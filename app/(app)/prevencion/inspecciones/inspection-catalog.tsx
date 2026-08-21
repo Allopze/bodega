@@ -20,7 +20,7 @@ import {
   runProgramNowAction,
   setInspectionTemplatePdtpActivitiesAction,
   updateInspectionProgramAction,
-} from "../actions"
+} from "./actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { todayInChile } from "@/lib/utils"
@@ -76,6 +76,8 @@ interface ImportableDefinition {
   sections: number
   items: number
   coverage: Coverage
+  /** Actividades del PDTP que acreditará al ejecutarse (cableado del programa). */
+  pdtpActivities: { n: number; name: string }[]
 }
 
 function templateStatusVariant(status: string): "default" | "success" | "outline" {
@@ -88,21 +90,18 @@ function coverageLabel(coverage: Coverage) {
   return `${coverage.withDanoPotencial}/${coverage.totalItems} con gravedad`
 }
 
-export function InspectionCatalog({ templates, programs, importable, approvedTemplates, worksites, assignees, riskEntriesByWorksite, canManage, canApprove }: {
+/**
+ * Catálogo de instrumentos. Antes convivía con la programación en una sola
+ * pantalla de pestañas: son dos actos distintos —qué se pregunta y cuándo se
+ * pregunta— con permisos y públicos distintos, y la pestaña obligaba a pasar
+ * por uno para llegar al otro.
+ */
+export function InspectionTemplatesPanel({ templates, importable, canManage, canApprove }: {
   templates: TemplateItem[]
-  programs: ProgramItem[]
   importable: ImportableDefinition[]
-  approvedTemplates: { id: string; name: string; versionLabel: string }[]
-  worksites: { id: string; name: string }[]
-  assignees: { id: string; name: string }[]
-  /** Peligros de la MIPER por faena, para el picker de la programación (A-09). */
-  riskEntriesByWorksite: Record<string, { id: string; hazardCode: string; hazard: string }[]>
-  /** Ya no se usa acá: la aprobación dejó de estar segregada en plantillas. */
-  currentUserId?: string
   canManage: boolean
   canApprove: boolean
 }) {
-  const [tab, setTab] = React.useState<"templates" | "programs">("templates")
   // A-02: antes se filtraba del picker toda definición ya incorporada, lo que
   // dejaba inalcanzable el versionado — y con él todo el mecanismo de
   // `superseded` que `approveInspectionTemplate` ya implementa. Reimportar es
@@ -123,27 +122,13 @@ export function InspectionCatalog({ templates, programs, importable, approvedTem
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex gap-1 rounded-md border border-[var(--color-border)] p-1">
-          {([["templates", `Plantillas (${templates.length})`], ["programs", `Programación (${programs.length})`]] as const).map(([value, label]) => (
-            <button key={value} type="button" onClick={() => setTab(value)} aria-pressed={tab === value}
-              className="rounded px-3 py-1 text-sm aria-pressed:bg-[var(--color-primary-tint)]">
-              {label}
-            </button>
-          ))}
-        </div>
-        {canManage && (
-          <div className="flex flex-wrap gap-2">
-            {tab === "templates" && importable.length > 0 && (
-              <ImportTemplateDialog importable={importable} versionsByDefinition={versionsByDefinition} />
-            )}
-            {tab === "programs" && approvedTemplates.length > 0 && worksites.length > 0 && (
-              <ProgramDialog templates={approvedTemplates} worksites={worksites} assignees={assignees} riskEntriesByWorksite={riskEntriesByWorksite} />
-            )}
-          </div>
+        <span className="text-eyebrow">{templates.length} instrumento(s)</span>
+        {canManage && importable.length > 0 && (
+          <ImportTemplateDialog importable={importable} versionsByDefinition={versionsByDefinition} />
         )}
       </div>
 
-      {tab === "templates" && (templates.length === 0 ? (
+      {templates.length === 0 ? (
         <EmptyState
           icon={<ClipboardText size={20} />}
           title="No hay instrumentos instalados"
@@ -226,9 +211,34 @@ export function InspectionCatalog({ templates, programs, importable, approvedTem
             </TableBody>
           </Table>
         </div>
-      ))}
+      )}
+    </div>
+  )
+}
 
-      {tab === "programs" && (programs.length === 0 ? (
+/**
+ * Programación: qué instrumento se ejecuta, en qué faena y con qué frecuencia.
+ * El cron diario materializa desde acá, y "Ejecutar ahora" usa el mismo camino.
+ */
+export function InspectionProgramsPanel({ programs, approvedTemplates, worksites, assignees, riskEntriesByWorksite, canManage }: {
+  programs: ProgramItem[]
+  approvedTemplates: { id: string; name: string; versionLabel: string }[]
+  worksites: { id: string; name: string }[]
+  assignees: { id: string; name: string }[]
+  /** Peligros de la MIPER por faena, para el picker de la programación (A-09). */
+  riskEntriesByWorksite: Record<string, { id: string; hazardCode: string; hazard: string }[]>
+  canManage: boolean
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-eyebrow">{programs.length} programación(es)</span>
+        {canManage && approvedTemplates.length > 0 && worksites.length > 0 && (
+          <ProgramDialog templates={approvedTemplates} worksites={worksites} assignees={assignees} riskEntriesByWorksite={riskEntriesByWorksite} />
+        )}
+      </div>
+
+      {programs.length === 0 ? (
         <EmptyState
           icon={<ClipboardText size={20} />}
           title="Aún no hay programación"
@@ -283,12 +293,15 @@ export function InspectionCatalog({ templates, programs, importable, approvedTem
             </TableBody>
           </Table>
         </div>
-      ))}
+      )}
     </div>
   )
 }
 
 /* ── Incorporar plantilla ─────────────────────────────────────────────────── */
+
+/** Centinela de "sin actividad": `Select` reserva el string vacío. */
+const NO_ACTIVITY = "__none__"
 
 function ImportTemplateDialog({ importable, versionsByDefinition }: {
   importable: ImportableDefinition[]
@@ -297,9 +310,15 @@ function ImportTemplateDialog({ importable, versionsByDefinition }: {
   const [open, setOpen] = React.useState(false)
   const [code, setCode] = React.useState(importable[0]?.code ?? "")
   const [kind, setKind] = React.useState("inspection")
+  /** Actividad elegida cuando la definición sirve a más de una. */
+  const [activity, setActivity] = React.useState(NO_ACTIVITY)
   const operation = useOperation()
   const definition = importable.find((item) => item.code === code)
   const existing = versionsByDefinition.get(code)
+  const ambiguous = (definition?.pdtpActivities.length ?? 0) > 1
+
+  // Cambiar de definición invalida la actividad elegida para la anterior.
+  React.useEffect(() => { setActivity(NO_ACTIVITY) }, [code])
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -309,6 +328,10 @@ function ImportTemplateDialog({ importable, versionsByDefinition }: {
       definitionCode: code,
       kind: form.get("kind"),
       versionLabel: versionLabel || undefined,
+      // Sólo se manda cuando hay que desempatar. Omitirlo deja que el servicio
+      // aplique el cableado por defecto, que es el caso de las nueve
+      // definiciones con una sola actividad.
+      ...(ambiguous && activity !== NO_ACTIVITY ? { pdtpActivityNumbers: [Number(activity)] } : {}),
     }), () => setOpen(false))
   }
 
@@ -332,6 +355,36 @@ function ImportTemplateDialog({ importable, versionsByDefinition }: {
               {definition.coverage.criticalityInert && " · sin gravedad por ítem, ningún hallazgo alcanzará criticidad alta."}
             </p>
           )}
+          {/* Qué acredita en el programa anual. Una sola actividad se cablea
+              sola; dos exigen elegir, porque la misma definición de EPP la
+              ejecutan el JT (n=64) y el PRF (n=65) por separado. */}
+          {definition && (definition.pdtpActivities.length === 1 && definition.pdtpActivities[0] ? (
+            <p className="text-xs text-[var(--color-text-subtle)]">
+              Acredita la actividad PDTP <span className="font-mono">N° {definition.pdtpActivities[0].n}</span> — {definition.pdtpActivities[0].name}.
+            </p>
+          ) : definition.pdtpActivities.length > 1 ? (
+            // La misma definición de EPP la ejecutan el JT (n=64) y el PRF
+            // (n=65) por separado: cablear las dos haría que un run de uno
+            // cerrara la ocurrencia del otro, así que se elige una.
+            <Field
+              label="Actividad del PDTP que acredita"
+              hint="Esta definición sirve a más de una; elige la del responsable que la va a ejecutar."
+            >
+              <Select value={activity} onValueChange={setActivity}>
+                <SelectTrigger aria-label="Actividad del PDTP que acredita"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_ACTIVITY}>No acredita</SelectItem>
+                  {definition.pdtpActivities.map((item) => (
+                    <SelectItem key={item.n} value={String(item.n)}>N° {item.n} — {item.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          ) : (
+            <p className="text-xs text-[var(--color-text-subtle)]">
+              No acredita ninguna actividad del programa anual.
+            </p>
+          ))}
           {existing?.approved && (
             <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-xs">
               Ya hay una versión vigente de esta definición: <span className="font-mono">{existing.approved.versionLabel}</span>.

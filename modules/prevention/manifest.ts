@@ -318,6 +318,10 @@ export const preventionModule = {
         // Los sourceType que reconoce prevention_pdtp_source_links: lo que puede
         // colgar de una actividad del programa y generar su evidencia.
         {
+          // Tres pantallas, una por acto: realizar (esta), el catálogo de
+          // instrumentos y el calendario que los dispara. Antes plantillas y
+          // programación compartían una sola pantalla con pestañas, y las
+          // auditorías del SGSST duplicaban el árbol entero en otra sección.
           label: "Inspecciones",
           href: "/prevencion/inspecciones",
           iconName: "MagnifyingGlass",
@@ -325,8 +329,13 @@ export const preventionModule = {
           permissions: ["prevention:inspections:view"],
           children: [
             {
-              label: "Catálogo y programación",
-              href: "/prevencion/inspecciones/catalogo",
+              label: "Plantillas",
+              href: "/prevencion/inspecciones/plantillas",
+              permissions: ["prevention:inspections:view"],
+            },
+            {
+              label: "Programación",
+              href: "/prevencion/inspecciones/programacion",
               permissions: ["prevention:inspections:view"],
             },
           ],
@@ -450,24 +459,6 @@ export const preventionModule = {
           iconName: "UsersThree",
           group: "Seguimiento",
           permissions: ["prevention:engagement:view"],
-        },
-        {
-          // DS 44 art. 22 n°4: auditoría del desempeño del Sistema de Gestión.
-          // No es lo mismo que /pdtp/cobertura, que cubre el art. 14 (evaluación
-          // del cumplimiento del programa). Reusa el motor de inspecciones con
-          // kind='audit', por eso comparte permisos con Inspecciones.
-          label: "Auditorías del SGSST",
-          href: "/prevencion/auditorias",
-          iconName: "ClipboardText",
-          group: "Seguimiento",
-          permissions: ["prevention:inspections:view"],
-          children: [
-            {
-              label: "Catálogo y programación",
-              href: "/prevencion/auditorias/catalogo",
-              permissions: ["prevention:inspections:view"],
-            },
-          ],
         },
         {
           label: "Indicadores SST",

@@ -276,6 +276,31 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
     command: ["node", "scripts/sync-rbac.mjs"]
 
+  # One-shot: instala el catálogo del motor de inspecciones cableado a las
+  # actividades del PDTP que acredita cada instrumento. Idempotente: la
+  # identidad es (code, versionLabel), así que repetirlo no crea versiones —
+  # sólo corrige el cableado de una plantilla que quedó sin acreditar.
+  #
+  #   docker compose run --rm seed-inspection-templates
+  #
+  # Sin SEED_ACTOR_USER_ID resuelve el primer usuario con rol `administrador`:
+  # `author_user_id` es FK obligatoria. Corre DESPUÉS de migrate y de sync-rbac.
+  seed-inspection-templates:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - SEED_ACTOR_USER_ID=${SEED_ACTOR_USER_ID:-}
+      - SEED_DRY_RUN=${SEED_DRY_RUN:-}
+    command: ["node", "scripts/seed-pdtp-inspection-templates.mjs"]
+
   # One-shot: diagnóstico READ ONLY de la conciliación OC-factura. No depende de
   # las columnas de proyección, así que deploy-prod.sh lo corre ANTES de migrar
   # para dejar registrado cuánta deriva traía la base. Nunca falla por hallazgos:

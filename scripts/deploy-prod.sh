@@ -9,7 +9,8 @@ set -euo pipefail
 # push/pull in this flow: build the image here on `main`, then swap it in at
 # PROD_DIR. Steps: tag current image as rollback -> pg_dump -> build ->
 # preflight conciliación -> migrate -> backfill conciliación (si hace falta) ->
-# recreate app then cron containers -> authenticated smoke check.
+# sync-rbac -> catálogo de inspecciones -> recreate app then cron containers ->
+# authenticated smoke check.
 # ─────────────────────────────────────────────────────────────────────────────
 
 PROD_DIR="${PROD_DIR:-/server/plataforma}"
@@ -136,6 +137,13 @@ fi
 
 echo "==> Syncing RBAC permissions from module manifests"
 (cd "$PROD_DIR" && docker compose run --rm sync-rbac)
+
+# Idempotente y antes del swap: si falla, el deploy aborta con la app anterior
+# todavía en pie. Va acá y no después porque la app debe levantar con el
+# catálogo ya cableado — una plantilla sin `pdtpActivityNumbers` ejecuta la
+# inspección sin acreditar nada en el programa anual.
+echo "==> Instalando el catálogo de inspecciones cableado al PDTP"
+(cd "$PROD_DIR" && docker compose run --rm seed-inspection-templates)
 
 # The durable database marker, not merely a host env var, determines whether
 # the immediately previous image is safe. A failed probe is deliberately

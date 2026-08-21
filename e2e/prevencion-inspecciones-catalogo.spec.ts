@@ -1,9 +1,9 @@
-import { test, expect, type Locator, type Page } from "@playwright/test"
+import { test, expect, type Page } from "@playwright/test"
 import { expectPageTitle, login } from "./helpers"
 
 /**
- * E2E: catálogo y programación del motor de inspecciones
- * (`/prevencion/inspecciones/catalogo`).
+ * E2E: plantillas (`/prevencion/inspecciones/plantillas`) y programación
+ * (`/prevencion/inspecciones/programacion`) del motor de inspecciones.
  *
  * Hasta ahora las siete acciones de esta pantalla —incorporar, aprobar,
  * retirar, declarar acreditación PDTP, programar, editar/desactivar la
@@ -34,21 +34,6 @@ async function nuevoPrograma(page: Page) {
   await page.getByRole("button", { name: "Nuevo programa" }).first().click()
 }
 
-/**
- * Espera a que termine una acción que sólo es un botón —"Ejecutar ahora",
- * "Desactivar"— y vuelve a dejar la pestaña de programación a la vista.
- *
- * Ninguna de las dos deja aviso en pantalla, así que recargar de inmediato
- * abortaba la acción en vuelo y el clic siguiente era en realidad el primero
- * que surtía efecto. La señal buena es que al revalidar el árbol se remonta y
- * la pestaña vuelve sola a "Plantillas": la fila desaparece.
- */
-async function esperarAccionDeFila(page: Page, fila: Locator) {
-  await expect(fila).toHaveCount(0, { timeout: 30_000 })
-  await page.reload()
-  await page.getByRole("button", { name: /^Programación \(/ }).click()
-}
-
 /** Incorpora `inspeccion_contenedores` con una etiqueta propia; queda en borrador. */
 async function incorporar(page: Page, version: string) {
   await page.getByRole("button", { name: "Publicar nueva versión" }).click()
@@ -65,8 +50,8 @@ async function incorporar(page: Page, version: string) {
 test.describe("Inspecciones — catálogo de instrumentos", () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
-    await page.goto("/prevencion/inspecciones/catalogo")
-    await expectPageTitle(page, "Catálogo de inspecciones")
+    await page.goto("/prevencion/inspecciones/plantillas")
+    await expectPageTitle(page, "Plantillas de inspección")
   })
 
   /**
@@ -98,7 +83,7 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
 
     // Programar exige una plantilla aprobada, y el picker sólo lista esas: el
     // borrador recién incorporado no debe aparecer todavía.
-    await page.getByRole("button", { name: /^Programación \(/ }).click()
+    await page.goto("/prevencion/inspecciones/programacion")
     // Sin programaciones el alta aparece dos veces —en la barra y como acción
     // del estado vacío—, así que el rótulo por sí solo no identifica un botón.
     await nuevoPrograma(page)
@@ -112,7 +97,7 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
     await page.keyboard.press("Escape")
     await expect(page.locator('[role="dialog"]')).not.toBeVisible()
 
-    await page.getByRole("button", { name: /^Plantillas \(/ }).click()
+    await page.goto("/prevencion/inspecciones/plantillas")
     await fila.getByRole("button", { name: "Aprobar" }).click()
     const aprobar = page.getByRole("dialog")
     await aprobar.locator('textarea[name="reason"]').fill("Instrumento revisado y habilitado para la faena E2E.")
@@ -124,7 +109,7 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
     await expect(fila.getByRole("button", { name: "Aprobar" })).toHaveCount(0)
 
     // Y ahora sí es programable.
-    await page.getByRole("button", { name: /^Programación \(/ }).click()
+    await page.goto("/prevencion/inspecciones/programacion")
     await nuevoPrograma(page)
     programa = page.getByRole("dialog", { name: "Nueva programación" })
     await programa.getByLabel("Plantilla").click()
@@ -147,18 +132,19 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
   })
 
   /**
-   * Sin actividades declaradas, `onInspectionCompleted` es un no-op y la
-   * inspección jamás llega al programa anual — el estado en que estuvieron
-   * todas las plantillas hasta 2026-08-04.
+   * La plantilla nace cableada al programa anual: `defaultPdtpActivityNumbers`
+   * toma el `n` que declara el sembrado (contenedores → n=29). Antes nacía sin
+   * acreditar, `onInspectionCompleted` era un no-op y la inspección jamás
+   * llegaba al PDTP — el estado de todas las plantillas hasta 2026-08-04.
    */
-  test("declarar la acreditación PDTP cambia \"No acredita\" por los números", async ({ page }) => {
+  test("la plantilla llega acreditando su actividad y la acreditación se puede corregir", async ({ page }) => {
     const version = `E2E-${RUN}-C`
     await incorporar(page, version)
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
     await page.reload()
 
     const fila = filaPlantilla(page, version)
-    await expect(fila.getByText("No acredita")).toBeVisible({ timeout: 15_000 })
+    await expect(fila.getByText("N° 29")).toBeVisible({ timeout: 15_000 })
 
     await fila.getByRole("button", { name: "Acreditación PDTP" }).click()
     const dialog = page.getByRole("dialog")
@@ -201,9 +187,8 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
 test.describe("Inspecciones — programación por faena y frecuencia", () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
-    await page.goto("/prevencion/inspecciones/catalogo")
-    await expectPageTitle(page, "Catálogo de inspecciones")
-    await page.getByRole("button", { name: /^Programación \(/ }).click()
+    await page.goto("/prevencion/inspecciones/programacion")
+    await expectPageTitle(page, "Programación de inspecciones")
   })
 
   /**
@@ -246,7 +231,6 @@ test.describe("Inspecciones — programación por faena y frecuencia", () => {
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
 
     await page.reload()
-    await page.getByRole("button", { name: /^Programación \(/ }).click()
     // La fila no lleva el tipo de sujeto, así que se ancla por plantilla y se
     // distingue por el intervalo propio que sólo esta programación declara.
     const fila = page.getByRole("row")
@@ -265,11 +249,9 @@ test.describe("Inspecciones — programación por faena y frecuencia", () => {
     await expect(fila.getByRole("cell", { name: hoy })).toBeVisible()
 
     await fila.getByRole("button", { name: "Ejecutar ahora" }).click()
-    await esperarAccionDeFila(page, fila)
     await expect(fila.getByRole("cell", { name: enDias(paso) })).toBeVisible({ timeout: 15_000 })
 
     await fila.getByRole("button", { name: "Ejecutar ahora" }).click()
-    await esperarAccionDeFila(page, fila)
     await expect(fila.getByRole("cell", { name: enDias(paso * 2) })).toBeVisible({ timeout: 15_000 })
 
     await fila.getByRole("button", { name: "Editar" }).click()
@@ -282,14 +264,11 @@ test.describe("Inspecciones — programación por faena y frecuencia", () => {
     await editar.getByRole("button", { name: "Guardar" }).click()
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
 
-    await page.reload()
-    await page.getByRole("button", { name: /^Programación \(/ }).click()
     await expect(fila.getByText("Semanal")).toBeVisible({ timeout: 15_000 })
     await expect(fila.getByText("Admin E2E")).toBeVisible()
 
     // Desactivar es el borrado: los runs ya materializados conservan su origen.
     await fila.getByRole("button", { name: "Desactivar" }).click()
-    await esperarAccionDeFila(page, fila)
     await expect(fila.getByRole("cell", { name: "No", exact: true })).toBeVisible({ timeout: 15_000 })
     await expect(fila.getByRole("button", { name: "Activar" })).toBeVisible()
     await expect(fila.getByRole("button", { name: "Ejecutar ahora" })).toHaveCount(0)

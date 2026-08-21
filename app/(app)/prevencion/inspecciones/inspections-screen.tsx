@@ -15,38 +15,21 @@ import {
   summarizeInspectionRuns,
   INSPECTION_PAGE_SIZE,
 } from "@/lib/services/prevention-inspections"
-import { InspectionRunList, type InspectionSubjectOption } from "./inspection-run-list"
+import { InspectionRunList, NewRunDialog, type InspectionSubjectOption } from "./inspection-run-list"
 import { todayInChile } from "@/lib/utils"
 
 /**
- * Pantalla del motor de inspecciones, parametrizada por los `kind` que muestra.
+ * Realizar una inspección: la bandeja de ejecuciones del motor.
  *
- * `/prevencion/inspecciones` muestra inspecciones y observaciones;
- * `/prevencion/auditorias` muestra las auditorías del Sistema de Gestión
- * (DS 44 art. 22 n°4). Es el mismo motor y la misma tabla: lo único que cambia
- * es el filtro y los rótulos, así que la pantalla se comparte en vez de
- * duplicarse.
- *
- * Se usan rutas distintas y no `?kind=`, porque `isHrefActive` compara sólo el
- * pathname: dos ítems del sidebar con la misma ruta y distinto query string
- * quedarían ambos resaltados.
+ * Un solo listado para los tres instrumentos —inspección, observación y la
+ * auditoría del Sistema de Gestión (DS 44 art. 22 n°4)—. Antes las auditorías
+ * tenían su propio par de rutas (`/prevencion/auditorias` y su catálogo) con la
+ * misma pantalla, los mismos permisos y las mismas acciones; el tipo pasó de ser
+ * una ruta a ser un filtro visible, que es lo que siempre fue en la tabla.
  */
-export async function InspectionsScreen({
-  kinds,
-  title,
-  description,
-  breadcrumbLabel,
-  catalogHref,
-  searchParams,
-}: {
-  kinds:           readonly string[]
-  title:           string
-  description:     string
-  breadcrumbLabel: string
-  /** Catálogo y programación de este mismo `kind` (C-12: sin esto, el catálogo de auditorías no se alcanza desde ningún enlace). */
-  catalogHref:     string
+export async function InspectionsScreen({ searchParams }: {
   /** Filtros y página. C-09: viajan al SQL, no se aplican sobre un dataset traído entero. */
-  searchParams?:   Record<string, string | string[] | undefined>
+  searchParams?: Record<string, string | string[] | undefined>
 }) {
   let session
   try { session = await requirePermission("prevention:inspections:view") }
@@ -67,6 +50,11 @@ export async function InspectionsScreen({
   const rawView = single("vista")
   const view: "pending_review" | "open_findings" | "critical" | undefined =
     rawView === "pending_review" || rawView === "open_findings" || rawView === "critical" ? rawView : undefined
+  // El tipo de instrumento es un filtro más. `kinds` se mantiene como lista
+  // porque el SQL lo consume así y "todos" es simplemente no declararlo.
+  const rawKind = single("tipo")
+  const kinds = rawKind === "inspection" || rawKind === "observation" || rawKind === "audit" ? [rawKind] : undefined
+  const exportQuery = kinds ? `?tipo=${kinds[0]}` : ""
   const filter = {
     kinds,
     status: single("estado") || undefined,
@@ -79,11 +67,15 @@ export async function InspectionsScreen({
     listInspectionRuns(access, filter, { offset: (page - 1) * INSPECTION_PAGE_SIZE }),
     // KPIs sobre el universo completo, no sobre la página visible (C-09).
     summarizeInspectionRuns(access, { kinds }),
-    listInspectionPrograms(access, filter),
-    canExecute ? listInspectionTemplates(access, filter) : Promise.resolve([]),
+    listInspectionPrograms(access, { kinds }),
+    canExecute ? listInspectionTemplates(access, { kinds }) : Promise.resolve([]),
     canExecute ? listInspectionWorksites(access) : Promise.resolve([]),
     canExecute ? listInspectionAssignees(access) : Promise.resolve([]),
   ])
+
+  const approvedTemplates = templates.flatMap((item) => item.status === "approved"
+    ? [{ id: item.id, name: item.name, versionLabel: item.versionLabel }]
+    : [])
 
   // Función #11: inventario por faena para el picker de sujeto. Son pocas
   // faenas por usuario, así que se precarga en vez de pedirlo al cambiar.
@@ -98,21 +90,37 @@ export async function InspectionsScreen({
   return (
     <PageContainer>
       <PageHeader
-        title={title}
-        description={description}
+        title="Inspecciones"
+        description="Inspecciones, observaciones de conducta y auditorías del Sistema de Gestión (DS 44 art. 22 n°4). Cada incumplimiento genera un hallazgo, y los graves exigen una acción correctiva antes de cerrar."
         breadcrumb={<Breadcrumbs items={[
           { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
-          { label: breadcrumbLabel },
+          { label: "Inspecciones" },
         ]} />}
         actions={
           <>
+            {/* Esta pantalla ES "realizar una inspección": su verbo va primero
+                y en el encabezado, no dentro de la barra de filtros. */}
+            {canExecute && approvedTemplates.length > 0 && worksites.length > 0 ? (
+              <NewRunDialog
+                templates={approvedTemplates}
+                worksites={worksites}
+                assignees={assignees}
+                subjectsByWorksite={subjectsByWorksite}
+              />
+            ) : undefined}
+            {/* El export respeta los filtros de la pantalla: exportar el
+                universo completo desde una bandeja acotada a un tipo era una
+                trampa silenciosa. */}
             <Button asChild variant="secondary">
-              <Link href={catalogHref}>Catálogo</Link>
+              <Link href="/prevencion/inspecciones/plantillas">Plantillas</Link>
+            </Button>
+            <Button asChild variant="secondary">
+              <Link href="/prevencion/inspecciones/programacion">Programación</Link>
             </Button>
             {session.user.permissions.includes("prevention:inspections:export") ? (
               <Button asChild variant="secondary">
-                <a href="/api/prevencion/inspecciones/export" download>Exportar Excel</a>
+                <a href={`/api/prevencion/inspecciones/export${exportQuery}`} download>Exportar Excel</a>
               </Button>
             ) : undefined}
           </>
@@ -140,9 +148,7 @@ export async function InspectionsScreen({
         pageSize={INSPECTION_PAGE_SIZE}
         overdueProgramCount={programs.filter((row) => row.program.isActive && row.program.nextDueOn < todayInChile()).length}
         canExecute={canExecute}
-        templates={templates.flatMap((item) => item.status === "approved"
-          ? [{ id: item.id, name: item.name, versionLabel: item.versionLabel }]
-          : [])}
+        templates={approvedTemplates}
         worksites={worksites}
         assignees={assignees}
         subjectsByWorksite={subjectsByWorksite}

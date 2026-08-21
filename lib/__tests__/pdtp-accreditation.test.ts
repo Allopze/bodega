@@ -585,10 +585,32 @@ describe("declarar qué actividades PDTP acredita una plantilla", () => {
     expect(template.pdtpActivityNumbers).toEqual([ACT_N])
   })
 
-  it("sin declararlos queda en null — el conector es no-op, que era el estado de todas", async () => {
+  it("sin declararlos hereda el cableado del programa: la plantilla llega acreditando", async () => {
     const service = await import("@/lib/services/prevention-inspections")
     const template = await service.importInspectionTemplate({ definitionCode: "inspeccion_taller" }, ACCESS)
+    // n=27 en PDTP_2026_INSPECTION_SPECS. Antes nacía en null y la inspección
+    // se ejecutaba sin que el programa anual se enterara.
+    expect(template.pdtpActivityNumbers).toEqual([27])
+  })
+
+  it("un [] explícito sigue significando que no acredita", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const template = await service.importInspectionTemplate(
+      { definitionCode: "inspeccion_equipos_moviles", pdtpActivityNumbers: [] },
+      ACCESS,
+    )
     expect(template.pdtpActivityNumbers).toBeNull()
+  })
+
+  it("no adivina cuando la definición sirve a dos actividades ni cuando no sirve a ninguna", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    // EPP es la n=64 (JT) y la n=65 (PRF): cablear ambas dejaría que un run del
+    // jefe de terreno cerrara la ocurrencia del prevencionista.
+    const epp = await service.importInspectionTemplate({ definitionCode: "inspeccion_epp" }, ACCESS)
+    expect(epp.pdtpActivityNumbers).toBeNull()
+    // La auditoría del SGSST la exige el DS 44, no el programa anual.
+    const audit = await service.importInspectionTemplate({ definitionCode: "auditoria_sgsst", kind: "audit" }, ACCESS)
+    expect(audit.pdtpActivityNumbers).toBeNull()
   })
 
   it("se pueden corregir después de incorporarla, deduplicados y ordenados", async () => {

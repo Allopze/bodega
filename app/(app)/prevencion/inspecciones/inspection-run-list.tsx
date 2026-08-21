@@ -83,6 +83,9 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
   // Filtros client-side en la URL (shareables + sobreviven refresh) vía useUrlFilters.
   const { getFilter, setFilters, clearFilters: clearUrlFilters } = useUrlFilters()
   const status = getFilter("estado") || "all"
+  // El tipo de instrumento era una ruta aparte (/prevencion/auditorias) con la
+  // misma pantalla; ahora es un filtro, que es lo que siempre fue en la tabla.
+  const kind = getFilter("tipo") || "all"
   const worksite = getFilter("faena") || "all"
   const quickFilter = (getFilter("vista") || "all") as QuickFilter
 
@@ -125,11 +128,13 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
   // ("Ver todas"), de modo que buscar algo inexistente era un callejón. El
   // buscador cuenta como filtro aunque viva en la cabecera del shell.
   const search = getFilter("q").trim()
-  const isFiltered = status !== "all" || worksite !== "all" || quickFilter !== "all" || search !== ""
+  const isFiltered = status !== "all" || kind !== "all" || worksite !== "all" || quickFilter !== "all" || search !== ""
 
   const STATUS_LABELS = INSPECTION_RUN_STATUS_LABELS as Record<string, string>
+  const KIND_LABELS = INSPECTION_KIND_LABELS as Record<string, string>
   const activeChips: ActiveFilterChip[] = []
   if (status !== "all") activeChips.push({ key: "estado", label: "Estado", value: status, displayValue: STATUS_LABELS[status] ?? status })
+  if (kind !== "all") activeChips.push({ key: "tipo", label: "Tipo", value: kind, displayValue: KIND_LABELS[kind] ?? kind })
   if (worksite !== "all") {
     const ws = runWorksites.find((w) => w.id === worksite)
     if (ws) activeChips.push({ key: "faena", label: "Faena", value: worksite, displayValue: ws.name })
@@ -164,15 +169,19 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
         onRemoveChip={handleRemoveChip}
         onClearAll={clearUrlFilters}
         hasActiveFilters={isFiltered}
-        actions={canExecute && templates.length > 0 && worksites.length > 0 ? (
-          <NewRunDialog templates={templates} worksites={worksites} assignees={assignees} subjectsByWorksite={subjectsByWorksite} />
-        ) : undefined}
       >
         <Select value={status} onValueChange={(value) => setFilters({ estado: value === "all" ? null : value, vista: null, pagina: null })}>
           <SelectTrigger className="w-56" aria-label="Estado de la inspección"><SelectValue placeholder="Estado" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos los estados</SelectItem>
             {Object.entries(INSPECTION_RUN_STATUS_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={kind} onValueChange={(value) => setFilters({ tipo: value === "all" ? null : value, pagina: null })}>
+          <SelectTrigger className="w-52" aria-label="Tipo de instrumento"><SelectValue placeholder="Tipo" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos los tipos</SelectItem>
+            {Object.entries(INSPECTION_KIND_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={worksite} onValueChange={(value) => setFilters({ faena: value === "all" ? null : value, pagina: null })}>
@@ -190,7 +199,7 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
           title={isFiltered ? "No hay inspecciones con estos filtros" : "Aún no hay inspecciones ejecutadas"}
           description={isFiltered
             ? "Ajusta los filtros o el texto del buscador superior."
-            : "Incorpora una plantilla del catálogo, apruébala y prográmala por faena. Cada incumplimiento genera un hallazgo, y los graves exigen una acción CAPA antes de cerrar."}
+            : "Habilita un instrumento en Plantillas y prográmalo por faena en Programación. Cada incumplimiento genera un hallazgo, y los graves exigen una acción CAPA antes de cerrar."}
           action={isFiltered
             ? <Button type="button" variant="secondary" onClick={clearFilters}>Ver todas</Button>
             : canExecute && templates.length > 0 && worksites.length > 0
@@ -284,7 +293,7 @@ function subjectRefOf(subject: InspectionSubjectOption) {
   return `${subject.source}:${subject.id}`
 }
 
-function NewRunDialog({ templates, worksites, assignees, subjectsByWorksite }: {
+export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksite }: {
   templates: TemplateOption[]
   worksites: { id: string; name: string }[]
   assignees: { id: string; name: string }[]

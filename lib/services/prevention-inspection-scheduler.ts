@@ -79,7 +79,7 @@ export async function materializeProgramRuns(options: { programId?: string } = {
           body: `La plantilla "${row.templateName}" ya no está aprobada, así que no se generó la inspección programada para el ${program.nextDueOn}.`,
           entityId: program.id,
           dedupeKey: `inspection:program-template:${program.id}:${program.nextDueOn}`,
-          href: "/prevencion/inspecciones/catalogo",
+          href: "/prevencion/inspecciones/plantillas",
         })
         continue
       }

@@ -18,6 +18,7 @@ import {
   summarizeInspectionTimelyClosure,
   summarizeInspectionTrends,
   type InspectionAccess,
+  type InspectionKindFilter,
 } from "@/lib/services/prevention-inspections"
 import { todayInChile } from "@/lib/utils"
 
@@ -30,7 +31,15 @@ function label(map: Record<string, string>, key: string | null | undefined) {
   return map[key] ?? key
 }
 
-export async function buildInspectionExport(access: InspectionAccess): Promise<ReportData> {
+/**
+ * `filter` acota el export al mismo tipo de instrumento que la pantalla. Sin
+ * esto, exportar desde una bandeja filtrada a auditorías bajaba el universo
+ * completo con el mismo nombre de archivo: dos Excel distintos indistinguibles.
+ */
+export async function buildInspectionExport(
+  access: InspectionAccess,
+  filter: InspectionKindFilter = {},
+): Promise<ReportData> {
   if (!access.permissions.includes("prevention:inspections:export")) {
     throw new Error("Inspección no encontrada o fuera de alcance.")
   }
@@ -39,11 +48,11 @@ export async function buildInspectionExport(access: InspectionAccess): Promise<R
   // sería un fallo silencioso de integridad, y hasta ahora truncaba a 500 filas
   // sin avisar.
   const [runs, templates, programs, timely, trends] = await Promise.all([
-    listAllInspectionRunsForExport(access),
-    listInspectionTemplates(access),
-    listInspectionPrograms(access),
-    summarizeInspectionTimelyClosure(access),
-    summarizeInspectionTrends(access),
+    listAllInspectionRunsForExport(access, filter),
+    listInspectionTemplates(access, filter),
+    listInspectionPrograms(access, filter),
+    summarizeInspectionTimelyClosure(access, filter),
+    summarizeInspectionTrends(access, filter),
   ])
   const ids = runs.map((row) => row.run.id)
   const code = new Map(runs.map((row) => [row.run.id, row.run.code]))
@@ -132,7 +141,9 @@ export async function buildInspectionExport(access: InspectionAccess): Promise<R
   ]
 
   return {
-    filenameBase: `inspecciones_${todayInChile()}`,
+    // El nombre declara el alcance: un export acotado y uno completo no pueden
+    // llamarse igual.
+    filenameBase: `inspecciones${filter.kinds?.length ? `_${filter.kinds.join("-")}` : ""}_${todayInChile()}`,
     worksheetName: sheets[0]!.worksheetName,
     headers: sheets[0]!.headers,
     rows: sheets[0]!.rows,

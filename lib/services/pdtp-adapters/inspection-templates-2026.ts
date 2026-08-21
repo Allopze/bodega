@@ -182,3 +182,29 @@ export async function ensurePdtp2026InspectionTemplates(input: {
 
   return result
 }
+
+/**
+ * Actividades del PDTP que acredita una definición del catálogo, según el mismo
+ * cableado que usa el sembrado. Se expone para que incorporar una plantilla a
+ * mano no quede desalineado con lo que instala `ensurePdtp2026InspectionTemplates`.
+ */
+export function pdtpActivityCandidatesFor(definitionCode: string): { n: number; name: string }[] {
+  return PDTP_2026_INSPECTION_SPECS
+    .filter((spec): spec is typeof spec & { n: number } => spec.definitionCode === definitionCode && spec.n !== null)
+    .map((spec) => ({ n: spec.n, name: spec.name }))
+}
+
+/**
+ * Cableado por defecto al incorporar una plantilla: el `n` que acredita, cuando
+ * no hay ambigüedad.
+ *
+ * Vacío en dos casos, y en ninguno se adivina: la definición no acredita
+ * ninguna actividad (la auditoría del SGSST la exige el DS 44, no el programa
+ * anual), o declara más de una y sólo una persona puede decidir cuál — EPP es
+ * la misma definición en la n=64 (JT) y la n=65 (PRF), y cablear las dos haría
+ * que un run del jefe de terreno cerrara la ocurrencia del prevencionista.
+ */
+export function defaultPdtpActivityNumbers(definitionCode: string): number[] {
+  const [only, ...rest] = pdtpActivityCandidatesFor(definitionCode)
+  return only && rest.length === 0 ? [only.n] : []
+}

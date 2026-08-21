@@ -56,6 +56,12 @@ const nextConfig: NextConfig = {
       { source: "/servicios/:id", destination: "/solicitudes/:id", permanent: false },
       { source: "/repuestos", destination: "/solicitudes", permanent: false },
       { source: "/servicios", destination: "/solicitudes", permanent: false },
+      // Auditorías del SGSST y el catálogo de inspecciones se fusionaron en
+      // Inspecciones (2026-08-21): eran el mismo motor con los mismos permisos
+      // en árboles de rutas paralelos. El tipo de instrumento pasó a filtro.
+      { source: "/prevencion/auditorias", destination: "/prevencion/inspecciones?tipo=audit", permanent: true },
+      { source: "/prevencion/auditorias/catalogo", destination: "/prevencion/inspecciones/plantillas", permanent: true },
+      { source: "/prevencion/inspecciones/catalogo", destination: "/prevencion/inspecciones/plantillas", permanent: true },
       // Biblioteca SST renamed to Documentación (2026-07-02)
       { source: "/prevencion/biblioteca", destination: "/prevencion/documentacion", permanent: true },
       { source: "/prevencion/biblioteca/:path*", destination: "/prevencion/documentacion/:path*", permanent: true },

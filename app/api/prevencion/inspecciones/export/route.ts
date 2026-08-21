@@ -9,16 +9,22 @@ import { buildXlsxBuffer } from "@/lib/reports/export"
 import { encodeContentDisposition } from "@/lib/utils"
 import { logger } from "@/lib/logger"
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await auth()
   if (!session) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
   if (!can(session, "prevention:inspections:export")) return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   try {
+    // Mismo parámetro que el filtro de la bandeja: el Excel baja lo que la
+    // pantalla está mostrando. Un valor desconocido se ignora en vez de
+    // rechazarse — el peor caso es exportar de más, no fallar la descarga.
+    const tipo = new URL(request.url).searchParams.get("tipo")
+    const kinds = tipo === "inspection" || tipo === "observation" || tipo === "audit" ? [tipo] : undefined
+
     const report = await buildInspectionExport({
       userId: session.user.id,
       scope: resolveWorksiteScope(session),
       permissions: session.user.permissions,
-    })
+    }, { kinds })
     const bytes = await buildXlsxBuffer(report)
     return new NextResponse(bytes, {
       status: 200,

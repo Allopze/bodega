@@ -45,6 +45,17 @@ RUN ./node_modules/.bin/esbuild scripts/sync-rbac.ts \
     --packages=external \
     --outfile=/tmp/sync-rbac.mjs
 
+# Mismo motivo que sync-rbac: el catálogo de instrumentos del motor de
+# inspecciones se instala cableado a la actividad del PDTP que acredita cada
+# uno, y sin ese paso en el deploy las plantillas quedan sin acreditar y la
+# inspección se ejecuta sin que el programa anual se entere.
+RUN ./node_modules/.bin/esbuild scripts/seed-pdtp-inspection-templates-2026.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --packages=external \
+    --outfile=/tmp/seed-pdtp-inspection-templates.mjs
+
 # Mismo motivo que sync-rbac: los one-shots de conciliación OC-factura viven en
 # TypeScript con alias `@/`, y la imagen de producción no lleva ni `tsx` ni el
 # source. Se bundlean acá y se corren con `node` desde `docker-compose.yml`.
@@ -125,6 +136,7 @@ COPY --from=build /app/node_modules/drizzle-orm ./node_modules/drizzle-orm
 COPY --from=build /app/node_modules/postgres ./node_modules/postgres
 
 COPY --from=build /tmp/sync-rbac.mjs ./scripts/sync-rbac.mjs
+COPY --from=build /tmp/seed-pdtp-inspection-templates.mjs ./scripts/seed-pdtp-inspection-templates.mjs
 COPY --from=build /tmp/invoice-reconciliation/preflight-purchase-invoice-reconciliation.mjs ./scripts/preflight-purchase-invoice-reconciliation.mjs
 COPY --from=build /tmp/invoice-reconciliation/backfill-purchase-invoice-reconciliation.mjs ./scripts/backfill-purchase-invoice-reconciliation.mjs
 # Cron service uses this bounded internal HTTP runner instead of an inline

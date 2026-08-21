@@ -51,6 +51,7 @@ import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { CHECKLIST_DEFINITIONS, isNonInspectionDefinition, isPersonEvaluationDefinition } from "@/lib/sst/definitions"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { onInspectionCompleted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
+import { defaultPdtpActivityNumbers, pdtpActivityCandidatesFor } from "@/lib/services/pdtp-adapters/inspection-templates-2026"
 import { codeYear, todayInChile } from "@/lib/utils"
 import { assertRouteModuleEnabled } from "@/lib/services/module-toggles"
 
@@ -78,84 +79,19 @@ function requireAccess(access: InspectionAccess, permission: string, worksiteId?
   }
 }
 
-export function inspectionOperationPath(kind: string): "/prevencion/inspecciones" | "/prevencion/auditorias" {
-  return kind === "audit" ? "/prevencion/auditorias" : "/prevencion/inspecciones"
-}
-
 /**
- * Aplica el toggle del submódulo según el tipo persistido del instrumento.
- * Auditorías e Inspecciones comparten motor, permisos y acciones: inferir el
- * owner desde la URL que despachó la acción permitiría operar una auditoría
- * desde la ruta hermana cuando su toggle está apagado.
+ * Toggle del submódulo. Inspecciones, observaciones y auditorías del SGSST
+ * viven en una sola ruta desde que se fusionaron (2026-08-21), así que basta
+ * la ruta del motor.
+ *
+ * Antes esto resolvía el `kind` persistido con siete joins —plantilla,
+ * programa, run, hallazgo, respuesta, documento, evidencia— porque
+ * `/prevencion/auditorias` tenía su propio toggle y había que impedir operar
+ * una auditoría desde la ruta hermana cuando el suyo estaba apagado. Con un
+ * único owner esa distinción no existe: el toggle que valía era el de la ruta.
  */
-export async function assertInspectionKindEnabled(kind: string): Promise<void> {
-  await assertRouteModuleEnabled(inspectionOperationPath(kind))
-}
-
-/**
- * Resuelve el kind desde la referencia inmutable de cada operación compartida.
- * Se ejecuta después de autenticar/autorización básica y antes de mutar.
- */
-export async function assertInspectionOperationEnabled(input: unknown): Promise<void> {
-  // Sin referencia resoluble —el alta de una plantilla nueva no tiene aún id—
-  // se aplica el submódulo por defecto del motor. Fallar aquí convertiría el
-  // guard en un rechazo de operaciones legítimas; dejar pasar lo volvería inútil.
-  if (!input || typeof input !== "object") {
-    await assertInspectionKindEnabled("inspection")
-    return
-  }
-  const value = input as Record<string, unknown>
-  const inlineKind = typeof value.kind === "string" ? value.kind : null
-  if (inlineKind === "inspection" || inlineKind === "observation" || inlineKind === "audit") {
-    await assertInspectionKindEnabled(inlineKind)
-    return
-  }
-
-  const id = (key: string) => typeof value[key] === "string" && value[key] ? String(value[key]) : null
-  let row: { kind: string } | undefined
-
-  if (id("templateId")) {
-    ;[row] = await db.select({ kind: preventionInspectionTemplates.kind })
-      .from(preventionInspectionTemplates)
-      .where(eq(preventionInspectionTemplates.id, id("templateId")!)).limit(1)
-  } else if (id("programId")) {
-    ;[row] = await db.select({ kind: preventionInspectionTemplates.kind })
-      .from(preventionInspectionPrograms)
-      .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionPrograms.templateId))
-      .where(eq(preventionInspectionPrograms.id, id("programId")!)).limit(1)
-  } else if (id("runId")) {
-    ;[row] = await db.select({ kind: preventionInspectionTemplates.kind })
-      .from(preventionInspectionRuns)
-      .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))
-      .where(eq(preventionInspectionRuns.id, id("runId")!)).limit(1)
-  } else if (id("findingId")) {
-    ;[row] = await db.select({ kind: preventionInspectionTemplates.kind })
-      .from(preventionInspectionFindings)
-      .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, preventionInspectionFindings.runId))
-      .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))
-      .where(eq(preventionInspectionFindings.id, id("findingId")!)).limit(1)
-  } else if (id("answerId")) {
-    ;[row] = await db.select({ kind: preventionInspectionTemplates.kind })
-      .from(preventionInspectionAnswers)
-      .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, preventionInspectionAnswers.runId))
-      .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))
-      .where(eq(preventionInspectionAnswers.id, id("answerId")!)).limit(1)
-  } else if (id("documentId")) {
-    ;[row] = await db.select({ kind: preventionInspectionTemplates.kind })
-      .from(preventionInspectionRunDocuments)
-      .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, preventionInspectionRunDocuments.runId))
-      .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))
-      .where(eq(preventionInspectionRunDocuments.id, id("documentId")!)).limit(1)
-  } else if (id("evidenceId")) {
-    ;[row] = await db.select({ kind: preventionInspectionTemplates.kind })
-      .from(preventionInspectionAnswerEvidence)
-      .innerJoin(preventionInspectionAnswers, eq(preventionInspectionAnswers.id, preventionInspectionAnswerEvidence.answerId))
-      .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, preventionInspectionAnswers.runId))
-      .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))
-      .where(eq(preventionInspectionAnswerEvidence.id, id("evidenceId")!)).limit(1)
-  }
-
-  await assertInspectionKindEnabled(row?.kind ?? "inspection")
+export async function assertInspectionOperationEnabled(): Promise<void> {
+  await assertRouteModuleEnabled("/prevencion/inspecciones")
 }
 
 function scopeCondition(scope: WorksiteScope, column: AnyPgColumn) {
@@ -326,6 +262,13 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
   }
 
   const versionLabel = data.versionLabel ?? definition.version
+  // La plantilla llega cableada al programa anual: qué actividad acredita cada
+  // definición ya lo declara `PDTP_2026_INSPECTION_SPECS`, la misma fuente que
+  // usa el sembrado. Antes el diálogo del catálogo no mandaba nada y toda
+  // plantilla incorporada a mano nacía sin acreditar, así que la inspección se
+  // ejecutaba y el PDTP seguía mostrando la actividad pendiente. Lo explícito
+  // manda: un `[]` deliberado sigue significando "no acredita".
+  const pdtpActivityNumbers = data.pdtpActivityNumbers ?? defaultPdtpActivityNumbers(data.definitionCode)
   const snapshot = definition as unknown as Record<string, unknown>
   const contentHash = contentHashOf(snapshot)
 
@@ -344,7 +287,7 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
         // el segundo deja constancia de quién puso el instrumento en uso.
         status: "draft",
         legalFramework: definition.legalFramework?.join(" · ") ?? null,
-        pdtpActivityNumbers: data.pdtpActivityNumbers?.length ? data.pdtpActivityNumbers : null,
+        pdtpActivityNumbers: pdtpActivityNumbers.length ? pdtpActivityNumbers : null,
         authorUserId: access.userId,
       }).returning()
       if (!created) throw new Error("No se pudo incorporar la plantilla.")
@@ -2117,5 +2060,9 @@ export function listImportableDefinitions() {
           sections: definition.sections.length,
           items: definition.sections.reduce((total, section) => total + section.items.length, 0),
           coverage: assessEnrichmentCoverage(itemsFromDefinition(definition)),
+          // Actividades del PDTP que acreditará. El diálogo las muestra antes
+          // de incorporar: es lo único que distingue una plantilla que alimenta
+          // el programa anual de una que no.
+          pdtpActivities: pdtpActivityCandidatesFor(code),
         }])
 }
