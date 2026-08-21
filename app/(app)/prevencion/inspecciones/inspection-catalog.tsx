@@ -44,6 +44,8 @@ interface TemplateItem {
   coverage: Coverage
   /** Actividades del PDTP (campo `n`) que acredita al completarse un run. */
   pdtpActivityNumbers: number[] | null
+  /** Actividades que acredita al REVISARSE (la firma, no la ejecución). */
+  pdtpReviewActivityNumbers: number[] | null
   /** Definición de `lib/sst/definitions` de la que salió el snapshot. */
   sourceDefinitionCode: string | null
   /** El catálogo en código difiere del snapshot congelado (A-03). */
@@ -187,6 +189,13 @@ export function InspectionTemplatesPanel({ templates, importable, canManage, can
                     ) : (
                       <span className="text-xs text-[var(--color-warning-ink)]">No acredita</span>
                     )}
+                    {/* Al revisar es otra ocurrencia y otro responsable: la
+                        n=25 la ejecuta el operador, la n=26 la firma el Sup/JT. */}
+                    {item.pdtpReviewActivityNumbers && item.pdtpReviewActivityNumbers.length > 0 && (
+                      <span className="mt-1 block text-xs text-[var(--color-text-subtle)]">
+                        al revisar: <span className="font-mono">N° {item.pdtpReviewActivityNumbers.join(", ")}</span>
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
@@ -196,6 +205,7 @@ export function InspectionTemplatesPanel({ templates, importable, canManage, can
                           name={item.name}
                           expectedVersion={item.version}
                           current={item.pdtpActivityNumbers ?? []}
+                          currentReview={item.pdtpReviewActivityNumbers ?? []}
                         />
                       )}
                       {item.status === "draft" && canApprove && (
@@ -420,11 +430,12 @@ function ImportTemplateDialog({ importable, versionsByDefinition }: {
  * el conector `onInspectionCompleted` no hace nada y la inspección jamás llega
  * al PDTP — que fue el estado de todas las plantillas hasta 2026-08-04.
  */
-function PdtpActivitiesDialog({ templateId, name, expectedVersion, current }: {
+function PdtpActivitiesDialog({ templateId, name, expectedVersion, current, currentReview }: {
   templateId: string
   name: string
   expectedVersion: number
   current: number[]
+  currentReview: number[]
 }) {
   const [open, setOpen] = React.useState(false)
   const operation = useOperation()
@@ -436,13 +447,18 @@ function PdtpActivitiesDialog({ templateId, name, expectedVersion, current }: {
         <form
           onSubmit={(event) => {
             event.preventDefault()
-            const raw = String(new FormData(event.currentTarget).get("numbers") ?? "")
-            const pdtpActivityNumbers = raw
+            const form = new FormData(event.currentTarget)
+            const parse = (field: string) => String(form.get(field) ?? "")
               .split(/[\s,]+/)
               .map((token) => Number(token.trim()))
               .filter((value) => Number.isInteger(value) && value > 0)
             operation.run(
-              () => setInspectionTemplatePdtpActivitiesAction({ templateId, expectedVersion, pdtpActivityNumbers }),
+              () => setInspectionTemplatePdtpActivitiesAction({
+                templateId,
+                expectedVersion,
+                pdtpActivityNumbers: parse("numbers"),
+                pdtpReviewActivityNumbers: parse("reviewNumbers"),
+              }),
               () => setOpen(false),
             )
           }}
@@ -451,12 +467,19 @@ function PdtpActivitiesDialog({ templateId, name, expectedVersion, current }: {
           <DialogHeader>
             <DialogTitle>Acreditación PDTP · {name}</DialogTitle>
             <DialogDescription>
-              Números de actividad del programa anual que se acreditan al completar una inspección con esta
-              plantilla. Vacío = no acredita nada.
+              Números de actividad del programa anual que acredita esta plantilla. El programa separa ejecutar
+              de revisar y firmar, y les pone responsables distintos, así que son dos declaraciones. Vacío = no
+              acredita nada.
             </DialogDescription>
           </DialogHeader>
-          <Field label="Números de actividad" hint="Separados por coma o espacio. Ej.: 24, 27">
+          <Field label="Al declarar ejecutada" hint="Separados por coma o espacio. Ej.: 24, 27">
             <Input name="numbers" defaultValue={current.join(", ")} maxLength={120} />
+          </Field>
+          {/* La firma es un acto de otra persona: acá el servicio ya impide que
+              revise quien ejecutó, que es la independencia que la actividad
+              exige. Ej.: la n=26 firma el reporte diario que llenó el operador. */}
+          <Field label="Al revisar y cerrar" hint="La firma del supervisor, no la ejecución. Ej.: 26">
+            <Input name="reviewNumbers" defaultValue={currentReview.join(", ")} maxLength={120} />
           </Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Guardar</Button></DialogFooter>

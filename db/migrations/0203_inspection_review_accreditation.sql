@@ -1,0 +1,1 @@
+ALTER TABLE "prevention_inspection_templates" ADD COLUMN "pdtp_review_activity_numbers" jsonb;

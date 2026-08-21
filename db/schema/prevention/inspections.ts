@@ -32,6 +32,14 @@ export const preventionInspectionTemplates = pgTable("prevention_inspection_temp
   /** Números de actividad PDTP (campo `n`) que esta plantilla acredita al
    * completar un run. Null = no vinculado al PDTP (comportamiento previo). */
   pdtpActivityNumbers: jsonb("pdtp_activity_numbers").$type<number[]>(),
+  /* Actividades que acredita al REVISARSE, no al ejecutarse. Conjunto aparte y
+   * no un flag sobre el anterior: el programa distingue el acto de llenar el
+   * instrumento del acto de revisarlo y firmarlo —n=25 la hace el operador,
+   * n=26 la firma el supervisor— y son dos personas, dos fechas y dos
+   * ocurrencias. Acreditar la firma al completar daría por firmado lo que
+   * nadie revisó; de ahí que el disparador sea `reviewed`, donde el servicio
+   * ya garantiza que el revisor no es quien ejecutó. */
+  pdtpReviewActivityNumbers: jsonb("pdtp_review_activity_numbers").$type<number[]>(),
   version:           integer("version").notNull().default(1),
   createdAt:         timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:         timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),

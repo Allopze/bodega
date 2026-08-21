@@ -51,6 +51,7 @@ export default async function PlantillasInspeccionPage() {
           version: row.version,
           coverage: row.coverage,
           pdtpActivityNumbers: row.pdtpActivityNumbers,
+          pdtpReviewActivityNumbers: row.pdtpReviewActivityNumbers,
           sourceDefinitionCode: row.sourceDefinitionCode,
           definitionDrifted: row.definitionDrifted,
           definitionMissing: row.definitionMissing,

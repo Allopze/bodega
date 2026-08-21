@@ -51,7 +51,7 @@ import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { CHECKLIST_DEFINITIONS, isNonInspectionDefinition, isPersonEvaluationDefinition } from "@/lib/sst/definitions"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { onInspectionCompleted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
-import { defaultPdtpActivityNumbers, pdtpActivityCandidatesFor } from "@/lib/services/pdtp-adapters/inspection-templates-2026"
+import { defaultPdtpActivityNumbers, defaultPdtpReviewActivityNumbers, pdtpActivityCandidatesFor } from "@/lib/services/pdtp-adapters/inspection-templates-2026"
 import { codeYear, todayInChile } from "@/lib/utils"
 import { assertRouteModuleEnabled } from "@/lib/services/module-toggles"
 
@@ -136,6 +136,8 @@ const importTemplateSchema = z.object({
    * plantillas hasta 2026-08-04.
    */
   pdtpActivityNumbers: z.array(z.number().int().positive()).max(20).optional(),
+  /** Actividades que acredita al revisarse (la firma del supervisor, no la ejecución). */
+  pdtpReviewActivityNumbers: z.array(z.number().int().positive()).max(20).optional(),
 })
 
 /**
@@ -269,6 +271,7 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
   // ejecutaba y el PDTP seguía mostrando la actividad pendiente. Lo explícito
   // manda: un `[]` deliberado sigue significando "no acredita".
   const pdtpActivityNumbers = data.pdtpActivityNumbers ?? defaultPdtpActivityNumbers(data.definitionCode)
+  const pdtpReviewActivityNumbers = data.pdtpReviewActivityNumbers ?? defaultPdtpReviewActivityNumbers(data.definitionCode)
   const snapshot = definition as unknown as Record<string, unknown>
   const contentHash = contentHashOf(snapshot)
 
@@ -288,6 +291,7 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
         status: "draft",
         legalFramework: definition.legalFramework?.join(" · ") ?? null,
         pdtpActivityNumbers: pdtpActivityNumbers.length ? pdtpActivityNumbers : null,
+        pdtpReviewActivityNumbers: pdtpReviewActivityNumbers.length ? pdtpReviewActivityNumbers : null,
         authorUserId: access.userId,
       }).returning()
       if (!created) throw new Error("No se pudo incorporar la plantilla.")
@@ -324,6 +328,8 @@ export async function setInspectionTemplatePdtpActivities(input: unknown, access
     templateId: z.string().min(1),
     expectedVersion: z.number().int().positive(),
     pdtpActivityNumbers: z.array(z.number().int().positive()).max(20),
+    /** Omitirlo conserva las que ya declaraba: el diálogo puede mandar sólo un conjunto. */
+    pdtpReviewActivityNumbers: z.array(z.number().int().positive()).max(20).optional(),
   }).parse(input)
   requireAccess(access, "prevention:inspections:manage")
 
@@ -335,9 +341,15 @@ export async function setInspectionTemplatePdtpActivities(input: unknown, access
     if (template.status === "superseded") throw new Error("Una plantilla reemplazada ya no puede cambiar sus actividades PDTP.")
 
     const now = nowIso()
-    const numbers = data.pdtpActivityNumbers.length > 0 ? [...new Set(data.pdtpActivityNumbers)].sort((a, b) => a - b) : null
+    const normalize = (values: number[] | undefined) =>
+      values && values.length > 0 ? [...new Set(values)].sort((a, b) => a - b) : null
+    const numbers = normalize(data.pdtpActivityNumbers)
+    const reviewNumbers = data.pdtpReviewActivityNumbers === undefined
+      ? (Array.isArray(template.pdtpReviewActivityNumbers) ? template.pdtpReviewActivityNumbers : null)
+      : normalize(data.pdtpReviewActivityNumbers)
     const [updated] = await tx.update(preventionInspectionTemplates).set({
       pdtpActivityNumbers: numbers,
+      pdtpReviewActivityNumbers: reviewNumbers,
       version: template.version + 1,
       updatedAt: now,
     }).where(and(
@@ -347,7 +359,10 @@ export async function setInspectionTemplatePdtpActivities(input: unknown, access
     if (!updated) throw new Error("La plantilla cambió mientras la editabas. Recarga y reintenta.")
     await history(tx, {
       entityType: "template", entityId: template.id, changeType: "pdtp_activities_set",
-      reason: numbers ? `Acredita actividades PDTP ${numbers.join(", ")}` : "Sin acreditación PDTP",
+      reason: [
+        numbers ? `Acredita al ejecutar: ${numbers.join(", ")}` : "Sin acreditación al ejecutar",
+        reviewNumbers ? `al revisar: ${reviewNumbers.join(", ")}` : null,
+      ].filter(Boolean).join(" · "),
       beforeState: template, afterState: updated, actorUserId: access.userId,
     })
     return updated
@@ -1442,7 +1457,12 @@ function transitionChangeSet(toStatus: string, actorUserId: string, reason: stri
 export async function transitionInspectionRun(input: unknown, access: InspectionAccess) {
   const data = runTransitionSchema.parse(input)
 
-  return db.transaction(async (tx) => {
+  // Acreditación de la revisión (n=26): se arma dentro de la transacción y se
+  // dispara DESPUÉS del commit, igual que la de la ejecución. Si se lanzara
+  // dentro y la transacción se revirtiera, quedaría una ocurrencia del programa
+  // anual afirmando una firma que no existe.
+  let accreditation: Parameters<typeof onInspectionCompleted>[0] | null = null
+  const result = await db.transaction(async (tx) => {
     const [run] = await tx.select().from(preventionInspectionRuns)
       .where(eq(preventionInspectionRuns.id, data.runId)).limit(1)
     if (!run) throw new Error(NOT_FOUND)
@@ -1511,8 +1531,33 @@ export async function transitionInspectionRun(input: unknown, access: Inspection
       actorUserId: access.userId,
       payload: { status: updated.status },
     }, tx)
+
+    // El programa distingue ejecutar de revisar y firmar, y les pone
+    // responsables distintos. La firma es este acto, no el anterior: acá el
+    // servicio ya garantizó que el revisor no es quien ejecutó
+    // (`assertInspectionRunTransition` → `assessRunReview`), que es justo la
+    // independencia que la actividad exige.
+    if (data.toStatus === "reviewed") {
+      const [template] = await tx.select({ numbers: preventionInspectionTemplates.pdtpReviewActivityNumbers })
+        .from(preventionInspectionTemplates)
+        .where(eq(preventionInspectionTemplates.id, run.templateId)).limit(1)
+      const activityNumbers = Array.isArray(template?.numbers) ? template.numbers : []
+      if (activityNumbers.length > 0) {
+        accreditation = {
+          runId: run.id,
+          worksiteId: run.worksiteId,
+          completedAt: updated.reviewedAt ?? now,
+          activityNumbers,
+        }
+      }
+    }
     return updated
   })
+
+  // La clave de idempotencia del PDTP incluye la actividad, así que acreditar
+  // n=26 desde el mismo run que ya acreditó n=25 no colisiona ni duplica.
+  if (accreditation) await onInspectionCompleted(accreditation)
+  return result
 }
 
 /* ── Evidencia fotográfica (función #1) ───────────────────────────────────

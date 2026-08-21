@@ -49,18 +49,32 @@ type InspectionTemplateSpec = {
    * propia ocurrencia, así que un run del JT no puede cerrar la del PRF.
    */
   versionSuffix?: string
+  /**
+   * Actividad que acredita al REVISARSE la inspección, no al ejecutarse.
+   *
+   * El programa separa el acto de llenar el instrumento del de revisarlo y
+   * firmarlo, y les pone responsables distintos: la n=25 la hace el operador,
+   * la n=26 la firma el Sup/JT. Ambas declaran "la cantidad será de acuerdo a
+   * la cantidad de equipos", así que son por reporte y el motor puede
+   * acreditarlas una a una.
+   */
+  reviewN?: number
 }
 
 export const PDTP_2026_INSPECTION_SPECS: readonly InspectionTemplateSpec[] = [
   { n: 24, definitionCode: "inspeccion_extintores",     name: "Inspección de Estado de Extintores",              kind: "inspection" },
-  // n=25 "Realizar report de uso diario de equipos". Las hermanas del grupo NO
-  // se cablean: la n=26 ("Revisión y firma del report") y la n=28 ("Revisar y
-  // cierra las inspecciones de estado de equipos") son actividades de revisión,
-  // y `onInspectionCompleted` dispara al **completar**, no al revisar. Darlas
-  // por acreditadas cuando alguien digita el papel falsificaría la evidencia de
-  // que el supervisor y el jefe de mantención las revisaron. Quedan manuales
-  // hasta que el conector sepa disparar también en `reviewed`.
-  { n: 25, definitionCode: "reporte_equipos",           name: "Reporte de Uso Diario de Equipos",                kind: "inspection" },
+  // n=25 la ejecuta el operador; la n=26 ("Revisión y firma del report") la
+  // firma el Sup/JT y por eso cuelga de `reviewN`: acredita al revisarse, donde
+  // el servicio ya exige que el revisor no sea quien ejecutó.
+  //
+  // La n=28 ("Revisar y cierra las inspecciones de estado de equipos") queda
+  // fuera a propósito y NO es un olvido: la planilla la describe como "revisar
+  // las inspecciones una vez sean recibidas, para ver si los temas mencionados
+  // se levantaron para cierre, en reunión semanal". Es un acto semanal sobre el
+  // CONJUNTO recibido y sobre el cierre de los hallazgos, no sobre una
+  // inspección. Acreditarla por run haría que una semana con doce inspecciones
+  // reportara doce cumplimientos de una actividad planificada como uno.
+  { n: 25, definitionCode: "reporte_equipos",           name: "Reporte de Uso Diario de Equipos",                kind: "inspection", reviewN: 26 },
   { n: 27, definitionCode: "inspeccion_taller",         name: "Inspección Taller de Mantención y Bodega RESPEL", kind: "inspection" },
   { n: 29, definitionCode: "inspeccion_contenedores",   name: "Inspección de Contenedores",                      kind: "inspection" },
   { n: 33, definitionCode: "inspeccion_equipos_moviles", name: "Inspección de Equipos Móviles",                  kind: "inspection" },
@@ -139,14 +153,22 @@ export async function ensurePdtp2026InspectionTemplates(input: {
 
     if (existing) {
       const current = Array.isArray(existing.pdtpActivityNumbers) ? existing.pdtpActivityNumbers as number[] : null
-      const wired = spec.n === null ? current === null : current?.length === 1 && current[0] === spec.n
+      const currentReview = Array.isArray(existing.pdtpReviewActivityNumbers) ? existing.pdtpReviewActivityNumbers as number[] : null
+      const matches = (actual: number[] | null, expected: number | null | undefined) =>
+        expected === null || expected === undefined ? actual === null : actual?.length === 1 && actual[0] === expected
+      const wired = matches(current, spec.n) && matches(currentReview, spec.reviewN)
       if (wired) {
         result.skipped.push({ n: spec.n, templateId: existing.id, reason: "already_installed" })
         continue
       }
       if (!input.dryRun) {
         await db.update(preventionInspectionTemplates)
-          .set({ pdtpActivityNumbers: spec.n === null ? null : [spec.n], version: existing.version + 1, updatedAt: now })
+          .set({
+            pdtpActivityNumbers: spec.n === null ? null : [spec.n],
+            pdtpReviewActivityNumbers: spec.reviewN === undefined ? null : [spec.reviewN],
+            version: existing.version + 1,
+            updatedAt: now,
+          })
           .where(eq(preventionInspectionTemplates.id, existing.id))
       }
       result.relinked.push({ n: spec.n, templateId: existing.id, from: current, to: spec.n === null ? [] : [spec.n] })
@@ -172,6 +194,7 @@ export async function ensurePdtp2026InspectionTemplates(input: {
         status: "draft",
         legalFramework: definition.legalFramework?.join(" · ") ?? null,
         pdtpActivityNumbers: spec.n === null ? null : [spec.n],
+        pdtpReviewActivityNumbers: spec.reviewN === undefined ? null : [spec.reviewN],
         authorUserId: input.actorUserId,
         createdAt: now,
         updatedAt: now,
@@ -207,4 +230,15 @@ export function pdtpActivityCandidatesFor(definitionCode: string): { n: number; 
 export function defaultPdtpActivityNumbers(definitionCode: string): number[] {
   const [only, ...rest] = pdtpActivityCandidatesFor(definitionCode)
   return only && rest.length === 0 ? [only.n] : []
+}
+
+/**
+ * Actividades que la definición acredita al REVISARSE. Mismo criterio: no se
+ * adivina cuando hay más de una candidata.
+ */
+export function defaultPdtpReviewActivityNumbers(definitionCode: string): number[] {
+  const numbers = PDTP_2026_INSPECTION_SPECS
+    .filter((spec) => spec.definitionCode === definitionCode && spec.reviewN !== undefined)
+    .map((spec) => spec.reviewN as number)
+  return numbers.length === 1 ? numbers : []
 }

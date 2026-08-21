@@ -52,6 +52,7 @@ const USER_ID = "user-acc-1"
 const WS_ID = "ws-acc-1"
 const PROGRAM_ID = "pdtp-2026-v1"
 const ACT_N = 42  // número de actividad de prueba
+const REVIEW_ACT_N = 43 // su hermana de "revisión y firma", con otro responsable
 const ACT_ID = `${PROGRAM_ID}-a-042`
 
 beforeEach(async () => {
@@ -102,7 +103,7 @@ beforeEach(async () => {
     updatedAt: new Date().toISOString(),
   })
 
-  await inMemoryDb.insert(schema.pdtpActivities).values({
+  await inMemoryDb.insert(schema.pdtpActivities).values([{
     id: ACT_ID,
     programId: PROGRAM_ID,
     n: ACT_N,
@@ -115,7 +116,22 @@ beforeEach(async () => {
     sourceSheetRow: 1,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-  })
+  }, {
+    // La hermana de revisión: otro responsable y otra ocurrencia, como la n=26
+    // frente a la n=25 en el programa real.
+    id: `${ACT_ID}-review`,
+    programId: PROGRAM_ID,
+    n: REVIEW_ACT_N,
+    activity: "Revisión y firma de la inspección de extintores",
+    program: "Prevención PDTP 2026",
+    responsibleSlugs: ["jefe_terreno"],
+    responsibleDisplay: "JT",
+    scheduleMode: "triggered",
+    scheduleClassificationStatus: "confirmed",
+    sourceSheetRow: 2,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }])
 })
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -567,6 +583,109 @@ describe("una inspección acreditada alimenta los ejes de verificación y cierre
   })
 })
 
+/* ── Acreditación de la revisión y firma ──────────────────────────────────
+ * El programa distingue ejecutar de revisar: la n=25 la llena el operador y la
+ * n=26 la firma el Sup/JT. Acreditar la firma al completar daría por firmado lo
+ * que nadie revisó, así que el disparador es `reviewed` — donde el servicio ya
+ * garantiza que el revisor no es quien ejecutó.
+ */
+describe("revisar y firmar acredita su propia actividad", () => {
+  const TPL = "instpl-rev-1"
+  const RUN = "insrun-rev-1"
+  const REVIEWER = "user-acc-reviewer"
+
+  const EXECUTOR_ACCESS = {
+    userId: USER_ID,
+    scope: { mode: "all" as const, ids: [] as [] },
+    permissions: ["prevention:inspections:review", "prevention:inspections:view"],
+  }
+  const REVIEWER_ACCESS = { ...EXECUTOR_ACCESS, userId: REVIEWER }
+
+  async function seedReviewable() {
+    await inMemoryDb.insert(schema.users).values({
+      id: REVIEWER, email: "revisor@acc.test", name: "Revisor E2E", hashedPassword: "x",
+    }).onConflictDoNothing()
+    await inMemoryDb.insert(schema.preventionInspectionTemplates).values({
+      id: TPL,
+      code: "reporte_equipos",
+      versionLabel: "01",
+      name: "Reporte de Uso Diario de Equipos",
+      kind: "inspection",
+      definitionSnapshot: { sections: [] },
+      contentHash: "b".repeat(64),
+      status: "approved",
+      pdtpActivityNumbers: [ACT_N],
+      pdtpReviewActivityNumbers: [REVIEW_ACT_N],
+      authorUserId: USER_ID,
+      approvedByUserId: USER_ID,
+      approvedAt: new Date().toISOString(),
+    })
+    const [run] = await inMemoryDb.insert(schema.preventionInspectionRuns).values({
+      id: RUN,
+      code: "RUE-0001",
+      templateId: TPL,
+      worksiteId: WS_ID,
+      status: "completed",
+      compliancePercent: 100,
+      executedByUserId: USER_ID,
+      executedAt: "2026-04-15T10:00:00.000Z",
+      createdByUserId: USER_ID,
+    }).returning()
+    return run!
+  }
+
+  it("acredita la actividad de revisión, y sólo al revisar", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const run = await seedReviewable()
+
+    // Antes de revisar, la ocurrencia de la firma no existe.
+    const before = await inMemoryDb.select().from(schema.pdtpExecutions)
+    expect(before.filter((row) => row.idempotencyKey?.includes(`${ACT_ID}-review`))).toHaveLength(0)
+
+    await service.reviewInspectionRun({
+      runId: run.id,
+      expectedVersion: run.version,
+      reviewComment: "Reporte revisado y firmado por el jefe de terreno.",
+    }, REVIEWER_ACCESS)
+
+    const after = await inMemoryDb.select().from(schema.pdtpExecutions)
+    // La clave del PDTP incluye la actividad, así que la firma no colisiona con
+    // la ejecución aunque compartan el mismo run.
+    expect(after.filter((row) => row.idempotencyKey?.includes(`${ACT_ID}-review`))).toHaveLength(1)
+  })
+
+  it("sin actividades de revisión declaradas no acredita nada al revisar", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const run = await seedReviewable()
+    await inMemoryDb.update(schema.preventionInspectionTemplates)
+      .set({ pdtpReviewActivityNumbers: null })
+      .where(eq(schema.preventionInspectionTemplates.id, TPL))
+
+    await service.reviewInspectionRun({
+      runId: run.id,
+      expectedVersion: run.version,
+      reviewComment: "Reporte revisado sin cableado de revisión.",
+    }, REVIEWER_ACCESS)
+
+    const rows = await inMemoryDb.select().from(schema.pdtpExecutions)
+    expect(rows.filter((row) => row.idempotencyKey?.includes(`${ACT_ID}-review`))).toHaveLength(0)
+  })
+
+  it("quien ejecutó no puede firmar lo suyo, así que tampoco acredita la firma", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const run = await seedReviewable()
+
+    await expect(service.reviewInspectionRun({
+      runId: run.id,
+      expectedVersion: run.version,
+      reviewComment: "Intento de firmar mi propia inspección.",
+    }, EXECUTOR_ACCESS)).rejects.toThrow(/no puede revisarla/)
+
+    const rows = await inMemoryDb.select().from(schema.pdtpExecutions)
+    expect(rows.filter((row) => row.idempotencyKey?.includes(`${ACT_ID}-review`))).toHaveLength(0)
+  })
+})
+
 // ── El escritor que faltaba ───────────────────────────────────────────────────
 
 describe("declarar qué actividades PDTP acredita una plantilla", () => {
@@ -583,6 +702,14 @@ describe("declarar qué actividades PDTP acredita una plantilla", () => {
       ACCESS,
     )
     expect(template.pdtpActivityNumbers).toEqual([ACT_N])
+  })
+
+  it("hereda también la actividad que acredita al revisarse", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    // reporte_equipos: n=25 al ejecutar, n=26 al revisar y firmar.
+    const template = await service.importInspectionTemplate({ definitionCode: "reporte_equipos" }, ACCESS)
+    expect(template.pdtpActivityNumbers).toEqual([25])
+    expect(template.pdtpReviewActivityNumbers).toEqual([26])
   })
 
   it("sin declararlos hereda el cableado del programa: la plantilla llega acreditando", async () => {
