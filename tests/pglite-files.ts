@@ -37,6 +37,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/equipment-performance-integration.test.ts",
   "lib/__tests__/feedback.test.ts",
   "lib/__tests__/accountable-fuel-loads.test.ts",
+  "lib/__tests__/fleet-document-versioning.test.ts",
   "lib/__tests__/fuel-cycle-integration.test.ts",
   "lib/__tests__/fuel-load-lifecycle.test.ts",
   "lib/__tests__/fuel-cycle-invariants.test.ts",

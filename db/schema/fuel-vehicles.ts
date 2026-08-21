@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, timestamp, index, numeric, jsonb, check, uniqueIndex } from "drizzle-orm/pg-core"
+import { pgTable, text, integer, boolean, timestamp, index, numeric, jsonb, check, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core"
 import { relations, sql } from "drizzle-orm"
 import { worksites } from "./worksites"
 import { fuelLoads } from "./fuel-invoices"
@@ -61,11 +61,24 @@ export const fleetVehicleDocuments = pgTable("fleet_vehicle_documents", {
   fileSize:     integer("file_size"),
   mimeType:     text("mime_type"),
   expiresAt:    text("expires_at"),
+  /* Vigencia del documento dentro de su tipo. Subir la póliza de este año no
+   * borraba la del anterior, y el "próximo vencimiento" salía de un MIN sobre
+   * TODAS las versiones: el equipo quedaba en atraso perpetuo contra una fecha
+   * que ya nadie usa. La historia se conserva como `replaced`. */
+  status:       text("status").notNull().default("current"),
+  supersededAt: timestamp("superseded_at", { withTimezone: true, mode: "string" }),
+  supersededBy: text("superseded_by").references((): AnyPgColumn => fleetVehicleDocuments.id, { onDelete: "set null" }),
   uploadedBy:   text("uploaded_by").notNull().references(() => users.id),
   createdAt:    timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
+  check("fleet_vehicle_documents_status_valid", sql`${table.status} IN ('current', 'replaced')`),
   index("fleet_vehicle_documents_vehicle_idx").on(table.vehicleId),
   index("fleet_vehicle_documents_expires_idx").on(table.expiresAt),
+  // Un solo documento vigente por equipo y tipo: es lo que sostiene que la
+  // vigencia sea un valor y no el mínimo de una pila de versiones.
+  uniqueIndex("fleet_vehicle_documents_current_unique")
+    .on(table.vehicleId, table.documentType)
+    .where(sql`${table.status} = 'current'`),
 ])
 
 /** Historial continuo del estado operacional de un equipo. Sólo puede existir un intervalo abierto por vehículo. */

@@ -156,7 +156,10 @@ describe("getFleetOverview", () => {
     await getFleetOverview(fleetOnlySession)
 
     expect(selectProjections).toHaveLength(1)
-    expect(selectProjections[0]).toHaveProperty("nextExpiry")
+    // La vigencia dejó de ser un `MIN` sobre toda la pila: se leen los
+    // documentos vigentes por tipo y la fecha se resuelve en memoria (CO-021).
+    expect(selectProjections[0]).toHaveProperty("documentType")
+    expect(selectProjections[0]).toHaveProperty("expiresAt")
   })
 
   // HALLAZGO 11: la faena elegida en el tablero tiene que reencuadrar las tres

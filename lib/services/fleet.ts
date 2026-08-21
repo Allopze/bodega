@@ -16,7 +16,7 @@ import { isGlobalRole, visibleWorksiteIds, worksiteScopeSql } from "@/lib/auth/s
 import { resolveFleetDocumentFile } from "@/lib/storage/config"
 import { can } from "@/lib/auth/can"
 import { accountableFuelLoadsWhere } from "@/lib/combustibles/load-status"
-import { fleetDocumentMetadataSchema } from "@/lib/validation/fleet-documents"
+import { fleetDocumentMetadataSchema, resolveExpiryCandidates } from "@/lib/validation/fleet-documents"
 import { isCivilDate } from "@/lib/validation/dates"
 
 /**
@@ -148,16 +148,28 @@ export async function getFleetOverview(session: Session, worksiteId?: string) {
     db
       .select({
         vehicleId: fleetVehicleDocuments.vehicleId,
-        nextExpiry: sql<string | null>`MIN(${fleetVehicleDocuments.expiresAt})`,
+        documentType: fleetVehicleDocuments.documentType,
+        expiresAt: fleetVehicleDocuments.expiresAt,
       })
       .from(fleetVehicleDocuments)
-      .where(isNotNull(fleetVehicleDocuments.expiresAt))
-      .groupBy(fleetVehicleDocuments.vehicleId),
+      .where(and(
+        isNotNull(fleetVehicleDocuments.expiresAt),
+        // Sólo la versión vigente de cada tipo: el MIN anterior tomaba también
+        // las reemplazadas, así que subir la póliza nueva no sacaba al equipo
+        // del atraso — seguía midiéndose contra la del año pasado.
+        eq(fleetVehicleDocuments.status, "current"),
+      )),
   ])
 
   const fuelByVehicle = new Map(fuelRows.map((row) => [row.vehicleId, row]))
   const maintenanceByVehicle = new Map(maintenanceRows.map((row) => [row.vehicleId, row]))
-  const documentExpiryByVehicle = new Map(documentExpiryRows.map((row) => [row.vehicleId, row.nextExpiry]))
+  const currentDocumentsByVehicle = new Map<string, Array<{ documentType: string; expiresAt: string | null }>>()
+  for (const row of documentExpiryRows) {
+    currentDocumentsByVehicle.set(row.vehicleId, [
+      ...(currentDocumentsByVehicle.get(row.vehicleId) ?? []),
+      { documentType: row.documentType, expiresAt: row.expiresAt },
+    ])
+  }
 
   return vehicles.map((vehicle) => {
     const fuel = fuelByVehicle.get(vehicle.id)
@@ -194,13 +206,12 @@ export async function getFleetOverview(session: Session, worksiteId?: string) {
       circulationPermitExpiresAt: vehicle.circulationPermitExpiresAt,
       insurancePolicyNumber: vehicle.insurancePolicyNumber,
       insuranceExpiresAt: vehicle.insuranceExpiresAt,
-      nextExpiryDate: getNextExpiryDate([
-        vehicle.soapExpiresAt,
-        vehicle.technicalReviewExpiresAt,
-        vehicle.circulationPermitExpiresAt,
-        vehicle.insuranceExpiresAt,
-        documentExpiryByVehicle.get(vehicle.id) ?? null,
-      ]),
+      nextExpiryDate: getNextExpiryDate(resolveExpiryCandidates({
+        soapExpiresAt: vehicle.soapExpiresAt,
+        technicalReviewExpiresAt: vehicle.technicalReviewExpiresAt,
+        circulationPermitExpiresAt: vehicle.circulationPermitExpiresAt,
+        insuranceExpiresAt: vehicle.insuranceExpiresAt,
+      }, currentDocumentsByVehicle.get(vehicle.id) ?? [])),
       totalFuelAmount,
       totalMaintenanceAmount,
       totalOperationalCost,
@@ -234,7 +245,9 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
   const [documents, recentMaintenance, recentOperations, operatorCounts, operationalIntervals] = await Promise.all([
     db.query.fleetVehicleDocuments.findMany({
       where: eq(fleetVehicleDocuments.vehicleId, id),
-      orderBy: [fleetVehicleDocuments.expiresAt],
+      // Vigentes primero y, dentro de cada grupo, por vencimiento: el historial
+      // se conserva visible pero no se confunde con lo que rige hoy.
+      orderBy: [desc(fleetVehicleDocuments.status), fleetVehicleDocuments.expiresAt],
     }),
     // De la más reciente a la más antigua: con `limit: 10` el orden ascendente
     // devolvía el tramo más viejo del historial y la última mantención del
@@ -311,13 +324,12 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
     recentOperations,
     topOperators: operatorCounts.map((o) => ({ operador: o.operador!, count: Number(o.count) })),
     operationalIntervals,
-    nextExpiryDate: getNextExpiryDate([
-      vehicle.soapExpiresAt,
-      vehicle.technicalReviewExpiresAt,
-      vehicle.circulationPermitExpiresAt,
-      vehicle.insuranceExpiresAt,
-      ...documents.map((document) => document.expiresAt),
-    ]),
+    nextExpiryDate: getNextExpiryDate(resolveExpiryCandidates({
+      soapExpiresAt: vehicle.soapExpiresAt,
+      technicalReviewExpiresAt: vehicle.technicalReviewExpiresAt,
+      circulationPermitExpiresAt: vehicle.circulationPermitExpiresAt,
+      insuranceExpiresAt: vehicle.insuranceExpiresAt,
+    }, documents.filter((document) => document.status === "current"))),
   }
 }
 
@@ -364,25 +376,56 @@ export async function uploadFleetDocument(
   }
 
   const docId = nanoid()
-  await db.insert(fleetVehicleDocuments).values({
-    id: docId,
-    vehicleId: input.vehicleId,
-    documentType: metadata.documentType,
-    fileName: input.fileName,
-    filePath: input.filePath,
-    fileSize: input.fileSize,
-    mimeType: input.mimeType,
-    expiresAt: metadata.expiresAt ?? null,
-    uploadedBy: session.user.id,
-  })
+  const now = new Date().toISOString()
+  await db.transaction(async (tx) => {
+    // La versión anterior del mismo tipo deja de ser vigente en la misma
+    // transacción: si se insertara la nueva sin retirar la vieja, el índice
+    // único la rechazaría y —antes de existir ese índice— el vencimiento del
+    // equipo lo seguía decidiendo la póliza reemplazada.
+    // En dos pasos y en este orden: retirar la vigente libera el índice único
+    // parcial —si no, el INSERT choca con ella—, y el puntero `supersededBy`
+    // sólo puede escribirse una vez que la fila nueva existe.
+    const [superseded] = await tx.update(fleetVehicleDocuments)
+      .set({ status: "replaced", supersededAt: now })
+      .where(and(
+        eq(fleetVehicleDocuments.vehicleId, input.vehicleId),
+        eq(fleetVehicleDocuments.documentType, metadata.documentType),
+        eq(fleetVehicleDocuments.status, "current"),
+      ))
+      .returning({ id: fleetVehicleDocuments.id })
 
-  await recordAudit({
-    userId: session.user.id,
-    userEmail: session.user.email ?? undefined,
-    action: "create",
-    entityType: "fleet_document",
-    entityId: docId,
-    newState: { vehicleId: input.vehicleId, documentType: input.documentType, fileName: input.fileName },
+    await tx.insert(fleetVehicleDocuments).values({
+      id: docId,
+      vehicleId: input.vehicleId,
+      documentType: metadata.documentType,
+      fileName: input.fileName,
+      filePath: input.filePath,
+      fileSize: input.fileSize,
+      mimeType: input.mimeType,
+      expiresAt: metadata.expiresAt ?? null,
+      status: "current",
+      uploadedBy: session.user.id,
+    })
+
+    if (superseded) {
+      await tx.update(fleetVehicleDocuments)
+        .set({ supersededBy: docId })
+        .where(eq(fleetVehicleDocuments.id, superseded.id))
+    }
+
+    await recordAudit({
+      userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
+      action: "create",
+      entityType: "fleet_document",
+      entityId: docId,
+      newState: {
+        vehicleId: input.vehicleId,
+        documentType: metadata.documentType,
+        fileName: input.fileName,
+        supersedes: superseded?.id ?? null,
+      },
+    }, tx)
   })
 
   return docId
@@ -408,20 +451,45 @@ export async function deleteFleetDocument(
     throw new Error("Sin acceso a la faena de este vehículo")
   }
 
-  await db.delete(fleetVehicleDocuments).where(eq(fleetVehicleDocuments.id, documentId))
+  let promotedId: string | null = null
+  await db.transaction(async (tx) => {
+    await tx.delete(fleetVehicleDocuments).where(eq(fleetVehicleDocuments.id, documentId))
+
+    // Si el borrado era el vigente, la versión inmediatamente anterior vuelve a
+    // serlo: dejar el tipo sin vigente apaga su alerta de vencimiento en vez de
+    // devolverla al último dato conocido.
+    if (document.status === "current") {
+      const [previous] = await tx.select({ id: fleetVehicleDocuments.id })
+        .from(fleetVehicleDocuments)
+        .where(and(
+          eq(fleetVehicleDocuments.vehicleId, document.vehicleId),
+          eq(fleetVehicleDocuments.documentType, document.documentType),
+          eq(fleetVehicleDocuments.status, "replaced"),
+        ))
+        .orderBy(desc(fleetVehicleDocuments.createdAt))
+        .limit(1)
+      if (previous) {
+        await tx.update(fleetVehicleDocuments)
+          .set({ status: "current", supersededAt: null, supersededBy: null })
+          .where(eq(fleetVehicleDocuments.id, previous.id))
+        promotedId = previous.id
+      }
+    }
+
+    await recordAudit({
+      userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
+      action: "delete",
+      entityType: "fleet_document",
+      entityId: documentId,
+      oldState: { vehicleId: document.vehicleId, documentType: document.documentType, fileName: document.fileName, status: document.status },
+      newState: { promotedToCurrent: promotedId },
+    }, tx)
+  })
 
   // El archivo quedaba en disco para siempre: sólo se borraba la fila. Se
-  // elimina después del DELETE y sin propagar el error — la fila ya no existe,
-  // un archivo huérfano no debe hacer fallar la acción.
+  // elimina después de confirmar y sin propagar el error — la fila ya no
+  // existe, un archivo huérfano no debe hacer fallar la acción.
   const absolutePath = resolveFleetDocumentFile(document.filePath)
   if (absolutePath) await fs.unlink(absolutePath).catch(() => undefined)
-
-  await recordAudit({
-    userId: session.user.id,
-    userEmail: session.user.email ?? undefined,
-    action: "delete",
-    entityType: "fleet_document",
-    entityId: documentId,
-    oldState: { vehicleId: document.vehicleId, documentType: document.documentType, fileName: document.fileName },
-  })
 }

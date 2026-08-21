@@ -34,3 +34,38 @@ export const fleetDocumentMetadataSchema = z.object({
 })
 
 export type FleetDocumentMetadata = z.infer<typeof fleetDocumentMetadataSchema>
+
+/**
+ * Tipos documentales que duplican una columna del equipo.
+ *
+ * La columna es la fuente canónica: es la que edita la ficha y la que alimenta
+ * las alertas desde siempre. El documento vigente sólo aporta su vencimiento
+ * cuando esa columna está vacía, para no contar dos veces el mismo hecho ni
+ * dejar que una póliza subida sin actualizar la ficha mueva la vigencia sola.
+ */
+export const DOCUMENT_TYPE_CANONICAL_FIELD = {
+  "SOAP": "soapExpiresAt",
+  "Revisión técnica": "technicalReviewExpiresAt",
+  "Permiso de circulación": "circulationPermitExpiresAt",
+  "Seguro": "insuranceExpiresAt",
+} as const satisfies Partial<Record<FleetDocumentType, string>>
+
+export type CanonicalExpiryField = (typeof DOCUMENT_TYPE_CANONICAL_FIELD)[keyof typeof DOCUMENT_TYPE_CANONICAL_FIELD]
+
+/**
+ * Vencimiento vigente de un equipo: las columnas declaradas, más el documento
+ * vigente de cada tipo cuya columna no esté declarada.
+ */
+export function resolveExpiryCandidates(
+  declared: Partial<Record<CanonicalExpiryField, string | null>>,
+  currentDocuments: Array<{ documentType: string; expiresAt: string | null }>,
+): string[] {
+  const candidates = Object.values(declared).filter((value): value is string => Boolean(value))
+  for (const document of currentDocuments) {
+    if (!document.expiresAt) continue
+    const field = DOCUMENT_TYPE_CANONICAL_FIELD[document.documentType as keyof typeof DOCUMENT_TYPE_CANONICAL_FIELD]
+    if (field && declared[field]) continue
+    candidates.push(document.expiresAt)
+  }
+  return candidates
+}

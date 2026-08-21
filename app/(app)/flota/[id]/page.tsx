@@ -193,6 +193,8 @@ export default async function FlotaVehiclePage({
               fileName: document.fileName,
               mimeType: document.mimeType ?? null,
               expiresAt: document.expiresAt ?? null,
+              status: document.status,
+              supersededAt: document.supersededAt ?? null,
               createdAt: document.createdAt,
             }))}
           />

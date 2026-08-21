@@ -14,6 +14,7 @@ import { formatDate } from "@/lib/utils"
 import { uploadFleetDocumentAction, deleteFleetDocumentAction } from "../actions"
 import type { ActionState } from "@/lib/validation/operations"
 import { FLEET_DOCUMENT_TYPES } from "@/lib/validation/fleet-documents"
+import { Badge } from "@/components/ui/badge"
 
 interface FleetDocument {
   id: string
@@ -21,6 +22,8 @@ interface FleetDocument {
   fileName: string
   mimeType: string | null
   expiresAt: string | null
+  status: string
+  supersededAt: string | null
   createdAt: string
 }
 
@@ -71,11 +74,15 @@ export function FleetDocumentsPanel({
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <FileText size={14} className="shrink-0 text-[var(--color-text-subtle)]" />
-                  <span title={document.fileName} className="truncate font-medium">{document.fileName}</span>
+                  <span title={document.fileName} className={`truncate font-medium ${document.status === "replaced" ? "text-[var(--color-text-muted)]" : ""}`}>{document.fileName}</span>
+                  {/* Sin esto, una versión reemplazada se lee igual que la
+                      vigente y su fecha parece el vencimiento del equipo. */}
+                  {document.status === "replaced" && <Badge variant="outline">Reemplazado</Badge>}
                 </div>
                 <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
                   <span>{document.documentType}</span>
-                  {document.expiresAt && <span>· Vence: {formatDate(document.expiresAt)}</span>}
+                  {document.expiresAt && <span>· {document.status === "replaced" ? "Vencía" : "Vence"}: {formatDate(document.expiresAt)}</span>}
+                  {document.supersededAt && <span>· Reemplazado el {formatDate(document.supersededAt)}</span>}
                 </div>
               </div>
               <div className="flex items-center gap-1 shrink-0">
