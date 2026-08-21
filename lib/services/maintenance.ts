@@ -1,5 +1,5 @@
 import type { Session } from "next-auth"
-import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import {
   costCenters,
