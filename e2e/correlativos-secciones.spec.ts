@@ -169,6 +169,16 @@ async function createEppRequest(page: Page, productName: string, quantity: strin
   await page.locator('input[id^="qty-"]').first().fill(quantity)
 
   await page.getByRole("button", { name: /enviar a aprobación/i }).click()
+
+  // Este spec recibe su propia OC antes de volver a pedir el mismo EPP, así que
+  // en la segunda solicitud ya hay stock en la faena y el preflight se
+  // interpone: es comportamiento correcto de la app, no un fallo, y el helper
+  // tiene que atravesarlo declarando que quiere comprar de todas formas.
+  const preflight = page.getByRole("button", { name: "Continuar con la solicitud" })
+  if (await preflight.isVisible({ timeout: 3_000 }).catch(() => false)) {
+    await preflight.click()
+  }
+
   await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 20_000 })
 
   // El correlativo es el título de la página de detalle. `textContent` y no

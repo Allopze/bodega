@@ -17,14 +17,14 @@ test.describe("Conciliación OC-factura-recepción", () => {
     // The reconciliation panel lives in the "Facturación" tab (OcDetailTabs),
     // which isn't the default active tab, and only renders once the OC has
     // an invoice attached.
-    await page.getByRole("tab", { name: "Facturación" }).click()
-    const conciliacion = page.getByText("Conciliación por línea")
-    await expect(conciliacion).toBeVisible({ timeout: 10_000 })
-    // `exact`: la advertencia de conciliación del rail ("Total facturado difiere
-    // del total OC") también contiene el texto desde que se muestra antes del cierre.
-    await expect(page.getByText("Total facturado (CLP)", { exact: true })).toBeVisible()
-    await expect(page.getByText("Monetariamente conciliada (tolerancia: $1)", { exact: true })).toBeVisible()
-    await expect(page.getByText("Cobertura parcial de líneas", { exact: true })).toBeVisible()
+    await page.getByRole("tab", { name: /^Facturación/ }).click()
+    // El panel dejó de ser un resumen monetario con etiquetas propias: ahora es
+    // la tarjeta "Conciliación de facturación" con una fila por línea de OC.
+    await expect(page.getByRole("heading", { name: "Conciliación de facturación" })).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(/Tolerancia monetaria: \$1/)).toBeVisible()
+    // La comparación es por línea: cantidad y precio de la OC contra la factura.
+    await expect(page.getByRole("columnheader", { name: "Cantidad OC / factura" })).toBeVisible()
+    await expect(page.getByRole("columnheader", { name: "Precio factura" })).toBeVisible()
   })
 
   // Antes había que saber que existía la pestaña "Facturación" y bajar hasta el

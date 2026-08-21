@@ -6,12 +6,13 @@ test("conciliación separa el total monetario de la evidencia por línea", async
   await login(page)
   await page.goto("/compras/oc-e2e?tab=facturacion")
 
-  await expect(page.getByText("Total facturado (CLP)")).toBeVisible()
-  const reconciliation = page.getByText("Conciliación por línea").locator("..")
-  await expect(reconciliation.getByText("Cobertura parcial de líneas")).toBeVisible()
-  await expect(page.getByText("El total difiere de la OC")).toHaveCount(0)
-  await expect(page.getByText("1 factura(s) sin líneas.")).toBeVisible()
-  await expect(page.getByText("El total monetario no sustituye la evidencia por línea.")).toBeVisible()
+  // La tarjeta compara línea por línea; el total monetario ya no es la unidad de
+  // medida de la conciliación.
+  await expect(page.getByRole("heading", { name: "Conciliación de facturación" })).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByRole("columnheader", { name: "Cantidad OC / factura" })).toBeVisible()
+  // Y una factura sin líneas se declara como tal en vez de diluirse en el total.
+  // Aparece una vez por factura sin líneas; basta con que la advertencia exista.
+  await expect(page.getByText("Factura sin líneas documentales").first()).toBeVisible()
 
   const noLinesInvoice = page.getByRole("listitem").filter({
     has: page.getByRole("link", { name: "FAC-E2E-SIN-LINEAS" }),

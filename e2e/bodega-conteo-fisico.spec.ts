@@ -21,7 +21,7 @@ test.describe("Bodega — vistas, filtros y movimientos", () => {
     await expect(page.getByRole("heading", { name: "Kardex" })).toBeVisible()
     expect(new URL(page.url()).searchParams.get("vista")).toBe("kardex")
 
-    await page.getByRole("link", { name: /^Documentos/ }).click()
+    await page.getByLabel("Vistas de bodega").getByRole("link", { name: "Documentos" }).click()
     await expect(page.getByRole("heading", { name: "Documentos de bodega" })).toBeVisible()
   })
 
@@ -29,14 +29,18 @@ test.describe("Bodega — vistas, filtros y movimientos", () => {
     await page.goto("/bodega?vista=kardex")
 
     const search = page.getByRole("searchbox", { name: "Buscar en bodega" })
-    // El input sí necesita hidratación, a diferencia de las pestañas.
+    // `toBeEnabled` pasa con el HTML del servidor, antes de que React hidrate:
+    // un `fill` en esa ventana escribe en el DOM sin que exista el `onChange`,
+    // así que el debounce nunca arranca y la URL no cambia. Se reintenta hasta
+    // que la navegación ocurra de verdad.
     await expect(search).toBeEnabled()
-    await search.fill("zzz-no-existe-zzz")
-
-    await expect(page.getByText("Sin coincidencias en el kardex")).toBeVisible()
+    await expect(async () => {
+      await search.fill("zzz-no-existe-zzz")
+      await expect(page).toHaveURL(/[?&]q=zzz-no-existe-zzz/, { timeout: 3_000 })
+    }).toPass({ timeout: 30_000 })
+    await expect(page.getByText("Sin coincidencias en el kardex")).toBeVisible({ timeout: 15_000 })
     // Sin filas no queda un paginador huérfano flotando bajo la tabla ausente.
     await expect(page.getByRole("navigation", { name: /paginaci/i })).toHaveCount(0)
-    expect(new URL(page.url()).searchParams.get("q")).toBe("zzz-no-existe-zzz")
   })
 
   test("registra un ajuste con folio y lo deja consultable en Documentos", async ({ page }) => {
@@ -44,7 +48,7 @@ test.describe("Bodega — vistas, filtros y movimientos", () => {
     await page.getByRole("button", { name: "Registrar movimiento" }).click()
 
     await page.getByRole("button", { name: /Ajuste de inventario/ }).click()
-    await page.getByLabel("Faena").click()
+    await page.getByRole("combobox", { name: "Faena", exact: true }).click()
     await page.getByRole("option").first().click()
 
     // Las opciones llegan del endpoint por faena, no del render de la página.
@@ -59,7 +63,7 @@ test.describe("Bodega — vistas, filtros y movimientos", () => {
     await page.getByLabel("Dirección").click()
     await page.getByRole("option", { name: /aumentar/ }).click()
     await page.getByLabel("Cantidad").fill("2")
-    await page.getByLabel("Motivo", { exact: true }).fill("Ajuste e2e")
+    await page.locator("#adjustReason").fill("Ajuste e2e")
     await page.getByRole("button", { name: "Registrar ajuste" }).click()
 
     await expect(page.getByText(/Ajuste AJU-\d{4}-\d{4} registrado/)).toBeVisible({ timeout: 15_000 })
@@ -73,7 +77,7 @@ test.describe("Bodega — vistas, filtros y movimientos", () => {
     await page.goto("/bodega")
     await page.getByRole("button", { name: "Registrar movimiento" }).click()
     await page.getByRole("button", { name: /Conteo físico/ }).click()
-    await page.getByLabel("Faena").click()
+    await page.getByRole("combobox", { name: "Faena", exact: true }).click()
     await page.getByRole("option").first().click()
 
     const search = page.getByRole("searchbox", { name: "Buscar producto en el conteo" })
@@ -89,7 +93,7 @@ test.describe("Bodega — vistas, filtros y movimientos", () => {
     await page.reload()
     await page.getByRole("button", { name: "Registrar movimiento" }).click()
     await page.getByRole("button", { name: /Conteo físico/ }).click()
-    await page.getByLabel("Faena").click()
+    await page.getByRole("combobox", { name: "Faena", exact: true }).click()
     await page.getByRole("option").first().click()
     await expect(page.getByText(/Retomando el borrador CON-\d{4}-\d{4}/)).toBeVisible({ timeout: 15_000 })
 
@@ -101,7 +105,7 @@ test.describe("Bodega — vistas, filtros y movimientos", () => {
     await page.goto("/bodega")
     await page.getByRole("button", { name: "Registrar movimiento" }).click()
     await page.getByRole("button", { name: /Baja por desecho/ }).click()
-    await page.getByLabel("Faena").click()
+    await page.getByRole("combobox", { name: "Faena", exact: true }).click()
     await page.getByRole("option").first().click()
 
     const productTrigger = page.locator("#discardProductId")
@@ -110,7 +114,7 @@ test.describe("Bodega — vistas, filtros y movimientos", () => {
     await page.getByRole("option").first().click()
 
     await page.getByLabel("Cantidad a dar de baja").fill("1")
-    await page.getByLabel("Motivo", { exact: true }).fill("Dañado en e2e")
+    await page.locator("#discardReason").fill("Dañado en e2e")
     await page.getByRole("button", { name: "Registrar baja" }).click()
 
     await expect(page.getByText(/Baja DES-\d{4}-\d{4} registrada/)).toBeVisible({ timeout: 15_000 })
@@ -123,7 +127,7 @@ test.describe("Bodega — vistas, filtros y movimientos", () => {
     await page.goto("/bodega")
     await page.getByRole("button", { name: "Registrar movimiento" }).click()
     await page.getByRole("button", { name: /Definir stock mínimo/ }).click()
-    await page.getByLabel("Faena").click()
+    await page.getByRole("combobox", { name: "Faena", exact: true }).click()
     await page.getByRole("option").first().click()
 
     const firstMin = page.locator('input[name="minStockValue"]').first()

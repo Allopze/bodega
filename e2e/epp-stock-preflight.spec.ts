@@ -32,7 +32,12 @@ async function fillEppWithAvailableStock(page: Page, requestNote: string) {
 
   const picker = page.getByPlaceholder(/Buscar en catálogo o escribir producto/i)
   await picker.fill("Casco Preflight E2E")
-  await page.getByRole("option", { name: "Casco Preflight E2E", exact: true }).click()
+  // La opción muestra SKU + nombre, así que su nombre accesible es
+  // "E2E-EPP-PREFLIGHT-001 Casco Preflight E2E": con `exact` sobre el nombre del
+  // producto no puede matchear nunca.
+  const option = page.getByRole("option", { name: /Casco Preflight E2E/ })
+  await expect(option.first()).toBeVisible({ timeout: 15_000 })
+  await option.first().click()
   await page.locator('input[id^="qty-"]').first().fill("2")
 }
 
