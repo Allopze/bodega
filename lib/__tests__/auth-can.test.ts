@@ -10,7 +10,17 @@ vi.mock("../auth/auth", () => ({
 vi.mock("@/lib/logger", () => ({
   logger: {
     warn: vi.fn(),
+    error: vi.fn(),
   },
+}))
+
+// El guard de módulos consulta system_settings en cada verificación de
+// permiso; sin este mock, requirePermission golpea un @/db real inexistente
+// en este test y falla cerrado con "No se pudo verificar el estado del módulo".
+vi.mock("@/lib/services/module-toggles", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/services/module-toggles")>()),
+  assertPermissionModuleEnabled: vi.fn(async () => {}),
+  assertRouteModuleEnabled: vi.fn(async () => {}),
 }))
 
 const authMock = auth as unknown as Mock

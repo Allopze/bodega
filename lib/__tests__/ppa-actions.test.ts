@@ -26,6 +26,14 @@ vi.mock("next/headers", () => ({
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
+// isRouteOperational falla cerrado (devuelve false) si no puede leer
+// system_settings; sin este mock golpea un @/db real inexistente en este test
+// y todas las llamadas se leen como "módulo inactivo".
+vi.mock("@/lib/services/module-toggles", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/services/module-toggles")>()),
+  isRouteOperational: vi.fn(async () => true),
+}))
+
 vi.mock("@/lib/logger", () => ({
   logger: {
     error: vi.fn(),
