@@ -70,4 +70,23 @@ describe("GET /api/tae/evidence/[id]", () => {
     expect(res.headers.get("Content-Type")).toBe("image/jpeg")
     expect(mockLogEvidenceAccess).toHaveBeenCalledWith("ev-1", "user-1", "view")
   })
+
+  // CO-040: sin allowlist de host, cualquier URL con protocolo válido se
+  // redirigía — el endpoint se volvía un redirect abierto.
+  describe("evidencia por URL externa (sin archivo propio)", () => {
+    it("redirige cuando el host está en el allowlist", async () => {
+      mockFindFirst.mockResolvedValueOnce({ id: "ev-1", submission: { worksiteId: "ws-1" }, filePath: null, externalUrl: "https://plataforma.portalchome.cl/evidencia/foto.jpg" })
+      mockCanAccessWorksite.mockReturnValueOnce(true)
+      const res = await callRoute("ev-1")
+      expect(res.status).toBe(307)
+      expect(res.headers.get("location")).toBe("https://plataforma.portalchome.cl/evidencia/foto.jpg")
+    })
+
+    it("devuelve 404 (no 400) cuando el host no está en el allowlist — no confirma que la evidencia exista", async () => {
+      mockFindFirst.mockResolvedValueOnce({ id: "ev-1", submission: { worksiteId: "ws-1" }, filePath: null, externalUrl: "https://evil.example/foto.jpg" })
+      mockCanAccessWorksite.mockReturnValueOnce(true)
+      const res = await callRoute("ev-1")
+      expect(res.status).toBe(404)
+    })
+  })
 })

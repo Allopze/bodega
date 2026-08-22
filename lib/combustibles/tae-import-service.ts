@@ -7,6 +7,7 @@ import { recordAudit, recordStatusChanges } from "@/lib/audit"
 import { parseTaeLegacyExcel, parseTaeLegacyRecord, type ParsedTaeLegacyRow } from "./tae-import"
 import { buildTaeImportReport, normalizeCode, normalizeName, type TaeImportReportData } from "./tae-import-report"
 import { FUEL_PRODUCT_IDS } from "./fuel-products"
+import { isAllowedTaeEvidenceHost } from "./tae-evidence-hosts"
 
 export type TaeImportCatalogs = {
   worksites: Array<{ id: string; name: string }>
@@ -85,7 +86,11 @@ export function safeTaeEvidenceUrl(value: string | null) {
   if (!value) return null
   try {
     const url = new URL(value)
-    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null
+    // Host fuera del allowlist: no se persiste como evidencia válida — evita
+    // que una URL de un host no confiable entre por importación o reproceso
+    // y sólo se descubra al servirla (CO-040).
+    return isAllowedTaeEvidenceHost(url) ? url.toString() : null
   } catch { return null }
 }
 

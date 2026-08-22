@@ -8,6 +8,7 @@ import { fuelTaeEvidence } from "@/db/schema"
 import { resolveFuelTaeEvidenceFile } from "@/lib/storage/config"
 import { readBuffer } from "@/lib/storage/helpers"
 import { logEvidenceAccess } from "@/lib/combustibles/evidence-management"
+import { isAllowedTaeEvidenceHost } from "@/lib/combustibles/tae-evidence-hosts"
 import { isRouteOperational } from "@/lib/services/module-toggles"
 
 export const runtime = "nodejs"
@@ -30,6 +31,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     try {
       const url = new URL(evidence.externalUrl)
       if (url.protocol !== "https:" && url.protocol !== "http:") return new NextResponse("Invalid evidence URL", { status: 400 })
+      // Host fuera del allowlist: mismo criterio que el enmascarado cross-faena
+      // de flota/documentos/[id] — 404, no 400, para no confirmar que la
+      // evidencia existe pero está bloqueada (CO-040).
+      if (!isAllowedTaeEvidenceHost(url)) return new NextResponse("Evidence not found", { status: 404 })
       return NextResponse.redirect(url)
     } catch { return new NextResponse("Invalid evidence URL", { status: 400 }) }
   }

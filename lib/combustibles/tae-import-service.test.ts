@@ -36,9 +36,15 @@ const catalogs = {
 
 describe("buildTaeImportPlan", () => {
   it("accepts only web URLs for historical evidence", () => {
-    expect(safeTaeEvidenceUrl("https://drive.example/photo")).toBe("https://drive.example/photo")
+    expect(safeTaeEvidenceUrl("https://plataforma.portalchome.cl/photo")).toBe("https://plataforma.portalchome.cl/photo")
     expect(safeTaeEvidenceUrl("javascript:alert(1)")).toBeNull()
     expect(safeTaeEvidenceUrl("not-a-url")).toBeNull()
+  })
+  // CO-040: sin allowlist de host, cualquier URL con protocolo válido pasaba
+  // — el endpoint que la sirve se volvía un redirect abierto.
+  it("rejects a host outside the allowlist even with a valid protocol", () => {
+    expect(safeTaeEvidenceUrl("https://evil.example/photo")).toBeNull()
+    expect(safeTaeEvidenceUrl("http://drive.example/photo")).toBeNull()
   })
   it("validates a fully matched historical row", () => {
     const rows = [legacyRow()]
