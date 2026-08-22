@@ -55,6 +55,12 @@ const JOBS = Object.freeze({
     kind: "sync",
     codePrefix: "FUEL_CRON_",
   },
+  "maintenance-reminders": {
+    url: "http://app:3000/api/cron/maintenance-reminders",
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "MAINTENANCE_CRON_",
+  },
 })
 
 // Mapa de sufijos: cada job combina esto con su propio `codePrefix`, así que

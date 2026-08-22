@@ -5,6 +5,7 @@ const INVOICE_ATTACHMENT_PREFIX = "storage/purchase-orders/"
 const QUOTATION_ATTACHMENT_PREFIX = "storage/repuestos/"
 const SERVICE_QUOTATION_PREFIX = "storage/servicios/"
 const FLEET_DOCUMENT_PREFIX = "storage/flota/"
+const MAINTENANCE_DOCUMENT_PREFIX = "storage/mantenciones/"
 const SST_DOCUMENT_PREFIX = "storage/sst-documents/"
 const PDTP_EVIDENCE_PREFIX = "storage/pdtp-evidence/"
 const INSPECTION_EVIDENCE_PREFIX = "storage/inspection-evidence/"
@@ -156,6 +157,22 @@ export function resolveFleetDocumentFile(filePath: string): string | null {
     return null
   }
   return path.join(/*turbopackIgnore: true*/ resolveFleetDir(), storageName)
+}
+
+export function resolveMaintenanceDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "mantenciones")
+}
+
+export function createMaintenanceDocumentPath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) throw new Error("Invalid maintenance document file name")
+  return `${MAINTENANCE_DOCUMENT_PREFIX}${storageName}`
+}
+
+export function resolveMaintenanceDocumentFile(filePath: string): string | null {
+  if (!filePath.startsWith(MAINTENANCE_DOCUMENT_PREFIX)) return null
+  const storageName = filePath.slice(MAINTENANCE_DOCUMENT_PREFIX.length)
+  if (!isSafeStorageName(storageName)) return null
+  return path.join(/*turbopackIgnore: true*/ resolveMaintenanceDir(), storageName)
 }
 
 /* ── Biblioteca SST ────────────────────────────────────────────────────────

@@ -82,6 +82,7 @@ const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "combustibles", submoduleHref: "/combustibles/tae", prefix: "/api/tae" },
   { moduleId: "combustibles", submoduleHref: "/combustibles/importar", prefix: "/api/combustibles/import" },
   { moduleId: "flota", submoduleHref: "/flota", prefix: "/api/flota" },
+  { moduleId: "mantenciones", submoduleHref: "/mantenciones", prefix: "/api/mantenciones" },
   { moduleId: "warehouse", submoduleHref: "/bodega", prefix: "/api/bodega" },
   { moduleId: "deliveries", submoduleHref: "/entregas", prefix: "/api/entregas" },
   // Sirve exclusivamente evidencia de entregas (ver S-08 en el handler).
@@ -135,6 +136,7 @@ const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "combustibles", submoduleHref: "/combustibles", prefix: "/api/cron/fuel-anomaly-detection" },
   { moduleId: "combustibles", submoduleHref: "/combustibles/importar", prefix: "/api/cron/fuel-copec-sync" },
   { moduleId: "combustibles", submoduleHref: "/combustibles", prefix: "/api/cron/fuel-statement-notifications" },
+  { moduleId: "mantenciones", submoduleHref: "/mantenciones", prefix: "/api/cron/maintenance-reminders" },
   { moduleId: "analytics", submoduleHref: "/analitica", prefix: "/api/cron/operational-metric-snapshots" },
   { moduleId: "analytics", submoduleHref: "/analitica", prefix: "/api/cron/operational-snapshot-health" },
   { moduleId: "prevention", submoduleHref: "/prevencion/pdtp", prefix: "/api/cron/pdtp-evidence-gc" },

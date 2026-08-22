@@ -235,6 +235,8 @@ services:
         0 5 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs fuel-anomaly-detection >/proc/1/fd/1 2>&1
         30 5 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs fuel-copec-sync >/proc/1/fd/1 2>&1
         30 8 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs fuel-statement-notifications >/proc/1/fd/1 2>&1
+        # Mantenciones — SLA y escalamiento antes del inicio de la jornada.
+        0 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs maintenance-reminders >/proc/1/fd/1 2>&1
         EOF
         # Si el montaje de zoneinfo se rompe, esto lo delata: debe decir -04 o
         # -03, nunca UTC. Los horarios de abajo se leen contra esta hora.

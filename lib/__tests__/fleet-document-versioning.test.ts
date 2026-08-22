@@ -29,7 +29,7 @@ vi.mock("@/db", () => ({
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
-const { uploadFleetDocument, deleteFleetDocument, getFleetOverview } = await import("@/lib/services/fleet")
+const { uploadFleetDocument, deleteFleetDocument, getFleetOverview, getFleetOverviewPage } = await import("@/lib/services/fleet")
 
 const worksiteId = nanoid()
 const equipmentTypeId = nanoid()
@@ -114,6 +114,25 @@ describe("versionado de documentos de flota", () => {
 
     const fleet = await getFleetOverview(session())
     expect(fleet.find((row) => row.id === vehicleId)?.nextExpiryDate).toBe("2026-09-30")
+  })
+
+  it("limita los detalles de la flota a los IDs de la página sin perder el total", async () => {
+    const secondVehicleId = nanoid()
+    await inMemoryDb.insert(schema.fuelVehicles).values({
+      id: secondVehicleId, plate: `ZZ${nanoid().slice(0, 4).toUpperCase()}`, type: "camion",
+      equipmentTypeId, worksiteId, isActive: true,
+    })
+
+    const page = await getFleetOverviewPage(
+      session(),
+      {},
+      { today: "2026-08-22", warningWindowEnd: "2026-09-21" },
+      { offset: 0, limit: 1 },
+    )
+
+    expect(page.total).toBe(2)
+    expect(page.index).toHaveLength(2)
+    expect(page.rows).toHaveLength(1)
   })
 
   it("borrar el vigente devuelve la vigencia a la versión anterior", async () => {

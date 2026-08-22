@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest"
 import {
   createMaintenanceRecordSchema,
+  maintenanceCostApprovalSchema,
+  maintenanceDocumentMetadataSchema,
+  maintenanceDocumentPolicySchema,
+  maintenanceLaborSchema,
+  maintenancePartSchema,
+  maintenancePlanSchema,
+  maintenanceTaskSchema,
   MAINTENANCE_STATUSES,
   MAINTENANCE_STATUS_LABELS,
   transitionMaintenanceRecordSchema,
@@ -88,5 +95,92 @@ describe("transitionMaintenanceRecordSchema", () => {
       transition: "complete",
       reason: "ok",
     }).success).toBe(false)
+  })
+})
+
+describe("maintenancePlanSchema", () => {
+  const plan = {
+    vehicleId: "veh-1",
+    name: "Preventiva 10.000 km",
+    maintenanceType: "preventiva",
+    strategy: "odometer" as const,
+    intervalUnits: 10_000,
+    advanceDays: 7,
+    advanceUnits: 500,
+  }
+
+  it("exige el intervalo que corresponde a la estrategia", () => {
+    expect(maintenancePlanSchema.safeParse(plan).success).toBe(true)
+    expect(maintenancePlanSchema.safeParse({ ...plan, intervalUnits: null }).success).toBe(false)
+    expect(maintenancePlanSchema.safeParse({
+      ...plan,
+      strategy: "calendar",
+      intervalUnits: null,
+      intervalDays: 90,
+    }).success).toBe(true)
+    expect(maintenancePlanSchema.safeParse({
+      ...plan,
+      strategy: "combined",
+      intervalDays: 90,
+    }).success).toBe(true)
+    expect(maintenancePlanSchema.safeParse({
+      ...plan,
+      strategy: "combined",
+      intervalDays: null,
+    }).success).toBe(false)
+  })
+
+  it("rechaza una próxima fecha civil inexistente", () => {
+    expect(maintenancePlanSchema.safeParse({ ...plan, nextDueDate: "2026-02-31" }).success).toBe(false)
+  })
+})
+
+describe("detalle de orden de trabajo", () => {
+  it("valida tareas, repuestos y mano de obra con cantidades positivas", () => {
+    expect(maintenanceTaskSchema.safeParse({ maintenanceId: "ot-1", description: "Revisar frenos" }).success).toBe(true)
+    expect(maintenanceTaskSchema.safeParse({ maintenanceId: "ot-1", description: "x" }).success).toBe(false)
+    expect(maintenancePartSchema.safeParse({
+      maintenanceId: "ot-1",
+      description: "Pastillas de freno",
+      quantity: 2,
+      unit: "un",
+      unitCost: 35_000,
+    }).success).toBe(true)
+    expect(maintenancePartSchema.safeParse({
+      maintenanceId: "ot-1",
+      description: "Pastillas de freno",
+      quantity: 0,
+      unit: "un",
+      unitCost: 35_000,
+    }).success).toBe(false)
+    expect(maintenanceLaborSchema.safeParse({
+      maintenanceId: "ot-1",
+      description: "Diagnóstico y cambio",
+      hours: 3.5,
+      hourlyRate: 25_000,
+    }).success).toBe(true)
+    expect(maintenanceLaborSchema.safeParse({
+      maintenanceId: "ot-1",
+      description: "Diagnóstico y cambio",
+      hours: -1,
+      hourlyRate: 25_000,
+    }).success).toBe(false)
+  })
+
+  it("mantiene cerradas las taxonomías documental y de aprobación", () => {
+    expect(maintenanceDocumentMetadataSchema.safeParse({ maintenanceId: "ot-1", documentType: "diagnosis" }).success).toBe(true)
+    expect(maintenanceDocumentMetadataSchema.safeParse({ maintenanceId: "ot-1", documentType: "archivo_libre" }).success).toBe(false)
+    expect(maintenanceDocumentPolicySchema.safeParse({
+      equipmentTypeId: "camion",
+      documentType: "work_order",
+      requiredAt: "before_complete",
+    }).success).toBe(true)
+    expect(maintenanceDocumentPolicySchema.safeParse({
+      equipmentTypeId: "camion",
+      documentType: "work_order",
+      requiredAt: "after_complete",
+    }).success).toBe(false)
+    expect(maintenanceCostApprovalSchema.safeParse({ maintenanceId: "ot-1", decision: "approve" }).success).toBe(true)
+    expect(maintenanceCostApprovalSchema.safeParse({ maintenanceId: "ot-1", decision: "self_approve" }).success).toBe(false)
   })
 })

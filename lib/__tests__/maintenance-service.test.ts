@@ -1,11 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { Session } from "next-auth"
 import {
+  addMaintenancePart,
   createMaintenanceRecord,
+  decideMaintenanceCostApproval,
   cancelMaintenanceRecord,
   getMaintenancePageData,
   getUpcomingMaintenance,
   getUsageMaintenanceAlerts,
+  materializeDueMaintenancePlans,
+  saveMaintenanceDocumentPolicy,
+  setMaintenanceTaskStatus,
   updateMaintenanceRecord,
   transitionMaintenanceRecord,
   type CreateMaintenanceInput,
@@ -19,17 +24,24 @@ const mockSupplierFindMany = vi.fn(async (..._args: unknown[]) => [] as unknown[
 const mockWorksiteFindMany = vi.fn(async (..._args: unknown[]) => [] as unknown[])
 const mockMaintenanceFindFirst = vi.fn()
 const mockMaintenanceFindMany = vi.fn()
+const mockMaintenancePlanFindMany = vi.fn()
 const mutationResults: unknown[][] = []
 const mockInsertValues = vi.fn((_values?: unknown) => createChain(mutationResults.shift() ?? []))
 const mockInsert = vi.fn().mockReturnValue({ values: mockInsertValues })
 const mockUpdateSet = vi.fn((_values?: unknown) => createChain(mutationResults.shift() ?? []))
 const mockUpdate = vi.fn().mockReturnValue({ set: mockUpdateSet })
+const mockExecute = vi.fn(async (_query?: unknown) => [{ next_document_code: 1 }])
+const mockPermissionTargetsForWorksite = vi.fn(async (_permission: unknown, _worksite: unknown) => [] as string[])
 const selectResults: unknown[][] = []
+const whereNodes: unknown[] = []
 
 function createChain(data: unknown[] = []) {
   const chain: Record<string, unknown> = {}
   chain.from = vi.fn(() => chain)
-  chain.where = vi.fn(() => chain)
+  chain.where = vi.fn((where?: unknown) => {
+    whereNodes.push(where)
+    return chain
+  })
   chain.for = vi.fn(() => chain)
   chain.limit = vi.fn(() => chain)
   chain.orderBy = vi.fn(() => chain)
@@ -48,7 +60,8 @@ const mockTransaction = vi.fn(async (callback: (tx: {
   update: typeof mockUpdate
   select: typeof mockSelect
   insert: typeof mockInsert
-}) => Promise<unknown>) => callback({ update: mockUpdate, select: mockSelect, insert: mockInsert }))
+  execute: typeof mockExecute
+}) => Promise<unknown>) => callback({ update: mockUpdate, select: mockSelect, insert: mockInsert, execute: mockExecute }))
 
 vi.mock("@/db", () => ({
   db: {
@@ -61,6 +74,7 @@ vi.mock("@/db", () => ({
         findFirst: (...args: unknown[]) => mockMaintenanceFindFirst(...args),
         findMany: (...args: unknown[]) => mockMaintenanceFindMany(...args),
       },
+      maintenancePlans: { findMany: (...args: unknown[]) => mockMaintenancePlanFindMany(...args) },
       costCenters: { findMany: (...args: unknown[]) => mockCostCenterFindMany(...args) },
       suppliers: { findMany: (...args: unknown[]) => mockSupplierFindMany(...args) },
       worksites: { findMany: (...args: unknown[]) => mockWorksiteFindMany(...args) },
@@ -70,11 +84,17 @@ vi.mock("@/db", () => ({
     transaction: (...args: [Parameters<typeof mockTransaction>[0]]) => mockTransaction(...args),
     select: (projection?: unknown) => mockSelect(projection),
     selectDistinctOn: (columns?: unknown, projection?: unknown) => mockSelectDistinctOn(columns, projection),
+    execute: (query: unknown) => mockExecute(query),
   },
 }))
 
 vi.mock("@/lib/audit", () => ({
   recordAudit: vi.fn(),
+}))
+
+vi.mock("@/lib/services/notification-targeting", () => ({
+  getUserIdsWithPermission: vi.fn(async () => []),
+  getUserIdsWithPermissionForWorksite: (...args: unknown[]) => mockPermissionTargetsForWorksite(args[0], args[1]),
 }))
 
 /** Trozos literales y parámetros de un predicado de Drizzle, sin levantar Postgres. */
@@ -109,6 +129,7 @@ afterEach(() => {
   vi.clearAllMocks()
   selectResults.length = 0
   mutationResults.length = 0
+  whereNodes.length = 0
   vi.useRealTimers()
 })
 
@@ -189,6 +210,22 @@ describe("Maintenance Service (createMaintenanceRecord)", () => {
       totalAmount: 59500,
     })).rejects.toThrow("No puedes registrar mantenciones para este vehículo")
   })
+
+  it("rechaza asignar la OT a un usuario sin alcance y permiso en la faena", async () => {
+    selectResults.push([{ id: "veh-1", worksiteId: "ws-1", isActive: true, meterType: "odometer" }])
+    mockPermissionTargetsForWorksite.mockResolvedValue(["allowed-user"])
+
+    await expect(createMaintenanceRecord(dummySession, {
+      vehicleId: "veh-1",
+      assignedToUserId: "other-worksite-user",
+      maintenanceDate: "2026-07-22",
+      maintenanceType: "preventiva",
+      status: "scheduled",
+      netAmount: 0,
+      taxAmount: 0,
+      totalAmount: 0,
+    })).rejects.toThrow("El responsable no está activo o no puede gestionar mantenciones en esta faena")
+  })
 })
 
 describe("Maintenance Service (updateMaintenanceRecord)", () => {
@@ -261,6 +298,72 @@ describe("Maintenance Service (updateMaintenanceRecord)", () => {
       totalAmount: 59500,
     })).rejects.toThrow("No puedes asignar mantenciones a este vehículo")
   })
+
+  it("impide cambiar el vehículo o el impacto mientras la OT controla el estado operacional", async () => {
+    selectResults.push(
+      [{ id: "veh-2", worksiteId: "ws-1", isActive: true }],
+      [{
+        id: "man-1",
+        vehicleId: "veh-1",
+        worksiteId: "ws-1",
+        status: "in_progress",
+        operationalImpact: "maintenance",
+        managesOperationalStatus: true,
+        inspectionFindingId: null,
+        maintenanceType: "correctiva",
+        maintenanceDate: "2026-08-07",
+      }],
+    )
+    const session = { user: { id: "operator", isGlobal: true, worksiteIds: [], permissions: ["mantenciones:edit"] } } as unknown as Session
+
+    await expect(updateMaintenanceRecord(session, "man-1", {
+      vehicleId: "veh-2",
+      maintenanceDate: "2026-08-07",
+      maintenanceType: "correctiva",
+      operationalImpact: "out_of_service",
+      netAmount: 0,
+      taxAmount: 0,
+      totalAmount: 0,
+    })).rejects.toThrow("Detén o completa la OT antes de cambiar el vehículo o su impacto operacional")
+    expect(mockUpdateSet).not.toHaveBeenCalled()
+  })
+
+  it("invalida una aprobación previa cuando cambian los costos base", async () => {
+    selectResults.push(
+      [{ id: "veh-1", worksiteId: "ws-1", isActive: true }],
+      [{
+        id: "man-1",
+        vehicleId: "veh-1",
+        worksiteId: "ws-1",
+        status: "scheduled",
+        operationalImpact: "maintenance",
+        managesOperationalStatus: false,
+        inspectionFindingId: null,
+        maintenanceType: "preventiva",
+        maintenanceDate: "2026-08-07",
+        netAmount: 100,
+        taxAmount: 19,
+        totalAmount: 119,
+        costApprovalStatus: "approved",
+      }],
+    )
+    const session = { user: { id: "operator", isGlobal: true, worksiteIds: [], permissions: ["mantenciones:edit", "combustibles:view_costs"] } } as unknown as Session
+
+    await updateMaintenanceRecord(session, "man-1", {
+      vehicleId: "veh-1",
+      maintenanceDate: "2026-08-07",
+      maintenanceType: "preventiva",
+      netAmount: 200,
+      taxAmount: 38,
+      totalAmount: 238,
+    })
+
+    expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({
+      costApprovalStatus: "not_required",
+      costApprovedByUserId: null,
+      costApprovedAt: null,
+    }))
+  })
 })
 
 describe("Maintenance Service (cancelMaintenanceRecord)", () => {
@@ -284,7 +387,10 @@ describe("Maintenance Service (transitionMaintenanceRecord)", () => {
 
   it("completa bajo lock y activa una sola referencia CAPA con el estado nuevo", async () => {
     selectResults.push(
-      [{ id: "man-1", worksiteId: "ws-1", status: "in_progress", inspectionFindingId: "finding-1", maintenanceType: "preventiva", maintenanceDate: "2026-08-07" }],
+      [{ id: "man-1", vehicleId: "veh-1", worksiteId: "ws-1", status: "in_progress", inspectionFindingId: "finding-1", maintenanceType: "preventiva", maintenanceDate: "2026-08-07", operationalImpact: "none", managesOperationalStatus: false, costApprovalStatus: "not_required" }],
+      [{ equipmentTypeId: "fet-camion" }],
+      [],
+      [],
       [{ capaActionId: "capa-1" }],
     )
     mutationResults.push([], [{ id: "evidence-1" }], [])
@@ -309,7 +415,9 @@ describe("Maintenance Service (transitionMaintenanceRecord)", () => {
 
   it("reabre y supersede la evidencia sin borrarla", async () => {
     selectResults.push(
-      [{ id: "man-1", worksiteId: "ws-1", status: "completed", inspectionFindingId: "finding-1", maintenanceType: "preventiva", maintenanceDate: "2026-08-07" }],
+      [{ id: "man-1", vehicleId: "veh-1", worksiteId: "ws-1", status: "completed", inspectionFindingId: "finding-1", maintenanceType: "preventiva", maintenanceDate: "2026-08-07", operationalImpact: "none", managesOperationalStatus: false, costApprovalStatus: "not_required" }],
+      [{ equipmentTypeId: "fet-camion" }],
+      [],
       [{ capaActionId: "capa-1" }],
     )
     mutationResults.push([], [{ id: "evidence-1" }], [])
@@ -340,6 +448,206 @@ describe("Maintenance Service (transitionMaintenanceRecord)", () => {
       reason: "Trabajo verificado por taller",
     })).rejects.toThrow("cambió en otra sesión")
     expect(mockUpdateSet).not.toHaveBeenCalled()
+  })
+
+  it("bloquea el cierre cuando falta un documento obligatorio para la clase del activo", async () => {
+    selectResults.push(
+      [{ id: "man-1", vehicleId: "veh-1", worksiteId: "ws-1", status: "in_progress", inspectionFindingId: null, maintenanceType: "preventiva", maintenanceDate: "2026-08-07", operationalImpact: "maintenance", managesOperationalStatus: true, costApprovalStatus: "not_required" }],
+      [{ equipmentTypeId: "fet-camion" }],
+      [{ documentType: "work_order" }],
+      [],
+    )
+
+    await expect(transitionMaintenanceRecord(session, {
+      id: "man-1",
+      expectedStatus: "in_progress",
+      transition: "complete",
+      reason: "Trabajo verificado por taller",
+    })).rejects.toThrow("Faltan documentos obligatorios para esta transición: work_order")
+    expect(mockUpdateSet).not.toHaveBeenCalled()
+  })
+
+  it("registra el inicio aunque la OT no cambie el estado operacional", async () => {
+    selectResults.push(
+      [{ id: "man-1", vehicleId: "veh-1", worksiteId: "ws-1", status: "scheduled", inspectionFindingId: null, maintenanceType: "preventiva", maintenanceDate: "2026-08-07", operationalImpact: "none", managesOperationalStatus: false, costApprovalStatus: "not_required" }],
+      [{ equipmentTypeId: "fet-camion" }],
+      [],
+    )
+
+    await transitionMaintenanceRecord(session, {
+      id: "man-1",
+      expectedStatus: "scheduled",
+      transition: "start",
+      reason: "Inicio del trabajo en taller",
+    })
+
+    expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({
+      status: "in_progress",
+      startedAt: expect.any(String),
+      downtimeStartedAt: undefined,
+    }))
+  })
+
+  it("al reabrir elimina el cierre anterior de la detención", async () => {
+    selectResults.push(
+      [{ id: "man-1", vehicleId: "veh-1", worksiteId: "ws-1", status: "completed", inspectionFindingId: null, maintenanceType: "correctiva", maintenanceDate: "2026-08-07", operationalImpact: "maintenance", managesOperationalStatus: false, costApprovalStatus: "approved" }],
+      [{ equipmentTypeId: "fet-camion" }],
+      [],
+    )
+
+    await transitionMaintenanceRecord(session, {
+      id: "man-1",
+      expectedStatus: "completed",
+      transition: "reopen",
+      reason: "Falla reapareció en terreno",
+    })
+
+    expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({
+      downtimeStartedAt: expect.any(String),
+      downtimeEndedAt: null,
+    }))
+  })
+
+  it("no pisa un estado operacional posterior impuesto por otra fuente", async () => {
+    selectResults.push(
+      [{ id: "man-1", code: "OT-2026-0001", vehicleId: "veh-1", worksiteId: "ws-1", status: "in_progress", inspectionFindingId: null, maintenanceType: "correctiva", maintenanceDate: "2026-08-07", operationalImpact: "maintenance", managesOperationalStatus: true, costApprovalStatus: "approved" }],
+      [{ equipmentTypeId: "fet-camion" }],
+      [],
+      [],
+      [],
+      [{ status: "fuera_servicio", reason: "INS-2026-001 · falla crítica" }],
+    )
+
+    await transitionMaintenanceRecord(session, {
+      id: "man-1",
+      expectedStatus: "in_progress",
+      transition: "complete",
+      reason: "Trabajo de taller terminado",
+    })
+
+    expect(mockUpdateSet).not.toHaveBeenCalledWith(expect.objectContaining({ operationalStatus: "operativo" }))
+  })
+})
+
+describe("Maintenance Service (tareas y costos mutables)", () => {
+  const session = { user: { id: "operator", isGlobal: true, worksiteIds: [], permissions: ["mantenciones:edit", "combustibles:view_costs"] } } as unknown as Session
+
+  it("no permite reabrir una tarea después de cerrar la OT", async () => {
+    selectResults.push(
+      [{ id: "task-1", maintenanceId: "man-1", status: "completed" }],
+      [{ id: "man-1", code: "OT-2026-0001", vehicleId: "veh-1", worksiteId: "ws-1", status: "completed", version: 2 }],
+    )
+
+    await expect(setMaintenanceTaskStatus(session, "task-1", false))
+      .rejects.toThrow("La orden cerrada no admite cambios en sus tareas")
+  })
+
+  it("agregar un repuesto invalida una aprobación de costos previa", async () => {
+    selectResults.push([{ id: "man-1", code: "OT-2026-0001", vehicleId: "veh-1", worksiteId: "ws-1", status: "in_progress", version: 2 }])
+
+    await addMaintenancePart(session, {
+      maintenanceId: "man-1",
+      description: "Filtro de aceite",
+      quantity: 1,
+      unit: "un",
+      unitCost: 25_000,
+      partNumber: null,
+    })
+
+    expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({
+      costApprovalStatus: "not_required",
+      costApprovedByUserId: null,
+      costApprovedAt: null,
+    }))
+  })
+})
+
+describe("Maintenance Service (aprobación de costos)", () => {
+  it("impide que quien creó la OT apruebe sus propios costos", async () => {
+    const session = { user: { id: "creator", isGlobal: true, worksiteIds: [], permissions: ["mantenciones:approve_costs"] } } as unknown as Session
+    selectResults.push(
+      [{ id: "man-1", code: "OT-2026-0001", vehicleId: "veh-1", worksiteId: "ws-1", status: "in_progress", version: 1 }],
+      [{ createdBy: "creator", approval: "pending", total: 100_000 }],
+    )
+
+    await expect(decideMaintenanceCostApproval(session, { maintenanceId: "man-1", decision: "approve" }))
+      .rejects.toThrow("Quien creó la OT no puede aprobar sus propios costos")
+    expect(mockUpdateSet).not.toHaveBeenCalled()
+  })
+
+  it("registra la aprobación de un actor segregado", async () => {
+    const session = { user: { id: "approver", isGlobal: true, worksiteIds: [], permissions: ["mantenciones:approve_costs"] } } as unknown as Session
+    selectResults.push(
+      [{ id: "man-1", code: "OT-2026-0001", vehicleId: "veh-1", worksiteId: "ws-1", status: "in_progress", version: 1 }],
+      [{ createdBy: "creator", approval: "pending", total: 100_000 }],
+    )
+
+    await expect(decideMaintenanceCostApproval(session, { maintenanceId: "man-1", decision: "approve" }))
+      .resolves.toEqual({ status: "approved" })
+    expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({
+      costApprovalStatus: "approved",
+      costApprovedByUserId: "approver",
+    }))
+  })
+
+  it("rechaza aprobar costos que nunca fueron enviados a aprobación", async () => {
+    const session = { user: { id: "approver", isGlobal: true, worksiteIds: [], permissions: ["mantenciones:approve_costs"] } } as unknown as Session
+    selectResults.push(
+      [{ id: "man-1", code: "OT-2026-0001", vehicleId: "veh-1", worksiteId: "ws-1", status: "in_progress", version: 1 }],
+      [{ createdBy: "creator", approval: "not_required", total: 100_000 }],
+    )
+
+    await expect(decideMaintenanceCostApproval(session, { maintenanceId: "man-1", decision: "approve" }))
+      .rejects.toThrow("Los costos no están pendientes de aprobación")
+  })
+
+  it("permite solicitar aprobación cuando el costo está sólo en repuestos o mano de obra", async () => {
+    const session = { user: { id: "editor", isGlobal: true, worksiteIds: [], permissions: ["mantenciones:edit"] } } as unknown as Session
+    selectResults.push(
+      [{ id: "man-1", code: "OT-2026-0001", vehicleId: "veh-1", worksiteId: "ws-1", status: "in_progress", version: 1 }],
+      [{ createdBy: "creator", approval: "not_required", total: 0 }],
+      [{ total: 25_000 }],
+      [{ total: 0 }],
+    )
+
+    await expect(decideMaintenanceCostApproval(session, { maintenanceId: "man-1", decision: "request" }))
+      .resolves.toEqual({ status: "pending" })
+  })
+})
+
+describe("Maintenance Service (planes y políticas)", () => {
+  it("filtra la lectura por la unidad exigida por el plan", async () => {
+    mockMaintenancePlanFindMany.mockResolvedValue([{
+      id: "plan-1",
+      vehicleId: "veh-1",
+      worksiteId: "ws-1",
+      maintenanceType: "preventiva",
+      strategy: "hour_meter",
+      nextDueDate: null,
+      nextDueReading: 1_000,
+      advanceDays: 7,
+      advanceUnits: 100,
+      isActive: true,
+      vehicle: { meterType: "hour_meter" },
+    }])
+    selectResults.push([{ value: 100 }])
+    const session = { user: { id: "operator", isGlobal: true, worksiteIds: [], permissions: ["mantenciones:view", "mantenciones:create"] } } as unknown as Session
+
+    await materializeDueMaintenancePlans(session)
+
+    const where = sqlChunks(whereNodes[0])
+    expect(where).toContain("medido_por")
+    expect(where).toContain("hora")
+  })
+
+  it("impide que un rol acotado modifique políticas documentales globales", async () => {
+    const session = { user: { id: "local-manager", isGlobal: false, worksiteIds: ["ws-1"], permissions: ["mantenciones:edit"] } } as unknown as Session
+
+    await expect(saveMaintenanceDocumentPolicy(session, {
+      equipmentTypeId: "fet-camion",
+      documentType: "work_order",
+      requiredAt: "before_complete",
+    })).rejects.toThrow("Sólo un rol global puede gestionar políticas documentales")
   })
 })
 

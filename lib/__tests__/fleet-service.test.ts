@@ -16,6 +16,7 @@ const selectProjections: unknown[] = []
 function createChain(data: unknown[] = []) {
   const chain: Record<string, unknown> = {}
   chain.from = vi.fn(() => chain)
+  chain.innerJoin = vi.fn(() => chain)
   chain.where = vi.fn(() => chain)
   selectChains.push(chain as Record<string, ReturnType<typeof vi.fn>>)
   chain.groupBy = vi.fn(() => chain)
