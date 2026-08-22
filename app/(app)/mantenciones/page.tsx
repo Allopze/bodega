@@ -155,8 +155,10 @@ export default async function MantencionesPage({
               </p>
               {usageAlerts.map((a) => (
                 <p key={a.vehicleId} className="text-[var(--color-warning-ink)]">
-                  {a.code ? `${a.code} · ` : ""}{a.plate}: +{formatNumber(a.usageSinceLastMaintenance)} {a.medidoPor === "km" ? "km" : "hr"} desde {formatDate(a.lastMaintenanceDate)}
-                  {" "}(lectura actual {formatNumber(a.currentReading)} al {formatDate(a.currentReadingDate)})
+                  {a.code ? `${a.code} · ` : ""}{a.plate}:{" "}
+                  {a.possibleMeterReset
+                    ? <>posible reset de medidor — verifica: lectura actual {formatNumber(a.currentReading)} al {formatDate(a.currentReadingDate)} es menor que la de la última mantención ({formatNumber(a.lastMaintenanceReading)} al {formatDate(a.lastMaintenanceDate)})</>
+                    : <>+{formatNumber(a.usageSinceLastMaintenance)} {a.medidoPor === "km" ? "km" : "hr"} desde {formatDate(a.lastMaintenanceDate)} (lectura actual {formatNumber(a.currentReading)} al {formatDate(a.currentReadingDate)})</>}
                 </p>
               ))}
             </div>

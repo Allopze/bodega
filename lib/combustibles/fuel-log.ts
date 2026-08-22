@@ -38,6 +38,16 @@ export function fuelLogDetailHref(row: Pick<FuelLogRow, "source" | "detailId">):
   return `/combustibles/importar/operaciones/${row.detailId}` // sin página propia por fila: abre el lote
 }
 
+/**
+ * Instante real de una fila del log operacional: `fecha` (día) + `horaCarga`
+ * (puede faltar) fundidos en un timestamp ordenable. Sin esto, dos cargas del
+ * mismo día devuelven un ganador arbitrario al pedir "la última lectura" —
+ * `fecha` sola no distingue entre ellas (sección CO-023).
+ */
+export function fuelOperationOccurredAtSql() {
+  return sql<string>`(${fuelOperationRecords.fecha} || ' ' || coalesce(${fuelOperationRecords.horaCarga}, '00:00'))::timestamptz`
+}
+
 /** Subquery de conteo de anomalías, reutilizada por las 3 ramas con su propio `referenceEntityType`. */
 function anomalyCountSql(referenceEntityType: string, idColumn: unknown) {
   return sql<number | null>`(select count(*)::int from fuel_anomaly_cases ac where ac.reference_entity_type = ${referenceEntityType} and ac.reference_entity_id = ${idColumn} and ac.status IN ('open', 'in_review', 'reopened'))`.as("anomalyCount")
@@ -277,7 +287,7 @@ function buildOperationBranch(session: Session, filters: FuelLogFilters, searchP
       id: sql<string>`${fuelOperationRecords.id}`.as("id"),
       detailId: sql<string>`${fuelOperationRecords.batchId}`.as("detailId"), // sin página de detalle por fila: se abre el lote que la contiene
       source: sql<FuelLogSource>`'operation_manual'`.as("source"),
-      occurredAt: sql<string>`(${fuelOperationRecords.fecha} || ' ' || coalesce(${fuelOperationRecords.horaCarga}, '00:00'))::timestamptz`.as("occurredAt"),
+      occurredAt: fuelOperationOccurredAtSql().as("occurredAt"),
       worksiteName: sql<string | null>`${worksites.name}`.as("worksiteName"),
       supplierId: sql<string | null>`${fuelSuppliers.id}`.as("supplierId"),
       supplierName: sql<string | null>`coalesce(${fuelSuppliers.name}, ${fuelOperationRecords.proveedorNombre})`.as("supplierName"),

@@ -42,6 +42,9 @@ export const pgliteTestFiles = [
   "lib/__tests__/fuel-load-lifecycle.test.ts",
   "lib/__tests__/fuel-cycle-invariants.test.ts",
   "lib/__tests__/fuel-load-anomaly-reevaluation.test.ts",
+  // Faltaba desde que se escribió: instancia PGlite y migra, igual que las de
+  // arriba con el mismo comentario.
+  "lib/__tests__/anomaly-detection-integration.test.ts",
   "lib/__tests__/full-flow-integration.test.ts",
   "lib/__tests__/integration-rbac-sequences.test.ts",
   "lib/__tests__/item-state-mutations.test.ts",

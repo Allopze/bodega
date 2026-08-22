@@ -26,6 +26,11 @@ vi.mock("@/db", () => ({
       const idx = selectCallCount++
       return createChain(selectResults[idx]?.data ?? [])
     },
+    selectDistinctOn: (_columns: unknown, projection: unknown) => {
+      selectProjections.push(projection)
+      const idx = selectCallCount++
+      return createChain(selectResults[idx]?.data ?? [])
+    },
   },
 }))
 
@@ -156,6 +161,7 @@ describe("getAnalyticsDashboard", () => {
       { data: [{ id: "ws-1", name: "Faena Norte", module: "Compras", totalAmount: 1_200_000 }] },
       { data: [{ id: "ws-1", name: "Faena Norte", module: "Combustible", totalAmount: 420_000 }] },
       { data: [{ id: "veh-1", plate: "AA-BB-11", type: "camioneta", totalFuelAmount: 420_000, totalLiters: 350, loadCount: 7 }] },
+      { data: [] },
       { data: [
         { productId: "prod-1", productName: "Guante cabritilla", sku: "EPP-001", worksiteName: "Faena Norte", currentQty: 2, minStock: 10 },
       ] },
@@ -228,9 +234,10 @@ describe("getAnalyticsDashboard", () => {
           totalFuelAmount: 100_000,
           totalLiters: 80,
           loadCount: 2,
-          lastOdometerReading: 12_500,
-          lastHourMeterReading: 440,
         },
+      ] },
+      { data: [
+        { vehicleId: "veh-1", odometerReading: 12_500, hourMeterReading: 440 },
       ] },
       { data: [] },
       { data: [] },

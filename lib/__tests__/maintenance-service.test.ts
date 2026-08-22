@@ -32,6 +32,9 @@ function createChain(data: unknown[] = []) {
   chain.where = vi.fn(() => chain)
   chain.for = vi.fn(() => chain)
   chain.limit = vi.fn(() => chain)
+  chain.orderBy = vi.fn(() => chain)
+  chain.innerJoin = vi.fn(() => chain)
+  chain.groupBy = vi.fn(() => chain)
   chain.onConflictDoUpdate = vi.fn(() => chain)
   chain.returning = vi.fn(() => chain)
   chain.then = (resolve: (value: unknown[]) => void, reject?: (error: unknown) => void) =>
@@ -40,6 +43,7 @@ function createChain(data: unknown[] = []) {
 }
 
 const mockSelect = vi.fn((_projection?: unknown) => createChain(selectResults.shift() ?? []))
+const mockSelectDistinctOn = vi.fn((_columns?: unknown, _projection?: unknown) => createChain(selectResults.shift() ?? []))
 const mockTransaction = vi.fn(async (callback: (tx: {
   update: typeof mockUpdate
   select: typeof mockSelect
@@ -65,6 +69,7 @@ vi.mock("@/db", () => ({
     update: (...args: unknown[]) => mockUpdate(...args),
     transaction: (...args: [Parameters<typeof mockTransaction>[0]]) => mockTransaction(...args),
     select: (projection?: unknown) => mockSelect(projection),
+    selectDistinctOn: (columns?: unknown, projection?: unknown) => mockSelectDistinctOn(columns, projection),
   },
 }))
 
@@ -377,6 +382,40 @@ describe("getUsageMaintenanceAlerts", () => {
     const where = sqlChunks((mockVehicleFindMany.mock.calls[0]![0] as { where: unknown }).where)
     expect(where).toContain("ws-1")
     expect(where).not.toContain("ws-2")
+  })
+
+  // CO-023: una lectura menor que la de la última mantención es un medidor
+  // reemplazado/reseteado, no "uso bajo el umbral" — antes desaparecía sin aviso.
+  it("marca posible reset de medidor en vez de descartar la lectura en silencio", async () => {
+    const session = { user: { id: "user-1", isGlobal: true, worksiteIds: [] } } as unknown as Session
+    mockVehicleFindMany.mockResolvedValue([{ id: "veh-1", plate: "AA-BB-11", code: "V-1" }])
+    selectResults.push(
+      [{ vehicleId: "veh-1", fecha: "2026-08-01", horometro: 5_000, medidoPor: "km" }],
+      [{ vehicleId: "veh-1", maintenanceDate: "2026-07-01", odometerReading: 12_000, hourMeterReading: null }],
+      [],
+    )
+
+    const alerts = await getUsageMaintenanceAlerts(session)
+
+    expect(alerts).toHaveLength(1)
+    expect(alerts[0]).toMatchObject({ possibleMeterReset: true, usageSinceLastMaintenance: -7_000 })
+  })
+
+  // Mismo escenario, pero el caso de anomalía del reset ya fue resuelto DESPUÉS
+  // de la última mantención: no hay lectura comparable, así que se omite en vez
+  // de seguir pidiendo verificación de algo ya aceptado.
+  it("omite la alerta cuando el reset ya fue aceptado después de la última mantención", async () => {
+    const session = { user: { id: "user-1", isGlobal: true, worksiteIds: [] } } as unknown as Session
+    mockVehicleFindMany.mockResolvedValue([{ id: "veh-1", plate: "AA-BB-11", code: "V-1" }])
+    selectResults.push(
+      [{ vehicleId: "veh-1", fecha: "2026-08-01", horometro: 5_000, medidoPor: "km" }],
+      [{ vehicleId: "veh-1", maintenanceDate: "2026-07-01", odometerReading: 12_000, hourMeterReading: null }],
+      [{ vehicleId: "veh-1", ruleCode: "kilometraje_regresivo", cutoffFecha: "2026-07-15" }],
+    )
+
+    const alerts = await getUsageMaintenanceAlerts(session)
+
+    expect(alerts).toHaveLength(0)
   })
 })
 

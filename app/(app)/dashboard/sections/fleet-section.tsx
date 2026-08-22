@@ -85,6 +85,10 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
     .sort((left, right) => right.value - left.value)
     .slice(0, 8) : []
 
+  // Los posibles resets de medidor no son "uso vencido" — son una lectura que
+  // necesita verificación. Se excluyen de este KPI (siguen visibles en /mantenciones).
+  const overdueUsageAlerts = usageAlerts.filter((a) => !a.possibleMeterReset)
+
   return (
     <DomainSection
       domain={DASHBOARD_DOMAINS.flota}
@@ -104,9 +108,9 @@ export async function FleetSection({ session, scope }: DomainSectionsProps) {
           {canViewFleet && <KpiCard icon={<Certificate size={16} />} label="Documentos por vencer" value={String(docs.within30)}
             detail={docs.expired > 0 ? `${docs.expired} ya vencido(s) · próximos 30 días` : "Próximos 30 días"}
             tone={docs.within30 + docs.expired > 0 ? "signal" : "neutral"} href="/flota" />}
-          {canViewMaintenance && <KpiCard icon={<Wrench size={16} />} label="Mantención vencida por uso" value={String(usageAlerts.length)}
-            detail={usageAlerts.length > 0 ? `${usageAlerts[0]!.plate} lleva ${Math.round(usageAlerts[0]!.usageSinceLastMaintenance)} ${usageAlerts[0]!.medidoPor} · ahora` : "Ninguna pasada de intervalo"}
-            tone={usageAlerts.length > 0 ? "signal" : "neutral"} href="/mantenciones" />}
+          {canViewMaintenance && <KpiCard icon={<Wrench size={16} />} label="Mantención vencida por uso" value={String(overdueUsageAlerts.length)}
+            detail={overdueUsageAlerts.length > 0 ? `${overdueUsageAlerts[0]!.plate} lleva ${Math.round(overdueUsageAlerts[0]!.usageSinceLastMaintenance)} ${overdueUsageAlerts[0]!.medidoPor} · ahora` : "Ninguna pasada de intervalo"}
+            tone={overdueUsageAlerts.length > 0 ? "signal" : "neutral"} href="/mantenciones" />}
         </>
       }
       summary={<SummaryBar stats={[

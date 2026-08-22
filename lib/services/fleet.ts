@@ -1,9 +1,10 @@
 import type { Session } from "next-auth"
 import { promises as fs } from "node:fs"
-import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm"
+import { and, asc, desc, eq, isNotNull, isNull, or, sql } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import {
   fleetVehicleDocuments,
+  fuelAnomalyCases,
   fuelLoads,
   fuelOperationRecords,
   fuelVehicleOperationalIntervals,
@@ -16,6 +17,7 @@ import { isGlobalRole, visibleWorksiteIds, worksiteScopeSql } from "@/lib/auth/s
 import { resolveFleetDocumentFile } from "@/lib/storage/config"
 import { can } from "@/lib/auth/can"
 import { accountableFuelLoadsWhere } from "@/lib/combustibles/load-status"
+import { fuelOperationOccurredAtSql } from "@/lib/combustibles/fuel-log"
 import { fleetDocumentMetadataSchema, resolveExpiryCandidates } from "@/lib/validation/fleet-documents"
 import { isCivilDate } from "@/lib/validation/dates"
 
@@ -103,7 +105,41 @@ export async function getFleetOverview(session: Session, worksiteId?: string) {
   sinceDate.setFullYear(sinceDate.getFullYear() - 1)
   const since = sinceDate.toISOString()
 
-  const [vehicles, fuelRows, maintenanceRows, documentExpiryRows] = await Promise.all([
+  // Predicado común a las tres consultas de `fuelLoads` de abajo (agregado +
+  // primera/última lectura): antes vivía inline y duplicado.
+  const fuelLoadWhere = and(
+    accountableFuelLoadsWhere(),
+    sql`${fuelLoads.loadDate} >= ${since.slice(0, 10)}`,
+    worksiteScopeSql(session, fuelLoads.worksiteId, worksiteId),
+  )
+  // Sólo un campo de lectura está poblado por vehículo en la práctica (según
+  // `performanceUnit`, el consumidor sólo lee uno de los dos más abajo), así
+  // que basta una fila "primera"/"última" por vehículo con cualquiera de los
+  // dos no nulo — no hace falta resolverlos por separado.
+  const hasReading = or(isNotNull(fuelLoads.odometerReading), isNotNull(fuelLoads.hourMeterReading))
+
+  // Una carga con un reset de medidor ACEPTADO (caso kilometraje_regresivo/
+  // horometro_regresivo resuelto o descartado) no es parte de la misma serie
+  // que las cargas posteriores al reset: sin este filtro, la "primera lectura"
+  // seguía siendo la del medidor viejo y el recorrido calculado se inflaba
+  // (o salía negativo) para siempre, incluso después de validar el reset
+  // (CO-023, ítem 7). Sólo aplica a la PRIMERA lectura — la última siempre es
+  // la más reciente exista o no un reset de por medio.
+  // `reset_fl` es un alias de texto plano (no `alias()` de drizzle): interpolar
+  // una tabla con alias de drizzle dentro de un fragmento `sql` no emite el
+  // `AS` que la define, sólo la referencia — Postgres la ve como una tabla que
+  // no existe. Con SQL de texto para el alias, sin ambigüedad de nombres.
+  const noLaterAcceptedReset = sql`NOT EXISTS (
+    SELECT 1 FROM fuel_loads reset_fl
+    INNER JOIN ${fuelAnomalyCases} ON ${fuelAnomalyCases.referenceEntityId} = reset_fl.id
+    WHERE reset_fl.vehicle_id = ${fuelLoads.vehicleId}
+      AND reset_fl.load_date > ${fuelLoads.loadDate}
+      AND ${fuelAnomalyCases.referenceEntityType} = 'fuel_load'
+      AND ${fuelAnomalyCases.ruleCode} IN ('kilometraje_regresivo', 'horometro_regresivo')
+      AND ${fuelAnomalyCases.status} IN ('resolved', 'dismissed')
+  )`
+
+  const [vehicles, fuelRows, firstReadingRows, lastReadingRows, maintenanceRows, documentExpiryRows] = await Promise.all([
     db.query.fuelVehicles.findMany({
       where: vehicleScope,
       with: { worksite: true, responsibleUser: true, equipmentType: true, usualFuelSupplier: true },
@@ -115,18 +151,30 @@ export async function getFleetOverview(session: Session, worksiteId?: string) {
         totalFuelAmount: canViewCosts ? sql<number>`COALESCE(SUM(${fuelLoads.totalAmount}), 0)` : sql<null>`null`,
         totalLiters: sql<number>`COALESCE(SUM(${fuelLoads.liters}), 0)`,
         loadCount: sql<number>`COUNT(*)`,
-        lastOdometerReading: sql<number>`MAX(${fuelLoads.odometerReading}) FILTER (WHERE ${fuelLoads.odometerReading} IS NOT NULL)`,
-        firstOdometerReading: sql<number>`MIN(${fuelLoads.odometerReading}) FILTER (WHERE ${fuelLoads.odometerReading} IS NOT NULL)`,
-        lastHourMeterReading: sql<number>`MAX(${fuelLoads.hourMeterReading}) FILTER (WHERE ${fuelLoads.hourMeterReading} IS NOT NULL)`,
-        firstHourMeterReading: sql<number>`MIN(${fuelLoads.hourMeterReading}) FILTER (WHERE ${fuelLoads.hourMeterReading} IS NOT NULL)`,
       })
       .from(fuelLoads)
-      .where(and(
-        accountableFuelLoadsWhere(),
-        sql`${fuelLoads.loadDate} >= ${since.slice(0, 10)}`,
-        worksiteScopeSql(session, fuelLoads.worksiteId, worksiteId),
-      ))
+      .where(fuelLoadWhere)
       .groupBy(fuelLoads.vehicleId) : Promise.resolve([]),
+    // Primera y última lectura CRONOLÓGICA del período (no el máximo/mínimo
+    // histórico): un medidor reemplazado dejaba el máximo antiguo pegado para
+    // siempre, y un reset bajaba el mínimo a un valor que infla el recorrido
+    // calculado (CO-023).
+    canViewFuel ? db.selectDistinctOn([fuelLoads.vehicleId], {
+        vehicleId: fuelLoads.vehicleId,
+        odometerReading: fuelLoads.odometerReading,
+        hourMeterReading: fuelLoads.hourMeterReading,
+      })
+      .from(fuelLoads)
+      .where(and(fuelLoadWhere, hasReading, noLaterAcceptedReset))
+      .orderBy(fuelLoads.vehicleId, asc(fuelLoads.loadDate), asc(fuelLoads.createdAt)) : Promise.resolve([]),
+    canViewFuel ? db.selectDistinctOn([fuelLoads.vehicleId], {
+        vehicleId: fuelLoads.vehicleId,
+        odometerReading: fuelLoads.odometerReading,
+        hourMeterReading: fuelLoads.hourMeterReading,
+      })
+      .from(fuelLoads)
+      .where(and(fuelLoadWhere, hasReading))
+      .orderBy(fuelLoads.vehicleId, desc(fuelLoads.loadDate), desc(fuelLoads.createdAt)) : Promise.resolve([]),
     canViewMaintenance ? db
       .select({
         vehicleId: maintenanceRecords.vehicleId,
@@ -162,6 +210,8 @@ export async function getFleetOverview(session: Session, worksiteId?: string) {
   ])
 
   const fuelByVehicle = new Map(fuelRows.map((row) => [row.vehicleId, row]))
+  const firstReadingByVehicle = new Map(firstReadingRows.map((row) => [row.vehicleId, row]))
+  const lastReadingByVehicle = new Map(lastReadingRows.map((row) => [row.vehicleId, row]))
   const maintenanceByVehicle = new Map(maintenanceRows.map((row) => [row.vehicleId, row]))
   const currentDocumentsByVehicle = new Map<string, Array<{ documentType: string; expiresAt: string | null }>>()
   for (const row of documentExpiryRows) {
@@ -179,10 +229,12 @@ export async function getFleetOverview(session: Session, worksiteId?: string) {
     const totalOperationalCost = totalFuelAmount != null && totalMaintenanceAmount != null
       ? totalFuelAmount + totalMaintenanceAmount
       : null
-    const firstOdometer = fuel?.firstOdometerReading == null ? null : Number(fuel.firstOdometerReading)
-    const lastOdometer = fuel?.lastOdometerReading == null ? null : Number(fuel.lastOdometerReading)
-    const firstHourMeter = fuel?.firstHourMeterReading == null ? null : Number(fuel.firstHourMeterReading)
-    const lastHourMeter = fuel?.lastHourMeterReading == null ? null : Number(fuel.lastHourMeterReading)
+    const firstReading = firstReadingByVehicle.get(vehicle.id)
+    const lastReading = lastReadingByVehicle.get(vehicle.id)
+    const firstOdometer = firstReading?.odometerReading == null ? null : Number(firstReading.odometerReading)
+    const lastOdometer = lastReading?.odometerReading == null ? null : Number(lastReading.odometerReading)
+    const firstHourMeter = firstReading?.hourMeterReading == null ? null : Number(firstReading.hourMeterReading)
+    const lastHourMeter = lastReading?.hourMeterReading == null ? null : Number(lastReading.hourMeterReading)
     // Costo operacional (combustible + mantención) por unidad de uso, sólo con la unidad
     // canónica del equipo (sección 2) y al menos dos lecturas distintas en el período —
     // con una sola carga no hay recorrido/uso que dividir.
@@ -267,6 +319,8 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
     }) : Promise.resolve([]),
     // Log operacional de combustible: fecha real por carga (a diferencia de
     // fuelLoads, que solo trae odómetro/horómetro cuando se digitó a mano).
+    // Orden por instante real (fecha+hora), no sólo `fecha`: dos cargas del
+    // mismo día devolvían un ganador arbitrario como "última lectura" (CO-023).
     canViewFuel ? db.query.fuelOperationRecords.findMany({
       where: eq(fuelOperationRecords.vehicleId, id),
       columns: {
@@ -276,7 +330,7 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
         medidoPor: true,
         operador: true,
       },
-      orderBy: [desc(fuelOperationRecords.fecha)],
+      orderBy: [desc(fuelOperationOccurredAtSql()), desc(fuelOperationRecords.createdAt)],
       limit: 20,
     }) : Promise.resolve([]),
     canViewFuel ? db

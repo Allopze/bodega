@@ -645,6 +645,84 @@ describe("variacion_brusca_consumo (batch — sharp consumption change)", () => 
   })
 })
 
+describe("kilometraje_regresivo / horometro_regresivo (batch — más allá de TAE)", () => {
+  // `detectTaeAnomaliesInTx` (fuel-tae.ts) sólo compara cargas TAE contra
+  // otras cargas TAE; estos detectores batch cubren el log operacional
+  // (fuel_operation_records) y las cargas manuales (fuel_loads) — CO-023.
+  const wsId = nanoid()
+  const eqTypeId = nanoid()
+  const vehOpId = nanoid()
+  const vehLoadId = nanoid()
+  const supplierId = nanoid()
+  const productId = nanoid()
+  const testUserId = nanoid()
+  const opBatchId = nanoid()
+
+  beforeAll(async () => {
+    await inMemoryDb.insert(schema.worksites).values({
+      id: wsId, name: "Faena regresiva", code: `FR-${nanoid().slice(0, 6)}`, isActive: true,
+    })
+    await inMemoryDb.insert(schema.users).values({
+      id: testUserId, name: "Test regresiva", email: `fr-${nanoid()}@example.com`, hashedPassword: "x", isActive: true,
+    })
+    await inMemoryDb.insert(schema.fuelEquipmentTypes).values({
+      id: eqTypeId, slug: `reg-camion-${nanoid().slice(0, 6)}`, name: "Camión regresiva",
+    })
+    await inMemoryDb.insert(schema.fuelVehicles).values([
+      { id: vehOpId, plate: `ROP${nanoid().slice(0, 4).toUpperCase()}`, type: "camion", equipmentTypeId: eqTypeId, worksiteId: wsId, isActive: true },
+      { id: vehLoadId, plate: `RLD${nanoid().slice(0, 4).toUpperCase()}`, type: "camion", equipmentTypeId: eqTypeId, worksiteId: wsId, isActive: true },
+    ])
+    await inMemoryDb.insert(schema.fuelSuppliers).values({ id: supplierId, name: "Proveedor regresiva" })
+    await inMemoryDb.insert(schema.fuelProducts).values({
+      id: productId, code: `DIESEL-REG-${nanoid().slice(0, 6)}`, name: "Diésel regresiva", category: "diesel", unit: "liter",
+    })
+    await inMemoryDb.insert(schema.fuelOperationBatches).values({
+      id: opBatchId, archivoNombre: "regresiva.xlsx", hashArchivo: nanoid(),
+      periodoDesde: "2026-06-01", periodoHasta: "2026-06-30", importadoPor: testUserId,
+    })
+  })
+
+  it("crea un caso kilometraje_regresivo cuando el log operacional baja de una carga a la siguiente", async () => {
+    await inMemoryDb.insert(schema.fuelOperationRecords).values([
+      {
+        id: nanoid(), batchId: opBatchId, worksiteId: wsId, vehicleId: vehOpId, plate: "ROP",
+        fecha: "2026-06-01", horaCarga: "08:00", horometro: 10_000, medidoPor: "km", liters: 50,
+      },
+      {
+        id: nanoid(), batchId: opBatchId, worksiteId: wsId, vehicleId: vehOpId, plate: "ROP",
+        fecha: "2026-06-05", horaCarga: "08:00", horometro: 4_000, medidoPor: "km", liters: 50,
+      },
+    ])
+
+    await runAllBatchRules()
+
+    const { cases } = await getAnomalyCases({ ruleCode: "kilometraje_regresivo" }, TEST_SESSION)
+    expect(cases.some((c) => c.referenceEntityType === "fuel_operation_record" && c.vehicleId === vehOpId)).toBe(true)
+  })
+
+  it("crea un caso horometro_regresivo cuando una carga manual baja respecto a la anterior", async () => {
+    await inMemoryDb.insert(schema.fuelLoads).values([
+      {
+        id: nanoid(), loadDate: "2026-06-01", month: "2026-06", serviceType: "TCT", vehicleId: vehLoadId,
+        fuelSupplierId: supplierId, worksiteId: wsId, product: "PETROLEO DIESEL", productId,
+        liters: 50, baseAmount: 50_000, totalAmount: 50_000, status: "registered", createdBy: testUserId,
+        hourMeterReading: 500,
+      },
+      {
+        id: nanoid(), loadDate: "2026-06-10", month: "2026-06", serviceType: "TCT", vehicleId: vehLoadId,
+        fuelSupplierId: supplierId, worksiteId: wsId, product: "PETROLEO DIESEL", productId,
+        liters: 50, baseAmount: 50_000, totalAmount: 50_000, status: "registered", createdBy: testUserId,
+        hourMeterReading: 200,
+      },
+    ])
+
+    await runAllBatchRules()
+
+    const { cases } = await getAnomalyCases({ ruleCode: "horometro_regresivo" }, TEST_SESSION)
+    expect(cases.some((c) => c.referenceEntityType === "fuel_load" && c.vehicleId === vehLoadId)).toBe(true)
+  })
+})
+
 describe("evidencia_duplicada (batch — duplicate evidence by SHA-256)", () => {
   const wsId = nanoid()
   const eqTypeId = nanoid()

@@ -17,6 +17,8 @@ import { nanoid } from "@/lib/id"
 import { todayInChile } from "@/lib/utils"
 import { createAnomalyCase, type AnomalySeverity } from "./anomaly-cases"
 import { detectCorruptEvidence, getReusedEvidence } from "./evidence-management"
+import { fuelOperationOccurredAtSql } from "./fuel-log"
+import { accountableFuelLoadsWhere } from "./load-status"
 import { DEFAULT_OUTLIER_THRESHOLD_STDDEVS, MIN_CONCLUSIVE_SAMPLE, flagOutliers } from "./performance-statistics"
 
 /** Techo defensivo para los escaneos sin ventana de fecha (sección 18). No hay volumen de
@@ -522,6 +524,114 @@ const detectCorruptEvidenceRule: DetectorFn = async (rule) => {
   return { created, skipped, scanned }
 }
 
+/**
+ * Par consecutivo (misma serie, ya ordenada cronológicamente) donde la lectura
+ * baja respecto a la anterior. Agrupa por vehículo preservando el orden de
+ * llegada — asume que `rows` ya viene ordenado por vehículo y luego por
+ * instante real (a cargo de cada consulta que lo use).
+ */
+function flagRegressivePairs<T extends { vehicleId: string | null }>(
+  rows: T[],
+  getValue: (row: T) => number | null,
+): Array<{ prev: T; curr: T }> {
+  const byVehicle = new Map<string, T[]>()
+  for (const row of rows) {
+    if (!row.vehicleId || getValue(row) == null) continue
+    byVehicle.set(row.vehicleId, [...(byVehicle.get(row.vehicleId) ?? []), row])
+  }
+  const pairs: Array<{ prev: T; curr: T }> = []
+  for (const [, group] of byVehicle) {
+    for (let i = 1; i < group.length; i++) {
+      const prev = group[i - 1]!, curr = group[i]!
+      if (getValue(curr)! < getValue(prev)!) pairs.push({ prev, curr })
+    }
+  }
+  return pairs
+}
+
+/**
+ * Detectar lectura regresiva de odómetro/horómetro más allá de TAE.
+ *
+ * `detectTaeAnomaliesInTx` (fuel-tae.ts) ya detecta esto, pero sólo se dispara
+ * al validar/observar una carga TAE puntual y sólo compara contra otras cargas
+ * TAE — una carga manual (`fuel_loads`) o el log operacional
+ * (`fuel_operation_records`) con un medidor reemplazado/reseteado no generaba
+ * ningún caso (CO-023). Reutiliza el mismo `ruleCode` que TAE
+ * (`kilometraje_regresivo`/`horometro_regresivo`): `referenceEntityType` ya
+ * distingue la fuente, así que un caso resuelto/descartado como "reset
+ * aceptado" queda visible desde el mismo lugar sin importar de dónde vino.
+ *
+ * `kilometraje_regresivo` y `horometro_regresivo` son dos reglas (dos filas en
+ * `fuel_anomaly_rules`, cada una con su propio `id`/severidad); de ahí el
+ * factory — cada detector registrado debe atribuir sus casos al `rule.id` que
+ * lo invocó, no mezclar ambos bajo uno solo.
+ */
+function makeRegressiveMeterDetector(meterType: "km" | "hora"): DetectorFn {
+  const ruleCode = meterType === "hora" ? "horometro_regresivo" : "kilometraje_regresivo"
+  const meterLabel = meterType === "hora" ? "de horómetro" : "de odómetro"
+  return async (rule) => {
+    const rowLimit = batchRowLimitOf(rule, BATCH_SCAN_ROW_LIMIT)
+    let created = 0, skipped = 0, scanned = 0
+
+    // Log operacional: horometro + medidoPor (km|hora) en una sola columna.
+    const opRows = await db.select({
+      id: fuelOperationRecords.id, vehicleId: fuelOperationRecords.vehicleId,
+      worksiteId: fuelOperationRecords.worksiteId, horometro: fuelOperationRecords.horometro,
+      plate: fuelVehicles.plate,
+    })
+      .from(fuelOperationRecords)
+      .innerJoin(fuelVehicles, eq(fuelOperationRecords.vehicleId, fuelVehicles.id))
+      .where(and(
+        eq(fuelOperationRecords.medidoPor, meterType),
+        isNotNull(fuelOperationRecords.horometro),
+      ))
+      .orderBy(fuelOperationRecords.vehicleId, fuelOperationOccurredAtSql(), fuelOperationRecords.createdAt)
+      .limit(rowLimit)
+
+    for (const { prev, curr } of flagRegressivePairs(opRows, (r) => Number(r.horometro))) {
+      scanned++
+      try {
+        await createAnomalyCase({
+          ruleId: rule.id, ruleCode, severity: severityOf(rule, "high"),
+          worksiteId: curr.worksiteId ?? undefined, vehicleId: curr.vehicleId ?? undefined,
+          referenceEntityType: "fuel_operation_record", referenceEntityId: curr.id,
+          description: `Lectura ${meterLabel} (${curr.horometro}) del log operacional de ${curr.plate} es menor que la carga anterior (${prev.horometro}).`,
+          observedValue: String(curr.horometro), expectedValue: `> ${prev.horometro}`,
+        })
+        created++
+      } catch { skipped++ }
+    }
+
+    // Cargas manuales: odómetro y horómetro son columnas separadas.
+    const readingColumn = meterType === "hora" ? fuelLoads.hourMeterReading : fuelLoads.odometerReading
+    const loadRows = await db.select({
+      id: fuelLoads.id, vehicleId: fuelLoads.vehicleId, worksiteId: fuelLoads.worksiteId,
+      reading: readingColumn, plate: fuelVehicles.plate,
+    })
+      .from(fuelLoads)
+      .innerJoin(fuelVehicles, eq(fuelLoads.vehicleId, fuelVehicles.id))
+      .where(and(isNotNull(readingColumn), accountableFuelLoadsWhere()))
+      .orderBy(fuelLoads.vehicleId, fuelLoads.loadDate, fuelLoads.createdAt)
+      .limit(rowLimit)
+
+    for (const { prev, curr } of flagRegressivePairs(loadRows, (r) => Number(r.reading))) {
+      scanned++
+      try {
+        await createAnomalyCase({
+          ruleId: rule.id, ruleCode, severity: severityOf(rule, "high"),
+          worksiteId: curr.worksiteId ?? undefined, vehicleId: curr.vehicleId ?? undefined,
+          referenceEntityType: "fuel_load", referenceEntityId: curr.id,
+          description: `Lectura ${meterLabel} (${curr.reading}) de la carga de ${curr.plate} es menor que la carga anterior (${prev.reading}).`,
+          observedValue: String(curr.reading), expectedValue: `> ${prev.reading}`,
+        })
+        created++
+      } catch { skipped++ }
+    }
+
+    return { created, skipped, scanned }
+  }
+}
+
 const BATCH_DETECTORS: Record<string, DetectorFn> = {
   litros_supera_capacidad: detectLitersExceedCapacity,
   variacion_brusca_consumo: detectSharpConsumptionChange,
@@ -531,6 +641,8 @@ const BATCH_DETECTORS: Record<string, DetectorFn> = {
   proveedor_no_habitual: detectUnusualSupplier,
   rendimiento_fuera_historico: detectPerformanceOutlierHistory,
   rendimiento_fuera_grupo: detectPerformanceOutlierGroup,
+  kilometraje_regresivo: makeRegressiveMeterDetector("km"),
+  horometro_regresivo: makeRegressiveMeterDetector("hora"),
 }
 
 import { KNOWN_RULE_CODES } from "./validation"

@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import {
   costCenters,
+  fuelAnomalyCases,
   fuelOperationRecords,
   fuelVehicles,
   maintenanceRecords,
@@ -13,6 +14,7 @@ import {
   worksites,
 } from "@/db/schema"
 import { canAccessWorksite, visibleWorksiteIds, isGlobalRole, worksiteScopeSql } from "@/lib/auth/scope"
+import { fuelOperationOccurredAtSql } from "@/lib/combustibles/fuel-log"
 import { assertCostCenterAllowed, costCenterOptionsWhere } from "@/lib/services/cost-centers"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
@@ -198,6 +200,10 @@ export interface UsageMaintenanceAlert {
   lastMaintenanceReading: number
   lastMaintenanceDate: string
   usageSinceLastMaintenance: number
+  // Lectura menor a la de la última mantención: no alcanza el umbral, alcanzó
+  // el umbral en negativo (medidor reemplazado/reseteado) — hay que avisar en
+  // vez de descartar la fila en silencio (CO-023).
+  possibleMeterReset: boolean
 }
 
 // ponytail: umbral fijo por tipo de medición (no varía por tipo de equipo);
@@ -228,7 +234,7 @@ export async function getUsageMaintenanceAlerts(session: Session, worksiteId?: s
   // memoria (sin filtro de faena ni límite) sólo para quedarse con una fila por
   // equipo. Ahora la reducción "última fila por vehículo" la resuelve Postgres
   // con DISTINCT ON, y sólo sobre los equipos activos visibles.
-  const [readings, completedMaintenances] = await Promise.all([
+  const [readings, completedMaintenances, acceptedResetCutoffs] = await Promise.all([
     db.selectDistinctOn([fuelOperationRecords.vehicleId], {
       vehicleId: fuelOperationRecords.vehicleId,
       fecha: fuelOperationRecords.fecha,
@@ -241,7 +247,9 @@ export async function getUsageMaintenanceAlerts(session: Session, worksiteId?: s
         isNotNull(fuelOperationRecords.horometro),
         isNotNull(fuelOperationRecords.medidoPor),
       ))
-      .orderBy(fuelOperationRecords.vehicleId, desc(fuelOperationRecords.fecha)),
+      // Desempate por instante real: `fecha` sola no distingue dos cargas del
+      // mismo día (CO-023, mismo helper que fleet.ts).
+      .orderBy(fuelOperationRecords.vehicleId, desc(fuelOperationOccurredAtSql()), desc(fuelOperationRecords.createdAt)),
     db.selectDistinctOn([maintenanceRecords.vehicleId], {
       vehicleId: maintenanceRecords.vehicleId,
       maintenanceDate: maintenanceRecords.maintenanceDate,
@@ -250,7 +258,27 @@ export async function getUsageMaintenanceAlerts(session: Session, worksiteId?: s
     })
       .from(maintenanceRecords)
       .where(and(eq(maintenanceRecords.status, "completed"), inArray(maintenanceRecords.vehicleId, vehicleIds)))
-      .orderBy(maintenanceRecords.vehicleId, desc(maintenanceRecords.maintenanceDate)),
+      // Desempate por createdAt: `maintenance_date` es sólo fecha (mismo
+      // criterio que el resto de esta remediación).
+      .orderBy(maintenanceRecords.vehicleId, desc(maintenanceRecords.maintenanceDate), desc(maintenanceRecords.createdAt)),
+    // Reset de medidor ya ACEPTADO (caso kilometraje_regresivo/horometro_regresivo
+    // resuelto o descartado) sobre una fila del log operacional: la fecha de esa
+    // fila es el punto donde la serie "reinicia" — comparar contra una mantención
+    // anterior a ese punto ya no es válido y no debe seguir avisando (CO-023, ítem 7).
+    db.select({
+      vehicleId: fuelOperationRecords.vehicleId,
+      ruleCode: fuelAnomalyCases.ruleCode,
+      cutoffFecha: sql<string>`MAX(${fuelOperationRecords.fecha})`,
+    })
+      .from(fuelAnomalyCases)
+      .innerJoin(fuelOperationRecords, eq(fuelAnomalyCases.referenceEntityId, fuelOperationRecords.id))
+      .where(and(
+        eq(fuelAnomalyCases.referenceEntityType, "fuel_operation_record"),
+        inArray(fuelAnomalyCases.ruleCode, ["kilometraje_regresivo", "horometro_regresivo"]),
+        inArray(fuelAnomalyCases.status, ["resolved", "dismissed"]),
+        inArray(fuelOperationRecords.vehicleId, vehicleIds),
+      ))
+      .groupBy(fuelOperationRecords.vehicleId, fuelAnomalyCases.ruleCode),
   ])
 
   const latestReadingByVehicle = new Map<string, { fecha: string; horometro: number; medidoPor: "km" | "hora" }>()
@@ -260,6 +288,7 @@ export async function getUsageMaintenanceAlerts(session: Session, worksiteId?: s
   }
 
   const lastMaintenanceByVehicle = new Map(completedMaintenances.map((m) => [m.vehicleId, m]))
+  const resetCutoffByVehicleAndRule = new Map(acceptedResetCutoffs.map((r) => [`${r.vehicleId}::${r.ruleCode}`, r.cutoffFecha]))
 
   const alerts: UsageMaintenanceAlert[] = []
   for (const vehicle of vehicles) {
@@ -271,7 +300,18 @@ export async function getUsageMaintenanceAlerts(session: Session, worksiteId?: s
     if (lastReading == null) continue
 
     const usage = reading.horometro - lastReading
-    if (usage < USAGE_ALERT_THRESHOLDS[reading.medidoPor]) continue
+    // Negativo: la lectura actual es MENOR que la de la última mantención —
+    // medidor reemplazado o reseteado, no "uso bajo". Antes desaparecía del
+    // todo junto con las filas bajo el umbral; ahora se avisa (CO-023).
+    const possibleMeterReset = usage < 0
+    if (possibleMeterReset) {
+      const ruleCode = reading.medidoPor === "hora" ? "horometro_regresivo" : "kilometraje_regresivo"
+      const resetCutoff = resetCutoffByVehicleAndRule.get(`${vehicle.id}::${ruleCode}`)
+      // El reset ya fue aceptado y ocurrió DESPUÉS de la última mantención: no
+      // hay una lectura comparable del mismo medidor para calcular uso — se
+      // omite en vez de seguir pidiendo verificación de algo ya verificado.
+      if (resetCutoff && lastMaintenance.maintenanceDate < resetCutoff) continue
+    } else if (usage < USAGE_ALERT_THRESHOLDS[reading.medidoPor]) continue
 
     alerts.push({
       vehicleId: vehicle.id,
@@ -283,10 +323,13 @@ export async function getUsageMaintenanceAlerts(session: Session, worksiteId?: s
       lastMaintenanceReading: lastReading,
       lastMaintenanceDate: lastMaintenance.maintenanceDate,
       usageSinceLastMaintenance: usage,
+      possibleMeterReset,
     })
   }
 
-  return alerts.sort((a, b) => b.usageSinceLastMaintenance - a.usageSinceLastMaintenance)
+  // Posibles resets primero: necesitan verificación humana, no compiten por
+  // "mayor uso" con el resto.
+  return alerts.sort((a, b) => Number(b.possibleMeterReset) - Number(a.possibleMeterReset) || b.usageSinceLastMaintenance - a.usageSinceLastMaintenance)
 }
 
 /**

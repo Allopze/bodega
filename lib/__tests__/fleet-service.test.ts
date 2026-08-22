@@ -43,6 +43,11 @@ vi.mock("@/db", () => ({
       const idx = selectCallCount++
       return createChain(selectResults[idx]?.data ?? [])
     },
+    selectDistinctOn: (_columns: unknown, projection: unknown) => {
+      selectProjections.push(projection)
+      const idx = selectCallCount++
+      return createChain(selectResults[idx]?.data ?? [])
+    },
   },
 }))
 
@@ -106,8 +111,11 @@ describe("getFleetOverview", () => {
       },
     ])
     selectResults.push(
-      { data: [{ vehicleId: "veh-1", totalFuelAmount: 100_000, totalLiters: 80, loadCount: 2, lastOdometerReading: 12_500, lastHourMeterReading: null }] },
+      { data: [{ vehicleId: "veh-1", totalFuelAmount: 100_000, totalLiters: 80, loadCount: 2 }] },
+      { data: [{ vehicleId: "veh-1", odometerReading: 10_000, hourMeterReading: null }] },
+      { data: [{ vehicleId: "veh-1", odometerReading: 12_500, hourMeterReading: null }] },
       { data: [{ vehicleId: "veh-1", totalMaintenanceAmount: 250_000, maintenanceCount: 1, lastMaintenanceDate: "2026-06-01" }] },
+      { data: [] },
     )
 
     const overview = await getFleetOverview(globalSession)
@@ -139,14 +147,18 @@ describe("getFleetOverview", () => {
     findManyVehicles.mockResolvedValue([{ id: "veh-1", plate: "AA-BB-11", type: "camioneta", isActive: true, operationalStatus: "operativo", worksite: { name: "Faena" }, equipmentType: null, responsibleUser: null }])
     selectResults.push(
       { data: [{ vehicleId: "veh-1", totalFuelAmount: null, totalLiters: 80, loadCount: 2 }] },
+      { data: [] },
+      { data: [] },
       { data: [{ vehicleId: "veh-1", totalMaintenanceAmount: null, maintenanceCount: 1 }] },
+      { data: [] },
     )
 
     const [vehicle] = await getFleetOverview(noCostsSession)
 
     expect(vehicle).toMatchObject({ totalFuelAmount: null, totalMaintenanceAmount: null, totalOperationalCost: null, costPerKm: null, costPerHour: null })
+    // Orden real: fuelRows(0), firstReadingRows(1), lastReadingRows(2), maintenanceRows(3), documentExpiryRows(4).
     expect(sqlChunks((selectProjections[0] as { totalFuelAmount: unknown }).totalFuelAmount).join(" ").toLowerCase()).not.toContain("total_amount")
-    expect(sqlChunks((selectProjections[1] as { totalMaintenanceAmount: unknown }).totalMaintenanceAmount).join(" ").toLowerCase()).not.toContain("total_amount")
+    expect(sqlChunks((selectProjections[3] as { totalMaintenanceAmount: unknown }).totalMaintenanceAmount).join(" ").toLowerCase()).not.toContain("total_amount")
   })
 
   it("no consulta datasets de combustible ni mantención con flota:view solamente", async () => {
@@ -166,16 +178,17 @@ describe("getFleetOverview", () => {
   // consultas, no sólo el alcance del rol.
   it("acota las tres consultas a la faena elegida en el tablero", async () => {
     findManyVehicles.mockResolvedValue([])
-    selectResults.push({ data: [] }, { data: [] })
+    selectResults.push({ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] })
 
     await getFleetOverview(scopedSession, "ws-1")
 
     // La sesión ve ws-1 y ws-2; al elegir ws-1 en el tablero, ws-2 no puede
-    // seguir apareciendo en ninguna de las tres consultas.
+    // seguir apareciendo en ninguna de las tres consultas. Orden real:
+    // fuelRows(0), firstReadingRows(1), lastReadingRows(2), maintenanceRows(3).
     for (const where of [
       findManyVehicles.mock.calls[0]![0].where,
       selectChains[0]!.where!.mock.calls[0]![0],
-      selectChains[1]!.where!.mock.calls[0]![0],
+      selectChains[3]!.where!.mock.calls[0]![0],
     ]) {
       expect(sqlChunks(where)).toContain("ws-1")
       expect(sqlChunks(where)).not.toContain("ws-2")
