@@ -302,6 +302,30 @@ test.describe("Inspecciones — ejecución en terreno", () => {
   })
 })
 
+test.describe("Inspecciones — traspaso físico por jefe de faena", () => {
+  test("el jefe de faena sube el papel, digita y ejecuta, pero no revisa", async ({ page }) => {
+    await login(page, "jefe.faena@e2e.chome.cl", "chome2026")
+    await nuevaInspeccion(page)
+
+    await expect(page.getByRole("heading", { name: "Subir la planilla física" })).toBeVisible()
+    await page.locator('input[type="file"][accept*="image/jpeg"]').setInputFiles({
+      name: "reporte-fisico-jefe-faena.png",
+      mimeType: "image/png",
+      buffer: MINIMAL_PNG,
+    })
+    await expect(page.getByRole("heading", { name: "Planilla original" })).toBeVisible({ timeout: 60_000 })
+
+    await responderTodo(page, "Sello")
+    await firmarActa(page, "Con observaciones")
+    await declararEjecutada(page)
+    await page.reload()
+
+    await expect(page.getByText("Ejecutada").first()).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("heading", { name: "Hallazgos (1)" })).toBeVisible()
+    await expect(page.getByRole("button", { name: /revisar/i })).toHaveCount(0)
+  })
+})
+
 /**
  * Función #8: `locationLatitude/Longitude` se aceptaban en el servicio desde el
  * principio y ninguna pantalla los enviaba nunca.

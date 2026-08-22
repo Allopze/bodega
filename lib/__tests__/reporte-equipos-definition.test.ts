@@ -52,6 +52,12 @@ function answerFor(item: InspectionItemSpec, result: "conforming" | "non_conform
 }
 
 describe("Reporte de Equipos", () => {
+  it("declara que el jefe de faena traspasa el papel sin crear una sesión de mecánico", () => {
+    expect(REPORTE_EQUIPOS.applicableTo).toMatch(/registro físico del operador y del mecánico/i)
+    expect(REPORTE_EQUIPOS.applicableTo).toMatch(/exclusivamente por el jefe de faena/i)
+    expect(REPORTE_EQUIPOS.applicableTo).not.toMatch(/sesión|usuario mecánico|rol mecánico/i)
+  })
+
   it("está registrado en el catálogo importable", () => {
     expect(CHECKLIST_DEFINITIONS["reporte_equipos"]).toBe(REPORTE_EQUIPOS)
   })

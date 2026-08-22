@@ -99,6 +99,36 @@ async function main() {
     worksiteId: "ws-e2e",
     isPrimary: true,
   })
+  // Jefe de faena: reproduce el rol real que traspasa el reporte físico.
+  // No recibe revisión, administración de plantillas ni gestión de flota.
+  await db.insert(schema.roles).values({
+    id: "rol-jefe-terreno-e2e",
+    name: "jefe_terreno",
+    label: "Jefe de faena",
+    description: "Ejecuta e ingresa reportes físicos de su faena — E2E",
+    isGlobal: false,
+  })
+  await db.insert(schema.rolePermissions).values([
+    { roleId: "rol-jefe-terreno-e2e", permissionId: "p-prev-insp-view" },
+    { roleId: "rol-jefe-terreno-e2e", permissionId: "p-prev-insp-execute" },
+    { roleId: "rol-jefe-terreno-e2e", permissionId: "p-prev-insp-ingest" },
+  ])
+  await db.insert(schema.users).values({
+    id: "user-jefe-terreno-e2e",
+    name: "Jefe Faena E2E",
+    email: "jefe.faena@e2e.chome.cl",
+    hashedPassword: password,
+    avatarColor: "35",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.userRoles).values({ userId: "user-jefe-terreno-e2e", roleId: "rol-jefe-terreno-e2e" })
+  await db.insert(schema.worksiteUsers).values({
+    userId: "user-jefe-terreno-e2e",
+    worksiteId: "ws-e2e",
+    isPrimary: true,
+  })
   await db.insert(schema.users).values({
     id: "user-ops-e2e",
     name: "Comprador E2E",
@@ -899,6 +929,43 @@ async function main() {
     unitPrice: 1000,
     discount: 0,
     subtotal: 10000,
+    status: "issued",
+    sortOrder: 1,
+    notes: null,
+  })
+
+  // Borrador estable dedicado a la guarda del receptor. No lo reutiliza el
+  // flujo OC, que avanza sus fixtures y volvía dependiente del orden al spec de
+  // roles restringidos.
+  await db.insert(schema.purchaseOrders).values({
+    id: "oc-restricted-draft-e2e",
+    code: "OC-2026-0089",
+    worksiteId: "ws-e2e",
+    supplierId: "sup-e2e",
+    createdBy: "user-admin-e2e",
+    status: "draft",
+    deliveryMode: "directo_faena",
+    estimatedDelivery: "2026-07-20",
+    deliveryAddress: "Ruta E2E",
+    paymentTerms: "30 días",
+    netAmount: 1000,
+    taxAmount: 190,
+    totalAmount: 1190,
+    notes: "Fixture estable para guarda de borradores por rol",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrderItems).values({
+    id: "oc-item-restricted-draft-e2e",
+    purchaseOrderId: "oc-restricted-draft-e2e",
+    requestItemId: null,
+    productId: "prod-e2e",
+    productNameFree: null,
+    quantity: 1,
+    unitOfMeasure: "unidad",
+    unitPrice: 1000,
+    discount: 0,
+    subtotal: 1000,
     status: "issued",
     sortOrder: 1,
     notes: null,
