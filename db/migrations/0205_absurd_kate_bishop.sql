@@ -1,0 +1,4 @@
+ALTER TABLE "maintenance_records" DROP CONSTRAINT "maintenance_records_dates_valid";--> statement-breakpoint
+ALTER TABLE "maintenance_document_policies" ADD CONSTRAINT "maintenance_document_policies_type_valid" CHECK ("maintenance_document_policies"."document_type" IN ('quote', 'diagnosis', 'work_order', 'invoice', 'evidence', 'other'));--> statement-breakpoint
+ALTER TABLE "maintenance_documents" ADD CONSTRAINT "maintenance_documents_type_valid" CHECK ("maintenance_documents"."document_type" IN ('quote', 'diagnosis', 'work_order', 'invoice', 'evidence', 'other'));--> statement-breakpoint
+ALTER TABLE "maintenance_records" ADD CONSTRAINT "maintenance_records_dates_valid" CHECK ("maintenance_records"."downtime_ended_at" IS NULL OR ("maintenance_records"."downtime_started_at" IS NOT NULL AND "maintenance_records"."downtime_ended_at" >= "maintenance_records"."downtime_started_at"));

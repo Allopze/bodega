@@ -68,6 +68,8 @@ export type NotificationType =
   | "fuel_loads_unassigned"
   | "sst_document_expiring"
   | "sst_document_expired"
+  | "maintenance_due_soon"
+  | "maintenance_overdue"
 
 export const notifications = pgTable("notifications", {
   id:           text("id").primaryKey(),
