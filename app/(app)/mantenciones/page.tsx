@@ -5,13 +5,17 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { ServerPagination } from "@/components/ui/server-pagination"
 import { can, requirePermission } from "@/lib/auth/can"
-import { MAINTENANCE_HISTORY_LIMIT, getMaintenancePageData, getUpcomingMaintenance, getUsageMaintenanceAlerts } from "@/lib/services/maintenance"
+import { isGlobalRole } from "@/lib/auth/scope"
+import { MAINTENANCE_PAGE_SIZE, getMaintenancePageData, getUpcomingMaintenance, getUsageMaintenanceAlerts, listMaintenanceAssignees } from "@/lib/services/maintenance"
+import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { MaintenanceCreateButton } from "./maintenance-create-button"
 import { MaintenanceTable } from "./maintenance-table"
 import { MaintenanceFilters } from "./maintenance-filters"
 import { formatDate } from "@/lib/utils"
 import { MAINTENANCE_STATUS_LABELS } from "@/lib/validation/maintenance"
+import { MaintenanceExportButton } from "./maintenance-export-button"
 
 export const metadata: Metadata = { title: "Mantenciones" }
 
@@ -50,15 +54,37 @@ export default async function MantencionesPage({
   const vehicleId = typeof sp.vehicle === "string" ? sp.vehicle : undefined
   const worksiteId = typeof sp.faena === "string" ? sp.faena : undefined
   const status = typeof sp.status === "string" ? sp.status : undefined
-  const [data, upcomingData, usageAlerts] = await Promise.all([
-    getMaintenancePageData(session, { vehicleId, worksiteId, status }),
+  const q = typeof sp.q === "string" ? sp.q.slice(0, 160) : undefined
+  const requestedPage = typeof sp.page === "string" && /^\d+$/.test(sp.page) ? Math.max(1, Number(sp.page)) : 1
+  const [initialData, upcomingData, usageAlerts, assigneeOptions] = await Promise.all([
+    getMaintenancePageData(session, {
+      vehicleId,
+      worksiteId,
+      status,
+      q,
+      limit: MAINTENANCE_PAGE_SIZE,
+      offset: (requestedPage - 1) * MAINTENANCE_PAGE_SIZE,
+    }),
     getUpcomingMaintenance(session),
     getUsageMaintenanceAlerts(session),
+    listMaintenanceAssignees(session),
   ])
+  const pagination = resolvePagination({ pageParam: sp.page, totalItems: initialData.total, pageSize: MAINTENANCE_PAGE_SIZE })
+  const data = pagination.offset === initialData.offset
+    ? initialData
+    : await getMaintenancePageData(session, {
+        vehicleId,
+        worksiteId,
+        status,
+        q,
+        limit: pagination.limit,
+        offset: pagination.offset,
+      })
   const canCreate = can(session, "mantenciones:create")
   const canEdit = can(session, "mantenciones:edit")
   const canViewCosts = can(session, "combustibles:view_costs")
-  const hasActiveFilters = Boolean(vehicleId || worksiteId || status)
+  const hasActiveFilters = Boolean(vehicleId || worksiteId || status || q)
+  const pageHref = (page: number) => buildPaginationHref("/mantenciones", sp, page)
 
   // Listas de opciones compartidas por el formulario de alta y la edición por
   // fila. La faena viaja con cada opción: el centro de costo se valida en el
@@ -84,11 +110,15 @@ export default async function MantencionesPage({
             {can(session, "flota:view") && <Button asChild size="sm" variant="secondary">
               <Link href="/flota">Ver flota</Link>
             </Button>}
+            <Button asChild size="sm" variant="secondary"><Link href="/mantenciones/planes">Planes preventivos</Link></Button>
+            {canEdit && isGlobalRole(session) && <Button asChild size="sm" variant="secondary"><Link href="/mantenciones/politicas-documentales">Política documental</Link></Button>}
+            <MaintenanceExportButton filters={{ vehicleId, worksiteId, status, q }} />
             {canCreate && (
               <MaintenanceCreateButton
                 vehicles={vehicleOptions}
                 suppliers={supplierOptions}
                 costCenters={costCenterOptions}
+                assignees={assigneeOptions}
                 canViewCosts={canViewCosts}
               />
             )}
@@ -105,7 +135,7 @@ export default async function MantencionesPage({
             vehicles={data.vehicles}
             worksites={data.worksites}
             statusLabels={statusLabels}
-            current={{ vehicle: vehicleId, faena: worksiteId, status }}
+            current={{ vehicle: vehicleId, faena: worksiteId, status, q }}
           />
         </CardContent>
       </Card>
@@ -169,13 +199,9 @@ export default async function MantencionesPage({
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Historial</CardTitle>
-          {/* El servicio corta en 100 filas: sin este aviso la tabla se leía
-              como el historial completo y los filtros como decorativos. */}
-          {data.records.length >= MAINTENANCE_HISTORY_LIMIT && (
-            <p className="text-xs text-[var(--color-text-muted)]">
-              Mostrando las {MAINTENANCE_HISTORY_LIMIT} mantenciones más recientes. Filtra por vehículo, faena o estado para acotar el historial.
-            </p>
-          )}
+          <p className="text-xs text-[var(--color-text-muted)]">
+            {pagination.from}-{pagination.to} de {pagination.totalItems} mantenciones visibles.
+          </p>
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <MaintenanceTable
@@ -188,8 +214,11 @@ export default async function MantencionesPage({
             vehicleOptions={vehicleOptions}
             supplierOptions={supplierOptions}
             costCenterOptions={costCenterOptions}
+            assigneeOptions={assigneeOptions}
+            serverPageSize={MAINTENANCE_PAGE_SIZE}
           />
         </CardContent>
+        <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </Card>
     </PageContainer>
   )

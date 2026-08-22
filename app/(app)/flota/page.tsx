@@ -6,17 +6,21 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import { Button } from "@/components/ui/button"
+import { ServerPagination } from "@/components/ui/server-pagination"
 import { can, requirePermission } from "@/lib/auth/can"
-import { getFleetOverview } from "@/lib/services/fleet"
+import { getFleetOverviewPage } from "@/lib/services/fleet"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
 import { addDaysToPlainDate, formatCLP, todayInChile } from "@/lib/utils"
+import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { FleetFilters } from "./fleet-filters"
 import { FleetTable } from "./fleet-table"
+import { FleetExportButton } from "./fleet-export-button"
 
 export const metadata: Metadata = { title: "Flota" }
 
 const NUMBER_FORMATTER = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 })
 const formatNumber = (value: number) => NUMBER_FORMATTER.format(value)
+const FLEET_PAGE_SIZE = 25
 
 export default async function FlotaPage({
   searchParams,
@@ -30,14 +34,13 @@ export default async function FlotaPage({
   const canViewFuel = can(session, "combustibles:view")
   const canViewMaintenance = can(session, "mantenciones:view")
 
-  const [vehicles, fleetSettings] = await Promise.all([
-    getFleetOverview(session),
-    getFleetAdminSettings(),
-  ])
+  const fleetSettings = await getFleetAdminSettings()
   const sp = await searchParams
   const filterEstado = typeof sp.estado === "string" ? sp.estado : undefined
   const filterResponsable = typeof sp.responsable === "string" ? sp.responsable : undefined
   const filterVencimiento = typeof sp.vencimiento === "string" ? sp.vencimiento : undefined
+  const q = typeof sp.q === "string" ? sp.q.slice(0, 160) : undefined
+  const requestedPage = typeof sp.page === "string" && /^\d+$/.test(sp.page) ? Math.max(1, Number(sp.page)) : 1
 
   const warningDays = fleetSettings.warningDays
   // Las columnas de vencimiento son fechas civiles chilenas: medirlas con
@@ -46,43 +49,40 @@ export default async function FlotaPage({
   const today = todayInChile()
   const warningWindowEnd = addDaysToPlainDate(today, warningDays)
 
-  // Client-side filtering after server fetch
-  let filteredVehicles = vehicles
-  if (filterEstado) {
-    filteredVehicles = filteredVehicles.filter((v) => v.operationalStatus === filterEstado)
+  const filters = {
+    operationalStatus: filterEstado,
+    responsibleName: filterResponsable,
+    expiry: filterVencimiento as "vencidos" | "proximos" | "al-dia" | undefined,
+    q,
   }
-  if (filterResponsable) {
-    filteredVehicles = filteredVehicles.filter((v) => v.responsibleName === filterResponsable)
-  }
-  if (filterVencimiento) {
-    if (filterVencimiento === "vencidos") {
-      filteredVehicles = filteredVehicles.filter((v) => v.nextExpiryDate && v.nextExpiryDate < today)
-    } else if (filterVencimiento === "proximos") {
-      filteredVehicles = filteredVehicles.filter((v) => v.nextExpiryDate && v.nextExpiryDate >= today && v.nextExpiryDate <= warningWindowEnd)
-    } else if (filterVencimiento === "al-dia") {
-      // `>` y no `>=`: con `>=` el vehículo que vence justo el último día de la
-      // ventana caía a la vez en "Próximos a vencer" y en "Al día".
-      filteredVehicles = filteredVehicles.filter((v) => !v.nextExpiryDate || v.nextExpiryDate > warningWindowEnd)
-    }
-  }
+  const initialPageData = await getFleetOverviewPage(session, filters, { today, warningWindowEnd }, {
+    offset: (requestedPage - 1) * FLEET_PAGE_SIZE,
+    limit: FLEET_PAGE_SIZE,
+  })
+  const pagination = resolvePagination({ pageParam: sp.page, totalItems: initialPageData.total, pageSize: FLEET_PAGE_SIZE })
+  const pageData = pagination.offset === initialPageData.offset
+    ? initialPageData
+    : await getFleetOverviewPage(session, filters, { today, warningWindowEnd }, {
+        offset: pagination.offset,
+        limit: pagination.limit,
+      })
+  const pageHref = (page: number) => buildPaginationHref("/flota", sp, page)
 
   // Extract unique filter options from vehicles
-  const operationalStatuses = [...new Set(vehicles.flatMap((v) => v.operationalStatus ? [v.operationalStatus] : []))]
+  const operationalStatuses = [...new Set(pageData.index.flatMap((v) => v.operationalStatus ? [v.operationalStatus] : []))]
   const responsibleUsers = [...new Map(
-    vehicles.filter((v) => v.responsibleName).map((v) => [v.responsibleName, { id: v.responsibleName!, name: v.responsibleName! }])
+    pageData.index.filter((v) => v.responsibleName).map((v) => [v.responsibleName, { id: v.responsibleName!, name: v.responsibleName! }])
   ).values()]
 
   // Sobre el conjunto filtrado, no sobre el total: con un filtro activo la fila
   // de cifras contradecía a la tabla que tiene debajo.
-  const active = filteredVehicles.filter((vehicle) => vehicle.isActive).length
-  const totalCost = canViewCosts && canViewFuel && canViewMaintenance
-    ? filteredVehicles.reduce((sum, vehicle) => sum + (vehicle.totalOperationalCost ?? 0), 0)
-    : null
-  const totalLiters = canViewFuel ? filteredVehicles.reduce((sum, vehicle) => sum + (vehicle.totalLiters ?? 0), 0) : null
-  const maintenanceCount = canViewMaintenance ? filteredVehicles.reduce((sum, vehicle) => sum + (vehicle.maintenanceCount ?? 0), 0) : null
+  const active = pageData.summary.active
+  const totalCost = pageData.summary.totalOperationalCost
+  const totalLiters = pageData.summary.totalLiters
+  const maintenanceCount = pageData.summary.maintenanceCount
 
-  const expiredVehicles = filteredVehicles.filter((vehicle) => vehicle.nextExpiryDate && vehicle.nextExpiryDate < today)
-  const expiringSoon = filteredVehicles.filter((vehicle) =>
+  const expiredVehicles = pageData.matching.filter((vehicle) => vehicle.nextExpiryDate && vehicle.nextExpiryDate < today)
+  const expiringSoon = pageData.matching.filter((vehicle) =>
     vehicle.nextExpiryDate &&
     vehicle.nextExpiryDate >= today &&
     vehicle.nextExpiryDate <= warningWindowEnd,
@@ -108,11 +108,14 @@ export default async function FlotaPage({
             { label: "Flota" },
           ]} />
         }
-        headerActions={can(session, "combustibles:manage_vehicles") ? (
-          <Button asChild size="sm" variant="secondary">
-            <Link href="/admin/flota-catalogos/vehiculos">Gestionar vehículos</Link>
-          </Button>
-        ) : undefined}
+        actions={<div className="flex items-center gap-2">
+          <FleetExportButton filters={{ operationalStatus: filterEstado, responsibleName: filterResponsable, expiry: filterVencimiento as "vencidos" | "proximos" | "al-dia" | undefined, q }} />
+          {can(session, "combustibles:manage_vehicles") && (
+            <Button asChild size="sm" variant="secondary">
+              <Link href="/admin/flota-catalogos/vehiculos">Gestionar vehículos</Link>
+            </Button>
+          )}
+        </div>}
       />
 
       <SummaryBar stats={summaryStats} />
@@ -142,7 +145,7 @@ export default async function FlotaPage({
           <FleetFilters
             operationalStatuses={operationalStatuses}
             responsibleUsers={responsibleUsers}
-            current={{ estado: filterEstado, responsable: filterResponsable, vencimiento: filterVencimiento }}
+            current={{ estado: filterEstado, responsable: filterResponsable, vencimiento: filterVencimiento, q }}
             warningDays={warningDays}
           />
         </CardContent>
@@ -153,8 +156,9 @@ export default async function FlotaPage({
           <CardTitle className="text-base">Vehículos</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          <FleetTable vehicles={filteredVehicles} hasAnyVehicle={vehicles.length > 0} canViewCosts={canViewCosts} canViewFuel={canViewFuel} canViewMaintenance={canViewMaintenance} />
+          <FleetTable vehicles={pageData.rows} hasAnyVehicle={pageData.index.length > 0} canViewCosts={canViewCosts} canViewFuel={canViewFuel} canViewMaintenance={canViewMaintenance} />
         </CardContent>
+        <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </Card>
     </PageContainer>
   )

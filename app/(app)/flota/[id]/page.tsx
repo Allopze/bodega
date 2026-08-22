@@ -44,7 +44,7 @@ export default async function FlotaVehiclePage({
         actions={
           <div className="flex justify-end gap-2">
             {can(session, "combustibles:view") && <Button asChild size="sm" variant="secondary">
-              <Link href={`/combustibles?vehicle=${vehicle.id}`}>Combustible</Link>
+              <Link href={`/combustibles?patente=${encodeURIComponent(vehicle.plate)}`}>Combustible</Link>
             </Button>}
             {can(session, "mantenciones:view") && <Button asChild size="sm" variant="secondary">
               <Link href={`/mantenciones?vehicle=${vehicle.id}`}>Mantenciones</Link>

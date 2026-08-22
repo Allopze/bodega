@@ -17,6 +17,12 @@ export const flotaModule = {
       areaId: "control-operacional",
       items: [
         {
+          label:    "Control operacional",
+          href:     "/control-operacional",
+          iconName: "Gauge",
+          permissions: ["flota:view"],
+        },
+        {
           label:    "Flota",
           href:     "/flota",
           iconName: "Truck",

@@ -28,12 +28,14 @@ export function MaintenanceRowActions({
   vehicles,
   suppliers,
   costCenters,
+  assignees,
   canViewCosts,
 }: {
   record: MaintenanceDefaults & { id: string; status: string }
   vehicles: VehicleOption[]
   suppliers: Option[]
   costCenters: Array<Option & { code: string; worksiteId: string | null }>
+  assignees: Array<Option & { worksiteIds: string[] | null }>
   canViewCosts: boolean
 }) {
   const [editOpen, setEditOpen] = useState(false)
@@ -83,6 +85,7 @@ export function MaintenanceRowActions({
             vehicles={vehicles}
             suppliers={suppliers}
             costCenters={costCenters}
+            assignees={assignees}
             canViewCosts={canViewCosts}
             action={updateMaintenanceRecordAction}
             submitLabel="Guardar"

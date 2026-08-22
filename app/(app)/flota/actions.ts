@@ -3,15 +3,22 @@
 import { revalidatePath } from "next/cache"
 import { promises as fs } from "node:fs"
 import path from "node:path"
-import { requirePermission } from "@/lib/auth/can"
+import { can, requirePermission } from "@/lib/auth/can"
 import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
-import { uploadFleetDocument, deleteFleetDocument } from "@/lib/services/fleet"
+import { uploadFleetDocument, deleteFleetDocument, getFleetOverview } from "@/lib/services/fleet"
+import { getFleetAdminSettings } from "@/lib/services/system-settings"
 import { createFleetDocumentPath, resolveFleetDir } from "@/lib/storage/config"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import type { ActionState } from "@/lib/validation/operations"
 import { fleetDocumentMetadataSchema } from "@/lib/validation/fleet-documents"
+import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
+import { filterFleetOverviewRows, type FleetOverviewFilters } from "@/lib/fleet-overview-filters"
+import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
+import { recordAudit } from "@/lib/audit"
+
+const FLEET_EXPORT_LIMIT = 10_000
 
 export async function uploadFleetDocumentAction(
   _prev: ActionState,
@@ -105,5 +112,93 @@ export async function deleteFleetDocumentAction(
   } catch (e) {
     logger.error("[deleteFleetDocumentAction]", e)
     return { ok: false, message: e instanceof Error ? e.message : "Error al eliminar documento" }
+  }
+}
+
+export async function exportFleetXlsxAction(filters: FleetOverviewFilters = {}) {
+  let session
+  try { session = await requirePermission("flota:view", "/flota") }
+  catch { return { ok: false as const, message: "Sin permisos para exportar la flota" } }
+
+  const [rows, settings] = await Promise.all([getFleetOverview(session), getFleetAdminSettings()])
+  const today = todayInChile()
+  const filtered = filterFleetOverviewRows(rows, filters, {
+    today,
+    warningWindowEnd: addDaysToPlainDate(today, settings.warningDays),
+  })
+  const truncated = filtered.length > FLEET_EXPORT_LIMIT
+  const exportRows = filtered.slice(0, FLEET_EXPORT_LIMIT)
+  const canViewCosts = can(session, "combustibles:view_costs")
+  const canViewFuel = can(session, "combustibles:view")
+  const canViewMaintenance = can(session, "mantenciones:view")
+  const ExcelJS = await import("exceljs")
+  const workbook = new ExcelJS.Workbook()
+  const sheet = workbook.addWorksheet("Flota")
+  sheet.columns = [
+    { header: "Patente", key: "plate", width: 16 },
+    { header: "Tipo", key: "type", width: 22 },
+    { header: "Marca", key: "brand", width: 18 },
+    { header: "Modelo", key: "model", width: 18 },
+    { header: "Año", key: "year", width: 10 },
+    { header: "Faena", key: "worksite", width: 24 },
+    { header: "Estado", key: "status", width: 18 },
+    { header: "Responsable", key: "responsible", width: 24 },
+    { header: "Próximo vencimiento", key: "expiry", width: 20 },
+    ...(canViewFuel ? [
+      { header: "Litros (12 meses)", key: "liters", width: 18 },
+      { header: "Cargas (12 meses)", key: "loads", width: 18 },
+    ] : []),
+    ...(canViewMaintenance ? [
+      { header: "Mantenciones (12 meses)", key: "maintenanceCount", width: 22 },
+      { header: "Última mantención", key: "lastMaintenance", width: 18 },
+    ] : []),
+    ...(canViewCosts && canViewFuel ? [{ header: "Costo combustible", key: "fuelCost", width: 18 }] : []),
+    ...(canViewCosts && canViewMaintenance ? [{ header: "Costo mantenciones", key: "maintenanceCost", width: 20 }] : []),
+    ...(canViewCosts && canViewFuel && canViewMaintenance ? [{ header: "Costo operacional", key: "operationalCost", width: 20 }] : []),
+  ]
+  for (const row of exportRows) {
+    sheet.addRow({
+      plate: row.plate,
+      type: row.type,
+      brand: row.brand ?? "",
+      model: row.model ?? "",
+      year: row.year ?? "",
+      worksite: row.worksiteName,
+      status: row.isActive ? row.operationalStatus : "inactivo",
+      responsible: row.responsibleName ?? "",
+      expiry: row.nextExpiryDate ?? "",
+      liters: row.totalLiters,
+      loads: row.loadCount,
+      maintenanceCount: row.maintenanceCount,
+      lastMaintenance: row.lastMaintenanceDate,
+      fuelCost: row.totalFuelAmount,
+      maintenanceCost: row.totalMaintenanceAmount,
+      operationalCost: row.totalOperationalCost,
+    })
+  }
+  sheet.getRow(1).font = { bold: true }
+  sheet.views = [{ state: "frozen", ySplit: 1 }]
+  sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: sheet.columns.length } }
+  for (const key of ["fuelCost", "maintenanceCost", "operationalCost"]) {
+    if (sheet.getColumn(key).number > 0) sheet.getColumn(key).numFmt = "$#,##0"
+  }
+  addExportMetadataSheet(workbook, session, { filters, rowCount: exportRows.length })
+  const bytes = await workbook.xlsx.writeBuffer()
+  await recordAudit({
+    userId: session.user.id,
+    userEmail: session.user.email ?? undefined,
+    action: "export",
+    entityType: "fleet_export",
+    entityId: nanoid(),
+    newState: { filters, rowCount: exportRows.length, truncated, includesCosts: canViewCosts },
+  })
+  return {
+    ok: true as const,
+    data: {
+      base64: Buffer.from(bytes).toString("base64"),
+      filename: `flota_${today}.xlsx`,
+      truncated,
+      rowLimit: FLEET_EXPORT_LIMIT,
+    },
   }
 }

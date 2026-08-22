@@ -562,7 +562,11 @@ const routeTargets: RouteTarget[] = [
   { slug: "facturacion-sincronizacion", path: "/facturacion/sincronizacion", auth: true },
   { slug: "flota", path: "/flota", auth: true },
   { slug: "flota-detalle", path: "/flota/fuel-veh-audit-1", auth: true },
+  { slug: "control-operacional", path: "/control-operacional", auth: true },
   { slug: "mantenciones", path: "/mantenciones", auth: true },
+  { slug: "mantenciones-detalle", path: "/mantenciones/maint-audit-1", auth: true },
+  { slug: "mantenciones-planes", path: "/mantenciones/planes", auth: true },
+  { slug: "mantenciones-politicas-documentales", path: "/mantenciones/politicas-documentales", auth: true },
   // ── Combustibles ──────────────────────────────────────────────────────
   { slug: "combustibles", path: "/combustibles", auth: true },
   { slug: "combustibles-nueva", path: "/combustibles/nueva", auth: true },
@@ -3121,6 +3125,25 @@ async function prepareDatabase(captureDbUrl: string) {
       updatedAt: now,
     },
   ])
+
+  await db.insert(schema.maintenanceRecords).values({
+    id: "maint-audit-1",
+    code: "OT-2026-0001",
+    vehicleId: "fuel-veh-audit-1",
+    worksiteId,
+    maintenanceDate: "2026-06-20",
+    maintenanceType: "preventiva",
+    status: "scheduled",
+    priority: "normal",
+    operationalImpact: "maintenance",
+    netAmount: 180_000,
+    taxAmount: 34_200,
+    totalAmount: 214_200,
+    notes: "Mantención preventiva de referencia para captura.",
+    createdBy: userId,
+    createdAt: now,
+    updatedAt: now,
+  })
 
   await db.insert(schema.fuelImportBatches).values({
     id: "fuel-import-audit-1",

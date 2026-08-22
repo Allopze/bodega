@@ -5,12 +5,15 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/field"
+import { Field } from "@/components/ui/field"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import { OptionSelect } from "@/components/ui/option-select"
 import { createMaintenanceRecordAction } from "./actions"
 import type { ActionState } from "@/lib/validation/masters"
 import { MAINTENANCE_INITIAL_STATUSES, MAINTENANCE_STATUS_LABELS } from "@/lib/validation/maintenance"
 import { toast } from "@/lib/toast"
+import { toLocalInputValue } from "@/lib/utils"
 
 interface Option {
   id: string
@@ -44,6 +47,13 @@ export interface MaintenanceDefaults {
   /** Sin campo visible, pero se reenvía: si no viaja, el update lo pone en NULL. */
   documentName?: string | null
   notes?: string | null
+  priority?: string
+  assignedToUserId?: string | null
+  assignedToName?: string | null
+  slaDueAt?: string | null
+  rootCause?: string | null
+  underWarranty?: boolean
+  operationalImpact?: string
 }
 
 const MAINTENANCE_TYPES = [
@@ -60,6 +70,7 @@ export function MaintenanceForm({
   vehicles,
   suppliers,
   costCenters,
+  assignees,
   action = createMaintenanceRecordAction,
   defaults,
   submitLabel = "Registrar",
@@ -69,6 +80,7 @@ export function MaintenanceForm({
   vehicles: VehicleOption[]
   suppliers: Option[]
   costCenters: CostCenterOption[]
+  assignees: Array<Option & { worksiteIds: string[] | null }>
   action?: MaintenanceAction
   defaults?: MaintenanceDefaults
   submitLabel?: string
@@ -101,6 +113,10 @@ export function MaintenanceForm({
   const [status, setStatus] = useState(defaults?.status === "in_progress" ? "in_progress" : "scheduled")
   const [supplierId, setSupplierId] = useState(defaults?.supplierId ?? "")
   const [costCenterId, setCostCenterId] = useState(defaults?.costCenterId ?? "")
+  const [assignedToUserId, setAssignedToUserId] = useState(defaults?.assignedToUserId ?? "")
+  const [priority, setPriority] = useState(defaults?.priority ?? "normal")
+  const [operationalImpact, setOperationalImpact] = useState(defaults?.operationalImpact ?? "maintenance")
+  const [slaDueAt, setSlaDueAt] = useState(defaults?.slaDueAt ?? "")
 
   // El servidor valida el centro contra la faena del EQUIPO. Ofrecer el catálogo
   // completo del alcance del actor —que para un rol global son todas las faenas—
@@ -116,6 +132,12 @@ export function MaintenanceForm({
   const costCenterChoices = inheritedCenter && !availableCostCenters.some((center) => center.id === inheritedCenter.id)
     ? [inheritedCenter, ...availableCostCenters]
     : availableCostCenters
+  const availableAssignees = assignees.filter(
+    (assignee) => assignee.worksiteIds === null || assignee.worksiteIds.includes(vehicleWorksiteId ?? ""),
+  )
+  const assigneeChoices = assignedToUserId && !availableAssignees.some((assignee) => assignee.id === assignedToUserId)
+    ? [{ id: assignedToUserId, name: defaults?.assignedToName ?? "Responsable actual", worksiteIds: null }, ...availableAssignees]
+    : availableAssignees
 
   function handleVehicleChange(nextVehicleId: string) {
     setVehicleId(nextVehicleId)
@@ -124,6 +146,8 @@ export function MaintenanceForm({
     // Cambiar de equipo cambia la faena: una imputación de la faena anterior
     // dejaría de ser válida y el servidor la rechazaría al guardar.
     if (chosen?.worksiteId && chosen.worksiteId !== nextWorksiteId) setCostCenterId("")
+    const assigned = assignees.find((assignee) => assignee.id === assignedToUserId)
+    if (assigned?.worksiteIds && !assigned.worksiteIds.includes(nextWorksiteId ?? "")) setAssignedToUserId("")
   }
 
   return (
@@ -175,6 +199,23 @@ export function MaintenanceForm({
         />
         <FieldError message={state.fieldErrors?.status?.[0]} />
       </div>}
+
+      <Field label="Prioridad" htmlFor="priority" error={state.fieldErrors?.priority?.[0]}>
+        <OptionSelect id="priority" name="priority" value={priority} onValueChange={setPriority} options={[{ value: "low", label: "Baja" }, { value: "normal", label: "Normal" }, { value: "high", label: "Alta" }, { value: "critical", label: "Crítica" }]} />
+      </Field>
+
+      <Field label="Impacto al iniciar" htmlFor="operationalImpact" helper="La plataforma cambia el estado del activo sólo mientras esta OT esté en curso.">
+        <OptionSelect id="operationalImpact" name="operationalImpact" value={operationalImpact} onValueChange={setOperationalImpact} options={[{ value: "none", label: "Sin cambio operacional" }, { value: "maintenance", label: "En mantención" }, { value: "out_of_service", label: "Fuera de servicio" }]} />
+      </Field>
+
+      <Field label="Compromiso SLA" htmlFor="slaDueAt" error={state.fieldErrors?.slaDueAt?.[0]}>
+        <Input id="slaDueAt" type="datetime-local" defaultValue={defaults?.slaDueAt ? toLocalInputValue(new Date(defaults.slaDueAt)) : ""} onChange={(event) => setSlaDueAt(event.target.value ? new Date(event.target.value).toISOString() : "")} />
+      </Field>
+      <input type="hidden" name="slaDueAt" value={slaDueAt} />
+
+      <Field label="Responsable" htmlFor="assignedToUserId" error={state.fieldErrors?.assignedToUserId?.[0]}>
+        <OptionSelect id="assignedToUserId" name="assignedToUserId" value={assignedToUserId} onValueChange={setAssignedToUserId} emptyLabel="Sin asignar" options={assigneeChoices.map((assignee) => ({ value: assignee.id, label: assignee.name }))} />
+      </Field>
 
       {/* `emptyLabel` es lo que faltaba: con un Select de Radix a secas, una vez
           elegido un proveedor/faena/centro no había forma de volver a dejarlo
@@ -249,6 +290,12 @@ export function MaintenanceForm({
         <Label htmlFor="notes">Notas</Label>
         <Textarea id="notes" name="notes" rows={2} defaultValue={defaults?.notes ?? ""} />
       </div>
+
+      <div className="lg:col-span-3">
+        <Field label="Causa raíz" htmlFor="rootCause" error={state.fieldErrors?.rootCause?.[0]}><Textarea id="rootCause" name="rootCause" rows={2} defaultValue={defaults?.rootCause ?? ""} /></Field>
+      </div>
+
+      <div className="flex items-center"><Checkbox id="underWarranty" name="underWarranty" defaultChecked={defaults?.underWarranty ?? false} label="Trabajo cubierto por garantía" /></div>
 
       <div className="flex items-end justify-end">
         <Button type="submit" disabled={pending}>

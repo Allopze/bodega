@@ -30,11 +30,13 @@ export function MaintenanceCreateButton({
   vehicles,
   suppliers,
   costCenters,
+  assignees,
   canViewCosts,
 }: {
   vehicles: VehicleOption[]
   suppliers: Option[]
   costCenters: Array<Option & { code: string; worksiteId: string | null }>
+  assignees: Array<Option & { worksiteIds: string[] | null }>
   canViewCosts: boolean
 }) {
   const [open, setOpen] = useState(false)
@@ -59,6 +61,7 @@ export function MaintenanceCreateButton({
           vehicles={vehicles}
           suppliers={suppliers}
           costCenters={costCenters}
+          assignees={assignees}
           canViewCosts={canViewCosts}
         />
           </SheetBody>

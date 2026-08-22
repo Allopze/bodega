@@ -29,7 +29,7 @@ const MAINTENANCE_TYPE_LABELS: Record<string, string> = {
 const maintenanceTypeLabel = (value: string) => MAINTENANCE_TYPE_LABELS[value] ?? value
 
 export function MaintenanceTable({
-  records, canEdit, canCreate, canViewCosts, hasActiveFilters, statusLabels, vehicleOptions, supplierOptions, costCenterOptions,
+  records, canEdit, canCreate, canViewCosts, hasActiveFilters, statusLabels, vehicleOptions, supplierOptions, costCenterOptions, assigneeOptions, serverPageSize,
 }: {
   records: MaintenanceRecord[]
   canEdit: boolean
@@ -40,6 +40,8 @@ export function MaintenanceTable({
   vehicleOptions: VehicleOption[]
   supplierOptions: OptionRow[]
   costCenterOptions: CostCenterOption[]
+  assigneeOptions: Array<OptionRow & { worksiteIds: string[] | null }>
+  serverPageSize: number
 }) {
   const rows = records.map((r) => ({
     ...r,
@@ -62,7 +64,7 @@ export function MaintenanceTable({
     { key: "costCenterLabel", label: "Centro de costo", sortable: true },
     { key: "documentLabel", label: "Documento", sortable: true },
     ...(canViewCosts ? [{ key: "totalAmount", label: "Total", sortable: true, numeric: true }] : []),
-    ...(canEdit ? [{ key: "_actions", label: "Acciones", sortable: false, numeric: true }] : []),
+    { key: "_actions", label: "Acciones", sortable: false, numeric: true },
   ]
 
   return (
@@ -72,7 +74,8 @@ export function MaintenanceTable({
       rows={rows}
       searchKeys={["plate", "maintenanceType", "supplierName", "costCenterLabel", "documentLabel"]}
       tableClassName="min-w-[1100px]"
-      pageSize={25}
+      pageSize={serverPageSize}
+      disableInternalSearch
       emptyTitle={hasActiveFilters ? "Ninguna mantención coincide con los filtros" : "Todavía no hay mantenciones registradas"}
       emptyDescription={hasActiveFilters
         ? "Prueba con otro vehículo, faena o estado, o quita los filtros para ver el historial completo."
@@ -80,8 +83,65 @@ export function MaintenanceTable({
       emptyAction={hasActiveFilters
         ? <Button asChild size="sm" variant="secondary"><Link href="/mantenciones">Quitar filtros</Link></Button>
         : canCreate
-          ? <MaintenanceCreateButton vehicles={vehicleOptions} suppliers={supplierOptions} costCenters={costCenterOptions} canViewCosts={canViewCosts} />
+          ? <MaintenanceCreateButton vehicles={vehicleOptions} suppliers={supplierOptions} costCenters={costCenterOptions} assignees={assigneeOptions} canViewCosts={canViewCosts} />
           : undefined}
+      renderMobileCard={(record) => {
+        const statusMeta = statusLabels[record.status] ?? { label: record.status, variant: "default" as const }
+        return (
+          <article className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-medium text-[var(--color-text)]">{record.plate}</p>
+                <p className="text-xs text-[var(--color-text-muted)]">{maintenanceTypeLabel(record.maintenanceType)} · {formatDate(record.maintenanceDate)}</p>
+              </div>
+              <Badge variant={statusMeta.variant}>{statusMeta.label}</Badge>
+            </div>
+            <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+              <div><dt className="text-[var(--color-text-subtle)]">Faena</dt><dd>{record.worksite?.name ?? "—"}</dd></div>
+              <div><dt className="text-[var(--color-text-subtle)]">Proveedor</dt><dd>{record.supplier?.name ?? "—"}</dd></div>
+              <div><dt className="text-[var(--color-text-subtle)]">Lectura</dt><dd>{record.odometerReading != null ? `${formatNumber(record.odometerReading)} km` : record.hourMeterReading != null ? `${formatNumber(record.hourMeterReading)} hr` : "—"}</dd></div>
+              {canViewCosts && <div><dt className="text-[var(--color-text-subtle)]">Total</dt><dd className="font-mono">{formatCLP(record.totalAmount ?? 0)}</dd></div>}
+            </dl>
+            <div className="mt-3 flex justify-end gap-2">
+              <Button asChild size="sm" variant="ghost"><Link href={`/mantenciones/${record.id}`}>Ver OT</Link></Button>
+              {canEdit &&
+              <MaintenanceRowActions
+                record={{
+                  id: record.id,
+                  vehicleId: record.vehicleId,
+                  supplierId: record.supplierId,
+                  costCenterId: record.costCenterId,
+                  costCenterOption: record.costCenter
+                    ? { id: record.costCenter.id, code: record.costCenter.code, name: record.costCenter.name, worksiteId: record.costCenter.worksiteId }
+                    : null,
+                  maintenanceDate: record.maintenanceDate,
+                  maintenanceType: record.maintenanceType,
+                  status: record.status,
+                  odometerReading: record.odometerReading,
+                  hourMeterReading: record.hourMeterReading,
+                  netAmount: canViewCosts ? record.netAmount : undefined,
+                  taxAmount: canViewCosts ? record.taxAmount : undefined,
+                  documentNumber: record.documentNumber,
+                  documentName: record.documentName,
+                  notes: record.notes,
+                  priority: record.priority,
+                  assignedToUserId: record.assignedToUserId,
+                  assignedToName: record.assignee?.name,
+                  slaDueAt: record.slaDueAt,
+                  rootCause: record.rootCause,
+                  underWarranty: record.underWarranty,
+                  operationalImpact: record.operationalImpact,
+                }}
+                vehicles={vehicleOptions}
+                suppliers={supplierOptions}
+                costCenters={costCenterOptions}
+                assignees={assigneeOptions}
+                canViewCosts={canViewCosts}
+              />}
+            </div>
+          </article>
+        )
+      }}
       renderRow={(record) => {
         const statusMeta = statusLabels[record.status] ?? { label: record.status, variant: "default" as const }
         return (
@@ -97,8 +157,10 @@ export function MaintenanceTable({
             <TableCell>{record.costCenterLabel || "—"}</TableCell>
             <TableCell>{record.documentNumber ?? record.documentName ?? "—"}</TableCell>
             {canViewCosts && <TableCell className="text-right font-mono">{formatCLP(record.totalAmount ?? 0)}</TableCell>}
-            {canEdit && (
-              <TableCell className="text-right">
+            <TableCell className="text-right">
+              <div className="flex justify-end gap-1">
+                <Button asChild size="sm" variant="ghost"><Link href={`/mantenciones/${record.id}`}>Ver</Link></Button>
+                {canEdit &&
                 <MaintenanceRowActions
                   record={{
                     id: record.id,
@@ -119,14 +181,22 @@ export function MaintenanceTable({
                     // Sin reenviarlo, el update lo pisaba con NULL.
                     documentName: record.documentName,
                     notes: record.notes,
+                    priority: record.priority,
+                    assignedToUserId: record.assignedToUserId,
+                    assignedToName: record.assignee?.name,
+                    slaDueAt: record.slaDueAt,
+                    rootCause: record.rootCause,
+                    underWarranty: record.underWarranty,
+                    operationalImpact: record.operationalImpact,
                   }}
                   vehicles={vehicleOptions}
                   suppliers={supplierOptions}
                   costCenters={costCenterOptions}
+                  assignees={assigneeOptions}
                   canViewCosts={canViewCosts}
-                />
-              </TableCell>
-            )}
+                />}
+              </div>
+            </TableCell>
           </TableRow>
         )
       }}

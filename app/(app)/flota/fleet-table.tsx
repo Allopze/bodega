@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { DataTable } from "@/components/admin/data-table"
 import { TableCell } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -8,6 +9,7 @@ import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
 import { formatCLP, formatDate } from "@/lib/utils"
 import type { getFleetOverview } from "@/lib/services/fleet"
 import { FleetTableRow } from "./fleet-table-row"
+import { Button } from "@/components/ui/button"
 
 type VehicleRow = Awaited<ReturnType<typeof getFleetOverview>>[number]
 
@@ -39,10 +41,35 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
       columns={columns}
       rows={vehicles}
       searchKeys={["plate", "brand", "model", "worksiteName", "responsibleName"]}
+      disableInternalSearch
       tableClassName="min-w-[760px]"
       pageSize={25}
       emptyTitle={hasAnyVehicle ? "Sin coincidencias" : "Sin vehículos visibles"}
       emptyDescription={hasAnyVehicle ? "No hay vehículos que coincidan con los filtros." : "No hay vehículos visibles para tu alcance."}
+      renderMobileCard={(vehicle) => (
+        <article className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)]">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-medium text-[var(--color-text)]">{vehicle.plate}</p>
+              <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+                {[vehicle.brand, vehicle.model, vehicle.year].filter(Boolean).join(" ") || vehicle.type}
+              </p>
+            </div>
+            <Badge variant={vehicle.isActive && vehicle.operationalStatus === "operativo" ? "success" : "outline"}>
+              {vehicle.isActive ? formatFuelVehicleStatus(vehicle.operationalStatus) : "Inactivo"}
+            </Badge>
+          </div>
+          <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+            <div><dt className="text-[var(--color-text-subtle)]">Faena</dt><dd>{vehicle.worksiteName}</dd></div>
+            <div><dt className="text-[var(--color-text-subtle)]">Responsable</dt><dd>{vehicle.responsibleName ?? "—"}</dd></div>
+            <div><dt className="text-[var(--color-text-subtle)]">Vencimiento</dt><dd>{vehicle.nextExpiryDate ? formatDate(vehicle.nextExpiryDate) : "—"}</dd></div>
+            {canViewMaintenance && <div><dt className="text-[var(--color-text-subtle)]">Última mantención</dt><dd>{vehicle.lastMaintenanceDate ? formatDate(vehicle.lastMaintenanceDate) : "—"}</dd></div>}
+          </dl>
+          <Button asChild size="sm" variant="secondary" className="mt-3 w-full">
+            <Link href={`/flota/${vehicle.id}`}>Ver ficha del equipo</Link>
+          </Button>
+        </article>
+      )}
       renderRow={(vehicle) => {
         return (
           <FleetTableRow key={vehicle.id} href={`/flota/${vehicle.id}`}>
