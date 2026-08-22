@@ -136,6 +136,7 @@ describeIf("combustibles â€” alcance de faena en mutaciones masivas y vinculaciÃ
       const formData = new FormData()
       formData.set("ids", "veh-a,veh-b")
       formData.set("activate", "false")
+      formData.set("reason", "Baja masiva por fin de temporada")
 
       const state = await vehicles.bulkToggleFuelVehicleActiveAction({ ok: false }, formData)
 
@@ -155,6 +156,7 @@ describeIf("combustibles â€” alcance de faena en mutaciones masivas y vinculaciÃ
       const formData = new FormData()
       formData.set("ids", "veh-a")
       formData.set("activate", "false")
+      formData.set("reason", "Baja por fin de temporada")
 
       const state = await vehicles.bulkToggleFuelVehicleActiveAction({ ok: false }, formData)
 

@@ -160,20 +160,24 @@ export async function createFuelLoadAction(
 
   try {
     const id = nanoid()
-    await db.insert(fuelLoads).values({
-      id,
-      ...parsed.data,
-      productId: fuelProductIdForLegacy(parsed.data.product),
-      createdBy: session.user.id,
-    })
+    // Auditoría dentro de la misma transacción que el insert: si `recordAudit`
+    // fallaba, la carga ya había quedado creada sin rastro (CO-025).
+    await db.transaction(async (tx) => {
+      await tx.insert(fuelLoads).values({
+        id,
+        ...parsed.data,
+        productId: fuelProductIdForLegacy(parsed.data.product),
+        createdBy: session.user.id,
+      })
 
-    await recordAudit({
-      userId: session.user.id,
-      userEmail: session.user.email ?? undefined,
-      action: "create",
-      entityType: "fuel_load",
-      entityId: id,
-      newState: { ...parsed.data, worksiteId: parsed.data.worksiteId },
+      await recordAudit({
+        userId: session.user.id,
+        userEmail: session.user.email ?? undefined,
+        action: "create",
+        entityType: "fuel_load",
+        entityId: id,
+        newState: { ...parsed.data, worksiteId: parsed.data.worksiteId },
+      }, tx)
     })
   } catch (e) {
     logger.error("createFuelLoad error", { error: e })
@@ -327,32 +331,38 @@ export async function updateFuelLoadAction(
     // toma FOR UPDATE sobre las cargas sin resumen y las asigna. Repetir la precondición
     // en el WHERE hace que, al despertar del lock, la fila ya no calce y no se pise el
     // total congelado del resumen.
-    const [updated] = await db.update(fuelLoads)
-      .set({ ...parsed.data, productId: fuelProductIdForLegacy(parsed.data.product), updatedAt: new Date().toISOString() })
-      .where(and(
-        eq(fuelLoads.id, id),
-        isNull(fuelLoads.statementId),
-        // …y el estado esperado: entre la lectura y este UPDATE otra sesión
-        // pudo conciliar o anular la carga.
-        inArray(fuelLoads.status, [...EDITABLE_FUEL_LOAD_STATUSES]),
-      ))
-      .returning({ id: fuelLoads.id })
+    // Auditoría dentro de la misma transacción que el update (CO-025): antes se
+    // llamaba después de que la conexión ya había hecho commit del UPDATE.
+    const updated = await db.transaction(async (tx) => {
+      const [row] = await tx.update(fuelLoads)
+        .set({ ...parsed.data, productId: fuelProductIdForLegacy(parsed.data.product), updatedAt: new Date().toISOString() })
+        .where(and(
+          eq(fuelLoads.id, id),
+          isNull(fuelLoads.statementId),
+          // …y el estado esperado: entre la lectura y este UPDATE otra sesión
+          // pudo conciliar o anular la carga.
+          inArray(fuelLoads.status, [...EDITABLE_FUEL_LOAD_STATUSES]),
+        ))
+        .returning({ id: fuelLoads.id })
+      if (!row) return null
+
+      await recordAudit({
+        userId: session.user.id,
+        userEmail: session.user.email ?? undefined,
+        action: "update",
+        entityType: "fuel_load",
+        entityId: id,
+        // El diff cubría 4 campos: cambiar vehículo, proveedor, factura, producto
+        // o fecha no dejaba rastro en el historial. Se guarda el estado editable
+        // completo a ambos lados.
+        oldState: pickAuditedLoadFields(existing),
+        newState: pickAuditedLoadFields(parsed.data),
+      }, tx)
+      return row
+    })
     if (!updated) {
       return { ok: false, message: "La carga cambió en otra sesión: se concilió, se anuló o quedó asignada a una cuenta corriente. Recarga antes de continuar." }
     }
-
-    await recordAudit({
-      userId: session.user.id,
-      userEmail: session.user.email ?? undefined,
-      action: "update",
-      entityType: "fuel_load",
-      entityId: id,
-      // El diff cubría 4 campos: cambiar vehículo, proveedor, factura, producto
-      // o fecha no dejaba rastro en el historial. Se guarda el estado editable
-      // completo a ambos lados.
-      oldState: pickAuditedLoadFields(existing),
-      newState: pickAuditedLoadFields(parsed.data),
-    })
 
     revalidatePath(REVALIDATE)
     revalidatePath("/combustibles/anomalias")
@@ -393,25 +403,30 @@ export async function deleteFuelLoadAction(id: string): Promise<ActionState> {
   try {
     // Misma carrera que en la edición: sin FK que frene el DELETE, una carga
     // recién asignada a un resumen desaparecería del detalle sin salir del total.
-    const [deleted] = await db.delete(fuelLoads)
-      .where(and(
-        eq(fuelLoads.id, id),
-        isNull(fuelLoads.statementId),
-        inArray(fuelLoads.status, [...DELETABLE_FUEL_LOAD_STATUSES]),
-      ))
-      .returning({ id: fuelLoads.id })
+    // Auditoría dentro de la misma transacción que el delete (CO-025).
+    const deleted = await db.transaction(async (tx) => {
+      const [row] = await tx.delete(fuelLoads)
+        .where(and(
+          eq(fuelLoads.id, id),
+          isNull(fuelLoads.statementId),
+          inArray(fuelLoads.status, [...DELETABLE_FUEL_LOAD_STATUSES]),
+        ))
+        .returning({ id: fuelLoads.id })
+      if (!row) return null
+
+      await recordAudit({
+        userId: session.user.id,
+        userEmail: session.user.email ?? undefined,
+        action: "delete",
+        entityType: "fuel_load",
+        entityId: id,
+        oldState: { worksiteId: existing.worksiteId, totalAmount: existing.totalAmount },
+      }, tx)
+      return row
+    })
     if (!deleted) {
       return { ok: false, message: "La carga cambió en otra sesión: se concilió o quedó asignada a una cuenta corriente. Recarga antes de continuar." }
     }
-
-    await recordAudit({
-      userId: session.user.id,
-      userEmail: session.user.email ?? undefined,
-      action: "delete",
-      entityType: "fuel_load",
-      entityId: id,
-      oldState: { worksiteId: existing.worksiteId, totalAmount: existing.totalAmount },
-    })
 
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Carga eliminada" }
@@ -435,10 +450,26 @@ export async function registerFuelLoadAction(id: string): Promise<ActionState> {
   try {
     // El estado esperado viaja en el WHERE: dos clics simultáneos, o un registro
     // que corrió mientras se leía, no pueden reescribir el estado dos veces.
-    const [registered] = await db.update(fuelLoads)
-      .set({ status: "registered", updatedAt: new Date().toISOString() })
-      .where(and(eq(fuelLoads.id, id), eq(fuelLoads.status, "draft")))
-      .returning({ id: fuelLoads.id })
+    // La transición draft→registered no auditaba en absoluto (CO-025): quedaba
+    // sin rastro quién sacó la carga de borrador y cuándo.
+    const registered = await db.transaction(async (tx) => {
+      const [row] = await tx.update(fuelLoads)
+        .set({ status: "registered", updatedAt: new Date().toISOString() })
+        .where(and(eq(fuelLoads.id, id), eq(fuelLoads.status, "draft")))
+        .returning({ id: fuelLoads.id })
+      if (!row) return null
+
+      await recordAudit({
+        userId: session.user.id,
+        userEmail: session.user.email ?? undefined,
+        action: "update",
+        entityType: "fuel_load",
+        entityId: id,
+        oldState: { status: "draft" },
+        newState: { status: "registered" },
+      }, tx)
+      return row
+    })
     if (!registered) return { ok: false, message: "La carga ya no está en borrador. Recarga antes de continuar." }
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Carga registrada" }

@@ -206,10 +206,22 @@ export async function updateFuelVehicleAction(
   }
 }
 
-export async function toggleFuelVehicleActiveAction(id: string, activate: boolean): Promise<ActionState> {
+/** Mismo umbral que `operationalStatusReason` (validation.ts) y que las
+ *  transiciones de mantención: motivo explicable, no un click vacío. */
+const MIN_REASON_LENGTH = 5
+const REASON_TOO_SHORT: ActionState = {
+  ok: false,
+  message: "Debes indicar el motivo del cambio de estado",
+  fieldErrors: { reason: ["Explica el motivo en al menos 5 caracteres"] },
+}
+
+export async function toggleFuelVehicleActiveAction(id: string, activate: boolean, reason: string): Promise<ActionState> {
   let session
   try { session = await requirePermission("combustibles:manage_vehicles", "/combustibles") }
   catch { return { ok: false, message: "Sin permisos" } }
+
+  const trimmedReason = reason.trim()
+  if (trimmedReason.length < MIN_REASON_LENGTH) return REASON_TOO_SHORT
 
   const existing = await db.query.fuelVehicles.findFirst({ where: eq(fuelVehicles.id, id) })
   if (!existing) return { ok: false, message: "Vehículo no encontrado" }
@@ -218,7 +230,30 @@ export async function toggleFuelVehicleActiveAction(id: string, activate: boolea
   }
 
   try {
-    await db.update(fuelVehicles).set({ isActive: activate, updatedAt: new Date().toISOString() }).where(eq(fuelVehicles.id, id))
+    // Control optimista (mismo patrón que loads.ts): el estado esperado viaja
+    // en el WHERE, no sólo en la lectura previa — CO-025/CO-028 pedía además
+    // que la baja quedara auditada, cosa que antes no pasaba en absoluto.
+    const updated = await db.transaction(async (tx) => {
+      const [row] = await tx.update(fuelVehicles)
+        .set({ isActive: activate, updatedAt: new Date().toISOString() })
+        .where(and(eq(fuelVehicles.id, id), eq(fuelVehicles.isActive, existing.isActive)))
+        .returning({ id: fuelVehicles.id })
+      if (!row) return null
+
+      await recordAudit({
+        userId: session.user.id,
+        userEmail: session.user.email ?? undefined,
+        action: "update",
+        entityType: "fuel_vehicle",
+        entityId: id,
+        oldState: { isActive: existing.isActive },
+        newState: { isActive: activate, reason: trimmedReason },
+      }, tx)
+      return row
+    })
+    if (!updated) {
+      return { ok: false, message: "El vehículo cambió en otra sesión. Recarga antes de continuar." }
+    }
     revalidatePath(FLEET_CATALOG_PATH)
     return { ok: true, message: activate ? "Vehículo activado" : "Vehículo desactivado" }
   } catch (e) {
@@ -233,7 +268,9 @@ export async function bulkToggleFuelVehicleActiveAction(_prev: ActionState, form
 
   const idsRaw = formData.get("ids") as string
   const activate = formData.get("activate") === "true"
+  const reason = String(formData.get("reason") ?? "").trim()
   if (!idsRaw) return { ok: false, message: "IDs requeridos" }
+  if (reason.length < MIN_REASON_LENGTH) return REASON_TOO_SHORT
 
   const ids = [...new Set(idsRaw.split(",").map((s) => s.trim()).filter(Boolean))]
   if (ids.length === 0) return { ok: false, message: "Selecciona al menos un vehículo" }
@@ -244,14 +281,28 @@ export async function bulkToggleFuelVehicleActiveAction(_prev: ActionState, form
     const scope = worksiteScopeSql(session, fuelVehicles.worksiteId)
     const where = scope ? and(inArray(fuelVehicles.id, ids), scope) : inArray(fuelVehicles.id, ids)
     const updated = await db.transaction(async (tx) => {
-      const visible = await tx.select({ id: fuelVehicles.id }).from(fuelVehicles).where(where)
+      const visible = await tx.select({ id: fuelVehicles.id, isActive: fuelVehicles.isActive }).from(fuelVehicles).where(where)
       if (visible.length !== ids.length) {
         throw new Error("Uno o más vehículos no existen o están fuera de tu alcance")
       }
-      return tx.update(fuelVehicles)
+      const rows = await tx.update(fuelVehicles)
         .set({ isActive: activate, updatedAt: now })
         .where(where)
         .returning({ id: fuelVehicles.id })
+      // Una fila de auditoría por vehículo: un resumen agregado no dice cuál
+      // cambió ni desde qué estado (CO-025/CO-028).
+      for (const vehicle of visible) {
+        await recordAudit({
+          userId: session.user.id,
+          userEmail: session.user.email ?? undefined,
+          action: "update",
+          entityType: "fuel_vehicle",
+          entityId: vehicle.id,
+          oldState: { isActive: vehicle.isActive },
+          newState: { isActive: activate, reason },
+        }, tx)
+      }
+      return rows
     })
 
     revalidatePath(FLEET_CATALOG_PATH)

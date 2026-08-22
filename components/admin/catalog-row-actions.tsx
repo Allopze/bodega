@@ -13,6 +13,13 @@ interface CatalogRowActionsProps {
   editDisabled?: boolean
   editPending?: boolean
   onDeactivateRequest?: () => void
+  /**
+   * Cuando se provee, el toggle en AMBAS direcciones abre confirmación en vez
+   * de reactivar con un solo clic — para catálogos donde incluso reactivar
+   * exige un paso explícito (ej. flota: exige motivo de vuelta a `fuel_vehicle`).
+   * Reemplaza tanto `onDeactivateRequest` como el envío directo del form.
+   */
+  onToggleRequest?: (id: string, activate: boolean) => void
   togglePending?: boolean
 }
 
@@ -24,7 +31,7 @@ interface CatalogRowActionsProps {
  */
 export function CatalogRowActions({
   id, isActive, label, onEdit, toggleAction, editDisabled = false, editPending = false,
-  onDeactivateRequest, togglePending = false,
+  onDeactivateRequest, onToggleRequest, togglePending = false,
 }: CatalogRowActionsProps) {
   return (
     <>
@@ -38,7 +45,20 @@ export function CatalogRowActions({
       >
         <PencilSimple size={16} className={editPending ? "animate-spin" : undefined} />
       </button>
-      {isActive && onDeactivateRequest ? (
+      {onToggleRequest ? (
+        <button
+          type="button"
+          onClick={() => onToggleRequest(id, !isActive)}
+          disabled={togglePending}
+          className={`${BUTTON_CLASS} disabled:opacity-50`}
+          title={isActive ? "Desactivar" : "Activar"}
+          aria-label={`${isActive ? "Desactivar" : "Activar"} ${label}`}
+        >
+          {isActive
+            ? <ToggleRight size={20} className="text-[var(--color-primary)]" />
+            : <ToggleLeft size={20} />}
+        </button>
+      ) : isActive && onDeactivateRequest ? (
         <button
           type="button"
           onClick={onDeactivateRequest}

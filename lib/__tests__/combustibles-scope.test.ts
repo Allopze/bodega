@@ -34,7 +34,7 @@ vi.mock("@/lib/auth/auth", () => ({ auth: mockAuth }))
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 import { NextRequest } from "next/server"
-import { bulkToggleFuelVehicleActiveAction } from "@/app/(app)/combustibles/actions-module/vehicles"
+import { bulkToggleFuelVehicleActiveAction, toggleFuelVehicleActiveAction } from "@/app/(app)/combustibles/actions-module/vehicles"
 import { linkConsumptionPlateAction } from "@/app/(app)/combustibles/actions-consumos"
 import { POST as importFuelLoads } from "@/app/api/combustibles/import/route"
 
@@ -99,6 +99,7 @@ describe("combustibles — alcance de faena en mutaciones masivas y vinculación
       const formData = new FormData()
       formData.set("ids", "veh-a,veh-b")
       formData.set("activate", "false")
+      formData.set("reason", "Baja masiva por fin de temporada")
 
       const state = await bulkToggleFuelVehicleActiveAction({ ok: false }, formData)
 
@@ -116,12 +117,72 @@ describe("combustibles — alcance de faena en mutaciones masivas y vinculación
       const formData = new FormData()
       formData.set("ids", "veh-a")
       formData.set("activate", "false")
+      formData.set("reason", "Baja por fin de temporada")
 
       const state = await bulkToggleFuelVehicleActiveAction({ ok: false }, formData)
 
       expect(state.ok).toBe(true)
       const updated = await inMemoryDb.query.fuelVehicles.findFirst({ where: eq(schema.fuelVehicles.id, "veh-a") })
       expect(updated?.isActive).toBe(false)
+    })
+
+    // CO-025/CO-028: la masiva audita una fila por vehículo, no un resumen agregado.
+    it("audita una fila de auditoría por cada vehículo dado de baja", async () => {
+      mockAuth.mockResolvedValue(scopedSession(["ws-a"]))
+      const formData = new FormData()
+      formData.set("ids", "veh-a")
+      formData.set("activate", "false")
+      formData.set("reason", "Baja por fin de temporada")
+
+      await bulkToggleFuelVehicleActiveAction({ ok: false }, formData)
+
+      const entries = await inMemoryDb.query.auditLog.findMany({
+        where: eq(schema.auditLog.entityId, "veh-a"),
+      })
+      expect(entries).toHaveLength(1)
+      expect(entries[0]?.entityType).toBe("fuel_vehicle")
+      expect(JSON.parse(entries[0]!.oldState!)).toMatchObject({ isActive: true })
+      expect(JSON.parse(entries[0]!.newState!)).toMatchObject({ isActive: false, reason: "Baja por fin de temporada" })
+    })
+  })
+
+  // CO-025/CO-028: la baja individual no auditaba, no exigía motivo y no
+  // repetía el estado esperado en el UPDATE (sin control optimista).
+  describe("toggleFuelVehicleActiveAction", () => {
+    it("audita el estado previo/nuevo con motivo dentro de la transacción", async () => {
+      mockAuth.mockResolvedValue(scopedSession(["ws-a"]))
+
+      const state = await toggleFuelVehicleActiveAction("veh-a", false, "Sale de servicio por revisión mecánica")
+
+      expect(state.ok).toBe(true)
+      const updated = await inMemoryDb.query.fuelVehicles.findFirst({ where: eq(schema.fuelVehicles.id, "veh-a") })
+      expect(updated?.isActive).toBe(false)
+
+      const entries = await inMemoryDb.query.auditLog.findMany({ where: eq(schema.auditLog.entityId, "veh-a") })
+      expect(entries).toHaveLength(1)
+      expect(JSON.parse(entries[0]!.oldState!)).toMatchObject({ isActive: true })
+      expect(JSON.parse(entries[0]!.newState!)).toMatchObject({ isActive: false, reason: "Sale de servicio por revisión mecánica" })
+    })
+
+    it("rechaza un motivo demasiado corto sin tocar la fila", async () => {
+      mockAuth.mockResolvedValue(scopedSession(["ws-a"]))
+
+      const state = await toggleFuelVehicleActiveAction("veh-a", false, "no")
+
+      expect(state.ok).toBe(false)
+      expect(state.message).toMatch(/motivo/i)
+      const untouched = await inMemoryDb.query.fuelVehicles.findFirst({ where: eq(schema.fuelVehicles.id, "veh-a") })
+      expect(untouched?.isActive).toBe(true)
+    })
+
+    // Control optimista: si el estado ya cambió (a lo que se pide), no hay
+    // nada que reconciliar y no debe fallar como si fuera una carrera perdida.
+    it("no falla si el vehículo ya estaba en el estado pedido", async () => {
+      mockAuth.mockResolvedValue(scopedSession(["ws-a"]))
+
+      const state = await toggleFuelVehicleActiveAction("veh-a", true, "Ya estaba activo, confirmando estado")
+
+      expect(state.ok).toBe(true)
     })
   })
 

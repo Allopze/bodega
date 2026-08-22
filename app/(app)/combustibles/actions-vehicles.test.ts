@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 const mockRequirePermission = vi.fn()
 const mockCanAccessWorksite = vi.fn()
 const mockInsertValues = vi.fn(async () => undefined)
-const mockUpdateWhere = vi.fn(async () => undefined)
+// `.returning(...)` sólo lo usan los tres toggles (control optimista, CO-025);
+// updateFuelVehicleAction ignora el resuelto de `.where(...)` igual que antes.
+const mockUpdateReturning = vi.fn(async () => [{ id: "veh-1" }])
+const mockUpdateWhere = vi.fn(() => ({ returning: mockUpdateReturning }))
 const mockUpdateSet = vi.fn(() => ({ where: mockUpdateWhere }))
 const mockFindVehicle = vi.fn()
 const mockFindEquipmentType = vi.fn()
@@ -124,7 +127,7 @@ describe("fuel vehicle actions worksite scope", () => {
     mockFindVehicle.mockResolvedValue({ id: "veh-1", worksiteId: "ws-2" })
     mockCanAccessWorksite.mockReturnValue(false)
 
-    const result = await toggleFuelVehicleActiveAction("veh-1", false)
+    const result = await toggleFuelVehicleActiveAction("veh-1", false, "Sale de operación por revisión")
 
     expect(result.ok).toBe(false)
     expect(result.message).toMatch(/faena/i)
@@ -206,23 +209,38 @@ describe("updateFuelVehicleAction governance fields", () => {
 })
 
 describe("toggleFuelVehicleActiveAction", () => {
-  it("reactivates a vehicle within the user's scope", async () => {
-    mockFindVehicle.mockResolvedValue({ id: "veh-1", worksiteId: "ws-1" })
+  it("reactivates a vehicle within the user's scope and audits within the transaction", async () => {
+    mockFindVehicle.mockResolvedValue({ id: "veh-1", worksiteId: "ws-1", isActive: false })
 
-    const result = await toggleFuelVehicleActiveAction("veh-1", true)
+    const result = await toggleFuelVehicleActiveAction("veh-1", true, "Vuelve de mantención programada")
 
     expect(result.ok).toBe(true)
     expect(result.message).toMatch(/activado/i)
     expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({ isActive: true }))
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "update", entityType: "fuel_vehicle", entityId: "veh-1" }),
+      expect.anything(),
+    )
   })
 
   it("deactivates a vehicle within the user's scope", async () => {
-    mockFindVehicle.mockResolvedValue({ id: "veh-1", worksiteId: "ws-1" })
+    mockFindVehicle.mockResolvedValue({ id: "veh-1", worksiteId: "ws-1", isActive: true })
 
-    const result = await toggleFuelVehicleActiveAction("veh-1", false)
+    const result = await toggleFuelVehicleActiveAction("veh-1", false, "Se da de baja por fin de contrato de arriendo")
 
     expect(result.ok).toBe(true)
     expect(result.message).toMatch(/desactivado/i)
     expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({ isActive: false }))
+  })
+
+  // CO-025/CO-028: antes ninguna baja pedía motivo.
+  it("rejects a toggle without an explained reason", async () => {
+    mockFindVehicle.mockResolvedValue({ id: "veh-1", worksiteId: "ws-1", isActive: true })
+
+    const result = await toggleFuelVehicleActiveAction("veh-1", false, "no")
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(/motivo/i)
+    expect(mockUpdateSet).not.toHaveBeenCalled()
   })
 })

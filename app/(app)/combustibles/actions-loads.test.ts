@@ -26,11 +26,14 @@ vi.mock("@/lib/auth/can", () => ({
 vi.mock("@/lib/auth/scope", () => ({
   canAccessWorksite: (...args: unknown[]) => mockCanAccessWorksite(...args),
 }))
-vi.mock("@/db", () => ({
-  db: {
+vi.mock("@/db", () => {
+  const db = {
     delete: () => ({ where: mockDeleteWhere }),
     update: () => ({ set: mockUpdateSet }),
     insert: () => ({ values: mockInsertValues }),
+    // Auditoría dentro de la misma transacción que la mutación (CO-025): el tx
+    // pasado al callback es el mismo `db` mockeado, mismas cadenas de arriba.
+    transaction: vi.fn(async <T,>(fn: (tx: typeof db) => T): Promise<T> => fn(db)),
     query: {
       fuelLoads: {
         findFirst: (...args: unknown[]) => mockFindLoad(...args),
@@ -43,8 +46,9 @@ vi.mock("@/db", () => ({
       dteDocuments: { findFirst: (...args: unknown[]) => mockFindDte(...args) },
       systemSettings: { findFirst: vi.fn(async () => null) },
     },
-  },
-}))
+  }
+  return { db }
+})
 vi.mock("@/lib/audit", () => ({ recordAudit: (...args: unknown[]) => mockRecordAudit(...args) }))
 vi.mock("@/lib/id", () => ({ nanoid: () => "id-new" }))
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }))
@@ -146,6 +150,20 @@ describe("registerFuelLoadAction", () => {
     expect(result.ok).toBe(false)
     expect(result.message).toMatch(/faena|acceso/i)
     expect(mockUpdateWhere).not.toHaveBeenCalled()
+  })
+
+  // CO-025: la transición draft→registered no auditaba en absoluto.
+  it("audita la transición a registered dentro de la misma transacción", async () => {
+    mockFindLoad.mockResolvedValue({ id: "load-1", worksiteId: "ws-mine", status: "draft" })
+    mockCanAccessWorksite.mockReturnValue(true)
+
+    const result = await registerFuelLoadAction("load-1")
+
+    expect(result.ok).toBe(true)
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "update", entityType: "fuel_load", entityId: "load-1" }),
+      expect.anything(),
+    )
   })
 })
 
@@ -355,8 +373,10 @@ describe("createFuelLoadAction — audit logging", () => {
     await createFuelLoadAction({ ok: false, message: "" }, fd)
 
     expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({ productId: "fuel-diesel" }))
+    // Segundo argumento: el `tx` de la transacción que envuelve insert+audit (CO-025).
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: "create", entityType: "fuel_load" }),
+      expect.anything(),
     )
     expect(mockRedirect).toHaveBeenCalledWith("/combustibles")
   })
