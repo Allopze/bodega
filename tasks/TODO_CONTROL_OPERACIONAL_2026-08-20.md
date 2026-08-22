@@ -35,29 +35,33 @@ Estado global: **en implementación**.
 
 ## Fase 3 — Features y UX
 
-- [ ] T23 CO-030: paginación y exportación Excel de Flota/Mantenciones.
-- [ ] T24 CO-031/032/035: enlaces, búsqueda y filtros.
-- [ ] T25 CO-034: móvil y accesibilidad.
-- [ ] T26: planes preventivos configurables.
-- [ ] T27: OT completa + estado operacional.
-- [ ] T28: adjuntos y política documental.
-- [ ] T29: notificaciones, SLA y escalamiento.
+- [x] T23 CO-030: paginación y exportación Excel de Flota/Mantenciones.
+- [x] T24 CO-031/032/035: enlaces, búsqueda y filtros.
+- [x] T25 CO-034: móvil y accesibilidad.
+- [x] T26: planes preventivos configurables.
+- [x] T27: OT completa + estado operacional.
+- [x] T28: adjuntos y política documental.
+- [x] T29: notificaciones, SLA y escalamiento.
 - [ ] T30: reconciliación persistente y reproceso.
-- [ ] T31: observabilidad y hub operacional.
-- [ ] T32: reportes de gestión operacional.
-- [ ] T33: contrato unificado de activos.
-- [ ] T34 CO-042: consulta de detalle sin N+1.
+- [x] T31: observabilidad y hub operacional.
+- [x] T32: reportes de gestión operacional.
+- [x] T33: contrato unificado de activos.
+- [x] T34 CO-042: consulta de detalle sin N+1.
 
 ## Fase 4 — Verificación final
 
-- [ ] T35: migraciones generadas/verificadas y sin drift.
-- [ ] T36: unitarias, `test:fast`, PGlite y PostgreSQL secuencial.
-- [ ] T37: lint, TypeScript, secretos, seguridad, React Doctor y build.
-- [ ] T38: E2E desechable completo.
-- [ ] T39: auditoría final de requisitos y documentación actualizada.
+- [x] T35: migraciones generadas/verificadas y sin drift.
+- [x] T36: unitarias, `test:fast`, PGlite y PostgreSQL secuencial.
+- [x] T37: lint, TypeScript, secretos, seguridad, React Doctor y build.
+- [x] T38: E2E desechable completo.
+- [x] T39: auditoría final de requisitos y documentación actualizada.
 
 ## Registro de avance
 
+- 2026-08-22: auditoría posterior al cierre completada. Se corrigieron 18 brechas de contrato en OT/costos/downtime/medidores/responsables/recordatorios/políticas/MTTR/permisos y Flota, más el timeout del setup PostgreSQL frío. Evidencia nueva: 61 regresiones unitarias focalizadas, `test:fast` final 4.580 pruebas, PGlite completo 854 más 6 focalizadas de Flota, PostgreSQL real 50 y E2E Chromium focalizado 22 más 2 finales de Flota, todos verdes; migraciones sin drift, lint, TypeScript, secretos, seguridad, aliases y build final limpios. React Doctor posterior no ejecutado por bloqueo de red/política; sin commit/push/deploy/producción.
+- 2026-08-22: T23–T29 y T31–T34 cerradas. Flota/Mantenciones incorporan paginación y búsqueda server-side, exportes Excel, filtros y deep links, tarjetas móviles, planes preventivos, OT con tareas/repuestos/mano de obra/causa raíz/garantía/downtime/costos segregados, documentos versionados con política por activo, recordatorios/SLA/escalamiento y sincronización explícita del estado operacional. `/control-operacional` entrega hub, salud de fuentes, contrato unificado de activos, métricas y reporte gerencial Excel; el detalle de Flota dejó de resolver impacto de mantenciones con N+1. T30 sigue pendiente porque es la misma brecha CO-027 ya declarada en T19: ledger persistente de rechazos y reproceso de importaciones, fuera del flujo de inspecciones.
+- 2026-08-22: Reporte de Equipos alineado al proceso real: el mecánico no es usuario de Chome; `jefe_terreno` sube la hoja física, transcribe y ejecuta dentro de su faena, mientras otra persona conserva la revisión segregada. El E2E dedicado acredita papel → digitación de falla → ejecución y ausencia de revisión para el jefe; los E2E existentes acreditan CAPA, OT y detención confirmada del equipo.
+- 2026-08-22: T35–T39 cerradas localmente. Migraciones 0204/0205 generadas, cadena de 206 entradas verificada y segunda generación sin drift. `test:fast`: 536 archivos aprobados, 29 omitidos; 4566 pruebas aprobadas, 266 omitidas. PGlite completo: 76/76 archivos y 854/854 pruebas. PostgreSQL real de inspecciones: 50/50. TypeScript, ESLint, secretos, auditoría de seguridad, aliases Drizzle y build limpios; React Doctor quedó en 76/100 con 19 advertencias revisadas (preexistentes o capacidades RBAC booleanas intencionales, sin hallazgos nuevos del servicio). E2E Chromium final secuencial sobre base desechable: 470 aprobados, 3 omitidos, 0 fallos. No se ejecutó despliegue ni verificación de producción.
 - 2026-08-20: auditoría terminada; 42 hallazgos y capacidades faltantes convertidos en 39 tareas verificables.
 - 2026-08-20: asumidos contratos conservadores de costos, faena, estados contables y retención; sin commit/push/deploy.
 - 2026-08-20: inicia T01; contrato de transiciones alineado con la UI y mutaciones diseñadas con lock + scope + auditoría en una transacción.
