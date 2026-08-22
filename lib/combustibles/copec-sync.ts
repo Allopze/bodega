@@ -42,9 +42,30 @@ export async function getCopecSyncState(): Promise<{ lastRunAt: string | null; c
   return { lastRunAt: s.lastRunAt, cursor: s.cursor, pending: s.pending.length }
 }
 
-async function saveState(next: SyncState) {
+/**
+ * `expectedVersion` es el `updatedAt` leído por la llamada a `state()` que
+ * originó este guardado (`""` si la fila no existía aún). Antes se pisaba a
+ * ciegas: dos corridas del cron solapadas —o un cron y un ajuste manual de
+ * fecha de inicio— podían leer el mismo estado y la segunda escritura
+ * descartaba en silencio el avance de cursor de la primera (CO-026).
+ * `setWhere` sólo aplica la actualización si nadie escribió entre medio; si
+ * la fila no existía (`expectedVersion === ""`), el INSERT no tiene conflicto
+ * y `setWhere` ni se evalúa.
+ */
+async function saveState(next: SyncState, expectedVersion: string) {
   const value = JSON.stringify(next)
-  await db.insert(systemSettings).values({ key: STATE_KEY, value }).onConflictDoUpdate({ target: systemSettings.key, set: { value, updatedAt: new Date().toISOString() } })
+  const now = new Date().toISOString()
+  const [result] = await db.insert(systemSettings)
+    .values({ key: STATE_KEY, value, updatedAt: now })
+    .onConflictDoUpdate({
+      target: systemSettings.key,
+      set: { value, updatedAt: now },
+      setWhere: eq(systemSettings.updatedAt, expectedVersion),
+    })
+    .returning({ key: systemSettings.key })
+  if (!result) {
+    throw new Error("El estado de sincronización Copec cambió en otra ejecución. Reintenta desde el estado actual.")
+  }
 }
 
 // Fecha civil chilena: en UTC (la zona del proceso en producción), entre las
@@ -138,7 +159,7 @@ export async function setCopecSyncStartDate(startDate: string, expectedStart: st
     throw new Error("La importación automática solo puede comenzar hasta el mes actual.")
   }
 
-  await saveState({ cursor: startDate, lastRunAt: current.lastRunAt, pending: current.pending })
+  await saveState({ cursor: startDate, lastRunAt: current.lastRunAt, pending: current.pending }, current._version)
   return { currentStart: startDate, minimumStart, maximumStart, latestImportedUntil }
 }
 
@@ -237,23 +258,29 @@ async function importCopecPeriod(
     // sólo al primer lote nuevo que se crea para este archivo.
     let fileErrorsAttributed = false
     for (const [worksiteId, rows] of groups) {
-      // Dedup por identidad lógica del período (faena + rango + fuente), NO por
-      // hash del archivo: Copec regenera el Excel en cada descarga (hash distinto
-      // siempre), así que deduplicar por hash nunca acertaba y reimportar un
-      // período DUPLICABA todo. La identidad lógica es estable entre descargas.
-      const duplicate = await db.query.fuelImportBatches.findFirst({ where: and(eq(fuelImportBatches.worksiteId, worksiteId), eq(fuelImportBatches.periodoDesde, from), eq(fuelImportBatches.periodoHasta, to), eq(fuelImportBatches.fuente, source), ne(fuelImportBatches.estado, "revertido")), columns: { id: true } })
-      if (duplicate) {
-        // El lote ya existe para este (archivo, faena). En vez de saltarlo entero,
-        // insertamos solo las patentes que faltaban: típicamente vehículos recién
-        // registrados que en una corrida previa quedaron "sin vincular". Así el
-        // consumo histórico sí entra al reimportar el período una vez completada
-        // la flota, sin duplicar lo ya cargado.
-        const existing = await db.query.fuelConsumptionRecords.findMany({ where: eq(fuelConsumptionRecords.batchId, duplicate.id), columns: { patente: true } })
-        const existingPlates = new Set(existing.map((r) => r.patente))
-        const missing = rows.filter((row) => !existingPlates.has(row.patente))
-        if (missing.length === 0) continue
-        const add = computeBatchTotals(missing)
-        await db.transaction(async (tx) => {
+      // Todo el grupo (dedup por identidad lógica, guard de fuente ajena y el
+      // insert que corresponda) bajo un único lock por (faena, período,
+      // fuente): antes cada chequeo y cada transacción corrían por separado,
+      // así que dos sincronizaciones solapadas (cron + reintento manual, o dos
+      // ejecuciones del cron) podían leer "no existe todavía" a la vez y crear
+      // el mismo lote dos veces (CO-026). Por hash NO sirve aquí — Copec
+      // regenera el Excel en cada descarga.
+      const lockKey = `fuel_copec:${worksiteId}:${from}:${to}:${source}`
+      const outcome = await db.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`)
+
+        const duplicate = await tx.query.fuelImportBatches.findFirst({ where: and(eq(fuelImportBatches.worksiteId, worksiteId), eq(fuelImportBatches.periodoDesde, from), eq(fuelImportBatches.periodoHasta, to), eq(fuelImportBatches.fuente, source), ne(fuelImportBatches.estado, "revertido")), columns: { id: true } })
+        if (duplicate) {
+          // El lote ya existe para este (archivo, faena). En vez de saltarlo entero,
+          // insertamos solo las patentes que faltaban: típicamente vehículos recién
+          // registrados que en una corrida previa quedaron "sin vincular". Así el
+          // consumo histórico sí entra al reimportar el período una vez completada
+          // la flota, sin duplicar lo ya cargado.
+          const existing = await tx.query.fuelConsumptionRecords.findMany({ where: eq(fuelConsumptionRecords.batchId, duplicate.id), columns: { patente: true } })
+          const existingPlates = new Set(existing.map((r) => r.patente))
+          const missing = rows.filter((row) => !existingPlates.has(row.patente))
+          if (missing.length === 0) return { imported: 0 }
+          const add = computeBatchTotals(missing)
           await tx.insert(fuelConsumptionRecords).values(buildRecords(missing, duplicate.id, worksiteId))
           await tx.update(fuelImportBatches).set({
             totalFilas: sql`${fuelImportBatches.totalFilas} + ${add.totalFilas}`,
@@ -265,38 +292,39 @@ async function importCopecPeriod(
             totalMonto: sql`${fuelImportBatches.totalMonto} + ${add.totalMonto}`,
             updatedAt: new Date().toISOString(),
           }).where(eq(fuelImportBatches.id, duplicate.id))
+          return { imported: missing.length }
+        }
+        // El dedup de arriba compara la fuente exacta, así que no ve los lotes
+        // importados a mano (fuente 'Copec'): sin este guard, sincronizar un mes ya
+        // cargado a mano duplicaría litros y monto de esa faena. Se excluyen las dos
+        // fuentes propias — Diésel y BlueMax son lotes separados por diseño y no
+        // deben bloquearse entre sí.
+        const foreign = await tx.query.fuelImportBatches.findFirst({
+          where: and(
+            eq(fuelImportBatches.worksiteId, worksiteId),
+            lte(fuelImportBatches.periodoDesde, to),
+            gte(fuelImportBatches.periodoHasta, from),
+            notInArray(fuelImportBatches.fuente, TCT_SOURCES),
+            ne(fuelImportBatches.estado, "revertido"),
+          ),
+          columns: { fuente: true },
         })
-        imported += missing.length
-        continue
-      }
-      // El dedup de arriba compara la fuente exacta, así que no ve los lotes
-      // importados a mano (fuente 'Copec'): sin este guard, sincronizar un mes ya
-      // cargado a mano duplicaría litros y monto de esa faena. Se excluyen las dos
-      // fuentes propias — Diésel y BlueMax son lotes separados por diseño y no
-      // deben bloquearse entre sí.
-      const foreign = await db.query.fuelImportBatches.findFirst({
-        where: and(
-          eq(fuelImportBatches.worksiteId, worksiteId),
-          lte(fuelImportBatches.periodoDesde, to),
-          gte(fuelImportBatches.periodoHasta, from),
-          notInArray(fuelImportBatches.fuente, TCT_SOURCES),
-          ne(fuelImportBatches.estado, "revertido"),
-        ),
-        columns: { fuente: true },
-      })
-      if (foreign) {
-        unavailable.push(`${productLabel}: faena con importación previa (${foreign.fuente ?? "sin fuente"}) en el período`)
-        continue
-      }
-      const totals = computeBatchTotals(rows)
-      const batchId = nanoid()
-      const fileErrors = fileErrorsAttributed ? 0 : parsed.errors.length
-      fileErrorsAttributed = true
-      await db.transaction(async (tx) => {
+        if (foreign) return { imported: 0, foreignSource: foreign.fuente ?? "sin fuente" }
+
+        const totals = computeBatchTotals(rows)
+        const batchId = nanoid()
+        const fileErrors = fileErrorsAttributed ? 0 : parsed.errors.length
+        fileErrorsAttributed = true
         await tx.insert(fuelImportBatches).values({ id: batchId, worksiteId, fuente: source, periodoDesde: from, periodoHasta: to, archivoNombre: report.fileName, hashArchivo: hash, estado: "importado", totalFilas: totals.totalFilas + fileErrors, filasValidas: totals.totalFilas, filasInvalidas: fileErrors, totalPatentes: totals.totalPatentes, totalTarjetas: totals.totalTarjetas, totalTransacciones: totals.totalTransacciones, totalCantidad: totals.totalCantidad, totalMonto: totals.totalMonto, importadoPor: resolvedImporterId, notas: "Sincronización mensual automática Copec TCT" })
         await tx.insert(fuelConsumptionRecords).values(buildRecords(rows, batchId, worksiteId))
+        return { imported: rows.length }
       })
-      imported += rows.length
+
+      if (outcome.foreignSource !== undefined) {
+        unavailable.push(`${productLabel}: faena con importación previa (${outcome.foreignSource}) en el período`)
+        continue
+      }
+      imported += outcome.imported
     }
   }
 
@@ -359,7 +387,7 @@ export async function syncCopecReportPeriod(period: CopecSyncPeriod, importerId?
   // la próxima ejecución re-procesará el período pero el hash check
   // evitará duplicados.
   try {
-    await saveState({ cursor: advanced ? addDays(period.to, 1) : period.from, lastRunAt: new Date().toISOString(), pending: [...pending].sort() })
+    await saveState({ cursor: advanced ? addDays(period.to, 1) : period.from, lastRunAt: new Date().toISOString(), pending: [...pending].sort() }, current._version)
   } catch (err) {
     console.error("[copec-sync] saveState failed, cursor may be stale on next run", err)
   }

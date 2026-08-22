@@ -14,6 +14,8 @@ const mockTransaction = vi.fn()
 const mockTxInsertValues = vi.fn()
 const mockTxUpdateSet = vi.fn()
 
+const mockSaveStateReturning = vi.fn().mockResolvedValue([{ key: "combustibles.copec.sync" }])
+
 vi.mock("@/db", () => ({
   db: {
     query: {
@@ -24,7 +26,12 @@ vi.mock("@/db", () => ({
       fuelConsumptionRecords: { findMany: (...args: unknown[]) => mockConsumptionFindMany(...args) },
     },
     insert: vi.fn(() => ({
-      values: vi.fn(() => ({ onConflictDoUpdate: (...args: unknown[]) => mockSaveState(...args) })),
+      values: vi.fn(() => ({
+        onConflictDoUpdate: (...args: unknown[]) => {
+          mockSaveState(...args)
+          return { returning: mockSaveStateReturning }
+        },
+      })),
     })),
     transaction: (cb: (tx: unknown) => unknown) => mockTransaction(cb),
   },
@@ -48,6 +55,25 @@ vi.mock("@/lib/combustibles/tae-receipts", () => ({
 }))
 
 const { buildCopecSyncPeriods, getCopecSyncPlan, getCopecSyncStartOptions, setCopecSyncStartDate, syncCopecReportPeriod } = await import("../copec-sync")
+
+// Cada grupo (faena, período, fuente) ahora corre bajo lock + recheck DENTRO
+// de la transacción (CO-026) — `tx.query...` reutiliza los mismos mocks que
+// antes vivían en `db.query...`, así que los `mockResolvedValue`/`Once` de
+// cada test siguen aplicando en el mismo orden.
+function makeTx() {
+  const insertedRecords: Array<{ patente: string }> = []
+  const tx = {
+    execute: vi.fn().mockResolvedValue(undefined),
+    query: {
+      fuelImportBatches: { findFirst: (...args: unknown[]) => mockBatchFindFirst(...args) },
+      fuelConsumptionRecords: { findMany: (...args: unknown[]) => mockConsumptionFindMany(...args) },
+    },
+    insert: () => ({ values: (records: Array<{ patente: string }>) => { insertedRecords.push(...records); return mockTxInsertValues(records) } }),
+    update: () => ({ set: (patch: unknown) => { mockTxUpdateSet(patch); return { where: vi.fn() } } }),
+    _insertedRecords: insertedRecords,
+  }
+  return tx
+}
 
 describe("buildCopecSyncPeriods", () => {
   it("divides an initial historical import into closed calendar months", () => {
@@ -81,6 +107,8 @@ describe("syncCopecReportPeriod", () => {
     mockParseTaeReceiptExcel.mockResolvedValue({ rows: [], errors: [] })
     mockImportTaeReceipts.mockResolvedValue({ inserted: 0, duplicates: 0, unmappedCards: [], unmappedLiters: 0 })
     mockSaveState.mockResolvedValue(undefined)
+    mockSaveStateReturning.mockResolvedValue([{ key: "combustibles.copec.sync" }])
+    mockTransaction.mockImplementation(async (cb: (t: unknown) => unknown) => cb(makeTx()))
   })
 
   afterEach(() => {
@@ -138,19 +166,15 @@ describe("syncCopecReportPeriod", () => {
     mockBatchFindFirst.mockResolvedValue({ id: "batch-1" })
     mockConsumptionFindMany.mockResolvedValue([{ patente: "AAA" }])
 
-    const insertedRecords: Array<{ patente: string }> = []
-    const tx = {
-      insert: () => ({ values: (records: Array<{ patente: string }>) => { insertedRecords.push(...records); return mockTxInsertValues(records) } }),
-      update: () => ({ set: (patch: unknown) => { mockTxUpdateSet(patch); return { where: vi.fn() } } }),
-    }
+    const tx = makeTx()
     mockTransaction.mockImplementation(async (cb: (t: unknown) => unknown) => cb(tx))
 
     const result = await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
 
     // Solo BBB se inserta; AAA no se duplica.
     expect(result.imported).toBe(1)
-    expect(insertedRecords).toHaveLength(1)
-    expect(insertedRecords[0]!.patente).toBe("BBB")
+    expect(tx._insertedRecords).toHaveLength(1)
+    expect(tx._insertedRecords[0]!.patente).toBe("BBB")
     // El lote existente se actualiza con los totales de la patente nueva.
     expect(mockTxUpdateSet).toHaveBeenCalledOnce()
   })
@@ -170,7 +194,10 @@ describe("syncCopecReportPeriod", () => {
     const result = await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
 
     expect(result.imported).toBe(0)
-    expect(mockTransaction).not.toHaveBeenCalled()
+    // El recheck ahora corre DENTRO de la transacción (bajo el lock, CO-026),
+    // así que sí se llama — pero sin insertar nada, porque encuentra el lote ajeno.
+    expect(mockTransaction).toHaveBeenCalledOnce()
+    expect(mockTxInsertValues).not.toHaveBeenCalled()
     expect(result.unavailable).toContain("Diesel: faena con importación previa (Copec) en el período")
   })
 })
@@ -235,5 +262,16 @@ describe("Copec synchronization start date", () => {
     await expect(setCopecSyncStartDate("2026-07-01", "2020-01-01"))
       .rejects.toThrow("La sincronización cambió")
     expect(mockSaveState).not.toHaveBeenCalled()
+  })
+
+  // CO-026: la comprobación de arriba es a nivel de aplicación (currentStart);
+  // esta es la comprobación a nivel de BD (`setWhere` sobre `updatedAt`) que
+  // atrapa la carrera cuando DOS escrituras pasan esa comprobación a la vez —
+  // sin esto, la segunda pisaba el cursor de la primera en silencio.
+  it("rejects the write itself when another process updated the state row concurrently", async () => {
+    mockSaveStateReturning.mockResolvedValueOnce([])
+
+    await expect(setCopecSyncStartDate("2026-07-01", "2020-02-01"))
+      .rejects.toThrow("cambió en otra ejecución")
   })
 })

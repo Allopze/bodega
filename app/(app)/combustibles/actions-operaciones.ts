@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto"
 import path from "node:path"
 import { revalidatePath } from "next/cache"
-import { and, eq, gte, inArray, lte, ne } from "drizzle-orm"
+import { and, eq, gte, inArray, lte, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelAnomalyCases, fuelOperationBatches, fuelOperationRecords, fuelVehicles, worksites } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
@@ -11,7 +11,7 @@ import { isGlobalRole } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
-import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
+import { mkdirp, removeFile, writeBuffer } from "@/lib/storage/helpers"
 import { resolveFuelImportsDir, createFuelImportPath } from "@/lib/storage/config"
 import {
   parseFuelOperationsExcel,
@@ -185,12 +185,15 @@ function operationRowKey(row: { plate: string; fecha: string; horaCarga: string 
  * Acotado por rango de fecha del archivo — `fecha` está indexada — para no
  * escanear la tabla completa en cada confirmación.
  */
-async function existingOperationKeys(rows: Awaited<ReturnType<typeof parseFuelOperationsExcel>>["rows"]): Promise<Set<string>> {
+async function existingOperationKeys(
+  rows: Awaited<ReturnType<typeof parseFuelOperationsExcel>>["rows"],
+  client: Parameters<Parameters<typeof db.transaction>[0]>[0] | typeof db = db,
+): Promise<Set<string>> {
   if (rows.length === 0) return new Set()
   const fechas = rows.map((r) => r.fecha)
   const minFecha = fechas.reduce((a, b) => (a < b ? a : b))
   const maxFecha = fechas.reduce((a, b) => (a > b ? a : b))
-  const existing = await db.select({
+  const existing = await client.select({
     plate: fuelOperationRecords.plate,
     fecha: fuelOperationRecords.fecha,
     horaCarga: fuelOperationRecords.horaCarga,
@@ -246,158 +249,185 @@ export async function confirmOperationsImportAction(
   const confirmDuplicates = formData.get("confirmDuplicates") === "true"
   const autoCreateVehicles = formData.get("autoCreateVehicles") === "true"
 
-  if (!confirmDuplicates) {
-    const archivoDuplicado = await db.query.fuelOperationBatches.findFirst({
-      where: and(eq(fuelOperationBatches.hashArchivo, hashArchivo), ne(fuelOperationBatches.estado, "revertido")),
-    })
-    if (archivoDuplicado) return { ok: false, message: `Este archivo ya fue importado como lote ${archivoDuplicado.id}` }
-  }
+  // Catálogos de referencia: de sólo lectura, no forman parte de la condición
+  // de carrera que el lock protege — no hace falta releerlos bajo el lock.
+  const [allWorksites, allSuppliers, existingVehicles] = await Promise.all([
+    db.query.worksites.findMany({ columns: { id: true, name: true } }),
+    db.query.fuelSuppliers.findMany({ columns: { id: true, name: true } }),
+    db.query.fuelVehicles.findMany({ columns: { id: true, plate: true, code: true, type: true, brand: true, model: true, year: true } }),
+  ])
+  const vehicleByKey = new Map(existingVehicles.map((v) => [plateMatchKey(v.plate), v]))
 
+  // No se puede escribir a disco DENTRO de una transacción de Postgres — se
+  // escribe antes y, si el lote resulta duplicado bajo el lock o la
+  // transacción falla, se compensa borrándolo (mismo patrón que TAE/TCT).
   const safeName = sanitizeFileName(fileName)
   const storageName = `${Date.now()}-${nanoid()}-${safeName}`
   const storageDir = resolveFuelImportsDir()
   await mkdirp(storageDir)
-  await writeBuffer(path.join(storageDir, storageName), buffer)
+  const absolutePath = path.join(storageDir, storageName)
+  await writeBuffer(absolutePath, buffer)
   const archivoPath = createFuelImportPath(storageName)
 
-  const [allWorksites, allSuppliers, existingVehicles, existingKeys] = await Promise.all([
-    db.query.worksites.findMany({ columns: { id: true, name: true } }),
-    db.query.fuelSuppliers.findMany({ columns: { id: true, name: true } }),
-    db.query.fuelVehicles.findMany({ columns: { id: true, plate: true, code: true, type: true, brand: true, model: true, year: true } }),
-    existingOperationKeys(parsed.rows),
-  ])
-  const vehicleByKey = new Map(existingVehicles.map((v) => [plateMatchKey(v.plate), v]))
+  const lockKey = `fuel_ops:${hashArchivo}`
 
-  // Filas que ya existen como carga real de un lote vigente: se excluyen del
-  // lote nuevo en vez de duplicarlas. `duplicateRows` no cuenta como error —
-  // es información, no un archivo inválido — y se reporta aparte en el resumen.
-  const newRows = parsed.rows.filter((row) => !existingKeys.has(operationRowKey(row)))
-  const duplicateRows = parsed.rows.length - newRows.length
-  if (newRows.length === 0) {
-    return { ok: false, message: `Las ${duplicateRows} filas del archivo ya estaban importadas en un lote vigente. No hay filas nuevas que importar.` }
-  }
+  try {
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`)
 
-  const batchId = nanoid()
-  const totales = computeTotales(newRows)
-
-  await db.transaction(async (tx) => {
-    await tx.insert(fuelOperationBatches).values({
-      id: batchId,
-      archivoNombre: safeName,
-      archivoPath,
-      hashArchivo,
-      estado: "importado",
-      periodoDesde: totales.periodoDesde,
-      periodoHasta: totales.periodoHasta,
-      totalFilas: totales.totalFilas + parsed.errors.length,
-      filasValidas: totales.totalFilas,
-      filasInvalidas: parsed.errors.length,
-      totalEquipos: totales.totalEquipos,
-      totalLitros: totales.totalLitros,
-      totalMonto: totales.totalMonto,
-      importadoPor: session.user.id,
-      notas: String(formData.get("notas") ?? "").trim() || null,
-    })
-
-    // Autocompletar/crear catálogo de vehículos a partir del log — opt-in
-    // explícito para creación (ver decisión en el plan: no crear ~100
-    // vehículos sin revisión humana por defecto).
-    const seenPlates = new Set<string>()
-    for (const row of parsed.rows) {
-      if (seenPlates.has(row.plate)) continue
-      seenPlates.add(row.plate)
-      const key = plateMatchKey(row.plate)
-      const existing = vehicleByKey.get(key)
-
-      if (existing) {
-        const patch: Partial<typeof fuelVehicles.$inferInsert> = {}
-        if (!existing.code && row.code) patch.code = row.code
-        if (!existing.brand && row.marca) patch.brand = row.marca
-        if (!existing.model && row.modelo) patch.model = row.modelo
-        if (!existing.year && row.anio) patch.year = row.anio
-        if (Object.keys(patch).length > 0) {
-          await tx.update(fuelVehicles).set(patch).where(eq(fuelVehicles.id, existing.id))
-        }
-        continue
+      // Recheck bajo el lock (CO-026): tanto el duplicado por hash de archivo
+      // como el dedupe secundario por fila corrían sin lock, así que dos
+      // confirmaciones simultáneas del mismo archivo (o de un consolidado que
+      // se solapa con uno ya importado) podían insertar el mismo lote dos veces.
+      if (!confirmDuplicates) {
+        const archivoDuplicado = await tx.query.fuelOperationBatches.findFirst({
+          where: and(eq(fuelOperationBatches.hashArchivo, hashArchivo), ne(fuelOperationBatches.estado, "revertido")),
+        })
+        if (archivoDuplicado) return { ok: false as const, message: `Este archivo ya fue importado como lote ${archivoDuplicado.id}` }
       }
 
-      if (autoCreateVehicles && row.tipo) {
+      const existingKeys = await existingOperationKeys(parsed.rows, tx)
+      // Filas que ya existen como carga real de un lote vigente: se excluyen del
+      // lote nuevo en vez de duplicarlas. `duplicateRows` no cuenta como error —
+      // es información, no un archivo inválido — y se reporta aparte en el resumen.
+      const newRows = parsed.rows.filter((row) => !existingKeys.has(operationRowKey(row)))
+      const duplicateRows = parsed.rows.length - newRows.length
+      if (newRows.length === 0) {
+        return { ok: false as const, message: `Las ${duplicateRows} filas del archivo ya estaban importadas en un lote vigente. No hay filas nuevas que importar.` }
+      }
+
+      const batchId = nanoid()
+      const totales = computeTotales(newRows)
+
+      await tx.insert(fuelOperationBatches).values({
+        id: batchId,
+        archivoNombre: safeName,
+        archivoPath,
+        hashArchivo,
+        estado: "importado",
+        periodoDesde: totales.periodoDesde,
+        periodoHasta: totales.periodoHasta,
+        totalFilas: totales.totalFilas + parsed.errors.length,
+        filasValidas: totales.totalFilas,
+        filasInvalidas: parsed.errors.length,
+        totalEquipos: totales.totalEquipos,
+        totalLitros: totales.totalLitros,
+        totalMonto: totales.totalMonto,
+        importadoPor: session.user.id,
+        notas: String(formData.get("notas") ?? "").trim() || null,
+      })
+
+      // Autocompletar/crear catálogo de vehículos a partir del log — opt-in
+      // explícito para creación (ver decisión en el plan: no crear ~100
+      // vehículos sin revisión humana por defecto).
+      const seenPlates = new Set<string>()
+      for (const row of parsed.rows) {
+        if (seenPlates.has(row.plate)) continue
+        seenPlates.add(row.plate)
+        const key = plateMatchKey(row.plate)
+        const existing = vehicleByKey.get(key)
+
+        if (existing) {
+          const patch: Partial<typeof fuelVehicles.$inferInsert> = {}
+          if (!existing.code && row.code) patch.code = row.code
+          if (!existing.brand && row.marca) patch.brand = row.marca
+          if (!existing.model && row.modelo) patch.model = row.modelo
+          if (!existing.year && row.anio) patch.year = row.anio
+          if (Object.keys(patch).length > 0) {
+            await tx.update(fuelVehicles).set(patch).where(eq(fuelVehicles.id, existing.id))
+          }
+          continue
+        }
+
+        if (autoCreateVehicles && row.tipo) {
+          const worksite = row.faenaNombre ? matchByNameOrContains(row.faenaNombre, allWorksites) : null
+          if (!worksite) continue // sin faena matcheada no se puede crear (worksiteId es NOT NULL)
+          const id = nanoid()
+          const metricDefaults = fuelMetricDefaultsForLegacy(row.tipo)
+          await tx.insert(fuelVehicles).values({
+            id,
+            plate: row.plate,
+            code: row.code,
+            type: row.tipo,
+            equipmentTypeId: fuelEquipmentTypeIdForLegacy(row.tipo),
+            ...metricDefaults,
+            brand: row.marca,
+            model: row.modelo,
+            year: row.anio,
+            worksiteId: worksite.id,
+          })
+          vehicleByKey.set(key, { id, plate: row.plate, code: row.code, type: row.tipo, brand: row.marca, model: row.modelo, year: row.anio })
+        }
+      }
+
+      // `newRows`, no `parsed.rows`: excluye las cargas ya existentes. En lotes
+      // (INSERT_CHUNK_SIZE) para no superar el límite de parámetros de Postgres.
+      await insertInChunks(tx, fuelOperationRecords, newRows.map((row) => {
+        const vehicle = vehicleByKey.get(plateMatchKey(row.plate))
         const worksite = row.faenaNombre ? matchByNameOrContains(row.faenaNombre, allWorksites) : null
-        if (!worksite) continue // sin faena matcheada no se puede crear (worksiteId es NOT NULL)
-        const id = nanoid()
-        const metricDefaults = fuelMetricDefaultsForLegacy(row.tipo)
-        await tx.insert(fuelVehicles).values({
-          id,
+        const supplier = row.proveedorNombre ? matchByNameOrContains(row.proveedorNombre, allSuppliers) : null
+        return {
+          id: nanoid(),
+          batchId,
+          worksiteId: worksite?.id ?? null,
+          vehicleId: vehicle?.id ?? null,
           plate: row.plate,
           code: row.code,
-          type: row.tipo,
-          equipmentTypeId: fuelEquipmentTypeIdForLegacy(row.tipo),
-          ...metricDefaults,
-          brand: row.marca,
-          model: row.modelo,
-          year: row.anio,
-          worksiteId: worksite.id,
-        })
-        vehicleByKey.set(key, { id, plate: row.plate, code: row.code, type: row.tipo, brand: row.marca, model: row.modelo, year: row.anio })
-      }
+          faenaNombre: row.faenaNombre,
+          tipo: row.tipo,
+          marca: row.marca,
+          modelo: row.modelo,
+          anio: row.anio,
+          fecha: row.fecha,
+          horaCarga: row.horaCarga,
+          horometro: row.horometro,
+          medidoPor: row.medidoPor,
+          liters: row.liters,
+          operador: row.operador,
+          supervisor: row.supervisor,
+          proveedorNombre: row.proveedorNombre,
+          fuelSupplierId: supplier?.id ?? null,
+          precioLitro: row.precioLitro,
+          monto: row.monto,
+          rendimiento: row.rendimiento,
+          tipoRendimiento: row.tipoRendimiento,
+          rawRow: row.rawRow,
+        }
+      }))
+
+      // Auditoría dentro de la misma transacción que el lote (CO-025).
+      await recordAudit({
+        userId: session.user.id,
+        userEmail: session.user.email ?? undefined,
+        action: "create",
+        entityType: "fuel_operation_batch",
+        entityId: batchId,
+        newState: { periodo: `${totales.periodoDesde}..${totales.periodoHasta}`, ...totales },
+      }, tx)
+
+      return { ok: true as const, batchId, imported: newRows.length, duplicateRows }
+    })
+
+    if (!result.ok) {
+      await removeFile(absolutePath)
+      return { ok: false, message: result.message }
     }
 
-    // `newRows`, no `parsed.rows`: excluye las cargas ya existentes. En lotes
-    // (INSERT_CHUNK_SIZE) para no superar el límite de parámetros de Postgres.
-    await insertInChunks(tx, fuelOperationRecords, newRows.map((row) => {
-      const vehicle = vehicleByKey.get(plateMatchKey(row.plate))
-      const worksite = row.faenaNombre ? matchByNameOrContains(row.faenaNombre, allWorksites) : null
-      const supplier = row.proveedorNombre ? matchByNameOrContains(row.proveedorNombre, allSuppliers) : null
-      return {
-        id: nanoid(),
-        batchId,
-        worksiteId: worksite?.id ?? null,
-        vehicleId: vehicle?.id ?? null,
-        plate: row.plate,
-        code: row.code,
-        faenaNombre: row.faenaNombre,
-        tipo: row.tipo,
-        marca: row.marca,
-        modelo: row.modelo,
-        anio: row.anio,
-        fecha: row.fecha,
-        horaCarga: row.horaCarga,
-        horometro: row.horometro,
-        medidoPor: row.medidoPor,
-        liters: row.liters,
-        operador: row.operador,
-        supervisor: row.supervisor,
-        proveedorNombre: row.proveedorNombre,
-        fuelSupplierId: supplier?.id ?? null,
-        precioLitro: row.precioLitro,
-        monto: row.monto,
-        rendimiento: row.rendimiento,
-        tipoRendimiento: row.tipoRendimiento,
-        rawRow: row.rawRow,
-      }
-    }))
-  })
+    // Sin revalidatePath aquí a propósito: en Next.js 16, CUALQUIER llamada a
+    // revalidatePath/refresh dentro de una server action fuerza a Next a
+    // re-renderizar y re-transmitir la ruta ACTUAL (donde vive este wizard) en
+    // la misma respuesta — sin importar qué ruta se pase — lo que remonta el
+    // árbol de cliente y pierde el estado local del wizard (paso "done").
+    // Ver node_modules/next/dist/docs/01-app/02-guides/server-actions.md.
+    // Las páginas afectadas (dashboard, vehículos, flota, mantenciones) son
+    // dinámicas (usan sesión/cookies) y se renderizan frescas en cada visita
+    // real, así que no necesitan revalidación explícita aquí.
 
-  await recordAudit({
-    userId: session.user.id,
-    userEmail: session.user.email ?? undefined,
-    action: "create",
-    entityType: "fuel_operation_batch",
-    entityId: batchId,
-    newState: { periodo: `${totales.periodoDesde}..${totales.periodoHasta}`, ...totales },
-  })
-
-  // Sin revalidatePath aquí a propósito: en Next.js 16, CUALQUIER llamada a
-  // revalidatePath/refresh dentro de una server action fuerza a Next a
-  // re-renderizar y re-transmitir la ruta ACTUAL (donde vive este wizard) en
-  // la misma respuesta — sin importar qué ruta se pase — lo que remonta el
-  // árbol de cliente y pierde el estado local del wizard (paso "done").
-  // Ver node_modules/next/dist/docs/01-app/02-guides/server-actions.md.
-  // Las páginas afectadas (dashboard, vehículos, flota, mantenciones) son
-  // dinámicas (usan sesión/cookies) y se renderizan frescas en cada visita
-  // real, así que no necesitan revalidación explícita aquí.
-
-  return { ok: true, data: { batchId, imported: newRows.length, duplicateRows, errors: parsed.errors } }
+    return { ok: true, data: { batchId: result.batchId, imported: result.imported, duplicateRows: result.duplicateRows, errors: parsed.errors } }
+  } catch (error) {
+    await removeFile(absolutePath)
+    throw error
+  }
 }
 
 export async function revertBatchOperationsAction(_prev: ActionState, formData: FormData): Promise<ActionState> {

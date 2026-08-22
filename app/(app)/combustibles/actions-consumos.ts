@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto"
 import path from "node:path"
 import { revalidatePath } from "next/cache"
-import { and, eq, inArray, ne } from "drizzle-orm"
+import { and, eq, inArray, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelImportBatches, fuelConsumptionRecords, fuelVehicles } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
@@ -11,7 +11,7 @@ import { canAccessWorksite, isGlobalRole } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
-import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
+import { mkdirp, removeFile, writeBuffer } from "@/lib/storage/helpers"
 import { resolveFuelImportsDir, createFuelImportPath } from "@/lib/storage/config"
 import { parseConsumptionExcel, type ImportError } from "@/lib/combustibles/consumption-import"
 import { computeBatchTotals, type BatchTotals } from "@/lib/combustibles/consumption-calculations"
@@ -184,37 +184,22 @@ export async function confirmConsumptionImportAction(
 
   const hashArchivo = createHash("sha256").update(buffer).digest("hex")
   const confirmDuplicates = formData.get("confirmDuplicates") === "true"
-  if (!confirmDuplicates) {
-    const [archivoDuplicado, loteDuplicado] = await Promise.all([
-      db.query.fuelImportBatches.findFirst({
-        where: and(eq(fuelImportBatches.hashArchivo, hashArchivo), ne(fuelImportBatches.estado, "revertido")),
-      }),
-      meta.worksiteId === "all"
-        ? Promise.resolve(undefined)
-        : db.query.fuelImportBatches.findFirst({
-            where: and(
-              eq(fuelImportBatches.worksiteId, meta.worksiteId),
-              eq(fuelImportBatches.periodoDesde, meta.periodoDesde),
-              eq(fuelImportBatches.periodoHasta, meta.periodoHasta),
-              meta.fuente ? eq(fuelImportBatches.fuente, meta.fuente) : undefined,
-              ne(fuelImportBatches.estado, "revertido"),
-            ),
-          }),
-    ])
-    if (archivoDuplicado) return { ok: false, message: `Este archivo ya fue importado como lote ${archivoDuplicado.id}` }
-    if (loteDuplicado) return { ok: false, message: `Ya existe un lote importado para esta faena, período y fuente (${loteDuplicado.id})` }
-  }
 
   const plates = [...new Set(parsed.rows.map((r) => r.patente))]
-
-  const totales = computeBatchTotals(parsed.rows)
   const vehicles = await findVehiclesByPlate(plates, meta.worksiteId)
   const vehicleByPlate = new Map(vehicles.map((v) => [v.plate, v]))
   const rowsByWorksite = new Map<string, typeof parsed.rows>()
+  // Antes las filas sin vehículo en "all" desaparecían con `continue`, sin
+  // dejar rastro ni en el resumen ni en ningún lado (CO-027): ahora se
+  // devuelven como error, igual que las filas que el parser ya rechaza.
+  const unmatchedErrors: ImportError[] = []
   if (meta.worksiteId === "all") {
     for (const row of parsed.rows) {
       const vehicle = vehicleByPlate.get(row.patente)
-      if (!vehicle) continue
+      if (!vehicle) {
+        unmatchedErrors.push({ rowIndex: row.rowIndex, field: "PATENTE", message: `Patente "${row.patente}" sin vehículo asociado a ninguna faena` })
+        continue
+      }
       const rows = rowsByWorksite.get(vehicle.worksiteId) ?? []
       rows.push(row)
       rowsByWorksite.set(vehicle.worksiteId, rows)
@@ -229,67 +214,116 @@ export async function confirmConsumptionImportAction(
 
   // Persistir el archivo original para trazabilidad sólo cuando hay al menos
   // un lote que crear; así una importación global sin vehículos no deja huérfanos.
+  // No se puede escribir a disco DENTRO de una transacción de Postgres — se
+  // escribe antes y, si la transacción de abajo falla o detecta un duplicado
+  // bajo el lock, se compensa borrándolo (mismo patrón que createTaeSubmission).
   const safeName = sanitizeFileName(fileName)
   const storageName = `${Date.now()}-${nanoid()}-${safeName}`
   const storageDir = resolveFuelImportsDir()
   await mkdirp(storageDir)
-  await writeBuffer(path.join(storageDir, storageName), buffer)
+  const absolutePath = path.join(storageDir, storageName)
+  await writeBuffer(absolutePath, buffer)
   const archivoPath = createFuelImportPath(storageName)
 
-  await db.transaction(async (tx) => {
-    for (const [[worksiteId, rows], batchId] of [...rowsByWorksite.entries()].map((entry, index) => [entry, batchIds[index]!] as const)) {
-      const batchTotals = computeBatchTotals(rows)
-      await tx.insert(fuelImportBatches).values({
-        id: batchId,
-        worksiteId,
-        fuente: meta.fuente,
-        periodoDesde: meta.periodoDesde,
-        periodoHasta: meta.periodoHasta,
-        archivoNombre: safeName,
-        archivoPath,
-        hashArchivo,
-        estado: "importado",
-        totalFilas: batchTotals.totalFilas + (meta.worksiteId === "all" ? 0 : parsed.errors.length),
-        filasValidas: batchTotals.totalFilas,
-        filasInvalidas: meta.worksiteId === "all" ? 0 : parsed.errors.length,
-        totalPatentes: batchTotals.totalPatentes,
-        totalTarjetas: batchTotals.totalTarjetas,
-        totalTransacciones: batchTotals.totalTransacciones,
-        totalCantidad: batchTotals.totalCantidad,
-        totalMonto: batchTotals.totalMonto,
-        importadoPor: session.user.id,
-        notas: meta.notas,
-      })
-      await tx.insert(fuelConsumptionRecords).values(
-        rows.map((row) => ({
-          id: nanoid(),
-          batchId,
+  // "all" es una sola operación atómica (reparte en N lotes, uno por faena);
+  // de faena única, el lock incluye la faena para no serializar contra otra
+  // faena distinta que comparta hash por coincidencia. Prefijo de dominio para
+  // no colisionar con el lock de otro importador sobre el mismo hashtext.
+  const lockKey = meta.worksiteId === "all" ? `fuel_tct_all:${hashArchivo}` : `fuel_tct:${hashArchivo}:${meta.worksiteId}`
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`)
+
+      // Recheck bajo el lock: el chequeo previo (para el mensaje de "¿confirmas
+      // duplicado?" en el preview) corre sin lock y puede quedar obsoleto entre
+      // que el usuario ve el preview y confirma (CO-026).
+      if (!confirmDuplicates) {
+        const [archivoDuplicado, loteDuplicado] = await Promise.all([
+          tx.query.fuelImportBatches.findFirst({
+            where: and(eq(fuelImportBatches.hashArchivo, hashArchivo), ne(fuelImportBatches.estado, "revertido")),
+          }),
+          meta.worksiteId === "all"
+            ? Promise.resolve(undefined)
+            : tx.query.fuelImportBatches.findFirst({
+                where: and(
+                  eq(fuelImportBatches.worksiteId, meta.worksiteId),
+                  eq(fuelImportBatches.periodoDesde, meta.periodoDesde),
+                  eq(fuelImportBatches.periodoHasta, meta.periodoHasta),
+                  meta.fuente ? eq(fuelImportBatches.fuente, meta.fuente) : undefined,
+                  ne(fuelImportBatches.estado, "revertido"),
+                ),
+              }),
+        ])
+        if (archivoDuplicado) return { ok: false as const, message: `Este archivo ya fue importado como lote ${archivoDuplicado.id}` }
+        if (loteDuplicado) return { ok: false as const, message: `Ya existe un lote importado para esta faena, período y fuente (${loteDuplicado.id})` }
+      }
+
+      for (const [[worksiteId, rows], batchId] of [...rowsByWorksite.entries()].map((entry, index) => [entry, batchIds[index]!] as const)) {
+        const batchTotals = computeBatchTotals(rows)
+        await tx.insert(fuelImportBatches).values({
+          id: batchId,
           worksiteId,
-          vehicleId: vehicleByPlate.get(row.patente)?.id ?? null,
-          patente: row.patente,
-          numeroTarjetas: row.numeroTarjetas,
-          numeroTransacciones: row.numeroTransacciones,
-          cantidadUnidad: row.cantidadUnidad,
-          monto: row.monto,
-          rendimientoPromedio: row.rendimientoPromedio,
-          precioPromedioUnidad: row.cantidadUnidad > 0 ? Math.round((row.monto / row.cantidadUnidad) * 100) / 100 : null,
+          fuente: meta.fuente,
           periodoDesde: meta.periodoDesde,
           periodoHasta: meta.periodoHasta,
-          fuente: meta.fuente,
-          rawRow: row.rawRow,
-        })),
-      )
-    }
-  })
+          archivoNombre: safeName,
+          archivoPath,
+          hashArchivo,
+          estado: "importado",
+          totalFilas: batchTotals.totalFilas + (meta.worksiteId === "all" ? 0 : parsed.errors.length),
+          filasValidas: batchTotals.totalFilas,
+          filasInvalidas: meta.worksiteId === "all" ? 0 : parsed.errors.length,
+          totalPatentes: batchTotals.totalPatentes,
+          totalTarjetas: batchTotals.totalTarjetas,
+          totalTransacciones: batchTotals.totalTransacciones,
+          totalCantidad: batchTotals.totalCantidad,
+          totalMonto: batchTotals.totalMonto,
+          importadoPor: session.user.id,
+          notas: meta.notas,
+        })
+        await tx.insert(fuelConsumptionRecords).values(
+          rows.map((row) => ({
+            id: nanoid(),
+            batchId,
+            worksiteId,
+            vehicleId: vehicleByPlate.get(row.patente)?.id ?? null,
+            patente: row.patente,
+            numeroTarjetas: row.numeroTarjetas,
+            numeroTransacciones: row.numeroTransacciones,
+            cantidadUnidad: row.cantidadUnidad,
+            monto: row.monto,
+            rendimientoPromedio: row.rendimientoPromedio,
+            precioPromedioUnidad: row.cantidadUnidad > 0 ? Math.round((row.monto / row.cantidadUnidad) * 100) / 100 : null,
+            periodoDesde: meta.periodoDesde,
+            periodoHasta: meta.periodoHasta,
+            fuente: meta.fuente,
+            rawRow: row.rawRow,
+          })),
+        )
+        // Auditoría dentro de la misma transacción que el lote (CO-025): antes
+        // se llamaba después del commit, con los totales del archivo completo
+        // en vez de lo realmente insertado en ESTE lote.
+        await recordAudit({
+          userId: session.user.id,
+          userEmail: session.user.email ?? undefined,
+          action: "create",
+          entityType: "fuel_import_batch",
+          entityId: batchId,
+          newState: { worksiteId, periodo: `${meta.periodoDesde}..${meta.periodoHasta}`, fuente: meta.fuente, ...batchTotals },
+        }, tx)
+      }
+      return { ok: true as const }
+    })
 
-  await Promise.all([...rowsByWorksite.keys()].map((worksiteId, index) => recordAudit({
-    userId: session.user.id,
-    userEmail: session.user.email ?? undefined,
-    action: "create",
-    entityType: "fuel_import_batch",
-    entityId: batchIds[index]!,
-    newState: { worksiteId, periodo: `${meta.periodoDesde}..${meta.periodoHasta}`, fuente: meta.fuente, ...totales },
-  })))
+    if (!result.ok) {
+      await removeFile(absolutePath)
+      return { ok: false, message: result.message }
+    }
+  } catch (error) {
+    await removeFile(absolutePath)
+    throw error
+  }
 
   // Sin revalidar "/combustibles/importar": es la ruta donde vive ESTE wizard
   // (import-wizard.tsx, renderizado desde importar/page.tsx). Revalidarla
@@ -300,7 +334,7 @@ export async function confirmConsumptionImportAction(
   // depende de sesión).
   revalidatePath("/combustibles")
 
-  return { ok: true, data: { batchId: batchIds[0]!, imported: [...rowsByWorksite.values()].flat().length, errors: parsed.errors } }
+  return { ok: true, data: { batchId: batchIds[0]!, imported: [...rowsByWorksite.values()].flat().length, errors: [...parsed.errors, ...unmatchedErrors] } }
 }
 
 export async function revertBatchAction(_prev: ActionState, formData: FormData): Promise<ActionState> {

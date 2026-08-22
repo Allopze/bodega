@@ -10,6 +10,7 @@ const mockTransaction = vi.fn()
 const mockRecordAudit = vi.fn()
 const mockMkdirp = vi.fn()
 const mockWriteBuffer = vi.fn()
+const mockRemoveFile = vi.fn()
 
 vi.mock("@/lib/auth/can", () => ({ requirePermission: (...a: unknown[]) => mockRequirePermission(...a) }))
 vi.mock("@/lib/auth/scope", () => ({
@@ -21,6 +22,7 @@ vi.mock("@/lib/audit", () => ({ recordAudit: (...a: unknown[]) => mockRecordAudi
 vi.mock("@/lib/storage/helpers", () => ({
   mkdirp: (...a: unknown[]) => mockMkdirp(...a),
   writeBuffer: (...a: unknown[]) => mockWriteBuffer(...a),
+  removeFile: (...a: unknown[]) => mockRemoveFile(...a),
 }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 vi.mock("@/db", () => ({
@@ -67,7 +69,13 @@ const validRows = [
 function makeTx() {
   const insertedRows: Array<{ values: unknown }> = []
   const tx = {
-    query: { fuelVehicles: { findMany: vi.fn().mockResolvedValue([{ id: "veh-1", plate: "ABCD12" }]) } },
+    execute: vi.fn().mockResolvedValue(undefined),
+    query: {
+      fuelVehicles: { findMany: vi.fn().mockResolvedValue([{ id: "veh-1", plate: "ABCD12" }]) },
+      // Recheck bajo el lock (CO-026): sin duplicado por defecto, cada test lo
+      // sobrescribe cuando quiere ejercitar el camino de duplicado.
+      fuelImportBatches: { findFirst: vi.fn().mockResolvedValue(undefined) },
+    },
     insert: vi.fn(() => ({
       values: vi.fn((vals: unknown) => {
         insertedRows.push({ values: vals })
@@ -168,20 +176,48 @@ describe("confirmConsumptionImportAction", () => {
     expect(mockRecordAudit).toHaveBeenCalledTimes(2)
   })
 
+  // CO-027: antes una patente sin vehículo en "all" desaparecía con `continue`,
+  // sin dejar rastro en ningún lado — ahora vuelve como error visible.
+  it("reporta como error una patente sin vehículo en la importación de todas las faenas", async () => {
+    const tx = makeTx()
+    tx.query.fuelVehicles.findMany.mockResolvedValue([{ id: "veh-1", plate: "ABCD12", worksiteId: "ws-1" }])
+    mockFindManyFuelVehicles.mockResolvedValue([{ id: "veh-1", plate: "ABCD12", worksiteId: "ws-1" }])
+    mockTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx))
+    const file = await makeXlsxFile([
+      ...validRows,
+      { "Patente": "SINVEH1", "N° Tarjetas": 1, "N° Transacciones": 2, "Cantidad (Unidad)": 30, "Monto ($)": 27000, "Rendimiento Promedio": 3.0 },
+    ])
+
+    const res = await confirmConsumptionImportAction(makeFormData(file, { worksiteId: "all" }))
+
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.data.imported).toBe(1)
+    expect(res.data.errors).toContainEqual(expect.objectContaining({ field: "PATENTE", message: expect.stringContaining("SINVEH1") }))
+  })
+
+  // CO-026: el recheck de duplicado se movió DENTRO de la transacción (bajo el
+  // lock), no antes — por eso ahora sí se llama a `db.transaction`, y el
+  // archivo ya escrito se compensa al detectar el duplicado bajo el lock.
   it("rejects when the same file was already imported (hash duplicate)", async () => {
-    mockFindFirstBatch.mockResolvedValueOnce({ id: "batch-existing" })  // hash check
+    const tx = makeTx()
+    tx.query.fuelImportBatches.findFirst.mockResolvedValueOnce({ id: "batch-existing" })
+    mockTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx))
+
     const file = await makeXlsxFile(validRows)
     const res = await confirmConsumptionImportAction(makeFormData(file))
 
     expect(res.ok).toBe(false)
     if (res.ok) return
     expect(res.message).toMatch(/ya fue importado/)
-    expect(mockTransaction).not.toHaveBeenCalled()
+    expect(mockTransaction).toHaveBeenCalledOnce()
+    expect(tx.insert).not.toHaveBeenCalled()
+    expect(mockRemoveFile).toHaveBeenCalledOnce()
   })
 
   it("proceeds past a duplicate when confirmDuplicates=true", async () => {
-    mockFindFirstBatch.mockResolvedValue({ id: "batch-existing" })
     const tx = makeTx()
+    tx.query.fuelImportBatches.findFirst.mockResolvedValue({ id: "batch-existing" })
     mockTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx))
 
     const file = await makeXlsxFile(validRows)
