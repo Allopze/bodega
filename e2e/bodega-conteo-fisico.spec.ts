@@ -65,9 +65,12 @@ test.describe("Bodega — vistas, filtros y movimientos", () => {
     await page.getByLabel("Cantidad").fill("2")
     await page.locator("#adjustReason").fill("Ajuste e2e")
     await page.getByRole("button", { name: "Registrar ajuste" }).click()
+    await expect(page.getByRole("dialog")).toHaveCount(0, { timeout: 20_000 })
 
-    await expect(page.getByText(/Ajuste AJU-\d{4}-\d{4} registrado/)).toBeVisible({ timeout: 15_000 })
-
+    // Se afirma el efecto persistido y no el toast: al cerrar la hoja, la
+    // revalidación remonta el árbol y el aviso puede desaparecer antes de que
+    // el test lo alcance. El folio en Documentos prueba más y no depende del
+    // tiempo de vida de una notificación.
     await page.goto("/bodega/documentos")
     await expect(page.getByText("Ajuste e2e").first()).toBeVisible()
     await expect(page.getByText(/AJU-\d{4}-\d{4}/).first()).toBeVisible()
@@ -98,7 +101,11 @@ test.describe("Bodega — vistas, filtros y movimientos", () => {
     await expect(page.getByText(/Retomando el borrador CON-\d{4}-\d{4}/)).toBeVisible({ timeout: 15_000 })
 
     await page.getByRole("button", { name: "Cerrar conteo" }).click()
-    await expect(page.getByText(/Conteo CON-\d{4}-\d{4} cerrado/)).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole("dialog")).toHaveCount(0, { timeout: 20_000 })
+    // El conteo cerrado queda con su folio en Documentos; el toast de cierre no
+    // sobrevive a la revalidación que dispara la propia acción.
+    await page.goto("/bodega/documentos")
+    await expect(page.getByText(/CON-\d{4}-\d{4}/).first()).toBeVisible({ timeout: 15_000 })
   })
 
   test("da de baja existencias con folio DES propio", async ({ page }) => {
@@ -116,11 +123,11 @@ test.describe("Bodega — vistas, filtros y movimientos", () => {
     await page.getByLabel("Cantidad a dar de baja").fill("1")
     await page.locator("#discardReason").fill("Dañado en e2e")
     await page.getByRole("button", { name: "Registrar baja" }).click()
+    await expect(page.getByRole("dialog")).toHaveCount(0, { timeout: 20_000 })
 
-    await expect(page.getByText(/Baja DES-\d{4}-\d{4} registrada/)).toBeVisible({ timeout: 15_000 })
-
-    await page.goto("/bodega?vista=kardex")
-    await expect(page.getByText("Baja").first()).toBeVisible()
+    await page.goto("/bodega/documentos")
+    await expect(page.getByText(/DES-\d{4}-\d{4}/).first()).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText("Dañado en e2e").first()).toBeVisible()
   })
 
   test("define stock mínimo para toda una faena de una vez", async ({ page }) => {
@@ -134,8 +141,13 @@ test.describe("Bodega — vistas, filtros y movimientos", () => {
     await expect(firstMin).toBeVisible({ timeout: 15_000 })
     await firstMin.fill("3")
     await page.getByRole("button", { name: "Guardar mínimos" }).click()
+    await expect(page.getByRole("dialog")).toHaveCount(0, { timeout: 20_000 })
 
-    await expect(page.getByText(/mínimo actualizado|mínimos actualizados|Sin cambios/)).toBeVisible({ timeout: 15_000 })
+    // Con un mínimo definido, la bodega deja de anunciar que las alertas de
+    // quiebre están apagadas: eso es lo que el usuario ve al recargar.
+    await page.goto("/bodega")
+    await expect(page.getByText(/Ningún producto tiene stock mínimo definido/))
+      .toHaveCount(0, { timeout: 15_000 })
   })
 
   test("las guías de despacho tienen entrada en el menú", async ({ page }) => {

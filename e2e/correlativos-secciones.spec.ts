@@ -174,10 +174,13 @@ async function createEppRequest(page: Page, productName: string, quantity: strin
   // en la segunda solicitud ya hay stock en la faena y el preflight se
   // interpone: es comportamiento correcto de la app, no un fallo, y el helper
   // tiene que atravesarlo declarando que quiere comprar de todas formas.
+  // El diálogo aparece tras consultar el stock en el servidor: la ventana tiene
+  // que cubrir esa ida y vuelta, no sólo el render.
   const preflight = page.getByRole("button", { name: "Continuar con la solicitud" })
-  if (await preflight.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    await preflight.click()
-  }
+  await Promise.race([
+    preflight.waitFor({ state: "visible", timeout: 10_000 }).then(() => preflight.click()).catch(() => undefined),
+    page.waitForURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 10_000 }).catch(() => undefined),
+  ])
 
   await expect(page).toHaveURL(/\/solicitudes\/(?!nueva$)[^/]+$/, { timeout: 20_000 })
 
