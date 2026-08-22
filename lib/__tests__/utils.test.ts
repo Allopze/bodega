@@ -8,6 +8,8 @@ import {
   formatCLP,
   todayInChile,
   addDaysToPlainDate,
+  subtractBusinessDays,
+  DELIVERY_BACKDATE_BUSINESS_DAYS,
   formatFileSize,
   formatQty,
   pluralize,
@@ -326,5 +328,30 @@ describe("todayInChile / addDaysToPlainDate", () => {
     // El cambio de hora chileno de 2026 cae el 6 de septiembre.
     expect(addDaysToPlainDate("2026-09-05", 2)).toBe("2026-09-07")
     expect(addDaysToPlainDate("2026-12-31", 30)).toBe("2027-01-30")
+  })
+})
+
+/**
+ * `subtractBusinessDays` acota cuánto se puede retrofechar una entrega de
+ * bodega. Contar días corridos regalaría o quitaría margen según el día de la
+ * semana en que se digite: un lunes, 5 corridos llegan al miércoles anterior.
+ */
+describe("subtractBusinessDays()", () => {
+  it("salta el fin de semana al retroceder un día", () => {
+    // Lunes 17 → viernes 14, no domingo 16.
+    expect(subtractBusinessDays("2026-08-17", 1)).toBe("2026-08-14")
+  })
+
+  it("retrocede 5 días hábiles al mismo día de la semana anterior", () => {
+    expect(subtractBusinessDays("2026-08-17", DELIVERY_BACKDATE_BUSINESS_DAYS)).toBe("2026-08-10")
+    expect(subtractBusinessDays("2026-08-20", DELIVERY_BACKDATE_BUSINESS_DAYS)).toBe("2026-08-13")
+  })
+
+  it("cruza el fin de año", () => {
+    expect(subtractBusinessDays("2026-01-05", DELIVERY_BACKDATE_BUSINESS_DAYS)).toBe("2025-12-29")
+  })
+
+  it("con 0 días es la identidad", () => {
+    expect(subtractBusinessDays("2026-08-16", 0)).toBe("2026-08-16")
   })
 })

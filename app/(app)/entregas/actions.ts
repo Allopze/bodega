@@ -33,6 +33,7 @@ export async function registerWorkerDeliveryAction(
   const parsed = workerStockDeliverySchema.safeParse({
     sourceWorksiteId: formData.get("sourceWorksiteId"),
     workerId: formData.get("workerId"),
+    deliveredAt: formData.get("deliveredAt") || undefined,
     receiverName: formData.get("receiverName") || null,
     notes: formData.get("notes"),
     items,
@@ -46,7 +47,7 @@ export async function registerWorkerDeliveryAction(
     }
   }
 
-  const { sourceWorksiteId, workerId, receiverName, notes, items: deliveryItems } = parsed.data
+  const { sourceWorksiteId, workerId, deliveredAt, receiverName, notes, items: deliveryItems } = parsed.data
   if (!canAccessWorksite(session, sourceWorksiteId)) {
     return { ok: false, message: "No tienes acceso a la bodega seleccionada" }
   }
@@ -58,6 +59,7 @@ export async function registerWorkerDeliveryAction(
     await registerWorkerStockDelivery({
       sourceWorksiteId,
       workerId,
+      deliveredAt,
       deliveredBy: session.user.id,
       userEmail: session.user.email ?? undefined,
       receiverName: receiverName?.trim() || null,

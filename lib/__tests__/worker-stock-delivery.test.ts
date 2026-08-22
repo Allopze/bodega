@@ -14,6 +14,11 @@ import path from "node:path"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import {
+  DELIVERY_BACKDATE_BUSINESS_DAYS,
+  subtractBusinessDays,
+  todayInChile,
+} from "@/lib/utils"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema }) as unknown as DB
@@ -311,5 +316,50 @@ describe("registerWorkerStockDelivery", () => {
     expect(deliveryItem?.requestItemId).toBe(requestItemId)
     expect(requestItem?.status).toBe("partially_delivered")
     expect(stock?.quantity).toBe(3)
+  })
+
+  // La entrega física ocurre en faena y se digita después. La fecha operacional
+  // del comprobante la fija el operador; el rastro de auditoría —created_at y el
+  // movimiento de kardex— sigue marcando cuándo se digitó.
+  it("retrofecha sólo el comprobante y deja el kardex en la hora real", async () => {
+    const scenario = await makeScenario()
+    const today = todayInChile()
+    const backdate = subtractBusinessDays(today, DELIVERY_BACKDATE_BUSINESS_DAYS)
+
+    const deliveryId = await registerWorkerStockDelivery({
+      sourceWorksiteId: scenario.sourceWorksiteId,
+      workerId: scenario.workerId,
+      deliveredAt: backdate,
+      deliveredBy: USER_ID,
+      items: [{ productId: scenario.firstProductId, quantity: 1 }],
+    })
+
+    const delivery = await inMemoryDb.query.deliveries.findFirst({
+      where: eq(schema.deliveries.id, deliveryId),
+    })
+    // El anclaje al mediodía UTC es lo que hace que el día chileno sea el
+    // elegido: con T00:00:00Z el comprobante mostraría el día anterior.
+    expect(todayInChile(delivery!.deliveredAt)).toBe(backdate)
+    expect(todayInChile(delivery!.createdAt)).toBe(today)
+
+    const [movement] = await inMemoryDb.select().from(schema.inventoryMovements)
+      .where(eq(schema.inventoryMovements.referenceId, deliveryId))
+    expect(todayInChile(movement!.performedAt)).toBe(today)
+  })
+
+  it("sin fecha explícita registra el comprobante con la hora real", async () => {
+    const scenario = await makeScenario()
+
+    const deliveryId = await registerWorkerStockDelivery({
+      sourceWorksiteId: scenario.sourceWorksiteId,
+      workerId: scenario.workerId,
+      deliveredBy: USER_ID,
+      items: [{ productId: scenario.firstProductId, quantity: 1 }],
+    })
+
+    const delivery = await inMemoryDb.query.deliveries.findFirst({
+      where: eq(schema.deliveries.id, deliveryId),
+    })
+    expect(todayInChile(delivery!.deliveredAt)).toBe(todayInChile())
   })
 })

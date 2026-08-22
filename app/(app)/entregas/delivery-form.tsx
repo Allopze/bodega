@@ -9,6 +9,7 @@ import { useEnterAdvancesFields } from "@/lib/hooks/use-enter-advances-fields"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { SubmitButton } from "@/components/admin/submit-button"
 import { Button } from "@/components/ui/button"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Field } from "@/components/ui/field"
 import { FileInput } from "@/components/ui/file-input"
 import { Input } from "@/components/ui/input"
@@ -20,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { formatQty } from "@/lib/utils"
+import { DELIVERY_BACKDATE_BUSINESS_DAYS, formatQty, subtractBusinessDays } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import { registerWorkerDeliveryAction } from "./actions"
 import type {
@@ -49,6 +50,7 @@ export function DeliveryForm({
   workers,
   stockProducts,
   traceableItems = [],
+  today,
   initialSourceWorksiteId,
   initialRequestItemId,
   onSuccess,
@@ -57,6 +59,8 @@ export function DeliveryForm({
   workers: DeliveryWorkerOption[]
   stockProducts: DeliveryStockProductOption[]
   traceableItems?: DeliverableEppOption[]
+  /** Hoy en hora de Chile, calculado en el servidor: no depende del reloj del navegador. */
+  today: string
   initialSourceWorksiteId?: string
   initialRequestItemId?: string
   onSuccess?: () => void
@@ -79,6 +83,8 @@ export function DeliveryForm({
     ?? ""
   const [sourceWorksiteId, setSourceWorksiteId] = React.useState(defaultSourceWorksiteId)
   const [workerId, setWorkerId] = React.useState("")
+  const [deliveredAt, setDeliveredAt] = React.useState(today)
+  const minDeliveredAt = subtractBusinessDays(today, DELIVERY_BACKDATE_BUSINESS_DAYS)
   const [pendingProductId, setPendingProductId] = React.useState(initialTraceItem?.productId ?? "")
   const [pendingQuantity, setPendingQuantity] = React.useState("")
   const [pendingRequestItemId, setPendingRequestItemId] = React.useState(initialTraceItem?.requestItemId ?? "")
@@ -109,6 +115,8 @@ export function DeliveryForm({
       router.refresh()
       formRef.current?.reset()
       setWorkerId("")
+      // `reset()` no alcanza al estado controlado del selector de fecha.
+      setDeliveredAt(today)
       setLines([])
       setPendingProductId("")
       setPendingQuantity("")
@@ -117,7 +125,7 @@ export function DeliveryForm({
     } else if (state.ok === false && state.message && state !== INITIAL_STATE) {
       toast.error(state.message)
     }
-  }, [onSuccess, router, state])
+  }, [onSuccess, router, state, today])
 
   function changeSource(nextSourceWorksiteId: string) {
     setSourceWorksiteId(nextSourceWorksiteId)
@@ -179,7 +187,7 @@ export function DeliveryForm({
       <input type="hidden" name="workerId" value={workerId} />
       <input type="hidden" name="itemsJson" value={JSON.stringify(lines)} />
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-3">
         <Field label="Bodega de origen" htmlFor="deliverySourceWorksite" required error={state.fieldErrors?.sourceWorksiteId?.[0]}>
           <Select value={sourceWorksiteId} onValueChange={changeSource}>
             <SelectTrigger id="deliverySourceWorksite" error={!!state.fieldErrors?.sourceWorksiteId}>
@@ -218,6 +226,27 @@ export function DeliveryForm({
               ? "La bodega de origen elegida no tiene dotación activa. Cámbiala por la faena del trabajador: sólo se entrega desde el stock de su propia faena."
               : "Sólo se muestran trabajadores activos de la bodega de origen seleccionada."}
           </p>
+        </Field>
+
+        <Field
+          label="Fecha de entrega"
+          htmlFor="deliveryDate"
+          required
+          helper={`Por defecto hoy. Puedes retrofechar hasta ${DELIVERY_BACKDATE_BUSINESS_DAYS} días hábiles.`}
+          error={state.fieldErrors?.deliveredAt?.[0]}
+        >
+          <DatePicker
+            id="deliveryDate"
+            name="deliveredAt"
+            // El `<label for>` de `Field` no nombra un `<button>`: sin esto el
+            // lector de pantalla sólo anuncia la fecha, no de qué campo es.
+            ariaLabel="Fecha de entrega"
+            value={deliveredAt}
+            onChange={setDeliveredAt}
+            min={minDeliveredAt}
+            max={today}
+            error={Boolean(state.fieldErrors?.deliveredAt?.[0])}
+          />
         </Field>
       </div>
 

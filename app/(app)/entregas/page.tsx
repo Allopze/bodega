@@ -16,7 +16,7 @@ import {
 } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
-import { formatQty } from "@/lib/utils"
+import { formatQty, todayInChile } from "@/lib/utils"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { ServerPagination } from "@/components/ui/server-pagination"
@@ -388,6 +388,7 @@ export default async function Page({
                 workers={workerOptions}
                 stockProducts={stockProducts}
                 traceableItems={deliverableItems}
+                today={todayInChile()}
                 initialSourceWorksiteId={initialWorksiteId}
                 initialRequestItemId={initialDeliverable?.requestItemId}
               />

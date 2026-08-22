@@ -17,6 +17,7 @@ import { nanoid } from "@/lib/id"
 import { getTraceableDeliveryBalance } from "@/lib/services/delivery-eligibility"
 import { deliverItemTx } from "@/lib/services/item-state"
 import { applyMovementTx } from "@/lib/services/stock"
+import { codeYear, todayInChile } from "@/lib/utils"
 import type {
   RegisterWorkerStockDeliveryInput,
   WorkerStockDeliveryItemInput,
@@ -142,7 +143,15 @@ export async function registerWorkerStockDelivery(
   const items = normalizeItems(input.items)
   const deliveryId = nanoid()
   const now = new Date().toISOString()
-  const year = new Date().getFullYear()
+  // La fecha civil retroactiva se ancla al mediodía UTC (08:00–09:00 en Chile):
+  // con T00:00:00Z el timestamp cae en las 20:00 del día anterior chileno y
+  // `formatDate` —que renderiza en America/Santiago— mostraría un día menos.
+  // Si la fecha elegida es hoy se conserva `now`, para no perder la hora real ni
+  // el orden intradía de las entregas del día.
+  const deliveredAt = input.deliveredAt && input.deliveredAt !== todayInChile()
+    ? `${input.deliveredAt}T12:00:00.000Z`
+    : now
+  const year = codeYear()
 
   await db.transaction(async (tx) => {
     const [sourceWorksite, worker] = await Promise.all([
@@ -172,7 +181,7 @@ export async function registerWorkerStockDelivery(
       id: deliveryId,
       code,
       deliveredBy: input.deliveredBy,
-      deliveredAt: now,
+      deliveredAt,
       destinationType: "worker",
       sourceWorksiteId: sourceWorksite.id,
       worksiteId: targetWorksite.id,

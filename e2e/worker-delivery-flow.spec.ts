@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test"
 
-import { listRecord, login, selectRadixById } from "./helpers"
+import { listRecord, login, pickCurrentMonthDate, selectRadixById } from "./helpers"
 
 /**
  * Entregas a trabajador, contra el formulario actual.
@@ -113,4 +113,37 @@ test("entregas: registra EPP a trabajador y descuenta de la bodega", async ({ pa
   await expect(sheet).toBeHidden({ timeout: 30_000 })
 
   await expect(listRecord(page, /Supervisor E2E/).first()).toBeVisible({ timeout: 30_000 })
+})
+
+/**
+ * Último día hábil anterior a hoy, en la zona de operación.
+ *
+ * Se calcula acá a propósito, sin importar `subtractBusinessDays`: si el helper
+ * de la aplicación estuviera mal, importarlo haría que la prueba se equivocara
+ * igual y no detectara nada.
+ */
+function ultimoDiaHabilAnterior(): string {
+  const cursor = new Date(`${new Date().toLocaleDateString("en-CA", { timeZone: "America/Santiago" })}T12:00:00Z`)
+  do {
+    cursor.setUTCDate(cursor.getUTCDate() - 1)
+  } while (cursor.getUTCDay() === 0 || cursor.getUTCDay() === 6)
+  return cursor.toISOString().slice(0, 10)
+}
+
+test("entregas: registra con fecha retroactiva y el comprobante queda con esa fecha", async ({ page }) => {
+  const sheet = await abrirFormulario(page)
+  await agregarLinea(page, "1")
+
+  const fecha = ultimoDiaHabilAnterior()
+  await pickCurrentMonthDate(page, /Fecha de entrega/, fecha)
+  await page.locator("#deliveryReceiverName").fill("Retrofecha E2E")
+  await enviar(sheet)
+  await expect(sheet).toBeHidden({ timeout: 30_000 })
+
+  // La fila muestra la fecha elegida, no la de digitación: es lo único que
+  // prueba que el selector viaja hasta la columna `delivered_at`.
+  const esperada = fecha.split("-").reverse().join("-") // `formatDate` rinde dd-mm-yyyy
+  const fila = listRecord(page, /Retrofecha E2E/).first()
+  await expect(fila).toBeVisible({ timeout: 30_000 })
+  await expect(fila).toContainText(esperada)
 })

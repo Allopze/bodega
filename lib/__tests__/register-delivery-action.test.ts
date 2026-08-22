@@ -6,9 +6,25 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import type { Session } from "next-auth"
+import {
+  DELIVERY_BACKDATE_BUSINESS_DAYS,
+  addDaysToPlainDate,
+  subtractBusinessDays,
+  todayInChile,
+} from "@/lib/utils"
 
 const mockAuthFn = vi.hoisted(() => vi.fn())
 const mockRegisterWorkerStock = vi.hoisted(() => vi.fn())
+
+// El guard de módulo consulta `system_settings` en cada verificación de permiso
+// (CO-007). Sin este mock la consulta falla y `requirePermission` se lee como
+// "sin permisos", dejando estas pruebas verdes-por-la-razón-equivocada.
+vi.mock("@/lib/services/module-toggles", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/services/module-toggles")>()),
+  assertPermissionModuleEnabled: vi.fn(async () => {}),
+  assertRouteModuleEnabled: vi.fn(async () => {}),
+  getNavigationToggleState: vi.fn(async () => ({ enabledModuleIds: new Set<string>(), disabledSubmoduleHrefs: new Set<string>() })),
+}))
 
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuthFn }))
 vi.mock("@/lib/services/deliveries", () => ({
@@ -101,5 +117,35 @@ describe("registerWorkerDeliveryAction", () => {
     expect(res.ok).toBe(false)
     expect(res.message).toMatch(/acceso|faena/i)
     expect(mockRegisterWorkerStock).not.toHaveBeenCalled()
+  })
+
+  it("passes a backdated delivery date through to the service", async () => {
+    const backdate = subtractBusinessDays(todayInChile(), DELIVERY_BACKDATE_BUSINESS_DAYS)
+    mockAuthFn.mockResolvedValueOnce(makeSession())
+    mockRegisterWorkerStock.mockResolvedValueOnce("del-1")
+    const res = await registerWorkerDeliveryAction(
+      { ok: false, message: "" },
+      makeFormData({ deliveredAt: backdate }),
+    )
+    expect(res.ok).toBe(true)
+    expect(mockRegisterWorkerStock).toHaveBeenCalledWith(
+      expect.objectContaining({ deliveredAt: backdate }),
+      expect.anything(),
+    )
+  })
+
+  // El `min`/`max` del selector es sólo UX: el rechazo real vive acá.
+  it("rejects a future or too-old delivery date", async () => {
+    const today = todayInChile()
+    for (const deliveredAt of [
+      addDaysToPlainDate(today, 1),
+      subtractBusinessDays(today, DELIVERY_BACKDATE_BUSINESS_DAYS + 1),
+    ]) {
+      mockAuthFn.mockResolvedValueOnce(makeSession())
+      const res = await registerWorkerDeliveryAction({ ok: false, message: "" }, makeFormData({ deliveredAt }))
+      expect(res.ok).toBe(false)
+      expect(res.fieldErrors?.deliveredAt).toBeDefined()
+      expect(mockRegisterWorkerStock).not.toHaveBeenCalled()
+    }
   })
 })

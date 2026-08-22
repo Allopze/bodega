@@ -53,6 +53,7 @@ describe("DeliveryForm", () => {
   it("muestra sólo trabajadores de la faena seleccionada aunque no haya EPP pendiente", () => {
     render(
       <DeliveryForm
+        today="2026-08-21"
         worksites={[
           { id: "faena-1", name: "Faena Santa Fe" },
           { id: "faena-2", name: "Faena Arauco" },
@@ -102,6 +103,7 @@ describe("DeliveryForm", () => {
   it("abre en una bodega con dotación, no en la bodega de oficina que sólo tiene stock", () => {
     render(
       <DeliveryForm
+        today="2026-08-21"
         worksites={[
           { id: "ws-oficina", name: "Administración" },
           { id: "faena-1", name: "Faena Santa Fe" },

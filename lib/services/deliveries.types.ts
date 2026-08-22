@@ -24,6 +24,8 @@ export interface RegisterWorkerStockDeliveryInput {
   sourceWorksiteId: string
   workerId: string
   items: WorkerStockDeliveryItemInput[]
+  /** Fecha civil "YYYY-MM-DD" del comprobante. Ausente ⇒ ahora. */
+  deliveredAt?: string | null
   deliveredBy: string
   userEmail?: string
   receiverName?: string | null

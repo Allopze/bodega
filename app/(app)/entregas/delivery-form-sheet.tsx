@@ -25,6 +25,7 @@ export function DeliveryFormSheet(props: {
   workers: DeliveryWorkerOption[]
   stockProducts: DeliveryStockProductOption[]
   traceableItems: DeliverableEppOption[]
+  today: string
   initialSourceWorksiteId?: string
   initialRequestItemId?: string
 }) {

@@ -295,6 +295,28 @@ export function addDaysToPlainDate(plainDate: string, days: number): string {
   return new Date(Date.parse(`${plainDate}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10)
 }
 
+/** Días hábiles que se pueden retrofechar en una entrega de bodega. */
+export const DELIVERY_BACKDATE_BUSINESS_DAYS = 5
+
+/**
+ * Retrocede `days` días hábiles sobre una fecha civil "YYYY-MM-DD".
+ *
+ * ponytail: hábil = lunes a viernes. No hay calendario de feriados en el
+ * sistema, así que un feriado cuenta como hábil; agregar la tabla si el rezago
+ * real los cruza.
+ */
+export function subtractBusinessDays(plainDate: string, days: number): string {
+  let date = plainDate
+  for (let remaining = days; remaining > 0;) {
+    date = addDaysToPlainDate(date, -1)
+    // La fecha civil se ancla en UTC, igual que en `addDaysToPlainDate`: leer el
+    // día de la semana con getDay() lo mediría en la zona del proceso.
+    const weekday = new Date(`${date}T00:00:00Z`).getUTCDay()
+    if (weekday !== 0 && weekday !== 6) remaining--
+  }
+  return date
+}
+
 // Todo lo que se muestra va en hora de Chile continental, no en la zona del
 // proceso: el contenedor de producción corre en UTC, así que leer los
 // componentes locales de la fecha (getHours/getDate) hacía que el servidor

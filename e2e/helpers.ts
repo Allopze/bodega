@@ -100,10 +100,21 @@ export async function continuePpaStep(page: Page) {
  * selecciona por valor exacto en vez de por texto. La fecha se calcula en la
  * zona de operación, que es contra la que valida el servidor (`todayInChile`).
  */
-export async function pickCurrentMonthDate(page: Page, triggerName: string | RegExp) {
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Santiago" })
+export async function pickCurrentMonthDate(
+  page: Page,
+  triggerName: string | RegExp,
+  isoDate?: string,
+) {
+  const day = isoDate ?? new Date().toLocaleDateString("en-CA", { timeZone: "America/Santiago" })
   await page.getByRole("button", { name: triggerName }).click()
-  await page.locator(`[data-day="${today}"]:not([data-outside]) button`).click()
+  const cell = page.locator(`[data-day="${day}"]:not([data-outside]) button`)
+  // Una fecha del mes anterior no tiene celda propia en la grilla: `fixedWeeks`
+  // asoma unos días fuera de mes, y esos quedan excluidos por `data-outside`.
+  // Retroceder un mes la convierte en celda del mes visible.
+  if (await cell.count() === 0) {
+    await page.getByRole("navigation").getByRole("button").first().click()
+  }
+  await cell.click()
 }
 
 /**

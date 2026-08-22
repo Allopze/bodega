@@ -6,6 +6,12 @@ import {
   workerDeliverySchema,
   workerStockDeliverySchema,
 } from "@/lib/validation/operations"
+import {
+  DELIVERY_BACKDATE_BUSINESS_DAYS,
+  addDaysToPlainDate,
+  subtractBusinessDays,
+  todayInChile,
+} from "@/lib/utils"
 
 const validRequest = {
   worksiteId: "worksite-1",
@@ -257,6 +263,34 @@ describe("workerStockDeliverySchema", () => {
     expect(workerStockDeliverySchema.safeParse({
       ...validDelivery,
       items: [{ productId: "product-1", quantity: 0 }],
+    }).success).toBe(false)
+  })
+
+  // La fecha del comprobante puede ser retroactiva, pero acotada: es el
+  // respaldo de entrega de EPP ante fiscalización, no un campo libre.
+  it("acepta hoy, la ausencia del campo y el borde de la ventana hábil", () => {
+    const today = todayInChile()
+    expect(workerStockDeliverySchema.safeParse(validDelivery).data?.deliveredAt).toBeUndefined()
+    expect(workerStockDeliverySchema.safeParse({ ...validDelivery, deliveredAt: today }).success).toBe(true)
+    expect(workerStockDeliverySchema.safeParse({
+      ...validDelivery,
+      deliveredAt: subtractBusinessDays(today, DELIVERY_BACKDATE_BUSINESS_DAYS),
+    }).success).toBe(true)
+  })
+
+  it("rechaza el futuro, más allá de la ventana hábil y una fecha inexistente", () => {
+    const today = todayInChile()
+    expect(workerStockDeliverySchema.safeParse({
+      ...validDelivery,
+      deliveredAt: addDaysToPlainDate(today, 1),
+    }).success).toBe(false)
+    expect(workerStockDeliverySchema.safeParse({
+      ...validDelivery,
+      deliveredAt: subtractBusinessDays(today, DELIVERY_BACKDATE_BUSINESS_DAYS + 1),
+    }).success).toBe(false)
+    expect(workerStockDeliverySchema.safeParse({
+      ...validDelivery,
+      deliveredAt: "2026-02-31",
     }).success).toBe(false)
   })
 })
