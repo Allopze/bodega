@@ -13,12 +13,18 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { runAllBatchRules } from "@/lib/combustibles/anomaly-detector"
 import { seedAnomalyRulesIfEmpty } from "@/lib/combustibles/anomaly-cases"
+import { fuelCronContractFor } from "@/lib/combustibles/fuel-cron-contract"
 import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
+import { withCronLock } from "@/lib/services/cron-lock"
 import { isRouteOperational } from "@/lib/services/module-toggles"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+// Techo explícito: 8 reglas batch, algunas con table scans acotados pero sin
+// paginación real — sin esto un corte por timeout de plataforma deja
+// ejecuciones "running" a medias sin ninguna señal accionable.
+export const maxDuration = 300
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const secret = process.env.CRON_SECRET
@@ -27,19 +33,40 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Cron secret not configured" }, { status: 500 })
   }
   if (!verifyCronSecret(req.headers.get("authorization"), secret)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    return respond(fuelCronContractFor({ unauthorized: true }))
   }
   if (!await isRouteOperational("/combustibles/anomalias")) {
-    return NextResponse.json({ error: "Módulo de combustibles inactivo" }, { status: 503 })
+    return respond(fuelCronContractFor({ disabled: true }))
   }
 
   try {
-    await seedAnomalyRulesIfEmpty()
-    const results = await runAllBatchRules()
-    logger.info("[cron/fuel-anomaly-detection] Completed", { results })
-    return NextResponse.json({ ok: true, results })
+    const outcome = await withCronLock("fuel-anomaly-detection", async () => {
+      await seedAnomalyRulesIfEmpty()
+      return runAllBatchRules()
+    })
+    if ("skipped" in outcome) {
+      logger.warn("[cron/fuel-anomaly-detection] Skipped: otra corrida en curso")
+      return respond(fuelCronContractFor({ conflict: true }))
+    }
+
+    // Antes una regla sin detector (no_detector) y una que reventó (failed)
+    // volvían el mismo {created:0, skipped:0} — el cron respondía 200 aunque
+    // reglas reales fallaran. Ahora el resultado global distingue ambos casos.
+    const failed = outcome.filter((r) => r.status === "failed").length
+    logger.info("[cron/fuel-anomaly-detection] Completed", { results: outcome })
+    return respond(fuelCronContractFor({ failed, total: outcome.length }), { results: outcome })
   } catch (err) {
     logger.error("[cron/fuel-anomaly-detection] Fatal error", err)
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Unknown error" }, { status: 500 })
+    return respond(fuelCronContractFor({ failed: 1, total: 1 }), { error: err instanceof Error ? err.message : "Unknown error" })
   }
+}
+
+function respond(contract: ReturnType<typeof fuelCronContractFor>, extra?: Record<string, unknown>) {
+  return NextResponse.json({
+    ok: contract.ok,
+    outcome: contract.outcome,
+    code: contract.code,
+    health: contract.health,
+    ...extra,
+  }, { status: contract.httpStatus })
 }

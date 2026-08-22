@@ -11,12 +11,15 @@
 
 import { type NextRequest, NextResponse } from 'next/server'
 import { checkFuelStatementNotifications } from '@/lib/combustibles/notifications'
+import { fuelCronContractFor } from '@/lib/combustibles/fuel-cron-contract'
 import { logger } from '@/lib/logger'
 import { verifyCronSecret } from '@/lib/security/cron-auth'
+import { withCronLock } from '@/lib/services/cron-lock'
 import { isRouteOperational } from '@/lib/services/module-toggles'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+export const maxDuration = 300
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const secret = process.env.CRON_SECRET
@@ -28,21 +31,32 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   if (!verifyCronSecret(authHeader, secret)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return respond(fuelCronContractFor({ unauthorized: true }))
   }
   if (!await isRouteOperational('/combustibles/cuenta-corriente')) {
-    return NextResponse.json({ error: 'Módulo de combustibles inactivo' }, { status: 503 })
+    return respond(fuelCronContractFor({ disabled: true }))
   }
 
   try {
-    await checkFuelStatementNotifications()
+    const outcome = await withCronLock('fuel-statement-notifications', () => checkFuelStatementNotifications())
+    if (outcome && typeof outcome === 'object' && 'skipped' in outcome) {
+      logger.warn('[cron/fuel-statement-notifications] Skipped: otra corrida en curso')
+      return respond(fuelCronContractFor({ conflict: true }))
+    }
     logger.info('[cron/fuel-statement-notifications] Completed')
-    return NextResponse.json({ ok: true })
+    return respond(fuelCronContractFor({ failed: 0, total: 1 }))
   } catch (err) {
     logger.error('[cron/fuel-statement-notifications] Fatal error', err)
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Unknown error' },
-      { status: 500 },
-    )
+    return respond(fuelCronContractFor({ failed: 1, total: 1 }), { error: err instanceof Error ? err.message : 'Unknown error' })
   }
+}
+
+function respond(contract: ReturnType<typeof fuelCronContractFor>, extra?: Record<string, unknown>) {
+  return NextResponse.json({
+    ok: contract.ok,
+    outcome: contract.outcome,
+    code: contract.code,
+    health: contract.health,
+    ...extra,
+  }, { status: contract.httpStatus })
 }

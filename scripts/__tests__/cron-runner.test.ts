@@ -66,4 +66,33 @@ describe("cron runner", () => {
     expect(exitCode).toBe(1)
     expect(log).toHaveBeenCalledWith(expect.stringContaining("DTE_CRON_RUNNER_CONTRACT"))
   })
+
+  // CO-029/CO-039: los crons de Combustibles usan su propio prefijo
+  // (FUEL_CRON_*) — el runner no debe exigirles fingir ser jobs DTE.
+  it("accepts the FUEL_CRON_ prefix for combustibles jobs", async () => {
+    const log = vi.fn()
+    const success = await runCronJob("fuel-anomaly-detection", {
+      secret: "cron-secret",
+      log,
+      fetchImpl: vi.fn().mockResolvedValue(jsonResponse(200, { ok: true, outcome: "success", code: "FUEL_CRON_SUCCESS" })),
+    })
+    const partial = await runCronJob("fuel-copec-sync", {
+      secret: "cron-secret",
+      log,
+      fetchImpl: vi.fn().mockResolvedValue(jsonResponse(503, { ok: false, outcome: "partial", code: "FUEL_CRON_PARTIAL" })),
+    })
+    expect(success).toBe(0)
+    expect(partial).toBe(1)
+  })
+
+  it("rejects a combustibles job whose payload wears the DTE prefix instead of its own", async () => {
+    const log = vi.fn()
+    const exitCode = await runCronJob("fuel-statement-notifications", {
+      secret: "cron-secret",
+      log,
+      fetchImpl: vi.fn().mockResolvedValue(jsonResponse(200, { ok: true, outcome: "success", code: "DTE_CRON_SUCCESS" })),
+    })
+    expect(exitCode).toBe(1)
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("DTE_CRON_RUNNER_CONTRACT"))
+  })
 })

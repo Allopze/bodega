@@ -9,36 +9,64 @@ import path from "node:path"
 
 const MAX_RESPONSE_BYTES = 32 * 1024
 
+// `codePrefix` por job (no uno global): los crons de Combustibles usan su
+// propio contrato (FUEL_CRON_*, lib/combustibles/fuel-cron-contract.ts) y no
+// deben fingir ser jobs DTE para que el runner los acepte.
 const JOBS = Object.freeze({
   dte: {
     url: "http://app:3000/api/cron/dte-portal-sync",
     timeoutMs: 5 * 60 * 1_000,
     kind: "sync",
+    codePrefix: "DTE_CRON_",
   },
   sales: {
     url: "http://app:3000/api/cron/billing-sales-sync",
     timeoutMs: 5 * 60 * 1_000,
     kind: "sync",
+    codePrefix: "DTE_CRON_",
   },
   chipax: {
     url: "http://app:3000/api/cron/chipax-sync",
     timeoutMs: 10 * 60 * 1_000,
     kind: "sync",
+    codePrefix: "DTE_CRON_",
   },
   health: {
     url: "http://app:3000/api/cron/dte-sync-health",
     timeoutMs: 20 * 1_000,
     kind: "health",
+    codePrefix: "DTE_HEALTH_",
+  },
+  "fuel-anomaly-detection": {
+    url: "http://app:3000/api/cron/fuel-anomaly-detection",
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "FUEL_CRON_",
+  },
+  "fuel-copec-sync": {
+    url: "http://app:3000/api/cron/fuel-copec-sync",
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "FUEL_CRON_",
+  },
+  "fuel-statement-notifications": {
+    url: "http://app:3000/api/cron/fuel-statement-notifications",
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "FUEL_CRON_",
   },
 })
 
-const SYNC_OUTCOMES = new Map([
-  ["success", { status: 200, exitCode: 0, ok: true, code: "DTE_CRON_SUCCESS" }],
-  ["disabled", { status: 200, exitCode: 0, ok: true, code: "DTE_CRON_DISABLED" }],
-  ["conflict", { status: 409, exitCode: 2, ok: false, code: "DTE_CRON_ACTIVE_RUN" }],
-  ["partial", { status: 503, exitCode: 1, ok: false, code: "DTE_CRON_PARTIAL" }],
-  ["failed", { status: 503, exitCode: 1, ok: false, code: "DTE_CRON_FAILED" }],
-  ["unauthorized", { status: 401, exitCode: 1, ok: false, code: "DTE_CRON_UNAUTHORIZED" }],
+// Mapa de sufijos: cada job combina esto con su propio `codePrefix`, así que
+// dos contratos distintos (DTE_CRON_SUCCESS, FUEL_CRON_SUCCESS) comparten la
+// misma tabla de exit codes sin que el runner tenga que conocer el prefijo.
+const SYNC_OUTCOME_SUFFIXES = new Map([
+  ["success", { status: 200, exitCode: 0, ok: true, suffix: "SUCCESS" }],
+  ["disabled", { status: 200, exitCode: 0, ok: true, suffix: "DISABLED" }],
+  ["conflict", { status: 409, exitCode: 2, ok: false, suffix: "ACTIVE_RUN" }],
+  ["partial", { status: 503, exitCode: 1, ok: false, suffix: "PARTIAL" }],
+  ["failed", { status: 503, exitCode: 1, ok: false, suffix: "FAILED" }],
+  ["unauthorized", { status: 401, exitCode: 1, ok: false, suffix: "UNAUTHORIZED" }],
 ])
 
 const HEALTH_OUTCOMES = new Map([
@@ -69,10 +97,10 @@ export async function runCronJob(jobName, options = {}) {
       signal: controller.signal,
     })
     const body = await readBoundedBody(response, MAX_RESPONSE_BYTES)
-    const payload = parseJsonContract(body, job.kind)
+    const payload = parseJsonContract(body, job.kind, job.codePrefix)
     const exitCode = job.kind === "health"
       ? healthExitCode(response.status, payload)
-      : syncExitCode(response.status, payload)
+      : syncExitCode(response.status, payload, job.codePrefix)
     log(JSON.stringify({
       job: jobName,
       status: response.status,
@@ -94,13 +122,13 @@ export async function runCronJob(jobName, options = {}) {
   }
 }
 
-function syncExitCode(status, payload) {
-  const expected = SYNC_OUTCOMES.get(payload.outcome)
+function syncExitCode(status, payload, codePrefix) {
+  const expected = SYNC_OUTCOME_SUFFIXES.get(payload.outcome)
   if (
     !expected ||
     expected.status !== status ||
     payload.ok !== expected.ok ||
-    payload.code !== expected.code
+    payload.code !== `${codePrefix}${expected.suffix}`
   ) {
     throw new RunnerContractError("DTE_CRON_RUNNER_CONTRACT")
   }
@@ -124,7 +152,7 @@ function healthExitCode(status, payload) {
   return 0
 }
 
-function parseJsonContract(body, kind) {
+function parseJsonContract(body, kind, codePrefix) {
   let payload
   try {
     payload = JSON.parse(body)
@@ -134,7 +162,9 @@ function parseJsonContract(body, kind) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload) || typeof payload.outcome !== "string" || typeof payload.code !== "string") {
     throw new RunnerContractError("DTE_CRON_RUNNER_CONTRACT")
   }
-  if (kind === "sync" && !payload.code.startsWith("DTE_CRON_")) {
+  // Prefijo por job, no un `DTE_CRON_` fijo: los crons de Combustibles usan su
+  // propio contrato y no deben fingir ser jobs DTE para que esto los acepte.
+  if (kind === "sync" && !payload.code.startsWith(codePrefix)) {
     throw new RunnerContractError("DTE_CRON_RUNNER_CONTRACT")
   }
   return payload

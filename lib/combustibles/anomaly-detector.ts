@@ -128,11 +128,22 @@ export function requiredEvidenceCountOf(rule: { config: string | null }, globalD
   return Array.isArray(kinds) ? kinds.length : globalDefault
 }
 
+export interface BatchRuleResult {
+  ruleCode: string
+  created: number
+  skipped: number
+  /** Distingue "corrió y no encontró nada" de "reventó" — antes ambos casos
+   *  volvían `{created:0, skipped:0}` y el cron respondía 200 aunque las 8
+   *  reglas hubieran fallado (CO-029/CO-039). `no_detector` es una regla activa
+   *  sin detector batch registrado (config huérfana, no un fallo de ejecución). */
+  status: "completed" | "failed" | "no_detector"
+}
+
 /** Ejecuta todas las reglas batch activas. Cada regla se ejecuta en secuencia,
  *  registrando la ejecución y los casos creados. */
-export async function runAllBatchRules(): Promise<Array<{ ruleCode: string; created: number; skipped: number }>> {
+export async function runAllBatchRules(): Promise<BatchRuleResult[]> {
   const rules = await db.select().from(fuelAnomalyRules).where(eq(fuelAnomalyRules.isActive, true))
-  const results: Array<{ ruleCode: string; created: number; skipped: number }> = []
+  const results: BatchRuleResult[] = []
 
   for (const rule of rules) {
     const execId = nanoid()
@@ -144,7 +155,7 @@ export async function runAllBatchRules(): Promise<Array<{ ruleCode: string; crea
       const detector = BATCH_DETECTORS[rule.code]
       if (!detector) {
         await db.update(fuelAnomalyExecutions).set({ status: "completed", completedAt: new Date().toISOString() }).where(eq(fuelAnomalyExecutions.id, execId))
-        results.push({ ruleCode: rule.code, created: 0, skipped: 0 })
+        results.push({ ruleCode: rule.code, created: 0, skipped: 0, status: "no_detector" })
         continue
       }
 
@@ -153,12 +164,12 @@ export async function runAllBatchRules(): Promise<Array<{ ruleCode: string; crea
         status: "completed", completedAt: new Date().toISOString(),
         casesCreated: created, casesSkipped: skipped, totalScanned: scanned,
       }).where(eq(fuelAnomalyExecutions.id, execId))
-      results.push({ ruleCode: rule.code, created, skipped })
+      results.push({ ruleCode: rule.code, created, skipped, status: "completed" })
     } catch (error) {
       await db.update(fuelAnomalyExecutions).set({
         status: "failed", error: String(error), completedAt: new Date().toISOString(),
       }).where(eq(fuelAnomalyExecutions.id, execId))
-      results.push({ ruleCode: rule.code, created: 0, skipped: 0 })
+      results.push({ ruleCode: rule.code, created: 0, skipped: 0, status: "failed" })
     }
   }
   return results
@@ -198,6 +209,10 @@ async function getOperationPerformanceObservations(rowLimit: number) {
     .innerJoin(fuelVehicles, eq(fuelOperationRecords.vehicleId, fuelVehicles.id))
     .leftJoin(fuelEquipmentTypes, eq(fuelVehicles.equipmentTypeId, fuelEquipmentTypes.id))
     .where(and(isNotNull(fuelOperationRecords.rendimiento), sql`${fuelVehicles.performanceUnit} <> 'not_applicable'`))
+    // Sin ORDER BY, qué filas caían dentro del LIMIT era arbitrario — el mismo
+    // vehículo podía tener suficiente muestra (≥ minSample) en una corrida y no
+    // en la siguiente, sin que cambiara ni un dato real (CO-029/CO-039).
+    .orderBy(fuelOperationRecords.vehicleId, fuelOperationRecords.id)
     .limit(rowLimit)
   return rows.filter((r) => Number(r.rendimiento) > 0).map((r) => ({ ...r, rendimiento: Number(r.rendimiento) }))
 }
@@ -333,8 +348,20 @@ const detectSharpConsumptionChange: DetectorFn = async (rule) => {
   const rowLimit = batchRowLimitOf(rule, BATCH_SCAN_ROW_LIMIT)
   let created = 0, skipped = 0, scanned = 0
 
+  // Acotar por VEHÍCULO, no por fila cruda: un LIMIT plano sobre filas podía
+  // partir la secuencia de un vehículo a la mitad (comparación de borde
+  // incompleta) y, peor, dejar vehículos enteros sin analizar según dónde
+  // cayera el corte alfabético de su id — ningún vehículo real se acerca al
+  // techo, así que en la práctica esto no limita nada todavía (CO-029/CO-039).
+  const vehicleIdsInWindow = await db.selectDistinct({ vehicleId: fuelConsumptionRecords.vehicleId })
+    .from(fuelConsumptionRecords)
+    .where(isNotNull(fuelConsumptionRecords.vehicleId))
+    .orderBy(fuelConsumptionRecords.vehicleId)
+    .limit(rowLimit)
+  const vehicleIdsToScan = vehicleIdsInWindow.map((row) => row.vehicleId).filter((id): id is string => !!id)
+
   // Escanear consumo TCT: comparar cada patente+período con el período anterior
-  const periods = await db.select({
+  const periods = vehicleIdsToScan.length === 0 ? [] : await db.select({
     vehicleId: fuelConsumptionRecords.vehicleId,
     periodoDesde: fuelConsumptionRecords.periodoDesde,
     cantidad: fuelConsumptionRecords.cantidadUnidad,
@@ -349,9 +376,8 @@ const detectSharpConsumptionChange: DetectorFn = async (rule) => {
     // aquí saltaba los períodos de consumo casi nulo — con eso, un vehículo con
     // junio=4.000L, julio=0,5L, agosto=3.900L comparaba junio contra agosto
     // como si fueran consecutivos y nunca detectaba ni la caída ni el rebote.
-    .where(isNotNull(fuelConsumptionRecords.vehicleId))
+    .where(inArray(fuelConsumptionRecords.vehicleId, vehicleIdsToScan))
     .orderBy(fuelConsumptionRecords.vehicleId, fuelConsumptionRecords.periodoDesde)
-    .limit(rowLimit)
 
   // Agrupar por vehicleId
   const byVehicle = new Map<string, typeof periods>()
@@ -457,6 +483,9 @@ const detectUnusualSupplier: DetectorFn = async (rule) => {
     .from(fuelLoads)
     .innerJoin(fuelVehicles, eq(fuelLoads.vehicleId, fuelVehicles.id))
     .where(isNotNull(fuelVehicles.usualFuelSupplierId))
+    // Mismo motivo que getOperationPerformanceObservations: sin orden, el
+    // recorte del LIMIT era arbitrario entre corridas (CO-029/CO-039).
+    .orderBy(fuelLoads.vehicleId, fuelLoads.id)
     .limit(rowLimit)
 
   for (const row of rows) {
@@ -479,7 +508,7 @@ const detectUnusualSupplier: DetectorFn = async (rule) => {
 /** Detectar evidencia reutilizada entre cargas (mismo SHA-256 en más de una carga). */
 const detectDuplicateEvidenceRule: DetectorFn = async (rule) => {
   let created = 0, skipped = 0, scanned = 0
-  const reused = await getReusedEvidence()
+  const reused = await getReusedEvidence(batchRowLimitOf(rule, BATCH_SCAN_ROW_LIMIT))
 
   for (const [hash, items] of reused) {
     scanned++
@@ -504,7 +533,7 @@ const detectDuplicateEvidenceRule: DetectorFn = async (rule) => {
 /** Detectar evidencia ilegible o corrupta (tamaño 0, MIME no imagen, sin archivo). */
 const detectCorruptEvidenceRule: DetectorFn = async (rule) => {
   let created = 0, skipped = 0, scanned = 0
-  const corrupt = await detectCorruptEvidence()
+  const corrupt = await detectCorruptEvidence(batchRowLimitOf(rule, BATCH_SCAN_ROW_LIMIT))
 
   for (const item of corrupt) {
     scanned++

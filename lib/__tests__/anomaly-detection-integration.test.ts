@@ -263,6 +263,22 @@ describe("anomaly detection engine (PostgreSQL integration)", () => {
     const after = await getAnomalyCases({ referenceEntityType: "fuel_tae_submission", referenceEntityId: submission.id, status: ["open", "in_review", "reopened"] }, TEST_SESSION)
     expect(after.cases.some((c) => c.ruleCode === "litros_supera_capacidad")).toBe(false)
   })
+
+  // CO-029/CO-039: antes una regla activa SIN detector batch (las inline de
+  // TAE, ej. sello_repetido) volvía `{created:0, skipped:0}` — indistinguible
+  // de una regla que sí corrió y no encontró nada. El cron respondía 200 aunque
+  // reglas reales hubieran reventado, porque el fallo también caía en {0,0}.
+  it("distingue una regla sin detector batch de una que corrió y no encontró nada", async () => {
+    const results = await runAllBatchRules()
+
+    const withoutDetector = results.find((r) => r.ruleCode === "sello_repetido")
+    expect(withoutDetector?.status).toBe("no_detector")
+
+    const withDetector = results.find((r) => r.ruleCode === "litros_supera_capacidad")
+    expect(withDetector?.status).toBe("completed")
+
+    expect(results.every((r) => r.status === "completed" || r.status === "no_detector" || r.status === "failed")).toBe(true)
+  })
 })
 
 describe("getAnomalyDistribution (sección 5 — gráfico de distribución)", () => {

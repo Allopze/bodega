@@ -15,8 +15,16 @@ export interface CorruptFileReport {
   reason: string
 }
 
-/** Detectar evidencias potencialmente corruptas: tamaño 0, sin filePath ni externalUrl, o mimeType no imagen. */
-export async function detectCorruptEvidence(): Promise<CorruptFileReport[]> {
+/** Techo defensivo — mismo criterio y mismo valor que `BATCH_SCAN_ROW_LIMIT`
+ *  en anomaly-detector.ts (no hay volumen de producción con el que calibrarlo
+ *  todavía; sólo debe actuar como freno de emergencia, no como paginación real). */
+const DEFAULT_EVIDENCE_ROW_LIMIT = 50_000
+
+/** Detectar evidencias potencialmente corruptas: tamaño 0, sin filePath ni externalUrl, o mimeType no imagen.
+ *  `rowLimit`: freno de emergencia contra un table scan sin límite — el llamador batch
+ *  hace además una consulta por resultado (N+1 acotado, no una query nueva), así que
+ *  limitar aquí también acota esa segunda pasada (sección 18). */
+export async function detectCorruptEvidence(rowLimit = DEFAULT_EVIDENCE_ROW_LIMIT): Promise<CorruptFileReport[]> {
   // Sin WHERE: el filtro `isNotNull(filePath)` de antes garantizaba
   // `filePath != null` para TODA fila que llegaba al loop, así que la rama
   // "sin filePath ni externalUrl" de abajo era inalcanzable por construcción
@@ -32,6 +40,7 @@ export async function detectCorruptEvidence(): Promise<CorruptFileReport[]> {
     submissionId: fuelTaeEvidence.submissionId,
   })
     .from(fuelTaeEvidence)
+    .limit(rowLimit)
 
   const corrupt: CorruptFileReport[] = []
   for (const row of rows) {
@@ -48,8 +57,10 @@ export async function detectCorruptEvidence(): Promise<CorruptFileReport[]> {
   return corrupt
 }
 
-/** Grupo de evidencias reutilizadas: mismo SHA-256 aparece en cargas distintas. */
-export async function getReusedEvidence(): Promise<Map<string, Array<{ submissionId: string; evidenceId: string; kind: string }>>> {
+/** Grupo de evidencias reutilizadas: mismo SHA-256 aparece en cargas distintas.
+ *  `rowLimit`: mismo freno de emergencia que `detectCorruptEvidence` — el
+ *  llamador batch hace una consulta adicional por hash reutilizado encontrado. */
+export async function getReusedEvidence(rowLimit = DEFAULT_EVIDENCE_ROW_LIMIT): Promise<Map<string, Array<{ submissionId: string; evidenceId: string; kind: string }>>> {
   const rows = await db.select({
     sha256: fuelTaeEvidence.sha256,
     submissionId: fuelTaeEvidence.submissionId,
@@ -59,6 +70,7 @@ export async function getReusedEvidence(): Promise<Map<string, Array<{ submissio
     .from(fuelTaeEvidence)
     .where(isNotNull(fuelTaeEvidence.sha256))
     .orderBy(fuelTaeEvidence.sha256)
+    .limit(rowLimit)
 
   const byHash = new Map<string, Array<{ submissionId: string; evidenceId: string; kind: string }>>()
   for (const row of rows) {
