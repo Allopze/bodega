@@ -22,7 +22,7 @@ test.describe("Bodega — vistas, filtros y movimientos", () => {
     expect(new URL(page.url()).searchParams.get("vista")).toBe("kardex")
 
     await page.getByLabel("Vistas de bodega").getByRole("link", { name: "Documentos" }).click()
-    await expect(page.getByRole("heading", { name: "Documentos de bodega" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Documentos de bodega", exact: true })).toBeVisible()
   })
 
   test("la búsqueda del kardex consulta el servidor, no sólo la página cargada", async ({ page }) => {
@@ -135,7 +135,9 @@ test.describe("Bodega — vistas, filtros y movimientos", () => {
     await page.getByRole("button", { name: "Registrar movimiento" }).click()
     await page.getByRole("button", { name: /Definir stock mínimo/ }).click()
     await page.getByRole("combobox", { name: "Faena", exact: true }).click()
-    await page.getByRole("option").first().click()
+    // La comprobación posterior carga la faena primaria del usuario. Elegir la
+    // primera opción hacía que el resultado dependiera del orden del catálogo.
+    await page.getByRole("option", { name: "Faena E2E", exact: true }).click()
 
     const firstMin = page.locator('input[name="minStockValue"]').first()
     await expect(firstMin).toBeVisible({ timeout: 15_000 })

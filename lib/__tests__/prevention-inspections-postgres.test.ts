@@ -142,7 +142,9 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     process.env.DATABASE_URL = databaseUrl
     vi.resetModules()
     await seedFixture(getDb())
-  }, 60_000)
+  // La cadena completa ya supera 200 migraciones; en un contenedor frío puede
+  // tardar algo más de un minuto antes de que empiece la primera prueba.
+  }, 120_000)
 
   afterAll(async () => {
     ;(globalThis as typeof globalThis & { __db?: unknown }).__db = undefined
@@ -776,7 +778,6 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     }
 
     it("importa el Reporte de Equipos y acredita sólo la actividad PDTP n=25", async () => {
-      const service = await import("@/lib/services/prevention-inspections")
       const template = await installTemplate({ definitionCode: "reporte_equipos", pdtpActivityNumbers: [25] })
       reporteTemplateId = template.id
       expect(template.status).toBe("approved")

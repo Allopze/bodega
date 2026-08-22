@@ -49,11 +49,14 @@ test.describe("Catálogos administrativos migrados", () => {
 
     await page.getByRole("button", { name: "Desactivar vehículo E2E-FUEL-1" }).click()
     await expect(page.getByRole("dialog")).toContainText("¿Desactivar vehículo?")
+    await page.getByRole("dialog").getByLabel("Motivo").fill("Baja temporal para validar el ciclo E2E")
     await page.getByRole("dialog").getByRole("button", { name: "Desactivar" }).click()
     await page.getByRole("tab", { name: /Inactivos/ }).click()
     await expect(page.getByRole("button", { name: "Activar vehículo E2E-FUEL-1" })).toBeVisible()
 
     await page.getByRole("button", { name: "Activar vehículo E2E-FUEL-1" }).click()
+    await page.getByRole("dialog").getByLabel("Motivo").fill("Reactivación para completar el ciclo E2E")
+    await page.getByRole("dialog").getByRole("button", { name: "Reactivar" }).click()
     await expect(page.getByRole("button", { name: "Desactivar vehículo E2E-FUEL-1" })).toBeVisible()
   })
 

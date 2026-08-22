@@ -294,7 +294,7 @@ function SortableHeader({
       <button
         type="button"
         onClick={() => onSort(sortKey)}
-        className="inline-flex items-center gap-1 transition-colors hover:text-[var(--color-text)]"
+        className="inline-flex min-h-6 min-w-6 items-center gap-1 py-1 transition-colors hover:text-[var(--color-text)]"
       >
         {label}
         <span aria-hidden className={active ? "opacity-100" : "opacity-0"}>
@@ -509,7 +509,7 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                           type="button"
                           onClick={() => toggleCollapsed(group.id)}
                           aria-expanded={!isCollapsed}
-                          className="inline-flex items-center gap-1.5 transition-colors hover:text-[var(--color-text)]"
+                          className="inline-flex min-h-6 min-w-6 items-center gap-1.5 py-1 transition-colors hover:text-[var(--color-text)]"
                         >
                           {isCollapsed ? <CaretRight size={12} weight="bold" aria-hidden /> : <CaretDown size={12} weight="bold" aria-hidden />}
                           {group.heading}

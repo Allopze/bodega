@@ -152,18 +152,16 @@ test.describe("Module toggles", () => {
     // Find the "Control operacional" card
     const card = flotaModuleSection(page)
 
-    // Toggle the first submodule's switch (should be Flota)
-    const submoduleSwitches = card.locator('input[type="checkbox"]')
-    // The first switch is the module itself; the second is the first submodule
-    if (await submoduleSwitches.count() > 1) {
-      const subToggle = submoduleSwitches.nth(1)
-      await subToggle.locator("xpath=..").click({ force: true })
-      const submoduleResponse = page.waitForResponse((response) => response.status() === 200 && response.url().includes("/admin/modulos"))
-      await confirmDisable(page, "Ocultar pantalla")
-      await submoduleResponse
-      await page.goto("/flota")
-      await expect(page).toHaveURL(/\/modulo-inactivo\?desde=%2Fflota/)
-    }
+    // Selecciona Flota por su contrato accesible, no por posición: Control
+    // operacional comparte la tarjeta y puede agregar superficies antes.
+    const subToggle = card.getByLabel("Desactivar Flota")
+    await expect(subToggle).toBeVisible()
+    await subToggle.click({ force: true })
+    const submoduleResponse = page.waitForResponse((response) => response.status() === 200 && response.url().includes("/admin/modulos"))
+    await confirmDisable(page, "Ocultar pantalla")
+    await submoduleResponse
+    await page.goto("/flota")
+    await expect(page).toHaveURL(/\/modulo-inactivo\?desde=%2Fflota/)
   })
 
   test("la confirmación es la única vía: cancelar deja el módulo encendido", async ({ page }) => {

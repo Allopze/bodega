@@ -78,8 +78,8 @@ test.describe("Restricted roles — faena scope enforcement", () => {
     expect(body).toContain("Recepción parcial registrada. Queda saldo por recibir.")
 
     // Un borrador no le corresponde: todavía se está armando en Compras.
-    await page.goto("/compras/oc-flow-e2e")
-    expect(await page.textContent("body")).not.toContain("OC-2026-0090")
+    await page.goto("/compras/oc-restricted-draft-e2e")
+    expect(await page.textContent("body")).not.toContain("OC-2026-0089")
   })
 
   test("admin user can see all worksites across the system", async ({ page }) => {
