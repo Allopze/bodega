@@ -507,7 +507,7 @@ export interface FuelMonthlyChartPoint {
  * Las cargas siguen disponibles en el tooltip, que es donde una cifra de apoyo
  * no compite por escala con nada.
  */
-export function FuelConsumptionChart({ data, showCosts = true }: { data: FuelMonthlyChartPoint[]; showCosts?: boolean }) {
+export function FuelConsumptionChart({ data, showCosts = true, periodLabel }: { data: FuelMonthlyChartPoint[]; showCosts?: boolean; periodLabel?: string }) {
   if (!data.length || !data.some((d) => d.liters > 0 || (showCosts && (d.amount ?? 0) > 0))) return null
 
   return (
@@ -515,7 +515,7 @@ export function FuelConsumptionChart({ data, showCosts = true }: { data: FuelMon
       <div className="mb-3 flex items-center justify-between">
         <div>
           <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Consumo de Combustibles</h3>
-          <p className="text-xs text-[var(--color-text-muted)]">{showCosts ? "Litros cargados y costo por mes" : "Litros cargados por mes"}</p>
+          <p className="text-xs text-[var(--color-text-muted)]">{showCosts ? "Litros cargados y costo por mes" : "Litros cargados por mes"}{periodLabel ? ` · ${periodLabel}` : ""}</p>
         </div>
       </div>
 
@@ -549,7 +549,7 @@ export interface MaintenanceMonthlyChartPoint {
  * ya lo calculaba `getMaintenanceMonthlyTrend` y se descartaba; sin él la
  * tarjeta contaba mantenciones sin decir lo que costaron.
  */
-export function MaintenanceTrendChart({ data, showCosts = true }: { data: MaintenanceMonthlyChartPoint[]; showCosts?: boolean }) {
+export function MaintenanceTrendChart({ data, showCosts = true, periodLabel }: { data: MaintenanceMonthlyChartPoint[]; showCosts?: boolean; periodLabel?: string }) {
   if (!data.length || !data.some((d) => d.completed > 0 || d.scheduled > 0 || (showCosts && (d.amount ?? 0) > 0))) return null
 
   return (
@@ -557,7 +557,7 @@ export function MaintenanceTrendChart({ data, showCosts = true }: { data: Mainte
       <div className="mb-3 flex items-center justify-between">
         <div>
           <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Mantención de Flota</h3>
-          <p className="text-xs text-[var(--color-text-muted)]">{showCosts ? "Completadas vs. programadas y costo por mes" : "Completadas vs. programadas por mes"}</p>
+          <p className="text-xs text-[var(--color-text-muted)]">{showCosts ? "Completadas vs. programadas y costo por mes" : "Completadas vs. programadas por mes"}{periodLabel ? ` · ${periodLabel}` : ""}</p>
         </div>
       </div>
 

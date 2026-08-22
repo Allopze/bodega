@@ -11,7 +11,8 @@ import { getConsumptionDashboard, normalizeConsumptionFilters, getConsumptionByE
 import { getOperationsSummary, getScatterObservations } from "@/lib/combustibles/operations-dashboard"
 import { getFuelControlOverview } from "@/lib/combustibles/fuel-control-overview"
 import { getAnomalyDistribution } from "@/lib/combustibles/anomaly-cases"
-import { settle } from "@/lib/async-settle"
+import { logger } from "@/lib/logger"
+import { DegradedDataBanner } from "@/components/ui/degraded-data-banner"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -74,11 +75,26 @@ export default async function CombustiblesPage({
   const canViewTae = can(session, "combustibles:tae_view")
   const canViewCosts = can(session, "combustibles:view_costs")
 
+  // Fuentes que fallaron y cayeron a su fallback — a diferencia de `settle`
+  // (que sólo loguea), esta página necesita saber CUÁLES para no leer un
+  // fallback vacío como "no hay datos" (CO-037): "Sin datos de análisis" es
+  // una afirmación activa y falsa cuando en realidad la consulta reventó.
+  const degradedSources: string[] = []
+  let trackedCount = 0
+  function track<T>(promise: Promise<T>, fallback: T, label: string): Promise<T> {
+    trackedCount++
+    return promise.catch((error: unknown) => {
+      logger.error(`[combustibles] ${label} falló`, error)
+      degradedSources.push(label)
+      return fallback
+    })
+  }
+
   const [dashboard, worksitesList, fuentesRows, operationsSummary, controlOverview, byEquipmentType, scatterPoints, evolutionByVehicle, heatmapCells, anomalyDistribution] = await Promise.all([
     needsDashboard
-      ? settle(getConsumptionDashboard(session, requestedFilters), null, "consumptionDashboard")
+      ? track(getConsumptionDashboard(session, requestedFilters), null, "consumptionDashboard")
       : Promise.resolve(null),
-    settle(
+    track(
       worksiteScope.mode === "none"
         ? Promise.resolve([] as Array<{ id: string; name: string }>)
         : db.query.worksites.findMany({
@@ -88,7 +104,7 @@ export default async function CombustiblesPage({
       [],
       "worksites",
     ),
-    settle(
+    track(
       db.selectDistinct({ fuente: fuelConsumptionRecords.fuente })
         .from(fuelConsumptionRecords)
         .where(isNotNull(fuelConsumptionRecords.fuente)),
@@ -96,7 +112,7 @@ export default async function CombustiblesPage({
       "fuentes",
     ),
     needsAnalysis
-      ? settle(getOperationsSummary(session, {
+      ? track(getOperationsSummary(session, {
           fromDate: requestedFilters.fromDate,
           toDate: requestedFilters.toDate,
           worksiteId: requestedFilters.worksiteId,
@@ -106,27 +122,27 @@ export default async function CombustiblesPage({
         }), null, "operationsSummary")
       : Promise.resolve(null),
     needsSummary
-      ? settle(getFuelControlOverview(session, { filters: requestedFilters, includeTae: canViewTae }), null, "fuelControlOverview")
+      ? track(getFuelControlOverview(session, { filters: requestedFilters, includeTae: canViewTae }), null, "fuelControlOverview")
       : Promise.resolve(null),
     // Filtros COMPLETOS: estos gráficos recibían sólo período y faena, así que
     // Fuente, Patente y Asociación quedaban sin efecto sobre ellos mientras los
     // KPIs de la misma vista sí los aplicaban.
     needsAnalysis
-      ? settle(getConsumptionByEquipmentType(session, requestedFilters), [], "byEquipmentType")
+      ? track(getConsumptionByEquipmentType(session, requestedFilters), [], "byEquipmentType")
       : Promise.resolve([]),
     needsAnalysis
-      ? settle(getScatterObservations(session, { fromDate: requestedFilters.fromDate, toDate: requestedFilters.toDate, worksiteId: requestedFilters.worksiteId, patente: requestedFilters.patente, proveedorNombre: proveedor }), [], "scatterPoints")
+      ? track(getScatterObservations(session, { fromDate: requestedFilters.fromDate, toDate: requestedFilters.toDate, worksiteId: requestedFilters.worksiteId, patente: requestedFilters.patente, proveedorNombre: proveedor }), [], "scatterPoints")
       : Promise.resolve([]),
     needsAnalysis
-      ? settle(getEvolutionByVehicle(session, requestedFilters), [], "evolutionByVehicle")
+      ? track(getEvolutionByVehicle(session, requestedFilters), [], "evolutionByVehicle")
       : Promise.resolve([]),
     needsAnalysis
-      ? settle(getWorksiteEquipmentMatrix(session, requestedFilters), [], "heatmapCells")
+      ? track(getWorksiteEquipmentMatrix(session, requestedFilters), [], "heatmapCells")
       : Promise.resolve([]),
     needsAnalysis
       // Sólo casos vigentes: sin el filtro de estado, "N casos activos" incluía
       // los resueltos y descartados y nunca bajaba.
-      ? settle(getAnomalyDistribution({ worksiteId: requestedFilters.worksiteId, status: ["open", "in_review", "reopened"] }, session), ANOMALY_DIST_FALLBACK, "anomalyDistribution")
+      ? track(getAnomalyDistribution({ worksiteId: requestedFilters.worksiteId, status: ["open", "in_review", "reopened"] }, session), ANOMALY_DIST_FALLBACK, "anomalyDistribution")
       : Promise.resolve(ANOMALY_DIST_FALLBACK),
   ])
   const scatterKm = (scatterPoints ?? []).filter((p) => p.medidoPor === "km")
@@ -138,7 +154,7 @@ export default async function CombustiblesPage({
   const detailWhere = buildConsumptionWhere(session, effectiveFilters)
   const [detailRowsRaw, detailCountResult] = await Promise.all([
     needsRecords
-      ? settle(
+      ? track(
       db.query.fuelConsumptionRecords.findMany({
         where: detailWhere,
         columns: {
@@ -164,7 +180,7 @@ export default async function CombustiblesPage({
       "detailRows",
       )
       : Promise.resolve([]),
-    settle(
+    track(
       db.select({ count: sql<number>`count(*)` }).from(fuelConsumptionRecords).where(detailWhere),
       [{ count: 0 }],
       "detailCount",
@@ -178,6 +194,9 @@ export default async function CombustiblesPage({
   }))
   const totalDetail = detailCountResult[0]?.count ?? 0
   const totalDetailPages = Math.ceil(totalDetail / PAGE_SIZE)
+  // El fallback de detailCount es [{count:0}]: sin esto, un conteo que
+  // reventó se leía igual que una tabla real y genuinamente vacía (CO-037).
+  const detailCountDegraded = degradedSources.includes("detailCount")
 
   const fuentes = fuentesRows.map((r) => r.fuente).filter((f): f is string => !!f).sort()
 
@@ -210,7 +229,7 @@ export default async function CombustiblesPage({
   const VISTA_TABS: Array<{ key: "resumen" | "analisis" | "registros"; label: string }> = [
     { key: "resumen", label: "Resumen" },
     { key: "analisis", label: "Análisis" },
-    { key: "registros", label: `Registros${totalDetail > 0 ? ` · ${totalDetail}` : ""}` },
+    { key: "registros", label: `Registros${!detailCountDegraded && totalDetail > 0 ? ` · ${totalDetail}` : ""}` },
   ]
   // `Boolean(dashboard)` volvía esto siempre verdadero: el dashboard existe aunque
   // no haya ni una fila, así que el estado vacío era inalcanzable y la vista
@@ -247,6 +266,8 @@ export default async function CombustiblesPage({
           </div>
         }
       />
+
+      <DegradedDataBanner degraded={degradedSources} total={trackedCount} />
 
       {needsSummary && controlOverview && (
         <FuelControlOverviewPanel
@@ -340,7 +361,7 @@ export default async function CombustiblesPage({
 
       <div className="mt-2 border-t border-[var(--color-border)] pt-4">
         <Link href={vistaHref("registros")} className="text-sm font-medium text-[var(--color-primary-ink)] hover:underline">
-          Ver {pluralize(totalDetail, "registro")} del período →
+          {detailCountDegraded ? "Ver registros del período →" : `Ver ${pluralize(totalDetail, "registro")} del período →`}
         </Link>
       </div>
         </>
@@ -585,7 +606,11 @@ export default async function CombustiblesPage({
         </section>
       )}
 
-      {!hasAnalysisContent && (
+      {/* "Sin datos" es una afirmación activa: sólo es cierta cuando ninguna
+          fuente de esta vista falló. Con degradación, el banner de arriba ya
+          explica por qué no hay nada que mostrar — repetir "ajusta el rango"
+          sería instrucción activa y falsa (CO-037). */}
+      {!hasAnalysisContent && degradedSources.length === 0 && (
         <div className="rounded-[var(--radius)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] px-6 py-10 text-center">
           <p className="text-sm font-medium text-[var(--color-text)]">Sin datos de análisis en el período</p>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">Ajusta el rango de fechas o la faena, o importa consumos para ver gráficos de tendencia, rendimiento y anomalías.</p>
@@ -595,13 +620,20 @@ export default async function CombustiblesPage({
       )}
 
       {vista === "registros" && (
-        <ConsumptionDetailTable
-          rows={detailRows}
-          page={page}
-          totalPages={totalDetailPages}
-          total={totalDetail}
-          canViewCosts={canViewCosts}
-        />
+        <>
+          {detailCountDegraded && (
+            <p className="mb-3 text-sm text-[var(--color-warning-ink)]">
+              El total de registros no se pudo calcular; se muestra igual la página actual.
+            </p>
+          )}
+          <ConsumptionDetailTable
+            rows={detailRows}
+            page={page}
+            totalPages={totalDetailPages}
+            total={totalDetail}
+            canViewCosts={canViewCosts}
+          />
+        </>
       )}
     </PageContainer>
   )

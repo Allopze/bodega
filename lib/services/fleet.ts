@@ -95,6 +95,11 @@ export function vehicleLabel(vehicle: { plate: string; code: string | null }) {
 // `worksiteId` es la faena elegida en el tablero: se intersecta con el alcance
 // del rol (nunca lo reemplaza). Los llamadores sin selector de faena (/flota)
 // lo omiten y conservan el alcance del rol tal cual.
+/** Ventana del costo por km/hora en `getFleetOverview` — exportada para que
+ *  la UI (fleet-section.tsx) rotule la ventana sin repetir el número a mano
+ *  y arriesgar que diverja del servicio (CO-038). */
+export const FLEET_OVERVIEW_LOOKBACK_MONTHS = 12
+
 export async function getFleetOverview(session: Session, worksiteId?: string) {
   const canViewFuel = can(session, "combustibles:view")
   const canViewMaintenance = can(session, "mantenciones:view")
@@ -102,7 +107,7 @@ export async function getFleetOverview(session: Session, worksiteId?: string) {
   const vehicleScope = worksiteScopeSql(session, fuelVehicles.worksiteId, worksiteId)
 
   const sinceDate = new Date()
-  sinceDate.setFullYear(sinceDate.getFullYear() - 1)
+  sinceDate.setMonth(sinceDate.getMonth() - FLEET_OVERVIEW_LOOKBACK_MONTHS)
   const since = sinceDate.toISOString()
 
   // Predicado común a las tres consultas de `fuelLoads` de abajo (agregado +
