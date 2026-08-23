@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { requirePermission } from "@/lib/auth/can"
+import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import {
   createWorksiteResource,
   deleteWorksiteResource,
@@ -52,8 +53,24 @@ export async function createWorksiteResourceAction(input: unknown): Promise<Inve
   return run((userId, permissions) => createWorksiteResource(input, { userId, permissions }))
 }
 
-export async function importWorksiteResourcesAction(input: unknown): Promise<InventoryActionState> {
-  return run((userId, permissions) => importWorksiteResources(input, { userId, permissions }))
+/**
+ * Recibe la planilla como `FormData`: mismo camino que la importación de
+ * vehículos, para que los dos padrones se carguen igual. El archivo se valida
+ * por su contenido y no sólo por su extensión.
+ */
+export async function importWorksiteResourcesAction(formData: FormData): Promise<InventoryActionState> {
+  const worksiteId = String(formData.get("worksiteId") ?? "")
+  const file = formData.get("file")
+  if (!worksiteId) return { ok: false, message: "Falta la faena." }
+  if (!(file instanceof File) || file.size === 0) return { ok: false, message: "Selecciona un archivo Excel." }
+  if (!file.name.toLowerCase().endsWith(".xlsx")) return { ok: false, message: "El archivo debe estar en formato .xlsx" }
+  if (file.size > 6 * 1024 * 1024) return { ok: false, message: "El archivo no puede superar 6 MB." }
+
+  const buffer = Buffer.from(await file.arrayBuffer())
+  const validation = validateFileBuffer(buffer, file.size, MimeType.SPREADSHEET)
+  if (validation.error) return { ok: false, message: validation.error }
+
+  return run((userId, permissions) => importWorksiteResources({ worksiteId, fileBuffer: buffer }, { userId, permissions }))
 }
 
 export async function deleteWorksiteResourceAction(input: unknown): Promise<InventoryActionState> {

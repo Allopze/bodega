@@ -12,7 +12,8 @@ import { VehicleCatalogTable } from "./vehicle-table"
 
 export async function FuelVehiclesCatalogPage() {
   let session
-  try { session = await requirePermission("combustibles:manage_vehicles") }
+  // Padrón, no operación: ver la nota en `actions-module/vehicles.ts`.
+  try { session = await requirePermission("admin:fleet_vehicles") }
   catch { redirect("/forbidden") }
 
   const worksiteScope = resolveWorksiteScope(session)

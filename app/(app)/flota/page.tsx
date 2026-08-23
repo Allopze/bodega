@@ -110,7 +110,9 @@ export default async function FlotaPage({
         }
         actions={<div className="flex items-center gap-2">
           <FleetExportButton filters={{ operationalStatus: filterEstado, responsibleName: filterResponsable, expiry: filterVencimiento as "vencidos" | "proximos" | "al-dia" | undefined, q }} />
-          {can(session, "combustibles:manage_vehicles") && (
+          {/* El botón lleva al padrón, así que se guarda con el permiso del
+              padrón y no con el de la decisión operativa. */}
+          {can(session, "admin:fleet_vehicles") && (
             <Button asChild size="sm" variant="secondary">
               <Link href="/admin/flota-catalogos/vehiculos">Gestionar vehículos</Link>
             </Button>

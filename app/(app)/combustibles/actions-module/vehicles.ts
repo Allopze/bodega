@@ -23,6 +23,15 @@ import type { ActionState } from "@/lib/validation/masters"
 import { pluralize } from "@/lib/utils"
 import { dbErrMsg } from "./loads"
 
+/* El padrón se administra desde acá, y por eso las cinco acciones de esta
+ * familia piden `admin:fleet_vehicles` y no `combustibles:manage_vehicles`.
+ *
+ * Ese permiso hacía dos trabajos incompatibles: mantener el padrón (dato
+ * maestro, que hace administración o secretaría) y decidir sacar un equipo de
+ * servicio por un hallazgo de inspección (decisión operativa de quien administra
+ * la flota, ver `stopVehicleForFinding`). Quien digita una patente nueva no es
+ * necesariamente quien puede detener un camión en faena. Los grants conservan a
+ * todos los que ya administraban el padrón: la separación no quitó acceso. */
 const FLEET_CATALOG_PATH = "/admin/flota-catalogos/vehiculos"
 
 function worksiteMatchKey(value: string) {
@@ -90,7 +99,7 @@ export async function createFuelVehicleAction(
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_vehicles", "/combustibles") }
+  try { session = await requirePermission("admin:fleet_vehicles", FLEET_CATALOG_PATH) }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const parsed = createFuelVehicleSchema.safeParse(vehicleFormData(formData))
@@ -143,7 +152,7 @@ export async function updateFuelVehicleAction(
   formData: FormData,
 ): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_vehicles", "/combustibles") }
+  try { session = await requirePermission("admin:fleet_vehicles", FLEET_CATALOG_PATH) }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const id = String(formData.get("id") ?? "")
@@ -217,7 +226,7 @@ const REASON_TOO_SHORT: ActionState = {
 
 export async function toggleFuelVehicleActiveAction(id: string, activate: boolean, reason: string): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_vehicles", "/combustibles") }
+  try { session = await requirePermission("admin:fleet_vehicles", FLEET_CATALOG_PATH) }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const trimmedReason = reason.trim()
@@ -263,7 +272,7 @@ export async function toggleFuelVehicleActiveAction(id: string, activate: boolea
 
 export async function bulkToggleFuelVehicleActiveAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_vehicles", "/combustibles") }
+  try { session = await requirePermission("admin:fleet_vehicles", FLEET_CATALOG_PATH) }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const idsRaw = formData.get("ids") as string
@@ -314,7 +323,7 @@ export async function bulkToggleFuelVehicleActiveAction(_prev: ActionState, form
 
 export async function importFuelVehiclesFromXlsx(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
-  try { session = await requirePermission("combustibles:manage_vehicles", "/combustibles") }
+  try { session = await requirePermission("admin:fleet_vehicles", FLEET_CATALOG_PATH) }
   catch { return { ok: false, message: "Sin permisos" } }
 
   const file = formData.get("file")

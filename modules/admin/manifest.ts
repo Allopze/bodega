@@ -36,6 +36,7 @@ export const adminModule = {
     "admin:pdtp_catalog",
     // Flota
     "admin:fleet_catalog",
+    "admin:fleet_vehicles",
     // Sistema
     "admin:config",
     "admin:smtp",
@@ -70,6 +71,7 @@ export const adminModule = {
     "admin:document_taxonomy": { id: "p-adm-docx",  description: "Gestionar taxonomía documental SST" },
     "admin:pdtp_catalog":      { id: "p-adm-pdtp",  description: "Gestionar catálogos base del programa preventivo" },
     "admin:fleet_catalog":     { id: "p-adm-fleet", description: "Gestionar catálogos administrativos de flota" },
+    "admin:fleet_vehicles":    { id: "p-adm-fleetveh", description: "Mantener el padrón de vehículos: alta, edición, baja e importación desde planilla" },
     "admin:config":            { id: "p-adm-cfg",   description: "Configuración del sistema" },
     "admin:smtp":              { id: "p-adm-smtp",  description: "Configurar servidor SMTP" },
     "admin:email_templates":   { id: "p-adm-tpl",   description: "Gestionar plantillas de correo" },
@@ -110,6 +112,7 @@ export const adminModule = {
     { roleSlug: "administrador", permission: "admin:document_taxonomy" },
     { roleSlug: "administrador", permission: "admin:pdtp_catalog" },
     { roleSlug: "administrador", permission: "admin:fleet_catalog" },
+    { roleSlug: "administrador", permission: "admin:fleet_vehicles" },
     { roleSlug: "administrador", permission: "admin:config" },
     { roleSlug: "administrador", permission: "admin:smtp" },
     { roleSlug: "administrador", permission: "admin:email_templates" },
@@ -135,12 +138,17 @@ export const adminModule = {
     // extintor al programar la inspección. Los roles acotados a una faena
     // quedan fuera a propósito: la pantalla es global.
     { roleSlug: "secretaria", permission: "admin:worksite_inventory" },
+    { roleSlug: "secretaria", permission: "admin:fleet_vehicles" },
+    { roleSlug: "admin_contrato", permission: "admin:fleet_vehicles" },
+    { roleSlug: "prevencionista_faena", permission: "admin:fleet_vehicles" },
+    { roleSlug: "solicitante_faena", permission: "admin:fleet_vehicles" },
     { roleSlug: "prevencionista", permission: "admin:worksite_inventory" },
     // Jefa Chome (Jefatura)
     { roleSlug: "jefa_chome", permission: "admin:cost_centers" },
     { roleSlug: "jefa_chome", permission: "admin:product_catalogs" },
     { roleSlug: "jefa_chome", permission: "admin:pdtp_catalog" },
     { roleSlug: "jefa_chome", permission: "admin:fleet_catalog" },
+    { roleSlug: "jefa_chome", permission: "admin:fleet_vehicles" },
     { roleSlug: "jefa_chome", permission: "admin:notifications" },
     // Jefa Dpto. Prevención de riesgos
     { roleSlug: "prevencionista", permission: "admin:users" },
@@ -154,6 +162,7 @@ export const adminModule = {
     { roleSlug: "prevencionista", permission: "admin:pdtp_catalog" },
     // Jefe de mantención — flota
     { roleSlug: "jefe_mantencion", permission: "admin:fleet_catalog" },
+    { roleSlug: "jefe_mantencion", permission: "admin:fleet_vehicles" },
     // Quien manda a mantener y calibrar los instrumentos es quien los da de alta.
     { roleSlug: "jefe_mantencion", permission: "admin:service_equipment" },
     // Prevencionista faena — solo trabajadores (para EPP tracking)

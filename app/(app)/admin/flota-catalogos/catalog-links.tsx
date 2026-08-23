@@ -36,7 +36,7 @@ const LINKS = [
     description: "Crear, editar y dar de baja vehículos asociados a faenas.",
     href:        "/admin/flota-catalogos/vehiculos",
     icon:        Truck,
-    permission:  "combustibles:manage_vehicles" satisfies Permission,
+    permission:  "admin:fleet_vehicles" satisfies Permission,
   },
   {
     title:       "Proveedores de combustible",

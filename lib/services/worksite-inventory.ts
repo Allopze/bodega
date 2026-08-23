@@ -17,6 +17,7 @@
  * qué recursos cubre, pero eligiéndolos del inventario en vez de crearlos.
  */
 
+import ExcelJS from "exceljs"
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
@@ -28,6 +29,7 @@ import {
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { z } from "zod"
+import { normKey, sheetToRecords } from "@/lib/combustibles/xlsx-utils"
 
 export interface InventoryAccess {
   userId: string
@@ -146,83 +148,125 @@ export async function createWorksiteResource(input: unknown, access: InventoryAc
 /* ── Carga masiva ────────────────────────────────────────────────────────── */
 
 export interface ParsedInventoryRow {
+  /** Fila real de Excel, para poder corregirla en la planilla. */
   line: number
-  values?: z.infer<typeof createSchema> extends infer T ? T extends { worksiteId: string } ? Omit<T, "worksiteId"> : never : never
+  values?: Omit<z.infer<typeof createSchema>, "worksiteId">
   error?: string
 }
 
-const IMPORT_COLUMNS = ["nombre", "tipo", "ubicación", "serie", "próxima inspección", "vencimiento"] as const
+/**
+ * Columnas de la planilla. Se buscan **por nombre**, no por posición: así el
+ * orden de las columnas puede cambiar sin romper la carga, y el usuario ve en su
+ * propia planilla cómo se llama cada una.
+ */
+export const INVENTORY_IMPORT_COLUMNS = {
+  name: "NOMBRE",
+  kind: "TIPO",
+  location: "UBICACION",
+  serialNumber: "SERIE",
+  nextInspectionAt: "PROXIMA INSPECCION",
+  expiresAt: "VENCIMIENTO",
+} as const
 
-/** Cabecera que se le muestra al usuario y que el parser espera en ese orden. */
-export const INVENTORY_IMPORT_HEADER = IMPORT_COLUMNS.join("\t")
+const REQUIRED_HEADERS = [
+  INVENTORY_IMPORT_COLUMNS.name,
+  INVENTORY_IMPORT_COLUMNS.kind,
+  INVENTORY_IMPORT_COLUMNS.location,
+]
+
+/** Excel entrega fechas como `Date`; la columna del inventario es texto ISO corto. */
+function toIsoDate(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null
+  if (value instanceof Date) return value.toISOString().slice(0, 10)
+  return String(value).trim() || null
+}
+
+/** Texto de celda. Separado de `toIsoDate` a propósito: una serie no es una fecha. */
+function toText(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+  return String(value).trim() || null
+}
+
+function cell(record: Record<string, unknown>, header: string): unknown {
+  for (const [key, value] of Object.entries(record)) {
+    if (normKey(key) === normKey(header)) return value
+  }
+  return null
+}
 
 /**
- * Parsea el pegado de una planilla. Se acepta texto tabulado o con punto y coma
- * porque es lo que produce copiar celdas desde Excel: exigir un archivo `.xlsx`
- * obligaría a subirlo, validar su MIME y guardarlo, para el mismo dato que ya
- * está en el portapapeles.
+ * Lee la planilla del inventario. Mismo patrón que la importación de vehículos
+ * (`lib/combustibles/fleet-xlsx-import.ts`): encabezados por nombre, una fila
+ * por recurso y **un error por fila** en vez de un rechazo del lote entero — que
+ * es lo que hace cargable una planilla de doscientos extintores.
  *
- * Función pura y exportada: la validación por fila es lo que hace usable una
- * carga de doscientos extintores, y es lo que hay que poder probar sin base.
- *
- * ponytail: pegado de texto, no lectura de xlsx. Si algún día hay que importar
- * un formato con celdas combinadas o varias hojas, el reemplazo es el panel de
- * subida que ya existe en Admin → Productos.
+ * Los dos padrones de la plataforma se cargan igual a propósito: tener uno por
+ * archivo y otro por pegado obligaba a recordar cuál era cuál.
  */
-export function parseInventoryPaste(text: string): ParsedInventoryRow[] {
+export async function parseInventoryXlsx(fileBuffer: ArrayBuffer | Buffer): Promise<ParsedInventoryRow[]> {
+  const workbook = new ExcelJS.Workbook()
+  try {
+    await workbook.xlsx.load(fileBuffer as never)
+  } catch {
+    return [{ line: 0, error: "Archivo Excel inválido o corrupto." }]
+  }
+
+  const sheet = workbook.worksheets[0]
+  if (!sheet) return [{ line: 0, error: "No se encontró una hoja con datos." }]
+
+  const headers: string[] = []
+  sheet.getRow(1).eachCell({ includeEmpty: true }, (item, columnNumber) => {
+    headers[columnNumber - 1] = normKey(String(item.value ?? ""))
+  })
+  const missing = REQUIRED_HEADERS.filter((header) => !headers.includes(normKey(header)))
+  if (missing.length > 0) {
+    return [{ line: 1, error: `Faltan columnas requeridas: ${missing.join(", ")}.` }]
+  }
+
   const rows: ParsedInventoryRow[] = []
-  const lines = text.split(/\r?\n/)
-
-  for (const [index, raw] of lines.entries()) {
-    const line = index + 1
-    if (!raw.trim()) continue
-    // El separador se decide por línea: una pegada de Excel es tabulada, pero
-    // un CSV exportado a mano llega con punto y coma.
-    const cells = (raw.includes("\t") ? raw.split("\t") : raw.split(";")).map((cell) => cell.trim())
-
-    // Cabecera repetida al copiar desde la planilla: se salta sin protestar.
-    if (cells[0]?.toLowerCase() === "nombre") continue
-
-    const [name, kind, location, serialNumber, nextInspectionAt, expiresAt] = cells
+  for (const record of sheetToRecords(sheet)) {
     const candidate = {
       worksiteId: "placeholder",
-      name: name ?? "",
-      kind: kind ?? "",
-      location: location ?? "",
-      serialNumber: serialNumber || null,
-      nextInspectionAt: nextInspectionAt || null,
-      expiresAt: expiresAt || null,
+      name: String(cell(record, INVENTORY_IMPORT_COLUMNS.name) ?? "").trim(),
+      kind: String(cell(record, INVENTORY_IMPORT_COLUMNS.kind) ?? "").trim(),
+      location: String(cell(record, INVENTORY_IMPORT_COLUMNS.location) ?? "").trim(),
+      serialNumber: toText(cell(record, INVENTORY_IMPORT_COLUMNS.serialNumber)),
+      nextInspectionAt: toIsoDate(cell(record, INVENTORY_IMPORT_COLUMNS.nextInspectionAt)),
+      expiresAt: toIsoDate(cell(record, INVENTORY_IMPORT_COLUMNS.expiresAt)),
     }
+    // Fila totalmente vacía: la planilla suele traer decenas al final.
+    if (!candidate.name && !candidate.kind && !candidate.location) continue
+
     const parsed = createSchema.safeParse(candidate)
     if (!parsed.success) {
       const first = parsed.error.issues[0]
-      rows.push({ line, error: `${first?.path.join(".") ?? "fila"}: ${first?.message ?? "dato inválido"}` })
+      rows.push({ line: record.__row, error: `${first?.path.join(".") ?? "fila"}: ${first?.message ?? "dato inválido"}` })
       continue
     }
     const { worksiteId: _ignored, ...values } = parsed.data
-    rows.push({ line, values: values as ParsedInventoryRow["values"] })
+    rows.push({ line: record.__row, values })
   }
   return rows
 }
 
 export interface ImportResult {
   created: number
-  /** Filas rechazadas, con su número de línea y el motivo. */
+  /** Filas rechazadas, con su número de fila en la planilla y el motivo. */
   rejected: Array<{ line: number; error: string }>
 }
 
-export async function importWorksiteResources(input: unknown, access: InventoryAccess): Promise<ImportResult> {
+export async function importWorksiteResources(
+  input: { worksiteId: string; fileBuffer: ArrayBuffer | Buffer },
+  access: InventoryAccess,
+): Promise<ImportResult> {
   requireAccess(access)
-  const data = z.object({
-    worksiteId: z.string().min(1),
-    text: z.string().min(1).max(200_000),
-  }).parse(input)
+  const worksiteId = z.string().min(1).parse(input.worksiteId)
 
   const [worksite] = await db.select({ id: worksites.id })
-    .from(worksites).where(eq(worksites.id, data.worksiteId)).limit(1)
+    .from(worksites).where(eq(worksites.id, worksiteId)).limit(1)
   if (!worksite) throw new Error("La faena no existe.")
 
-  const rows = parseInventoryPaste(data.text)
+  const rows = await parseInventoryXlsx(input.fileBuffer)
   const valid = rows.filter((row) => row.values)
   const rejected = rows.filter((row) => row.error).map((row) => ({ line: row.line, error: row.error! }))
 
@@ -234,7 +278,7 @@ export async function importWorksiteResources(input: unknown, access: InventoryA
    * y ubicación). Las filas inválidas se informan y no bloquean al lote. */
   await db.insert(preventionEmergencyResources).values(valid.map((row) => ({
     id: `pemgre-${nanoid()}`,
-    worksiteId: data.worksiteId,
+    worksiteId,
     planId: null,
     name: row.values!.name,
     kind: row.values!.kind,
@@ -248,7 +292,7 @@ export async function importWorksiteResources(input: unknown, access: InventoryA
   await recordAudit({
     action: "create",
     entityType: "prevention_emergency_resource",
-    entityId: data.worksiteId,
+    entityId: worksiteId,
     userId: access.userId,
     reason: `Carga masiva de inventario: ${valid.length} recurso(s) creado(s), ${rejected.length} fila(s) rechazada(s)`,
   })

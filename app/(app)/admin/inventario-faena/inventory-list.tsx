@@ -12,7 +12,6 @@ import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-too
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Textarea } from "@/components/ui/textarea"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import {
@@ -260,10 +259,11 @@ function ImportDialog({ worksites }: { worksites: { id: string; name: string }[]
           className="space-y-4"
           onSubmit={(event) => {
             event.preventDefault()
-            const text = String(new FormData(event.currentTarget).get("text") ?? "")
+            const form = new FormData(event.currentTarget)
+            form.set("worksiteId", worksiteId)
             setResult(null)
             operation.run(
-              () => importWorksiteResourcesAction({ worksiteId, text }),
+              () => importWorksiteResourcesAction(form),
               (state) => setResult((state.data as unknown as typeof result) ?? null),
             )
           }}
@@ -271,9 +271,10 @@ function ImportDialog({ worksites }: { worksites: { id: string; name: string }[]
           <DialogHeader>
             <DialogTitle>Cargar inventario desde planilla</DialogTitle>
             <DialogDescription>
-              Copia las celdas desde Excel y pégalas aquí. Una fila por recurso, en este orden:
-              <span className="mt-1 block font-mono text-xs">nombre · tipo · ubicación · serie · próxima inspección · vencimiento</span>
-              Las fechas van como aaaa-mm-dd. Serie y fechas pueden ir vacías. Si pegas la fila de títulos, se ignora.
+              Sube un archivo <span className="font-mono">.xlsx</span> con una fila por recurso. Las columnas se
+              buscan por nombre, así que el orden no importa:
+              <span className="mt-1 block font-mono text-xs">NOMBRE · TIPO · UBICACION · SERIE · PROXIMA INSPECCION · VENCIMIENTO</span>
+              Las tres primeras son obligatorias. Si una fila viene mal, se informa con su número y el resto sí entra.
             </DialogDescription>
           </DialogHeader>
           <Field label="Faena" required>
@@ -284,8 +285,14 @@ function ImportDialog({ worksites }: { worksites: { id: string; name: string }[]
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Filas" required>
-            <Textarea name="text" required rows={10} className="font-mono text-xs" aria-label="Filas de la planilla" />
+          <Field label="Planilla" required hint="Archivo .xlsx, hasta 6 MB.">
+            <Input
+              type="file"
+              name="file"
+              required
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              aria-label="Planilla del inventario"
+            />
           </Field>
           {result && (
             <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-xs">
@@ -297,7 +304,7 @@ function ImportDialog({ worksites }: { worksites: { id: string; name: string }[]
                   </p>
                   <ul className="mt-1 space-y-0.5">
                     {result.rejected.slice(0, 15).map((item) => (
-                      <li key={item.line}>Línea {item.line}: {item.error}</li>
+                      <li key={item.line}>Fila {item.line}: {item.error}</li>
                     ))}
                   </ul>
                   {result.rejected.length > 15 && <p className="mt-1">…y {result.rejected.length - 15} más.</p>}

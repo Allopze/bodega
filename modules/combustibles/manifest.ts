@@ -32,7 +32,11 @@ export const combustiblesModule = {
     "combustibles:import":           { id: "p-fuel-import", description: "Importar consumos de combustible por patente" },
     "combustibles:revert":           { id: "p-fuel-revert", description: "Revertir un lote de importación de consumos" },
     "combustibles:export":           { id: "p-fuel-export", description: "Exportar datos de combustible" },
-    "combustibles:manage_vehicles":  { id: "p-fuel-veh",   description: "Gestionar vehículos de combustible" },
+    // Ya no cubre el padrón: eso es `admin:fleet_vehicles`. Lo que queda es la
+    // decisión operativa sobre un equipo —sacarlo de servicio por un hallazgo,
+    // vincular una patente de un lote importado—, que es de quien administra la
+    // flota en terreno y no de quien mantiene el dato maestro.
+    "combustibles:manage_vehicles":  { id: "p-fuel-veh",   description: "Decidir sobre un equipo en operación: sacarlo de servicio y vincular patentes de lotes importados" },
     "combustibles:manage_suppliers": { id: "p-fuel-sup",  description: "Gestionar proveedores de combustible" },
     "combustibles:tae_view":          { id: "p-fuel-tae-view", description: "Ver control operacional TAE" },
     "combustibles:tae_review":        { id: "p-fuel-tae-review", description: "Revisar cargas TAE" },
