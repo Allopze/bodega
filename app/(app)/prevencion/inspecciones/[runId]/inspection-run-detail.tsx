@@ -127,6 +127,10 @@ export interface RunDocumentInfo {
 interface Props {
   run: RunInfo
   templateKind: string
+  /** Actividades del programa anual que esta inspección acredita al ejecutarse. */
+  pdtpActivityNumbers: number[]
+  /** Y las que acredita al revisarse y firmarse: son otra ocurrencia y otro responsable. */
+  pdtpReviewActivityNumbers: number[]
   worksiteName: string
   assigneeName: string | null
   executorName: string | null
@@ -354,7 +358,8 @@ function AnswerEvidence({ answerId, evidence, editable }: {
 }
 
 export function InspectionRunDetail({
-  run, templateKind, worksiteName, assigneeName, executorName, reviewerName,
+  run, templateKind, pdtpActivityNumbers, pdtpReviewActivityNumbers,
+  worksiteName, assigneeName, executorName, reviewerName,
   sections, answers, findings, currentUserId, assignees, canExecute, canReview, canManage, canStopVehicle,
   documents, canIngest, closingAct,
 }: Props) {
@@ -594,6 +599,15 @@ export function InspectionRunDetail({
     { label: "Programada para", value: run.scheduledFor ?? "—" },
     { label: "Ejecutada por", value: executorName ? `${executorName} · ${formatDateTime(run.executedAt!)}` : "Sin ejecutar" },
     { label: "Cumplimiento", value: run.compliancePercent === null ? (summary.compliancePercent === null ? "No calculable" : `${summary.compliancePercent}% (previsto)`) : `${run.compliancePercent}%` },
+    // Qué acredita en el programa anual, y en qué etapa. El estado del run dice
+    // si ya ocurrió: `completed` cierra la primera, `reviewed` la segunda.
+    {
+      label: "Acredita en el PDTP",
+      value: [
+        pdtpActivityNumbers.length > 0 ? `N° ${pdtpActivityNumbers.join(", ")} al ejecutar` : null,
+        pdtpReviewActivityNumbers.length > 0 ? `N° ${pdtpReviewActivityNumbers.join(", ")} al revisar` : null,
+      ].filter(Boolean).join(" · ") || "No acredita ninguna actividad",
+    },
   ]
 
   return (

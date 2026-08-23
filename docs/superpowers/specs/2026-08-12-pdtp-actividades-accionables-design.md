@@ -282,12 +282,29 @@ del seed de checklists; hay que confirmarlos con la jefa de prevención.
 | 37 | Charlas de seguridad (PRF) | 🔗 Capacitación (sesión + asistencia) |
 | 38 | Charlas de seguridad diarias por turno (SUP/JT) | 🔗 Capacitación · volumen alto, una por turno |
 
-**Nota sobre la N°28** — es el único caso donde la actividad es *revisar* lo
-que otro ejecutó: las N°33/34 ejecutan la inspección de equipos y la N°28 la
-cierra. El módulo ya distingue las dos etapas (`executed_by_user_id` vs
-`reviewed_by_user_id`), pero `onInspectionCompleted` se dispara en las dos por
-igual, así que hoy no se puede acreditar una actividad distinta en cada etapa.
-Requiere separar el conector o que la plantilla declare actividades por etapa.
+**Nota sobre la N°28** — *actualizada el 2026-08-21.* El mecanismo que esta nota
+pedía ya existe: la plantilla declara actividades **por etapa**
+(`pdtp_activity_numbers` al completar, `pdtp_review_activity_numbers` al pasar a
+`reviewed`, migración 0203) y el conector dispara en las dos. La primera en usarlo
+es la **N°26** ("Revisión y firma del report de uso diario"), cableada a
+`reporte_equipos`.
+
+La **N°28**, en cambio, **queda manual por decisión de la jefatura
+(2026-08-21)**, y no por falta de mecanismo. El campo `program` del catálogo la
+describe como *"revisar las inspecciones una vez sean recibidas, para ver si los
+temas mencionados se levantaron para cierre, **en reunión semanal**"*, y su
+calendario es 1 por semana. Es un acto semanal sobre el **conjunto** recibido,
+no sobre una inspección: acreditarla por run haría que una semana con doce
+inspecciones reportara doce cumplimientos de una actividad planificada como uno.
+Además su objeto es si **los hallazgos se cerraron** —territorio de CAPA, que
+ocurre después— y no el llenado del checklist. Automatizarla exigiría un objeto
+que no existe: la reunión semanal con acta (el molde estaría en las sesiones de
+CPHS).
+
+Criterio general que salió de esto: ante la duda de si una actividad se acredita
+**por evento o por período**, leer su campo `program` en
+`db/seed/pdtp-catalog-2026.json` — distingue explícitamente "según la cantidad de
+equipos" de "reunión semanal".
 
 **Sin registro en la plataforma:**
 
@@ -300,12 +317,21 @@ Requiere separar el conector o que la plantilla declare actividades por etapa.
 Lo único que hay de alcotest hoy es el equipo físico como ítem de servicio
 (para su calibración) y una mención en la descripción del rol jefe de terreno.
 
-**Bloqueadas:**
+**Desbloqueadas el 2026-08-21** (estaban bloqueadas por A7, "el responsable son
+los conductores, que no tienen cuenta"):
 
-| N° | Actividad | Bloqueo |
+| N° | Actividad | Mecanismo |
 |---|---|---|
-| 25 | Report de uso diario de equipos | A7 — el responsable son los conductores, que no tienen cuenta |
-| 26 | Revisión y firma del report | Acoplada a la N°25 |
+| 25 | Report de uso diario de equipos | 🔗 Inspecciones, plantilla `reporte_equipos`: el conductor llena el papel y quien tiene `prevention:inspections:ingest` sube la foto. Acredita al completar |
+| 26 | Revisión y firma del report | 🔗 Inspecciones, **paso de revisión** vía `pdtp_review_activity_numbers`. Acredita al pasar a `reviewed` |
+
+**Pendiente operativo de la N°26:** el candado de independencia impide que quien
+ejecuta revise lo suyo. Si el jefe de terreno sube la planilla **y además**
+completa la inspección, no puede firmarla y la N°26 se acreditaría a otra
+persona, no al responsable que el programa declara (Sup, JT). Se resuelve sin
+código: subir la foto (`:ingest`) no convierte en ejecutante, así que el JT sube,
+otra persona teclea, y la firma queda para el JT. Hay que decidirlo y
+comunicarlo.
 
 El padrón para su cobertura **sí existe**: `fuel_vehicles`, 18 equipos activos
 en 6 faenas. Lo mismo sirve de denominador a las N°33/34 ("cantidad de
@@ -637,8 +663,10 @@ la fuente PDTP les habría borrado el trabajo de la cola.
 
 ### H · Verificación pendiente
 
-- `prevention-inspections-postgres.test.ts` (18 tests) nunca corrió: exige una
-  base desechable con `PREVENTION_INSPECTIONS_ALLOW_DESTRUCTIVE_RESET=true`.
+- ~~`prevention-inspections-postgres.test.ts` (18 tests) nunca corrió~~ —
+  **corrido el 2026-08-21**: son 50 tests y pasan contra Postgres real
+  (`PREVENTION_INSPECTIONS_DATABASE_URL=postgres:///…_test` +
+  `PREVENTION_INSPECTIONS_ALLOW_DESTRUCTIVE_RESET=true`, `PGHOST` al socket).
 - Documentación SST, MIPER, Legal, Campañas, Permisos y Gestión del cambio
   siguen como "por verificar" en el inventario de §4: no confirmé qué
   registran ni si sirven de enganche.

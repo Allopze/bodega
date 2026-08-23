@@ -81,27 +81,17 @@ export async function onInspectionCompleted(input: {
   worksiteId: string
   completedAt: string
   activityNumbers: number[]
-  coveredSubjectCount?: number  // Para futura implementación de R1 (todo-o-nada)
-  expectedSubjectCount?: number // ídem
 }): Promise<void> {
   if (input.activityNumbers.length === 0) return
 
-  // R1 (todo-o-nada): si hay padrón definido y no se cubrió el 100%, ejecutedQuantity=0
-  // Nota: con Q=0 no acreditamos (la actividad necesita Q>0 para contar). Por ahora
-  // si expectedSubjectCount no está definido, asumimos Q=1 (acredita).
+  // Cantidad 1 porque el modelo es una inspección por sujeto: el run declara su
+  // `subjectResourceId`/`subjectVehicleId`, y la cobertura del PDTP sale de
+  // sumar ejecuciones contra el `expectedSubjectCount` de la faena
+  // (`lib/services/pdtp/compliance.ts`). Antes había aquí dos parámetros
+  // —`coveredSubjectCount`/`expectedSubjectCount`— para una regla de
+  // todo-o-nada que ningún llamador alimentó nunca: se retiraron porque una
+  // regla que no corre leída en el código se confunde con una que sí.
   const executedQuantity = 1
-  if (
-    input.expectedSubjectCount != null &&
-    input.coveredSubjectCount != null &&
-    input.coveredSubjectCount < input.expectedSubjectCount
-  ) {
-    // Todo-o-nada: inspección incompleta no acredita
-    logger.info(
-      { runId: input.runId, covered: input.coveredSubjectCount, expected: input.expectedSubjectCount },
-      "[pdtp-connector] Inspección no cubre todos los sujetos esperados (R1): no se acredita.",
-    )
-    return
-  }
 
   await safeAccredit({
     sourceType: "inspeccion",
@@ -112,6 +102,41 @@ export async function onInspectionCompleted(input: {
     executedQuantity,
     evidenceRef: `Inspección completada: ${input.runId}`,
   })
+}
+
+/**
+ * Revierte la acreditación cuando la inspección deja de sostenerla: se cancela,
+ * o se reabre para rectificar.
+ *
+ * Sin esto el programa anual seguía contando una inspección que el propio
+ * motor había anulado —`transitionInspectionRun` borra `compliancePercent`,
+ * `executedAt` y `reviewedAt` al reabrir— y con la acreditación de la revisión
+ * el desfase era doble: quedaba viva la firma de un run sin firmante.
+ *
+ * Las ejecuciones ya aprobadas por una persona NO se tocan: eso lo decide
+ * `revokePdtpAccreditation`, que las reporta en `skippedApproved`. Deshacer una
+ * aprobación humana es una decisión humana.
+ */
+export async function onInspectionReverted(input: {
+  runId: string
+  worksiteId: string
+  reason: string
+  revokedBy?: string
+}): Promise<void> {
+  try {
+    await revokePdtpAccreditation({
+      sourceType: "inspeccion",
+      sourceId: input.runId,
+      worksiteId: input.worksiteId,
+      revokedBy: input.revokedBy,
+      reason: input.reason,
+    })
+  } catch (err) {
+    logger.error(
+      { err, runId: input.runId, worksiteId: input.worksiteId },
+      "[pdtp-connector] Error al revertir la acreditación de una inspección anulada o reabierta.",
+    )
+  }
 }
 
 // ── Conector: Capacitación ────────────────────────────────────────────────────

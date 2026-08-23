@@ -50,7 +50,7 @@ import { createMaintenanceRecordWithClient } from "@/lib/services/maintenance"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { CHECKLIST_DEFINITIONS, isNonInspectionDefinition, isPersonEvaluationDefinition } from "@/lib/sst/definitions"
 import type { ChecklistDefinition } from "@/lib/sst/types"
-import { onInspectionCompleted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
+import { onInspectionCompleted, onInspectionReverted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { defaultPdtpActivityNumbers, defaultPdtpReviewActivityNumbers, pdtpActivityCandidatesFor } from "@/lib/services/pdtp-adapters/inspection-templates-2026"
 import { codeYear, todayInChile } from "@/lib/utils"
 import { assertRouteModuleEnabled } from "@/lib/services/module-toggles"
@@ -1462,6 +1462,11 @@ export async function transitionInspectionRun(input: unknown, access: Inspection
   // dentro y la transacción se revirtiera, quedaría una ocurrencia del programa
   // anual afirmando una firma que no existe.
   let accreditation: Parameters<typeof onInspectionCompleted>[0] | null = null
+  /* Cancelar y reabrir destruyen la ejecución que el PDTP estaba contando, así
+   * que la acreditación tiene que caer con ella. Va post-commit igual que la
+   * acreditación: revocar sobre una transacción que después se revierte dejaría
+   * el programa sin un cumplimiento que sí existe. */
+  let revocation: Parameters<typeof onInspectionReverted>[0] | null = null
   const result = await db.transaction(async (tx) => {
     const [run] = await tx.select().from(preventionInspectionRuns)
       .where(eq(preventionInspectionRuns.id, data.runId)).limit(1)
@@ -1551,12 +1556,26 @@ export async function transitionInspectionRun(input: unknown, access: Inspection
         }
       }
     }
+    // Sólo se revoca lo que alguna vez se acreditó: un run que nunca pasó de
+    // `planned` no tiene nada que devolver, y llamar igual gastaría una consulta
+    // por cada cancelación de una inspección jamás ejecutada.
+    if ((data.toStatus === "cancelled" || data.toStatus === "in_progress") && run.executedAt) {
+      revocation = {
+        runId: run.id,
+        worksiteId: run.worksiteId,
+        reason: data.toStatus === "cancelled"
+          ? `Inspección ${run.code} cancelada: ${data.reason ?? "sin motivo declarado"}`
+          : `Inspección ${run.code} reabierta para rectificar: ${data.reason ?? "sin motivo declarado"}`,
+        revokedBy: access.userId,
+      }
+    }
     return updated
   })
 
   // La clave de idempotencia del PDTP incluye la actividad, así que acreditar
   // n=26 desde el mismo run que ya acreditó n=25 no colisiona ni duplica.
   if (accreditation) await onInspectionCompleted(accreditation)
+  if (revocation) await onInspectionReverted(revocation)
   return result
 }
 
@@ -1931,6 +1950,11 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
     templateName: preventionInspectionTemplates.name,
     templateKind: preventionInspectionTemplates.kind,
     definitionSnapshot: preventionInspectionTemplates.definitionSnapshot,
+    // Enlace fuente → PDTP: hasta ahora sólo existía el inverso
+    // (`findInspectionTemplateForPdtpActivity`), así que quien abría una
+    // inspección no podía saber si alimentaba el programa anual ni con qué.
+    pdtpActivityNumbers: preventionInspectionTemplates.pdtpActivityNumbers,
+    pdtpReviewActivityNumbers: preventionInspectionTemplates.pdtpReviewActivityNumbers,
     worksiteName: worksites.name,
     assigneeName: assignee.name,
     executorName: executor.name,

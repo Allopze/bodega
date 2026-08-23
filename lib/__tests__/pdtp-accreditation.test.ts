@@ -686,6 +686,174 @@ describe("revisar y firmar acredita su propia actividad", () => {
   })
 })
 
+/* ── Reversión al anular o reabrir ────────────────────────────────────────
+ * `transitionInspectionRun` borra `compliancePercent`, `executedAt` y
+ * `reviewedAt` al reabrir, pero la ejecución del programa anual sobrevivía: el
+ * PDTP seguía contando una inspección que el propio motor había anulado. Con la
+ * acreditación de la revisión el desfase era doble.
+ */
+describe("cancelar o reabrir devuelve la acreditación al programa", () => {
+  const TPL = "instpl-rev2-1"
+  const RUN = "insrun-rev2-1"
+  const REVIEWER = "user-acc-rev2"
+
+  const ACCESS = {
+    userId: REVIEWER,
+    scope: { mode: "all" as const, ids: [] as [] },
+    permissions: [
+      "prevention:inspections:review",
+      "prevention:inspections:manage",
+      "prevention:inspections:view",
+    ],
+  }
+
+  /** Deja el run ejecutado Y revisado, con las dos acreditaciones puestas. */
+  async function seedAccredited() {
+    await inMemoryDb.insert(schema.users).values({
+      id: REVIEWER, email: "rev2@acc.test", name: "Revisor Dos", hashedPassword: "x",
+    }).onConflictDoNothing()
+    await inMemoryDb.insert(schema.preventionInspectionTemplates).values({
+      id: TPL,
+      code: "reporte_equipos",
+      versionLabel: "02",
+      name: "Reporte de Uso Diario de Equipos",
+      kind: "inspection",
+      definitionSnapshot: { sections: [] },
+      contentHash: "c".repeat(64),
+      status: "approved",
+      pdtpActivityNumbers: [ACT_N],
+      pdtpReviewActivityNumbers: [REVIEW_ACT_N],
+      authorUserId: USER_ID,
+      approvedByUserId: USER_ID,
+      approvedAt: new Date().toISOString(),
+    })
+    const [run] = await inMemoryDb.insert(schema.preventionInspectionRuns).values({
+      id: RUN,
+      code: "RUE-0002",
+      templateId: TPL,
+      worksiteId: WS_ID,
+      status: "completed",
+      compliancePercent: 100,
+      executedByUserId: USER_ID,
+      executedAt: "2026-04-15T10:00:00.000Z",
+      createdByUserId: USER_ID,
+    }).returning()
+
+    // La acreditación de la ejecución, como la habría dejado completeInspectionRun.
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    await accreditPdtpFromEvent({
+      sourceType: "inspeccion",
+      sourceId: RUN,
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: "2026-04-15T10:00:00.000Z",
+    })
+    return run!
+  }
+
+  async function liveExecutions() {
+    const rows = await inMemoryDb.select().from(schema.pdtpExecutions)
+    return rows.filter((row) => row.sourceId === RUN && row.status !== "draft")
+  }
+
+  it("reabrir para rectificar revoca las dos acreditaciones", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const run = await seedAccredited()
+
+    // Primero se revisa: quedan las dos (ejecución + firma).
+    const reviewed = await service.reviewInspectionRun({
+      runId: run.id,
+      expectedVersion: run.version,
+      reviewComment: "Reporte revisado y firmado por el jefe de terreno.",
+    }, ACCESS)
+    expect(await liveExecutions()).toHaveLength(2)
+
+    await service.transitionInspectionRun({
+      runId: run.id,
+      expectedVersion: reviewed.version,
+      toStatus: "in_progress",
+      reason: "Error de tipeo en el horómetro; se rectifica.",
+    }, ACCESS)
+
+    // Reabrir borra el cumplimiento, así que ninguna de las dos puede seguir
+    // contando: una firma sin firmante es justo lo que no debe quedar viva.
+    expect(await liveExecutions()).toHaveLength(0)
+  })
+
+  it("cancelar una ejecutada también la revoca", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const run = await seedAccredited()
+    expect(await liveExecutions()).toHaveLength(1)
+
+    await service.transitionInspectionRun({
+      runId: run.id,
+      expectedVersion: run.version,
+      toStatus: "cancelled",
+      reason: "El equipo salió de la faena antes de cerrar el reporte.",
+    }, ACCESS)
+
+    expect(await liveExecutions()).toHaveLength(0)
+  })
+
+  it("una ejecución ya aprobada por una persona no se revoca sola", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const run = await seedAccredited()
+    // Deshacer una aprobación humana es una decisión humana, no un efecto
+    // secundario de reabrir.
+    await inMemoryDb.update(schema.pdtpExecutions).set({ status: "approved" })
+
+    await service.transitionInspectionRun({
+      runId: run.id,
+      expectedVersion: run.version,
+      toStatus: "cancelled",
+      reason: "Se cancela con la acreditación ya aprobada.",
+    }, ACCESS)
+
+    const rows = await inMemoryDb.select().from(schema.pdtpExecutions)
+    expect(rows.filter((row) => row.sourceId === RUN && row.status === "approved")).toHaveLength(1)
+  })
+
+  it("cancelar una planificada no toca el programa: nunca acreditó nada", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    // `cancelled_by_user_id` es FK: este caso no pasa por `seedAccredited`.
+    await inMemoryDb.insert(schema.users).values({
+      id: REVIEWER, email: "rev2@acc.test", name: "Revisor Dos", hashedPassword: "x",
+    }).onConflictDoNothing()
+    await inMemoryDb.insert(schema.preventionInspectionTemplates).values({
+      id: `${TPL}-plan`,
+      code: "inspeccion_carros",
+      versionLabel: "01",
+      name: "Inspección de Carros",
+      kind: "inspection",
+      definitionSnapshot: { sections: [] },
+      contentHash: "d".repeat(64),
+      status: "approved",
+      pdtpActivityNumbers: [ACT_N],
+      authorUserId: USER_ID,
+      approvedByUserId: USER_ID,
+      approvedAt: new Date().toISOString(),
+    })
+    const [planned] = await inMemoryDb.insert(schema.preventionInspectionRuns).values({
+      id: `${RUN}-plan`,
+      code: "RUE-0003",
+      templateId: `${TPL}-plan`,
+      worksiteId: WS_ID,
+      status: "planned",
+      createdByUserId: USER_ID,
+    }).returning()
+
+    await service.transitionInspectionRun({
+      runId: planned!.id,
+      expectedVersion: planned!.version,
+      toStatus: "cancelled",
+      reason: "La programación ya no corresponde a esta faena.",
+    }, ACCESS)
+
+    const rows = await inMemoryDb.select().from(schema.pdtpExecutions)
+    expect(rows.filter((row) => row.sourceId === `${RUN}-plan`)).toHaveLength(0)
+  })
+})
+
 // ── El escritor que faltaba ───────────────────────────────────────────────────
 
 describe("declarar qué actividades PDTP acredita una plantilla", () => {

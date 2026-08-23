@@ -74,6 +74,8 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
         }}
         closingAct={closingActFromDefinition(definition)}
         templateKind={detail.templateKind}
+        pdtpActivityNumbers={detail.pdtpActivityNumbers ?? []}
+        pdtpReviewActivityNumbers={detail.pdtpReviewActivityNumbers ?? []}
         worksiteName={detail.worksiteName}
         assigneeName={detail.assigneeName}
         executorName={detail.executorName}
