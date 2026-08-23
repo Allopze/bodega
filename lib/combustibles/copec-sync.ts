@@ -7,6 +7,8 @@ import { todayInChile, addDaysToPlainDate } from "@/lib/utils"
 import { parseConsumptionExcel, type ParsedConsumptionRow } from "@/lib/combustibles/consumption-import"
 import { computeBatchTotals } from "@/lib/combustibles/consumption-calculations"
 import { plateMatchKey } from "@/lib/combustibles/xlsx-utils"
+import { AUTOMATED_SOURCES, copecTctSource } from "@/lib/combustibles/fuel-sources"
+import { batchTotalsUnchanged, isOpenPeriod, upsertBatchRecords } from "@/lib/combustibles/open-period"
 import {
   downloadCopecReports,
 } from "@/lib/combustibles/copec-reports"
@@ -16,10 +18,6 @@ import { importTaeReceipts } from "@/lib/combustibles/tae-receipts"
 const STATE_KEY = "combustibles.copec.sync"
 const START_KEY = "COPEC_SYNC_START_DATE"
 const DEFAULT_START = "2020-01-01"
-/** Las únicas fuentes que escribe esta sincronización. Diésel y BlueMax son lotes
- *  separados por diseño; cualquier OTRA fuente para la misma faena y período es una
- *  importación ajena (manual) cuyo consumo ya está contado. */
-const TCT_SOURCES = ["Copec TCT Diesel", "Copec TCT BlueMax"]
 
 interface SyncState { cursor: string | null; lastRunAt: string | null; pending: string[]; }
 
@@ -69,8 +67,9 @@ async function saveState(next: SyncState, expectedVersion: string) {
 }
 
 // Fecha civil chilena: en UTC (la zona del proceso en producción), entre las
-// 21:00 y la medianoche de Chile el 1º del mes ya llegó — `lastClosedMonthEnd()`
-// cerraba un mes de más y el plan intentaba sincronizar un mes aún abierto.
+// 21:00 y la medianoche de Chile el 1º del mes ya llegó, y el cálculo del mes
+// cerraba un mes de más. Todo lo que dependa del mes en curso —el tope del plan
+// y el piso de la fecha de inicio— tiene que pasar por acá, no por `new Date()`.
 function today(): string { return todayInChile() }
 
 function addDays(value: string, days: number): string { return addDaysToPlainDate(value, days) }
@@ -87,10 +86,6 @@ function nextMonth(value: string): string {
 
 function lastDayOfMonth(value: string): string {
   return addDays(nextMonth(value), -1)
-}
-
-function lastClosedMonthEnd(): string {
-  return addDays(firstDayOfMonth(today()), -1)
 }
 
 function isValidIsoDate(value: string | null | undefined): value is string {
@@ -124,6 +119,19 @@ async function latestActiveImportUntil(): Promise<string | null> {
  * (el plan quedaba vacío y la UI decía "no hay meses nuevos"). El doble conteo lo
  * evita el guard por faena+período de `importCopecPeriod`, no este piso.
  */
+/**
+ * Piso derivado de la última importación activa, recortado al mes en curso.
+ *
+ * Ahora que el mes abierto se importa y se refresca, un lote suyo dejaría el piso
+ * en el mes SIGUIENTE y el plan quedaría vacío: el mes en curso no volvería a
+ * sincronizarse nunca.
+ */
+function minimumStartFrom(latestImportedUntil: string | null): string {
+  const floor = latestImportedUntil ? nextMonth(latestImportedUntil) : DEFAULT_START
+  const currentMonthStart = firstDayOfMonth(today())
+  return floor > currentMonthStart ? currentMonthStart : floor
+}
+
 function resolveStart(current: SyncState, minimumStart: string): string {
   const start = startFrom(current)
   return firstDayOfMonth(isValidIsoDate(current.cursor) || start >= minimumStart ? start : minimumStart)
@@ -131,7 +139,7 @@ function resolveStart(current: SyncState, minimumStart: string): string {
 
 export async function getCopecSyncStartOptions(): Promise<CopecSyncStartOptions> {
   const [current, latestImportedUntil] = await Promise.all([state(), latestActiveImportUntil()])
-  const minimumStart = latestImportedUntil ? nextMonth(latestImportedUntil) : DEFAULT_START
+  const minimumStart = minimumStartFrom(latestImportedUntil)
   return {
     currentStart: resolveStart(current, minimumStart),
     minimumStart,
@@ -145,7 +153,7 @@ export async function setCopecSyncStartDate(startDate: string, expectedStart: st
   if (!startDate.endsWith("-01")) throw new Error("Selecciona el primer día del mes desde el que quieres sincronizar")
 
   const [current, latestImportedUntil] = await Promise.all([state(), latestActiveImportUntil()])
-  const minimumStart = latestImportedUntil ? nextMonth(latestImportedUntil) : DEFAULT_START
+  const minimumStart = minimumStartFrom(latestImportedUntil)
   const currentStart = resolveStart(current, minimumStart)
   if (currentStart !== expectedStart) {
     throw new Error("La sincronización cambió mientras ajustabas la fecha. Actualiza la página e inténtalo nuevamente.")
@@ -180,14 +188,17 @@ export function buildCopecSyncPeriods(from: string, to: string): CopecSyncPeriod
 
 export async function getCopecSyncPlan(): Promise<{ from: string; to: string; periods: CopecSyncPeriod[]; pending: number }> {
   const [current, latestImportedUntil] = await Promise.all([state(), latestActiveImportUntil()])
-  const minimumStart = latestImportedUntil ? nextMonth(latestImportedUntil) : DEFAULT_START
+  const minimumStart = minimumStartFrom(latestImportedUntil)
   const from = resolveStart(current, minimumStart)
-  const to = lastClosedMonthEnd()
+  // Incluye el mes en curso: su lote se refresca en cada corrida.
+  const to = lastDayOfMonth(today())
   return { from, to, periods: buildCopecSyncPeriods(from, to), pending: current.pending.length }
 }
 
 interface PeriodSyncResult {
   imported: number
+  /** Registros de un período abierto cuyos totales se actualizaron. */
+  refreshed: number
   pending: number
   /** Solo informes TCT. El guard de "el portal no entregó nada" se mide con esto:
    *  si un informe TAE contara aquí, una caída de TCT avanzaría el cursor igual. */
@@ -215,6 +226,7 @@ async function importCopecPeriod(
   if (!resolvedImporterId) throw new Error("No hay un usuario activo para registrar la sincronización Copec. Configura COPEC_SYNC_IMPORTER_EMAIL para la ejecución automática.")
 
   let imported = 0
+  let refreshed = 0
   const reports: string[] = []
   const unavailable: string[] = []
   const downloads = await downloadCopecReports(
@@ -223,7 +235,7 @@ async function importCopecPeriod(
   for (const download of downloads) {
     const { product } = download
     const productLabel = product === "diesel" ? "Diesel" : "BlueMax"
-    const source = `Copec TCT ${productLabel}`
+    const source = copecTctSource(product)
     if (download.unavailable) {
       unavailable.push(productLabel)
       continue
@@ -269,8 +281,31 @@ async function importCopecPeriod(
       const outcome = await db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`)
 
-        const duplicate = await tx.query.fuelImportBatches.findFirst({ where: and(eq(fuelImportBatches.worksiteId, worksiteId), eq(fuelImportBatches.periodoDesde, from), eq(fuelImportBatches.periodoHasta, to), eq(fuelImportBatches.fuente, source), ne(fuelImportBatches.estado, "revertido")), columns: { id: true } })
+        const duplicate = await tx.query.fuelImportBatches.findFirst({ where: and(eq(fuelImportBatches.worksiteId, worksiteId), eq(fuelImportBatches.periodoDesde, from), eq(fuelImportBatches.periodoHasta, to), eq(fuelImportBatches.fuente, source), ne(fuelImportBatches.estado, "revertido")), // Los totales vienen para poder saltarse el refresco cuando nada cambió.
+          columns: { id: true, totalFilas: true, totalPatentes: true, totalTarjetas: true, totalTransacciones: true, totalCantidad: true, totalMonto: true } })
         if (duplicate) {
+          if (isOpenPeriod(to)) {
+            // Mes en curso: el agregado por patente cambia con cada carga nueva,
+            // así que se actualizan las patentes que ya estaban y los totales del
+            // lote se FIJAN (no se suman: eso duplicaría lo ya contado).
+            const totals = computeBatchTotals(rows)
+            // Sin cargas nuevas desde la corrida anterior no se toca nada: el
+            // portal regenera el Excel en cada descarga, así que el hash cambia
+            // siempre y no sirve para detectarlo — los totales sí.
+            if (batchTotalsUnchanged(duplicate, totals)) return { imported: 0, refreshed: 0 }
+            const refresh = await upsertBatchRecords(tx, duplicate.id, buildRecords(rows, duplicate.id, worksiteId))
+            await tx.update(fuelImportBatches).set({
+              totalFilas: totals.totalFilas,
+              filasValidas: totals.totalFilas,
+              totalPatentes: totals.totalPatentes,
+              totalTarjetas: totals.totalTarjetas,
+              totalTransacciones: totals.totalTransacciones,
+              totalCantidad: totals.totalCantidad,
+              totalMonto: totals.totalMonto,
+              updatedAt: new Date().toISOString(),
+            }).where(eq(fuelImportBatches.id, duplicate.id))
+            return { imported: refresh.inserted, refreshed: refresh.updated }
+          }
           // El lote ya existe para este (archivo, faena). En vez de saltarlo entero,
           // insertamos solo las patentes que faltaban: típicamente vehículos recién
           // registrados que en una corrida previa quedaron "sin vincular". Así el
@@ -296,15 +331,17 @@ async function importCopecPeriod(
         }
         // El dedup de arriba compara la fuente exacta, así que no ve los lotes
         // importados a mano (fuente 'Copec'): sin este guard, sincronizar un mes ya
-        // cargado a mano duplicaría litros y monto de esa faena. Se excluyen las dos
-        // fuentes propias — Diésel y BlueMax son lotes separados por diseño y no
-        // deben bloquearse entre sí.
+        // cargado a mano duplicaría litros y monto de esa faena. Se excluyen TODAS
+        // las fuentes automáticas (ver `fuel-sources.ts`): Diésel y BlueMax son lotes
+        // separados por diseño y no deben bloquearse entre sí, y un lote de otro
+        // proveedor automático en la misma faena y mes es el caso normal —dos
+        // contratos de combustible coexistiendo— no una duplicación.
         const foreign = await tx.query.fuelImportBatches.findFirst({
           where: and(
             eq(fuelImportBatches.worksiteId, worksiteId),
             lte(fuelImportBatches.periodoDesde, to),
             gte(fuelImportBatches.periodoHasta, from),
-            notInArray(fuelImportBatches.fuente, TCT_SOURCES),
+            notInArray(fuelImportBatches.fuente, AUTOMATED_SOURCES),
             ne(fuelImportBatches.estado, "revertido"),
           ),
           columns: { fuente: true },
@@ -325,11 +362,12 @@ async function importCopecPeriod(
         continue
       }
       imported += outcome.imported
+      refreshed += outcome.refreshed ?? 0
     }
   }
 
   const receipts = await importTaeReceiptPeriod(from, to, resolvedImporterId, unavailable)
-  return { imported, pending: pending.size, reports, unavailable, ...receipts }
+  return { imported, refreshed, pending: pending.size, reports, unavailable, ...receipts }
 }
 
 /**
@@ -380,7 +418,10 @@ export async function syncCopecReportPeriod(period: CopecSyncPeriod, importerId?
   // ausencia total de archivo indica que el portal cambió o las credenciales
   // fallan; avanzar el cursor ahí fue lo que enmascaró una pérdida de datos de
   // meses. Al no avanzar, el próximo intento reanuda desde el mismo tramo.
-  const advanced = result.reports.length > 0
+  // Un período abierto no se cierra: sus totales cambian con cada carga nueva, así
+  // que el cursor se queda ahí y la próxima corrida lo vuelve a refrescar. Si
+  // avanzara, el mes en curso se importaría una vez —parcial— y nunca más.
+  const advanced = result.reports.length > 0 && !isOpenPeriod(period.to)
   // Persistimos cada período. Así una primera importación extensa puede
   // reanudarse y no vuelve a descargar los tramos ya procesados.
   // Si saveState falla, los datos ya están insertados con hash check;
@@ -394,9 +435,10 @@ export async function syncCopecReportPeriod(period: CopecSyncPeriod, importerId?
   return result
 }
 
-export async function syncCopecReports(): Promise<{ from: string; to: string; imported: number; received: number; pending: number; reports: string[]; unavailable: string[]; unmappedCards: string[] }> {
+export async function syncCopecReports(): Promise<{ from: string; to: string; imported: number; refreshed: number; received: number; pending: number; reports: string[]; unavailable: string[]; unmappedCards: string[] }> {
   const plan = await getCopecSyncPlan()
   let imported = 0
+  let refreshed = 0
   let received = 0
   const reports: string[] = []
   const unavailable: string[] = []
@@ -405,6 +447,7 @@ export async function syncCopecReports(): Promise<{ from: string; to: string; im
   for (const period of plan.periods) {
     const result = await syncCopecReportPeriod(period)
     imported += result.imported
+    refreshed += result.refreshed
     received += result.received
     for (const card of result.unmappedCards) unmappedCards.add(card)
     pending = result.pending
@@ -414,8 +457,12 @@ export async function syncCopecReports(): Promise<{ from: string; to: string; im
     // el barrido y se falla ruidosamente en vez de avanzar el cursor por todo el
     // histórico importando cero (el bug que dejó la sync "al día" con la tabla vacía).
     if (result.reports.length === 0) {
+      // El mes en curso puede no estar disponible todavía en el portal, o no
+      // tener consumo aún. Eso no es señal de portal roto: se corta el barrido
+      // sin fallar. Un mes CERRADO sin archivo sí es sospechoso y sigue fallando.
+      if (isOpenPeriod(period.to)) break
       throw new Error(`Copec no entregó ningún archivo para el período ${period.from} a ${period.to}. Revisa credenciales/portal, o ajusta la fecha de inicio si ese tramo no tiene consumos. Se importaron ${imported} registros antes de detenerse.`)
     }
   }
-  return { from: plan.from, to: plan.to, imported, received, pending, reports, unavailable, unmappedCards: [...unmappedCards].sort() }
+  return { from: plan.from, to: plan.to, imported, refreshed, received, pending, reports, unavailable, unmappedCards: [...unmappedCards].sort() }
 }

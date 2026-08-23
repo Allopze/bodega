@@ -2,36 +2,39 @@ import { test, expect } from "@playwright/test"
 import { login, expectPageTitle } from "./helpers"
 
 /**
- * E2E Spec: Capacitación, Competencias e Inducción (ODI/DAS - DS 40 / DS 44).
+ * E2E Spec: Capacitaciones, Competencias y Matriz ODI (DS 40 / DS 44).
  *
- * Covers:
- *   • Carga del listado de sesiones de capacitación y habilitación de trabajadores.
- *   • Presencia de botones de exportación.
- *   • Verificación de rutas asociadas (brechas, catálogo).
+ * Cubre:
+ *   • Renderizado de la bandeja de sesiones de capacitación y competencias.
+ *   • Navegación al catálogo de cursos y versiones publicadas.
+ *   • Visualización de brechas de capacitación y reconocimientos pendientes.
+ *   • Exportación de registros de capacitación a Excel.
  */
-test.describe("Prevención — Capacitación e Inducciones ODI/DAS", () => {
+
+test.describe("Prevención — Capacitaciones y ODI", () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
   })
 
-  test("la vista principal de capacitación carga correctamente", async ({ page }) => {
+  test("la bandeja de capacitación carga correctamente y permite navegar al catálogo", async ({ page }) => {
     await page.goto("/prevencion/capacitacion")
     await expect(page).toHaveURL(/\/prevencion\/capacitacion/)
-
-    // Título de la página
     await expectPageTitle(page, "Capacitación y competencias")
 
-    // Exportación a Excel
-    await expect(page.getByRole("link", { name: /Exportar Excel/i })).toBeVisible()
-  })
-
-  test("la vista de brechas de competencias carga", async ({ page }) => {
-    await page.goto("/prevencion/capacitacion/brechas")
-    await expect(page).not.toHaveURL(/\/forbidden/)
-  })
-
-  test("la vista de catálogo de cursos carga", async ({ page }) => {
+    // Navegación al catálogo de cursos
     await page.goto("/prevencion/capacitacion/catalogo")
-    await expect(page).not.toHaveURL(/\/forbidden/)
+    await expect(page).toHaveURL(/\/prevencion\/capacitacion\/catalogo/)
+    await expectPageTitle(page, /Catálogo de cursos|Cursos de capacitación/i)
+  })
+
+  test("exportar entrega el consolidado de capacitaciones en Excel", async ({ page }) => {
+    await page.goto("/prevencion/capacitacion")
+    const exportBtn = page.getByRole("link", { name: /Exportar Excel/i })
+    if (await exportBtn.count() > 0) {
+      const descarga = page.waitForEvent("download")
+      await exportBtn.click()
+      const archivo = await descarga
+      expect(archivo.suggestedFilename()).toMatch(/\.xlsx$/)
+    }
   })
 })

@@ -37,7 +37,9 @@ vi.mock("@/db", () => ({
   },
 }))
 vi.mock("@/db/schema", () => ({
-  fuelConsumptionRecords: {}, fuelImportBatches: {}, fuelVehicles: {}, systemSettings: {}, users: {},
+  // Marcadas para que el mock de `tx.insert` distinga el lote de los registros.
+  fuelConsumptionRecords: { __table: "records" }, fuelImportBatches: { __table: "batches" },
+  fuelVehicles: {}, systemSettings: {}, users: {},
 }))
 vi.mock("@/lib/combustibles/copec-reports", () => ({
   downloadCopecReports: (...args: unknown[]) => mockDownloadCopecReports(...args),
@@ -54,7 +56,20 @@ vi.mock("@/lib/combustibles/tae-receipts", () => ({
   importTaeReceipts: (...args: unknown[]) => mockImportTaeReceipts(...args),
 }))
 
-const { buildCopecSyncPeriods, getCopecSyncPlan, getCopecSyncStartOptions, setCopecSyncStartDate, syncCopecReportPeriod } = await import("../copec-sync")
+const { buildCopecSyncPeriods, getCopecSyncPlan, getCopecSyncStartOptions, setCopecSyncStartDate, syncCopecReportPeriod, syncCopecReports } = await import("../copec-sync")
+const { AUTOMATED_SOURCES } = await import("../fuel-sources")
+
+/** Junta todos los strings de un objeto SQL de drizzle. El mock de `findFirst`
+ *  responde sin mirar el WHERE, así que la única forma de comprobar A QUÉ fuentes
+ *  mira un filtro es inspeccionar el filtro mismo, sin acoplarse a la
+ *  representación interna de drizzle. */
+function collectStrings(value: unknown, seen = new Set<unknown>(), out: string[] = []): string[] {
+  if (typeof value === "string") { out.push(value); return out }
+  if (!value || typeof value !== "object" || seen.has(value)) return out
+  seen.add(value)
+  for (const item of Object.values(value as Record<string, unknown>)) collectStrings(item, seen, out)
+  return out
+}
 
 // Cada grupo (faena, período, fuente) ahora corre bajo lock + recheck DENTRO
 // de la transacción (CO-026) — `tx.query...` reutiliza los mismos mocks que
@@ -62,15 +77,26 @@ const { buildCopecSyncPeriods, getCopecSyncPlan, getCopecSyncStartOptions, setCo
 // cada test siguen aplicando en el mismo orden.
 function makeTx() {
   const insertedRecords: Array<{ patente: string }> = []
+  const insertedBatches: Array<Record<string, unknown>> = []
   const tx = {
     execute: vi.fn().mockResolvedValue(undefined),
     query: {
       fuelImportBatches: { findFirst: (...args: unknown[]) => mockBatchFindFirst(...args) },
       fuelConsumptionRecords: { findMany: (...args: unknown[]) => mockConsumptionFindMany(...args) },
     },
-    insert: () => ({ values: (records: Array<{ patente: string }>) => { insertedRecords.push(...records); return mockTxInsertValues(records) } }),
+    // El insert del LOTE recibe un objeto y el de REGISTROS un array: se
+    // distinguen por tabla, no por la forma del argumento. Asumir array dejaba
+    // sin cobertura todo el camino de "crear un lote nuevo".
+    insert: (table: { __table?: string }) => ({
+      values: (payload: unknown) => {
+        if (table?.__table === "records") insertedRecords.push(...(payload as Array<{ patente: string }>))
+        else insertedBatches.push(payload as Record<string, unknown>)
+        return mockTxInsertValues(payload)
+      },
+    }),
     update: () => ({ set: (patch: unknown) => { mockTxUpdateSet(patch); return { where: vi.fn() } } }),
     _insertedRecords: insertedRecords,
+    _insertedBatches: insertedBatches,
   }
   return tx
 }
@@ -200,6 +226,132 @@ describe("syncCopecReportPeriod", () => {
     expect(mockTxInsertValues).not.toHaveBeenCalled()
     expect(result.unavailable).toContain("Diesel: faena con importación previa (Copec) en el período")
   })
+  describe("open month", () => {
+    const OPEN = { from: "2026-08-01", to: "2026-08-31" }
+
+    function withToday(iso: string, run: () => Promise<void>) {
+      vi.useFakeTimers({ toFake: ["Date"] })
+      vi.setSystemTime(new Date(iso))
+      return run().finally(() => { vi.useRealTimers() })
+    }
+
+    function oneDieselRow() {
+      const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
+      mockDownloadCopecReports.mockResolvedValue([
+        { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
+        { product: "bluemax", unavailable: true },
+      ])
+      mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [] })
+      mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
+    }
+
+    it("does NOT advance the cursor past a month that is still open", async () => {
+      // Si avanzara, el mes en curso se importaría una vez -parcial- y nunca se
+      // volvería a refrescar: es el mecanismo que hace posible la visibilidad.
+      oneDieselRow()
+      mockBatchFindFirst.mockResolvedValue(undefined)
+      await withToday("2026-08-22T12:00:00.000Z", async () => {
+        await syncCopecReportPeriod(OPEN, "operator-1")
+      })
+      expect(mockSaveState).toHaveBeenCalledOnce()
+      expect(JSON.parse(mockSaveState.mock.calls[0]![0].set.value)).toMatchObject({ cursor: "2026-08-01" })
+    })
+
+    it("advances the cursor once the month has closed", async () => {
+      oneDieselRow()
+      mockBatchFindFirst.mockResolvedValue(undefined)
+      await withToday("2026-09-02T12:00:00.000Z", async () => {
+        await syncCopecReportPeriod(OPEN, "operator-1")
+      })
+      expect(JSON.parse(mockSaveState.mock.calls[0]![0].set.value)).toMatchObject({ cursor: "2026-09-01" })
+    })
+
+    it("sets an open batch's totals instead of adding to them", async () => {
+      // Sumar sobre lo ya contado duplicaría litros y monto en cada corrida.
+      oneDieselRow()
+      // Totales viejos: el lote traía menos litros que el reporte de ahora.
+      mockBatchFindFirst.mockResolvedValue({ id: "batch-agosto", totalFilas: 1, totalPatentes: 1, totalTarjetas: 1, totalTransacciones: 1, totalCantidad: 60, totalMonto: 30000 })
+      mockConsumptionFindMany.mockResolvedValue([{ id: "rec-1", patente: "AAA", vehicleId: "v-aaa" }])
+      await withToday("2026-08-22T12:00:00.000Z", async () => {
+        const result = await syncCopecReportPeriod(OPEN, "operator-1")
+        expect(result.refreshed).toBe(1)
+      })
+      const batchPatch = mockTxUpdateSet.mock.calls.map((call) => call[0]).find((patch) => patch.totalCantidad !== undefined)
+      expect(typeof batchPatch.totalCantidad).toBe("number")
+      expect(batchPatch).toMatchObject({ totalCantidad: 100, totalMonto: 50000 })
+    })
+
+    it("leaves an open batch untouched when the report has not changed", async () => {
+      // El portal regenera el Excel en cada descarga, así que el hash cambia
+      // siempre: los totales son lo único que distingue "llegó una carga nueva"
+      // de "es el mismo mes sin novedades".
+      oneDieselRow()
+      mockBatchFindFirst.mockResolvedValue({
+        id: "batch-agosto",
+        totalFilas: 1, totalPatentes: 1, totalTarjetas: 1, totalTransacciones: 2,
+        totalCantidad: 100, totalMonto: 50000,
+      })
+      await withToday("2026-08-22T12:00:00.000Z", async () => {
+        const result = await syncCopecReportPeriod(OPEN, "operator-1")
+        expect(result).toMatchObject({ imported: 0, refreshed: 0 })
+      })
+      expect(mockTxUpdateSet).not.toHaveBeenCalled()
+      expect(mockConsumptionFindMany).not.toHaveBeenCalled()
+    })
+
+    it("stops quietly when the portal has nothing for the open month yet", async () => {
+      // El mes en curso puede no existir aún en el portal. Fallar ahí rompería
+      // el cron todos los días por algo que no es un problema.
+      mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2026-08-01", lastRunAt: null, pending: [] }) })
+      mockBatchFindFirst.mockResolvedValue(undefined)
+      mockDownloadCopecReports.mockResolvedValue([
+        { product: "diesel", unavailable: true },
+        { product: "bluemax", unavailable: true },
+      ])
+      await withToday("2026-08-22T12:00:00.000Z", async () => {
+        await expect(syncCopecReports()).resolves.toMatchObject({ imported: 0 })
+      })
+    })
+
+    it("still fails loudly when a CLOSED month delivers no file", async () => {
+      // Ese caso sí indica portal cambiado o credenciales rotas, y enmascararlo
+      // fue lo que dejó la sync "al día" con la tabla vacía.
+      mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2026-06-01", lastRunAt: null, pending: [] }) })
+      mockBatchFindFirst.mockResolvedValue(undefined)
+      mockDownloadCopecReports.mockResolvedValue([
+        { product: "diesel", unavailable: true },
+        { product: "bluemax", unavailable: true },
+      ])
+      await withToday("2026-08-22T12:00:00.000Z", async () => {
+        await expect(syncCopecReports()).rejects.toThrow(/no entregó ningún archivo/)
+      })
+    })
+  })
+
+  // Regresión: el guard de "import ajeno" excluía SÓLO las fuentes de Copec, así
+  // que el primer lote de otro proveedor automático (Aramco) para la misma faena
+  // y período hacía que esta sincronización devolviera `imported: 0` y se saltara
+  // la faena en silencio. Dos contratos de combustible en la misma faena y mes es
+  // el caso normal, no una duplicación.
+  it("excludes every automated provider from the foreign-import guard, not just its own sources", async () => {
+    const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
+    mockDownloadCopecReports.mockResolvedValue([
+      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
+      { product: "bluemax", unavailable: true },
+    ])
+    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [] })
+    mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
+    // Se corta en el guard (como el caso de arriba) para no depender del insert:
+    // el WHERE que nos interesa ya quedó construido igual.
+    mockBatchFindFirst.mockResolvedValueOnce(undefined).mockResolvedValueOnce({ fuente: "Copec" })
+
+    await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
+
+    // 1ª consulta = dedup por fuente exacta; 2ª = el guard de import ajeno.
+    expect(mockBatchFindFirst).toHaveBeenCalledTimes(2)
+    const guardLiterals = collectStrings(mockBatchFindFirst.mock.calls[1]?.[0])
+    expect(AUTOMATED_SOURCES.filter((source) => !guardLiterals.includes(source))).toEqual([])
+  })
 })
 
 describe("Copec synchronization start date", () => {
@@ -234,9 +386,10 @@ describe("Copec synchronization start date", () => {
     expect(mockSaveState).toHaveBeenCalledOnce()
   })
 
-  it("plans the months a foreign manual batch used to swallow", async () => {
+  it("plans the months a foreign manual batch used to swallow, up to the open one", async () => {
     // Cursor en abril y un lote ajeno que llega hasta julio: el plan debe cubrir
-    // abril–julio, no quedar vacío con "no hay meses cerrados nuevos".
+    // abril–agosto, no quedar vacío con "no hay meses nuevos". Agosto es el mes
+    // en curso y también entra: se refresca en cada corrida.
     mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2026-04-01", lastRunAt: null, pending: [] }) })
     mockBatchFindFirst.mockResolvedValue({ periodoHasta: "2026-07-31" })
     vi.useFakeTimers({ toFake: ["Date"] })
@@ -244,8 +397,26 @@ describe("Copec synchronization start date", () => {
     try {
       const plan = await getCopecSyncPlan()
       expect(plan.from).toBe("2026-04-01")
-      expect(plan.to).toBe("2026-07-31")
-      expect(plan.periods).toHaveLength(4)
+      expect(plan.to).toBe("2026-08-31")
+      expect(plan.periods).toHaveLength(5)
+      expect(plan.periods.at(-1)).toEqual({ from: "2026-08-01", to: "2026-08-31" })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("keeps the open month reachable even after importing it", async () => {
+    // Un lote del mes en curso dejaría el piso en el mes SIGUIENTE, y el plan
+    // quedaría vacío: el mes abierto no volvería a sincronizarse nunca.
+    mockSettingFindFirst.mockResolvedValue(undefined)
+    mockBatchFindFirst.mockResolvedValue({ periodoHasta: "2026-08-31" })
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-08-07T12:00:00.000Z"))
+    try {
+      const options = await getCopecSyncStartOptions()
+      expect(options.minimumStart).toBe("2026-08-01")
+      const plan = await getCopecSyncPlan()
+      expect(plan.periods).toEqual([{ from: "2026-08-01", to: "2026-08-31" }])
     } finally {
       vi.useRealTimers()
     }

@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm"
 import { systemSettings } from "@/db/schema"
 import { guardPermission } from "@/lib/auth/can"
 import { getCopecSyncPlan, setCopecSyncStartDate, syncCopecReportPeriod } from "@/lib/combustibles/copec-sync"
+import { isOpenPeriod } from "@/lib/combustibles/open-period"
 import { z } from "zod"
 
 const STATE_KEY = "combustibles.copec.sync"
@@ -86,7 +87,7 @@ export async function updateCopecSyncStartAction(input: { startDate: string; exp
 }
 
 export async function runCopecSyncPeriodAction(period: { from: string; to: string }): Promise<
-  | { ok: true; imported: number; received: number; pending: number; unavailable: string[]; reports: number; unmappedCards: string[] }
+  | { ok: true; imported: number; refreshed: number; received: number; pending: number; unavailable: string[]; reports: number; unmappedCards: string[]; openPeriod: boolean }
   | { ok: false; message: string }
 > {
   const guard = await guardPermission("combustibles:import", "/combustibles/importar")
@@ -107,7 +108,9 @@ export async function runCopecSyncPeriodAction(period: { from: string; to: strin
     // La acción manual usa al operador autenticado. El importador configurado
     // queda reservado para el cron, que no tiene sesión de usuario.
     const result = await syncCopecReportPeriod(parsedPeriod.data, session.user.id)
-    return { ok: true, imported: result.imported, received: result.received, pending: result.pending, unavailable: result.unavailable, reports: result.reports.length, unmappedCards: result.unmappedCards }
+    // `openPeriod` lo decide el servidor: el cliente no puede compararlo contra
+    // "hoy" sin arriesgar el desfase de zona horaria que ya costó un bug acá.
+    return { ok: true, imported: result.imported, refreshed: result.refreshed, received: result.received, pending: result.pending, unavailable: result.unavailable, reports: result.reports.length, unmappedCards: result.unmappedCards, openPeriod: isOpenPeriod(parsedPeriod.data.to) }
   } catch (error) {
     // Los errores de Playwright arrastran el "Call log:" completo -kilobytes de
     // reintentos- y el toast del operador, que persiste hasta cerrarlo a mano,

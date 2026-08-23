@@ -16,6 +16,8 @@ import { ImportWizard } from "./import-wizard"
 import { ImportBatchHistory } from "./import-batch-history"
 import { OperationsImportWizard } from "./operations-import-wizard"
 import { CopecSyncStatus } from "./copec-sync-status"
+import { AramcoSyncStatus } from "./aramco-sync-status"
+import { getAramcoSyncStatusAction } from "./aramco-sync-action"
 import { OperationsBatchHistory } from "./operations-batch-history"
 
 export const metadata: Metadata = { title: "Importar consumos de combustible" }
@@ -29,7 +31,7 @@ export default async function ImportarConsumosPage() {
   const canImportOperations = isGlobalRole(session)
   const canViewTae = can(session, "combustibles:tae_view")
 
-  const [worksitesList, batches, operationBatches, copecSyncState, copecSyncStartOptions] = await Promise.all([
+  const [worksitesList, batches, operationBatches, copecSyncState, copecSyncStartOptions, aramcoStatus] = await Promise.all([
     worksiteScope.mode === "none"
       ? Promise.resolve([])
       : db.query.worksites.findMany({
@@ -51,13 +53,14 @@ export default async function ImportarConsumosPage() {
       : Promise.resolve([]),
     getCopecSyncState(),
     getCopecSyncStartOptions(),
+    getAramcoSyncStatusAction(),
   ])
 
   return (
     <PageContainer>
       <PageHeader
         title="Importar consumos TCT"
-        description="Sincroniza el detalle mensual de Diésel y BlueMax desde Copec, o carga un reporte Excel manual"
+        description="Sincroniza los consumos mensuales desde Copec y Aramco, o carga un reporte Excel manual"
         breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Importar consumos" }]} />}
         actions={canViewTae ? (
           <Button asChild variant="secondary" size="sm">
@@ -79,8 +82,9 @@ export default async function ImportarConsumosPage() {
               <Link href="/combustibles/tae" className="shrink-0 font-medium text-[var(--color-primary)] hover:underline">Ir a Control TAE</Link>
             </div>
           )}
-          <div className="mb-6">
+          <div className="mb-6 grid gap-4">
             <CopecSyncStatus initialStatus={copecSyncState} initialStartOptions={copecSyncStartOptions} />
+            {aramcoStatus.ok && <AramcoSyncStatus initialStatus={aramcoStatus.data} />}
           </div>
           <div className="mb-8">
             <h2 className="mb-3 text-sm font-semibold text-[var(--color-text)]">Carga manual de reportes</h2>

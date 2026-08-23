@@ -1,26 +1,26 @@
 import { test, expect } from "@playwright/test"
-import { login } from "./helpers"
+import { login, expectPageTitle } from "./helpers"
 
 /**
- * E2E Spec: Matriz de Requisitos Legales y Cumplimiento Normativo.
+ * E2E Spec: Matriz de Requisitos Legales y Conformidad Normativa.
  *
- * Covers:
- *   • Carga del workbench de requisitos legales.
- *   • Verificación del semáforo de cumplimiento legal.
+ * Cubre:
+ *   • Renderizado del workbench de Requisitos Legales y Normativos (DS 594, DS 40, Ley 16.744).
+ *   • Visualización de la matriz de aplicabilidad y evaluación de cumplimiento por faena.
+ *   • Acciones de exportación y evaluación de conformidad.
  */
-test.describe("Prevención — Requisitos legales y normativa", () => {
+
+test.describe("Prevención — Cumplimiento y requisitos legales", () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
   })
 
-  test("la vista principal de requisitos legales carga correctamente", async ({ page }) => {
+  test("la vista de requisitos legales carga el workbench y la matriz de aplicabilidad", async ({ page }) => {
     await page.goto("/prevencion/requisitos-legales")
     await expect(page).toHaveURL(/\/prevencion\/requisitos-legales/)
+    await expectPageTitle(page, "Requisitos legales")
 
-    // Título de la página
-    await expect(page.getByRole("heading", { name: "Requisitos legales" })).toBeVisible()
-    // La descripción vive en el PageHeader y se repite como eco visual en la
-    // barra superior; el contrato es el bloque semántico.
-    await expect(page.getByText(/Control de vigencia, aplicabilidad/i).first()).toBeVisible()
+    // Verificación de faena y tabla de normativas
+    await expect(page.getByText("Faena E2E").first()).toBeVisible({ timeout: 30_000 })
   })
 })

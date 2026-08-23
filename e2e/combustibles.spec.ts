@@ -39,6 +39,41 @@ test.describe("Combustibles module", () => {
     await expect(page.getByRole("heading", { name: "Historial de importaciones" })).toBeVisible()
   })
 
+  test("aramco panel shows its state and gates actions on credentials", async ({ page }) => {
+    await page.goto("/combustibles/importar")
+    const panel = page.getByRole("region", { name: "Sincronización Aramco Fleet" })
+    await expect(panel).toBeVisible()
+    await expect(panel.getByText(/Incluye el mes en curso/)).toBeVisible()
+    // El entorno e2e no configura credenciales de Aramco: sin ellas no se puede
+    // sincronizar, y el panel tiene que decirlo en vez de fallar al pulsar.
+    await expect(panel.getByText(/Faltan credenciales/)).toBeVisible()
+    await expect(panel.getByRole("button", { name: /Actualizar ahora/ })).toBeDisabled()
+    await expect(panel.getByRole("button", { name: /Importar histórico/ })).toBeDisabled()
+  })
+
+  test("aramco credentials form refuses to save without a keyring", async ({ page }) => {
+    await page.goto("/combustibles/importar")
+    const panel = page.getByRole("region", { name: "Sincronización Aramco Fleet" })
+    const open = panel.getByRole("button", { name: /Credenciales y automatización/ })
+    // Reintento: un clic antes de que hidrate el árbol no dispara el handler y
+    // el clic en sí no se reintenta solo.
+    await expect(async () => {
+      await open.click()
+      await expect(panel.getByLabel(/RUT de la cuenta/)).toBeVisible({ timeout: 1_000 })
+    }).toPass()
+    await expect(panel.getByLabel(/^Clave/)).toBeVisible()
+    // Sin keyring no se guarda: guardar en claro no es una opción.
+    await expect(panel.getByText(/no tiene el keyring de cifrado/)).toBeVisible()
+    await expect(panel.getByRole("button", { name: "Guardar", exact: true })).toBeDisabled()
+  })
+
+  test("copec panel announces that the open month is included", async ({ page }) => {
+    await page.goto("/combustibles/importar")
+    const panel = page.getByRole("region", { name: "Sincronización mensual Copec TCT" })
+    await expect(panel).toBeVisible()
+    await expect(panel.getByText(/Incluye el mes en curso/)).toBeVisible()
+  })
+
   test("create a new fuel load", async ({ page }) => {
     await page.goto("/combustibles/nueva")
     await expect(page.locator("h1").first()).toContainText("Nueva carga")

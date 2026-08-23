@@ -2,23 +2,31 @@ import { test, expect } from "@playwright/test"
 import { login, expectPageTitle } from "./helpers"
 
 /**
- * E2E Spec: Privacidad SST, Ley Karín y Casos Reservados.
+ * E2E Spec: Privacidad de Datos y Gestión de Casos Reservados (Ley Karin / Ley 21.643).
  *
- * Covers:
- *   • Carga del módulo de privacidad y derechos ARCO.
+ * Cubre:
+ *   • Acceso al portal de Privacidad y Protección de Datos Sensibles.
+ *   • Navegación a Solicitudes de derechos del titular.
+ *   • Verificación de Auditoría de accesos a datos sensibles.
  */
-test.describe("Prevención — Privacidad y Casos Reservados (Ley Karín)", () => {
+
+test.describe("Prevención — Privacidad y Ley Karin", () => {
   test.beforeEach(async ({ page }) => {
     await login(page)
   })
 
-  test("la vista principal de privacidad carga correctamente", async ({ page }) => {
-    // No hay página en /prevencion/privacidad: el módulo vive en subrutas
-    // (`solicitudes` es el workbench de derechos del titular, `auditoria` el de
-    // accesos sensibles). El spec apuntaba a una ruta que no existe.
-    await page.goto("/prevencion/privacidad/solicitudes")
-    await expect(page).toHaveURL(/\/prevencion\/privacidad\/solicitudes/)
+  test("la vista principal de privacidad carga con enlaces a solicitudes y auditoría", async ({ page }) => {
+    await page.goto("/prevencion/privacidad")
+    await expect(page).toHaveURL(/\/prevencion\/privacidad/)
+    await expectPageTitle(page, "Datos personales")
 
-    await expectPageTitle(page, "Derechos del titular")
+    await expect(page.getByRole("heading", { name: "Solicitudes de derechos" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Auditoría de accesos" })).toBeVisible()
+  })
+
+  test("navegación a la bandeja de auditoría de accesos", async ({ page }) => {
+    await page.goto("/prevencion/privacidad/auditoria")
+    await expect(page).toHaveURL(/\/prevencion\/privacidad\/auditoria/)
+    await expectPageTitle(page, /Auditoría de accesos|Accesos sensibles/i)
   })
 })

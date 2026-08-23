@@ -66,11 +66,12 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
       const plan = await getCopecSyncPlanAction()
       if (!plan.ok) { toast.error(plan.message); dispatchView({ type: "patch", patch: { syncInProgress: false } }); return }
       if (plan.periods.length === 0) {
-        dispatchView({ type: "patch", patch: { result: "No hay meses cerrados nuevos para sincronizar", syncInProgress: false } })
+        dispatchView({ type: "patch", patch: { result: "No hay meses nuevos para sincronizar", syncInProgress: false } })
         return
       }
 
       let imported = 0
+      let refreshed = 0
       let received = 0
       let pendingPlates = 0
       const unavailable: string[] = []
@@ -88,6 +89,7 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
           break
         }
         imported += r.imported
+        refreshed += r.refreshed
         received += r.received
         pendingPlates = r.pending
         for (const card of r.unmappedCards) unmappedCards.add(card)
@@ -95,6 +97,10 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
         // Sin ninguna descarga = portal/credenciales rotos. Se detiene y avisa en
         // lugar de seguir barriendo el histórico sin traer nada.
         if (r.reports === 0) {
+          // El mes en curso puede no estar disponible aún en el portal, o no
+          // tener consumo todavía: no es portal roto. Se corta el barrido sin
+          // alarmar. Un mes cerrado sin detalles sí es señal de problema.
+          if (r.openPeriod) break
           toast.error(`Copec no entregó detalles para ${formatMonth(period.from)}. Revisa el portal, las credenciales o el primer mes configurado.`)
           stoppedAt = sp
           break
@@ -109,7 +115,7 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
       if (stoppedAt) {
         dispatchView({ type: "patch", patch: { result: `Se importaron ${imported} registros antes de detenerse. Reintenta desde ${formatMonth(stoppedAt.from)}.` } })
       } else {
-        dispatchView({ type: "patch", patch: { result: `${imported} registros importados · ${received} recepciones TAE${pendingPlates ? ` · ${pendingPlates} patentes pendientes` : ""}${unmappedCards.size ? ` · ${unmappedCards.size} tarjetas TAE sin estanque` : ""}${unavailable.length ? ` · ${unavailable.length} reportes sin importar` : ""}` } })
+        dispatchView({ type: "patch", patch: { result: `${imported} registros importados${refreshed ? ` · ${refreshed} actualizados del mes en curso` : ""} · ${received} recepciones TAE${pendingPlates ? ` · ${pendingPlates} patentes pendientes` : ""}${unmappedCards.size ? ` · ${unmappedCards.size} tarjetas TAE sin estanque` : ""}${unavailable.length ? ` · ${unavailable.length} reportes sin importar` : ""}` } })
       }
 
       // `router.refresh()` AL FINAL, después de fijar el resultado en el estado
@@ -161,7 +167,7 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
             <ArrowsClockwise className="h-4 w-4 text-[var(--color-primary)]" />
             <div>
               <p className="text-sm font-semibold text-[var(--color-text)]">Copec TCT · detalle mensual automático</p>
-              <p className="max-w-[75ch] text-xs text-[var(--color-text-muted)]">Cada corrida entra a Informes → Informes de Consumos, consulta un mes cerrado, busca Diésel y BlueMax por separado y descarga el Detalle en Excel. TAE se registra en el nuevo control manual.</p>
+              <p className="max-w-[75ch] text-xs text-[var(--color-text-muted)]">Cada corrida entra a Informes → Informes de Consumos, busca Diésel y BlueMax por separado y descarga el Detalle en Excel. Incluye el mes en curso, que se recalcula en cada corrida. TAE se registra en el nuevo control manual.</p>
             </div>
           </div>
 
@@ -209,7 +215,7 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
                 </Button>
               </div>
               <p className="text-xs text-[var(--color-text-muted)] sm:col-span-2">
-                Se consulta un mes completo por vez, hasta el mes actual; solo los meses ya cerrados se descargan. Puedes retroceder para recuperar meses pendientes{startOptions.latestImportedUntil ? `: la última importación activa termina el ${startOptions.latestImportedUntil}, y las faenas que ya tengan una importación manual de esos meses se saltan para no duplicar consumo` : ""}.
+                Se consulta un mes por vez, hasta el mes actual incluido. El mes en curso se recalcula en cada corrida; los ya cerrados no se vuelven a escribir. Puedes retroceder para recuperar meses pendientes{startOptions.latestImportedUntil ? `: la última importación activa termina el ${startOptions.latestImportedUntil}, y las faenas que ya tengan una importación manual de esos meses se saltan para no duplicar consumo` : ""}.
               </p>
             </div>
           )}
