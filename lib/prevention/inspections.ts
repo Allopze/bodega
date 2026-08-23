@@ -499,8 +499,31 @@ export interface ReviewBlocker {
 }
 
 /**
- * Revisar y cerrar exige independencia de quien ejecutó y que todo hallazgo
- * alto o crítico tenga una CAPA enlazada. Un hallazgo grave sin acción es
+ * Criticidades que **obligan** a una acción correctiva: sin ella la inspección
+ * no cierra y el hallazgo no se puede cerrar a mano.
+ *
+ * Incluye `medium` por decisión de Prevención (2026-08-23): antes sólo `high` y
+ * `critical` obligaban, y un hallazgo medio podía cerrarse con una frase. Sólo
+ * `low` conserva el cierre manual.
+ *
+ * Vive acá y no como literal repetido porque la regla gobierna tres puertas
+ * —el cierre de la inspección, el cierre del hallazgo y el aviso a las 48 h— y
+ * tenerla escrita tres veces garantiza que alguna se quede atrás.
+ *
+ * Ojo: la propuesta de sacar un equipo de servicio NO usa esta lista y sigue
+ * acotada a `high`/`critical`. Que un hallazgo exija acción correctiva no es
+ * razón para detener un camión en faena: son dos decisiones distintas.
+ */
+export const CAPA_REQUIRED_CRITICALITIES = ["medium", "high", "critical"] as const
+
+export function requiresCapa(criticality: string): boolean {
+  return (CAPA_REQUIRED_CRITICALITIES as readonly string[]).includes(criticality)
+}
+
+/**
+ * Revisar y cerrar exige independencia de quien ejecutó y que todo hallazgo que
+ * obliga a acción correctiva tenga una CAPA enlazada — ver
+ * `CAPA_REQUIRED_CRITICALITIES`. Un hallazgo con consecuencia sin acción es
  * exactamente lo que la auditoría no acepta como cierre.
  */
 export function assessRunReview(args: {
@@ -513,7 +536,7 @@ export function assessRunReview(args: {
     blockers.push({ kind: "executor_is_reviewer", detail: "Quien ejecutó la inspección no puede revisarla y cerrarla." })
   }
   for (const finding of args.findings) {
-    if (["high", "critical"].includes(finding.criticality) && !finding.capaActionId) {
+    if (requiresCapa(finding.criticality) && !finding.capaActionId) {
       blockers.push({ kind: "critical_finding_without_capa", detail: `El hallazgo "${finding.description}" es ${FINDING_CRITICALITY_LABELS[finding.criticality] ?? finding.criticality} y no tiene CAPA.` })
     }
   }

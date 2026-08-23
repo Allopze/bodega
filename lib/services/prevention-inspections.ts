@@ -35,10 +35,12 @@ import {
   closingActFromDefinition,
   deriveFindings,
   nextDueAfter,
+  requiresCapa,
   requiresHumanConfirmation,
   summarizeCompliance,
   summarizeTimelyClosure,
   validateAnswerRow,
+  FINDING_CRITICALITY_LABELS,
   FREQUENCY_INTERVAL_DAYS,
   TRANSITION_REASON_MIN_LENGTH,
   type InspectionRunStatus,
@@ -1785,6 +1787,14 @@ export async function closeInspectionFinding(input: unknown, access: InspectionA
     if (row.finding.status === "closed") throw new Error("El hallazgo ya está cerrado.")
     if (row.finding.capaActionId) {
       throw new Error("El hallazgo tiene una acción CAPA: se cierra al verificar o cerrar esa acción.")
+    }
+    /* Sólo los leves se cierran con una frase. Desde que `medium` obliga a
+     * acción correctiva, cerrarlo a mano sería la puerta trasera que vacía la
+     * regla: el hallazgo desaparecería sin que nadie corrija nada. */
+    if (requiresCapa(row.finding.criticality)) {
+      throw new Error(
+        `Un hallazgo ${FINDING_CRITICALITY_LABELS[row.finding.criticality] ?? row.finding.criticality} exige una acción correctiva: derívalo a CAPA en vez de cerrarlo a mano.`,
+      )
     }
 
     const now = nowIso()

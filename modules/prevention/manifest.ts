@@ -837,6 +837,12 @@ export const preventionModule = {
     { roleSlug: "jefe_terreno",         permission: "prevention:inspections:ingest" },
     { roleSlug: "admin_contrato",       permission: "prevention:inspections:view" },
     { roleSlug: "admin_contrato",       permission: "prevention:inspections:execute" },
+    /* Sube la foto de la planilla física igual que el jefe de terreno: el
+     * reporte de uso diario lo llena el operador en papel —los conductores no
+     * tienen cuenta— y lo transcribe el administrador de contrato o el
+     * supervisor de faena, bajo el nombre de quien lo hizo. Sin `ingest` no
+     * podía adjuntar el papel que respalda lo que digita. */
+    { roleSlug: "admin_contrato",       permission: "prevention:inspections:ingest" },
     { roleSlug: "prevencionista_faena", permission: "prevention:inspections:view" },
     { roleSlug: "prevencionista_faena", permission: "prevention:inspections:manage" },
     { roleSlug: "prevencionista_faena", permission: "prevention:inspections:execute" },

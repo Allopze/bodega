@@ -22,7 +22,7 @@ import {
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
-import { nextDueAfter } from "@/lib/prevention/inspections"
+import { CAPA_REQUIRED_CRITICALITIES, nextDueAfter } from "@/lib/prevention/inspections"
 import { createNotifications } from "@/lib/services/notifications"
 import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notification-targeting"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
@@ -181,7 +181,8 @@ export async function alertCriticalFindingsWithoutCapa(): Promise<{ alerted: num
     .where(and(
       isNull(preventionInspectionFindings.capaActionId),
       eq(preventionInspectionFindings.status, "open"),
-      inArray(preventionInspectionFindings.criticality, ["high", "critical"]),
+      // La misma regla que bloquea el cierre: si obliga a CAPA, se persigue.
+      inArray(preventionInspectionFindings.criticality, [...CAPA_REQUIRED_CRITICALITIES]),
       lte(preventionInspectionFindings.createdAt, cutoff),
       eq(preventionInspectionRuns.status, "completed"),
     ))
@@ -194,7 +195,7 @@ export async function alertCriticalFindingsWithoutCapa(): Promise<{ alerted: num
       if (userIds.length === 0) continue
       await createNotifications(userIds, {
         type: "system_alert",
-        title: "Hallazgo grave sin acción correctiva",
+        title: "Hallazgo sin acción correctiva",
         body: `${finding.runCode}: "${finding.description}" lleva más de ${CRITICAL_FINDING_GRACE_HOURS} h sin CAPA, y la inspección no puede cerrarse hasta que la tenga.`,
         entityType: "inspection_run",
         entityId: finding.runId,

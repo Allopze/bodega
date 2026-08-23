@@ -872,12 +872,16 @@ describe("declarar qué actividades PDTP acredita una plantilla", () => {
     expect(template.pdtpActivityNumbers).toEqual([ACT_N])
   })
 
-  it("hereda también la actividad que acredita al revisarse", async () => {
+  it("un solo acto puede acreditar dos actividades del programa", async () => {
     const service = await import("@/lib/services/prevention-inspections")
-    // reporte_equipos: n=25 al ejecutar, n=26 al revisar y firmar.
+    /* reporte_equipos acredita n=25 (el operador lo llenó) y n=26 (el
+     * supervisor lo revisó y firmó) al declararse ejecutada: transcribir el
+     * papel línea por línea es revisarlo, y el formulario guarda el nombre del
+     * operador porque los conductores no tienen cuenta. Decisión de Prevención
+     * del 2026-08-23. */
     const template = await service.importInspectionTemplate({ definitionCode: "reporte_equipos" }, ACCESS)
-    expect(template.pdtpActivityNumbers).toEqual([25])
-    expect(template.pdtpReviewActivityNumbers).toEqual([26])
+    expect(template.pdtpActivityNumbers).toEqual([25, 26])
+    expect(template.pdtpReviewActivityNumbers).toBeNull()
   })
 
   it("sin declararlos hereda el cableado del programa: la plantilla llega acreditando", async () => {

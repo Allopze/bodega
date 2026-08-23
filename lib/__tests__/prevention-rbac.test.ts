@@ -335,11 +335,15 @@ describe("prevention module RBAC", () => {
     // Nadie del taller ejecuta inspecciones — el reporte llega por foto.
     expect(rolesFor("prevention:inspections:view")).toContain("jefe_mantencion")
     expect(rolesFor("prevention:inspections:execute")).not.toContain("jefe_mantencion")
-    // Sube la planilla el jefe de faena, que en RBAC es `jefe_terreno`
-    // (ver lib/prevention/admin-contrato-label.ts). Permiso acotado: no lo
-    // tiene el taller ni quien sólo revisa.
-    expect(rolesFor("prevention:inspections:ingest")).toEqual(["jefe_terreno"])
+    /* Sube la planilla quien transcribe el reporte físico: el jefe de faena
+     * (`jefe_terreno` en RBAC, ver lib/prevention/admin-contrato-label.ts) y el
+     * administrador de contrato, que es el otro cargo que lo hace en terreno
+     * (decisión de Prevención, 2026-08-23). Sigue acotado: no lo tiene el
+     * taller ni quien sólo revisa. */
+    // `rolesFor` ordena alfabéticamente, no por declaración.
+    expect(rolesFor("prevention:inspections:ingest")).toEqual(["admin_contrato", "jefe_terreno"])
     expect(rolesFor("prevention:inspections:ingest")).not.toContain("jefe_mantencion")
+    expect(rolesFor("prevention:inspections:ingest")).not.toContain("prevencionista")
   })
 
   it("keeps the committee as its own body and management review out of terreno", () => {

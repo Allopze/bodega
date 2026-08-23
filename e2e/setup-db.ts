@@ -1767,6 +1767,14 @@ async function main() {
     ...answersFor("insp-e2e-equipo", "manometro"),
   ])
 
+  /* `low` en los hallazgos de `insp-e2e-revisar` e `insp-e2e-hallazgo` NO es
+   * arbitrario: desde 2026-08-23 el hallazgo medio obliga a acción correctiva,
+   * así que con uno abierto la inspección no cierra y el hallazgo no se cierra
+   * a mano. Esos dos fixtures existen para probar justamente esos dos caminos
+   * felices, y el leve es la única criticidad que los permite. El bloqueo con
+   * `high` lo cubre `insp-e2e-bloqueada`, y el de `medium`,
+   * `prevention-inspections-calc.test.ts`.
+   */
   /* La criticidad la deriva `criticalityFromDanoPotencial` del daño potencial
    * de la plantilla: `manometro` es 'grave' → Alta (bloquea el cierre sin
    * CAPA), `sello` es 'moderado' → Media (no lo bloquea). */
@@ -1774,9 +1782,9 @@ async function main() {
     { id: "inspfind-e2e-autorrevision", runId: "insp-e2e-autorrevision", answerId: "inspans-insp-e2e-autorrevision-sello", description: labelOf("sello"), criticality: "medium", status: "open", createdAt: now, updatedAt: now },
     { id: "inspfind-e2e-bloqueada", runId: "insp-e2e-bloqueada", answerId: "inspans-insp-e2e-bloqueada-manometro", description: labelOf("manometro"), criticality: "high", status: "open", createdAt: now, updatedAt: now },
     { id: "inspfind-e2e-capa", runId: "insp-e2e-capa", answerId: "inspans-insp-e2e-capa-manometro", description: labelOf("manometro"), criticality: "high", status: "open", createdAt: now, updatedAt: now },
-    { id: "inspfind-e2e-revisar", runId: "insp-e2e-revisar", answerId: "inspans-insp-e2e-revisar-sello", description: labelOf("sello"), criticality: "medium", status: "open", createdAt: now, updatedAt: now },
+    { id: "inspfind-e2e-revisar", runId: "insp-e2e-revisar", answerId: "inspans-insp-e2e-revisar-sello", description: labelOf("sello"), criticality: "low", status: "open", createdAt: now, updatedAt: now },
     { id: "inspfind-e2e-reabrir", runId: "insp-e2e-reabrir", answerId: "inspans-insp-e2e-reabrir-sello", description: labelOf("sello"), criticality: "medium", status: "open", createdAt: now, updatedAt: now },
-    { id: "inspfind-e2e-hallazgo", runId: "insp-e2e-hallazgo", answerId: "inspans-insp-e2e-hallazgo-sello", description: labelOf("sello"), criticality: "medium", status: "open", createdAt: now, updatedAt: now },
+    { id: "inspfind-e2e-hallazgo", runId: "insp-e2e-hallazgo", answerId: "inspans-insp-e2e-hallazgo-sello", description: labelOf("sello"), criticality: "low", status: "open", createdAt: now, updatedAt: now },
     { id: "inspfind-e2e-equipo", runId: "insp-e2e-equipo", answerId: "inspans-insp-e2e-equipo-manometro", description: labelOf("manometro"), criticality: "high", status: "open", createdAt: now, updatedAt: now },
   ])
   await db.insert(schema.pdtpSheets).values({

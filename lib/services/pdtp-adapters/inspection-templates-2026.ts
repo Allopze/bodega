@@ -30,12 +30,17 @@ import type { ChecklistDefinition } from "@/lib/sst/types"
 
 type InspectionTemplateSpec = {
   /**
-   * `n` de la actividad PDTP que esta plantilla acredita. `null` para los
-   * instrumentos que no acreditan ninguna —la auditoría del SGSST vive fuera
-   * del programa anual— pero que igual deben quedar instalados: la promesa es
-   * que el catálogo llegue completo, sin que nadie incorpore nada a mano.
+   * Actividad —o actividades— que esta plantilla acredita al declararse
+   * ejecutada. `null` para los instrumentos que no acreditan ninguna —la
+   * auditoría del SGSST vive fuera del programa anual— pero que igual deben
+   * quedar instalados: la promesa es que el catálogo llegue completo, sin que
+   * nadie incorpore nada a mano.
+   *
+   * Admite varias porque un mismo acto puede cerrar más de una obligación del
+   * programa: transcribir el reporte de equipos acredita a la vez que el
+   * operador lo llenó (n=25) y que el supervisor lo revisó y firmó (n=26).
    */
-  n: number | null
+  n: number | number[] | null
   /** Clave en `CHECKLIST_DEFINITIONS`. */
   definitionCode: string
   /** Nombre visible. Distingue las dos plantillas que comparten definición. */
@@ -63,10 +68,17 @@ type InspectionTemplateSpec = {
 
 export const PDTP_2026_INSPECTION_SPECS: readonly InspectionTemplateSpec[] = [
   { n: 24, definitionCode: "inspeccion_extintores",     name: "Inspección de Estado de Extintores",              kind: "inspection" },
-  // n=25 la ejecuta el operador; la n=26 ("Revisión y firma del report") la
-  // firma el Sup/JT y por eso cuelga de `reviewN`: acredita al revisarse, donde
-  // el servicio ya exige que el revisor no sea quien ejecutó.
-  //
+  /* n=25 y n=26 en el mismo acto, por decisión de Prevención (2026-08-23): el
+   * operador llena el reporte en papel y el administrador de contrato o el
+   * supervisor de faena lo transcribe **bajo el nombre de quien lo hizo** —el
+   * formulario tiene `operador_entrante` como campo obligatorio justamente
+   * porque los conductores no tienen cuenta—. Transcribirlo línea por línea ES
+   * revisarlo y firmarlo, así que la n=26 acredita al declarar ejecutada y no
+   * en un segundo paso.
+   *
+   * El mecanismo de acreditar al revisar (`reviewN`) sigue existiendo para
+   * cuando una actividad sí exija a una segunda persona; acá no aplica.
+   */
   // La n=28 ("Revisar y cierra las inspecciones de estado de equipos") queda
   // fuera a propósito y NO es un olvido: la planilla la describe como "revisar
   // las inspecciones una vez sean recibidas, para ver si los temas mencionados
@@ -74,7 +86,7 @@ export const PDTP_2026_INSPECTION_SPECS: readonly InspectionTemplateSpec[] = [
   // CONJUNTO recibido y sobre el cierre de los hallazgos, no sobre una
   // inspección. Acreditarla por run haría que una semana con doce inspecciones
   // reportara doce cumplimientos de una actividad planificada como uno.
-  { n: 25, definitionCode: "reporte_equipos",           name: "Reporte de Uso Diario de Equipos",                kind: "inspection", reviewN: 26 },
+  { n: [25, 26], definitionCode: "reporte_equipos",      name: "Reporte de Uso Diario de Equipos",                kind: "inspection" },
   { n: 27, definitionCode: "inspeccion_taller",         name: "Inspección Taller de Mantención y Bodega RESPEL", kind: "inspection" },
   { n: 29, definitionCode: "inspeccion_contenedores",   name: "Inspección de Contenedores",                      kind: "inspection" },
   { n: 33, definitionCode: "inspeccion_equipos_moviles", name: "Inspección de Equipos Móviles",                  kind: "inspection" },
@@ -92,6 +104,17 @@ export const PDTP_2026_INSPECTION_SPECS: readonly InspectionTemplateSpec[] = [
   // que incorporarla desde el catálogo.
   { n: null, definitionCode: "auditoria_sgsst",         name: "Auditoría interna del Sistema de Gestión de SST",  kind: "audit" },
 ]
+
+/** `n` como lista, que es la forma en que la columna lo guarda. */
+function completionNumbers(spec: InspectionTemplateSpec): number[] | null {
+  if (spec.n === null) return null
+  return Array.isArray(spec.n) ? [...spec.n].sort((a, b) => a - b) : [spec.n]
+}
+
+function sameNumbers(actual: number[] | null, expected: number[] | null): boolean {
+  if (expected === null) return actual === null
+  return actual?.length === expected.length && expected.every((value, index) => actual[index] === value)
+}
 
 function resolveDefinition(code: string): ChecklistDefinition {
   const definition = CHECKLIST_DEFINITIONS[code]
@@ -121,11 +144,11 @@ export async function findInspectionTemplateForPdtpActivity(n: number) {
 }
 
 export type EnsureInspectionTemplatesResult = {
-  created: Array<{ n: number | null; templateId: string; code: string; versionLabel: string }>
+  created: Array<{ n: number | number[] | null; templateId: string; code: string; versionLabel: string }>
   /** Ya existía una plantilla con ese (code, versionLabel). */
-  skipped: Array<{ n: number | null; templateId: string; reason: "already_installed" }>
+  skipped: Array<{ n: number | number[] | null; templateId: string; reason: "already_installed" }>
   /** Existía pero declaraba otras actividades PDTP; se corrigió. */
-  relinked: Array<{ n: number | null; templateId: string; from: number[] | null; to: number[] }>
+  relinked: Array<{ n: number | number[] | null; templateId: string; from: number[] | null; to: number[] }>
 }
 
 /**
@@ -154,9 +177,8 @@ export async function ensurePdtp2026InspectionTemplates(input: {
     if (existing) {
       const current = Array.isArray(existing.pdtpActivityNumbers) ? existing.pdtpActivityNumbers as number[] : null
       const currentReview = Array.isArray(existing.pdtpReviewActivityNumbers) ? existing.pdtpReviewActivityNumbers as number[] : null
-      const matches = (actual: number[] | null, expected: number | null | undefined) =>
-        expected === null || expected === undefined ? actual === null : actual?.length === 1 && actual[0] === expected
-      const wired = matches(current, spec.n) && matches(currentReview, spec.reviewN)
+      const wired = sameNumbers(current, completionNumbers(spec))
+        && sameNumbers(currentReview, spec.reviewN === undefined ? null : [spec.reviewN])
       if (wired) {
         result.skipped.push({ n: spec.n, templateId: existing.id, reason: "already_installed" })
         continue
@@ -164,14 +186,14 @@ export async function ensurePdtp2026InspectionTemplates(input: {
       if (!input.dryRun) {
         await db.update(preventionInspectionTemplates)
           .set({
-            pdtpActivityNumbers: spec.n === null ? null : [spec.n],
+            pdtpActivityNumbers: completionNumbers(spec),
             pdtpReviewActivityNumbers: spec.reviewN === undefined ? null : [spec.reviewN],
             version: existing.version + 1,
             updatedAt: now,
           })
           .where(eq(preventionInspectionTemplates.id, existing.id))
       }
-      result.relinked.push({ n: spec.n, templateId: existing.id, from: current, to: spec.n === null ? [] : [spec.n] })
+      result.relinked.push({ n: spec.n, templateId: existing.id, from: current, to: completionNumbers(spec) ?? [] })
       continue
     }
 
@@ -193,7 +215,7 @@ export async function ensurePdtp2026InspectionTemplates(input: {
         // lo habilita una persona, y queda constancia de quién y cuándo.
         status: "draft",
         legalFramework: definition.legalFramework?.join(" · ") ?? null,
-        pdtpActivityNumbers: spec.n === null ? null : [spec.n],
+        pdtpActivityNumbers: completionNumbers(spec),
         pdtpReviewActivityNumbers: spec.reviewN === undefined ? null : [spec.reviewN],
         authorUserId: input.actorUserId,
         createdAt: now,
@@ -213,8 +235,8 @@ export async function ensurePdtp2026InspectionTemplates(input: {
  */
 export function pdtpActivityCandidatesFor(definitionCode: string): { n: number; name: string }[] {
   return PDTP_2026_INSPECTION_SPECS
-    .filter((spec): spec is typeof spec & { n: number } => spec.definitionCode === definitionCode && spec.n !== null)
-    .map((spec) => ({ n: spec.n, name: spec.name }))
+    .filter((spec) => spec.definitionCode === definitionCode && spec.n !== null)
+    .flatMap((spec) => (completionNumbers(spec) ?? []).map((n) => ({ n, name: spec.name })))
 }
 
 /**
@@ -228,8 +250,12 @@ export function pdtpActivityCandidatesFor(definitionCode: string): { n: number; 
  * que un run del jefe de terreno cerrara la ocurrencia del prevencionista.
  */
 export function defaultPdtpActivityNumbers(definitionCode: string): number[] {
-  const [only, ...rest] = pdtpActivityCandidatesFor(definitionCode)
-  return only && rest.length === 0 ? [only.n] : []
+  const specs = PDTP_2026_INSPECTION_SPECS.filter((spec) => spec.definitionCode === definitionCode)
+  // Una sola fila del catálogo: se aplica su cableado completo, sean una o dos
+  // actividades. Dos filas (EPP: n=64 del JT y n=65 del PRF) es la ambigüedad
+  // que no se adivina.
+  const [only, ...rest] = specs
+  return only && rest.length === 0 ? completionNumbers(only) ?? [] : []
 }
 
 /**
