@@ -6,7 +6,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import Link from "next/link"
 import {
-  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear, FileText, ArrowRight, EnvelopeSimple, ToggleLeft, HardDrives, Receipt,
+  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear, FileText, ArrowRight, EnvelopeSimple, ToggleLeft, HardDrives, Receipt, Package,
 } from "@phosphor-icons/react/dist/ssr"
 
 export const metadata: Metadata = { title: "Panel de Administración" }
@@ -58,6 +58,14 @@ const modules = [
     href:        "/admin/catalogos-productos",
     icon:        Cube,
     permission:  "admin:product_catalogs",
+    group:       "catalogos",
+  },
+  {
+    title:       "Inventario de faena",
+    description: "Extintores, kits de derrame y otros recursos instalados en terreno. Prevención los inspecciona; el padrón se carga acá.",
+    href:        "/admin/inventario-faena",
+    icon:        Package,
+    permission:  "admin:worksite_inventory",
     group:       "catalogos",
   },
   {

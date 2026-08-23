@@ -22,7 +22,7 @@ import {
 import { formatDateTime } from "@/lib/utils"
 import {
   addEmergencyContactAction,
-  addEmergencyResourceAction,
+  linkResourcesToPlanAction,
   addEmergencyRoleAction,
   addEmergencyScenarioAction,
   approveEmergencyPlanAction,
@@ -65,6 +65,8 @@ interface Props {
   scenarios: ScenarioInfo[]
   roles: RoleInfo[]
   resources: ResourceInfo[]
+  /** Inventario de la faena que este plan aún no declara (Admin → Inventario de faena). */
+  linkableResources: { id: string; name: string; kind: string; location: string }[]
   contacts: ContactInfo[]
   drills: DrillInfo[]
   eligibleWorkers: WorkerOption[]
@@ -76,7 +78,7 @@ interface Props {
 }
 
 export function PlanDetail({
-  plan, worksiteName, readiness, scenarios, roles, resources, contacts, drills,
+  plan, worksiteName, readiness, scenarios, roles, resources, linkableResources, contacts, drills,
   eligibleWorkers, assignees, currentUserId, canManage, canApprove, canExecuteDrill,
 }: Props) {
   const isDraft = plan.status === "draft"
@@ -209,7 +211,7 @@ export function PlanDetail({
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">Recursos ({resources.length})</h2>
-          {canManage && isDraft && <AddResourceDialog planId={plan.id} />}
+          {canManage && isDraft && <LinkResourcesDialog planId={plan.id} options={linkableResources} />}
         </div>
         {resources.length === 0 ? (
           <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">Sin recursos declarados.</p>
@@ -436,51 +438,81 @@ function AddRoleDialog({ planId, eligibleWorkers }: { planId: string; eligibleWo
 
 /* ── Alta de recurso ──────────────────────────────────────────────────────── */
 
-function AddResourceDialog({ planId }: { planId: string }) {
+/**
+ * Declara en el plan recursos que YA existen en el inventario de la faena.
+ *
+ * Antes esto era un alta: el plan creaba el extintor. Eso ataba la realidad
+ * física al estado de un documento —con el plan aprobado no se podía registrar
+ * un equipo nuevo— y ponía el padrón dentro de Prevención, que sólo lo consume.
+ * El inventario se carga en Admin → Inventario de faena; acá se elige.
+ */
+function LinkResourcesDialog({ planId, options }: {
+  planId: string
+  options: { id: string; name: string; kind: string; location: string }[]
+}) {
   const [open, setOpen] = React.useState(false)
+  const [selected, setSelected] = React.useState<string[]>([])
   const operation = useOperation()
 
-  function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const form = new FormData(event.currentTarget)
-    const lastInspectedAt = String(form.get("lastInspectedAt") ?? "").trim()
-    const nextInspectionAt = String(form.get("nextInspectionAt") ?? "").trim()
-    operation.run(() => addEmergencyResourceAction({
-      planId,
-      name: form.get("name"),
-      kind: form.get("kind"),
-      location: form.get("location"),
-      lastInspectedAt: lastInspectedAt || null,
-      nextInspectionAt: nextInspectionAt || null,
-    }), () => setOpen(false))
+  function toggle(id: string) {
+    setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button size="sm">Agregar recurso</Button></DialogTrigger>
+    <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) setSelected([]) }}>
+      <DialogTrigger asChild><Button size="sm">Declarar recursos</Button></DialogTrigger>
       <DialogContent>
-        <form onSubmit={submit} className="space-y-4">
+        <form
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            operation.run(
+              () => linkResourcesToPlanAction({ planId, resourceIds: selected }),
+              () => { setOpen(false); setSelected([]) },
+            )
+          }}
+        >
           <DialogHeader>
-            <DialogTitle>Agregar recurso</DialogTitle>
-            <DialogDescription>Equipos, extintores, kits de derrame u otro recurso de respuesta.</DialogDescription>
+            <DialogTitle>Declarar recursos del inventario</DialogTitle>
+            <DialogDescription>
+              Los equipos instalados en la faena se cargan en Administración → Inventario de faena. Acá se declara
+              cuáles cubre este plan de emergencias.
+            </DialogDescription>
           </DialogHeader>
-          <Field label="Nombre"><Input name="name" required minLength={2} maxLength={200} /></Field>
-          <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Tipo" hint="Ej: Extintor, kit de derrame."><Input name="kind" required minLength={2} maxLength={120} /></Field>
-            <Field label="Ubicación"><Input name="location" required minLength={2} maxLength={300} /></Field>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Última inspección" hint="Opcional."><DatePicker name="lastInspectedAt" /></Field>
-            <Field label="Próxima inspección" hint="Opcional."><DatePicker name="nextInspectionAt" /></Field>
-          </div>
+          {options.length === 0 ? (
+            <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-xs">
+              No queda ningún recurso de esta faena sin declarar. Si falta un equipo, cárgalo primero en
+              Administración → Inventario de faena.
+            </p>
+          ) : (
+            <div className="max-h-72 space-y-1 overflow-y-auto rounded-md border border-[var(--color-border)] p-2">
+              {options.map((option) => (
+                <label key={option.id} className="flex items-start gap-2 rounded p-1.5 text-sm hover:bg-[var(--color-surface-2)]">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={selected.includes(option.id)}
+                    onChange={() => toggle(option.id)}
+                  />
+                  <span>
+                    <span className="block font-medium">{option.name}</span>
+                    <span className="text-xs text-[var(--color-text-subtle)]">{option.kind} · {option.location}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-          <DialogFooter><Button type="submit" disabled={operation.pending}>Agregar</Button></DialogFooter>
+          <DialogFooter>
+            <Button type="submit" disabled={operation.pending || selected.length === 0}>
+              Declarar {selected.length > 0 ? `(${selected.length})` : ""}
+            </Button>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
   )
 }
-
 /* ── Mantención y baja de un recurso ──────────────────────────────────────────
  * El equipo pertenece a la faena, no al documento: se mantiene aunque el plan
  * esté aprobado o archivado. Actualizar las fechas es lo que apaga el aviso de

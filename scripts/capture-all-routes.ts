@@ -696,6 +696,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "admin-correo-smtp", path: "/admin/correo-smtp", auth: true },
   { slug: "admin-dte", path: "/admin/dte", auth: true, notes: "Credenciales del portal DTE e historial de corridas." },
   { slug: "admin-equipos", path: "/admin/equipos", auth: true },
+  { slug: "admin-inventario-faena", path: "/admin/inventario-faena", auth: true, notes: "Padrón físico por faena (extintores, kits). Prevención lo consume; el alta y la carga masiva viven acá." },
   { slug: "admin-equipo-detalle", path: "/admin/equipos/equip-audit-1", auth: true, notes: "Ficha del instrumento con su historial de intervenciones." },
   { slug: "admin-faenas", path: "/admin/faenas", auth: true },
   { slug: "admin-flotas-catalogos", path: "/admin/flota-catalogos", auth: true },

@@ -8,7 +8,6 @@ import { parseZ } from "@/lib/actions/parse-z"
 import { unexpectedActionError } from "@/lib/actions/safe-server-action"
 import {
   addEmergencyContact,
-  addEmergencyResource,
   addEmergencyRole,
   addEmergencyScenario,
   approveEmergencyPlan,
@@ -23,6 +22,7 @@ import {
   updateEmergencyResource,
   type EmergencyAccess,
 } from "@/lib/services/prevention-emergency"
+import { linkResourcesToPlan } from "@/lib/services/worksite-inventory"
 import type { ActionState } from "@/lib/validation/prevention"
 
 const BASE = "/prevencion/emergencias"
@@ -78,10 +78,20 @@ export async function addEmergencyRoleAction(input: unknown): Promise<ActionStat
   return run(accessFromSession(guard.session), "addEmergencyRole", (access) => addEmergencyRole(input, access))
 }
 
-export async function addEmergencyResourceAction(input: unknown): Promise<ActionState> {
+/**
+ * Declara en el plan recursos que ya existen en el inventario de la faena.
+ *
+ * Reemplaza al alta (`addEmergencyResource`, que exigía un plan en borrador y
+ * creaba el equipo): el padrón físico se carga en Administración → Inventario de
+ * faena, porque existe por la operación y no por el documento que lo declara.
+ * Acá sólo se elige, con el mismo permiso de siempre.
+ */
+export async function linkResourcesToPlanAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:emergency:manage")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), "addEmergencyResource", (access) => addEmergencyResource(input, access))
+  const session = guard.session
+  if (!session) return { ok: false, message: "Sesión no disponible." }
+  return run(accessFromSession(session), "linkResourcesToPlan", () => linkResourcesToPlan(input, session.user.id))
 }
 
 export async function addEmergencyContactAction(input: unknown): Promise<ActionState> {

@@ -9,6 +9,7 @@ import {
   listEmergencyAssignees,
   listEmergencyWorkers,
 } from "@/lib/services/prevention-emergency"
+import { listLinkableResources } from "@/lib/services/worksite-inventory"
 import { PlanDetail } from "./plan-detail"
 
 export const metadata: Metadata = { title: "Plan de emergencia" }
@@ -36,9 +37,12 @@ export default async function PlanEmergenciaPage({ params }: { params: Promise<{
   // La faena del plan se pasa al servicio, no se filtra después: el tope de la
   // consulta se aplicaba antes del filtro y truncaba dotación arbitrariamente
   // (EMERGENCIAS-11).
-  const [eligibleWorkers, assignees] = await Promise.all([
+  const [eligibleWorkers, assignees, linkableResources] = await Promise.all([
     canManage || canExecuteDrill ? listEmergencyWorkers(access, detail.plan.worksiteId) : Promise.resolve([]),
     canExecuteDrill ? listEmergencyAssignees(access) : Promise.resolve([]),
+    // Inventario de la faena que este plan todavía no declara. El padrón se
+    // carga en Administración → Inventario de faena; el plan sólo elige.
+    canManage ? listLinkableResources(detail.plan.worksiteId) : Promise.resolve([]),
   ])
 
   return (
@@ -74,6 +78,7 @@ export default async function PlanEmergenciaPage({ params }: { params: Promise<{
           backupName: role.backupName,
         }))}
         resources={detail.resources}
+        linkableResources={linkableResources}
         contacts={detail.contacts}
         drills={detail.drills.map((drill) => ({
           id: drill.id,
