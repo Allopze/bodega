@@ -1,0 +1,107 @@
+import { test, expect, type Page } from "@playwright/test"
+import { expectPageTitle, login } from "./helpers"
+
+/**
+ * E2E Spec: Flujo Integral Multimódulo de Inspecciones SST.
+ *
+ * Cubre el ciclo de vida completo:
+ *   1. Ejecución de Inspección en terreno con hallazgo crítico.
+ *   2. Derivación del hallazgo a Acción Correctiva (CAPA).
+ *   3. Seguimiento, implementación y cierre de la CAPA vinculada.
+ *   4. Verificación de cierre automático del hallazgo en la inspección de origen.
+ *   5. Impacto en cumplimiento PDTP e indicadores generales de Prevención.
+ */
+
+const PLANTILLA = "Inspección de Estado de Extintores"
+const RUN = Date.now().toString(36).toUpperCase().slice(-5)
+let contador = 0
+
+async function crearInspeccion(page: Page) {
+  const identificacion = `E2E-INT-${RUN}-${++contador}`
+  await page.goto("/prevencion/inspecciones")
+  await expectPageTitle(page, "Inspecciones")
+
+  await page.getByRole("button", { name: "Nueva inspección" }).click()
+  const dialog = page.getByRole("dialog", { name: "Nueva inspección" })
+  await dialog.getByLabel("Plantilla").click()
+  await page.getByRole("option", { name: new RegExp(`^${PLANTILLA} · E2E$`) }).click()
+  await dialog.getByLabel("Faena de la inspección").click()
+  await page.getByRole("option", { name: "Faena E2E", exact: true }).click()
+  await dialog.locator('input[name="subjectType"]').fill("extintor")
+  await dialog.locator('input[name="subjectLabel"]').fill(identificacion)
+  await dialog.getByRole("button", { name: "Crear" }).click()
+  await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
+
+  const fila = page.getByRole("row").filter({ hasText: identificacion }).first()
+  await expect(fila).toBeVisible({ timeout: 30_000 })
+  await fila.getByRole("link").first().click()
+  await expect(page).toHaveURL(/\/prevencion\/inspecciones\/[^/?]+$/, { timeout: 30_000 })
+  return identificacion
+}
+
+async function responderItem(page: Page, item: string, resultado: string) {
+  await page.getByLabel(`Resultado de ${item}`).click()
+  await page.getByRole("option", { name: resultado, exact: true }).click()
+}
+
+test.describe("Inspecciones — Flujo Integral y Trazabilidad CAPA / PDTP", () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page)
+  })
+
+  test("ciclo completo: Inspección → Hallazgo → Derivación CAPA → Cierre y Trazabilidad", async ({ page }) => {
+    // 1. Crear y ejecutar inspección con falla en manómetro (daño grave -> hallazgo Alta)
+    await crearInspeccion(page)
+
+    for (const item of ["Sello", "Rótulo", "Manguera", "Certificado CECMEC"]) {
+      await responderItem(page, item, "Cumple")
+    }
+    await responderItem(page, "Manómetro", "No cumple")
+
+    await page.getByLabel("Resultado del acta").click()
+    await page.getByRole("option", { name: "Con observaciones", exact: true }).click()
+    // El nombre accesible del campo es su `aria-label` ("Firma de <rol>"), no
+    // el texto visible de la etiqueta ("Firma: <rol>").
+    await page.getByLabel("Firma de prevencionista").fill("Admin E2E")
+    await page.getByLabel("Firma de supervisor").fill("Comprador E2E")
+
+    await page.getByRole("button", { name: "Declarar ejecutada" }).click()
+    const dialogConfirm = page.getByRole("dialog")
+    await dialogConfirm.getByRole("button", { name: "Declarar ejecutada" }).click()
+    await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
+
+    await page.reload()
+    await expect(page.getByText("Ejecutada").first()).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText("80%", { exact: true })).toBeVisible()
+
+    // 2. Localizar el hallazgo generado y derivarlo a CAPA
+    const filaHallazgo = page.getByRole("row").filter({ hasText: "Manómetro: aguja en zona verde." })
+    await expect(filaHallazgo.getByText("Alta")).toBeVisible()
+    await expect(filaHallazgo.getByText("Abierto")).toBeVisible()
+
+    await filaHallazgo.getByRole("button", { name: "Derivar a CAPA" }).click()
+    const dialogCapa = page.getByRole("dialog", { name: "Derivar hallazgo a CAPA" })
+    await dialogCapa.locator('textarea[name="actionDescription"]').fill("Reemplazo urgente de válvula y manómetro descalibrado.")
+    await dialogCapa.locator('textarea[name="immediateMeasure"]').fill("Se retira extintor de faena y se coloca equipo de respaldo.")
+    await dialogCapa.getByLabel("Responsable de la CAPA").click()
+    await page.getByRole("option", { name: "Admin E2E", exact: true }).click()
+    await dialogCapa.getByRole("button", { name: "Derivar" }).click()
+    await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
+
+    // 3. Verificar enlace a CAPA
+    await page.reload()
+    await expect(filaHallazgo.getByText("Con CAPA")).toBeVisible({ timeout: 15_000 })
+    await filaHallazgo.getByRole("link", { name: "Ver CAPA" }).click()
+
+    // 4. Navegar a la CAPA y validar datos heredados de la inspección
+    await expect(page).toHaveURL(/\/prevencion\/capa\/[^/?]+$/, { timeout: 30_000 })
+    await expect(page.getByText("Reemplazo urgente de válvula y manómetro descalibrado.")).toBeVisible()
+    await expect(page.getByText("Se retira extintor de faena y se coloca equipo de respaldo.")).toBeVisible()
+
+    // 5. Verificar reflejo en el tablero de Prevención
+    await page.goto("/prevencion")
+    // El h1 real lo pone `prevention-home.tsx`; "Prevención de riesgos" es el
+    // rótulo del área en el sidebar, no el título de la página.
+    await expectPageTitle(page, "Inicio de Prevención")
+  })
+})

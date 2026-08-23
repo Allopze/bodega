@@ -875,6 +875,11 @@ export function InspectionRunDetail({
               {closing.signatures.length > 0 && (
                 <div className="grid gap-3 md:grid-cols-2">
                   {closing.signatures.map((signature, index) => (
+                    /* Sin `htmlFor` a propósito: el `Input` ya declara su
+                     * `aria-label` abajo, y pasarlo haría que `Field` inyecte un
+                     * `aria-labelledby` que lo pisa —el nombre accesible pasaría
+                     * de "Firma de prevencionista" a "Firma: prevencionista"— y
+                     * rompe a todo el que localice el campo por su nombre. */
                     <Field key={signature.role} label={`Firma: ${signature.role}`} hint="Nombre de quien firma.">
                       <Input
                         value={signature.name}
