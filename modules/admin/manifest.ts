@@ -141,7 +141,12 @@ export const adminModule = {
     { roleSlug: "secretaria", permission: "admin:fleet_vehicles" },
     { roleSlug: "admin_contrato", permission: "admin:fleet_vehicles" },
     { roleSlug: "prevencionista_faena", permission: "admin:fleet_vehicles" },
-    { roleSlug: "solicitante_faena", permission: "admin:fleet_vehicles" },
+    /* `solicitante_faena` NO administra el padrón, aunque lo hacía por
+     * herencia de `combustibles:manage_vehicles`: pide ítems para sus faenas,
+     * y dar de alta un camión no es parte de eso. Se le retira al separar el
+     * permiso. `ensureSystemRbac` borra y reconstruye los grants de los roles
+     * del sistema, así que `db:sync-rbac` lo revoca también en una base ya
+     * poblada, no sólo en un seed nuevo. */
     { roleSlug: "prevencionista", permission: "admin:worksite_inventory" },
     // Jefa Chome (Jefatura)
     { roleSlug: "jefa_chome", permission: "admin:cost_centers" },
