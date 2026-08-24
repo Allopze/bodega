@@ -456,6 +456,11 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
             eq(fuelImportBatches.worksiteId, worksiteId),
             lte(fuelImportBatches.periodoDesde, period.to),
             gte(fuelImportBatches.periodoHasta, period.from),
+            // OJO: `fuente` es nullable y NOT IN no matchea NULL, así que un lote
+            // sin fuente NO bloquea. El `?? "sin fuente"` de abajo es código
+            // muerto por eso. El arreglo correcto es la columna NOT NULL, no
+            // relajar el predicado: un lote legacy sin fuente bloquearía esa
+            // faena y ese período para siempre, y el guard no tiene salida.
             notInArray(fuelImportBatches.fuente, AUTOMATED_SOURCES),
             ne(fuelImportBatches.estado, "revertido"),
           ),

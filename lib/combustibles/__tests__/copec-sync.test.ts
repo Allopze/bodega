@@ -65,18 +65,7 @@ vi.mock("@/lib/combustibles/tae-receipts", () => ({
 
 const { buildCopecSyncPeriods, copecProjectionHash, getCopecSyncPlan, getCopecSyncStartOptions, setCopecSyncStartDate, syncCopecReportPeriod, syncCopecReports } = await import("../copec-sync")
 const { AUTOMATED_SOURCES } = await import("../fuel-sources")
-
-/** Junta todos los strings de un objeto SQL de drizzle. El mock de `findFirst`
- *  responde sin mirar el WHERE, así que la única forma de comprobar A QUÉ fuentes
- *  mira un filtro es inspeccionar el filtro mismo, sin acoplarse a la
- *  representación interna de drizzle. */
-function collectStrings(value: unknown, seen = new Set<unknown>(), out: string[] = []): string[] {
-  if (typeof value === "string") { out.push(value); return out }
-  if (!value || typeof value !== "object" || seen.has(value)) return out
-  seen.add(value)
-  for (const item of Object.values(value as Record<string, unknown>)) collectStrings(item, seen, out)
-  return out
-}
+const { collectStrings } = await import("./drizzle-filter")
 
 // Cada grupo (faena, período, fuente) ahora corre bajo lock + recheck DENTRO
 // de la transacción (CO-026) — `tx.query...` reutiliza los mismos mocks que

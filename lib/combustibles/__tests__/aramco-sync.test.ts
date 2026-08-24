@@ -82,6 +82,8 @@ vi.mock("@/lib/combustibles/fuel-provider-ledger", () => ({
 }))
 
 const { aramcoProjectionHash, syncAramco } = await import("../aramco-sync")
+const { AUTOMATED_SOURCES } = await import("../fuel-sources")
+const { collectStrings } = await import("./drizzle-filter")
 
 /** Transacción con los campos que el portal entrega de verdad. */
 function movement(over: Record<string, unknown> = {}) {
@@ -329,6 +331,17 @@ describe("syncAramco", () => {
       rowsRejected: 1,
       rowsPending: 2,
     }))
+  })
+
+  it("el guard de import ajeno excluye a TODOS los proveedores automáticos", async () => {
+    // Dos proveedores en la misma faena y mes es el caso normal, no una
+    // duplicación: si el guard sólo conociera las fuentes de Aramco, el primer
+    // lote de Copec haría que Aramco se saltara esa faena en silencio. Copec ya
+    // tiene esta prueba; Aramco no la tenía.
+    mocks.batchFindFirst.mockResolvedValueOnce(undefined).mockResolvedValueOnce({ fuente: "Copec" })
+    await syncAramco()
+    const guardLiterals = collectStrings(mocks.batchFindFirst.mock.calls[1]?.[0])
+    expect(AUTOMATED_SOURCES.filter((source) => !guardLiterals.includes(source))).toEqual([])
   })
 
   it("skips a worksite already loaded by hand for that period", async () => {

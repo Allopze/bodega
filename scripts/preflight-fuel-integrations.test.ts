@@ -10,7 +10,7 @@ describe("preflight de integraciones de combustible", () => {
         expect(strings.join(" ")).toContain("fuel_provider_transactions")
         expect(strings.join(" ")).toContain("COUNT(r.id) <> b.filas_validas")
         return Promise.resolve([{
-          duplicate_provider_identities: 1,
+          split_tct_identities: 1,
           provider_transactions_without_identity: 0,
           unknown_provider_transactions: 0,
           open_provider_pendings: 2,
@@ -25,7 +25,7 @@ describe("preflight de integraciones de combustible", () => {
     })
 
     await expect(readFuelIntegrationsPreflight({ begin } as unknown as postgres.Sql)).resolves.toEqual({
-      duplicateProviderIdentities: 1,
+      splitTctIdentities: 1,
       providerTransactionsWithoutIdentity: 0,
       unknownProviderTransactions: 0,
       openProviderPendings: 2,

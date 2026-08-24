@@ -1,7 +1,7 @@
 import postgres from "postgres"
 
 export interface FuelIntegrationsPreflight {
-  duplicateProviderIdentities: number
+  splitTctIdentities: number
   providerTransactionsWithoutIdentity: number
   unknownProviderTransactions: number
   openProviderPendings: number
@@ -20,7 +20,7 @@ export interface FuelIntegrationsPreflight {
  */
 export async function readFuelIntegrationsPreflight(sql: postgres.Sql): Promise<FuelIntegrationsPreflight> {
   const [report] = await sql.begin("read only", async (tx) => tx<{
-    duplicate_provider_identities: number
+    split_tct_identities: number
     provider_transactions_without_identity: number
     unknown_provider_transactions: number
     open_provider_pendings: number
@@ -31,11 +31,21 @@ export async function readFuelIntegrationsPreflight(sql: postgres.Sql): Promise<
     unmatched_reconciliation_links: number
     dte_reconciliation_mismatches: number
   }[]>`
-    WITH duplicate_provider_identities AS (
-      SELECT provider, source_account, identity_key
+    WITH split_tct_identities AS (
+      -- El informe TCT es un agregado mensual POR PATENTE, así que la misma
+      -- cuenta, el mismo mes y la misma patente sólo pueden tener UNA
+      -- transacción. Dos identidades distintas ahí significan que la fila se
+      -- duplicó en el ledger, que es el síntoma de una identidad inestable.
+      --
+      -- Reemplaza a un chequeo que agrupaba por (provider, source_account,
+      -- identity_key), o sea exactamente las columnas del índice único
+      -- fuel_provider_transactions_identity_unique: daba cero por construcción
+      -- y no podía encontrar nada.
+      SELECT source_account, occurred_at, regexp_replace(upper(trim(coalesce(source_plate, ''))), '[^A-Z0-9]', '', 'g') AS normalized_plate
       FROM fuel_provider_transactions
-      GROUP BY provider, source_account, identity_key
-      HAVING COUNT(*) > 1
+      WHERE provider = 'copec' AND source_account LIKE 'tct:%' AND source_plate IS NOT NULL
+      GROUP BY 1, 2, 3
+      HAVING COUNT(DISTINCT identity_key) > 1
     ),
     duplicate_active_batches AS (
       SELECT worksite_id, periodo_desde, periodo_hasta, fuente
@@ -74,7 +84,7 @@ export async function readFuelIntegrationsPreflight(sql: postgres.Sql): Promise<
       HAVING ABS(COALESCE(SUM(t.amount), 0) - d.monto_total) > 1
     )
     SELECT
-      (SELECT COUNT(*)::int FROM duplicate_provider_identities) AS duplicate_provider_identities,
+      (SELECT COUNT(*)::int FROM split_tct_identities) AS split_tct_identities,
       (SELECT COUNT(*)::int FROM fuel_provider_transactions WHERE NULLIF(trim(identity_key), '') IS NULL) AS provider_transactions_without_identity,
       (SELECT COUNT(*)::int FROM fuel_provider_transactions WHERE provider NOT IN ('copec', 'aramco')) AS unknown_provider_transactions,
       (SELECT COUNT(*)::int FROM fuel_provider_transactions WHERE status = 'pending') AS open_provider_pendings,
@@ -87,7 +97,7 @@ export async function readFuelIntegrationsPreflight(sql: postgres.Sql): Promise<
   `)
 
   return {
-    duplicateProviderIdentities: Number(report?.duplicate_provider_identities ?? 0),
+    splitTctIdentities: Number(report?.split_tct_identities ?? 0),
     providerTransactionsWithoutIdentity: Number(report?.provider_transactions_without_identity ?? 0),
     unknownProviderTransactions: Number(report?.unknown_provider_transactions ?? 0),
     openProviderPendings: Number(report?.open_provider_pendings ?? 0),
