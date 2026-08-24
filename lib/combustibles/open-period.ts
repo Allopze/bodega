@@ -11,13 +11,21 @@
  * `linkConsumptionPlateAction`, donde puede elegir un vehículo cuya patente no
  * coincide con la del reporte. Ese vínculo no existe en ninguna otra parte y
  * recalcularlo desde el catálogo lo borraría en silencio.
+ *
+ * Por eso la fila se identifica por `plateMatchKey` y no por el texto exacto de
+ * la patente: cada fuente trae su propio formato ("SZ GB 72" en Aramco, "SZGB72"
+ * en Copec) y un cambio de formato hacía que la fila guardada no calzara con la
+ * entrante — se borraba y se reinsertaba, que es exactamente lo que este módulo
+ * existe para evitar. El `UPDATE` incluye `patente` para que el texto guardado
+ * se alinee solo con el canon en el refresco siguiente.
  */
 
-import { and, eq, notInArray } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import { type DB } from "@/db"
 import { fuelConsumptionRecords } from "@/db/schema"
 import { todayInChile } from "@/lib/utils"
 import { type BatchTotals } from "@/lib/combustibles/consumption-calculations"
+import { plateMatchKey } from "@/lib/combustibles/xlsx-utils"
 
 type RecordsTx = Pick<DB, "insert" | "update" | "delete" | "query">
 
@@ -50,19 +58,20 @@ export async function upsertBatchRecords(
     where: eq(fuelConsumptionRecords.batchId, batchId),
     columns: { id: true, patente: true, vehicleId: true },
   })
-  const stored = new Map(existing.map((record) => [record.patente, record]))
+  const stored = new Map(existing.map((record) => [plateMatchKey(record.patente), record]))
   const updatedAt = new Date().toISOString()
 
   const toInsert: ConsumptionRecordInsert[] = []
   let updated = 0
   for (const record of records) {
-    const previous = stored.get(record.patente)
+    const previous = stored.get(plateMatchKey(record.patente))
     if (!previous) {
       toInsert.push(record)
       continue
     }
     await tx.update(fuelConsumptionRecords)
       .set({
+        patente: record.patente,
         numeroTarjetas: record.numeroTarjetas,
         numeroTransacciones: record.numeroTransacciones,
         cantidadUnidad: record.cantidadUnidad,
@@ -95,27 +104,32 @@ export async function replaceBatchRecords(
     where: eq(fuelConsumptionRecords.batchId, batchId),
     columns: { id: true, patente: true, vehicleId: true },
   })
-  const incomingPlates = [...new Set(records.map((record) => record.patente))]
-  const incomingPlateSet = new Set(incomingPlates)
-  const removed = existing.filter((record) => !incomingPlateSet.has(record.patente)).length
-  await tx.delete(fuelConsumptionRecords).where(
-    incomingPlates.length === 0
-      ? eq(fuelConsumptionRecords.batchId, batchId)
-      : and(eq(fuelConsumptionRecords.batchId, batchId), notInArray(fuelConsumptionRecords.patente, incomingPlates)),
-  )
+  // El borrado va por `id` y ya no por exclusión de patentes en SQL: las filas
+  // están en memoria, y comparar el texto de la patente volvería a depender del
+  // formato exacto que este módulo dejó de usar como identidad.
+  const incomingPlateKeys = new Set(records.map((record) => plateMatchKey(record.patente)))
+  const obsolete = existing.filter((record) => !incomingPlateKeys.has(plateMatchKey(record.patente)))
+  const removed = obsolete.length
+  if (removed > 0) {
+    await tx.delete(fuelConsumptionRecords).where(and(
+      eq(fuelConsumptionRecords.batchId, batchId),
+      inArray(fuelConsumptionRecords.id, obsolete.map((record) => record.id)),
+    ))
+  }
 
-  const stored = new Map(existing.map((record) => [record.patente, record]))
+  const stored = new Map(existing.map((record) => [plateMatchKey(record.patente), record]))
   const updatedAt = new Date().toISOString()
   const toInsert: ConsumptionRecordInsert[] = []
   let updated = 0
   for (const record of records) {
-    const previous = stored.get(record.patente)
+    const previous = stored.get(plateMatchKey(record.patente))
     if (!previous) {
       toInsert.push(record)
       continue
     }
     await tx.update(fuelConsumptionRecords)
       .set({
+        patente: record.patente,
         numeroTarjetas: record.numeroTarjetas,
         numeroTransacciones: record.numeroTransacciones,
         cantidadUnidad: record.cantidadUnidad,

@@ -52,6 +52,23 @@ describe("replaceBatchRecords", () => {
     expect(tx.inserts[0]).toMatchObject({ patente: "CCC333", cantidadUnidad: 60 })
   })
 
+  it("no borra la fila cuando la fuente cambia el formato de la patente", async () => {
+    // Aramco entrega "SZ GB 72" y el canon del módulo es "SZGB72". Con la clave
+    // exacta la fila guardada no calzaba con la entrante: se borraba y se
+    // reinsertaba, perdiendo el `vehicle_id` que un operador fijó a mano — que
+    // es justo lo que este módulo existe para no perder.
+    const tx = makeTx([{ id: "old-a", patente: "SZ GB 72", vehicleId: "manual-vehicle" }])
+
+    const result = await replaceBatchRecords(tx as never, "batch-1", [row("SZGB72", 40)])
+
+    expect(result).toMatchObject({ inserted: 0, updated: 1, removed: 0 })
+    expect(tx.deletes).toHaveLength(0)
+    expect(tx.inserts).toHaveLength(0)
+    // El texto guardado se alinea con el canon, y el vínculo manual sobrevive.
+    expect(tx.updates[0]).toMatchObject({ patente: "SZGB72", cantidadUnidad: 40 })
+    expect(tx.updates[0]).not.toHaveProperty("vehicleId")
+  })
+
   it("clears the projection when the provider returns no rows", async () => {
     const tx = makeTx([{ id: "old-a", patente: "AAA111", vehicleId: "manual-vehicle" }])
 
