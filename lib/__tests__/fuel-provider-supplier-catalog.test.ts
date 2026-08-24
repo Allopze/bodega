@@ -86,6 +86,49 @@ describe("proveedor de las transacciones de integración", () => {
     expect((await runFor("16044916"))?.supplierId).toBe(aramcoId)
   })
 
+  it("un duplicado no degrada la fila aceptada que ya estaba en el ledger", async () => {
+    // La identidad de una fila rechazada se calcula igual que la de una aceptada.
+    // Un `duplicate_identity` —la segunda aparición de la misma identidad dentro
+    // de la respuesta externa— caía sobre la fila buena por el upsert y le
+    // cambiaba el estado y los montos por los del duplicado.
+    const externalId = "16044918"
+    const run = await beginFuelProviderSyncRun({ provider: "aramco", trigger: "manual", requestedFrom: "2026-07-01", requestedTo: "2026-07-31" })
+    const result = acceptedRow(externalId)
+    const accepted = result.accepted[0]!
+    result.rejected = [{
+      sourceRowKey: accepted.sourceRowKey,
+      code: "duplicate_identity",
+      message: `La identidad ${accepted.identityKey} se repite dentro de la respuesta externa`,
+      input: {
+        provider: "aramco",
+        accountKey: accepted.accountKey,
+        sourceRowKey: accepted.sourceRowKey,
+        externalId,
+        occurredAt: accepted.occurredAt,
+        plate: accepted.plate,
+        product: accepted.sourceProduct,
+        quantity: 999,
+        amount: 999,
+        payload: {},
+      },
+    }]
+
+    await recordFuelProviderValidation(run.id, result, () => ({ worksiteId: null, vehicleId: null, productId: null }))
+
+    const [row] = await inMemoryDb.select({
+      status: schema.fuelProviderTransactions.status,
+      quantity: schema.fuelProviderTransactions.quantity,
+      resolutionCode: schema.fuelProviderTransactions.resolutionCode,
+    }).from(schema.fuelProviderTransactions)
+      .where(eq(schema.fuelProviderTransactions.identityKey, `external:${externalId}`))
+
+    // Sin mapping la fila válida queda `pending`, no `accepted`: lo que se prueba
+    // es que el duplicado no la pisó con sus propios montos ni con su código.
+    expect(row?.status).toBe("pending")
+    expect(row?.resolutionCode).toBe("unresolved_mapping")
+    expect(Number(row?.quantity)).toBe(37.4319)
+  })
+
   it("ignora proveedores desactivados", async () => {
     await inMemoryDb.update(schema.fuelSuppliers).set({ isActive: false }).where(eq(schema.fuelSuppliers.id, aramcoId))
     expect((await runFor("16044917"))?.supplierId).toBeNull()

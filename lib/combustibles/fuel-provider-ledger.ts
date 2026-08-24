@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { and, eq, sql } from "drizzle-orm"
+import { and, eq, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   fuelProviderRejections,
@@ -104,6 +104,18 @@ async function recordRejectedItem(runId: string, item: DurableProviderIssue, sta
       payloadHash: jsonHash(input.payload),
       updatedAt: new Date().toISOString(),
     },
+    // Un duplicado NO pisa la fila que esta misma corrida acaba de escribir. La
+    // identidad de una fila rechazada se calcula igual que la de una válida, así
+    // que un `duplicate_identity` —la segunda aparición de la misma identidad
+    // dentro de la respuesta externa— caía sobre la primera y le cambiaba el
+    // estado y los montos por los del duplicado. La cota va por corrida y no por
+    // estado: la fila buena puede haber quedado `accepted` o `pending` según su
+    // mapping, y una fila de una corrida ANTERIOR sí debe poder actualizarse. La
+    // constancia del duplicado igual queda en `fuel_provider_rejections`, cuya
+    // clave única es otra.
+    setWhere: item.code === "duplicate_identity"
+      ? ne(fuelProviderTransactions.syncRunId, runId)
+      : undefined,
   })
   await db.insert(fuelProviderRejections).values({
     id: nanoid(),
