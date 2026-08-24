@@ -37,6 +37,7 @@ import {
   criticalityFromDanoPotencial,
   deriveFindings,
   nextDueAfter,
+  requiresCapa,
   requiresHumanConfirmation,
   summarizeCompliance,
   summarizeTimelyClosure,
@@ -1111,10 +1112,45 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
       })))
     }
 
+    /* Cierre al completar, para los instrumentos donde declarar ejecutada YA es
+     * la revisión (`closesOnCompletion`). Sin esto, un reporte por equipo y por
+     * turno quedaba "Esperando revisión" para siempre y ese indicador dejaba de
+     * servir para lo que sí necesita atención.
+     *
+     * NO se salta la regla del hallazgo que exige acción correctiva: si la
+     * ejecución levantó alguno sin CAPA, la inspección se queda en `completed` y
+     * entra a la cola igual. Un reporte con los frenos en falla tiene que caer
+     * en las manos de alguien, y a esta altura nadie tuvo ocasión de derivar la
+     * CAPA todavía. Se miran TODOS los hallazgos abiertos del run, no sólo los
+     * recién derivados: uno de una ejecución anterior que sobrevivió a un
+     * reabrir también bloquea. */
+    const openFindings = await tx.select({
+      criticality: preventionInspectionFindings.criticality,
+      capaActionId: preventionInspectionFindings.capaActionId,
+    })
+      .from(preventionInspectionFindings)
+      .where(and(
+        eq(preventionInspectionFindings.runId, run.id),
+        ne(preventionInspectionFindings.status, "closed"),
+      ))
+    const blockedByFinding = openFindings.some((finding) => requiresCapa(finding.criticality) && !finding.capaActionId)
+    const autoCloses = Boolean(
+      (template.definitionSnapshot as unknown as ChecklistDefinition)?.closesOnCompletion,
+    ) && !blockedByFinding
+
     const [updated] = await tx.update(preventionInspectionRuns).set({
-      status: "completed",
+      status: autoCloses ? "reviewed" : "completed",
       executedByUserId: access.userId,
       executedAt: now,
+      /* Quien transcribió es quien revisó: es literalmente lo que hizo al
+       * pasar el papel al sistema, y el CHECK de la tabla exige los dos campos
+       * juntos. Queda dicho en el comentario para que la trazabilidad no
+       * insinúe una segunda persona que no existió. */
+      ...(autoCloses ? {
+        reviewedByUserId: access.userId,
+        reviewedAt: now,
+        reviewComment: "Cerrada al declararse ejecutada: transcribir el reporte firmado es su revisión.",
+      } : {}),
       conformingCount: summary.conforming,
       partialCount: summary.partial,
       nonConformingCount: summary.nonConforming,
@@ -1199,6 +1235,9 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
   // Un reintento offline no vuelve a notificar. El `dedupeKey` ya lo evitaría,
   // pero salir temprano ahorra la consulta de destinatarios.
   if ("alreadyCompleted" in result) return result
+
+  // Cerrada al completar: no hay nada esperando a nadie.
+  if (result.run.status === "reviewed") return result
 
   // A-08: quien puede revisar necesita enterarse de que hay algo esperándolo.
   // Post-commit y sin propagar el error, igual que la acreditación PDTP: una

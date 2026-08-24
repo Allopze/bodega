@@ -126,6 +126,21 @@ export interface ChecklistDefinition {
    * nulo por construcción, que es lo correcto: no hay nada que promediar.
    */
   recordsDeviations?: boolean
+  /**
+   * El instrumento **cierra al declararse ejecutado**, sin pasar por revisión
+   * independiente.
+   *
+   * Para los casos donde declarar ejecutada YA es la revisión: el reporte de uso
+   * diario lo llena el operador en papel y el supervisor lo transcribe línea por
+   * línea, así que transcribirlo es revisarlo y firmarlo (decisión de Prevención,
+   * 2026-08-23). Sin esto cada reporte —uno por equipo y por turno— quedaba
+   * "Esperando revisión" para siempre, y ese indicador dejaba de servir.
+   *
+   * NO salta la regla de que un hallazgo grave exige acción correctiva: si la
+   * ejecución levantó alguno, la inspección se queda esperando revisión igual.
+   * Un reporte con los frenos en falla tiene que caer en la cola de alguien.
+   */
+  closesOnCompletion?: boolean
 }
 
 export interface ClosingActDefinition {

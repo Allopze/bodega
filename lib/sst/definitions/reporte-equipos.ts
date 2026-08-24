@@ -33,6 +33,12 @@ export const REPORTE_EQUIPOS: ChecklistDefinition = {
   frequencySuggested: 'Diaria, por cada equipo y turno.',
   evaluationCriteria:
     'Cada ítem se evalúa como Normal / Falla / N/A. Una falla en frenos, dirección o sistema de acople nace como hallazgo crítico: la acción correctiva exige detención inmediata y se propone sacar el equipo de servicio. Las secciones de acoplado y las exclusivas no puntúan el cumplimiento —se dejan sin responder cuando no corresponden al equipo— pero una falla en ellas genera hallazgo igual.',
+  /* Cierra al declararse ejecutado: el operador llena el papel y el supervisor
+   * lo transcribe, y transcribirlo línea por línea ES revisarlo y firmarlo —
+   * de ahí que este instrumento acredite la n=25 y la n=26 en el mismo acto.
+   * Sin esto, un reporte por equipo y por turno inundaba "Esperando
+   * revisión". Los que levanten un hallazgo grave sí esperan revisión. */
+  closesOnCompletion: true,
   sections: REPORTE_EQUIPOS_SECTIONS,
   closingAct: {
     title: 'Cierre del reporte de turno',

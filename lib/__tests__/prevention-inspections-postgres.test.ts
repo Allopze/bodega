@@ -1,7 +1,7 @@
 /** Real PostgreSQL proof for the cross-cutting inspection engine. */
 import path from "node:path"
 import postgres from "postgres"
-import { eq, sql } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/postgres-js"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
@@ -1290,6 +1290,90 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     })
   })
 
+  /* ── Cierre al completar ────────────────────────────────────────────────
+   * El reporte de uso diario lo llena el operador en papel y el supervisor lo
+   * transcribe: transcribirlo ES revisarlo, así que cierra sin pasar por
+   * revisión independiente. Lo que se prueba es que ese atajo NO se lleve por
+   * delante la regla del hallazgo grave.
+   */
+  describe("Instrumentos que cierran al completar", () => {
+    /* El reporte mezcla ítems de conformidad con `number`, `select` y `text`, y
+     * el helper genérico responde "Registrado en terreno" en todos — que el
+     * horómetro rechaza. Se arma acá igual que en el describe del reporte. */
+    function reporteRespuestas(items: InspectionItemSpec[], failBrakes = false) {
+      return items
+        .filter((item) => item.required || (item.countsForCompliance && fieldKindIsScorable(item.kind)))
+        .map((item) => {
+          if (!fieldKindIsScorable(item.kind)) {
+            return {
+              sectionId: item.sectionId,
+              itemId: item.itemId,
+              result: "recorded" as const,
+              value: item.kind === "number" ? "134122" : item.kind === "select" ? "tarde" : "Patio madera",
+            }
+          }
+          if (failBrakes && item.itemId === "freno_servicio") {
+            return { sectionId: item.sectionId, itemId: item.itemId, result: "non_conforming" as const, comment: "Pedal esponjoso" }
+          }
+          return { sectionId: item.sectionId, itemId: item.itemId, result: "conforming" as const, comment: null }
+        })
+    }
+
+    async function reporteRun(failBrakes = false) {
+      const service = await import("@/lib/services/prevention-inspections")
+      const template = await installTemplate({
+        definitionCode: "reporte_equipos", versionLabel: `cierre-${Date.now()}-${failBrakes ? "f" : "ok"}`,
+      })
+      const { run } = await service.createInspectionRun({ templateId: template.id, worksiteId: "ws-in-a" }, AUTHOR)
+      const items = service.itemsFromDefinition(template.definitionSnapshot as never)
+      const saved = await service.saveInspectionAnswers({
+        runId: run.id, expectedVersion: run.version, answers: reporteRespuestas(items, failBrakes),
+      }, AUTHOR)
+      return { service, template, run, saved }
+    }
+
+    it("sin hallazgos, el reporte queda cerrado y no entra a la cola de revisión", async () => {
+      const { service, template, run, saved } = await reporteRun()
+      const completed = await service.completeInspectionRun({
+        runId: run.id, expectedVersion: saved.version, closingAct: await closingActFor(template.id),
+      }, AUTHOR)
+
+      expect(completed.run.status).toBe("reviewed")
+      // Quien transcribió es quien revisó: es literalmente lo que hizo.
+      expect(completed.run.reviewedByUserId).toBe(AUTHOR.userId)
+      expect(completed.run.reviewedAt).toBeTruthy()
+    })
+
+    it("con un hallazgo que exige CAPA, se queda esperando revisión igual", async () => {
+      // El freno de servicio es de daño potencial fatal → hallazgo crítico.
+      const { service, template, run, saved } = await reporteRun(true)
+      const completed = await service.completeInspectionRun({
+        runId: run.id, expectedVersion: saved.version, closingAct: await closingActFor(template.id),
+      }, AUTHOR)
+
+      // Un reporte con los frenos en falla tiene que caer en la cola de alguien.
+      expect(completed.run.status).toBe("completed")
+      expect(completed.run.reviewedByUserId).toBeNull()
+    })
+
+    it("un instrumento normal sigue exigiendo revisión independiente", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      const template = await installTemplate({
+        definitionCode: "inspeccion_extintores", versionLabel: `norm-${Date.now()}`,
+      })
+      const { run } = await service.createInspectionRun({ templateId: template.id, worksiteId: "ws-in-a" }, AUTHOR)
+      const items = service.itemsFromDefinition(template.definitionSnapshot as never)
+      const saved = await service.saveInspectionAnswers({
+        runId: run.id, expectedVersion: run.version, answers: answersForAll(items),
+      }, AUTHOR)
+      const completed = await service.completeInspectionRun({
+        runId: run.id, expectedVersion: saved.version, closingAct: await closingActFor(template.id),
+      }, AUTHOR)
+
+      expect(completed.run.status).toBe("completed")
+    })
+  })
+
   describe("Ingesta de la planilla física", () => {
     const INGESTOR = { userId: "in-author", scope: scopeA, permissions: [...ALL, "prevention:inspections:ingest"] }
     let ingestaTemplateId = ""
@@ -1297,8 +1381,14 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
 
     it("prepara una ejecución del reporte para la ingesta", async () => {
       const service = await import("@/lib/services/prevention-inspections")
+      /* La APROBADA, no una cualquiera: aprobar una versión reemplaza a la
+       * anterior del mismo código, así que cualquier otro caso que instale un
+       * reporte deja varias filas y sólo una es ejecutable. */
       const [template] = await getDb().select().from(schema.preventionInspectionTemplates)
-        .where(eq(schema.preventionInspectionTemplates.sourceDefinitionCode, "reporte_equipos"))
+        .where(and(
+          eq(schema.preventionInspectionTemplates.sourceDefinitionCode, "reporte_equipos"),
+          eq(schema.preventionInspectionTemplates.status, "approved"),
+        ))
       ingestaTemplateId = template!.id
       const { run } = await service.createInspectionRun({
         templateId: ingestaTemplateId, worksiteId: "ws-in-a", subjectVehicleId: "veh-a",
@@ -1399,15 +1489,21 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
         runId: ingestaRunId, expectedVersion: await currentRunVersion(ingestaRunId),
         closingAct: await closingActFor(ingestaTemplateId),
       }, AUTHOR)
-      expect(done.run.status).toBe("completed")
+      /* El reporte declara `closesOnCompletion`: transcribirlo ES revisarlo, así
+       * que sin hallazgos que exijan CAPA queda cerrado de una vez y no entra a
+       * la cola de "Esperando revisión". Acá todo cumple, así que cierra. */
+      expect(done.run.status).toBe("reviewed")
+      expect(done.run.reviewedByUserId).toBe(AUTHOR.userId)
     })
 
     it("no admite adjuntar a una inspección ya cerrada", async () => {
       const service = await import("@/lib/services/prevention-inspections")
-      await service.transitionInspectionRun({
-        runId: ingestaRunId, expectedVersion: await currentRunVersion(ingestaRunId),
-        toStatus: "reviewed", reason: "Revisado y conforme para la prueba de ingesta.",
-      }, REVIEWER)
+      // Ya quedó cerrada al declararse ejecutada en el caso anterior.
+      const [current] = await getDb().select({ status: schema.preventionInspectionRuns.status })
+        .from(schema.preventionInspectionRuns)
+        .where(eq(schema.preventionInspectionRuns.id, ingestaRunId))
+      expect(current?.status).toBe("reviewed")
+
       await expect(service.addRunDocument({
         runId: ingestaRunId, path: "storage/inspection-evidence/tarde.jpg",
       }, INGESTOR)).rejects.toThrow(/cerrada o cancelada/i)
