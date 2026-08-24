@@ -3,10 +3,11 @@ import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import { CheckCircle } from "@phosphor-icons/react/dist/ssr"
 import { db }                  from "@/db"
-import { dteDocuments, purchaseOrderInvoices, purchaseOrders, statusHistory, users } from "@/db/schema"
+import { dteDocumentItems, dteDocuments, purchaseOrderInvoices, purchaseOrders, statusHistory, supplierProductAliases, users } from "@/db/schema"
 import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm"
 import { localDateToISO } from "@/lib/sst/date"
-import { selectDteCandidates } from "@/lib/services/purchasing-module/dte-candidates"
+import { assessDteCandidates } from "@/lib/services/purchasing-module/dte-candidates"
+import { cleanRut } from "@/lib/rut"
 import { getPurchaseOrderInvoiceReconciliation, reconciliationWarnings } from "@/lib/services/purchasing-module/invoice-reconciliation-service"
 import { requireAuth, can, canAny } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"
@@ -189,6 +190,17 @@ export default async function OcDetailPage({
         }),
       ])
 
+  // Cantidad facturada por ítem de OC: alimenta tanto la ficha como el saldo
+  // contra el que se evalúan las líneas de cada DTE candidato.
+  const invoicedByItem = new Map<string, number>()
+  for (const item of invoiceItemRows) {
+    if (item.purchaseOrderItemId) {
+      invoicedByItem.set(item.purchaseOrderItemId, (invoicedByItem.get(item.purchaseOrderItemId) ?? 0) + item.quantity)
+    }
+  }
+
+  const productMap = Object.fromEntries(productRows.map((product) => [product.id, product]))
+
   // DTE del proveedor de esta OC que todavía no cuelgan de ninguna factura:
   // son los candidatos a registrar sin volver a subir un archivo que la
   // plataforma ya tiene. Es la contracara de `dteRows` —que muestra los ya
@@ -226,6 +238,7 @@ export default async function OcDetailPage({
         columns: {
           id: true, tipoDte: true, folio: true, rutEmisor: true,
           razonSocialEmisor: true, montoTotal: true, fechaEmision: true, estadoSii: true,
+          lineEnrichmentStatus: true, lineEnrichedAt: true,
         },
         orderBy: (d, { desc: descOrder }) => [descOrder(d.fechaEmision)],
       })
@@ -236,10 +249,59 @@ export default async function OcDetailPage({
   const alreadyInvoiced = orderInvoices.reduce((sum, inv) => sum + (inv.amount ?? 0), 0)
   const expectedAmount = Math.max(0, (order.totalAmount ?? 0) - alreadyInvoiced)
 
-  const candidateDtes = selectDteCandidates(unlinkedDtes, {
+  const supplierDtes = unlinkedDtes.filter((doc) => cleanRut(doc.rutEmisor) === cleanRut(order.supplier?.rut ?? ""))
+  const [candidateLineRows, supplierAliasRows] = await Promise.all([
+    supplierDtes.length > 0
+      ? db.query.dteDocumentItems.findMany({
+          where: inArray(dteDocumentItems.dteDocumentId, supplierDtes.map((doc) => doc.id)),
+          orderBy: (line, { asc }) => [asc(line.lineNumber)],
+        })
+      : Promise.resolve([]),
+    productIds.length > 0 && order.supplierId
+      ? db.query.supplierProductAliases.findMany({
+          where: and(
+            eq(supplierProductAliases.supplierId, order.supplierId),
+            inArray(supplierProductAliases.productId, productIds),
+          ),
+          columns: { productId: true, normalizedCode: true, normalizedName: true },
+        })
+      : Promise.resolve([]),
+  ])
+  const linesByDte = new Map<string, typeof candidateLineRows>()
+  for (const line of candidateLineRows) {
+    const lines = linesByDte.get(line.dteDocumentId) ?? []
+    lines.push(line)
+    linesByDte.set(line.dteDocumentId, lines)
+  }
+
+  const candidateDtes = assessDteCandidates(
+    supplierDtes.map((doc) => ({
+      ...doc,
+      enrichmentStatus: doc.lineEnrichmentStatus as "pending" | "ready" | "failed",
+      lines: (linesByDte.get(doc.id) ?? []).map((line) => ({
+        id: line.id,
+        lineNumber: line.lineNumber,
+        productCode: line.productCode,
+        productName: line.productName,
+        unitOfMeasure: line.unitOfMeasure,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        amount: line.amount,
+      })),
+    })), {
     supplierRut: order.supplier?.rut ?? null,
     createdOn: candidateFloor,
     expectedAmount,
+    orderItems: order.items.map((item) => ({
+      id: item.id,
+      productId: item.productId,
+      productName: item.productNameFree ?? (item.productId ? productMap[item.productId]?.name : null) ?? item.id,
+      productCode: item.productId ? productMap[item.productId]?.sku ?? null : null,
+      unitOfMeasure: item.unitOfMeasure,
+      quantity: item.quantity,
+      invoicedQuantity: invoicedByItem.get(item.id) ?? 0,
+    })),
+    aliases: supplierAliasRows,
   })
 
   // Attach items to invoices
@@ -252,17 +314,8 @@ export default async function OcDetailPage({
     ? await getPurchaseOrderInvoiceReconciliation(order.id)
     : null
 
-  // Cantidad facturada por ítem de OC (reutilizado por close-warnings y tabla de avance)
-  const invoicedByItem = new Map<string, number>()
-  for (const item of invoiceItemRows) {
-    if (item.purchaseOrderItemId) {
-      invoicedByItem.set(item.purchaseOrderItemId, (invoicedByItem.get(item.purchaseOrderItemId) ?? 0) + item.quantity)
-    }
-  }
-
   // Build maps
   const reqItemMap = Object.fromEntries(requestItemRows.map((ri) => [ri.id, ri]))
-  const productMap = Object.fromEntries(productRows.map((p) => [p.id, p]))
 
   const canManage      = session.user.permissions.includes("purchasing:create_order")
   const canSend        = session.user.permissions.includes("purchasing:send_order")
@@ -514,6 +567,7 @@ export default async function OcDetailPage({
                   invoices={invoicesWithItems as unknown as React.ComponentProps<typeof InvoicesSection>["invoices"]}
                   ocItems={order.items.map((i) => ({
                     id: i.id,
+                    catalogProductId: i.productId,
                     productName: i.productNameFree ?? (i.productId ? productMap[i.productId]?.name : null) ?? i.id,
                     productCode: i.productId ? productMap[i.productId]?.sku ?? null : null,
                     unitOfMeasure: i.unitOfMeasure,
@@ -530,7 +584,7 @@ export default async function OcDetailPage({
                   // ofrecer en pantalla algo que va a fallar.
                   canAttach={canInvoice && order.status !== "cancelled"}
                   defaultInvoiceNumber={defaultInvoiceNumber}
-                  dteCandidates={candidateDtes.map(({ doc, amountMatches }) => ({
+                  dteCandidates={candidateDtes.map(({ doc, confidence, amountMatches, proposedLinks, explanation }) => ({
                     id: doc.id,
                     tipoDte: doc.tipoDte,
                     folio: doc.folio,
@@ -538,6 +592,12 @@ export default async function OcDetailPage({
                     montoTotal: doc.montoTotal,
                     fechaEmision: doc.fechaEmision,
                     amountMatches,
+                    confidence,
+                    enrichmentStatus: doc.enrichmentStatus,
+                    lineEnrichedAt: doc.lineEnrichedAt,
+                    lines: doc.lines ?? [],
+                    proposedLinks,
+                    explanation,
                   }))}
                 />
                 <DteReceivedCard docs={dteRows} />

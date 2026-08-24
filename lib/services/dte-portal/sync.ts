@@ -21,7 +21,7 @@
  */
 
 import { createHash } from "node:crypto"
-import { eq, and, lt } from "drizzle-orm"
+import { eq, and, inArray, lt } from "drizzle-orm"
 import { db } from "@/db"
 import { dteDocuments, dteSyncRuns, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -35,6 +35,7 @@ import { classifyDteFailure } from "./failure"
 import { chileClock, chilePeriod, previousChilePeriod } from "./chile-time"
 import { claimDteSyncStart } from "./sync-start-gate"
 import { clearDteSyncProgress, publishDteSyncProgress } from "./sync-progress"
+import { enrichDteDocumentLines } from "./purchase-document-xml"
 
 /** Cada cuántos documentos se refresca el avance visible: ni una escritura por fila
  *  ni un salto de minutos en pantalla. */
@@ -183,6 +184,7 @@ export async function syncDteDocuments(
   let rowsUpdated = 0
   let finalStatus: "success" | "partial" | "failed" = "success"
   let errorMsg: string | undefined
+  const insertedInvoiceDteIds: string[] = []
 
   // La consulta al portal es la etapa larga y la que no tiene contador: sin
   // publicar la etapa, el botón manual pasa minutos diciendo sólo "Sincronizando".
@@ -227,8 +229,10 @@ export async function syncDteDocuments(
     for (const [index, row] of docs.entries()) {
       try {
         const result = await db.transaction((tx) => upsertDteDocument(tx, row, periodo, codEmp, runId))
-        if (result === "inserted") rowsInserted++
-        else if (result === "updated") rowsUpdated++
+        if (result.status === "inserted") {
+          rowsInserted++
+          if (row.tipoDoc === "33" || row.tipoDoc === "34") insertedInvoiceDteIds.push(result.id)
+        } else if (result.status === "updated") rowsUpdated++
       } catch (err) {
         failures++
         const failure = classifyDteFailure(err, Object.values(client.credentials))
@@ -256,6 +260,48 @@ export async function syncDteDocuments(
     const failure = classifyDteFailure(err, Object.values(client.credentials))
     errorMsg = `${failure.code}: ${failure.summary}`
     logger.error({ correlationId }, "[dte-sync] consulta falló", { code: failure.code, periodo })
+  }
+
+  // El XML enriquece la ingesta de cabeceras, pero no es condición para
+  // conservar el libro tributario. Se reintentan fallos previos hasta tres
+  // veces y sólo dos descargas corren en paralelo para cuidar el portal.
+  if (finalStatus !== "failed") {
+    try {
+      const retryable = await db.query.dteDocuments.findMany({
+        columns: { id: true },
+        where: and(
+          eq(dteDocuments.periodo, periodo),
+          eq(dteDocuments.codEmp, codEmp),
+          inArray(dteDocuments.tipoDte, ["33", "34"]),
+          eq(dteDocuments.lineEnrichmentStatus, "failed"),
+          lt(dteDocuments.lineEnrichmentAttempts, 3),
+        ),
+      })
+      const enrichmentIds = [...new Set([...insertedInvoiceDteIds, ...retryable.map((row) => row.id)])]
+      await runWithConcurrency(enrichmentIds, 2, async (id) => {
+        try {
+          const result = await enrichDteDocumentLines(id)
+          if (!result.ok) {
+            logger.warn({ correlationId }, "[dte-sync] XML no enriquecido", {
+              code: result.errorCode,
+              periodo,
+              dteDocumentId: id,
+            })
+          }
+        } catch {
+          logger.warn({ correlationId }, "[dte-sync] enriquecimiento XML no disponible", {
+            code: "DTE_XML_ENRICHMENT_FAILED",
+            periodo,
+            dteDocumentId: id,
+          })
+        }
+      })
+    } catch {
+      logger.warn({ correlationId }, "[dte-sync] cola de enriquecimiento XML no disponible", {
+        code: "DTE_XML_ENRICHMENT_QUEUE_FAILED",
+        periodo,
+      })
+    }
   }
 
   // 4. Conciliar contra OC y combustible ANTES de cerrar la corrida.
@@ -447,7 +493,7 @@ async function upsertDteDocument(
   periodo: string,
   codEmp: string,
   syncRunId: string,
-): Promise<"inserted" | "updated" | "unchanged"> {
+): Promise<{ status: "inserted" | "updated" | "unchanged"; id: string }> {
   const rawHash = computeDocumentHash(row)
   // La ingesta era el único punto que guardaba el RUT con la ortografía cruda
   // del portal, siendo parte de la clave única: si la celda llegara con puntos
@@ -476,7 +522,9 @@ async function upsertDteDocument(
       row.nreguist && existing.portalRecordId !== row.nreguist,
     )
     const needsFechaRecepcionBackfill = Boolean(fechaRecepcion && !existing.fechaRecepcion)
-    if (existing.rawHash === rawHash && !needsPortalRecordBackfill && !needsFechaRecepcionBackfill) return "unchanged"
+    if (existing.rawHash === rawHash && !needsPortalRecordBackfill && !needsFechaRecepcionBackfill) {
+      return { status: "unchanged", id: existing.id }
+    }
 
     // Actualizar el registro existente (estado en plataforma puede haber cambiado)
     // y completar Nreguist incluso si el contenido tributario no cambió. Sin
@@ -493,7 +541,7 @@ async function upsertDteDocument(
       syncedAt: new Date().toISOString(),
     }).where(eq(dteDocuments.id, existing.id))
 
-    return "updated"
+    return { status: "updated", id: existing.id }
   }
 
   // Insertar nuevo documento. La Bandeja de Entrada no trae ni SII ni
@@ -503,8 +551,9 @@ async function upsertDteDocument(
   // `estado_plataforma`, que sí llega poblado y es el que leen el export
   // tributario y las pantallas. La columna se conserva por si algún día el
   // panel de ventas alimenta el libro.
+  const id = nanoid()
   await tx.insert(dteDocuments).values({
-    id: nanoid(),
+    id,
     tipoDte: row.tipoDoc,
     folio: row.folio,
     rutEmisor,
@@ -529,7 +578,22 @@ async function upsertDteDocument(
     syncedAt: new Date().toISOString(),
   })
 
-  return "inserted"
+  return { status: "inserted", id }
+}
+
+async function runWithConcurrency<T>(
+  values: readonly T[],
+  concurrency: number,
+  task: (value: T) => Promise<void>,
+): Promise<void> {
+  let cursor = 0
+  await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, async () => {
+    while (cursor < values.length) {
+      const value = values[cursor]
+      cursor += 1
+      if (value !== undefined) await task(value)
+    }
+  }))
 }
 
 function currentPeriodo(): string {

@@ -19,8 +19,10 @@ export type PersistedInvoiceAttachment = {
   absolutePath: string
 }
 
+export type PersistedInvoiceUpload = PersistedInvoiceAttachment & { verifiedBuffer: Buffer }
+
 export async function persistInvoiceFile(value: FormDataEntryValue | null): Promise<
-  | { ok: true; attachment: PersistedInvoiceAttachment | null }
+  | { ok: true; attachment: PersistedInvoiceUpload | null }
   | { ok: false; message: string }
 > {
   if (!(value instanceof File) || value.size === 0) {
@@ -36,10 +38,8 @@ export async function persistInvoiceFile(value: FormDataEntryValue | null): Prom
     }
 
     const buffer = Buffer.from(await value.arrayBuffer())
-    return {
-      ok: true,
-      attachment: await persistInvoiceBuffer(buffer, value.name || "factura", maxBytes),
-    }
+    const persisted = await persistInvoiceBuffer(buffer, value.name || "factura", maxBytes)
+    return { ok: true, attachment: { ...persisted, verifiedBuffer: buffer } }
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : "No se pudo guardar el archivo de la factura" }
   }

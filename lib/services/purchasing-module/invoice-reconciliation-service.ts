@@ -40,7 +40,11 @@ export async function reconcilePurchaseOrderInvoicesTx(
   purchaseOrderId: string,
 ): Promise<InvoiceReconciliationEvidence> {
   const [order] = await tx
-    .select({ totalAmount: purchaseOrders.totalAmount, supplierId: purchaseOrders.supplierId })
+    .select({
+      totalAmount: purchaseOrders.totalAmount,
+      supplierId: purchaseOrders.supplierId,
+      deliveryMode: purchaseOrders.deliveryMode,
+    })
     .from(purchaseOrders)
     .where(eq(purchaseOrders.id, purchaseOrderId))
   if (!order) throw new Error("Orden de compra no encontrada")
@@ -57,6 +61,8 @@ export async function reconcilePurchaseOrderInvoicesTx(
         unitPrice: purchaseOrderItems.unitPrice,
         subtotal: purchaseOrderItems.subtotal,
         currentSupplierPrice: productSuppliers.unitPrice,
+        quantityOfficeReceived: purchaseOrderItems.quantityOfficeReceived,
+        quantityReceived: purchaseOrderItems.quantityReceived,
       })
       .from(purchaseOrderItems)
       .leftJoin(products, eq(purchaseOrderItems.productId, products.id))
@@ -95,8 +101,14 @@ export async function reconcilePurchaseOrderInvoicesTx(
       unitPrice: item.unitPrice,
       subtotal: item.subtotal,
       currentSupplierPrice: item.currentSupplierPrice,
+      supplierReceivedQuantity: order.deliveryMode === "via_oficina"
+        ? item.quantityOfficeReceived
+        : item.quantityReceived,
     })),
-    invoices,
+    invoices: invoices.map((invoice) => ({
+      ...invoice,
+      supplierIdentityStatus: invoice.supplierIdentityStatus as "unknown" | "verified" | "unverified",
+    })),
     reviews: reviews.map((review): InvoiceReconciliationReview => ({
       ...review,
       evidence: review.evidence,
@@ -183,6 +195,9 @@ export async function acceptPurchaseOrderInvoiceReconciliation(
     }
     if (initial.status === "matched") throw new Error("La orden ya está conciliada")
     if (initial.status === "accepted_exception") throw new Error("Las diferencias de esta evidencia ya fueron aceptadas")
+    if (initial.issues.some((issue) => issue.code === "quantity_over_received")) {
+      throw new Error("No se puede aceptar la conciliación mientras la cantidad facturada exceda lo recibido del proveedor")
+    }
 
     await applyPendingCostsTx(tx, order.id, input.pendingCosts ?? [], input.userId, input.userEmail, order.code)
     const catalogUpdates = await applyCatalogPricesTx(tx, {

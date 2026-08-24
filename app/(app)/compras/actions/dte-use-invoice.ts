@@ -1,6 +1,9 @@
 "use server"
 
 import { requirePermission } from "@/lib/auth/can"
+import { db } from "@/db"
+import { dteDocumentItems } from "@/db/schema"
+import { eq } from "drizzle-orm"
 import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import { createPurchaseOrderInvoiceFromDte } from "@/lib/services/purchasing"
@@ -9,10 +12,16 @@ import { logger } from "@/lib/logger"
 import { assertOrderAccess } from "../actions.helpers"
 import { downloadDteDocumentXml } from "./dte-download-xml"
 import { persistInvoicePdf, removeInvoiceAttachment } from "../invoice-attachments"
+import { enrichDteDocumentLines } from "@/lib/services/dte-portal/purchase-document-xml"
 
 export interface UseDteAsInvoiceInput {
   purchaseOrderId: string
   dteDocumentId: string
+  lineResolutions?: Array<{
+    dteDocumentItemId: string
+    purchaseOrderItemId: string | null
+    rememberAlias: boolean
+  }>
 }
 
 /**
@@ -33,6 +42,17 @@ export async function attachDteAsInvoice(
 
   if (!isOpaqueId(input.purchaseOrderId) || !isOpaqueId(input.dteDocumentId)) {
     return { ok: false, message: "No se pudo adjuntar este DTE" }
+  }
+  if (input.lineResolutions && (
+    input.lineResolutions.length === 0
+    || input.lineResolutions.length > 100
+    || input.lineResolutions.some((resolution) =>
+      !isDteLineId(resolution.dteDocumentItemId)
+      || (resolution.purchaseOrderItemId !== null && !isOpaqueId(resolution.purchaseOrderItemId))
+      || typeof resolution.rememberAlias !== "boolean"
+    )
+  )) {
+    return { ok: false, message: "Las resoluciones de líneas no son válidas" }
   }
   let accessError: Awaited<ReturnType<typeof assertOrderAccess>>
   try {
@@ -61,6 +81,18 @@ export async function attachDteAsInvoice(
   if (!xml.ok || !xml.detail.tipoDte || !xml.detail.issueDate || !xml.detail.supplierRut) {
     return { ok: false, message: "No se pudo verificar el XML del DTE" }
   }
+
+  let persistedLines = await db.query.dteDocumentItems.findMany({
+    where: eq(dteDocumentItems.dteDocumentId, input.dteDocumentId),
+  })
+  if (persistedLines.length === 0) {
+    const enrichment = await enrichDteDocumentLines(input.dteDocumentId)
+    if (!enrichment.ok) return { ok: false, message: "No se pudieron verificar las líneas del DTE" }
+    persistedLines = await db.query.dteDocumentItems.findMany({
+      where: eq(dteDocumentItems.dteDocumentId, input.dteDocumentId),
+    })
+  }
+  const persistedByLine = new Map(persistedLines.map((line) => [line.lineNumber, line]))
 
   let pdf
   try {
@@ -97,9 +129,11 @@ export async function attachDteAsInvoice(
         supplierRut: xml.detail.supplierRut,
         totalAmount: xml.detail.totalAmount,
       },
+      lineResolutions: input.lineResolutions,
       // Se preservan todas las líneas del XML. El servicio decide bajo lock qué
       // asociación es única; las ambiguas o incompatibles quedan sin vínculo.
       items: xml.detail.items.map((item) => ({
+        sourceDteDocumentItemId: persistedByLine.get(item.lineNumber)?.id ?? null,
         productName: item.productName,
         productCode: item.productCode,
         unitOfMeasure: item.unitOfMeasure,
@@ -124,4 +158,8 @@ export async function attachDteAsInvoice(
 
 function isOpaqueId(value: string): boolean {
   return typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(value)
+}
+
+function isDteLineId(value: string): boolean {
+  return typeof value === "string" && /^[A-Za-z0-9_:-]{1,256}$/.test(value)
 }

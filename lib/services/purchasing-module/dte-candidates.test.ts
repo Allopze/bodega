@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { selectDteCandidates } from "./dte-candidates"
+import { assessDteCandidates, selectDteCandidates } from "./dte-candidates"
 
 const doc = (id: string, rutEmisor: string, fechaEmision: string, montoTotal = 1000) =>
   ({ id, rutEmisor, fechaEmision, montoTotal })
@@ -97,5 +97,126 @@ describe("selectDteCandidates · monto esperado", () => {
   it("ignora un monto esperado no positivo", () => {
     const result = selectDteCandidates(docs, { ...filtro, expectedAmount: 0 })
     expect(result.map((r) => r.doc.id)).toEqual(["lejano", "exacto", "cercano"])
+  })
+})
+
+describe("assessDteCandidates", () => {
+  const orderItems = [
+    {
+      id: "oc-casco",
+      productId: "product-casco",
+      productName: "Casco amarillo",
+      productCode: "CAS-01",
+      unitOfMeasure: "unidad",
+      quantity: 10,
+      invoicedQuantity: 0,
+    },
+  ]
+
+  it("ranks product evidence before an amount-only coincidence", () => {
+    const result = assessDteCandidates([
+      {
+        ...doc("amount-only", "86887200-4", "2026-08-11", 1000),
+        enrichmentStatus: "ready" as const,
+        lines: [{
+          id: "line-unrelated", lineNumber: 1, productCode: "OTRO", productName: "Producto distinto",
+          unitOfMeasure: "unidad", quantity: 10, unitPrice: 100, amount: 1000,
+        }],
+      },
+      {
+        ...doc("product-match", "86887200-4", "2026-08-10", 900),
+        enrichmentStatus: "ready" as const,
+        lines: [{
+          id: "line-casco", lineNumber: 1, productCode: "CAS-01", productName: "Casco amarillo",
+          unitOfMeasure: "UN", quantity: 9, unitPrice: 100, amount: 900,
+        }],
+      },
+    ], {
+      supplierRut: "86887200-4",
+      createdOn: "2026-08-01",
+      expectedAmount: 1000,
+      orderItems,
+      aliases: [],
+    })
+
+    expect(result.map((candidate) => candidate.doc.id)).toEqual(["product-match", "amount-only"])
+    expect(result[0]).toMatchObject({ confidence: "high", amountMatches: false })
+    expect(result[0]?.proposedLinks[0]).toMatchObject({ purchaseOrderItemId: "oc-casco", matchType: "sku" })
+    expect(result[1]).toMatchObject({ confidence: "low", amountMatches: true })
+  })
+
+  it("uses a confirmed supplier alias before the internal SKU", () => {
+    const [candidate] = assessDteCandidates([{
+      ...doc("alias", "86887200-4", "2026-08-10", 1000),
+      enrichmentStatus: "ready" as const,
+      lines: [{
+        id: "line-alias", lineNumber: 1, productCode: "PROV-778", productName: "Protección craneal",
+        unitOfMeasure: "unidad", quantity: 10, unitPrice: 100, amount: 1000,
+      }],
+    }], {
+      supplierRut: "86887200-4",
+      createdOn: "2026-08-01",
+      expectedAmount: 1000,
+      orderItems,
+      aliases: [{
+        productId: "product-casco",
+        normalizedCode: "PROV778",
+        normalizedName: "proteccion craneal",
+      }],
+    })
+
+    expect(candidate?.proposedLinks[0]).toMatchObject({ purchaseOrderItemId: "oc-casco", matchType: "supplier_alias" })
+  })
+
+  it("never uses quantity alone to resolve duplicate product lines", () => {
+    const [candidate] = assessDteCandidates([{
+      ...doc("ambiguous", "86887200-4", "2026-08-10", 500),
+      enrichmentStatus: "ready" as const,
+      lines: [{
+        id: "line-ambiguous", lineNumber: 1, productCode: null, productName: "Casco amarillo",
+        unitOfMeasure: "unidad", quantity: 5, unitPrice: 100, amount: 500,
+      }],
+    }], {
+      supplierRut: "86887200-4",
+      createdOn: "2026-08-01",
+      expectedAmount: 500,
+      orderItems: [
+        { ...orderItems[0]!, id: "oc-a", quantity: 5 },
+        { ...orderItems[0]!, id: "oc-b", quantity: 10 },
+      ],
+      aliases: [],
+    })
+
+    expect(candidate?.proposedLinks[0]).toMatchObject({ purchaseOrderItemId: null, matchType: "ambiguous" })
+    expect(candidate?.confidence).toBe("low")
+  })
+
+  it("keeps pending evidence visible and applies the limit after ranking", () => {
+    const result = assessDteCandidates([
+      ...Array.from({ length: 20 }, (_, index) => ({
+        ...doc(`pending-${index}`, "86887200-4", "2026-08-10", 1000),
+        enrichmentStatus: "pending" as const,
+        lines: [],
+      })),
+      {
+        ...doc("late-better", "86887200-4", "2026-08-09", 900),
+        enrichmentStatus: "ready" as const,
+        lines: [{
+          id: "line-better", lineNumber: 1, productCode: "CAS-01", productName: "Casco amarillo",
+          unitOfMeasure: "unidad", quantity: 9, unitPrice: 100, amount: 900,
+        }],
+      },
+    ], {
+      supplierRut: "86887200-4",
+      createdOn: "2026-08-01",
+      expectedAmount: 1000,
+      orderItems,
+      aliases: [],
+      limit: 20,
+    })
+
+    expect(result).toHaveLength(20)
+    expect(result[0]?.doc.id).toBe("late-better")
+    expect(result.some((candidate) => candidate.confidence === "unassessed")).toBe(true)
   })
 })

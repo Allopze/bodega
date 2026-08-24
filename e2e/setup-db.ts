@@ -1129,14 +1129,14 @@ async function main() {
     taxAmount: 950,
     totalAmount: 5950,
     notes: "Fixture E2E para OC recibida sin factura",
-    createdAt: now,
+    createdAt: "2026-07-01T12:00:00.000Z",
     updatedAt: now,
   })
   await db.insert(schema.purchaseOrderItems).values({
     id: "oc-item-sin-factura-e2e",
     purchaseOrderId: "oc-sin-factura-e2e",
     requestItemId: null,
-    productId: null,
+    productId: "prod-e2e",
     productNameFree: "Insumo recibido sin factura E2E",
     quantity: 5,
     unitOfMeasure: "unidad",
@@ -1390,8 +1390,8 @@ async function main() {
     codEmp: "433",
     trigger: "manual",
     status: "success",
-    rowsSeen: 3,
-    rowsInserted: 3,
+    rowsSeen: 4,
+    rowsInserted: 4,
     rowsUpdated: 0,
     importerId: "user-admin-e2e",
     startedAt: now,
@@ -1455,7 +1455,45 @@ async function main() {
       syncedAt: now,
       createdAt: now,
     },
+    {
+      // Resultado de un portal simulado para probar el ranking y el diálogo
+      // sin descargar XML/PDF ni depender de FacturaEnLínea en E2E.
+      id: "dte-e2e-candidato-oc",
+      tipoDte: "33",
+      folio: 900004,
+      rutEmisor: "76000000-0",
+      razonSocialEmisor: "Proveedor E2E",
+      fechaEmision: "2026-07-18",
+      montoNeto: 5000,
+      iva: 950,
+      montoTotal: 5950,
+      estadoSii: "aceptado",
+      codEmp: "433",
+      periodo: dtePeriodo,
+      lineEnrichmentStatus: "ready",
+      lineEnrichmentAttempts: 1,
+      lineEnrichedAt: now,
+      rawHash: "e2e-hash-candidato-oc",
+      syncRunId: "dte-sync-run-e2e",
+      syncedAt: now,
+      createdAt: now,
+    },
   ])
+  await db.insert(schema.dteDocumentItems).values({
+    id: "dte-line:dte-e2e-candidato-oc:1",
+    dteDocumentId: "dte-e2e-candidato-oc",
+    lineNumber: 1,
+    productCode: "PROD-E2E",
+    productName: "Insumo recibido sin factura E2E",
+    description: "Línea tributaria simulada para la sugerencia de OC",
+    unitOfMeasure: "unidad",
+    quantity: 5,
+    unitPrice: 1000,
+    discount: 0,
+    amount: 5000,
+    createdAt: now,
+    updatedAt: now,
+  })
 
   // Advance the OC sequence past the fixture code (OC-2026-0001) so the
   // first real app call gets OC-2026-0002 and doesn't collide.

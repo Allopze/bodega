@@ -2,7 +2,8 @@
 
 import * as React from "react"
 import { useActionState } from "react"
-import { Trash, FilePdf, Warning, Plus, X, Eye } from "@phosphor-icons/react"
+import { Trash, FilePdf, Warning, Plus, X, Eye, ArrowsClockwise } from "@phosphor-icons/react"
+import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
 import { INITIAL_STATE } from "@/components/admin/form-state"
 import { SubmitButton } from "@/components/admin/submit-button"
@@ -12,9 +13,11 @@ import { Input } from "@/components/ui/input"
 import { OptionSelect } from "@/components/ui/option-select"
 import { FileInput } from "@/components/ui/file-input"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { formatCLP, formatDate } from "@/lib/utils"
+import { formatCLP, formatDate, formatDateTime } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import { areEquivalentUnits, matchInvoiceItemsToPurchaseOrderItems } from "@/lib/services/purchasing-module/invoice-item-matching"
 import { useOperation } from "@/lib/hooks/use-operation"
@@ -23,6 +26,7 @@ import { InvoiceReconciliationCard } from "./invoice-reconciliation-card"
 import { addInvoiceAction, deleteInvoiceAction } from "../invoice-actions"
 import { attachDteAsInvoice } from "../actions/dte-use-invoice"
 import { dteTipoLabel } from "@/lib/services/dte-portal/labels"
+import type { DteCandidateConfidence, DteCandidateMatchType } from "@/lib/services/purchasing-module/dte-candidates"
 
 /**
  * DTE del proveedor de esta OC que aún no cuelga de ninguna factura.
@@ -41,10 +45,41 @@ export interface DteCandidate {
    * siempre — pero es una señal, no un filtro: la lista igual muestra los demás.
    */
   amountMatches: boolean
+  confidence: DteCandidateConfidence
+  enrichmentStatus: "pending" | "ready" | "failed"
+  lineEnrichedAt: string | null
+  lines: Array<{
+    id: string
+    lineNumber: number
+    productCode: string | null
+    productName: string
+    unitOfMeasure: string | null
+    quantity: number
+    unitPrice: number
+    amount: number
+  }>
+  proposedLinks: Array<{
+    dteItemId: string
+    purchaseOrderItemId: string | null
+    matchType: DteCandidateMatchType
+    quantityStatus: "exact" | "under" | "over" | "not_evaluable"
+  }>
+  explanation: {
+    totalLines: number
+    matchedLines: number
+    ambiguousLines: number
+    unitMismatches: number
+    quantityExactLines: number
+    quantityUnderLines: number
+    quantityOverLines: number
+  }
 }
+
+const EMPTY_DTE_CANDIDATES: DteCandidate[] = []
 
 export interface OcItem {
   id: string
+  catalogProductId: string | null
   productName: string
   productCode: string | null
   unitOfMeasure: string
@@ -83,7 +118,7 @@ export function InvoicesSection({
   canUpdateCatalog,
   canAttach = canManage,
   defaultInvoiceNumber,
-  dteCandidates = [],
+  dteCandidates = EMPTY_DTE_CANDIDATES,
 }: {
   purchaseOrderId: string
   invoices: InvoiceRow[]
@@ -368,23 +403,41 @@ function AddInvoiceForm({
   const [lineItems, setLineItems] = React.useState<InvoiceLineItem[]>([])
   const [dteParsed, setDteParsed] = React.useState(false)
   const [extractionWarnings, setExtractionWarnings] = React.useState<string[]>([])
+  const [supplierRutMissing, setSupplierRutMissing] = React.useState(false)
   const invoiceNumberRef = React.useRef<HTMLInputElement>(null)
   // `createPurchaseOrderInvoice` recalcula el monto como la suma de las líneas
   // cuando la factura trae detalle, así que el formulario muestra esa misma
   // suma. El total declarado en el documento sólo se usa si la extracción no
   // produjo líneas; si no, el campo mostraría un número que la base no guarda.
-  const [extractedTotal, setExtractedTotal] = React.useState<number | null>(null)
   // El monto necesita estado propio: cuando la extracción trae total pero no
   // líneas, el campo llevaba `value` sin `onChange` y React lo volvía inmutable,
   // justo en el caso en que el propio flujo pide "corrige los montos".
   const [amount, setAmount] = React.useState("")
-  React.useEffect(() => {
-    setAmount(extractedTotal != null ? String(extractedTotal) : "")
-  }, [extractedTotal])
   // Estado controlado en vez de ref imperativo: DatePicker guarda el valor en
   // React, así que form.reset() del navegador no lo limpiaría solo.
   const [issueDate, setIssueDate] = React.useState("")
   const dteOperation = useOperation()
+  const router = useRouter()
+  const [refreshPending, startRefresh] = React.useTransition()
+  const [refreshMessage, setRefreshMessage] = React.useState("")
+  const lastRefreshAt = React.useRef<number | null>(null)
+  const [selectedDte, setSelectedDte] = React.useState<DteCandidate | null>(null)
+  const [dteResolutions, setDteResolutions] = React.useState<Record<string, { purchaseOrderItemId: string | null; rememberAlias: boolean }>>({})
+
+  const refreshCandidates = React.useCallback((source: "button" | "focus") => {
+    lastRefreshAt.current = Date.now()
+    setRefreshMessage(source === "button" ? "Actualizando sugerencias…" : "Revisando nuevos DTE…")
+    startRefresh(() => router.refresh())
+  }, [router])
+
+  React.useEffect(() => {
+    lastRefreshAt.current = Date.now()
+    function handleFocus() {
+      if (lastRefreshAt.current !== null && Date.now() - lastRefreshAt.current >= 60_000) refreshCandidates("focus")
+    }
+    window.addEventListener("focus", handleFocus)
+    return () => window.removeEventListener("focus", handleFocus)
+  }, [refreshCandidates])
 
   React.useEffect(() => {
     if (state.ok && state.message) {
@@ -393,9 +446,9 @@ function AddInvoiceForm({
       setIssueDate("")
       setAmount("")
       setLineItems([])
-      setExtractedTotal(null)
       setDteParsed(false)
       setExtractionWarnings([])
+      setSupplierRutMissing(false)
     } else if (!state.ok && state.message && "fieldErrors" in state) {
       toast.error(state.message)
     }
@@ -446,8 +499,9 @@ function AddInvoiceForm({
   async function handleFileChange(file: File | null) {
     if (!file) {
       setDteParsed(false)
-      setExtractedTotal(null)
+      setAmount("")
       setExtractionWarnings([])
+      setSupplierRutMissing(false)
       return
     }
 
@@ -512,6 +566,7 @@ function AddInvoiceForm({
       invoiceNumber?: string | null
       issueDate?: string | null
       totalAmount?: number | null
+      supplierRut?: string | null
       items?: Array<{
         productName: string
         productCode: string | null
@@ -525,12 +580,13 @@ function AddInvoiceForm({
     warnings: string[]
   }) {
     setExtractionWarnings(warnings)
+    setSupplierRutMissing(!data.supplierRut?.trim())
 
     // Auto-fill form fields
     if (data.invoiceNumber && invoiceNumberRef.current) {
       invoiceNumberRef.current.value = data.invoiceNumber
     }
-    setExtractedTotal(typeof data.totalAmount === "number" ? data.totalAmount : null)
+    setAmount(typeof data.totalAmount === "number" ? String(data.totalAmount) : "")
     if (data.issueDate) {
       setIssueDate(data.issueDate)
     }
@@ -572,13 +628,32 @@ function AddInvoiceForm({
     }
   }
 
-  function handleUseDte(dteDocumentId: string, folio: number) {
+  function openDteResolution(doc: DteCandidate) {
+    setSelectedDte(doc)
+    setDteResolutions(Object.fromEntries(doc.lines.map((line) => {
+      const proposed = doc.proposedLinks.find((link) => link.dteItemId === line.id)
+      return [line.id, {
+        purchaseOrderItemId: proposed?.purchaseOrderItemId ?? null,
+        rememberAlias: false,
+      }]
+    })))
+  }
+
+  function handleUseDte(doc: DteCandidate) {
+    const lineResolutions = doc.lines.length > 0
+      ? doc.lines.map((line) => ({
+          dteDocumentItemId: line.id,
+          purchaseOrderItemId: dteResolutions[line.id]?.purchaseOrderItemId ?? null,
+          rememberAlias: dteResolutions[line.id]?.rememberAlias ?? false,
+        }))
+      : undefined
     dteOperation.run(async () => {
-      const result = await attachDteAsInvoice({ purchaseOrderId, dteDocumentId })
+      const result = await attachDteAsInvoice({ purchaseOrderId, dteDocumentId: doc.id, lineResolutions })
       if (!result.ok) toast.error(result.message)
       return result
     }, () => {
-      toast.success(`Factura ${folio} adjuntada correctamente`)
+      setSelectedDte(null)
+      toast.success(`Factura ${doc.folio} adjuntada correctamente`)
     })
   }
 
@@ -588,6 +663,9 @@ function AddInvoiceForm({
     return sum + qty * price
   }, 0)
   const unresolvedLineCount = lineItems.filter((item) => item.resolution === "needs_review").length
+  const lastCandidateAnalysis = dteCandidates
+    .flatMap((candidate) => candidate.lineEnrichedAt ? [candidate.lineEnrichedAt] : [])
+    .sort((left, right) => right.localeCompare(left))[0]
 
   return (
     <form
@@ -609,27 +687,61 @@ function AddInvoiceForm({
           está en la plataforma, bajarlo del portal para volver a subirlo es
           trabajo que la máquina ya hizo. Subir el archivo sigue disponible
           abajo para lo que no llega por el portal. */}
-      {dteCandidates.length > 0 && (
-        <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface-2) p-3">
-          <p className="text-xs font-medium text-(--color-text)">
-            DTE de este proveedor sin registrar ({dteCandidates.length})
+      <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface-2) p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-medium text-(--color-text)">
+              DTE de este proveedor sin registrar ({dteCandidates.length})
+            </p>
+            <Button type="button" variant="ghost" size="sm" loading={refreshPending} onClick={() => refreshCandidates("button")}>
+              <ArrowsClockwise size={14} aria-hidden />
+              Actualizar sugerencias
+            </Button>
+          </div>
+          <p aria-live="polite" className="mt-0.5 min-h-4 text-[11px] text-(--color-text-subtle)">
+            {(refreshMessage
+              ? refreshPending
+                ? refreshMessage
+                : `Sugerencias actualizadas: ${dteCandidates.length} candidato(s).`
+              : lastCandidateAnalysis
+              ? `Último análisis: ${formatDateTime(lastCandidateAnalysis)}. Se actualizan al volver a la pestaña después de 60 segundos.`
+              : "Pendientes de análisis. Se actualizan al volver a esta pestaña después de 60 segundos.")}
           </p>
           <p className="mt-0.5 text-xs text-(--color-text-subtle)">
             Llegaron por el portal tributario desde que se creó esta orden. Usa uno para registrar la
             factura y adjuntar su PDF sin volver a subir el archivo.
           </p>
-          <ul className="mt-2 space-y-1">
-            {dteCandidates.map((doc) => (
+          {dteCandidates.length > 0 ? (
+            <ul className="mt-2 space-y-1">
+              {dteCandidates.map((doc) => (
               <DteCandidateRow
                 key={doc.id}
                 doc={doc}
                 usePending={dteOperation.pending}
-                onUse={() => handleUseDte(doc.id, doc.folio)}
+                onUse={() => openDteResolution(doc)}
               />
-            ))}
-          </ul>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-xs text-(--color-text-subtle)">No hay DTE elegibles sin registrar para esta orden.</p>
+          )}
         </div>
-      )}
+
+      <DteResolutionDialog
+        doc={selectedDte}
+        ocItems={ocItems}
+        resolutions={dteResolutions}
+        onResolutionChange={(lineId, purchaseOrderItemId) => setDteResolutions((current) => ({
+          ...current,
+          [lineId]: { purchaseOrderItemId, rememberAlias: false },
+        }))}
+        onRememberChange={(lineId, rememberAlias) => setDteResolutions((current) => ({
+          ...current,
+          [lineId]: { purchaseOrderItemId: current[lineId]?.purchaseOrderItemId ?? null, rememberAlias },
+        }))}
+        onOpenChange={(open) => { if (!open && !dteOperation.pending) setSelectedDte(null) }}
+        onConfirm={() => { if (selectedDte) handleUseDte(selectedDte) }}
+        pending={dteOperation.pending}
+      />
 
       {/* El archivo va primero porque es lo que rellena todo lo de abajo (DTE/OCR):
           pidiéndolo al final, el operador tipeaba a mano datos que el documento
@@ -668,6 +780,17 @@ function AddInvoiceForm({
           <ul className="mt-0.5 list-disc pl-4">
             {extractionWarnings.map((warning) => <li key={warning}>{warning}</li>)}
           </ul>
+        </div>
+      )}
+
+      {supplierRutMissing && !extracting && (
+        <div role="alert" className="rounded border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-2 py-2 text-[11px] text-[var(--color-warning-ink)]">
+          <p className="font-medium">No se pudo verificar el RUT del proveedor desde el archivo.</p>
+          <Checkbox
+            id="confirm-unverified-supplier"
+            name="confirmUnverifiedSupplier"
+            label="Adjuntar de todas formas y mantener la conciliación en revisión"
+          />
         </div>
       )}
 
@@ -838,6 +961,114 @@ function AddInvoiceForm({
 
 /* ── DTE candidate row ──────────────────────────────────────────────────────── */
 
+function DteResolutionDialog({
+  doc,
+  ocItems,
+  resolutions,
+  onResolutionChange,
+  onRememberChange,
+  onOpenChange,
+  onConfirm,
+  pending,
+}: {
+  doc: DteCandidate | null
+  ocItems: OcItem[]
+  resolutions: Record<string, { purchaseOrderItemId: string | null; rememberAlias: boolean }>
+  onResolutionChange: (lineId: string, purchaseOrderItemId: string | null) => void
+  onRememberChange: (lineId: string, rememberAlias: boolean) => void
+  onOpenChange: (open: boolean) => void
+  onConfirm: () => void
+  pending: boolean
+}) {
+  return (
+    <Dialog open={Boolean(doc)} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Revisar asociaciones del DTE</DialogTitle>
+          <DialogDescription>
+            {doc
+              ? `${dteTipoLabel(doc.tipoDte)} N° ${doc.folio}. Confirma cada vínculo; puedes dejar líneas explícitamente sin asociar.`
+              : "Revisa las líneas del documento."}
+          </DialogDescription>
+        </DialogHeader>
+
+        {doc?.lines.length ? (
+          <ul className="space-y-3">
+            {doc.lines.map((line) => {
+              const proposed = doc.proposedLinks.find((link) => link.dteItemId === line.id)
+              const resolution = resolutions[line.id]
+              const selectedOc = ocItems.find((item) => item.id === resolution?.purchaseOrderItemId)
+              return (
+                <li key={line.id} className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface-2) p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-semibold text-(--color-text)">{line.productName}</p>
+                      <p className="mt-0.5 text-[11px] text-(--color-text-subtle)">
+                        Línea {line.lineNumber} · {line.quantity} {line.unitOfMeasure ?? "sin unidad"} · {formatCLP(line.amount)}
+                        {line.productCode ? ` · Código ${line.productCode}` : ""}
+                      </p>
+                    </div>
+                    <Badge variant={proposed?.matchType === "supplier_alias" ? "success" : proposed?.matchType === "unit_mismatch" || proposed?.matchType === "ambiguous" ? "warning" : "default"}>
+                      {dteMatchLabel(proposed?.matchType ?? "none")}
+                    </Badge>
+                  </div>
+                  <div className="mt-2">
+                    <OptionSelect
+                      aria-label={`Asociar línea DTE ${line.lineNumber}`}
+                      value={resolution?.purchaseOrderItemId ?? "__unlinked"}
+                      onValueChange={(value) => onResolutionChange(line.id, value === "__unlinked" ? null : value)}
+                      options={[
+                        ...ocItems.map((item) => ({
+                          value: item.id,
+                          label: `${item.productName} · ${item.quantity} ${item.unitOfMeasure}`,
+                        })),
+                        { value: "__unlinked", label: "Dejar explícitamente sin vínculo" },
+                      ]}
+                    />
+                  </div>
+                  <div className="mt-2">
+                    <Checkbox
+                      id={`remember-alias-${line.id}`}
+                      checked={resolution?.rememberAlias ?? false}
+                      disabled={!selectedOc?.catalogProductId}
+                      onChange={(event) => onRememberChange(line.id, event.target.checked)}
+                      label={selectedOc?.catalogProductId
+                        ? "Recordar esta correspondencia para este proveedor"
+                        : "Recordar correspondencia (requiere un producto de catálogo)"}
+                    />
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        ) : (
+          <div className="rounded-(--radius-lg) border border-(--color-warning-line) bg-(--color-warning-tint) p-3 text-xs text-(--color-warning-ink)">
+            Este DTE aún está pendiente de análisis de líneas. El servidor volverá a verificar el XML antes de adjuntarlo.
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button type="button" variant="ghost" disabled={pending} onClick={() => onOpenChange(false)}>Cancelar</Button>
+          <Button type="button" variant="primary" loading={pending} disabled={pending} onClick={onConfirm}>
+            {pending ? "Adjuntando…" : "Confirmar y usar DTE"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function dteMatchLabel(matchType: DteCandidateMatchType) {
+  return {
+    supplier_alias: "Alias confirmado",
+    sku: "SKU exacto",
+    name: "Nombre coincidente",
+    ambiguous: "Coincidencia ambigua",
+    unit_mismatch: "Unidad incompatible",
+    none: "Sin coincidencia",
+  }[matchType]
+}
+
 /**
  * Un DTE del proveedor todavía sin registrar. "Ver factura" abre el PDF real
  * desde una ruta autenticada; no reemplaza el documento con el detalle XML.
@@ -865,6 +1096,12 @@ function DteCandidateRow({
           {doc.amountMatches && (
             <Badge variant="success" className="ml-2">Calza con el saldo</Badge>
           )}
+          <Badge
+            variant={doc.confidence === "high" ? "success" : doc.confidence === "medium" ? "info" : doc.confidence === "low" ? "warning" : "default"}
+            className="ml-2"
+          >
+            {doc.confidence === "high" ? "Confianza alta" : doc.confidence === "medium" ? "Confianza media" : doc.confidence === "low" ? "Confianza baja" : "Pendiente de análisis"}
+          </Badge>
         </span>
         <div className="flex items-center gap-1.5">
           <Button asChild variant="ghost" size="sm">
@@ -889,6 +1126,12 @@ function DteCandidateRow({
           </Button>
         </div>
       </div>
+      <p className="mt-1 text-[11px] text-(--color-text-subtle)">
+        Proveedor verificado · {doc.explanation.matchedLines}/{doc.explanation.totalLines} líneas vinculadas
+        {doc.explanation.unitMismatches > 0 ? ` · ${doc.explanation.unitMismatches} unidad(es) incompatible(s)` : ""}
+        {doc.explanation.quantityOverLines > 0 ? ` · ${doc.explanation.quantityOverLines} cantidad(es) excedida(s)` : ""}
+        {doc.explanation.quantityUnderLines > 0 ? ` · ${doc.explanation.quantityUnderLines} línea(s) parcial(es)` : ""}
+      </p>
     </li>
   )
 }

@@ -234,4 +234,53 @@ describe("reconcileInvoiceEvidence", () => {
     expect(changed.currentReview).toBeNull()
     expect(changed.previousReview?.id).toBe("review-1")
   })
+
+  it("keeps over-billing against accepted supplier delivery in review even with a generic acceptance", () => {
+    const input = {
+      totalOC: 100,
+      orderItems: [{ ...orderItems[0]!, supplierReceivedQuantity: 1 }],
+      invoices: [{
+        id: "inv-1", invoiceNumber: "123", amount: 100,
+        items: [{ id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: "unidad", quantity: 2, subtotal: 100 }],
+      }],
+    }
+    const initial = reconcileInvoiceEvidence(input)
+    const reviewed = reconcileInvoiceEvidence({
+      ...input,
+      reviews: [{ id: "review-1", fingerprint: initial.fingerprint, reason: "Diferencia de precio respaldada documentalmente.", createdAt: "2026-08-24T10:00:00.000Z" }],
+    })
+
+    expect(initial.issues).toContainEqual(expect.objectContaining({ code: "quantity_over_received", expected: 1, actual: 2 }))
+    expect(reviewed.status).toBe("needs_review")
+  })
+
+  it("does not invalidate a prior documentary fingerprint when normal reception advances", () => {
+    const base = {
+      totalOC: 100,
+      invoices: [{
+        id: "inv-1", invoiceNumber: "123", amount: 100,
+        items: [{ id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: "unidad", quantity: 2, subtotal: 100 }],
+      }],
+    }
+    const before = reconcileInvoiceEvidence({ ...base, orderItems: [{ ...orderItems[0]!, supplierReceivedQuantity: 0 }] })
+    const after = reconcileInvoiceEvidence({ ...base, orderItems: [{ ...orderItems[0]!, supplierReceivedQuantity: 2 }] })
+
+    expect(after.fingerprint).toBe(before.fingerprint)
+    expect(before.receipt.status).toBe("over_invoiced")
+    expect(after.receipt.status).toBe("covered")
+  })
+
+  it("keeps a manual invoice without extracted supplier RUT auditable", () => {
+    const result = reconcileInvoiceEvidence({
+      totalOC: 100,
+      orderItems: [{ ...orderItems[0]!, supplierReceivedQuantity: 2 }],
+      invoices: [{
+        id: "inv-1", invoiceNumber: "123", amount: 100, supplierIdentityStatus: "unverified",
+        items: [{ id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: "unidad", quantity: 2, subtotal: 100 }],
+      }],
+    })
+
+    expect(result.status).toBe("needs_review")
+    expect(result.issues).toContainEqual(expect.objectContaining({ code: "supplier_unverified", invoiceId: "inv-1" }))
+  })
 })

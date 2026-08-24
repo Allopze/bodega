@@ -1,0 +1,1 @@
+ALTER TABLE "purchase_order_invoice_items" ADD CONSTRAINT "purchase_order_invoice_items_source_dte_document_item_id_dte_document_items_id_fk" FOREIGN KEY ("source_dte_document_item_id") REFERENCES "public"."dte_document_items"("id") ON DELETE set null ON UPDATE no action;

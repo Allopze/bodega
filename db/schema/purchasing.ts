@@ -5,6 +5,7 @@ import { worksites, suppliers } from "./worksites"
 import { products } from "./products"
 import { purchaseRequestItems } from "./requests"
 import { costCenters } from "./cost-centers"
+import { dteDocumentItems } from "./purchase-invoice-matching"
 
 /* ── Purchase Order States ───────────────────────────────────────────────── */
 // draft | sent
@@ -166,10 +167,20 @@ export const purchaseOrderInvoices = pgTable("purchase_order_invoices", {
   filePath:        text("file_path").notNull(),           // relative: "storage/purchase-orders/<name>"
   fileSize:        integer("file_size"),
   mimeType:        text("mime_type"),
+  /** Identidad del emisor leída desde el documento, no desde el formulario. */
+  documentSupplierRut: text("document_supplier_rut"),
+  supplierIdentityStatus: text("supplier_identity_status").notNull().default("unknown"),
+  supplierIdentitySource: text("supplier_identity_source").notNull().default("legacy"),
   uploadedBy:      text("uploaded_by").notNull().references(() => users.id),
   uploadedAt:      timestamp("uploaded_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   check("purchase_order_invoices_amount_non_negative", sql`${table.amount} >= 0`),
+  check("purchase_order_invoices_supplier_identity_status_valid", sql`
+    ${table.supplierIdentityStatus} IN ('unknown', 'verified', 'unverified')
+  `),
+  check("purchase_order_invoices_supplier_identity_source_valid", sql`
+    ${table.supplierIdentitySource} IN ('legacy', 'dte_xml', 'pdf_text', 'pdf_text_ocr', 'ocr', 'manual')
+  `),
   // A folio is unique at least within its OC. The service also checks this
   // before insert for an operator-friendly error; this index closes races.
   uniqueIndex("purchase_order_invoices_order_number_unique").on(table.purchaseOrderId, table.invoiceNumber),
@@ -182,6 +193,7 @@ export const purchaseOrderInvoiceItems = pgTable("purchase_order_invoice_items",
   id:                  text("id").primaryKey(),
   invoiceId:           text("invoice_id").notNull().references(() => purchaseOrderInvoices.id, { onDelete: "cascade" }),
   purchaseOrderItemId: text("purchase_order_item_id").references(() => purchaseOrderItems.id),
+  sourceDteDocumentItemId: text("source_dte_document_item_id").references(() => dteDocumentItems.id, { onDelete: "set null" }),
   productName:         text("product_name").notNull(),
   productCode:         text("product_code"),
   // Unidad declarada por el documento. Null significa que el comprobante no la
@@ -195,6 +207,7 @@ export const purchaseOrderInvoiceItems = pgTable("purchase_order_invoice_items",
   check("po_invoice_items_amounts_non_negative", sql`${table.unitPrice} >= 0 AND ${table.subtotal} >= 0`),
   index("po_invoice_items_invoice_idx").on(table.invoiceId),
   index("po_invoice_items_oc_item_idx").on(table.purchaseOrderItemId),
+  index("po_invoice_items_source_dte_item_idx").on(table.sourceDteDocumentItemId),
 ])
 
 /* ── Purchase Order Invoice Reconciliation Reviews ───────────────────────── */

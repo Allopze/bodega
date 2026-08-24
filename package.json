@@ -16,6 +16,8 @@
     "verify:epp-lots": "tsx scripts/verify-epp-lot-reconciliation.ts",
     "db:preflight-invoice-reconciliation": "tsx --env-file-if-exists=.env.local scripts/preflight-purchase-invoice-reconciliation.ts",
     "db:backfill-invoice-reconciliation": "tsx --env-file-if-exists=.env.local scripts/backfill-purchase-invoice-reconciliation.ts",
+    "db:preflight-dte-enrichment": "tsx --env-file-if-exists=.env.local scripts/preflight-dte-line-enrichment.ts",
+    "db:enrich-purchase-dtes": "tsx --env-file-if-exists=.env.local scripts/enrich-historical-purchase-dtes.ts",
     "check:drizzle-aliases": "bash scripts/check-drizzle-aliases.sh",
     "check:bundle-budget": "tsx scripts/check-bundle-budget.ts",
     "check:mistyped-requests": "tsx scripts/check-mistyped-requests.ts",

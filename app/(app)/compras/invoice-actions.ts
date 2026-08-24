@@ -13,6 +13,7 @@ import { logger } from "@/lib/logger"
 import { safeActionMessage as dbErrMsg } from "@/lib/action-error"
 import { assertOrderAccess } from "./actions.helpers"
 import { persistInvoiceFile, removeInvoiceAttachment } from "./invoice-attachments"
+import { extractInvoiceData } from "@/lib/services/purchasing-module/invoice-extractor"
 
 // ── Add Invoice ───────────────────────────────────────────────────────────────
 
@@ -105,6 +106,36 @@ export async function addInvoiceAction(
     return { ok: false, message: "El archivo de la factura es obligatorio" }
   }
 
+  let extracted: Awaited<ReturnType<typeof extractInvoiceData>>
+  try {
+    extracted = await extractInvoiceData(
+      fileResult.attachment.verifiedBuffer,
+      fileResult.attachment.attachment.mimeType,
+      fileResult.attachment.attachment.fileName,
+    )
+  } catch {
+    await removeInvoiceAttachment(fileResult.attachment.absolutePath)
+    return { ok: false, message: "No se pudo verificar la identidad del proveedor desde el archivo" }
+  }
+  const documentSupplierRut = extracted.data?.supplierRut?.trim() || null
+  const supplierIdentityStatus = documentSupplierRut ? "verified" as const : "unverified" as const
+  if (!documentSupplierRut && formData.get("confirmUnverifiedSupplier") !== "on") {
+    await removeInvoiceAttachment(fileResult.attachment.absolutePath)
+    return {
+      ok: false,
+      message: "No se pudo extraer el RUT del proveedor. Confirma explícitamente que la factura quedará en revisión.",
+    }
+  }
+  const supplierIdentitySource = extracted.method === "dte_xml"
+    ? "dte_xml" as const
+    : extracted.method === "pdf_text"
+      ? "pdf_text" as const
+      : extracted.method === "pdf_text_ocr"
+        ? "pdf_text_ocr" as const
+        : extracted.method === "ocr"
+          ? "ocr" as const
+          : "manual" as const
+
   try {
     await createPurchaseOrderInvoice({
       purchaseOrderId,
@@ -118,6 +149,11 @@ export async function addInvoiceAction(
       uploadedBy: session.user.id,
       userEmail:  session.user.email ?? undefined,
       items: items.length > 0 ? items : undefined,
+      supplierIdentity: {
+        documentSupplierRut,
+        status: supplierIdentityStatus,
+        source: supplierIdentitySource,
+      },
     })
     // La cola operacional tiene el pendiente "Adjuntar factura": sin esto el
     // usuario lo resolvía y seguía viéndolo (con su badge) hasta que otra

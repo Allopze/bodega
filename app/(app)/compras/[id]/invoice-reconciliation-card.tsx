@@ -16,7 +16,7 @@ import { toast } from "@/lib/toast"
 import { formatCLP, formatDateTime } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import type { InvoiceReconciliationEvidence, InvoiceReconciliationIssueCode } from "@/lib/services/purchasing-module/invoice-reconciliation"
-import { acceptInvoiceReconciliationAction } from "../actions"
+import { acceptInvoiceReconciliationAction } from "../actions/invoice-reconciliation"
 import type { InvoiceRow } from "./invoices-section"
 
 const STATUS = {
@@ -35,6 +35,8 @@ const ISSUE_LABELS: Record<InvoiceReconciliationIssueCode, string> = {
   invoice_without_lines: "Factura sin líneas documentales",
   quantity_under: "Cantidad facturada menor que la OC",
   quantity_over: "Cantidad facturada mayor que la OC",
+  quantity_over_received: "Cantidad facturada mayor que la entrega aceptada del proveedor",
+  supplier_unverified: "RUT del proveedor no verificado en factura manual",
   total_mismatch: "Total facturado distinto del total OC",
 }
 type CatalogUpdateSnapshot = {
@@ -101,6 +103,7 @@ export function InvoiceReconciliationCard({
   const status = STATUS[reconciliation.status]
   const appliedCatalogUpdates = catalogUpdatesFromEvidence(reconciliation.currentReview?.evidence)
     .filter((update) => update.changed)
+  const receiptBlocksAcceptance = reconciliation.issues.some((issue) => issue.code === "quantity_over_received")
 
   return (
     <div className="mb-4 rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface-2) p-3">
@@ -108,7 +111,7 @@ export function InvoiceReconciliationCard({
         <div>
           <h3 className="text-sm font-semibold text-(--color-text)">Conciliación de facturación</h3>
           <p className="mt-0.5 text-xs text-(--color-text-subtle)">
-            Compara documento, cantidades, unidades y precios efectivos netos. Tolerancia monetaria: $1.
+            Compara OC, entrega aceptada del proveedor y factura, además de unidades y precios efectivos netos. Tolerancia monetaria: $1.
           </p>
         </div>
         <Badge variant={status.variant}>{status.label}</Badge>
@@ -120,7 +123,7 @@ export function InvoiceReconciliationCard({
             <thead className="text-(--color-text-subtle)">
               <tr className="border-b border-(--color-border)">
                 <th className="px-2 py-2 font-medium">Producto</th>
-                <th className="px-2 py-2 text-right font-medium">Cantidad OC / factura</th>
+                <th className="px-2 py-2 text-right font-medium">Cantidad OC / aceptada / factura</th>
                 <th className="px-2 py-2 text-right font-medium">Precio OC</th>
                 <th className="px-2 py-2 text-right font-medium">Precio factura</th>
                 <th className="px-2 py-2 text-right font-medium">Diferencia</th>
@@ -131,7 +134,9 @@ export function InvoiceReconciliationCard({
               {reconciliation.items.map((item) => (
                 <tr key={item.ocItemId}>
                   <td className="px-2 py-2 font-medium text-(--color-text)">{item.productName}</td>
-                  <td className="px-2 py-2 text-right font-mono tabular-nums">{item.ocQuantity} / {item.invoicedQty}</td>
+                  <td className={`px-2 py-2 text-right font-mono tabular-nums ${item.receiptStatus === "over_invoiced" ? "text-(--color-warning-ink)" : ""}`}>
+                    {item.ocQuantity} / {item.supplierReceivedQty} / {item.invoicedQty}
+                  </td>
                   <td className="px-2 py-2 text-right font-mono tabular-nums">{item.ocEffectiveUnitPrice === null ? "Pendiente" : formatCLP(item.ocEffectiveUnitPrice)}</td>
                   <td className="px-2 py-2 text-right font-mono tabular-nums">{item.invoiceEffectiveUnitPrice === null ? "No evaluable" : formatCLP(item.invoiceEffectiveUnitPrice)}</td>
                   <td className={`px-2 py-2 text-right font-mono tabular-nums ${item.priceDifference && Math.abs(item.priceDifference) > 1 ? "text-(--color-warning-ink)" : "text-(--color-text-muted)"}`}>
@@ -171,7 +176,13 @@ export function InvoiceReconciliationCard({
         <p className="mt-3 flex items-center gap-1.5 text-xs text-(--color-warning-ink)"><ClockCounterClockwise size={14} aria-hidden />La revisión anterior quedó desactualizada porque cambió la evidencia.</p>
       )}
 
-      {canAccept && reconciliation.status === "needs_review" && (
+      {receiptBlocksAcceptance && (
+        <p className="mt-3 rounded-(--radius-lg) border border-(--color-warning-line) bg-(--color-warning-tint) px-3 py-2 text-xs text-(--color-warning-ink)">
+          Esta diferencia no puede cerrarse con la aceptación genérica: primero debe cuadrarse la cantidad aceptada con la evidencia documental correspondiente.
+        </p>
+      )}
+
+      {canAccept && reconciliation.status === "needs_review" && !receiptBlocksAcceptance && (
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button className="mt-3" size="sm" type="button">Aceptar diferencias</Button>

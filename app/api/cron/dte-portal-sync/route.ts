@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { revalidatePath } from "next/cache"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
@@ -55,6 +56,7 @@ async function runRecoverySweep(
         importerEmail: config.importerEmail,
         correlationId,
       })
+      if (result.status === "success" || result.status === "partial") safelyRevalidatePurchasing()
       sweep.push({ period: periodo, status: result.status, rowsInserted: result.rowsInserted })
     } catch (error) {
       const failure = classifyDteFailure(error)
@@ -138,6 +140,7 @@ export async function GET(request: NextRequest) {
         importerEmail: config.importerEmail,
         correlationId,
       })
+      if (result.status === "success" || result.status === "partial") safelyRevalidatePurchasing()
       results.push({
         period: periodo,
         status: result.status,
@@ -172,6 +175,10 @@ export async function GET(request: NextRequest) {
           : result.status),
   })
   return response(contract, correlationId, results, sweep)
+}
+
+function safelyRevalidatePurchasing() {
+  try { revalidatePath("/compras") } catch { /* la corrida ya es durable; caché es best-effort */ }
 }
 
 function response(

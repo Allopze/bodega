@@ -4,6 +4,7 @@ import { DtePortalClient } from "@/lib/services/dte-portal/client"
 import { buildDtePortalClientConfig, isDteSyncEnabled } from "@/lib/services/dte-portal/config"
 import { classifyDteFailure } from "@/lib/services/dte-portal/failure"
 import { assertSyncablePeriodo, syncDteDocuments } from "@/lib/services/dte-portal/sync"
+import { revalidatePath } from "next/cache"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -64,6 +65,7 @@ export async function POST(request: NextRequest) {
       force: body.force,
       importerId: session.user.id,
     })
+    if (result.status === "success" || result.status === "partial") revalidatePath("/compras")
 
     return NextResponse.json({
       ok: true,

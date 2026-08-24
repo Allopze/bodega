@@ -995,6 +995,49 @@ describe("Purchasing service — edge cases", () => {
       })).rejects.toThrow("no pertenece a esta OC")
     })
 
+    it("blocks a manual invoice whose extracted RUT differs and audits an absent RUT as unverified", async () => {
+      const targetOrder = await inMemoryDb.query.purchaseOrders.findFirst({
+        where: eq(schema.purchaseOrders.status, "sent"),
+      })
+      expect(targetOrder).toBeDefined()
+
+      await expect(createPurchaseOrderInvoice({
+        purchaseOrderId: targetOrder!.id,
+        invoiceNumber: "FAC-RUT-DISTINTO",
+        amount: 1000,
+        fileName: "rut-distinto.pdf",
+        filePath: "/uploads/rut-distinto.pdf",
+        uploadedBy: userId,
+        supplierIdentity: {
+          documentSupplierRut: "77.777.777-7",
+          status: "verified",
+          source: "pdf_text",
+        },
+      })).rejects.toThrow("RUT de la factura no corresponde")
+
+      const invoiceId = await createPurchaseOrderInvoice({
+        purchaseOrderId: targetOrder!.id,
+        invoiceNumber: "FAC-RUT-AUSENTE",
+        amount: 1000,
+        fileName: "rut-ausente.pdf",
+        filePath: "/uploads/rut-ausente.pdf",
+        uploadedBy: userId,
+        supplierIdentity: {
+          documentSupplierRut: null,
+          status: "unverified",
+          source: "manual",
+        },
+      })
+      const invoice = await inMemoryDb.query.purchaseOrderInvoices.findFirst({
+        where: eq(schema.purchaseOrderInvoices.id, invoiceId),
+      })
+      expect(invoice).toMatchObject({
+        documentSupplierRut: null,
+        supplierIdentityStatus: "unverified",
+        supplierIdentitySource: "manual",
+      })
+    })
+
     it("throws if order does not exist", async () => {
       await expect(
         createPurchaseOrderInvoice({
@@ -1049,6 +1092,17 @@ describe("Purchasing service — edge cases", () => {
         portalRecordId: "9000001",
         rawHash: "dte-auto-invoice-1-hash",
       })
+      await inMemoryDb.insert(schema.dteDocumentItems).values({
+        id: "dte-line:dte-auto-invoice-1:1",
+        dteDocumentId: dteId,
+        lineNumber: 1,
+        productCode: "PROV-CASCO-01",
+        productName: "Casco proveedor",
+        unitOfMeasure: "UN",
+        quantity: 10,
+        unitPrice: 10000,
+        amount: 100000,
+      })
 
       const invoiceId = await createPurchaseOrderInvoiceFromDte({
         purchaseOrderId: orderId,
@@ -1070,6 +1124,7 @@ describe("Purchasing service — edge cases", () => {
           totalAmount: 119000,
         },
         items: [{
+          sourceDteDocumentItemId: "dte-line:dte-auto-invoice-1:1",
           productName: "Producto Purch",
           productCode: "P-001",
           unitOfMeasure: "UN",
@@ -1077,6 +1132,11 @@ describe("Purchasing service — edge cases", () => {
           unitPrice: 10000,
           // Neto de la línea: no debe reemplazar MntTotal ($119.000 con IVA).
           subtotal: 100000,
+        }],
+        lineResolutions: [{
+          dteDocumentItemId: "dte-line:dte-auto-invoice-1:1",
+          purchaseOrderItemId: "oc-dte-auto-item-1",
+          rememberAlias: true,
         }],
       })
 
@@ -1090,6 +1150,16 @@ describe("Purchasing service — edge cases", () => {
       expect(invoice?.amount).toBe(119000)
       expect(invoice?.items).toHaveLength(1)
       expect(invoice?.items[0]?.purchaseOrderItemId).toBeTruthy()
+      expect(invoice?.items[0]?.sourceDteDocumentItemId).toBe("dte-line:dte-auto-invoice-1:1")
+      const alias = await inMemoryDb.query.supplierProductAliases.findFirst({
+        where: eq(schema.supplierProductAliases.supplierId, "sup-purch"),
+      })
+      expect(alias).toMatchObject({
+        productId: "prod-purch",
+        supplierProductCode: "PROV-CASCO-01",
+        normalizedCode: "PROVCASCO01",
+        confirmedBy: userId,
+      })
       expect(dte?.purchaseOrderInvoiceId).toBe(invoiceId)
 
       await expect(createPurchaseOrderInvoiceFromDte({

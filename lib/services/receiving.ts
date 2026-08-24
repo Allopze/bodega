@@ -22,6 +22,7 @@ import { OFFICE_ORIGIN_LABEL, prepareDispatchGuideForOfficeReceiptTx, resolveOff
 import { notifyManyUser, notifyAfterCommit } from "./notifications"
 import { closeOrderTx } from "./purchasing-module/receiving"
 import { RECEIVABLE_ORDER_STATUSES } from "@/lib/work-queue-labels"
+import { persistPurchaseOrderInvoiceReconciliationTx } from "./purchasing-module/invoice-reconciliation-service"
 
 /* ── Types ──────────────────────────────────────────────────────────────────── */
 
@@ -314,6 +315,11 @@ export async function registerReceipt(
         { userEmail: input.userEmail },
       )
     }
+
+    // La cantidad aceptada del proveedor es un eje de conciliación. Se
+    // recalcula dentro del mismo commit para que ficha, cola y exportación no
+    // observen una recepción nueva con una proyección tributaria anterior.
+    await persistPurchaseOrderInvoiceReconciliationTx(tx, input.purchaseOrderId)
 
     await recordAudit({
       userId:     input.receivedBy,

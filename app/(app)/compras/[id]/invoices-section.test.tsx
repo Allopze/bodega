@@ -3,6 +3,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const mockAddInvoiceAction = vi.fn()
+const mockRefresh = vi.fn()
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mockRefresh }) }))
 vi.mock("../invoice-actions", () => ({
   addInvoiceAction: (...args: unknown[]) => mockAddInvoiceAction(...args),
   deleteInvoiceAction: vi.fn(),
@@ -21,9 +23,59 @@ function emptyReconciliation(totalOC = 0) {
   return reconcileInvoiceEvidence({ totalOC, orderItems: [], invoices: [] })
 }
 
+function candidate() {
+  return {
+    id: "dte-1",
+    tipoDte: "33",
+    folio: 3692684,
+    razonSocialEmisor: "Proveedor Ficticio SpA",
+    montoTotal: 119000,
+    fechaEmision: "2026-07-09",
+    amountMatches: true,
+    confidence: "unassessed" as const,
+    enrichmentStatus: "pending" as const,
+    lineEnrichedAt: null,
+    lines: [],
+    proposedLinks: [],
+    explanation: {
+      totalLines: 0,
+      matchedLines: 0,
+      ambiguousLines: 0,
+      unitMismatches: 0,
+      quantityExactLines: 0,
+      quantityUnderLines: 0,
+      quantityOverLines: 0,
+    },
+  }
+}
+
 describe("InvoicesSection", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  it("refreshes suggestions explicitly and again on focus only after sixty seconds", () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-08-24T10:00:00.000Z"))
+    render(
+      <InvoicesSection
+        purchaseOrderId="oc-1"
+        invoices={[]}
+        reconciliation={emptyReconciliation()}
+        canManage
+        canUpdateCatalog={false}
+        ocItems={[]}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: /actualizar sugerencias/i }))
+    expect(mockRefresh).toHaveBeenCalledTimes(1)
+    window.dispatchEvent(new Event("focus"))
+    expect(mockRefresh).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(60_001)
+    window.dispatchEvent(new Event("focus"))
+    expect(mockRefresh).toHaveBeenCalledTimes(2)
+    vi.useRealTimers()
   })
 
   it("does not serialise a pending OC cost as the string null when adding an invoice line", () => {
@@ -36,6 +88,7 @@ describe("InvoicesSection", () => {
         canUpdateCatalog={false}
         ocItems={[{
           id: "oc-linea-servicio",
+          catalogProductId: null,
           productName: "Calibración pendiente",
           productCode: null,
           unitOfMeasure: "servicio",
@@ -62,15 +115,7 @@ describe("InvoicesSection", () => {
         canManage
         canUpdateCatalog={false}
         ocItems={[]}
-        dteCandidates={[{
-          id: "dte-1",
-          tipoDte: "33",
-          folio: 3692684,
-          razonSocialEmisor: "Proveedor Ficticio SpA",
-          montoTotal: 119000,
-          fechaEmision: "2026-07-09",
-          amountMatches: true,
-        }]}
+        dteCandidates={[candidate()]}
       />,
     )
 
@@ -89,23 +134,17 @@ describe("InvoicesSection", () => {
         canManage
         canUpdateCatalog={false}
         ocItems={[]}
-        dteCandidates={[{
-          id: "dte-1",
-          tipoDte: "33",
-          folio: 3692684,
-          razonSocialEmisor: "Proveedor Ficticio SpA",
-          montoTotal: 119000,
-          fechaEmision: "2026-07-09",
-          amountMatches: true,
-        }]}
+        dteCandidates={[candidate()]}
       />,
     )
 
     fireEvent.click(screen.getByRole("button", { name: /usar este dte/i }))
+    fireEvent.click(screen.getByRole("button", { name: /confirmar y usar dte/i }))
 
     await waitFor(() => expect(mockUseDteAsInvoice).toHaveBeenCalledWith({
       purchaseOrderId: "oc-1",
       dteDocumentId: "dte-1",
+      lineResolutions: undefined,
     }))
   })
 
@@ -119,15 +158,7 @@ describe("InvoicesSection", () => {
         canManage
         canUpdateCatalog={false}
         ocItems={[]}
-        dteCandidates={[{
-          id: "dte-1",
-          tipoDte: "33",
-          folio: 3692684,
-          razonSocialEmisor: "Proveedor Ficticio SpA",
-          montoTotal: 119000,
-          fechaEmision: "2026-07-09",
-          amountMatches: true,
-        }]}
+        dteCandidates={[candidate()]}
       />,
     )
 
@@ -146,6 +177,7 @@ describe("InvoicesSection", () => {
     form!.addEventListener("submit", onSubmit)
 
     fireEvent.click(useDteButton)
+    fireEvent.click(screen.getByRole("button", { name: /confirmar y usar dte/i }))
 
     await waitFor(() => expect(mockUseDteAsInvoice).toHaveBeenCalledOnce())
     expect(useDteButton).toHaveAttribute("type", "button")

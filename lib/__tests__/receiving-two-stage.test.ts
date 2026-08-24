@@ -40,7 +40,7 @@ vi.mock("@/lib/services/notifications", async (importOriginal) => ({
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 import { registerReceipt } from "@/lib/services/receiving"
-import { closeOrder } from "@/lib/services/purchasing"
+import { closeOrder, createPurchaseOrderInvoice } from "@/lib/services/purchasing"
 import { getOcReconciliation } from "@/lib/services/oc-reconciliation"
 import { notifyManyUser } from "@/lib/services/notifications"
 
@@ -101,6 +101,40 @@ async function status(orderId: string): Promise<string> {
 }
 
 describe("two-stage receiving rollup", () => {
+  it("recalculates three-way reconciliation when accepted supplier delivery advances", async () => {
+    const { orderId, itemIds } = await makeOrder([2])
+    await inMemoryDb.update(schema.purchaseOrderItems)
+      .set({ unitPrice: 0, subtotal: 0 })
+      .where(eq(schema.purchaseOrderItems.id, itemIds[0]!))
+    await createPurchaseOrderInvoice({
+      purchaseOrderId: orderId,
+      invoiceNumber: `F-${orderId}`,
+      amount: 0,
+      fileName: `${orderId}.pdf`,
+      filePath: `storage/purchase-orders/${orderId}.pdf`,
+      uploadedBy: USER_ID,
+      items: [{
+        purchaseOrderItemId: itemIds[0],
+        productName: "Servicio documental",
+        unitOfMeasure: "unidad",
+        quantity: 2,
+        unitPrice: 0,
+        subtotal: 0,
+      }],
+    })
+    let order = await inMemoryDb.query.purchaseOrders.findFirst({ where: eq(schema.purchaseOrders.id, orderId) })
+    expect(order?.invoiceReconciliationStatus).toBe("needs_review")
+
+    await registerReceipt({
+      purchaseOrderId: orderId,
+      receivedBy: USER_ID,
+      stage: "office",
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 2 }],
+    })
+    order = await inMemoryDb.query.purchaseOrders.findFirst({ where: eq(schema.purchaseOrders.id, orderId) })
+    expect(order?.invoiceReconciliationStatus).toBe("matched")
+  })
+
   it("partial office reception → partially_office_received", async () => {
     const { orderId, itemIds } = await makeOrder([10])
     await registerReceipt({

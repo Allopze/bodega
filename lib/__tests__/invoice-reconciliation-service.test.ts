@@ -56,6 +56,7 @@ async function insertOrderFixture(input: {
     purchaseOrderId: input.id,
     productId: "product-reconciliation",
     quantity: pendingCost ? 1 : 2,
+    quantityOfficeReceived: pendingCost ? 1 : 2,
     unitOfMeasure: pendingCost ? "servicio" : "unidad",
     unitPrice: pendingCost ? null : 50,
     subtotal: pendingCost ? null : 100,

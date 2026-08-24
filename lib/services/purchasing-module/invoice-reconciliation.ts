@@ -11,6 +11,8 @@ export type InvoiceReconciliationIssueCode =
   | "invoice_without_lines"
   | "quantity_under"
   | "quantity_over"
+  | "quantity_over_received"
+  | "supplier_unverified"
   | "total_mismatch"
 
 export interface InvoiceReconciliationOrderItem {
@@ -22,6 +24,7 @@ export interface InvoiceReconciliationOrderItem {
   unitPrice?: number | null
   subtotal?: number | null
   currentSupplierPrice?: number | null
+  supplierReceivedQuantity?: number | null
 }
 
 export interface InvoiceReconciliationInvoiceItem {
@@ -41,6 +44,9 @@ export interface InvoiceReconciliationInvoice {
   issueDate?: string | null
   uploadedAt?: string | null
   items?: InvoiceReconciliationInvoiceItem[]
+  supplierIdentityStatus?: "unknown" | "verified" | "unverified"
+  documentSupplierRut?: string | null
+  supplierIdentitySource?: string | null
 }
 
 export interface InvoiceReconciliationReview {
@@ -65,6 +71,7 @@ export interface InvoiceReconciliationIssue {
 
 export type MoneyReconciliationStatus = "no_invoices" | "matched" | "mismatch"
 export type LineReconciliationStatus = "not_evaluable" | "unlinked" | "partial" | "covered"
+export type ReceiptReconciliationStatus = "no_invoices" | "not_evaluable" | "covered" | "over_invoiced"
 
 export interface ReconciledOrderItem {
   ocItemId: string
@@ -73,6 +80,9 @@ export interface ReconciledOrderItem {
   unitOfMeasure: string | null
   ocQuantity: number
   invoicedQty: number
+  supplierReceivedQty: number
+  invoiceVsReceivedDifference: number
+  receiptStatus: "not_evaluable" | "not_invoiced" | "covered" | "over_invoiced"
   difference: number
   matched: boolean
   status: "not_evaluable" | "not_covered" | "partial" | "covered" | "over_invoiced"
@@ -101,6 +111,7 @@ export interface InvoiceReconciliationEvidence {
   totalOC: number
   money: { status: MoneyReconciliationStatus; tolerance: number; difference: number }
   lines: { status: LineReconciliationStatus; invoicesWithoutLines: number; linkedLineCount: number; unlinkedLineCount: number }
+  receipt: { status: ReceiptReconciliationStatus; overInvoicedLineCount: number }
   items: ReconciledOrderItem[]
   invoices: InvoiceEvidenceStatus[]
   issues: InvoiceReconciliationIssue[]
@@ -233,6 +244,9 @@ export function reconcileInvoiceEvidence({
   let unlinkedLineCount = 0
 
   const perInvoice = sortedInvoices.map((invoice) => {
+    if (invoice.supplierIdentityStatus === "unverified") {
+      issues.push({ code: "supplier_unverified", invoiceId: invoice.id })
+    }
     const lines = invoice.items ?? []
     if (lines.length === 0) {
       invoicesWithoutLines += 1
@@ -295,6 +309,9 @@ export function reconcileInvoiceEvidence({
   const items = sortedOrderItems.map((item): ReconciledOrderItem => {
     const linkedLines = linkedLinesByOrderItem.get(item.id) ?? []
     const invoicedQty = linkedLines.reduce((sum, line) => sum + finite(line.quantity), 0)
+    const receiptEvaluable = nullableFinite(item.supplierReceivedQuantity) !== null
+    const supplierReceivedQty = finite(item.supplierReceivedQuantity)
+    const invoiceVsReceivedDifference = invoicedQty - supplierReceivedQty
     const invoiceSubtotal = linkedLines.reduce((sum, line) => sum + finite(line.subtotal), 0)
     const difference = item.quantity - invoicedQty
     const matched = Math.abs(difference) < 0.01
@@ -305,6 +322,15 @@ export function reconcileInvoiceEvidence({
     if (hasInvoices && !matched) {
       issues.push({ code: difference < 0 ? "quantity_over" : "quantity_under", orderItemId: item.id, expected: item.quantity, actual: invoicedQty, difference: -difference })
     }
+    if (hasInvoices && receiptEvaluable && invoiceVsReceivedDifference > 0.01) {
+      issues.push({
+        code: "quantity_over_received",
+        orderItemId: item.id,
+        expected: supplierReceivedQty,
+        actual: invoicedQty,
+        difference: invoiceVsReceivedDifference,
+      })
+    }
     if (hasInvoices && item.unitPrice === null) issues.push({ code: "pending_oc_cost", orderItemId: item.id })
 
     return {
@@ -314,6 +340,9 @@ export function reconcileInvoiceEvidence({
       unitOfMeasure: item.unitOfMeasure ?? null,
       ocQuantity: item.quantity,
       invoicedQty,
+      supplierReceivedQty,
+      invoiceVsReceivedDifference,
+      receiptStatus: !receiptEvaluable ? "not_evaluable" : invoicedQty === 0 ? "not_invoiced" : invoiceVsReceivedDifference > 0.01 ? "over_invoiced" : "covered",
       difference,
       matched,
       status: noLineEvidence ? "not_evaluable" : invoicedQty === 0 ? "not_covered" : matched ? "covered" : difference < 0 ? "over_invoiced" : "partial",
@@ -336,22 +365,30 @@ export function reconcileInvoiceEvidence({
         : "partial"
   // El precio vigente del catálogo es contexto visual, no evidencia documental.
   // Una actualización del catálogo no debe invalidar una revisión ya aceptada.
-  const fingerprintOrderItems = sortedOrderItems.map(({ currentSupplierPrice: _catalogPrice, ...item }) => item)
-  const fingerprint = fingerprintFor({ version: INVOICE_RECONCILIATION_VERSION, totalOC, orderItems: fingerprintOrderItems, invoices: sortedInvoices })
+  const fingerprintOrderItems = sortedOrderItems.map(({ currentSupplierPrice: _catalogPrice, supplierReceivedQuantity: _receipt, ...item }) => item)
+  const fingerprintInvoices = sortedInvoices.map(({ supplierIdentityStatus: _identityStatus, documentSupplierRut: _supplierRut, supplierIdentitySource: _identitySource, ...invoice }) => invoice)
+  const fingerprint = fingerprintFor({ version: INVOICE_RECONCILIATION_VERSION, totalOC, orderItems: fingerprintOrderItems, invoices: fingerprintInvoices })
   const sortedReviews = [...reviews].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   const currentReview = sortedReviews.find((review) => review.fingerprint === fingerprint) ?? null
   const previousReview = sortedReviews.find((review) => review.fingerprint !== fingerprint) ?? null
   const baseStatus: InvoiceReconciliationStatus = !hasInvoices ? "no_invoices" : issues.length === 0 ? "matched" : "needs_review"
+  const hasBlockingReceiptIssue = issues.some((issue) => issue.code === "quantity_over_received")
+  const overInvoicedLineCount = items.filter((item) => item.receiptStatus === "over_invoiced").length
+  const receiptEvaluable = items.some((item) => item.receiptStatus !== "not_evaluable")
 
   return {
     version: INVOICE_RECONCILIATION_VERSION,
-    status: baseStatus === "needs_review" && currentReview ? "accepted_exception" : baseStatus,
+    status: baseStatus === "needs_review" && currentReview && !hasBlockingReceiptIssue ? "accepted_exception" : baseStatus,
     fingerprint,
     hasInvoices,
     totalInvoiced,
     totalOC,
     money: { status: !hasInvoices ? "no_invoices" : Math.abs(moneyDifference) <= CLP_RECONCILIATION_TOLERANCE ? "matched" : "mismatch", tolerance: CLP_RECONCILIATION_TOLERANCE, difference: moneyDifference },
     lines: { status: lineStatus, invoicesWithoutLines, linkedLineCount, unlinkedLineCount },
+    receipt: {
+      status: !hasInvoices ? "no_invoices" : !receiptEvaluable ? "not_evaluable" : overInvoicedLineCount > 0 ? "over_invoiced" : "covered",
+      overInvoicedLineCount,
+    },
     items,
     invoices: perInvoice,
     issues,
@@ -370,6 +407,8 @@ export function formatInvoiceReconciliationIssues(evidence: InvoiceReconciliatio
     invoice_without_lines: "Hay una factura sin líneas documentales.",
     quantity_under: "La cantidad facturada es menor que la cantidad de la OC.",
     quantity_over: "La cantidad facturada excede la cantidad de la OC.",
+    quantity_over_received: "La cantidad facturada excede lo aceptado del proveedor.",
+    supplier_unverified: "No se pudo verificar el RUT del proveedor en una factura manual.",
     total_mismatch: "El total facturado difiere del total de la OC.",
   }
   return [...new Set(evidence.issues.map((issue) => labels[issue.code]))]

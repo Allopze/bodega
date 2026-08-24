@@ -68,6 +68,7 @@ async function runDteSync(options: { periodo?: string; force?: boolean }): Promi
     })
 
     revalidatePath("/admin/dte")
+    if (result.status === "success" || result.status === "partial") revalidatePath("/compras")
 
     if (result.status === "failed") {
       return { ok: false, message: "La sincronización DTE falló. Revise el historial de corridas para el código seguro." }

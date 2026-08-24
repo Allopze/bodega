@@ -22,9 +22,27 @@ test.describe("Conciliación OC-factura-recepción", () => {
     // la tarjeta "Conciliación de facturación" con una fila por línea de OC.
     await expect(page.getByRole("heading", { name: "Conciliación de facturación" })).toBeVisible({ timeout: 10_000 })
     await expect(page.getByText(/Tolerancia monetaria: \$1/)).toBeVisible()
-    // La comparación es por línea: cantidad y precio de la OC contra la factura.
-    await expect(page.getByRole("columnheader", { name: "Cantidad OC / factura" })).toBeVisible()
+    // La comparación es por línea y conserva las tres cantidades independientes.
+    await expect(page.getByRole("columnheader", { name: "OC / aceptada / factura" })).toBeVisible()
     await expect(page.getByRole("columnheader", { name: "Precio factura" })).toBeVisible()
+  })
+
+  test("explica una sugerencia DTE enriquecida y permite revisar sus asociaciones", async ({ page }) => {
+    await page.goto(`/compras/${OC_SIN_FACTURA_ID}?tab=facturacion`)
+
+    await expect(page.getByRole("button", { name: "Actualizar sugerencias" })).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText("Factura electrónica N° 900004")).toBeVisible()
+    await expect(page.getByText("Confianza alta")).toBeVisible()
+    await expect(page.getByText(/Proveedor verificado · 1\/1 líneas vinculadas/)).toBeVisible()
+
+    await page.getByRole("button", { name: "Usar este DTE" }).click()
+    const dialog = page.getByRole("dialog", { name: "Revisar asociaciones del DTE" })
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByRole("combobox", { name: "Asociar línea DTE 1" })).toBeVisible()
+    const remember = dialog.getByRole("checkbox", { name: "Recordar esta correspondencia para este proveedor" })
+    await expect(remember).toBeEnabled()
+    await expect(remember).not.toBeChecked()
+    await expect(dialog.getByRole("button", { name: "Confirmar y usar DTE" })).toBeVisible()
   })
 
   // Antes había que saber que existía la pestaña "Facturación" y bajar hasta el

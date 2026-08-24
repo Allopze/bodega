@@ -133,6 +133,12 @@ export const dteDocuments = pgTable("dte_documents", {
 
   /** Ruta al archivo XML descargado (relativa a storage/) — nullable, se llena on-demand */
   xmlPath:                text("xml_path"),
+  /** Estado del detalle tributario persistido para ranking OC–factura. */
+  lineEnrichmentStatus:   text("line_enrichment_status").notNull().default("pending"),
+  lineEnrichmentAttempts: integer("line_enrichment_attempts").notNull().default(0),
+  lineEnrichedAt:         timestamp("line_enriched_at", { withTimezone: true, mode: "string" }),
+  /** Código seguro; nunca conserva URLs, credenciales ni respuesta cruda del portal. */
+  lineEnrichmentErrorCode: text("line_enrichment_error_code"),
   /** Ruta al archivo PDF descargado (relativa a storage/) — nullable, se llena on-demand */
   pdfPath:                text("pdf_path"),
   /** Id Nreguist del portal, necesario para reconstruir el enlace PDF autenticado. */
@@ -163,6 +169,10 @@ export const dteDocuments = pgTable("dte_documents", {
       'pendiente', 'aceptado', 'rechazado'
     )
   `),
+  check("dte_documents_line_enrichment_status_valid", sql`
+    ${table.lineEnrichmentStatus} IN ('pending', 'ready', 'failed')
+  `),
+  check("dte_documents_line_enrichment_attempts_non_negative", sql`${table.lineEnrichmentAttempts} >= 0`),
   // Un DTE representa una sola evidencia tributaria: nunca puede quedar
   // simultáneamente conciliado contra una factura de OC y una carga TAE.
   check("dte_documents_single_business_link", sql`
@@ -185,6 +195,7 @@ export const dteDocuments = pgTable("dte_documents", {
   index("dte_documents_purchase_invoice_idx").on(table.purchaseOrderInvoiceId),
   index("dte_documents_fuel_load_idx").on(table.fuelLoadId),
   index("dte_documents_portal_record_idx").on(table.portalRecordId),
+  index("dte_documents_line_enrichment_idx").on(table.lineEnrichmentStatus, table.tipoDte, table.periodo),
   index("dte_documents_raw_hash_idx").on(table.rawHash),
   index("dte_documents_sync_run_idx").on(table.syncRunId),
 ])

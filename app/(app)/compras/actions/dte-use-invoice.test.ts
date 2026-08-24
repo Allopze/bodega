@@ -9,6 +9,15 @@ const mockRemoveInvoiceAttachment = vi.fn()
 const mockCreatePurchaseOrderInvoiceFromDte = vi.fn()
 const mockRevalidateOperationalViews = vi.fn()
 const mockLoggerError = vi.fn()
+const mockDteLinesFindMany = vi.fn()
+const mockEnrichDteDocumentLines = vi.fn()
+
+vi.mock("@/db", () => ({
+  db: { query: { dteDocumentItems: { findMany: (...args: unknown[]) => mockDteLinesFindMany(...args) } } },
+}))
+vi.mock("@/lib/services/dte-portal/purchase-document-xml", () => ({
+  enrichDteDocumentLines: (...args: unknown[]) => mockEnrichDteDocumentLines(...args),
+}))
 
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: (...args: unknown[]) => mockRequirePermission(...args),
@@ -76,6 +85,12 @@ describe("attachDteAsInvoice", () => {
       absolutePath: "/tmp/dte-33-45678.pdf",
     })
     mockCreatePurchaseOrderInvoiceFromDte.mockResolvedValue("inv-1")
+    mockDteLinesFindMany.mockResolvedValue([{
+      id: "dte-line:dte-1:1",
+      dteDocumentId: "dte-1",
+      lineNumber: 1,
+    }])
+    mockEnrichDteDocumentLines.mockResolvedValue({ ok: true, lineCount: 1 })
   })
 
   it("registers and attaches the selected DTE without requiring a manual upload", async () => {

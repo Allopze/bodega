@@ -34,11 +34,13 @@ const mockSummarizeDteReconciliation = vi.fn()
 const mockClaimDteSyncStart = vi.fn()
 const mockPublishProgress = vi.fn()
 const mockClearProgress = vi.fn()
+const mockEnrichDteDocumentLines = vi.fn()
 
 vi.mock("@/db", () => ({
   db: {
     query: {
       dteSyncRuns: { findFirst: (...args: unknown[]) => mockSyncRunsFindFirst(...args) },
+      dteDocuments: { findMany: (...args: unknown[]) => mockDocumentsFindMany(...args) },
       users: { findFirst: vi.fn() },
     },
     insert: () => ({ values: (...args: unknown[]) => mockInsertValues(...args) }),
@@ -73,6 +75,9 @@ vi.mock("../sync-start-gate", () => ({
 vi.mock("../sync-progress", () => ({
   publishDteSyncProgress: (...args: unknown[]) => mockPublishProgress(...args),
   clearDteSyncProgress: (...args: unknown[]) => mockClearProgress(...args),
+}))
+vi.mock("../purchase-document-xml", () => ({
+  enrichDteDocumentLines: (...args: unknown[]) => mockEnrichDteDocumentLines(...args),
 }))
 
 const { syncDteDocuments, computeDocumentHash, previousPeriodo, rollingSyncPeriods, recoverySweepPeriods, assertSyncablePeriodo } = await import("../sync")
@@ -163,6 +168,7 @@ describe("syncDteDocuments", () => {
     mockTxInsertValues.mockResolvedValue(undefined)
     mockTxUpdateSet.mockResolvedValue(undefined)
     mockDocumentsFindMany.mockResolvedValue([])
+    mockEnrichDteDocumentLines.mockResolvedValue({ ok: true, lineCount: 1 })
     mockMatchToPurchaseOrderInvoices.mockResolvedValue([])
     mockMatchToFuelLoads.mockResolvedValue([])
     mockSummarizeDteReconciliation.mockResolvedValue({ matched: 0, ambiguous: 0, unmatched: 0, internalAmbiguity: 0, discrepancies: 0 })
@@ -200,11 +206,24 @@ describe("syncDteDocuments", () => {
     expect(mockTxInsertValues).toHaveBeenCalledWith(expect.objectContaining({
       portalRecordId: "9000001",
     }))
+    expect(mockEnrichDteDocumentLines).toHaveBeenCalledOnce()
     expect(mockFetchBandejaEntrada).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ mes: "06", anio: "2026", codEmp: "433" }),
       expect.objectContaining({ periodo: "2026-06" }),
     )
+  })
+
+  it("keeps a successful header ingestion when XML enrichment fails", async () => {
+    mockSyncRunsFindFirst.mockResolvedValue(undefined)
+    mockDocumentsFindFirst.mockResolvedValue(undefined)
+    mockFetchBandejaEntrada.mockResolvedValue({ rows: [BASE_ROW], totalRegistros: 1, declaredTotal: 1 })
+    mockEnrichDteDocumentLines.mockRejectedValue(new Error("portal XML unavailable"))
+
+    const result = await syncDteDocuments(makeClient(), { periodo: "2026-06", importerId: "user-1" })
+
+    expect(result.status).toBe("success")
+    expect(result.rowsInserted).toBe(1)
   })
 
   it("persists the cron batch correlation id with the DTE run", async () => {

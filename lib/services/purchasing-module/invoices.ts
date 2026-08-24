@@ -2,9 +2,9 @@
  * Invoice management for purchase orders.
  */
 
-import { and, eq, inArray, isNull } from "drizzle-orm"
+import { and, eq, inArray, isNull, or } from "drizzle-orm"
 import { db } from "@/db"
-import { dteDocuments, products, purchaseOrders, purchaseOrderInvoices, purchaseOrderInvoiceItems, purchaseOrderItems, suppliers } from "@/db/schema"
+import { dteDocumentItems, dteDocuments, products, purchaseOrders, purchaseOrderInvoices, purchaseOrderInvoiceItems, purchaseOrderItems, supplierProductAliases, suppliers } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
@@ -16,6 +16,7 @@ import {
 } from "./invoice-reconciliation"
 import { matchInvoiceItemsToPurchaseOrderItems } from "./invoice-item-matching"
 import { getPurchaseOrderInvoiceReconciliation, persistPurchaseOrderInvoiceReconciliationTx, reconciliationWarnings } from "./invoice-reconciliation-service"
+import { normalizeSupplierProductCode, normalizeSupplierProductName } from "./dte-candidates"
 
 /* ── Purchase Order Invoices ─────────────────────────────────────────────────── */
 
@@ -34,6 +35,8 @@ const INVOICE_DELETABLE_STATUSES = new Set([...INVOICE_ALLOWED_STATUSES, "cancel
 
 export interface CreateInvoiceItemInput {
   purchaseOrderItemId?: string | null
+  /** Evidencia fiscal de origen; sólo el flujo DTE puede poblarla. */
+  sourceDteDocumentItemId?: string | null
   productName:          string
   productCode?:         string | null
   unitOfMeasure?:       string | null
@@ -56,6 +59,11 @@ export interface CreateInvoiceInput {
   items?:          CreateInvoiceItemInput[]
   /** Manual uploads keep their line-total guard; DTE uses MntTotal as authority. */
   amountAuthority?: "line_items" | "document_header"
+  supplierIdentity?: {
+    documentSupplierRut: string | null
+    status: "verified" | "unverified"
+    source: "dte_xml" | "pdf_text" | "pdf_text_ocr" | "ocr" | "manual"
+  }
 }
 
 export interface DteInvoiceIdentity {
@@ -71,6 +79,13 @@ export interface CreateInvoiceFromDteInput extends CreateInvoiceInput {
   dteIdentity: DteInvoiceIdentity
   amountAuthority: "document_header"
   items: CreateInvoiceItemInput[]
+  lineResolutions?: DteInvoiceLineResolution[]
+}
+
+export interface DteInvoiceLineResolution {
+  dteDocumentItemId: string
+  purchaseOrderItemId: string | null
+  rememberAlias: boolean
 }
 
 export interface DeleteInvoiceResult {
@@ -119,6 +134,7 @@ export async function createPurchaseOrderInvoiceFromDte(
   return insertPurchaseOrderInvoice(input, worksiteIds, {
     dteDocumentId: input.dteDocumentId,
     dteIdentity: input.dteIdentity,
+    lineResolutions: input.lineResolutions,
   })
 }
 
@@ -128,6 +144,7 @@ async function insertPurchaseOrderInvoice(
   dteAttachment?: {
     dteDocumentId: string
     dteIdentity: DteInvoiceIdentity
+    lineResolutions?: DteInvoiceLineResolution[]
   },
 ): Promise<string> {
   return await db.transaction(async (tx) => {
@@ -164,9 +181,32 @@ async function insertPurchaseOrderInvoice(
       )
     }
 
+    if (input.supplierIdentity) {
+      const [supplier] = await tx.select({ rut: suppliers.rut })
+        .from(suppliers)
+        .where(eq(suppliers.id, order.supplierId))
+      if (!supplier?.rut) throw new Error("El proveedor de la OC no tiene RUT verificable")
+      if (input.supplierIdentity.status === "verified") {
+        if (!input.supplierIdentity.documentSupplierRut) throw new Error("La identidad verificada no contiene RUT documental")
+        if (cleanRut(input.supplierIdentity.documentSupplierRut) !== cleanRut(supplier.rut)) {
+          throw new Error("El RUT de la factura no corresponde al proveedor de esta OC")
+        }
+      } else if (input.supplierIdentity.documentSupplierRut) {
+        throw new Error("Una factura con RUT extraído no puede guardarse como no verificada")
+      }
+    }
+
     if (dteAttachment) {
       await validateDteForInvoiceTx(tx, order, input, dteAttachment)
-      invoiceItems = await linkDteItemsToOrderTx(tx, input.purchaseOrderId, invoiceItems)
+      invoiceItems = dteAttachment.lineResolutions
+        ? await applyExplicitDteLineResolutionsTx(
+            tx,
+            input.purchaseOrderId,
+            dteAttachment.dteDocumentId,
+            invoiceItems,
+            dteAttachment.lineResolutions,
+          )
+        : await linkDteItemsToOrderTx(tx, input.purchaseOrderId, invoiceItems)
     }
 
     const invoiceNumber = input.invoiceNumber.trim()
@@ -200,6 +240,15 @@ async function insertPurchaseOrderInvoice(
       }
     }
 
+    if (dteAttachment?.lineResolutions?.some((resolution) => resolution.rememberAlias)) {
+      await persistConfirmedSupplierAliasesTx(
+        tx,
+        order.supplierId,
+        input.uploadedBy,
+        dteAttachment.lineResolutions,
+      )
+    }
+
     const invoiceId = nanoid()
 
     // Una carga manual recalcula desde líneas para no confiar en el navegador.
@@ -222,6 +271,9 @@ async function insertPurchaseOrderInvoice(
       fileSize:        input.fileSize ?? null,
       mimeType:        input.mimeType ?? null,
       uploadedBy:      input.uploadedBy,
+      documentSupplierRut: dteAttachment?.dteIdentity.supplierRut ?? input.supplierIdentity?.documentSupplierRut ?? null,
+      supplierIdentityStatus: dteAttachment ? "verified" : input.supplierIdentity?.status ?? "unknown",
+      supplierIdentitySource: dteAttachment ? "dte_xml" : input.supplierIdentity?.source ?? "legacy",
     })
 
     // Insert invoice items if provided
@@ -231,6 +283,7 @@ async function insertPurchaseOrderInvoice(
           id:                  nanoid(),
           invoiceId,
           purchaseOrderItemId: item.purchaseOrderItemId ?? null,
+          sourceDteDocumentItemId: item.sourceDteDocumentItemId ?? null,
           productName:         item.productName,
           productCode:         item.productCode ?? null,
           unitOfMeasure:       item.unitOfMeasure ?? null,
@@ -275,6 +328,135 @@ async function insertPurchaseOrderInvoice(
 
     return invoiceId
   })
+}
+
+async function applyExplicitDteLineResolutionsTx(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  purchaseOrderId: string,
+  dteDocumentId: string,
+  invoiceItems: ReturnType<typeof normalizeInvoiceItems>,
+  resolutions: DteInvoiceLineResolution[],
+) {
+  if (resolutions.length !== invoiceItems.length || resolutions.length === 0) {
+    throw new Error("Debes resolver todas las líneas del DTE")
+  }
+  const resolutionByLine = new Map(resolutions.map((resolution) => [resolution.dteDocumentItemId, resolution]))
+  if (resolutionByLine.size !== resolutions.length) throw new Error("Una línea DTE fue resuelta más de una vez")
+
+  const sourceIds = invoiceItems
+    .map((item) => item.sourceDteDocumentItemId)
+    .filter((id): id is string => Boolean(id))
+  if (sourceIds.length !== invoiceItems.length || new Set(sourceIds).size !== sourceIds.length) {
+    throw new Error("Las líneas del XML no coinciden con la evidencia persistida")
+  }
+  const persistedLines = await tx
+    .select({ id: dteDocumentItems.id })
+    .from(dteDocumentItems)
+    .where(and(
+      eq(dteDocumentItems.dteDocumentId, dteDocumentId),
+      inArray(dteDocumentItems.id, sourceIds),
+    ))
+  if (persistedLines.length !== sourceIds.length || sourceIds.some((id) => !resolutionByLine.has(id))) {
+    throw new Error("Una resolución no pertenece a este DTE")
+  }
+
+  const targetIds = resolutions
+    .map((resolution) => resolution.purchaseOrderItemId)
+    .filter((id): id is string => Boolean(id))
+  if (new Set(targetIds).size !== targetIds.length) throw new Error("No puedes asociar dos líneas DTE al mismo ítem de la OC")
+  if (targetIds.length > 0) {
+    const validTargets = await tx
+      .select({ id: purchaseOrderItems.id })
+      .from(purchaseOrderItems)
+      .where(and(
+        eq(purchaseOrderItems.purchaseOrderId, purchaseOrderId),
+        inArray(purchaseOrderItems.id, targetIds),
+      ))
+    if (validTargets.length !== targetIds.length) throw new Error("Una resolución no pertenece a esta OC")
+  }
+
+  return invoiceItems.map((item) => ({
+    ...item,
+    purchaseOrderItemId: resolutionByLine.get(item.sourceDteDocumentItemId!)!.purchaseOrderItemId,
+  }))
+}
+
+async function persistConfirmedSupplierAliasesTx(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  supplierId: string,
+  confirmedBy: string,
+  resolutions: DteInvoiceLineResolution[],
+) {
+  const remembered = resolutions.filter(
+    (resolution): resolution is DteInvoiceLineResolution & { purchaseOrderItemId: string } =>
+      resolution.rememberAlias && Boolean(resolution.purchaseOrderItemId),
+  )
+  if (remembered.length === 0) return
+
+  const [orderItems, documentLines] = await Promise.all([
+    tx.select({ id: purchaseOrderItems.id, productId: purchaseOrderItems.productId })
+      .from(purchaseOrderItems)
+      .where(inArray(purchaseOrderItems.id, remembered.map((resolution) => resolution.purchaseOrderItemId))),
+    tx.select({
+      id: dteDocumentItems.id,
+      productCode: dteDocumentItems.productCode,
+      productName: dteDocumentItems.productName,
+      unitOfMeasure: dteDocumentItems.unitOfMeasure,
+    }).from(dteDocumentItems)
+      .where(inArray(dteDocumentItems.id, remembered.map((resolution) => resolution.dteDocumentItemId))),
+  ])
+  const productByOrderItem = new Map(orderItems.map((item) => [item.id, item.productId]))
+  const lineById = new Map(documentLines.map((line) => [line.id, line]))
+
+  for (const resolution of remembered) {
+    const productId = productByOrderItem.get(resolution.purchaseOrderItemId)
+    const line = lineById.get(resolution.dteDocumentItemId)
+    if (!productId || !line) throw new Error("Sólo se pueden recordar correspondencias con productos de catálogo")
+    const normalizedCode = normalizeSupplierProductCode(line.productCode) || null
+    const normalizedName = normalizeSupplierProductName(line.productName) || null
+    if (!normalizedCode && !normalizedName) throw new Error("La línea no contiene un alias utilizable")
+
+    const identityPredicates = [
+      normalizedCode ? eq(supplierProductAliases.normalizedCode, normalizedCode) : undefined,
+      normalizedName ? eq(supplierProductAliases.normalizedName, normalizedName) : undefined,
+    ].filter((predicate): predicate is NonNullable<typeof predicate> => Boolean(predicate))
+    const conflicting = await tx.query.supplierProductAliases.findMany({
+      where: and(
+        eq(supplierProductAliases.supplierId, supplierId),
+        identityPredicates.length === 1 ? identityPredicates[0] : or(...identityPredicates),
+      ),
+      columns: { productId: true },
+    })
+    if (conflicting.some((alias) => alias.productId !== productId)) {
+      throw new Error("La correspondencia elegida contradice un alias confirmado previamente")
+    }
+    if (conflicting.length > 0) continue
+
+    const inserted = await tx.insert(supplierProductAliases).values({
+      id: nanoid(),
+      supplierId,
+      productId,
+      supplierProductCode: line.productCode,
+      supplierProductName: line.productName,
+      normalizedCode,
+      normalizedName,
+      unitOfMeasure: line.unitOfMeasure,
+      confirmedBy,
+      sourceDteDocumentItemId: line.id,
+    }).onConflictDoNothing().returning({ productId: supplierProductAliases.productId })
+    if (inserted.length === 0) {
+      const winner = await tx.query.supplierProductAliases.findFirst({
+        where: and(
+          eq(supplierProductAliases.supplierId, supplierId),
+          identityPredicates.length === 1 ? identityPredicates[0] : or(...identityPredicates),
+        ),
+        columns: { productId: true },
+      })
+      if (!winner || winner.productId !== productId) {
+        throw new Error("La correspondencia fue confirmada para otro producto en paralelo")
+      }
+    }
+  }
 }
 
 function normalizeInvoiceItems(

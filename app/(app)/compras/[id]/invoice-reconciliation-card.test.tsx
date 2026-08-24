@@ -2,7 +2,7 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
-vi.mock("../actions", () => ({ acceptInvoiceReconciliationAction: vi.fn() }))
+vi.mock("../actions/invoice-reconciliation", () => ({ acceptInvoiceReconciliationAction: vi.fn() }))
 vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
 import { reconcileInvoiceEvidence } from "@/lib/services/purchasing-module/invoice-reconciliation"
