@@ -42,6 +42,11 @@ vi.mock("@/db/schema", () => ({
   fuelConsumptionRecords: { __table: "records" }, fuelImportBatches: { __table: "batches" },
   fuelVehicles: {}, fuelProviderMappings: {}, systemSettings: {}, users: {},
 }))
+// La conciliación tiene sus propias pruebas contra Postgres; acá se aísla para
+// que estos casos sigan midiendo sólo la importación.
+vi.mock("@/lib/combustibles/fuel-reconciliation", () => ({
+  reconcileFuelProviderRun: vi.fn().mockResolvedValue({ reconciled: 0, matched: 0 }),
+}))
 vi.mock("@/lib/combustibles/fuel-provider-ledger", () => ({
   beginFuelProviderSyncRun: vi.fn().mockResolvedValue({ id: "run-1", correlationId: "corr-1" }),
   recordFuelProviderIssues: vi.fn().mockResolvedValue({ rejected: 0 }),

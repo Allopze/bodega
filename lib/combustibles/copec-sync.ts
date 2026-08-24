@@ -13,6 +13,7 @@ import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
 import { isOpenPeriod, replaceBatchRecords } from "@/lib/combustibles/open-period"
 import { beginFuelProviderSyncRun, finishFuelProviderSyncRun, recordFuelProviderIssues, recordFuelProviderValidation } from "@/lib/combustibles/fuel-provider-ledger"
 import { validateProviderRows, type ProviderRowInput } from "@/lib/combustibles/provider-validation"
+import { reconcileFuelProviderRun } from "@/lib/combustibles/fuel-reconciliation"
 import {
   downloadCopecReports,
 } from "@/lib/combustibles/copec-reports"
@@ -655,8 +656,17 @@ export async function syncCopecReportPeriod(period: CopecSyncPeriod, importerId?
       stateError = err instanceof Error ? err.message : "No fue posible guardar el estado Copec"
       console.error("[copec-sync] saveState failed, cursor may be stale on next run", stateError)
     }
+    // La conciliación es un modelo derivado que se calcula DESPUÉS de importar:
+    // si falla, los lotes ya están commiteados, así que se reporta como parcial
+    // con el motivo en vez de marcar la corrida como fallida.
+    const reconciliationError = await reconcileFuelProviderRun(run.id).then(
+      () => null,
+      (error: unknown) => (error instanceof Error ? error.message : "No fue posible conciliar la corrida"),
+    )
+    if (reconciliationError) console.error("[copec-sync] conciliación incompleta", reconciliationError)
+
     await finishFuelProviderSyncRun(run.id, {
-      status: stateError || result.rowsRejected > 0 || result.rowsPending > 0 || result.unavailable.length > 0 ? "partial" : "success",
+      status: stateError || reconciliationError || result.rowsRejected > 0 || result.rowsPending > 0 || result.unavailable.length > 0 ? "partial" : "success",
       receivedFrom: period.from,
       receivedTo: period.to,
       files: result.reports.length,
@@ -665,7 +675,7 @@ export async function syncCopecReportPeriod(period: CopecSyncPeriod, importerId?
       rowsRejected: result.rowsRejected,
       rowsPending: result.rowsPending,
       rowsReprocessed: result.refreshed,
-      error: stateError,
+      error: stateError ?? reconciliationError,
     })
     runFinished = true
     return result

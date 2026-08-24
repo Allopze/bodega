@@ -148,6 +148,29 @@ export function decideCycleMovementMatch(
   return { status: "unmatched", candidate: null, candidates: [], reason: "sin entrega física compatible por proveedor, producto, faena, vehículo y fecha", litersDelta: null }
 }
 
+/**
+ * Deja UN vínculo por (transacción, tipo): reemplaza el anterior en vez de
+ * sumarle uno.
+ *
+ * `onConflictDoNothing` no alcanzaba. El índice único incluye las columnas de
+ * destino y en PostgreSQL los NULL son distintos entre sí, así que una
+ * transacción sin match insertaba una fila NUEVA en cada corrida —verificado:
+ * tres corridas idénticas dejaban tres filas—, y cuando la carga interna
+ * aparecía, el `matched` se sumaba al `unmatched` viejo en vez de reemplazarlo.
+ * `unmatched_reconciliation_links` del preflight habría crecido para siempre.
+ *
+ * Es el mismo criterio que la conciliación DTE ya aplicaba borrando primero.
+ */
+async function replaceLink(values: typeof fuelReconciliationLinks.$inferInsert): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.delete(fuelReconciliationLinks).where(and(
+      eq(fuelReconciliationLinks.providerTransactionId, values.providerTransactionId),
+      eq(fuelReconciliationLinks.linkType, values.linkType),
+    ))
+    await tx.insert(fuelReconciliationLinks).values(values)
+  })
+}
+
 /** Persiste una decisión de carga sin crear un vínculo artificial 1:1 con DTE. */
 export async function reconcileProviderTransactionToFuelLoads(
   transactionId: string,
@@ -191,7 +214,7 @@ export async function reconcileProviderTransactionToFuelLoads(
     totalAmount: candidate.totalAmount,
   })), tolerances)
 
-  await db.insert(fuelReconciliationLinks).values({
+  await replaceLink({
     id: nanoid(),
     providerTransactionId: transactionId,
     linkType: "fuel_load",
@@ -204,7 +227,7 @@ export async function reconcileProviderTransactionToFuelLoads(
     toleranceAmount: tolerances.amount,
     reason: decision.reason,
     updatedAt: new Date().toISOString(),
-  }).onConflictDoNothing()
+  })
 
   return decision
 }
@@ -242,7 +265,7 @@ export async function reconcileProviderTransactionToCycleMovement(
     quantity: candidate.quantity,
   })), toleranceLiters)
 
-  await db.insert(fuelReconciliationLinks).values({
+  await replaceLink({
     id: nanoid(),
     providerTransactionId: transactionId,
     linkType: "cycle_movement",
@@ -253,6 +276,42 @@ export async function reconcileProviderTransactionToCycleMovement(
     toleranceLiters,
     reason: decision.reason,
     updatedAt: new Date().toISOString(),
-  }).onConflictDoNothing()
+  })
   return decision
+}
+
+/**
+ * Concilia las transacciones aceptadas de una corrida contra las cargas
+ * internas y las entregas del ciclo físico.
+ *
+ * Existe porque nadie llamaba a las funciones de arriba: `fuel_reconciliation_links`
+ * no la escribía ningún camino de producción, así que las dos métricas que el
+ * preflight saca de ahí daban cero por falta de datos y no por estar todo
+ * cuadrado.
+ *
+ * Sólo las `accepted`: una `pending` no tiene faena, producto ni vehículo, así
+ * que no hay contra qué compararla y sólo dejaría ruido.
+ *
+ * ponytail: el alcance es la corrida, no el histórico. Una transacción cuya
+ * carga interna se registre después queda `unmatched` hasta que otra corrida la
+ * vuelva a tocar; como ambas sincronizaciones reimportan una ventana —el mes
+ * abierto en Copec, cuatro meses en Aramco— se resuelve sola dentro de ella. Más
+ * atrás va a necesitar reconciliar bajo demanda, que es lo que corresponde
+ * cuando exista la pantalla de revisión.
+ */
+export async function reconcileFuelProviderRun(runId: string): Promise<{ reconciled: number; matched: number }> {
+  const transactions = await db.query.fuelProviderTransactions.findMany({
+    where: and(eq(fuelProviderTransactions.syncRunId, runId), eq(fuelProviderTransactions.status, "accepted")),
+    columns: { id: true },
+  })
+
+  let matched = 0
+  for (const transaction of transactions) {
+    const [load, cycle] = [
+      await reconcileProviderTransactionToFuelLoads(transaction.id),
+      await reconcileProviderTransactionToCycleMovement(transaction.id),
+    ]
+    if (load.status === "matched" || cycle.status === "matched") matched++
+  }
+  return { reconciled: transactions.length, matched }
 }

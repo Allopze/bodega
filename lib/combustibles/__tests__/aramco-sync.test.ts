@@ -75,6 +75,11 @@ vi.mock("@/lib/combustibles/aramco-client", () => ({
   authenticateAramco: (...args: unknown[]) => mocks.authenticateAramco(...args),
   fetchAramcoMovements: (...args: unknown[]) => mocks.fetchAramcoMovements(...args),
 }))
+// La conciliación tiene sus propias pruebas contra Postgres; acá se aísla para
+// que estos casos sigan midiendo sólo la importación.
+vi.mock("@/lib/combustibles/fuel-reconciliation", () => ({
+  reconcileFuelProviderRun: vi.fn().mockResolvedValue({ reconciled: 0, matched: 0 }),
+}))
 vi.mock("@/lib/combustibles/fuel-provider-ledger", () => ({
   beginFuelProviderSyncRun: vi.fn().mockResolvedValue({ id: "run-1", correlationId: "corr-1" }),
   recordFuelProviderValidation: vi.fn().mockResolvedValue({ accepted: 1, rejected: 0, pending: 0 }),
@@ -342,6 +347,25 @@ describe("syncAramco", () => {
     await syncAramco()
     const guardLiterals = collectStrings(mocks.batchFindFirst.mock.calls[1]?.[0])
     expect(AUTOMATED_SOURCES.filter((source) => !guardLiterals.includes(source))).toEqual([])
+  })
+
+  it("concilia la corrida y no la marca fallida si la conciliación revienta", async () => {
+    // La conciliación es un modelo derivado que se calcula después de importar:
+    // los lotes ya están commiteados, así que un fallo ahí es "parcial con
+    // motivo", no "la sincronización falló".
+    const { reconcileFuelProviderRun } = await import("@/lib/combustibles/fuel-reconciliation")
+    const { finishFuelProviderSyncRun } = await import("@/lib/combustibles/fuel-provider-ledger")
+
+    await syncAramco()
+    expect(vi.mocked(reconcileFuelProviderRun)).toHaveBeenCalledWith("run-1")
+
+    vi.mocked(reconcileFuelProviderRun).mockRejectedValueOnce(new Error("la conciliación explotó"))
+    await syncAramco()
+
+    expect(vi.mocked(finishFuelProviderSyncRun)).toHaveBeenLastCalledWith("run-1", expect.objectContaining({
+      status: "partial",
+      error: "la conciliación explotó",
+    }))
   })
 
   it("skips a worksite already loaded by hand for that period", async () => {

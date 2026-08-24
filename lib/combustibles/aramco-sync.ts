@@ -34,6 +34,7 @@ import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
 import { replaceBatchRecords } from "@/lib/combustibles/open-period"
 import { beginFuelProviderSyncRun, finishFuelProviderSyncRun, recordFuelProviderValidation } from "@/lib/combustibles/fuel-provider-ledger"
 import { validateProviderRows, type ProviderRowInput } from "@/lib/combustibles/provider-validation"
+import { reconcileFuelProviderRun } from "@/lib/combustibles/fuel-reconciliation"
 import { readAramcoConfig } from "@/lib/combustibles/aramco-settings"
 import {
   authenticateAramco,
@@ -501,8 +502,19 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
     }
   }
 
+    // La conciliación es un modelo derivado que se calcula DESPUÉS de importar:
+    // si falla, el lote ya está commiteado y no se pierde nada, así que no se
+    // marca la corrida como fallida — se reporta como parcial con el motivo, el
+    // mismo criterio que Copec usa con el guardado de estado.
+    const reconciliationError = await reconcileFuelProviderRun(run.id).then(
+      () => null,
+      (error: unknown) => (error instanceof Error ? error.message : "No fue posible conciliar la corrida"),
+    )
+    if (reconciliationError) console.error("[aramco-sync] conciliación incompleta", reconciliationError)
+
     await finishFuelProviderSyncRun(run.id, {
-      status: result.rowsRejected > 0 || result.rowsPending > 0 ? "partial" : "success",
+      status: reconciliationError || result.rowsRejected > 0 || result.rowsPending > 0 ? "partial" : "success",
+      error: reconciliationError,
       receivedFrom: from,
       receivedTo: to,
       rowsReceived: result.transactions,
