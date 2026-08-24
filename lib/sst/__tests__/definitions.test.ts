@@ -97,8 +97,8 @@ describe('TRABAJADOR_NUEVO', () => {
 
   it('has closingAct definition', () => {
     expect(TRABAJADOR_NUEVO.closingAct).toBeDefined()
-    expect(TRABAJADOR_NUEVO.closingAct.title).toBeTruthy()
-    expect(Array.isArray(TRABAJADOR_NUEVO.closingAct.signatureRoles)).toBe(true)
+    expect(TRABAJADOR_NUEVO.closingAct!.title).toBeTruthy()
+    expect(Array.isArray(TRABAJADOR_NUEVO.closingAct!.signatureRoles)).toBe(true)
   })
 
   it('includes blocker sections: documentacion_requisitos, induccion_capacitacion, competencias_operacionales', () => {

@@ -9,11 +9,14 @@ import {
   approveInspectionTemplate,
   assertProgramInScope,
   closeInspectionFinding,
+  copyDeviationCatalog,
   completeInspectionRun,
   createFindingCapa,
   createInspectionProgram,
   createInspectionRun,
   importInspectionTemplate,
+  registerDeviation,
+  removeDeviation,
   retireInspectionTemplate,
   reviewInspectionRun,
   saveInspectionAnswers,
@@ -234,4 +237,27 @@ export async function updateDeviationCatalogEntryAction(input: unknown): Promise
   const guard = await guardPermission("prevention:inspections:manage")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => updateDeviationCatalogEntry(input, access))
+}
+
+/* ── Desviaciones en terreno ──────────────────────────────────────────────
+ * Registrar es ejecutar (`:execute`); copiar el catálogo es calibrar el
+ * instrumento (`:manage`). Son dos actos distintos y por eso dos permisos.
+ */
+
+export async function registerDeviationAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:inspections:execute")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => registerDeviation(input, access))
+}
+
+export async function removeDeviationAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:inspections:execute")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => removeDeviation(input, access))
+}
+
+export async function copyDeviationCatalogAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:inspections:manage")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => copyDeviationCatalog(input, access))
 }

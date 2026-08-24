@@ -39,6 +39,8 @@ import {
   closeInspectionFindingAction,
   completeInspectionRunAction,
   createFindingCapaAction,
+  registerDeviationAction,
+  removeDeviationAction,
   reopenInspectionRunAction,
   reviewInspectionRunAction,
   saveInspectionAnswersAction,
@@ -111,6 +113,8 @@ interface FindingInfo {
   criticality: string
   status: string
   capaActionId: string | null
+  /** `derived` lo levantó un ítem; `deviation` lo registró una persona. */
+  origin: string
 }
 
 type ResultValue = "" | "conforming" | "partial" | "non_conforming" | "not_applicable" | "recorded"
@@ -127,6 +131,10 @@ export interface RunDocumentInfo {
 interface Props {
   run: RunInfo
   templateKind: string
+  /** El instrumento registra desviaciones en vez de puntuar ítems. */
+  recordsDeviations: boolean
+  /** Catálogo activo del instrumento: de acá sale la gravedad de cada desviación. */
+  deviationCatalog: { id: string; label: string; danoPotencial: string; criticality: string }[]
   /** Actividades del programa anual que esta inspección acredita al ejecutarse. */
   pdtpActivityNumbers: number[]
   /** Y las que acredita al revisarse y firmarse: son otra ocurrencia y otro responsable. */
@@ -358,7 +366,8 @@ function AnswerEvidence({ answerId, evidence, editable }: {
 }
 
 export function InspectionRunDetail({
-  run, templateKind, pdtpActivityNumbers, pdtpReviewActivityNumbers,
+  run, templateKind, recordsDeviations, deviationCatalog,
+  pdtpActivityNumbers, pdtpReviewActivityNumbers,
   worksiteName, assigneeName, executorName, reviewerName,
   sections, answers, findings, currentUserId, assignees, canExecute, canReview, canManage, canStopVehicle,
   documents, canIngest, closingAct,
@@ -846,6 +855,19 @@ export function InspectionRunDetail({
         {documents.length > 0 && <SourceFormViewer documents={documents} />}
       </div>
 
+      {/* Los instrumentos que no puntúan ítems registran lo que encontraron. La
+          gravedad la trae el catálogo, así que el plazo de la acción correctiva
+          no depende de quien está en terreno. */}
+      {recordsDeviations && (
+        <DeviationsPanel
+          runId={run.id}
+          editable={editable}
+          canExecute={canExecute}
+          catalog={deviationCatalog}
+          registered={findings.filter((finding) => finding.origin === "deviation")}
+        />
+      )}
+
       {canIngest && editable && <SourceFormUpload runId={run.id} hasDocuments={documents.length > 0} />}
 
       {closingAct && (
@@ -976,6 +998,199 @@ export function InspectionRunDetail({
         </p>
       )}
     </div>
+  )
+}
+
+/* ── Desviaciones encontradas ─────────────────────────────────────────────
+ * El panel de los instrumentos que no puntúan ítems: observación de conductas,
+ * inspección de área y caminata de seguridad.
+ *
+ * Cada desviación se elige del catálogo del instrumento y de ahí sale su
+ * gravedad — por eso el formulario NO ofrece elegirla en ese camino: si la
+ * eligiera quien registra, el plazo de la acción correctiva dependería de su
+ * criterio. La excepción es "Otra desviación", que existe porque forzar la
+ * desviación más parecida ensucia el dato peor que no clasificarla; ésas quedan
+ * en la cola que Prevención resuelve desde el creador.
+ */
+
+const DEVIATION_PLAZO: Record<string, string> = {
+  critical: "3 días y detención",
+  high: "7 días",
+  medium: "15 días",
+  low: "30 días",
+}
+
+function DeviationsPanel({ runId, editable, canExecute, catalog, registered }: {
+  runId: string
+  editable: boolean
+  canExecute: boolean
+  catalog: { id: string; label: string; danoPotencial: string; criticality: string }[]
+  registered: FindingInfo[]
+}) {
+  const [entryId, setEntryId] = React.useState("")
+  const [otherOpen, setOtherOpen] = React.useState(false)
+  const operation = useOperation()
+  const puedeRegistrar = editable && canExecute
+
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold">Desviaciones encontradas ({registered.length})</h2>
+        {puedeRegistrar && (
+          <div className="flex flex-wrap items-center gap-2">
+            {catalog.length > 0 && (
+              <>
+                <Select value={entryId} onValueChange={setEntryId}>
+                  <SelectTrigger className="w-72" aria-label="Desviación del catálogo">
+                    <SelectValue placeholder="Elegir del catálogo…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {catalog.map((entry) => (
+                      <SelectItem key={entry.id} value={entry.id}>
+                        {entry.label} · {DEVIATION_PLAZO[entry.criticality] ?? entry.criticality}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={operation.pending || !entryId}
+                  onClick={() => operation.run(
+                    () => registerDeviationAction({ runId, catalogEntryId: entryId }),
+                    () => setEntryId(""),
+                  )}
+                >
+                  Registrar
+                </Button>
+              </>
+            )}
+            <Button type="button" size="sm" variant="secondary" onClick={() => setOtherOpen(true)}>
+              Otra desviación
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {catalog.length === 0 && puedeRegistrar && (
+        <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-xs">
+          Este instrumento aún no tiene catálogo de desviaciones. Prevención lo arma desde Inspecciones → Plantillas;
+          mientras tanto se pueden registrar con «Otra desviación».
+        </p>
+      )}
+
+      {registered.length === 0 ? (
+        <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">
+          Sin desviaciones registradas. Si la actividad se hizo y no encontró nada, declárala ejecutada así.
+        </p>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Desviación</TableHead>
+                <TableHead>Criticidad</TableHead>
+                <TableHead>Plazo de la acción</TableHead>
+                <TableHead>Estado</TableHead>
+                {puedeRegistrar && <TableHead className="text-right">Acción</TableHead>}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {registered.map((finding) => (
+                <TableRow key={finding.id}>
+                  <TableCell className="text-sm">{finding.description}</TableCell>
+                  <TableCell>
+                    <Badge variant={criticalityBadgeVariant(finding.criticality)}>
+                      {FINDING_CRITICALITY_LABELS[finding.criticality] ?? finding.criticality}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-sm">{DEVIATION_PLAZO[finding.criticality] ?? "—"}</TableCell>
+                  <TableCell className="text-sm">{FINDING_STATUS_LABELS[finding.status] ?? finding.status}</TableCell>
+                  {puedeRegistrar && (
+                    <TableCell className="text-right">
+                      {/* Quitar sólo mientras no tenga CAPA: con acción correctiva
+                          enlazada ya hay trabajo colgando de ella. */}
+                      {finding.capaActionId ? (
+                        <span className="text-xs text-[var(--color-text-subtle)]">Con CAPA</span>
+                      ) : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          disabled={operation.pending}
+                          onClick={() => operation.run(() => removeDeviationAction({ findingId: finding.id }))}
+                        >
+                          Quitar
+                        </Button>
+                      )}
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+      {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+
+      <OtherDeviationDialog runId={runId} open={otherOpen} onOpenChange={setOtherOpen} />
+    </section>
+  )
+}
+
+/**
+ * "Otra desviación": el único camino donde la gravedad la elige quien registra.
+ * Queda sin entrada de catálogo, y por eso aparece en la cola de clasificación
+ * del creador para que Prevención la incorpore con la gravedad oficial.
+ */
+function OtherDeviationDialog({ runId, open, onOpenChange }: {
+  runId: string
+  open: boolean
+  onOpenChange: (next: boolean) => void
+}) {
+  const [dano, setDano] = React.useState("moderado")
+  const operation = useOperation()
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <form
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const description = String(new FormData(event.currentTarget).get("description") ?? "").trim()
+            operation.run(
+              () => registerDeviationAction({ runId, description, danoPotencial: dano }),
+              () => onOpenChange(false),
+            )
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Otra desviación</DialogTitle>
+            <DialogDescription>
+              Para lo que no está en el catálogo. Prevención la revisará y, si corresponde, la incorporará con su
+              gravedad oficial — hasta entonces rige la que elijas acá.
+            </DialogDescription>
+          </DialogHeader>
+          <Field label="Qué se encontró" required>
+            <Textarea name="description" required minLength={3} maxLength={3000} rows={3} aria-label="Descripción de la desviación" />
+          </Field>
+          <Field label="Gravedad" required>
+            <Select value={dano} onValueChange={setDano}>
+              <SelectTrigger aria-label="Gravedad de la desviación"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="leve">Leve → bajo · 30 días</SelectItem>
+                <SelectItem value="moderado">Moderado → medio · 15 días</SelectItem>
+                <SelectItem value="grave">Grave → alto · 7 días</SelectItem>
+                <SelectItem value="fatal">Fatal → crítico · 3 días y detención</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+          <DialogFooter><Button type="submit" disabled={operation.pending}>Registrar</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 

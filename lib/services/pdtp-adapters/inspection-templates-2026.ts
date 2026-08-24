@@ -91,12 +91,27 @@ export const PDTP_2026_INSPECTION_SPECS: readonly InspectionTemplateSpec[] = [
   { n: 29, definitionCode: "inspeccion_contenedores",   name: "Inspección de Contenedores",                      kind: "inspection" },
   { n: 33, definitionCode: "inspeccion_equipos_moviles", name: "Inspección de Equipos Móviles",                  kind: "inspection" },
   { n: 34, definitionCode: "inspeccion_carros",         name: "Inspección de Carros",                            kind: "inspection" },
-  // n=39 (Observación Planeada, Anexo 7) sale del motor de inspecciones: es un
-  // relato libre sin ítems puntuables, así que no calcula cumplimiento ni puede
-  // derivar hallazgos. La definición se conserva en el catálogo; la actividad
-  // pasa a acreditarse a mano — ver NON_INSPECTION_DEFINITION_CODES.
-  { n: 40, definitionCode: "observacion_ampliroll",     name: "Observación de Seguridad: Camión Ampliroll",      kind: "observation" },
-  { n: 41, definitionCode: "observacion_maquinaria",    name: "Observación de Seguridad: Maquinaria Pesada",     kind: "observation" },
+  /* Las tres actividades que no son un checklist: se registran como "se hizo"
+   * más las desviaciones encontradas, tomadas del catálogo de cada instrumento.
+   * Antes se acreditaban a mano porque el motor sólo sabía derivar hallazgos de
+   * un ítem marcado "no cumple".
+   *
+   * La n=40 y la n=41 estaban cableadas al ampliroll y a maquinaria pesada, que
+   * son observaciones **conductuales por operador** — la descripción de la n=39,
+   * no de ellas. Quedaron ahí porque el formulario propio de la n=39 (Anexo 7)
+   * fue excluido del motor por no tener ítems puntuables, así que los dos
+   * formularios que sí existían se estacionaron en los números vecinos que
+   * estaban vacíos. Se sueltan: ninguna de las dos era su actividad. */
+  { n: 39, definitionCode: "observacion_conductas",     name: "Observación de conductas en terreno",             kind: "observation" },
+  { n: 40, definitionCode: "inspeccion_area",           name: "Inspección de área de trabajo",                   kind: "inspection" },
+  { n: 41, definitionCode: "caminata_seguridad",        name: "Caminata de seguridad",                           kind: "inspection" },
+  /* Los dos formularios conductuales por operador (PR-SGC-24 y PR-SGC-25) se
+   * siguen instalando, pero SIN actividad: son instrumentos reales y alguien
+   * puede querer ejecutarlos, sólo que ninguno de los dos era la n=40 ni la
+   * n=41. Si corresponden a la n=39 —que es la observación de conductas— es una
+   * decisión de Prevención, no una que se adivine acá. */
+  { n: null, definitionCode: "observacion_ampliroll",   name: "Observación de Seguridad: Camión Ampliroll",      kind: "observation" },
+  { n: null, definitionCode: "observacion_maquinaria",  name: "Observación de Seguridad: Maquinaria Pesada",     kind: "observation" },
   { n: 64, definitionCode: "inspeccion_epp",            name: "Inspección de Uso y Estado de EPP (JT)",          kind: "inspection", versionSuffix: "jt" },
   { n: 65, definitionCode: "inspeccion_epp",            name: "Inspección de Uso y Estado de EPP (PRF)",         kind: "inspection", versionSuffix: "prf" },
   // Sin actividad PDTP: la auditoría interna del SGSST la exige el DS 44

@@ -1106,6 +1106,190 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     })
   })
 
+  /* ── Instrumento de desviaciones ────────────────────────────────────────
+   * Lo que se prueba es la garantía que justifica todo el diseño: que la
+   * gravedad —y con ella el plazo de la acción correctiva— la declare el
+   * catálogo y no quien está en terreno. Y que completar la inspección no
+   * borre lo que esa persona registró, que es la regresión por la que existe
+   * la columna `origin`.
+   */
+  describe("Registrar desviaciones", () => {
+    async function areaRunWithCatalog() {
+      const service = await import("@/lib/services/prevention-inspections")
+      const template = await installTemplate({
+        definitionCode: "inspeccion_area", kind: "inspection", versionLabel: `area-${Date.now()}`,
+      })
+      const grave = await service.addDeviationCatalogEntry({
+        templateId: template.id, label: "Vía de evacuación bloqueada", danoPotencial: "grave",
+      }, AUTHOR)
+      const leve = await service.addDeviationCatalogEntry({
+        templateId: template.id, label: "Desorden localizado", danoPotencial: "leve",
+      }, AUTHOR)
+      // `createInspectionRun` devuelve `{ run, idempotentReplay }`.
+      const { run } = await service.createInspectionRun({
+        templateId: template.id, worksiteId: "ws-in-a",
+      }, AUTHOR)
+      return { service, template, run, grave, leve }
+    }
+
+    async function findingsOf(runId: string) {
+      return getDb().select().from(schema.preventionInspectionFindings)
+        .where(eq(schema.preventionInspectionFindings.runId, runId))
+    }
+
+    it("la desviación del catálogo trae su gravedad: el cliente no la manda", async () => {
+      const { service, run, grave } = await areaRunWithCatalog()
+      const created = await service.registerDeviation({ runId: run.id, catalogEntryId: grave.id }, AUTHOR)
+
+      expect(created.description).toBe("Vía de evacuación bloqueada")
+      // `grave` → `high` → plazo de 7 días en la CAPA.
+      expect(created.criticality).toBe("high")
+      expect(created.origin).toBe("deviation")
+      expect(created.catalogEntryId).toBe(grave.id)
+      // Y la inspección deja de estar sólo planificada: registrar es trabajo.
+      const [after] = await getDb().select({ status: schema.preventionInspectionRuns.status })
+        .from(schema.preventionInspectionRuns).where(eq(schema.preventionInspectionRuns.id, run.id))
+      expect(after?.status).toBe("in_progress")
+    })
+
+    it("declarar ejecutada NO borra las desviaciones registradas", async () => {
+      const { service, run, grave, leve } = await areaRunWithCatalog()
+      await service.registerDeviation({ runId: run.id, catalogEntryId: grave.id }, AUTHOR)
+      await service.registerDeviation({ runId: run.id, catalogEntryId: leve.id }, AUTHOR)
+
+      const [before] = await getDb().select({ version: schema.preventionInspectionRuns.version })
+        .from(schema.preventionInspectionRuns).where(eq(schema.preventionInspectionRuns.id, run.id))
+      await service.completeInspectionRun({ runId: run.id, expectedVersion: before!.version }, AUTHOR)
+
+      const findings = await findingsOf(run.id)
+      expect(findings).toHaveLength(2)
+      // Sin ítems puntuables no hay nada que promediar.
+      const [completed] = await getDb().select({ compliancePercent: schema.preventionInspectionRuns.compliancePercent })
+        .from(schema.preventionInspectionRuns).where(eq(schema.preventionInspectionRuns.id, run.id))
+      expect(completed?.compliancePercent).toBeNull()
+    })
+
+    it("reabrir para rectificar tampoco las borra", async () => {
+      const { service, run, grave } = await areaRunWithCatalog()
+      await service.registerDeviation({ runId: run.id, catalogEntryId: grave.id }, AUTHOR)
+      const [pre] = await getDb().select({ version: schema.preventionInspectionRuns.version })
+        .from(schema.preventionInspectionRuns).where(eq(schema.preventionInspectionRuns.id, run.id))
+      const completed = await service.completeInspectionRun({ runId: run.id, expectedVersion: pre!.version }, AUTHOR)
+
+      await service.transitionInspectionRun({
+        runId: run.id, expectedVersion: completed.run.version,
+        toStatus: "in_progress", reason: "Se corrige el sector recorrido.",
+      }, { ...AUTHOR, permissions: [...AUTHOR.permissions, "prevention:inspections:review"] })
+
+      expect(await findingsOf(run.id)).toHaveLength(1)
+    })
+
+    it("«Otra desviación» queda sin catálogo y aparece en la cola de clasificación", async () => {
+      const { service, template, run } = await areaRunWithCatalog()
+      const created = await service.registerDeviation({
+        runId: run.id, description: "Extintor tapado por pallets", danoPotencial: "moderado",
+      }, AUTHOR)
+      expect(created.catalogEntryId).toBeNull()
+      expect(created.criticality).toBe("medium")
+
+      const pendientes = await service.listUnclassifiedDeviations(template.id, AUTHOR)
+      expect(pendientes.map((row) => row.description)).toContain("Extintor tapado por pallets")
+    })
+
+    it("una entrada de otro instrumento se rechaza", async () => {
+      const { service, run } = await areaRunWithCatalog()
+      const otro = await installTemplate({ definitionCode: "caminata_seguridad", versionLabel: `cam-${Date.now()}` })
+      const ajena = await service.addDeviationCatalogEntry({
+        templateId: otro.id, label: "Desviación de otra plantilla", danoPotencial: "grave",
+      }, AUTHOR)
+
+      await expect(service.registerDeviation({ runId: run.id, catalogEntryId: ajena.id }, AUTHOR))
+        .rejects.toThrow(/no pertenece al instrumento/)
+    })
+
+    it("una entrada retirada se rechaza", async () => {
+      const { service, run, leve } = await areaRunWithCatalog()
+      await service.updateDeviationCatalogEntry({ entryId: leve.id, isActive: false }, AUTHOR)
+      await expect(service.registerDeviation({ runId: run.id, catalogEntryId: leve.id }, AUTHOR))
+        .rejects.toThrow(/retirada/)
+    })
+
+    it("no se registra en una inspección ya ejecutada", async () => {
+      const { service, run, grave, leve } = await areaRunWithCatalog()
+      await service.registerDeviation({ runId: run.id, catalogEntryId: grave.id }, AUTHOR)
+      const [pre] = await getDb().select({ version: schema.preventionInspectionRuns.version })
+        .from(schema.preventionInspectionRuns).where(eq(schema.preventionInspectionRuns.id, run.id))
+      await service.completeInspectionRun({ runId: run.id, expectedVersion: pre!.version }, AUTHOR)
+
+      await expect(service.registerDeviation({ runId: run.id, catalogEntryId: leve.id }, AUTHOR))
+        .rejects.toThrow(/sigue en ejecución/)
+    })
+
+    it("quitar una desviación se puede sin CAPA y no con ella", async () => {
+      const { service, run, grave } = await areaRunWithCatalog()
+      const created = await service.registerDeviation({ runId: run.id, catalogEntryId: grave.id }, AUTHOR)
+
+      await service.createFindingCapa({
+        findingId: created.id, actionDescription: "Despejar la vía y demarcarla.",
+      }, AUTHOR)
+      await expect(service.removeDeviation({ findingId: created.id }, AUTHOR))
+        .rejects.toThrow(/acción correctiva/)
+    })
+
+    it("derivar una desviación a CAPA le pone el plazo de su criticidad", async () => {
+      const { service, run, grave } = await areaRunWithCatalog()
+      const created = await service.registerDeviation({ runId: run.id, catalogEntryId: grave.id }, AUTHOR)
+      const result = await service.createFindingCapa({
+        findingId: created.id, actionDescription: "Despejar la vía de evacuación.",
+      }, AUTHOR)
+
+      const [capa] = await getDb().select({ targetDate: schema.preventionCapaActions.targetDate, priority: schema.preventionCapaActions.priority })
+        .from(schema.preventionCapaActions).where(eq(schema.preventionCapaActions.id, result.capaId))
+      // `high` → prioridad alta y 7 días.
+      expect(capa?.priority).toBe("high")
+      expect(capa?.targetDate).toBeTruthy()
+    })
+
+    it("copiar el catálogo no duplica lo que ya existe", async () => {
+      const { service, template } = await areaRunWithCatalog()
+      const destino = await installTemplate({ definitionCode: "caminata_seguridad", versionLabel: `cam2-${Date.now()}` })
+      await service.addDeviationCatalogEntry({
+        templateId: destino.id, label: "Desorden localizado", danoPotencial: "leve",
+      }, AUTHOR)
+
+      const first = await service.copyDeviationCatalog({ fromTemplateId: template.id, toTemplateId: destino.id }, AUTHOR)
+      expect(first.copied).toBe(1)
+      expect(first.skipped).toBe(1)
+
+      // Repetir es inocuo: nada nuevo entra y no revienta el índice único.
+      const second = await service.copyDeviationCatalog({ fromTemplateId: template.id, toTemplateId: destino.id }, AUTHOR)
+      expect(second.copied).toBe(0)
+    })
+
+    it("un checklist normal sigue rehaciendo sus hallazgos derivados al completar", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      const template = await installTemplate({ definitionCode: "inspeccion_extintores", versionLabel: `der-${Date.now()}` })
+      const { run } = await service.createInspectionRun({ templateId: template.id, worksiteId: "ws-in-a" }, AUTHOR)
+      const items = service.itemsFromDefinition(template.definitionSnapshot as never)
+
+      const saved = await service.saveInspectionAnswers({
+        runId: run.id, expectedVersion: run.version,
+        answers: answersForAll(items, (item) => item.countsForCompliance
+          ? { sectionId: item.sectionId, itemId: item.itemId, result: "non_conforming" as const, comment: null }
+          : undefined),
+      }, AUTHOR)
+      // Extintores declara acta, así que hay que completarla — a diferencia de
+      // los instrumentos de desviaciones, que no la tienen.
+      await service.completeInspectionRun({
+        runId: run.id, expectedVersion: saved.version, closingAct: await closingActFor(template.id),
+      }, AUTHOR)
+
+      const derived = await findingsOf(run.id)
+      expect(derived.length).toBeGreaterThan(0)
+      expect(derived.every((finding) => finding.origin === "derived")).toBe(true)
+    })
+  })
+
   describe("Ingesta de la planilla física", () => {
     const INGESTOR = { userId: "in-author", scope: scopeA, permissions: [...ALL, "prevention:inspections:ingest"] }
     let ingestaTemplateId = ""

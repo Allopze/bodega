@@ -1086,10 +1086,16 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
     const answerId = new Map(stored.map((row) => [`${row.sectionId}::${row.itemId}`, row.id]))
     const now = nowIso()
 
-    // Rehacer los hallazgos abiertos mantiene la coherencia si se corrigió una
-    // respuesta antes de cerrar; los que ya tienen CAPA no se tocan.
+    /* Rehacer los hallazgos DERIVADOS mantiene la coherencia si se corrigió una
+     * respuesta antes de cerrar; los que ya tienen CAPA no se tocan.
+     *
+     * El filtro por `origin` no es decorativo: sin él este borrado se llevaba
+     * también las desviaciones que una persona registró a mano —abiertas y sin
+     * CAPA, como cualquier hallazgo nuevo—, así que declarar ejecutada una
+     * inspección de área borraba justamente lo que se había ido a buscar. */
     await tx.delete(preventionInspectionFindings).where(and(
       eq(preventionInspectionFindings.runId, run.id),
+      eq(preventionInspectionFindings.origin, "derived"),
       eq(preventionInspectionFindings.status, "open"),
       sql`${preventionInspectionFindings.capaActionId} IS NULL`,
     ))
@@ -1100,6 +1106,7 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
         answerId: answerId.get(`${finding.sectionId}::${finding.itemId}`) ?? null,
         description: finding.description,
         criticality: finding.criticality,
+        origin: "derived" as const,
         status: "open" as const,
       })))
     }
@@ -1499,11 +1506,16 @@ export async function transitionInspectionRun(input: unknown, access: Inspection
     const now = nowIso()
 
     if (data.toStatus === "in_progress") {
-      // Los hallazgos con CAPA sobreviven: la acción correctiva ya vive en otro
-      // módulo y borrarla en cascada destruiría evidencia. Es la misma
-      // sentencia que usa `completeInspectionRun` al rehacerlos.
+      /* Los hallazgos con CAPA sobreviven: la acción correctiva ya vive en otro
+       * módulo y borrarla en cascada destruiría evidencia. Es la misma
+       * sentencia que usa `completeInspectionRun` al rehacerlos.
+       *
+       * Las desviaciones también sobreviven: son lo que una persona encontró en
+       * terreno, no un artefacto recalculable a partir de las respuestas.
+       * Reabrir para corregir un dato no puede obligar a volver a escribirlas. */
       await tx.delete(preventionInspectionFindings).where(and(
         eq(preventionInspectionFindings.runId, run.id),
+        eq(preventionInspectionFindings.origin, "derived"),
         sql`${preventionInspectionFindings.capaActionId} IS NULL`,
       ))
     }
@@ -1957,6 +1969,7 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
     // inspección no podía saber si alimentaba el programa anual ni con qué.
     pdtpActivityNumbers: preventionInspectionTemplates.pdtpActivityNumbers,
     pdtpReviewActivityNumbers: preventionInspectionTemplates.pdtpReviewActivityNumbers,
+    templateId: preventionInspectionTemplates.id,
     worksiteName: worksites.name,
     assigneeName: assignee.name,
     executorName: executor.name,
@@ -1990,11 +2003,34 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
     list.push(item)
     evidenceByAnswer.set(item.answerId, list)
   }
+  /* Catálogo activo del instrumento, sólo si registra desviaciones. Una
+   * plantilla de checklist no lo necesita: ahí la gravedad la declara el ítem. */
+  const definition = run.definitionSnapshot as unknown as ChecklistDefinition
+  const deviationCatalog = definition?.recordsDeviations
+    ? await db.select({
+        id: preventionInspectionDeviationCatalog.id,
+        label: preventionInspectionDeviationCatalog.label,
+        danoPotencial: preventionInspectionDeviationCatalog.danoPotencial,
+      })
+        .from(preventionInspectionDeviationCatalog)
+        .where(and(
+          eq(preventionInspectionDeviationCatalog.templateId, run.templateId),
+          eq(preventionInspectionDeviationCatalog.isActive, true),
+        ))
+        .orderBy(asc(preventionInspectionDeviationCatalog.label))
+    : []
+
   return {
     ...run,
     answers: answers.map((row) => ({ ...row, evidence: evidenceByAnswer.get(row.id) ?? [] })),
     findings,
     documents,
+    /** El instrumento registra desviaciones en vez de puntuar ítems. */
+    recordsDeviations: Boolean(definition?.recordsDeviations),
+    deviationCatalog: deviationCatalog.map((entry) => ({
+      ...entry,
+      criticality: criticalityFromDanoPotencial(entry.danoPotencial),
+    })),
   }
 }
 
@@ -2263,4 +2299,192 @@ export async function listUnclassifiedDeviations(templateId: string, access: Ins
     .groupBy(preventionInspectionFindings.description, preventionInspectionFindings.criticality)
     .orderBy(sql`COUNT(*) DESC`)
     .limit(100)
+}
+
+/* ── Registrar desviaciones en una inspección ─────────────────────────────
+ * La contraparte del catálogo: lo que se ejecuta en terreno.
+ *
+ * Una desviación es un hallazgo con `origin: 'deviation'`. No hizo falta tabla
+ * nueva —la de hallazgos ya admite filas variables por inspección— y con eso
+ * hereda todo lo que viene después: criticidad, derivación a CAPA con su plazo,
+ * revisión independiente, acta y acreditación al PDTP.
+ */
+
+/** Inspección editable y dentro de alcance, con la plantilla que la gobierna. */
+async function requireEditableRunForDeviation(tx: Tx, runId: string, access: InspectionAccess) {
+  const [row] = await tx.select({ run: preventionInspectionRuns, templateId: preventionInspectionTemplates.id })
+    .from(preventionInspectionRuns)
+    .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))
+    .where(eq(preventionInspectionRuns.id, runId)).limit(1)
+  if (!row) throw new Error(NOT_FOUND)
+  requireAccess(access, "prevention:inspections:execute", row.run.worksiteId)
+  if (!["planned", "in_progress"].includes(row.run.status)) {
+    throw new Error("Sólo se pueden registrar desviaciones mientras la inspección sigue en ejecución.")
+  }
+  return row
+}
+
+/**
+ * Registra una desviación encontrada.
+ *
+ * Del catálogo: el cliente manda `catalogEntryId` y **nada más**. La descripción
+ * y la gravedad salen de la entrada, que es lo que garantiza que quien registra
+ * en terreno no decida el plazo de la acción correctiva.
+ *
+ * "Otra desviación": manda descripción y gravedad, y queda sin `catalogEntryId`.
+ * Es el único caso donde la gravedad depende de una persona, y existe porque la
+ * alternativa —forzar la desviación más parecida del catálogo— ensucia el dato
+ * con una gravedad que no corresponde. Queda en la cola de
+ * `listUnclassifiedDeviations` para que Prevención la incorpore.
+ */
+export async function registerDeviation(input: unknown, access: InspectionAccess) {
+  const data = z.union([
+    z.object({ runId: z.string().min(1), catalogEntryId: z.string().min(1) }),
+    z.object({
+      runId: z.string().min(1),
+      description: z.string().trim().min(3).max(3000),
+      danoPotencial: z.enum(["leve", "moderado", "grave", "fatal"]),
+    }),
+  ]).parse(input)
+
+  return db.transaction(async (tx) => {
+    const { run, templateId } = await requireEditableRunForDeviation(tx, data.runId, access)
+
+    let description: string
+    let danoPotencial: string
+    let catalogEntryId: string | null = null
+
+    if ("catalogEntryId" in data) {
+      const [entry] = await tx.select().from(preventionInspectionDeviationCatalog)
+        .where(eq(preventionInspectionDeviationCatalog.id, data.catalogEntryId)).limit(1)
+      if (!entry) throw new Error(NOT_FOUND)
+      // El catálogo es por instrumento: una entrada de otra plantilla no aplica.
+      if (entry.templateId !== templateId) throw new Error("Esa desviación no pertenece al instrumento de esta inspección.")
+      if (!entry.isActive) throw new Error("Esa desviación fue retirada del catálogo.")
+      description = entry.label
+      danoPotencial = entry.danoPotencial
+      catalogEntryId = entry.id
+    } else {
+      description = data.description
+      danoPotencial = data.danoPotencial
+    }
+
+    const now = nowIso()
+    const [created] = await tx.insert(preventionInspectionFindings).values({
+      id: `insfnd-${nanoid()}`,
+      runId: run.id,
+      origin: "deviation",
+      // Una desviación no sale de una respuesta; el CHECK de la tabla lo exige.
+      answerId: null,
+      catalogEntryId,
+      description,
+      criticality: criticalityFromDanoPotencial(danoPotencial),
+      status: "open",
+    }).returning()
+    if (!created) throw new Error("No se pudo registrar la desviación.")
+
+    /* La inspección pasa a `in_progress` igual que al guardar respuestas:
+     * registrar una desviación ES trabajo de terreno, y dejarla en `planned`
+     * la mantendría contada como no iniciada. */
+    if (run.status === "planned") {
+      await tx.update(preventionInspectionRuns)
+        .set({ status: "in_progress", version: run.version + 1, updatedAt: now })
+        .where(and(eq(preventionInspectionRuns.id, run.id), eq(preventionInspectionRuns.version, run.version)))
+    }
+
+    await history(tx, {
+      entityType: "run", entityId: run.id, worksiteId: run.worksiteId,
+      changeType: "deviation_registered",
+      reason: `${description} (${danoPotencial}${catalogEntryId ? "" : " · fuera de catálogo"})`,
+      afterState: created, actorUserId: access.userId,
+    })
+    return created
+  })
+}
+
+/**
+ * Quita una desviación mal registrada, sólo mientras la inspección siga
+ * editable y el hallazgo no tenga CAPA: con acción correctiva enlazada ya hay
+ * trabajo colgando de ella y quitarla dejaría la CAPA sin origen.
+ */
+export async function removeDeviation(input: unknown, access: InspectionAccess) {
+  const data = z.object({ findingId: z.string().min(1) }).parse(input)
+
+  return db.transaction(async (tx) => {
+    const [row] = await tx.select({ finding: preventionInspectionFindings, run: preventionInspectionRuns })
+      .from(preventionInspectionFindings)
+      .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, preventionInspectionFindings.runId))
+      .where(eq(preventionInspectionFindings.id, data.findingId)).limit(1)
+    if (!row) throw new Error(NOT_FOUND)
+    requireAccess(access, "prevention:inspections:execute", row.run.worksiteId)
+    if (row.finding.origin !== "deviation") throw new Error("Ese hallazgo lo derivó un ítem del checklist: se corrige cambiando la respuesta.")
+    if (!["planned", "in_progress"].includes(row.run.status)) {
+      throw new Error("La inspección ya no está en ejecución.")
+    }
+    if (row.finding.capaActionId) throw new Error("La desviación ya tiene una acción correctiva: ciérrala desde la CAPA.")
+
+    await tx.delete(preventionInspectionFindings).where(eq(preventionInspectionFindings.id, row.finding.id))
+    await history(tx, {
+      entityType: "run", entityId: row.run.id, worksiteId: row.run.worksiteId,
+      changeType: "deviation_removed",
+      reason: row.finding.description,
+      beforeState: row.finding, actorUserId: access.userId,
+    })
+    return { removed: true as const }
+  })
+}
+
+/**
+ * Siembra el catálogo de un instrumento copiando el de otro.
+ *
+ * Existe porque los catálogos de la inspección de área y de la caminata de
+ * seguridad son casi idénticos —ambos levantan condiciones del lugar de
+ * trabajo—, y mantenerlos por instrumento obligaría a escribir treinta
+ * desviaciones dos veces. Las copias son independientes: editar o retirar una en
+ * el destino no toca el origen.
+ */
+export async function copyDeviationCatalog(input: unknown, access: InspectionAccess) {
+  const data = z.object({
+    fromTemplateId: z.string().min(1),
+    toTemplateId: z.string().min(1),
+  }).parse(input)
+  requireAccess(access, "prevention:inspections:manage")
+  if (data.fromTemplateId === data.toTemplateId) throw new Error("Elige un instrumento distinto del que estás editando.")
+
+  const [target] = await db.select({ id: preventionInspectionTemplates.id, status: preventionInspectionTemplates.status })
+    .from(preventionInspectionTemplates)
+    .where(eq(preventionInspectionTemplates.id, data.toTemplateId)).limit(1)
+  if (!target) throw new Error(NOT_FOUND)
+  if (target.status === "superseded") throw new Error("Una plantilla reemplazada ya no admite desviaciones nuevas.")
+
+  const [source, existing] = await Promise.all([
+    db.select().from(preventionInspectionDeviationCatalog).where(and(
+      eq(preventionInspectionDeviationCatalog.templateId, data.fromTemplateId),
+      eq(preventionInspectionDeviationCatalog.isActive, true),
+    )),
+    db.select({ label: preventionInspectionDeviationCatalog.label })
+      .from(preventionInspectionDeviationCatalog)
+      .where(eq(preventionInspectionDeviationCatalog.templateId, data.toTemplateId)),
+  ])
+
+  // Copiar dos veces no duplica ni revienta contra el índice único: lo que ya
+  // está por etiqueta se salta, incluso si está retirado en el destino.
+  const already = new Set(existing.map((row) => row.label))
+  const pending = source.filter((row) => !already.has(row.label))
+  if (pending.length === 0) return { copied: 0, skipped: source.length }
+
+  await db.insert(preventionInspectionDeviationCatalog).values(pending.map((row) => ({
+    id: `insdev-${nanoid()}`,
+    templateId: data.toTemplateId,
+    label: row.label,
+    danoPotencial: row.danoPotencial,
+    createdByUserId: access.userId,
+  })))
+  await history(db, {
+    entityType: "template", entityId: data.toTemplateId,
+    changeType: "deviation_catalog_copied",
+    reason: `${pending.length} desviación(es) copiadas desde otro instrumento`,
+    actorUserId: access.userId,
+  })
+  return { copied: pending.length, skipped: source.length - pending.length }
 }

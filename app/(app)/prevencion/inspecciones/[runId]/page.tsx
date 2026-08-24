@@ -74,6 +74,8 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
         }}
         closingAct={closingActFromDefinition(definition)}
         templateKind={detail.templateKind}
+        recordsDeviations={detail.recordsDeviations}
+        deviationCatalog={detail.deviationCatalog}
         pdtpActivityNumbers={detail.pdtpActivityNumbers ?? []}
         pdtpReviewActivityNumbers={detail.pdtpReviewActivityNumbers ?? []}
         worksiteName={detail.worksiteName}
@@ -113,6 +115,7 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
           criticality: item.criticality,
           status: item.status,
           capaActionId: item.capaActionId,
+          origin: item.origin,
         }))}
         currentUserId={auth.user.id}
         assignees={assignees}

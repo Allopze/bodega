@@ -17,6 +17,7 @@ import {
   retireInspectionTemplateAction,
   createInspectionProgramAction,
   addDeviationCatalogEntryAction,
+  copyDeviationCatalogAction,
   importInspectionTemplateAction,
   runProgramNowAction,
   setInspectionTemplatePdtpActivitiesAction,
@@ -234,6 +235,9 @@ export function InspectionTemplatesPanel({ templates, importable, canManage, can
                           name={item.name}
                           entries={item.deviations}
                           unclassified={item.unclassifiedDeviations}
+                          copySources={templates.flatMap((other) => other.id !== item.id && other.deviations.length > 0
+                            ? [{ id: other.id, name: other.name, count: other.deviations.filter((entry) => entry.isActive).length }]
+                            : [])}
                         />
                       )}
                       {item.status !== "superseded" && canManage && (
@@ -362,15 +366,19 @@ const DANO_LABELS: Record<string, string> = {
  * es "Otra desviación", donde sí la elige — y esas aparecen acá abajo para que
  * Prevención las incorpore y dejen de depender de un criterio individual.
  */
-function DeviationCatalogDialog({ templateId, name, entries, unclassified }: {
+function DeviationCatalogDialog({ templateId, name, entries, unclassified, copySources }: {
   templateId: string
   name: string
   entries: DeviationEntry[]
   unclassified: { description: string; criticality: string; occurrences: number }[]
+  /** Otros instrumentos con catálogo, para sembrar este copiando el suyo. */
+  copySources: { id: string; name: string; count: number }[]
 }) {
   const [open, setOpen] = React.useState(false)
   const [dano, setDano] = React.useState("moderado")
+  const [copyFrom, setCopyFrom] = React.useState("")
   const operation = useOperation()
+  const copyOperation = useOperation()
 
   const activas = entries.filter((entry) => entry.isActive)
   const retiradas = entries.filter((entry) => !entry.isActive)
@@ -419,6 +427,38 @@ function DeviationCatalogDialog({ templateId, name, entries, unclassified }: {
           <Button type="submit" size="sm" disabled={operation.pending}>Agregar al catálogo</Button>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
         </form>
+
+        {/* Los catálogos de la inspección de área y de la caminata son casi
+            iguales —ambos levantan condiciones del lugar de trabajo—, así que
+            sembrarlos copiando evita escribir treinta desviaciones dos veces.
+            Las copias son independientes del origen. */}
+        {copySources.length > 0 && (
+          <div className="flex flex-wrap items-end gap-2 rounded-lg border border-[var(--color-border)] p-3">
+            <Field label="Copiar desde otro instrumento" hint="Se copian las activas que no estén ya acá." className="flex-1">
+              <Select value={copyFrom} onValueChange={setCopyFrom}>
+                <SelectTrigger aria-label="Instrumento de origen"><SelectValue placeholder="Elegir instrumento…" /></SelectTrigger>
+                <SelectContent>
+                  {copySources.map((source) => (
+                    <SelectItem key={source.id} value={source.id}>{source.name} ({source.count})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={copyOperation.pending || !copyFrom}
+              onClick={() => copyOperation.run(
+                () => copyDeviationCatalogAction({ fromTemplateId: copyFrom, toTemplateId: templateId }),
+                () => setCopyFrom(""),
+              )}
+            >
+              Copiar
+            </Button>
+            {copyOperation.message && <p role="status" className="w-full text-sm">{copyOperation.message}</p>}
+          </div>
+        )}
 
         {activas.length > 0 && (
           <div className="max-h-56 space-y-1 overflow-y-auto">

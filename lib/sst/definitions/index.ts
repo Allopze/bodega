@@ -9,6 +9,9 @@ import { INSPECCION_EQUIPOS_MOVILES } from './inspeccion-equipos-moviles'
 import { INSPECCION_EPP } from './inspeccion-epp'
 import { OBSERVACION_AMPLIROLL } from './observacion-ampliroll'
 import { OBSERVACION_MAQUINARIA } from './observacion-maquinaria'
+import { OBSERVACION_CONDUCTAS } from './observacion-conductas'
+import { INSPECCION_AREA } from './inspeccion-area'
+import { CAMINATA_SEGURIDAD } from './caminata-seguridad'
 import { AUDITORIA_SGSST } from './auditoria-sgsst'
 import { REPORTE_EQUIPOS } from './reporte-equipos'
 import type { ChecklistDefinition } from '../types'
@@ -68,6 +71,14 @@ export const CHECKLIST_DEFINITIONS: Record<string, ChecklistDefinition> = {
   'observacion_maquinaria': OBSERVACION_MAQUINARIA,
   // Se importa con kind='audit' en el motor de inspecciones (DS 44 art. 22 n°4).
   'auditoria_sgsst': AUDITORIA_SGSST,
+  /* Instrumentos que NO puntúan ítems: registran la actividad y sus
+   * desviaciones, tomadas del catálogo de cada uno (`recordsDeviations`). Son
+   * las tres actividades del programa que no son una lista de preguntas —n=39
+   * conductas, n=40 áreas, n=41 caminata—, y que hasta ahora se acreditaban a
+   * mano porque el motor sólo sabía derivar hallazgos de un "no cumple". */
+  'observacion_conductas': OBSERVACION_CONDUCTAS,
+  'inspeccion_area': INSPECCION_AREA,
+  'caminata_seguridad': CAMINATA_SEGURIDAD,
 }
 
 export function getDefinition(code: string, _version?: string): ChecklistDefinition {
@@ -82,4 +93,5 @@ export {
   INSPECCION_EQUIPOS_MOVILES, INSPECCION_EPP,
   OBSERVACION_AMPLIROLL, OBSERVACION_MAQUINARIA,
   AUDITORIA_SGSST, REPORTE_EQUIPOS,
+  OBSERVACION_CONDUCTAS, INSPECCION_AREA, CAMINATA_SEGURIDAD,
 }

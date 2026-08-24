@@ -204,7 +204,7 @@ describe("Reporte de Equipos", () => {
   })
 
   it("declara la triple firma del papel", () => {
-    expect(REPORTE_EQUIPOS.closingAct.signatureRoles).toEqual([
+    expect(REPORTE_EQUIPOS.closingAct!.signatureRoles).toEqual([
       "operador_entrante", "operador_saliente", "supervisor_turno",
     ])
   })

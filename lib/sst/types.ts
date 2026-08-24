@@ -108,7 +108,24 @@ export interface ChecklistDefinition {
   frequencySuggested?: string
   evaluationCriteria?: string
   sections: ChecklistSection[]
-  closingAct: ClosingActDefinition
+  /**
+   * Opcional: los instrumentos que registran desviaciones no tienen acta, porque
+   * el papel firmado sigue siendo el respaldo. Ensanchar el tipo no rompe a
+   * ninguna definición existente — todas la declaran.
+   */
+  closingAct?: ClosingActDefinition
+  /**
+   * El instrumento **no puntúa ítems**: registra que la actividad se hizo y qué
+   * desviaciones se encontraron, tomadas de su catálogo
+   * (`prevention_inspection_deviation_catalog`).
+   *
+   * Es lo que necesitan las actividades del programa que no son una lista de
+   * preguntas —observación de conductas, inspección de área, caminata de
+   * seguridad—: ahí no hay ítem que declare la gravedad, así que la declara el
+   * catálogo y no el criterio de quien registra. Su `compliancePercent` queda
+   * nulo por construcción, que es lo correcto: no hay nada que promediar.
+   */
+  recordsDeviations?: boolean
 }
 
 export interface ClosingActDefinition {

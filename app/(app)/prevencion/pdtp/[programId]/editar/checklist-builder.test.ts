@@ -34,8 +34,10 @@ describe("checklist-builder: buildSkeletonDefinition (F1)", () => {
     expect(def.legalFramework).toEqual([])
     expect(def.sections).toEqual([])
     expect(def.revisionDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
-    expect(def.closingAct.resultOptions).toHaveLength(3)
-    expect(def.closingAct.signatureRoles).toContain("prevencionista_faena")
+    // `closingAct` es opcional en el tipo desde que hay instrumentos sin acta;
+    // los del PDTP sí la declaran, y es justo lo que se afirma acá.
+    expect(def.closingAct!.resultOptions).toHaveLength(3)
+    expect(def.closingAct!.signatureRoles).toContain("prevencionista_faena")
   })
 
   it("empieza con sections vacías (no pasa el schema hasta agregar 1 sección con 1 ítem)", () => {

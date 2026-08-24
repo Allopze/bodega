@@ -294,12 +294,23 @@ export const preventionInspectionRunDocuments = pgTable("prevention_inspection_r
 ])
 
 /* ── Hallazgos ────────────────────────────────────────────────────────────
- * Un hallazgo nace de una respuesta no conforme. Su criticidad deriva del
- * `danoPotencial` declarado en la plantilla, no del criterio del ejecutante.
+ * Un hallazgo nace de una respuesta no conforme, o lo registra una persona como
+ * desviación en los instrumentos que no puntúan ítems. Su criticidad deriva del
+ * `danoPotencial` declarado —por el ítem o por el catálogo—, no del criterio del
+ * ejecutante.
  */
 export const preventionInspectionFindings = pgTable("prevention_inspection_findings", {
   id:                text("id").primaryKey(),
   runId:             text("run_id").notNull().references(() => preventionInspectionRuns.id, { onDelete: "cascade" }),
+  /* Quién lo puso ahí. `completeInspectionRun` rehace los hallazgos derivados en
+   * cada cierre —borra los abiertos sin CAPA y los vuelve a calcular—, y sin
+   * esta marca ese borrado se llevaba también las desviaciones que una persona
+   * había registrado a mano.
+   *
+   * No sirve deducirlo de `answerId IS NULL`: un derivado también puede quedar
+   * con `answerId` nulo si la búsqueda de su respuesta falla. La procedencia
+   * tiene que ser explícita. */
+  origin:            text("origin").notNull().default("derived"),
   answerId:          text("answer_id").references(() => preventionInspectionAnswers.id, { onDelete: "set null" }),
   /* De dónde salió la gravedad, que es lo que gobierna el plazo de la CAPA:
    *   `answerId` → la declaró el ítem de la plantilla (checklist puntuado).
@@ -320,6 +331,9 @@ export const preventionInspectionFindings = pgTable("prevention_inspection_findi
   updatedAt:         timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   index("prevention_inspection_finding_run_idx").on(table.runId, table.status),
+  check("prevention_inspection_finding_origin_valid", sql`${table.origin} IN ('derived', 'deviation')`),
+  // Una desviación no sale de una respuesta: si trae `answer_id`, es derivada.
+  check("prevention_inspection_finding_origin_consistent", sql`${table.origin} = 'derived' OR ${table.answerId} IS NULL`),
   check("prevention_inspection_finding_criticality_valid", sql`${table.criticality} IN ('low', 'medium', 'high', 'critical')`),
   check("prevention_inspection_finding_status_valid", sql`${table.status} IN ('open', 'capa_linked', 'closed')`),
   check("prevention_inspection_finding_closed_consistent", sql`(${table.closedAt} IS NULL AND ${table.closedByUserId} IS NULL) OR (${table.closedAt} IS NOT NULL AND ${table.closedByUserId} IS NOT NULL)`),

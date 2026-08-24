@@ -80,11 +80,14 @@ export function EvaluationActaSection({
           </div>
         )}
 
-        {definition.closingAct.signatureRoles.length > 0 && (
+        {/* `closingAct` es opcional desde que hay instrumentos que registran
+            desviaciones y no tienen acta. Las evaluaciones de personas sí la
+            declaran, pero el tipo ya no lo garantiza. */}
+        {(definition.closingAct?.signatureRoles.length ?? 0) > 0 && (
           <div>
             <p className="text-xs font-medium text-text-subtle uppercase tracking-wide mb-2">Firmas requeridas (en acta impresa)</p>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {definition.closingAct.signatureRoles.map((role) => (
+              {definition.closingAct!.signatureRoles.map((role) => (
                 <div
                   key={role}
                   className="h-16 rounded-(--radius) border-2 border-dashed border-(--color-border) flex flex-col items-center justify-end pb-1"

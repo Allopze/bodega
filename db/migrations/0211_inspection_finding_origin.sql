@@ -1,0 +1,3 @@
+ALTER TABLE "prevention_inspection_findings" ADD COLUMN "origin" text DEFAULT 'derived' NOT NULL;--> statement-breakpoint
+ALTER TABLE "prevention_inspection_findings" ADD CONSTRAINT "prevention_inspection_finding_origin_valid" CHECK ("prevention_inspection_findings"."origin" IN ('derived', 'deviation'));--> statement-breakpoint
+ALTER TABLE "prevention_inspection_findings" ADD CONSTRAINT "prevention_inspection_finding_origin_consistent" CHECK ("prevention_inspection_findings"."origin" = 'derived' OR "prevention_inspection_findings"."answer_id" IS NULL);
