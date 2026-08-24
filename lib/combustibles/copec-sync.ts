@@ -260,6 +260,9 @@ async function importCopecPeriod(
   pending: Set<string>,
   importerId?: string,
   runId?: string,
+  /** Se va llenando a medida que el ledger escribe, para que una caída a mitad
+   *  de camino no cierre la corrida diciendo que no se procesó nada. */
+  quality?: { accepted: number; rejected: number; pending: number },
 ): Promise<PeriodSyncResult> {
   const importerEmail = process.env.COPEC_SYNC_IMPORTER_EMAIL?.trim()
   const configuredImporter = importerId
@@ -341,6 +344,11 @@ async function importCopecPeriod(
       rowsAccepted += persistedRows.accepted
       rowsRejected += persistedRows.rejected + (persistedIssues.rejected ?? 0)
       rowsPending += persistedRows.pending
+      if (quality) {
+        quality.accepted += persistedRows.accepted
+        quality.rejected += persistedRows.rejected + (persistedIssues.rejected ?? 0)
+        quality.pending += persistedRows.pending
+      }
     } else {
       rowsAccepted += validation.accepted.length
       rowsRejected += validation.rejected.length + parsed.errors.length
@@ -548,8 +556,11 @@ export async function syncCopecReportPeriod(period: CopecSyncPeriod, importerId?
   })
   let runFinished = false
   let receivedRows = 0
+  // Fuera del try: si el período muere después de escribir el ledger, cerrar la
+  // corrida con las métricas en cero borraba de la bitácora el trabajo hecho.
+  const quality = { accepted: 0, rejected: 0, pending: 0 }
   try {
-    const result = await importCopecPeriod(period.from, period.to, pending, importerId, run.id)
+    const result = await importCopecPeriod(period.from, period.to, pending, importerId, run.id, quality)
     receivedRows = result.rowsReceived
     // Solo avanzamos el cursor si el portal entregó al menos un archivo. Un período
     // sin NINGUNA descarga (todas las tarjetas "no disponible") no hace avanzar el
@@ -584,9 +595,9 @@ export async function syncCopecReportPeriod(period: CopecSyncPeriod, importerId?
           receivedFrom: period.from,
           receivedTo: period.to,
           rowsReceived: receivedRows,
-          rowsAccepted: 0,
-          rowsRejected: 0,
-          rowsPending: 0,
+          rowsAccepted: quality.accepted,
+          rowsRejected: quality.rejected,
+          rowsPending: quality.pending,
           error: error instanceof Error ? error.message : "Error desconocido en la sincronización Copec",
         })
       } catch (finishError) {

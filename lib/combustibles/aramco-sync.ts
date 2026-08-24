@@ -284,6 +284,10 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
   }
 
   let receivedRows = 0
+  // Fuera del try: si la corrida muere armando la proyección, el ledger ya
+  // escribió sus filas y cerrarla con las métricas en cero borraba de la
+  // bitácora el trabajo que sí quedó hecho.
+  const quality = { accepted: 0, rejected: 0, pending: 0 }
   try {
     const session = await authenticateAramco(config.documentNumber, config.password)
     const movements = await fetchAramcoMovements(session, from, to)
@@ -320,6 +324,9 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
         productId: input.product ? fuelProductIdForLegacy(input.product) : null,
       }
     })
+    quality.accepted = persisted.accepted
+    quality.rejected = persisted.rejected
+    quality.pending = persisted.pending
     const acceptedIdentityKeys = new Set(validation.accepted.map((row) => row.identityKey))
 
     // (mes, fuente) -> (faena -> transacciones). El grupo es la unidad de lote.
@@ -514,9 +521,9 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
           receivedFrom: from,
           receivedTo: to,
           rowsReceived: receivedRows,
-          rowsAccepted: 0,
-          rowsRejected: 0,
-          rowsPending: 0,
+          rowsAccepted: quality.accepted,
+          rowsRejected: quality.rejected,
+          rowsPending: quality.pending,
           error: error instanceof Error ? error.message : "Error desconocido en la sincronización Aramco",
         })
       } catch (finishError) {

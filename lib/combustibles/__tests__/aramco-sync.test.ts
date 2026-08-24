@@ -314,6 +314,23 @@ describe("syncAramco", () => {
     expect(insertedRecords[0]).toMatchObject({ patente: "RWYH93", batchId: "batch-existente" })
   })
 
+  it("cierra una corrida fallida con las métricas que el ledger ya escribió", async () => {
+    // El ledger se escribe ANTES de armar la proyección. Cerrar la corrida con
+    // ceros borraba de la bitácora el trabajo que sí quedó hecho.
+    const { recordFuelProviderValidation, finishFuelProviderSyncRun } = await import("@/lib/combustibles/fuel-provider-ledger")
+    vi.mocked(recordFuelProviderValidation).mockResolvedValue({ accepted: 3, rejected: 1, pending: 2 })
+    mocks.batchFindFirst.mockRejectedValue(new Error("la proyección explotó"))
+
+    await expect(syncAramco()).rejects.toThrow("la proyección explotó")
+
+    expect(vi.mocked(finishFuelProviderSyncRun)).toHaveBeenCalledWith("run-1", expect.objectContaining({
+      status: "failed",
+      rowsAccepted: 3,
+      rowsRejected: 1,
+      rowsPending: 2,
+    }))
+  })
+
   it("skips a worksite already loaded by hand for that period", async () => {
     // 1ª consulta: no hay lote propio. 2ª: hay una carga manual del período.
     mocks.batchFindFirst.mockResolvedValueOnce(undefined).mockResolvedValueOnce({ fuente: "Aramco" })
