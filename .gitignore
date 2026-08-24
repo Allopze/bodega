@@ -92,3 +92,9 @@ backup-*.sql
 *.dump
 
 /anexos
+# Environment files may contain credentials. Keep only the sanitized template.
+*.env
+*.env.*
+.env
+.env.*
+!.env.example

@@ -66,10 +66,15 @@ services:
       - COPEC_PASSWORD=${COPEC_PASSWORD:-}
       - COPEC_SYNC_START_DATE=${COPEC_SYNC_START_DATE:-2020-01-01}
       - COPEC_SYNC_IMPORTER_EMAIL=${COPEC_SYNC_IMPORTER_EMAIL:-}
+      - ARAMCO_DOCUMENT_NUMBER=${ARAMCO_DOCUMENT_NUMBER:-}
+      - ARAMCO_PASSWORD=${ARAMCO_PASSWORD:-}
+      - ARAMCO_SYNC_ENABLED=${ARAMCO_SYNC_ENABLED:-false}
+      - ARAMCO_SYNC_IMPORTER_EMAIL=${ARAMCO_SYNC_IMPORTER_EMAIL:-}
       # Cron endpoints and the DTE/billing integrations are server-only. A
       # Compose `.env` is used for interpolation; these explicit mappings are
       # what actually put the values into the running app container.
       - CRON_SECRET=${CRON_SECRET:-}
+      - CRON_ALLOWED_SOURCES=${CRON_ALLOWED_SOURCES:-}
       - DTE_PORTAL_BASE_URL=${DTE_PORTAL_BASE_URL:-https://clientes.dtefacturaenlinea.cl/facturaenlinea}
       - DTE_PORTAL_RUT_USR=${DTE_PORTAL_RUT_USR:-}
       - DTE_PORTAL_RUT_EMP=${DTE_PORTAL_RUT_EMP:-}

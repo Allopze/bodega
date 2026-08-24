@@ -79,6 +79,7 @@ const SYNC_OUTCOME_SUFFIXES = new Map([
   ["partial", { status: 503, exitCode: 1, ok: false, suffix: "PARTIAL" }],
   ["failed", { status: 503, exitCode: 1, ok: false, suffix: "FAILED" }],
   ["unauthorized", { status: 401, exitCode: 1, ok: false, suffix: "UNAUTHORIZED" }],
+  ["rate_limited", { status: 429, exitCode: 1, ok: false, suffix: "RATE_LIMITED" }],
 ])
 
 const HEALTH_OUTCOMES = new Map([

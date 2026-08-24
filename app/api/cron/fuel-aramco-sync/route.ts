@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { verifyCronSecret } from "@/lib/security/cron-auth"
+import { cronRequestSource, parseCronAllowedSources, verifyCronRequest } from "@/lib/security/cron-auth"
 import { syncAramco } from "@/lib/combustibles/aramco-sync"
 import { readAramcoConfig } from "@/lib/combustibles/aramco-settings"
 import { fuelCronContractFor } from "@/lib/combustibles/fuel-cron-contract"
@@ -7,6 +7,7 @@ import { AramcoTwoFactorRequiredError } from "@/lib/combustibles/aramco-client"
 import { logger } from "@/lib/logger"
 import { withCronLock } from "@/lib/services/cron-lock"
 import { isRouteOperational } from "@/lib/services/module-toggles"
+import { consumeFixedWindowLimit } from "@/lib/services/rate-limit"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -17,7 +18,16 @@ export const maxDuration = 300
 
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET
-  if (!secret || !verifyCronSecret(request.headers.get("authorization"), secret)) {
+  const source = cronRequestSource({ forwardedFor: request.headers.get("x-forwarded-for"), realIp: request.headers.get("x-real-ip") })
+  const quota = await consumeFixedWindowLimit(`cron:fuel:${source ?? "unknown"}`, { maxAttempts: 10, lockMs: 60_000 })
+  if (!quota.allowed) return respond(fuelCronContractFor({ rateLimited: true }))
+  const allowedSources = parseCronAllowedSources(process.env.CRON_ALLOWED_SOURCES)
+  const enforceSource = process.env.NODE_ENV === "production" || allowedSources.length > 0
+  if (!secret || !verifyCronRequest({
+    authorization: request.headers.get("authorization"),
+    forwardedFor: request.headers.get("x-forwarded-for"),
+    realIp: request.headers.get("x-real-ip"),
+  }, secret ?? "", allowedSources, enforceSource)) {
     return respond(fuelCronContractFor({ unauthorized: true }))
   }
   if (!await isRouteOperational("/combustibles/importar")) {

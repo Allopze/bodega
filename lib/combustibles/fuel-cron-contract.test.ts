@@ -26,6 +26,10 @@ describe("fuelCronContractFor", () => {
     expect(fuelCronContractFor({ unauthorized: true, failed: 1, total: 1 })).toMatchObject({ outcome: "unauthorized", httpStatus: 401 })
   })
 
+  it("reports rate limiting without pretending the provider failed", () => {
+    expect(fuelCronContractFor({ rateLimited: true })).toMatchObject({ outcome: "rate_limited", code: "FUEL_CRON_RATE_LIMITED", httpStatus: 429 })
+  })
+
   it("disabled module reports ok:true so the runner does not treat it as a failure", () => {
     expect(fuelCronContractFor({ disabled: true })).toMatchObject({ outcome: "disabled", ok: true, httpStatus: 200 })
   })

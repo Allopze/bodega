@@ -6,13 +6,13 @@
  */
 
 export type FuelCronHealth = "healthy" | "disabled" | "waiting" | "degraded" | "critical"
-export type FuelCronOutcome = "success" | "disabled" | "conflict" | "partial" | "failed" | "unauthorized"
+export type FuelCronOutcome = "success" | "disabled" | "conflict" | "partial" | "failed" | "unauthorized" | "rate_limited"
 
 export interface FuelCronContract {
   outcome: FuelCronOutcome
   code: `FUEL_CRON_${string}`
   ok: boolean
-  httpStatus: 200 | 401 | 409 | 503
+  httpStatus: 200 | 401 | 409 | 429 | 503
   runnerExitCode: 0 | 1 | 2
   health: FuelCronHealth
 }
@@ -28,10 +28,12 @@ export function fuelCronContractFor(input: {
   unauthorized?: boolean
   disabled?: boolean
   conflict?: boolean
+  rateLimited?: boolean
   failed?: number
   total?: number
 }): FuelCronContract {
   if (input.unauthorized) return contract("unauthorized", "FUEL_CRON_UNAUTHORIZED", false, 401, 1, "critical")
+  if (input.rateLimited) return contract("rate_limited", "FUEL_CRON_RATE_LIMITED", false, 429, 1, "degraded")
   if (input.disabled) return contract("disabled", "FUEL_CRON_DISABLED", true, 200, 0, "disabled")
   const failed = input.failed ?? 0
   const total = input.total ?? 0

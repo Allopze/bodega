@@ -85,6 +85,15 @@ describe("cron runner", () => {
     expect(partial).toBe(1)
   })
 
+  it("maps a rate-limited response to a failed runner exit without accepting it as provider failure", async () => {
+    const exitCode = await runCronJob("fuel-copec-sync", {
+      secret: "cron-secret",
+      log: vi.fn(),
+      fetchImpl: vi.fn().mockResolvedValue(jsonResponse(429, { ok: false, outcome: "rate_limited", code: "FUEL_CRON_RATE_LIMITED" })),
+    })
+    expect(exitCode).toBe(1)
+  })
+
   it("rejects a combustibles job whose payload wears the DTE prefix instead of its own", async () => {
     const log = vi.fn()
     const exitCode = await runCronJob("fuel-statement-notifications", {
