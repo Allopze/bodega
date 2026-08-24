@@ -184,6 +184,69 @@ describe("syncCopecReportPeriod", () => {
     expect(mockSaveState).toHaveBeenCalledOnce()
   })
 
+  it("atribuye las filas inválidas del archivo a un solo lote, no a cada faena", async () => {
+    // `parsed.errors` es del ARCHIVO. Con 2 faenas en el mismo reporte, sumarle
+    // el conteo completo a cada lote triplicaba las filas rechazadas.
+    const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
+    mockDownloadCopecReports.mockResolvedValue([
+      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
+      { product: "bluemax", unavailable: true },
+    ])
+    mockParseConsumptionExcel.mockResolvedValue({
+      rows: [row("AAA"), row("BBB")],
+      errors: [{ rowIndex: 9, field: "Patente", message: "requerida" }, { rowIndex: 10, field: "Monto ($)", message: "requerido" }],
+      duplicates: [],
+    })
+    mockVehiclesFindMany.mockResolvedValue([
+      { id: "v-aaa", plate: "AAA", worksiteId: "W1" },
+      { id: "v-bbb", plate: "BBB", worksiteId: "W2" },
+    ])
+
+    const tx = makeTx()
+    mockTransaction.mockImplementation(async (cb: (t: unknown) => unknown) => cb(tx))
+
+    await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
+
+    const batches = tx._insertedBatches as Array<{ totalFilas: number; filasValidas: number; filasInvalidas: number }>
+    expect(batches).toHaveLength(2)
+    expect(batches.map((batch) => batch.filasInvalidas)).toEqual([2, 0])
+    // El invariante que audita `batch_detail_mismatches` del preflight.
+    for (const batch of batches) expect(batch.totalFilas).toBe(batch.filasValidas + batch.filasInvalidas)
+  })
+
+  it("mantiene la atribución de filas inválidas al refrescar un lote existente", async () => {
+    // La rama de refresco escribía `parsed.errors.length` sin el reparto, así que
+    // un mes ya importado volvía a multiplicar las rechazadas en cada faena.
+    const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
+    mockDownloadCopecReports.mockResolvedValue([
+      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
+      { product: "bluemax", unavailable: true },
+    ])
+    mockParseConsumptionExcel.mockResolvedValue({
+      rows: [row("AAA"), row("BBB")],
+      errors: [{ rowIndex: 9, field: "Patente", message: "requerida" }, { rowIndex: 10, field: "Monto ($)", message: "requerido" }],
+      duplicates: [],
+    })
+    mockVehiclesFindMany.mockResolvedValue([
+      { id: "v-aaa", plate: "AAA", worksiteId: "W1" },
+      { id: "v-bbb", plate: "BBB", worksiteId: "W2" },
+    ])
+    mockBatchFindFirst.mockResolvedValue({ id: "batch-existente", hashArchivo: "otro" })
+    mockConsumptionFindMany.mockResolvedValue([])
+
+    const tx = makeTx()
+    mockTransaction.mockImplementation(async (cb: (t: unknown) => unknown) => cb(tx))
+
+    await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
+
+    const patches = mockTxUpdateSet.mock.calls
+      .map((call) => call[0] as { filasInvalidas?: number; totalFilas?: number; filasValidas?: number })
+      .filter((patch) => patch.filasInvalidas !== undefined)
+    expect(patches).toHaveLength(2)
+    expect(patches.map((patch) => patch.filasInvalidas)).toEqual([2, 0])
+    for (const patch of patches) expect(patch.totalFilas).toBe(patch.filasValidas! + patch.filasInvalidas!)
+  })
+
   it("re-imports only the newly-linked plates into an existing batch (no duplicates)", async () => {
     const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
     mockDownloadCopecReports.mockResolvedValue([

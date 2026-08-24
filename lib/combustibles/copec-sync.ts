@@ -155,17 +155,25 @@ function resolveStart(current: SyncState, minimumStart: string): string {
 }
 
 /** Hash estable de la proyección TCT. El Excel puede regenerarse con otro
- * nombre o metadata sin que cambie el agregado que se proyecta. */
-export function copecProjectionHash(rows: ParsedConsumptionRow[]): string {
+ * nombre o metadata sin que cambie el agregado que se proyecta.
+ *
+ * `invalidRows` entra al hash aunque no se proyecte: sin él, un archivo que gana
+ * una fila inválida sin cambiar ninguna válida salía por el atajo de "hash
+ * idéntico, no hay trabajo" y el lote se quedaba con su conteo de filas
+ * rechazadas viejo para siempre. */
+export function copecProjectionHash(rows: ParsedConsumptionRow[], invalidRows = 0): string {
   return createHash("sha256")
-    .update(JSON.stringify(rows.map((row) => ({
-      patente: row.patente,
-      tarjetas: row.numeroTarjetas,
-      transacciones: row.numeroTransacciones,
-      cantidad: row.cantidadUnidad,
-      monto: row.monto,
-      rendimiento: row.rendimientoPromedio,
-    }))))
+    .update(JSON.stringify({
+      invalidRows,
+      rows: rows.map((row) => ({
+        patente: row.patente,
+        tarjetas: row.numeroTarjetas,
+        transacciones: row.numeroTransacciones,
+        cantidad: row.cantidadUnidad,
+        monto: row.monto,
+        rendimiento: row.rendimientoPromedio,
+      })),
+    }))
     .digest("hex")
 }
 
@@ -352,12 +360,16 @@ async function importCopecPeriod(
       rows.map((row) => ({ id: nanoid(), batchId, worksiteId, vehicleId: resolveVehicle(row.patente)?.id ?? null, patente: row.patente, numeroTarjetas: row.numeroTarjetas, numeroTransacciones: row.numeroTransacciones, cantidadUnidad: row.cantidadUnidad, monto: row.monto, rendimientoPromedio: row.rendimientoPromedio, precioPromedioUnidad: row.cantidadUnidad > 0 ? Math.round(row.monto / row.cantidadUnidad * 100) / 100 : null, periodoDesde: from, periodoHasta: to, fuente: source, rawRow: row.rawRow }))
 
     // Las filas de `parsed.errors` son del ARCHIVO completo, no por faena: el
-    // loop de abajo crea un lote nuevo por cada faena del archivo, y antes le
-    // sumaba el conteo COMPLETO de errores a cada uno — con 3 faenas en el
-    // mismo reporte, el total de filas rechazadas se triplicaba. Se atribuyen
-    // sólo al primer lote nuevo que se crea para este archivo.
-    let fileErrorsAttributed = false
+    // loop de abajo crea un lote por cada faena del archivo, y antes le sumaba el
+    // conteo COMPLETO a cada uno — con 3 faenas en el mismo reporte, el total de
+    // filas rechazadas se triplicaba. Se atribuyen al PRIMER grupo del archivo, y
+    // en las dos ramas: el flag anterior sólo lo consumía la rama de creación, así
+    // que un refresco volvía a multiplicarlas. Por índice y no por "el primero que
+    // escriba" para que la atribución no oscile entre corridas cuando un lote sale
+    // por el atajo del hash sin escribir nada.
+    let groupIndex = 0
     for (const [worksiteId, rows] of groups) {
+      const fileErrors = groupIndex++ === 0 ? parsed.errors.length : 0
       // Todo el grupo (dedup por identidad lógica, guard de fuente ajena y el
       // insert que corresponda) bajo un único lock por (faena, período,
       // fuente): antes cada chequeo y cada transacción corrían por separado,
@@ -369,7 +381,7 @@ async function importCopecPeriod(
       const outcome = await db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`)
 
-        const projectionHash = copecProjectionHash(rows)
+        const projectionHash = copecProjectionHash(rows, parsed.errors.length)
         const duplicate = await tx.query.fuelImportBatches.findFirst({ where: and(eq(fuelImportBatches.worksiteId, worksiteId), eq(fuelImportBatches.periodoDesde, from), eq(fuelImportBatches.periodoHasta, to), eq(fuelImportBatches.fuente, source), ne(fuelImportBatches.estado, "revertido")),
           columns: { id: true, hashArchivo: true } })
         if (duplicate) {
@@ -377,9 +389,9 @@ async function importCopecPeriod(
           const totals = computeBatchTotals(rows)
           const refresh = await replaceBatchRecords(tx, duplicate.id, buildRecords(rows, duplicate.id, worksiteId))
           await tx.update(fuelImportBatches).set({
-            totalFilas: totals.totalFilas,
+            totalFilas: totals.totalFilas + fileErrors,
             filasValidas: totals.totalFilas,
-            filasInvalidas: parsed.errors.length,
+            filasInvalidas: fileErrors,
             totalPatentes: totals.totalPatentes,
             totalTarjetas: totals.totalTarjetas,
             totalTransacciones: totals.totalTransacciones,
@@ -411,8 +423,6 @@ async function importCopecPeriod(
 
         const totals = computeBatchTotals(rows)
         const batchId = nanoid()
-        const fileErrors = fileErrorsAttributed ? 0 : parsed.errors.length
-        fileErrorsAttributed = true
         await tx.insert(fuelImportBatches).values({ id: batchId, worksiteId, fuente: source, periodoDesde: from, periodoHasta: to, archivoNombre: report.fileName, hashArchivo: projectionHash, estado: "importado", totalFilas: totals.totalFilas + fileErrors, filasValidas: totals.totalFilas, filasInvalidas: fileErrors, totalPatentes: totals.totalPatentes, totalTarjetas: totals.totalTarjetas, totalTransacciones: totals.totalTransacciones, totalCantidad: totals.totalCantidad, totalMonto: totals.totalMonto, importadoPor: resolvedImporterId, notas: "Sincronización mensual automática Copec TCT" })
         await tx.insert(fuelConsumptionRecords).values(buildRecords(rows, batchId, worksiteId))
         return { imported: rows.length }
