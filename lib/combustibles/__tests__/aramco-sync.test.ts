@@ -254,6 +254,11 @@ describe("syncAramco", () => {
     // `linkConsumptionPlateAction` permite vincular una patente a un vehículo
     // cuya patente NO coincide con la del reporte. Ese vínculo no existe en
     // ninguna otra parte: recalcularlo desde el catálogo lo borraría.
+    //
+    // El "SZ GB 72" del registro guardado es load-bearing: es una fila escrita
+    // antes de que Aramco normalizara la patente, y la corrida de hoy emite
+    // "SZGB72". Si la proyección volviera a identificar la fila por el texto
+    // exacto, esto sería un borrado + inserción y el vínculo se perdería.
     mocks.fetchAramcoMovements.mockResolvedValue([movement({ transactionDate: "2026-08-02T08:00:00" })])
     mocks.batchFindFirst.mockResolvedValue({ id: "batch-agosto", totalFilas: 0, totalPatentes: 0, totalTarjetas: 0, totalTransacciones: 0, totalCantidad: 0, totalMonto: 0 })
     mocks.recordsFindMany.mockResolvedValue([{ id: "rec-1", patente: "SZ GB 72", vehicleId: "vehiculo-elegido-a-mano" }])
@@ -304,7 +309,9 @@ describe("syncAramco", () => {
     expect(result.imported).toBe(1)
     expect(result.batches).toBe(0)
     expect(insertedRecords).toHaveLength(1)
-    expect(insertedRecords[0]).toMatchObject({ patente: "RW YH 93", batchId: "batch-existente" })
+    // Se guarda normalizada: Aramco la entrega "RW YH 93" y el canon del módulo
+    // no lleva espacios.
+    expect(insertedRecords[0]).toMatchObject({ patente: "RWYH93", batchId: "batch-existente" })
   })
 
   it("skips a worksite already loaded by hand for that period", async () => {

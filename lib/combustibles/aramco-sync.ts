@@ -27,7 +27,7 @@ import { fuelConsumptionRecords, fuelImportBatches, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { todayInChile } from "@/lib/utils"
 import { calcPrecioPromedioUnidad, computeBatchTotals } from "@/lib/combustibles/consumption-calculations"
-import { plateMatchKey } from "@/lib/combustibles/xlsx-utils"
+import { normalizePlate, plateMatchKey } from "@/lib/combustibles/xlsx-utils"
 import { AUTOMATED_SOURCES, aramcoSourceForProduct } from "@/lib/combustibles/fuel-sources"
 import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
 import { fuelProviderMappings } from "@/db/schema"
@@ -161,7 +161,12 @@ function aggregateByPlate(movements: AramcoMovement[]): AggregatedRow[] {
   }>()
 
   for (const movement of movements) {
-    const plate = (movement.vehicleRegistrationPlate ?? "").trim().toUpperCase()
+    // `normalizePlate` y no `.trim().toUpperCase()`: Aramco entrega la patente
+    // con espacios ("RW YH 93") y el resto del módulo guarda el canon sin ellos.
+    // Guardarla cruda hacía que el mismo camión contara como dos patentes en el
+    // dashboard —que agrupa por la columna— y que el filtro `?patente=RWYH93`
+    // que arma la ficha de flota no encontrara ninguna de sus cargas.
+    const plate = normalizePlate(movement.vehicleRegistrationPlate ?? "")
     if (!plate) continue
     const group = groups.get(plate) ?? {
       cards: new Set<string>(),
@@ -339,6 +344,10 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
     const pendingPlates = new Set<string>()
     for (const movement of movements) {
       if (!acceptedIdentityKeys.has(`external:${movement.transactionId}`)) continue
+      // Sin normalizar a propósito: `pendingPlates` va a un toast para que el
+      // operador busque la patente en el portal de Aramco, y ahí sirve el texto
+      // tal como Aramco lo entrega. La resolución de vehículo ya normaliza sola
+      // con `plateMatchKey`, así que el formato de acá no decide nada.
       const plate = (movement.vehicleRegistrationPlate ?? "").trim()
       const vehicle = plate ? resolveVehicle(plate) : undefined
       if (!vehicle) {
