@@ -1,8 +1,8 @@
 "use server"
 
 import { db } from "@/db"
-import { eq } from "drizzle-orm"
-import { systemSettings } from "@/db/schema"
+import { desc, eq } from "drizzle-orm"
+import { fuelProviderSyncRuns, systemSettings } from "@/db/schema"
 import { guardPermission } from "@/lib/auth/can"
 import { getCopecSyncPlan, setCopecSyncStartDate, syncCopecReportPeriod } from "@/lib/combustibles/copec-sync"
 import { isOpenPeriod } from "@/lib/combustibles/open-period"
@@ -20,6 +20,13 @@ const copecStartDateSchema = z.object({
 
 export interface CopecSyncStatus {
   lastRunAt: string | null
+  lastRunStatus: string | null
+  rowsReceived: number
+  rowsAccepted: number
+  rowsRejected: number
+  rowsPending: number
+  affectedQuantity: number
+  affectedAmount: number
   cursor: string | null
   pending: number
 }
@@ -35,21 +42,31 @@ export async function getCopecSyncStatusAction(): Promise<
   | { ok: true; data: CopecSyncStatus }
   | { ok: false; message: string }
 > {
-  const guard = await guardPermission("combustibles:import", "/combustibles/importar")
+  const guard = await guardPermission("combustibles:sync_integrations", "/combustibles/importar")
   if (guard.error) return guard.error
   try {
-    const row = await db.query.systemSettings.findFirst({ where: eq(systemSettings.key, STATE_KEY) })
+    const [row, latestRun] = await Promise.all([
+      db.query.systemSettings.findFirst({ where: eq(systemSettings.key, STATE_KEY) }),
+      db.query.fuelProviderSyncRuns.findFirst({ where: eq(fuelProviderSyncRuns.provider, "copec"), orderBy: [desc(fuelProviderSyncRuns.startedAt)] }),
+    ])
     if (!row) {
-      return { ok: true, data: { lastRunAt: null, cursor: null, pending: 0 } }
+      return { ok: true, data: { lastRunAt: latestRun?.finishedAt ?? latestRun?.startedAt ?? null, lastRunStatus: latestRun?.status ?? null, rowsReceived: latestRun?.rowsReceived ?? 0, rowsAccepted: latestRun?.rowsAccepted ?? 0, rowsRejected: latestRun?.rowsRejected ?? 0, rowsPending: latestRun?.rowsPending ?? 0, affectedQuantity: latestRun?.affectedQuantity ?? 0, affectedAmount: latestRun?.affectedAmount ?? 0, cursor: null, pending: latestRun?.rowsPending ?? 0 } }
     }
     let state: { cursor?: string | null; lastRunAt?: string | null; pending?: string[] } = {}
     try { state = JSON.parse(row.value) } catch { /* fall through */ }
     return {
       ok: true,
       data: {
-        lastRunAt: state.lastRunAt ?? null,
+        lastRunAt: latestRun?.finishedAt ?? latestRun?.startedAt ?? state.lastRunAt ?? null,
+        lastRunStatus: latestRun?.status ?? null,
+        rowsReceived: latestRun?.rowsReceived ?? 0,
+        rowsAccepted: latestRun?.rowsAccepted ?? 0,
+        rowsRejected: latestRun?.rowsRejected ?? 0,
+        rowsPending: latestRun?.rowsPending ?? 0,
+        affectedQuantity: latestRun?.affectedQuantity ?? 0,
+        affectedAmount: latestRun?.affectedAmount ?? 0,
         cursor: state.cursor ?? null,
-        pending: Array.isArray(state.pending) ? state.pending.length : 0,
+        pending: latestRun?.rowsPending ?? (Array.isArray(state.pending) ? state.pending.length : 0),
       },
     }
   } catch (error) {
@@ -61,7 +78,7 @@ export async function getCopecSyncPlanAction(): Promise<
   | { ok: true; from: string; to: string; periods: Array<{ from: string; to: string }> }
   | { ok: false; message: string }
 > {
-  const guard = await guardPermission("combustibles:import", "/combustibles/importar")
+  const guard = await guardPermission("combustibles:sync_integrations", "/combustibles/importar")
   if (guard.error) return guard.error
   try {
     const result = await getCopecSyncPlan()
@@ -75,7 +92,7 @@ export async function updateCopecSyncStartAction(input: { startDate: string; exp
   | { ok: true; data: CopecSyncStartOptions }
   | { ok: false; message: string }
 > {
-  const guard = await guardPermission("combustibles:import", "/combustibles/importar")
+  const guard = await guardPermission("combustibles:sync_integrations", "/combustibles/importar")
   if (guard.error) return guard.error
   try {
     const parsed = copecStartDateSchema.safeParse(input)
@@ -87,10 +104,10 @@ export async function updateCopecSyncStartAction(input: { startDate: string; exp
 }
 
 export async function runCopecSyncPeriodAction(period: { from: string; to: string }): Promise<
-  | { ok: true; imported: number; refreshed: number; received: number; pending: number; unavailable: string[]; reports: number; unmappedCards: string[]; openPeriod: boolean }
+  | { ok: true; imported: number; refreshed: number; received: number; pending: number; rowsReceived: number; rowsAccepted: number; rowsRejected: number; rowsPending: number; unavailable: string[]; reports: number; unmappedCards: string[]; openPeriod: boolean }
   | { ok: false; message: string }
 > {
-  const guard = await guardPermission("combustibles:import", "/combustibles/importar")
+  const guard = await guardPermission("combustibles:sync_integrations", "/combustibles/importar")
   if (guard.error) return guard.error
   const session = guard.session
   try {
@@ -110,7 +127,7 @@ export async function runCopecSyncPeriodAction(period: { from: string; to: strin
     const result = await syncCopecReportPeriod(parsedPeriod.data, session.user.id)
     // `openPeriod` lo decide el servidor: el cliente no puede compararlo contra
     // "hoy" sin arriesgar el desfase de zona horaria que ya costó un bug acá.
-    return { ok: true, imported: result.imported, refreshed: result.refreshed, received: result.received, pending: result.pending, unavailable: result.unavailable, reports: result.reports.length, unmappedCards: result.unmappedCards, openPeriod: isOpenPeriod(parsedPeriod.data.to) }
+    return { ok: true, imported: result.imported, refreshed: result.refreshed, received: result.received, pending: result.pending, rowsReceived: result.rowsReceived, rowsAccepted: result.rowsAccepted, rowsRejected: result.rowsRejected, rowsPending: result.rowsPending, unavailable: result.unavailable, reports: result.reports.length, unmappedCards: result.unmappedCards, openPeriod: isOpenPeriod(parsedPeriod.data.to) }
   } catch (error) {
     // Los errores de Playwright arrastran el "Call log:" completo -kilobytes de
     // reintentos- y el toast del operador, que persiste hasta cerrarlo a mano,

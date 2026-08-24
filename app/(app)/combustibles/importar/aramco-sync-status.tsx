@@ -22,6 +22,7 @@ const SOURCE_LABEL: Record<string, string> = {
   environment: "heredada del servidor",
   missing: "sin configurar",
 }
+const NUMBER_FORMATTER = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 2 })
 
 interface ViewState {
   status: AramcoStatus
@@ -69,7 +70,7 @@ export function AramcoSyncStatus({ initialStatus }: { initialStatus: AramcoStatu
         return
       }
       const refreshed = response.refreshed > 0 ? ` · ${response.refreshed} actualizado(s) del mes en curso` : ""
-      const summary = `${response.transactions} transacción(es) leídas · ${response.imported} registro(s) en ${response.batches} lote(s) nuevo(s)${refreshed}`
+      const summary = `${response.transactions} transacción(es) leídas · ${response.imported} registro(s) en ${response.batches} lote(s) nuevo(s) · ${response.rowsRejected} rechazadas · ${response.rowsPending} pendientes${refreshed}`
       patch({
         result: `${summary}. Período ${response.from} a ${response.to}.`,
         busy: false,
@@ -137,6 +138,7 @@ export function AramcoSyncStatus({ initialStatus }: { initialStatus: AramcoStatu
             <span className="text-[var(--color-text-muted)]">Último período cargado: {status.lastPeriod}</span>
           )}
           <span className="text-[var(--color-text-muted)]">{status.batches} lote(s) de Aramco vigentes</span>
+          {status.lastRunStatus && <span className="text-[var(--color-text-muted)]">Calidad última corrida: {status.rowsReceived} recibidas · {status.rowsAccepted} aceptadas · {status.rowsRejected} rechazadas · {status.rowsPending} pendientes · impacto {NUMBER_FORMATTER.format(status.affectedQuantity)} L / ${NUMBER_FORMATTER.format(status.affectedAmount)} ({status.lastRunStatus})</span>}
           {!status.hasCredentials && (
             <span className="flex items-center gap-1.5 text-[var(--color-warning-ink)]">
               <WarningCircle className="h-3.5 w-3.5" />

@@ -36,6 +36,7 @@
     "db:preflight-pdtp-annual": "tsx --env-file-if-exists=.env.local scripts/reconcile-pdtp-annual-programs.ts --apply",
     "db:preflight-migrations": "node --env-file-if-exists=.env.local scripts/migration-preflight.mjs",
     "db:preflight-dte-single-link": "tsx --env-file-if-exists=.env.local scripts/preflight-dte-single-link.ts",
+    "db:preflight-fuel-integrations": "tsx --env-file-if-exists=.env.local scripts/preflight-fuel-integrations.ts",
     "db:repair-dte-single-link": "tsx --env-file-if-exists=.env.local scripts/repair-dte-single-link.ts",
     "db:diagnose-orphan-stock": "tsx --env-file=.env.local scripts/diagnose-orphan-stock.ts",
     "db:normalize-epp-families": "tsx --env-file=.env.local scripts/normalize-epp-families.ts",

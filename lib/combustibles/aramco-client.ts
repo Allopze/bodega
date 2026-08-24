@@ -102,6 +102,14 @@ export class AramcoTwoFactorRequiredError extends Error {
   }
 }
 
+/** Upstream JSON did not match the movement contract. No raw payload is kept in the error. */
+export class AramcoPayloadValidationError extends Error {
+  constructor(readonly issues: string[]) {
+    super(`Aramco entregó movimientos inválidos (${issues.length})`)
+    this.name = "AramcoPayloadValidationError"
+  }
+}
+
 /** Permutación aleatoria de 0-9, réplica de `generateKeyboard()` del portal. */
 export function generateAramcoKeyboard(): number[] {
   const keyboard: number[] = []
@@ -303,7 +311,7 @@ export async function fetchAramcoMovements(
   from: string,
   to: string,
 ): Promise<AramcoMovement[]> {
-  return fetchAllPages<AramcoMovement>(session, `${session.baseUrl}movements`, {
+  const rows = await fetchAllPages<AramcoMovement>(session, `${session.baseUrl}movements`, {
     operador: "and",
     orderBy: [{ name: "transactionDate", order: "asc" }],
     filter: [
@@ -311,6 +319,32 @@ export async function fetchAramcoMovements(
       { name: "transactionDate", value: portalDate(to, true), condition: "lte" },
     ],
   })
+  const issues: string[] = []
+  const ids = new Set<number>()
+  const valid = rows.filter((row, index): row is AramcoMovement => {
+    const candidate = row as Partial<AramcoMovement> | null
+    const transactionId = candidate?.transactionId
+    const validId = typeof transactionId === "number"
+      && Number.isInteger(transactionId)
+      && transactionId > 0
+    const validDate = typeof candidate?.transactionDate === "string"
+      && /^\d{4}-\d{2}-\d{2}(?:T|$)/.test(candidate.transactionDate)
+    const numericFields = [candidate?.quantity, candidate?.originalAmount, candidate?.totalDiscountAmount, candidate?.amountToPay]
+    const validNumbers = numericFields.every((value) => typeof value === "number" && Number.isFinite(value) && value >= 0)
+    const validProduct = candidate?.productName === null || typeof candidate?.productName === "string"
+    if (!validId || !validDate || !validNumbers || !validProduct) {
+      issues.push(`fila ${index + 1}: contrato de movimiento inválido`)
+      return false
+    }
+    if (ids.has(transactionId as number)) {
+      issues.push(`fila ${index + 1}: transactionId duplicado`)
+      return false
+    }
+    ids.add(transactionId as number)
+    return true
+  })
+  if (issues.length > 0) throw new AramcoPayloadValidationError(issues)
+  return valid
 }
 
 /** Catálogo de vehículos de la cuenta. */

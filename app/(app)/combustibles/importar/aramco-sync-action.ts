@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import { and, desc, eq, inArray } from "drizzle-orm"
 import { z } from "zod"
 import { db } from "@/db"
-import { fuelImportBatches } from "@/db/schema"
+import { fuelImportBatches, fuelProviderSyncRuns } from "@/db/schema"
 import { guardPermission } from "@/lib/auth/can"
 import { logger } from "@/lib/logger"
 import { ARAMCO_SOURCES } from "@/lib/combustibles/fuel-sources"
@@ -20,7 +20,8 @@ import {
 } from "@/lib/combustibles/aramco-settings"
 
 const PAGE = "/combustibles/importar"
-const PERMISSION = "combustibles:import"
+const SYNC_PERMISSION = "combustibles:sync_integrations"
+const MANAGE_PERMISSION = "combustibles:manage_integrations"
 
 /** Rango opcional para el barrido histórico manual. */
 const rangeSchema = z.object({
@@ -40,6 +41,14 @@ export interface AramcoSyncStatus {
   lastBatchAt: string | null
   lastPeriod: string | null
   batches: number
+  lastRunAt: string | null
+  lastRunStatus: string | null
+  rowsReceived: number
+  rowsAccepted: number
+  rowsRejected: number
+  rowsPending: number
+  affectedQuantity: number
+  affectedAmount: number
   hasCredentials: boolean
   settings: AramcoAdminStatus
 }
@@ -55,15 +64,16 @@ export async function getAramcoSyncStatusAction(): Promise<
   | { ok: true; data: AramcoSyncStatus }
   | { ok: false; message: string }
 > {
-  const guard = await guardPermission(PERMISSION, PAGE)
+  const guard = await guardPermission(SYNC_PERMISSION, PAGE)
   if (guard.error) return guard.error
   try {
-    const [latest, settings, config] = await Promise.all([
+    const [latest, latestRun, settings, config] = await Promise.all([
       db.query.fuelImportBatches.findFirst({
         where: and(inArray(fuelImportBatches.fuente, ARAMCO_SOURCES), eq(fuelImportBatches.estado, "importado")),
         orderBy: [desc(fuelImportBatches.createdAt)],
         columns: { createdAt: true, periodoDesde: true, periodoHasta: true },
       }),
+      db.query.fuelProviderSyncRuns.findFirst({ where: eq(fuelProviderSyncRuns.provider, "aramco"), orderBy: [desc(fuelProviderSyncRuns.startedAt)] }),
       readAramcoAdminStatus(),
       readAramcoConfig(),
     ])
@@ -77,6 +87,14 @@ export async function getAramcoSyncStatusAction(): Promise<
         lastBatchAt: latest?.createdAt ?? null,
         lastPeriod: latest ? `${latest.periodoDesde} a ${latest.periodoHasta}` : null,
         batches,
+        lastRunAt: latestRun?.finishedAt ?? latestRun?.startedAt ?? null,
+        lastRunStatus: latestRun?.status ?? null,
+        rowsReceived: latestRun?.rowsReceived ?? 0,
+        rowsAccepted: latestRun?.rowsAccepted ?? 0,
+        rowsRejected: latestRun?.rowsRejected ?? 0,
+        rowsPending: latestRun?.rowsPending ?? 0,
+        affectedQuantity: latestRun?.affectedQuantity ?? 0,
+        affectedAmount: latestRun?.affectedAmount ?? 0,
         hasCredentials: config.hasCredentials,
         settings,
       },
@@ -88,10 +106,10 @@ export async function getAramcoSyncStatusAction(): Promise<
 
 /** Dispara la misma función que el cron, con el operador autenticado. */
 export async function runAramcoSyncAction(range: { from?: string; to?: string } = {}): Promise<
-  | { ok: true; imported: number; refreshed: number; batches: number; transactions: number; pendingPlates: string[]; from: string; to: string }
+  | { ok: true; imported: number; refreshed: number; batches: number; transactions: number; rowsAccepted: number; rowsRejected: number; rowsPending: number; pendingPlates: string[]; from: string; to: string }
   | { ok: false; message: string }
 > {
-  const guard = await guardPermission(PERMISSION, PAGE)
+  const guard = await guardPermission(SYNC_PERMISSION, PAGE)
   if (guard.error) return guard.error
   const session = guard.session
   try {
@@ -111,6 +129,9 @@ export async function runAramcoSyncAction(range: { from?: string; to?: string } 
       refreshed: result.refreshed,
       batches: result.batches,
       transactions: result.transactions,
+      rowsAccepted: result.rowsAccepted,
+      rowsRejected: result.rowsRejected,
+      rowsPending: result.rowsPending,
       pendingPlates: result.pendingPlates,
       from: result.from,
       to: result.to,
@@ -131,7 +152,7 @@ export async function saveAramcoSettingsAction(input: {
   password?: string
   syncEnabled: boolean
 }): Promise<{ ok: true; message: string } | { ok: false; message: string }> {
-  const guard = await guardPermission(PERMISSION, PAGE)
+  const guard = await guardPermission(MANAGE_PERMISSION, PAGE)
   if (guard.error) return guard.error
   const session = guard.session
 
@@ -171,7 +192,7 @@ export async function saveAramcoSettingsAction(input: {
 
 /** Borra lo persistido y devuelve el mando al `.env` del servidor. */
 export async function clearAramcoSettingsAction(): Promise<{ ok: true } | { ok: false; message: string }> {
-  const guard = await guardPermission(PERMISSION, PAGE)
+  const guard = await guardPermission(MANAGE_PERMISSION, PAGE)
   if (guard.error) return guard.error
   const session = guard.session
   try {

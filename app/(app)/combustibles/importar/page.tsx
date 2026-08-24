@@ -19,6 +19,7 @@ import { CopecSyncStatus } from "./copec-sync-status"
 import { AramcoSyncStatus } from "./aramco-sync-status"
 import { getAramcoSyncStatusAction } from "./aramco-sync-action"
 import { OperationsBatchHistory } from "./operations-batch-history"
+import { FuelProviderQualityExportButton } from "./fuel-provider-quality-export-button"
 
 export const metadata: Metadata = { title: "Importar consumos de combustible" }
 
@@ -29,7 +30,9 @@ export default async function ImportarConsumosPage() {
 
   const worksiteScope = resolveWorksiteScope(session)
   const canImportOperations = isGlobalRole(session)
+  const canSyncIntegrations = can(session, "combustibles:sync_integrations")
   const canViewTae = can(session, "combustibles:tae_view")
+  const canExportQuality = can(session, "combustibles:export")
 
   const [worksitesList, batches, operationBatches, copecSyncState, copecSyncStartOptions, aramcoStatus] = await Promise.all([
     worksiteScope.mode === "none"
@@ -51,9 +54,9 @@ export default async function ImportarConsumosPage() {
           limit: 50,
         })
       : Promise.resolve([]),
-    getCopecSyncState(),
-    getCopecSyncStartOptions(),
-    getAramcoSyncStatusAction(),
+    canSyncIntegrations ? getCopecSyncState() : Promise.resolve(null),
+    canSyncIntegrations ? getCopecSyncStartOptions() : Promise.resolve(null),
+    canSyncIntegrations ? getAramcoSyncStatusAction() : Promise.resolve(null),
   ])
 
   return (
@@ -62,10 +65,15 @@ export default async function ImportarConsumosPage() {
         title="Importar consumos TCT"
         description="Sincroniza los consumos mensuales desde Copec y Aramco, o carga un reporte Excel manual"
         breadcrumb={<Breadcrumbs items={[{ label: "Combustibles", href: "/combustibles" }, { label: "Importar consumos" }]} />}
-        actions={canViewTae ? (
-          <Button asChild variant="secondary" size="sm">
-            <Link href="/combustibles/tae"><QrCode className="mr-1 h-4 w-4" />Control manual TAE</Link>
-          </Button>
+        actions={(canViewTae || canExportQuality) ? (
+          <div className="flex flex-wrap gap-2">
+            {canExportQuality && <FuelProviderQualityExportButton />}
+            {canViewTae && (
+              <Button asChild variant="secondary" size="sm">
+                <Link href="/combustibles/tae"><QrCode className="mr-1 h-4 w-4" />Control manual TAE</Link>
+              </Button>
+            )}
+          </div>
         ) : undefined}
       />
 
@@ -78,13 +86,15 @@ export default async function ImportarConsumosPage() {
         <TabsContent value="consumos">
           {canViewTae && (
             <div className="mb-4 flex flex-col gap-2 border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2.5 text-xs text-[var(--color-text-muted)] sm:flex-row sm:items-center sm:justify-between">
-              <span>TAE ya no se extrae junto con TCT. Las cargas físicas se registran en el control manual por QR.</span>
+              <span>TAE se extrae junto con la sincronización Copec y las cargas físicas también pueden registrarse manualmente por QR.</span>
               <Link href="/combustibles/tae" className="shrink-0 font-medium text-[var(--color-primary)] hover:underline">Ir a Control TAE</Link>
             </div>
           )}
           <div className="mb-6 grid gap-4">
-            <CopecSyncStatus initialStatus={copecSyncState} initialStartOptions={copecSyncStartOptions} />
-            {aramcoStatus.ok && <AramcoSyncStatus initialStatus={aramcoStatus.data} />}
+            {canSyncIntegrations && copecSyncState && copecSyncStartOptions && (
+              <CopecSyncStatus initialStatus={copecSyncState} initialStartOptions={copecSyncStartOptions} />
+            )}
+            {canSyncIntegrations && aramcoStatus?.ok && <AramcoSyncStatus initialStatus={aramcoStatus.data} />}
           </div>
           <div className="mb-8">
             <h2 className="mb-3 text-sm font-semibold text-[var(--color-text)]">Carga manual de reportes</h2>

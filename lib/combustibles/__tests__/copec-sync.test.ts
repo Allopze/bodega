@@ -22,6 +22,7 @@ vi.mock("@/db", () => ({
       systemSettings: { findFirst: (...args: unknown[]) => mockSettingFindFirst(...args) },
       users: { findFirst: (...args: unknown[]) => mockUserFindFirst(...args) },
       fuelVehicles: { findMany: (...args: unknown[]) => mockVehiclesFindMany(...args) },
+      fuelProviderMappings: { findMany: vi.fn().mockResolvedValue([]) },
       fuelImportBatches: { findFirst: (...args: unknown[]) => mockBatchFindFirst(...args) },
       fuelConsumptionRecords: { findMany: (...args: unknown[]) => mockConsumptionFindMany(...args) },
     },
@@ -39,7 +40,13 @@ vi.mock("@/db", () => ({
 vi.mock("@/db/schema", () => ({
   // Marcadas para que el mock de `tx.insert` distinga el lote de los registros.
   fuelConsumptionRecords: { __table: "records" }, fuelImportBatches: { __table: "batches" },
-  fuelVehicles: {}, systemSettings: {}, users: {},
+  fuelVehicles: {}, fuelProviderMappings: {}, systemSettings: {}, users: {},
+}))
+vi.mock("@/lib/combustibles/fuel-provider-ledger", () => ({
+  beginFuelProviderSyncRun: vi.fn().mockResolvedValue({ id: "run-1", correlationId: "corr-1" }),
+  recordFuelProviderIssues: vi.fn().mockResolvedValue({ rejected: 0 }),
+  recordFuelProviderValidation: vi.fn().mockResolvedValue({ accepted: 1, rejected: 0, pending: 0 }),
+  finishFuelProviderSyncRun: vi.fn().mockResolvedValue(undefined),
 }))
 vi.mock("@/lib/combustibles/copec-reports", () => ({
   downloadCopecReports: (...args: unknown[]) => mockDownloadCopecReports(...args),
@@ -56,7 +63,7 @@ vi.mock("@/lib/combustibles/tae-receipts", () => ({
   importTaeReceipts: (...args: unknown[]) => mockImportTaeReceipts(...args),
 }))
 
-const { buildCopecSyncPeriods, getCopecSyncPlan, getCopecSyncStartOptions, setCopecSyncStartDate, syncCopecReportPeriod, syncCopecReports } = await import("../copec-sync")
+const { buildCopecSyncPeriods, copecProjectionHash, getCopecSyncPlan, getCopecSyncStartOptions, setCopecSyncStartDate, syncCopecReportPeriod, syncCopecReports } = await import("../copec-sync")
 const { AUTOMATED_SOURCES } = await import("../fuel-sources")
 
 /** Junta todos los strings de un objeto SQL de drizzle. El mock de `findFirst`
@@ -95,6 +102,7 @@ function makeTx() {
       },
     }),
     update: () => ({ set: (patch: unknown) => { mockTxUpdateSet(patch); return { where: vi.fn() } } }),
+    delete: () => ({ where: vi.fn() }),
     _insertedRecords: insertedRecords,
     _insertedBatches: insertedBatches,
   }
@@ -201,8 +209,9 @@ describe("syncCopecReportPeriod", () => {
     expect(result.imported).toBe(1)
     expect(tx._insertedRecords).toHaveLength(1)
     expect(tx._insertedRecords[0]!.patente).toBe("BBB")
-    // El lote existente se actualiza con los totales de la patente nueva.
-    expect(mockTxUpdateSet).toHaveBeenCalledOnce()
+    // El lote existente se reconstruye: se actualiza el registro AAA y se
+    // fijan los totales del lote, mientras BBB se inserta una sola vez.
+    expect(mockTxUpdateSet).toHaveBeenCalledTimes(2)
   })
 
   it("skips a worksite already imported from another source instead of duplicating its consumption", async () => {
@@ -282,12 +291,15 @@ describe("syncCopecReportPeriod", () => {
     })
 
     it("leaves an open batch untouched when the report has not changed", async () => {
-      // El portal regenera el Excel en cada descarga, así que el hash cambia
-      // siempre: los totales son lo único que distingue "llegó una carga nueva"
-      // de "es el mismo mes sin novedades".
+      // El hash de la proyección permite evitar una escritura diaria cuando el
+      // contenido del portal es idéntico.
       oneDieselRow()
       mockBatchFindFirst.mockResolvedValue({
         id: "batch-agosto",
+        hashArchivo: copecProjectionHash([{
+          rowIndex: 1, patente: "AAA", numeroTarjetas: 1, numeroTransacciones: 2,
+          cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {},
+        }]),
         totalFilas: 1, totalPatentes: 1, totalTarjetas: 1, totalTransacciones: 2,
         totalCantidad: 100, totalMonto: 50000,
       })

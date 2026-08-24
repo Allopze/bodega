@@ -10,6 +10,7 @@ import { formatDateTime } from "@/lib/utils"
 import { getCopecSyncPlanAction, runCopecSyncPeriodAction, getCopecSyncStatusAction, updateCopecSyncStartAction, type CopecSyncStartOptions, type CopecSyncStatus } from "./copec-sync-action"
 
 const MONTH_FORMATTER = new Intl.DateTimeFormat("es-CL", { month: "long", year: "numeric", timeZone: "UTC" })
+const NUMBER_FORMATTER = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 2 })
 
 interface SyncProgress {
   current: number
@@ -73,6 +74,9 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
       let imported = 0
       let refreshed = 0
       let received = 0
+      let rowsReceived = 0
+      let rowsRejected = 0
+      let rowsPending = 0
       let pendingPlates = 0
       const unavailable: string[] = []
       const unmappedCards = new Set<string>()
@@ -91,6 +95,9 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
         imported += r.imported
         refreshed += r.refreshed
         received += r.received
+        rowsReceived += r.rowsReceived
+        rowsRejected += r.rowsRejected
+        rowsPending += r.rowsPending
         pendingPlates = r.pending
         for (const card of r.unmappedCards) unmappedCards.add(card)
         unavailable.push(...r.unavailable.map((product) => `${formatMonth(period.from)} (${product})`))
@@ -115,7 +122,7 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
       if (stoppedAt) {
         dispatchView({ type: "patch", patch: { result: `Se importaron ${imported} registros antes de detenerse. Reintenta desde ${formatMonth(stoppedAt.from)}.` } })
       } else {
-        dispatchView({ type: "patch", patch: { result: `${imported} registros importados${refreshed ? ` · ${refreshed} actualizados del mes en curso` : ""} · ${received} recepciones TAE${pendingPlates ? ` · ${pendingPlates} patentes pendientes` : ""}${unmappedCards.size ? ` · ${unmappedCards.size} tarjetas TAE sin estanque` : ""}${unavailable.length ? ` · ${unavailable.length} reportes sin importar` : ""}` } })
+        dispatchView({ type: "patch", patch: { result: `${imported} registros importados${refreshed ? ` · ${refreshed} actualizados` : ""} · ${received} recepciones TAE · ${rowsReceived} filas recibidas · ${rowsRejected} rechazadas · ${rowsPending} pendientes${pendingPlates ? ` · ${pendingPlates} patentes pendientes` : ""}${unmappedCards.size ? ` · ${unmappedCards.size} tarjetas TAE sin estanque` : ""}${unavailable.length ? ` · ${unavailable.length} reportes sin importar` : ""}` } })
       }
 
       // `router.refresh()` AL FINAL, después de fijar el resultado en el estado
@@ -167,7 +174,7 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
             <ArrowsClockwise className="h-4 w-4 text-[var(--color-primary)]" />
             <div>
               <p className="text-sm font-semibold text-[var(--color-text)]">Copec TCT · detalle mensual automático</p>
-              <p className="max-w-[75ch] text-xs text-[var(--color-text-muted)]">Cada corrida entra a Informes → Informes de Consumos, busca Diésel y BlueMax por separado y descarga el Detalle en Excel. Incluye el mes en curso, que se recalcula en cada corrida. TAE se registra en el nuevo control manual.</p>
+              <p className="max-w-[75ch] text-xs text-[var(--color-text-muted)]">Cada corrida entra a Informes → Informes de Consumos, busca Diésel y BlueMax por separado y descarga el Detalle en Excel. Incluye el mes en curso, que se recalcula en cada corrida. TAE se consulta en el mismo ciclo y sus recepciones quedan conciliables con el estanque.</p>
             </div>
           </div>
 
@@ -188,6 +195,7 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
               </span>
             )}
             {status.pending > 0 && <span className="text-[var(--color-warning-ink)]">{status.pending} patente(s) sin vehículo registrado: su consumo no se importa hasta que las registres en la flota y vuelvas a sincronizar su período</span>}
+            {status.lastRunStatus && <span className="text-[var(--color-text-muted)]">Calidad última corrida: {status.rowsReceived} recibidas · {status.rowsAccepted} aceptadas · {status.rowsRejected} rechazadas · {status.rowsPending} pendientes · impacto {NUMBER_FORMATTER.format(status.affectedQuantity)} L / ${NUMBER_FORMATTER.format(status.affectedAmount)} ({status.lastRunStatus})</span>}
           </div>
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-[var(--color-border)] pt-3 text-xs">
@@ -215,7 +223,7 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
                 </Button>
               </div>
               <p className="text-xs text-[var(--color-text-muted)] sm:col-span-2">
-                Se consulta un mes por vez, hasta el mes actual incluido. El mes en curso se recalcula en cada corrida; los ya cerrados no se vuelven a escribir. Puedes retroceder para recuperar meses pendientes{startOptions.latestImportedUntil ? `: la última importación activa termina el ${startOptions.latestImportedUntil}, y las faenas que ya tengan una importación manual de esos meses se saltan para no duplicar consumo` : ""}.
+                Se consulta un mes por vez, hasta el mes actual incluido. El mes en curso se recalcula en cada corrida; los meses cerrados también se comparan y sólo se reconstruyen si cambia su composición. Puedes retroceder para recuperar meses pendientes{startOptions.latestImportedUntil ? `: la última importación activa termina el ${startOptions.latestImportedUntil}, y las faenas que ya tengan una importación manual de esos meses se saltan para no duplicar consumo` : ""}.
               </p>
             </div>
           )}

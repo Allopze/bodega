@@ -3,9 +3,9 @@
 import { createHash } from "node:crypto"
 import path from "node:path"
 import { revalidatePath } from "next/cache"
-import { and, eq, inArray, ne, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { fuelImportBatches, fuelConsumptionRecords, fuelVehicles } from "@/db/schema"
+import { fuelConsumptionRecords, fuelImportBatches, fuelProviderMappings, fuelProviderTransactions, fuelVehicles } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite, isGlobalRole } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
@@ -16,6 +16,7 @@ import { resolveFuelImportsDir, createFuelImportPath } from "@/lib/storage/confi
 import { parseConsumptionExcel, type ImportError } from "@/lib/combustibles/consumption-import"
 import { computeBatchTotals, type BatchTotals } from "@/lib/combustibles/consumption-calculations"
 import type { ActionState } from "@/lib/validation/masters"
+import { plateMatchKey } from "@/lib/combustibles/xlsx-utils"
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024
 
@@ -391,10 +392,74 @@ export async function linkConsumptionPlateAction(_prev: ActionState, formData: F
     return { ok: false, message: "El vehículo no pertenece a la faena del lote" }
   }
 
-  const updated = await db.update(fuelConsumptionRecords)
-    .set({ vehicleId, updatedAt: new Date().toISOString() })
-    .where(and(eq(fuelConsumptionRecords.batchId, batchId), eq(fuelConsumptionRecords.patente, patente)))
-    .returning({ id: fuelConsumptionRecords.id })
+  const providerMapping = batch.fuente?.startsWith("Copec TCT Diesel")
+    ? { provider: "copec" as const, sourceAccount: "tct:diesel" }
+    : batch.fuente?.startsWith("Copec TCT BlueMax")
+    ? { provider: "copec" as const, sourceAccount: "tct:bluemax" }
+    : batch.fuente?.startsWith("Aramco Fleet")
+    ? { provider: "aramco" as const, sourceAccount: "fleet" }
+    : null
+  const normalizedValue = plateMatchKey(patente)
+  const updated = await db.transaction(async (tx) => {
+    const linked = await tx.update(fuelConsumptionRecords)
+      .set({ vehicleId, updatedAt: new Date().toISOString() })
+      .where(and(eq(fuelConsumptionRecords.batchId, batchId), eq(fuelConsumptionRecords.patente, patente)))
+      .returning({ id: fuelConsumptionRecords.id })
+    if (providerMapping) {
+      const previous = await tx.query.fuelProviderMappings.findFirst({
+        where: and(
+          eq(fuelProviderMappings.provider, providerMapping.provider),
+          eq(fuelProviderMappings.sourceAccount, providerMapping.sourceAccount),
+          eq(fuelProviderMappings.externalKey, normalizedValue),
+          eq(fuelProviderMappings.isActive, true),
+        ),
+        orderBy: [desc(fuelProviderMappings.version)],
+        columns: { id: true, version: true },
+      })
+      if (previous) {
+        await tx.update(fuelProviderMappings).set({ isActive: false, effectiveTo: batch.periodoHasta }).where(eq(fuelProviderMappings.id, previous.id))
+      }
+      await tx.insert(fuelProviderMappings).values({
+        id: nanoid(),
+        provider: providerMapping.provider,
+        sourceAccount: providerMapping.sourceAccount,
+        externalKey: normalizedValue,
+        normalizedValue,
+        worksiteId: batch.worksiteId,
+        vehicleId,
+        version: (previous?.version ?? 0) + 1,
+        isActive: true,
+        decidedBy: session.user.id,
+        reason: "Vínculo manual desde el detalle de una importación de combustible",
+        effectiveFrom: batch.periodoDesde,
+      })
+
+      // Resolver una patente no debe dejar el ledger en estado pendiente hasta
+      // el siguiente barrido del portal. Las filas ya validadas se promueven en
+      // la misma transacción; si el producto aún es desconocido, se conserva
+      // pendiente para que la decisión de producto siga siendo explícita.
+      const pendingByPlate = and(
+        eq(fuelProviderTransactions.provider, providerMapping.provider),
+        eq(fuelProviderTransactions.sourceAccount, providerMapping.sourceAccount),
+        eq(fuelProviderTransactions.status, "pending"),
+        sql`regexp_replace(upper(coalesce(${fuelProviderTransactions.sourcePlate}, '')), '[^A-Z0-9]', '', 'g') = ${normalizedValue}`,
+      )
+      await tx.update(fuelProviderTransactions).set({
+        worksiteId: batch.worksiteId,
+        vehicleId,
+        status: "accepted",
+        resolutionCode: null,
+        resolutionMessage: null,
+        updatedAt: new Date().toISOString(),
+      }).where(and(pendingByPlate, sql`${fuelProviderTransactions.productId} IS NOT NULL`))
+      await tx.update(fuelProviderTransactions).set({
+        worksiteId: batch.worksiteId,
+        vehicleId,
+        updatedAt: new Date().toISOString(),
+      }).where(and(pendingByPlate, isNull(fuelProviderTransactions.productId)))
+    }
+    return linked
+  })
 
   await recordAudit({
     userId: session.user.id,

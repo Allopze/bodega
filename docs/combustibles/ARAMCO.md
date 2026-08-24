@@ -1,6 +1,10 @@
 # Aramco Fleet
 
-## Estado: IMPLEMENTADO contra el contrato real y verificado en vivo (2026-08-22).
+## Estado: implementado y verificado localmente (2026-08-23).
+
+La implementación local tiene pruebas de cliente, validación semántica, ledger,
+proyección reconstruible y conciliación. Este documento no declara verificación de
+producción ni una nueva llamada al portal.
 
 La marca Aramco en Chile la opera **Esmax** sobre la plataforma ex-Petrobras
 (Paytech). El portal tiene dos frontends sobre el mismo backend:
@@ -18,6 +22,8 @@ navegador en el camino del cron.
 
 - `lib/combustibles/aramco-client.ts` — autenticación y lectura de la API.
 - `lib/combustibles/aramco-sync.ts` — mapeo a `fuel_import_batches` / `fuel_consumption_records`.
+- `lib/combustibles/fuel-provider-ledger.ts` — corrida durable, identidad externa y pendientes/rechazos.
+- `lib/combustibles/fuel-reconciliation.ts` — matching conservador contra cargas internas.
 - `lib/combustibles/aramco-settings.ts` — credenciales cifradas en `system_settings`.
 - `lib/combustibles/fuel-sources.ts` — etiquetas de `fuente` por producto.
 - `lib/combustibles/open-period.ts` — refresco del mes en curso (compartido con Copec).
@@ -92,8 +98,10 @@ porque la lectura previa está desfasada, y 25 no traen odómetro. Sobre 25 km/L
 guarda `0` —«sin dato»—, que es lo mismo que hace el parser de Copec con su guard
 `performance > 0`. El detalle crudo queda en `rawRow` para auditar.
 
-**El producto viaja en `fuente`.** `fuel_consumption_records` no tiene columna de
-producto, así que hay un lote por (faena, mes, producto), igual que en Copec.
+**El producto tiene doble representación.** El ledger guarda FK a
+`fuel_products` más `source_product`; como la proyección histórica
+`fuel_consumption_records` no tiene columna de producto, además hay un lote por
+(faena, mes, producto) y el producto viaja en `fuente`.
 `products/main` **no es exhaustivo** —el único producto que la cuenta transó,
 "Aramco ProForce Diesel B" (id 6), no aparece ahí— por eso la clasificación va por
 nombre: ver `aramcoSourceForProduct`.
@@ -103,29 +111,29 @@ nombre: ver `aramcoSourceForProduct`.
 `"SZGB72"`). Las patentes que no están en el catálogo **no se pierden**: se
 devuelven como pendientes para el flujo de vinculación existente.
 
-**No hace falta fila en `fuel_suppliers`.** Ni `fuel_import_batches` ni
-`fuel_consumption_records` tienen FK a proveedor: la identidad va en `fuente`.
-Sólo `fuel_loads` (facturas) exige proveedor, y no es este camino.
+El ledger relaciona Aramco con el proveedor canónico `fs-aramco`; no se infiere el
+proveedor desde una etiqueta libre de `fuente` al conciliar.
 
 ## Mes en curso
 
-El sync incluye el mes abierto para dar visibilidad del consumo del día. Como su
-agregado cambia con cada carga nueva, ese lote se **refresca** en cada corrida
-(`upsertBatchRecords`) en vez de sólo recibir las patentes que faltaban.
+El sync incluye el mes abierto para dar visibilidad del consumo del día. El
+ledger se valida primero y la proyección se **reconstruye** cuando cambia el hash
+de composición, tanto para meses abiertos como cerrados. Eso permite corregir
+una transacción, retirar una transacción ausente de una respuesta posterior o
+incorporar una carga tardía sin acumular duplicados.
 
-Dos cuidados que el diseño respeta:
+Tres cuidados que el diseño respeta:
 
-1. **No se borra y reinserta**, aunque sería más corto: al borrar se pierde el
-   `vehicle_id` que un operador fijó a mano con `linkConsumptionPlateAction`,
-   donde puede elegir un vehículo cuya patente **no** coincide con la del reporte.
-   Ese vínculo no existe en ninguna otra parte. El refresco preserva el
-   `vehicle_id` guardado cuando ya tiene valor.
-2. **Si el agregado no cambió, no se toca nada** (`batchTotalsUnchanged`). Sin
-   eso, un mes abierto dejaría `updated_at` nuevo en todos sus registros todos los
-   días aunque nadie haya cargado combustible.
-
-Un mes ya cerrado conserva el camino barato: su agregado es final y sólo entran
-las patentes recién vinculadas.
+1. **El reemplazo conserva decisiones manuales.** La tabla
+   `fuel_provider_mappings` guarda la relación proveedor/cuenta/patente externa
+   → vehículo/faena fuera de la proyección. Al reconstruir, el UPDATE no envía
+   `vehicle_id` cuando ya existe un vínculo manual.
+2. **El hash no se basa sólo en totales.** Incluye identidad, fecha, patente,
+   producto, cantidad y monto, por lo que una composición distinta con la misma
+   suma sí se reconstruye.
+3. **Una respuesta idéntica no reescribe el lote.** Si el hash no cambia, el
+   lote queda intacto; si cambia, se reemplazan sus filas mediante la operación
+   transaccional de `open-period.ts`, tanto si el mes está abierto como cerrado.
 
 ## Configuración
 
@@ -163,6 +171,24 @@ Administración: Combustibles → Importar → «Credenciales y automatización�
   simplemente no está en uso.
 - El botón manual llama la **misma** función, con el operador autenticado como
   importador. No requiere que la automatización esté encendida.
+- En producción el Bearer no es suficiente: la ruta exige un origen presente en
+  `CRON_ALLOWED_SOURCES` y aplica una ventana de rate limit. El proxy o runner
+  debe enviar `X-Forwarded-For`/`X-Real-IP` de forma confiable.
+
+## Ledger, pendientes y conciliación
+
+Cada corrida crea una fila en `fuel_provider_sync_runs`. Cada movimiento usa
+`transactionId` como identidad externa, conserva fingerprint y payload hash, y
+queda `accepted`, `pending` o `rejected`. Producto desconocido, patente sin
+vehículo, respuesta fuera de rango, números inválidos y duplicados no se mezclan
+con «Otros» ni desaparecen en un log. La pantalla muestra recibidas, aceptadas,
+rechazadas, pendientes e impacto en litros/monto; la calidad se puede descargar
+en Excel sin incluir el payload crudo.
+
+La tabla `fuel_reconciliation_links` permite vincular una transacción a una
+carga interna, un movimiento del ciclo físico y/o un DTE como evidencias
+separadas. Una factura mensual puede cubrir N transacciones; una coincidencia
+ambigua o fuera de tolerancia queda para decisión humana.
 
 ## Volumen real (al 2026-08-22)
 
@@ -178,9 +204,10 @@ Primera `2025-10-01`, última `2026-08-18`. Un solo producto:
 patentes distintas de 39 vehículos registrados. Todo en MATRIZ; las dos sucursales
 (Camiones, Camionetas) en 0.
 
-Ese volumen es la razón de que el sync **no lleve estado**: el histórico completo
-entra en una sola llamada, así que no hay cursor, ni lista de meses pendientes, ni
-fila de estado con concurrencia optimista. La idempotencia la da `transactionId`.
+Ese volumen hace innecesario un cursor de meses: el histórico completo entra en
+una sola llamada y la idempotencia la da `transactionId`. Sí existe una corrida
+durable en `fuel_provider_sync_runs`, con estado, métricas y correlación; lo que
+no se persiste es una lista artificial de meses pendientes.
 
 ## Lo que sigue en manos de una persona
 

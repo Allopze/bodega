@@ -1,16 +1,16 @@
 /**
  * Sincronización de consumos de Aramco Fleet.
  *
- * A diferencia de `copec-sync.ts` esta sincronización **no lleva estado**: el
- * histórico completo de la cuenta entra en una sola llamada a la API, así que no
- * hay cursor, ni lista de meses pendientes, ni fila en `system_settings` con
- * concurrencia optimista. El cron y el botón manual llaman la misma función.
+ * A diferencia de `copec-sync.ts` esta sincronización no lleva cursor de meses:
+ * el histórico completo de la cuenta entra en una sola llamada a la API, así que
+ * la idempotencia la da el `transactionId`. La corrida y sus métricas sí quedan
+ * en el ledger. El cron y el botón manual llaman la misma función.
  *
  * Incluye el **mes en curso**, para dar visibilidad del consumo del día. El
- * agregado de un mes abierto cambia con cada carga nueva, así que ese lote se
- * REFRESCA en cada corrida (`upsertBatchRecords`) en vez de sólo agregarle las
- * patentes que faltaban. Un mes ya cerrado conserva el camino barato: su
- * agregado es final y sólo entran las patentes recién vinculadas.
+ * agregado cambia cuando el proveedor incorpora, corrige o retira cargas, así
+ * que el lote se RECONSTRUYE en cada corrida cuya identidad de contenido
+ * cambió. El reemplazo conserva vínculos manuales de vehículo y elimina de la
+ * proyección las patentes que ya no vienen en la fuente.
  *
  * Conserva de Copec una decisión: **un lote por (faena, mes, producto)**, porque
  * `fuel_consumption_records` no tiene columna de producto y viaja en `fuente`.
@@ -29,7 +29,11 @@ import { todayInChile } from "@/lib/utils"
 import { calcPrecioPromedioUnidad, computeBatchTotals } from "@/lib/combustibles/consumption-calculations"
 import { plateMatchKey } from "@/lib/combustibles/xlsx-utils"
 import { AUTOMATED_SOURCES, aramcoSourceForProduct } from "@/lib/combustibles/fuel-sources"
-import { batchTotalsUnchanged, isOpenPeriod, upsertBatchRecords } from "@/lib/combustibles/open-period"
+import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
+import { fuelProviderMappings } from "@/db/schema"
+import { replaceBatchRecords } from "@/lib/combustibles/open-period"
+import { beginFuelProviderSyncRun, finishFuelProviderSyncRun, recordFuelProviderValidation } from "@/lib/combustibles/fuel-provider-ledger"
+import { validateProviderRows, type ProviderRowInput } from "@/lib/combustibles/provider-validation"
 import { readAramcoConfig } from "@/lib/combustibles/aramco-settings"
 import {
   authenticateAramco,
@@ -66,6 +70,10 @@ export type AramcoSyncResult = {
   batches: number
   /** Transacciones leídas de la API. */
   transactions: number
+  /** Métricas de calidad durable de la corrida. */
+  rowsAccepted: number
+  rowsRejected: number
+  rowsPending: number
   /** Patentes que no están en `fuel_vehicles` (no se importó su consumo). */
   pendingPlates: string[]
   /**
@@ -190,11 +198,20 @@ function aggregateByPlate(movements: AramcoMovement[]): AggregatedRow[] {
   }))
 }
 
-/** Identidad de contenido del grupo. Sin archivo que hashear, la identidad son
- *  las transacciones que lo componen: `transactionId` es estable en el portal. */
-function contentHash(movements: AramcoMovement[]): string {
-  const ids = movements.map((movement) => movement.transactionId).sort((a, b) => a - b)
-  return createHash("sha256").update(ids.join(",")).digest("hex")
+/** Identidad de contenido del grupo, incluyendo campos que el proveedor puede
+ * corregir sin cambiar el `transactionId` (cantidad, monto, patente o fecha). */
+export function aramcoProjectionHash(movements: AramcoMovement[]): string {
+  const rows = movements
+    .map((movement) => ({
+      transactionId: movement.transactionId,
+      transactionDate: movement.transactionDate,
+      vehicleRegistrationPlate: movement.vehicleRegistrationPlate,
+      productName: movement.productName,
+      quantity: movement.quantity,
+      amountToPay: movement.amountToPay,
+    }))
+    .sort((left, right) => left.transactionId - right.transactionId)
+  return createHash("sha256").update(JSON.stringify(rows), "utf8").digest("hex")
 }
 
 /* ── Sincronización ──────────────────────────────────────────────────────── */
@@ -217,18 +234,19 @@ async function resolveImporterId(importerId?: string): Promise<string> {
 export interface SyncAramcoOptions {
   /** Primer mes a considerar (`YYYY-MM-DD`). Por defecto, 4 meses atrás. */
   from?: string
-  /** Último mes a considerar. Se recorta al último mes cerrado. */
+  /** Último mes a considerar. Se recorta al mes civil en curso. */
   to?: string
   /** Usuario que dispara la sincronización manual. Sin él se usa el del cron. */
   importerId?: string
+  trigger?: "manual" | "cron" | "reprocess"
+  correlationId?: string
 }
 
 /**
  * Trae las transacciones de Aramco y las deja como lotes de consumo.
  *
- * Es idempotente: reimportar un período ya cargado no duplica: inserta sólo las
- * patentes que faltaban (típicamente vehículos recién dados de alta que en una
- * corrida previa quedaron sin vincular).
+ * Es idempotente: cada respuesta externa entra primero al ledger por identidad
+ * y la proyección mensual se reconstruye sólo cuando cambió su hash.
  */
 export async function syncAramco(options: SyncAramcoOptions = {}): Promise<AramcoSyncResult> {
   const config = await readAramcoConfig()
@@ -244,47 +262,110 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
 
   const from = monthBounds(firstMonth).from
   const to = monthBounds(lastMonth).to
-  const empty: AramcoSyncResult = { imported: 0, refreshed: 0, batches: 0, transactions: 0, pendingPlates: [], skippedGroups: [], from, to }
-  if (firstMonth > lastMonth) return empty
+  const run = await beginFuelProviderSyncRun({
+    provider: "aramco",
+    trigger: options.trigger ?? (options.importerId ? "manual" : "cron"),
+    requestedFrom: from,
+    requestedTo: to,
+    actorUserId: importerId,
+    correlationId: options.correlationId,
+  })
+  let runFinished = false
+  const empty: AramcoSyncResult = { imported: 0, refreshed: 0, batches: 0, transactions: 0, rowsAccepted: 0, rowsRejected: 0, rowsPending: 0, pendingPlates: [], skippedGroups: [], from, to }
+  if (firstMonth > lastMonth) {
+    await finishFuelProviderSyncRun(run.id, { status: "success", receivedFrom: from, receivedTo: to, rowsReceived: 0, rowsAccepted: 0, rowsRejected: 0, rowsPending: 0 })
+    runFinished = true
+    return empty
+  }
 
-  const session = await authenticateAramco(config.documentNumber, config.password)
-  const movements = await fetchAramcoMovements(session, from, to)
-  if (movements.length === 0) return empty
-
-  // Mismo criterio que Copec: matching por clave normalizada, no por igualdad
-  // exacta. Aramco entrega la patente con espacios ("SZ GB 72") y el catálogo
-  // la guarda con o sin guion; `plateMatchKey` deja ambas en "SZGB72".
-  const vehicles = await db.query.fuelVehicles.findMany({ columns: { id: true, plate: true, worksiteId: true } })
-  const byPlateKey = new Map(vehicles.map((vehicle) => [plateMatchKey(vehicle.plate), vehicle]))
-
-  // (mes, fuente) -> (faena -> transacciones). El grupo es la unidad de lote.
-  const groups = new Map<string, Map<string, AramcoMovement[]>>()
-  const pendingPlates = new Set<string>()
-  for (const movement of movements) {
-    const plate = (movement.vehicleRegistrationPlate ?? "").trim()
-    const vehicle = plate ? byPlateKey.get(plateMatchKey(plate)) : undefined
-    if (!vehicle) {
-      if (plate) pendingPlates.add(plate)
-      continue
+  let receivedRows = 0
+  try {
+    const session = await authenticateAramco(config.documentNumber, config.password)
+    const movements = await fetchAramcoMovements(session, from, to)
+    receivedRows = movements.length
+    if (movements.length === 0) {
+      await finishFuelProviderSyncRun(run.id, { status: "success", receivedFrom: from, receivedTo: to, rowsReceived: 0, rowsAccepted: 0, rowsRejected: 0, rowsPending: 0 })
+      runFinished = true
+      return empty
     }
-    const key = `${monthOf(movement.transactionDate)}|${aramcoSourceForProduct(movement.productName)}`
-    const byWorksite = groups.get(key) ?? new Map<string, AramcoMovement[]>()
-    const rows = byWorksite.get(vehicle.worksiteId) ?? []
-    rows.push(movement)
-    byWorksite.set(vehicle.worksiteId, rows)
-    groups.set(key, byWorksite)
-  }
 
-  const result: AramcoSyncResult = {
-    imported: 0,
-    refreshed: 0,
-    batches: 0,
-    transactions: movements.length,
-    pendingPlates: [...pendingPlates],
-    skippedGroups: [],
-    from,
-    to,
-  }
+    const accountKey = "fleet"
+    const validationInputs: ProviderRowInput[] = movements.map((movement) => ({
+      provider: "aramco",
+      accountKey,
+      sourceRowKey: String(movement.transactionId),
+      externalId: movement.transactionId,
+      occurredAt: movement.transactionDate,
+      plate: movement.vehicleRegistrationPlate,
+      product: movement.productName,
+      quantity: movement.quantity,
+      amount: movement.amountToPay,
+      payload: movement,
+    }))
+    const validation = validateProviderRows(validationInputs, { from, to })
+
+    // Mismo criterio que Copec: matching por clave normalizada, no por igualdad
+    // exacta. Aramco entrega la patente con espacios ("SZ GB 72") y el catálogo
+    // la guarda con o sin guion; `plateMatchKey` deja ambas en "SZGB72".
+    const vehicles = await db.query.fuelVehicles.findMany({ columns: { id: true, plate: true, worksiteId: true } })
+    const byPlateKey = new Map(vehicles.map((vehicle) => [plateMatchKey(vehicle.plate), vehicle]))
+    const mappings = await db.query.fuelProviderMappings.findMany({
+      where: and(
+        eq(fuelProviderMappings.provider, "aramco"),
+        eq(fuelProviderMappings.sourceAccount, accountKey),
+        eq(fuelProviderMappings.isActive, true),
+      ),
+      columns: { externalKey: true, worksiteId: true, vehicleId: true },
+    })
+    const byVehicleId = new Map(vehicles.map((vehicle) => [vehicle.id, vehicle]))
+    const byMappedPlate = new Map(mappings.map((mapping) => [mapping.externalKey, mapping]))
+    const resolveVehicle = (plate: string) => {
+      const mapped = byMappedPlate.get(plateMatchKey(plate))
+      if (mapped) return mapped.vehicleId ? byVehicleId.get(mapped.vehicleId) : undefined
+      return byPlateKey.get(plateMatchKey(plate))
+    }
+    const persisted = await recordFuelProviderValidation(run.id, validation, (input) => {
+      const vehicle = input.plate ? resolveVehicle(input.plate) : undefined
+      return {
+        worksiteId: vehicle?.worksiteId,
+        vehicleId: vehicle?.id,
+        productId: input.product ? fuelProductIdForLegacy(input.product) : null,
+      }
+    })
+    const acceptedIdentityKeys = new Set(validation.accepted.map((row) => row.identityKey))
+
+    // (mes, fuente) -> (faena -> transacciones). El grupo es la unidad de lote.
+    const groups = new Map<string, Map<string, AramcoMovement[]>>()
+    const pendingPlates = new Set<string>()
+    for (const movement of movements) {
+      if (!acceptedIdentityKeys.has(`external:${movement.transactionId}`)) continue
+      const plate = (movement.vehicleRegistrationPlate ?? "").trim()
+      const vehicle = plate ? resolveVehicle(plate) : undefined
+      if (!vehicle) {
+        if (plate) pendingPlates.add(plate)
+        continue
+      }
+      const key = `${monthOf(movement.transactionDate)}|${aramcoSourceForProduct(movement.productName)}`
+      const byWorksite = groups.get(key) ?? new Map<string, AramcoMovement[]>()
+      const rows = byWorksite.get(vehicle.worksiteId) ?? []
+      rows.push(movement)
+      byWorksite.set(vehicle.worksiteId, rows)
+      groups.set(key, byWorksite)
+    }
+
+    const result: AramcoSyncResult = {
+      imported: 0,
+      refreshed: 0,
+      batches: 0,
+      transactions: movements.length,
+      rowsAccepted: persisted.accepted,
+      rowsRejected: persisted.rejected,
+      rowsPending: persisted.pending,
+      pendingPlates: [...pendingPlates],
+      skippedGroups: [],
+      from,
+      to,
+    }
 
   for (const [key, byWorksite] of groups) {
     const [month, source] = key.split("|") as [string, string]
@@ -293,13 +374,13 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
     for (const [worksiteId, worksiteMovements] of byWorksite) {
       const rows = aggregateByPlate(worksiteMovements)
       if (rows.length === 0) continue
-      const hash = contentHash(worksiteMovements)
+      const hash = aramcoProjectionHash(worksiteMovements)
 
       const buildRecords = (subset: AggregatedRow[], batchId: string) => subset.map((row) => ({
         id: nanoid(),
         batchId,
         worksiteId,
-        vehicleId: byPlateKey.get(plateMatchKey(row.patente))?.id ?? null,
+        vehicleId: resolveVehicle(row.patente)?.id ?? null,
         patente: row.patente,
         numeroTarjetas: row.numeroTarjetas,
         numeroTransacciones: row.numeroTransacciones,
@@ -329,9 +410,11 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
             eq(fuelImportBatches.fuente, source),
             ne(fuelImportBatches.estado, "revertido"),
           ),
-          // Los totales vienen para poder saltarse el refresco cuando nada cambió.
+          // `hashArchivo` identifica la proyección completa, no sólo sus totales:
+          // dos composiciones distintas pueden tener la misma suma.
           columns: {
             id: true,
+            hashArchivo: true,
             totalFilas: true,
             totalPatentes: true,
             totalTarjetas: true,
@@ -341,39 +424,29 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
           },
         })
         if (duplicate) {
-          if (isOpenPeriod(period.to, today)) {
-            const totals = computeBatchTotals(rows)
-            // Mes abierto pero sin cargas nuevas desde la corrida anterior: no se
-            // toca nada, para no dejar `updated_at` nuevo todos los días.
-            if (batchTotalsUnchanged(duplicate, totals)) return { imported: 0, refreshed: 0 }
-            // Mes en curso: los totales por patente cambian con cada carga, así
-            // que se actualizan las que ya estaban además de insertar las nuevas.
-            const outcome = await upsertBatchRecords(tx, duplicate.id, buildRecords(rows, duplicate.id))
-            await tx.update(fuelImportBatches).set({
-              totalFilas: totals.totalFilas,
-              filasValidas: totals.totalFilas,
-              totalPatentes: totals.totalPatentes,
-              totalTarjetas: totals.totalTarjetas,
-              totalTransacciones: totals.totalTransacciones,
-              totalCantidad: totals.totalCantidad,
-              totalMonto: totals.totalMonto,
-              hashArchivo: hash,
-              updatedAt: new Date().toISOString(),
-            }).where(eq(fuelImportBatches.id, duplicate.id))
-            return { imported: outcome.inserted, refreshed: outcome.updated, created: false }
+          // No hay trabajo si la fuente es idéntica. La comparación por hash
+          // también aplica a meses cerrados: Aramco puede corregir o retirar
+          // cargas históricas y la proyección debe seguir siendo reconstruible.
+          if (duplicate.hashArchivo === hash) return { imported: 0, refreshed: 0, created: false }
+
+          const totals = computeBatchTotals(rows)
+          const replacement = await replaceBatchRecords(tx, duplicate.id, buildRecords(rows, duplicate.id))
+          await tx.update(fuelImportBatches).set({
+            totalFilas: totals.totalFilas,
+            filasValidas: totals.totalFilas,
+            totalPatentes: totals.totalPatentes,
+            totalTarjetas: totals.totalTarjetas,
+            totalTransacciones: totals.totalTransacciones,
+            totalCantidad: totals.totalCantidad,
+            totalMonto: totals.totalMonto,
+            hashArchivo: hash,
+            updatedAt: new Date().toISOString(),
+          }).where(eq(fuelImportBatches.id, duplicate.id))
+          return {
+            imported: replacement.inserted,
+            refreshed: replacement.updated + replacement.removed,
+            created: false,
           }
-          // Mes cerrado: el agregado es final y sólo entran las patentes que
-          // faltaban, que son las de vehículos vinculados después de la corrida
-          // anterior. Evita reescribir registros que no cambiaron.
-          const existing = await tx.query.fuelConsumptionRecords.findMany({
-            where: eq(fuelConsumptionRecords.batchId, duplicate.id),
-            columns: { patente: true },
-          })
-          const existingPlates = new Set(existing.map((record) => record.patente))
-          const missing = rows.filter((row) => !existingPlates.has(row.patente))
-          if (missing.length === 0) return { imported: 0, created: false }
-          await tx.insert(fuelConsumptionRecords).values(buildRecords(missing, duplicate.id))
-          return { imported: missing.length, created: false }
         }
 
         // El dedup de arriba compara la fuente exacta, así que no ve una carga
@@ -400,7 +473,8 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
           periodoDesde: period.from,
           periodoHasta: period.to,
           // No hay archivo: el "nombre" identifica el origen y el período, y el
-          // hash es el de los `transactionId` que componen el lote.
+          // hash es la identidad de contenido de las transacciones que componen
+          // el lote, no sólo una marca de que el período fue consultado.
           archivoNombre: `aramco-${source.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${month}.json`,
           hashArchivo: hash,
           estado: "importado",
@@ -428,5 +502,35 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
     }
   }
 
-  return result
+    await finishFuelProviderSyncRun(run.id, {
+      status: result.rowsRejected > 0 || result.rowsPending > 0 ? "partial" : "success",
+      receivedFrom: from,
+      receivedTo: to,
+      rowsReceived: result.transactions,
+      rowsAccepted: result.rowsAccepted,
+      rowsRejected: result.rowsRejected,
+      rowsPending: result.rowsPending,
+      rowsReprocessed: result.refreshed,
+    })
+    runFinished = true
+    return result
+  } catch (error) {
+    if (!runFinished) {
+      try {
+        await finishFuelProviderSyncRun(run.id, {
+          status: "failed",
+          receivedFrom: from,
+          receivedTo: to,
+          rowsReceived: receivedRows,
+          rowsAccepted: 0,
+          rowsRejected: 0,
+          rowsPending: 0,
+          error: error instanceof Error ? error.message : "Error desconocido en la sincronización Aramco",
+        })
+      } catch (finishError) {
+        console.error("[aramco-sync] no fue posible cerrar la corrida durable", finishError instanceof Error ? finishError.message : "error desconocido")
+      }
+    }
+    throw error
+  }
 }

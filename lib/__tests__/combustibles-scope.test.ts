@@ -45,7 +45,7 @@ function scopedSession(worksiteIds: string[]): Session {
       name: "Admin Contrato Faena A",
       email: "actor@example.com",
       roles: ["admin_contrato"],
-      permissions: ["combustibles:manage_vehicles", "combustibles:revert", "combustibles:import"],
+      permissions: ["admin:fleet_vehicles", "combustibles:manage_vehicles", "combustibles:revert", "combustibles:import"],
       worksiteIds,
       primaryWorksiteId: worksiteIds[0] ?? null,
       avatarColor: null,

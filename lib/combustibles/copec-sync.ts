@@ -1,14 +1,17 @@
 import { createHash } from "node:crypto"
 import { and, desc, eq, gte, lte, ne, notInArray, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { fuelConsumptionRecords, fuelImportBatches, systemSettings, users } from "@/db/schema"
+import { fuelConsumptionRecords, fuelImportBatches, fuelProviderMappings, fuelProviderSyncRuns, systemSettings, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { todayInChile, addDaysToPlainDate } from "@/lib/utils"
 import { parseConsumptionExcel, type ParsedConsumptionRow } from "@/lib/combustibles/consumption-import"
 import { computeBatchTotals } from "@/lib/combustibles/consumption-calculations"
 import { plateMatchKey } from "@/lib/combustibles/xlsx-utils"
 import { AUTOMATED_SOURCES, copecTctSource } from "@/lib/combustibles/fuel-sources"
-import { batchTotalsUnchanged, isOpenPeriod, upsertBatchRecords } from "@/lib/combustibles/open-period"
+import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
+import { isOpenPeriod, replaceBatchRecords } from "@/lib/combustibles/open-period"
+import { beginFuelProviderSyncRun, finishFuelProviderSyncRun, recordFuelProviderIssues, recordFuelProviderValidation } from "@/lib/combustibles/fuel-provider-ledger"
+import { validateProviderRows, type ProviderRowInput } from "@/lib/combustibles/provider-validation"
 import {
   downloadCopecReports,
 } from "@/lib/combustibles/copec-reports"
@@ -35,9 +38,23 @@ async function state(): Promise<SyncState & { _version: string }> {
   catch { return { cursor: null, lastRunAt: null, pending: [], _version: "" } }
 }
 
-export async function getCopecSyncState(): Promise<{ lastRunAt: string | null; cursor: string | null; pending: number }> {
-  const s = await state()
-  return { lastRunAt: s.lastRunAt, cursor: s.cursor, pending: s.pending.length }
+export async function getCopecSyncState(): Promise<{ lastRunAt: string | null; lastRunStatus: string | null; rowsReceived: number; rowsAccepted: number; rowsRejected: number; rowsPending: number; affectedQuantity: number; affectedAmount: number; cursor: string | null; pending: number }> {
+  const [s, latestRun] = await Promise.all([
+    state(),
+    db.query.fuelProviderSyncRuns.findFirst({ where: eq(fuelProviderSyncRuns.provider, "copec"), orderBy: [desc(fuelProviderSyncRuns.startedAt)] }),
+  ])
+  return {
+    lastRunAt: latestRun?.finishedAt ?? latestRun?.startedAt ?? s.lastRunAt,
+    lastRunStatus: latestRun?.status ?? null,
+    rowsReceived: latestRun?.rowsReceived ?? 0,
+    rowsAccepted: latestRun?.rowsAccepted ?? 0,
+    rowsRejected: latestRun?.rowsRejected ?? 0,
+    rowsPending: latestRun?.rowsPending ?? 0,
+    affectedQuantity: latestRun?.affectedQuantity ?? 0,
+    affectedAmount: latestRun?.affectedAmount ?? 0,
+    cursor: s.cursor,
+    pending: latestRun?.rowsPending ?? s.pending.length,
+  }
 }
 
 /**
@@ -137,6 +154,21 @@ function resolveStart(current: SyncState, minimumStart: string): string {
   return firstDayOfMonth(isValidIsoDate(current.cursor) || start >= minimumStart ? start : minimumStart)
 }
 
+/** Hash estable de la proyección TCT. El Excel puede regenerarse con otro
+ * nombre o metadata sin que cambie el agregado que se proyecta. */
+export function copecProjectionHash(rows: ParsedConsumptionRow[]): string {
+  return createHash("sha256")
+    .update(JSON.stringify(rows.map((row) => ({
+      patente: row.patente,
+      tarjetas: row.numeroTarjetas,
+      transacciones: row.numeroTransacciones,
+      cantidad: row.cantidadUnidad,
+      monto: row.monto,
+      rendimiento: row.rendimientoPromedio,
+    }))))
+    .digest("hex")
+}
+
 export async function getCopecSyncStartOptions(): Promise<CopecSyncStartOptions> {
   const [current, latestImportedUntil] = await Promise.all([state(), latestActiveImportUntil()])
   const minimumStart = minimumStartFrom(latestImportedUntil)
@@ -208,6 +240,10 @@ interface PeriodSyncResult {
   received: number
   /** Tarjetas TAE sin vasija asociada: su combustible no entró al ciclo. */
   unmappedCards: string[]
+  rowsReceived: number
+  rowsAccepted: number
+  rowsRejected: number
+  rowsPending: number
 }
 
 async function importCopecPeriod(
@@ -215,6 +251,7 @@ async function importCopecPeriod(
   to: string,
   pending: Set<string>,
   importerId?: string,
+  runId?: string,
 ): Promise<PeriodSyncResult> {
   const importerEmail = process.env.COPEC_SYNC_IMPORTER_EMAIL?.trim()
   const configuredImporter = importerId
@@ -229,6 +266,10 @@ async function importCopecPeriod(
   let refreshed = 0
   const reports: string[] = []
   const unavailable: string[] = []
+  let rowsReceived = 0
+  let rowsAccepted = 0
+  let rowsRejected = 0
+  let rowsPending = 0
   const downloads = await downloadCopecReports(
     (["diesel", "bluemax"] as const).map((product) => ({ product, from, to })),
   )
@@ -242,8 +283,72 @@ async function importCopecPeriod(
     }
     const { report } = download
     reports.push(`${productLabel}:${report.fileName}`)
-    const hash = createHash("sha256").update(report.buffer).digest("hex")
     const parsed = await parseConsumptionExcel(report.buffer)
+    rowsReceived += parsed.rows.length + parsed.errors.length
+    const accountKey = `tct:${product}`
+    const validationInputs: ProviderRowInput[] = parsed.rows.map((row) => ({
+      provider: "copec",
+      accountKey,
+      sourceRowKey: `${from}:${to}:${product}:${row.rowIndex}`,
+      externalId: null,
+      // TCT entrega un agregado mensual por patente, no una fecha de carga por
+      // fila. Se conserva el inicio del período como fecha de evidencia y el
+      // rango solicitado sigue siendo la frontera de validación.
+      occurredAt: from,
+      plate: row.patente,
+      product,
+      quantity: row.cantidadUnidad,
+      amount: row.monto,
+      payload: row.rawRow,
+    }))
+    const validation = validateProviderRows(validationInputs, { from, to })
+    if (runId) {
+      const persistedIssues = await recordFuelProviderIssues(runId, parsed.errors.map((error) => ({
+        input: {
+          provider: "copec" as const,
+          accountKey,
+          sourceRowKey: `${from}:${to}:${product}:error:${error.rowIndex}`,
+          externalId: null,
+          occurredAt: from,
+          plate: null,
+          product,
+          quantity: null,
+          amount: null,
+          payload: error,
+        },
+        code: "source_row_invalid",
+        message: `${error.field}: ${error.message}`,
+      })))
+      const platesForLedger = [...new Set(parsed.rows.map((row) => row.patente))]
+      const vehiclesForLedger = platesForLedger.length ? await db.query.fuelVehicles.findMany({ columns: { id: true, plate: true, worksiteId: true } }) : []
+      const byPlateForLedger = new Map(vehiclesForLedger.map((vehicle) => [plateMatchKey(vehicle.plate), vehicle]))
+      const mappingsForLedger = await db.query.fuelProviderMappings.findMany({
+        where: and(eq(fuelProviderMappings.provider, "copec"), eq(fuelProviderMappings.sourceAccount, accountKey), eq(fuelProviderMappings.isActive, true)),
+        columns: { externalKey: true, vehicleId: true },
+      })
+      const byVehicleForLedger = new Map(vehiclesForLedger.map((vehicle) => [vehicle.id, vehicle]))
+      const byMappedPlateForLedger = new Map(mappingsForLedger.map((mapping) => [mapping.externalKey, mapping]))
+      const resolveVehicleForLedger = (plate: string) => {
+        const mapped = byMappedPlateForLedger.get(plateMatchKey(plate))
+        if (mapped) return mapped.vehicleId ? byVehicleForLedger.get(mapped.vehicleId) : undefined
+        return byPlateForLedger.get(plateMatchKey(plate))
+      }
+      const persistedRows = await recordFuelProviderValidation(runId, validation, (input) => {
+        const vehicle = input.plate ? resolveVehicleForLedger(input.plate) : undefined
+        return {
+          worksiteId: vehicle?.worksiteId,
+          vehicleId: vehicle?.id,
+          productId: fuelProductIdForLegacy(input.product),
+        }
+      })
+      rowsAccepted += persistedRows.accepted
+      rowsRejected += persistedRows.rejected + (persistedIssues.rejected ?? 0)
+      rowsPending += persistedRows.pending
+    } else {
+      rowsAccepted += validation.accepted.length
+      rowsRejected += validation.rejected.length + parsed.errors.length
+      rowsPending += validation.pending.length
+    }
     // Matching por clave normalizada (sin separadores), no por igualdad
     // exacta: el catálogo de vehículos guarda la patente con el formato del
     // import masivo/alta manual (con o sin guion) y el reporte TCT trae su
@@ -253,15 +358,29 @@ async function importCopecPeriod(
     const plates = [...new Set(parsed.rows.map((row) => row.patente))]
     const vehicles = plates.length ? await db.query.fuelVehicles.findMany({ columns: { id: true, plate: true, worksiteId: true } }) : []
     const byPlateKey = new Map(vehicles.map((vehicle) => [plateMatchKey(vehicle.plate), vehicle]))
+    const mappings = await db.query.fuelProviderMappings.findMany({
+      where: and(eq(fuelProviderMappings.provider, "copec"), eq(fuelProviderMappings.sourceAccount, `tct:${product}`), eq(fuelProviderMappings.isActive, true)),
+      columns: { externalKey: true, vehicleId: true },
+    })
+    const byVehicleId = new Map(vehicles.map((vehicle) => [vehicle.id, vehicle]))
+    const byMappedPlate = new Map(mappings.map((mapping) => [mapping.externalKey, mapping]))
+    const resolveVehicle = (plate: string) => {
+      const mapped = byMappedPlate.get(plateMatchKey(plate))
+      if (mapped) return mapped.vehicleId ? byVehicleId.get(mapped.vehicleId) : undefined
+      return byPlateKey.get(plateMatchKey(plate))
+    }
     const groups = new Map<string, ParsedConsumptionRow[]>()
+    const acceptedIdentityKeys = new Set(validation.accepted.map((row) => row.identityKey))
     for (const row of parsed.rows) {
-      const vehicle = byPlateKey.get(plateMatchKey(row.patente))
+      const sourceRowKey = `${from}:${to}:${product}:${row.rowIndex}`
+      if (!acceptedIdentityKeys.has(`row:copec:${accountKey}:${sourceRowKey}`)) continue
+      const vehicle = resolveVehicle(row.patente)
       if (!vehicle) { pending.add(row.patente); continue }
       const rows = groups.get(vehicle.worksiteId) ?? []
       rows.push(row); groups.set(vehicle.worksiteId, rows)
     }
     const buildRecords = (rows: ParsedConsumptionRow[], batchId: string, worksiteId: string) =>
-      rows.map((row) => ({ id: nanoid(), batchId, worksiteId, vehicleId: byPlateKey.get(plateMatchKey(row.patente))?.id ?? null, patente: row.patente, numeroTarjetas: row.numeroTarjetas, numeroTransacciones: row.numeroTransacciones, cantidadUnidad: row.cantidadUnidad, monto: row.monto, rendimientoPromedio: row.rendimientoPromedio, precioPromedioUnidad: row.cantidadUnidad > 0 ? Math.round(row.monto / row.cantidadUnidad * 100) / 100 : null, periodoDesde: from, periodoHasta: to, fuente: source, rawRow: row.rawRow }))
+      rows.map((row) => ({ id: nanoid(), batchId, worksiteId, vehicleId: resolveVehicle(row.patente)?.id ?? null, patente: row.patente, numeroTarjetas: row.numeroTarjetas, numeroTransacciones: row.numeroTransacciones, cantidadUnidad: row.cantidadUnidad, monto: row.monto, rendimientoPromedio: row.rendimientoPromedio, precioPromedioUnidad: row.cantidadUnidad > 0 ? Math.round(row.monto / row.cantidadUnidad * 100) / 100 : null, periodoDesde: from, periodoHasta: to, fuente: source, rawRow: row.rawRow }))
 
     // Las filas de `parsed.errors` son del ARCHIVO completo, no por faena: el
     // loop de abajo crea un lote nuevo por cada faena del archivo, y antes le
@@ -281,53 +400,26 @@ async function importCopecPeriod(
       const outcome = await db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`)
 
-        const duplicate = await tx.query.fuelImportBatches.findFirst({ where: and(eq(fuelImportBatches.worksiteId, worksiteId), eq(fuelImportBatches.periodoDesde, from), eq(fuelImportBatches.periodoHasta, to), eq(fuelImportBatches.fuente, source), ne(fuelImportBatches.estado, "revertido")), // Los totales vienen para poder saltarse el refresco cuando nada cambió.
-          columns: { id: true, totalFilas: true, totalPatentes: true, totalTarjetas: true, totalTransacciones: true, totalCantidad: true, totalMonto: true } })
+        const projectionHash = copecProjectionHash(rows)
+        const duplicate = await tx.query.fuelImportBatches.findFirst({ where: and(eq(fuelImportBatches.worksiteId, worksiteId), eq(fuelImportBatches.periodoDesde, from), eq(fuelImportBatches.periodoHasta, to), eq(fuelImportBatches.fuente, source), ne(fuelImportBatches.estado, "revertido")),
+          columns: { id: true, hashArchivo: true } })
         if (duplicate) {
-          if (isOpenPeriod(to)) {
-            // Mes en curso: el agregado por patente cambia con cada carga nueva,
-            // así que se actualizan las patentes que ya estaban y los totales del
-            // lote se FIJAN (no se suman: eso duplicaría lo ya contado).
-            const totals = computeBatchTotals(rows)
-            // Sin cargas nuevas desde la corrida anterior no se toca nada: el
-            // portal regenera el Excel en cada descarga, así que el hash cambia
-            // siempre y no sirve para detectarlo — los totales sí.
-            if (batchTotalsUnchanged(duplicate, totals)) return { imported: 0, refreshed: 0 }
-            const refresh = await upsertBatchRecords(tx, duplicate.id, buildRecords(rows, duplicate.id, worksiteId))
-            await tx.update(fuelImportBatches).set({
-              totalFilas: totals.totalFilas,
-              filasValidas: totals.totalFilas,
-              totalPatentes: totals.totalPatentes,
-              totalTarjetas: totals.totalTarjetas,
-              totalTransacciones: totals.totalTransacciones,
-              totalCantidad: totals.totalCantidad,
-              totalMonto: totals.totalMonto,
-              updatedAt: new Date().toISOString(),
-            }).where(eq(fuelImportBatches.id, duplicate.id))
-            return { imported: refresh.inserted, refreshed: refresh.updated }
-          }
-          // El lote ya existe para este (archivo, faena). En vez de saltarlo entero,
-          // insertamos solo las patentes que faltaban: típicamente vehículos recién
-          // registrados que en una corrida previa quedaron "sin vincular". Así el
-          // consumo histórico sí entra al reimportar el período una vez completada
-          // la flota, sin duplicar lo ya cargado.
-          const existing = await tx.query.fuelConsumptionRecords.findMany({ where: eq(fuelConsumptionRecords.batchId, duplicate.id), columns: { patente: true } })
-          const existingPlates = new Set(existing.map((r) => r.patente))
-          const missing = rows.filter((row) => !existingPlates.has(row.patente))
-          if (missing.length === 0) return { imported: 0 }
-          const add = computeBatchTotals(missing)
-          await tx.insert(fuelConsumptionRecords).values(buildRecords(missing, duplicate.id, worksiteId))
+          if (duplicate.hashArchivo === projectionHash) return { imported: 0, refreshed: 0 }
+          const totals = computeBatchTotals(rows)
+          const refresh = await replaceBatchRecords(tx, duplicate.id, buildRecords(rows, duplicate.id, worksiteId))
           await tx.update(fuelImportBatches).set({
-            totalFilas: sql`${fuelImportBatches.totalFilas} + ${add.totalFilas}`,
-            filasValidas: sql`${fuelImportBatches.filasValidas} + ${add.totalFilas}`,
-            totalPatentes: sql`${fuelImportBatches.totalPatentes} + ${add.totalPatentes}`,
-            totalTarjetas: sql`${fuelImportBatches.totalTarjetas} + ${add.totalTarjetas}`,
-            totalTransacciones: sql`${fuelImportBatches.totalTransacciones} + ${add.totalTransacciones}`,
-            totalCantidad: sql`${fuelImportBatches.totalCantidad} + ${add.totalCantidad}`,
-            totalMonto: sql`${fuelImportBatches.totalMonto} + ${add.totalMonto}`,
+            totalFilas: totals.totalFilas,
+            filasValidas: totals.totalFilas,
+            filasInvalidas: parsed.errors.length,
+            totalPatentes: totals.totalPatentes,
+            totalTarjetas: totals.totalTarjetas,
+            totalTransacciones: totals.totalTransacciones,
+            totalCantidad: totals.totalCantidad,
+            totalMonto: totals.totalMonto,
+            hashArchivo: projectionHash,
             updatedAt: new Date().toISOString(),
           }).where(eq(fuelImportBatches.id, duplicate.id))
-          return { imported: missing.length }
+          return { imported: refresh.inserted, refreshed: refresh.updated + refresh.removed }
         }
         // El dedup de arriba compara la fuente exacta, así que no ve los lotes
         // importados a mano (fuente 'Copec'): sin este guard, sincronizar un mes ya
@@ -352,7 +444,7 @@ async function importCopecPeriod(
         const batchId = nanoid()
         const fileErrors = fileErrorsAttributed ? 0 : parsed.errors.length
         fileErrorsAttributed = true
-        await tx.insert(fuelImportBatches).values({ id: batchId, worksiteId, fuente: source, periodoDesde: from, periodoHasta: to, archivoNombre: report.fileName, hashArchivo: hash, estado: "importado", totalFilas: totals.totalFilas + fileErrors, filasValidas: totals.totalFilas, filasInvalidas: fileErrors, totalPatentes: totals.totalPatentes, totalTarjetas: totals.totalTarjetas, totalTransacciones: totals.totalTransacciones, totalCantidad: totals.totalCantidad, totalMonto: totals.totalMonto, importadoPor: resolvedImporterId, notas: "Sincronización mensual automática Copec TCT" })
+        await tx.insert(fuelImportBatches).values({ id: batchId, worksiteId, fuente: source, periodoDesde: from, periodoHasta: to, archivoNombre: report.fileName, hashArchivo: projectionHash, estado: "importado", totalFilas: totals.totalFilas + fileErrors, filasValidas: totals.totalFilas, filasInvalidas: fileErrors, totalPatentes: totals.totalPatentes, totalTarjetas: totals.totalTarjetas, totalTransacciones: totals.totalTransacciones, totalCantidad: totals.totalCantidad, totalMonto: totals.totalMonto, importadoPor: resolvedImporterId, notas: "Sincronización mensual automática Copec TCT" })
         await tx.insert(fuelConsumptionRecords).values(buildRecords(rows, batchId, worksiteId))
         return { imported: rows.length }
       })
@@ -366,8 +458,19 @@ async function importCopecPeriod(
     }
   }
 
-  const receipts = await importTaeReceiptPeriod(from, to, resolvedImporterId, unavailable)
-  return { imported, refreshed, pending: pending.size, reports, unavailable, ...receipts }
+  const receipts = await importTaeReceiptPeriod(from, to, resolvedImporterId, unavailable, runId)
+  return {
+    imported,
+    refreshed,
+    pending: pending.size,
+    reports,
+    unavailable,
+    ...receipts,
+    rowsReceived: rowsReceived + receipts.rowsReceived,
+    rowsAccepted: rowsAccepted + receipts.rowsAccepted,
+    rowsRejected: rowsRejected + receipts.rowsRejected,
+    rowsPending: rowsPending + pending.size + receipts.rowsPending,
+  }
 }
 
 /**
@@ -383,13 +486,18 @@ async function importTaeReceiptPeriod(
   to: string,
   importerId: string,
   unavailable: string[],
-): Promise<{ received: number; unmappedCards: string[] }> {
+  runId?: string,
+): Promise<{ received: number; unmappedCards: string[]; rowsReceived: number; rowsAccepted: number; rowsRejected: number; rowsPending: number }> {
   const downloads = await downloadCopecReports(
     (["diesel", "bluemax"] as const).map((product) => ({ product, from, to })),
     "TAE",
   )
 
   let received = 0
+  let rowsReceived = 0
+  let rowsAccepted = 0
+  let rowsRejected = 0
+  let rowsPending = 0
   const unmappedCards = new Set<string>()
   for (const download of downloads) {
     const productLabel = download.product === "diesel" ? "Diesel" : "BlueMax"
@@ -398,41 +506,116 @@ async function importTaeReceiptPeriod(
       continue
     }
     const parsed = await parseTaeReceiptExcel(download.report.buffer)
-    if (parsed.errors.length) {
-      console.warn(`[copec-sync] informe TAE ${productLabel} ${from}: ${parsed.errors.length} filas descartadas`, parsed.errors.slice(0, 5))
+    rowsReceived += parsed.rows.length + parsed.errors.length
+    const product = download.product
+    const accountKey = `tae:${product}`
+    if (runId && parsed.errors.length > 0) {
+      await recordFuelProviderIssues(runId, parsed.errors.map((error) => ({
+        input: {
+          provider: "copec" as const,
+          accountKey,
+          sourceRowKey: `${from}:${to}:${product}:error:${error.rowIndex}`,
+          externalId: null,
+          occurredAt: from,
+          plate: null,
+          product,
+          quantity: null,
+          amount: null,
+          payload: error,
+        },
+        code: "source_row_invalid",
+        message: `${error.field}: ${error.message}`,
+      })))
     }
+    rowsRejected += parsed.errors.length
     const outcome = await importTaeReceipts(parsed.rows, importerId)
     received += outcome.inserted
+    rowsAccepted += outcome.inserted
     for (const card of outcome.unmappedCards) unmappedCards.add(card)
+    const unmappedCardSet = new Set(outcome.unmappedCards)
+    const unmappedRows = parsed.rows.filter((row) => unmappedCardSet.has(row.cardNumber))
+    rowsPending += unmappedRows.length
+    if (runId && unmappedRows.length > 0) {
+      await recordFuelProviderIssues(runId, unmappedRows.map((row) => ({
+        input: {
+          provider: "copec" as const,
+          accountKey,
+          sourceRowKey: row.documentNumber,
+          externalId: row.documentNumber,
+          occurredAt: row.occurredAt,
+          plate: row.cardNumber,
+          product,
+          quantity: row.liters,
+          amount: row.amount,
+          payload: row.rawRow,
+        },
+        code: "unmapped_tae_card",
+        message: `La tarjeta TAE ${row.cardNumber} no tiene estanque activo para ${productLabel}`,
+      })), "pending")
+    }
   }
-  return { received, unmappedCards: [...unmappedCards].sort() }
+  return { received, unmappedCards: [...unmappedCards].sort(), rowsReceived, rowsAccepted, rowsRejected, rowsPending }
 }
 
 export async function syncCopecReportPeriod(period: CopecSyncPeriod, importerId?: string): Promise<PeriodSyncResult> {
   const current = await state()
   const pending = new Set(current.pending)
-  const result = await importCopecPeriod(period.from, period.to, pending, importerId)
-  // Solo avanzamos el cursor si el portal entregó al menos un archivo. Un período
-  // sin NINGUNA descarga (todas las tarjetas "no disponible") ya no es el caso
-  // normal: un período realmente vacío igual descarga un archivo de 0 filas. La
-  // ausencia total de archivo indica que el portal cambió o las credenciales
-  // fallan; avanzar el cursor ahí fue lo que enmascaró una pérdida de datos de
-  // meses. Al no avanzar, el próximo intento reanuda desde el mismo tramo.
-  // Un período abierto no se cierra: sus totales cambian con cada carga nueva, así
-  // que el cursor se queda ahí y la próxima corrida lo vuelve a refrescar. Si
-  // avanzara, el mes en curso se importaría una vez —parcial— y nunca más.
-  const advanced = result.reports.length > 0 && !isOpenPeriod(period.to)
-  // Persistimos cada período. Así una primera importación extensa puede
-  // reanudarse y no vuelve a descargar los tramos ya procesados.
-  // Si saveState falla, los datos ya están insertados con hash check;
-  // la próxima ejecución re-procesará el período pero el hash check
-  // evitará duplicados.
+  const run = await beginFuelProviderSyncRun({
+    provider: "copec",
+    trigger: importerId ? "manual" : "cron",
+    requestedFrom: period.from,
+    requestedTo: period.to,
+    actorUserId: importerId,
+  })
+  let runFinished = false
+  let receivedRows = 0
   try {
-    await saveState({ cursor: advanced ? addDays(period.to, 1) : period.from, lastRunAt: new Date().toISOString(), pending: [...pending].sort() }, current._version)
-  } catch (err) {
-    console.error("[copec-sync] saveState failed, cursor may be stale on next run", err)
+    const result = await importCopecPeriod(period.from, period.to, pending, importerId, run.id)
+    receivedRows = result.rowsReceived
+    // Solo avanzamos el cursor si el portal entregó al menos un archivo. Un período
+    // sin NINGUNA descarga (todas las tarjetas "no disponible") no hace avanzar el
+    // cursor; un mes abierto queda listo para refrescarse en la próxima corrida.
+    const advanced = result.reports.length > 0 && !isOpenPeriod(period.to)
+    let stateError: string | null = null
+    try {
+      await saveState({ cursor: advanced ? addDays(period.to, 1) : period.from, lastRunAt: new Date().toISOString(), pending: [...pending].sort() }, current._version)
+    } catch (err) {
+      stateError = err instanceof Error ? err.message : "No fue posible guardar el estado Copec"
+      console.error("[copec-sync] saveState failed, cursor may be stale on next run", stateError)
+    }
+    await finishFuelProviderSyncRun(run.id, {
+      status: stateError || result.rowsRejected > 0 || result.rowsPending > 0 || result.unavailable.length > 0 ? "partial" : "success",
+      receivedFrom: period.from,
+      receivedTo: period.to,
+      files: result.reports.length,
+      rowsReceived: result.rowsReceived,
+      rowsAccepted: result.rowsAccepted,
+      rowsRejected: result.rowsRejected,
+      rowsPending: result.rowsPending,
+      rowsReprocessed: result.refreshed,
+      error: stateError,
+    })
+    runFinished = true
+    return result
+  } catch (error) {
+    if (!runFinished) {
+      try {
+        await finishFuelProviderSyncRun(run.id, {
+          status: "failed",
+          receivedFrom: period.from,
+          receivedTo: period.to,
+          rowsReceived: receivedRows,
+          rowsAccepted: 0,
+          rowsRejected: 0,
+          rowsPending: 0,
+          error: error instanceof Error ? error.message : "Error desconocido en la sincronización Copec",
+        })
+      } catch (finishError) {
+        console.error("[copec-sync] no fue posible cerrar la corrida durable", finishError instanceof Error ? finishError.message : "error desconocido")
+      }
+    }
+    throw error
   }
-  return result
 }
 
 export async function syncCopecReports(): Promise<{ from: string; to: string; imported: number; refreshed: number; received: number; pending: number; reports: string[]; unavailable: string[]; unmappedCards: string[] }> {

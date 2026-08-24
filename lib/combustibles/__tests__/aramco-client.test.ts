@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   AramcoAuthError,
+  AramcoPayloadValidationError,
   AramcoUpstreamError,
   AramcoTwoFactorRequiredError,
   authenticateAramco,
@@ -77,6 +78,20 @@ describe("generateAramcoKeyboard", () => {
 
 const fetchMock = vi.fn()
 const ACCOUNT = { userId: 34822, systemOperatorId: 23645, systemOperatorName: "CHOME", programType: 1, twoFactorAuthentication: null }
+const VALID_MOVEMENT = {
+  transactionId: 1,
+  transactionDate: "2026-08-10T10:00:00",
+  vehicleRegistrationPlate: "AB-CD12",
+  cardNumber: "CARD-1",
+  quantity: 10,
+  originalAmount: 10_000,
+  totalDiscountAmount: 0,
+  amountToPay: 10_000,
+  productName: "Diesel",
+  productId: 1,
+  vehicleOdometer: null,
+  vehiclePreviousOdometer: null,
+}
 
 function jsonResponse(body: unknown, status = 200) {
   return { ok: status >= 200 && status < 300, status, statusText: "", text: async () => JSON.stringify(body) }
@@ -185,8 +200,8 @@ describe("fetchAramcoMovements", () => {
 
   it("walks every page instead of returning only the first", async () => {
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ totalPages: 2, data: [{ transactionId: 1 }] }))
-      .mockResolvedValueOnce(jsonResponse({ totalPages: 2, data: [{ transactionId: 2 }] }))
+      .mockResolvedValueOnce(jsonResponse({ totalPages: 2, data: [{ ...VALID_MOVEMENT, transactionId: 1 }] }))
+      .mockResolvedValueOnce(jsonResponse({ totalPages: 2, data: [{ ...VALID_MOVEMENT, transactionId: 2 }] }))
     const movements = await fetchAramcoMovements(session, "2026-01-01", "2026-12-31")
     expect(movements.map((movement) => movement.transactionId)).toEqual([1, 2])
     expect(decodeFilter(fetchMock.mock.calls[1]![0])).toMatchObject({ pageNumber: 2 })
@@ -196,5 +211,19 @@ describe("fetchAramcoMovements", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ totalPages: 1, data: [] }))
     await fetchAramcoMovements(session, "2026-01-01", "2026-01-31")
     expect(fetchMock.mock.calls[0]![1].headers.Authorization).toBe("Bearer tok")
+  })
+
+  it("rejects malformed movements before they reach aggregation", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ totalPages: 1, data: [{ ...VALID_MOVEMENT, quantity: null }] }))
+
+    await expect(fetchAramcoMovements(session, "2026-08-01", "2026-08-31"))
+      .rejects.toBeInstanceOf(AramcoPayloadValidationError)
+  })
+
+  it("rejects repeated transaction ids from paginated responses", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ totalPages: 1, data: [VALID_MOVEMENT, { ...VALID_MOVEMENT }] }))
+
+    await expect(fetchAramcoMovements(session, "2026-08-01", "2026-08-31"))
+      .rejects.toBeInstanceOf(AramcoPayloadValidationError)
   })
 })

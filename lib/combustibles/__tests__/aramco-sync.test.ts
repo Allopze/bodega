@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   fetchAramcoMovements: vi.fn(),
   vehiclesFindMany: vi.fn(),
   usersFindFirst: vi.fn(),
+  mappingsFindMany: vi.fn(),
   batchFindFirst: vi.fn(),
   recordsFindMany: vi.fn(),
 }))
@@ -21,6 +22,7 @@ vi.mock("@/db/schema", () => ({
   fuelConsumptionRecords: { __table: "records" },
   fuelImportBatches: { __table: "batches" },
   fuelVehicles: { __table: "vehicles" },
+  fuelProviderMappings: { __table: "mappings" },
   users: { __table: "users" },
 }))
 
@@ -48,6 +50,7 @@ function makeTx() {
         return { where: () => Promise.resolve(undefined) }
       },
     }),
+    delete: () => ({ where: () => Promise.resolve(undefined) }),
   }
 }
 
@@ -56,6 +59,7 @@ vi.mock("@/db", () => ({
     query: {
       fuelVehicles: { findMany: (...args: unknown[]) => mocks.vehiclesFindMany(...args) },
       users: { findFirst: (...args: unknown[]) => mocks.usersFindFirst(...args) },
+      fuelProviderMappings: { findMany: (...args: unknown[]) => mocks.mappingsFindMany(...args) },
     },
     transaction: (callback: (tx: unknown) => unknown) => callback(makeTx()),
   },
@@ -71,8 +75,13 @@ vi.mock("@/lib/combustibles/aramco-client", () => ({
   authenticateAramco: (...args: unknown[]) => mocks.authenticateAramco(...args),
   fetchAramcoMovements: (...args: unknown[]) => mocks.fetchAramcoMovements(...args),
 }))
+vi.mock("@/lib/combustibles/fuel-provider-ledger", () => ({
+  beginFuelProviderSyncRun: vi.fn().mockResolvedValue({ id: "run-1", correlationId: "corr-1" }),
+  recordFuelProviderValidation: vi.fn().mockResolvedValue({ accepted: 1, rejected: 0, pending: 0 }),
+  finishFuelProviderSyncRun: vi.fn().mockResolvedValue(undefined),
+}))
 
-const { syncAramco } = await import("../aramco-sync")
+const { aramcoProjectionHash, syncAramco } = await import("../aramco-sync")
 
 /** Transacción con los campos que el portal entrega de verdad. */
 function movement(over: Record<string, unknown> = {}) {
@@ -110,6 +119,7 @@ describe("syncAramco", () => {
     // normalizada, igual que en Copec.
     mocks.vehiclesFindMany.mockResolvedValue([{ id: "v-1", plate: "SZGB72", worksiteId: "W1" }])
     mocks.usersFindFirst.mockResolvedValue({ id: "cron-user" })
+    mocks.mappingsFindMany.mockResolvedValue([])
     mocks.batchFindFirst.mockResolvedValue(undefined)
     mocks.recordsFindMany.mockResolvedValue([])
     process.env.ARAMCO_SYNC_IMPORTER_EMAIL = "importer@chome.cl"
@@ -226,6 +236,7 @@ describe("syncAramco", () => {
     mocks.fetchAramcoMovements.mockResolvedValue([movement({ transactionDate: "2026-08-02T08:00:00" })])
     mocks.batchFindFirst.mockResolvedValue({
       id: "batch-agosto",
+      hashArchivo: aramcoProjectionHash([movement({ transactionDate: "2026-08-02T08:00:00" })] as never),
       totalFilas: 1, totalPatentes: 1, totalTarjetas: 1, totalTransacciones: 1,
       totalCantidad: 100, totalMonto: 55_000,
     })
@@ -263,8 +274,8 @@ describe("syncAramco", () => {
   })
 
   it("still only adds missing plates to a closed month", async () => {
-    // Un mes cerrado no se reescribe: su agregado es final y reescribirlo a
-    // diario sería puro ruido en `updated_at`.
+    // Un mes cerrado también se reconstruye si el proveedor cambia el
+    // contenido. Esto corrige cargas históricas sin duplicar registros.
     mocks.fetchAramcoMovements.mockResolvedValue([movement({ transactionDate: "2026-06-15T10:00:00" })])
     mocks.batchFindFirst.mockResolvedValue({ id: "batch-junio" })
     mocks.recordsFindMany.mockResolvedValue([{ id: "rec-1", patente: "SZ GB 72", vehicleId: "v-1" }])
@@ -272,8 +283,8 @@ describe("syncAramco", () => {
     const result = await syncAramco()
 
     expect(result.imported).toBe(0)
-    expect(result.refreshed).toBe(0)
-    expect(updatedRecords).toHaveLength(0)
+    expect(result.refreshed).toBe(1)
+    expect(updatedRecords).toHaveLength(1)
   })
 
   it("re-imports only the plates missing from an existing batch", async () => {

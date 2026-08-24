@@ -13,13 +13,13 @@
  * recalcularlo desde el catálogo lo borraría en silencio.
  */
 
-import { eq } from "drizzle-orm"
+import { and, eq, notInArray } from "drizzle-orm"
 import { type DB } from "@/db"
 import { fuelConsumptionRecords } from "@/db/schema"
 import { todayInChile } from "@/lib/utils"
 import { type BatchTotals } from "@/lib/combustibles/consumption-calculations"
 
-type RecordsTx = Pick<DB, "insert" | "update" | "query">
+type RecordsTx = Pick<DB, "insert" | "update" | "delete" | "query">
 
 export type ConsumptionRecordInsert = typeof fuelConsumptionRecords.$inferInsert
 
@@ -78,6 +78,59 @@ export async function upsertBatchRecords(
   }
   if (toInsert.length > 0) await tx.insert(fuelConsumptionRecords).values(toInsert)
   return { inserted: toInsert.length, updated }
+}
+
+/**
+ * Rebuilds the aggregate from the validated provider ledger. A source refresh
+ * is a replacement, not an additive import: absent plates are removed from the
+ * projection while any manual mapping is expected to live in
+ * `fuel_provider_mappings`, outside this table.
+ */
+export async function replaceBatchRecords(
+  tx: RecordsTx,
+  batchId: string,
+  records: ConsumptionRecordInsert[],
+): Promise<{ inserted: number; updated: number; removed: number }> {
+  const existing = await tx.query.fuelConsumptionRecords.findMany({
+    where: eq(fuelConsumptionRecords.batchId, batchId),
+    columns: { id: true, patente: true, vehicleId: true },
+  })
+  const incomingPlates = [...new Set(records.map((record) => record.patente))]
+  const incomingPlateSet = new Set(incomingPlates)
+  const removed = existing.filter((record) => !incomingPlateSet.has(record.patente)).length
+  await tx.delete(fuelConsumptionRecords).where(
+    incomingPlates.length === 0
+      ? eq(fuelConsumptionRecords.batchId, batchId)
+      : and(eq(fuelConsumptionRecords.batchId, batchId), notInArray(fuelConsumptionRecords.patente, incomingPlates)),
+  )
+
+  const stored = new Map(existing.map((record) => [record.patente, record]))
+  const updatedAt = new Date().toISOString()
+  const toInsert: ConsumptionRecordInsert[] = []
+  let updated = 0
+  for (const record of records) {
+    const previous = stored.get(record.patente)
+    if (!previous) {
+      toInsert.push(record)
+      continue
+    }
+    await tx.update(fuelConsumptionRecords)
+      .set({
+        numeroTarjetas: record.numeroTarjetas,
+        numeroTransacciones: record.numeroTransacciones,
+        cantidadUnidad: record.cantidadUnidad,
+        monto: record.monto,
+        rendimientoPromedio: record.rendimientoPromedio,
+        precioPromedioUnidad: record.precioPromedioUnidad,
+        rawRow: record.rawRow,
+        ...(previous.vehicleId ? {} : { vehicleId: record.vehicleId }),
+        updatedAt,
+      })
+      .where(eq(fuelConsumptionRecords.id, previous.id))
+    updated++
+  }
+  if (toInsert.length > 0) await tx.insert(fuelConsumptionRecords).values(toInsert)
+  return { inserted: toInsert.length, updated, removed }
 }
 
 /** Los totales de un lote tal como quedaron guardados. */
