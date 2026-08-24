@@ -8,7 +8,7 @@
  */
 
 import ExcelJS from "exceljs"
-import { normKey, sheetToRecords, parseChileanNumber, nullableChileanNumber, formatExcelDateUTC, normalizePlate, plateMatchKey } from "./xlsx-utils"
+import { normKey, sheetToRecords, parseChileanNumber, nullableChileanNumber, normalizePlate, parseSheetDate, plateMatchKey } from "./xlsx-utils"
 
 export { normalizePlate, plateMatchKey }
 
@@ -117,9 +117,6 @@ function normalizeTipoRendimiento(raw: unknown): TipoRendimiento | null {
   return null
 }
 
-// La regla vive en ./xlsx-utils, compartida con el parser de facturas.
-const formatDateUTC = formatExcelDateUTC
-
 function formatTimeUTC(date: Date): string {
   const h = String(date.getUTCHours()).padStart(2, "0")
   const min = String(date.getUTCMinutes()).padStart(2, "0")
@@ -191,14 +188,9 @@ export async function parseFuelOperationsExcel(fileBuffer: ArrayBuffer | Buffer)
     }
     const plate = normalizePlate(plateRaw)
 
-    const rawFecha = get("Fecha")
-    let fecha = ""
-    if (rawFecha instanceof Date) {
-      fecha = formatDateUTC(rawFecha)
-    } else if (typeof rawFecha === "string" && rawFecha.trim()) {
-      const d = new Date(rawFecha)
-      if (!isNaN(d.getTime())) fecha = formatDateUTC(d)
-    }
+    // `parseSheetDate` y no `new Date(texto)`: éste lee mm/dd y corría de mes
+    // las fechas chilenas de los días 1-12 sin dejar rastro.
+    const fecha = parseSheetDate(get("Fecha"))
     if (!fecha) {
       errors.push({ rowIndex: rowNum, field: "Fecha", message: "Fecha requerida o inválida" })
       continue

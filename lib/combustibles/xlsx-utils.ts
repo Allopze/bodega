@@ -123,6 +123,39 @@ export function formatExcelDateUTC(date: Date): string {
   return `${y}-${m}-${d}`
 }
 
+/**
+ * Fecha civil "YYYY-MM-DD" de una celda que puede venir como serial de Excel o
+ * como texto.
+ *
+ * Los parsers hacían `new Date(texto)`, y `new Date("03/02/2026")` es el 2 de
+ * marzo: JS lee mm/dd y en Chile eso es el 3 de febrero. Los días 1-12 se
+ * reasignaban de mes EN SILENCIO (la carga quedaba contabilizada en otro mes) y
+ * los 13-31 caían en "fecha inválida" por accidente, no por diseño.
+ *
+ * Acá el texto se parte con reglas explícitas: el grupo de 4 dígitos es el año y
+ * el otro extremo es el día. Lo que no calza devuelve `null` para que el
+ * llamador reporte la fila, que es lo que ya hace. Se rechaza a propósito el año
+ * de dos dígitos ("03/02/26"): no hay forma de saber si es 1926 o 2026, y
+ * adivinar es exactamente el bug que esto corrige.
+ */
+const SHEET_DATE_TEXT = /^(\d{1,4})([/-])(\d{1,2})\2(\d{1,4})(?:[ T].*)?$/
+
+export function parseSheetDate(value: unknown): string | null {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : formatExcelDateUTC(value)
+  if (typeof value !== "string") return null
+  const match = SHEET_DATE_TEXT.exec(value.trim())
+  if (!match) return null
+  const [, first, , month, last] = match
+  // Exactamente un extremo con 4 dígitos: con dos es ambiguo y con ninguno es
+  // año de dos dígitos.
+  if ((first!.length === 4) === (last!.length === 4)) return null
+  const [year, day] = first!.length === 4 ? [first!, last!] : [last!, first!]
+  const utc = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)))
+  // `Date.UTC` "arregla" 30/02 corriéndolo al mes siguiente; el round-trip lo caza.
+  if (utc.getUTCMonth() !== Number(month) - 1 || utc.getUTCDate() !== Number(day)) return null
+  return formatExcelDateUTC(utc)
+}
+
 /** Convierte un valor de celda (número, o texto con formato chileno —
  *  miles con "." y decimales con ",") a número. Vacío/no numérico → 0. */
 export function parseChileanNumber(value: unknown): number {

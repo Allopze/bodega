@@ -78,6 +78,13 @@ describe("parseFuelOperationsExcel", () => {
     expect(result.errors[0]!.field).toBe("Patente")
   })
 
+  it("lee la fecha chilena de texto como DD/MM y no como MM/DD", async () => {
+    const buffer = await createTestExcel([{ ...validRow, "FECHA": "03/02/2026" }])
+    const result = await parseFuelOperationsExcel(buffer)
+    expect(result.errors).toHaveLength(0)
+    expect(result.rows[0]!.fecha).toBe("2026-02-03")
+  })
+
   it("rejects a row with a missing fecha", async () => {
     const row = { ...validRow, "FECHA": null }
     const buffer = await createTestExcel([row])

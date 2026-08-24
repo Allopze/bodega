@@ -103,6 +103,16 @@ describe("parseFuelExcel", () => {
     expect(result.loads[0]!.month).toBe("2026-03")
   })
 
+  it("lee la fecha chilena de texto como DD/MM y no como MM/DD", async () => {
+    // "03/02/2026" es el 3 de febrero. `new Date(texto)` lo leía como 2 de marzo
+    // y la carga quedaba contabilizada en otro mes sin dejar rastro.
+    const buffer = await createTestExcel([{ ...validRow, "MES-AÑO": "03/02/2026" }])
+    const result = await parseFuelExcel(buffer)
+    expect(result.errors).toHaveLength(0)
+    expect(result.loads[0]!.loadDate).toBe("2026-02-03")
+    expect(result.loads[0]!.month).toBe("2026-02")
+  })
+
   it("does not shift dates on servers with UTC offset (H11)", async () => {
     // A Date at midnight local time: toISOString would give previous day in UTC-X zones.
     // We create the date directly as a JS Date object (as Excel does with cellDates:true)

@@ -5,7 +5,7 @@
  */
 
 import ExcelJS from "exceljs"
-import { normKey, sheetToRecords, parseChileanNumber, nullableChileanNumber, formatExcelDateUTC } from "./xlsx-utils"
+import { normKey, sheetToRecords, parseChileanNumber, nullableChileanNumber, parseSheetDate } from "./xlsx-utils"
 
 export interface ParsedFuelLoad {
   rowIndex: number
@@ -80,27 +80,19 @@ export async function parseFuelExcel(fileBuffer: ArrayBuffer): Promise<ImportRes
     // Saltar filas completamente vacías
     if (!get("MES-AÑO") && !get("SERVICIO") && !get("FACTURA")) continue
 
-    // Parsear fecha
+    // Parsear fecha. El desambiguado día/mes vive en `parseSheetDate`: acá se
+    // hacía `new Date(texto)`, que lee mm/dd y corría de mes las fechas
+    // chilenas de los días 1-12.
     const rawDate = get("MES-AÑO")
-    let loadDate = ""
-    let month = ""
-    if (rawDate instanceof Date) {
-      loadDate = formatExcelDateUTC(rawDate)
-      month = loadDate.slice(0, 7)
-    } else if (typeof rawDate === "string" && rawDate.trim()) {
-      // Intentar parsear string
-      const d = new Date(rawDate)
-      if (!isNaN(d.getTime())) {
-        loadDate = formatExcelDateUTC(d)
-        month = loadDate.slice(0, 7)
-      } else {
-        errors.push({ rowIndex: rowNum, field: "MES-AÑO", message: `Fecha inválida: ${rawDate}` })
-        continue
-      }
-    } else {
-      errors.push({ rowIndex: rowNum, field: "MES-AÑO", message: "Fecha requerida" })
+    const loadDate = parseSheetDate(rawDate)
+    if (!loadDate) {
+      const provided = typeof rawDate === "string" ? rawDate.trim() : rawDate
+      errors.push(provided
+        ? { rowIndex: rowNum, field: "MES-AÑO", message: `Fecha inválida: ${String(provided)}` }
+        : { rowIndex: rowNum, field: "MES-AÑO", message: "Fecha requerida" })
       continue
     }
+    const month = loadDate.slice(0, 7)
 
     // Campos texto
     const serviceType = String(get("SERVICIO") ?? "").trim().toUpperCase()
