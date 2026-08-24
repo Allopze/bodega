@@ -160,6 +160,45 @@ describe("syncCopecReportPeriod", () => {
     expect(savedState.cursor).toBe("2026-02-01")
   })
 
+  it("no avanza el cursor TAE cuando el portal entregó TCT pero no TAE", async () => {
+    // `advanced` mide sólo TCT a propósito. Sin cursor propio, ese mes cerrado
+    // avanzaba igual y sus recepciones TAE no se reintentaban nunca más.
+    const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
+    mockDownloadCopecReports
+      .mockResolvedValueOnce([
+        { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
+        { product: "bluemax", unavailable: true },
+      ])
+      .mockResolvedValueOnce([
+        { product: "diesel", unavailable: true },
+        { product: "bluemax", unavailable: true },
+      ])
+    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [] })
+    mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
+
+    await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
+
+    const saved = JSON.parse(mockSaveState.mock.calls[0]![0].set.value)
+    expect(saved.cursor).toBe("2026-03-01")
+    expect(saved.taeCursor).toBe("2026-02-01")
+  })
+
+  it("avanza los dos cursores cuando el portal entregó ambos canales", async () => {
+    const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
+    mockDownloadCopecReports.mockResolvedValue([
+      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "informe.xlsx" } },
+      { product: "bluemax", unavailable: true },
+    ])
+    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [] })
+    mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
+
+    await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
+
+    const saved = JSON.parse(mockSaveState.mock.calls[0]![0].set.value)
+    expect(saved.cursor).toBe("2026-03-01")
+    expect(saved.taeCursor).toBe("2026-03-01")
+  })
+
   it("uses the authenticated operator for a manual sync without requiring cron configuration", async () => {
     vi.unstubAllEnvs()
     mockDownloadCopecReports.mockResolvedValue([
@@ -464,6 +503,36 @@ describe("Copec synchronization start date", () => {
       expect(plan.to).toBe("2026-08-31")
       expect(plan.periods).toHaveLength(5)
       expect(plan.periods.at(-1)).toEqual({ from: "2026-08-01", to: "2026-08-31" })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("el plan retrocede hasta el mes TAE atrasado, con tope", async () => {
+    // TCT iba en agosto y TAE quedó en abril porque el portal no entregó sus
+    // informes. Recuperar TAE es volver a pedir esos meses completos, y cada uno
+    // es una sesión de navegador: el tope evita que la puesta al día cuelgue el
+    // cron. TCT ya importado sale por el atajo del hash sin escribir nada.
+    mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2026-08-01", taeCursor: "2026-04-01", lastRunAt: null, pending: [] }) })
+    mockBatchFindFirst.mockResolvedValue(undefined)
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-08-07T12:00:00.000Z"))
+    try {
+      const plan = await getCopecSyncPlan()
+      // Tope de 3 meses: no arranca en abril sino en mayo.
+      expect(plan.from).toBe("2026-05-01")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("no retrocede el plan cuando el canal TAE está al día", async () => {
+    mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2026-08-01", taeCursor: "2026-08-01", lastRunAt: null, pending: [] }) })
+    mockBatchFindFirst.mockResolvedValue(undefined)
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-08-07T12:00:00.000Z"))
+    try {
+      expect((await getCopecSyncPlan()).from).toBe("2026-08-01")
     } finally {
       vi.useRealTimers()
     }

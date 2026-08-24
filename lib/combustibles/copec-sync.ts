@@ -22,7 +22,28 @@ const STATE_KEY = "combustibles.copec.sync"
 const START_KEY = "COPEC_SYNC_START_DATE"
 const DEFAULT_START = "2020-01-01"
 
-interface SyncState { cursor: string | null; lastRunAt: string | null; pending: string[]; }
+/**
+ * `taeCursor` es el cursor del canal TAE, independiente del de TCT.
+ *
+ * `advanced` mide sólo los informes TCT a propósito (ver el docblock de
+ * `importTaeReceiptPeriod`), así que un mes en que TCT entregaba y TAE no hacía
+ * avanzar el cursor igual: esas recepciones —la etapa `received` del ciclo
+ * físico— no se reintentaban nunca más.
+ *
+ * Va en la misma fila y no en una clave aparte para que las dos posiciones se
+ * guarden en la misma escritura optimista: con dos filas, un fallo entre medio
+ * dejaba un canal avanzado y el otro no.
+ */
+interface SyncState { cursor: string | null; taeCursor: string | null; lastRunAt: string | null; pending: string[]; }
+
+/**
+ * Tope de meses TAE atrasados por corrida.
+ *
+ * `downloadCopecReports` abre un navegador con login POR LLAMADA, y el cron
+ * corta a los 5 minutos: ponerse al día de un tirón sobre un histórico largo es
+ * un timeout garantizado con el lock tomado. Se recupera de a poco.
+ */
+const MAX_TAE_CATCHUP_MONTHS = 3
 
 export interface CopecSyncStartOptions {
   currentStart: string
@@ -33,9 +54,9 @@ export interface CopecSyncStartOptions {
 
 async function state(): Promise<SyncState & { _version: string }> {
   const row = await db.query.systemSettings.findFirst({ where: eq(systemSettings.key, STATE_KEY) })
-  if (!row) return { cursor: null, lastRunAt: null, pending: [], _version: "" }
-  try { return { ...{ cursor: null, lastRunAt: null, pending: [], _version: row.updatedAt ?? "" }, ...JSON.parse(row.value) } }
-  catch { return { cursor: null, lastRunAt: null, pending: [], _version: "" } }
+  if (!row) return { cursor: null, taeCursor: null, lastRunAt: null, pending: [], _version: "" }
+  try { return { ...{ cursor: null, taeCursor: null, lastRunAt: null, pending: [], _version: row.updatedAt ?? "" }, ...JSON.parse(row.value) } }
+  catch { return { cursor: null, taeCursor: null, lastRunAt: null, pending: [], _version: "" } }
 }
 
 export async function getCopecSyncState(): Promise<{ lastRunAt: string | null; lastRunStatus: string | null; rowsReceived: number; rowsAccepted: number; rowsRejected: number; rowsPending: number; affectedQuantity: number; affectedAmount: number; cursor: string | null; pending: number }> {
@@ -95,11 +116,13 @@ function firstDayOfMonth(value: string): string {
   return `${value.slice(0, 7)}-01`
 }
 
-function nextMonth(value: string): string {
+function shiftMonth(value: string, delta: number): string {
   const date = new Date(`${firstDayOfMonth(value)}T00:00:00.000Z`)
-  date.setUTCMonth(date.getUTCMonth() + 1)
+  date.setUTCMonth(date.getUTCMonth() + delta)
   return date.toISOString().slice(0, 10)
 }
+
+function nextMonth(value: string): string { return shiftMonth(value, 1) }
 
 function lastDayOfMonth(value: string): string {
   return addDays(nextMonth(value), -1)
@@ -207,7 +230,7 @@ export async function setCopecSyncStartDate(startDate: string, expectedStart: st
     throw new Error("La importación automática solo puede comenzar hasta el mes actual.")
   }
 
-  await saveState({ cursor: startDate, lastRunAt: current.lastRunAt, pending: current.pending }, current._version)
+  await saveState({ cursor: startDate, taeCursor: current.taeCursor, lastRunAt: current.lastRunAt, pending: current.pending }, current._version)
   return { currentStart: startDate, minimumStart, maximumStart, latestImportedUntil }
 }
 
@@ -226,10 +249,26 @@ export function buildCopecSyncPeriods(from: string, to: string): CopecSyncPeriod
   return periods
 }
 
+/**
+ * Inicio del plan considerando el atraso del canal TAE.
+ *
+ * Los dos canales se piden en el mismo período, así que recuperar un mes TAE es
+ * volver a pedir ese mes completo: TCT ya importado sale por el atajo del hash
+ * sin escribir nada, y TAE se reintenta. El tope existe porque cada mes es una
+ * sesión de navegador con login y el cron corta a los 5 minutos.
+ */
+function planStartWithTaeCatchup(taeCursor: string | null, tctFrom: string): string {
+  if (!isValidIsoDate(taeCursor)) return tctFrom
+  const taeFrom = firstDayOfMonth(taeCursor)
+  if (taeFrom >= tctFrom) return tctFrom
+  const floor = shiftMonth(tctFrom, -MAX_TAE_CATCHUP_MONTHS)
+  return taeFrom > floor ? taeFrom : floor
+}
+
 export async function getCopecSyncPlan(): Promise<{ from: string; to: string; periods: CopecSyncPeriod[]; pending: number }> {
   const [current, latestImportedUntil] = await Promise.all([state(), latestActiveImportUntil()])
   const minimumStart = minimumStartFrom(latestImportedUntil)
-  const from = resolveStart(current, minimumStart)
+  const from = planStartWithTaeCatchup(current.taeCursor, resolveStart(current, minimumStart))
   // Incluye el mes en curso: su lote se refresca en cada corrida.
   const to = lastDayOfMonth(today())
   return { from, to, periods: buildCopecSyncPeriods(from, to), pending: current.pending.length }
@@ -246,6 +285,9 @@ interface PeriodSyncResult {
   unavailable: string[]
   /** Recepciones del canal TAE (etapa `received` del ciclo físico). */
   received: number
+  /** Informes TAE que el portal sí entregó. Decide el cursor TAE, igual que
+   *  `reports` decide el de TCT. */
+  taeReports: number
   /** Tarjetas TAE sin vasija asociada: su combustible no entró al ciclo. */
   unmappedCards: string[]
   rowsReceived: number
@@ -479,7 +521,7 @@ async function importTaeReceiptPeriod(
   importerId: string,
   unavailable: string[],
   runId?: string,
-): Promise<{ received: number; unmappedCards: string[]; rowsReceived: number; rowsAccepted: number; rowsRejected: number; rowsPending: number }> {
+): Promise<{ received: number; unmappedCards: string[]; taeReports: number; rowsReceived: number; rowsAccepted: number; rowsRejected: number; rowsPending: number }> {
   const downloads = await downloadCopecReports(
     (["diesel", "bluemax"] as const).map((product) => ({ product, from, to })),
     "TAE",
@@ -491,12 +533,14 @@ async function importTaeReceiptPeriod(
   let rowsRejected = 0
   let rowsPending = 0
   const unmappedCards = new Set<string>()
+  let taeReports = 0
   for (const download of downloads) {
     const productLabel = download.product === "diesel" ? "Diesel" : "BlueMax"
     if (download.unavailable) {
       unavailable.push(`TAE ${productLabel}`)
       continue
     }
+    taeReports++
     const parsed = await parseTaeReceiptExcel(download.report.buffer)
     rowsReceived += parsed.rows.length + parsed.errors.length
     const product = download.product
@@ -546,7 +590,7 @@ async function importTaeReceiptPeriod(
       })), "pending")
     }
   }
-  return { received, unmappedCards: [...unmappedCards].sort(), rowsReceived, rowsAccepted, rowsRejected, rowsPending }
+  return { received, unmappedCards: [...unmappedCards].sort(), taeReports, rowsReceived, rowsAccepted, rowsRejected, rowsPending }
 }
 
 export async function syncCopecReportPeriod(period: CopecSyncPeriod, importerId?: string): Promise<PeriodSyncResult> {
@@ -571,9 +615,24 @@ export async function syncCopecReportPeriod(period: CopecSyncPeriod, importerId?
     // sin NINGUNA descarga (todas las tarjetas "no disponible") no hace avanzar el
     // cursor; un mes abierto queda listo para refrescarse en la próxima corrida.
     const advanced = result.reports.length > 0 && !isOpenPeriod(period.to)
+    // El canal TAE avanza por su cuenta y con el mismo criterio: si el portal no
+    // entregó su informe, este mes queda pendiente de reintento aunque TCT haya
+    // funcionado. Nunca retrocede: un mes de recuperación no puede tirar hacia
+    // atrás el cursor de un mes posterior ya importado.
+    const taeAdvanced = result.taeReports > 0 && !isOpenPeriod(period.to)
+    const taeCursor = taeAdvanced ? addDays(period.to, 1) : period.from
     let stateError: string | null = null
     try {
-      await saveState({ cursor: advanced ? addDays(period.to, 1) : period.from, lastRunAt: new Date().toISOString(), pending: [...pending].sort() }, current._version)
+      // Ningún cursor retrocede: recuperar un mes atrasado hace que el plan
+      // vuelva a pedir un período viejo, y guardar su posición tal cual tiraría
+      // hacia atrás el canal que ya iba más adelante.
+      const forward = (previous: string | null, next: string) => (previous && previous > next ? previous : next)
+      await saveState({
+        cursor: forward(current.cursor, advanced ? addDays(period.to, 1) : period.from),
+        taeCursor: forward(current.taeCursor, taeCursor),
+        lastRunAt: new Date().toISOString(),
+        pending: [...pending].sort(),
+      }, current._version)
     } catch (err) {
       stateError = err instanceof Error ? err.message : "No fue posible guardar el estado Copec"
       console.error("[copec-sync] saveState failed, cursor may be stale on next run", stateError)
