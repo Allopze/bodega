@@ -27,10 +27,10 @@ import { fuelConsumptionRecords, fuelImportBatches, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { todayInChile } from "@/lib/utils"
 import { calcPrecioPromedioUnidad, computeBatchTotals } from "@/lib/combustibles/consumption-calculations"
-import { normalizePlate, plateMatchKey } from "@/lib/combustibles/xlsx-utils"
+import { normalizePlate } from "@/lib/combustibles/xlsx-utils"
+import { loadVehicleResolver } from "@/lib/combustibles/plate-resolver"
 import { AUTOMATED_SOURCES, aramcoSourceForProduct } from "@/lib/combustibles/fuel-sources"
 import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
-import { fuelProviderMappings } from "@/db/schema"
 import { replaceBatchRecords } from "@/lib/combustibles/open-period"
 import { beginFuelProviderSyncRun, finishFuelProviderSyncRun, recordFuelProviderValidation } from "@/lib/combustibles/fuel-provider-ledger"
 import { validateProviderRows, type ProviderRowInput } from "@/lib/combustibles/provider-validation"
@@ -309,26 +309,9 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
     }))
     const validation = validateProviderRows(validationInputs, { from, to })
 
-    // Mismo criterio que Copec: matching por clave normalizada, no por igualdad
-    // exacta. Aramco entrega la patente con espacios ("SZ GB 72") y el catálogo
-    // la guarda con o sin guion; `plateMatchKey` deja ambas en "SZGB72".
-    const vehicles = await db.query.fuelVehicles.findMany({ columns: { id: true, plate: true, worksiteId: true } })
-    const byPlateKey = new Map(vehicles.map((vehicle) => [plateMatchKey(vehicle.plate), vehicle]))
-    const mappings = await db.query.fuelProviderMappings.findMany({
-      where: and(
-        eq(fuelProviderMappings.provider, "aramco"),
-        eq(fuelProviderMappings.sourceAccount, accountKey),
-        eq(fuelProviderMappings.isActive, true),
-      ),
-      columns: { externalKey: true, worksiteId: true, vehicleId: true },
-    })
-    const byVehicleId = new Map(vehicles.map((vehicle) => [vehicle.id, vehicle]))
-    const byMappedPlate = new Map(mappings.map((mapping) => [mapping.externalKey, mapping]))
-    const resolveVehicle = (plate: string) => {
-      const mapped = byMappedPlate.get(plateMatchKey(plate))
-      if (mapped) return mapped.vehicleId ? byVehicleId.get(mapped.vehicleId) : undefined
-      return byPlateKey.get(plateMatchKey(plate))
-    }
+    // Matching por clave normalizada, no por igualdad exacta: Aramco entrega la
+    // patente con espacios ("SZ GB 72") y el catálogo la guarda con o sin guion.
+    const resolveVehicle = await loadVehicleResolver({ provider: "aramco", sourceAccount: accountKey })
     const persisted = await recordFuelProviderValidation(run.id, validation, (input) => {
       const vehicle = input.plate ? resolveVehicle(input.plate) : undefined
       return {

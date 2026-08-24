@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto"
 import { and, desc, eq, gte, lte, ne, notInArray, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { fuelConsumptionRecords, fuelImportBatches, fuelProviderMappings, fuelProviderSyncRuns, systemSettings, users } from "@/db/schema"
+import { fuelConsumptionRecords, fuelImportBatches, fuelProviderSyncRuns, systemSettings, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { todayInChile, addDaysToPlainDate } from "@/lib/utils"
 import { parseConsumptionExcel, type ParsedConsumptionRow } from "@/lib/combustibles/consumption-import"
 import { computeBatchTotals } from "@/lib/combustibles/consumption-calculations"
-import { plateMatchKey } from "@/lib/combustibles/xlsx-utils"
+import { loadVehicleResolver } from "@/lib/combustibles/plate-resolver"
 import { AUTOMATED_SOURCES, copecTctSource } from "@/lib/combustibles/fuel-sources"
 import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
 import { isOpenPeriod, replaceBatchRecords } from "@/lib/combustibles/open-period"
@@ -302,6 +302,9 @@ async function importCopecPeriod(
       payload: row.rawRow,
     }))
     const validation = validateProviderRows(validationInputs, { from, to })
+    // Un solo resolutor para el ledger y para la proyección: eran dos bloques
+    // idénticos, cada uno con su propia consulta del padrón y de los mappings.
+    const resolveVehicle = await loadVehicleResolver({ provider: "copec", sourceAccount: accountKey })
     if (runId) {
       const persistedIssues = await recordFuelProviderIssues(runId, parsed.errors.map((error) => ({
         input: {
@@ -319,22 +322,8 @@ async function importCopecPeriod(
         code: "source_row_invalid",
         message: `${error.field}: ${error.message}`,
       })))
-      const platesForLedger = [...new Set(parsed.rows.map((row) => row.patente))]
-      const vehiclesForLedger = platesForLedger.length ? await db.query.fuelVehicles.findMany({ columns: { id: true, plate: true, worksiteId: true } }) : []
-      const byPlateForLedger = new Map(vehiclesForLedger.map((vehicle) => [plateMatchKey(vehicle.plate), vehicle]))
-      const mappingsForLedger = await db.query.fuelProviderMappings.findMany({
-        where: and(eq(fuelProviderMappings.provider, "copec"), eq(fuelProviderMappings.sourceAccount, accountKey), eq(fuelProviderMappings.isActive, true)),
-        columns: { externalKey: true, vehicleId: true },
-      })
-      const byVehicleForLedger = new Map(vehiclesForLedger.map((vehicle) => [vehicle.id, vehicle]))
-      const byMappedPlateForLedger = new Map(mappingsForLedger.map((mapping) => [mapping.externalKey, mapping]))
-      const resolveVehicleForLedger = (plate: string) => {
-        const mapped = byMappedPlateForLedger.get(plateMatchKey(plate))
-        if (mapped) return mapped.vehicleId ? byVehicleForLedger.get(mapped.vehicleId) : undefined
-        return byPlateForLedger.get(plateMatchKey(plate))
-      }
       const persistedRows = await recordFuelProviderValidation(runId, validation, (input) => {
-        const vehicle = input.plate ? resolveVehicleForLedger(input.plate) : undefined
+        const vehicle = input.plate ? resolveVehicle(input.plate) : undefined
         return {
           worksiteId: vehicle?.worksiteId,
           vehicleId: vehicle?.id,
@@ -348,26 +337,6 @@ async function importCopecPeriod(
       rowsAccepted += validation.accepted.length
       rowsRejected += validation.rejected.length + parsed.errors.length
       rowsPending += validation.pending.length
-    }
-    // Matching por clave normalizada (sin separadores), no por igualdad
-    // exacta: el catálogo de vehículos guarda la patente con el formato del
-    // import masivo/alta manual (con o sin guion) y el reporte TCT trae su
-    // propio formato — "AB-CD12" contra "ABCD12" no calzaba con `inArray`
-    // y la carga quedaba en `pending` como "patente sin vincular" pese a
-    // que el vehículo sí existe.
-    const plates = [...new Set(parsed.rows.map((row) => row.patente))]
-    const vehicles = plates.length ? await db.query.fuelVehicles.findMany({ columns: { id: true, plate: true, worksiteId: true } }) : []
-    const byPlateKey = new Map(vehicles.map((vehicle) => [plateMatchKey(vehicle.plate), vehicle]))
-    const mappings = await db.query.fuelProviderMappings.findMany({
-      where: and(eq(fuelProviderMappings.provider, "copec"), eq(fuelProviderMappings.sourceAccount, `tct:${product}`), eq(fuelProviderMappings.isActive, true)),
-      columns: { externalKey: true, vehicleId: true },
-    })
-    const byVehicleId = new Map(vehicles.map((vehicle) => [vehicle.id, vehicle]))
-    const byMappedPlate = new Map(mappings.map((mapping) => [mapping.externalKey, mapping]))
-    const resolveVehicle = (plate: string) => {
-      const mapped = byMappedPlate.get(plateMatchKey(plate))
-      if (mapped) return mapped.vehicleId ? byVehicleId.get(mapped.vehicleId) : undefined
-      return byPlateKey.get(plateMatchKey(plate))
     }
     const groups = new Map<string, ParsedConsumptionRow[]>()
     const acceptedIdentityKeys = new Set(validation.accepted.map((row) => row.identityKey))
