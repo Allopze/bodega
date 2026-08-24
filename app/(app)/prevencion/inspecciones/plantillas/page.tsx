@@ -4,7 +4,12 @@ import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { listImportableDefinitions, listInspectionTemplates } from "@/lib/services/prevention-inspections"
+import {
+  listDeviationCatalog,
+  listImportableDefinitions,
+  listInspectionTemplates,
+  listUnclassifiedDeviations,
+} from "@/lib/services/prevention-inspections"
 import { InspectionTemplatesPanel } from "../inspection-catalog"
 
 export const metadata: Metadata = { title: "Plantillas de inspección" }
@@ -26,6 +31,23 @@ export default async function PlantillasInspeccionPage() {
   }
   const canManage = session.user.permissions.includes("prevention:inspections:manage")
   const templates = await listInspectionTemplates(access)
+
+  /* Catálogo de desviaciones por instrumento, más las que se registraron como
+   * "Otra" y esperan clasificación. Se piden en paralelo y sólo para quien
+   * administra: quien sólo mira no tiene qué hacer con ellas. */
+  const deviationsByTemplate = new Map<string, Awaited<ReturnType<typeof listDeviationCatalog>>>()
+  const unclassifiedByTemplate = new Map<string, Awaited<ReturnType<typeof listUnclassifiedDeviations>>>()
+  if (canManage) {
+    const rows = await Promise.all(templates.map(async (template) => [
+      template.id,
+      await listDeviationCatalog(template.id, access),
+      await listUnclassifiedDeviations(template.id, access),
+    ] as const))
+    for (const [templateId, catalog, unclassified] of rows) {
+      deviationsByTemplate.set(templateId, catalog)
+      unclassifiedByTemplate.set(templateId, unclassified)
+    }
+  }
 
   return (
     <PageContainer>
@@ -55,6 +77,14 @@ export default async function PlantillasInspeccionPage() {
           sourceDefinitionCode: row.sourceDefinitionCode,
           definitionDrifted: row.definitionDrifted,
           definitionMissing: row.definitionMissing,
+          deviations: (deviationsByTemplate.get(row.id) ?? []).map((entry) => ({
+            id: entry.id,
+            label: entry.label,
+            danoPotencial: entry.danoPotencial,
+            isActive: entry.isActive,
+            criticality: entry.criticality,
+          })),
+          unclassifiedDeviations: unclassifiedByTemplate.get(row.id) ?? [],
         }))}
         importable={canManage ? listImportableDefinitions() : []}
         canManage={canManage}

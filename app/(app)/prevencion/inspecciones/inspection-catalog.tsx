@@ -16,9 +16,11 @@ import {
   approveInspectionTemplateAction,
   retireInspectionTemplateAction,
   createInspectionProgramAction,
+  addDeviationCatalogEntryAction,
   importInspectionTemplateAction,
   runProgramNowAction,
   setInspectionTemplatePdtpActivitiesAction,
+  updateDeviationCatalogEntryAction,
   updateInspectionProgramAction,
 } from "./actions"
 import { Field } from "@/components/ui/field"
@@ -46,12 +48,25 @@ interface TemplateItem {
   pdtpActivityNumbers: number[] | null
   /** Actividades que acredita al REVISARSE (la firma, no la ejecución). */
   pdtpReviewActivityNumbers: number[] | null
+  /** Desviaciones que este instrumento ofrece al registrar, con su gravedad. */
+  deviations: DeviationEntry[]
+  /** Desviaciones registradas como "Otra" que aún no están en el catálogo. */
+  unclassifiedDeviations: { description: string; criticality: string; occurrences: number }[]
   /** Definición de `lib/sst/definitions` de la que salió el snapshot. */
   sourceDefinitionCode: string | null
   /** El catálogo en código difiere del snapshot congelado (A-03). */
   definitionDrifted: boolean
   /** La definición de origen ya no existe en el catálogo en código. */
   definitionMissing: boolean
+}
+
+export interface DeviationEntry {
+  id: string
+  label: string
+  danoPotencial: string
+  isActive: boolean
+  /** La criticidad que producirá el hallazgo. Se muestra para que no quede implícita. */
+  criticality: string
 }
 
 interface ProgramItem {
@@ -148,6 +163,7 @@ export function InspectionTemplatesPanel({ templates, importable, canManage, can
                 <TableHead>Estado</TableHead>
                 <TableHead>Gravedad declarada</TableHead>
                 <TableHead>Acredita PDTP</TableHead>
+                <TableHead>Desviaciones</TableHead>
                 <TableHead className="text-right">Acción</TableHead>
               </TableRow>
             </TableHeader>
@@ -197,8 +213,29 @@ export function InspectionTemplatesPanel({ templates, importable, canManage, can
                       </span>
                     )}
                   </TableCell>
+                  {/* El catálogo de desviaciones sólo tiene sentido en los
+                      instrumentos que no puntúan ítems: ahí la gravedad no la
+                      declara ningún ítem y tiene que declararla el catálogo. */}
+                  <TableCell className="text-sm">
+                    {item.deviations.length > 0
+                      ? `${item.deviations.filter((entry) => entry.isActive).length} activa(s)`
+                      : <span className="text-xs text-[var(--color-text-subtle)]">Sin catálogo</span>}
+                    {item.unclassifiedDeviations.length > 0 && (
+                      <span className="mt-1 block text-xs text-[var(--color-warning-ink)]">
+                        {item.unclassifiedDeviations.length} por clasificar
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
+                      {item.status !== "superseded" && canManage && (
+                        <DeviationCatalogDialog
+                          templateId={item.id}
+                          name={item.name}
+                          entries={item.deviations}
+                          unclassified={item.unclassifiedDeviations}
+                        />
+                      )}
                       {item.status !== "superseded" && canManage && (
                         <PdtpActivitiesDialog
                           templateId={item.id}
@@ -304,6 +341,154 @@ export function InspectionProgramsPanel({ programs, approvedTemplates, worksites
           </Table>
         </div>
       )}
+    </div>
+  )
+}
+
+/* ── Creador de desviaciones ──────────────────────────────────────────────── */
+
+const DANO_LABELS: Record<string, string> = {
+  leve: "Leve → hallazgo bajo · 30 días",
+  moderado: "Moderado → hallazgo medio · 15 días",
+  grave: "Grave → hallazgo alto · 7 días",
+  fatal: "Fatal → hallazgo crítico · 3 días y detención",
+}
+
+/**
+ * Mantiene qué desviaciones ofrece un instrumento y con qué gravedad.
+ *
+ * Es lo que permite que quien registra en terreno NO decida la gravedad: elige
+ * de esta lista y el plazo de la acción correctiva sale solo. La única excepción
+ * es "Otra desviación", donde sí la elige — y esas aparecen acá abajo para que
+ * Prevención las incorpore y dejen de depender de un criterio individual.
+ */
+function DeviationCatalogDialog({ templateId, name, entries, unclassified }: {
+  templateId: string
+  name: string
+  entries: DeviationEntry[]
+  unclassified: { description: string; criticality: string; occurrences: number }[]
+}) {
+  const [open, setOpen] = React.useState(false)
+  const [dano, setDano] = React.useState("moderado")
+  const operation = useOperation()
+
+  const activas = entries.filter((entry) => entry.isActive)
+  const retiradas = entries.filter((entry) => !entry.isActive)
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="ghost">
+          Desviaciones{unclassified.length > 0 ? ` (${unclassified.length})` : ""}
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Desviaciones · {name}</DialogTitle>
+          <DialogDescription>
+            Lo que este instrumento ofrece al registrar una desviación, con la gravedad que le corresponde. Quien
+            registra en terreno elige de esta lista; el plazo de la acción correctiva sale de acá y no de su criterio.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form
+          className="space-y-3 rounded-lg border border-[var(--color-border)] p-3"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const form = event.currentTarget
+            const label = String(new FormData(form).get("label") ?? "").trim()
+            operation.run(
+              () => addDeviationCatalogEntryAction({ templateId, label, danoPotencial: dano }),
+              () => form.reset(),
+            )
+          }}
+        >
+          <Field label="Desviación" required hint="Cómo la va a ver quien registra. Ej: «Extintor obstruido o sin acceso libre».">
+            <Input name="label" required minLength={3} maxLength={300} />
+          </Field>
+          <Field label="Gravedad" required>
+            <Select value={dano} onValueChange={setDano}>
+              <SelectTrigger aria-label="Gravedad de la desviación"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {Object.entries(DANO_LABELS).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Button type="submit" size="sm" disabled={operation.pending}>Agregar al catálogo</Button>
+          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+        </form>
+
+        {activas.length > 0 && (
+          <div className="max-h-56 space-y-1 overflow-y-auto">
+            {activas.map((entry) => (
+              <DeviationRow key={entry.id} entry={entry} />
+            ))}
+          </div>
+        )}
+
+        {/* Recalibrar no reescribe los hallazgos ya levantados: su criticidad es
+            evidencia del plazo que tuvieron. Retirar sólo deja de ofrecerla. */}
+        {retiradas.length > 0 && (
+          <details className="text-xs">
+            <summary className="cursor-pointer text-[var(--color-text-subtle)]">
+              {retiradas.length} retirada(s)
+            </summary>
+            <div className="mt-2 space-y-1">
+              {retiradas.map((entry) => <DeviationRow key={entry.id} entry={entry} />)}
+            </div>
+          </details>
+        )}
+
+        {unclassified.length > 0 && (
+          <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-xs">
+            <p className="font-medium">Registradas como «Otra», sin catalogar</p>
+            <p className="mt-1 text-[var(--color-text-subtle)]">
+              Su gravedad la eligió quien registró. Agrégalas arriba con la gravedad oficial y dejarán de depender de
+              un criterio individual.
+            </p>
+            <ul className="mt-2 space-y-0.5">
+              {unclassified.slice(0, 12).map((item) => (
+                <li key={item.description}>
+                  {item.description} · <span className="font-mono">{item.criticality}</span>
+                  {item.occurrences > 1 ? ` · ${item.occurrences} veces` : ""}
+                </li>
+              ))}
+            </ul>
+            {unclassified.length > 12 && <p className="mt-1">…y {unclassified.length - 12} más.</p>}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function DeviationRow({ entry }: { entry: DeviationEntry }) {
+  const operation = useOperation()
+  return (
+    <div className="flex items-center justify-between gap-2 rounded border border-[var(--color-border)] px-2 py-1.5 text-sm">
+      <span className={entry.isActive ? undefined : "text-[var(--color-text-subtle)] line-through"}>{entry.label}</span>
+      <span className="flex shrink-0 items-center gap-2">
+        <Select
+          value={entry.danoPotencial}
+          onValueChange={(value) => operation.run(() => updateDeviationCatalogEntryAction({ entryId: entry.id, danoPotencial: value }))}
+        >
+          <SelectTrigger className="h-7 w-40 text-xs" aria-label={`Gravedad de ${entry.label}`}><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {Object.keys(DANO_LABELS).map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={operation.pending}
+          onClick={() => operation.run(() => updateDeviationCatalogEntryAction({ entryId: entry.id, isActive: !entry.isActive }))}
+        >
+          {entry.isActive ? "Retirar" : "Reactivar"}
+        </Button>
+      </span>
     </div>
   )
 }

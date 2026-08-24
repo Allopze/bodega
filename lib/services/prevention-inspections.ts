@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { and, asc, desc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm"
 import { z } from "zod"
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
@@ -7,6 +7,7 @@ import {
   preventionCapaActions,
   preventionInspectionAnswerEvidence,
   preventionInspectionAnswers,
+  preventionInspectionDeviationCatalog,
   preventionInspectionFindings,
   preventionInspectionHistory,
   preventionInspectionPrograms,
@@ -33,6 +34,7 @@ import {
   assessRunCompletion,
   capaPriorityForCriticality,
   closingActFromDefinition,
+  criticalityFromDanoPotencial,
   deriveFindings,
   nextDueAfter,
   requiresHumanConfirmation,
@@ -2134,4 +2136,131 @@ export function listImportableDefinitions() {
           // el programa anual de una que no.
           pdtpActivities: pdtpActivityCandidatesFor(code),
         }])
+}
+
+/* ── Catálogo de desviaciones por instrumento ─────────────────────────────
+ * Quien registra una desviación no decide su gravedad: la declara este
+ * catálogo, igual que en un checklist la declara el ítem. La excepción es
+ * "Otra desviación", donde sí la elige —porque la alternativa es que fuerce la
+ * desviación más parecida y ensucie el dato con una gravedad que no
+ * corresponde—, y queda marcada para que Prevención la incorpore.
+ */
+
+const deviationSchema = z.object({
+  templateId: z.string().min(1),
+  label: z.string().trim().min(3).max(300),
+  danoPotencial: z.enum(["leve", "moderado", "grave", "fatal"]),
+})
+
+/** Desviaciones ofrecidas al registrar, con la criticidad que producirán. */
+export async function listDeviationCatalog(templateId: string, access: InspectionAccess) {
+  requireAccess(access, "prevention:inspections:view")
+  const rows = await db.select().from(preventionInspectionDeviationCatalog)
+    .where(eq(preventionInspectionDeviationCatalog.templateId, templateId))
+    .orderBy(asc(preventionInspectionDeviationCatalog.label))
+  return rows.map((row) => ({
+    ...row,
+    /** La criticidad que tendrá el hallazgo, para que el catálogo no la oculte. */
+    criticality: criticalityFromDanoPotencial(row.danoPotencial),
+  }))
+}
+
+export async function addDeviationCatalogEntry(input: unknown, access: InspectionAccess) {
+  requireAccess(access, "prevention:inspections:manage")
+  const data = deviationSchema.parse(input)
+
+  const [template] = await db.select({ id: preventionInspectionTemplates.id, status: preventionInspectionTemplates.status })
+    .from(preventionInspectionTemplates)
+    .where(eq(preventionInspectionTemplates.id, data.templateId)).limit(1)
+  if (!template) throw new Error(NOT_FOUND)
+  // Una plantilla reemplazada ya no se ejecuta, así que ampliar su catálogo no
+  // tendría a quién servir.
+  if (template.status === "superseded") throw new Error("Una plantilla reemplazada ya no admite desviaciones nuevas.")
+
+  try {
+    const [created] = await db.insert(preventionInspectionDeviationCatalog).values({
+      id: `insdev-${nanoid()}`,
+      templateId: data.templateId,
+      label: data.label,
+      danoPotencial: data.danoPotencial,
+      createdByUserId: access.userId,
+    }).returning()
+    if (!created) throw new Error("No se pudo agregar la desviación.")
+    await history(db, {
+      entityType: "template", entityId: data.templateId,
+      changeType: "deviation_added",
+      reason: `${data.label} (${data.danoPotencial})`,
+      afterState: created, actorUserId: access.userId,
+    })
+    return created
+  } catch (error) {
+    if (isUniqueViolation(error, "prevention_inspection_deviation_label_unique")) {
+      throw new Error("Esa desviación ya está en el catálogo de este instrumento.")
+    }
+    throw error
+  }
+}
+
+/**
+ * Cambia la gravedad de una desviación, o la retira de circulación.
+ *
+ * NO reescribe los hallazgos ya levantados: su criticidad —y el plazo de la
+ * CAPA que salió de ella— es evidencia de lo que la regla decía cuando se
+ * registraron. Recalibrar el catálogo rige desde ahora.
+ */
+export async function updateDeviationCatalogEntry(input: unknown, access: InspectionAccess) {
+  const data = z.object({
+    entryId: z.string().min(1),
+    danoPotencial: z.enum(["leve", "moderado", "grave", "fatal"]).optional(),
+    isActive: z.boolean().optional(),
+  }).parse(input)
+  requireAccess(access, "prevention:inspections:manage")
+
+  const [entry] = await db.select().from(preventionInspectionDeviationCatalog)
+    .where(eq(preventionInspectionDeviationCatalog.id, data.entryId)).limit(1)
+  if (!entry) throw new Error(NOT_FOUND)
+
+  const [updated] = await db.update(preventionInspectionDeviationCatalog).set({
+    danoPotencial: data.danoPotencial ?? entry.danoPotencial,
+    isActive: data.isActive ?? entry.isActive,
+    updatedAt: nowIso(),
+  }).where(eq(preventionInspectionDeviationCatalog.id, entry.id)).returning()
+  if (!updated) throw new Error("No se pudo actualizar la desviación.")
+
+  await history(db, {
+    entityType: "template", entityId: entry.templateId,
+    changeType: "deviation_updated",
+    reason: `${entry.label}: ${entry.danoPotencial} → ${updated.danoPotencial}${updated.isActive ? "" : " · retirada"}`,
+    beforeState: entry, afterState: updated, actorUserId: access.userId,
+  })
+  return updated
+}
+
+/**
+ * Desviaciones que se registraron como "Otra" y que todavía no están en el
+ * catálogo: la cola de trabajo de Prevención.
+ *
+ * Son las únicas cuya gravedad la eligió una persona, así que son también las
+ * únicas que conviene revisar. Se agrupan por texto porque la misma desviación
+ * repetida en cinco faenas es un solo candidato al catálogo, no cinco.
+ */
+export async function listUnclassifiedDeviations(templateId: string, access: InspectionAccess) {
+  requireAccess(access, "prevention:inspections:manage")
+  return db.select({
+    description: preventionInspectionFindings.description,
+    criticality: preventionInspectionFindings.criticality,
+    occurrences: sql<number>`COUNT(*)::int`,
+  })
+    .from(preventionInspectionFindings)
+    .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, preventionInspectionFindings.runId))
+    .where(and(
+      eq(preventionInspectionRuns.templateId, templateId),
+      scopeCondition(access.scope, preventionInspectionRuns.worksiteId),
+      // Ni de un ítem ni del catálogo: la gravedad la puso quien registró.
+      isNull(preventionInspectionFindings.answerId),
+      isNull(preventionInspectionFindings.catalogEntryId),
+    ))
+    .groupBy(preventionInspectionFindings.description, preventionInspectionFindings.criticality)
+    .orderBy(sql`COUNT(*) DESC`)
+    .limit(100)
 }

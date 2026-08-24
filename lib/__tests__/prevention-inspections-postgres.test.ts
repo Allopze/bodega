@@ -1014,6 +1014,98 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
   })
 
   /* ── Ingesta: la planilla física y la ratificación de lo leído ─────────── */
+  /* ── Catálogo de desviaciones ───────────────────────────────────────────
+   * La razón de existir del catálogo es que quien registra en terreno NO decida
+   * la gravedad: la declara Prevención al calibrar el instrumento, y de ella
+   * sale el plazo de la acción correctiva. Lo que se prueba acá es esa garantía.
+   */
+  describe("Catálogo de desviaciones por instrumento", () => {
+    async function templateWithCatalog() {
+      const service = await import("@/lib/services/prevention-inspections")
+      const template = await installTemplate({ definitionCode: "inspeccion_carros", versionLabel: `dev-${Date.now()}` })
+      return { service, template }
+    }
+
+    it("la gravedad del catálogo determina la criticidad del hallazgo, no el criterio de quien registra", async () => {
+      const { service, template } = await templateWithCatalog()
+      const entry = await service.addDeviationCatalogEntry({
+        templateId: template.id, label: "Gancho de tiro con holgura", danoPotencial: "grave",
+      }, AUTHOR)
+
+      const catalog = await service.listDeviationCatalog(template.id, AUTHOR)
+      const found = catalog.find((row) => row.id === entry.id)
+      // `grave` produce hallazgo `high`, que a su vez fija el plazo en 7 días.
+      expect(found?.criticality).toBe("high")
+    })
+
+    it("el catálogo es por instrumento: una desviación de carros no aparece en extintores", async () => {
+      const { service, template } = await templateWithCatalog()
+      const otro = await installTemplate({ definitionCode: "inspeccion_extintores", versionLabel: `dev-otro-${Date.now()}` })
+      await service.addDeviationCatalogEntry({
+        templateId: template.id, label: "Pernos de rueda sueltos", danoPotencial: "grave",
+      }, AUTHOR)
+
+      const deCarros = await service.listDeviationCatalog(template.id, AUTHOR)
+      const deExtintores = await service.listDeviationCatalog(otro.id, AUTHOR)
+      expect(deCarros.map((row) => row.label)).toContain("Pernos de rueda sueltos")
+      expect(deExtintores.map((row) => row.label)).not.toContain("Pernos de rueda sueltos")
+    })
+
+    it("no admite la misma desviación dos veces en el mismo instrumento", async () => {
+      const { service, template } = await templateWithCatalog()
+      await service.addDeviationCatalogEntry({ templateId: template.id, label: "Luces sin funcionar", danoPotencial: "grave" }, AUTHOR)
+      await expect(service.addDeviationCatalogEntry({
+        templateId: template.id, label: "Luces sin funcionar", danoPotencial: "leve",
+      }, AUTHOR)).rejects.toThrow(/ya está en el catálogo/)
+    })
+
+    it("recalibrar la gravedad rige desde ahora y no reescribe lo ya levantado", async () => {
+      const { service, template } = await templateWithCatalog()
+      const entry = await service.addDeviationCatalogEntry({
+        templateId: template.id, label: "Espejo trizado", danoPotencial: "moderado",
+      }, AUTHOR)
+
+      const updated = await service.updateDeviationCatalogEntry({ entryId: entry.id, danoPotencial: "grave" }, AUTHOR)
+      expect(updated.danoPotencial).toBe("grave")
+      // La fila del catálogo cambió; ningún hallazgo se toca — su criticidad es
+      // evidencia del plazo que tuvo cuando se registró.
+      const catalog = await service.listDeviationCatalog(template.id, AUTHOR)
+      expect(catalog.find((row) => row.id === entry.id)?.criticality).toBe("high")
+    })
+
+    it("retirar una desviación la deja de ofrecer sin borrar su historia", async () => {
+      const { service, template } = await templateWithCatalog()
+      const entry = await service.addDeviationCatalogEntry({
+        templateId: template.id, label: "Neumático con desgaste irregular", danoPotencial: "moderado",
+      }, AUTHOR)
+
+      await service.updateDeviationCatalogEntry({ entryId: entry.id, isActive: false }, AUTHOR)
+      const catalog = await service.listDeviationCatalog(template.id, AUTHOR)
+      const row = catalog.find((item) => item.id === entry.id)
+      expect(row).toBeDefined()
+      expect(row?.isActive).toBe(false)
+    })
+
+    it("quien sólo ejecuta no puede calibrar el catálogo", async () => {
+      const { service, template } = await templateWithCatalog()
+      const executor = { ...AUTHOR, permissions: ["prevention:inspections:view", "prevention:inspections:execute"] }
+      await expect(service.addDeviationCatalogEntry({
+        templateId: template.id, label: "Desviación no autorizada", danoPotencial: "grave",
+      }, executor)).rejects.toThrow()
+    })
+
+    it("una plantilla reemplazada ya no admite desviaciones nuevas", async () => {
+      const { service, template } = await templateWithCatalog()
+      await getDb().update(schema.preventionInspectionTemplates)
+        .set({ status: "superseded" })
+        .where(eq(schema.preventionInspectionTemplates.id, template.id))
+
+      await expect(service.addDeviationCatalogEntry({
+        templateId: template.id, label: "Desviación tardía", danoPotencial: "leve",
+      }, AUTHOR)).rejects.toThrow(/reemplazada/)
+    })
+  })
+
   describe("Ingesta de la planilla física", () => {
     const INGESTOR = { userId: "in-author", scope: scopeA, permissions: [...ALL, "prevention:inspections:ingest"] }
     let ingestaTemplateId = ""

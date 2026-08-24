@@ -53,6 +53,38 @@ export const preventionInspectionTemplates = pgTable("prevention_inspection_temp
   check("prevention_inspection_template_version_positive", sql`${table.version} >= 1`),
 ])
 
+/* ── Catálogo de desviaciones por instrumento ─────────────────────────────
+ * Los instrumentos de checklist derivan sus hallazgos de los ítems marcados "no
+ * cumple", y la gravedad la declara el ítem. Pero hay actividades del programa
+ * —observación de conductas, inspección de área, caminata de seguridad— que no
+ * son un checklist puntuado: se registra que se hicieron y **qué desviaciones se
+ * encontraron**, sin lista fija de preguntas.
+ *
+ * Para esas, la gravedad tiene que venir de algún lado que no sea el criterio de
+ * quien registra: de este catálogo. Y es **por plantilla** a propósito — una
+ * desviación en un carro no es la misma que en un área de trabajo, y compartir
+ * una lista global obligaría a que cada instrumento filtrara la ajena.
+ */
+export const preventionInspectionDeviationCatalog = pgTable("prevention_inspection_deviation_catalog", {
+  id:            text("id").primaryKey(),
+  templateId:    text("template_id").notNull().references(() => preventionInspectionTemplates.id, { onDelete: "cascade" }),
+  label:         text("label").notNull(),
+  /** Misma escala que los ítems del catálogo SST: de acá sale la criticidad del hallazgo. */
+  danoPotencial: text("dano_potencial").notNull(),
+  /* Retirar una desviación no borra su fila: los hallazgos ya levantados la
+   * referencian y su gravedad es evidencia de por qué tuvieron el plazo que
+   * tuvieron. Se desactiva para que deje de ofrecerse. */
+  isActive:      boolean("is_active").notNull().default(true),
+  createdByUserId: text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt:     timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:     timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("prevention_inspection_deviation_label_unique").on(table.templateId, table.label),
+  index("prevention_inspection_deviation_template_idx").on(table.templateId, table.isActive),
+  check("prevention_inspection_deviation_dano_valid", sql`${table.danoPotencial} IN ('leve', 'moderado', 'grave', 'fatal')`),
+  check("prevention_inspection_deviation_label_length", sql`length(${table.label}) >= 3`),
+])
+
 /* ── Programación por faena y frecuencia ──────────────────────────────────── */
 export const preventionInspectionPrograms = pgTable("prevention_inspection_programs", {
   id:                text("id").primaryKey(),
@@ -269,6 +301,14 @@ export const preventionInspectionFindings = pgTable("prevention_inspection_findi
   id:                text("id").primaryKey(),
   runId:             text("run_id").notNull().references(() => preventionInspectionRuns.id, { onDelete: "cascade" }),
   answerId:          text("answer_id").references(() => preventionInspectionAnswers.id, { onDelete: "set null" }),
+  /* De dónde salió la gravedad, que es lo que gobierna el plazo de la CAPA:
+   *   `answerId` → la declaró el ítem de la plantilla (checklist puntuado).
+   *   `catalogEntryId` → la declaró el catálogo de desviaciones.
+   *   ambos nulos → la eligió quien registró, con "Otra desviación", y está
+   *   esperando que Prevención la incorpore al catálogo.
+   * El tercer caso es el único donde la gravedad depende de una persona, y por
+   * eso tiene que poder consultarse: es la cola de trabajo del catálogo. */
+  catalogEntryId:    text("catalog_entry_id").references(() => preventionInspectionDeviationCatalog.id, { onDelete: "set null" }),
   description:       text("description").notNull(),
   criticality:       text("criticality").notNull(),
   immediateMeasure:  text("immediate_measure"),
@@ -335,6 +375,11 @@ export const preventionInspectionAnswerEvidenceRelations = relations(preventionI
   answer: one(preventionInspectionAnswers, { fields: [preventionInspectionAnswerEvidence.answerId], references: [preventionInspectionAnswers.id] }),
 }))
 
+export const preventionInspectionDeviationCatalogRelations = relations(preventionInspectionDeviationCatalog, ({ one, many }) => ({
+  template: one(preventionInspectionTemplates, { fields: [preventionInspectionDeviationCatalog.templateId], references: [preventionInspectionTemplates.id] }),
+  findings: many(preventionInspectionFindings),
+}))
+
 export const preventionInspectionFindingsRelations = relations(preventionInspectionFindings, ({ one }) => ({
   run: one(preventionInspectionRuns, { fields: [preventionInspectionFindings.runId], references: [preventionInspectionRuns.id] }),
   capaAction: one(preventionCapaActions, { fields: [preventionInspectionFindings.capaActionId], references: [preventionCapaActions.id] }),
@@ -346,4 +391,5 @@ export type PreventionInspectionRun = typeof preventionInspectionRuns.$inferSele
 export type PreventionInspectionAnswer = typeof preventionInspectionAnswers.$inferSelect
 export type PreventionInspectionAnswerEvidence = typeof preventionInspectionAnswerEvidence.$inferSelect
 export type PreventionInspectionFinding = typeof preventionInspectionFindings.$inferSelect
+export type PreventionInspectionDeviationEntry = typeof preventionInspectionDeviationCatalog.$inferSelect
 export type PreventionInspectionRunDocument = typeof preventionInspectionRunDocuments.$inferSelect

@@ -5,6 +5,7 @@ import { z } from "zod"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import {
+  addDeviationCatalogEntry,
   approveInspectionTemplate,
   assertProgramInScope,
   closeInspectionFinding,
@@ -19,6 +20,7 @@ import {
   setInspectionTemplatePdtpActivities,
   stopVehicleForFinding,
   transitionInspectionRun,
+  updateDeviationCatalogEntry,
   updateInspectionProgram,
   type InspectionAccess,
 } from "@/lib/services/prevention-inspections"
@@ -214,4 +216,22 @@ export async function closeInspectionFindingAction(input: unknown): Promise<Acti
   const guard = await guardPermission("prevention:inspections:review")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => closeInspectionFinding(input, access))
+}
+
+/* ── Catálogo de desviaciones ─────────────────────────────────────────────
+ * Lo mantiene Prevención con el mismo permiso que administra los instrumentos:
+ * declarar qué desviaciones existen y con qué gravedad es calibrar el
+ * instrumento, no ejecutarlo.
+ */
+
+export async function addDeviationCatalogEntryAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:inspections:manage")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => addDeviationCatalogEntry(input, access))
+}
+
+export async function updateDeviationCatalogEntryAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:inspections:manage")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => updateDeviationCatalogEntry(input, access))
 }
