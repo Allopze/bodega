@@ -22,6 +22,12 @@ vi.mock("@/components/admin/submit-button", () => ({
   ),
 }))
 
+vi.mock("@/components/ui/date-picker", () => ({
+  DatePicker: ({ min, max, ...props }: { min?: string; max?: string; [key: string]: unknown }) => (
+    <input data-testid="delivery-date-picker" min={min} max={max} {...props} />
+  ),
+}))
+
 vi.mock("@/components/ui/select", () => ({
   Select: ({ children, searchable, value, onValueChange }: PropsWithChildren<{
     searchable?: boolean
@@ -50,6 +56,36 @@ afterEach(cleanup)
 import { DeliveryForm } from "./delivery-form"
 
 describe("DeliveryForm", () => {
+  it("permite seleccionar cualquier fecha pasada y limita sólo el futuro", () => {
+    render(
+      <DeliveryForm
+        today="2026-08-21"
+        worksites={[{ id: "faena-1", name: "Faena Santa Fe" }]}
+        workers={[{
+          id: "worker-1",
+          name: "Andrea Rojas",
+          worksiteId: "faena-1",
+          worksiteName: "Faena Santa Fe",
+          position: "Operaria",
+          rut: "12.345.678-9",
+        }]}
+        stockProducts={[{
+          sourceWorksiteId: "faena-1",
+          productId: "helmet",
+          productName: "Casco dieléctrico",
+          productSku: "EPP-001",
+          unitOfMeasure: "unidad",
+          stockQuantity: 4,
+        }]}
+      />,
+    )
+
+    const datePicker = screen.getByTestId("delivery-date-picker")
+    expect(datePicker).not.toHaveAttribute("min")
+    expect(datePicker).toHaveAttribute("max", "2026-08-21")
+    expect(screen.getByText("Por defecto hoy. Puedes registrar cualquier fecha pasada.")).toBeDefined()
+  })
+
   it("muestra sólo trabajadores de la faena seleccionada aunque no haya EPP pendiente", () => {
     render(
       <DeliveryForm

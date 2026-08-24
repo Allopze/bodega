@@ -7,9 +7,7 @@ import {
   workerStockDeliverySchema,
 } from "@/lib/validation/operations"
 import {
-  DELIVERY_BACKDATE_BUSINESS_DAYS,
   addDaysToPlainDate,
-  subtractBusinessDays,
   todayInChile,
 } from "@/lib/utils"
 
@@ -266,27 +264,23 @@ describe("workerStockDeliverySchema", () => {
     }).success).toBe(false)
   })
 
-  // La fecha del comprobante puede ser retroactiva, pero acotada: es el
-  // respaldo de entrega de EPP ante fiscalización, no un campo libre.
-  it("acepta hoy, la ausencia del campo y el borde de la ventana hábil", () => {
+  // La fecha del comprobante puede ser histórica: la entrega física puede
+  // haberse realizado mucho antes de que el operador la registre.
+  it("acepta hoy, la ausencia del campo y cualquier fecha pasada", () => {
     const today = todayInChile()
     expect(workerStockDeliverySchema.safeParse(validDelivery).data?.deliveredAt).toBeUndefined()
     expect(workerStockDeliverySchema.safeParse({ ...validDelivery, deliveredAt: today }).success).toBe(true)
     expect(workerStockDeliverySchema.safeParse({
       ...validDelivery,
-      deliveredAt: subtractBusinessDays(today, DELIVERY_BACKDATE_BUSINESS_DAYS),
+      deliveredAt: addDaysToPlainDate(today, -365),
     }).success).toBe(true)
   })
 
-  it("rechaza el futuro, más allá de la ventana hábil y una fecha inexistente", () => {
+  it("rechaza el futuro y una fecha inexistente", () => {
     const today = todayInChile()
     expect(workerStockDeliverySchema.safeParse({
       ...validDelivery,
       deliveredAt: addDaysToPlainDate(today, 1),
-    }).success).toBe(false)
-    expect(workerStockDeliverySchema.safeParse({
-      ...validDelivery,
-      deliveredAt: subtractBusinessDays(today, DELIVERY_BACKDATE_BUSINESS_DAYS + 1),
     }).success).toBe(false)
     expect(workerStockDeliverySchema.safeParse({
       ...validDelivery,

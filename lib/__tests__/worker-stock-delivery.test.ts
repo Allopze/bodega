@@ -15,8 +15,7 @@ import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import {
-  DELIVERY_BACKDATE_BUSINESS_DAYS,
-  subtractBusinessDays,
+  addDaysToPlainDate,
   todayInChile,
 } from "@/lib/utils"
 
@@ -324,7 +323,7 @@ describe("registerWorkerStockDelivery", () => {
   it("retrofecha sólo el comprobante y deja el kardex en la hora real", async () => {
     const scenario = await makeScenario()
     const today = todayInChile()
-    const backdate = subtractBusinessDays(today, DELIVERY_BACKDATE_BUSINESS_DAYS)
+    const backdate = addDaysToPlainDate(today, -365)
 
     const deliveryId = await registerWorkerStockDelivery({
       sourceWorksiteId: scenario.sourceWorksiteId,

@@ -7,9 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import type { Session } from "next-auth"
 import {
-  DELIVERY_BACKDATE_BUSINESS_DAYS,
   addDaysToPlainDate,
-  subtractBusinessDays,
   todayInChile,
 } from "@/lib/utils"
 
@@ -120,7 +118,7 @@ describe("registerWorkerDeliveryAction", () => {
   })
 
   it("passes a backdated delivery date through to the service", async () => {
-    const backdate = subtractBusinessDays(todayInChile(), DELIVERY_BACKDATE_BUSINESS_DAYS)
+    const backdate = addDaysToPlainDate(todayInChile(), -365)
     mockAuthFn.mockResolvedValueOnce(makeSession())
     mockRegisterWorkerStock.mockResolvedValueOnce("del-1")
     const res = await registerWorkerDeliveryAction(
@@ -134,18 +132,14 @@ describe("registerWorkerDeliveryAction", () => {
     )
   })
 
-  // El `min`/`max` del selector es sólo UX: el rechazo real vive acá.
-  it("rejects a future or too-old delivery date", async () => {
+  // El `max` del selector es sólo UX: el rechazo real vive acá.
+  it("rejects a future delivery date", async () => {
     const today = todayInChile()
-    for (const deliveredAt of [
-      addDaysToPlainDate(today, 1),
-      subtractBusinessDays(today, DELIVERY_BACKDATE_BUSINESS_DAYS + 1),
-    ]) {
-      mockAuthFn.mockResolvedValueOnce(makeSession())
-      const res = await registerWorkerDeliveryAction({ ok: false, message: "" }, makeFormData({ deliveredAt }))
-      expect(res.ok).toBe(false)
-      expect(res.fieldErrors?.deliveredAt).toBeDefined()
-      expect(mockRegisterWorkerStock).not.toHaveBeenCalled()
-    }
+    const deliveredAt = addDaysToPlainDate(today, 1)
+    mockAuthFn.mockResolvedValueOnce(makeSession())
+    const res = await registerWorkerDeliveryAction({ ok: false, message: "" }, makeFormData({ deliveredAt }))
+    expect(res.ok).toBe(false)
+    expect(res.fieldErrors?.deliveredAt).toBeDefined()
+    expect(mockRegisterWorkerStock).not.toHaveBeenCalled()
   })
 })

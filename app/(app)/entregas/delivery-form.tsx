@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { DELIVERY_BACKDATE_BUSINESS_DAYS, formatQty, subtractBusinessDays } from "@/lib/utils"
+import { formatQty } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import { registerWorkerDeliveryAction } from "./actions"
 import type {
@@ -84,7 +84,6 @@ export function DeliveryForm({
   const [sourceWorksiteId, setSourceWorksiteId] = React.useState(defaultSourceWorksiteId)
   const [workerId, setWorkerId] = React.useState("")
   const [deliveredAt, setDeliveredAt] = React.useState(today)
-  const minDeliveredAt = subtractBusinessDays(today, DELIVERY_BACKDATE_BUSINESS_DAYS)
   const [pendingProductId, setPendingProductId] = React.useState(initialTraceItem?.productId ?? "")
   const [pendingQuantity, setPendingQuantity] = React.useState("")
   const [pendingRequestItemId, setPendingRequestItemId] = React.useState(initialTraceItem?.requestItemId ?? "")
@@ -232,7 +231,7 @@ export function DeliveryForm({
           label="Fecha de entrega"
           htmlFor="deliveryDate"
           required
-          helper={`Por defecto hoy. Puedes retrofechar hasta ${DELIVERY_BACKDATE_BUSINESS_DAYS} días hábiles.`}
+          helper="Por defecto hoy. Puedes registrar cualquier fecha pasada."
           error={state.fieldErrors?.deliveredAt?.[0]}
         >
           <DatePicker
@@ -243,7 +242,6 @@ export function DeliveryForm({
             ariaLabel="Fecha de entrega"
             value={deliveredAt}
             onChange={setDeliveredAt}
-            min={minDeliveredAt}
             max={today}
             error={Boolean(state.fieldErrors?.deliveredAt?.[0])}
           />

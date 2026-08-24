@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { DELIVERY_BACKDATE_BUSINESS_DAYS, subtractBusinessDays, todayInChile } from "@/lib/utils"
+import { todayInChile } from "@/lib/utils"
 import { normalizeEquipmentCode } from "@/lib/products/service-items"
 
 // ── Re-export shared ActionState ──────────────────────────────────────────────
@@ -231,15 +231,11 @@ export const workerStockDeliveryItemSchema = z.object({
 export const workerStockDeliverySchema = z.object({
   sourceWorksiteId: z.string().min(1, "Selecciona la bodega de origen"),
   workerId: z.string().min(1, "Selecciona un trabajador"),
-  // Fecha operacional del comprobante. Opcional: ausente ⇒ hoy. El `min`/`max`
-  // del selector es sólo UX; esta es la validación que manda.
+  // Fecha operacional del comprobante. Opcional: ausente ⇒ hoy. Las entregas
+  // pueden registrarse con cualquier fecha histórica, pero nunca en el futuro.
   deliveredAt: z.string()
     .refine(isRealIsoDate, "Fecha de entrega inválida")
     .refine((value) => value <= todayInChile(), "La entrega no puede tener fecha futura")
-    .refine(
-      (value) => value >= subtractBusinessDays(todayInChile(), DELIVERY_BACKDATE_BUSINESS_DAYS),
-      `Sólo puedes retrofechar hasta ${DELIVERY_BACKDATE_BUSINESS_DAYS} días hábiles`,
-    )
     .optional(),
   receiverName: z.string().trim().max(120).nullable().optional().or(z.literal("")),
   notes: z.string().trim().max(500).nullable().optional().or(z.literal("")),
