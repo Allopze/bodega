@@ -63,7 +63,7 @@ vi.mock("@/lib/combustibles/tae-receipts", () => ({
   importTaeReceipts: (...args: unknown[]) => mockImportTaeReceipts(...args),
 }))
 
-const { buildCopecSyncPeriods, copecProjectionHash, getCopecSyncPlan, getCopecSyncStartOptions, setCopecSyncStartDate, syncCopecReportPeriod, syncCopecReports } = await import("../copec-sync")
+const { buildCopecSyncPeriods, copecProjectionHash, copecSourceRowKey, getCopecSyncPlan, getCopecSyncStartOptions, setCopecSyncStartDate, syncCopecReportPeriod, syncCopecReports } = await import("../copec-sync")
 const { AUTOMATED_SOURCES } = await import("../fuel-sources")
 const { collectStrings } = await import("./drizzle-filter")
 
@@ -114,6 +114,24 @@ describe("buildCopecSyncPeriods", () => {
 
   it("does not request a period when the cursor is already after the target date", () => {
     expect(buildCopecSyncPeriods("2026-02-05", "2026-02-04")).toEqual([])
+  })
+})
+
+describe("copecSourceRowKey", () => {
+  it("identifica la fila por patente y no por su posición en el Excel", () => {
+    // Copec regenera el Excel en cada descarga, y en el informe de detalle el
+    // índice es el de la primera transacción de esa patente: una transacción
+    // corregida lo corría y el ledger ganaba una fila nueva, dejando la vieja
+    // huérfana para siempre.
+    expect(copecSourceRowKey("2026-02-01", "2026-02-28", "diesel", "AB-CD12"))
+      .toBe("2026-02-01:2026-02-28:diesel:ABCD12")
+    // Mismo vehículo escrito distinto = misma clave.
+    expect(copecSourceRowKey("2026-02-01", "2026-02-28", "diesel", "ABCD12"))
+      .toBe(copecSourceRowKey("2026-02-01", "2026-02-28", "diesel", "AB-CD12"))
+    // El período es parte de la clave: sin él, dos meses de la misma patente
+    // colisionarían contra el índice único y el upsert pisaría el historial.
+    expect(copecSourceRowKey("2026-03-01", "2026-03-31", "diesel", "ABCD12"))
+      .not.toBe(copecSourceRowKey("2026-02-01", "2026-02-28", "diesel", "ABCD12"))
   })
 })
 
@@ -210,6 +228,27 @@ describe("syncCopecReportPeriod", () => {
 
     expect(mockUserFindFirst).not.toHaveBeenCalled()
     expect(mockSaveState).toHaveBeenCalledOnce()
+  })
+
+  it("la proyección sigue recibiendo las filas tras cambiar la clave del ledger", async () => {
+    // La clave se arma en un lado y se reconstruye en otro para filtrar qué filas
+    // entran al lote. Si se desincronizan, `groups` queda vacío y se importan
+    // CERO registros sin lanzar ningún error.
+    const row = (patente: string): unknown => ({ rowIndex: 7, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
+    mockDownloadCopecReports.mockResolvedValue([
+      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
+      { product: "bluemax", unavailable: true },
+    ])
+    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AB-CD12")], errors: [], duplicates: [] })
+    mockVehiclesFindMany.mockResolvedValue([{ id: "v-1", plate: "ABCD12", worksiteId: "W1" }])
+
+    const tx = makeTx()
+    mockTransaction.mockImplementation(async (cb: (t: unknown) => unknown) => cb(tx))
+
+    const result = await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
+
+    expect(result.imported).toBe(1)
+    expect(tx._insertedRecords).toHaveLength(1)
   })
 
   it("atribuye las filas inválidas del archivo a un solo lote, no a cada faena", async () => {

@@ -62,11 +62,34 @@ describe("parseConsumptionExcel", () => {
     expect(result.errors[0]!.field).toBe("Monto ($)")
   })
 
-  it("detects duplicate plates within the same file", async () => {
+  it("agrega la patente repetida en una sola fila y la sigue reportando", async () => {
+    // Empujarla como segunda fila la hacía entrar al ledger como identidad
+    // duplicada —la identidad es (período, producto, patente)—, y ahí no pasaba
+    // el filtro de la proyección: sus litros y su monto desaparecían del lote.
     const buffer = await createTestExcel([validRow, { ...validRow, "N° Transacciones": 20 }])
     const result = await parseConsumptionExcel(buffer)
-    expect(result.rows).toHaveLength(2)
+    expect(result.rows).toHaveLength(1)
     expect(result.duplicates).toEqual([3])
+    expect(result.rows[0]).toMatchObject({
+      patente: "AB-CD12",
+      numeroTarjetas: 4,
+      numeroTransacciones: 35,
+      cantidadUnidad: 2469.12,
+      monto: 2300000,
+      // Mismo rendimiento en ambas filas: ponderar no lo mueve.
+      rendimientoPromedio: 3.5,
+    })
+    expect(result.rows[0]!.rawRow).toHaveProperty("agregado")
+  })
+
+  it("pondera el rendimiento por litros al agregar", async () => {
+    const buffer = await createTestExcel([
+      { ...validRow, "Cantidad (Unidad)": "100", "Rendimiento Promedio": "2" },
+      { ...validRow, "Cantidad (Unidad)": "300", "Rendimiento Promedio": "6" },
+    ])
+    const result = await parseConsumptionExcel(buffer)
+    // (2*100 + 6*300) / 400 = 5, no el promedio simple 4.
+    expect(result.rows[0]).toMatchObject({ cantidadUnidad: 400, rendimientoPromedio: 5 })
   })
 
   it("tolerates header aliases with accents and symbols", async () => {

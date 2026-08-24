@@ -6,6 +6,7 @@ import { nanoid } from "@/lib/id"
 import { todayInChile, addDaysToPlainDate } from "@/lib/utils"
 import { parseConsumptionExcel, type ParsedConsumptionRow } from "@/lib/combustibles/consumption-import"
 import { computeBatchTotals } from "@/lib/combustibles/consumption-calculations"
+import { plateMatchKey } from "@/lib/combustibles/xlsx-utils"
 import { loadVehicleResolver } from "@/lib/combustibles/plate-resolver"
 import { AUTOMATED_SOURCES, copecTctSource } from "@/lib/combustibles/fuel-sources"
 import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
@@ -234,6 +235,28 @@ export async function setCopecSyncStartDate(startDate: string, expectedStart: st
   return { currentStart: startDate, minimumStart, maximumStart, latestImportedUntil }
 }
 
+/**
+ * Clave de fila del ledger para una carga TCT.
+ *
+ * Va por PATENTE y no por índice de fila. El informe TCT es un agregado mensual
+ * por patente, así que la patente es su clave natural; el índice de fila, en
+ * cambio, es posición en un Excel que Copec REGENERA en cada descarga, y en el
+ * informe de detalle es además la fila de la primera transacción de esa patente.
+ * Una transacción corregida corría el índice y el ledger ganaba una segunda
+ * transacción para la misma patente y mes, con la vieja huérfana para siempre.
+ *
+ * `from:to:product` es obligatorio: `identity_key` no lleva el período y su
+ * índice único es (proveedor, cuenta, identidad), así que sin él dos meses con
+ * la misma patente colisionarían y el upsert pisaría el historial.
+ *
+ * Existe como función porque la cadena se arma en un lado y se RECONSTRUYE en
+ * otro para filtrar qué filas entran a la proyección: desincronizarlas deja el
+ * lote vacío sin lanzar ningún error.
+ */
+export function copecSourceRowKey(from: string, to: string, product: string, patente: string): string {
+  return `${from}:${to}:${product}:${plateMatchKey(patente)}`
+}
+
 export interface CopecSyncPeriod { from: string; to: string }
 
 /** El portal TCT acepta un mes por búsqueda, por eso cada período es un mes calendario. */
@@ -342,7 +365,7 @@ async function importCopecPeriod(
     const validationInputs: ProviderRowInput[] = parsed.rows.map((row) => ({
       provider: "copec",
       accountKey,
-      sourceRowKey: `${from}:${to}:${product}:${row.rowIndex}`,
+      sourceRowKey: copecSourceRowKey(from, to, product, row.patente),
       externalId: null,
       // TCT entrega un agregado mensual por patente, no una fecha de carga por
       // fila. Se conserva el inicio del período como fecha de evidencia y el
@@ -399,7 +422,7 @@ async function importCopecPeriod(
     const groups = new Map<string, ParsedConsumptionRow[]>()
     const acceptedIdentityKeys = new Set(validation.accepted.map((row) => row.identityKey))
     for (const row of parsed.rows) {
-      const sourceRowKey = `${from}:${to}:${product}:${row.rowIndex}`
+      const sourceRowKey = copecSourceRowKey(from, to, product, row.patente)
       if (!acceptedIdentityKeys.has(`row:copec:${accountKey}:${sourceRowKey}`)) continue
       const vehicle = resolveVehicle(row.patente)
       if (!vehicle) { pending.add(row.patente); continue }

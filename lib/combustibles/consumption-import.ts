@@ -146,8 +146,15 @@ export async function parseConsumptionExcel(fileBuffer: ArrayBuffer | Buffer): P
 
   const rows: ParsedConsumptionRow[] = []
   const errors: ImportError[] = []
-  const seenPlates = new Set<string>()
   const duplicates: number[] = []
+  // La patente repetida se AGREGA a su fila, no se empuja como una segunda.
+  // La identidad de la transacción en el ledger es (período, producto, patente),
+  // así que una segunda fila con la misma patente entra como duplicada, no pasa
+  // el filtro de la proyección y desaparece del lote: menos litros y menos monto
+  // que el archivo, sin que nadie lo vea. Es el mismo criterio que ya aplica
+  // `parseCopecDetail` al informe de detalle.
+  const byPlate = new Map<string, ParsedConsumptionRow>()
+  const sourceRecords = new Map<string, Record<string, unknown>[]>()
 
   for (let i = 0; i < records.length; i++) {
     const record = records[i]!
@@ -195,10 +202,24 @@ export async function parseConsumptionExcel(fileBuffer: ArrayBuffer | Buffer): P
       continue
     }
 
-    if (seenPlates.has(patente)) duplicates.push(rowNum)
-    seenPlates.add(patente)
+    sourceRecords.set(patente, [...(sourceRecords.get(patente) ?? []), record])
+    const previous = byPlate.get(patente)
+    if (previous) {
+      duplicates.push(rowNum)
+      // El rendimiento se pondera por litros, como en `parseCopecDetail`:
+      // promediar dos rendimientos a secas ignora que uno cargó el triple.
+      const cantidadTotal = previous.cantidadUnidad + cantidadUnidad
+      previous.rendimientoPromedio = cantidadTotal > 0
+        ? Math.round(((previous.rendimientoPromedio * previous.cantidadUnidad + rendimientoPromedio * cantidadUnidad) / cantidadTotal) * 100) / 100
+        : 0
+      previous.numeroTarjetas += numeroTarjetas
+      previous.numeroTransacciones += numeroTransacciones
+      previous.cantidadUnidad = Math.round(cantidadTotal * 10_000) / 10_000
+      previous.monto = Math.round((previous.monto + monto) * 100) / 100
+      continue
+    }
 
-    rows.push({
+    const row: ParsedConsumptionRow = {
       rowIndex: rowNum,
       patente,
       numeroTarjetas,
@@ -207,7 +228,16 @@ export async function parseConsumptionExcel(fileBuffer: ArrayBuffer | Buffer): P
       monto,
       rendimientoPromedio,
       rawRow: record,
-    })
+    }
+    byPlate.set(patente, row)
+    rows.push(row)
+  }
+
+  // Sólo las patentes que se agregaron cambian de forma: el caso normal —una
+  // fila por patente— conserva su registro crudo tal cual.
+  for (const row of rows) {
+    const records = sourceRecords.get(row.patente) ?? []
+    if (records.length > 1) row.rawRow = { agregado: records }
   }
 
   return { rows, errors, duplicates }
