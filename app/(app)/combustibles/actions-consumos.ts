@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto"
 import path from "node:path"
 import { revalidatePath } from "next/cache"
-import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm"
+import { and, desc, eq, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelConsumptionRecords, fuelImportBatches, fuelProviderMappings, fuelProviderTransactions, fuelVehicles } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
@@ -74,15 +74,36 @@ async function readImportForm(formData: FormData): Promise<
 /** Resuelve patente→vehículo respetando el invariante «vehículo y registro comparten
  *  faena», el mismo que exigen linkConsumptionPlateAction y el alta manual de cargas
  *  (actions-module/loads.ts). En "all" la faena se deriva del vehículo, así que ahí no
- *  hay nada que filtrar. Compartido por preview y confirm para que ambos cuenten igual. */
+ *  hay nada que filtrar. Compartido por preview y confirm para que ambos cuenten igual.
+ *
+ *  El matching va por `plateMatchKey` y no por igualdad exacta: el catálogo guarda
+ *  la patente con el formato del alta manual (con o sin guion) y la planilla trae
+ *  el suyo — "AB-CD12" contra "ABCD12" no calzaba y la fila quedaba sin vehículo,
+ *  o se descartaba del import entero en modo "all", pese a que el vehículo existe.
+ *  Es el mismo criterio que las sincronizaciones adoptaron por este mismo bug.
+ *
+ *  A propósito NO consulta `fuel_provider_mappings`: un mapping puede apuntar a un
+ *  vehículo de otra faena y honrarlo acá rompería el invariante de arriba.
+ *
+ *  `fuel_vehicles.plate` es único sobre el texto crudo, así que dos filas pueden
+ *  colapsar a la misma clave. Esa clave queda en `null` en vez de elegir una en
+ *  silencio: cuál de las dos fichas es la buena es una decisión de catálogo. */
 async function findVehiclesByPlate(plates: string[], worksiteId: string) {
-  if (plates.length === 0) return []
+  const byPlateKey = new Map<string, typeof fuelVehicles.$inferSelect | null>()
+  if (plates.length === 0) return byPlateKey
+  const wanted = new Set(plates.map(plateMatchKey))
   const vehicles = await db.query.fuelVehicles.findMany({
-    where: worksiteId === "all"
-      ? inArray(fuelVehicles.plate, plates)
-      : and(inArray(fuelVehicles.plate, plates), eq(fuelVehicles.worksiteId, worksiteId)),
+    where: worksiteId === "all" ? undefined : eq(fuelVehicles.worksiteId, worksiteId),
   })
-  return worksiteId === "all" ? vehicles : vehicles.filter((v) => v.worksiteId === worksiteId)
+  for (const vehicle of vehicles) {
+    // El invariante de faena se vuelve a comprobar acá y no sólo en el WHERE: es
+    // la regla de negocio del importador, no un detalle de la consulta.
+    if (worksiteId !== "all" && vehicle.worksiteId !== worksiteId) continue
+    const key = plateMatchKey(vehicle.plate)
+    if (!wanted.has(key)) continue
+    byPlateKey.set(key, byPlateKey.has(key) ? null : vehicle)
+  }
+  return byPlateKey
 }
 
 export interface ConsumptionPreviewData {
@@ -137,8 +158,8 @@ export async function previewConsumptionImportAction(
   ])
 
   const plates = [...new Set(parsed.rows.map((r) => r.patente))]
-  const vehicles = await findVehiclesByPlate(plates, meta.worksiteId)
-  const matchedPlates = new Set(vehicles.map((v) => v.plate))
+  const vehiclesByPlateKey = await findVehiclesByPlate(plates, meta.worksiteId)
+  const matched = (plate: string) => vehiclesByPlateKey.get(plateMatchKey(plate)) ?? null
 
   return {
     ok: true,
@@ -146,8 +167,8 @@ export async function previewConsumptionImportAction(
       totales: computeBatchTotals(parsed.rows),
       errores: parsed.errors,
       duplicadosEnArchivo: parsed.duplicates.length,
-      patentesConVehiculo: plates.filter((p) => matchedPlates.has(p)).length,
-      patentesSinVehiculo: plates.filter((p) => !matchedPlates.has(p)).length,
+      patentesConVehiculo: plates.filter((p) => matched(p)).length,
+      patentesSinVehiculo: plates.filter((p) => !matched(p)).length,
       archivoDuplicado: !!archivoDuplicado,
       loteDuplicado: !!loteDuplicado,
     },
@@ -187,8 +208,8 @@ export async function confirmConsumptionImportAction(
   const confirmDuplicates = formData.get("confirmDuplicates") === "true"
 
   const plates = [...new Set(parsed.rows.map((r) => r.patente))]
-  const vehicles = await findVehiclesByPlate(plates, meta.worksiteId)
-  const vehicleByPlate = new Map(vehicles.map((v) => [v.plate, v]))
+  const vehiclesByPlateKey = await findVehiclesByPlate(plates, meta.worksiteId)
+  const vehicleFor = (plate: string) => vehiclesByPlateKey.get(plateMatchKey(plate)) ?? null
   const rowsByWorksite = new Map<string, typeof parsed.rows>()
   // Antes las filas sin vehículo en "all" desaparecían con `continue`, sin
   // dejar rastro ni en el resumen ni en ningún lado (CO-027): ahora se
@@ -196,9 +217,18 @@ export async function confirmConsumptionImportAction(
   const unmatchedErrors: ImportError[] = []
   if (meta.worksiteId === "all") {
     for (const row of parsed.rows) {
-      const vehicle = vehicleByPlate.get(row.patente)
+      const vehicle = vehicleFor(row.patente)
       if (!vehicle) {
-        unmatchedErrors.push({ rowIndex: row.rowIndex, field: "PATENTE", message: `Patente "${row.patente}" sin vehículo asociado a ninguna faena` })
+        // La clave presente con valor nulo es una colisión del catálogo, no una
+        // patente desconocida: el mensaje tiene que decir qué hay que arreglar.
+        const ambigua = vehiclesByPlateKey.has(plateMatchKey(row.patente))
+        unmatchedErrors.push({
+          rowIndex: row.rowIndex,
+          field: "PATENTE",
+          message: ambigua
+            ? `Patente "${row.patente}" coincide con más de un vehículo del catálogo; unifica las fichas antes de importar`
+            : `Patente "${row.patente}" sin vehículo asociado a ninguna faena`,
+        })
         continue
       }
       const rows = rowsByWorksite.get(vehicle.worksiteId) ?? []
@@ -288,7 +318,7 @@ export async function confirmConsumptionImportAction(
             id: nanoid(),
             batchId,
             worksiteId,
-            vehicleId: vehicleByPlate.get(row.patente)?.id ?? null,
+            vehicleId: vehicleFor(row.patente)?.id ?? null,
             patente: row.patente,
             numeroTarjetas: row.numeroTarjetas,
             numeroTransacciones: row.numeroTransacciones,

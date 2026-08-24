@@ -136,6 +136,42 @@ describe("confirmConsumptionImportAction", () => {
     expect(recordsInsert[0]!.vehicleId).toBeNull()
   })
 
+  it("vincula la patente aunque el catálogo la guarde con guion", async () => {
+    // El catálogo guarda "AB-CD12" y la planilla trae "ABCD12". Con `inArray`
+    // sobre el texto crudo no calzaban y la fila entraba sin vehículo pese a que
+    // el vehículo existe — el mismo bug que las sincronizaciones ya corrigieron.
+    const tx = makeTx()
+    mockFindManyFuelVehicles.mockResolvedValue([{ id: "veh-1", plate: "AB-CD12", worksiteId: "ws-1" }])
+    mockTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx))
+
+    const file = await makeXlsxFile(validRows)
+    const res = await confirmConsumptionImportAction(makeFormData(file, { worksiteId: "ws-1" }))
+
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    const recordsInsert = tx._insertedRows[1]!.values as Array<{ vehicleId: string | null }>
+    expect(recordsInsert[0]!.vehicleId).toBe("veh-1")
+  })
+
+  it("no elige en silencio cuando dos fichas del catálogo colapsan a la misma patente", async () => {
+    // `fuel_vehicles.plate` es único sobre el texto crudo, así que "AB-CD12" y
+    // "ABCD12" pueden coexistir. Cuál es la buena es decisión de catálogo.
+    const tx = makeTx()
+    mockFindManyFuelVehicles.mockResolvedValue([
+      { id: "veh-1", plate: "AB-CD12", worksiteId: "ws-1" },
+      { id: "veh-2", plate: "ABCD12", worksiteId: "ws-1" },
+    ])
+    mockTransaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(tx))
+
+    const file = await makeXlsxFile(validRows)
+    const res = await confirmConsumptionImportAction(makeFormData(file, { worksiteId: "ws-1" }))
+
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    const recordsInsert = tx._insertedRows[1]!.values as Array<{ vehicleId: string | null }>
+    expect(recordsInsert[0]!.vehicleId).toBeNull()
+  })
+
   it("no vincula una patente cuyo vehículo pertenece a otra faena", async () => {
     const tx = makeTx()
     mockFindManyFuelVehicles.mockResolvedValue([{ id: "veh-1", plate: "ABCD12", worksiteId: "ws-2" }])
