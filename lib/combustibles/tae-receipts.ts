@@ -12,10 +12,8 @@ import { db } from "@/db"
 import { fuelCycleMovements, fuelStorageLocations } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
+import { fuelSupplierIdForProvider } from "./fuel-sources"
 import type { ParsedTaeReceiptRow } from "./tae-receipt-import"
-
-/** Sembrado en `db/seed-combustibles.ts`. */
-const COPEC_SUPPLIER_ID = "fs-copec"
 export const TAE_RECEIPT_SOURCE = "copec_tae"
 
 export interface TaeReceiptImportOutcome {
@@ -35,6 +33,12 @@ function cardKey(cardNumber: string, productId: string) {
 export async function importTaeReceipts(rows: ParsedTaeReceiptRow[], importerId: string): Promise<TaeReceiptImportOutcome> {
   const empty: TaeReceiptImportOutcome = { inserted: 0, duplicates: 0, unmappedCards: [], unmappedLiters: 0 }
   if (!rows.length) return empty
+
+  // `fuel_cycle_movements` exige proveedor en las recepciones, así que acá no
+  // sirve el null que sí acepta el ledger de proveedores: sin la fila del
+  // catálogo se corta con un mensaje accionable y no con una violación de FK.
+  const supplierId = await fuelSupplierIdForProvider("copec")
+  if (!supplierId) throw new Error("No hay un proveedor Copec activo en el catálogo de combustibles. Créalo antes de importar el informe TAE.")
 
   const cards = [...new Set(rows.map((row) => row.cardNumber))]
   const locations = await db.query.fuelStorageLocations.findMany({
@@ -62,7 +66,7 @@ export async function importTaeReceipts(rows: ParsedTaeReceiptRow[], importerId:
       productId: row.productId,
       quantity: row.liters,
       occurredAt: row.occurredAt,
-      supplierId: COPEC_SUPPLIER_ID,
+      supplierId,
       targetLocationId: location.id,
       documentNumber: row.documentNumber,
       sourceType: TAE_RECEIPT_SOURCE,

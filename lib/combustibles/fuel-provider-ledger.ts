@@ -7,12 +7,16 @@ import {
   fuelProviderTransactions,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { fuelSupplierIdForProvider } from "./fuel-sources"
 import { fingerprintProviderRow, type ProviderValidationResult, type ProviderRowInput } from "./provider-validation"
 
-const SUPPLIER_ID_BY_PROVIDER = {
-  copec: "fs-copec",
-  aramco: "fs-aramco",
-} as const
+/** Una consulta por proveedor y por corrida: el catálogo puede cambiar entre
+ *  corridas, así que no se cachea a nivel de módulo. */
+async function supplierIdsFor(providers: Iterable<"copec" | "aramco">) {
+  const resolved = new Map<string, string | null>()
+  for (const provider of new Set(providers)) resolved.set(provider, await fuelSupplierIdForProvider(provider))
+  return resolved
+}
 
 export interface FuelProviderSyncRunInput {
   provider: "copec" | "aramco"
@@ -56,7 +60,7 @@ export interface DurableProviderIssue {
   message: string
 }
 
-async function recordRejectedItem(runId: string, item: DurableProviderIssue, status: "rejected" | "pending") {
+async function recordRejectedItem(runId: string, item: DurableProviderIssue, status: "rejected" | "pending", supplierId: string | null) {
   const input = item.input
   const identityKey = rejectedIdentity(input)
   const quantity = typeof input.quantity === "number" && Number.isFinite(input.quantity) && input.quantity >= 0 ? input.quantity : null
@@ -66,7 +70,7 @@ async function recordRejectedItem(runId: string, item: DurableProviderIssue, sta
     syncRunId: runId,
     provider: input.provider,
     sourceAccount: input.accountKey,
-    supplierId: SUPPLIER_ID_BY_PROVIDER[input.provider],
+    supplierId,
     identityKey,
     externalId: input.externalId === null || input.externalId === undefined ? null : String(input.externalId),
     fingerprint: fingerprintProviderRow(input),
@@ -86,7 +90,7 @@ async function recordRejectedItem(runId: string, item: DurableProviderIssue, sta
     target: [fuelProviderTransactions.provider, fuelProviderTransactions.sourceAccount, fuelProviderTransactions.identityKey],
     set: {
       syncRunId: runId,
-      supplierId: SUPPLIER_ID_BY_PROVIDER[input.provider],
+      supplierId,
       fingerprint: fingerprintProviderRow(input),
       sourceProduct: input.product,
       sourcePlate: input.plate,
@@ -132,7 +136,8 @@ async function recordRejectedItem(runId: string, item: DurableProviderIssue, sta
 }
 
 export async function recordFuelProviderIssues(runId: string, issues: DurableProviderIssue[], status: "rejected" | "pending" = "rejected") {
-  for (const issue of issues) await recordRejectedItem(runId, issue, status)
+  const supplierIds = await supplierIdsFor(issues.map((issue) => issue.input.provider))
+  for (const issue of issues) await recordRejectedItem(runId, issue, status, supplierIds.get(issue.input.provider) ?? null)
   return status === "pending" ? { pending: issues.length } : { rejected: issues.length }
 }
 
@@ -155,6 +160,11 @@ export async function recordFuelProviderValidation(
   let accepted = 0
   let pending = 0
   let rejected = 0
+  const supplierIds = await supplierIdsFor([
+    ...result.accepted.map((row) => row.provider),
+    ...result.rejected.map((item) => item.input.provider),
+    ...result.pending.map((item) => item.input.provider),
+  ])
 
   for (const row of result.accepted) {
     const input: ProviderRowInput = {
@@ -176,7 +186,7 @@ export async function recordFuelProviderValidation(
       syncRunId: runId,
       provider: row.provider,
       sourceAccount: row.accountKey,
-      supplierId: SUPPLIER_ID_BY_PROVIDER[row.provider],
+      supplierId: supplierIds.get(row.provider) ?? null,
       identityKey: row.identityKey,
       externalId: row.externalId,
       fingerprint: row.fingerprint,
@@ -201,7 +211,7 @@ export async function recordFuelProviderValidation(
       set: {
         syncRunId: runId,
         fingerprint: row.fingerprint,
-        supplierId: SUPPLIER_ID_BY_PROVIDER[row.provider],
+        supplierId: supplierIds.get(row.provider) ?? null,
         worksiteId: resolution.worksiteId ?? null,
         vehicleId: resolution.vehicleId ?? null,
         productId: resolution.productId ?? null,
@@ -224,11 +234,11 @@ export async function recordFuelProviderValidation(
   }
 
   for (const item of result.rejected) {
-    await recordRejectedItem(runId, item, "rejected")
+    await recordRejectedItem(runId, item, "rejected", supplierIds.get(item.input.provider) ?? null)
     rejected++
   }
   for (const item of result.pending) {
-    await recordRejectedItem(runId, item, "pending")
+    await recordRejectedItem(runId, item, "pending", supplierIds.get(item.input.provider) ?? null)
     pending++
   }
 

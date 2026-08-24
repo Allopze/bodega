@@ -1,3 +1,7 @@
+import { and, eq, sql } from "drizzle-orm"
+import { db } from "@/db"
+import { fuelSuppliers } from "@/db/schema"
+
 /**
  * Fuentes (`fuel_import_batches.fuente`) que escribe cada integración automática.
  *
@@ -59,3 +63,27 @@ export function aramcoSourceForProduct(productName: string | null | undefined): 
 /** Unión de las fuentes de todos los proveedores automáticos. Lo que NO está acá
  *  se considera carga manual y sí debe bloquear una sincronización. */
 export const AUTOMATED_SOURCES = [...COPEC_TCT_SOURCES, ...ARAMCO_SOURCES]
+
+/**
+ * Id del proveedor en `fuel_suppliers` para una integración automática.
+ *
+ * `fuel_suppliers` es catálogo del usuario, no una constante del código: la base
+ * real trae los proveedores que creó operación (`seed-copec`, `seed-enex`), no
+ * los `fs-copec`/`fs-aramco` que sembraba `db/seed-combustibles.ts` —un script
+ * que no está enganchado a ningún `db:seed`—. Hardcodear el id hacía que cada
+ * fila de la corrida reventara con violación de FK.
+ *
+ * Se resuelve por nombre porque es lo único que liga la integración con la fila
+ * del catálogo. Devuelve null si el proveedor todavía no existe: la transacción
+ * queda sin proveedor (la columna es nullable) y la conciliación no la cruza con
+ * nada, en vez de perder la corrida entera. Al crearlo, la corrida siguiente ya
+ * lo toma sin tocar código.
+ */
+export async function fuelSupplierIdForProvider(provider: "copec" | "aramco"): Promise<string | null> {
+  const [row] = await db.select({ id: fuelSuppliers.id })
+    .from(fuelSuppliers)
+    .where(and(eq(fuelSuppliers.isActive, true), sql`lower(${fuelSuppliers.name}) LIKE ${`%${provider}%`}`))
+    .orderBy(fuelSuppliers.id)
+    .limit(1)
+  return row?.id ?? null
+}
