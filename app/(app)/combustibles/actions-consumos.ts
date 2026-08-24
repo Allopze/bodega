@@ -468,25 +468,51 @@ export async function linkConsumptionPlateAction(_prev: ActionState, formData: F
       // el siguiente barrido del portal. Las filas ya validadas se promueven en
       // la misma transacción; si el producto aún es desconocido, se conserva
       // pendiente para que la decisión de producto siga siendo explícita.
+      //
+      // La promoción NO se acota por período a propósito: no hay otro camino que
+      // resuelva una pendiente vieja. El barrido automático sólo vuelve a pedir
+      // lo que su cursor alcanza (Copec, de su cursor hacia adelante; Aramco, los
+      // últimos meses), así que acotarla dejaría pendientes huérfanas para
+      // siempre.
       const pendingByPlate = and(
         eq(fuelProviderTransactions.provider, providerMapping.provider),
         eq(fuelProviderTransactions.sourceAccount, providerMapping.sourceAccount),
         eq(fuelProviderTransactions.status, "pending"),
         sql`regexp_replace(upper(coalesce(${fuelProviderTransactions.sourcePlate}, '')), '[^A-Z0-9]', '', 'g') = ${normalizedValue}`,
       )
+      const promotable = and(pendingByPlate, sql`${fuelProviderTransactions.productId} IS NOT NULL`)
+      const stillPending = and(pendingByPlate, isNull(fuelProviderTransactions.productId))
       await tx.update(fuelProviderTransactions).set({
-        worksiteId: batch.worksiteId,
         vehicleId,
         status: "accepted",
         resolutionCode: null,
         resolutionMessage: null,
         updatedAt: new Date().toISOString(),
-      }).where(and(pendingByPlate, sql`${fuelProviderTransactions.productId} IS NOT NULL`))
+      }).where(promotable)
       await tx.update(fuelProviderTransactions).set({
-        worksiteId: batch.worksiteId,
         vehicleId,
         updatedAt: new Date().toISOString(),
-      }).where(and(pendingByPlate, isNull(fuelProviderTransactions.productId)))
+      }).where(stillPending)
+
+      // La FAENA sí se acota a la vigencia del mapping recién escrito, y por eso
+      // va en un UPDATE aparte. Sin cota, vincular una patente desde el lote de
+      // marzo reescribía la faena de TODO su historial: un vehículo que cambió de
+      // faena quedaba con sus cargas viejas atribuidas a la nueva.
+      //
+      // `occurred_at` es texto y Aramco guarda hora de pared completa
+      // ("2026-07-31T08:00:00"), así que se compara el prefijo de 10 caracteres:
+      // como string, '2026-07-31T08:00:00' <= '2026-07-31' es falso y se perdía
+      // el último día de cada mes.
+      await tx.update(fuelProviderTransactions).set({
+        worksiteId: batch.worksiteId,
+        updatedAt: new Date().toISOString(),
+      }).where(and(
+        eq(fuelProviderTransactions.provider, providerMapping.provider),
+        eq(fuelProviderTransactions.sourceAccount, providerMapping.sourceAccount),
+        eq(fuelProviderTransactions.vehicleId, vehicleId),
+        sql`regexp_replace(upper(coalesce(${fuelProviderTransactions.sourcePlate}, '')), '[^A-Z0-9]', '', 'g') = ${normalizedValue}`,
+        sql`left(coalesce(${fuelProviderTransactions.occurredAt}, ''), 10) >= ${batch.periodoDesde}`,
+      ))
     }
     return linked
   })

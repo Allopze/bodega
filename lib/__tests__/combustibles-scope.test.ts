@@ -61,6 +61,12 @@ describe("combustibles — alcance de faena en mutaciones masivas y vinculación
     vi.clearAllMocks()
     await inMemoryDb.delete(schema.fuelConsumptionRecords)
     await inMemoryDb.delete(schema.fuelImportBatches)
+    // Antes que `fuelVehicles`: el ledger de proveedor y sus mappings apuntan al
+    // vehículo por FK, y `linkConsumptionPlateAction` los escribe.
+    await inMemoryDb.delete(schema.fuelProviderTransactions)
+    await inMemoryDb.delete(schema.fuelProviderRejections)
+    await inMemoryDb.delete(schema.fuelProviderMappings)
+    await inMemoryDb.delete(schema.fuelProviderSyncRuns)
     await inMemoryDb.delete(schema.fuelVehicles)
     await inMemoryDb.delete(schema.fuelEquipmentTypes)
     await inMemoryDb.delete(schema.auditLog)
@@ -187,10 +193,11 @@ describe("combustibles — alcance de faena en mutaciones masivas y vinculación
   })
 
   describe("linkConsumptionPlateAction", () => {
-    async function seedBatch(worksiteId: string) {
+    async function seedBatch(worksiteId: string, fuente?: string) {
       await inMemoryDb.insert(schema.fuelImportBatches).values({
         id: "batch-1",
         worksiteId,
+        fuente,
         periodoDesde: "2026-06-01",
         periodoHasta: "2026-06-30",
         archivoNombre: "consumos.xlsx",
@@ -253,6 +260,48 @@ describe("combustibles — alcance de faena en mutaciones masivas y vinculación
       expect(state.ok).toBe(true)
       const record = await inMemoryDb.query.fuelConsumptionRecords.findFirst({ where: eq(schema.fuelConsumptionRecords.id, "rec-1") })
       expect(record?.vehicleId).toBe("veh-a")
+    })
+
+    it("promueve todo el historial pendiente pero sólo restampa la faena desde la vigencia del mapping", async () => {
+      // Vincular una patente desde el lote de junio reescribía la faena de TODAS
+      // sus transacciones: un vehículo que cambió de faena quedaba con sus cargas
+      // viejas atribuidas a la nueva. La promoción sí es global a propósito: no
+      // hay otro camino que resuelva una pendiente que el cursor ya pasó.
+      await seedBatch("ws-a", "Aramco Fleet Diesel")
+      const run = await inMemoryDb.insert(schema.fuelProviderSyncRuns).values({
+        id: "run-link", provider: "aramco", requestedFrom: "2026-01-01", requestedTo: "2026-06-30", correlationId: "corr-link",
+      }).returning({ id: schema.fuelProviderSyncRuns.id })
+      const pending = (id: string, occurredAt: string) => ({
+        id, syncRunId: run[0]!.id, provider: "aramco", sourceAccount: "fleet",
+        identityKey: `external:${id}`, fingerprint: id, sourceRowKey: id,
+        worksiteId: "ws-b", productId: "fuel-diesel", sourcePlate: "ZZ ZZ 99",
+        occurredAt, status: "pending", resolutionCode: "unresolved_mapping", payloadHash: id,
+      })
+      await inMemoryDb.insert(schema.fuelProviderTransactions).values([
+        // Antes de que empiece el lote: la faena vieja tiene que sobrevivir.
+        pending("tx-antes", "2026-03-11T08:00:00"),
+        // Último día del período: con comparación de texto plana se perdía.
+        pending("tx-ultimo-dia", "2026-06-30T08:00:00"),
+      ])
+
+      mockAuth.mockResolvedValue(scopedSession(["ws-a"]))
+      const formData = new FormData()
+      formData.set("batchId", "batch-1")
+      formData.set("patente", "ZZZZ99")
+      formData.set("vehicleId", "veh-a")
+
+      expect((await linkConsumptionPlateAction({ ok: false }, formData)).ok).toBe(true)
+
+      const rows = await inMemoryDb.query.fuelProviderTransactions.findMany({
+        columns: { id: true, status: true, worksiteId: true, vehicleId: true },
+      })
+      const byId = new Map(rows.map((row) => [row.id, row]))
+      // Las dos se promueven y se vinculan al vehículo.
+      for (const id of ["tx-antes", "tx-ultimo-dia"]) {
+        expect(byId.get(id)).toMatchObject({ status: "accepted", vehicleId: "veh-a" })
+      }
+      expect(byId.get("tx-antes")?.worksiteId).toBe("ws-b")
+      expect(byId.get("tx-ultimo-dia")?.worksiteId).toBe("ws-a")
     })
   })
 
