@@ -195,7 +195,7 @@ export async function alertCriticalFindingsWithoutCapa(): Promise<{ alerted: num
       if (userIds.length === 0) continue
       await createNotifications(userIds, {
         type: "system_alert",
-        title: "Hallazgo sin acción correctiva",
+        title: "Hallazgo grave sin acción correctiva",
         body: `${finding.runCode}: "${finding.description}" lleva más de ${CRITICAL_FINDING_GRACE_HOURS} h sin CAPA, y la inspección no puede cerrarse hasta que la tenga.`,
         entityType: "inspection_run",
         entityId: finding.runId,

@@ -500,31 +500,35 @@ export interface ReviewBlocker {
 
 /**
  * Criticidades que **obligan** a una acción correctiva: sin ella la inspección
- * no cierra y el hallazgo no se puede cerrar a mano.
+ * no cierra.
  *
- * Incluye `medium` por decisión de Prevención (2026-08-23): antes sólo `high` y
- * `critical` obligaban, y un hallazgo medio podía cerrarse con una frase. Sólo
- * `low` conserva el cierre manual.
+ * `medium` queda deliberadamente fuera. Se evaluó incluirlo (2026-08-23) y se
+ * descartó al ver el costo con la calibración real de desviaciones: la mayoría
+ * de lo que levanta una caminata semanal o una inspección de área cae en
+ * moderado, así que obligar CAPA ahí convierte un recorrido de seis hallazgos
+ * en cinco acciones con plazo y responsable. El seguimiento formal se reserva
+ * para lo que tiene consecuencia grave; el resto se cierra con su motivo.
  *
- * Vive acá y no como literal repetido porque la regla gobierna tres puertas
- * —el cierre de la inspección, el cierre del hallazgo y el aviso a las 48 h— y
- * tenerla escrita tres veces garantiza que alguna se quede atrás.
+ * Vive acá y no como literal repetido porque la regla gobierna dos puertas —el
+ * cierre de la inspección y el aviso a las 48 h— y tenerla escrita dos veces
+ * garantiza que alguna se quede atrás. Cambiar el criterio es cambiar esta
+ * lista, en un solo lugar.
  *
- * Ojo: la propuesta de sacar un equipo de servicio NO usa esta lista y sigue
- * acotada a `high`/`critical`. Que un hallazgo exija acción correctiva no es
- * razón para detener un camión en faena: son dos decisiones distintas.
+ * Ojo: la propuesta de sacar un equipo de servicio NO usa esta lista, aunque
+ * hoy coincidan. Que un hallazgo exija acción correctiva no es lo mismo que
+ * detener un camión en faena: son dos decisiones y pueden divergir.
  */
-export const CAPA_REQUIRED_CRITICALITIES = ["medium", "high", "critical"] as const
+export const CAPA_REQUIRED_CRITICALITIES = ["high", "critical"] as const
 
 export function requiresCapa(criticality: string): boolean {
   return (CAPA_REQUIRED_CRITICALITIES as readonly string[]).includes(criticality)
 }
 
 /**
- * Revisar y cerrar exige independencia de quien ejecutó y que todo hallazgo que
- * obliga a acción correctiva tenga una CAPA enlazada — ver
- * `CAPA_REQUIRED_CRITICALITIES`. Un hallazgo con consecuencia sin acción es
- * exactamente lo que la auditoría no acepta como cierre.
+ * Revisar y cerrar exige independencia de quien ejecutó y que todo hallazgo alto
+ * o crítico tenga una CAPA enlazada — ver `CAPA_REQUIRED_CRITICALITIES`. Un
+ * hallazgo grave sin acción es exactamente lo que la auditoría no acepta como
+ * cierre.
  */
 export function assessRunReview(args: {
   executedByUserId: string | null

@@ -249,23 +249,14 @@ describe("revisión independiente", () => {
   })
 
   /**
-   * Desde 2026-08-23 el hallazgo MEDIO también obliga a acción correctiva
-   * (decisión de Prevención). Antes se cerraba con una frase; sólo el leve
-   * conserva ese camino.
+   * Medio y bajo NO bloquean, por decisión de Prevención: se evaluó exigirles
+   * CAPA y se descartó al ver que la mayoría de lo que levanta una caminata cae
+   * en moderado. El criterio vive en `CAPA_REQUIRED_CRITICALITIES`.
    */
-  it("un hallazgo medio sin CAPA bloquea el cierre", () => {
+  it("un hallazgo medio o bajo sin CAPA no bloquea el cierre", () => {
     const result = assessRunReview({
       executedByUserId: "u1", reviewerUserId: "u2",
-      findings: [finding({ criticality: "medium" })],
-    })
-    expect(result.allowed).toBe(false)
-    expect(result.blockers[0]?.kind).toBe("critical_finding_without_capa")
-  })
-
-  it("un hallazgo leve sin CAPA no bloquea el cierre", () => {
-    const result = assessRunReview({
-      executedByUserId: "u1", reviewerUserId: "u2",
-      findings: [finding({ criticality: "low" })],
+      findings: [finding({ criticality: "medium" }), finding({ id: "f2", criticality: "low" })],
     })
     expect(result.allowed).toBe(true)
   })
