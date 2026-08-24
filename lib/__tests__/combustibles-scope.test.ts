@@ -193,7 +193,7 @@ describe("combustibles — alcance de faena en mutaciones masivas y vinculación
   })
 
   describe("linkConsumptionPlateAction", () => {
-    async function seedBatch(worksiteId: string, fuente?: string) {
+    async function seedBatch(worksiteId: string, fuente = "Copec") {
       await inMemoryDb.insert(schema.fuelImportBatches).values({
         id: "batch-1",
         worksiteId,

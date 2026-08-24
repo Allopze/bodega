@@ -629,7 +629,7 @@ describe("variacion_brusca_consumo (batch — sharp consumption change)", () => 
       equipmentTypeId: eqTypeId, worksiteId: wsId, isActive: true,
     })
     await inMemoryDb.insert(schema.fuelImportBatches).values({
-      id: importBatchId, worksiteId: wsId, archivoNombre: "variacion.xlsx", hashArchivo: nanoid(),
+      id: importBatchId, worksiteId: wsId, fuente: "Copec", archivoNombre: "variacion.xlsx", hashArchivo: nanoid(),
       estado: "importado", periodoDesde: "2026-06-01", periodoHasta: "2026-07-30",
       importadoPor: testUserId,
     })

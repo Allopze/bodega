@@ -11,7 +11,9 @@ import { fuelVehicles } from "./fuel-vehicles"
 export const fuelImportBatches = pgTable("fuel_import_batches", {
   id:                 text("id").primaryKey(),
   worksiteId:         text("worksite_id").notNull().references(() => worksites.id),
-  fuente:             text("fuente"),                              // proveedor / sistema de origen
+  // NOT NULL desde 0215: el guard de "import ajeno" filtra con `NOT IN (...)`,
+  // y en SQL eso no matchea NULL — un lote sin fuente no bloqueaba nada.
+  fuente:             text("fuente").notNull(),                     // proveedor / sistema de origen
   periodoDesde:       text("periodo_desde").notNull(),              // "2026-06-01"
   periodoHasta:       text("periodo_hasta").notNull(),              // "2026-06-30"
   archivoNombre:      text("archivo_nombre").notNull(),

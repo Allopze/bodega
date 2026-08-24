@@ -168,11 +168,12 @@ describeIf("combustibles â€” alcance de faena en mutaciones masivas y vinculaciÃ
   })
 
   describe("linkConsumptionPlateAction", () => {
-    async function seedBatch(worksiteId: string) {
+    async function seedBatch(worksiteId: string, fuente = "Copec") {
       const db = getTestDb()
       await db.insert(schema.fuelImportBatches).values({
         id: "batch-1",
         worksiteId,
+        fuente,
         periodoDesde: "2026-06-01",
         periodoHasta: "2026-06-30",
         archivoNombre: "consumos.xlsx",

@@ -24,7 +24,7 @@ interface BatchMeta {
   worksiteId: string
   periodoDesde: string
   periodoHasta: string
-  fuente: string | null
+  fuente: string
   notas: string | null
 }
 
@@ -151,7 +151,7 @@ export async function previewConsumptionImportAction(
             eq(fuelImportBatches.worksiteId, meta.worksiteId),
             eq(fuelImportBatches.periodoDesde, meta.periodoDesde),
             eq(fuelImportBatches.periodoHasta, meta.periodoHasta),
-            meta.fuente ? eq(fuelImportBatches.fuente, meta.fuente) : undefined,
+            eq(fuelImportBatches.fuente, meta.fuente),
             ne(fuelImportBatches.estado, "revertido"),
           ),
         }),
@@ -281,7 +281,7 @@ export async function confirmConsumptionImportAction(
                   eq(fuelImportBatches.worksiteId, meta.worksiteId),
                   eq(fuelImportBatches.periodoDesde, meta.periodoDesde),
                   eq(fuelImportBatches.periodoHasta, meta.periodoHasta),
-                  meta.fuente ? eq(fuelImportBatches.fuente, meta.fuente) : undefined,
+                  eq(fuelImportBatches.fuente, meta.fuente),
                   ne(fuelImportBatches.estado, "revertido"),
                 ),
               }),
