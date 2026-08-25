@@ -208,6 +208,3 @@ export async function seedDefaultDocumentCategoriesAction(_prev: ActionState): P
     return { ok: false, message: (err as Error).message }
   }
 }
-
-// Re-export types for client component typing
-export type { ActionState }

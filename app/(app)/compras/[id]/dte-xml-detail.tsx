@@ -1,7 +1,7 @@
 "use client"
 
 import { formatCLP } from "@/lib/utils"
-import type { DteXmlDetail } from "../actions/dte-download-xml"
+import type { DteXmlDetail } from "@/lib/services/dte-portal/purchase-document-xml"
 
 /**
  * Neto, IVA, total y líneas de un DTE tal como vienen en su XML.

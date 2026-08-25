@@ -7,7 +7,11 @@ import {
   type DteXmlDetail,
 } from "@/lib/services/dte-portal/purchase-document-xml"
 
-export type { DteXmlDetail }
+// El tipo NO se re-exporta desde acá: en un archivo "use server" todo export
+// named se trata como acción, y Turbopack emitía
+// `registerServerReference(DteXmlDetail, …)` sobre un binding que TypeScript
+// borra al compilar — `ReferenceError` al evaluar el módulo, en producción.
+// Quien lo necesite lo importa del módulo que lo declara.
 
 export type DteXmlDownloadResult =
   | { ok: true; detail: DteXmlDetail }

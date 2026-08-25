@@ -15,5 +15,6 @@ export { closeOrderAction, cancelOrderAction, deleteOrderAction } from "./order-
 
 // ── DTE (portal DTE FacturaEnLínea, Bandeja de Entrada) ───────────────────────
 export { downloadDteDocumentXml } from "./dte-download-xml"
-export type { DteXmlDetail, DteXmlDownloadResult } from "./dte-download-xml"
+export type { DteXmlDownloadResult } from "./dte-download-xml"
+export type { DteXmlDetail } from "@/lib/services/dte-portal/purchase-document-xml"
 export { attachDteAsInvoice } from "./dte-use-invoice"

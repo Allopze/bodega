@@ -8,7 +8,8 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { formatCLP } from "@/lib/utils"
 import { toast } from "@/lib/toast"
 import { dteTipoLabel } from "@/lib/services/dte-portal/labels"
-import { downloadDteDocumentXml, type DteXmlDetail } from "../actions/dte-download-xml"
+import { downloadDteDocumentXml } from "../actions/dte-download-xml"
+import type { DteXmlDetail } from "@/lib/services/dte-portal/purchase-document-xml"
 import { DteXmlDetailPanel } from "./dte-xml-detail"
 
 export interface DteReceivedRow {
