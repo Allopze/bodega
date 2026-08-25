@@ -317,6 +317,71 @@ describe("registerWorkerStockDelivery", () => {
     expect(stock?.quantity).toBe(3)
   })
 
+  /**
+   * La fuga que dejaba la cola de pendientes creciendo para siempre: sin
+   * `requestItemId` no corre `deliverItemTx`, el ítem se queda en `received` y
+   * su solicitud no puede llegar nunca a `closed`. En producción 12 de 14
+   * líneas salieron así y no existía un solo ítem `delivered`.
+   */
+  it("rejects an unlinked line when that product still owes a received request item", async () => {
+    const scenario = await makeScenario()
+    const now = new Date().toISOString()
+    const suffix = String(scenarioNumber)
+    const requestId = `req-leak-${suffix}`
+    const requestItemId = `req-item-leak-${suffix}`
+    const supplierId = `supplier-leak-${suffix}`
+    const orderId = `oc-leak-${suffix}`
+
+    await inMemoryDb.insert(schema.purchaseRequests).values({
+      id: requestId, code: `SOL-LEAK-${suffix}`, worksiteId: scenario.workerWorksiteId,
+      requesterId: USER_ID, urgency: "normal", status: "in_purchasing", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequestItems).values({
+      id: requestItemId, requestId, productId: scenario.firstProductId, quantity: 4,
+      unitOfMeasure: "par", status: "received", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.suppliers).values({
+      id: supplierId, name: `Proveedor fuga ${suffix}`, isActive: true, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseOrders).values({
+      id: orderId, code: `OC-LEAK-${suffix}`, worksiteId: scenario.workerWorksiteId, supplierId,
+      createdBy: USER_ID, status: "received", deliveryMode: "directo_faena", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseOrderItems).values({
+      id: `oci-leak-${suffix}`, purchaseOrderId: orderId, requestItemId,
+      productId: scenario.firstProductId, quantity: 4, quantityReceived: 4,
+      unitOfMeasure: "par", sortOrder: 0,
+    })
+
+    await expect(registerWorkerStockDelivery({
+      sourceWorksiteId: scenario.sourceWorksiteId,
+      workerId: scenario.workerId,
+      deliveredBy: USER_ID,
+      items: [{ productId: scenario.firstProductId, quantity: 2 }],
+    })).rejects.toThrow(`SOL-LEAK-${suffix}`)
+
+    // Y no dejó rastro: ni entrega, ni movimiento, ni stock descontado.
+    const stock = await inMemoryDb.query.worksiteStock.findFirst({
+      where: and(
+        eq(schema.worksiteStock.worksiteId, scenario.sourceWorksiteId),
+        eq(schema.worksiteStock.productId, scenario.firstProductId),
+      ),
+    })
+    expect(stock?.quantity).toBe(10)
+
+    // Imputada, la misma línea sí entra y mueve el ítem de solicitud.
+    await registerWorkerStockDelivery({
+      sourceWorksiteId: scenario.sourceWorksiteId,
+      workerId: scenario.workerId,
+      deliveredBy: USER_ID,
+      items: [{ productId: scenario.firstProductId, quantity: 4, requestItemId }],
+    })
+    const requestItemAfter = await inMemoryDb.query.purchaseRequestItems.findFirst({
+      where: eq(schema.purchaseRequestItems.id, requestItemId),
+    })
+    expect(requestItemAfter?.status).toBe("delivered")
+  })
+
   // La entrega física ocurre en faena y se digita después. La fecha operacional
   // del comprobante la fija el operador; el rastro de auditoría —created_at y el
   // movimiento de kardex— sigue marcando cuándo se digitó.
