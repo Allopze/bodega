@@ -12,9 +12,12 @@ import { resolveStorageDir } from "@/lib/storage/config"
 import { getOperationalSettings } from "@/lib/services/system-settings"
 import { nanoid } from "@/lib/id"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
+import { logger } from "@/lib/logger"
 
 const REVALIDATE = "/soporte"
 const FEEDBACK_PREFIX = "storage/feedback/"
+const CREATE_REPORT_FAILED_MESSAGE = "No se pudo enviar el reporte. Intenta nuevamente."
+const UPDATE_REPORT_FAILED_MESSAGE = "No se pudo actualizar el reporte. Intenta nuevamente."
 
 function sanitizeFileName(name: string) {
   return name
@@ -53,40 +56,37 @@ export async function createReportAction(
   let pendingAttachmentPath: string | null = null
   let finalAttachmentPath: string | null = null
   let attachmentFinalized = false
-  if (input.attachment instanceof File && input.attachment.size > 0) {
-    const file = input.attachment
-    const { feedbackAttachmentMaxMb: MAX_MB } = await getOperationalSettings()
-    if (file.size > MAX_MB * 1024 * 1024) {
-      return { ok: false, message: `El archivo supera el límite de ${MAX_MB} MB` }
-    }
-
-    const fileBuf = new Uint8Array(await file.arrayBuffer())
-    const validation = validateFileBuffer(fileBuf, file.size, MimeType.PROOF)
-    if (validation.error) {
-      return { ok: false, message: validation.error }
-    }
-
-    const safeName = sanitizeFileName(file.name || "adjunto")
-    const storageName = `${Date.now()}-${nanoid()}-${safeName}`
-    const feedbackDir = path.join(resolveStorageDir(), "feedback")
-    const relativePath = `${FEEDBACK_PREFIX}${storageName}`
-    const absolutePath = path.join(feedbackDir, storageName)
-    const temporaryPath = `${absolutePath}.tmp`
-
-    await fs.mkdir(feedbackDir, { recursive: true })
-    await fs.writeFile(temporaryPath, Buffer.from(fileBuf))
-    pendingAttachmentPath = temporaryPath
-    finalAttachmentPath = absolutePath
-
-    proofAttachment = {
-      fileName: safeName,
-      filePath: relativePath,
-      fileSize: file.size,
-      mimeType: validation.mimeType,
-    }
-  }
-
   try {
+    if (input.attachment instanceof File && input.attachment.size > 0) {
+      const file = input.attachment
+      const { feedbackAttachmentMaxMb: MAX_MB } = await getOperationalSettings()
+      if (file.size > MAX_MB * 1024 * 1024) {
+        return { ok: false, message: `El archivo supera el límite de ${MAX_MB} MB` }
+      }
+
+      const fileBuf = new Uint8Array(await file.arrayBuffer())
+      const validation = validateFileBuffer(fileBuf, file.size, MimeType.PROOF)
+      if (validation.error) return { ok: false, message: validation.error }
+
+      const safeName = sanitizeFileName(file.name || "adjunto")
+      const storageName = `${Date.now()}-${nanoid()}-${safeName}`
+      const feedbackDir = path.join(resolveStorageDir(), "feedback")
+      const relativePath = `${FEEDBACK_PREFIX}${storageName}`
+      const absolutePath = path.join(feedbackDir, storageName)
+      const temporaryPath = `${absolutePath}.tmp`
+
+      await fs.mkdir(feedbackDir, { recursive: true })
+      await fs.writeFile(temporaryPath, Buffer.from(fileBuf))
+      pendingAttachmentPath = temporaryPath
+      finalAttachmentPath = absolutePath
+      proofAttachment = {
+        fileName: safeName,
+        filePath: relativePath,
+        fileSize: file.size,
+        mimeType: validation.mimeType,
+      }
+    }
+
     if (pendingAttachmentPath && finalAttachmentPath) {
       await fs.rename(pendingAttachmentPath, finalAttachmentPath)
       attachmentFinalized = true
@@ -108,14 +108,15 @@ export async function createReportAction(
 
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Reporte enviado", data: { id: report.id } }
-  } catch (e) {
+  } catch (error) {
     if (!attachmentFinalized && pendingAttachmentPath) {
       await fs.unlink(pendingAttachmentPath).catch(() => undefined)
     }
     if (attachmentFinalized && finalAttachmentPath) {
       await fs.unlink(finalAttachmentPath).catch(() => undefined)
     }
-    return { ok: false, message: e instanceof Error ? e.message : "Error al enviar el reporte" }
+    logger.error(error instanceof Error ? error : new Error("Unexpected feedback report creation failure"))
+    return { ok: false, message: CREATE_REPORT_FAILED_MESSAGE }
   }
 }
 
@@ -148,7 +149,8 @@ export async function updateReportStatusAction(
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${parsed.data.id}`)
     return { ok: true, message: "Estado actualizado" }
-  } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "Error al actualizar el estado" }
+  } catch (error) {
+    logger.error(error instanceof Error ? error : new Error("Unexpected feedback status update failure"))
+    return { ok: false, message: UPDATE_REPORT_FAILED_MESSAGE }
   }
 }

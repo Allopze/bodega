@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog"
 import { toast } from "@/lib/toast"
 import { createReportAction } from "@/app/(app)/soporte/actions"
+import { buildBoundaryErrorReport } from "@/lib/services/feedback-error-context"
 
 interface ReportErrorButtonProps {
   /** The error from the error boundary (for context) */
@@ -39,13 +40,12 @@ export function ReportErrorButton({
   const [description, setDescription] = React.useState("")
   const [submitting, setSubmitting] = React.useState(false)
 
-  const pageUrl = React.useMemo(() => {
-    if (typeof window === "undefined") return ""
-    return window.location.pathname + window.location.search
+  const pathname = React.useMemo(() => {
+    if (typeof window === "undefined") return "/"
+    return window.location.pathname
   }, [])
 
   const errorDigest = error?.digest
-  const errorMessage = error?.message
 
   function handleOpenChange(next: boolean) {
     if (!next) setDescription("")
@@ -58,21 +58,11 @@ export function ReportErrorButton({
 
     setSubmitting(true)
     try {
-      const title = `Error en ${pageUrl || "página desconocida"}`
-      const fullDescription = [
-        description.trim(),
-        errorDigest ? `\n\nCódigo de error: ${errorDigest}` : "",
-        errorMessage ? `\nMensaje original: ${errorMessage}` : "",
-        `\nURL: ${pageUrl}`,
-      ].filter(Boolean).join("")
-
-      const result = await createReportAction({
-        tipo: "bug",
-        titulo: title.slice(0, 160),
-        descripcion: fullDescription.slice(0, 4000),
-        pagina: pageUrl,
-        priority: "normal",
-      })
+      const result = await createReportAction(buildBoundaryErrorReport({
+        description,
+        pathname,
+        errorDigest,
+      }))
 
       if (!result.ok) {
         toast.error(result.message ?? "Error al enviar el reporte")
@@ -107,11 +97,6 @@ export function ReportErrorButton({
             </DialogHeader>
 
             <div className="space-y-3">
-              {errorMessage && (
-                <div className="rounded-[var(--radius)] bg-[var(--color-danger-tint)] px-3 py-2 text-xs text-[var(--color-danger)] font-mono break-words">
-                  {errorMessage}
-                </div>
-              )}
               {errorDigest && (
                 <p className="text-xs text-[var(--color-text-faint)] font-mono">
                   Código: {errorDigest}

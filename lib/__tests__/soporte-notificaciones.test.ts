@@ -5,7 +5,7 @@
  *  1. Permission/auth denied
  *  2. Validation errors
  *  3. Happy paths
- *  4. Service error propagation
+ *  4. Safe handling of unexpected service failures
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest"
@@ -105,12 +105,13 @@ describe("soporte actions", () => {
       expect(mockCreateReport).toHaveBeenCalled()
     })
 
-    it("propagates service error", async () => {
+    it("does not reveal service errors", async () => {
       mockAuthFn.mockResolvedValue(makeSession("feedback:create"))
       mockCreateReport.mockRejectedValue(new Error("DB error"))
       const { createReportAction } = await import("@/app/(app)/soporte/actions")
       const r = await createReportAction({ tipo: "bug", titulo: "Test", descripcion: "Desc" })
-      expect(r.ok).toBe(false); expect(r.message).toContain("DB error")
+      expect(r.ok).toBe(false)
+      expect(r.message).toBe("No se pudo enviar el reporte. Intenta nuevamente.")
     })
 
     it("cleans the temporary upload when finalization fails", async () => {
@@ -128,7 +129,7 @@ describe("soporte actions", () => {
 
       expect(mockFs.rename).toHaveBeenCalled()
       expect(r.ok).toBe(false)
-      expect(r.message).toContain("filesystem rename failure")
+      expect(r.message).toBe("No se pudo enviar el reporte. Intenta nuevamente.")
       expect(mockFs.writeFile).toHaveBeenCalledWith(expect.stringContaining(".tmp"), expect.anything())
       expect(mockFs.unlink).toHaveBeenCalledWith(expect.stringContaining(".tmp"))
       expect(mockCreateReport).not.toHaveBeenCalled()
@@ -149,7 +150,7 @@ describe("soporte actions", () => {
 
       expect(mockFs.rename).toHaveBeenCalledBefore(mockCreateReport)
       expect(r.ok).toBe(false)
-      expect(r.message).toContain("DB error")
+      expect(r.message).toBe("No se pudo enviar el reporte. Intenta nuevamente.")
       expect(mockFs.unlink).toHaveBeenCalledTimes(1)
       expect(String(mockFs.unlink.mock.calls[0]?.[0])).not.toMatch(/\.tmp$/)
     })
@@ -178,6 +179,18 @@ describe("soporte actions", () => {
       const fd = new FormData(); fd.set("id", "report-1"); fd.set("estado", "resuelto"); fd.set("notaInterna", "")
       const r = await updateReportStatusAction({ ok: false }, fd)
       expect(r.ok).toBe(true)
+    })
+
+    it("does not reveal service errors", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("feedback:manage"))
+      mockUpdateReportStatus.mockRejectedValue(new Error("DB error"))
+      const { updateReportStatusAction } = await import("@/app/(app)/soporte/actions")
+      const fd = new FormData(); fd.set("id", "report-1"); fd.set("estado", "resuelto"); fd.set("notaInterna", "")
+
+      const r = await updateReportStatusAction({ ok: false }, fd)
+
+      expect(r.ok).toBe(false)
+      expect(r.message).toBe("No se pudo actualizar el reporte. Intenta nuevamente.")
     })
   })
 })
