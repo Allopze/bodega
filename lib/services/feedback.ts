@@ -5,19 +5,41 @@
  */
 
 import { z } from "zod"
-import { eq, and, desc } from "drizzle-orm"
+import { eq, and, desc, ilike, or, count } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import { feedbackReports, type FeedbackReport } from "@/db/schema/feedback"
 import { attachments } from "@/db/schema/audit"
 import { users } from "@/db/schema/users"
 import { nanoid } from "@/lib/id"
-import { feedbackCreateSchema, feedbackUpdateStatusSchema } from "@/lib/validation/feedback"
+import {
+  feedbackCreateSchema,
+  feedbackUpdateStatusSchema,
+  type FeedbackEstado,
+  type FeedbackPrioridad,
+  type FeedbackTipo,
+} from "@/lib/validation/feedback"
 
 // ── Tipos de resultado ─────────────────────────────────────────────────────────
 
 export type FeedbackRow = FeedbackReport & {
   authorName:  string
   authorEmail: string
+}
+
+/** Deliberately narrow shape sent to the client-side support inbox. */
+export type FeedbackListRow = Pick<FeedbackReport,
+  "id" | "tipo" | "titulo" | "priority" | "dueAt" | "estado" | "createdBy" | "createdAt"
+> & {
+  authorName: string
+}
+
+export interface FeedbackListFilters {
+  mode: "own" | "all"
+  userId: string
+  q?: string
+  estado?: FeedbackEstado
+  tipo?: FeedbackTipo
+  priority?: FeedbackPrioridad
 }
 
 export interface FeedbackAttachmentInput {
@@ -137,33 +159,52 @@ export async function getReportAttachments(reportId: string): Promise<FeedbackAt
 
 // ── listReports ───────────────────────────────────────────────────────────────
 
-export async function listReports(
-  filters: { mode: "own" | "all"; userId: string },
-  limit  = 50,
-  offset = 0
-): Promise<FeedbackRow[]> {
+function reportListConditions(filters: FeedbackListFilters) {
   const conditions = filters.mode === "own"
     ? [eq(feedbackReports.createdBy, filters.userId)]
     : []
+
+  if (filters.q) {
+    const search = `%${filters.q}%`
+    conditions.push(or(
+      ilike(feedbackReports.titulo, search),
+      ilike(feedbackReports.descripcion, search),
+    )!)
+  }
+  if (filters.estado) conditions.push(eq(feedbackReports.estado, filters.estado))
+  if (filters.tipo) conditions.push(eq(feedbackReports.tipo, filters.tipo))
+  if (filters.priority) conditions.push(eq(feedbackReports.priority, filters.priority))
+  return conditions
+}
+
+export async function countReports(filters: FeedbackListFilters): Promise<number> {
+  const conditions = reportListConditions(filters)
+  const [result] = await db
+    .select({ count: count() })
+    .from(feedbackReports)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+
+  return result?.count ?? 0
+}
+
+export async function listReports(
+  filters: FeedbackListFilters,
+  limit  = 50,
+  offset = 0
+): Promise<FeedbackListRow[]> {
+  const conditions = reportListConditions(filters)
 
   const rows = await db
     .select({
       id:          feedbackReports.id,
       tipo:        feedbackReports.tipo,
       titulo:      feedbackReports.titulo,
-      descripcion: feedbackReports.descripcion,
-      pagina:      feedbackReports.pagina,
       priority:    feedbackReports.priority,
       dueAt:       feedbackReports.dueAt,
       estado:      feedbackReports.estado,
-      notaInterna: feedbackReports.notaInterna,
       createdBy:   feedbackReports.createdBy,
-      resolvedBy:  feedbackReports.resolvedBy,
-      resolvedAt:  feedbackReports.resolvedAt,
       createdAt:   feedbackReports.createdAt,
-      updatedAt:   feedbackReports.updatedAt,
       authorName:  users.name,
-      authorEmail: users.email,
     })
     .from(feedbackReports)
     .leftJoin(users, eq(feedbackReports.createdBy, users.id))
@@ -172,7 +213,7 @@ export async function listReports(
     .limit(limit)
     .offset(offset)
 
-  return rows as FeedbackRow[]
+  return rows as FeedbackListRow[]
 }
 
 // ── updateReportStatus ────────────────────────────────────────────────────────

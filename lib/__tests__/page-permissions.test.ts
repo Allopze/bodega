@@ -86,10 +86,12 @@ vi.mock("@/lib/adquisiciones/list-query", () => ({
   worksiteEqSql: () => undefined,
   periodSql: () => undefined,
 }))
-vi.mock("@/lib/constants", () => ({ SOLICITUDES_PAGE_SIZE: 20 }))
+vi.mock("@/lib/constants", () => ({ SOLICITUDES_PAGE_SIZE: 20, DEFAULT_PAGE_SIZE: 25 }))
 vi.mock("@/lib/services/feedback", () => ({
+  countReports: () => Promise.resolve(0),
   listReports: () => Promise.resolve([]),
   getReport: () => Promise.resolve(null),
+  getReportAttachments: () => Promise.resolve([]),
 }))
 vi.mock("next/link", () => ({ default: ({ children }: { children: unknown }) => children }))
 

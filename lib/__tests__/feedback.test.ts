@@ -20,6 +20,7 @@ vi.mock("@/db", () => ({
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 import {
+  countReports,
   createReport,
   getReport,
   getReportAttachments,
@@ -183,6 +184,31 @@ describe("feedback service", () => {
     const page = await listReports({ mode: "all", userId: "user-1" }, 1, 1)
     expect(page).toHaveLength(1)
     expect(page[0]!.id).toBe(report1.id) // Ordered by desc createdAt
+  })
+
+  it("filters and counts reports before pagination", async () => {
+    const matching = await createReport({
+      tipo: "bug",
+      titulo: "Recepción bloqueada",
+      descripcion: "La recepción no se puede confirmar",
+      priority: "alta",
+    }, "user-1")
+    await createReport({
+      tipo: "consulta",
+      titulo: "Duda sobre catálogo",
+      descripcion: "Consulta general",
+      priority: "normal",
+    }, "user-2")
+
+    const filters = { mode: "all" as const, userId: "user-1", q: "recepción", tipo: "bug" as const, priority: "alta" as const }
+    const [filtered, total] = await Promise.all([
+      listReports(filters, 25, 0),
+      countReports(filters),
+    ])
+
+    expect(total).toBe(1)
+    expect(filtered).toHaveLength(1)
+    expect(filtered[0]!.id).toBe(matching.id)
   })
 
   it("updates report status and sets terminal resolution details", async () => {

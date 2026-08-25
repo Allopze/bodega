@@ -1,7 +1,6 @@
 "use client"
 
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import {
   TableRoot, Table, TableHeader, TableBody,
@@ -11,20 +10,18 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { StateBadge } from "@/components/states/state-badge"
 import { FEEDBACK_TIPO_LABELS } from "@/components/states/state-badge"
 import { ChatCircleText } from "@phosphor-icons/react"
-import type { FeedbackRow } from "@/lib/services/feedback"
+import type { FeedbackListRow } from "@/lib/services/feedback"
 import type { FeedbackTipo, FeedbackEstado } from "@/lib/validation/feedback"
 
 import { formatDate } from "@/lib/utils"
 
 interface Props {
-  reports:   FeedbackRow[]
+  reports:   FeedbackListRow[]
   canCreate: boolean
   canViewAll: boolean
 }
 
 export function ReportList({ reports, canCreate, canViewAll }: Props) {
-  const router = useRouter()
-
   if (reports.length === 0) {
     return (
       <EmptyState
@@ -62,18 +59,16 @@ export function ReportList({ reports, canCreate, canViewAll }: Props) {
         </TableHeader>
         <TableBody>
           {reports.map((r) => (
-            <TableRow
-              key={r.id}
-              className="cursor-pointer"
-              onClick={() => router.push(`/soporte/${r.id}`)}
-            >
+            <TableRow key={r.id}>
               <TableCell>
                 <span className="text-sub">
                   {FEEDBACK_TIPO_LABELS[r.tipo as FeedbackTipo] ?? r.tipo}
                 </span>
               </TableCell>
               <TableCell className="font-medium max-w-[32ch] truncate">
-                {r.titulo}
+                <Link href={`/soporte/${r.id}`} className="underline-offset-2 hover:underline focus-visible:rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]">
+                  {r.titulo}
+                </Link>
               </TableCell>
               {canViewAll && (
                 <TableCell className="text-sub">{r.authorName}</TableCell>
