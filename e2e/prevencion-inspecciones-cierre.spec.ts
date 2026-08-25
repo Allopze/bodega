@@ -53,10 +53,8 @@ test.describe("Inspecciones — revisión independiente y cierre", () => {
   test("quien ejecutó la inspección no puede revisarla", async ({ page }) => {
     await abrir(page, "insp-e2e-autorrevision", "INSP-E2E-0002")
 
-    await page.getByRole("button", { name: "Revisar y cerrar" }).click()
-    const dialog = page.getByRole("dialog")
-    await expect(dialog.getByText("Quien ejecutó la inspección no puede revisarla y cerrarla.")).toBeVisible()
-    await expect(dialog.getByRole("button", { name: "Revisar y cerrar" })).toBeDisabled()
+    await expect(page.getByText("Tú ejecutaste esta inspección. Para conservar la revisión segregada, debe cerrarla otra persona con permiso de revisión.")).toBeVisible()
+    await expect(page.getByRole("button", { name: "Revisar y cerrar" })).toHaveCount(0)
   })
 
   test("un hallazgo alto sin CAPA bloquea el cierre y lo nombra", async ({ page }) => {
@@ -129,7 +127,7 @@ test.describe("Inspecciones — revisión independiente y cierre", () => {
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
 
     await page.reload()
-    await expect(page.getByText("Revisada y cerrada").first()).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText("Revisada y cerrada", { exact: true }).filter({ visible: true }).first()).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText(/Revisada .* por Admin E2E: Revisada en terreno/)).toBeVisible()
     // Cerrada, deja de ofrecer la revisión y conserva el camino de rectificación.
     await expect(page.getByRole("button", { name: "Revisar y cerrar" })).toHaveCount(0)
@@ -144,7 +142,7 @@ test.describe("Inspecciones — revisión independiente y cierre", () => {
    */
   test("reabrir para rectificar borra el cumplimiento firmado", async ({ page }) => {
     await abrir(page, "insp-e2e-reabrir", "INSP-E2E-0006")
-    await expect(page.getByText("80%", { exact: true })).toBeVisible()
+    await expect(page.getByText("80%", { exact: true }).filter({ visible: true }).first()).toBeVisible()
     await expect(page.getByRole("heading", { name: "Hallazgos (1)" })).toBeVisible()
 
     await confirmarConMotivo(
@@ -154,11 +152,11 @@ test.describe("Inspecciones — revisión independiente y cierre", () => {
     )
 
     await page.reload()
-    await expect(page.getByText("En ejecución").first()).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText("En ejecución", { exact: true }).filter({ visible: true }).first()).toBeVisible({ timeout: 15_000 })
     // Las respuestas siguen ahí, así que la pantalla vuelve a proyectar un 80%
-    // — pero como previsión, no como el porcentaje firmado que había antes.
+    // sobre los ítems evaluados, no como el porcentaje firmado que había antes.
     await expect(page.getByText("80%", { exact: true })).toHaveCount(0)
-    await expect(page.getByText("80% (previsto)")).toBeVisible()
+    await expect(page.getByText("80% de 5 evaluados", { exact: true }).filter({ visible: true }).first()).toBeVisible()
     // La sección de hallazgos sólo existe en ejecutada o cerrada.
     await expect(page.getByRole("heading", { name: /^Hallazgos \(/ })).toHaveCount(0)
     // Y vuelve a ser editable.
@@ -193,12 +191,12 @@ test.describe("Inspecciones — revisión independiente y cierre", () => {
    */
   test("cancelar una planificada la saca de la bandeja de pendientes", async ({ page }) => {
     await abrir(page, "insp-e2e-cancelar", "INSP-E2E-0001")
-    await expect(page.getByText("Planificada").first()).toBeVisible()
+    await expect(page.getByText("Pendiente de ejecución", { exact: true }).filter({ visible: true }).first()).toBeVisible()
 
     await confirmarConMotivo(page, "Cancelar", "La faena retiró el extintor de bodega antes de inspeccionarlo.")
 
     await page.reload()
-    await expect(page.getByText("Cancelada").first()).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText("Cancelada", { exact: true }).filter({ visible: true }).first()).toBeVisible({ timeout: 15_000 })
     // Cancelada deja de ser editable y de ofrecer transiciones.
     await expect(page.getByRole("button", { name: "Guardar respuestas" })).toHaveCount(0)
     await expect(page.getByRole("button", { name: "Cancelar" })).toHaveCount(0)
@@ -226,6 +224,8 @@ test.describe("Inspecciones — falla de un equipo de flota", () => {
     await hallazgo.getByRole("button", { name: "Derivar a CAPA" }).click()
     const dialog = page.getByRole("dialog", { name: "Derivar hallazgo a CAPA" })
     await dialog.locator('textarea[name="actionDescription"]').fill("Reparar el sistema y verificar en taller.")
+    await dialog.getByLabel("Responsable de la CAPA").click()
+    await page.getByRole("option", { name: "Admin E2E", exact: true }).click()
     await dialog.getByRole("checkbox", { name: "Programar mantención del equipo" }).check()
     await dialog.getByRole("button", { name: "Derivar" }).click()
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })

@@ -294,6 +294,22 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       .where(eq(schema.preventionInspectionRuns.clientSubmissionId, "offline-inspection-001"))).toHaveLength(1)
   })
 
+  it("surfaces an executable inspection in Prevention attention", async () => {
+    const { getPreventionAttention } = await import("@/lib/services/prevention-attention")
+    const items = await getPreventionAttention({
+      worksiteIds: ["ws-in-a"],
+      includeActions: false,
+      includeEvaluations: false,
+      includePpa: false,
+      inspectionStatuses: ["planned", "in_progress"],
+    })
+    expect(items).toContainEqual(expect.objectContaining({
+      id: `inspection:${runId}`,
+      kind: "inspection",
+      href: `/prevencion/inspecciones/${runId}`,
+    }))
+  })
+
   it("rejects an answer that does not belong to the template", async () => {
     const service = await import("@/lib/services/prevention-inspections")
     await expect(service.saveInspectionAnswers({
@@ -377,6 +393,22 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     expect(findings[0]?.criticality).toBe(criticalityFromDanoPotencial(failing.danoPotencial))
   })
 
+  it("surfaces a completed inspection as pending review in Prevention attention", async () => {
+    const { getPreventionAttention } = await import("@/lib/services/prevention-attention")
+    const items = await getPreventionAttention({
+      worksiteIds: ["ws-in-a"],
+      includeActions: false,
+      includeEvaluations: false,
+      includePpa: false,
+      inspectionStatuses: ["completed"],
+    })
+    expect(items).toContainEqual(expect.objectContaining({
+      id: `inspection:${runId}`,
+      title: expect.stringContaining("Revisar"),
+      detail: expect.stringContaining("pendiente de revisión"),
+    }))
+  })
+
   it("blocks the executor from reviewing their own inspection", async () => {
     const service = await import("@/lib/services/prevention-inspections")
     await expect(service.reviewInspectionRun({
@@ -399,10 +431,16 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       runId, expectedVersion: runVersion, reviewComment: "Intento de cierre con hallazgo grave sin acción.",
     }, REVIEWER)).rejects.toThrow(/no tiene CAPA/)
 
+    await expect(service.createFindingCapa({
+      findingId: finding!.id,
+      actionDescription: "Intento de derivar sin una persona responsable.",
+    }, AUTHOR)).rejects.toThrow()
+
     const linked = await service.createFindingCapa({
       findingId: finding!.id,
       actionDescription: "Recargar y certificar el extintor, y verificar el resto del sector.",
       immediateMeasure: "Extintor retirado de servicio y reemplazado por uno operativo.",
+      responsibleUserId: AUTHOR.userId,
     }, AUTHOR)
     expect(linked.finding).toMatchObject({ status: "capa_linked" })
     expect(linked.finding.capaActionId).toBeTruthy()
@@ -416,6 +454,7 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
 
     await expect(service.createFindingCapa({
       findingId: finding!.id, actionDescription: "Intento de duplicar la acción del mismo hallazgo.",
+      responsibleUserId: AUTHOR.userId,
     }, AUTHOR)).rejects.toThrow(/ya tiene una acción CAPA/)
   })
 
@@ -850,6 +889,7 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       const linked = await service.createFindingCapa({
         findingId: finding!.id,
         actionDescription: "Cambiar cilindro maestro y purgar el sistema de frenos.",
+        responsibleUserId: AUTHOR.userId,
         createMaintenance: true,
       }, AUTHOR)
       expect(linked.maintenanceId).toBeTruthy()
@@ -960,7 +1000,7 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       // La segunda derivación se rechaza antes por la CAPA ya enlazada; el
       // índice único parcial es la red por debajo.
       await expect(service.createFindingCapa({
-        findingId: finding!.id, actionDescription: "Otra acción distinta.", createMaintenance: true,
+        findingId: finding!.id, actionDescription: "Otra acción distinta.", responsibleUserId: AUTHOR.userId, createMaintenance: true,
       }, AUTHOR)).rejects.toThrow(/ya tiene una acción CAPA/i)
     })
 
@@ -1231,6 +1271,7 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
 
       await service.createFindingCapa({
         findingId: created.id, actionDescription: "Despejar la vía y demarcarla.",
+        responsibleUserId: AUTHOR.userId,
       }, AUTHOR)
       await expect(service.removeDeviation({ findingId: created.id }, AUTHOR))
         .rejects.toThrow(/acción correctiva/)
@@ -1241,6 +1282,7 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       const created = await service.registerDeviation({ runId: run.id, catalogEntryId: grave.id }, AUTHOR)
       const result = await service.createFindingCapa({
         findingId: created.id, actionDescription: "Despejar la vía de evacuación.",
+        responsibleUserId: AUTHOR.userId,
       }, AUTHOR)
 
       const [capa] = await getDb().select({ targetDate: schema.preventionCapaActions.targetDate, priority: schema.preventionCapaActions.priority })

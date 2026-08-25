@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -14,13 +15,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   assessRunCompletion,
   assessRunReview,
+  addDays,
+  capaPriorityForCriticality,
   criticalityBadgeVariant,
   FINDING_CRITICALITY_LABELS,
   FINDING_STATUS_LABELS,
   INSPECTION_KIND_LABELS,
   INSPECTION_ORIGIN_LABELS,
   INSPECTION_RESULT_LABELS,
-  INSPECTION_RUN_STATUS_LABELS,
   fieldKindAcceptsPartial,
   fieldKindIsScorable,
   resultBadgeVariant,
@@ -33,7 +35,7 @@ import {
   type InspectionItemSpec,
 } from "@/lib/prevention/inspections"
 import type { FieldKind } from "@/lib/sst/types"
-import { formatDateTime } from "@/lib/utils"
+import { formatDate, formatDateTime, todayInChile } from "@/lib/utils"
 import {
   cancelInspectionRunAction,
   closeInspectionFindingAction,
@@ -49,6 +51,7 @@ import {
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { compressPhoto } from "@/lib/pwa/image-compress"
+import { inspectionSubjectTypeLabel, inspectionTaskStatusLabel } from "@/lib/prevention/inspection-list-query"
 
 interface RunInfo {
   id: string
@@ -72,6 +75,8 @@ interface RunInfo {
   closingResult: string | null
   closingRestrictions: string | null
   closingSignatures: { role: string; name: string; userId: string | null; signedAt: string }[] | null
+  locationLatitude: string | null
+  locationLongitude: string | null
   version: number
 }
 
@@ -159,6 +164,8 @@ interface Props {
   canIngest: boolean
   /** Acta que declara la plantilla; `null` si no exige uno. */
   closingAct: ClosingActSpec | null
+  /** Reporte de Equipos: el papel es el insumo que el jefe de faena transcribe. */
+  physicalSourceRequired: boolean
 }
 
 function draftKey(sectionId: string, itemId: string) {
@@ -287,31 +294,45 @@ function NonScorableField({ item, value, onChange }: {
  * guardado antes de poder adjuntar — de ahí que el control se deshabilite
  * mientras no exista `answerId`.
  */
-function AnswerEvidence({ answerId, evidence, editable }: {
+function inspectionEvidenceFileName(path: string) {
+  return path.split("/").pop() ?? ""
+}
+
+export function AnswerEvidence({ answerId, evidence, editable, readyToPersist, ensureAnswerId }: {
   answerId: string | null
   evidence: { id: string; path: string; caption: string | null }[]
   editable: boolean
+  /** Existe una respuesta válida en el borrador y puede guardarse. */
+  readyToPersist: boolean
+  /** Autosave que crea la fila persistida cuando la foto es el primer guardado. */
+  ensureAnswerId?: () => Promise<string>
 }) {
   const [items, setItems] = React.useState(evidence)
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState("")
+  const inputRef = React.useRef<HTMLInputElement>(null)
   React.useEffect(() => { setItems(evidence) }, [evidence])
 
   async function upload(files: FileList | null) {
-    if (!files?.length || !answerId) return
+    if (!files?.length || !readyToPersist) return
     setBusy(true)
     setError("")
     try {
+      const persistedAnswerId = answerId ?? await ensureAnswerId?.()
+      if (!persistedAnswerId) throw new Error("No se pudo guardar la respuesta antes de adjuntar la foto.")
       // Secuencial y no en paralelo: en terreno la conexión es escasa y varias
       // subidas simultáneas se estorban entre sí.
       for (const file of Array.from(files)) {
         const compressed = await compressPhoto(file)
         const body = new FormData()
         body.set("file", compressed)
-        body.set("answerId", answerId)
+        body.set("answerId", persistedAnswerId)
         const response = await fetch("/api/prevencion/inspecciones/evidence", { method: "POST", body })
+        if (!response.ok) {
+          const failure = await response.json().catch(() => ({}))
+          throw new Error(failure.error ?? "No se pudo subir la foto.")
+        }
         const json = await response.json()
-        if (!response.ok) throw new Error(json.error ?? "No se pudo subir la foto.")
         setItems((current) => [...current, { id: json.id, path: json.path, caption: null }])
       }
     } catch (err) {
@@ -321,8 +342,6 @@ function AnswerEvidence({ answerId, evidence, editable }: {
     }
   }
 
-  const fileName = (path: string) => path.split("/").pop() ?? ""
-
   return (
     <div className="space-y-2">
       {items.length > 0 && (
@@ -330,14 +349,14 @@ function AnswerEvidence({ answerId, evidence, editable }: {
           {items.map((item) => (
             <a
               key={item.id}
-              href={`/api/prevencion/inspecciones/evidence/${fileName(item.path)}`}
+              href={`/api/prevencion/inspecciones/evidence/${inspectionEvidenceFileName(item.path)}`}
               target="_blank"
               rel="noreferrer"
               className="block"
             >
               {/* eslint-disable-next-line @next/next/no-img-element -- la ruta es dinámica y autenticada; next/image no aporta aquí. */}
               <img
-                src={`/api/prevencion/inspecciones/evidence/${fileName(item.path)}`}
+                src={`/api/prevencion/inspecciones/evidence/${inspectionEvidenceFileName(item.path)}`}
                 alt={item.caption ?? "Evidencia de la inspección"}
                 className="h-16 w-16 rounded border border-[var(--color-border)] object-cover"
               />
@@ -348,15 +367,26 @@ function AnswerEvidence({ answerId, evidence, editable }: {
       {editable && (
         <>
           <input
+            ref={inputRef}
             type="file"
             accept="image/*"
             multiple
-            disabled={!answerId || busy}
+            disabled={!readyToPersist || busy}
             onChange={(event) => { void upload(event.target.files); event.target.value = "" }}
             aria-label="Adjuntar evidencia fotográfica"
-            className="text-xs"
+            className="sr-only"
           />
-          {!answerId && <p className="text-xs text-[var(--color-text-subtle)]">Guarda la respuesta para adjuntar fotos.</p>}
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={!readyToPersist || busy}
+            onClick={() => inputRef.current?.click()}
+          >
+            {busy ? "Subiendo…" : items.length > 0 ? "Agregar fotos" : "Adjuntar fotos"}
+          </Button>
+          {!readyToPersist && <p className="text-xs text-[var(--color-text-subtle)]">Responde el ítem para habilitar fotografías.</p>}
+          {readyToPersist && !answerId && <p className="text-xs text-[var(--color-text-subtle)]">Al elegir una foto, esta respuesta se guardará automáticamente.</p>}
           {busy && <p className="text-xs text-[var(--color-text-subtle)]">Subiendo…</p>}
           {error && <p role="status" className="text-xs text-[var(--color-danger-ink)]">{error}</p>}
         </>
@@ -371,6 +401,7 @@ export function InspectionRunDetail({
   worksiteName, assigneeName, executorName, reviewerName,
   sections, answers, findings, currentUserId, assignees, canExecute, canReview, canManage, canStopVehicle,
   documents, canIngest, closingAct,
+  physicalSourceRequired,
 }: Props) {
   const editable = canExecute && ["planned", "in_progress"].includes(run.status)
   const items: InspectionItemSpec[] = React.useMemo(
@@ -411,7 +442,12 @@ export function InspectionRunDetail({
     })),
   }))
 
-  const [coords, setCoords] = React.useState<{ lat: string; lon: string } | null>(null)
+  const [coords, setCoords] = React.useState<{ lat: string; lon: string } | null>(() =>
+    run.locationLatitude && run.locationLongitude ? { lat: run.locationLatitude, lon: run.locationLongitude } : null,
+  )
+  React.useEffect(() => {
+    if (run.locationLatitude && run.locationLongitude) setCoords({ lat: run.locationLatitude, lon: run.locationLongitude })
+  }, [run.locationLatitude, run.locationLongitude])
   const [geoState, setGeoState] = React.useState<"idle" | "pending" | "denied">("idle")
 
   // Función #9: la idempotencia del servidor (`clientSubmissionId`, su índice
@@ -509,6 +545,8 @@ export function InspectionRunDetail({
   )
   const summary = React.useMemo(() => summarizeCompliance(items, currentAnswers), [items, currentAnswers])
   const answeredCount = currentAnswers.length
+  const requiredItems = React.useMemo(() => items.filter((item) => item.required), [items])
+  const answeredRequired = React.useMemo(() => requiredItems.filter((item) => drafts[draftKey(item.sectionId, item.itemId)]?.result).length, [requiredItems, drafts])
 
   // B-03: la misma regla que aplica el servicio, evaluada antes de enviar.
   // Sin esto el CHECK de Postgres reventaba el lote entero y el usuario veía
@@ -517,21 +555,34 @@ export function InspectionRunDetail({
     () => new Map(items.map((item) => [draftKey(item.sectionId, item.itemId), item])),
     [items],
   )
-  // La evidencia cuelga de la respuesta persistida: sin `answerId` no hay dónde
-  // colgarla, y por eso el control de subida se deshabilita hasta guardar.
+  const [savedAnswerRows, setSavedAnswerRows] = React.useState(answers)
+  React.useEffect(() => { setSavedAnswerRows(answers) }, [answers])
+
+  // La evidencia cuelga de la respuesta persistida. El mapa se actualiza con
+  // las claves que devuelve el autosave, por lo que elegir una foto puede
+  // crear la respuesta y subirla en el mismo gesto.
   const savedAnswers = React.useMemo(
-    () => new Map(answers.map((answer) => [draftKey(answer.sectionId, answer.itemId), answer])),
-    [answers],
+    () => new Map(savedAnswerRows.map((answer) => [draftKey(answer.sectionId, answer.itemId), answer])),
+    [savedAnswerRows],
   )
-  const rowProblems = React.useMemo(
+  const rowProblemEntries = React.useMemo(
     () => currentAnswers.flatMap((answer) => {
       const item = itemBySpec.get(draftKey(answer.sectionId, answer.itemId))
       if (!item) return []
       const problem = validateAnswerRow(item, answer)
-      return problem ? [problem] : []
+      return problem ? [{ key: draftKey(answer.sectionId, answer.itemId), problem }] : []
     }),
     [currentAnswers, itemBySpec],
   )
+  const rowProblems = React.useMemo(() => rowProblemEntries.map((entry) => entry.problem), [rowProblemEntries])
+  const completionBlockers = React.useMemo(() => {
+    const seen = new Set(rowProblems)
+    return completion.blockers.filter((item) => {
+      if (seen.has(item.detail)) return false
+      seen.add(item.detail)
+      return true
+    })
+  }, [completion.blockers, rowProblems])
 
   /** Payload compartido por guardar y por declarar ejecutada: un solo contrato. */
   function answersPayload() {
@@ -594,20 +645,67 @@ export function InspectionRunDetail({
     if (typeof next === "number") setVersion(next)
   }
 
+  function applySavedAnswerRefs(result: { data?: Record<string, unknown> }) {
+    applyVersion(result)
+    const refs = result.data?.answerRefs
+    if (!Array.isArray(refs)) return
+    setSavedAnswerRows((current) => {
+      const byKey = new Map(current.map((answer) => [draftKey(answer.sectionId, answer.itemId), answer]))
+      for (const value of refs) {
+        if (!value || typeof value !== "object") continue
+        const row = value as { answerId?: unknown; sectionId?: unknown; itemId?: unknown }
+        if (typeof row.answerId !== "string" || typeof row.sectionId !== "string" || typeof row.itemId !== "string") continue
+        const key = draftKey(row.sectionId, row.itemId)
+        const previous = byKey.get(key)
+        byKey.set(key, previous
+          ? { ...previous, answerId: row.answerId }
+          : {
+              answerId: row.answerId,
+              sectionId: row.sectionId,
+              itemId: row.itemId,
+              result: drafts[key]?.result ?? "",
+              comment: drafts[key]?.comment || null,
+              value: drafts[key]?.value || null,
+              evidence: [],
+              needsConfirmation: drafts[key]?.needsConfirmation ?? false,
+            })
+      }
+      return [...byKey.values()]
+    })
+  }
+
+  async function ensureAnswerSaved(key: string) {
+    if (rowProblems.length > 0) throw new Error("Corrige las respuestas marcadas antes de adjuntar fotografías.")
+    const result = await saveInspectionAnswersAction(answersPayload())
+    if (!result.ok) throw new Error(result.message ?? "No se pudo guardar la respuesta.")
+    applySavedAnswerRefs(result)
+    operation.setMessage("Respuesta guardada y lista para recibir evidencia.")
+    const refs = result.data?.answerRefs
+    if (!Array.isArray(refs)) throw new Error("El servidor no devolvió la respuesta guardada.")
+    const target = refs.find((value) => {
+      if (!value || typeof value !== "object") return false
+      const row = value as { sectionId?: unknown; itemId?: unknown }
+      return draftKey(String(row.sectionId ?? ""), String(row.itemId ?? "")) === key
+    }) as { answerId?: unknown } | undefined
+    if (typeof target?.answerId !== "string") throw new Error("No se encontró la respuesta guardada.")
+    return target.answerId
+  }
+
   function saveAnswers() {
-    operation.run(() => saveInspectionAnswersAction(answersPayload()), applyVersion)
+    operation.run(() => saveInspectionAnswersAction(answersPayload()), applySavedAnswerRefs)
   }
 
   const facts = [
-    { label: "Estado", value: INSPECTION_RUN_STATUS_LABELS[run.status] ?? run.status },
+    { label: "Estado", value: inspectionTaskStatusLabel(run.status) },
     { label: "Tipo", value: INSPECTION_KIND_LABELS[templateKind] ?? templateKind },
     { label: "Origen", value: INSPECTION_ORIGIN_LABELS[run.origin] ?? run.origin },
     { label: "Faena", value: worksiteName },
-    { label: "Sujeto", value: run.subjectType ? `${run.subjectType}${run.subjectLabel ? ` · ${run.subjectLabel}` : ""}` : run.subjectLabel ?? "—" },
+    { label: "Sujeto", value: run.subjectType ? `${inspectionSubjectTypeLabel(run.subjectType)}${run.subjectLabel ? ` · ${run.subjectLabel}` : ""}` : run.subjectLabel ?? "—" },
     { label: "Asignada a", value: assigneeName ?? "Sin asignar" },
-    { label: "Programada para", value: run.scheduledFor ?? "—" },
+    { label: "Programada para", value: run.scheduledFor ? formatDate(run.scheduledFor) : "Sin fecha" },
     { label: "Ejecutada por", value: executorName ? `${executorName} · ${formatDateTime(run.executedAt!)}` : "Sin ejecutar" },
-    { label: "Cumplimiento", value: run.compliancePercent === null ? (summary.compliancePercent === null ? "No calculable" : `${summary.compliancePercent}% (previsto)`) : `${run.compliancePercent}%` },
+    { label: "Cumplimiento", value: run.compliancePercent === null ? (summary.compliancePercent === null ? "Aún no calculable" : `${summary.compliancePercent}% de ${summary.conforming + summary.partial + summary.nonConforming} evaluados`) : `${run.compliancePercent}%` },
+    { label: "Ubicación", value: coords ? `${coords.lat}, ${coords.lon} · dato de apoyo opcional` : "No capturada · opcional" },
     // Qué acredita en el programa anual, y en qué etapa. El estado del run dice
     // si ya ocurrió: `completed` cierra la primera, `reviewed` la segunda.
     {
@@ -618,12 +716,35 @@ export function InspectionRunDetail({
       ].filter(Boolean).join(" · ") || "No acredita ninguna actividad",
     },
   ]
+  const selfReviewBlocked = run.status === "completed" && canReview && run.executedByUserId === currentUserId
+  const canCurrentUserReview = run.status === "completed" && canReview && !selfReviewBlocked
+  const showMobileActionBar = editable || canCurrentUserReview
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-px overflow-hidden border-y border-[var(--color-border)] bg-[var(--color-border)] md:grid-cols-4">
+    <div className={showMobileActionBar ? "space-y-6 pb-24 md:pb-0" : "space-y-6"}>
+      <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 md:hidden">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-eyebrow">Trabajo actual</p>
+            <p className="mt-1 text-base font-semibold">{worksiteName}{run.subjectLabel ? ` · ${run.subjectLabel}` : ""}</p>
+          </div>
+          <Badge variant={runStatusBadgeVariant(run.status)}>{inspectionTaskStatusLabel(run.status)}</Badge>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+          <div><span className="block text-[var(--color-text-subtle)]">Responsable</span><span className="mt-0.5 block font-medium">{assigneeName ?? "Sin asignar"}</span></div>
+          <div><span className="block text-[var(--color-text-subtle)]">Avance obligatorio</span><span className="mt-0.5 block font-medium">{answeredRequired} de {requiredItems.length || items.length}</span></div>
+        </div>
+        <details className="mt-3 border-t border-[var(--color-border)] pt-3 text-sm">
+          <summary className="cursor-pointer font-medium">Ver contexto completo</summary>
+          <dl className="mt-3 grid grid-cols-2 gap-3">
+            {facts.slice(1).map((fact) => <div key={fact.label}><dt className="text-xs text-[var(--color-text-subtle)]">{fact.label}</dt><dd className="mt-0.5 text-xs font-medium">{fact.value}</dd></div>)}
+          </dl>
+        </details>
+      </section>
+
+      <div className="hidden grid-cols-2 gap-px overflow-hidden border-y border-[var(--color-border)] bg-[var(--color-border)] md:grid md:grid-cols-4">
         {facts.map((fact) => (
-          <div key={fact.label} className="bg-[var(--color-surface-1)] px-4 py-3">
+          <div key={fact.label} className="bg-[var(--color-surface)] px-4 py-3">
             <span className="text-eyebrow">{fact.label}</span>
             <span className="mt-1 block text-sm font-medium">{fact.value}</span>
           </div>
@@ -632,8 +753,8 @@ export function InspectionRunDetail({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Badge variant={runStatusBadgeVariant(run.status)}>{INSPECTION_RUN_STATUS_LABELS[run.status] ?? run.status}</Badge>
-          <span className="text-sm text-[var(--color-text-subtle)]">{answeredCount} de {items.length} ítems respondidos</span>
+          <Badge variant={runStatusBadgeVariant(run.status)}>{inspectionTaskStatusLabel(run.status)}</Badge>
+          <span className="text-sm text-[var(--color-text-subtle)]">{answeredRequired} de {requiredItems.length || items.length} obligatorios · {answeredCount} de {items.length} totales</span>
         </div>
         <div className="flex flex-wrap gap-2">
           {editable && (
@@ -648,7 +769,7 @@ export function InspectionRunDetail({
             </Button>
           )}
           {editable && (
-            <Button type="button" size="sm" variant="secondary" disabled={operation.pending || rowProblems.length > 0} onClick={saveAnswers}>
+            <Button className="hidden md:inline-flex" type="button" size="sm" variant="secondary" disabled={operation.pending || rowProblems.length > 0} onClick={saveAnswers}>
               Guardar respuestas
             </Button>
           )}
@@ -659,9 +780,9 @@ export function InspectionRunDetail({
               <a href={`/prevencion/inspecciones/${run.id}/print`} target="_blank" rel="noreferrer">Acta PDF</a>
             </Button>
           )}
-          {editable && <CompleteDialog run={run} completion={completion} rowProblems={rowProblems} payload={completePayload} onSaved={applyVersion} />}
-          {run.status === "completed" && canReview && (
-            <ReviewDialog run={run} findings={findings} currentUserId={currentUserId} version={version} />
+          {editable && <span className="hidden md:inline-flex"><CompleteDialog run={run} completion={completion} rowProblems={rowProblems} payload={completePayload} onSaved={applyVersion} /></span>}
+          {canCurrentUserReview && (
+            <span className="hidden md:inline-flex"><ReviewDialog run={run} findings={findings} currentUserId={currentUserId} version={version} /></span>
           )}
           {/* A-05: rectificar una ejecución declarada por error. Antes no
               existía camino de vuelta y el dato quedaba firmado. */}
@@ -687,15 +808,34 @@ export function InspectionRunDetail({
         </div>
       </div>
 
-      {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+      {operation.message && <p role="status" className="rounded-lg border border-[var(--color-success-line)] bg-[var(--color-success-tint)] px-3 py-2 text-sm text-[var(--color-success-ink)] md:static">{operation.message}</p>}
+
+      {selfReviewBlocked && (
+        <p className="rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-sm text-[var(--color-warning-ink)]">
+          Tú ejecutaste esta inspección. Para conservar la revisión segregada, debe cerrarla otra persona con permiso de revisión.
+        </p>
+      )}
+
+      {physicalSourceRequired && (
+        <section className="space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+          <div>
+            <p className="text-eyebrow">Paso 1 · documento fuente</p>
+            <h2 className="mt-1 text-base font-semibold">Transcribir el Reporte de Equipos</h2>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">El jefe de faena carga y transcribe el registro físico del operador/mecánico. Prevención revisa y cierra después; no corresponde que quien transcribe se auto-revise.</p>
+          </div>
+          {canIngest && editable && <SourceFormUpload runId={run.id} hasDocuments={documents.length > 0} />}
+          {documents.length > 0 && <div className="lg:hidden"><SourceFormViewer documents={documents} /></div>}
+        </section>
+      )}
 
       {/* Función #9: en terreno la conexión falla justo cuando hay que cerrar
           la inspección. El envío queda en el dispositivo y se reintenta solo. */}
       {editable && (
         <div className="flex flex-wrap items-center gap-3 text-sm">
           <Button type="button" size="sm" variant="ghost" onClick={() => void queueOffline()} disabled={operation.pending || !completion.allowed}>
-            Guardar sin conexión
+            Encolar cierre en este dispositivo
           </Button>
+          <span className="text-xs text-[var(--color-text-subtle)]">Sólo protege el cierre cuando ya está listo; no guarda fotografías ni planillas.</span>
           {queued > 0 && (
             <>
               <span className="text-[var(--color-text-subtle)]">1 cierre pendiente de sincronizar.</span>
@@ -712,24 +852,24 @@ export function InspectionRunDetail({
         </p>
       )}
 
-      {editable && rowProblems.length > 0 && (
+      {editable && (rowProblemEntries.length > 0 || completionBlockers.length > 0) && (
         <div className="rounded-md border border-[var(--color-danger-line)] bg-[var(--color-surface-2)] p-4 text-sm">
-          <p className="font-medium">Corrige antes de guardar:</p>
+          <p className="font-medium">Corrige antes de guardar o declarar ejecutada:</p>
           <ul className="mt-2 list-disc space-y-1 pl-4">
-            {rowProblems.slice(0, 8).map((problem) => <li key={problem}>{problem}</li>)}
-            {rowProblems.length > 8 && <li>y {rowProblems.length - 8} más…</li>}
+            {rowProblemEntries.slice(0, 6).map((entry) => <li key={entry.key}>
+              <a className="underline md:hidden" href={`#item-mobile-${entry.key}`}>{entry.problem}</a>
+              <a className="hidden underline md:inline" href={`#item-desktop-${entry.key}`}>{entry.problem}</a>
+            </li>)}
+            {completionBlockers.slice(0, 6).map((item) => <li key={item.detail}>{item.detail}</li>)}
+            {rowProblemEntries.length + completionBlockers.length > 12 && <li>y {rowProblemEntries.length + completionBlockers.length - 12} más…</li>}
           </ul>
         </div>
       )}
 
-      {editable && !completion.allowed && (
-        <div className="rounded-md border border-[var(--color-warning-line)] bg-[var(--color-surface-2)] p-4 text-sm">
-          <p className="font-medium">Aún no puede declararse ejecutada:</p>
-          <ul className="mt-2 list-disc space-y-1 pl-4">
-            {completion.blockers.slice(0, 8).map((item) => <li key={item.detail}>{item.detail}</li>)}
-            {completion.blockers.length > 8 && <li>y {completion.blockers.length - 8} más…</li>}
-          </ul>
-        </div>
+      {editable && sections.length > 1 && (
+        <nav aria-label="Secciones de la inspección" className="sticky top-0 z-10 -mx-1 flex gap-2 overflow-x-auto bg-[var(--color-bg)] px-1 py-2 md:static md:bg-transparent">
+          {sections.map((section, index) => <a key={section.id} href={`#section-${section.id}`} className="shrink-0 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs font-medium">{index + 1}. {section.title}</a>)}
+        </nav>
       )}
 
       <div className={documents.length > 0
@@ -737,10 +877,67 @@ export function InspectionRunDetail({
         : undefined}
       >
         <div className="space-y-4">
-        {sections.map((section) => (
-          <section key={section.id} className="space-y-2">
+        {sections.map((section, sectionIndex) => (
+          <section key={section.id} id={`section-${section.id}`} className="scroll-mt-16 space-y-3">
+            <p className="text-eyebrow">Sección {sectionIndex + 1} de {sections.length}</p>
             <h2 className="text-sm font-semibold">{section.title}</h2>
-            <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
+            <div className="space-y-3 md:hidden">
+              {section.items.map((item, itemIndex) => {
+                const key = draftKey(section.id, item.id)
+                const draft = drafts[key] ?? { result: "" as ResultValue, comment: "", value: "", needsConfirmation: false }
+                const needsComment = draft.result === "not_applicable" || draft.result === "partial"
+                const scorable = fieldKindIsScorable(item.kind)
+                return (
+                  <article key={item.id} id={`item-mobile-${key}`} className="scroll-mt-28 space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <h3 className="text-sm font-semibold leading-snug">{itemIndex + 1}. {item.label}</h3>
+                      {item.required ? <Badge variant="outline">Obligatorio</Badge> : <span className="text-xs text-[var(--color-text-subtle)]">Opcional</span>}
+                    </div>
+                    {draft.needsConfirmation && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="warning">Leído de la planilla</Badge>
+                        {editable && <Button type="button" size="sm" variant="secondary" onClick={() => confirmRead(section.id, item.id)}>Confirmar contra la foto</Button>}
+                      </div>
+                    )}
+                    {scorable ? (
+                      <>
+                        <Field label="Resultado" required={item.required}>
+                          {editable ? (
+                            <Select value={draft.result || "__unset__"} onValueChange={(value) => update(section.id, item.id, { result: (value === "__unset__" ? "" : value) as ResultValue })}>
+                              <SelectTrigger aria-label={`Resultado de ${item.label}`}><SelectValue placeholder="Sin responder" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__unset__">Sin responder</SelectItem>
+                                {Object.entries(INSPECTION_RESULT_LABELS)
+                                  .filter(([value]) => value !== "recorded")
+                                  .filter(([value]) => value !== "partial" || fieldKindAcceptsPartial(item.kind))
+                                  .map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          ) : draft.result ? <Badge variant={resultBadgeVariant(draft.result)}>{INSPECTION_RESULT_LABELS[draft.result] ?? draft.result}</Badge> : <span>Sin respuesta</span>}
+                        </Field>
+                        <Field label="Comentario" hint={needsComment ? "Obligatorio para Regular o No aplica; mínimo 3 caracteres." : "Opcional, salvo que el resultado requiera justificación."}>
+                          {editable ? <Textarea value={draft.comment} onChange={(event) => update(section.id, item.id, { comment: event.target.value })} rows={3} aria-label={`Comentario de ${item.label}`} /> : <p className="text-sm">{draft.comment || "Sin comentario"}</p>}
+                        </Field>
+                      </>
+                    ) : (
+                      <Field label="Respuesta" required={item.required}>
+                        {editable ? <NonScorableField item={item} value={draft.value} onChange={(next) => update(section.id, item.id, { value: next, result: next.trim() ? "recorded" : "" })} /> : <p className="whitespace-pre-wrap text-sm">{draft.value || "Sin respuesta"}</p>}
+                      </Field>
+                    )}
+                    <Field label="Evidencia fotográfica" hint="La foto queda vinculada a este ítem.">
+                      <AnswerEvidence
+                        answerId={savedAnswers.get(key)?.answerId ?? null}
+                        evidence={savedAnswers.get(key)?.evidence ?? []}
+                        editable={editable}
+                        readyToPersist={draft.result !== ""}
+                        ensureAnswerId={() => ensureAnswerSaved(key)}
+                      />
+                    </Field>
+                  </article>
+                )
+              })}
+            </div>
+            <div className="hidden overflow-x-auto rounded-lg border border-[var(--color-border)] md:block">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -762,7 +959,7 @@ export function InspectionRunDetail({
                     // el texto no tenía dónde guardarse.
                     const scorable = fieldKindIsScorable(item.kind)
                     return (
-                      <TableRow key={item.id}>
+                      <TableRow key={item.id} id={`item-desktop-${key}`} className="scroll-mt-20">
                         <TableCell className="text-sm">
                           {item.label}
                           {item.required && <Badge variant="outline" className="ml-2">Obligatorio</Badge>}
@@ -841,6 +1038,8 @@ export function InspectionRunDetail({
                             answerId={savedAnswers.get(key)?.answerId ?? null}
                             evidence={savedAnswers.get(key)?.evidence ?? []}
                             editable={editable}
+                            readyToPersist={draft.result !== ""}
+                            ensureAnswerId={() => ensureAnswerSaved(key)}
                           />
                         </TableCell>
                       </TableRow>
@@ -852,7 +1051,9 @@ export function InspectionRunDetail({
           </section>
         ))}
         </div>
-        {documents.length > 0 && <SourceFormViewer documents={documents} />}
+        {documents.length > 0 && (physicalSourceRequired
+          ? <div className="hidden lg:block"><SourceFormViewer documents={documents} /></div>
+          : <SourceFormViewer documents={documents} />)}
       </div>
 
       {/* Los instrumentos que no puntúan ítems registran lo que encontraron. La
@@ -868,7 +1069,7 @@ export function InspectionRunDetail({
         />
       )}
 
-      {canIngest && editable && <SourceFormUpload runId={run.id} hasDocuments={documents.length > 0} />}
+      {!physicalSourceRequired && canIngest && editable && <SourceFormUpload runId={run.id} hasDocuments={documents.length > 0} />}
 
       {closingAct && (
         <section className="space-y-3">
@@ -948,7 +1149,7 @@ export function InspectionRunDetail({
                     <TableHead>Hallazgo</TableHead>
                     <TableHead>Criticidad</TableHead>
                     <TableHead>Estado</TableHead>
-                    {canExecute && <TableHead className="text-right">Acción</TableHead>}
+                    {(canExecute || canReview) && <TableHead className="text-right">Acción</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -996,6 +1197,19 @@ export function InspectionRunDetail({
         <p className="text-sm text-[var(--color-text-subtle)]">
           Revisada {formatDateTime(run.reviewedAt!)} por {reviewerName ?? "—"}: {run.reviewComment}
         </p>
+      )}
+
+      {showMobileActionBar && (
+        <div className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 grid grid-cols-2 gap-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-[var(--shadow-lg)] md:hidden">
+          {editable ? (
+            <>
+              <Button type="button" variant="secondary" disabled={operation.pending || rowProblems.length > 0} onClick={saveAnswers}>Guardar</Button>
+              <CompleteDialog run={run} completion={completion} rowProblems={rowProblems} payload={completePayload} onSaved={applyVersion} />
+            </>
+          ) : canCurrentUserReview ? (
+            <div className="col-span-2"><ReviewDialog run={run} findings={findings} currentUserId={currentUserId} version={version} /></div>
+          ) : null}
+        </div>
       )}
     </div>
   )
@@ -1270,11 +1484,13 @@ function CapaDialog({ finding, assignees, hasVehicle }: {
   hasVehicle: boolean
 }) {
   const [open, setOpen] = React.useState(false)
-  const [responsibleUserId, setResponsibleUserId] = React.useState("_none")
+  const [responsibleUserId, setResponsibleUserId] = React.useState("")
   // Sólo tiene sentido con un equipo de flota como sujeto; el servicio lo
   // rechaza igual, pero ofrecerlo sin equipo sería un botón que siempre falla.
   const [createMaintenance, setCreateMaintenance] = React.useState(false)
   const operation = useOperation()
+  const capaRule = capaPriorityForCriticality(finding.criticality)
+  const targetDate = addDays(todayInChile(), capaRule.dueInDays)
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -1284,7 +1500,7 @@ function CapaDialog({ finding, assignees, hasVehicle }: {
     operation.run(() => createFindingCapaAction({
       findingId: finding.id,
       actionDescription: form.get("actionDescription"),
-      responsibleUserId: responsibleUserId || null,
+      responsibleUserId,
       immediateMeasure: immediateMeasure || null,
       createMaintenance: hasVehicle && createMaintenance,
     }), () => setOpen(false))
@@ -1299,14 +1515,19 @@ function CapaDialog({ finding, assignees, hasVehicle }: {
             <DialogTitle>Derivar hallazgo a CAPA</DialogTitle>
             <DialogDescription>{finding.description}</DialogDescription>
           </DialogHeader>
+          <div className="grid grid-cols-2 gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm">
+            <div><span className="block text-xs text-[var(--color-text-subtle)]">Gravedad</span><Badge className="mt-1" variant={criticalityBadgeVariant(finding.criticality)}>{FINDING_CRITICALITY_LABELS[finding.criticality] ?? finding.criticality}</Badge></div>
+            <div><span className="block text-xs text-[var(--color-text-subtle)]">Compromiso automático</span><span className="mt-1 block font-semibold">{formatDate(targetDate)} · {capaRule.dueInDays} días</span></div>
+            {capaRule.requiresImmediateStop && <p className="col-span-2 text-xs font-medium text-[var(--color-danger-ink)]">La criticidad exige detener de inmediato la tarea o el equipo afectado.</p>}
+          </div>
           <Field label="Acción correctiva" hint="Mínimo 3 caracteres.">
             <Textarea name="actionDescription" required minLength={3} maxLength={3000} />
           </Field>
           <Field label="Medida inmediata" hint="Opcional.">
             <Textarea name="immediateMeasure" maxLength={3000} />
           </Field>
-          <Field label="Responsable" hint="Opcional.">
-            <Select value={responsibleUserId} onValueChange={setResponsibleUserId}><SelectTrigger aria-label="Responsable de la CAPA"><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="responsibleUserId" value={responsibleUserId === "_none" ? "" : responsibleUserId} />
+          <Field label="Responsable" required hint="Debe quedar una persona a cargo antes de derivar.">
+            <Select value={responsibleUserId} onValueChange={setResponsibleUserId}><SelectTrigger aria-label="Responsable de la CAPA"><SelectValue placeholder="Selecciona responsable" /></SelectTrigger><SelectContent>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="responsibleUserId" value={responsibleUserId} />
           </Field>
           {hasVehicle && (
             <div className="space-y-1">
@@ -1321,7 +1542,7 @@ function CapaDialog({ finding, assignees, hasVehicle }: {
             </div>
           )}
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-          <DialogFooter><Button type="submit" disabled={operation.pending}>Derivar</Button></DialogFooter>
+          <DialogFooter><Button type="submit" disabled={operation.pending || !responsibleUserId}>Derivar con responsable</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -1389,12 +1610,13 @@ function SourceFormViewer({ documents }: { documents: RunDocumentInfo[] }) {
   const current = documents[Math.min(index, documents.length - 1)]
   if (!current) return null
   const src = `/api/prevencion/inspecciones/documento/${current.path.split("/").pop()}`
+  const isPdf = current.path.toLowerCase().endsWith(".pdf")
 
   return (
     <aside className="space-y-2 lg:sticky lg:top-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold">Planilla original</h2>
-        <div className="flex items-center gap-1">
+        {!isPdf && <div className="flex items-center gap-1">
           <Button type="button" size="sm" variant="ghost" aria-label="Reducir la planilla"
             onClick={() => setZoom((z) => Math.max(0.5, Math.round((z - 0.25) * 100) / 100))}>−</Button>
           <span className="min-w-12 text-center text-xs tabular-nums text-[var(--color-text-subtle)]">
@@ -1403,16 +1625,22 @@ function SourceFormViewer({ documents }: { documents: RunDocumentInfo[] }) {
           <Button type="button" size="sm" variant="ghost" aria-label="Ampliar la planilla"
             onClick={() => setZoom((z) => Math.min(4, Math.round((z + 0.25) * 100) / 100))}>+</Button>
           <Button type="button" size="sm" variant="ghost" onClick={() => setZoom(1)}>Ajustar</Button>
-        </div>
+        </div>}
       </div>
       <div className="max-h-[70vh] overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]">
-        {/* eslint-disable-next-line @next/next/no-img-element -- la ruta es dinámica y autorizada por sesión; no pasa por el optimizador */}
-        <img
-          src={src}
-          alt={current.caption ?? "Planilla del reporte de equipos"}
-          className="origin-top-left"
-          style={{ width: `${zoom * 100}%`, maxWidth: "none" }}
-        />
+        {isPdf ? (
+          <object data={src} type="application/pdf" className="h-[60dvh] min-h-96 w-full" aria-label={current.caption ?? "Planilla PDF del reporte de equipos"}>
+            <p className="p-4 text-sm">Este navegador no puede mostrar el PDF. <a className="underline" href={src} target="_blank" rel="noreferrer">Abrir documento</a>.</p>
+          </object>
+        ) : (
+          /* eslint-disable-next-line @next/next/no-img-element -- la ruta es dinámica y autorizada por sesión; no pasa por el optimizador */
+          <img
+            src={src}
+            alt={current.caption ?? "Planilla del reporte de equipos"}
+            className="origin-top-left"
+            style={{ width: `${zoom * 100}%`, maxWidth: "none" }}
+          />
+        )}
       </div>
       {documents.length > 1 && (
         <div className="flex flex-wrap gap-1">
@@ -1436,6 +1664,7 @@ function SourceFormViewer({ documents }: { documents: RunDocumentInfo[] }) {
 
 /** Sube la foto de la planilla. Requiere `prevention:inspections:ingest`. */
 function SourceFormUpload({ runId, hasDocuments }: { runId: string; hasDocuments: boolean }) {
+  const router = useRouter()
   const inputRef = React.useRef<HTMLInputElement>(null)
   const [pending, setPending] = React.useState(false)
   const [message, setMessage] = React.useState("")
@@ -1448,10 +1677,14 @@ function SourceFormUpload({ runId, hasDocuments }: { runId: string; hasDocuments
       body.append("file", file)
       body.append("runId", runId)
       const response = await fetch("/api/prevencion/inspecciones/documento", { method: "POST", body })
-      const payload = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(payload?.error ?? "No se pudo subir la planilla.")
-      // La planilla la lee el servidor al renderizar el detalle.
-      window.location.reload()
+      if (!response.ok) {
+        const failure = await response.json().catch(() => ({}))
+        throw new Error(failure?.error ?? "No se pudo subir la planilla.")
+      }
+      // Actualiza el documento del Server Component y conserva el estado del
+      // checklist cliente; una recarga completa destruía el borrador.
+      setMessage("Planilla cargada. Tu borrador de respuestas se conserva.")
+      router.refresh()
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudo subir la planilla.")
     } finally {
@@ -1468,6 +1701,7 @@ function SourceFormUpload({ runId, hasDocuments }: { runId: string; hasDocuments
       <input
         ref={inputRef}
         type="file"
+        aria-label={hasDocuments ? "Agregar otra hoja del reporte físico" : "Subir la planilla física"}
         accept="image/jpeg,image/png,application/pdf"
         className="sr-only"
         onChange={(event) => {

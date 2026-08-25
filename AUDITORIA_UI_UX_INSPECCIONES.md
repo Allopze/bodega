@@ -2,21 +2,33 @@
 
 **Fecha:** 24 de agosto de 2026  
 **Perspectiva evaluada:** prevencionista de riesgos, con énfasis en trabajo de terreno  
-**Estado final:** análisis de interfaz y contratos E2E contrastado con capturas automatizadas en escritorio y móvil
+**Estado final:** auditoría remediada localmente; implementación, pruebas y capturas finales completadas
 
-## Veredicto final
+## Veredicto actualizado después de la remediación
 
-El flujo **no es todavía suficientemente intuitivo para un prevencionista de riesgos**, especialmente durante una inspección desde un teléfono.
+**Sí: el flujo ahora es suficientemente intuitivo para el trabajo habitual de un prevencionista**, tanto en escritorio como en un teléfono. La bandeja responde qué requiere atención; la ejecución móvil mantiene la pregunta, el resultado, el comentario y la evidencia en una sola unidad; y las acciones de completar, revisar o derivar explican sus condiciones antes de confirmar.
 
-La arquitectura general se entiende y la trazabilidad es sólida, pero la interfaz está organizada alrededor del registro y sus datos, no alrededor de la pregunta operacional del usuario: **“¿Qué tengo que hacer ahora y qué me falta para terminar?”**
+Evaluación heurística posterior a la implementación y a la revisión visual:
 
-Evaluación heurística después del contraste visual:
+- Escritorio / gestión: **8,5/10**
+- Teléfono / terreno: **8/10**
+- Experiencia general: **8/10**
 
-- Escritorio / gestión: **6/10**
-- Teléfono / terreno: **3/10**
-- Experiencia general: **5/10**
+No se asigna una nota mayor porque todavía falta una prueba observada con prevencionistas reales en condiciones de faena y conectividad degradada. La capacidad offline continúa limitada al cierre ya preparado; la mejora consiste en describir ese alcance sin prometer que fotografías y documentos se encolan.
 
-Estas puntuaciones son una estimación heurística, no el resultado de una prueba presencial con usuarios.
+Las secciones de hallazgos conservan el diagnóstico original como línea base histórica. El estado vigente de cada hallazgo está resumido a continuación.
+
+## Estado de remediación de los 34 hallazgos
+
+| Grupo | Hallazgos | Estado actual | Evidencia principal |
+|---|---|---|---|
+| Bandeja y creación | UX-I-01, 08–14, 32, 34 | **Resueltos** | Tarjetas móviles; búsqueda y filtros coherentes; vencidas primero; exportación fiel; alta sin valores peligrosos; acciones consolidadas y pie persistente. |
+| Ejecución en terreno | UX-I-02, 03, 06, 15–17, 19, 30 | **Resueltos** | Checklist móvil por tarjetas; navegación y acciones persistentes; respuesta + evidencia en un gesto; progreso obligatorio; bloqueos enlazados; ubicación persistida; copy offline exacto. |
+| Reporte de Equipos, revisión y CAPA | UX-I-04, 05, 07, 18, 31 | **Resueltos** | Planilla física primero; visor de imagen/PDF; refresco sin descartar borradores; responsabilidades explícitas; auto-revisión advertida; responsable CAPA obligatorio con gravedad y plazo visibles. |
+| Plantillas y programación | UX-I-20–28, 33 | **Resueltos** | Ciclo borrador/aprobación inequívoco; tarjetas y filtros móviles; PDTP por número y nombre; ejecución creada se abre; cambios de estado confirmados; intervalo efectivo explícito; sujeto/riesgo visibles. |
+| Entrada diaria | UX-I-29 | **Resuelto** | Inicio de Prevención incluye ejecuciones y revisiones de inspección según los mismos estados accionables y permisos de la cola personal. |
+
+Detalle de implementación y evidencia por ítem: `tasks/TODO_INSPECCIONES_UI_UX_2026-08-24.md`.
 
 ## Modelo actual del flujo
 
@@ -29,7 +41,7 @@ Ejecución y guardado de respuestas
     ↓
 Carga de evidencias
     ↓
-Cierre como “Ejecutada”
+Finalización → “Pendiente de revisión”
     ↓
 Revisión segregada
     ↓
@@ -42,40 +54,70 @@ Para Reporte de Equipos existe una rama diferente:
 Registro físico → jefe de faena lo transcribe → prevencionista lo revisa
 ```
 
-La diferencia de responsabilidades existe en los permisos, pero la interfaz no la explica suficientemente.
+La interfaz ahora explica que el jefe de faena transcribe el registro físico y que la revisión corresponde a otra persona con permiso de Prevención; la misma segregación se valida en el servidor.
 
 ## Evidencia visual ejecutada
 
 Se ejecutó el capturador oficial `scripts/capture-all-routes.ts` con Node 22.13 sobre la base PostgreSQL desechable `bodega_capture`, usando el filtro `prevencion-inspeccion` y el modo completo de interacciones.
 
-Resultados:
+Resultados finales posteriores a la implementación:
 
 - **5 rutas**: bandeja, plantillas, programación, detalle y acta imprimible.
 - **2 viewports**: escritorio de 1920 × 1080 y móvil de 390 × 844.
-- **40 capturas** con estado `capture-ok`: 10 vistas base y 30 estados de diálogos, selectores o menús.
-- Build de producción, migraciones y fixtures completados.
+- **42 capturas** con estado `capture-ok`: 10 vistas base y 32 estados de diálogos, selectores o menús.
+- Build de producción completo, TypeScript, migraciones y fixtures completados.
+- Las 10 rutas base respondieron HTTP 200.
 - Ningún error JavaScript de cliente.
-- Ninguna ruta devolvió error HTTP.
-- El manifiesto declaró ausencia de scroll horizontal a nivel de página. La revisión visual sí encontró desbordamiento dentro de contenedores de tabla, que esa métrica no detecta.
-- El proceso terminó con código 1 sólo porque capturó dos veces el mismo diálogo **Nuevo programa** y ambos PNG tienen el mismo hash. No faltan archivos ni existen capturas inválidas.
+- Ningún desbordamiento horizontal a nivel de página.
+- Integridad verde: sin URL inválida, archivo faltante, huérfano, obsoleto, referencia duplicada, hash duplicado ni hash compartido.
+- La primera repetición final descubrió una colisión de nombres entre dos selectores cuyas etiquetas truncadas eran iguales. Se corrigió el capturador con una prueba de regresión y se regeneró toda la evidencia; no era un defecto de la interfaz.
 
 Evidencia representativa:
 
-- [Bandeja en escritorio](audit/screenshots/inspecciones-ui-ux-2026-08-24/desktop-prevencion-inspecciones.png)
-- [Bandeja en móvil](audit/screenshots/inspecciones-ui-ux-2026-08-24/mobile-prevencion-inspecciones.png)
-- [Detalle en móvil](audit/screenshots/inspecciones-ui-ux-2026-08-24/mobile-prevencion-inspeccion-detalle.png)
-- [Nueva inspección en móvil](audit/screenshots/inspecciones-ui-ux-2026-08-24/mobile-prevencion-inspecciones-modal-auto-nueva-inspecci-n.png)
-- [Plantillas en móvil](audit/screenshots/inspecciones-ui-ux-2026-08-24/mobile-prevencion-inspecciones-plantillas.png)
-- [Publicar versión en móvil](audit/screenshots/inspecciones-ui-ux-2026-08-24/mobile-prevencion-inspecciones-plantillas-modal-auto-publicar-nueva-versi-n.png)
-- [Nueva programación en móvil](audit/screenshots/inspecciones-ui-ux-2026-08-24/mobile-prevencion-inspecciones-programacion-modal-auto-nuevo-programa.png)
-- [Derivar a CAPA en móvil](audit/screenshots/inspecciones-ui-ux-2026-08-24/mobile-prevencion-inspeccion-detalle-modal-auto-derivar-a-capa.png)
-- [Acta en escritorio](audit/screenshots/inspecciones-ui-ux-2026-08-24/desktop-prevencion-inspeccion-print.png)
-- [Acta en móvil](audit/screenshots/inspecciones-ui-ux-2026-08-24/mobile-prevencion-inspeccion-print.png)
-- [Manifiesto completo](audit/screenshots/inspecciones-ui-ux-2026-08-24/manifest.json)
+- [Bandeja en escritorio](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/desktop-prevencion-inspecciones.png)
+- [Bandeja en móvil](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspecciones.png)
+- [Detalle en móvil](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspeccion-detalle.png)
+- [Nueva inspección en móvil](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspecciones-modal-auto-nueva-inspecci-n.png)
+- [Plantillas en móvil](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspecciones-plantillas.png)
+- [Incorporar borrador en móvil](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspecciones-plantillas-modal-auto-incorporar-borrador.png)
+- [Nueva programación en móvil](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspecciones-programacion-modal-auto-nuevo-programa.png)
+- [Derivar a CAPA en móvil](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspeccion-detalle-modal-auto-derivar-a-capa.png)
+- [Acreditación PDTP en móvil](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspecciones-plantillas-modal-auto-acreditaci-n-pdtp.png)
+- [Acta en escritorio](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/desktop-prevencion-inspeccion-print.png)
+- [Acta en móvil](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/mobile-prevencion-inspeccion-print.png)
+- [Manifiesto completo](audit/screenshots/inspecciones-ui-ux-fixes-2026-08-24/manifest.json)
+
+### Evidencia posterior: estados operativos que faltaban
+
+Se añadió una segunda pasada específica sobre la base desechable `bodega_inspections_capture`, con dos fixtures persistidos y el filtro `inspecciones-evidencia`:
+
+- **Inspección en curso:** dos de tres respuestas obligatorias guardadas, una pendiente, avance separado del cumplimiento y acciones persistentes.
+- **Reporte de Equipos en transcripción:** definición completa de 70 campos, cinco valores transcritos, responsabilidad asignada a jefatura y planilla física N° 03101 servida por la ruta autenticada.
+- **14 capturas `capture-ok`:** 4 vistas base —dos rutas × escritorio/móvil— y 10 estados de diálogo.
+- **4/4 vistas base HTTP 200**, sin errores de cliente ni desbordamiento horizontal.
+- Integridad verde: cero resultados inválidos, archivos faltantes, huérfanos, referencias duplicadas o hashes duplicados.
+
+La primera revisión visual de esta nueva evidencia detectó tres defectos que la verificación automática no podía interpretar y que se corrigieron antes de conservar las capturas finales:
+
+1. El standalone cambia su directorio de trabajo y buscaba la planilla en una ruta distinta a la usada por el sembrado. El capturador ahora comparte un `CAPTURE_STORAGE_PATH` absoluto y desechable, sin heredar el volumen `STORAGE_PATH` de la aplicación.
+2. El tipo técnico `equipment` aparecía sin traducir. Los tipos conocidos ahora se presentan como **Equipo**, **Vehículo** o **Camión**, conservando intactos los tipos libres del usuario.
+3. La evidencia por respuesta exponía el control nativo en inglés (`Choose Files`). Se reemplazó por **Adjuntar fotos**, manteniendo el input accesible y oculto.
+
+La inspección en curso muestra en la primera pantalla móvil qué trabajo es, quién responde, cuánto falta y por qué todavía no puede cerrarse. Reporte de Equipos presenta primero el documento fuente y explica, antes del formulario, que jefatura transcribe el registro físico y Prevención realiza la revisión segregada. En escritorio, la planilla permanece a la derecha del formulario; en móvil se apila después del paso documental.
+
+Evidencia representativa adicional:
+
+- [Inspección en curso — escritorio](audit/screenshots/inspecciones-estados-operativos-2026-08-24/desktop-prevencion-inspeccion-en-curso.png)
+- [Inspección en curso — móvil](audit/screenshots/inspecciones-estados-operativos-2026-08-24/mobile-prevencion-inspeccion-en-curso.png)
+- [Reporte de Equipos — escritorio](audit/screenshots/inspecciones-estados-operativos-2026-08-24/desktop-prevencion-inspeccion-reporte-equipos.png)
+- [Reporte de Equipos — móvil](audit/screenshots/inspecciones-estados-operativos-2026-08-24/mobile-prevencion-inspeccion-reporte-equipos.png)
+- [Manifiesto de estados operativos](audit/screenshots/inspecciones-estados-operativos-2026-08-24/manifest.json)
+
+La cobertura funcional completa también quedó ejecutada en Chromium: **17/17 E2E** de catálogo, programación, cierre, CAPA, flota y roles/permisos. La corrida descubrió y corrigió un caso real: una actividad PDTP ya acreditada desaparecía del selector cuando dejaba de pertenecer al programa activo; ahora se conserva rotulada como histórica y puede retirarse conscientemente.
 
 ### Límites de la evidencia visual
 
-Los fixtures muestran una inspección normal ya revisada y cerrada. No ejercitan visualmente una ejecución en progreso ni la variante física de Reporte de Equipos. Esos hallazgos conservan evidencia de código y contratos E2E, pero no se presentan como confirmación visual.
+Los nuevos fixtures sí ejercitan visualmente una ejecución en progreso y la variante física de Reporte de Equipos. La planilla es un documento sintético de captura, no evidencia de una operación real, y la sesión corresponde a un administrador con permisos globales; no reemplaza una prueba observada iniciando sesión como jefatura y luego como Prevención.
 
 El área principal de la aplicación utiliza un scroller interno. Por eso las capturas móviles base documentan la primera pantalla visible, no todo el contenido que se alcanza desplazándose verticalmente.
 
@@ -94,7 +136,9 @@ El área principal de la aplicación utiliza un scroller interno. Por eso las ca
 11. Los selectores estructurados son legibles y mantienen objetivos táctiles razonables en móvil.
 12. El acta imprimible es la superficie mejor resuelta del flujo: tiene jerarquía clara, resumen comprensible y una adaptación móvil realmente responsiva.
 
-## Hallazgos críticos y altos
+## Línea base histórica: hallazgos críticos y altos
+
+> Los textos UX-I-01–34 documentan el estado observado antes de implementar. No describen la interfaz vigente; su cierre está en la matriz de remediación y en el to-do enlazado al comienzo.
 
 ### UX-I-01 — La ejecución no está diseñada realmente para teléfono
 
@@ -387,7 +431,9 @@ En **Nueva inspección** y **Nueva programación**, el formulario excede la altu
 
 Esto aumenta la sensación de formulario incompleto y dificulta terminar la tarea con una mano.
 
-## Orden final recomendado de corrección
+## Orden de corrección ejecutado
+
+Los diez frentes siguientes quedaron implementados y verificados localmente; se conserva el orden para documentar la secuencia de remediación.
 
 1. **P0 — Ejecución móvil:** tarjetas o pasos, barra inferior persistente, navegación por secciones y evidencia incorporada al mismo gesto de respuesta.
 2. **P0 — Reporte de Equipos:** planilla primero, visor alternable, soporte PDF real y protección de borradores.
@@ -400,10 +446,16 @@ Esto aumenta la sensación de formulario incompleto y dificulta terminar la tare
 9. **P2 — Incorporar inspecciones al Inicio de Prevención y a la matriz de pruebas móviles.**
 10. **P2 — Corregir el estado ambiguo Aprobada / Definición retirada y reducir las acciones secundarias visibles en móvil.**
 
-## Conclusión después de revisar las capturas
+## Conclusión después de revisar las capturas finales
 
-Las capturas no cambian el veredicto inicial; lo vuelven más firme. En escritorio el módulo es sobrio, legible y razonablemente ordenado. En teléfono, la bandeja y los catálogos conservan estructuras de escritorio, la ficha consume demasiado espacio antes de la tarea y los formularios largos esconden su confirmación.
+Las capturas finales sí cambian el veredicto de la línea base. En escritorio la bandeja conserva densidad útil sin perder la siguiente acción. En móvil, la bandeja y los catálogos ya no dependen de tablas horizontales; el detalle presenta el trabajo actual antes del contexto secundario; y los diálogos largos mantienen la confirmación visible mientras el contenido se desplaza internamente.
 
-El acta imprimible y los diálogos cortos demuestran que el sistema sí cuenta con componentes capaces de responder bien en móvil. El problema no es el sistema visual general, sino la composición específica del flujo operativo de Inspecciones.
+Desde la perspectiva del prevencionista, el flujo ahora responde con claridad cuatro preguntas: **qué debo atender, dónde debo hacerlo, qué me falta y qué consecuencia tendrá cerrar o derivar**. La terminología también distingue ejecución, revisión y trazabilidad sin exponer estados técnicos.
 
-Esta revisión no reemplaza una prueba observada con prevencionistas reales, idealmente ejecutando una inspección en terreno con conectividad degradada, guantes, luz exterior y un teléfono de gama media. Tampoco presenta las pruebas locales como evidencia de producción.
+Riesgo residual no bloqueante:
+
+- Reporte de Equipos y la ejecución en curso ya tienen fixtures visuales dedicados, pero todavía no una sesión observada con jefatura y Prevención reales alternando responsabilidades;
+- la cola offline no incorpora fotografías ni documentos y lo declara expresamente;
+- React Doctor mantiene deuda estructural en componentes grandes, aunque ya no reporta las advertencias de accesibilidad y manejo de respuestas detectadas durante esta remediación;
+- la evidencia es local y no demuestra despliegue ni comportamiento en producción;
+- falta una prueba observada con prevencionistas reales, idealmente en terreno, con conectividad degradada, guantes, luz exterior y un teléfono de gama media.

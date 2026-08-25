@@ -12,11 +12,23 @@ import {
   pruneRedundantInteractionCaptures,
   reconcileCaptureArtifacts,
   requireCaptureDatabaseUrl,
+  resolveCaptureStoragePath,
   resolveServerLaunch,
   shouldUseProductionCaptureServer,
+  uniqueInteractionSlug,
 } from "./capture-all-routes"
 
 const root = process.cwd()
+
+describe("uniqueInteractionSlug", () => {
+  it("preserva capturas distintas cuando sus etiquetas producen el mismo slug", () => {
+    const used = new Set<string>()
+
+    expect(uniqueInteractionSlug(used, "filtrar-programaciones-po")).toBe("filtrar-programaciones-po")
+    expect(uniqueInteractionSlug(used, "filtrar-programaciones-po")).toBe("filtrar-programaciones-po-2")
+    expect(uniqueInteractionSlug(used, "filtrar-programaciones-po")).toBe("filtrar-programaciones-po-3")
+  })
+})
 
 /**
  * Directorio desechable para las pruebas de artefactos.
@@ -48,6 +60,13 @@ describe("capture-all-routes route inventory", () => {
       DATABASE_URL: "postgres:///bodega",
       CAPTURE_ALLOW_DESTRUCTIVE_RESET: "true",
     })).toThrow(/DATABASE_URL is never used as a fallback/)
+  })
+
+  it("never inherits the application storage volume for capture fixtures", () => {
+    expect(resolveCaptureStoragePath({ STORAGE_PATH: "/srv/production-storage" }))
+      .toBe(path.join(root, "storage", "capture"))
+    expect(resolveCaptureStoragePath({ CAPTURE_STORAGE_PATH: "/tmp/chome-capture-storage" }))
+      .toBe("/tmp/chome-capture-storage")
   })
 
   /*
@@ -160,6 +179,8 @@ describe("capture-all-routes route inventory", () => {
       expect.objectContaining({ slug: "prevencion-incidentes-detalle", path: "/prevencion/incidentes/inc-audit-1" }),
       expect.objectContaining({ slug: "prevencion-incidentes-procedimiento", expectedStatus: 404, captureView: false }),
       expect.objectContaining({ slug: "prevencion-inspeccion-detalle", path: "/prevencion/inspecciones/insp-audit-1" }),
+      expect.objectContaining({ slug: "prevencion-inspeccion-en-curso", path: "/prevencion/inspecciones/insp-audit-progress" }),
+      expect.objectContaining({ slug: "prevencion-inspeccion-reporte-equipos", path: "/prevencion/inspecciones/insp-audit-equipment-report" }),
       expect.objectContaining({ slug: "prevencion-pdtp-ejecucion", path: "/prevencion/pdtp/prog-audit-1/ejecucion/exec-audit-1" }),
     ]))
     expect(combustibleFixtures).toEqual(expect.arrayContaining([
@@ -183,6 +204,8 @@ describe("capture-all-routes route inventory", () => {
     expect(preventionFixtures).toContain("control MIPER crítico verificado")
     expect(preventionFixtures).toContain("incidente en investigación con evidencia y difusión RE-20")
     expect(preventionFixtures).toContain("inspección revisada con hallazgo CAPA")
+    expect(preventionFixtures).toContain("inspección en curso con respuestas parciales")
+    expect(preventionFixtures).toContain("Reporte de Equipos en transcripción con planilla física")
     expect(preventionFixtures).toContain("ejecución PDTP aprobada con checklist y plan de acción")
   })
 

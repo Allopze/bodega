@@ -23,7 +23,7 @@ test.describe("Inspecciones — Matriz de Roles y Permisos", () => {
     // 3. Acceder al catálogo de plantillas: puede verlas pero NO debe ver botones de acción administrativa
     await page.goto("/prevencion/inspecciones/plantillas")
     await expectPageTitle(page, "Plantillas de inspección")
-    await expect(page.getByRole("button", { name: "Publicar nueva versión" })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Incorporar borrador" })).toHaveCount(0)
     await expect(page.getByRole("button", { name: "Aprobar" })).toHaveCount(0)
     await expect(page.getByRole("button", { name: "Retirar" })).toHaveCount(0)
 
@@ -39,7 +39,7 @@ test.describe("Inspecciones — Matriz de Roles y Permisos", () => {
 
     await page.goto("/prevencion/inspecciones/plantillas")
     await expectPageTitle(page, "Plantillas de inspección")
-    await expect(page.getByRole("button", { name: "Publicar nueva versión" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Incorporar borrador" })).toBeVisible()
 
     await page.goto("/prevencion/inspecciones/programacion")
     await expectPageTitle(page, "Programación de inspecciones")

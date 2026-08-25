@@ -70,6 +70,8 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
           closingResult: detail.run.closingResult,
           closingRestrictions: detail.run.closingRestrictions,
           closingSignatures: detail.run.closingSignatures,
+          locationLatitude: detail.run.locationLatitude,
+          locationLongitude: detail.run.locationLongitude,
           version: detail.run.version,
         }}
         closingAct={closingActFromDefinition(definition)}
@@ -130,6 +132,7 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
         canExecute={canExecute}
         canReview={auth.user.permissions.includes("prevention:inspections:review")}
         canManage={auth.user.permissions.includes("prevention:inspections:manage")}
+        physicalSourceRequired={detail.sourceDefinitionCode === "reporte_equipos"}
       />
     </PageContainer>
   )

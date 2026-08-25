@@ -18,7 +18,7 @@ import {
   summarizeInspectionTimelyClosure,
   summarizeInspectionTrends,
   type InspectionAccess,
-  type InspectionKindFilter,
+  type InspectionListFilters,
 } from "@/lib/services/prevention-inspections"
 import { todayInChile } from "@/lib/utils"
 
@@ -38,7 +38,7 @@ function label(map: Record<string, string>, key: string | null | undefined) {
  */
 export async function buildInspectionExport(
   access: InspectionAccess,
-  filter: InspectionKindFilter = {},
+  filter: InspectionListFilters = {},
 ): Promise<ReportData> {
   if (!access.permissions.includes("prevention:inspections:export")) {
     throw new Error("Inspección no encontrada o fuera de alcance.")
@@ -143,7 +143,7 @@ export async function buildInspectionExport(
   return {
     // El nombre declara el alcance: un export acotado y uno completo no pueden
     // llamarse igual.
-    filenameBase: `inspecciones${filter.kinds?.length ? `_${filter.kinds.join("-")}` : ""}_${todayInChile()}`,
+    filenameBase: `inspecciones${filter.kinds?.length ? `_${filter.kinds.join("-")}` : ""}${filter.status || filter.worksiteId || filter.search || filter.view ? "_filtradas" : ""}_${todayInChile()}`,
     worksheetName: sheets[0]!.worksheetName,
     headers: sheets[0]!.headers,
     rows: sheets[0]!.rows,

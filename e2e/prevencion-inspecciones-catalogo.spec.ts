@@ -36,14 +36,14 @@ async function nuevoPrograma(page: Page) {
 
 /** Incorpora `inspeccion_contenedores` con una etiqueta propia; queda en borrador. */
 async function incorporar(page: Page, version: string) {
-  await page.getByRole("button", { name: "Publicar nueva versión" }).click()
-  const dialog = page.getByRole("dialog", { name: "Publicar nueva versión" })
+  await page.getByRole("button", { name: "Incorporar borrador" }).click()
+  const dialog = page.getByRole("dialog", { name: "Incorporar nueva versión como borrador" })
   await dialog.getByLabel("Definición del catálogo SST").click()
   await page.getByRole("option", { name: DEFINICION, exact: true }).click()
   await dialog.getByLabel("Tipo de instrumento").click()
   await page.getByRole("option", { name: "Inspección", exact: true }).click()
   await dialog.locator('input[name="versionLabel"]').fill(version)
-  await dialog.getByRole("button", { name: "Incorporar" }).click()
+  await dialog.getByRole("button", { name: "Incorporar como borrador" }).click()
   return dialog
 }
 
@@ -62,8 +62,8 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
    * además al recibir el código; acá se verifica que tampoco se ofrezcan.
    */
   test("el picker no ofrece evaluaciones de personas ni el Anexo 7", async ({ page }) => {
-    await page.getByRole("button", { name: "Publicar nueva versión" }).click()
-    const dialog = page.getByRole("dialog", { name: "Publicar nueva versión" })
+    await page.getByRole("button", { name: "Incorporar borrador" }).click()
+    const dialog = page.getByRole("dialog", { name: "Incorporar nueva versión como borrador" })
     await dialog.getByLabel("Definición del catálogo SST").click()
 
     await expect(page.getByRole("option", { name: DEFINICION, exact: true })).toBeVisible()
@@ -148,14 +148,15 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
 
     await fila.getByRole("button", { name: "Acreditación PDTP" }).click()
     const dialog = page.getByRole("dialog")
-    // Se normalizan a enteros ordenados y sin repetir, así que el desorden y
-    // los separadores mezclados del enunciado son parte de lo que se prueba.
-    await dialog.locator('input[name="numbers"]').fill("27, 24 24")
+    const ejecucion = dialog.getByRole("group", { name: "Al declarar ejecutada" })
+    await ejecucion.getByLabel(/N° 29 —/).uncheck()
+    await ejecucion.getByLabel(/N° 1 —/).check()
+    await ejecucion.getByLabel(/N° 2 —/).check()
     await dialog.getByRole("button", { name: "Guardar" }).click()
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
 
     await page.reload()
-    await expect(fila.getByText("N° 24, 27")).toBeVisible({ timeout: 15_000 })
+    await expect(fila.getByText("N° 1, 2")).toBeVisible({ timeout: 15_000 })
   })
 
   /**
@@ -233,7 +234,7 @@ test.describe("Inspecciones — programación por faena y frecuencia", () => {
     await page.reload()
     // La fila no lleva el tipo de sujeto, así que se ancla por plantilla y se
     // distingue por el intervalo propio que sólo esta programación declara.
-    const fila = page.getByRole("row")
+    let fila = page.getByRole("row")
       .filter({ hasText: "Inspección de Estado de Extintores" })
       .filter({ hasText: `cada ${intervalo} día(s)` })
     await expect(fila).toHaveCount(1, { timeout: 15_000 })
@@ -248,10 +249,16 @@ test.describe("Inspecciones — programación por faena y frecuencia", () => {
     // (programId, scheduledFor) sólo se defendería de un choque con el cron.
     await expect(fila.getByRole("cell", { name: hoy })).toBeVisible()
 
-    await fila.getByRole("button", { name: "Ejecutar ahora" }).click()
+    await fila.getByRole("button", { name: "Crear y abrir inspección" }).click()
+    await expect(page).toHaveURL(/\/prevencion\/inspecciones\/[^/]+$/)
+    await page.goto("/prevencion/inspecciones/programacion")
+    fila = page.getByRole("row").filter({ hasText: "Inspección de Estado de Extintores" }).filter({ hasText: `cada ${intervalo} día(s)` })
     await expect(fila.getByRole("cell", { name: enDias(paso) })).toBeVisible({ timeout: 15_000 })
 
-    await fila.getByRole("button", { name: "Ejecutar ahora" }).click()
+    await fila.getByRole("button", { name: "Crear y abrir inspección" }).click()
+    await expect(page).toHaveURL(/\/prevencion\/inspecciones\/[^/]+$/)
+    await page.goto("/prevencion/inspecciones/programacion")
+    fila = page.getByRole("row").filter({ hasText: "Inspección de Estado de Extintores" }).filter({ hasText: `cada ${intervalo} día(s)` })
     await expect(fila.getByRole("cell", { name: enDias(paso * 2) })).toBeVisible({ timeout: 15_000 })
 
     await fila.getByRole("button", { name: "Editar" }).click()
@@ -268,9 +275,12 @@ test.describe("Inspecciones — programación por faena y frecuencia", () => {
     await expect(fila.getByText("Admin E2E")).toBeVisible()
 
     // Desactivar es el borrado: los runs ya materializados conservan su origen.
-    await fila.getByRole("button", { name: "Desactivar" }).click()
+    await fila.getByRole("button", { name: "Detener" }).click()
+    const detener = page.getByRole("dialog", { name: "¿Detener esta programación?" })
+    await detener.locator('textarea[name="reason"]').fill("Programa detenido al terminar su ciclo de prueba E2E.")
+    await detener.getByRole("button", { name: "Detener programación" }).click()
     await expect(fila.getByRole("cell", { name: "No", exact: true })).toBeVisible({ timeout: 15_000 })
-    await expect(fila.getByRole("button", { name: "Activar" })).toBeVisible()
-    await expect(fila.getByRole("button", { name: "Ejecutar ahora" })).toHaveCount(0)
+    await expect(fila.getByRole("button", { name: "Reactivar" })).toBeVisible()
+    await expect(fila.getByRole("button", { name: "Crear y abrir inspección" })).toHaveCount(0)
   })
 })

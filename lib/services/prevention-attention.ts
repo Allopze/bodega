@@ -7,6 +7,8 @@ import {
   preventionCommitteeMeetings,
   preventionCommittees,
   preventionEmergencyResources,
+  preventionInspectionRuns,
+  preventionInspectionTemplates,
   preventionProtocolApplicabilities,
   sstEvaluations,
   worksites,
@@ -19,7 +21,7 @@ import { todayInChile } from "@/lib/utils"
 
 export type PreventionAttentionItem = {
   id: string
-  kind: "action" | "evaluation" | "ppa" | "cphs" | "protocol" | "emergency_resource" | "change_review"
+  kind: "action" | "evaluation" | "ppa" | "inspection" | "cphs" | "protocol" | "emergency_resource" | "change_review"
   title: string
   detail: string
   worksiteName: string
@@ -36,6 +38,8 @@ export async function getPreventionAttention(args: {
   includeActions: boolean
   includeEvaluations: boolean
   includePpa: boolean
+  /** Estados sobre los que el rol puede actuar; usa la misma proyección que Mi trabajo. */
+  inspectionStatuses?: string[]
   includeCphs?: boolean
   /**
    * EMERGENCIAS-08: eran un solo `includeCompliance`, así que
@@ -59,7 +63,7 @@ export async function getPreventionAttention(args: {
   // hoy aparecía vencido desde las 20:00 de la víspera.
   const today = todayInChile()
 
-  const [actionRows = [], evalRows = [], ppaRows = []] = await Promise.all([
+  const [actionRows = [], evalRows = [], ppaRows = [], inspectionRows = []] = await Promise.all([
     args.includeActions
       // D11: la acción del PDTP se lee de su CAPA, que es donde vive el estado.
       // La faena es columna directa, así que la ejecución ya no hace falta.
@@ -88,6 +92,22 @@ export async function getPreventionAttention(args: {
           .where(and(scope(worksites.id), or(eq(ppaSubmissions.estado, "detenido"), eq(ppaSubmissions.estado, "en_correccion"))))
           .orderBy(asc(ppaSubmissions.createdAt)).limit(limit)
       : Promise.resolve([]),
+    (args.inspectionStatuses?.length ?? 0) > 0
+      ? db.select({
+          id: preventionInspectionRuns.id,
+          code: preventionInspectionRuns.code,
+          status: preventionInspectionRuns.status,
+          scheduledFor: preventionInspectionRuns.scheduledFor,
+          templateName: preventionInspectionTemplates.name,
+          worksiteName: worksites.name,
+        })
+          .from(preventionInspectionRuns)
+          .innerJoin(preventionInspectionTemplates, eq(preventionInspectionRuns.templateId, preventionInspectionTemplates.id))
+          .innerJoin(worksites, eq(preventionInspectionRuns.worksiteId, worksites.id))
+          .where(and(scope(worksites.id), inArray(preventionInspectionRuns.status, args.inspectionStatuses!)))
+          .orderBy(asc(preventionInspectionRuns.scheduledFor), asc(preventionInspectionRuns.createdAt))
+          .limit(limit)
+      : Promise.resolve([]),
   ])
 
   const items: PreventionAttentionItem[] = []
@@ -113,6 +133,21 @@ export async function getPreventionAttention(args: {
     detail: row.workerName, worksiteName: row.worksiteName, dueDate: row.createdAt.slice(0, 10),
     href: `/prevencion/ppa/${row.id}`, tone: row.estado === "detenido" ? "danger" as const : "warning" as const,
   })))
+
+  items.push(...inspectionRows.map((row) => {
+    const needsReview = row.status === "completed"
+    const overdue = !needsReview && Boolean(row.scheduledFor && row.scheduledFor < today)
+    return {
+      id: `inspection:${row.id}`,
+      kind: "inspection" as const,
+      title: `${needsReview ? "Revisar" : "Ejecutar"} ${row.code}`,
+      detail: `${row.templateName} · ${needsReview ? "pendiente de revisión" : row.status === "in_progress" ? "en ejecución" : "planificada"}`,
+      worksiteName: row.worksiteName,
+      dueDate: row.scheduledFor,
+      href: `/prevencion/inspecciones/${row.id}`,
+      tone: overdue ? "danger" as const : "warning" as const,
+    }
+  }))
 
   if (args.includeCphs) items.push(...await cphsAttentionItems(scope, today, limit))
   items.push(...await complianceAttentionItems(scope, today, limit, {

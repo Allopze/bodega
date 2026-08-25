@@ -1,17 +1,19 @@
 "use client"
 
 import * as React from "react"
-import { ClipboardText } from "@phosphor-icons/react"
+import { ClipboardText, MagnifyingGlass } from "@phosphor-icons/react"
+import { useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { INSPECTION_FREQUENCY_LABELS, INSPECTION_KIND_LABELS } from "@/lib/prevention/inspections"
+import { FREQUENCY_INTERVAL_DAYS, INSPECTION_FREQUENCY_LABELS, INSPECTION_KIND_LABELS } from "@/lib/prevention/inspections"
 import {
   approveInspectionTemplateAction,
   retireInspectionTemplateAction,
@@ -27,6 +29,7 @@ import {
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { todayInChile } from "@/lib/utils"
+import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 
 interface Coverage {
   totalItems: number
@@ -35,7 +38,7 @@ interface Coverage {
   criticalityInert: boolean
 }
 
-interface TemplateItem {
+export interface TemplateItem {
   id: string
   code: string
   versionLabel: string
@@ -82,12 +85,13 @@ interface ProgramItem {
   assignedToUserId: string | null
   assigneeName: string | null
   riskEntryId: string | null
+  riskLabel: string | null
   subjectType: string | null
   isActive: boolean
   version: number
 }
 
-interface ImportableDefinition {
+export interface ImportableDefinition {
   code: string
   title: string
   version: string
@@ -97,6 +101,8 @@ interface ImportableDefinition {
   /** Actividades del PDTP que acreditará al ejecutarse (cableado del programa). */
   pdtpActivities: { n: number; name: string }[]
 }
+
+export interface PdtpActivityOption { n: number; name: string; year: number }
 
 function templateStatusVariant(status: string): "default" | "success" | "outline" {
   if (status === "approved") return "success"
@@ -108,53 +114,68 @@ function coverageLabel(coverage: Coverage) {
   return `${coverage.withDanoPotencial}/${coverage.totalItems} con gravedad`
 }
 
+function toggleNumber(values: number[], value: number, checked: boolean) {
+  return checked ? [...new Set([...values, value])].sort((a, b) => a - b) : values.filter((item) => item !== value)
+}
+
 /**
  * Catálogo de instrumentos. Antes convivía con la programación en una sola
  * pantalla de pestañas: son dos actos distintos —qué se pregunta y cuándo se
  * pregunta— con permisos y públicos distintos, y la pestaña obligaba a pasar
  * por uno para llegar al otro.
  */
-export function InspectionTemplatesPanel({ templates, importable, canManage, canApprove }: {
+export function InspectionTemplatesPanel({ templates, pdtpOptions, canManage, canApprove }: {
   templates: TemplateItem[]
-  importable: ImportableDefinition[]
+  pdtpOptions: PdtpActivityOption[]
   canManage: boolean
   canApprove: boolean
 }) {
-  // A-02: antes se filtraba del picker toda definición ya incorporada, lo que
-  // dejaba inalcanzable el versionado — y con él todo el mecanismo de
-  // `superseded` que `approveInspectionTemplate` ya implementa. Reimportar es
-  // el camino normal para publicar una versión nueva; lo único que el servicio
-  // rechaza es repetir la misma `versionLabel`.
-  const versionsByDefinition = React.useMemo(() => {
-    const map = new Map<string, { approved?: TemplateItem; latest?: TemplateItem }>()
-    for (const template of templates) {
-      if (!template.sourceDefinitionCode) continue
-      const entry = map.get(template.sourceDefinitionCode) ?? {}
-      if (template.status === "approved") entry.approved = template
-      if (!entry.latest) entry.latest = template
-      map.set(template.sourceDefinitionCode, entry)
-    }
-    return map
-  }, [templates])
+  const [query, setQuery] = React.useState("")
+  const [kind, setKind] = React.useState("all")
+  const [status, setStatus] = React.useState("all")
+  const visibleTemplates = React.useMemo(() => templates.filter((item) => {
+    const normalized = query.trim().toLocaleLowerCase("es-CL")
+    return (!normalized || `${item.code} ${item.name} ${item.versionLabel}`.toLocaleLowerCase("es-CL").includes(normalized))
+      && (kind === "all" || item.kind === kind)
+      && (status === "all" || item.status === status)
+  }), [templates, query, kind, status])
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-eyebrow">{templates.length} instrumento(s)</span>
-        {canManage && importable.length > 0 && (
-          <ImportTemplateDialog importable={importable} versionsByDefinition={versionsByDefinition} />
-        )}
+      <div className="grid gap-2 sm:grid-cols-[minmax(14rem,1fr)_12rem_12rem]">
+        <div className="relative">
+          <MagnifyingGlass size={16} aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-subtle)]" />
+          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar código o nombre" aria-label="Buscar plantillas" className="pl-9" />
+        </div>
+        <Select value={kind} onValueChange={setKind}><SelectTrigger aria-label="Filtrar plantillas por tipo"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos los tipos</SelectItem>{Object.entries(INSPECTION_KIND_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
+        <Select value={status} onValueChange={setStatus}><SelectTrigger aria-label="Filtrar plantillas por estado"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos los estados</SelectItem><SelectItem value="draft">Borradores</SelectItem><SelectItem value="approved">Aprobadas</SelectItem><SelectItem value="superseded">Reemplazadas</SelectItem></SelectContent></Select>
       </div>
 
-      {templates.length === 0 ? (
+      {visibleTemplates.length === 0 ? (
         <EmptyState
           icon={<ClipboardText size={20} />}
-          title="No hay instrumentos instalados"
-          description="El catálogo se instala solo al desplegar. Si esta pantalla está vacía, falta correr el sembrado de plantillas."
-          action={canManage && importable.length > 0 ? <ImportTemplateDialog importable={importable} versionsByDefinition={versionsByDefinition} /> : undefined}
+          title={templates.length === 0 ? "No hay instrumentos incorporados" : "No hay plantillas con estos filtros"}
+          description={templates.length === 0 ? "Una persona administradora debe incorporar un instrumento desde el catálogo SST y luego enviarlo a aprobación." : "Ajusta la búsqueda, el tipo o el estado."}
         />
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
+        <>
+        <div className="space-y-3 md:hidden">
+          {visibleTemplates.map((item) => (
+            <article key={item.id} className="space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div><span className="font-mono text-xs text-[var(--color-text-subtle)]">{item.code} · {item.versionLabel}</span><h2 className="mt-0.5 text-sm font-semibold">{item.name}</h2><p className="mt-1 text-xs text-[var(--color-text-subtle)]">{INSPECTION_KIND_LABELS[item.kind] ?? item.kind}</p></div>
+                <Badge variant={templateStatusVariant(item.status)}>{item.status === "approved" ? "Aprobada" : item.status === "superseded" ? "Reemplazada" : "Borrador"}</Badge>
+              </div>
+              {item.definitionMissing && <p className="rounded-lg bg-[var(--color-warning-tint)] px-3 py-2 text-xs text-[var(--color-warning-ink)]">La fuente fue retirada del catálogo, pero esta versión {item.status === "approved" ? "sigue ejecutable desde su checklist congelado hasta que la retires" : "se conserva sólo como historial"}.</p>}
+              <dl className="grid grid-cols-2 gap-3 text-xs">
+                <div><dt className="text-[var(--color-text-subtle)]">Gravedad declarada</dt><dd className="mt-0.5 font-medium">{coverageLabel(item.coverage)}</dd></div>
+                <div><dt className="text-[var(--color-text-subtle)]">PDTP</dt><dd className="mt-0.5 font-medium">{item.pdtpActivityNumbers?.length ? `Ejecutar N° ${item.pdtpActivityNumbers.join(", ")}` : "No acredita"}</dd></div>
+              </dl>
+              <TemplateActions item={item} templates={templates} pdtpOptions={pdtpOptions} canManage={canManage} canApprove={canApprove} />
+            </article>
+          ))}
+        </div>
+        <div className="hidden overflow-x-auto rounded-lg border border-[var(--color-border)] md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -169,7 +190,7 @@ export function InspectionTemplatesPanel({ templates, importable, canManage, can
               </TableRow>
             </TableHeader>
             <TableBody>
-              {templates.map((item) => (
+              {visibleTemplates.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell>
                     <span className="font-mono text-xs">{item.code}</span>
@@ -189,8 +210,8 @@ export function InspectionTemplatesPanel({ templates, importable, canManage, can
                       </span>
                     )}
                     {item.definitionMissing && (
-                      <span className="mt-1 block text-xs text-[var(--color-warning-ink)]" title="La definición de origen ya no existe en lib/sst/definitions.">
-                        Definición retirada
+                      <span className="mt-1 block max-w-48 text-xs text-[var(--color-warning-ink)]" title="La fuente fue retirada; el snapshot de esta versión se conserva.">
+                        Fuente retirada · {item.status === "approved" ? "sigue ejecutable desde su checklist congelado" : "sólo historial"}
                       </span>
                     )}
                   </TableCell>
@@ -228,41 +249,32 @@ export function InspectionTemplatesPanel({ templates, importable, canManage, can
                     )}
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      {item.status !== "superseded" && canManage && (
-                        <DeviationCatalogDialog
-                          templateId={item.id}
-                          name={item.name}
-                          entries={item.deviations}
-                          unclassified={item.unclassifiedDeviations}
-                          copySources={templates.flatMap((other) => other.id !== item.id && other.deviations.length > 0
-                            ? [{ id: other.id, name: other.name, count: other.deviations.filter((entry) => entry.isActive).length }]
-                            : [])}
-                        />
-                      )}
-                      {item.status !== "superseded" && canManage && (
-                        <PdtpActivitiesDialog
-                          templateId={item.id}
-                          name={item.name}
-                          expectedVersion={item.version}
-                          current={item.pdtpActivityNumbers ?? []}
-                          currentReview={item.pdtpReviewActivityNumbers ?? []}
-                        />
-                      )}
-                      {item.status === "draft" && canApprove && (
-                        <ApproveDialog templateId={item.id} name={item.name} expectedVersion={item.version} />
-                      )}
-                      {item.status !== "superseded" && canApprove && (
-                        <RetireDialog templateId={item.id} name={item.name} />
-                      )}
-                    </div>
+                    <TemplateActions item={item} templates={templates} pdtpOptions={pdtpOptions} canManage={canManage} canApprove={canApprove} />
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </div>
+        </>
       )}
+    </div>
+  )
+}
+
+function TemplateActions({ item, templates, pdtpOptions, canManage, canApprove }: {
+  item: TemplateItem
+  templates: TemplateItem[]
+  pdtpOptions: PdtpActivityOption[]
+  canManage: boolean
+  canApprove: boolean
+}) {
+  return (
+    <div className="flex flex-wrap justify-end gap-2">
+      {item.status !== "superseded" && canManage && <DeviationCatalogDialog templateId={item.id} name={item.name} entries={item.deviations} unclassified={item.unclassifiedDeviations} copySources={templates.flatMap((other) => other.id !== item.id && other.deviations.length > 0 ? [{ id: other.id, name: other.name, count: other.deviations.filter((entry) => entry.isActive).length }] : [])} />}
+      {item.status !== "superseded" && canManage && <PdtpActivitiesDialog templateId={item.id} name={item.name} expectedVersion={item.version} current={item.pdtpActivityNumbers ?? []} currentReview={item.pdtpReviewActivityNumbers ?? []} options={pdtpOptions} />}
+      {item.status === "draft" && canApprove && <ApproveDialog templateId={item.id} name={item.name} expectedVersion={item.version} />}
+      {item.status !== "superseded" && canApprove && <RetireDialog templateId={item.id} name={item.name} />}
     </div>
   )
 }
@@ -271,33 +283,82 @@ export function InspectionTemplatesPanel({ templates, importable, canManage, can
  * Programación: qué instrumento se ejecuta, en qué faena y con qué frecuencia.
  * El cron diario materializa desde acá, y "Ejecutar ahora" usa el mismo camino.
  */
-export function InspectionProgramsPanel({ programs, approvedTemplates, worksites, assignees, riskEntriesByWorksite, canManage }: {
+export function InspectionProgramsPanel({ programs, assignees, canManage, initialView = "all" }: {
   programs: ProgramItem[]
-  approvedTemplates: { id: string; name: string; versionLabel: string }[]
-  worksites: { id: string; name: string }[]
   assignees: { id: string; name: string }[]
-  /** Peligros de la MIPER por faena, para el picker de la programación (A-09). */
-  riskEntriesByWorksite: Record<string, { id: string; hazardCode: string; hazard: string }[]>
   canManage: boolean
+  initialView?: "all" | "overdue"
 }) {
+  const { setFilter } = useUrlFilters()
+  const today = todayInChile()
+  const [query, setQuery] = React.useState("")
+  const [status, setStatus] = React.useState("all")
+  const [worksite, setWorksite] = React.useState("all")
+  const worksites = React.useMemo(() => Array.from(
+    new Map(programs.map((item) => [item.worksiteId, item.worksiteName])).entries(),
+  ).map(([id, name]) => ({ id, name })), [programs])
+  const visiblePrograms = React.useMemo(() => programs.filter((item) => {
+    const normalized = query.trim().toLocaleLowerCase("es-CL")
+    const searchable = `${item.templateName} ${item.worksiteName} ${item.subjectType ?? ""} ${item.riskLabel ?? ""} ${item.assigneeName ?? ""}`.toLocaleLowerCase("es-CL")
+    const overdue = item.isActive && item.nextDueOn < today
+    return (!normalized || searchable.includes(normalized))
+      && (worksite === "all" || item.worksiteId === worksite)
+      && (status === "all" || (status === "active" ? item.isActive : status === "paused" ? !item.isActive : overdue))
+      && (initialView !== "overdue" || overdue)
+  }), [programs, query, status, worksite, initialView, today])
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-eyebrow">{programs.length} programación(es)</span>
-        {canManage && approvedTemplates.length > 0 && worksites.length > 0 && (
-          <ProgramDialog templates={approvedTemplates} worksites={worksites} assignees={assignees} riskEntriesByWorksite={riskEntriesByWorksite} />
-        )}
+      <div className="grid gap-2 sm:grid-cols-[minmax(14rem,1fr)_12rem_12rem_auto]">
+        <div className="relative">
+          <MagnifyingGlass size={16} aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-subtle)]" />
+          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar plantilla, sujeto o riesgo" aria-label="Buscar programaciones" className="pl-9" />
+        </div>
+        <Select value={status} onValueChange={setStatus}><SelectTrigger aria-label="Filtrar programaciones por estado"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos los estados</SelectItem><SelectItem value="active">Activas</SelectItem><SelectItem value="overdue">Vencidas</SelectItem><SelectItem value="paused">Detenidas</SelectItem></SelectContent></Select>
+        <Select value={worksite} onValueChange={setWorksite}><SelectTrigger aria-label="Filtrar programaciones por faena"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todas las faenas</SelectItem>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
+        <Button
+          type="button"
+          size="sm"
+          variant={initialView === "overdue" ? "primary" : "secondary"}
+          aria-pressed={initialView === "overdue"}
+          onClick={() => setFilter("vista", initialView === "overdue" ? null : "vencidas")}
+        >
+          {initialView === "overdue" ? "Ver todas" : "Sólo vencidas"}
+        </Button>
       </div>
+      <p className="text-eyebrow">{visiblePrograms.length} programación(es)</p>
 
-      {programs.length === 0 ? (
+      {visiblePrograms.length === 0 ? (
         <EmptyState
           icon={<ClipboardText size={20} />}
-          title="Aún no hay programación"
-          description="Una programación declara qué plantilla se ejecuta, en qué faena y con qué frecuencia."
-          action={canManage && approvedTemplates.length > 0 && worksites.length > 0 ? <ProgramDialog templates={approvedTemplates} worksites={worksites} assignees={assignees} riskEntriesByWorksite={riskEntriesByWorksite} /> : undefined}
+          title={programs.length === 0 ? "Aún no hay programación" : initialView === "overdue" ? "No hay programaciones vencidas" : "No hay programaciones con estos filtros"}
+          description={programs.length === 0 ? "Crea la primera desde la acción «Nuevo programa» del encabezado." : initialView === "overdue" ? "Todas las programaciones activas tienen su próxima fecha al día." : "Ajusta la búsqueda, el estado o la faena."}
+          action={initialView === "overdue" ? <Button type="button" variant="secondary" onClick={() => setFilter("vista", null)}>Ver todas</Button> : undefined}
         />
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
+        <>
+        <div className="space-y-3 md:hidden">
+          {visiblePrograms.map((item) => {
+            const overdue = item.isActive && item.nextDueOn < today
+            return (
+              <article key={item.id} className="space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div><h2 className="text-sm font-semibold">{item.templateName}</h2><p className="mt-1 text-xs text-[var(--color-text-subtle)]">{item.worksiteName}</p></div>
+                  <Badge variant={!item.isActive ? "outline" : overdue ? "warning" : "success"}>{!item.isActive ? "Detenida" : overdue ? "Vencida" : "Activa"}</Badge>
+                </div>
+                <dl className="grid grid-cols-2 gap-3 text-xs">
+                  <div><dt className="text-[var(--color-text-subtle)]">Cadencia</dt><dd className="mt-0.5 font-medium">{INSPECTION_FREQUENCY_LABELS[item.frequency] ?? item.frequency} · {item.intervalDays} días</dd></div>
+                  <div><dt className="text-[var(--color-text-subtle)]">Próxima</dt><dd className="mt-0.5 font-medium tabular-nums">{item.nextDueOn}</dd></div>
+                  <div><dt className="text-[var(--color-text-subtle)]">Asignada a</dt><dd className="mt-0.5 font-medium">{item.assigneeName ?? "Sin asignar"}</dd></div>
+                  <div><dt className="text-[var(--color-text-subtle)]">Sujeto</dt><dd className="mt-0.5 font-medium">{item.subjectType ?? "No especificado"}</dd></div>
+                </dl>
+                {item.riskLabel && <p className="rounded-lg bg-[var(--color-surface-2)] px-3 py-2 text-xs"><span className="text-[var(--color-text-subtle)]">Riesgo MIPER:</span> {item.riskLabel}</p>}
+                {canManage && <ProgramActions program={item} assignees={assignees} />}
+              </article>
+            )
+          })}
+        </div>
+        <div className="hidden overflow-x-auto rounded-lg border border-[var(--color-border)] md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -306,12 +367,13 @@ export function InspectionProgramsPanel({ programs, approvedTemplates, worksites
                 <TableHead>Frecuencia</TableHead>
                 <TableHead>Próxima</TableHead>
                 <TableHead>Asignada a</TableHead>
+                <TableHead>Contexto</TableHead>
                 <TableHead>Activa</TableHead>
                 {canManage && <TableHead className="text-right">Acción</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {programs.map((item) => (
+              {visiblePrograms.map((item) => (
                 <TableRow key={item.id}>
                   <TableCell className="text-sm">{item.templateName}</TableCell>
                   <TableCell className="text-sm">{item.worksiteName}</TableCell>
@@ -321,22 +383,19 @@ export function InspectionProgramsPanel({ programs, approvedTemplates, worksites
                   </TableCell>
                   <TableCell className="text-sm tabular-nums">
                     {item.nextDueOn}
-                    {item.isActive && item.nextDueOn < todayInChile() && (
+                    {item.isActive && item.nextDueOn < today && (
                       <span className="block text-xs text-[var(--color-warning-ink)]">Vencida</span>
                     )}
                   </TableCell>
                   <TableCell className="text-sm">{item.assigneeName ?? "Sin asignar"}</TableCell>
+                  <TableCell className="max-w-64 text-sm">
+                    <span>{item.subjectType ?? "Sin sujeto especificado"}</span>
+                    {item.riskLabel && <span className="mt-1 block text-xs text-[var(--color-text-subtle)]">MIPER · {item.riskLabel}</span>}
+                  </TableCell>
                   <TableCell className="text-sm">{item.isActive ? "Sí" : "No"}</TableCell>
                   {canManage && (
                     <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        {/* A-11: la programación se creaba y quedaba congelada
-                            — ni editar, ni reasignar, ni desactivar. */}
-                        <EditProgramDialog program={item} assignees={assignees} />
-                        <ToggleProgramButton program={item} />
-                        {/* B-04: mismo camino que el cron diario. */}
-                        {item.isActive && <RunProgramNowButton program={item} />}
-                      </div>
+                      <ProgramActions program={item} assignees={assignees} />
                     </TableCell>
                   )}
                 </TableRow>
@@ -344,7 +403,18 @@ export function InspectionProgramsPanel({ programs, approvedTemplates, worksites
             </TableBody>
           </Table>
         </div>
+        </>
       )}
+    </div>
+  )
+}
+
+function ProgramActions({ program, assignees }: { program: ProgramItem; assignees: { id: string; name: string }[] }) {
+  return (
+    <div className="flex flex-wrap justify-end gap-2">
+      <EditProgramDialog program={program} assignees={assignees} />
+      <ToggleProgramButton program={program} />
+      {program.isActive && <RunProgramNowButton program={program} />}
     </div>
   )
 }
@@ -538,10 +608,21 @@ function DeviationRow({ entry }: { entry: DeviationEntry }) {
 /** Centinela de "sin actividad": `Select` reserva el string vacío. */
 const NO_ACTIVITY = "__none__"
 
-function ImportTemplateDialog({ importable, versionsByDefinition }: {
+export function ImportTemplateDialog({ importable, templates }: {
   importable: ImportableDefinition[]
-  versionsByDefinition: Map<string, { approved?: TemplateItem; latest?: TemplateItem }>
+  templates: TemplateItem[]
 }) {
+  const versionsByDefinition = React.useMemo(() => {
+    const map = new Map<string, { approved?: TemplateItem; latest?: TemplateItem }>()
+    for (const template of templates) {
+      if (!template.sourceDefinitionCode) continue
+      const entry = map.get(template.sourceDefinitionCode) ?? {}
+      if (template.status === "approved") entry.approved = template
+      if (!entry.latest) entry.latest = template
+      map.set(template.sourceDefinitionCode, entry)
+    }
+    return map
+  }, [templates])
   const [open, setOpen] = React.useState(false)
   const [code, setCode] = React.useState(importable[0]?.code ?? "")
   const [kind, setKind] = React.useState("inspection")
@@ -572,13 +653,13 @@ function ImportTemplateDialog({ importable, versionsByDefinition }: {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button size="sm" variant="secondary">Publicar nueva versión</Button></DialogTrigger>
+      <DialogTrigger asChild><Button size="sm">Incorporar borrador</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
-            <DialogTitle>Publicar nueva versión</DialogTitle>
+            <DialogTitle>Incorporar nueva versión como borrador</DialogTitle>
             <DialogDescription>
-              Queda vigente al incorporarla: puede programarse y ejecutarse de inmediato. El contenido viene del catálogo SST versionado en el código, no se redacta aquí.
+              Se crea como borrador y todavía no puede programarse ni ejecutarse. Otra persona con permiso de aprobación debe revisarla y habilitarla.
             </DialogDescription>
           </DialogHeader>
           <Field label="Definición del catálogo SST">
@@ -623,8 +704,7 @@ function ImportTemplateDialog({ importable, versionsByDefinition }: {
           {existing?.approved && (
             <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-xs">
               Ya hay una versión vigente de esta definición: <span className="font-mono">{existing.approved.versionLabel}</span>.
-              Incorporar otra la reemplaza en el acto, y las programaciones que apunten a la anterior dejarán de generar inspecciones.
-              Usa una etiqueta de versión distinta.
+              El nuevo borrador no reemplaza esta versión. El reemplazo ocurre recién cuando se aprueba, después de revisar su contenido.
             </p>
           )}
           <div className="grid gap-3 md:grid-cols-2">
@@ -641,7 +721,7 @@ function ImportTemplateDialog({ importable, versionsByDefinition }: {
             </Field>
           </div>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-          <DialogFooter><Button type="submit" disabled={operation.pending}>Incorporar</Button></DialogFooter>
+          <DialogFooter><Button type="submit" disabled={operation.pending}>Incorporar como borrador</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -655,34 +735,49 @@ function ImportTemplateDialog({ importable, versionsByDefinition }: {
  * el conector `onInspectionCompleted` no hace nada y la inspección jamás llega
  * al PDTP — que fue el estado de todas las plantillas hasta 2026-08-04.
  */
-function PdtpActivitiesDialog({ templateId, name, expectedVersion, current, currentReview }: {
+function PdtpActivitiesDialog({ templateId, name, expectedVersion, current, currentReview, options }: {
   templateId: string
   name: string
   expectedVersion: number
   current: number[]
   currentReview: number[]
+  options: PdtpActivityOption[]
 }) {
   const [open, setOpen] = React.useState(false)
+  const [execution, setExecution] = React.useState<number[]>(current)
+  const [review, setReview] = React.useState<number[]>(currentReview)
+  const executionSet = React.useMemo(() => new Set(execution), [execution])
+  const reviewSet = React.useMemo(() => new Set(review), [review])
+  const retainedNumbers = React.useMemo(() => {
+    const activeNumbers = new Set(options.map((option) => option.n))
+    return [...new Set([...current, ...currentReview])]
+      .filter((number) => !activeNumbers.has(number))
+      .sort((a, b) => a - b)
+  }, [current, currentReview, options])
+  const visibleOptions = React.useMemo(() => [
+    ...options.map((option) => ({ ...option, retained: false })),
+    ...retainedNumbers.map((number) => ({
+      n: number,
+      name: "Actividad vinculada fuera del programa activo",
+      year: 0,
+      retained: true,
+    })),
+  ].sort((a, b) => a.n - b.n), [options, retainedNumbers])
   const operation = useOperation()
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (next) { setExecution(current); setReview(currentReview) } }}>
       <DialogTrigger asChild><Button size="sm" variant="ghost">Acreditación PDTP</Button></DialogTrigger>
       <DialogContent>
         <form
           onSubmit={(event) => {
             event.preventDefault()
-            const form = new FormData(event.currentTarget)
-            const parse = (field: string) => String(form.get(field) ?? "")
-              .split(/[\s,]+/)
-              .map((token) => Number(token.trim()))
-              .filter((value) => Number.isInteger(value) && value > 0)
             operation.run(
               () => setInspectionTemplatePdtpActivitiesAction({
                 templateId,
                 expectedVersion,
-                pdtpActivityNumbers: parse("numbers"),
-                pdtpReviewActivityNumbers: parse("reviewNumbers"),
+                pdtpActivityNumbers: execution,
+                pdtpReviewActivityNumbers: review,
               }),
               () => setOpen(false),
             )
@@ -692,20 +787,27 @@ function PdtpActivitiesDialog({ templateId, name, expectedVersion, current, curr
           <DialogHeader>
             <DialogTitle>Acreditación PDTP · {name}</DialogTitle>
             <DialogDescription>
-              Números de actividad del programa anual que acredita esta plantilla. El programa separa ejecutar
-              de revisar y firmar, y les pone responsables distintos, así que son dos declaraciones. Vacío = no
-              acredita nada.
+              Elige por número y nombre qué actividad acredita la ejecución y cuál acredita la revisión segregada.
             </DialogDescription>
           </DialogHeader>
-          <Field label="Al declarar ejecutada" hint="Separados por coma o espacio. Ej.: 24, 27">
-            <Input name="numbers" defaultValue={current.join(", ")} maxLength={120} />
-          </Field>
-          {/* La firma es un acto de otra persona: acá el servicio ya impide que
-              revise quien ejecutó, que es la independencia que la actividad
-              exige. Ej.: la n=26 firma el reporte diario que llenó el operador. */}
-          <Field label="Al revisar y cerrar" hint="La firma del supervisor, no la ejecución. Ej.: 26">
-            <Input name="reviewNumbers" defaultValue={currentReview.join(", ")} maxLength={120} />
-          </Field>
+          {options.length === 0 && <p className="rounded-lg bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">No hay un PDTP activo con actividades seleccionables. Activa el programa anual antes de agregar nuevas acreditaciones.</p>}
+          {retainedNumbers.length > 0 && (
+            <p className="rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">
+              Las actividades señaladas como fuera del programa activo se conservan por trazabilidad. Desmárcalas si esta plantilla ya no debe acreditarlas.
+            </p>
+          )}
+          {visibleOptions.length > 0 && (
+            <div className="grid gap-4 md:grid-cols-2">
+              <fieldset className="max-h-72 space-y-2 overflow-y-auto rounded-lg border border-[var(--color-border)] p-3">
+                <legend className="px-1 text-sm font-semibold">Al declarar ejecutada</legend>
+                {visibleOptions.map((option) => <Checkbox key={`execute-${option.year}-${option.n}`} checked={executionSet.has(option.n)} onChange={(event) => setExecution((values) => toggleNumber(values, option.n, event.target.checked))} label={`N° ${option.n} — ${option.name}`} />)}
+              </fieldset>
+              <fieldset className="max-h-72 space-y-2 overflow-y-auto rounded-lg border border-[var(--color-border)] p-3">
+                <legend className="px-1 text-sm font-semibold">Al revisar y cerrar</legend>
+                {visibleOptions.map((option) => <Checkbox key={`review-${option.year}-${option.n}`} checked={reviewSet.has(option.n)} onChange={(event) => setReview((values) => toggleNumber(values, option.n, event.target.checked))} label={`N° ${option.n} — ${option.name}`} />)}
+              </fieldset>
+            </div>
+          )}
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Guardar</Button></DialogFooter>
         </form>
@@ -799,6 +901,7 @@ function EditProgramDialog({ program, assignees }: {
 }) {
   const [open, setOpen] = React.useState(false)
   const [frequency, setFrequency] = React.useState(program.frequency)
+  const [intervalDays, setIntervalDays] = React.useState(program.intervalDays)
   const [assignedToUserId, setAssignedToUserId] = React.useState(program.assignedToUserId ?? "_none")
   const [nextDueOn, setNextDueOn] = React.useState(program.nextDueOn)
   const operation = useOperation()
@@ -806,13 +909,12 @@ function EditProgramDialog({ program, assignees }: {
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
-    const intervalDays = Number(form.get("intervalDays"))
     const subjectType = String(form.get("subjectType") ?? "").trim()
     operation.run(() => updateInspectionProgramAction({
       programId: program.id,
       expectedVersion: program.version,
       frequency,
-      intervalDays: Number.isFinite(intervalDays) && intervalDays > 0 ? intervalDays : undefined,
+      intervalDays,
       nextDueOn,
       assignedToUserId: assignedToUserId === "_none" ? null : assignedToUserId,
       subjectType: subjectType || null,
@@ -820,7 +922,15 @@ function EditProgramDialog({ program, assignees }: {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(value) => {
+      if (value) {
+        setFrequency(program.frequency)
+        setIntervalDays(program.intervalDays)
+        setAssignedToUserId(program.assignedToUserId ?? "_none")
+        setNextDueOn(program.nextDueOn)
+      }
+      setOpen(value)
+    }}>
       <DialogTrigger asChild><Button size="sm" variant="ghost">Editar</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
@@ -830,10 +940,10 @@ function EditProgramDialog({ program, assignees }: {
           </DialogHeader>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Frecuencia">
-              <Select value={frequency} onValueChange={setFrequency}><SelectTrigger aria-label="Frecuencia"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_FREQUENCY_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
+              <Select value={frequency} onValueChange={(value) => { setFrequency(value); setIntervalDays(FREQUENCY_INTERVAL_DAYS[value] ?? 30) }}><SelectTrigger aria-label="Frecuencia"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_FREQUENCY_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
             </Field>
-            <Field label="Intervalo (días)" hint="Vacío = el propio de la frecuencia.">
-              <Input name="intervalDays" type="number" min={1} max={3650} defaultValue={program.intervalDays} />
+            <Field label="Intervalo efectivo (días)" hint="Este número gobierna el calendario. Al cambiar la frecuencia se propone su intervalo estándar.">
+              <Input name="intervalDays" type="number" min={1} max={3650} value={intervalDays} onChange={(event) => setIntervalDays(Number(event.target.value))} required />
             </Field>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
@@ -857,54 +967,77 @@ function EditProgramDialog({ program, assignees }: {
 
 /** Desactivar es el borrado: los runs ya creados conservan su origen. */
 function ToggleProgramButton({ program }: { program: ProgramItem }) {
+  const [open, setOpen] = React.useState(false)
   const operation = useOperation()
   return (
-    <Button
-      type="button"
-      size="sm"
-      variant="ghost"
-      disabled={operation.pending}
-      onClick={() => operation.run(() => updateInspectionProgramAction({
-        programId: program.id,
-        expectedVersion: program.version,
-        isActive: !program.isActive,
-      }))}
-    >
-      {program.isActive ? "Desactivar" : "Activar"}
-    </Button>
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild><Button type="button" size="sm" variant="ghost">{program.isActive ? "Detener" : "Reactivar"}</Button></DialogTrigger>
+      <DialogContent>
+        <form className="space-y-4" onSubmit={(event) => {
+          event.preventDefault()
+          const reason = String(new FormData(event.currentTarget).get("reason") ?? "").trim()
+          operation.run(() => updateInspectionProgramAction({
+            programId: program.id,
+            expectedVersion: program.version,
+            isActive: !program.isActive,
+            reason,
+          }), () => setOpen(false))
+        }}>
+          <DialogHeader>
+            <DialogTitle>{program.isActive ? "¿Detener esta programación?" : "¿Reactivar esta programación?"}</DialogTitle>
+            <DialogDescription>{program.isActive
+              ? "No se crearán futuras inspecciones automáticas. Las ya creadas se conservan y pueden seguir ejecutándose."
+              : "Volverán a generarse inspecciones desde la próxima fecha configurada."}</DialogDescription>
+          </DialogHeader>
+          <Field label="Motivo" required hint="Quedará registrado en el historial. Mínimo 10 caracteres."><Textarea name="reason" required minLength={10} maxLength={2000} /></Field>
+          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button type="submit" disabled={operation.pending}>{program.isActive ? "Detener programación" : "Reactivar programación"}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 
 /** Materializa la ejecución del período por el mismo camino que el cron. */
 function RunProgramNowButton({ program }: { program: ProgramItem }) {
   const operation = useOperation()
+  const router = useRouter()
   return (
-    <Button
-      type="button"
-      size="sm"
-      variant="secondary"
-      disabled={operation.pending}
-      onClick={() => operation.run(() => runProgramNowAction({ programId: program.id }))}
-      title={operation.message || undefined}
-    >
-      Ejecutar ahora
-    </Button>
+    <div className="space-y-1 text-right">
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        disabled={operation.pending}
+        onClick={() => operation.run(() => runProgramNowAction({ programId: program.id }), (result) => {
+          const runId = result.data?.runId
+          if (typeof runId === "string") router.push(`/prevencion/inspecciones/${runId}`)
+        })}
+      >
+        {operation.pending ? "Creando…" : "Crear y abrir inspección"}
+      </Button>
+      {operation.message && <p role="status" className="max-w-64 text-xs">{operation.message}</p>}
+    </div>
   )
 }
 
 /* ── Alta de programación ─────────────────────────────────────────────────── */
 
-function ProgramDialog({ templates, worksites, assignees, riskEntriesByWorksite }: {
+export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWorksite }: {
   templates: { id: string; name: string; versionLabel: string }[]
   worksites: { id: string; name: string }[]
   assignees: { id: string; name: string }[]
   riskEntriesByWorksite: Record<string, { id: string; hazardCode: string; hazard: string }[]>
 }) {
   const [open, setOpen] = React.useState(false)
-  const [defaultStart, setDefaultStart] = React.useState("")
-  const [templateId, setTemplateId] = React.useState(templates[0]?.id ?? "")
-  const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
+  const [startsOn, setStartsOn] = React.useState("")
+  const [templateId, setTemplateId] = React.useState("")
+  const [worksiteId, setWorksiteId] = React.useState("")
   const [frequency, setFrequency] = React.useState("monthly")
+  const [intervalDays, setIntervalDays] = React.useState(FREQUENCY_INTERVAL_DAYS.monthly)
   const [assignedToUserId, setAssignedToUserId] = React.useState("_none")
   const [riskEntryId, setRiskEntryId] = React.useState("_none")
   const operation = useOperation()
@@ -915,13 +1048,16 @@ function ProgramDialog({ templates, worksites, assignees, riskEntriesByWorksite 
     const assignee = String(form.get("assignedToUserId") ?? "").trim()
     const subjectType = String(form.get("subjectType") ?? "").trim()
     const riskEntry = String(form.get("riskEntryId") ?? "").trim()
-    const intervalDays = Number(form.get("intervalDays"))
+    if (!templateId || !worksiteId || !startsOn) {
+      operation.setMessage("Selecciona conscientemente la plantilla, la faena y la primera fecha.")
+      return
+    }
     operation.run(() => createInspectionProgramAction({
       templateId: form.get("templateId"),
       worksiteId: form.get("worksiteId"),
       frequency: form.get("frequency"),
       // A-10: el Zod y el CHECK siempre lo soportaron; el formulario no lo ofrecía.
-      intervalDays: Number.isFinite(intervalDays) && intervalDays > 0 ? intervalDays : undefined,
+      intervalDays,
       startsOn: form.get("startsOn"),
       assignedToUserId: assignee || null,
       subjectType: subjectType || null,
@@ -930,31 +1066,44 @@ function ProgramDialog({ templates, worksites, assignees, riskEntriesByWorksite 
   }
 
   return (
-    <Dialog open={open} onOpenChange={(value) => { if (value) setDefaultStart(todayInChile()); setOpen(value) }}>
+    <Dialog open={open} onOpenChange={(value) => {
+      if (value) {
+        setTemplateId("")
+        setWorksiteId("")
+        setStartsOn(todayInChile())
+        setFrequency("monthly")
+        setIntervalDays(FREQUENCY_INTERVAL_DAYS.monthly)
+        setAssignedToUserId("_none")
+        setRiskEntryId("_none")
+        operation.setMessage("")
+      }
+      setOpen(value)
+    }}>
       <DialogTrigger asChild><Button size="sm">Nuevo programa</Button></DialogTrigger>
-      <DialogContent>
-        <form onSubmit={submit} className="space-y-4">
-          <DialogHeader>
+      <DialogContent className="overflow-hidden p-0">
+        <form onSubmit={submit} className="flex max-h-[min(90dvh,54rem)] flex-col">
+          <DialogHeader className="mb-0 shrink-0 border-b border-[var(--color-border)] px-6 pb-4 pt-6">
             <DialogTitle>Nueva programación</DialogTitle>
-            <DialogDescription>Sólo puede programarse una plantilla aprobada.</DialogDescription>
+            <DialogDescription>Elige explícitamente el instrumento y la faena. Sólo las plantillas aprobadas pueden programarse.</DialogDescription>
           </DialogHeader>
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
           <Field label="Plantilla">
-            <Select value={templateId} onValueChange={setTemplateId}><SelectTrigger aria-label="Plantilla"><SelectValue /></SelectTrigger><SelectContent>{templates.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} · {item.versionLabel}</SelectItem>)}</SelectContent></Select><input type="hidden" name="templateId" value={templateId} />
+            <Select value={templateId} onValueChange={setTemplateId}><SelectTrigger aria-label="Plantilla"><SelectValue placeholder="Selecciona una plantilla" /></SelectTrigger><SelectContent>{templates.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} · {item.versionLabel}</SelectItem>)}</SelectContent></Select><input type="hidden" name="templateId" value={templateId} />
           </Field>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Faena">
-              <Select value={worksiteId} onValueChange={(value) => { setWorksiteId(value); setRiskEntryId("_none") }}><SelectTrigger aria-label="Faena del programa"><SelectValue /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
+              <Select value={worksiteId} onValueChange={(value) => { setWorksiteId(value); setRiskEntryId("_none") }}><SelectTrigger aria-label="Faena del programa"><SelectValue placeholder="Selecciona la faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
             </Field>
             <Field label="Frecuencia">
-              <Select value={frequency} onValueChange={setFrequency}><SelectTrigger aria-label="Frecuencia"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_FREQUENCY_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="frequency" value={frequency} />
+              <Select value={frequency} onValueChange={(value) => { setFrequency(value); setIntervalDays(FREQUENCY_INTERVAL_DAYS[value] ?? 30) }}><SelectTrigger aria-label="Frecuencia"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_FREQUENCY_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="frequency" value={frequency} />
             </Field>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Primera fecha" required>
-              <DatePicker name="startsOn" defaultValue={defaultStart} />
+              <DatePicker name="startsOn" value={startsOn} onChange={setStartsOn} />
             </Field>
-            <Field label="Intervalo (días)" hint="Vacío = el propio de la frecuencia.">
-              <Input name="intervalDays" type="number" min={1} max={3650} />
+            <Field label="Intervalo efectivo (días)" hint="Este número gobierna el calendario. Al cambiar la frecuencia se propone su intervalo estándar.">
+              <Input name="intervalDays" type="number" min={1} max={3650} value={intervalDays} onChange={(event) => setIntervalDays(Number(event.target.value))} required />
             </Field>
             <Field label="Asignada a" hint="Opcional.">
               <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger aria-label="Asignada a"><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="assignedToUserId" value={assignedToUserId === "_none" ? "" : assignedToUserId} />
@@ -978,7 +1127,8 @@ function ProgramDialog({ templates, worksites, assignees, riskEntriesByWorksite 
             </Field>
           </div>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-          <DialogFooter><Button type="submit" disabled={operation.pending}>Programar</Button></DialogFooter>
+          </div>
+          <DialogFooter className="mt-0 shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-4"><Button type="submit" disabled={operation.pending || !templateId || !worksiteId || !startsOn}>{operation.pending ? "Programando…" : "Programar"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

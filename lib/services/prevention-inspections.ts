@@ -16,6 +16,8 @@ import {
   preventionInspectionTemplates,
   preventionEmergencyResources,
   fuelVehicles,
+  pdtpActivities,
+  pdtpPrograms,
   preventionRiskEntries,
   preventionRiskMatrices,
   users,
@@ -545,6 +547,7 @@ export async function updateInspectionProgram(input: unknown, access: Inspection
     subjectResourceId: z.string().min(1).nullable().optional(),
     subjectVehicleId: z.string().min(1).nullable().optional(),
     isActive: z.boolean().optional(),
+    reason: z.string().trim().min(10).max(2000).optional(),
   }).parse(input)
 
   return db.transaction(async (tx) => {
@@ -554,6 +557,9 @@ export async function updateInspectionProgram(input: unknown, access: Inspection
     requireAccess(access, "prevention:inspections:manage", program.worksiteId)
     if (program.version !== data.expectedVersion) {
       throw new Error("La programación cambió mientras la editabas. Recarga y reintenta.")
+    }
+    if (data.isActive !== undefined && data.isActive !== program.isActive && !data.reason) {
+      throw new Error("Activar o detener una programación requiere un motivo de al menos 10 caracteres.")
     }
     if (data.riskEntryId) await assertRiskEntryInWorksite(tx, data.riskEntryId, program.worksiteId)
     // `undefined` = no se toca; para validar hay que mirar el valor resultante,
@@ -592,7 +598,7 @@ export async function updateInspectionProgram(input: unknown, access: Inspection
     await history(tx, {
       entityType: "program", entityId: program.id, worksiteId: program.worksiteId,
       changeType: updated.isActive === program.isActive ? "updated" : (updated.isActive ? "reactivated" : "deactivated"),
-      reason: `Programación ${updated.frequency} cada ${updated.intervalDays} día(s), próxima ${updated.nextDueOn}`,
+      reason: data.reason ?? `Programación ${updated.frequency} cada ${updated.intervalDays} día(s), próxima ${updated.nextDueOn}`,
       beforeState: program, afterState: updated, actorUserId: access.userId,
     })
     return updated
@@ -959,7 +965,17 @@ async function saveAnswersWithClient(tx: Tx, args: {
   )).returning()
   if (!updated) throw new Error("La inspección cambió en otra sesión. Recarga y reintenta.")
 
-  return { run: updated, saved: args.answers.length, removed: deleted.length }
+  // La UI puede adjuntar una foto en el mismo gesto de responder: después del
+  // autosave necesita el id persistido al que colgar la evidencia, sin recargar
+  // ni obligar a recorrer el checklist por segunda vez.
+  const answerRefs = args.answers.length === 0 ? [] : await tx.select({
+    answerId: preventionInspectionAnswers.id,
+    sectionId: preventionInspectionAnswers.sectionId,
+    itemId: preventionInspectionAnswers.itemId,
+  }).from(preventionInspectionAnswers)
+    .where(eq(preventionInspectionAnswers.runId, run.id))
+
+  return { run: updated, saved: args.answers.length, removed: deleted.length, answerRefs }
 }
 
 export async function saveInspectionAnswers(input: unknown, access: InspectionAccess) {
@@ -978,7 +994,7 @@ export async function saveInspectionAnswers(input: unknown, access: InspectionAc
       afterState: { version: result.run.version, saved: result.saved, removed: result.removed },
       actorUserId: access.userId,
     })
-    return { saved: result.saved, removed: result.removed, version: result.run.version }
+    return { saved: result.saved, removed: result.removed, version: result.run.version, answerRefs: result.answerRefs }
   })
 }
 
@@ -1308,7 +1324,7 @@ export async function createFindingCapa(input: unknown, access: InspectionAccess
   const data = z.object({
     findingId: z.string().min(1),
     actionDescription: z.string().trim().min(3).max(3000),
-    responsibleUserId: z.string().min(1).nullable().optional(),
+    responsibleUserId: z.string().min(1),
     immediateMeasure: z.string().trim().max(3000).nullable().optional(),
     /** Abre además la mantención correctiva del equipo (sólo con sujeto de flota). */
     createMaintenance: z.boolean().optional(),
@@ -1331,7 +1347,7 @@ export async function createFindingCapa(input: unknown, access: InspectionAccess
       finding: row.finding.description,
       immediateMeasure: data.immediateMeasure ?? row.finding.immediateMeasure ?? null,
       actionDescription: data.actionDescription,
-      responsibleUserId: data.responsibleUserId ?? null,
+      responsibleUserId: data.responsibleUserId,
       priority,
       targetDate: addDays(todayInChile(), dueInDays),
       evidenceRequired: true,
@@ -1943,15 +1959,29 @@ export async function listInspectionRuns(
     .innerJoin(preventionInspectionTemplates, eq(preventionInspectionRuns.templateId, preventionInspectionTemplates.id))
     .innerJoin(worksites, eq(preventionInspectionRuns.worksiteId, worksites.id))
     .where(listFilterConditions(access, filter))
-    // Orden estable: `createdAt` sola empata entre ejecuciones creadas por el
-    // mismo barrido del cron y la paginación repetiría o saltaría filas.
-    .orderBy(desc(preventionInspectionRuns.createdAt), desc(preventionInspectionRuns.id))
+    // Bandeja orientada a la tarea: primero lo vencido, luego lo que espera
+    // revisión y después el resto. La fecha y el id mantienen el orden estable
+    // entre ejecuciones creadas por un mismo barrido.
+    .orderBy(
+      sql`CASE
+        WHEN ${preventionInspectionRuns.status} IN ('planned', 'in_progress')
+          AND ${preventionInspectionRuns.scheduledFor} IS NOT NULL
+          AND ${preventionInspectionRuns.scheduledFor} < ${todayInChile()} THEN 0
+        WHEN ${preventionInspectionRuns.status} = 'completed' THEN 1
+        WHEN ${preventionInspectionRuns.status} = 'in_progress' THEN 2
+        WHEN ${preventionInspectionRuns.status} = 'planned' THEN 3
+        ELSE 4
+      END`,
+      asc(preventionInspectionRuns.scheduledFor),
+      desc(preventionInspectionRuns.createdAt),
+      desc(preventionInspectionRuns.id),
+    )
     .limit(page.limit ?? INSPECTION_PAGE_SIZE)
     .offset(page.offset ?? 0)
 }
 
 /** KPIs sobre el universo completo, no sobre la página visible (C-09). */
-export async function summarizeInspectionRuns(access: InspectionAccess, filter: InspectionKindFilter = {}) {
+export async function summarizeInspectionRuns(access: InspectionAccess, filter: InspectionListFilters = {}) {
   requireAccess(access, "prevention:inspections:view")
   const [row] = await db.select({
     total: sql<number>`COUNT(*)::int`,
@@ -1971,7 +2001,7 @@ export async function summarizeInspectionRuns(access: InspectionAccess, filter: 
  * a propósito: si alguien las unifica más adelante, el Excel vuelve a truncarse
  * en silencio, que es el defecto que C-09 corrige.
  */
-export async function listAllInspectionRunsForExport(access: InspectionAccess, filter: InspectionKindFilter = {}) {
+export async function listAllInspectionRunsForExport(access: InspectionAccess, filter: InspectionListFilters = {}) {
   requireAccess(access, "prevention:inspections:view")
   // Los alias se crean UNA vez: `alias()` devuelve un objeto nuevo en cada
   // llamada, así que repetirlo en el select y en el join produciría dos tablas
@@ -1990,7 +2020,20 @@ export async function listAllInspectionRunsForExport(access: InspectionAccess, f
     .leftJoin(executor, eq(preventionInspectionRuns.executedByUserId, executor.id))
     .leftJoin(reviewer, eq(preventionInspectionRuns.reviewedByUserId, reviewer.id))
     .where(listFilterConditions(access, filter))
-    .orderBy(desc(preventionInspectionRuns.createdAt), desc(preventionInspectionRuns.id))
+    .orderBy(
+      sql`CASE
+        WHEN ${preventionInspectionRuns.status} IN ('planned', 'in_progress')
+          AND ${preventionInspectionRuns.scheduledFor} IS NOT NULL
+          AND ${preventionInspectionRuns.scheduledFor} < ${todayInChile()} THEN 0
+        WHEN ${preventionInspectionRuns.status} = 'completed' THEN 1
+        WHEN ${preventionInspectionRuns.status} = 'in_progress' THEN 2
+        WHEN ${preventionInspectionRuns.status} = 'planned' THEN 3
+        ELSE 4
+      END`,
+      asc(preventionInspectionRuns.scheduledFor),
+      desc(preventionInspectionRuns.createdAt),
+      desc(preventionInspectionRuns.id),
+    )
 }
 
 export async function getInspectionRunDetail(runId: string, access: InspectionAccess) {
@@ -2002,6 +2045,7 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
     run: preventionInspectionRuns,
     templateName: preventionInspectionTemplates.name,
     templateKind: preventionInspectionTemplates.kind,
+    sourceDefinitionCode: preventionInspectionTemplates.sourceDefinitionCode,
     definitionSnapshot: preventionInspectionTemplates.definitionSnapshot,
     // Enlace fuente → PDTP: hasta ahora sólo existía el inverso
     // (`findInspectionTemplateForPdtpActivity`), así que quien abría una
@@ -2106,11 +2150,14 @@ export async function listInspectionPrograms(access: InspectionAccess, filter: I
     templateName: preventionInspectionTemplates.name,
     worksiteName: worksites.name,
     assigneeName: users.name,
+    riskHazardCode: preventionRiskEntries.hazardCode,
+    riskHazard: preventionRiskEntries.hazard,
   })
     .from(preventionInspectionPrograms)
     .innerJoin(preventionInspectionTemplates, eq(preventionInspectionPrograms.templateId, preventionInspectionTemplates.id))
     .innerJoin(worksites, eq(preventionInspectionPrograms.worksiteId, worksites.id))
     .leftJoin(users, eq(preventionInspectionPrograms.assignedToUserId, users.id))
+    .leftJoin(preventionRiskEntries, eq(preventionInspectionPrograms.riskEntryId, preventionRiskEntries.id))
     .where(and(scopeCondition(access.scope, preventionInspectionPrograms.worksiteId), kindCondition(filter)))
     .orderBy(asc(preventionInspectionPrograms.nextDueOn))
 }
@@ -2143,6 +2190,20 @@ export async function listInspectionAssignees(access: InspectionAccess) {
     .orderBy(asc(users.name))
 }
 
+/** Actividades del PDTP vigente para elegir por número y nombre, sin pedirle
+ * al prevencionista que memorice o transcriba números sueltos. */
+export async function listInspectionPdtpActivityOptions(access: InspectionAccess) {
+  requireAccess(access, "prevention:inspections:view")
+  return db.select({
+    n: pdtpActivities.n,
+    name: pdtpActivities.activity,
+    year: pdtpPrograms.year,
+  }).from(pdtpActivities)
+    .innerJoin(pdtpPrograms, eq(pdtpPrograms.id, pdtpActivities.programId))
+    .where(and(eq(pdtpPrograms.status, "active"), eq(pdtpActivities.status, "active")))
+    .orderBy(desc(pdtpPrograms.year), asc(pdtpActivities.n))
+}
+
 /**
  * Cierre oportuno de hallazgos (B-07) y serie mensual (función #10).
  *
@@ -2152,7 +2213,7 @@ export async function listInspectionAssignees(access: InspectionAccess) {
  * en ninguna pantalla. Su insumo es `targetDate` de la CAPA y `closedAt` del
  * hallazgo, que sólo empezó a escribirse con la cascada de cierre.
  */
-export async function summarizeInspectionTimelyClosure(access: InspectionAccess, filter: InspectionKindFilter = {}) {
+export async function summarizeInspectionTimelyClosure(access: InspectionAccess, filter: InspectionListFilters = {}) {
   requireAccess(access, "prevention:inspections:view")
   const rows = await db.select({
     targetDate: preventionCapaActions.targetDate,
@@ -2161,8 +2222,9 @@ export async function summarizeInspectionTimelyClosure(access: InspectionAccess,
     .from(preventionInspectionFindings)
     .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, preventionInspectionFindings.runId))
     .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))
+    .innerJoin(worksites, eq(worksites.id, preventionInspectionRuns.worksiteId))
     .leftJoin(preventionCapaActions, eq(preventionCapaActions.id, preventionInspectionFindings.capaActionId))
-    .where(and(scopeCondition(access.scope, preventionInspectionRuns.worksiteId), kindCondition(filter)))
+    .where(listFilterConditions(access, filter))
   return summarizeTimelyClosure(
     rows.map((row) => ({
       targetDate: row.targetDate ?? null,
@@ -2174,7 +2236,7 @@ export async function summarizeInspectionTimelyClosure(access: InspectionAccess,
 }
 
 /** Serie mensual de cumplimiento y hallazgos (función #10). */
-export async function summarizeInspectionTrends(access: InspectionAccess, filter: InspectionKindFilter = {}) {
+export async function summarizeInspectionTrends(access: InspectionAccess, filter: InspectionListFilters = {}) {
   requireAccess(access, "prevention:inspections:view")
   return db.select({
     month: sql<string>`to_char(${preventionInspectionRuns.executedAt}, 'YYYY-MM')`,
@@ -2185,9 +2247,9 @@ export async function summarizeInspectionTrends(access: InspectionAccess, filter
   })
     .from(preventionInspectionRuns)
     .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))
+    .innerJoin(worksites, eq(worksites.id, preventionInspectionRuns.worksiteId))
     .where(and(
-      scopeCondition(access.scope, preventionInspectionRuns.worksiteId),
-      kindCondition(filter),
+      listFilterConditions(access, filter),
       isNotNull(preventionInspectionRuns.executedAt),
     ))
     .groupBy(sql`to_char(${preventionInspectionRuns.executedAt}, 'YYYY-MM')`)

@@ -37,6 +37,8 @@ export interface MaterializeResult {
   /** La plantilla dejó de estar aprobada: un fallo de datos que hay que ver. */
   skippedTemplate: number
   errors: number
+  /** Ejecuciones creadas, para que una acción interactiva pueda abrirlas. */
+  createdRuns: { id: string; code: string }[]
 }
 
 /** Tope por corrida: una cota explícita vale más que un timeout de plataforma. */
@@ -44,7 +46,7 @@ const MAX_PROGRAMS_PER_RUN = 500
 
 export async function materializeProgramRuns(options: { programId?: string } = {}): Promise<MaterializeResult> {
   const today = todayInChile()
-  const result: MaterializeResult = { examined: 0, created: 0, skippedDuplicate: 0, skippedTemplate: 0, errors: 0 }
+  const result: MaterializeResult = { examined: 0, created: 0, skippedDuplicate: 0, skippedTemplate: 0, errors: 0, createdRuns: [] }
 
   const due = await db.select({
     program: preventionInspectionPrograms,
@@ -135,6 +137,7 @@ export async function materializeProgramRuns(options: { programId?: string } = {
 
       if (!created) { result.skippedDuplicate += 1; continue }
       result.created += 1
+      result.createdRuns.push({ id: created.id, code: created.code })
 
       if (created.assignedToUserId) {
         await createNotifications([created.assignedToUserId], {

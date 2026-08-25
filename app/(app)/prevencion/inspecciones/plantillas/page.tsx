@@ -7,10 +7,11 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import {
   listDeviationCatalog,
   listImportableDefinitions,
+  listInspectionPdtpActivityOptions,
   listInspectionTemplates,
   listUnclassifiedDeviations,
 } from "@/lib/services/prevention-inspections"
-import { InspectionTemplatesPanel } from "../inspection-catalog"
+import { ImportTemplateDialog, InspectionTemplatesPanel, type TemplateItem } from "../inspection-catalog"
 
 export const metadata: Metadata = { title: "Plantillas de inspección" }
 
@@ -30,7 +31,10 @@ export default async function PlantillasInspeccionPage() {
     permissions: session.user.permissions,
   }
   const canManage = session.user.permissions.includes("prevention:inspections:manage")
-  const templates = await listInspectionTemplates(access)
+  const [templates, pdtpOptions] = await Promise.all([
+    listInspectionTemplates(access),
+    listInspectionPdtpActivityOptions(access),
+  ])
 
   /* Catálogo de desviaciones por instrumento, más las que se registraron como
    * "Otra" y esperan clasificación. Se piden en paralelo y sólo para quien
@@ -48,6 +52,31 @@ export default async function PlantillasInspeccionPage() {
       unclassifiedByTemplate.set(templateId, unclassified)
     }
   }
+  const templateItems: TemplateItem[] = templates.map((row) => ({
+    id: row.id,
+    code: row.code,
+    versionLabel: row.versionLabel,
+    name: row.name,
+    kind: row.kind,
+    status: row.status,
+    authorUserId: row.authorUserId,
+    version: row.version,
+    coverage: row.coverage,
+    pdtpActivityNumbers: row.pdtpActivityNumbers,
+    pdtpReviewActivityNumbers: row.pdtpReviewActivityNumbers,
+    sourceDefinitionCode: row.sourceDefinitionCode,
+    definitionDrifted: row.definitionDrifted,
+    definitionMissing: row.definitionMissing,
+    deviations: (deviationsByTemplate.get(row.id) ?? []).map((entry) => ({
+      id: entry.id,
+      label: entry.label,
+      danoPotencial: entry.danoPotencial,
+      isActive: entry.isActive,
+      criticality: entry.criticality,
+    })),
+    unclassifiedDeviations: unclassifiedByTemplate.get(row.id) ?? [],
+  }))
+  const importable = canManage ? listImportableDefinitions() : []
 
   return (
     <PageContainer>
@@ -60,33 +89,11 @@ export default async function PlantillasInspeccionPage() {
           { label: "Inspecciones", href: "/prevencion/inspecciones" },
           { label: "Plantillas" },
         ]} />}
+        actions={canManage && importable.length > 0 ? <ImportTemplateDialog importable={importable} templates={templateItems} /> : undefined}
       />
       <InspectionTemplatesPanel
-        templates={templates.map((row) => ({
-          id: row.id,
-          code: row.code,
-          versionLabel: row.versionLabel,
-          name: row.name,
-          kind: row.kind,
-          status: row.status,
-          authorUserId: row.authorUserId,
-          version: row.version,
-          coverage: row.coverage,
-          pdtpActivityNumbers: row.pdtpActivityNumbers,
-          pdtpReviewActivityNumbers: row.pdtpReviewActivityNumbers,
-          sourceDefinitionCode: row.sourceDefinitionCode,
-          definitionDrifted: row.definitionDrifted,
-          definitionMissing: row.definitionMissing,
-          deviations: (deviationsByTemplate.get(row.id) ?? []).map((entry) => ({
-            id: entry.id,
-            label: entry.label,
-            danoPotencial: entry.danoPotencial,
-            isActive: entry.isActive,
-            criticality: entry.criticality,
-          })),
-          unclassifiedDeviations: unclassifiedByTemplate.get(row.id) ?? [],
-        }))}
-        importable={canManage ? listImportableDefinitions() : []}
+        templates={templateItems}
+        pdtpOptions={pdtpOptions}
         canManage={canManage}
         canApprove={session.user.permissions.includes("prevention:inspections:approve")}
       />

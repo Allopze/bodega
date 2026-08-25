@@ -11,12 +11,14 @@ import {
   listInspectionWorksites,
   listRiskEntriesForWorksite,
 } from "@/lib/services/prevention-inspections"
-import { InspectionProgramsPanel } from "../inspection-catalog"
+import { InspectionProgramsPanel, ProgramDialog } from "../inspection-catalog"
 
 export const metadata: Metadata = { title: "Programación de inspecciones" }
 
 /** Cuándo se pregunta: el calendario del que nacen las inspecciones planificadas. */
-export default async function ProgramacionInspeccionPage() {
+export default async function ProgramacionInspeccionPage({ searchParams }: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
   let session
   try { session = await requirePermission("prevention:inspections:view") }
   catch { redirect("/forbidden") }
@@ -27,6 +29,8 @@ export default async function ProgramacionInspeccionPage() {
     permissions: session.user.permissions,
   }
   const canManage = session.user.permissions.includes("prevention:inspections:manage")
+  const rawView = (await searchParams).vista
+  const initialView = (Array.isArray(rawView) ? rawView[0] : rawView) === "vencidas" ? "overdue" as const : "all" as const
 
   const [programs, templates, worksites, assignees] = await Promise.all([
     listInspectionPrograms(access),
@@ -46,11 +50,18 @@ export default async function ProgramacionInspeccionPage() {
     for (const [worksiteId, rows] of entries) riskEntriesByWorksite[worksiteId] = rows
   }
 
+  const approvedTemplates = templates
+    .filter((item) => item.status === "approved")
+    .map((item) => ({ id: item.id, name: item.name, versionLabel: item.versionLabel }))
+
   return (
     <PageContainer>
       <PageHeader
         title="Programación de inspecciones"
         description="Qué instrumento se ejecuta, en qué faena y con qué frecuencia. El barrido diario crea las inspecciones vencidas; «Ejecutar ahora» usa el mismo camino."
+        actions={canManage && approvedTemplates.length > 0 && worksites.length > 0
+          ? <ProgramDialog templates={approvedTemplates} worksites={worksites} assignees={assignees} riskEntriesByWorksite={riskEntriesByWorksite} />
+          : undefined}
         breadcrumb={<Breadcrumbs items={[
           { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
@@ -71,15 +82,16 @@ export default async function ProgramacionInspeccionPage() {
           assignedToUserId: row.program.assignedToUserId,
           assigneeName: row.assigneeName,
           riskEntryId: row.program.riskEntryId,
+          riskLabel: row.riskHazard
+            ? `${row.riskHazardCode ? `${row.riskHazardCode} · ` : ""}${row.riskHazard}`
+            : null,
           subjectType: row.program.subjectType,
           isActive: row.program.isActive,
           version: row.program.version,
         }))}
-        approvedTemplates={templates.filter((item) => item.status === "approved").map((item) => ({ id: item.id, name: item.name, versionLabel: item.versionLabel }))}
-        worksites={worksites}
         assignees={assignees}
-        riskEntriesByWorksite={riskEntriesByWorksite}
         canManage={canManage}
+        initialView={initialView}
       />
     </PageContainer>
   )

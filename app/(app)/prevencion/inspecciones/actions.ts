@@ -75,6 +75,15 @@ function versionOf(result: unknown): ActionState["data"] {
   return typeof version === "number" ? { version } : undefined
 }
 
+/** Guardar respuestas también devuelve las claves persistidas para que una
+ * fotografía elegida antes del primer guardado pueda adjuntarse en el mismo
+ * gesto, sin una recarga ni una segunda pasada por el checklist. */
+function versionAndAnswerRefsOf(result: unknown): ActionState["data"] {
+  const data = versionOf(result)
+  const answerRefs = (result as { answerRefs?: unknown } | null)?.answerRefs
+  return data && Array.isArray(answerRefs) ? { ...data, answerRefs } : data
+}
+
 export async function importInspectionTemplateAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:manage")
   if (guard.error) return guard.error
@@ -136,6 +145,11 @@ export async function runProgramNowAction(input: unknown): Promise<ActionState> 
       throw new Error("La inspección de este período ya existe.")
     }
     return result
+  }, (result) => {
+    const created = (result as { createdRuns?: unknown } | null)?.createdRuns
+    if (!Array.isArray(created) || !created[0] || typeof created[0] !== "object") return undefined
+    const first = created[0] as { id?: unknown; code?: unknown }
+    return typeof first.id === "string" ? { runId: first.id, runCode: typeof first.code === "string" ? first.code : undefined } : undefined
   })
 }
 
@@ -148,7 +162,7 @@ export async function createInspectionRunAction(input: unknown): Promise<ActionS
 export async function saveInspectionAnswersAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:execute")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => saveInspectionAnswers(input, access), versionOf)
+  return run(accessFromSession(guard.session), (access) => saveInspectionAnswers(input, access), versionAndAnswerRefsOf)
 }
 
 export async function completeInspectionRunAction(input: unknown): Promise<ActionState> {

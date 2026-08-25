@@ -5,6 +5,7 @@ import { spawn, type ChildProcess } from "node:child_process"
 import crypto from "node:crypto"
 import postgres from "postgres"
 import bcrypt from "bcryptjs"
+import sharp from "sharp"
 import { chromium, type BrowserContext, type Locator, type Page } from "@playwright/test"
 import { loadEnvConfig } from "@next/env"
 import { drizzle } from "drizzle-orm/postgres-js"
@@ -12,6 +13,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator"
 import { sql } from "drizzle-orm"
 import * as schema from "../db/schema"
 import { SYSTEM_PERMISSIONS } from "@/lib/auth/system-rbac"
+import { REPORTE_EQUIPOS } from "@/lib/sst/definitions/reporte-equipos"
 import {
   assertSafeDestructiveDatabase,
   getDatabaseNameFromUrl,
@@ -46,6 +48,7 @@ import {
  *   Variables opcionales:
  *     CAPTURE_PORT                      Puerto del servidor Next.js (def. 3127)
  *     CAPTURE_OUTPUT_DIR                Directorio de salida (def. audit/screenshots/{fecha})
+ *     CAPTURE_STORAGE_PATH              Volumen desechable de archivos (def. storage/capture)
  *     CAPTURE_CONCURRENCY               Workers en paralelo (def. 4)
  *     CAPTURE_ALLOW_DESTRUCTIVE_RESET   "true" para permitir reset de BD
  *     CAPTURE_SKIP_HASH                 "true" omite el SHA-256 de cada PNG (más rápido)
@@ -440,6 +443,17 @@ async function runWithSpinner<T>(label: string, fn: () => Promise<T>): Promise<T
  */
 type CaptureEnvironment = Readonly<Record<string, string | undefined>>
 
+/**
+ * El entorno de capturas nunca hereda `STORAGE_PATH`: podría apuntar al volumen
+ * real de la aplicación y mezclar fixtures visuales con evidencia operativa.
+ * El standalone cambia su cwd a `.next/standalone`, por eso el servidor y el
+ * sembrado reciben además una ruta absoluta compartida.
+ */
+export function resolveCaptureStoragePath(env: CaptureEnvironment = process.env) {
+  const explicit = env.CAPTURE_STORAGE_PATH?.trim()
+  return explicit ? path.resolve(explicit) : path.join(root, "storage", "capture")
+}
+
 export function requireCaptureDatabaseUrl(env: CaptureEnvironment = process.env) {
   const captureDbUrl = env.CAPTURE_DATABASE_URL?.trim()
   if (!captureDbUrl) {
@@ -656,6 +670,8 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-inspecciones-plantillas", path: "/prevencion/inspecciones/plantillas", auth: true, notes: "Qué se pregunta. Incluye la auditoría del SGSST (DS 44 art. 22 n°4) como un kind más." },
   { slug: "prevencion-inspecciones-programacion", path: "/prevencion/inspecciones/programacion", auth: true, notes: "Cuándo se pregunta: de acá nacen las inspecciones planificadas." },
   { slug: "prevencion-inspeccion-detalle", path: "/prevencion/inspecciones/insp-audit-1", auth: true },
+  { slug: "prevencion-inspeccion-en-curso", path: "/prevencion/inspecciones/insp-audit-progress", auth: true, notes: "Ejecución en terreno parcialmente respondida: progreso obligatorio, guardado y continuidad." },
+  { slug: "prevencion-inspeccion-reporte-equipos", path: "/prevencion/inspecciones/insp-audit-equipment-report", auth: true, notes: "Transcripción de Reporte de Equipos con la planilla física visible junto al formulario." },
   { slug: "prevencion-inspeccion-print", path: "/prevencion/inspecciones/insp-audit-1/print", auth: true, notes: "Acta A4 de la ejecución; el export Excel es agregado y en fiscalización se pide esta." },
   { slug: "prevencion-cphs", path: "/prevencion/cphs", auth: true },
   { slug: "prevencion-cphs-comite-detalle", path: "/prevencion/cphs/comite-audit-1", auth: true },
@@ -763,7 +779,7 @@ const seedCoverage: CaptureSeedArea[] = [
   { section: "combustibles", fixtures: ["cargas de combustible", "lote de consumos con registros asociados y sin asociar", "lote de log operacional con faena pendiente de asociar", "carga TAE con resultado público", "lote TAE histórico con carga observada y rechazo", "vehículos de combustible", "proveedores de combustible", "cuentas corrientes", "reportes mensuales"] },
   { section: "repuestos", fixtures: ["solicitud de repuestos", "ítem libre", "cotización pendiente"] },
   { section: "servicios", fixtures: ["solicitud de servicios", "ítem libre", "cotización pendiente"] },
-  { section: "prevencion", fixtures: ["fiscalización de la Dirección del Trabajo con medida prescrita", "coordinación de información entregada al mandante", "evaluación nueva", "evaluación seguimiento", "plan de acción", "acción CAPA en progreso con evidencia y seguimiento", "requisito legal publicado con aplicabilidad por faena", "solicitud de privacidad con identidad verificada", "incidente en investigación con evidencia y difusión RE-20", "inspección revisada con hallazgo CAPA", "ejecución PDTP aprobada con checklist y plan de acción", "sesión de capacitación cerrada con asistencia", "gestión de cambio evaluada con CAPA", "plan de emergencia con simulacro y roles", "permiso activo con AST, medición y aislamiento", "comité CPHS paritario con acta", "grupo de exposición con medición", "programa de vigilancia con matrículas", "documento vigente distribuido con acuse", "control MIPER crítico verificado", "indicadores mensuales de seguridad y salud en el trabajo", "indicadores material y ambiental"] },
+  { section: "prevencion", fixtures: ["fiscalización de la Dirección del Trabajo con medida prescrita", "coordinación de información entregada al mandante", "evaluación nueva", "evaluación seguimiento", "plan de acción", "acción CAPA en progreso con evidencia y seguimiento", "requisito legal publicado con aplicabilidad por faena", "solicitud de privacidad con identidad verificada", "incidente en investigación con evidencia y difusión RE-20", "inspección revisada con hallazgo CAPA", "inspección en curso con respuestas parciales", "Reporte de Equipos en transcripción con planilla física", "ejecución PDTP aprobada con checklist y plan de acción", "sesión de capacitación cerrada con asistencia", "gestión de cambio evaluada con CAPA", "plan de emergencia con simulacro y roles", "permiso activo con AST, medición y aislamiento", "comité CPHS paritario con acta", "grupo de exposición con medición", "programa de vigilancia con matrículas", "documento vigente distribuido con acuse", "control MIPER crítico verificado", "indicadores mensuales de seguridad y salud en el trabajo", "indicadores material y ambiental"] },
   { section: "admin-faenas", fixtures: ["faenas activas", "faena que representa la bodega de la oficina central"] },
   { section: "admin-equipos", fixtures: ["detector monogás con historial de calibración", "alcotest en otra faena"] },
   { section: "admin-plantillas", fixtures: ["plantillas de correo del sistema"] },
@@ -782,6 +798,7 @@ const moduleAliases: Record<string, string[]> = {
   compras: ["solicitudes", "compras", "recepcion"],
   sst: ["prevencion"],
   prevencion: ["prevencion"],
+  "inspecciones-evidencia": ["prevencion-inspeccion-en-curso", "prevencion-inspeccion-reporte-equipos"],
   combustible: ["combustibles"],
   combustibles: ["combustibles"],
   inventario: ["bodega", "entregas", "trazabilidad"],
@@ -1168,6 +1185,52 @@ async function prepareDatabase(captureDbUrl: string) {
   const serviceItemId = "srv-item-audit-1"
   const resetToken = "capture-reset-token"
   const resetTokenHash = crypto.createHash("sha256").update(resetToken).digest("hex")
+
+  // El visor de Reporte de Equipos necesita una planilla real servible por la
+  // ruta autenticada. Se genera sólo para la base desechable de capturas: el
+  // PNG deja visible el documento fuente sin depender de archivos personales
+  // ni de un volumen externo.
+  const equipmentReportStorageName = "capture-reporte-equipos-03101.png"
+  const equipmentReportDir = path.join(resolveCaptureStoragePath(), "inspection-evidence")
+  fs.mkdirSync(equipmentReportDir, { recursive: true })
+  await sharp(Buffer.from(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="900" height="1200" viewBox="0 0 900 1200">
+      <rect width="900" height="1200" fill="#e8e5dd"/>
+      <rect x="38" y="28" width="824" height="1144" rx="4" fill="#fffefa" stroke="#aaa59b" stroke-width="2"/>
+      <text x="70" y="78" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#1f2937">CHOME · CONTROL OPERACIONAL</text>
+      <text x="450" y="132" text-anchor="middle" font-family="Arial, sans-serif" font-size="34" font-weight="700" fill="#111827">REPORTE DE EQUIPOS</text>
+      <text x="765" y="76" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#9f1239">N° 03101</text>
+      <g font-family="Arial, sans-serif" font-size="16" fill="#27303d">
+        <text x="70" y="178">Faena: MININCO</text><line x1="132" y1="182" x2="335" y2="182" stroke="#6b7280"/>
+        <text x="365" y="178">Fecha: 12-06-2026</text><line x1="420" y1="182" x2="600" y2="182" stroke="#6b7280"/>
+        <text x="630" y="178">Turno: DÍA</text><line x1="682" y1="182" x2="818" y2="182" stroke="#6b7280"/>
+        <text x="70" y="218">Equipo: CAMIÓN LK-45-10</text><line x1="132" y1="222" x2="430" y2="222" stroke="#6b7280"/>
+        <text x="468" y="218">Área: Patio madera</text><line x1="510" y1="222" x2="818" y2="222" stroke="#6b7280"/>
+        <text x="70" y="258">Operador entrante: Carlos M.</text><line x1="202" y1="262" x2="430" y2="262" stroke="#6b7280"/>
+        <text x="468" y="258">Horómetro inicio: 134122</text><line x1="594" y1="262" x2="818" y2="262" stroke="#6b7280"/>
+      </g>
+      <rect x="70" y="302" width="748" height="656" fill="none" stroke="#374151" stroke-width="2"/>
+      <rect x="70" y="302" width="748" height="58" fill="#e5e7eb"/>
+      <g stroke="#6b7280" stroke-width="1">
+        <line x1="555" y1="302" x2="555" y2="958"/><line x1="635" y1="302" x2="635" y2="958"/><line x1="715" y1="302" x2="715" y2="958"/>
+        <line x1="70" y1="360" x2="818" y2="360"/><line x1="70" y1="414" x2="818" y2="414"/><line x1="70" y1="468" x2="818" y2="468"/>
+        <line x1="70" y1="522" x2="818" y2="522"/><line x1="70" y1="576" x2="818" y2="576"/><line x1="70" y1="630" x2="818" y2="630"/>
+        <line x1="70" y1="684" x2="818" y2="684"/><line x1="70" y1="738" x2="818" y2="738"/><line x1="70" y1="792" x2="818" y2="792"/>
+        <line x1="70" y1="846" x2="818" y2="846"/><line x1="70" y1="900" x2="818" y2="900"/>
+      </g>
+      <g font-family="Arial, sans-serif" fill="#1f2937">
+        <text x="90" y="338" font-size="16" font-weight="700">ESTADO DEL CAMIÓN / MAQUINARIA</text>
+        <text x="572" y="330" font-size="12" font-weight="700">NORMAL</text><text x="655" y="330" font-size="12" font-weight="700">FALLA</text><text x="742" y="330" font-size="12" font-weight="700">N/A</text>
+        <g font-size="17"><text x="92" y="394">1. Luces</text><text x="92" y="448">2. Baliza</text><text x="92" y="502">3. Bocina</text><text x="92" y="556">4. Alarma de retroceso</text><text x="92" y="610">5. Fuga de aceite / frenos</text><text x="92" y="664">6. Espejos</text><text x="92" y="718">7. Cinturón de seguridad</text><text x="92" y="772">8. Freno de servicio</text><text x="92" y="826">9. Freno de estacionamiento</text><text x="92" y="880">10. Estado de carrocería</text><text x="92" y="934">11. Neumáticos y llantas</text></g>
+        <g font-size="28" font-weight="700" fill="#166534"><text x="582" y="397">✓</text><text x="582" y="451">✓</text><text x="582" y="505">✓</text><text x="582" y="559">✓</text><text x="582" y="613">✓</text><text x="582" y="667">✓</text><text x="582" y="721">✓</text><text x="582" y="775">✓</text><text x="582" y="829">✓</text><text x="582" y="883">✓</text><text x="582" y="937">✓</text></g>
+      </g>
+      <text x="70" y="1002" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#1f2937">OBSERVACIONES</text>
+      <rect x="70" y="1016" width="748" height="62" fill="none" stroke="#6b7280"/>
+      <text x="86" y="1048" font-family="Arial, sans-serif" font-size="15" fill="#374151">Sin novedades operacionales. Verificar lavado al cierre del turno.</text>
+      <g font-family="Arial, sans-serif" font-size="13" fill="#374151"><text x="90" y="1114">OPERADOR ENTRANTE</text><text x="355" y="1114">OPERADOR SALIENTE</text><text x="650" y="1114">SUPERVISOR TURNO</text></g>
+      <g fill="none" stroke="#475569" stroke-width="2"><path d="M102 1140 q36 -34 72 0 q30 26 70 -2"/><path d="M380 1141 q28 -29 62 0 q42 24 80 -4"/><path d="M668 1140 q38 -35 72 0 q24 20 58 -5"/></g>
+    </svg>
+  `)).png().toFile(path.join(equipmentReportDir, equipmentReportStorageName))
 
   // Antes había aquí un catálogo de 99 permisos escrito a mano, y **derivó** de la
   // fuente real: le faltaban todos los `prevention:epp*`, así que el entorno de
@@ -2177,6 +2240,91 @@ async function prepareDatabase(captureDbUrl: string) {
     { id: "inspection-history-audit-1", entityType: "run", entityId: "insp-audit-1", worksiteId, changeType: "created", reason: "Inspección programada en faena.", afterState: { status: "planned" }, actorUserId: userId, createdAt: now },
     { id: "inspection-history-audit-2", entityType: "run", entityId: "insp-audit-1", worksiteId, changeType: "reviewed", reason: "Revisión completada con hallazgo vinculado a CAPA.", beforeState: { status: "completed" }, afterState: { status: "reviewed", capaActionId: "capa-audit-1" }, actorUserId: userId, createdAt: now },
   ])
+
+  // Estado operativo #1: ejecución parcialmente respondida. Hace visible la
+  // composición de terreno —avance obligatorio, persistencia y cierre— que no
+  // aparece en la inspección revisada usada por la captura histórica.
+  await db.insert(schema.preventionInspectionRuns).values({
+    id: "insp-audit-progress",
+    code: "INSP-2026-0002",
+    templateId: "inspection-template-audit-1",
+    worksiteId,
+    subjectType: "equipment",
+    subjectLabel: "Tablero MCC sala de proceso",
+    scheduledFor: "2026-06-13",
+    status: "in_progress",
+    assignedToUserId: "user-audit-prevencion",
+    version: 2,
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionInspectionAnswers).values([
+    { id: "inspection-answer-progress-1", runId: "insp-audit-progress", sectionId: "aislamiento", itemId: "bloqueo-personal", itemLabel: "Cada persona expuesta utiliza su bloqueo personal", result: "conforming", comment: "Bloqueos personales instalados en el punto de aislamiento.", danoPotencial: "grave", createdAt: now, updatedAt: now },
+    { id: "inspection-answer-progress-2", runId: "insp-audit-progress", sectionId: "aislamiento", itemId: "energia-cero", itemLabel: "Se verifica y registra ausencia de tensión antes de intervenir", result: "conforming", comment: "Ausencia de tensión verificada; registro disponible para revisión.", danoPotencial: "fatal", createdAt: now, updatedAt: now },
+  ])
+
+  // Estado operativo #2: el jefe de faena transcribe el Reporte de Equipos
+  // mirando la planilla física. La definición completa mantiene el orden real
+  // de sus campos y el documento se sirve por la ruta autenticada del módulo.
+  await db.insert(schema.preventionInspectionTemplates).values({
+    id: "inspection-template-equipment-report-audit",
+    code: REPORTE_EQUIPOS.code,
+    versionLabel: REPORTE_EQUIPOS.version,
+    name: REPORTE_EQUIPOS.title,
+    kind: "inspection",
+    sourceDefinitionCode: REPORTE_EQUIPOS.code,
+    definitionSnapshot: REPORTE_EQUIPOS,
+    contentHash: "b".repeat(64),
+    status: "approved",
+    legalFramework: Array.isArray(REPORTE_EQUIPOS.legalFramework) ? REPORTE_EQUIPOS.legalFramework.join(" · ") : REPORTE_EQUIPOS.legalFramework,
+    authorUserId: "user-audit-prevencion",
+    approvedByUserId: userId,
+    approvedAt: now,
+    pdtpActivityNumbers: [25],
+    pdtpReviewActivityNumbers: [26],
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionInspectionRuns).values({
+    id: "insp-audit-equipment-report",
+    code: "RE-EQ-2026-03101",
+    templateId: "inspection-template-equipment-report-audit",
+    worksiteId,
+    subjectType: "camion",
+    subjectLabel: "Camión LK-45-10 · Mercedes-Benz Atego 1726",
+    scheduledFor: "2026-06-12",
+    status: "in_progress",
+    assignedToUserId: "user-audit-jefa",
+    version: 2,
+    createdByUserId: "user-audit-jefa",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionInspectionAnswers).values([
+    { id: "equipment-report-answer-1", runId: "insp-audit-equipment-report", sectionId: "identificacion", itemId: "turno", itemLabel: "Turno.", result: "recorded", value: "dia", createdAt: now, updatedAt: now },
+    { id: "equipment-report-answer-2", runId: "insp-audit-equipment-report", sectionId: "identificacion", itemId: "area_trabajo", itemLabel: "Área de trabajo.", result: "recorded", value: "Patio madera", createdAt: now, updatedAt: now },
+    { id: "equipment-report-answer-3", runId: "insp-audit-equipment-report", sectionId: "identificacion", itemId: "operador_entrante", itemLabel: "Operador entrante.", result: "recorded", value: "Carlos M.", createdAt: now, updatedAt: now },
+    { id: "equipment-report-answer-4", runId: "insp-audit-equipment-report", sectionId: "identificacion", itemId: "folio_papel", itemLabel: "N° de reporte en papel.", result: "recorded", value: "03101", createdAt: now, updatedAt: now },
+    { id: "equipment-report-answer-5", runId: "insp-audit-equipment-report", sectionId: "horometro", itemId: "horometro_inicio", itemLabel: "Horómetro inicio.", result: "recorded", value: "134122", createdAt: now, updatedAt: now },
+  ])
+  await db.insert(schema.preventionInspectionRunDocuments).values({
+    id: "equipment-report-document-audit-1",
+    runId: "insp-audit-equipment-report",
+    path: `storage/inspection-evidence/${equipmentReportStorageName}`,
+    kind: "source_form",
+    caption: "Planilla física N° 03101 · turno día · Camión LK-45-10",
+    extraction: {
+      layoutVersion: "reporte-equipos-01-capture",
+      cells: [
+        { sectionId: "identificacion", itemId: "turno", result: "dia", confidence: 0.99 },
+        { sectionId: "identificacion", itemId: "folio_papel", result: "03101", confidence: 0.98 },
+      ],
+    },
+    uploadedByUserId: "user-audit-jefa",
+    createdAt: now,
+  })
 
   // Sesión de capacitación completa: el detalle une sesión, versión del
   // curso, curso, faena y asistencia. Sembrar sólo la sesión dejaba una ruta
@@ -4870,6 +5018,7 @@ function buildCaptureEnv(captureDbUrl: string, serverBaseUrl?: string): NodeJS.D
   return {
     ...(process.env as Record<string, string>),
     DATABASE_URL: captureDbUrl,
+    STORAGE_PATH: resolveCaptureStoragePath(),
     ...(socketHost ? {
       PGHOST: socketHost,
       PGUSER: process.env.PGUSER ?? process.env.USER ?? "postgres",
@@ -5300,7 +5449,7 @@ function isDeclaredElsewhere(route: RouteTarget, url: string): boolean {
   return getCaptureRoutes().some((other) => other.slug !== route.slug && other.path === current)
 }
 
-function uniqueInteractionSlug(used: Set<string>, base: string): string {
+export function uniqueInteractionSlug(used: Set<string>, base: string): string {
   let slug = base
   let n = 2
   while (used.has(slug)) slug = `${base}-${n++}`
@@ -5402,6 +5551,7 @@ async function captureSelectsForRoute(
     const triggers = page.locator('[role="combobox"], [aria-haspopup="listbox"], button[id*="select"]')
     const count = await triggers.count().catch(() => 0)
     const maxSelects = Math.min(count, 2)
+    const usedSelectSlugs = new Set<string>()
 
     for (let i = 0; i < maxSelects; i++) {
       const reset = await resetRouteForInteraction(page, route, requestedUrl)
@@ -5416,7 +5566,8 @@ async function captureSelectsForRoute(
       const trigger = triggers.nth(i)
       if (!(await trigger.isVisible({ timeout: 1000 }).catch(() => false))) continue
       const label = (await trigger.getAttribute("aria-label").catch(() => "")) || (await trigger.textContent().catch(() => "")) || `select-${i}`
-      const cleanSlug = label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 25)
+      const baseSlug = label.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 25) || `select-${i}`
+      const cleanSlug = uniqueInteractionSlug(usedSelectSlugs, baseSlug)
 
       await trigger.click({ force: true }).catch(() => undefined)
       const menuSelector = '[role="listbox"], [role="menu"], [data-radix-popper-content-wrapper]'

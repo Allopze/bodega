@@ -4,6 +4,7 @@ import { CaretRight } from "@phosphor-icons/react/dist/ssr"
 import { can, requireAuth } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getPreventionAttention } from "@/lib/services/prevention-attention"
+import { inspectionQueueStatuses } from "@/lib/services/operational-work-queue"
 import { getNavigationToggleState, routeIsEnabled } from "@/lib/services/module-toggles"
 import { getVisibleAreas } from "@/components/layout/nav-items"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -35,6 +36,9 @@ export async function PreventionHome() {
     includeActions: can(session, "prevention:pdtp:view") && routeIsEnabled("/prevencion/pdtp", toggleState),
     includeEvaluations: can(session, "sst:view") && routeIsEnabled("/prevencion/evaluaciones", toggleState),
     includePpa: can(session, "ppa:view") && routeIsEnabled("/prevencion/ppa", toggleState),
+    inspectionStatuses: routeIsEnabled("/prevencion/inspecciones", toggleState)
+      ? inspectionQueueStatuses(session)
+      : [],
     includeCphs: can(session, "prevention:cphs:view") && routeIsEnabled("/prevencion/cphs", toggleState),
     // Fechas que ya existían en la base y que ninguna pantalla leía. Cada fuente
     // con SU permiso: era un solo interruptor y ver higiene abría también los
