@@ -213,6 +213,21 @@ describe("feedback service", () => {
     expect(filtered[0]!.id).toBe(matching.id)
   })
 
+  it("filters the manager inbox by overdue SLA", async () => {
+    const overdue = await createReport({ tipo: "bug", titulo: "SLA vencido", descripcion: "Debe escalar" }, "user-1")
+    const current = await createReport({ tipo: "bug", titulo: "SLA vigente", descripcion: "Aún hay tiempo" }, "user-2")
+    await inMemoryDb.update(schema.feedbackReports)
+      .set({ dueAt: new Date(Date.now() - 60_000).toISOString() })
+      .where(eq(schema.feedbackReports.id, overdue.id))
+    await inMemoryDb.update(schema.feedbackReports)
+      .set({ dueAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString() })
+      .where(eq(schema.feedbackReports.id, current.id))
+
+    const rows = await listReports({ mode: "all", userId: "user-1", sla: "overdue" })
+
+    expect(rows.map((row) => row.id)).toEqual([overdue.id])
+  })
+
   it("updates report status and sets terminal resolution details", async () => {
     const created = await createReport({ tipo: "sugerencia", titulo: "T", descripcion: "D" }, "user-1")
 

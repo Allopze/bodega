@@ -8,11 +8,13 @@ describe("parseFeedbackListParams", () => {
       estado: "en_progreso",
       tipo: "bug",
       prioridad: "alta",
+      sla: "overdue",
     })).toEqual({
       q: "recepción pendiente",
       estado: "en_progreso",
       tipo: "bug",
       priority: "alta",
+      sla: "overdue",
     })
   })
 
@@ -22,6 +24,7 @@ describe("parseFeedbackListParams", () => {
       estado: "desconocido",
       tipo: "incidente",
       prioridad: "urgente",
+      sla: "mañana",
     })).toEqual({ q: "" })
   })
 })

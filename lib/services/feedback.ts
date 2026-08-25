@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod"
-import { eq, and, desc, ilike, or, count } from "drizzle-orm"
+import { eq, and, desc, ilike, or, count, gte, lt, lte, sql } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import {
   feedbackReportEvents,
@@ -45,6 +45,7 @@ export interface FeedbackListFilters {
   estado?: FeedbackEstado
   tipo?: FeedbackTipo
   priority?: FeedbackPrioridad
+  sla?: "due_soon" | "overdue"
 }
 
 export type FeedbackEventRow = FeedbackReportEvent & { actorName: string | null }
@@ -217,6 +218,18 @@ function reportListConditions(filters: FeedbackListFilters) {
   if (filters.estado) conditions.push(eq(feedbackReports.estado, filters.estado))
   if (filters.tipo) conditions.push(eq(feedbackReports.tipo, filters.tipo))
   if (filters.priority) conditions.push(eq(feedbackReports.priority, filters.priority))
+  if (filters.sla) {
+    const now = new Date()
+    const nowIso = now.toISOString()
+    const warningAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString()
+    conditions.push(filters.sla === "overdue"
+      ? and(sql`${feedbackReports.dueAt} IS NOT NULL`, lt(feedbackReports.dueAt, nowIso))!
+      : and(
+        sql`${feedbackReports.dueAt} IS NOT NULL`,
+        gte(feedbackReports.dueAt, nowIso),
+        lte(feedbackReports.dueAt, warningAt),
+      )!)
+  }
   return conditions
 }
 

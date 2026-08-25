@@ -14,6 +14,7 @@ export interface FeedbackListQuery {
   estado?: FeedbackEstado
   tipo?: FeedbackTipo
   priority?: FeedbackPrioridad
+  sla?: "due_soon" | "overdue"
 }
 
 function readSingle(value: QueryValue): string {
@@ -32,5 +33,6 @@ export function parseFeedbackListParams(searchParams: Record<string, QueryValue>
     estado: readEnum(searchParams.estado, FEEDBACK_ESTADOS),
     tipo: readEnum(searchParams.tipo, FEEDBACK_TIPOS),
     priority: readEnum(searchParams.prioridad, FEEDBACK_PRIORIDADES),
+    sla: readEnum(searchParams.sla, ["due_soon", "overdue"] as const),
   }
 }

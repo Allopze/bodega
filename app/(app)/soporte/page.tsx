@@ -46,7 +46,9 @@ export default async function SoportePage({
     <PageContainer>
       <PageHeader
         title="Soporte"
-        description="Reporta bugs, consultas o sugerencias para mejorar la plataforma."
+        description={canViewAll
+          ? "Bandeja de atención de tickets: prioriza los que vencen o ya están fuera de SLA."
+          : "Reporta bugs, consultas o sugerencias para mejorar la plataforma."}
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Inicio", href: "/dashboard" },

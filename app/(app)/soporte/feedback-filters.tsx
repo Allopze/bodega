@@ -23,6 +23,10 @@ const PRIORITY_OPTIONS = [
   { value: "alta", label: "Alta" },
   { value: "critica", label: "Crítica" },
 ]
+const SLA_OPTIONS = [
+  { value: "overdue", label: "Fuera de SLA" },
+  { value: "due_soon", label: "Vence en 24 h" },
+]
 
 export function FeedbackFilters({ current }: { current: FeedbackListQuery }) {
   const router = useRouter()
@@ -43,6 +47,7 @@ export function FeedbackFilters({ current }: { current: FeedbackListQuery }) {
     ["estado", current.estado, "Estado", STATUS_OPTIONS],
     ["tipo", current.tipo, "Tipo", TYPE_OPTIONS],
     ["prioridad", current.priority, "Prioridad", PRIORITY_OPTIONS],
+    ["sla", current.sla, "SLA", SLA_OPTIONS],
   ] as const) {
     const option = options.find((item) => item.value === value)
     if (option) chips.push({ key, label, value: option.value, displayValue: option.label })
@@ -85,6 +90,14 @@ export function FeedbackFilters({ current }: { current: FeedbackListQuery }) {
         options={PRIORITY_OPTIONS}
         value={current.priority ?? ""}
         onValueChange={(value) => setFilter("prioridad", value)}
+      />
+      <OptionSelect
+        aria-label="Filtrar por SLA"
+        className="h-11 w-full text-xs sm:h-8 sm:w-40"
+        emptyLabel="Todos los SLA"
+        options={SLA_OPTIONS}
+        value={current.sla ?? ""}
+        onValueChange={(value) => setFilter("sla", value)}
       />
     </FilterToolbar>
   )

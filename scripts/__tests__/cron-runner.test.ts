@@ -104,4 +104,18 @@ describe("cron runner", () => {
     expect(exitCode).toBe(1)
     expect(log).toHaveBeenCalledWith(expect.stringContaining("DTE_CRON_RUNNER_CONTRACT"))
   })
+
+  it("accepts the FEEDBACK_CRON_ contract for ticket SLA reminders", async () => {
+    const exitCode = await runCronJob("feedback-sla-reminders", {
+      secret: "cron-secret",
+      log: vi.fn(),
+      fetchImpl: vi.fn().mockResolvedValue(jsonResponse(200, {
+        ok: true,
+        outcome: "success",
+        code: "FEEDBACK_CRON_SUCCESS",
+      })),
+    })
+
+    expect(exitCode).toBe(0)
+  })
 })

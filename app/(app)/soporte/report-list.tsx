@@ -21,6 +21,15 @@ interface Props {
   canViewAll: boolean
 }
 
+function slaLabel(dueAt: string | null): { label: string; className: string } {
+  if (!dueAt) return { label: "—", className: "text-[var(--color-text-subtle)]" }
+  const due = new Date(dueAt).getTime()
+  const now = Date.now()
+  if (due < now) return { label: `Vencido · ${formatDate(dueAt)}`, className: "font-medium text-[var(--color-danger)]" }
+  if (due <= now + 24 * 60 * 60 * 1000) return { label: `Vence pronto · ${formatDate(dueAt)}`, className: "font-medium text-[var(--color-warning-ink)]" }
+  return { label: formatDate(dueAt), className: "text-[var(--color-text-subtle)]" }
+}
+
 export function ReportList({ reports, canCreate, canViewAll }: Props) {
   if (reports.length === 0) {
     return (
@@ -58,7 +67,9 @@ export function ReportList({ reports, canCreate, canViewAll }: Props) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {reports.map((r) => (
+          {reports.map((r) => {
+            const sla = slaLabel(r.dueAt)
+            return (
             <TableRow key={r.id}>
               <TableCell>
                 <span className="text-sub">
@@ -77,14 +88,15 @@ export function ReportList({ reports, canCreate, canViewAll }: Props) {
               <TableCell>
                 <StateBadge state={r.estado as FeedbackEstado} entity="feedback" />
               </TableCell>
-              <TableCell className="text-sub whitespace-nowrap">
-                {r.dueAt ? formatDate(r.dueAt) : "—"}
+              <TableCell className={`whitespace-nowrap ${sla.className}`}>
+                {sla.label}
               </TableCell>
               <TableCell className="text-sub whitespace-nowrap">
                 {formatDate(r.createdAt)}
               </TableCell>
             </TableRow>
-          ))}
+            )
+          })}
         </TableBody>
       </Table>
     </TableRoot>
