@@ -17,3 +17,12 @@ Registros SG-SST
 !db/seed/trabajadores_por_faena_actualizado.md
 .git
 .github
+# Local documentation, virtual environments and generated evidence are not
+# inputs to the production image. Keeping them out avoids sending gigabytes of
+# unrelated data to the Docker daemon for every deploy build.
+docs/
+.venv/
+.vitest-reports/
+artifacts/
+storage/
+*.tsbuildinfo

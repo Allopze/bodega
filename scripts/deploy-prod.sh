@@ -16,6 +16,32 @@ set -euo pipefail
 PROD_DIR="${PROD_DIR:-/server/plataforma}"
 IMAGE="${IMAGE:-ghcr.io/allopze/bodega:latest}"
 PREV_IMAGE="${IMAGE%:*}:prev"
+BUILDER="${BUILDER:-chome-prod}"
+DEPLOY_STARTED_SECONDS=$SECONDS
+
+format_duration() {
+  local duration_seconds="$1"
+  printf '%dm%02ds' "$((duration_seconds / 60))" "$((duration_seconds % 60))"
+}
+
+run_timed() {
+  local label="$1"
+  shift
+  local started_seconds=$SECONDS
+
+  echo "==> $label"
+  if "$@"; then
+    echo "    completed in $(format_duration "$((SECONDS - started_seconds))")"
+  else
+    local status=$?
+    echo "    failed after $(format_duration "$((SECONDS - started_seconds))")"
+    return "$status"
+  fi
+}
+
+run_in_prod() {
+  (cd "$PROD_DIR" && "$@")
+}
 
 if [ ! -d "$PROD_DIR" ]; then
   echo "ERROR: PROD_DIR not found: $PROD_DIR"
@@ -37,6 +63,12 @@ echo "About to deploy $(git rev-parse --short HEAD) ($(git log -1 --format=%s)) 
 read -p "Continue? [y/N] " confirm
 if [ "$confirm" != "y" ]; then
   echo "Aborted."
+  exit 1
+fi
+
+echo "==> Verifying persistent BuildKit builder ($BUILDER)"
+if ! docker buildx inspect "$BUILDER" --bootstrap; then
+  echo "ERROR: BuildKit builder '$BUILDER' is unavailable. Install docker-buildx-plugin and bootstrap the builder before deploying."
   exit 1
 fi
 
@@ -100,21 +132,21 @@ rollback_release() {
 }
 trap rollback_release EXIT
 
-echo "==> Dumping production database"
-dump_file="$PROD_DIR/backups/prod-$(date +%F-%H%M).dump"
-(cd "$PROD_DIR" && docker compose exec -T db pg_dump -U bodega -Fc bodega) > "$dump_file"
-echo "    saved: $dump_file ($(du -h "$dump_file" | cut -f1))"
+dump_production_database() {
+  dump_file="$PROD_DIR/backups/prod-$(date +%F-%H%M).dump"
+  run_in_prod docker compose exec -T db pg_dump -U bodega -Fc bodega > "$dump_file"
+  echo "    saved: $dump_file ($(du -h "$dump_file" | cut -f1))"
+}
 
-echo "==> Building image from $(pwd) (main)"
-docker build --target prod -t "$IMAGE" .
+run_timed "Dumping production database" dump_production_database
+
+run_timed "Building image from $(pwd) (main)" docker buildx build --builder "$BUILDER" --target prod --tag "$IMAGE" --load --progress=plain .
 
 # Read-only y sin depender de las columnas de proyección, así que corre antes
 # de migrar: deja en el log del deploy cuánta deriva OC-factura traía la base.
-echo "==> Diagnóstico de conciliación OC-factura (previo a migrar)"
-(cd "$PROD_DIR" && docker compose run --rm preflight-invoice-reconciliation)
+run_timed "Diagnóstico de conciliación OC-factura (previo a migrar)" run_in_prod docker compose run --rm preflight-invoice-reconciliation
 
-echo "==> Applying migrations"
-(cd "$PROD_DIR" && docker compose run --rm migrate)
+run_timed "Applying migrations" run_in_prod docker compose run --rm migrate
 
 # La migración 0196 marca toda OC con factura como 'needs_review' con
 # fingerprint NULL. El backfill calcula el estado real, y ese fingerprint NULL
@@ -130,20 +162,18 @@ case "$pending_reconciliation" in
 esac
 if [ "$pending_reconciliation" -gt 0 ]; then
   echo "    $pending_reconciliation OC sin recalcular; ejecutando backfill"
-  (cd "$PROD_DIR" && docker compose run --rm backfill-invoice-reconciliation)
+  run_timed "Proyección de conciliación OC-factura" run_in_prod docker compose run --rm backfill-invoice-reconciliation
 else
   echo "    proyección al día; backfill omitido"
 fi
 
-echo "==> Syncing RBAC permissions from module manifests"
-(cd "$PROD_DIR" && docker compose run --rm sync-rbac)
+run_timed "Syncing RBAC permissions from module manifests" run_in_prod docker compose run --rm sync-rbac
 
 # Idempotente y antes del swap: si falla, el deploy aborta con la app anterior
 # todavía en pie. Va acá y no después porque la app debe levantar con el
 # catálogo ya cableado — una plantilla sin `pdtpActivityNumbers` ejecuta la
 # inspección sin acreditar nada en el programa anual.
-echo "==> Instalando el catálogo de inspecciones cableado al PDTP"
-(cd "$PROD_DIR" && docker compose run --rm seed-inspection-templates)
+run_timed "Instalando el catálogo de inspecciones cableado al PDTP" run_in_prod docker compose run --rm seed-inspection-templates
 
 # The durable database marker, not merely a host env var, determines whether
 # the immediately previous image is safe. A failed probe is deliberately
@@ -155,48 +185,57 @@ if [ "$CUTOVER_STATE" != "compat" ] && [ "$CUTOVER_STATE" != "encrypted_only" ];
 fi
 echo "==> DTE cutover state: $CUTOVER_STATE"
 
-echo "==> Recreating app container"
 ROLLBACK_ARMED=1
-(cd "$PROD_DIR" && docker compose up -d --no-deps --force-recreate app)
+run_timed "Recreating app container" run_in_prod docker compose up -d --no-deps --force-recreate app
 
-echo "==> Health check"
-sleep 5
-curl -sf http://127.0.0.1:3000/api/health
-echo "==> Recreating cron container"
-(cd "$PROD_DIR" && docker compose up -d --no-deps --force-recreate cron)
-app_containers=$(cd "$PROD_DIR" && docker compose ps -q app)
-cron_containers=$(cd "$PROD_DIR" && docker compose ps -q cron)
-test -n "$app_containers"
-test -n "$cron_containers"
-# Todas las réplicas app deben llevar el mismo release compatible con sobres
-# antes de que un operador pueda ejecutar el corte. Cron queda deliberadamente
-# singleton: escalarlo duplicaría las sincronizaciones programadas.
-for app_container in $app_containers; do
-  test "$(docker inspect --format '{{.Config.Image}}' "$app_container")" = "$IMAGE"
-done
-set -- $cron_containers
-test "$#" -eq 1
-cron_container="$1"
-test "$(docker inspect --format '{{.Config.Image}}' "$cron_container")" = "$IMAGE"
-for attempt in $(seq 1 12); do
-  if [ "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cron_container")" = "healthy" ]; then
-    break
-  fi
+check_app_health() {
   sleep 5
-done
-test "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cron_container")" = "healthy"
+  curl -sf http://127.0.0.1:3000/api/health
+}
+
+run_timed "Health check" check_app_health
+run_timed "Recreating cron container" run_in_prod docker compose up -d --no-deps --force-recreate cron
+
+check_cron_health() {
+  app_containers=$(run_in_prod docker compose ps -q app)
+  cron_containers=$(run_in_prod docker compose ps -q cron)
+  test -n "$app_containers"
+  test -n "$cron_containers"
+  # Todas las réplicas app deben llevar el mismo release compatible con sobres
+  # antes de que un operador pueda ejecutar el corte. Cron queda deliberadamente
+  # singleton: escalarlo duplicaría las sincronizaciones programadas.
+  for app_container in $app_containers; do
+    test "$(docker inspect --format '{{.Config.Image}}' "$app_container")" = "$IMAGE"
+  done
+  set -- $cron_containers
+  test "$#" -eq 1
+  cron_container="$1"
+  test "$(docker inspect --format '{{.Config.Image}}' "$cron_container")" = "$IMAGE"
+  for attempt in $(seq 1 12); do
+    if [ "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cron_container")" = "healthy" ]; then
+      break
+    fi
+    sleep 5
+  done
+  test "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$cron_container")" = "healthy"
+}
+
+run_timed "Cron health check" check_cron_health
 # Read-only protected evaluator smoke. It does not call either sync route and
 # keeps CRON_SECRET inside the app container process.
-(cd "$PROD_DIR" && docker compose exec -T app node -e '
-  const secret = process.env.CRON_SECRET
-  if (!secret) process.exit(1)
-  fetch("http://127.0.0.1:3000/api/cron/dte-sync-health", { headers: { Authorization: `Bearer ${secret}` } })
-    .then(async (response) => {
-      const body = await response.json().catch(() => null)
-      if (!response.ok || !body || typeof body.code !== "string") process.exit(1)
-    })
-    .catch(() => process.exit(1))
-')
+run_protected_cron_smoke() {
+  run_in_prod docker compose exec -T app node -e '
+    const secret = process.env.CRON_SECRET
+    if (!secret) process.exit(1)
+    fetch("http://127.0.0.1:3000/api/cron/dte-sync-health", { headers: { Authorization: `Bearer ${secret}` } })
+      .then(async (response) => {
+        const body = await response.json().catch(() => null)
+        if (!response.ok || !body || typeof body.code !== "string") process.exit(1)
+      })
+      .catch(() => process.exit(1))
+  '
+}
+run_timed "Protected cron smoke" run_protected_cron_smoke
 ROLLBACK_ARMED=0
 trap - EXIT
 echo
@@ -235,3 +274,5 @@ if [ -z "$BASE_CHECK" ]; then
 else
   echo "  ✓ Base preventiva 2026 publicada (v${BASE_CHECK})."
 fi
+
+echo "==> Total deploy time: $(format_duration "$((SECONDS - DEPLOY_STARTED_SECONDS))")"

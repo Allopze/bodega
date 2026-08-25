@@ -72,6 +72,29 @@ describe("deploy workflow", () => {
     expect(deployScript).toContain("docker-compose-predeploy-")
   })
 
+  it("uses BuildKit cache mounts and excludes local artifacts from the build context", () => {
+    const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
+    const dockerignore = readFileSync(path.join(repoRoot, ".dockerignore"), "utf8")
+
+    expect(dockerfile).toMatch(/^# syntax=docker\/dockerfile:1/)
+    expect(dockerfile).toContain("type=cache,id=chome-npm,target=/root/.npm,sharing=locked")
+    expect(dockerfile).toContain("type=cache,id=chome-next,target=/app/.next/cache,sharing=locked")
+    expect(dockerfile).toContain("COPY scripts/backup-pg.sh")
+    for (const ignoredPath of ["docs/", ".venv/", ".vitest-reports/", "artifacts/", "storage/", "*.tsbuildinfo"]) {
+      expect(dockerignore).toContain(ignoredPath)
+    }
+  })
+
+  it("uses the persistent BuildKit builder and reports timed deploy steps", () => {
+    const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
+
+    expect(deployScript).toContain('BUILDER="${BUILDER:-chome-prod}"')
+    expect(deployScript).toContain('docker buildx inspect "$BUILDER" --bootstrap')
+    expect(deployScript).toContain('docker buildx build --builder "$BUILDER" --target prod --tag "$IMAGE" --load --progress=plain .')
+    expect(deployScript).toContain("run_timed")
+    expect(deployScript).not.toContain('if "$@"; then')
+  })
+
   it("runs the same fail-closed migration preflight in the standalone image", () => {
     const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
     const migrateRunner = readFileSync(path.join(repoRoot, "scripts/migrate.mjs"), "utf8")

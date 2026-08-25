@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 # ── Development stage: provides a full dev environment with hot reload ──
 FROM node:22.13-alpine AS dev
 
@@ -10,7 +12,8 @@ COPY package*.json ./
 # Keep the build stage complete even when the Docker daemon inherits
 # NODE_ENV=production. Next.js compilation and one-shot script bundling depend
 # on development tools such as TypeScript and esbuild.
-RUN npm ci --include=dev
+RUN --mount=type=cache,id=chome-npm,target=/root/.npm,sharing=locked \
+    npm ci --include=dev
 
 COPY . .
 
@@ -33,7 +36,8 @@ FROM dev AS build
 # `next build` page-data collection.  The build never opens a real
 # connection (all routes using @/db are force-dynamic), so a placeholder
 # URL is safe here.  The real DATABASE_URL is injected at runtime only.
-RUN DATABASE_URL=postgres://build:build@localhost:5432/build npm run build
+RUN --mount=type=cache,id=chome-next,target=/app/.next/cache,sharing=locked \
+    DATABASE_URL=postgres://build:build@localhost:5432/build npm run build
 
 # Bundle the RBAC synchronizer while its TypeScript sources, path aliases and
 # build tools are still available. The slim runtime image receives only this
@@ -146,6 +150,7 @@ COPY --from=build /app/scripts/cron-runner.mjs ./scripts/cron-runner.mjs
 
 # Backup scripts (orquestador, verificación, storage, scheduler)
 COPY scripts/backup-orchestrator.sh  ./scripts/backup-orchestrator.sh
+COPY scripts/backup-pg.sh            ./scripts/backup-pg.sh
 COPY scripts/backup-verify.sh       ./scripts/backup-verify.sh
 COPY scripts/backup-storage.sh      ./scripts/backup-storage.sh
 COPY scripts/restore-all.sh         ./scripts/restore-all.sh
