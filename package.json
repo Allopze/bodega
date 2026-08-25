@@ -21,6 +21,7 @@
     "check:drizzle-aliases": "bash scripts/check-drizzle-aliases.sh",
     "check:bundle-budget": "tsx scripts/check-bundle-budget.ts",
     "check:mistyped-requests": "tsx scripts/check-mistyped-requests.ts",
+    "db:diagnose-delivery-quantities": "tsx --env-file-if-exists=.env.local scripts/diagnose-delivery-quantities.ts",
     "db:verify-migrations": "node scripts/verify-migration-chain.mjs",
     "perf:queries": "tsx scripts/measure-operational-queries.ts",
     "prepare": "husky",
