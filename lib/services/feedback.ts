@@ -27,6 +27,14 @@ export interface FeedbackAttachmentInput {
   mimeType: string
 }
 
+export interface FeedbackAttachmentRow {
+  id: string
+  fileName: string
+  fileSize: number | null
+  mimeType: string | null
+  uploadedAt: string
+}
+
 // ── createReport ──────────────────────────────────────────────────────────────
 
 export async function createReport(
@@ -108,6 +116,23 @@ export async function getReport(id: string): Promise<FeedbackRow | null> {
 
   if (!rows[0]) return null
   return rows[0] as FeedbackRow
+}
+
+export async function getReportAttachments(reportId: string): Promise<FeedbackAttachmentRow[]> {
+  return db
+    .select({
+      id: attachments.id,
+      fileName: attachments.fileName,
+      fileSize: attachments.fileSize,
+      mimeType: attachments.mimeType,
+      uploadedAt: attachments.uploadedAt,
+    })
+    .from(attachments)
+    .where(and(
+      eq(attachments.entityType, "feedback_report"),
+      eq(attachments.entityId, reportId),
+    ))
+    .orderBy(desc(attachments.uploadedAt))
 }
 
 // ── listReports ───────────────────────────────────────────────────────────────

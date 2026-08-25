@@ -1,7 +1,8 @@
 import type { Metadata } from "next"
 import { redirect, notFound } from "next/navigation"
 import { requireAuth, can } from "@/lib/auth/can"
-import { getReport } from "@/lib/services/feedback"
+import { getReport, getReportAttachments } from "@/lib/services/feedback"
+import { canAccessFeedbackIndex, canAccessFeedbackReport } from "@/lib/services/feedback-access"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
@@ -21,7 +22,7 @@ export default async function ReporteDetailPage({ params }: Props) {
   let session
   try { session = await requireAuth() }
   catch { redirect(`/forbidden?desde=${encodeURIComponent("/soporte")}`) }
-  if (!can(session, "feedback:view_own") && !can(session, "feedback:view_all") && !can(session, "feedback:manage")) {
+  if (!canAccessFeedbackIndex(session)) {
     redirect(`/forbidden?desde=${encodeURIComponent("/soporte")}`)
   }
 
@@ -30,11 +31,10 @@ export default async function ReporteDetailPage({ params }: Props) {
   if (!report) notFound()
 
   const canManage   = can(session, "feedback:manage")
-  const canViewAll  = can(session, "feedback:view_all")
-  const isOwn       = report.createdBy === session.user.id
-
-  // Non-managers can only see their own reports
-  if (!canViewAll && !isOwn) redirect(`/forbidden?desde=${encodeURIComponent("/soporte")}`)
+  if (!canAccessFeedbackReport(session, report)) {
+    redirect(`/forbidden?desde=${encodeURIComponent("/soporte")}`)
+  }
+  const attachmentList = await getReportAttachments(report.id)
 
   const tipoLabel = FEEDBACK_TIPO_LABELS[report.tipo as FeedbackTipo] ?? report.tipo
 
@@ -87,6 +87,33 @@ export default async function ReporteDetailPage({ params }: Props) {
                 <p className="text-sm whitespace-pre-wrap text-[var(--color-text-subtle)]">
                   {report.notaInterna}
                 </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {attachmentList.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Adjuntos</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-2">
+                  {attachmentList.map((attachment) => (
+                    <li key={attachment.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                      <a
+                        href={`/api/soporte/adjuntos/${attachment.id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-medium text-[var(--color-accent-ink)] underline underline-offset-2"
+                      >
+                        {attachment.fileName}
+                      </a>
+                      <span className="text-xs text-[var(--color-text-subtle)]">
+                        {attachment.mimeType ?? "Archivo adjunto"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </CardContent>
             </Card>
           )}

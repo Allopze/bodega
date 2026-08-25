@@ -7,9 +7,9 @@ import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { attachments, feedbackReports } from "@/db/schema"
 import { auth } from "@/lib/auth/auth"
-import { can } from "@/lib/auth/can"
 import { resolveStorageDir } from "@/lib/storage/config"
 import { encodeContentDisposition } from "@/lib/utils"
+import { canAccessFeedbackIndex, canAccessFeedbackReport } from "@/lib/services/feedback-access"
 
 import { logger } from "@/lib/logger"
 
@@ -23,7 +23,7 @@ export async function GET(
   if (!session) {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 })
   }
-  if (!can(session, "feedback:view_own")) {
+  if (!canAccessFeedbackIndex(session)) {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }
 
@@ -42,9 +42,7 @@ export async function GET(
     return NextResponse.json({ error: "Archivo no encontrado" }, { status: 404 })
   }
 
-  const isOwn = report.createdBy === session.user.id
-  const canManageAll = can(session, "feedback:manage")
-  if (!isOwn && !canManageAll) {
+  if (!canAccessFeedbackReport(session, report)) {
     return NextResponse.json({ error: "Archivo no encontrado" }, { status: 404 })
   }
 

@@ -22,6 +22,7 @@ await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 import {
   createReport,
   getReport,
+  getReportAttachments,
   listReports,
   updateReportStatus,
 } from "@/lib/services/feedback"
@@ -142,6 +143,27 @@ describe("feedback service", () => {
 
     const nonexistent = await getReport("non-existent-id")
     expect(nonexistent).toBeNull()
+  })
+
+  it("lists the attachments associated with a report", async () => {
+    const created = await createReport({
+      tipo: "bug",
+      titulo: "Con evidencia",
+      descripcion: "Incluye una captura de pantalla",
+    }, "user-1", {
+      fileName: "captura.png",
+      filePath: "storage/feedback/captura.png",
+      fileSize: 128,
+      mimeType: "image/png",
+    })
+
+    const attachmentList = await getReportAttachments(created.id)
+
+    expect(attachmentList).toEqual([expect.objectContaining({
+      fileName: "captura.png",
+      mimeType: "image/png",
+    })])
+    expect(attachmentList[0]).not.toHaveProperty("filePath")
   })
 
   it("lists reports with filters, limit, and offset", async () => {
