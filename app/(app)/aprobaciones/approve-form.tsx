@@ -7,7 +7,7 @@ import { SubmitButton } from "@/components/admin/submit-button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { INITIAL_STATE } from "@/components/admin/form-state"
-import { formatQty } from "@/lib/utils"
+import { formatQty, quantityStep } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import type { ApprovalItem } from "./types"
 
@@ -37,8 +37,8 @@ export function ApproveForm({
             id={`modifiedQty-${item.id}`}
             type="number"
             name="modifiedQty"
-            step="0.01"
-            min="0.01"
+            step={quantityStep(item.unitOfMeasure)}
+            min={quantityStep(item.unitOfMeasure)}
             placeholder={String(item.quantity)}
             value={qty}
             onChange={(e) => setQty(e.target.value)}
