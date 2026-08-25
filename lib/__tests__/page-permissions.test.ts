@@ -92,6 +92,7 @@ vi.mock("@/lib/services/feedback", () => ({
   listReports: () => Promise.resolve([]),
   getReport: () => Promise.resolve(null),
   getReportAttachments: () => Promise.resolve([]),
+  getReportEvents: () => Promise.resolve([]),
 }))
 vi.mock("next/link", () => ({ default: ({ children }: { children: unknown }) => children }))
 

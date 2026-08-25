@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { redirect, notFound } from "next/navigation"
 import { requireAuth, can } from "@/lib/auth/can"
-import { getReport, getReportAttachments } from "@/lib/services/feedback"
+import { getReport, getReportAttachments, getReportEvents } from "@/lib/services/feedback"
 import { canAccessFeedbackIndex, canAccessFeedbackReport } from "@/lib/services/feedback-access"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -16,6 +16,21 @@ export const metadata: Metadata = { title: "Detalle de reporte (Soporte)" }
 
 interface Props {
   params: Promise<{ id: string }>
+}
+
+const ESTADO_LABELS: Record<FeedbackEstado, string> = {
+  abierto: "Abierto",
+  en_progreso: "En progreso",
+  resuelto: "Resuelto",
+  descartado: "Descartado",
+}
+
+function eventLabel(event: { eventType: string; fromEstado: string | null; toEstado: string | null }) {
+  if (event.eventType === "created") return "Reporte creado"
+  if (event.eventType === "note_added") return "Nota interna agregada"
+  const from = ESTADO_LABELS[event.fromEstado as FeedbackEstado] ?? event.fromEstado ?? "Sin estado"
+  const to = ESTADO_LABELS[event.toEstado as FeedbackEstado] ?? event.toEstado ?? "Sin estado"
+  return `Estado: ${from} → ${to}`
 }
 
 export default async function ReporteDetailPage({ params }: Props) {
@@ -34,7 +49,11 @@ export default async function ReporteDetailPage({ params }: Props) {
   if (!canAccessFeedbackReport(session, report)) {
     redirect(`/forbidden?desde=${encodeURIComponent("/soporte")}`)
   }
-  const attachmentList = await getReportAttachments(report.id)
+  const [attachmentList, eventList] = await Promise.all([
+    getReportAttachments(report.id),
+    getReportEvents(report.id),
+  ])
+  const visibleEvents = canManage ? eventList : eventList.filter((event) => event.eventType !== "note_added")
 
   const tipoLabel = FEEDBACK_TIPO_LABELS[report.tipo as FeedbackTipo] ?? report.tipo
 
@@ -117,6 +136,31 @@ export default async function ReporteDetailPage({ params }: Props) {
               </CardContent>
             </Card>
           )}
+
+          {visibleEvents.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Historial</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ol className="space-y-4">
+                  {visibleEvents.map((event) => (
+                    <li key={event.id} className="border-l-2 border-[var(--color-border)] pl-3">
+                      <p className="text-sm font-medium">{eventLabel(event)}</p>
+                      <p className="text-xs text-[var(--color-text-subtle)]">
+                        {event.actorName ?? "Usuario"} · {formatDateTime(event.createdAt)}
+                      </p>
+                      {canManage && event.note && (
+                        <p className="mt-2 whitespace-pre-wrap text-sm text-[var(--color-text-subtle)]">
+                          {event.note}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* ── Sidebar ─────────────────────────────────────────────────────── */}
@@ -161,7 +205,6 @@ export default async function ReporteDetailPage({ params }: Props) {
                 <StatusPanel
                   reportId={report.id}
                   currentEstado={report.estado as FeedbackEstado}
-                  currentNota={report.notaInterna}
                 />
               </CardContent>
             </Card>

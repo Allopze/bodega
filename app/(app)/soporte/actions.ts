@@ -18,6 +18,12 @@ const REVALIDATE = "/soporte"
 const FEEDBACK_PREFIX = "storage/feedback/"
 const CREATE_REPORT_FAILED_MESSAGE = "No se pudo enviar el reporte. Intenta nuevamente."
 const UPDATE_REPORT_FAILED_MESSAGE = "No se pudo actualizar el reporte. Intenta nuevamente."
+const FEEDBACK_STATUS_LABELS = {
+  abierto: "Abierto",
+  en_progreso: "En progreso",
+  resuelto: "Resuelto",
+  descartado: "Descartado",
+} as const
 
 function sanitizeFileName(name: string) {
   return name
@@ -145,7 +151,19 @@ export async function updateReportStatusAction(
   }
 
   try {
-    await updateReportStatus(parsed.data.id, parsed.data, session.user.id)
+    const updated = await updateReportStatus(parsed.data.id, parsed.data, session.user.id)
+    if (updated.stateChanged && updated.createdBy !== session.user.id) {
+      notifyAfterCommit(() =>
+        notifyManyUser([updated.createdBy], {
+          type: "feedback_status_updated",
+          title: `Tu reporte ahora está: ${FEEDBACK_STATUS_LABELS[updated.estado as keyof typeof FEEDBACK_STATUS_LABELS] ?? updated.estado}`,
+          body: "El equipo de soporte actualizó el estado de tu reporte.",
+          entityType: "feedback_report",
+          entityId: updated.id,
+          entityHref: `/soporte/${updated.id}`,
+        }),
+      )
+    }
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${parsed.data.id}`)
     return { ok: true, message: "Estado actualizado" }

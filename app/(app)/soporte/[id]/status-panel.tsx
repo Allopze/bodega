@@ -24,10 +24,9 @@ const ESTADO_OPTIONS: { value: FeedbackEstado; label: string }[] = [
 interface Props {
   reportId:         string
   currentEstado:    FeedbackEstado
-  currentNota:      string | null
 }
 
-export function StatusPanel({ reportId, currentEstado, currentNota }: Props) {
+export function StatusPanel({ reportId, currentEstado }: Props) {
   const [state, formAction] = useActionState<ActionState, FormData>(
     updateReportStatusAction,
     INITIAL_STATE,
@@ -65,15 +64,14 @@ export function StatusPanel({ reportId, currentEstado, currentNota }: Props) {
       </Field>
 
       <Field
-        label="Nota interna"
+        label="Añadir nota interna"
         htmlFor="notaInterna"
-        helper="Solo visible para gestores"
+        helper="Solo visible para gestores; se agrega al historial y no reemplaza notas anteriores."
         error={state.fieldErrors?.notaInterna?.[0]}
       >
         <Textarea
           id="notaInterna"
           name="notaInterna"
-          defaultValue={currentNota ?? ""}
           placeholder="Contexto interno, decisión tomada, enlace a PR, etc."
           rows={4}
           error={!!state.fieldErrors?.notaInterna}

@@ -181,6 +181,26 @@ describe("soporte actions", () => {
       expect(r.ok).toBe(true)
     })
 
+    it("notifies the reporter when the ticket state changes", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("feedback:manage"))
+      mockUpdateReportStatus.mockResolvedValue({
+        id: "report-1",
+        createdBy: "reporter-1",
+        estado: "resuelto",
+        stateChanged: true,
+      })
+      const { updateReportStatusAction } = await import("@/app/(app)/soporte/actions")
+      const fd = new FormData(); fd.set("id", "report-1"); fd.set("estado", "resuelto"); fd.set("notaInterna", "")
+
+      const r = await updateReportStatusAction({ ok: false }, fd)
+
+      expect(r.ok).toBe(true)
+      expect(mockNotifyManyUser).toHaveBeenCalledWith(
+        ["reporter-1"],
+        expect.objectContaining({ type: "feedback_status_updated", entityId: "report-1" }),
+      )
+    })
+
     it("does not reveal service errors", async () => {
       mockAuthFn.mockResolvedValue(makeSession("feedback:manage"))
       mockUpdateReportStatus.mockRejectedValue(new Error("DB error"))

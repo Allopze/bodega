@@ -62,6 +62,7 @@ export type NotificationType =
   | "ppa_authorized"
   | "ppa_rejected"
   | "feedback_submitted"
+  | "feedback_status_updated"
   | "system_alert"
   | "fuel_statement_due_soon"
   | "fuel_statement_overdue"

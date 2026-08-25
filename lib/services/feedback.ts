@@ -7,7 +7,12 @@
 import { z } from "zod"
 import { eq, and, desc, ilike, or, count } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
-import { feedbackReports, type FeedbackReport } from "@/db/schema/feedback"
+import {
+  feedbackReportEvents,
+  feedbackReports,
+  type FeedbackReport,
+  type FeedbackReportEvent,
+} from "@/db/schema/feedback"
 import { attachments } from "@/db/schema/audit"
 import { users } from "@/db/schema/users"
 import { nanoid } from "@/lib/id"
@@ -40,6 +45,12 @@ export interface FeedbackListFilters {
   estado?: FeedbackEstado
   tipo?: FeedbackTipo
   priority?: FeedbackPrioridad
+}
+
+export type FeedbackEventRow = FeedbackReportEvent & { actorName: string | null }
+export type FeedbackStatusUpdate = FeedbackReport & {
+  stateChanged: boolean
+  noteAdded: boolean
 }
 
 export interface FeedbackAttachmentInput {
@@ -89,6 +100,17 @@ export async function createReport(
     }).returning()
 
     if (!report) throw new Error("Error al crear el reporte")
+
+    await tx.insert(feedbackReportEvents).values({
+      id: nanoid(),
+      reportId: id,
+      eventType: "created",
+      fromEstado: null,
+      toEstado: "abierto",
+      note: null,
+      actorId: userId,
+      createdAt: now,
+    })
 
     if (proofAttachment) {
       await tx.insert(attachments).values({
@@ -157,6 +179,27 @@ export async function getReportAttachments(reportId: string): Promise<FeedbackAt
     .orderBy(desc(attachments.uploadedAt))
 }
 
+export async function getReportEvents(reportId: string): Promise<FeedbackEventRow[]> {
+  const rows = await db
+    .select({
+      id: feedbackReportEvents.id,
+      reportId: feedbackReportEvents.reportId,
+      eventType: feedbackReportEvents.eventType,
+      fromEstado: feedbackReportEvents.fromEstado,
+      toEstado: feedbackReportEvents.toEstado,
+      note: feedbackReportEvents.note,
+      actorId: feedbackReportEvents.actorId,
+      createdAt: feedbackReportEvents.createdAt,
+      actorName: users.name,
+    })
+    .from(feedbackReportEvents)
+    .leftJoin(users, eq(feedbackReportEvents.actorId, users.id))
+    .where(eq(feedbackReportEvents.reportId, reportId))
+    .orderBy(desc(feedbackReportEvents.createdAt))
+
+  return rows as FeedbackEventRow[]
+}
+
 // ── listReports ───────────────────────────────────────────────────────────────
 
 function reportListConditions(filters: FeedbackListFilters) {
@@ -222,26 +265,64 @@ export async function updateReportStatus(
   id: string,
   input: Omit<z.infer<typeof feedbackUpdateStatusSchema>, "id">,
   userId: string
-): Promise<FeedbackReport> {
+): Promise<FeedbackStatusUpdate> {
   const data = feedbackUpdateStatusSchema.parse({ ...input, id })
-
-  const isTerminal = data.estado === "resuelto" || data.estado === "descartado"
   const now = new Date().toISOString()
 
-  const [updated] = await db
-    .update(feedbackReports)
-    .set({
-      estado:      data.estado,
-      notaInterna: data.notaInterna || null,
-      resolvedBy:  isTerminal ? userId : null,
-      resolvedAt:  isTerminal ? now : null,
-      updatedAt:   now,
-    })
-    .where(eq(feedbackReports.id, id))
-    .returning()
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(feedbackReports)
+      .where(eq(feedbackReports.id, id))
+      .limit(1)
+    if (!existing) throw new Error("Reporte no encontrado")
 
-  if (!updated) throw new Error("Reporte no encontrado")
-  return updated
+    const note = data.notaInterna?.trim() || null
+    const stateChanged = existing.estado !== data.estado
+    if (!stateChanged && !note) {
+      return { ...existing, stateChanged: false, noteAdded: false }
+    }
+
+    const changes: {
+      updatedAt: string
+      estado?: string
+      notaInterna?: string
+      resolvedBy?: string | null
+      resolvedAt?: string | null
+    } = { updatedAt: now }
+    if (stateChanged) {
+      changes.estado = data.estado
+      const isTerminal = data.estado === "resuelto" || data.estado === "descartado"
+      if (isTerminal) {
+        changes.resolvedBy = userId
+        changes.resolvedAt = now
+      } else {
+        changes.resolvedBy = null
+        changes.resolvedAt = null
+      }
+    }
+    if (note) changes.notaInterna = note
+
+    const [updated] = await tx
+      .update(feedbackReports)
+      .set(changes)
+      .where(eq(feedbackReports.id, id))
+      .returning()
+    if (!updated) throw new Error("Reporte no encontrado")
+
+    await tx.insert(feedbackReportEvents).values({
+      id: nanoid(),
+      reportId: id,
+      eventType: stateChanged ? "status_changed" : "note_added",
+      fromEstado: stateChanged ? existing.estado : null,
+      toEstado: stateChanged ? data.estado : null,
+      note,
+      actorId: userId,
+      createdAt: now,
+    })
+
+    return { ...updated, stateChanged, noteAdded: Boolean(note) }
+  })
 }
 
 function computeDueAt(priority: "baja" | "normal" | "alta" | "critica", fromIso: string) {

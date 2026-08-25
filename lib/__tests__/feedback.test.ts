@@ -1,6 +1,7 @@
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
+import { eq } from "drizzle-orm"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
@@ -22,6 +23,7 @@ await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 import {
   countReports,
   createReport,
+  getReportEvents,
   getReport,
   getReportAttachments,
   listReports,
@@ -227,5 +229,45 @@ describe("feedback service", () => {
     expect(resolved.resolvedAt).not.toBeNull()
 
     await expect(updateReportStatus("non-existent", { estado: "resuelto" }, "user-2")).rejects.toThrow("Reporte no encontrado")
+  })
+
+  it("keeps an append-only history for creation, state changes and internal notes", async () => {
+    const created = await createReport({
+      tipo: "bug",
+      titulo: "Historial de soporte",
+      descripcion: "Se debe conservar la trazabilidad",
+    }, "user-1")
+
+    await updateReportStatus(created.id, {
+      estado: "en_progreso",
+      notaInterna: "Se reprodujo el problema en producción local.",
+    }, "user-2")
+    await updateReportStatus(created.id, { estado: "resuelto" }, "user-2")
+
+    const events = await getReportEvents(created.id)
+
+    expect(events).toHaveLength(3)
+    expect(events.map((event) => event.eventType)).toEqual(["status_changed", "status_changed", "created"])
+    expect(events[0]).toMatchObject({ fromEstado: "en_progreso", toEstado: "resuelto", note: null, actorName: "User Two" })
+    expect(events[1]).toMatchObject({ fromEstado: "abierto", toEstado: "en_progreso", note: "Se reprodujo el problema en producción local." })
+    expect(events[2]).toMatchObject({ fromEstado: null, toEstado: "abierto", actorName: "User One" })
+  })
+
+  it("rejects updates and deletions of feedback history events", async () => {
+    const created = await createReport({
+      tipo: "consulta",
+      titulo: "Evento inmutable",
+      descripcion: "El historial no se puede modificar.",
+    }, "user-1")
+    const [event] = await getReportEvents(created.id)
+    expect(event).toBeDefined()
+
+    await expect(inMemoryDb.update(schema.feedbackReportEvents)
+      .set({ note: "Intento de reescritura" })
+      .where(eq(schema.feedbackReportEvents.id, event!.id)))
+      .rejects.toThrow()
+    await expect(inMemoryDb.delete(schema.feedbackReportEvents)
+      .where(eq(schema.feedbackReportEvents.id, event!.id)))
+      .rejects.toThrow()
   })
 })
