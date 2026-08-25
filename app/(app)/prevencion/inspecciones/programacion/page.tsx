@@ -58,7 +58,7 @@ export default async function ProgramacionInspeccionPage({ searchParams }: {
     <PageContainer>
       <PageHeader
         title="Programación de inspecciones"
-        description="Qué instrumento se ejecuta, en qué faena y con qué frecuencia. El barrido diario crea las inspecciones vencidas; «Ejecutar ahora» usa el mismo camino."
+        description="Qué instrumento se ejecuta, en qué faena y con qué frecuencia. El barrido diario crea las inspecciones vencidas; «Crear y abrir inspección» usa el mismo camino."
         actions={canManage && approvedTemplates.length > 0 && worksites.length > 0
           ? <ProgramDialog templates={approvedTemplates} worksites={worksites} assignees={assignees} riskEntriesByWorksite={riskEntriesByWorksite} />
           : undefined}
@@ -87,6 +87,9 @@ export default async function ProgramacionInspeccionPage({ searchParams }: {
             : null,
           subjectType: row.program.subjectType,
           isActive: row.program.isActive,
+          // I-04: la plantilla puede haber quedado `superseded` desde que se
+          // creó el programa; ese estado decide si el botón operativo aplica.
+          templateApproved: row.templateStatus === "approved",
           version: row.program.version,
         }))}
         assignees={assignees}

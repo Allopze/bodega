@@ -142,6 +142,35 @@ function versionLabelFor(definition: ChecklistDefinition, spec: InspectionTempla
 }
 
 /**
+ * `code` de la plantilla. Dos filas del catálogo que comparten definición son
+ * dos INSTRUMENTOS distintos, no dos versiones del mismo: EPP es la n=64 del
+ * jefe de terreno y la n=65 del prevencionista (ver `defaultPdtpActivityNumbers`
+ * más abajo). `supersedePreviousApproved` reemplaza por `code`, así que
+ * compartirlo hacía que aprobar uno retirara al otro en silencio (I-03,
+ * auditoría UI/UX 2026-08-25). `versionSuffix` ya distinguía `versionLabel`;
+ * ahora también distingue `code`.
+ */
+function codeFor(definition: ChecklistDefinition, spec: InspectionTemplateSpec) {
+  return spec.versionSuffix ? `${definition.code}_${spec.versionSuffix}` : definition.code
+}
+
+/**
+ * `code` para una importación manual (no la del seed 2026), desempatado por la
+ * actividad PDTP que la persona eligió — el diálogo de importación ya obliga a
+ * elegir una cuando la definición es ambigua (`pdtpActivityCandidatesFor`
+ * devuelve más de una). Sin actividad elegida cae al código base de la
+ * definición: no reemplaza nada tras la migración 0218, así que es sólo una
+ * limitación conocida (un tercer `code` ambiguo), no un riesgo de reemplazo.
+ */
+export function inspectionTemplateCodeFor(definitionCode: string, pdtpActivityNumbers: number[]): string {
+  const definition = resolveDefinition(definitionCode)
+  const spec = PDTP_2026_INSPECTION_SPECS.find((candidate) =>
+    candidate.definitionCode === definitionCode
+    && (completionNumbers(candidate) ?? []).some((n) => pdtpActivityNumbers.includes(n)))
+  return spec ? codeFor(definition, spec) : definition.code
+}
+
+/**
  * Plantilla aprobada que acredita esta actividad del PDTP, si existe. La usa la
  * UI de PDTP para mandar al usuario al motor de inspecciones en vez de ofrecer
  * un checklist propio.
@@ -183,9 +212,10 @@ export async function ensurePdtp2026InspectionTemplates(input: {
   for (const spec of PDTP_2026_INSPECTION_SPECS) {
     const definition = resolveDefinition(spec.definitionCode)
     const versionLabel = versionLabelFor(definition, spec)
+    const code = codeFor(definition, spec)
 
     const [existing] = await db.select().from(preventionInspectionTemplates).where(and(
-      eq(preventionInspectionTemplates.code, definition.code),
+      eq(preventionInspectionTemplates.code, code),
       eq(preventionInspectionTemplates.versionLabel, versionLabel),
     )).limit(1)
 
@@ -219,7 +249,7 @@ export async function ensurePdtp2026InspectionTemplates(input: {
     if (!input.dryRun) {
       await db.insert(preventionInspectionTemplates).values({
         id,
-        code: definition.code,
+        code,
         versionLabel,
         name: spec.name,
         kind: spec.kind,
@@ -237,7 +267,7 @@ export async function ensurePdtp2026InspectionTemplates(input: {
         updatedAt: now,
       })
     }
-    result.created.push({ n: spec.n, templateId: id, code: definition.code, versionLabel })
+    result.created.push({ n: spec.n, templateId: id, code, versionLabel })
   }
 
   return result

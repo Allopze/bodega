@@ -4,7 +4,7 @@ import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { getInspectionRunDetail } from "@/lib/services/prevention-inspections"
+import { getInspectionRunDetail, listInspectionReviewers } from "@/lib/services/prevention-inspections"
 import { listWorksiteAssignableUsers } from "@/lib/services/prevention-capa"
 import { closingActFromDefinition } from "@/lib/prevention/inspections"
 import type { ChecklistDefinition } from "@/lib/sst/types"
@@ -34,6 +34,11 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
   const assignees = canExecute
     ? await listWorksiteAssignableUsers({ worksiteId: detail.run.worksiteId, scope: access.scope })
     : []
+  // I-08: sólo se resuelve cuando el bloqueo aplica (misma condición que
+  // `reviewBlocked` en el cliente) — `getUserIdsWithPermissionForWorksite`
+  // son consultas de más que no tienen por qué correr en cada apertura.
+  const reviewBlocked = detail.run.status === "completed" && detail.run.executedByUserId === auth.user.id
+  const reviewers = reviewBlocked ? await listInspectionReviewers(access, detail.run.worksiteId) : []
   const definition = detail.definitionSnapshot as unknown as ChecklistDefinition
 
   return (
@@ -84,7 +89,12 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
         assigneeName={detail.assigneeName}
         executorName={detail.executorName}
         reviewerName={detail.reviewerName}
-        sections={definition.sections.map((section) => ({
+        /* Piso de seguridad ante un `definitionSnapshot` sin `sections` (fixture
+           legado insertado a mano, como INSP-DEMO) — mismo criterio que ya
+           aplican `itemsFromDefinition` (prevention-inspections.ts) y el acta
+           impresa (print/document.tsx); esta pantalla era la única que
+           reventaba la ruta entera en vez de degradar a un checklist vacío. */
+        sections={(definition.sections ?? []).map((section) => ({
           id: section.id,
           title: section.title,
           items: section.items.map((item) => ({
@@ -121,6 +131,7 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
         }))}
         currentUserId={auth.user.id}
         assignees={assignees}
+        reviewers={reviewers}
         canStopVehicle={auth.user.permissions.includes("combustibles:manage_vehicles")}
         canIngest={auth.user.permissions.includes("prevention:inspections:ingest")}
         documents={detail.documents.map((item) => ({

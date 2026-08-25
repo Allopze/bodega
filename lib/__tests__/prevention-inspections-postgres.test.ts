@@ -1317,7 +1317,8 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       const saved = await service.saveInspectionAnswers({
         runId: run.id, expectedVersion: run.version,
         answers: answersForAll(items, (item) => item.countsForCompliance
-          ? { sectionId: item.sectionId, itemId: item.itemId, result: "non_conforming" as const, comment: null }
+          // I-05: "no cumple" ya exige motivo, igual que "no aplica"/"regular".
+          ? { sectionId: item.sectionId, itemId: item.itemId, result: "non_conforming" as const, comment: "Se detecta el incumplimiento en la revisión." }
           : undefined),
       }, AUTHOR)
       // Extintores declara acta, así que hay que completarla — a diferencia de

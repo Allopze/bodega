@@ -33,6 +33,38 @@ export type PreventionAttentionItem = {
 /** Sin esto `warning` y `neutral` empataban y el orden dependía del azar. */
 const TONE_RANK: Record<PreventionAttentionItem["tone"], number> = { danger: 0, warning: 1, neutral: 2 }
 
+function byUrgency(a: PreventionAttentionItem, b: PreventionAttentionItem) {
+  return TONE_RANK[a.tone] - TONE_RANK[b.tone] || (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999")
+}
+
+/**
+ * I-11 (auditoría UI/UX 2026-08-25): el orden por urgencia ya era correcto —
+ * el defecto real era cortar en `limit` sobre el ranking GLOBAL sin repartir
+ * por tipo. Con 12 acciones PDTP vencidas (algo normal), los 12 cupos se los
+ * llevaba una sola fuente y las inspecciones pendientes de revisión no
+ * aparecían nunca, aunque hubiera diez esperando. Se reparte round-robin por
+ * `kind` —el más urgente de cada uno primero, luego el segundo— y lo elegido
+ * se reordena por urgencia al final, para que dentro de lo visible siga
+ * mandando lo más urgente.
+ */
+export function pickAttention(items: PreventionAttentionItem[], limit: number): PreventionAttentionItem[] {
+  const queues = new Map<PreventionAttentionItem["kind"], PreventionAttentionItem[]>()
+  for (const item of [...items].sort(byUrgency)) {
+    const queue = queues.get(item.kind) ?? []
+    queue.push(item)
+    queues.set(item.kind, queue)
+  }
+  const picked: PreventionAttentionItem[] = []
+  while (picked.length < limit && [...queues.values()].some((queue) => queue.length > 0)) {
+    for (const queue of queues.values()) {
+      const next = queue.shift()
+      if (next) picked.push(next)
+      if (picked.length === limit) break
+    }
+  }
+  return picked.sort(byUrgency)
+}
+
 export async function getPreventionAttention(args: {
   worksiteIds: string[] | "all"
   includeActions: boolean
@@ -156,10 +188,7 @@ export async function getPreventionAttention(args: {
     changeReviews: args.includeChangeReviews ?? false,
   }))
 
-  return items
-    .sort((a, b) => TONE_RANK[a.tone] - TONE_RANK[b.tone]
-      || (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999"))
-    .slice(0, limit)
+  return pickAttention(items, limit)
 }
 
 /**

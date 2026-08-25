@@ -131,11 +131,14 @@ export async function buildInspectionExport(
     ),
     sheet(
       "Programación",
-      ["Plantilla", "Faena", "Frecuencia", "Intervalo (días)", "Próxima", "Responsable", "Activa"],
+      ["Plantilla", "Faena", "Frecuencia", "Intervalo (días)", "Próxima", "Responsable", "Activa", "Plantilla vigente"],
       programs.map((row) => [
         safeCell(row.templateName), safeCell(row.worksiteName), row.program.frequency,
         row.program.intervalDays, row.program.nextDueOn, safeCell(row.assigneeName),
         row.program.isActive ? "Sí" : "No",
+        // I-04: el Excel es artefacto de evidencia; repetía la misma "Activa: Sí"
+        // aunque la plantilla ya no pueda producir inspecciones.
+        row.templateStatus === "approved" ? "Sí" : "No — no producirá inspecciones",
       ]),
     ),
   ]

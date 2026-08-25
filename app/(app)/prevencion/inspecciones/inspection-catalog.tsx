@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { ClipboardText, MagnifyingGlass } from "@phosphor-icons/react"
 import { useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
@@ -13,7 +14,11 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { FREQUENCY_INTERVAL_DAYS, INSPECTION_FREQUENCY_LABELS, INSPECTION_KIND_LABELS } from "@/lib/prevention/inspections"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import {
+  FREQUENCY_INTERVAL_DAYS, INSPECTION_FREQUENCY_LABELS, INSPECTION_KIND_LABELS,
+  inspectionProgramIsOverdue, nextDueAfter,
+} from "@/lib/prevention/inspections"
 import {
   approveInspectionTemplateAction,
   retireInspectionTemplateAction,
@@ -21,6 +26,7 @@ import {
   addDeviationCatalogEntryAction,
   copyDeviationCatalogAction,
   importInspectionTemplateAction,
+  remindTemplateApprovalAction,
   runProgramNowAction,
   setInspectionTemplatePdtpActivitiesAction,
   updateDeviationCatalogEntryAction,
@@ -28,7 +34,7 @@ import {
 } from "./actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
-import { todayInChile } from "@/lib/utils"
+import { formatDate, todayInChile } from "@/lib/utils"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 
 interface Coverage {
@@ -88,6 +94,8 @@ interface ProgramItem {
   riskLabel: string | null
   subjectType: string | null
   isActive: boolean
+  /** I-04: la plantilla puede haber quedado `superseded` desde que se creó el programa. */
+  templateApproved: boolean
   version: number
 }
 
@@ -103,6 +111,13 @@ export interface ImportableDefinition {
 }
 
 export interface PdtpActivityOption { n: number; name: string; year: number }
+
+/**
+ * I-20: acciones destructivas (Detener, Retirar) se veían como texto plano
+ * idéntico a una acción neutra — "ghost" a secas. Rojo tenue: discreto
+ * junto a la acción primaria, pero reconocible como riesgoso.
+ */
+const GHOST_DANGER_CLASS = "text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-tint)] hover:text-[var(--color-danger-ink)]"
 
 function templateStatusVariant(status: string): "default" | "success" | "outline" {
   if (status === "approved") return "success"
@@ -130,25 +145,39 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, canManage, ca
   canManage: boolean
   canApprove: boolean
 }) {
-  const [query, setQuery] = React.useState("")
-  const [kind, setKind] = React.useState("all")
-  const [status, setStatus] = React.useState("all")
+  // I-16: filtros en la URL, mismo patrón que la bandeja — se perdían al refrescar.
+  const { getFilter, setFilters } = useUrlFilters()
+  const kind = getFilter("tipo") || "all"
+  const status = getFilter("estado") || "all"
+  const urlQuery = getFilter("q")
+  const [query, setQueryDraft] = React.useState(urlQuery)
+  React.useEffect(() => setQueryDraft(urlQuery), [urlQuery])
+  React.useEffect(() => {
+    const next = query.trim()
+    if (next === urlQuery) return
+    const timer = setTimeout(() => setFilters({ q: next || null }), 350)
+    return () => clearTimeout(timer)
+  }, [query, urlQuery, setFilters])
   const visibleTemplates = React.useMemo(() => templates.filter((item) => {
-    const normalized = query.trim().toLocaleLowerCase("es-CL")
+    const normalized = urlQuery.trim().toLocaleLowerCase("es-CL")
     return (!normalized || `${item.code} ${item.name} ${item.versionLabel}`.toLocaleLowerCase("es-CL").includes(normalized))
       && (kind === "all" || item.kind === kind)
       && (status === "all" || item.status === status)
-  }), [templates, query, kind, status])
+  }), [templates, urlQuery, kind, status])
+  // I-22: en el diálogo de importación el PDTP se muestra por número y
+  // nombre; acá sólo salía el número — el dato ya está en `pdtpOptions`.
+  const pdtpNameByNumber = React.useMemo(() => new Map(pdtpOptions.map((option) => [option.n, option.name])), [pdtpOptions])
+  const pdtpLabel = (n: number) => `N° ${n}${pdtpNameByNumber.has(n) ? ` — ${pdtpNameByNumber.get(n)}` : ""}`
 
   return (
     <div className="space-y-4">
       <div className="grid gap-2 sm:grid-cols-[minmax(14rem,1fr)_12rem_12rem]">
         <div className="relative">
           <MagnifyingGlass size={16} aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-subtle)]" />
-          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar código o nombre" aria-label="Buscar plantillas" className="pl-9" />
+          <Input value={query} onChange={(event) => setQueryDraft(event.target.value)} placeholder="Buscar código o nombre" aria-label="Buscar plantillas" className="pl-9" />
         </div>
-        <Select value={kind} onValueChange={setKind}><SelectTrigger aria-label="Filtrar plantillas por tipo"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos los tipos</SelectItem>{Object.entries(INSPECTION_KIND_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
-        <Select value={status} onValueChange={setStatus}><SelectTrigger aria-label="Filtrar plantillas por estado"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos los estados</SelectItem><SelectItem value="draft">Borradores</SelectItem><SelectItem value="approved">Aprobadas</SelectItem><SelectItem value="superseded">Reemplazadas</SelectItem></SelectContent></Select>
+        <Select value={kind} onValueChange={(value) => setFilters({ tipo: value === "all" ? null : value })}><SelectTrigger aria-label="Filtrar plantillas por tipo"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos los tipos</SelectItem>{Object.entries(INSPECTION_KIND_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
+        <Select value={status} onValueChange={(value) => setFilters({ estado: value === "all" ? null : value })}><SelectTrigger aria-label="Filtrar plantillas por estado"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos los estados</SelectItem><SelectItem value="draft">Borradores</SelectItem><SelectItem value="approved">Aprobadas</SelectItem><SelectItem value="superseded">Reemplazadas</SelectItem></SelectContent></Select>
       </div>
 
       {visibleTemplates.length === 0 ? (
@@ -164,12 +193,17 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, canManage, ca
             <article key={item.id} className="space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
               <div className="flex items-start justify-between gap-3">
                 <div><span className="font-mono text-xs text-[var(--color-text-subtle)]">{item.code} · {item.versionLabel}</span><h2 className="mt-0.5 text-sm font-semibold">{item.name}</h2><p className="mt-1 text-xs text-[var(--color-text-subtle)]">{INSPECTION_KIND_LABELS[item.kind] ?? item.kind}</p></div>
-                <Badge variant={templateStatusVariant(item.status)}>{item.status === "approved" ? "Aprobada" : item.status === "superseded" ? "Reemplazada" : "Borrador"}</Badge>
+                <div className="flex flex-col items-end gap-1">
+                  <Badge variant={templateStatusVariant(item.status)}>{item.status === "approved" ? "Aprobada" : item.status === "superseded" ? "Reemplazada" : "Borrador"}</Badge>
+                  {/* I-28: la plantilla demo (y cualquier otra sin origen de catálogo) quedaba indistinguible de un instrumento real. */}
+                  {!item.sourceDefinitionCode && <Badge variant="outline">Sin origen en catálogo</Badge>}
+                </div>
               </div>
               {item.definitionMissing && <p className="rounded-lg bg-[var(--color-warning-tint)] px-3 py-2 text-xs text-[var(--color-warning-ink)]">La fuente fue retirada del catálogo, pero esta versión {item.status === "approved" ? "sigue ejecutable desde su checklist congelado hasta que la retires" : "se conserva sólo como historial"}.</p>}
               <dl className="grid grid-cols-2 gap-3 text-xs">
-                <div><dt className="text-[var(--color-text-subtle)]">Gravedad declarada</dt><dd className="mt-0.5 font-medium">{coverageLabel(item.coverage)}</dd></div>
-                <div><dt className="text-[var(--color-text-subtle)]">PDTP</dt><dd className="mt-0.5 font-medium">{item.pdtpActivityNumbers?.length ? `Ejecutar N° ${item.pdtpActivityNumbers.join(", ")}` : "No acredita"}</dd></div>
+                {/* I-29: la fracción no se explicaba por sí sola. */}
+                <div><dt className="text-[var(--color-text-subtle)]" title="Ítems con gravedad asignada; el resto usa una gravedad por defecto al generar hallazgos.">Gravedad declarada</dt><dd className="mt-0.5 font-medium">{coverageLabel(item.coverage)}</dd></div>
+                <div><dt className="text-[var(--color-text-subtle)]">PDTP</dt><dd className="mt-0.5 font-medium">{item.pdtpActivityNumbers?.length ? `Ejecutar ${item.pdtpActivityNumbers.map(pdtpLabel).join(", ")}` : "No acredita"}</dd></div>
               </dl>
               <TemplateActions item={item} templates={templates} pdtpOptions={pdtpOptions} canManage={canManage} canApprove={canApprove} />
             </article>
@@ -195,6 +229,8 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, canManage, ca
                   <TableCell>
                     <span className="font-mono text-xs">{item.code}</span>
                     <span className="block text-sm">{item.name}</span>
+                    {/* I-28: la plantilla demo (y cualquier otra sin origen de catálogo) quedaba indistinguible de un instrumento real. */}
+                    {!item.sourceDefinitionCode && <Badge variant="outline" className="mt-1">Sin origen en catálogo</Badge>}
                   </TableCell>
                   <TableCell className="text-sm">{INSPECTION_KIND_LABELS[item.kind] ?? item.kind}</TableCell>
                   <TableCell className="font-mono text-xs">{item.versionLabel}</TableCell>
@@ -215,7 +251,8 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, canManage, ca
                       </span>
                     )}
                   </TableCell>
-                  <TableCell className="text-sm">
+                  {/* I-29: la fracción no se explicaba por sí sola. */}
+                  <TableCell className="text-sm" title="Ítems con gravedad asignada; el resto usa una gravedad por defecto al generar hallazgos.">
                     {coverageLabel(item.coverage)}
                     {item.coverage.criticalityInert && <span className="ml-1 text-xs text-[var(--color-warning-ink)]">sin gravedad: toda falla saldrá de criticidad media</span>}
                   </TableCell>
@@ -223,7 +260,7 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, canManage, ca
                       nada en el programa anual: el conector es un no-op. */}
                   <TableCell className="text-sm">
                     {item.pdtpActivityNumbers && item.pdtpActivityNumbers.length > 0 ? (
-                      <span className="font-mono text-xs">N° {item.pdtpActivityNumbers.join(", ")}</span>
+                      <span className="font-mono text-xs">{item.pdtpActivityNumbers.map(pdtpLabel).join(", ")}</span>
                     ) : (
                       <span className="text-xs text-[var(--color-warning-ink)]">No acredita</span>
                     )}
@@ -231,7 +268,7 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, canManage, ca
                         n=25 la ejecuta el operador, la n=26 la firma el Sup/JT. */}
                     {item.pdtpReviewActivityNumbers && item.pdtpReviewActivityNumbers.length > 0 && (
                       <span className="mt-1 block text-xs text-[var(--color-text-subtle)]">
-                        al revisar: <span className="font-mono">N° {item.pdtpReviewActivityNumbers.join(", ")}</span>
+                        al revisar: <span className="font-mono">{item.pdtpReviewActivityNumbers.map(pdtpLabel).join(", ")}</span>
                       </span>
                     )}
                   </TableCell>
@@ -262,6 +299,35 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, canManage, ca
   )
 }
 
+/**
+ * I-15: quien incorpora un borrador (`manage`) puede no tener `approve` — sin
+ * esto podía crear una plantilla que nunca podría habilitar ella misma, sin
+ * forma de avisarle a quien sí puede.
+ */
+function RequestApprovalButton({ templateId }: { templateId: string }) {
+  const operation = useOperation()
+  return (
+    <div className="text-right">
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        disabled={operation.pending}
+        onClick={() => operation.run(
+          () => remindTemplateApprovalAction({ templateId }),
+          (result) => {
+            const names = result.data?.notified
+            if (Array.isArray(names) && names.length > 0) operation.setMessage(`Solicitud enviada a ${names.join(", ")}.`)
+          },
+        )}
+      >
+        {operation.pending ? "Enviando…" : "Solicitar aprobación"}
+      </Button>
+      {operation.message && <p role="status" className="max-w-64 text-xs">{operation.message}</p>}
+    </div>
+  )
+}
+
 function TemplateActions({ item, templates, pdtpOptions, canManage, canApprove }: {
   item: TemplateItem
   templates: TemplateItem[]
@@ -274,6 +340,7 @@ function TemplateActions({ item, templates, pdtpOptions, canManage, canApprove }
       {item.status !== "superseded" && canManage && <DeviationCatalogDialog templateId={item.id} name={item.name} entries={item.deviations} unclassified={item.unclassifiedDeviations} copySources={templates.flatMap((other) => other.id !== item.id && other.deviations.length > 0 ? [{ id: other.id, name: other.name, count: other.deviations.filter((entry) => entry.isActive).length }] : [])} />}
       {item.status !== "superseded" && canManage && <PdtpActivitiesDialog templateId={item.id} name={item.name} expectedVersion={item.version} current={item.pdtpActivityNumbers ?? []} currentReview={item.pdtpReviewActivityNumbers ?? []} options={pdtpOptions} />}
       {item.status === "draft" && canApprove && <ApproveDialog templateId={item.id} name={item.name} expectedVersion={item.version} />}
+      {item.status === "draft" && canManage && !canApprove && <RequestApprovalButton templateId={item.id} />}
       {item.status !== "superseded" && canApprove && <RetireDialog templateId={item.id} name={item.name} />}
     </div>
   )
@@ -289,33 +356,42 @@ export function InspectionProgramsPanel({ programs, assignees, canManage, initia
   canManage: boolean
   initialView?: "all" | "overdue"
 }) {
-  const { setFilter } = useUrlFilters()
+  // I-16: filtros en la URL, mismo patrón que la bandeja — sólo `vista` sobrevivía al refresh.
+  const { getFilter, setFilter, setFilters } = useUrlFilters()
   const today = todayInChile()
-  const [query, setQuery] = React.useState("")
-  const [status, setStatus] = React.useState("all")
-  const [worksite, setWorksite] = React.useState("all")
+  const status = getFilter("estado") || "all"
+  const worksite = getFilter("faena") || "all"
+  const urlQuery = getFilter("q")
+  const [query, setQueryDraft] = React.useState(urlQuery)
+  React.useEffect(() => setQueryDraft(urlQuery), [urlQuery])
+  React.useEffect(() => {
+    const next = query.trim()
+    if (next === urlQuery) return
+    const timer = setTimeout(() => setFilters({ q: next || null }), 350)
+    return () => clearTimeout(timer)
+  }, [query, urlQuery, setFilters])
   const worksites = React.useMemo(() => Array.from(
     new Map(programs.map((item) => [item.worksiteId, item.worksiteName])).entries(),
   ).map(([id, name]) => ({ id, name })), [programs])
   const visiblePrograms = React.useMemo(() => programs.filter((item) => {
-    const normalized = query.trim().toLocaleLowerCase("es-CL")
+    const normalized = urlQuery.trim().toLocaleLowerCase("es-CL")
     const searchable = `${item.templateName} ${item.worksiteName} ${item.subjectType ?? ""} ${item.riskLabel ?? ""} ${item.assigneeName ?? ""}`.toLocaleLowerCase("es-CL")
-    const overdue = item.isActive && item.nextDueOn < today
+    const overdue = inspectionProgramIsOverdue(item, today)
     return (!normalized || searchable.includes(normalized))
       && (worksite === "all" || item.worksiteId === worksite)
       && (status === "all" || (status === "active" ? item.isActive : status === "paused" ? !item.isActive : overdue))
       && (initialView !== "overdue" || overdue)
-  }), [programs, query, status, worksite, initialView, today])
+  }), [programs, urlQuery, status, worksite, initialView, today])
 
   return (
     <div className="space-y-4">
       <div className="grid gap-2 sm:grid-cols-[minmax(14rem,1fr)_12rem_12rem_auto]">
         <div className="relative">
           <MagnifyingGlass size={16} aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-subtle)]" />
-          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar plantilla, sujeto o riesgo" aria-label="Buscar programaciones" className="pl-9" />
+          <Input value={query} onChange={(event) => setQueryDraft(event.target.value)} placeholder="Buscar plantilla, sujeto o riesgo" aria-label="Buscar programaciones" className="pl-9" />
         </div>
-        <Select value={status} onValueChange={setStatus}><SelectTrigger aria-label="Filtrar programaciones por estado"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos los estados</SelectItem><SelectItem value="active">Activas</SelectItem><SelectItem value="overdue">Vencidas</SelectItem><SelectItem value="paused">Detenidas</SelectItem></SelectContent></Select>
-        <Select value={worksite} onValueChange={setWorksite}><SelectTrigger aria-label="Filtrar programaciones por faena"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todas las faenas</SelectItem>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
+        <Select value={status} onValueChange={(value) => setFilters({ estado: value === "all" ? null : value })}><SelectTrigger aria-label="Filtrar programaciones por estado"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos los estados</SelectItem><SelectItem value="active">Activas</SelectItem><SelectItem value="overdue">Vencidas</SelectItem><SelectItem value="paused">Detenidas</SelectItem></SelectContent></Select>
+        <Select value={worksite} onValueChange={(value) => setFilters({ faena: value === "all" ? null : value })}><SelectTrigger aria-label="Filtrar programaciones por faena"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todas las faenas</SelectItem>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
         <Button
           type="button"
           size="sm"
@@ -326,7 +402,7 @@ export function InspectionProgramsPanel({ programs, assignees, canManage, initia
           {initialView === "overdue" ? "Ver todas" : "Sólo vencidas"}
         </Button>
       </div>
-      <p className="text-eyebrow">{visiblePrograms.length} programación(es)</p>
+      <p className="text-eyebrow">{visiblePrograms.length} {visiblePrograms.length === 1 ? "programación" : "programaciones"}</p>
 
       {visiblePrograms.length === 0 ? (
         <EmptyState
@@ -339,16 +415,18 @@ export function InspectionProgramsPanel({ programs, assignees, canManage, initia
         <>
         <div className="space-y-3 md:hidden">
           {visiblePrograms.map((item) => {
-            const overdue = item.isActive && item.nextDueOn < today
+            const overdue = inspectionProgramIsOverdue(item, today)
             return (
               <article key={item.id} className="space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div><h2 className="text-sm font-semibold">{item.templateName}</h2><p className="mt-1 text-xs text-[var(--color-text-subtle)]">{item.worksiteName}</p></div>
-                  <Badge variant={!item.isActive ? "outline" : overdue ? "warning" : "success"}>{!item.isActive ? "Detenida" : overdue ? "Vencida" : "Activa"}</Badge>
+                  <Badge variant={!item.templateApproved ? "warning" : !item.isActive ? "outline" : overdue ? "warning" : "success"}>
+                    {!item.templateApproved ? "Plantilla reemplazada" : !item.isActive ? "Detenida" : overdue ? "Vencida" : "Activa"}
+                  </Badge>
                 </div>
                 <dl className="grid grid-cols-2 gap-3 text-xs">
                   <div><dt className="text-[var(--color-text-subtle)]">Cadencia</dt><dd className="mt-0.5 font-medium">{INSPECTION_FREQUENCY_LABELS[item.frequency] ?? item.frequency} · {item.intervalDays} días</dd></div>
-                  <div><dt className="text-[var(--color-text-subtle)]">Próxima</dt><dd className="mt-0.5 font-medium tabular-nums">{item.nextDueOn}</dd></div>
+                  <div><dt className="text-[var(--color-text-subtle)]">Próxima</dt><dd className="mt-0.5 font-medium tabular-nums">{formatDate(item.nextDueOn)}</dd></div>
                   <div><dt className="text-[var(--color-text-subtle)]">Asignada a</dt><dd className="mt-0.5 font-medium">{item.assigneeName ?? "Sin asignar"}</dd></div>
                   <div><dt className="text-[var(--color-text-subtle)]">Sujeto</dt><dd className="mt-0.5 font-medium">{item.subjectType ?? "No especificado"}</dd></div>
                 </dl>
@@ -379,20 +457,24 @@ export function InspectionProgramsPanel({ programs, assignees, canManage, initia
                   <TableCell className="text-sm">{item.worksiteName}</TableCell>
                   <TableCell className="text-sm">
                     {INSPECTION_FREQUENCY_LABELS[item.frequency] ?? item.frequency}
-                    <span className="block text-xs text-[var(--color-text-subtle)]">cada {item.intervalDays} día(s)</span>
+                    <span className="block text-xs text-[var(--color-text-subtle)]">cada {item.intervalDays} {item.intervalDays === 1 ? "día" : "días"}</span>
                   </TableCell>
                   <TableCell className="text-sm tabular-nums">
-                    {item.nextDueOn}
-                    {item.isActive && item.nextDueOn < today && (
+                    {formatDate(item.nextDueOn)}
+                    {inspectionProgramIsOverdue(item, today) && (
                       <span className="block text-xs text-[var(--color-warning-ink)]">Vencida</span>
                     )}
                   </TableCell>
                   <TableCell className="text-sm">{item.assigneeName ?? "Sin asignar"}</TableCell>
                   <TableCell className="max-w-64 text-sm">
-                    <span>{item.subjectType ?? "Sin sujeto especificado"}</span>
+                    <span>{item.subjectType ?? "—"}</span>
                     {item.riskLabel && <span className="mt-1 block text-xs text-[var(--color-text-subtle)]">MIPER · {item.riskLabel}</span>}
                   </TableCell>
-                  <TableCell className="text-sm">{item.isActive ? "Sí" : "No"}</TableCell>
+                  <TableCell className="text-sm">
+                    {!item.templateApproved
+                      ? <Badge variant="warning">Plantilla reemplazada</Badge>
+                      : item.isActive ? "Sí" : "No"}
+                  </TableCell>
                   {canManage && (
                     <TableCell className="text-right">
                       <ProgramActions program={item} assignees={assignees} />
@@ -411,10 +493,17 @@ export function InspectionProgramsPanel({ programs, assignees, canManage, initia
 
 function ProgramActions({ program, assignees }: { program: ProgramItem; assignees: { id: string; name: string }[] }) {
   return (
-    <div className="flex flex-wrap justify-end gap-2">
+    <div className="flex flex-wrap items-center justify-end gap-2">
       <EditProgramDialog program={program} assignees={assignees} />
       <ToggleProgramButton program={program} />
-      {program.isActive && <RunProgramNowButton program={program} />}
+      {program.isActive && (program.templateApproved
+        ? <RunProgramNowButton program={program} />
+        // I-04: un botón deshabilitado no avisa de forma fiable por teclado/
+        // lector de pantalla ni en móvil (sin hover); el texto siempre visible
+        // dice lo mismo en ambos casos, sin JS.
+        : <p className="max-w-64 text-right text-xs text-[var(--color-warning-ink)]">
+            No producirá inspecciones: su plantilla ya no está aprobada. Apúntala a una vigente o reactívala en Plantillas.
+          </p>)}
     </div>
   )
 }
@@ -790,7 +879,12 @@ function PdtpActivitiesDialog({ templateId, name, expectedVersion, current, curr
               Elige por número y nombre qué actividad acredita la ejecución y cuál acredita la revisión segregada.
             </DialogDescription>
           </DialogHeader>
-          {options.length === 0 && <p className="rounded-lg bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">No hay un PDTP activo con actividades seleccionables. Activa el programa anual antes de agregar nuevas acreditaciones.</p>}
+          {options.length === 0 && (
+            <p className="rounded-lg bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">
+              No hay un PDTP activo con actividades seleccionables.{" "}
+              <Link href="/prevencion/pdtp" className="underline">Activa el programa anual</Link> antes de agregar nuevas acreditaciones.
+            </p>
+          )}
           {retainedNumbers.length > 0 && (
             <p className="rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">
               Las actividades señaladas como fuera del programa activo se conservan por trazabilidad. Desmárcalas si esta plantilla ya no debe acreditarlas.
@@ -809,7 +903,7 @@ function PdtpActivitiesDialog({ templateId, name, expectedVersion, current, curr
             </div>
           )}
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-          <DialogFooter><Button type="submit" disabled={operation.pending}>Guardar</Button></DialogFooter>
+          <DialogFooter><Button type="submit" disabled={operation.pending || visibleOptions.length === 0}>Guardar</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -863,7 +957,7 @@ function RetireDialog({ templateId, name }: { templateId: string; name: string }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button size="sm" variant="ghost">Retirar</Button></DialogTrigger>
+      <DialogTrigger asChild><Button size="sm" variant="ghost" className={GHOST_DANGER_CLASS}>Retirar</Button></DialogTrigger>
       <DialogContent>
         <form
           onSubmit={(event) => {
@@ -971,7 +1065,10 @@ function ToggleProgramButton({ program }: { program: ProgramItem }) {
   const operation = useOperation()
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button type="button" size="sm" variant="ghost">{program.isActive ? "Detener" : "Reactivar"}</Button></DialogTrigger>
+      <DialogTrigger asChild>
+        {/* I-20: "Detener" es destructivo (frena la generación futura); "Reactivar" no. */}
+        <Button type="button" size="sm" variant="ghost" className={program.isActive ? GHOST_DANGER_CLASS : undefined}>{program.isActive ? "Detener" : "Reactivar"}</Button>
+      </DialogTrigger>
       <DialogContent>
         <form className="space-y-4" onSubmit={(event) => {
           event.preventDefault()
@@ -1005,6 +1102,24 @@ function ToggleProgramButton({ program }: { program: ProgramItem }) {
 function RunProgramNowButton({ program }: { program: ProgramItem }) {
   const operation = useOperation()
   const router = useRouter()
+  const [confirming, setConfirming] = React.useState(false)
+  const today = todayInChile()
+  // I-01: cada ejecución avanza `nextDueOn` un intervalo completo
+  // (materializeProgramRuns), sin exigir que el programa esté vencido cuando
+  // se llama con `programId` explícito. Regularizar una vencida es el camino
+  // correcto y no debe pedir confirmación; crearla fuera de ciclo sí consume
+  // un ciclo del programa anual y merece decirlo antes, no después.
+  const outOfCycle = program.frequency !== "on_demand" && program.nextDueOn > today
+  const nextAfter = nextDueAfter(program.nextDueOn, program.intervalDays, today)
+
+  function create() {
+    setConfirming(false)
+    operation.run(() => runProgramNowAction({ programId: program.id }), (result) => {
+      const runId = result.data?.runId
+      if (typeof runId === "string") router.push(`/prevencion/inspecciones/${runId}`)
+    })
+  }
+
   return (
     <div className="space-y-1 text-right">
       <Button
@@ -1012,14 +1127,22 @@ function RunProgramNowButton({ program }: { program: ProgramItem }) {
         size="sm"
         variant="secondary"
         disabled={operation.pending}
-        onClick={() => operation.run(() => runProgramNowAction({ programId: program.id }), (result) => {
-          const runId = result.data?.runId
-          if (typeof runId === "string") router.push(`/prevencion/inspecciones/${runId}`)
-        })}
+        onClick={() => (outOfCycle ? setConfirming(true) : create())}
       >
         {operation.pending ? "Creando…" : "Crear y abrir inspección"}
       </Button>
       {operation.message && <p role="status" className="max-w-64 text-xs">{operation.message}</p>}
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        variant="warning"
+        title="Esta programación aún no vence"
+        description={`La próxima inspección de "${program.templateName}" está programada para el ${formatDate(program.nextDueOn)}. Crearla ahora consume ese ciclo: la próxima pasará al ${formatDate(nextAfter)}. ¿Crear de todos modos?`}
+        confirmLabel="Crear igual y mover la fecha"
+        cancelLabel="No crear"
+        onConfirm={create}
+        loading={operation.pending}
+      />
     </div>
   )
 }

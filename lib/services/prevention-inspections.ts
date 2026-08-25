@@ -56,8 +56,8 @@ import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { CHECKLIST_DEFINITIONS, isNonInspectionDefinition, isPersonEvaluationDefinition } from "@/lib/sst/definitions"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { onInspectionCompleted, onInspectionReverted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
-import { defaultPdtpActivityNumbers, defaultPdtpReviewActivityNumbers, pdtpActivityCandidatesFor } from "@/lib/services/pdtp-adapters/inspection-templates-2026"
-import { codeYear, todayInChile } from "@/lib/utils"
+import { defaultPdtpActivityNumbers, defaultPdtpReviewActivityNumbers, inspectionTemplateCodeFor, pdtpActivityCandidatesFor } from "@/lib/services/pdtp-adapters/inspection-templates-2026"
+import { codeYear, formatDate, todayInChile } from "@/lib/utils"
 import { assertRouteModuleEnabled } from "@/lib/services/module-toggles"
 
 type Client = DB | Tx
@@ -284,7 +284,10 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
     return await db.transaction(async (tx) => {
       const [created] = await tx.insert(preventionInspectionTemplates).values({
         id: `instpl-${nanoid()}`,
-        code: definition.code,
+        // I-03: dos filas que comparten definición (EPP JT/PRF) son dos
+        // instrumentos, no dos versiones — desempatado por la actividad PDTP
+        // elegida (el diálogo ya obliga a elegirla cuando es ambigua).
+        code: inspectionTemplateCodeFor(data.definitionCode, pdtpActivityNumbers),
         versionLabel,
         name: definition.title,
         kind: data.kind,
@@ -1323,7 +1326,9 @@ async function readMeterFromRun(client: Client, runId: string): Promise<number |
 export async function createFindingCapa(input: unknown, access: InspectionAccess) {
   const data = z.object({
     findingId: z.string().min(1),
-    actionDescription: z.string().trim().min(3).max(3000),
+    // I-24: alineado con el mínimo de los diálogos de motivo (ReasonDialog,
+    // TRANSITION_REASON_MIN_LENGTH) — 3 caracteres no describe una acción correctiva.
+    actionDescription: z.string().trim().min(10).max(3000),
     responsibleUserId: z.string().min(1),
     immediateMeasure: z.string().trim().max(3000).nullable().optional(),
     /** Abre además la mantención correctiva del equipo (sólo con sujeto de flota). */
@@ -1907,7 +1912,18 @@ export interface InspectionListFilters extends InspectionKindFilter {
   /** Texto libre sobre código, plantilla, sujeto y faena. */
   search?: string
   /** Vista rápida de la pantalla: pendientes de revisión, con hallazgos, graves. */
-  view?: "pending_review" | "open_findings" | "critical"
+  view?: "pending_review" | "open_findings" | "critical" | "overdue"
+  /** I-10: "¿qué le debe cada prevencionista?" — sin esto la jefa no podía gestionar por responsable. */
+  assignedToUserId?: string
+  /**
+   * I-10: rango sobre la fecha de EJECUCIÓN (no la programada) — responde
+   * "cómo cerró [mes]", que es la pregunta real de cierre de período. Los
+   * nombres llevan `executed` y no `scheduled` para que no mientan sobre qué
+   * comparan. `executedAt` es `timestamptz`; se castea a día de Chile con el
+   * mismo patrón que `prevention-incidents.ts` y `operational-trend-history.ts`.
+   */
+  executedFrom?: string
+  executedTo?: string
 }
 
 const OPEN_FINDINGS_SQL = sql<number>`(SELECT COUNT(*)::int FROM prevention_inspection_findings f WHERE f.run_id = ${preventionInspectionRuns.id} AND f.status <> 'closed')`
@@ -1920,9 +1936,18 @@ function listFilterConditions(access: InspectionAccess, filter: InspectionListFi
   ]
   if (filter.status) conditions.push(eq(preventionInspectionRuns.status, filter.status))
   if (filter.worksiteId) conditions.push(eq(preventionInspectionRuns.worksiteId, filter.worksiteId))
+  if (filter.assignedToUserId) conditions.push(eq(preventionInspectionRuns.assignedToUserId, filter.assignedToUserId))
+  if (filter.executedFrom) conditions.push(sql`(${preventionInspectionRuns.executedAt} AT TIME ZONE 'America/Santiago')::date >= ${filter.executedFrom}`)
+  if (filter.executedTo) conditions.push(sql`(${preventionInspectionRuns.executedAt} AT TIME ZONE 'America/Santiago')::date <= ${filter.executedTo}`)
   if (filter.view === "pending_review") conditions.push(eq(preventionInspectionRuns.status, "completed"))
   if (filter.view === "open_findings") conditions.push(sql`${OPEN_FINDINGS_SQL} > 0`)
   if (filter.view === "critical") conditions.push(sql`${CRITICAL_FINDINGS_SQL} > 0`)
+  // I-31: mismo predicado que ya usa el `ORDER BY` para priorizar vencidas.
+  if (filter.view === "overdue") {
+    conditions.push(sql`${preventionInspectionRuns.status} IN ('planned', 'in_progress')
+      AND ${preventionInspectionRuns.scheduledFor} IS NOT NULL
+      AND ${preventionInspectionRuns.scheduledFor} < ${todayInChile()}`)
+  }
   if (filter.search?.trim()) {
     // `unaccent` no está garantizado en la base; `ILIKE` cubre el caso real
     // (buscar por código o por nombre de plantilla) sin depender de extensiones.
@@ -1937,13 +1962,23 @@ function listFilterConditions(access: InspectionAccess, filter: InspectionListFi
   return and(...conditions)
 }
 
-const RUN_LIST_SELECTION = {
-  run: preventionInspectionRuns,
-  templateName: preventionInspectionTemplates.name,
-  templateKind: preventionInspectionTemplates.kind,
-  worksiteName: worksites.name,
-  openFindings: OPEN_FINDINGS_SQL,
-  criticalFindings: CRITICAL_FINDINGS_SQL,
+/**
+ * I-10/I-18: `assigneeName` sustituye a la columna "Origen" de la bandeja, que
+ * decía "Departamento de Prevención" en prácticamente todas las filas.
+ * Función, no objeto: el alias de `users` se crea una vez por llamada (mismo
+ * patrón que `executor`/`reviewer` más abajo), así que cada consumidor pasa
+ * el suyo.
+ */
+function runListSelection(assignee: { name: AnyPgColumn }) {
+  return {
+    run: preventionInspectionRuns,
+    templateName: preventionInspectionTemplates.name,
+    templateKind: preventionInspectionTemplates.kind,
+    worksiteName: worksites.name,
+    assigneeName: assignee.name,
+    openFindings: OPEN_FINDINGS_SQL,
+    criticalFindings: CRITICAL_FINDINGS_SQL,
+  }
 }
 
 export const INSPECTION_PAGE_SIZE = 50
@@ -1954,10 +1989,12 @@ export async function listInspectionRuns(
   page: { limit?: number; offset?: number } = {},
 ) {
   requireAccess(access, "prevention:inspections:view")
-  return db.select(RUN_LIST_SELECTION)
+  const assignee = alias(users, "inspection_list_assignee")
+  return db.select(runListSelection(assignee))
     .from(preventionInspectionRuns)
     .innerJoin(preventionInspectionTemplates, eq(preventionInspectionRuns.templateId, preventionInspectionTemplates.id))
     .innerJoin(worksites, eq(preventionInspectionRuns.worksiteId, worksites.id))
+    .leftJoin(assignee, eq(preventionInspectionRuns.assignedToUserId, assignee.id))
     .where(listFilterConditions(access, filter))
     // Bandeja orientada a la tarea: primero lo vencido, luego lo que espera
     // revisión y después el resto. La fecha y el id mantienen el orden estable
@@ -1985,15 +2022,20 @@ export async function summarizeInspectionRuns(access: InspectionAccess, filter: 
   requireAccess(access, "prevention:inspections:view")
   const [row] = await db.select({
     total: sql<number>`COUNT(*)::int`,
-    pendingReview: sql<number>`COUNT(*) FILTER (WHERE ${preventionInspectionRuns.status} = 'completed')::int`,
+    // I-30: sin la exclusión, contaba también lo que el propio usuario
+    // ejecutó — que no puede revisar (assessRunReview) — sobrestimando la
+    // cola accionable de quien también ejecuta.
+    pendingReview: sql<number>`COUNT(*) FILTER (WHERE ${preventionInspectionRuns.status} = 'completed' AND ${preventionInspectionRuns.executedByUserId} IS DISTINCT FROM ${access.userId})::int`,
     withOpenFindings: sql<number>`COUNT(*) FILTER (WHERE ${OPEN_FINDINGS_SQL} > 0)::int`,
     withCriticalFindings: sql<number>`COUNT(*) FILTER (WHERE ${CRITICAL_FINDINGS_SQL} > 0)::int`,
+    // I-31: mismo predicado que la vista rápida "Vencidas" y que el ORDER BY.
+    overdueRuns: sql<number>`COUNT(*) FILTER (WHERE ${preventionInspectionRuns.status} IN ('planned', 'in_progress') AND ${preventionInspectionRuns.scheduledFor} IS NOT NULL AND ${preventionInspectionRuns.scheduledFor} < ${todayInChile()})::int`,
   })
     .from(preventionInspectionRuns)
     .innerJoin(preventionInspectionTemplates, eq(preventionInspectionRuns.templateId, preventionInspectionTemplates.id))
     .innerJoin(worksites, eq(preventionInspectionRuns.worksiteId, worksites.id))
     .where(listFilterConditions(access, filter))
-  return row ?? { total: 0, pendingReview: 0, withOpenFindings: 0, withCriticalFindings: 0 }
+  return row ?? { total: 0, pendingReview: 0, withOpenFindings: 0, withCriticalFindings: 0, overdueRuns: 0 }
 }
 
 /**
@@ -2006,10 +2048,11 @@ export async function listAllInspectionRunsForExport(access: InspectionAccess, f
   // Los alias se crean UNA vez: `alias()` devuelve un objeto nuevo en cada
   // llamada, así que repetirlo en el select y en el join produciría dos tablas
   // distintas con el mismo nombre.
+  const assignee = alias(users, "inspection_export_assignee")
   const executor = alias(users, "inspection_export_executor")
   const reviewer = alias(users, "inspection_export_reviewer")
   return db.select({
-    ...RUN_LIST_SELECTION,
+    ...runListSelection(assignee),
     // A-07: el Excel volcaba los IDs crudos de usuario.
     executorName: executor.name,
     reviewerName: reviewer.name,
@@ -2017,6 +2060,7 @@ export async function listAllInspectionRunsForExport(access: InspectionAccess, f
     .from(preventionInspectionRuns)
     .innerJoin(preventionInspectionTemplates, eq(preventionInspectionRuns.templateId, preventionInspectionTemplates.id))
     .innerJoin(worksites, eq(preventionInspectionRuns.worksiteId, worksites.id))
+    .leftJoin(assignee, eq(preventionInspectionRuns.assignedToUserId, assignee.id))
     .leftJoin(executor, eq(preventionInspectionRuns.executedByUserId, executor.id))
     .leftJoin(reviewer, eq(preventionInspectionRuns.reviewedByUserId, reviewer.id))
     .where(listFilterConditions(access, filter))
@@ -2148,6 +2192,10 @@ export async function listInspectionPrograms(access: InspectionAccess, filter: I
   return db.select({
     program: preventionInspectionPrograms,
     templateName: preventionInspectionTemplates.name,
+    // I-04: sin esto un programa apuntando a una plantilla `superseded` se
+    // veía "Activa: Sí" con botón operativo, aunque el materializador ya la
+    // salta. El join contra la plantilla ya existía para el nombre.
+    templateStatus: preventionInspectionTemplates.status,
     worksiteName: worksites.name,
     assigneeName: users.name,
     riskHazardCode: preventionRiskEntries.hazardCode,
@@ -2188,6 +2236,90 @@ export async function listInspectionAssignees(access: InspectionAccess) {
     .from(users)
     .where(and(inArray(users.id, ids), eq(users.isActive, true)))
     .orderBy(asc(users.name))
+}
+
+/**
+ * Quién puede cerrar esta inspección en esta faena (I-08, auditoría UI/UX
+ * 2026-08-25).
+ *
+ * Misma lista que ya resuelve `notifySafely("pendiente de revisión")` al
+ * completar — se expone para lectura porque la pantalla que bloquea el cierre
+ * ("Tú ejecutaste esta inspección…") nombraba el problema sin decir a quién
+ * pedirle la revisión. Que la pantalla y la notificación automática lean la
+ * MISMA función evita que se contradigan.
+ */
+export async function listInspectionReviewers(access: InspectionAccess, worksiteId: string) {
+  requireAccess(access, "prevention:inspections:view", worksiteId)
+  const ids = (await getUserIdsWithPermissionForWorksite("prevention:inspections:review", worksiteId))
+    .filter((userId) => userId !== access.userId)
+  if (ids.length === 0) return []
+  return db.select({ id: users.id, name: users.name })
+    .from(users)
+    .where(and(inArray(users.id, ids), eq(users.isActive, true)))
+    .orderBy(asc(users.name))
+}
+
+/**
+ * Recordatorio manual de que una inspección espera revisión. No es
+ * destructivo: cualquiera con `view` sobre la faena puede empujarla — el tope
+ * de un recordatorio por día lo da la deduplicación de `createNotifications`,
+ * no el permiso.
+ */
+export async function remindInspectionReview(input: unknown, access: InspectionAccess) {
+  const data = z.object({ runId: z.string().min(1) }).parse(input)
+  const [run] = await db.select().from(preventionInspectionRuns)
+    .where(eq(preventionInspectionRuns.id, data.runId)).limit(1)
+  if (!run) throw new Error(NOT_FOUND)
+  requireAccess(access, "prevention:inspections:view", run.worksiteId)
+  if (run.status !== "completed") throw new Error("Sólo una inspección ejecutada espera revisión.")
+
+  const reviewers = await listInspectionReviewers(access, run.worksiteId)
+  if (reviewers.length === 0) throw new Error("Nadie tiene permiso de revisión en esta faena. Avisa a Prevención.")
+
+  await createNotifications(reviewers.map((reviewer) => reviewer.id), {
+    type: "system_alert",
+    title: "Recordatorio: inspección pendiente de revisión",
+    body: `${run.code} espera revisión desde ${run.executedAt ? formatDate(run.executedAt) : run.scheduledFor ?? "hace un tiempo"}.`,
+    entityType: "inspection_run",
+    entityId: run.id,
+    entityHref: `/prevencion/inspecciones/${run.id}`,
+    // Distinto del que usa `completeInspectionRun` (`inspection:review:${id}`):
+    // con ése el recordatorio sería un no-op para siempre. Con fecha: como
+    // máximo uno por día.
+    dedupeKey: `inspection:review-reminder:${run.id}:${todayInChile()}`,
+  })
+  return { notified: reviewers.map((reviewer) => reviewer.name) }
+}
+
+/**
+ * I-15 (auditoría UI/UX 2026-08-25): quien incorpora un borrador (`manage`)
+ * puede no tener `approve` — las plantillas no son por faena, así que a
+ * diferencia de I-08 el permiso se resuelve global, no por faena.
+ */
+export async function remindTemplateApproval(input: unknown, access: InspectionAccess) {
+  const data = z.object({ templateId: z.string().min(1) }).parse(input)
+  requireAccess(access, "prevention:inspections:manage")
+  const [template] = await db.select().from(preventionInspectionTemplates)
+    .where(eq(preventionInspectionTemplates.id, data.templateId)).limit(1)
+  if (!template) throw new Error(NOT_FOUND)
+  if (template.status !== "draft") throw new Error("Sólo un borrador espera aprobación.")
+
+  const approverIds = await getUserIdsWithPermission("prevention:inspections:approve")
+  if (approverIds.length === 0) throw new Error("Nadie tiene permiso de aprobación. Avisa a un administrador.")
+  const approvers = await db.select({ id: users.id, name: users.name }).from(users)
+    .where(and(inArray(users.id, approverIds), eq(users.isActive, true)))
+
+  await createNotifications(approvers.map((approver) => approver.id), {
+    type: "system_alert",
+    title: "Solicitud de aprobación de plantilla",
+    body: `${template.name} (${template.versionLabel}) espera aprobación para habilitarse.`,
+    entityType: "inspection_template",
+    entityId: template.id,
+    entityHref: "/prevencion/inspecciones/plantillas",
+    // Con fecha: como máximo una solicitud por día para el mismo borrador.
+    dedupeKey: `inspection:template-approval:${template.id}:${todayInChile()}`,
+  })
+  return { notified: approvers.map((approver) => approver.name) }
 }
 
 /** Actividades del PDTP vigente para elegir por número y nombre, sin pedirle

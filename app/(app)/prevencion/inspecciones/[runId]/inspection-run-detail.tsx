@@ -18,6 +18,7 @@ import {
   addDays,
   capaPriorityForCriticality,
   criticalityBadgeVariant,
+  effectiveRequiredItems,
   FINDING_CRITICALITY_LABELS,
   FINDING_STATUS_LABELS,
   INSPECTION_KIND_LABELS,
@@ -25,7 +26,9 @@ import {
   INSPECTION_RESULT_LABELS,
   fieldKindAcceptsPartial,
   fieldKindIsScorable,
+  formatSignatureRole,
   resultBadgeVariant,
+  resultSelectToneClass,
   runStatusBadgeVariant,
   summarizeCompliance,
   validateAnswerRow,
@@ -42,6 +45,7 @@ import {
   completeInspectionRunAction,
   createFindingCapaAction,
   registerDeviationAction,
+  remindInspectionReviewAction,
   removeDeviationAction,
   reopenInspectionRunAction,
   reviewInspectionRunAction,
@@ -153,6 +157,8 @@ interface Props {
   findings: FindingInfo[]
   currentUserId: string
   assignees: { id: string; name: string }[]
+  /** I-08: quién puede cerrarla en esta faena; se resuelve sólo cuando el bloqueo aplica. */
+  reviewers: { id: string; name: string }[]
   canExecute: boolean
   canReview: boolean
   canManage: boolean
@@ -173,17 +179,90 @@ function draftKey(sectionId: string, itemId: string) {
 }
 
 /**
+ * I-06: el árbol móvil y el de escritorio coexisten en el DOM —uno oculto por
+ * `md:hidden`/`hidden md:*`—, así que sólo uno está realmente visible. Se
+ * prueba primero el id móvil y se usa `offsetParent` (null si el elemento o un
+ * ancestro tiene `display:none`) para devolver el que esté pintado.
+ */
+function visibleItemElement(key: string): HTMLElement | null {
+  for (const prefix of ["item-mobile-", "item-desktop-"]) {
+    const el = document.getElementById(`${prefix}${key}`)
+    if (el && el.offsetParent !== null) return el
+  }
+  return null
+}
+
+/** Salta al ítem y enfoca su primer control, para dejar a la persona lista para responder. */
+function jumpToItem(key: string) {
+  const el = visibleItemElement(key)
+  if (!el) return
+  el.scrollIntoView({ behavior: "smooth", block: "center" })
+  el.querySelector<HTMLElement>("button, select, input, textarea, [tabindex]")?.focus()
+}
+
+/**
+ * I-19: el chip de navegación anteponía "{index+1}. " sobre `section.title`,
+ * y una parte del catálogo SST ya numera sus secciones en el propio título
+ * ("1. Documentos") mientras otra parte no ("Observaciones generales") — no
+ * es consistente, así que no basta con quitar el prefijo siempre: sólo se
+ * omite cuando el título ya empieza con un número.
+ */
+const SECTION_TITLE_ALREADY_NUMBERED = /^\d+\.\s/
+function sectionNavLabel(title: string, index: number) {
+  return SECTION_TITLE_ALREADY_NUMBERED.test(title) ? title : `${index + 1}. ${title}`
+}
+
+/**
  * Diálogo genérico de "acción con motivo obligatorio": cancelar, reabrir,
  * cerrar hallazgo. Las tres son la misma interacción, y el servicio exige el
  * mismo mínimo de 10 caracteres en todas.
  */
+/**
+ * I-08: recordatorio manual para quien puede cerrar una inspección bloqueada.
+ * `createNotifications` deduplica por día, así que el botón nunca satura —
+ * clics repetidos el mismo día son inocuos.
+ */
+function RemindReviewButton({ runId }: { runId: string }) {
+  const operation = useOperation()
+  return (
+    <div className="mt-2 space-y-1">
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        disabled={operation.pending}
+        onClick={() => operation.run(
+          () => remindInspectionReviewAction({ runId }),
+          (result) => {
+            const names = result.data?.notified
+            if (Array.isArray(names) && names.length > 0) operation.setMessage(`Recordatorio enviado a ${names.join(", ")}.`)
+          },
+        )}
+      >
+        {operation.pending ? "Enviando…" : "Recordar a quien revisa"}
+      </Button>
+      <p className="text-xs text-[var(--color-text-subtle)]">Se envía como máximo un recordatorio al día.</p>
+      {operation.message && <p role="status" className="text-xs">{operation.message}</p>}
+    </div>
+  )
+}
+
+/**
+ * I-20: las 4 acciones destructivas del módulo (Cancelar, Detener, Cerrar,
+ * Retirar) se veían como texto plano indistinguible de una acción neutra —
+ * "ghost" a secas. Un ghost coloreado en rojo tenue es lo bastante discreto
+ * para convivir con la acción primaria y lo bastante visible para no
+ * confundirse con "Reabrir para rectificar", que no lo es.
+ */
+const GHOST_DANGER_CLASS = "text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-tint)] hover:text-[var(--color-danger-ink)]"
+
 function ReasonDialog({ trigger, title, description, action, onDone, variant = "ghost", confirmLabel }: {
   trigger: string
   title: string
   description: string
   action: (reason: string) => Promise<{ ok: boolean; message?: string; data?: Record<string, unknown> }>
   onDone?: (result: { data?: Record<string, unknown> }) => void
-  variant?: "ghost" | "secondary"
+  variant?: "ghost" | "secondary" | "ghost-danger"
   confirmLabel?: string
 }) {
   const [open, setOpen] = React.useState(false)
@@ -191,7 +270,9 @@ function ReasonDialog({ trigger, title, description, action, onDone, variant = "
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button size="sm" variant={variant}>{trigger}</Button></DialogTrigger>
+      <DialogTrigger asChild>
+        <Button size="sm" variant={variant === "ghost-danger" ? "ghost" : variant} className={variant === "ghost-danger" ? GHOST_DANGER_CLASS : undefined}>{trigger}</Button>
+      </DialogTrigger>
       <DialogContent>
         <form
           onSubmit={(event) => {
@@ -399,7 +480,7 @@ export function InspectionRunDetail({
   run, templateKind, recordsDeviations, deviationCatalog,
   pdtpActivityNumbers, pdtpReviewActivityNumbers,
   worksiteName, assigneeName, executorName, reviewerName,
-  sections, answers, findings, currentUserId, assignees, canExecute, canReview, canManage, canStopVehicle,
+  sections, answers, findings, currentUserId, assignees, reviewers, canExecute, canReview, canManage, canStopVehicle,
   documents, canIngest, closingAct,
   physicalSourceRequired,
 }: Props) {
@@ -545,7 +626,10 @@ export function InspectionRunDetail({
   )
   const summary = React.useMemo(() => summarizeCompliance(items, currentAnswers), [items, currentAnswers])
   const answeredCount = currentAnswers.length
-  const requiredItems = React.useMemo(() => items.filter((item) => item.required), [items])
+  // I-02: mismo conjunto que exige `assessRunCompletion` — antes el contador
+  // usaba sólo `item.required`, y 11 de 12 plantillas del catálogo no declaran
+  // ninguno, así que decía "0 de N" sobre inspecciones ya terminadas.
+  const requiredItems = React.useMemo(() => effectiveRequiredItems(items), [items])
   const answeredRequired = React.useMemo(() => requiredItems.filter((item) => drafts[draftKey(item.sectionId, item.itemId)]?.result).length, [requiredItems, drafts])
 
   // B-03: la misma regla que aplica el servicio, evaluada antes de enviar.
@@ -716,9 +800,78 @@ export function InspectionRunDetail({
       ].filter(Boolean).join(" · ") || "No acredita ninguna actividad",
     },
   ]
-  const selfReviewBlocked = run.status === "completed" && canReview && run.executedByUserId === currentUserId
-  const canCurrentUserReview = run.status === "completed" && canReview && !selfReviewBlocked
+  const isExecutor = run.executedByUserId === currentUserId
+  const canCurrentUserReview = run.status === "completed" && canReview && !isExecutor
+  // I-08: el bloqueo cubría sólo la auto-revisión. Quien ejecutó SIN permiso
+  // de revisión (p. ej. el jefe de terreno) tampoco puede cerrarla y antes no
+  // veía ningún mensaje — sólo cambia el copy según tenga o no el permiso.
+  const reviewBlocked = run.status === "completed" && isExecutor
+  const selfReviewBlocked = reviewBlocked && canReview
   const showMobileActionBar = editable || canCurrentUserReview
+
+  // I-09: en modo revisión el trabajo es juzgar los hallazgos, no recorrer el
+  // checklist entero para llegar a ellos — se adelantan antes de las
+  // secciones. En modo edición se quedan al final (recién se están
+  // generando). Es una regla de lectura (¿hay algo que revisar?), no de
+  // permiso: cualquiera que abre una inspección terminada los quiere primero.
+  const findingsFirst = !editable && (run.status === "completed" || run.status === "reviewed")
+  const findingsSection = (run.status === "completed" || run.status === "reviewed") ? (
+    <section id="hallazgos" className="scroll-mt-16 space-y-3">
+      <h2 className="text-sm font-semibold">Hallazgos ({findings.length})</h2>
+      {findings.length === 0 ? (
+        <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">Sin hallazgos: todos los ítems evaluables cumplieron.</p>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Hallazgo</TableHead>
+                <TableHead>Criticidad</TableHead>
+                <TableHead>Estado</TableHead>
+                {(canExecute || canReview) && <TableHead className="text-right">Acción</TableHead>}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {findings.map((finding) => (
+                <TableRow key={finding.id}>
+                  <TableCell className="text-sm">{finding.description}</TableCell>
+                  <TableCell><Badge variant={criticalityBadgeVariant(finding.criticality)}>{FINDING_CRITICALITY_LABELS[finding.criticality] ?? finding.criticality}</Badge></TableCell>
+                  <TableCell className="text-sm">
+                    {FINDING_STATUS_LABELS[finding.status] ?? finding.status}
+                    {finding.capaActionId && (
+                      <Link href={`/prevencion/capa/${finding.capaActionId}`} className="ml-2 text-xs underline">Ver CAPA</Link>
+                    )}
+                  </TableCell>
+                  {(canExecute || canReview) && (
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        {canExecute && finding.status === "open" && <CapaDialog finding={finding} assignees={assignees} hasVehicle={!!run.subjectVehicleId} />}
+                        {canStopVehicle && run.subjectVehicleId && ["high", "critical"].includes(finding.criticality) && (
+                          <StopVehicleDialog finding={finding} subjectLabel={run.subjectLabel} />
+                        )}
+                        {/* B-06: cierre manual sólo para hallazgos sin CAPA.
+                            Los que la tienen se cierran al verificar o
+                            cerrar su acción, en la misma transacción. */}
+                        {canReview && finding.status === "open" && !finding.capaActionId && (
+                          <ReasonDialog
+                            trigger="Cerrar"
+                            title="Cerrar hallazgo"
+                            description={finding.description}
+                            action={(reason) => closeInspectionFindingAction({ findingId: finding.id, reason })}
+                            variant="ghost-danger"
+                          />
+                        )}
+                      </div>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </section>
+  ) : null
 
   return (
     <div className={showMobileActionBar ? "space-y-6 pb-24 md:pb-0" : "space-y-6"}>
@@ -732,7 +885,13 @@ export function InspectionRunDetail({
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
           <div><span className="block text-[var(--color-text-subtle)]">Responsable</span><span className="mt-0.5 block font-medium">{assigneeName ?? "Sin asignar"}</span></div>
-          <div><span className="block text-[var(--color-text-subtle)]">Avance obligatorio</span><span className="mt-0.5 block font-medium">{answeredRequired} de {requiredItems.length || items.length}</span></div>
+          {/* I-02: sin obligatorios efectivos (instrumento de un solo ítem de
+              texto libre) "0 de N obligatorios" mentía igual que antes, sólo
+              que al revés — se muestra el avance total en su lugar. */}
+          <div>
+            <span className="block text-[var(--color-text-subtle)]">{requiredItems.length > 0 ? "Avance obligatorio" : "Avance"}</span>
+            <span className="mt-0.5 block font-medium">{requiredItems.length > 0 ? `${answeredRequired} de ${requiredItems.length}` : `${answeredCount} de ${items.length}`}</span>
+          </div>
         </div>
         <details className="mt-3 border-t border-[var(--color-border)] pt-3 text-sm">
           <summary className="cursor-pointer font-medium">Ver contexto completo</summary>
@@ -754,7 +913,10 @@ export function InspectionRunDetail({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Badge variant={runStatusBadgeVariant(run.status)}>{inspectionTaskStatusLabel(run.status)}</Badge>
-          <span className="text-sm text-[var(--color-text-subtle)]">{answeredRequired} de {requiredItems.length || items.length} obligatorios · {answeredCount} de {items.length} totales</span>
+          <span className="text-sm text-[var(--color-text-subtle)]">
+            {requiredItems.length > 0 && `${answeredRequired} de ${requiredItems.length} obligatorios · `}
+            {answeredCount} de {items.length} {requiredItems.length > 0 ? "totales" : "respondidos"}
+          </span>
         </div>
         <div className="flex flex-wrap gap-2">
           {editable && (
@@ -782,7 +944,7 @@ export function InspectionRunDetail({
           )}
           {editable && <span className="hidden md:inline-flex"><CompleteDialog run={run} completion={completion} rowProblems={rowProblems} payload={completePayload} onSaved={applyVersion} /></span>}
           {canCurrentUserReview && (
-            <span className="hidden md:inline-flex"><ReviewDialog run={run} findings={findings} currentUserId={currentUserId} version={version} /></span>
+            <span className="hidden md:inline-flex"><ReviewDialog run={run} findings={findings} currentUserId={currentUserId} version={version} assignees={assignees} canExecute={canExecute} /></span>
           )}
           {/* A-05: rectificar una ejecución declarada por error. Antes no
               existía camino de vuelta y el dato quedaba firmado. */}
@@ -803,6 +965,7 @@ export function InspectionRunDetail({
               description="La inspección deja de estar pendiente y sale de la bandeja. No se puede deshacer."
               action={(reason) => cancelInspectionRunAction({ runId: run.id, expectedVersion: version, reason })}
               onDone={applyVersion}
+              variant="ghost-danger"
             />
           )}
         </div>
@@ -810,10 +973,17 @@ export function InspectionRunDetail({
 
       {operation.message && <p role="status" className="rounded-lg border border-[var(--color-success-line)] bg-[var(--color-success-tint)] px-3 py-2 text-sm text-[var(--color-success-ink)] md:static">{operation.message}</p>}
 
-      {selfReviewBlocked && (
-        <p className="rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-sm text-[var(--color-warning-ink)]">
-          Tú ejecutaste esta inspección. Para conservar la revisión segregada, debe cerrarla otra persona con permiso de revisión.
-        </p>
+      {reviewBlocked && (
+        <div className="rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-sm text-[var(--color-warning-ink)]">
+          <p>
+            {selfReviewBlocked
+              ? "Tú ejecutaste esta inspección. Para conservar la revisión segregada, debe cerrarla otra persona con permiso de revisión."
+              : "Ejecutaste esta inspección y no tienes permiso para revisarla. Debe cerrarla otra persona con permiso de revisión."}
+            {reviewers.length > 0 && ` Puede cerrarla: ${reviewers.map((reviewer) => reviewer.name).join(", ")}.`}
+          </p>
+          {reviewers.length > 0 && <RemindReviewButton runId={run.id} />}
+          {reviewers.length === 0 && <p className="mt-1">Nadie con permiso de revisión está asignado a esta faena. Avisa a Prevención.</p>}
+        </div>
       )}
 
       {physicalSourceRequired && (
@@ -855,22 +1025,35 @@ export function InspectionRunDetail({
       {editable && (rowProblemEntries.length > 0 || completionBlockers.length > 0) && (
         <div className="rounded-md border border-[var(--color-danger-line)] bg-[var(--color-surface-2)] p-4 text-sm">
           <p className="font-medium">Corrige antes de guardar o declarar ejecutada:</p>
-          <ul className="mt-2 list-disc space-y-1 pl-4">
-            {rowProblemEntries.slice(0, 6).map((entry) => <li key={entry.key}>
-              <a className="underline md:hidden" href={`#item-mobile-${entry.key}`}>{entry.problem}</a>
-              <a className="hidden underline md:inline" href={`#item-desktop-${entry.key}`}>{entry.problem}</a>
+          {/* I-06: lista completa con scroll interno, no un "y N más…" mudo. */}
+          <ul className="mt-2 max-h-56 list-disc space-y-1 overflow-y-auto pl-4">
+            {rowProblemEntries.map((entry) => <li key={entry.key}>
+              <button type="button" className="text-left underline" onClick={() => jumpToItem(entry.key)}>{entry.problem}</button>
             </li>)}
-            {completionBlockers.slice(0, 6).map((item) => <li key={item.detail}>{item.detail}</li>)}
-            {rowProblemEntries.length + completionBlockers.length > 12 && <li>y {rowProblemEntries.length + completionBlockers.length - 12} más…</li>}
+            {completionBlockers.map((item) => {
+              const key = item.sectionId && item.itemId ? draftKey(item.sectionId, item.itemId) : null
+              return (
+                <li key={item.detail}>
+                  {key ? <button type="button" className="text-left underline" onClick={() => jumpToItem(key)}>{item.detail}</button> : item.detail}
+                </li>
+              )
+            })}
           </ul>
         </div>
       )}
 
-      {editable && sections.length > 1 && (
+      {/* I-09: ya no depende de `editable` — un índice de secciones sirve a
+          cualquiera que lea el checklist, no sólo a quien ejecuta. */}
+      {sections.length > 1 && (
         <nav aria-label="Secciones de la inspección" className="sticky top-0 z-10 -mx-1 flex gap-2 overflow-x-auto bg-[var(--color-bg)] px-1 py-2 md:static md:bg-transparent">
-          {sections.map((section, index) => <a key={section.id} href={`#section-${section.id}`} className="shrink-0 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs font-medium">{index + 1}. {section.title}</a>)}
+          {findingsFirst && findingsSection && (
+            <a href="#hallazgos" className="shrink-0 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs font-medium">Hallazgos ({findings.length})</a>
+          )}
+          {sections.map((section, index) => <a key={section.id} href={`#section-${section.id}`} className="shrink-0 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs font-medium">{sectionNavLabel(section.title, index)}</a>)}
         </nav>
       )}
+
+      {findingsFirst && findingsSection}
 
       <div className={documents.length > 0
         ? "grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:items-start"
@@ -885,7 +1068,9 @@ export function InspectionRunDetail({
               {section.items.map((item, itemIndex) => {
                 const key = draftKey(section.id, item.id)
                 const draft = drafts[key] ?? { result: "" as ResultValue, comment: "", value: "", needsConfirmation: false }
-                const needsComment = draft.result === "not_applicable" || draft.result === "partial"
+                // I-05: "No cumple" exige motivo igual que "No aplica"/"Regular" — es
+                // el resultado que genera el hallazgo.
+                const needsComment = draft.result === "not_applicable" || draft.result === "partial" || draft.result === "non_conforming"
                 const scorable = fieldKindIsScorable(item.kind)
                 return (
                   <article key={item.id} id={`item-mobile-${key}`} className="scroll-mt-28 space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
@@ -904,7 +1089,8 @@ export function InspectionRunDetail({
                         <Field label="Resultado" required={item.required}>
                           {editable ? (
                             <Select value={draft.result || "__unset__"} onValueChange={(value) => update(section.id, item.id, { result: (value === "__unset__" ? "" : value) as ResultValue })}>
-                              <SelectTrigger aria-label={`Resultado de ${item.label}`}><SelectValue placeholder="Sin responder" /></SelectTrigger>
+                              {/* I-13: color visible también mientras se edita, no sólo en el badge de lectura. */}
+                              <SelectTrigger aria-label={`Resultado de ${item.label}`} className={resultSelectToneClass(draft.result)}><SelectValue placeholder="Sin responder" /></SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="__unset__">Sin responder</SelectItem>
                                 {Object.entries(INSPECTION_RESULT_LABELS)
@@ -915,13 +1101,15 @@ export function InspectionRunDetail({
                             </Select>
                           ) : draft.result ? <Badge variant={resultBadgeVariant(draft.result)}>{INSPECTION_RESULT_LABELS[draft.result] ?? draft.result}</Badge> : <span>Sin respuesta</span>}
                         </Field>
-                        <Field label="Comentario" hint={needsComment ? "Obligatorio para Regular o No aplica; mínimo 3 caracteres." : "Opcional, salvo que el resultado requiera justificación."}>
+                        <Field label="Comentario" hint={needsComment ? "Obligatorio para No cumple, Regular o No aplica; mínimo 3 caracteres." : "Opcional, salvo que el resultado requiera justificación."}>
                           {editable ? <Textarea value={draft.comment} onChange={(event) => update(section.id, item.id, { comment: event.target.value })} rows={3} aria-label={`Comentario de ${item.label}`} /> : <p className="text-sm">{draft.comment || "Sin comentario"}</p>}
                         </Field>
                       </>
                     ) : (
                       <Field label="Respuesta" required={item.required}>
-                        {editable ? <NonScorableField item={item} value={draft.value} onChange={(next) => update(section.id, item.id, { value: next, result: next.trim() ? "recorded" : "" })} /> : <p className="whitespace-pre-wrap text-sm">{draft.value || "Sin respuesta"}</p>}
+                        {editable ? <NonScorableField item={item} value={draft.value} onChange={(next) => update(section.id, item.id, { value: next, result: next.trim() ? "recorded" : "" })} />
+                          // I-17: un ítem tipo fecha guarda ISO (YYYY-MM-DD); en lectura se formatea igual que el resto de la pantalla.
+                          : <p className="whitespace-pre-wrap text-sm">{draft.value ? (item.kind === "date" ? formatDate(draft.value) : draft.value) : "Sin respuesta"}</p>}
                       </Field>
                     )}
                     <Field label="Evidencia fotográfica" hint="La foto queda vinculada a este ítem.">
@@ -953,7 +1141,9 @@ export function InspectionRunDetail({
                     const draft = drafts[key] ?? { result: "" as ResultValue, comment: "", value: "", needsConfirmation: false }
                     // 'Regular' exige justificarse por escrito igual que 'No aplica'
                     // — mismo criterio que el motor SST (requiresObservation).
-                    const needsComment = draft.result === "not_applicable" || draft.result === "partial"
+                    // I-05: "No cumple" exige motivo igual que "No aplica"/"Regular" — es
+                // el resultado que genera el hallazgo.
+                const needsComment = draft.result === "not_applicable" || draft.result === "partial" || draft.result === "non_conforming"
                     // B-08: un ítem que no expresa conformidad se responde con
                     // su contenido. Antes se le ofrecía "Cumple / No cumple" y
                     // el texto no tenía dónde guardarse.
@@ -1004,7 +1194,7 @@ export function InspectionRunDetail({
                                 <Input
                                   value={draft.comment}
                                   onChange={(event) => update(section.id, item.id, { comment: event.target.value })}
-                                  placeholder={needsComment ? (draft.result === "partial" ? "Motivo del Regular (mínimo 3 caracteres)" : "Motivo por el que no aplica (mínimo 3 caracteres)") : "Opcional"}
+                                  placeholder={needsComment ? (draft.result === "partial" ? "Motivo del Regular (mínimo 3 caracteres)" : draft.result === "non_conforming" ? "Motivo del No cumple (mínimo 3 caracteres)" : "Motivo por el que no aplica (mínimo 3 caracteres)") : "Opcional"}
                                   aria-label={`Comentario de ${item.label}`}
                                 />
                               ) : (
@@ -1029,7 +1219,8 @@ export function InspectionRunDetail({
                                 })}
                               />
                             ) : (
-                              <span className="text-sm whitespace-pre-wrap">{draft.value || "—"}</span>
+                              // I-17: mismo formato que el resto de la pantalla para un ítem tipo fecha.
+                              <span className="text-sm whitespace-pre-wrap">{draft.value ? (item.kind === "date" ? formatDate(draft.value) : draft.value) : "—"}</span>
                             )}
                           </TableCell>
                         )}
@@ -1103,7 +1294,7 @@ export function InspectionRunDetail({
                      * `aria-labelledby` que lo pisa —el nombre accesible pasaría
                      * de "Firma de prevencionista" a "Firma: prevencionista"— y
                      * rompe a todo el que localice el campo por su nombre. */
-                    <Field key={signature.role} label={`Firma: ${signature.role}`} hint="Nombre de quien firma.">
+                    <Field key={signature.role} label={`Firma: ${formatSignatureRole(signature.role)}`} hint="Nombre de quien firma.">
                       <Input
                         value={signature.name}
                         onChange={(event) => setClosing((c) => ({
@@ -1111,7 +1302,7 @@ export function InspectionRunDetail({
                           signatures: c.signatures.map((item, i) => i === index ? { ...item, name: event.target.value } : item),
                         }))}
                         maxLength={200}
-                        aria-label={`Firma de ${signature.role}`}
+                        aria-label={`Firma de ${formatSignatureRole(signature.role)}`}
                       />
                     </Field>
                   ))}
@@ -1127,7 +1318,7 @@ export function InspectionRunDetail({
               {run.closingRestrictions && <p><span className="text-[var(--color-text-subtle)]">Restricciones: </span>{run.closingRestrictions}</p>}
               {run.closingSignatures?.map((signature) => (
                 <p key={signature.role}>
-                  <span className="text-[var(--color-text-subtle)]">{signature.role}: </span>
+                  <span className="text-[var(--color-text-subtle)]">{formatSignatureRole(signature.role)}: </span>
                   {signature.name} · {formatDateTime(signature.signedAt)}
                 </p>
               ))}
@@ -1136,62 +1327,9 @@ export function InspectionRunDetail({
         </section>
       )}
 
-      {(run.status === "completed" || run.status === "reviewed") && (
-        <section className="space-y-3">
-          <h2 className="text-sm font-semibold">Hallazgos ({findings.length})</h2>
-          {findings.length === 0 ? (
-            <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">Sin hallazgos: todos los ítems evaluables cumplieron.</p>
-          ) : (
-            <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Hallazgo</TableHead>
-                    <TableHead>Criticidad</TableHead>
-                    <TableHead>Estado</TableHead>
-                    {(canExecute || canReview) && <TableHead className="text-right">Acción</TableHead>}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {findings.map((finding) => (
-                    <TableRow key={finding.id}>
-                      <TableCell className="text-sm">{finding.description}</TableCell>
-                      <TableCell><Badge variant={criticalityBadgeVariant(finding.criticality)}>{FINDING_CRITICALITY_LABELS[finding.criticality] ?? finding.criticality}</Badge></TableCell>
-                      <TableCell className="text-sm">
-                        {FINDING_STATUS_LABELS[finding.status] ?? finding.status}
-                        {finding.capaActionId && (
-                          <Link href={`/prevencion/capa/${finding.capaActionId}`} className="ml-2 text-xs underline">Ver CAPA</Link>
-                        )}
-                      </TableCell>
-                      {(canExecute || canReview) && (
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            {canExecute && finding.status === "open" && <CapaDialog finding={finding} assignees={assignees} hasVehicle={!!run.subjectVehicleId} />}
-                            {canStopVehicle && run.subjectVehicleId && ["high", "critical"].includes(finding.criticality) && (
-                              <StopVehicleDialog finding={finding} subjectLabel={run.subjectLabel} />
-                            )}
-                            {/* B-06: cierre manual sólo para hallazgos sin CAPA.
-                                Los que la tienen se cierran al verificar o
-                                cerrar su acción, en la misma transacción. */}
-                            {canReview && finding.status === "open" && !finding.capaActionId && (
-                              <ReasonDialog
-                                trigger="Cerrar"
-                                title="Cerrar hallazgo"
-                                description={finding.description}
-                                action={(reason) => closeInspectionFindingAction({ findingId: finding.id, reason })}
-                              />
-                            )}
-                          </div>
-                        </TableCell>
-                      )}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </section>
-      )}
+      {/* I-09: en modo edición se quedan al final; en revisión ya se movieron
+          justo después de la barra de secciones. */}
+      {!findingsFirst && findingsSection}
 
       {run.status === "reviewed" && run.reviewComment && (
         <p className="text-sm text-[var(--color-text-subtle)]">
@@ -1207,7 +1345,7 @@ export function InspectionRunDetail({
               <CompleteDialog run={run} completion={completion} rowProblems={rowProblems} payload={completePayload} onSaved={applyVersion} />
             </>
           ) : canCurrentUserReview ? (
-            <div className="col-span-2"><ReviewDialog run={run} findings={findings} currentUserId={currentUserId} version={version} /></div>
+            <div className="col-span-2"><ReviewDialog run={run} findings={findings} currentUserId={currentUserId} version={version} assignees={assignees} canExecute={canExecute} /></div>
           ) : null}
         </div>
       )}
@@ -1517,17 +1655,21 @@ function CapaDialog({ finding, assignees, hasVehicle }: {
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm">
             <div><span className="block text-xs text-[var(--color-text-subtle)]">Gravedad</span><Badge className="mt-1" variant={criticalityBadgeVariant(finding.criticality)}>{FINDING_CRITICALITY_LABELS[finding.criticality] ?? finding.criticality}</Badge></div>
-            <div><span className="block text-xs text-[var(--color-text-subtle)]">Compromiso automático</span><span className="mt-1 block font-semibold">{formatDate(targetDate)} · {capaRule.dueInDays} días</span></div>
+            {/* I-24: "Compromiso automático" no explicaba por qué ese plazo — es
+                política según gravedad, no un dato libre; se mantiene no editable. */}
+            <div><span className="block text-xs text-[var(--color-text-subtle)]">Plazo según gravedad</span><span className="mt-1 block font-semibold">{capaRule.dueInDays} días · {formatDate(targetDate)}</span></div>
             {capaRule.requiresImmediateStop && <p className="col-span-2 text-xs font-medium text-[var(--color-danger-ink)]">La criticidad exige detener de inmediato la tarea o el equipo afectado.</p>}
           </div>
-          <Field label="Acción correctiva" hint="Mínimo 3 caracteres.">
-            <Textarea name="actionDescription" required minLength={3} maxLength={3000} />
+          <Field label="Acción correctiva" hint="Mínimo 10 caracteres.">
+            <Textarea name="actionDescription" required minLength={10} maxLength={3000} />
+          </Field>
+          {/* I-24: el único campo obligatorio del formulario iba después de uno
+              opcional, y sin asterisco. */}
+          <Field label="Responsable" required hint="Debe quedar una persona a cargo antes de derivar.">
+            <Select value={responsibleUserId} onValueChange={setResponsibleUserId}><SelectTrigger aria-label="Responsable de la CAPA"><SelectValue placeholder="Selecciona responsable" /></SelectTrigger><SelectContent>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="responsibleUserId" value={responsibleUserId} />
           </Field>
           <Field label="Medida inmediata" hint="Opcional.">
             <Textarea name="immediateMeasure" maxLength={3000} />
-          </Field>
-          <Field label="Responsable" required hint="Debe quedar una persona a cargo antes de derivar.">
-            <Select value={responsibleUserId} onValueChange={setResponsibleUserId}><SelectTrigger aria-label="Responsable de la CAPA"><SelectValue placeholder="Selecciona responsable" /></SelectTrigger><SelectContent>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="responsibleUserId" value={responsibleUserId} />
           </Field>
           {hasVehicle && (
             <div className="space-y-1">
@@ -1720,12 +1862,15 @@ function SourceFormUpload({ runId, hasDocuments }: { runId: string; hasDocuments
 
 /* ── Revisar y cerrar ─────────────────────────────────────────────────────── */
 
-function ReviewDialog({ run, findings, currentUserId, version }: {
+function ReviewDialog({ run, findings, currentUserId, version, assignees, canExecute }: {
   run: RunInfo
   findings: FindingInfo[]
   currentUserId: string
   /** Versión vigente del run: desde C-02 el guardado la avanza, así que las props pueden estar atrasadas. */
   version: number
+  /** I-07: para poder derivar a CAPA sin salir del diálogo de revisión. */
+  assignees: { id: string; name: string }[]
+  canExecute: boolean
 }) {
   const [open, setOpen] = React.useState(false)
   const operation = useOperation()
@@ -1737,7 +1882,7 @@ function ReviewDialog({ run, findings, currentUserId, version }: {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button size="sm" variant="secondary">Revisar y cerrar</Button></DialogTrigger>
+      <DialogTrigger asChild><Button size="sm" variant="secondary">Revisar y cerrar{!review.allowed ? ` · ${review.blockers.length} bloqueo(s)` : ""}</Button></DialogTrigger>
       <DialogContent>
         <form
           onSubmit={(event) => {
@@ -1756,9 +1901,25 @@ function ReviewDialog({ run, findings, currentUserId, version }: {
             <DialogDescription>Exige independencia de quien ejecutó y que todo hallazgo alto o crítico tenga CAPA enlazada.</DialogDescription>
           </DialogHeader>
           {!review.allowed && (
-            <div className="space-y-1 rounded-md border border-[var(--color-danger-line)] p-3 text-sm">
+            <div className="space-y-2 rounded-md border border-[var(--color-danger-line)] p-3 text-sm">
               <p className="font-medium">No se puede cerrar:</p>
-              <ul className="list-disc space-y-1 pl-4">{review.blockers.map((item) => <li key={item.detail}>{item.detail}</li>)}</ul>
+              <ul className="list-disc space-y-2 pl-4">
+                {review.blockers.map((item) => {
+                  // I-07: el bloqueador trae el hallazgo que falta derivar — se
+                  // ofrece el mismo diálogo de CAPA ACÁ, anidado, sin cerrar
+                  // este (el comentario de revisión es un textarea no
+                  // controlado y se perdería si se desmontara el diálogo).
+                  const finding = item.findingId ? findings.find((f) => f.id === item.findingId) : undefined
+                  return (
+                    <li key={item.detail} className="flex flex-wrap items-center gap-2">
+                      <span>{item.detail}</span>
+                      {finding && (canExecute
+                        ? <CapaDialog finding={finding} assignees={assignees} hasVehicle={!!run.subjectVehicleId} />
+                        : <a href="#hallazgos" className="text-xs underline">Ver en Hallazgos</a>)}
+                    </li>
+                  )
+                })}
+              </ul>
             </div>
           )}
           <Field label="Comentario de revisión" hint="Mínimo 10 caracteres.">

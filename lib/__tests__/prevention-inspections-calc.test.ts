@@ -6,6 +6,7 @@ import {
   capaPriorityForCriticality,
   criticalityFromDanoPotencial,
   deriveFindings,
+  effectiveRequiredItems,
   fieldKindAcceptsPartial,
   resultBadgeVariant,
   summarizeCompliance,
@@ -154,7 +155,8 @@ describe("derivación de hallazgos", () => {
 
   it("incorpora el comentario del ejecutante a la descripción", () => {
     const findings = deriveFindings([item()], [answer({ result: "non_conforming", comment: "Manómetro en zona roja" })])
-    expect(findings[0]?.description).toBe("Extintor con carga vigente: Manómetro en zona roja")
+    // I-32: separador " — " en vez de ": ", que se leía como una estructura clave-valor que no es.
+    expect(findings[0]?.description).toBe("Extintor con carga vigente — Manómetro en zona roja")
   })
 })
 
@@ -204,6 +206,53 @@ describe("cierre de la ejecución", () => {
   it("un 'partial' con motivo pasa", () => {
     const result = assessRunCompletion([item()], [answer({ result: "partial", comment: "Desgaste menor, aún operativo." })])
     expect(result.allowed).toBe(true)
+  })
+
+  // I-05: espejo del gate para "no cumple" — sin esto, una respuesta guardada
+  // antes del fix de `validateAnswerRow` bloqueaba el cierre sin explicar por qué.
+  it("un 'no cumple' sin motivo bloquea el cierre", () => {
+    const result = assessRunCompletion([item()], [answer({ result: "non_conforming" })])
+    expect(result.blockers[0]?.kind).toBe("missing_nc_reason")
+  })
+
+  it("un 'no cumple' con motivo pasa", () => {
+    const result = assessRunCompletion([item()], [answer({ result: "non_conforming", comment: "Manguera con corte visible." })])
+    expect(result.allowed).toBe(true)
+  })
+
+  // I-06: el bloqueador debe cargar la referencia al ítem, no sólo su label —
+  // es lo que permite a la UI saltar al ítem en vez de listarlo como texto.
+  it("cada bloqueador de ítem trae sectionId/itemId", () => {
+    const result = assessRunCompletion([item(), item({ itemId: "i2", label: "Acceso despejado" })], [answer()])
+    expect(result.blockers[0]).toMatchObject({ kind: "missing_required", sectionId: "s1", itemId: "i2" })
+  })
+})
+
+describe("obligatorios efectivos (I-02)", () => {
+  it("incluye un ítem required aunque no cuente para cumplimiento", () => {
+    const items = effectiveRequiredItems([item({ required: true, countsForCompliance: false })])
+    expect(items).toHaveLength(1)
+  })
+
+  it("incluye un ítem que cuenta para cumplimiento y puntúa, aunque no sea required", () => {
+    const items = effectiveRequiredItems([item({ required: false, countsForCompliance: true })])
+    expect(items).toHaveLength(1)
+  })
+
+  it("excluye un ítem ni required ni que cuente para cumplimiento", () => {
+    const items = effectiveRequiredItems([item({ required: false, countsForCompliance: false })])
+    expect(items).toHaveLength(0)
+  })
+
+  it("excluye un ítem que cuenta para cumplimiento pero no puntúa (textarea)", () => {
+    const items = effectiveRequiredItems([item({ required: false, countsForCompliance: true, kind: "textarea" })])
+    expect(items).toHaveLength(0)
+  })
+
+  it("es el mismo conjunto que assessRunCompletion exige responder", () => {
+    const items = [item(), item({ itemId: "i2", required: false, countsForCompliance: true }), item({ itemId: "i3", required: false, countsForCompliance: false })]
+    const result = assessRunCompletion(items, [])
+    expect(result.blockers).toHaveLength(effectiveRequiredItems(items).length)
   })
 })
 
@@ -268,6 +317,13 @@ describe("revisión independiente", () => {
     })
     expect(result.blockers).toHaveLength(2)
   })
+
+  // I-07: el bloqueador carga el id del hallazgo para poder ofrecer "Derivar a
+  // CAPA" en el mismo diálogo, sin obligar a cerrar y buscarlo en la tabla.
+  it("el bloqueador de hallazgo sin CAPA trae su findingId", () => {
+    const result = assessRunReview({ executedByUserId: "u1", reviewerUserId: "u2", findings: [finding({ id: "f9" })] })
+    expect(result.blockers[0]).toMatchObject({ kind: "critical_finding_without_capa", findingId: "f9" })
+  })
 })
 
 describe("calibración de la plantilla", () => {
@@ -317,8 +373,20 @@ describe("validación de una respuesta contra su ítem", () => {
     expect(validateAnswerRow(item(), answer())).toBeNull()
   })
 
-  it("acepta 'no cumple' sin comentario: el motor no lo exige", () => {
-    expect(validateAnswerRow(item(), answer({ result: "non_conforming" }))).toBeNull()
+  // I-05 (auditoría UI/UX 2026-08-25): era el único resultado que generaba un
+  // hallazgo y no exigía justificarse — invertido de "acepta sin comentario".
+  it("rechaza 'no cumple' sin motivo: es el resultado que genera el hallazgo", () => {
+    const problem = validateAnswerRow(item(), answer({ result: "non_conforming" }))
+    expect(problem).toMatch(/exige indicar el motivo/)
+    expect(problem).toContain("Extintor con carga vigente")
+  })
+
+  it("acepta 'no cumple' con motivo", () => {
+    expect(validateAnswerRow(item(), answer({ result: "non_conforming", comment: "Manguera con corte visible." }))).toBeNull()
+  })
+
+  it("espacios en blanco no cuentan como motivo de 'no cumple'", () => {
+    expect(validateAnswerRow(item(), answer({ result: "non_conforming", comment: "   " }))).toMatch(/motivo/)
   })
 
   it("rechaza 'no aplica' sin motivo y nombra el ítem", () => {

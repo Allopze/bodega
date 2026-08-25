@@ -16,6 +16,8 @@ import {
   createInspectionRun,
   importInspectionTemplate,
   registerDeviation,
+  remindInspectionReview,
+  remindTemplateApproval,
   removeDeviation,
   retireInspectionTemplate,
   reviewInspectionRun,
@@ -73,6 +75,12 @@ function versionOf(result: unknown): ActionState["data"] {
   const version = (result as { version?: number; run?: { version?: number } } | null)?.version
     ?? (result as { run?: { version?: number } } | null)?.run?.version
   return typeof version === "number" ? { version } : undefined
+}
+
+/** I-08: nombres notificados, para que el botón confirme a quién le llegó. */
+function notifiedOf(result: unknown): ActionState["data"] {
+  const notified = (result as { notified?: unknown } | null)?.notified
+  return Array.isArray(notified) ? { notified } : undefined
 }
 
 /** Guardar respuestas también devuelve las claves persistidas para que una
@@ -233,6 +241,24 @@ export async function closeInspectionFindingAction(input: unknown): Promise<Acti
   const guard = await guardPermission("prevention:inspections:review")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => closeInspectionFinding(input, access))
+}
+
+/**
+ * I-08 (auditoría UI/UX 2026-08-25): recordatorio manual de que una inspección
+ * espera revisión. No es destructivo — sólo `view`, no `review` — el tope de
+ * un recordatorio por día lo pone la deduplicación de la notificación.
+ */
+export async function remindInspectionReviewAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:inspections:view")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => remindInspectionReview(input, access), notifiedOf)
+}
+
+/** I-15: solicitar aprobación de un borrador desde quien lo incorporó sin poder aprobarlo. */
+export async function remindTemplateApprovalAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:inspections:manage")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => remindTemplateApproval(input, access), notifiedOf)
 }
 
 /* ── Catálogo de desviaciones ─────────────────────────────────────────────

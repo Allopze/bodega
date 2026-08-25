@@ -2,7 +2,8 @@ import type { InspectionListFilters } from "@/lib/services/prevention-inspection
 
 const KINDS = new Set(["inspection", "observation", "audit"])
 const STATUSES = new Set(["planned", "in_progress", "completed", "reviewed", "cancelled"])
-const VIEWS = new Set(["pending_review", "open_findings", "critical"])
+const VIEWS = new Set(["pending_review", "open_findings", "critical", "overdue"])
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 type SearchParams = Record<string, string | string[] | undefined> | URLSearchParams
 
@@ -28,6 +29,9 @@ export function parseInspectionListQuery(params: SearchParams): {
   const view = clean(single(params, "vista"))
   const worksiteId = clean(single(params, "faena"))
   const search = clean(single(params, "q"))
+  const assignedToUserId = clean(single(params, "responsable"))
+  const executedFrom = clean(single(params, "desde"))
+  const executedTo = clean(single(params, "hasta"))
 
   const filter: InspectionListFilters = {}
   if (kind && KINDS.has(kind)) filter.kinds = [kind]
@@ -35,6 +39,10 @@ export function parseInspectionListQuery(params: SearchParams): {
   if (worksiteId) filter.worksiteId = worksiteId
   if (search) filter.search = search
   if (view && VIEWS.has(view)) filter.view = view as InspectionListFilters["view"]
+  if (assignedToUserId) filter.assignedToUserId = assignedToUserId
+  // Sin validar, un `?desde=ayer` devolvía cero filas sin decir por qué.
+  if (executedFrom && ISO_DATE.test(executedFrom)) filter.executedFrom = executedFrom
+  if (executedTo && ISO_DATE.test(executedTo)) filter.executedTo = executedTo
 
   return { page, filter }
 }
@@ -47,6 +55,9 @@ export function buildInspectionExportQuery(filter: InspectionListFilters) {
   if (filter.worksiteId) params.set("faena", filter.worksiteId)
   if (filter.search) params.set("q", filter.search)
   if (filter.view) params.set("vista", filter.view)
+  if (filter.assignedToUserId) params.set("responsable", filter.assignedToUserId)
+  if (filter.executedFrom) params.set("desde", filter.executedFrom)
+  if (filter.executedTo) params.set("hasta", filter.executedTo)
   const query = params.toString()
   return query ? `?${query}` : ""
 }

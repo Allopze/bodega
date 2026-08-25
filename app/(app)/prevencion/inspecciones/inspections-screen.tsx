@@ -16,6 +16,7 @@ import {
 import { InspectionPageActions, InspectionRunList, type InspectionSubjectOption } from "./inspection-run-list"
 import { todayInChile } from "@/lib/utils"
 import { buildInspectionExportQuery, parseInspectionListQuery } from "@/lib/prevention/inspection-list-query"
+import { inspectionProgramIsOverdue } from "@/lib/prevention/inspections"
 
 /**
  * Realizar una inspección: la bandeja de ejecuciones del motor.
@@ -51,7 +52,9 @@ export async function InspectionsScreen({ searchParams }: {
     listInspectionPrograms(access, { kinds: filter.kinds }),
     canExecute ? listInspectionTemplates(access, { kinds: filter.kinds }) : Promise.resolve([]),
     canExecute ? listInspectionWorksites(access) : Promise.resolve([]),
-    canExecute ? listInspectionAssignees(access) : Promise.resolve([]),
+    // I-10: el filtro de responsable es para cualquiera con `view` (la jefa
+    // puede tener `review` sin `execute`), no sólo para quien ejecuta.
+    listInspectionAssignees(access),
   ])
 
   const approvedTemplates = templates.flatMap((item) => item.status === "approved"
@@ -72,7 +75,7 @@ export async function InspectionsScreen({ searchParams }: {
     <PageContainer>
       <PageHeader
         title="Inspecciones"
-        description="Inspecciones, observaciones de conducta y auditorías del Sistema de Gestión (DS 44 art. 22 n°4). Cada incumplimiento genera un hallazgo, y los graves exigen una acción correctiva antes de cerrar."
+        description="Inspecciones, observaciones y auditorías del Sistema de Gestión (DS 44). Todo incumplimiento genera un hallazgo."
         breadcrumb={<Breadcrumbs items={[
           { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
@@ -105,6 +108,9 @@ export async function InspectionsScreen({ searchParams }: {
           subjectLabel: row.run.subjectLabel,
           worksiteId: row.run.worksiteId,
           worksiteName: row.worksiteName,
+          // I-18: sustituye a la columna "Origen", que decía "Departamento de
+          // Prevención" en prácticamente todas las filas.
+          assigneeName: row.assigneeName,
           executedAt: row.run.executedAt,
           scheduledFor: row.run.scheduledFor,
           compliancePercent: row.run.compliancePercent,
@@ -115,7 +121,10 @@ export async function InspectionsScreen({ searchParams }: {
         summary={summary}
         page={page}
         pageSize={INSPECTION_PAGE_SIZE}
-        overdueProgramCount={programs.filter((row) => row.program.isActive && row.program.nextDueOn < todayInChile()).length}
+        overdueProgramCount={programs.filter((row) => inspectionProgramIsOverdue(
+          { isActive: row.program.isActive, templateApproved: row.templateStatus === "approved", nextDueOn: row.program.nextDueOn },
+          todayInChile(),
+        )).length}
         today={todayInChile()}
         canExecute={canExecute}
         templates={approvedTemplates}

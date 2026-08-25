@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { DateRangePicker } from "@/components/ui/date-range-picker"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -39,6 +40,8 @@ interface RunItem {
   templateName: string
   templateKind: string
   origin: string
+  /** I-18: columna "Origen" decía "Departamento de Prevención" en casi todas las filas; se sustituye por esto. */
+  assigneeName: string | null
   subjectLabel: string | null
   worksiteId: string
   worksiteName: string
@@ -50,12 +53,12 @@ interface RunItem {
   criticalFindings: number
 }
 
-type QuickFilter = "all" | "pending_review" | "open_findings" | "critical"
+type QuickFilter = "all" | "pending_review" | "open_findings" | "critical" | "overdue"
 
 interface Props {
   runs: RunItem[]
   /** KPIs del universo completo. C-09: derivarlos de la página los volvía mentira pasadas 500 filas. */
-  summary: { total: number; pendingReview: number; withOpenFindings: number; withCriticalFindings: number }
+  summary: { total: number; pendingReview: number; withOpenFindings: number; withCriticalFindings: number; overdueRuns: number }
   page: number
   pageSize: number
   overdueProgramCount: number
@@ -90,6 +93,11 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
   const kind = getFilter("tipo") || "all"
   const worksite = getFilter("faena") || "all"
   const quickFilter = (getFilter("vista") || "all") as QuickFilter
+  // I-10: responsable + rango de ejecución. Van al sheet "Más filtros" — la
+  // barra ya tiene 4 controles y sumar 3 más empeoraría la cabecera móvil (I-12).
+  const responsable = getFilter("responsable") || "all"
+  const desde = getFilter("desde")
+  const hasta = getFilter("hasta")
   const urlSearch = getFilter("q")
   const [searchDraft, setSearchDraft] = React.useState(urlSearch)
 
@@ -120,6 +128,10 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
     { id: "pending-review", key: "pending_review" as const, label: "Pendientes de revisión", value: summary.pendingReview, detail: "Requieren a Prevención" },
     { id: "open-findings", key: "open_findings" as const, label: "Con hallazgos abiertos", value: summary.withOpenFindings, detail: "Requieren acción" },
     { id: "critical", key: "critical" as const, label: "Con hallazgo grave", value: summary.withCriticalFindings, detail: "Alto o crítico" },
+    // I-31: vencido era el primer criterio de orden y no tenía acceso directo
+    // en la bandeja — sólo existía "Programaciones vencidas" (otra pantalla,
+    // sobre programas, no sobre ejecuciones ya creadas).
+    { id: "overdue", key: "overdue" as const, label: "Vencidas", value: summary.overdueRuns, detail: "Planificadas o en curso" },
   ]
 
   const totalPages = Math.max(1, Math.ceil(summary.total / pageSize))
@@ -130,7 +142,8 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
   // ("Ver todas"), de modo que buscar algo inexistente era un callejón. El
   // buscador cuenta como filtro aunque viva en la cabecera del shell.
   const search = urlSearch.trim()
-  const isFiltered = status !== "all" || kind !== "all" || worksite !== "all" || quickFilter !== "all" || search !== ""
+  const secondaryActiveCount = [responsable !== "all", Boolean(desde), Boolean(hasta)].filter(Boolean).length
+  const isFiltered = status !== "all" || kind !== "all" || worksite !== "all" || quickFilter !== "all" || search !== "" || secondaryActiveCount > 0
 
   const KIND_LABELS = INSPECTION_KIND_LABELS as Record<string, string>
   const activeChips: ActiveFilterChip[] = []
@@ -141,6 +154,14 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
     if (ws) activeChips.push({ key: "faena", label: "Faena", value: worksite, displayValue: ws.name })
   }
   if (search) activeChips.push({ key: "q", label: "Búsqueda", value: search, displayValue: search })
+  // I-10: responsable y rango de ejecución, aunque vivan en el sheet "Más
+  // filtros" — el estado sigue visible como chip para no esconderlo.
+  if (responsable !== "all") {
+    const person = assignees.find((item) => item.id === responsable)
+    if (person) activeChips.push({ key: "responsable", label: "Responsable", value: responsable, displayValue: person.name })
+  }
+  if (desde) activeChips.push({ key: "desde", label: "Ejecutada desde", value: desde, displayValue: formatDate(desde) })
+  if (hasta) activeChips.push({ key: "hasta", label: "Ejecutada hasta", value: hasta, displayValue: formatDate(hasta) })
   function handleRemoveChip(key: string) {
     setFilters({ [key]: null })
   }
@@ -151,14 +172,17 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 overflow-hidden border-y border-[var(--color-border)] lg:grid-cols-4">
+      {/* I-12: en móvil los 5 KPI ocupaban una grilla 2×3 (~170px de alto)
+          antes de la primera tarjeta. Una fila con scroll horizontal baja eso
+          a una sola fila; desde `lg` vuelve a ser la grilla de siempre. */}
+      <div className="flex overflow-x-auto border-y border-[var(--color-border)] lg:grid lg:grid-cols-5 lg:overflow-hidden">
         {metrics.map((metric) => (
           <button
             key={metric.id}
             type="button"
             onClick={() => setFilters({ vista: quickFilter === metric.key ? null : metric.key, pagina: null })}
             aria-pressed={quickFilter === metric.key}
-            className="border-r border-[var(--color-border)] px-4 py-3 text-left hover:bg-[var(--color-surface-2)] aria-pressed:bg-[var(--color-primary-tint)]"
+            className="w-36 shrink-0 border-r border-[var(--color-border)] px-4 py-3 text-left hover:bg-[var(--color-surface-2)] aria-pressed:bg-[var(--color-primary-tint)] lg:w-auto"
           >
             <span className="text-eyebrow">{metric.label}</span>
             <span className="mt-1 block font-mono text-xl font-semibold tabular-nums">{metric.value}</span>
@@ -167,7 +191,7 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
         ))}
         <Link
           href="/prevencion/inspecciones/programacion?vista=vencidas"
-          className="border-r border-[var(--color-border)] px-4 py-3 text-left hover:bg-[var(--color-surface-2)]"
+          className="w-36 shrink-0 border-r border-[var(--color-border)] px-4 py-3 text-left hover:bg-[var(--color-surface-2)] lg:w-auto"
         >
           <span className="text-eyebrow">Programaciones vencidas</span>
           <span className="mt-1 block font-mono text-xl font-semibold tabular-nums">{overdueProgramCount}</span>
@@ -180,6 +204,30 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
         onRemoveChip={handleRemoveChip}
         onClearAll={clearUrlFilters}
         hasActiveFilters={isFiltered}
+        activeCount={secondaryActiveCount}
+        overflowFilters={
+          <>
+            <Field label="Responsable" hint="Quién tiene asignada la ejecución.">
+              <Select value={responsable} onValueChange={(value) => setFilters({ responsable: value === "all" ? null : value, pagina: null })}>
+                <SelectTrigger aria-label="Responsable"><SelectValue placeholder="Responsable" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los responsables</SelectItem>
+                  {assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Ejecutada entre" hint="Deja fuera las inspecciones sin ejecutar en el rango.">
+              <DateRangePicker
+                fromValue={desde}
+                toValue={hasta}
+                onFromChange={(iso) => setFilters({ desde: iso || null, pagina: null })}
+                onToChange={(iso) => setFilters({ hasta: iso || null, pagina: null })}
+                fromPlaceholder="Ejecutada desde"
+                toPlaceholder="Ejecutada hasta"
+              />
+            </Field>
+          </>
+        }
       >
         <div className="relative w-full sm:w-64">
           <MagnifyingGlass size={16} aria-hidden className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-subtle)]" />
@@ -274,7 +322,7 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
               <TableRow>
                 <TableHead>Código / plantilla</TableHead>
                 <TableHead>Tipo</TableHead>
-                <TableHead>Origen</TableHead>
+                <TableHead>Responsable</TableHead>
                 <TableHead>Faena / sujeto</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead>Fecha clave</TableHead>
@@ -292,7 +340,7 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
                     </Link>
                   </TableCell>
                   <TableCell className="text-sm">{INSPECTION_KIND_LABELS[item.templateKind] ?? item.templateKind}</TableCell>
-                  <TableCell className="text-sm">{INSPECTION_ORIGIN_LABELS[item.origin] ?? item.origin}</TableCell>
+                  <TableCell className="text-sm">{item.assigneeName ?? "Sin asignar"}</TableCell>
                   <TableCell className="text-sm">
                     {item.worksiteName}
                     {item.subjectLabel && <span className="block text-xs text-[var(--color-text-subtle)]">{item.subjectLabel}</span>}
@@ -472,19 +520,22 @@ export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksi
             <DialogDescription>Elige explícitamente el instrumento y la faena. Así evitas registrar trabajo en un alcance distinto al que estás visitando.</DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
-          <Field label="Plantilla">
+          <Field label="Plantilla" required>
             <Select value={templateId} onValueChange={setTemplateId}><SelectTrigger aria-label="Plantilla"><SelectValue placeholder="Selecciona una plantilla" /></SelectTrigger><SelectContent>{templates.map((item) => <SelectItem key={item.id} value={item.id}>{INSPECTION_KIND_LABELS[item.kind] ?? item.kind} · {item.name} · {item.versionLabel}</SelectItem>)}</SelectContent></Select><input type="hidden" name="templateId" value={templateId} />
           </Field>
-          <Field label="Faena">
+          <Field label="Faena" required>
             <Select value={worksiteId} onValueChange={handleWorksiteChange}><SelectTrigger aria-label="Faena de la inspección"><SelectValue placeholder="Selecciona la faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
           </Field>
           <Field label="Origen" hint="Quién origina la inspección — la certificación Mutual distingue las del comité paritario.">
             <Select value={origin} onValueChange={setOrigin}><SelectTrigger aria-label="Origen"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_ORIGIN_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="origin" value={origin} />
           </Field>
-          {worksiteId && (subjectsByWorksite[worksiteId]?.length ?? 0) > 0 && (
-            <Field label="Sujeto inspeccionado" hint="Opcional. Un recurso del inventario actualiza su última inspección al completar; un equipo habilita derivar la falla a mantención.">
-              <Select value={subjectRef} onValueChange={setSubjectRef}>
-                <SelectTrigger aria-label="Sujeto inspeccionado"><SelectValue placeholder="Otro / texto libre" /></SelectTrigger>
+          {/* I-25: antes este campo aparecía/desaparecía al elegir faena,
+              desplazando el resto del formulario. Ahora ocupa su lugar siempre,
+              con un estado explícito mientras no hay faena elegida. */}
+          {(!worksiteId || (subjectsByWorksite[worksiteId]?.length ?? 0) > 0) && (
+            <Field label="Sujeto inspeccionado" hint={worksiteId ? "Opcional. Un recurso del inventario actualiza su última inspección al completar; un equipo habilita derivar la falla a mantención." : "Selecciona una faena para ver su inventario."}>
+              <Select value={subjectRef} onValueChange={setSubjectRef} disabled={!worksiteId}>
+                <SelectTrigger aria-label="Sujeto inspeccionado"><SelectValue placeholder={worksiteId ? "Otro / texto libre" : "Selecciona una faena primero"} /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="_none">Otro / texto libre</SelectItem>
                   {(subjectsByWorksite[worksiteId] ?? []).map((subject) => (

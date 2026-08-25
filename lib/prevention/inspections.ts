@@ -92,6 +92,20 @@ export function resultBadgeVariant(result: string): "success" | "warning" | "dan
   return "success"
 }
 
+/**
+ * I-13 (auditoría UI/UX 2026-08-25): en el teléfono el resultado se edita con
+ * un `Select`, que en texto plano pierde el color que el badge de lectura sí
+ * tiene — recorrer 70 tarjetas buscando un "No cumple" es imposible ahí, que
+ * es justo donde se ejecuta. Mismas categorías que `resultBadgeVariant`, como
+ * clases de borde/fondo tenue para el `SelectTrigger` editable.
+ */
+export function resultSelectToneClass(result: string): string {
+  if (result === "non_conforming") return "border-[var(--color-danger-line)] bg-[var(--color-danger-tint)]"
+  if (result === "partial") return "border-[var(--color-warning-line)] bg-[var(--color-warning-tint)]"
+  if (result === "conforming") return "border-[var(--color-success-line)] bg-[var(--color-success-tint)]"
+  return ""
+}
+
 export function criticalityBadgeVariant(criticality: string): "default" | "warning" | "danger" {
   if (criticality === "critical" || criticality === "high") return "danger"
   if (criticality === "medium") return "warning"
@@ -268,6 +282,13 @@ export function validateAnswerRow(
   if (answer.result === "partial" && (answer.comment?.trim().length ?? 0) < ANSWER_COMMENT_MIN_LENGTH) {
     return `"${item.label}": un "Regular" exige justificarse por escrito (mínimo ${ANSWER_COMMENT_MIN_LENGTH} caracteres).`
   }
+  // El resultado más consecuente tenía el piso más bajo del formulario: un "No
+  // cumple" genera un hallazgo (deriveFindings) y dispara CAPA obligatoria en
+  // alto/crítico (CAPA_REQUIRED_CRITICALITIES), y hasta acá podía describirse
+  // sólo con la etiqueta del ítem. Mismo mínimo que "No aplica"/"Regular".
+  if (answer.result === "non_conforming" && (answer.comment?.trim().length ?? 0) < ANSWER_COMMENT_MIN_LENGTH) {
+    return `"${item.label}": un "No cumple" exige indicar el motivo (mínimo ${ANSWER_COMMENT_MIN_LENGTH} caracteres).`
+  }
   return null
 }
 
@@ -344,7 +365,9 @@ export function deriveFindings(items: InspectionItemSpec[], answers: InspectionA
     findings.push({
       sectionId: answer.sectionId,
       itemId: answer.itemId,
-      description: answer.comment?.trim() ? `${item.label}: ${answer.comment.trim()}` : item.label,
+      // I-32: "etiqueta: comentario" con dos puntos se leía como una
+      // estructura clave-valor que no es — un guion largo no la insinúa.
+      description: answer.comment?.trim() ? `${item.label} — ${answer.comment.trim()}` : item.label,
       criticality: criticalityFromDanoPotencial(item.danoPotencial),
     })
   }
@@ -352,8 +375,24 @@ export function deriveFindings(items: InspectionItemSpec[], answers: InspectionA
 }
 
 export interface CompletionBlocker {
-  kind: "missing_required" | "missing_na_reason" | "missing_partial_reason" | "missing_closing_act" | "unconfirmed_critical"
+  kind: "missing_required" | "missing_na_reason" | "missing_partial_reason" | "missing_nc_reason" | "missing_closing_act" | "unconfirmed_critical"
   detail: string
+  /** Ítem que lo originó. Ausente sólo en `missing_closing_act`, que no cuelga de ningún ítem. */
+  sectionId?: string
+  itemId?: string
+}
+
+/**
+ * Ítems que el gate de cierre exige responder.
+ *
+ * Unión, no ternario: obligatorio si lo declara la plantilla, o si puntúa
+ * para el cumplimiento (C-04). Se expone porque el contador de avance que ve
+ * el ejecutante y la regla que lo bloquea tienen que ser el MISMO conjunto —
+ * 11 de 12 plantillas del catálogo declaran cero `required`, y contar contra
+ * ese conjunto vacío daba siempre 0 sobre inspecciones terminadas.
+ */
+export function effectiveRequiredItems<T extends Pick<InspectionItemSpec, "required" | "countsForCompliance" | "kind">>(items: T[]): T[] {
+  return items.filter((item) => item.required || (item.countsForCompliance && fieldKindIsScorable(item.kind)))
 }
 
 /**
@@ -373,6 +412,18 @@ export function requiresHumanConfirmation(item: Pick<InspectionItemSpec, "danoPo
  * Cada definición del catálogo declara `closingAct` con su resultado global y
  * los roles que firman, y el motor la descartaba entera.
  */
+
+/**
+ * I-21 (auditoría UI/UX 2026-08-25): `signatureRoles` en el catálogo SST son
+ * claves crudas ("prevencionista", "jefe_area") sin un mapa de etiquetas —
+ * el acta impresa las mostraba tal cual, en minúscula y con guion bajo. No hay
+ * traducción curada por rol en la fuente, así que esto es un humanizado
+ * genérico (capitaliza, cambia "_" por espacio), no una etiqueta por catálogo.
+ */
+export function formatSignatureRole(role: string): string {
+  const spaced = role.replace(/_/g, " ")
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+}
 
 export interface ClosingActSpec {
   title: string
@@ -445,33 +496,38 @@ export function assessRunCompletion(
   const answered = new Map(answers.map((answer) => [`${answer.sectionId}::${answer.itemId}`, answer]))
   const blockers: CompletionBlocker[] = []
 
-  for (const item of items) {
-    // Unión, no ternario. El criterio anterior era
-    // `declaresRequired ? item.required : item.countsForCompliance`, y como
-    // `observacion_planeada` es la ÚNICA definición del catálogo que declara
-    // `required: true`, el piso de seguridad se apagaba justo donde más falta
-    // hacía y quedaba activo donde no. Ahora cada ítem se juzga solo: es
-    // obligatorio si lo declara, o si puntúa para el cumplimiento (C-04).
-    const mustAnswer = item.required || (item.countsForCompliance && fieldKindIsScorable(item.kind))
-    if (!mustAnswer) continue
+  // Unión, no ternario. El criterio anterior era
+  // `declaresRequired ? item.required : item.countsForCompliance`, y como
+  // `observacion_planeada` es la ÚNICA definición del catálogo que declara
+  // `required: true`, el piso de seguridad se apagaba justo donde más falta
+  // hacía y quedaba activo donde no. `effectiveRequiredItems` es el MISMO
+  // conjunto que consume el contador de avance de la UI (I-02): un ítem
+  // obligatorio para el gate no puede ser "0 de N" en la pantalla.
+  for (const item of effectiveRequiredItems(items)) {
     const answer = answered.get(`${item.sectionId}::${item.itemId}`)
     if (!answer) {
-      blockers.push({ kind: "missing_required", detail: item.label })
+      blockers.push({ kind: "missing_required", detail: item.label, sectionId: item.sectionId, itemId: item.itemId })
       continue
     }
     // Un ítem que no puntúa se responde con su `value`; sin contenido, no está
     // respondido por más que exista la fila.
     if (!fieldKindIsScorable(item.kind) && (answer.value?.trim().length ?? 0) === 0) {
-      blockers.push({ kind: "missing_required", detail: item.label })
+      blockers.push({ kind: "missing_required", detail: item.label, sectionId: item.sectionId, itemId: item.itemId })
       continue
     }
     if (answer.result === "not_applicable" && (answer.comment?.trim().length ?? 0) < ANSWER_COMMENT_MIN_LENGTH) {
-      blockers.push({ kind: "missing_na_reason", detail: item.label })
+      blockers.push({ kind: "missing_na_reason", detail: item.label, sectionId: item.sectionId, itemId: item.itemId })
     }
     // 'Regular' (escala B/R/M) exige justificarse por escrito, igual que en
     // el motor SST — ver requiresObservation en lib/sst/compliance.ts.
     if (answer.result === "partial" && (answer.comment?.trim().length ?? 0) < ANSWER_COMMENT_MIN_LENGTH) {
-      blockers.push({ kind: "missing_partial_reason", detail: item.label })
+      blockers.push({ kind: "missing_partial_reason", detail: item.label, sectionId: item.sectionId, itemId: item.itemId })
+    }
+    // I-05: el resultado que genera el hallazgo era el único sin piso de
+    // comentario — espejo de `validateAnswerRow`, para que una respuesta
+    // guardada antes de este fix bloquee el cierre explicando por qué.
+    if (answer.result === "non_conforming" && (answer.comment?.trim().length ?? 0) < ANSWER_COMMENT_MIN_LENGTH) {
+      blockers.push({ kind: "missing_nc_reason", detail: item.label, sectionId: item.sectionId, itemId: item.itemId })
     }
   }
   // Ratificación de lo que leyó la máquina en los ítems que matan. Va después
@@ -481,7 +537,7 @@ export function assessRunCompletion(
     if (!answer.needsConfirmation) continue
     const item = items.find((entry) => entry.sectionId === answer.sectionId && entry.itemId === answer.itemId)
     if (!item || !requiresHumanConfirmation(item)) continue
-    blockers.push({ kind: "unconfirmed_critical", detail: item.label })
+    blockers.push({ kind: "unconfirmed_critical", detail: item.label, sectionId: item.sectionId, itemId: item.itemId })
   }
 
   // El acta sólo se exige si la plantilla la declara. `closing` es opcional
@@ -496,6 +552,8 @@ export function assessRunCompletion(
 export interface ReviewBlocker {
   kind: "executor_is_reviewer" | "critical_finding_without_capa"
   detail: string
+  /** Sólo en `critical_finding_without_capa`: el hallazgo que falta derivar. */
+  findingId?: string
 }
 
 /**
@@ -541,7 +599,11 @@ export function assessRunReview(args: {
   }
   for (const finding of args.findings) {
     if (requiresCapa(finding.criticality) && !finding.capaActionId) {
-      blockers.push({ kind: "critical_finding_without_capa", detail: `El hallazgo "${finding.description}" es ${FINDING_CRITICALITY_LABELS[finding.criticality] ?? finding.criticality} y no tiene CAPA.` })
+      blockers.push({
+        kind: "critical_finding_without_capa",
+        detail: `El hallazgo "${finding.description}" es ${FINDING_CRITICALITY_LABELS[finding.criticality] ?? finding.criticality} y no tiene CAPA.`,
+        findingId: finding.id,
+      })
     }
   }
   return { allowed: blockers.length === 0, blockers }
@@ -689,6 +751,23 @@ export function nextDueAfter(dueOn: string, intervalDays: number, today: string)
   // Red de seguridad ante bordes de redondeo: nunca devolver una fecha pasada.
   while (next <= today) next = addDays(next, step)
   return next
+}
+
+/**
+ * Una programación está "vencida y accionable" sólo si además su plantilla
+ * sigue aprobada: `materializeProgramRuns` salta las que no lo están y sólo
+ * notifica, así que perseguirlas como vencidas manda al usuario a un botón
+ * que no puede producir nada.
+ *
+ * Vive acá porque la regla la leen varios sitios —el KPI de la bandeja, el
+ * filtro/badge de Programación, la celda de la tabla— y escrita más de una
+ * vez ya se había desincronizado una.
+ */
+export function inspectionProgramIsOverdue(
+  program: { isActive: boolean; templateApproved: boolean; nextDueOn: string },
+  today: string,
+): boolean {
+  return program.isActive && program.templateApproved && program.nextDueOn < today
 }
 
 /* ── Origen de la inspección y oportunidad del cierre ──────────────────────
