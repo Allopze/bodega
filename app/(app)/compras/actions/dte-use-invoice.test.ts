@@ -119,7 +119,11 @@ describe("attachDteAsInvoice", () => {
   })
 
   it("registers and attaches the selected DTE without requiring a manual upload", async () => {
-    const result = await attachDteAsInvoice({ purchaseOrderId: "oc-1", dteDocumentId: "dte-1" })
+    const result = await attachDteAsInvoice({
+      purchaseOrderId: "oc-1",
+      dteDocumentId: "dte-1",
+      receiptIds: ["receipt-1"],
+    })
 
     expect(result).toEqual({ ok: true, message: "Factura 45678 adjuntada correctamente" })
     expect(mockRequirePermission).toHaveBeenCalledWith("purchasing:send_order")
@@ -133,6 +137,7 @@ describe("attachDteAsInvoice", () => {
         invoiceNumber: "45678",
         amount: 119000,
         amountAuthority: "document_header",
+        receiptIds: ["receipt-1"],
         items: [expect.objectContaining({
           productName: "Casco amarillo",
           unitOfMeasure: "UN",
@@ -141,7 +146,24 @@ describe("attachDteAsInvoice", () => {
       }),
       expect.anything(),
     )
-    expect(mockRevalidateOperationalViews).toHaveBeenCalledWith(["/compras", "/compras/oc-1"])
+    expect(mockRevalidateOperationalViews).toHaveBeenCalledWith([
+      "/compras",
+      "/compras/oc-1",
+      "/recepcion",
+      "/recepcion/receipt-1",
+    ])
+  })
+
+  it("rechaza una selección de recepciones inválida antes de consultar la OC o el portal", async () => {
+    const result = await attachDteAsInvoice({
+      purchaseOrderId: "oc-1",
+      dteDocumentId: "dte-1",
+      receiptIds: Array.from({ length: 101 }, (_, index) => `receipt-${index}`),
+    })
+
+    expect(result).toEqual({ ok: false, message: "Las recepciones seleccionadas no son válidas" })
+    expect(mockAssertOrderAccess).not.toHaveBeenCalled()
+    expect(mockDownloadDteDocumentXml).not.toHaveBeenCalled()
   })
 
   it("removes the invoice-owned PDF when the atomic database write fails", async () => {

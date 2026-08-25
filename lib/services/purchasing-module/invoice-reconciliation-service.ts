@@ -148,10 +148,19 @@ export async function backfillPurchaseOrderInvoiceReconciliations() {
       )`)
       .orderBy(asc(purchaseOrders.id))
       .for("update")
-    const counts = { total: orders.length, matched: 0, needsReview: 0, acceptedException: 0 }
+    const counts = {
+      total: orders.length,
+      partiallyInvoiced: 0,
+      awaitingReceipt: 0,
+      matched: 0,
+      needsReview: 0,
+      acceptedException: 0,
+    }
     for (const order of orders) {
       const reconciliation = await persistPurchaseOrderInvoiceReconciliationTx(tx, order.id)
       if (reconciliation.status === "matched") counts.matched += 1
+      else if (reconciliation.status === "partially_invoiced") counts.partiallyInvoiced += 1
+      else if (reconciliation.status === "awaiting_receipt") counts.awaitingReceipt += 1
       else if (reconciliation.status === "needs_review") counts.needsReview += 1
       else if (reconciliation.status === "accepted_exception") counts.acceptedException += 1
     }
@@ -192,6 +201,15 @@ export async function acceptPurchaseOrderInvoiceReconciliation(
     if (!initial.hasInvoices) throw new Error("No se pueden aceptar diferencias sin una factura adjunta")
     if (initial.fingerprint !== input.fingerprint) {
       throw new Error("La conciliación cambió. Recarga la página y revisa la evidencia actual.")
+    }
+    if (["partial", "not_evaluable", "no_invoices"].includes(initial.coverage.status)) {
+      throw new Error("No se pueden aceptar diferencias mientras la cobertura documental esté incompleta")
+    }
+    if (initial.status === "partially_invoiced") {
+      throw new Error("No se pueden aceptar diferencias mientras queden cantidades o monto por facturar")
+    }
+    if (initial.status === "awaiting_receipt") {
+      throw new Error("No se pueden aceptar diferencias mientras la recepción del proveedor esté pendiente")
     }
     if (initial.status === "matched") throw new Error("La orden ya está conciliada")
     if (initial.status === "accepted_exception") throw new Error("Las diferencias de esta evidencia ya fueron aceptadas")
@@ -375,5 +393,11 @@ async function applyCatalogPricesTx(
 export function reconciliationWarnings(reconciliation: InvoiceReconciliationEvidence) {
   if (reconciliation.status === "matched" || reconciliation.status === "accepted_exception") return []
   if (!reconciliation.hasInvoices) return ["No hay facturas adjuntadas a esta orden."]
+  if (reconciliation.status === "partially_invoiced") {
+    return [`Facturación parcial: queda ${Math.round(reconciliation.coverage.remainingAmount).toLocaleString("es-CL")} por facturar.`]
+  }
+  if (reconciliation.status === "awaiting_receipt") {
+    return ["La facturación está completa, pero la recepción aceptada aún no cubre las cantidades facturadas."]
+  }
   return formatInvoiceReconciliationIssues(reconciliation)
 }

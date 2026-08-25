@@ -16,14 +16,26 @@ import { deleteOrderAction } from "./actions/order-cancel"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Button } from "@/components/ui/button"
 import { DELETABLE_ORDER_STATUSES } from "@/lib/services/purchasing.constants"
-import { INVOICE_DUE_ORDER_STATUSES } from "@/lib/work-queue-labels"
 import type { ActionState } from "@/lib/validation/operations"
 import type { OcRow } from "./oc-list.types"
 import { ocDeleteConfirmDescription, ocDisplayDate } from "./oc-list.types"
 
 /** La factura ya corresponde: llegó mercadería y la OC sigue abierta. */
 function invoiceDue(row: OcRow) {
-  return row.invoiceReconciliationStatus === "needs_review" || (row.invoiceReconciliationStatus === "no_invoices" && INVOICE_DUE_ORDER_STATUSES.includes(row.status))
+  return row.invoiceNeedsWork
+}
+
+function InvoiceCoverageLabel({ status }: { status: OcRow["invoiceReconciliationStatus"] }) {
+  if (status === "needs_review") {
+    return <span className="inline-flex items-center rounded-full bg-warning-tint px-2 py-0.5 text-xs font-medium text-warning-ink">Revisar conciliación</span>
+  }
+  if (status === "partially_invoiced") {
+    return <span className="inline-flex items-center rounded-full bg-[var(--color-info-tint)] px-2 py-0.5 text-xs font-medium text-[var(--color-info-ink)]">Facturación parcial</span>
+  }
+  if (status === "awaiting_receipt") {
+    return <span className="inline-flex items-center rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-xs font-medium text-[var(--color-text-muted)]">Recepción pendiente</span>
+  }
+  return null
 }
 
 
@@ -146,10 +158,10 @@ export function OcTableRow({ row, canDelete = false, canSend = false }: { row: O
           invertidas respecto a los encabezados, así que el badge de estado caía
           bajo "Facturas" y el conteo bajo "Estado". */}
       <TableCellNum>
-        {row.invoiceReconciliationStatus === "needs_review" ? (
-          <span className="inline-flex items-center rounded-full bg-warning-tint px-2 py-0.5 text-xs font-medium text-warning-ink">
-            Revisar conciliación
-          </span>
+        {row.invoiceReconciliationStatus === "needs_review"
+          || row.invoiceReconciliationStatus === "partially_invoiced"
+          || row.invoiceReconciliationStatus === "awaiting_receipt" ? (
+          <InvoiceCoverageLabel status={row.invoiceReconciliationStatus} />
         ) : row.invoiceCount > 0 ? (
           <span className="inline-flex items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[var(--color-text-muted)] text-xs font-medium px-2 py-0.5 tabular-nums">
             {row.invoiceCount}
@@ -239,9 +251,11 @@ export function OcMobileCard({
         <dd className="text-right font-mono tabular-nums text-[var(--color-text)]">{formatDate(ocDisplayDate(row))}</dd>
       </dl>
       {row.invoiceReconciliationStatus === "needs_review" ? (
-        <p className="mt-2 text-xs font-medium text-warning-ink">
-          Revisar conciliación
-        </p>
+        <p className="mt-2 text-xs font-medium text-warning-ink">Revisar conciliación</p>
+      ) : row.invoiceReconciliationStatus === "partially_invoiced" ? (
+        <p className="mt-2 text-xs font-medium text-[var(--color-info-ink)]">Facturación parcial</p>
+      ) : row.invoiceReconciliationStatus === "awaiting_receipt" ? (
+        <p className="mt-2 text-xs text-[var(--color-text-muted)]">Recepción pendiente</p>
       ) : row.invoiceCount > 0 ? (
         <p className="mt-2 text-xs text-[var(--color-text-muted)]">
           {pluralize(row.invoiceCount, "factura")} {pluralize(row.invoiceCount, "asociada", "asociadas")}

@@ -42,6 +42,7 @@ await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 import { registerReceipt } from "@/lib/services/receiving"
 import { closeOrder, createPurchaseOrderInvoice } from "@/lib/services/purchasing"
 import { getOcReconciliation } from "@/lib/services/oc-reconciliation"
+import { getPurchaseOrderInvoiceReconciliation } from "@/lib/services/purchasing-module/invoice-reconciliation-service"
 import { notifyManyUser } from "@/lib/services/notifications"
 
 const USER_ID = "u-test"
@@ -101,6 +102,97 @@ async function status(orderId: string): Promise<string> {
 }
 
 describe("two-stage receiving rollup", () => {
+  it("reconciles a direct order after two receipts and two partial invoices totaling 10 units", async () => {
+    const { orderId, itemIds } = await makeOrder([10], "directo_faena")
+    const itemId = itemIds[0]!
+    await inMemoryDb.update(schema.purchaseOrders)
+      .set({ netAmount: 10000, taxAmount: 0, totalAmount: 10000 })
+      .where(eq(schema.purchaseOrders.id, orderId))
+    await inMemoryDb.update(schema.purchaseOrderItems)
+      .set({ unitPrice: 1000, subtotal: 10000 })
+      .where(eq(schema.purchaseOrderItems.id, itemId))
+
+    const firstReceiptId = await registerReceipt({
+      purchaseOrderId: orderId,
+      receivedBy: USER_ID,
+      stage: "faena",
+      worksiteId: WS_ID,
+      items: [{ purchaseOrderItemId: itemId, quantityReceived: 6 }],
+    })
+    await createPurchaseOrderInvoice({
+      purchaseOrderId: orderId,
+      invoiceNumber: `F-${orderId}-6`,
+      amount: 6000,
+      fileName: `${orderId}-6.pdf`,
+      filePath: `storage/purchase-orders/${orderId}-6.pdf`,
+      uploadedBy: USER_ID,
+      receiptIds: [firstReceiptId],
+      items: [{
+        purchaseOrderItemId: itemId,
+        productName: "EPP parcial",
+        unitOfMeasure: "unidad",
+        quantity: 6,
+        unitPrice: 1000,
+        subtotal: 6000,
+      }],
+    })
+
+    let evidence = await getPurchaseOrderInvoiceReconciliation(orderId)
+    expect(evidence.status).toBe("partially_invoiced")
+    expect(evidence.coverage).toMatchObject({
+      status: "partial",
+      remainingAmount: 4000,
+      pendingItemCount: 1,
+      coveredItemCount: 0,
+      totalItemCount: 1,
+    })
+    expect(evidence.items[0]).toMatchObject({
+      ocQuantity: 10,
+      supplierReceivedQty: 6,
+      invoicedQty: 6,
+    })
+
+    const secondReceiptId = await registerReceipt({
+      purchaseOrderId: orderId,
+      receivedBy: USER_ID,
+      stage: "faena",
+      worksiteId: WS_ID,
+      items: [{ purchaseOrderItemId: itemId, quantityReceived: 4 }],
+    })
+    await createPurchaseOrderInvoice({
+      purchaseOrderId: orderId,
+      invoiceNumber: `F-${orderId}-4`,
+      amount: 4000,
+      fileName: `${orderId}-4.pdf`,
+      filePath: `storage/purchase-orders/${orderId}-4.pdf`,
+      uploadedBy: USER_ID,
+      receiptIds: [secondReceiptId],
+      items: [{
+        purchaseOrderItemId: itemId,
+        productName: "EPP saldo",
+        unitOfMeasure: "unidad",
+        quantity: 4,
+        unitPrice: 1000,
+        subtotal: 4000,
+      }],
+    })
+
+    evidence = await getPurchaseOrderInvoiceReconciliation(orderId)
+    expect(evidence.status).toBe("matched")
+    expect(evidence.coverage).toMatchObject({
+      status: "complete",
+      remainingAmount: 0,
+      pendingItemCount: 0,
+      coveredItemCount: 1,
+      totalItemCount: 1,
+    })
+    expect(evidence.items[0]).toMatchObject({
+      ocQuantity: 10,
+      supplierReceivedQty: 10,
+      invoicedQty: 10,
+    })
+  })
+
   it("recalculates three-way reconciliation when accepted supplier delivery advances", async () => {
     const { orderId, itemIds } = await makeOrder([2])
     await inMemoryDb.update(schema.purchaseOrderItems)
@@ -123,7 +215,7 @@ describe("two-stage receiving rollup", () => {
       }],
     })
     let order = await inMemoryDb.query.purchaseOrders.findFirst({ where: eq(schema.purchaseOrders.id, orderId) })
-    expect(order?.invoiceReconciliationStatus).toBe("needs_review")
+    expect(order?.invoiceReconciliationStatus).toBe("awaiting_receipt")
 
     await registerReceipt({
       purchaseOrderId: orderId,

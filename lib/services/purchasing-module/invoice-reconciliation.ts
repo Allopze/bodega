@@ -1,7 +1,13 @@
 export const CLP_RECONCILIATION_TOLERANCE = 1
-export const INVOICE_RECONCILIATION_VERSION = 1
+export const INVOICE_RECONCILIATION_VERSION = 2
 
-export type InvoiceReconciliationStatus = "no_invoices" | "matched" | "needs_review" | "accepted_exception"
+export type InvoiceReconciliationStatus =
+  | "no_invoices"
+  | "partially_invoiced"
+  | "awaiting_receipt"
+  | "matched"
+  | "needs_review"
+  | "accepted_exception"
 export type InvoiceReconciliationIssueCode =
   | "unlinked_line"
   | "missing_unit"
@@ -72,6 +78,7 @@ export interface InvoiceReconciliationIssue {
 export type MoneyReconciliationStatus = "no_invoices" | "matched" | "mismatch"
 export type LineReconciliationStatus = "not_evaluable" | "unlinked" | "partial" | "covered"
 export type ReceiptReconciliationStatus = "no_invoices" | "not_evaluable" | "covered" | "over_invoiced"
+export type InvoiceCoverageStatus = "no_invoices" | "not_evaluable" | "partial" | "complete" | "over"
 
 export interface ReconciledOrderItem {
   ocItemId: string
@@ -110,6 +117,13 @@ export interface InvoiceReconciliationEvidence {
   totalInvoiced: number
   totalOC: number
   money: { status: MoneyReconciliationStatus; tolerance: number; difference: number }
+  coverage: {
+    status: InvoiceCoverageStatus
+    remainingAmount: number
+    pendingItemCount: number
+    coveredItemCount: number
+    totalItemCount: number
+  }
   lines: { status: LineReconciliationStatus; invoicesWithoutLines: number; linkedLineCount: number; unlinkedLineCount: number }
   receipt: { status: ReceiptReconciliationStatus; overInvoicedLineCount: number }
   items: ReconciledOrderItem[]
@@ -301,10 +315,6 @@ export function reconcileInvoiceEvidence({
     }
   })
 
-  if (hasInvoices && Math.abs(moneyDifference) > CLP_RECONCILIATION_TOLERANCE) {
-    issues.push({ code: "total_mismatch", expected: totalOC, actual: totalInvoiced, difference: moneyDifference })
-  }
-
   const noLineEvidence = !hasInvoices || (linkedLineCount === 0 && unlinkedLineCount === 0)
   const items = sortedOrderItems.map((item): ReconciledOrderItem => {
     const linkedLines = linkedLinesByOrderItem.get(item.id) ?? []
@@ -319,8 +329,8 @@ export function reconcileInvoiceEvidence({
     const invoiceEffectiveUnitPrice = effectiveUnitPrice(invoiceSubtotal, invoicedQty)
     const priceDifference = ocEffectiveUnitPrice === null || invoiceEffectiveUnitPrice === null ? null : invoiceEffectiveUnitPrice - ocEffectiveUnitPrice
 
-    if (hasInvoices && !matched) {
-      issues.push({ code: difference < 0 ? "quantity_over" : "quantity_under", orderItemId: item.id, expected: item.quantity, actual: invoicedQty, difference: -difference })
+    if (hasInvoices && difference < -0.01) {
+      issues.push({ code: "quantity_over", orderItemId: item.id, expected: item.quantity, actual: invoicedQty, difference: -difference })
     }
     if (hasInvoices && receiptEvaluable && invoiceVsReceivedDifference > 0.01) {
       issues.push({
@@ -363,6 +373,27 @@ export function reconcileInvoiceEvidence({
       : allItemsCovered && invoicesWithoutLines === 0 && unlinkedLineCount === 0
         ? "covered"
         : "partial"
+  const hasQuantityOver = items.some((item) => item.status === "over_invoiced")
+  const coveredItemCount = items.filter((item) => item.status === "covered").length
+  const pendingItemCount = items.filter((item) => item.status === "not_covered" || item.status === "partial").length
+  const moneyOver = moneyDifference > CLP_RECONCILIATION_TOLERANCE
+  const moneyMatched = Math.abs(moneyDifference) <= CLP_RECONCILIATION_TOLERANCE
+  const coverageStatus: InvoiceCoverageStatus = !hasInvoices
+    ? "no_invoices"
+    : noLineEvidence || linkedLineCount === 0
+      ? "not_evaluable"
+      : hasQuantityOver || moneyOver
+        ? "over"
+        : allItemsCovered && moneyMatched && invoicesWithoutLines === 0 && unlinkedLineCount === 0
+          ? "complete"
+          : "partial"
+
+  // Un saldo por facturar es trabajo normal en una entrega parcial, no una
+  // excepción comercial. Sólo el exceso monetario es una inconsistencia por sí
+  // mismo; el faltante queda expresado por `coverage.remainingAmount`.
+  if (hasInvoices && moneyOver) {
+    issues.push({ code: "total_mismatch", expected: totalOC, actual: totalInvoiced, difference: moneyDifference })
+  }
   // El precio vigente del catálogo es contexto visual, no evidencia documental.
   // Una actualización del catálogo no debe invalidar una revisión ya aceptada.
   const fingerprintOrderItems = sortedOrderItems.map(({ currentSupplierPrice: _catalogPrice, supplierReceivedQuantity: _receipt, ...item }) => item)
@@ -371,19 +402,45 @@ export function reconcileInvoiceEvidence({
   const sortedReviews = [...reviews].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   const currentReview = sortedReviews.find((review) => review.fingerprint === fingerprint) ?? null
   const previousReview = sortedReviews.find((review) => review.fingerprint !== fingerprint) ?? null
-  const baseStatus: InvoiceReconciliationStatus = !hasInvoices ? "no_invoices" : issues.length === 0 ? "matched" : "needs_review"
   const hasBlockingReceiptIssue = issues.some((issue) => issue.code === "quantity_over_received")
+  const hardIssues = issues.filter((issue) => issue.code !== "quantity_over_received")
   const overInvoicedLineCount = items.filter((item) => item.receiptStatus === "over_invoiced").length
   const receiptEvaluable = items.some((item) => item.receiptStatus !== "not_evaluable")
+  const baseStatus: InvoiceReconciliationStatus = !hasInvoices
+    ? "no_invoices"
+    : hardIssues.length > 0 || coverageStatus === "over" || coverageStatus === "not_evaluable"
+      ? "needs_review"
+      : coverageStatus === "partial"
+        ? "partially_invoiced"
+        : hasBlockingReceiptIssue
+          ? "awaiting_receipt"
+          : "matched"
+  const acceptedStatus = baseStatus === "needs_review"
+    && coverageStatus !== "partial"
+    && coverageStatus !== "not_evaluable"
+    && coverageStatus !== "no_invoices"
+    && pendingItemCount === 0
+    && !hasQuantityOver
+    && currentReview
+    && !hasBlockingReceiptIssue
+      ? "accepted_exception"
+      : baseStatus
 
   return {
     version: INVOICE_RECONCILIATION_VERSION,
-    status: baseStatus === "needs_review" && currentReview && !hasBlockingReceiptIssue ? "accepted_exception" : baseStatus,
+    status: acceptedStatus,
     fingerprint,
     hasInvoices,
     totalInvoiced,
     totalOC,
     money: { status: !hasInvoices ? "no_invoices" : Math.abs(moneyDifference) <= CLP_RECONCILIATION_TOLERANCE ? "matched" : "mismatch", tolerance: CLP_RECONCILIATION_TOLERANCE, difference: moneyDifference },
+    coverage: {
+      status: coverageStatus,
+      remainingAmount: Math.max(0, totalOC - totalInvoiced),
+      pendingItemCount,
+      coveredItemCount,
+      totalItemCount: items.length,
+    },
     lines: { status: lineStatus, invoicesWithoutLines, linkedLineCount, unlinkedLineCount },
     receipt: {
       status: !hasInvoices ? "no_invoices" : !receiptEvaluable ? "not_evaluable" : overInvoicedLineCount > 0 ? "over_invoiced" : "covered",

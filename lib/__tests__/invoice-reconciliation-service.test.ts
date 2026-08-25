@@ -21,7 +21,7 @@ const {
   getPurchaseOrderInvoiceReconciliation,
   backfillPurchaseOrderInvoiceReconciliations,
 } = await import("@/lib/services/purchasing-module/invoice-reconciliation-service")
-const { deletePurchaseOrderInvoice } = await import("@/lib/services/purchasing-module/invoices")
+const { deletePurchaseOrderInvoice, setPurchaseOrderInvoiceReceipts } = await import("@/lib/services/purchasing-module/invoices")
 
 const now = "2026-08-20T12:00:00.000Z"
 const userId = "user-reconciliation"
@@ -142,7 +142,7 @@ describe("servicio transaccional de conciliación OC-factura", () => {
       updatedAt: schema.purchaseOrders.invoiceReconciliationUpdatedAt,
     }).from(schema.purchaseOrders).where(eq(schema.purchaseOrders.id, "backfill"))
     expect(order?.status).toBe("needs_review")
-    expect(order?.fingerprint).toMatch(/^v1:[a-f0-9]{64}$/)
+    expect(order?.fingerprint).toMatch(/^v2:[a-f0-9]{64}$/)
     expect(order?.updatedAt).not.toBeNull()
   })
 
@@ -161,6 +161,102 @@ describe("servicio transaccional de conciliación OC-factura", () => {
     expect(afterDelete.status).toBe("no_invoices")
     expect(afterDelete.currentReview).toBeNull()
     expect(afterDelete.previousReview?.reason).toContain("Diferencia comercial")
+  })
+
+  it("bloquea la aceptación si la cobertura sigue parcial aunque exista una diferencia de precio", async () => {
+    const { itemId, invoiceItemId, invoiceId } = await insertOrderFixture({ id: "partial-hard-difference" })
+    await inMemoryDb.update(schema.purchaseOrders).set({ netAmount: 200, taxAmount: 38, totalAmount: 238 })
+      .where(eq(schema.purchaseOrders.id, "partial-hard-difference"))
+    await inMemoryDb.update(schema.purchaseOrderItems).set({ quantity: 4, subtotal: 200, quantityOfficeReceived: 2 })
+      .where(eq(schema.purchaseOrderItems.id, itemId))
+    await inMemoryDb.update(schema.purchaseOrderInvoiceItems).set({ quantity: 2, unitPrice: 52, subtotal: 104 })
+      .where(eq(schema.purchaseOrderInvoiceItems.id, invoiceItemId))
+    await inMemoryDb.update(schema.purchaseOrderInvoices).set({ amount: 123 })
+      .where(eq(schema.purchaseOrderInvoices.id, invoiceId))
+
+    const evidence = await getPurchaseOrderInvoiceReconciliation("partial-hard-difference")
+    expect(evidence.status).toBe("needs_review")
+    expect(evidence.coverage.status).toBe("partial")
+    await expect(acceptPurchaseOrderInvoiceReconciliation({
+      purchaseOrderId: "partial-hard-difference", fingerprint: evidence.fingerprint,
+      reason: "No se puede cerrar una cobertura todavía incompleta.", userId, worksiteScope: "all",
+    })).rejects.toThrow(/cobertura|facturar|parcial/i)
+    expect(await inMemoryDb.select().from(schema.purchaseOrderInvoiceReconciliationReviews)
+      .where(eq(schema.purchaseOrderInvoiceReconciliationReviews.purchaseOrderId, "partial-hard-difference"))).toHaveLength(0)
+  })
+
+  it("relaciona muchas facturas y recepciones sin aceptar vínculos de otra OC", async () => {
+    const { invoiceId } = await insertOrderFixture({ id: "receipt-links" })
+    await inMemoryDb.insert(schema.receipts).values([
+      {
+        id: "receipt-links-a", code: "REC-LINK-A", purchaseOrderId: "receipt-links",
+        receivedBy: userId, receivedAt: now, locationType: "office", status: "closed",
+      },
+      {
+        id: "receipt-links-b", code: "REC-LINK-B", purchaseOrderId: "receipt-links",
+        receivedBy: userId, receivedAt: now, locationType: "office", status: "closed",
+      },
+    ])
+    await inMemoryDb.insert(schema.purchaseOrderInvoices).values({
+      id: "receipt-links-invoice-2", purchaseOrderId: "receipt-links", invoiceNumber: "F-LINK-2",
+      amount: 0, fileName: "link-2.pdf", filePath: "storage/purchase-orders/link-2.pdf",
+      uploadedBy: userId, uploadedAt: now,
+    })
+
+    await setPurchaseOrderInvoiceReceipts({
+      invoiceId, purchaseOrderId: "receipt-links",
+      receiptIds: ["receipt-links-a", "receipt-links-a", "receipt-links-b"],
+      userId, userEmail: "revisora@example.com", worksiteScope: "all",
+    })
+    await setPurchaseOrderInvoiceReceipts({
+      invoiceId: "receipt-links-invoice-2", purchaseOrderId: "receipt-links",
+      receiptIds: ["receipt-links-a"], userId, worksiteScope: "all",
+    })
+    await expect(setPurchaseOrderInvoiceReceipts({
+      invoiceId, purchaseOrderId: "receipt-links",
+      receiptIds: ["receipt-links-a"], userId, worksiteScope: ["ws-other"],
+    })).rejects.toThrow("No tienes acceso")
+
+    const links = await inMemoryDb.select().from(schema.purchaseOrderInvoiceReceipts)
+    expect(links).toEqual(expect.arrayContaining([
+      expect.objectContaining({ invoiceId, receiptId: "receipt-links-a", linkedBy: userId }),
+      expect.objectContaining({ invoiceId, receiptId: "receipt-links-b", linkedBy: userId }),
+      expect.objectContaining({ invoiceId: "receipt-links-invoice-2", receiptId: "receipt-links-a", linkedBy: userId }),
+    ]))
+
+    await insertOrderFixture({ id: "receipt-links-foreign" })
+    await inMemoryDb.insert(schema.receipts).values({
+      id: "receipt-links-foreign-receipt", code: "REC-LINK-X", purchaseOrderId: "receipt-links-foreign",
+      receivedBy: userId, receivedAt: now, locationType: "office", status: "closed",
+    })
+    await expect(setPurchaseOrderInvoiceReceipts({
+      invoiceId, purchaseOrderId: "receipt-links", receiptIds: ["receipt-links-foreign-receipt"],
+      userId, worksiteScope: "all",
+    })).rejects.toThrow("misma orden")
+
+    const preserved = await inMemoryDb.select().from(schema.purchaseOrderInvoiceReceipts)
+      .where(eq(schema.purchaseOrderInvoiceReceipts.invoiceId, invoiceId))
+    expect(preserved).toHaveLength(2)
+    const audit = await inMemoryDb.select().from(schema.auditLog)
+      .where(eq(schema.auditLog.entityId, invoiceId))
+    expect(audit.some((entry) => entry.entityType === "purchase_order_invoice_receipts")).toBe(true)
+
+    await setPurchaseOrderInvoiceReceipts({
+      invoiceId, purchaseOrderId: "receipt-links", receiptIds: ["receipt-links-b"],
+      userId, worksiteScope: "all",
+    })
+    const edited = await inMemoryDb.select().from(schema.purchaseOrderInvoiceReceipts)
+      .where(eq(schema.purchaseOrderInvoiceReceipts.invoiceId, invoiceId))
+    expect(edited.map((link) => link.receiptId)).toEqual(["receipt-links-b"])
+
+    await inMemoryDb.delete(schema.purchaseOrderInvoices)
+      .where(eq(schema.purchaseOrderInvoices.id, "receipt-links-invoice-2"))
+    expect(await inMemoryDb.select().from(schema.purchaseOrderInvoiceReceipts)
+      .where(eq(schema.purchaseOrderInvoiceReceipts.invoiceId, "receipt-links-invoice-2"))).toHaveLength(0)
+
+    await inMemoryDb.delete(schema.receipts).where(eq(schema.receipts.id, "receipt-links-b"))
+    expect(await inMemoryDb.select().from(schema.purchaseOrderInvoiceReceipts)
+      .where(eq(schema.purchaseOrderInvoiceReceipts.invoiceId, invoiceId))).toHaveLength(0)
   })
 
   it("registra el costo pendiente desde una línea concreta y audita el cambio", async () => {

@@ -9,7 +9,7 @@ test("conciliación separa el total monetario de la evidencia por línea", async
   // La tarjeta compara línea por línea; el total monetario ya no es la unidad de
   // medida de la conciliación.
   await expect(page.getByRole("heading", { name: "Conciliación de facturación" })).toBeVisible({ timeout: 10_000 })
-  await expect(page.getByRole("columnheader", { name: "Cantidad OC / factura" })).toBeVisible()
+  await expect(page.getByRole("columnheader", { name: "Cantidad OC / aceptada / factura" })).toBeVisible()
   // Y una factura sin líneas se declara como tal en vez de diluirse en el total.
   // Aparece una vez por factura sin líneas; basta con que la advertencia exista.
   await expect(page.getByText("Factura sin líneas documentales").first()).toBeVisible()

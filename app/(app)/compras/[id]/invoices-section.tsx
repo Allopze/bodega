@@ -28,6 +28,11 @@ import { attachDteAsInvoice } from "../actions/dte-use-invoice"
 import { analyzeDteCandidateLines } from "../actions/dte-analyze-lines"
 import { dteTipoLabel } from "@/lib/services/dte-portal/labels"
 import type { DteCandidateConfidence, DteCandidateMatchType } from "@/lib/services/purchasing-module/dte-candidates"
+import {
+  InvoiceReceiptAssociationDialog,
+  type InvoiceReceiptOption,
+  type InvoiceReceiptSuggestionView,
+} from "./invoice-receipt-association-dialog"
 
 /**
  * DTE del proveedor de esta OC que aún no cuelga de ninguna factura.
@@ -98,6 +103,8 @@ export interface InvoiceRow {
   fileName: string
   mimeType: string | null
   uploadedAt: string
+  receiptIds?: string[]
+  receiptSuggestion?: InvoiceReceiptSuggestionView
   items?: Array<{
     id: string
     purchaseOrderItemId: string | null
@@ -118,7 +125,8 @@ export function InvoicesSection({
   canManage,
   canUpdateCatalog,
   canAttach = canManage,
-  defaultInvoiceNumber,
+  receipts = [],
+  defaultReceiptId,
   dteCandidates = EMPTY_DTE_CANDIDATES,
 }: {
   purchaseOrderId: string
@@ -135,8 +143,10 @@ export function InvoicesSection({
    * carga que falla siempre. Por defecto sigue a `canManage`.
    */
   canAttach?: boolean
-  /** N° de guía/factura traído desde una recepción (`?nro=`) para no retipearlo. */
-  defaultInvoiceNumber?: string
+  /** Recepciones del proveedor disponibles para el vínculo documental opcional. */
+  receipts?: InvoiceReceiptOption[]
+  /** Recepción desde la que se abrió la OC; queda preseleccionada, nunca usada como folio. */
+  defaultReceiptId?: string
   /** DTE del proveedor sin vincular, ofrecidos para registro directo. */
   dteCandidates?: DteCandidate[]
 }) {
@@ -179,6 +189,7 @@ export function InvoicesSection({
               purchaseOrderId={purchaseOrderId}
               canManage={canManage}
               lineEvidence={invoiceReconciliation.get(inv.id)}
+              receipts={receipts}
             />
           ))}
         </ul>
@@ -191,7 +202,8 @@ export function InvoicesSection({
             <AddInvoiceForm
               purchaseOrderId={purchaseOrderId}
               ocItems={ocItems}
-              defaultInvoiceNumber={defaultInvoiceNumber}
+              receipts={receipts}
+              defaultReceiptId={defaultReceiptId}
               separated={false}
               dteCandidates={dteCandidates}
             />
@@ -201,11 +213,12 @@ export function InvoicesSection({
             // —excepción de "estación de captura repetitiva"— con la preferencia
             // recordada. Sin facturas no hay lista que tapar: el formulario *es*
             // el contenido y queda abierto.
-            <CollapsedInvoiceForm defaultOpen={Boolean(defaultInvoiceNumber)}>
+            <CollapsedInvoiceForm defaultOpen={Boolean(defaultReceiptId)}>
               <AddInvoiceForm
                 purchaseOrderId={purchaseOrderId}
                 ocItems={ocItems}
-                defaultInvoiceNumber={defaultInvoiceNumber}
+                receipts={receipts}
+                defaultReceiptId={defaultReceiptId}
                 separated={false}
                 heading={false}
                 dteCandidates={dteCandidates}
@@ -261,11 +274,13 @@ function InvoiceItem({
   purchaseOrderId,
   canManage,
   lineEvidence,
+  receipts,
 }: {
   invoice: InvoiceRow
   purchaseOrderId: string
   canManage: boolean
   lineEvidence?: InvoiceEvidenceStatus
+  receipts: InvoiceReceiptOption[]
 }) {
   const [state, action] = useActionState<ActionState, FormData>(deleteInvoiceAction, INITIAL_STATE)
   const [pending, startTransition] = React.useTransition()
@@ -295,6 +310,9 @@ function InvoiceItem({
     partial: "Líneas parcialmente vinculadas",
     linked_lines: "Líneas vinculadas a la OC",
   }[lineEvidence.status]
+  const invoiceReceiptIds = invoice.receiptIds ?? []
+  const invoiceReceiptIdSet = new Set(invoiceReceiptIds)
+  const linkedReceipts = receipts.filter((receipt) => invoiceReceiptIdSet.has(receipt.id))
 
   return (
     <li className="flex items-start justify-between gap-3 py-2.5">
@@ -324,6 +342,11 @@ function InvoiceItem({
               {lineEvidenceLabel}
             </p>
           )}
+          <p className="mt-1 text-[11px] text-(--color-text-muted)">
+            {linkedReceipts.length > 0
+              ? `Recepciones: ${linkedReceipts.map((receipt) => receipt.code).join(", ")}`
+              : "Sin recepción asociada"}
+          </p>
           {invoice.items && invoice.items.length > 0 && (
             <ul className="mt-1 space-y-0.5">
               {invoice.items.map((item) => (
@@ -337,7 +360,18 @@ function InvoiceItem({
         </div>
       </div>
       {canManage && (
-        <>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+          <InvoiceReceiptAssociationDialog
+            invoiceId={invoice.id}
+            invoiceNumber={invoice.invoiceNumber}
+            purchaseOrderId={purchaseOrderId}
+            receipts={receipts}
+            currentReceiptIds={invoiceReceiptIds}
+            suggestion={invoice.receiptSuggestion ?? {
+              receiptIds: [], confidence: "low", ambiguous: false,
+              reasons: ["No hay evidencia suficiente para sugerir una recepción."],
+            }}
+          />
           <Button
             type="button"
             variant="ghost"
@@ -359,7 +393,7 @@ function InvoiceItem({
             loading={pending}
             onConfirm={handleConfirmDelete}
           />
-        </>
+        </div>
       )}
     </li>
   )
@@ -385,14 +419,16 @@ function createInvoiceLineId() {
 function AddInvoiceForm({
   purchaseOrderId,
   ocItems,
-  defaultInvoiceNumber,
+  receipts,
+  defaultReceiptId,
   separated = true,
   heading = true,
   dteCandidates = [],
 }: {
   purchaseOrderId: string
   ocItems: OcItem[]
-  defaultInvoiceNumber?: string
+  receipts: InvoiceReceiptOption[]
+  defaultReceiptId?: string
   /** Con facturas arriba el formulario se separa con una línea; sin ellas la línea quedaba colgando. */
   separated?: boolean
   /** Plegado, el rótulo lo pone el `<summary>`: repetirlo dejaba dos títulos. */
@@ -403,13 +439,13 @@ function AddInvoiceForm({
   const formRef = React.useRef<HTMLFormElement>(null)
   const [lineItems, setLineItems] = React.useState<InvoiceLineItem[]>([])
   const [dteParsed, setDteParsed] = React.useState(false)
+  const [hasExtractedDocumentTotal, setHasExtractedDocumentTotal] = React.useState(false)
   const [extractionWarnings, setExtractionWarnings] = React.useState<string[]>([])
   const [supplierRutMissing, setSupplierRutMissing] = React.useState(false)
   const invoiceNumberRef = React.useRef<HTMLInputElement>(null)
-  // `createPurchaseOrderInvoice` recalcula el monto como la suma de las líneas
-  // cuando la factura trae detalle, así que el formulario muestra esa misma
-  // suma. El total declarado en el documento sólo se usa si la extracción no
-  // produjo líneas; si no, el campo mostraría un número que la base no guarda.
+  // El total documental extraído puede ser bruto mientras las líneas son netas.
+  // Cuando no existe cabecera usable, el formulario conserva el guard de suma
+  // de líneas; en ambos casos el servidor vuelve a validar la fuente elegida.
   // El monto necesita estado propio: cuando la extracción trae total pero no
   // líneas, el campo llevaba `value` sin `onChange` y React lo volvía inmutable,
   // justo en el caso en que el propio flujo pide "corrige los montos".
@@ -424,6 +460,9 @@ function AddInvoiceForm({
   const lastRefreshAt = React.useRef<number | null>(null)
   const [selectedDte, setSelectedDte] = React.useState<DteCandidate | null>(null)
   const [dteResolutions, setDteResolutions] = React.useState<Record<string, { purchaseOrderItemId: string | null; rememberAlias: boolean }>>({})
+  const [selectedReceiptIds, setSelectedReceiptIds] = React.useState<string[]>(() => (
+    defaultReceiptId && receipts.some((receipt) => receipt.id === defaultReceiptId) ? [defaultReceiptId] : []
+  ))
 
   const refreshCandidates = React.useCallback((source: "button" | "focus") => {
     lastRefreshAt.current = Date.now()
@@ -461,6 +500,7 @@ function AddInvoiceForm({
       formRef.current?.reset()
       setIssueDate("")
       setAmount("")
+      setHasExtractedDocumentTotal(false)
       setLineItems([])
       setDteParsed(false)
       setExtractionWarnings([])
@@ -516,6 +556,7 @@ function AddInvoiceForm({
     if (!file) {
       setDteParsed(false)
       setAmount("")
+      setHasExtractedDocumentTotal(false)
       setExtractionWarnings([])
       setSupplierRutMissing(false)
       return
@@ -602,7 +643,9 @@ function AddInvoiceForm({
     if (data.invoiceNumber && invoiceNumberRef.current) {
       invoiceNumberRef.current.value = data.invoiceNumber
     }
-    setAmount(typeof data.totalAmount === "number" ? String(data.totalAmount) : "")
+    const hasDocumentTotal = typeof data.totalAmount === "number" && Number.isFinite(data.totalAmount) && data.totalAmount >= 0
+    setHasExtractedDocumentTotal(hasDocumentTotal)
+    setAmount(hasDocumentTotal ? String(data.totalAmount) : "")
     if (data.issueDate) {
       setIssueDate(data.issueDate)
     }
@@ -664,7 +707,12 @@ function AddInvoiceForm({
         }))
       : undefined
     dteOperation.run(async () => {
-      const result = await attachDteAsInvoice({ purchaseOrderId, dteDocumentId: doc.id, lineResolutions })
+      const result = await attachDteAsInvoice({
+        purchaseOrderId,
+        dteDocumentId: doc.id,
+        lineResolutions,
+        receiptIds: selectedReceiptIds,
+      })
       if (!result.ok) toast.error(result.message)
       return result
     }, () => {
@@ -691,6 +739,12 @@ function AddInvoiceForm({
     >
       {heading && <h3 className="text-sm font-semibold text-(--color-text)">Adjuntar factura</h3>}
       <input type="hidden" name="purchaseOrderId" value={purchaseOrderId} />
+
+      <ReceiptSelection
+        receipts={receipts}
+        selectedIds={selectedReceiptIds}
+        onChange={setSelectedReceiptIds}
+      />
 
       {!state.ok && state.message && !("fieldErrors" in state) && (
         <p className="flex items-center gap-1.5 text-xs text-[var(--color-danger)]">
@@ -824,7 +878,6 @@ function AddInvoiceForm({
           name="invoiceNumber"
           placeholder="Ej: 000123"
           autoComplete="off"
-          defaultValue={defaultInvoiceNumber}
         />
       </Field>
 
@@ -841,7 +894,7 @@ function AddInvoiceForm({
             min="0"
             step="1"
             placeholder="0"
-            value={lineItems.length > 0 ? String(Math.round(totalItems)) : amount}
+            value={lineItems.length > 0 && !hasExtractedDocumentTotal ? String(Math.round(totalItems)) : amount}
             onChange={(e) => setAmount(e.target.value)}
             readOnly={lineItems.length > 0}
             className={lineItems.length > 0 ? "bg-surface-2" : ""}
@@ -975,6 +1028,49 @@ function AddInvoiceForm({
         disabled={unresolvedLineCount > 0}
       />
     </form>
+  )
+}
+
+function ReceiptSelection({
+  receipts,
+  selectedIds,
+  onChange,
+}: {
+  receipts: InvoiceReceiptOption[]
+  selectedIds: string[]
+  onChange: (receiptIds: string[]) => void
+}) {
+  if (receipts.length === 0) {
+    return (
+      <p className="rounded-(--radius-lg) bg-(--color-surface-2) px-3 py-2 text-xs text-(--color-text-muted)">
+        Recepción pendiente: puedes guardar la factura ahora y asociar recepciones cuando lleguen.
+      </p>
+    )
+  }
+  const selectedIdSet = new Set(selectedIds)
+
+  return (
+    <fieldset className="rounded-(--radius-lg) border border-(--color-border) p-3">
+      <legend className="px-1 text-xs font-medium text-(--color-text)">Recepciones relacionadas (opcional)</legend>
+      <p className="mb-2 text-[11px] text-(--color-text-subtle)">
+        Selecciona una o varias. El número de guía no se reutiliza como folio de factura.
+      </p>
+      <div className="max-h-40 space-y-1.5 overflow-y-auto">
+        {receipts.map((receipt) => (
+          <Checkbox
+            key={receipt.id}
+            id={`new-invoice-receipt-${receipt.id}`}
+            name="receiptId"
+            value={receipt.id}
+            checked={selectedIdSet.has(receipt.id)}
+            onChange={(event) => onChange(event.target.checked
+              ? [...new Set([...selectedIds, receipt.id])]
+              : selectedIds.filter((id) => id !== receipt.id))}
+            label={`${receipt.code} · ${formatDateTime(receipt.receivedAt)}${receipt.dispatchGuideNo ? ` · documento ${receipt.dispatchGuideNo}` : ""}`}
+          />
+        ))}
+      </div>
+    </fieldset>
   )
 }
 

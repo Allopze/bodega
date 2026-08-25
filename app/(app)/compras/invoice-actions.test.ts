@@ -26,13 +26,22 @@ vi.mock("@/db", () => ({ db: { query: { purchaseOrderInvoices: { findFirst: vi.f
 
 const { addInvoiceAction } = await import("./invoice-actions")
 
-function form(confirmUnverified = false) {
+function form(confirmUnverified = false, amount = "119000", withLine = false) {
   const data = new FormData()
   data.set("purchaseOrderId", "oc-1")
   data.set("invoiceNumber", "F-100")
-  data.set("amount", "119000")
+  data.set("amount", amount)
   data.set("issueDate", "2026-08-24")
-  data.set("itemCount", "0")
+  data.set("itemCount", withLine ? "1" : "0")
+  if (withLine) {
+    data.set("item_ocItemId_0", "oc-item-1")
+    data.set("item_productName_0", "Casco")
+    data.set("item_productCode_0", "CASCO-1")
+    data.set("item_unitOfMeasure_0", "unidad")
+    data.set("item_qty_0", "10")
+    data.set("item_price_0", "10000")
+    data.set("item_resolution_0", "matched")
+  }
   data.set("file", "mocked-file")
   if (confirmUnverified) data.set("confirmUnverifiedSupplier", "on")
   return data
@@ -77,6 +86,41 @@ describe("addInvoiceAction supplier identity", () => {
         source: "pdf_text",
       },
     }))
+  })
+
+  it("preserves the extracted gross document total when invoice lines are net", async () => {
+    mocks.extractInvoiceData.mockResolvedValue({
+      data: { supplierRut: "76.000.001-1", totalAmount: 119000 },
+      method: "pdf_text",
+      quality: { coverage: 1, engineConfidence: null, totalsConsistent: true },
+    })
+
+    const result = await addInvoiceAction({ ok: false, message: "" }, form(false, "100000", true))
+
+    expect(result.ok).toBe(true)
+    expect(mocks.createPurchaseOrderInvoice).toHaveBeenCalledWith(expect.objectContaining({
+      amount: 119000,
+      amountAuthority: "document_header",
+    }))
+  })
+
+  it("invalidates the receipt detail when a new invoice is linked from that receipt", async () => {
+    mocks.extractInvoiceData.mockResolvedValue({
+      data: { supplierRut: "76.000.001-1", totalAmount: 119000 },
+      method: "pdf_text",
+      quality: { coverage: 1, engineConfidence: null, totalsConsistent: true },
+    })
+
+    const data = form(false, "119000")
+    data.set("receiptId", "receipt-1")
+    await addInvoiceAction({ ok: false, message: "" }, data)
+
+    expect(mocks.revalidateOperationalViews).toHaveBeenCalledWith([
+      "/compras",
+      "/compras/oc-1",
+      "/recepcion",
+      "/recepcion/receipt-1",
+    ])
   })
 
   it("requires explicit confirmation and removes the file when no supplier RUT can be extracted", async () => {

@@ -28,7 +28,9 @@ import {
   preventionInspectionRuns,
   preventionInspectionTemplates,
   products,
+  purchaseOrderInvoiceItems,
   purchaseOrderInvoices,
+  purchaseOrderItems,
   purchaseOrders,
   purchaseRequestItems,
   purchaseRequests,
@@ -78,6 +80,27 @@ export const orderHasNoInvoice = sql`NOT EXISTS (
   WHERE ${purchaseOrderInvoices.purchaseOrderId} = ${purchaseOrders.id}
 )`
 
+/** Hay cantidades aceptadas por el proveedor que todavía no tienen factura. */
+export const orderHasReceivedUninvoicedQuantity = sql`EXISTS (
+  SELECT 1
+  FROM ${purchaseOrderItems}
+  WHERE ${purchaseOrderItems.purchaseOrderId} = ${purchaseOrders.id}
+    AND (
+      CASE
+        WHEN ${purchaseOrders.deliveryMode} = 'via_oficina'
+          THEN ${purchaseOrderItems.quantityOfficeReceived}
+        ELSE ${purchaseOrderItems.quantityReceived}
+      END
+    ) > COALESCE((
+      SELECT SUM(${purchaseOrderInvoiceItems.quantity})
+      FROM ${purchaseOrderInvoiceItems}
+      INNER JOIN ${purchaseOrderInvoices}
+        ON ${purchaseOrderInvoiceItems.invoiceId} = ${purchaseOrderInvoices.id}
+      WHERE ${purchaseOrderInvoiceItems.purchaseOrderItemId} = ${purchaseOrderItems.id}
+        AND ${purchaseOrderInvoices.purchaseOrderId} = ${purchaseOrders.id}
+    ), 0) + 0.01
+)`
+
 /** Trabajo tributario: falta documento tras recepción o existe conciliación no resuelta. */
 export const orderNeedsInvoiceWork = or(
   and(
@@ -85,7 +108,11 @@ export const orderNeedsInvoiceWork = or(
     eq(purchaseOrders.invoiceReconciliationStatus, "no_invoices"),
   ),
   eq(purchaseOrders.invoiceReconciliationStatus, "needs_review"),
-)
+  and(
+    eq(purchaseOrders.invoiceReconciliationStatus, "partially_invoiced"),
+    orderHasReceivedUninvoicedQuantity,
+  ),
+)!
 
 export type { OperationalModule } from "@/lib/work-queue.types"
 
@@ -326,6 +353,7 @@ export async function getOperationalDetailWorkItem(
       createdAt: purchaseOrders.createdAt,
       issuedAt: purchaseOrders.issuedAt,
       sentAt: purchaseOrders.sentAt,
+      invoiceNeedsWork: sql<boolean>`${orderNeedsInvoiceWork}`,
     })
     .from(purchaseOrders)
     .innerJoin(worksites, eq(purchaseOrders.worksiteId, worksites.id))
@@ -340,10 +368,7 @@ export async function getOperationalDetailWorkItem(
 
   // La factura es el último escalón: mientras quede algo por recibir, recibir
   // manda. La proyección evita reimplementar el conciliador en esta lectura.
-  const invoicePending = hasPermission(session, "purchasing:send_order") && (
-    order.invoiceReconciliationStatus === "needs_review"
-    || (INVOICE_DUE_ORDER_STATUSES.includes(order.status) && order.invoiceReconciliationStatus === "no_invoices")
-  )
+  const invoicePending = hasPermission(session, "purchasing:send_order") && order.invoiceNeedsWork
 
   const stage = order.status === "draft" && hasPermission(session, "purchasing:send_order")
     ? { actionKey: "issue" as const, module: "compras" as const, statusLabel: "OC en borrador", title: `Emitir y enviar ${order.code}`, ctaLabel: "Emitir y enviar", createdAt: order.createdAt }
@@ -358,6 +383,8 @@ export async function getOperationalDetailWorkItem(
           : invoicePending
             ? order.invoiceReconciliationStatus === "needs_review"
               ? { actionKey: "invoice" as const, module: "compras" as const, statusLabel: "Conciliación pendiente", title: `Revisar conciliación de ${order.code}`, ctaLabel: "Revisar conciliación", createdAt: order.sentAt ?? order.createdAt, href: `/compras/${order.id}?tab=facturacion` }
+              : order.invoiceReconciliationStatus === "partially_invoiced"
+                ? { actionKey: "invoice" as const, module: "compras" as const, statusLabel: "Facturación parcial", title: `Completar facturación de ${order.code}`, ctaLabel: "Completar facturación", createdAt: order.sentAt ?? order.createdAt, href: `/compras/${order.id}?tab=facturacion` }
               : { actionKey: "invoice" as const, module: "compras" as const, statusLabel: "Sin factura", title: `Adjuntar factura de ${order.code}`, ctaLabel: "Adjuntar factura", createdAt: order.sentAt ?? order.createdAt, href: `/compras/${order.id}?tab=facturacion` }
             : null
 
@@ -763,6 +790,11 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
   if (hasPermission(session, "purchasing:send_order")) add("compras", sql`
     SELECT ${orderFields('invoice', 'compras', sql`CONCAT('Revisar conciliación de ', ${purchaseOrders.code})`, 'Conciliación pendiente', sql`CONCAT('/compras/', ${purchaseOrders.id}, '?tab=facturacion')`, 'Revisar conciliación', sql`COALESCE(${purchaseOrders.sentAt}, ${purchaseOrders.createdAt}::text)`)}
     ${orderBase} AND ${purchaseOrders.invoiceReconciliationStatus} = 'needs_review'
+  `)
+  if (hasPermission(session, "purchasing:send_order")) add("compras", sql`
+    SELECT ${orderFields('invoice', 'compras', sql`CONCAT('Completar facturación de ', ${purchaseOrders.code})`, 'Facturación parcial', sql`CONCAT('/compras/', ${purchaseOrders.id}, '?tab=facturacion')`, 'Completar facturación', sql`COALESCE(${purchaseOrders.sentAt}, ${purchaseOrders.createdAt}::text)`)}
+    ${orderBase} AND ${purchaseOrders.invoiceReconciliationStatus} = 'partially_invoiced'
+      AND ${orderHasReceivedUninvoicedQuantity}
   `)
 
   if (hasPermission(session, "prevention:pdtp:view")) {

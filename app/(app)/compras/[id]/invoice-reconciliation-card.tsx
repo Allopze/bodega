@@ -21,6 +21,8 @@ import type { InvoiceRow } from "./invoices-section"
 
 const STATUS = {
   no_invoices: { label: "Sin facturas", variant: "neutral" as const },
+  partially_invoiced: { label: "Facturación parcial", variant: "info" as const },
+  awaiting_receipt: { label: "Recepción pendiente", variant: "info" as const },
   matched: { label: "Conciliada", variant: "success" as const },
   needs_review: { label: "Revisión requerida", variant: "warning" as const },
   accepted_exception: { label: "Diferencias aceptadas", variant: "info" as const },
@@ -35,7 +37,7 @@ const ISSUE_LABELS: Record<InvoiceReconciliationIssueCode, string> = {
   invoice_without_lines: "Factura sin líneas documentales",
   quantity_under: "Cantidad facturada menor que la OC",
   quantity_over: "Cantidad facturada mayor que la OC",
-  quantity_over_received: "Cantidad facturada mayor que la entrega aceptada del proveedor",
+  quantity_over_received: "La recepción aceptada todavía no cubre la cantidad facturada",
   supplier_unverified: "RUT del proveedor no verificado en factura manual",
   total_mismatch: "Total facturado distinto del total OC",
 }
@@ -104,6 +106,7 @@ export function InvoiceReconciliationCard({
   const appliedCatalogUpdates = catalogUpdatesFromEvidence(reconciliation.currentReview?.evidence)
     .filter((update) => update.changed)
   const receiptBlocksAcceptance = reconciliation.issues.some((issue) => issue.code === "quantity_over_received")
+  const coverageBlocksAcceptance = ["partial", "not_evaluable", "no_invoices"].includes(reconciliation.coverage.status)
 
   return (
     <div className="mb-4 rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface-2) p-3">
@@ -116,6 +119,28 @@ export function InvoiceReconciliationCard({
         </div>
         <Badge variant={status.variant}>{status.label}</Badge>
       </div>
+
+      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-y border-(--color-border) py-3 sm:grid-cols-4">
+        <CoverageMetric label="Facturas" value={String(invoices.length)} />
+        <CoverageMetric label="Total facturado" value={formatCLP(reconciliation.totalInvoiced)} />
+        <CoverageMetric label="Saldo por facturar" value={formatCLP(reconciliation.coverage.remainingAmount)} />
+        <CoverageMetric
+          label="Líneas cubiertas"
+          value={`${reconciliation.coverage.coveredItemCount}/${reconciliation.coverage.totalItemCount}`}
+        />
+      </dl>
+
+      {reconciliation.status === "partially_invoiced" && (
+        <p className="mt-3 rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-xs text-(--color-text-muted)">
+          Las facturas registradas son válidas, pero todavía queda cobertura documental pendiente. No es una diferencia aceptable ni una inconsistencia.
+        </p>
+      )}
+
+      {reconciliation.status === "awaiting_receipt" && (
+        <p className="mt-3 rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-xs text-(--color-text-muted)">
+          La facturación está completa. La conciliación se actualizará automáticamente cuando se registre recepción suficiente del proveedor.
+        </p>
+      )}
 
       {reconciliation.hasInvoices && (
         <div className="mt-3 overflow-x-auto">
@@ -182,7 +207,13 @@ export function InvoiceReconciliationCard({
         </p>
       )}
 
-      {canAccept && reconciliation.status === "needs_review" && !receiptBlocksAcceptance && (
+      {coverageBlocksAcceptance && reconciliation.status === "needs_review" && (
+        <p className="mt-3 rounded-(--radius-lg) border border-(--color-warning-line) bg-(--color-warning-tint) px-3 py-2 text-xs text-(--color-warning-ink)">
+          Esta diferencia no puede cerrarse con la aceptación genérica: todavía falta cobertura documental de la OC.
+        </p>
+      )}
+
+      {canAccept && reconciliation.status === "needs_review" && !receiptBlocksAcceptance && !coverageBlocksAcceptance && (
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button className="mt-3" size="sm" type="button">Aceptar diferencias</Button>
@@ -244,6 +275,15 @@ export function InvoiceReconciliationCard({
           </DialogContent>
         </Dialog>
       )}
+    </div>
+  )
+}
+
+function CoverageMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-[10px] uppercase tracking-[0.06em] text-(--color-text-subtle)">{label}</dt>
+      <dd className="mt-0.5 font-mono text-xs font-semibold tabular-nums text-(--color-text)">{value}</dd>
     </div>
   )
 }

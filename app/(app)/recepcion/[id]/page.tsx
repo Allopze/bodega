@@ -2,8 +2,8 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import { db } from "@/db"
-import { receipts } from "@/db/schema"
-import { eq } from "drizzle-orm"
+import { purchaseOrderInvoiceReceipts, purchaseOrderInvoices, receipts } from "@/db/schema"
+import { desc, eq } from "drizzle-orm"
 import { can, canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -40,7 +40,7 @@ export default async function RecepcionDetallePage({
     with: {
       // Una sola factura basta: sólo interesa si la OC ya tiene alguna.
       purchaseOrder: {
-        with: { worksite: true, supplier: true, invoices: { columns: { id: true }, limit: 1 } },
+        with: { worksite: true, supplier: true },
       },
       worksite: true,
       receivedBy: true,
@@ -78,10 +78,21 @@ export default async function RecepcionDetallePage({
       })
     : []
 
-  const [documentChain, acquisitionGuides, officeLabel] = await Promise.all([
+  const [documentChain, acquisitionGuides, officeLabel, linkedInvoices] = await Promise.all([
     getDocumentChain(session, { kind: "receipt", id: receipt.id }),
     listDispatchGuidesForReceipt(receipt.id),
     officeWorksiteLabel(),
+    db
+      .select({
+        id: purchaseOrderInvoices.id,
+        invoiceNumber: purchaseOrderInvoices.invoiceNumber,
+        issueDate: purchaseOrderInvoices.issueDate,
+        uploadedAt: purchaseOrderInvoices.uploadedAt,
+      })
+      .from(purchaseOrderInvoiceReceipts)
+      .innerJoin(purchaseOrderInvoices, eq(purchaseOrderInvoiceReceipts.invoiceId, purchaseOrderInvoices.id))
+      .where(eq(purchaseOrderInvoiceReceipts.receiptId, receipt.id))
+      .orderBy(desc(purchaseOrderInvoices.uploadedAt)),
   ])
 
   const productMap = Object.fromEntries(productRows.map((product) => [product.id, product]))
@@ -89,9 +100,9 @@ export default async function RecepcionDetallePage({
     ? officeLabel
     : formatWorksiteLabel(receipt.worksite?.name ?? receipt.purchaseOrder.worksite?.name ?? "").trim()
 
-  const invoiceMissing = receipt.purchaseOrder.invoices.length === 0
-    && !["draft", "cancelled"].includes(receipt.purchaseOrder.status)
   const canAttachInvoice = session.user.permissions.includes("purchasing:send_order")
+    && !["draft", "cancelled"].includes(receipt.purchaseOrder.status)
+  const canViewInvoices = can(session, "purchasing:view")
 
   const totalRejected = receipt.items.reduce((sum, item) => sum + (item.quantityRejected ?? 0), 0)
   const totalDamaged  = receipt.items.reduce((sum, item) => sum + (item.quantityDamaged ?? 0), 0)
@@ -325,27 +336,42 @@ export default async function RecepcionDetallePage({
                 <ArrowSquareOut size={13} aria-hidden />
               </Link>
             </Button>
-            {/* El número de guía/factura se tipeó aquí, con el documento en la
-                mano, y ahí moría: adjuntarlo exigía ir a buscar la pestaña de
-                facturación de la OC. Se ofrece el atajo con el número ya puesto. */}
-            {invoiceMissing && (
-              canAttachInvoice ? (
-                <Button asChild variant="signal" size="sm" className="mt-2 w-full">
-                  <Link
-                    href={`/compras/${receipt.purchaseOrderId}?tab=facturacion${
-                      receipt.dispatchGuideNo ? `&nro=${encodeURIComponent(receipt.dispatchGuideNo)}` : ""
-                    }`}
-                  >
-                    Adjuntar factura
-                    <ArrowSquareOut size={13} aria-hidden />
-                  </Link>
-                </Button>
+            <div className="mt-3 border-t border-(--color-border) pt-3">
+              <p className="text-xs font-medium text-(--color-text)">Facturas relacionadas ({linkedInvoices.length})</p>
+              {linkedInvoices.length > 0 ? (
+                <ul className="mt-1.5 space-y-1">
+                  {linkedInvoices.map((invoice) => (
+                    <li key={invoice.id} className="text-xs text-(--color-text-muted)">
+                      {canViewInvoices ? (
+                        <a
+                          href={`/api/purchase-orders/invoices/${invoice.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-medium text-(--color-text) hover:underline"
+                        >
+                          {invoice.invoiceNumber}
+                        </a>
+                      ) : invoice.invoiceNumber}
+                    </li>
+                  ))}
+                </ul>
               ) : (
-                <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-                  Esta OC todavía no tiene factura. La adjunta quien compra.
-                </p>
-              )
-            )}
+                <p className="mt-1 text-xs text-(--color-text-muted)">Esta recepción aún no tiene factura asociada.</p>
+              )}
+            </div>
+
+            {canAttachInvoice ? (
+              <Button asChild variant="signal" size="sm" className="mt-2 w-full">
+                <Link href={`/compras/${receipt.purchaseOrderId}?tab=facturacion&receiptId=${encodeURIComponent(receipt.id)}`}>
+                  {linkedInvoices.length > 0 ? "Adjuntar otra factura" : "Adjuntar factura"}
+                  <ArrowSquareOut size={13} aria-hidden />
+                </Link>
+              </Button>
+            ) : linkedInvoices.length === 0 ? (
+              <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+                La factura la adjunta quien compra.
+              </p>
+            ) : null}
           </section>
 
           <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">

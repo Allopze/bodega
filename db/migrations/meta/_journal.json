@@ -1520,6 +1520,13 @@
       "when": 1787670288141,
       "tag": "0216_worthless_prowler",
       "breakpoints": true
+    },
+    {
+      "idx": 217,
+      "version": "7",
+      "when": 1787679115103,
+      "tag": "0217_bored_titania",
+      "breakpoints": true
     }
   ]
 }

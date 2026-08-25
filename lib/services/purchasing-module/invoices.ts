@@ -3,8 +3,8 @@
  */
 
 import { and, eq, inArray, isNull, or } from "drizzle-orm"
-import { db } from "@/db"
-import { dteDocumentItems, dteDocuments, products, purchaseOrders, purchaseOrderInvoices, purchaseOrderInvoiceItems, purchaseOrderItems, supplierProductAliases, suppliers } from "@/db/schema"
+import { db, type Tx } from "@/db"
+import { dteDocumentItems, dteDocuments, products, purchaseOrderInvoiceReceipts, purchaseOrders, purchaseOrderInvoices, purchaseOrderInvoiceItems, purchaseOrderItems, receipts, supplierProductAliases, suppliers } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
@@ -57,7 +57,12 @@ export interface CreateInvoiceInput {
   uploadedBy:      string
   userEmail?:      string
   items?:          CreateInvoiceItemInput[]
-  /** Manual uploads keep their line-total guard; DTE uses MntTotal as authority. */
+  /** Recepciones del proveedor que este documento respalda; vínculo opcional. */
+  receiptIds?:     string[]
+  /**
+   * Manual uploads keep their line-total guard unless server extraction provides
+   * a document header; DTE and verified extracted headers use that authority.
+   */
   amountAuthority?: "line_items" | "document_header"
   supplierIdentity?: {
     documentSupplierRut: string | null
@@ -90,6 +95,15 @@ export interface DteInvoiceLineResolution {
 
 export interface DeleteInvoiceResult {
   filePath: string
+}
+
+export interface SetPurchaseOrderInvoiceReceiptsInput {
+  invoiceId: string
+  purchaseOrderId: string
+  receiptIds: string[]
+  userId: string
+  userEmail?: string
+  worksiteScope?: string[] | "all"
 }
 
 export async function createPurchaseOrderInvoice(
@@ -276,6 +290,15 @@ async function insertPurchaseOrderInvoice(
       supplierIdentitySource: dteAttachment ? "dte_xml" : input.supplierIdentity?.source ?? "legacy",
     })
 
+    const receiptIds = await validateReceiptIdsForOrderTx(tx, order.id, input.receiptIds ?? [])
+    if (receiptIds.length > 0) {
+      await tx.insert(purchaseOrderInvoiceReceipts).values(receiptIds.map((receiptId) => ({
+        invoiceId,
+        receiptId,
+        linkedBy: input.uploadedBy,
+      })))
+    }
+
     // Insert invoice items if provided
     if (invoiceItems.length > 0) {
       await tx.insert(purchaseOrderInvoiceItems).values(
@@ -321,6 +344,7 @@ async function insertPurchaseOrderInvoice(
         amount: totalAmount,
         issueDate: input.issueDate,
         dteDocumentId: dteAttachment?.dteDocumentId ?? null,
+        receiptIds,
       },
     }, tx)
 
@@ -328,6 +352,85 @@ async function insertPurchaseOrderInvoice(
 
     return invoiceId
   })
+}
+
+/** Reemplaza únicamente el vínculo documental; no altera factura ni stock. */
+export async function setPurchaseOrderInvoiceReceipts(
+  input: SetPurchaseOrderInvoiceReceiptsInput,
+): Promise<string[]> {
+  return db.transaction(async (tx) => {
+    const [invoice] = await tx
+      .select({
+        id: purchaseOrderInvoices.id,
+        invoiceNumber: purchaseOrderInvoices.invoiceNumber,
+        purchaseOrderId: purchaseOrderInvoices.purchaseOrderId,
+        worksiteId: purchaseOrders.worksiteId,
+      })
+      .from(purchaseOrderInvoices)
+      .innerJoin(purchaseOrders, eq(purchaseOrderInvoices.purchaseOrderId, purchaseOrders.id))
+      .where(eq(purchaseOrderInvoices.id, input.invoiceId))
+      .for("update")
+    if (!invoice || invoice.purchaseOrderId !== input.purchaseOrderId) {
+      throw new Error("Factura no encontrada en esta orden")
+    }
+    if (input.worksiteScope && input.worksiteScope !== "all" && !input.worksiteScope.includes(invoice.worksiteId)) {
+      throw new Error("No tienes acceso a esta faena")
+    }
+
+    const receiptIds = await validateReceiptIdsForOrderTx(tx, input.purchaseOrderId, input.receiptIds)
+    const previous = await tx
+      .select({ receiptId: purchaseOrderInvoiceReceipts.receiptId })
+      .from(purchaseOrderInvoiceReceipts)
+      .where(eq(purchaseOrderInvoiceReceipts.invoiceId, input.invoiceId))
+    const previousIds = previous.map((link) => link.receiptId).sort()
+    const nextIds = [...receiptIds].sort()
+    if (previousIds.length === nextIds.length && previousIds.every((id, index) => id === nextIds[index])) {
+      return nextIds
+    }
+
+    await tx.delete(purchaseOrderInvoiceReceipts)
+      .where(eq(purchaseOrderInvoiceReceipts.invoiceId, input.invoiceId))
+    if (nextIds.length > 0) {
+      await tx.insert(purchaseOrderInvoiceReceipts).values(nextIds.map((receiptId) => ({
+        invoiceId: input.invoiceId,
+        receiptId,
+        linkedBy: input.userId,
+      })))
+    }
+    await recordAudit({
+      userId: input.userId,
+      userEmail: input.userEmail,
+      action: "update",
+      entityType: "purchase_order_invoice_receipts",
+      entityId: input.invoiceId,
+      entityCode: invoice.invoiceNumber,
+      oldState: { purchaseOrderId: input.purchaseOrderId, receiptIds: previousIds },
+      newState: { purchaseOrderId: input.purchaseOrderId, receiptIds: nextIds },
+    }, tx)
+    return nextIds
+  })
+}
+
+async function validateReceiptIdsForOrderTx(tx: Tx, purchaseOrderId: string, rawReceiptIds: string[]) {
+  if (!Array.isArray(rawReceiptIds) || rawReceiptIds.length > 100) {
+    throw new Error("La cantidad de recepciones asociadas no es válida")
+  }
+  const receiptIds = [...new Set(rawReceiptIds.flatMap((id) => {
+    const normalized = id.trim()
+    return normalized ? [normalized] : []
+  }))]
+  if (receiptIds.length === 0) return []
+  const valid = await tx
+    .select({ id: receipts.id })
+    .from(receipts)
+    .where(and(
+      eq(receipts.purchaseOrderId, purchaseOrderId),
+      inArray(receipts.id, receiptIds),
+    ))
+  if (valid.length !== receiptIds.length) {
+    throw new Error("Las recepciones deben pertenecer a la misma orden de compra")
+  }
+  return receiptIds
 }
 
 async function applyExplicitDteLineResolutionsTx(

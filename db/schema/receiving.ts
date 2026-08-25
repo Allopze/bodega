@@ -1,9 +1,9 @@
 import { relations, sql } from "drizzle-orm"
-import { pgTable, text, real, timestamp, check, index, uniqueIndex, jsonb } from "drizzle-orm/pg-core"
+import { pgTable, text, real, timestamp, check, index, uniqueIndex, jsonb, primaryKey } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { worksites, workers } from "./worksites"
 import { products } from "./products"
-import { purchaseOrders, purchaseOrderItems } from "./purchasing"
+import { purchaseOrderInvoices, purchaseOrders, purchaseOrderItems } from "./purchasing"
 import { purchaseRequestItems } from "./requests"
 import { costCenters } from "./cost-centers"
 
@@ -59,6 +59,19 @@ export const receiptItems = pgTable("receipt_items", {
   index("idx_receipt_items_po_item").on(table.purchaseOrderItemId),
   // DAT-11: FK caliente sin índice — CASCADE de receipts.
   index("idx_receipt_items_receipt").on(table.receiptId),
+])
+
+/* ── Purchase invoice ↔ supplier receipt links ───────────────────────────── */
+// Vínculo documental opcional. Las cantidades se concilian acumuladas por
+// línea de OC; esta tabla no reparte unidades entre factura y recepción.
+export const purchaseOrderInvoiceReceipts = pgTable("purchase_order_invoice_receipts", {
+  invoiceId: text("invoice_id").notNull().references(() => purchaseOrderInvoices.id, { onDelete: "cascade" }),
+  receiptId: text("receipt_id").notNull().references(() => receipts.id, { onDelete: "cascade" }),
+  linkedBy:  text("linked_by").notNull().references(() => users.id),
+  linkedAt:  timestamp("linked_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.invoiceId, table.receiptId] }),
+  index("po_invoice_receipts_receipt_idx").on(table.receiptId),
 ])
 
 /* ── Deliveries (Entregas a Faena / Trabajador) ──────────────────────────── */
@@ -161,11 +174,27 @@ export const receiptsRelations = relations(receipts, ({ one, many }) => ({
   receivedBy:    one(users, { fields: [receipts.receivedBy], references: [users.id] }),
   worksite:      one(worksites, { fields: [receipts.worksiteId], references: [worksites.id] }),
   items:         many(receiptItems),
+  invoiceLinks:  many(purchaseOrderInvoiceReceipts),
 }))
 
 export const receiptItemsRelations = relations(receiptItems, ({ one }) => ({
   receipt:           one(receipts, { fields: [receiptItems.receiptId], references: [receipts.id] }),
   purchaseOrderItem: one(purchaseOrderItems, { fields: [receiptItems.purchaseOrderItemId], references: [purchaseOrderItems.id] }),
+}))
+
+export const purchaseOrderInvoiceReceiptsRelations = relations(purchaseOrderInvoiceReceipts, ({ one }) => ({
+  invoice: one(purchaseOrderInvoices, {
+    fields: [purchaseOrderInvoiceReceipts.invoiceId],
+    references: [purchaseOrderInvoices.id],
+  }),
+  receipt: one(receipts, {
+    fields: [purchaseOrderInvoiceReceipts.receiptId],
+    references: [receipts.id],
+  }),
+  linkedByUser: one(users, {
+    fields: [purchaseOrderInvoiceReceipts.linkedBy],
+    references: [users.id],
+  }),
 }))
 
 export const deliveriesRelations = relations(deliveries, ({ one, many }) => ({

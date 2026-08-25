@@ -3,11 +3,13 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const mockAddInvoiceAction = vi.fn()
+const mockSetInvoiceReceiptsAction = vi.fn()
 const mockRefresh = vi.fn()
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mockRefresh }) }))
 vi.mock("../invoice-actions", () => ({
   addInvoiceAction: (...args: unknown[]) => mockAddInvoiceAction(...args),
   deleteInvoiceAction: vi.fn(),
+  setInvoiceReceiptsAction: (...args: unknown[]) => mockSetInvoiceReceiptsAction(...args),
 }))
 
 const mockUseDteAsInvoice = vi.fn()
@@ -187,6 +189,15 @@ describe("InvoicesSection", () => {
         canManage
         canUpdateCatalog={false}
         ocItems={[]}
+        receipts={[{
+          id: "receipt-1",
+          code: "REC-1",
+          receivedAt: "2026-08-20T12:00:00.000Z",
+          locationType: "faena",
+          dispatchGuideNo: "GD-100",
+          items: [],
+        }]}
+        defaultReceiptId="receipt-1"
         dteCandidates={[candidate()]}
       />,
     )
@@ -198,7 +209,9 @@ describe("InvoicesSection", () => {
       purchaseOrderId: "oc-1",
       dteDocumentId: "dte-1",
       lineResolutions: undefined,
+      receiptIds: ["receipt-1"],
     }))
+    expect(screen.getByLabelText(/REC-1/)).toBeChecked()
   })
 
   it("does not submit the manual invoice form when using a DTE", async () => {
@@ -325,5 +338,47 @@ describe("InvoicesSection", () => {
 
     expect(screen.getByRole("button", { name: /eliminar factura 456999/i })).toBeInTheDocument()
     expect(screen.queryByText(/adjuntar factura/i)).not.toBeInTheDocument()
+  })
+
+  it("shows current receipt links and applies an explainable suggestion only after confirmation", () => {
+    const receipts = [
+      { id: "receipt-1", code: "REC-1", receivedAt: "2026-08-20T12:00:00.000Z", locationType: "faena", dispatchGuideNo: "GD-1", items: [] },
+      { id: "receipt-2", code: "REC-2", receivedAt: "2026-08-21T12:00:00.000Z", locationType: "faena", dispatchGuideNo: "GD-2", items: [] },
+    ]
+    render(
+      <InvoicesSection
+        purchaseOrderId="oc-1"
+        invoices={[{
+          id: "invoice-1",
+          invoiceNumber: "F-100",
+          amount: 100,
+          issueDate: "2026-08-20",
+          fileName: "factura.pdf",
+          mimeType: "application/pdf",
+          uploadedAt: "2026-08-20T12:00:00.000Z",
+          receiptIds: ["receipt-1"],
+          receiptSuggestion: {
+            receiptIds: ["receipt-2"],
+            confidence: "medium",
+            ambiguous: false,
+            reasons: ["Las cantidades documentadas quedan cubiertas por las recepciones sugeridas."],
+          },
+        }]}
+        receipts={receipts}
+        reconciliation={emptyReconciliation(100)}
+        canManage
+        canUpdateCatalog={false}
+        canAttach={false}
+        ocItems={[]}
+      />,
+    )
+
+    expect(screen.getByText("Recepciones: REC-1")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Asociar recepciones" }))
+    expect(screen.getByLabelText(/REC-1/)).toBeChecked()
+    expect(screen.getByLabelText(/REC-2/)).not.toBeChecked()
+    fireEvent.click(screen.getByRole("button", { name: "Aplicar sugerencia" }))
+    expect(screen.getByLabelText(/REC-1/)).not.toBeChecked()
+    expect(screen.getByLabelText(/REC-2/)).toBeChecked()
   })
 })

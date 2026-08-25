@@ -55,12 +55,10 @@ test.describe("Conciliación OC-factura-recepción", () => {
     await expect(cta).toHaveAttribute("href", `/compras/${OC_SIN_FACTURA_ID}?tab=facturacion`, { timeout: 10_000 })
     await cta.click()
 
-    // El deep-link abre la pestaña y el archivo es el primer control del
-    // formulario: es lo que auto-completa el resto vía DTE/OCR.
+    // El deep-link abre la pestaña y mantiene disponible la carga documental.
+    // La lista opcional de recepciones ahora puede aparecer antes del archivo.
     await expect(page.getByRole("heading", { name: "Adjuntar factura" })).toBeVisible({ timeout: 10_000 })
-    const form = page.locator("form").filter({ has: page.locator("#invoice-file") })
-    const firstControl = form.locator("input:not([type=hidden]), select, textarea").first()
-    await expect(firstControl).toHaveAttribute("id", "invoice-file")
+    await expect(page.locator("#invoice-file")).toBeVisible()
   })
 
   test("el listado delata la OC recibida sin factura y permite filtrarla", async ({ page }) => {
@@ -113,20 +111,57 @@ test.describe("Conciliación OC-factura-recepción", () => {
     }, { timeout: 15_000 }).not.toMatch(/factura=pendiente/)
   })
 
-  // El número de guía se tipea en la recepción, con el documento en la mano.
-  test("desde la recepción se adjunta la factura con el N° de guía ya puesto", async ({ page }) => {
+  test("desde la recepción la preselecciona sin copiar la guía como folio", async ({ page }) => {
     await page.goto("/recepcion/rec-sin-factura-e2e")
     await expect(page.getByRole("heading", { name: "REC-2026-0091" })).toBeVisible({ timeout: 10_000 })
 
     const atajo = page.getByRole("link", { name: /Adjuntar factura/i })
     await expect(atajo).toHaveAttribute(
       "href",
-      "/compras/oc-sin-factura-e2e?tab=facturacion&nro=GD-77123",
+      "/compras/oc-sin-factura-e2e?tab=facturacion&receiptId=rec-sin-factura-e2e",
     )
     await atajo.click()
 
     await expect(page.getByRole("heading", { name: "Adjuntar factura" })).toBeVisible({ timeout: 10_000 })
-    await expect(page.locator("#invoice-number")).toHaveValue("GD-77123")
+    await expect(page.getByRole("checkbox", { name: /REC-2026-0091/ })).toBeChecked()
+    await expect(page.locator("#invoice-number")).toHaveValue("")
+  })
+
+  test("muestra una primera factura por 6 como parcial y su recepción asociada", async ({ page }) => {
+    await page.goto("/compras/oc-facturacion-parcial-e2e?tab=facturacion")
+    await expect(page.getByText("Facturación parcial").first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText("$4.760")).toBeVisible()
+    await expect(page.getByText("10 / 6 / 6")).toBeVisible()
+    await expect(page.getByText("Recepciones: REC-2026-0193")).toBeVisible()
+    await expect(page.getByRole("button", { name: "Aceptar diferencias" })).toHaveCount(0)
+  })
+
+  test("muestra dos recepciones y dos facturas por 6 + 4 como conciliadas", async ({ page }) => {
+    await page.goto("/compras/oc-facturacion-completa-e2e?tab=facturacion")
+    await expect(page.getByText("Conciliada").first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole("heading", { name: "Facturas 2" })).toBeVisible()
+    await expect(page.getByText("Saldo por facturar").locator("..").getByText("$0")).toBeVisible()
+    await expect(page.getByText("10 / 10 / 10")).toBeVisible()
+    await expect(page.getByText("Recepciones: REC-2026-0195-1")).toBeVisible()
+    await expect(page.getByText("Recepciones: REC-2026-0195-2")).toBeVisible()
+  })
+
+  test("la recepción lista su factura y permite adjuntar otra", async ({ page }) => {
+    await page.goto("/recepcion/rec-facturacion-parcial-e2e")
+    await expect(page.getByRole("heading", { name: "REC-2026-0193" })).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText("Facturas relacionadas (1)")).toBeVisible()
+    await expect(page.getByRole("link", { name: "FAC-PARCIAL-6" })).toBeVisible()
+    await expect(page.getByRole("link", { name: "Adjuntar otra factura" })).toHaveAttribute(
+      "href",
+      "/compras/oc-facturacion-parcial-e2e?tab=facturacion&receiptId=rec-facturacion-parcial-e2e",
+    )
+  })
+
+  test("una factura completa antes de recibir queda en recepción pendiente", async ({ page }) => {
+    await page.goto("/compras/oc-factura-anticipada-e2e?tab=facturacion")
+    await expect(page.getByText("Recepción pendiente").first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(/la conciliación se actualizará automáticamente/i)).toBeVisible()
+    await expect(page.getByRole("button", { name: "Aceptar diferencias" })).toHaveCount(0)
   })
 
   // VA AL FINAL A PROPÓSITO: consume el DTE candidato y le pone factura a

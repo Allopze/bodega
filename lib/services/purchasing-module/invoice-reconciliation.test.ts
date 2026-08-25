@@ -185,8 +185,8 @@ describe("reconcileInvoiceEvidence", () => {
         items: [{ id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: "unidad", quantity: 1, subtotal: 50 }],
       }],
     })
-    expect(partial.issues).toContainEqual(expect.objectContaining({ code: "quantity_under", orderItemId: "oc-1" }))
-    expect(partial.issues).toContainEqual(expect.objectContaining({ code: "quantity_under", orderItemId: "oc-2" }))
+    expect(partial.status).toBe("partially_invoiced")
+    expect(partial.coverage).toMatchObject({ status: "partial", pendingItemCount: 2 })
 
     const excess = reconcileInvoiceEvidence({
       totalOC: 200,
@@ -197,6 +197,100 @@ describe("reconcileInvoiceEvidence", () => {
       ],
     })
     expect(excess.issues).toContainEqual(expect.objectContaining({ code: "quantity_over", orderItemId: "oc-1" }))
+  })
+
+  it("treats the first valid supplier invoice as partial coverage instead of an exception", () => {
+    const result = reconcileInvoiceEvidence({
+      totalOC: 500,
+      orderItems: [{
+        id: "gloves", productName: "Guantes", quantity: 10, unitOfMeasure: "par",
+        unitPrice: 50, subtotal: 500, supplierReceivedQuantity: 6,
+      }],
+      invoices: [{
+        id: "inv-1", invoiceNumber: "101", amount: 300,
+        supplierIdentityStatus: "verified",
+        items: [{ id: "line-1", purchaseOrderItemId: "gloves", unitOfMeasure: "par", quantity: 6, subtotal: 300 }],
+      }],
+    })
+
+    expect(result.status).toBe("partially_invoiced")
+    expect(result.coverage).toEqual({
+      status: "partial",
+      remainingAmount: 200,
+      pendingItemCount: 1,
+      coveredItemCount: 0,
+      totalItemCount: 1,
+    })
+    expect(result.issues.map((issue) => issue.code)).not.toContain("quantity_under")
+    expect(result.issues.map((issue) => issue.code)).not.toContain("total_mismatch")
+  })
+
+  it("keeps partial coverage blocked even when another hard difference exists", () => {
+    const result = reconcileInvoiceEvidence({
+      totalOC: 500,
+      orderItems: [{
+        id: "gloves", productName: "Guantes", quantity: 10, unitOfMeasure: "par",
+        unitPrice: 50, subtotal: 500, supplierReceivedQuantity: 6,
+      }],
+      invoices: [{
+        id: "inv-1", invoiceNumber: "101", amount: 300, supplierIdentityStatus: "verified",
+        items: [{ id: "line-1", purchaseOrderItemId: "gloves", unitOfMeasure: "par", quantity: 6, unitPrice: 45, subtotal: 270 }],
+      }],
+    })
+
+    expect(result.status).toBe("needs_review")
+    expect(result.coverage.status).toBe("partial")
+    expect(result.coverage.pendingItemCount).toBe(1)
+  })
+
+  it("reconciles one OC when two invoices cumulatively cover the ordered and received quantity", () => {
+    const result = reconcileInvoiceEvidence({
+      totalOC: 500,
+      orderItems: [{
+        id: "gloves", productName: "Guantes", quantity: 10, unitOfMeasure: "par",
+        unitPrice: 50, subtotal: 500, supplierReceivedQuantity: 10,
+      }],
+      invoices: [
+        {
+          id: "inv-1", invoiceNumber: "101", amount: 300, supplierIdentityStatus: "verified",
+          items: [{ id: "line-1", purchaseOrderItemId: "gloves", unitOfMeasure: "par", quantity: 6, subtotal: 300 }],
+        },
+        {
+          id: "inv-2", invoiceNumber: "102", amount: 200, supplierIdentityStatus: "verified",
+          items: [{ id: "line-2", purchaseOrderItemId: "gloves", unitOfMeasure: "par", quantity: 4, subtotal: 200 }],
+        },
+      ],
+    })
+
+    expect(result.status).toBe("matched")
+    expect(result.coverage).toMatchObject({ status: "complete", remainingAmount: 0, coveredItemCount: 1 })
+    expect(result.items[0]).toMatchObject({ invoicedQty: 10, supplierReceivedQty: 10 })
+  })
+
+  it("keeps a complete early invoice waiting for reception and rejects generic acceptance", () => {
+    const input = {
+      totalOC: 500,
+      orderItems: [{
+        id: "gloves", productName: "Guantes", quantity: 10, unitOfMeasure: "par",
+        unitPrice: 50, subtotal: 500, supplierReceivedQuantity: 0,
+      }],
+      invoices: [{
+        id: "inv-1", invoiceNumber: "101", amount: 500, supplierIdentityStatus: "verified" as const,
+        items: [{ id: "line-1", purchaseOrderItemId: "gloves", unitOfMeasure: "par", quantity: 10, subtotal: 500 }],
+      }],
+    }
+    const pending = reconcileInvoiceEvidence(input)
+    const reviewed = reconcileInvoiceEvidence({
+      ...input,
+      reviews: [{
+        id: "review-1", fingerprint: pending.fingerprint,
+        reason: "Recepción todavía pendiente de registrar.", createdAt: "2026-08-25T10:00:00.000Z",
+      }],
+    })
+
+    expect(pending.status).toBe("awaiting_receipt")
+    expect(pending.coverage.status).toBe("complete")
+    expect(reviewed.status).toBe("awaiting_receipt")
   })
 
   it("produces a stable fingerprint and invalidates acceptance when documents change", () => {
@@ -235,7 +329,7 @@ describe("reconcileInvoiceEvidence", () => {
     expect(changed.previousReview?.id).toBe("review-1")
   })
 
-  it("keeps over-billing against accepted supplier delivery in review even with a generic acceptance", () => {
+  it("keeps billing ahead of accepted supplier delivery waiting even with a generic acceptance", () => {
     const input = {
       totalOC: 100,
       orderItems: [{ ...orderItems[0]!, supplierReceivedQuantity: 1 }],
@@ -251,7 +345,7 @@ describe("reconcileInvoiceEvidence", () => {
     })
 
     expect(initial.issues).toContainEqual(expect.objectContaining({ code: "quantity_over_received", expected: 1, actual: 2 }))
-    expect(reviewed.status).toBe("needs_review")
+    expect(reviewed.status).toBe("awaiting_receipt")
   })
 
   it("does not invalidate a prior documentary fingerprint when normal reception advances", () => {

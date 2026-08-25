@@ -69,7 +69,12 @@ export async function comprasList(session: Session | null, filters: ExportFilter
       o.totalAmount,
       ocStatusLabel(o.status),
       invMap[o.id] ?? 0,
-      o.invoiceReconciliationStatus === "needs_review" ? "Revisión requerida" : o.invoiceReconciliationStatus === "accepted_exception" ? "Diferencias aceptadas" : o.invoiceReconciliationStatus === "matched" ? "Conciliada" : "Sin facturas",
+      o.invoiceReconciliationStatus === "needs_review" ? "Revisión requerida"
+        : o.invoiceReconciliationStatus === "partially_invoiced" ? "Facturación parcial"
+        : o.invoiceReconciliationStatus === "awaiting_receipt" ? "Recepción pendiente"
+        : o.invoiceReconciliationStatus === "accepted_exception" ? "Diferencias aceptadas"
+        : o.invoiceReconciliationStatus === "matched" ? "Conciliada"
+        : "Sin facturas",
       formatDate(o.createdAt),
     ]),
     rowLimitApplied,

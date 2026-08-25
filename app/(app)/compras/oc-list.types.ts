@@ -7,6 +7,7 @@ export type OcRow = {
   supplierName:    string
   status:          string
   invoiceReconciliationStatus: InvoiceReconciliationStatus
+  invoiceNeedsWork: boolean
   itemCount:       number
   totalAmount:     number
   /** Líneas de servicio cuyo costo aún no se conoce; no entran en totalAmount. */

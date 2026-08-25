@@ -995,6 +995,56 @@ describe("Purchasing service — edge cases", () => {
       })).rejects.toThrow("no pertenece a esta OC")
     })
 
+    it("creates optional receipt links atomically and deduplicates their ids", async () => {
+      const targetOrder = await inMemoryDb.query.purchaseOrders.findFirst({
+        where: eq(schema.purchaseOrders.status, "sent"),
+      })
+      const foreignOrder = await inMemoryDb.query.purchaseOrders.findFirst({
+        where: ne(schema.purchaseOrders.id, targetOrder!.id),
+      })
+      expect(targetOrder).toBeDefined()
+      expect(foreignOrder).toBeDefined()
+
+      await inMemoryDb.insert(schema.receipts).values([
+        {
+          id: "receipt-create-invoice", code: "REC-CREATE-INVOICE",
+          purchaseOrderId: targetOrder!.id, receivedBy: userId,
+          locationType: "faena", worksiteId: targetOrder!.worksiteId,
+        },
+        {
+          id: "receipt-create-invoice-foreign", code: "REC-CREATE-INVOICE-FOREIGN",
+          purchaseOrderId: foreignOrder!.id, receivedBy: userId,
+          locationType: "faena", worksiteId: foreignOrder!.worksiteId,
+        },
+      ])
+
+      const invoiceId = await createPurchaseOrderInvoice({
+        purchaseOrderId: targetOrder!.id,
+        invoiceNumber: "FAC-WITH-RECEIPT",
+        amount: 1000,
+        fileName: "with-receipt.pdf",
+        filePath: "/uploads/with-receipt.pdf",
+        uploadedBy: userId,
+        receiptIds: ["receipt-create-invoice", "receipt-create-invoice"],
+      })
+      expect(await inMemoryDb.select().from(schema.purchaseOrderInvoiceReceipts)
+        .where(eq(schema.purchaseOrderInvoiceReceipts.invoiceId, invoiceId))).toEqual([
+        expect.objectContaining({ invoiceId, receiptId: "receipt-create-invoice", linkedBy: userId }),
+      ])
+
+      await expect(createPurchaseOrderInvoice({
+        purchaseOrderId: targetOrder!.id,
+        invoiceNumber: "FAC-WITH-FOREIGN-RECEIPT",
+        amount: 1000,
+        fileName: "foreign-receipt.pdf",
+        filePath: "/uploads/foreign-receipt.pdf",
+        uploadedBy: userId,
+        receiptIds: ["receipt-create-invoice-foreign"],
+      })).rejects.toThrow("misma orden")
+      expect(await inMemoryDb.select().from(schema.purchaseOrderInvoices)
+        .where(eq(schema.purchaseOrderInvoices.invoiceNumber, "FAC-WITH-FOREIGN-RECEIPT"))).toHaveLength(0)
+    })
+
     it("blocks a manual invoice whose extracted RUT differs and audits an absent RUT as unverified", async () => {
       const targetOrder = await inMemoryDb.query.purchaseOrders.findFirst({
         where: eq(schema.purchaseOrders.status, "sent"),

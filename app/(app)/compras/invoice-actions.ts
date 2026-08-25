@@ -3,10 +3,10 @@
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
-import { purchaseOrderInvoices } from "@/db/schema"
+import { purchaseOrderInvoiceReceipts, purchaseOrderInvoices } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { serviceWorksiteScope } from "@/lib/auth/scope"
-import { createPurchaseOrderInvoice, deletePurchaseOrderInvoice } from "@/lib/services/purchasing"
+import { createPurchaseOrderInvoice, deletePurchaseOrderInvoice, setPurchaseOrderInvoiceReceipts } from "@/lib/services/purchasing"
 import { invoiceSchema, type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
 
@@ -40,6 +40,10 @@ export async function addInvoiceAction(
   }
 
   const { purchaseOrderId, invoiceNumber, amount, issueDate } = parsed.data
+  const receiptIds = formData.getAll("receiptId")
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim())
+    .filter(Boolean)
 
   const accessError = await assertOrderAccess(session, purchaseOrderId)
   if (accessError) return accessError
@@ -134,13 +138,22 @@ export async function addInvoiceAction(
         ? "pdf_text_ocr" as const
         : extracted.method === "ocr"
           ? "ocr" as const
-          : "manual" as const
+        : "manual" as const
+  const extractedDocumentTotal = extracted.data?.totalAmount
+  const hasExtractedDocumentTotal = typeof extractedDocumentTotal === "number"
+    && Number.isFinite(extractedDocumentTotal)
+    && extractedDocumentTotal >= 0
 
   try {
     await createPurchaseOrderInvoice({
       purchaseOrderId,
       invoiceNumber,
-      amount,
+      // PDF/OCR/DTE extraction reads the document header total, which may be
+      // gross while its detail lines are net. The service still ignores the
+      // browser preview for line subtotals, but the extracted header is the
+      // document authority when it is available.
+      amount: hasExtractedDocumentTotal ? extractedDocumentTotal : amount,
+      amountAuthority: hasExtractedDocumentTotal ? "document_header" : "line_items",
       issueDate: issueDate || null,
       fileName:  fileResult.attachment.attachment.fileName,
       filePath:  fileResult.attachment.attachment.filePath,
@@ -149,6 +162,7 @@ export async function addInvoiceAction(
       uploadedBy: session.user.id,
       userEmail:  session.user.email ?? undefined,
       items: items.length > 0 ? items : undefined,
+      receiptIds,
       supplierIdentity: {
         documentSupplierRut,
         status: supplierIdentityStatus,
@@ -158,12 +172,72 @@ export async function addInvoiceAction(
     // La cola operacional tiene el pendiente "Adjuntar factura": sin esto el
     // usuario lo resolvía y seguía viéndolo (con su badge) hasta que otra
     // mutación cualquiera revalidara.
-    revalidateOperationalViews(["/compras", `/compras/${purchaseOrderId}`])
+    revalidateOperationalViews([
+      "/compras",
+      `/compras/${purchaseOrderId}`,
+      ...(receiptIds.length > 0
+        ? ["/recepcion", ...receiptIds.map((receiptId) => `/recepcion/${receiptId}`)]
+        : []),
+    ])
     return { ok: true, message: `Factura ${invoiceNumber} adjuntada correctamente` }
   } catch (e) {
     await removeInvoiceAttachment(fileResult.attachment.absolutePath)
     logger.error("[addInvoiceAction]", e)
     return { ok: false, message: dbErrMsg(e, "Error al adjuntar factura") }
+  }
+}
+
+// ── Associate supplier receipts ─────────────────────────────────────────────
+
+export async function setInvoiceReceiptsAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("purchasing:send_order") }
+  catch { return { ok: false, message: "Sin permisos para asociar recepciones" } }
+
+  const invoiceId = formData.get("invoiceId")
+  const purchaseOrderId = formData.get("purchaseOrderId")
+  if (typeof invoiceId !== "string" || !invoiceId || typeof purchaseOrderId !== "string" || !purchaseOrderId) {
+    return { ok: false, message: "Factura u orden no especificada" }
+  }
+  const accessError = await assertOrderAccess(session, purchaseOrderId)
+  if (accessError) return accessError
+
+  try {
+    const previousReceiptIds = await db
+      .select({ receiptId: purchaseOrderInvoiceReceipts.receiptId })
+      .from(purchaseOrderInvoiceReceipts)
+      .where(eq(purchaseOrderInvoiceReceipts.invoiceId, invoiceId))
+    const receiptIds = await setPurchaseOrderInvoiceReceipts({
+      invoiceId,
+      purchaseOrderId,
+      receiptIds: formData.getAll("receiptId").filter((value): value is string => typeof value === "string"),
+      userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
+      worksiteScope: serviceWorksiteScope(session),
+    })
+    const affectedReceiptIds = [...new Set([
+      ...previousReceiptIds.map((link) => link.receiptId),
+      ...receiptIds,
+    ])]
+    revalidateOperationalViews([
+      "/compras",
+      `/compras/${purchaseOrderId}`,
+      ...(affectedReceiptIds.length > 0
+        ? ["/recepcion", ...affectedReceiptIds.map((receiptId) => `/recepcion/${receiptId}`)]
+        : []),
+    ])
+    return {
+      ok: true,
+      message: receiptIds.length === 0
+        ? "Factura guardada sin recepciones asociadas"
+        : `${receiptIds.length} recepción(es) asociada(s) correctamente`,
+    }
+  } catch (e) {
+    logger.error("[setInvoiceReceiptsAction]", e)
+    return { ok: false, message: dbErrMsg(e, "Error al asociar recepciones") }
   }
 }
 
@@ -201,6 +275,10 @@ export async function deleteInvoiceAction(
   }
 
   try {
+    const previousReceiptIds = await db
+      .select({ receiptId: purchaseOrderInvoiceReceipts.receiptId })
+      .from(purchaseOrderInvoiceReceipts)
+      .where(eq(purchaseOrderInvoiceReceipts.invoiceId, invoiceId))
     // Scope de la sesión, no "all": `assertOrderAccess` ya validó el acceso,
     // pero era el único camino de compras que soltaba el cinturón dentro de la
     // transacción — el resto (cancelar, cerrar, borrar, recibir) lo pasa.
@@ -216,7 +294,13 @@ export async function deleteInvoiceAction(
     // La cola operacional tiene el pendiente "Adjuntar factura": sin esto el
     // usuario lo resolvía y seguía viéndolo (con su badge) hasta que otra
     // mutación cualquiera revalidara.
-    revalidateOperationalViews(["/compras", `/compras/${purchaseOrderId}`])
+    revalidateOperationalViews([
+      "/compras",
+      `/compras/${purchaseOrderId}`,
+      ...(previousReceiptIds.length > 0
+        ? ["/recepcion", ...previousReceiptIds.map(({ receiptId }) => `/recepcion/${receiptId}`)]
+        : []),
+    ])
     return { ok: true, message: "Factura eliminada correctamente" }
   } catch (e) {
     logger.error("[deleteInvoiceAction]", e)

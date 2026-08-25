@@ -1175,6 +1175,283 @@ async function main() {
     notes: null,
   })
 
+  // Facturación parcial real: OC de 10, una recepción aceptada por 6 y una
+  // primera factura por esas mismas 6 unidades. La segunda parte todavía no
+  // llegó ni fue facturada.
+  await db.insert(schema.purchaseOrders).values({
+    id: "oc-facturacion-parcial-e2e",
+    code: "OC-2026-0193",
+    worksiteId: "ws-e2e",
+    supplierId: "sup-e2e",
+    createdBy: "user-admin-e2e",
+    status: "partially_received",
+    deliveryMode: "directo_faena",
+    invoiceReconciliationStatus: "partially_invoiced",
+    issuedAt: now,
+    sentAt: now,
+    netAmount: 10000,
+    taxAmount: 1900,
+    totalAmount: 11900,
+    notes: "Fixture E2E para facturación y recepción parciales",
+    createdAt: "2026-07-02T12:00:00.000Z",
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrderItems).values({
+    id: "oc-item-facturacion-parcial-e2e",
+    purchaseOrderId: "oc-facturacion-parcial-e2e",
+    productId: "prod-e2e",
+    productNameFree: "EPP facturado parcialmente E2E",
+    quantity: 10,
+    unitOfMeasure: "unidad",
+    unitPrice: 1000,
+    subtotal: 10000,
+    status: "issued",
+    quantityReceived: 6,
+    sortOrder: 1,
+  })
+  await db.insert(schema.receipts).values({
+    id: "rec-facturacion-parcial-e2e",
+    code: "REC-2026-0193",
+    purchaseOrderId: "oc-facturacion-parcial-e2e",
+    receivedBy: "user-admin-e2e",
+    receivedAt: now,
+    locationType: "faena",
+    worksiteId: "ws-e2e",
+    dispatchGuideNo: "GD-0093-1",
+    status: "closed",
+    createdAt: now,
+  })
+  await db.insert(schema.receiptItems).values({
+    id: "rec-item-facturacion-parcial-e2e",
+    receiptId: "rec-facturacion-parcial-e2e",
+    purchaseOrderItemId: "oc-item-facturacion-parcial-e2e",
+    quantityReceived: 6,
+    status: "received",
+  })
+  await db.insert(schema.purchaseOrderInvoices).values({
+    id: "invoice-facturacion-parcial-e2e",
+    purchaseOrderId: "oc-facturacion-parcial-e2e",
+    invoiceNumber: "FAC-PARCIAL-6",
+    amount: 7140,
+    issueDate: "2026-07-03",
+    fileName: "factura-parcial-e2e.pdf",
+    filePath: "storage/purchase-orders/factura-parcial-e2e.pdf",
+    uploadedBy: "user-admin-e2e",
+    supplierIdentityStatus: "verified",
+    supplierIdentitySource: "dte_xml",
+    uploadedAt: now,
+  })
+  await db.insert(schema.purchaseOrderInvoiceItems).values({
+    id: "invoice-item-facturacion-parcial-e2e",
+    invoiceId: "invoice-facturacion-parcial-e2e",
+    purchaseOrderItemId: "oc-item-facturacion-parcial-e2e",
+    productName: "EPP facturado parcialmente E2E",
+    unitOfMeasure: "unidad",
+    quantity: 6,
+    unitPrice: 1000,
+    subtotal: 6000,
+  })
+  await db.insert(schema.purchaseOrderInvoiceReceipts).values({
+    invoiceId: "invoice-facturacion-parcial-e2e",
+    receiptId: "rec-facturacion-parcial-e2e",
+    linkedBy: "user-admin-e2e",
+  })
+
+  // Mismo escenario ya completado: dos entregas (6 + 4) respaldadas por dos
+  // facturas distintas. Complementa el fixture parcial sin mutarlo durante la
+  // suite, por lo que ambos estados pueden verificarse en cualquier orden.
+  await db.insert(schema.purchaseOrders).values({
+    id: "oc-facturacion-completa-e2e",
+    code: "OC-2026-0195",
+    worksiteId: "ws-e2e",
+    supplierId: "sup-e2e",
+    createdBy: "user-admin-e2e",
+    status: "closed",
+    deliveryMode: "directo_faena",
+    invoiceReconciliationStatus: "matched",
+    issuedAt: now,
+    sentAt: now,
+    netAmount: 10000,
+    taxAmount: 1900,
+    totalAmount: 11900,
+    notes: "Fixture E2E para dos recepciones y dos facturas conciliadas",
+    createdAt: "2026-07-04T12:00:00.000Z",
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrderItems).values({
+    id: "oc-item-facturacion-completa-e2e",
+    purchaseOrderId: "oc-facturacion-completa-e2e",
+    productId: "prod-e2e",
+    productNameFree: "EPP facturado en dos entregas E2E",
+    quantity: 10,
+    unitOfMeasure: "unidad",
+    unitPrice: 1000,
+    subtotal: 10000,
+    status: "issued",
+    quantityReceived: 10,
+    sortOrder: 1,
+  })
+  await db.insert(schema.receipts).values([
+    {
+      id: "rec-facturacion-completa-6-e2e",
+      code: "REC-2026-0195-1",
+      purchaseOrderId: "oc-facturacion-completa-e2e",
+      receivedBy: "user-admin-e2e",
+      receivedAt: "2026-07-04T12:00:00.000Z",
+      locationType: "faena",
+      worksiteId: "ws-e2e",
+      dispatchGuideNo: "GD-0095-1",
+      status: "closed",
+      createdAt: now,
+    },
+    {
+      id: "rec-facturacion-completa-4-e2e",
+      code: "REC-2026-0195-2",
+      purchaseOrderId: "oc-facturacion-completa-e2e",
+      receivedBy: "user-admin-e2e",
+      receivedAt: "2026-07-05T12:00:00.000Z",
+      locationType: "faena",
+      worksiteId: "ws-e2e",
+      dispatchGuideNo: "GD-0095-2",
+      status: "closed",
+      createdAt: now,
+    },
+  ])
+  await db.insert(schema.receiptItems).values([
+    {
+      id: "rec-item-facturacion-completa-6-e2e",
+      receiptId: "rec-facturacion-completa-6-e2e",
+      purchaseOrderItemId: "oc-item-facturacion-completa-e2e",
+      quantityReceived: 6,
+      status: "partially_received",
+    },
+    {
+      id: "rec-item-facturacion-completa-4-e2e",
+      receiptId: "rec-facturacion-completa-4-e2e",
+      purchaseOrderItemId: "oc-item-facturacion-completa-e2e",
+      quantityReceived: 4,
+      status: "received",
+    },
+  ])
+  await db.insert(schema.purchaseOrderInvoices).values([
+    {
+      id: "invoice-facturacion-completa-6-e2e",
+      purchaseOrderId: "oc-facturacion-completa-e2e",
+      invoiceNumber: "FAC-COMPLETA-6",
+      amount: 7140,
+      issueDate: "2026-07-04",
+      fileName: "factura-completa-6-e2e.pdf",
+      filePath: "storage/purchase-orders/factura-completa-6-e2e.pdf",
+      uploadedBy: "user-admin-e2e",
+      supplierIdentityStatus: "verified",
+      supplierIdentitySource: "dte_xml",
+      uploadedAt: now,
+    },
+    {
+      id: "invoice-facturacion-completa-4-e2e",
+      purchaseOrderId: "oc-facturacion-completa-e2e",
+      invoiceNumber: "FAC-COMPLETA-4",
+      amount: 4760,
+      issueDate: "2026-07-05",
+      fileName: "factura-completa-4-e2e.pdf",
+      filePath: "storage/purchase-orders/factura-completa-4-e2e.pdf",
+      uploadedBy: "user-admin-e2e",
+      supplierIdentityStatus: "verified",
+      supplierIdentitySource: "dte_xml",
+      uploadedAt: now,
+    },
+  ])
+  await db.insert(schema.purchaseOrderInvoiceItems).values([
+    {
+      id: "invoice-item-facturacion-completa-6-e2e",
+      invoiceId: "invoice-facturacion-completa-6-e2e",
+      purchaseOrderItemId: "oc-item-facturacion-completa-e2e",
+      productName: "EPP facturado en dos entregas E2E",
+      unitOfMeasure: "unidad",
+      quantity: 6,
+      unitPrice: 1000,
+      subtotal: 6000,
+    },
+    {
+      id: "invoice-item-facturacion-completa-4-e2e",
+      invoiceId: "invoice-facturacion-completa-4-e2e",
+      purchaseOrderItemId: "oc-item-facturacion-completa-e2e",
+      productName: "EPP facturado en dos entregas E2E",
+      unitOfMeasure: "unidad",
+      quantity: 4,
+      unitPrice: 1000,
+      subtotal: 4000,
+    },
+  ])
+  await db.insert(schema.purchaseOrderInvoiceReceipts).values([
+    {
+      invoiceId: "invoice-facturacion-completa-6-e2e",
+      receiptId: "rec-facturacion-completa-6-e2e",
+      linkedBy: "user-admin-e2e",
+    },
+    {
+      invoiceId: "invoice-facturacion-completa-4-e2e",
+      receiptId: "rec-facturacion-completa-4-e2e",
+      linkedBy: "user-admin-e2e",
+    },
+  ])
+
+  // Factura anticipada completa sin recepción: debe mostrarse como trabajo de
+  // Recepción y nunca como una diferencia comercial aceptable.
+  await db.insert(schema.purchaseOrders).values({
+    id: "oc-factura-anticipada-e2e",
+    code: "OC-2026-0094",
+    worksiteId: "ws-e2e",
+    supplierId: "sup-e2e",
+    createdBy: "user-admin-e2e",
+    status: "sent",
+    deliveryMode: "directo_faena",
+    invoiceReconciliationStatus: "awaiting_receipt",
+    issuedAt: now,
+    sentAt: now,
+    netAmount: 10000,
+    taxAmount: 1900,
+    totalAmount: 11900,
+    createdAt: "2026-07-03T12:00:00.000Z",
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrderItems).values({
+    id: "oc-item-factura-anticipada-e2e",
+    purchaseOrderId: "oc-factura-anticipada-e2e",
+    productId: "prod-e2e",
+    productNameFree: "EPP con factura anticipada E2E",
+    quantity: 10,
+    unitOfMeasure: "unidad",
+    unitPrice: 1000,
+    subtotal: 10000,
+    status: "issued",
+    quantityReceived: 0,
+    sortOrder: 1,
+  })
+  await db.insert(schema.purchaseOrderInvoices).values({
+    id: "invoice-factura-anticipada-e2e",
+    purchaseOrderId: "oc-factura-anticipada-e2e",
+    invoiceNumber: "FAC-ANTICIPADA-10",
+    amount: 11900,
+    issueDate: "2026-07-03",
+    fileName: "factura-anticipada-e2e.pdf",
+    filePath: "storage/purchase-orders/factura-anticipada-e2e.pdf",
+    uploadedBy: "user-admin-e2e",
+    supplierIdentityStatus: "verified",
+    supplierIdentitySource: "dte_xml",
+    uploadedAt: now,
+  })
+  await db.insert(schema.purchaseOrderInvoiceItems).values({
+    id: "invoice-item-factura-anticipada-e2e",
+    invoiceId: "invoice-factura-anticipada-e2e",
+    purchaseOrderItemId: "oc-item-factura-anticipada-e2e",
+    productName: "EPP con factura anticipada E2E",
+    unitOfMeasure: "unidad",
+    quantity: 10,
+    unitPrice: 1000,
+    subtotal: 10000,
+  })
+
   // SST seed — one closed evaluation used by sst-pdf.spec.ts to verify the
   // /sst/[id]/print/pdf route works in standalone without MODULE_NOT_FOUND.
   await db.insert(schema.sstEvaluations).values({

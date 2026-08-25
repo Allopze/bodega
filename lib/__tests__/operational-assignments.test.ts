@@ -412,6 +412,17 @@ describe("operational work commitments", () => {
       createdBy: assignerId, status: "received", deliveryMode: "via_oficina",
       netAmount: 100, taxAmount: 19, totalAmount: 119, createdAt: now, updatedAt: now,
     })
+    const orderItemId = nanoid()
+    await inMemoryDb.insert(schema.purchaseOrderItems).values({
+      id: orderItemId,
+      purchaseOrderId: orderId,
+      productNameFree: "EPP facturable",
+      quantity: 10,
+      unitOfMeasure: "unidad",
+      unitPrice: 10,
+      subtotal: 100,
+      quantityOfficeReceived: 10,
+    })
 
     const buyer = {
       user: {
@@ -459,8 +470,9 @@ describe("operational work commitments", () => {
     await inMemoryDb.update(schema.purchaseOrders)
       .set({ status: "received", updatedAt: now })
       .where(eq(schema.purchaseOrders.id, orderId))
+    const invoiceId = nanoid()
     await inMemoryDb.insert(schema.purchaseOrderInvoices).values({
-      id: nanoid(), purchaseOrderId: orderId, invoiceNumber: "000123", amount: 119,
+      id: invoiceId, purchaseOrderId: orderId, invoiceNumber: "000123", amount: 119,
       fileName: "factura.pdf", filePath: "storage/purchase-orders/factura.pdf",
       uploadedBy: assignerId, uploadedAt: now,
     })
@@ -474,6 +486,28 @@ describe("operational work commitments", () => {
       sourceType: "purchase_order",
       sourceId: orderId,
     })).resolves.toBeNull()
+
+    await inMemoryDb.insert(schema.purchaseOrderInvoiceItems).values({
+      id: nanoid(), invoiceId, purchaseOrderItemId: orderItemId,
+      productName: "EPP facturable", unitOfMeasure: "unidad",
+      quantity: 6, unitPrice: 10, subtotal: 60,
+    })
+    await inMemoryDb.update(schema.purchaseOrders)
+      .set({ invoiceReconciliationStatus: "partially_invoiced", updatedAt: now })
+      .where(eq(schema.purchaseOrders.id, orderId))
+    await expect(getOperationalWorkQueue(buyer, { limit: 50 })).resolves.toMatchObject({
+      total: 1,
+      items: [{ statusLabel: "Facturación parcial", ctaLabel: "Completar facturación" }],
+    })
+    await expect(getOperationalDetailWorkItem(buyer, {
+      sourceType: "purchase_order",
+      sourceId: orderId,
+    })).resolves.toMatchObject({ statusLabel: "Facturación parcial", ctaLabel: "Completar facturación" })
+
+    await inMemoryDb.update(schema.purchaseOrders)
+      .set({ invoiceReconciliationStatus: "awaiting_receipt", updatedAt: now })
+      .where(eq(schema.purchaseOrders.id, orderId))
+    await expect(getOperationalWorkQueue(buyer, { limit: 50 })).resolves.toMatchObject({ total: 0 })
 
     await inMemoryDb.update(schema.purchaseOrders)
       .set({ status: "closed", invoiceReconciliationStatus: "needs_review", updatedAt: now })

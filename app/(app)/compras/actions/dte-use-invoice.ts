@@ -20,6 +20,7 @@ import { enrichDteDocumentLines } from "@/lib/services/dte-portal/purchase-docum
 export interface UseDteAsInvoiceInput {
   purchaseOrderId: string
   dteDocumentId: string
+  receiptIds?: string[]
   lineResolutions?: Array<{
     dteDocumentItemId: string
     purchaseOrderItemId: string | null
@@ -45,6 +46,12 @@ export async function attachDteAsInvoice(
 
   if (!isOpaqueId(input.purchaseOrderId) || !isOpaqueId(input.dteDocumentId)) {
     return { ok: false, message: "No se pudo adjuntar este DTE" }
+  }
+  if (input.receiptIds && (
+    input.receiptIds.length > 100
+    || input.receiptIds.some((receiptId) => !isOpaqueId(receiptId))
+  )) {
+    return { ok: false, message: "Las recepciones seleccionadas no son válidas" }
   }
   if (input.lineResolutions && (
     input.lineResolutions.length === 0
@@ -168,6 +175,7 @@ export async function attachDteAsInvoice(
         totalAmount: xml.detail.totalAmount,
       },
       lineResolutions: input.lineResolutions,
+      receiptIds: input.receiptIds,
       // Se preservan todas las líneas del XML. El servicio decide bajo lock qué
       // asociación es única; las ambiguas o incompatibles quedan sin vínculo.
       items: xml.detail.items.map((item) => ({
@@ -196,7 +204,13 @@ export async function attachDteAsInvoice(
     return { ok: false, message: dbErrMsg(error, "No se pudo adjuntar este DTE") }
   }
 
-  revalidateOperationalViews(["/compras", `/compras/${input.purchaseOrderId}`])
+  revalidateOperationalViews([
+    "/compras",
+    `/compras/${input.purchaseOrderId}`,
+    ...(input.receiptIds && input.receiptIds.length > 0
+      ? ["/recepcion", ...input.receiptIds.map((receiptId) => `/recepcion/${receiptId}`)]
+      : []),
+  ])
   return { ok: true, message: `Factura ${xml.detail.invoiceNumber} adjuntada correctamente` }
 }
 

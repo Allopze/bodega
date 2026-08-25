@@ -22,6 +22,46 @@ const invoice = {
 }
 
 describe("InvoiceReconciliationCard", () => {
+  it("shows partial coverage and pending receipt as operational states that cannot be accepted", () => {
+    const partial = reconcileInvoiceEvidence({
+      totalOC: 100,
+      orderItems: [{ ...orderItem, supplierReceivedQuantity: 1 }],
+      invoices: [{ ...invoice, amount: 50, items: [{ ...invoice.items[0]!, quantity: 1, unitPrice: 50, subtotal: 50 }] }],
+    })
+    const { rerender } = render(
+      <InvoiceReconciliationCard purchaseOrderId="oc-1" reconciliation={partial} invoices={[invoice]} canAccept canUpdateCatalog={false} />,
+    )
+    expect(screen.getByText("Facturación parcial")).toBeInTheDocument()
+    expect(screen.getByText("Saldo por facturar").nextElementSibling).toHaveTextContent("$50")
+    expect(screen.queryByRole("button", { name: "Aceptar diferencias" })).not.toBeInTheDocument()
+
+    const awaiting = reconcileInvoiceEvidence({
+      totalOC: 100,
+      orderItems: [{ ...orderItem, supplierReceivedQuantity: 0 }],
+      invoices: [{ ...invoice, items: [{ ...invoice.items[0]!, unitPrice: 50, subtotal: 100 }] }],
+    })
+    rerender(<InvoiceReconciliationCard purchaseOrderId="oc-1" reconciliation={awaiting} invoices={[invoice]} canAccept canUpdateCatalog={false} />)
+    expect(screen.getByText("Recepción pendiente")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Aceptar diferencias" })).not.toBeInTheDocument()
+  })
+
+  it("does not offer generic acceptance for partial coverage with another difference", () => {
+    const partialWithPriceDifference = reconcileInvoiceEvidence({
+      totalOC: 100,
+      orderItems: [{ ...orderItem, quantity: 2, subtotal: 100, supplierReceivedQuantity: 1 }],
+      invoices: [{
+        ...invoice,
+        amount: 50,
+        items: [{ ...invoice.items[0]!, quantity: 1, unitPrice: 40, subtotal: 40 }],
+      }],
+    })
+
+    render(<InvoiceReconciliationCard purchaseOrderId="oc-1" reconciliation={partialWithPriceDifference} invoices={[invoice]} canAccept canUpdateCatalog={false} />)
+    expect(partialWithPriceDifference.status).toBe("needs_review")
+    expect(partialWithPriceDifference.coverage.status).toBe("partial")
+    expect(screen.queryByRole("button", { name: "Aceptar diferencias" })).not.toBeInTheDocument()
+  })
+
   it("renders matched, pending and accepted states", () => {
     const matched = reconcileInvoiceEvidence({
       totalOC: 100,

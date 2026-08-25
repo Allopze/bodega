@@ -63,7 +63,10 @@ export const purchaseOrders = pgTable("purchase_orders", {
     ${table.deliveryMode} IN ('via_oficina', 'directo_faena')
   `),
   check("purchase_orders_invoice_reconciliation_status_valid", sql`
-    ${table.invoiceReconciliationStatus} IN ('no_invoices', 'matched', 'needs_review', 'accepted_exception')
+    ${table.invoiceReconciliationStatus} IN (
+      'no_invoices', 'partially_invoiced', 'awaiting_receipt',
+      'matched', 'needs_review', 'accepted_exception'
+    )
   `),
   index("purchase_orders_worksite_status_idx").on(table.worksiteId, table.status, table.createdAt),
   index("purchase_orders_cost_center_idx").on(table.costCenterId),

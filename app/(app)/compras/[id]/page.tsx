@@ -3,7 +3,7 @@ import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import { CheckCircle } from "@phosphor-icons/react/dist/ssr"
 import { db }                  from "@/db"
-import { dteDocumentItems, dteDocuments, purchaseOrderInvoices, purchaseOrders, statusHistory, supplierProductAliases, users } from "@/db/schema"
+import { dteDocumentItems, dteDocuments, purchaseOrderInvoiceReceipts, purchaseOrderInvoices, purchaseOrders, statusHistory, supplierProductAliases, users } from "@/db/schema"
 import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm"
 import { localDateToISO } from "@/lib/sst/date"
 import { assessDteCandidates } from "@/lib/services/purchasing-module/dte-candidates"
@@ -31,6 +31,7 @@ import { getOcReconciliation } from "@/lib/services/oc-reconciliation"
 import { getDocumentChain } from "@/lib/services/document-chain"
 import { DocumentChainStrip } from "@/components/documents/document-chain-strip"
 import { DteReceivedCard } from "./dte-received-card"
+import { suggestReceiptLinks } from "@/lib/services/purchasing-module/invoice-receipt-suggestions"
 
 
 export const metadata: Metadata = { title: "Orden de compra" }
@@ -40,7 +41,7 @@ export default async function OcDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ tab?: string; nro?: string; actualizada?: string }>
+  searchParams: Promise<{ tab?: string; receiptId?: string; actualizada?: string }>
 }) {
   // Quien recibe la OC necesita leerla —ítems, cantidades, montos— y los roles de
   // faena (prevencionista_faena, solicitante_faena, prevencionista) tienen
@@ -56,7 +57,7 @@ export default async function OcDetailPage({
   }
   const canViewPurchasing = can(session, "purchasing:view")
 
-  const [{ id }, { tab, nro, actualizada }] = await Promise.all([params, searchParams])
+  const [{ id }, { tab, receiptId, actualizada }] = await Promise.all([params, searchParams])
 
   const order = await db.query.purchaseOrders.findFirst({
     where: eq(purchaseOrders.id, id),
@@ -115,7 +116,7 @@ export default async function OcDetailPage({
     .map((i) => i.productId)
     .filter((id): id is string => id !== null)
 
-  const [requestItemRows, productRows, timelineEvents, orderInvoices] = await Promise.all([
+  const [requestItemRows, productRows, timelineEvents, orderInvoices, orderReceipts] = await Promise.all([
     requestItemIds.length > 0
       ? db.query.purchaseRequestItems.findMany({
           where: (ri, { inArray }) => inArray(ri.id, requestItemIds),
@@ -170,12 +171,32 @@ export default async function OcDetailPage({
           .where(eq(purchaseOrderInvoices.purchaseOrderId, order.id))
           .orderBy(desc(purchaseOrderInvoices.uploadedAt))
       : Promise.resolve([]),
+
+    canViewPurchasing
+      ? db.query.receipts.findMany({
+          where: (receipt, { eq: equals }) => equals(receipt.purchaseOrderId, order.id),
+          columns: {
+            id: true,
+            code: true,
+            receivedAt: true,
+            locationType: true,
+            dispatchGuideNo: true,
+            purchaseOrderId: true,
+          },
+          with: {
+            items: {
+              columns: { purchaseOrderItemId: true, quantityReceived: true },
+            },
+          },
+          orderBy: (receipt, { desc: descending }) => [descending(receipt.receivedAt)],
+        })
+      : Promise.resolve([]),
   ])
 
   // ARQ-10: ambas cuelgan sólo de `invoiceIds` — ninguna espera a la otra.
   const invoiceIds = orderInvoices.map((inv) => inv.id)
-  const [invoiceItemRows, dteRows] = invoiceIds.length === 0
-    ? [[], []]
+  const [invoiceItemRows, dteRows, invoiceReceiptLinks] = invoiceIds.length === 0
+    ? [[], [], []]
     : await Promise.all([
         // Load invoice items for reconciliation
         db.query.purchaseOrderInvoiceItems.findMany({
@@ -188,6 +209,13 @@ export default async function OcDetailPage({
           columns: { id: true, tipoDte: true, folio: true, rutEmisor: true, razonSocialEmisor: true, montoTotal: true, estadoSii: true },
           orderBy: (d, { desc: descOrder }) => [descOrder(d.fechaEmision)],
         }),
+        db
+          .select({
+            invoiceId: purchaseOrderInvoiceReceipts.invoiceId,
+            receiptId: purchaseOrderInvoiceReceipts.receiptId,
+          })
+          .from(purchaseOrderInvoiceReceipts)
+          .where(inArray(purchaseOrderInvoiceReceipts.invoiceId, invoiceIds)),
       ])
 
   // Cantidad facturada por ítem de OC: alimenta tanto la ficha como el saldo
@@ -305,10 +333,38 @@ export default async function OcDetailPage({
   })
 
   // Attach items to invoices
-  const invoicesWithItems = orderInvoices.map((inv) => ({
-    ...inv,
-    items: invoiceItemRows.filter((item) => item.invoiceId === inv.id),
+  const receiptOptions = orderReceipts.map((receipt) => ({
+    id: receipt.id,
+    code: receipt.code,
+    receivedAt: receipt.receivedAt,
+    locationType: receipt.locationType,
+    dispatchGuideNo: receipt.dispatchGuideNo,
+    items: receipt.items,
   }))
+  const receiptIdsByInvoice = new Map<string, string[]>()
+  for (const link of invoiceReceiptLinks) {
+    const receiptIds = receiptIdsByInvoice.get(link.invoiceId) ?? []
+    receiptIds.push(link.receiptId)
+    receiptIdsByInvoice.set(link.invoiceId, receiptIds)
+  }
+  const invoicesWithItems = orderInvoices.map((inv) => {
+    const items = invoiceItemRows.filter((item) => item.invoiceId === inv.id)
+    return {
+      ...inv,
+      items,
+      receiptIds: receiptIdsByInvoice.get(inv.id) ?? [],
+      receiptSuggestion: suggestReceiptLinks({
+        id: inv.id,
+        purchaseOrderId: order.id,
+        invoiceNumber: inv.invoiceNumber,
+        issueDate: inv.issueDate,
+        items: items.map((item) => ({
+          purchaseOrderItemId: item.purchaseOrderItemId,
+          quantity: item.quantity,
+        })),
+      }, orderReceipts),
+    }
+  })
 
   const invoiceReconciliation = canViewPurchasing
     ? await getPurchaseOrderInvoiceReconciliation(order.id)
@@ -436,10 +492,13 @@ export default async function OcDetailPage({
   ]
   const initialTab = tab && availableTabs.includes(tab) ? tab : "items"
 
-  // `?nro=` llega desde el detalle de una recepción: el número de guía/factura ya
-  // lo tipeó quien recibió, así que no se pide de nuevo. Mismo tope que
-  // `dispatchGuideNo` en la validación de recepciones.
-  const defaultInvoiceNumber = typeof nro === "string" ? nro.trim().slice(0, 80) || undefined : undefined
+  // El enlace desde Recepción preselecciona únicamente la recepción. Una guía
+  // puede compartir formato con una factura, pero no es evidencia suficiente
+  // para copiarla como folio tributario.
+  const defaultReceiptId = typeof receiptId === "string"
+    && orderReceipts.some((receipt) => receipt.id === receiptId)
+      ? receiptId
+      : undefined
   // Mismo criterio que el CTA de recepción, no un "queda saldo" propio: en una
   // OC directo a faena ya recibida, el saldo de oficina es el total pedido y
   // degradaba el CTA de factura a secundario sin que hubiera nada que recibir.
@@ -451,8 +510,15 @@ export default async function OcDetailPage({
   }) !== null
   // Misma regla que la cola operacional y el listado: la factura se exige desde
   // que llegó mercadería, no desde que la OC salió al proveedor.
-  const invoiceDue = INVOICE_DUE_ORDER_STATUSES.includes(order.status)
-    || invoiceReconciliation?.status === "needs_review"
+  const hasReceivedUninvoicedQuantity = order.items.some((item) => {
+    const supplierReceived = order.deliveryMode === "via_oficina"
+      ? (item.quantityOfficeReceived ?? 0)
+      : (item.quantityReceived ?? 0)
+    return supplierReceived > (invoicedByItem.get(item.id) ?? 0) + 0.01
+  })
+  const invoiceDue = invoiceReconciliation?.status === "needs_review"
+    || (invoiceReconciliation?.status === "no_invoices" && INVOICE_DUE_ORDER_STATUSES.includes(order.status))
+    || (invoiceReconciliation?.status === "partially_invoiced" && hasReceivedUninvoicedQuantity)
 
   return (
     <PageContainer width="workbench">
@@ -583,7 +649,8 @@ export default async function OcDetailPage({
                   // recibir nuevas. El servicio ya las rechaza; esto evita
                   // ofrecer en pantalla algo que va a fallar.
                   canAttach={canInvoice && order.status !== "cancelled"}
-                  defaultInvoiceNumber={defaultInvoiceNumber}
+                  receipts={receiptOptions}
+                  defaultReceiptId={defaultReceiptId}
                   dteCandidates={candidateDtes.map(({ doc, confidence, amountMatches, proposedLinks, explanation }) => ({
                     id: doc.id,
                     tipoDte: doc.tipoDte,
