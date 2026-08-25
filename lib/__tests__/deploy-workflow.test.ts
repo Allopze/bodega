@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs"
+import { spawnSync } from "node:child_process"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
 
@@ -47,6 +48,24 @@ function cronServiceFromCompose(compose: string): string {
   return cronService
 }
 
+function deployFunction(script: string, name: string): string {
+  const source = script.match(new RegExp(`^${name}\\(\\) \\{[\\s\\S]*?^\\}`, "m"))?.[0]
+  if (!source) throw new Error(`No se encontró ${name} en scripts/deploy-prod.sh`)
+  return source
+}
+
+function runTimedHarness(command: string) {
+  const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
+  const source = [
+    "set -u -o pipefail",
+    deployFunction(deployScript, "format_duration"),
+    deployFunction(deployScript, "run_timed"),
+    command,
+  ].join("\n\n")
+
+  return spawnSync("bash", ["-c", source], { encoding: "utf8" })
+}
+
 describe("deploy workflow", () => {
   it("builds and publishes the production Docker stage", () => {
     const workflow = readFileSync(path.join(repoRoot, ".github/workflows/deploy.yml"), "utf8")
@@ -93,6 +112,50 @@ describe("deploy workflow", () => {
     expect(deployScript).toContain('docker buildx build --builder "$BUILDER" --target prod --tag "$IMAGE" --load --progress=plain .')
     expect(deployScript).toContain("run_timed")
     expect(deployScript).not.toContain('if "$@"; then')
+  })
+
+  it("propagates a nested pg_dump failure and stops the failing function immediately", () => {
+    const result = runTimedHarness(`
+dump_production_database() {
+  false
+  echo "DUMP_CONTINUED"
+}
+run_timed "Dumping production database" dump_production_database
+exit $?
+`)
+
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toContain("failed after")
+    expect(result.stdout).not.toContain("DUMP_CONTINUED")
+  })
+
+  it("propagates a nested healthcheck failure without running later checks", () => {
+    const result = runTimedHarness(`
+check_app_health() {
+  false
+  echo "HEALTHCHECK_CONTINUED"
+}
+run_timed "Health check" check_app_health
+exit $?
+`)
+
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toContain("failed after")
+    expect(result.stdout).not.toContain("HEALTHCHECK_CONTINUED")
+  })
+
+  it("reports duration and returns zero for a successful timed step", () => {
+    const result = runTimedHarness(`
+successful_step() {
+  echo "STEP_COMPLETED"
+}
+run_timed "Successful step" successful_step
+exit $?
+`)
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain("STEP_COMPLETED")
+    expect(result.stdout).toMatch(/completed in 0m\d{2}s/)
   })
 
   it("runs the same fail-closed migration preflight in the standalone image", () => {

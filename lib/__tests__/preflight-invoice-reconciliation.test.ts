@@ -1,5 +1,6 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
+import { inArray } from "drizzle-orm"
 import path from "node:path"
 import type postgres from "postgres"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
@@ -7,6 +8,7 @@ import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { readPurchaseInvoiceReconciliationPreflight } from "@/scripts/preflight-purchase-invoice-reconciliation"
+import { mapNewInvoiceReconciliationStatusesForRollback } from "@/scripts/rollback-purchase-invoice-reconciliation-statuses"
 
 /**
  * El preflight corre en el deploy de producción (`scripts/deploy-prod.sh`) y es
@@ -81,6 +83,10 @@ describe("preflight de conciliación OC-factura", () => {
       unlinkedLines: 0,
       priceVarianceLines: 0,
       affectedClosedOrders: 0,
+      ordersWithMultipleInvoices: 0,
+      ordersWithMultipleReceipts: 0,
+      uniqueReceiptSuggestions: 0,
+      ambiguousReceiptSuggestions: 0,
     })
   })
 
@@ -89,5 +95,69 @@ describe("preflight de conciliación OC-factura", () => {
     const report = await readPurchaseInvoiceReconciliationPreflight(sqlShim)
     expect(report.affectedClosedOrders).toBe(1)
     expect(report.priceVarianceLines).toBe(1)
+  })
+
+  it("no confunde una cobertura parcial legítima con una diferencia", async () => {
+    const before = await readPurchaseInvoiceReconciliationPreflight(sqlShim)
+    await insertClosedOrder("parcial-legitima", { withInvoice: true })
+    await db.update(schema.purchaseOrderInvoices)
+      .set({ amount: 60 })
+      .where(inArray(schema.purchaseOrderInvoices.id, ["parcial-legitima-invoice"]))
+    await db.update(schema.purchaseOrderInvoiceItems)
+      .set({ quantity: 1, unitPrice: 50, subtotal: 50 })
+      .where(inArray(schema.purchaseOrderInvoiceItems.id, ["parcial-legitima-invoice-item"]))
+
+    const after = await readPurchaseInvoiceReconciliationPreflight(sqlShim)
+    expect(after.affectedClosedOrders).toBe(before.affectedClosedOrders)
+    expect(after.priceVarianceLines).toBe(before.priceVarianceLines)
+  })
+
+  it("cuenta una sugerencia ambigua sin escribir vínculos históricos", async () => {
+    await insertClosedOrder("ambiguo", { withInvoice: true })
+    await db.insert(schema.receipts).values([
+      {
+        id: "ambiguo-receipt-a", code: "REC-AMB-A", purchaseOrderId: "ambiguo",
+        receivedBy: "user-preflight", receivedAt: now, locationType: "faena", worksiteId: "ws-preflight",
+      },
+      {
+        id: "ambiguo-receipt-b", code: "REC-AMB-B", purchaseOrderId: "ambiguo",
+        receivedBy: "user-preflight", receivedAt: now, locationType: "faena", worksiteId: "ws-preflight",
+      },
+    ])
+    await db.insert(schema.receiptItems).values([
+      {
+        id: "ambiguo-receipt-item-a", receiptId: "ambiguo-receipt-a",
+        purchaseOrderItemId: "ambiguo-item", quantityReceived: 2,
+      },
+      {
+        id: "ambiguo-receipt-item-b", receiptId: "ambiguo-receipt-b",
+        purchaseOrderItemId: "ambiguo-item", quantityReceived: 2,
+      },
+    ])
+
+    const report = await readPurchaseInvoiceReconciliationPreflight(sqlShim)
+    expect(report.ordersWithMultipleReceipts).toBe(1)
+    expect(report.ambiguousReceiptSuggestions).toBe(1)
+    expect(await db.select().from(schema.purchaseOrderInvoiceReceipts)).toHaveLength(0)
+  })
+
+  it("prepara el rollback mapeando sólo los estados nuevos a revisión", async () => {
+    await db.update(schema.purchaseOrders)
+      .set({ invoiceReconciliationStatus: "partially_invoiced", invoiceReconciliationFingerprint: "v2:partial" })
+      .where(inArray(schema.purchaseOrders.id, ["sin-factura", "con-diferencia"]))
+    await db.update(schema.purchaseOrders)
+      .set({ invoiceReconciliationStatus: "awaiting_receipt", invoiceReconciliationFingerprint: "v2:awaiting" })
+      .where(inArray(schema.purchaseOrders.id, ["ambiguo"]))
+
+    expect(await mapNewInvoiceReconciliationStatusesForRollback(sqlShim)).toEqual({ mappedOrders: 3 })
+    const statuses = await db.select({
+      id: schema.purchaseOrders.id,
+      status: schema.purchaseOrders.invoiceReconciliationStatus,
+      fingerprint: schema.purchaseOrders.invoiceReconciliationFingerprint,
+    }).from(schema.purchaseOrders)
+      .where(inArray(schema.purchaseOrders.id, ["sin-factura", "con-diferencia", "ambiguo"]))
+    expect(statuses).toHaveLength(3)
+    expect(statuses.every((row) => row.status === "needs_review")).toBe(true)
+    expect(statuses.every((row) => row.fingerprint === null)).toBe(true)
   })
 })

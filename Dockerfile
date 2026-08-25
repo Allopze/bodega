@@ -66,6 +66,7 @@ RUN ./node_modules/.bin/esbuild scripts/seed-pdtp-inspection-templates-2026.ts \
 RUN ./node_modules/.bin/esbuild \
     scripts/preflight-purchase-invoice-reconciliation.ts \
     scripts/backfill-purchase-invoice-reconciliation.ts \
+    scripts/rollback-purchase-invoice-reconciliation-statuses.ts \
     --bundle \
     --platform=node \
     --format=esm \
@@ -143,6 +144,7 @@ COPY --from=build /tmp/sync-rbac.mjs ./scripts/sync-rbac.mjs
 COPY --from=build /tmp/seed-pdtp-inspection-templates.mjs ./scripts/seed-pdtp-inspection-templates.mjs
 COPY --from=build /tmp/invoice-reconciliation/preflight-purchase-invoice-reconciliation.mjs ./scripts/preflight-purchase-invoice-reconciliation.mjs
 COPY --from=build /tmp/invoice-reconciliation/backfill-purchase-invoice-reconciliation.mjs ./scripts/backfill-purchase-invoice-reconciliation.mjs
+COPY --from=build /tmp/invoice-reconciliation/rollback-purchase-invoice-reconciliation-statuses.mjs ./scripts/rollback-purchase-invoice-reconciliation-statuses.mjs
 # Cron service uses this bounded internal HTTP runner instead of an inline
 # wget command. It is copied explicitly because Next standalone does not trace
 # scripts invoked only by Compose.

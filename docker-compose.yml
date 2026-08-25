@@ -337,8 +337,8 @@ services:
     command: ["node", "scripts/preflight-purchase-invoice-reconciliation.mjs"]
 
   # One-shot: recalcula la proyección de conciliación de toda OC con factura.
-  # La migración 0196 deja esas OC en 'needs_review' con fingerprint NULL como
-  # marcador conservador; esto calcula el estado real. Idempotente (el estado se
+  # Incluye huellas de versiones anteriores; el resultado se deriva de la
+  # evidencia. Idempotente (el estado se
   # deriva de la evidencia y de la tabla de revisiones, no de la proyección),
   # pero toma FOR UPDATE sobre todas esas OC en una sola transacción: correrlo
   # de más es una ventana de bloqueo gratis, por eso deploy-prod.sh lo condiciona
@@ -356,6 +356,22 @@ services:
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
     command: ["node", "scripts/backfill-purchase-invoice-reconciliation.mjs"]
+
+  # One-shot, MANUAL y previo a volver al código anterior: traduce los estados
+  # nuevos a `needs_review`. No elimina facturas, recepciones ni vínculos.
+  prepare-rollback-invoice-reconciliation:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+    command: ["node", "scripts/rollback-purchase-invoice-reconciliation-statuses.mjs"]
 
   # One-shot, MANUAL: Bootstrap Base Preventiva 2026 (PDTP).
   # Corre solo cuando se necesita publicar o actualizar la base normativa.

@@ -28,15 +28,24 @@ run_timed() {
   local label="$1"
   shift
   local started_seconds=$SECONDS
+  local status
 
   echo "==> $label"
-  if "$@"; then
-    echo "    completed in $(format_duration "$((SECONDS - started_seconds))")"
-  else
-    local status=$?
+  # Ejecutar un comando como condición de `if` desactiva `errexit` también
+  # dentro de funciones shell llamadas desde aquí. El subshell reactiva `-e`
+  # para que un pg_dump, una migración o un healthcheck fallen en el primer
+  # comando no exitoso; afuera capturamos el estado para poder informar tiempo.
+  set +e
+  (set -e; "$@")
+  status=$?
+  set -e
+
+  if [ "$status" -ne 0 ]; then
     echo "    failed after $(format_duration "$((SECONDS - started_seconds))")"
     return "$status"
   fi
+
+  echo "    completed in $(format_duration "$((SECONDS - started_seconds))")"
 }
 
 run_in_prod() {
@@ -148,12 +157,11 @@ run_timed "Diagnóstico de conciliación OC-factura (previo a migrar)" run_in_pr
 
 run_timed "Applying migrations" run_in_prod docker compose run --rm migrate
 
-# La migración 0196 marca toda OC con factura como 'needs_review' con
-# fingerprint NULL. El backfill calcula el estado real, y ese fingerprint NULL
-# es justamente el marcador de "todavía no se recalculó": en los deploys
-# siguientes el conteo da 0 y nos ahorramos el FOR UPDATE sobre todas las OC.
+# El backfill recalcula tanto OC nunca proyectadas como huellas de una versión
+# anterior. La versión 2 introduce estados parciales, así que conservar una
+# huella v1 dejaría la pantalla y la cola con semántica antigua.
 echo "==> Proyección de conciliación OC-factura"
-pending_reconciliation="$( (cd "$PROD_DIR" && docker compose exec -T db psql -U "${POSTGRES_USER:-bodega}" -d "${POSTGRES_DB:-bodega}" -tAc "SELECT COUNT(*) FROM purchase_orders po WHERE po.invoice_reconciliation_fingerprint IS NULL AND EXISTS (SELECT 1 FROM purchase_order_invoices poi WHERE poi.purchase_order_id = po.id)" 2>/dev/null | tr -d '[:space:]') || true)"
+pending_reconciliation="$( (cd "$PROD_DIR" && docker compose exec -T db psql -U "${POSTGRES_USER:-bodega}" -d "${POSTGRES_DB:-bodega}" -tAc "SELECT COUNT(*) FROM purchase_orders po WHERE (po.invoice_reconciliation_fingerprint IS NULL OR po.invoice_reconciliation_fingerprint NOT LIKE 'v2:%') AND EXISTS (SELECT 1 FROM purchase_order_invoices poi WHERE poi.purchase_order_id = po.id)" 2>/dev/null | tr -d '[:space:]') || true)"
 case "$pending_reconciliation" in
   ''|*[!0-9]*)
     echo "    no se pudo contar OC pendientes; se ejecuta el backfill igual (es idempotente)"
