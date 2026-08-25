@@ -215,7 +215,7 @@ export default async function OcDetailPage({
   // El RUT se compara en memoria con cleanRut() y no en SQL, para usar
   // exactamente la misma normalización que el conciliador — `suppliers.rut` se
   // ingresa a mano y no siempre trae el mismo formato que el portal.
-  // El acotado por proveedor y por fecha vive en `selectDteCandidates`, con sus
+  // El acotado por proveedor y por fecha vive en `assessDteCandidates`, con sus
   // pruebas: la primera versión filtraba sólo por RUT y ofrecía documentos que
   // no podían pertenecer a la orden. Acá sólo se estrecha lo barato en SQL.
   // `createdAt` se guarda como texto UTC (mode: "string"). Se convierte a la
@@ -237,7 +237,7 @@ export default async function OcDetailPage({
         ),
         columns: {
           id: true, tipoDte: true, folio: true, rutEmisor: true,
-          razonSocialEmisor: true, montoTotal: true, fechaEmision: true, estadoSii: true,
+          razonSocialEmisor: true, montoTotal: true, fechaEmision: true,
           lineEnrichmentStatus: true, lineEnrichedAt: true,
         },
         orderBy: (d, { desc: descOrder }) => [descOrder(d.fechaEmision)],

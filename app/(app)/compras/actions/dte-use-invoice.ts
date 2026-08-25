@@ -2,14 +2,17 @@
 
 import { requirePermission } from "@/lib/auth/can"
 import { db } from "@/db"
-import { dteDocumentItems } from "@/db/schema"
+import { dteDocumentItems, dteDocuments, purchaseOrders, suppliers } from "@/db/schema"
 import { eq } from "drizzle-orm"
+import { localDateToISO } from "@/lib/sst/date"
+import { dteInvoiceRejection } from "@/lib/services/purchasing-module/dte-candidates"
 import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import { createPurchaseOrderInvoiceFromDte } from "@/lib/services/purchasing"
 import { getDteDocumentPdf } from "@/lib/services/dte-portal/purchase-document-pdf"
 import { logger } from "@/lib/logger"
 import { assertOrderAccess } from "../actions.helpers"
+import { dbErrMsg } from "./helpers"
 import { downloadDteDocumentXml } from "./dte-download-xml"
 import { persistInvoicePdf, removeInvoiceAttachment } from "../invoice-attachments"
 import { enrichDteDocumentLines } from "@/lib/services/dte-portal/purchase-document-xml"
@@ -67,6 +70,37 @@ export async function attachDteAsInvoice(
   }
   if (accessError) return { ok: false, message: accessError.message ?? "No se pudo acceder a la orden" }
 
+  // Prechequeo con el MISMO predicado que aplica la transacción, no una copia:
+  // `dteInvoiceRejection` vive en un solo lugar. Acá corre sin lock y por eso no
+  // es la autoridad —entre este SELECT y el commit alguien más puede tomar el
+  // DTE—, pero corta antes el caso frecuente (documento ya usado, de otro
+  // proveedor o anterior a la orden), que si no se descubría después de dos
+  // viajes al portal y de escribir el PDF en disco para borrarlo enseguida.
+  const [dte, [orderContext]] = await Promise.all([
+    db.query.dteDocuments.findFirst({
+      where: eq(dteDocuments.id, input.dteDocumentId),
+      columns: {
+        tipoDte: true,
+        rutEmisor: true,
+        fechaEmision: true,
+        purchaseOrderInvoiceId: true,
+        fuelLoadId: true,
+      },
+    }),
+    db
+      .select({ createdAt: purchaseOrders.createdAt, supplierRut: suppliers.rut })
+      .from(purchaseOrders)
+      .leftJoin(suppliers, eq(suppliers.id, purchaseOrders.supplierId))
+      .where(eq(purchaseOrders.id, input.purchaseOrderId)),
+  ])
+  if (!orderContext) return { ok: false, message: "Orden de compra no encontrada" }
+  const rejection = dteInvoiceRejection(
+    dte,
+    orderContext.supplierRut,
+    localDateToISO(new Date(orderContext.createdAt)),
+  )
+  if (rejection) return { ok: false, message: rejection }
+
   let xml: Awaited<ReturnType<typeof downloadDteDocumentXml>>
   try {
     xml = await downloadDteDocumentXml(input.dteDocumentId)
@@ -78,8 +112,12 @@ export async function attachDteAsInvoice(
     })
     return { ok: false, message: "No se pudo verificar el XML del DTE" }
   }
-  if (!xml.ok || !xml.detail.tipoDte || !xml.detail.issueDate || !xml.detail.supplierRut) {
-    return { ok: false, message: "No se pudo verificar el XML del DTE" }
+  // `downloadDteDocumentXml` ya trae el motivo real ("pertenece a otra empresa
+  // del portal", "no corresponde a este documento"): decirlo evita que el
+  // operador reintente contra una causa que no va a cambiar sola.
+  if (!xml.ok) return { ok: false, message: xml.error || "No se pudo verificar el XML del DTE" }
+  if (!xml.detail.tipoDte || !xml.detail.issueDate || !xml.detail.supplierRut) {
+    return { ok: false, message: "El XML del DTE no trae tipo, fecha o RUT del emisor" }
   }
 
   let persistedLines = await db.query.dteDocumentItems.findMany({
@@ -142,14 +180,20 @@ export async function attachDteAsInvoice(
         subtotal: item.amount,
       })),
     }, serviceWorksiteScope(session))
-  } catch {
+  } catch (error) {
     await removeInvoiceAttachment(persisted.absolutePath)
     logger.error("[attachDteAsInvoice] attach failed", {
       code: "DTE_INVOICE_ATTACH_FAILED",
       purchaseOrderId: input.purchaseOrderId,
       dteDocumentId: input.dteDocumentId,
     })
-    return { ok: false, message: "No se pudo adjuntar este DTE" }
+    // El servicio lanza sus rechazos con el texto que el operador necesita
+    // ("ya existe una factura con ese folio", "no puedes asociar dos líneas al
+    // mismo ítem", "el alias contradice uno confirmado"): casi todos se
+    // arreglan desde el mismo diálogo. Un mensaje único los volvía a todos un
+    // callejón sin salida. `dbErrMsg` deja pasar el error de negocio y sigue
+    // tapando los del driver, que publicarían el SQL y la fila.
+    return { ok: false, message: dbErrMsg(error, "No se pudo adjuntar este DTE") }
   }
 
   revalidateOperationalViews(["/compras", `/compras/${input.purchaseOrderId}`])

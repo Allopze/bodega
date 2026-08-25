@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import { promises as fs } from "node:fs"
 import path from "node:path"
 import postgres from "postgres"
 import { drizzle } from "drizzle-orm/postgres-js"
@@ -1494,6 +1495,9 @@ async function main() {
     createdAt: now,
     updatedAt: now,
   })
+  await db.update(schema.dteDocuments)
+    .set(await cacheCandidateDteFiles())
+    .where(eq(schema.dteDocuments.id, "dte-e2e-candidato-oc"))
 
   // Advance the OC sequence past the fixture code (OC-2026-0001) so the
   // first real app call gets OC-2026-0002 and doesn't collide.
@@ -2202,6 +2206,49 @@ async function main() {
   })
 
   await client.end()
+}
+
+/**
+ * Deja en el caché local el XML y el PDF del DTE candidato, y apunta la fila a
+ * ellos.
+ *
+ * Sin esto, "Confirmar y usar DTE" sale a FacturaEnLínea a buscar ambos
+ * archivos y el flujo completo era inejecutable en E2E: la prueba llegaba hasta
+ * ver el botón y se detenía, así que el camino de servidor —validación bajo
+ * lock, resoluciones de línea, vínculo del DTE— no lo ejercitaba nada.
+ * `getPurchaseDteXmlDetail` y `getDteDocumentPdf` prefieren el caché, así que
+ * basta con poblarlo: no se simula ningún módulo.
+ *
+ * La identidad del XML tiene que calzar con la fila (tipo, folio, RUT y monto)
+ * o `assertSameIdentity` lo rechaza, que es justo lo que debe hacer.
+ */
+async function cacheCandidateDteFiles() {
+  const { createDtePath, resolveDteDir } = await import("../lib/storage/config")
+  const { jsPDF } = await import("jspdf")
+
+  const xml = '<?xml version="1.0" encoding="ISO-8859-1"?><EnvDTE><SetDTE><DTE><Documento>'
+    + '<Encabezado><IdDoc><TipoDTE>33</TipoDTE><Folio>900004</Folio><FchEmis>2026-07-18</FchEmis></IdDoc>'
+    + '<Emisor><RUTEmisor>76.000.000-0</RUTEmisor><RznSoc>Proveedor E2E</RznSoc></Emisor>'
+    + '<Totales><MntNeto>5000</MntNeto><IVA>950</IVA><MntTotal>5950</MntTotal></Totales></Encabezado>'
+    + '<Detalle><NroLinDet>1</NroLinDet><CdgItem><TpoCodigo>INT1</TpoCodigo><VlrCodigo>PROD-E2E</VlrCodigo></CdgItem>'
+    + '<NmbItem>Insumo recibido sin factura E2E</NmbItem><QtyItem>5</QtyItem><UnmdItem>unidad</UnmdItem>'
+    + '<PrcItem>1000</PrcItem><MontoItem>5000</MontoItem></Detalle>'
+    + '</Documento></DTE></SetDTE></EnvDTE>'
+
+  // El validador no se conforma con la firma "%PDF": abre el catálogo y exige
+  // al menos una página. jsPDF ya es dependencia de la app y produce uno real.
+  const pdf = new jsPDF()
+  pdf.text("DTE 33 N° 900004 — Proveedor E2E", 14, 20)
+
+  const dir = resolveDteDir()
+  await fs.mkdir(dir, { recursive: true })
+  await fs.writeFile(path.join(dir, "e2e-candidato-oc.xml"), xml, "latin1")
+  await fs.writeFile(path.join(dir, "e2e-candidato-oc.pdf"), Buffer.from(pdf.output("arraybuffer")))
+
+  return {
+    xmlPath: createDtePath("e2e-candidato-oc.xml"),
+    pdfPath: createDtePath("e2e-candidato-oc.pdf"),
+  }
 }
 
 async function ensureDatabaseExists(databaseUrl: string) {

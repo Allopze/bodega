@@ -1,10 +1,13 @@
 import { describe, it, expect } from "vitest"
-import { assessDteCandidates, selectDteCandidates } from "./dte-candidates"
+import { assessDteCandidates } from "./dte-candidates"
 
 const doc = (id: string, rutEmisor: string, fechaEmision: string, montoTotal = 1000) =>
   ({ id, rutEmisor, fechaEmision, montoTotal })
 
-describe("selectDteCandidates", () => {
+/** Sin ítems ni alias: acá sólo se ejercita el acotado proveedor + fecha. */
+const sinEvidencia = { orderItems: [], aliases: [] }
+
+describe("assessDteCandidates · a quién se le ofrece", () => {
   // Regresión del caso real: OC de APRO creada el 2026-08-07 ofrecía las 10
   // facturas de julio del proveedor, todas anteriores a la orden.
   it("descarta los DTE emitidos antes de que la orden existiera", () => {
@@ -13,7 +16,7 @@ describe("selectDteCandidates", () => {
       doc("jul-01", "86887200-4", "2026-07-01"),
     ]
 
-    const result = selectDteCandidates(docs, { supplierRut: "86887200-4", createdOn: "2026-08-07" })
+    const result = assessDteCandidates(docs, { ...sinEvidencia, supplierRut: "86887200-4", createdOn: "2026-08-07" })
 
     expect(result).toEqual([])
   })
@@ -21,7 +24,7 @@ describe("selectDteCandidates", () => {
   it("acepta el DTE emitido el mismo día en que se creó la orden", () => {
     const docs = [doc("mismo-dia", "86887200-4", "2026-08-07")]
 
-    const result = selectDteCandidates(docs, { supplierRut: "86887200-4", createdOn: "2026-08-07" })
+    const result = assessDteCandidates(docs, { ...sinEvidencia, supplierRut: "86887200-4", createdOn: "2026-08-07" })
 
     expect(result.map((r) => r.doc.id)).toEqual(["mismo-dia"])
   })
@@ -32,7 +35,7 @@ describe("selectDteCandidates", () => {
       doc("ajeno", "96542490-3", "2026-08-10"),
     ]
 
-    const result = selectDteCandidates(docs, { supplierRut: "86887200-4", createdOn: "2026-08-01" })
+    const result = assessDteCandidates(docs, { ...sinEvidencia, supplierRut: "86887200-4", createdOn: "2026-08-01" })
 
     expect(result.map((r) => r.doc.id)).toEqual(["propio"])
   })
@@ -40,7 +43,7 @@ describe("selectDteCandidates", () => {
   it("normaliza el RUT antes de comparar: suppliers.rut se ingresa a mano", () => {
     const docs = [doc("con-puntos", "86887200-4", "2026-08-10")]
 
-    const result = selectDteCandidates(docs, { supplierRut: "86.887.200-4", createdOn: "2026-08-01" })
+    const result = assessDteCandidates(docs, { ...sinEvidencia, supplierRut: "86.887.200-4", createdOn: "2026-08-01" })
 
     expect(result.map((r) => r.doc.id)).toEqual(["con-puntos"])
   })
@@ -48,16 +51,16 @@ describe("selectDteCandidates", () => {
   it("no ofrece nada cuando el proveedor de la OC no tiene RUT cargado", () => {
     const docs = [doc("cualquiera", "86887200-4", "2026-08-10")]
 
-    expect(selectDteCandidates(docs, { supplierRut: null, createdOn: "2026-08-01" })).toEqual([])
-    expect(selectDteCandidates(docs, { supplierRut: "", createdOn: "2026-08-01" })).toEqual([])
+    expect(assessDteCandidates(docs, { ...sinEvidencia, supplierRut: null, createdOn: "2026-08-01" })).toEqual([])
+    expect(assessDteCandidates(docs, { ...sinEvidencia, supplierRut: "", createdOn: "2026-08-01" })).toEqual([])
   })
 
-  it("recorta la lista y conserva el orden recibido", () => {
+  it("recorta la lista al tope pedido", () => {
     const docs = Array.from({ length: 30 }, (_, i) =>
       doc(`d${i}`, "86887200-4", "2026-08-10"),
     )
 
-    const result = selectDteCandidates(docs, { supplierRut: "86887200-4", createdOn: "2026-08-01", limit: 5 })
+    const result = assessDteCandidates(docs, { ...sinEvidencia, supplierRut: "86887200-4", createdOn: "2026-08-01", limit: 5 })
 
     expect(result.map((r) => r.doc.id)).toEqual(["d0", "d1", "d2", "d3", "d4"])
   })
@@ -66,36 +69,43 @@ describe("selectDteCandidates", () => {
 // La operación factura una OC por DTE, así que el documento correcto trae el
 // monto que la orden espera facturar. Se usa para ordenar y marcar, nunca para
 // filtrar: un flete o un redondeo no puede sacar el documento de la lista.
-describe("selectDteCandidates · monto esperado", () => {
+describe("assessDteCandidates · monto esperado", () => {
   const docs = [
     doc("lejano", "86887200-4", "2026-08-10", 875245),
     doc("exacto", "86887200-4", "2026-08-09", 28084),
     doc("cercano", "86887200-4", "2026-08-08", 28100),
   ]
-  const filtro = { supplierRut: "86887200-4", createdOn: "2026-08-01", expectedAmount: 28084 }
+  const filtro = { ...sinEvidencia, supplierRut: "86887200-4", createdOn: "2026-08-01", expectedAmount: 28084 }
 
   it("pone primero el monto que calza exacto", () => {
-    const result = selectDteCandidates(docs, filtro)
+    const result = assessDteCandidates(docs, filtro)
     expect(result.map((r) => r.doc.id)).toEqual(["exacto", "cercano", "lejano"])
   })
 
   it("marca sólo el que calza dentro de la tolerancia", () => {
-    const result = selectDteCandidates(docs, filtro)
+    const result = assessDteCandidates(docs, filtro)
     expect(result.map((r) => r.amountMatches)).toEqual([true, false, false])
   })
 
   it("no descarta los que no calzan: la factura parcial es legítima", () => {
-    expect(selectDteCandidates(docs, filtro)).toHaveLength(3)
+    expect(assessDteCandidates(docs, filtro)).toHaveLength(3)
   })
 
-  it("sin monto esperado conserva el orden recibido y no marca nada", () => {
-    const result = selectDteCandidates(docs, { supplierRut: "86887200-4", createdOn: "2026-08-01" })
+  // Sin monto esperado los tres empatan en todo lo anterior y el desempate
+  // legítimo es la fecha. Restar los dos `Infinity` daba NaN y se lo saltaba.
+  it("sin monto esperado desempata por fecha de emisión, de la más nueva a la más vieja", () => {
+    // Entrada deliberadamente desordenada: con el NaN el comparador se leía como
+    // "iguales" y la lista salía tal cual entró, pasando la prueba por accidente.
+    const desordenados = [docs[2]!, docs[0]!, docs[1]!]
+
+    const result = assessDteCandidates(desordenados, { ...sinEvidencia, supplierRut: "86887200-4", createdOn: "2026-08-01" })
+
     expect(result.map((r) => r.doc.id)).toEqual(["lejano", "exacto", "cercano"])
     expect(result.every((r) => r.amountMatches === false)).toBe(true)
   })
 
   it("ignora un monto esperado no positivo", () => {
-    const result = selectDteCandidates(docs, { ...filtro, expectedAmount: 0 })
+    const result = assessDteCandidates(docs, { ...filtro, expectedAmount: 0 })
     expect(result.map((r) => r.doc.id)).toEqual(["lejano", "exacto", "cercano"])
   })
 })

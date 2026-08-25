@@ -25,6 +25,7 @@ import type { InvoiceEvidenceStatus, InvoiceReconciliationEvidence } from "@/lib
 import { InvoiceReconciliationCard } from "./invoice-reconciliation-card"
 import { addInvoiceAction, deleteInvoiceAction } from "../invoice-actions"
 import { attachDteAsInvoice } from "../actions/dte-use-invoice"
+import { analyzeDteCandidateLines } from "../actions/dte-analyze-lines"
 import { dteTipoLabel } from "@/lib/services/dte-portal/labels"
 import type { DteCandidateConfidence, DteCandidateMatchType } from "@/lib/services/purchasing-module/dte-candidates"
 
@@ -426,9 +427,24 @@ function AddInvoiceForm({
 
   const refreshCandidates = React.useCallback((source: "button" | "focus") => {
     lastRefreshAt.current = Date.now()
-    setRefreshMessage(source === "button" ? "Actualizando sugerencias…" : "Revisando nuevos DTE…")
-    startRefresh(() => router.refresh())
-  }, [router])
+    setRefreshMessage(source === "button" ? "Analizando DTE pendientes…" : "Revisando nuevos DTE…")
+    startRefresh(async () => {
+      // Sólo el clic sale al portal. Hacerlo también al volver a la pestaña
+      // convertiría un gesto pasivo en descargas con las credenciales de la
+      // empresa cada vez que alguien cambia de ventana.
+      if (source === "button") {
+        const analysis = await analyzeDteCandidateLines(purchaseOrderId)
+        setRefreshMessage(analysis.message)
+        if (!analysis.ok) {
+          toast.error(analysis.message)
+          return
+        }
+      } else {
+        setRefreshMessage("")
+      }
+      router.refresh()
+    })
+  }, [router, purchaseOrderId])
 
   React.useEffect(() => {
     lastRefreshAt.current = Date.now()
@@ -697,14 +713,14 @@ function AddInvoiceForm({
               Actualizar sugerencias
             </Button>
           </div>
+          {/* El resultado del análisis manda sobre el estado de reposo: decir
+              "sugerencias actualizadas" después de pedirlo tapaba justo lo que
+              hay que saber (cuántos quedaron sin XML, cuántos faltan). */}
           <p aria-live="polite" className="mt-0.5 min-h-4 text-[11px] text-(--color-text-subtle)">
             {(refreshMessage
-              ? refreshPending
-                ? refreshMessage
-                : `Sugerencias actualizadas: ${dteCandidates.length} candidato(s).`
-              : lastCandidateAnalysis
-              ? `Último análisis: ${formatDateTime(lastCandidateAnalysis)}. Se actualizan al volver a la pestaña después de 60 segundos.`
-              : "Pendientes de análisis. Se actualizan al volver a esta pestaña después de 60 segundos.")}
+              || (lastCandidateAnalysis
+                ? `Último análisis de líneas: ${formatDateTime(lastCandidateAnalysis)}.`
+                : "Sin análisis de líneas todavía: pulsa «Actualizar sugerencias» para pedírselo al portal."))}
           </p>
           <p className="mt-0.5 text-xs text-(--color-text-subtle)">
             Llegaron por el portal tributario desde que se creó esta orden. Usa uno para registrar la
@@ -716,7 +732,10 @@ function AddInvoiceForm({
               <DteCandidateRow
                 key={doc.id}
                 doc={doc}
-                usePending={dteOperation.pending}
+                // `pending` es del formulario entero: sin acotarlo, adjuntar uno
+                // ponía "Adjuntando…" en las quince filas a la vez.
+                usePending={dteOperation.pending && selectedDte?.id === doc.id}
+                disabled={dteOperation.pending}
                 onUse={() => openDteResolution(doc)}
               />
               ))}
@@ -993,11 +1012,30 @@ function DteResolutionDialog({
         </DialogHeader>
 
         {doc?.lines.length ? (
-          <ul className="space-y-3">
+          <>
+            {doc.enrichmentStatus !== "ready" && (
+              <div role="alert" className="rounded-(--radius-lg) border border-(--color-warning-line) bg-(--color-warning-tint) p-3 text-xs text-(--color-warning-ink)">
+                {/* Con el análisis fallido las filas persistidas siguen ahí pero
+                    sin sugerencias: el diálogo se veía idéntico a "se analizó y
+                    no coincidió nada" y confirmarlo dejaba la factura sin un solo
+                    vínculo de línea, descuadrando la conciliación en silencio. */}
+                El análisis de líneas de este DTE {doc.enrichmentStatus === "failed" ? "falló" : "no ha terminado"}.
+                Lo de abajo puede estar incompleto o desactualizado: revisa cada asociación antes de confirmar.
+              </div>
+            )}
+            <ul className="space-y-3">
             {doc.lines.map((line) => {
               const proposed = doc.proposedLinks.find((link) => link.dteItemId === line.id)
               const resolution = resolutions[line.id]
               const selectedOc = ocItems.find((item) => item.id === resolution?.purchaseOrderItemId)
+              // El servicio rechaza dos líneas DTE sobre el mismo ítem de OC.
+              // Ofrecerlo igual convertía un error evitable de la pantalla en un
+              // viaje al servidor que bota todo el adjunto.
+              const takenByOtherLine = new Set(
+                Object.entries(resolutions)
+                  .filter(([lineId, value]) => lineId !== line.id && value.purchaseOrderItemId)
+                  .map(([, value]) => value.purchaseOrderItemId as string),
+              )
               return (
                 <li key={line.id} className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface-2) p-3">
                   <div className="flex flex-wrap items-start justify-between gap-2">
@@ -1008,9 +1046,21 @@ function DteResolutionDialog({
                         {line.productCode ? ` · Código ${line.productCode}` : ""}
                       </p>
                     </div>
-                    <Badge variant={proposed?.matchType === "supplier_alias" ? "success" : proposed?.matchType === "unit_mismatch" || proposed?.matchType === "ambiguous" ? "warning" : "default"}>
-                      {dteMatchLabel(proposed?.matchType ?? "none")}
-                    </Badge>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Badge variant={proposed?.matchType === "supplier_alias" ? "success" : proposed?.matchType === "unit_mismatch" || proposed?.matchType === "ambiguous" ? "warning" : "default"}>
+                        {dteMatchLabel(proposed?.matchType ?? "none")}
+                      </Badge>
+                      {/* La cifra existía en `proposedLinks` y sólo se resumía
+                          en la fila ("N cantidad(es) excedida(s)"), lejos del
+                          select donde se decide. Facturar más de lo que queda
+                          por facturar es el error caro de esta pantalla. */}
+                      {proposed?.quantityStatus === "over" && (
+                        <Badge variant="warning">Excede lo pendiente</Badge>
+                      )}
+                      {proposed?.quantityStatus === "under" && (
+                        <Badge variant="info">Cubre parte de la línea</Badge>
+                      )}
+                    </div>
                   </div>
                   <div className="mt-2">
                     <OptionSelect
@@ -1020,7 +1070,10 @@ function DteResolutionDialog({
                       options={[
                         ...ocItems.map((item) => ({
                           value: item.id,
-                          label: `${item.productName} · ${item.quantity} ${item.unitOfMeasure}`,
+                          label: takenByOtherLine.has(item.id)
+                            ? `${item.productName} · ya asociado a otra línea`
+                            : `${item.productName} · ${item.quantity} ${item.unitOfMeasure}`,
+                          disabled: takenByOtherLine.has(item.id),
                         })),
                         { value: "__unlinked", label: "Dejar explícitamente sin vínculo" },
                       ]}
@@ -1040,10 +1093,16 @@ function DteResolutionDialog({
                 </li>
               )
             })}
-          </ul>
+            </ul>
+          </>
         ) : (
-          <div className="rounded-(--radius-lg) border border-(--color-warning-line) bg-(--color-warning-tint) p-3 text-xs text-(--color-warning-ink)">
-            Este DTE aún está pendiente de análisis de líneas. El servidor volverá a verificar el XML antes de adjuntarlo.
+          <div role="alert" className="rounded-(--radius-lg) border border-(--color-warning-line) bg-(--color-warning-tint) p-3 text-xs text-(--color-warning-ink)">
+            {/* Decía sólo "el servidor volverá a verificar el XML" y callaba la
+                mitad que importa: sin líneas que revisar, éste es el único
+                camino del flujo donde nadie confirma las asociaciones. */}
+            Este DTE aún no tiene análisis de líneas. Al confirmar, el servidor descargará el XML
+            y <strong>vinculará las líneas automáticamente</strong> por código y nombre, sin esta revisión.
+            Podrás corregirlo después quitando la factura y volviéndola a adjuntar.
           </div>
         )}
 
@@ -1077,10 +1136,14 @@ function DteCandidateRow({
   doc,
   onUse,
   usePending,
+  disabled,
 }: {
   doc: DteCandidate
   onUse: () => void
+  /** Esta fila es la que se está adjuntando. */
   usePending: boolean
+  /** Hay otro adjunto en curso: ninguna fila acepta abrir su diálogo. */
+  disabled: boolean
 }) {
   return (
     <li className="rounded-(--radius-md) bg-(--color-surface) px-2.5 py-1.5">
@@ -1119,7 +1182,7 @@ function DteCandidateRow({
             variant="secondary"
             size="sm"
             loading={usePending}
-            disabled={usePending}
+            disabled={usePending || disabled}
             onClick={onUse}
           >
             {usePending ? "Adjuntando…" : "Usar este DTE"}

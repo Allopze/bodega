@@ -16,7 +16,7 @@ import {
 } from "./invoice-reconciliation"
 import { matchInvoiceItemsToPurchaseOrderItems } from "./invoice-item-matching"
 import { getPurchaseOrderInvoiceReconciliation, persistPurchaseOrderInvoiceReconciliationTx, reconciliationWarnings } from "./invoice-reconciliation-service"
-import { normalizeSupplierProductCode, normalizeSupplierProductName } from "./dte-candidates"
+import { dteInvoiceRejection, normalizeSupplierProductCode, normalizeSupplierProductName } from "./dte-candidates"
 
 /* ── Purchase Order Invoices ─────────────────────────────────────────────────── */
 
@@ -408,13 +408,18 @@ async function persistConfirmedSupplierAliasesTx(
   const productByOrderItem = new Map(orderItems.map((item) => [item.id, item.productId]))
   const lineById = new Map(documentLines.map((line) => [line.id, line]))
 
+  // Los rechazos de acá abortan TODA la factura, así que nombran la línea: el
+  // operador pudo marcar varios "Recordar" en el mismo diálogo y sin el nombre
+  // del producto no sabe cuál desmarcar para poder seguir.
   for (const resolution of remembered) {
     const productId = productByOrderItem.get(resolution.purchaseOrderItemId)
     const line = lineById.get(resolution.dteDocumentItemId)
     if (!productId || !line) throw new Error("Sólo se pueden recordar correspondencias con productos de catálogo")
     const normalizedCode = normalizeSupplierProductCode(line.productCode) || null
     const normalizedName = normalizeSupplierProductName(line.productName) || null
-    if (!normalizedCode && !normalizedName) throw new Error("La línea no contiene un alias utilizable")
+    if (!normalizedCode && !normalizedName) {
+      throw new Error(`La línea "${line.productName}" no contiene un alias utilizable: desmarca "Recordar" en ella`)
+    }
 
     const identityPredicates = [
       normalizedCode ? eq(supplierProductAliases.normalizedCode, normalizedCode) : undefined,
@@ -428,7 +433,7 @@ async function persistConfirmedSupplierAliasesTx(
       columns: { productId: true },
     })
     if (conflicting.some((alias) => alias.productId !== productId)) {
-      throw new Error("La correspondencia elegida contradice un alias confirmado previamente")
+      throw new Error(`"${line.productName}" ya está confirmado para otro producto: desmarca "Recordar" en esa línea o corrige el alias`)
     }
     if (conflicting.length > 0) continue
 
@@ -453,7 +458,7 @@ async function persistConfirmedSupplierAliasesTx(
         columns: { productId: true },
       })
       if (!winner || winner.productId !== productId) {
-        throw new Error("La correspondencia fue confirmada para otro producto en paralelo")
+        throw new Error(`"${line.productName}" fue confirmado para otro producto en paralelo: desmarca "Recordar" en esa línea y vuelve a intentar`)
       }
     }
   }
@@ -517,15 +522,13 @@ async function validateDteForInvoiceTx(
       .for("update"),
   ])
 
-  if (!dte || !supplier?.rut) throw new Error("El DTE o proveedor ya no está disponible")
-  if (!['33', '34'].includes(dte.tipoDte)) throw new Error("Este tipo de DTE no puede registrarse como factura de OC")
-  if (dte.purchaseOrderInvoiceId || dte.fuelLoadId) throw new Error("Este DTE ya fue usado por otra operación")
-  if (cleanRut(dte.rutEmisor) !== cleanRut(supplier.rut)) {
-    throw new Error("El emisor del DTE no corresponde al proveedor de esta OC")
-  }
-  if (dte.fechaEmision < localDateToISO(new Date(order.createdAt))) {
-    throw new Error("El DTE fue emitido antes de crear esta orden")
-  }
+  // Mismo predicado que aplica la acción antes de bajar nada del portal; acá es
+  // la autoridad, porque corre con el DTE bloqueado (`FOR UPDATE`).
+  const rejection = dteInvoiceRejection(dte, supplier?.rut, localDateToISO(new Date(order.createdAt)))
+  if (rejection) throw new Error(rejection)
+  // El predicado ya descartó el documento ausente; el compilador no lo deduce
+  // de un string de vuelta.
+  if (!dte) throw new Error("El DTE o proveedor ya no está disponible")
 
   const xmlFolio = parseDteFolio(attachment.dteIdentity.invoiceNumber)
   const hasSameIdentity = (

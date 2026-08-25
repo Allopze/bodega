@@ -10,10 +10,19 @@ const mockCreatePurchaseOrderInvoiceFromDte = vi.fn()
 const mockRevalidateOperationalViews = vi.fn()
 const mockLoggerError = vi.fn()
 const mockDteLinesFindMany = vi.fn()
+const mockDteDocumentFindFirst = vi.fn()
+const mockOrderContextRows = vi.fn()
 const mockEnrichDteDocumentLines = vi.fn()
 
 vi.mock("@/db", () => ({
-  db: { query: { dteDocumentItems: { findMany: (...args: unknown[]) => mockDteLinesFindMany(...args) } } },
+  db: {
+    query: {
+      dteDocumentItems: { findMany: (...args: unknown[]) => mockDteLinesFindMany(...args) },
+      dteDocuments: { findFirst: (...args: unknown[]) => mockDteDocumentFindFirst(...args) },
+    },
+    // OC + RUT del proveedor para el prechequeo de elegibilidad.
+    select: () => ({ from: () => ({ leftJoin: () => ({ where: () => mockOrderContextRows() }) }) }),
+  },
 }))
 vi.mock("@/lib/services/dte-portal/purchase-document-xml", () => ({
   enrichDteDocumentLines: (...args: unknown[]) => mockEnrichDteDocumentLines(...args),
@@ -24,6 +33,9 @@ vi.mock("@/lib/auth/can", () => ({
 }))
 vi.mock("../actions.helpers", () => ({
   assertOrderAccess: (...args: unknown[]) => mockAssertOrderAccess(...args),
+}))
+vi.mock("./helpers", async () => ({
+  dbErrMsg: (await vi.importActual<typeof import("@/lib/action-error")>("@/lib/action-error")).safeActionMessage,
 }))
 vi.mock("./dte-download-xml", () => ({
   downloadDteDocumentXml: (...args: unknown[]) => mockDownloadDteDocumentXml(...args),
@@ -91,6 +103,19 @@ describe("attachDteAsInvoice", () => {
       lineNumber: 1,
     }])
     mockEnrichDteDocumentLines.mockResolvedValue({ ok: true, lineCount: 1 })
+    mockDteDocumentFindFirst.mockResolvedValue({
+      tipoDte: "33",
+      rutEmisor: "76987654-3",
+      fechaEmision: "2026-07-28",
+      purchaseOrderInvoiceId: null,
+      fuelLoadId: null,
+    })
+    mockOrderContextRows.mockReturnValue([{
+      createdAt: "2026-07-01T12:00:00.000Z",
+      // El portal entrega el RUT sin puntos y `suppliers.rut` se ingresa a
+      // mano: el predicado normaliza antes de comparar.
+      supplierRut: "76.987.654-3",
+    }])
   })
 
   it("registers and attaches the selected DTE without requiring a manual upload", async () => {
@@ -120,12 +145,101 @@ describe("attachDteAsInvoice", () => {
   })
 
   it("removes the invoice-owned PDF when the atomic database write fails", async () => {
-    mockCreatePurchaseOrderInvoiceFromDte.mockRejectedValue(new Error("DTE ya vinculado"))
+    mockCreatePurchaseOrderInvoiceFromDte.mockRejectedValue(new Error("Ya existe una factura con ese folio para esta OC"))
+
+    const result = await attachDteAsInvoice({ purchaseOrderId: "oc-1", dteDocumentId: "dte-1" })
+
+    // El rechazo del servicio llega tal cual: casi todos se arreglan desde el
+    // mismo diálogo, y un mensaje único los volvía a todos un callejón sin salida.
+    expect(result).toEqual({ ok: false, message: "Ya existe una factura con ese folio para esta OC" })
+    expect(mockRemoveInvoiceAttachment).toHaveBeenCalledWith("/tmp/dte-33-45678.pdf")
+  })
+
+  it("no filtra al cliente el error del driver, que publicaría el SQL y la fila", async () => {
+    const driverError = Object.assign(new Error("Failed query: insert into ...\nparams: 119000"), {
+      query: "insert into purchase_order_invoices ...",
+    })
+    mockCreatePurchaseOrderInvoiceFromDte.mockRejectedValue(driverError)
 
     const result = await attachDteAsInvoice({ purchaseOrderId: "oc-1", dteDocumentId: "dte-1" })
 
     expect(result).toEqual({ ok: false, message: "No se pudo adjuntar este DTE" })
     expect(mockRemoveInvoiceAttachment).toHaveBeenCalledWith("/tmp/dte-33-45678.pdf")
+  })
+
+  it("corta un DTE ya usado antes de golpear el portal y escribir su PDF", async () => {
+    mockDteDocumentFindFirst.mockResolvedValue({
+      tipoDte: "33",
+      rutEmisor: "76987654-3",
+      fechaEmision: "2026-07-28",
+      purchaseOrderInvoiceId: "inv-otra-oc",
+      fuelLoadId: null,
+    })
+
+    const result = await attachDteAsInvoice({ purchaseOrderId: "oc-1", dteDocumentId: "dte-1" })
+
+    expect(result).toEqual({ ok: false, message: "Este DTE ya fue usado por otra operación" })
+    expect(mockDownloadDteDocumentXml).not.toHaveBeenCalled()
+    expect(mockGetDteDocumentPdf).not.toHaveBeenCalled()
+    expect(mockPersistInvoicePdf).not.toHaveBeenCalled()
+  })
+
+  it("rechaza un tipo de DTE que no puede ser factura de OC sin descargar nada", async () => {
+    mockDteDocumentFindFirst.mockResolvedValue({
+      tipoDte: "61",
+      rutEmisor: "76987654-3",
+      fechaEmision: "2026-07-28",
+      purchaseOrderInvoiceId: null,
+      fuelLoadId: null,
+    })
+
+    const result = await attachDteAsInvoice({ purchaseOrderId: "oc-1", dteDocumentId: "dte-1" })
+
+    expect(result).toEqual({ ok: false, message: "Este tipo de DTE no puede registrarse como factura de OC" })
+    expect(mockDownloadDteDocumentXml).not.toHaveBeenCalled()
+  })
+
+  it("corta un DTE de otro proveedor antes de descargar su XML", async () => {
+    mockDteDocumentFindFirst.mockResolvedValue({
+      tipoDte: "33",
+      rutEmisor: "96542490-3",
+      fechaEmision: "2026-07-28",
+      purchaseOrderInvoiceId: null,
+      fuelLoadId: null,
+    })
+
+    const result = await attachDteAsInvoice({ purchaseOrderId: "oc-1", dteDocumentId: "dte-1" })
+
+    expect(result).toEqual({ ok: false, message: "El emisor del DTE no corresponde al proveedor de esta OC" })
+    expect(mockDownloadDteDocumentXml).not.toHaveBeenCalled()
+  })
+
+  // Un proveedor no puede facturar una orden que todavía no existía.
+  it("corta un DTE anterior a la orden antes de descargar su XML", async () => {
+    mockDteDocumentFindFirst.mockResolvedValue({
+      tipoDte: "33",
+      rutEmisor: "76987654-3",
+      fechaEmision: "2026-06-30",
+      purchaseOrderInvoiceId: null,
+      fuelLoadId: null,
+    })
+
+    const result = await attachDteAsInvoice({ purchaseOrderId: "oc-1", dteDocumentId: "dte-1" })
+
+    expect(result).toEqual({ ok: false, message: "El DTE fue emitido antes de crear esta orden" })
+    expect(mockDownloadDteDocumentXml).not.toHaveBeenCalled()
+  })
+
+  it("dice por qué el XML no sirve en vez de un motivo genérico", async () => {
+    mockDownloadDteDocumentXml.mockResolvedValue({
+      ok: false,
+      error: "El XML de este documento pertenece a otra empresa del portal DTE",
+    })
+
+    const result = await attachDteAsInvoice({ purchaseOrderId: "oc-1", dteDocumentId: "dte-1" })
+
+    expect(result).toEqual({ ok: false, message: "El XML de este documento pertenece a otra empresa del portal DTE" })
+    expect(mockPersistInvoicePdf).not.toHaveBeenCalled()
   })
 
   it("returns a controlled result when XML retrieval fails unexpectedly", async () => {

@@ -36,6 +36,7 @@ import { chileClock, chilePeriod, previousChilePeriod } from "./chile-time"
 import { claimDteSyncStart } from "./sync-start-gate"
 import { clearDteSyncProgress, publishDteSyncProgress } from "./sync-progress"
 import { enrichDteDocumentLines } from "./purchase-document-xml"
+import { runWithConcurrency } from "@/lib/concurrency"
 
 /** Cada cuántos documentos se refresca el avance visible: ni una escritura por fila
  *  ni un salto de minutos en pantalla. */
@@ -265,6 +266,14 @@ export async function syncDteDocuments(
   // El XML enriquece la ingesta de cabeceras, pero no es condición para
   // conservar el libro tributario. Se reintentan fallos previos hasta tres
   // veces y sólo dos descargas corren en paralelo para cuidar el portal.
+  //
+  // `pending` entra al reintento junto con `failed`: es el DEFAULT de la
+  // columna, así que un documento cuya sincronización murió antes de llegar
+  // acá —o antes de que `enrichDteDocumentLines` alcanzara a marcar el fallo—
+  // se quedaba en ese estado sin que ningún reintento lo mirara nunca. En
+  // pantalla eso es un candidato "Pendiente de análisis" eterno, y la única
+  // salida era correr a mano `db:enrich-historical-dtes`. El tope de intentos
+  // sigue acotando el daño; el filtro por período acota el volumen.
   if (finalStatus !== "failed") {
     try {
       const retryable = await db.query.dteDocuments.findMany({
@@ -273,7 +282,7 @@ export async function syncDteDocuments(
           eq(dteDocuments.periodo, periodo),
           eq(dteDocuments.codEmp, codEmp),
           inArray(dteDocuments.tipoDte, ["33", "34"]),
-          eq(dteDocuments.lineEnrichmentStatus, "failed"),
+          inArray(dteDocuments.lineEnrichmentStatus, ["pending", "failed"]),
           lt(dteDocuments.lineEnrichmentAttempts, 3),
         ),
       })
@@ -579,21 +588,6 @@ async function upsertDteDocument(
   })
 
   return { status: "inserted", id }
-}
-
-async function runWithConcurrency<T>(
-  values: readonly T[],
-  concurrency: number,
-  task: (value: T) => Promise<void>,
-): Promise<void> {
-  let cursor = 0
-  await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, async () => {
-    while (cursor < values.length) {
-      const value = values[cursor]
-      cursor += 1
-      if (value !== undefined) await task(value)
-    }
-  }))
 }
 
 function currentPeriodo(): string {

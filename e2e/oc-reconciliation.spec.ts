@@ -128,4 +128,33 @@ test.describe("Conciliación OC-factura-recepción", () => {
     await expect(page.getByRole("heading", { name: "Adjuntar factura" })).toBeVisible({ timeout: 10_000 })
     await expect(page.locator("#invoice-number")).toHaveValue("GD-77123")
   })
+
+  // VA AL FINAL A PROPÓSITO: consume el DTE candidato y le pone factura a
+  // `oc-sin-factura-e2e`, así que las pruebas de arriba —que lo necesitan
+  // libre— ya corrieron. El archivo no es paralelo (`fullyParallel: false`) y
+  // este fixture no lo usa ningún otro spec.
+  //
+  // Hasta acá la cobertura llegaba a "el botón Confirmar existe": todo el
+  // camino de servidor (validación bajo lock, resoluciones de línea, vínculo
+  // del DTE, revalidación) no lo ejercitaba nada de punta a punta.
+  test("confirmar el diálogo registra la factura y saca el DTE del pozo", async ({ page }) => {
+    await page.goto(`/compras/${OC_SIN_FACTURA_ID}?tab=facturacion`)
+    await expect(page.getByText("Factura electrónica N° 900004")).toBeVisible({ timeout: 10_000 })
+
+    await page.getByRole("button", { name: "Usar este DTE" }).click()
+    const dialog = page.getByRole("dialog", { name: "Revisar asociaciones del DTE" })
+    await expect(dialog).toBeVisible()
+    await dialog.getByRole("button", { name: "Confirmar y usar DTE" }).click()
+
+    // El folio del XML, no uno tipeado: el servidor lo revalida contra la fila
+    // del portal antes de aceptarlo.
+    await expect(page.getByText("Factura 900004 adjuntada correctamente")).toBeVisible({ timeout: 20_000 })
+    await expect(dialog).toBeHidden()
+    await expect(page.getByRole("link", { name: "900004" })).toBeVisible({ timeout: 15_000 })
+
+    // Con una factura arriba, el alta se pliega: hay que abrirla para ver que
+    // el DTE ya no se ofrece —quedó vinculado a esta factura y salió del pozo—.
+    await page.locator("summary", { hasText: "Adjuntar factura" }).click()
+    await expect(page.getByText("No hay DTE elegibles sin registrar para esta orden")).toBeVisible({ timeout: 10_000 })
+  })
 })

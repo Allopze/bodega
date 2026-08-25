@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const mockAddInvoiceAction = vi.fn()
@@ -14,9 +14,14 @@ const mockUseDteAsInvoice = vi.fn()
 vi.mock("../actions/dte-use-invoice", () => ({
   attachDteAsInvoice: (...args: unknown[]) => mockUseDteAsInvoice(...args),
 }))
+
+const mockAnalyzeDteLines = vi.fn()
+vi.mock("../actions/dte-analyze-lines", () => ({
+  analyzeDteCandidateLines: (...args: unknown[]) => mockAnalyzeDteLines(...args),
+}))
 vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
-import { InvoicesSection } from "./invoices-section"
+import { InvoicesSection, type DteCandidate } from "./invoices-section"
 import { reconcileInvoiceEvidence } from "@/lib/services/purchasing-module/invoice-reconciliation"
 
 function emptyReconciliation(totalOC = 0) {
@@ -49,12 +54,52 @@ function candidate() {
   }
 }
 
+/** Candidato con evidencia de líneas ya persistida, como lo deja el análisis. */
+function enrichedCandidate(overrides: Partial<DteCandidate> = {}): DteCandidate {
+  return {
+    ...candidate(),
+    confidence: "medium" as const,
+    enrichmentStatus: "ready" as const,
+    lineEnrichedAt: "2026-08-24T10:00:00.000Z",
+    lines: [{
+      id: "dte-line:dte-1:1",
+      lineNumber: 1,
+      productCode: "CAS-01",
+      productName: "Casco amarillo",
+      unitOfMeasure: "UN",
+      quantity: 12,
+      unitPrice: 10000,
+      amount: 120000,
+    }],
+    proposedLinks: [{
+      dteItemId: "dte-line:dte-1:1",
+      purchaseOrderItemId: "oc-casco",
+      matchType: "sku" as const,
+      quantityStatus: "over" as const,
+    }],
+    explanation: { ...candidate().explanation, totalLines: 1, matchedLines: 1, quantityOverLines: 1 },
+    ...overrides,
+  }
+}
+
+const OC_ITEMS = [{
+  id: "oc-casco",
+  catalogProductId: "prod-casco",
+  productName: "Casco amarillo",
+  productCode: "CAS-01",
+  unitOfMeasure: "UN",
+  quantity: 10,
+  unitPrice: 10000,
+  subtotal: 100000,
+}]
+
 describe("InvoicesSection", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockAnalyzeDteLines.mockResolvedValue({ ok: true, message: "1 DTE analizado(s)." })
   })
 
-  it("refreshes suggestions explicitly and again on focus only after sixty seconds", () => {
+  it("refreshes suggestions explicitly and again on focus only after sixty seconds", async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date("2026-08-24T10:00:00.000Z"))
     render(
@@ -68,13 +113,21 @@ describe("InvoicesSection", () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole("button", { name: /actualizar sugerencias/i }))
+    // El clic pide el análisis al portal y sólo entonces relee la lista.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /actualizar sugerencias/i }))
+    })
+    expect(mockAnalyzeDteLines).toHaveBeenCalledWith("oc-1")
     expect(mockRefresh).toHaveBeenCalledTimes(1)
+
     window.dispatchEvent(new Event("focus"))
     expect(mockRefresh).toHaveBeenCalledTimes(1)
     vi.advanceTimersByTime(60_001)
-    window.dispatchEvent(new Event("focus"))
+    await act(async () => { window.dispatchEvent(new Event("focus")) })
     expect(mockRefresh).toHaveBeenCalledTimes(2)
+    // Volver a la pestaña NO sale al portal: sería una descarga con las
+    // credenciales de la empresa cada vez que alguien cambia de ventana.
+    expect(mockAnalyzeDteLines).toHaveBeenCalledTimes(1)
     vi.useRealTimers()
   })
 
@@ -183,6 +236,68 @@ describe("InvoicesSection", () => {
     expect(useDteButton).toHaveAttribute("type", "button")
     expect(onSubmit).not.toHaveBeenCalled()
     expect(mockAddInvoiceAction).not.toHaveBeenCalled()
+  })
+
+  // La cifra existía en `proposedLinks` y sólo se resumía en la fila, lejos del
+  // select donde se decide. Facturar de más es el error caro de esta pantalla.
+  it("avisa en la línea, no sólo en el resumen, que el DTE excede lo pendiente", () => {
+    render(
+      <InvoicesSection
+        purchaseOrderId="oc-1"
+        invoices={[]}
+        reconciliation={emptyReconciliation(119000)}
+        canManage
+        canUpdateCatalog={false}
+        ocItems={OC_ITEMS}
+        dteCandidates={[enrichedCandidate()]}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: /usar este dte/i }))
+
+    expect(screen.getByRole("dialog", { name: /revisar asociaciones/i })).toBeTruthy()
+    expect(screen.getByText("Excede lo pendiente")).toBeTruthy()
+  })
+
+  // Con el análisis fallido las filas persistidas siguen ahí pero sin
+  // sugerencias: el diálogo se veía igual que "se analizó y no coincidió nada",
+  // y confirmarlo dejaba la factura sin un solo vínculo de línea.
+  it("distingue un análisis fallido de un análisis sin coincidencias", () => {
+    render(
+      <InvoicesSection
+        purchaseOrderId="oc-1"
+        invoices={[]}
+        reconciliation={emptyReconciliation(119000)}
+        canManage
+        canUpdateCatalog={false}
+        ocItems={OC_ITEMS}
+        dteCandidates={[enrichedCandidate({ enrichmentStatus: "failed", proposedLinks: [] })]}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: /usar este dte/i }))
+
+    expect(screen.getByRole("alert").textContent).toContain("El análisis de líneas de este DTE falló")
+  })
+
+  // Sin líneas que revisar el servidor vincula solo: es el único camino del
+  // flujo donde nadie confirma las asociaciones, y el aviso lo callaba.
+  it("advierte que sin análisis previo el servidor vinculará las líneas sin revisión", () => {
+    render(
+      <InvoicesSection
+        purchaseOrderId="oc-1"
+        invoices={[]}
+        reconciliation={emptyReconciliation(119000)}
+        canManage
+        canUpdateCatalog={false}
+        ocItems={OC_ITEMS}
+        dteCandidates={[candidate()]}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: /usar este dte/i }))
+
+    expect(screen.getByRole("alert").textContent).toContain("vinculará las líneas automáticamente")
   })
 
   // OC anulada: la sección existe sólo para soltar el DTE que quedó colgado.

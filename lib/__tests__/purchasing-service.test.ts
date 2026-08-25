@@ -1254,6 +1254,213 @@ describe("Purchasing service — edge cases", () => {
       expect(rolledBackItems).toEqual([])
       expect(dteAfterRollback?.purchaseOrderInvoiceId).toBeNull()
     })
+
+    // Las resoluciones explícitas son lo que confirma el operador en el diálogo
+    // "Revisar asociaciones". Sus ocho rechazos no tenían ninguna prueba: sólo
+    // se ejercitaba el camino feliz, y son justo los que ahora llegan a la
+    // pantalla con su texto (antes se tapaban con un mensaje único).
+    describe("resoluciones de línea explícitas", () => {
+      const issueDate = now.slice(0, 10)
+      // (tipo, folio, RUT, empresa) es único: derivar el folio del nombre hacía
+      // colisionar cualquier par de sufijos parecidos.
+      let nextFolio = 470001
+
+      // Un segundo producto de catálogo: el conflicto de alias sólo existe entre
+      // dos productos distintos del MISMO proveedor.
+      beforeAll(async () => {
+        await inMemoryDb.insert(schema.products).values({
+          id: "prod-purch-2", sku: "P-002", name: "Producto Purch Dos",
+          categoryId: "cat-purch", unitOfMeasure: "unidad", isActive: true,
+          createdAt: now, updatedAt: now,
+        }).onConflictDoNothing()
+      })
+
+      /** OC + DTE + dos líneas persistidas, listos para resolver. */
+      async function seedResolvableDte(suffix: string) {
+        const orderId = `oc-dte-res-${suffix}`
+        const dteId = `dte-res-${suffix}`
+        const folio = nextFolio++
+        await inMemoryDb.insert(schema.purchaseOrders).values({
+          id: orderId,
+          code: `OC-DTE-RES-${suffix.toUpperCase()}`,
+          worksiteId: "ws-purch",
+          supplierId: "sup-purch",
+          createdBy: userId,
+          status: "sent",
+          netAmount: 100000,
+          taxAmount: 19000,
+          totalAmount: 119000,
+          createdAt: now,
+          updatedAt: now,
+        })
+        await inMemoryDb.insert(schema.purchaseOrderItems).values([
+          {
+            id: `${orderId}-item-1`,
+            purchaseOrderId: orderId,
+            productId: "prod-purch",
+            productNameFree: null,
+            quantity: 10,
+            unitOfMeasure: "unidad",
+            unitPrice: 10000,
+            subtotal: 100000,
+            status: "issued",
+          },
+          {
+            id: `${orderId}-item-2`,
+            purchaseOrderId: orderId,
+            productId: "prod-purch-2",
+            productNameFree: null,
+            quantity: 5,
+            unitOfMeasure: "unidad",
+            unitPrice: 2000,
+            subtotal: 10000,
+            status: "issued",
+          },
+        ])
+        await inMemoryDb.insert(schema.dteDocuments).values({
+          id: dteId,
+          tipoDte: "33",
+          folio,
+          rutEmisor: "76.000.001-1",
+          razonSocialEmisor: "Proveedor Purch",
+          fechaEmision: issueDate,
+          montoTotal: 119000,
+          codEmp: "433",
+          periodo: issueDate.slice(0, 7),
+          portalRecordId: `9${folio}`,
+          rawHash: `${dteId}-hash`,
+        })
+        await inMemoryDb.insert(schema.dteDocumentItems).values([
+          {
+            id: `dte-line:${dteId}:1`,
+            dteDocumentId: dteId,
+            lineNumber: 1,
+            productCode: "PROV-CASCO-01",
+            productName: "Casco proveedor",
+            unitOfMeasure: "UN",
+            quantity: 10,
+            unitPrice: 10000,
+            amount: 100000,
+          },
+          {
+            id: `dte-line:${dteId}:2`,
+            dteDocumentId: dteId,
+            lineNumber: 2,
+            productCode: "PROV-CASCO-02",
+            productName: "Casco proveedor dos",
+            unitOfMeasure: "UN",
+            quantity: 5,
+            unitPrice: 2000,
+            amount: 10000,
+          },
+        ])
+        return { orderId, dteId, folio }
+      }
+
+      type DteInvoiceItems = Parameters<typeof createPurchaseOrderInvoiceFromDte>[0]["items"]
+
+      function attach(
+        seeded: { orderId: string; dteId: string; folio: number },
+        lineResolutions: Array<{ dteDocumentItemId: string; purchaseOrderItemId: string | null; rememberAlias: boolean }>,
+        items?: DteInvoiceItems,
+      ) {
+        return createPurchaseOrderInvoiceFromDte({
+          purchaseOrderId: seeded.orderId,
+          dteDocumentId: seeded.dteId,
+          invoiceNumber: String(seeded.folio),
+          amount: 119000,
+          amountAuthority: "document_header",
+          issueDate,
+          fileName: "DTE.pdf",
+          filePath: "storage/purchase-orders/dte.pdf",
+          uploadedBy: userId,
+          dteIdentity: {
+            tipoDte: "33",
+            invoiceNumber: String(seeded.folio),
+            issueDate,
+            supplierRut: "76.000.001-1",
+            totalAmount: 119000,
+          },
+          lineResolutions,
+          items: items ?? [
+            {
+              sourceDteDocumentItemId: `dte-line:${seeded.dteId}:1`,
+              productName: "Casco proveedor",
+              unitOfMeasure: "UN",
+              quantity: 10,
+              unitPrice: 10000,
+              subtotal: 100000,
+            },
+            {
+              sourceDteDocumentItemId: `dte-line:${seeded.dteId}:2`,
+              productName: "Casco proveedor dos",
+              unitOfMeasure: "UN",
+              quantity: 5,
+              unitPrice: 2000,
+              subtotal: 10000,
+            },
+          ],
+        })
+      }
+
+      it("rechaza dos líneas del DTE apuntando al mismo ítem de la OC", async () => {
+        const seeded = await seedResolvableDte("dup")
+
+        await expect(attach(seeded, [
+          { dteDocumentItemId: `dte-line:${seeded.dteId}:1`, purchaseOrderItemId: `${seeded.orderId}-item-1`, rememberAlias: false },
+          { dteDocumentItemId: `dte-line:${seeded.dteId}:2`, purchaseOrderItemId: `${seeded.orderId}-item-1`, rememberAlias: false },
+        ])).rejects.toThrow("No puedes asociar dos líneas DTE al mismo ítem de la OC")
+
+        const dte = await inMemoryDb.query.dteDocuments.findFirst({ where: eq(schema.dteDocuments.id, seeded.dteId) })
+        expect(dte?.purchaseOrderInvoiceId).toBeNull()
+      })
+
+      it("rechaza una resolución que apunta a un ítem de otra OC", async () => {
+        const seeded = await seedResolvableDte("ajena")
+        const otra = await seedResolvableDte("otra")
+
+        await expect(attach(seeded, [
+          { dteDocumentItemId: `dte-line:${seeded.dteId}:1`, purchaseOrderItemId: `${otra.orderId}-item-1`, rememberAlias: false },
+          { dteDocumentItemId: `dte-line:${seeded.dteId}:2`, purchaseOrderItemId: null, rememberAlias: false },
+        ])).rejects.toThrow("Una resolución no pertenece a esta OC")
+      })
+
+      it("rechaza una resolución que no corresponde a una línea de este DTE", async () => {
+        const seeded = await seedResolvableDte("fantasma")
+
+        await expect(attach(seeded, [
+          { dteDocumentItemId: `dte-line:${seeded.dteId}:1`, purchaseOrderItemId: null, rememberAlias: false },
+          { dteDocumentItemId: `dte-line:${seeded.dteId}:99`, purchaseOrderItemId: null, rememberAlias: false },
+        ])).rejects.toThrow("Una resolución no pertenece a este DTE")
+      })
+
+      it("exige una resolución por línea del XML: ninguna puede quedar sin decidir", async () => {
+        const seeded = await seedResolvableDte("faltante")
+
+        await expect(attach(seeded, [
+          { dteDocumentItemId: `dte-line:${seeded.dteId}:1`, purchaseOrderItemId: null, rememberAlias: false },
+        ])).rejects.toThrow("Debes resolver todas las líneas del DTE")
+      })
+
+      // "Recordar" es una preferencia, pero contradecir un alias ya confirmado
+      // aborta la factura entera. El mensaje nombra la línea justamente para que
+      // se sepa cuál desmarcar.
+      it("nombra la línea cuando el alias a recordar contradice uno confirmado", async () => {
+        const primera = await seedResolvableDte("alias1")
+        await attach(primera, [
+          { dteDocumentItemId: `dte-line:${primera.dteId}:1`, purchaseOrderItemId: `${primera.orderId}-item-1`, rememberAlias: true },
+          { dteDocumentItemId: `dte-line:${primera.dteId}:2`, purchaseOrderItemId: null, rememberAlias: false },
+        ])
+
+        // Mismo alias del proveedor (código y nombre de la línea 1), ahora
+        // apuntado a otro producto del catálogo: no puede reescribirse solo.
+        const segunda = await seedResolvableDte("alias2")
+        await expect(attach(segunda, [
+          { dteDocumentItemId: `dte-line:${segunda.dteId}:1`, purchaseOrderItemId: `${segunda.orderId}-item-2`, rememberAlias: true },
+          { dteDocumentItemId: `dte-line:${segunda.dteId}:2`, purchaseOrderItemId: null, rememberAlias: false },
+        ])).rejects.toThrow("Casco proveedor")
+      })
+    })
   })
 
   // ── deletePurchaseOrderInvoice ─────────────────────────────────────────
