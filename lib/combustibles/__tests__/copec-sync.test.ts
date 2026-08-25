@@ -64,7 +64,9 @@ vi.mock("@/lib/combustibles/consumption-import", () => ({
 vi.mock("@/lib/combustibles/tae-receipt-import", () => ({
   parseTaeReceiptExcel: (...args: unknown[]) => mockParseTaeReceiptExcel(...args),
 }))
-vi.mock("@/lib/combustibles/tae-receipts", () => ({
+vi.mock("@/lib/combustibles/tae-receipts", async (importOriginal) => ({
+  // La clase de error va real: la sincronización la distingue con `instanceof`.
+  ...(await importOriginal<typeof import("@/lib/combustibles/tae-receipts")>()),
   importTaeReceipts: (...args: unknown[]) => mockImportTaeReceipts(...args),
 }))
 
@@ -181,6 +183,32 @@ describe("syncCopecReportPeriod", () => {
     expect(mockSaveState).toHaveBeenCalledOnce()
     const savedState = JSON.parse(mockSaveState.mock.calls[0]![0].set.value)
     expect(savedState.cursor).toBe("2026-02-01")
+  })
+
+  it("un proveedor faltante en el catálogo no tumba la corrida ni avanza el cursor TAE", async () => {
+    // El catálogo de combustibles puede estar sin poblar: `fuel_cycle_movements`
+    // exige proveedor, así que TAE no puede importar. Eso es configuración, no
+    // una falla — no puede arrastrarse al canal TCT, que ya importó sus lotes.
+    const { TaeSupplierMissingError } = await import("../tae-receipts")
+    const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
+    mockDownloadCopecReports.mockResolvedValue([
+      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "informe.xlsx" } },
+      { product: "bluemax", unavailable: true },
+    ])
+    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [] })
+    mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
+    mockParseTaeReceiptExcel.mockResolvedValue({ rows: [{ documentNumber: "G-1", cardNumber: "1", productId: "fuel-diesel", occurredAt: "2026-02-10T10:00:00.000Z", liters: 10, unitPrice: 1, amount: 10, assignment: "", station: "", rawRow: {} }], errors: [] })
+    mockImportTaeReceipts.mockRejectedValue(new TaeSupplierMissingError())
+
+    const result = await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
+
+    // TCT importó igual y la corrida no explota.
+    expect(result.imported).toBe(1)
+    expect(result.unavailable.some((item) => item.includes("proveedor Copec"))).toBe(true)
+    // El cursor TCT avanza; el de TAE se queda para reintentar el mes.
+    const saved = JSON.parse(mockSaveState.mock.calls[0]![0].set.value)
+    expect(saved.cursor).toBe("2026-03-01")
+    expect(saved.taeCursor).toBe("2026-02-01")
   })
 
   it("no avanza el cursor TAE cuando el portal entregó TCT pero no TAE", async () => {

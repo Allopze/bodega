@@ -18,7 +18,7 @@ import {
   downloadCopecReports,
 } from "@/lib/combustibles/copec-reports"
 import { parseTaeReceiptExcel } from "@/lib/combustibles/tae-receipt-import"
-import { importTaeReceipts } from "@/lib/combustibles/tae-receipts"
+import { importTaeReceipts, TaeSupplierMissingError } from "@/lib/combustibles/tae-receipts"
 
 const STATE_KEY = "combustibles.copec.sync"
 const START_KEY = "COPEC_SYNC_START_DATE"
@@ -559,7 +559,6 @@ async function importTaeReceiptPeriod(
       unavailable.push(`TAE ${productLabel}`)
       continue
     }
-    taeReports++
     const parsed = await parseTaeReceiptExcel(download.report.buffer)
     rowsReceived += parsed.rows.length + parsed.errors.length
     const product = download.product
@@ -583,7 +582,20 @@ async function importTaeReceiptPeriod(
       })))
     }
     rowsRejected += parsed.errors.length
-    const outcome = await importTaeReceipts(parsed.rows, importerId)
+    let outcome
+    try {
+      outcome = await importTaeReceipts(parsed.rows, importerId)
+    } catch (error) {
+      // Sin proveedor en el catálogo no hay nada que importar, pero tampoco es
+      // una falla de la corrida: se reporta como no disponible para que el
+      // cursor TAE no avance y el mes se reintente cuando exista la ficha.
+      if (!(error instanceof TaeSupplierMissingError)) throw error
+      unavailable.push(`TAE ${productLabel}: ${error.message}`)
+      continue
+    }
+    // Recién acá: el contador decide si avanza el cursor TAE, así que tiene que
+    // significar "este informe entró", no "el portal me lo entregó".
+    taeReports++
     received += outcome.inserted
     rowsAccepted += outcome.inserted
     for (const card of outcome.unmappedCards) unmappedCards.add(card)

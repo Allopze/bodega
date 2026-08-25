@@ -16,6 +16,16 @@ import { fuelSupplierIdForProvider } from "./fuel-sources"
 import type { ParsedTaeReceiptRow } from "./tae-receipt-import"
 export const TAE_RECEIPT_SOURCE = "copec_tae"
 
+/** El catálogo de combustibles todavía no tiene al proveedor Copec. Es una
+ *  condición de configuración, no una falla: el caller decide si corta o si la
+ *  reporta como período no disponible. */
+export class TaeSupplierMissingError extends Error {
+  constructor() {
+    super("No hay un proveedor Copec activo en el catálogo de combustibles. Créalo antes de importar el informe TAE.")
+    this.name = "TaeSupplierMissingError"
+  }
+}
+
 export interface TaeReceiptImportOutcome {
   inserted: number
   /** Guías ya presentes: reimportar un mes es seguro y no duplica. */
@@ -37,8 +47,13 @@ export async function importTaeReceipts(rows: ParsedTaeReceiptRow[], importerId:
   // `fuel_cycle_movements` exige proveedor en las recepciones, así que acá no
   // sirve el null que sí acepta el ledger de proveedores: sin la fila del
   // catálogo se corta con un mensaje accionable y no con una violación de FK.
+  //
+  // El error va tipado para que la sincronización lo distinga de una falla real:
+  // que falte una fila de catálogo no puede tumbar la corrida completa de Copec
+  // —incluido el canal TCT, que ya importó sus lotes— ni hacer avanzar el cursor
+  // sobre un mes cuyas recepciones no entraron.
   const supplierId = await fuelSupplierIdForProvider("copec")
-  if (!supplierId) throw new Error("No hay un proveedor Copec activo en el catálogo de combustibles. Créalo antes de importar el informe TAE.")
+  if (!supplierId) throw new TaeSupplierMissingError()
 
   const cards = [...new Set(rows.map((row) => row.cardNumber))]
   const locations = await db.query.fuelStorageLocations.findMany({
