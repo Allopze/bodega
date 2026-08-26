@@ -61,7 +61,10 @@ export function capaSourceHref(sourceType: string, sourceId: string) {
   if (sourceType === "sst_evaluation") return `/prevencion/${sourceId}`
   if (sourceType === "pdtp") return "/prevencion/pdtp"
   if (sourceType === "incident") return `/prevencion/incidentes/${sourceId}`
-  if (sourceType === "risk") return `/prevencion/miper/${sourceId}`
+  // Enlace muerto hasta que existió `app/(app)/prevencion/miper/riesgos/[id]/`
+  // — `sourceId` es un riskEntryId, no un matrixId (la API de export ya usa
+  // `[id]` = matrixId, de ahí el segmento `riesgos/` para no ambiguar).
+  if (sourceType === "risk") return `/prevencion/miper/riesgos/${sourceId}`
   if (sourceType === "legal_requirement") return `/prevencion/requisitos-legales/${sourceId}`
   if (sourceType === "training") return `/prevencion/capacitacion/competencias?workerId=${encodeURIComponent(sourceId)}`
   if (sourceType === "work_permit") return `/prevencion/permisos/${sourceId}`

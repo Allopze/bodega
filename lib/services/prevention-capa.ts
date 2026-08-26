@@ -55,7 +55,10 @@ function capaQuickFilterWhere(filter: CapaQuickFilter | undefined) {
   )
 }
 
-const capaCreateSchema = z.object({
+// Exportado para que `prevention-risk-capa.ts` valide en su propio boundary
+// antes de llamar a `createCapaActionWithClient` — mismo criterio que
+// `capaTransitionSchema` un poco más abajo.
+export const capaCreateSchema = z.object({
   sourceType: z.enum(["pdtp", "sst_evaluation", "ppa", "incident", "risk", "legal_requirement", "training", "work_permit", "inspection", "cphs", "emergency", "change", "epp", "external_engagement", "manual"]),
   sourceId: z.string().min(1).max(200),
   sourceItemId: z.string().min(1).max(300).nullable().optional(),
@@ -780,14 +783,20 @@ export async function getCapaActionBundle(args: {
 export async function getCapaDashboardCounts(args: {
   scope: WorksiteScope
   permissions: readonly string[]
+  /** MIPER filtra el tablero de Programa de Trabajo a sus propias acciones (`sourceType:'risk'`) sin reimplementar el conteo. */
+  sourceType?: string
+  worksiteId?: string
 }) {
   requirePermission(args.permissions, "prevention:capa:view")
   if (args.scope.mode === "none") {
     return { open: 0, overdue: 0, pendingVerification: 0, unreconciled: 0, immediateStop: 0 }
   }
-  const scopeWhere = args.scope.mode === "some"
-    ? inArray(preventionCapaActions.worksiteId, args.scope.ids)
-    : undefined
+  const conditions = [
+    args.scope.mode === "some" ? inArray(preventionCapaActions.worksiteId, args.scope.ids) : undefined,
+    args.sourceType ? eq(preventionCapaActions.sourceType, args.sourceType) : undefined,
+    args.worksiteId ? eq(preventionCapaActions.worksiteId, args.worksiteId) : undefined,
+  ].filter((condition) => condition !== undefined)
+  const scopeWhere = conditions.length ? and(...conditions) : undefined
   const today = chileToday()
   const [row] = await db.select({
     open: sql<number>`count(*) filter (where ${preventionCapaActions.status} not in ('closed', 'cancelled'))::int`,
@@ -803,6 +812,32 @@ export async function getCapaDashboardCounts(args: {
     unreconciled: row?.unreconciled ?? 0,
     immediateStop: row?.immediateStop ?? 0,
   }
+}
+
+/**
+ * Mismo conteo que `getCapaDashboardCounts` pero agrupado por faena — evita
+ * el N+1 de un tablero MIPER multi-faena (una consulta por faena en vez de
+ * una consulta agrupada).
+ */
+export async function getCapaCountsByWorksite(args: {
+  scope: WorksiteScope
+  permissions: readonly string[]
+  sourceType?: string
+}) {
+  requirePermission(args.permissions, "prevention:capa:view")
+  if (args.scope.mode === "none") return new Map<string, { open: number; overdue: number; pendingVerification: number }>()
+  const conditions = [
+    args.scope.mode === "some" ? inArray(preventionCapaActions.worksiteId, args.scope.ids) : undefined,
+    args.sourceType ? eq(preventionCapaActions.sourceType, args.sourceType) : undefined,
+  ].filter((condition) => condition !== undefined)
+  const today = chileToday()
+  const rows = await db.select({
+    worksiteId: preventionCapaActions.worksiteId,
+    open: sql<number>`count(*) filter (where ${preventionCapaActions.status} not in ('closed', 'cancelled'))::int`,
+    overdue: sql<number>`count(*) filter (where ${preventionCapaActions.status} not in ('verified', 'closed', 'cancelled') and ${preventionCapaActions.targetDate} < ${today})::int`,
+    pendingVerification: sql<number>`count(*) filter (where ${preventionCapaActions.status} = 'pending_verification')::int`,
+  }).from(preventionCapaActions).where(conditions.length ? and(...conditions) : undefined).groupBy(preventionCapaActions.worksiteId)
+  return new Map(rows.map((row) => [row.worksiteId, { open: row.open, overdue: row.overdue, pendingVerification: row.pendingVerification }]))
 }
 
 /**

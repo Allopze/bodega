@@ -238,7 +238,11 @@ describeIf("canonical incident workflow on real PostgreSQL", () => {
     const riskAccess = (userId: string, permissions: string[]) => ({ userId, scope: { mode: "some" as const, ids: ["ws-incidents"] }, permissions })
     const riskAuthor = riskAccess("incident-reporter", ["prevention:risk:view", "prevention:risk:edit"])
     const riskReviewer = riskAccess("incident-verifier", ["prevention:risk:review"])
-    const riskApprover = riskAccess("incident-risk-approver", ["prevention:risk:approve", "prevention:risk:publish"])
+    // Doble aprobación (§48-51): Prevención y Operaciones firman por separado,
+    // y ninguno de los dos puede ser el autor ni el revisor.
+    const riskApproverPrevention = riskAccess("incident-risk-approver", ["prevention:risk:approve_prevention"])
+    const riskApproverOperations = riskAccess("incident-ops-approver", ["prevention:risk:approve_operations"])
+    const riskPublisher = riskAccess("incident-risk-approver", ["prevention:risk:publish"])
     const methodology = await risk.ensureIspRiskMethodology(riskAuthor)
     const matrix = await risk.createRiskMatrixDraft({
       worksiteId: "ws-incidents", title: "MIPER revisada por incidente grave", methodologyId: methodology.id,
@@ -252,21 +256,24 @@ describeIf("canonical incident workflow on real PostgreSQL", () => {
       task: { code: "TASK-INC", name: "Operar línea de clasificación", isRoutine: true },
       position: { code: "POS-INC", name: "Operador de línea" },
       hazardCode: "INC-01", hazard: "Contacto con zona de riesgo por barrera insuficiente",
+      risk: "Atrapamiento por elemento en movimiento",
       riskFactor: "Operación industrial con equipos en movimiento",
       expectedEventOrDamage: "Lesión grave con tiempo perdido",
       exposedPeopleDescription: "Operadores de la línea de clasificación",
       exposedPeopleCount: 4,
       genderConsiderations: "Evaluar diferencias de exposición y ajuste de EPP.",
       sensitiveWorkerConsiderations: "Validar restricciones sin exponer diagnósticos.",
-      inherentDimensions: { probability: 4, consequence: 5 }, inherentScore: 20, inherentLevel: "Alto",
-      residualDimensions: { probability: 2, consequence: 5 }, residualScore: 10, residualLevel: "Medio",
+      // Motor P×C: el cliente sólo aporta probabilidad y consecuencia; MR,
+      // clasificación y nivel los calcula el servidor.
+      probability: 2, consequence: 4,
       isCritical: true, responsibleSnapshot: "Jefatura de operaciones",
       controls: [{ description: "Barrera de ingeniería certificada con verificación periódica", hierarchy: "engineering", isExisting: false, isCritical: true, performanceStandard: "Resistencia certificada y anclaje verificado", verificationFrequency: "Mensual", responsibleSnapshot: "Jefatura de operaciones", status: "implemented" }],
     }, riskAuthor)
     const submitted = await risk.transitionRiskMatrix({ matrixId: matrix.id, expectedVersion: matrix.version, toStatus: "in_review", reason: "Revisión post incidente enviada al circuito formal." }, riskAuthor)
     const reviewed = await risk.transitionRiskMatrix({ matrixId: matrix.id, expectedVersion: submitted.version, toStatus: "reviewed", reason: "Causas y controles del incidente contrastados en terreno." }, riskReviewer)
-    const approvedMatrix = await risk.transitionRiskMatrix({ matrixId: matrix.id, expectedVersion: reviewed.version, toStatus: "approved", reason: "Aprobación segregada de la revisión post incidente." }, riskApprover)
-    await risk.transitionRiskMatrix({ matrixId: matrix.id, expectedVersion: approvedMatrix.version, toStatus: "published", reason: "Publicación de la MIPER revisada por el incidente.", effectiveFrom: "2026-07-18" }, riskApprover)
+    await risk.decideRiskMatrixApproval({ matrixId: matrix.id, expectedVersion: reviewed.version, domain: "prevention", decision: "approved", reason: "Prevención aprueba la revisión post incidente." }, riskApproverPrevention)
+    const approvedMatrix = await risk.decideRiskMatrixApproval({ matrixId: matrix.id, expectedVersion: reviewed.version, domain: "operations", decision: "approved", reason: "Operaciones aprueba la revisión post incidente." }, riskApproverOperations)
+    await risk.transitionRiskMatrix({ matrixId: matrix.id, expectedVersion: approvedMatrix.matrix.version, toStatus: "published", reason: "Publicación de la MIPER revisada por el incidente.", effectiveFrom: "2026-07-18" }, riskPublisher)
     const resolvedTrigger = await risk.resolveRiskReviewTrigger({
       triggerId: miperTrigger!.id, matrixId: matrix.id,
       resolution: "MIPER republicada incorporando la barrera certificada como control crítico.",
@@ -433,6 +440,7 @@ async function seedFixture(db: ReturnType<typeof drizzle<typeof schema>>) {
     { id: "incident-verifier", name: "Incident Verifier", email: "incident-verifier@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "incident-outsider", name: "Incident Outsider", email: "incident-outsider@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "incident-risk-approver", name: "Incident Risk Approver", email: "incident-risk-approver@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
+    { id: "incident-ops-approver", name: "Incident Operations Approver", email: "incident-ops-approver@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
   ])
 }
 
