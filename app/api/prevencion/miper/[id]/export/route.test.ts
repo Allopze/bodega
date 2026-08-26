@@ -11,6 +11,18 @@ vi.mock("@/lib/auth/can", () => ({ can: mockCan }))
 vi.mock("@/lib/auth/scope", () => ({ resolveWorksiteScope: mockScope }))
 vi.mock("@/lib/services/prevention-risk-legal", () => ({ getPublishedRiskMatrix: mockGetPublishedRiskMatrix }))
 vi.mock("@/lib/audit", () => ({ recordAudit: mockRecordAudit }))
+// El exportador (lib/services/prevention-risk-export.ts) consulta historial de
+// Modificaciones y CAPA de Programa de Trabajo directo por `db.select()` — un
+// objeto encadenable "thenable" que siempre resuelve `[]` es suficiente: este
+// test no ejercita esas dos hojas, sólo que no revienten al construirse vacías.
+function emptyChain() {
+  const chain: { from: () => typeof chain; where: () => typeof chain; orderBy: () => typeof chain; then: (resolve: (rows: unknown[]) => unknown) => Promise<unknown> } = {
+    from: () => chain, where: () => chain, orderBy: () => chain,
+    then: (resolve) => Promise.resolve([]).then(resolve),
+  }
+  return chain
+}
+vi.mock("@/db", () => ({ db: { select: vi.fn(() => emptyChain()) } }))
 
 function session(permissions: string[] = ["prevention:risk:view"]) {
   return {
@@ -44,11 +56,14 @@ describe("GET /api/prevencion/miper/[id]/export", () => {
       entries: [{
         process: { name: "Proceso principal" }, task: { name: "Tarea crítica" }, position: { name: "Operador" },
         entry: {
-          id: "entry-1", hazardCode: "PEL-01", hazard: "=WEBSERVICE(\"https://example.test\")", riskFactor: "+factor",
+          id: "entry-1", hazardCode: "PEL-01", hazard: "=WEBSERVICE(\"https://example.test\")", risk: "Caída de altura", riskFactor: "+factor",
           expectedEventOrDamage: "Lesión", exposedPeopleDescription: "Personal operativo", exposedPeopleCount: 3,
+          isRoutine: true, specificWorkplace: null, exposedWorkersFemale: null, exposedWorkersMale: 3, exposedWorkersOther: null,
+          probability: 2, consequence: 4, riskMagnitude: 8, riskClassification: "importante",
+          controlStatusText: "partial", controlDeadlineText: "Mensual",
           genderConsiderations: "Exposición evaluada por sexo", sensitiveWorkerConsiderations: "Incluye personas especialmente sensibles",
-          inherentDimensions: { probability: 4, consequence: 4 }, inherentLevel: "critical", residualDimensions: { probability: 2, consequence: 2 },
-          residualLevel: "medium", isCritical: true, responsibleSnapshot: "Jefatura", evidenceReference: "EVID-1", specialMethodologyReference: "TMERT",
+          inherentDimensions: null, inherentLevel: null, residualDimensions: { probability: 2, consequence: 4 },
+          residualLevel: "high", isCritical: true, responsibleSnapshot: "Jefatura", evidenceReference: "EVID-1", specialMethodologyReference: "TMERT",
         },
       }],
       controls: [{ riskEntryId: "entry-1", description: "Aislamiento", hierarchy: "engineering", isExisting: true, isCritical: true, performanceStandard: "100% operativo", verificationFrequency: "Mensual", responsibleSnapshot: "Supervisor", status: "implemented", effectivenessStatus: "verified_effective", evidenceReference: "CTRL-1" }],
@@ -84,9 +99,10 @@ describe("GET /api/prevencion/miper/[id]/export", () => {
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(await response.arrayBuffer())
     expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
-      "Matriz MIPER", "Controles", "Aprobación", "Revisiones", "Metadatos",
+      "RE-04 IPER", "Controles", "Modificaciones", "Criterios de Evaluación IPER", "Programa de Trabajo", "Aprobación", "Revisiones", "Metadatos",
     ])
-    expect(workbook.getWorksheet("Matriz MIPER")?.getCell("G2").value).toBe("'=WEBSERVICE(\"https://example.test\")")
+    // Columna K = PELIGRO en la hoja RE-04 IPER (A=N°,B=ACTIVIDAD,...,K=PELIGRO).
+    expect(workbook.getWorksheet("RE-04 IPER")?.getCell("K2").value).toBe("'=WEBSERVICE(\"https://example.test\")")
     expect(workbook.getWorksheet("Aprobación")?.getCell("B15").value).toBe("hash-miper-2")
     expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
       action: "export", entityType: "prevention_risk_matrix", entityId: "matrix-1",
