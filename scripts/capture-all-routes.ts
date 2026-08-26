@@ -12,6 +12,7 @@ import { drizzle } from "drizzle-orm/postgres-js"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
 import { sql } from "drizzle-orm"
 import * as schema from "../db/schema"
+import { evaluateRisk } from "@/lib/prevention/risk-engine"
 import { SYSTEM_PERMISSIONS } from "@/lib/auth/system-rbac"
 import { REPORTE_EQUIPOS } from "@/lib/sst/definitions/reporte-equipos"
 import {
@@ -651,6 +652,9 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-incidentes-procedimiento", path: "/prevencion/incidentes/inc-audit-1/procedimiento", auth: true, expectedStatus: 404, captureView: false, notes: "No existe página App Router para este subpath: la investigación RE-20 se gestiona dentro del detalle canónico del incidente." },
   { slug: "prevencion-miper", path: "/prevencion/miper", auth: true },
   { slug: "prevencion-miper-control", path: "/prevencion/miper/controles/risk-control-audit-1", auth: true },
+  { slug: "prevencion-miper-riesgo", path: "/prevencion/miper/riesgos/risk-entry-audit-1", auth: true },
+  { slug: "prevencion-miper-matriz", path: "/prevencion/miper/matriz/risk-matrix-audit-1", auth: true },
+  { slug: "prevencion-miper-matriz-comparar", path: "/prevencion/miper/matriz/risk-matrix-audit-1/comparar", auth: true },
   { slug: "prevencion-miper-mapa", path: "/prevencion/miper/mapa", auth: true, notes: "Mapa de riesgos: instrumento propio del DS 44 art. 62, ya no una pestaña de la MIPER." },
   { slug: "prevencion-requisitos-legales", path: "/prevencion/requisitos-legales", auth: true },
   { slug: "prevencion-requisito-legal", path: "/prevencion/requisitos-legales/legal-requirement-audit-1", auth: true },
@@ -1944,6 +1948,7 @@ async function prepareDatabase(captureDbUrl: string) {
     createdAt: now,
     updatedAt: now,
   })
+  const electricalRisk = evaluateRisk({ probability: 4, consequence: 4 })
   await db.insert(schema.preventionRiskEntries).values({
     id: "risk-entry-audit-1",
     matrixId: "risk-matrix-audit-1",
@@ -1952,18 +1957,17 @@ async function prepareDatabase(captureDbUrl: string) {
     positionId: "risk-position-audit-1",
     hazardCode: "ELEC-001",
     hazard: "Energía eléctrica residual",
+    risk: "Electrocución por contacto directo",
     riskFactor: "Intervención sin aislamiento y verificación de energía cero.",
     expectedEventOrDamage: "Electrocución o quemadura grave durante la mantención.",
     exposedPeopleDescription: "Mecánicos y supervisores que intervienen equipos energizados.",
     exposedPeopleCount: 4,
     genderConsiderations: "El control aplica por exposición, sin distinción de género.",
     sensitiveWorkerConsiderations: "Restringir la intervención a personal competente y autorizado.",
-    inherentDimensions: { probability: 4, consequence: 5 },
-    inherentScore: 20,
-    inherentLevel: "critical",
-    residualDimensions: { probability: 1, consequence: 5 },
-    residualScore: 5,
-    residualLevel: "medium",
+    probability: electricalRisk.probability, consequence: electricalRisk.consequence,
+    riskMagnitude: electricalRisk.riskMagnitude, riskClassification: electricalRisk.riskClassification,
+    residualDimensions: { probability: electricalRisk.probability, consequence: electricalRisk.consequence },
+    residualLevel: electricalRisk.residualLevel, residualScore: electricalRisk.residualScore,
     isCritical: true,
     responsibleUserId: "user-audit-prevencion",
     responsibleSnapshot: "Equipo de mantención y Prevención",

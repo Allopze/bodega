@@ -22,6 +22,7 @@ import { createHash } from "node:crypto"
 import { loadEnvConfig } from "@next/env"
 import * as schema from "../db/schema"
 import { hashPpaPublicToken } from "@/lib/services/ppa-module/public-token"
+import { evaluateRisk } from "@/lib/prevention/risk-engine"
 
 loadEnvConfig(process.cwd())
 
@@ -510,9 +511,6 @@ async function main() {
   const publishedMatrices = matrices.filter((m) => m.status === "published")
   const entries: (typeof schema.preventionRiskEntries.$inferInsert)[] = []
   const controls: (typeof schema.preventionRiskControls.$inferInsert)[] = []
-  // Vocabulario canónico de lib/prevention/risk-levels: la columna tiene un
-  // CHECK y la UI sólo sabe etiquetar estas cuatro claves.
-  const NIVELES = ["low", "medium", "high", "critical"] as const
 
   for (const matrix of publishedMatrices) {
     const procesosFaena = processes.filter((p) => p.worksiteId === matrix.worksiteId)
@@ -523,15 +521,24 @@ async function main() {
         const position = positions.find((p) => p.taskId === task.id)!
         const isCritical = chance(0.2)
         const entryId = id("re")
+        // Motor P×C (lib/prevention/risk-engine.ts): datos ficticios de demo,
+        // no históricos reales — se generan con probabilidad/consecuencia
+        // reales y se derivan MR/clasificación/nivel, en vez de inventar un
+        // nivel suelto que ya no tiene de dónde salir.
+        const evaluated = evaluateRisk({ probability: pick([1, 2, 4] as const), consequence: pick([1, 2, 4] as const) })
         entries.push({
           id: entryId, matrixId: matrix.id!, processId: proc.id!, taskId: task.id!, positionId: position.id!,
           hazardCode: `HZ-${entries.length + 1}`, hazard: "Exposición a riesgo mecánico/operacional",
+          risk: "Contacto o atrapamiento con partes móviles",
           riskFactor: "Condición insegura del entorno de trabajo", expectedEventOrDamage: "Lesión por contacto o atrapamiento",
           exposedPeopleDescription: "Trabajadores directos de la tarea", exposedPeopleCount: int(1, 6),
+          isRoutine: chance(0.8),
           genderConsiderations: "Sin diferencias relevantes identificadas",
           sensitiveWorkerConsiderations: "Se evalúa caso a caso ante trabajadores sensibles",
-          inherentDimensions: { probabilidad: int(2, 5), consecuencia: int(2, 5) }, inherentLevel: pick(NIVELES),
-          residualDimensions: { probabilidad: int(1, 3), consecuencia: int(1, 4) }, residualLevel: pick(NIVELES),
+          probability: evaluated.probability, consequence: evaluated.consequence,
+          riskMagnitude: evaluated.riskMagnitude, riskClassification: evaluated.riskClassification,
+          residualDimensions: { probability: evaluated.probability, consequence: evaluated.consequence },
+          residualLevel: evaluated.residualLevel, residualScore: evaluated.residualScore,
           isCritical, responsibleSnapshot: "Jefatura de Prevención de Riesgos",
           createdAt: iso(daysAgo(220)), updatedAt: iso(daysAgo(220)),
         })

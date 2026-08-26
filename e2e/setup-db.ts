@@ -8,6 +8,7 @@ import bcrypt from "bcryptjs"
 import { loadEnvConfig } from "@next/env"
 import { eq, sql } from "drizzle-orm"
 import * as schema from "../db/schema"
+import { evaluateRisk } from "../lib/prevention/risk-engine"
 import { SYSTEM_PERMISSIONS } from "../lib/auth/system-rbac"
 import { INSPECCION_EXTINTORES } from "../lib/sst/definitions/inspeccion-extintores"
 import {
@@ -2470,14 +2471,18 @@ async function main() {
     publishedByUserId: "user-admin-e2e", publishedAt: now,
     version: 1, createdAt: now, updatedAt: now,
   })
+  const riskEntryE2eEvaluation = evaluateRisk({ probability: 2, consequence: 4 })
   await db.insert(schema.preventionRiskEntries).values({
     id: "riskentry-e2e", matrixId: "riskmatrix-e2e", processId: "riskproc-e2e", taskId: "risktask-e2e", positionId: "riskpos-e2e",
-    hazardCode: "HAZ-E2E", hazard: "Caída de altura E2E", riskFactor: "Trabajo en altura sin arnés",
+    hazardCode: "HAZ-E2E", hazard: "Caída de altura E2E", risk: "Caída con lesión grave",
+    riskFactor: "Trabajo en altura sin arnés",
     expectedEventOrDamage: "Caída con lesión", exposedPeopleDescription: "Operarios de mantención",
     exposedPeopleCount: 4, genderConsiderations: "Sin diferencias identificadas.",
     sensitiveWorkerConsiderations: "Sin trabajadores sensibles identificados.",
-    inherentDimensions: { assessment: "alto" }, inherentLevel: "high",
-    residualDimensions: { assessment: "moderado" }, residualLevel: "medium",
+    probability: riskEntryE2eEvaluation.probability, consequence: riskEntryE2eEvaluation.consequence,
+    riskMagnitude: riskEntryE2eEvaluation.riskMagnitude, riskClassification: riskEntryE2eEvaluation.riskClassification,
+    residualDimensions: { probability: riskEntryE2eEvaluation.probability, consequence: riskEntryE2eEvaluation.consequence },
+    residualLevel: riskEntryE2eEvaluation.residualLevel, residualScore: riskEntryE2eEvaluation.residualScore,
     isCritical: false, responsibleSnapshot: "Admin E2E",
     version: 1, createdAt: now, updatedAt: now,
   })
