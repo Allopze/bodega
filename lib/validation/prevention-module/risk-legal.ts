@@ -57,6 +57,18 @@ export const riskControlSchema = z.object({
   if (value.isCritical && (value.verificationFrequency?.length ?? 0) < 2) ctx.addIssue({ code: "custom", path: ["verificationFrequency"], message: "Un control crítico exige frecuencia de verificación." })
 })
 
+/* Motor de evaluación P×C (lib/prevention/risk-engine.ts): el único dato de
+ * evaluación que acepta el cliente es probabilidad y consecuencia. MR
+ * (`riskMagnitude`), clasificación (`riskClassification`), `residualLevel` y
+ * `residualScore` NO están en este shape — el cliente no puede ni intentar
+ * fijarlos; el servidor los calcula siempre (`evaluateRisk()`) antes de
+ * persistir. La evaluación "inherente" (antes de controles) es opcional: la
+ * plantilla real de la empresa sólo tiene una evaluación (mapea a residual). */
+export const riskEvaluationInputSchema = z.object({
+  probability: z.union([z.literal(1), z.literal(2), z.literal(4)]),
+  consequence: z.union([z.literal(1), z.literal(2), z.literal(4)]),
+})
+
 export const riskEntrySchema = z.object({
   matrixId: z.string().min(1),
   process: z.object({ code: z.string().trim().min(1).max(80), name: z.string().trim().min(2).max(300), description: z.string().trim().max(2000).nullable().optional() }),
@@ -64,19 +76,39 @@ export const riskEntrySchema = z.object({
   position: z.object({ code: z.string().trim().min(1).max(80), name: z.string().trim().min(2).max(300), workerPositionKey: z.string().trim().max(300).nullable().optional() }),
   hazardCode: z.string().trim().min(1).max(100),
   hazard: z.string().trim().min(3).max(2000),
+  /* "Riesgo" (§11.12): concepto distinto de "Peligro" en la plantilla real —
+   * columnas separadas PELIGRO/RIESGO. Nullable en BD para no inventar texto
+   * en entries históricas, pero requerido acá: toda entrada NUEVA (creador
+   * guiado o importador) siempre lo trae. */
+  risk: z.string().trim().min(2).max(2000),
   riskFactor: z.string().trim().min(2).max(2000),
   expectedEventOrDamage: z.string().trim().min(3).max(3000),
   exposedPeopleDescription: z.string().trim().min(3).max(2000),
   exposedPeopleCount: z.coerce.number().int().min(0).nullable().optional(),
+  isRoutine: z.boolean().default(true),
+  specificWorkplace: z.string().trim().max(500).nullable().optional(),
+  exposedWorkersFemale: z.coerce.number().int().min(0).nullable().optional(),
+  exposedWorkersMale: z.coerce.number().int().min(0).nullable().optional(),
+  exposedWorkersOther: z.coerce.number().int().min(0).nullable().optional(),
   genderConsiderations: z.string().trim().min(3).max(3000),
   sensitiveWorkerConsiderations: z.string().trim().min(3).max(3000),
   specialMethodologyReference: z.string().trim().max(1000).nullable().optional(),
-  inherentDimensions: z.record(z.string(), z.unknown()),
+  /* Evaluación calculada por el motor — probabilidad/consecuencia. */
+  ...riskEvaluationInputSchema.shape,
+  /* Evaluación "inherente" opcional (antes de controles). Sigue aceptando el
+   * shape libre anterior por compatibilidad con matrices creadas antes del
+   * motor P×C; nunca la exige el creador guiado. `null`/ausente cuando no se
+   * completa — nunca `{}` como sustituto de "sin evaluar". */
+  inherentDimensions: z.record(z.string(), z.unknown()).nullable().optional(),
   inherentScore: z.coerce.number().min(0).nullable().optional(),
-  inherentLevel: riskLevelSchema,
-  residualDimensions: z.record(z.string(), z.unknown()),
-  residualScore: z.coerce.number().min(0).nullable().optional(),
-  residualLevel: riskLevelSchema,
+  inherentLevel: riskLevelSchema.nullable().optional(),
+  controlStatusText: z.enum(["controlled", "partial", "partial_immediate"]).nullable().optional(),
+  controlDeadlineText: z.string().trim().max(300).nullable().optional(),
+  /* Discrepancia MR/clasificación entre el Excel importado y el cálculo del
+   * sistema (§67) — nunca la fija el cliente en el creador guiado, sólo el
+   * importador la produce. Se acepta acá porque `addRiskEntryWithClient` es
+   * el único punto de escritura, tanto para el creador como para el import. */
+  evaluationDivergence: z.record(z.string(), z.unknown()).nullable().optional(),
   isCritical: z.boolean().default(false),
   responsibleUserId: z.string().min(1).nullable().optional(),
   responsibleSnapshot: z.string().trim().min(2).max(300),
@@ -93,10 +125,28 @@ export const riskMatrixTransitionSchema = z.object({
   expectedVersion: z.coerce.number().int().positive(),
   /* 'draft' es el retorno del revisor (MIPER-10): la máquina sólo avanzaba, así
    * que una versión enviada a revisión con un error se quedaba trabada ahí. El
-   * motivo ya es obligatorio para toda transición y queda en el historial. */
-  toStatus: z.enum(["draft", "in_review", "reviewed", "approved", "published"]),
+   * motivo ya es obligatorio para toda transición y queda en el historial.
+   * 'approved' no es un destino válido aquí: exigía una sola firma y hoy sólo
+   * se alcanza a través de `decideRiskMatrixApprovalSchema`, cuando ambos
+   * dominios (Prevención y Operaciones) firman. */
+  toStatus: z.enum(["draft", "in_review", "reviewed", "published"]),
   reason,
   effectiveFrom: date.optional(),
+})
+
+/* Doble aprobación (§48-51): cada dominio firma por separado, con motivo
+ * obligatorio tanto para aprobar como para rechazar — a diferencia de
+ * `riskMatrixTransitionSchema`, aquí el motivo siempre es exigible porque no
+ * hay ninguna transición "de trámite" (como enviar a revisión) que lo
+ * amerite opcional. Mismo mecanismo de excepción de segregación que
+ * `riskControlVerificationSchema`. */
+export const decideRiskMatrixApprovalSchema = z.object({
+  matrixId: z.string().min(1),
+  expectedVersion: z.coerce.number().int().positive(),
+  domain: z.enum(["prevention", "operations"]),
+  decision: z.enum(["approved", "rejected"]),
+  reason: z.string().trim().min(10).max(3000),
+  segregationExceptionReason: z.string().trim().max(2000).optional(),
 })
 
 /* MIPER-08: verificar un control es un acto separado de escribirlo, con

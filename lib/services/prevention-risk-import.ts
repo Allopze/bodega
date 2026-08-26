@@ -12,6 +12,17 @@ import {
   worksites,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { recordAudit } from "@/lib/audit"
+import {
+  MIPER_SHEETS,
+  cellText,
+  detectHeaderRows,
+  findSheet,
+  isEmptyDataRow,
+  mapColumns,
+  type IperField,
+} from "@/lib/prevention/miper-template"
+import { DEFAULT_RISK_METHODOLOGY, evaluateRisk, parseScaleValue } from "@/lib/prevention/risk-engine"
 import type { RiskLegalAccess } from "@/lib/services/prevention-risk-legal"
 import {
   createRiskMatrixDraftWithClient,
@@ -36,52 +47,29 @@ const RISK_IMPORT_LIMITS = {
 }
 const STORAGE_PREFIX = "storage/risk-imports/"
 
-const COLUMN_ALIASES: Record<string, string[]> = {
-  processCode: ["codigo proceso", "código proceso"],
-  processName: ["proceso"],
-  taskCode: ["codigo tarea", "código tarea"],
-  taskName: ["tarea", "actividad"],
-  positionCode: ["codigo puesto", "código puesto", "codigo cargo"],
-  positionName: ["puesto", "puesto de trabajo", "cargo"],
-  hazardCode: ["codigo peligro", "código peligro", "id peligro"],
-  hazard: ["peligro"],
-  riskFactor: ["factor", "factor de riesgo"],
-  expectedEventOrDamage: ["evento o dano", "evento o daño", "dano esperado", "daño esperado", "consecuencia"],
-  exposedPeopleDescription: ["personas expuestas", "expuestos"],
-  exposedPeopleCount: ["cantidad expuestos", "n expuestos", "n° expuestos"],
-  genderConsiderations: ["enfoque de genero", "enfoque de género", "genero", "género"],
-  sensitiveWorkerConsiderations: ["sensibilidad", "personas especialmente sensibles"],
-  inherentDimensions: ["dimensiones inherentes", "evaluacion inherente", "evaluación inherente"],
-  inherentScore: ["puntaje inherente", "valor inherente"],
-  inherentLevel: ["nivel inherente", "riesgo inherente"],
-  residualDimensions: ["dimensiones residuales", "evaluacion residual", "evaluación residual"],
-  residualScore: ["puntaje residual", "valor residual"],
-  residualLevel: ["nivel residual", "riesgo residual"],
-  isCritical: ["riesgo critico", "riesgo crítico", "critico", "crítico"],
-  responsibleSnapshot: ["responsable"],
-  evidenceReference: ["evidencia", "referencia evidencia"],
-  controls: ["controles", "medidas de control"],
-}
-
 interface NormalizedRiskImportRow {
   process: { code: string; name: string }
   task: { code: string; name: string; isRoutine: boolean }
   position: { code: string; name: string }
   hazardCode: string
   hazard: string
+  risk: string
   riskFactor: string
   expectedEventOrDamage: string
   exposedPeopleDescription: string
   exposedPeopleCount: number | null
+  isRoutine: boolean
+  specificWorkplace: string | null
+  exposedWorkersFemale: number | null
+  exposedWorkersMale: number | null
+  exposedWorkersOther: number | null
+  probability: 1 | 2 | 4
+  consequence: 1 | 2 | 4
+  controlStatusText: "controlled" | "partial" | "partial_immediate" | null
+  controlDeadlineText: string | null
+  evaluationDivergence: Record<string, unknown> | null
   genderConsiderations: string
   sensitiveWorkerConsiderations: string
-  inherentDimensions: Record<string, unknown>
-  inherentScore: number | null
-  inherentLevel: string
-  residualDimensions: Record<string, unknown>
-  residualScore: number | null
-  residualLevel: string
-  isCritical: boolean
   responsibleSnapshot: string
   evidenceReference: string | null
   controls: Array<{
@@ -100,16 +88,6 @@ function normalize(value: unknown) {
   return String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase().replace(/\s+/g, " ")
 }
 
-function text(value: ExcelJS.CellValue | undefined) {
-  if (value == null) return ""
-  if (value instanceof Date) return value.toISOString()
-  if (typeof value !== "object") return String(value).trim()
-  if ("result" in value && value.result != null) return text(value.result as ExcelJS.CellValue)
-  if ("text" in value && typeof value.text === "string") return value.text.trim()
-  if ("richText" in value && Array.isArray(value.richText)) return value.richText.map((item) => item.text).join("").trim()
-  return ""
-}
-
 function slug(value: string, fallback: string) {
   const normalized = normalize(value).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
   return normalized || fallback
@@ -118,21 +96,6 @@ function slug(value: string, fallback: string) {
 function numberOrNull(value: string) {
   const parsed = Number(value.replace(/\./g, "").replace(",", "."))
   return value.trim() && Number.isFinite(parsed) ? parsed : null
-}
-
-function booleanValue(value: string) {
-  return ["1", "si", "sí", "true", "x", "critico", "crítico"].includes(normalize(value))
-}
-
-function dimensions(value: string) {
-  if (!value.trim()) return {}
-  try {
-    const parsed = JSON.parse(value) as unknown
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, unknown>
-  } catch {
-    // Los formatos históricos suelen usar "probabilidad: 3; consecuencia: 4".
-  }
-  return Object.fromEntries(value.split(/[;|]/).map((item) => item.split(":").map((part) => part.trim())).filter((parts) => parts.length === 2 && parts[0]))
 }
 
 function controlHierarchy(value: string): NormalizedRiskImportRow["controls"][number]["hierarchy"] {
@@ -144,73 +107,48 @@ function controlHierarchy(value: string): NormalizedRiskImportRow["controls"][nu
   return "administrative"
 }
 
-function parseControls(value: string, responsible: string, critical: boolean) {
-  return value.split(/[;\n]/).map((item) => item.trim()).filter(Boolean).map((item, index) => {
+function parseControls(value: string, responsible: string) {
+  return value.split(/[;\n]/).map((item) => item.trim()).filter(Boolean).map((item) => {
     const [prefix, ...descriptionParts] = item.split(":")
     const hasPrefix = descriptionParts.length > 0
     const description = hasPrefix ? descriptionParts.join(":").trim() : item
-    const isCritical = critical && index === 0
     return {
       description,
       hierarchy: controlHierarchy(hasPrefix ? prefix! : item),
       isExisting: true,
-      isCritical,
-      performanceStandard: isCritical ? "Verificación documentada de disponibilidad y desempeño" : null,
-      verificationFrequency: isCritical ? "Mensual" : null,
+      // La plantilla real no tiene columna de "riesgo crítico": no se infiere,
+      // el usuario lo marca deliberadamente después de importar (§27 exige
+      // control+responsable+plazo antes de aprobar, no antes de importar).
+      isCritical: false,
+      performanceStandard: null,
+      verificationFrequency: null,
       responsibleSnapshot: responsible,
       status: "proposed" as const,
     }
   })
 }
 
-function buildColumnMap(row: ExcelJS.Row) {
-  const map = new Map<string, number>()
-  row.eachCell({ includeEmpty: false }, (cell, column) => {
-    const header = normalize(text(cell.value))
-    for (const [field, aliases] of Object.entries(COLUMN_ALIASES)) {
-      if (!map.has(field) && aliases.some((alias) => normalize(alias) === header)) map.set(field, column)
-    }
-  })
-  const required = ["processName", "taskName", "positionName", "hazard", "riskFactor", "expectedEventOrDamage", "inherentLevel", "residualLevel", "responsibleSnapshot"]
-  const missing = required.filter((field) => !map.has(field))
-  if (missing.length) throw new Error(`El Excel MIPER no contiene columnas obligatorias reconocibles: ${missing.join(", ")}.`)
-  return map
+/**
+ * "ESTA CONTROLADO EL RIESGO" es texto libre en el archivo real
+ * ("SÍ, CONTROLADO" / "PARCIALMENTE CONTROLADO" /
+ * "PARCIALMENTE CONTROLADO - REQUIERE ACCIÓN INMEDIATA") — se normaliza al
+ * vocabulario estructurado de `controlStatusText` (§30). Nunca adivina: texto
+ * que no calce con ninguna variante conocida se descarta (`null`), no se
+ * fuerza a un estado.
+ */
+function parseControlStatusText(value: string): NormalizedRiskImportRow["controlStatusText"] {
+  const normalized = normalize(value)
+  if (!normalized) return null
+  if (/requiere accion inmediata|accion inmediata/.test(normalized)) return "partial_immediate"
+  if (/parcial/.test(normalized)) return "partial"
+  if (/si,? controlado|controlado/.test(normalized)) return "controlled"
+  return null
 }
 
-function readOriginal(row: ExcelJS.Row, columns: Map<string, number>) {
-  return Object.fromEntries([...columns].map(([field, column]) => [field, text(row.getCell(column).value)]))
-}
-
-function normalizeRow(original: Record<string, string>, rowNumber: number): NormalizedRiskImportRow {
-  const processName = original.processName?.trim() ?? ""
-  const taskName = original.taskName?.trim() ?? ""
-  const positionName = original.positionName?.trim() ?? ""
-  const hazard = original.hazard?.trim() ?? ""
-  const responsibleSnapshot = original.responsibleSnapshot?.trim() ?? ""
-  const critical = booleanValue(original.isCritical ?? "")
-  return {
-    process: { code: original.processCode?.trim() || slug(processName, `proceso-${rowNumber}`), name: processName },
-    task: { code: original.taskCode?.trim() || slug(taskName, `tarea-${rowNumber}`), name: taskName, isRoutine: true },
-    position: { code: original.positionCode?.trim() || slug(positionName, `puesto-${rowNumber}`), name: positionName },
-    hazardCode: original.hazardCode?.trim() || `R${rowNumber}`,
-    hazard,
-    riskFactor: original.riskFactor?.trim() ?? "",
-    expectedEventOrDamage: original.expectedEventOrDamage?.trim() ?? "",
-    exposedPeopleDescription: original.exposedPeopleDescription?.trim() || "Personas que ejecutan la tarea",
-    exposedPeopleCount: numberOrNull(original.exposedPeopleCount ?? ""),
-    genderConsiderations: original.genderConsiderations?.trim() || "Requiere validación participativa del enfoque de género",
-    sensitiveWorkerConsiderations: original.sensitiveWorkerConsiderations?.trim() || "Requiere validar personas especialmente sensibles",
-    inherentDimensions: dimensions(original.inherentDimensions ?? ""),
-    inherentScore: numberOrNull(original.inherentScore ?? ""),
-    inherentLevel: original.inherentLevel?.trim() ?? "",
-    residualDimensions: dimensions(original.residualDimensions ?? ""),
-    residualScore: numberOrNull(original.residualScore ?? ""),
-    residualLevel: original.residualLevel?.trim() ?? "",
-    isCritical: critical,
-    responsibleSnapshot,
-    evidenceReference: original.evidenceReference?.trim() || null,
-    controls: parseControls(original.controls ?? "", responsibleSnapshot, critical),
-  }
+function readOriginal(row: ExcelJS.Row, columns: Partial<Record<IperField, number>>) {
+  return Object.fromEntries(
+    (Object.entries(columns) as Array<[IperField, number]>).map(([field, column]) => [field, cellText(row.getCell(column))]),
+  ) as Partial<Record<IperField, string>>
 }
 
 /* El contrato real de una fila es `riskEntrySchema` — es lo que corre
@@ -231,16 +169,14 @@ function contractIssues(row: NormalizedRiskImportRow) {
 
 function issuesFor(row: NormalizedRiskImportRow) {
   const issues: string[] = []
-  if (!row.process.name) issues.push("Proceso vacío")
+  if (!row.process.name) issues.push("Actividad (proceso) vacía")
   if (!row.task.name) issues.push("Tarea vacía")
   if (!row.position.name) issues.push("Puesto vacío")
   if (row.hazard.length < 3) issues.push("Peligro insuficiente")
-  if (row.riskFactor.length < 2) issues.push("Factor insuficiente")
-  if (row.expectedEventOrDamage.length < 3) issues.push("Evento o daño insuficiente")
-  if (!row.inherentLevel) issues.push("Nivel inherente vacío")
-  if (!row.residualLevel) issues.push("Nivel residual vacío")
+  if (row.risk.length < 2) issues.push("Riesgo insuficiente")
+  if (row.riskFactor.length < 2) issues.push("Factor de riesgo insuficiente")
+  if (row.expectedEventOrDamage.length < 3) issues.push("Daño probable insuficiente")
   if (row.responsibleSnapshot.length < 2) issues.push("Responsable vacío")
-  if (row.isCritical && row.controls.length === 0) issues.push("Riesgo crítico sin control")
   return issues.length ? issues : contractIssues(row)
 }
 
@@ -249,7 +185,12 @@ function issuesFor(row: NormalizedRiskImportRow) {
  * código de peligro. El texto del peligro NO entra — incluirlo hacía que dos
  * filas con el mismo código y distinta redacción pasaran el filtro de
  * duplicados del archivo y después chocaran contra el índice al activar,
- * matando el lote completo. */
+ * matando el lote completo.
+ *
+ * No es `riskEntryIdentityKey()` (lib/prevention/risk-engine.ts): esa clave
+ * usa los id de proceso/tarea/puesto ya resueltos en la base; en esta etapa
+ * de staging esas filas todavía no existen, sólo sus códigos de texto del
+ * Excel. */
 function fingerprint(row: NormalizedRiskImportRow) {
   return createHash("sha256").update(JSON.stringify({ process: row.process.code, task: row.task.code, position: row.position.code, hazardCode: row.hazardCode })).digest("hex")
 }
@@ -257,6 +198,126 @@ function fingerprint(row: NormalizedRiskImportRow) {
 function assertPermission(access: RiskLegalAccess, permission: string, worksiteId?: string) {
   const scopeAllows = !worksiteId || access.scope.mode === "all" || (access.scope.mode === "some" && access.scope.ids.includes(worksiteId))
   if (!access.permissions.includes(permission) || !scopeAllows) throw new Error("Lote MIPER no encontrado o fuera de alcance.")
+}
+
+/**
+ * Compara el MR/clasificación que traía el Excel (columnas MR/CLASIFICACION
+ * DEL RIESGO) contra el calculado por el motor — advierte, nunca bloquea
+ * (§67). Sólo compara cuando el Excel trae un valor legible: una fórmula sin
+ * `result` cacheado (archivo nunca recalculado) no cuenta como discrepancia,
+ * cuenta como "no declarado".
+ */
+function computeDivergence(original: Partial<Record<IperField, string>>, system: { riskMagnitude: number; riskClassification: string }): Record<string, unknown> | null {
+  const excelMagnitudeRaw = original.magnitude?.trim()
+  const excelClassificationRaw = original.classification?.trim()
+  const excelMagnitude = excelMagnitudeRaw ? Number(excelMagnitudeRaw) : null
+  const excelClassification = excelClassificationRaw ? normalize(excelClassificationRaw) : null
+  const magnitudeDiverges = excelMagnitude != null && Number.isFinite(excelMagnitude) && excelMagnitude !== system.riskMagnitude
+  const classificationDiverges = excelClassification != null && excelClassification !== "revisar" && excelClassification !== normalize(system.riskClassification)
+  if (!magnitudeDiverges && !classificationDiverges) return null
+  return {
+    excelMagnitude: excelMagnitude ?? excelMagnitudeRaw ?? null,
+    excelClassification: excelClassificationRaw ?? null,
+    systemMagnitude: system.riskMagnitude,
+    systemClassification: system.riskClassification,
+  }
+}
+
+/**
+ * "RUTINARIA/NO RUTINARIA" (§16: valor controlado, no texto libre). Nunca
+ * adivina —mismo criterio que `parseControlStatusText`—: antes, la ausencia
+ * del "no" bastaba para declarar la tarea rutinaria, así que una celda VACÍA
+ * (o con texto que no calza) se importaba afirmando "rutinaria" sin que nadie
+ * lo hubiera dicho. En una MIPER del DS 44 eso es inventar una condición de
+ * exposición, no un default inocuo. Devuelve `null` y la fila queda observada
+ * para que una persona la resuelva.
+ */
+function parseRoutine(value: string | undefined): boolean | null {
+  const normalized = normalize(value ?? "")
+  if (!normalized) return null
+  if (/\bno\s*rutinaria\b/.test(normalized)) return false
+  if (/\brutinaria\b/.test(normalized)) return true
+  return null
+}
+
+function normalizeRow(original: Partial<Record<IperField, string>>, rowNumber: number): NormalizedRiskImportRow {
+  const processName = original.activity?.trim() ?? ""
+  const taskName = original.task?.trim() ?? ""
+  const positionName = original.position?.trim() ?? ""
+  const hazard = original.hazard?.trim() ?? ""
+  const responsibleSnapshot = original.responsible?.trim() ?? ""
+  const routine = parseRoutine(original.routine)
+  // El contrato de escritura exige un booleano; el `?? true` sólo alimenta la
+  // previsualización. `issuesFor` marca la fila cuando `routine` es null, así
+  // que ninguna fila sin resolver llega a activarse con este valor.
+  const isRoutine = routine ?? true
+  const methodology = DEFAULT_RISK_METHODOLOGY
+  const probability = parseScaleValue(original.probability, methodology.probability)
+  const consequence = parseScaleValue(original.consequence, methodology.consequence)
+  const evaluationDivergence = probability != null && consequence != null
+    ? computeDivergence(original, evaluateRisk({ probability, consequence }, methodology))
+    : null
+  return {
+    process: { code: slug(processName, `proceso-${rowNumber}`), name: processName },
+    task: { code: slug(taskName, `tarea-${rowNumber}`), name: taskName, isRoutine },
+    position: { code: slug(positionName, `puesto-${rowNumber}`), name: positionName },
+    hazardCode: slug(hazard, `peligro-${rowNumber}`),
+    hazard,
+    risk: original.risk?.trim() ?? "",
+    riskFactor: original.riskFactor?.trim() ?? "",
+    expectedEventOrDamage: original.probableDamage?.trim() ?? "",
+    // La plantilla real no tiene columna de descripción de personas expuestas
+    // (sólo conteo F/M/OTRO) — se completa con el mismo default razonable que
+    // usa el creador guiado cuando el usuario no la escribe a mano.
+    exposedPeopleDescription: "Personas que ejecutan la tarea",
+    exposedPeopleCount: [original.workersFemale, original.workersMale, original.workersOther]
+      .map((value) => numberOrNull(value ?? ""))
+      .reduce<number | null>((total, value) => (value == null ? total : (total ?? 0) + value), null),
+    isRoutine,
+    specificWorkplace: original.specificWorkplace?.trim() || null,
+    exposedWorkersFemale: numberOrNull(original.workersFemale ?? ""),
+    exposedWorkersMale: numberOrNull(original.workersMale ?? ""),
+    exposedWorkersOther: numberOrNull(original.workersOther ?? ""),
+    probability: (probability ?? 1) as 1 | 2 | 4,
+    consequence: (consequence ?? 1) as 1 | 2 | 4,
+    controlStatusText: parseControlStatusText(original.controlStatus ?? ""),
+    controlDeadlineText: original.deadline?.trim() || null,
+    evaluationDivergence,
+    // La plantilla real no tiene columnas de enfoque de género ni de personas
+    // especialmente sensibles (son requisitos DS 44 de la plataforma, no del
+    // Excel) — quedan marcadas como pendientes de validación participativa,
+    // igual que hacía el importador anterior.
+    genderConsiderations: "Requiere validación participativa del enfoque de género",
+    sensitiveWorkerConsiderations: "Requiere validar personas especialmente sensibles",
+    responsibleSnapshot,
+    evidenceReference: null,
+    controls: parseControls(original.controlMeasure ?? "", responsibleSnapshot),
+  }
+}
+
+/**
+ * Filas donde P o C no se pudieron leer (columna ausente o texto que
+ * `parseScaleValue` no reconoce) se marcan `needs_review` explícitamente —
+ * `normalizeRow` no puede dejarlas pasar como "probabilidad 1" por defecto
+ * sin decirlo, porque eso falsearía la evaluación. Lo mismo con
+ * RUTINARIA/NO RUTINARIA: el default del contrato no puede convertirse en una
+ * afirmación sobre la condición de exposición que nadie escribió.
+ */
+function evaluationIssues(original: Partial<Record<IperField, string>>) {
+  const issues: string[] = []
+  const methodology = DEFAULT_RISK_METHODOLOGY
+  if (parseScaleValue(original.probability, methodology.probability) == null) issues.push(`Probabilidad no reconocida: "${original.probability ?? ""}"`)
+  if (parseScaleValue(original.consequence, methodology.consequence) == null) issues.push(`Consecuencia no reconocida: "${original.consequence ?? ""}"`)
+  /* Sólo si la columna EXISTE en la hoja: `readOriginal` omite la clave
+   * cuando no se mapeó ninguna columna. Una plantilla vieja sin la columna
+   * RUTINARIA es un vacío del archivo completo, y observar sus 200 filas por
+   * lo mismo convierte la revisión en ruido que se resuelve en bloque sin
+   * mirar. Con la columna presente, en cambio, la celda vacía es un dato que
+   * falta en ESA fila y sí hay que resolver. */
+  if ("routine" in original && parseRoutine(original.routine) == null) {
+    issues.push(`Rutinaria/No rutinaria no reconocida: "${original.routine ?? ""}"`)
+  }
+  return issues
 }
 
 export async function stageRiskImport(args: {
@@ -285,8 +346,18 @@ export async function stageRiskImport(args: {
   try { await workbook.xlsx.load(args.buffer as never, { ignoreNodes: ["dataValidations", "conditionalFormatting", "hyperlinks"] }) }
   catch { throw new Error("El archivo no es un Excel válido.") }
   validateLoadedWorkbook(workbook, MAX_ROWS, RISK_IMPORT_LIMITS)
-  const sheet = workbook.worksheets[0]!
-  const columns = buildColumnMap(sheet.getRow(1))
+  // Reconoce la hoja por NOMBRE (`RE-04 IPER`), no por posición: en la
+  // plantilla real la primera hoja es "Instructivo MIPER" — un ejemplo de
+  // cómo llenar una fila, no datos (§62-63). `worksheets[0]` la tomaba y el
+  // importador nunca leía un riesgo real.
+  const sheet = findSheet(workbook, MIPER_SHEETS.iper) ?? workbook.worksheets[0]
+  if (!sheet) throw new Error("El Excel no contiene hojas.")
+  const header = detectHeaderRows(sheet)
+  if (!header) throw new Error(`No se encontró un encabezado reconocible (columnas "Actividad" y "Peligro") en la hoja "${sheet.name}".`)
+  const columns = mapColumns(sheet, header)
+  const missing = (["activity", "task", "position", "hazard", "risk"] as IperField[]).filter((field) => columns[field] === undefined)
+  if (missing.length) throw new Error(`El Excel MIPER no contiene columnas obligatorias reconocibles: ${missing.join(", ")}.`)
+
   const rows: Array<{ rowNumber: number; original: Record<string, string>; normalized: NormalizedRiskImportRow; issues: string[]; fingerprint: string }> = []
   const seen = new Set<string>()
   /* `resolveHierarchy` reutiliza proceso/tarea/puesto por código y revienta si
@@ -304,12 +375,15 @@ export async function stageRiskImport(args: {
     if (previous === undefined) { namesByCode.set(code, name); return null }
     return previous === name ? null : `El código de ${kind} "${code}" ya aparece en el archivo con otro nombre ("${previous}")`
   }
-  sheet.eachRow((row, rowNumber) => {
-    if (rowNumber === 1) return
+  for (let rowNumber = header.firstDataRow; rowNumber <= sheet.rowCount; rowNumber++) {
+    const row = sheet.getRow(rowNumber)
+    // Las 24 filas vacías preformateadas del archivo real (R244-R267) cachean
+    // "REVISAR" en la columna de clasificación aunque no tienen ningún dato —
+    // se cortan por las columnas de DATOS, nunca por esa columna (§69).
+    if (isEmptyDataRow(row, columns)) continue
     const original = readOriginal(row, columns)
-    if (!Object.values(original).some(Boolean)) return
     const normalized = normalizeRow(original, rowNumber)
-    const rowIssues = issuesFor(normalized)
+    const rowIssues = [...evaluationIssues(original), ...issuesFor(normalized)]
     const processKey = `proceso:${normalized.process.code}`
     const taskKey = `tarea:${normalized.process.code}|${normalized.task.code}`
     const positionKey = `puesto:${taskKey}|${normalized.position.code}`
@@ -321,8 +395,8 @@ export async function stageRiskImport(args: {
     const rowFingerprint = fingerprint(normalized)
     if (seen.has(rowFingerprint)) rowIssues.push("Duplicado dentro del archivo")
     seen.add(rowFingerprint)
-    rows.push({ rowNumber, original, normalized, issues: rowIssues, fingerprint: rowFingerprint })
-  })
+    rows.push({ rowNumber, original: original as Record<string, string>, normalized, issues: rowIssues, fingerprint: rowFingerprint })
+  }
   if (!rows.length) throw new Error("El Excel no contiene filas MIPER utilizables.")
 
   const batchId = `riskimport-${nanoid()}`
@@ -534,7 +608,10 @@ export async function activateRiskImportBatch(input: unknown, access: RiskLegalA
     const counts = await tx.select({ remaining: sql<number>`count(*) filter (where ${preventionRiskImportRows.status} IN ('ready', 'needs_review'))::int` }).from(preventionRiskImportRows).where(eq(preventionRiskImportRows.batchId, batch.id))
     const remaining = counts[0]?.remaining ?? 0
     const completed = remaining === 0
-    if (completed) await tx.update(preventionRiskImportBatches).set({ status: "activated", activatedMatrixId: matrix.id, activatedByUserId: access.userId, activatedAt: new Date().toISOString() }).where(eq(preventionRiskImportBatches.id, batch.id))
+    if (completed) {
+      await tx.update(preventionRiskImportBatches).set({ status: "activated", activatedMatrixId: matrix.id, activatedByUserId: access.userId, activatedAt: new Date().toISOString() }).where(eq(preventionRiskImportBatches.id, batch.id))
+      await recordAudit({ userId: access.userId, action: "create", entityType: "prevention_risk_matrix", entityId: matrix.id, entityCode: `MIPER-v${matrix.matrixVersion}`, newState: { sourceImportBatchId: batch.id, sourceFileName: batch.sourceFileName, rowCount: rows.length }, reason: "Versión MIPER completada por activación de lote de importación Excel." }, tx)
+    }
     return { matrix, completed, remaining }
   })
 }

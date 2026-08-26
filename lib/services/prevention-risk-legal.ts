@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, notInArray, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, exists, gte, ilike, inArray, isNotNull, isNull, lte, ne, not, notInArray, or, sql } from "drizzle-orm"
 import { z } from "zod"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
@@ -28,6 +28,7 @@ import {
   preventionRiskLegalHistory,
   preventionRiskMapMarkers,
   preventionRiskMatrices,
+  preventionRiskMatrixApprovals,
   preventionRiskMethodologies,
   preventionRiskPositions,
   preventionRiskProcesses,
@@ -44,9 +45,17 @@ import { nanoid } from "@/lib/id"
 import { LEGAL_COMPLIANCE_STATUS_LABELS } from "@/lib/prevention/badges"
 import { CAPA_STATUS_LABELS } from "@/lib/prevention/capa"
 import { MINSAL_PROTOCOL_LABELS } from "@/lib/prevention/minsal-protocols"
-import { createCapaActionWithClient, type CapaStatus } from "@/lib/services/prevention-capa"
+import { DEFAULT_RISK_METHODOLOGY, RISK_LEVEL_TO_CLASSIFICATION, evaluateRisk, resolveMethodology, riskEntryIdentityKey, type RiskMethodology } from "@/lib/prevention/risk-engine"
+import { normalizeRiskLevel } from "@/lib/prevention/risk-levels"
+import { createCapaActionWithClient, getCapaCountsByWorksite, type CapaStatus } from "@/lib/services/prevention-capa"
+import { listCapaForRiskEntry } from "@/lib/services/prevention-risk-capa"
+import type { RiskQuickFilter } from "@/lib/prevention/risk-list-filters"
+import { recordAudit } from "@/lib/audit"
+import { createNotifications, notifyAfterCommit } from "@/lib/services/notification-create"
+import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notification-targeting"
 import { addDaysToPlainDate, formatDate, todayInChile } from "@/lib/utils"
 import {
+  decideRiskMatrixApprovalSchema,
   legalApplicabilityApprovalSchema,
   legalApplicabilityProposalSchema,
   legalComplianceAssessmentSchema,
@@ -158,7 +167,11 @@ export async function ensureIspRiskMethodology(access: RiskLegalAccess) {
     versionLabel: "v3-2024",
     kind: "primary",
     authoritySource: "Instituto de Salud Pública de Chile, versión 3 (2024)",
-    configuration: { dimensions: ["probability", "consequence"], allowsSpecialMethodology: true },
+    // Tabla P×C real (misma escala de la hoja "Criterios de Evaluación IPER") +
+    // intervalo de revisión semestral (ficha §44). `configuration` era inerte
+    // — declaraba las dimensiones pero nada la leía; `resolveMethodology`
+    // (lib/prevention/risk-engine.ts) es el primer lector.
+    configuration: DEFAULT_RISK_METHODOLOGY,
     createdByUserId: access.userId,
   }).onConflictDoNothing().returning()
   if (created) await history(db, { domain: "risk", entityType: "methodology", entityId: id, changeType: "created", reason: "Metodología oficial base registrada", afterState: created, actorUserId: access.userId })
@@ -291,6 +304,40 @@ async function resolveHierarchy(client: Client, worksiteId: string, data: z.infe
   return { process, task, position }
 }
 
+/**
+ * Único punto de escritura de la evaluación de una entrada de riesgo. El
+ * cliente sólo aporta `probability`/`consequence`; MR, clasificación y el
+ * nivel de compatibilidad `residualLevel` se calculan siempre acá con la
+ * metodología congelada de la matriz (§23-24: el backend nunca confía en el
+ * cliente). `residualDimensions` pasa a guardar el par estructurado en vez
+ * de la forma libre `{assessment: nivel}` que usaba el selector manual.
+ */
+/**
+ * `methodologySnapshot` congela `{code, name, versionLabel, kind,
+ * authoritySource, configuration}` (ver `createRiskMatrixDraftWithClient`);
+ * el motor de riesgo sólo necesita `configuration`. Cae al default si el
+ * snapshot es de una matriz creada antes de que `configuration` declarara la
+ * tabla P×C real (`resolveMethodology` ya maneja eso), o si el snapshot no
+ * tiene la forma esperada.
+ */
+function matrixMethodology(matrix: { methodologySnapshot: unknown }): RiskMethodology {
+  const snapshot = matrix.methodologySnapshot as { configuration?: unknown } | null
+  return resolveMethodology(snapshot?.configuration)
+}
+
+function applyRiskEvaluation(data: { probability: number; consequence: number }, methodology: RiskMethodology) {
+  const evaluated = evaluateRisk(data, methodology)
+  return {
+    probability: evaluated.probability,
+    consequence: evaluated.consequence,
+    riskMagnitude: evaluated.riskMagnitude,
+    riskClassification: evaluated.riskClassification,
+    residualDimensions: { probability: evaluated.probability, consequence: evaluated.consequence },
+    residualScore: evaluated.residualScore,
+    residualLevel: evaluated.residualLevel,
+  }
+}
+
 export async function addRiskEntryWithClient(
   client: Client,
   input: unknown,
@@ -306,6 +353,8 @@ export async function addRiskEntryWithClient(
     ...data.controls.map((control) => control.responsibleUserId),
   ])
   const hierarchy = await resolveHierarchy(client, matrix.worksiteId, data)
+  const methodology = matrixMethodology(matrix)
+  const evaluation = applyRiskEvaluation(data, methodology)
   const now = new Date().toISOString()
   const [entry] = await client.insert(preventionRiskEntries).values({
     id: `riskentry-${nanoid()}`,
@@ -315,19 +364,26 @@ export async function addRiskEntryWithClient(
     positionId: hierarchy.position.id,
     hazardCode: data.hazardCode,
     hazard: data.hazard,
+    risk: data.risk,
     riskFactor: data.riskFactor,
     expectedEventOrDamage: data.expectedEventOrDamage,
     exposedPeopleDescription: data.exposedPeopleDescription,
     exposedPeopleCount: data.exposedPeopleCount ?? null,
+    isRoutine: data.isRoutine,
+    specificWorkplace: data.specificWorkplace ?? null,
+    exposedWorkersFemale: data.exposedWorkersFemale ?? null,
+    exposedWorkersMale: data.exposedWorkersMale ?? null,
+    exposedWorkersOther: data.exposedWorkersOther ?? null,
     genderConsiderations: data.genderConsiderations,
     sensitiveWorkerConsiderations: data.sensitiveWorkerConsiderations,
     specialMethodologyReference: data.specialMethodologyReference ?? null,
-    inherentDimensions: data.inherentDimensions,
+    inherentDimensions: data.inherentDimensions ?? null,
     inherentScore: data.inherentScore ?? null,
-    inherentLevel: data.inherentLevel,
-    residualDimensions: data.residualDimensions,
-    residualScore: data.residualScore ?? null,
-    residualLevel: data.residualLevel,
+    inherentLevel: data.inherentLevel ?? null,
+    ...evaluation,
+    controlStatusText: data.controlStatusText ?? null,
+    controlDeadlineText: data.controlDeadlineText ?? null,
+    evaluationDivergence: data.evaluationDivergence ?? null,
     isCritical: data.isCritical,
     responsibleUserId: data.responsibleUserId ?? null,
     responsibleSnapshot: data.responsibleSnapshot,
@@ -370,8 +426,20 @@ export async function addRiskEntryWithClient(
   return { entry, controls }
 }
 
+/**
+ * Entrada pública (creador guiado / server action). `evaluationDivergence` se
+ * descarta acá: es evidencia DERIVADA de comparar un Excel importado contra
+ * el cálculo del sistema (§67), así que sólo la produce el importador por la
+ * vía `addRiskEntryWithClient`. Aceptarla desde el cliente permitía plantar
+ * una discrepancia inventada —"el Excel decía INTOLERABLE"— en un documento
+ * DS 44, que es exactamente el tipo de dato que §23-24 prohíbe recibir del
+ * cliente.
+ */
 export async function addRiskEntry(input: unknown, access: RiskLegalAccess) {
-  return db.transaction(async (tx) => addRiskEntryWithClient(tx, input, access))
+  const sanitized = input && typeof input === "object"
+    ? { ...(input as Record<string, unknown>), evaluationDivergence: undefined }
+    : input
+  return db.transaction(async (tx) => addRiskEntryWithClient(tx, sanitized, access))
 }
 
 const MATRIX_TRANSITIONS: Record<string, readonly string[]> = {
@@ -381,7 +449,12 @@ const MATRIX_TRANSITIONS: Record<string, readonly string[]> = {
   // editor no podía tocarla (`addRiskEntry` exige 'draft'). El retorno es del
   // revisor, con motivo obligatorio como cualquier otra transición.
   in_review: ["reviewed", "draft"],
-  reviewed: ["approved"],
+  // reviewed → approved ya no pasa por esta máquina genérica: exigía una
+  // sola firma (`prevention:risk:approve`), lo que dejaba abierto un atajo
+  // alrededor de la doble aprobación de Prevención + Operaciones agregada
+  // después. ``decideRiskMatrixApproval`` es ahora el único camino a
+  // 'approved' — hace su propia transición cuando ambos dominios firman.
+  reviewed: [],
   approved: ["published"],
 }
 
@@ -389,7 +462,6 @@ const MATRIX_PERMISSION: Record<string, string> = {
   draft: "prevention:risk:review",
   in_review: "prevention:risk:edit",
   reviewed: "prevention:risk:review",
-  approved: "prevention:risk:approve",
   published: "prevention:risk:publish",
 }
 
@@ -427,8 +499,7 @@ async function repointRiskMapMarkers(
   actorUserId: string,
 ) {
   if (supersededMatrixIds.length === 0) return
-  const identity = (entry: { processId: string; taskId: string; positionId: string; hazardCode: string }) =>
-    `${entry.processId}|${entry.taskId}|${entry.positionId}|${entry.hazardCode}`
+  const identity = riskEntryIdentityKey
 
   // Se parte por los marcadores, no por las entradas: lo normal es que no haya
   // ninguno y el resto del trabajo no llega a ocurrir.
@@ -480,9 +551,160 @@ async function repointRiskMapMarkers(
   }
 }
 
+const APPROVAL_DOMAIN_PERMISSION: Record<"prevention" | "operations", string> = {
+  prevention: "prevention:risk:approve_prevention",
+  operations: "prevention:risk:approve_operations",
+}
+
+const APPROVAL_DOMAIN_LABEL: Record<"prevention" | "operations", string> = {
+  prevention: "Prevención",
+  operations: "Operaciones",
+}
+
+/* Doble aprobación (§48-51): Prevención y Operaciones firman por separado en
+ * `prevention_risk_matrix_approvals`, una fila por dominio. La firma de un
+ * solo dominio no toca la matriz (por eso no bumpea `version`: ninguna fila
+ * de `prevention_risk_matrices` cambió todavía). Cuando la segunda fila
+ * completa el par en 'approved', esta misma transacción transiciona la
+ * matriz a 'approved' — sin segunda llamada ni job. Un 'rejected' de
+ * cualquiera de los dos borra ambas firmas y devuelve la matriz a 'draft'
+ * (mismo mecanismo de retorno que MIPER-10 en `transitionRiskMatrix`): la
+ * ronda siguiente firma de cero, porque el contenido ya cambió. */
+export async function decideRiskMatrixApproval(input: unknown, access: RiskLegalAccess) {
+  const data = decideRiskMatrixApprovalSchema.parse(input)
+  const result = await db.transaction(async (tx) => {
+    /* `FOR UPDATE` serializa las dos firmas sobre la misma matriz. Sin el
+     * candado, bajo READ COMMITTED dos aprobaciones simultáneas de dominios
+     * distintos leen ambas la tabla de aprobaciones vacía, insertan cada una
+     * su fila (el índice único es por (matrixId, domain), así que ninguna
+     * choca) y ambas concluyen que falta la otra: quedan las DOS firmas en
+     * 'approved' con la matriz clavada en 'reviewed', y como cada dominio ya
+     * "se pronunció", ninguna decisión posterior la desatasca. El CAS de
+     * `version` no lo cubre: la firma parcial no toca la matriz. */
+    const [matrix] = await tx.select().from(preventionRiskMatrices).where(eq(preventionRiskMatrices.id, data.matrixId)).for("update").limit(1)
+    if (!matrix) throw new Error("MIPER no encontrada o fuera de alcance.")
+    requireAccess(access, APPROVAL_DOMAIN_PERMISSION[data.domain], matrix.worksiteId)
+    if (matrix.status !== "reviewed") throw new Error("Sólo se decide la aprobación de una MIPER en estado 'revisada'.")
+    if (matrix.version !== data.expectedVersion) throw new Error("La MIPER cambió mientras la revisabas. Recarga antes de continuar.")
+
+    const existingApprovals = await tx.select().from(preventionRiskMatrixApprovals).where(eq(preventionRiskMatrixApprovals.matrixId, matrix.id))
+    if (existingApprovals.some((row) => row.domain === data.domain)) {
+      throw new Error(`${APPROVAL_DOMAIN_LABEL[data.domain]} ya se pronunció sobre esta versión.`)
+    }
+    const otherApproval = existingApprovals.find((row) => row.domain !== data.domain)
+
+    // El mismo usuario no firma los dos dominios ni aprueba lo que él mismo
+    // creó o revisó, salvo excepción fundamentada — mismo mecanismo que
+    // `verifyRiskControl`.
+    const conflicted = matrix.createdByUserId === access.userId
+      || matrix.reviewedByUserId === access.userId
+      || otherApproval?.userId === access.userId
+    if (conflicted) {
+      const canOverride = access.permissions.includes("prevention:risk:override_segregation")
+      if (!canOverride || (data.segregationExceptionReason?.trim().length ?? 0) < 10) {
+        throw new Error("La aprobación debe estar segregada de quien creó, revisó o ya aprobó por el otro dominio esta versión MIPER.")
+      }
+    }
+
+    const now = new Date().toISOString()
+    const approval = { id: `miperapproval-${nanoid()}`, matrixId: matrix.id, domain: data.domain, decision: data.decision, userId: access.userId, reason: data.reason, decidedAt: now }
+    await tx.insert(preventionRiskMatrixApprovals).values(approval)
+    await history(tx, {
+      domain: "risk",
+      entityType: "matrix",
+      entityId: matrix.id,
+      worksiteId: matrix.worksiteId,
+      changeType: data.decision === "approved" ? "approval_domain_signed" : "approval_domain_rejected",
+      reason: data.reason,
+      beforeState: { status: matrix.status, version: matrix.version, domain: data.domain },
+      afterState: { domain: data.domain, decision: data.decision, segregationExceptionReason: conflicted ? data.segregationExceptionReason!.trim() : null },
+      actorUserId: access.userId,
+    })
+    await recordAudit({ userId: access.userId, action: "create", entityType: "prevention_risk_matrix_approval", entityId: approval.id, entityCode: `MIPER-v${matrix.matrixVersion}:${data.domain}`, newState: { domain: data.domain, decision: data.decision }, reason: data.reason }, tx)
+
+    if (data.decision === "rejected") {
+      // Motivo ya cambió lo que ambos dominios evaluaban: las firmas de la
+      // ronda anterior (si el otro dominio ya había aprobado) ya no valen.
+      await tx.delete(preventionRiskMatrixApprovals).where(eq(preventionRiskMatrixApprovals.matrixId, matrix.id))
+      const [reverted] = await tx.update(preventionRiskMatrices)
+        .set({ status: "draft", version: matrix.version + 1, updatedAt: now, reviewedByUserId: null, reviewedAt: null })
+        .where(and(eq(preventionRiskMatrices.id, matrix.id), eq(preventionRiskMatrices.version, data.expectedVersion), eq(preventionRiskMatrices.status, "reviewed")))
+        .returning()
+      if (!reverted) throw new Error("La MIPER cambió mientras la revisabas. Recarga antes de continuar.")
+      await history(tx, {
+        domain: "risk", entityType: "matrix", entityId: matrix.id, worksiteId: matrix.worksiteId,
+        changeType: "draft", reason: `Rechazada por ${APPROVAL_DOMAIN_LABEL[data.domain]}: ${data.reason}`,
+        beforeState: { status: "reviewed", version: matrix.version }, afterState: { status: "draft", version: reverted.version },
+        actorUserId: access.userId,
+      })
+      await recordAudit({ userId: access.userId, action: "status_change", entityType: "prevention_risk_matrix", entityId: matrix.id, entityCode: `MIPER-v${matrix.matrixVersion}`, oldState: { status: "reviewed" }, newState: { status: "draft" }, reason: `Rechazada por ${APPROVAL_DOMAIN_LABEL[data.domain]}: ${data.reason}` }, tx)
+      return { matrix: reverted, approval, complete: false as const }
+    }
+
+    const bothApproved = otherApproval?.decision === "approved"
+    if (!bothApproved) return { matrix, approval, complete: false as const }
+
+    const [approvedMatrix] = await tx.update(preventionRiskMatrices)
+      .set({ status: "approved", version: matrix.version + 1, updatedAt: now, approvedByUserId: access.userId, approvedAt: now })
+      .where(and(eq(preventionRiskMatrices.id, matrix.id), eq(preventionRiskMatrices.version, data.expectedVersion), eq(preventionRiskMatrices.status, "reviewed")))
+      .returning()
+    if (!approvedMatrix) throw new Error("La MIPER cambió mientras la revisabas. Recarga antes de continuar.")
+    await history(tx, {
+      domain: "risk", entityType: "matrix", entityId: matrix.id, worksiteId: matrix.worksiteId,
+      changeType: "approved", reason: "Prevención y Operaciones aprobaron esta versión.",
+      beforeState: { status: "reviewed", version: matrix.version }, afterState: { status: "approved", version: approvedMatrix.version },
+      actorUserId: access.userId,
+    })
+    await recordAudit({ userId: access.userId, action: "status_change", entityType: "prevention_risk_matrix", entityId: matrix.id, entityCode: `MIPER-v${matrix.matrixVersion}`, oldState: { status: "reviewed" }, newState: { status: "approved" }, reason: "Prevención y Operaciones aprobaron esta versión." }, tx)
+    return { matrix: approvedMatrix, approval, complete: true as const }
+  })
+  // Post-commit (S-05): ver la nota en `transitionRiskMatrix`.
+  notifyAfterCommit(async () => {
+    if (data.decision === "rejected") {
+      await createNotifications([result.matrix.createdByUserId], {
+        type: "system_alert",
+        title: "MIPER rechazada en aprobación",
+        body: `${APPROVAL_DOMAIN_LABEL[data.domain]} rechazó ${result.matrix.title} v${result.matrix.matrixVersion}: ${data.reason}`,
+        entityType: "prevention_risk_matrix",
+        entityId: result.matrix.id,
+        entityHref: "/prevencion/miper",
+        dedupeKey: `risk-matrix:${result.matrix.id}:v${result.matrix.version}:rejected:${data.domain}`,
+      })
+      return
+    }
+    if (result.complete) {
+      await createNotifications([result.matrix.createdByUserId], {
+        type: "system_alert",
+        title: "MIPER aprobada",
+        body: `${result.matrix.title} v${result.matrix.matrixVersion} fue aprobada por Prevención y Operaciones. Ya puede publicarse.`,
+        entityType: "prevention_risk_matrix",
+        entityId: result.matrix.id,
+        entityHref: "/prevencion/miper",
+        dedupeKey: `risk-matrix:${result.matrix.id}:v${result.matrix.version}:approved`,
+      })
+      return
+    }
+    // Un solo dominio firmó 'approved': al otro le falta pronunciarse.
+    const otherDomain: "prevention" | "operations" = data.domain === "prevention" ? "operations" : "prevention"
+    const pending = (await getUserIdsWithPermissionForWorksite(APPROVAL_DOMAIN_PERMISSION[otherDomain], result.matrix.worksiteId))
+      .filter((userId) => userId !== access.userId)
+    if (pending.length === 0) return
+    await createNotifications(pending, {
+      type: "system_alert",
+      title: "MIPER pendiente de tu aprobación",
+      body: `${APPROVAL_DOMAIN_LABEL[data.domain]} ya firmó ${result.matrix.title} v${result.matrix.matrixVersion}. Falta la firma de ${APPROVAL_DOMAIN_LABEL[otherDomain]}.`,
+      entityType: "prevention_risk_matrix",
+      entityId: result.matrix.id,
+      entityHref: "/prevencion/miper",
+      dedupeKey: `risk-matrix:${result.matrix.id}:v${result.matrix.version}:pending:${otherDomain}`,
+    })
+  })
+  return result
+}
+
 export async function transitionRiskMatrix(input: unknown, access: RiskLegalAccess) {
   const data = riskMatrixTransitionSchema.parse(input)
-  return db.transaction(async (tx) => {
+  const updated = await db.transaction(async (tx) => {
     const [matrix] = await tx.select().from(preventionRiskMatrices).where(eq(preventionRiskMatrices.id, data.matrixId)).limit(1)
     if (!matrix) throw new Error("MIPER no encontrada o fuera de alcance.")
     requireAccess(access, MATRIX_PERMISSION[data.toStatus]!, matrix.worksiteId)
@@ -493,16 +715,18 @@ export async function transitionRiskMatrix(input: unknown, access: RiskLegalAcce
       if (!countRows[0]?.count) throw new Error("Una MIPER sin peligros no puede enviarse a revisión.")
     }
     if (data.toStatus === "reviewed" && matrix.createdByUserId === access.userId) throw new Error("Quien creó la versión MIPER no puede revisarla.")
-    if (data.toStatus === "approved" && (matrix.createdByUserId === access.userId || matrix.reviewedByUserId === access.userId)) throw new Error("La aprobación MIPER debe estar segregada de creación y revisión.")
     const now = new Date().toISOString()
     const updates: Partial<typeof preventionRiskMatrices.$inferInsert> = { status: data.toStatus, version: matrix.version + 1, updatedAt: now }
     if (data.toStatus === "reviewed") Object.assign(updates, { reviewedByUserId: access.userId, reviewedAt: now })
-    if (data.toStatus === "approved") Object.assign(updates, { approvedByUserId: access.userId, approvedAt: now })
     let sourceHash: string | null = null
     if (data.toStatus === "published") {
       sourceHash = await matrixSourceHash(tx, matrix.id)
       const effectiveFrom = data.effectiveFrom ?? todayInChile()
-      const reviewDueAt = addDays(effectiveFrom, 365)
+      // Ficha §44: "la MIPER se actualiza semestralmente" — antes codificado a
+      // 365 días (anual). El intervalo viene de la metodología congelada de
+      // ESTA matriz (default 182 días si la metodología no lo declara), no de
+      // un literal: una metodología futura puede declarar otro ciclo.
+      const reviewDueAt = addDays(effectiveFrom, matrixMethodology(matrix).reviewIntervalDays)
       const previousPublished = await tx.select().from(preventionRiskMatrices).where(and(
         eq(preventionRiskMatrices.worksiteId, matrix.worksiteId),
         eq(preventionRiskMatrices.status, "published"),
@@ -536,6 +760,9 @@ export async function transitionRiskMatrix(input: unknown, access: RiskLegalAcce
     const [updated] = await tx.update(preventionRiskMatrices).set(updates).where(and(eq(preventionRiskMatrices.id, matrix.id), eq(preventionRiskMatrices.version, data.expectedVersion), eq(preventionRiskMatrices.status, matrix.status))).returning()
     if (!updated) throw new Error("La MIPER cambió mientras la revisabas. Recarga antes de continuar.")
     await history(tx, { domain: "risk", entityType: "matrix", entityId: matrix.id, worksiteId: matrix.worksiteId, changeType: data.toStatus, reason: data.reason, beforeState: { status: matrix.status, version: matrix.version }, afterState: { status: updated.status, version: updated.version, sourceHash }, actorUserId: access.userId })
+    // Complementa `preventionRiskLegalHistory` (dominio) sin reemplazarla:
+    // `admin/auditoria` lee la tabla genérica, no la de dominio.
+    await recordAudit({ userId: access.userId, action: "status_change", entityType: "prevention_risk_matrix", entityId: matrix.id, entityCode: `MIPER-v${matrix.matrixVersion}`, oldState: { status: matrix.status }, newState: { status: updated.status }, reason: data.reason }, tx)
     if (data.toStatus === "published") {
       const effectiveFrom = updated.effectiveFrom!
       await createRiskReviewTriggerWithClient(tx, {
@@ -563,6 +790,26 @@ export async function transitionRiskMatrix(input: unknown, access: RiskLegalAcce
     }
     return updated
   })
+  // Post-commit (S-05): un correo/notificación no puede revertir una
+  // transacción ya confirmada, así que se dispara después de que
+  // `db.transaction` resuelve, nunca dentro de su callback.
+  if (data.toStatus === "in_review") {
+    notifyAfterCommit(async () => {
+      const reviewers = (await getUserIdsWithPermissionForWorksite("prevention:risk:review", updated.worksiteId))
+        .filter((userId) => userId !== access.userId)
+      if (reviewers.length === 0) return
+      await createNotifications(reviewers, {
+        type: "system_alert",
+        title: "MIPER pendiente de revisión",
+        body: `${updated.title} v${updated.matrixVersion} fue enviada a revisión.`,
+        entityType: "prevention_risk_matrix",
+        entityId: updated.id,
+        entityHref: `/prevencion/miper`,
+        dedupeKey: `risk-matrix:${updated.id}:v${updated.version}:in_review`,
+      })
+    })
+  }
+  return updated
 }
 
 /**
@@ -1242,6 +1489,19 @@ export async function getRiskDashboard(access: RiskLegalAccess) {
   })
   const activePositions = processes.length ? await db.select({ id: preventionRiskPositions.id, processId: preventionRiskTasks.processId }).from(preventionRiskPositions).innerJoin(preventionRiskTasks, eq(preventionRiskTasks.id, preventionRiskPositions.taskId)).where(and(eq(preventionRiskPositions.isActive, true), inArray(preventionRiskTasks.processId, processes.map((item) => item.id)))) : []
   const publishedEntries = entries.filter((item) => publishedIds.has(item.entry.matrixId))
+  // Programa de Trabajo (CAPA con sourceType:'risk') por faena — reutiliza el
+  // conteo agrupado de CAPA en vez de reimplementarlo acá. `cphs` y
+  // `jefe_terreno` tienen `prevention:risk:view` pero no `prevention:capa:view`
+  // (RBAC real, modules/prevention/manifest.ts): degradar a vacío, no reventar
+  // el tablero completo por un permiso vecino que no tienen.
+  const workProgramCountsByWorksite = access.permissions.includes("prevention:capa:view")
+    ? await getCapaCountsByWorksite({ scope: access.scope, permissions: access.permissions, sourceType: "risk" })
+    : new Map<string, { open: number; overdue: number; pendingVerification: number }>()
+  // Estado de la doble aprobación por matriz — sólo interesa para las que
+  // llegaron a 'reviewed' o más allá; una matriz en borrador nunca tiene filas.
+  const approvals = matrixIds.length ? await db.select().from(preventionRiskMatrixApprovals).where(inArray(preventionRiskMatrixApprovals.matrixId, matrixIds)) : []
+  const approvalsByMatrix = new Map<string, typeof approvals>()
+  for (const approval of approvals) approvalsByMatrix.set(approval.matrixId, [...(approvalsByMatrix.get(approval.matrixId) ?? []), approval])
   return {
     worksites: visibleWorksites,
     methodologies,
@@ -1258,6 +1518,8 @@ export async function getRiskDashboard(access: RiskLegalAccess) {
       activePositions: activePositions.length,
       coveredPositions: new Set(publishedEntries.map((item) => item.entry.positionId)).size,
     },
+    workProgramCountsByWorksite,
+    approvalsByMatrix,
   }
 }
 
@@ -1497,6 +1759,171 @@ export async function getRiskControlDetail(controlId: string, access: RiskLegalA
   return { ...row, links }
 }
 
+/**
+ * Ficha de una entrada de riesgo (`/prevencion/miper/riesgos/[id]`) — cierra
+ * el enlace muerto de `capaSourceHref("risk", ...)`, que ya apuntaba acá
+ * antes de que la ruta existiera. A diferencia de `getRiskControlDetail`, no
+ * restringe por estado de la matriz: un riesgo de una versión en borrador
+ * también debe poder consultarse mientras se construye.
+ */
+export async function getRiskEntryBundle(args: { entryId: string; scope: WorksiteScope; permissions: readonly string[] }) {
+  if (!args.permissions.includes("prevention:risk:view")) throw new Error("Riesgo MIPER no encontrado o fuera de alcance.")
+  const [row] = await db.select({
+    entry: preventionRiskEntries,
+    matrix: preventionRiskMatrices,
+    process: preventionRiskProcesses,
+    task: preventionRiskTasks,
+    position: preventionRiskPositions,
+    worksiteName: worksites.name,
+  }).from(preventionRiskEntries)
+    .innerJoin(preventionRiskMatrices, eq(preventionRiskMatrices.id, preventionRiskEntries.matrixId))
+    .innerJoin(preventionRiskProcesses, eq(preventionRiskProcesses.id, preventionRiskEntries.processId))
+    .innerJoin(preventionRiskTasks, eq(preventionRiskTasks.id, preventionRiskEntries.taskId))
+    .innerJoin(preventionRiskPositions, eq(preventionRiskPositions.id, preventionRiskEntries.positionId))
+    .innerJoin(worksites, eq(worksites.id, preventionRiskMatrices.worksiteId))
+    .where(eq(preventionRiskEntries.id, args.entryId)).limit(1)
+  if (!row || !scopeAllows(args.scope, row.matrix.worksiteId)) throw new Error("Riesgo MIPER no encontrado o fuera de alcance.")
+  const [controls, history, capaActions] = await Promise.all([
+    db.select().from(preventionRiskControls).where(eq(preventionRiskControls.riskEntryId, args.entryId)).orderBy(asc(preventionRiskControls.createdAt)),
+    db.select().from(preventionRiskLegalHistory).where(and(eq(preventionRiskLegalHistory.entityType, "entry"), eq(preventionRiskLegalHistory.entityId, args.entryId))).orderBy(desc(preventionRiskLegalHistory.createdAt)),
+    /* Une el camino directo (sourceId = entryId) con el caso N:N de la tabla
+     * puente (una acción cubriendo varios riesgos), sin duplicar. Sólo para
+     * quien puede ver CAPA: `cphs` y `jefe_terreno` tienen
+     * `prevention:risk:view` SIN `prevention:capa:view` (RBAC real,
+     * modules/prevention/manifest.ts), y la ficha de riesgo sólo exige el
+     * primero — mismo resguardo que `getRiskDashboard` y el exportador. */
+    args.permissions.includes("prevention:capa:view")
+      ? listCapaForRiskEntry({ riskEntryId: args.entryId })
+      : Promise.resolve([]),
+  ])
+  return { ...row, controls, history, capaActions }
+}
+
+/**
+ * Vista matriz (Fase 5): lista paginada server-side de las entradas de UNA
+ * matriz, con filtros estructurados + filtros rápidos (§82-83 de la ficha).
+ * Una MIPER real supera las 200 filas — traerlas todas al cliente para
+ * filtrar ahí sería exactamente el problema que esta vista reemplaza.
+ */
+export async function listRiskEntriesPage(args: {
+  matrixId: string
+  scope: WorksiteScope
+  permissions: readonly string[]
+  filters?: {
+    classification?: string
+    riskFactor?: string
+    routine?: "routine" | "non_routine"
+    responsibleUserId?: string
+    controlStatus?: string
+    quickFilter?: RiskQuickFilter
+    search?: string
+  }
+  limit?: number
+  offset?: number
+}) {
+  if (!args.permissions.includes("prevention:risk:view")) throw new Error("MIPER no encontrada o fuera de alcance.")
+  const [matrix] = await db.select({ id: preventionRiskMatrices.id, worksiteId: preventionRiskMatrices.worksiteId, status: preventionRiskMatrices.status }).from(preventionRiskMatrices).where(eq(preventionRiskMatrices.id, args.matrixId)).limit(1)
+  if (!matrix || !scopeAllows(args.scope, matrix.worksiteId)) throw new Error("MIPER no encontrada o fuera de alcance.")
+
+  const f = args.filters ?? {}
+  const noControlCondition = not(exists(db.select({ id: preventionRiskControls.id }).from(preventionRiskControls).where(eq(preventionRiskControls.riskEntryId, preventionRiskEntries.id))))
+  const where = and(
+    eq(preventionRiskEntries.matrixId, args.matrixId),
+    f.classification ? eq(preventionRiskEntries.riskClassification, f.classification) : undefined,
+    f.riskFactor ? eq(preventionRiskEntries.riskFactor, f.riskFactor) : undefined,
+    f.routine === "routine" ? eq(preventionRiskEntries.isRoutine, true) : f.routine === "non_routine" ? eq(preventionRiskEntries.isRoutine, false) : undefined,
+    f.responsibleUserId ? eq(preventionRiskEntries.responsibleUserId, f.responsibleUserId) : undefined,
+    f.controlStatus ? eq(preventionRiskEntries.controlStatusText, f.controlStatus) : undefined,
+    f.search ? or(ilike(preventionRiskEntries.hazard, `%${f.search}%`), ilike(preventionRiskEntries.risk, `%${f.search}%`), ilike(preventionRiskEntries.hazardCode, `%${f.search}%`)) : undefined,
+    f.quickFilter === "intolerable" ? eq(preventionRiskEntries.riskClassification, "intolerable") : undefined,
+    f.quickFilter === "importante" ? eq(preventionRiskEntries.riskClassification, "importante") : undefined,
+    f.quickFilter === "sin_responsable" ? isNull(preventionRiskEntries.responsibleUserId) : undefined,
+    f.quickFilter === "sin_control" ? noControlCondition : undefined,
+  )
+  const effectiveLimit = Math.min(args.limit ?? 50, 500)
+  const effectiveOffset = args.offset ?? 0
+  const [rows, [totalRow]] = await Promise.all([
+    db.select({ entry: preventionRiskEntries, process: preventionRiskProcesses, task: preventionRiskTasks, position: preventionRiskPositions })
+      .from(preventionRiskEntries)
+      .innerJoin(preventionRiskProcesses, eq(preventionRiskProcesses.id, preventionRiskEntries.processId))
+      .innerJoin(preventionRiskTasks, eq(preventionRiskTasks.id, preventionRiskEntries.taskId))
+      .innerJoin(preventionRiskPositions, eq(preventionRiskPositions.id, preventionRiskEntries.positionId))
+      .where(where).orderBy(asc(preventionRiskProcesses.name), asc(preventionRiskTasks.name), asc(preventionRiskEntries.hazardCode))
+      .limit(effectiveLimit).offset(effectiveOffset),
+    db.select({ count: sql<number>`count(*)::int` }).from(preventionRiskEntries).where(where),
+  ])
+  const entryIds = rows.map((row) => row.entry.id)
+  const controls = entryIds.length ? await db.select().from(preventionRiskControls).where(inArray(preventionRiskControls.riskEntryId, entryIds)) : []
+  const controlsByEntry = new Map<string, typeof controls>()
+  for (const control of controls) controlsByEntry.set(control.riskEntryId, [...(controlsByEntry.get(control.riskEntryId) ?? []), control])
+  // Conteo de CAPA abiertas: sólo el camino directo (sourceId = entryId) — el
+  // caso N:N de la tabla puente es raro y su detalle completo ya vive en la
+  // ficha de cada riesgo (`listCapaForRiskEntry`), que sí lo une.
+  const openCapaCounts = entryIds.length
+    ? await db.select({ sourceId: preventionCapaActions.sourceId, count: sql<number>`count(*)::int` })
+      .from(preventionCapaActions)
+      .where(and(eq(preventionCapaActions.sourceType, "risk"), inArray(preventionCapaActions.sourceId, entryIds), notInArray(preventionCapaActions.status, ["closed", "cancelled"])))
+      .groupBy(preventionCapaActions.sourceId)
+    : []
+  const openCapaByEntry = new Map(openCapaCounts.map((row) => [row.sourceId, row.count]))
+  return {
+    matrix,
+    rows: rows.map((row) => ({ ...row, controls: controlsByEntry.get(row.entry.id) ?? [], openCapaCount: openCapaByEntry.get(row.entry.id) ?? 0 })),
+    total: totalRow?.count ?? 0,
+    limit: effectiveLimit,
+    offset: effectiveOffset,
+  }
+}
+
+const bulkUpdateRiskControlsSchema = z.object({
+  riskEntryIds: z.array(z.string().min(1)).min(1).max(500),
+  responsibleUserId: z.string().min(1).nullable().optional(),
+  controlDeadlineText: z.string().trim().max(300).nullable().optional(),
+})
+
+/**
+ * Operación masiva (§81 de la ficha): reasigna responsable y/o plazo sobre
+ * varias entradas a la vez. Sólo sobre matrices en `draft` — publicada es
+ * inmutable, igual que el resto del módulo. Una sola auditoría por
+ * operación, no una por fila.
+ */
+export async function bulkUpdateRiskControlsWithClient(client: Client, input: unknown, access: RiskLegalAccess) {
+  const data = bulkUpdateRiskControlsSchema.parse(input)
+  if (data.responsibleUserId === undefined && data.controlDeadlineText === undefined) throw new Error("Indica al menos un campo a cambiar.")
+  const entryIds = [...new Set(data.riskEntryIds)]
+  /* `FOR UPDATE` sobre las filas que se van a escribir y su matriz: sin el
+   * candado, una transición a 'in_review' que se cuele entre este SELECT y el
+   * UPDATE deja la escritura masiva aterrizando sobre una versión que ya
+   * salió de borrador — justo la inmutabilidad que valida la línea de abajo. */
+  const rows = await client.select({ entry: preventionRiskEntries, matrix: preventionRiskMatrices })
+    .from(preventionRiskEntries)
+    .innerJoin(preventionRiskMatrices, eq(preventionRiskMatrices.id, preventionRiskEntries.matrixId))
+    .where(inArray(preventionRiskEntries.id, entryIds))
+    .for("update")
+  if (rows.length !== entryIds.length) throw new Error("Uno o más riesgos no se encontraron o están fuera de alcance.")
+  for (const row of rows) {
+    requireAccess(access, "prevention:risk:edit", row.matrix.worksiteId)
+    if (row.matrix.status !== "draft") throw new Error("Sólo una versión MIPER en borrador admite cambios masivos.")
+  }
+  if (data.responsibleUserId) await assertActiveUser(client, data.responsibleUserId)
+  const now = new Date().toISOString()
+  const patch: Record<string, unknown> = { updatedAt: now, version: sql`${preventionRiskEntries.version} + 1` }
+  if (data.responsibleUserId !== undefined) patch.responsibleUserId = data.responsibleUserId
+  if (data.controlDeadlineText !== undefined) patch.controlDeadlineText = data.controlDeadlineText
+  await client.update(preventionRiskEntries).set(patch).where(inArray(preventionRiskEntries.id, entryIds))
+  await history(client, {
+    domain: "risk", entityType: "matrix", entityId: rows[0]!.matrix.id, worksiteId: rows[0]!.matrix.worksiteId,
+    changeType: "bulk_update", reason: `Operación masiva sobre ${entryIds.length} riesgo(s).`,
+    afterState: { riskEntryIds: entryIds, responsibleUserId: data.responsibleUserId, controlDeadlineText: data.controlDeadlineText },
+    actorUserId: access.userId,
+  })
+  return { updated: entryIds.length }
+}
+
+export async function bulkUpdateRiskControls(input: unknown, access: RiskLegalAccess) {
+  return db.transaction((tx) => bulkUpdateRiskControlsWithClient(tx, input, access))
+}
+
 export async function getLegalRequirementDetail(requirementId: string, access: RiskLegalAccess) {
   if (!access.permissions.includes("prevention:legal:view") && !access.permissions.includes("prevention:pdtp:view")) throw new Error("Requisito legal no encontrado.")
   const [requirement] = await db.select().from(preventionLegalRequirements).where(and(eq(preventionLegalRequirements.id, requirementId), inArray(preventionLegalRequirements.status, ["published", "superseded"]))).limit(1)
@@ -1508,4 +1935,60 @@ export async function getLegalRequirementDetail(requirementId: string, access: R
   // La ficha decía "Vigente" por el solo hecho de estar publicado, sin mirar la
   // ventana de vigencia que ella misma muestra (LEGAL-03).
   return { requirement, inForce: isLegalRequirementInForce(requirement), applicabilities, assessments, links }
+}
+
+/**
+ * Backfill del motor P×C (Fase 1): entradas creadas antes del motor no
+ * tienen `probability`/`consequence`/`riskMagnitude` — nunca se inventan
+ * (falsear una probabilidad en un documento DS 44 sería falsear evidencia de
+ * cumplimiento). Sólo deriva `riskClassification` desde el `residualLevel`
+ * ya almacenado, vía la biyección de `risk-engine.ts` — es exacto y
+ * reversible: mismos totales por balde antes/después (round-trip). Ejecutar
+ * con `npm run db:backfill-risk-classification`. Idempotente (sólo toca
+ * filas con `riskClassification IS NULL`).
+ */
+export async function backfillRiskClassification(client: DB = db) {
+  const rows = await client.select({ id: preventionRiskEntries.id, residualLevel: preventionRiskEntries.residualLevel })
+    .from(preventionRiskEntries)
+    .where(isNull(preventionRiskEntries.riskClassification))
+  let updated = 0
+  const unresolved: string[] = []
+  for (const row of rows) {
+    const level = normalizeRiskLevel(row.residualLevel)
+    if (!level) { unresolved.push(row.id); continue }
+    await client.update(preventionRiskEntries).set({ riskClassification: RISK_LEVEL_TO_CLASSIFICATION[level] }).where(eq(preventionRiskEntries.id, row.id))
+    updated++
+  }
+  return { total: rows.length, updated, unresolved }
+}
+
+/* Doble aprobación (§48-51): antes de esta migración, una matriz `approved`
+ * llevaba una sola firma (`approvedByUserId`). Cada matriz ya
+ * approved/published/superseded recibe 2 filas derivadas de esa firma única
+ * —una por dominio, `migratedFromLegacy: true`— para que el invariante
+ * "toda matriz que llegó a 'approved' tiene 2 filas de aprobación" se
+ * sostenga desde antes de que existiera esta tabla. Idempotente: una matriz
+ * que ya tiene alguna fila (real o backfilleada) se deja intacta, nunca se
+ * duplica. Ejecutar en el mismo despliegue que la migración de la tabla —
+ * `decideRiskMatrixApproval` rechaza decisiones sobre una matriz más allá de
+ * 'reviewed', así que una matriz `approved` sin backfillear queda atrapada
+ * (nunca podría llegar a 'published'), no corrupta. */
+export async function backfillRiskMatrixApprovals(client: DB = db) {
+  const matrices = await client.select().from(preventionRiskMatrices).where(inArray(preventionRiskMatrices.status, ["approved", "published", "superseded"]))
+  let insertedRows = 0
+  const skippedNoApprover: string[] = []
+  const alreadyPresent: string[] = []
+  for (const matrix of matrices) {
+    if (!matrix.approvedByUserId) { skippedNoApprover.push(matrix.id); continue }
+    const existing = await client.select({ id: preventionRiskMatrixApprovals.id }).from(preventionRiskMatrixApprovals).where(eq(preventionRiskMatrixApprovals.matrixId, matrix.id)).limit(1)
+    if (existing.length > 0) { alreadyPresent.push(matrix.id); continue }
+    const decidedAt = matrix.approvedAt ?? matrix.updatedAt
+    const reason = "Backfill: aprobación única previa a la doble aprobación de Prevención y Operaciones."
+    await client.insert(preventionRiskMatrixApprovals).values([
+      { id: `miperapproval-${nanoid()}`, matrixId: matrix.id, domain: "prevention", decision: "approved", userId: matrix.approvedByUserId, reason, decidedAt, migratedFromLegacy: true },
+      { id: `miperapproval-${nanoid()}`, matrixId: matrix.id, domain: "operations", decision: "approved", userId: matrix.approvedByUserId, reason, decidedAt, migratedFromLegacy: true },
+    ])
+    insertedRows += 2
+  }
+  return { totalMatrices: matrices.length, insertedRows, skippedNoApprover, alreadyPresent }
 }

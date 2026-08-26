@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import ExcelJS from "exceljs"
+import { MIPER_SHEETS } from "@/lib/prevention/miper-template"
 import postgres from "postgres"
 import { and, asc, eq, isNull, ne, sql } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/postgres-js"
@@ -62,7 +63,9 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     const service = await import("@/lib/services/prevention-risk-legal")
     const author = access("risk-author", ["prevention:risk:view", "prevention:risk:edit"])
     const reviewer = access("risk-reviewer", ["prevention:risk:review"])
-    const approver = access("risk-approver", ["prevention:risk:approve", "prevention:risk:publish"])
+    const approverPrevention = access("risk-approver-prevention", ["prevention:risk:approve_prevention"])
+    const approverOperations = access("risk-approver-operations", ["prevention:risk:approve_operations"])
+    const publisher = access("risk-publisher", ["prevention:risk:publish"])
     const methodology = await service.ensureIspRiskMethodology(author)
     methodologyId = methodology.id
     const first = await service.createRiskMatrixDraft({
@@ -80,14 +83,17 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     const submitted = await service.transitionRiskMatrix({ matrixId: first.id, expectedVersion: 1, toStatus: "in_review", reason: "Contenido completo enviado a revisión técnica." }, author)
     await expect(service.transitionRiskMatrix({ matrixId: first.id, expectedVersion: submitted.version, toStatus: "reviewed", reason: "Autor intenta revisar su propio trabajo" }, access("risk-author", ["prevention:risk:review"]))).rejects.toThrow(/no puede revisarla/i)
     const reviewed = await service.transitionRiskMatrix({ matrixId: first.id, expectedVersion: submitted.version, toStatus: "reviewed", reason: "Metodología, jerarquía y participación verificadas." }, reviewer)
-    const approved = await service.transitionRiskMatrix({ matrixId: first.id, expectedVersion: reviewed.version, toStatus: "approved", reason: "Revisión independiente aceptada para publicación." }, approver)
-    const published = await service.transitionRiskMatrix({ matrixId: first.id, expectedVersion: approved.version, toStatus: "published", reason: "Publicación formal de la primera versión MIPER.", effectiveFrom: "2026-07-18" }, approver)
-    expect(published).toMatchObject({ status: "published", effectiveFrom: "2026-07-18", reviewDueAt: "2027-07-18" })
+    await service.decideRiskMatrixApproval({ matrixId: first.id, expectedVersion: reviewed.version, domain: "prevention", decision: "approved", reason: "Prevención acepta la versión para publicación." }, approverPrevention)
+    const approved = await service.decideRiskMatrixApproval({ matrixId: first.id, expectedVersion: reviewed.version, domain: "operations", decision: "approved", reason: "Operaciones acepta la versión para publicación." }, approverOperations)
+    const published = await service.transitionRiskMatrix({ matrixId: first.id, expectedVersion: approved.matrix.version, toStatus: "published", reason: "Publicación formal de la primera versión MIPER.", effectiveFrom: "2026-07-18" }, publisher)
+    // Ficha §44: revisión semestral (182 días), no anual — el intervalo viene
+    // de `DEFAULT_RISK_METHODOLOGY.reviewIntervalDays` congelado en la matriz.
+    expect(published).toMatchObject({ status: "published", effectiveFrom: "2026-07-18", reviewDueAt: "2027-01-16" })
     expect(published.publishedHashSha256).toMatch(/^[a-f0-9]{64}$/)
     const [clock] = await getDb().select().from(schema.preventionPdtpUpdateObligations).where(eq(schema.preventionPdtpUpdateObligations.sourceId, first.id))
     expect(clock).toMatchObject({ status: "pending", dueAt: "2026-08-17" })
     const [annual] = await getDb().select().from(schema.preventionRiskReviewTriggers).where(eq(schema.preventionRiskReviewTriggers.idempotencyKey, `miper:annual:${first.id}`))
-    expect(annual).toMatchObject({ triggerType: "annual", dueAt: "2027-07-18", status: "pending" })
+    expect(annual).toMatchObject({ triggerType: "annual", dueAt: "2027-01-16", status: "pending" })
     const dashboard = await service.getRiskDashboard(access("risk-viewer", ["prevention:risk:view"]))
     expect(dashboard.criticalBlockers.map((item) => item.entry.hazardCode)).toContain("CRIT-01")
 
@@ -102,8 +108,9 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     expect(copied).toHaveLength(firstBefore.length)
     const revisionSubmitted = await service.transitionRiskMatrix({ matrixId: revision.id, expectedVersion: revision.version, toStatus: "in_review", reason: "Revisión actualizada enviada al circuito formal." }, author)
     const revisionReviewed = await service.transitionRiskMatrix({ matrixId: revision.id, expectedVersion: revisionSubmitted.version, toStatus: "reviewed", reason: "Cambios y controles contrastados con terreno." }, reviewer)
-    const revisionApproved = await service.transitionRiskMatrix({ matrixId: revision.id, expectedVersion: revisionReviewed.version, toStatus: "approved", reason: "Versión revisada aprobada por jefatura segregada." }, approver)
-    const revisionPublished = await service.transitionRiskMatrix({ matrixId: revision.id, expectedVersion: revisionApproved.version, toStatus: "published", reason: "Nueva versión publicada sin sobrescribir la anterior.", effectiveFrom: "2026-08-01" }, approver)
+    await service.decideRiskMatrixApproval({ matrixId: revision.id, expectedVersion: revisionReviewed.version, domain: "prevention", decision: "approved", reason: "Prevención aprueba la versión revisada." }, approverPrevention)
+    const revisionApproved = await service.decideRiskMatrixApproval({ matrixId: revision.id, expectedVersion: revisionReviewed.version, domain: "operations", decision: "approved", reason: "Operaciones aprueba la versión revisada." }, approverOperations)
+    const revisionPublished = await service.transitionRiskMatrix({ matrixId: revision.id, expectedVersion: revisionApproved.matrix.version, toStatus: "published", reason: "Nueva versión publicada sin sobrescribir la anterior.", effectiveFrom: "2026-08-01" }, publisher)
     currentMatrixId = revisionPublished.id
     const [old] = await getDb().select().from(schema.preventionRiskMatrices).where(eq(schema.preventionRiskMatrices.id, first.id))
     const oldEntriesAfter = await getDb().select().from(schema.preventionRiskEntries).where(eq(schema.preventionRiskEntries.matrixId, first.id))
@@ -149,6 +156,41 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
       eq(schema.preventionRiskLegalHistory.changeType, "reviewed"),
     ))
     expect(concurrentHistory).toHaveLength(1)
+  })
+
+  /* Sin el `FOR UPDATE` sobre la matriz en `decideRiskMatrixApproval`, las dos
+   * firmas simultáneas leen la tabla de aprobaciones vacía, insertan cada una
+   * su dominio (el único es por (matrixId, domain), así que no chocan) y
+   * ambas concluyen que falta la otra: quedaban las DOS en 'approved' con la
+   * matriz clavada en 'reviewed' y sin salida, porque cada dominio ya se
+   * pronunció. */
+  it("dos firmas simultáneas de dominios distintos dejan la MIPER aprobada, no clavada en 'revisada'", async () => {
+    const service = await import("@/lib/services/prevention-risk-legal")
+    const author = access("risk-author", ["prevention:risk:view", "prevention:risk:edit"])
+    const reviewer = access("risk-reviewer", ["prevention:risk:review"])
+    const draft = await service.createRiskMatrixDraft({
+      worksiteId: "ws-risk-a", title: "MIPER doble firma concurrente", methodologyId,
+      revisionReason: "Prueba controlada de dos aprobaciones simultáneas de dominios distintos.",
+      participationSummary: "Escenario técnico con participación documentada para verificar concurrencia.",
+      consultationEvidenceReference: "test-concurrency-approval-001",
+    }, author)
+    await service.addRiskEntry(riskEntry(draft.id, { hazardCode: "CONCAPR-01", hazard: "Firma concurrente de aprobación", critical: false, controls: [] }), author)
+    const submitted = await service.transitionRiskMatrix({ matrixId: draft.id, expectedVersion: draft.version, toStatus: "in_review", reason: "Enviada para probar dos firmas simultáneas." }, author)
+    const reviewed = await service.transitionRiskMatrix({ matrixId: draft.id, expectedVersion: submitted.version, toStatus: "reviewed", reason: "Revisión técnica previa a la doble firma." }, reviewer)
+
+    const decisions = await Promise.allSettled([
+      service.decideRiskMatrixApproval({ matrixId: draft.id, expectedVersion: reviewed.version, domain: "prevention", decision: "approved", reason: "Prevención firma en paralelo con Operaciones." }, access("risk-approver-prevention", ["prevention:risk:approve_prevention"])),
+      service.decideRiskMatrixApproval({ matrixId: draft.id, expectedVersion: reviewed.version, domain: "operations", decision: "approved", reason: "Operaciones firma en paralelo con Prevención." }, access("risk-approver-operations", ["prevention:risk:approve_operations"])),
+    ])
+    // Ambas firmas son legítimas: ninguna debe fallar.
+    expect(decisions.filter((result) => result.status === "fulfilled")).toHaveLength(2)
+    // Y exactamente una cierra el par transicionando la matriz.
+    expect(decisions.filter((result) => result.status === "fulfilled" && result.value.complete)).toHaveLength(1)
+
+    const [finalMatrix] = await getDb().select().from(schema.preventionRiskMatrices).where(eq(schema.preventionRiskMatrices.id, draft.id))
+    expect(finalMatrix).toMatchObject({ status: "approved" })
+    const approvalRows = await getDb().select().from(schema.preventionRiskMatrixApprovals).where(eq(schema.preventionRiskMatrixApprovals.matrixId, draft.id))
+    expect(approvalRows).toHaveLength(2)
   })
 
   /* MIPER-07 (cierre): el guard de más abajo valida la sesión, pero mientras
@@ -338,16 +380,16 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
   it("preserves Excel original, normalization and activation decisions without cross-faena access", async () => {
     const importer = await import("@/lib/services/prevention-risk-import")
     const workbook = new ExcelJS.Workbook()
-    const sheet = workbook.addWorksheet("MIPER")
-    sheet.addRow(["Proceso", "Tarea", "Puesto de trabajo", "Peligro", "Factor de riesgo", "Evento o daño", "Nivel inherente", "Nivel residual", "Responsable", "Controles"])
-    sheet.addRow(["Recepción", "Descargar contenedor", "Operador", "Caída de carga", "Carga suspendida", "Lesión grave", "Alto", "Medio", "Jefatura de patio", "Ingeniería: barrera física y zona de exclusión"])
+    const sheet = workbook.addWorksheet("RE-04 IPER")
+    sheet.addRow(["ACTIVIDAD", "TAREA", "PUESTO DE TRABAJO", "PELIGRO", "RIESGO", "FACTORES DE RIESGO", "DAÑO PROBABLE", "PROBABILIDAD", "CONSECUENCIA", "RESPONSABLE", "MEDIDA DE CONTROL"])
+    sheet.addRow(["Recepción", "Descargar contenedor", "Operador", "Carga suspendida sin señalización", "Caída de carga", "Mecánico", "Lesión grave", "Media", "Alta", "Jefatura de patio", "Ingeniería: barrera física y zona de exclusión"])
     const bytes = Buffer.from(await workbook.xlsx.writeBuffer())
     const author = access("risk-author", ["prevention:risk:view", "prevention:risk:edit"])
     const approver = access("risk-approver", ["prevention:risk:approve"])
     const staged = await importer.stageRiskImport({ worksiteId: "ws-risk-a", fileName: "miper_fuente.xlsx", buffer: bytes, access: author })
     expect(staged.idempotentReplay).toBe(false)
     const [row] = await getDb().select().from(schema.preventionRiskImportRows).where(eq(schema.preventionRiskImportRows.batchId, staged.batch.id))
-    expect(row).toMatchObject({ status: "ready", original: expect.objectContaining({ processName: "Recepción" }), normalized: expect.objectContaining({ hazard: "Caída de carga" }) })
+    expect(row).toMatchObject({ status: "ready", original: expect.objectContaining({ activity: "Recepción" }), normalized: expect.objectContaining({ hazard: "Carga suspendida sin señalización", risk: "Caída de carga" }) })
     await expect(importer.approveRiskImportBatch(staged.batch.id, access("risk-author", ["prevention:risk:approve"]))).rejects.toThrow(/no puede aprobar/i)
     await importer.approveRiskImportBatch(staged.batch.id, approver)
     const activated = await importer.activateRiskImportBatch({ batchId: staged.batch.id, title: "MIPER importada desde planilla histórica", methodologyId, revisionReason: "Migración controlada de la matriz histórica operacional.", participationSummary: "Normalización revisada con responsables de proceso y prevención.", consultationEvidenceReference: "acta-importacion-miper-001" }, author)
@@ -538,21 +580,22 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     const author = accessB("risk-author", ["prevention:risk:view", "prevention:risk:edit"])
     const approver = accessB("risk-approver", ["prevention:risk:approve"])
 
-    // Fila 2: nivel residual fuera del vocabulario — pasaba `issuesFor` (no está
-    // vacío) y moría en Zod al activar. Fila 3 y 4: misma identidad MIPER con
-    // distinta redacción — pasaban el filtro de duplicados y chocaban contra
-    // `prevention_risk_entries_matrix_identity_unique`.
+    // Fila 2: consecuencia fuera del vocabulario P×C ("Regular" no es
+    // baja/media/alta) — no se puede evaluar y queda observada. Fila 3 y 4:
+    // mismo peligro con distinta redacción (mayúsculas) — mismo slug de
+    // identidad, distinto texto — pasaban el filtro de duplicados y chocaban
+    // contra `prevention_risk_entries_matrix_identity_unique`.
     const staged = await importer.stageRiskImport({
       worksiteId: "ws-risk-b", fileName: "miper_trampas.xlsx", access: author,
       buffer: await miperWorkbook([
-        ["Bodega", "Ordenar pallets", "Bodeguero", "Caída de altura", "Trabajo en altura", "Fractura", "Alto", "Regular", "Jefatura de bodega", "Administrativo: procedimiento de trabajo en altura"],
-        ["Bodega", "Ordenar pallets", "Bodeguero", "Golpe con pallet", "Manipulación manual", "Contusión", "Medio", "Bajo", "Jefatura de bodega", "Administrativo: instructivo de manipulación"],
-        ["Bodega", "Ordenar pallets", "Bodeguero", "Golpe con pallet apilado", "Manipulación manual", "Contusión", "Medio", "Bajo", "Jefatura de bodega", "Administrativo: instructivo de manipulación"],
-      ], { hazardCodes: ["ALT-01", "GOL-01", "GOL-01"] }),
+        ["Bodega", "Ordenar pallets", "Bodeguero", "Trabajo en altura sin baranda", "Caída de altura", "Trabajo en altura", "Fractura", "Alta", "Regular", "Jefatura de bodega", "Administrativo: procedimiento de trabajo en altura"],
+        ["Bodega", "Ordenar pallets", "Bodeguero", "Manipulación manual de pallets", "Golpe con pallet", "Manipulación manual", "Contusión", "Media", "Baja", "Jefatura de bodega", "Administrativo: instructivo de manipulación"],
+        ["Bodega", "Ordenar pallets", "Bodeguero", "MANIPULACIÓN MANUAL DE PALLETS", "Golpe con pallet apilado", "Manipulación manual", "Contusión", "Media", "Baja", "Jefatura de bodega", "Administrativo: instructivo de manipulación"],
+      ]),
     })
     const rows = await getDb().select().from(schema.preventionRiskImportRows).where(eq(schema.preventionRiskImportRows.batchId, staged.batch.id)).orderBy(asc(schema.preventionRiskImportRows.rowNumber))
     expect(rows.map((row) => row.status)).toEqual(["needs_review", "ready", "duplicate"])
-    expect((rows[0]!.issues as string[]).join(" ")).toMatch(/residualLevel/i)
+    expect((rows[0]!.issues as string[]).join(" ")).toMatch(/consecuencia/i)
 
     // Toda fila `ready` tiene que parsear contra el contrato real: eso es lo que
     // convierte "activable" en una promesa y no en una apuesta.
@@ -561,21 +604,23 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
       expect(contract.riskEntrySchema.omit({ matrixId: true, sourceRowNumber: true, sourceOriginal: true, sourceNormalized: true, normalizationDecision: true }).safeParse(row.normalized).success).toBe(true)
     }
 
-    await importer.resolveRiskImportRow({ rowId: rows[0]!.id, normalized: { ...(rows[0]!.normalized as Record<string, unknown>), residualLevel: "Medio" }, resolution: "El nivel 'Regular' del original se normaliza a Medio según la escala ISP." }, author)
+    await importer.resolveRiskImportRow({ rowId: rows[0]!.id, normalized: { ...(rows[0]!.normalized as Record<string, unknown>), consequence: 2 }, resolution: "La consecuencia 'Regular' del original se normaliza a Media (2) según la escala ISP." }, author)
     await importer.approveRiskImportBatch(staged.batch.id, approver)
     // Control positivo: resuelta la observada, TODA fila `ready` se activa.
     expect(await importer.activateRiskImportBatch({ batchId: staged.batch.id, ...activationFields() }, author)).toMatchObject({ completed: true, remaining: 0 })
 
     // El lote muerto que el archivo por sí solo no delata: el código de proceso
-    // "bodega" ya existe en la faena con el nombre "Bodega" (lo creó el lote
-    // anterior), y la fila 2 lo redefine, así que `resolveHierarchy` revienta al
-    // activar. Antes llegaba como un error anónimo y sin fila.
+    // se deriva del nombre por slug, y "BODEGA" desliza al mismo código
+    // "bodega" que ya existe en la faena con el nombre "Bodega" (lo creó el
+    // lote anterior) — mismo código, nombre distinto —, así que
+    // `resolveHierarchy` revienta al activar. Antes llegaba como un error
+    // anónimo y sin fila.
     const conflicting = await importer.stageRiskImport({
       worksiteId: "ws-risk-b", fileName: "miper_conflicto.xlsx", access: author,
       buffer: await miperWorkbook([
-        ["Bodega central", "Ordenar pallets", "Bodeguero", "Peligro que redefine el proceso", "Factor de riesgo", "Lesión", "Bajo", "Bajo", "Jefatura de bodega", "Administrativo: instructivo"],
-        ["Patio", "Estacionar equipos", "Portero", "Atropello en patio", "Circulación de equipos", "Lesión grave", "Alto", "Medio", "Jefatura de patio", "Administrativo: instructivo"],
-      ], { processCodes: ["bodega", "patio"], hazardCodes: ["RED-01", "ATR-01"] }),
+        ["BODEGA", "Ordenar pallets", "Bodeguero", "Peligro que redefine el proceso", "Riesgo derivado del proceso mal identificado", "Factor de riesgo", "Lesión", "Baja", "Baja", "Jefatura de bodega", "Administrativo: instructivo"],
+        ["Patio", "Estacionar equipos", "Portero", "Circulación de equipos sin señalización", "Atropello en patio", "Circulación de equipos", "Lesión grave", "Alta", "Media", "Jefatura de patio", "Administrativo: instructivo"],
+      ]),
     })
     const conflictingStaged = await getDb().select({ status: schema.preventionRiskImportRows.status }).from(schema.preventionRiskImportRows).where(eq(schema.preventionRiskImportRows.batchId, conflicting.batch.id)).orderBy(asc(schema.preventionRiskImportRows.rowNumber))
     expect(conflictingStaged.map((row) => row.status)).toEqual(["ready", "ready"])
@@ -620,8 +665,8 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     const staged = await importer.stageRiskImport({
       worksiteId: "ws-risk-b", fileName: "miper_carrera.xlsx", access: author,
       buffer: await miperWorkbook([
-        ["Patio", "Barrer patio", "Auxiliar", "Contacto con polvo", "Material particulado", "Irritación", "Bajo", "Bajo", "Jefatura de patio", "Administrativo: instructivo de aseo"],
-      ], { processCodes: ["patio"], hazardCodes: ["POL-01"] }),
+        ["Patio", "Barrer patio", "Auxiliar", "Presencia de material particulado en el aire", "Contacto con polvo", "Material particulado", "Irritación", "Baja", "Baja", "Jefatura de patio", "Administrativo: instructivo de aseo"],
+      ]),
     })
 
     // La aprobación rival ya escribió pero no confirmó: bajo READ COMMITTED la
@@ -1069,7 +1114,10 @@ function riskEntryB(matrixId: string, args: { hazardCode: string; hazard: string
   return { ...riskEntry(matrixId, args), process: { code: "PROC-B", name: "Operación planta sur" }, task: { code: "TASK-B", name: "Operar cinta", isRoutine: true }, position: { code: "POS-B", name: "Operador de planta" } }
 }
 
-/** Borrador → publicada en ws-risk-b, que es lo único que interesa de los 4 pasos. */
+/** Borrador → publicada en ws-risk-b, que es lo único que interesa de los 4 pasos.
+ * La aprobación es doble (Prevención + Operaciones, §48-51): dos usuarios
+ * distintos del autor y del revisor, y distintos entre sí, firman cada uno su
+ * propio dominio antes de publicar. */
 async function publishMatrixB(
   service: typeof import("@/lib/services/prevention-risk-legal"),
   title: string,
@@ -1078,13 +1126,16 @@ async function publishMatrixB(
 ) {
   const author = accessB("risk-author", ["prevention:risk:view", "prevention:risk:edit"])
   const reviewer = accessB("risk-reviewer", ["prevention:risk:review"])
-  const approver = accessB("risk-approver", ["prevention:risk:approve", "prevention:risk:publish"])
+  const approverPrevention = accessB("risk-approver-prevention", ["prevention:risk:approve_prevention"])
+  const approverOperations = accessB("risk-approver-operations", ["prevention:risk:approve_operations"])
+  const publisher = accessB("risk-publisher", ["prevention:risk:publish"])
   const draft = await service.createRiskMatrixDraft(matrixDraft(title, sourceMatrixId), author)
   for (const entry of entries) await service.addRiskEntry(riskEntryB(draft.id, entry), author)
   const submitted = await service.transitionRiskMatrix({ matrixId: draft.id, expectedVersion: draft.version, toStatus: "in_review", reason: `Envío a revisión de ${title}.` }, author)
   const reviewed = await service.transitionRiskMatrix({ matrixId: draft.id, expectedVersion: submitted.version, toStatus: "reviewed", reason: `Revisión técnica de ${title}.` }, reviewer)
-  const approved = await service.transitionRiskMatrix({ matrixId: draft.id, expectedVersion: reviewed.version, toStatus: "approved", reason: `Aprobación segregada de ${title}.` }, approver)
-  return service.transitionRiskMatrix({ matrixId: draft.id, expectedVersion: approved.version, toStatus: "published", reason: `Publicación de ${title}.` }, approver)
+  await service.decideRiskMatrixApproval({ matrixId: draft.id, expectedVersion: reviewed.version, domain: "prevention", decision: "approved", reason: `Aprobación de Prevención de ${title}.` }, approverPrevention)
+  const bothApproved = await service.decideRiskMatrixApproval({ matrixId: draft.id, expectedVersion: reviewed.version, domain: "operations", decision: "approved", reason: `Aprobación de Operaciones de ${title}.` }, approverOperations)
+  return service.transitionRiskMatrix({ matrixId: draft.id, expectedVersion: bothApproved.matrix.version, toStatus: "published", reason: `Publicación de ${title}.` }, publisher)
 }
 
 /** `methodologyId` se resuelve en la primera prueba, así que esto es función. */
@@ -1098,12 +1149,19 @@ function activationFields() {
   }
 }
 
-/** Excel MIPER mínimo con las columnas obligatorias del importador. */
-async function miperWorkbook(rows: string[][], opts?: { processCodes?: string[]; hazardCodes?: string[] }) {
+/**
+ * Excel MIPER mínimo con el vocabulario real (RE-04 IPER): ACTIVIDAD, TAREA,
+ * PUESTO DE TRABAJO, PELIGRO, RIESGO, FACTORES DE RIESGO, DAÑO PROBABLE,
+ * PROBABILIDAD, CONSECUENCIA, RESPONSABLE, MEDIDA DE CONTROL. Sin columnas de
+ * código: el código de proceso/tarea/puesto/peligro se deriva por slug del
+ * nombre (igual que hace el importador real) — para forzar una colisión de
+ * código con nombre distinto, basta variar mayúsculas/minúsculas del nombre.
+ */
+async function miperWorkbook(rows: string[][]) {
   const workbook = new ExcelJS.Workbook()
-  const sheet = workbook.addWorksheet("MIPER")
-  sheet.addRow(["Proceso", "Tarea", "Puesto de trabajo", "Peligro", "Factor de riesgo", "Evento o daño", "Nivel inherente", "Nivel residual", "Responsable", "Controles", "Código proceso", "Código peligro"])
-  rows.forEach((row, index) => sheet.addRow([...row, opts?.processCodes?.[index] ?? "", opts?.hazardCodes?.[index] ?? ""]))
+  const sheet = workbook.addWorksheet(MIPER_SHEETS.iper)
+  sheet.addRow(["ACTIVIDAD", "TAREA", "PUESTO DE TRABAJO", "PELIGRO", "RIESGO", "FACTORES DE RIESGO", "DAÑO PROBABLE", "PROBABILIDAD", "CONSECUENCIA", "RESPONSABLE", "MEDIDA DE CONTROL"])
+  rows.forEach((row) => sheet.addRow(row))
   return Buffer.from(await workbook.xlsx.writeBuffer())
 }
 
@@ -1115,18 +1173,19 @@ function riskEntry(matrixId: string, args: { hazardCode: string; hazard: string;
     position: { code: "POS-01", name: "Operador de residuos" },
     hazardCode: args.hazardCode,
     hazard: args.hazard,
+    risk: "Lesión por contacto con equipo en movimiento",
     riskFactor: "Operación industrial y circulación de equipos",
     expectedEventOrDamage: "Lesión con tiempo perdido o daño grave",
     exposedPeopleDescription: "Operadores y personal de apoyo",
     exposedPeopleCount: 5,
     genderConsiderations: "Evaluar diferencias de exposición, ajuste de EPP y organización del trabajo.",
     sensitiveWorkerConsiderations: "Validar restricciones y personas especialmente sensibles sin exponer diagnósticos.",
-    inherentDimensions: { probability: 4, consequence: 5 },
-    inherentScore: 20,
-    inherentLevel: "Alto",
-    residualDimensions: { probability: 3, consequence: 5 },
-    residualScore: 15,
-    residualLevel: "Alto",
+    // Motor P×C (lib/prevention/risk-engine.ts): P=2×C=4 → MR=8 → "importante"
+    // → residualLevel deriva a "high" — mismo balde que el "Alto" que este
+    // fixture mandaba antes del motor, así que las aserciones que ya
+    // comparaban contra "high"/"Alto" no cambian de sentido.
+    probability: 2,
+    consequence: 4,
     isCritical: args.critical,
     responsibleSnapshot: "Jefatura de operaciones",
     controls: args.controls,
@@ -1148,6 +1207,9 @@ async function seedFixture(database: ReturnType<typeof drizzle<typeof schema>>) 
     { id: "risk-author", name: "Autor", email: "risk-author@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "risk-reviewer", name: "Revisor", email: "risk-reviewer@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "risk-approver", name: "Aprobador", email: "risk-approver@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
+    { id: "risk-approver-prevention", name: "Aprobador Prevención", email: "risk-approver-prevention@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
+    { id: "risk-approver-operations", name: "Aprobador Operaciones", email: "risk-approver-operations@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
+    { id: "risk-publisher", name: "Publicador", email: "risk-publisher@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "risk-viewer", name: "Lector", email: "risk-viewer@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "risk-outsider", name: "Ajeno", email: "risk-outsider@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
   ])

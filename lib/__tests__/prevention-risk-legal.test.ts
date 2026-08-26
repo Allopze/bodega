@@ -30,16 +30,18 @@ const validEntry = {
   task: { code: "TASK-01", name: "Operar cinta", isRoutine: true },
   position: { code: "POS-01", name: "Operador" },
   hazardCode: "MEC-01",
-  hazard: "Atrapamiento en cinta transportadora",
+  hazard: "Cinta transportadora sin resguardo",
+  risk: "Atrapamiento",
   riskFactor: "Partes móviles sin resguardo",
   expectedEventOrDamage: "Amputación o lesión grave",
   exposedPeopleDescription: "Operadores y mantenedores",
   genderConsiderations: "Evaluar diferencias de exposición y ajuste de EPP.",
   sensitiveWorkerConsiderations: "Validar restricciones sin exponer diagnósticos.",
-  inherentDimensions: { probability: 4, consequence: 5 },
-  inherentLevel: "Alto",
-  residualDimensions: { probability: 2, consequence: 5 },
-  residualLevel: "Medio",
+  // Motor P×C (lib/prevention/risk-engine.ts): el cliente sólo aporta
+  // probabilidad y consecuencia; MR/clasificación/residualLevel se calculan
+  // en el servicio, nunca se aceptan en el payload.
+  probability: 2,
+  consequence: 4,
   responsibleSnapshot: "Jefatura de operaciones",
 }
 
@@ -135,8 +137,12 @@ describe("Prevention Risk & Legal Validation Schemas", () => {
     }
     const schema = readFileSync(path.join(process.cwd(), "db/schema/prevention/risk-legal.ts"), "utf8")
     const constraint = `IN (${RISK_LEVELS.map((level) => `'${level}'`).join(", ")})`
+    // `residualLevel` sigue NOT NULL (la evaluación única de la plantilla real
+    // siempre la produce vía el motor P×C). `inherentLevel` es opcional desde
+    // la Fase 1 del motor (evaluación "antes de controles" que la plantilla
+    // real no tiene) — su CHECK admite NULL además del vocabulario.
     expect(schema).toContain(`prevention_risk_entries_residual_level_valid", sql\`\${table.residualLevel} ${constraint}`)
-    expect(schema).toContain(`prevention_risk_entries_inherent_level_valid", sql\`\${table.inherentLevel} ${constraint}`)
+    expect(schema).toContain(`prevention_risk_entries_inherent_level_valid", sql\`\${table.inherentLevel} IS NULL OR \${table.inherentLevel} ${constraint}`)
   })
 
   // MIPER-08: quien escribía el peligro declaraba verificado su propio control
@@ -193,12 +199,24 @@ describe("Prevention Risk & Legal Validation Schemas", () => {
     const validTransition = {
       matrixId: "mat-101",
       expectedVersion: 2,
-      toStatus: "approved",
-      reason: "Aprobación formal por Gerencia de Operaciones y Prevención",
+      toStatus: "published",
+      reason: "Publicación formal por Gerencia de Operaciones y Prevención",
       effectiveFrom: "2026-08-01",
     }
 
     expect(riskMatrixTransitionSchema.parse(validTransition)).toMatchObject(validTransition)
+  })
+
+  // 'approved' ya no es un destino de esta máquina genérica: exigía una sola
+  // firma, lo que dejaba abierto un atajo alrededor de la doble aprobación de
+  // Prevención + Operaciones (`decideRiskMatrixApprovalSchema`).
+  it("rejects 'approved' as a direct transition target — it now requires both approval domains", () => {
+    expect(() => riskMatrixTransitionSchema.parse({
+      matrixId: "mat-101",
+      expectedVersion: 2,
+      toStatus: "approved",
+      reason: "Intento de saltarse la doble aprobación",
+    })).toThrow()
   })
 })
 
