@@ -1,0 +1,1 @@
+ALTER TABLE "prevention_risk_entries" ADD COLUMN "risk" text;

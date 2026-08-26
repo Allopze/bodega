@@ -130,6 +130,14 @@ export const preventionRiskEntries = pgTable("prevention_risk_entries", {
   positionId: text("position_id").notNull().references(() => preventionRiskPositions.id, { onDelete: "restrict" }),
   hazardCode: text("hazard_code").notNull(),
   hazard: text("hazard").notNull(),
+  /* "Riesgo" (§11.12 de la ficha) es un dato DISTINTO de "Peligro" en la
+   * plantilla real (columnas K=PELIGRO y L=RIESGO separadas en RE-04 IPER;
+   * p. ej. peligro="cinta transportadora sin resguardo", riesgo="atrapamiento").
+   * El esquema sólo tenía `hazard` — se agrega acá al descubrir el vacío
+   * implementando el importador real. Nullable: filas existentes conflaban
+   * ambos en `hazard` y no se puede reconstruir el riesgo específico sin
+   * inventar texto; el creador guiado y el importador lo exigen desde ahora. */
+  risk: text("risk"),
   riskFactor: text("risk_factor").notNull(),
   expectedEventOrDamage: text("expected_event_or_damage").notNull(),
   exposedPeopleDescription: text("exposed_people_description").notNull(),
@@ -137,12 +145,40 @@ export const preventionRiskEntries = pgTable("prevention_risk_entries", {
   genderConsiderations: text("gender_considerations").notNull(),
   sensitiveWorkerConsiderations: text("sensitive_worker_considerations").notNull(),
   specialMethodologyReference: text("special_methodology_reference"),
-  inherentDimensions: jsonb("inherent_dimensions").notNull(),
+  /* La evaluación "inherente" (antes de controles) es opcional a propósito:
+   * la plantilla real de la empresa (RE-04 IPER) sólo tiene UNA evaluación
+   * P×C por fila, que mapea a residual. Forzar una segunda evaluación en el
+   * creador guiado inventaría un dato que nadie completa. */
+  inherentDimensions: jsonb("inherent_dimensions"),
   inherentScore: numeric("inherent_score", { precision: 12, scale: 4, mode: "number" }),
-  inherentLevel: text("inherent_level").notNull(),
+  inherentLevel: text("inherent_level"),
   residualDimensions: jsonb("residual_dimensions").notNull(),
   residualScore: numeric("residual_score", { precision: 12, scale: 4, mode: "number" }),
   residualLevel: text("residual_level").notNull(),
+  /* Motor de evaluación P×C (lib/prevention/risk-engine.ts). Nullable: filas
+   * existentes no tienen probabilidad/consecuencia y no se inventan
+   * (scripts/backfill-risk-classification.ts sólo deriva `riskClassification`
+   * desde `residualLevel`, deja P/C en null). La obligatoriedad para filas
+   * nuevas la impone `riskEntrySchema`, no el DDL. */
+  probability: integer("probability"),
+  consequence: integer("consequence"),
+  riskMagnitude: integer("risk_magnitude"),
+  riskClassification: text("risk_classification"),
+  /* Discrepancia entre el MR/clasificación que traía el Excel importado y el
+   * calculado por el sistema (ficha §67): se guarda para trazabilidad, nunca
+   * bloquea el lote. Forma: {excelMagnitude, excelClassification,
+   * systemMagnitude, systemClassification}. */
+  evaluationDivergence: jsonb("evaluation_divergence"),
+  /* Columnas de la plantilla real (RE-04 IPER) sin destino hasta ahora:
+   * RUTINARIA/NO RUTINARIA, LUGAR DE TRABAJO ESPECÍFICO, N° TRABAJADORES
+   * F/M/OTRO, ESTA CONTROLADO EL RIESGO, PLAZOS. */
+  isRoutine: boolean("is_routine").notNull().default(true),
+  specificWorkplace: text("specific_workplace"),
+  exposedWorkersFemale: integer("exposed_workers_female"),
+  exposedWorkersMale: integer("exposed_workers_male"),
+  exposedWorkersOther: integer("exposed_workers_other"),
+  controlStatusText: text("control_status_text"),
+  controlDeadlineText: text("control_deadline_text"),
   isCritical: boolean("is_critical").notNull().default(false),
   responsibleUserId: text("responsible_user_id").references(() => users.id),
   responsibleSnapshot: text("responsible_snapshot").notNull(),
@@ -157,15 +193,30 @@ export const preventionRiskEntries = pgTable("prevention_risk_entries", {
 }, (table) => [
   uniqueIndex("prevention_risk_entries_matrix_identity_unique").on(table.matrixId, table.processId, table.taskId, table.positionId, table.hazardCode),
   index("prevention_risk_entries_matrix_level_idx").on(table.matrixId, table.residualLevel),
+  // Vista matriz (Fase 5): filtro por clasificación dentro de una matriz — la
+  // consulta más frecuente de una tabla que puede superar las 200 filas.
+  index("prevention_risk_entries_matrix_classification_idx").on(table.matrixId, table.riskClassification),
   /* MIPER-01: el nivel era texto libre al escribir y un enum inglés al leer, así
    * que convivían "Alto", "critico", "moderate" y "high" en la misma columna y la
    * UI pintaba en gris todo lo que no fuera inglés. La fuente de verdad es
    * lib/prevention/risk-levels (`RISK_LEVELS`); esto la vuelve exigible también
    * para lo que entra por seeds y scripts, que no pasan por Zod. */
-  check("prevention_risk_entries_inherent_level_valid", sql`${table.inherentLevel} IN ('low', 'medium', 'high', 'critical')`),
+  check("prevention_risk_entries_inherent_level_valid", sql`${table.inherentLevel} IS NULL OR ${table.inherentLevel} IN ('low', 'medium', 'high', 'critical')`),
   check("prevention_risk_entries_residual_level_valid", sql`${table.residualLevel} IN ('low', 'medium', 'high', 'critical')`),
   check("prevention_risk_entries_exposed_count_valid", sql`${table.exposedPeopleCount} IS NULL OR ${table.exposedPeopleCount} >= 0`),
   check("prevention_risk_entries_version_positive", sql`${table.version} > 0`),
+  /* Motor P×C (lib/prevention/risk-engine.ts). `probability`/`consequence`
+   * fijos a 1/2/4 porque hoy sólo existe la metodología ISP 3×3; el CHECK de
+   * `risk_magnitude` es el invariante agnóstico a la escala (producto, no
+   * enumeración) para que una metodología futura de otra escala no exija
+   * tocar este constraint — y para que ninguna ruta de escritura pueda dejar
+   * la tripleta inconsistente, sea cual sea la metodología. */
+  check("prevention_risk_entries_probability_valid", sql`${table.probability} IS NULL OR ${table.probability} IN (1, 2, 4)`),
+  check("prevention_risk_entries_consequence_valid", sql`${table.consequence} IS NULL OR ${table.consequence} IN (1, 2, 4)`),
+  check("prevention_risk_entries_magnitude_product", sql`${table.riskMagnitude} IS NULL OR (${table.probability} IS NOT NULL AND ${table.consequence} IS NOT NULL AND ${table.riskMagnitude} = ${table.probability} * ${table.consequence})`),
+  check("prevention_risk_entries_classification_valid", sql`${table.riskClassification} IS NULL OR ${table.riskClassification} IN ('tolerable', 'moderado', 'importante', 'intolerable')`),
+  check("prevention_risk_entries_control_status_text_valid", sql`${table.controlStatusText} IS NULL OR ${table.controlStatusText} IN ('controlled', 'partial', 'partial_immediate')`),
+  check("prevention_risk_entries_exposed_workers_valid", sql`(${table.exposedWorkersFemale} IS NULL OR ${table.exposedWorkersFemale} >= 0) AND (${table.exposedWorkersMale} IS NULL OR ${table.exposedWorkersMale} >= 0) AND (${table.exposedWorkersOther} IS NULL OR ${table.exposedWorkersOther} >= 0)`),
 ])
 
 /* ── Mapa de riesgos espacial ─────────────────────────────────────────────
@@ -482,4 +533,51 @@ export const preventionRiskLegalHistory = pgTable("prevention_risk_legal_history
 }, (table) => [
   index("prevention_risk_legal_history_entity_idx").on(table.domain, table.entityType, table.entityId, table.createdAt),
   check("prevention_risk_legal_history_domain_valid", sql`${table.domain} IN ('risk', 'legal', 'pdtp_coverage', 'import')`),
+])
+
+/* ── Programa de Trabajo Preventivo de MIPER = CAPA con sourceType:'risk' ──
+ * El camino común (una acción por riesgo) usa `sourceId = riskEntryId`
+ * directo en `prevention_capa_actions`, sin fila puente. Esta tabla sólo
+ * cubre el caso N:N real: una acción que cubre varios riesgos a la vez
+ * (generación en lote con "agrupar seleccionados"). Vive del lado MIPER, no
+ * del lado CAPA, para no meter una FK a riesgos en un esquema que hoy es
+ * agnóstico de fuente. */
+export const preventionCapaRiskLinks = pgTable("prevention_capa_risk_links", {
+  id: text("id").primaryKey(),
+  capaActionId: text("capa_action_id").notNull().references(() => preventionCapaActions.id, { onDelete: "cascade" }),
+  riskEntryId: text("risk_entry_id").notNull().references(() => preventionRiskEntries.id, { onDelete: "cascade" }),
+  createdByUserId: text("created_by_user_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("prevention_capa_risk_links_unique").on(table.capaActionId, table.riskEntryId),
+  index("prevention_capa_risk_links_capa_idx").on(table.capaActionId),
+  index("prevention_capa_risk_links_risk_entry_idx").on(table.riskEntryId),
+])
+
+/* ── Doble aprobación (Prevención + Operaciones) — §48-51 de la ficha ──────
+ * Hasta ahora `transitionRiskMatrix` sólo pedía una aprobación
+ * (`prevention:risk:approve`). Una fila por dominio, única por
+ * (matrixId, domain): cuando ambas quedan 'approved' en la misma
+ * transacción, la matriz pasa a 'approved'. Un 'rejected' de cualquiera
+ * borra ambas filas y la matriz vuelve a 'draft' — la ronda siguiente firma
+ * de cero, porque el contenido cambió. */
+export const preventionRiskMatrixApprovals = pgTable("prevention_risk_matrix_approvals", {
+  id: text("id").primaryKey(),
+  matrixId: text("matrix_id").notNull().references(() => preventionRiskMatrices.id, { onDelete: "cascade" }),
+  domain: text("domain").notNull(),
+  decision: text("decision").notNull(),
+  userId: text("user_id").notNull().references(() => users.id),
+  reason: text("reason").notNull(),
+  decidedAt: timestamp("decided_at", { withTimezone: true, mode: "string" }).notNull(),
+  /* Backfill del modelo anterior (aprobación única): distingue una firma real
+   * de una derivada de `approvedByUserId` al migrar. Columna, no texto en
+   * `reason`, para poder auditar/revertir el backfill con una condición SQL
+   * simple — ver scripts/backfill-risk-matrix-approvals.ts. */
+  migratedFromLegacy: boolean("migrated_from_legacy").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("prevention_risk_matrix_approvals_unique").on(table.matrixId, table.domain),
+  index("prevention_risk_matrix_approvals_matrix_idx").on(table.matrixId),
+  check("prevention_risk_matrix_approvals_domain_valid", sql`${table.domain} IN ('prevention', 'operations')`),
+  check("prevention_risk_matrix_approvals_decision_valid", sql`${table.decision} IN ('approved', 'rejected')`),
 ])

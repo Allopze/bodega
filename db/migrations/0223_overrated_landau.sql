@@ -1,0 +1,1 @@
+CREATE INDEX "prevention_risk_entries_matrix_classification_idx" ON "prevention_risk_entries" USING btree ("matrix_id","risk_classification");
