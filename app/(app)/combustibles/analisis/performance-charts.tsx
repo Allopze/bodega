@@ -1,4 +1,5 @@
 "use client"
+import { ChartEmpty } from "@/components/ui/chart-empty"
 
 import { useRouter } from "next/navigation"
 import { BarChart, Bar, Cell, ErrorBar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts"
@@ -18,14 +19,6 @@ function truncate(label: string, max = 18) {
   return label.length > max ? `${label.slice(0, max)}…` : label
 }
 
-function EmptyChart({ label }: { label: string }) {
-  return (
-    <div className="flex h-64 flex-col items-center justify-center border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-2)] px-6 text-center">
-      <ChartLineUp size={24} className="mb-2 text-[var(--color-text-subtle)]" aria-hidden />
-      <p className="max-w-64 text-sm leading-5 text-[var(--color-text-muted)]">{label}</p>
-    </div>
-  )
-}
 
 /**
  * Barra de rendimiento medio por grupo, con la desviación estándar como barra de
@@ -35,7 +28,7 @@ function EmptyChart({ label }: { label: string }) {
  */
 export function PerformanceGroupChart({ groups, drilldownHref }: { groups: PerformanceGroup[]; drilldownHref: (group: PerformanceGroup) => string }) {
   const router = useRouter()
-  if (groups.length === 0) return <EmptyChart label="Sin observaciones de rendimiento para este filtro." />
+  if (groups.length === 0) return <ChartEmpty icon={<ChartLineUp size={24} className="mb-2 text-[var(--color-text-subtle)]" aria-hidden />} className="border-[var(--color-border-strong)]" label="Sin observaciones de rendimiento para este filtro." />
 
   const unit = groups[0]!.unit
   const unitLabel = UNIT_LABEL[unit] ?? unit

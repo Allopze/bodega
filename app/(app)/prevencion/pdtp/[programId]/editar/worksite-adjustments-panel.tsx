@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { setPdtpActivityWorksiteAdjustmentAction } from "../../actions"
 import { useOperation } from "@/lib/hooks/use-operation"
 import type { PdtpActivityRow, PdtpScheduleRow } from "./tabs/types"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 type Worksite = { id: string; name: string; code: string }
 type Responsible = { slug: string; displayName: string }
@@ -277,21 +278,23 @@ function AdjustmentDialog({
             </div>
             {planMode === "adjust" && (
               <div className="mt-3 overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-left text-[var(--color-text-subtle)]">
-                      <th className="px-2 py-1">Mes</th>
-                      {[1, 2, 3, 4].map((week) => <th key={week} className="px-2 py-1">S{week}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[var(--color-border)]">
+                <TableRoot className="rounded-none border-0">
+                <Table className="text-xs">
+                  <caption className="sr-only">Ajustes de programación por faena</caption>
+                  <TableHeader>
+                    <TableRow className="text-left text-[var(--color-text-subtle)]">
+                      <TableHead>Mes</TableHead>
+                      {[1, 2, 3, 4].map((week) => <TableHead key={week}>S{week}</TableHead>)}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {MONTHS.map((month, monthIndex) => (
-                      <tr key={month}>
-                        <th className="px-2 py-1.5 text-left font-medium">{month}</th>
+                      <TableRow key={month}>
+                        <TableHead scope="row" className="font-medium">{month}</TableHead>
                         {[1, 2, 3, 4].map((week) => {
                           const key = `${monthIndex + 1}:${week}`
                           return (
-                            <td key={week} className="px-2 py-1">
+                            <TableCell key={week}>
                               <Input
                                 aria-label={`${month} semana ${week}`}
                                 className="h-8 min-w-20"
@@ -301,13 +304,14 @@ function AdjustmentDialog({
                                 value={cells[key] ?? 0}
                                 onChange={(event) => setCells((current) => ({ ...current, [key]: Number(event.target.value) }))}
                               />
-                            </td>
+                            </TableCell>
                           )
                         })}
-                      </tr>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
+                </TableRoot>
               </div>
             )}
           </div>

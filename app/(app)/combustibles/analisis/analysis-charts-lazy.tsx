@@ -1,4 +1,5 @@
 "use client"
+import { Skeleton } from "@/components/ui/skeleton"
 
 import dynamic from "next/dynamic"
 import type { ComponentType } from "react"
@@ -17,9 +18,9 @@ function AnalysisChartSkeleton() {
     <div className="flex h-72 items-end gap-2 border border-[var(--color-border)] bg-[var(--color-surface-2)] p-5" role="status" aria-label="Cargando gráfico de análisis">
       <span className="sr-only">Cargando gráfico de análisis</span>
       {[42, 68, 54, 82, 64, 90, 72, 48].map((height, index) => (
-        <span
+        <Skeleton
           key={height}
-          className="flex-1 animate-pulse bg-[var(--color-border-strong)]"
+          className="flex-1"
           style={{ height: `${height}%`, animationDelay: `${index * 70}ms` }}
         />
       ))}

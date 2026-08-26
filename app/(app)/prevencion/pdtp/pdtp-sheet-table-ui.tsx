@@ -10,6 +10,7 @@ import { Tooltip } from "@/components/ui/tooltip"
 import type { PdtpActivityStatus } from "@/lib/services/pdtp/period"
 import { pdtpExecutionStatusLabel } from "@/lib/prevention/pdtp"
 import { countOf } from "@/lib/utils"
+import { useLocalStorageState } from "@/lib/hooks/use-local-storage-state"
 
 // ---------------------------------------------------------------------------
 // PdtpStatusBadge
@@ -313,24 +314,17 @@ const DENSITY_KEY = "pdtp-table-density"
 /**
  * La preferencia se lee en un efecto, no en el initializer de `useState`: leerla
  * durante el primer render hace que el servidor emita el default y el cliente
- * hidrate con otro valor (mismatch de hidratación). Mismo patrón que
- * `PersistedDetails`.
+ * hidrate con otro valor (mismatch de hidratación). El patrón vive en
+ * `useLocalStorageState`.
  */
-export function usePdtpDensity(): ["compact" | "comfortable", () => void] {
-  const [density, setDensity] = React.useState<"compact" | "comfortable">("comfortable")
+const densityParse = (stored: string) => (stored === "compact" || stored === "comfortable" ? stored : null)
 
-  React.useEffect(() => {
-    try {
-      const stored = localStorage.getItem(DENSITY_KEY)
-      if (stored === "compact" || stored === "comfortable") setDensity(stored)
-    } catch {}
-  }, [])
+export function usePdtpDensity(): ["compact" | "comfortable", () => void] {
+  const [density, setDensity] = useLocalStorageState<"compact" | "comfortable">(DENSITY_KEY, "comfortable", densityParse)
 
   const toggle = React.useCallback(() => {
-    const next = density === "compact" ? "comfortable" : "compact"
-    setDensity(next)
-    try { localStorage.setItem(DENSITY_KEY, next) } catch {}
-  }, [density])
+    setDensity(density === "compact" ? "comfortable" : "compact")
+  }, [density, setDensity])
 
   return [density, toggle]
 }
@@ -365,6 +359,8 @@ export function PdtpDensityToggle({
 // ---------------------------------------------------------------------------
 
 const MONTH_WINDOW_KEY = "pdtp-month-window"
+const monthWindowParse = (stored: string) => (stored === "1" ? true : stored === "0" ? false : null)
+const monthWindowSerialize = (next: boolean) => (next ? "1" : "0")
 
 /**
  * Vista anual: por defecto muestra solo el mes actual ±1 mes alrededor.
@@ -374,20 +370,11 @@ const MONTH_WINDOW_KEY = "pdtp-month-window"
 export function usePdtpMonthWindow(
   currentMonth: number,
 ): [number[], boolean, () => void] {
-  // Preferencia leída en efecto, no en el initializer: ver nota en usePdtpDensity.
-  const [expanded, setExpanded] = React.useState(false)
-
-  React.useEffect(() => {
-    try {
-      if (localStorage.getItem(MONTH_WINDOW_KEY) === "1") setExpanded(true)
-    } catch {}
-  }, [])
+  const [expanded, setExpanded] = useLocalStorageState(MONTH_WINDOW_KEY, false, monthWindowParse, monthWindowSerialize)
 
   const toggle = React.useCallback(() => {
-    const next = !expanded
-    setExpanded(next)
-    try { localStorage.setItem(MONTH_WINDOW_KEY, next ? "1" : "0") } catch {}
-  }, [expanded])
+    setExpanded(!expanded)
+  }, [expanded, setExpanded])
 
   const visibleMonths = React.useMemo(() => {
     if (expanded) return MONTH_INDICES

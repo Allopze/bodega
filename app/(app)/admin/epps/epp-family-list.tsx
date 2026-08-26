@@ -1,12 +1,12 @@
 "use client"
 
 import * as React from "react"
-import { DataTable } from "@/components/admin/data-table"
+import { DataTable } from "@/components/ui/data-table"
 import { Badge } from "@/components/ui/badge"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 
-import type { ColumnDef } from "@/components/admin/data-table"
+import type { ColumnDef } from "@/components/ui/data-table"
 
 export interface EppFamilyRow {
   id: string

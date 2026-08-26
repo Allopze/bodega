@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
  * reservada para limpiar la selección y mostrar el placeholder. Usarla lanza en
  * cliente y tumba la página entera — era el motivo por el que
  * `/combustibles/bitacora` renderizaba su error boundary con status 200.
- * Mismo centinela que `components/adquisiciones/list-filters.tsx`.
+ * Mismo centinela que `components/ui/server-list-filters.tsx`.
  */
 const ALL = "_all"
 

@@ -22,12 +22,16 @@ export function useDebouncedAutosave({
   watchKey,
   isDirty,
   onSave,
+  onSaved,
   enabled = true,
   debounceMs = 1500,
 }: {
   watchKey: string | number
   isDirty: boolean
   onSave: () => Promise<ActionState>
+  /** Se invoca tras un guardado exitoso, con el resultado. Pensado para UIs
+   *  que muestran "Guardado HH:MM" o refrescan datos derivados. */
+  onSaved?: (result: ActionState) => void
   enabled?: boolean
   debounceMs?: number
 }): { status: AutosaveStatus; error: string | null; saveNow: () => Promise<void> } {
@@ -37,6 +41,10 @@ export function useDebouncedAutosave({
   React.useEffect(() => {
     onSaveRef.current = onSave
   })
+  const onSavedRef = React.useRef(onSaved)
+  React.useEffect(() => {
+    onSavedRef.current = onSaved
+  })
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const runSave = React.useCallback(async () => {
@@ -45,6 +53,7 @@ export function useDebouncedAutosave({
     try {
       const result = await onSaveRef.current()
       if (!result.ok) setError(result.message ?? "Error al guardar.")
+      else onSavedRef.current?.(result)
     } catch {
       // Falla de red u otra excepción no controlada (no la Server Action
       // devolviendo ok:false, sino que ni siquiera respondió): sin este

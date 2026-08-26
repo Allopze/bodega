@@ -14,9 +14,13 @@ import { fuelAnomalyCases, fuelAnomalyComments, fuelAnomalyRules, fuelVehicles, 
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import type { AnomalyCaseStatus, AnomalySeverity } from "./anomaly-labels"
 
-export type AnomalyCaseStatus = "open" | "in_review" | "resolved" | "dismissed" | "reopened"
-export type AnomalySeverity = "low" | "medium" | "high" | "critical"
+// Compatibilidad para consumidores server-side que todavía importan el
+// vocabulario desde el servicio. Los componentes client-side usan
+// `anomaly-labels.ts` directamente para no arrastrar Drizzle/DB al bundle.
+export { ANOMALY_SEVERITY_LABELS, ANOMALY_STATUS_COLORS, ANOMALY_STATUS_LABELS, anomalySeverityVariant } from "./anomaly-labels"
+export type { AnomalyCaseStatus, AnomalySeverity } from "./anomaly-labels"
 
 const ANOMALY_CASE_TRANSITIONS: Record<AnomalyCaseStatus, readonly AnomalyCaseStatus[]> = {
   open: ["in_review", "dismissed"],

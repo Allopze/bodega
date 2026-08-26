@@ -1,6 +1,7 @@
 "use server"
 
 import { requirePermission } from "@/lib/auth/can"
+import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { getTaeCopecReconciliation, type TaeCopecFilters } from "@/lib/combustibles/tae-copec-reconciliation"
@@ -39,11 +40,11 @@ export async function exportTaeCopecReconciliationAction(filters: TaeCopecFilter
   for (const key of ["tae", "diesel", "bluemax", "total"]) sheet.getColumn(key).numFmt = "#,##0.000"
   sheet.views = [{ state: "frozen", ySplit: 1 }]
   addExportMetadataSheet(workbook, session, { filters, rowCount: rows.length, from: filters.from, to: filters.to })
-  const buffer = await workbook.xlsx.writeBuffer()
+  const base64 = await xlsxToBase64(workbook)
   await recordAudit({
     userId: session.user.id, userEmail: session.user.email ?? undefined, action: "export",
     entityType: "fuel_reconciliation_export", entityId: nanoid(),
     newState: { rowCount: rows.length, truncated: result.rows.length > MAX_EXPORT_ROWS, filters: filters as Record<string, unknown> },
   })
-  return { ok: true as const, data: { base64: Buffer.from(buffer).toString("base64"), filename: `conciliacion_tae_tct_${todayInChile()}.xlsx`, truncated: result.rows.length > MAX_EXPORT_ROWS } }
+  return { ok: true as const, data: { base64, filename: `conciliacion_tae_tct_${todayInChile()}.xlsx`, truncated: result.rows.length > MAX_EXPORT_ROWS } }
 }

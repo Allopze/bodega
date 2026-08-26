@@ -1,8 +1,8 @@
 "use client"
 
-import { useRouter, useSearchParams } from "next/navigation"
-import Link from "next/link"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
+import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 
 interface TrazabilidadFiltersProps {
   worksites: Array<{ id: string; name: string }>
@@ -27,61 +27,58 @@ const FILTER_ESTADOS = [
 ]
 
 export function TrazabilidadFilters({ worksites, current }: TrazabilidadFiltersProps) {
-  const router = useRouter()
-  const searchParams = useSearchParams()
+  const { setFilter, clearFilters } = useUrlFilters()
 
-  function setFilter(key: string, value: string) {
-    const params = new URLSearchParams(searchParams.toString())
-    if (value) {
-      params.set(key, value)
-    } else {
-      params.delete(key)
-    }
-    router.push(`?${params.toString()}`)
+  const chips: ActiveFilterChip[] = []
+  if (current.faena) {
+    chips.push({
+      key: "faena",
+      label: "Faena",
+      value: current.faena,
+      displayValue: worksites.find((w) => w.id === current.faena)?.name ?? current.faena,
+    })
+  }
+  if (current.estado) {
+    chips.push({
+      key: "estado",
+      label: "Estado",
+      value: current.estado,
+      displayValue: FILTER_ESTADOS.find((e) => e.value === current.estado)?.label ?? current.estado,
+    })
   }
 
   return (
-    <div className="mb-4 flex flex-wrap items-end gap-3">
-      <div className="flex flex-col gap-1">
-        <label htmlFor="trazabilidad-faena-filter" className="text-xs font-medium text-[var(--color-text-muted)]">Faena</label>
-        <Select
-          defaultValue={current.faena ?? "all"}
-          onValueChange={(v) => setFilter("faena", v === "all" ? "" : v)}
-        >
-          <SelectTrigger id="trazabilidad-faena-filter" className="w-56" aria-label="Filtrar por faena"><SelectValue placeholder="Todas las faenas" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas las faenas</SelectItem>
-            {worksites.map((w) => (
-              <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+    <FilterToolbar
+      activeChips={chips}
+      onRemoveChip={(key) => setFilter(key, "")}
+      onClearAll={() => clearFilters()}
+      hasActiveFilters={chips.length > 0}
+    >
+      <Select
+        defaultValue={current.faena ?? "all"}
+        onValueChange={(v) => setFilter("faena", v === "all" ? "" : v)}
+      >
+        <SelectTrigger className="w-56" aria-label="Filtrar por faena"><SelectValue placeholder="Todas las faenas" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Todas las faenas</SelectItem>
+          {worksites.map((w) => (
+            <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
-      <div className="flex flex-col gap-1">
-        <label htmlFor="trazabilidad-estado-filter" className="text-xs font-medium text-[var(--color-text-muted)]">Estado</label>
-        <Select
-          defaultValue={current.estado ?? "all"}
-          onValueChange={(v) => setFilter("estado", v === "all" ? "" : v)}
-        >
-          <SelectTrigger id="trazabilidad-estado-filter" className="w-56" aria-label="Filtrar por estado"><SelectValue placeholder="Todos los estados" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos los estados</SelectItem>
-            {FILTER_ESTADOS.map((e) => (
-              <SelectItem key={e.value} value={e.value}>{e.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {(current.faena || current.estado) && (
-        <Link
-          href="/trazabilidad"
-          className="inline-flex h-9 items-center text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] underline underline-offset-2"
-        >
-          Quitar filtros
-        </Link>
-      )}
-    </div>
+      <Select
+        defaultValue={current.estado ?? "all"}
+        onValueChange={(v) => setFilter("estado", v === "all" ? "" : v)}
+      >
+        <SelectTrigger className="w-56" aria-label="Filtrar por estado"><SelectValue placeholder="Todos los estados" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Todos los estados</SelectItem>
+          {FILTER_ESTADOS.map((e) => (
+            <SelectItem key={e.value} value={e.value}>{e.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </FilterToolbar>
   )
 }

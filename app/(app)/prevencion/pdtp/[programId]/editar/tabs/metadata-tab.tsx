@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Input } from "@/components/ui/input"
 import { Field, FieldGroup } from "@/components/ui/field"
-import { SubmitButton } from "@/components/admin/submit-button"
+import { SubmitButton } from "@/components/ui/submit-button"
 import { updatePdtpProgramAction, deletePdtpProgramAction } from "../../../actions"
 import { setPdtpProgramWorksitesAction } from "../../../actions/worksites-actions"
 

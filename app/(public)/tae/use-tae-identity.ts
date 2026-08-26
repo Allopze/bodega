@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { toast } from "@/lib/toast"
+import { useRutIdentity, type RutIdentityResult } from "@/lib/hooks/use-rut-identity"
 import { getTaeIdentity, saveTaeIdentity, type TaeIdentityRole } from "@/lib/pwa/tae-offline-queue"
 
 export interface TaeMatchedWorker {
@@ -9,25 +9,12 @@ export interface TaeMatchedWorker {
   name: string
 }
 
-/** Verificación por RUT reutilizable offline (Fase 0: el conductor completa el formulario). */
+/** Verificación por RUT reutilizable offline (Fase 0: el conductor completa el formulario).
+ *  La máquina de verificación vive en `useRutIdentity`; acá queda el backend
+ *  específico de TAE (fetch con accessToken + caché offline por scopeKey). */
 export function useTaeIdentity(role: TaeIdentityRole, accessToken: string | null, scopeKey: string | null) {
-  const [rut, setRut] = React.useState("")
-  const [verifying, setVerifying] = React.useState(false)
-  const [matched, setMatched] = React.useState<TaeMatchedWorker | null>(null)
-
-  React.useEffect(() => {
-    void (async () => {
-      setMatched(null)
-      if (!scopeKey) return
-      const cached = await getTaeIdentity(scopeKey, role)
-      if (cached) setMatched(cached)
-    })()
-  }, [role, scopeKey])
-
-  async function verify() {
-    if (!accessToken || !rut) return
-    setVerifying(true)
-    try {
+  const verifyByRut = React.useCallback(
+    async (rut: string): Promise<RutIdentityResult<TaeMatchedWorker>> => {
       const response = await fetch("/api/tae/identity", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -35,35 +22,50 @@ export function useTaeIdentity(role: TaeIdentityRole, accessToken: string | null
       })
       if (!response.ok) {
         const errBody = await response.json().catch(() => ({})) as { message?: string }
-        setMatched(null)
-        toast.error(errBody.message ?? "No se pudo verificar el RUT")
-        return
+        return { ok: false, message: errBody.message ?? "No se pudo verificar el RUT" }
       }
       const body = await response.json() as { ok: boolean; data?: TaeMatchedWorker; message?: string }
-      if (body.ok && body.data) {
-        setMatched(body.data)
-        if (scopeKey) await saveTaeIdentity(scopeKey, role, body.data)
-        toast.success("Identidad verificada")
-      } else {
-        setMatched(null)
-        toast.error(body.message ?? "No se pudo verificar el RUT")
-      }
-    } catch {
-      toast.error(navigator.onLine ? "Error al verificar el RUT" : "Sin conexión. Completa el nombre manualmente; quedará observado para revisión.")
-    } finally {
-      setVerifying(false)
-    }
-  }
+      if (body.ok && body.data) return { ok: true, matched: body.data }
+      return { ok: false, message: body.message ?? "No se pudo verificar el RUT" }
+    },
+    [accessToken],
+  )
 
-  function clear() {
-    setMatched(null)
-    setRut("")
-  }
+  const loadCached = React.useCallback(async () => {
+    if (!scopeKey) return null
+    return getTaeIdentity(scopeKey, role)
+  }, [scopeKey, role])
 
-  function updateRut(value: string) {
-    setRut(value)
-    if (matched) setMatched(null)
-  }
+  const identity = useRutIdentity<TaeMatchedWorker>({
+    verify: verifyByRut,
+    loadMatched: loadCached,
+    clearMatchedOnEdit: true,
+    onMatched: React.useCallback(async (matched: TaeMatchedWorker) => {
+      if (scopeKey) await saveTaeIdentity(scopeKey, role, matched)
+    }, [scopeKey, role]),
+    messages: {
+      success: "Identidad verificada",
+      notFound: "No se pudo verificar el RUT",
+      error: () => navigator.onLine
+        ? "Error al verificar el RUT"
+        : "Sin conexión. Completa el nombre manualmente; quedará observado para revisión.",
+    },
+  })
 
-  return { rut, setRut: updateRut, verifying, matched, verify, clear }
+  const verify = React.useCallback(async () => {
+    if (!accessToken) return
+    await identity.verify()
+    // identity.verify es estable (useCallback interno con deps propias);
+    // se incluye en deps por completitud, no cambia entre renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken])
+
+  return {
+    rut: identity.rut,
+    setRut: identity.setRut,
+    verifying: identity.verifying,
+    matched: identity.matched,
+    verify,
+    clear: identity.clear,
+  }
 }

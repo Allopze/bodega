@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
+import { EMERGENCY_RESOURCE_STATUS_LABELS, emergencyResourceStatusVariant } from "@/lib/prevention/emergency"
 import {
   createWorksiteResourceAction,
   deleteWorksiteResourceAction,
@@ -35,18 +36,6 @@ export interface InventoryRow {
   planName: string | null
   /** Inspecciones que lo tomaron como sujeto: si hay, la ficha es evidencia. */
   inspectionCount: number
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  operational: "Operativo",
-  needs_maintenance: "Requiere mantención",
-  out_of_service: "Fuera de servicio",
-}
-
-function statusVariant(status: string): "success" | "warning" | "danger" {
-  if (status === "operational") return "success"
-  if (status === "out_of_service") return "danger"
-  return "warning"
 }
 
 export function InventoryList({ rows, worksites, canManage }: {
@@ -146,7 +135,7 @@ export function InventoryList({ rows, worksites, canManage }: {
                   <TableCell className="text-sm tabular-nums">{row.nextInspectionAt ?? "—"}</TableCell>
                   <TableCell className="text-sm tabular-nums">{row.expiresAt ?? "—"}</TableCell>
                   <TableCell>
-                    <Badge variant={statusVariant(row.status)}>{STATUS_LABELS[row.status] ?? row.status}</Badge>
+                    <Badge variant={emergencyResourceStatusVariant(row.status)}>{EMERGENCY_RESOURCE_STATUS_LABELS[row.status] ?? row.status}</Badge>
                   </TableCell>
                   <TableCell className="text-sm">
                     {row.planName ?? <span className="text-xs text-[var(--color-text-subtle)]">Ningún plan</span>}

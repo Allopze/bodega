@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { DataTable } from "@/components/admin/data-table"
+import { DataTable } from "@/components/ui/data-table"
 import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
 import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
 import { SupplierForm } from "./supplier-form"

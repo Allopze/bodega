@@ -6,7 +6,7 @@ import { CaretDown } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
-import { SubmitButton } from "@/components/admin/submit-button"
+import { SubmitButton } from "@/components/ui/submit-button"
 import { formatDate } from "@/lib/utils"
 import { toast } from "@/lib/toast"
 import { REQUEST_TYPE_LABELS, REQUEST_TYPE_VARIANTS } from "./types"
@@ -14,7 +14,7 @@ import type { ApprovalRequest } from "./types"
 import { ItemRow } from "./item-row"
 import { useBulkApproveAction } from "./use-approval-actions"
 import { updateDeliveryModeAction } from "./actions"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { INITIAL_STATE } from "@/lib/form-state"
 
 const EMPTY_SELECTED_IDS: string[] = []
 

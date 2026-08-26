@@ -10,7 +10,7 @@ import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { parseListParams, periodSql, statusSql, worksiteEqSql } from "@/lib/adquisiciones/list-query"
-import type { StageTab } from "@/components/adquisiciones/stage-tabs"
+import type { StageTab } from "@/components/ui/stage-tabs"
 import { RequestList } from "./request-list"
 import { SolicitudesActions } from "./solicitudes-actions"
 

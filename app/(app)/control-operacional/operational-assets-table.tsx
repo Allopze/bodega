@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { DataTable } from "@/components/admin/data-table"
+import { DataTable } from "@/components/ui/data-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TableCell, TableRow } from "@/components/ui/table"

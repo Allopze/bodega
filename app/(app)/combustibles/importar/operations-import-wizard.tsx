@@ -6,16 +6,17 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/field"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Upload, FileText, WarningCircle, CheckCircle, ArrowLeft, ArrowUp, ArrowDown } from "@phosphor-icons/react"
+import { FileText, WarningCircle, CheckCircle, ArrowLeft, ArrowUp, ArrowDown } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
-import { cn, formatCLP, formatQty } from "@/lib/utils"
+import { formatCLP, formatQty } from "@/lib/utils"
 import {
   previewOperationsImportAction,
   confirmOperationsImportAction,
   type OperationsPreviewData,
   type OperationsImportResultSummary,
 } from "../actions-operaciones"
-import { downloadErrorsXlsx, importErrorKey, Stat } from "@/lib/combustibles/wizard-helpers"
+import { Stat } from "@/lib/combustibles/wizard-helpers"
+import { ImportDuplicateConfirmation, ImportErrorList, ImportFileDropzone } from "./import-wizard-primitives"
 
 type Step = "form" | "preview" | "done"
 
@@ -117,28 +118,7 @@ export function OperationsImportWizard() {
               <p className="mt-1 text-xs text-[var(--color-text-muted)]">{result.duplicateRows} {result.duplicateRows === 1 ? "fila ya estaba" : "filas ya estaban"} importada{result.duplicateRows === 1 ? "" : "s"} de un lote anterior y se omitieron.</p>
             )}
           </div>
-          {result.errors.length > 0 && (
-            <div className="text-sm text-left p-3 bg-[var(--color-warning-tint)] rounded-md max-w-md mx-auto">
-              <div className="flex items-center justify-between mb-1">
-                <p className="font-medium text-[var(--color-warning-ink)]">{result.errors.length} filas omitidas por errores:</p>
-                <button
-                  type="button"
-                  onClick={() => downloadErrorsXlsx(result.errors, "errores-operaciones.xlsx")}
-                  className="text-xs text-[var(--color-primary)] hover:underline"
-                >
-                  Descargar (.xlsx)
-                </button>
-              </div>
-              <div className="max-h-32 overflow-y-auto space-y-0.5 text-[var(--color-text-muted)]">
-                {result.errors.slice(0, 20).map((e) => (
-                  <p key={importErrorKey(e)}>• Fila {e.rowIndex}, {e.field}: {e.message}</p>
-                ))}
-                {result.errors.length > 20 && (
-                  <p className="text-xs text-[var(--color-text-muted)]">…y {result.errors.length - 20} errores más</p>
-                )}
-              </div>
-            </div>
-          )}
+          <ImportErrorList errors={result.errors} filename="errores-operaciones.xlsx" title={`${result.errors.length} filas omitidas por errores:`} maxVisible={20} />
           <div className="flex justify-center gap-3">
             <Button variant="secondary" onClick={reset}>Importar otro archivo</Button>
             <Button asChild><a href={`/combustibles/importar/operaciones/${result.batchId}`}>Ver lote</a></Button>
@@ -184,28 +164,7 @@ export function OperationsImportWizard() {
             </div>
           )}
 
-          {preview.errores.length > 0 && (
-            <div className="p-3 bg-[var(--color-warning-tint)] rounded-md text-sm">
-              <div className="flex items-center justify-between mb-1">
-                <p className="font-medium">Filas con errores (no se importarán):</p>
-                <button
-                  type="button"
-                  onClick={() => downloadErrorsXlsx(preview.errores, "errores-preview-operaciones.xlsx")}
-                  className="text-xs text-[var(--color-primary)] hover:underline"
-                >
-                  Descargar errores (.xlsx)
-                </button>
-              </div>
-              <div className="max-h-40 overflow-y-auto space-y-0.5">
-                {preview.errores.slice(0, 30).map((e) => (
-                  <p key={importErrorKey(e)} className="text-[var(--color-danger)]">Fila {e.rowIndex}, {e.field}: {e.message}</p>
-                ))}
-                {preview.errores.length > 30 && (
-                  <p className="text-xs text-[var(--color-text-muted)]">…y {preview.errores.length - 30} errores más. Usa el botón de arriba para descargar la lista completa.</p>
-                )}
-              </div>
-            </div>
-          )}
+          <ImportErrorList errors={preview.errores} filename="errores-preview-operaciones.xlsx" />
 
           {preview.equiposSinVehiculo > 0 && (
             <Checkbox
@@ -225,20 +184,11 @@ export function OperationsImportWizard() {
             </div>
           )}
 
-          {preview.archivoDuplicado && (
-            <div className="flex items-start gap-2 p-3 rounded-md bg-[var(--color-danger-tint)] text-sm">
-              <WarningCircle className="h-4 w-4 mt-0.5 shrink-0 text-[var(--color-danger)]" />
-              <div className="space-y-2">
-                <p>Este archivo ya fue importado antes.</p>
-                <Checkbox
-                  id="confirmDuplicates"
-                  label="Entiendo e igualmente quiero importar (puede duplicar datos)"
-                  checked={confirmDuplicates}
-                  onChange={(e) => setConfirmDuplicates(e.target.checked)}
-                />
-              </div>
-            </div>
-          )}
+          {preview.archivoDuplicado && <ImportDuplicateConfirmation
+            messages={["Este archivo ya fue importado antes."]}
+            checked={confirmDuplicates}
+            onCheckedChange={setConfirmDuplicates}
+          />}
 
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setStep("form")}>Volver</Button>
@@ -268,44 +218,15 @@ export function OperationsImportWizard() {
           </div>
         </div>
 
-        <label
-          onDragOver={(e) => { e.preventDefault(); setDragActive(true) }}
-          onDragLeave={() => setDragActive(false)}
-          onDrop={(e) => { e.preventDefault(); setDragActive(false); handleFile(e.dataTransfer.files?.[0]) }}
-          className={cn(
-            "flex flex-col items-center justify-center gap-3 cursor-pointer text-center",
-            "rounded-[var(--radius-xl)] border-2 border-dashed px-6 py-10",
-            fileError
-              ? "border-[var(--color-danger)] bg-[var(--color-danger-tint)]"
-              : dragActive
-                ? "border-[var(--color-primary)] bg-[var(--color-primary-tint)]"
-                : "border-[var(--color-border)] hover:border-[var(--color-primary-line)] hover:bg-[var(--color-surface-2)]",
-          )}
-        >
-          <div className={cn(
-            "flex h-12 w-12 items-center justify-center rounded-full",
-            fileError ? "bg-[var(--color-danger-tint)]" : "bg-[var(--color-primary-tint)]",
-          )}>
-            {fileError ? (
-              <WarningCircle className="h-6 w-6 text-[var(--color-danger)]" weight="bold" />
-            ) : (
-              <Upload className="h-6 w-6 text-[var(--color-primary)]" weight="bold" />
-            )}
-          </div>
-          <div>
-            {fileError ? (
-              <p className="text-sm font-medium text-[var(--color-danger)]">{fileError}</p>
-            ) : (
-              <p className="text-sm font-medium text-[var(--color-text)]">
-                {file ? file.name : <>Arrastra tu archivo aquí o <span className="text-[var(--color-primary)]">haz clic para buscar</span></>}
-              </p>
-            )}
-            {!fileError && (
-              <p className="text-xs text-[var(--color-text-muted)] mt-0.5">Consolidado de cargas de combustible (.xlsx)</p>
-            )}
-          </div>
-          <input type="file" accept=".xlsx" onChange={(e) => handleFile(e.target.files?.[0])} className="sr-only" />
-        </label>
+        <ImportFileDropzone
+          file={file}
+          fileError={fileError}
+          dragActive={dragActive}
+          onDragActiveChange={setDragActive}
+          onFile={handleFile}
+          onClear={() => { setFile(null); setFileError(null) }}
+          helperText="Consolidado de cargas de combustible (.xlsx)"
+        />
 
         <section className="rounded-[var(--radius-lg)] border border-[var(--color-border)]">
           <button

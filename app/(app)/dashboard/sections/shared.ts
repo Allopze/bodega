@@ -1,6 +1,7 @@
 import type { Session } from "next-auth"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { getOperationalCalendarBounds } from "@/lib/services/operational-period-metrics"
+import { addDaysToPlainDate, todayInChile as utilsTodayInChile } from "@/lib/utils"
 import { scopedWorksiteId, type DashboardScope } from "../dashboard-scope"
 import type { ModuleWorkloadPoint } from "../dashboard-charts"
 
@@ -14,13 +15,6 @@ import type { ModuleWorkloadPoint } from "../dashboard-charts"
  * en runtime— pero real, y con un archivo por dominio se habría multiplicado
  * por siete.
  */
-
-const CHILE_TODAY_FORMATTER = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "America/Santiago",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-})
 
 export interface DomainSectionsProps {
   session: Session
@@ -44,9 +38,9 @@ export function analyticsFilters(scope: DashboardScope) {
   }
 }
 
-/** Hoy en calendario chileno: el proceso corre en UTC. */
+/** Hoy en calendario chileno: delega en el helper canónico de lib/utils. */
 export function todayInChile() {
-  return CHILE_TODAY_FORMATTER.format(new Date())
+  return utilsTodayInChile()
 }
 
 /** Porcentaje entero, con 0 cuando no hay denominador (evita NaN en el gráfico). */
@@ -55,7 +49,5 @@ export function pct(part: number, total: number) {
 }
 
 export function plusDays(date: string, days: number) {
-  const next = new Date(`${date}T00:00:00Z`)
-  next.setUTCDate(next.getUTCDate() + days)
-  return next.toISOString().slice(0, 10)
+  return addDaysToPlainDate(date, days)
 }

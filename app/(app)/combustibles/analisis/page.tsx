@@ -18,6 +18,7 @@ import { ChartErrorBoundary } from "@/components/chart-error-boundary"
 import { HistogramChart, PerformanceGroupChart } from "./analysis-charts-lazy"
 import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import { FilterSelect } from "../filter-select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 export const metadata: Metadata = { title: "Análisis de rendimiento por equipo" }
 
@@ -148,47 +149,36 @@ export default async function EquipmentPerformancePage({ searchParams }: { searc
           </div>
         )}
         <div className="overflow-x-auto border border-(--color-border)">
-          <table className="w-full min-w-[1200px] text-sm">
-            <thead className="bg-(--color-surface-2) text-left th-type">
-              <tr>
-                <th scope="col" className="p-3">{AGGREGATIONS.find((a) => a.value === aggregateBy)?.label}</th>
-                <th>Unidad</th>
-                <th>Muestra</th>
-                <th>Promedio</th>
-                <th>Mediana</th>
-                <th>Mín / Máx</th>
-                <th>Desv. estándar</th>
-                <th>CV</th>
-                <th>P10–P90</th>
-                <th>Rango esperado</th>
-                <th>vs. período anterior</th>
-                <th>Tendencia</th>
-                <th>Cargas</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-(--color-border)">
+          <TableRoot>
+          <Table className="min-w-[1200px]">
+            <caption className="sr-only">Análisis estadístico de rendimiento por equipo</caption>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{AGGREGATIONS.find((a) => a.value === aggregateBy)?.label}</TableHead><TableHead>Unidad</TableHead><TableHead>Muestra</TableHead>
+                <TableHead>Promedio</TableHead><TableHead>Mediana</TableHead><TableHead>Mín / Máx</TableHead><TableHead>Desv. estándar</TableHead>
+                <TableHead>CV</TableHead><TableHead>P10–P90</TableHead><TableHead>Rango esperado</TableHead><TableHead>vs. período anterior</TableHead>
+                <TableHead>Tendencia</TableHead><TableHead>Cargas</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {groups.map((group) => {
                 const badge = RELIABILITY_BADGE[group.reliability]!
                 return (
-                  <tr key={group.key}>
-                    <td className="p-3 font-medium">{group.label}</td>
-                    <td className="font-mono text-xs">{UNIT_LABEL[group.unit] ?? group.unit}</td>
-                    <td><Badge variant={badge.variant} size="sm">{group.stats.count} · {badge.label}</Badge></td>
-                    <td className="font-mono">{group.stats.mean}</td>
-                    <td className="font-mono">{group.stats.median}</td>
-                    <td className="font-mono">{group.stats.min} / {group.stats.max}</td>
-                    <td className="font-mono">{group.stats.stdDev}</td>
-                    <td className="font-mono">{group.stats.coefficientOfVariation == null ? "—" : `${group.stats.coefficientOfVariation}%`}</td>
-                    <td className="font-mono">{group.stats.p10} – {group.stats.p90}</td>
-                    <td className="font-mono text-(--color-text-muted)">{group.expectedRange ? `${group.expectedRange.low} – ${group.expectedRange.high}` : "—"}</td>
-                    <td className="font-mono">{group.variationPct == null ? "—" : `${group.variationPct > 0 ? "+" : ""}${group.variationPct}%`}</td>
-                    <td className="font-mono text-xs">{trendLabel(group.trend)}<br /><span className="text-(--color-text-muted)">{group.trend ? `R²=${group.trend.r2}` : ""}</span></td>
-                    <td><Link href={bitacoraHref(group, worksiteId, from, to)} className="text-xs text-(--color-primary-ink) hover:underline">Ver cargas</Link></td>
-                  </tr>
+                  <TableRow key={group.key}>
+                    <TableCell className="font-medium">{group.label}</TableCell><TableCell className="font-mono text-xs">{UNIT_LABEL[group.unit] ?? group.unit}</TableCell>
+                    <TableCell><Badge variant={badge.variant} size="sm">{group.stats.count} · {badge.label}</Badge></TableCell><TableCell className="font-mono">{group.stats.mean}</TableCell>
+                    <TableCell className="font-mono">{group.stats.median}</TableCell><TableCell className="font-mono">{group.stats.min} / {group.stats.max}</TableCell>
+                    <TableCell className="font-mono">{group.stats.stdDev}</TableCell><TableCell className="font-mono">{group.stats.coefficientOfVariation == null ? "—" : `${group.stats.coefficientOfVariation}%`}</TableCell>
+                    <TableCell className="font-mono">{group.stats.p10} – {group.stats.p90}</TableCell><TableCell className="font-mono text-(--color-text-muted)">{group.expectedRange ? `${group.expectedRange.low} – ${group.expectedRange.high}` : "—"}</TableCell>
+                    <TableCell className="font-mono">{group.variationPct == null ? "—" : `${group.variationPct > 0 ? "+" : ""}${group.variationPct}%`}</TableCell>
+                    <TableCell className="font-mono text-xs">{trendLabel(group.trend)}<br /><span className="text-(--color-text-muted)">{group.trend ? `R²=${group.trend.r2}` : ""}</span></TableCell>
+                    <TableCell><Link href={bitacoraHref(group, worksiteId, from, to)} className="text-xs text-(--color-primary-ink) hover:underline">Ver cargas</Link></TableCell>
+                  </TableRow>
                 )
               })}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
+          </TableRoot>
         </div>
         </>
       )}

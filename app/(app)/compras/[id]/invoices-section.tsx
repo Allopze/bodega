@@ -5,8 +5,8 @@ import { useActionState } from "react"
 import { Trash, FilePdf, Warning, Plus, X, Eye, ArrowsClockwise } from "@phosphor-icons/react"
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
-import { INITIAL_STATE } from "@/components/admin/form-state"
-import { SubmitButton } from "@/components/admin/submit-button"
+import { INITIAL_STATE } from "@/lib/form-state"
+import { SubmitButton } from "@/components/ui/submit-button"
 import { Field } from "@/components/ui/field"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Input } from "@/components/ui/input"
@@ -88,11 +88,23 @@ export interface OcItem {
   catalogProductId: string | null
   productName: string
   productCode: string | null
+  attributes?: Array<{ name: string; value: string }>
   unitOfMeasure: string
   quantity: number
   /** `null` is a service whose purchase cost is still pending, never $0. */
   unitPrice: number | null
   subtotal: number | null
+}
+
+function dteOcItemLabel(item: OcItem) {
+  const parts = [item.productName]
+  for (const attribute of item.attributes ?? []) {
+    if (attribute.name.trim() && attribute.value.trim()) {
+      parts.push(`${attribute.name}: ${attribute.value}`)
+    }
+  }
+  parts.push(`${item.quantity} ${item.unitOfMeasure}`)
+  return parts.join(" · ")
 }
 
 export interface InvoiceRow {
@@ -1167,8 +1179,8 @@ function DteResolutionDialog({
                         ...ocItems.map((item) => ({
                           value: item.id,
                           label: takenByOtherLine.has(item.id)
-                            ? `${item.productName} · ya asociado a otra línea`
-                            : `${item.productName} · ${item.quantity} ${item.unitOfMeasure}`,
+                            ? `${dteOcItemLabel(item)} · ya asociado a otra línea`
+                            : dteOcItemLabel(item),
                           disabled: takenByOtherLine.has(item.id),
                         })),
                         { value: "__unlinked", label: "Dejar explícitamente sin vínculo" },

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { toast } from "@/lib/toast"
+import { useRutIdentity, type RutIdentityResult } from "@/lib/hooks/use-rut-identity"
 import { findWorkerByRutAction } from "./actions"
 
 export interface MatchedWorker {
@@ -9,6 +9,11 @@ export interface MatchedWorker {
   name: string
   rut: string | null
   position: string | null
+}
+
+/** Match de PPA con la faena que resuelve el servidor (no se expone en la UI). */
+interface PpaMatchedWorker extends MatchedWorker {
+  worksiteId: string
 }
 
 interface UsePpaIdentityOptions {
@@ -38,64 +43,74 @@ export function usePpaIdentity({
   hasFaenaParam,
   onWorksiteChange,
 }: UsePpaIdentityOptions): UsePpaIdentityReturn {
-  const [rutSearch, setRutSearch] = React.useState("")
-  const [searchingWorker, setSearchingWorker] = React.useState(false)
-  const [matchedWorker, setMatchedWorker] = React.useState<MatchedWorker | null>(null)
   const [workerId, setWorkerId] = React.useState("")
   const [manual, setManual] = React.useState(false)
   const [workerName, setWorkerName] = React.useState("")
   const [workerRut, setWorkerRut] = React.useState("")
   const [workerCompany, setWorkerCompany] = React.useState("")
 
+  /** RUT efectivamente buscado en la última verificación (fallback si el
+   *  servidor devuelve match sin RUT). */
+  const searchedRutRef = React.useRef("")
+
+  const verifyByRut = React.useCallback(
+    async (rut: string): Promise<RutIdentityResult<PpaMatchedWorker>> => {
+      searchedRutRef.current = rut
+      const res = await findWorkerByRutAction(rut)
+      if (res.ok && res.worker) {
+        return {
+          ok: true,
+          matched: {
+            id: res.worker.id,
+            name: res.worker.name,
+            rut: res.worker.rut,
+            position: res.worker.position,
+            worksiteId: res.worker.worksiteId,
+          },
+        }
+      }
+      return { ok: false, message: res.message ?? "No se encontró el trabajador." }
+    },
+    [],
+  )
+
+  const identity = useRutIdentity<PpaMatchedWorker>({
+    verify: verifyByRut,
+    onBeforeVerify: React.useCallback(() => {
+      setWorkerId("")
+      if (!hasFaenaParam) onWorksiteChange("")
+    }, [hasFaenaParam, onWorksiteChange]),
+    onMatched: React.useCallback((worker: PpaMatchedWorker) => {
+      setWorkerId(worker.id)
+      if (!hasFaenaParam) onWorksiteChange(worker.worksiteId)
+      setWorkerRut(worker.rut ?? searchedRutRef.current)
+    }, [hasFaenaParam, onWorksiteChange]),
+    messages: { success: "Trabajador verificado.", error: "Error al buscar el trabajador." },
+  })
+
   function resetIdentity() {
-    setMatchedWorker(null)
+    identity.resetMatch()
     setWorkerId("")
     if (!hasFaenaParam) onWorksiteChange("")
   }
 
-  async function handleVerifyRut() {
-    if (!rutSearch) return
-    setSearchingWorker(true)
-    resetIdentity()
-    try {
-      const res = await findWorkerByRutAction(rutSearch)
-      if (res.ok && res.worker) {
-        setMatchedWorker({
-          id: res.worker.id,
-          name: res.worker.name,
-          rut: res.worker.rut,
-          position: res.worker.position,
-        })
-        setWorkerId(res.worker.id)
-        if (!hasFaenaParam) onWorksiteChange(res.worker.worksiteId)
-        setWorkerRut(res.worker.rut ?? rutSearch)
-        toast.success("Trabajador verificado.")
-      } else {
-        toast.error(res.message ?? "No se encontró el trabajador.")
-      }
-    } catch {
-      toast.error("Error al buscar el trabajador.")
-    } finally {
-      setSearchingWorker(false)
-    }
-  }
-
   function toggleManual() {
     setManual((m) => !m)
-    setMatchedWorker(null)
+    identity.resetMatch()
     setWorkerId("")
   }
 
   return {
-    rutSearch, setRutSearch,
-    searchingWorker,
-    matchedWorker,
+    rutSearch: identity.rut,
+    setRutSearch: identity.setRut,
+    searchingWorker: identity.verifying,
+    matchedWorker: identity.matched,
     manual,
     workerName, setWorkerName,
     workerRut, setWorkerRut,
     workerCompany, setWorkerCompany,
     workerId,
-    handleVerifyRut,
+    handleVerifyRut: identity.verify,
     toggleManual,
     resetIdentity,
   }

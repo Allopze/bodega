@@ -9,7 +9,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { toast } from "@/lib/toast"
 import { deleteRequestAction } from "@/app/(app)/solicitudes/actions"
 import { DELETABLE_REQUEST_STATUSES } from "@/lib/services/requests-delete.constants"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { INITIAL_STATE } from "@/lib/form-state"
 import type { ActionState } from "@/lib/validation/operations"
 
 interface DeleteRequestButtonProps {

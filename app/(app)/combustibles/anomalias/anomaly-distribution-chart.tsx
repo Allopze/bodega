@@ -1,30 +1,9 @@
 "use client"
+import { ChartEmpty } from "@/components/ui/chart-empty"
 
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts"
 import { chartTooltipStyle } from "@/lib/chart-palette"
-
-const STATUS_LABELS: Record<string, string> = {
-  open: "Abierto",
-  in_review: "En revisión",
-  resolved: "Resuelto",
-  dismissed: "Descartado",
-  reopened: "Reabierto",
-}
-
-const SEVERITY_LABELS: Record<string, string> = {
-  low: "Baja",
-  medium: "Media",
-  high: "Alta",
-  critical: "Crítica",
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  open: "var(--color-danger)",
-  in_review: "var(--color-warning)",
-  resolved: "var(--color-success)",
-  dismissed: "var(--color-text-muted)",
-  reopened: "var(--color-signal)",
-}
+import { ANOMALY_STATUS_LABELS, ANOMALY_STATUS_COLORS, ANOMALY_SEVERITY_LABELS } from "@/lib/combustibles/anomaly-labels"
 
 const SEVERITY_COLORS = [
   "var(--color-info)",
@@ -44,13 +23,6 @@ const RULE_COLORS = [
   "var(--color-signal-ink)",
 ]
 
-function EmptyChart({ label }: { label: string }) {
-  return (
-    <div className="flex h-48 items-center justify-center border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 text-center text-sm text-[var(--color-text-muted)]">
-      {label}
-    </div>
-  )
-}
 
 interface DistributionData {
   byStatus: Array<{ status: string; count: number }>
@@ -64,22 +36,22 @@ export function AnomalyDistributionChart({ distribution }: { distribution: Distr
     <div className="grid gap-5 lg:grid-cols-2">
       <div className="border border-(--color-border) bg-(--color-surface) p-4">
         <h3 className="mb-2 text-sm font-medium">Casos por estado</h3>
-        <EmptyChart label="Sin casos registrados" />
+        <ChartEmpty label="Sin casos registrados" />
       </div>
       <div className="border border-(--color-border) bg-(--color-surface) p-4">
         <h3 className="mb-2 text-sm font-medium">Casos por severidad</h3>
-        <EmptyChart label="Sin casos registrados" />
+        <ChartEmpty label="Sin casos registrados" />
       </div>
     </div>
   )
 
   const statusData = distribution.byStatus
     .filter((d) => d.status && d.count > 0)
-    .map((d) => ({ name: STATUS_LABELS[d.status] ?? d.status, value: d.count, fill: STATUS_COLORS[d.status] ?? "var(--color-text-muted)" }))
+    .map((d) => ({ name: ANOMALY_STATUS_LABELS[d.status as keyof typeof ANOMALY_STATUS_LABELS] ?? d.status, value: d.count, fill: ANOMALY_STATUS_COLORS[d.status as keyof typeof ANOMALY_STATUS_COLORS] ?? "var(--color-text-muted)" }))
 
   const severityData = distribution.bySeverity
     .filter((d) => d.severity && d.count > 0)
-    .map((d) => ({ name: SEVERITY_LABELS[d.severity] ?? d.severity, value: d.count }))
+    .map((d) => ({ name: ANOMALY_SEVERITY_LABELS[d.severity as keyof typeof ANOMALY_SEVERITY_LABELS] ?? d.severity, value: d.count }))
 
   const ruleData = distribution.byRuleCode
     .filter((d) => d.ruleCode && d.count > 0)

@@ -1,20 +1,20 @@
 "use client"
+import { ChartEmpty } from "@/components/ui/chart-empty"
 
 import { BarChart, Bar, Cell, LabelList, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 import { ChartLineUp } from "@phosphor-icons/react"
+import { formatQty } from "@/lib/utils"
 
 const STAGE_COLOR = "var(--color-primary)"
 const UNAVAILABLE_COLOR = "var(--color-border-strong)"
 const GRID_COLOR = "var(--color-border)"
 
-const liters = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 })
 
 export interface CycleStagePoint {
   stage: string
   liters: number | null
   records: number | null
 }
-
 /**
  * Barras en el orden recibido → registrado → entregado → consumido: leídas de
  * izquierda a derecha, la caída de una barra a la siguiente ES el flujo físico
@@ -23,7 +23,7 @@ export interface CycleStagePoint {
  */
 export function CycleStageChart({ stages }: { stages: CycleStagePoint[] }) {
   const hasAnyData = stages.some((s) => s.liters != null)
-  if (!hasAnyData) return <EmptyChart label="No hay ninguna etapa con fuente disponible en este filtro." />
+  if (!hasAnyData) return <ChartEmpty icon={<ChartLineUp size={24} className="mb-2 text-[var(--color-text-subtle)]" aria-hidden />} className="border-[var(--color-border-strong)]" label="No hay ninguna etapa con fuente disponible en este filtro." />
 
   const chartData = stages.map((s) => ({ ...s, value: s.liters ?? 0 }))
 
@@ -45,7 +45,7 @@ export function CycleStageChart({ stages }: { stages: CycleStagePoint[] }) {
                   <p className="mb-1 font-semibold text-(--color-text)">{point.stage}</p>
                   {point.liters == null ? <p className="text-(--color-text-muted)">Sin registros aún</p> : (
                     <>
-                      <div className="flex justify-between gap-4"><span className="text-(--color-text-muted)">Litros</span><span className="font-mono">{liters.format(point.liters)} L</span></div>
+                      <div className="flex justify-between gap-4"><span className="text-(--color-text-muted)">Litros</span><span className="font-mono">{formatQty(point.liters, undefined, { maximumFractionDigits: 0 })} L</span></div>
                       <div className="flex justify-between gap-4"><span className="text-(--color-text-muted)">Registros</span><span className="font-mono">{point.records}</span></div>
                     </>
                   )}
@@ -54,21 +54,12 @@ export function CycleStageChart({ stages }: { stages: CycleStagePoint[] }) {
             }}
           />
           <Bar dataKey="value" radius={[3, 3, 0, 0]} maxBarSize={72} name="Litros" animationDuration={420} animationEasing="ease-out">
-            <LabelList dataKey="value" position="top" formatter={(value: unknown) => typeof value === "number" && value > 0 ? `${liters.format(value)} L` : ""} style={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
+            <LabelList dataKey="value" position="top" formatter={(value: unknown) => typeof value === "number" && value > 0 ? `${formatQty(value, undefined, { maximumFractionDigits: 0 })} L` : ""} style={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
             {chartData.map((point) => <Cell key={point.stage} fill={point.liters == null ? UNAVAILABLE_COLOR : STAGE_COLOR} />)}
           </Bar>
         </BarChart>
       </ResponsiveContainer>
     </div>
     </>
-  )
-}
-
-function EmptyChart({ label }: { label: string }) {
-  return (
-    <div className="flex h-64 flex-col items-center justify-center border border-dashed border-(--color-border-strong) bg-(--color-surface-2) px-6 text-center">
-      <ChartLineUp size={24} className="mb-2 text-(--color-text-subtle)" aria-hidden />
-      <p className="max-w-64 text-sm leading-5 text-(--color-text-muted)">{label}</p>
-    </div>
   )
 }

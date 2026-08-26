@@ -3,10 +3,10 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { DataTable } from "@/components/admin/data-table"
+import { DataTable } from "@/components/ui/data-table"
 import { RECEPCION_PAGE_SIZE } from "@/lib/constants"
-import { ListFilters, LIST_FILTER_PARAMS, type FilterOption } from "@/components/adquisiciones/list-filters"
-import { StageTabs, type StageTab } from "@/components/adquisiciones/stage-tabs"
+import { hasServerListFilters, ServerListFilters, type ServerListFilterOption } from "@/components/ui/server-list-filters"
+import { StageTabs, type StageTab } from "@/components/ui/stage-tabs"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { StateBadge } from "@/components/states/state-badge"
@@ -44,8 +44,8 @@ interface RecepcionTableProps {
   canOffice:        boolean
   canFaena:         boolean
   officeName:       string
-  worksiteOptions?: FilterOption[]
-  supplierOptions?: FilterOption[]
+  worksiteOptions?: ServerListFilterOption[]
+  supplierOptions?: ServerListFilterOption[]
   stageTabs?:       StageTab[]
 }
 
@@ -66,14 +66,14 @@ const COLUMNS = [
   // Las acciones van al final de la fila, que es donde se las busca.
   { key: "actions",      label: "",               sortable: false, width: "w-28" },
 ]
-const EMPTY_FILTER_OPTIONS: FilterOption[] = []
+const EMPTY_FILTER_OPTIONS: ServerListFilterOption[] = []
 const EMPTY_STAGE_TABS: StageTab[] = []
 
 export function RecepcionTable({ orders, wsMap, supMap, gapMap, guideMap, canOffice, canFaena, officeName, worksiteOptions = EMPTY_FILTER_OPTIONS, supplierOptions = EMPTY_FILTER_OPTIONS, stageTabs = EMPTY_STAGE_TABS }: RecepcionTableProps) {
   const router = useRouter()
 
   const searchParams = useSearchParams()
-  const hasActiveFilters = LIST_FILTER_PARAMS.some((key) => searchParams.get(key))
+  const hasActiveFilters = hasServerListFilters(searchParams)
 
   // Nombres resueltos en la fila para que el orden de esas columnas coincida con
   // lo que se lee (ver COLUMNS).
@@ -95,7 +95,7 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, guideMap, canOff
     />
     <StateLegend officeName={officeName} />
     {stageTabs.length > 0 && <StageTabs tabs={stageTabs} ariaLabel="Etapa de la recepción" />}
-    <ListFilters
+    <ServerListFilters
       searchPlaceholder="Buscar por código o proveedor..."
       worksiteOptions={worksiteOptions}
       supplierOptions={supplierOptions}

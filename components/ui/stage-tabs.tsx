@@ -17,7 +17,7 @@ export interface StageTab {
  * Tabs por etapa del pipeline, sincronizadas con el parámetro `estado` de la URL.
  *
  * Regla A5: el estado es *una* dimensión, así que se representa una sola vez.
- * Donde hay estas tabs no va además un select de estado en `ListFilters`.
+ * Donde hay estas tabs no va además un select de estado en `ServerListFilters`.
  *
  * Son `<Link>` y no botones a propósito: navegan desde el primer pintado, sin
  * esperar hidratación (misma razón que el chip de "Sin factura").

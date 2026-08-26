@@ -36,3 +36,25 @@ export const PDTP_EXECUTION_STATUS_LABELS: Record<PdtpExecutionStatus, string> =
 export function pdtpExecutionStatusLabel(status: string): string {
   return PDTP_EXECUTION_STATUS_LABELS[status as PdtpExecutionStatus] ?? status
 }
+
+export type PdtpActionStatus = "pendiente" | "en_proceso" | "completado" | "verificado" | "reabierto"
+
+export const PDTP_ACTION_STATUS_LABELS: Record<PdtpActionStatus, string> = {
+  pendiente: "Pendiente",
+  en_proceso: "En proceso",
+  completado: "Completado",
+  verificado: "Verificado",
+  reabierto: "Reabierto",
+}
+
+/** Variant de presentación para acciones/planes de acción. Vencida gana siempre. */
+export function pdtpActionStatusVariant(estado: string, vencida: boolean): "default" | "info" | "warning" | "success" | "danger" {
+  if (vencida) return "danger"
+  switch (estado) {
+    case "verificado": return "success"
+    case "completado": return "info"
+    case "en_proceso": return "warning"
+    case "reabierto":  return "danger"
+    default:           return "default"
+  }
+}

@@ -23,15 +23,9 @@ export const INCIDENT_SEVERITY_VARIANTS: Record<string, BadgeVariant> = {
   fatal: "danger",
 }
 
-export const INCIDENT_STATUS_LABELS: Record<string, string> = {
-  open: "Abierto",
-  investigating: "En investigación",
-  closed: "Cerrado",
-}
-
-export function incidentStatusVariant(status: string): BadgeVariant {
-  return status === "closed" ? "success" : "default"
-}
+/* El vocabulario de estado de incidentes vive en `lib/prevention/incidents.ts`
+ * (tipado contra `IncidentStatus`): aquí existía una copia antigua con otro
+ * set de keys (`open`/`investigating`/`closed`) y sin consumidores. */
 
 /* ── IPER ────────────────────────────────────────────────────────────────── */
 export const IPER_STATUS_LABELS: Record<string, string> = {
@@ -47,17 +41,9 @@ export const IPER_STATUS_VARIANTS: Record<string, BadgeVariant> = {
 }
 
 /* ── Inspecciones ────────────────────────────────────────────────────────── */
-export const INSPECTION_RUN_STATUS_LABELS: Record<string, string> = {
-  open: "Abierta",
-  in_review: "En revisión",
-  closed: "Cerrada",
-}
-
-export function inspectionRunStatusVariant(status: string): BadgeVariant {
-  if (status === "open") return "primary"
-  if (status === "closed") return "outline"
-  return "warning"
-}
+/* El vocabulario de estado de corridas de inspección vive en
+ * `lib/prevention/inspections.ts` (`planned`/`in_progress`/…): aquí existía
+ * una copia antigua (`open`/`in_review`/`closed`) sin consumidores. */
 
 export const INSPECTION_ITEM_STATUS_LABELS: Record<string, string> = {
   pendiente: "Pendiente",
@@ -86,32 +72,14 @@ export function behavioralSeverityVariant(severity: string): BadgeVariant {
 }
 
 /* ── Permisos de trabajo ─────────────────────────────────────────────────── */
-export const PERMIT_STATUS_LABELS: Record<string, string> = {
-  solicitado: "Solicitado",
-  aprobado: "Aprobado",
-  rechazado: "Rechazado",
-  cerrado: "Cerrado",
-}
-
-export const PERMIT_STATUS_VARIANTS: Record<string, BadgeVariant> = {
-  solicitado: "warning",
-  aprobado: "success",
-  rechazado: "danger",
-  cerrado: "outline",
-}
+/* El vocabulario de estado de permisos vive en `lib/prevention/permits.ts`
+ * (`draft`/`pending_approval`/…): aquí existía una copia antigua
+ * (`solicitado`/`aprobado`/…) sin consumidores. */
 
 /* ── Comités ─────────────────────────────────────────────────────────────── */
-export const COMMITTEE_STATUS_LABELS: Record<string, string> = {
-  activo: "Activo",
-  inactivo: "Inactivo",
-  disuelto: "Disuelto",
-}
-
-export const COMMITTEE_STATUS_VARIANTS: Record<string, BadgeVariant> = {
-  activo: "success",
-  inactivo: "outline",
-  disuelto: "danger",
-}
+/* El vocabulario de estado de comités vive en `lib/prevention/cphs.ts`
+ * (`active`/`dissolved`/`expired`): aquí existía una copia antigua
+ * (`activo`/`inactivo`/`disuelto`) sin consumidores. */
 
 export const AGREEMENT_STATUS_LABELS: Record<string, string> = {
   pendiente: "Pendiente",

@@ -8,16 +8,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/lib/toast"
 import { formatDateTime } from "@/lib/utils"
 import { updateAnomalyStatusAction, commentAnomalyAction } from "./actions"
+import { ANOMALY_SEVERITY_LABELS, ANOMALY_STATUS_LABELS, anomalySeverityVariant } from "@/lib/combustibles/anomaly-labels"
 import type { AnomalyCaseRow, AnomalyCaseStatus } from "@/lib/combustibles/anomaly-cases"
-
-const SEVERITY_BADGE: Record<string, { label: string; variant: "danger" | "warning" | "success" | "info" }> = {
-  low: { label: "Baja", variant: "info" },
-  medium: { label: "Media", variant: "warning" },
-  high: { label: "Alta", variant: "danger" },
-  critical: { label: "Crítica", variant: "danger" },
-}
-
-const STATUS_LABELS: Record<string, string> = { open: "Abierto", in_review: "En revisión", resolved: "Resuelto", dismissed: "Descartado", reopened: "Reabierto" }
 
 /** resolved/dismissed requieren `combustibles:resolve_anomalies`; el resto sólo `combustibles:review_anomalies`. */
 const NEXT_STATUS: Record<AnomalyCaseStatus, Array<{ status: AnomalyCaseStatus; label: string; requiresResolve?: boolean }>> = {
@@ -33,7 +25,7 @@ export function AnomalyCaseCard({ anomalyCase, canReview, canResolve }: { anomal
   const [comment, setComment] = useState("")
   const [pending, setPending] = useState(false)
   const [resolution, setResolution] = useState("")
-  const sv = SEVERITY_BADGE[anomalyCase.severity] ?? { label: anomalyCase.severity, variant: "info" as const }
+  const sv = { label: ANOMALY_SEVERITY_LABELS[anomalyCase.severity] ?? anomalyCase.severity, variant: anomalySeverityVariant(anomalyCase.severity) }
 
   async function doStatus(status: AnomalyCaseStatus) {
     setPending(true)
@@ -58,7 +50,7 @@ export function AnomalyCaseCard({ anomalyCase, canReview, canResolve }: { anomal
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={sv.variant} size="sm">{sv.label}</Badge>
-            <Badge variant="outline" size="sm">{STATUS_LABELS[anomalyCase.status] ?? anomalyCase.status}</Badge>
+            <Badge variant="outline" size="sm">{ANOMALY_STATUS_LABELS[anomalyCase.status] ?? anomalyCase.status}</Badge>
             {anomalyCase.ruleName && <span className="text-sm font-medium">{anomalyCase.ruleName}</span>}
           </div>
           <p className="mt-2 text-sm">{anomalyCase.description}</p>

@@ -9,9 +9,9 @@ import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
-import { SubmitButton } from "@/components/admin/submit-button"
+import { SubmitButton } from "@/components/ui/submit-button"
 import { EmptyState } from "@/components/ui/empty-state"
-import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
+import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import { formatQty } from "@/lib/utils"
 import type {
   GuideFormInitialValues,

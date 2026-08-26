@@ -2,7 +2,7 @@
 
 import { KpiCard } from "@/components/ui/kpi-card"
 import { GasPump, CurrencyCircleDollar, Hash, Gauge } from "@phosphor-icons/react"
-import { formatCLP } from "@/lib/utils"
+import { formatCLP, formatQty } from "@/lib/utils"
 
 interface FuelDashboardKpisProps {
   totalLiters: number
@@ -13,8 +13,6 @@ interface FuelDashboardKpisProps {
   canViewCuentaCorriente: boolean
 }
 
-const NUM_FORMAT = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 })
-const formatNum = (n: number) => NUM_FORMAT.format(n)
 
 export function FuelDashboardKpis({ totalLiters, totalAmount, loadCount, periodLabel, canViewCuentaCorriente }: FuelDashboardKpisProps) {
   const avgPricePerLiter = totalLiters > 0 ? totalAmount / totalLiters : 0
@@ -32,14 +30,14 @@ export function FuelDashboardKpis({ totalLiters, totalAmount, loadCount, periodL
         <KpiCard
           icon={<Hash size={18} weight="bold" />}
           label="Cargas"
-          value={formatNum(loadCount)}
+          value={formatQty(loadCount)}
           detail="Cargas registradas"
           href="#tabla-cargas"
         />
         <KpiCard
           icon={<GasPump size={18} weight="bold" />}
           label="Litros totales"
-          value={`${formatNum(totalLiters)} L`}
+          value={`${formatQty(totalLiters)} L`}
           detail="Combustible cargado"
           href="#evolucion-mensual"
         />

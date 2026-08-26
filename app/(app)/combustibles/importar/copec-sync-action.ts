@@ -4,18 +4,16 @@ import { db } from "@/db"
 import { desc, eq } from "drizzle-orm"
 import { fuelProviderSyncRuns, systemSettings } from "@/db/schema"
 import { guardPermission } from "@/lib/auth/can"
+import { civilDate, civilDateRange } from "@/lib/validation/dates"
 import { getCopecSyncPlan, setCopecSyncStartDate, syncCopecReportPeriod } from "@/lib/combustibles/copec-sync"
 import { isOpenPeriod } from "@/lib/combustibles/open-period"
 import { z } from "zod"
 
 const STATE_KEY = "combustibles.copec.sync"
-const copecPeriodSchema = z.object({
-  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-})
+const copecPeriodSchema = civilDateRange({ required: true, message: "El período de Copec no es válido" })
 const copecStartDateSchema = z.object({
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  expectedStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  startDate: civilDate(),
+  expectedStart: civilDate(),
 })
 
 export interface CopecSyncStatus {
@@ -112,22 +110,23 @@ export async function runCopecSyncPeriodAction(period: { from: string; to: strin
   const session = guard.session
   try {
     const parsedPeriod = copecPeriodSchema.safeParse(period)
-    if (!parsedPeriod.success || parsedPeriod.data.from > parsedPeriod.data.to) {
+    if (!parsedPeriod.success || !parsedPeriod.data.from || !parsedPeriod.data.to) {
       return { ok: false, message: "El período de Copec no es válido" }
     }
+    const periodRange = { from: parsedPeriod.data.from, to: parsedPeriod.data.to }
 
     const plan = await getCopecSyncPlan()
     const expected = plan.periods[0]
-    if (!expected || expected.from !== parsedPeriod.data.from || expected.to !== parsedPeriod.data.to) {
+    if (!expected || expected.from !== periodRange.from || expected.to !== periodRange.to) {
       return { ok: false, message: "El período ya no corresponde al siguiente tramo pendiente. Actualiza e inténtalo nuevamente." }
     }
 
     // La acción manual usa al operador autenticado. El importador configurado
     // queda reservado para el cron, que no tiene sesión de usuario.
-    const result = await syncCopecReportPeriod(parsedPeriod.data, session.user.id)
+    const result = await syncCopecReportPeriod(periodRange, session.user.id)
     // `openPeriod` lo decide el servidor: el cliente no puede compararlo contra
     // "hoy" sin arriesgar el desfase de zona horaria que ya costó un bug acá.
-    return { ok: true, imported: result.imported, refreshed: result.refreshed, received: result.received, pending: result.pending, rowsReceived: result.rowsReceived, rowsAccepted: result.rowsAccepted, rowsRejected: result.rowsRejected, rowsPending: result.rowsPending, unavailable: result.unavailable, reports: result.reports.length, unmappedCards: result.unmappedCards, openPeriod: isOpenPeriod(parsedPeriod.data.to) }
+    return { ok: true, imported: result.imported, refreshed: result.refreshed, received: result.received, pending: result.pending, rowsReceived: result.rowsReceived, rowsAccepted: result.rowsAccepted, rowsRejected: result.rowsRejected, rowsPending: result.rowsPending, unavailable: result.unavailable, reports: result.reports.length, unmappedCards: result.unmappedCards, openPeriod: isOpenPeriod(periodRange.to) }
   } catch (error) {
     // Los errores de Playwright arrastran el "Call log:" completo -kilobytes de
     // reintentos- y el toast del operador, que persiste hasta cerrarlo a mano,

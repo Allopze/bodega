@@ -5,7 +5,7 @@ import { useActionState } from "react"
 import { useEffect } from "react"
 import { useReducer } from "react"
 import { toast } from "@/lib/toast"
-import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
+import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import { createUser } from "./actions/create"
 import { updateUser } from "./actions/update"
 import {

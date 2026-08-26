@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Field } from "@/components/ui/field"
 import { FileInput } from "@/components/ui/file-input"
-import { Badge, type BadgeProps } from "@/components/ui/badge"
+import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ListBullets, Plus } from "@phosphor-icons/react"
 import { PdtpEvidenceThumbs } from "../../../pdtp-evidence-thumbs"
@@ -21,6 +21,7 @@ import {
   reopenPdtpActionPlanItemAction,
   addPdtpFollowupAction,
 } from "../../../actions/checklist-actions"
+import { PDTP_ACTION_STATUS_LABELS, pdtpActionStatusVariant } from "@/lib/prevention/pdtp"
 // Import type-only para romper la cadena cliente → barrel → db → postgres → fs
 import type { listFollowups, listActionPlanItems } from "@/lib/services/prevention-pdtp"
 // Constantes y funciones puras del dominio (no usan db); se importan directo del
@@ -41,31 +42,12 @@ const DANO_POTENCIAL_OPTIONS = [
 type ActionItem = Awaited<ReturnType<typeof listActionPlanItems>>[number]
 type Followup = Awaited<ReturnType<typeof listFollowups>>[number]
 
-const ESTADO_LABELS: Record<string, string> = {
-  pendiente: "Pendiente",
-  en_proceso: "En proceso",
-  completado: "Completado",
-  verificado: "Verificado",
-  reabierto: "Reabierto",
-}
-
 const FOLLOWUP_STATE_OPTIONS = [
-  { value: "pendiente", label: "Pendiente" },
-  { value: "en_proceso", label: "En proceso" },
-  { value: "completado", label: "Completado" },
-  { value: "reabierto", label: "Reabierto" },
+  { value: "pendiente", label: PDTP_ACTION_STATUS_LABELS.pendiente },
+  { value: "en_proceso", label: PDTP_ACTION_STATUS_LABELS.en_proceso },
+  { value: "completado", label: PDTP_ACTION_STATUS_LABELS.completado },
+  { value: "reabierto", label: PDTP_ACTION_STATUS_LABELS.reabierto },
 ] as const
-
-function estadoVariant(estado: string, vencida: boolean): BadgeProps["variant"] {
-  if (vencida) return "danger"
-  switch (estado) {
-    case "verificado": return "success"
-    case "completado": return "info"
-    case "en_proceso": return "warning"
-    case "reabierto":  return "danger"
-    default:           return "default"
-  }
-}
 
 export function ExecutionActionPlanPanel({ executionId, worksiteId, items, followupsByItem, canManage, canVerify }: {
   executionId: string
@@ -113,8 +95,8 @@ export function ExecutionActionPlanPanel({ executionId, worksiteId, items, follo
                 <p className="truncate text-xs text-text-subtle">{item.accion} · Responsable: {item.responsable} · Plazo: {item.plazo}</p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <Badge variant={estadoVariant(item.estado, item.vencida)}>
-                  {item.vencida ? "Vencida" : ESTADO_LABELS[item.estado] ?? item.estado}
+                <Badge variant={pdtpActionStatusVariant(item.estado, item.vencida)}>
+                  {item.vencida ? "Vencida" : PDTP_ACTION_STATUS_LABELS[item.estado as keyof typeof PDTP_ACTION_STATUS_LABELS] ?? item.estado}
                 </Badge>
                 <Badge variant="outline">{item.prioridad}</Badge>
               </div>
@@ -366,7 +348,7 @@ function ActionFollowupTimeline({ itemId, estado, worksiteId, followups, canMana
         <ul className="space-y-2">
           {followups.map((f) => (
             <li key={f.id} className="rounded-(--radius) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-xs">
-              <p className="font-medium text-(--color-text)">{f.fecha} · {ESTADO_LABELS[f.estadoNuevo] ?? f.estadoNuevo}</p>
+              <p className="font-medium text-(--color-text)">{f.fecha} · {PDTP_ACTION_STATUS_LABELS[f.estadoNuevo as keyof typeof PDTP_ACTION_STATUS_LABELS] ?? f.estadoNuevo}</p>
               {f.observacion && <p className="mt-1 text-text-subtle">{f.observacion}</p>}
               {(f.evidenciaUrl || (Array.isArray(f.evidenciaPhotos) && f.evidenciaPhotos.length > 0)) && (
                 <div className="mt-1">

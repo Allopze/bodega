@@ -4,6 +4,7 @@ import { Clock, CheckCircle, XCircle, Cloud, HardDrives, WarningCircle } from "@
 import { formatBytes } from "@/lib/format-bytes"
 import { formatDateTime } from "@/lib/utils"
 import { Tooltip } from "@/components/ui/tooltip"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 interface BackupRow {
   id: string
@@ -54,36 +55,32 @@ export function BackupsList({ backups }: Props) {
   return (
     <section className="overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
       <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)]">
-              <th scope="col" className="px-4 py-2.5 th-type">Fecha</th>
-              <th scope="col" className="px-4 py-2.5 th-type">Estado</th>
-              <th scope="col" className="px-4 py-2.5 th-type">Origen</th>
-              <th scope="col" className="px-4 py-2.5 th-type">PostgreSQL</th>
-              <th scope="col" className="px-4 py-2.5 th-type">Storage</th>
-              <th scope="col" className="px-4 py-2.5 th-type">Total</th>
-              <th scope="col" className="px-4 py-2.5 th-type">Drive</th>
-              <th scope="col" className="px-4 py-2.5 th-type">Manifiesto</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[var(--color-border)]">
+        <TableRoot className="rounded-none border-0">
+        <Table className="text-left">
+          <caption className="sr-only">Respaldos ejecutados y su estado de almacenamiento</caption>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Fecha</TableHead><TableHead>Estado</TableHead><TableHead>Origen</TableHead><TableHead>PostgreSQL</TableHead>
+              <TableHead>Storage</TableHead><TableHead>Total</TableHead><TableHead>Drive</TableHead><TableHead>Manifiesto</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {backups.map((b) => {
               const statusInfo = STATUS_ICONS[b.status]
               const StatusIcon = statusInfo.icon
 
               return (
-                <tr
+                <TableRow
                   key={b.id}
                   className="transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-tint)]"
                 >
-                  <td className="whitespace-nowrap px-4 py-2.5 font-medium text-[var(--color-text)]">
+                  <TableCell className="whitespace-nowrap font-medium text-[var(--color-text)]">
                     {b.date}
                     <span className="ml-1.5 text-xs text-[var(--color-text-muted)]">
                       {formatDateTime(b.startedAt).slice(11, 16)}
                     </span>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2.5">
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
                     <span className="inline-flex items-center gap-1 text-sm">
                       <StatusIcon size={14} className={statusInfo.color} />
                       <span className={statusInfo.color}>{statusInfo.label}</span>
@@ -105,27 +102,27 @@ export function BackupsList({ backups }: Props) {
                         </button>
                       </Tooltip>
                     )}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2.5 text-[var(--color-text-muted)]">
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-[var(--color-text-muted)]">
                     {TRIGGER_LABELS[b.trigger]}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2.5 text-[var(--color-text-muted)]">
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-[var(--color-text-muted)]">
                     {formatBytes(b.pgSizeBytes)}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2.5 text-[var(--color-text-muted)]">
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-[var(--color-text-muted)]">
                     {formatBytes(b.storageSizeBytes)}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2.5 font-medium text-[var(--color-text)]">
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap font-medium text-[var(--color-text)]">
                     {formatBytes(b.totalSizeBytes)}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2.5">
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
                     {b.driveUploaded ? (
                       <Cloud size={14} className="text-[var(--color-success)]" />
                     ) : (
                       <span className="text-xs text-[var(--color-text-faint)]">—</span>
                     )}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2.5">
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
                     {b.manifestSha256 ? (
                       <code className="rounded bg-[var(--color-surface-2)] px-1.5 py-0.5 text-xs font-mono text-[var(--color-text-muted)]">
                         {b.manifestSha256}…
@@ -133,12 +130,13 @@ export function BackupsList({ backups }: Props) {
                     ) : (
                       <span className="text-xs text-[var(--color-text-faint)]">—</span>
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )
             })}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
+        </TableRoot>
       </div>
     </section>
   )

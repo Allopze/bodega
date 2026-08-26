@@ -5,7 +5,7 @@ import { useActionState } from "react"
 import { useEffect } from "react"
 import { toast } from "@/lib/toast"
 import { PencilSimple, ToggleLeft, ToggleRight, Trash } from "@phosphor-icons/react"
-import { DataTable } from "@/components/admin/data-table"
+import { DataTable } from "@/components/ui/data-table"
 import { UserForm } from "./user-form"
 import { UserInvitationsPanel, type InvitationRow } from "./user-invitations-panel"
 import { Avatar } from "@/components/ui/avatar"
@@ -16,7 +16,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { formatDate } from "@/lib/utils"
 import { deleteUser } from "./actions/delete"
 import { toggleUserActive } from "./actions/toggle-active"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { INITIAL_STATE } from "@/lib/form-state"
 
 interface Role    { id: string; name: string; label: string }
 interface Permission {

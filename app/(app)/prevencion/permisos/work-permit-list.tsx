@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { DataTable } from "@/components/admin/data-table"
+import { DataTable } from "@/components/ui/data-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"

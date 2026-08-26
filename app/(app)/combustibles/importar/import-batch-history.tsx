@@ -2,13 +2,13 @@
 
 import { useState, useMemo } from "react"
 import Link from "next/link"
-import { DataTable, type ColumnDef } from "@/components/admin/data-table"
+import { DataTable, type ColumnDef } from "@/components/ui/data-table"
 import { TableCell, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { formatCLP, formatQty, formatDateTime } from "@/lib/utils"
+import { ImportBatchStatusBadge, ImportStatusFilter } from "./import-history-primitives"
 
 interface BatchRow {
   id: string
@@ -112,9 +112,7 @@ export function ImportBatchHistory({ batches }: { batches: BatchRow[] }) {
         <TableCell className="text-right font-mono">{formatQty(r.totalCantidad, "L")}</TableCell>
         <TableCell className="text-right font-mono">{formatCLP(r.totalMonto)}</TableCell>
         <TableCell>
-          <Badge variant={r.estado === "revertido" ? "danger" : "success"} size="sm">
-            {r.estado === "revertido" ? "Revertido" : "Importado"}
-          </Badge>
+          <ImportBatchStatusBadge status={r.estado} />
         </TableCell>
         <TableCell className="text-xs text-[var(--color-text-muted)] max-w-32 truncate" title={r.importerName}>{r.importerName}</TableCell>
         <TableCell>
@@ -128,16 +126,7 @@ export function ImportBatchHistory({ batches }: { batches: BatchRow[] }) {
 
   const actions = (
     <div className="flex items-center gap-2">
-      <Select value={estadoFilter} onValueChange={setEstadoFilter}>
-        <SelectTrigger className="h-8 text-xs w-32">
-          <SelectValue placeholder="Estado" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="todas">Todos</SelectItem>
-          <SelectItem value="importado">Importado</SelectItem>
-          <SelectItem value="revertido">Revertido</SelectItem>
-        </SelectContent>
-      </Select>
+      <ImportStatusFilter value={estadoFilter} onValueChange={setEstadoFilter} />
       <Select value={fuenteFilter} onValueChange={setFuenteFilter}>
         <SelectTrigger className="h-8 text-xs w-36">
           <SelectValue placeholder="Fuente" />
@@ -168,7 +157,7 @@ export function ImportBatchHistory({ batches }: { batches: BatchRow[] }) {
             <ResponsiveDataListCard
               title={r.archivoNombre}
               description={r.periodoLabel}
-              status={<Badge variant={r.estado === "revertido" ? "danger" : "success"}>{r.estado === "revertido" ? "Revertido" : "Importado"}</Badge>}
+              status={<ImportBatchStatusBadge status={r.estado} />}
               actions={<Button asChild type="button" variant="ghost" size="sm"><Link href={`/combustibles/importar/${r.id}`}>Ver lote</Link></Button>}
             >
               <ResponsiveDataListField label="Faena">{r.worksiteName}</ResponsiveDataListField>

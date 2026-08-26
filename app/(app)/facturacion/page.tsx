@@ -20,6 +20,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Badge } from "@/components/ui/badge"
 import { MoneyStat } from "./money-stat"
 import { PeriodPicker } from "@/components/ui/period-picker"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Facturación y cobranza" }
@@ -135,30 +136,33 @@ export default async function BillingSummaryPage({
                   Saldo pendiente por días transcurridos desde el vencimiento.
                 </p>
               </header>
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-[var(--color-border)]">
-                    <th scope="col" className="py-1.5 th-type">Tramo</th>
-                    <th scope="col" className="py-1.5 th-type text-right">Facturas</th>
-                    <th scope="col" className="py-1.5 th-type text-right">Saldo</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--color-border)]">
+              <TableRoot className="rounded-none border-0 bg-transparent">
+                <Table className="text-left">
+                  <caption className="sr-only">Antigüedad de facturas por cobrar</caption>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Tramo</TableHead>
+                      <TableHead className="text-right">Facturas</TableHead>
+                      <TableHead className="text-right">Saldo</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                   {summary.aging.map((bucket) => (
-                    <tr key={bucket.bucket}>
-                      <th scope="row" className="py-1.5 font-normal text-[var(--color-text)]">{bucket.label}</th>
-                      <td className="py-1.5 text-right tabular-nums text-[var(--color-text-muted)]">{bucket.count}</td>
-                      <td className="py-1.5 text-right tabular-nums font-medium text-[var(--color-text)]">
+                    <TableRow key={bucket.bucket}>
+                      <TableHead scope="row" className="font-normal normal-case tracking-normal">{bucket.label}</TableHead>
+                      <TableCell className="text-right tabular-nums text-[var(--color-text-muted)]">{bucket.count}</TableCell>
+                      <TableCell className="text-right tabular-nums font-medium text-[var(--color-text)]">
                         {bucket.byCurrency.length === 0
                           ? "—"
                           : bucket.byCurrency.map((money) => (
                               <div key={money.currency}>{formatMoney(money.amount, money.currency)}</div>
                             ))}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                  </TableBody>
+                </Table>
+              </TableRoot>
               <p className="mt-3 text-xs text-[var(--color-text-subtle)]">
                 Días promedio de pago:{" "}
                 <strong className="text-[var(--color-text)]">

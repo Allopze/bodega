@@ -18,6 +18,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Badge } from "@/components/ui/badge"
 import { ProposalDialog } from "./proposal-dialog"
 import { ProposalActions } from "./proposal-actions"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Propuestas de facturación" }
@@ -111,43 +112,43 @@ export default async function ProposalsPage({
         />
       ) : (
         <section className="overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+          <TableRoot className="rounded-none border-0">
+            <Table className="text-left">
               <caption className="sr-only">Propuestas de facturación con su estado y acciones disponibles</caption>
-              <thead>
-                <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)]">
-                  <th scope="col" className="px-4 py-2.5 th-type">Código</th>
-                  <th scope="col" className="px-4 py-2.5 th-type">Cliente</th>
-                  <th scope="col" className="px-4 py-2.5 th-type">Contrato · Faena</th>
-                  <th scope="col" className="px-4 py-2.5 th-type">Período</th>
-                  <th scope="col" className="px-4 py-2.5 th-type text-right">Total estimado</th>
-                  <th scope="col" className="px-4 py-2.5 th-type">Estado</th>
-                  <th scope="col" className="px-4 py-2.5 th-type">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--color-border)]">
+              <TableHeader>
+                <TableRow className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)]">
+                  <TableHead>Código</TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Contrato · Faena</TableHead>
+                  <TableHead>Período</TableHead>
+                  <TableHead className="text-right">Total estimado</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {proposals.map((proposal) => {
                   const status = proposalStatusLabel(proposal.status)
                   return (
-                    <tr key={proposal.id} className="align-top">
-                      <td className="whitespace-nowrap px-4 py-2.5 font-medium text-[var(--color-text)]">
+                    <TableRow key={proposal.id} className="align-top">
+                      <TableCell className="whitespace-nowrap font-medium text-[var(--color-text)]">
                         {proposal.code}
                         <div className="text-xs font-normal text-[var(--color-text-subtle)]">
                           {proposal.itemCount} {proposal.itemCount === 1 ? "ítem" : "ítems"}
                         </div>
-                      </td>
-                      <td className="px-4 py-2.5 text-[var(--color-text)]">{proposal.clientName}</td>
-                      <td className="px-4 py-2.5 text-xs text-[var(--color-text-muted)]">
+                      </TableCell>
+                      <TableCell className="text-[var(--color-text)]">{proposal.clientName}</TableCell>
+                      <TableCell className="text-xs text-[var(--color-text-muted)]">
                         {proposal.contractCode ?? "Sin contrato"}
                         <div className="text-[var(--color-text-subtle)]">{proposal.worksiteName ?? "Transversal"}</div>
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-2.5 text-[var(--color-text-muted)]">
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-[var(--color-text-muted)]">
                         {formatPeriod(proposal.servicePeriod)}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums font-medium text-[var(--color-text)]">
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-right tabular-nums font-medium text-[var(--color-text)]">
                         {formatMoney(proposal.estimatedTotal, proposal.currency)}
-                      </td>
-                      <td className="px-4 py-2.5">
+                      </TableCell>
+                      <TableCell>
                         <Badge variant={status.tone}>{status.label}</Badge>
                         {proposal.missingDocuments && (
                           <p className="mt-1 max-w-[28ch] text-xs text-[var(--color-warning-ink)]">
@@ -157,8 +158,8 @@ export default async function ProposalsPage({
                         <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
                           Actualizada {formatDateTime(proposal.updatedAt)}
                         </p>
-                      </td>
-                      <td className="px-4 py-2.5">
+                      </TableCell>
+                      <TableCell>
                         <ProposalActions
                           proposalId={proposal.id}
                           code={proposal.code}
@@ -170,13 +171,13 @@ export default async function ProposalsPage({
                           canLink={canLink}
                           invoiceOptions={invoiceOptions}
                         />
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   )
                 })}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+            </Table>
+          </TableRoot>
         </section>
       )}
     </PageContainer>

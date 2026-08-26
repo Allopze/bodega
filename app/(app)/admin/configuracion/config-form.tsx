@@ -2,10 +2,10 @@
 
 import { useActionState, useEffect } from "react"
 import { toast } from "@/lib/toast"
-import { SubmitButton } from "@/components/admin/submit-button"
+import { SubmitButton } from "@/components/ui/submit-button"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { INITIAL_STATE } from "@/lib/form-state"
 import { updateSystemSettings } from "./actions"
 import type { CompanyProfile } from "@/lib/services/system-settings"
 

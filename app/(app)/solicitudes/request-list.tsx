@@ -4,11 +4,11 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Plus, Trash } from "@phosphor-icons/react"
-import { DataTable } from "@/components/admin/data-table"
+import { DataTable } from "@/components/ui/data-table"
 import { SOLICITUDES_PAGE_SIZE } from "@/lib/constants"
 import { StateBadge } from "@/components/states/state-badge"
-import { ListFilters, LIST_FILTER_PARAMS, type FilterOption } from "@/components/adquisiciones/list-filters"
-import { StageTabs, type StageTab } from "@/components/adquisiciones/stage-tabs"
+import { hasServerListFilters, ServerListFilters, type ServerListFilterOption } from "@/components/ui/server-list-filters"
+import { StageTabs, type StageTab } from "@/components/ui/stage-tabs"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
 import { TableRow, TableCell, TableCellNum } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -20,7 +20,7 @@ import { PriorityBadge } from "@/components/ui/priority-badge"
 import { useActionState, useTransition } from "react"
 import { deleteRequestAction } from "./actions"
 import { DELETABLE_REQUEST_STATUSES, isOwnerDeletable } from "@/lib/services/requests-delete.constants"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { INITIAL_STATE } from "@/lib/form-state"
 import { REQUEST_TYPE_LABELS, REQUEST_TYPE_VARIANTS } from "@/lib/request-types"
 import type { ActionState } from "@/lib/validation/operations"
 
@@ -111,7 +111,7 @@ export function RequestList({
   requests: RequestRow[]
   currentUserId: string
   canDeleteAny?: boolean
-  worksiteOptions?: FilterOption[]
+  worksiteOptions?: ServerListFilterOption[]
   stageTabs?: StageTab[]
 }) {
   const router = useRouter()
@@ -119,7 +119,7 @@ export function RequestList({
 
   // Lista compartida con la barra de filtros: la copia local se quedaba corta
   // cada vez que aparecía un filtro sin control propio.
-  const hasActiveFilters = LIST_FILTER_PARAMS.some((key) => searchParams.get(key))
+  const hasActiveFilters = hasServerListFilters(searchParams)
 
   return (
     <div className="flex flex-col gap-4">
@@ -130,7 +130,7 @@ export function RequestList({
       />
       {/* A5: el estado vive en las tabs, así que la barra no repite su select. */}
       {stageTabs.length > 0 && <StageTabs tabs={stageTabs} ariaLabel="Etapa de la solicitud" />}
-      <ListFilters
+      <ServerListFilters
         searchPlaceholder="Buscar por código o producto..."
         worksiteOptions={worksiteOptions}
       />

@@ -2,6 +2,10 @@ import * as React from "react"
 import { Badge } from "@/components/ui/badge"
 import type { ItemStatus } from "@/lib/services/item-state"
 import { cn } from "@/lib/utils"
+import { FEEDBACK_ESTADO_LABELS, FEEDBACK_TIPO_LABELS } from "@/lib/validation/feedback"
+import type { FeedbackEstado, FeedbackTipo } from "@/lib/validation/feedback"
+export type { FeedbackEstado, FeedbackTipo }
+export { FEEDBACK_TIPO_LABELS }
 
 /* ── State families ──────────────────────────────────────────────────────── */
 type BadgeVariant = "default" | "primary" | "success" | "warning" | "signal" | "info" | "danger"
@@ -106,20 +110,13 @@ const OC_STATE_META: Record<OcStatus, StateMeta> = {
 }
 
 /* ── Feedback (Soporte) states ───────────────────────────────────────────── */
-export type FeedbackEstado = "abierto" | "en_progreso" | "resuelto" | "descartado"
-export type FeedbackTipo   = "bug" | "consulta" | "sugerencia"
-
+/* Los labels viven en lib/validation/feedback (single source sin "use client");
+ * aquí sólo se agrega el variant/family de presentación. */
 export const FEEDBACK_ESTADO_META: Record<FeedbackEstado, StateMeta> = {
-  abierto:     { label: "Abierto",      variant: "info",    family: "info"    },
-  en_progreso: { label: "En progreso",  variant: "warning", family: "warning" },
-  resuelto:    { label: "Resuelto",     variant: "success", family: "success" },
-  descartado:  { label: "Descartado",   variant: "default", family: "neutral" },
-}
-
-export const FEEDBACK_TIPO_LABELS: Record<FeedbackTipo, string> = {
-  bug:        "Bug",
-  consulta:   "Consulta",
-  sugerencia: "Sugerencia",
+  abierto:     { label: FEEDBACK_ESTADO_LABELS.abierto,     variant: "info",    family: "info"    },
+  en_progreso: { label: FEEDBACK_ESTADO_LABELS.en_progreso, variant: "warning", family: "warning" },
+  resuelto:    { label: FEEDBACK_ESTADO_LABELS.resuelto,    variant: "success", family: "success" },
+  descartado:  { label: FEEDBACK_ESTADO_LABELS.descartado,  variant: "default", family: "neutral" },
 }
 
 /* ── PPA states ──────────────────────────────────────────────────────────── */

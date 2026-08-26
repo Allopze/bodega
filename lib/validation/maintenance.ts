@@ -23,6 +23,30 @@ export const MAINTENANCE_STATUS_LABELS: Record<MaintenanceStatus, string> = {
   cancelled: "Cancelada",
 }
 
+export type MaintenanceStatusVariant = "default" | "warning" | "success" | "danger" | "outline"
+
+/** Variant de presentación canónico (2026-08-25): `cancelled` es `danger`, no
+ *  `default` — la anulación es un estado terminal negativo. La ficha de flota
+ *  lo pintaba gris mientras las otras dos pantallas usaban rojo. */
+export const MAINTENANCE_STATUS_VARIANTS: Record<MaintenanceStatus, MaintenanceStatusVariant> = {
+  scheduled: "outline",
+  in_progress: "warning",
+  completed: "success",
+  cancelled: "danger",
+}
+
+export function maintenanceStatusMeta(status: string): { label: string; variant: MaintenanceStatusVariant } {
+  if (Object.prototype.hasOwnProperty.call(MAINTENANCE_STATUS_LABELS, status)) {
+    const typedStatus = status as MaintenanceStatus
+    return {
+      label: MAINTENANCE_STATUS_LABELS[typedStatus],
+      variant: MAINTENANCE_STATUS_VARIANTS[typedStatus],
+    }
+  }
+
+  return { label: status, variant: "outline" }
+}
+
 const maintenanceEditableShape = {
   vehicleId: z.string().min(1, "Vehículo requerido"),
   supplierId: optionalText,

@@ -13,6 +13,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { formatDateTime } from "@/lib/utils"
 import type { listPdtpDemandActivities, listPdtpObligations } from "@/lib/services/prevention-pdtp"
 import { cancelPdtpObligationAction, createPdtpObligationAction, reportPdtpObligationAction } from "./actions"
 
@@ -36,11 +37,10 @@ function statusVariant(status: string): "warning" | "danger" | "info" | "success
   return "outline"
 }
 
-const DATE_TIME_FORMAT = new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Santiago" })
-
+/** Formato de fecha canónico del design system; el nulo mantiene su "Sin plazo". */
 function dateTime(value: string | null) {
   if (!value) return "Sin plazo"
-  return DATE_TIME_FORMAT.format(new Date(value))
+  return formatDateTime(value)
 }
 
 function clientRequestId() {

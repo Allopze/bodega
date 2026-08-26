@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache"
 import { guardPermission } from "@/lib/auth/can"
 import { createReport, updateReportStatus, type FeedbackAttachmentInput } from "@/lib/services/feedback"
 import { feedbackCreateSchema, feedbackUpdateStatusSchema } from "@/lib/validation/feedback"
+import { FEEDBACK_ESTADO_LABELS } from "@/lib/validation/feedback"
 import type { ActionState } from "@/lib/validation/feedback"
 import { notifyAfterCommit, getUserIdsWithPermission, notifyManyUser } from "@/lib/services/notifications"
 import { resolveStorageDir } from "@/lib/storage/config"
@@ -18,12 +19,6 @@ const REVALIDATE = "/soporte"
 const FEEDBACK_PREFIX = "storage/feedback/"
 const CREATE_REPORT_FAILED_MESSAGE = "No se pudo enviar el reporte. Intenta nuevamente."
 const UPDATE_REPORT_FAILED_MESSAGE = "No se pudo actualizar el reporte. Intenta nuevamente."
-const FEEDBACK_STATUS_LABELS = {
-  abierto: "Abierto",
-  en_progreso: "En progreso",
-  resuelto: "Resuelto",
-  descartado: "Descartado",
-} as const
 
 function sanitizeFileName(name: string) {
   return name
@@ -156,7 +151,7 @@ export async function updateReportStatusAction(
       notifyAfterCommit(() =>
         notifyManyUser([updated.createdBy], {
           type: "feedback_status_updated",
-          title: `Tu reporte ahora está: ${FEEDBACK_STATUS_LABELS[updated.estado as keyof typeof FEEDBACK_STATUS_LABELS] ?? updated.estado}`,
+          title: `Tu reporte ahora está: ${FEEDBACK_ESTADO_LABELS[updated.estado as keyof typeof FEEDBACK_ESTADO_LABELS] ?? updated.estado}`,
           body: "El equipo de soporte actualizó el estado de tu reporte.",
           entityType: "feedback_report",
           entityId: updated.id,

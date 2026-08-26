@@ -2,14 +2,14 @@
 
 import { useActionState, useEffect } from "react"
 import { Trash, Calendar } from "@phosphor-icons/react"
-import { DataTable } from "@/components/admin/data-table"
+import { DataTable } from "@/components/ui/data-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
 import { formatDateTime } from "@/lib/utils"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { INITIAL_STATE } from "@/lib/form-state"
 import { cleanupReadNotificationsAction } from "./actions"
 import * as React from "react"
 

@@ -22,6 +22,12 @@ export const EMERGENCY_RESOURCE_STATUS_LABELS: Record<string, string> = {
   out_of_service: "Fuera de servicio",
 }
 
+export function emergencyResourceStatusVariant(status: string): "success" | "warning" | "danger" {
+  if (status === "operational") return "success"
+  if (status === "out_of_service") return "danger"
+  return "warning"
+}
+
 export const EMERGENCY_DRILL_STATUS_LABELS: Record<string, string> = {
   scheduled: "Programado",
   completed: "Realizado",

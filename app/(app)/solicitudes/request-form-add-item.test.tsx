@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { INITIAL_STATE } from "@/lib/form-state"
 import type { PropsWithChildren } from "react"
 import type { ProductOption } from "./request-form.types"
 
@@ -27,7 +27,7 @@ vi.mock("./actions", () => ({
   getWorkerEppStatusAction: vi.fn(async () => ({ activeRequest: null, lastDelivery: null })),
 }))
 
-vi.mock("@/components/admin/submit-button", () => ({
+vi.mock("@/components/ui/submit-button", () => ({
   SubmitButton: ({ label, disabled }: { label: string; disabled?: boolean }) => (
     <button type="submit" disabled={disabled}>{label}</button>
   ),

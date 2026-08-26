@@ -7,6 +7,7 @@ import { db } from "@/db"
 import { fuelImportBatches, fuelProviderSyncRuns } from "@/db/schema"
 import { guardPermission } from "@/lib/auth/can"
 import { logger } from "@/lib/logger"
+import { civilDateRange } from "@/lib/validation/dates"
 import { ARAMCO_SOURCES } from "@/lib/combustibles/fuel-sources"
 import { syncAramco } from "@/lib/combustibles/aramco-sync"
 import { AramcoTwoFactorRequiredError } from "@/lib/combustibles/aramco-client"
@@ -24,10 +25,7 @@ const SYNC_PERMISSION = "combustibles:sync_integrations"
 const MANAGE_PERMISSION = "combustibles:manage_integrations"
 
 /** Rango opcional para el barrido histórico manual. */
-const rangeSchema = z.object({
-  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-})
+const rangeSchema = civilDateRange()
 
 const settingsSchema = z.object({
   documentNumber: z.string().trim().max(20).optional(),
@@ -115,9 +113,6 @@ export async function runAramcoSyncAction(range: { from?: string; to?: string } 
   try {
     const parsed = rangeSchema.safeParse(range)
     if (!parsed.success) return { ok: false, message: "El rango de fechas no es válido" }
-    if (parsed.data.from && parsed.data.to && parsed.data.from > parsed.data.to) {
-      return { ok: false, message: "La fecha desde no puede ser posterior a la fecha hasta" }
-    }
 
     // El importador configurado queda reservado para el cron, que no tiene
     // sesión de usuario.

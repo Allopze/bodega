@@ -18,6 +18,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Badge } from "@/components/ui/badge"
 import { ProposalDialog } from "../propuestas/proposal-dialog"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Pendientes de facturar" }
@@ -134,52 +135,52 @@ export default async function PendingBillingPage() {
           </section>
 
           <section className="overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+          <TableRoot className="rounded-none border-0">
+              <Table className="text-left">
                 <caption className="sr-only">Cobros pendientes de facturar con su motivo y bloqueo</caption>
-                <thead>
-                  <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)]">
-                    <th scope="col" className="px-4 py-2.5 th-type">Cliente</th>
-                    <th scope="col" className="px-4 py-2.5 th-type">Contrato · Faena</th>
-                    <th scope="col" className="px-4 py-2.5 th-type">Período</th>
-                    <th scope="col" className="px-4 py-2.5 th-type text-right">Monto estimado</th>
-                    <th scope="col" className="px-4 py-2.5 th-type">OC del cliente</th>
-                    <th scope="col" className="px-4 py-2.5 th-type">Responsable</th>
-                    <th scope="col" className="px-4 py-2.5 th-type text-right">Antigüedad</th>
-                    <th scope="col" className="px-4 py-2.5 th-type">Situación</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--color-border)]">
+                <TableHeader>
+                  <TableRow className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)]">
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Contrato · Faena</TableHead>
+                    <TableHead>Período</TableHead>
+                    <TableHead className="text-right">Monto estimado</TableHead>
+                    <TableHead>OC del cliente</TableHead>
+                    <TableHead>Responsable</TableHead>
+                    <TableHead className="text-right">Antigüedad</TableHead>
+                    <TableHead>Situación</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {items.map((item) => {
                     const proposalStatus = item.proposalStatus ? proposalStatusLabel(item.proposalStatus) : null
                     return (
-                      <tr key={item.key} className="align-top">
-                        <td className="px-4 py-2.5 text-[var(--color-text)]">{item.clientName}</td>
-                        <td className="px-4 py-2.5 text-xs text-[var(--color-text-muted)]">
+                      <TableRow key={item.key} className="align-top">
+                        <TableCell className="text-[var(--color-text)]">{item.clientName}</TableCell>
+                        <TableCell className="text-xs text-[var(--color-text-muted)]">
                           {item.contractCode ?? "Sin contrato"}
                           {item.contractName && <div>{item.contractName}</div>}
                           <div className="text-[var(--color-text-subtle)]">{item.worksiteName ?? "Transversal"}</div>
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 text-[var(--color-text-muted)]">
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-[var(--color-text-muted)]">
                           {formatPeriod(item.period)}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums text-[var(--color-text)]">
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right tabular-nums text-[var(--color-text)]">
                           {item.estimatedAmount === null
                             ? <span className="text-[var(--color-text-subtle)]">Variable</span>
                             : formatMoney(item.estimatedAmount, item.currency)}
-                        </td>
-                        <td className="px-4 py-2.5 text-xs text-[var(--color-text-muted)]">
+                        </TableCell>
+                        <TableCell className="text-xs text-[var(--color-text-muted)]">
                           {item.clientPoNumber ?? "—"}
-                        </td>
-                        <td className="px-4 py-2.5 text-xs text-[var(--color-text-muted)]">
+                        </TableCell>
+                        <TableCell className="text-xs text-[var(--color-text-muted)]">
                           {item.ownerName ?? "Sin asignar"}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums">
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right tabular-nums">
                           <span className={item.ageDays > 45 ? "text-[var(--color-danger-ink)]" : "text-[var(--color-text-muted)]"}>
                             {item.ageDays} d
                           </span>
-                        </td>
-                        <td className="px-4 py-2.5">
+                        </TableCell>
+                        <TableCell>
                           {/* Sin propuesta: el motivo y el bloqueo son idénticos en
                               todas las filas (el período ya tiene su columna), así
                               que van al tooltip y no como 3 líneas repetidas
@@ -206,13 +207,13 @@ export default async function PendingBillingPage() {
                               Ver propuesta
                             </Link>
                           )}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     )
                   })}
-                </tbody>
-              </table>
-            </div>
+                </TableBody>
+              </Table>
+            </TableRoot>
           </section>
         </>
       )}

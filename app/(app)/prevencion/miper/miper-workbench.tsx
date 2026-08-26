@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useState, useTransition, type FormEvent, type ReactNode } from "react"
+import { useCallback, useState, type FormEvent } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
@@ -17,6 +17,8 @@ import { RISK_LEVELS, RISK_LEVEL_LABEL, riskLevelLabel } from "@/lib/prevention/
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { formatDate } from "@/lib/utils"
+import { useOperation } from "@/lib/hooks/use-operation"
+import { Field } from "@/components/ui/field"
 import type { PaginationState } from "@/lib/pagination"
 import type { getRiskDashboard } from "@/lib/services/prevention-risk-legal"
 import type { listRiskImportBatchesPage } from "@/lib/services/prevention-risk-import"
@@ -35,7 +37,6 @@ import {
 
 type Dashboard = Awaited<ReturnType<typeof getRiskDashboard>>
 type Imports = Awaited<ReturnType<typeof listRiskImportBatchesPage>>["rows"]
-type Result = { ok: boolean; message?: string }
 const MIPER_TABS = new Set(["versions", "reviews", "imports"])
 
 function resolveMiperTab(value: string | null) {
@@ -56,24 +57,6 @@ function variant(status: string): "success" | "warning" | "danger" | "default" |
   if (["in_review", "reviewed", "pending", "overdue", "staged"].includes(status)) return "warning"
   if (["ineffective", "rejected"].includes(status)) return "danger"
   return "default"
-}
-
-function useOperation() {
-  const [pending, startTransition] = useTransition()
-  const [message, setMessage] = useState("")
-  function run(operation: () => Promise<Result>, onSuccess?: () => void) {
-    setMessage("")
-    startTransition(async () => {
-      const result = await operation()
-      setMessage(result.ok ? "Guardado correctamente." : result.message ?? "No se pudo completar la acción.")
-      if (result.ok) onSuccess?.()
-    })
-  }
-  return { pending, message, run }
-}
-
-function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
-  return <label className="grid gap-1 text-sm"><span className="font-medium">{label}{required && <span className="ml-0.5 text-[var(--color-danger)]" aria-hidden>*</span>}</span>{children}</label>
 }
 
 export function MiperHeaderActions({ worksites, methodologies, matrices, committeeMeetings, canEdit }: {

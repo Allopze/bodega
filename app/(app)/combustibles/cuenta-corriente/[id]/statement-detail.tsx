@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Plus } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
-import { formatCLP } from "@/lib/utils"
+import { formatCLP, formatQty } from "@/lib/utils"
 
 interface StatementData {
   id: string
@@ -46,8 +46,6 @@ interface StatementData {
   }>
 }
 
-const LITERS_FORMAT = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 })
-const formatLiters = (n: number) => LITERS_FORMAT.format(n)
 
 export function StatementDetail({ statement, canManage }: { statement: StatementData; canManage: boolean }) {
   const pending = statement.totalAmount - statement.paidAmount
@@ -60,7 +58,7 @@ export function StatementDetail({ statement, canManage }: { statement: Statement
         <Card>
           <CardContent className="pt-6">
             <p className="text-sm text-[var(--color-text-muted)]">Total litros</p>
-            <p className="text-2xl font-bold">{formatLiters(statement.totalLiters)}</p>
+            <p className="text-2xl font-bold">{formatQty(statement.totalLiters)}</p>
           </CardContent>
         </Card>
         <Card>
@@ -153,7 +151,7 @@ export function StatementDetail({ statement, canManage }: { statement: Statement
                     <TableCell>{l.vehicle?.plate ?? "—"}</TableCell>
                     <TableCell className="max-w-40 truncate">{l.worksite?.name ?? "—"}</TableCell>
                     <TableCell>{l.product}</TableCell>
-                    <TableCell className="text-right font-mono">{formatLiters(l.liters)}</TableCell>
+                    <TableCell className="text-right font-mono">{formatQty(l.liters)}</TableCell>
                     <TableCell className="text-right font-mono">{formatCLP(l.totalAmount)}</TableCell>
                   </TableRow>
                 ))}

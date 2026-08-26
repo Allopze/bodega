@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useState } from "react"
 import { toast } from "@/lib/toast"
-import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
+import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 
 type ToggleAction = (prev: ActionState, formData: FormData) => Promise<ActionState>
 

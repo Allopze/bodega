@@ -13,8 +13,7 @@ import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { MaintenanceCreateButton } from "./maintenance-create-button"
 import { MaintenanceTable } from "./maintenance-table"
 import { MaintenanceFilters } from "./maintenance-filters"
-import { formatDate } from "@/lib/utils"
-import { MAINTENANCE_STATUS_LABELS } from "@/lib/validation/maintenance"
+import { formatDate, formatQty } from "@/lib/utils"
 import { MaintenanceExportButton } from "./maintenance-export-button"
 
 export const metadata: Metadata = { title: "Mantenciones" }
@@ -29,17 +28,7 @@ const MAINTENANCE_TYPE_LABELS: Record<string, string> = {
 }
 const maintenanceTypeLabel = (value: string) => MAINTENANCE_TYPE_LABELS[value] ?? value
 
-const statusLabels: Record<string, { label: string; variant: "default" | "warning" | "success" | "danger" | "outline" }> = {
-  scheduled: { label: MAINTENANCE_STATUS_LABELS.scheduled, variant: "outline" },
-  in_progress: { label: MAINTENANCE_STATUS_LABELS.in_progress, variant: "warning" },
-  completed: { label: MAINTENANCE_STATUS_LABELS.completed, variant: "success" },
-  cancelled: { label: MAINTENANCE_STATUS_LABELS.cancelled, variant: "danger" },
-}
-
-const NUMBER_FORMAT = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 })
-
-const formatNumber = (value: number | null) =>
-  value == null ? "—" : NUMBER_FORMAT.format(value)
+const formatNumber = (value: number | null) => value == null ? "—" : formatQty(value, undefined, { maximumFractionDigits: 1 })
 
 export default async function MantencionesPage({
   searchParams,
@@ -134,7 +123,6 @@ export default async function MantencionesPage({
           <MaintenanceFilters
             vehicles={data.vehicles}
             worksites={data.worksites}
-            statusLabels={statusLabels}
             current={{ vehicle: vehicleId, faena: worksiteId, status, q }}
           />
         </CardContent>
@@ -210,7 +198,6 @@ export default async function MantencionesPage({
             canCreate={canCreate}
             canViewCosts={canViewCosts}
             hasActiveFilters={hasActiveFilters}
-            statusLabels={statusLabels}
             vehicleOptions={vehicleOptions}
             supplierOptions={supplierOptions}
             costCenterOptions={costCenterOptions}

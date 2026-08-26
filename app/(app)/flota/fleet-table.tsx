@@ -2,19 +2,18 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { DataTable } from "@/components/admin/data-table"
+import { DataTable } from "@/components/ui/data-table"
 import { TableCell } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
-import { formatCLP, formatDate } from "@/lib/utils"
+import { formatCLP, formatDate, formatQty } from "@/lib/utils"
 import type { getFleetOverview } from "@/lib/services/fleet"
 import { FleetTableRow } from "./fleet-table-row"
 import { Button } from "@/components/ui/button"
 
 type VehicleRow = Awaited<ReturnType<typeof getFleetOverview>>[number]
 
-const NUMBER_FORMATTER = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 })
-const formatNumber = (value: number) => NUMBER_FORMATTER.format(value)
+const formatNumber = (value: number) => formatQty(value, undefined, { maximumFractionDigits: 1 })
 
 export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel, canViewMaintenance }: { vehicles: VehicleRow[]; hasAnyVehicle: boolean; canViewCosts: boolean; canViewFuel: boolean; canViewMaintenance: boolean }) {
   const showCostPerDistance = canViewCosts && canViewFuel && canViewMaintenance && vehicles.some((v) => v.costPerKm != null || v.costPerHour != null)

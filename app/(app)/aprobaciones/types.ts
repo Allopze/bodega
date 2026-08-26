@@ -1,10 +1,10 @@
 "use client"
 
-import type { FilterOption } from "@/components/adquisiciones/list-filters"
+import type { ServerListFilterOption } from "@/components/ui/server-list-filters"
 import { URGENCY_OPTIONS as CANONICAL_URGENCY_OPTIONS, URGENCY_LABELS } from "@/lib/urgency-labels"
 import type { OperationalWorkItem } from "@/lib/services/operational-work-queue"
 
-export const URGENCY_OPTIONS: FilterOption[] = CANONICAL_URGENCY_OPTIONS.map((o) => ({ value: o.value, label: o.label }))
+export const URGENCY_OPTIONS: ServerListFilterOption[] = CANONICAL_URGENCY_OPTIONS.map((o) => ({ value: o.value, label: o.label }))
 
 
 // Re-export del diccionario canónico (lib/request-types.ts) en vez de una copia

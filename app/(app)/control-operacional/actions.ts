@@ -1,6 +1,7 @@
 "use server"
 
 import { requirePermission } from "@/lib/auth/can"
+import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import { getOperationalControlHub, resolveOperationalControlPeriod, type OperationalControlPeriod } from "@/lib/services/operational-control"
 import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
 import { recordAudit } from "@/lib/audit"
@@ -49,8 +50,8 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
     indicators.getColumn(2).width = 22
     indicators.getRow(1).font = { bold: true }
     addExportMetadataSheet(workbook, session, { filters: period, rowCount: data.assets.length })
-    const bytes = await workbook.xlsx.writeBuffer()
+    const base64 = await xlsxToBase64(workbook)
     await recordAudit({ userId: session.user.id, action: "export", entityType: "operational_control_report", entityId: nanoid(), newState: { period, rowCount: data.assets.length, includesCosts: data.permissions.canViewCosts } })
-    return { ok: true as const, data: { base64: Buffer.from(bytes).toString("base64"), filename: `control_operacional_${period.from}_${period.to}.xlsx` } }
+    return { ok: true as const, data: { base64, filename: `control_operacional_${period.from}_${period.to}.xlsx` } }
   } catch (error) { return { ok: false as const, message: error instanceof Error ? error.message : "No se pudo exportar el reporte" } }
 }

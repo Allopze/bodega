@@ -47,6 +47,22 @@ function Field({ label, htmlFor, required, helper, hint, error, className, child
     ? addLabelAndDescriptionToSingleControl(children, labelId, descriptionId, !!error)
     : children
 
+  // Sin `htmlFor` ni mensajes de error/ayuda, y con UN solo control, el label
+  // envuelve al control: asociación implícita como `<label>` nativo. Antes los
+  // workbenches reimplementaban este patrón a mano (Field local); centralizarlo
+  // devuelve el nombre accesible a ~400 usos de Field sin ids explícitos.
+  if (!htmlFor && !(error || helperText)) {
+    const childArray = React.Children.toArray(children)
+    if (childArray.length === 1) {
+      return (
+        <label className={cn("flex flex-col gap-0", className)}>
+          <Label required={required}>{label}</Label>
+          {children}
+        </label>
+      )
+    }
+  }
+
   return (
     <div className={cn("flex flex-col gap-0", className)}>
       <Label htmlFor={htmlFor} required={required} id={labelId}>

@@ -1,11 +1,11 @@
 "use client"
 
 import Link from "next/link"
-import { DataTable } from "@/components/admin/data-table"
+import { DataTable } from "@/components/ui/data-table"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { formatCLP, formatDate } from "@/lib/utils"
+import { formatCLP, formatDate, formatQty } from "@/lib/utils"
 import { FUEL_STATEMENT_STATUS_LABELS as statusLabels } from "@/lib/combustibles/labels"
 import { getStatementDisplayStatus } from "@/lib/combustibles/calculations"
 
@@ -21,8 +21,6 @@ interface StatementRow {
   payments: Array<{ amount: number }>
 }
 
-const LITERS_FORMAT = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 })
-const formatLiters = (n: number) => LITERS_FORMAT.format(n)
 
 const COLUMNS = [
   { key: "month", label: "Mes", sortable: true },
@@ -63,7 +61,7 @@ export function StatementsTable({ statements, today }: { statements: StatementRo
           <TableRow key={s.id}>
             <TableCell className="font-mono">{s.month}</TableCell>
             <TableCell className="font-semibold">{s.supplierName}</TableCell>
-            <TableCell className="text-right font-mono">{formatLiters(s.totalLiters)}</TableCell>
+            <TableCell className="text-right font-mono">{formatQty(s.totalLiters)}</TableCell>
             <TableCell className="text-right font-mono">{formatCLP(s.totalAmount)}</TableCell>
             <TableCell className="text-right font-mono text-[var(--color-success-ink)]">{formatCLP(s.paidAmount)}</TableCell>
             <TableCell className="text-right font-mono text-[var(--color-warning-ink)]">{formatCLP(s.pending)}</TableCell>

@@ -5,9 +5,10 @@ import { useSearchParams } from "next/navigation"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { CaretLeft, CaretRight } from "@phosphor-icons/react"
 import { formatCLP, formatQty } from "@/lib/utils"
 import { buildConsumptionHref } from "./consumption-url"
+import { ServerPagination } from "@/components/ui/server-pagination"
+import { resolvePagination } from "@/lib/pagination"
 
 interface ConsumptionRecordRow {
   id: string
@@ -28,12 +29,12 @@ interface ConsumptionRecordRow {
 interface ConsumptionDetailTableProps {
   rows: ConsumptionRecordRow[]
   page: number
-  totalPages: number
   total: number
+  pageSize: number
   canViewCosts: boolean
 }
 
-export function ConsumptionDetailTable({ rows, page, totalPages, total, canViewCosts }: ConsumptionDetailTableProps) {
+export function ConsumptionDetailTable({ rows, page, total, pageSize, canViewCosts }: ConsumptionDetailTableProps) {
   const searchParams = useSearchParams()
   const pageHref = (nextPage: number) => buildConsumptionHref(
     searchParams.toString(),
@@ -41,33 +42,11 @@ export function ConsumptionDetailTable({ rows, page, totalPages, total, canViewC
     { resetPage: false },
   )
 
-  const hasPrev = page > 1
-  const hasNext = page < totalPages
+  const pagination = resolvePagination({ pageParam: String(page), totalItems: total, pageSize })
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-sm text-[var(--color-text-muted)]">{total} registros encontrados</p>
-        <div className="flex items-center gap-2">
-          {/* `disabled` sobre un <Button asChild> se pierde en el <Link>: el
-              botón seguía navegando. Fuera del rango se rinde sin enlace. */}
-          {hasPrev ? (
-            <Button asChild variant="secondary" size="sm">
-              <Link href={pageHref(page - 1)} aria-label="Página anterior"><CaretLeft className="h-4 w-4" aria-hidden /></Link>
-            </Button>
-          ) : (
-            <Button variant="secondary" size="sm" disabled aria-label="Página anterior"><CaretLeft className="h-4 w-4" aria-hidden /></Button>
-          )}
-          <span className="text-sm">Página {page} de {totalPages || 1}</span>
-          {hasNext ? (
-            <Button asChild variant="secondary" size="sm">
-              <Link href={pageHref(page + 1)} aria-label="Página siguiente"><CaretRight className="h-4 w-4" aria-hidden /></Link>
-            </Button>
-          ) : (
-            <Button variant="secondary" size="sm" disabled aria-label="Página siguiente"><CaretRight className="h-4 w-4" aria-hidden /></Button>
-          )}
-        </div>
-      </div>
+      <p className="mb-3 text-sm text-[var(--color-text-muted)]">{total} registros encontrados</p>
 
       <div className="border rounded-lg overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         <Table className="min-w-[960px]">
@@ -123,6 +102,7 @@ export function ConsumptionDetailTable({ rows, page, totalPages, total, canViewC
           </TableBody>
         </Table>
       </div>
+      <ServerPagination pagination={pagination} hrefForPage={pageHref} className="mt-3" />
     </div>
   )
 }

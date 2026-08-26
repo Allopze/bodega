@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { DatePicker } from "@/components/ui/date-picker"
 import { toast } from "@/lib/toast"
-import { formatDateTime } from "@/lib/utils"
+import { formatDateTime, formatQty } from "@/lib/utils"
 import {
   clearAramcoSettingsAction,
   getAramcoSyncStatusAction,
@@ -22,7 +22,6 @@ const SOURCE_LABEL: Record<string, string> = {
   environment: "heredada del servidor",
   missing: "sin configurar",
 }
-const NUMBER_FORMATTER = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 2 })
 
 interface ViewState {
   status: AramcoStatus
@@ -138,7 +137,7 @@ export function AramcoSyncStatus({ initialStatus }: { initialStatus: AramcoStatu
             <span className="text-[var(--color-text-muted)]">Último período cargado: {status.lastPeriod}</span>
           )}
           <span className="text-[var(--color-text-muted)]">{status.batches} lote(s) de Aramco vigentes</span>
-          {status.lastRunStatus && <span className="text-[var(--color-text-muted)]">Calidad última corrida: {status.rowsReceived} recibidas · {status.rowsAccepted} aceptadas · {status.rowsRejected} rechazadas · {status.rowsPending} pendientes · impacto {NUMBER_FORMATTER.format(status.affectedQuantity)} L / ${NUMBER_FORMATTER.format(status.affectedAmount)} ({status.lastRunStatus})</span>}
+          {status.lastRunStatus && <span className="text-[var(--color-text-muted)]">Calidad última corrida: {status.rowsReceived} recibidas · {status.rowsAccepted} aceptadas · {status.rowsRejected} rechazadas · {status.rowsPending} pendientes · impacto {formatQty(status.affectedQuantity, undefined, { maximumFractionDigits: 2 })} L / ${formatQty(status.affectedAmount, undefined, { maximumFractionDigits: 2 })} ({status.lastRunStatus})</span>}
           {!status.hasCredentials && (
             <span className="flex items-center gap-1.5 text-[var(--color-warning-ink)]">
               <WarningCircle className="h-3.5 w-3.5" />

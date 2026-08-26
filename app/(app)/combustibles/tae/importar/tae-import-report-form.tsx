@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "@/lib/toast"
+import { downloadBase64Xlsx } from "@/components/ui/export-button"
 import type { TaeImportMappingDecision, TaeImportPreview } from "@/lib/combustibles/tae-import-service"
 import { generateTaeImportReportAction, importTaeHistoryAction } from "./actions"
 
@@ -53,10 +54,7 @@ export function TaeImportReportForm() {
       formData.set("file", file)
       const result = await generateTaeImportReportAction(formData)
       if (result.ok && result.data) {
-        const link = document.createElement("a")
-        link.href = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${result.data.base64}`
-        link.download = result.data.filename
-        link.click()
+        downloadBase64Xlsx(result.data.base64, result.data.filename)
         dispatch({ type: "previewReady", preview: result.data.preview })
         toast.success("Reporte generado. Revisa el archivo antes de aprobar cualquier match.")
       } else {

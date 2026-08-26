@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useActionState } from "react"
 import { ArrowRight, CheckCircle, FileXls } from "@phosphor-icons/react"
-import { SubmitButton } from "@/components/admin/submit-button"
+import { SubmitButton } from "@/components/ui/submit-button"
 import { Badge } from "@/components/ui/badge"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"

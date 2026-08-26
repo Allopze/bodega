@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ChartBar, Truck, Buildings, GasPump, CalendarBlank } from "@phosphor-icons/react"
 import { MonthlyEvolutionChart, CategoryBarChart } from "../fuel-charts-lazy"
-import { formatCLP } from "@/lib/utils"
+import { formatCLP, formatQty } from "@/lib/utils"
 
 interface ReportRow {
   group: string | null
@@ -35,8 +35,6 @@ interface ReportsViewProps {
   currentFilters: { startDate?: string; endDate?: string }
 }
 
-const LITERS_FORMAT = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 })
-const formatLiters = (n: number) => LITERS_FORMAT.format(n)
 
 export function ReportsView({ byMonth, byWeek, byWorksite, byVehicle, bySupplier, byProduct, currentFilters }: ReportsViewProps) {
   const router = useRouter()
@@ -162,7 +160,7 @@ function ReportCard({ title, icon, rows }: { title: string; icon: React.ReactNod
               rows.map((r) => (
                 <TableRow key={r.group ?? "sin-grupo"}>
                   <TableCell className="font-medium">{r.group ?? "—"}</TableCell>
-                  <TableCell className="text-right font-mono text-sm">{formatLiters(r.totalLiters)}</TableCell>
+                  <TableCell className="text-right font-mono text-sm">{formatQty(r.totalLiters)}</TableCell>
                   <TableCell className="text-right font-mono text-sm">{formatCLP(r.totalAmount)}</TableCell>
                   <TableCell className="text-right">{r.count}</TableCell>
                 </TableRow>

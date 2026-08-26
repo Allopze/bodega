@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { updatePdtpActivityAction } from "../../../actions"
 import { describePdtpRecurrence, deriveScheduleHorizon, type PdtpRecurrenceRule, type PdtpScheduleHorizon } from "@/lib/services/pdtp/recurrence"
 import { useDebouncedAutosave, autosaveStatusLabel } from "@/lib/hooks/use-debounced-autosave"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 
 import type { PdtpActivityRow, PdtpScheduleRow } from "./types"
@@ -104,24 +105,25 @@ export function PlanificacionTab({ programId: _programId, year, periodStart, per
         {horizon.months.length < 12 ? ` (período de ${horizon.months.length} mes(es))` : ""}. Cada mes tiene {horizon.weeksPerMonth} celda(s).
         &ldquo;Rellenar&rdquo; fija una cantidad en las {horizon.months.length * horizon.weeksPerMonth} semanas del período de la fila (sin guardar todavía). Revisa y presiona Guardar.
       </p>
-      <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
-        <table className="w-full border-collapse text-sm">
-          <thead className="bg-[var(--color-surface-2)] th-type">
-            <tr>
-              <th scope="col" className="sticky left-0 z-10 min-w-[16rem] border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-left">Actividad</th>
+      <TableRoot className="rounded-lg">
+        <Table className="border-collapse text-sm">
+          <caption className="sr-only">Planificación semanal de actividades PDTP</caption>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="sticky left-0 z-10 min-w-[16rem] text-left">Actividad</TableHead>
               {visibleMonthLabels.map((m) => (
-                <th scope="col" key={m} className="min-w-[5.5rem] border-b border-[var(--color-border)] px-1 py-2 text-center">{m}</th>
+                <TableHead key={m} className="min-w-[5.5rem] text-center">{m}</TableHead>
               ))}
-              <th scope="col" className="min-w-[13rem] border-b border-[var(--color-border)] px-2 py-2 text-left">Rellenar / Guardar</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[var(--color-border)]">
+              <TableHead className="min-w-[13rem] text-left">Rellenar / Guardar</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {activities.map((activity) => (
               <PlanificacionRow key={activity.id} activity={activity} initial={scheduleByActivity.get(activity.id) ?? {}} horizon={horizon} />
             ))}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableRoot>
     </div>
   )
 }
@@ -188,12 +190,12 @@ function PlanificacionRow({ activity, initial, horizon }: { activity: PdtpActivi
   const pending = status === "saving"
 
   return (
-    <tr className="bg-[var(--color-surface)] align-top">
-      <td className="sticky left-0 z-10 border-r border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs">
+    <TableRow className="bg-[var(--color-surface)] align-top">
+      <TableCell className="sticky left-0 z-10 border-r border-[var(--color-border)] bg-[var(--color-surface)] text-xs">
         <span className="font-mono text-[var(--color-text-subtle)]">N°{activity.n}</span> {activity.activity}
-      </td>
+      </TableCell>
       {horizon.months.map((month) => (
-        <td key={month} className="p-1">
+        <TableCell key={month} className="p-1">
           <div className="grid grid-cols-2 gap-0.5">
             {Array.from({ length: horizon.weeksPerMonth }, (_, i) => i + 1).map((week) => (
               <input
@@ -209,9 +211,9 @@ function PlanificacionRow({ activity, initial, horizon }: { activity: PdtpActivi
               />
             ))}
           </div>
-        </td>
+        </TableCell>
       ))}
-      <td className="px-2 py-2">
+      <TableCell>
         <div className="flex items-center gap-1">
           <input
             type="number"
@@ -228,7 +230,7 @@ function PlanificacionRow({ activity, initial, horizon }: { activity: PdtpActivi
         </div>
         <p aria-live="polite" className="mt-1 text-[11px] text-[var(--color-text-subtle)]">{autosaveStatusLabel(status)}</p>
         {error && <p className="mt-1 text-[11px] text-[var(--color-danger)]">{error}</p>}
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   )
 }

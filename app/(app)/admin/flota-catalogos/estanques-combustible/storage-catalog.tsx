@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { CatalogFormSheet } from "@/components/admin/catalog-form-sheet"
 import { formatQty } from "@/lib/utils"
 import { setFuelStorageLocationStatusAction, createFuelStorageLocationAction, updateFuelStorageLocationAction } from "./actions"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 type Row = { id: string; name: string; worksiteId: string; productId: string; capacityLiters: number | null; taeCardNumber: string | null; notes: string | null; isActive: boolean; worksite: { name: string }; product: { name: string } }
 type Option = { id: string; name: string }
@@ -30,33 +31,32 @@ export function StorageCatalog({ rows, worksites, products, initialOpen = false 
 
   return <>
     <div className="overflow-x-auto border border-[var(--color-border)]">
-      <table className="w-full min-w-[760px] text-sm">
-        <thead className="bg-[var(--color-surface-2)] text-left th-type">
-          <tr>
-            <th scope="col" className="p-3">Estanque</th>
-            <th>Faena</th>
-            <th>Producto</th>
-            <th>Capacidad</th>
-            <th>Estado</th>
-            <th scope="col" className="w-24">Acciones</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-[var(--color-border)]">
-          {rows.map(row => <tr key={row.id}>
-            <td className="p-3 font-medium">{row.name}{row.notes && <span className="mt-0.5 block text-xs font-normal text-[var(--color-text-muted)]">{row.notes}</span>}</td>
-            <td>{row.worksite.name}</td>
-            <td>{row.product.name}</td>
-            <td className="font-mono">{row.capacityLiters ? formatQty(row.capacityLiters, "L") : "—"}</td>
-            <td>{row.isActive ? "Activo" : "Inactivo"}</td>
-            <td>
+      <TableRoot>
+      <Table className="min-w-[760px]">
+        <caption className="sr-only">Catálogo de estanques de combustible</caption>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Estanque</TableHead><TableHead>Faena</TableHead><TableHead>Producto</TableHead><TableHead>Capacidad</TableHead>
+            <TableHead>Estado</TableHead><TableHead className="w-24">Acciones</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map(row => <TableRow key={row.id}>
+            <TableCell className="font-medium">{row.name}{row.notes && <span className="mt-0.5 block text-xs font-normal text-[var(--color-text-muted)]">{row.notes}</span>}</TableCell>
+            <TableCell>{row.worksite.name}</TableCell>
+            <TableCell>{row.product.name}</TableCell>
+            <TableCell className="font-mono">{row.capacityLiters ? formatQty(row.capacityLiters, "L") : "—"}</TableCell>
+            <TableCell>{row.isActive ? "Activo" : "Inactivo"}</TableCell>
+            <TableCell>
               <div className="flex gap-1">
                 <button type="button" aria-label={`Editar ${row.name}`} onClick={() => edit(row)} className="rounded p-1.5 hover:bg-[var(--color-surface-2)]"><PencilSimple size={17} /></button>
                 <button type="button" aria-label={`${row.isActive ? "Desactivar" : "Activar"} ${row.name}`} onClick={async () => { await setFuelStorageLocationStatusAction(row.id, !row.isActive) }} className="rounded p-1.5 hover:bg-[var(--color-surface-2)]">{row.isActive ? <ToggleRight size={19} /> : <ToggleLeft size={19} />}</button>
               </div>
-            </td>
-          </tr>)}
-        </tbody>
-      </table>
+            </TableCell>
+          </TableRow>)}
+        </TableBody>
+      </Table>
+      </TableRoot>
     </div>
     {rows.length === 0 && <p className="border border-dashed border-[var(--color-border-strong)] p-8 text-sm text-[var(--color-text-muted)]">Aún no hay estanques. Crea el primero para habilitar recepciones y entregas desde estanque.</p>}
     <CatalogFormSheet

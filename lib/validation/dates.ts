@@ -18,3 +18,34 @@ export function isCivilDate(value: string | null | undefined): value is string {
 export function civilDate(message = "Fecha inválida") {
   return z.string().refine(isCivilDate, message)
 }
+
+/**
+ * Rango de fechas civiles `from`/`to`, con `from <= to` validado en el propio
+ * schema. Antes los importadores Aramco/Copec validaban el orden a mano
+ * después del parse, con mensajes distintos por módulo.
+ */
+export function civilDateRange(options?: {
+  required?: boolean
+  message?: string
+}) {
+  const date = civilDate()
+  const rangeMessage = options?.message ?? "La fecha desde no puede ser posterior a la fecha hasta"
+
+  if (options?.required) {
+    return z
+      .object({ from: date, to: date })
+      .superRefine((data: { from: string; to: string }, ctx) => {
+        if (data.from > data.to) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: rangeMessage })
+        }
+      })
+  }
+
+  return z
+    .object({ from: date.optional(), to: date.optional() })
+    .superRefine((data: { from?: string; to?: string }, ctx) => {
+      if (data.from && data.to && data.from > data.to) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: rangeMessage })
+      }
+    })
+}

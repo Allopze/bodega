@@ -1,6 +1,7 @@
 "use server"
 
 import { eq, sql } from "drizzle-orm"
+import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import { db } from "@/db"
 import {
   fuelLoads,
@@ -212,7 +213,7 @@ export async function exportFuelLogAction(filters: FuelLogFilters) {
   const { rows, truncated } = await getFuelLogExportRows(session, filters)
   const wb = await buildWorkbook(rows)
   addExportMetadataSheet(wb, session, { filters, rowCount: rows.length, from: filters.from, to: filters.to })
-  const buffer = await wb.xlsx.writeBuffer()
+  const base64 = await xlsxToBase64(wb)
   await recordAudit({
     userId: session.user.id, userEmail: session.user.email ?? undefined, action: "export",
     entityType: "fuel_log_export", entityId: nanoid(),
@@ -221,7 +222,7 @@ export async function exportFuelLogAction(filters: FuelLogFilters) {
   return {
     ok: true as const,
     data: {
-      base64: Buffer.from(buffer).toString("base64"),
+      base64,
       filename: exportFileName("bitacora_combustible"),
       truncated,
     },
@@ -237,7 +238,7 @@ export async function exportFuelLogSelectionAction(selection: Array<{ source: Fu
   const rows = await getFuelLogRowsBySelection(session, selection)
   const wb = await buildWorkbook(rows)
   addExportMetadataSheet(wb, session, { rowCount: rows.length })
-  const buffer = await wb.xlsx.writeBuffer()
+  const base64 = await xlsxToBase64(wb)
   await recordAudit({
     userId: session.user.id, userEmail: session.user.email ?? undefined, action: "export",
     entityType: "fuel_log_export", entityId: nanoid(),
@@ -246,7 +247,7 @@ export async function exportFuelLogSelectionAction(selection: Array<{ source: Fu
   return {
     ok: true as const,
     data: {
-      base64: Buffer.from(buffer).toString("base64"),
+      base64,
       filename: exportFileName("bitacora_seleccion"),
       truncated: false,
     },

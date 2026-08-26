@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge"
 import { SyncControls } from "./sync-controls"
 import { ProviderHealthButton } from "./provider-health-button"
 import { ChipaxSettingsDialog } from "./chipax-settings-dialog"
+import { Table, TableBody, TableHeader, TableRoot } from "@/components/ui/table"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Sincronización de facturación" }
@@ -207,10 +208,10 @@ export default async function BillingSyncPage() {
           <p className="text-sm text-[var(--color-text-muted)]">Todavía no se ha ejecutado ninguna sincronización.</p>
         ) : (
           <div className="overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+          <TableRoot className="rounded-none border-0">
+              <Table className="text-left">
                 <caption className="sr-only">Corridas de sincronización con su resultado y desglose</caption>
-                <thead>
+                <TableHeader>
                   <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)]">
                     <th scope="col" className="px-4 py-2.5 th-type">Inicio</th>
                     <th scope="col" className="px-4 py-2.5 th-type">Proveedor · Alcance</th>
@@ -224,8 +225,8 @@ export default async function BillingSyncPage() {
                     <th scope="col" className="px-4 py-2.5 th-type text-right">Errores</th>
                     <th scope="col" className="px-4 py-2.5 th-type">Resultado</th>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--color-border)]">
+                </TableHeader>
+                <TableBody>
                   {runs.map((run) => {
                     const status = syncStatusLabel(run.status)
                     return (
@@ -285,9 +286,9 @@ export default async function BillingSyncPage() {
                       </tr>
                     )
                   })}
-                </tbody>
-              </table>
-            </div>
+                </TableBody>
+              </Table>
+            </TableRoot>
           </div>
         )}
       </section>

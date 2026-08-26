@@ -13,12 +13,12 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DatePicker } from "@/components/ui/date-picker"
-import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
+import { addDaysToPlainDate, formatQty, todayInChile } from "@/lib/utils"
 import { CycleWorkbench } from "./cycle-workbench"
 import { CycleStageChart, type CycleStagePoint } from "./cycle-stage-chart"
 import { FilterSelect } from "../filter-select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
-const liters = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 2 })
 const dateTime = new Intl.DateTimeFormat("es-CL", { dateStyle: "short", timeStyle: "short" })
 
 type TraceStage = "received" | "delivered"
@@ -33,7 +33,7 @@ const sourceHref = (type: string | null, id: string | null) =>
       : null
 
 function amount(value: { liters: number; records: number } | null) {
-  return value ? `${liters.format(value.liters)} L` : "Sin registros"
+  return value ? `${formatQty(value.liters, undefined, { maximumFractionDigits: 2 })} L` : "Sin registros"
 }
 
 function cycleQuery(filters: { from: string; to: string; worksiteId?: string; productId?: string }, stage?: TraceStage) {
@@ -196,23 +196,26 @@ export default async function FuelCyclePage({ searchParams }: { searchParams: Pr
           <div className="flex gap-3 border border-dashed border-[var(--color-border-strong)] p-6 text-sm text-[var(--color-text-muted)]"><Database size={20} />No hay estanques activas en este filtro.</div>
         ) : (
           <div className="overflow-x-auto border border-[var(--color-border)]">
-            <table className="w-full min-w-[700px] text-sm">
-              <thead className="bg-[var(--color-surface-2)] text-left th-type"><tr><th scope="col" className="p-3">Estanque</th><th>Recibido</th><th>Entregado</th><th>Saldo</th><th>Capacidad</th></tr></thead>
-              <tbody className="divide-y divide-[var(--color-border)]">
+            <TableRoot>
+            <Table className="min-w-[700px]">
+              <caption className="sr-only">Saldos de estanques de combustible</caption>
+              <TableHeader><TableRow><TableHead>Estanque</TableHead><TableHead>Recibido</TableHead><TableHead>Entregado</TableHead><TableHead>Saldo</TableHead><TableHead>Capacidad</TableHead></TableRow></TableHeader>
+              <TableBody>
                 {balances.map((balance) => {
                   const overCapacity = balance.capacityLiters != null && balance.balanceLiters > balance.capacityLiters
                   return (
-                    <tr key={balance.storageLocationId}>
-                      <td className="p-3 font-medium">{balance.name}</td>
-                      <td className="font-mono">{liters.format(balance.receivedLiters + balance.transferInLiters)} L</td>
-                      <td className="font-mono">{liters.format(balance.deliveredLiters + balance.transferOutLiters)} L</td>
-                      <td className={`font-mono ${overCapacity ? "text-[var(--color-danger)]" : ""}`}>{liters.format(balance.balanceLiters)} L{overCapacity && " ⚠"}</td>
-                      <td className="font-mono text-[var(--color-text-muted)]">{balance.capacityLiters != null ? `${liters.format(balance.capacityLiters)} L` : "Sin capacidad informada"}</td>
-                    </tr>
+                    <TableRow key={balance.storageLocationId}>
+                      <TableCell className="font-medium">{balance.name}</TableCell>
+                      <TableCell className="font-mono">{formatQty(balance.receivedLiters + balance.transferInLiters, undefined, { maximumFractionDigits: 2 })} L</TableCell>
+                      <TableCell className="font-mono">{formatQty(balance.deliveredLiters + balance.transferOutLiters, undefined, { maximumFractionDigits: 2 })} L</TableCell>
+                      <TableCell className={`font-mono ${overCapacity ? "text-[var(--color-danger)]" : ""}`}>{formatQty(balance.balanceLiters, undefined, { maximumFractionDigits: 2 })} L{overCapacity && " ⚠"}</TableCell>
+                      <TableCell className="font-mono text-[var(--color-text-muted)]">{balance.capacityLiters != null ? `${formatQty(balance.capacityLiters, undefined, { maximumFractionDigits: 2 })} L` : "Sin capacidad informada"}</TableCell>
+                    </TableRow>
                   )
                 })}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
+            </TableRoot>
           </div>
         )}
         <p className="mt-2 text-xs text-[var(--color-text-muted)]">El saldo no distingue merma real de una carga no registrada: para eso falta el aforo físico periódico del estanque.</p>
@@ -233,24 +236,27 @@ export default async function FuelCyclePage({ searchParams }: { searchParams: Pr
           <div className="flex gap-3 border border-dashed border-[var(--color-border-strong)] p-6 text-sm text-[var(--color-text-muted)]"><Database size={20} />No hay movimientos físicos en este filtro.</div>
         ) : (
           <div className="overflow-x-auto border border-[var(--color-border)]">
-            <table className="w-full min-w-[850px] text-sm">
-              <thead className="bg-[var(--color-surface-2)] text-left th-type"><tr><th scope="col" className="p-3">Momento</th><th>Evento</th><th>Faena / producto</th><th>Ruta</th><th>Litros</th><th>Origen documental</th></tr></thead>
-              <tbody className="divide-y divide-[var(--color-border)]">
+            <TableRoot>
+            <Table className="min-w-[850px]">
+              <caption className="sr-only">Movimientos del ciclo de combustible</caption>
+              <TableHeader><TableRow><TableHead>Momento</TableHead><TableHead>Evento</TableHead><TableHead>Faena / producto</TableHead><TableHead>Ruta</TableHead><TableHead>Litros</TableHead><TableHead>Origen documental</TableHead></TableRow></TableHeader>
+              <TableBody>
                 {movements.map((movement) => {
                   const href = sourceHref(movement.sourceType, movement.sourceId)
                   return (
-                    <tr key={movement.id}>
-                      <td className="p-3 font-mono text-xs">{dateTime.format(new Date(movement.occurredAt))}</td>
-                      <td className="font-medium">{movement.eventType === "received" ? "Recepción" : movement.eventType === "transfer" ? "Transferencia" : movement.eventType === "tank_delivery" ? "Entrega desde estanque" : "Entrega directa"}</td>
-                      <td>{movement.worksite.name}<span className="block text-xs text-[var(--color-text-muted)]">{movement.product.name}</span></td>
-                      <td>{movement.sourceLocation?.name ?? movement.supplier?.name ?? "—"} <span className="text-[var(--color-text-muted)]">→</span> {movement.targetLocation?.name ?? movement.vehicle?.code ?? movement.vehicle?.plate ?? "—"}</td>
-                      <td className="font-mono">{liters.format(movement.quantity)} L</td>
-                      <td>{href ? <Link className="inline-flex items-center gap-1 text-[var(--color-primary-ink)] hover:underline" href={href}>Abrir registro <ArrowSquareOut size={14} /></Link> : <span className="inline-flex items-center gap-1 text-[var(--color-text-muted)]"><WarningCircle size={14} />Sin registro asociado</span>}</td>
-                    </tr>
+                    <TableRow key={movement.id}>
+                      <TableCell className="font-mono text-xs">{dateTime.format(new Date(movement.occurredAt))}</TableCell>
+                      <TableCell className="font-medium">{movement.eventType === "received" ? "Recepción" : movement.eventType === "transfer" ? "Transferencia" : movement.eventType === "tank_delivery" ? "Entrega desde estanque" : "Entrega directa"}</TableCell>
+                      <TableCell>{movement.worksite.name}<span className="block text-xs text-[var(--color-text-muted)]">{movement.product.name}</span></TableCell>
+                      <TableCell>{movement.sourceLocation?.name ?? movement.supplier?.name ?? "—"} <span className="text-[var(--color-text-muted)]">→</span> {movement.targetLocation?.name ?? movement.vehicle?.code ?? movement.vehicle?.plate ?? "—"}</TableCell>
+                      <TableCell className="font-mono">{formatQty(movement.quantity, undefined, { maximumFractionDigits: 2 })} L</TableCell>
+                      <TableCell>{href ? <Link className="inline-flex items-center gap-1 text-[var(--color-primary-ink)] hover:underline" href={href}>Abrir registro <ArrowSquareOut size={14} /></Link> : <span className="inline-flex items-center gap-1 text-[var(--color-text-muted)]"><WarningCircle size={14} />Sin registro asociado</span>}</TableCell>
+                    </TableRow>
                   )
                 })}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
+            </TableRoot>
           </div>
         )}
       </section>
@@ -279,7 +285,7 @@ function DifferenceMetric({ label, difference, trace }: { label: string; differe
   return (
     <div className="bg-[var(--color-surface)] p-4">
       <div className="flex items-center justify-between gap-2"><p className="text-xs font-medium text-[var(--color-text-muted)]">{label}</p><Badge variant={badge.variant} size="sm">{badge.label}</Badge></div>
-      <p className="mt-2 text-xl font-semibold tracking-tight">{difference.status === "available" ? `${liters.format(difference.absolute)} L` : "—"}</p>
+      <p className="mt-2 text-xl font-semibold tracking-tight">{difference.status === "available" ? `${formatQty(difference.absolute, undefined, { maximumFractionDigits: 2 })} L` : "—"}</p>
       <p className="mt-1 text-xs text-[var(--color-text-muted)]">{difference.status === "available" ? (difference.percent === null ? "base cero" : `${difference.percent.toFixed(1)}%`) : "Registra las dos etapas para comparar"}</p>
       {trace && <div className="mt-3">{trace}</div>}
     </div>

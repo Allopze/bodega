@@ -9,7 +9,7 @@ import { useSavedViews } from "@/lib/hooks/use-saved-views"
 import { cn } from "@/lib/utils"
 
 /**
- * E-2 · Botón "Vistas" para `ListFilters`/`FilterToolbar`: guarda la URL
+ * E-2 · Botón "Vistas" para `ServerListFilters`/`FilterToolbar`: guarda la URL
  * actual (con sus filtros) bajo un nombre y permite volver a ella con un
  * clic. Persistido en `localStorage` por `scopeKey` — ver `useSavedViews`.
  */

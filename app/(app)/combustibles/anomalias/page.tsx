@@ -1,4 +1,6 @@
 import type { Metadata } from "next"
+import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
+import { ServerPagination } from "@/components/ui/server-pagination"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import { inArray } from "drizzle-orm"
@@ -9,6 +11,8 @@ import { settle } from "@/lib/async-settle"
 import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getAnomalyCases, getAnomalyDistribution, type AnomalyCaseStatus } from "@/lib/combustibles/anomaly-cases"
+import { ANOMALY_STATUS_LABELS, ANOMALY_SEVERITY_LABELS } from "@/lib/combustibles/anomaly-labels"
+import { parsePageParam } from "@/lib/utils"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
@@ -19,15 +23,6 @@ import { FilterSelect } from "../filter-select"
 export const metadata: Metadata = { title: "Anomalías de combustible" }
 
 const PAGE_SIZE = 50
-
-const SEVERITY_BADGE: Record<string, { label: string; variant: "danger" | "warning" | "success" | "info" }> = {
-  low: { label: "Baja", variant: "info" },
-  medium: { label: "Media", variant: "warning" },
-  high: { label: "Alta", variant: "danger" },
-  critical: { label: "Crítica", variant: "danger" },
-}
-
-const STATUS_LABELS: Record<string, string> = { open: "Abierto", in_review: "En revisión", resolved: "Resuelto", dismissed: "Descartado", reopened: "Reabierto" }
 
 type SearchParams = { faena?: string; estado?: string; severidad?: string; ref?: string; page?: string }
 
@@ -55,9 +50,8 @@ export default async function AnomalyCasesPage({ searchParams }: { searchParams:
   const [refSource, ...refIdParts] = (sp.ref ?? "").split(":")
   const referenceEntityType = refSource ? SOURCE_TO_REFERENCE_TYPE[refSource] : undefined
   const referenceEntityId = refIdParts.length > 0 ? refIdParts.join(":") : undefined
-  // `?page=` no numérico → 1, no NaN (mismo guard que /combustibles).
-  const parsedPage = Number(sp.page)
-  const page = Number.isFinite(parsedPage) ? Math.max(1, Math.floor(parsedPage)) : 1
+  // `?page=` no numérico → 1, no NaN (guard compartido en lib/utils).
+  const page = parsePageParam(sp.page)
 
   const [worksitesList, anomalyCasesResult, distribution] = await Promise.all([
     settle(
@@ -80,17 +74,9 @@ export default async function AnomalyCasesPage({ searchParams }: { searchParams:
     ),
   ])
   const { cases, total } = anomalyCasesResult
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
-  const pageHref = (target: number) => {
-    const params = new URLSearchParams()
-    if (sp.faena) params.set("faena", sp.faena)
-    if (sp.estado) params.set("estado", sp.estado)
-    if (sp.severidad) params.set("severidad", sp.severidad)
-    if (sp.ref) params.set("ref", sp.ref)
-    if (target > 1) params.set("page", String(target))
-    const qs = params.toString()
-    return `/combustibles/anomalias${qs ? `?${qs}` : ""}`
-  }
+  const pagination = resolvePagination({ pageParam: String(page), totalItems: total, pageSize: PAGE_SIZE })
+  const totalPages = pagination.totalPages
+  const pageHref = (target: number) => buildPaginationHref("/combustibles/anomalias", sp, target)
 
   return (
     <PageContainer width="wide">
@@ -103,8 +89,8 @@ export default async function AnomalyCasesPage({ searchParams }: { searchParams:
 
       <form className="mb-4 grid gap-3 border-y border-(--color-border) py-4 md:grid-cols-4">
         <FilterSelect name="faena" defaultValue={sp.faena} options={worksitesList.map((w) => ({ value: w.id, label: w.name }))} placeholder="Todas las faenas" />
-        <FilterSelect name="estado" defaultValue={sp.estado} options={Object.entries(STATUS_LABELS).map(([k, v]) => ({ value: k, label: v }))} placeholder="Todos los estados" />
-        <FilterSelect name="severidad" defaultValue={sp.severidad} options={Object.entries(SEVERITY_BADGE).map(([k, v]) => ({ value: k, label: v.label }))} placeholder="Todas las severidades" />
+        <FilterSelect name="estado" defaultValue={sp.estado} options={Object.entries(ANOMALY_STATUS_LABELS).map(([k, v]) => ({ value: k, label: v }))} placeholder="Todos los estados" />
+        <FilterSelect name="severidad" defaultValue={sp.severidad} options={Object.entries(ANOMALY_SEVERITY_LABELS).map(([k, v]) => ({ value: k, label: v }))} placeholder="Todas las severidades" />
         <Button type="submit" variant="secondary">Aplicar</Button>
       </form>
 
@@ -135,21 +121,7 @@ export default async function AnomalyCasesPage({ searchParams }: { searchParams:
         </div>
       )}
 
-      {totalPages > 1 && (
-        <div className="mt-6 flex items-center justify-center gap-2">
-          {page > 1 ? (
-            <Button asChild variant="secondary" size="sm"><Link href={pageHref(page - 1)}>Anterior</Link></Button>
-          ) : (
-            <Button variant="secondary" size="sm" disabled>Anterior</Button>
-          )}
-          <span className="text-xs text-(--color-text-muted)">Página {page} de {totalPages}</span>
-          {page < totalPages ? (
-            <Button asChild variant="secondary" size="sm"><Link href={pageHref(page + 1)}>Siguiente</Link></Button>
-          ) : (
-            <Button variant="secondary" size="sm" disabled>Siguiente</Button>
-          )}
-        </div>
-      )}
+      <ServerPagination pagination={pagination} hrefForPage={pageHref} />
     </PageContainer>
   )
 }

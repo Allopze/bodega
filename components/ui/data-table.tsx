@@ -264,7 +264,7 @@ const DataTableInner = <T extends Record<string, unknown>>({
           "flex flex-col gap-3 sm:flex-row sm:items-center",
           hasExplicitSearch || showDensityToggle ? "sm:justify-between" : "sm:justify-end gap-2",
           // A-19: cuando el único control es "Columnas" (el caso de /solicitudes,
-          // que tiene su buscador en `ListFilters`), esta barra se quedaba con una
+          // que tiene su buscador en `ServerListFilters`), esta barra se quedaba con una
           // fila entera para un botón y dejaba ~60px de banda vacía sobre la tabla.
           hasExplicitSearch || actions || (showDensityToggle && !hideDensityToggle) ? "mb-3" : "mb-1",
         )}>

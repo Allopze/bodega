@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Badge } from "@/components/ui/badge"
 import { formatCLP } from "@/lib/utils"
 import { PeriodPicker } from "@/components/ui/period-picker"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Documentos DTE" }
@@ -156,48 +157,48 @@ export default async function DteListPage({
       ) : (
         <section className="overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)]">
-                  <th scope="col" className="px-4 py-2.5 th-type">Tipo · Folio</th>
-                  <th scope="col" className="px-4 py-2.5 th-type">Proveedor</th>
-                  <th scope="col" className="hidden px-4 py-2.5 th-type md:table-cell">Emisión</th>
-                  <th scope="col" className="px-4 py-2.5 th-type">Total</th>
-                  <th scope="col" className="px-4 py-2.5 th-type">Estado plataforma</th>
-                  <th scope="col" className="hidden px-4 py-2.5 th-type lg:table-cell">Vínculo</th>
-                  <th scope="col" className="hidden px-4 py-2.5 th-type lg:table-cell">Discrepancia</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--color-border)]">
+            <TableRoot className="rounded-none border-0">
+            <Table className="text-left">
+              <caption className="sr-only">Documentos tributarios electrónicos recibidos</caption>
+              <TableHeader>
+                <TableRow className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)]">
+                  <TableHead>Tipo · Folio</TableHead><TableHead>Proveedor</TableHead>
+                  <TableHead className="hidden md:table-cell">Emisión</TableHead><TableHead>Total</TableHead>
+                  <TableHead>Estado plataforma</TableHead><TableHead className="hidden lg:table-cell">Vínculo</TableHead>
+                  <TableHead className="hidden lg:table-cell">Discrepancia</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {filtered.map((r) => (
-                  <tr key={r.id} className="transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-tint)]">
-                    <td className="whitespace-nowrap px-4 py-2.5 font-medium text-[var(--color-text)]">
+                  <TableRow key={r.id} className="transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-tint)]">
+                    <TableCell className="whitespace-nowrap font-medium text-[var(--color-text)]">
                       {dteTipoLabel(r.tipoDte)} · {r.folio}
-                    </td>
-                    <td className="px-4 py-2.5 text-[var(--color-text-muted)]">
+                    </TableCell>
+                    <TableCell className="text-[var(--color-text-muted)]">
                       {r.razonSocialEmisor} <span className="text-xs text-[var(--color-text-subtle)]">({r.rutEmisor})</span>
-                    </td>
-                    <td className="hidden whitespace-nowrap px-4 py-2.5 text-[var(--color-text-muted)] md:table-cell">{r.fechaEmision}</td>
-                    <td className="whitespace-nowrap px-4 py-2.5 font-mono tabular-nums text-[var(--color-text)]">{formatCLP(r.montoTotal)}</td>
-                    <td className="whitespace-nowrap px-4 py-2.5">
+                    </TableCell>
+                    <TableCell className="hidden whitespace-nowrap text-[var(--color-text-muted)] md:table-cell">{r.fechaEmision}</TableCell>
+                    <TableCell className="whitespace-nowrap font-mono tabular-nums text-[var(--color-text)]">{formatCLP(r.montoTotal)}</TableCell>
+                    <TableCell className="whitespace-nowrap">
                       {r.estadoPlataforma
                         ? <Badge variant={estadoPlataformaTone(r.estadoPlataforma)} size="sm">{estadoPlataformaLabel(r.estadoPlataforma)}</Badge>
                         : <span className="text-xs text-[var(--color-text-faint)]">—</span>}
-                    </td>
-                    <td className="hidden whitespace-nowrap px-4 py-2.5 lg:table-cell">
+                    </TableCell>
+                    <TableCell className="hidden whitespace-nowrap lg:table-cell">
                       {r.vinculoTipo === "oc" && <Badge variant="success" size="sm">Vinculado a OC</Badge>}
                       {r.vinculoTipo === "combustible" && <Badge variant="info" size="sm">Vinculado a combustible</Badge>}
                       {r.vinculoTipo === "ninguno" && <Badge variant="outline" size="sm">Sin vínculo</Badge>}
-                    </td>
-                    <td className="hidden whitespace-nowrap px-4 py-2.5 lg:table-cell">
+                    </TableCell>
+                    <TableCell className="hidden whitespace-nowrap lg:table-cell">
                       {r.discrepancy !== null && r.discrepancy > DISCREPANCY_TOLERANCE_CLP
                         ? <span className="font-mono tabular-nums text-[var(--color-danger-ink)]">{formatCLP(r.discrepancy)}</span>
                         : <span className="text-xs text-[var(--color-text-faint)]">—</span>}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
+            </TableRoot>
           </div>
         </section>
       )}

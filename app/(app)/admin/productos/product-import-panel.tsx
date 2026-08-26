@@ -13,8 +13,8 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/admin/sheet"
-import { INITIAL_STATE } from "@/components/admin/form-state"
-import { SubmitButton } from "@/components/admin/submit-button"
+import { INITIAL_STATE } from "@/lib/form-state"
+import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { FileInput } from "@/components/ui/file-input"

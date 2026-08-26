@@ -14,7 +14,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { parseListParams, textSearchSql, eqFilter, worksiteEqSql } from "@/lib/adquisiciones/list-query"
-import type { FilterOption } from "@/components/adquisiciones/list-filters"
+import type { ServerListFilterOption } from "@/components/ui/server-list-filters"
 import { ApprovalPanel } from "./approval-panel"
 import { canApproveEpp, canSetDispatch } from "./roles"
 import type { ApprovalItem, ApprovalRequest } from "./types"
@@ -73,7 +73,7 @@ export default async function AprobacionesPage({
     pageSize: APPROVAL_REQUESTS_PAGE_SIZE,
   })
   const pageHref = (page: number) => buildPaginationHref("/aprobaciones", sp, page)
-  const worksiteOptions: FilterOption[] = worksiteOptionRows.map((w) => ({ value: w.id, label: w.name }))
+  const worksiteOptions: ServerListFilterOption[] = worksiteOptionRows.map((w) => ({ value: w.id, label: w.name }))
 
   // Load only submitted/in-review requests in the approver's worksite scope.
   const visible = await db

@@ -6,6 +6,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 import { PageContainer } from "@/components/ui/page-container"
 import { EmptyState } from "@/components/ui/empty-state"
+import { ServerPagination } from "@/components/ui/server-pagination"
 import { Warning, DownloadSimple } from "@phosphor-icons/react/dist/ssr"
 import { TrazabilidadFilters } from "./trazabilidad-filters"
 import { getTrazabilidadMatrix } from "@/lib/services/trazabilidad-matrix"
@@ -20,6 +21,7 @@ import {
   TRACEABILITY_PAGE_SIZE as PAGE_SIZE,
   TRACEABILITY_ALERT_SCAN_LIMIT as ALERT_SCAN_LIMIT,
 } from "@/lib/constants"
+import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 
 export const metadata: Metadata = { title: "Trazabilidad de ítems" }
 
@@ -37,13 +39,10 @@ export default async function TrazabilidadPage({
     rows,
     paginated,
     totalFiltered,
-    totalPages,
-    safePage,
     alertCount,
     visibleWorksites,
     filterFaenaId,
     filterEstado,
-    pageHref,
     totalRows,
     isAlertFilter,
   } = await getTrazabilidadMatrix(sp, session)
@@ -55,6 +54,8 @@ export default async function TrazabilidadPage({
     ])
     : [[], []]
   const activeWorksite = visibleWorksites.find((worksite) => worksite.id === filterFaenaId)
+  const pagination = resolvePagination({ pageParam: sp.page, totalItems: totalFiltered, pageSize: PAGE_SIZE })
+  const currentPageHref = (page: number) => buildPaginationHref("/trazabilidad", sp, page)
 
   return (
     <PageContainer>
@@ -123,7 +124,7 @@ export default async function TrazabilidadPage({
         )}
         <span className="ml-auto self-end text-xs text-[var(--color-text-subtle)]">
           {totalFiltered} de {totalRows} ítems
-          {totalPages > 1 && ` · Pág. ${safePage} de ${totalPages}`}
+          {pagination.totalPages > 1 && ` · Pág. ${pagination.page} de ${pagination.totalPages}`}
           {isAlertFilter && totalRows > ALERT_SCAN_LIMIT && ` · primeras ${ALERT_SCAN_LIMIT} filas revisadas`}
         </span>
       </div>
@@ -161,40 +162,7 @@ export default async function TrazabilidadPage({
       )}
 
       {/* ── Pagination ────────────────────────────────────────────────── */}
-      {totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-between gap-4 border-t border-[var(--color-border)] px-4 py-3">
-          <p className="text-xs text-[var(--color-text-subtle)]">
-            <span className="font-mono tabular-nums">{(safePage - 1) * PAGE_SIZE + 1}</span>
-            {" – "}
-            <span className="font-mono tabular-nums">{Math.min(safePage * PAGE_SIZE, totalFiltered)}</span>
-            {" de "}
-            <span className="font-mono tabular-nums">{totalFiltered}</span>
-          </p>
-          <div className="flex items-center gap-1">
-            {safePage > 1 && (
-              <a
-                href={pageHref(safePage - 1)}
-                className="inline-flex h-11 w-11 sm:h-8 sm:w-8 items-center justify-center rounded-[var(--radius)] text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]"
-                aria-label="Página anterior"
-              >
-                ←
-              </a>
-            )}
-            <span className="px-3 text-xs text-[var(--color-text-subtle)]">
-              Pág. {safePage} de {totalPages}
-            </span>
-            {safePage < totalPages && (
-              <a
-                href={pageHref(safePage + 1)}
-                className="inline-flex h-11 w-11 sm:h-8 sm:w-8 items-center justify-center rounded-[var(--radius)] text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] transition-[color,background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)]"
-                aria-label="Página siguiente"
-              >
-                →
-              </a>
-            )}
-          </div>
-        </div>
-      )}
+      <ServerPagination pagination={pagination} hrefForPage={currentPageHref} className="mt-4" />
 
       {/* ── Legend ────────────────────────────────────────────────────── */}
       <p className="mt-4 text-xs text-[var(--color-text-subtle)]">

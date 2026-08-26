@@ -1,4 +1,5 @@
 "use client"
+import { ChartEmpty } from "@/components/ui/chart-empty"
 
 import { useRouter, useSearchParams } from "next/navigation"
 import {
@@ -9,6 +10,7 @@ import {
 import { ChartLineUp } from "@phosphor-icons/react"
 import type { PeriodoRow, PatenteRankingRow, RendimientoRow } from "@/lib/combustibles/consumption-dashboard"
 import { buildConsumptionHref } from "./consumption-url"
+import { formatCompactCLP, formatCompactQty } from "@/lib/utils"
 
 const MONTO_COLOR = "var(--color-info)"
 const CANTIDAD_COLOR = "var(--color-primary)"
@@ -19,18 +21,7 @@ const GRID_COLOR = "var(--color-border)"
 
 const shortMonths = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 
-const formatCLP = (value: number) => {
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`
-  if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`
-  return `$${value.toFixed(0)}`
-}
-
-const formatQty = (value: number) => {
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`
-  return value.toFixed(0)
-}
-
-const formatPrice = (value: number) => `$${Math.round(value).toLocaleString("es-CL")}/L`
+const formatPricePerLiter = (value: number) => `$${Math.round(value).toLocaleString("es-CL")}/L`
 
 function formatPeriod(period: string | number) {
   const value = String(period)
@@ -38,7 +29,6 @@ function formatPeriod(period: string | number) {
   if (!match) return value
   return `${Number(match[3])} ${shortMonths[Number(match[2]) - 1]}`
 }
-
 function truncate(label: string, max = 18) {
   return label.length > max ? `${label.slice(0, max)}…` : label
 }
@@ -92,7 +82,7 @@ function chartAxisProps() {
 
 /* ── Evolución: cantidad consumida + monto por período ─────────────────────── */
 export function EvolutionChart({ data, showCosts = true }: { data: PeriodoRow[]; showCosts?: boolean }) {
-  if (data.length === 0) return <EmptyChart label="Aún no hay períodos importados para esta selección." />
+  if (data.length === 0) return <ChartEmpty icon={<ChartLineUp size={24} className="mb-2 text-[var(--color-text-subtle)]" aria-hidden />} className="border-[var(--color-border-strong)]" label="Aún no hay períodos importados para esta selección." />
 
   return (
     <div className="h-72" aria-label={showCosts ? "Evolución de consumo y gasto por período" : "Evolución de consumo por período"}>
@@ -110,11 +100,11 @@ export function EvolutionChart({ data, showCosts = true }: { data: PeriodoRow[];
           </defs>
           <CartesianGrid vertical={false} stroke={GRID_COLOR} strokeDasharray="2 5" />
           <XAxis dataKey="periodo" tickFormatter={formatPeriod} minTickGap={28} {...chartAxisProps()} />
-          {showCosts && <YAxis yAxisId="monto" tickFormatter={formatCLP} width={60} {...chartAxisProps()} />}
-          <YAxis yAxisId="cantidad" orientation="right" tickFormatter={(value) => `${formatQty(Number(value))} L`} width={58} {...chartAxisProps()} />
+          {showCosts && <YAxis yAxisId="monto" tickFormatter={formatCompactCLP} width={60} {...chartAxisProps()} />}
+          <YAxis yAxisId="cantidad" orientation="right" tickFormatter={(value) => `${formatCompactQty(Number(value))} L`} width={58} {...chartAxisProps()} />
           <Tooltip
             cursor={{ stroke: "var(--color-border-strong)", strokeDasharray: "3 3" }}
-            content={<TooltipPanel formatValue={(value, name) => name === "Consumo" ? `${formatQty(value)} L` : formatCLP(value)} />}
+            content={<TooltipPanel formatValue={(value, name) => name === "Consumo" ? `${formatCompactQty(value)} L` : formatCompactCLP(value)} />}
           />
           <Legend iconType="plainline" iconSize={10} wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
           {showCosts && <Area
@@ -153,7 +143,7 @@ export function EvolutionChart({ data, showCosts = true }: { data: PeriodoRow[];
 /* ── Precio promedio por unidad, por período ─────────────────────────────── */
 export function PriceEvolutionChart({ data }: { data: PeriodoRow[] }) {
   const chartData = data.filter((row) => row.precioPromedio != null)
-  if (chartData.length === 0) return <EmptyChart label="No hay litros suficientes para calcular un precio promedio." />
+  if (chartData.length === 0) return <ChartEmpty icon={<ChartLineUp size={24} className="mb-2 text-[var(--color-text-subtle)]" aria-hidden />} className="border-[var(--color-border-strong)]" label="No hay litros suficientes para calcular un precio promedio." />
 
   return (
     <div className="h-72" aria-label="Precio promedio por litro y período">
@@ -168,7 +158,7 @@ export function PriceEvolutionChart({ data }: { data: PeriodoRow[] }) {
           <YAxis tickFormatter={(value) => `$${Math.round(Number(value)).toLocaleString("es-CL")}`} width={64} domain={["auto", "auto"]} {...chartAxisProps()} />
           <Tooltip
             cursor={{ stroke: "var(--color-border-strong)", strokeDasharray: "3 3" }}
-            content={<TooltipPanel formatValue={(value) => formatPrice(value)} />}
+            content={<TooltipPanel formatValue={(value) => formatPricePerLiter(value)} />}
           />
           <Line
             type="linear"
@@ -188,9 +178,9 @@ export function PriceEvolutionChart({ data }: { data: PeriodoRow[] }) {
 }
 
 const RANKING_FORMATTERS: Record<"cantidad" | "monto" | "transacciones", (value: number) => string> = {
-  cantidad: (value) => `${formatQty(value)} L`,
-  monto: formatCLP,
-  transacciones: (value) => formatQty(value),
+  cantidad: (value) => `${formatCompactQty(value)} L`,
+  monto: formatCompactCLP,
+  transacciones: (value) => formatCompactQty(value),
 }
 
 /* ── Ranking por patente, con acceso directo a sus registros ─────────────── */
@@ -202,7 +192,7 @@ export function PatenteRankingChart({
   metric: "cantidad" | "monto" | "transacciones"
 }) {
   const openPatente = usePatenteDrilldown()
-  if (data.length === 0) return <EmptyChart label="No hay patentes que comparar con esta selección." />
+  if (data.length === 0) return <ChartEmpty icon={<ChartLineUp size={24} className="mb-2 text-[var(--color-text-subtle)]" aria-hidden />} className="border-[var(--color-border-strong)]" label="No hay patentes que comparar con esta selección." />
 
   const formatter = RANKING_FORMATTERS[metric]
   const chartData = data.slice(0, 8).map((row) => ({
@@ -255,7 +245,7 @@ export function PatenteRankingChart({
  */
 export function RendimientoChart({ data, unitLabel }: { data: RendimientoRow[]; unitLabel?: string }) {
   const openPatente = usePatenteDrilldown()
-  if (data.length === 0) return <EmptyChart label="No hay rendimiento informado para esta selección." />
+  if (data.length === 0) return <ChartEmpty icon={<ChartLineUp size={24} className="mb-2 text-[var(--color-text-subtle)]" aria-hidden />} className="border-[var(--color-border-strong)]" label="No hay rendimiento informado para esta selección." />
 
   const chartData = data.slice(0, 12).map((row) => ({
     name: truncate(row.patente, 12),
@@ -294,15 +284,6 @@ export function RendimientoChart({ data, unitLabel }: { data: RendimientoRow[]; 
           </Bar>
         </BarChart>
       </ResponsiveContainer>
-    </div>
-  )
-}
-
-function EmptyChart({ label }: { label: string }) {
-  return (
-    <div className="flex h-64 flex-col items-center justify-center border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-2)] px-6 text-center">
-      <ChartLineUp size={24} className="mb-2 text-[var(--color-text-subtle)]" aria-hidden />
-      <p className="max-w-64 text-sm leading-5 text-[var(--color-text-muted)]">{label}</p>
     </div>
   )
 }

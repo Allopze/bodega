@@ -26,6 +26,7 @@ import {
   verificationStatusLabel,
 } from "@/lib/services/billing/labels"
 import { PageContainer } from "@/components/ui/page-container"
+import { Table, TableRoot } from "@/components/ui/table"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { Badge } from "@/components/ui/badge"
 import { InvoiceInternalPanel } from "./internal-panel"
@@ -168,8 +169,8 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
                 Sin ítems informados. No se inventan líneas cuando la fuente solo entrega totales.
               </p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
+              <TableRoot className="rounded-none border-0">
+                <Table className="text-left text-sm">
                   <thead>
                     <tr className="border-b border-[var(--color-border)]">
                       <th scope="col" className="py-1.5 th-type">Descripción</th>
@@ -194,8 +195,8 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
                       </tr>
                     ))}
                   </tbody>
-                </table>
-              </div>
+                </Table>
+              </TableRoot>
             )}
           </Section>
 

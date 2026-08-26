@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/lib/toast"
+import { useOperation } from "@/lib/hooks/use-operation"
 import {
   addPpaEvidenceAction,
   authorizePpaRestartAction,
@@ -45,23 +46,6 @@ interface Props {
   canClose: boolean
 }
 
-function useWorkflowMutation() {
-  const router = useRouter()
-  const [pending, startTransition] = React.useTransition()
-  function run(operation: () => Promise<{ ok: boolean; message?: string }>) {
-    startTransition(async () => {
-      const result = await operation()
-      if (result.ok) {
-        toast.success(result.message ?? "Cambio registrado")
-        router.refresh()
-      } else {
-        toast.error(result.message ?? "No se pudo registrar el cambio")
-      }
-    })
-  }
-  return { pending, run }
-}
-
 export function PpaWorkflowPanel({
   ppaId,
   ppaVersion,
@@ -74,7 +58,8 @@ export function PpaWorkflowPanel({
   canCancel,
   canClose,
 }: Props) {
-  const { pending, run } = useWorkflowMutation()
+  const router = useRouter()
+  const { pending, run } = useOperation({ feedback: "toast", onSuccess: () => router.refresh() })
   const [evidenceKind, setEvidenceKind] = React.useState<"document" | "photo" | "url">("photo")
   const [evidenceReference, setEvidenceReference] = React.useState("")
   const [evidenceDescription, setEvidenceDescription] = React.useState("")

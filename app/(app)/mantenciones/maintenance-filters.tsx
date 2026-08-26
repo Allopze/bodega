@@ -6,11 +6,11 @@ import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { MAINTENANCE_STATUS_LABELS } from "@/lib/validation/maintenance"
 
 interface MaintenanceFiltersProps {
   vehicles: Array<{ id: string; plate: string }>
   worksites: Array<{ id: string; name: string }>
-  statusLabels: Record<string, { label: string }>
   current: {
     vehicle?: string
     faena?: string
@@ -19,7 +19,7 @@ interface MaintenanceFiltersProps {
   }
 }
 
-export function MaintenanceFilters({ vehicles, worksites, statusLabels, current }: MaintenanceFiltersProps) {
+export function MaintenanceFilters({ vehicles, worksites, current }: MaintenanceFiltersProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -84,8 +84,8 @@ export function MaintenanceFilters({ vehicles, worksites, statusLabels, current 
         <SelectTrigger aria-label="Estado"><SelectValue placeholder="Todos los estados" /></SelectTrigger>
         <SelectContent>
           <SelectItem value="all">Todos los estados</SelectItem>
-          {Object.entries(statusLabels).map(([value, meta]) => (
-            <SelectItem key={value} value={value}>{meta.label}</SelectItem>
+          {Object.entries(MAINTENANCE_STATUS_LABELS).map(([value, label]) => (
+            <SelectItem key={value} value={value}>{label}</SelectItem>
           ))}
         </SelectContent>
       </Select>

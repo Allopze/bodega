@@ -1,4 +1,6 @@
 import type { Metadata } from "next"
+import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
+import { ServerPagination } from "@/components/ui/server-pagination"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import { DownloadSimple, Receipt } from "@phosphor-icons/react/dist/ssr"
@@ -22,6 +24,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Badge } from "@/components/ui/badge"
 import { InvoiceFiltersBar } from "./invoice-filters"
+import { Table, TableRoot } from "@/components/ui/table"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Facturas emitidas" }
@@ -65,7 +68,7 @@ export default async function InvoicesPage({
     listActiveClients(),
   ])
 
-  const totalPages = Math.max(1, Math.ceil(result.total / PAGE_SIZE))
+  const pagination = resolvePagination({ pageParam: String(result.page), totalItems: result.total, pageSize: PAGE_SIZE })
   const hasFilters = Object.entries(params).some(([key, value]) => key !== "pagina" && Boolean(value))
 
   return (
@@ -146,8 +149,8 @@ export default async function InvoicesPage({
       ) : (
         <>
           <section className="overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+            <TableRoot className="rounded-none border-0">
+              <Table className="text-left text-sm">
                 <caption className="sr-only">
                   Facturas emitidas con su cliente, montos, estado de pago y estado de cobranza
                 </caption>
@@ -233,21 +236,11 @@ export default async function InvoicesPage({
                     )
                   })}
                 </tbody>
-              </table>
-            </div>
+              </Table>
+            </TableRoot>
           </section>
 
-          {totalPages > 1 && (
-            <nav aria-label="Paginación de facturas" className="flex items-center justify-between text-sm">
-              <p className="text-[var(--color-text-muted)]">
-                Página {result.page} de {totalPages}
-              </p>
-              <div className="flex gap-2">
-                <PageLink params={params} page={result.page - 1} disabled={result.page <= 1}>Anterior</PageLink>
-                <PageLink params={params} page={result.page + 1} disabled={result.page >= totalPages}>Siguiente</PageLink>
-              </div>
-            </nav>
-          )}
+          <ServerPagination pagination={pagination} hrefForPage={(target) => buildPaginationHref("/facturacion/facturas", params, target, "pagina")} />
         </>
       )}
 
@@ -258,33 +251,6 @@ export default async function InvoicesPage({
   )
 }
 
-function PageLink({
-  params,
-  page,
-  disabled,
-  children,
-}: {
-  params: Record<string, string | undefined>
-  page: number
-  disabled: boolean
-  children: React.ReactNode
-}) {
-  if (disabled) {
-    return <span className="rounded-[var(--radius-md)] px-3 py-1.5 text-[var(--color-text-subtle)]">{children}</span>
-  }
-  const next = new URLSearchParams(
-    Object.entries(params).filter(([, value]) => Boolean(value)) as [string, string][],
-  )
-  next.set("pagina", String(page))
-  return (
-    <Link
-      href={`/facturacion/facturas?${next.toString()}`}
-      className="rounded-[var(--radius-md)] border border-[var(--color-border)] px-3 py-1.5 text-[var(--color-text)] hover:bg-[var(--color-surface-2)]"
-    >
-      {children}
-    </Link>
-  )
-}
 
 /* ── Validación de parámetros ────────────────────────────────────────────── */
 

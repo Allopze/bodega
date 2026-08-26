@@ -10,6 +10,8 @@ import {
   maintenanceTaskSchema,
   MAINTENANCE_STATUSES,
   MAINTENANCE_STATUS_LABELS,
+  maintenanceStatusMeta,
+  MAINTENANCE_STATUS_VARIANTS,
   transitionMaintenanceRecordSchema,
   updateMaintenanceRecordSchema,
 } from "@/lib/validation/maintenance"
@@ -33,6 +35,16 @@ describe("createMaintenanceRecordSchema", () => {
       completed: "Completada",
       cancelled: "Cancelada",
     })
+  })
+
+  it("resolves the canonical label and variant for every maintenance status", () => {
+    expect(MAINTENANCE_STATUSES.map((status) => maintenanceStatusMeta(status))).toEqual([
+      { label: "Programada", variant: MAINTENANCE_STATUS_VARIANTS.scheduled },
+      { label: "En curso", variant: MAINTENANCE_STATUS_VARIANTS.in_progress },
+      { label: "Completada", variant: MAINTENANCE_STATUS_VARIANTS.completed },
+      { label: "Cancelada", variant: MAINTENANCE_STATUS_VARIANTS.cancelled },
+    ])
+    expect(maintenanceStatusMeta("legacy_status")).toEqual({ label: "legacy_status", variant: "outline" })
   })
 
   it("accepts a coherent total (neto + IVA)", () => {

@@ -10,13 +10,13 @@ import {
   Plant,
   ArrowsClockwise,
 } from "@phosphor-icons/react"
-import { DataTable } from "@/components/admin/data-table"
+import { DataTable } from "@/components/ui/data-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { INITIAL_STATE } from "@/lib/form-state"
 import {
   seedDefaultDocumentCategoriesAction,
   setDocumentCategoryStatusAction,

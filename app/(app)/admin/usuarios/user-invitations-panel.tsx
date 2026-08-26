@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { formatDate } from "@/lib/utils"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { INITIAL_STATE } from "@/lib/form-state"
 import { cancelInvitation, resendInvitation } from "./actions/invitations"
 
 export interface InvitationRow {

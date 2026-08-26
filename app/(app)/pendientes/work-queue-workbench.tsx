@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn, formatDate, formatDateTime } from "@/lib/utils"
 import type { OperationalQueueResult, OperationalWorkItem } from "@/lib/services/operational-work-queue"
 import { WorkCommitmentControl } from "./work-commitment-control"
+import { Table, TableBody, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 const QUICK_FILTERS = [
   ["all", "Todas"], ["critical", "Críticas"], ["overdue", "Vencidas"], ["today", "Hoy"],
@@ -244,11 +245,14 @@ export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
               Mismo patrón de tarjetas que `recepcion-table`: la tabla desde `md`,
               tarjetas debajo. No se migró a `DataTable` porque esta cola pagina
               por cursor y ordena en SQL, y `DataTable` hace ambas en cliente. */}
-          <div className="hidden overflow-x-auto rounded-[var(--radius)] border border-[var(--color-border)] md:block">
-            <table className="w-full min-w-[980px] border-collapse text-left text-xs" aria-label="Pendientes operacionales">
-              <thead className="bg-[var(--color-surface-2)] text-[var(--color-text-muted)]"><tr><th className="px-3 py-2.5 th-type">Prioridad</th><th className="px-3 py-2.5 th-type">Tarea</th><th className="px-3 py-2.5 th-type">Módulo</th><th className="px-3 py-2.5 th-type">Faena</th><th className="px-3 py-2.5 th-type">Estado</th><th className="px-3 py-2.5 th-type">Antigüedad</th><th className="px-3 py-2.5 th-type">Vencimiento</th><th className="px-3 py-2.5"><span className="sr-only">Acciones</span></th></tr></thead>
-              <tbody>{result.items.map((item) => <QueueRow key={item.id} item={item} today={today} />)}</tbody>
-            </table>
+          <div className="hidden md:block">
+            <TableRoot>
+            <Table className="min-w-[980px] text-left text-xs" aria-label="Pendientes operacionales">
+              <caption className="sr-only">Pendientes operacionales ordenados por prioridad y vencimiento</caption>
+              <TableHeader><TableRow><TableHead>Prioridad</TableHead><TableHead>Tarea</TableHead><TableHead>Módulo</TableHead><TableHead>Faena</TableHead><TableHead>Estado</TableHead><TableHead>Antigüedad</TableHead><TableHead>Vencimiento</TableHead><TableHead><span className="sr-only">Acciones</span></TableHead></TableRow></TableHeader>
+              <TableBody>{result.items.map((item) => <QueueRow key={item.id} item={item} today={today} />)}</TableBody>
+            </Table>
+            </TableRoot>
           </div>
           <ul className="flex flex-col gap-2 md:hidden" aria-label="Pendientes operacionales">
             {result.items.map((item) => <QueueCard key={item.id} item={item} today={today} />)}

@@ -1,6 +1,7 @@
 "use server"
 
 import { db } from "@/db"
+import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import { fuelLoads } from "@/db/schema"
 import { desc } from "drizzle-orm"
 import { requirePermission } from "@/lib/auth/can"
@@ -106,8 +107,7 @@ export async function exportFuelLoadsXlsxAction(filters?: {
   ws.getColumn("liters").numFmt = "#,##0.00"
   addExportMetadataSheet(wb, session, { filters: filters ?? null, rowCount: exportRows.length, from: filters?.startDate, to: filters?.endDate })
 
-  const buffer = await wb.xlsx.writeBuffer()
-  const base64 = Buffer.from(buffer).toString("base64")
+  const base64 = await xlsxToBase64(wb)
   // Esta exportación incluye montos (IEC, IVA, total) — auditarla es más
   // importante que las demás, que sólo exponen datos operativos.
   await recordAudit({

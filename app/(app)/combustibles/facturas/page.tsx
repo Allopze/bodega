@@ -113,7 +113,6 @@ export default async function CombustiblesFacturasPage({
   ])
 
   const total = countResult[0]?.count ?? 0
-  const totalPages = Math.ceil(total / PAGE_SIZE)
 
   // KPIs over the filtered set (all data when no filter), consistent with the charts.
   const [kpiRow] = await settle(
@@ -244,8 +243,8 @@ export default async function CombustiblesFacturasPage({
         <FuelLoadTable
           rows={rows}
           page={page}
-          totalPages={totalPages}
           total={total}
+          pageSize={PAGE_SIZE}
         />
       </div>
     </PageContainer>

@@ -14,7 +14,7 @@ import { nanoid } from "@/lib/id"
  * requiere una tabla y queda fuera de este alcance.
  *
  * Guarda la URL completa (querystring), no los valores de filtro por separado:
- * cada página ya sincroniza sus filtros con la URL (`ListFilters`), así que
+ * cada página ya sincroniza sus filtros con la URL (`ServerListFilters`), así que
  * "la vista" simplemente ES esa URL. Aplicar una vista es navegar a ella.
  */
 

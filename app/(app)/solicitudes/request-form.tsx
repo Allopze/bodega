@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useEffect, useState } from "react"
 import { ArrowLeft, Info, Plus, Warning } from "@phosphor-icons/react"
-import { SubmitButton } from "@/components/admin/submit-button"
+import { SubmitButton } from "@/components/ui/submit-button"
 import { toast } from "@/lib/toast"
 import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"

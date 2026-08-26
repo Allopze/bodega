@@ -28,7 +28,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart"
-import { formatCLP } from "@/lib/utils"
+import { formatCLP, formatCompactCLP } from "@/lib/utils"
 import { CHART_COLORS, CHART_SERIES } from "@/lib/chart-palette"
 
 // ── Configuration for Charts ──────────────────────────────────────────────────
@@ -119,12 +119,6 @@ const materialEnvConfig = {
  * Formato compacto para ejes de dinero: `formatCLP` completo no cabe en un tick
  * de 52px y obliga a rotarlo. El valor exacto vive en el tooltip.
  */
-function compactCLPTick(value: number) {
-  if (Math.abs(value) >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`
-  if (Math.abs(value) >= 1_000) return `$${Math.round(value / 1_000)}k`
-  return `$${value}`
-}
-
 const fuelChartConfig = {
   liters: {
     label: "Litros",
@@ -524,7 +518,7 @@ export function FuelConsumptionChart({ data, showCosts = true, periodLabel }: { 
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
           <YAxis yAxisId="liters" tickLine={false} axisLine={false} tickMargin={8} />
-          {showCosts && <YAxis yAxisId="amount" orientation="right" tickLine={false} axisLine={false} tickMargin={4} tickFormatter={compactCLPTick} width={52} />}
+          {showCosts && <YAxis yAxisId="amount" orientation="right" tickLine={false} axisLine={false} tickMargin={4} tickFormatter={formatCompactCLP} width={52} />}
           <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
           <ChartLegend content={<ChartLegendContent />} />
           <Bar yAxisId="liters" dataKey="liters" fill={CHART_COLORS.signal} radius={[4, 4, 0, 0]} />
@@ -567,7 +561,7 @@ export function MaintenanceTrendChart({ data, showCosts = true, periodLabel }: {
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={8} />
           <YAxis yAxisId="count" tickLine={false} axisLine={false} tickMargin={8} allowDecimals={false} />
-          {showCosts && <YAxis yAxisId="amount" orientation="right" tickLine={false} axisLine={false} tickMargin={4} tickFormatter={compactCLPTick} width={52} />}
+          {showCosts && <YAxis yAxisId="amount" orientation="right" tickLine={false} axisLine={false} tickMargin={4} tickFormatter={formatCompactCLP} width={52} />}
           <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
           <ChartLegend content={<ChartLegendContent />} />
           <Bar yAxisId="count" dataKey="completed" fill={CHART_COLORS.brand} radius={[4, 4, 0, 0]} />
@@ -814,7 +808,7 @@ export function ThresholdRankingChart({
           onMouseLeave={() => setActiveIndex(null)}
         >
           <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-          <XAxis type="number" domain={[0, max ?? (unit === "%" ? 100 : "dataMax")]} tickFormatter={(value) => (format === "clp" ? compactCLPTick(Number(value)) : `${value}${unit}`)} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
+          <XAxis type="number" domain={[0, max ?? (unit === "%" ? 100 : "dataMax")]} tickFormatter={(value) => (format === "clp" ? formatCompactCLP(Number(value)) : `${value}${unit}`)} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
           <YAxis type="category" dataKey="name" width={116} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
           <ChartTooltip content={<ChartTooltipContent hideLabel formatter={(value, _name, item) => {
             const val = Number(value)
@@ -935,7 +929,7 @@ export function BillingFlowChart({ data }: {
         <LineChart data={data} margin={{ left: 4, right: 8, top: 8, bottom: 0 }}>
           <CartesianGrid vertical={false} strokeDasharray="3 3" />
           <XAxis dataKey="period" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} />
-          <YAxis tickLine={false} axisLine={false} width={52} fontSize={11} tickFormatter={compactCLPTick} />
+          <YAxis tickLine={false} axisLine={false} width={52} fontSize={11} tickFormatter={formatCompactCLP} />
           <ChartTooltip content={<ChartTooltipContent formatter={(value, name) => `${String(name)}: ${formatCLP(Number(value))}`} />} />
           <ChartLegend content={<ChartLegendContent />} />
           <Line dataKey="invoiced" type="monotone" stroke={CHART_COLORS.brand} strokeWidth={2} dot={false} />

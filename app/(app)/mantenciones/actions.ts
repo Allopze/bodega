@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import { can, requirePermission } from "@/lib/auth/can"
@@ -377,7 +378,7 @@ export async function exportMaintenanceXlsxAction(filters: {
     for (const key of ["net", "tax", "total"]) sheet.getColumn(key).numFmt = "$#,##0"
   }
   addExportMetadataSheet(workbook, session, { filters, rowCount: data.records.length })
-  const bytes = await workbook.xlsx.writeBuffer()
+  const base64 = await xlsxToBase64(workbook)
   await recordAudit({
     userId: session.user.id,
     userEmail: session.user.email ?? undefined,
@@ -389,7 +390,7 @@ export async function exportMaintenanceXlsxAction(filters: {
   return {
     ok: true as const,
     data: {
-      base64: Buffer.from(bytes).toString("base64"),
+      base64,
       filename: `mantenciones_${todayInChile()}.xlsx`,
       truncated,
       rowLimit: MAINTENANCE_EXPORT_LIMIT,

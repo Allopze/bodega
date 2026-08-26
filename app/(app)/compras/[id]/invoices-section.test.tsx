@@ -272,6 +272,34 @@ describe("InvoicesSection", () => {
     expect(screen.getByText("Excede lo pendiente")).toBeTruthy()
   })
 
+  it("muestra talla y demás atributos para distinguir variantes en el selector DTE", () => {
+    render(
+      <InvoicesSection
+        purchaseOrderId="oc-1"
+        invoices={[]}
+        reconciliation={emptyReconciliation(119000)}
+        canManage
+        canUpdateCatalog={false}
+        ocItems={[{
+          ...OC_ITEMS[0]!,
+          productName: "Buzo Dupont Tyvek",
+          attributes: [
+            { name: "Talla", value: "L" },
+            { name: "Color", value: "Blanco" },
+          ],
+        }]}
+        dteCandidates={[enrichedCandidate()]}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: /usar este dte/i }))
+    fireEvent.click(screen.getByRole("combobox", { name: /asociar línea dte 1/i }))
+
+    expect(screen.getByRole("option", {
+      name: /Buzo Dupont Tyvek · Talla: L · Color: Blanco · 10 UN/i,
+    })).toBeInTheDocument()
+  })
+
   // Con el análisis fallido las filas persistidas siguen ahí pero sin
   // sugerencias: el diálogo se veía igual que "se analizó y no coincidió nada",
   // y confirmarlo dejaba la factura sin un solo vínculo de línea.

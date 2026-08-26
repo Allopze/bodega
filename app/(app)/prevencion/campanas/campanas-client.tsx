@@ -17,6 +17,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/field"
 import { PageHeader } from "@/components/ui/page-header"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import {
   Select,
   SelectContent,
@@ -186,39 +187,37 @@ export function CampanasClient({
       ) : (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead className="bg-[var(--color-surface-2)] th-type border-b border-[var(--color-border)]">
-                <tr>
-                  <th scope="col" className="px-4 py-3">Código</th>
-                  <th scope="col" className="px-4 py-3">Título / Descripción</th>
-                  <th scope="col" className="px-4 py-3">Faena</th>
-                  <th scope="col" className="px-4 py-3">Asistentes</th>
-                  <th scope="col" className="px-4 py-3">Estado</th>
-                  <th scope="col" className="px-4 py-3 text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--color-border)]">
+            <TableRoot className="rounded-none border-0">
+            <Table className="text-left">
+              <caption className="sr-only">Campañas de capacitación</caption>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Código</TableHead><TableHead>Título / Descripción</TableHead><TableHead>Faena</TableHead>
+                  <TableHead>Asistentes</TableHead><TableHead>Estado</TableHead><TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {initialCampaigns.map((cmp) => (
-                  <tr key={cmp.id} className="hover:bg-[var(--color-surface-hover)]">
-                    <td className="px-4 py-3 font-mono font-medium">{cmp.code}</td>
-                    <td className="px-4 py-3">
+                  <TableRow key={cmp.id} className="hover:bg-[var(--color-surface-hover)]">
+                    <TableCell className="font-mono font-medium">{cmp.code}</TableCell>
+                    <TableCell>
                       <div className="font-medium text-[var(--color-text)]">{cmp.title}</div>
                       {cmp.description && (
                         <div className="text-xs text-[var(--color-text-muted)] line-clamp-1">
                           {cmp.description}
                         </div>
                       )}
-                    </td>
-                    <td className="px-4 py-3 text-[var(--color-text-muted)]">{cmp.worksiteName}</td>
-                    <td className="px-4 py-3 font-semibold text-[var(--color-primary-ink)]">
+                    </TableCell>
+                    <TableCell className="text-[var(--color-text-muted)]">{cmp.worksiteName}</TableCell>
+                    <TableCell className="font-semibold text-[var(--color-primary-ink)]">
                       {cmp.attendanceCount} trabajadores
-                    </td>
-                    <td className="px-4 py-3">
+                    </TableCell>
+                    <TableCell>
                       {cmp.status === "active" && <Badge variant="primary">Activa</Badge>}
                       {cmp.status === "completed" && <Badge variant="success">Completada</Badge>}
                       {cmp.status === "cancelled" && <Badge variant="danger">Cancelada</Badge>}
-                    </td>
-                    <td className="px-4 py-3 text-right space-x-2">
+                    </TableCell>
+                    <TableCell className="text-right space-x-2">
                       {canManage && cmp.status === "active" && (
                         <>
                           <Button
@@ -240,11 +239,12 @@ export function CampanasClient({
                           </Button>
                         </>
                       )}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
+            </TableRoot>
           </div>
         </div>
       )}

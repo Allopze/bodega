@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { FileText } from "@phosphor-icons/react"
 import { formatDate, formatQty } from "@/lib/utils"
 import type { StockDocumentRow, StockCountDetailItem } from "@/lib/services/stock-documents"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 const KIND_META: Record<string, { label: string; variant: "neutral" | "warning" | "success" | "info" }> = {
   ajuste:     { label: "Ajuste",      variant: "neutral" },
@@ -46,33 +47,29 @@ export function DocumentsTable({ documents, detail, highlightId }: DocumentsTabl
       </div>
 
       <div className="hidden md:block overflow-x-auto">
-        <table className="w-full text-sm">
+        <TableRoot className="rounded-none border-0">
+        <Table className="text-sm">
           <caption className="sr-only">Documentos manuales de bodega ordenados del más reciente al más antiguo</caption>
-          <thead className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
-            <tr>
-              <th scope="col" className="px-5 py-2.5 text-left th-type">Folio</th>
-              <th scope="col" className="px-5 py-2.5 text-left th-type">Tipo</th>
-              <th scope="col" className="px-5 py-2.5 text-left th-type">Fecha</th>
-              <th scope="col" className="px-5 py-2.5 text-left th-type">Faena</th>
-              <th scope="col" className="px-5 py-2.5 text-left th-type">Detalle</th>
-              <th scope="col" className="px-5 py-2.5 text-right th-type w-28">Cantidad</th>
-              <th scope="col" className="px-5 py-2.5 text-left th-type">Responsable</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[var(--color-border)]">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Folio</TableHead><TableHead>Tipo</TableHead><TableHead>Fecha</TableHead><TableHead>Faena</TableHead>
+              <TableHead>Detalle</TableHead><TableHead className="text-right">Cantidad</TableHead><TableHead>Responsable</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {documents.map((doc) => {
               const meta = KIND_META[doc.kind] ?? { label: doc.kind, variant: "neutral" as const }
               const isCount = doc.kind === "conteo"
               const isOpen = expanded === doc.id
               return (
                 <React.Fragment key={doc.id}>
-                  <tr
+                  <TableRow
                     className={[
                       "transition-colors hover:bg-[var(--color-surface-2)]",
                       doc.id === highlightId ? "bg-[var(--color-primary-tint)]" : "",
                     ].join(" ")}
                   >
-                    <td className="px-5 py-3 font-mono text-xs font-semibold text-[var(--color-text)]">
+                    <TableCell className="font-mono text-xs font-semibold text-[var(--color-text)]">
                       {isCount ? (
                         <button
                           type="button"
@@ -83,13 +80,13 @@ export function DocumentsTable({ documents, detail, highlightId }: DocumentsTabl
                           {doc.folio}
                         </button>
                       ) : doc.folio}
-                    </td>
-                    <td className="px-5 py-3">
+                    </TableCell>
+                    <TableCell>
                       <Badge variant={meta.variant}>{meta.label}</Badge>
-                    </td>
-                    <td className="px-5 py-3 text-xs tabular-nums text-[var(--color-text-muted)]">{formatDate(doc.at)}</td>
-                    <td className="px-5 py-3 text-xs text-[var(--color-text-muted)]">{doc.worksiteName}</td>
-                    <td className="px-5 py-3 text-xs text-[var(--color-text-subtle)]">
+                    </TableCell>
+                    <TableCell className="text-xs tabular-nums text-[var(--color-text-muted)]">{formatDate(doc.at)}</TableCell>
+                    <TableCell className="text-xs text-[var(--color-text-muted)]">{doc.worksiteName}</TableCell>
+                    <TableCell className="text-xs text-[var(--color-text-subtle)]">
                       {doc.productName && <span className="text-[var(--color-text)]">{doc.productName}</span>}
                       {doc.productName && doc.reason && " · "}
                       {doc.reason}
@@ -98,40 +95,38 @@ export function DocumentsTable({ documents, detail, highlightId }: DocumentsTabl
                           {doc.reason ? " · " : ""}{doc.itemCount} {doc.itemCount === 1 ? "producto" : "productos"}
                         </span>
                       )}
-                    </td>
-                    <td className="px-5 py-3 text-right font-mono text-sm tabular-nums text-[var(--color-text)]">
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-sm tabular-nums text-[var(--color-text)]">
                       {doc.quantity === null ? "—" : `${doc.quantity > 0 ? "+" : ""}${doc.quantity}`}
-                    </td>
-                    <td className="px-5 py-3 text-xs text-[var(--color-text-muted)]">{doc.authorName ?? "—"}</td>
-                  </tr>
+                    </TableCell>
+                    <TableCell className="text-xs text-[var(--color-text-muted)]">{doc.authorName ?? "—"}</TableCell>
+                  </TableRow>
                   {isCount && isOpen && (
-                    <tr>
-                      <td colSpan={7} className="bg-[var(--color-surface-2)] px-5 py-3">
+                    <TableRow>
+                      <TableCell colSpan={7} className="bg-[var(--color-surface-2)]">
                         {detail && detail.id === doc.id ? (
                           detail.items.length === 0 ? (
                             <p className="text-xs text-[var(--color-text-muted)]">Este conteo no registró productos.</p>
                           ) : (
-                            <table className="w-full text-xs">
-                              <thead>
-                                <tr className="text-left text-[var(--color-text-subtle)]">
-                                  <th scope="col" className="py-1 font-semibold">Producto</th>
-                                  <th scope="col" className="py-1 text-right font-semibold">Sistema</th>
-                                  <th scope="col" className="py-1 text-right font-semibold">Contado</th>
-                                  <th scope="col" className="py-1 text-right font-semibold">Diferencia</th>
-                                </tr>
-                              </thead>
-                              <tbody>
+                            <Table className="text-xs">
+                              <TableHeader>
+                                <TableRow className="text-left text-[var(--color-text-subtle)]">
+                                  <TableHead>Producto</TableHead><TableHead className="text-right">Sistema</TableHead>
+                                  <TableHead className="text-right">Contado</TableHead><TableHead className="text-right">Diferencia</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
                                 {detail.items.map((item) => (
-                                  <tr key={item.productName} className="border-t border-[var(--color-border)]">
-                                    <td className="py-1.5 text-[var(--color-text)]">
+                                  <TableRow key={item.productName} className="border-t border-[var(--color-border)]">
+                                    <TableCell className="text-[var(--color-text)]">
                                       {item.productName}
                                       {item.productSku && (
                                         <span className="ml-1.5 font-mono text-[11px] text-[var(--color-text-subtle)]">{item.productSku}</span>
                                       )}
-                                    </td>
-                                    <td className="py-1.5 text-right font-mono tabular-nums">{formatQty(item.expectedQuantity)}</td>
-                                    <td className="py-1.5 text-right font-mono tabular-nums">{formatQty(item.countedQuantity)}</td>
-                                    <td className={[
+                                    </TableCell>
+                                    <TableCell className="text-right font-mono tabular-nums">{formatQty(item.expectedQuantity)}</TableCell>
+                                    <TableCell className="text-right font-mono tabular-nums">{formatQty(item.countedQuantity)}</TableCell>
+                                    <TableCell className={[
                                       "py-1.5 text-right font-mono font-semibold tabular-nums",
                                       item.difference === 0
                                         ? "text-[var(--color-text-faint)]"
@@ -140,25 +135,26 @@ export function DocumentsTable({ documents, detail, highlightId }: DocumentsTabl
                                           : "text-[var(--color-danger)]",
                                     ].join(" ")}>
                                       {item.difference > 0 ? "+" : ""}{item.difference}
-                                    </td>
-                                  </tr>
+                                    </TableCell>
+                                  </TableRow>
                                 ))}
-                              </tbody>
-                            </table>
+                              </TableBody>
+                            </Table>
                           )
                         ) : (
                           <p className="text-xs text-[var(--color-text-muted)]">
                             Abre el documento desde su enlace para ver el detalle del conteo.
                           </p>
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   )}
                 </React.Fragment>
               )
             })}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
+        </TableRoot>
       </div>
 
       <div className="grid gap-3 p-5 md:hidden">

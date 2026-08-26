@@ -15,6 +15,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Badge } from "@/components/ui/badge"
 import { ClientContractManager } from "./client-contract-manager"
+import { Table, TableRoot } from "@/components/ui/table"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Clientes y contratos" }
@@ -114,8 +115,8 @@ export default async function ClientsPage() {
                   Sin contratos registrados. Las facturas de este cliente se pueden vincular igual, pero no habrá reporte por contrato.
                 </p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
+                <TableRoot className="rounded-none border-0">
+                  <Table className="text-left text-sm">
                     <caption className="sr-only">Contratos de {client.name}</caption>
                     <thead>
                       <tr className="border-b border-[var(--color-border)]">
@@ -155,8 +156,8 @@ export default async function ClientsPage() {
                         </tr>
                       ))}
                     </tbody>
-                  </table>
-                </div>
+                  </Table>
+                </TableRoot>
               )}
             </article>
           ))}

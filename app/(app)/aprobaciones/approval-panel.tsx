@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { usePathname, useSearchParams } from "next/navigation"
 import { CheckCircle, MagnifyingGlass } from "@phosphor-icons/react"
-import { ListFilters, LIST_FILTER_PARAMS, type FilterOption } from "@/components/adquisiciones/list-filters"
+import { hasServerListFilters, ServerListFilters, type ServerListFilterOption } from "@/components/ui/server-list-filters"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
 import { RequestGroup } from "./request-group"
 import { BulkApproveBar } from "./bulk-approve-bar"
@@ -22,7 +22,7 @@ export function ApprovalPanel({
   canApproveEpp:   boolean
   canSetDispatch:  boolean
   canAssignWork:   boolean
-  worksiteOptions?: FilterOption[]
+  worksiteOptions?: ServerListFilterOption[]
 }) {
   // E-3: la selección vive aquí, no en cada grupo, para poder aprobar ítems de
   // varias solicitudes de una vez. La acción del servidor valida el alcance por
@@ -32,7 +32,7 @@ export function ApprovalPanel({
 
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const hasActiveFilters = LIST_FILTER_PARAMS.some((key) => searchParams.get(key))
+  const hasActiveFilters = hasServerListFilters(searchParams)
 
   const toggleItem = React.useCallback((id: string) => {
     setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
@@ -63,7 +63,7 @@ export function ApprovalPanel({
         title="Revisión y aprobación"
         body="Aquí aparecen los ítems que esperan tu aprobación. Puedes aprobar o rechazar ítem por ítem, o usar 'Aprobar todos' en una solicitud completa. Los ítems aprobados pasan a Compras automáticamente."
       />
-      <ListFilters
+      <ServerListFilters
         searchPlaceholder="Buscar por código..."
         urgencyOptions={URGENCY_OPTIONS}
         worksiteOptions={worksiteOptions}

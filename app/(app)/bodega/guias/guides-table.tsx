@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { Truck } from "@phosphor-icons/react"
-import { DataTable } from "@/components/admin/data-table"
+import { DataTable } from "@/components/ui/data-table"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { StateBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"

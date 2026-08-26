@@ -5,9 +5,10 @@ import { useSearchParams } from "next/navigation"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { CaretLeft, CaretRight } from "@phosphor-icons/react"
-import { formatCLP, formatDate } from "@/lib/utils"
+import { formatCLP, formatDate, formatQty } from "@/lib/utils"
 import { FUEL_LOAD_STATUS_LABELS as statusLabels } from "@/lib/combustibles/labels"
+import { ServerPagination } from "@/components/ui/server-pagination"
+import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 
 interface FuelLoadRow {
   id: string
@@ -28,49 +29,25 @@ interface FuelLoadRow {
 interface FuelLoadTableProps {
   rows: FuelLoadRow[]
   page: number
-  totalPages: number
   total: number
+  pageSize: number
 }
 
-const LITERS_FORMAT = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 })
-const formatLiters = (n: number) => LITERS_FORMAT.format(n)
 
-export function FuelLoadTable({ rows, page, totalPages, total }: FuelLoadTableProps) {
+export function FuelLoadTable({ rows, page, total, pageSize }: FuelLoadTableProps) {
   const searchParams = useSearchParams()
   // `?page=N` a secas borraba proveedor, faena, estado y período: pasar a la
   // página 2 devolvía el listado sin filtrar.
-  const pageHref = (target: number) => {
-    const params = new URLSearchParams(searchParams.toString())
-    params.set("page", String(target))
-    return `?${params.toString()}`
-  }
-  const hasPrev = page > 1
-  const hasNext = page < totalPages
+  const pageHref = (target: number) => buildPaginationHref(
+    "/combustibles/facturas",
+    Object.fromEntries(searchParams.entries()),
+    target,
+  )
+  const pagination = resolvePagination({ pageParam: String(page), totalItems: total, pageSize })
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-sm text-[var(--color-text-muted)]">{total} cargas encontradas</p>
-        <div className="flex items-center gap-2">
-          {/* `disabled` sobre un <Button asChild> se pierde en el <Link>: el
-              botón seguía navegando. Fuera del rango se rinde sin enlace. */}
-          {hasPrev ? (
-            <Button asChild variant="secondary" size="sm">
-              <Link href={pageHref(page - 1)} aria-label="Página anterior"><CaretLeft className="h-4 w-4" aria-hidden /></Link>
-            </Button>
-          ) : (
-            <Button variant="secondary" size="sm" disabled aria-label="Página anterior"><CaretLeft className="h-4 w-4" aria-hidden /></Button>
-          )}
-          <span className="text-sm">Página {page} de {totalPages || 1}</span>
-          {hasNext ? (
-            <Button asChild variant="secondary" size="sm">
-              <Link href={pageHref(page + 1)} aria-label="Página siguiente"><CaretRight className="h-4 w-4" aria-hidden /></Link>
-            </Button>
-          ) : (
-            <Button variant="secondary" size="sm" disabled aria-label="Página siguiente"><CaretRight className="h-4 w-4" aria-hidden /></Button>
-          )}
-        </div>
-      </div>
+      <p className="mb-3 text-sm text-[var(--color-text-muted)]">{total} cargas encontradas</p>
 
       <div className="border rounded-lg overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
         <Table className="min-w-[800px]">
@@ -110,9 +87,9 @@ export function FuelLoadTable({ rows, page, totalPages, total }: FuelLoadTablePr
                     <TableCell>{row.product}</TableCell>
                     <TableCell className="font-mono text-sm">{row.receiptNumber ?? "—"}</TableCell>
                     <TableCell className="text-right font-mono text-sm">
-                      {row.odometerReading != null ? formatLiters(row.odometerReading) : row.hourMeterReading != null ? `${formatLiters(row.hourMeterReading)} h` : "—"}
+                      {row.odometerReading != null ? formatQty(row.odometerReading) : row.hourMeterReading != null ? `${formatQty(row.hourMeterReading)} h` : "—"}
                     </TableCell>
-                    <TableCell className="text-right font-mono">{formatLiters(row.liters)}</TableCell>
+                    <TableCell className="text-right font-mono">{formatQty(row.liters)}</TableCell>
                     <TableCell className="text-right font-mono">{formatCLP(row.totalAmount)}</TableCell>
                     <TableCell><Badge variant={st.variant}>{st.label}</Badge></TableCell>
                     <TableCell>
@@ -127,6 +104,7 @@ export function FuelLoadTable({ rows, page, totalPages, total }: FuelLoadTablePr
           </TableBody>
         </Table>
       </div>
+      <ServerPagination pagination={pagination} hrefForPage={pageHref} className="mt-3" />
     </div>
   )
 }

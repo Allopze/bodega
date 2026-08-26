@@ -16,6 +16,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { toast } from "@/lib/toast"
 import { deleteFuelLoadAction, registerFuelLoadAction } from "../actions"
 import { formatCLP } from "@/lib/utils"
+import { FUEL_LOAD_STATUS_LABELS } from "@/lib/combustibles/labels"
 
 interface LoadData {
   id: string
@@ -98,8 +99,8 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <Badge variant={load.status === "draft" ? "default" : load.status === "registered" ? "primary" : load.status === "reconciled" ? "outline" : "danger"}>
-          {load.status === "draft" ? "Borrador" : load.status === "registered" ? "Registrado" : load.status === "reconciled" ? "Conciliado" : "Anulado"}
+        <Badge variant={FUEL_LOAD_STATUS_LABELS[load.status]?.variant ?? "danger"}>
+          {FUEL_LOAD_STATUS_LABELS[load.status]?.label ?? load.status}
         </Badge>
         {isEditable && (
           <Button size="sm" onClick={handleRegister}>Registrar</Button>

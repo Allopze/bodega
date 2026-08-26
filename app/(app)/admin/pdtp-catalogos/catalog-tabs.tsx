@@ -4,13 +4,14 @@ import * as React from "react"
 import { useActionState, useEffect, useState } from "react"
 import Link from "next/link"
 import { PencilSimple, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
-import { DataTable } from "@/components/admin/data-table"
+import { DataTable } from "@/components/ui/data-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { TableRow, TableCell } from "@/components/ui/table"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "@/lib/toast"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { INITIAL_STATE } from "@/lib/form-state"
 import { togglePdtpResponsibleActiveAction, togglePdtpSheetActiveAction } from "./actions"
 import { ResponsibleForm, type ResponsibleRow } from "./responsible-form"
 import { SheetForm, type SheetRow } from "./sheet-form"
@@ -82,22 +83,15 @@ export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: Cat
 
   return (
     <>
-      <div className="mb-4 flex gap-1 border-b border-[var(--color-border)]">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`relative -mb-px rounded-t-[var(--radius)] border border-b-0 px-4 py-2 text-sm transition-colors ${
-              tab === t.key
-                ? "border-[var(--color-border)] bg-[var(--color-surface)] font-semibold text-[var(--color-text)]"
-                : "border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs value={tab} onValueChange={(value) => setTab(value as (typeof TABS)[number]["key"])} className="mb-4">
+        <TabsList>
+          {TABS.map((t) => (
+            <TabsTrigger key={t.key} value={t.key}>
+              {t.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       {tab === "responsibles" && (
         <section>

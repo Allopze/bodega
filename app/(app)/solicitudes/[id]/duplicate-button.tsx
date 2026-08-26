@@ -1,8 +1,8 @@
 "use client"
 
 import { useActionState, useEffect } from "react"
-import { SubmitButton } from "@/components/admin/submit-button"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { SubmitButton } from "@/components/ui/submit-button"
+import { INITIAL_STATE } from "@/lib/form-state"
 import { duplicateRequest } from "../actions"
 import { toast } from "@/lib/toast"
 import { QUOTATION_TYPES } from "@/lib/request-types"

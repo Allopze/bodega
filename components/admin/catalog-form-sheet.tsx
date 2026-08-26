@@ -7,9 +7,9 @@ import {
   Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter,
   SheetTitle, SheetDescription, SheetCloseButton,
 } from "@/components/admin/sheet"
-import { SubmitButton } from "@/components/admin/submit-button"
+import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
-import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
+import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 
 type CatalogAction = (prev: ActionState, formData: FormData) => Promise<ActionState>
 type ExternalActionState = {

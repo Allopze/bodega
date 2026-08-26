@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition, type FormEvent, type ReactNode } from "react"
+import { useState, type FormEvent } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
@@ -17,6 +17,8 @@ import {
   legalStatusVariant,
 } from "@/lib/prevention/badges"
 import { formatDate, todayInChile } from "@/lib/utils"
+import { useOperation } from "@/lib/hooks/use-operation"
+import { Field } from "@/components/ui/field"
 import type { getLegalDashboard } from "@/lib/services/prevention-risk-legal"
 import {
   approveLegalApplicabilityAction,
@@ -27,15 +29,6 @@ import {
 } from "./actions"
 
 type Dashboard = Awaited<ReturnType<typeof getLegalDashboard>>
-type Result = { ok: boolean; message?: string }
-
-function useOperation() {
-  const [pending, startTransition] = useTransition(); const [message, setMessage] = useState("")
-  function run(operation: () => Promise<Result>, success?: () => void) { setMessage(""); startTransition(async () => { const result = await operation(); setMessage(result.ok ? "Guardado correctamente." : result.message ?? "No se pudo completar la acción."); if (result.ok) success?.() }) }
-  return { pending, message, run }
-}
-
-function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="grid gap-1 text-sm"><span className="font-medium">{label}</span>{children}</label> }
 
 export function LegalRequirementsHeaderActions({ canAssess, canExport }: { canAssess: boolean; canExport: boolean }) {
   return <div className="flex gap-2">{canExport && <Button asChild variant="secondary"><a href="/api/prevencion/requisitos-legales/export" download>Exportar Excel</a></Button>}{canAssess && <CreateRequirementDialog />}</div>

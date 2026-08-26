@@ -4,22 +4,20 @@ import { useActionState } from "react"
 import { useEffect } from "react"
 import { Field } from "@/components/ui/field"
 import { Textarea } from "@/components/ui/textarea"
-import { SubmitButton } from "@/components/admin/submit-button"
+import { SubmitButton } from "@/components/ui/submit-button"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
 import { toast } from "@/lib/toast"
 import { updateReportStatusAction } from "@/app/(app)/soporte/actions"
 import type { ActionState } from "@/lib/validation/feedback"
-import type { FeedbackEstado } from "@/lib/validation/feedback"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { FEEDBACK_ESTADOS, FEEDBACK_ESTADO_LABELS, type FeedbackEstado } from "@/lib/validation/feedback"
+import { INITIAL_STATE } from "@/lib/form-state"
 
-const ESTADO_OPTIONS: { value: FeedbackEstado; label: string }[] = [
-  { value: "abierto",     label: "Abierto" },
-  { value: "en_progreso", label: "En progreso" },
-  { value: "resuelto",    label: "Resuelto" },
-  { value: "descartado",  label: "Descartado" },
-]
+const ESTADO_OPTIONS: { value: FeedbackEstado; label: string }[] = FEEDBACK_ESTADOS.map((estado) => ({
+  value: estado,
+  label: FEEDBACK_ESTADO_LABELS[estado],
+}))
 
 interface Props {
   reportId:         string

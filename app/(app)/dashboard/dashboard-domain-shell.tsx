@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { Skeleton } from "@/components/ui/skeleton"
 import Link from "next/link"
 import { ArrowRight } from "@phosphor-icons/react/dist/ssr"
 import type { DashboardDomain } from "./dashboard-domains"
@@ -96,13 +97,13 @@ export function DomainSection({ domain, kpis, kpiGroups, summary, charts, links,
 /** Reserva el alto de una sección para que el índice no salte al resolver. */
 export function DomainSectionFallback() {
   return (
-    <div className="animate-pulse" aria-hidden>
-      <div className="mb-3 h-6 w-48 rounded bg-[var(--color-surface-2)]" />
+    <div aria-hidden>
+      <Skeleton className="mb-3 h-6 w-48" />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {[0, 1, 2, 3].map((i) => <div key={i} className="h-24 rounded-2xl bg-[var(--color-surface-2)]" />)}
+        {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-24 rounded-2xl" />)}
       </div>
       <div className="mt-4 grid gap-6 grid-cols-1 xl:grid-cols-2">
-        {[0, 1].map((i) => <div key={i} className="h-64 rounded-2xl bg-[var(--color-surface-2)]" />)}
+        {[0, 1].map((i) => <Skeleton key={i} className="h-64 rounded-2xl" />)}
       </div>
     </div>
   )

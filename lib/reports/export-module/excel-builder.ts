@@ -27,6 +27,29 @@ export function sanitizeCell(value: unknown): string | number | boolean {
   return /^[=+\-@]/.test(text) ? `'${text}` : text
 }
 
+/**
+ * Serializa el workbook a base64 aplicando `sanitizeCell` a cada celda.
+ *
+ * Las acciones de exportación que arman su workbook a mano (flota,
+ * mantenciones, control operacional, bitácora/TAE de combustibles) pasaban las
+ * celdas sin sanitizar y repetían el par `writeBuffer` → `Buffer.from(...).
+ * toString("base64")` en cada archivo. Este es el punto único de salida.
+ */
+export async function xlsxToBase64(workbook: ExcelJS.Workbook): Promise<string> {
+  // Algunos consumidores/test doubles sólo implementan `addWorksheet` y
+  // `xlsx.writeBuffer`; la sanitización es best-effort en ese caso y la
+  // serialización conserva el contrato anterior.
+  for (const worksheet of workbook.worksheets ?? []) {
+    worksheet.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        cell.value = sanitizeCell(cell.value)
+      })
+    })
+  }
+  const buffer = await workbook.xlsx.writeBuffer()
+  return Buffer.from(buffer).toString("base64")
+}
+
 function addWorksheet(workbook: ExcelJS.Workbook, sheet: ReportSheet) {
   const worksheet = workbook.addWorksheet(sheet.worksheetName)
   worksheet.addRow(sheet.headers)

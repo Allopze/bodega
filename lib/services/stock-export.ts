@@ -8,22 +8,12 @@ import { worksites, worksiteStock, inventoryMovements, products, users } from "@
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { buildXlsxBuffer, type ReportData } from "@/lib/reports/export"
 import { periodSql } from "@/lib/adquisiciones/list-query"
+import { MOVEMENT_TYPE_LABELS } from "@/lib/movement-labels"
 import type { Session } from "next-auth"
 import { todayInChile } from "@/lib/utils"
 
 export interface StockExportFilters {
   worksiteId?: string
-}
-
-const MOVEMENT_TYPE_LABELS: Record<string, string> = {
-  ingreso_oc:            "Ingreso OC",
-  egreso_entrega:        "Entrega",
-  ingreso_devolucion:    "Devolución",
-  egreso_desecho:        "Retiro",
-  ajuste:                "Ajuste",
-  egreso_traslado:       "Salida por guía",
-  ingreso_traslado:      "Ingreso por guía",
-  retiro_epp_trabajador: "Retiro EPP usado",
 }
 
 /**

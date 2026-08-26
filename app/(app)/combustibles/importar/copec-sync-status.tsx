@@ -6,11 +6,10 @@ import { ArrowsClockwise, CheckCircle, PencilSimple, WarningCircle, XCircle } fr
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
 import { toast } from "@/lib/toast"
-import { formatDateTime } from "@/lib/utils"
+import { formatDateTime, formatQty } from "@/lib/utils"
 import { getCopecSyncPlanAction, runCopecSyncPeriodAction, getCopecSyncStatusAction, updateCopecSyncStartAction, type CopecSyncStartOptions, type CopecSyncStatus } from "./copec-sync-action"
 
 const MONTH_FORMATTER = new Intl.DateTimeFormat("es-CL", { month: "long", year: "numeric", timeZone: "UTC" })
-const NUMBER_FORMATTER = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 2 })
 
 interface SyncProgress {
   current: number
@@ -195,7 +194,7 @@ export function CopecSyncStatus({ initialStatus, initialStartOptions }: { initia
               </span>
             )}
             {status.pending > 0 && <span className="text-[var(--color-warning-ink)]">{status.pending} patente(s) sin vehículo registrado: su consumo no se importa hasta que las registres en la flota y vuelvas a sincronizar su período</span>}
-            {status.lastRunStatus && <span className="text-[var(--color-text-muted)]">Calidad última corrida: {status.rowsReceived} recibidas · {status.rowsAccepted} aceptadas · {status.rowsRejected} rechazadas · {status.rowsPending} pendientes · impacto {NUMBER_FORMATTER.format(status.affectedQuantity)} L / ${NUMBER_FORMATTER.format(status.affectedAmount)} ({status.lastRunStatus})</span>}
+            {status.lastRunStatus && <span className="text-[var(--color-text-muted)]">Calidad última corrida: {status.rowsReceived} recibidas · {status.rowsAccepted} aceptadas · {status.rowsRejected} rechazadas · {status.rowsPending} pendientes · impacto {formatQty(status.affectedQuantity, undefined, { maximumFractionDigits: 2 })} L / ${formatQty(status.affectedAmount, undefined, { maximumFractionDigits: 2 })} ({status.lastRunStatus})</span>}
           </div>
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-[var(--color-border)] pt-3 text-xs">

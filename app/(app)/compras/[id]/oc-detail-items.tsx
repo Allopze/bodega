@@ -1,6 +1,7 @@
 import { countOf, formatCLP, formatDateTime, formatQty } from "@/lib/utils"
 import { OcItemCostForm } from "./oc-item-cost-form"
 import type { OcDetailItem, OcDetailOrder } from "./oc-detail.types"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 function formatLineAmount(amount: number | null) {
   return amount === null ? "Costo pendiente" : formatCLP(amount)
@@ -127,16 +128,16 @@ export function OcDetailItems({
 
       {/* Desktop table */}
       <div className="hidden overflow-hidden rounded-[var(--radius-2xl)] shadow-[var(--shadow-card)] bg-[var(--color-surface)] md:block">
-        <table className="w-full text-sm">
-          <thead className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
-            <tr>
-              <th scope="col" className="px-4 py-2.5 text-left th-type">Producto</th>
-              <th scope="col" className="px-4 py-2.5 text-right th-type w-24">Cant.</th>
-              <th scope="col" className="px-4 py-2.5 text-right th-type w-28">Precio unit.</th>
-              <th scope="col" className="px-4 py-2.5 text-right th-type w-28">Subtotal</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[var(--color-border)]">
+        <TableRoot className="rounded-none border-0">
+        <Table className="text-sm">
+          <caption className="sr-only">Detalle de ítems de la orden de compra</caption>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Producto</TableHead><TableHead className="text-right">Cant.</TableHead>
+              <TableHead className="text-right">Precio unit.</TableHead><TableHead className="text-right">Subtotal</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {order.items.map((item) => {
               const reqItem = item.requestItemId ? reqItemMap[item.requestItemId] : null
               const product = item.productId ? productMap[item.productId] : null
@@ -145,8 +146,8 @@ export function OcDetailItems({
               const reqCode = reqItem?.request?.code
 
               return (
-                <tr key={item.id} className="hover:bg-[var(--color-surface-2)] transition-colors">
-                  <td className="px-4 py-3">
+                <TableRow key={item.id} className="hover:bg-[var(--color-surface-2)] transition-colors">
+                  <TableCell>
                     <div className="flex items-center gap-2">
                       {sku && (
                         <span className="font-mono text-[11px] text-[var(--color-text-subtle)] bg-[var(--color-surface-2)] px-1.5 py-0.5 rounded">{sku}</span>
@@ -165,21 +166,22 @@ export function OcDetailItems({
                         unitOfMeasure={item.unitOfMeasure}
                       />
                     )}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-[var(--color-text-muted)]">
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-[var(--color-text-muted)]">
                     {formatQty(item.quantity, item.unitOfMeasure)}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-[var(--color-text-muted)]">
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-[var(--color-text-muted)]">
                     {formatLineAmount(item.unitPrice)}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums font-medium text-[var(--color-text)]">
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums font-medium text-[var(--color-text)]">
                     {formatLineAmount(item.subtotal)}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )
             })}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
+        </TableRoot>
       </div>
     </>
   )

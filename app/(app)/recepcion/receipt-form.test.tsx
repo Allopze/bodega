@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest"
 import { cleanup, render, screen } from "@testing-library/react"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { INITIAL_STATE } from "@/lib/form-state"
 import type { ComponentPropsWithoutRef } from "react"
 
 // ── Mocks ───────────────────────────────────────────────────────────────────
@@ -24,7 +24,7 @@ vi.mock("./actions", () => ({
   registerReceiptAction: vi.fn(async () => INITIAL_STATE),
 }))
 
-vi.mock("@/components/admin/submit-button", () => ({
+vi.mock("@/components/ui/submit-button", () => ({
   SubmitButton: ({ label, disabled }: { label: string; disabled?: boolean }) => (
     <button type="submit" disabled={disabled}>{label}</button>
   ),

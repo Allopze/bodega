@@ -636,6 +636,12 @@ export default async function OcDetailPage({
                     catalogProductId: i.productId,
                     productName: i.productNameFree ?? (i.productId ? productMap[i.productId]?.name : null) ?? i.id,
                     productCode: i.productId ? productMap[i.productId]?.sku ?? null : null,
+                    attributes: i.requestItemId
+                      ? reqItemMap[i.requestItemId]?.attributes.map((attribute) => ({
+                          name: attribute.attributeName,
+                          value: attribute.value,
+                        })) ?? []
+                      : [],
                     unitOfMeasure: i.unitOfMeasure,
                     quantity: i.quantity,
                     unitPrice: i.unitPrice,

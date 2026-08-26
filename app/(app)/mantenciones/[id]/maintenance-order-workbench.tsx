@@ -13,20 +13,15 @@ import { OptionSelect } from "@/components/ui/option-select"
 import { EmptyState } from "@/components/ui/empty-state"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { formatCLP, formatDate, formatDateTime } from "@/lib/utils"
+import { maintenanceStatusMeta } from "@/lib/validation/maintenance"
 import type { ActionState } from "@/lib/validation/masters"
 import type { getMaintenanceRecordDetail } from "@/lib/services/maintenance"
 import { addMaintenanceLaborAction, addMaintenancePartAction, addMaintenanceTaskAction, decideMaintenanceCostApprovalAction, setMaintenanceTaskStatusAction, uploadMaintenanceDocumentAction } from "../actions"
 
 type RecordDetail = Awaited<ReturnType<typeof getMaintenanceRecordDetail>>
-const STATUS: Record<string, { label: string; variant: "outline" | "warning" | "success" | "danger" }> = {
-  scheduled: { label: "Programada", variant: "outline" },
-  in_progress: { label: "En curso", variant: "warning" },
-  completed: { label: "Completada", variant: "success" },
-  cancelled: { label: "Cancelada", variant: "danger" },
-}
 
 export function MaintenanceOrderWorkbench({ record, canEdit, canViewCosts, canApproveCosts }: { record: RecordDetail; canEdit: boolean; canViewCosts: boolean; canApproveCosts: boolean }) {
-  const status = STATUS[record.status] ?? { label: record.status, variant: "outline" as const }
+  const status = maintenanceStatusMeta(record.status)
   const editable = canEdit && ["scheduled", "in_progress"].includes(record.status)
   return <PageContainer width="workbench">
     <PageHeader title={record.code ?? "Orden de trabajo"} description={`${record.vehicle.code ? `${record.vehicle.code} · ` : ""}${record.vehicle.plate} · ${record.worksite.name}`} breadcrumb={<Breadcrumbs items={[{ label: "Mantenciones", href: "/mantenciones" }, { label: record.code ?? "Detalle" }]} />} actions={<Button asChild variant="secondary"><Link href={`/flota/${record.vehicleId}`}>Ver activo</Link></Button>} />

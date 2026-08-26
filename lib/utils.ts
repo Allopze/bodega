@@ -108,10 +108,60 @@ export function countOf(count: number, singular: string, plural?: string): strin
 }
 
 /** Format a number with thousands separators (for quantities) */
-export function formatQty(n: number, unit?: string): string {
+export function formatQty(n: number, unit?: string, options?: { maximumFractionDigits?: number }): string {
   if (!Number.isFinite(n)) return VALUE_MISSING
-  const formatted = QTY_FORMAT.format(n)
+  const formatted = qtyFormat(options?.maximumFractionDigits).format(n)
   return unit ? `${formatted} ${pluralizeUnit(n, unit)}` : formatted
+}
+
+/* El default de QTY_FORMAT usa hasta 3 decimales (es-CL); cada pantalla de
+ * tabla creaba su propio Intl.NumberFormat con su precisión local. Este cache
+ * centraliza esas variantes (0, 1 y 2 decimales son las que existen). */
+const QTY_FORMAT_BY_PRECISION = new Map<number, Intl.NumberFormat>()
+
+function qtyFormat(maximumFractionDigits?: number): Intl.NumberFormat {
+  if (maximumFractionDigits == null) return QTY_FORMAT
+  let format = QTY_FORMAT_BY_PRECISION.get(maximumFractionDigits)
+  if (!format) {
+    format = new Intl.NumberFormat("es-CL", { maximumFractionDigits })
+    QTY_FORMAT_BY_PRECISION.set(maximumFractionDigits, format)
+  }
+  return format
+}
+
+/**
+ * Monto compacto para ticks de ejes de gráficos: `$1,2M`, `$45K`, `$300`.
+ * `formatCLP` completo no cabe en un eje; antes cada archivo de charts tenía
+ * su propia copia (4) con divergencias de redondeo y mayúsculas.
+ */
+export function formatCompactCLP(value: number): string {
+  if (!Number.isFinite(value)) return VALUE_MISSING
+  const abs = Math.abs(value)
+  const sign = value < 0 ? "-" : ""
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`
+  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(0)}K`
+  return `${sign}$${abs.toFixed(0)}`
+}
+
+/** Cantidad compacta para ejes: `1,2K`, `45K`, `300`. Misma motivación que
+ *  `formatCompactCLP`. */
+export function formatCompactQty(value: number): string {
+  if (!Number.isFinite(value)) return VALUE_MISSING
+  const abs = Math.abs(value)
+  const sign = value < 0 ? "-" : ""
+  if (abs >= 1_000) return `${sign}${(abs / 1_000).toFixed(1)}K`
+  return `${sign}${abs.toFixed(0)}`
+}
+
+/**
+ * Parámetro `?page=` numérico y ≥ 1. Un valor no numérico devuelve 1, no NaN
+ * (el offset salía NaN y la vista de Registros quedaba vacía rotulada
+ * "Página NaN"). Antes /combustibles y /anomalias tenían este guard copiado.
+ */
+export function parsePageParam(raw: string | string[] | undefined): number {
+  const value = Array.isArray(raw) ? raw[0] : raw
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? Math.max(1, Math.floor(parsed)) : 1
 }
 
 /**

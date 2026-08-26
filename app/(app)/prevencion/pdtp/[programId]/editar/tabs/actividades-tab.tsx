@@ -21,6 +21,7 @@ import {
 import { describePdtpRecurrenceImpact, type PdtpRecurrenceFrequency, type PdtpRecurrenceRule } from "@/lib/services/pdtp/recurrence"
 import { todayLocalISO } from "@/lib/sst/date"
 import { formatDate } from "@/lib/utils"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 
 import type { PdtpActivityRow } from "./types"
@@ -142,22 +143,22 @@ export function ActividadesTab({
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
-          <table className="w-full text-sm">
-            <thead className="bg-[var(--color-surface-2)] th-type">
-              <tr>
-                <th scope="col" className="w-10 px-3 py-2 text-left"><span className="sr-only">Seleccionar</span></th>
-                <th scope="col" className="w-12 px-3 py-2 text-left">N°</th>
-                <th scope="col" className="px-3 py-2 text-left">Actividad</th>
-                <th scope="col" className="px-3 py-2 text-left">Guía de ejecución</th>
-                <th scope="col" className="w-56 px-3 py-2 text-right">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--color-border)]">
+          <TableRoot className="rounded-none border-0">
+          <Table className="text-sm">
+            <caption className="sr-only">Actividades del programa PDTP</caption>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-10"><span className="sr-only">Seleccionar</span></TableHead>
+                <TableHead className="w-12">N°</TableHead><TableHead>Actividad</TableHead><TableHead>Guía de ejecución</TableHead>
+                <TableHead className="w-56 text-right">Acciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {items.map((activity, index) => (
-                <tr key={activity.id} className={activity.status === "retired" ? "bg-[var(--color-surface-2)] opacity-70" : "bg-[var(--color-surface)]"}>
-                  <td className="px-3 py-2"><Checkbox labelHidden label={`Seleccionar actividad ${activity.n}`} disabled={activity.status === "retired"} checked={selectedIdSet.has(activity.id)} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, activity.id] : current.filter((id) => id !== activity.id))} /></td>
-                  <td className="px-3 py-2 font-mono text-xs text-[var(--color-text-subtle)]">{activity.n}</td>
-                  <td className="px-3 py-2">
+                <TableRow key={activity.id} className={activity.status === "retired" ? "bg-[var(--color-surface-2)] opacity-70" : "bg-[var(--color-surface)]"}>
+                  <TableCell><Checkbox labelHidden label={`Seleccionar actividad ${activity.n}`} disabled={activity.status === "retired"} checked={selectedIdSet.has(activity.id)} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, activity.id] : current.filter((id) => id !== activity.id))} /></TableCell>
+                  <TableCell className="font-mono text-xs text-[var(--color-text-subtle)]">{activity.n}</TableCell>
+                  <TableCell>
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-medium text-[var(--color-text)]">{activity.activity}</p>
                       {activity.status === "retired" && <Badge variant="outline">Retirada</Badge>}
@@ -167,9 +168,9 @@ export function ActividadesTab({
                         Desde {activity.retiredEffectiveFrom ? formatDate(activity.retiredEffectiveFrom) : "fecha no disponible"} · {activity.retiredReason}
                       </p>
                     )}
-                  </td>
-                  <td className="px-3 py-2 text-[var(--color-text-muted)]">{activity.program}</td>
-                  <td className="px-3 py-2">
+                  </TableCell>
+                  <TableCell className="text-[var(--color-text-muted)]">{activity.program}</TableCell>
+                  <TableCell>
                     <div className="flex items-center justify-end gap-1">
                       <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || activity.status === "retired" || index === 0} onClick={() => move(index, -1)} aria-label="Subir">↑</Button>
                       <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || activity.status === "retired" || index === items.length - 1} onClick={() => move(index, 1)} aria-label="Bajar">↓</Button>
@@ -188,11 +189,12 @@ export function ActividadesTab({
                         Retirar
                       </Button>
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
+          </TableRoot>
         </div>
       )}
 

@@ -1,23 +1,22 @@
 "use client"
 
 import Link from "next/link"
-import { DataTable } from "@/components/admin/data-table"
+import { DataTable } from "@/components/ui/data-table"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { formatCLP, formatDate } from "@/lib/utils"
+import { formatCLP, formatDate, formatQty } from "@/lib/utils"
+import { maintenanceStatusMeta } from "@/lib/validation/maintenance"
 import type { getMaintenancePageData } from "@/lib/services/maintenance"
 import { MaintenanceRowActions } from "./maintenance-row-actions"
 import { MaintenanceCreateButton } from "./maintenance-create-button"
 
 type MaintenanceRecord = Awaited<ReturnType<typeof getMaintenancePageData>>["records"][number]
-type StatusMeta = { label: string; variant: "default" | "warning" | "success" | "danger" | "outline" }
 type OptionRow = { id: string; name: string }
 type VehicleOption = { id: string; plate: string; type: string; worksiteId: string }
 type CostCenterOption = { id: string; code: string; name: string; worksiteId: string | null }
 
-const NUMBER_FORMAT = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 })
-const formatNumber = (value: number | null) => (value == null ? "—" : NUMBER_FORMAT.format(value))
+const formatNumber = (value: number | null) => (value == null ? "—" : formatQty(value, undefined, { maximumFractionDigits: 1 }))
 
 const MAINTENANCE_TYPE_LABELS: Record<string, string> = {
   preventiva: "Preventiva",
@@ -29,14 +28,13 @@ const MAINTENANCE_TYPE_LABELS: Record<string, string> = {
 const maintenanceTypeLabel = (value: string) => MAINTENANCE_TYPE_LABELS[value] ?? value
 
 export function MaintenanceTable({
-  records, canEdit, canCreate, canViewCosts, hasActiveFilters, statusLabels, vehicleOptions, supplierOptions, costCenterOptions, assigneeOptions, serverPageSize,
+  records, canEdit, canCreate, canViewCosts, hasActiveFilters, vehicleOptions, supplierOptions, costCenterOptions, assigneeOptions, serverPageSize,
 }: {
   records: MaintenanceRecord[]
   canEdit: boolean
   canCreate: boolean
   canViewCosts: boolean
   hasActiveFilters: boolean
-  statusLabels: Record<string, StatusMeta>
   vehicleOptions: VehicleOption[]
   supplierOptions: OptionRow[]
   costCenterOptions: CostCenterOption[]
@@ -86,7 +84,7 @@ export function MaintenanceTable({
           ? <MaintenanceCreateButton vehicles={vehicleOptions} suppliers={supplierOptions} costCenters={costCenterOptions} assignees={assigneeOptions} canViewCosts={canViewCosts} />
           : undefined}
       renderMobileCard={(record) => {
-        const statusMeta = statusLabels[record.status] ?? { label: record.status, variant: "default" as const }
+        const statusMeta = maintenanceStatusMeta(record.status)
         return (
           <article className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-[var(--shadow-card)]">
             <div className="flex items-start justify-between gap-3">
@@ -143,7 +141,7 @@ export function MaintenanceTable({
         )
       }}
       renderRow={(record) => {
-        const statusMeta = statusLabels[record.status] ?? { label: record.status, variant: "default" as const }
+        const statusMeta = maintenanceStatusMeta(record.status)
         return (
           <TableRow key={record.id}>
             <TableCell className="font-mono text-sm">{formatDate(record.maintenanceDate)}</TableCell>

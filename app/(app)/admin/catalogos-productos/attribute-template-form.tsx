@@ -11,14 +11,14 @@ import {
   SheetDescription,
   SheetCloseButton,
 } from "@/components/admin/sheet"
-import { SubmitButton } from "@/components/admin/submit-button"
+import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
+import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import { toast } from "@/lib/toast"
 import { saveAttributeTemplateAction } from "./actions"
 import { ATTRIBUTE_TYPE_OPTIONS } from "@/lib/validation/product-catalogs"

@@ -12,6 +12,23 @@ export type FeedbackTipo   = typeof FEEDBACK_TIPOS[number]
 export type FeedbackEstado = typeof FEEDBACK_ESTADOS[number]
 export type FeedbackPrioridad = typeof FEEDBACK_PRIORIDADES[number]
 
+// ── Vocabulario de UI ──────────────────────────────────────────────────────────
+// Single source sin "use client": lo consumen tanto server actions
+// (notificaciones) como componentes (StateBadge, paneles). Antes cada pantalla
+// re-declaraba estos mapas con riesgo de divergencia.
+export const FEEDBACK_TIPO_LABELS: Record<FeedbackTipo, string> = {
+  bug:        "Bug",
+  consulta:   "Consulta",
+  sugerencia: "Sugerencia",
+}
+
+export const FEEDBACK_ESTADO_LABELS: Record<FeedbackEstado, string> = {
+  abierto:     "Abierto",
+  en_progreso: "En progreso",
+  resuelto:    "Resuelto",
+  descartado:  "Descartado",
+}
+
 // ── Crear reporte ─────────────────────────────────────────────────────────────
 export const feedbackCreateSchema = z.object({
   tipo:        z.enum(FEEDBACK_TIPOS, { error: "Selecciona el tipo de reporte" }),

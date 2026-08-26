@@ -1,10 +1,10 @@
 "use client"
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { DataTable } from "@/components/admin/data-table"
+import { DataTable } from "@/components/ui/data-table"
 import { ORDERS_PAGE_SIZE } from "@/lib/constants"
-import { ListFilters, LIST_FILTER_PARAMS, type FilterOption } from "@/components/adquisiciones/list-filters"
-import { StageTabs, type StageTab } from "@/components/adquisiciones/stage-tabs"
+import { hasServerListFilters, ServerListFilters, type ServerListFilterOption } from "@/components/ui/server-list-filters"
+import { StageTabs, type StageTab } from "@/components/ui/stage-tabs"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
 import { Button } from "@/components/ui/button"
 import { OcTableRow, OcMobileCard } from "./oc-list-rows"
@@ -44,13 +44,13 @@ export function OcList({
   stageTabs?:   StageTab[]
   canDelete?:   boolean
   canSend?:     boolean
-  worksiteOptions?: FilterOption[]
-  supplierOptions?: FilterOption[]
+  worksiteOptions?: ServerListFilterOption[]
+  supplierOptions?: ServerListFilterOption[]
 }) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const hasActiveFilters = LIST_FILTER_PARAMS.some((key) => searchParams.get(key))
+  const hasActiveFilters = hasServerListFilters(searchParams)
   const rowsWithDate = orders.map((o) => ({ ...o, displayDate: ocDisplayDate(o) }))
 
   return (
@@ -65,7 +65,7 @@ export function OcList({
       {stageTabs.length > 0 && <StageTabs tabs={stageTabs} ariaLabel="Etapa de la orden de compra" />}
 
       {/* Filtros server-side (URL-synced) */}
-      <ListFilters
+      <ServerListFilters
         searchPlaceholder="Buscar por código o proveedor..."
         worksiteOptions={worksiteOptions}
         supplierOptions={supplierOptions}

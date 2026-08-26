@@ -5,10 +5,12 @@ import { requirePermission } from "@/lib/auth/can"
 import { countTaeImportBatches, listTaeImportBatches, taeLedgerIsGlobal } from "@/lib/combustibles/tae-import-ledger"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
+import { ServerPagination } from "@/components/ui/server-pagination"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatDateTime, formatQty } from "@/lib/utils"
+import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 
 export const metadata: Metadata = { title: "Historial de importaciones TAE" }
 
@@ -18,11 +20,10 @@ export default async function TaeImportHistoryPage({ searchParams }: { searchPar
   let session
   try { session = await requirePermission("combustibles:tae_import") } catch { redirect("/forbidden") }
   const query = await searchParams
-  const page = Math.max(1, Number.parseInt(query.page ?? "1", 10) || 1)
   const isGlobal = taeLedgerIsGlobal(session)
   const count = await countTaeImportBatches(session)
-  const pageCount = Math.max(1, Math.ceil(count / PAGE_SIZE))
-  const currentPage = Math.min(page, pageCount)
+  const pagination = resolvePagination({ pageParam: query.page, totalItems: count, pageSize: PAGE_SIZE })
+  const currentPage = pagination.page
   const batches = await listTaeImportBatches(session, { limit: PAGE_SIZE, offset: (currentPage - 1) * PAGE_SIZE })
 
   return (
@@ -57,7 +58,7 @@ export default async function TaeImportHistoryPage({ searchParams }: { searchPar
         </Table>
       </div>
 
-      {pageCount > 1 && <nav className="mt-4 flex items-center justify-between" aria-label="Paginación del historial"><Button asChild variant="secondary" size="sm"><Link aria-disabled={currentPage === 1} className={currentPage === 1 ? "pointer-events-none opacity-50" : undefined} href={`?page=${Math.max(1, currentPage - 1)}`}>Anterior</Link></Button><span className="text-sm text-(--color-text-muted)">Página {currentPage} de {pageCount}</span><Button asChild variant="secondary" size="sm"><Link aria-disabled={currentPage === pageCount} className={currentPage === pageCount ? "pointer-events-none opacity-50" : undefined} href={`?page=${Math.min(pageCount, currentPage + 1)}`}>Siguiente</Link></Button></nav>}
+      <ServerPagination pagination={pagination} hrefForPage={(target) => buildPaginationHref("/combustibles/tae/importar/historial", {}, target)} />
     </PageContainer>
   )
 }

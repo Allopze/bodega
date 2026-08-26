@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { CaretDown, CaretRight, CheckCircle, Warning } from "@phosphor-icons/react"
-import { DataTable } from "@/components/admin/data-table"
+import { DataTable } from "@/components/ui/data-table"
 import { PENDING_PURCHASE_PAGE_SIZE } from "@/lib/constants"
 import { TableRow, TableCell, TableCellNum } from "@/components/ui/table"
 import { StateBadge } from "@/components/states/state-badge"

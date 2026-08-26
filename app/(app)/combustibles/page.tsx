@@ -29,7 +29,7 @@ import { EvolutionByVehicleChart, LitersVsHourMeterChart, LitersVsKmChart } from
 import { WorksiteEquipmentHeatmap } from "./worksite-equipment-heatmap"
 import { AnomalyDistributionChart } from "./anomalias/anomaly-charts-lazy"
 import { ChartErrorBoundary } from "@/components/chart-error-boundary"
-import { formatCLP, formatDate, formatQty, cn, pluralize } from "@/lib/utils"
+import { formatCLP, formatDate, formatQty, cn, pluralize, parsePageParam } from "@/lib/utils"
 import { FuelControlOverviewPanel } from "./fuel-control-overview"
 
 export const metadata: Metadata = { title: "Combustibles" }
@@ -64,10 +64,8 @@ export default async function CombustiblesPage({
   const needsAnalysis = vista === "analisis"
   const needsDashboard = needsSummary || needsAnalysis
   const needsRecords = vista === "registros"
-  // `Math.max(1, Number("abc"))` es NaN, no 1: el offset salía NaN y la vista
-  // Registros quedaba vacía rotulada "Página NaN".
-  const parsedPage = Number(sp.page)
-  const page = Number.isFinite(parsedPage) ? Math.max(1, Math.floor(parsedPage)) : 1
+  // parsePageParam: `?page=` no numérico → 1, no NaN (guard compartido).
+  const page = parsePageParam(sp.page)
   const requestedFilters = normalizeConsumptionFilters({ fromDate, toDate, worksiteId, fuente, patente, associated })
 
   const worksiteScope = resolveWorksiteScope(session)
@@ -193,7 +191,6 @@ export default async function CombustiblesPage({
     precioPromedioUnidad: redactAmount((row as { precioPromedioUnidad?: unknown }).precioPromedioUnidad),
   }))
   const totalDetail = detailCountResult[0]?.count ?? 0
-  const totalDetailPages = Math.ceil(totalDetail / PAGE_SIZE)
   // El fallback de detailCount es [{count:0}]: sin esto, un conteo que
   // reventó se leía igual que una tabla real y genuinamente vacía (CO-037).
   const detailCountDegraded = degradedSources.includes("detailCount")
@@ -629,8 +626,8 @@ export default async function CombustiblesPage({
           <ConsumptionDetailTable
             rows={detailRows}
             page={page}
-            totalPages={totalDetailPages}
             total={totalDetail}
+            pageSize={PAGE_SIZE}
             canViewCosts={canViewCosts}
           />
         </>

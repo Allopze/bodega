@@ -2,6 +2,7 @@
 
 import { X } from "@phosphor-icons/react"
 import type { VariantCombo } from "./product-form.types"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -26,30 +27,30 @@ export function VariantPreview({ variants, onRemove, onMarkDirty }: VariantPrevi
       </div>
       <div className="overflow-hidden rounded-(--radius) border border-[var(--color-border)]">
         <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-[var(--color-surface-2)]">
-                <th scope="col" className="sticky top-0 z-10 bg-[var(--color-surface-2)] px-3 py-2.5 text-left th-type w-8">#</th>
-                <th scope="col" className="sticky top-0 z-10 bg-[var(--color-surface-2)] px-3 py-2.5 text-left th-type">Nombre</th>
-                <th scope="col" className="sticky top-0 z-10 bg-[var(--color-surface-2)] px-3 py-2.5 text-left th-type w-24">SKU</th>
+          <TableRoot className="rounded-none border-0">
+          <Table className="text-xs">
+            <caption className="sr-only">Vista previa de variantes EPP</caption>
+            <TableHeader>
+              <TableRow className="bg-[var(--color-surface-2)]">
+                <TableHead>#</TableHead><TableHead>Nombre</TableHead><TableHead className="w-24">SKU</TableHead>
                 {variants[0]!.attributes.map((attr) => (
-                  <th scope="col" key={attr.name} className="sticky top-0 z-10 bg-[var(--color-surface-2)] px-3 py-2.5 text-left th-type">{attr.name}</th>
+                  <TableHead key={attr.name}>{attr.name}</TableHead>
                 ))}
-                <th scope="col" className="sticky top-0 z-10 bg-[var(--color-surface-2)] px-2 py-2.5 text-center th-type w-10">Acción</th>
-              </tr>
-            </thead>
-            <tbody>
+                <TableHead className="w-10 text-center">Acción</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {variants.map((v, i) => (
-                <tr key={v.sku || v.name} className="border-t border-[var(--color-border)] even:bg-[var(--color-surface-1)] hover:bg-[var(--color-surface-2)] transition-colors">
-                  <td className="px-3 py-2 tabular-nums text-[var(--color-text-muted)]">{i + 1}</td>
-                  <td className="px-3 py-2 font-medium text-[var(--color-text)]">{v.name}</td>
-                  <td className="px-3 py-2 font-mono text-[11px] text-[var(--color-text-subtle)]">
+                <TableRow key={v.sku || v.name} className="border-t border-[var(--color-border)] even:bg-[var(--color-surface-1)] hover:bg-[var(--color-surface-2)] transition-colors">
+                  <TableCell className="tabular-nums text-[var(--color-text-muted)]">{i + 1}</TableCell>
+                  <TableCell className="font-medium text-[var(--color-text)]">{v.name}</TableCell>
+                  <TableCell className="font-mono text-[11px] text-[var(--color-text-subtle)]">
                     {v.sku || <span className="italic text-[var(--color-text-faint)]">por asignar</span>}
-                  </td>
+                  </TableCell>
                   {v.attributes.map((attr) => (
-                    <td key={attr.name} className="px-3 py-2 text-[var(--color-text-muted)]">{attr.value}</td>
+                    <TableCell key={attr.name} className="text-[var(--color-text-muted)]">{attr.value}</TableCell>
                   ))}
-                  <td className="px-2 py-2 text-center">
+                  <TableCell className="text-center">
                     <button
                       type="button"
                       onClick={() => { onMarkDirty(); onRemove(i) }}
@@ -59,11 +60,12 @@ export function VariantPreview({ variants, onRemove, onMarkDirty }: VariantPrevi
                     >
                       <X size={12} />
                     </button>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
+          </TableRoot>
         </div>
       </div>
       <p className="text-[11px] text-[var(--color-text-faint)]">

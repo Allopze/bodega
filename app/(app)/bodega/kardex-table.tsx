@@ -6,6 +6,7 @@ import { ArrowSquareOut, ClockCounterClockwise } from "@phosphor-icons/react/dis
 import { KardexExportButton } from "./kardex-export-button"
 import { movementLabel, movementToneClass } from "./movement-labels"
 import { movementDocumentHref, referenceTypeLabel } from "./movement-href"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 interface WorksiteOption {
   id: string
@@ -79,72 +80,68 @@ export function KardexTable({ movements, worksites = [], canExport = false, sear
       ) : (
         <>
           <div className="hidden md:block overflow-x-auto" tabIndex={0} role="region" aria-label="Kardex de movimientos">
-            <table className="w-full text-sm" aria-label="Kardex de movimientos de inventario">
+            <TableRoot className="rounded-none border-0">
+            <Table className="text-sm" aria-label="Kardex de movimientos de inventario">
               <caption className="sr-only">Movimientos de inventario registrados, del más reciente al más antiguo</caption>
-              <thead className="bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
-                <tr>
-                  <th scope="col" className="px-5 py-2.5 text-left th-type">Fecha</th>
-                  <th scope="col" className="px-5 py-2.5 text-left th-type">Tipo</th>
-                  <th scope="col" className="px-5 py-2.5 text-left th-type">Producto</th>
-                  <th scope="col" className="px-5 py-2.5 text-left th-type">Faena</th>
-                  <th scope="col" className="px-5 py-2.5 text-right th-type w-28">Cantidad</th>
-                  <th scope="col" className="px-5 py-2.5 text-right th-type w-32">Saldo</th>
-                  <th scope="col" className="px-5 py-2.5 text-left th-type">Responsable</th>
-                  <th scope="col" className="px-5 py-2.5 text-left th-type">Documento</th>
-                  <th scope="col" className="px-5 py-2.5 text-left th-type">Observación</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--color-border)]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead><TableHead>Tipo</TableHead><TableHead>Producto</TableHead><TableHead>Faena</TableHead>
+                  <TableHead className="text-right">Cantidad</TableHead><TableHead className="text-right">Saldo</TableHead>
+                  <TableHead>Responsable</TableHead><TableHead>Documento</TableHead><TableHead>Observación</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {movements.map((m) => {
                   const moment = formatMoment(m.performedAt)
                   const observation = m.reason ?? m.notes ?? ""
                   return (
-                    <tr key={m.id} className="hover:bg-[var(--color-surface-2)] transition-colors">
-                      <td className="px-5 py-3 text-xs text-[var(--color-text-muted)] whitespace-nowrap">
+                    <TableRow key={m.id} className="hover:bg-[var(--color-surface-2)] transition-colors">
+                      <TableCell className="text-xs text-[var(--color-text-muted)] whitespace-nowrap">
                         <span className="tabular-nums">{moment.date}</span>
                         {moment.time && (
                           <span className="mt-0.5 block text-[11px] tabular-nums text-[var(--color-text-faint)]">{moment.time}</span>
                         )}
-                      </td>
-                      <td className="px-5 py-3">
+                      </TableCell>
+                      <TableCell>
                         <span className="inline-block rounded-[var(--radius)] bg-[var(--color-surface-2)] px-2 py-0.5 text-xs font-medium text-[var(--color-text-muted)]">
                           {movementLabel(m.type)}
                         </span>
-                      </td>
-                      <td className="px-5 py-3 text-sm font-medium text-[var(--color-text)]">
+                      </TableCell>
+                      <TableCell className="text-sm font-medium text-[var(--color-text)]">
                         {m.product?.name ?? m.productId}
-                      </td>
-                      <td className="px-5 py-3 text-xs text-[var(--color-text-muted)]">
+                      </TableCell>
+                      <TableCell className="text-xs text-[var(--color-text-muted)]">
                         {m.worksite?.name ?? m.worksiteId}
-                      </td>
-                      <td className={`px-5 py-3 text-right font-mono tabular-nums text-sm font-semibold ${movementToneClass(m.type)}`}>
+                      </TableCell>
+                      <TableCell className={`text-right font-mono tabular-nums text-sm font-semibold ${movementToneClass(m.type)}`}>
                         {m.quantity > 0 ? "+" : ""}{m.quantity}
-                      </td>
+                      </TableCell>
                       {/* Antes y después: con sólo el saldo posterior no se puede
                           reconstruir un descuadre leyendo la fila. */}
-                      <td className="px-5 py-3 text-right font-mono tabular-nums text-xs text-[var(--color-text-muted)]">
+                      <TableCell className="text-right font-mono tabular-nums text-xs text-[var(--color-text-muted)]">
                         {m.stockBefore !== undefined && (
                           <span className="text-[var(--color-text-faint)]">{m.stockBefore} → </span>
                         )}
                         <span className="text-sm text-[var(--color-text)]">{m.stockAfter}</span>
-                      </td>
-                      <td className="px-5 py-3 text-xs text-[var(--color-text-muted)]">
+                      </TableCell>
+                      <TableCell className="text-xs text-[var(--color-text-muted)]">
                         {m.performedByName ?? "—"}
-                      </td>
-                      <td className="px-5 py-3 text-xs">
+                      </TableCell>
+                      <TableCell className="text-xs">
                         <DocumentLink movement={m} />
-                      </td>
-                      <td
+                      </TableCell>
+                      <TableCell
                         title={observation || undefined}
                         className="px-5 py-3 text-xs text-[var(--color-text-subtle)] truncate max-w-[240px]"
                       >
                         {observation || "—"}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   )
                 })}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
+            </TableRoot>
           </div>
 
           <div className="grid gap-3 p-5 md:hidden">

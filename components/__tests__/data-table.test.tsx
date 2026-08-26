@@ -9,7 +9,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace }),
 }))
 
-import { DataTable } from "@/components/admin/data-table"
+import { DataTable } from "@/components/ui/data-table"
 import { ShellHeaderProvider } from "@/components/layout/header-context"
 import { TableRow, TableCell } from "@/components/ui/table"
 

@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useCallback, useRef, useEffect } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "@/lib/toast"
+import { useDebouncedAutosave } from "@/lib/hooks/use-debounced-autosave"
 import { saveResponsesAction } from "@/app/(app)/prevencion/actions"
 import type { ChecklistSection, StatusValue } from "@/lib/sst/types"
 import type { SstResponse } from "@/db/schema/sst"
@@ -32,40 +33,57 @@ export function useChecklistResponses({
     () => buildInitialResponseMap(initialResponses)
   )
   const [saveState, setSaveState] = useState<null | "saving" | { ts: string } | "error">(null)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const isFirstRender = useRef(true)
+  // El hook compartido vigila un primitivo por valor: un contador que cambia en
+  // cada edición cumple sin serializar el mapa completo en cada render.
+  const [revision, setRevision] = useState(0)
+  const clearSavedAtRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  function scheduleAutoSave(newMap: ResponseMap) {
-    if (!canEditAnyVisible) return
-    if (debounceRef.current) clearTimeout(debounceRef.current)
+  const saveBatch = useCallback(async () => {
     const editableSections = visibleSections.filter((sec) => !isSectionReadOnly(sec.id))
-    debounceRef.current = setTimeout(async () => {
+    const batch = editableSections.flatMap((sec) =>
+      sec.items.map((item) => {
+        const r = responseMap[sec.id]?.[item.id] ?? { estado: null, observacion: "", accionCorrectiva: "" }
+        return {
+          evaluationId,
+          seccionId: sec.id,
+          itemId: item.id,
+          estado: r.estado,
+          observacion: r.observacion || undefined,
+          accionCorrectiva: r.accionCorrectiva || undefined,
+        }
+      })
+    )
+    return saveResponsesAction(evaluationId, batch)
+  }, [evaluationId, visibleSections, isSectionReadOnly, responseMap])
+
+  const markSaved = useCallback(() => {
+    const now = new Date()
+    const ts = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`
+    setSaveState({ ts })
+    if (clearSavedAtRef.current) clearTimeout(clearSavedAtRef.current)
+    clearSavedAtRef.current = setTimeout(() => setSaveState(null), 4000)
+  }, [])
+
+  const { status, error } = useDebouncedAutosave({
+    watchKey: revision,
+    isDirty: revision > 0,
+    onSave: saveBatch,
+    onSaved: markSaved,
+    enabled: canEditAnyVisible,
+    debounceMs: 800,
+  })
+  const pending = status === "saving"
+
+  // El hook compartido expone el mensaje del action como `error`; esta pantalla
+  // además lo tosta y refleja el estado en `saveState`.
+  useEffect(() => {
+    if (pending) {
       setSaveState("saving")
-      const batch = editableSections.flatMap((sec) =>
-        sec.items.map((item) => {
-          const r = newMap[sec.id]?.[item.id] ?? { estado: null, observacion: "", accionCorrectiva: "" }
-          return {
-            evaluationId,
-            seccionId: sec.id,
-            itemId: item.id,
-            estado: r.estado,
-            observacion: r.observacion || undefined,
-            accionCorrectiva: r.accionCorrectiva || undefined,
-          }
-        })
-      )
-      const result = await saveResponsesAction(evaluationId, batch)
-      if (!result.ok) {
-        setSaveState("error")
-        toast.error(result.message ?? "Error al guardar respuestas")
-      } else {
-        const now = new Date()
-        const ts = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`
-        setSaveState({ ts })
-        setTimeout(() => setSaveState(null), 4000)
-      }
-    }, 800)
-  }
+    } else if (error) {
+      setSaveState("error")
+      toast.error(error)
+    }
+  }, [pending, error])
 
   const handleResponseChange = useCallback(
     (seccionId: string, itemId: string, patch: Partial<ItemResponse>) => {
@@ -79,18 +97,10 @@ export function useChecklistResponses({
           },
         },
       }))
+      setRevision((value) => value + 1)
     },
     []
   )
-
-  useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false
-      return
-    }
-    scheduleAutoSave(responseMap)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [responseMap])
 
   return { responseMap, saveState, handleResponseChange }
 }

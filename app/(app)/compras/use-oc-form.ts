@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useActionState } from "react"
 import { toast } from "@/lib/toast"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { INITIAL_STATE } from "@/lib/form-state"
 import { createOrderAction } from "./actions"
 import { computeOrderTotals } from "@/lib/order-totals"
 import { itemSupplierId, suggestedPrice, applySuggestedPrices } from "./oc-form.helpers"

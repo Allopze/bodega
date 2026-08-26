@@ -3,8 +3,8 @@
 import * as React from "react"
 import { useActionState } from "react"
 import { CheckCircle, ClockCounterClockwise, Warning } from "@phosphor-icons/react"
-import { INITIAL_STATE } from "@/components/admin/form-state"
-import { SubmitButton } from "@/components/admin/submit-button"
+import { INITIAL_STATE } from "@/lib/form-state"
+import { SubmitButton } from "@/components/ui/submit-button"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -18,6 +18,7 @@ import type { ActionState } from "@/lib/validation/operations"
 import type { InvoiceReconciliationEvidence, InvoiceReconciliationIssueCode } from "@/lib/services/purchasing-module/invoice-reconciliation"
 import { acceptInvoiceReconciliationAction } from "../actions/invoice-reconciliation"
 import type { InvoiceRow } from "./invoices-section"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 const STATUS = {
   no_invoices: { label: "Sin facturas", variant: "neutral" as const },
@@ -144,34 +145,37 @@ export function InvoiceReconciliationCard({
 
       {reconciliation.hasInvoices && (
         <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-xs">
-            <thead className="text-(--color-text-subtle)">
-              <tr className="border-b border-(--color-border)">
-                <th className="px-2 py-2 font-medium">Producto</th>
-                <th className="px-2 py-2 text-right font-medium">Cantidad OC / aceptada / factura</th>
-                <th className="px-2 py-2 text-right font-medium">Precio OC</th>
-                <th className="px-2 py-2 text-right font-medium">Precio factura</th>
-                <th className="px-2 py-2 text-right font-medium">Diferencia</th>
-                <th className="px-2 py-2 text-right font-medium">Catálogo vigente</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-(--color-border)">
+          <TableRoot className="rounded-none border-0">
+          <Table className="min-w-[720px] text-left text-xs">
+            <caption className="sr-only">Conciliación de líneas de factura contra la orden de compra</caption>
+            <TableHeader className="text-(--color-text-subtle)">
+              <TableRow className="border-b border-(--color-border)">
+                <TableHead>Producto</TableHead>
+                <TableHead className="text-right">Cantidad OC / aceptada / factura</TableHead>
+                <TableHead className="text-right">Precio OC</TableHead>
+                <TableHead className="text-right">Precio factura</TableHead>
+                <TableHead className="text-right">Diferencia</TableHead>
+                <TableHead className="text-right">Catálogo vigente</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {reconciliation.items.map((item) => (
-                <tr key={item.ocItemId}>
-                  <td className="px-2 py-2 font-medium text-(--color-text)">{item.productName}</td>
-                  <td className={`px-2 py-2 text-right font-mono tabular-nums ${item.receiptStatus === "over_invoiced" ? "text-(--color-warning-ink)" : ""}`}>
+                <TableRow key={item.ocItemId}>
+                  <TableCell className="font-medium text-(--color-text)">{item.productName}</TableCell>
+                  <TableCell className={`text-right font-mono tabular-nums ${item.receiptStatus === "over_invoiced" ? "text-(--color-warning-ink)" : ""}`}>
                     {item.ocQuantity} / {item.supplierReceivedQty} / {item.invoicedQty}
-                  </td>
-                  <td className="px-2 py-2 text-right font-mono tabular-nums">{item.ocEffectiveUnitPrice === null ? "Pendiente" : formatCLP(item.ocEffectiveUnitPrice)}</td>
-                  <td className="px-2 py-2 text-right font-mono tabular-nums">{item.invoiceEffectiveUnitPrice === null ? "No evaluable" : formatCLP(item.invoiceEffectiveUnitPrice)}</td>
-                  <td className={`px-2 py-2 text-right font-mono tabular-nums ${item.priceDifference && Math.abs(item.priceDifference) > 1 ? "text-(--color-warning-ink)" : "text-(--color-text-muted)"}`}>
+                  </TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{item.ocEffectiveUnitPrice === null ? "Pendiente" : formatCLP(item.ocEffectiveUnitPrice)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{item.invoiceEffectiveUnitPrice === null ? "No evaluable" : formatCLP(item.invoiceEffectiveUnitPrice)}</TableCell>
+                  <TableCell className={`text-right font-mono tabular-nums ${item.priceDifference && Math.abs(item.priceDifference) > 1 ? "text-(--color-warning-ink)" : "text-(--color-text-muted)"}`}>
                     {item.priceDifference === null ? "—" : `${item.priceDifference > 0 ? "+" : ""}${formatCLP(item.priceDifference)}${item.pricePercentage === null ? "" : ` (${item.pricePercentage.toFixed(1)}%)`}`}
-                  </td>
-                  <td className="px-2 py-2 text-right font-mono tabular-nums">{item.currentSupplierPrice === null ? "—" : formatCLP(item.currentSupplierPrice)}</td>
-                </tr>
+                  </TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{item.currentSupplierPrice === null ? "—" : formatCLP(item.currentSupplierPrice)}</TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
+          </TableRoot>
         </div>
       )}
 

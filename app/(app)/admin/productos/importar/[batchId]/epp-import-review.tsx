@@ -7,9 +7,10 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cancelEppImportBatchAction, confirmEppImportBatchAction, reviewEppImportRowAction } from "../../actions"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { INITIAL_STATE } from "@/lib/form-state"
 import { toast } from "@/lib/toast"
 import { VALID_UNITS, VALID_COLORS, EPP_TYPES, RULE_LABELS, type NormalizedEppRow, type EppAttribute } from "@/lib/services/epp-import.types"
+import { Table, TableBody, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 type ReviewRow = {
   id: string; rowNumber: number; originalJson: string; normalizedJson: string; severity: string; decision: string; targetProductId: string | null; reviewReason: string | null
@@ -226,23 +227,17 @@ export function EppImportReview({ batch }: { batch: { id: string; status: string
         ))}
       </div>
 
-      <div className="overflow-x-auto rounded-(--radius-lg) border border-(--color-border)">
-        <table className="w-full text-xs">
-          <thead className="bg-(--color-surface-2) th-type">
-            <tr>
-              <th scope="col" className="px-2 py-2 text-left font-medium">#</th>
-              <th scope="col" className="px-2 py-2 text-left font-medium">Nombre</th>
-              <th scope="col" className="px-2 py-2 text-left font-medium">Unidad</th>
-              <th scope="col" className="px-2 py-2 text-left font-medium">Tipo EPP</th>
-              <th scope="col" className="px-2 py-2 text-left font-medium">Color / Talla</th>
-              <th scope="col" className="px-2 py-2 text-left font-medium">Proveedor</th>
-              <th scope="col" className="px-2 py-2 text-left font-medium">Precio</th>
-              <th scope="col" className="px-2 py-2 text-left font-medium">Estado</th>
-              <th scope="col" className="px-2 py-2 text-left font-medium">Decision</th>
-              <th scope="col" className="px-2 py-2 text-center font-medium"></th>
-            </tr>
-          </thead>
-          <tbody>
+      <TableRoot className="rounded-(--radius-lg)">
+        <Table className="text-xs">
+          <caption className="sr-only">Revisión de filas de importación de productos EPP</caption>
+          <TableHeader>
+            <TableRow>
+              <TableHead>#</TableHead><TableHead>Nombre</TableHead><TableHead>Unidad</TableHead><TableHead>Tipo EPP</TableHead>
+              <TableHead>Color / Talla</TableHead><TableHead>Proveedor</TableHead><TableHead>Precio</TableHead><TableHead>Estado</TableHead>
+              <TableHead>Decisión</TableHead><TableHead className="text-center" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {visibleRows.map((row) => {
               const edit = edits[row.id]
               if (!edit) return null
@@ -272,9 +267,9 @@ export function EppImportReview({ batch }: { batch: { id: string; status: string
                 />
               )
             })}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableRoot>
 
       <div className="sticky bottom-3 flex items-center justify-between gap-3 rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-3 shadow-(--shadow-card)">
         <div className="flex items-center gap-3">
@@ -330,7 +325,7 @@ function DecisionRow({
 
   return (
     <>
-      <tr className="border-t border-(--color-border) bg-(--color-surface)">
+      <TableRow className="border-t border-(--color-border) bg-(--color-surface)">
         <td className="px-2 py-2 text-(--color-text-subtle)">{row.rowNumber}</td>
         <td className="px-2 py-2">
           <input
@@ -431,13 +426,13 @@ function DecisionRow({
           </form>
         </td>
         <td className="px-2 py-2 text-center">
-          <button type="button" onClick={onToggleExpand} className="text-(--color-text-muted) hover:text-(--color-text)">
+          <button type="button" onClick={onToggleExpand} className="text-(--color-text-muted) hover:text-(--color-text)" aria-label={isExpanded ? "Ocultar detalles de la fila" : "Mostrar detalles de la fila"}>
             {isExpanded ? <CaretUp size={14} /> : <CaretDown size={14} />}
           </button>
         </td>
-      </tr>
+      </TableRow>
       {isExpanded && (
-        <tr className="border-t border-(--color-border) bg-(--color-surface-2)">
+        <TableRow className="border-t border-(--color-border) bg-(--color-surface-2)">
           <td colSpan={10} className="px-4 py-3">
             <DetailPanel
               original={original}
@@ -448,7 +443,7 @@ function DecisionRow({
               reviewReason={row.reviewReason}
             />
           </td>
-        </tr>
+        </TableRow>
       )}
     </>
   )

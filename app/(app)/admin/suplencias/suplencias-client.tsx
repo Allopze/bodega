@@ -24,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import {
   createTemporarySubstituteAction,
   extendTemporarySubstituteAction,
@@ -176,31 +177,30 @@ export function SuplenciasClient({ activeUsers, substitutions }: SuplenciasClien
       ) : (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead className="bg-[var(--color-surface-2)] th-type border-b border-[var(--color-border)]">
-                <tr>
-                  <th scope="col" className="px-4 py-3">Suplente</th>
-                  <th scope="col" className="px-4 py-3">Reemplaza a (Titular)</th>
-                  <th scope="col" className="px-4 py-3">Vigencia hasta</th>
-                  <th scope="col" className="px-4 py-3">Estado</th>
-                  <th scope="col" className="px-4 py-3 text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--color-border)]">
+            <TableRoot className="rounded-none border-0">
+            <Table className="text-left">
+              <caption className="sr-only">Suplencias temporales de usuarios</caption>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Suplente</TableHead><TableHead>Reemplaza a (Titular)</TableHead><TableHead>Vigencia hasta</TableHead>
+                  <TableHead>Estado</TableHead><TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {substitutions.map(({ user, substituteForName }) => (
-                  <tr key={user.id} className="hover:bg-[var(--color-surface-hover)]">
-                    <td className="px-4 py-3">
+                  <TableRow key={user.id} className="hover:bg-[var(--color-surface-hover)]">
+                    <TableCell>
                       <div className="font-medium text-[var(--color-text)]">{user.name}</div>
                       <div className="text-xs text-[var(--color-text-muted)]">{user.email}</div>
-                    </td>
-                    <td className="px-4 py-3 font-medium text-[var(--color-text-muted)]">
+                    </TableCell>
+                    <TableCell className="font-medium text-[var(--color-text-muted)]">
                       {substituteForName || user.substituteForUserId || "—"}
-                    </td>
-                    <td className="px-4 py-3 text-[var(--color-text-muted)]">
+                    </TableCell>
+                    <TableCell className="text-[var(--color-text-muted)]">
                       {user.validUntil ? formatDate(user.validUntil) : "—"}
-                    </td>
-                    <td className="px-4 py-3">{getStatusBadge(user, nowMs)}</td>
-                    <td className="px-4 py-3 text-right space-x-2">
+                    </TableCell>
+                    <TableCell>{getStatusBadge(user, nowMs)}</TableCell>
+                    <TableCell className="text-right space-x-2">
                       {user.isActive && (
                         <>
                           <Button
@@ -222,11 +222,12 @@ export function SuplenciasClient({ activeUsers, substitutions }: SuplenciasClien
                           </Button>
                         </>
                       )}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
+            </TableRoot>
           </div>
         </div>
       )}

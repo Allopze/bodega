@@ -2,6 +2,7 @@ import { Archive } from "@phosphor-icons/react/dist/ssr"
 import { formatDateTime } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { syncStatusLabel } from "@/lib/services/billing/labels"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 export interface DteSyncRunRow {
   id: string
@@ -37,45 +38,42 @@ export function DteSyncList({ runs }: { runs: DteSyncRunRow[] }) {
   return (
     <section className="overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
       <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)]">
-              <th scope="col" className="px-4 py-2.5 th-type">Período</th>
-              <th scope="col" className="px-4 py-2.5 th-type">Fecha</th>
-              <th scope="col" className="px-4 py-2.5 th-type">Estado</th>
-              <th scope="col" className="px-4 py-2.5 th-type">Conciliación</th>
-              <th scope="col" className="px-4 py-2.5 th-type">Origen</th>
-              <th scope="col" className="px-4 py-2.5 th-type">Vistos</th>
-              <th scope="col" className="px-4 py-2.5 th-type">Nuevos</th>
-              <th scope="col" className="px-4 py-2.5 th-type">Actualizados</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[var(--color-border)]">
+        <TableRoot className="rounded-none border-0">
+        <Table className="text-left">
+          <caption className="sr-only">Corridas de sincronización DTE y su conciliación</caption>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Período</TableHead><TableHead>Fecha</TableHead><TableHead>Estado</TableHead><TableHead>Conciliación</TableHead>
+              <TableHead>Origen</TableHead><TableHead>Vistos</TableHead><TableHead>Nuevos</TableHead><TableHead>Actualizados</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {runs.map((run) => {
               // Mismo vocabulario visual que /facturacion/sincronizacion
               // (UI/UX 2026-08-05, M3): un solo estilo de chip para el mismo concepto.
               const statusInfo = syncStatusLabel(run.status)
               return (
-                <tr key={run.id} className="transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-tint)]">
-                  <td className="whitespace-nowrap px-4 py-2.5 font-medium text-[var(--color-text)]">{run.periodo}</td>
-                  <td className="whitespace-nowrap px-4 py-2.5 text-[var(--color-text-muted)]">{formatDateTime(run.startedAt)}</td>
-                  <td className="px-4 py-2.5">
+                <TableRow key={run.id} className="transition-colors duration-[var(--duration-fast)] hover:bg-[var(--color-primary-tint)]">
+                  <TableCell className="whitespace-nowrap font-medium text-[var(--color-text)]">{run.periodo}</TableCell>
+                  <TableCell className="whitespace-nowrap text-[var(--color-text-muted)]">{formatDateTime(run.startedAt)}</TableCell>
+                  <TableCell>
                     <Badge variant={statusInfo.tone}>{statusInfo.label}</Badge>
                     {run.error && <p className="mt-1 max-w-[40ch] text-xs text-[var(--color-text-muted)]">{run.error}</p>}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2.5">
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
                     <Badge variant={reconciliationInfo(run.reconciliationStatus).tone}>{reconciliationInfo(run.reconciliationStatus).label}</Badge>
                     {run.reconciliationError && <p className="mt-1 max-w-[32ch] truncate text-xs text-[var(--color-text-muted)]">{run.reconciliationError}</p>}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-2.5 text-[var(--color-text-muted)]">{TRIGGER_LABELS[run.trigger]}</td>
-                  <td className="whitespace-nowrap px-4 py-2.5 font-mono tabular-nums text-[var(--color-text-muted)]">{run.rowsSeen}</td>
-                  <td className="whitespace-nowrap px-4 py-2.5 font-mono tabular-nums text-[var(--color-text)]">{run.rowsInserted}</td>
-                  <td className="whitespace-nowrap px-4 py-2.5 font-mono tabular-nums text-[var(--color-text-muted)]">{run.rowsUpdated}</td>
-                </tr>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-[var(--color-text-muted)]">{TRIGGER_LABELS[run.trigger]}</TableCell>
+                  <TableCell className="whitespace-nowrap font-mono tabular-nums text-[var(--color-text-muted)]">{run.rowsSeen}</TableCell>
+                  <TableCell className="whitespace-nowrap font-mono tabular-nums text-[var(--color-text)]">{run.rowsInserted}</TableCell>
+                  <TableCell className="whitespace-nowrap font-mono tabular-nums text-[var(--color-text-muted)]">{run.rowsUpdated}</TableCell>
+                </TableRow>
               )
             })}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
+        </TableRoot>
       </div>
     </section>
   )

@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { PropsWithChildren } from "react"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { INITIAL_STATE } from "@/lib/form-state"
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
@@ -16,7 +16,7 @@ vi.mock("./actions", () => ({
   registerWorkerDeliveryAction: vi.fn(async () => INITIAL_STATE),
 }))
 
-vi.mock("@/components/admin/submit-button", () => ({
+vi.mock("@/components/ui/submit-button", () => ({
   SubmitButton: ({ label, disabled }: { label: string; disabled?: boolean }) => (
     <button type="submit" disabled={disabled}>{label}</button>
   ),

@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import { and, desc, eq, ilike, or, sql } from "drizzle-orm"
 import { isNetworkError } from "@/lib/network-error"
 import { db } from "@/db"
@@ -253,8 +254,7 @@ export async function exportTaeSubmissionsXlsxAction(filters: TaeExportFilters =
   ws.views = [{ state: "frozen", ySplit: 1 }]
   addExportMetadataSheet(wb, session, { filters, rowCount: exportRows.length, from: filters.from, to: filters.to })
 
-  const buffer = await wb.xlsx.writeBuffer()
-  const base64 = Buffer.from(buffer).toString("base64")
+  const base64 = await xlsxToBase64(wb)
   await recordAudit({
     userId: session.user.id, userEmail: session.user.email ?? undefined, action: "export",
     entityType: "fuel_tae_export", entityId: nanoid(),

@@ -1,11 +1,11 @@
 "use client"
 
-import { useRouter, useSearchParams } from "next/navigation"
 import { DateRangePicker } from "@/components/ui/date-range-picker"
 import { WorksiteSelect } from "@/components/ui/worksite-select"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { Label } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 
 interface FuelFiltersProps {
   vehicles: Array<{ id: string; plate: string }>
@@ -27,32 +27,12 @@ interface FuelFiltersProps {
 }
 
 export function FuelFilters({ vehicles, suppliers, worksites, products, currentFilters }: FuelFiltersProps) {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-
-  function setFilter(key: string, value: string) {
-    const params = new URLSearchParams(searchParams.toString())
-    if (value) {
-      params.set(key, value)
-    } else {
-      params.delete(key)
-    }
-    params.delete("page")
-    router.push(`?${params.toString()}`)
-  }
-
-  function clearFilters() {
-    router.push("/combustibles/facturas")
-  }
+  const { setFilter, setFilters, clearFilters } = useUrlFilters()
 
   function setProductFilter(value: string) {
-    const params = new URLSearchParams(searchParams.toString())
-    params.delete("producto")
-    params.delete("productoId")
-    if (value.startsWith("legacy:")) params.set("producto", value.slice("legacy:".length))
-    else if (value !== "all") params.set("productoId", value)
-    params.delete("page")
-    router.push(`?${params.toString()}`)
+    if (value.startsWith("legacy:")) setFilters({ producto: value.slice("legacy:".length), productoId: undefined })
+    else if (value !== "all") setFilters({ producto: undefined, productoId: value })
+    else setFilters({ producto: undefined, productoId: undefined })
   }
 
   const activeChips: ActiveFilterChip[] = []
@@ -78,13 +58,7 @@ export function FuelFilters({ vehicles, suppliers, worksites, products, currentF
 
   function handleRemoveChip(key: string) {
     if (key === "dateRange") {
-      const params = new URLSearchParams(searchParams.toString())
-      params.delete("startDate")
-      params.delete("endDate")
-      params.delete("page")
-      router.push(`?${params.toString()}`)
-    } else if (key === "vehicle") {
-      setFilter("vehicle", "")
+      setFilters({ startDate: undefined, endDate: undefined })
     } else {
       setFilter(key, "")
     }

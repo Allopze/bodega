@@ -2,6 +2,7 @@
 
 import { ScatterChart as ReScatter, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ZAxis } from "recharts"
 import { ChartLineUp } from "@phosphor-icons/react"
+import { ChartEmpty } from "@/components/ui/chart-empty"
 import type { ScatterPoint } from "@/lib/combustibles/operations-dashboard"
 
 const DOT_COLOR = "var(--color-primary)"
@@ -10,15 +11,6 @@ const GRID_COLOR = "var(--color-border)"
 
 function chartAxisProps() {
   return { axisLine: false, tickLine: false, tick: { fill: "var(--color-text-muted)", fontSize: 11 } }
-}
-
-function EmptyScatter({ label }: { label: string }) {
-  return (
-    <div className="flex h-72 flex-col items-center justify-center border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-2)] px-6 text-center">
-      <ChartLineUp size={24} className="mb-2 text-[var(--color-text-subtle)]" aria-hidden />
-      <p className="max-w-64 text-sm leading-5 text-[var(--color-text-muted)]">{label}</p>
-    </div>
-  )
 }
 
 function MeterScatter({
@@ -69,11 +61,11 @@ function MeterScatter({
 }
 
 export function LitersVsKmChart({ points }: { points: ScatterPoint[] }) {
-  if (points.length === 0) return <EmptyScatter label="Sin registros con odómetro para este filtro." />
+  if (points.length === 0) return <ChartEmpty icon={<ChartLineUp size={24} className="mb-2 text-[var(--color-text-subtle)]" aria-hidden />} className="h-72 border-[var(--color-border-strong)]" label="Sin registros con odómetro para este filtro." />
   return <MeterScatter points={points} meterLabel="Odómetro" meterUnit="km" axisLabel="Odómetro (km)" ariaLabel="Dispersión litros vs kilometraje" />
 }
 
 export function LitersVsHourMeterChart({ points }: { points: ScatterPoint[] }) {
-  if (points.length === 0) return <EmptyScatter label="Sin registros con horómetro para este filtro." />
+  if (points.length === 0) return <ChartEmpty icon={<ChartLineUp size={24} className="mb-2 text-[var(--color-text-subtle)]" aria-hidden />} className="h-72 border-[var(--color-border-strong)]" label="Sin registros con horómetro para este filtro." />
   return <MeterScatter points={points} meterLabel="Horómetro" meterUnit="h" axisLabel="Horómetro (h)" ariaLabel="Dispersión litros vs horómetro" />
 }

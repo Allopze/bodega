@@ -12,9 +12,10 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { formatQty, formatDate, formatDateRelative } from "@/lib/utils"
 import { setMinStockAction } from "./actions"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { INITIAL_STATE } from "@/lib/form-state"
 import type { ActionState } from "@/lib/validation/operations"
 import { StockExportButton } from "./stock-export-button"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 export interface StockTableProps {
   worksites: Array<{
@@ -286,7 +287,7 @@ function SortableHeader({
   className?: string
 }) {
   return (
-    <th
+    <TableHead
       scope="col"
       aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
       className={className}
@@ -301,7 +302,7 @@ function SortableHeader({
           {dir === "asc" ? "↑" : "↓"}
         </span>
       </button>
-    </th>
+    </TableHead>
   )
 }
 
@@ -453,7 +454,8 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
               calculaba sus anchos `auto` por separado y las cantidades quedaban
               desalineadas entre grupos. Los anchos viven en el <colgroup>. */}
           <div className="hidden md:block">
-            <table className="w-full table-fixed text-sm">
+            <TableRoot className="rounded-none border-0">
+            <Table className="table-fixed text-sm">
               <caption className="sr-only">
                 Stock por producto, agrupado por {groupBy === "faena" ? "faena" : "producto"}
               </caption>
@@ -464,14 +466,14 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                 <col className="w-32" />
                 <col className="w-44" />
               </colgroup>
-              <thead>
-                <tr className="border-b border-[var(--color-border)] text-xs uppercase tracking-wide text-[var(--color-text-subtle)]">
+              <TableHeader>
+                <TableRow className="border-b border-[var(--color-border)] text-xs uppercase tracking-wide text-[var(--color-text-subtle)]">
                   <SortableHeader
                     label={groupBy === "faena" ? "Producto" : "Faena"}
                     sortKey="name" active={sort.key === "name"} dir={sort.dir} onSort={handleSort}
                     className="px-5 py-2.5 text-left font-semibold"
                   />
-                  <th scope="col" className="px-5 py-2.5 text-left font-semibold">Estado</th>
+                  <TableHead className="text-left font-semibold">Estado</TableHead>
                   <SortableHeader
                     label="Stock actual"
                     sortKey="quantity" active={sort.key === "quantity"} dir={sort.dir} onSort={handleSort}
@@ -487,17 +489,17 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                     sortKey="lastMovementAt" active={sort.key === "lastMovementAt"} dir={sort.dir} onSort={handleSort}
                     className="px-5 py-2.5 text-right font-semibold"
                   />
-                </tr>
-              </thead>
+                </TableRow>
+              </TableHeader>
               {groups.map((group) => {
                 const isCollapsed = collapsed.has(group.id)
                 return (
-                  <tbody
+                  <TableBody
                     key={group.id}
                     className="divide-y divide-[var(--color-border)] border-b-2 border-[var(--color-border-strong)] last:border-b-0"
                   >
-                    <tr>
-                      <th
+                    <TableRow>
+                      <TableHead
                         scope="rowgroup"
                         colSpan={5}
                         className="bg-[var(--color-surface-2)] px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"
@@ -515,14 +517,14 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                           {group.heading}
                           <span className="font-normal normal-case tracking-normal">{group.meta}</span>
                         </button>
-                      </th>
-                    </tr>
+                      </TableHead>
+                    </TableRow>
                     {group.rows.map(({ item: s, title, subtitle, worksiteId }) => {
                       const lowStock = s.minStock > 0 && s.quantity <= s.minStock
 
                       return (
-                        <tr key={s.id} hidden={isCollapsed} className="hover:bg-[var(--color-surface-2)] transition-colors">
-                          <td className="px-5 py-3">
+                        <TableRow key={s.id} hidden={isCollapsed} className="hover:bg-[var(--color-surface-2)] transition-colors">
+                          <TableCell>
                             {/* La fila lleva a su propio kardex: antes hacer clic
                                 en un producto no hacía nada. */}
                             <Link
@@ -534,10 +536,10 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                             {subtitle && (
                               <p className="mt-0.5 font-mono text-[11px] text-[var(--color-text-subtle)]">{subtitle}</p>
                             )}
-                          </td>
+                          </TableCell>
                           {/* Sólo se rotula lo que tiene algo que decir: una
                               columna entera repitiendo "Sin mínimo" era ruido. */}
-                          <td className="px-5 py-3">
+                          <TableCell>
                             {lowStock && (
                               <div className="flex flex-col items-start gap-1">
                                 <Badge variant="signal" dot>Bajo mínimo</Badge>
@@ -552,16 +554,16 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                                 </Link>
                               </div>
                             )}
-                          </td>
-                          <td className="px-5 py-3 text-right">
+                          </TableCell>
+                          <TableCell className="text-right">
                             <span className="font-mono text-sm font-semibold tabular-nums text-[var(--color-text)]">
                               {formatQty(s.quantity)}
                             </span>
-                          </td>
-                          <td className="px-5 py-3 text-right">
+                          </TableCell>
+                          <TableCell className="text-right">
                             <MinStockCell stockId={s.id} currentMin={s.minStock} disabled={!canSetMinStock} />
-                          </td>
-                          <td className="px-5 py-3 text-right text-xs text-[var(--color-text-subtle)]">
+                          </TableCell>
+                          <TableCell className="text-right text-xs text-[var(--color-text-subtle)]">
                             {s.lastMovementAt ? (
                               <>
                                 <span className="tabular-nums">{formatDate(s.lastMovementAt)}</span>
@@ -570,14 +572,15 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                                 </span>
                               </>
                             ) : "—"}
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       )
                     })}
-                  </tbody>
+                  </TableBody>
                 )
               })}
-            </table>
+            </Table>
+            </TableRoot>
           </div>
         </>
       )}

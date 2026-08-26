@@ -2,10 +2,10 @@
 
 import { useActionState, useEffect, useRef, useState, type FormEvent } from "react"
 import { toast } from "@/lib/toast"
-import { SubmitButton } from "@/components/admin/submit-button"
+import { SubmitButton } from "@/components/ui/submit-button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { INITIAL_STATE } from "@/lib/form-state"
 import { setEmailsEnabledAction, testResendAction } from "./actions"
 import { formatDateTime } from "@/lib/utils"
 import type { LastDeliveryTest, ResendStatus } from "@/lib/services/smtp-settings"

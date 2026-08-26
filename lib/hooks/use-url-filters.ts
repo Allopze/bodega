@@ -6,11 +6,16 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 export interface UseUrlFiltersOptions {
   debounceMs?: number
   pageKey?: string
+  resetPageKeys?: string[]
   scroll?: boolean
 }
 
 export function useUrlFilters(options: UseUrlFiltersOptions = {}) {
-  const { debounceMs = 350, pageKey = "page", scroll = false } = options
+  const { debounceMs = 350, pageKey = "page", resetPageKeys, scroll = false } = options
+  const paginationKeys = React.useMemo(
+    () => Array.from(new Set([pageKey, ...(resetPageKeys ?? [])])),
+    [pageKey, resetPageKeys],
+  )
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -23,11 +28,11 @@ export function useUrlFilters(options: UseUrlFiltersOptions = {}) {
       } else {
         params.delete(key)
       }
-      params.delete(pageKey)
+      for (const key of paginationKeys) params.delete(key)
       const query = params.toString()
       router.replace(query ? `${pathname}?${query}` : pathname, { scroll })
     },
-    [router, pathname, searchParams, pageKey, scroll],
+    [router, pathname, searchParams, paginationKeys, scroll],
   )
 
   const setFilters = React.useCallback(
@@ -40,11 +45,11 @@ export function useUrlFilters(options: UseUrlFiltersOptions = {}) {
           params.delete(key)
         }
       }
-      params.delete(pageKey)
+      for (const key of paginationKeys) params.delete(key)
       const query = params.toString()
       router.replace(query ? `${pathname}?${query}` : pathname, { scroll })
     },
-    [router, pathname, searchParams, pageKey, scroll],
+    [router, pathname, searchParams, paginationKeys, scroll],
   )
 
   const clearFilters = React.useCallback(

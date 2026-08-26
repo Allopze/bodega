@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import type { EppCoverageGap } from "@/lib/prevention/epp"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { EppGapList } from "./epp-gap-list"
 import { EppRequirementList } from "./epp-requirement-list"
 
@@ -30,16 +31,12 @@ export function EppTabs({ gaps, requirements, eppTypes, families, worksites, can
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 rounded-md border border-[var(--color-border)] p-1 w-fit">
-        <button type="button" onClick={() => setTab("coverage")} aria-pressed={tab === "coverage"}
-          className="rounded px-3 py-1 text-sm aria-pressed:bg-[var(--color-primary-tint)]">
-          Cobertura ({gaps.length})
-        </button>
-        <button type="button" onClick={() => setTab("requirements")} aria-pressed={tab === "requirements"}
-          className="rounded px-3 py-1 text-sm aria-pressed:bg-[var(--color-primary-tint)]">
-          Requisitos ({requirements.length})
-        </button>
-      </div>
+      <Tabs value={tab} onValueChange={(value) => setTab(value as "coverage" | "requirements")}>
+        <TabsList>
+          <TabsTrigger value="coverage">Cobertura ({gaps.length})</TabsTrigger>
+          <TabsTrigger value="requirements">Requisitos ({requirements.length})</TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {tab === "coverage" && <EppGapList gaps={gaps} canEscalate={canManage} />}
       {tab === "requirements" && (

@@ -7,7 +7,7 @@ vi.mock("../actions", () => ({
   createPdtpProgramAction: vi.fn(async () => ({ ok: false, message: "" })),
 }))
 
-vi.mock("@/components/admin/submit-button", () => ({
+vi.mock("@/components/ui/submit-button", () => ({
   SubmitButton: ({ label, disabled }: { label: string; disabled?: boolean }) => (
     <button type="submit" disabled={disabled}>{label}</button>
   ),

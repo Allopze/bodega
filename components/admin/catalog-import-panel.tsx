@@ -6,8 +6,8 @@ import {
   Sheet, SheetBody, SheetCloseButton, SheetContent,
   SheetDescription, SheetFooter, SheetHeader, SheetTitle,
 } from "@/components/admin/sheet"
-import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
-import { SubmitButton } from "@/components/admin/submit-button"
+import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
+import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { FileInput } from "@/components/ui/file-input"

@@ -9,6 +9,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { StateBadge } from "@/components/states/state-badge"
 import { FEEDBACK_TIPO_LABELS } from "@/components/states/state-badge"
 import type { FeedbackEstado, FeedbackTipo } from "@/lib/validation/feedback"
+import { FEEDBACK_ESTADO_LABELS } from "@/lib/validation/feedback"
 import { StatusPanel } from "./status-panel"
 import { formatDateTime } from "@/lib/utils"
 
@@ -18,18 +19,11 @@ interface Props {
   params: Promise<{ id: string }>
 }
 
-const ESTADO_LABELS: Record<FeedbackEstado, string> = {
-  abierto: "Abierto",
-  en_progreso: "En progreso",
-  resuelto: "Resuelto",
-  descartado: "Descartado",
-}
-
 function eventLabel(event: { eventType: string; fromEstado: string | null; toEstado: string | null }) {
   if (event.eventType === "created") return "Reporte creado"
   if (event.eventType === "note_added") return "Nota interna agregada"
-  const from = ESTADO_LABELS[event.fromEstado as FeedbackEstado] ?? event.fromEstado ?? "Sin estado"
-  const to = ESTADO_LABELS[event.toEstado as FeedbackEstado] ?? event.toEstado ?? "Sin estado"
+  const from = FEEDBACK_ESTADO_LABELS[event.fromEstado as FeedbackEstado] ?? event.fromEstado ?? "Sin estado"
+  const to = FEEDBACK_ESTADO_LABELS[event.toEstado as FeedbackEstado] ?? event.toEstado ?? "Sin estado"
   return `Estado: ${from} → ${to}`
 }
 

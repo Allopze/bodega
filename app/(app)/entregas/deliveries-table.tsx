@@ -1,7 +1,7 @@
 "use client"
 
 import { FileText, User } from "@phosphor-icons/react"
-import { DataTable } from "@/components/admin/data-table"
+import { DataTable } from "@/components/ui/data-table"
 import { HISTORY_PAGE_SIZE } from "@/lib/constants"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"

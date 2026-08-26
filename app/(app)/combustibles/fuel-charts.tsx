@@ -1,7 +1,9 @@
 "use client"
+import { ChartEmpty } from "@/components/ui/chart-empty"
 
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts"
 import { chartTooltipStyle } from "@/lib/chart-palette"
+import { formatCompactCLP, formatCompactQty } from "@/lib/utils"
 
 interface ChartDataPoint {
   group: string | null
@@ -23,17 +25,6 @@ const COLORS = [
 
 const AMOUNT_COLOR = "var(--color-info)"
 const PRICE_COLOR = "var(--color-signal)"
-
-const formatCLP = (n: number) => {
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}K`
-  return `$${n.toFixed(0)}`
-}
-
-const formatLiters = (n: number) => {
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
-  return n.toFixed(0)
-}
 
 // Precio por litro: la métrica que explica el gasto (volumen vs. precio).
 const formatPricePerLiter = (n: number) => `$${Math.round(n).toLocaleString("es-CL")}/L`
@@ -68,7 +59,7 @@ function groupSmallProductSlices(data: ChartDataPoint[]) {
 
 /* ── Monthly Evolution (Area Chart) ──────────────────────────────────────── */
 export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
-  if (data.length === 0) return <EmptyChart label="Sin datos mensuales" />
+  if (data.length === 0) return <ChartEmpty className="h-64 px-6" label="Sin datos mensuales" />
 
   const chartData = data.map(d => ({
     month: d.group ?? "?",
@@ -91,14 +82,14 @@ export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
           <XAxis dataKey="month" className="text-xs" tick={{ fill: "var(--color-text-muted)" }} />
           {/* Eje izquierdo = Monto (cuánto se gastó); derecho = Precio $/L (por qué). */}
-          <YAxis yAxisId="amount" className="text-xs" tickFormatter={formatCLP} tick={{ fill: AMOUNT_COLOR }} width={60} />
+          <YAxis yAxisId="amount" className="text-xs" tickFormatter={formatCompactCLP} tick={{ fill: AMOUNT_COLOR }} width={60} />
           <YAxis yAxisId="price" orientation="right" className="text-xs" tickFormatter={(v) => formatPricePerLiter(Number(v))} tick={{ fill: PRICE_COLOR }} width={68} domain={[0, "auto"]} />
           <Tooltip
             contentStyle={chartTooltipStyle()}
             formatter={(value, name) => {
               const n = String(name).toLowerCase()
               if (n === "precio") return [formatPricePerLiter(Number(value)), "Precio prom."]
-              return [formatCLP(Number(value)), "Monto CLP"]
+              return [formatCompactCLP(Number(value)), "Monto CLP"]
             }}
           />
           <Legend iconType="plainline" />
@@ -114,7 +105,7 @@ export function MonthlyEvolutionChart({ data }: { data: ChartDataPoint[] }) {
 
 /* ── By Category (Horizontal Bar Chart) ──────────────────────────────────── */
 export function CategoryBarChart({ data, title, onSelect, metric = "amount" }: { data: ChartDataPoint[]; title: string; onSelect?: (group: string) => void; metric?: "amount" | "liters" }) {
-  if (data.length === 0) return <EmptyChart label={`Sin datos de ${title.toLowerCase()}`} />
+  if (data.length === 0) return <ChartEmpty className="h-64 px-6" label={`Sin datos de ${title.toLowerCase()}`} />
 
   const chartData = data.slice(0, 8).map(d => ({
     name: (d.group ?? "Sin asignar").length > 20 ? (d.group ?? "Sin asignar").substring(0, 20) + "…" : (d.group ?? "Sin asignar"),
@@ -128,15 +119,15 @@ export function CategoryBarChart({ data, title, onSelect, metric = "amount" }: {
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 10, left: 0, bottom: 5 }} title={onSelect ? `${title}. Selecciona una barra para filtrar el panel por esta selección.` : title}>
           <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-          <XAxis type="number" className="text-xs" tickFormatter={metric === "amount" ? formatCLP : (value) => `${formatLiters(Number(value))} L`} tick={{ fill: "var(--color-text-muted)" }} />
+          <XAxis type="number" className="text-xs" tickFormatter={metric === "amount" ? formatCompactCLP : (value) => `${formatCompactQty(Number(value))} L`} tick={{ fill: "var(--color-text-muted)" }} />
           <YAxis type="category" dataKey="name" width={120} className="text-xs" tick={{ fill: "var(--color-text-muted)", fontSize: 11 }} />
           <Tooltip
             contentStyle={chartTooltipStyle()}
             formatter={(value, _name, item) => {
               const litros = (item?.payload as { litros?: number } | undefined)?.litros ?? 0
               return metric === "amount"
-                ? [`${formatCLP(Number(value))} · ${formatLiters(litros)} L`, "Gasto"]
-                : [`${formatLiters(Number(value))} L`, "Consumo"]
+                ? [`${formatCompactCLP(Number(value))} · ${formatCompactQty(litros)} L`, "Gasto"]
+                : [`${formatCompactQty(Number(value))} L`, "Consumo"]
             }}
           />
           <Bar
@@ -155,7 +146,7 @@ export function CategoryBarChart({ data, title, onSelect, metric = "amount" }: {
 
 /* ── By Product (Pie Chart) ──────────────────────────────────────────────── */
 export function ProductPieChart({ data }: { data: ChartDataPoint[] }) {
-  if (data.length === 0) return <EmptyChart label="Sin datos de producto" />
+  if (data.length === 0) return <ChartEmpty className="h-64 px-6" label="Sin datos de producto" />
 
   const chartData = groupSmallProductSlices(data)
 
@@ -181,7 +172,7 @@ export function ProductPieChart({ data }: { data: ChartDataPoint[] }) {
             contentStyle={chartTooltipStyle()}
             formatter={(value, name, item) => {
               const litros = (item?.payload as { liters?: number } | undefined)?.liters ?? 0
-              return [`${formatCLP(Number(value))} · ${formatLiters(litros)} L`, String(name)]
+              return [`${formatCompactCLP(Number(value))} · ${formatCompactQty(litros)} L`, String(name)]
             }}
           />
           <Legend
@@ -197,10 +188,3 @@ export function ProductPieChart({ data }: { data: ChartDataPoint[] }) {
 }
 
 /* ── Empty State ─────────────────────────────────────────────────────────── */
-function EmptyChart({ label }: { label: string }) {
-  return (
-    <div className="flex h-64 items-center justify-center border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] px-6 text-center text-sm text-[var(--color-text-muted)]">
-      {label}
-    </div>
-  )
-}

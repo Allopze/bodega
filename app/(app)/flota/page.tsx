@@ -10,7 +10,7 @@ import { ServerPagination } from "@/components/ui/server-pagination"
 import { can, requirePermission } from "@/lib/auth/can"
 import { getFleetOverviewPage } from "@/lib/services/fleet"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
-import { addDaysToPlainDate, formatCLP, todayInChile } from "@/lib/utils"
+import { addDaysToPlainDate, formatCLP, todayInChile, formatQty } from "@/lib/utils"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { FleetFilters } from "./fleet-filters"
 import { FleetTable } from "./fleet-table"
@@ -18,8 +18,7 @@ import { FleetExportButton } from "./fleet-export-button"
 
 export const metadata: Metadata = { title: "Flota" }
 
-const NUMBER_FORMATTER = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 })
-const formatNumber = (value: number) => NUMBER_FORMATTER.format(value)
+const formatNumber = (value: number) => formatQty(value, undefined, { maximumFractionDigits: 1 })
 const FLEET_PAGE_SIZE = 25
 
 export default async function FlotaPage({

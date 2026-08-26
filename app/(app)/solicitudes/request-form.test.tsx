@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { INITIAL_STATE } from "@/lib/form-state"
 import type { PropsWithChildren } from "react"
 import type { ProductOption } from "./request-form.types"
 
@@ -22,7 +22,7 @@ vi.mock("./actions", () => ({
   deleteRequestAction: vi.fn(async () => INITIAL_STATE),
 }))
 
-vi.mock("@/components/admin/submit-button", () => ({
+vi.mock("@/components/ui/submit-button", () => ({
   SubmitButton: ({ label, disabled }: { label: string; disabled?: boolean }) => (
     <button type="submit" disabled={disabled}>{label}</button>
   ),

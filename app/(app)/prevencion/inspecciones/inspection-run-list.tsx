@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DateRangePicker } from "@/components/ui/date-range-picker"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
+import { Pagination } from "@/components/ui/pagination"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -372,31 +373,12 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
       )}
 
       {totalPages > 1 && (
-        <div className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-          <span className="text-[var(--color-text-subtle)]">
-            Página {page} de {totalPages} · {summary.total} inspecciones
-          </span>
-          <div className="grid grid-cols-2 gap-2 sm:flex">
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={page <= 1}
-              onClick={() => setFilters({ pagina: page - 1 <= 1 ? null : String(page - 1) })}
-            >
-              Anterior
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={page >= totalPages}
-              onClick={() => setFilters({ pagina: String(page + 1) })}
-            >
-              Siguiente
-            </Button>
-          </div>
-        </div>
+        <Pagination
+          page={page}
+          total={summary.total}
+          perPage={pageSize}
+          onPage={(target) => setFilters({ pagina: target <= 1 ? null : String(target) })}
+        />
       )}
     </div>
   )

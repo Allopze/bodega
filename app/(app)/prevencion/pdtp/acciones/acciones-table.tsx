@@ -3,34 +3,16 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
-import { DataTable } from "@/components/admin/data-table"
+import { DataTable } from "@/components/ui/data-table"
 import { TableCell, TableRow } from "@/components/ui/table"
-import { Badge, type BadgeProps } from "@/components/ui/badge"
+import { Badge } from "@/components/ui/badge"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
 import type { listActionsByProgram } from "@/lib/services/prevention-pdtp"
+import { PDTP_ACTION_STATUS_LABELS, pdtpActionStatusVariant } from "@/lib/prevention/pdtp"
 
 type ActionRow = Awaited<ReturnType<typeof listActionsByProgram>>[number]
-
-const ESTADO_LABELS: Record<string, string> = {
-  pendiente: "Pendiente",
-  en_proceso: "En proceso",
-  completado: "Completado",
-  verificado: "Verificado",
-  reabierto: "Reabierto",
-}
-
-function estadoVariant(estado: string, vencida: boolean): BadgeProps["variant"] {
-  if (vencida) return "danger"
-  switch (estado) {
-    case "verificado": return "success"
-    case "completado": return "info"
-    case "en_proceso": return "warning"
-    case "reabierto":  return "danger"
-    default:           return "default"
-  }
-}
 
 // Orden y rótulos del Anexo 15 ("Seguimiento y Control de Inspecciones /
 // Observaciones"): N° · Fecha · AREA · Desviación Detectada · Medidas
@@ -82,7 +64,7 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
           <SelectTrigger aria-label="Filtrar por estado" className="w-40"><SelectValue placeholder="Estado" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="__all">Todos los estados</SelectItem>
-            {Object.entries(ESTADO_LABELS).map(([value, label]) => (
+            {Object.entries(PDTP_ACTION_STATUS_LABELS).map(([value, label]) => (
               <SelectItem key={value} value={value}>{label}</SelectItem>
             ))}
           </SelectContent>
@@ -151,8 +133,8 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
               <TableCell className="tabular-nums">{item.plazo}</TableCell>
               <TableCell><Badge variant="outline">{item.prioridad}</Badge></TableCell>
               <TableCell>
-                <Badge variant={estadoVariant(item.estado, item.vencida)}>
-                  {item.vencida ? "Vencida" : ESTADO_LABELS[item.estado] ?? item.estado}
+                <Badge variant={pdtpActionStatusVariant(item.estado, item.vencida)}>
+                  {item.vencida ? "Vencida" : PDTP_ACTION_STATUS_LABELS[item.estado as keyof typeof PDTP_ACTION_STATUS_LABELS] ?? item.estado}
                 </Badge>
               </TableCell>
             </TableRow>
@@ -169,8 +151,8 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
             >
               <div className="flex items-start justify-between gap-3">
                 <p title={item.hallazgo} className="min-w-0 flex-1 truncate text-sm font-medium text-(--color-text)">{item.hallazgo}</p>
-                <Badge variant={estadoVariant(item.estado, item.vencida)} size="sm">
-                  {item.vencida ? "Vencida" : ESTADO_LABELS[item.estado] ?? item.estado}
+                <Badge variant={pdtpActionStatusVariant(item.estado, item.vencida)} size="sm">
+                  {item.vencida ? "Vencida" : PDTP_ACTION_STATUS_LABELS[item.estado as keyof typeof PDTP_ACTION_STATUS_LABELS] ?? item.estado}
                 </Badge>
               </div>
               <p title={item.activity} className="mt-0.5 truncate text-xs text-(--color-text-muted)">{item.activity}</p>

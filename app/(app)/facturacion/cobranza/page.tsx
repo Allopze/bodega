@@ -23,6 +23,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { Badge } from "@/components/ui/badge"
 import { CollectionActionDialog } from "./collection-action-dialog"
 import { SuggestionsPanel } from "./suggestions-panel"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 export const dynamic = "force-dynamic"
 export const metadata: Metadata = { title: "Cobranza" }
@@ -142,29 +143,29 @@ export default async function CollectionsPage({
 
           {/* ── Tabla ─────────────────────────────────────────────────────── */}
           <section className="overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+            <TableRoot className="rounded-none border-0">
+              <Table className="text-left">
                 <caption className="sr-only">Facturas por cobrar con su situación y última gestión</caption>
-                <thead>
-                  <tr className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)]">
-                    <th scope="col" className="px-4 py-2.5 th-type">Documento</th>
-                    <th scope="col" className="px-4 py-2.5 th-type">Cliente</th>
-                    <th scope="col" className="px-4 py-2.5 th-type">Vencimiento</th>
-                    <th scope="col" className="px-4 py-2.5 th-type text-right">Saldo</th>
-                    <th scope="col" className="px-4 py-2.5 th-type">Situación</th>
-                    <th scope="col" className="hidden px-4 py-2.5 th-type lg:table-cell">Última gestión</th>
-                    <th scope="col" className="hidden px-4 py-2.5 th-type lg:table-cell">Responsable</th>
-                    {canManage && <th scope="col" className="px-4 py-2.5 th-type">Acción</th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--color-border)]">
+                <TableHeader>
+                  <TableRow className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)]">
+                    <TableHead>Documento</TableHead>
+                    <TableHead>Cliente</TableHead>
+                    <TableHead>Vencimiento</TableHead>
+                    <TableHead className="text-right">Saldo</TableHead>
+                    <TableHead>Situación</TableHead>
+                    <TableHead className="hidden lg:table-cell">Última gestión</TableHead>
+                    <TableHead className="hidden lg:table-cell">Responsable</TableHead>
+                    {canManage && <TableHead>Acción</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {rows.map((row) => {
                     const payment = paymentStatusLabel(row.paymentStatus)
                     const collection = collectionStatusLabel(row.collectionStatus)
                     const due = dueStatusLabel(row.daysOverdue, row.paymentStatus)
                     return (
-                      <tr key={row.invoiceId} className="align-top">
-                        <td className="whitespace-nowrap px-4 py-2.5">
+                      <TableRow key={row.invoiceId} className="align-top">
+                        <TableCell className="whitespace-nowrap">
                           <Link href={`/facturacion/facturas/${row.invoiceId}`} className="font-medium text-[var(--color-text)] hover:underline">
                             {docTypeShortLabel(row.docType)} {row.folio}
                           </Link>
@@ -173,23 +174,23 @@ export default async function CollectionsPage({
                               {row.suggestedPayments} pago(s) sugerido(s)
                             </div>
                           )}
-                        </td>
-                        <td className="px-4 py-2.5">
+                        </TableCell>
+                        <TableCell>
                           <div className="max-w-[22ch] truncate text-[var(--color-text)]">{row.clientName}</div>
                           <div className="text-xs text-[var(--color-text-subtle)]">
                             {row.contractCode ?? row.clientTaxId}
                             {row.worksiteName && ` · ${row.worksiteName}`}
                           </div>
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5">
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
                           <div className="tabular-nums text-[var(--color-text-muted)]">{formatDateShort(row.dueDate)}</div>
                           {due && (
                             <div className={due.tone === "danger" ? "text-xs text-[var(--color-danger-ink)]" : "text-xs text-[var(--color-text-subtle)]"}>
                               {due.label}
                             </div>
                           )}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 text-right">
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right">
                           <div className="tabular-nums font-medium text-[var(--color-text)]">
                             {formatMoney(row.outstandingAmount, row.currency)}
                           </div>
@@ -198,8 +199,8 @@ export default async function CollectionsPage({
                               cobrado {formatMoney(row.paidAmount, row.currency)}
                             </div>
                           )}
-                        </td>
-                        <td className="px-4 py-2.5">
+                        </TableCell>
+                        <TableCell>
                           <div className="flex flex-wrap gap-1">
                             <Badge variant={payment.tone}>{payment.label}</Badge>
                             {row.collectionStatus !== "none" && (
@@ -211,20 +212,20 @@ export default async function CollectionsPage({
                               Comprometido para el {formatDateShort(row.commitmentDate)}
                             </p>
                           )}
-                        </td>
-                        <td className="hidden px-4 py-2.5 text-xs text-[var(--color-text-muted)] lg:table-cell">
+                        </TableCell>
+                        <TableCell className="hidden text-xs text-[var(--color-text-muted)] lg:table-cell">
                           {row.lastActionDate
                             ? <>
                                 {actionTypeLabel(row.lastActionType ?? "")} · {formatDateShort(row.lastActionDate)}
                                 <div className="text-[var(--color-text-subtle)]">hace {row.daysSinceLastAction} días</div>
                               </>
                             : <span className="text-[var(--color-text-subtle)]">Sin gestión registrada</span>}
-                        </td>
-                        <td className="hidden px-4 py-2.5 text-xs text-[var(--color-text-muted)] lg:table-cell">
+                        </TableCell>
+                        <TableCell className="hidden text-xs text-[var(--color-text-muted)] lg:table-cell">
                           {row.ownerName ?? "Sin asignar"}
-                        </td>
+                        </TableCell>
                         {canManage && (
-                          <td className="px-4 py-2.5">
+                          <TableCell>
                             <CollectionActionDialog
                               invoiceId={row.invoiceId}
                               folio={row.folio}
@@ -234,14 +235,14 @@ export default async function CollectionsPage({
                               canConfirmPayments={canConfirm}
                               today={view.today}
                             />
-                          </td>
+                          </TableCell>
                         )}
-                      </tr>
+                      </TableRow>
                     )
                   })}
-                </tbody>
-              </table>
-            </div>
+                </TableBody>
+              </Table>
+            </TableRoot>
           </section>
         </>
       )}

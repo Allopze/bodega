@@ -11,6 +11,7 @@ import { FileInput } from "@/components/ui/file-input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
 import { formatDate, formatFileSize } from "@/lib/utils"
+import { SST_DOCUMENT_STATUS_LABELS } from "@/lib/prevention/privacy-inventory"
 import {
   approveSstDocumentVersionAction,
   markSstDocumentVersionReviewedAction,
@@ -100,7 +101,7 @@ export function VersionsTab({
                       {v.id === currentVersionId ? <Badge variant="outline" className="ml-2">Actual</Badge> : null}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={statusBadgeVariant(v.status)}>{statusLabel(v.status)}</Badge>
+                      <Badge variant={statusBadgeVariant(v.status)}>{SST_DOCUMENT_STATUS_LABELS[v.status] ?? v.status}</Badge>
                     </TableCell>
                     <TableCell className="text-xs">{v.fileName}</TableCell>
                     <TableCell className="text-xs">{userMap[v.uploadedBy]?.name ?? v.uploadedBy}</TableCell>
@@ -235,18 +236,6 @@ export function VersionsTab({
       }
     })
   }
-}
-
-function statusLabel(status: string) {
-  return ({
-    borrador: "Borrador",
-    en_revision: "En revisión",
-    observado: "Observado",
-    aprobado: "Aprobado",
-    vigente: "Vigente",
-    reemplazado: "Reemplazado",
-    archivado: "Archivado",
-  } as Record<string, string>)[status] ?? status
 }
 
 function statusBadgeVariant(status: string): "default" | "info" | "warning" | "success" | "outline" {

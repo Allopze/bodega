@@ -1,4 +1,6 @@
 import type { Metadata } from "next"
+import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
+import { ServerPagination } from "@/components/ui/server-pagination"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 import { and, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm"
@@ -115,7 +117,7 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
     settle(getTaeGroupedTotals(session, chartRange, "loadingPoint"), TAEGROUP_FALLBACK, "tae-group-loadingPoint"),
   ])
   const metrics = metricsRows[0] ?? { total: 0, liters: 0, observed: 0, pending: 0 }
-  const totalPages = Math.max(1, Math.ceil(Number(metrics.total) / PAGE_SIZE))
+  const pagination = resolvePagination({ pageParam: String(page), totalItems: Number(metrics.total), pageSize: PAGE_SIZE })
   const canConfigure = can(session, "combustibles:tae_manage_config")
   const canExport = can(session, "combustibles:tae_export")
   const canImport = can(session, "combustibles:tae_import")
@@ -173,7 +175,7 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
           {submissions.length === 0 ? <TableRow><TableCell colSpan={9} className="py-10 text-center text-[var(--color-text-muted)]">Aún no hay cargas TAE. Genera un QR y compártelo en el punto de carga.</TableCell></TableRow> : submissions.map((item) => { const status = STATUS[item.status] ?? { label: "Recibida", variant: "primary" as const }; return <TableRow key={item.id}><TableCell className="font-mono text-xs">{formatDateTime(item.loadedAt)}</TableCell><TableCell>{item.worksite?.name ?? "—"}</TableCell><TableCell>{item.loadingPoint?.name ?? "—"}</TableCell><TableCell className="font-mono">{item.equipmentCodeSnapshot}</TableCell><TableCell>{item.product?.name ?? "—"}</TableCell><TableCell className="font-mono text-right">{Number(item.liters).toLocaleString("es-CL")} L</TableCell><TableCell>{item.supervisorNameSnapshot}</TableCell><TableCell><Badge variant={status.variant}>{status.label}</Badge></TableCell><TableCell className="text-right"><Button asChild variant="ghost" size="sm"><Link href={`/combustibles/tae/${item.id}`}>Revisar</Link></Button></TableCell></TableRow> })}
         </TableBody></Table>
       </div>
-      {totalPages > 1 && <nav aria-label="Paginación de cargas TAE" className="mt-4 flex items-center justify-between gap-3 text-sm"><span className="text-(--color-text-muted)">Página {Math.min(page, totalPages)} de {totalPages}</span><div className="flex gap-2">{page > 1 && <Button asChild variant="secondary" size="sm"><Link href={{ pathname: "/combustibles/tae", query: { ...raw, page: String(page - 1) } }}>Anterior</Link></Button>}{page < totalPages && <Button asChild variant="secondary" size="sm"><Link href={{ pathname: "/combustibles/tae", query: { ...raw, page: String(page + 1) } }}>Siguiente</Link></Button>}</div></nav>}
+      <ServerPagination pagination={pagination} hrefForPage={(target) => buildPaginationHref("/combustibles/tae", raw, target)} />
     </PageContainer>
   )
 }

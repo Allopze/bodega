@@ -2,9 +2,9 @@
 
 import { Warning } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
-import { SubmitButton } from "@/components/admin/submit-button"
+import { SubmitButton } from "@/components/ui/submit-button"
 import { Textarea } from "@/components/ui/textarea"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { INITIAL_STATE } from "@/lib/form-state"
 import type { ActionState } from "@/lib/validation/operations"
 
 export function ReasonForm({

@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { formatDateTime } from "@/lib/utils"
 import { FilterSelect } from "../filter-select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 export const metadata: Metadata = { title: "Historial de sellos" }
 
@@ -83,41 +84,35 @@ export default async function SealHistoryPage({ searchParams }: { searchParams: 
         />
       ) : (
       <div className="overflow-x-auto border border-(--color-border)">
-        <table className="w-full min-w-[900px] text-sm">
-          <thead className="bg-(--color-surface-2) text-left th-type">
-            <tr>
-              <th scope="col" className="p-3">Fecha</th>
-              <th>Faena</th>
-              <th>Punto de carga</th>
-              <th>Equipo</th>
-              <th>Producto</th>
-              <th>Litros</th>
-              <th>Sello retirado</th>
-              <th>Sello instalado</th>
-              <th>Siguiente</th>
-              <th>Carga</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-(--color-border)">
+        <TableRoot>
+        <Table className="min-w-[900px]">
+          <caption className="sr-only">Historial de sellos de cargas de combustible</caption>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Fecha</TableHead><TableHead>Faena</TableHead><TableHead>Punto de carga</TableHead><TableHead>Equipo</TableHead>
+              <TableHead>Producto</TableHead><TableHead>Litros</TableHead><TableHead>Sello retirado</TableHead><TableHead>Sello instalado</TableHead>
+              <TableHead>Siguiente</TableHead><TableHead>Carga</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {movements.map((m) => (
-              <tr key={m.submissionId}>
-                <td className="p-3 font-mono text-xs whitespace-nowrap">{formatDateTime(m.loadedAt)}</td>
-                <td>{m.worksiteName ?? "—"}</td>
-                <td className="text-xs">{m.loadingPointName ?? "—"}</td>
-                <td className="font-medium whitespace-nowrap">{m.equipmentCode}{m.plate ? ` (${m.plate})` : ""}</td>
-                <td>{m.productName ?? "—"}</td>
-                <td className="font-mono">{m.liters.toLocaleString("es-CL")}</td>
-                <td className="font-mono">{m.removedSeal ?? "—"}</td>
-                <td className="font-mono">
+              <TableRow key={m.submissionId}>
+                <TableCell className="font-mono text-xs whitespace-nowrap">{formatDateTime(m.loadedAt)}</TableCell>
+                <TableCell>{m.worksiteName ?? "—"}</TableCell><TableCell className="text-xs">{m.loadingPointName ?? "—"}</TableCell>
+                <TableCell className="font-medium whitespace-nowrap">{m.equipmentCode}{m.plate ? ` (${m.plate})` : ""}</TableCell>
+                <TableCell>{m.productName ?? "—"}</TableCell><TableCell className="font-mono">{m.liters.toLocaleString("es-CL")}</TableCell>
+                <TableCell className="font-mono">{m.removedSeal ?? "—"}</TableCell>
+                <TableCell className="font-mono">
                   {m.installedSeal ?? "—"}
                   {m.installedRepeated && <Badge variant="warning" size="sm" className="ml-1">repetido</Badge>}
-                </td>
-                <td className="text-xs">{m.nextRemovedBy && m.nextRemovedAt ? `${m.nextRemovedBy} · ${formatDateTime(m.nextRemovedAt)}` : m.continuityBroken ? <Badge variant="warning" size="sm">sin siguiente</Badge> : "—"}</td>
-                <td><Link href={`/combustibles/tae/${m.submissionId}`} className="text-xs text-(--color-primary-ink) hover:underline">Ver carga</Link></td>
-              </tr>
+                </TableCell>
+                <TableCell className="text-xs">{m.nextRemovedBy && m.nextRemovedAt ? `${m.nextRemovedBy} · ${formatDateTime(m.nextRemovedAt)}` : m.continuityBroken ? <Badge variant="warning" size="sm">sin siguiente</Badge> : "—"}</TableCell>
+                <TableCell><Link href={`/combustibles/tae/${m.submissionId}`} className="text-xs text-(--color-primary-ink) hover:underline">Ver carga</Link></TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
+        </TableRoot>
       </div>
       )}
     </PageContainer>

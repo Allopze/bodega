@@ -9,7 +9,7 @@ import { signIn } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { INITIAL_STATE, type ActionState } from "@/components/admin/form-state"
+import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import { registerUser } from "./actions"
 
 interface RegisterFormProps {

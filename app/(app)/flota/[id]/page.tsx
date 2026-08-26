@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { can, requirePermission } from "@/lib/auth/can"
 import { getFleetVehicleDetail } from "@/lib/services/fleet"
 import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
-import { MAINTENANCE_STATUS_LABELS } from "@/lib/validation/maintenance"
+import { MAINTENANCE_STATUS_LABELS, MAINTENANCE_STATUS_VARIANTS, type MaintenanceStatus } from "@/lib/validation/maintenance"
 import { formatDate, formatDateTime, formatQty } from "@/lib/utils"
 import { FleetDocumentsPanel } from "./fleet-documents-panel"
 
@@ -164,7 +164,7 @@ export default async function FlotaVehiclePage({
                 return (
                   <li key={m.id} className="grid gap-1 py-3 text-sm sm:grid-cols-[10rem_1fr_auto] sm:items-center sm:gap-4">
                     <span className="capitalize">{m.maintenanceType}</span>
-                    <Badge variant={m.status === "completed" ? "success" : m.status === "cancelled" ? "default" : "outline"}>{MAINTENANCE_STATUS_LABELS[m.status as keyof typeof MAINTENANCE_STATUS_LABELS] ?? m.status}</Badge>
+                    <Badge variant={MAINTENANCE_STATUS_VARIANTS[m.status as MaintenanceStatus] ?? "default"}>{MAINTENANCE_STATUS_LABELS[m.status as MaintenanceStatus] ?? m.status}</Badge>
                     <p className="text-xs text-[var(--color-text-muted)] sm:text-right">
                       {formatDate(m.maintenanceDate)}
                       {impact && (impact.avgBefore != null || impact.avgAfter != null) ? (

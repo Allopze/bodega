@@ -11,6 +11,7 @@
  */
 
 import { addAmounts, applyTaxRate, multiplyAmount, sumAmounts, taxRate } from "./money"
+import { proposalStatusLabel } from "./labels"
 
 export type ProposalStatus =
   | "draft" | "in_review" | "observed" | "approved" | "ready"
@@ -69,7 +70,7 @@ export function assertProposalTransition(context: TransitionContext): ProposalSt
 
   if (!rule.from.includes(context.currentStatus)) {
     throw new ProposalTransitionError(
-      `No se puede ${TRANSITION_LABELS[context.transition]} una propuesta en estado ${STATUS_LABELS[context.currentStatus]}`,
+      `No se puede ${TRANSITION_LABELS[context.transition]} una propuesta en estado ${statusMessageLabel(context.currentStatus)}`,
     )
   }
 
@@ -111,10 +112,11 @@ const TRANSITION_LABELS: Record<ProposalTransition, string> = {
   reject: "rechazar", mark_ready: "marcar lista", cancel: "anular", reopen: "reabrir",
 }
 
-const STATUS_LABELS: Record<ProposalStatus, string> = {
-  draft: "borrador", in_review: "en revisión", observed: "observada", approved: "aprobada",
-  ready: "lista para facturar", invoiced: "relacionada con factura", closed: "cerrada",
-  rejected: "rechazada", cancelled: "anulada",
+/** Nombre del estado en minúsculas para mensajes: deriva del vocabulario
+ *  canónico de `labels.ts` (antes había un segundo mapa acá con riesgo de
+ *  divergencia). */
+function statusMessageLabel(status: ProposalStatus): string {
+  return proposalStatusLabel(status).label.toLowerCase()
 }
 
 /* ── Totales ─────────────────────────────────────────────────────────────── */

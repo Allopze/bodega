@@ -1,4 +1,5 @@
 "use client"
+import { Skeleton } from "@/components/ui/skeleton"
 
 import dynamic from "next/dynamic"
 import type { ComponentType } from "react"
@@ -20,9 +21,9 @@ import { ChartErrorBoundary } from "@/components/chart-error-boundary"
 function chartSkeleton(heightClass: string) {
   return function ChartSkeleton() {
     return (
-      <div className={`rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs animate-pulse ${heightClass}`}>
-        <div className="mb-3 h-3 w-40 rounded bg-[var(--color-surface-2)]" />
-        <div className="h-[calc(100%-2rem)] w-full rounded bg-[var(--color-surface-2)]" />
+      <div className={`rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs ${heightClass}`}>
+        <Skeleton className="mb-3 h-3 w-40" />
+        <Skeleton className="h-[calc(100%-2rem)] w-full" />
       </div>
     )
   }

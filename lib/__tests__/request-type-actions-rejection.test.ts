@@ -74,7 +74,7 @@ vi.mock("@/lib/logger", () => ({
 
 // ── Import after mocks ────────────────────────────────────────────────────────
 import { saveDraft } from "@/app/(app)/solicitudes/actions"
-import { INITIAL_STATE } from "@/components/admin/form-state"
+import { INITIAL_STATE } from "@/lib/form-state"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
