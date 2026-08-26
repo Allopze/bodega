@@ -4,6 +4,7 @@ const guardPermission = vi.hoisted(() => vi.fn())
 const resolveWorksiteScope = vi.hoisted(() => vi.fn())
 const createRiskMatrixDraft = vi.hoisted(() => vi.fn())
 const transitionRiskMatrix = vi.hoisted(() => vi.fn())
+const decideRiskMatrixApproval = vi.hoisted(() => vi.fn())
 const approveRiskImportBatch = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({ guardPermission }))
@@ -14,6 +15,7 @@ vi.mock("@/lib/services/prevention-risk-legal", () => ({
   createRiskMatrixDraft,
   createRiskMethodology: vi.fn(),
   createRiskReviewTrigger: vi.fn(),
+  decideRiskMatrixApproval,
   ensureIspRiskMethodology: vi.fn(),
   resolveRiskReviewTrigger: vi.fn(),
   transitionRiskMatrix,
@@ -28,6 +30,7 @@ vi.mock("@/lib/services/prevention-risk-import", () => ({
 import {
   approveRiskImportBatchAction,
   createRiskMatrixDraftAction,
+  decideRiskMatrixApprovalAction,
   transitionRiskMatrixAction,
 } from "./actions"
 
@@ -70,7 +73,6 @@ describe("MIPER server actions are authorization boundaries", () => {
 
   it.each([
     ["reviewed", "prevention:risk:review"],
-    ["approved", "prevention:risk:approve"],
     ["published", "prevention:risk:publish"],
   ])("requires the specific %s workflow permission", async (toStatus, permission) => {
     guardPermission.mockResolvedValue(denied)
@@ -79,6 +81,18 @@ describe("MIPER server actions are authorization boundaries", () => {
 
     expect(guardPermission).toHaveBeenCalledWith(permission)
     expect(transitionRiskMatrix).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ["prevention", "prevention:risk:approve_prevention"],
+    ["operations", "prevention:risk:approve_operations"],
+  ])("requires the %s approval permission for its own domain, never the other's", async (domain, permission) => {
+    guardPermission.mockResolvedValue(denied)
+
+    await decideRiskMatrixApprovalAction({ matrixId: "matrix-1", domain, decision: "approved" })
+
+    expect(guardPermission).toHaveBeenCalledWith(permission)
+    expect(decideRiskMatrixApproval).not.toHaveBeenCalled()
   })
 
   it("requires approval permission for an import batch", async () => {

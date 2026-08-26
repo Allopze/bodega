@@ -13,7 +13,9 @@ import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { OptionSelect } from "@/components/ui/option-select"
 import { Pagination } from "@/components/ui/pagination"
-import { RISK_LEVELS, RISK_LEVEL_LABEL, riskLevelLabel } from "@/lib/prevention/risk-levels"
+import { riskLevelLabel } from "@/lib/prevention/risk-levels"
+import { DEFAULT_RISK_METHODOLOGY, RISK_CLASSIFICATION_LABEL, type RiskClassification } from "@/lib/prevention/risk-engine"
+import { RiskMatrixHelper } from "./risk-matrix-helper"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { formatDate } from "@/lib/utils"
@@ -27,6 +29,7 @@ import {
   addRiskEntryAction,
   approveRiskImportBatchAction,
   createRiskMatrixDraftAction,
+  decideRiskMatrixApprovalAction,
   ensureIspRiskMethodologyAction,
   reopenRiskImportBatchAction,
   resolveRiskImportRowAction,
@@ -37,6 +40,8 @@ import {
 
 type Dashboard = Awaited<ReturnType<typeof getRiskDashboard>>
 type Imports = Awaited<ReturnType<typeof listRiskImportBatchesPage>>["rows"]
+type MatrixApproval = NonNullable<ReturnType<Dashboard["approvalsByMatrix"]["get"]>>[number]
+type ApprovalDomain = "prevention" | "operations"
 const MIPER_TABS = new Set(["versions", "reviews", "imports"])
 
 function resolveMiperTab(value: string | null) {
@@ -47,6 +52,8 @@ type RiskMatrixPermissions = {
   canEdit: boolean
   canReview: boolean
   canApprove: boolean
+  canApprovePrevention: boolean
+  canApproveOperations: boolean
   canPublish: boolean
 }
 
@@ -183,7 +190,10 @@ export function MiperWorkbench({ dashboard, imports, importsTotal, importsPagina
           {dashboard.matrices.length === 0 ? <EmptyState title="Sin versiones MIPER" description="Crea la primera versión usando una metodología validada." /> : dashboard.matrices.map((matrix) => {
             const entries = dashboard.entries.filter((item) => item.entry.matrixId === matrix.id)
             return <section key={matrix.id} className="rounded-lg border p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><h2 className="font-semibold">{matrix.title} · v{matrix.matrixVersion}</h2><Badge variant={variant(matrix.status)}>{STATUS_LABEL[matrix.status] ?? matrix.status}</Badge></div><p className="mt-1 text-sm text-[var(--color-text-subtle)]">{entries.length} peligro(s) · {matrix.revisionReason}</p>{matrix.publishedHashSha256 && <p className="mt-1 font-mono text-xs">SHA-256 {matrix.publishedHashSha256.slice(0, 16)}…</p>}</div><div className="flex flex-wrap gap-2">{matrix.status === "draft" && canEdit && <AddRiskDialog matrixId={matrix.id} />}{matrix.status === "published" && <Button variant="secondary" asChild><Link href={`/api/prevencion/miper/${matrix.id}/export`}>Exportar Excel</Link></Button>}<MatrixTransition matrix={matrix} currentUserId={currentUserId} permissions={permissions} today={today} /></div></div>
-              {entries.length > 0 && <div className="mt-3 grid gap-2 md:grid-cols-2">{entries.slice(0, 8).map(({ entry, process, task, position }) => <div key={entry.id} className="rounded border p-3 text-sm"><div className="flex justify-between gap-2"><strong>{entry.hazardCode} · {entry.hazard}</strong>{entry.isCritical && <Badge variant="danger">Crítico</Badge>}</div><p className="mt-1 text-[var(--color-text-subtle)]">{process.name} → {task.name} → {position.name}</p><p className="mt-1">Residual: {riskLevelLabel(entry.residualLevel)}</p></div>)}</div>}
+              {matrix.status === "reviewed" && <MatrixApprovalPanel matrix={matrix} approvals={dashboard.approvalsByMatrix.get(matrix.id) ?? []} permissions={permissions} />}
+              {entries.length > 0 && <div className="mt-3 grid gap-2 md:grid-cols-2">{entries.slice(0, 8).map(({ entry, process, task, position }) => <div key={entry.id} className="rounded border p-3 text-sm"><div className="flex justify-between gap-2"><strong>{entry.hazardCode} · {entry.hazard}{entry.risk ? ` → ${entry.risk}` : ""}</strong>{entry.isCritical && <Badge variant="danger">Crítico</Badge>}</div><p className="mt-1 text-[var(--color-text-subtle)]">{process.name} → {task.name} → {position.name}</p><p className="mt-1">{entry.riskClassification ? `${RISK_CLASSIFICATION_LABEL[entry.riskClassification as RiskClassification]} (MR ${entry.riskMagnitude})` : `Residual: ${riskLevelLabel(entry.residualLevel)} — sin evaluar P×C`}</p></div>)}</div>}
+              <WorkProgramSummary counts={dashboard.workProgramCountsByWorksite.get(matrix.worksiteId)} worksiteId={matrix.worksiteId} />
+              {entries.length > 0 && <div className="mt-3"><Link href={`/prevencion/miper/matriz/${matrix.id}`} className="text-sm underline">Ver vista matriz {entries.length > 8 ? `(${entries.length} riesgos)` : ""} →</Link></div>}
             </section>
           })}
         </TabsContent>
@@ -205,23 +215,26 @@ export function MiperWorkbench({ dashboard, imports, importsTotal, importsPagina
 function AddRiskDialog({ matrixId }: { matrixId: string }) {
   const [open, setOpen] = useState(false)
   const [hierarchy, setHierarchy] = useState("elimination")
-  // MIPER-01: el nivel era un campo de texto libre, así que cada quien escribía
-  // "Alto", "alto" o "high" y la UI sólo sabía pintar el enum inglés. La lista
-  // canónica es la de lib/prevention/risk-levels, la misma que valida el
-  // servidor y la que restringe la base.
-  const [inherentLevel, setInherentLevel] = useState<string>(RISK_LEVELS[2])
-  const [residualLevel, setResidualLevel] = useState<string>(RISK_LEVELS[1])
+  // Motor P×C (lib/prevention/risk-engine.ts): el usuario elige probabilidad
+  // y consecuencia, nunca el nivel de riesgo directamente. MR y clasificación
+  // se muestran como previsualización (RiskMatrixHelper, puro y aislomorfo) —
+  // el servidor los recalcula siempre al guardar, nunca confía en esto.
+  const [probability, setProbability] = useState<string>(String(DEFAULT_RISK_METHODOLOGY.probability[1]!.value))
+  const [consequence, setConsequence] = useState<string>(String(DEFAULT_RISK_METHODOLOGY.consequence[0]!.value))
+  const [routine, setRoutine] = useState(true)
   const operation = useOperation()
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const v = new FormData(event.currentTarget); const critical = v.get("critical") === "on"; const control = String(v.get("control") ?? "").trim()
-    operation.run(() => addRiskEntryAction({ matrixId, process: { code: v.get("processCode"), name: v.get("process") }, task: { code: v.get("taskCode"), name: v.get("task"), isRoutine: true }, position: { code: v.get("positionCode"), name: v.get("position") }, hazardCode: v.get("hazardCode"), hazard: v.get("hazard"), riskFactor: v.get("factor"), expectedEventOrDamage: v.get("damage"), exposedPeopleDescription: v.get("exposed"), exposedPeopleCount: Number(v.get("count") || 0), genderConsiderations: v.get("gender"), sensitiveWorkerConsiderations: v.get("sensitivity"), inherentDimensions: { assessment: v.get("inherent") }, inherentLevel: v.get("inherent"), residualDimensions: { assessment: v.get("residual") }, residualLevel: v.get("residual"), isCritical: critical, responsibleSnapshot: v.get("responsible"), evidenceReference: v.get("evidence") || null, controls: control ? [{ description: control, hierarchy: v.get("hierarchy"), isExisting: true, isCritical: critical, performanceStandard: critical ? v.get("standard") : null, verificationFrequency: critical ? v.get("frequency") : null, responsibleSnapshot: v.get("responsible"), status: "proposed" }] : [] }), () => setOpen(false))
+    operation.run(() => addRiskEntryAction({ matrixId, process: { code: v.get("processCode"), name: v.get("process") }, task: { code: v.get("taskCode"), name: v.get("task"), isRoutine: routine }, position: { code: v.get("positionCode"), name: v.get("position") }, hazardCode: v.get("hazardCode"), hazard: v.get("hazard"), risk: v.get("risk"), riskFactor: v.get("factor"), expectedEventOrDamage: v.get("damage"), exposedPeopleDescription: v.get("exposed"), exposedPeopleCount: Number(v.get("count") || 0), isRoutine: routine, genderConsiderations: v.get("gender"), sensitiveWorkerConsiderations: v.get("sensitivity"), probability: Number(probability), consequence: Number(consequence), isCritical: critical, responsibleSnapshot: v.get("responsible"), evidenceReference: v.get("evidence") || null, controls: control ? [{ description: control, hierarchy: v.get("hierarchy"), isExisting: true, isCritical: critical, performanceStandard: critical ? v.get("standard") : null, verificationFrequency: critical ? v.get("frequency") : null, responsibleSnapshot: v.get("responsible"), status: "proposed" }] : [] }), () => setOpen(false))
   }
-  return <Dialog open={open} onOpenChange={setOpen}><DialogTrigger asChild><Button size="sm">Agregar peligro</Button></DialogTrigger><DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto"><form onSubmit={submit} className="space-y-4"><DialogHeader><DialogTitle>Agregar peligro y control</DialogTitle><DialogDescription>La jerarquía y evaluación quedan congeladas en esta versión.</DialogDescription></DialogHeader><div className="grid gap-3 md:grid-cols-3"><Field label="Proceso"><Input name="process" required /></Field><Field label="Código proceso"><Input name="processCode" required /></Field><span /><Field label="Tarea"><Input name="task" required /></Field><Field label="Código tarea"><Input name="taskCode" required /></Field><span /><Field label="Puesto"><Input name="position" required /></Field><Field label="Código puesto"><Input name="positionCode" required /></Field><span /></div><div className="grid gap-3 md:grid-cols-2"><Field label="Código peligro"><Input name="hazardCode" required /></Field><Field label="Peligro"><Input name="hazard" required /></Field><Field label="Factor"><Input name="factor" required /></Field><Field label="Evento o daño"><Input name="damage" required /></Field><Field label="Personas expuestas"><Input name="exposed" required /></Field><Field label="Cantidad"><Input name="count" type="number" min="0" defaultValue="0" /></Field><Field label="Riesgo inherente"><OptionSelect id="miper-inherent" value={inherentLevel} onValueChange={setInherentLevel} options={RISK_LEVELS.map((level) => ({ value: level, label: RISK_LEVEL_LABEL[level] }))} /><input type="hidden" name="inherent" value={inherentLevel} /></Field><Field label="Riesgo residual"><OptionSelect id="miper-residual" value={residualLevel} onValueChange={setResidualLevel} options={RISK_LEVELS.map((level) => ({ value: level, label: RISK_LEVEL_LABEL[level] }))} /><input type="hidden" name="residual" value={residualLevel} /></Field></div><Field label="Enfoque de género"><Textarea name="gender" required minLength={3} /></Field><Field label="Personas especialmente sensibles"><Textarea name="sensitivity" required minLength={3} /></Field><div className="grid gap-3 md:grid-cols-2"><Field label="Responsable"><Input name="responsible" required /></Field><Field label="Evidencia"><Input name="evidence" /></Field></div><Checkbox name="critical" label="Riesgo/control crítico" /><Field label="Control existente o planificado"><Textarea name="control" /></Field><div className="grid gap-3 md:grid-cols-3"><Field label="Jerarquía"><Select value={hierarchy} onValueChange={setHierarchy}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="elimination">Eliminación</SelectItem><SelectItem value="substitution">Sustitución</SelectItem><SelectItem value="engineering">Ingeniería</SelectItem><SelectItem value="administrative">Administrativo</SelectItem><SelectItem value="ppe">EPP</SelectItem></SelectContent></Select><input type="hidden" name="hierarchy" value={hierarchy} /></Field><Field label="Estándar crítico"><Input name="standard" /></Field><Field label="Frecuencia"><Input name="frequency" /></Field></div>{operation.message && <p role="status" className="text-sm">{operation.message}</p>}<DialogFooter><Button type="submit" disabled={operation.pending}>Guardar peligro</Button></DialogFooter></form></DialogContent></Dialog>
+  return <Dialog open={open} onOpenChange={setOpen}><DialogTrigger asChild><Button size="sm">Agregar peligro</Button></DialogTrigger><DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto"><form onSubmit={submit} className="space-y-4"><DialogHeader><DialogTitle>Agregar peligro y control</DialogTitle><DialogDescription>La jerarquía y evaluación quedan congeladas en esta versión.</DialogDescription></DialogHeader><div className="grid gap-3 md:grid-cols-3"><Field label="Proceso"><Input name="process" required /></Field><Field label="Código proceso"><Input name="processCode" required /></Field><span /><Field label="Tarea"><Input name="task" required /></Field><Field label="Código tarea"><Input name="taskCode" required /></Field><span /><Field label="Puesto"><Input name="position" required /></Field><Field label="Código puesto"><Input name="positionCode" required /></Field><span /></div><div className="grid gap-3 md:grid-cols-2"><Field label="Código peligro"><Input name="hazardCode" required /></Field><Field label="Peligro"><Input name="hazard" required /></Field><Field label="Riesgo"><Input name="risk" required /></Field><Field label="Factor"><Input name="factor" required /></Field><Field label="Evento o daño"><Input name="damage" required /></Field><Field label="Personas expuestas"><Input name="exposed" required /></Field><Field label="Cantidad"><Input name="count" type="number" min="0" defaultValue="0" /></Field></div><Checkbox checked={routine} onChange={(event) => setRoutine(event.target.checked)} label="Tarea rutinaria" /><div className="grid gap-3 md:grid-cols-2"><Field label="Probabilidad"><OptionSelect id="miper-probability" value={probability} onValueChange={setProbability} options={DEFAULT_RISK_METHODOLOGY.probability.map((level) => ({ value: String(level.value), label: level.label }))} /></Field><Field label="Consecuencia"><OptionSelect id="miper-consequence" value={consequence} onValueChange={setConsequence} options={DEFAULT_RISK_METHODOLOGY.consequence.map((level) => ({ value: String(level.value), label: level.label }))} /></Field></div><RiskMatrixHelper probability={Number(probability)} consequence={Number(consequence)} /><Field label="Enfoque de género"><Textarea name="gender" required minLength={3} /></Field><Field label="Personas especialmente sensibles"><Textarea name="sensitivity" required minLength={3} /></Field><div className="grid gap-3 md:grid-cols-2"><Field label="Responsable"><Input name="responsible" required /></Field><Field label="Evidencia"><Input name="evidence" /></Field></div><Checkbox name="critical" label="Riesgo/control crítico" /><Field label="Control existente o planificado"><Textarea name="control" /></Field><div className="grid gap-3 md:grid-cols-3"><Field label="Jerarquía"><Select value={hierarchy} onValueChange={setHierarchy}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="elimination">Eliminación</SelectItem><SelectItem value="substitution">Sustitución</SelectItem><SelectItem value="engineering">Ingeniería</SelectItem><SelectItem value="administrative">Administrativo</SelectItem><SelectItem value="ppe">EPP</SelectItem></SelectContent></Select><input type="hidden" name="hierarchy" value={hierarchy} /></Field><Field label="Estándar crítico"><Input name="standard" /></Field><Field label="Frecuencia"><Input name="frequency" /></Field></div>{operation.message && <p role="status" className="text-sm">{operation.message}</p>}<DialogFooter><Button type="submit" disabled={operation.pending}>Guardar peligro</Button></DialogFooter></form></DialogContent></Dialog>
 }
 
 function MatrixTransition({ matrix, currentUserId, permissions, today }: { matrix: Dashboard["matrices"][number]; currentUserId: string; permissions: RiskMatrixPermissions; today: string }) {
-  const { canEdit, canReview, canApprove, canPublish } = permissions
-  const next = matrix.status === "draft" && canEdit ? ["in_review", "Enviar a revisión"] : matrix.status === "in_review" && canReview && matrix.createdByUserId !== currentUserId ? ["reviewed", "Revisar"] : matrix.status === "reviewed" && canApprove && matrix.createdByUserId !== currentUserId && matrix.reviewedByUserId !== currentUserId ? ["approved", "Aprobar"] : matrix.status === "approved" && canPublish ? ["published", "Publicar"] : null
+  const { canEdit, canReview, canPublish } = permissions
+  // reviewed → approved ya no se decide acá: ver MatrixApprovalPanel — exige
+  // la firma separada de Prevención y Operaciones, no un botón único.
+  const next = matrix.status === "draft" && canEdit ? ["in_review", "Enviar a revisión"] : matrix.status === "in_review" && canReview && matrix.createdByUserId !== currentUserId ? ["reviewed", "Revisar"] : matrix.status === "approved" && canPublish ? ["published", "Publicar"] : null
   // MIPER-10: el revisor puede devolver a borrador. Sin esto una versión con un
   // error quedaba trabada en revisión — nadie podía avanzarla ni editarla.
   const canReturn = matrix.status === "in_review" && canReview
@@ -229,6 +242,70 @@ function MatrixTransition({ matrix, currentUserId, permissions, today }: { matri
     {next && <MatrixTransitionDialog matrix={matrix} toStatus={next[0]!} label={next[1]!} today={today} />}
     {canReturn && <MatrixTransitionDialog matrix={matrix} toStatus="draft" label="Devolver a borrador" today={today} />}
   </>
+}
+
+/**
+ * Programa de Trabajo Preventivo de la faena (CAPA con `sourceType:'risk'`).
+ * El conteo lo trae `getRiskDashboard` ya agrupado por faena; el enlace usa
+ * los filtros server-side que `/prevencion/capa` ya expone, en vez de
+ * reconstruir la lista acá.
+ */
+function WorkProgramSummary({ counts, worksiteId }: { counts?: { open: number; overdue: number; pendingVerification: number }; worksiteId: string }) {
+  if (!counts || counts.open === 0) return null
+  return (
+    <p className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+      <span className="text-eyebrow">Programa de Trabajo</span>
+      <Badge variant="default">{counts.open} abierta(s)</Badge>
+      {counts.overdue > 0 && <Badge variant="danger">{counts.overdue} vencida(s)</Badge>}
+      {counts.pendingVerification > 0 && <Badge variant="warning">{counts.pendingVerification} por verificar</Badge>}
+      <Link href={`/prevencion/capa?source=risk&worksite=${worksiteId}`} className="underline">Ver acciones →</Link>
+    </p>
+  )
+}
+
+const APPROVAL_DOMAINS: Array<{ key: ApprovalDomain; label: string }> = [
+  { key: "prevention", label: "Prevención" },
+  { key: "operations", label: "Operaciones" },
+]
+
+/* §48-51: Prevención y Operaciones firman por separado. Cada dominio muestra
+ * su propio estado (pendiente/aprobada/rechazada) — nunca un botón único
+ * "Aprobar" que una sola persona pudiera resolver por los dos. */
+function MatrixApprovalPanel({ matrix, approvals, permissions }: { matrix: Dashboard["matrices"][number]; approvals: MatrixApproval[]; permissions: RiskMatrixPermissions }) {
+  return <div className="mt-3 flex flex-wrap items-center gap-2 rounded border p-3 text-sm">
+    <span className="text-eyebrow">Doble aprobación</span>
+    {APPROVAL_DOMAINS.map(({ key, label }) => {
+      const approval = approvals.find((row) => row.domain === key)
+      if (approval) return <Badge key={key} variant={approval.decision === "approved" ? "success" : "danger"}>{label}: {approval.decision === "approved" ? "aprobada" : "rechazada"}</Badge>
+      const canDecide = key === "prevention" ? permissions.canApprovePrevention : permissions.canApproveOperations
+      return canDecide
+        ? <MatrixApprovalDialog key={key} matrix={matrix} domain={key} domainLabel={label} />
+        : <Badge key={key} variant="warning">{label}: pendiente</Badge>
+    })}
+  </div>
+}
+
+function MatrixApprovalDialog({ matrix, domain, domainLabel }: { matrix: Dashboard["matrices"][number]; domain: ApprovalDomain; domainLabel: string }) {
+  const [open, setOpen] = useState(false)
+  const [decision, setDecision] = useState<"approved" | "rejected">("approved")
+  const operation = useOperation()
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const v = new FormData(event.currentTarget)
+    operation.run(() => decideRiskMatrixApprovalAction({ matrixId: matrix.id, expectedVersion: matrix.version, domain, decision, reason: v.get("reason") }), () => setOpen(false))
+  }
+  return <Dialog open={open} onOpenChange={setOpen}>
+    <DialogTrigger asChild><Button size="sm" variant="secondary">Firmar como {domainLabel}</Button></DialogTrigger>
+    <DialogContent>
+      <form onSubmit={submit} className="space-y-4">
+        <DialogHeader><DialogTitle>Aprobación de {domainLabel} · MIPER v{matrix.matrixVersion}</DialogTitle><DialogDescription>No puede firmarla quien creó o revisó esta versión, ni quien ya firmó por el otro dominio. La decisión queda en el historial con actor y fecha.</DialogDescription></DialogHeader>
+        <Field label="Decisión"><Select value={decision} onValueChange={(value) => setDecision(value as "approved" | "rejected")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="approved">Aprobar</SelectItem><SelectItem value="rejected">Rechazar</SelectItem></SelectContent></Select></Field>
+        <Field label="Fundamento"><Textarea name="reason" required minLength={10} /></Field>
+        {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+        <DialogFooter><Button type="submit" disabled={operation.pending}>Confirmar</Button></DialogFooter>
+      </form>
+    </DialogContent>
+  </Dialog>
 }
 
 function MatrixTransitionDialog({ matrix, toStatus, label, today }: { matrix: Dashboard["matrices"][number]; toStatus: string; label: string; today: string }) {

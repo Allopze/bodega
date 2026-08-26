@@ -36,7 +36,10 @@ export default async function MiperPage({ searchParams }: { searchParams: Promis
   const permissions = {
     canEdit: can(session, "prevention:risk:edit"),
     canReview: can(session, "prevention:risk:review"),
+    // Aprobar un LOTE de importación (bandeja de import) — no la versión MIPER.
     canApprove: can(session, "prevention:risk:approve"),
+    canApprovePrevention: can(session, "prevention:risk:approve_prevention"),
+    canApproveOperations: can(session, "prevention:risk:approve_operations"),
     canPublish: can(session, "prevention:risk:publish"),
   }
 

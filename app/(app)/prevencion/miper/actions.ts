@@ -8,9 +8,11 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import type { Permission } from "@/modules/permissions"
 import {
   addRiskEntry,
+  bulkUpdateRiskControls,
   createRiskMatrixDraft,
   createRiskMethodology,
   createRiskReviewTrigger,
+  decideRiskMatrixApproval,
   ensureIspRiskMethodology,
   resolveRiskReviewTrigger,
   transitionRiskMatrix,
@@ -29,6 +31,7 @@ import {
   addRiskMapMarker,
   removeRiskMapMarker,
 } from "@/lib/services/prevention-risk-map"
+import { generateCapaActionsFromRiskEntries } from "@/lib/services/prevention-risk-capa"
 import type { ActionState } from "@/lib/validation/prevention"
 
 const REVALIDATE = "/prevencion/miper"
@@ -78,10 +81,19 @@ export async function transitionRiskMatrixAction(input: unknown): Promise<Action
   const toStatus = typeof input === "object" && input && "toStatus" in input ? String(input.toStatus) : ""
   // 'draft' es la devolución del revisor (MIPER-10): mismo permiso que revisar,
   // no el de editar — devolver es una decisión de revisión, no una corrección.
-  const permission: Permission = toStatus === "reviewed" || toStatus === "draft" ? "prevention:risk:review" : toStatus === "approved" ? "prevention:risk:approve" : toStatus === "published" ? "prevention:risk:publish" : "prevention:risk:edit"
+  // 'approved' ya no pasa por aquí: ver decideRiskMatrixApprovalAction.
+  const permission: Permission = toStatus === "reviewed" || toStatus === "draft" ? "prevention:risk:review" : toStatus === "published" ? "prevention:risk:publish" : "prevention:risk:edit"
   const guard = await guardPermission(permission)
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => transitionRiskMatrix(input, access))
+}
+
+export async function decideRiskMatrixApprovalAction(input: unknown): Promise<ActionState> {
+  const domain = typeof input === "object" && input && "domain" in input ? String(input.domain) : ""
+  const permission: Permission = domain === "operations" ? "prevention:risk:approve_operations" : "prevention:risk:approve_prevention"
+  const guard = await guardPermission(permission)
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => decideRiskMatrixApproval(input, access))
 }
 
 export async function createRiskReviewTriggerAction(input: unknown): Promise<ActionState> {
@@ -162,4 +174,29 @@ export async function removeRiskMapMarkerAction(input: unknown): Promise<ActionS
   const guard = await guardPermission("prevention:risk:edit")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => removeRiskMapMarker(input, access))
+}
+
+/* ── Vista matriz: operaciones masivas ──────────────────────────────────────── */
+
+export async function bulkUpdateRiskControlsAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:risk:edit")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => bulkUpdateRiskControls(input, access))
+}
+
+/* ── Programa de Trabajo (CAPA con sourceType:'risk') ──────────────────────── */
+
+export async function generateCapaFromRisksAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:capa:manage")
+  if (guard.error) return guard.error
+  try {
+    const result = await generateCapaActionsFromRiskEntries(input, accessFromSession(guard.session))
+    revalidatePath(REVALIDATE)
+    revalidatePath("/prevencion/miper/riesgos/[id]", "page")
+    revalidatePath("/prevencion/capa")
+    return { ok: true, message: `${result.created.length} acción(es) creada(s)${result.skipped.length ? `, ${result.skipped.length} omitida(s)` : ""}.` }
+  } catch (error) {
+    if (error instanceof ZodError) return { ok: false, message: "Revisa los campos marcados.", fieldErrors: error.flatten().fieldErrors as Record<string, string[]> }
+    return unexpectedActionError(error, "prevencion/miper/actions")
+  }
 }
