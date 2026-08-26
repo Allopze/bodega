@@ -67,6 +67,8 @@ export const preventionModule = {
     "prevention:risk:edit",
     "prevention:risk:review",
     "prevention:risk:approve",
+    "prevention:risk:approve_prevention",
+    "prevention:risk:approve_operations",
     "prevention:risk:publish",
     "prevention:risk:override_segregation",
     "prevention:legal:view",
@@ -179,7 +181,12 @@ export const preventionModule = {
     "prevention:risk:view": { id: "p-prev-risk-view", description: "Ver MIPER, controles críticos, revisiones y cobertura dentro de la faena autorizada" },
     "prevention:risk:edit": { id: "p-prev-risk-edit", description: "Crear versiones MIPER, importar peligros y gestionar disparadores de revisión" },
     "prevention:risk:review": { id: "p-prev-risk-review", description: "Revisar técnicamente versiones MIPER de forma segregada" },
-    "prevention:risk:approve": { id: "p-prev-risk-approve", description: "Aprobar versiones y lotes MIPER de forma segregada" },
+    // Aprueba LOTES de importación antes de activarlos (prevention-risk-import.ts).
+    // La aprobación final de la VERSIÓN MIPER (para poder publicarla) usa los
+    // dos permisos de dominio de abajo — dos actos distintos, no el mismo.
+    "prevention:risk:approve": { id: "p-prev-risk-approve", description: "Aprobar lotes de importación MIPER antes de activarlos, de forma segregada" },
+    "prevention:risk:approve_prevention": { id: "p-prev-risk-approve-prev", description: "Aprobar una versión MIPER como Jefatura del Departamento de Prevención de Riesgos (§48)" },
+    "prevention:risk:approve_operations": { id: "p-prev-risk-approve-ops", description: "Aprobar una versión MIPER como Subgerencia de Operaciones (§48)" },
     "prevention:risk:publish": { id: "p-prev-risk-publish", description: "Publicar una versión MIPER inmutable y activar el reloj PDTP" },
     "prevention:risk:override_segregation": { id: "p-prev-risk-override", description: "Autorizar excepción fundamentada a la segregación de verificación de controles MIPER" },
     "prevention:legal:view": { id: "p-prev-legal-view", description: "Ver el registro legal y la aplicabilidad dentro de la faena autorizada" },
@@ -649,6 +656,9 @@ export const preventionModule = {
     { roleSlug: "prevencionista", permission: "prevention:risk:view" },
     { roleSlug: "prevencionista", permission: "prevention:risk:edit" },
     { roleSlug: "prevencionista", permission: "prevention:risk:review" },
+    // §48: la Jefatura del Departamento de Prevención de Riesgos es
+    // exactamente el label del rol `prevencionista` en lib/auth/system-rbac.ts.
+    { roleSlug: "prevencionista", permission: "prevention:risk:approve_prevention" },
     { roleSlug: "prevencionista_faena", permission: "prevention:risk:view" },
     { roleSlug: "prevencionista_faena", permission: "prevention:risk:edit" },
     { roleSlug: "jefa_chome", permission: "prevention:risk:view" },
@@ -657,10 +667,16 @@ export const preventionModule = {
     { roleSlug: "jefa_chome", permission: "prevention:risk:publish" },
     { roleSlug: "cphs", permission: "prevention:risk:view" },
     { roleSlug: "jefe_terreno", permission: "prevention:risk:view" },
+    // §48: la Subgerencia de Operaciones ya existe como rol propio
+    // (`subgerente_operaciones`, hoy sólo usado en PDTP) — no se inventa uno.
+    { roleSlug: "subgerente_operaciones", permission: "prevention:risk:view" },
+    { roleSlug: "subgerente_operaciones", permission: "prevention:risk:approve_operations" },
     { roleSlug: "administrador", permission: "prevention:risk:view" },
     { roleSlug: "administrador", permission: "prevention:risk:edit" },
     { roleSlug: "administrador", permission: "prevention:risk:review" },
     { roleSlug: "administrador", permission: "prevention:risk:approve" },
+    { roleSlug: "administrador", permission: "prevention:risk:approve_prevention" },
+    { roleSlug: "administrador", permission: "prevention:risk:approve_operations" },
     { roleSlug: "administrador", permission: "prevention:risk:publish" },
     { roleSlug: "administrador", permission: "prevention:risk:override_segregation" },
     { roleSlug: "prevencionista", permission: "prevention:legal:view" },
