@@ -150,10 +150,16 @@ describe("Reporte de Equipos", () => {
       : answer)
     const bloqueado = assessRunCompletion(items, conPendiente)
     expect(bloqueado.allowed).toBe(false)
-    expect(bloqueado.blockers).toContainEqual({
+    // Subconjunto, no igualdad exacta: los bloqueadores llevan además
+    // `sectionId`/`itemId` desde ccf1edf —la UI los necesita para enlazar cada
+    // bloqueo con su ítem— y un literal cerrado se rompe con cada campo nuevo.
+    // Mismo criterio que prevention-inspections-calc.test.ts. Se fija el
+    // `itemId` porque el punto de la prueba es CUÁL ítem quedó sin ratificar.
+    expect(bloqueado.blockers).toContainEqual(expect.objectContaining({
       kind: "unconfirmed_critical",
       detail: "Estado de frenos — de servicio (pedal de freno).",
-    })
+      itemId: "freno_servicio",
+    }))
 
     // Ratificarlo lo desbloquea, sin cambiar la respuesta.
     const ratificado = conPendiente.map((answer) => ({ ...answer, needsConfirmation: false }))
