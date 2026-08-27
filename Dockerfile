@@ -78,11 +78,22 @@ RUN ./node_modules/.bin/esbuild \
 # los DTE sincronizados antes de que existiera la columna. Sin este paso en el
 # deploy, la señal "el proveedor cita esta OC" sólo existiría para los
 # documentos que lleguen después, o sea para ninguno de los que ya están.
+#
+# Acá NO se usa `--packages=external` como en los one-shot de arriba: la imagen
+# de producción es un build standalone de Next y su `node_modules` sólo trae lo
+# que el tracer vio más lo que se copia explícitamente abajo — `drizzle-orm` y
+# `postgres`. `fast-xml-parser`, que este script necesita para leer el XML, NO
+# está: Next lo inlinea en sus chunks de servidor y nunca queda como paquete
+# resoluble. Dejarlo externo produce un ERR_MODULE_NOT_FOUND al arrancar, así
+# que se externalizan sólo los dos paquetes que sí existen en la imagen y todo
+# lo demás se empaqueta.
 RUN ./node_modules/.bin/esbuild scripts/backfill-dte-order-refs.ts \
     --bundle \
     --platform=node \
     --format=esm \
-    --packages=external \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
     --outfile=/tmp/backfill-dte-order-refs.mjs
 
 

@@ -26,7 +26,7 @@
 import { and, asc, gt, isNull, isNotNull, eq, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { dteDocuments } from "@/db/schema"
-import { readCachedXml } from "@/lib/services/dte-portal/purchase-document-xml"
+import { readCachedXml } from "@/lib/services/dte-portal/cached-xml"
 
 const BATCH = 500
 

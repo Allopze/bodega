@@ -4,11 +4,12 @@ import { and, eq, isNull, notInArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { dteDocumentItems, dteDocuments } from "@/db/schema"
 import { cleanRut } from "@/lib/rut"
-import { mkdirp, readBuffer, writeBuffer } from "@/lib/storage/helpers"
-import { createDtePath, resolveDteDir, resolveDteFile } from "@/lib/storage/config"
-import { decodeXmlBuffer, DtePortalClient } from "./client"
+import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
+import { createDtePath, resolveDteDir } from "@/lib/storage/config"
+import { DtePortalClient } from "./client"
 import { buildDtePortalClientConfig, readDtePortalConfig } from "./config"
-import { downloadDteXml, MAX_DTE_XML_BYTES } from "./download"
+import { downloadDteXml } from "./download"
+import { readCachedXml } from "./cached-xml"
 import { parseDteXml, type DteData, type DteItem } from "@/lib/services/purchasing-module/dte-parser"
 
 export interface DteXmlDetail {
@@ -196,26 +197,6 @@ function toDetail(parsed: DteData): DteXmlDetail {
     totalAmount: parsed.totalAmount,
     items: parsed.items,
     referencedOrderCodes: parsed.referencedOrderCodes,
-  }
-}
-
-/**
- * Lee y parsea el XML ya verificado en disco. Exportada para el backfill de
- * `referenced_order_codes`, que necesita releer documentos ya enriquecidos sin
- * pasar por `enrichDteDocumentLines` —eso los devolvería a `pending` y podría
- * dejarlos en `failed`— y sin poder salir al portal.
- */
-export async function readCachedXml(xmlPath: string): Promise<DteData | null> {
-  const absolutePath = resolveDteFile(xmlPath)
-  if (!absolutePath) return null
-  try {
-    const stat = await fs.stat(absolutePath)
-    if ((typeof stat.isFile === "function" && !stat.isFile()) || stat.size > MAX_DTE_XML_BYTES) return null
-    const buffer = await readBuffer(absolutePath)
-    if (buffer.length > MAX_DTE_XML_BYTES) return null
-    return parseDteXml(decodeXmlBuffer(buffer))
-  } catch {
-    return null
   }
 }
 
