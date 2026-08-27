@@ -9,8 +9,8 @@ set -euo pipefail
 # push/pull in this flow: build the image here on `main`, then swap it in at
 # PROD_DIR. Steps: tag current image as rollback -> pg_dump -> build ->
 # preflight conciliación -> migrate -> backfill conciliación (si hace falta) ->
-# sync-rbac -> catálogo de inspecciones -> recreate app then cron containers ->
-# authenticated smoke check.
+# backfill referencias OC en DTE (si hace falta) -> sync-rbac -> catálogo de
+# inspecciones -> recreate app then cron containers -> authenticated smoke check.
 # ─────────────────────────────────────────────────────────────────────────────
 
 PROD_DIR="${PROD_DIR:-/server/plataforma}"
@@ -173,6 +173,25 @@ if [ "$pending_reconciliation" -gt 0 ]; then
   run_timed "Proyección de conciliación OC-factura" run_in_prod docker compose run --rm backfill-invoice-reconciliation
 else
   echo "    proyección al día; backfill omitido"
+fi
+
+# La señal "el proveedor cita esta OC" sale del XML, y los DTE sincronizados
+# antes de que existiera la columna la tienen sin leer. `referenced_order_codes`
+# NULL significa exactamente eso —cadena vacía es "se leyó y no citaba nada"—,
+# así que contar NULL con XML en disco es contar trabajo real pendiente.
+echo "==> Referencias a OC en los DTE del histórico"
+pending_dte_refs="$( (cd "$PROD_DIR" && docker compose exec -T db psql -U "${POSTGRES_USER:-bodega}" -d "${POSTGRES_DB:-bodega}" -tAc "SELECT COUNT(*) FROM dte_documents WHERE referenced_order_codes IS NULL AND xml_path IS NOT NULL" 2>/dev/null | tr -d '[:space:]') || true)"
+case "$pending_dte_refs" in
+  ''|*[!0-9]*)
+    echo "    no se pudo contar DTE pendientes; se ejecuta el backfill igual (es idempotente)"
+    pending_dte_refs=1
+    ;;
+esac
+if [ "$pending_dte_refs" -gt 0 ]; then
+  echo "    $pending_dte_refs DTE con XML sin examinar; ejecutando backfill"
+  run_timed "Referencias a OC en los DTE del histórico" run_in_prod docker compose run --rm backfill-dte-order-refs
+else
+  echo "    referencias al día; backfill omitido"
 fi
 
 run_timed "Syncing RBAC permissions from module manifests" run_in_prod docker compose run --rm sync-rbac

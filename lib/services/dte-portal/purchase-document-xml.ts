@@ -20,6 +20,8 @@ export interface DteXmlDetail {
   taxAmount: number
   totalAmount: number
   items: DteItem[]
+  /** Códigos de OC citados por el proveedor en `<Referencia>`, normalizados. */
+  referencedOrderCodes: string[]
 }
 
 export type PurchaseDteXmlErrorCode =
@@ -149,6 +151,15 @@ export async function enrichDteDocumentLines(dteDocumentId: string): Promise<
         lineEnrichmentStatus: "ready",
         lineEnrichedAt: new Date().toISOString(),
         lineEnrichmentErrorCode: null,
+        // Sale del mismo XML que las líneas y en la misma transacción: un
+        // documento "ready" con la referencia sin leer sería un candidato al
+        // que le falta justo la evidencia más fuerte.
+        //
+        // Cadena vacía y no NULL cuando el proveedor no citó ninguna OC: NULL
+        // significa "nunca se examinó el XML" y es lo que busca el backfill
+        // `backfill-dte-order-refs`. Confundirlos lo haría releer para siempre
+        // los documentos que ya sabemos que no traen referencia.
+        referencedOrderCodes: detail.referencedOrderCodes.join(","),
       }).where(eq(dteDocuments.id, dteDocumentId))
     })
 
@@ -184,10 +195,17 @@ function toDetail(parsed: DteData): DteXmlDetail {
     taxAmount: parsed.taxAmount,
     totalAmount: parsed.totalAmount,
     items: parsed.items,
+    referencedOrderCodes: parsed.referencedOrderCodes,
   }
 }
 
-async function readCachedXml(xmlPath: string): Promise<DteData | null> {
+/**
+ * Lee y parsea el XML ya verificado en disco. Exportada para el backfill de
+ * `referenced_order_codes`, que necesita releer documentos ya enriquecidos sin
+ * pasar por `enrichDteDocumentLines` —eso los devolvería a `pending` y podría
+ * dejarlos en `failed`— y sin poder salir al portal.
+ */
+export async function readCachedXml(xmlPath: string): Promise<DteData | null> {
   const absolutePath = resolveDteFile(xmlPath)
   if (!absolutePath) return null
   try {

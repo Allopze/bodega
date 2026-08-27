@@ -137,6 +137,18 @@ export const dteDocuments = pgTable("dte_documents", {
   lineEnrichmentStatus:   text("line_enrichment_status").notNull().default("pending"),
   lineEnrichmentAttempts: integer("line_enrichment_attempts").notNull().default(0),
   lineEnrichedAt:         timestamp("line_enriched_at", { withTimezone: true, mode: "string" }),
+  /**
+   * Códigos de OC que el proveedor citó en `<Referencia>` TpoDocRef 801, ya
+   * normalizados (`normalizeOrderCodeRef`) y separados por coma — la
+   * normalización deja sólo `[A-Z0-9]`, así que la coma nunca es ambigua.
+   * Se llena junto con las líneas, desde el mismo XML.
+   *
+   * Tres estados: NULL = el XML nunca se examinó (fila anterior a la columna);
+   * cadena vacía = se examinó y el proveedor no citó ninguna OC; con contenido
+   * = citó. La distinción es la condición de término de
+   * `scripts/backfill-dte-order-refs.ts`.
+   */
+  referencedOrderCodes:   text("referenced_order_codes"),
   /** Código seguro; nunca conserva URLs, credenciales ni respuesta cruda del portal. */
   lineEnrichmentErrorCode: text("line_enrichment_error_code"),
   /** Ruta al archivo PDF descargado (relativa a storage/) — nullable, se llena on-demand */

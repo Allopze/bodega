@@ -266,7 +266,7 @@ export default async function OcDetailPage({
         columns: {
           id: true, tipoDte: true, folio: true, rutEmisor: true,
           razonSocialEmisor: true, montoTotal: true, fechaEmision: true,
-          lineEnrichmentStatus: true, lineEnrichedAt: true,
+          lineEnrichmentStatus: true, lineEnrichedAt: true, referencedOrderCodes: true,
         },
         orderBy: (d, { desc: descOrder }) => [descOrder(d.fechaEmision)],
       })
@@ -320,6 +320,7 @@ export default async function OcDetailPage({
     supplierRut: order.supplier?.rut ?? null,
     createdOn: candidateFloor,
     expectedAmount,
+    orderCode: order.code,
     orderItems: order.items.map((item) => ({
       id: item.id,
       productId: item.productId,
@@ -657,7 +658,7 @@ export default async function OcDetailPage({
                   canAttach={canInvoice && order.status !== "cancelled"}
                   receipts={receiptOptions}
                   defaultReceiptId={defaultReceiptId}
-                  dteCandidates={candidateDtes.map(({ doc, confidence, amountMatches, proposedLinks, explanation }) => ({
+                  dteCandidates={candidateDtes.map(({ doc, confidence, referencesOrder, amountMatches, proposedLinks, explanation }) => ({
                     id: doc.id,
                     tipoDte: doc.tipoDte,
                     folio: doc.folio,
@@ -665,6 +666,7 @@ export default async function OcDetailPage({
                     montoTotal: doc.montoTotal,
                     fechaEmision: doc.fechaEmision,
                     amountMatches,
+                    referencesOrder,
                     confidence,
                     enrichmentStatus: doc.enrichmentStatus,
                     lineEnrichedAt: doc.lineEnrichedAt,

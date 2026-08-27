@@ -230,3 +230,64 @@ describe("assessDteCandidates", () => {
     expect(result.some((candidate) => candidate.confidence === "unassessed")).toBe(true)
   })
 })
+
+describe("assessDteCandidates · la OC citada en el XML", () => {
+  const base = { ...sinEvidencia, supplierRut: "96542490-3", createdOn: "2026-08-01", orderCode: "OC-2026-0020" }
+
+  it("marca el documento que cita el código de esta orden", () => {
+    const docs = [
+      { ...doc("cita", "96542490-3", "2026-08-07"), referencedOrderCodes: "20260020" },
+      { ...doc("no-cita", "96542490-3", "2026-08-07"), referencedOrderCodes: "20260021" },
+    ]
+
+    const result = assessDteCandidates(docs, base)
+
+    expect(result.find((r) => r.doc.id === "cita")!.referencesOrder).toBe(true)
+    expect(result.find((r) => r.doc.id === "no-cita")!.referencesOrder).toBe(false)
+  })
+
+  it("pone primero al que cita la orden, incluso sin líneas analizadas", () => {
+    // Control positivo del orden: sin la cita, "calza" ganaría por monto.
+    const docs = [
+      { ...doc("calza", "96542490-3", "2026-08-10", 5000), referencedOrderCodes: null },
+      { ...doc("cita", "96542490-3", "2026-08-07", 999_999), referencedOrderCodes: "20260020" },
+    ]
+
+    const conCita = assessDteCandidates(docs, { ...base, expectedAmount: 5000 })
+    expect(conCita.map((r) => r.doc.id)).toEqual(["cita", "calza"])
+
+    const sinCita = assessDteCandidates(
+      docs.map((d) => ({ ...d, referencedOrderCodes: null })),
+      { ...base, expectedAmount: 5000 },
+    )
+    expect(sinCita.map((r) => r.doc.id)).toEqual(["calza", "cita"])
+  })
+
+  it("cruza una referencia sin el prefijo contra el código con prefijo", () => {
+    // Es el caso real: TRECK y APRO escriben "2026-0020", nosotros "OC-2026-0020".
+    const docs = [{ ...doc("real", "96542490-3", "2026-08-07"), referencedOrderCodes: "20260020" }]
+
+    expect(assessDteCandidates(docs, base)[0]!.referencesOrder).toBe(true)
+  })
+
+  it("lee varias referencias del mismo documento", () => {
+    const docs = [{ ...doc("multi", "96542490-3", "2026-08-07"), referencedOrderCodes: "20260019,20260020" }]
+
+    expect(assessDteCandidates(docs, base)[0]!.referencesOrder).toBe(true)
+  })
+
+  it("no marca nada cuando la orden no aporta código o el documento no trae referencias", () => {
+    const docs = [{ ...doc("d", "96542490-3", "2026-08-07"), referencedOrderCodes: "20260020" }]
+
+    expect(assessDteCandidates(docs, { ...base, orderCode: null })[0]!.referencesOrder).toBe(false)
+    expect(assessDteCandidates([doc("sin-ref", "96542490-3", "2026-08-07")], base)[0]!.referencesOrder).toBe(false)
+  })
+
+  it("no confunde la numeración interna vieja del proveedor con una OC nuestra", () => {
+    // Las 611 facturas previas a la plataforma citan su propio correlativo
+    // ("4477", "585."): normalizan a algo que no es ningún código nuestro.
+    const docs = [{ ...doc("legado", "96542490-3", "2026-08-07"), referencedOrderCodes: "4477" }]
+
+    expect(assessDteCandidates(docs, base)[0]!.referencesOrder).toBe(false)
+  })
+})

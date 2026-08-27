@@ -39,6 +39,7 @@ function candidate() {
     montoTotal: 119000,
     fechaEmision: "2026-07-09",
     amountMatches: true,
+    referencesOrder: false,
     confidence: "unassessed" as const,
     enrichmentStatus: "pending" as const,
     lineEnrichedAt: null,

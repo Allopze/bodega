@@ -74,6 +74,17 @@ RUN ./node_modules/.bin/esbuild \
     --outdir=/tmp/invoice-reconciliation \
     --out-extension:.js=.mjs
 
+# Mismo motivo: el backfill de `referenced_order_codes` relee el XML cacheado de
+# los DTE sincronizados antes de que existiera la columna. Sin este paso en el
+# deploy, la señal "el proveedor cita esta OC" sólo existiría para los
+# documentos que lleguen después, o sea para ninguno de los que ya están.
+RUN ./node_modules/.bin/esbuild scripts/backfill-dte-order-refs.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --packages=external \
+    --outfile=/tmp/backfill-dte-order-refs.mjs
+
 
 # ── Production stage: standalone build, minimal runtime ──
 FROM node:22.13-alpine AS prod
@@ -145,6 +156,7 @@ COPY --from=build /tmp/seed-pdtp-inspection-templates.mjs ./scripts/seed-pdtp-in
 COPY --from=build /tmp/invoice-reconciliation/preflight-purchase-invoice-reconciliation.mjs ./scripts/preflight-purchase-invoice-reconciliation.mjs
 COPY --from=build /tmp/invoice-reconciliation/backfill-purchase-invoice-reconciliation.mjs ./scripts/backfill-purchase-invoice-reconciliation.mjs
 COPY --from=build /tmp/invoice-reconciliation/rollback-purchase-invoice-reconciliation-statuses.mjs ./scripts/rollback-purchase-invoice-reconciliation-statuses.mjs
+COPY --from=build /tmp/backfill-dte-order-refs.mjs ./scripts/backfill-dte-order-refs.mjs
 # Cron service uses this bounded internal HTTP runner instead of an inline
 # wget command. It is copied explicitly because Next standalone does not trace
 # scripts invoked only by Compose.

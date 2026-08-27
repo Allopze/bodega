@@ -357,6 +357,36 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
     command: ["node", "scripts/backfill-purchase-invoice-reconciliation.mjs"]
 
+  # One-shot: rellena `referenced_order_codes` en los DTE sincronizados antes de
+  # que existiera la columna, releyendo el XML ya cacheado en disco. Es lo que
+  # enciende la señal "el proveedor cita esta OC" para el histórico; sin esto
+  # sólo la tendrían los documentos que lleguen después del deploy.
+  #
+  # NO sale al portal y NO toca el estado de enriquecimiento (ver la cabecera
+  # del script). Idempotente, así que deploy-prod.sh lo condiciona sólo para
+  # ahorrarse la pasada, no por riesgo de repetirlo.
+  #
+  # Monta el volumen de storage en sólo lectura: su trabajo es leer XML y
+  # escribir una columna.
+  #
+  #   docker compose run --rm backfill-dte-order-refs
+  backfill-dte-order-refs:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - STORAGE_PATH=${STORAGE_PATH:-/data/storage}
+    volumes:
+      - bodega-storage:/data/storage:ro
+    command: ["node", "scripts/backfill-dte-order-refs.mjs"]
+
   # One-shot, MANUAL y previo a volver al código anterior: traduce los estados
   # nuevos a `needs_review`. No elimina facturas, recepciones ni vínculos.
   prepare-rollback-invoice-reconciliation:

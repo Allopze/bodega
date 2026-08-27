@@ -15,6 +15,7 @@
  */
 
 import { cleanRut } from "@/lib/rut"
+import { normalizeOrderCodeRef } from "./dte-parser"
 import { areEquivalentUnits } from "./invoice-item-matching"
 
 export interface DteCandidateInput {
@@ -113,6 +114,12 @@ export interface DteCandidateLineInput {
 export interface DteCandidateDocumentInput extends DteCandidateInput {
   enrichmentStatus?: "pending" | "ready" | "failed"
   lines?: DteCandidateLineInput[]
+  /**
+   * Contenido crudo de `dte_documents.referenced_order_codes`: los códigos de
+   * OC que el proveedor citó en `<Referencia>`, normalizados y separados por
+   * coma. Null en los documentos anteriores a la columna.
+   */
+  referencedOrderCodes?: string | null
 }
 
 export interface DteCandidateOrderItem {
@@ -141,6 +148,14 @@ export interface DteCandidateProposedLink {
 export interface DteCandidateAssessment<T extends DteCandidateDocumentInput = DteCandidateDocumentInput> {
   doc: T
   confidence: DteCandidateConfidence
+  /**
+   * El proveedor citó el código de ESTA orden en el XML. Es la evidencia más
+   * fuerte disponible y se mantiene aparte de `confidence`, que mide otra cosa
+   * (cuántas líneas se pudieron vincular): una factura puede nombrar la orden
+   * correcta y aun así traer líneas que nadie logró cruzar, y esconder una de
+   * las dos señales detrás de la otra deja al operador sin qué discutir.
+   */
+  referencesOrder: boolean
   amountMatches: boolean
   amountDifference: number | null
   proposedLinks: DteCandidateProposedLink[]
@@ -158,6 +173,8 @@ export interface DteCandidateAssessment<T extends DteCandidateDocumentInput = Dt
 export interface DteCandidateAssessmentFilter extends DteCandidateFilter {
   orderItems: DteCandidateOrderItem[]
   aliases: DteCandidateAlias[]
+  /** `purchase_orders.code` ("OC-2026-0025"); se normaliza acá. */
+  orderCode?: string | null
 }
 
 /**
@@ -167,11 +184,15 @@ export interface DteCandidateAssessmentFilter extends DteCandidateFilter {
  */
 export function assessDteCandidates<T extends DteCandidateDocumentInput>(
   unlinkedDocs: T[],
-  { supplierRut, createdOn, expectedAmount, limit = DEFAULT_LIMIT, orderItems, aliases }: DteCandidateAssessmentFilter,
+  { supplierRut, createdOn, expectedAmount, limit = DEFAULT_LIMIT, orderItems, aliases, orderCode }: DteCandidateAssessmentFilter,
 ): DteCandidateAssessment<T>[] {
   if (!supplierRut || !cleanRut(supplierRut)) return []
   const supplier = cleanRut(supplierRut)
   const target = typeof expectedAmount === "number" && expectedAmount > 0 ? expectedAmount : null
+  // Los dos lados del cruce pasan por la misma normalización; ver
+  // `normalizeOrderCodeRef`. Un código nuestro ilegible deja la señal apagada,
+  // nunca prendida de más.
+  const normalizedOrderCode = normalizeOrderCodeRef(orderCode)
   const itemByProductId = new Map<string, DteCandidateOrderItem[]>()
 
   for (const item of orderItems) {
@@ -186,11 +207,14 @@ export function assessDteCandidates<T extends DteCandidateDocumentInput>(
     .map((doc): DteCandidateAssessment<T> => {
       const amountDifference = target === null ? null : Math.abs(doc.montoTotal - target)
       const amountMatches = amountDifference !== null && amountDifference <= AMOUNT_TOLERANCE_CLP
+      const referencesOrder = normalizedOrderCode !== null
+        && splitReferencedOrderCodes(doc.referencedOrderCodes).includes(normalizedOrderCode)
       const lines = doc.lines ?? []
       if (doc.enrichmentStatus !== "ready" || lines.length === 0) {
         return {
           doc,
           confidence: "unassessed",
+          referencesOrder,
           amountMatches,
           amountDifference,
           proposedLinks: [],
@@ -270,7 +294,7 @@ export function assessDteCandidates<T extends DteCandidateDocumentInput>(
           ? "medium"
           : "low"
 
-      return { doc, confidence, amountMatches, amountDifference, proposedLinks, explanation }
+      return { doc, confidence, referencesOrder, amountMatches, amountDifference, proposedLinks, explanation }
     })
 
   return assessed
@@ -279,6 +303,11 @@ export function assessDteCandidates<T extends DteCandidateDocumentInput>(
 }
 
 function compareAssessments(left: DteCandidateAssessment, right: DteCandidateAssessment) {
+  // La cita de la OC manda sobre todo lo demás, incluso sobre un documento sin
+  // analizar: que el proveedor haya escrito el código de esta orden en el XML
+  // pesa más que cualquier cruce de líneas que podamos inferir nosotros. Va
+  // primero en el orden, no en `confidence`, porque son señales distintas.
+  if (left.referencesOrder !== right.referencesOrder) return left.referencesOrder ? -1 : 1
   const confidenceOrder: Record<DteCandidateConfidence, number> = { high: 0, medium: 1, low: 2, unassessed: 3 }
   const confidence = confidenceOrder[left.confidence] - confidenceOrder[right.confidence]
   if (confidence !== 0) return confidence
@@ -298,6 +327,11 @@ function compareAssessments(left: DteCandidateAssessment, right: DteCandidateAss
   const rightAmount = right.amountDifference ?? Number.POSITIVE_INFINITY
   if (leftAmount !== rightAmount) return leftAmount - rightAmount
   return right.doc.fechaEmision.localeCompare(left.doc.fechaEmision)
+}
+
+/** El separador es seguro porque la normalización deja sólo `[A-Z0-9]`. */
+function splitReferencedOrderCodes(value: string | null | undefined): string[] {
+  return value ? value.split(",").filter(Boolean) : []
 }
 
 function emptyExplanation(totalLines: number) {
