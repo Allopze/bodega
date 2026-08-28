@@ -100,3 +100,5 @@ backup-*.sql
 .env
 .env.*
 !.env.example
+
+/beaconhs-main
