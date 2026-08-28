@@ -25,7 +25,7 @@ export const flotaModule = {
         {
           label:    "Control operacional",
           href:     "/control-operacional",
-          iconName: "Gauge",
+          iconName: "ChartLineUp",
           permissions: ["flota:view"],
         },
         {
