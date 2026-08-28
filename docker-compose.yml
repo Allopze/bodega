@@ -70,6 +70,9 @@ services:
       - ARAMCO_PASSWORD=${ARAMCO_PASSWORD:-}
       - ARAMCO_SYNC_ENABLED=${ARAMCO_SYNC_ENABLED:-false}
       - ARAMCO_SYNC_IMPORTER_EMAIL=${ARAMCO_SYNC_IMPORTER_EMAIL:-}
+      - ONWAY_USERNAME=${ONWAY_USERNAME:-}
+      - ONWAY_PASSWORD=${ONWAY_PASSWORD:-}
+      - ONWAY_SYNC_ENABLED=${ONWAY_SYNC_ENABLED:-false}
       # Cron endpoints and the DTE/billing integrations are server-only. A
       # Compose `.env` is used for interpolation; these explicit mappings are
       # what actually put the values into the running app container.
@@ -241,6 +244,11 @@ services:
         30 5 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs fuel-copec-sync >/proc/1/fd/1 2>&1
         45 5 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs fuel-aramco-sync >/proc/1/fd/1 2>&1
         30 8 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs fuel-statement-notifications >/proc/1/fd/1 2>&1
+        # Flota GPS — refresco cada 5 minutos. La app reutiliza una sesión
+        # Auth0 en memoria para no autenticar contra OnWay en cada ejecución.
+        */5 * * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs fleet-onway-sync >/proc/1/fd/1 2>&1
+        # GPS OnWay — retención diaria de puntos y coordenadas detalladas.
+        20 4 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs fleet-onway-retention >/proc/1/fd/1 2>&1
         # Mantenciones — SLA y escalamiento antes del inicio de la jornada.
         0 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs maintenance-reminders >/proc/1/fd/1 2>&1
         # Soporte — alerta diaria a gestores por tickets próximos a vencer o fuera de SLA.

@@ -67,6 +67,7 @@ export function capaSourceHref(sourceType: string, sourceId: string) {
   if (sourceType === "work_permit") return `/prevencion/permisos/${sourceId}`
   if (sourceType === "inspection") return `/prevencion/inspecciones/${sourceId}`
   if (sourceType === "external_engagement") return `/prevencion/coordinacion/${sourceId}`
+  if (sourceType === "gps_onway") return "/flota/monitoreo"
   if (sourceType === "change") return `/prevencion/gestion-cambio/${sourceId}`
   if (sourceType === "epp") return `/prevencion/epp-preventivo?workerId=${encodeURIComponent(sourceId.split(":")[0] ?? sourceId)}`
   return null

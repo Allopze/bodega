@@ -85,6 +85,19 @@ describe("cron runner", () => {
     expect(partial).toBe(1)
   })
 
+  it("accepts the dedicated Fleet GPS contract for OnWay", async () => {
+    const success = await runCronJob("fleet-onway-sync", {
+      secret: "cron-secret",
+      log: vi.fn(),
+      fetchImpl: vi.fn().mockResolvedValue(jsonResponse(200, {
+        ok: true,
+        outcome: "success",
+        code: "FLEET_GPS_CRON_SUCCESS",
+      })),
+    })
+    expect(success).toBe(0)
+  })
+
   it("maps a rate-limited response to a failed runner exit without accepting it as provider failure", async () => {
     const exitCode = await runCronJob("fuel-copec-sync", {
       secret: "cron-secret",

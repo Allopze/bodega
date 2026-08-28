@@ -61,6 +61,18 @@ const JOBS = Object.freeze({
     kind: "sync",
     codePrefix: "FUEL_CRON_",
   },
+  "fleet-onway-sync": {
+    url: "http://app:3000/api/cron/fleet-onway-sync",
+    timeoutMs: 2 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "FLEET_GPS_CRON_",
+  },
+  "fleet-onway-retention": {
+    url: "http://app:3000/api/cron/fleet-onway-retention",
+    timeoutMs: 2 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "FLEET_GPS_CRON_",
+  },
   "maintenance-reminders": {
     url: "http://app:3000/api/cron/maintenance-reminders",
     timeoutMs: 5 * 60 * 1_000,
