@@ -22,6 +22,7 @@ import {
   preventionRiskMatrices,
   users,
   worksites,
+  type PreventionInspectionDeviationEntry,
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
@@ -231,17 +232,14 @@ async function supersedePreviousApproved(tx: Tx, args: { code: string; keepTempl
  * Las evaluaciones de personas quedan fuera a propósito: la auditoría pide no
  * mezclar inspecciones de activos con evaluación de trabajadores.
  *
- * Nace **vigente** (`approved`). El contenido no lo redacta nadie aquí: viene
- * de `lib/sst/definitions/`, ya versionado y revisado en el repositorio — el
- * mismo criterio con el que `ensurePdtp2026InspectionTemplates` instala las
- * plantillas del programa 2026 aprobadas. Pedir un segundo par de ojos sobre
- * una copia literal del catálogo dejaba la plantilla inservible en toda
- * instalación con un solo prevencionista, porque quien la incorpora no puede
- * aprobarla.
+ * Nace en **borrador** (`draft`): incorporar y habilitar son dos actos
+ * distintos, y el segundo deja constancia de quién puso el instrumento en uso
+ * (`approveInspectionTemplate`). La versión vigente anterior NO se retira acá
+ * — hacerlo sacaría de circulación el instrumento en uso por un borrador que
+ * quizás nadie apruebe, y la faena se quedaría sin con qué inspeccionar.
  *
- * Reimportar un código ya incorporado sigue siendo el camino para versionar, y
- * ahora reemplaza (`superseded`) a la vigente en el acto. Lo único que no se
- * admite es repetir la misma `versionLabel` (A-02/C-10).
+ * Reimportar un código ya incorporado sigue siendo el camino para versionar.
+ * Lo único que no se admite es repetir la misma `versionLabel` (A-02/C-10).
  */
 export async function importInspectionTemplate(input: unknown, access: InspectionAccess) {
   requireAccess(access, "prevention:inspections:manage")
@@ -327,9 +325,8 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
  *
  * No toca `contentHash` a propósito — el hash cubre el cuestionario
  * (`definitionSnapshot`), no el cableado al programa anual. Cambiar a qué
- * actividad acredita no altera la evidencia de lo que se preguntó, y por eso
- * no hace falta el borrador: restringirlo ahí no dejaba ninguna ventana para
- * declararlo, ahora que incorporar publica.
+ * actividad acredita no altera la evidencia de lo que se preguntó, así que se
+ * admite también sobre una plantilla ya vigente.
  */
 export async function setInspectionTemplatePdtpActivities(input: unknown, access: InspectionAccess) {
   const data = z.object({
@@ -647,8 +644,13 @@ export async function assertProgramInScope(programId: string, access: Inspection
  * nombre del recurso o la patente ajena. El CHECK
  * `prevention_inspection_run_single_subject` cubre la exclusión mutua en la
  * base; acá se rechaza antes, con un mensaje que se entiende.
+ *
+ * Exportada para el materializador de programas, que crea ejecuciones sin
+ * sesión y necesita la MISMA etiqueta congelada: sin ella, un run programado
+ * quedaba con el sujeto apuntado pero sin nombre, y la bandeja, la cabecera y
+ * el acta lo mostraban vacío (INS-05).
  */
-async function resolveSubject(
+export async function resolveSubject(
   client: Client,
   args: { worksiteId: string; subjectResourceId?: string | null; subjectVehicleId?: string | null },
 ): Promise<string | null> {
@@ -723,6 +725,63 @@ export async function listInspectionSubjects(worksiteId: string, access: Inspect
       serialNumber: item.plate,
     })),
   ]
+}
+
+/**
+ * Inventario de varias faenas de una vez, agrupado por faena.
+ *
+ * La bandeja y la programación precargan el picker de sujeto para todas las
+ * faenas del alcance, y hacerlo faena por faena eran dos consultas por cada una
+ * en CADA carga de pantalla — con alcance global, cuarenta consultas para
+ * poblar un `Select` que la mayoría de las veces nadie abre (INS-12).
+ */
+export async function listInspectionSubjectsByWorksite(
+  worksiteIds: string[],
+  access: InspectionAccess,
+): Promise<Record<string, Awaited<ReturnType<typeof listInspectionSubjects>>>> {
+  const grouped: Record<string, Awaited<ReturnType<typeof listInspectionSubjects>>> = {}
+  const allowed = worksiteIds.filter((worksiteId) => scopeAllows(access.scope, worksiteId))
+  for (const worksiteId of allowed) grouped[worksiteId] = []
+  if (allowed.length === 0) return grouped
+  requireAccess(access, "prevention:inspections:view")
+
+  const [resources, vehicles] = await Promise.all([
+    db.select({
+      worksiteId: preventionEmergencyResources.worksiteId,
+      id: preventionEmergencyResources.id,
+      name: preventionEmergencyResources.name,
+      kind: preventionEmergencyResources.kind,
+      location: preventionEmergencyResources.location,
+      serialNumber: preventionEmergencyResources.serialNumber,
+    })
+      .from(preventionEmergencyResources)
+      .where(inArray(preventionEmergencyResources.worksiteId, allowed))
+      .orderBy(asc(preventionEmergencyResources.name))
+      .limit(500 * allowed.length),
+    db.select({
+      worksiteId: fuelVehicles.worksiteId,
+      id: fuelVehicles.id,
+      plate: fuelVehicles.plate,
+      code: fuelVehicles.code,
+      type: fuelVehicles.type,
+    })
+      .from(fuelVehicles)
+      .where(and(inArray(fuelVehicles.worksiteId, allowed), eq(fuelVehicles.isActive, true))),
+  ])
+
+  for (const item of resources) {
+    grouped[item.worksiteId]?.push({
+      source: "resource", id: item.id, name: item.name, kind: item.kind,
+      location: item.location, serialNumber: item.serialNumber,
+    })
+  }
+  for (const item of vehicles) {
+    grouped[item.worksiteId]?.push({
+      source: "vehicle", id: item.id, name: vehicleLabel(item), kind: item.type,
+      location: "", serialNumber: item.plate,
+    })
+  }
+  return grouped
 }
 
 /** Peligros de la MIPER de la faena, para el picker de la programación (A-09). */
@@ -908,6 +967,43 @@ async function saveAnswersWithClient(tx: Tx, args: {
   }
 
   const now = nowIso()
+
+  /* INS-03: una respuesta que se borra se lleva su evidencia por cascada
+   * (`prevention_inspection_answer_evidence.answer_id` es ON DELETE cascade).
+   * Dejar un ítem en "Sin responder" —o vaciar el campo de uno que no puntúa,
+   * que pone `result: ""` solo— destruía sus fotografías sin preguntar, en el
+   * módulo cuyo propósito es que un hallazgo tenga foto.
+   *
+   * La guarda vive acá y no en el formulario porque este camino lo comparten
+   * el guardado manual, el autoguardado y la sincronización offline: avisarlo
+   * en el cliente serían tres avisos y uno de ellos se quedaría atrás. */
+  const keepKeys = new Set(args.answers.map((answer) => `${answer.sectionId}::${answer.itemId}`))
+  const droppedWithEvidence = await tx.select({
+    itemLabel: preventionInspectionAnswers.itemLabel,
+    sectionId: preventionInspectionAnswers.sectionId,
+    itemId: preventionInspectionAnswers.itemId,
+    photos: sql<number>`count(${preventionInspectionAnswerEvidence.id})::int`,
+  })
+    .from(preventionInspectionAnswers)
+    .innerJoin(
+      preventionInspectionAnswerEvidence,
+      eq(preventionInspectionAnswerEvidence.answerId, preventionInspectionAnswers.id),
+    )
+    .where(eq(preventionInspectionAnswers.runId, run.id))
+    .groupBy(
+      preventionInspectionAnswers.itemLabel,
+      preventionInspectionAnswers.sectionId,
+      preventionInspectionAnswers.itemId,
+    )
+  const blocked = droppedWithEvidence.filter((row) => !keepKeys.has(`${row.sectionId}::${row.itemId}`))
+  if (blocked.length > 0) {
+    const detail = blocked
+      .map((row) => `"${row.itemLabel}" (${row.photos} ${row.photos === 1 ? "fotografía" : "fotografías"})`)
+      .join(", ")
+    throw new Error(
+      `No se puede dejar sin responder ${detail}: se perdería la evidencia adjunta. Quita las fotografías primero, o vuelve a responder el ítem.`,
+    )
+  }
 
   // B-02: el payload declara el conjunto completo, así que lo que no viene se
   // borra. Sin esto, devolver un ítem a "Sin responder" en el formulario no
@@ -2056,6 +2152,11 @@ export async function listAllInspectionRunsForExport(access: InspectionAccess, f
     // A-07: el Excel volcaba los IDs crudos de usuario.
     executorName: executor.name,
     reviewerName: reviewer.name,
+    // El cuestionario congelado, para que la hoja de respuestas pueda nombrar
+    // la sección y traducir el resultado con la escala del instrumento
+    // (INS-07/INS-13). No va en `runListSelection`: la bandeja paginada no lo
+    // usa y arrastraría el JSON completo en cada página.
+    templateSnapshot: preventionInspectionTemplates.definitionSnapshot,
   })
     .from(preventionInspectionRuns)
     .innerJoin(preventionInspectionTemplates, eq(preventionInspectionRuns.templateId, preventionInspectionTemplates.id))
@@ -2371,7 +2472,11 @@ export async function summarizeInspectionTimelyClosure(access: InspectionAccess,
 export async function summarizeInspectionTrends(access: InspectionAccess, filter: InspectionListFilters = {}) {
   requireAccess(access, "prevention:inspections:view")
   return db.select({
-    month: sql<string>`to_char(${preventionInspectionRuns.executedAt}, 'YYYY-MM')`,
+    // I-08/INS-08: sin `AT TIME ZONE`, una inspección cerrada a las 21:30 del
+    // 31 de agosto caía en septiembre acá y en agosto en el filtro
+    // `executedFrom` de este mismo archivo. Mismo patrón que
+    // `operational-trend-history.ts`.
+    month: sql<string>`to_char(${preventionInspectionRuns.executedAt} AT TIME ZONE 'America/Santiago', 'YYYY-MM')`,
     executed: sql<number>`COUNT(*)::int`,
     avgCompliance: sql<number | null>`ROUND(AVG(${preventionInspectionRuns.compliancePercent}))::int`,
     nonConforming: sql<number>`COALESCE(SUM(${preventionInspectionRuns.nonConformingCount}), 0)::int`,
@@ -2384,8 +2489,8 @@ export async function summarizeInspectionTrends(access: InspectionAccess, filter
       listFilterConditions(access, filter),
       isNotNull(preventionInspectionRuns.executedAt),
     ))
-    .groupBy(sql`to_char(${preventionInspectionRuns.executedAt}, 'YYYY-MM')`)
-    .orderBy(sql`to_char(${preventionInspectionRuns.executedAt}, 'YYYY-MM')`)
+    .groupBy(sql`to_char(${preventionInspectionRuns.executedAt} AT TIME ZONE 'America/Santiago', 'YYYY-MM')`)
+    .orderBy(sql`to_char(${preventionInspectionRuns.executedAt} AT TIME ZONE 'America/Santiago', 'YYYY-MM')`)
 }
 
 /** Catálogo de definiciones SST disponibles para incorporar como plantilla. */
@@ -2420,6 +2525,63 @@ const deviationSchema = z.object({
   label: z.string().trim().min(3).max(300),
   danoPotencial: z.enum(["leve", "moderado", "grave", "fatal"]),
 })
+
+/**
+ * Catálogos de varias plantillas de una vez.
+ *
+ * La pantalla de plantillas pedía dos consultas POR plantilla —y una de ellas
+ * un GROUP BY con join—, también para los 13 instrumentos de checklist que
+ * nunca registran desviaciones: 32 consultas para pintar una tabla (INS-12).
+ */
+export async function listDeviationCatalogs(templateIds: string[], access: InspectionAccess) {
+  requireAccess(access, "prevention:inspections:view")
+  const byTemplate = new Map<string, (PreventionInspectionDeviationEntry & { criticality: string })[]>()
+  if (templateIds.length === 0) return byTemplate
+  const rows = await db.select().from(preventionInspectionDeviationCatalog)
+    .where(inArray(preventionInspectionDeviationCatalog.templateId, templateIds))
+    .orderBy(asc(preventionInspectionDeviationCatalog.label))
+  for (const row of rows) {
+    const list = byTemplate.get(row.templateId) ?? []
+    list.push({ ...row, criticality: criticalityFromDanoPotencial(row.danoPotencial) })
+    byTemplate.set(row.templateId, list)
+  }
+  return byTemplate
+}
+
+/** Desviaciones sin catalogar de varias plantillas, agrupadas por plantilla. */
+export async function listUnclassifiedDeviationsFor(templateIds: string[], access: InspectionAccess) {
+  requireAccess(access, "prevention:inspections:manage")
+  const byTemplate = new Map<string, { description: string; criticality: string; occurrences: number }[]>()
+  if (templateIds.length === 0) return byTemplate
+  const rows = await db.select({
+    templateId: preventionInspectionRuns.templateId,
+    description: preventionInspectionFindings.description,
+    criticality: preventionInspectionFindings.criticality,
+    occurrences: sql<number>`COUNT(*)::int`,
+  })
+    .from(preventionInspectionFindings)
+    .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, preventionInspectionFindings.runId))
+    .where(and(
+      inArray(preventionInspectionRuns.templateId, templateIds),
+      scopeCondition(access.scope, preventionInspectionRuns.worksiteId),
+      // Ni de un ítem ni del catálogo: la gravedad la puso quien registró.
+      isNull(preventionInspectionFindings.answerId),
+      isNull(preventionInspectionFindings.catalogEntryId),
+    ))
+    .groupBy(
+      preventionInspectionRuns.templateId,
+      preventionInspectionFindings.description,
+      preventionInspectionFindings.criticality,
+    )
+    .orderBy(sql`COUNT(*) DESC`)
+    .limit(500)
+  for (const row of rows) {
+    const list = byTemplate.get(row.templateId) ?? []
+    list.push({ description: row.description, criticality: row.criticality, occurrences: row.occurrences })
+    byTemplate.set(row.templateId, list)
+  }
+  return byTemplate
+}
 
 /** Desviaciones ofrecidas al registrar, con la criticidad que producirán. */
 export async function listDeviationCatalog(templateId: string, access: InspectionAccess) {

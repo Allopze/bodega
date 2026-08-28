@@ -234,7 +234,14 @@ export const preventionInspectionAnswers = pgTable("prevention_inspection_answer
   // su respuesta es `value`. Sin este estado, un relato libre sólo podía
   // guardarse mintiendo ('conforming', que infla el cumplimiento) o no
   // guardarse (B-08, auditoría 2026-08-18).
-  check("prevention_inspection_answer_result_valid", sql`${table.result} IN ('conforming', 'partial', 'non_conforming', 'not_applicable', 'recorded')`),
+  // 'not_present' = "NT / NO TIENE" del Anexo 14 (Contenedores): el sujeto no
+  // posee el componente. Estado propio y no un 'not_applicable' con comentario
+  // porque en el papel son dos casillas distintas —"no corresponde" vs "no
+  // existe"—; para el puntaje son idénticos (ver EXCLUDED_RESULTS en
+  // lib/prevention/inspections.ts). No entra en el CHECK de comentario
+  // obligatorio: "no aplica" exige motivo porque hay un criterio detrás, "no
+  // tiene" es una constatación verificable contra el sujeto.
+  check("prevention_inspection_answer_result_valid", sql`${table.result} IN ('conforming', 'partial', 'non_conforming', 'not_applicable', 'not_present', 'recorded')`),
   check("prevention_inspection_answer_recorded_has_value", sql`${table.result} <> 'recorded' OR length(${table.value}) >= 1`),
   // 'partial' exige observación igual que 'not_applicable': es la misma regla
   // que ya rige la escala B/R/M en el motor SST (requiresObservation en
@@ -251,9 +258,14 @@ export const preventionInspectionAnswers = pgTable("prevention_inspection_answer
  * necesitar más de un ángulo. `evidenceReference` (texto libre) queda deprecado
  * — nunca tuvo UI que lo escribiera.
  *
- * `onDelete: cascade` desde la respuesta: el DELETE del conjunto que hace
- * `saveAnswersWithClient` limpia también estas filas sin código extra. El
- * archivo físico lo recoge el GC de evidencias.
+ * `onDelete: cascade` desde la respuesta: borrar la respuesta se lleva sus
+ * fotos, y el archivo físico lo recoge el GC de evidencias.
+ *
+ * Esa cascada NO es el camino por el que se quita evidencia (INS-03): dejar un
+ * ítem en "Sin responder" borra su fila, y con ella destruía en silencio las
+ * fotografías del hallazgo. `saveAnswersWithClient` ahora rechaza ese guardado
+ * y exige quitar las fotos explícitamente; la cascada queda como red de
+ * integridad para los borrados que sí son deliberados (cancelar el run).
  */
 export const preventionInspectionAnswerEvidence = pgTable("prevention_inspection_answer_evidence", {
   id:               text("id").primaryKey(),

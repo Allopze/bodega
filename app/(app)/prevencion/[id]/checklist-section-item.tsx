@@ -14,13 +14,7 @@ import {
 } from "@/components/ui/select"
 import type { ChecklistItem, FieldKind, StatusValue } from "@/lib/sst/types"
 import { requiresObservation } from "@/lib/sst/compliance"
-
-/** Escalas Bueno/Regular/Malo de los anexos de inspección (3, 13, 14). */
-const BRM_KINDS: FieldKind[] = [
-  "bueno_regular_malo_obs",
-  "bueno_regular_malo_na_obs",
-  "bueno_regular_malo_na_nt_obs",
-]
+import { BRM_KINDS, statusOptionsForKind } from "@/lib/sst/status-options"
 import { cn } from "@/lib/utils"
 import type { ItemResponse } from "./checklist-section"
 
@@ -108,36 +102,9 @@ export function ItemField({
   }
 
   const renderStatusButtons = () => {
-    const pairs: { value: StatusValue; label: string; variant: "positive" | "negative" | "neutral" }[] = []
-
-    if (kind === "cumple_nocumple_obs" || kind === "cumple_nocumple_na_obs") {
-      pairs.push({ value: "cumple",    label: "Cumple",    variant: "positive" })
-      pairs.push({ value: "no_cumple", label: "No cumple", variant: "negative" })
-      if (kind === "cumple_nocumple_na_obs") {
-        pairs.push({ value: "na", label: "N/A", variant: "neutral" })
-      }
-    } else if (kind === "entregado_obs") {
-      pairs.push({ value: "entregado",    label: "Entregado",    variant: "positive" })
-      pairs.push({ value: "no_entregado", label: "No entregado", variant: "negative" })
-    } else if (kind === "apto_obs") {
-      pairs.push({ value: "apto",    label: "Apto",    variant: "positive" })
-      pairs.push({ value: "no_apto", label: "No apto", variant: "negative" })
-    } else if (kind === "si_no_obs") {
-      pairs.push({ value: "si", label: "Sí", variant: "positive" })
-      pairs.push({ value: "no", label: "No", variant: "negative" })
-    } else if (BRM_KINDS.includes(kind)) {
-      // Escala B/R/M de los anexos de inspección. Regular puntúa 0.5.
-      pairs.push({ value: "cumple",    label: "Bueno",   variant: "positive" })
-      pairs.push({ value: "regular",   label: "Regular", variant: "neutral" })
-      pairs.push({ value: "no_cumple", label: "Malo",    variant: "negative" })
-      if (kind === "bueno_regular_malo_na_obs" || kind === "bueno_regular_malo_na_nt_obs") {
-        pairs.push({ value: "na", label: "N/A", variant: "neutral" })
-      }
-      if (kind === "bueno_regular_malo_na_nt_obs") {
-        // NT = "no tiene" (Anexo 14): el contenedor no posee el componente.
-        pairs.push({ value: "no_tiene", label: "No tiene", variant: "neutral" })
-      }
-    }
+    // El mapa vive en `lib/sst/status-options.ts`: el motor de Inspecciones
+    // necesita las mismas opciones y las reimplementaba incompleto.
+    const pairs = statusOptionsForKind(kind)
 
     return (
       <div className="space-y-2">

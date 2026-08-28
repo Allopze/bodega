@@ -61,6 +61,7 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
           origin: detail.run.origin,
           subjectType: detail.run.subjectType,
           subjectLabel: detail.run.subjectLabel,
+          subjectResourceId: detail.run.subjectResourceId,
           subjectVehicleId: detail.run.subjectVehicleId,
           scheduledFor: detail.run.scheduledFor,
           executedAt: detail.run.executedAt,
@@ -143,6 +144,7 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
         canExecute={canExecute}
         canReview={auth.user.permissions.includes("prevention:inspections:review")}
         canManage={auth.user.permissions.includes("prevention:inspections:manage")}
+        canRequestRecharge={auth.user.permissions.includes("admin:worksite_inventory_service")}
         physicalSourceRequired={detail.sourceDefinitionCode === "reporte_equipos"}
       />
     </PageContainer>

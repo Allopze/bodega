@@ -9,7 +9,7 @@ import { generateStorageName } from "@/lib/services/prevention-documents/utils"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
 import { resolveInspectionEvidenceDir, createInspectionEvidencePath } from "@/lib/storage/config"
-import { addRunDocument } from "@/lib/services/prevention-inspections"
+import { addRunDocument, assertInspectionOperationEnabled } from "@/lib/services/prevention-inspections"
 import { detectMarksInPhoto } from "@/lib/services/inspection-forms/detect-marks"
 import { logger } from "@/lib/logger"
 
@@ -74,6 +74,9 @@ export async function POST(request: Request) {
   }
 
   try {
+    // INS-15: el toggle del submódulo sólo lo aplicaban las server actions,
+    // así que con Inspecciones apagado se podía seguir adjuntando archivos.
+    await assertInspectionOperationEnabled()
     const storageName = generateStorageName(file.name)
     const dir = resolveInspectionEvidenceDir()
     await mkdirp(dir)

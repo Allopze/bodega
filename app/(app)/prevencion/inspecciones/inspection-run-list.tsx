@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { DotsThree, MagnifyingGlass } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
 import { DatePicker } from "@/components/ui/date-picker"
@@ -25,7 +26,13 @@ import { formatDate, formatDateTime } from "@/lib/utils"
 import { createInspectionRunAction } from "./actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
-import { inspectionTaskStatusLabel, safeNewInspectionDefaults } from "@/lib/prevention/inspection-list-query"
+import {
+  inspectionTaskStatusLabel,
+  safeNewInspectionDefaults,
+  subjectIdsFromRef,
+  subjectRefOf,
+  type InspectionSubjectOption,
+} from "@/lib/prevention/inspection-list-query"
 
 interface TemplateOption {
   id: string
@@ -69,20 +76,6 @@ interface Props {
   worksites: { id: string; name: string }[]
   assignees: { id: string; name: string }[]
   subjectsByWorksite: Record<string, InspectionSubjectOption[]>
-}
-
-/**
- * Sujeto inspeccionable: recurso del inventario de emergencias o equipo de
- * flota. `source` discrimina a cuál de las dos FK del run va el id — el CHECK
- * `prevention_inspection_run_single_subject` no admite ambas.
- */
-export type InspectionSubjectOption = {
-  source: "resource" | "vehicle"
-  id: string
-  name: string
-  kind: string
-  location: string
-  serialNumber: string | null
 }
 
 export function InspectionRunList({ runs, summary, page, pageSize, overdueProgramCount, today, canExecute, templates, worksites, assignees, subjectsByWorksite }: Props) {
@@ -427,11 +420,6 @@ export function InspectionPageActions({
 
 /* ── Alta de inspección ───────────────────────────────────────────────────── */
 
-/** Valor del selector: `source:id`, porque un id suelto no dice a qué tabla apunta. */
-function subjectRefOf(subject: InspectionSubjectOption) {
-  return `${subject.source}:${subject.id}`
-}
-
 export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksite }: {
   templates: TemplateOption[]
   worksites: { id: string; name: string }[]
@@ -452,6 +440,7 @@ export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksi
   // padrón de flota también es sujeto, el valor lleva su origen: `source:id`.
   const [subjectRef, setSubjectRef] = React.useState<string>(defaults.subjectRef)
   const operation = useOperation()
+  const router = useRouter()
 
   function handleOpenChange(nextOpen: boolean) {
     setOpen(nextOpen)
@@ -485,11 +474,16 @@ export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksi
       origin: form.get("origin"),
       subjectType: subjectType || null,
       subjectLabel: subjectLabel || null,
-      subjectResourceId: subjectRef.startsWith("resource:") ? subjectRef.slice("resource:".length) : null,
-      subjectVehicleId: subjectRef.startsWith("vehicle:") ? subjectRef.slice("vehicle:".length) : null,
+      ...subjectIdsFromRef(subjectRef),
       scheduledFor: scheduledFor || null,
       assignedToUserId: assignedToUserId || null,
-    }), () => setOpen(false))
+    }), (result) => {
+      setOpen(false)
+      // Se abre la inspección recién creada: el gesto siguiente es ejecutarla,
+      // no volver a buscarla en la bandeja (INS-09).
+      const runId = result.data?.runId
+      if (typeof runId === "string") router.push(`/prevencion/inspecciones/${runId}`)
+    })
   }
 
   return (

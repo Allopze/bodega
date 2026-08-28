@@ -5,11 +5,11 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import {
-  listDeviationCatalog,
+  listDeviationCatalogs,
   listImportableDefinitions,
   listInspectionPdtpActivityOptions,
   listInspectionTemplates,
-  listUnclassifiedDeviations,
+  listUnclassifiedDeviationsFor,
 } from "@/lib/services/prevention-inspections"
 import { ImportTemplateDialog, InspectionTemplatesPanel, type TemplateItem } from "../inspection-catalog"
 
@@ -39,19 +39,21 @@ export default async function PlantillasInspeccionPage() {
   /* Catálogo de desviaciones por instrumento, más las que se registraron como
    * "Otra" y esperan clasificación. Se piden en paralelo y sólo para quien
    * administra: quien sólo mira no tiene qué hacer con ellas. */
-  const deviationsByTemplate = new Map<string, Awaited<ReturnType<typeof listDeviationCatalog>>>()
-  const unclassifiedByTemplate = new Map<string, Awaited<ReturnType<typeof listUnclassifiedDeviations>>>()
-  if (canManage) {
-    const rows = await Promise.all(templates.map(async (template) => [
-      template.id,
-      await listDeviationCatalog(template.id, access),
-      await listUnclassifiedDeviations(template.id, access),
-    ] as const))
-    for (const [templateId, catalog, unclassified] of rows) {
-      deviationsByTemplate.set(templateId, catalog)
-      unclassifiedByTemplate.set(templateId, unclassified)
-    }
-  }
+  /* INS-12: antes eran dos consultas secuenciales POR plantilla —una de ellas
+   * un GROUP BY con join— y para todas, aunque sólo tres instrumentos del
+   * catálogo registran desviaciones. Ahora son dos consultas en total, y sólo
+   * sobre los que pueden tenerlas. */
+  const deviationTemplateIds = templates
+    .filter((row) => Boolean((row.definitionSnapshot as { recordsDeviations?: boolean } | null)?.recordsDeviations))
+    .map((row) => row.id)
+  // Sólo para quien administra: quien únicamente mira no tiene qué hacer con ellas.
+  const [deviationsByTemplate, unclassifiedByTemplate] = await Promise.all([
+    canManage ? listDeviationCatalogs(deviationTemplateIds, access) : Promise.resolve(new Map()),
+    canManage ? listUnclassifiedDeviationsFor(deviationTemplateIds, access) : Promise.resolve(new Map()),
+  ]) as [
+    Awaited<ReturnType<typeof listDeviationCatalogs>>,
+    Awaited<ReturnType<typeof listUnclassifiedDeviationsFor>>,
+  ]
   const templateItems: TemplateItem[] = templates.map((row) => ({
     id: row.id,
     code: row.code,

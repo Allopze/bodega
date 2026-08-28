@@ -164,7 +164,18 @@ export async function runProgramNowAction(input: unknown): Promise<ActionState> 
 export async function createInspectionRunAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:execute")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => createInspectionRun(input, access))
+  // Devuelve el id para poder abrir la inspección recién creada, igual que
+  // `runProgramNowAction`: crear y quedarse en la bandeja obligaba a buscar la
+  // fila a mano, y crear una inspección es para ejecutarla ahora (INS-09).
+  return run(
+    accessFromSession(guard.session),
+    (access) => createInspectionRun(input, access),
+    (result) => {
+      const created = (result as { run?: { id?: unknown; code?: unknown } } | null)?.run
+      if (!created || typeof created.id !== "string") return undefined
+      return { runId: created.id, runCode: typeof created.code === "string" ? created.code : undefined }
+    },
+  )
 }
 
 export async function saveInspectionAnswersAction(input: unknown): Promise<ActionState> {

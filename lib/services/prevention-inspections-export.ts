@@ -6,9 +6,10 @@ import {
   FINDING_STATUS_LABELS,
   INSPECTION_KIND_LABELS,
   INSPECTION_ORIGIN_LABELS,
-  INSPECTION_RESULT_LABELS,
+  inspectionResultLabel,
   INSPECTION_RUN_STATUS_LABELS,
 } from "@/lib/prevention/inspections"
+import type { ChecklistDefinition, FieldKind } from "@/lib/sst/types"
 import type { ReportCell, ReportData, ReportSheet } from "@/lib/reports/export"
 import { sanitizeCell as safeCell } from "@/lib/reports/export-module/excel-builder"
 import {
@@ -56,6 +57,31 @@ export async function buildInspectionExport(
   ])
   const ids = runs.map((row) => row.run.id)
   const code = new Map(runs.map((row) => [row.run.id, row.run.code]))
+
+  /**
+   * Título y escala de cada ítem, resueltos desde el snapshot congelado de la
+   * plantilla de cada inspección.
+   *
+   * La hoja de respuestas itera filas de `prevention_inspection_answers`, que
+   * no llevan ni el `kind` ni el nombre de la sección: volcaba el `sectionId`
+   * crudo y traducía el resultado con el mapa global, de modo que un Anexo 13
+   * salía como "Cumple" donde el papel firmado dice "Bueno" (INS-07/INS-13).
+   */
+  const itemContext = new Map<string, { sectionTitle: string; kind?: FieldKind }>()
+  for (const row of runs) {
+    const definition = (row.templateSnapshot ?? null) as ChecklistDefinition | null
+    for (const section of definition?.sections ?? []) {
+      for (const item of section.items) {
+        itemContext.set(`${row.run.templateId}::${section.id}::${item.id}`, {
+          sectionTitle: section.title,
+          kind: item.kind,
+        })
+      }
+    }
+  }
+  const templateOfRun = new Map(runs.map((row) => [row.run.id, row.run.templateId]))
+  const contextOf = (runId: string, sectionId: string, itemId: string) =>
+    itemContext.get(`${templateOfRun.get(runId) ?? ""}::${sectionId}::${itemId}`)
   const [answers, findings] = ids.length === 0 ? [[], []] : await Promise.all([
     db.select().from(preventionInspectionAnswers).where(inArray(preventionInspectionAnswers.runId, ids)),
     db.select().from(preventionInspectionFindings).where(inArray(preventionInspectionFindings.runId, ids)),
@@ -79,15 +105,18 @@ export async function buildInspectionExport(
     sheet(
       "Respuestas",
       ["Inspección", "Sección", "Ítem", "Resultado", "Valor", "Comentario", "Evidencia", "Daño potencial"],
-      answers.map((row) => [
-        safeCell(code.get(row.runId)), safeCell(row.sectionId), safeCell(row.itemLabel),
-        label(INSPECTION_RESULT_LABELS, row.result),
+      answers.map((row) => {
+        const context = contextOf(row.runId, row.sectionId, row.itemId)
+        return [
+        safeCell(code.get(row.runId)), safeCell(context?.sectionTitle ?? row.sectionId), safeCell(row.itemLabel),
+        inspectionResultLabel(context?.kind, row.result),
         // Los ítems que no puntúan responden con su contenido, no con un
         // juicio de conformidad (B-08).
         safeCell(row.value),
         safeCell(row.comment), safeCell(row.evidenceReference),
         safeCell(row.danoPotencial),
-      ]),
+        ]
+      }),
     ),
     sheet(
       "Hallazgos",

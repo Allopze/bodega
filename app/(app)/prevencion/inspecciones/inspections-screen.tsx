@@ -7,13 +7,14 @@ import {
   listInspectionAssignees,
   listInspectionPrograms,
   listInspectionRuns,
-  listInspectionSubjects,
+  listInspectionSubjectsByWorksite,
   listInspectionTemplates,
   listInspectionWorksites,
   summarizeInspectionRuns,
   INSPECTION_PAGE_SIZE,
 } from "@/lib/services/prevention-inspections"
-import { InspectionPageActions, InspectionRunList, type InspectionSubjectOption } from "./inspection-run-list"
+import { InspectionPageActions, InspectionRunList } from "./inspection-run-list"
+import type { InspectionSubjectOption } from "@/lib/prevention/inspection-list-query"
 import { todayInChile } from "@/lib/utils"
 import { buildInspectionExportQuery, parseInspectionListQuery } from "@/lib/prevention/inspection-list-query"
 import { inspectionProgramIsOverdue } from "@/lib/prevention/inspections"
@@ -63,13 +64,9 @@ export async function InspectionsScreen({ searchParams }: {
 
   // Función #11: inventario por faena para el picker de sujeto. Son pocas
   // faenas por usuario, así que se precarga en vez de pedirlo al cambiar.
-  const subjectsByWorksite: Record<string, InspectionSubjectOption[]> = {}
-  if (canExecute) {
-    const entries = await Promise.all(
-      worksites.map(async (worksite) => [worksite.id, await listInspectionSubjects(worksite.id, access)] as const),
-    )
-    for (const [worksiteId, rows] of entries) subjectsByWorksite[worksiteId] = rows
-  }
+  const subjectsByWorksite: Record<string, InspectionSubjectOption[]> = canExecute
+    ? await listInspectionSubjectsByWorksite(worksites.map((worksite) => worksite.id), access)
+    : {}
 
   return (
     <PageContainer>

@@ -23,9 +23,9 @@ import {
   FINDING_STATUS_LABELS,
   INSPECTION_KIND_LABELS,
   INSPECTION_ORIGIN_LABELS,
-  INSPECTION_RESULT_LABELS,
-  fieldKindAcceptsPartial,
   fieldKindIsScorable,
+  inspectionResultLabel,
+  inspectionResultOptionsFor,
   formatSignatureRole,
   resultBadgeVariant,
   resultSelectToneClass,
@@ -54,8 +54,15 @@ import {
 } from "../actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { autosaveStatusLabel, useDebouncedAutosave } from "@/lib/hooks/use-debounced-autosave"
+import {
+  clearInspectionDraft,
+  readInspectionDraft,
+  writeInspectionDraft,
+} from "@/lib/prevention/inspection-draft-storage"
 import { compressPhoto } from "@/lib/pwa/image-compress"
 import { inspectionSubjectTypeLabel, inspectionTaskStatusLabel } from "@/lib/prevention/inspection-list-query"
+import type { OfflineInspectionSubmission } from "./offline-inspection-queue"
 
 interface RunInfo {
   id: string
@@ -64,6 +71,7 @@ interface RunInfo {
   origin: string
   subjectType: string | null
   subjectLabel: string | null
+  subjectResourceId: string | null
   /** Equipo de flota inspeccionado; habilita derivar a mantención. */
   subjectVehicleId: string | null
   scheduledFor: string | null
@@ -162,6 +170,7 @@ interface Props {
   canExecute: boolean
   canReview: boolean
   canManage: boolean
+  canRequestRecharge: boolean
   /** `combustibles:manage_vehicles`: confirma sacar el equipo de servicio. */
   canStopVehicle: boolean
   /** Planillas físicas adjuntas al run. */
@@ -480,7 +489,7 @@ export function InspectionRunDetail({
   run, templateKind, recordsDeviations, deviationCatalog,
   pdtpActivityNumbers, pdtpReviewActivityNumbers,
   worksiteName, assigneeName, executorName, reviewerName,
-  sections, answers, findings, currentUserId, assignees, reviewers, canExecute, canReview, canManage, canStopVehicle,
+  sections, answers, findings, currentUserId, assignees, reviewers, canExecute, canReview, canManage, canStopVehicle, canRequestRecharge,
   documents, canIngest, closingAct,
   physicalSourceRequired,
 }: Props) {
@@ -503,6 +512,39 @@ export function InspectionRunDetail({
     return initial
   })
   const operation = useOperation()
+  /* INS-02: el hook de autoguardado vigila un primitivo por valor, así que un
+   * contador que sube en cada edición cumple sin serializar el mapa completo en
+   * cada render. Mismo patrón que `use-checklist-responses.ts` en el motor SST. */
+  const [revision, setRevision] = React.useState(0)
+  const [restoredDraft, setRestoredDraft] = React.useState(false)
+
+  /* Espejo local recuperado. Sólo se aplica si es MÁS nuevo que lo que trae el
+   * servidor (misma versión del run): si alguien guardó desde otra sesión, lo
+   * persistido manda y el espejo se descarta, o restaurar pisaría trabajo ajeno
+   * con un borrador viejo del dispositivo. */
+  React.useEffect(() => {
+    if (!editable) return
+    const snapshot = readInspectionDraft(run.id)
+    if (!snapshot || snapshot.version !== run.version) {
+      if (snapshot) clearInspectionDraft(run.id)
+      return
+    }
+    setDrafts((current) => {
+      const restored = { ...current }
+      for (const [key, draft] of Object.entries(snapshot.drafts)) {
+        restored[key] = {
+          result: draft.result as ResultValue,
+          comment: draft.comment ?? "",
+          value: draft.value ?? "",
+          needsConfirmation: draft.needsConfirmation ?? false,
+        }
+      }
+      return restored
+    })
+    setRestoredDraft(true)
+    // Sólo al montar: después manda lo que la persona esté tecleando.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run.id])
 
   // C-02: el guardado ahora sube `version`, así que el CAS del siguiente envío
   // debe usar la que devolvió el servidor y no la de las props, que quedó
@@ -551,9 +593,20 @@ export function InspectionRunDetail({
       return { ok: response.ok, message: response.message, retriable: response.ok ? undefined : false }
     })
     if (result.synchronized > 0) setOfflineNote("Inspección sincronizada.")
-    else if (result.rejected > 0) setOfflineNote("La sincronización fue rechazada; revisa los datos.")
+    else if (result.rejected > 0) {
+      /* INS-19: el rechazo decía "revisa los datos" y el motivo real quedaba
+       * en IndexedDB sin que nadie lo leyera — típicamente que la inspección
+       * cambió en otra sesión y el CAS ya no cuadra. Sin el motivo, quien
+       * ejecutó no sabe si rehacer el cierre o pedir ayuda. */
+      const { listQueuedInspectionSubmissions } = await import("./offline-inspection-queue")
+      const entries = await listQueuedInspectionSubmissions()
+      const failed = entries.find((entry) => entry.payload.runId === run.id)
+      setOfflineNote(failed?.lastError
+        ? `La sincronización fue rechazada: ${failed.lastError}`
+        : "La sincronización fue rechazada; revisa los datos.")
+    }
     await refreshQueue()
-  }, [refreshQueue])
+  }, [refreshQueue, run.id])
 
   React.useEffect(() => {
     void refreshQueue()
@@ -580,6 +633,7 @@ export function InspectionRunDetail({
   }
 
   function update(sectionId: string, itemId: string, patch: Partial<Draft>) {
+    setRevision((value) => value + 1)
     setDrafts((current) => {
       const key = draftKey(sectionId, itemId)
       const base = current[key] ?? { result: "" as ResultValue, comment: "", value: "", needsConfirmation: false }
@@ -595,6 +649,7 @@ export function InspectionRunDetail({
 
   /** Ratifica lo que leyó la máquina sin cambiar la respuesta. */
   function confirmRead(sectionId: string, itemId: string) {
+    setRevision((value) => value + 1)
     setDrafts((current) => {
       const key = draftKey(sectionId, itemId)
       const base = current[key]
@@ -694,28 +749,19 @@ export function InspectionRunDetail({
   }
 
   async function queueOffline() {
-    const { queueInspectionSubmission, createInspectionSubmissionId } = await import("./offline-inspection-queue")
+    const { queueInspectionSubmission } = await import("./offline-inspection-queue")
     try {
+      /* INS-18/INS-19: el mismo payload que manda el cierre en línea, sin
+       * recomponerlo a mano. Antes se omitía `needsConfirmation` —hoy inocuo
+       * porque el gate del cliente ya exige ratificar antes de habilitar el
+       * botón, pero era una divergencia esperando a que esa condición cambie—
+       * y viajaba un `clientSubmissionId` que `completeInspectionRun` descarta:
+       * su Zod no lo declara. La idempotencia del reintento la da el bloque
+       * `alreadyCompleted` del servicio (mismo ejecutante + ya ejecutada), no
+       * ese campo. */
       await queueInspectionSubmission({
-        clientSubmissionId: createInspectionSubmissionId(),
+        ...(completePayload() as unknown as Omit<OfflineInspectionSubmission, "runId">),
         runId: run.id,
-        expectedVersion: version,
-        answers: currentAnswers.map((answer) => ({
-          sectionId: answer.sectionId,
-          itemId: answer.itemId,
-          result: answer.result,
-          value: answer.value ?? null,
-          comment: answer.comment ?? null,
-        })),
-        locationLatitude: coords?.lat ?? null,
-        locationLongitude: coords?.lon ?? null,
-        closingAct: closingAct
-          ? {
-              result: closing.result,
-              restrictions: closing.restrictions || null,
-              signatures: closing.signatures.filter((item) => item.name.trim().length > 0),
-            }
-          : undefined,
       })
       setOfflineNote("Guardada en el dispositivo. Se enviará al recuperar conexión.")
       await refreshQueue()
@@ -779,6 +825,37 @@ export function InspectionRunDetail({
     operation.run(() => saveInspectionAnswersAction(answersPayload()), applySavedAnswerRefs)
   }
 
+  /* INS-02: espejo del borrador en el propio dispositivo. Se escribe en cada
+   * edición, antes y con independencia del autoguardado: en terreno el envío
+   * al servidor es justo lo que falla, y el espejo es lo único que sobrevive a
+   * cerrar la pestaña sin señal. */
+  React.useEffect(() => {
+    if (!editable || revision === 0) return
+    writeInspectionDraft(run.id, { version, savedAt: new Date().toISOString(), drafts })
+  }, [editable, revision, drafts, run.id, version])
+
+  /* Autoguardado contra el servidor, con el mismo camino de escritura que el
+   * botón. Reusa el hook que ya usa el motor SST para sus checklists — hasta
+   * ahora Inspecciones era el único que obligaba a acordarse de guardar, y es
+   * el que se ejecuta en terreno con 54 y hasta 75 ítems por delante.
+   *
+   * No se autoguarda con respuestas inválidas: el servidor las rechazaría
+   * igual y el hook reintentaría en bucle contra una guarda. */
+  const autosave = useDebouncedAutosave({
+    watchKey: revision,
+    isDirty: revision > 0,
+    onSave: () => saveInspectionAnswersAction(answersPayload()),
+    onSaved: (result) => {
+      applySavedAnswerRefs(result)
+      // Persistido: el espejo dejó de tener nada que rescatar.
+      clearInspectionDraft(run.id)
+      setRestoredDraft(false)
+    },
+    enabled: editable && rowProblems.length === 0,
+    debounceMs: 1200,
+  })
+  const savingAnswers = autosave.status === "saving"
+
   const facts = [
     { label: "Estado", value: inspectionTaskStatusLabel(run.status) },
     { label: "Tipo", value: INSPECTION_KIND_LABELS[templateKind] ?? templateKind },
@@ -817,7 +894,16 @@ export function InspectionRunDetail({
   const findingsFirst = !editable && (run.status === "completed" || run.status === "reviewed")
   const findingsSection = (run.status === "completed" || run.status === "reviewed") ? (
     <section id="hallazgos" className="scroll-mt-16 space-y-3">
-      <h2 className="text-sm font-semibold">Hallazgos ({findings.length})</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold">Hallazgos ({findings.length})</h2>
+        {findings.length > 0 && run.subjectResourceId && canRequestRecharge && (
+          <Button asChild size="sm" variant="secondary">
+            <Link href={`/solicitudes/nueva?tipo=otro&recursoEmergencia=${encodeURIComponent(run.subjectResourceId)}`}>
+              Solicitar recarga
+            </Link>
+          </Button>
+        )}
+      </div>
       {findings.length === 0 ? (
         <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">Sin hallazgos: todos los ítems evaluables cumplieron.</p>
       ) : (
@@ -931,9 +1017,16 @@ export function InspectionRunDetail({
             </Button>
           )}
           {editable && (
-            <Button className="hidden md:inline-flex" type="button" size="sm" variant="secondary" disabled={operation.pending || rowProblems.length > 0} onClick={saveAnswers}>
-              Guardar respuestas
-            </Button>
+            <>
+              <Button className="hidden md:inline-flex" type="button" size="sm" variant="secondary" disabled={operation.pending || savingAnswers || rowProblems.length > 0} onClick={saveAnswers}>
+                {savingAnswers ? "Guardando…" : "Guardar respuestas"}
+              </Button>
+              {/* INS-02: el autoguardado necesita decir en qué estado está, o
+                  quien ejecuta no sabe si puede irse de la pantalla. */}
+              <span role="status" className="hidden self-center text-xs text-[var(--color-text-subtle)] md:inline">
+                {autosaveStatusLabel(autosave.status)}
+              </span>
+            </>
           )}
           {/* Función #3: el acta de LA inspección. El export Excel es agregado
               y en fiscalización se pide esta. */}
@@ -942,7 +1035,7 @@ export function InspectionRunDetail({
               <a href={`/prevencion/inspecciones/${run.id}/print`} target="_blank" rel="noreferrer">Acta PDF</a>
             </Button>
           )}
-          {editable && <span className="hidden md:inline-flex"><CompleteDialog run={run} completion={completion} rowProblems={rowProblems} payload={completePayload} onSaved={applyVersion} /></span>}
+          {editable && <span className="hidden md:inline-flex"><CompleteDialog run={run} completion={completion} rowProblems={rowProblems} payload={completePayload} onSaved={applyVersion} saving={savingAnswers} /></span>}
           {canCurrentUserReview && (
             <span className="hidden md:inline-flex"><ReviewDialog run={run} findings={findings} currentUserId={currentUserId} version={version} assignees={assignees} canExecute={canExecute} /></span>
           )}
@@ -972,6 +1065,23 @@ export function InspectionRunDetail({
       </div>
 
       {operation.message && <p role="status" className="rounded-lg border border-[var(--color-success-line)] bg-[var(--color-success-tint)] px-3 py-2 text-sm text-[var(--color-success-ink)] md:static">{operation.message}</p>}
+
+      {/* INS-02: el borrador que sobrevivió en el dispositivo. Se dice, no se
+          aplica en silencio: quien vuelve tiene que saber que lo que ve son sus
+          respuestas sin enviar y no lo que el servidor tiene guardado. */}
+      {restoredDraft && (
+        <p role="status" className="rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-sm text-[var(--color-warning-ink)]">
+          Se recuperaron respuestas sin enviar de este dispositivo. Se guardarán solas al recuperar conexión, o pulsa «Guardar respuestas».
+        </p>
+      )}
+
+      {/* El hook reintenta solo, pero callarlo dejaría a alguien creyendo que
+          su trabajo está a salvo cuando la faena no tiene señal. */}
+      {autosave.error && (
+        <p role="status" className="rounded-lg border border-[var(--color-danger-line)] bg-[var(--color-surface-2)] px-3 py-2 text-sm">
+          {autosave.error} Tus respuestas siguen guardadas en este dispositivo.
+        </p>
+      )}
 
       {reviewBlocked && (
         <div className="rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-sm text-[var(--color-warning-ink)]">
@@ -1093,15 +1203,18 @@ export function InspectionRunDetail({
                               <SelectTrigger aria-label={`Resultado de ${item.label}`} className={resultSelectToneClass(draft.result)}><SelectValue placeholder="Sin responder" /></SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="__unset__">Sin responder</SelectItem>
-                                {Object.entries(INSPECTION_RESULT_LABELS)
-                                  .filter(([value]) => value !== "recorded")
-                                  .filter(([value]) => value !== "partial" || fieldKindAcceptsPartial(item.kind))
-                                  .map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                                {/* INS-01: las opciones salen de la escala del ítem, no del
+                                    mapa global. Ofrecer "No aplica" en un Anexo 13 dejaba
+                                    sacar del denominador un ítem que el papel obliga a
+                                    juzgar; y ahora la etiqueta es la del anexo ("Bueno"). */}
+                                {inspectionResultOptionsFor(item.kind).map((option) => (
+                                  <SelectItem key={option.result} value={option.result}>{option.label}</SelectItem>
+                                ))}
                               </SelectContent>
                             </Select>
-                          ) : draft.result ? <Badge variant={resultBadgeVariant(draft.result)}>{INSPECTION_RESULT_LABELS[draft.result] ?? draft.result}</Badge> : <span>Sin respuesta</span>}
+                          ) : draft.result ? <Badge variant={resultBadgeVariant(draft.result)}>{inspectionResultLabel(item.kind, draft.result)}</Badge> : <span>Sin respuesta</span>}
                         </Field>
-                        <Field label="Comentario" hint={needsComment ? "Obligatorio para No cumple, Regular o No aplica; mínimo 3 caracteres." : "Opcional, salvo que el resultado requiera justificación."}>
+                        <Field label="Comentario" hint={needsComment ? `Obligatorio para "${inspectionResultLabel(item.kind, draft.result)}"; mínimo 3 caracteres.` : "Opcional, salvo que el resultado requiera justificación."}>
                           {editable ? <Textarea value={draft.comment} onChange={(event) => update(section.id, item.id, { comment: event.target.value })} rows={3} aria-label={`Comentario de ${item.label}`} /> : <p className="text-sm">{draft.comment || "Sin comentario"}</p>}
                         </Field>
                       </>
@@ -1177,15 +1290,14 @@ export function InspectionRunDetail({
                                   <SelectTrigger aria-label={`Resultado de ${item.label}`}><SelectValue placeholder="Sin responder" /></SelectTrigger>
                                   <SelectContent>
                                     <SelectItem value="__unset__">Sin responder</SelectItem>
-                                    {Object.entries(INSPECTION_RESULT_LABELS)
-                                      .filter(([value]) => value !== "recorded")
-                                      .filter(([value]) => value !== "partial" || fieldKindAcceptsPartial(item.kind))
-                                      .map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                                    {inspectionResultOptionsFor(item.kind).map((option) => (
+                                      <SelectItem key={option.result} value={option.result}>{option.label}</SelectItem>
+                                    ))}
                                   </SelectContent>
                                 </Select>
                               ) : draft.result ? (
                                 <Badge variant={resultBadgeVariant(draft.result)}>
-                                  {INSPECTION_RESULT_LABELS[draft.result] ?? draft.result}
+                                  {inspectionResultLabel(item.kind, draft.result)}
                                 </Badge>
                               ) : "—"}
                             </TableCell>
@@ -1194,7 +1306,9 @@ export function InspectionRunDetail({
                                 <Input
                                   value={draft.comment}
                                   onChange={(event) => update(section.id, item.id, { comment: event.target.value })}
-                                  placeholder={needsComment ? (draft.result === "partial" ? "Motivo del Regular (mínimo 3 caracteres)" : draft.result === "non_conforming" ? "Motivo del No cumple (mínimo 3 caracteres)" : "Motivo por el que no aplica (mínimo 3 caracteres)") : "Opcional"}
+                                  // El motivo nombra el resultado como lo nombra el instrumento:
+                                  // en un Anexo B/R/M pide "Motivo del Malo", no "del No cumple".
+                                  placeholder={needsComment ? `Motivo del "${inspectionResultLabel(item.kind, draft.result)}" (mínimo 3 caracteres)` : "Opcional"}
                                   aria-label={`Comentario de ${item.label}`}
                                 />
                               ) : (
@@ -1341,8 +1455,8 @@ export function InspectionRunDetail({
         <div className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 grid grid-cols-2 gap-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-[var(--shadow-lg)] md:hidden">
           {editable ? (
             <>
-              <Button type="button" variant="secondary" disabled={operation.pending || rowProblems.length > 0} onClick={saveAnswers}>Guardar</Button>
-              <CompleteDialog run={run} completion={completion} rowProblems={rowProblems} payload={completePayload} onSaved={applyVersion} />
+              <Button type="button" variant="secondary" disabled={operation.pending || savingAnswers || rowProblems.length > 0} onClick={saveAnswers}>{savingAnswers ? "Guardando…" : "Guardar"}</Button>
+              <CompleteDialog run={run} completion={completion} rowProblems={rowProblems} payload={completePayload} onSaved={applyVersion} saving={savingAnswers} />
             </>
           ) : canCurrentUserReview ? (
             <div className="col-span-2"><ReviewDialog run={run} findings={findings} currentUserId={currentUserId} version={version} assignees={assignees} canExecute={canExecute} /></div>
@@ -1557,16 +1671,18 @@ function OtherDeviationDialog({ runId, open, onOpenChange }: {
  * inspector que corregía tres ítems y pulsaba "Declarar ejecutada" sin volver a
  * guardar firmaba cumplimiento y hallazgos con los valores viejos, sin aviso.
  */
-function CompleteDialog({ run, completion, rowProblems, payload, onSaved }: {
+function CompleteDialog({ run, completion, rowProblems, payload, onSaved, saving = false }: {
   run: RunInfo
   completion: { allowed: boolean; blockers: { kind: string; detail: string }[] }
   rowProblems: string[]
   payload: () => Record<string, unknown>
   onSaved: (result: { data?: Record<string, unknown> }) => void
+  /** Autoguardado en vuelo: cerrar ahora mandaría un `expectedVersion` viejo. */
+  saving?: boolean
 }) {
   const [open, setOpen] = React.useState(false)
   const operation = useOperation()
-  const blocked = !completion.allowed || rowProblems.length > 0
+  const blocked = !completion.allowed || rowProblems.length > 0 || saving
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -1577,6 +1693,8 @@ function CompleteDialog({ run, completion, rowProblems, payload, onSaved }: {
             event.preventDefault()
             operation.run(() => completeInspectionRunAction(payload()), (result) => {
               onSaved(result)
+              // Declarada ejecutada: el borrador del dispositivo ya no aplica.
+              clearInspectionDraft(run.id)
               setOpen(false)
             })
           }}
@@ -1607,6 +1725,7 @@ function CompleteDialog({ run, completion, rowProblems, payload, onSaved }: {
             </div>
           )}
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+          {saving && <p className="text-sm text-[var(--color-text-subtle)]">Guardando las últimas respuestas…</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending || blocked}>Declarar ejecutada</Button></DialogFooter>
         </form>
       </DialogContent>
@@ -1823,8 +1942,11 @@ function SourceFormUpload({ runId, hasDocuments }: { runId: string; hasDocuments
         const failure = await response.json().catch(() => ({}))
         throw new Error(failure?.error ?? "No se pudo subir la planilla.")
       }
-      // Actualiza el documento del Server Component y conserva el estado del
-      // checklist cliente; una recarga completa destruía el borrador.
+      /* INS-10: `router.refresh()` en una ruta con `loading.tsx` vuelve a
+       * suspender, y React puede desmontar el árbol de cliente y montar uno
+       * nuevo — el borrador en `useState` se iría con él. Lo que sostiene la
+       * promesa de abajo no es el refresh: es el espejo en el dispositivo
+       * (`inspection-draft-storage`), que se restaura al volver a montar. */
       setMessage("Planilla cargada. Tu borrador de respuestas se conserva.")
       router.refresh()
     } catch (error) {

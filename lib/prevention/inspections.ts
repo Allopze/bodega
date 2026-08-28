@@ -1,4 +1,5 @@
 import { PARTIAL_STATUS_WEIGHT } from "@/lib/sst/compliance"
+import { BRM_KINDS, statusOptionsForKind } from "@/lib/sst/status-options"
 import type { FieldKind } from "@/lib/sst/types"
 
 export const INSPECTION_KIND_LABELS: Record<string, string> = {
@@ -22,6 +23,14 @@ export const INSPECTION_RESULT_LABELS: Record<string, string> = {
   partial: "Regular",
   non_conforming: "No cumple",
   not_applicable: "No aplica",
+  /**
+   * "NT = NO TIENE" del Anexo 14 (Contenedores): el sujeto no posee el
+   * componente. Distinto de "No aplica" en el papel —ahí el ítem no
+   * corresponde, acá el componente no existe— y por eso es un estado propio y
+   * no un N/A con comentario. Para el puntaje son idénticos: los dos salen del
+   * denominador (ver EXCLUDED_RESULTS).
+   */
+  not_present: "No tiene",
   /**
    * Ítems que no puntúan (`text`, `textarea`, `date`, `select`…): su respuesta
    * es el `value`, no un juicio de conformidad. Antes no tenían dónde
@@ -85,6 +94,7 @@ export function resultBadgeVariant(result: string): "success" | "warning" | "dan
   if (result === "non_conforming") return "danger"
   if (result === "partial") return "warning"
   if (result === "not_applicable") return "outline"
+  if (result === "not_present") return "outline"
   // 'recorded' no es conformidad: pintarlo verde afirmaría algo que el ítem
   // nunca evaluó. Es exactamente el accidente que el comentario de arriba
   // advierte para todo estado nuevo que caiga al `return` final.
@@ -151,13 +161,6 @@ export function capaPriorityForCriticality(criticality: string): {
   }
 }
 
-/** Ítems con escala B/R/M (Bueno/Regular/Malo): los únicos que admiten 'partial'. */
-const BRM_KINDS: readonly FieldKind[] = [
-  "bueno_regular_malo_obs",
-  "bueno_regular_malo_na_obs",
-  "bueno_regular_malo_na_nt_obs",
-]
-
 /** ¿Este tipo de ítem admite la respuesta intermedia 'partial' (Regular)? */
 export function fieldKindAcceptsPartial(kind: FieldKind | null | undefined): boolean {
   return kind !== null && kind !== undefined && BRM_KINDS.includes(kind)
@@ -192,6 +195,108 @@ export function fieldKindIsScorable(kind: FieldKind | null | undefined): boolean
   return !NON_SCORABLE_KINDS.includes(kind)
 }
 
+/**
+ * Vocabulario del catálogo SST (`StatusValue`) → vocabulario de este motor.
+ *
+ * Son dos vocabularios porque el motor transversal puntúa cualquier
+ * instrumento con el mismo conjunto de estados, mientras el catálogo conserva
+ * el del papel: "Bueno" y "Entregado" y "Apto" son todos `conforming` acá.
+ * La etiqueta que ve quien ejecuta sí vuelve a ser la del papel — ver
+ * `inspectionResultOptionsFor`.
+ */
+const STATUS_TO_RESULT: Record<string, InspectionResult> = {
+  cumple: "conforming",
+  entregado: "conforming",
+  apto: "conforming",
+  si: "conforming",
+  regular: "partial",
+  no_cumple: "non_conforming",
+  no_entregado: "non_conforming",
+  no_apto: "non_conforming",
+  no: "non_conforming",
+  na: "not_applicable",
+  no_tiene: "not_present",
+}
+
+/**
+ * Conjunto histórico, para los ítems cuyo snapshot congelado no declara `kind`
+ * (fixtures como INSP-DEMO y plantillas anteriores a que el catálogo lo
+ * llevara). Tratarlos como no respondibles convertiría esas plantillas en
+ * inejecutables, así que conservan lo que siempre ofrecieron.
+ */
+const LEGACY_RESULT_OPTIONS: { result: InspectionResult; label: string }[] = [
+  { result: "conforming", label: "Cumple" },
+  { result: "non_conforming", label: "No cumple" },
+  { result: "not_applicable", label: "No aplica" },
+]
+
+/**
+ * Qué puede responderse en este ítem, con la etiqueta del instrumento.
+ *
+ * Antes la pantalla ofrecía `INSPECTION_RESULT_LABELS` entero menos 'recorded'
+ * y —salvo B/R/M— 'partial', así que un Anexo 13 aceptaba "No aplica" que ese
+ * anexo no tiene. Como el N/A sale del denominador, marcarlo subía el
+ * cumplimiento: un carro con 1 de 2 ítems en Malo pasaba de 50% a 100%.
+ *
+ * Lista vacía = el ítem no expresa conformidad y se responde con su `value`
+ * ('recorded').
+ */
+export function inspectionResultOptionsFor(
+  kind: FieldKind | null | undefined,
+): { result: InspectionResult; label: string }[] {
+  if (!fieldKindIsScorable(kind)) return []
+  const options = statusOptionsForKind(kind)
+  if (options.length === 0) return LEGACY_RESULT_OPTIONS
+  return options.map((option) => {
+    const result = STATUS_TO_RESULT[option.value as string] ?? "conforming"
+    return {
+      result,
+      /* La escala decide QUÉ se ofrece; cómo se llama lo decide este motor
+       * cuando ya tenía nombre propio. El catálogo SST rotula el escape "N/A"
+       * —botones estrechos— y acá siempre fue "No aplica", que es lo que dicen
+       * la bandeja, el acta y el Excel. Renombrarlo de paso sería un cambio
+       * gratuito en la pantalla que se usa en terreno. */
+      label: result === "not_applicable" ? INSPECTION_RESULT_LABELS.not_applicable! : option.label,
+    }
+  })
+}
+
+/**
+ * Etiqueta de una respuesta ya guardada, en el vocabulario del instrumento.
+ *
+ * `INSPECTION_RESULT_LABELS` sigue siendo el fallback para lo que no cuelga de
+ * un ítem (el Excel agregado, un `recorded`), pero leer "Cumple" donde el
+ * papel firmado dice "Bueno" obliga a traducir mentalmente entre la pantalla y
+ * el anexo — que es justo lo que el prevencionista está cotejando.
+ */
+export function inspectionResultLabel(
+  kind: FieldKind | null | undefined,
+  result: string,
+): string {
+  const option = inspectionResultOptionsFor(kind).find((entry) => entry.result === result)
+  return option?.label ?? INSPECTION_RESULT_LABELS[result] ?? result
+}
+
+/** ¿Este ítem admite `result`? Fuente única del formulario y del validador. */
+export function inspectionResultAllowed(
+  kind: FieldKind | null | undefined,
+  result: InspectionResult,
+): boolean {
+  return inspectionResultOptionsFor(kind).some((option) => option.result === result)
+}
+
+/**
+ * Estados que salen del denominador del cumplimiento: el ítem no se evaluó.
+ * 'not_applicable' = no corresponde al sujeto · 'not_present' = el sujeto no
+ * posee el componente (NT del Anexo 14). Distintos en el papel, idénticos para
+ * el puntaje — mismo criterio que `EXCLUDED_STATUSES` en lib/sst/compliance.ts.
+ */
+export const EXCLUDED_RESULTS: readonly InspectionResult[] = ["not_applicable", "not_present"]
+
+export function isExcludedResult(result: string): boolean {
+  return (EXCLUDED_RESULTS as readonly string[]).includes(result)
+}
+
 export interface InspectionItemSpec {
   sectionId: string
   itemId: string
@@ -211,7 +316,7 @@ export interface InspectionItemSpec {
   placeholder?: string
 }
 
-export type InspectionResult = "conforming" | "partial" | "non_conforming" | "not_applicable" | "recorded"
+export type InspectionResult = "conforming" | "partial" | "non_conforming" | "not_applicable" | "not_present" | "recorded"
 
 export interface InspectionAnswerInput {
   sectionId: string
@@ -271,10 +376,15 @@ export function validateAnswerRow(
       return `"${item.label}" requiere un número válido de 0 o más.`
     }
   }
-  // 'partial' (Regular) sólo existe en la escala B/R/M — aceptarlo en un ítem
-  // cumple/no-cumple inventaría un estado que ese ítem no tiene.
-  if (answer.result === "partial" && !fieldKindAcceptsPartial(item.kind)) {
-    return `"${item.label}" no admite la respuesta "Regular".`
+  // La escala del ítem manda: ofrecer "No aplica" donde el instrumento no lo
+  // tiene (Anexo 13, B/R/M sin escape) permitía sacar del denominador un ítem
+  // que el papel obliga a juzgar, inflando el cumplimiento. Subsume la regla
+  // anterior de 'partial', que era este mismo problema visto en un solo estado.
+  if (scorable && !inspectionResultAllowed(item.kind, answer.result)) {
+    const admitido = inspectionResultOptionsFor(item.kind).map((option) => option.label)
+    return admitido.length > 0
+      ? `"${item.label}" se responde ${admitido.join(", ")}.`
+      : `"${item.label}" no admite esa respuesta.`
   }
   if (answer.result === "not_applicable" && (answer.comment?.trim().length ?? 0) < ANSWER_COMMENT_MIN_LENGTH) {
     return `"${item.label}": un "No aplica" exige indicar el motivo (mínimo ${ANSWER_COMMENT_MIN_LENGTH} caracteres).`
@@ -329,10 +439,15 @@ export function summarizeCompliance(items: InspectionItemSpec[], answers: Inspec
     // `else if` explícito, no `else`: el `else` capturaba como "no aplica"
     // cualquier estado desconocido, así que 'recorded' habría inflado ese
     // contador. Un dato registrado no es una exclusión.
-    else if (answer.result === "not_applicable") notApplicable += 1
+    // 'not_present' (NT) suma en el mismo contador: en el papel son dos cosas
+    // distintas, pero el resumen agregado del acta y del Excel las presenta
+    // juntas como "no evaluados", y separarlas exigiría una columna nueva en
+    // `prevention_inspection_runs` que ninguna pantalla pide. El detalle por
+    // ítem sí conserva cuál fue.
+    else if (isExcludedResult(answer.result)) notApplicable += 1
 
     if (!item?.countsForCompliance) continue
-    if (answer.result === "not_applicable" || answer.result === "recorded") continue
+    if (isExcludedResult(answer.result) || answer.result === "recorded") continue
     scored += 1
     if (answer.result === "conforming") scoredPoints += 1
     else if (answer.result === "partial") scoredPoints += PARTIAL_STATUS_WEIGHT

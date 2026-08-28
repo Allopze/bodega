@@ -1,0 +1,2 @@
+ALTER TABLE "prevention_inspection_answers" DROP CONSTRAINT "prevention_inspection_answer_result_valid";--> statement-breakpoint
+ALTER TABLE "prevention_inspection_answers" ADD CONSTRAINT "prevention_inspection_answer_result_valid" CHECK ("prevention_inspection_answers"."result" IN ('conforming', 'partial', 'non_conforming', 'not_applicable', 'not_present', 'recorded'));

@@ -535,6 +535,29 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     expect(after!.nextDueOn > "2026-01-15").toBe(true)
   })
 
+  /**
+   * INS-04/INS-05: el sujeto del programa se propagaba como par de FK pero sin
+   * su etiqueta, así que la inspección programada del extintor del pañol nacía
+   * sin decir de cuál — la bandeja no la encontraba al buscar por sujeto y el
+   * acta imprimía "—". Ahora se congela igual que en el alta ad-hoc.
+   */
+  it("propaga el sujeto del programa Y congela su etiqueta al materializar", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const { materializeProgramRuns } = await import("@/lib/services/prevention-inspection-scheduler")
+    const program = await service.createInspectionProgram({
+      templateId, worksiteId: "ws-in-a", frequency: "monthly", startsOn: "2026-02-10",
+      subjectVehicleId: "veh-a",
+    }, AUTHOR)
+
+    await materializeProgramRuns({ programId: program.id })
+    const [run] = await getDb().select().from(schema.preventionInspectionRuns)
+      .where(eq(schema.preventionInspectionRuns.programId, program.id))
+
+    expect(run!.subjectVehicleId).toBe("veh-a")
+    // Lo que faltaba: sin esto quedaba en null y el sujeto era invisible.
+    expect(run!.subjectLabel).toBeTruthy()
+  })
+
   it("does not leak runs of another worksite", async () => {
     const service = await import("@/lib/services/prevention-inspections")
     expect(await service.listInspectionRuns(OUTSIDER)).toEqual([])
@@ -561,7 +584,8 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     await expect(service.saveInspectionAnswers({
       runId: created.run.id, expectedVersion: created.run.version,
       answers: [{ sectionId: target.sectionId, itemId: target.itemId, result: "partial", comment: "Desgaste menor." }],
-    }, AUTHOR)).rejects.toThrow(/no admite la respuesta "Regular"/)
+      // El mensaje nombra lo que el ítem SÍ admite, en el vocabulario del anexo.
+    }, AUTHOR)).rejects.toThrow(/se responde Cumple, No cumple, No aplica/)
   })
 
   it("persists 'partial' end-to-end on a B/R/M template and scores it at 0.5", async () => {
@@ -1550,6 +1574,98 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       await expect(service.addRunDocument({
         runId: ingestaRunId, path: "storage/inspection-evidence/tarde.jpg",
       }, INGESTOR)).rejects.toThrow(/cerrada o cancelada/i)
+    })
+  })
+
+  /**
+   * INS-03 (auditoría 2026-08-27): la evidencia cuelga de la respuesta con
+   * `ON DELETE cascade`, y `saveAnswersWithClient` borra toda respuesta que no
+   * venga en el payload. Dejar un ítem en "Sin responder" —o vaciar el campo de
+   * uno que no puntúa, que pone el resultado en "" solo— destruía sus
+   * fotografías sin preguntar. Con autoguardado eso pasaría sin que nadie
+   * pulse un botón, de ahí que la guarda esté en el servidor.
+   */
+  describe("La evidencia no se borra por dejar un ítem sin responder", () => {
+    let evidenceRunId = ""
+    let evidenceTemplateId = ""
+    let firstItem: InspectionItemSpec | undefined
+
+    it("prepara una inspección con una respuesta y su fotografía", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      const [template] = await getDb().select().from(schema.preventionInspectionTemplates)
+        .where(and(
+          eq(schema.preventionInspectionTemplates.sourceDefinitionCode, "inspeccion_taller"),
+          eq(schema.preventionInspectionTemplates.status, "approved"),
+        ))
+      evidenceTemplateId = template!.id
+      const items = service.itemsFromDefinition(template!.definitionSnapshot as never)
+      firstItem = items.find((item) => fieldKindIsScorable(item.kind))
+      expect(firstItem).toBeDefined()
+
+      const { run } = await service.createInspectionRun({
+        templateId: evidenceTemplateId, worksiteId: "ws-in-a",
+      }, AUTHOR)
+      evidenceRunId = run.id
+
+      await service.saveInspectionAnswers({
+        runId: evidenceRunId,
+        expectedVersion: await currentRunVersion(evidenceRunId),
+        answers: [{ sectionId: firstItem!.sectionId, itemId: firstItem!.itemId, result: "conforming" }],
+      }, AUTHOR)
+
+      const [answer] = await getDb().select().from(schema.preventionInspectionAnswers)
+        .where(eq(schema.preventionInspectionAnswers.runId, evidenceRunId))
+      await service.addAnswerEvidence({
+        answerId: answer!.id,
+        path: "storage/inspection-evidence/hallazgo.jpg",
+      }, AUTHOR)
+
+      const evidence = await getDb().select().from(schema.preventionInspectionAnswerEvidence)
+        .where(eq(schema.preventionInspectionAnswerEvidence.answerId, answer!.id))
+      expect(evidence).toHaveLength(1)
+    })
+
+    it("rechaza el guardado que dejaría el ítem sin responder, nombrando lo que se perdería", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      await expect(service.saveInspectionAnswers({
+        runId: evidenceRunId,
+        expectedVersion: await currentRunVersion(evidenceRunId),
+        // El conjunto completo llega vacío: es lo que manda el formulario
+        // cuando alguien devuelve el único ítem respondido a "Sin responder".
+        answers: [],
+      }, AUTHOR)).rejects.toThrow(/se perdería la evidencia adjunta/i)
+    })
+
+    it("y la fotografía sigue ahí después del rechazo", async () => {
+      const rows = await getDb().select().from(schema.preventionInspectionAnswerEvidence)
+        .innerJoin(
+          schema.preventionInspectionAnswers,
+          eq(schema.preventionInspectionAnswers.id, schema.preventionInspectionAnswerEvidence.answerId),
+        )
+        .where(eq(schema.preventionInspectionAnswers.runId, evidenceRunId))
+      expect(rows).toHaveLength(1)
+    })
+
+    it("sigue permitiendo cambiar la respuesta del ítem: lo que se guarda es no responderlo", async () => {
+      const service = await import("@/lib/services/prevention-inspections")
+      await expect(service.saveInspectionAnswers({
+        runId: evidenceRunId,
+        expectedVersion: await currentRunVersion(evidenceRunId),
+        answers: [{
+          sectionId: firstItem!.sectionId,
+          itemId: firstItem!.itemId,
+          result: "non_conforming",
+          comment: "Extintor descargado.",
+        }],
+      }, AUTHOR)).resolves.toBeDefined()
+
+      const rows = await getDb().select().from(schema.preventionInspectionAnswerEvidence)
+        .innerJoin(
+          schema.preventionInspectionAnswers,
+          eq(schema.preventionInspectionAnswers.id, schema.preventionInspectionAnswerEvidence.answerId),
+        )
+        .where(eq(schema.preventionInspectionAnswers.runId, evidenceRunId))
+      expect(rows).toHaveLength(1)
     })
   })
 })

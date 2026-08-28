@@ -36,6 +36,13 @@ import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { formatDate, todayInChile } from "@/lib/utils"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
+import {
+  NO_SUBJECT,
+  subjectIdsFromRef,
+  subjectRefFromIds,
+  subjectRefOf,
+  type InspectionSubjectOption,
+} from "@/lib/prevention/inspection-list-query"
 
 interface Coverage {
   totalItems: number
@@ -93,6 +100,9 @@ interface ProgramItem {
   riskEntryId: string | null
   riskLabel: string | null
   subjectType: string | null
+  /** Sujeto del inventario; excluyente con `subjectVehicleId` (INS-04). */
+  subjectResourceId: string | null
+  subjectVehicleId: string | null
   isActive: boolean
   /** I-04: la plantilla puede haber quedado `superseded` desde que se creó el programa. */
   templateApproved: boolean
@@ -350,9 +360,12 @@ function TemplateActions({ item, templates, pdtpOptions, canManage, canApprove }
  * Programación: qué instrumento se ejecuta, en qué faena y con qué frecuencia.
  * El cron diario materializa desde acá, y "Ejecutar ahora" usa el mismo camino.
  */
-export function InspectionProgramsPanel({ programs, assignees, canManage, initialView = "all" }: {
+export function InspectionProgramsPanel({ programs, assignees, subjectsByWorksite = {}, riskEntriesByWorksite = {}, canManage, initialView = "all" }: {
   programs: ProgramItem[]
   assignees: { id: string; name: string }[]
+  /** Inventario por faena, para declarar QUÉ se inspecciona (INS-04). */
+  subjectsByWorksite?: Record<string, InspectionSubjectOption[]>
+  riskEntriesByWorksite?: Record<string, { id: string; hazardCode: string; hazard: string }[]>
   canManage: boolean
   initialView?: "all" | "overdue"
 }) {
@@ -431,7 +444,7 @@ export function InspectionProgramsPanel({ programs, assignees, canManage, initia
                   <div><dt className="text-[var(--color-text-subtle)]">Sujeto</dt><dd className="mt-0.5 font-medium">{item.subjectType ?? "No especificado"}</dd></div>
                 </dl>
                 {item.riskLabel && <p className="rounded-lg bg-[var(--color-surface-2)] px-3 py-2 text-xs"><span className="text-[var(--color-text-subtle)]">Riesgo MIPER:</span> {item.riskLabel}</p>}
-                {canManage && <ProgramActions program={item} assignees={assignees} />}
+                {canManage && <ProgramActions program={item} assignees={assignees} subjectsByWorksite={subjectsByWorksite} riskEntriesByWorksite={riskEntriesByWorksite} />}
               </article>
             )
           })}
@@ -477,7 +490,7 @@ export function InspectionProgramsPanel({ programs, assignees, canManage, initia
                   </TableCell>
                   {canManage && (
                     <TableCell className="text-right">
-                      <ProgramActions program={item} assignees={assignees} />
+                      <ProgramActions program={item} assignees={assignees} subjectsByWorksite={subjectsByWorksite} riskEntriesByWorksite={riskEntriesByWorksite} />
                     </TableCell>
                   )}
                 </TableRow>
@@ -491,10 +504,20 @@ export function InspectionProgramsPanel({ programs, assignees, canManage, initia
   )
 }
 
-function ProgramActions({ program, assignees }: { program: ProgramItem; assignees: { id: string; name: string }[] }) {
+function ProgramActions({ program, assignees, subjectsByWorksite, riskEntriesByWorksite }: {
+  program: ProgramItem
+  assignees: { id: string; name: string }[]
+  subjectsByWorksite: Record<string, InspectionSubjectOption[]>
+  riskEntriesByWorksite: Record<string, { id: string; hazardCode: string; hazard: string }[]>
+}) {
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
-      <EditProgramDialog program={program} assignees={assignees} />
+      <EditProgramDialog
+        program={program}
+        assignees={assignees}
+        subjects={subjectsByWorksite[program.worksiteId] ?? []}
+        riskEntries={riskEntriesByWorksite[program.worksiteId] ?? []}
+      />
       <ToggleProgramButton program={program} />
       {program.isActive && (program.templateApproved
         ? <RunProgramNowButton program={program} />
@@ -673,9 +696,11 @@ function DeviationRow({ entry }: { entry: DeviationEntry }) {
           value={entry.danoPotencial}
           onValueChange={(value) => operation.run(() => updateDeviationCatalogEntryAction({ entryId: entry.id, danoPotencial: value }))}
         >
-          <SelectTrigger className="h-7 w-40 text-xs" aria-label={`Gravedad de ${entry.label}`}><SelectValue /></SelectTrigger>
+          <SelectTrigger className="h-7 w-52 text-xs" aria-label={`Gravedad de ${entry.label}`}><SelectValue /></SelectTrigger>
           <SelectContent>
-            {Object.keys(DANO_LABELS).map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}
+            {/* El alta ya explica la consecuencia ("Grave → hallazgo alto · 7
+                días"); acá salía "grave" pelado, para la misma decisión. */}
+            {Object.entries(DANO_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
           </SelectContent>
         </Select>
         <Button
@@ -989,15 +1014,20 @@ function RetireDialog({ templateId, name }: { templateId: string; name: string }
  * reasignar ni desactivar.
  */
 
-function EditProgramDialog({ program, assignees }: {
+function EditProgramDialog({ program, assignees, subjects, riskEntries }: {
   program: ProgramItem
   assignees: { id: string; name: string }[]
+  subjects: InspectionSubjectOption[]
+  riskEntries: { id: string; hazardCode: string; hazard: string }[]
 }) {
   const [open, setOpen] = React.useState(false)
   const [frequency, setFrequency] = React.useState(program.frequency)
   const [intervalDays, setIntervalDays] = React.useState(program.intervalDays)
   const [assignedToUserId, setAssignedToUserId] = React.useState(program.assignedToUserId ?? "_none")
   const [nextDueOn, setNextDueOn] = React.useState(program.nextDueOn)
+  const [subjectRef, setSubjectRef] = React.useState(subjectRefFromIds(program))
+  // INS-16: el servicio siempre aceptó cambiar el peligro y el formulario no lo ofrecía.
+  const [riskEntryId, setRiskEntryId] = React.useState(program.riskEntryId ?? "_none")
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -1012,6 +1042,8 @@ function EditProgramDialog({ program, assignees }: {
       nextDueOn,
       assignedToUserId: assignedToUserId === "_none" ? null : assignedToUserId,
       subjectType: subjectType || null,
+      riskEntryId: riskEntryId === "_none" ? null : riskEntryId,
+      ...subjectIdsFromRef(subjectRef),
     }), () => setOpen(false))
   }
 
@@ -1022,6 +1054,8 @@ function EditProgramDialog({ program, assignees }: {
         setIntervalDays(program.intervalDays)
         setAssignedToUserId(program.assignedToUserId ?? "_none")
         setNextDueOn(program.nextDueOn)
+        setSubjectRef(subjectRefFromIds(program))
+        setRiskEntryId(program.riskEntryId ?? "_none")
       }
       setOpen(value)
     }}>
@@ -1048,9 +1082,38 @@ function EditProgramDialog({ program, assignees }: {
               <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger aria-label="Asignada a"><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
             </Field>
           </div>
-          <Field label="Tipo de sujeto" hint="Opcional. Ej: extintor, camión, contenedor.">
-            <Input name="subjectType" maxLength={120} defaultValue={program.subjectType ?? ""} />
-          </Field>
+          {subjects.length > 0 && (
+            <Field label="Sujeto inspeccionado" hint="Opcional. Cada inspección generada apuntará a este recurso o equipo; un recurso del inventario actualiza su última inspección al completarse.">
+              <Select value={subjectRef} onValueChange={setSubjectRef}>
+                <SelectTrigger aria-label="Sujeto inspeccionado"><SelectValue placeholder="Sin sujeto del inventario" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_SUBJECT}>Sin sujeto del inventario</SelectItem>
+                  {subjects.map((subject) => (
+                    <SelectItem key={subjectRefOf(subject)} value={subjectRefOf(subject)}>
+                      {subject.source === "vehicle" ? "Equipo" : "Recurso"} · {subject.name}
+                      {subject.location ? ` · ${subject.location}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Tipo de sujeto" hint="Opcional. Ej: extintor, camión, contenedor.">
+              <Input name="subjectType" maxLength={120} defaultValue={program.subjectType ?? ""} />
+            </Field>
+            <Field label="Peligro MIPER de origen" hint="Opcional. Los de esta faena.">
+              <Select value={riskEntryId} onValueChange={setRiskEntryId}>
+                <SelectTrigger aria-label="Peligro MIPER de origen"><SelectValue placeholder="Sin vincular" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">Sin vincular</SelectItem>
+                  {riskEntries.map((entry) => (
+                    <SelectItem key={entry.id} value={entry.id}>{entry.hazardCode} · {entry.hazard}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Guardar</Button></DialogFooter>
         </form>
@@ -1149,11 +1212,13 @@ function RunProgramNowButton({ program }: { program: ProgramItem }) {
 
 /* ── Alta de programación ─────────────────────────────────────────────────── */
 
-export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWorksite }: {
+export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWorksite, subjectsByWorksite = {} }: {
   templates: { id: string; name: string; versionLabel: string }[]
   worksites: { id: string; name: string }[]
   assignees: { id: string; name: string }[]
   riskEntriesByWorksite: Record<string, { id: string; hazardCode: string; hazard: string }[]>
+  /** Inventario por faena: declarar QUÉ se inspecciona, no sólo con qué instrumento (INS-04). */
+  subjectsByWorksite?: Record<string, InspectionSubjectOption[]>
 }) {
   const [open, setOpen] = React.useState(false)
   const [startsOn, setStartsOn] = React.useState("")
@@ -1163,6 +1228,7 @@ export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWo
   const [intervalDays, setIntervalDays] = React.useState(FREQUENCY_INTERVAL_DAYS.monthly)
   const [assignedToUserId, setAssignedToUserId] = React.useState("_none")
   const [riskEntryId, setRiskEntryId] = React.useState("_none")
+  const [subjectRef, setSubjectRef] = React.useState(NO_SUBJECT)
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -1185,6 +1251,7 @@ export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWo
       assignedToUserId: assignee || null,
       subjectType: subjectType || null,
       riskEntryId: riskEntry || null,
+      ...subjectIdsFromRef(subjectRef),
     }), () => setOpen(false))
   }
 
@@ -1198,6 +1265,7 @@ export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWo
         setIntervalDays(FREQUENCY_INTERVAL_DAYS.monthly)
         setAssignedToUserId("_none")
         setRiskEntryId("_none")
+        setSubjectRef(NO_SUBJECT)
         operation.setMessage("")
       }
       setOpen(value)
@@ -1215,7 +1283,7 @@ export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWo
           </Field>
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Faena">
-              <Select value={worksiteId} onValueChange={(value) => { setWorksiteId(value); setRiskEntryId("_none") }}><SelectTrigger aria-label="Faena del programa"><SelectValue placeholder="Selecciona la faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
+              <Select value={worksiteId} onValueChange={(value) => { setWorksiteId(value); setRiskEntryId("_none"); setSubjectRef(NO_SUBJECT) }}><SelectTrigger aria-label="Faena del programa"><SelectValue placeholder="Selecciona la faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
             </Field>
             <Field label="Frecuencia">
               <Select value={frequency} onValueChange={(value) => { setFrequency(value); setIntervalDays(FREQUENCY_INTERVAL_DAYS[value] ?? 30) }}><SelectTrigger aria-label="Frecuencia"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(INSPECTION_FREQUENCY_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select><input type="hidden" name="frequency" value={frequency} />
@@ -1232,6 +1300,22 @@ export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWo
               <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger aria-label="Asignada a"><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="assignedToUserId" value={assignedToUserId === "_none" ? "" : assignedToUserId} />
             </Field>
           </div>
+          {(subjectsByWorksite[worksiteId]?.length ?? 0) > 0 && (
+            <Field label="Sujeto inspeccionado" hint="Opcional. Cada inspección generada apuntará a este recurso o equipo, y el prevencionista sabrá qué va a inspeccionar.">
+              <Select value={subjectRef} onValueChange={setSubjectRef}>
+                <SelectTrigger aria-label="Sujeto inspeccionado"><SelectValue placeholder="Sin sujeto del inventario" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_SUBJECT}>Sin sujeto del inventario</SelectItem>
+                  {(subjectsByWorksite[worksiteId] ?? []).map((subject) => (
+                    <SelectItem key={subjectRefOf(subject)} value={subjectRefOf(subject)}>
+                      {subject.source === "vehicle" ? "Equipo" : "Recurso"} · {subject.name}
+                      {subject.location ? ` · ${subject.location}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Tipo de sujeto" hint="Opcional. Ej: extintor, camión, contenedor."><Input name="subjectType" maxLength={120} /></Field>
             {/* A-09: antes era un `<Input>` donde el usuario debía escribir el
