@@ -18,31 +18,76 @@
  */
 
 import ExcelJS from "exceljs"
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm"
-import { db } from "@/db"
+import { createHash } from "node:crypto"
+import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm"
+import { db, type DB, type Tx } from "@/db"
 import {
+  fuelVehicles,
   preventionEmergencyPlans,
+  preventionEmergencyResourceAssignments,
+  preventionEmergencyResourceEvents,
+  preventionEmergencyResourceImportBatches,
+  preventionEmergencyResourcePoints,
+  preventionEmergencyResourceServiceCases,
+  preventionEmergencyResourceTypes,
   preventionEmergencyResources,
   preventionInspectionRuns,
+  purchaseOrderItems,
+  purchaseOrders,
+  purchaseRequestItems,
+  purchaseRequests,
+  receiptItems,
+  receipts,
+  suppliers,
   worksites,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { z } from "zod"
 import { normKey, sheetToRecords } from "@/lib/combustibles/xlsx-utils"
+import { plateMatchKey } from "@/lib/combustibles/xlsx-utils"
+import {
+  buildEmergencyInventoryPreview,
+  calculateEmergencyCoverage,
+  type EmergencyImportContext,
+  type EmergencyImportPreview,
+} from "@/lib/services/emergency-resource-catalog"
+import { todayInChile } from "@/lib/utils"
 
 export interface InventoryAccess {
   userId: string
   permissions: readonly string[]
+  scope: readonly string[] | "all"
 }
 
 const PERMISSION = "admin:worksite_inventory"
+const SERVICE_PERMISSION = "admin:worksite_inventory_service"
 
 /** Mismo texto para todo lo no encontrado o fuera de permiso: no filtra existencia. */
 const NOT_FOUND = "Recurso no encontrado o fuera de alcance."
 
 function requireAccess(access: InventoryAccess) {
   if (!access.permissions.includes(PERMISSION)) throw new Error(NOT_FOUND)
+}
+
+function requireViewAccess(access: InventoryAccess) {
+  if (!access.permissions.includes(PERMISSION) && !access.permissions.includes(SERVICE_PERMISSION)) throw new Error(NOT_FOUND)
+}
+
+function requireServiceAccess(access: InventoryAccess) {
+  if (!access.permissions.includes(SERVICE_PERMISSION)) throw new Error(NOT_FOUND)
+}
+
+function assertWorksiteScope(access: InventoryAccess, worksiteId: string) {
+  if (access.scope !== "all" && !access.scope.includes(worksiteId)) throw new Error(NOT_FOUND)
+}
+
+function scopeCondition(access: InventoryAccess) {
+  return access.scope === "all"
+    ? undefined
+    : access.scope.length > 0
+      ? inArray(preventionEmergencyResources.worksiteId, [...access.scope])
+      : sql`false`
 }
 
 /** Fecha ISO corta. Se guarda como texto igual que el resto del inventario. */
@@ -63,9 +108,10 @@ const createSchema = z.object({ worksiteId: z.string().min(1), ...resourceFields
 /* ── Consultas ───────────────────────────────────────────────────────────── */
 
 export async function listWorksiteInventory(access: InventoryAccess) {
-  requireAccess(access)
+  requireViewAccess(access)
   return db.select({
     resource: preventionEmergencyResources,
+    technicalType: preventionEmergencyResourceTypes,
     worksiteName: worksites.name,
     planName: preventionEmergencyPlans.title,
     /* Cuántas inspecciones lo tomaron como sujeto. Gobierna si se puede borrar
@@ -77,15 +123,22 @@ export async function listWorksiteInventory(access: InventoryAccess) {
   })
     .from(preventionEmergencyResources)
     .innerJoin(worksites, eq(worksites.id, preventionEmergencyResources.worksiteId))
+    .leftJoin(preventionEmergencyResourceTypes, eq(preventionEmergencyResources.typeId, preventionEmergencyResourceTypes.id))
     .leftJoin(preventionEmergencyPlans, eq(preventionEmergencyPlans.id, preventionEmergencyResources.planId))
+    .where(scopeCondition(access))
     .orderBy(asc(worksites.name), asc(preventionEmergencyResources.name))
 }
 
 export async function listWorksitesForInventory(access: InventoryAccess) {
-  requireAccess(access)
+  requireViewAccess(access)
   return db.select({ id: worksites.id, name: worksites.name })
     .from(worksites)
-    .where(eq(worksites.isActive, true))
+    .where(and(
+      eq(worksites.isActive, true),
+      access.scope === "all"
+        ? undefined
+        : access.scope.length > 0 ? inArray(worksites.id, [...access.scope]) : sql`false`,
+    ))
     .orderBy(asc(worksites.name))
 }
 
@@ -113,6 +166,7 @@ export async function listLinkableResources(worksiteId: string) {
 export async function createWorksiteResource(input: unknown, access: InventoryAccess) {
   requireAccess(access)
   const data = createSchema.parse(input)
+  assertWorksiteScope(access, data.worksiteId)
 
   const [worksite] = await db.select({ id: worksites.id })
     .from(worksites).where(eq(worksites.id, data.worksiteId)).limit(1)
@@ -256,47 +310,548 @@ export interface ImportResult {
 }
 
 export async function importWorksiteResources(
-  input: { worksiteId: string; fileBuffer: ArrayBuffer | Buffer },
+  input: { worksiteId: string; fileBuffer: ArrayBuffer | Buffer; fileName?: string },
   access: InventoryAccess,
 ): Promise<ImportResult> {
+  const result = await confirmEmergencyInventoryImport({
+    worksiteId: input.worksiteId,
+    fileBuffer: input.fileBuffer,
+    fileName: input.fileName ?? "inventario.xlsx",
+  }, access)
+  return { created: result.created, rejected: [] }
+}
+
+type InventoryReader = Pick<DB | Tx, "select">
+
+function fingerprint(fileBuffer: ArrayBuffer | Buffer) {
+  return createHash("sha256").update(toBuffer(fileBuffer)).digest("hex")
+}
+
+function toBuffer(fileBuffer: ArrayBuffer | Buffer): Buffer {
+  return Buffer.isBuffer(fileBuffer) ? fileBuffer : Buffer.from(new Uint8Array(fileBuffer))
+}
+
+function pointCode(row: EmergencyImportPreview["rows"][number]) {
+  if (row.vehicleId && row.plate) return `VEH-${plateMatchKey(row.plate)}`
+  const normalized = (row.fixedLocation ?? "SIN-UBICACION")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "")
+  return `FIX-${normalized.slice(0, 80)}`
+}
+
+async function loadEmergencyImportContext(client: InventoryReader, worksiteId: string): Promise<EmergencyImportContext> {
+  const vehicles = await client.select({
+    id: fuelVehicles.id,
+    worksiteId: fuelVehicles.worksiteId,
+    plate: fuelVehicles.plate,
+    brand: fuelVehicles.brand,
+    category: fuelVehicles.type,
+  }).from(fuelVehicles).where(and(
+    eq(fuelVehicles.worksiteId, worksiteId),
+    eq(fuelVehicles.isActive, true),
+  ))
+
+  const resources = await client.select({
+    id: preventionEmergencyResources.id,
+    worksiteId: preventionEmergencyResources.worksiteId,
+    assetCode: preventionEmergencyResources.assetCode,
+    agent: preventionEmergencyResourceTypes.agent,
+    capacity: preventionEmergencyResourceTypes.capacity,
+    capacityUnit: preventionEmergencyResourceTypes.capacityUnit,
+    lastMaintenanceAt: preventionEmergencyResources.lastMaintenanceAt,
+    expiresAt: preventionEmergencyResources.expiresAt,
+    status: preventionEmergencyResources.status,
+  }).from(preventionEmergencyResources)
+    .leftJoin(preventionEmergencyResourceTypes, eq(preventionEmergencyResources.typeId, preventionEmergencyResourceTypes.id))
+    .where(eq(preventionEmergencyResources.worksiteId, worksiteId))
+
+  const placements = await client.select({
+    resourceId: preventionEmergencyResourceAssignments.resourceId,
+    vehicleId: preventionEmergencyResourcePoints.vehicleId,
+    fixedLocation: preventionEmergencyResourcePoints.fixedLocation,
+  }).from(preventionEmergencyResourceAssignments)
+    .innerJoin(preventionEmergencyResourcePoints, eq(preventionEmergencyResourceAssignments.pointId, preventionEmergencyResourcePoints.id))
+    .where(and(
+      eq(preventionEmergencyResourcePoints.worksiteId, worksiteId),
+      isNull(preventionEmergencyResourceAssignments.unassignedAt),
+    ))
+
+  return {
+    worksiteId,
+    vehicles,
+    existingResources: resources.map((resource) => ({
+      ...resource,
+      status: resource.status as EmergencyImportContext["existingResources"][number]["status"],
+    })),
+    existingPlacements: placements,
+  }
+}
+
+export interface EmergencyInventoryPreviewResult extends EmergencyImportPreview {
+  fingerprint: string
+  alreadyApplied: boolean
+}
+
+export async function previewEmergencyInventoryImport(
+  input: { worksiteId: string; fileBuffer: ArrayBuffer | Buffer },
+  access: InventoryAccess,
+): Promise<EmergencyInventoryPreviewResult> {
   requireAccess(access)
   const worksiteId = z.string().min(1).parse(input.worksiteId)
-
-  const [worksite] = await db.select({ id: worksites.id })
-    .from(worksites).where(eq(worksites.id, worksiteId)).limit(1)
+  assertWorksiteScope(access, worksiteId)
+  const [worksite] = await db.select({ id: worksites.id }).from(worksites)
+    .where(eq(worksites.id, worksiteId)).limit(1)
   if (!worksite) throw new Error("La faena no existe.")
 
-  const rows = await parseInventoryXlsx(input.fileBuffer)
-  const valid = rows.filter((row) => row.values)
-  const rejected = rows.filter((row) => row.error).map((row) => ({ line: row.line, error: row.error! }))
+  const fileFingerprint = fingerprint(input.fileBuffer)
+  const [existingBatch] = await db.select({ id: preventionEmergencyResourceImportBatches.id })
+    .from(preventionEmergencyResourceImportBatches)
+    .where(and(
+      eq(preventionEmergencyResourceImportBatches.worksiteId, worksiteId),
+      eq(preventionEmergencyResourceImportBatches.fileFingerprint, fileFingerprint),
+      or(
+        eq(preventionEmergencyResourceImportBatches.status, "applied"),
+        eq(preventionEmergencyResourceImportBatches.status, "superseded"),
+      ),
+    )).limit(1)
+  const context = await loadEmergencyImportContext(db, worksiteId)
+  const preview = await buildEmergencyInventoryPreview(input.fileBuffer, context)
+  return { ...preview, fingerprint: fileFingerprint, alreadyApplied: Boolean(existingBatch) }
+}
 
-  if (valid.length === 0) return { created: 0, rejected }
+export interface ConfirmEmergencyInventoryResult {
+  batchId: string
+  created: number
+  updated: number
+  unchanged: number
+  points: number
+}
 
-  /* Todo o nada por lote: una carga a medias deja al usuario sin saber qué
-   * quedó dentro, y reintentar duplicaría lo ya insertado — el inventario no
-   * tiene clave natural que lo impida (dos extintores pueden compartir nombre
-   * y ubicación). Las filas inválidas se informan y no bloquean al lote. */
-  await db.insert(preventionEmergencyResources).values(valid.map((row) => ({
-    id: `pemgre-${nanoid()}`,
-    worksiteId,
-    planId: null,
-    name: row.values!.name,
-    kind: row.values!.kind,
-    location: row.values!.location,
-    serialNumber: row.values!.serialNumber ?? null,
-    lastInspectedAt: null,
-    nextInspectionAt: row.values!.nextInspectionAt ?? null,
-    expiresAt: row.values!.expiresAt ?? null,
-  })))
+/** Confirma el mismo archivo previsualizado, recalculando todo dentro del tx. */
+export async function confirmEmergencyInventoryImport(
+  input: { worksiteId: string; fileBuffer: ArrayBuffer | Buffer; fileName: string },
+  access: InventoryAccess,
+): Promise<ConfirmEmergencyInventoryResult> {
+  requireAccess(access)
+  const data = z.object({
+    worksiteId: z.string().min(1),
+    fileName: z.string().trim().min(1).max(255),
+  }).parse({ worksiteId: input.worksiteId, fileName: input.fileName })
+  assertWorksiteScope(access, data.worksiteId)
+  const fileFingerprint = fingerprint(input.fileBuffer)
 
-  await recordAudit({
-    action: "create",
-    entityType: "prevention_emergency_resource",
-    entityId: worksiteId,
-    userId: access.userId,
-    reason: `Carga masiva de inventario: ${valid.length} recurso(s) creado(s), ${rejected.length} fila(s) rechazada(s)`,
+  return db.transaction(async (tx) => {
+    const [worksite] = await tx.select({ id: worksites.id }).from(worksites)
+      .where(eq(worksites.id, data.worksiteId)).limit(1)
+    if (!worksite) throw new Error("La faena no existe.")
+
+    const [duplicate] = await tx.select({ id: preventionEmergencyResourceImportBatches.id })
+      .from(preventionEmergencyResourceImportBatches)
+      .where(and(
+        eq(preventionEmergencyResourceImportBatches.worksiteId, data.worksiteId),
+        eq(preventionEmergencyResourceImportBatches.fileFingerprint, fileFingerprint),
+        or(
+          eq(preventionEmergencyResourceImportBatches.status, "applied"),
+          eq(preventionEmergencyResourceImportBatches.status, "superseded"),
+        ),
+      )).limit(1)
+    if (duplicate) throw new Error("Este archivo ya fue confirmado para la faena. No se duplicó ningún registro.")
+
+    const context = await loadEmergencyImportContext(tx, data.worksiteId)
+    const preview = await buildEmergencyInventoryPreview(input.fileBuffer, context)
+    if (!preview.canConfirm) {
+      const first = preview.conflicts[0]
+      throw new Error(first ? `Hay conflictos sin resolver. Fila ${first.line}: ${first.message}` : "La planilla no contiene filas confirmables.")
+    }
+
+    const snapshots: Array<Record<string, unknown>> = []
+    let created = 0
+    let updated = 0
+    const affectedPointIds = new Set<string>()
+
+    for (const row of preview.rows) {
+      let [type] = await tx.select().from(preventionEmergencyResourceTypes).where(and(
+        eq(preventionEmergencyResourceTypes.resourceClass, "extinguisher"),
+        eq(preventionEmergencyResourceTypes.agent, row.agent),
+        eq(preventionEmergencyResourceTypes.capacity, row.capacity),
+        eq(preventionEmergencyResourceTypes.capacityUnit, row.capacityUnit),
+      )).limit(1)
+      if (!type) {
+        ;[type] = await tx.insert(preventionEmergencyResourceTypes).values({
+          id: `pemgrt-${nanoid()}`,
+          resourceClass: "extinguisher",
+          agent: row.agent,
+          capacity: row.capacity,
+          capacityUnit: row.capacityUnit,
+          canonicalName: `Extintor ${row.agent} ${row.capacity} ${row.capacityUnit}`,
+          serviceProductId: "prod-srv-recarga-extintor",
+        }).returning()
+      }
+      if (!type) throw new Error("No se pudo clasificar el tipo técnico.")
+
+      let [resource] = await tx.select().from(preventionEmergencyResources).where(and(
+        eq(preventionEmergencyResources.worksiteId, data.worksiteId),
+        eq(preventionEmergencyResources.assetCode, row.assetCode),
+      )).limit(1)
+      snapshots.push({ line: row.line, decision: row.decision, before: resource ?? null })
+      const location = row.placementKind === "vehicle" ? `Vehículo ${row.plate}` : row.fixedLocation!
+      if (!resource) {
+        ;[resource] = await tx.insert(preventionEmergencyResources).values({
+          id: `pemgre-${nanoid()}`,
+          worksiteId: data.worksiteId,
+          planId: null,
+          assetCode: row.assetCode,
+          typeId: type.id,
+          name: `Extintor ${row.assetCode}`,
+          kind: "Extintor",
+          location,
+          serialNumber: null,
+          lastMaintenanceAt: row.lastMaintenanceAt,
+          expiresAt: row.expiresAt,
+          status: row.status,
+        }).returning()
+        created += 1
+      } else if (row.decision === "update") {
+        ;[resource] = await tx.update(preventionEmergencyResources).set({
+          typeId: type.id,
+          location,
+          lastMaintenanceAt: row.lastMaintenanceAt,
+          expiresAt: row.expiresAt,
+          status: row.status,
+          version: sql`${preventionEmergencyResources.version} + 1`,
+          updatedAt: new Date().toISOString(),
+        }).where(eq(preventionEmergencyResources.id, resource.id)).returning()
+        updated += 1
+      }
+      if (!resource) throw new Error(`No se pudo guardar ${row.assetCode}.`)
+
+      const code = pointCode(row)
+      let [point] = await tx.select().from(preventionEmergencyResourcePoints).where(and(
+        eq(preventionEmergencyResourcePoints.worksiteId, data.worksiteId),
+        eq(preventionEmergencyResourcePoints.code, code),
+      )).limit(1)
+      if (!point) {
+        ;[point] = await tx.insert(preventionEmergencyResourcePoints).values({
+          id: `pemgrp-${nanoid()}`,
+          worksiteId: data.worksiteId,
+          code,
+          label: location,
+          pointKind: row.placementKind,
+          vehicleId: row.vehicleId,
+          fixedLocation: row.fixedLocation,
+          requiredTypeId: type.id,
+        }).returning()
+      } else {
+        ;[point] = await tx.update(preventionEmergencyResourcePoints).set({
+          label: location,
+          requiredTypeId: type.id,
+          vehicleId: row.vehicleId,
+          fixedLocation: row.fixedLocation,
+          pointKind: row.placementKind,
+          version: sql`${preventionEmergencyResourcePoints.version} + 1`,
+          updatedAt: new Date().toISOString(),
+        }).where(eq(preventionEmergencyResourcePoints.id, point.id)).returning()
+      }
+      if (!point) throw new Error(`No se pudo guardar el punto de ${row.assetCode}.`)
+      affectedPointIds.add(point.id)
+
+      const [currentAssignment] = await tx.select().from(preventionEmergencyResourceAssignments)
+        .where(and(
+          eq(preventionEmergencyResourceAssignments.resourceId, resource.id),
+          isNull(preventionEmergencyResourceAssignments.unassignedAt),
+        )).limit(1)
+      if (currentAssignment && currentAssignment.pointId !== point.id) {
+        await tx.update(preventionEmergencyResourceAssignments).set({
+          unassignedAt: new Date().toISOString(),
+          reason: "Reconciliación mediante importación supervisada",
+        }).where(eq(preventionEmergencyResourceAssignments.id, currentAssignment.id))
+      }
+      if (!currentAssignment || currentAssignment.pointId !== point.id) {
+        await tx.insert(preventionEmergencyResourceAssignments).values({
+          id: `pemgra-${nanoid()}`,
+          pointId: point.id,
+          resourceId: resource.id,
+          actorUserId: access.userId,
+          reason: "Carga supervisada de inventario",
+        })
+      }
+
+      if (row.decision !== "unchanged") {
+        await tx.insert(preventionEmergencyResourceEvents).values({
+          id: `pemgrev-${nanoid()}`,
+          worksiteId: data.worksiteId,
+          resourceId: resource.id,
+          eventType: row.eventType,
+          actorUserId: access.userId,
+          sourceType: "inventory_import",
+          sourceId: fileFingerprint,
+          notes: row.eventType === "used" ? "Percutado en simulacro según planilla importada" : "Activo reconciliado desde planilla",
+          snapshot: { line: row.line, assetCode: row.assetCode, status: row.status },
+        })
+      }
+    }
+
+    const batchId = `pemgrib-${nanoid()}`
+    await tx.insert(preventionEmergencyResourceImportBatches).values({
+      id: batchId,
+      worksiteId: data.worksiteId,
+      fileName: data.fileName,
+      fileFingerprint,
+      fileSize: toBuffer(input.fileBuffer).byteLength,
+      summary: { ...preview.counts, points: affectedPointIds.size },
+      snapshots,
+      createdByUserId: access.userId,
+    })
+    await recordAudit({
+      action: "create",
+      entityType: "prevention_emergency_resource_import_batch",
+      entityId: batchId,
+      userId: access.userId,
+      newState: { fingerprint: fileFingerprint, ...preview.counts, points: affectedPointIds.size },
+      reason: `Carga supervisada: ${created} alta(s), ${updated} actualización(es), ${preview.counts.unchanged} sin cambio(s)`,
+    }, tx)
+    return { batchId, created, updated, unchanged: preview.counts.unchanged, points: affectedPointIds.size }
   })
-  return { created: valid.length, rejected }
+}
+
+export async function exportEmergencyInventoryXlsx(access: InventoryAccess): Promise<Buffer> {
+  const [rows, coverage] = await Promise.all([
+    listWorksiteInventory(access),
+    listEmergencyResourceCoverage(access),
+  ])
+  const placementByResource = new Map(coverage.flatMap((row) => row.assignedResourceId ? [[row.assignedResourceId, row] as const] : []))
+  const workbook = new ExcelJS.Workbook()
+  const sheet = workbook.addWorksheet("Activos de emergencia")
+  sheet.columns = [
+    { header: "N°", key: "number", width: 8 },
+    { header: "Categoría", key: "category", width: 24 },
+    { header: "Patente", key: "plate", width: 16 },
+    { header: "Marca", key: "brand", width: 18 },
+    { header: "ID extintor", key: "assetCode", width: 16 },
+    { header: "Agente", key: "agent", width: 14 },
+    { header: "Capacidad", key: "capacity", width: 14 },
+    { header: "Última mantención", key: "lastMaintenanceAt", width: 22 },
+    { header: "Próximo vencimiento", key: "expiresAt", width: 22 },
+    { header: "Ubicación", key: "location", width: 32 },
+    { header: "Estado técnico", key: "status", width: 24 },
+  ]
+  sheet.getRow(1).font = { bold: true }
+  sheet.autoFilter = { from: "A1", to: "K1" }
+  sheet.views = [{ state: "frozen", ySplit: 1 }]
+  for (const [index, row] of rows.entries()) {
+    const placement = placementByResource.get(row.resource.id)
+    sheet.addRow({
+    number: index + 1,
+    category: placement?.point.pointKind === "vehicle" ? placement.vehicleCategory ?? "Vehículo" : placement?.point.label ?? row.resource.kind,
+    plate: placement?.vehiclePlate ?? null,
+    brand: placement?.vehicleBrand ?? null,
+    assetCode: row.resource.assetCode,
+    agent: row.technicalType?.agent,
+    capacity: row.technicalType?.capacity === null || row.technicalType?.capacity === undefined
+      ? null
+      : `${row.technicalType.capacity} ${row.technicalType.capacityUnit ?? ""}`.trim(),
+    location: row.resource.location,
+    lastMaintenanceAt: row.resource.lastMaintenanceAt,
+    expiresAt: row.resource.expiresAt,
+    status: row.resource.status === "needs_maintenance"
+      ? "REQUIERE MANTENCIÓN"
+      : row.resource.status === "out_of_service" ? "FUERA DE SERVICIO" : "OK",
+  })
+  }
+  return Buffer.from(await workbook.xlsx.writeBuffer())
+}
+
+export async function listEmergencyResourceCoverage(access: InventoryAccess) {
+  requireViewAccess(access)
+  const pointRows = await db.select({
+    point: preventionEmergencyResourcePoints,
+    vehiclePlate: fuelVehicles.plate,
+    vehicleBrand: fuelVehicles.brand,
+    vehicleCategory: fuelVehicles.type,
+    assignmentId: preventionEmergencyResourceAssignments.id,
+    assignedResourceId: preventionEmergencyResourceAssignments.resourceId,
+    assetCode: preventionEmergencyResources.assetCode,
+    resourceName: preventionEmergencyResources.name,
+    resourceTypeId: preventionEmergencyResources.typeId,
+    resourceStatus: preventionEmergencyResources.status,
+    expiresAt: preventionEmergencyResources.expiresAt,
+    nextInspectionAt: preventionEmergencyResources.nextInspectionAt,
+  }).from(preventionEmergencyResourcePoints)
+    .leftJoin(fuelVehicles, eq(preventionEmergencyResourcePoints.vehicleId, fuelVehicles.id))
+    .leftJoin(preventionEmergencyResourceAssignments, and(
+      eq(preventionEmergencyResourceAssignments.pointId, preventionEmergencyResourcePoints.id),
+      isNull(preventionEmergencyResourceAssignments.unassignedAt),
+    ))
+    .leftJoin(preventionEmergencyResources, eq(preventionEmergencyResourceAssignments.resourceId, preventionEmergencyResources.id))
+    .where(and(
+      eq(preventionEmergencyResourcePoints.isActive, true),
+      access.scope === "all"
+        ? undefined
+        : access.scope.length > 0
+          ? inArray(preventionEmergencyResourcePoints.worksiteId, [...access.scope])
+          : sql`false`,
+    ))
+    .orderBy(asc(preventionEmergencyResourcePoints.label))
+
+  const calculated = calculateEmergencyCoverage({
+    today: todayInChile(),
+    placements: pointRows.map((row) => ({
+      id: row.point.id,
+      isActive: row.point.isActive,
+      requiredTypeId: row.point.requiredTypeId,
+    })),
+    assignments: pointRows.flatMap((row) => row.assignmentId && row.assignedResourceId
+      ? [{ placementId: row.point.id, resourceId: row.assignedResourceId, active: true }]
+      : []),
+    resources: pointRows.flatMap((row) => row.assignedResourceId
+      ? [{
+        id: row.assignedResourceId,
+        typeId: row.resourceTypeId,
+        status: row.resourceStatus as "operational" | "needs_maintenance" | "out_of_service",
+        expiresAt: row.expiresAt,
+        nextInspectionAt: row.nextInspectionAt,
+      }]
+      : []),
+  })
+  const byPoint = new Map(calculated.map((row) => [row.placementId, row]))
+  return pointRows.map((row) => ({ ...row, coverage: byPoint.get(row.point.id)! }))
+}
+
+/** Ficha canónica y trazabilidad cruzada del activo, siempre acotada a faena. */
+export async function getEmergencyResourceDetail(access: InventoryAccess, resourceId: string) {
+  requireViewAccess(access)
+  const [resource] = await db.select({
+    resource: preventionEmergencyResources,
+    technicalType: preventionEmergencyResourceTypes,
+    worksiteName: worksites.name,
+  }).from(preventionEmergencyResources)
+    .innerJoin(worksites, eq(worksites.id, preventionEmergencyResources.worksiteId))
+    .leftJoin(preventionEmergencyResourceTypes, eq(preventionEmergencyResources.typeId, preventionEmergencyResourceTypes.id))
+    .where(eq(preventionEmergencyResources.id, resourceId))
+    .limit(1)
+  if (!resource) throw new Error(NOT_FOUND)
+  assertWorksiteScope(access, resource.resource.worksiteId)
+
+  const [assignments, events, inspections, serviceCases] = await Promise.all([
+    db.select({
+      id: preventionEmergencyResourceAssignments.id,
+      assignedAt: preventionEmergencyResourceAssignments.assignedAt,
+      unassignedAt: preventionEmergencyResourceAssignments.unassignedAt,
+      reason: preventionEmergencyResourceAssignments.reason,
+      pointId: preventionEmergencyResourcePoints.id,
+      pointLabel: preventionEmergencyResourcePoints.label,
+    }).from(preventionEmergencyResourceAssignments)
+      .innerJoin(preventionEmergencyResourcePoints, eq(preventionEmergencyResourceAssignments.pointId, preventionEmergencyResourcePoints.id))
+      .where(eq(preventionEmergencyResourceAssignments.resourceId, resourceId))
+      .orderBy(desc(preventionEmergencyResourceAssignments.assignedAt)),
+    db.select().from(preventionEmergencyResourceEvents)
+      .where(eq(preventionEmergencyResourceEvents.resourceId, resourceId))
+      .orderBy(desc(preventionEmergencyResourceEvents.occurredAt)),
+    db.select({
+      id: preventionInspectionRuns.id,
+      code: preventionInspectionRuns.code,
+      status: preventionInspectionRuns.status,
+      subjectLabel: preventionInspectionRuns.subjectLabel,
+      executedAt: preventionInspectionRuns.executedAt,
+      reviewedAt: preventionInspectionRuns.reviewedAt,
+      compliancePercent: preventionInspectionRuns.compliancePercent,
+      nonConformingCount: preventionInspectionRuns.nonConformingCount,
+    }).from(preventionInspectionRuns)
+      .where(eq(preventionInspectionRuns.subjectResourceId, resourceId))
+      .orderBy(desc(preventionInspectionRuns.createdAt)),
+    db.select({
+      id: preventionEmergencyResourceServiceCases.id,
+      status: preventionEmergencyResourceServiceCases.status,
+      openedAt: preventionEmergencyResourceServiceCases.openedAt,
+      completedAt: preventionEmergencyResourceServiceCases.completedAt,
+      requestId: purchaseRequests.id,
+      requestCode: purchaseRequests.code,
+      requestStatus: purchaseRequests.status,
+      requestItemId: purchaseRequestItems.id,
+      orderId: purchaseOrders.id,
+      orderCode: purchaseOrders.code,
+      orderStatus: purchaseOrders.status,
+      supplierName: suppliers.name,
+      unitPrice: purchaseOrderItems.unitPrice,
+      subtotal: purchaseOrderItems.subtotal,
+      receiptId: receipts.id,
+      receiptCode: receipts.code,
+      receiptStatus: receiptItems.status,
+      receivedAt: receipts.receivedAt,
+    }).from(preventionEmergencyResourceServiceCases)
+      .innerJoin(purchaseRequestItems, eq(preventionEmergencyResourceServiceCases.requestItemId, purchaseRequestItems.id))
+      .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
+      .leftJoin(purchaseOrderItems, eq(purchaseOrderItems.requestItemId, purchaseRequestItems.id))
+      .leftJoin(purchaseOrders, eq(purchaseOrderItems.purchaseOrderId, purchaseOrders.id))
+      .leftJoin(suppliers, eq(purchaseOrders.supplierId, suppliers.id))
+      .leftJoin(receiptItems, eq(preventionEmergencyResourceServiceCases.completedReceiptItemId, receiptItems.id))
+      .leftJoin(receipts, eq(receiptItems.receiptId, receipts.id))
+      .where(eq(preventionEmergencyResourceServiceCases.resourceId, resourceId))
+      .orderBy(desc(preventionEmergencyResourceServiceCases.openedAt)),
+  ])
+  return { ...resource, assignments, events, inspections, serviceCases }
+}
+
+export async function assignEmergencyResource(input: unknown, access: InventoryAccess) {
+  requireServiceAccess(access)
+  const data = z.object({
+    pointId: z.string().min(1),
+    resourceId: z.string().min(1),
+    reason: z.string().trim().min(3).max(300),
+  }).parse(input)
+  return db.transaction(async (tx) => {
+    const [point] = await tx.select().from(preventionEmergencyResourcePoints)
+      .where(eq(preventionEmergencyResourcePoints.id, data.pointId)).for("update").limit(1)
+    if (!point || !point.isActive) throw new Error(NOT_FOUND)
+    assertWorksiteScope(access, point.worksiteId)
+    const [resource] = await tx.select().from(preventionEmergencyResources)
+      .where(and(
+        eq(preventionEmergencyResources.id, data.resourceId),
+        eq(preventionEmergencyResources.worksiteId, point.worksiteId),
+      )).for("update").limit(1)
+    if (!resource) throw new Error(NOT_FOUND)
+    if (resource.status !== "operational") throw new Error("Sólo un activo operativo puede cubrir un punto.")
+    if (!resource.expiresAt || resource.expiresAt < todayInChile()) throw new Error("Un activo vencido no puede cubrir un punto.")
+    if (!resource.typeId || !point.requiredTypeId || resource.typeId !== point.requiredTypeId) {
+      throw new Error("El activo no es técnicamente compatible con el punto.")
+    }
+    const now = new Date().toISOString()
+    const activeAssignments = await tx.select().from(preventionEmergencyResourceAssignments).where(and(
+      or(
+        eq(preventionEmergencyResourceAssignments.pointId, point.id),
+        eq(preventionEmergencyResourceAssignments.resourceId, resource.id),
+      ),
+      isNull(preventionEmergencyResourceAssignments.unassignedAt),
+    )).for("update")
+    const already = activeAssignments.find((assignment) => assignment.pointId === point.id && assignment.resourceId === resource.id)
+    if (already) return { assignmentId: already.id, unchanged: true as const }
+    for (const assignment of activeAssignments) {
+      await tx.update(preventionEmergencyResourceAssignments).set({
+        unassignedAt: now,
+        reason: `Reemplazado: ${data.reason}`,
+      }).where(eq(preventionEmergencyResourceAssignments.id, assignment.id))
+    }
+    const assignmentId = `pemgra-${nanoid()}`
+    await tx.insert(preventionEmergencyResourceAssignments).values({
+      id: assignmentId,
+      pointId: point.id,
+      resourceId: resource.id,
+      actorUserId: access.userId,
+      reason: data.reason,
+    })
+    await tx.insert(preventionEmergencyResourceEvents).values({
+      id: `pemgrev-${nanoid()}`,
+      worksiteId: resource.worksiteId,
+      resourceId: resource.id,
+      eventType: "reassigned",
+      actorUserId: access.userId,
+      sourceType: "coverage_point",
+      sourceId: point.id,
+      notes: data.reason,
+      snapshot: { pointId: point.id, closedAssignmentIds: activeAssignments.map((item) => item.id) },
+    })
+    return { assignmentId, unchanged: false as const }
+  })
 }
 
 /* ── Baja ────────────────────────────────────────────────────────────────── */
@@ -317,6 +872,7 @@ export async function deleteWorksiteResource(input: unknown, access: InventoryAc
   const [resource] = await db.select().from(preventionEmergencyResources)
     .where(eq(preventionEmergencyResources.id, resourceId)).limit(1)
   if (!resource) throw new Error(NOT_FOUND)
+  assertWorksiteScope(access, resource.worksiteId)
 
   const [used] = await db.select({ id: preventionInspectionRuns.id })
     .from(preventionInspectionRuns)

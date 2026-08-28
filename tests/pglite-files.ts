@@ -70,6 +70,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/prevention-cphs-certification-persistence.test.ts",
   "lib/__tests__/worksite-lifecycle.test.ts",
   "lib/__tests__/prevention-emergency-list.test.ts",
+  "lib/__tests__/emergency-resource-inventory-pglite.test.ts",
   // Faltaba desde que se escribió (Grupo B): instancia PGlite y migra, así que
   // en el proyecto paralelo competía por CPU y corría con el timeout de 20 s,
   // no con los 60 s que necesita la instrumentación de `--coverage` del CI.

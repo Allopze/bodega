@@ -6,9 +6,9 @@ import type { ChecklistSection } from '../types'
  * Fuente: `docx revisado/10-inspeccion-extintores.md`.
  * Actividad PDTP 2026: n=24 ("Inspección estado de extintores").
  *
- * Patrón C (multi-sujeto): una instancia por extintor. En Fase B/C el sujeto
- * es label libre (subjectType='extintor', subjectId=código). La alerta de
- * "recarga vencida" es follow-up (no v1) — PLAN_INTEGRACION §5.3.
+ * Patrón C (multi-sujeto): una instancia por extintor canónico. La etiqueta se
+ * congela en la instancia y los datos técnicos se siembran como respuestas
+ * editables para conservar la evidencia observada durante la ejecución.
  *
  * El markdown 10 mezcla dos tipos de campos por extintor:
  *   - **Estado** (B/M → cumple/no_cumple): certifican el extintor en uso.

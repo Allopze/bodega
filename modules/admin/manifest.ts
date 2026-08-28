@@ -31,6 +31,7 @@ export const adminModule = {
     "admin:product_catalogs",
     "admin:service_equipment",
     "admin:worksite_inventory",
+    "admin:worksite_inventory_service",
     // Prevención / SST
     "admin:document_taxonomy",
     "admin:pdtp_catalog",
@@ -62,6 +63,7 @@ export const adminModule = {
     "admin:products":          { id: "p-adm-prod",  description: "Gestionar catálogo" },
     "admin:service_equipment": { id: "p-adm-equip", description: "Gestionar el registro de equipos de servicio (monogás, alcotest)" },
     "admin:worksite_inventory": { id: "p-adm-wsinv", description: "Cargar y mantener el inventario físico de cada faena (extintores, kits de derrame y otros recursos)" },
+    "admin:worksite_inventory_service": { id: "p-adm-wsinvsrv", description: "Gestionar cobertura, asignaciones y recargas de activos de emergencia dentro de las faenas autorizadas" },
     "admin:epp_import_upload": { id: "p-adm-epp-up", description: "Cargar archivos de importación EPP" },
     "admin:epp_import_review": { id: "p-adm-epp-rv", description: "Revisar y resolver importaciones EPP" },
     "admin:epp_import_confirm": { id: "p-adm-epp-cf", description: "Confirmar importaciones EPP" },
@@ -109,6 +111,7 @@ export const adminModule = {
     { roleSlug: "administrador", permission: "admin:product_catalogs" },
     { roleSlug: "administrador", permission: "admin:service_equipment" },
     { roleSlug: "administrador", permission: "admin:worksite_inventory" },
+    { roleSlug: "administrador", permission: "admin:worksite_inventory_service" },
     { roleSlug: "administrador", permission: "admin:document_taxonomy" },
     { roleSlug: "administrador", permission: "admin:pdtp_catalog" },
     { roleSlug: "administrador", permission: "admin:fleet_catalog" },
@@ -148,6 +151,8 @@ export const adminModule = {
      * del sistema, así que `db:sync-rbac` lo revoca también en una base ya
      * poblada, no sólo en un seed nuevo. */
     { roleSlug: "prevencionista", permission: "admin:worksite_inventory" },
+    { roleSlug: "prevencionista", permission: "admin:worksite_inventory_service" },
+    { roleSlug: "prevencionista_faena", permission: "admin:worksite_inventory_service" },
     // Jefa Chome (Jefatura)
     { roleSlug: "jefa_chome", permission: "admin:cost_centers" },
     { roleSlug: "jefa_chome", permission: "admin:product_catalogs" },
@@ -170,6 +175,7 @@ export const adminModule = {
     { roleSlug: "jefe_mantencion", permission: "admin:fleet_vehicles" },
     // Quien manda a mantener y calibrar los instrumentos es quien los da de alta.
     { roleSlug: "jefe_mantencion", permission: "admin:service_equipment" },
+    { roleSlug: "jefe_mantencion", permission: "admin:worksite_inventory_service" },
     // Prevencionista faena — solo trabajadores (para EPP tracking)
     { roleSlug: "solicitante_faena", permission: "admin:workers" },
     { roleSlug: "prevencionista_faena", permission: "admin:workers" },
