@@ -4,6 +4,7 @@ import { purchaseRequests, purchaseRequestItems } from "@/db/schema"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { resolveReplenishmentLinksTx } from "@/lib/services/epp-replenishment"
 import { isRequestCancellable } from "@/lib/services/requests-cancel.constants"
+import { cancelEmergencyResourceServiceCaseTx } from "@/lib/services/emergency-resource-service"
 import type { RequestModuleConfig } from "../request-config"
 
 const LOCKED_ITEM_STATUSES = ["in_purchase_order", "purchased", "partially_received", "received", "partially_delivered", "delivered"]
@@ -98,6 +99,9 @@ export async function cancelRequest(
       }
 
       await resolveReplenishmentLinksTx(tx, itemIdsToReject)
+      for (const itemId of itemIdsToReject) {
+        await cancelEmergencyResourceServiceCaseTx(tx, { requestItemId: itemId, actorUserId: userId, reason })
+      }
     }
 
     await tx

@@ -9,6 +9,7 @@ import {
   requestItemAttributes,
   productAttributes,
   products,
+  preventionEmergencyResources,
   serviceEquipment,
   workers,
 } from "@/db/schema"
@@ -17,6 +18,7 @@ import {
   type CatalogProductRules,
 } from "@/lib/products/service-items"
 import type { RequestFormData, RequestItemFormData } from "@/lib/validation/operations"
+import { openEmergencyResourceServiceCaseTx } from "@/lib/services/emergency-resource-service"
 
 export interface RequestSubmissionIdentity {
   submissionKey: string
@@ -159,6 +161,7 @@ export async function resolveCatalogItemQuantitiesTx(
   const productRows = await tx.select({
     id: products.id, name: products.name,
     requiresWorker: products.requiresWorker, equipmentKind: products.equipmentKind,
+    serviceSubjectKind: products.serviceSubjectKind,
   })
     .from(products)
     .where(inArray(products.id, productIds))
@@ -383,8 +386,35 @@ async function insertAllItems(
   // solicitudes. La familia y la faena las pone el servidor, nunca el cliente.
   const equipmentIdByIndex = await resolveEquipmentIds(tx, items, opts)
 
+  const emergencyResourceIds = [...new Set(items.flatMap((item) => item.emergencyResourceId ? [item.emergencyResourceId] : []))]
+  const emergencyResourcesInWorksite = emergencyResourceIds.length === 0 ? [] : await tx.select({
+    id: preventionEmergencyResources.id,
+  }).from(preventionEmergencyResources).where(and(
+    inArray(preventionEmergencyResources.id, emergencyResourceIds),
+    eq(preventionEmergencyResources.worksiteId, opts.worksiteId),
+  ))
+  const validEmergencyResourceIds = new Set(emergencyResourcesInWorksite.map((resource) => resource.id))
+
+  const serviceProductIds = [...new Set(items.flatMap((item) => item.productId ? [item.productId] : []))]
+  const serviceTargetByProductId = new Map(
+    (serviceProductIds.length === 0 ? [] : await tx.select({ id: products.id, serviceSubjectKind: products.serviceSubjectKind })
+      .from(products)
+      .where(inArray(products.id, serviceProductIds))
+    ).map((product) => [product.id, product.serviceSubjectKind] as const),
+  )
+
   const itemIds: string[] = []
   for (const [i, item] of items.entries()) {
+    const serviceTarget = item.productId ? serviceTargetByProductId.get(item.productId) : null
+    if (serviceTarget === "emergency_resource" && !item.emergencyResourceId) {
+      throw new Error(`Ítem ${i + 1}: selecciona el activo de emergencia`)
+    }
+    if (item.emergencyResourceId && serviceTarget !== "emergency_resource") {
+      throw new Error(`Ítem ${i + 1}: el producto no corresponde a un servicio de activos de emergencia`)
+    }
+    if (item.emergencyResourceId && !validEmergencyResourceIds.has(item.emergencyResourceId)) {
+      throw new Error(`Ítem ${i + 1}: el activo de emergencia no pertenece a la faena de la solicitud`)
+    }
     const itemId = item.id ?? nanoid()
     itemIds.push(itemId)
     await tx.insert(purchaseRequestItems).values({
@@ -399,11 +429,21 @@ async function insertAllItems(
       requiredDate,
       workerId:            item.workerId || null,
       equipmentId:         equipmentIdByIndex.get(i) ?? null,
+      emergencyResourceId: item.emergencyResourceId || null,
       suggestedSupplierId: item.suggestedSupplierId || null,
       supplierHint:        item.supplierHint || null,
       sortOrder:           item.sortOrder ?? i,
       notes:               item.notes || null,
     })
+
+    if (item.emergencyResourceId) {
+      await openEmergencyResourceServiceCaseTx(tx, {
+        resourceId: item.emergencyResourceId,
+        requestItemId: itemId,
+        worksiteId: opts.worksiteId,
+        actorUserId: opts.sessionUserId,
+      })
+    }
 
     await recordStatusChange({
       entityType: "request_item",

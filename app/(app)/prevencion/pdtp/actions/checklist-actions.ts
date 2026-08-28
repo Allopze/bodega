@@ -119,6 +119,7 @@ export async function startPdtpExecutionChecklistAction(input: unknown): Promise
     const instance = await getOrCreateExecutionChecklist(parsed.executionId, session.user.id, {
       subjectType: parsed.subjectType,
       subjectId: parsed.subjectId,
+      subjectResourceId: parsed.subjectResourceId,
       subjectLabel: parsed.subjectLabel,
     })
     return { ok: true, instanceId: instance.id }

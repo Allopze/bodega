@@ -6,7 +6,14 @@ import { ClipboardText } from "@phosphor-icons/react/dist/ssr"
 import { requireAuth, can } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
 import { db } from "@/db"
-import { fuelVehicles, pdtpActivities, pdtpExecutions, workers } from "@/db/schema"
+import {
+  fuelVehicles,
+  pdtpActivities,
+  pdtpExecutions,
+  preventionEmergencyResources,
+  preventionEmergencyResourceTypes,
+  workers,
+} from "@/db/schema"
 import {
   getPdtpProgram,
   listExecutionChecklists,
@@ -59,7 +66,7 @@ export default async function PdtpExecutionDetailPage({ params }: Props) {
 
   // Sujetos disponibles para el selector "Agregar sujeto": vehículos y
   // trabajadores activos de la faena de la ejecución (PLAN_INTEGRACION §7).
-  const [vehicles, worksiteWorkers] = await Promise.all([
+  const [vehicles, worksiteWorkers, emergencyResources] = await Promise.all([
     db.select({
       id: fuelVehicles.id,
       plate: fuelVehicles.plate,
@@ -78,6 +85,16 @@ export default async function PdtpExecutionDetailPage({ params }: Props) {
     }).from(workers)
       .where(and(eq(workers.worksiteId, execution.worksiteId), eq(workers.isActive, true)))
       .orderBy(workers.lastName, workers.firstName),
+    db.select({
+      id: preventionEmergencyResources.id,
+      assetCode: preventionEmergencyResources.assetCode,
+      name: preventionEmergencyResources.name,
+      location: preventionEmergencyResources.location,
+      canonicalType: preventionEmergencyResourceTypes.canonicalName,
+    }).from(preventionEmergencyResources)
+      .leftJoin(preventionEmergencyResourceTypes, eq(preventionEmergencyResources.typeId, preventionEmergencyResourceTypes.id))
+      .where(eq(preventionEmergencyResources.worksiteId, execution.worksiteId))
+      .orderBy(preventionEmergencyResources.assetCode, preventionEmergencyResources.name),
   ])
 
   const canFill = can(session, "prevention:pdtp:checklist:fill")
@@ -120,6 +137,10 @@ export default async function PdtpExecutionDetailPage({ params }: Props) {
             canFill={canFill}
             vehicles={vehicles}
             worksiteWorkers={worksiteWorkers}
+            emergencyResources={emergencyResources.map((resource) => ({
+              id: resource.id,
+              label: [resource.assetCode ?? resource.name, resource.canonicalType, resource.location].filter(Boolean).join(" · "),
+            }))}
           />
         )}
 

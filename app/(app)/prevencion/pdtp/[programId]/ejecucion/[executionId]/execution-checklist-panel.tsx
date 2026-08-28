@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -11,6 +12,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Field } from "@/components/ui/field"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
@@ -28,14 +30,14 @@ function responseKey(seccionId: string, itemId: string) {
   return `${seccionId}::${itemId}`
 }
 
-/** Opción de sujeto para el selector (vehículo o trabajador de la faena). */
+/** Opción canónica de sujeto para el selector de la faena. */
 type SubjectOption = { id: string; label: string }
 
 /** Catálogo de tipos de sujeto (multi-sujeto, PLAN_INTEGRACION §4).
  *  'equipo'|'carro' → selector de flota; 'trabajador' → selector de trabajadores;
- *  'extintor'|'contenedor' → label libre (sin inventario en v1). */
+ *  'extintor' → padrón canónico; sólo 'contenedor' conserva texto libre. */
 const SUBJECT_TYPES = [
-  { value: "extintor", label: "Extintor", libre: true },
+  { value: "extintor", label: "Extintor", libre: false },
   { value: "equipo", label: "Equipo / Vehículo", libre: false },
   { value: "carro", label: "Carro", libre: false },
   { value: "contenedor", label: "Contenedor", libre: true },
@@ -43,7 +45,7 @@ const SUBJECT_TYPES = [
 ] as const
 
 export function ExecutionChecklistPanel({
-  executionId, programId, instances, responsesByInstance, canFill, vehicles, worksiteWorkers,
+  executionId, programId, instances, responsesByInstance, canFill, vehicles, worksiteWorkers, emergencyResources = [],
 }: {
   executionId: string
   programId: string
@@ -52,6 +54,7 @@ export function ExecutionChecklistPanel({
   canFill: boolean
   vehicles: { id: string; plate: string; code: string | null; brand: string | null; model: string | null }[]
   worksiteWorkers: { id: string; firstName: string; lastName: string; position: string | null; rut: string | null }[]
+  emergencyResources?: SubjectOption[]
 }) {
   const router = useRouter()
   const [pending, setPending] = React.useState(false)
@@ -214,6 +217,7 @@ export function ExecutionChecklistPanel({
             disabled={pending}
             vehicles={vehicles}
             worksiteWorkers={worksiteWorkers}
+            emergencyResources={emergencyResources}
           />
         )}
       </div>
@@ -275,6 +279,23 @@ function InstanceCard({
         </div>
       </div>
 
+      {instance.subjectType === "extintor"
+        && instance.subjectResourceId
+        && instance.overallStatus === "completado"
+        && instance.porcentajeCumplimiento !== null
+        && instance.porcentajeCumplimiento < 100 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-(--radius-lg) border border-(--color-danger-line) bg-(--color-danger-tint) px-3 py-2">
+            <p className="text-xs text-(--color-danger-ink)">
+              La no conformidad mantiene su hallazgo y plan de acción. Si corresponde, inicia la recarga mediante Solicitudes.
+            </p>
+            <Button asChild size="sm" variant="secondary">
+              <Link href={`/solicitudes/nueva?tipo=otro&recursoEmergencia=${encodeURIComponent(instance.subjectResourceId)}`}>
+                Solicitar recarga
+              </Link>
+            </Button>
+          </div>
+        )}
+
       {instance.definition.sections.map((section) => (
         <ChecklistSectionPanel
           key={section.id}
@@ -304,16 +325,16 @@ function InstanceCard({
   )
 }
 
-// ── "Agregar sujeto" — selectores reales de flota/trabajadores (Fase C) ──────
-// Para extintor/contenedor (sin inventario en v1) se usa label libre.
+// ── "Agregar sujeto" — selectores canónicos de la faena ────────────────────
 
 function AddSubjectButton({
-  executionId, disabled, vehicles, worksiteWorkers,
+  executionId, disabled, vehicles, worksiteWorkers, emergencyResources,
 }: {
   executionId: string
   disabled: boolean
   vehicles: { id: string; plate: string; code: string | null; brand: string | null; model: string | null }[]
   worksiteWorkers: { id: string; firstName: string; lastName: string; position: string | null; rut: string | null }[]
+  emergencyResources: SubjectOption[]
 }) {
   const router = useRouter()
   const [open, setOpen] = React.useState(false)
@@ -341,8 +362,9 @@ function AddSubjectButton({
         label: [`${w.firstName} ${w.lastName}`, w.position && `· ${w.position}`].filter(Boolean).join(" "),
       }))
     }
+    if (subjectType === "extintor") return emergencyResources
     return []
-  }, [subjectType, vehicles, worksiteWorkers])
+  }, [subjectType, vehicles, worksiteWorkers, emergencyResources])
 
   // Resetea la selección al cambiar de tipo de sujeto. Se hace en el handler y
   // no en un efecto: si no, queda un frame con el id del sujeto anterior
@@ -386,6 +408,7 @@ function AddSubjectButton({
         executionId,
         subjectType,
         subjectId,
+        subjectResourceId: subjectType === "extintor" ? subjectId : undefined,
         subjectLabel,
       })
       if (!result.ok) setError(result.message ?? "Error al agregar el sujeto.")
@@ -415,25 +438,19 @@ function AddSubjectButton({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="grid gap-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-text-subtle">
-                Tipo de sujeto
-              </label>
+            <Field label="Tipo de sujeto">
               <Select value={subjectType} onValueChange={changeSubjectType}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label="Tipo de sujeto"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {SUBJECT_TYPES.map((t) => (
                     <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
+            </Field>
 
             {isLibre ? (
-              <div className="grid gap-1.5">
-                <label className="text-[11px] font-semibold uppercase tracking-wide text-text-subtle">
-                  Identificador (código, ubicación)
-                </label>
+              <Field label="Identificador (código, ubicación)" hint="Texto libre sólo para sujetos que aún no tienen un padrón canónico.">
                 <Input
                   autoFocus
                   placeholder="p.ej. Extintor #7 / acopio"
@@ -441,22 +458,20 @@ function AddSubjectButton({
                   onChange={(e) => setFreeLabel(e.target.value)}
                   maxLength={200}
                 />
-                <p className="text-[11px] text-text-subtle">
-                  Texto libre: no hay inventario permanente de {subjectType}s en v1.
-                </p>
-              </div>
+              </Field>
             ) : (
-              <div className="grid gap-1.5">
-                <label className="text-[11px] font-semibold uppercase tracking-wide text-text-subtle">
-                  {subjectType === "trabajador" ? "Trabajador de la faena" : "Equipo / Vehículo de la faena"}
-                </label>
+              <Field label={subjectType === "trabajador"
+                    ? "Trabajador de la faena"
+                    : subjectType === "extintor"
+                      ? "Extintor del inventario"
+                      : "Equipo / Vehículo de la faena"}>
                 {options.length === 0 ? (
                   <p className="rounded-(--radius) border border-(--color-border) bg-(--color-surface-2) px-3 py-2 text-xs text-text-subtle">
-                    No hay {subjectType === "trabajador" ? "trabajadores" : "vehículos"} activos en esta faena.
+                    No hay {subjectType === "trabajador" ? "trabajadores" : subjectType === "extintor" ? "extintores" : "vehículos"} disponibles en esta faena.
                   </p>
                 ) : (
                   <Select value={selectedId} onValueChange={setSelectedId}>
-                    <SelectTrigger><SelectValue placeholder="Selecciona…" /></SelectTrigger>
+                    <SelectTrigger aria-label="Sujeto de inspección"><SelectValue placeholder="Selecciona…" /></SelectTrigger>
                     <SelectContent>
                       {options.map((o) => (
                         <SelectItem key={o.id} value={o.id}>{o.label}</SelectItem>
@@ -464,7 +479,7 @@ function AddSubjectButton({
                     </SelectContent>
                   </Select>
                 )}
-              </div>
+              </Field>
             )}
             {error && <p className="text-sm text-danger">{error}</p>}
           </div>

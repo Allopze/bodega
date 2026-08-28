@@ -3,6 +3,7 @@ import { boolean, check, date, index, integer, jsonb, numeric, real, text, times
 import { pgTable } from "drizzle-orm/pg-core"
 import { users } from "../users"
 import { worksites } from "../worksites"
+import { preventionEmergencyResources } from "./emergency"
 
 export const pdtpPrograms = pgTable("pdtp_programs", {
   id:                    text("id").primaryKey(),
@@ -537,6 +538,8 @@ export const pdtpExecutionChecklists = pgTable("pdtp_execution_checklists", {
   subjectType:            text("subject_type"),
   // fuelVehicles.id / workers.id / '' (instancia de faena única). NOT NULL DEFAULT ''.
   subjectId:              text("subject_id").notNull().default(""),
+  /** FK canónica para nuevas instancias de extintor; subjectId queda histórico. */
+  subjectResourceId:      text("subject_resource_id").references(() => preventionEmergencyResources.id, { onDelete: "restrict" }),
   // Denormalizado para mostrar/exportar: patente, nombre, "Extintor #7 / acopio".
   subjectLabel:           text("subject_label"),
   createdAt:              timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
@@ -544,6 +547,8 @@ export const pdtpExecutionChecklists = pgTable("pdtp_execution_checklists", {
 }, (table) => [
   // Una instancia por (ejecución, sujeto). subjectId='' → instancia única de faena.
   uniqueIndex("pdtp_execution_checklists_execution_subject_unique").on(table.executionId, table.subjectId),
+  index("pdtp_execution_checklists_subject_resource_idx").on(table.subjectResourceId),
+  check("pdtp_execution_checklists_extinguisher_subject_fk", sql`${table.subjectType} <> 'extintor' OR ${table.subjectResourceId} IS NOT NULL OR ${table.subjectId} <> ''`),
   check("pdtp_execution_checklists_status_check", sql`${table.overallStatus} IN ('pendiente', 'en_proceso', 'completado')`),
 ])
 

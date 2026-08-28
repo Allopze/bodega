@@ -23,6 +23,7 @@ import { notifyManyUser, notifyAfterCommit } from "./notifications"
 import { closeOrderTx } from "./purchasing-module/receiving"
 import { RECEIVABLE_ORDER_STATUSES } from "@/lib/work-queue-labels"
 import { persistPurchaseOrderInvoiceReconciliationTx } from "./purchasing-module/invoice-reconciliation-service"
+import { completeEmergencyResourceServiceCaseTx, type EmergencyServiceCertificate } from "./emergency-resource-service"
 
 /* ── Types ──────────────────────────────────────────────────────────────────── */
 
@@ -32,6 +33,9 @@ export interface ReceiptItemInput {
   quantityRejected?:   number
   quantityDamaged?:    number
   notes?:              string | null
+  maintenanceDate?:    string | null
+  nextExpiryDate?:     string | null
+  certificate?:        EmergencyServiceCertificate | null
 }
 
 export interface RegisterReceiptInput {
@@ -43,6 +47,12 @@ export interface RegisterReceiptInput {
   dispatchGuideNo?: string | null
   notes?:           string | null
   items:            ReceiptItemInput[]
+}
+
+function isRealIsoDate(value: string | null | undefined): value is string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const date = new Date(`${value}T00:00:00.000Z`)
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
 }
 
 /* ── Register receipt ────────────────────────────────────────────────────────── */
@@ -136,6 +146,21 @@ export async function registerReceipt(
 
       if (!lockedOcItem || lockedOcItem.purchaseOrderId !== input.purchaseOrderId) {
         throw new Error(`OC item ${ri.purchaseOrderItemId} not in this order`)
+      }
+
+      const requestItem = lockedOcItem.requestItemId
+        ? await tx.query.purchaseRequestItems.findFirst({
+          where: eq(purchaseRequestItems.id, lockedOcItem.requestItemId),
+          columns: { id: true, emergencyResourceId: true },
+        })
+        : null
+      const isEmergencyService = Boolean(requestItem?.emergencyResourceId)
+      if (isEmergencyService && input.stage === "faena" && qtyRec > 0) {
+        if (!ri.maintenanceDate) throw new Error("La recepción del extintor exige fecha de mantención.")
+        if (!ri.nextExpiryDate) throw new Error("La recepción del extintor exige próximo vencimiento.")
+        if (!isRealIsoDate(ri.maintenanceDate)) throw new Error("La fecha de mantención del extintor es inválida.")
+        if (!isRealIsoDate(ri.nextExpiryDate)) throw new Error("El próximo vencimiento del extintor es inválido.")
+        if (ri.nextExpiryDate <= ri.maintenanceDate) throw new Error("El próximo vencimiento debe ser posterior a la mantención.")
       }
 
       // Office stage caps at the ordered quantity; faena stage caps at what already arrived at
@@ -264,7 +289,19 @@ export async function registerReceipt(
                 entityId: reqItem?.request?.id ?? "",
                 entityHref: `/solicitudes/${reqItem?.request?.id ?? ""}`,
               }))
-            }
+          }
+
+
+          if (isEmergencyService && fullReceived && qtyRej === 0 && qtyDmg === 0) {
+            await completeEmergencyResourceServiceCaseTx(tx, {
+              requestItemId: lockedOcItem.requestItemId,
+              receiptItemId,
+              actorUserId: input.receivedBy,
+              maintenanceDate: ri.maintenanceDate!,
+              nextExpiryDate: ri.nextExpiryDate!,
+              certificate: ri.certificate,
+            })
+          }
         }
 
         }

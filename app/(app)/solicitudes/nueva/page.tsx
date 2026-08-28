@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { worksites, products, productAttributes, suppliers, productSuppliers, workers, serviceEquipment, purchaseRequests } from "@/db/schema"
+import { worksites, products, productAttributes, suppliers, productSuppliers, workers, serviceEquipment, purchaseRequests, preventionEmergencyResources } from "@/db/schema"
 import { and, eq, asc, desc, inArray } from "drizzle-orm"
 import { requireAuth } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
@@ -31,6 +31,7 @@ export default async function NuevaSolicitudPage({
     faena?: string | string[]
     producto?: string | string[]
     cantidad?: string | string[]
+    recursoEmergencia?: string | string[]
   }>
 }) {
   let session
@@ -115,6 +116,7 @@ export default async function NuevaSolicitudPage({
     isService:      p.isService,
     requiresWorker: p.requiresWorker,
     equipmentKind:  p.equipmentKind,
+    serviceSubjectKind: p.serviceSubjectKind,
     unitOfMeasure:  p.unitOfMeasure,
     categoryName:   p.categoryId,
     referencePrice: p.referencePrice,
@@ -163,6 +165,7 @@ export default async function NuevaSolicitudPage({
     desdeId: firstParam(query.desde),
     productoIds: paramList(query.producto),
     cantidades: paramList(query.cantidad),
+    emergencyResourceId: firstParam(query.recursoEmergencia),
   })
 
   // Faena pedida por el enlace (p. ej. "Reponer" desde una fila de Bodega).
@@ -250,14 +253,47 @@ function paramList(value: string | string[] | undefined): string[] {
 }
 
 async function buildPrefill({
-  session, reposicion, desdeId, productoIds, cantidades,
+  session, reposicion, desdeId, productoIds, cantidades, emergencyResourceId,
 }: {
   session: Awaited<ReturnType<typeof requireAuth>>
   reposicion: boolean
   desdeId: string
   productoIds: string[]
   cantidades: string[]
+  emergencyResourceId: string
 }): Promise<{ prefillItems?: PrefillItem[]; prefillNotice?: string }> {
+  if (emergencyResourceId) {
+    const [resource] = await db.select({
+      id: preventionEmergencyResources.id,
+      worksiteId: preventionEmergencyResources.worksiteId,
+      assetCode: preventionEmergencyResources.assetCode,
+      name: preventionEmergencyResources.name,
+      status: preventionEmergencyResources.status,
+    }).from(preventionEmergencyResources)
+      .where(eq(preventionEmergencyResources.id, emergencyResourceId)).limit(1)
+    if (!resource || !canAccessWorksite(session, resource.worksiteId)) return { prefillNotice: "El activo no existe o está fuera de tus faenas autorizadas." }
+    if (resource.status === "out_of_service") return { prefillNotice: "El activo está dado de baja y no admite recarga." }
+    const [product] = await db.select({ id: products.id, name: products.name, unitOfMeasure: products.unitOfMeasure })
+      .from(products).where(and(
+        eq(products.id, "prod-srv-recarga-extintor"),
+        eq(products.isActive, true),
+      )).limit(1)
+    if (!product) return { prefillNotice: "El servicio de recarga no está disponible en el catálogo." }
+    const label = resource.assetCode ? `${resource.assetCode} · ${resource.name}` : resource.name
+    return {
+      prefillItems: [{
+        productId: product.id,
+        productNameFree: "",
+        quantity: 1,
+        unitOfMeasure: product.unitOfMeasure,
+        urgency: "critical",
+        notes: `Recarga de ${label}`,
+        emergencyResourceId: resource.id,
+        emergencyResourceLabel: label,
+      }],
+      prefillNotice: `${label} preseleccionado. Al enviar se abrirá la brecha de cobertura.`,
+    }
+  }
   // Reposición desde Bodega: `?producto=&cantidad=` (repetibles) para pedir de
   // una vez todo lo que está bajo el mínimo de una faena. Se pre-llena el
   // creador y no se crea la solicitud: arrastra urgencia, fecha requerida y un

@@ -342,7 +342,16 @@ export const pdtpChecklistStartSchema = z.object({
   // `subjectLabel` se persiste denormalizado para UI/export.
   subjectType: z.enum(["equipo", "trabajador", "contenedor", "extintor", "carro"]).nullish(),
   subjectId: z.string().trim().max(100).optional(),
+  subjectResourceId: z.string().trim().max(100).optional(),
   subjectLabel: z.string().trim().max(200).nullish(),
+}).superRefine((value, ctx) => {
+  if (value.subjectType === "extintor" && !value.subjectResourceId) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["subjectResourceId"],
+      message: "Selecciona un extintor del inventario de la faena.",
+    })
+  }
 })
 
 export const pdtpChecklistSubmitSchema = z.object({

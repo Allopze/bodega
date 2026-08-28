@@ -41,6 +41,7 @@ export const requestItemSchema = z.object({
    */
   equipmentCode:       z.string().trim().max(40).transform(normalizeEquipmentCode)
                          .optional().nullable(),
+  emergencyResourceId: z.string().trim().max(120).optional().nullable(),
   suggestedSupplierId: z.string().nullable().optional(),
   supplierHint:        z.string().max(100).nullable().optional().or(z.literal("")),
   sortOrder:           z.coerce.number().int().default(0),
@@ -160,6 +161,10 @@ export const receiptItemSchema = z.object({
   quantityRejected:    nonNegativeQuantitySchema.default(0),
   quantityDamaged:     nonNegativeQuantitySchema.default(0),
   notes:               z.string().max(300).nullable().optional().or(z.literal("")),
+  maintenanceDate:     z.string().optional().nullable()
+                         .refine((value) => !value || isRealIsoDate(value), "Fecha de mantención inválida"),
+  nextExpiryDate:      z.string().optional().nullable()
+                         .refine((value) => !value || isRealIsoDate(value), "Próximo vencimiento inválido"),
 }).refine(
   (d) => d.quantityReceived + d.quantityRejected + d.quantityDamaged > 0,
   { message: "Registra al menos una cantidad (recibida, rechazada o dañada)", path: ["quantityReceived"] },

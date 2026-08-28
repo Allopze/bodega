@@ -8,6 +8,8 @@ export interface ReceiptOcItem {
   quantityReceived:     number   // already received in previous receipts
   unitOfMeasure:        string
   notes:                string | null
+  isEmergencyService?:   boolean
+  emergencyResourceLabel?: string | null
 }
 
 export type ReceiptStage = "office" | "faena"

@@ -273,6 +273,7 @@ export function useRequestForm({
           // colaborador vacío aunque el ítem sí tuviera uno asignado.
           variantQuantities: {}, workerId: item.workerId ?? "", workerName: item.workerName ?? "",
           equipmentCode: item.equipmentCode ?? "", equipmentLabel: item.equipmentLabel ?? "",
+          emergencyResourceId: item.emergencyResourceId ?? "", emergencyResourceLabel: item.emergencyResourceLabel ?? "",
           showAttrs: !isQuotation && item.attributes.length > 0, cotizaciones: [],
           ...equipmentFromAttributes(editRequest.requestType, item.attributes),
           attributes: isQuotation ? [] : item.attributes.map((a) => {
@@ -307,6 +308,8 @@ export function useRequestForm({
           workerName:          prefill.workerName ?? "",
           equipmentCode:       prefill.equipmentCode ?? "",
           equipmentLabel:      prefill.equipmentLabel ?? "",
+          emergencyResourceId: prefill.emergencyResourceId ?? "",
+          emergencyResourceLabel: prefill.emergencyResourceLabel ?? "",
           suggestedSupplierId: prefill.suggestedSupplierId ?? "",
           supplierHint:        prefill.supplierHint ?? "",
           isEpp:               prod?.isEpp ?? false,
@@ -382,6 +385,7 @@ export function useRequestForm({
       // si no, arrastrarlo dejaría un alcotest colgando de una mantención de
       // monogás (el servidor lo rechaza igual, pero acá no llega a pasar).
       const keepsEquipment = !!prod.equipmentKind && prod.equipmentKind === previousKind
+      const keepsEmergencyResource = prod.serviceSubjectKind === "emergency_resource"
       return {
         ...i,
         productId: prod.id, productNameFree: "", productName: prod.name,
@@ -392,6 +396,8 @@ export function useRequestForm({
         workerName: keepsWorker ? i.workerName : "",
         equipmentCode: keepsEquipment ? i.equipmentCode : "",
         equipmentLabel: keepsEquipment ? i.equipmentLabel : "",
+        emergencyResourceId: keepsEmergencyResource ? i.emergencyResourceId : "",
+        emergencyResourceLabel: keepsEmergencyResource ? i.emergencyResourceLabel : "",
       }
     }))
   }, [invalidateStockWarning, products])
@@ -403,14 +409,14 @@ export function useRequestForm({
     setItems((prev) => prev.map((i) =>
       // Un ítem fuera de catálogo no tiene reglas de producto: pierde también el
       // colaborador que hubiera quedado de la selección anterior.
-      i._key !== key ? i : { ...i, productId: null, productNameFree: trimmed, productName: trimmed, isEpp: false, unitOfMeasure: i.unitOfMeasure || "unidad", suggestedSupplierId: "", supplierHint: "", attributes: [], showAttrs: false, workerId: "", workerName: "", equipmentCode: "", equipmentLabel: "" }
+      i._key !== key ? i : { ...i, productId: null, productNameFree: trimmed, productName: trimmed, isEpp: false, unitOfMeasure: i.unitOfMeasure || "unidad", suggestedSupplierId: "", supplierHint: "", attributes: [], showAttrs: false, workerId: "", workerName: "", equipmentCode: "", equipmentLabel: "", emergencyResourceId: "", emergencyResourceLabel: "" }
     ))
   }, [invalidateStockWarning])
 
   const clearProduct = useCallback((key: string) => {
     invalidateStockWarning()
     setItems((prev) => prev.map((i) =>
-      i._key !== key ? i : { ...i, productId: null, productNameFree: "", productName: "", isEpp: false, suggestedSupplierId: "", supplierHint: "", attributes: [], showAttrs: false, workerId: "", workerName: "", equipmentCode: "", equipmentLabel: "" }
+      i._key !== key ? i : { ...i, productId: null, productNameFree: "", productName: "", isEpp: false, suggestedSupplierId: "", supplierHint: "", attributes: [], showAttrs: false, workerId: "", workerName: "", equipmentCode: "", equipmentLabel: "", emergencyResourceId: "", emergencyResourceLabel: "" }
     ))
   }, [invalidateStockWarning])
 
@@ -483,6 +489,7 @@ export function useRequestForm({
         supplierHint: item.supplierHint || null, notes: item.notes || null,
         workerId: item.workerId || null,
         equipmentCode: item.equipmentCode || null,
+        emergencyResourceId: item.emergencyResourceId || null,
         partNumber: item.partNumber || null, location: item.location || null,
         equipmentName: item.equipmentName || null, patent: item.patent || null,
         brand: item.brand || null, model: item.model || null,

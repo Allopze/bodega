@@ -12,12 +12,18 @@
  * preserva el comportamiento legacy (Fase A, tests existentes, flujo actual).
  */
 
-import { and, eq, inArray } from "drizzle-orm"
+import { and, desc, eq, inArray } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import {
   pdtpExecutionChecklistResponses,
   pdtpExecutionChecklists,
   pdtpExecutions,
+  preventionEmergencyResources,
+  preventionEmergencyResourceTypes,
+  preventionEmergencyResourceServiceCases,
+  purchaseOrderItems,
+  purchaseOrders,
+  suppliers,
 } from "@/db/schema"
 import type { ChecklistDefinition, StatusValue } from "@/lib/sst/types"
 import { getApplicableItems } from "@/lib/sst/checklist"
@@ -45,6 +51,7 @@ export type PdtpChecklistResponseInput = {
 export type PdtpChecklistSubject = {
   subjectType?: string | null
   subjectId?: string
+  subjectResourceId?: string
   subjectLabel?: string | null
 }
 
@@ -60,6 +67,7 @@ function parseInstance(row: typeof pdtpExecutionChecklists.$inferSelect): PdtpEx
 type NormalizedSubject = {
   subjectType: string | null
   subjectId: string
+  subjectResourceId: string | null
   subjectLabel: string | null
 }
 
@@ -68,8 +76,18 @@ function normalizeSubject(subject?: PdtpChecklistSubject): NormalizedSubject {
   return {
     subjectType: subject?.subjectType?.trim() || null,
     subjectId: (subject?.subjectId ?? "").trim(),
+    subjectResourceId: subject?.subjectResourceId?.trim() || null,
     subjectLabel: subject?.subjectLabel?.trim() || null,
   }
+}
+
+function extinguisherAgentValue(agent: string | null): string {
+  const normalized = agent?.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase() ?? ""
+  if (normalized.includes("pqs") || normalized.includes("polvo")) return "pqs"
+  if (normalized.includes("co2") || normalized.includes("carbon")) return "co2"
+  if (normalized.includes("agua")) return "agua"
+  if (normalized.includes("espuma")) return "espuma"
+  return "otro"
 }
 
 /**
@@ -86,9 +104,61 @@ export async function getOrCreateExecutionChecklist(
 ): Promise<PdtpExecutionChecklistInstance> {
   void userId // reservado para auditoría de quién inició la verificación (no persistido aún)
 
-  const norm = normalizeSubject(subject)
+  // Obtener la ejecución para saber la actividad
+  const [execution] = await db.select().from(pdtpExecutions)
+    .where(eq(pdtpExecutions.id, executionId)).limit(1)
+  if (!execution) throw new Error("Ejecución PDTP no encontrada.")
 
-  // Verificar si ya existe la instancia para (executionId, subjectId)
+  let norm = normalizeSubject(subject)
+  let extinguisherSnapshot: Array<{ seccionId: string; itemId: string; observacion: string }> = []
+  if (norm.subjectType === "extintor") {
+    if (!norm.subjectResourceId) throw new Error("Selecciona un extintor del inventario de la faena.")
+    const [canonical] = await db.select({
+      id: preventionEmergencyResources.id,
+      worksiteId: preventionEmergencyResources.worksiteId,
+      assetCode: preventionEmergencyResources.assetCode,
+      name: preventionEmergencyResources.name,
+      location: preventionEmergencyResources.location,
+      lastMaintenanceAt: preventionEmergencyResources.lastMaintenanceAt,
+      agent: preventionEmergencyResourceTypes.agent,
+      capacity: preventionEmergencyResourceTypes.capacity,
+      capacityUnit: preventionEmergencyResourceTypes.capacityUnit,
+    }).from(preventionEmergencyResources)
+      .leftJoin(preventionEmergencyResourceTypes, eq(preventionEmergencyResources.typeId, preventionEmergencyResourceTypes.id))
+      .where(eq(preventionEmergencyResources.id, norm.subjectResourceId))
+      .limit(1)
+    if (!canonical || canonical.worksiteId !== execution.worksiteId) {
+      throw new Error("El extintor no pertenece a la faena de esta ejecución.")
+    }
+
+    const [provider] = await db.select({ name: suppliers.name })
+      .from(preventionEmergencyResourceServiceCases)
+      .innerJoin(purchaseOrderItems, eq(preventionEmergencyResourceServiceCases.requestItemId, purchaseOrderItems.requestItemId))
+      .innerJoin(purchaseOrders, eq(purchaseOrderItems.purchaseOrderId, purchaseOrders.id))
+      .innerJoin(suppliers, eq(purchaseOrders.supplierId, suppliers.id))
+      .where(and(
+        eq(preventionEmergencyResourceServiceCases.resourceId, canonical.id),
+        eq(preventionEmergencyResourceServiceCases.status, "completed"),
+      ))
+      .orderBy(desc(preventionEmergencyResourceServiceCases.completedAt), desc(purchaseOrders.createdAt))
+      .limit(1)
+
+    const label = [canonical.assetCode ?? canonical.name, canonical.location].filter(Boolean).join(" · ")
+    norm = {
+      ...norm,
+      subjectId: canonical.id,
+      subjectResourceId: canonical.id,
+      subjectLabel: label,
+    }
+    extinguisherSnapshot = [
+      { seccionId: "inventario_extintor", itemId: "tipo_extintor", observacion: extinguisherAgentValue(canonical.agent) },
+      { seccionId: "inventario_extintor", itemId: "peso_kg", observacion: canonical.capacity === null ? "" : String(canonical.capacity) },
+      { seccionId: "inventario_extintor", itemId: "empresa_recarga", observacion: provider?.name ?? "" },
+      { seccionId: "inventario_extintor", itemId: "fecha_recarga", observacion: canonical.lastMaintenanceAt ?? "" },
+    ].filter((item) => item.observacion)
+  }
+
+  // Verificar si ya existe la instancia para (executionId, subjectId).
   const [existing] = await db.select().from(pdtpExecutionChecklists)
     .where(and(
       eq(pdtpExecutionChecklists.executionId, executionId),
@@ -97,33 +167,54 @@ export async function getOrCreateExecutionChecklist(
     .limit(1)
   if (existing) return parseInstance(existing)
 
-  // Obtener la ejecución para saber la actividad
-  const [execution] = await db.select().from(pdtpExecutions)
-    .where(eq(pdtpExecutions.id, executionId)).limit(1)
-  if (!execution) throw new Error("Ejecución PDTP no encontrada.")
-
   // Obtener la plantilla activa de la actividad
   const template = await getActivePdtpActivityChecklist(execution.activityId)
   const definition = template?.definition ?? null
 
   const now = new Date().toISOString()
   const id = pdtpExecutionChecklistId(executionId, norm.subjectId)
-  const [row] = await db.insert(pdtpExecutionChecklists).values({
-    id,
-    executionId,
-    checklistId: template?.id ?? null,
-    definitionSnapshotJson: (definition ?? { sections: [], closingAct: { title: "", resultOptions: [], signatureRoles: [] }, code: "", version: "01", revisionDate: "", title: "", tipo: "nuevo", legalFramework: [], applicableTo: "" }) as unknown as Record<string, unknown>,
-    overallStatus: "en_proceso",
-    subjectType: norm.subjectType,
-    subjectId: norm.subjectId,
-    subjectLabel: norm.subjectLabel,
-    completedByUserId: null,
-    completedAt: null,
-    createdAt: now,
-    updatedAt: now,
-  }).returning()
+  return db.transaction(async (tx) => {
+    // Segundo chequeo dentro del límite transaccional: evita separar la
+    // instancia de su snapshot si dos clientes intentan iniciar el mismo sujeto.
+    const [concurrent] = await tx.select().from(pdtpExecutionChecklists)
+      .where(and(
+        eq(pdtpExecutionChecklists.executionId, executionId),
+        eq(pdtpExecutionChecklists.subjectId, norm.subjectId),
+      )).limit(1)
+    if (concurrent) return parseInstance(concurrent)
 
-  return parseInstance(row!)
+    const [row] = await tx.insert(pdtpExecutionChecklists).values({
+      id,
+      executionId,
+      checklistId: template?.id ?? null,
+      definitionSnapshotJson: (definition ?? { sections: [], closingAct: { title: "", resultOptions: [], signatureRoles: [] }, code: "", version: "01", revisionDate: "", title: "", tipo: "nuevo", legalFramework: [], applicableTo: "" }) as unknown as Record<string, unknown>,
+      overallStatus: "en_proceso",
+      subjectType: norm.subjectType,
+      subjectId: norm.subjectId,
+      subjectResourceId: norm.subjectResourceId,
+      subjectLabel: norm.subjectLabel,
+      completedByUserId: null,
+      completedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    }).returning()
+
+    if (extinguisherSnapshot.length > 0) {
+      await tx.insert(pdtpExecutionChecklistResponses).values(extinguisherSnapshot.map((item) => ({
+        id: pdtpChecklistResponseId(id, item.seccionId, item.itemId),
+        checklistInstanceId: id,
+        seccionId: item.seccionId,
+        itemId: item.itemId,
+        estado: null,
+        observacion: item.observacion,
+        accionCorrectiva: null,
+        respondedByUserId: userId,
+        respondedAt: now,
+      })))
+    }
+
+    return parseInstance(row!)
+  })
 }
 
 /**

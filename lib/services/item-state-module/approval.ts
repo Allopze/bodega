@@ -6,6 +6,7 @@ import {
 import { nanoid } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { resolveReplenishmentLinksTx } from "@/lib/services/epp-replenishment"
+import { cancelEmergencyResourceServiceCaseTx } from "@/lib/services/emergency-resource-service"
 import { canTransition, type ItemStatus } from "./types"
 import { lockRequestsForRollupTx, rollupRequestStatus } from "./rollup"
 
@@ -256,6 +257,7 @@ export async function rejectItem(
       reason,
     }, tx)
     await resolveReplenishmentLinksTx(tx, [itemId])
+    await cancelEmergencyResourceServiceCaseTx(tx, { requestItemId: itemId, actorUserId: userId, reason })
     await rollupRequestStatus(item.requestId, tx, userId)
   })
 }
