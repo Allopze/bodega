@@ -2305,9 +2305,9 @@ export async function remindTemplateApproval(input: unknown, access: InspectionA
   if (template.status !== "draft") throw new Error("Sólo un borrador espera aprobación.")
 
   const approverIds = await getUserIdsWithPermission("prevention:inspections:approve")
-  if (approverIds.length === 0) throw new Error("Nadie tiene permiso de aprobación. Avisa a un administrador.")
-  const approvers = await db.select({ id: users.id, name: users.name }).from(users)
+  const approvers = approverIds.length === 0 ? [] : await db.select({ id: users.id, name: users.name }).from(users)
     .where(and(inArray(users.id, approverIds), eq(users.isActive, true)))
+  if (approvers.length === 0) throw new Error("Nadie tiene permiso de aprobación. Avisa a un administrador.")
 
   await createNotifications(approvers.map((approver) => approver.id), {
     type: "system_alert",
