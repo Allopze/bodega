@@ -206,6 +206,7 @@ export const KNOWN_RULE_CODES = [
   "evidencia_faltante", "kilometraje_sin_variacion", "horometro_sin_variacion",
   "sello_inicial_faltante", "sello_final_faltante", "identidad_incompleta",
   "carga_faena_distinta", "carga_fuera_horario", "exceso_cargas_ventana",
+  "salto_medidor_implausible",
 ] as const
 
 export const anomalyRuleSchema = z.object({

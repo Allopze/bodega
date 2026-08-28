@@ -9,6 +9,8 @@ describe("preflight de integraciones de combustible", () => {
       return callback((strings: TemplateStringsArray) => {
         expect(strings.join(" ")).toContain("fuel_provider_transactions")
         expect(strings.join(" ")).toContain("COUNT(r.id) <> b.filas_validas")
+        // El rescate del detalle se mide leyendo el JSON ya guardado, sin escribir.
+        expect(strings.join(" ")).toContain("jsonb_array_elements")
         return Promise.resolve([{
           split_tct_identities: 1,
           provider_transactions_without_identity: 0,
@@ -20,6 +22,13 @@ describe("preflight de integraciones de combustible", () => {
           batch_detail_mismatches: 0,
           unmatched_reconciliation_links: 3,
           dte_reconciliation_mismatches: 1,
+          detail_transactions: 265,
+          detail_without_odometer: 0,
+          detail_duplicate_keys: 0,
+          detail_plates_without_vehicle: 2,
+          meter_readings_regressive: 27,
+          meter_readings_no_change: 1,
+          provider_performance_zero: 48,
         }])
       })
     })
@@ -35,6 +44,13 @@ describe("preflight de integraciones de combustible", () => {
       batchDetailMismatches: 0,
       unmatchedReconciliationLinks: 3,
       dteReconciliationMismatches: 1,
+      detailTransactions: 265,
+      detailWithoutOdometer: 0,
+      detailDuplicateKeys: 0,
+      detailPlatesWithoutVehicle: 2,
+      meterReadingsRegressive: 27,
+      meterReadingsNoChange: 1,
+      providerPerformanceZero: 48,
     })
   })
 })

@@ -387,6 +387,63 @@ services:
       - bodega-storage:/data/storage:ro
     command: ["node", "scripts/backfill-dte-order-refs.mjs"]
 
+  # One-shot de sólo lectura: dimensiona el rescate del detalle de combustible
+  # (odómetro por transacción) y la deriva del ledger. No escribe nada — la
+  # garantía está en `sql.begin("read only", ...)`, no en la convención.
+  #
+  #   docker compose run --rm preflight-fuel-integrations
+  preflight-fuel-integrations:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+    command: ["node", "scripts/preflight-fuel-integrations.mjs"]
+
+  # One-shot: reconstruye `fuel_meter_readings` desde el detalle por transacción
+  # que Copec y Aramco ya dejaron en `fuel_consumption_records.raw_row`. No sale
+  # al portal ni consume cuota de proveedor. Idempotente por (fuente, guía).
+  #
+  #   docker compose run --rm backfill-fuel-meter-readings
+  backfill-fuel-meter-readings:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+    command: ["node", "scripts/backfill-fuel-meter-readings.mjs"]
+
+  # One-shot: deja el catálogo de reglas de anomalía al día. Sin esto, una regla
+  # nueva no existe como fila y su detector no dispara aunque esté en el código.
+  # No pisa severidad, config ni activación de las reglas ya presentes.
+  #
+  #   docker compose run --rm seed-fuel-anomaly-rules
+  seed-fuel-anomaly-rules:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+    command: ["node", "scripts/seed-fuel-anomaly-rules.mjs"]
+
   # One-shot, MANUAL y previo a volver al código anterior: traduce los estados
   # nuevos a `needs_review`. No elimina facturas, recepciones ni vínculos.
   prepare-rollback-invoice-reconciliation:

@@ -8,9 +8,11 @@ set -euo pipefail
 # Prod and this checkout share the same Docker daemon, so there is no GHCR
 # push/pull in this flow: build the image here on `main`, then swap it in at
 # PROD_DIR. Steps: tag current image as rollback -> pg_dump -> build ->
-# preflight conciliación -> migrate -> backfill conciliación (si hace falta) ->
-# backfill referencias OC en DTE (si hace falta) -> sync-rbac -> catálogo de
-# inspecciones -> recreate app then cron containers -> authenticated smoke check.
+# preflight conciliación -> preflight combustible -> migrate -> backfill
+# conciliación (si hace falta) -> backfill referencias OC en DTE (si hace falta)
+# -> backfill lecturas de medidor -> catálogo de reglas de anomalía -> sync-rbac
+# -> catálogo de inspecciones -> recreate app then cron containers ->
+# authenticated smoke check.
 # ─────────────────────────────────────────────────────────────────────────────
 
 PROD_DIR="${PROD_DIR:-/server/plataforma}"
@@ -155,6 +157,12 @@ run_timed "Building image from $(pwd) (main)" docker buildx build --builder "$BU
 # de migrar: deja en el log del deploy cuánta deriva OC-factura traía la base.
 run_timed "Diagnóstico de conciliación OC-factura (previo a migrar)" run_in_prod docker compose run --rm preflight-invoice-reconciliation
 
+# También de sólo lectura y también antes de migrar: deja en el log cuántas
+# transacciones con odómetro trae el detalle ya guardado, cuántas patentes no
+# resuelven a un equipo y cuántas lecturas regresivas arrastra el histórico. Es
+# la cifra con la que se contrasta el backfill de más abajo.
+run_timed "Diagnóstico de integraciones de combustible (previo a migrar)" run_in_prod docker compose run --rm preflight-fuel-integrations
+
 run_timed "Applying migrations" run_in_prod docker compose run --rm migrate
 
 # El backfill recalcula tanto OC nunca proyectadas como huellas de una versión
@@ -193,6 +201,17 @@ if [ "$pending_dte_refs" -gt 0 ]; then
 else
   echo "    referencias al día; backfill omitido"
 fi
+
+# Sin conteo previo y siempre: el backfill relee el detalle que ya está en
+# `raw_row` y hace upsert por (fuente, guía), así que sobre una base al día no
+# escribe nada. Contar lo pendiente costaría el mismo escaneo que hacerlo.
+run_timed "Rescate de lecturas de odómetro del detalle de proveedor" run_in_prod docker compose run --rm backfill-fuel-meter-readings
+
+# Después del backfill y antes de levantar la app: una regla que no existe como
+# fila no dispara aunque su detector esté en el código, y el cron de detección
+# corre a las 05:00 — sin este paso, el primer día tras el deploy no se detecta
+# nada nuevo.
+run_timed "Catálogo de reglas de anomalía de combustible" run_in_prod docker compose run --rm seed-fuel-anomaly-rules
 
 run_timed "Syncing RBAC permissions from module manifests" run_in_prod docker compose run --rm sync-rbac
 

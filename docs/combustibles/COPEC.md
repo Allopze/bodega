@@ -2,10 +2,22 @@
 
 ## Contrato operativo
 
-Copec se consulta por período mensual y producto. TCT entrega un agregado por
-patente en Excel; TAE entrega una fila por guía/tarjeta y se proyecta como
+Copec se consulta por período mensual y producto. Los dos canales se descargan
+con la opción "Descargar Detalle" del portal, así que el Excel trae **una fila
+por transacción**: producto, tarjeta, patente, fecha y hora, estación de
+servicio, guía de despacho, volumen, monto y **odómetro**.
+
+TCT se AGREGA por patente al proyectarlo (`fuel_consumption_records` guarda un
+consolidado mensual, y el detalle crudo queda en `raw_row`); la agregación es
+nuestra, no del portal. TAE entrega una fila por guía/tarjeta y se proyecta como
 recepción `received` del ciclo físico cuando la tarjeta tiene un estanque activo.
 Una fila externa no validable queda en el ledger como `pending` o `rejected`.
+
+El odómetro de cada transacción se persiste aparte, en `fuel_meter_readings`
+(identidad: guía de despacho), y de ahí salen el rendimiento calculado y las
+reglas de medidor regresivo y de salto implausible. El histórico se reconstruye
+desde `raw_row` con `npm run db:backfill-fuel-meter-readings`, sin volver a
+consultar el portal.
 
 El TCT usa `tct:diesel` y `tct:bluemax` como cuentas lógicas. Como no existe un
 ID nativo estable en el Excel, la identidad fallback es período + producto +

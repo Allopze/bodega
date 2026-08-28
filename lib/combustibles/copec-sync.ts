@@ -8,6 +8,7 @@ import { parseConsumptionExcel, type ParsedConsumptionRow } from "@/lib/combusti
 import { computeBatchTotals } from "@/lib/combustibles/consumption-calculations"
 import { plateMatchKey } from "@/lib/combustibles/xlsx-utils"
 import { loadVehicleResolver } from "@/lib/combustibles/plate-resolver"
+import { saveMeterReadings } from "@/lib/combustibles/meter-readings"
 import { AUTOMATED_SOURCES, copecTctSource } from "@/lib/combustibles/fuel-sources"
 import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
 import { isOpenPeriod, replaceBatchRecords } from "@/lib/combustibles/open-period"
@@ -318,6 +319,8 @@ interface PeriodSyncResult {
   rowsAccepted: number
   rowsRejected: number
   rowsPending: number
+  /** Lecturas de odómetro rescatadas del informe de detalle. */
+  meterReadings: number
 }
 
 async function importCopecPeriod(
@@ -347,6 +350,7 @@ async function importCopecPeriod(
   let rowsAccepted = 0
   let rowsRejected = 0
   let rowsPending = 0
+  let meterReadings = 0
   const downloads = await downloadCopecReports(
     (["diesel", "bluemax"] as const).map((product) => ({ product, from, to })),
   )
@@ -368,9 +372,15 @@ async function importCopecPeriod(
       accountKey,
       sourceRowKey: copecSourceRowKey(from, to, product, row.patente),
       externalId: null,
-      // TCT entrega un agregado mensual por patente, no una fecha de carga por
-      // fila. Se conserva el inicio del período como fecha de evidencia y el
-      // rango solicitado sigue siendo la frontera de validación.
+      // La PROYECCIÓN es un agregado mensual por patente, así que su evidencia
+      // en el ledger se fecha al inicio del período y el rango solicitado sigue
+      // siendo la frontera de validación.
+      //
+      // Ojo: el ARCHIVO sí trae fecha y hora por transacción — el informe de
+      // detalle entrega una fila por carga, con odómetro y estación de servicio.
+      // Ese nivel no se pierde: viaja a `fuel_meter_readings` por su cuenta (ver
+      // `saveMeterReadings` más abajo). Este `from` describe la granularidad de
+      // la proyección, no la del archivo.
       occurredAt: from,
       plate: row.patente,
       product,
@@ -430,6 +440,13 @@ async function importCopecPeriod(
       const rows = groups.get(vehicle.worksiteId) ?? []
       rows.push(row); groups.set(vehicle.worksiteId, rows)
     }
+    // Las lecturas de odómetro no pertenecen a ningún lote: su identidad es la
+    // guía de despacho de la transacción, no (faena, período, producto). Se
+    // guardan una vez por archivo y fuera del loop por faena, con upsert, así que
+    // una corrección del proveedor en un mes abierto las alcanza igual.
+    const savedReadings = await saveMeterReadings(db, "copec_tct", parsed.detail, resolveVehicle)
+    meterReadings += savedReadings.saved
+
     const buildRecords = (rows: ParsedConsumptionRow[], batchId: string, worksiteId: string) =>
       rows.map((row) => ({ id: nanoid(), batchId, worksiteId, vehicleId: resolveVehicle(row.patente)?.id ?? null, patente: row.patente, numeroTarjetas: row.numeroTarjetas, numeroTransacciones: row.numeroTransacciones, cantidadUnidad: row.cantidadUnidad, monto: row.monto, rendimientoPromedio: row.rendimientoPromedio, precioPromedioUnidad: row.cantidadUnidad > 0 ? Math.round(row.monto / row.cantidadUnidad * 100) / 100 : null, periodoDesde: from, periodoHasta: to, fuente: source, rawRow: row.rawRow }))
 
@@ -523,6 +540,7 @@ async function importCopecPeriod(
     rowsAccepted: rowsAccepted + receipts.rowsAccepted,
     rowsRejected: rowsRejected + receipts.rowsRejected,
     rowsPending: rowsPending + pending.size + receipts.rowsPending,
+    meterReadings,
   }
 }
 
@@ -712,11 +730,12 @@ export async function syncCopecReportPeriod(period: CopecSyncPeriod, importerId?
   }
 }
 
-export async function syncCopecReports(): Promise<{ from: string; to: string; imported: number; refreshed: number; received: number; pending: number; reports: string[]; unavailable: string[]; unmappedCards: string[] }> {
+export async function syncCopecReports(): Promise<{ from: string; to: string; imported: number; refreshed: number; received: number; pending: number; reports: string[]; unavailable: string[]; unmappedCards: string[]; meterReadings: number }> {
   const plan = await getCopecSyncPlan()
   let imported = 0
   let refreshed = 0
   let received = 0
+  let meterReadings = 0
   const reports: string[] = []
   const unavailable: string[] = []
   const unmappedCards = new Set<string>()
@@ -726,6 +745,7 @@ export async function syncCopecReports(): Promise<{ from: string; to: string; im
     imported += result.imported
     refreshed += result.refreshed
     received += result.received
+    meterReadings += result.meterReadings
     for (const card of result.unmappedCards) unmappedCards.add(card)
     pending = result.pending
     reports.push(...result.reports)
@@ -741,5 +761,5 @@ export async function syncCopecReports(): Promise<{ from: string; to: string; im
       throw new Error(`Copec no entregó ningún archivo para el período ${period.from} a ${period.to}. Revisa credenciales/portal, o ajusta la fecha de inicio si ese tramo no tiene consumos. Se importaron ${imported} registros antes de detenerse.`)
     }
   }
-  return { from: plan.from, to: plan.to, imported, refreshed, received, pending, reports, unavailable, unmappedCards: [...unmappedCards].sort() }
+  return { from: plan.from, to: plan.to, imported, refreshed, received, pending, reports, unavailable, unmappedCards: [...unmappedCards].sort(), meterReadings }
 }

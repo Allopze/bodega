@@ -36,6 +36,8 @@ import { beginFuelProviderSyncRun, finishFuelProviderSyncRun, recordFuelProvider
 import { validateProviderRows, type ProviderRowInput } from "@/lib/combustibles/provider-validation"
 import { reconcileFuelProviderRun } from "@/lib/combustibles/fuel-reconciliation"
 import { readAramcoConfig } from "@/lib/combustibles/aramco-settings"
+import { saveMeterReadings, aramcoMovementReading } from "@/lib/combustibles/meter-readings"
+import { DEFAULT_MAX_KM_PER_LITER, summarizeMeterPerformance } from "@/lib/combustibles/meter-performance"
 import {
   authenticateAramco,
   fetchAramcoMovements,
@@ -47,15 +49,13 @@ import {
 const DEFAULT_LOOKBACK_MONTHS = 4
 
 /**
- * Techo de rendimiento plausible en km/L. El portal calcula `vehicleConsumption`
- * a partir del odómetro que el conductor tipea en el surtidor, y en el histórico
+ * Techo de rendimiento plausible en km/L, compartido con el cálculo por serie de
+ * odómetro (`meter-performance.ts`). El portal calcula `vehicleConsumption` a
+ * partir del odómetro que el conductor tipea en el surtidor, y en el histórico
  * real 48 de 154 transacciones dan valores absurdos (hasta 785 km/L) porque la
- * lectura previa está desfasada. Un rendimiento inventado envenena los
- * dashboards y el detector de anomalías, así que sobre este techo se guarda 0
- * —«sin dato»—, que es lo mismo que hace el parser de Copec con su guard
- * `performance > 0`. El detalle crudo queda en `rawRow` para auditar.
+ * lectura previa está desfasada. El detalle crudo queda en `rawRow` para auditar.
  */
-const MAX_PLAUSIBLE_KM_PER_LITER = 25
+const MAX_PLAUSIBLE_KM_PER_LITER = DEFAULT_MAX_KM_PER_LITER
 
 /**
  * `type` y no `interface` a propósito: la ruta de cron lo pasa como
@@ -71,6 +71,8 @@ export type AramcoSyncResult = {
   batches: number
   /** Transacciones leídas de la API. */
   transactions: number
+  /** Lecturas de odómetro rescatadas de las transacciones. */
+  meterReadings: number
   /** Métricas de calidad durable de la corrida. */
   rowsAccepted: number
   rowsRejected: number
@@ -157,8 +159,6 @@ function aggregateByPlate(movements: AramcoMovement[]): AggregatedRow[] {
     transactions: AramcoMovement[]
     quantity: number
     amount: number
-    weightedPerformance: number
-    performanceQuantity: number
   }>()
 
   for (const movement of movements) {
@@ -174,8 +174,6 @@ function aggregateByPlate(movements: AramcoMovement[]): AggregatedRow[] {
       transactions: [],
       quantity: 0,
       amount: 0,
-      weightedPerformance: 0,
-      performanceQuantity: 0,
     }
     const quantity = Number(movement.quantity ?? 0)
     const card = (movement.cardNumber ?? "").trim()
@@ -183,11 +181,6 @@ function aggregateByPlate(movements: AramcoMovement[]): AggregatedRow[] {
     group.transactions.push(movement)
     group.quantity += quantity
     group.amount += Number(movement.amountToPay ?? 0)
-    const performance = plausiblePerformance(movement)
-    if (performance !== null) {
-      group.weightedPerformance += performance * quantity
-      group.performanceQuantity += quantity
-    }
     groups.set(plate, group)
   }
 
@@ -197,9 +190,17 @@ function aggregateByPlate(movements: AramcoMovement[]): AggregatedRow[] {
     numeroTransacciones: group.transactions.length,
     cantidadUnidad: round(group.quantity, 4),
     monto: round(group.amount, 2),
-    rendimientoPromedio: group.performanceQuantity > 0
-      ? round(group.weightedPerformance / group.performanceQuantity, 2)
-      : 0,
+    // Rendimiento por serie de odómetro, con el cálculo del propio portal
+    // (odómetro actual contra el previo que él guarda) como respaldo para la
+    // primera transacción de la ventana, que no tiene par anterior acá.
+    rendimientoPromedio: summarizeMeterPerformance(group.transactions.map((movement) => ({
+      occurredAt: movement.transactionDate,
+      value: Number.isFinite(Number(movement.vehicleOdometer)) && Number(movement.vehicleOdometer) > 0
+        ? Number(movement.vehicleOdometer)
+        : null,
+      liters: Number(movement.quantity ?? 0),
+      providerPerformance: plausiblePerformance(movement),
+    })), { maxPerformance: MAX_PLAUSIBLE_KM_PER_LITER }).average,
     transactions: group.transactions,
   }))
 }
@@ -277,7 +278,7 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
     correlationId: options.correlationId,
   })
   let runFinished = false
-  const empty: AramcoSyncResult = { imported: 0, refreshed: 0, batches: 0, transactions: 0, rowsAccepted: 0, rowsRejected: 0, rowsPending: 0, pendingPlates: [], skippedGroups: [], from, to }
+  const empty: AramcoSyncResult = { imported: 0, refreshed: 0, batches: 0, transactions: 0, meterReadings: 0, rowsAccepted: 0, rowsRejected: 0, rowsPending: 0, pendingPlates: [], skippedGroups: [], from, to }
   if (firstMonth > lastMonth) {
     await finishFuelProviderSyncRun(run.id, { status: "success", receivedFrom: from, receivedTo: to, rowsReceived: 0, rowsAccepted: 0, rowsRejected: 0, rowsPending: 0 })
     runFinished = true
@@ -330,6 +331,15 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
     quality.pending = persisted.pending
     const acceptedIdentityKeys = new Set(validation.accepted.map((row) => row.identityKey))
 
+    // Las lecturas de odómetro se guardan aunque el grupo termine saltado por un
+    // lote de otra fuente: son un hecho del proveedor, no una proyección nuestra,
+    // y el detector de anomalías las necesita igual. Upsert por transacción.
+    const savedReadings = await saveMeterReadings(
+      db, "aramco",
+      movements.flatMap((movement) => aramcoMovementReading(movement) ?? []),
+      resolveVehicle,
+    )
+
     // (mes, fuente) -> (faena -> transacciones). El grupo es la unidad de lote.
     const groups = new Map<string, Map<string, AramcoMovement[]>>()
     const pendingPlates = new Set<string>()
@@ -358,6 +368,7 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
       refreshed: 0,
       batches: 0,
       transactions: movements.length,
+      meterReadings: savedReadings.saved,
       rowsAccepted: persisted.accepted,
       rowsRejected: persisted.rejected,
       rowsPending: persisted.pending,

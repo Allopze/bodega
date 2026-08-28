@@ -96,6 +96,35 @@ RUN ./node_modules/.bin/esbuild scripts/backfill-dte-order-refs.ts \
     --external:postgres \
     --outfile=/tmp/backfill-dte-order-refs.mjs
 
+# Mismo motivo, para los one-shot de combustible. El backfill de lecturas de
+# medidor reconstruye la serie de odómetro desde el detalle que ya está guardado
+# en `raw_row`, y el sync del catálogo de reglas deja disponibles las reglas
+# nuevas sin esperar la ventana del cron. Se externalizan sólo `drizzle-orm` y
+# `postgres` —los dos paquetes que la imagen standalone sí resuelve— y todo lo
+# demás (incluido `exceljs`, del que cuelgan los helpers de parseo) se empaqueta.
+RUN ./node_modules/.bin/esbuild \
+    scripts/backfill-fuel-meter-readings.ts \
+    scripts/seed-fuel-anomaly-rules.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outdir=/tmp/fuel \
+    --out-extension:.js=.mjs
+
+# El preflight de integraciones de combustible sólo habla `postgres` y es de
+# sólo lectura (`sql.begin("read only", ...)`): corre ANTES de migrar para dejar
+# en el log del deploy cuánto detalle hay por rescatar y cuántas lecturas
+# regresivas trae el histórico.
+RUN ./node_modules/.bin/esbuild scripts/preflight-fuel-integrations.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:postgres \
+    --outfile=/tmp/preflight-fuel-integrations.mjs
+
 
 # ── Production stage: standalone build, minimal runtime ──
 FROM node:22.13-alpine AS prod
@@ -168,6 +197,9 @@ COPY --from=build /tmp/invoice-reconciliation/preflight-purchase-invoice-reconci
 COPY --from=build /tmp/invoice-reconciliation/backfill-purchase-invoice-reconciliation.mjs ./scripts/backfill-purchase-invoice-reconciliation.mjs
 COPY --from=build /tmp/invoice-reconciliation/rollback-purchase-invoice-reconciliation-statuses.mjs ./scripts/rollback-purchase-invoice-reconciliation-statuses.mjs
 COPY --from=build /tmp/backfill-dte-order-refs.mjs ./scripts/backfill-dte-order-refs.mjs
+COPY --from=build /tmp/fuel/backfill-fuel-meter-readings.mjs ./scripts/backfill-fuel-meter-readings.mjs
+COPY --from=build /tmp/fuel/seed-fuel-anomaly-rules.mjs ./scripts/seed-fuel-anomaly-rules.mjs
+COPY --from=build /tmp/preflight-fuel-integrations.mjs ./scripts/preflight-fuel-integrations.mjs
 # Cron service uses this bounded internal HTTP runner instead of an inline
 # wget command. It is copied explicitly because Next standalone does not trace
 # scripts invoked only by Compose.
