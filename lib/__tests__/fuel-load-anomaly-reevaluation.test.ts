@@ -20,7 +20,8 @@ vi.mock("@/db", () => ({
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
-const { reevaluateFuelLoadAnomalies } = await import("@/lib/combustibles/fuel-load-anomaly-reevaluation")
+const { reevaluateFuelLoadAnomalies, resolveCorrectedMeterCases } = await import("@/lib/combustibles/fuel-load-anomaly-reevaluation")
+const { lastKnownMeterReading, meterReadingFieldErrors } = await import("@/lib/combustibles/meter-readings")
 
 const ACTOR_ID = "fuel-anomaly-actor"
 const WORKSITE_ID = "fuel-anomaly-worksite"
@@ -89,5 +90,101 @@ describe("reevaluateFuelLoadAnomalies", () => {
       ["resolved", "reopened"],
     ])
     expect(audit.filter((entry) => entry.action === "status_change")).toHaveLength(2)
+  })
+})
+
+describe("corrección de lectura de medidor", () => {
+  // Serie propia para no interferir con el caso de proveedor de arriba.
+  const METER_VEHICLE_ID = "far-meter-vehicle"
+  const FIRST_LOAD_ID = "far-meter-load-1"
+  const SECOND_LOAD_ID = "far-meter-load-2"
+  const METER_RULE_ID = "far-meter-rule"
+
+  beforeAll(async () => {
+    await inMemoryDb.insert(schema.fuelVehicles).values({
+      id: METER_VEHICLE_ID, plate: "FAR-002", type: "camion", equipmentTypeId: EQUIPMENT_TYPE_ID,
+      worksiteId: WORKSITE_ID, meterType: "odometer", isActive: true,
+    })
+    await inMemoryDb.insert(schema.fuelLoads).values([
+      {
+        id: FIRST_LOAD_ID, loadDate: "2026-07-01", month: "2026-07", serviceType: "TCT",
+        vehicleId: METER_VEHICLE_ID, fuelSupplierId: USUAL_SUPPLIER_ID, worksiteId: WORKSITE_ID,
+        product: "PETROLEO DIESEL", productId: PRODUCT_ID, liters: 100, odometerReading: 720_325,
+        baseAmount: 1_000, iecFixed: 0, iecVariable: 0, iecTotal: 0, ivaAmount: 190, totalAmount: 1_190,
+        status: "registered", createdBy: ACTOR_ID,
+      },
+      {
+        // El dígito perdido: 72.000 donde debía decir 720.900.
+        id: SECOND_LOAD_ID, loadDate: "2026-07-10", month: "2026-07", serviceType: "TCT",
+        vehicleId: METER_VEHICLE_ID, fuelSupplierId: USUAL_SUPPLIER_ID, worksiteId: WORKSITE_ID,
+        product: "PETROLEO DIESEL", productId: PRODUCT_ID, liters: 100, odometerReading: 72_000,
+        baseAmount: 1_000, iecFixed: 0, iecVariable: 0, iecTotal: 0, ivaAmount: 190, totalAmount: 1_190,
+        status: "registered", createdBy: ACTOR_ID,
+      },
+    ])
+    await inMemoryDb.insert(schema.fuelAnomalyRules).values({
+      id: METER_RULE_ID, code: "kilometraje_regresivo", name: "Kilometraje regresivo",
+      severity: "high", isActive: true, config: "{}",
+    })
+  })
+
+  it("la última lectura conocida sale de la carga anterior del equipo", async () => {
+    const known = await lastKnownMeterReading(inMemoryDb as never, METER_VEHICLE_ID, "odometer", { before: "2026-07-10", excludeLoadId: SECOND_LOAD_ID })
+    expect(known).toEqual({ value: 720_325, on: "2026-07-01" })
+  })
+
+  it("rechaza en la captura una lectura menor que la conocida", async () => {
+    const errors = await meterReadingFieldErrors(inMemoryDb as never, {
+      vehicleId: METER_VEHICLE_ID, loadDate: "2026-07-10", odometerReading: 72_000,
+    }, { excludeLoadId: SECOND_LOAD_ID })
+    expect(errors?.odometerReading?.[0]).toContain("menor que la última registrada")
+  })
+
+  it("acepta la lectura corregida y la que avanza", async () => {
+    await expect(meterReadingFieldErrors(inMemoryDb as never, {
+      vehicleId: METER_VEHICLE_ID, loadDate: "2026-07-10", odometerReading: 720_900,
+    }, { excludeLoadId: SECOND_LOAD_ID })).resolves.toBeNull()
+  })
+
+  it("cierra el caso como lectura corregida —no como reset— al arreglar el número", async () => {
+    await inMemoryDb.insert(schema.fuelAnomalyCases).values({
+      id: "far-meter-case", ruleId: METER_RULE_ID, ruleCode: "kilometraje_regresivo", severity: "high",
+      worksiteId: WORKSITE_ID, vehicleId: METER_VEHICLE_ID,
+      referenceEntityType: "fuel_load", referenceEntityId: SECOND_LOAD_ID,
+      description: "Lectura de odómetro (72000) menor que la carga anterior (720325).", status: "open",
+    })
+
+    // Con la lectura todavía mala el caso sigue abierto.
+    await expect(resolveCorrectedMeterCases(SECOND_LOAD_ID, ACTOR_ID)).resolves.toEqual({ resolved: 0, reopened: 0 })
+
+    await inMemoryDb.update(schema.fuelLoads).set({ odometerReading: 720_900 }).where(eq(schema.fuelLoads.id, SECOND_LOAD_ID))
+    await expect(resolveCorrectedMeterCases(SECOND_LOAD_ID, ACTOR_ID)).resolves.toEqual({ resolved: 1, reopened: 0 })
+
+    const [closed] = await inMemoryDb.select().from(schema.fuelAnomalyCases).where(eq(schema.fuelAnomalyCases.id, "far-meter-case"))
+    expect(closed!.status).toBe("resolved")
+    // La diferencia que importa: `reset_medidor` cortaría la serie del equipo en
+    // Flota y Mantenciones; una corrección de tipeo no debe hacerlo.
+    expect(closed!.resolutionKind).toBe("lectura_corregida")
+  })
+
+  it("reabre el caso cerrado si la carga se vuelve a editar con la lectura mala", async () => {
+    // `createAnomalyCase` deduplica en cualquier estado, así que sin esta rama la
+    // carga quedaba sin vigilancia para siempre tras el primer cierre.
+    await inMemoryDb.update(schema.fuelLoads).set({ odometerReading: 71_000 }).where(eq(schema.fuelLoads.id, SECOND_LOAD_ID))
+    await expect(resolveCorrectedMeterCases(SECOND_LOAD_ID, ACTOR_ID)).resolves.toEqual({ resolved: 0, reopened: 1 })
+
+    const [reopened] = await inMemoryDb.select().from(schema.fuelAnomalyCases).where(eq(schema.fuelAnomalyCases.id, "far-meter-case"))
+    expect(reopened!.status).toBe("reopened")
+    expect(reopened!.resolutionKind).toBeNull()
+  })
+
+  it("no reabre un caso cerrado como reset de medidor: eso fue un hecho físico", async () => {
+    await inMemoryDb.update(schema.fuelAnomalyCases)
+      .set({ status: "dismissed", resolutionKind: "reset_medidor", resolvedById: ACTOR_ID })
+      .where(eq(schema.fuelAnomalyCases.id, "far-meter-case"))
+
+    await expect(resolveCorrectedMeterCases(SECOND_LOAD_ID, ACTOR_ID)).resolves.toEqual({ resolved: 0, reopened: 0 })
+    const [untouched] = await inMemoryDb.select().from(schema.fuelAnomalyCases).where(eq(schema.fuelAnomalyCases.id, "far-meter-case"))
+    expect(untouched!.status).toBe("dismissed")
   })
 })

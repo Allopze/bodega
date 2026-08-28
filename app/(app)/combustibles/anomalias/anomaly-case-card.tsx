@@ -5,10 +5,11 @@ import { useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { OptionSelect } from "@/components/ui/option-select"
 import { toast } from "@/lib/toast"
 import { formatDateTime } from "@/lib/utils"
 import { updateAnomalyStatusAction, commentAnomalyAction } from "./actions"
-import { ANOMALY_SEVERITY_LABELS, ANOMALY_STATUS_LABELS, anomalySeverityVariant } from "@/lib/combustibles/anomaly-labels"
+import { ANOMALY_SEVERITY_LABELS, ANOMALY_STATUS_LABELS, METER_RESOLUTION_KIND_LABELS, METER_RESOLUTION_KINDS, anomalySeverityVariant, requiresMeterResolutionKind } from "@/lib/combustibles/anomaly-labels"
 import type { AnomalyCaseRow, AnomalyCaseStatus } from "@/lib/combustibles/anomaly-cases"
 
 /** resolved/dismissed requieren `combustibles:resolve_anomalies`; el resto sólo `combustibles:review_anomalies`. */
@@ -25,12 +26,19 @@ export function AnomalyCaseCard({ anomalyCase, canReview, canResolve }: { anomal
   const [comment, setComment] = useState("")
   const [pending, setPending] = useState(false)
   const [resolution, setResolution] = useState("")
+  const [resolutionKind, setResolutionKind] = useState("")
+  // Cerrar un caso de medidor decide si la serie del equipo se corta acá, así
+  // que el revisor tiene que decir cuál de las dos cosas pasó.
+  const needsKind = requiresMeterResolutionKind(anomalyCase.ruleCode)
   const sv = { label: ANOMALY_SEVERITY_LABELS[anomalyCase.severity] ?? anomalyCase.severity, variant: anomalySeverityVariant(anomalyCase.severity) }
 
   async function doStatus(status: AnomalyCaseStatus) {
     setPending(true)
-    const result = await updateAnomalyStatusAction({ caseId: anomalyCase.id, expectedStatus: anomalyCase.status, status, resolution })
-    if (result.ok) { toast.success(result.message ?? "Actualizado"); setResolution(""); router.refresh() }
+    const result = await updateAnomalyStatusAction({
+      caseId: anomalyCase.id, expectedStatus: anomalyCase.status, status, resolution,
+      resolutionKind: needsKind && resolutionKind ? resolutionKind : undefined,
+    })
+    if (result.ok) { toast.success(result.message ?? "Actualizado"); setResolution(""); setResolutionKind(""); router.refresh() }
     else toast.error(result.message)
     setPending(false)
   }
@@ -90,13 +98,27 @@ export function AnomalyCaseCard({ anomalyCase, canReview, canResolve }: { anomal
         return (
           <div className="mt-3 border-t border-(--color-border) pt-3">
             {needsResolution && (
-              <div className="mb-2">
+              <div className="mb-2 space-y-2">
                 <Textarea placeholder="Motivo (obligatorio para resolver o descartar)" value={resolution} onChange={(e) => setResolution(e.target.value)} rows={2} className="text-xs" />
+                {needsKind && (
+                  <div>
+                    <OptionSelect
+                      aria-label="Qué pasó con el medidor"
+                      placeholder="¿Qué pasó con el medidor?"
+                      value={resolutionKind}
+                      onValueChange={setResolutionKind}
+                      options={METER_RESOLUTION_KINDS.map((kind) => ({ value: kind, label: METER_RESOLUTION_KIND_LABELS[kind] }))}
+                    />
+                    <p className="mt-1 text-xs text-(--color-text-muted)">
+                      Sólo un medidor reemplazado reinicia la serie del equipo en Flota y Mantenciones.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
             <div className="flex flex-wrap gap-2">
               {available.map((next) => (
-                <Button key={next.status} size="sm" variant={next.status === "dismissed" ? "destructive" : "secondary"} disabled={pending || (next.requiresResolve && !resolution.trim())} onClick={() => doStatus(next.status)}>
+                <Button key={next.status} size="sm" variant={next.status === "dismissed" ? "destructive" : "secondary"} disabled={pending || (next.requiresResolve && (!resolution.trim() || (needsKind && !resolutionKind)))} onClick={() => doStatus(next.status)}>
                   {next.label}
                 </Button>
               ))}

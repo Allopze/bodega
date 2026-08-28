@@ -8,6 +8,8 @@
 
 import ExcelJS from "exceljs"
 import { normKey, sheetToRecords, parseChileanNumber, normalizePlate } from "./xlsx-utils"
+import { copecDetailReading, type ParsedMeterReading } from "./meter-readings"
+import { summarizeMeterPerformance } from "./meter-performance"
 
 export { normalizePlate }
 
@@ -32,6 +34,9 @@ export interface ConsumptionImportResult {
   rows: ParsedConsumptionRow[]
   errors: ImportError[]
   duplicates: number[]   // rowIndex de patentes repetidas dentro del archivo
+  /** Lecturas de medidor por transacción. Sólo el informe de detalle las trae;
+   *  el resumen por patente no tiene una fila por carga que leer. */
+  detail: ParsedMeterReading[]
 }
 
 function normalizedRecord(record: Record<string, unknown>) {
@@ -55,14 +60,14 @@ function isCopecDetail(records: Record<string, unknown>[]) {
 
 function parseCopecDetail(records: Record<string, unknown>[]): ConsumptionImportResult {
   const errors: ImportError[] = []
+  const detail: ParsedMeterReading[] = []
   const groups = new Map<string, {
     rowIndex: number
     cards: Set<string>
     transactions: Record<string, unknown>[]
     quantity: number
     amount: number
-    weightedPerformance: number
-    performanceQuantity: number
+    readings: ParsedMeterReading[]
   }>()
 
   for (let index = 0; index < records.length; index++) {
@@ -89,21 +94,26 @@ function parseCopecDetail(records: Record<string, unknown>[]): ConsumptionImport
       transactions: [],
       quantity: 0,
       amount: 0,
-      weightedPerformance: 0,
-      performanceQuantity: 0,
+      readings: [],
     }
     const card = String(get("Tarjeta", "N° Tarjeta", "Numero Tarjeta") ?? "").trim()
     if (card) group.cards.add(card)
     group.transactions.push(record)
     group.quantity += quantity
     group.amount += amount
-    if (performance > 0 && quantity > 0) {
-      group.weightedPerformance += performance * quantity
-      group.performanceQuantity += quantity
+    const reading = copecDetailReading(record)
+    if (reading) {
+      group.readings.push(reading)
+      detail.push(reading)
     }
     groups.set(patente, group)
   }
 
+  // El rendimiento sale de la serie de odómetro y NO del promedio ponderado de
+  // la columna del proveedor: Copec entrega 0 cuando la lectura de la boleta
+  // retrocede —el operario perdió un dígito al tipear— y ese 0 se comía la carga
+  // entera del promedio del mes. La serie puentea el tramo malo y sólo cae al
+  // dato del proveedor donde no hay tramo propio que calcular.
   const rows = [...groups.entries()].map(([patente, group]): ParsedConsumptionRow => ({
     rowIndex: group.rowIndex,
     patente,
@@ -111,13 +121,16 @@ function parseCopecDetail(records: Record<string, unknown>[]): ConsumptionImport
     numeroTransacciones: group.transactions.length,
     cantidadUnidad: Math.round(group.quantity * 10_000) / 10_000,
     monto: Math.round(group.amount * 100) / 100,
-    rendimientoPromedio: group.performanceQuantity > 0
-      ? Math.round((group.weightedPerformance / group.performanceQuantity) * 100) / 100
-      : 0,
+    rendimientoPromedio: summarizeMeterPerformance(group.readings.map((reading) => ({
+      occurredAt: reading.occurredAt,
+      value: reading.value,
+      liters: reading.liters ?? 0,
+      providerPerformance: reading.providerPerformance,
+    }))).average,
     rawRow: { detalle: group.transactions },
   }))
 
-  return { rows, errors, duplicates: [] }
+  return { rows, errors, duplicates: [], detail }
 }
 
 /**
@@ -131,11 +144,11 @@ export async function parseConsumptionExcel(fileBuffer: ArrayBuffer | Buffer): P
   try {
     await workbook.xlsx.load(fileBuffer as never)
   } catch {
-    return { rows: [], errors: [{ rowIndex: 0, field: "file", message: "Archivo Excel inválido o corrupto" }], duplicates: [] }
+    return { rows: [], errors: [{ rowIndex: 0, field: "file", message: "Archivo Excel inválido o corrupto" }], duplicates: [], detail: [] }
   }
 
   const sheet = workbook.worksheets[0]
-  if (!sheet) return { rows: [], errors: [{ rowIndex: 0, field: "file", message: "No se encontró hoja con datos" }], duplicates: [] }
+  if (!sheet) return { rows: [], errors: [{ rowIndex: 0, field: "file", message: "No se encontró hoja con datos" }], duplicates: [], detail: [] }
 
   const records = sheetToRecords(sheet)
 
@@ -240,5 +253,7 @@ export async function parseConsumptionExcel(fileBuffer: ArrayBuffer | Buffer): P
     if (records.length > 1) row.rawRow = { agregado: records }
   }
 
-  return { rows, errors, duplicates }
+  // El resumen por patente no trae una fila por carga: sin transacciones no hay
+  // lectura de medidor que rescatar.
+  return { rows, errors, duplicates, detail: [] }
 }

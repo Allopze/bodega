@@ -195,7 +195,7 @@ describe("syncCopecReportPeriod", () => {
       { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "informe.xlsx" } },
       { product: "bluemax", unavailable: true },
     ])
-    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [] })
+    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [], detail: []  })
     mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
     mockParseTaeReceiptExcel.mockResolvedValue({ rows: [{ documentNumber: "G-1", cardNumber: "1", productId: "fuel-diesel", occurredAt: "2026-02-10T10:00:00.000Z", liters: 10, unitPrice: 1, amount: 10, assignment: "", station: "", rawRow: {} }], errors: [] })
     mockImportTaeReceipts.mockRejectedValue(new TaeSupplierMissingError())
@@ -224,7 +224,7 @@ describe("syncCopecReportPeriod", () => {
         { product: "diesel", unavailable: true },
         { product: "bluemax", unavailable: true },
       ])
-    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [] })
+    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [], detail: []  })
     mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
 
     await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
@@ -240,7 +240,7 @@ describe("syncCopecReportPeriod", () => {
       { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "informe.xlsx" } },
       { product: "bluemax", unavailable: true },
     ])
-    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [] })
+    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [], detail: []  })
     mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
 
     await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
@@ -272,7 +272,7 @@ describe("syncCopecReportPeriod", () => {
       { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
       { product: "bluemax", unavailable: true },
     ])
-    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AB-CD12")], errors: [], duplicates: [] })
+    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AB-CD12")], errors: [], duplicates: [], detail: []  })
     mockVehiclesFindMany.mockResolvedValue([{ id: "v-1", plate: "ABCD12", worksiteId: "W1" }])
 
     const tx = makeTx()
@@ -296,6 +296,7 @@ describe("syncCopecReportPeriod", () => {
       rows: [row("AAA"), row("BBB")],
       errors: [{ rowIndex: 9, field: "Patente", message: "requerida" }, { rowIndex: 10, field: "Monto ($)", message: "requerido" }],
       duplicates: [],
+      detail: [],
     })
     mockVehiclesFindMany.mockResolvedValue([
       { id: "v-aaa", plate: "AAA", worksiteId: "W1" },
@@ -326,6 +327,7 @@ describe("syncCopecReportPeriod", () => {
       rows: [row("AAA"), row("BBB")],
       errors: [{ rowIndex: 9, field: "Patente", message: "requerida" }, { rowIndex: 10, field: "Monto ($)", message: "requerido" }],
       duplicates: [],
+      detail: [],
     })
     mockVehiclesFindMany.mockResolvedValue([
       { id: "v-aaa", plate: "AAA", worksiteId: "W1" },
@@ -354,7 +356,7 @@ describe("syncCopecReportPeriod", () => {
       { product: "bluemax", unavailable: true },
     ])
     // El archivo trae AAA (ya importada antes) y BBB (recién vinculada a un vehículo).
-    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA"), row("BBB")], errors: [], duplicates: [] })
+    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA"), row("BBB")], errors: [], duplicates: [], detail: []  })
     mockVehiclesFindMany.mockResolvedValue([
       { id: "v-aaa", plate: "AAA", worksiteId: "W1" },
       { id: "v-bbb", plate: "BBB", worksiteId: "W1" },
@@ -383,7 +385,7 @@ describe("syncCopecReportPeriod", () => {
       { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
       { product: "bluemax", unavailable: true },
     ])
-    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [] })
+    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [], detail: []  })
     mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
     // 1ª consulta: no hay lote propio (dedup por fuente exacta). 2ª: sí hay uno
     // importado a mano ('Copec') que cubre el mismo período de esa faena.
@@ -413,7 +415,7 @@ describe("syncCopecReportPeriod", () => {
         { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
         { product: "bluemax", unavailable: true },
       ])
-      mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [] })
+      mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [], detail: []  })
       mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
     }
 
@@ -514,7 +516,7 @@ describe("syncCopecReportPeriod", () => {
       { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "tct-diesel.xlsx" } },
       { product: "bluemax", unavailable: true },
     ])
-    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [] })
+    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA")], errors: [], duplicates: [], detail: []  })
     mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
     // Se corta en el guard (como el caso de arriba) para no depender del insert:
     // el WHERE que nos interesa ya quedó construido igual.

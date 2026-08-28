@@ -107,8 +107,9 @@ export async function getFleetOverview(session: Session, worksiteId?: string, ve
   // dos no nulo — no hace falta resolverlos por separado.
   const hasReading = or(isNotNull(fuelLoads.odometerReading), isNotNull(fuelLoads.hourMeterReading))
 
-  // Una carga con un reset de medidor ACEPTADO (caso kilometraje_regresivo/
-  // horometro_regresivo resuelto o descartado) no es parte de la misma serie
+  // Una carga con un reset de medidor ACEPTADO —caso regresivo cerrado
+  // explícitamente como `reset_medidor`, no como lectura corregida— no es parte
+  // de la misma serie
   // que las cargas posteriores al reset: sin este filtro, la "primera lectura"
   // seguía siendo la del medidor viejo y el recorrido calculado se inflaba
   // (o salía negativo) para siempre, incluso después de validar el reset
@@ -126,6 +127,7 @@ export async function getFleetOverview(session: Session, worksiteId?: string, ve
       AND ${fuelAnomalyCases.referenceEntityType} = 'fuel_load'
       AND ${fuelAnomalyCases.ruleCode} IN ('kilometraje_regresivo', 'horometro_regresivo')
       AND ${fuelAnomalyCases.status} IN ('resolved', 'dismissed')
+      AND ${fuelAnomalyCases.resolutionKind} = 'reset_medidor'
   )`
 
   const [vehicles, fuelRows, firstReadingRows, lastReadingRows, maintenanceRows, documentExpiryRows] = await Promise.all([

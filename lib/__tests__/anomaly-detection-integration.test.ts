@@ -23,7 +23,7 @@ vi.mock("@/db", () => ({
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 const { reviewTaeSubmission, isOutsideOperatingSchedule } = await import("@/lib/services/fuel-tae")
-const { seedAnomalyRulesIfEmpty, getAnomalyCases, updateAnomalyCaseStatus, assignAnomalyCase, addAnomalyComment } = await import("@/lib/combustibles/anomaly-cases")
+const { syncAnomalyRuleCatalog, getAnomalyCases, updateAnomalyCaseStatus, assignAnomalyCase, addAnomalyComment } = await import("@/lib/combustibles/anomaly-cases")
 const { severityOf } = await import("@/lib/combustibles/anomaly-detector")
 const { KNOWN_RULE_CODES } = await import("@/lib/combustibles/validation")
 
@@ -63,7 +63,7 @@ describe("anomaly detection engine (PostgreSQL integration)", () => {
       id: vehicleId, plate: `BB${nanoid().slice(0, 4).toUpperCase()}`, type: "camion", equipmentTypeId,
       worksiteId: worksiteHome, isActive: true, tankCapacityLiters: 200,
     })
-    await seedAnomalyRulesIfEmpty()
+    await syncAnomalyRuleCatalog()
   })
 
   function baseSubmission(overrides: Partial<typeof fuelTaeSubmissions.$inferInsert> = {}) {
@@ -882,7 +882,7 @@ describe("evidencia_ilegible (batch — corrupt/unreadable evidence)", () => {
 // de la severidad.
 describe("paridad de reglas y severidad efectiva", () => {
   it("toda regla sembrada existe en el catálogo compartido", async () => {
-    await seedAnomalyRulesIfEmpty()
+    await syncAnomalyRuleCatalog()
     const seeded = await inMemoryDb.select({ code: schema.fuelAnomalyRules.code }).from(schema.fuelAnomalyRules)
     const unknown = seeded.map((rule) => rule.code).filter((code) => !(KNOWN_RULE_CODES as readonly string[]).includes(code))
     expect(unknown).toEqual([])
@@ -893,5 +893,139 @@ describe("paridad de reglas y severidad efectiva", () => {
     // Fallback sólo para una regla sin severidad válida.
     expect(severityOf({ severity: null }, "medium")).toBe("medium")
     expect(severityOf({ severity: "inventada" }, "high")).toBe("high")
+  })
+})
+
+describe("lecturas del detalle de proveedor (fuel_meter_readings)", () => {
+  // El odómetro que el operario tipea en el surtidor llega en el detalle por
+  // transacción de Copec y Aramco. Es la fuente donde el error de dedo aparece
+  // de verdad —en la muestra real, 27 de 249 pares consecutivos retroceden— y
+  // hasta ahora ninguna regla la miraba.
+  const wsId = nanoid()
+  const eqTypeId = nanoid()
+  const vehRegId = nanoid()
+  const vehJumpId = nanoid()
+  const vehMixId = nanoid()
+  const vehSlowId = nanoid()
+
+  const reading = (vehicleId: string, over: Partial<typeof schema.fuelMeterReadings.$inferInsert>) => ({
+    id: nanoid(),
+    vehicleId,
+    plate: "TEST",
+    source: "copec_tct",
+    sourceRef: nanoid(),
+    occurredAt: "2026-06-01T12:00:00.000Z",
+    meterType: "odometer",
+    value: 0,
+    ...over,
+  })
+
+  beforeAll(async () => {
+    await inMemoryDb.insert(schema.worksites).values({
+      id: wsId, name: "Faena lecturas", code: `FL-${nanoid().slice(0, 6)}`, isActive: true,
+    })
+    await inMemoryDb.insert(schema.fuelEquipmentTypes).values({
+      id: eqTypeId, slug: `lect-camion-${nanoid().slice(0, 6)}`, name: "Camión lecturas",
+    })
+    await inMemoryDb.insert(schema.fuelVehicles).values(
+      [vehRegId, vehJumpId, vehMixId, vehSlowId].map((id) => ({
+        id, plate: `LEC${nanoid().slice(0, 5).toUpperCase()}`, type: "camion",
+        equipmentTypeId: eqTypeId, worksiteId: wsId, meterType: "odometer", isActive: true,
+      })),
+    )
+  })
+
+  it("crea kilometraje_regresivo cuando la boleta pierde un dígito", async () => {
+    await inMemoryDb.insert(schema.fuelMeterReadings).values([
+      reading(vehRegId, { occurredAt: "2026-06-01T12:00:00.000Z", value: 720_325, stationName: "RUTA 5 KM 786" }),
+      reading(vehRegId, { occurredAt: "2026-06-08T12:00:00.000Z", value: 72_000, stationName: "RUTA 5 KM 786" }),
+    ])
+
+    await runAllBatchRules()
+
+    const { cases } = await getAnomalyCases({ ruleCode: "kilometraje_regresivo" }, TEST_SESSION)
+    const found = cases.find((c) => c.referenceEntityType === "fuel_meter_reading" && c.vehicleId === vehRegId)
+    expect(found).toBeDefined()
+    // La estación va en el texto: es por donde el operador persigue la boleta.
+    expect(found!.description).toContain("RUTA 5 KM 786")
+    expect(found!.observedValue).toBe("72000")
+  })
+
+  it("crea salto_medidor_implausible cuando el medidor sube más de lo posible", async () => {
+    await inMemoryDb.insert(schema.fuelMeterReadings).values([
+      reading(vehJumpId, { occurredAt: "2026-06-01T12:00:00.000Z", value: 100_000 }),
+      reading(vehJumpId, { occurredAt: "2026-06-02T12:00:00.000Z", value: 1_000_000 }),
+    ])
+
+    await runAllBatchRules()
+
+    const { cases } = await getAnomalyCases({ ruleCode: "salto_medidor_implausible" }, TEST_SESSION)
+    expect(cases.some((c) => c.referenceEntityType === "fuel_meter_reading" && c.vehicleId === vehJumpId)).toBe(true)
+  })
+
+  it("no marca un avance grande repartido en meses de operación normal", async () => {
+    await inMemoryDb.insert(schema.fuelMeterReadings).values([
+      reading(vehSlowId, { occurredAt: "2026-01-01T12:00:00.000Z", value: 200_000 }),
+      // 40.000 km en 200 días: 200 km/día, muy por debajo del techo.
+      reading(vehSlowId, { occurredAt: "2026-07-20T12:00:00.000Z", value: 240_000 }),
+    ])
+
+    await runAllBatchRules()
+
+    const { cases } = await getAnomalyCases({ ruleCode: "salto_medidor_implausible" }, TEST_SESSION)
+    expect(cases.some((c) => c.vehicleId === vehSlowId)).toBe(false)
+  })
+
+  it("no compara entre proveedores: cada portal arrastra su propio desfase", async () => {
+    await inMemoryDb.insert(schema.fuelMeterReadings).values([
+      reading(vehMixId, { source: "copec_tct", occurredAt: "2026-06-01T12:00:00.000Z", value: 300_000 }),
+      reading(vehMixId, { source: "aramco", occurredAt: "2026-06-02T12:00:00.000Z", value: 5_000 }),
+    ])
+
+    await runAllBatchRules()
+
+    const { cases: regresivos } = await getAnomalyCases({ ruleCode: "kilometraje_regresivo" }, TEST_SESSION)
+    expect(regresivos.some((c) => c.vehicleId === vehMixId)).toBe(false)
+    const { cases: saltos } = await getAnomalyCases({ ruleCode: "salto_medidor_implausible" }, TEST_SESSION)
+    expect(saltos.some((c) => c.vehicleId === vehMixId)).toBe(false)
+  })
+})
+
+describe("cierre de un caso de medidor: corrección vs reset", () => {
+  // Cerrar un caso regresivo decide si la serie del equipo se corta ahí: Flota y
+  // Mantenciones tratan como reinicio SÓLO `reset_medidor`. Antes no había forma
+  // de decirlo, así que corregir un dígito mal tecleado cortaba la serie igual.
+  beforeAll(async () => {
+    // `TEST_SESSION` es un rol global con id fijo; para poder CERRAR casos el
+    // usuario tiene que existir (`resolved_by_id` es FK).
+    await inMemoryDb.insert(schema.users).values({
+      id: "test-user", name: "Revisor global", email: `global-${nanoid()}@example.com`, hashedPassword: "x", isActive: true,
+    }).onConflictDoNothing()
+  })
+
+  it("exige declarar qué pasó con el medidor antes de cerrar el caso", async () => {
+    const { cases } = await getAnomalyCases({ ruleCode: "kilometraje_regresivo" }, TEST_SESSION)
+    const target = cases.find((item) => item.status === "open")
+    expect(target).toBeDefined()
+
+    await expect(
+      updateAnomalyCaseStatus(TEST_SESSION, target!.id, "open", "dismissed", "Revisado con el conductor"),
+    ).rejects.toThrow(/lectura se corrigió o si el medidor fue reemplazado/i)
+
+    const closed = await updateAnomalyCaseStatus(
+      TEST_SESSION, target!.id, "open", "dismissed", "Revisado con el conductor", "lectura_corregida",
+    )
+    expect(closed.status).toBe("dismissed")
+    expect(closed.resolutionKind).toBe("lectura_corregida")
+  })
+
+  it("un salto implausible se cierra sin declarar nada: no marca reinicio de serie", async () => {
+    const { cases } = await getAnomalyCases({ ruleCode: "salto_medidor_implausible" }, TEST_SESSION)
+    const target = cases.find((item) => item.status === "open")
+    expect(target).toBeDefined()
+
+    const closed = await updateAnomalyCaseStatus(TEST_SESSION, target!.id, "open", "dismissed", "Odómetro verificado en terreno")
+    expect(closed.status).toBe("dismissed")
+    expect(closed.resolutionKind).toBeNull()
   })
 })

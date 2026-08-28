@@ -2,10 +2,11 @@
 
 import { useActionState, useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { updateFuelLoadAction } from "../actions"
+import { updateFuelLoadAction, correctFuelLoadMeterAction } from "../actions"
 import type { ActionState } from "@/lib/validation/masters"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -51,6 +52,7 @@ interface EditFuelLoadFormProps {
 export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditFuelLoadFormProps) {
   const router = useRouter()
   const [state, formAction, isPending] = useActionState<ActionState, FormData>(updateFuelLoadAction, { ok: false, message: "" })
+  const [meterState, meterFormAction, meterPending] = useActionState<ActionState, FormData>(correctFuelLoadMeterAction, { ok: false, message: "" })
 
   const [liters, setLiters] = useState(load.liters)
   const [baseAmount, setBaseAmount] = useState(load.baseAmount)
@@ -72,6 +74,11 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
       toast.error(state.message)
     }
   }, [state, router])
+
+  useEffect(() => {
+    if (meterState.ok) { toast.success(meterState.message); router.refresh() }
+    else if (meterState.message) toast.error(meterState.message)
+  }, [meterState, router])
 
   const isEditable = load.status === "draft"
 
@@ -106,6 +113,42 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
           <Button size="sm" onClick={handleRegister}>Registrar</Button>
         )}
       </div>
+
+      {/* El formulario principal sólo se habilita en borrador, así que sin esta
+          tarjeta una carga registrada o conciliada con el odómetro mal tecleado
+          no tenía forma de arreglarse desde la pantalla. */}
+      {!isEditable && (load.status === "registered" || load.status === "reconciled") && (
+        <Card>
+          <CardHeader><CardTitle>Corregir lectura del medidor</CardTitle></CardHeader>
+          <CardContent>
+            {/* La carga conciliada está cerrada para todo lo demás: sus litros y
+                montos ya cuadraron contra el documento tributario. El odómetro no
+                aparece en ese documento, así que un dígito perdido sí se puede
+                arreglar sin reabrir nada. */}
+            <form action={meterFormAction} className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <input type="hidden" name="id" value={load.id} />
+              <div className="space-y-2">
+                <Label htmlFor="correctOdometer">Kilometraje</Label>
+                <Input id="correctOdometer" name="odometerReading" type="number" step="0.01" min="0" inputMode="decimal" defaultValue={load.odometerReading ?? ""} />
+                {meterState.fieldErrors?.odometerReading && <p className="text-sm text-[var(--color-danger-ink)]">{meterState.fieldErrors.odometerReading[0]}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="correctHourMeter">Horómetro</Label>
+                <Input id="correctHourMeter" name="hourMeterReading" type="number" step="0.01" min="0" inputMode="decimal" defaultValue={load.hourMeterReading ?? ""} />
+                {meterState.fieldErrors?.hourMeterReading && <p className="text-sm text-[var(--color-danger-ink)]">{meterState.fieldErrors.hourMeterReading[0]}</p>}
+              </div>
+              <div className="md:col-span-2">
+                <Checkbox name="meterReplaced" value="1" label="El medidor fue reemplazado o reiniciado" />
+              </div>
+              <div className="md:col-span-2 flex justify-end">
+                <Button type="submit" size="sm" variant="secondary" disabled={meterPending}>
+                  {meterPending ? "Guardando…" : "Corregir lectura"}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
 
       <form action={formAction} className="space-y-6">
         <input type="hidden" name="id" value={load.id} />
@@ -176,11 +219,21 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
             <div className="space-y-2">
               <Label>Kilometraje</Label>
               <Input name="odometerReading" type="number" step="0.01" min="0" inputMode="decimal" defaultValue={load.odometerReading ?? ""} disabled={!isEditable} />
+              {state.fieldErrors?.odometerReading && <p className="text-sm text-[var(--color-danger-ink)]">{state.fieldErrors.odometerReading[0]}</p>}
             </div>
             <div className="space-y-2">
               <Label>Horómetro</Label>
               <Input name="hourMeterReading" type="number" step="0.01" min="0" inputMode="decimal" defaultValue={load.hourMeterReading ?? ""} disabled={!isEditable} />
+              {state.fieldErrors?.hourMeterReading && <p className="text-sm text-[var(--color-danger-ink)]">{state.fieldErrors.hourMeterReading[0]}</p>}
             </div>
+            {isEditable && (
+              <div className="space-y-2 sm:col-span-2">
+                <Checkbox name="meterReplaced" value="1" label="El medidor fue reemplazado o reiniciado" />
+                <p className="text-xs text-[var(--color-text-muted)]">
+                  Márcalo sólo si el equipo estrenó medidor. Sin esto, una lectura menor que la anterior se rechaza como error de tipeo.
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 

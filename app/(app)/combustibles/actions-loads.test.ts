@@ -15,6 +15,7 @@ const mockInsertValues = vi.fn(async () => undefined)
 const mockRecordAudit = vi.fn()
 const mockRedirect = vi.fn()
 const mockReevaluateFuelLoadAnomalies = vi.fn()
+const mockResolveCorrectedMeterCases = vi.fn()
 const mockNotifyAfterCommit = vi.fn((thunk: () => unknown) => thunk())
 const mockFindDte = vi.fn(async (..._args: unknown[]): Promise<unknown> => undefined)
 
@@ -27,7 +28,20 @@ vi.mock("@/lib/auth/scope", () => ({
   canAccessWorksite: (...args: unknown[]) => mockCanAccessWorksite(...args),
 }))
 vi.mock("@/db", () => {
+  // `select` devuelve una cadena vacía: la validación de medidor consulta la
+  // última lectura conocida del equipo y sin historial no tiene nada que objetar,
+  // que es lo que estas pruebas necesitan para ejercitar el resto de la acción.
+  const emptySelect = () => {
+    const chain = {
+      from: () => chain,
+      where: () => chain,
+      orderBy: () => chain,
+      limit: async () => [] as unknown[],
+    }
+    return chain
+  }
   const db = {
+    select: emptySelect,
     delete: () => ({ where: mockDeleteWhere }),
     update: () => ({ set: mockUpdateSet }),
     insert: () => ({ values: mockInsertValues }),
@@ -54,6 +68,7 @@ vi.mock("@/lib/id", () => ({ nanoid: () => "id-new" }))
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }))
 vi.mock("@/lib/combustibles/fuel-load-anomaly-reevaluation", () => ({
   reevaluateFuelLoadAnomalies: (...args: unknown[]) => mockReevaluateFuelLoadAnomalies(...args),
+  resolveCorrectedMeterCases: (...args: unknown[]) => mockResolveCorrectedMeterCases(...args),
 }))
 vi.mock("@/lib/services/notifications", () => ({
   notifyAfterCommit: (thunk: () => unknown) => mockNotifyAfterCommit(thunk),

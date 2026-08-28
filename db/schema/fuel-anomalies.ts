@@ -43,6 +43,13 @@ export const fuelAnomalyCases = pgTable("fuel_anomaly_cases", {
   status:            text("status").notNull().default("open"),
   assigneeId:        text("assignee_id").references(() => users.id),
   resolution:        text("resolution"),
+  /**
+   * Sólo para las reglas de medidor regresivo: distingue "el número estaba mal
+   * anotado" de "el medidor físico cambió". Flota y Mantenciones tratan como
+   * reinicio de serie SÓLO `reset_medidor`; sin esta columna, corregir un error
+   * de tipeo cortaba la serie del equipo para siempre.
+   */
+  resolutionKind:    text("resolution_kind"),
   resolvedById:      text("resolved_by_id").references(() => users.id),
   resolvedAt:        timestamp("resolved_at", { withTimezone: true, mode: "string" }),
   detectedAt:        timestamp("detected_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
@@ -51,6 +58,7 @@ export const fuelAnomalyCases = pgTable("fuel_anomaly_cases", {
 }, (table) => [
   check("fuel_anomaly_cases_severity_valid", sql`${table.severity} IN ('low', 'medium', 'high', 'critical')`),
   check("fuel_anomaly_cases_status_valid", sql`${table.status} IN ('open', 'in_review', 'resolved', 'dismissed', 'reopened')`),
+  check("fuel_anomaly_cases_resolution_kind_valid", sql`${table.resolutionKind} IS NULL OR ${table.resolutionKind} IN ('lectura_corregida', 'reset_medidor')`),
   index("fuel_anomaly_cases_rule_idx").on(table.ruleId),
   index("fuel_anomaly_cases_status_idx").on(table.status),
   index("fuel_anomaly_cases_worksite_idx").on(table.worksiteId),

@@ -4,14 +4,14 @@ import { NextRequest } from "next/server"
 const mocks = vi.hoisted(() => ({
   verifyCronSecret: vi.fn(),
   isRouteOperational: vi.fn(),
-  seedAnomalyRulesIfEmpty: vi.fn(),
+  syncAnomalyRuleCatalog: vi.fn(),
   runAllBatchRules: vi.fn(),
   withCronLock: vi.fn(async (_job: string, run: () => Promise<unknown>) => run()),
 }))
 
 vi.mock("@/lib/security/cron-auth", () => ({ verifyCronSecret: (...args: unknown[]) => mocks.verifyCronSecret(...args) }))
 vi.mock("@/lib/services/module-toggles", () => ({ isRouteOperational: (...args: unknown[]) => mocks.isRouteOperational(...args) }))
-vi.mock("@/lib/combustibles/anomaly-cases", () => ({ seedAnomalyRulesIfEmpty: (...args: unknown[]) => mocks.seedAnomalyRulesIfEmpty(...args) }))
+vi.mock("@/lib/combustibles/anomaly-cases", () => ({ syncAnomalyRuleCatalog: (...args: unknown[]) => mocks.syncAnomalyRuleCatalog(...args) }))
 vi.mock("@/lib/combustibles/anomaly-detector", () => ({ runAllBatchRules: (...args: unknown[]) => mocks.runAllBatchRules(...args) }))
 vi.mock("@/lib/services/cron-lock", () => ({ withCronLock: (...args: [string, () => Promise<unknown>]) => mocks.withCronLock(...args) }))
 
