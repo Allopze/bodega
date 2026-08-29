@@ -9,7 +9,9 @@ const mocks = vi.hoisted(() => ({
   usersFindFirst: vi.fn(),
   mappingsFindMany: vi.fn(),
   batchFindFirst: vi.fn(),
+  batchFindMany: vi.fn(),
   recordsFindMany: vi.fn(),
+  recordFuelProviderIssues: vi.fn(),
 }))
 
 /** Lo insertado en la corrida, separado por tabla. */
@@ -60,7 +62,10 @@ vi.mock("@/db", () => ({
       fuelVehicles: { findMany: (...args: unknown[]) => mocks.vehiclesFindMany(...args) },
       users: { findFirst: (...args: unknown[]) => mocks.usersFindFirst(...args) },
       fuelProviderMappings: { findMany: (...args: unknown[]) => mocks.mappingsFindMany(...args) },
+      // Usado por el barrido de lotes que la fuente ya no respalda.
+      fuelImportBatches: { findMany: (...args: unknown[]) => mocks.batchFindMany(...args) },
     },
+    insert: () => ({ values: () => ({ onConflictDoUpdate: () => Promise.resolve(undefined) }) }),
     transaction: (callback: (tx: unknown) => unknown) => callback(makeTx()),
   },
 }))
@@ -83,6 +88,7 @@ vi.mock("@/lib/combustibles/fuel-reconciliation", () => ({
 vi.mock("@/lib/combustibles/fuel-provider-ledger", () => ({
   beginFuelProviderSyncRun: vi.fn().mockResolvedValue({ id: "run-1", correlationId: "corr-1" }),
   recordFuelProviderValidation: vi.fn().mockResolvedValue({ accepted: 1, rejected: 0, pending: 0 }),
+  recordFuelProviderIssues: (...args: unknown[]) => mocks.recordFuelProviderIssues(...args),
   finishFuelProviderSyncRun: vi.fn().mockResolvedValue(undefined),
 }))
 
@@ -118,10 +124,12 @@ describe("syncAramco", () => {
     insertedRecords = []
     updatedBatches = []
     updatedRecords = []
+    mocks.batchFindMany.mockResolvedValue([])
+    mocks.recordFuelProviderIssues.mockResolvedValue({ rejected: 0 })
     mocks.today.mockReturnValue("2026-08-22")
     mocks.readAramcoConfig.mockResolvedValue({ documentNumber: "78023530-6", password: "780235", syncEnabled: true, hasCredentials: true })
     mocks.authenticateAramco.mockResolvedValue({ token: "tok", baseUrl: "customers/23645/", systemOperatorId: 23645, customerName: "CHOME" })
-    mocks.fetchAramcoMovements.mockResolvedValue([movement()])
+    mocks.fetchAramcoMovements.mockResolvedValue({ issues: [], movements: [movement()] })
     // El catálogo guarda la patente sin espacios: el matching es por clave
     // normalizada, igual que en Copec.
     mocks.vehiclesFindMany.mockResolvedValue([{ id: "v-1", plate: "SZGB72", worksiteId: "W1" }])
@@ -152,26 +160,26 @@ describe("syncAramco", () => {
     // Caso real del histórico: la lectura previa está desfasada y el rendimiento
     // sale absurdo. Guardar 0 significa «sin dato» y el promedio ponderado lo
     // ignora, en vez de envenenar los dashboards y el detector de anomalías.
-    mocks.fetchAramcoMovements.mockResolvedValue([
+    mocks.fetchAramcoMovements.mockResolvedValue({ issues: [], movements: [
       movement({ vehicleOdometer: "77498", vehiclePreviousOdometer: "43753", quantity: 42.967 }),
-    ])
+    ] })
     await syncAramco()
     expect(insertedRecords[0]).toMatchObject({ rendimientoPromedio: 0 })
   })
 
   it("keeps a plausible odometer reading", async () => {
-    mocks.fetchAramcoMovements.mockResolvedValue([
+    mocks.fetchAramcoMovements.mockResolvedValue({ issues: [], movements: [
       movement({ vehicleOdometer: "1500", vehiclePreviousOdometer: "1000", quantity: 100 }),
-    ])
+    ] })
     await syncAramco()
     expect(insertedRecords[0]).toMatchObject({ rendimientoPromedio: 5 })
   })
 
   it("aggregates a plate's transactions into one row", async () => {
-    mocks.fetchAramcoMovements.mockResolvedValue([
+    mocks.fetchAramcoMovements.mockResolvedValue({ issues: [], movements: [
       movement({ transactionId: 1, quantity: 40, amountToPay: 20_000, cardNumber: "A" }),
       movement({ transactionId: 2, quantity: 60, amountToPay: 30_000, cardNumber: "A" }),
-    ])
+    ] })
     await syncAramco()
     expect(insertedRecords).toHaveLength(1)
     expect(insertedRecords[0]).toMatchObject({
@@ -190,20 +198,20 @@ describe("syncAramco", () => {
   it("splits diesel and AdBlue into separate batches", async () => {
     // `fuel_consumption_records` no tiene columna de producto: el producto vive
     // en `fuente`, así que un producto distinto es un lote distinto.
-    mocks.fetchAramcoMovements.mockResolvedValue([
+    mocks.fetchAramcoMovements.mockResolvedValue({ issues: [], movements: [
       movement({ transactionId: 1, productName: "Aramco ProForce Diesel B" }),
       movement({ transactionId: 2, productName: "ADBLUE-FLUA" }),
-    ])
+    ] })
     await syncAramco()
     expect(insertedBatches.map((batch) => batch.fuente).sort())
       .toEqual(["Aramco Fleet AdBlue", "Aramco Fleet Diesel"])
   })
 
   it("splits calendar months into separate batches", async () => {
-    mocks.fetchAramcoMovements.mockResolvedValue([
+    mocks.fetchAramcoMovements.mockResolvedValue({ issues: [], movements: [
       movement({ transactionId: 1, transactionDate: "2026-05-10T08:00:00" }),
       movement({ transactionId: 2, transactionDate: "2026-06-10T08:00:00" }),
-    ])
+    ] })
     await syncAramco()
     expect(insertedBatches.map((batch) => `${batch.periodoDesde}..${batch.periodoHasta}`).sort())
       .toEqual(["2026-05-01..2026-05-31", "2026-06-01..2026-06-30"])
@@ -220,10 +228,10 @@ describe("syncAramco", () => {
     // Una patente que ya está en el lote del mes en curso: sus totales cambiaron
     // porque llegó otra carga, así que hay que ACTUALIZARLA. El camino de "sólo
     // patentes que faltaban" la habría dejado con el total viejo.
-    mocks.fetchAramcoMovements.mockResolvedValue([
+    mocks.fetchAramcoMovements.mockResolvedValue({ issues: [], movements: [
       movement({ transactionId: 1, transactionDate: "2026-08-02T08:00:00", quantity: 40, amountToPay: 20_000 }),
       movement({ transactionId: 2, transactionDate: "2026-08-09T08:00:00", quantity: 60, amountToPay: 30_000 }),
-    ])
+    ] })
     // Totales viejos: el lote tenía sólo la primera carga.
     mocks.batchFindFirst.mockResolvedValue({ id: "batch-agosto", totalFilas: 1, totalPatentes: 1, totalTarjetas: 1, totalTransacciones: 1, totalCantidad: 40, totalMonto: 20_000 })
     mocks.recordsFindMany.mockResolvedValue([{ id: "rec-1", patente: "SZ GB 72", vehicleId: "v-1" }])
@@ -240,7 +248,7 @@ describe("syncAramco", () => {
   it("leaves the open month untouched when no new load arrived", async () => {
     // Sin esto, un mes abierto deja `updated_at` nuevo en todos sus registros
     // todos los días aunque nadie haya cargado combustible.
-    mocks.fetchAramcoMovements.mockResolvedValue([movement({ transactionDate: "2026-08-02T08:00:00" })])
+    mocks.fetchAramcoMovements.mockResolvedValue({ issues: [], movements: [movement({ transactionDate: "2026-08-02T08:00:00" })] })
     mocks.batchFindFirst.mockResolvedValue({
       id: "batch-agosto",
       hashArchivo: aramcoProjectionHash([movement({ transactionDate: "2026-08-02T08:00:00" })] as never),
@@ -266,7 +274,7 @@ describe("syncAramco", () => {
     // antes de que Aramco normalizara la patente, y la corrida de hoy emite
     // "SZGB72". Si la proyección volviera a identificar la fila por el texto
     // exacto, esto sería un borrado + inserción y el vínculo se perdería.
-    mocks.fetchAramcoMovements.mockResolvedValue([movement({ transactionDate: "2026-08-02T08:00:00" })])
+    mocks.fetchAramcoMovements.mockResolvedValue({ issues: [], movements: [movement({ transactionDate: "2026-08-02T08:00:00" })] })
     mocks.batchFindFirst.mockResolvedValue({ id: "batch-agosto", totalFilas: 0, totalPatentes: 0, totalTarjetas: 0, totalTransacciones: 0, totalCantidad: 0, totalMonto: 0 })
     mocks.recordsFindMany.mockResolvedValue([{ id: "rec-1", patente: "SZ GB 72", vehicleId: "vehiculo-elegido-a-mano" }])
 
@@ -276,7 +284,7 @@ describe("syncAramco", () => {
   })
 
   it("adopts the recomputed vehicle for a plate that was still unlinked", async () => {
-    mocks.fetchAramcoMovements.mockResolvedValue([movement({ transactionDate: "2026-08-02T08:00:00" })])
+    mocks.fetchAramcoMovements.mockResolvedValue({ issues: [], movements: [movement({ transactionDate: "2026-08-02T08:00:00" })] })
     mocks.batchFindFirst.mockResolvedValue({ id: "batch-agosto", totalFilas: 0, totalPatentes: 0, totalTarjetas: 0, totalTransacciones: 0, totalCantidad: 0, totalMonto: 0 })
     mocks.recordsFindMany.mockResolvedValue([{ id: "rec-1", patente: "SZ GB 72", vehicleId: null }])
 
@@ -288,7 +296,7 @@ describe("syncAramco", () => {
   it("still only adds missing plates to a closed month", async () => {
     // Un mes cerrado también se reconstruye si el proveedor cambia el
     // contenido. Esto corrige cargas históricas sin duplicar registros.
-    mocks.fetchAramcoMovements.mockResolvedValue([movement({ transactionDate: "2026-06-15T10:00:00" })])
+    mocks.fetchAramcoMovements.mockResolvedValue({ issues: [], movements: [movement({ transactionDate: "2026-06-15T10:00:00" })] })
     mocks.batchFindFirst.mockResolvedValue({ id: "batch-junio" })
     mocks.recordsFindMany.mockResolvedValue([{ id: "rec-1", patente: "SZ GB 72", vehicleId: "v-1" }])
 
@@ -300,10 +308,10 @@ describe("syncAramco", () => {
   })
 
   it("re-imports only the plates missing from an existing batch", async () => {
-    mocks.fetchAramcoMovements.mockResolvedValue([
+    mocks.fetchAramcoMovements.mockResolvedValue({ issues: [], movements: [
       movement({ transactionId: 1, vehicleRegistrationPlate: "SZ GB 72" }),
       movement({ transactionId: 2, vehicleRegistrationPlate: "RW YH 93" }),
-    ])
+    ] })
     mocks.vehiclesFindMany.mockResolvedValue([
       { id: "v-1", plate: "SZGB72", worksiteId: "W1" },
       { id: "v-2", plate: "RWYH93", worksiteId: "W1" },

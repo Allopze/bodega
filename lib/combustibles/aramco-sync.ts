@@ -31,8 +31,8 @@ import { normalizePlate } from "@/lib/combustibles/xlsx-utils"
 import { loadVehicleResolver } from "@/lib/combustibles/plate-resolver"
 import { AUTOMATED_SOURCES, aramcoSourceForProduct } from "@/lib/combustibles/fuel-sources"
 import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
-import { replaceBatchRecords } from "@/lib/combustibles/open-period"
-import { beginFuelProviderSyncRun, finishFuelProviderSyncRun, recordFuelProviderValidation } from "@/lib/combustibles/fuel-provider-ledger"
+import { emptyUnbackedProviderBatches, providerBatchKey, replaceBatchRecords } from "@/lib/combustibles/open-period"
+import { beginFuelProviderSyncRun, finishFuelProviderSyncRun, recordFuelProviderIssues, recordFuelProviderValidation } from "@/lib/combustibles/fuel-provider-ledger"
 import { validateProviderRows, type ProviderRowInput } from "@/lib/combustibles/provider-validation"
 import { reconcileFuelProviderRun } from "@/lib/combustibles/fuel-reconciliation"
 import { readAramcoConfig } from "@/lib/combustibles/aramco-settings"
@@ -42,6 +42,7 @@ import {
   authenticateAramco,
   fetchAramcoMovements,
   type AramcoMovement,
+  type AramcoMovementIssue,
 } from "@/lib/combustibles/aramco-client"
 
 /** Ventana por defecto del cron. Con ~1 transacción al mes sobra de lejos, y
@@ -69,7 +70,7 @@ export type AramcoSyncResult = {
   refreshed: number
   /** Lotes nuevos creados. */
   batches: number
-  /** Transacciones leídas de la API. */
+  /** Transacciones leídas de la API (válidas + descartadas por contrato). */
   transactions: number
   /** Lecturas de odómetro rescatadas de las transacciones. */
   meterReadings: number
@@ -292,12 +293,42 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
   const quality = { accepted: 0, rejected: 0, pending: 0 }
   try {
     const session = await authenticateAramco(config.documentNumber, config.password)
-    const movements = await fetchAramcoMovements(session, from, to)
-    receivedRows = movements.length
+    const { movements, issues } = await fetchAramcoMovements(session, from, to)
+    receivedRows = movements.length + issues.length
+
+    // Las filas fuera de contrato van al ledger de rechazos, igual que las de
+    // Copec: antes tumbaban la corrida entera y no dejaban rastro de cuál era.
+    if (issues.length > 0) {
+      await recordFuelProviderIssues(run.id, issues.map((issue: AramcoMovementIssue) => ({
+        input: {
+          provider: "aramco" as const,
+          accountKey: "fleet",
+          sourceRowKey: issue.transactionId !== null ? String(issue.transactionId) : `${from}:${to}:invalid:${issue.index}`,
+          externalId: null,
+          occurredAt: from,
+          plate: null,
+          product: null,
+          quantity: null,
+          amount: null,
+          payload: issue.payload,
+        },
+        code: "source_row_invalid",
+        message: issue.reason,
+      })))
+      quality.rejected += issues.length
+    }
+
     if (movements.length === 0) {
-      await finishFuelProviderSyncRun(run.id, { status: "success", receivedFrom: from, receivedTo: to, rowsReceived: 0, rowsAccepted: 0, rowsRejected: 0, rowsPending: 0 })
+      // Sin movimientos NO se barren lotes obsoletos: una respuesta vacía puede
+      // ser un mes sin consumo o un portal a medio responder, y vaciar contra
+      // ella borraría datos buenos.
+      await finishFuelProviderSyncRun(run.id, {
+        status: issues.length > 0 ? "partial" : "success",
+        receivedFrom: from, receivedTo: to,
+        rowsReceived: receivedRows, rowsAccepted: 0, rowsRejected: issues.length, rowsPending: 0,
+      })
       runFinished = true
-      return empty
+      return { ...empty, transactions: receivedRows, rowsRejected: issues.length }
     }
 
     const accountKey = "fleet"
@@ -342,6 +373,8 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
 
     // (mes, fuente) -> (faena -> transacciones). El grupo es la unidad de lote.
     const groups = new Map<string, Map<string, AramcoMovement[]>>()
+    /** Lotes que esta respuesta respalda; el resto se vacía al final. */
+    const backedBatches = new Set<string>()
     const pendingPlates = new Set<string>()
     for (const movement of movements) {
       if (!acceptedIdentityKeys.has(`external:${movement.transactionId}`)) continue
@@ -367,10 +400,12 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
       imported: 0,
       refreshed: 0,
       batches: 0,
-      transactions: movements.length,
+      transactions: receivedRows,
       meterReadings: savedReadings.saved,
       rowsAccepted: persisted.accepted,
-      rowsRejected: persisted.rejected,
+      // Las filas fuera de contrato ya se registraron arriba; se suman acá para
+      // que el conteo de la corrida cuadre con lo que la API entregó.
+      rowsRejected: persisted.rejected + issues.length,
       rowsPending: persisted.pending,
       pendingPlates: [...pendingPlates],
       skippedGroups: [],
@@ -510,8 +545,27 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
       if (outcome.foreignSource) {
         result.skippedGroups.push({ periodo: month, source, foreignSource: outcome.foreignSource })
       }
+      backedBatches.add(providerBatchKey(worksiteId, period.from, period.to, source))
     }
   }
+
+    // Lotes de la ventana que la respuesta de esta corrida ya NO respalda: un
+    // vehículo que cambió de faena, o un mes cuyas cargas Aramco retiró. La
+    // reconstrucción por hash sólo visita los grupos presentes, así que sin este
+    // barrido ese lote conservaba litros y monto para siempre.
+    //
+    // Sólo se barren las fuentes que ESTA corrida sí respaldó con datos: barrer
+    // una fuente ausente de la respuesta confundiría "el mes no tuvo gasolina"
+    // con "el portal no devolvió la gasolina de este mes".
+    const backedSources = [...new Set([...backedBatches].map((key) => key.split("|")[3]!))]
+    const unbacked = await emptyUnbackedProviderBatches(db, {
+      sources: backedSources,
+      from,
+      to,
+      keep: backedBatches,
+      lockNamespace: "fuel_aramco",
+    })
+    result.refreshed += unbacked.records
 
     // La conciliación es un modelo derivado que se calcula DESPUÉS de importar:
     // si falla, el lote ya está commiteado y no se pierde nada, así que no se

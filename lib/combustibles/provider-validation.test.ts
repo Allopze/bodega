@@ -76,4 +76,28 @@ describe("provider validation", () => {
     expect(result.accepted[0]).toMatchObject({ identityKey: "external:aramco-123", externalId: "aramco-123" })
     expect(result.accepted[0]?.fingerprint).toBe(fingerprintProviderRow(input))
   })
+
+  it("conserva la patente cruda además de la clave de comparación", () => {
+    // `source_plate` guardaba la forma compacta para las aceptadas y la cruda
+    // para las rechazadas: dos representaciones en la misma columna. La columna
+    // significa "lo que mandó el proveedor" —así la lee la exportación de
+    // calidad, donde el operador va a buscarla al portal—; `plate` es la clave
+    // de matching. Mismo par que `sourceProduct`/`product`.
+    const result = validateProviderRows([row({ plate: "RW YH 93" })], window)
+
+    expect(result.accepted[0]).toMatchObject({ plate: "RWYH93", sourcePlate: "RW YH 93" })
+  })
+
+  it("acepta gasolina y kerosene en vez de dejarlos sin mapping", () => {
+    // Caían en `pending` por "producto sin mapping canónico" y sus litros nunca
+    // llegaban a un lote, con lo que la fuente `Aramco Fleet Otros` —creada
+    // justamente para recogerlos— era inalcanzable.
+    const result = validateProviderRows([
+      row({ sourceRowKey: "g", product: "Aramco Gasolina 93" }),
+      row({ sourceRowKey: "k", product: "Kerosene" }),
+    ], window)
+
+    expect(result.accepted.map((accepted) => accepted.product)).toEqual(["gasolina", "kerosene"])
+    expect(result.pending).toEqual([])
+  })
 })

@@ -42,6 +42,8 @@ function acceptedRow(externalId: string): ProviderValidationResult {
       fingerprint: `fp-${externalId}`,
       occurredAt: "2026-07-21T18:31:26",
       plate: "RWYH93",
+      sourcePlate: "RW YH 93",
+      granularity: "transaction" as const,
       sourceProduct: "Aramco ProForce Diesel B",
       product: "diesel",
       quantity: 37.4319,
@@ -84,6 +86,22 @@ describe("proveedor de las transacciones de integración", () => {
   it("toma el id del catálogo, no una constante del código", async () => {
     await inMemoryDb.insert(schema.fuelSuppliers).values({ id: aramcoId, name: "ARAMCO", isActive: true })
     expect((await runFor("16044916"))?.supplierId).toBe(aramcoId)
+  })
+
+  it("reconoce la ficha bajo el nombre comercial real del operador", async () => {
+    // Aramco Fleet es la plataforma de Esmax (ex-Petrobras Chile): la ficha del
+    // catálogo casi nunca dice "Aramco". Buscar sólo esa palabra devolvía null
+    // en producción y dejaba TODA la conciliación de Aramco sin cruzar.
+    // Se desactiva en vez de borrarse: la ficha ya tiene transacciones
+    // apuntándola, y de paso queda cubierto que la búsqueda respeta `isActive`.
+    await inMemoryDb.update(schema.fuelSuppliers).set({ isActive: false }).where(eq(schema.fuelSuppliers.id, aramcoId))
+    const esmaxId = nanoid()
+    await inMemoryDb.insert(schema.fuelSuppliers).values({ id: esmaxId, name: "Esmax Distribución SpA", isActive: true })
+
+    expect((await runFor("16044917"))?.supplierId).toBe(esmaxId)
+
+    await inMemoryDb.update(schema.fuelSuppliers).set({ isActive: false }).where(eq(schema.fuelSuppliers.id, esmaxId))
+    await inMemoryDb.update(schema.fuelSuppliers).set({ isActive: true }).where(eq(schema.fuelSuppliers.id, aramcoId))
   })
 
   it("un duplicado no degrada la fila aceptada que ya estaba en el ledger", async () => {

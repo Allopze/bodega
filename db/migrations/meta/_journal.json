@@ -1611,6 +1611,20 @@
       "when": 1787959830656,
       "tag": "0229_normalize_unit_of_measure",
       "breakpoints": true
+    },
+    {
+      "idx": 230,
+      "version": "7",
+      "when": 1788000000000,
+      "tag": "0230_seed_fuel_gasoline_kerosene",
+      "breakpoints": true
+    },
+    {
+      "idx": 231,
+      "version": "7",
+      "when": 1788000001000,
+      "tag": "0231_provider_transaction_granularity",
+      "breakpoints": true
     }
   ]
 }

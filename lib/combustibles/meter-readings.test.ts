@@ -88,11 +88,14 @@ describe("aramcoMovementReading", () => {
     serviceStationName: "ESMAX LOS ANGELES",
   }
 
-  it("normaliza la patente con espacios y conserva la hora de pared del portal", () => {
+  it("normaliza la patente y lleva la hora de pared chilena al mismo instante UTC que Copec", () => {
+    // La columna `occurred_at` es UNA sola serie para las tres fuentes, y
+    // `copec_tct`/`gps_onway` guardan instantes UTC. Guardar la hora de pared
+    // cruda dejaba al mismo equipo con la serie desordenada en ~4 h.
     const reading = aramcoMovementReading(movement)!
     expect(reading.plate).toBe("RWYH93")
     expect(reading.sourceRef).toBe("90210")
-    expect(reading.occurredAt).toBe("2026-08-18T07:49:32")
+    expect(reading.occurredAt).toBe("2026-08-18T11:49:32.000Z")
     expect(reading.value).toBe(412_300)
     expect(reading.liters).toBe(120.5)
     expect(reading.cardNumber).toBe("4455")

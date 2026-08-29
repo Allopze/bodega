@@ -33,10 +33,19 @@ export interface ParsedMeterReading {
   rawPayload: Record<string, unknown>
 }
 
-/** Columnas del informe que identifican personas: no se copian a la tabla. */
+/** Columnas del informe que identifican personas: no se copian a ninguna tabla. */
 const PERSONAL_COLUMNS = new Set(["rut chofer", "rut atendedor"].map(normKey))
 
-function withoutPersonalData(record: Record<string, unknown>): Record<string, unknown> {
+/**
+ * Fila del informe sin los identificadores de persona.
+ *
+ * Exportada porque el detalle crudo de Copec se guarda en DOS tablas: acá, en
+ * `fuel_meter_readings.raw_payload`, y —completo— en
+ * `fuel_consumption_records.raw_row.detalle`. La minimización se aplicaba sólo
+ * a la primera, así que los mismos RUT que se decidió no persistir seguían
+ * entrando por la otra puerta, y a la tabla más consultada de las dos.
+ */
+export function withoutPersonalData(record: Record<string, unknown>): Record<string, unknown> {
   const clean: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(record)) {
     if (PERSONAL_COLUMNS.has(normKey(key))) continue
@@ -106,6 +115,33 @@ export function copecDetailReading(record: Record<string, unknown>): ParsedMeter
 }
 
 /**
+ * Instante UTC de una fecha-hora de pared chilena sin zona (`2026-08-18T07:49:32`).
+ *
+ * `fuel_meter_readings.occurred_at` es la MISMA serie para las tres fuentes, y
+ * `copec_tct` y `gps_onway` guardan instantes UTC reales. Aramco guardaba su
+ * `transactionDate` tal cual —hora de pared, sin zona—, así que un mismo equipo
+ * con cargas en los dos proveedores quedaba con la serie desordenada en ~4 h y,
+ * como la columna es `text`, con dos formatos de distinta longitud que se
+ * comparan lexicográficamente. Se normaliza al mismo instante UTC que el resto.
+ *
+ * Un valor que YA trae zona (`Z` u offset) se respeta: sólo se interpreta como
+ * hora chilena lo que viene sin ella.
+ */
+export function chileanWallClockToInstant(value: string): string | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  if (/(?:Z|[+-]\d{2}:?\d{2})$/.test(trimmed)) {
+    const zoned = new Date(trimmed)
+    return Number.isNaN(zoned.getTime()) ? null : zoned.toISOString()
+  }
+  // `Z` postizo para que los getters UTC devuelvan los componentes de pared tal
+  // como vinieron; `santiagoInstant` les aplica el desfase real de la fecha.
+  const wall = new Date(`${trimmed}${/T\d{2}:\d{2}/.test(trimmed) ? "" : "T00:00:00"}Z`)
+  if (Number.isNaN(wall.getTime())) return null
+  return santiagoInstant(wall, wall)
+}
+
+/**
  * Un movimiento de la API de Aramco. El portal entrega el odómetro como string y
  * a veces nulo, y `transactionId` es la clave estable de la transacción.
  */
@@ -114,15 +150,19 @@ export function aramcoMovementReading(movement: Record<string, unknown>): Parsed
   const sourceRef = text(movement["transactionId"])
   const occurredAtRaw = text(movement["transactionDate"])
   if (!plate || !sourceRef || !occurredAtRaw) return null
+  // `transactionDate` viene como hora de pared chilena sin zona: se convierte al
+  // mismo instante UTC que guardan `copec_tct` y `gps_onway`. La PROYECCIÓN
+  // mensual sigue usando la hora de pared cruda a propósito (ver `monthOf` en
+  // `aramco-sync`): ahí lo que importa es el mes civil, no el instante.
+  const occurredAt = chileanWallClockToInstant(occurredAtRaw)
+  if (!occurredAt) return null
 
   const value = Number(movement["vehicleOdometer"] ?? Number.NaN)
   const liters = Number(movement["quantity"] ?? 0)
   return {
     plate,
     sourceRef,
-    // `transactionDate` viene como hora local de pared sin zona; se conserva tal
-    // cual, igual que hace la proyección mensual de Aramco.
-    occurredAt: occurredAtRaw,
+    occurredAt,
     value: Number.isFinite(value) && value > 0 ? value : null,
     liters: liters > 0 ? liters : null,
     stationName: text(movement["serviceStationName"]) || null,
@@ -210,6 +250,11 @@ export async function saveMeterReadings(
   return { saved: values.length, unresolved }
 }
 
+/** Instante UTC del último segundo del día civil chileno `YYYY-MM-DD`. */
+function endOfChileanDayUtc(plainDate: string): string {
+  return santiagoInstant(new Date(`${plainDate}T00:00:00Z`), new Date("1970-01-01T23:59:59Z"))
+}
+
 /** `excluded.<col>` — la fila que el INSERT intentó meter. */
 function sqlExcluded(column: string) {
   return sql.raw(`excluded.${column}`)
@@ -255,7 +300,11 @@ export async function lastKnownMeterReading(
     .where(and(
       eq(fuelMeterReadings.vehicleId, vehicleId),
       eq(fuelMeterReadings.meterType, meterType),
-      options.before ? lte(fuelMeterReadings.occurredAt, `${options.before}T23:59:59.999Z`) : undefined,
+      // Fin del día CIVIL chileno expresado en UTC, no `T23:59:59.999Z`: la
+      // columna guarda instantes UTC, así que una carga chilena de las 21:30 se
+      // graba al día siguiente en UTC y el corte ingenuo la dejaba fuera del
+      // día que el operador declaró.
+      options.before ? lte(fuelMeterReadings.occurredAt, endOfChileanDayUtc(options.before)) : undefined,
     ))
     .orderBy(desc(fuelMeterReadings.occurredAt))
     .limit(1)

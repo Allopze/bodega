@@ -202,7 +202,7 @@ describe("fetchAramcoMovements", () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ totalPages: 2, data: [{ ...VALID_MOVEMENT, transactionId: 1 }] }))
       .mockResolvedValueOnce(jsonResponse({ totalPages: 2, data: [{ ...VALID_MOVEMENT, transactionId: 2 }] }))
-    const movements = await fetchAramcoMovements(session, "2026-01-01", "2026-12-31")
+    const { movements } = await fetchAramcoMovements(session, "2026-01-01", "2026-12-31")
     expect(movements.map((movement) => movement.transactionId)).toEqual([1, 2])
     expect(decodeFilter(fetchMock.mock.calls[1]![0])).toMatchObject({ pageNumber: 2 })
   })
@@ -213,17 +213,37 @@ describe("fetchAramcoMovements", () => {
     expect(fetchMock.mock.calls[0]![1].headers.Authorization).toBe("Bearer tok")
   })
 
-  it("rejects malformed movements before they reach aggregation", async () => {
+  it("reports a malformed movement without discarding the valid ones", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ totalPages: 1, data: [
+      { ...VALID_MOVEMENT, transactionId: 1 },
+      { ...VALID_MOVEMENT, transactionId: 2, quantity: null },
+    ] }))
+
+    const { movements, issues } = await fetchAramcoMovements(session, "2026-08-01", "2026-08-31")
+    expect(movements.map((movement) => movement.transactionId)).toEqual([1])
+    expect(issues).toEqual([{ index: 2, transactionId: 2, reason: "contrato de movimiento inválido", payload: expect.anything() }])
+  })
+
+  it("fails loudly only when NO row matches the contract", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ totalPages: 1, data: [{ ...VALID_MOVEMENT, quantity: null }] }))
 
     await expect(fetchAramcoMovements(session, "2026-08-01", "2026-08-31"))
       .rejects.toBeInstanceOf(AramcoPayloadValidationError)
   })
 
-  it("rejects repeated transaction ids from paginated responses", async () => {
+  it("drops an identical repeat from paginated responses without failing the run", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ totalPages: 1, data: [VALID_MOVEMENT, { ...VALID_MOVEMENT }] }))
 
-    await expect(fetchAramcoMovements(session, "2026-08-01", "2026-08-31"))
-      .rejects.toBeInstanceOf(AramcoPayloadValidationError)
+    const { movements, issues } = await fetchAramcoMovements(session, "2026-08-01", "2026-08-31")
+    expect(movements).toHaveLength(1)
+    expect(issues).toEqual([])
+  })
+
+  it("sends a repeated id with different content to review instead of picking one", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ totalPages: 1, data: [VALID_MOVEMENT, { ...VALID_MOVEMENT, quantity: 99 }] }))
+
+    const { movements, issues } = await fetchAramcoMovements(session, "2026-08-01", "2026-08-31")
+    expect(movements).toHaveLength(1)
+    expect(issues[0]).toMatchObject({ reason: "transactionId repetido con contenido distinto" })
   })
 })

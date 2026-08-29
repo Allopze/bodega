@@ -6,6 +6,7 @@ import { fuelProviderSyncRuns, systemSettings } from "@/db/schema"
 import { guardPermission } from "@/lib/auth/can"
 import { civilDate, civilDateRange } from "@/lib/validation/dates"
 import { getCopecSyncPlan, setCopecSyncStartDate, syncCopecReportPeriod } from "@/lib/combustibles/copec-sync"
+import { withCronLock } from "@/lib/services/cron-lock"
 import { isOpenPeriod } from "@/lib/combustibles/open-period"
 import { z } from "zod"
 
@@ -123,7 +124,16 @@ export async function runCopecSyncPeriodAction(period: { from: string; to: strin
 
     // La acción manual usa al operador autenticado. El importador configurado
     // queda reservado para el cron, que no tiene sesión de usuario.
-    const result = await syncCopecReportPeriod(periodRange, session.user.id)
+    //
+    // Bajo el MISMO lock que el cron: Copec abre una sesión de navegador con
+    // login por descarga y el portal es de sesión única, así que un botón
+    // manual durante la corrida automática pelea por la sesión del portal y
+    // por el cursor (el `saveState` optimista descarta el avance del perdedor).
+    const outcome = await withCronLock("fuel-copec-sync", () => syncCopecReportPeriod(periodRange, session.user.id))
+    if ("skipped" in outcome) {
+      return { ok: false, message: "La sincronización automática de Copec está corriendo en este momento. Espera a que termine e inténtalo nuevamente." }
+    }
+    const result = outcome
     // `openPeriod` lo decide el servidor: el cliente no puede compararlo contra
     // "hoy" sin arriesgar el desfase de zona horaria que ya costó un bug acá.
     return { ok: true, imported: result.imported, refreshed: result.refreshed, received: result.received, pending: result.pending, rowsReceived: result.rowsReceived, rowsAccepted: result.rowsAccepted, rowsRejected: result.rowsRejected, rowsPending: result.rowsPending, unavailable: result.unavailable, reports: result.reports.length, unmappedCards: result.unmappedCards, openPeriod: isOpenPeriod(periodRange.to) }

@@ -61,6 +61,25 @@ function env(name: string): string {
   return value
 }
 
+/**
+ * Si el servidor tiene con qué entrar al portal, y si el cron tiene permiso.
+ *
+ * Existe para que el cron distinga "nadie configuró esto todavía" de "la
+ * sincronización falló": sin credenciales, `env()` lanzaba dentro de la corrida
+ * y la ruta reportaba `failed`, o sea una alerta diaria por una integración que
+ * simplemente no está en uso. Aramco ya hacía esta distinción con
+ * `readAramcoConfig`; Copec no la tenía.
+ *
+ * `COPEC_SYNC_ENABLED` sólo apaga si vale exactamente `"false"`: el default es
+ * seguir corriendo, para no apagar la integración de nadie por omisión.
+ */
+export function copecSyncAvailability(): { hasCredentials: boolean; syncEnabled: boolean } {
+  return {
+    hasCredentials: Boolean(process.env.COPEC_USERNAME?.trim() && process.env.COPEC_PASSWORD?.trim()),
+    syncEnabled: process.env.COPEC_SYNC_ENABLED?.trim() !== "false",
+  }
+}
+
 function assertDate(value: string, field: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error(`${field} debe tener formato YYYY-MM-DD`)
 }

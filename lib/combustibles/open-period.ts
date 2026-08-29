@@ -20,9 +20,9 @@
  * se alinee solo con el canon en el refresco siguiente.
  */
 
-import { and, eq, inArray } from "drizzle-orm"
+import { and, eq, gte, inArray, lte, ne, sql } from "drizzle-orm"
 import { type DB } from "@/db"
-import { fuelConsumptionRecords } from "@/db/schema"
+import { fuelConsumptionRecords, fuelImportBatches } from "@/db/schema"
 import { todayInChile } from "@/lib/utils"
 import { type BatchTotals } from "@/lib/combustibles/consumption-calculations"
 import { plateMatchKey } from "@/lib/combustibles/xlsx-utils"
@@ -176,4 +176,88 @@ export function batchTotalsUnchanged(stored: StoredBatchTotals, computed: BatchT
     && stored.totalTransacciones === computed.totalTransacciones
     && stored.totalCantidad === computed.totalCantidad
     && stored.totalMonto === computed.totalMonto
+}
+
+
+/* ── Lotes que la fuente dejó de respaldar ───────────────────────────────── */
+
+/** Clave de un lote de proveedor: (faena, período, fuente). */
+export function providerBatchKey(worksiteId: string, from: string, to: string, source: string): string {
+  return `${worksiteId}|${from}|${to}|${source}`
+}
+
+/**
+ * Vacía los lotes de la ventana sincronizada que la fuente ya NO respalda.
+ *
+ * La reconstrucción por hash sólo alcanza a los `(faena, período, fuente)` que
+ * APARECEN en la respuesta del proveedor. Un grupo que desaparece —un vehículo
+ * que cambia de faena, o un mes cuyas cargas el proveedor retiró— no se visita
+ * nunca, así que su lote conservaba litros y monto para siempre, sumando a los
+ * totales de una faena que ya no los tuvo.
+ *
+ * Se VACÍA, no se borra ni se marca `revertido`: `revertido` es un acto humano
+ * con significado propio (alguien deshizo una importación), y borrar el lote
+ * perdería la evidencia de que ese período sí se sincronizó. Un lote en cero es
+ * la lectura honesta: "acá no quedó consumo".
+ *
+ * El llamador es responsable de NO invocarla cuando la respuesta del proveedor
+ * fue parcial o vacía: vaciar contra una descarga incompleta borraría datos
+ * buenos. Por eso recibe explícitamente las fuentes que sí se pudieron leer.
+ */
+export async function emptyUnbackedProviderBatches(
+  db: Pick<DB, "query" | "transaction">,
+  params: {
+    /** Sólo las fuentes cuya descarga se leyó completa en esta corrida. */
+    sources: string[]
+    from: string
+    to: string
+    /** Claves de `providerBatchKey` que la respuesta sí respalda. */
+    keep: Set<string>
+    /** Prefijo del lock por lote, para no cruzarse con el insert/refresh. */
+    lockNamespace: string
+  },
+): Promise<{ emptied: number; records: number }> {
+  if (params.sources.length === 0) return { emptied: 0, records: 0 }
+
+  const candidates = await db.query.fuelImportBatches.findMany({
+    where: and(
+      inArray(fuelImportBatches.fuente, params.sources),
+      gte(fuelImportBatches.periodoDesde, params.from),
+      lte(fuelImportBatches.periodoHasta, params.to),
+      ne(fuelImportBatches.estado, "revertido"),
+    ),
+    columns: { id: true, worksiteId: true, periodoDesde: true, periodoHasta: true, fuente: true, totalFilas: true },
+  })
+
+  let emptied = 0
+  let records = 0
+  for (const batch of candidates) {
+    const key = providerBatchKey(batch.worksiteId, batch.periodoDesde, batch.periodoHasta, batch.fuente)
+    if (params.keep.has(key)) continue
+    if (batch.totalFilas === 0) continue
+
+    const lockKey = `${params.lockNamespace}:${batch.worksiteId}:${batch.periodoDesde}:${batch.periodoHasta}:${batch.fuente}`
+    const removed = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${lockKey}))`)
+      const replacement = await replaceBatchRecords(tx, batch.id, [])
+      await tx.update(fuelImportBatches).set({
+        totalFilas: 0,
+        filasValidas: 0,
+        filasInvalidas: 0,
+        totalPatentes: 0,
+        totalTarjetas: 0,
+        totalTransacciones: 0,
+        totalCantidad: 0,
+        totalMonto: 0,
+        // El hash deja de describir un contenido: se anula para que la corrida
+        // siguiente reconstruya el lote si la fuente vuelve a respaldarlo.
+        hashArchivo: "",
+        updatedAt: new Date().toISOString(),
+      }).where(eq(fuelImportBatches.id, batch.id))
+      return replacement.removed
+    })
+    if (removed > 0 || batch.totalFilas > 0) emptied++
+    records += removed
+  }
+  return { emptied, records }
 }

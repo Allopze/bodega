@@ -8,7 +8,7 @@
 
 import ExcelJS from "exceljs"
 import { normKey, sheetToRecords, parseChileanNumber, normalizePlate } from "./xlsx-utils"
-import { copecDetailReading, type ParsedMeterReading } from "./meter-readings"
+import { copecDetailReading, withoutPersonalData, type ParsedMeterReading } from "./meter-readings"
 import { summarizeMeterPerformance } from "./meter-performance"
 
 export { normalizePlate }
@@ -98,7 +98,9 @@ function parseCopecDetail(records: Record<string, unknown>[]): ConsumptionImport
     }
     const card = String(get("Tarjeta", "N° Tarjeta", "Numero Tarjeta") ?? "").trim()
     if (card) group.cards.add(card)
-    group.transactions.push(record)
+    // Sanitizado ANTES de acumular: `group.transactions` termina en
+    // `rawRow.detalle`, que es lo que se guarda en la fila de consumo.
+    group.transactions.push(withoutPersonalData(record))
     group.quantity += quantity
     group.amount += amount
     const reading = copecDetailReading(record)

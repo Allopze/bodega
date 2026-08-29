@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { cronRequestSource, parseCronAllowedSources, verifyCronRequest } from "@/lib/security/cron-auth"
 import { syncCopecReports } from "@/lib/combustibles/copec-sync"
+import { copecSyncAvailability } from "@/lib/combustibles/copec-reports"
 import { fuelCronContractFor } from "@/lib/combustibles/fuel-cron-contract"
 import { logger } from "@/lib/logger"
 import { withCronLock } from "@/lib/services/cron-lock"
@@ -30,6 +31,17 @@ export async function GET(request: NextRequest) {
   }
   if (!await isRouteOperational("/combustibles/importar")) {
     return respond(fuelCronContractFor({ disabled: true }))
+  }
+
+  // Sin credenciales o con el sync apagado no es una falla: es que nadie lo
+  // configuró todavía. Antes `env()` lanzaba dentro de la corrida y la ruta
+  // reportaba `failed` todos los días por una integración fuera de uso. Es el
+  // mismo criterio que ya aplicaba la ruta de Aramco.
+  const availability = copecSyncAvailability()
+  if (!availability.hasCredentials || !availability.syncEnabled) {
+    return respond(fuelCronContractFor({ disabled: true }), {
+      reason: availability.hasCredentials ? "sync deshabilitado" : "sin credenciales",
+    })
   }
 
   try {

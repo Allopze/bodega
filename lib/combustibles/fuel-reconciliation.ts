@@ -299,19 +299,46 @@ export async function reconcileProviderTransactionToCycleMovement(
  * atrás va a necesitar reconciliar bajo demanda, que es lo que corresponde
  * cuando exista la pantalla de revisión.
  */
-export async function reconcileFuelProviderRun(runId: string): Promise<{ reconciled: number; matched: number }> {
-  const transactions = await db.query.fuelProviderTransactions.findMany({
+export async function reconcileFuelProviderRun(runId: string): Promise<{ reconciled: number; matched: number; skippedAggregates: number }> {
+  const accepted = await db.query.fuelProviderTransactions.findMany({
     where: and(eq(fuelProviderTransactions.syncRunId, runId), eq(fuelProviderTransactions.status, "accepted")),
-    columns: { id: true },
+    columns: { id: true, provider: true, supplierId: true, granularity: true },
   })
+
+  // La evidencia agregada (informe TCT de Copec: una fila por patente y MES) no
+  // es comparable con una carga interna. `decideFuelLoadMatch` exige misma
+  // fecha civil y litros/monto dentro de tolerancia, así que le daba
+  // `unmatched` a TODAS: un veredicto que decía "descuadre" donde sólo había
+  // granularidades distintas, y que inflaba `unmatchedReconciliationLinks` del
+  // preflight con ruido puro. Se saltan explícitamente.
+  const transactions = accepted.filter((transaction) => transaction.granularity !== "period_aggregate")
+  const skippedAggregates = accepted.length - transactions.length
+
+  // Sin ficha en `fuel_suppliers` el primer filtro de `decideFuelLoadMatch`
+  // corta siempre (`evidence.supplierId !== null`), así que conciliar dejaría
+  // un `unmatched` por transacción y ninguna pista de la causa. Se corta antes
+  // y se reporta: el llamador lo convierte en una corrida `partial` con motivo,
+  // que es donde el operador lo puede ver.
+  const orphanProviders = [...new Set(
+    transactions.filter((transaction) => transaction.supplierId === null).map((transaction) => transaction.provider),
+  )]
+  if (transactions.length > 0 && orphanProviders.length > 0 && transactions.every((transaction) => transaction.supplierId === null)) {
+    throw new Error(
+      `No hay proveedor activo en el catálogo de combustibles para ${orphanProviders.join(", ")}: `
+      + "crea su ficha en Combustibles → Proveedores para que la conciliación pueda cruzar sus transacciones.",
+    )
+  }
 
   let matched = 0
   for (const transaction of transactions) {
-    const [load, cycle] = [
-      await reconcileProviderTransactionToFuelLoads(transaction.id),
-      await reconcileProviderTransactionToCycleMovement(transaction.id),
-    ]
+    // Secuencial a propósito y sin `Promise.all`: las dos ramas escriben en
+    // `fuel_reconciliation_links` para la MISMA transacción y cada
+    // `replaceLink` abre su transacción con un DELETE por (transacción, tipo).
+    // El `const [a, b] = [await ..., await ...]` anterior parecía paralelo y no
+    // lo era; esto dice lo que hace.
+    const load = await reconcileProviderTransactionToFuelLoads(transaction.id)
+    const cycle = await reconcileProviderTransactionToCycleMovement(transaction.id)
     if (load.status === "matched" || cycle.status === "matched") matched++
   }
-  return { reconciled: transactions.length, matched }
+  return { reconciled: transactions.length, matched, skippedAggregates }
 }

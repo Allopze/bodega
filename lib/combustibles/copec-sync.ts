@@ -11,7 +11,7 @@ import { loadVehicleResolver } from "@/lib/combustibles/plate-resolver"
 import { saveMeterReadings } from "@/lib/combustibles/meter-readings"
 import { AUTOMATED_SOURCES, copecTctSource } from "@/lib/combustibles/fuel-sources"
 import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
-import { isOpenPeriod, replaceBatchRecords } from "@/lib/combustibles/open-period"
+import { emptyUnbackedProviderBatches, isOpenPeriod, providerBatchKey, replaceBatchRecords } from "@/lib/combustibles/open-period"
 import { beginFuelProviderSyncRun, finishFuelProviderSyncRun, recordFuelProviderIssues, recordFuelProviderValidation } from "@/lib/combustibles/fuel-provider-ledger"
 import { validateProviderRows, type ProviderRowInput } from "@/lib/combustibles/provider-validation"
 import { reconcileFuelProviderRun } from "@/lib/combustibles/fuel-reconciliation"
@@ -47,6 +47,18 @@ interface SyncState { cursor: string | null; taeCursor: string | null; lastRunAt
  * un timeout garantizado con el lock tomado. Se recupera de a poco.
  */
 const MAX_TAE_CATCHUP_MONTHS = 3
+
+/**
+ * Tope de meses TCT por corrida.
+ *
+ * Cada período abre DOS sesiones de navegador con login (una por canal, TCT y
+ * TAE) y el cron corta a los 5 minutos (`maxDuration = 300`). Sin tope, una
+ * instalación sin cursor planifica desde `DEFAULT_START` —más de 60 meses— y
+ * cada corrida muere por timeout en el mismo lugar sin avanzar del todo. Con
+ * tope, el cursor avanza lo que alcanzó y la corrida siguiente sigue: es el
+ * mismo criterio que `MAX_TAE_CATCHUP_MONTHS` ya aplicaba al canal TAE.
+ */
+const MAX_PERIODS_PER_RUN = 4
 
 export interface CopecSyncStartOptions {
   currentStart: string
@@ -186,12 +198,21 @@ function resolveStart(current: SyncState, minimumStart: string): string {
  * `invalidRows` entra al hash aunque no se proyecte: sin él, un archivo que gana
  * una fila inválida sin cambiar ninguna válida salía por el atajo de "hash
  * idéntico, no hay trabajo" y el lote se quedaba con su conteo de filas
- * rechazadas viejo para siempre. */
+ * rechazadas viejo para siempre.
+ *
+ * Las filas se ORDENAN por patente antes de hashear. Copec regenera el Excel en
+ * cada descarga, así que su orden de filas no es parte del contenido: hashearlo
+ * en orden de archivo hacía que un reordenamiento sin ningún cambio de datos
+ * invalidara el hash y disparara un `replaceBatchRecords` completo, con
+ * `updated_at` nuevo en todos los registros del lote. Es el mismo criterio que
+ * `aramcoProjectionHash`, que ordena por `transactionId`. */
 export function copecProjectionHash(rows: ParsedConsumptionRow[], invalidRows = 0): string {
   return createHash("sha256")
     .update(JSON.stringify({
       invalidRows,
-      rows: rows.map((row) => ({
+      rows: [...rows]
+        .sort((left, right) => plateMatchKey(left.patente).localeCompare(plateMatchKey(right.patente)))
+        .map((row) => ({
         patente: row.patente,
         tarjetas: row.numeroTarjetas,
         transacciones: row.numeroTransacciones,
@@ -295,8 +316,12 @@ export async function getCopecSyncPlan(): Promise<{ from: string; to: string; pe
   const minimumStart = minimumStartFrom(latestImportedUntil)
   const from = planStartWithTaeCatchup(current.taeCursor, resolveStart(current, minimumStart))
   // Incluye el mes en curso: su lote se refresca en cada corrida.
-  const to = lastDayOfMonth(today())
-  return { from, to, periods: buildCopecSyncPeriods(from, to), pending: current.pending.length }
+  const all = buildCopecSyncPeriods(from, lastDayOfMonth(today()))
+  // `to` sigue al recorte, no al horizonte: la UI muestra el plan de ESTA
+  // corrida, y anunciar un `to` que los períodos no alcanzan es mentirle.
+  const periods = all.slice(0, MAX_PERIODS_PER_RUN)
+  const to = periods.at(-1)?.to ?? lastDayOfMonth(today())
+  return { from, to, periods, pending: current.pending.length }
 }
 
 interface PeriodSyncResult {
@@ -304,6 +329,8 @@ interface PeriodSyncResult {
   /** Registros de un período abierto cuyos totales se actualizaron. */
   refreshed: number
   pending: number
+  /** Patentes sin vehículo vistas EN ESTE período. */
+  pendingPlates: string[]
   /** Solo informes TCT. El guard de "el portal no entregó nada" se mide con esto:
    *  si un informe TAE contara aquí, una caída de TCT avanzaría el cursor igual. */
   reports: string[]
@@ -351,6 +378,8 @@ async function importCopecPeriod(
   let rowsRejected = 0
   let rowsPending = 0
   let meterReadings = 0
+  /** Lotes que los informes de ESTE período respaldan; el resto se vacía. */
+  const backedBatches = new Set<string>()
   const downloads = await downloadCopecReports(
     (["diesel", "bluemax"] as const).map((product) => ({ product, from, to })),
   )
@@ -387,6 +416,10 @@ async function importCopecPeriod(
       quantity: row.cantidadUnidad,
       amount: row.monto,
       payload: row.rawRow,
+      // La fila del informe TCT es el agregado del MES para esa patente, no una
+      // carga: declararlo evita que la conciliación la cruce contra una carga
+      // interna por fecha y monto y la marque `unmatched` sin significado.
+      granularity: "period_aggregate" as const,
     }))
     const validation = validateProviderRows(validationInputs, { from, to })
     // Un solo resolutor para el ledger y para la proyección: eran dos bloques
@@ -453,14 +486,19 @@ async function importCopecPeriod(
     // Las filas de `parsed.errors` son del ARCHIVO completo, no por faena: el
     // loop de abajo crea un lote por cada faena del archivo, y antes le sumaba el
     // conteo COMPLETO a cada uno — con 3 faenas en el mismo reporte, el total de
-    // filas rechazadas se triplicaba. Se atribuyen al PRIMER grupo del archivo, y
-    // en las dos ramas: el flag anterior sólo lo consumía la rama de creación, así
-    // que un refresco volvía a multiplicarlas. Por índice y no por "el primero que
-    // escriba" para que la atribución no oscile entre corridas cuando un lote sale
-    // por el atajo del hash sin escribir nada.
-    let groupIndex = 0
-    for (const [worksiteId, rows] of groups) {
-      const fileErrors = groupIndex++ === 0 ? parsed.errors.length : 0
+    // filas rechazadas se triplicaba. Se atribuyen a UNA faena, y en las dos
+    // ramas: el flag anterior sólo lo consumía la rama de creación, así que un
+    // refresco volvía a multiplicarlas.
+    //
+    // La faena elegida es la MENOR por id, no la primera del `Map`: el orden de
+    // inserción es el orden de filas del Excel, y Copec regenera el archivo en
+    // cada descarga, así que un reordenamiento movía las filas inválidas de un
+    // lote a otro entre corridas. Ordenar el recorrido completo, además, hace
+    // determinista el orden en que se toman los locks por faena.
+    const orderedGroups = [...groups.entries()].sort(([left], [right]) => left.localeCompare(right))
+    const errorsWorksiteId = orderedGroups[0]?.[0]
+    for (const [worksiteId, rows] of orderedGroups) {
+      const fileErrors = worksiteId === errorsWorksiteId ? parsed.errors.length : 0
       // Todo el grupo (dedup por identidad lógica, guard de fuente ajena y el
       // insert que corresponda) bajo un único lock por (faena, período,
       // fuente): antes cada chequeo y cada transacción corrían por separado,
@@ -525,21 +563,46 @@ async function importCopecPeriod(
       }
       imported += outcome.imported
       refreshed += outcome.refreshed ?? 0
+      backedBatches.add(providerBatchKey(worksiteId, from, to, source))
     }
   }
+
+  // Lotes del período que los informes de esta corrida ya no respaldan: una
+  // faena cuyos equipos se movieron, o cargas que Copec retiró del mes. Sin
+  // esto conservaban litros y monto para siempre, porque la reconstrucción por
+  // hash sólo visita los grupos presentes en el archivo.
+  //
+  // Sólo las fuentes que produjeron al menos un lote: un producto "no
+  // disponible", o uno cuyas patentes quedaron todas sin vehículo, no dice nada
+  // sobre lo ya importado y barrerlo borraría datos buenos.
+  const backedSources = [...new Set([...backedBatches].map((key) => key.split("|")[3]!))]
+  const unbacked = await emptyUnbackedProviderBatches(db, {
+    sources: backedSources,
+    from,
+    to,
+    keep: backedBatches,
+    lockNamespace: "fuel_copec",
+  })
+  refreshed += unbacked.records
 
   const receipts = await importTaeReceiptPeriod(from, to, resolvedImporterId, unavailable, runId)
   return {
     imported,
     refreshed,
     pending: pending.size,
+    pendingPlates: [...pending].sort(),
     reports,
     unavailable,
     ...receipts,
     rowsReceived: rowsReceived + receipts.rowsReceived,
     rowsAccepted: rowsAccepted + receipts.rowsAccepted,
     rowsRejected: rowsRejected + receipts.rowsRejected,
-    rowsPending: rowsPending + pending.size + receipts.rowsPending,
+    // Sin `pending.size`: una patente sin vehículo ya entró al ledger como
+    // fila `pending` (`recordFuelProviderValidation` marca así toda fila
+    // aceptada sin mapping completo), y el informe TCT trae UNA fila por
+    // patente y mes, así que sumar el set contaba exactamente lo mismo dos
+    // veces e inflaba `rowsPending` de la corrida.
+    rowsPending: rowsPending + receipts.rowsPending,
     meterReadings,
   }
 }
@@ -644,7 +707,13 @@ async function importTaeReceiptPeriod(
 
 export async function syncCopecReportPeriod(period: CopecSyncPeriod, importerId?: string): Promise<PeriodSyncResult> {
   const current = await state()
-  const pending = new Set(current.pending)
+  // Set NUEVO, no la continuación del guardado. Antes se sembraba con
+  // `current.pending` y sólo se hacía `add`: ninguna patente salía nunca, ni
+  // siquiera al dar de alta el vehículo. El JSON de estado crecía sin techo y
+  // la corrida quedaba `partial` para siempre porque `rowsPending > 0`. El
+  // registro durable de lo pendiente es el ledger (`fuel_provider_transactions`
+  // con estado `pending`), no esta lista; acá sólo interesa lo de ESTE período.
+  const pending = new Set<string>()
   const run = await beginFuelProviderSyncRun({
     provider: "copec",
     trigger: importerId ? "manual" : "cron",
@@ -730,7 +799,7 @@ export async function syncCopecReportPeriod(period: CopecSyncPeriod, importerId?
   }
 }
 
-export async function syncCopecReports(): Promise<{ from: string; to: string; imported: number; refreshed: number; received: number; pending: number; reports: string[]; unavailable: string[]; unmappedCards: string[]; meterReadings: number }> {
+export async function syncCopecReports(): Promise<{ from: string; to: string; imported: number; refreshed: number; received: number; pending: number; pendingPlates: string[]; reports: string[]; unavailable: string[]; unmappedCards: string[]; meterReadings: number }> {
   const plan = await getCopecSyncPlan()
   let imported = 0
   let refreshed = 0
@@ -739,7 +808,10 @@ export async function syncCopecReports(): Promise<{ from: string; to: string; im
   const reports: string[] = []
   const unavailable: string[] = []
   const unmappedCards = new Set<string>()
-  let pending = plan.pending
+  // Unión de los períodos del barrido, no "el último gana": ahora que cada
+  // período parte de un set vacío, quedarse con el conteo del último mes
+  // escondía las patentes sin vincular de todos los anteriores.
+  const pendingPlates = new Set<string>()
   for (const period of plan.periods) {
     const result = await syncCopecReportPeriod(period)
     imported += result.imported
@@ -747,7 +819,7 @@ export async function syncCopecReports(): Promise<{ from: string; to: string; im
     received += result.received
     meterReadings += result.meterReadings
     for (const card of result.unmappedCards) unmappedCards.add(card)
-    pending = result.pending
+    for (const plate of result.pendingPlates) pendingPlates.add(plate)
     reports.push(...result.reports)
     unavailable.push(...result.unavailable.map((product) => `${period.from} a ${period.to} (${product})`))
     // Un período que no descargó nada indica portal/credenciales rotos. Se corta
@@ -761,5 +833,5 @@ export async function syncCopecReports(): Promise<{ from: string; to: string; im
       throw new Error(`Copec no entregó ningún archivo para el período ${period.from} a ${period.to}. Revisa credenciales/portal, o ajusta la fecha de inicio si ese tramo no tiene consumos. Se importaron ${imported} registros antes de detenerse.`)
     }
   }
-  return { from: plan.from, to: plan.to, imported, refreshed, received, pending, reports, unavailable, unmappedCards: [...unmappedCards].sort(), meterReadings }
+  return { from: plan.from, to: plan.to, imported, refreshed, received, pending: pendingPlates.size, pendingPlates: [...pendingPlates].sort(), reports, unavailable, unmappedCards: [...unmappedCards].sort(), meterReadings }
 }

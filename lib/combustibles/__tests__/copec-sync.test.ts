@@ -15,6 +15,8 @@ const mockTxInsertValues = vi.fn()
 const mockTxUpdateSet = vi.fn()
 
 const mockSaveStateReturning = vi.fn().mockResolvedValue([{ key: "combustibles.copec.sync" }])
+/** Lotes existentes del período, para el barrido de lotes sin respaldo. */
+const mockBatchFindMany = vi.fn().mockResolvedValue([])
 
 vi.mock("@/db", () => ({
   db: {
@@ -23,7 +25,11 @@ vi.mock("@/db", () => ({
       users: { findFirst: (...args: unknown[]) => mockUserFindFirst(...args) },
       fuelVehicles: { findMany: (...args: unknown[]) => mockVehiclesFindMany(...args) },
       fuelProviderMappings: { findMany: vi.fn().mockResolvedValue([]) },
-      fuelImportBatches: { findFirst: (...args: unknown[]) => mockBatchFindFirst(...args) },
+      fuelImportBatches: {
+        findFirst: (...args: unknown[]) => mockBatchFindFirst(...args),
+        // Usado por el barrido de lotes que los informes ya no respaldan.
+        findMany: (...args: unknown[]) => mockBatchFindMany(...args),
+      },
       fuelConsumptionRecords: { findMany: (...args: unknown[]) => mockConsumptionFindMany(...args) },
     },
     insert: vi.fn(() => ({
@@ -142,9 +148,36 @@ describe("copecSourceRowKey", () => {
   })
 })
 
+describe("copecProjectionHash", () => {
+  const row = (patente: string, monto: number) => ({
+    rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2,
+    cantidadUnidad: 100, monto, rendimientoPromedio: 3, rawRow: {},
+  })
+
+  it("no cambia porque Copec reordene las filas del Excel", () => {
+    // El portal REGENERA el archivo en cada descarga: hashear en orden de
+    // archivo hacía que un reordenamiento sin ningún cambio de datos
+    // invalidara el hash y reconstruyera el lote entero, dejando `updated_at`
+    // nuevo en todos sus registros.
+    expect(copecProjectionHash([row("AAA11", 10), row("BBB22", 20)]))
+      .toBe(copecProjectionHash([row("BBB22", 20), row("AAA11", 10)]))
+  })
+
+  it("sí cambia cuando cambia un dato", () => {
+    expect(copecProjectionHash([row("AAA11", 10)]))
+      .not.toBe(copecProjectionHash([row("AAA11", 11)]))
+  })
+
+  it("sí cambia cuando el archivo gana una fila inválida", () => {
+    expect(copecProjectionHash([row("AAA11", 10)], 0))
+      .not.toBe(copecProjectionHash([row("AAA11", 10)], 1))
+  })
+})
+
 describe("syncCopecReportPeriod", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockBatchFindMany.mockResolvedValue([])
     // importCopecPeriod only looks up the importer user when this env var is
     // set — stub it here so the test doesn't depend on the ambient shell/CI
     // environment ever defining it.
@@ -400,6 +433,36 @@ describe("syncCopecReportPeriod", () => {
     expect(mockTxInsertValues).not.toHaveBeenCalled()
     expect(result.unavailable).toContain("Diesel: faena con importación previa (Copec) en el período")
   })
+  it("no arrastra las patentes pendientes de corridas anteriores ni las cuenta dos veces", async () => {
+    // El set se sembraba con el estado guardado y sólo hacía `add`: ninguna
+    // patente salía nunca, ni al dar de alta el vehículo. El JSON crecía sin
+    // techo y `rowsPending` sumaba el histórico completo en CADA corrida, con
+    // lo que el ledger quedaba `partial` para siempre.
+    mockSettingFindFirst.mockResolvedValue({
+      value: JSON.stringify({ cursor: "2026-02-01", taeCursor: null, lastRunAt: null, pending: ["VIEJA1", "VIEJA2", "VIEJA3"] }),
+    })
+    const row = (patente: string): unknown => ({ rowIndex: 1, patente, numeroTarjetas: 1, numeroTransacciones: 2, cantidadUnidad: 100, monto: 50000, rendimientoPromedio: 3, rawRow: {} })
+    mockDownloadCopecReports.mockResolvedValue([
+      { product: "diesel", unavailable: false, report: { buffer: Buffer.from("x"), fileName: "informe.xlsx" } },
+      { product: "bluemax", unavailable: true },
+    ])
+    mockParseConsumptionExcel.mockResolvedValue({ rows: [row("AAA"), row("SINVEHICULO")], errors: [], duplicates: [], detail: [] })
+    mockVehiclesFindMany.mockResolvedValue([{ id: "v-aaa", plate: "AAA", worksiteId: "W1" }])
+
+    const result = await syncCopecReportPeriod({ from: "2026-02-01", to: "2026-02-28" }, "operator-1")
+
+    // Sólo la patente sin vehículo de ESTE período.
+    expect(result.pendingPlates).toEqual(["SINVEHICULO"])
+    expect(result.pending).toBe(1)
+    // Y no se suma al conteo del ledger: `recordFuelProviderValidation` ya la
+    // contó como fila `pending` (el mock devuelve 0 aquí, así que el total
+    // refleja exactamente lo que el ledger reportó, sin el set encima).
+    expect(result.rowsPending).toBe(0)
+
+    const savedState = JSON.parse(mockSaveState.mock.calls[0]![0].set.value)
+    expect(savedState.pending).toEqual(["SINVEHICULO"])
+  })
+
   describe("open month", () => {
     const OPEN = { from: "2026-08-01", to: "2026-08-31" }
 
@@ -534,6 +597,7 @@ describe("syncCopecReportPeriod", () => {
 describe("Copec synchronization start date", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockBatchFindMany.mockResolvedValue([])
     vi.stubEnv("COPEC_SYNC_START_DATE", "2020-01-01")
     mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2020-02-01", lastRunAt: null, pending: [] }) })
     mockBatchFindFirst.mockResolvedValue({ periodoHasta: "2026-06-30" })
@@ -542,6 +606,27 @@ describe("Copec synchronization start date", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs()
+  })
+
+  it("corta el plan en el tope por corrida en vez de planificar el histórico entero", async () => {
+    // Cada mes son DOS sesiones de navegador con login y el cron corta a los 5
+    // minutos: sin tope, un cursor viejo planifica decenas de meses y la corrida
+    // muere por timeout siempre en el mismo lugar. El cursor avanza lo que
+    // alcanzó y la corrida siguiente sigue desde ahí.
+    mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2020-01-01", lastRunAt: null, pending: [] }) })
+    mockBatchFindFirst.mockResolvedValue(undefined)
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(new Date("2026-08-07T12:00:00.000Z"))
+    try {
+      const plan = await getCopecSyncPlan()
+      expect(plan.from).toBe("2020-01-01")
+      expect(plan.periods).toHaveLength(4)
+      // `to` sigue al recorte: anunciar 2026 con 4 meses planificados mentiría.
+      expect(plan.to).toBe("2020-04-30")
+      expect(plan.periods.at(-1)).toEqual({ from: "2020-04-01", to: "2020-04-30" })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("keeps the explicit cursor even when a foreign batch reaches a later month", async () => {
@@ -564,18 +649,18 @@ describe("Copec synchronization start date", () => {
   })
 
   it("plans the months a foreign manual batch used to swallow, up to the open one", async () => {
-    // Cursor en abril y un lote ajeno que llega hasta julio: el plan debe cubrir
-    // abril–agosto, no quedar vacío con "no hay meses nuevos". Agosto es el mes
+    // Cursor en mayo y un lote ajeno que llega hasta julio: el plan debe cubrir
+    // mayo–agosto, no quedar vacío con "no hay meses nuevos". Agosto es el mes
     // en curso y también entra: se refresca en cada corrida.
-    mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2026-04-01", lastRunAt: null, pending: [] }) })
+    mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2026-05-01", lastRunAt: null, pending: [] }) })
     mockBatchFindFirst.mockResolvedValue({ periodoHasta: "2026-07-31" })
     vi.useFakeTimers({ toFake: ["Date"] })
     vi.setSystemTime(new Date("2026-08-07T12:00:00.000Z"))
     try {
       const plan = await getCopecSyncPlan()
-      expect(plan.from).toBe("2026-04-01")
+      expect(plan.from).toBe("2026-05-01")
       expect(plan.to).toBe("2026-08-31")
-      expect(plan.periods).toHaveLength(5)
+      expect(plan.periods).toHaveLength(4)
       expect(plan.periods.at(-1)).toEqual({ from: "2026-08-01", to: "2026-08-31" })
     } finally {
       vi.useRealTimers()
