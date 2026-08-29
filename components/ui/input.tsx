@@ -25,7 +25,10 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           "flex h-11 sm:h-[34px] w-full rounded-[var(--radius-md)]",
           "border border-[var(--color-border-control)]",
           "bg-[var(--color-surface)] px-[10px] py-1.5",
-          "font-sans text-xs text-[var(--color-text)] font-medium",
+          // iOS Safari hace zoom automático al enfocar un input con font-size
+          // menor a 16px (rompe el layout en mobile). 16px en mobile, 12px
+          // cuando el shell ya tiene más espacio y cabe el texto compacto.
+          "font-sans text-base sm:text-xs text-[var(--color-text)] font-medium",
           "placeholder:text-[var(--color-text-subtle)]",
           "transition-[border-color,box-shadow] duration-[var(--duration-fast)] ease-[var(--ease-out)]",
           "hover:border-[var(--color-border-control-hover)]",

@@ -84,7 +84,7 @@ export function PageHeader({ title, description, actions, headerActions, breadcr
           {eyebrow && (
             <p className="text-eyebrow mb-1.5">{eyebrow}</p>
           )}
-          <h1 className="text-h1 text-[var(--color-text)]">
+          <h1 className="text-h1 text-[var(--color-text)] break-words">
             {title}
           </h1>
           {description && (

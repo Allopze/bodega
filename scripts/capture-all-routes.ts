@@ -576,6 +576,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "facturacion-sincronizacion", path: "/facturacion/sincronizacion", auth: true },
   { slug: "flota", path: "/flota", auth: true },
   { slug: "flota-detalle", path: "/flota/fuel-veh-audit-1", auth: true },
+  { slug: "flota-monitoreo", path: "/flota/monitoreo", auth: true, notes: "Monitoreo GPS Entel OnWay: vehículos vinculados, alertas, último run y dispositivos sin match." },
   { slug: "control-operacional", path: "/control-operacional", auth: true },
   { slug: "mantenciones", path: "/mantenciones", auth: true },
   { slug: "mantenciones-detalle", path: "/mantenciones/maint-audit-1", auth: true },
@@ -713,6 +714,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "admin-dte", path: "/admin/dte", auth: true, notes: "Credenciales del portal DTE e historial de corridas." },
   { slug: "admin-equipos", path: "/admin/equipos", auth: true },
   { slug: "admin-inventario-faena", path: "/admin/inventario-faena", auth: true, notes: "Padrón físico por faena (extintores, kits). Prevención lo consume; el alta y la carga masiva viven acá." },
+  { slug: "admin-inventario-faena-detalle", path: "/admin/inventario-faena/inventory-audit-1", auth: true, notes: "Ficha de un extintor del padrón: ubicación, vigencias, asignaciones e historial." },
   { slug: "admin-equipo-detalle", path: "/admin/equipos/equip-audit-1", auth: true, notes: "Ficha del instrumento con su historial de intervenciones." },
   { slug: "admin-faenas", path: "/admin/faenas", auth: true },
   { slug: "admin-flotas-catalogos", path: "/admin/flota-catalogos", auth: true },
@@ -781,6 +783,7 @@ const seedCoverage: CaptureSeedArea[] = [
   { section: "servicios", fixtures: ["solicitud de servicios", "ítem libre", "cotización pendiente"] },
   { section: "prevencion", fixtures: ["fiscalización de la Dirección del Trabajo con medida prescrita", "coordinación de información entregada al mandante", "evaluación nueva", "evaluación seguimiento", "plan de acción", "acción CAPA en progreso con evidencia y seguimiento", "requisito legal publicado con aplicabilidad por faena", "solicitud de privacidad con identidad verificada", "incidente en investigación con evidencia y difusión RE-20", "inspección revisada con hallazgo CAPA", "inspección en curso con respuestas parciales", "Reporte de Equipos en transcripción con planilla física", "ejecución PDTP aprobada con checklist y plan de acción", "sesión de capacitación cerrada con asistencia", "gestión de cambio evaluada con CAPA", "plan de emergencia con simulacro y roles", "permiso activo con AST, medición y aislamiento", "comité CPHS paritario con acta", "grupo de exposición con medición", "programa de vigilancia con matrículas", "documento vigente distribuido con acuse", "control MIPER crítico verificado", "indicadores mensuales de seguridad y salud en el trabajo", "indicadores material y ambiental"] },
   { section: "admin-faenas", fixtures: ["faenas activas", "faena que representa la bodega de la oficina central"] },
+  { section: "admin-inventario-faena", fixtures: ["extintor operativo con plan de emergencias, asignaciones y eventos", "kit de derrame sin asignar a punto"] },
   { section: "admin-equipos", fixtures: ["detector monogás con historial de calibración", "alcotest en otra faena"] },
   { section: "admin-plantillas", fixtures: ["plantillas de correo del sistema"] },
   { section: "admin-productos", fixtures: ["categorías", "productos EPP", "productos insumo", "proveedores preferidos", "lote EPP pendiente de revisión"] },
@@ -807,6 +810,10 @@ const moduleAliases: Record<string, string[]> = {
   dte: ["compras-dte", "admin-dte"],
   guias: ["bodega-guia"],
   facturacion: ["facturacion"],
+  // El monitoreo GPS de Entel OnWay es un subpath de Flota pero su ciclo de
+  // auditoría es propio; ofrecerlo por nombre evita que un cambio allí pase
+  // inadvertido al filtrar `--module flota`.
+  monitoreo: ["flota-monitoreo"],
 }
 
 export function getCaptureRoutes(filter?: string) {
@@ -2438,6 +2445,85 @@ async function prepareDatabase(captureDbUrl: string) {
     createdAt: now,
     updatedAt: now,
   })
+  /*
+   * Padrón físico por faena (inventario-faena). La ficha `/admin/inventario-faena/[id]`
+   * consulta tipo, asignaciones, eventos y casos de servicio por separado: sembrar
+   * un extintor sin su punto ni eventos dejaría la captura visualmente pobre y
+   * restaría evidencia al ciclo del recurso.
+   */
+  await db.insert(schema.preventionEmergencyResourceTypes).values({
+    id: "invertype-audit-pqs10",
+    resourceClass: "extinguisher",
+    agent: "PQS",
+    capacity: 10,
+    capacityUnit: "kg",
+    canonicalName: "Extintor PQS 10 kg",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionEmergencyResourcePoints).values({
+    id: "inventory-point-audit-1",
+    worksiteId,
+    code: "PT-CORTE-01",
+    label: "Punto fijo acceso línea de corte",
+    pointKind: "fixed",
+    fixedLocation: "Acceso línea de corte",
+    requiredTypeId: "invertype-audit-pqs10",
+    isActive: true,
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionEmergencyResources).values({
+    id: "inventory-audit-1",
+    worksiteId,
+    planId: "plan-audit-1",
+    assetCode: "EXT-CORTE-01",
+    typeId: "invertype-audit-pqs10",
+    name: "Extintor PQS 10 kg · acceso línea de corte",
+    kind: "Extintor",
+    location: "Acceso línea de corte",
+    serialNumber: "PQS-10-2026-0042",
+    lastMaintenanceAt: "2026-04-12",
+    lastInspectedAt: "2026-06-01",
+    nextInspectionAt: "2026-09-01",
+    expiresAt: "2027-04-12",
+    status: "operational",
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionEmergencyResourceAssignments).values({
+    id: "inventory-assignment-audit-1",
+    pointId: "inventory-point-audit-1",
+    resourceId: "inventory-audit-1",
+    assignedAt: now,
+    reason: "Alta inicial del padrón físico de faena.",
+    actorUserId: userId,
+  })
+  await db.insert(schema.preventionEmergencyResourceEvents).values([
+    {
+      id: "inventory-event-audit-import",
+      worksiteId,
+      resourceId: "inventory-audit-1",
+      eventType: "imported",
+      occurredAt: now,
+      actorUserId: userId,
+      sourceType: "xlsx",
+      notes: "Importado desde padrón histórico 2026-04-12 con su mantenimiento al día.",
+      snapshot: { assetCode: "EXT-CORTE-01", kind: "Extintor" },
+    },
+    {
+      id: "inventory-event-audit-inspected",
+      worksiteId,
+      resourceId: "inventory-audit-1",
+      eventType: "classified",
+      occurredAt: now,
+      actorUserId: "user-audit-prevencion",
+      notes: "Inspección preventiva del 2026-06-01: presión, sello y señalización OK.",
+    },
+  ])
   await db.insert(schema.preventionEmergencyContacts).values({
     id: "emergency-contact-audit-1",
     planId: "plan-audit-1",
@@ -3272,6 +3358,122 @@ async function prepareDatabase(captureDbUrl: string) {
       notes: "Camión de carga para faena Mininco.",
       createdAt: now,
       updatedAt: now,
+    },
+  ])
+
+  /*
+   * Monitoreo GPS Entel OnWay. La página `/flota/monitoreo` une posiciones,
+   * alertas, último run y dispositivos sin match. Sin sembrar nada la
+   * captura muestra la lista vacía, que es evidencia de "no hay sync" y no
+   * de "el módulo existe". Tres posiciones sobre la misma faena y dos
+   * alertas bastan para ejercitar la vista de mapa, la tabla y el panel
+   * de alertas.
+   */
+  await db.insert(schema.fleetGpsSyncRuns).values({
+    id: "fleet-gps-run-audit-1",
+    provider: "onway",
+    trigger: "cron",
+    status: "success",
+    actorUserId: userId,
+    devicesReceived: 3,
+    devicesAccepted: 3,
+    devicesRejected: 0,
+    devicesUnmatched: 0,
+    alertsReceived: 2,
+    pointsReceived: 240,
+    tripsReceived: 4,
+    startedAt: now,
+    finishedAt: now,
+  })
+  await db.insert(schema.fleetGpsLatestPositions).values([
+    {
+      id: "fleet-gps-pos-audit-1",
+      provider: "onway",
+      externalDeviceId: "onway-fd7122",
+      externalGroupId: "mininco",
+      vehicleId: "fuel-veh-audit-1",
+      worksiteId,
+      sourcePlate: "FD-71-22",
+      normalizedPlate: "FD-71-22",
+      latitude: -37.4716,
+      longitude: -72.3527,
+      speedKph: 0,
+      headingDegrees: 0,
+      ignition: true,
+      sourceStatus: "moving",
+      gpsReportedAt: now,
+      gprsReportedAt: now,
+      gpsStatus: "ok",
+      gprsStatus: "ok",
+      movementState: "stopped",
+      odometer: 134122,
+      hourMeter: 8421,
+      observedAt: now,
+      syncRunId: "fleet-gps-run-audit-1",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "fleet-gps-pos-audit-2",
+      provider: "onway",
+      externalDeviceId: "onway-lk4510",
+      externalGroupId: "mininco",
+      vehicleId: "fuel-veh-audit-2",
+      worksiteId,
+      sourcePlate: "LK-45-10",
+      normalizedPlate: "LK-45-10",
+      latitude: -37.4724,
+      longitude: -72.3501,
+      speedKph: 28.5,
+      headingDegrees: 84,
+      ignition: true,
+      sourceStatus: "moving",
+      gpsReportedAt: now,
+      gprsReportedAt: now,
+      gpsStatus: "ok",
+      gprsStatus: "ok",
+      movementState: "moving",
+      odometer: 220118,
+      hourMeter: 11020,
+      observedAt: now,
+      syncRunId: "fleet-gps-run-audit-1",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
+  await db.insert(schema.fleetGpsAlerts).values([
+    {
+      id: "fleet-gps-alert-audit-1",
+      provider: "onway",
+      externalDeviceId: "onway-lk4510",
+      externalEventKey: "onway-lk4510-speeding-2026-06-09",
+      vehicleId: "fuel-veh-audit-2",
+      worksiteId,
+      alertType: "speeding",
+      category: "operational",
+      title: "Exceso de velocidad detectado en faena",
+      priority: "medium",
+      occurredAt: now,
+      latitude: -37.4724,
+      longitude: -72.3501,
+      speedKph: 78.4,
+      processingStatus: "new",
+    },
+    {
+      id: "fleet-gps-alert-audit-2",
+      provider: "onway",
+      externalDeviceId: "onway-fd7122",
+      externalEventKey: "onway-fd7122-ignition-2026-06-09",
+      vehicleId: "fuel-veh-audit-1",
+      worksiteId,
+      alertType: "ignition_off_outside_hours",
+      category: "operational",
+      title: "Encendido fuera de horario operativo",
+      priority: "low",
+      occurredAt: now,
+      latitude: -37.4716,
+      longitude: -72.3527,
+      processingStatus: "ignored",
     },
   ])
 

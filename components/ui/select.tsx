@@ -89,7 +89,7 @@ const SelectTrigger = React.forwardRef<
         // El truncado no lo necesita: lo resuelve el `min-w-0` del span.
         "flex h-11 sm:h-9 w-full items-center justify-between gap-2 rounded-(--radius-lg)",
         "border border-[var(--color-border-control)] bg-[var(--color-surface)]",
-        "px-3.5 py-1.5 text-sm text-[var(--color-text)]",
+        "px-3.5 py-1.5 text-base sm:text-sm text-[var(--color-text)]",
         // El trigger tiene altura fija: sin truncado, una opción larga (nombre
         // de actividad, razón social) se parte en varias líneas y el texto se
         // dibuja FUERA del borde, encima del contenido vecino. El span es el
@@ -121,7 +121,7 @@ const SelectTrigger = React.forwardRef<
           }}
           placeholder="Buscar..."
           aria-label="Buscar en opciones"
-          className="min-w-0 flex-1 bg-transparent text-sm text-(--color-text) outline-none placeholder:text-[var(--color-text-subtle)]"
+          className="min-w-0 flex-1 bg-transparent text-base sm:text-sm text-(--color-text) outline-none placeholder:text-[var(--color-text-subtle)]"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         />

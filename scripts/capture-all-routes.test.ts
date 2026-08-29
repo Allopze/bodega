@@ -182,6 +182,8 @@ describe("capture-all-routes route inventory", () => {
       expect.objectContaining({ slug: "prevencion-inspeccion-en-curso", path: "/prevencion/inspecciones/insp-audit-progress" }),
       expect.objectContaining({ slug: "prevencion-inspeccion-reporte-equipos", path: "/prevencion/inspecciones/insp-audit-equipment-report" }),
       expect.objectContaining({ slug: "prevencion-pdtp-ejecucion", path: "/prevencion/pdtp/prog-audit-1/ejecucion/exec-audit-1" }),
+      expect.objectContaining({ slug: "admin-inventario-faena-detalle", path: "/admin/inventario-faena/inventory-audit-1" }),
+      expect.objectContaining({ slug: "flota-monitoreo", path: "/flota/monitoreo" }),
     ]))
     expect(combustibleFixtures).toEqual(expect.arrayContaining([
       "lote de consumos con registros asociados y sin asociar",
