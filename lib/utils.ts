@@ -241,6 +241,28 @@ export function formatDateTime(date: Date | string | number): string {
   return `${formatDate(d)} ${CHILE_TIME_FORMAT.format(d)}`
 }
 
+const LONG_DATE_FORMAT = new Intl.DateTimeFormat("es-CL", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  timeZone: "America/Santiago",
+})
+
+/**
+ * Fecha larga en español de Chile: "viernes 29 de agosto".
+ *
+ * Una sola fuente para el saludo de Inicio y cualquier otra superficie que
+ * necesite nombrar el día en lenguaje natural. La zona horaria va explícita
+ * porque el proceso corre en UTC: entre las 20:00 y la medianoche chilena
+ * `toLocaleDateString` con el default del sistema se saltaba al día siguiente.
+ */
+export function formatDateLong(date?: Date | string | number | null): string {
+  if (date === null || date === undefined || date === "") return VALUE_MISSING
+  const d = date instanceof Date ? date : new Date(date)
+  if (Number.isNaN(d.getTime())) return VALUE_MISSING
+  return LONG_DATE_FORMAT.format(d)
+}
+
 /**
  * Formatea una cadena de calendario 'YYYY-MM-DD' como 'dd-mm-yyyy'.
  *

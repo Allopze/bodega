@@ -17,6 +17,7 @@ import {
   formatDate,
   formatDateRelative,
   formatDateTime,
+  formatDateLong,
   toTitleCase,
   getInitials,
   escapeHtml,
@@ -219,6 +220,30 @@ describe("formatDateTime()", () => {
 
   it("gives a plain date a midnight time component", () => {
     expect(formatDateTime("2026-03-01")).toBe("01-03-2026 00:00")
+  })
+})
+
+describe("formatDateLong()", () => {
+  it("renders weekday, day and month in es-CL", () => {
+    // 2026-08-29 15:00Z son las 12:00 en Santiago (UTC-3 en invierno): sigue
+    // siendo sábado 29 en Chile. es-CL inserta una coma entre el día de la
+    // semana y el resto, por eso la forma es "weekday, day de month".
+    const out = formatDateLong(new Date("2026-08-29T15:00:00Z"))
+    expect(out.toLowerCase()).toBe("sábado, 29 de agosto")
+  })
+
+  it("uses the Chilean day, not the UTC day, across the date boundary", () => {
+    // 03:00Z del 23 son las 23:00 del 22 en Santiago (invierno, UTC-4). Si el
+    // helper midiera en UTC diría "jueves, 23"; debe decir "miércoles, 22".
+    const out = formatDateLong(new Date("2026-07-23T03:00:00Z"))
+    expect(out.toLowerCase()).toBe("miércoles, 22 de julio")
+  })
+
+  it("returns VALUE_MISSING for null / undefined / empty / garbage", () => {
+    expect(formatDateLong(null)).toBe("—")
+    expect(formatDateLong(undefined)).toBe("—")
+    expect(formatDateLong("")).toBe("—")
+    expect(formatDateLong("basura")).toBe("—")
   })
 })
 
