@@ -104,3 +104,5 @@ backup-*.sql
 /beaconhs-main
 
 /plataforma-portalchome-vulnerabilidades
+
+/.github
