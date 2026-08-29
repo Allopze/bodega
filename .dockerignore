@@ -21,6 +21,11 @@ Registros SG-SST
 # inputs to the production image. Keeping them out avoids sending gigabytes of
 # unrelated data to the Docker daemon for every deploy build.
 docs/
+# Fixtures de prueba: el libro PDTP definitivo pesa 4,5 MB y sólo lo leen los
+# tests. Vivía en la raíz y también viajaba al contexto de build; al restaurarlo
+# bajo tests/ hay que dejarlo fuera explícitamente o vuelve el mismo peso por
+# cada deploy.
+tests/fixtures/
 .venv/
 .vitest-reports/
 artifacts/

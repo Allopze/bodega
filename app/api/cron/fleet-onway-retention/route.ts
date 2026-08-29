@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { purgeOnwayRetention } from "@/lib/integrations/onway/onway-retention"
 import { cronRequestSource, parseCronAllowedSources, verifyCronRequest } from "@/lib/security/cron-auth"
 import { withCronLock } from "@/lib/services/cron-lock"
+import { isRouteOperational } from "@/lib/services/module-toggles"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -16,6 +17,11 @@ export async function GET(request: NextRequest) {
     realIp: request.headers.get("x-real-ip"),
   }, secret, allowedSources, enforceSource)) {
     return NextResponse.json({ ok: false, outcome: "unauthorized", code: "FLEET_GPS_CRON_UNAUTHORIZED" }, { status: 401 })
+  }
+  // Mismo href que `fleet-onway-sync`: apagar Monitoreo GPS tiene que detener
+  // también la purga, o el módulo apagado sigue borrando datos por su cuenta.
+  if (!await isRouteOperational("/flota/monitoreo")) {
+    return NextResponse.json({ ok: true, outcome: "disabled", code: "FLEET_GPS_CRON_DISABLED" }, { status: 200 })
   }
   const source = cronRequestSource({ forwardedFor: request.headers.get("x-forwarded-for"), realIp: request.headers.get("x-real-ip") })
   const result = await withCronLock("fleet-onway-retention", () => purgeOnwayRetention())

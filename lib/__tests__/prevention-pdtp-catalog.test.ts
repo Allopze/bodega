@@ -5,7 +5,9 @@ import {
   readPdtpWorkbook,
 } from "@/lib/services/prevention-pdtp-catalog"
 
-const workbookPath = path.resolve(process.cwd(), "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx")
+import { PDTP_2026_SOURCE } from "@/lib/services/pdtp-adapters/contract-2026"
+
+const workbookPath = path.resolve(process.cwd(), PDTP_2026_SOURCE.repoPath)
 let baseWorkbook: Awaited<ReturnType<typeof readPdtpWorkbook>>
 
 describe("Base PDTP 2026 definitiva", () => {

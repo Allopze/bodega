@@ -12,6 +12,17 @@ export const PDTP_2026_SOURCE = {
   filename: "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx",
   sha256: "8ad52fe16ba12a1514d6af2bb6601bb44627f4020bb95907b33e6a162ad46fd2",
   sizeBytes: 4_509_309,
+  /**
+   * Dónde vive el libro dentro del repo, relativo a la raíz.
+   *
+   * Estaba EN la raíz y cada prueba lo resolvía con
+   * `path.resolve(process.cwd(), PDTP_2026_SOURCE.filename)` por su cuenta —
+   * quince veces—, así que cuando la limpieza de documentos históricos lo
+   * movió, los 52 casos que lo leen se cayeron todos a la vez sin un solo
+   * lugar donde corregirlo. Ahora la ubicación se declara una vez, junto a la
+   * identidad del documento que describe.
+   */
+  repoPath: "tests/fixtures/PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx",
 } as const
 
 /** Métricas normalizadas de la Base 2026 definitiva. */

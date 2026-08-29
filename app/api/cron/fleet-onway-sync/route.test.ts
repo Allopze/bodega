@@ -40,7 +40,15 @@ describe("GET /api/cron/fleet-onway-sync", () => {
     mocks.isRouteOperational.mockResolvedValue(true)
     mocks.readOnwayConfig.mockResolvedValue({ username: "configured", password: "configured", syncEnabled: true, hasCredentials: true })
     mocks.withCronLock.mockImplementation(async (_job: string, run: () => Promise<unknown>) => run())
-    mocks.syncOnway.mockResolvedValue({ matched: 4, unmatched: 1, rejected: 0 })
+    // El mock tiene que devolver `SyncOnwayResult` COMPLETO: la ruta lee
+    // `result.warnings.length` para decidir entre `success` y `partial`, y con
+    // el mock incompleto reventaba con TypeError dentro del `try`, se
+    // clasificaba como `failed` y respondía 503. `vi.fn()` no está tipado, así
+    // que TypeScript no lo cazaba.
+    mocks.syncOnway.mockResolvedValue({
+      received: 5, matched: 4, rejected: 0, unmatched: 1, unmatchedPlates: ["SIN-VINCULO"],
+      observedAt: "2026-08-29T00:00:00.000Z", alerts: 0, points: 12, trips: 3, warnings: [],
+    })
   })
 
   it("rejects unauthorized requests before touching OnWay", async () => {

@@ -24,6 +24,7 @@ vi.mock("@/db", () => ({
 import { mkdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { PDTP_2026_SOURCE } from "@/lib/services/pdtp-adapters/contract-2026"
 const tmpEvidenceDir = join(tmpdir(), "pdtp-evidence-test")
 mkdirSync(tmpEvidenceDir, { recursive: true })
 
@@ -105,7 +106,7 @@ describe("prevention PDTP service", () => {
 
   const loadCatalog = async () => {
     const { loadPdtpCatalog } = await import("@/lib/services/prevention-pdtp")
-    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx"))
+    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), PDTP_2026_SOURCE.repoPath))
     const catalog = extractPdtpCatalogFromWorkbook(workbook)
     return loadPdtpCatalog({
       year: 2026,
@@ -136,7 +137,7 @@ describe("prevention PDTP service", () => {
 
   it("loads the Excel catalog idempotently into the PDTP program tables", async () => {
     const { loadPdtpCatalog } = await import("@/lib/services/prevention-pdtp")
-    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx"))
+    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), PDTP_2026_SOURCE.repoPath))
     const catalog = extractPdtpCatalogFromWorkbook(workbook)
 
     const first = await loadPdtpCatalog({
@@ -548,7 +549,7 @@ describe("prevention PDTP service", () => {
     const { readFile } = await import("node:fs/promises")
     const { applyPdtpImportBatch, createLegacyPdtpProgramForTests, rollbackPdtpImportBatch, stagePdtpXlsxImport } = await import("@/lib/services/prevention-pdtp")
     const program = await createLegacyPdtpProgramForTests({ year: 2026, title: "Migración controlada 2026", userId: "user-1" })
-    const bytes = await readFile(path.resolve(process.cwd(), "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx"))
+    const bytes = await readFile(path.resolve(process.cwd(), PDTP_2026_SOURCE.repoPath))
     const staged = await stagePdtpXlsxImport({
       programId: program.id,
       bytes,
@@ -578,7 +579,7 @@ describe("prevention PDTP service", () => {
 
   it("returns a read-only sheet view with monthly planned totals", async () => {
     const { loadPdtpCatalog, getPdtpSheetView } = await import("@/lib/services/prevention-pdtp")
-    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx"))
+    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), PDTP_2026_SOURCE.repoPath))
     const catalog = extractPdtpCatalogFromWorkbook(workbook)
 
     await loadPdtpCatalog({
@@ -690,7 +691,7 @@ describe("prevention PDTP service", () => {
 
   it("builds an Excel report payload for the selected sheet and worksite", async () => {
     const { loadPdtpCatalog, buildPdtpExport } = await import("@/lib/services/prevention-pdtp")
-    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx"))
+    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), PDTP_2026_SOURCE.repoPath))
     const catalog = extractPdtpCatalogFromWorkbook(workbook)
 
     await loadPdtpCatalog({
@@ -1662,7 +1663,7 @@ describe("prevention PDTP service", () => {
 
   it("getPdtpSheetView prefiere el programa activo sobre el más reciente por versión", async () => {
     const { loadPdtpCatalog, getPdtpSheetView, approvePdtpProgramJdpr, signPdtpProgramLegal, activatePdtpProgram } = await import("@/lib/services/prevention-pdtp")
-    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx"))
+    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), PDTP_2026_SOURCE.repoPath))
     const catalog = extractPdtpCatalogFromWorkbook(workbook)
 
     // v1 → activar
@@ -2007,7 +2008,7 @@ describe("prevention PDTP service", () => {
   it("round-trips the five long 2026 activities without swapping or truncating their meaning", async () => {
     const { buildPdtpExport, readPdtpActivityContent, updatePdtpActivity } = await import("@/lib/services/prevention-pdtp")
     const { PDTP_2026_LONG_TEXT_ACTIVITY_IDS } = await import("@/lib/services/pdtp-adapters/contract-2026")
-    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx"))
+    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), PDTP_2026_SOURCE.repoPath))
     const catalog = extractPdtpCatalogFromWorkbook(workbook)
     const { program } = await loadCatalog()
     const longTextIds = new Set<number>(PDTP_2026_LONG_TEXT_ACTIVITY_IDS)
@@ -2276,7 +2277,7 @@ describe("prevention PDTP service", () => {
       justification: "Vínculo previo que debe conservarse",
       createdByUserId: "user-1",
     })
-    const bytes = await readFile(path.resolve(process.cwd(), "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx"))
+    const bytes = await readFile(path.resolve(process.cwd(), PDTP_2026_SOURCE.repoPath))
 
     const staged = await stagePdtpXlsxImport({
       programId: program.id,
@@ -2456,7 +2457,7 @@ describe("prevention PDTP service", () => {
       createdAt: now,
       updatedAt: now,
     })
-    const bytes = await readFile(path.resolve(process.cwd(), "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx"))
+    const bytes = await readFile(path.resolve(process.cwd(), PDTP_2026_SOURCE.repoPath))
     const staged = await stagePdtpXlsxImport({
       programId: program.id,
       bytes,
@@ -2567,7 +2568,7 @@ describe("prevention PDTP service", () => {
       publishPdtpBase2026Revision,
     } = await import("@/lib/services/prevention-pdtp")
     const program = await createLegacyPdtpProgramForTests({ year: 2026, title: "Bootstrap repetible 2026", userId: "user-1" })
-    const bytes = await readFile(path.resolve(process.cwd(), "PROGRAMA_ACTIVIDADES_DEFINITIVO.xlsx"))
+    const bytes = await readFile(path.resolve(process.cwd(), PDTP_2026_SOURCE.repoPath))
     const staged = await stagePdtpXlsxImport({
       programId: program.id,
       bytes,
