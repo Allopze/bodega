@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useActionState } from "react"
 import { toast } from "@/lib/toast"
-import { ArrowLeft, ArrowRight } from "@phosphor-icons/react"
+import { ArrowLeft, ArrowRight, X } from "@phosphor-icons/react"
 import { Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter, SheetTitle, SheetDescription, SheetCloseButton } from "@/components/admin/sheet"
 import { Button } from "@/components/ui/button"
 import { Field, FieldGroup } from "@/components/ui/field"
@@ -18,8 +18,19 @@ import { createProduct, updateProduct, createProductVariantBatch, type ProductVa
 import { StepIndicator } from "./epp-wizard-steps"
 import { VariantGenerator } from "./epp-variant-generator"
 import { VariantPreview } from "./epp-variant-preview"
-import { parseOptionsText, generateVariantCombos, canAdvanceWizard, shouldShowConfirmClose, getStepAnimationClass } from "./product-form.helpers"
-import type { ProductFormProps, WizardStep, WizardGeneralState, WizardSupplierState, AttributeMultiValues, VariantCombo } from "./product-form.types"
+import {
+  parseOptionsText, generateVariantCombos, canAdvanceWizard, shouldShowConfirmClose, getStepAnimationClass,
+  pickPrimarySupplier, otherSuppliers, buildSuppliersForSubmit, mergeEditAttributes,
+  ADVANCED_ATTRIBUTE_TYPES, blankAdvancedAttribute, setQuantityDriver, duplicateAttributeNames,
+  normalizeProductAttributeName, type AdvancedAttributeType,
+} from "./product-form.helpers"
+import type { ProductFormProps, WizardStep, WizardGeneralState, WizardSupplierState, AttributeMultiValues, VariantCombo, SupplierRow, AttributeRow } from "./product-form.types"
+
+const ADVANCED_TYPE_LABELS: Record<string, string> = {
+  text: "Texto",
+  number: "Número",
+  integer: "Conteo",
+}
 
 /** Máximo de variantes que se pueden generar de una sola vez. */
 const VARIANT_LIMIT = 500
@@ -101,17 +112,36 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
       .filter((a) => a.type === "select")
       .map((a) => ({ name: a.name, type: "select" as const, values: parseOptionsText(a.options), sizeFamily: a.sizeFamily }))
   })
+  // Atributos que NO son ejes de variante: `text`/`number`/`integer`, incluido
+  // el que gobierna la cantidad. El paso 2 es dueño de los `select`; este
+  // estado es dueño del resto, así que los dos editores nunca tocan la misma
+  // fila (ver `mergeEditAttributes`).
+  const [advAttrs, setAdvAttrs] = React.useState<AttributeRow[]>(() =>
+    editProduct?.attributes.filter((a) => a.type !== "select") ?? [],
+  )
   const [variants, setVariants] = React.useState<VariantCombo[]>(() => {
     if (!editProduct) return []
     // On edit, reconstruct a single variant from the product's attributes
     const attrs = editProduct.attributes.map((a) => ({ name: a.name, value: parseOptionsText(a.options).join(", ") }))
     return [{ sku: editProduct.sku, name: editProduct.name, attributes: attrs }]
   })
-  const [supplier, setSupplier] = React.useState<WizardSupplierState>({
-    supplierId: editProduct?.suppliers[0]?.supplierId ?? "",
-    unitPrice: editProduct?.suppliers[0]?.unitPrice ?? "",
-    notes: editProduct?.suppliers[0]?.notes ?? "",
-    hasSupplier: (editProduct?.suppliers.length ?? 0) > 0,
+  // The wizard's "Proveedor" step edits a single slot — the preferred
+  // supplier if there is one, else the first. Every other supplier the
+  // product already has is preserved untouched in `otherSuppliersState` and
+  // merged back in on submit (see `buildSuppliersForSubmit`), so saving an
+  // edit doesn't silently drop suppliers this UI can't show.
+  const [otherSuppliersState] = React.useState<SupplierRow[]>(() => {
+    const initial = editProduct?.suppliers ?? []
+    return otherSuppliers(initial, pickPrimarySupplier(initial))
+  })
+  const [supplier, setSupplier] = React.useState<WizardSupplierState>(() => {
+    const primary = pickPrimarySupplier(editProduct?.suppliers ?? [])
+    return {
+      supplierId: primary?.supplierId ?? "",
+      unitPrice: primary?.unitPrice ?? "",
+      notes: primary?.notes ?? "",
+      hasSupplier: !!primary,
+    }
   })
 
   // ── Derived: unit options ─────────────────────────────────────────────────
@@ -127,22 +157,38 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
     const category = categories.find((c) => c.id === id)
     if (!category) return
     setGeneral((prev) => ({ ...prev, isEpp: category.isEpp ?? false, requiresPrevencion: category.requiresPrevencion ?? false }))
-    // Load attribute templates for this category
+    // Plantillas de atributos de la categoría. Se reparten igual que los dos
+    // editores: las `select` son ejes de variante (paso 2) y el resto va al
+    // editor avanzado. Antes las no-`select` se filtraban y se perdían, así que
+    // una plantilla de tipo texto o número no servía para nada.
     const categoryTemplates = templates.filter((t) => !t.categoryId || t.categoryId === id)
     if (categoryTemplates.length > 0) {
-      const loaded: AttributeMultiValues[] = categoryTemplates
+      const loadedSelect: AttributeMultiValues[] = categoryTemplates
         .filter((t) => t.type === "select")
         .map((t) => ({ name: t.name, type: "select", values: parseOptionsText(t.options), sizeFamily: t.sizeFamily }))
       setWizAttrs((prev) => {
-        const existing = new Set(prev.map((a) => a.name))
-        return [...prev, ...loaded.filter((a) => !existing.has(a.name))]
+        const existing = new Set(prev.map((a) => normalizeProductAttributeName(a.name)))
+        return [...prev, ...loadedSelect.filter((a) => !existing.has(normalizeProductAttributeName(a.name)))]
+      })
+
+      const loadedAdvanced: AttributeRow[] = categoryTemplates
+        .filter((t) => t.type !== "select")
+        .map((t, i) => ({
+          name: t.name, type: t.type, isRequired: t.isRequired,
+          options: "", sortOrder: t.sortOrder ?? i, drivesQuantity: false,
+        }))
+      setAdvAttrs((prev) => {
+        const existing = new Set(prev.map((a) => normalizeProductAttributeName(a.name)))
+        return [...prev, ...loadedAdvanced.filter((a) => !existing.has(normalizeProductAttributeName(a.name)))]
       })
     }
   }
 
   // ── Attribute management ──────────────────────────────────────────────────
+  // No fuerza `isEpp`: la categoría ya gobierna ese flag en
+  // `handleCategoryChange`, y agregar un atributo de talla a un producto que no
+  // es EPP no debería convertirlo en uno.
   function toggleAttrPreset(preset: { name: string; options: string[]; sizeFamily?: string }) {
-    setGeneral((prev) => ({ ...prev, isEpp: true }))
     setWizAttrs((prev) => {
       if (prev.some((a) => a.name === preset.name)) {
         return prev.filter((a) => a.name !== preset.name)
@@ -157,6 +203,53 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
     if (values.length === 0) {
       setVariants([])
     }
+  }
+
+  // Quitar un atributo cualquiera, sea preset o venido de una plantilla de
+  // categoría. No pasa por `toggleAttrPreset` porque ese además fuerza
+  // `isEpp = true`, y borrar una fila no debería convertir el producto en EPP.
+  function removeAttr(name: string) {
+    setWizAttrs((prev) => prev.filter((a) => a.name !== name))
+    setVariants([])
+  }
+
+  // ── Advanced (non-select) attribute management ────────────────────────────
+  const duplicateNames = React.useMemo(
+    () => duplicateAttributeNames(wizAttrs, advAttrs),
+    [wizAttrs, advAttrs],
+  )
+  // Una fila recién agregada y nunca completada no debe convertirse en atributo:
+  // `name` vacío haría fallar la validación del servidor sin que el usuario
+  // entienda por qué.
+  // El `type !== "select"` es a la vez estrechamiento de tipo y red de
+  // seguridad: los `select` son del paso 2, y si alguno se colara acá los dos
+  // editores serían dueños de la misma fila.
+  const submittableAdvAttrs = React.useMemo(
+    () => advAttrs.filter(
+      (a): a is AttributeRow & { type: AdvancedAttributeType } =>
+        a.name.trim().length > 0 && a.type !== "select",
+    ),
+    [advAttrs],
+  )
+
+  function updateAdvAttr(index: number, patch: Partial<AttributeRow>) {
+    markDirty()
+    setAdvAttrs((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)))
+  }
+
+  function toggleAdvDriver(index: number, checked: boolean) {
+    markDirty()
+    setAdvAttrs((prev) => setQuantityDriver(prev, index, checked))
+  }
+
+  function addAdvAttr() {
+    markDirty()
+    setAdvAttrs((prev) => [...prev, blankAdvancedAttribute(prev.length)])
+  }
+
+  function removeAdvAttr(index: number) {
+    markDirty()
+    setAdvAttrs((prev) => prev.filter((_, i) => i !== index))
   }
 
   function removeVariant(index: number) {
@@ -220,11 +313,20 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
         requiresPrevencion: general.requiresPrevencion,
         isService: general.isService,
         requiresWorker: general.requiresWorker,
+        equipmentKind: general.isService ? general.equipmentKind : "",
         referencePrice: general.referencePrice ? parseFloat(general.referencePrice) : null,
         notes: general.notes || undefined,
         isActive: general.isActive,
         attributes: wizAttrs.map((a, i) => ({
           name: a.name, type: "select", options: JSON.stringify(a.values), sizeFamily: a.sizeFamily, sortOrder: i,
+        })),
+        // Único camino por el que un driver de cantidad llega a un producto
+        // creado por lote. El índice único es por producto, así que un driver
+        // por variante es legal.
+        advancedAttributes: submittableAdvAttrs.map((a, i) => ({
+          name: a.name, type: a.type, isRequired: a.isRequired,
+          drivesQuantity: a.drivesQuantity ?? false,
+          sortOrder: wizAttrs.length + i,
         })),
         variants: variants.map((v) => ({
           name: v.name, attributes: v.attributes,
@@ -385,6 +487,101 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
                 label="Producto activo"
               />
             </div>
+
+            {/* Editor avanzado: inline y no un Sheet anidado — es estado del
+                producto que debe enviarse atómicamente con él, y un Sheet
+                dentro de otro pelearía con `isDirty`/`closingRef`. */}
+            <details className="rounded-(--radius) border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
+              <summary className="cursor-pointer text-sm font-medium text-[var(--color-text)]">
+                Atributos avanzados
+                {submittableAdvAttrs.length > 0 && (
+                  <span className="ml-1.5 text-xs font-normal text-[var(--color-text-muted)]">
+                    ({submittableAdvAttrs.length})
+                  </span>
+                )}
+              </summary>
+
+              <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+                Datos que no generan variantes: un texto libre, una medida, o un conteo
+                como el número de dosis. Las tallas y colores se definen en el paso siguiente.
+              </p>
+
+              <div className="mt-3 space-y-2">
+                {advAttrs.map((attr, index) => {
+                  const isDuplicate = attr.name.trim().length > 0
+                    && duplicateNames.has(normalizeProductAttributeName(attr.name))
+                  return (
+                    <div key={index} className="rounded-(--radius-sm) border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
+                      <div className="flex flex-wrap items-start gap-2">
+                        <div className="min-w-40 flex-1">
+                          <Input
+                            value={attr.name}
+                            onChange={(e) => updateAdvAttr(index, { name: e.target.value })}
+                            placeholder="Nombre (ej. Dosis)"
+                            aria-label={`Nombre del atributo avanzado ${index + 1}`}
+                            error={isDuplicate}
+                            className="h-8 text-sm"
+                          />
+                        </div>
+                        <Select
+                          value={attr.type}
+                          onValueChange={(value) => updateAdvAttr(index, { type: value as AttributeRow["type"] })}
+                          disabled={attr.drivesQuantity}
+                        >
+                          <SelectTrigger className="h-8 w-32 text-sm" aria-label={`Tipo del atributo ${attr.name || index + 1}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ADVANCED_ATTRIBUTE_TYPES.map((type) => (
+                              <SelectItem key={type} value={type}>{ADVANCED_TYPE_LABELS[type]}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <button
+                          type="button"
+                          onClick={() => removeAdvAttr(index)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-(--radius-sm) text-[var(--color-text-faint)] transition-colors hover:bg-[var(--color-danger-tint)] hover:text-[var(--color-danger)]"
+                          aria-label={`Quitar atributo ${attr.name || index + 1}`}
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap gap-4">
+                        <Checkbox
+                          id={`adv-req-${index}`}
+                          checked={attr.isRequired}
+                          onChange={(e) => updateAdvAttr(index, { isRequired: e.target.checked })}
+                          disabled={attr.drivesQuantity}
+                          label="Obligatorio"
+                        />
+                        <Checkbox
+                          id={`adv-drv-${index}`}
+                          checked={attr.drivesQuantity ?? false}
+                          onChange={(e) => toggleAdvDriver(index, e.target.checked)}
+                          label="Su valor es la cantidad"
+                        />
+                      </div>
+
+                      {isDuplicate && (
+                        <p className="mt-1.5 text-xs text-[var(--color-danger)]">
+                          Ya hay otro atributo con este nombre.
+                        </p>
+                      )}
+                      {attr.drivesQuantity && (
+                        <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">
+                          La cantidad del ítem se toma de este atributo, así que debe ser un conteo entero y obligatorio.
+                        </p>
+                      )}
+                    </div>
+                  )
+                })}
+
+                <Button type="button" variant="ghost" size="sm" onClick={addAdvAttr}>
+                  + Agregar atributo
+                </Button>
+              </div>
+            </details>
           </FieldGroup>
         )
 
@@ -396,6 +593,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
               isEpp={general.isEpp}
               onToggleAttr={toggleAttrPreset}
               onUpdateAttrValues={updateAttrValues}
+              onRemoveAttr={removeAttr}
               onGenerate={generateVariants}
               generating={generatingVariants}
               variantLimit={VARIANT_LIMIT}
@@ -524,19 +722,29 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
         {general.isService && general.requiresWorker && <input type="hidden" name="requiresWorker" value="on" />}
         {general.isService && <input type="hidden" name="equipmentKind" value={general.equipmentKind} />}
         {general.isActive && <input type="hidden" name="isActive" value="on" />}
+        {/* Edit mode merges the wizard's `select`-only editor back into the
+            product's full attribute set (mergeEditAttributes) so a non-select
+            attribute — e.g. an `integer` quantity driver — survives a save
+            instead of being silently converted to `select`. */}
+        {/* Los `select` salen del paso 2 y todo lo demás del editor avanzado;
+            en alta se concatenan, en edición los une `mergeEditAttributes`
+            conservando id y sortOrder de los que ya existían. */}
         <input type="hidden" name="attributesJson" value={JSON.stringify(
-          variants.length > 0
-            ? variants[0]!.attributes.map((a, i) => ({
-              name: a.name, type: "select" as const, isRequired: true, options: a.value, sortOrder: i,
-            }))
-            : wizAttrs.map((a, i) => ({
-              name: a.name, type: "select" as const, isRequired: true, options: a.values.join(", "), sortOrder: i,
-            }))
+          isEdit
+            ? mergeEditAttributes(editProduct!.attributes, wizAttrs, advAttrs)
+            : [
+              ...(variants.length > 0
+                ? variants[0]!.attributes.map((a, i) => ({
+                  name: a.name, type: "select" as const, isRequired: true, options: a.value, sortOrder: i,
+                }))
+                : wizAttrs.map((a, i) => ({
+                  name: a.name, type: "select" as const, isRequired: true, options: a.values.join(", "), sortOrder: i,
+                }))),
+              ...submittableAdvAttrs.map((a, i) => ({ ...a, sortOrder: wizAttrs.length + i })),
+            ]
         )} />
         <input type="hidden" name="suppliersJson" value={JSON.stringify(
-          supplier.hasSupplier && supplier.supplierId
-            ? [{ supplierId: supplier.supplierId, unitPrice: supplier.unitPrice ? parseFloat(supplier.unitPrice) : null, isPreferred: true, notes: supplier.notes || null }]
-            : []
+          buildSuppliersForSubmit(supplier, otherSuppliersState)
         )} />
 
         {/* Step indicator (hidden on edit, since it's not a step flow) */}
@@ -578,7 +786,13 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
             <Button type="button" variant="ghost" onClick={prevStep}>
               <ArrowLeft size={14} className="mr-1" /> Anterior
             </Button>
-            <Button type="button" onClick={nextStep}>
+            {/* `key` distinto del botón de envío del paso 3: sin él React
+                reconcilia los dos en el MISMO nodo del DOM y sólo le cambia el
+                `type`. Como eso ocurre dentro del propio click de «Siguiente»,
+                el botón ya era `type="submit"` cuando llegaba el `mouseup` y el
+                navegador enviaba el formulario: al entrar al paso 3 se creaban
+                los productos solos y el paso de proveedor no se podía usar. */}
+            <Button key="wizard-next" type="button" onClick={nextStep}>
               Siguiente <ArrowRight size={14} className="ml-1" />
             </Button>
           </>
@@ -588,11 +802,11 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
               <ArrowLeft size={14} className="mr-1" /> Anterior
             </Button>
             {variants.length > 1 ? (
-              <Button type="submit" disabled={batchPending}>
+              <Button key="wizard-submit-batch" type="submit" disabled={batchPending}>
                 {batchPending ? "Creando productos..." : `Crear ${variants.length} productos`}
               </Button>
             ) : (
-              <SubmitButton label="Crear producto" loadingLabel="Creando..." />
+              <SubmitButton key="wizard-submit-single" label="Crear producto" loadingLabel="Creando..." />
             )}
           </>
         )}

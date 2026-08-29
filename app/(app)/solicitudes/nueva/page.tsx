@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
-import { worksites, products, productAttributes, suppliers, productSuppliers, workers, serviceEquipment, purchaseRequests, preventionEmergencyResources } from "@/db/schema"
+import { worksites, products, productAttributes, suppliers, productSuppliers, workers, serviceEquipment, purchaseRequests, preventionEmergencyResources, productUnits } from "@/db/schema"
 import { and, eq, asc, desc, inArray } from "drizzle-orm"
 import { requireAuth } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/can"
@@ -47,7 +47,7 @@ export default async function NuevaSolicitudPage({
     ? "El tipo indicado en el enlace no está disponible para tu cuenta. Se seleccionó el primer tipo de solicitud que puedes crear."
     : undefined
 
-  const [allWorksites, allProducts, allAttrs, productSupplierRows, allSuppliers, allWorkers, allEquipment, maxFileSizeMb] = await Promise.all([
+  const [allWorksites, allProducts, allAttrs, productSupplierRows, allSuppliers, allWorkers, allEquipment, maxFileSizeMb, unitRows] = await Promise.all([
     db.select().from(worksites)
       .where(eq(worksites.isActive, true))
       .orderBy(asc(worksites.name)),
@@ -81,6 +81,12 @@ export default async function NuevaSolicitudPage({
       .where(eq(serviceEquipment.isActive, true))
       .orderBy(asc(serviceEquipment.code)),
     getPdfMaxSizeMb(),
+    // Sugerencias de unidad desde el catálogo del admin. Antes era una
+    // constante hardcodeada, así que crear una unidad en /admin/catalogos-productos
+    // no aparecía nunca acá.
+    db.select({ code: productUnits.code }).from(productUnits)
+      .where(eq(productUnits.isActive, true))
+      .orderBy(asc(productUnits.sortOrder), asc(productUnits.code)),
   ])
 
   // Scope worksites to the user's assignments
@@ -221,6 +227,7 @@ export default async function NuevaSolicitudPage({
       />
       <RequestForm
         worksites={worksiteOptions}
+        units={unitRows.map((u) => u.code)}
         initialWorksiteId={initialWorksiteId}
         products={productOptions}
         suppliers={supplierOptions}

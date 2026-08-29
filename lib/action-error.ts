@@ -27,3 +27,19 @@ export function safeActionMessage(e: unknown, fallback: string): string {
   }
   return e.message
 }
+
+/**
+ * Código Postgres 23503 = foreign_key_violation.
+ *
+ * Igual que con 23505, Drizzle envuelve el error del driver en un
+ * `DrizzleQueryError` que no expone `.code` propio: el código real queda en
+ * `.cause`, así que hay que mirar ambos niveles.
+ */
+export function isForeignKeyViolation(e: unknown): boolean {
+  const hasCode = (candidate: unknown) =>
+    typeof candidate === "object" && candidate !== null && "code" in candidate
+    && (candidate as { code?: string }).code === "23503"
+
+  if (hasCode(e)) return true
+  return hasCode(e instanceof Error ? e.cause : undefined)
+}

@@ -18,10 +18,65 @@ export interface NormalizedEppRow {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-export const UNIT_ALIASES: Record<string, string> = { uni: "unidad", un: "unidad", unidad: "unidad", par: "par", pares: "par", caja: "caja", pack: "paquete", paquete: "paquete", set: "set", juego: "juego" }
+export const UNIT_ALIASES: Record<string, string> = {
+  uni: "unidad", un: "unidad", unidad: "unidad", unidades: "unidad",
+  par: "par", pares: "par",
+  caja: "caja", cajas: "caja",
+  pack: "paquete", paquete: "paquete", paquetes: "paquete",
+  set: "set", juego: "juego",
+  bolsa: "bolsa", bolsas: "bolsa",
+  rollo: "rollo", rollos: "rollo",
+  kit: "kit", kits: "kit",
+  tarro: "tarro", tarros: "tarro",
+  bidon: "bidon", bidones: "bidon",
+  kg: "kg", kilo: "kg", kilos: "kg", kilogramo: "kg", kilogramos: "kg",
+  litro: "litro", litros: "litro", lt: "litro", l: "litro",
+  metro: "metro", metros: "metro", mt: "metro", m: "metro",
+  servicio: "servicio", servicios: "servicio",
+  dosis: "dosis",
+}
 export const COLOR_ALIASES: Record<string, string> = { blanco: "Blanco", negra: "Negro", negro: "Negro", azul: "Azul", "azul marino": "Azul marino", rojo: "Rojo", roja: "Rojo", amarillo: "Amarillo", amarilla: "Amarillo", verde: "Verde", gris: "Gris", claro: "Claro", transparente: "Transparente" }
 export const EPP_TYPES = ["casco", "guante", "lente", "antiparra", "botin", "zapato", "chaleco", "mascarilla", "respirador", "arnes", "protector auditivo", "buzo", "traje", "pantalon", "chaqueta", "otros"] as const
-export const VALID_UNITS = ["unidad", "par", "caja", "paquete", "set", "juego"] as const
+
+/**
+ * Maps this import's item-level vocabulary (EPP_TYPES, e.g. "casco") to the
+ * `epp_types.code` body-part vocabulary ("cabeza") that Prevención's EPP
+ * coverage tracking (`computeEppCoverageGaps`) actually joins on. `resolveFamily`
+ * uses this to classify a family's `eppTypeId` at import time — without it,
+ * every imported family stayed unclassified and no delivery of it ever
+ * counted as coverage for anyone.
+ */
+export const EPP_TYPE_TO_BODY_PART_CODE: Partial<Record<(typeof EPP_TYPES)[number], string>> = {
+  casco: "cabeza",
+  lente: "ojos_cara",
+  antiparra: "ojos_cara",
+  "protector auditivo": "auditiva",
+  mascarilla: "respiratoria",
+  respirador: "respiratoria",
+  guante: "manos",
+  botin: "pies",
+  zapato: "pies",
+  arnes: "caidas",
+  chaleco: "cuerpo",
+  buzo: "cuerpo",
+  traje: "cuerpo",
+  pantalon: "cuerpo",
+  chaqueta: "cuerpo",
+}
+/**
+ * Unidades que el importador acepta. Debe reflejar los códigos sembrados por
+ * la migración `0228_seed_product_units` — ésa es la fuente de verdad; acá se
+ * duplican porque este archivo es deliberadamente libre de `@/db` (lo importan
+ * componentes cliente) y no puede consultar el catálogo.
+ *
+ * Con las 6 originales, una fila con `rollo`, `litro`, `kg` o `dosis` se
+ * bloqueaba en la importación aunque fuera una unidad perfectamente válida.
+ */
+export const VALID_UNITS = [
+  "unidad", "par", "caja", "paquete", "set", "juego",
+  "bolsa", "rollo", "kit", "tarro", "bidon",
+  "kg", "litro", "metro", "servicio", "dosis",
+] as const
 export const VALID_COLORS = [...new Set(Object.values(COLOR_ALIASES))]
 
 export const RULE_LABELS: Record<string, string> = {

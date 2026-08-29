@@ -8,6 +8,7 @@ import {
   approvalDecisions, purchaseRequestItems,
   repuestoQuotations, serviceQuotations,
   purchaseOrders, purchaseOrderItems,
+  productUnits,
 } from "@/db/schema"
 import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm"
 import { can, requireAuth } from "@/lib/auth/can"
@@ -156,7 +157,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     referencedEquipment.map((equipment) => [equipment.id, equipment.code]),
   )
 
-  const [allWorksites, allProducts, allAttrs, productSupplierRows, timelineEvents, approvalDecisionRows, allSuppliers, maxFileSizeMb] = await Promise.all([
+  const [allWorksites, allProducts, allAttrs, productSupplierRows, timelineEvents, approvalDecisionRows, allSuppliers, maxFileSizeMb, unitRows] = await Promise.all([
     db.select().from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
     canEditItems
       ? db.select().from(products).where(
@@ -223,6 +224,11 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
       .orderBy(desc(approvalDecisions.decidedAt)),
     db.select().from(suppliers).where(eq(suppliers.isActive, true)).orderBy(asc(suppliers.name)),
     getPdfMaxSizeMb(),
+    // Mismas sugerencias de unidad que en /solicitudes/nueva: desde el catálogo
+    // del admin, no desde una constante.
+    db.select({ code: productUnits.code }).from(productUnits)
+      .where(eq(productUnits.isActive, true))
+      .orderBy(asc(productUnits.sortOrder), asc(productUnits.code)),
   ])
 
   const worksiteOptions = allWorksites
@@ -445,6 +451,7 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
         )}
         <RequestForm
           worksites={worksiteOptions}
+          units={unitRows.map((u) => u.code)}
           products={productOptions}
           suppliers={supplierOptions}
           editRequest={editRequest}

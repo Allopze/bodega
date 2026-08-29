@@ -1,16 +1,9 @@
+import { duplicateNormalizedNames, normalizeAttributeName } from "@/lib/products/attribute-names"
 import type { AttributeRow, SupplierRow, AttributeMultiValues, VariantCombo, WizardStep, WizardGeneralState, WizardCloseAction } from "./product-form.types"
-import { nanoid } from "@/lib/id"
 
 // ── Text helpers ─────────────────────────────────────────────────────────────
 
-export function normalizeProductAttributeName(value: string) {
-  return value
-    .trim()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-}
+export { normalizeAttributeName as normalizeProductAttributeName } from "@/lib/products/attribute-names"
 
 /**
  * Parse attribute options stored as JSON array or comma/newline-separated text.
@@ -28,25 +21,86 @@ export function parseOptionsText(text: string): string[] {
 
 // ── Attribute helpers ────────────────────────────────────────────────────────
 
-export function mergeProductAttribute(rows: AttributeRow[], next: AttributeRow): AttributeRow[] {
-  const existingIndex = rows.findIndex(
-    (row) => normalizeProductAttributeName(row.name) === normalizeProductAttributeName(next.name),
-  )
-  const existing = existingIndex >= 0 ? rows[existingIndex] : undefined
-  const merged = {
-    ...next,
-    id: existing?.id ?? next.id ?? nanoid(),
-    sortOrder: existing?.sortOrder ?? next.sortOrder ?? rows.length,
-  }
+// ── Edit-mode attribute/supplier preservation ──────────────────────────────
+//
+// The wizard UI only edits ONE supplier slot and only creates/edits `select`
+// attributes. Saving an edited product must not silently drop every other
+// supplier or every non-select attribute (e.g. an `integer` quantity driver)
+// that the product already had from another path (import, seed, API).
 
-  if (existingIndex < 0) return [...rows, merged]
-  return rows.map((row, index) => (index === existingIndex ? merged : row))
+/**
+ * The supplier the wizard's single "Proveedor" step edits: the preferred one
+ * if there is one, else the first. Everything else is carried through
+ * untouched by `buildSuppliersForSubmit`.
+ */
+export function pickPrimarySupplier(suppliers: SupplierRow[]): SupplierRow | null {
+  return suppliers.find((s) => s.isPreferred) ?? suppliers[0] ?? null
 }
 
-// Only one supplier can be preferred per product (DB-enforced). Checking one
-// row's "preferred" unchecks every other row instead of allowing multiple.
-export function setPreferredSupplier(rows: SupplierRow[], index: number, checked: boolean): SupplierRow[] {
-  return rows.map((row, idx) => ({ ...row, isPreferred: idx === index ? checked : (checked ? false : row.isPreferred) }))
+export function otherSuppliers(suppliers: SupplierRow[], primary: SupplierRow | null): SupplierRow[] {
+  if (!primary) return suppliers
+  return suppliers.filter((s) => s !== primary)
+}
+
+export interface SupplierSubmitRow {
+  supplierId: string
+  unitPrice: number | null
+  isPreferred: boolean
+  notes: string | null
+}
+
+export function buildSuppliersForSubmit(
+  primary: { supplierId: string; unitPrice: string; notes: string; hasSupplier: boolean },
+  others: SupplierRow[],
+): SupplierSubmitRow[] {
+  const rest: SupplierSubmitRow[] = others.map((s) => ({
+    supplierId: s.supplierId,
+    unitPrice: s.unitPrice ? parseFloat(s.unitPrice) : null,
+    isPreferred: false,
+    notes: s.notes || null,
+  }))
+  if (!primary.hasSupplier || !primary.supplierId) return rest
+  return [
+    { supplierId: primary.supplierId, unitPrice: primary.unitPrice ? parseFloat(primary.unitPrice) : null, isPreferred: true, notes: primary.notes || null },
+    ...rest,
+  ]
+}
+
+/**
+ * Une los dos editores de atributos en la lista que se envía al servidor.
+ *
+ * La propiedad se reparte por **tipo**, no por editor, que es lo que evita que
+ * peleen por la misma fila: los chips del paso 2 son dueños de los `select`
+ * (los ejes de variante), y el editor avanzado es dueño de todo lo demás
+ * (`text`/`number`/`integer`, incluido el atributo que gobierna la cantidad).
+ * Los `select` se casan por nombre normalizado contra el snapshot para
+ * conservar su `id` y `sortOrder`.
+ */
+export function mergeEditAttributes(
+  original: AttributeRow[],
+  wizAttrs: AttributeMultiValues[],
+  advAttrs: AttributeRow[],
+): AttributeRow[] {
+  // La mitad no-`select` sale del editor avanzado (estado vivo), no del
+  // snapshot del servidor: si se leyera `original` como antes, cualquier
+  // edición del editor avanzado se descartaría en silencio al guardar.
+  const nonSelect = advAttrs.filter((a) => a.type !== "select")
+  const existingByName = new Map(
+    original.filter((a) => a.type === "select").map((a) => [normalizeAttributeName(a.name), a]),
+  )
+  const selectAttrs = wizAttrs.map((attr, i) => {
+    const existing = existingByName.get(normalizeAttributeName(attr.name))
+    return {
+      id: existing?.id,
+      name: attr.name,
+      type: "select" as const,
+      isRequired: existing?.isRequired ?? true,
+      options: JSON.stringify(attr.values),
+      sizeFamily: attr.sizeFamily,
+      sortOrder: existing?.sortOrder ?? original.length + i,
+    }
+  })
+  return [...nonSelect, ...selectAttrs]
 }
 
 // ── Variant generation (Cartesian product) ────────────────────────────────────
@@ -117,6 +171,56 @@ export function shouldShowConfirmClose(
  * providing a direction-aware slide-in effect.
  */
 export function getStepAnimationClass(direction: "forward" | "backward"): string {
-  const from = direction === "forward" ? "right" : "left"
-  return `animate-in fade-in-0 slide-in-from-${from}-4 duration-[var(--duration-default)] ease-[var(--ease-out)]`
+  // Clases literales y no interpoladas: Tailwind escanea el código fuente como
+  // texto, así que una clase armada en tiempo de ejecución (interpolando la
+  // dirección dentro del nombre) nunca llegaba al CSS compilado y la animación
+  // simplemente no existía. La prueba afirmaba el string resultante, por eso
+  // pasaba igual; el chequeo de verdad mira la fuente.
+  return direction === "forward"
+    ? "animate-in fade-in-0 slide-in-from-right-4 duration-[var(--duration-default)] ease-[var(--ease-out)]"
+    : "animate-in fade-in-0 slide-in-from-left-4 duration-[var(--duration-default)] ease-[var(--ease-out)]"
+}
+
+// ── Editor de atributos avanzados ────────────────────────────────────────────
+
+/**
+ * El editor avanzado **no** ofrece `select` a propósito: ese tipo es el que
+ * genera variantes y ya tiene su propia UI en el paso 2. Si ambos editores
+ * pudieran crear `select`, los dos serían dueños de la misma fila.
+ */
+export const ADVANCED_ATTRIBUTE_TYPES = ["text", "number", "integer"] as const
+export type AdvancedAttributeType = (typeof ADVANCED_ATTRIBUTE_TYPES)[number]
+
+export function blankAdvancedAttribute(sortOrder: number): AttributeRow {
+  return { name: "", type: "text", isRequired: false, options: "", sortOrder, drivesQuantity: false }
+}
+
+/**
+ * Marca (o desmarca) el atributo que gobierna la cantidad.
+ *
+ * `productAttributeSchema` exige que un driver sea `integer` **y** obligatorio,
+ * y la BD sólo admite uno por producto (índice único parcial). Aplicar las tres
+ * reglas acá evita que el usuario reciba un error de campo que no puede
+ * explicarse desde lo que ve.
+ */
+export function setQuantityDriver(rows: AttributeRow[], index: number, checked: boolean): AttributeRow[] {
+  return rows.map((row, i) => {
+    if (i !== index) return checked ? { ...row, drivesQuantity: false } : row
+    return checked
+      ? { ...row, drivesQuantity: true, type: "integer" as const, isRequired: true }
+      : { ...row, drivesQuantity: false }
+  })
+}
+
+/**
+ * Nombres normalizados que aparecen en más de un atributo, mirando los dos
+ * editores juntos. Dos atributos con el mismo nombre se pisan al resolverse
+ * por nombre en la solicitud (`quantityFromAttributes` y `catalogItemIssues`
+ * caen al nombre cuando no hay id).
+ */
+export function duplicateAttributeNames(wizAttrs: AttributeMultiValues[], advAttrs: AttributeRow[]): Set<string> {
+  return duplicateNormalizedNames([
+    ...wizAttrs.map((a) => a.name),
+    ...advAttrs.map((a) => a.name),
+  ])
 }

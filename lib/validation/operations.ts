@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { todayInChile } from "@/lib/utils"
 import { normalizeEquipmentCode } from "@/lib/products/service-items"
+import { unitOfMeasureSchema } from "./product-catalogs"
 
 // ── Re-export shared ActionState ──────────────────────────────────────────────
 export type { ActionState } from "./masters"
@@ -30,7 +31,7 @@ export const requestItemSchema = z.object({
   productId:           z.string().nullable().optional(),
   productNameFree:     z.string().max(120).nullable().optional().or(z.literal("")),
   quantity:            z.coerce.number().positive("Cantidad debe ser mayor a 0"),
-  unitOfMeasure:       z.string().min(1, "Unidad requerida").max(20).default("unidad"),
+  unitOfMeasure:       unitOfMeasureSchema.default("unidad"),
   urgency:             z.enum(["normal", "high", "critical"]).default("normal"),
   requiredDate:        requiredOperationalDate.optional().nullable(),
   workerId:            z.string().optional().nullable(),
@@ -116,7 +117,7 @@ export const createOrderItemSchema = z.object({
   productId:       z.string().nullable().optional(),
   productNameFree: z.string().nullable().optional(),
   quantity:        z.coerce.number().refine(Number.isFinite, "Cantidad inválida").positive("Cantidad debe ser mayor a 0"),
-  unitOfMeasure:   z.string().min(1, "Unidad requerida").max(20),
+  unitOfMeasure:   unitOfMeasureSchema,
   unitPrice:       pendingOrKnownMoneySchema,
   discount:        z.coerce.number().refine(Number.isFinite, "Descuento inválido").min(0).max(100).default(0),
   notes:           z.string().max(300).nullable().optional().or(z.literal("")),

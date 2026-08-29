@@ -74,7 +74,7 @@ describe("RequestForm — agregar un ítem", () => {
         worksites={worksites}
         products={products}
         suppliers={[]}
-        maxFileSizeMb={10}
+        units={["unidad", "par", "caja"]} maxFileSizeMb={10}
         initialRequestType="otro"
       />,
     )
@@ -110,7 +110,7 @@ describe("RequestForm — agregar un ítem", () => {
           worksites={worksites}
           products={products}
           suppliers={[]}
-          maxFileSizeMb={10}
+          units={["unidad", "par", "caja"]} maxFileSizeMb={10}
           initialRequestType="otro"
         />,
       )
@@ -143,7 +143,7 @@ describe("RequestForm — agregar un ítem", () => {
         worksites={worksites}
         products={products}
         suppliers={[]}
-        maxFileSizeMb={10}
+        units={["unidad", "par", "caja"]} maxFileSizeMb={10}
         initialRequestType="otro"
       />,
     )
@@ -154,7 +154,7 @@ describe("RequestForm — agregar un ítem", () => {
         worksites={worksites}
         products={products}
         suppliers={[]}
-        maxFileSizeMb={10}
+        units={["unidad", "par", "caja"]} maxFileSizeMb={10}
         initialRequestType="otro"
       />,
     )

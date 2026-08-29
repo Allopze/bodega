@@ -12,7 +12,7 @@ import { parseCatalogWorkbook } from "@/lib/services/catalog-import"
 import type { ActionState } from "@/lib/validation/masters"
 import { nanoid } from "@/lib/id"
 import { lockCatalogProductsForUpdateTx } from "@/lib/services/catalog-product-locks"
-import { formString, generateUniqueProductSku, REVALIDATE } from "./helpers"
+import { formString, generateUniqueSkus, REVALIDATE } from "./helpers"
 
 // ── EPP Import (Excel → review → confirm) ──────────────────────────────────────
 
@@ -152,6 +152,17 @@ export async function importProductsFromXlsx(_prev: ActionState, formData: FormD
       const missingTargetId = updateProductIds.find((productId) => !lockedProductIds.has(productId))
       if (missingTargetId) throw new Error("Uno de los productos del archivo ya no existe")
 
+      // Todos los SKU del lote de una sola consulta y sobre `tx`: generarlos de
+      // a uno con `db` consultaba fuera de la transacción, así que dos filas del
+      // mismo archivo podían sacar el mismo SKU (la consulta no ve las filas aún
+      // sin commitear) y el import moría con un error de constraint crudo.
+      const pendingSkus = await generateUniqueSkus(
+        tx,
+        activeRows.filter((row) => !(row.decision === "update" && row.existingId)).length,
+        false,
+      )
+      let nextSkuIndex = 0
+
       for (const row of activeRows) {
         const v = row.values
         const name = (v["Nombre"] ?? "").trim()
@@ -174,7 +185,7 @@ export async function importProductsFromXlsx(_prev: ActionState, formData: FormD
           }).where(eq(products.id, row.existingId!))
         } else {
           created++
-          const sku = await generateUniqueProductSku(false)
+          const sku = pendingSkus[nextSkuIndex++]!
           const id = nanoid()
           await tx.insert(products).values({
             id, sku, name,

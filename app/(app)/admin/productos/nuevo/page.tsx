@@ -56,9 +56,10 @@ export default async function NuevoProductoPage() {
           categoryId: template.categoryId ?? "",
           categoryName: template.category?.name,
           name: template.name,
-          type: template.type as "text" | "select" | "number",
+          type: template.type as "text" | "select" | "number" | "integer",
           isRequired: template.isRequired,
           options: template.options ?? "",
+          sizeFamily: template.sizeFamily ?? undefined,
           sortOrder: template.sortOrder,
         }))}
       />

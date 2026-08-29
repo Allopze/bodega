@@ -10,7 +10,7 @@ export function normalizePickerText(value: string) {
 
 export function filterProductsForPicker(products: ProductOption[], query: string) {
   const trimmed = query.trim()
-  if (!trimmed) return products.slice(0, 50)
+  if (!trimmed) return products
 
   const needle = normalizePickerText(trimmed)
   return products.filter((product) => {
@@ -20,6 +20,13 @@ export function filterProductsForPicker(products: ProductOption[], query: string
   })
 }
 
+/** Familias mostradas cuando no hay búsqueda escrita. */
+const PICKER_GROUP_LIMIT = 50
+
 export function groupProductsForPicker(products: ProductOption[], query: string) {
-  return groupProductVariants(filterProductsForPicker(products, query))
+  // El recorte va DESPUÉS de agrupar: cortando antes, 50 filas de variantes
+  // podían ser apenas 4 o 5 familias reales (una familia de EPP con tallas y
+  // colores gasta decenas de filas por sí sola).
+  const groups = groupProductVariants(filterProductsForPicker(products, query))
+  return query.trim() ? groups : groups.slice(0, PICKER_GROUP_LIMIT)
 }

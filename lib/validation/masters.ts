@@ -1,6 +1,8 @@
 import { z } from "zod"
 import { cleanRut, validateRut } from "@/lib/rut"
 import { normalizeEquipmentCode } from "@/lib/products/service-items"
+import { duplicateNormalizedNames } from "@/lib/products/attribute-names"
+import { unitOfMeasureSchema } from "./product-catalogs"
 
 // ── Chilean RUT helper ────────────────────────────────────────────────────────
 // Canonical cleaning/validation lives in @/lib/rut (audit A-15).
@@ -120,7 +122,16 @@ export const productAttributeSchema = z.object({
   type:       z.enum(["text", "select", "number", "integer"]),
   isRequired: z.coerce.boolean().default(false),
   options:    z.string().max(4000, "Opciones demasiado largas").optional().nullable(),   // JSON array string for "select"
-  sizeFamily: z.string().max(20).optional().or(z.literal("")).or(z.literal("undefined")),
+  /**
+   * `""` y el literal `"undefined"` significan ambos "sin familia de tallas".
+   * El segundo existe porque en algún momento se serializó un `undefined` a
+   * string y el schema se ensanchó para aceptarlo; mientras `updateProduct`
+   * descartaba el campo era inofensivo, pero al persistirlo entraría el texto
+   * "undefined" en la columna. Se normaliza acá, una vez, en vez de repetir el
+   * guard en cada call site (`a.sizeFamily || null` no atrapa "undefined").
+   */
+  sizeFamily: z.string().max(20).optional()
+                .transform((value) => (value && value !== "undefined" ? value : undefined)),
   /** El valor de este atributo ES la cantidad del ítem solicitado. */
   drivesQuantity: z.coerce.boolean().default(false),
   sortOrder:  z.coerce.number().int().default(0),
@@ -167,7 +178,7 @@ export const productSchema = z.object({
   name:               z.string().min(2, "Nombre requerido").max(120),
   description:        z.string().max(500).optional().or(z.literal("")),
   categoryId:         z.string().min(1, "Selecciona una categoría"),
-  unitOfMeasure:      z.string().min(1, "Unidad requerida").max(20).default("unidad"),
+  unitOfMeasure:      unitOfMeasureSchema.default("unidad"),
   isEpp:              z.coerce.boolean().default(false),
   requiresPrevencion: z.coerce.boolean().default(false),
   /** Servicio: se solicita sin precio y su costo se registra sobre la OC. */
@@ -184,6 +195,18 @@ export const productSchema = z.object({
   attributes:         z.array(productAttributeSchema).default([]),
   suppliers:          z.array(productSupplierSchema).default([]),
 }).superRefine((data, ctx) => {
+  // Dos atributos con el mismo nombre se pisan cuando la solicitud los resuelve
+  // por nombre (`quantityFromAttributes` y `catalogItemIssues` caen al nombre
+  // si no hay id). El formulario ya lo marca, pero esta es la frontera de
+  // confianza y cubre también al import y al lote de variantes.
+  const names = data.attributes.map((a) => a.name).filter(Boolean)
+  if (duplicateNormalizedNames(names).size > 0) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Hay dos atributos con el mismo nombre",
+      path: ["attributes"],
+    })
+  }
   // El índice único parcial de la BD ya lo cierra; acá el error es legible.
   if (data.attributes.filter((a) => a.drivesQuantity).length > 1) {
     ctx.addIssue({
