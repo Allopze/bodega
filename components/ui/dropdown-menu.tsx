@@ -40,7 +40,11 @@ const DropdownMenuContent = React.forwardRef<
         "data-[state=open]:animate-in data-[state=closed]:animate-out",
         "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
         "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
-        "duration-[var(--duration-fast)]",
+        // Menús pequeños merecen 180ms, no 140ms: la curva ease-out de la
+        // cabecera global termina antes que el ojo rastree el contenido,
+        // y la siguiente interacción (hover sobre un ítem) llega con
+        // el menú todavía "apareciendo".
+        "duration-[var(--duration-default)] ease-[var(--ease-out)]",
         className
       )}
       {...props}

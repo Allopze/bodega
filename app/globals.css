@@ -257,10 +257,22 @@ body {
   background: transparent;
 }
 
-/* ─── Pressable — color transition on press (no scale) ── */
+/* ─── Pressable — color transition + press scale ──
+   El feedback de presión estaba sólo en <Button> (scale 0.98). El resto de
+   superficies interactivas (nav, link, tarjeta resumen) sólo cambiaba color:
+   la presión se sentía como un parpadeo, no como un toque. Unificar al
+   mismo 0.98 del botón le devuelve al usuario la sensación de que el
+   sistema registra el gesto, sin introducir sombras (la jerarquía sigue
+   cargada en los bordes). 140ms con ease-out — la curva corta del
+   baseline, no una excepción. */
 @media (prefers-reduced-motion: no-preference) {
   [data-pressable] {
-    transition: background-color var(--duration-fast) var(--ease-out);
+    transition:
+      background-color var(--duration-fast) var(--ease-out),
+      transform        var(--duration-fast) var(--ease-out);
+  }
+  [data-pressable]:active {
+    transform: scale(0.98);
   }
 }
 
@@ -300,18 +312,15 @@ body {
 [data-density="compact"] td { font-size: var(--text-xs); }
 
 /* ─── Movimiento reducido (WCAG 2.3.3) ─────────────────────────────────────
-   Cubre de una vez las animaciones que no pasan por utilidades de Tailwind:
-   entrada/salida del drawer, toasts de Sonner y los `animate-in`/`animate-out`
-   de tw-animate-css. Los cambios de color y opacidad se conservan: no producen
-   movimiento y son los que transmiten el estado. */
+   El kill switch global está más abajo (línea ~445). Este bloque sólo cubre
+   el caso del toast de Sonner, que tiene su propio `translate` y `transform:
+   scale()` dentro del keyframe — el global no los alcanza. Se mata sólo el
+   movimiento espacial; el fade de opacidad sigue corriendo, así el toast
+   sigue siendo una señal funcional cuando el usuario lo prefiere quieto. */
 @media (prefers-reduced-motion: reduce) {
   [data-sonner-toast],
   [data-sonner-toast][data-mounted="true"],
-  [data-sonner-toast][data-removed="true"],
-  .animate-in,
-  .animate-out {
-    animation: none !important;
-    transition-duration: 1ms !important;
+  [data-sonner-toast][data-removed="true"] {
     translate: none !important;
     transform: none !important;
   }
@@ -429,7 +438,13 @@ body {
   }
 }
 
-/* ─── Reduced motion ── */
+/* ─── Reduced motion (kill switch global) ──
+   WCAG 2.3.3. El switch mata movimiento, no señal: las animaciones de los
+   `animate-in`/`animate-out` y las transiciones de presión se completan en
+   0.01ms — el `transitionend` y `animationend` siguen disparando, así
+   cualquier JS que escuche esos eventos no se queda colgado esperando un
+   `none` que nunca termina. Los cambios de color y opacidad se conservan:
+   no producen movimiento y son los que comunican el estado. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     --duration-fast: 0ms;
@@ -442,7 +457,7 @@ body {
   }
   [data-pressable],
   button {
-    transition-duration: 0ms !important;
+    transition-duration: 0.01ms !important;
   }
   @keyframes shimmer {
     from { opacity: 0.5; }
