@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 import { NextResponse } from "next/server"
 import { headers } from "next/headers"
 import sharp from "sharp"
+import { resolveTrustedClientIp } from "@/lib/security/login-rate-limit-ip"
 import { checkRateLimit, consumeFixedWindowLimit, recordFailure, recordSuccessForTelemetry } from "@/lib/services/rate-limit"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { createTaeSubmission, type TaeEvidenceKind, type TaeEvidenceUpload } from "@/lib/services/fuel-tae"
@@ -32,12 +33,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: "Control TAE temporalmente inactivo" }, { status: 503 })
   }
   const requestHeaders = await headers()
-  const ipAddress = requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1"
-  const volumeLimit = await consumeFixedWindowLimit(`tae:submit-volume:ip:${ipAddress}`, { maxAttempts: 120, lockMs: 15 * 60 * 1000 })
+  const rateLimitIp = resolveTrustedClientIp(requestHeaders)
+  // Audit records must use the same trusted identity as the public limiter.
+  const ipAddress = rateLimitIp
+  const volumeLimit = await consumeFixedWindowLimit(`tae:submit-volume:ip:${rateLimitIp}`, { maxAttempts: 120, lockMs: 15 * 60 * 1000 })
   if (!volumeLimit.allowed) {
     return NextResponse.json({ ok: false, message: "Se alcanzó el límite de envíos para este origen. Intenta nuevamente más tarde." }, { status: 429 })
   }
-  const rateLimit = await checkRateLimit(`tae:submit:${ipAddress}`)
+  const rateLimit = await checkRateLimit(`tae:submit:${rateLimitIp}`)
   if (!rateLimit.allowed) {
     return NextResponse.json({ ok: false, message: "Demasiados envíos. Intenta nuevamente más tarde." }, { status: 429 })
   }
@@ -86,10 +89,10 @@ export async function POST(request: Request) {
     const ocrResult = odometerFile ? await extractMeterReading(odometerFile.buffer) : undefined
 
     const result = await createTaeSubmission({ accessToken, input: parsed.data, evidence, ipAddress, ocrResult })
-    await recordSuccessForTelemetry(`tae:submit:${ipAddress}`)
+    await recordSuccessForTelemetry(`tae:submit:${rateLimitIp}`)
     return NextResponse.json({ ok: true, data: result })
   } catch (error) {
-    await recordFailure(`tae:submit:${ipAddress}`, { maxAttempts: 12 })
+    await recordFailure(`tae:submit:${rateLimitIp}`, { maxAttempts: 12 })
     const message = error instanceof Error ? error.message : "No se pudo registrar la carga TAE"
     return NextResponse.json({ ok: false, message }, { status: 400 })
   }

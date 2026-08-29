@@ -8,6 +8,7 @@ import { z } from "zod"
 import { applyRbacToToken, getUserRbacById } from "@/lib/auth/rbac"
 import { isPasswordSetupPending } from "@/lib/auth/password-setup"
 import { isTemporaryAccountExpired } from "@/lib/auth/temporary-account"
+import { resolveTrustedClientIp } from "@/lib/security/login-rate-limit-ip"
 
 import { headers } from "next/headers"
 import {
@@ -85,12 +86,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!parsed.success) return null
 
         const email = parsed.data.email.toLowerCase()
-        let clientIp = "127.0.0.1"
+        let clientIp = "unresolved"
         try {
           const headersList = await headers()
-          clientIp = headersList.get("x-forwarded-for")?.split(",")[0] || "127.0.0.1"
+          clientIp = resolveTrustedClientIp(headersList)
         } catch {
-          // Fallback if headers are not available
+          // A shared key is safe if request headers are unavailable: it cannot
+          // be split by an attacker into unlimited per-IP rate-limit buckets.
         }
 
         const ipCheck = await persistentCheckRateLimit(clientIp)

@@ -9,6 +9,7 @@ import { isInvitationUsable } from "@/lib/auth/invitations"
 import { isPasswordSetupPending } from "@/lib/auth/password-setup"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
+import { resolveTrustedClientIp } from "@/lib/security/login-rate-limit-ip"
 import { checkRateLimit, recordFailure, recordSuccess } from "@/lib/services/rate-limit"
 import { registerUserSchema, type ActionState } from "@/lib/validation/masters"
 import { headers } from "next/headers"
@@ -44,10 +45,10 @@ export async function registerUser(
   const data = parsed.data
 
   // Rate-limit por IP y email (defensa en profundidad).
-  let clientIp = "127.0.0.1"
+  let clientIp = "unresolved"
   try {
     const h = await headers()
-    clientIp = h.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1"
+    clientIp = resolveTrustedClientIp(h)
   } catch {}
 
   const ipRateKey = `registro:ip:${clientIp}`

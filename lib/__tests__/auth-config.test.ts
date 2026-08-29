@@ -88,7 +88,7 @@ describe("NextAuth configuration", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockCheckRateLimit.mockResolvedValue({ allowed: true, waitTimeRemainingMs: 0 })
-    mockHeaders.mockResolvedValue({ get: (key: string) => key === "x-forwarded-for" ? "203.0.113.1" : null })
+    mockHeaders.mockResolvedValue({ get: (key: string) => key === "cf-connecting-ip" ? "203.0.113.1" : null })
     mockIsPasswordSetupPending.mockReturnValue(false)
   })
 
@@ -145,6 +145,43 @@ describe("NextAuth configuration", () => {
       const result = await authorize({ email: "missing@example.com", password: "pwd" })
       expect(result).toBeNull()
       expect(mockRecordFailure).toHaveBeenCalledWith("203.0.113.1")
+    })
+
+    it("mantiene la clave IP aunque rote X-Forwarded-For", async () => {
+      mockFindFirst.mockResolvedValue(null)
+      mockCompare.mockResolvedValue(false)
+      mockHeaders.mockResolvedValue({
+        get: (key: string) => key === "cf-connecting-ip"
+          ? "203.0.113.1"
+          : key === "x-forwarded-for"
+            ? "10.0.0.1"
+            : null,
+      })
+
+      await authorize({ email: "spray-a@example.com", password: "pwd" })
+
+      mockHeaders.mockResolvedValue({
+        get: (key: string) => key === "cf-connecting-ip"
+          ? "203.0.113.1"
+          : key === "x-forwarded-for"
+            ? "10.0.0.2"
+            : null,
+      })
+
+      await authorize({ email: "spray-b@example.com", password: "pwd" })
+
+      expect(mockCheckRateLimit.mock.calls.map(([key]) => key)).toEqual([
+        "203.0.113.1",
+        "spray-a@example.com",
+        "203.0.113.1",
+        "spray-b@example.com",
+      ])
+      expect(mockRecordFailure.mock.calls.map(([key]) => key)).toEqual([
+        "203.0.113.1",
+        "spray-a@example.com",
+        "203.0.113.1",
+        "spray-b@example.com",
+      ])
     })
 
     it("returns user safe data on successful login", async () => {

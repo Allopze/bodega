@@ -5,6 +5,7 @@ import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import { ppaSubmitSchema, type ActionState } from "@/lib/validation/ppa"
 import { z } from "zod"
 import { logger } from "@/lib/logger"
+import { resolveTrustedClientIp } from "@/lib/security/login-rate-limit-ip"
 import { headers } from "next/headers"
 import { checkRateLimit, consumeFixedWindowLimit, recordFailure, recordSuccessForTelemetry } from "@/lib/services/rate-limit"
 import { isRouteOperational } from "@/lib/services/module-toggles"
@@ -41,7 +42,7 @@ export async function submitPpaAction(
     return { ok: false, message: "PPA Digital está inactivo temporalmente." }
   }
   const h = await headers()
-  const clientIp = h.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1"
+  const clientIp = resolveTrustedClientIp(h)
 
   // La cuota por IP se consume SIEMPRE y antes de validar: un payload basura
   // repetido también es escritura no autenticada contra la base.
@@ -108,7 +109,7 @@ export async function findWorkerByRutAction(
 
   // Rate limit por IP para evitar enumeración masiva de trabajadores (S-01)
   const h = await headers()
-  const clientIp = h.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1"
+  const clientIp = resolveTrustedClientIp(h)
   const lookupLimitKey = `ppa-lookup:${clientIp}`
   const limitRes = await checkRateLimit(lookupLimitKey)
   if (!limitRes.allowed) {

@@ -1,6 +1,7 @@
 "use server"
 
 import { requestPasswordReset } from "@/lib/services/password-reset"
+import { resolveTrustedClientIp } from "@/lib/security/login-rate-limit-ip"
 import type { ActionState } from "@/lib/validation/masters"
 import { checkRateLimit, recordFailure } from "@/lib/services/rate-limit"
 import { headers } from "next/headers"
@@ -14,10 +15,10 @@ export async function forgotPasswordAction(
     return { ok: false, fieldErrors: { email: ["Ingresa un correo válido"] } }
   }
 
-  let clientIp = "127.0.0.1"
+  let clientIp = "unresolved"
   try {
     const h = await headers()
-    clientIp = h.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1"
+    clientIp = resolveTrustedClientIp(h)
   } catch { /* headers unavailable in test */ }
 
   const key = `recuperar:ip:${clientIp}`
