@@ -26,3 +26,6 @@ docs/
 artifacts/
 storage/
 *.tsbuildinfo
+/beaconhs-main
+
+/plataforma-portalchome-vulnerabilidades

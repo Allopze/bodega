@@ -102,3 +102,5 @@ backup-*.sql
 !.env.example
 
 /beaconhs-main
+
+/plataforma-portalchome-vulnerabilidades

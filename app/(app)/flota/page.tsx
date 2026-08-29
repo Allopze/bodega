@@ -109,6 +109,9 @@ export default async function FlotaPage({
         }
         actions={<div className="flex items-center gap-2">
           <FleetExportButton filters={{ operationalStatus: filterEstado, responsibleName: filterResponsable, expiry: filterVencimiento as "vencidos" | "proximos" | "al-dia" | undefined, q }} />
+          <Button asChild size="sm" variant="secondary">
+            <Link href="/flota/monitoreo">Monitoreo GPS</Link>
+          </Button>
           {/* El botón lleva al padrón, así que se guarda con el permiso del
               padrón y no con el de la decisión operativa. */}
           {can(session, "admin:fleet_vehicles") && (
