@@ -3,7 +3,7 @@ import type { Metadata } from "next"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { chileDateParts } from "@/lib/utils"
+import { chileDateParts, formatDateLong } from "@/lib/utils"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader } from "@/components/ui/page-header"
 import { OPERATIONAL_MODULE_LABELS, type WorkTaskType } from "@/lib/work-queue"
@@ -161,9 +161,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           la TopBar y un "Hola, …" en `text-3xl` debajo, más grande que el `h1`
           real— y la segunda costaba una banda entera antes del primer dato.
           Ninguna cifra en el saludo: el total de la cola ya está en la insignia
-          de "Mi trabajo", que además navega hasta ella (§A5). */}
+          de "Mi trabajo", que además navega hasta ella (§A5). El `description`
+          lleva la fecha en lenguaje natural —es la única superficie de la app
+          donde el "hoy" se nombra, y se nombra una vez, no en cada KPI. */}
       <PageHeader
         title={`Hola, ${session.user.name?.split(" ")[0] ?? "usuario"}`}
+        description={formatDateLong()}
         actions={<QuickActions session={session} />}
       />
       <div className="animate-in fade-in duration-(--duration-default)">
