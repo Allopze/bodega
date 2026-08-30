@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { isNetworkError } from "@/lib/network-error"
 import { guardPermission } from "@/lib/auth/can"
@@ -36,7 +38,7 @@ export async function updateAnomalyStatusAction(input: { caseId: string; expecte
     return { ok: true, message: "Estado actualizado" }
   } catch (error) {
     logger.error("[updateAnomalyStatusAction]", error)
-    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : error instanceof Error ? error.message : "No se pudo actualizar"
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudo actualizar")
     return { ok: false, message: msg }
   }
 }
@@ -50,7 +52,7 @@ export async function assignAnomalyAction(input: { caseId: string; expectedAssig
     return { ok: true, message: "Asignado correctamente" }
   } catch (error) {
     logger.error("[assignAnomalyAction]", error)
-    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : error instanceof Error ? error.message : "No se pudo asignar"
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudo asignar")
     return { ok: false, message: msg }
   }
 }
@@ -64,7 +66,7 @@ export async function commentAnomalyAction(input: { caseId: string; body: string
     return { ok: true, message: "Comentario añadido" }
   } catch (error) {
     logger.error("[commentAnomalyAction]", error)
-    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : error instanceof Error ? error.message : "No se pudo comentar"
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudo comentar")
     return { ok: false, message: msg }
   }
 }

@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
@@ -127,7 +129,7 @@ export async function toggleWorksiteActive(_prev: ActionState, formData: FormDat
       returnStockToOffice,
     })
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "No se pudo cambiar el estado de la faena" }
+    return { ok: false, message: safeActionMessage(e, "No se pudo cambiar el estado de la faena") }
   }
 
   revalidatePath(REVALIDATE)

@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { db } from "@/db"
 import { desc, eq } from "drizzle-orm"
 import { fuelProviderSyncRuns, systemSettings } from "@/db/schema"
@@ -69,7 +71,7 @@ export async function getCopecSyncStatusAction(): Promise<
       },
     }
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No fue posible obtener el estado del sync" }
+    return { ok: false, message: safeActionMessage(error, "No fue posible obtener el estado del sync") }
   }
 }
 
@@ -83,7 +85,7 @@ export async function getCopecSyncPlanAction(): Promise<
     const result = await getCopecSyncPlan()
     return { ok: true, from: result.from, to: result.to, periods: result.periods }
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No fue posible preparar la sincronización Copec" }
+    return { ok: false, message: safeActionMessage(error, "No fue posible preparar la sincronización Copec") }
   }
 }
 
@@ -98,7 +100,7 @@ export async function updateCopecSyncStartAction(input: { startDate: string; exp
     if (!parsed.success) return { ok: false, message: "La fecha de inicio no es válida" }
     return { ok: true, data: await setCopecSyncStartDate(parsed.data.startDate, parsed.data.expectedStart) }
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No fue posible actualizar la fecha de inicio" }
+    return { ok: false, message: safeActionMessage(error, "No fue posible actualizar la fecha de inicio") }
   }
 }
 

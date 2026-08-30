@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
@@ -68,7 +70,7 @@ export async function reviewEppImportRowAction(_prev: ActionState, formData: For
     return { ok: true, message: "Fila revisada" }
   } catch (error) {
     logger.error("[admin/productos] reviewEppImportRowAction", error)
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo revisar la fila" }
+    return { ok: false, message: safeActionMessage(error, "No se pudo revisar la fila") }
   }
 }
 
@@ -85,7 +87,7 @@ export async function cancelEppImportBatchAction(_prev: ActionState, formData: F
     return { ok: true, message: "Lote cancelado. Puedes volver a importar el archivo." }
   } catch (error) {
     logger.error("[admin/productos] cancelEppImportBatchAction", error)
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo cancelar el lote" }
+    return { ok: false, message: safeActionMessage(error, "No se pudo cancelar el lote") }
   }
 }
 
@@ -102,7 +104,7 @@ export async function confirmEppImportBatchAction(_prev: ActionState, formData: 
     return { ok: true, message: `Lote confirmado: ${result.created} creados, ${result.updated} actualizados`, data: result }
   } catch (error) {
     logger.error("[admin/productos] confirmEppImportBatchAction", error)
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo confirmar el lote" }
+    return { ok: false, message: safeActionMessage(error, "No se pudo confirmar el lote") }
   }
 }
 

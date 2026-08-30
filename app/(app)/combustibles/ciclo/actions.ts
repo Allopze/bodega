@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { isNetworkError } from "@/lib/network-error"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
@@ -39,7 +41,7 @@ export async function createFuelCycleMovementAction(_prev: ActionState, formData
     return { ok: true, message: "Movimiento físico registrado" }
   } catch (error) {
     logger.error("[createFuelCycleMovementAction]", error)
-    const message = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : error instanceof Error ? error.message : "No se pudo registrar el movimiento"
+    const message = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudo registrar el movimiento")
     return { ok: false, message }
   }
 }

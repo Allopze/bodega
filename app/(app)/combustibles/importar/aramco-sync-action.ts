@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { and, desc, eq, inArray } from "drizzle-orm"
 import { z } from "zod"
@@ -99,7 +101,7 @@ export async function getAramcoSyncStatusAction(): Promise<
       },
     }
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No fue posible obtener el estado de Aramco" }
+    return { ok: false, message: safeActionMessage(error, "No fue posible obtener el estado de Aramco") }
   }
 }
 
@@ -141,7 +143,7 @@ export async function runAramcoSyncAction(range: { from?: string; to?: string } 
     }
   } catch (error) {
     if (error instanceof AramcoTwoFactorRequiredError) return { ok: false, message: error.message }
-    return { ok: false, message: error instanceof Error ? error.message : "No fue posible sincronizar Aramco" }
+    return { ok: false, message: safeActionMessage(error, "No fue posible sincronizar Aramco") }
   }
 }
 

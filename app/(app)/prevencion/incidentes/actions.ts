@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
@@ -34,7 +36,7 @@ function access(session: NonNullable<Awaited<ReturnType<typeof guardPermission>>
 }
 
 function fail(error: unknown, fallback: string): ActionState {
-  return { ok: false, message: error instanceof Error ? error.message : fallback }
+  return { ok: false, message: safeActionMessage(error, fallback) }
 }
 
 function refresh(incidentId?: string) {

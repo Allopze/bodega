@@ -44,6 +44,24 @@ describe("toast wrapper", () => {
     })
   })
 
+  it("blocks SQL and parameters that reached the client boundary", () => {
+    toast.error('Failed query: insert into "system_settings" values ($1)\nparams: secret')
+
+    expect(mocks.error).toHaveBeenCalledWith(
+      "No se pudo completar la acción. Intenta nuevamente.",
+      expect.objectContaining({ duration: DEFAULT_TOAST_DURATION }),
+    )
+  })
+
+  it("blocks oversized strings instead of rendering a wall of text", () => {
+    toast.error("x".repeat(2_000))
+
+    expect(mocks.error).toHaveBeenCalledWith(
+      "No se pudo completar la acción. Intenta nuevamente.",
+      expect.objectContaining({ duration: DEFAULT_TOAST_DURATION }),
+    )
+  })
+
   it("calls sonner success toast with normal options", () => {
     toast.success("Success!")
     expect(mocks.success).toHaveBeenCalledWith("Success!")

@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { eq } from "drizzle-orm"
@@ -196,7 +198,7 @@ export async function saveProposalAction(input: unknown): Promise<ActionResult> 
     revalidatePath("/facturacion/pendientes")
     return { ok: true, message: data.id ? "Propuesta actualizada" : "Propuesta creada" }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "No se pudo guardar la propuesta"
+    const message = safeActionMessage(err, "No se pudo guardar la propuesta")
     logger.error("[billing/saveProposal]", { message })
     // El índice único (contrato, período) evita dos propuestas vivas del mismo
     // cobro; el mensaje tiene que decirlo en términos del negocio.
@@ -306,7 +308,7 @@ export async function transitionProposalAction(input: unknown): Promise<ActionRe
     return { ok: true, message: TRANSITION_MESSAGES[transition] }
   } catch (err) {
     if (err instanceof ProposalTransitionError) return { ok: false, message: err.message }
-    const message = err instanceof Error ? err.message : "No se pudo cambiar el estado"
+    const message = safeActionMessage(err, "No se pudo cambiar el estado")
     logger.error("[billing/transitionProposal]", { message })
     return { ok: false, message }
   }
@@ -441,7 +443,7 @@ export async function relateProposalToInvoiceAction(input: unknown): Promise<Act
       : ""
     return { ok: true, message: `Propuesta ${proposal.code} relacionada con la factura ${invoice.folio}.${note}` }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "No se pudo relacionar la propuesta"
+    const message = safeActionMessage(err, "No se pudo relacionar la propuesta")
     logger.error("[billing/relateProposal]", { message })
     return { ok: false, message }
   }

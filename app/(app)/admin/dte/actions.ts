@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { requirePermission } from "@/lib/auth/can"
@@ -51,7 +53,7 @@ async function runDteSync(options: { periodo?: string; force?: boolean }): Promi
       try {
         assertSyncablePeriodo(options.periodo)
       } catch (error) {
-        return { ok: false, message: error instanceof Error ? error.message : "Período inválido." }
+        return { ok: false, message: safeActionMessage(error, "Período inválido.") }
       }
     }
 

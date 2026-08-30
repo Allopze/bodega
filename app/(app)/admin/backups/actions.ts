@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { requirePermission } from "@/lib/auth/can"
 import { createBackupLog, completeBackupLog, getBackupConfig, updateBackupConfig } from "@/lib/services/backups"
 import type { BackupConfig } from "@/lib/services/backups"
@@ -183,7 +185,7 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
         await completeBackupLog(logId, {
           status: "failed",
           errorMessage:
-            err instanceof Error ? err.message.slice(0, 500) : "Error desconocido",
+            safeActionMessage(err, "Error desconocido"),
           errorCode: "BACKUP_FAILED",
           appVersion: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? "unknown",
           hostname: "manual-trigger",
@@ -194,7 +196,7 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
     revalidatePath("/admin/backups")
     return {
       ok: false,
-      message: err instanceof Error ? err.message : "Error al ejecutar backup",
+      message: safeActionMessage(err, "Error al ejecutar backup"),
     }
   }
 }
@@ -207,7 +209,7 @@ export async function verifyBackupsAction(): Promise<BackupActionResult> {
   } catch (err) {
     return {
       ok: false,
-      message: err instanceof Error ? err.message : "Error al verificar",
+      message: safeActionMessage(err, "Error al verificar"),
     }
   }
 }

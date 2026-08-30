@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { redirect } from "next/navigation"
 import { requirePermission } from "@/lib/auth/can"
 import { serviceWorksiteScope } from "@/lib/auth/scope"
@@ -85,7 +87,7 @@ export async function createGuideAction(_prev: ActionState, formData: FormData):
     )
   } catch (error) {
     logger.error("[createGuideAction]", error)
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo crear la guía" }
+    return { ok: false, message: safeActionMessage(error, "No se pudo crear la guía") }
   }
 
   revalidateGuideViews(created.id)
@@ -113,7 +115,7 @@ export async function updateGuideAction(_prev: ActionState, formData: FormData):
     )
   } catch (error) {
     logger.error("[updateGuideAction]", error)
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo guardar la guía" }
+    return { ok: false, message: safeActionMessage(error, "No se pudo guardar la guía") }
   }
 
   revalidateGuideViews(guideId)
@@ -135,7 +137,7 @@ export async function dispatchGuideAction(guideId: string): Promise<ActionState>
     return { ok: true, message: `Guía ${result.code} despachada. Se registraron ${result.movements} movimientos de bodega.` }
   } catch (error) {
     logger.error("[dispatchGuideAction]", error)
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo despachar la guía" }
+    return { ok: false, message: safeActionMessage(error, "No se pudo despachar la guía") }
   }
 }
 
@@ -156,7 +158,7 @@ export async function prepareAdditionalGuideAction(receiptId: string): Promise<A
     return { ok: true, message: `Guía ${result.code} preparada.`, data: { guideId: result.id } }
   } catch (error) {
     logger.error("[prepareAdditionalGuideAction]", error)
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo preparar el despacho" }
+    return { ok: false, message: safeActionMessage(error, "No se pudo preparar el despacho") }
   }
 }
 
@@ -187,7 +189,7 @@ export async function receiveGuideAction(
     return { ok: true, message: `Recepción de la guía ${result.code} confirmada.` }
   } catch (error) {
     logger.error("[receiveGuideAction]", error)
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo confirmar la recepción" }
+    return { ok: false, message: safeActionMessage(error, "No se pudo confirmar la recepción") }
   }
 }
 
@@ -217,6 +219,6 @@ export async function cancelGuideAction(guideId: string, reason: string): Promis
     }
   } catch (error) {
     logger.error("[cancelGuideAction]", error)
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo anular la guía" }
+    return { ok: false, message: safeActionMessage(error, "No se pudo anular la guía") }
   }
 }

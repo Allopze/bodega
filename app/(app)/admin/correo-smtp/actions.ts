@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { requirePermission } from "@/lib/auth/can"
 import { setEmailsEnabled } from "@/lib/services/system-settings"
@@ -52,7 +54,7 @@ export async function testResendAction(
   } catch (error) {
     result = {
       ok: false,
-      error: error instanceof Error ? error.message : "No se pudo contactar al proveedor de correo",
+      error: safeActionMessage(error, "No se pudo contactar al proveedor de correo"),
     }
   }
   try {

@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
@@ -24,7 +26,7 @@ export async function saveActionPlanItemAction(
     revalidateOperationalViews([REVALIDATE, `${REVALIDATE}/${input.evaluationId}`])
     return { ok: true, message: "Ítem del plan guardado", data: { id: saved.id, capaActionId: saved.capaActionId } }
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "Error al guardar el ítem del plan" }
+    return { ok: false, message: safeActionMessage(e, "Error al guardar el ítem del plan") }
   }
 }
 
@@ -40,6 +42,6 @@ export async function deleteActionPlanItemAction(id: string): Promise<ActionStat
     revalidateOperationalViews([REVALIDATE])
     return { ok: true, message: "Ítem eliminado" }
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "Error al eliminar el ítem" }
+    return { ok: false, message: safeActionMessage(e, "Error al eliminar el ítem") }
   }
 }

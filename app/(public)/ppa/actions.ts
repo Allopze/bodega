@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { createPpaSubmission, findWorkerByRut } from "@/lib/services/ppa"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import { ppaSubmitSchema, type ActionState } from "@/lib/validation/ppa"
@@ -89,7 +91,7 @@ export async function submitPpaAction(
     }
   } catch (e) {
     logger.error("[ppa] submit failed", e)
-    return { ok: false, message: e instanceof Error ? e.message : "No se pudo enviar el PPA." }
+    return { ok: false, message: safeActionMessage(e, "No se pudo enviar el PPA.") }
   }
 }
 

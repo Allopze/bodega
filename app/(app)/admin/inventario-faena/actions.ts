@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { canAny, requireAuth } from "@/lib/auth/can"
 import { serviceWorksiteScope } from "@/lib/auth/scope"
@@ -68,7 +70,7 @@ async function run(operation: (access: {
     if (revalidate) revalidateInventoryViews()
     return { ok: true, data: (result ?? undefined) as Record<string, unknown> | undefined }
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo completar la operación." }
+    return { ok: false, message: safeActionMessage(error, "No se pudo completar la operación.") }
   }
 }
 
@@ -153,7 +155,7 @@ export async function exportEmergencyInventoryAction(): Promise<{
       },
     }
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo exportar." }
+    return { ok: false, message: safeActionMessage(error, "No se pudo exportar.") }
   }
 }
 

@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { and, eq, isNull } from "drizzle-orm"
 import { db } from "@/db"
@@ -148,7 +150,7 @@ export async function createUser(
       pendingInviteUrl = inviteUrl
     }
   } catch (error) {
-    const reason = error instanceof Error ? error.message : "error desconocido"
+    const reason = safeActionMessage(error, "error desconocido")
     deliveryMessage = `Usuario ${displayName} creado, pero no se pudo enviar la invitación (${reason}).`
     pendingInviteUrl = inviteUrl
   }

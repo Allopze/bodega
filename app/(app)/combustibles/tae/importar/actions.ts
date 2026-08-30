@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { and, eq, inArray } from "drizzle-orm"
 import { isNetworkError } from "@/lib/network-error"
@@ -65,7 +67,7 @@ export async function generateTaeImportReportAction(formData: FormData) {
     }
   } catch (error) {
     logger.error("[generateTaeImportReportAction]", error)
-    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : error instanceof Error ? error.message : "No se pudo generar el reporte"
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudo generar el reporte")
     return { ok: false, message: msg }
   }
 }
@@ -101,7 +103,7 @@ export async function importTaeHistoryAction(formData: FormData) {
     return { ok: true as const, data: result, message: `${result.importedRows} cargas históricas importadas` }
   } catch (error) {
     logger.error("[importTaeHistoryAction]", error)
-    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : error instanceof Error ? error.message : "No se pudo importar el histórico TAE"
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudo importar el histórico TAE")
     return { ok: false, message: msg }
   }
 }
@@ -194,7 +196,7 @@ export async function revertTaeImportBatchAction(batchId: string) {
     return { ok: true as const, message: `Lote revertido: ${result.removed} cargas eliminadas`, data: result }
   } catch (error) {
     logger.error("[revertTaeImportBatchAction]", error)
-    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : error instanceof Error ? error.message : "No se pudo revertir el lote"
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudo revertir el lote")
     return { ok: false as const, message: msg }
   }
 }
@@ -218,7 +220,7 @@ export async function reprocessTaeImportBatchAction(batchId: string) {
     return { ok: true as const, data: result, message: result.reprocessedRows ? `Se reprocesaron ${result.reprocessedRows} filas rechazadas` : "No hubo filas rechazadas listas para reprocesar" }
   } catch (error) {
     logger.error("[reprocessTaeImportBatchAction]", error)
-    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : error instanceof Error ? error.message : "No se pudieron reprocesar las filas"
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudieron reprocesar las filas")
     return { ok: false as const, message: msg }
   }
 }

@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { requirePermission } from "@/lib/auth/can"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import { getOperationalControlHub, resolveOperationalControlPeriod, type OperationalControlPeriod } from "@/lib/services/operational-control"
@@ -53,5 +55,5 @@ export async function exportOperationalControlXlsxAction(filters: Partial<Operat
     const base64 = await xlsxToBase64(workbook)
     await recordAudit({ userId: session.user.id, action: "export", entityType: "operational_control_report", entityId: nanoid(), newState: { period, rowCount: data.assets.length, includesCosts: data.permissions.canViewCosts } })
     return { ok: true as const, data: { base64, filename: `control_operacional_${period.from}_${period.to}.xlsx` } }
-  } catch (error) { return { ok: false as const, message: error instanceof Error ? error.message : "No se pudo exportar el reporte" } }
+  } catch (error) { return { ok: false as const, message: safeActionMessage(error, "No se pudo exportar el reporte") } }
 }

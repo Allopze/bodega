@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react"
 import { toast as sonnerToast } from "sonner"
+import { userFacingErrorText } from "@/lib/user-facing-error"
 
 /**
  * Duración por defecto para los toasts de error.
@@ -16,7 +17,10 @@ export const DEFAULT_TOAST_DURATION = 5000
  */
 const error: typeof sonnerToast.error = (message, options) => {
   const duration = options?.duration ?? DEFAULT_TOAST_DURATION
-  return sonnerToast.error(message, {
+  const safeMessage = typeof message === "string"
+    ? userFacingErrorText(message) ?? "No se pudo completar la acción. Intenta nuevamente."
+    : message
+  return sonnerToast.error(safeMessage, {
     ...options,
     duration,
     style: { "--progress-duration": `${duration}ms`, ...options?.style } as CSSProperties,

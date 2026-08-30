@@ -1,4 +1,5 @@
 import { logger } from "@/lib/logger"
+import { userFacingErrorText } from "@/lib/user-facing-error"
 
 /**
  * Mensaje seguro para devolverle al cliente desde una server action.
@@ -21,11 +22,16 @@ export function safeActionMessage(e: unknown, fallback: string): string {
   const isDriverError = typeof candidate.query === "string" || candidate.cause !== undefined
   const isSchemaError = Array.isArray(candidate.issues)
 
-  if (isDriverError || isSchemaError) {
+  // Playwright adjunta un bloque de varios kilobytes con selectores, reintentos
+  // y detalles de la página. El texto anterior a `Call log:` es el motivo que
+  // los adaptadores redactan para el operador y sí resulta accionable.
+  const message = userFacingErrorText(e.message)
+
+  if (isDriverError || isSchemaError || message === null) {
     logger.error("[action] error interno no apto para el cliente", e)
     return fallback
   }
-  return e.message
+  return message
 }
 
 /**

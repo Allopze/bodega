@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { guardAuth, guardPermission, canAny } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getDashboardStats, listEvaluationsGroupedByWorker } from "@/lib/services/sst"
@@ -28,7 +30,7 @@ export async function getDashboardStatsAction(): Promise<
     const stats = await getDashboardStats(worksiteIds)
     return { ok: true, data: stats }
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "Error al obtener estadísticas" }
+    return { ok: false, message: safeActionMessage(e, "Error al obtener estadísticas") }
   }
 }
 
@@ -49,6 +51,6 @@ export async function listWorkerEvaluationsAction(
     const workers = await listEvaluationsGroupedByWorker(worksiteIds, limit, offset)
     return { ok: true, data: { workers } }
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "Error al listar evaluaciones por trabajador" }
+    return { ok: false, message: safeActionMessage(e, "Error al listar evaluaciones por trabajador") }
   }
 }

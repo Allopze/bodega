@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { requireAuth } from "@/lib/auth/can"
 import { markNotificationRead, markAllNotificationsRead } from "@/lib/services/notifications"
 import { revalidatePath } from "next/cache"
@@ -15,7 +17,7 @@ export async function markReadAction(notificationId: string): Promise<{ ok: bool
     revalidatePath("/") // notifications appear in the global layout
     return { ok: true }
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Error al marcar como leída" }
+    return { ok: false, error: safeActionMessage(e, "Error al marcar como leída") }
   }
 }
 
@@ -30,6 +32,6 @@ export async function markAllReadAction(): Promise<{ ok: boolean; error?: string
     revalidatePath("/")
     return { ok: true }
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Error al marcar como leídas" }
+    return { ok: false, error: safeActionMessage(e, "Error al marcar como leídas") }
   }
 }

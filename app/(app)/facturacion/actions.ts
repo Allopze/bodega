@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { and, eq } from "drizzle-orm"
@@ -119,7 +121,7 @@ export async function triggerBillingSyncAction(input: unknown): Promise<ActionRe
       message: `${prefix} ${detail}${warnings.length > 0 ? ` · ${warnings.join(", ")}` : ""}`,
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Error de sincronización"
+    const message = safeActionMessage(err, "Error de sincronización")
     logger.error("[billing/triggerSync]", { message })
     return { ok: false, message }
   }
@@ -143,7 +145,7 @@ export async function checkProviderHealthAction(provider: BillingProviderId): Pr
     revalidatePath("/facturacion/sincronizacion")
     return { ok: health.ok, message: health.detail }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "No se pudo consultar el proveedor"
+    const message = safeActionMessage(err, "No se pudo consultar el proveedor")
     // Un fallo inesperado también es un estado: se guarda para que la pantalla
     // no siga mostrando un "operativo" viejo que ya no es cierto.
     await writeStoredHealth(provider, { ok: false, detail: message, checkedAt: new Date().toISOString() })
@@ -268,7 +270,7 @@ export async function linkInvoiceAction(input: unknown): Promise<ActionResult> {
     revalidatePath("/facturacion")
     return { ok: true, message: "Vínculo registrado" }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "No se pudo registrar el vínculo"
+    const message = safeActionMessage(err, "No se pudo registrar el vínculo")
     logger.error("[billing/linkInvoice]", { message })
     return { ok: false, message }
   }
@@ -316,7 +318,7 @@ export async function rejectInvoiceLinkAction(linkId: string): Promise<ActionRes
     revalidatePath(`/facturacion/facturas/${link.invoiceId}`)
     return { ok: true, message: "Vínculo descartado" }
   } catch (err) {
-    return { ok: false, message: err instanceof Error ? err.message : "No se pudo descartar el vínculo" }
+    return { ok: false, message: safeActionMessage(err, "No se pudo descartar el vínculo") }
   }
 }
 
@@ -370,7 +372,7 @@ export async function confirmInvoiceLinkAction(linkId: string): Promise<ActionRe
     revalidatePath(`/facturacion/facturas/${link.invoiceId}`)
     return { ok: true, message: "Vínculo confirmado" }
   } catch (err) {
-    return { ok: false, message: err instanceof Error ? err.message : "No se pudo confirmar el vínculo" }
+    return { ok: false, message: safeActionMessage(err, "No se pudo confirmar el vínculo") }
   }
 }
 
@@ -459,7 +461,7 @@ export async function updateInvoiceInternalDataAction(input: unknown): Promise<A
     revalidatePath("/facturacion/facturas")
     return { ok: true, message: "Datos internos actualizados" }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "No se pudieron guardar los cambios"
+    const message = safeActionMessage(err, "No se pudieron guardar los cambios")
     logger.error("[billing/updateInternalData]", { message })
     return { ok: false, message }
   }
@@ -537,7 +539,7 @@ export async function saveClientAction(input: unknown): Promise<ActionResult> {
     revalidatePath("/facturacion/clientes")
     return { ok: true, message: data.id ? "Cliente actualizado" : "Cliente creado" }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "No se pudo guardar el cliente"
+    const message = safeActionMessage(err, "No se pudo guardar el cliente")
     logger.error("[billing/saveClient]", { message })
     return { ok: false, message }
   }
@@ -623,7 +625,7 @@ export async function saveContractAction(input: unknown): Promise<ActionResult> 
     revalidatePath("/facturacion/clientes")
     return { ok: true, message: data.id ? "Contrato actualizado" : "Contrato creado" }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "No se pudo guardar el contrato"
+    const message = safeActionMessage(err, "No se pudo guardar el contrato")
     logger.error("[billing/saveContract]", { message })
     return { ok: false, message }
   }
@@ -697,9 +699,7 @@ export async function saveChipaxSettingsAction(
       }
     }
     // Nunca se propaga el mensaje original: puede venir de la capa de cifrado.
-    logger.error("[billing/saveChipaxSettings]", {
-      message: err instanceof Error ? err.message : String(err),
-    })
+    logger.error("[billing/saveChipaxSettings]", err)
     return { ok: false, message: "No se pudo guardar la configuración de Chipax" }
   }
 }
@@ -714,9 +714,7 @@ export async function clearChipaxSettingsAction(): Promise<ActionResult> {
     revalidatePath("/facturacion/sincronizacion")
     return { ok: true, message: "Se restauró la configuración del servidor" }
   } catch (err) {
-    logger.error("[billing/clearChipaxSettings]", {
-      message: err instanceof Error ? err.message : String(err),
-    })
+    logger.error("[billing/clearChipaxSettings]", err)
     return { ok: false, message: "No se pudo restaurar la configuración del servidor" }
   }
 }

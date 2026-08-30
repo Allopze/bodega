@@ -531,6 +531,6 @@ export async function createProductVariantBatch(input: ProductVariantBatchInput)
     return { ok: true, message: `${d.variants.length} producto${d.variants.length === 1 ? "" : "s"} creado${d.variants.length === 1 ? "" : "s"}` }
   } catch (error) {
     logger.error("[admin/productos] createProductVariantBatch", error)
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo crear el lote de variantes" }
+    return { ok: false, message: safeActionMessage(error, "No se pudo crear el lote de variantes") }
   }
 }
