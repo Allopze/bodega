@@ -3,6 +3,8 @@
 # dependencies
 /node_modules
 /.venv
+__pycache__/
+*.py[cod]
 /.pnp
 .pnp.*
 .yarn/*
@@ -110,9 +112,5 @@ backup-*.sql
 # QA automatizado
 .env.qa
 playwright/.auth/
-qa/reports/audit-latest.log
-qa/reports/*-audit.md
-qa/reports/*-audit-full.md
-qa/reports/agents-latest.json
 
 /.monkeytest

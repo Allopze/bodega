@@ -72,10 +72,7 @@
     "analyze": "next experimental-analyze",
     "release": "tsx scripts/release.ts",
     "deploy:prod": "bash scripts/deploy-prod.sh",
-    "doctor": "npx react-doctor@latest",
-    "audit": "node scripts/audit.mjs",
-    "audit:full": "node scripts/audit.mjs --full",
-    "audit:report": "bash -c 'set -a; source .env.qa; set +a; node scripts/monkeytest-report.mjs'"
+    "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.2",
@@ -138,7 +135,6 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitest/coverage-v8": "^4.1.8",
-    "cli-progress": "^3.12.0",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "^16.2.12",
