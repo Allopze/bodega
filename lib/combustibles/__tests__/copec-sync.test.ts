@@ -33,7 +33,13 @@ vi.mock("@/db", () => ({
       fuelConsumptionRecords: { findMany: (...args: unknown[]) => mockConsumptionFindMany(...args) },
     },
     insert: vi.fn(() => ({
-      values: vi.fn(() => ({
+      values: vi.fn((payload: { value: string }) => ({
+        onConflictDoNothing: (...args: unknown[]) => {
+          // La creación inicial no lleva `set`; se normaliza la captura para
+          // que las aserciones de estado midan el mismo valor persistido.
+          mockSaveState({ ...(args[0] as object), set: { value: payload.value } })
+          return { returning: mockSaveStateReturning }
+        },
         onConflictDoUpdate: (...args: unknown[]) => {
           mockSaveState(...args)
           return { returning: mockSaveStateReturning }
@@ -599,7 +605,10 @@ describe("Copec synchronization start date", () => {
     vi.clearAllMocks()
     mockBatchFindMany.mockResolvedValue([])
     vi.stubEnv("COPEC_SYNC_START_DATE", "2020-01-01")
-    mockSettingFindFirst.mockResolvedValue({ value: JSON.stringify({ cursor: "2020-02-01", lastRunAt: null, pending: [] }) })
+    mockSettingFindFirst.mockResolvedValue({
+      value: JSON.stringify({ cursor: "2020-02-01", lastRunAt: null, pending: [] }),
+      updatedAt: "2026-08-30T12:00:00.000Z",
+    })
     mockBatchFindFirst.mockResolvedValue({ periodoHasta: "2026-06-30" })
     mockSaveState.mockResolvedValue(undefined)
   })

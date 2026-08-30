@@ -44,6 +44,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/accountable-fuel-loads.test.ts",
   "lib/__tests__/fleet-document-versioning.test.ts",
   "lib/__tests__/fuel-cycle-integration.test.ts",
+  "lib/__tests__/copec-sync-state-pglite.test.ts",
   "lib/__tests__/fuel-provider-supplier-catalog.test.ts",
   "lib/__tests__/fuel-provider-reconciliation.test.ts",
   "lib/__tests__/fuel-load-lifecycle.test.ts",

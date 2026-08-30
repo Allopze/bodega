@@ -99,21 +99,28 @@ export async function getCopecSyncState(): Promise<{ lastRunAt: string | null; l
  * ciegas: dos corridas del cron solapadas —o un cron y un ajuste manual de
  * fecha de inicio— podían leer el mismo estado y la segunda escritura
  * descartaba en silencio el avance de cursor de la primera (CO-026).
- * `setWhere` sólo aplica la actualización si nadie escribió entre medio; si
- * la fila no existía (`expectedVersion === ""`), el INSERT no tiene conflicto
- * y `setWhere` ni se evalúa.
+ * `setWhere` sólo aplica la actualización si nadie escribió entre medio. La
+ * creación inicial usa un INSERT separado con `DO NOTHING`: PostgreSQL castea
+ * todos los parámetros antes de decidir si ejecuta la rama de conflicto, por
+ * lo que pasar `""` a una comparación `timestamptz` fallaba incluso cuando la
+ * fila todavía no existía.
  */
 async function saveState(next: SyncState, expectedVersion: string) {
   const value = JSON.stringify(next)
   const now = new Date().toISOString()
-  const [result] = await db.insert(systemSettings)
-    .values({ key: STATE_KEY, value, updatedAt: now })
-    .onConflictDoUpdate({
-      target: systemSettings.key,
-      set: { value, updatedAt: now },
-      setWhere: eq(systemSettings.updatedAt, expectedVersion),
-    })
-    .returning({ key: systemSettings.key })
+  const [result] = expectedVersion === ""
+    ? await db.insert(systemSettings)
+      .values({ key: STATE_KEY, value, updatedAt: now })
+      .onConflictDoNothing({ target: systemSettings.key })
+      .returning({ key: systemSettings.key })
+    : await db.insert(systemSettings)
+      .values({ key: STATE_KEY, value, updatedAt: now })
+      .onConflictDoUpdate({
+        target: systemSettings.key,
+        set: { value, updatedAt: now },
+        setWhere: eq(systemSettings.updatedAt, expectedVersion),
+      })
+      .returning({ key: systemSettings.key })
   if (!result) {
     throw new Error("El estado de sincronización Copec cambió en otra ejecución. Reintenta desde el estado actual.")
   }
