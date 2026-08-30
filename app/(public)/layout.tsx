@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next"
-import { Toaster } from "sonner"
+import { AppToaster } from "@/components/ui/app-toaster"
 
 export const metadata: Metadata = {
   title: "Plataforma Chome",
@@ -28,7 +28,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
   return (
     <div className="min-h-dvh bg-[var(--color-surface-1)] text-[var(--color-text)]">
       {children}
-      <Toaster position="top-center" closeButton offset={16} toastOptions={{ duration: 4000 }} />
+      <AppToaster position="top-center" />
     </div>
   )
 }

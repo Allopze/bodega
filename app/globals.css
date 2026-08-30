@@ -346,37 +346,6 @@ body {
   padding-right: 36px;
 }
 
-/* Botón de cierre: icono X plano, discreto y estilizado dentro de la esquina superior derecha */
-[data-sonner-toast][data-styled="true"] [data-close-button] {
-  left: auto;
-  right: 8px;
-  top: 8px;
-  transform: none;
-  width: 22px;
-  height: 22px;
-  border-radius: var(--radius-sm, 6px);
-  border: none !important;
-  background: transparent !important;
-  color: var(--color-text-muted) !important;
-  opacity: 0.6;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: opacity 150ms ease, background-color 150ms ease, color 150ms ease;
-}
-
-[data-sonner-toast][data-styled="true"] [data-close-button]:hover {
-  opacity: 1;
-  background: var(--color-surface-2) !important;
-  color: var(--color-text) !important;
-}
-
-[data-sonner-toast][data-styled="true"] [data-close-button]:focus-visible {
-  opacity: 1;
-  outline: 2px solid var(--color-primary);
-  outline-offset: 1px;
-}
-
 /* ── Entry: fade-in + slide-down ── */
 [data-sonner-toast][data-mounted="true"] {
   animation: toast-enter 300ms var(--ease-out) both;
