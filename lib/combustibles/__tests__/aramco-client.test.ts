@@ -173,6 +173,18 @@ describe("authenticateAramco", () => {
     await expect(authenticateAramco("1-9", "1")).rejects.toThrow(/Clave incorrecta/)
   })
 
+  it("classifies a locked account without leaking the raw portal payload", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({
+      validations: [{ type: "LimitAttemptsReached", message: "Límite de intentos alcanzado. Usuario bloqueado." }],
+    }, 412))
+
+    const error = await authenticateAramco("1-9", "1").catch((caught: unknown) => caught)
+    expect(error).toBeInstanceOf(AramcoAuthError)
+    expect((error as Error).message).toMatch(/cuenta de Aramco está bloqueada/i)
+    expect((error as Error).message).not.toContain("validations")
+    expect((error as Error).message).not.toContain("LimitAttemptsReached")
+  })
+
   it("does not call the portal at all without credentials", async () => {
     await expect(authenticateAramco("", "")).rejects.toThrow(AramcoAuthError)
     expect(fetchMock).not.toHaveBeenCalled()

@@ -187,6 +187,32 @@ function headers(token?: string): Record<string, string> {
   return base
 }
 
+function aramcoValidationMessage(body: string): { locked: boolean; message: string } | null {
+  try {
+    const parsed = JSON.parse(body) as { validations?: unknown }
+    if (!Array.isArray(parsed.validations)) return null
+
+    const validations = parsed.validations.filter((entry): entry is { type?: unknown; message?: unknown } => (
+      typeof entry === "object" && entry !== null
+    ))
+    const locked = validations.some((entry) => entry.type === "LimitAttemptsReached")
+    if (locked) {
+      return {
+        locked: true,
+        message: "La cuenta de Aramco está bloqueada por exceso de intentos. No reintentes: desbloquéala en el portal y luego verifica la clave configurada.",
+      }
+    }
+
+    const messages = validations
+      .map((entry) => typeof entry.message === "string" ? entry.message.trim() : "")
+      .filter((message) => message.length > 0 && message.length <= 240)
+    if (messages.length === 0) return null
+    return { locked: false, message: messages.join(" ") }
+  } catch {
+    return null
+  }
+}
+
 async function request(path: string, init: RequestInit & { token?: string } = {}): Promise<unknown> {
   const { token, ...rest } = init
   const response = await fetch(API_ROOT + path, {
@@ -200,10 +226,18 @@ async function request(path: string, init: RequestInit & { token?: string } = {}
     if (response.status === 401 || response.status === 403) {
       throw new AramcoAuthError(`Aramco rechazó las credenciales (${response.status})`)
     }
-    // 412 son validaciones legibles del portal y sí valen tal cual. El resto de
-    // los 4xx/5xx con cuerpo de excepción .NET son fallas suyas: se traducen a un
-    // mensaje accionable y el detalle queda en el error para el log.
-    if (response.status !== 412 && /operation|context|exception|Object reference/i.test(body)) {
+    if (response.status === 412) {
+      const validation = aramcoValidationMessage(body)
+      const authenticationRequest = path === "users/authenticatecredential" || path === "token"
+      if (validation?.locked || authenticationRequest) {
+        throw new AramcoAuthError(validation?.message ?? "Aramco rechazó el acceso. Revisa las credenciales antes de reintentar.")
+      }
+      if (validation) throw new Error(`Aramco rechazó la solicitud: ${validation.message}`)
+      throw new Error("Aramco rechazó la solicitud (412). Revisa los datos antes de reintentar.")
+    }
+    // Los demás 4xx/5xx con cuerpo de excepción .NET son fallas del proveedor:
+    // se traducen a un mensaje accionable y el detalle queda en el error para el log.
+    if (/operation|context|exception|Object reference/i.test(body)) {
       throw new AramcoUpstreamError(response.status, body.slice(0, 300))
     }
     throw new Error(`Aramco respondió ${response.status} en ${path}: ${body.slice(0, 200)}`)

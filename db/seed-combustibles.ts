@@ -44,7 +44,9 @@ async function main() {
 
   const FUEL_SUPPLIERS: (typeof schema.fuelSuppliers.$inferInsert)[] = [
     { id: "fs-copec", name: "COPEC", rut: "97.080.000-1", contactName: "Área Cuenta Corriente", isActive: true },
-    { id: "fs-aramco", name: "ARAMCO", rut: "76.320.590-7", contactName: "Ventas Corporativas", isActive: true },
+    // Aramco Fleet opera en Chile mediante Esmax Distribución SpA. Mantener la
+    // razón social/RUT reales permite conciliar DTE aunque el portal use la marca.
+    { id: "fs-esmax", name: "Esmax Distribución SpA", rut: "79.588.870-5", contactName: "Ventas Corporativas", isActive: true },
   ]
 
   const FUEL_SETTINGS: (typeof schema.systemSettings.$inferInsert)[] = [
