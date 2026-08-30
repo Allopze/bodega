@@ -1,0 +1,952 @@
+import { spawn, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync
+} from 'node:fs';
+import { resolve } from 'node:path';
+import { loadEnvFile } from 'node:process';
+
+const execFileAsync = promisify(execFile);
+
+const ROOT = process.cwd();
+const FULL = process.argv.includes('--full');
+
+const MONKEYTEST_CLI =
+  process.env.MONKEYTEST_CLI ||
+  resolve(
+    process.env.HOME || '',
+    'monkeytest-core/dist/cli.js'
+  );
+
+if (!existsSync(MONKEYTEST_CLI)) {
+  console.error(
+    `ERROR: no existe MonkeyTest en: ${MONKEYTEST_CLI}`
+  );
+  console.error(
+    'Compílalo con: cd ~/monkeytest-core && npm run build'
+  );
+  process.exit(2);
+}
+
+try {
+  loadEnvFile(resolve(ROOT, '.env.qa'));
+} catch {}
+
+const REPORT_DIR = resolve(ROOT, 'qa/reports');
+mkdirSync(REPORT_DIR, { recursive: true });
+
+const BASE_URL =
+  process.env.QA_BASE_URL ||
+  'http://localhost:3001';
+
+const API_KEY =
+  process.env.OPENAI_COMPATIBLE_API_KEY ||
+  process.env.CMD_API_KEY;
+
+const API_BASE =
+  process.env.OPENAI_COMPATIBLE_BASE_URL ||
+  'https://api.commandcode.ai/provider/v1';
+
+const MODEL =
+  process.env.MONKEYTEST_MODEL ||
+  'deepseek/deepseek-v4-flash';
+
+const STORAGE =
+  process.env.MONKEYTEST_STORAGE_STATE ||
+  resolve(ROOT, 'playwright/.auth/monkeytest.json');
+
+const MAX_PAGES = FULL
+  ? Number(process.env.AUDIT_FULL_MAX_PAGES || 5000)
+  : Number(process.env.AUDIT_MAX_PAGES || 30);
+
+const MAX_FLOWS = FULL
+  ? Number(process.env.AUDIT_FULL_MAX_FLOWS || 60)
+  : Number(process.env.AUDIT_MAX_FLOWS || 12);
+
+process.env.OPENAI_COMPATIBLE_API_KEY = API_KEY || '';
+process.env.OPENAI_COMPATIBLE_BASE_URL = API_BASE;
+process.env.MONKEYTEST_STORAGE_STATE = STORAGE;
+
+// ============================================================
+// Estrategia de exploración
+// ============================================================
+//
+// audit:
+//   análisis semántico profundo página por página.
+//
+// audit:full:
+//   crawl estructural rápido para obtener máxima cobertura;
+//   el análisis profundo se realiza después sobre los flows.
+//
+if (FULL) {
+  process.env.MONKEYTEST_FAST_CRAWL = '1';
+
+  process.env.MONKEYTEST_SITE_SUMMARY_MAX_PAGES =
+    process.env.MONKEYTEST_SITE_SUMMARY_MAX_PAGES ||
+    '120';
+} else {
+  process.env.MONKEYTEST_FAST_CRAWL = '0';
+}
+
+function fallbackReport(title, text) {
+  const md = `# Informe QA Automatizado - Plataforma Chome
+
+## Estado de la auditoría
+
+**${title}**
+
+${text}
+
+## Resultado
+
+La auditoría no pudo completarse normalmente. Este informe fue generado automáticamente para que la ejecución siempre deje evidencia en el repositorio.
+
+## Recomendación
+
+Resolver el error indicado y volver a ejecutar:
+
+\`\`\`bash
+npm run ${FULL ? 'audit:full' : 'audit'}
+\`\`\`
+`;
+
+  writeFileSync(
+    resolve(REPORT_DIR, 'latest.md'),
+    md,
+    'utf8'
+  );
+}
+
+if (!API_KEY) {
+  fallbackReport(
+    'Error de configuración',
+    'No existe CMD_API_KEY ni OPENAI_COMPATIBLE_API_KEY.'
+  );
+
+  console.error('ERROR: API de Command Code no configurada.');
+  process.exit(2);
+}
+
+function bar(value, total, width = 22) {
+  if (!total) return `[${value} rutas]`;
+
+  const ratio = Math.min(1, value / total);
+  const filled = Math.round(width * ratio);
+
+  return (
+    '[' +
+    '█'.repeat(filled) +
+    '░'.repeat(width - filled) +
+    ']'
+  );
+}
+
+let visited = 0;
+let flows = 0;
+let steps = 0;
+
+let animationTick = 0;
+
+const auditStartedAt = Date.now();
+
+function elapsed() {
+  const totalSeconds = Math.floor(
+    (Date.now() - auditStartedAt) / 1000
+  );
+
+  const hours =
+    Math.floor(totalSeconds / 3600);
+
+  const minutes =
+    Math.floor(
+      (totalSeconds % 3600) / 60
+    );
+
+  const seconds =
+    totalSeconds % 60;
+
+  if (hours > 0) {
+    return (
+      String(hours).padStart(2, '0') +
+      ':' +
+      String(minutes).padStart(2, '0') +
+      ':' +
+      String(seconds).padStart(2, '0')
+    );
+  }
+
+  return (
+    String(minutes).padStart(2, '0') +
+    ':' +
+    String(seconds).padStart(2, '0')
+  );
+}
+
+function indeterminateBar(width = 22) {
+  const blockWidth = 5;
+
+  const travel =
+    Math.max(
+      1,
+      width - blockWidth
+    );
+
+  const cycle =
+    travel * 2;
+
+  const raw =
+    animationTick % cycle;
+
+  const position =
+    raw <= travel
+      ? raw
+      : cycle - raw;
+
+  return (
+    '[' +
+    '░'.repeat(position) +
+    '█'.repeat(blockWidth) +
+    '░'.repeat(
+      width -
+      position -
+      blockWidth
+    ) +
+    ']'
+  );
+}
+
+function progress() {
+  if (!process.stdout.isTTY) return;
+
+  animationTick++;
+
+  const routeBar = FULL
+    ? indeterminateBar()
+    : bar(
+        Math.min(
+          visited,
+          MAX_PAGES
+        ),
+        MAX_PAGES
+      );
+
+  const flowBar =
+    bar(
+      Math.min(
+        flows,
+        MAX_FLOWS
+      ),
+      MAX_FLOWS
+    );
+
+  const routeText =
+    FULL
+      ? `${visited} visitadas`
+      : `${visited}/${MAX_PAGES}`;
+
+  process.stdout.write(
+    '\r' +
+    `Exploración ${routeBar} ${routeText}` +
+    ` | Flujos ${flowBar} ${flows}/${MAX_FLOWS}` +
+    ` | Pasos ${steps}` +
+    ` | ${elapsed()}   `
+  );
+}
+
+
+function run(command, args, { visible = false } = {}) {
+  return new Promise((done, reject) => {
+    const child = spawn(command, args, {
+      cwd: ROOT,
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    let output = '';
+    let buffer = '';
+
+    const consume = chunk => {
+      const data = chunk.toString();
+
+      output += data;
+      buffer += data;
+
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (/^\s*· visited /.test(line)) {
+          visited++;
+          progress();
+        }
+
+        if (/^\s*▶ /.test(line)) {
+          flows++;
+          progress();
+        }
+
+        if (/^[✓✗·]\s+step /.test(line.trim())) {
+          steps++;
+          progress();
+        }
+
+        if (
+          visible ||
+          process.env.AUDIT_VERBOSE === '1'
+        ) {
+          if (process.stdout.isTTY) {
+            process.stdout.write('\n');
+          }
+
+          console.log(line);
+          progress();
+        }
+      }
+    };
+
+    child.stdout.on('data', consume);
+    child.stderr.on('data', consume);
+
+    child.on('error', reject);
+
+    child.on('close', code => {
+      if (process.stdout.isTTY) {
+        process.stdout.write('\n');
+      }
+
+      done({
+        code: code ?? 0,
+        output
+      });
+    });
+  });
+}
+
+/* ==========================================================
+   LOGIN QA
+   ========================================================== */
+
+console.log('');
+console.log(
+  FULL
+    ? 'AUDITORÍA FULL - Plataforma Chome'
+    : 'AUDITORÍA - Plataforma Chome'
+);
+console.log(`URL: ${BASE_URL}`);
+console.log(`Modelo: ${MODEL}`);
+console.log(`Máximo páginas: ${MAX_PAGES}`);
+console.log(`Máximo flows: ${MAX_FLOWS}`);
+console.log('');
+
+if (
+  process.env.AUDIT_REFRESH_LOGIN !== '0' &&
+  existsSync(resolve(ROOT, 'scripts/qa-login.mjs'))
+) {
+  process.stdout.write('Autenticación... ');
+
+  const login = await run(
+    process.execPath,
+    ['scripts/qa-login.mjs']
+  );
+
+  if (login.code !== 0) {
+    console.log('ERROR');
+
+    fallbackReport(
+      'Error de autenticación',
+      login.output
+    );
+
+    process.exit(login.code);
+  }
+
+  console.log('OK');
+}
+
+if (!existsSync(STORAGE)) {
+  fallbackReport(
+    'Sesión QA inexistente',
+    `No existe ${STORAGE}.`
+  );
+
+  process.exit(2);
+}
+
+/* ==========================================================
+   MONKEYTEST
+   ========================================================== */
+
+progress();
+
+// The crawler may spend time inside Playwright or the LLM without
+// printing a new line. Keep the UI alive independently from logs.
+const progressTimer = setInterval(
+  progress,
+  150
+);
+
+const monkey = await run(
+  process.execPath,
+  [
+    MONKEYTEST_CLI,
+    'run',
+    BASE_URL,
+
+    '--provider',
+    'openai_compatible',
+
+    '--model',
+    MODEL,
+
+    '--base-url',
+    API_BASE,
+
+    '--api-key',
+    API_KEY,
+
+    '--max',
+    String(MAX_PAGES),
+
+    '--flows',
+    String(MAX_FLOWS),
+
+    '--label',
+    FULL
+      ? 'bodega-audit-full'
+      : 'bodega-audit'
+  ]
+);
+
+clearInterval(progressTimer);
+progress();
+
+writeFileSync(
+  resolve(REPORT_DIR, 'audit-latest.log'),
+  monkey.output,
+  'utf8'
+);
+
+/* ==========================================================
+   SITEMAP
+   ========================================================== */
+
+let sitemap = null;
+
+try {
+  sitemap = JSON.parse(
+    readFileSync(
+      resolve(ROOT, '.monkeytest/sitemap.json'),
+      'utf8'
+    )
+  );
+} catch {}
+
+const routeStats = {
+  visited:
+    sitemap?.pages?.length || visited,
+
+  pending:
+    sitemap?.pendingUrls?.length || 0,
+
+  failed:
+    sitemap?.failedUrls?.length || 0
+};
+
+routeStats.discovered =
+  routeStats.visited +
+  routeStats.pending +
+  routeStats.failed;
+
+routeStats.coveragePercent =
+  routeStats.discovered
+    ? Number(
+        (
+          routeStats.visited /
+          routeStats.discovered *
+          100
+        ).toFixed(2)
+      )
+    : 0;
+
+routeStats.queueExhausted =
+  routeStats.pending === 0;
+
+/* ==========================================================
+   RUN JSON
+   ========================================================== */
+
+let stored = null;
+
+try {
+  const result = await execFileAsync(
+    process.execPath,
+    [
+      MONKEYTEST_CLI,
+      'report',
+      'latest',
+      '--json'
+    ],
+    {
+      cwd: ROOT,
+      env: process.env,
+      maxBuffer: 100 * 1024 * 1024
+    }
+  );
+
+  stored = JSON.parse(result.stdout);
+} catch (error) {
+  fallbackReport(
+    'MonkeyTest terminó pero no se pudo leer el run',
+    String(error)
+  );
+
+  process.exit(monkey.code);
+}
+
+const runData = stored.run || stored;
+
+const allSteps = (runData.flows || [])
+  .flatMap(flow =>
+    (flow.steps || []).map(step => ({
+      flow: flow.name,
+      flowStatus: flow.status,
+      ...step
+    }))
+  );
+
+const count = status =>
+  allSteps.filter(
+    step => step.status === status
+  ).length;
+
+const stepStats = {
+  total: allSteps.length,
+  passed: count('passed'),
+  failed: count('failed'),
+  skipped: count('skipped'),
+  blocked: count('blocked')
+};
+
+stepStats.unverified =
+  stepStats.total - stepStats.passed;
+
+stepStats.coveragePercent =
+  stepStats.total
+    ? Number(
+        (
+          stepStats.passed /
+          stepStats.total *
+          100
+        ).toFixed(2)
+      )
+    : 0;
+
+/* ==========================================================
+   PAYLOAD PARA DEEPSEEK
+   ========================================================== */
+
+const reportPageLimit =
+  Number(
+    process.env.AUDIT_REPORT_MAX_PAGES ||
+    (FULL ? 1000 : 100)
+  );
+
+const pageSample = (sitemap?.pages || [])
+  .slice(0, reportPageLimit)
+  .map(page => ({
+    url: page.url,
+    title: page.title,
+    summary: page.summary,
+    authGated: page.authGated,
+
+    interactive:
+      (page.interactive || [])
+        .slice(0, 100)
+        .map(i => ({
+          kind: i.kind,
+          label: i.label
+        })),
+
+    screenshotPath:
+      page.screenshotPath
+  }));
+
+const payload = {
+  audit: {
+    mode: FULL ? 'full' : 'standard',
+    url: BASE_URL,
+    model: MODEL,
+    maxPages: MAX_PAGES,
+    maxFlows: MAX_FLOWS
+  },
+
+  routeCoverage: routeStats,
+  stepCoverage: stepStats,
+
+  engineStats: runData.stats,
+
+  flows: (runData.flows || []).map(flow => ({
+    name: flow.name,
+    description: flow.description,
+    kind: flow.kind,
+    startUrl: flow.startUrl,
+    status: flow.status,
+    failureReason: flow.failureReason,
+
+    steps: (flow.steps || []).map(step => ({
+      index: step.index,
+      action: step.action,
+      expectation: step.expectation,
+      status: step.status,
+      observation: step.observation,
+      error: step.error,
+      screenshotPath: step.screenshotPath,
+      consoleErrors: step.consoleErrors || [],
+      networkFailures: step.networkFailures || []
+    }))
+  })),
+
+  bugs: runData.bugs || [],
+
+  pagesSample: pageSample,
+
+  pendingUrls:
+    (sitemap?.pendingUrls || []).slice(0, 300),
+
+  failedUrls:
+    sitemap?.failedUrls || []
+};
+
+/* ==========================================================
+   INFORME IA
+   ========================================================== */
+
+const system = `
+Actúa como Principal QA Engineer de Plataforma Chome.
+
+Analiza exclusivamente la evidencia proporcionada.
+Genera SIEMPRE un informe Markdown completo en español.
+
+Distingue estrictamente:
+
+- PRODUCT BUG: fallo confirmado.
+- FUNCTIONAL FINDING: comportamiento sospechoso que requiere revisión.
+- UX FINDING: problema observable de usabilidad.
+- INCONSISTENCY: diferencias de patrones, nombres, controles o comportamiento.
+- AUTOMATION WARNING: el agente no pudo completar una acción.
+- COVERAGE GAP: parte no comprobada.
+- IMPROVEMENT OPPORTUNITY: mejora concreta basada en evidencia.
+- PASS: comportamiento realmente verificado.
+
+Un flow "passed" NO significa que todos sus pasos estén verificados.
+Revisa cada step.status.
+
+Nunca conviertas automáticamente skipped/blocked/locator timeout
+en bug del producto.
+
+"No se pudo comprobar" NO significa "funciona correctamente".
+
+No digas que se auditó el 100% de la aplicación.
+Si pending=0 puedes decir que se procesaron todas las rutas descubiertas.
+
+El informe DEBE contener exactamente estas secciones:
+
+# Informe QA Automatizado - Plataforma Chome
+
+## Resumen ejecutivo
+## Alcance de la auditoría
+## Métricas de cobertura
+## Evaluación de confianza
+## Bugs confirmados
+## Hallazgos funcionales
+## Inconsistencias detectadas
+## Hallazgos UI/UX
+## Advertencias de automatización
+## Brechas de cobertura
+## Oportunidades de mejora
+## Flujos ejecutados
+## Errores de consola y red
+## Evidencias
+## Recomendaciones priorizadas
+### Prioridad alta
+### Prioridad media
+### Prioridad baja
+## Próximos tests recomendados
+## Conclusión
+
+En Métricas de cobertura incluye una tabla con:
+rutas descubiertas, visitadas, pendientes, fallidas,
+cobertura de rutas, flows, pasos totales, passed,
+failed, skipped, blocked, no verificados y cobertura efectiva.
+
+Para cada hallazgo indica:
+- severidad
+- ruta/flujo
+- evidencia
+- impacto
+- recomendación
+
+Si no hay bugs confirmados, dilo expresamente,
+pero analiza igualmente hallazgos, UX, inconsistencias,
+gaps y oportunidades.
+
+No inventes información.
+`;
+
+let markdown;
+
+try {
+  const {
+    analyzeParallel
+  } = await import(
+    './qa-parallel-analyzer.mjs'
+  );
+
+  const llmConcurrency =
+    Math.max(
+      1,
+      Number(
+        process.env.AUDIT_LLM_CONCURRENCY ||
+        (FULL ? 8 : 4)
+      )
+    );
+
+  const llmBatchSize =
+    Math.max(
+      1,
+      Number(
+        process.env.AUDIT_LLM_BATCH_SIZE ||
+        (FULL ? 30 : 10)
+      )
+    );
+
+  console.log('');
+  console.log(
+    `Analizando con DeepSeek V4 Flash usando hasta ${llmConcurrency} subagentes...`
+  );
+
+  const analysis =
+    await analyzeParallel({
+      payload,
+
+      apiKey:
+        API_KEY,
+
+      apiBase:
+        API_BASE,
+
+      model:
+        MODEL,
+
+      concurrency:
+        llmConcurrency,
+
+      batchSize:
+        llmBatchSize
+    });
+
+  markdown =
+    analysis.markdown;
+
+  writeFileSync(
+    resolve(
+      REPORT_DIR,
+      'agents-latest.json'
+    ),
+
+    JSON.stringify(
+      {
+        generatedAt:
+          new Date().toISOString(),
+
+        model:
+          MODEL,
+
+        concurrency:
+          analysis.concurrency,
+
+        batchSize:
+          analysis.batchSize,
+
+        workerCount:
+          analysis.workerCount,
+
+        workers:
+          analysis.workers
+      },
+      null,
+      2
+    ),
+
+    'utf8'
+  );
+
+  console.log(
+    `✓ ${analysis.workerCount} lotes analizados`
+  );
+
+} catch (error) {
+
+  console.error(
+    'ERROR en análisis paralelo:',
+    error
+  );
+
+  markdown = `# Informe QA Automatizado - Plataforma Chome
+
+## Resumen ejecutivo
+
+La ejecución de MonkeyTest terminó, pero falló la fase de análisis paralelo mediante DeepSeek.
+
+## Alcance de la auditoría
+
+- Modo: ${FULL ? 'FULL' : 'standard'}
+- URL: ${BASE_URL}
+- Modelo: ${MODEL}
+
+## Métricas de cobertura
+
+| Métrica | Resultado |
+|---|---:|
+| Rutas descubiertas | ${routeStats.discovered} |
+| Rutas visitadas | ${routeStats.visited} |
+| Rutas pendientes | ${routeStats.pending} |
+| Rutas fallidas | ${routeStats.failed} |
+| Cobertura estructural | ${routeStats.coveragePercent}% |
+| Pasos totales | ${stepStats.total} |
+| Pasos passed | ${stepStats.passed} |
+| Pasos failed | ${stepStats.failed} |
+| Pasos skipped | ${stepStats.skipped} |
+| Pasos blocked | ${stepStats.blocked} |
+| Pasos no verificados | ${stepStats.unverified} |
+| Cobertura funcional | ${stepStats.coveragePercent}% |
+
+## Evaluación de confianza
+
+BAJA debido a que la fase de análisis distribuido no pudo completarse.
+
+## Bugs confirmados
+
+Consultar evidencia bruta de MonkeyTest.
+
+## Hallazgos funcionales
+
+No analizados debido al fallo del orquestador.
+
+## Inconsistencias detectadas
+
+No analizadas debido al fallo del orquestador.
+
+## Hallazgos UI/UX
+
+No analizados debido al fallo del orquestador.
+
+## Advertencias de automatización
+
+La fase de análisis paralelo falló:
+
+${String(error)}
+
+## Brechas de cobertura
+
+El análisis final quedó incompleto.
+
+## Oportunidades de mejora
+
+Revisar el error del orquestador y volver a ejecutar la auditoría.
+
+## Flujos ejecutados
+
+Consultar:
+
+\`qa/reports/audit-latest.log\`
+
+## Errores de consola y red
+
+Consultar evidencia bruta del run.
+
+## Evidencias
+
+- \`qa/reports/audit-latest.log\`
+- \`.monkeytest/\`
+
+## Recomendaciones priorizadas
+
+### Prioridad alta
+
+Corregir el fallo del análisis paralelo.
+
+### Prioridad media
+
+Reejecutar la auditoría.
+
+### Prioridad baja
+
+N/A.
+
+## Próximos tests recomendados
+
+Repetir la auditoría una vez reparado el análisis distribuido.
+
+## Conclusión
+
+MonkeyTest produjo evidencia, pero el análisis QA final no pudo consolidarse.
+`;
+}
+
+/* ==========================================================
+   GUARDAR
+   ========================================================== */
+
+const timestamp =
+  new Date()
+    .toISOString()
+    .replace(/:/g, '-')
+    .replace(/\.\d{3}Z$/, 'Z');
+
+const mode =
+  FULL ? 'audit-full' : 'audit';
+
+const header = `<!--
+Generado automáticamente
+Modo: ${mode}
+Modelo: ${MODEL}
+Fecha: ${new Date().toISOString()}
+-->
+
+`;
+
+const finalReport =
+  header + markdown + '\n';
+
+writeFileSync(
+  resolve(REPORT_DIR, 'latest.md'),
+  finalReport,
+  'utf8'
+);
+
+writeFileSync(
+  resolve(
+    REPORT_DIR,
+    `${timestamp}-${mode}.md`
+  ),
+  finalReport,
+  'utf8'
+);
+
+console.log('');
+console.log('Auditoría finalizada');
+console.log('────────────────────');
+console.log(`Rutas descubiertas: ${routeStats.discovered}`);
+console.log(`Rutas visitadas:    ${routeStats.visited}`);
+console.log(`Rutas pendientes:   ${routeStats.pending}`);
+console.log(`Rutas fallidas:     ${routeStats.failed}`);
+console.log(`Cobertura rutas:    ${routeStats.coveragePercent}%`);
+console.log(`Cobertura pasos:    ${stepStats.coveragePercent}%`);
+console.log('');
+console.log('Informe: qa/reports/latest.md');
+
+process.exit(monkey.code);
