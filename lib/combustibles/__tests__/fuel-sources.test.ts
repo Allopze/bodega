@@ -33,8 +33,13 @@ describe("fuel sources", () => {
   })
 
   it("routes fuels the account has enabled but never used", () => {
-    expect(aramcoSourceForProduct("Aramco Gasolina 93")).toBe("Aramco Fleet Otros")
-    expect(aramcoSourceForProduct("Kerosene")).toBe("Aramco Fleet Otros")
+    // Cada uno a SU fuente: `fuel_consumption_records` no tiene columna de
+    // producto, así que compartir el cajón "Otros" habría mezclado gasolina y
+    // kerosene en un mismo agregado mensual.
+    expect(aramcoSourceForProduct("Aramco Gasolina 93")).toBe("Aramco Fleet Gasolina")
+    expect(aramcoSourceForProduct("Kerosene")).toBe("Aramco Fleet Kerosene")
+    // "Otros" queda de red para lo que se acepte a futuro sin fuente propia.
+    expect(aramcoSourceForProduct("Producto nuevo del portal")).toBe("Aramco Fleet Otros")
   })
 
   it("never invents a source outside the declared list", () => {

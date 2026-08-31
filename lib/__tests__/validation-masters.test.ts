@@ -451,3 +451,27 @@ describe("workerSchema", () => {
     expect(result.isActive).toBe(true)
   })
 })
+
+describe("unitOfMeasureSchema", () => {
+  it("normaliza espacios y caja: 'CAJAS ' y 'cajas' eran valores distintos en la base", async () => {
+    const { unitOfMeasureSchema } = await import("@/lib/validation/product-catalogs")
+    expect(unitOfMeasureSchema.parse("  CAJAS  ")).toBe("cajas")
+    expect(unitOfMeasureSchema.parse("Unidad")).toBe("unidad")
+  })
+
+  it("acepta un código del catálogo de 24 caracteres (antes el max(20) lo rechazaba)", async () => {
+    const { unitOfMeasureSchema } = await import("@/lib/validation/product-catalogs")
+    const code = "a".repeat(24)
+    expect(unitOfMeasureSchema.parse(code)).toBe(code)
+  })
+
+  it("no valida contra el catálogo: el texto libre es deliberado", async () => {
+    const { unitOfMeasureSchema } = await import("@/lib/validation/product-catalogs")
+    expect(unitOfMeasureSchema.parse("unidad inventada")).toBe("unidad inventada")
+  })
+
+  it("exige un valor no vacío", async () => {
+    const { unitOfMeasureSchema } = await import("@/lib/validation/product-catalogs")
+    expect(unitOfMeasureSchema.safeParse("   ").success).toBe(false)
+  })
+})

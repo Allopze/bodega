@@ -1,6 +1,7 @@
 export type { PdtpAggregateActivityWorksite, PdtpAggregatedSheetView, PdtpSheetView } from "./sheets"
 export type { PdtpComplianceMonth, PdtpComplianceIndicators, PdtpCategoryCompliance } from "./compliance"
-export type { PdtpActivityUpdateInput, PdtpActivityAddInput } from "./activities"
+export type { PdtpActivityUpdateInput, PdtpActivityAddInput, PdtpScheduleConflictDetail } from "./activities"
+export { PdtpScheduleConflictError } from "./activities"
 export { readPdtpActivityContent, writePdtpActivityContent } from "./activity-content"
 export type { PdtpActivityContent } from "./activity-content"
 export type { WorksiteScope } from "./helpers"
@@ -39,7 +40,7 @@ export {
 } from "./helpers"
 
 export { loadPdtpCatalog, listPdtpResponsibleCatalog } from "./catalog"
-export { projectRecurrenceToLegacySchedule, describePdtpRecurrence, describePdtpRecurrenceImpact } from "./recurrence"
+export { projectRecurrenceToLegacySchedule, describePdtpRecurrence, describePdtpRecurrenceImpact, deriveScheduleHorizon } from "./recurrence"
 export type { PdtpRecurrenceRule, PdtpRecurrenceFrequency, PdtpScheduleMode } from "./recurrence"
 export {
   createPdtpTemplateVersion,
@@ -80,7 +81,7 @@ export type { PdtpApprovalStepInput, PdtpApprovalSegregationRule } from "./appro
 export { getPdtpAggregatedSheetViewByProgram, getPdtpSheetView, getPdtpSheetViewByProgram, buildPdtpExport } from "./sheets"
 export { markPdtpExecution, approvePdtpExecution, rejectPdtpExecution, listPendingPdtpExecutions, getPendingPdtpApprovalsForView, getPdtpChangeLog } from "./executions"
 export { getPdtpComplianceIndicators, getPdtpComplianceIndicatorsForScope, getPdtpComplianceByCategoryForScope } from "./compliance"
-export { updatePdtpActivity, addPdtpActivity, batchUpdatePdtpActivities, duplicatePdtpActivity, retirePdtpActivity, reorderPdtpActivities, listPdtpProgramActivities } from "./activities"
+export { updatePdtpActivity, addPdtpActivity, batchUpdatePdtpActivities, duplicatePdtpActivity, retirePdtpActivity, reorderPdtpActivities, listPdtpProgramActivities, listPdtpProgramScheduleForYear } from "./activities"
 export type { PdtpActivityBatchUpdateInput } from "./activities"
 export { findPdtpWeeklyPending, runPdtpWeeklyReminders, runPdtpActionPlanVencidasReminders, runPdtpObligationReminders } from "./reminders"
 export type { PdtpPendingTarget, PdtpWeeklyPendingResult, PdtpActionVencidasReminderResult, PdtpObligationReminderResult } from "./reminders"

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { parseDteXml, matchDteItemsToOcItems } from "./dte-parser"
+import { parseDteXml, matchDteItemsToOcItems, normalizeOrderCodeRef } from "./dte-parser"
 import { extractInvoiceData } from "./invoice-extractor"
 
 // Single-line XML to avoid DOMParser whitespace issues in vitest
@@ -144,5 +144,69 @@ ${detalle}</Documento></DTE></SetDTE></EnvioDTE>`
   it("devuelve null cuando la línea no trae CdgItem (caso APRO)", () => {
     const xml = linea("")
     expect(parseDteXml(xml)?.items[0]?.productCode).toBeNull()
+  })
+})
+
+/**
+ * Referencia con la forma exacta de las facturas reales de TRECK y APRO
+ * (`docs/facturas_apro_treck_kupfer`): 654 de 667 traen un TpoDocRef 801 y las
+ * emitidas desde que la plataforma existe citan el código sin el prefijo "OC-".
+ */
+function withReferencia(inner: string) {
+  return SII_DTE.replace("</Documento>", `<Referencia>${inner}</Referencia></Documento>`)
+}
+
+describe("referencias a orden de compra", () => {
+  it("lee el código de OC que el proveedor citó en TpoDocRef 801", () => {
+    const xml = withReferencia("<NroLinRef>1</NroLinRef><TpoDocRef>801</TpoDocRef><FolioRef>2026-0020</FolioRef><FchRef>2026-08-07</FchRef>")
+
+    expect(parseDteXml(xml)!.referencedOrderCodes).toEqual(["20260020"])
+  })
+
+  it("ignora las referencias que no son órdenes de compra", () => {
+    // Las guías de despacho (52) y las facturas referenciadas (33) aparecen en
+    // las mismas facturas reales: tomarlas cruzaría contra folios ajenos.
+    const xml = withReferencia("<NroLinRef>1</NroLinRef><TpoDocRef>52</TpoDocRef><FolioRef>2026-0020</FolioRef>")
+
+    expect(parseDteXml(xml)!.referencedOrderCodes).toEqual([])
+  })
+
+  it("junta varias referencias 801 sin repetir", () => {
+    const xml = SII_DTE.replace(
+      "</Documento>",
+      "<Referencia><TpoDocRef>801</TpoDocRef><FolioRef>2026-0020</FolioRef></Referencia>"
+      + "<Referencia><TpoDocRef>801</TpoDocRef><FolioRef>OC 2026 0020</FolioRef></Referencia>"
+      + "<Referencia><TpoDocRef>801</TpoDocRef><FolioRef>2026-0021</FolioRef></Referencia></Documento>",
+    )
+
+    expect(parseDteXml(xml)!.referencedOrderCodes).toEqual(["20260020", "20260021"])
+  })
+
+  it("deja la lista vacía cuando el documento no cita ninguna orden", () => {
+    expect(parseDteXml(SII_DTE)!.referencedOrderCodes).toEqual([])
+  })
+})
+
+describe("normalizeOrderCodeRef", () => {
+  it("colapsa nuestro código y el del proveedor a la misma forma", () => {
+    expect(normalizeOrderCodeRef("OC-2026-0025")).toBe("20260025")
+    expect(normalizeOrderCodeRef("2026-0025")).toBe("20260025")
+    expect(normalizeOrderCodeRef("oc 2026 0025")).toBe("20260025")
+  })
+
+  it("normaliza la numeración sucia que mandan igual los proveedores", () => {
+    // Valores textuales de las facturas reales: no identifican una OC nuestra,
+    // pero tampoco pueden reventar ni inventar una coincidencia.
+    expect(normalizeOrderCodeRef("585.")).toBe("585")
+    expect(normalizeOrderCodeRef("OC206")).toBe("206")
+    expect(normalizeOrderCodeRef("25/09/2025")).toBe("25092025")
+    expect(normalizeOrderCodeRef("SINOC080426")).toBe("SINOC080426")
+  })
+
+  it("descarta lo que es demasiado corto para identificar una orden", () => {
+    expect(normalizeOrderCodeRef("N")).toBeNull()
+    expect(normalizeOrderCodeRef("-")).toBeNull()
+    expect(normalizeOrderCodeRef("")).toBeNull()
+    expect(normalizeOrderCodeRef(null)).toBeNull()
   })
 })

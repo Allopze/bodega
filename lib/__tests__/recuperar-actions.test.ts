@@ -28,7 +28,7 @@ vi.mock("@/lib/services/password-reset", () => ({
 }))
 
 vi.mock("next/headers", () => ({
-  headers: () => Promise.resolve(new Map([["x-forwarded-for", "192.168.1.1"]])),
+  headers: () => Promise.resolve(new Map([["cf-connecting-ip", "192.168.1.1"]])),
 }))
 
 // ── forgotPasswordAction ─────────────────────────────────────────────────────

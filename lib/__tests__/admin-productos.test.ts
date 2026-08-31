@@ -16,9 +16,25 @@ const mockAuthFn = vi.hoisted(() => vi.fn())
 const mockRecordAudit = vi.hoisted(() => vi.fn())
 const mockSelectForUpdate = vi.fn().mockResolvedValue([])
 const mockSelectWhere = vi.fn(() => ({ for: mockSelectForUpdate }))
-const mockSelectFrom = vi.fn(() => ({ where: mockSelectWhere }))
+// `.from(...)` tiene que ser encadenable Y esperable: la generación de SKU lo
+// espera directo (`select({sku}).from(products)`) mientras el resto encadena
+// `.where(...)`. Un objeto con `then` cubre ambos usos.
+const mockSelectFrom = vi.fn(() => ({
+  where: mockSelectWhere,
+  then: (resolve: (rows: unknown[]) => unknown) => resolve([]),
+}))
 const mockCancelEppImportBatch = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
-const mockInsertValues = vi.fn().mockResolvedValue(undefined)
+// `.values(...)` tiene que ser esperable Y encadenable: el alta de familia usa
+// `.onConflictDoNothing(...).returning(...)` para no reventar cuando dos altas
+// simultáneas chocan en `identity_key`, y el resto de los inserts la esperan
+// directo.
+const mockReturning = vi.fn().mockResolvedValue([{ id: "fam-generada" }])
+const mockOnConflictDoNothing = vi.fn(() => ({ returning: mockReturning }))
+const mockInsertValues = vi.fn((_values?: unknown) => ({
+  onConflictDoNothing: mockOnConflictDoNothing,
+  returning: mockReturning,
+  then: (resolve: (value: unknown) => unknown) => resolve(undefined),
+}))
 const mockUpdateSetWhere = vi.fn().mockResolvedValue(undefined)
 const mockUpdateSet = vi.fn(() => ({ where: mockUpdateSetWhere }))
 
@@ -27,8 +43,10 @@ const mockDb = {
     productCategories: { findFirst: vi.fn() },
     products: { findFirst: vi.fn() },
     eppProductFamilies: { findFirst: vi.fn() },
-  select: vi.fn(() => ({ from: mockSelectFrom })),
   },
+  // Estaba anidado dentro de `query` por error: nadie lo llamaba desde ahí, así
+  // que el mock nunca falló hasta que la generación de SKU pasó a usar select.
+  select: vi.fn(() => ({ from: mockSelectFrom })),
   insert: vi.fn(() => ({ values: mockInsertValues })),
   update: vi.fn(() => ({ set: mockUpdateSet })),
   delete: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
@@ -256,6 +274,24 @@ describe("admin/productos actions", () => {
       expect(result?.id).toBe("prod-1")
       expect(mockAuthFn).toHaveBeenCalled()
     })
+
+    it("carries drivesQuantity and sizeFamily through to the edit form", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("admin:products"))
+      mockDb.query.products.findFirst.mockResolvedValue({
+        id: "prod-1", sku: "PRD-ABC123", name: "Vacuna", description: null,
+        categoryId: "cat-1", unitOfMeasure: "unidad", isEpp: false, requiresPrevencion: false,
+        isService: true, requiresWorker: true, equipmentKind: null, referencePrice: null, notes: null, isActive: true,
+        productAttributes: [
+          { id: "attr-1", name: "Dosis", type: "integer", isRequired: true, options: null, sizeFamily: null, drivesQuantity: true, sortOrder: 0 },
+        ],
+        productSuppliers: [],
+      })
+      const { getProductForEdit } = await import("@/app/(app)/admin/productos/actions")
+
+      const result = await getProductForEdit("prod-1")
+
+      expect(result?.attributes[0]).toMatchObject({ name: "Dosis", type: "integer", drivesQuantity: true })
+    })
   })
 
   // ── cancelEppImportBatchAction ─────────────────────────────────────────
@@ -413,24 +449,33 @@ describe("admin/productos actions", () => {
       }))
     })
 
-    it("includes audit record with batch tracing", async () => {
+    it("traza el audit con el SKU real del primer producto del lote", async () => {
       mockAuthFn.mockResolvedValue(makeSession("admin:products"))
       mockDb.query.productCategories.findFirst.mockResolvedValue({ id: "cat-epp", name: "EPP", slug: "epp" })
       mockDb.query.eppProductFamilies.findFirst.mockResolvedValue(null)
-      mockDb.query.products.findFirst
-        .mockResolvedValueOnce(null)  // SKU 1
-        .mockResolvedValueOnce(null)  // SKU 2
-        .mockResolvedValue({ sku: "EPP-ABC123" }) // audit
+      mockDb.query.products.findFirst.mockResolvedValue(null)  // cada SKU generado es único
 
       const { createProductVariantBatch } = await import("@/app/(app)/admin/productos/actions")
       const r = await createProductVariantBatch(VALID_INPUT)
 
       expect(r.ok).toBe(true)
+
+      // El SKU trazado tiene que ser el del primer producto que se insertó, no
+      // el resultado de buscar `products.name === familyName`: los nombres de
+      // variante llevan sufijo ("Casco de seguridad Blanco"), así que esa
+      // búsqueda no acertaba nunca y el audit registraba "desconocido".
+      const insertedSkus = mockInsertValues.mock.calls
+        .flatMap(([values]) => (Array.isArray(values) ? values : [values]))
+        .filter((row) => typeof row?.sku === "string")
+        .map((row) => row.sku as string)
+
+      expect(insertedSkus.length).toBe(2)
       expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
         entityId: "batch_Casco de seguridad",
-        entityCode: "EPP-ABC123",
+        entityCode: insertedSkus[0],
         reason: "Creación por asistente EPP",
       }))
+      expect(insertedSkus[0]).toMatch(/^EPP-/)
     })
   })
 })

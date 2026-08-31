@@ -65,6 +65,16 @@ export const fuelProviderTransactions = pgTable("fuel_provider_transactions", {
   unitPrice: numeric("unit_price", { precision: 14, scale: 4, mode: "number" }),
   amount: numeric("amount", { precision: 14, scale: 2, mode: "number" }),
   status: text("status").notNull(),
+  /**
+   * Qué representa la fila: una transacción del proveedor o el agregado de un
+   * período.
+   *
+   * El informe TCT de Copec es un agregado MENSUAL por patente, así que su fila
+   * no se puede cruzar contra una carga interna por fecha y monto: la
+   * conciliación la salta en vez de marcarla `unmatched`, que sugería un
+   * descuadre donde sólo había granularidades distintas.
+   */
+  granularity: text("granularity").notNull().default("transaction"),
   resolutionCode: text("resolution_code"),
   resolutionMessage: text("resolution_message"),
   rawPayload: jsonb("raw_payload"),
@@ -75,6 +85,7 @@ export const fuelProviderTransactions = pgTable("fuel_provider_transactions", {
 }, (table) => [
   check("fuel_provider_transactions_provider_valid", sql`${table.provider} IN ('copec', 'aramco')`),
   check("fuel_provider_transactions_status_valid", sql`${table.status} IN ('accepted', 'rejected', 'pending', 'superseded')`),
+  check("fuel_provider_transactions_granularity_valid", sql`${table.granularity} IN ('transaction', 'period_aggregate')`),
   check("fuel_provider_transactions_values_valid", sql`
     (${table.quantity} IS NULL OR ${table.quantity} >= 0) AND
     (${table.amount} IS NULL OR ${table.amount} >= 0) AND

@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { db } from "@/db"
 import { worksiteStock } from "@/db/schema"
 import { eq, inArray } from "drizzle-orm"
@@ -155,7 +157,7 @@ export async function adjustStockAction(
     return { ok: true, message: `Ajuste ${adjustment.code} registrado: ${sign}${quantity} unidades` }
   } catch (e) {
     logger.error("[adjustStockAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al registrar ajuste" }
+    return { ok: false, message: safeActionMessage(e, "Error al registrar ajuste") }
   }
 }
 
@@ -200,7 +202,7 @@ export async function returnStockAction(
     return { ok: true, message: `Devolución ${stockReturn.code} registrada: ${quantity} unidades` }
   } catch (e) {
     logger.error("[returnStockAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al registrar devolución" }
+    return { ok: false, message: safeActionMessage(e, "Error al registrar devolución") }
   }
 }
 
@@ -243,7 +245,7 @@ export async function closePhysicalInventoryCountAction(
     }
   } catch (e) {
     logger.error("[closePhysicalInventoryCountAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al cerrar conteo fisico" }
+    return { ok: false, message: safeActionMessage(e, "Error al cerrar conteo fisico") }
   }
 }
 
@@ -325,7 +327,7 @@ export async function setMinStockBulkAction(
     }
   } catch (e) {
     logger.error("[setMinStockBulkAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al guardar los mínimos" }
+    return { ok: false, message: safeActionMessage(e, "Error al guardar los mínimos") }
   }
 }
 
@@ -376,7 +378,7 @@ export async function discardStockAction(
     return { ok: true, message: `Baja ${discard.code} registrada: ${quantity} unidades` }
   } catch (e) {
     logger.error("[discardStockAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al registrar la baja" }
+    return { ok: false, message: safeActionMessage(e, "Error al registrar la baja") }
   }
 }
 
@@ -411,6 +413,6 @@ export async function savePhysicalInventoryDraftAction(
     }
   } catch (e) {
     logger.error("[savePhysicalInventoryDraftAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al guardar el borrador" }
+    return { ok: false, message: safeActionMessage(e, "Error al guardar el borrador") }
   }
 }

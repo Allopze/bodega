@@ -1,5 +1,33 @@
 import type { ChecklistSection } from '../types'
 
+const OBSERVATION_DOCUMENT_CONTEXT: ChecklistSection = {
+  id: 'encabezado_documental',
+  title: 'Antecedentes de la observación',
+  description: 'Encabezados del formulario oficial; no intervienen en el resultado.',
+  countsForCompliance: false,
+  items: [
+    {
+      id: 'tipo_observacion',
+      label: 'Tipo de observación',
+      kind: 'select',
+      required: true,
+      options: [
+        { value: 'planeada', label: 'Planeada' },
+        { value: 'no_planeada', label: 'No planeada' },
+      ],
+    },
+    { id: 'motivo_observacion', label: 'Motivo de la observación', kind: 'text', required: true },
+    { id: 'tarea_observada', label: 'Tarea observada', kind: 'text', required: true },
+    { id: 'actividad_observada', label: 'Actividad que realizaba', kind: 'textarea', required: true },
+    {
+      id: 'reinstruccion',
+      label: '¿Se realizó reinstrucción?',
+      kind: 'si_no_obs',
+      required: true,
+    },
+  ],
+}
+
 /**
  * Observaciones de Seguridad — módulos 12 (ampliroll) + 13 (maquinaria).
  *
@@ -21,6 +49,7 @@ import type { ChecklistSection } from '../types'
  * N/A=na). `% = buenas/22`.
  */
 export const OBSERVACION_AMPLIROLL_SECTIONS: ChecklistSection[] = [
+  OBSERVATION_DOCUMENT_CONTEXT,
   // ============================================================
   // 3.1 Inspección al ingreso y término de turno
   // ============================================================
@@ -132,6 +161,7 @@ export const OBSERVACION_AMPLIROLL_SECTIONS: ChecklistSection[] = [
  * pala, lanza y garra).
  */
 export const OBSERVACION_MAQUINARIA_SECTIONS: ChecklistSection[] = [
+  OBSERVATION_DOCUMENT_CONTEXT,
   {
     id: 'ingreso_termino_turno',
     title: '1. Inspección al ingreso y término de turno',

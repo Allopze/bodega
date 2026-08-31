@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { and, desc, eq, inArray } from "drizzle-orm"
 import { z } from "zod"
@@ -10,6 +12,7 @@ import { logger } from "@/lib/logger"
 import { civilDateRange } from "@/lib/validation/dates"
 import { ARAMCO_SOURCES } from "@/lib/combustibles/fuel-sources"
 import { syncAramco } from "@/lib/combustibles/aramco-sync"
+import { withCronLock } from "@/lib/services/cron-lock"
 import { AramcoTwoFactorRequiredError } from "@/lib/combustibles/aramco-client"
 import {
   AramcoSettingsError,
@@ -98,7 +101,7 @@ export async function getAramcoSyncStatusAction(): Promise<
       },
     }
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No fue posible obtener el estado de Aramco" }
+    return { ok: false, message: safeActionMessage(error, "No fue posible obtener el estado de Aramco") }
   }
 }
 
@@ -115,8 +118,15 @@ export async function runAramcoSyncAction(range: { from?: string; to?: string } 
     if (!parsed.success) return { ok: false, message: "El rango de fechas no es válido" }
 
     // El importador configurado queda reservado para el cron, que no tiene
-    // sesión de usuario.
-    const result = await syncAramco({ ...parsed.data, importerId: session.user.id })
+    // sesión de usuario. Bajo el MISMO lock que el cron: dos corridas
+    // solapadas autentican dos veces contra el portal y compiten por los
+    // mismos lotes (el lock por lote las serializa, pero a costa de trabajo
+    // duplicado y de un `partial` espurio).
+    const outcome = await withCronLock("fuel-aramco-sync", () => syncAramco({ ...parsed.data, importerId: session.user.id }))
+    if ("skipped" in outcome) {
+      return { ok: false, message: "La sincronización automática de Aramco está corriendo en este momento. Espera a que termine e inténtalo nuevamente." }
+    }
+    const result = outcome
     revalidatePath(PAGE)
     return {
       ok: true,
@@ -133,7 +143,7 @@ export async function runAramcoSyncAction(range: { from?: string; to?: string } 
     }
   } catch (error) {
     if (error instanceof AramcoTwoFactorRequiredError) return { ok: false, message: error.message }
-    return { ok: false, message: error instanceof Error ? error.message : "No fue posible sincronizar Aramco" }
+    return { ok: false, message: safeActionMessage(error, "No fue posible sincronizar Aramco") }
   }
 }
 

@@ -18,6 +18,7 @@ import { recordAudit } from "@/lib/audit"
 import {
   DELETABLE_FUEL_LOAD_STATUSES,
   EDITABLE_FUEL_LOAD_STATUSES,
+  METER_CORRECTABLE_FUEL_LOAD_STATUSES,
   fuelLoadStatusBlockMessage,
 } from "@/lib/combustibles/load-status"
 import { logger } from "@/lib/logger"
@@ -26,7 +27,8 @@ import { safeActionMessage } from "@/lib/action-error"
 import type { ActionState } from "@/lib/validation/masters"
 import { optionalNumber } from "./export"
 import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
-import { reevaluateFuelLoadAnomalies } from "@/lib/combustibles/fuel-load-anomaly-reevaluation"
+import { reevaluateFuelLoadAnomalies, resolveCorrectedMeterCases } from "@/lib/combustibles/fuel-load-anomaly-reevaluation"
+import { meterReadingFieldErrors } from "@/lib/combustibles/meter-readings"
 import { notifyAfterCommit } from "@/lib/services/notifications"
 
 const REVALIDATE = "/combustibles"
@@ -135,6 +137,15 @@ export async function createFuelLoadAction(
 
   if (!parsed.success) {
     return { ok: false, message: "Revisa los datos", fieldErrors: parsed.error.flatten().fieldErrors }
+  }
+
+  // Un medidor que retrocede casi siempre es un dígito perdido al teclear. Se
+  // caza acá y no sólo en la detección nocturna: un caso de anomalía obliga a
+  // alguien a revisarlo después, y este error simplemente no deja que exista.
+  // El operador puede declarar un medidor nuevo, que es el único caso legítimo.
+  if (!formData.get("meterReplaced")) {
+    const meterErrors = await meterReadingFieldErrors(db, parsed.data)
+    if (meterErrors) return { ok: false, message: "Revisa la lectura del medidor", fieldErrors: meterErrors }
   }
 
   const expectedTotal = parsed.data.baseAmount + parsed.data.iecTotal + parsed.data.ivaAmount
@@ -302,6 +313,20 @@ export async function updateFuelLoadAction(
     return { ok: false, message: "Revisa los datos", fieldErrors: parsed.error.flatten().fieldErrors }
   }
 
+  // Un medidor que retrocede casi siempre es un dígito perdido al teclear. Se
+  // caza acá y no sólo en la detección nocturna: un caso de anomalía obliga a
+  // alguien a revisarlo después, y este error simplemente no deja que exista.
+  // El operador puede declarar un medidor nuevo, que es el único caso legítimo.
+  if (!formData.get("meterReplaced")) {
+    const meterErrors = await meterReadingFieldErrors(db, {
+      vehicleId: parsed.data.vehicleId ?? existing.vehicleId,
+      loadDate: parsed.data.loadDate ?? existing.loadDate,
+      odometerReading: parsed.data.odometerReading,
+      hourMeterReading: parsed.data.hourMeterReading,
+    }, { excludeLoadId: id })
+    if (meterErrors) return { ok: false, message: "Revisa la lectura del medidor", fieldErrors: meterErrors }
+  }
+
   const expectedTotal = parsed.data.baseAmount! + parsed.data.iecTotal! + parsed.data.ivaAmount!
   if (Math.abs(parsed.data.totalAmount! - expectedTotal) > 1) {
     return { ok: false, message: `Total (${parsed.data.totalAmount}) no cuadra con base + IEC + IVA (${expectedTotal})` }
@@ -367,6 +392,7 @@ export async function updateFuelLoadAction(
     revalidatePath(REVALIDATE)
     revalidatePath("/combustibles/anomalias")
     notifyAfterCommit(() => reevaluateFuelLoadAnomalies(id, session.user.id))
+    notifyAfterCommit(() => resolveCorrectedMeterCases(id, session.user.id))
     return { ok: true, message: "Carga actualizada" }
   } catch (e) {
     return { ok: false, message: await dbErrMsg(e, "Error al actualizar") }
@@ -476,4 +502,87 @@ export async function registerFuelLoadAction(id: string): Promise<ActionState> {
   } catch (e) {
     return { ok: false, message: await dbErrMsg(e, "Error al registrar") }
   }
+}
+
+/**
+ * Corrige SÓLO la lectura del medidor de una carga, incluso conciliada.
+ *
+ * Existe aparte de `updateFuelLoadAction` porque el bloqueo de la conciliada es
+ * correcto para todo lo demás —litros, montos, proveedor, fecha: eso ya cuadró
+ * contra el DTE— y equivocado para el odómetro, que no aparece en el documento
+ * tributario. La acción no puede tocar ningún otro campo, así que abrir esta
+ * puerta no reabre la carga.
+ */
+export async function correctFuelLoadMeterAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("combustibles:create", "/combustibles") }
+  catch { return { ok: false, message: "Sin permisos" } }
+
+  const id = String(formData.get("id") ?? "")
+  if (!id) return { ok: false, message: "ID requerido" }
+
+  const existing = await db.query.fuelLoads.findFirst({ where: eq(fuelLoads.id, id) })
+  if (!existing) return { ok: false, message: "Carga no encontrada" }
+  if (!(METER_CORRECTABLE_FUEL_LOAD_STATUSES as readonly string[]).includes(existing.status)) {
+    return { ok: false, message: fuelLoadStatusBlockMessage(existing.status, "editar") }
+  }
+  if (!canAccessWorksite(session, existing.worksiteId)) {
+    return { ok: false, message: "Sin acceso a la faena de esta carga" }
+  }
+
+  const odometerReading = await optionalNumber(formData.get("odometerReading"))
+  const hourMeterReading = await optionalNumber(formData.get("hourMeterReading"))
+  if (odometerReading == null && hourMeterReading == null) {
+    return { ok: false, message: "Indica al menos una lectura" }
+  }
+  for (const value of [odometerReading, hourMeterReading]) {
+    if (value != null && (!Number.isFinite(value) || value < 0)) {
+      return { ok: false, message: "La lectura debe ser un número ≥ 0" }
+    }
+  }
+
+  if (!formData.get("meterReplaced")) {
+    const meterErrors = await meterReadingFieldErrors(db, {
+      vehicleId: existing.vehicleId,
+      loadDate: existing.loadDate,
+      odometerReading,
+      hourMeterReading,
+    }, { excludeLoadId: id })
+    if (meterErrors) return { ok: false, message: "Revisa la lectura del medidor", fieldErrors: meterErrors }
+  }
+
+  try {
+    await db.transaction(async (tx) => {
+      // El `WHERE` repite el estado leído: entre la lectura y la escritura otra
+      // sesión puede haber anulado la carga.
+      const [updated] = await tx.update(fuelLoads)
+        .set({ odometerReading, hourMeterReading, updatedAt: new Date().toISOString() })
+        .where(and(
+          eq(fuelLoads.id, id),
+          inArray(fuelLoads.status, [...METER_CORRECTABLE_FUEL_LOAD_STATUSES]),
+        ))
+        .returning()
+      if (!updated) throw new Error("La carga cambió de estado en otra sesión. Recarga antes de continuar.")
+      await recordAudit({
+        userId: session.user.id,
+        userEmail: session.user.email ?? undefined,
+        action: "update",
+        entityType: "fuel_load",
+        entityId: id,
+        oldState: { odometerReading: existing.odometerReading, hourMeterReading: existing.hourMeterReading },
+        newState: { odometerReading, hourMeterReading },
+        reason: "Corrección de lectura de medidor",
+      }, tx)
+    })
+  } catch (e) {
+    return { ok: false, message: await dbErrMsg(e, "No se pudo corregir la lectura") }
+  }
+
+  revalidatePath(REVALIDATE)
+  revalidatePath("/combustibles/anomalias")
+  notifyAfterCommit(() => resolveCorrectedMeterCases(id, session.user.id))
+  return { ok: true, message: "Lectura corregida" }
 }

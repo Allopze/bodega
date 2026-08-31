@@ -56,9 +56,15 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
   const generatedAt = new Date().toISOString()
   const suggestedFilename = `comprobante-entrega-${delivery.code}.pdf`
   const deliveryItems = delivery.items.map((item, index) => ({
-    label: `Producto ${index + 1}`,
+    label: `Producto ${index + 1}${item.quantityOriginal !== null ? " (regularizado)" : ""}`,
     value: `${productMap.get(item.productId ?? "") ?? item.productNameFree ?? "Producto"} · ${formatQty(item.quantity, item.unitOfMeasure)}`,
   }))
+  const correctedItems = delivery.items
+    .filter((item) => item.quantityOriginal !== null)
+    .map((item, index) => ({
+      label: `Corrección ${index + 1}`,
+      value: `Original ${formatQty(item.quantityOriginal ?? 0, item.unitOfMeasure)} · efectiva ${formatQty(item.quantity, item.unitOfMeasure)}`,
+    }))
   const returnedItems = delivery.items.reduce<Array<{ label: string; value: string }>>((items, item) => {
     if (item.returnQuantity) {
       items.push({
@@ -100,6 +106,7 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
             ],
           },
           { title: "Productos entregados", fields: deliveryItems },
+          ...(correctedItems.length > 0 ? [{ title: "Regularización automática", fields: correctedItems }] : []),
           ...(returnedItems.length > 0 ? [{ title: "Devolución de EPP", fields: returnedItems }] : []),
           ...(delivery.signaturePath ? [{
             title: "Evidencia histórica",
@@ -176,6 +183,11 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
               ))}
             </tbody>
           </table>
+          {delivery.items.some((item) => item.quantityOriginal !== null) && (
+            <p style={{ marginTop: 10, fontSize: 10, color: "#475569" }}>
+              Cantidad regularizada automáticamente por el defecto histórico de escala. El valor original permanece conservado en la auditoría.
+            </p>
+          )}
           {delivery.notes && (
             <p style={{ marginTop: 12, fontSize: 11, color: "#6b7280" }}>
               Notas: {delivery.notes}

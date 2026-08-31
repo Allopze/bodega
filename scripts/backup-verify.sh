@@ -188,18 +188,43 @@ if $JSON_OUTPUT; then
   [ "$EXIT_CODE" -eq 1 ] && STATUS="WARNING"
   [ "$EXIT_CODE" -eq 2 ] && STATUS="CRITICAL"
 
-  jq -n \
-    --arg status "$STATUS" \
-    --argjson exit_code "$EXIT_CODE" \
-    --argjson issue_count "${#ISSUES[@]}" \
-    --arg issues "$(IFS=';'; echo "${ISSUES[*]}")" \
-    '{
-      status: $status,
-      exit_code: $exit_code,
-      issue_count: $issue_count,
-      issues: ($issues | split(";") | map(select(length > 0))),
-      checked_at: (now | strftime("%Y-%m-%dT%H:%M:%SZ"))
-    }'
+  if command -v jq >/dev/null 2>&1; then
+    jq -n \
+      --arg status "$STATUS" \
+      --argjson exit_code "$EXIT_CODE" \
+      --argjson issue_count "${#ISSUES[@]}" \
+      --arg issues "$(IFS=';'; echo "${ISSUES[*]}")" \
+      '{
+        status: $status,
+        exit_code: $exit_code,
+        issue_count: $issue_count,
+        issues: ($issues | split(";") | map(select(length > 0))),
+        checked_at: (now | strftime("%Y-%m-%dT%H:%M:%SZ"))
+      }'
+  elif command -v node >/dev/null 2>&1; then
+    # La imagen de la aplicación siempre trae Node, pero algunos hosts que
+    # ejecutan este script directamente no traen jq. Mantener JSON válido acá
+    # evita que el endpoint de estado convierta una alerta real en una respuesta
+    # vacía por un binario auxiliar ausente.
+    BACKUP_VERIFY_STATUS="$STATUS" \
+      BACKUP_VERIFY_EXIT_CODE="$EXIT_CODE" \
+      BACKUP_VERIFY_ISSUE_COUNT="${#ISSUES[@]}" \
+      BACKUP_VERIFY_ISSUES="$(printf '%s\n' "${ISSUES[@]}")" \
+      node --input-type=module <<'NODE'
+const issues = (process.env.BACKUP_VERIFY_ISSUES ?? "").split("\n").filter(Boolean)
+const payload = {
+  status: process.env.BACKUP_VERIFY_STATUS,
+  exit_code: Number(process.env.BACKUP_VERIFY_EXIT_CODE),
+  issue_count: Number(process.env.BACKUP_VERIFY_ISSUE_COUNT),
+  issues,
+  checked_at: new Date().toISOString(),
+}
+process.stdout.write(`${JSON.stringify(payload)}\n`)
+NODE
+  else
+    error "No se puede emitir JSON: se requiere jq o node"
+    exit "$EXIT_CODE"
+  fi
 else
   log ""
   if [ "$EXIT_CODE" -eq 0 ]; then

@@ -39,8 +39,8 @@ export default async function ForbiddenPage({
         <p className="mt-5 font-mono text-xs uppercase tracking-[0.08em] text-[var(--color-text-subtle)]">Sin acceso</p>
         <h1 className="mt-1 text-h1 text-[var(--color-text)]">Sin permisos suficientes</h1>
         <p className="mt-2 max-w-[60ch] text-sub">
-          Tu cuenta no cuenta con los permisos necesarios. Si crees que es un error, pide a un
-          administrador que revise tus roles o el alcance de tus faenas.
+          Tu cuenta no autoriza esta vista. Si esperabas llegar aquí, pide a un administrador que
+          revise tus roles o el alcance de tus faenas.
         </p>
 
         <div className="mt-6 flex flex-wrap gap-3">

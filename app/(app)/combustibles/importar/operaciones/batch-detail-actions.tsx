@@ -23,14 +23,19 @@ export function RevertOperationsBatchButton({ batchId, canRevert }: { batchId: s
     setLoading(true)
     const fd = new FormData()
     fd.set("batchId", batchId)
-    const res = await revertBatchOperationsAction(INITIAL_STATE, fd)
-    setLoading(false)
-    setOpen(false)
-    if (res.ok) {
-      toast.success(res.message ?? "Lote revertido")
-      router.refresh()
-    } else {
-      toast.error(res.message ?? "No se pudo revertir el lote")
+    try {
+      const res = await revertBatchOperationsAction(INITIAL_STATE, fd)
+      setOpen(false)
+      if (res.ok) {
+        toast.success(res.message ?? "Lote revertido")
+        router.refresh()
+      } else {
+        toast.error(res.message ?? "No se pudo revertir el lote")
+      }
+    } finally {
+      // En `finally`: si la acción rechaza, el botón quedaba deshabilitado
+      // para siempre. El diálogo sigue abierto para poder reintentar.
+      setLoading(false)
     }
   }
 

@@ -10,7 +10,7 @@ import { and, desc, eq, gt, inArray, isNotNull, isNull, ne, sql } from "drizzle-
 import { db } from "@/db"
 import {
   fuelAnomalyExecutions, fuelAnomalyRules,
-  fuelConsumptionRecords, fuelEquipmentTypes, fuelLoads, fuelOperationRecords,
+  fuelConsumptionRecords, fuelEquipmentTypes, fuelLoads, fuelMeterReadings, fuelOperationRecords,
   fuelTaeSubmissions, fuelVehicleOperationalIntervals, fuelVehicles,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -236,14 +236,14 @@ const detectPerformanceOutlierHistory: DetectorFn = async (rule) => {
       if (!row.atipico) continue
       scanned++
       try {
-        await createAnomalyCase({
+        const outcome = await createAnomalyCase({
           ruleId: rule.id, ruleCode: "rendimiento_fuera_historico", severity: severityOf(rule, "high"),
           worksiteId: row.worksiteId ?? undefined, vehicleId: row.vehicleId,
           referenceEntityType: "fuel_operation_record", referenceEntityId: row.id,
           description: `Rendimiento de ${row.plate} (${row.rendimiento}) se aparta más de ${perVehicleThreshold} desviaciones estándar de su propio historial.`,
           observedValue: String(row.rendimiento),
         })
-        created++
+        if (outcome.wasCreated) created++; else skipped++
       } catch { skipped++ }
     }
   }
@@ -285,14 +285,14 @@ const detectPerformanceOutlierGroup: DetectorFn = async (rule) => {
       if (!row.atipico) continue
       scanned++
       try {
-        await createAnomalyCase({
+        const outcome = await createAnomalyCase({
           ruleId: rule.id, ruleCode: "rendimiento_fuera_grupo", severity: severityOf(rule, "medium"),
           worksiteId: row.worksiteId ?? undefined, vehicleId: row.vehicleId,
           referenceEntityType: "fuel_operation_record", referenceEntityId: row.id,
           description: `Rendimiento de ${row.plate} (${row.rendimiento}) se aparta más de ${perGroupThreshold} desviaciones estándar de su grupo comparable ("${row.comparisonGroup}").`,
           observedValue: String(row.rendimiento),
         })
-        created++
+        if (outcome.wasCreated) created++; else skipped++
       } catch { skipped++ }
     }
   }
@@ -329,14 +329,14 @@ const detectLitersExceedCapacity: DetectorFn = async (rule) => {
     for (const row of taeRows) {
       scanned++
       try {
-        await createAnomalyCase({
+        const outcome = await createAnomalyCase({
           ruleId: rule.id, ruleCode: "litros_supera_capacidad", severity: severityOf(rule, "critical"),
           worksiteId: v.worksiteId, vehicleId: v.vehicleId,
           referenceEntityType: "fuel_tae_submission", referenceEntityId: row.id,
           description: `${Number(row.liters).toLocaleString("es-CL")} L supera la capacidad declarada de ${Number(v.tankCapacityLiters).toLocaleString("es-CL")} L (+${Math.round(margin * 100)}% margen) para el equipo ${v.plate}.`,
           observedValue: String(row.liters), expectedValue: `≤ ${Number(v.tankCapacityLiters)} L`,
         })
-        created++
+        if (outcome.wasCreated) created++; else skipped++
       } catch { skipped++ }
     }
   }
@@ -394,7 +394,7 @@ const detectSharpConsumptionChange: DetectorFn = async (rule) => {
       if (pct >= perVehicleThreshold) {
         scanned++
         try {
-          await createAnomalyCase({
+          const outcome = await createAnomalyCase({
             ruleId: rule.id, ruleCode: "variacion_brusca_consumo", severity: severityOf(rule, "medium"),
             worksiteId: curr.worksiteId ?? undefined, vehicleId: curr.vehicleId ?? undefined,
             // Singular, como los otros 5 detectores: en plural, `fuelLogEntityType()`
@@ -403,7 +403,7 @@ const detectSharpConsumptionChange: DetectorFn = async (rule) => {
             description: `Consumo varió ${Math.round(pct)}% respecto al período anterior (${Number(curr.cantidad).toLocaleString("es-CL")} L vs ${Number(prev.cantidad).toLocaleString("es-CL")} L).`,
             observedValue: `+${Math.round(pct)}%`,            expectedValue: `< ${perVehicleThreshold}%`,
           })
-          created++
+          if (outcome.wasCreated) created++; else skipped++
         } catch { skipped++ }
       }
     }
@@ -456,14 +456,14 @@ const detectConsumptionWhileInactive: DetectorFn = async (rule) => {
       // referenceEntityId incluye la fecha: a diferencia de las demás reglas batch (que
       // referencian un registro histórico inmutable), ésta vigila una condición vigente
       // — debe poder resurgir en una corrida futura aunque el caso de hoy se haya descartado.
-      await createAnomalyCase({
+      const outcome = await createAnomalyCase({
         ruleId: rule.id, ruleCode: "consumo_durante_inactividad", severity: severityOf(rule, "high"),
         worksiteId: v.worksiteId ?? undefined, vehicleId: v.vehicleId,
         referenceEntityType: "fuel_vehicle", referenceEntityId: `${v.vehicleId}:${today}`,
         description: `El equipo ${v.plate} está en estado "${v.operationalStatus}" desde ${interval.startedAt.slice(0, 10)} y tiene cargas registradas después de esa fecha.`,
         observedValue: "inactivo con cargas",
       })
-      created++
+      if (outcome.wasCreated) created++; else skipped++
     } catch { skipped++ }
   }
   return { created, skipped, scanned }
@@ -492,14 +492,14 @@ const detectUnusualSupplier: DetectorFn = async (rule) => {
     if (row.fuelSupplierId === row.usualFuelSupplierId) continue
     scanned++
     try {
-      await createAnomalyCase({
+      const outcome = await createAnomalyCase({
         ruleId: rule.id, ruleCode: "proveedor_no_habitual", severity: severityOf(rule, "low"),
         worksiteId: row.worksiteId, vehicleId: row.vehicleId,
         referenceEntityType: "fuel_load", referenceEntityId: row.loadId,
         description: `Carga de ${row.plate} facturada con un proveedor distinto del habitual declarado para el equipo.`,
         observedValue: row.fuelSupplierId, expectedValue: row.usualFuelSupplierId ?? undefined,
       })
-      created++
+      if (outcome.wasCreated) created++; else skipped++
     } catch { skipped++ }
   }
   return { created, skipped, scanned }
@@ -517,14 +517,14 @@ const detectDuplicateEvidenceRule: DetectorFn = async (rule) => {
       .from(fuelTaeSubmissions).where(inArray(fuelTaeSubmissions.id, submissionIds))
     const first = submissions[0]
     try {
-      await createAnomalyCase({
+      const outcome = await createAnomalyCase({
         ruleId: rule.id, ruleCode: "evidencia_duplicada", severity: severityOf(rule, "low"),
         worksiteId: first?.worksiteId ?? undefined, vehicleId: first?.vehicleId ?? undefined,
         referenceEntityType: "fuel_tae_evidence_hash", referenceEntityId: hash,
         description: `La misma fotografía (SHA-256 ${hash.slice(0, 12)}…) aparece en ${submissionIds.length} cargas distintas: ${submissionIds.join(", ")}.`,
         observedValue: `${submissionIds.length} cargas`, expectedValue: "1 carga",
       })
-      created++
+      if (outcome.wasCreated) created++; else skipped++
     } catch { skipped++ }
   }
   return { created, skipped, scanned }
@@ -540,14 +540,14 @@ const detectCorruptEvidenceRule: DetectorFn = async (rule) => {
     const [submission] = await db.select({ worksiteId: fuelTaeSubmissions.worksiteId, vehicleId: fuelTaeSubmissions.vehicleId })
       .from(fuelTaeSubmissions).where(eq(fuelTaeSubmissions.id, item.submissionId)).limit(1)
     try {
-      await createAnomalyCase({
+      const outcome = await createAnomalyCase({
         ruleId: rule.id, ruleCode: "evidencia_ilegible", severity: severityOf(rule, "medium"),
         worksiteId: submission?.worksiteId ?? undefined, vehicleId: submission?.vehicleId ?? undefined,
         referenceEntityType: "fuel_tae_evidence", referenceEntityId: item.evidenceId,
         description: `Evidencia "${item.fileName ?? item.evidenceId}" ilegible: ${item.reason}.`,
         observedValue: item.reason,
       })
-      created++
+      if (outcome.wasCreated) created++; else skipped++
     } catch { skipped++ }
   }
   return { created, skipped, scanned }
@@ -559,23 +559,30 @@ const detectCorruptEvidenceRule: DetectorFn = async (rule) => {
  * llegada — asume que `rows` ya viene ordenado por vehículo y luego por
  * instante real (a cargo de cada consulta que lo use).
  */
+function consecutiveMeterPairs<T>(
+  rows: T[],
+  seriesKey: (row: T) => string | null,
+  getValue: (row: T) => number | null,
+): Array<{ prev: T; curr: T }> {
+  const bySeries = new Map<string, T[]>()
+  for (const row of rows) {
+    const key = seriesKey(row)
+    if (!key || getValue(row) == null) continue
+    bySeries.set(key, [...(bySeries.get(key) ?? []), row])
+  }
+  const pairs: Array<{ prev: T; curr: T }> = []
+  for (const [, group] of bySeries) {
+    for (let i = 1; i < group.length; i++) pairs.push({ prev: group[i - 1]!, curr: group[i]! })
+  }
+  return pairs
+}
+
 function flagRegressivePairs<T extends { vehicleId: string | null }>(
   rows: T[],
   getValue: (row: T) => number | null,
 ): Array<{ prev: T; curr: T }> {
-  const byVehicle = new Map<string, T[]>()
-  for (const row of rows) {
-    if (!row.vehicleId || getValue(row) == null) continue
-    byVehicle.set(row.vehicleId, [...(byVehicle.get(row.vehicleId) ?? []), row])
-  }
-  const pairs: Array<{ prev: T; curr: T }> = []
-  for (const [, group] of byVehicle) {
-    for (let i = 1; i < group.length; i++) {
-      const prev = group[i - 1]!, curr = group[i]!
-      if (getValue(curr)! < getValue(prev)!) pairs.push({ prev, curr })
-    }
-  }
-  return pairs
+  return consecutiveMeterPairs(rows, (row) => row.vehicleId, getValue)
+    .filter(({ prev, curr }) => getValue(curr)! < getValue(prev)!)
 }
 
 /**
@@ -620,14 +627,14 @@ function makeRegressiveMeterDetector(meterType: "km" | "hora"): DetectorFn {
     for (const { prev, curr } of flagRegressivePairs(opRows, (r) => Number(r.horometro))) {
       scanned++
       try {
-        await createAnomalyCase({
+        const outcome = await createAnomalyCase({
           ruleId: rule.id, ruleCode, severity: severityOf(rule, "high"),
           worksiteId: curr.worksiteId ?? undefined, vehicleId: curr.vehicleId ?? undefined,
           referenceEntityType: "fuel_operation_record", referenceEntityId: curr.id,
           description: `Lectura ${meterLabel} (${curr.horometro}) del log operacional de ${curr.plate} es menor que la carga anterior (${prev.horometro}).`,
           observedValue: String(curr.horometro), expectedValue: `> ${prev.horometro}`,
         })
-        created++
+        if (outcome.wasCreated) created++; else skipped++
       } catch { skipped++ }
     }
 
@@ -646,19 +653,140 @@ function makeRegressiveMeterDetector(meterType: "km" | "hora"): DetectorFn {
     for (const { prev, curr } of flagRegressivePairs(loadRows, (r) => Number(r.reading))) {
       scanned++
       try {
-        await createAnomalyCase({
+        const outcome = await createAnomalyCase({
           ruleId: rule.id, ruleCode, severity: severityOf(rule, "high"),
           worksiteId: curr.worksiteId ?? undefined, vehicleId: curr.vehicleId ?? undefined,
           referenceEntityType: "fuel_load", referenceEntityId: curr.id,
           description: `Lectura ${meterLabel} (${curr.reading}) de la carga de ${curr.plate} es menor que la carga anterior (${prev.reading}).`,
           observedValue: String(curr.reading), expectedValue: `> ${prev.reading}`,
         })
-        created++
+        if (outcome.wasCreated) created++; else skipped++
+      } catch { skipped++ }
+    }
+
+    // Detalle del proveedor: una fila por transacción, con el odómetro que el
+    // operario tipeó en el surtidor. Es la fuente donde el error de dedo aparece
+    // de verdad —en la muestra real, 27 de 249 pares consecutivos retroceden— y
+    // la única que hasta ahora no miraba nadie.
+    for (const { prev, curr } of providerReadingPairs(await meterReadingRows(meterType, rowLimit))
+      .filter(({ prev, curr }) => curr.value < prev.value)) {
+      scanned++
+      try {
+        const outcome = await createAnomalyCase({
+          ruleId: rule.id, ruleCode, severity: severityOf(rule, "high"),
+          worksiteId: curr.worksiteId ?? undefined, vehicleId: curr.vehicleId ?? undefined,
+          referenceEntityType: "fuel_meter_reading", referenceEntityId: curr.id,
+          description: `Lectura ${meterLabel} (${curr.value}) de la carga de ${curr.plate} en ${curr.stationName ?? "estación no informada"} es menor que la carga anterior (${prev.value}).`,
+          observedValue: String(curr.value), expectedValue: `> ${prev.value}`,
+        })
+        if (outcome.wasCreated) created++; else skipped++
       } catch { skipped++ }
     }
 
     return { created, skipped, scanned }
   }
+}
+
+/** Serie del detalle de proveedor para un tipo de medidor, ya ordenada. */
+async function meterReadingRows(meterType: "km" | "hora", rowLimit: number) {
+  return db.select({
+    id: fuelMeterReadings.id,
+    vehicleId: fuelMeterReadings.vehicleId,
+    source: fuelMeterReadings.source,
+    value: fuelMeterReadings.value,
+    occurredAt: fuelMeterReadings.occurredAt,
+    stationName: fuelMeterReadings.stationName,
+    plate: fuelVehicles.plate,
+    worksiteId: fuelVehicles.worksiteId,
+    equipmentTypeSlug: fuelEquipmentTypes.slug,
+  })
+    .from(fuelMeterReadings)
+    .innerJoin(fuelVehicles, eq(fuelMeterReadings.vehicleId, fuelVehicles.id))
+    .leftJoin(fuelEquipmentTypes, eq(fuelVehicles.equipmentTypeId, fuelEquipmentTypes.id))
+    .where(eq(fuelMeterReadings.meterType, meterType === "hora" ? "hour_meter" : "odometer"))
+    // La serie es por equipo Y por fuente: el odómetro que reporta Copec y el que
+    // reporta Aramco son el mismo medidor físico, pero cada portal arrastra su
+    // propio desfase, así que compararlos entre sí inventa saltos que no existen.
+    .orderBy(fuelMeterReadings.vehicleId, fuelMeterReadings.source, fuelMeterReadings.occurredAt)
+    .limit(rowLimit)
+}
+
+type MeterReadingRow = Awaited<ReturnType<typeof meterReadingRows>>[number]
+
+function providerReadingPairs(rows: MeterReadingRow[]): Array<{ prev: MeterReadingRow; curr: MeterReadingRow }> {
+  return consecutiveMeterPairs(rows, (row) => `${row.vehicleId}::${row.source}`, (row) => row.value)
+}
+
+/**
+ * Salto de medidor imposible para el tiempo transcurrido.
+ *
+ * La regla regresiva sólo mira hacia abajo, y la mitad del problema va hacia
+ * arriba: un dígito de más (100.000 tecleado como 1.000.000) pasa limpio, y la
+ * carga SIGUIENTE a una lectura baja aparece con un salto enorme que infla el
+ * recorrido calculado. En la muestra real hay 18 saltos sobre 5.000 km entre
+ * cargas consecutivas.
+ *
+ * El umbral es una tasa y no un delta fijo: dos cargas separadas por un mes
+ * admiten un recorrido que dos del mismo día no. Un par dentro del mismo día
+ * cuenta como un día — es el piso, no una división por cero.
+ */
+const detectImplausibleMeterJump: DetectorFn = async (rule) => {
+  const rowLimit = batchRowLimitOf(rule, BATCH_SCAN_ROW_LIMIT)
+  let created = 0, skipped = 0, scanned = 0
+
+  for (const meterType of ["km", "hora"] as const) {
+    const unit = meterType === "hora" ? "h" : "km"
+    const meterLabel = meterType === "hora" ? "de horómetro" : "de odómetro"
+    for (const { prev, curr } of providerReadingPairs(await meterReadingRows(meterType, rowLimit))) {
+      const delta = curr.value - prev.value
+      if (delta <= 0) continue   // el retroceso es asunto de la regla regresiva
+      const days = elapsedDays(prev.occurredAt, curr.occurredAt)
+      const rate = delta / days
+      const maxPerDay = maxMeterRatePerDayOf(rule, meterType, curr.equipmentTypeSlug ?? undefined)
+      if (rate <= maxPerDay) continue
+
+      scanned++
+      try {
+        const outcome = await createAnomalyCase({
+          ruleId: rule.id, ruleCode: "salto_medidor_implausible", severity: severityOf(rule, "high"),
+          worksiteId: curr.worksiteId ?? undefined, vehicleId: curr.vehicleId ?? undefined,
+          referenceEntityType: "fuel_meter_reading", referenceEntityId: curr.id,
+          description: `Lectura ${meterLabel} de ${curr.plate} sube ${Math.round(delta).toLocaleString("es-CL")} ${unit} en ${days} día(s) (${Math.round(rate).toLocaleString("es-CL")} ${unit}/día): supera lo posible para el equipo.`,
+          observedValue: String(curr.value), expectedValue: `≤ ${Math.round(prev.value + maxPerDay * days)}`,
+        })
+        if (outcome.wasCreated) created++; else skipped++
+      } catch { skipped++ }
+    }
+  }
+  return { created, skipped, scanned }
+}
+
+/** Días calendario entre dos instantes, con piso de 1: dos cargas del mismo día
+ *  no dividen por cero, y un salto grande entre ellas sigue siendo implausible. */
+function elapsedDays(from: string, to: string): number {
+  const ms = new Date(to).getTime() - new Date(from).getTime()
+  if (!Number.isFinite(ms)) return 1
+  return Math.max(1, Math.round(ms / 86_400_000))
+}
+
+/**
+ * Techo de avance diario del medidor. `maxKmPerDay` para odómetro y
+ * `maxHoursPerDay` para horómetro, ambos con override por tipo de equipo.
+ *
+ * Los valores por omisión son cotas físicas, no metas de operación: 1.500 km en
+ * un día es más de lo que rinde un camión conduciendo sin parar, y un motor no
+ * puede acumular más de 24 horas por día.
+ */
+function maxMeterRatePerDayOf(rule: { config: string | null }, meterType: "km" | "hora", equipmentTypeSlug?: string): number {
+  const key = meterType === "hora" ? "maxHoursPerDay" : "maxKmPerDay"
+  const fallback = meterType === "hora" ? 24 : 1_500
+  const cfg = configOf(rule)
+  if (equipmentTypeSlug) {
+    const override = readEqTypeOverride(cfg, equipmentTypeSlug, key)
+    if (typeof override === "number" && override > 0) return override
+  }
+  if (typeof cfg[key] === "number" && (cfg[key] as number) > 0) return cfg[key] as number
+  return fallback
 }
 
 const BATCH_DETECTORS: Record<string, DetectorFn> = {
@@ -672,6 +800,7 @@ const BATCH_DETECTORS: Record<string, DetectorFn> = {
   rendimiento_fuera_grupo: detectPerformanceOutlierGroup,
   kilometraje_regresivo: makeRegressiveMeterDetector("km"),
   horometro_regresivo: makeRegressiveMeterDetector("hora"),
+  salto_medidor_implausible: detectImplausibleMeterJump,
 }
 
 import { KNOWN_RULE_CODES } from "./validation"

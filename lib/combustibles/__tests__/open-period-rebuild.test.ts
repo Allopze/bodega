@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import { replaceBatchRecords } from "../open-period"
+import { emptyUnbackedProviderBatches, providerBatchKey, replaceBatchRecords } from "../open-period"
 
 function makeTx(existing: Array<{ id: string; patente: string; vehicleId: string | null }>) {
   const updates: Array<Record<string, unknown>> = []
@@ -76,5 +76,64 @@ describe("replaceBatchRecords", () => {
 
     expect(result).toMatchObject({ inserted: 0, updated: 0, removed: 1 })
     expect(tx.deletes).toHaveLength(1)
+  })
+})
+
+describe("emptyUnbackedProviderBatches", () => {
+  const batch = (over: Record<string, unknown> = {}) => ({
+    id: "batch-viejo", worksiteId: "ws-1", periodoDesde: "2026-08-01", periodoHasta: "2026-08-31",
+    fuente: "Aramco Fleet Diesel", totalFilas: 3, ...over,
+  })
+
+  function makeDb(candidates: Record<string, unknown>[]) {
+    const tx = makeTx([{ id: "rec-1", patente: "AAA11", vehicleId: null }])
+    return {
+      tx,
+      db: {
+        query: { fuelImportBatches: { findMany: vi.fn().mockResolvedValue(candidates) } },
+        transaction: (callback: (inner: unknown) => unknown) => callback({ ...tx, execute: vi.fn() }),
+      },
+    }
+  }
+
+  it("vacía el lote que la fuente dejó de respaldar", async () => {
+    // Un vehículo que cambia de faena saca su grupo de la respuesta: la
+    // reconstrucción por hash sólo visita los grupos presentes, así que sin
+    // este barrido el lote conservaba litros y monto para siempre.
+    const { db, tx } = makeDb([batch()])
+
+    const result = await emptyUnbackedProviderBatches(db as never, {
+      sources: ["Aramco Fleet Diesel"], from: "2026-08-01", to: "2026-08-31",
+      keep: new Set<string>(), lockNamespace: "fuel_aramco",
+    })
+
+    expect(result).toEqual({ emptied: 1, records: 1 })
+    expect(tx.updates[0]).toMatchObject({ totalFilas: 0, totalCantidad: 0, totalMonto: 0, hashArchivo: "" })
+  })
+
+  it("no toca un lote que la respuesta sí respalda", async () => {
+    const { db, tx } = makeDb([batch()])
+
+    const result = await emptyUnbackedProviderBatches(db as never, {
+      sources: ["Aramco Fleet Diesel"], from: "2026-08-01", to: "2026-08-31",
+      keep: new Set([providerBatchKey("ws-1", "2026-08-01", "2026-08-31", "Aramco Fleet Diesel")]),
+      lockNamespace: "fuel_aramco",
+    })
+
+    expect(result).toEqual({ emptied: 0, records: 0 })
+    expect(tx.updates).toEqual([])
+  })
+
+  it("no consulta nada cuando la corrida no leyó ninguna fuente completa", async () => {
+    // El llamador pasa sólo las fuentes que sí pudo leer: barrer con una
+    // descarga incompleta borraría datos buenos.
+    const { db } = makeDb([batch()])
+
+    const result = await emptyUnbackedProviderBatches(db as never, {
+      sources: [], from: "2026-08-01", to: "2026-08-31", keep: new Set<string>(), lockNamespace: "fuel_aramco",
+    })
+
+    expect(result).toEqual({ emptied: 0, records: 0 })
+    expect(db.query.fuelImportBatches.findMany).not.toHaveBeenCalled()
   })
 })

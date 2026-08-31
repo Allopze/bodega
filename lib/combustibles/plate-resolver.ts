@@ -19,6 +19,10 @@ export interface ResolvedVehicle {
   id: string
   plate: string
   worksiteId: string
+  /** 'odometer' | 'hour_meter' | 'none'. Clasifica la lectura que trae el
+   *  detalle del proveedor, que rotula su columna "Odómetro (Kms.)" para todos
+   *  los equipos por igual, midan kilómetros u horas. */
+  meterType: string
 }
 
 /**
@@ -37,7 +41,7 @@ export async function loadVehicleResolver(
   mapping: { provider: "copec" | "aramco"; sourceAccount: string },
 ): Promise<(plate: string) => ResolvedVehicle | undefined> {
   const [vehicles, mappings] = await Promise.all([
-    db.query.fuelVehicles.findMany({ columns: { id: true, plate: true, worksiteId: true } }),
+    db.query.fuelVehicles.findMany({ columns: { id: true, plate: true, worksiteId: true, meterType: true } }),
     db.query.fuelProviderMappings.findMany({
       where: and(
         eq(fuelProviderMappings.provider, mapping.provider),

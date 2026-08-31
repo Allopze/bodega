@@ -84,11 +84,31 @@ describe("deploy workflow", () => {
     expect(workflow).toContain("backups/docker-compose-predeploy-${{ env.RELEASE_SHA }}.yml")
   })
 
-  it("syncs Compose before the local production deploy uses it", () => {
+  it("syncs Compose to the production host before the deploy uses it", () => {
     const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
 
-    expect(deployScript).toContain('cp docker-compose.yml "$PROD_DIR/docker-compose.yml"')
+    // Producción dejó de compartir el daemon Docker con este checkout, así que
+    // el compose viaja por SSH en vez de copiarse en el mismo disco.
+    expect(deployScript).toContain('prod_sh "cat > $(printf \'%q\' "$PROD_DIR/docker-compose.yml")" < docker-compose.yml')
     expect(deployScript).toContain("docker-compose-predeploy-")
+  })
+
+  it("routes every production-touching command through the SSH helpers", () => {
+    const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
+
+    // El fallo que esto atrapa es silencioso y caro: un comando que quedó sin
+    // redirigir se ejecuta contra el Docker de ESTE box y "tiene éxito"
+    // mientras producción, que vive en otra máquina, no se entera.
+    expect(deployScript).toContain('ssh "${prod_ssh_opts[@]}" "$PROD_SSH"')
+    // El lookahead salta los comentarios: la prohibición es sobre código
+    // ejecutable, y el propio script menciona la forma vieja al explicarse.
+    expect(deployScript).not.toMatch(/^(?!\s*#).*\(cd "\$PROD_DIR" &&/m)
+    expect(deployScript).not.toMatch(/^(?!\s*#)\s*(docker tag|curl -sf http:\/\/127\.0\.0\.1:3000)/m)
+
+    // La imagen se construye acá y tiene que viajar; sin esto el despliegue
+    // recrearía los contenedores con la imagen anterior.
+    expect(deployScript).toContain("ship_image_to_prod")
+    expect(deployScript).toContain('docker save "$IMAGE"')
   })
 
   it("uses BuildKit cache mounts and excludes local artifacts from the build context", () => {
@@ -192,6 +212,7 @@ exit $?
     expect(cronService).toContain("cron-runner.mjs sales")
     expect(cronService).toContain("cron-runner.mjs chipax")
     expect(cronService).toContain("cron-runner.mjs health")
+    expect(cronService).toContain("cron-runner.mjs fleet-onway-sync")
     expect(cronService).toContain("0 9 * * *")
     expect(cronService).toContain('interval: 5m')
     expect(cronService).not.toContain("DTE_SETTINGS_KEYRING=")

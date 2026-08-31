@@ -1,4 +1,21 @@
-import type { ChecklistSection } from '../types'
+import type { ChecklistItem, ChecklistSection } from '../types'
+
+function eppMatrixRow(
+  id: string,
+  label: string,
+  danoPotencial: NonNullable<ChecklistItem['danoPotencial']>,
+): ChecklistItem[] {
+  return [
+    {
+      id: `${id}_uso`, label: `${label}: usa`, kind: 'si_no_na_obs', danoPotencial,
+      matrix: { rowId: id, rowLabel: label, columnLabel: 'Usa (Sí/No/N/A)' },
+    },
+    {
+      id: `${id}_estado`, label: `${label}: estado`, kind: 'bueno_regular_malo_obs', danoPotencial,
+      matrix: { rowId: id, rowLabel: label, columnLabel: 'Estado (B/R/M)' },
+    },
+  ]
+}
 
 /**
  * Inspección de Uso y Estado de EPP — módulo 11.
@@ -13,58 +30,35 @@ import type { ChecklistSection } from '../types'
  *
  * El Anexo 3 es una matriz trabajador × EPP con dos dimensiones por tipo:
  * **Usa** (SI / NO / N/A) y **Estado** (B = BUENO / R = REGULAR / M = MALO).
- * Decisión vigente (PLAN_INTEGRACION §5.5): **un ítem por EPP** en vez de dos,
- * para no duplicar el trabajo de terreno — son 10 EPP por trabajador y esto es
- * multi-sujeto.
- *
- * Escala `bueno_regular_malo_na_obs`, leída como el Estado del anexo:
- *   Bueno = lo usa y está en buen estado · Regular = lo usa pero deteriorado
- *   (puntúa 0.5) · Malo = no lo usa o está inservible · N/A = no aplica al cargo.
- * El motivo va en `observacion`, obligatoria en Regular y Malo.
- *
- * Excepción: **Bloqueador solar** = `entregado_obs` (el anexo pide "Registro",
- * no "Estado" — igual que la sección EPP de trabajador-nuevo-sections).
- *
- * Pendiente de decisión: separar Usa y Estado en dos campos, como el papel.
- * Duplicaría los ítems de 10 a 20 por trabajador; hoy se mantiene el colapso.
+ * Cada dimensión se persiste por separado. `matrix` sólo decide la presentación
+ * visual: no vuelve a fusionar Uso y Estado en una respuesta ambigua.
  */
 export const EPP_SECTIONS: ChecklistSection[] = [
   {
     id: 'uso_estado_epp',
     title: 'Uso y estado de EPP por trabajador',
     description:
-      'Para cada EPP: Bueno = lo usa y está en buen estado · Regular = lo usa pero deteriorado · Malo = no lo usa o está inservible · N/A = no aplica al cargo. Regular y Malo exigen observación. Bloqueador solar verifica registro de entrega.',
+      'Para cada EPP responda por separado Uso (Sí/No/N/A) y Estado (Bueno/Regular/Malo). Bloqueador solar conserva Uso y Registro como columnas independientes.',
     countsForCompliance: true,
     hasActionCorrectiva: true,
     items: [
-      { id: 'zapatos_seguridad',       label: 'Zapatos de seguridad: uso y estado.', kind: 'bueno_regular_malo_na_obs',
-        danoPotencial: 'grave',
+      ...eppMatrixRow('zapatos_seguridad', 'Zapatos de seguridad', 'grave'),
+      ...eppMatrixRow('lentes_seguridad', 'Lentes de seguridad', 'grave'),
+      ...eppMatrixRow('casco_cubre_cuello', 'Casco / cubre cuello', 'fatal'),
+      ...eppMatrixRow('guantes', 'Guantes', 'grave'),
+      ...eppMatrixRow('proteccion_auditiva', 'Protección auditiva', 'grave'),
+      ...eppMatrixRow('ropa_trabajo', 'Ropa de trabajo', 'grave'),
+      ...eppMatrixRow('chaleco_reflectante', 'Chaleco reflectante', 'fatal'),
+      {
+        id: 'bloqueador_solar_uso', label: 'Bloqueador solar: usa', kind: 'si_no_na_obs',
+        matrix: { rowId: 'bloqueador_solar', rowLabel: 'Bloqueador solar', columnLabel: 'Usa (Sí/No/N/A)' },
       },
-      { id: 'lentes_seguridad',        label: 'Lentes de seguridad: uso y estado.', kind: 'bueno_regular_malo_na_obs',
-        danoPotencial: 'grave',
+      {
+        id: 'bloqueador_solar_registro', label: 'Bloqueador solar: registro', kind: 'si_no_obs',
+        matrix: { rowId: 'bloqueador_solar', rowLabel: 'Bloqueador solar', columnLabel: 'Registro (Sí/No)' },
       },
-      { id: 'casco_cubre_cuello',      label: 'Casco / cubre cuello: uso y estado.', kind: 'bueno_regular_malo_na_obs',
-        danoPotencial: 'fatal',
-      },
-      { id: 'guantes',                 label: 'Guantes: uso y estado.', kind: 'bueno_regular_malo_na_obs',
-        danoPotencial: 'grave',
-      },
-      { id: 'proteccion_auditiva',     label: 'Protección auditiva: uso y estado.', kind: 'bueno_regular_malo_na_obs',
-        danoPotencial: 'grave',
-      },
-      { id: 'ropa_trabajo',            label: 'Ropa de trabajo: uso y estado.', kind: 'bueno_regular_malo_na_obs',
-        danoPotencial: 'grave',
-      },
-      { id: 'chaleco_reflectante',     label: 'Chaleco reflectante: uso y estado.', kind: 'bueno_regular_malo_na_obs',
-        danoPotencial: 'fatal',
-      },
-      { id: 'bloqueador_solar',        label: 'Bloqueador solar: registro de entrega.', kind: 'entregado_obs' },
-      { id: 'traje_agua',              label: 'Traje de agua: uso y estado.', kind: 'bueno_regular_malo_na_obs',
-        danoPotencial: 'moderado',
-      },
-      { id: 'traje_termico',           label: 'Traje térmico: uso y estado.', kind: 'bueno_regular_malo_na_obs',
-        danoPotencial: 'grave',
-      },
+      ...eppMatrixRow('traje_agua', 'Traje de agua', 'moderado'),
+      ...eppMatrixRow('traje_termico', 'Traje térmico', 'grave'),
     ],
   },
   {

@@ -13,6 +13,7 @@ const RISK_MAP_PREFIX = "storage/risk-map/"
 const FUEL_IMPORT_PREFIX = "storage/imports/"
 const FUEL_TAE_EVIDENCE_PREFIX = "storage/fuel-tae/"
 const PREVENTION_SENSITIVE_FILE_PREFIX = "storage/prevention-sensitive/"
+const EMERGENCY_RESOURCE_CERTIFICATE_PREFIX = "storage/emergency-resource-certificates/"
 
 /**
  * Resolves the base storage directory.
@@ -380,4 +381,21 @@ export function resolveDteFile(filePath: string): string | null {
   const storageName = filePath.slice(DTE_XML_PREFIX.length)
   if (!isSafeStorageName(storageName)) return null
   return path.join(/*turbopackIgnore: true*/ resolveDteDir(), storageName)
+}
+
+/* ── Certificados de recarga de activos de emergencia ───────────────────── */
+export function resolveEmergencyResourceCertificatesDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "emergency-resource-certificates")
+}
+
+export function createEmergencyResourceCertificatePath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) throw new Error("Invalid emergency resource certificate name")
+  return `${EMERGENCY_RESOURCE_CERTIFICATE_PREFIX}${storageName}`
+}
+
+export function resolveEmergencyResourceCertificateFile(filePath: string): string | null {
+  if (!filePath.startsWith(EMERGENCY_RESOURCE_CERTIFICATE_PREFIX)) return null
+  const storageName = filePath.slice(EMERGENCY_RESOURCE_CERTIFICATE_PREFIX.length)
+  if (!isSafeStorageName(storageName)) return null
+  return path.join(/*turbopackIgnore: true*/ resolveEmergencyResourceCertificatesDir(), storageName)
 }

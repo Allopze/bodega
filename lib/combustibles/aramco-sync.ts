@@ -31,15 +31,18 @@ import { normalizePlate } from "@/lib/combustibles/xlsx-utils"
 import { loadVehicleResolver } from "@/lib/combustibles/plate-resolver"
 import { AUTOMATED_SOURCES, aramcoSourceForProduct } from "@/lib/combustibles/fuel-sources"
 import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
-import { replaceBatchRecords } from "@/lib/combustibles/open-period"
-import { beginFuelProviderSyncRun, finishFuelProviderSyncRun, recordFuelProviderValidation } from "@/lib/combustibles/fuel-provider-ledger"
+import { emptyUnbackedProviderBatches, providerBatchKey, replaceBatchRecords } from "@/lib/combustibles/open-period"
+import { beginFuelProviderSyncRun, finishFuelProviderSyncRun, recordFuelProviderIssues, recordFuelProviderValidation } from "@/lib/combustibles/fuel-provider-ledger"
 import { validateProviderRows, type ProviderRowInput } from "@/lib/combustibles/provider-validation"
 import { reconcileFuelProviderRun } from "@/lib/combustibles/fuel-reconciliation"
 import { readAramcoConfig } from "@/lib/combustibles/aramco-settings"
+import { saveMeterReadings, aramcoMovementReading } from "@/lib/combustibles/meter-readings"
+import { DEFAULT_MAX_KM_PER_LITER, summarizeMeterPerformance } from "@/lib/combustibles/meter-performance"
 import {
   authenticateAramco,
   fetchAramcoMovements,
   type AramcoMovement,
+  type AramcoMovementIssue,
 } from "@/lib/combustibles/aramco-client"
 
 /** Ventana por defecto del cron. Con ~1 transacción al mes sobra de lejos, y
@@ -47,15 +50,13 @@ import {
 const DEFAULT_LOOKBACK_MONTHS = 4
 
 /**
- * Techo de rendimiento plausible en km/L. El portal calcula `vehicleConsumption`
- * a partir del odómetro que el conductor tipea en el surtidor, y en el histórico
+ * Techo de rendimiento plausible en km/L, compartido con el cálculo por serie de
+ * odómetro (`meter-performance.ts`). El portal calcula `vehicleConsumption` a
+ * partir del odómetro que el conductor tipea en el surtidor, y en el histórico
  * real 48 de 154 transacciones dan valores absurdos (hasta 785 km/L) porque la
- * lectura previa está desfasada. Un rendimiento inventado envenena los
- * dashboards y el detector de anomalías, así que sobre este techo se guarda 0
- * —«sin dato»—, que es lo mismo que hace el parser de Copec con su guard
- * `performance > 0`. El detalle crudo queda en `rawRow` para auditar.
+ * lectura previa está desfasada. El detalle crudo queda en `rawRow` para auditar.
  */
-const MAX_PLAUSIBLE_KM_PER_LITER = 25
+const MAX_PLAUSIBLE_KM_PER_LITER = DEFAULT_MAX_KM_PER_LITER
 
 /**
  * `type` y no `interface` a propósito: la ruta de cron lo pasa como
@@ -69,8 +70,10 @@ export type AramcoSyncResult = {
   refreshed: number
   /** Lotes nuevos creados. */
   batches: number
-  /** Transacciones leídas de la API. */
+  /** Transacciones leídas de la API (válidas + descartadas por contrato). */
   transactions: number
+  /** Lecturas de odómetro rescatadas de las transacciones. */
+  meterReadings: number
   /** Métricas de calidad durable de la corrida. */
   rowsAccepted: number
   rowsRejected: number
@@ -157,8 +160,6 @@ function aggregateByPlate(movements: AramcoMovement[]): AggregatedRow[] {
     transactions: AramcoMovement[]
     quantity: number
     amount: number
-    weightedPerformance: number
-    performanceQuantity: number
   }>()
 
   for (const movement of movements) {
@@ -174,8 +175,6 @@ function aggregateByPlate(movements: AramcoMovement[]): AggregatedRow[] {
       transactions: [],
       quantity: 0,
       amount: 0,
-      weightedPerformance: 0,
-      performanceQuantity: 0,
     }
     const quantity = Number(movement.quantity ?? 0)
     const card = (movement.cardNumber ?? "").trim()
@@ -183,11 +182,6 @@ function aggregateByPlate(movements: AramcoMovement[]): AggregatedRow[] {
     group.transactions.push(movement)
     group.quantity += quantity
     group.amount += Number(movement.amountToPay ?? 0)
-    const performance = plausiblePerformance(movement)
-    if (performance !== null) {
-      group.weightedPerformance += performance * quantity
-      group.performanceQuantity += quantity
-    }
     groups.set(plate, group)
   }
 
@@ -197,9 +191,17 @@ function aggregateByPlate(movements: AramcoMovement[]): AggregatedRow[] {
     numeroTransacciones: group.transactions.length,
     cantidadUnidad: round(group.quantity, 4),
     monto: round(group.amount, 2),
-    rendimientoPromedio: group.performanceQuantity > 0
-      ? round(group.weightedPerformance / group.performanceQuantity, 2)
-      : 0,
+    // Rendimiento por serie de odómetro, con el cálculo del propio portal
+    // (odómetro actual contra el previo que él guarda) como respaldo para la
+    // primera transacción de la ventana, que no tiene par anterior acá.
+    rendimientoPromedio: summarizeMeterPerformance(group.transactions.map((movement) => ({
+      occurredAt: movement.transactionDate,
+      value: Number.isFinite(Number(movement.vehicleOdometer)) && Number(movement.vehicleOdometer) > 0
+        ? Number(movement.vehicleOdometer)
+        : null,
+      liters: Number(movement.quantity ?? 0),
+      providerPerformance: plausiblePerformance(movement),
+    })), { maxPerformance: MAX_PLAUSIBLE_KM_PER_LITER }).average,
     transactions: group.transactions,
   }))
 }
@@ -277,7 +279,7 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
     correlationId: options.correlationId,
   })
   let runFinished = false
-  const empty: AramcoSyncResult = { imported: 0, refreshed: 0, batches: 0, transactions: 0, rowsAccepted: 0, rowsRejected: 0, rowsPending: 0, pendingPlates: [], skippedGroups: [], from, to }
+  const empty: AramcoSyncResult = { imported: 0, refreshed: 0, batches: 0, transactions: 0, meterReadings: 0, rowsAccepted: 0, rowsRejected: 0, rowsPending: 0, pendingPlates: [], skippedGroups: [], from, to }
   if (firstMonth > lastMonth) {
     await finishFuelProviderSyncRun(run.id, { status: "success", receivedFrom: from, receivedTo: to, rowsReceived: 0, rowsAccepted: 0, rowsRejected: 0, rowsPending: 0 })
     runFinished = true
@@ -291,12 +293,42 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
   const quality = { accepted: 0, rejected: 0, pending: 0 }
   try {
     const session = await authenticateAramco(config.documentNumber, config.password)
-    const movements = await fetchAramcoMovements(session, from, to)
-    receivedRows = movements.length
+    const { movements, issues } = await fetchAramcoMovements(session, from, to)
+    receivedRows = movements.length + issues.length
+
+    // Las filas fuera de contrato van al ledger de rechazos, igual que las de
+    // Copec: antes tumbaban la corrida entera y no dejaban rastro de cuál era.
+    if (issues.length > 0) {
+      await recordFuelProviderIssues(run.id, issues.map((issue: AramcoMovementIssue) => ({
+        input: {
+          provider: "aramco" as const,
+          accountKey: "fleet",
+          sourceRowKey: issue.transactionId !== null ? String(issue.transactionId) : `${from}:${to}:invalid:${issue.index}`,
+          externalId: null,
+          occurredAt: from,
+          plate: null,
+          product: null,
+          quantity: null,
+          amount: null,
+          payload: issue.payload,
+        },
+        code: "source_row_invalid",
+        message: issue.reason,
+      })))
+      quality.rejected += issues.length
+    }
+
     if (movements.length === 0) {
-      await finishFuelProviderSyncRun(run.id, { status: "success", receivedFrom: from, receivedTo: to, rowsReceived: 0, rowsAccepted: 0, rowsRejected: 0, rowsPending: 0 })
+      // Sin movimientos NO se barren lotes obsoletos: una respuesta vacía puede
+      // ser un mes sin consumo o un portal a medio responder, y vaciar contra
+      // ella borraría datos buenos.
+      await finishFuelProviderSyncRun(run.id, {
+        status: issues.length > 0 ? "partial" : "success",
+        receivedFrom: from, receivedTo: to,
+        rowsReceived: receivedRows, rowsAccepted: 0, rowsRejected: issues.length, rowsPending: 0,
+      })
       runFinished = true
-      return empty
+      return { ...empty, transactions: receivedRows, rowsRejected: issues.length }
     }
 
     const accountKey = "fleet"
@@ -330,8 +362,19 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
     quality.pending = persisted.pending
     const acceptedIdentityKeys = new Set(validation.accepted.map((row) => row.identityKey))
 
+    // Las lecturas de odómetro se guardan aunque el grupo termine saltado por un
+    // lote de otra fuente: son un hecho del proveedor, no una proyección nuestra,
+    // y el detector de anomalías las necesita igual. Upsert por transacción.
+    const savedReadings = await saveMeterReadings(
+      db, "aramco",
+      movements.flatMap((movement) => aramcoMovementReading(movement) ?? []),
+      resolveVehicle,
+    )
+
     // (mes, fuente) -> (faena -> transacciones). El grupo es la unidad de lote.
     const groups = new Map<string, Map<string, AramcoMovement[]>>()
+    /** Lotes que esta respuesta respalda; el resto se vacía al final. */
+    const backedBatches = new Set<string>()
     const pendingPlates = new Set<string>()
     for (const movement of movements) {
       if (!acceptedIdentityKeys.has(`external:${movement.transactionId}`)) continue
@@ -357,9 +400,12 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
       imported: 0,
       refreshed: 0,
       batches: 0,
-      transactions: movements.length,
+      transactions: receivedRows,
+      meterReadings: savedReadings.saved,
       rowsAccepted: persisted.accepted,
-      rowsRejected: persisted.rejected,
+      // Las filas fuera de contrato ya se registraron arriba; se suman acá para
+      // que el conteo de la corrida cuadre con lo que la API entregó.
+      rowsRejected: persisted.rejected + issues.length,
       rowsPending: persisted.pending,
       pendingPlates: [...pendingPlates],
       skippedGroups: [],
@@ -499,8 +545,27 @@ export async function syncAramco(options: SyncAramcoOptions = {}): Promise<Aramc
       if (outcome.foreignSource) {
         result.skippedGroups.push({ periodo: month, source, foreignSource: outcome.foreignSource })
       }
+      backedBatches.add(providerBatchKey(worksiteId, period.from, period.to, source))
     }
   }
+
+    // Lotes de la ventana que la respuesta de esta corrida ya NO respalda: un
+    // vehículo que cambió de faena, o un mes cuyas cargas Aramco retiró. La
+    // reconstrucción por hash sólo visita los grupos presentes, así que sin este
+    // barrido ese lote conservaba litros y monto para siempre.
+    //
+    // Sólo se barren las fuentes que ESTA corrida sí respaldó con datos: barrer
+    // una fuente ausente de la respuesta confundiría "el mes no tuvo gasolina"
+    // con "el portal no devolvió la gasolina de este mes".
+    const backedSources = [...new Set([...backedBatches].map((key) => key.split("|")[3]!))]
+    const unbacked = await emptyUnbackedProviderBatches(db, {
+      sources: backedSources,
+      from,
+      to,
+      keep: backedBatches,
+      lockNamespace: "fuel_aramco",
+    })
+    result.refreshed += unbacked.records
 
     // La conciliación es un modelo derivado que se calcula DESPUÉS de importar:
     // si falla, el lote ya está commiteado y no se pierde nada, así que no se

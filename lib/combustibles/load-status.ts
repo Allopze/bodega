@@ -33,6 +33,22 @@ export function accountableFuelLoadsWhere(): SQL {
  * conciliado la carga o asignarla a un estado de cuenta.
  */
 export const EDITABLE_FUEL_LOAD_STATUSES = ["draft", "registered"] as const
+
+/**
+ * Estados en los que SÍ se puede corregir la lectura del medidor, aunque la
+ * carga esté cerrada para el resto de la edición.
+ *
+ * Una conciliada no se toca porque su cifra ya cuadró contra el documento
+ * tributario — pero el odómetro no es parte de ese documento: no lo declara el
+ * DTE, no entra en el cuadre y equivocarse tecleándolo no cambia un peso. Sin
+ * esta excepción, un dígito perdido descubierto después de conciliar quedaba
+ * congelado para siempre, envenenando el rendimiento y el aviso de mantención
+ * del equipo sin forma alguna de arreglarlo.
+ *
+ * Anulada queda fuera a propósito: no arrastra saldo ni alimenta indicadores,
+ * así que corregirle el medidor no arregla nada.
+ */
+export const METER_CORRECTABLE_FUEL_LOAD_STATUSES = ["draft", "registered", "reconciled"] as const
 export const DELETABLE_FUEL_LOAD_STATUSES = ["draft", "registered", "cancelled"] as const
 
 export function fuelLoadStatusBlockMessage(status: string, verb: "editar" | "eliminar"): string {

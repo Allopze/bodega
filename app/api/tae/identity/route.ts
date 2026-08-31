@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { headers } from "next/headers"
+import { resolveTrustedClientIp } from "@/lib/security/login-rate-limit-ip"
 import { checkRateLimit, recordFailure, recordSuccessForTelemetry } from "@/lib/services/rate-limit"
 import { validateRut } from "@/lib/rut"
 import { findTaeWorkerByRut, getTaeLinkWorksiteId } from "@/lib/services/fuel-tae"
@@ -12,7 +13,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: "Control TAE temporalmente inactivo" }, { status: 503 })
   }
   const requestHeaders = await headers()
-  const ipAddress = requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1"
+  const ipAddress = resolveTrustedClientIp(requestHeaders)
   const rateLimitKey = `tae:identity:${ipAddress}`
   const rateLimit = await checkRateLimit(rateLimitKey)
   if (!rateLimit.allowed) {

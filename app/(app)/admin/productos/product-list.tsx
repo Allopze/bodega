@@ -453,10 +453,14 @@ export function ProductList({ products, categories, allSuppliers, units, templat
           const fd = new FormData()
           fd.set("ids", Array.from(selectedIds).join(","))
           fd.set("activate", String(bulkActionType === "activate"))
-          const res = await bulkToggleProductActiveAction({ ok: true, message: "" }, fd)
-          setBulkPending(false)
-          setBulkActionType(null)
-          setSelectedIds(new Set())
+          let res
+          try {
+            res = await bulkToggleProductActiveAction({ ok: true, message: "" }, fd)
+            setBulkActionType(null)
+            setSelectedIds(new Set())
+          } finally {
+            setBulkPending(false)
+          }
           if (res.ok) toast.success(res.message ?? "Operación exitosa")
           else toast.error(res.message ?? "Error al realizar la operación")
         }}

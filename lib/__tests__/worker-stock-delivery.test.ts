@@ -67,11 +67,13 @@ async function makeScenario({ workerAtSource = true }: { workerAtSource?: boolea
     {
       id: firstProductId, sku: `ENT-A-${suffix}`, name: `Guante ${suffix}`,
       categoryId, unitOfMeasure: "par", isActive: true, isService: false,
+      isEpp: true,
       createdAt: now, updatedAt: now,
     },
     {
       id: secondProductId, sku: `ENT-B-${suffix}`, name: `Lente ${suffix}`,
       categoryId, unitOfMeasure: "unidad", isActive: true, isService: false,
+      isEpp: true,
       createdAt: now, updatedAt: now,
     },
     {
@@ -210,6 +212,32 @@ describe("registerWorkerStockDelivery", () => {
     })).rejects.toThrow("Los servicios no se entregan desde bodega")
   })
 
+  it("rejects fractional EPP quantities without changing stock", async () => {
+    const scenario = await makeScenario()
+
+    await expect(registerWorkerStockDelivery({
+      sourceWorksiteId: scenario.sourceWorksiteId,
+      workerId: scenario.workerId,
+      deliveredBy: USER_ID,
+      items: [{ productId: scenario.firstProductId, quantity: 0.02 }],
+    })).rejects.toThrow("Los EPP se entregan en cantidades enteras")
+
+    const stock = await inMemoryDb.query.worksiteStock.findFirst({
+      where: and(
+        eq(schema.worksiteStock.worksiteId, scenario.sourceWorksiteId),
+        eq(schema.worksiteStock.productId, scenario.firstProductId),
+      ),
+    })
+    expect(stock?.quantity).toBe(10)
+    const delivery = await inMemoryDb.query.deliveries.findFirst({
+      where: and(
+        eq(schema.deliveries.sourceWorksiteId, scenario.sourceWorksiteId),
+        eq(schema.deliveries.workerId, scenario.workerId),
+      ),
+    })
+    expect(delivery).toBeUndefined()
+  })
+
   it("rejects a worker assigned to a different worksite than the selected source", async () => {
     const scenario = await makeScenario({ workerAtSource: false })
 
@@ -315,6 +343,71 @@ describe("registerWorkerStockDelivery", () => {
     expect(deliveryItem?.requestItemId).toBe(requestItemId)
     expect(requestItem?.status).toBe("partially_delivered")
     expect(stock?.quantity).toBe(3)
+  })
+
+  /**
+   * La fuga que dejaba la cola de pendientes creciendo para siempre: sin
+   * `requestItemId` no corre `deliverItemTx`, el ítem se queda en `received` y
+   * su solicitud no puede llegar nunca a `closed`. En producción 12 de 14
+   * líneas salieron así y no existía un solo ítem `delivered`.
+   */
+  it("rejects an unlinked line when that product still owes a received request item", async () => {
+    const scenario = await makeScenario()
+    const now = new Date().toISOString()
+    const suffix = String(scenarioNumber)
+    const requestId = `req-leak-${suffix}`
+    const requestItemId = `req-item-leak-${suffix}`
+    const supplierId = `supplier-leak-${suffix}`
+    const orderId = `oc-leak-${suffix}`
+
+    await inMemoryDb.insert(schema.purchaseRequests).values({
+      id: requestId, code: `SOL-LEAK-${suffix}`, worksiteId: scenario.workerWorksiteId,
+      requesterId: USER_ID, urgency: "normal", status: "in_purchasing", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequestItems).values({
+      id: requestItemId, requestId, productId: scenario.firstProductId, quantity: 4,
+      unitOfMeasure: "par", status: "received", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.suppliers).values({
+      id: supplierId, name: `Proveedor fuga ${suffix}`, isActive: true, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseOrders).values({
+      id: orderId, code: `OC-LEAK-${suffix}`, worksiteId: scenario.workerWorksiteId, supplierId,
+      createdBy: USER_ID, status: "received", deliveryMode: "directo_faena", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseOrderItems).values({
+      id: `oci-leak-${suffix}`, purchaseOrderId: orderId, requestItemId,
+      productId: scenario.firstProductId, quantity: 4, quantityReceived: 4,
+      unitOfMeasure: "par", sortOrder: 0,
+    })
+
+    await expect(registerWorkerStockDelivery({
+      sourceWorksiteId: scenario.sourceWorksiteId,
+      workerId: scenario.workerId,
+      deliveredBy: USER_ID,
+      items: [{ productId: scenario.firstProductId, quantity: 2 }],
+    })).rejects.toThrow(`SOL-LEAK-${suffix}`)
+
+    // Y no dejó rastro: ni entrega, ni movimiento, ni stock descontado.
+    const stock = await inMemoryDb.query.worksiteStock.findFirst({
+      where: and(
+        eq(schema.worksiteStock.worksiteId, scenario.sourceWorksiteId),
+        eq(schema.worksiteStock.productId, scenario.firstProductId),
+      ),
+    })
+    expect(stock?.quantity).toBe(10)
+
+    // Imputada, la misma línea sí entra y mueve el ítem de solicitud.
+    await registerWorkerStockDelivery({
+      sourceWorksiteId: scenario.sourceWorksiteId,
+      workerId: scenario.workerId,
+      deliveredBy: USER_ID,
+      items: [{ productId: scenario.firstProductId, quantity: 4, requestItemId }],
+    })
+    const requestItemAfter = await inMemoryDb.query.purchaseRequestItems.findFirst({
+      where: eq(schema.purchaseRequestItems.id, requestItemId),
+    })
+    expect(requestItemAfter?.status).toBe("delivered")
   })
 
   // La entrega física ocurre en faena y se digita después. La fecha operacional

@@ -102,7 +102,16 @@ export class AramcoTwoFactorRequiredError extends Error {
   }
 }
 
-/** Upstream JSON did not match the movement contract. No raw payload is kept in the error. */
+/**
+ * Upstream JSON did not match the movement contract. No raw payload is kept in
+ * the error.
+ *
+ * Ya NO se lanza cuando algunas filas fallan: `fetchAramcoMovements` devuelve
+ * las buenas y reporta las malas aparte, para que la sincronización las mande
+ * al ledger de rechazos igual que hace Copec. Se reserva para el caso en que
+ * NINGUNA fila cumple el contrato, que sí es un cambio de API y no una fila
+ * suelta corrupta.
+ */
 export class AramcoPayloadValidationError extends Error {
   constructor(readonly issues: string[]) {
     super(`Aramco entregó movimientos inválidos (${issues.length})`)
@@ -155,7 +164,11 @@ export function encodeAramcoLogin(
     .map((digit) => pairs.findIndex((pair) => pair.includes(Number(digit))))
     .join("")
 
-  let data = `documentNumber=${documentNumber}`
+  // `documentNumber` se escapa: es un query string, y aunque un RUT no traiga
+  // `&` ni `=`, el valor viene de la configuración y un carácter de más partía
+  // el parámetro en dos del lado del portal, gastando un intento de los que
+  // bloquean la cuenta. `indices` y el layout son numéricos por construcción.
+  let data = `documentNumber=${encodeURIComponent(documentNumber)}`
     + `&password=${indices}`
     + `&passwordType=2`
     + `&passwordKeyboard=${pairs.map(([a, b]) => `${a} - ${b}`)}`
@@ -174,6 +187,32 @@ function headers(token?: string): Record<string, string> {
   return base
 }
 
+function aramcoValidationMessage(body: string): { locked: boolean; message: string } | null {
+  try {
+    const parsed = JSON.parse(body) as { validations?: unknown }
+    if (!Array.isArray(parsed.validations)) return null
+
+    const validations = parsed.validations.filter((entry): entry is { type?: unknown; message?: unknown } => (
+      typeof entry === "object" && entry !== null
+    ))
+    const locked = validations.some((entry) => entry.type === "LimitAttemptsReached")
+    if (locked) {
+      return {
+        locked: true,
+        message: "La cuenta de Aramco está bloqueada por exceso de intentos. No reintentes: desbloquéala en el portal y luego verifica la clave configurada.",
+      }
+    }
+
+    const messages = validations
+      .map((entry) => typeof entry.message === "string" ? entry.message.trim() : "")
+      .filter((message) => message.length > 0 && message.length <= 240)
+    if (messages.length === 0) return null
+    return { locked: false, message: messages.join(" ") }
+  } catch {
+    return null
+  }
+}
+
 async function request(path: string, init: RequestInit & { token?: string } = {}): Promise<unknown> {
   const { token, ...rest } = init
   const response = await fetch(API_ROOT + path, {
@@ -187,10 +226,18 @@ async function request(path: string, init: RequestInit & { token?: string } = {}
     if (response.status === 401 || response.status === 403) {
       throw new AramcoAuthError(`Aramco rechazó las credenciales (${response.status})`)
     }
-    // 412 son validaciones legibles del portal y sí valen tal cual. El resto de
-    // los 4xx/5xx con cuerpo de excepción .NET son fallas suyas: se traducen a un
-    // mensaje accionable y el detalle queda en el error para el log.
-    if (response.status !== 412 && /operation|context|exception|Object reference/i.test(body)) {
+    if (response.status === 412) {
+      const validation = aramcoValidationMessage(body)
+      const authenticationRequest = path === "users/authenticatecredential" || path === "token"
+      if (validation?.locked || authenticationRequest) {
+        throw new AramcoAuthError(validation?.message ?? "Aramco rechazó el acceso. Revisa las credenciales antes de reintentar.")
+      }
+      if (validation) throw new Error(`Aramco rechazó la solicitud: ${validation.message}`)
+      throw new Error("Aramco rechazó la solicitud (412). Revisa los datos antes de reintentar.")
+    }
+    // Los demás 4xx/5xx con cuerpo de excepción .NET son fallas del proveedor:
+    // se traducen a un mensaje accionable y el detalle queda en el error para el log.
+    if (/operation|context|exception|Object reference/i.test(body)) {
       throw new AramcoUpstreamError(response.status, body.slice(0, 300))
     }
     throw new Error(`Aramco respondió ${response.status} en ${path}: ${body.slice(0, 200)}`)
@@ -300,17 +347,42 @@ async function fetchAllPages<T>(session: AramcoSession, path: string, search: Re
   throw new Error(`Aramco devolvió más de ${MAX_PAGES} páginas en ${path}: se cortó por seguridad`)
 }
 
+/** Fila que no cumplió el contrato, con el motivo, para mandarla al ledger. */
+export interface AramcoMovementIssue {
+  /** Posición en la respuesta, 1-based. Lo único identificable de una fila que
+   *  puede no tener siquiera `transactionId`. */
+  index: number
+  /** `transactionId` cuando existe y es usable como identidad. */
+  transactionId: number | null
+  reason: string
+  payload: unknown
+}
+
+export interface AramcoMovementsResult {
+  movements: AramcoMovement[]
+  issues: AramcoMovementIssue[]
+}
+
 /**
  * Transacciones en un rango de fechas (`YYYY-MM-DD`, ambos inclusive).
  *
  * El endpoint devuelve 500 si se lo llama sin filtro, así que el rango no es
  * opcional.
+ *
+ * Devuelve las filas válidas y las inválidas por separado en vez de lanzar.
+ * Antes una sola fila fuera de contrato tiraba abajo la corrida entera y
+ * descartaba las buenas: era la única integración con semántica todo-o-nada
+ * —Copec deriva la fila mala a `fuel_provider_rejections` y sigue—, así que un
+ * cambio de tipo del lado de Esmax dejaba la sincronización caída sin importar
+ * nada. El duplicado de `transactionId` era peor todavía: `fetchAllPages` pagina
+ * sin snapshot, así que una transacción insertada entre páginas puede repetir
+ * filas legítimamente y eso bastaba para caer la corrida.
  */
 export async function fetchAramcoMovements(
   session: AramcoSession,
   from: string,
   to: string,
-): Promise<AramcoMovement[]> {
+): Promise<AramcoMovementsResult> {
   const rows = await fetchAllPages<AramcoMovement>(session, `${session.baseUrl}movements`, {
     operador: "and",
     orderBy: [{ name: "transactionDate", order: "asc" }],
@@ -319,8 +391,8 @@ export async function fetchAramcoMovements(
       { name: "transactionDate", value: portalDate(to, true), condition: "lte" },
     ],
   })
-  const issues: string[] = []
-  const ids = new Set<number>()
+  const issues: AramcoMovementIssue[] = []
+  const seen = new Map<number, AramcoMovement>()
   const valid = rows.filter((row, index): row is AramcoMovement => {
     const candidate = row as Partial<AramcoMovement> | null
     const transactionId = candidate?.transactionId
@@ -333,18 +405,40 @@ export async function fetchAramcoMovements(
     const validNumbers = numericFields.every((value) => typeof value === "number" && Number.isFinite(value) && value >= 0)
     const validProduct = candidate?.productName === null || typeof candidate?.productName === "string"
     if (!validId || !validDate || !validNumbers || !validProduct) {
-      issues.push(`fila ${index + 1}: contrato de movimiento inválido`)
+      issues.push({
+        index: index + 1,
+        transactionId: validId ? transactionId as number : null,
+        reason: "contrato de movimiento inválido",
+        payload: row,
+      })
       return false
     }
-    if (ids.has(transactionId as number)) {
-      issues.push(`fila ${index + 1}: transactionId duplicado`)
+
+    const previous = seen.get(transactionId as number)
+    if (previous) {
+      // Repetición entre páginas: si el contenido es idéntico se descarta en
+      // silencio (la paginación no es un snapshot y reordenar filas puede
+      // devolver la misma dos veces). Si difiere, la fila es ambigua y va a
+      // revisión: no hay forma honesta de elegir cuál de las dos manda.
+      if (JSON.stringify(previous) !== JSON.stringify(row)) {
+        issues.push({
+          index: index + 1,
+          transactionId: transactionId as number,
+          reason: "transactionId repetido con contenido distinto",
+          payload: row,
+        })
+      }
       return false
     }
-    ids.add(transactionId as number)
+    seen.set(transactionId as number, row as AramcoMovement)
     return true
   })
-  if (issues.length > 0) throw new AramcoPayloadValidationError(issues)
-  return valid
+  // Ninguna fila válida y sí filas: eso ya no es una fila corrupta, es que el
+  // contrato del endpoint cambió. Ahí sí conviene fallar ruidosamente.
+  if (valid.length === 0 && issues.length > 0) {
+    throw new AramcoPayloadValidationError(issues.map((issue) => `fila ${issue.index}: ${issue.reason}`))
+  }
+  return { movements: valid, issues }
 }
 
 /** Catálogo de vehículos de la cuenta. */

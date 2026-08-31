@@ -15,12 +15,15 @@ export function ReprocessTaeBatchButton({ batchId, canReprocess }: { batchId: st
 
   async function handleReprocess() {
     setLoading(true)
-    const result = await reprocessTaeImportBatchAction(batchId)
-    setLoading(false)
-    if (result.ok) {
-      toast.success(result.message)
-      router.refresh()
-    } else toast.error(result.message)
+    try {
+      const result = await reprocessTaeImportBatchAction(batchId)
+      if (result.ok) {
+        toast.success(result.message)
+        router.refresh()
+      } else toast.error(result.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return <Button type="button" variant="secondary" size="sm" onClick={handleReprocess} disabled={loading}><ArrowClockwise className="h-4 w-4" />{loading ? "Reprocesando…" : "Reprocesar rechazadas"}</Button>
@@ -35,14 +38,17 @@ export function RevertTaeBatchButton({ batchId, canRevert }: { batchId: string; 
 
   async function handleConfirm() {
     setLoading(true)
-    const result = await revertTaeImportBatchAction(batchId)
-    setLoading(false)
-    setOpen(false)
-    if (result.ok) {
-      toast.success(result.message)
-      router.refresh()
-    } else {
-      toast.error(result.message)
+    try {
+      const result = await revertTaeImportBatchAction(batchId)
+      setOpen(false)
+      if (result.ok) {
+        toast.success(result.message)
+        router.refresh()
+      } else {
+        toast.error(result.message)
+      }
+    } finally {
+      setLoading(false)
     }
   }
 

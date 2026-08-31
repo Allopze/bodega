@@ -23,6 +23,7 @@ import {
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { CAPA_REQUIRED_CRITICALITIES, nextDueAfter } from "@/lib/prevention/inspections"
+import { resolveSubject } from "@/lib/services/prevention-inspections"
 import { createNotifications } from "@/lib/services/notifications"
 import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notification-targeting"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
@@ -88,6 +89,16 @@ export async function materializeProgramRuns(options: { programId?: string } = {
 
       const scheduledFor = program.nextDueOn
       const created = await db.transaction(async (tx) => {
+        /* La etiqueta del sujeto se congela igual que en `createInspectionRun`:
+         * el run copiaba las dos FK pero no el nombre, así que una inspección
+         * programada del extintor del pañol nacía sin decir de cuál — la
+         * bandeja no lo encontraba al buscar y el acta imprimía "—" (INS-05).
+         * Renombrar el recurso después no reescribe esta evidencia. */
+        const subjectLabel = await resolveSubject(tx, {
+          worksiteId: program.worksiteId,
+          subjectResourceId: program.subjectResourceId,
+          subjectVehicleId: program.subjectVehicleId,
+        })
         const [inserted] = await tx.insert(preventionInspectionRuns).values({
           id: `insrun-${nanoid()}`,
           code: `INSP-${codeYear()}-${nanoid(8).toUpperCase()}`,
@@ -100,6 +111,7 @@ export async function materializeProgramRuns(options: { programId?: string } = {
           // ejecución quedaba sin saber qué inspeccionar.
           subjectResourceId: program.subjectResourceId,
           subjectVehicleId: program.subjectVehicleId,
+          subjectLabel,
           scheduledFor,
           status: "planned",
           assignedToUserId: program.assignedToUserId,

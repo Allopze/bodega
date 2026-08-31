@@ -9,6 +9,12 @@
 export type FieldKind =
   | 'cumple_nocumple_obs'
   | 'cumple_nocumple_na_obs'
+  /** Escala literal B/M de los anexos que no admiten Regular ni N/A. */
+  | 'bueno_malo_obs'
+  /** Escala literal Sí/No/N/A (p. ej. columna "Usa" del Anexo 3). */
+  | 'si_no_na_obs'
+  /** Cumple / Cumple parcialmente / No cumple / N/A (Anexo 12). */
+  | 'cumple_parcial_nocumple_na_obs'
   | 'entregado_obs'
   | 'apto_obs'
   | 'si_no_obs'
@@ -77,6 +83,12 @@ export interface ChecklistItem {
    * Ítems sin este campo caen al default ("media", +7 días).
    */
   danoPotencial?: 'leve' | 'moderado' | 'grave' | 'fatal'
+  /** Agrupa respuestas independientes en una fila visual sin fusionar sus datos. */
+  matrix?: {
+    rowId: string
+    rowLabel: string
+    columnLabel: string
+  }
 }
 
 export interface ChecklistSection {
@@ -109,6 +121,20 @@ export interface ChecklistDefinition {
   evaluationCriteria?: string
   sections: ChecklistSection[]
   /**
+   * Política congelada junto al formulario. El resultado documental sólo se
+   * calcula cuando el papel declara una fórmula; el normalizado conserva la
+   * métrica transversal de la plataforma.
+   */
+  scoringPolicy?: {
+    official:
+      | { mode: 'none' }
+      | { mode: 'fixed_conforming_denominator'; denominator: number }
+    normalized: {
+      mode: 'weighted_applicable'
+      partialWeightBasisPoints: number
+    }
+  }
+  /**
    * Opcional: los instrumentos que registran desviaciones no tienen acta, porque
    * el papel firmado sigue siendo el respaldo. Ensanchar el tipo no rompe a
    * ninguna definición existente — todas la declaran.
@@ -126,6 +152,8 @@ export interface ChecklistDefinition {
    * nulo por construcción, que es lo correcto: no hay nada que promediar.
    */
   recordsDeviations?: boolean
+  /** Anexo 7: hasta seis acciones preventivas que nacen directamente en CAPA. */
+  recordsPreventiveActions?: boolean
   /**
    * El instrumento **cierra al declararse ejecutado**, sin pasar por revisión
    * independiente.

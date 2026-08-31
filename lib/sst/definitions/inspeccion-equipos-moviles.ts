@@ -1,5 +1,6 @@
 import type { ChecklistDefinition } from '../types'
 import { EQUIPOS_MOVILES_SECTIONS } from './inspeccion-equipos-moviles-sections'
+import { NORMALIZED_ONLY_SCORING } from '../scoring-policies'
 
 /**
  * Inspección de Equipos Móviles — módulo 05.
@@ -15,8 +16,8 @@ import { EQUIPOS_MOVILES_SECTIONS } from './inspeccion-equipos-moviles-sections'
  */
 export const INSPECCION_EQUIPOS_MOVILES: ChecklistDefinition = {
   code: 'inspeccion_equipos_moviles',
-  version: '01',
-  revisionDate: '2026-07-14',
+  version: '02',
+  revisionDate: '2026-08-30',
   tipo: 'seguimiento',
   title: 'Inspección de Equipos Móviles',
   subtitle: 'Verificación por equipo: uno por instancia de checklist. Realizar en conjunto con el operador.',
@@ -34,6 +35,7 @@ export const INSPECCION_EQUIPOS_MOVILES: ChecklistDefinition = {
   evaluationCriteria:
     'Cada ítem se evalúa como Cumple / No cumple / N/A. Frenos o dirección en No cumple sugieren fuera de servicio (acción de prioridad alta). Los ítems No cumple generan automáticamente acciones del plan de acción PDTP.',
   sections: EQUIPOS_MOVILES_SECTIONS,
+  scoringPolicy: NORMALIZED_ONLY_SCORING,
   closingAct: {
     title: 'Cierre de inspección del equipo',
     resultOptions: [

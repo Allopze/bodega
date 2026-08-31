@@ -53,7 +53,11 @@ const SheetContent = React.forwardRef<
         "sm:data-[state=open]:zoom-in-95 sm:data-[state=closed]:zoom-out-95",
         "data-[state=open]:slide-in-from-bottom sm:data-[state=open]:slide-in-from-left-1/2 sm:data-[state=open]:slide-in-from-top-[48%]",
         "data-[state=closed]:slide-out-to-bottom sm:data-[state=closed]:slide-out-to-left-1/2 sm:data-[state=closed]:slide-out-to-top-[48%]",
-        "duration-[var(--duration-default)] ease-[var(--ease-out)]",
+        // El sheet desliza una distancia mayor que un menú: 180ms terminaba
+        // antes que el ojo rastreara el contenido, sobre todo en móvil donde
+        // ocupa la pantalla completa. 220ms con ease-drawer deja la curva
+        // terminar con el sheet ya asentado, no todavía en vuelo.
+        "duration-[var(--duration-slow)] ease-[var(--ease-drawer)]",
         className,
       )}
       {...props}

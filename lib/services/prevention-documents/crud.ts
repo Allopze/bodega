@@ -32,7 +32,7 @@ import {
   recordAuditEntry,
 } from "./utils"
 
-const ALLOWED_MIMES = MimeType.INVOICE
+const ALLOWED_MIMES = MimeType.DOCUMENT_LIBRARY
 const MAX_FILE_SIZE = 25 * 1024 * 1024
 
 /* ── Creación de documento ──────────────────────────────────────────────── */
@@ -141,7 +141,7 @@ export async function uploadDocumentVersion(args: {
   const file = await readFileToBuffer(args.input.file)
   if (file.size > MAX_FILE_SIZE) throw new Error(`El archivo supera el máximo permitido de ${Math.round(MAX_FILE_SIZE / 1024 / 1024)} MB.`)
   if (file.size < 4) throw new Error("El archivo está vacío o es demasiado pequeño.")
-  const validated = validateFileBuffer(file.buffer, file.size, ALLOWED_MIMES)
+  const validated = validateFileBuffer(file.buffer, file.size, ALLOWED_MIMES, file.name)
   if (validated.error) throw new Error(validated.error)
 
   const checksum = sha256Hex(file.buffer)

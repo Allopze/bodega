@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { unitOfMeasureSchema } from "./product-catalogs"
 
 // ── Re-export shared ActionState ──────────────────────────────────────────────
 export type { ActionState } from "./masters"
@@ -21,7 +22,7 @@ export const serviceItemSchema = z.object({
   // Location where the service will be performed (required)
   location:      z.string().trim().min(1, "Indica la ubicación del servicio").max(150, "Ubicación demasiado larga"),
   quantity:      z.coerce.number().positive("Cantidad debe ser mayor a 0"),
-  unitOfMeasure: z.string().min(1, "Unidad requerida").max(20).default("servicio"),
+  unitOfMeasure: unitOfMeasureSchema.default("servicio"),
   sortOrder:     z.coerce.number().int().default(0),
   notes:         z.string().max(300).nullable().optional().or(z.literal("")),
   // Equipment association (optional open text fields)

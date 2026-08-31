@@ -7,6 +7,7 @@ import {
   eppImportMatches,
   eppImportRows,
   eppProductFamilies,
+  eppTypes,
   productAttributes,
   productCategories,
   productExternalReferences,
@@ -22,6 +23,7 @@ import {
   buildCorrections,
   normalizeEppRow,
   parseEppWorkbook,
+  EPP_TYPE_TO_BODY_PART_CODE,
   type NormalizedEppRow,
   type EppAttribute,
   type ImportCorrection,
@@ -228,7 +230,39 @@ function buildManualCorrections(previous: NormalizedEppRow, next: NormalizedEppR
 }
 
 async function resolveCategory(tx: Tx, categoryName: string) { const slug = toCode(categoryName).toLowerCase(); const existing = await tx.query.productCategories.findFirst({ where: eq(productCategories.slug, slug) }); if (existing) return existing; const id = slug === "epp" ? DEFAULT_CATEGORY.id : `cat-${slug}`; await tx.insert(productCategories).values({ id, name: categoryName, slug, isEpp: true, requiresPrevencion: true, sortOrder: 10 }).onConflictDoNothing(); return { id, name: categoryName } }
-async function resolveFamily(tx: Tx, categoryId: string, normalized: NormalizedEppRow) { const existing = await tx.query.eppProductFamilies.findFirst({ where: eq(eppProductFamilies.identityKey, normalized.familyIdentityKey) }); if (existing) return existing; const id = nanoid(); await tx.insert(eppProductFamilies).values({ id, categoryId, canonicalName: normalized.canonicalName, identityKey: normalized.familyIdentityKey, eppType: normalized.eppType, brand: normalized.brand, model: normalized.model }); return { id } }
+async function resolveEppTypeId(tx: Tx, itemType: string | null) {
+  const code = itemType ? EPP_TYPE_TO_BODY_PART_CODE[itemType as keyof typeof EPP_TYPE_TO_BODY_PART_CODE] : undefined
+  if (!code) return null
+  const type = await tx.query.eppTypes.findFirst({ where: eq(eppTypes.code, code) })
+  return type?.id ?? null
+}
+async function resolveFamily(tx: Tx, categoryId: string, normalized: NormalizedEppRow) {
+  const existing = await tx.query.eppProductFamilies.findFirst({ where: eq(eppProductFamilies.identityKey, normalized.familyIdentityKey) })
+  if (existing) {
+    // Backfill only: a family already classified (by any path) keeps its
+    // existing type rather than being silently reclassified by one row.
+    if (!existing.eppTypeId) {
+      const eppTypeId = await resolveEppTypeId(tx, normalized.eppType)
+      if (eppTypeId) await tx.update(eppProductFamilies).set({ eppTypeId }).where(eq(eppProductFamilies.id, existing.id))
+    }
+    return existing
+  }
+  const id = nanoid()
+  const eppTypeId = await resolveEppTypeId(tx, normalized.eppType)
+  // `onConflictDoNothing` + relectura: entre el SELECT de arriba y este INSERT
+  // otra transacción puede crear la misma identidad (`identity_key` es UNIQUE)
+  // y el 23505 abortaría el lote entero. Mismo motivo que en
+  // `ensureEppFamilyTx` del alta manual.
+  const [inserted] = await tx.insert(eppProductFamilies)
+    .values({ id, categoryId, canonicalName: normalized.canonicalName, identityKey: normalized.familyIdentityKey, eppType: normalized.eppType, eppTypeId, brand: normalized.brand, model: normalized.model })
+    .onConflictDoNothing({ target: eppProductFamilies.identityKey })
+    .returning({ id: eppProductFamilies.id })
+  if (inserted) return inserted
+
+  const winner = await tx.query.eppProductFamilies.findFirst({ where: eq(eppProductFamilies.identityKey, normalized.familyIdentityKey) })
+  if (!winner) throw new Error("No se pudo resolver la familia de EPP")
+  return winner
+}
 async function resolveSupplier(tx: Tx, supplierName: string) { const existing = await tx.query.suppliers.findFirst({ where: eq(suppliers.name, supplierName) }); if (existing) return existing; const id = `sup-${toCode(supplierName).toLowerCase()}`; await tx.insert(suppliers).values({ id, name: supplierName, isActive: true, notes: "Aprobado durante importación de EPP." }).onConflictDoNothing(); return { id } }
 async function generateUniqueEppSku(tx: Tx) { for (let attempt = 0; attempt < 5; attempt++) { const sku = `EPP-${nanoid(6).toUpperCase().replace(/[^A-Z0-9]/g, "X")}`; const existing = await tx.query.products.findFirst({ where: eq(products.sku, sku) }); if (!existing) return sku } throw new Error("No se pudo generar un SKU único") }
 async function persistProductDetails(

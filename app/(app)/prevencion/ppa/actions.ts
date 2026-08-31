@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
@@ -49,7 +51,7 @@ function refreshPpa(id: string) {
 }
 
 function failure(error: unknown, fallback: string): ActionState {
-  return { ok: false, message: error instanceof Error ? error.message : fallback }
+  return { ok: false, message: safeActionMessage(error, fallback) }
 }
 
 export interface PpaListClientFilters {
@@ -74,7 +76,7 @@ export async function listPpaAction(
     const [rows, total] = await Promise.all([listPpa(f, limit, offset), countPpa(f)])
     return { ok: true, data: { rows, total } }
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "Error al listar PPA" }
+    return { ok: false, message: safeActionMessage(e, "Error al listar PPA") }
   }
 }
 
@@ -88,7 +90,7 @@ export async function getPpaAction(
     const ppa = await getPpa(id, worksiteIds)
     return { ok: true, data: { ppa } }
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "Error al obtener el PPA" }
+    return { ok: false, message: safeActionMessage(e, "Error al obtener el PPA") }
   }
 }
 
@@ -118,7 +120,7 @@ export async function reviewPpaAction(
 
     return { ok: true, message: "Revisión registrada" }
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "Error al registrar la revisión" }
+    return { ok: false, message: safeActionMessage(e, "Error al registrar la revisión") }
   }
 }
 
@@ -230,7 +232,7 @@ export async function getPpaStatsAction(): Promise<ActionState & { data?: { stat
     const stats = await getPpaStats(worksiteIds)
     return { ok: true, data: { stats } }
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "Error al obtener indicadores" }
+    return { ok: false, message: safeActionMessage(e, "Error al obtener indicadores") }
   }
 }
 
@@ -250,6 +252,6 @@ export async function revokePpaTokenAction(
     refreshPpa(id)
     return { ok: true, message: "Acceso público revocado. El enlace ya no muestra el resultado." }
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "Error al revocar el acceso público" }
+    return { ok: false, message: safeActionMessage(e, "Error al revocar el acceso público") }
   }
 }

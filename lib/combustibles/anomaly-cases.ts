@@ -15,11 +15,15 @@ import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import type { AnomalyCaseStatus, AnomalySeverity } from "./anomaly-labels"
+import { METER_RESOLUTION_KINDS, requiresMeterResolutionKind, type MeterResolutionKind } from "./anomaly-labels"
+import { ANOMALY_RULE_CATALOG } from "./anomaly-rule-catalog"
 
 // Compatibilidad para consumidores server-side que todavía importan el
 // vocabulario desde el servicio. Los componentes client-side usan
 // `anomaly-labels.ts` directamente para no arrastrar Drizzle/DB al bundle.
-export { ANOMALY_SEVERITY_LABELS, ANOMALY_STATUS_COLORS, ANOMALY_STATUS_LABELS, anomalySeverityVariant } from "./anomaly-labels"
+export { ANOMALY_SEVERITY_LABELS, ANOMALY_STATUS_COLORS, ANOMALY_STATUS_LABELS, anomalySeverityVariant,
+  METER_RESET_RULE_CODES, METER_RESOLUTION_KIND_LABELS, METER_RESOLUTION_KINDS, requiresMeterResolutionKind } from "./anomaly-labels"
+export type { MeterResolutionKind } from "./anomaly-labels"
 export type { AnomalyCaseStatus, AnomalySeverity } from "./anomaly-labels"
 
 const ANOMALY_CASE_TRANSITIONS: Record<AnomalyCaseStatus, readonly AnomalyCaseStatus[]> = {
@@ -53,6 +57,7 @@ export interface AnomalyCaseRow {
   assigneeId: string | null
   assigneeName: string | null
   resolution: string | null
+  resolutionKind: MeterResolutionKind | null
   resolvedById: string | null
   resolvedByName: string | null
   resolvedAt: string | null
@@ -98,7 +103,9 @@ export interface AnomalyCasesFilters {
 
 /**
  * Crear un caso de anomalía. Si ya existe UNO PARA LA MISMA regla+entidad
- * — en cualquier estado, no sólo abierto — no duplica.
+ * — en cualquier estado, no sólo abierto — no duplica y devuelve el existente
+ * con `wasCreated: false`: los detectores contaban como "creado" también el caso
+ * deduplicado, así que la bitácora de cada corrida inflaba sus cifras.
  *
  * Deliberado: casi todas las reglas (litros_supera_capacidad, evidencia_*,
  * variacion_brusca_consumo, sello_*, etc.) referencian un registro histórico
@@ -109,7 +116,7 @@ export interface AnomalyCasesFilters {
  * legítimamente (p. ej. `consumo_durante_inactividad`) evitan este problema
  * incluyendo la fecha en `referenceEntityId`, no reabriendo la deduplicación.
  */
-export async function createAnomalyCase(input: CreateAnomalyCaseInput): Promise<AnomalyCaseRow> {
+export async function createAnomalyCase(input: CreateAnomalyCaseInput): Promise<AnomalyCaseRow & { wasCreated: boolean }> {
   // Verificar duplicado
   if (input.referenceEntityType && input.referenceEntityId) {
     const existing = await db.query.fuelAnomalyCases.findFirst({
@@ -119,7 +126,7 @@ export async function createAnomalyCase(input: CreateAnomalyCaseInput): Promise<
         eq(fuelAnomalyCases.referenceEntityId, input.referenceEntityId),
       ),
     })
-    if (existing) return await enrichAnomalyCase(existing)
+    if (existing) return { ...(await enrichAnomalyCase(existing)), wasCreated: false }
   }
 
   const id = nanoid()
@@ -139,7 +146,7 @@ export async function createAnomalyCase(input: CreateAnomalyCaseInput): Promise<
     status: "open",
     detectedAt: now,
   }).returning()
-  return await enrichAnomalyCase(record!)
+  return { ...(await enrichAnomalyCase(record!)), wasCreated: true }
 }
 
 /**
@@ -190,6 +197,8 @@ export async function updateAnomalyCaseStatus(
   expectedStatus: AnomalyCaseStatus,
   status: AnomalyCaseStatus,
   resolution?: string,
+  /** Obligatorio al cerrar una regla de medidor; ignorado en el resto. */
+  resolutionKind?: MeterResolutionKind,
 ): Promise<AnomalyCaseRow> {
   const updated = await db.transaction(async (tx) => {
     const scope = worksiteScopeSql(session, fuelAnomalyCases.worksiteId)
@@ -210,11 +219,18 @@ export async function updateAnomalyCaseStatus(
     if (isResolved && !(resolution ?? "").trim()) {
       throw new Error("Debes indicar el motivo para resolver o descartar un caso")
     }
+    // Cerrar un caso de medidor decide si la serie del equipo se corta acá:
+    // Flota y Mantenciones tratan como reinicio SÓLO `reset_medidor`. Sin la
+    // elección explícita, un error de tipeo corregido cortaría la serie igual.
+    const needsKind = isResolved && requiresMeterResolutionKind(current.ruleCode)
+    if (needsKind && !METER_RESOLUTION_KINDS.includes(resolutionKind as MeterResolutionKind)) {
+      throw new Error("Indica si la lectura se corrigió o si el medidor fue reemplazado")
+    }
     const now = new Date().toISOString()
     const resolutionFields = isResolved
-      ? { resolution: resolution!.trim(), resolvedById: session.user.id, resolvedAt: now }
+      ? { resolution: resolution!.trim(), resolutionKind: needsKind ? resolutionKind! : null, resolvedById: session.user.id, resolvedAt: now }
       : status === "reopened"
-        ? { resolution: null, resolvedById: null, resolvedAt: null }
+        ? { resolution: null, resolutionKind: null, resolvedById: null, resolvedAt: null }
         : {}
     const [next] = await tx.update(fuelAnomalyCases).set({ status, updatedAt: now, ...resolutionFields })
       .where(and(eq(fuelAnomalyCases.id, caseId), eq(fuelAnomalyCases.status, expectedStatus)))
@@ -235,8 +251,8 @@ export async function updateAnomalyCaseStatus(
       action: "status_change",
       entityType: "fuel_anomaly_case",
       entityId: caseId,
-      oldState: { status: current.status, resolution: current.resolution },
-      newState: { status, resolution: next.resolution },
+      oldState: { status: current.status, resolution: current.resolution, resolutionKind: current.resolutionKind },
+      newState: { status, resolution: next.resolution, resolutionKind: next.resolutionKind },
       reason: resolution?.trim() || undefined,
     }, tx)
     return next
@@ -383,41 +399,33 @@ export async function getAnomalyDistribution(filters: Pick<AnomalyCasesFilters, 
   }
 }
 
-/** Seed de reglas canónicas si no existen. */
-export async function seedAnomalyRulesIfEmpty() {
-  const existing = await db.select({ count: sql<number>`count(*)::int` }).from(fuelAnomalyRules)
-  if (existing[0]?.count && existing[0]!.count > 0) return
+/**
+ * Deja el catálogo de reglas al día: inserta las que falten y no toca las que ya
+ * están.
+ *
+ * Antes salía temprano si la tabla tenía cualquier fila ("seed si está vacía"),
+ * y eso significaba que una regla NUEVA no llegaba jamás a una instalación ya
+ * sembrada: el detector quedaba registrado en el código, sin fila que lo
+ * dispare, sin error y sin señal. El cron la llama en cada corrida.
+ *
+ * Nunca pisa severidad, config ni activación: son decisiones del operador. La
+ * pantalla de reglas no permite borrar —sólo desactivar— así que reponer las
+ * que faltan no puede resucitar algo que alguien quitó a propósito.
+ */
+export async function syncAnomalyRuleCatalog(): Promise<{ created: number }> {
+  const existing = await db.select({ code: fuelAnomalyRules.code }).from(fuelAnomalyRules)
+  const known = new Set(existing.map((row) => row.code))
+  let created = 0
 
-  const rules = [
-    { code: "rendimiento_fuera_historico", name: "Rendimiento fuera del historial del equipo", severity: "high" as const, config: { thresholdStdDevs: 2 } },
-    { code: "rendimiento_fuera_grupo", name: "Rendimiento fuera del grupo comparable", severity: "medium" as const, config: { thresholdStdDevs: 2 } },
-    { code: "litros_supera_capacidad", name: "Litros superiores a capacidad del estanque", severity: "critical" as const, config: { margin: 0.05 } },
-    { code: "sello_repetido", name: "Sello repetido", severity: "high" as const, config: {} },
-    { code: "sello_no_correlativo", name: "Sello no correlativo", severity: "medium" as const, config: {} },
-    { code: "evidencia_faltante", name: "Evidencia faltante en carga TAE", severity: "medium" as const, config: { requiredKinds: ["odometer", "liter_meter", "removed_seal", "installed_seal"] } },
-    { code: "evidencia_duplicada", name: "Evidencia duplicada por hash", severity: "low" as const, config: {} },
-    { code: "evidencia_ilegible", name: "Evidencia ilegible o corrupta", severity: "medium" as const, config: {} },
-    { code: "kilometraje_regresivo", name: "Kilometraje inferior al anterior", severity: "high" as const, config: {} },
-    { code: "horometro_regresivo", name: "Horómetro inferior al anterior", severity: "high" as const, config: {} },
-    { code: "kilometraje_sin_variacion", name: "Kilometraje sin variación respecto a la carga anterior", severity: "medium" as const, config: {} },
-    { code: "horometro_sin_variacion", name: "Horómetro sin variación respecto a la carga anterior", severity: "medium" as const, config: {} },
-    { code: "sello_inicial_faltante", name: "Falta sello inicial (retirado)", severity: "medium" as const, config: {} },
-    { code: "sello_final_faltante", name: "Falta sello final (instalado)", severity: "medium" as const, config: {} },
-    { code: "identidad_incompleta", name: "Conductor o supervisor no verificado en catálogo", severity: "low" as const, config: {} },
-    { code: "consumo_durante_inactividad", name: "Consumo durante inactividad del equipo", severity: "high" as const, config: {} },
-    { code: "carga_fuera_horario", name: "Carga fuera de horario operativo", severity: "low" as const, config: {} },
-    { code: "carga_faena_distinta", name: "Carga en faena distinta de la asignada al equipo", severity: "medium" as const, config: {} },
-    { code: "exceso_cargas_ventana", name: "Exceso de cargas dentro de una ventana temporal", severity: "medium" as const, config: { windowHours: 2, maxLoads: 3 } },
-    { code: "proveedor_no_habitual", name: "Carga facturada con proveedor no habitual", severity: "low" as const, config: {} },
-    { code: "variacion_brusca_consumo", name: "Variación brusca de consumo", severity: "medium" as const, config: { thresholdPct: 50 } },
-  ]
-
-  for (const rule of rules) {
-    await db.insert(fuelAnomalyRules).values({
-      id: nanoid(), code: rule.code, name: rule.name,
+  for (const rule of ANOMALY_RULE_CATALOG) {
+    if (known.has(rule.code)) continue
+    const [inserted] = await db.insert(fuelAnomalyRules).values({
+      id: nanoid(), code: rule.code, name: rule.name, description: rule.description,
       severity: rule.severity, config: JSON.stringify(rule.config), isActive: true,
-    }).onConflictDoNothing()
+    }).onConflictDoNothing().returning({ id: fuelAnomalyRules.id })
+    if (inserted) created++
   }
+  return { created }
 }
 
 /** Enriquecer un caso con nombres legibles y comentarios. */
@@ -477,6 +485,7 @@ async function enrichAnomalyCases(rows: (typeof fuelAnomalyCases.$inferSelect)[]
     assigneeId: row.assigneeId,
     assigneeName: (row.assigneeId ? userById.get(row.assigneeId)?.name : null) ?? null,
     resolution: row.resolution,
+    resolutionKind: (row.resolutionKind as MeterResolutionKind | null) ?? null,
     resolvedById: row.resolvedById,
     resolvedByName: (row.resolvedById ? userById.get(row.resolvedById)?.name : null) ?? null,
     resolvedAt: row.resolvedAt,

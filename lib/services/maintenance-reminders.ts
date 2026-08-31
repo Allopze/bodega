@@ -14,7 +14,7 @@ export interface MaintenanceReminderResult {
 export async function runMaintenanceReminders(now = new Date()): Promise<MaintenanceReminderResult> {
   const nowIso = now.toISOString()
   const warningAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString()
-  const records = await db.select({
+  const recordsQuery = db.select({
     id: maintenanceRecords.id,
     code: maintenanceRecords.code,
     worksiteId: maintenanceRecords.worksiteId,
@@ -27,7 +27,7 @@ export async function runMaintenanceReminders(now = new Date()): Promise<Mainten
     lte(maintenanceRecords.slaDueAt, warningAt),
   ))
 
-  const managers = await db.select({
+  const managersQuery = db.select({
     userId: users.id,
     isGlobal: roles.isGlobal,
     worksiteId: worksiteUsers.worksiteId,
@@ -36,6 +36,9 @@ export async function runMaintenanceReminders(now = new Date()): Promise<Mainten
     .innerJoin(roles, eq(roles.id, userRoles.roleId))
     .leftJoin(worksiteUsers, eq(worksiteUsers.userId, users.id))
     .where(and(eq(roles.name, "jefe_mantencion"), eq(users.isActive, true)))
+
+  // Ninguna de las dos lecturas depende de la otra: se resuelven en paralelo.
+  const [records, managers] = await Promise.all([recordsQuery, managersQuery])
 
   let dueSoon = 0
   let overdue = 0

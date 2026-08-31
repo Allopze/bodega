@@ -10,7 +10,8 @@
  * @see explicacion_integral_dte_facturaenlinea.md § 12–13
  */
 
-import { DtePortalClient, decodeXmlBuffer } from "./client"
+import { DtePortalClient } from "./client"
+import { decodeXmlBuffer, MAX_DTE_XML_BYTES } from "./cached-xml"
 import { DtePortalError } from "./types"
 import { resolveDtePortalResourceUrl } from "./portal-origin"
 
@@ -19,7 +20,9 @@ export interface DtePdfDownloadOptions {
   maxBytes?: number
 }
 
-export const MAX_DTE_XML_BYTES = 10 * 1024 * 1024
+// Definido en `./cached-xml` —lo comparte con la lectura de disco, que no
+// puede importar este módulo— y re-exportado acá para sus importadores.
+export { MAX_DTE_XML_BYTES }
 
 /**
  * Descarga el XML de un DTE y lo retorna como string decodificado.

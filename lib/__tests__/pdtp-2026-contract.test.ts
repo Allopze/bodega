@@ -34,7 +34,7 @@ describe("contrato del adaptador PDTP 2026", () => {
   })
 
   it("conserva las seis celdas E como evidencia, pero no las importa", async () => {
-    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), PDTP_2026_SOURCE.filename))
+    const workbook = await readPdtpWorkbook(path.resolve(process.cwd(), PDTP_2026_SOURCE.repoPath))
     const sheet = workbook.getWorksheet("PDTP GENERAL")
     const extracted = extractPdtpCatalogFromWorkbook(workbook)
     expect(sheet).toBeDefined()

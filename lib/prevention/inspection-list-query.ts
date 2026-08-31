@@ -91,3 +91,54 @@ export function inspectionSubjectTypeLabel(subjectType: string) {
 export function safeNewInspectionDefaults() {
   return { templateId: "", worksiteId: "", subjectRef: "_none" } as const
 }
+
+/* ── Sujeto inspeccionado ─────────────────────────────────────────────────
+ * Vivía en `inspection-run-list.tsx`, así que sólo lo tenía el alta ad-hoc.
+ * La programación no podía declarar sujeto (INS-04) pese a que el esquema, el
+ * servicio y el materializador lo soportan, y toda inspección nacida del cron
+ * llegaba sin saber qué se inspecciona. Compartirlo evita que las dos
+ * pantallas inventen dos formas de codificar lo mismo.
+ */
+
+/**
+ * Sujeto inspeccionable: recurso del inventario de emergencias o equipo de
+ * flota. `source` discrimina a cuál de las dos FK va el id — el CHECK
+ * `prevention_inspection_run_single_subject` no admite ambas.
+ */
+export type InspectionSubjectOption = {
+  source: "resource" | "vehicle"
+  id: string
+  name: string
+  kind: string
+  location: string
+  serialNumber: string | null
+}
+
+/** Valor del selector: `source:id`, porque un id suelto no dice a qué tabla apunta. */
+export function subjectRefOf(subject: Pick<InspectionSubjectOption, "source" | "id">) {
+  return `${subject.source}:${subject.id}`
+}
+
+/** Centinela del selector cuando no se eligió sujeto del inventario. */
+export const NO_SUBJECT = "_none"
+
+/** Descompone `source:id` en el par de FK que espera el servicio. */
+export function subjectIdsFromRef(ref: string): {
+  subjectResourceId: string | null
+  subjectVehicleId: string | null
+} {
+  return {
+    subjectResourceId: ref.startsWith("resource:") ? ref.slice("resource:".length) : null,
+    subjectVehicleId: ref.startsWith("vehicle:") ? ref.slice("vehicle:".length) : null,
+  }
+}
+
+/** Vuelve del par de FK persistido al valor del selector. */
+export function subjectRefFromIds(subject: {
+  subjectResourceId?: string | null
+  subjectVehicleId?: string | null
+}): string {
+  if (subject.subjectResourceId) return `resource:${subject.subjectResourceId}`
+  if (subject.subjectVehicleId) return `vehicle:${subject.subjectVehicleId}`
+  return NO_SUBJECT
+}

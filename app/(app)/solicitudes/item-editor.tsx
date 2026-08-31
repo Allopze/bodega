@@ -313,6 +313,14 @@ export function ItemEditor({
         </div>
       )}
 
+      {item.emergencyResourceId && (
+        <div className="ml-8 max-w-sm rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Activo de emergencia</p>
+          <p className="mt-0.5 text-sm font-medium text-[var(--color-text)]">{item.emergencyResourceLabel || item.emergencyResourceId}</p>
+          <p className="mt-1 text-xs text-[var(--color-text-muted)]">Al enviar, termina su asignación vigente y la cobertura queda en brecha hasta instalar un reemplazo.</p>
+        </div>
+      )}
+
       {/* Quantity + unit + (urgency for catalog types only) */}
       <div className={`ml-8 grid gap-3 ${isQuotationType ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"}`}>
         {/* Cuando el catálogo declara que un atributo gobierna la cantidad

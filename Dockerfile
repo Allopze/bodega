@@ -49,6 +49,18 @@ RUN ./node_modules/.bin/esbuild scripts/sync-rbac.ts \
     --packages=external \
     --outfile=/tmp/sync-rbac.mjs
 
+# La regularización de las entregas EPP históricas forma parte del deploy, no
+# de una operación manual. Se bundlea porque la imagen slim no incluye `tsx`
+# ni las fuentes TypeScript; deja externos sólo los drivers que sí se copian.
+RUN ./node_modules/.bin/esbuild scripts/reconcile-epp-delivery-scale.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/reconcile-epp-delivery-scale.mjs
+
 # Mismo motivo que sync-rbac: el catálogo de instrumentos del motor de
 # inspecciones se instala cableado a la actividad del PDTP que acredita cada
 # uno, y sin ese paso en el deploy las plantillas quedan sin acreditar y la
@@ -73,6 +85,57 @@ RUN ./node_modules/.bin/esbuild \
     --packages=external \
     --outdir=/tmp/invoice-reconciliation \
     --out-extension:.js=.mjs
+
+# Mismo motivo: el backfill de `referenced_order_codes` relee el XML cacheado de
+# los DTE sincronizados antes de que existiera la columna. Sin este paso en el
+# deploy, la señal "el proveedor cita esta OC" sólo existiría para los
+# documentos que lleguen después, o sea para ninguno de los que ya están.
+#
+# Acá NO se usa `--packages=external` como en los one-shot de arriba: la imagen
+# de producción es un build standalone de Next y su `node_modules` sólo trae lo
+# que el tracer vio más lo que se copia explícitamente abajo — `drizzle-orm` y
+# `postgres`. `fast-xml-parser`, que este script necesita para leer el XML, NO
+# está: Next lo inlinea en sus chunks de servidor y nunca queda como paquete
+# resoluble. Dejarlo externo produce un ERR_MODULE_NOT_FOUND al arrancar, así
+# que se externalizan sólo los dos paquetes que sí existen en la imagen y todo
+# lo demás se empaqueta.
+RUN ./node_modules/.bin/esbuild scripts/backfill-dte-order-refs.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/backfill-dte-order-refs.mjs
+
+# Mismo motivo, para los one-shot de combustible. El backfill de lecturas de
+# medidor reconstruye la serie de odómetro desde el detalle que ya está guardado
+# en `raw_row`, y el sync del catálogo de reglas deja disponibles las reglas
+# nuevas sin esperar la ventana del cron. Se externalizan sólo `drizzle-orm` y
+# `postgres` —los dos paquetes que la imagen standalone sí resuelve— y todo lo
+# demás (incluido `exceljs`, del que cuelgan los helpers de parseo) se empaqueta.
+RUN ./node_modules/.bin/esbuild \
+    scripts/backfill-fuel-meter-readings.ts \
+    scripts/seed-fuel-anomaly-rules.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outdir=/tmp/fuel \
+    --out-extension:.js=.mjs
+
+# El preflight de integraciones de combustible sólo habla `postgres` y es de
+# sólo lectura (`sql.begin("read only", ...)`): corre ANTES de migrar para dejar
+# en el log del deploy cuánto detalle hay por rescatar y cuántas lecturas
+# regresivas trae el histórico.
+RUN ./node_modules/.bin/esbuild scripts/preflight-fuel-integrations.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:postgres \
+    --outfile=/tmp/preflight-fuel-integrations.mjs
 
 
 # ── Production stage: standalone build, minimal runtime ──
@@ -141,10 +204,15 @@ COPY --from=build /app/node_modules/drizzle-orm ./node_modules/drizzle-orm
 COPY --from=build /app/node_modules/postgres ./node_modules/postgres
 
 COPY --from=build /tmp/sync-rbac.mjs ./scripts/sync-rbac.mjs
+COPY --from=build /tmp/reconcile-epp-delivery-scale.mjs ./scripts/reconcile-epp-delivery-scale.mjs
 COPY --from=build /tmp/seed-pdtp-inspection-templates.mjs ./scripts/seed-pdtp-inspection-templates.mjs
 COPY --from=build /tmp/invoice-reconciliation/preflight-purchase-invoice-reconciliation.mjs ./scripts/preflight-purchase-invoice-reconciliation.mjs
 COPY --from=build /tmp/invoice-reconciliation/backfill-purchase-invoice-reconciliation.mjs ./scripts/backfill-purchase-invoice-reconciliation.mjs
 COPY --from=build /tmp/invoice-reconciliation/rollback-purchase-invoice-reconciliation-statuses.mjs ./scripts/rollback-purchase-invoice-reconciliation-statuses.mjs
+COPY --from=build /tmp/backfill-dte-order-refs.mjs ./scripts/backfill-dte-order-refs.mjs
+COPY --from=build /tmp/fuel/backfill-fuel-meter-readings.mjs ./scripts/backfill-fuel-meter-readings.mjs
+COPY --from=build /tmp/fuel/seed-fuel-anomaly-rules.mjs ./scripts/seed-fuel-anomaly-rules.mjs
+COPY --from=build /tmp/preflight-fuel-integrations.mjs ./scripts/preflight-fuel-integrations.mjs
 # Cron service uses this bounded internal HTTP runner instead of an inline
 # wget command. It is copied explicitly because Next standalone does not trace
 # scripts invoked only by Compose.

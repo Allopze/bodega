@@ -11,6 +11,16 @@ import { receiptSchema, type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import { safeActionMessage } from "@/lib/action-error"
+import { promises as fs } from "node:fs"
+import path from "node:path"
+import { nanoid } from "@/lib/id"
+import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
+import { validateFileBuffer, MimeType } from "@/lib/file-validation"
+import {
+  createEmergencyResourceCertificatePath,
+  resolveEmergencyResourceCertificatesDir,
+} from "@/lib/storage/config"
+import type { EmergencyServiceCertificate } from "@/lib/services/emergency-resource-service"
 
 const REVALIDATE = "/recepcion"
 
@@ -82,6 +92,18 @@ export async function registerReceiptAction(
     return { ok: false, message: "Ingresa al menos una cantidad (recibida, rechazada o dañada)" }
   }
 
+  const storedCertificates: string[] = []
+  const itemsWithCertificates: Array<(typeof nonZeroItems)[number] & { certificate?: EmergencyServiceCertificate | null }> = []
+  for (const item of nonZeroItems) {
+    const persisted = await persistEmergencyCertificate(formData.get(`certificate-${item.purchaseOrderItemId}`))
+    if (!persisted.ok) {
+      await Promise.allSettled(storedCertificates.map((absolutePath) => fs.unlink(absolutePath)))
+      return { ok: false, message: persisted.message }
+    }
+    if (persisted.absolutePath) storedCertificates.push(persisted.absolutePath)
+    itemsWithCertificates.push({ ...item, certificate: persisted.attachment })
+  }
+
   let receiptId: string
   try {
     receiptId = await registerReceipt({
@@ -92,13 +114,46 @@ export async function registerReceiptAction(
       worksiteId:      worksiteId || null,
       dispatchGuideNo: dispatchGuideNo || null,
       notes:           notes || null,
-      items:           nonZeroItems,
+      items:           itemsWithCertificates,
     }, serviceWorksiteScope(session))
 
     revalidateOperationalViews([REVALIDATE, "/compras", `/compras/${purchaseOrderId}`, "/bodega"])
   } catch (e) {
+    await Promise.allSettled(storedCertificates.map((absolutePath) => fs.unlink(absolutePath)))
     logger.error("[registerReceiptAction]", e)
     return { ok: false, message: safeActionMessage(e, "Error al registrar recepción") }
   }
   redirect(`/recepcion/${receiptId}`)
+}
+
+async function persistEmergencyCertificate(value: FormDataEntryValue | null): Promise<
+  | { ok: true; attachment: EmergencyServiceCertificate | null; absolutePath?: string }
+  | { ok: false; message: string }
+> {
+  if (!(value instanceof File) || value.size === 0) return { ok: true, attachment: null }
+  const maxMb = await getPdfMaxSizeMb()
+  const maxBytes = maxMb * 1024 * 1024
+  if (value.size > maxBytes) return { ok: false, message: `El certificado supera el límite de ${maxMb} MB` }
+  const buffer = Buffer.from(await value.arrayBuffer())
+  const validation = validateFileBuffer(buffer, value.size, MimeType.PROOF)
+  if (validation.error) return { ok: false, message: validation.error }
+  const safeName = (value.name || "certificado")
+    .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "")
+    .slice(0, 120) || "certificado"
+  const storageName = `${Date.now()}-${nanoid()}-${safeName}`
+  const directory = resolveEmergencyResourceCertificatesDir()
+  const absolutePath = path.join(directory, storageName)
+  await fs.mkdir(directory, { recursive: true })
+  await fs.writeFile(absolutePath, buffer, { flag: "wx" })
+  return {
+    ok: true,
+    absolutePath,
+    attachment: {
+      fileName: safeName,
+      filePath: createEmergencyResourceCertificatePath(storageName),
+      fileSize: value.size,
+      mimeType: validation.mimeType,
+    },
+  }
 }

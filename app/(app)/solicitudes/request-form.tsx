@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dialog"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { ItemEditor } from "./item-editor"
-import { URGENCY_OPTS, UNIT_OF_MEASURE_OPTIONS } from "./request-form.constants"
+import { URGENCY_OPTS } from "./request-form.constants"
 import { formatDate, formatDateTime, formatQty } from "@/lib/utils"
 import { QUOTATION_TYPES } from "@/lib/request-types"
 import type { RequestType } from "@/lib/request-types"
@@ -38,6 +38,14 @@ function SummaryLine({ label, value, muted = false }: { label: string; value: st
 
 interface RequestFormProps {
   worksites: WorksiteOption[]
+  /**
+   * Códigos de `product_units` (activos, ordenados) para el datalist de unidad.
+   * Requerido y no opcional-con-default a propósito: era una constante
+   * hardcodeada de 13 valores que el catálogo del admin no alimentaba, así que
+   * crear una unidad ahí no aparecía nunca acá. Que el compilador obligue a
+   * pasarla evita que vuelva a divergir en silencio.
+   */
+  units: string[]
   products: ProductOption[]
   suppliers: SupplierOption[]
   workers?: WorkerOption[]
@@ -129,12 +137,12 @@ function RequestFormHeader({
 
 function ItemsSection({
   items, requestType, requestTypeLabel: _requestTypeLabel, readOnly, savedId, itemsError,
-  products, suppliers, workers, equipment, maxFileSizeMb,
+  products, suppliers, workers, equipment, maxFileSizeMb, units,
   onAdd, onRemove, onUpdate, onSelectProduct, onSelectFreeProduct, onClearProduct, onUpdateAttr, onUpdateWorker,
 }: {
   items: ItemRow[]; requestType: string; requestTypeLabel?: string; readOnly: boolean; savedId?: string
   itemsError?: string; products: ProductOption[]; suppliers: SupplierOption[]; workers?: WorkerOption[]
-  equipment?: EquipmentOption[]; maxFileSizeMb: number
+  equipment?: EquipmentOption[]; maxFileSizeMb: number; units: string[]
   onAdd: () => void; onRemove: (key: string) => void; onUpdate: (key: string, patch: Partial<ItemRow>) => void
   onSelectProduct: (key: string, pid: string) => void; onSelectFreeProduct: (key: string, name: string) => void
   onClearProduct: (key: string) => void; onUpdateAttr: (itemKey: string, attrIdx: number, value: string) => void
@@ -160,7 +168,7 @@ function ItemsSection({
           que con 2+ ítems el DOM quedaba con IDs repetidos (inválido, y axe lo
           marca como duplicate-id). Los inputs lo referencian por ese id. */}
       <datalist id="unit-of-measure-options">
-        {UNIT_OF_MEASURE_OPTIONS.map((unit) => <option key={unit} value={unit} />)}
+        {units.map((unit) => <option key={unit} value={unit} />)}
       </datalist>
       <div className="space-y-2">
         {items.map((item, idx) => (
@@ -239,6 +247,7 @@ function SummarySidebar({
 export function RequestForm({
   worksites,
   products,
+  units,
   suppliers,
   workers,
   equipment,
@@ -338,6 +347,7 @@ export function RequestForm({
             items={form.items} requestType={form.requestType} requestTypeLabel={form.requestTypeLabel}
             readOnly={form.readOnly} savedId={form.savedId} itemsError={form.itemsError}
             products={products} suppliers={suppliers} workers={workers} equipment={equipment} maxFileSizeMb={maxFileSizeMb}
+            units={units}
             onAdd={form.addItem} onRemove={form.removeItem} onUpdate={form.updateItem}
             onSelectProduct={form.selectProduct} onSelectFreeProduct={form.selectFreeProduct}
             onClearProduct={form.clearProduct} onUpdateAttr={form.updateAttr}

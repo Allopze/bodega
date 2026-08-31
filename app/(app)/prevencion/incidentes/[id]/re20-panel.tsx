@@ -42,6 +42,9 @@ interface RE20PanelProps {
   diffusions?: IncidentDiffusion[]
 }
 
+const diffusionKindLabel = (kind: "shift" | "corrective_measures") =>
+  kind === "shift" ? "Difusión en turnos (Act. 71)" : "Difusión de medidas correctivas 48h (Act. 75)"
+
 export function RE20Panel({
   incidentId,
   preliminaryReportText: initialPrelim,
@@ -160,9 +163,6 @@ export function RE20Panel({
       setMessage({ text: res.message || "Difusión confirmada", isError: !res.ok })
     })
   }
-
-  const diffusionKindLabel = (kind: "shift" | "corrective_measures") =>
-    kind === "shift" ? "Difusión en turnos (Act. 71)" : "Difusión de medidas correctivas 48h (Act. 75)"
 
   return (
     <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 space-y-4">

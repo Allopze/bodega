@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { deriveScheduleHorizon, describePdtpRecurrence, describePdtpRecurrenceImpact, projectRecurrenceToLegacySchedule } from "@/lib/services/pdtp/recurrence"
+import { DEFAULT_SCHEDULE_HORIZON, derivePdtpScheduleSource, deriveScheduleHorizon, describePdtpRecurrence, describePdtpRecurrenceImpact, diffScheduleCells, projectRecurrenceToLegacySchedule, recurrenceRulesEqual, scheduleCellsFingerprint } from "@/lib/services/pdtp/recurrence"
 import { pdtpRecurrenceRuleSchema } from "@/lib/validation/prevention-module/pdtp"
 
 describe("PDTP recurrence rules", () => {
@@ -76,5 +76,83 @@ describe("PDTP recurrence rules", () => {
     const horizon = deriveScheduleHorizon({ year: 2026 })
     const cells = projectRecurrenceToLegacySchedule({ frequency: "weekly", interval: 1, plannedQuantity: 1, weekOfMonth: 1 }, horizon)
     expect(cells).toHaveLength(48)
+  })
+})
+
+describe("PDTP schedule source derivation", () => {
+  const MONTHLY = { frequency: "monthly" as const, interval: 1, plannedQuantity: 1, weekOfMonth: 2 }
+
+  it("recurrenceRulesEqual ignora el orden de claves y la forma numérica, pero distingue meses", () => {
+    // jsonb no conserva el orden de claves ni `1` frente a `1.0`; comparar con
+    // JSON.stringify daría un falso "cambió" y dispararía la re-proyección.
+    expect(recurrenceRulesEqual(
+      { weekOfMonth: 2, plannedQuantity: 1.0, interval: 1, frequency: "monthly" },
+      MONTHLY,
+    )).toBe(true)
+    expect(recurrenceRulesEqual(
+      { frequency: "custom", interval: 1, plannedQuantity: 1, weekOfMonth: 1, months: [8, 3] },
+      { frequency: "custom", interval: 1, plannedQuantity: 1, weekOfMonth: 1, months: [3, 8] },
+    )).toBe(true)
+    expect(recurrenceRulesEqual(
+      { frequency: "custom", interval: 1, plannedQuantity: 1, weekOfMonth: 1, months: [3, 8] },
+      { frequency: "custom", interval: 1, plannedQuantity: 1, weekOfMonth: 1, months: [3, 9] },
+    )).toBe(false)
+    expect(recurrenceRulesEqual(MONTHLY, { ...MONTHLY, weekOfMonth: 3 })).toBe(false)
+    expect(recurrenceRulesEqual(null, null)).toBe(true)
+    expect(recurrenceRulesEqual(MONTHLY, null)).toBe(false)
+  })
+
+  it("scheduleCellsFingerprint ignora el orden y trata ausencia igual que cero", () => {
+    const a = scheduleCellsFingerprint([
+      { month: 3, week: 2, plannedQuantity: 1 },
+      { month: 1, week: 1, plannedQuantity: 2 },
+    ])
+    const b = scheduleCellsFingerprint([
+      { month: 1, week: 1, plannedQuantity: 2 },
+      { month: 2, week: 4, plannedQuantity: 0 },
+      { month: 3, week: 2, plannedQuantity: 1 },
+    ])
+    expect(a).toBe(b)
+    expect(scheduleCellsFingerprint([])).toBe("")
+    expect(scheduleCellsFingerprint([{ month: 1, week: 1, plannedQuantity: 0 }])).toBe("")
+  })
+
+  it("diffScheduleCells separa altas, bajas, cambios y totales planificados", () => {
+    const diff = diffScheduleCells(
+      [{ month: 1, week: 1, plannedQuantity: 2 }, { month: 2, week: 1, plannedQuantity: 1 }],
+      [{ month: 1, week: 1, plannedQuantity: 3 }, { month: 3, week: 1, plannedQuantity: 1 }],
+    )
+    expect(diff.addedCells).toEqual([{ month: 3, week: 1, plannedQuantity: 1 }])
+    expect(diff.removedCells).toEqual([{ month: 2, week: 1, plannedQuantity: 1 }])
+    expect(diff.changedCells).toEqual([{ month: 1, week: 1, from: 2, to: 3 }])
+    expect(diff.currentPlannedTotal).toBe(3)
+    expect(diff.nextPlannedTotal).toBe(4)
+  })
+
+  it("derivePdtpScheduleSource distingue proyección de la regla y ajuste manual", () => {
+    const horizon = DEFAULT_SCHEDULE_HORIZON
+    const projected = projectRecurrenceToLegacySchedule(MONTHLY, horizon)
+    const base = { scheduleMode: "scheduled" as const, recurrenceRule: MONTHLY, horizon }
+
+    expect(derivePdtpScheduleSource({ ...base, cells: projected })).toBe("rule")
+    expect(derivePdtpScheduleSource({ ...base, cells: [] })).toBe("none")
+    expect(derivePdtpScheduleSource({ ...base, cells: projected.slice(1) })).toBe("manual")
+    expect(derivePdtpScheduleSource({ ...base, cells: [...projected, { month: 6, week: 4, plannedQuantity: 1 }] })).toBe("manual")
+    expect(derivePdtpScheduleSource({
+      ...base,
+      cells: projected.map((cell, index) => (index === 0 ? { ...cell, plannedQuantity: 5 } : cell)),
+    })).toBe("manual")
+    // Celdas heredadas de la importación: no hay regla que las explique.
+    expect(derivePdtpScheduleSource({ ...base, recurrenceRule: null, cells: projected })).toBe("manual")
+    expect(derivePdtpScheduleSource({ ...base, scheduleMode: "on_demand", cells: projected })).toBe("manual")
+  })
+
+  it("el horizonte forma parte del criterio: las mismas celdas son regla o manual según el período", () => {
+    const partial = deriveScheduleHorizon({ year: 2026, periodStart: "2026-04-01", periodEnd: "2026-09-30" })
+    const cells = projectRecurrenceToLegacySchedule(MONTHLY, partial)
+    expect(cells).toHaveLength(6)
+
+    expect(derivePdtpScheduleSource({ cells, scheduleMode: "scheduled", recurrenceRule: MONTHLY, horizon: partial })).toBe("rule")
+    expect(derivePdtpScheduleSource({ cells, scheduleMode: "scheduled", recurrenceRule: MONTHLY, horizon: DEFAULT_SCHEDULE_HORIZON })).toBe("manual")
   })
 })

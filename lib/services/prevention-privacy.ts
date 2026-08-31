@@ -333,10 +333,12 @@ export async function getPreventionPrivacyExportDataset(args: {
     throw new Error("Solicitud no encontrada o fuera de alcance.")
   }
 
-  const [worksite] = await db.select().from(worksites).where(eq(worksites.id, worker.worksiteId)).limit(1)
-  const healthRecords = await db.select().from(preventionHealthRecords)
-    .where(eq(preventionHealthRecords.workerId, worker.id))
-    .orderBy(desc(preventionHealthRecords.createdAt))
+  const [[worksite], healthRecords] = await Promise.all([
+    db.select().from(worksites).where(eq(worksites.id, worker.worksiteId)).limit(1),
+    db.select().from(preventionHealthRecords)
+      .where(eq(preventionHealthRecords.workerId, worker.id))
+      .orderBy(desc(preventionHealthRecords.createdAt)),
+  ])
   const clinicalPayloads = args.includeClinical
     ? await Promise.all(healthRecords.map(async (record) => ({
         recordId: record.id,

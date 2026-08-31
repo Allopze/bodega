@@ -48,7 +48,7 @@ describe("findWorkerByRutAction", () => {
   beforeEach(() => {
     vi.resetAllMocks()
     mockHeaders.mockResolvedValue({
-      get: (key: string) => (key === "x-forwarded-for" ? "203.0.113.1" : null),
+      get: (key: string) => (key === "cf-connecting-ip" ? "203.0.113.1" : null),
     })
     mockCheckRateLimit.mockResolvedValue({ allowed: true, waitTimeRemainingMs: 0 })
     mockRecordFailure.mockResolvedValue(undefined)
@@ -127,7 +127,7 @@ describe("submitPpaAction - Rate Limiting", () => {
     vi.resetAllMocks()
     quotaCounters.clear()
     mockHeaders.mockResolvedValue({
-      get: (key: string) => (key === "x-forwarded-for" ? "203.0.113.1" : null),
+      get: (key: string) => (key === "cf-connecting-ip" ? "203.0.113.1" : null),
     })
     mockConsumeFixedWindowLimit.mockImplementation(
       async (key: string, { maxAttempts }: { maxAttempts: number }) => {

@@ -1,7 +1,10 @@
 "use client"
 
+import * as React from "react"
+import { X } from "@phosphor-icons/react"
 import { Tooltip } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import type { AttributeMultiValues } from "./product-form.types"
 
 // ── Attribute presets for quick-add ────────────────────────────────────────────
@@ -20,11 +23,58 @@ export interface VariantGeneratorProps {
   isEpp: boolean
   onToggleAttr: (preset: { name: string; options: string[]; sizeFamily?: string }) => void
   onUpdateAttrValues: (name: string, values: string[]) => void
+  /**
+   * Quita un atributo del asistente. Separado de `onToggleAttr` a propósito:
+   * ese sólo enumera los presets (así que no podía quitar un atributo venido de
+   * una plantilla de categoría) y además fuerza `isEpp = true`, que no es lo que
+   * significa borrar una fila.
+   */
+  onRemoveAttr: (name: string) => void
   onGenerate: () => void
   generating: boolean
   variantLimit: number
   variantWarnAt: number
   onMarkDirty: () => void
+}
+
+// ── Add a value not covered by the preset ─────────────────────────────────────
+
+/**
+ * Los presets cubren las tallas y colores habituales, pero no todos: una talla
+ * 47, un color corporativo o cualquier valor de una plantilla de categoría no
+ * tenían forma de entrar. Enter agrega sin enviar el formulario (el asistente
+ * vive dentro de un `<form>`, así que el submit por defecto crearía el producto
+ * a medio configurar).
+ */
+function AddValueInput({ attributeName, onAdd }: { attributeName: string; onAdd: (value: string) => void }) {
+  const [draft, setDraft] = React.useState("")
+
+  function commit() {
+    const value = draft.trim()
+    if (!value) return
+    onAdd(value)
+    setDraft("")
+  }
+
+  return (
+    <div className="mt-2 flex gap-2">
+      <Input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter") return
+          e.preventDefault()
+          commit()
+        }}
+        placeholder="Agregar valor..."
+        aria-label={`Agregar un valor a ${attributeName}`}
+        className="h-7 max-w-40 text-xs"
+      />
+      <Button type="button" variant="ghost" size="sm" onClick={commit} disabled={!draft.trim()}>
+        Agregar
+      </Button>
+    </div>
+  )
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -34,6 +84,7 @@ export function VariantGenerator({
   isEpp,
   onToggleAttr,
   onUpdateAttrValues,
+  onRemoveAttr,
   onGenerate,
   generating,
   variantLimit,
@@ -84,10 +135,25 @@ export function VariantGenerator({
         <div className="space-y-3">
           {wizAttrs.map((attr) => {
             const preset = EPP_ATTRIBUTE_PRESETS.find((p) => p.name === attr.name)
-            const options = preset?.options ?? []
+            // Un atributo que no es preset (viene de una plantilla de categoría)
+            // trae sus opciones en `values`: sin este fallback se dibujaba una
+            // caja sin chips, `values` quedaba vacío y «Generar variantes» no se
+            // habilitaba nunca — y como el toggle de arriba sólo lista presets,
+            // tampoco se podía quitar. El paso 2 quedaba muerto.
+            const options = preset?.options ?? attr.values
             return (
               <div key={attr.name} className="rounded-(--radius) border border-[var(--color-border)] p-3">
-                <p className="mb-2 text-sm font-medium">{attr.name}</p>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">{attr.name}</p>
+                  <button
+                    type="button"
+                    onClick={() => { onMarkDirty(); onRemoveAttr(attr.name) }}
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-(--radius-sm) text-[var(--color-text-faint)] transition-colors hover:bg-[var(--color-danger-tint)] hover:text-[var(--color-danger)]"
+                    aria-label={`Quitar atributo ${attr.name}`}
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {options.map((option) => {
                     const isSelected = attr.values.includes(option)
@@ -112,6 +178,14 @@ export function VariantGenerator({
                     )
                   })}
                 </div>
+                <AddValueInput
+                  attributeName={attr.name}
+                  onAdd={(value) => {
+                    if (attr.values.includes(value)) return
+                    onMarkDirty()
+                    onUpdateAttrValues(attr.name, [...attr.values, value])
+                  }}
+                />
               </div>
             )
           })}

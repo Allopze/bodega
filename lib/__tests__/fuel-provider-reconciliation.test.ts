@@ -102,4 +102,27 @@ describe("conciliación de una corrida de proveedor", () => {
     })
     expect(pendingLinks).toHaveLength(0)
   })
+
+  it("salta la evidencia agregada en vez de darle un veredicto que no significa nada", async () => {
+    // El informe TCT de Copec es un agregado MENSUAL por patente: su fila se
+    // fecha al día 1 y suma todas las cargas del mes, así que el matcher —que
+    // exige misma fecha civil y litros/monto dentro de tolerancia— le daba
+    // `unmatched` siempre. Eso decía "descuadre" donde sólo había
+    // granularidades distintas, e inflaba `unmatched_reconciliation_links`.
+    await inMemoryDb.insert(schema.fuelProviderTransactions).values({
+      id: "tx-agregada", syncRunId: ids.run, provider: "copec", sourceAccount: "tct:diesel",
+      supplierId: ids.supplier, identityKey: "row:copec:tct:diesel:AGREGADA", fingerprint: "fp3", sourceRowKey: "rk3",
+      worksiteId: ids.worksite, vehicleId: ids.vehicle, productId: ids.product,
+      occurredAt: "2026-07-01", quantity: 320, amount: 288_000, status: "accepted",
+      granularity: "period_aggregate", payloadHash: "ph3",
+    })
+
+    const outcome = await reconcileFuelProviderRun(ids.run)
+
+    expect(outcome).toMatchObject({ reconciled: 1, skippedAggregates: 1 })
+    const aggregateLinks = await inMemoryDb.query.fuelReconciliationLinks.findMany({
+      where: eq(schema.fuelReconciliationLinks.providerTransactionId, "tx-agregada"),
+    })
+    expect(aggregateLinks).toHaveLength(0)
+  })
 })

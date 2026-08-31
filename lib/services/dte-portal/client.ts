@@ -17,6 +17,7 @@
  */
 
 import { Agent } from "undici"
+import { decodeXmlBuffer } from "./cached-xml"
 import { DtePortalError, type DtePortalClientConfig, type DtePortalCredentials } from "./types"
 import { withDtePortalOperationLease } from "./operation-lease"
 import { DtePortalOriginError, assertDtePortalBaseUrl, resolveDtePortalResourceUrl } from "./portal-origin"
@@ -372,18 +373,9 @@ async function readBinaryResponse(response: Response, maxBytes: number | undefin
 }
 
 /**
- * Decodifica un buffer XML respetando la declaración de encoding.
- *
- * Los DTE chilenos frecuentemente declaran ISO-8859-1 en el XML; decodificarlos
- * como UTF-8 corrompe los caracteres del nombre del proveedor/producto.
- *
- * Reutiliza el mismo patrón de `invoice-extractor.ts` (decodeXmlBuffer).
+ * Re-exportada desde `./cached-xml` para no romper a quien ya la importaba de
+ * acá. La definición vive allá porque decodificar un buffer no necesita el
+ * cliente HTTP, y los one-shot de producción no pueden arrastrarlo.
  */
-export function decodeXmlBuffer(buffer: Buffer): string {
-  const declaration = buffer.toString("latin1", 0, Math.min(buffer.length, 1024))
-  const encoding = declaration.match(/<\?xml[^>]*encoding=["']([^"']+)/i)?.[1]?.toLowerCase()
-  if (encoding && /^(iso-8859-1|iso8859-1|latin-?1|windows-1252)$/i.test(encoding)) {
-    return buffer.toString("latin1")
-  }
-  return buffer.toString("utf8")
-}
+export { decodeXmlBuffer } from "./cached-xml"
+

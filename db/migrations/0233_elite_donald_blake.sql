@@ -1,0 +1,2 @@
+ALTER TABLE "prevention_inspection_templates" DROP CONSTRAINT "prevention_inspection_template_official_source_consistent";--> statement-breakpoint
+ALTER TABLE "prevention_inspection_templates" ADD CONSTRAINT "prevention_inspection_template_official_source_consistent" CHECK ("prevention_inspection_templates"."provenance_kind" <> 'official_document' OR "prevention_inspection_templates"."status" <> 'approved' OR "prevention_inspection_templates"."source_document_version_id" IS NOT NULL);

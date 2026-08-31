@@ -183,7 +183,7 @@ describe("RequestForm", () => {
           worksites={worksites}
           products={products}
           suppliers={suppliers}
-          maxFileSizeMb={10}
+          units={["unidad", "par", "caja"]} maxFileSizeMb={10}
         />,
       )
       expect(screen.getByText("Datos de la solicitud")).toBeDefined()
@@ -195,7 +195,7 @@ describe("RequestForm", () => {
           worksites={worksites}
           products={products}
           suppliers={suppliers}
-          maxFileSizeMb={10}
+          units={["unidad", "par", "caja"]} maxFileSizeMb={10}
         />,
       )
       expect(screen.getByText("Ítems solicitados")).toBeDefined()
@@ -211,7 +211,7 @@ describe("RequestForm", () => {
           worksites={worksites}
           products={products}
           suppliers={suppliers}
-          maxFileSizeMb={10}
+          units={["unidad", "par", "caja"]} maxFileSizeMb={10}
         />,
       )
       // "Faena Norte" appears in SelectItem and in the summary sidebar
@@ -226,7 +226,7 @@ describe("RequestForm", () => {
           worksites={worksites}
           products={products}
           suppliers={suppliers}
-          maxFileSizeMb={10}
+          units={["unidad", "par", "caja"]} maxFileSizeMb={10}
         />,
       )
       expect(screen.getByText("Resumen")).toBeDefined()
@@ -240,7 +240,7 @@ describe("RequestForm", () => {
           worksites={worksites}
           products={products}
           suppliers={suppliers}
-          maxFileSizeMb={10}
+          units={["unidad", "par", "caja"]} maxFileSizeMb={10}
         />,
       )
       expect(screen.getByText("Crear y enviar a aprobación")).toBeDefined()
@@ -255,7 +255,7 @@ describe("RequestForm", () => {
           worksites={worksites}
           products={products}
           suppliers={suppliers}
-          maxFileSizeMb={10}
+          units={["unidad", "par", "caja"]} maxFileSizeMb={10}
           userPermissions={["repuestos:create"]}
           initialRequestType="repuestos"
         />,
@@ -282,7 +282,7 @@ describe("RequestForm", () => {
           worksites={worksites}
           products={products}
           suppliers={suppliers}
-          maxFileSizeMb={10}
+          units={["unidad", "par", "caja"]} maxFileSizeMb={10}
           editRequest={{
             id: "req-pending",
             code: "SOL-PENDING",
@@ -318,7 +318,7 @@ describe("RequestForm", () => {
           worksites={worksites}
           products={products}
           suppliers={suppliers}
-          maxFileSizeMb={10}
+          units={["unidad", "par", "caja"]} maxFileSizeMb={10}
           userPermissions={["servicios:create"]}
           initialRequestType="servicios"
         />,
@@ -334,7 +334,7 @@ describe("RequestForm", () => {
           worksites={worksites}
           products={products}
           suppliers={suppliers}
-          maxFileSizeMb={10}
+          units={["unidad", "par", "caja"]} maxFileSizeMb={10}
           initialRequestType="epp"
           initialRequestTypeNotice="El tipo indicado en el enlace no está disponible para tu cuenta."
         />,
@@ -351,7 +351,7 @@ describe("RequestForm", () => {
           worksites={worksites}
           products={products}
           suppliers={suppliers}
-          maxFileSizeMb={10}
+          units={["unidad", "par", "caja"]} maxFileSizeMb={10}
           editRequest={{
             id: "req-1",
             code: "SOL-001",
@@ -377,7 +377,7 @@ describe("RequestForm", () => {
           worksites={worksites}
           products={products}
           suppliers={suppliers}
-          maxFileSizeMb={10}
+          units={["unidad", "par", "caja"]} maxFileSizeMb={10}
           editRequest={{
             id: "req-2",
             code: "SOL-002",
@@ -405,7 +405,7 @@ describe("RequestForm", () => {
           worksites={worksites}
           products={products}
           suppliers={suppliers}
-          maxFileSizeMb={10}
+          units={["unidad", "par", "caja"]} maxFileSizeMb={10}
         />,
       )
       // No required date set, so should show "Pendientes"
@@ -418,7 +418,7 @@ describe("RequestForm", () => {
           worksites={worksites}
           products={products}
           suppliers={suppliers}
-          maxFileSizeMb={10}
+          units={["unidad", "par", "caja"]} maxFileSizeMb={10}
         />,
       )
       // "1 ítem" appears in items header count and sidebar badge
@@ -434,7 +434,7 @@ describe("RequestForm", () => {
           worksites={worksites}
           products={products}
           suppliers={suppliers}
-          maxFileSizeMb={10}
+          units={["unidad", "par", "caja"]} maxFileSizeMb={10}
         />,
       )
 
@@ -449,7 +449,7 @@ describe("RequestForm", () => {
           worksites={worksites}
           products={products}
           suppliers={suppliers}
-          maxFileSizeMb={10}
+          units={["unidad", "par", "caja"]} maxFileSizeMb={10}
         />,
       )
 
@@ -464,7 +464,7 @@ describe("RequestForm", () => {
           worksites={worksites}
           products={products}
           suppliers={suppliers}
-          maxFileSizeMb={10}
+          units={["unidad", "par", "caja"]} maxFileSizeMb={10}
         />,
       )
 
@@ -508,7 +508,7 @@ describe("RequestForm", () => {
           worksites={worksites}
           products={products}
           suppliers={suppliers}
-          maxFileSizeMb={10}
+          units={["unidad", "par", "caja"]} maxFileSizeMb={10}
           editRequest={editableEppRequest}
         />,
       )

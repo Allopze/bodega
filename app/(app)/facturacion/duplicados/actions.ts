@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { eq } from "drizzle-orm"
@@ -38,7 +40,7 @@ export async function detectDuplicatesAction(): Promise<ActionResult> {
       message: `${result.created} pares nuevos sobre ${result.scanned} facturas revisadas. Ninguno se fusiona solo.`,
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "No se pudo revisar duplicados"
+    const message = safeActionMessage(err, "No se pudo revisar duplicados")
     logger.error("[billing/detectDuplicates]", { message })
     return { ok: false, message }
   }
@@ -126,7 +128,7 @@ export async function resolveDuplicateAction(input: unknown): Promise<ActionResu
     }
   } catch (err) {
     if (err instanceof DuplicateMergeError) return { ok: false, message: err.message }
-    const message = err instanceof Error ? err.message : "No se pudo resolver el caso"
+    const message = safeActionMessage(err, "No se pudo resolver el caso")
     logger.error("[billing/resolveDuplicate]", { message })
     return { ok: false, message }
   }

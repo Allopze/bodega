@@ -79,6 +79,33 @@ function flatRow(b: BatchRow): BatchRowFlat {
   }
 }
 
+const renderRow = (r: BatchRowFlat, _index: number) => {
+  return (
+    <TableRow key={r.id}>
+      <TableCell className="font-mono text-xs">{formatDateTime(r.createdAt)}</TableCell>
+      <TableCell title={r.worksiteName}>{r.worksiteName}</TableCell>
+      <TableCell className="font-mono text-xs">{r.periodoLabel}</TableCell>
+      <TableCell>{r.fuente}</TableCell>
+      <TableCell className="max-w-40 truncate" title={r.archivoNombre}>{r.archivoNombre}</TableCell>
+      <TableCell className="text-right font-mono text-xs">
+        {formatQty(r.filasValidas)}
+        {r.filasInvalidas > 0 && <span className="text-[var(--color-danger)]"> ({r.filasInvalidas} err.)</span>}
+      </TableCell>
+      <TableCell className="text-right font-mono">{formatQty(r.totalCantidad, "L")}</TableCell>
+      <TableCell className="text-right font-mono">{formatCLP(r.totalMonto)}</TableCell>
+      <TableCell>
+        <ImportBatchStatusBadge status={r.estado} />
+      </TableCell>
+      <TableCell className="text-xs text-[var(--color-text-muted)] max-w-32 truncate" title={r.importerName}>{r.importerName}</TableCell>
+      <TableCell>
+        <Button asChild variant="ghost" size="sm">
+          <Link href={`/combustibles/importar/${r.id}`}>Ver</Link>
+        </Button>
+      </TableCell>
+    </TableRow>
+  )
+}
+
 export function ImportBatchHistory({ batches }: { batches: BatchRow[] }) {
   const [estadoFilter, setEstadoFilter] = useState("todas")
   const [fuenteFilter, setFuenteFilter] = useState("todas")
@@ -96,33 +123,6 @@ export function ImportBatchHistory({ batches }: { batches: BatchRow[] }) {
     if (fuenteFilter !== "todas") rows = rows.filter((r) => r.fuente === fuenteFilter)
     return rows
   }, [flatRows, estadoFilter, fuenteFilter])
-
-  const renderRow = (r: BatchRowFlat, _index: number) => {
-    return (
-      <TableRow key={r.id}>
-        <TableCell className="font-mono text-xs">{formatDateTime(r.createdAt)}</TableCell>
-        <TableCell title={r.worksiteName}>{r.worksiteName}</TableCell>
-        <TableCell className="font-mono text-xs">{r.periodoLabel}</TableCell>
-        <TableCell>{r.fuente}</TableCell>
-        <TableCell className="max-w-40 truncate" title={r.archivoNombre}>{r.archivoNombre}</TableCell>
-        <TableCell className="text-right font-mono text-xs">
-          {formatQty(r.filasValidas)}
-          {r.filasInvalidas > 0 && <span className="text-[var(--color-danger)]"> ({r.filasInvalidas} err.)</span>}
-        </TableCell>
-        <TableCell className="text-right font-mono">{formatQty(r.totalCantidad, "L")}</TableCell>
-        <TableCell className="text-right font-mono">{formatCLP(r.totalMonto)}</TableCell>
-        <TableCell>
-          <ImportBatchStatusBadge status={r.estado} />
-        </TableCell>
-        <TableCell className="text-xs text-[var(--color-text-muted)] max-w-32 truncate" title={r.importerName}>{r.importerName}</TableCell>
-        <TableCell>
-          <Button asChild variant="ghost" size="sm">
-            <Link href={`/combustibles/importar/${r.id}`}>Ver</Link>
-          </Button>
-        </TableCell>
-      </TableRow>
-    )
-  }
 
   const actions = (
     <div className="flex items-center gap-2">

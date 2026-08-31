@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { guardAuth, canAny } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
@@ -25,7 +27,7 @@ export async function getWeeklyEvaluationsAction(
     const weeks = await getWeeklyEvaluations(evaluationId, worksiteIds)
     return { ok: true, data: { weeks } }
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "Error al obtener semanas" }
+    return { ok: false, message: safeActionMessage(e, "Error al obtener semanas") }
   }
 }
 
@@ -44,6 +46,6 @@ export async function markWeekCompletedAction(weeklyEvalId: string): Promise<Act
     revalidatePath(REVALIDATE)
     return { ok: true, message: "Semana marcada como completada" }
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : "Error al marcar semana" }
+    return { ok: false, message: safeActionMessage(e, "Error al marcar semana") }
   }
 }

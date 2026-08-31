@@ -92,7 +92,7 @@ export default async function LoginPage() {
           <h1 className="mt-2 text-display text-[var(--color-text)]">
             Iniciar sesión
           </h1>
-          <p className="mt-2 text-sub">Ingresa tus credenciales para continuar.</p>
+          <p className="mt-2 text-sub">Vuelve a entrar con tu cuenta de Chome.</p>
 
           <div className="mt-8">
             <Suspense fallback={null}>

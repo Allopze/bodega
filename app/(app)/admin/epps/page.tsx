@@ -26,13 +26,20 @@ export default async function EppsPage() {
     orderBy: (f, { asc }) => [asc(f.canonicalName)],
   })
 
-  const families: EppFamilyRow[] = raw.map((f) => ({
+  // `epp_product_families` ahora también agrupa variantes de productos que no
+  // son EPP (es el mecanismo de agrupación del picker, no sólo de EPP). Esta
+  // pantalla es el catálogo de EPP, así que muestra sólo las familias cuyos
+  // productos lo son.
+  const eppFamilies = raw.filter((f) => f.products.some((p) => p.isEpp))
+
+  const families: EppFamilyRow[] = eppFamilies.map((f) => ({
     id: f.id,
     canonicalName: f.canonicalName,
     brand: f.brand,
     model: f.model,
     certification: f.certification,
     lifespanMonths: f.lifespanMonths,
+    eppTypeId: f.eppTypeId,
     eppTypeLabel: f.type?.label ?? f.eppType ?? null,
     categoryName: f.category?.name ?? "—",
     totalVariants: f.products.length,

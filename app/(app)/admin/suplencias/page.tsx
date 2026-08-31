@@ -19,15 +19,17 @@ export default async function SuplenciasPage() {
     redirect("/admin")
   }
 
-  // Lista de usuarios titulares activos
-  const activeUsers = await db
-    .select({ id: users.id, name: users.name, email: users.email })
-    .from(users)
-    .where(and(eq(users.isActive, true), eq(users.isTemporary, false)))
-    .orderBy(asc(users.name))
-
-  // Lista de suplencias (temporales)
-  const substitutions = await listActiveSubstitutions()
+  // Dos lecturas independientes: corren en paralelo en vez de encadenarse.
+  const [activeUsers, substitutions] = await Promise.all([
+    // Lista de usuarios titulares activos
+    db
+      .select({ id: users.id, name: users.name, email: users.email })
+      .from(users)
+      .where(and(eq(users.isActive, true), eq(users.isTemporary, false)))
+      .orderBy(asc(users.name)),
+    // Lista de suplencias (temporales)
+    listActiveSubstitutions(),
+  ])
 
   return (
     <PageContainer width="wide">

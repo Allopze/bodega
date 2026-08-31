@@ -49,6 +49,8 @@ const STAGE_GROUPS = [
   { value: "cancelled", label: "Anuladas" },
 ] as const
 
+function escapeLikeLocal(v: string) { return v.replace(/[\\%_]/g, (c) => `\\${c}`) }
+
 export default async function ComprasPage({
   searchParams,
 }: {
@@ -90,7 +92,6 @@ export default async function ComprasPage({
   const exportHref = `/api/reportes/export?${exportParams.toString()}`
 
   // Extended text search: match OC code OR supplier name via EXISTS subquery.
-  function escapeLikeLocal(v: string) { return v.replace(/[\\%_]/g, (c) => `\\${c}`) }
   const q = listParams.q.trim()
   const likePattern = q ? `%${escapeLikeLocal(q)}%` : null
   const textCondition = likePattern

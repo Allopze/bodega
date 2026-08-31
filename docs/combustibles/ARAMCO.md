@@ -181,7 +181,21 @@ Cada corrida crea una fila en `fuel_provider_sync_runs`. Cada movimiento usa
 `transactionId` como identidad externa, conserva fingerprint y payload hash, y
 queda `accepted`, `pending` o `rejected`. Producto desconocido, patente sin
 vehículo, respuesta fuera de rango, números inválidos y duplicados no se mezclan
-con «Otros» ni desaparecen en un log. La pantalla muestra recibidas, aceptadas,
+con «Otros» ni desaparecen en un log.
+
+Una fila que no cumple el contrato de `movements` **no tumba la corrida**: se
+registra como `source_row_invalid` en el ledger de rechazos y el resto se
+importa igual (2026-08-28). Sólo si NINGUNA fila cumple el contrato se falla
+ruidosamente, porque eso ya no es una fila corrupta sino un cambio de API. Un
+`transactionId` repetido entre páginas con contenido idéntico se descarta en
+silencio —la paginación del portal no es un snapshot—; si el contenido difiere,
+va a revisión en vez de elegir uno de los dos.
+
+Gasolina y kerosene tienen fuente propia (`Aramco Fleet Gasolina` /
+`Aramco Fleet Kerosene`) y ficha en `fuel_products` desde la migración 0230.
+Antes caían en «producto sin mapping canónico» y sus litros no llegaban a
+ningún lote, con lo que el cajón `Aramco Fleet Otros` era inalcanzable; hoy ése
+queda de red para lo que se acepte a futuro sin fuente propia. La pantalla muestra recibidas, aceptadas,
 rechazadas, pendientes e impacto en litros/monto; la calidad se puede descargar
 en Excel sin incluir el payload crudo.
 
@@ -189,6 +203,20 @@ La tabla `fuel_reconciliation_links` permite vincular una transacción a una
 carga interna, un movimiento del ciclo físico y/o un DTE como evidencias
 separadas. Una factura mensual puede cubrir N transacciones; una coincidencia
 ambigua o fuera de tolerancia queda para decisión humana.
+
+**La conciliación necesita la ficha del proveedor en `fuel_suppliers`.**
+`decideFuelLoadMatch` exige `supplierId` en su primer filtro, así que sin ficha
+TODA transacción queda `unmatched` — no por descuadre sino por catálogo
+incompleto. La búsqueda reconoce `aramco`, `esmax` y `petrobras`, que son los
+nombres bajo los que operación suele crearla; si aun así no la encuentra, la
+corrida se cierra como `partial` con el motivo a la vista en vez de fabricar
+`unmatched` en silencio.
+
+Los lotes de la ventana que una corrida ya no respalda —un vehículo que cambió
+de faena, o cargas que el proveedor retiró— se **vacían** (totales en cero,
+registros eliminados), no se borran ni se marcan `revertido`. Antes conservaban
+litros y monto para siempre, porque la reconstrucción por hash sólo visita los
+grupos presentes en la respuesta.
 
 ## Volumen real (al 2026-08-22)
 

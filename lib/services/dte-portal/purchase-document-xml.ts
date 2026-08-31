@@ -4,11 +4,12 @@ import { and, eq, isNull, notInArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { dteDocumentItems, dteDocuments } from "@/db/schema"
 import { cleanRut } from "@/lib/rut"
-import { mkdirp, readBuffer, writeBuffer } from "@/lib/storage/helpers"
-import { createDtePath, resolveDteDir, resolveDteFile } from "@/lib/storage/config"
-import { decodeXmlBuffer, DtePortalClient } from "./client"
+import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
+import { createDtePath, resolveDteDir } from "@/lib/storage/config"
+import { DtePortalClient } from "./client"
 import { buildDtePortalClientConfig, readDtePortalConfig } from "./config"
-import { downloadDteXml, MAX_DTE_XML_BYTES } from "./download"
+import { downloadDteXml } from "./download"
+import { readCachedXml } from "./cached-xml"
 import { parseDteXml, type DteData, type DteItem } from "@/lib/services/purchasing-module/dte-parser"
 
 export interface DteXmlDetail {
@@ -20,6 +21,8 @@ export interface DteXmlDetail {
   taxAmount: number
   totalAmount: number
   items: DteItem[]
+  /** Códigos de OC citados por el proveedor en `<Referencia>`, normalizados. */
+  referencedOrderCodes: string[]
 }
 
 export type PurchaseDteXmlErrorCode =
@@ -149,6 +152,15 @@ export async function enrichDteDocumentLines(dteDocumentId: string): Promise<
         lineEnrichmentStatus: "ready",
         lineEnrichedAt: new Date().toISOString(),
         lineEnrichmentErrorCode: null,
+        // Sale del mismo XML que las líneas y en la misma transacción: un
+        // documento "ready" con la referencia sin leer sería un candidato al
+        // que le falta justo la evidencia más fuerte.
+        //
+        // Cadena vacía y no NULL cuando el proveedor no citó ninguna OC: NULL
+        // significa "nunca se examinó el XML" y es lo que busca el backfill
+        // `backfill-dte-order-refs`. Confundirlos lo haría releer para siempre
+        // los documentos que ya sabemos que no traen referencia.
+        referencedOrderCodes: detail.referencedOrderCodes.join(","),
       }).where(eq(dteDocuments.id, dteDocumentId))
     })
 
@@ -184,20 +196,7 @@ function toDetail(parsed: DteData): DteXmlDetail {
     taxAmount: parsed.taxAmount,
     totalAmount: parsed.totalAmount,
     items: parsed.items,
-  }
-}
-
-async function readCachedXml(xmlPath: string): Promise<DteData | null> {
-  const absolutePath = resolveDteFile(xmlPath)
-  if (!absolutePath) return null
-  try {
-    const stat = await fs.stat(absolutePath)
-    if ((typeof stat.isFile === "function" && !stat.isFile()) || stat.size > MAX_DTE_XML_BYTES) return null
-    const buffer = await readBuffer(absolutePath)
-    if (buffer.length > MAX_DTE_XML_BYTES) return null
-    return parseDteXml(decodeXmlBuffer(buffer))
-  } catch {
-    return null
+    referencedOrderCodes: parsed.referencedOrderCodes,
   }
 }
 

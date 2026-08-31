@@ -1,11 +1,11 @@
 import type { ReactNode } from "react"
 import Link from "next/link"
-import { ArrowDown, ArrowUp, Info } from "@phosphor-icons/react/dist/ssr"
+import { ArrowDown, ArrowUp } from "@phosphor-icons/react/dist/ssr"
 import { cn } from "@/lib/utils"
 import { Card, CardContent } from "@/components/ui/card"
-import { Tooltip } from "@/components/ui/tooltip"
 import { MiniSparkline } from "@/components/ui/mini-sparkline"
 import { CHART_COLORS } from "@/lib/chart-palette"
+import { KpiCardGlossary } from "./kpi-card-glossary"
 
 /**
  * Tarjeta de KPI del producto.
@@ -65,13 +65,7 @@ export function KpiCard({
                 {icon}
               </span>
             )}
-            {glossary && (
-              <Tooltip content={glossary} side="top">
-                <span className="inline-flex cursor-help items-center text-[var(--color-text-subtle)] hover:text-[var(--color-text)]">
-                  <Info size={14} />
-                </span>
-              </Tooltip>
-            )}
+            {glossary && <KpiCardGlossary content={glossary} />}
           </div>
         </div>
 

@@ -22,6 +22,7 @@ export interface AttributeRow {
   options: string
   sortOrder: number
   sizeFamily?: string
+  drivesQuantity?: boolean
 }
 
 export interface SupplierRow {

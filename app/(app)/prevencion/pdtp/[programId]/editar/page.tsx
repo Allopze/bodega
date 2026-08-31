@@ -8,6 +8,7 @@ import {
   getPdtpProgram,
   listPdtpProgramSheets,
   listPdtpProgramActivities,
+  listPdtpProgramScheduleForYear,
   listProgramActiveChecklists,
   listPdtpResponsibleCatalog,
   listPdtpProgramWorksites,
@@ -17,7 +18,7 @@ import {
   comparePdtpProgramToSourceBase,
 } from "@/lib/services/prevention-pdtp"
 import { db } from "@/db"
-import { pdtpActivitySchedule, worksites } from "@/db/schema"
+import { worksites } from "@/db/schema"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
@@ -63,9 +64,7 @@ export default async function PdtpEditProgramPage({ params, searchParams }: Prop
   const activityIds = activities.map((activity) => activity.id)
   const [activityWorksiteExclusions, schedule, activityWorksiteParams, activityScheduleOverrides] = await Promise.all([
     listPdtpActivityWorksiteExclusions(programId),
-    activityIds.length > 0
-      ? db.select().from(pdtpActivitySchedule).where(inArray(pdtpActivitySchedule.activityId, activityIds))
-      : Promise.resolve([]),
+    listPdtpProgramScheduleForYear(activityIds, program.year),
     listPdtpActivityWorksiteParams(activityIds),
     loadPdtpOverrides(activityIds, program.year),
   ])

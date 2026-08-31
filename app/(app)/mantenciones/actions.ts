@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import { promises as fs } from "node:fs"
@@ -59,7 +61,7 @@ export async function createMaintenanceRecordAction(
     return { ok: true, message: "Mantención registrada", data: { id } }
   } catch (error) {
     logger.error("createMaintenanceRecordAction", { error })
-    return { ok: false, message: error instanceof Error ? error.message : "Error al registrar mantención" }
+    return { ok: false, message: safeActionMessage(error, "Error al registrar mantención") }
   }
 }
 
@@ -108,7 +110,7 @@ export async function updateMaintenanceRecordAction(
     return { ok: true, message: "Mantención actualizada" }
   } catch (error) {
     logger.error("updateMaintenanceRecordAction", { error })
-    return { ok: false, message: error instanceof Error ? error.message : "Error al actualizar mantención" }
+    return { ok: false, message: safeActionMessage(error, "Error al actualizar mantención") }
   }
 }
 
@@ -129,7 +131,7 @@ export async function transitionMaintenanceRecordAction(rawInput: unknown): Prom
     return { ok: true, message: "Estado de mantención actualizado", data: result }
   } catch (error) {
     logger.error("transitionMaintenanceRecordAction", { error })
-    return { ok: false, message: error instanceof Error ? error.message : "Error al cambiar el estado de la mantención" }
+    return { ok: false, message: safeActionMessage(error, "Error al cambiar el estado de la mantención") }
   }
 }
 
@@ -167,7 +169,7 @@ export async function saveMaintenancePlanAction(_prev: ActionState, formData: Fo
     return { ok: true, message: "Plan preventivo guardado", data: { id } }
   } catch (error) {
     logger.error("saveMaintenancePlanAction", { error })
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo guardar el plan" }
+    return { ok: false, message: safeActionMessage(error, "No se pudo guardar el plan") }
   }
 }
 
@@ -180,7 +182,7 @@ export async function setMaintenancePlanActiveAction(input: { id: string; active
     revalidatePath("/mantenciones/planes")
     return { ok: true, message: input.active ? "Plan activado" : "Plan pausado" }
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo actualizar el plan" }
+    return { ok: false, message: safeActionMessage(error, "No se pudo actualizar el plan") }
   }
 }
 
@@ -194,7 +196,7 @@ export async function materializeMaintenancePlansAction(): Promise<ActionState> 
     revalidatePath("/mantenciones/planes")
     return { ok: true, message: result.created === 1 ? "Se programó 1 orden" : `Se programaron ${result.created} órdenes`, data: result }
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudieron materializar los planes" }
+    return { ok: false, message: safeActionMessage(error, "No se pudieron materializar los planes") }
   }
 }
 
@@ -208,7 +210,7 @@ export async function addMaintenanceTaskAction(_prev: ActionState, formData: For
     await addMaintenanceTask(session, parsed.data)
     revalidatePath(`/mantenciones/${parsed.data.maintenanceId}`)
     return { ok: true, message: "Tarea agregada" }
-  } catch (error) { return { ok: false, message: error instanceof Error ? error.message : "No se pudo agregar la tarea" } }
+  } catch (error) { return { ok: false, message: safeActionMessage(error, "No se pudo agregar la tarea") } }
 }
 
 export async function setMaintenanceTaskStatusAction(input: { taskId: string; maintenanceId: string; completed: boolean }): Promise<ActionState> {
@@ -219,7 +221,7 @@ export async function setMaintenanceTaskStatusAction(input: { taskId: string; ma
     await setMaintenanceTaskStatus(session, input.taskId, input.completed)
     revalidatePath(`/mantenciones/${input.maintenanceId}`)
     return { ok: true, message: input.completed ? "Tarea completada" : "Tarea reabierta" }
-  } catch (error) { return { ok: false, message: error instanceof Error ? error.message : "No se pudo actualizar la tarea" } }
+  } catch (error) { return { ok: false, message: safeActionMessage(error, "No se pudo actualizar la tarea") } }
 }
 
 export async function addMaintenancePartAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -239,7 +241,7 @@ export async function addMaintenancePartAction(_prev: ActionState, formData: For
     await addMaintenancePart(session, parsed.data)
     revalidatePath(`/mantenciones/${parsed.data.maintenanceId}`)
     return { ok: true, message: "Repuesto agregado" }
-  } catch (error) { return { ok: false, message: error instanceof Error ? error.message : "No se pudo agregar el repuesto" } }
+  } catch (error) { return { ok: false, message: safeActionMessage(error, "No se pudo agregar el repuesto") } }
 }
 
 export async function uploadMaintenanceDocumentAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -267,7 +269,7 @@ export async function uploadMaintenanceDocumentAction(_prev: ActionState, formDa
   } catch (error) {
     await fs.unlink(absolutePath).catch(() => undefined)
     logger.error("uploadMaintenanceDocumentAction", { error })
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo adjuntar el documento" }
+    return { ok: false, message: safeActionMessage(error, "No se pudo adjuntar el documento") }
   }
 }
 
@@ -281,7 +283,7 @@ export async function addMaintenanceLaborAction(_prev: ActionState, formData: Fo
     await addMaintenanceLabor(session, parsed.data)
     revalidatePath(`/mantenciones/${parsed.data.maintenanceId}`)
     return { ok: true, message: "Mano de obra agregada" }
-  } catch (error) { return { ok: false, message: error instanceof Error ? error.message : "No se pudo agregar la mano de obra" } }
+  } catch (error) { return { ok: false, message: safeActionMessage(error, "No se pudo agregar la mano de obra") } }
 }
 
 export async function decideMaintenanceCostApprovalAction(input: unknown): Promise<ActionState> {
@@ -294,7 +296,7 @@ export async function decideMaintenanceCostApprovalAction(input: unknown): Promi
     const result = await decideMaintenanceCostApproval(session, parsed.data)
     revalidatePath(`/mantenciones/${parsed.data.maintenanceId}`)
     return { ok: true, message: "Estado de aprobación actualizado", data: result }
-  } catch (error) { return { ok: false, message: error instanceof Error ? error.message : "No se pudo actualizar la aprobación" } }
+  } catch (error) { return { ok: false, message: safeActionMessage(error, "No se pudo actualizar la aprobación") } }
 }
 
 export async function saveMaintenanceDocumentPolicyAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -307,7 +309,7 @@ export async function saveMaintenanceDocumentPolicyAction(_prev: ActionState, fo
     await saveMaintenanceDocumentPolicy(session, parsed.data)
     revalidatePath("/mantenciones/politicas-documentales")
     return { ok: true, message: "Política documental guardada" }
-  } catch (error) { return { ok: false, message: error instanceof Error ? error.message : "No se pudo guardar la política" } }
+  } catch (error) { return { ok: false, message: safeActionMessage(error, "No se pudo guardar la política") } }
 }
 
 export async function setMaintenanceDocumentPolicyActiveAction(input: { id: string; active: boolean }): Promise<ActionState> {
@@ -318,7 +320,7 @@ export async function setMaintenanceDocumentPolicyActiveAction(input: { id: stri
     await setMaintenanceDocumentPolicyActive(session, input.id, input.active)
     revalidatePath("/mantenciones/politicas-documentales")
     return { ok: true, message: input.active ? "Política activada" : "Política pausada" }
-  } catch (error) { return { ok: false, message: error instanceof Error ? error.message : "No se pudo actualizar la política" } }
+  } catch (error) { return { ok: false, message: safeActionMessage(error, "No se pudo actualizar la política") } }
 }
 
 export async function exportMaintenanceXlsxAction(filters: {

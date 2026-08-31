@@ -130,6 +130,62 @@ test("admin: crear producto con categoría, verificarlo en catálogo", async ({ 
   await expect(page.getByRole("row", { name: new RegExp(name) })).toBeVisible({ timeout: 15_000 })
 })
 
+/**
+ * El asistente de 3 pasos y el camino de lote no tenían ninguna cobertura: la
+ * prueba de "crear producto" de arriba envía el formulario con
+ * `form.requestSubmit()` desde el paso 1, que es un camino que un usuario real
+ * no puede tomar (no hay botón de envío hasta el paso 3).
+ */
+test("admin: asistente de variantes crea un producto por cada talla", async ({ page }) => {
+  await login(page)
+  const familyName = `Casco ${uniqueId("E2E")}`
+
+  await page.goto("/admin/productos")
+  await expect(page.getByRole("heading", { name: "Catálogo" })).toBeVisible()
+
+  await page.getByRole("button", { name: /nuevo producto/i }).click()
+  const dialog = page.getByRole("dialog", { name: "Nuevo producto" })
+
+  // Paso 1 — información general
+  await dialog.getByRole("textbox", { name: "Nombre" }).fill(familyName)
+  await selectRadixById(page, "p-cat", /Categoría E2E/)
+  await dialog.getByRole("button", { name: /Siguiente/ }).click()
+
+  // Paso 2 — atributos y generación de variantes
+  await dialog.getByRole("button", { name: /^\+ Talla$/ }).click()
+  await dialog.getByRole("button", { name: /^✓? ?M$/ }).first().click()
+  await dialog.getByRole("button", { name: /^✓? ?L$/ }).first().click()
+  await dialog.getByRole("button", { name: /Generar variantes \(2 combinaciones\)/ }).click()
+
+  // La vista previa confirma las dos variantes antes de crear.
+  await expect(dialog.getByText(`${familyName} M`)).toBeVisible()
+  await expect(dialog.getByText(`${familyName} L`)).toBeVisible()
+
+  await dialog.getByRole("button", { name: /Siguiente/ }).click()
+
+  // Paso 3 — proveedor (opcional) y creación del lote.
+  // `nextStep` regenera las variantes con un `setTimeout(0)`, así que el pie
+  // del asistente se vuelve a montar justo después de cambiar de paso: hay que
+  // esperar a que el paso 3 asiente o el click cae sobre un botón que se
+  // desmonta y Playwright reintenta para siempre.
+  // Llegar al paso 3 no debe crear nada por sí solo: el asistente enviaba el
+  // formulario en el propio click de «Siguiente» (React le cambiaba el `type`
+  // al mismo nodo), así que los productos nacían sin pasar por acá y el paso de
+  // proveedor era inalcanzable.
+  await expect(dialog.getByText("Variantes a crear:")).toBeVisible()
+  await expect(dialog.getByRole("button", { name: /Crear 2 productos/ })).toBeVisible()
+
+  await dialog.getByRole("button", { name: /Crear 2 productos/ }).click()
+
+  // Las dos variantes se agrupan en UNA fila de familia con su selector de
+  // variante, en vez de aparecer sueltas. La categoría E2E no es EPP, así que
+  // esto además cubre que el lote crea familia también para productos que no
+  // son EPP — sin eso cada talla se listaba como un producto aparte.
+  const familyRow = page.getByRole("row", { name: new RegExp(familyName) })
+  await expect(familyRow).toHaveCount(1, { timeout: 15_000 })
+  await expect(familyRow.getByRole("combobox", { name: /Características/ })).toBeVisible()
+})
+
 test("admin: crear usuario con rol prevencionista faena, verificar login", async ({ page }) => {
   await login(page)
   const email = `${uniqueId("user")}@e2e.chome.cl`

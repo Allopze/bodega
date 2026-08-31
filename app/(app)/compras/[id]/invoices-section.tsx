@@ -51,6 +51,12 @@ export interface DteCandidate {
    * siempre — pero es una señal, no un filtro: la lista igual muestra los demás.
    */
   amountMatches: boolean
+  /**
+   * El XML del proveedor cita el código de esta OC en `<Referencia>`. Es la
+   * evidencia más fuerte que puede traer un candidato: la escribió el proveedor
+   * mirando nuestra orden, no la infirió la plataforma.
+   */
+  referencesOrder: boolean
   confidence: DteCandidateConfidence
   enrichmentStatus: "pending" | "ready" | "failed"
   lineEnrichedAt: string | null
@@ -1261,6 +1267,11 @@ function DteCandidateRow({
           <span className="text-(--color-text-subtle)">
             {" · "}{formatDate(doc.fechaEmision)}{" · "}{formatCLP(doc.montoTotal)}
           </span>
+          {/* Va antes que el monto: nombrar lo que el documento DICE pesa más
+              que lo que dedujimos comparando cifras. */}
+          {doc.referencesOrder && (
+            <Badge variant="success" className="ml-2">Cita esta OC</Badge>
+          )}
           {/* La marca va sobre el monto, que es lo que la distingue.
               Se nombra lo que se comparó en vez de decir "sugerido":
               el operador tiene que poder discutirla. */}

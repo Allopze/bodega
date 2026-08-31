@@ -59,11 +59,12 @@ function capaQuickFilterWhere(filter: CapaQuickFilter | undefined) {
 // antes de llamar a `createCapaActionWithClient` — mismo criterio que
 // `capaTransitionSchema` un poco más abajo.
 export const capaCreateSchema = z.object({
-  sourceType: z.enum(["pdtp", "sst_evaluation", "ppa", "incident", "risk", "legal_requirement", "training", "work_permit", "inspection", "cphs", "emergency", "change", "epp", "external_engagement", "manual"]),
+  sourceType: z.enum(["pdtp", "sst_evaluation", "ppa", "incident", "risk", "legal_requirement", "training", "work_permit", "inspection", "cphs", "emergency", "change", "epp", "external_engagement", "gps_onway", "manual"]),
   sourceId: z.string().min(1).max(200),
   sourceItemId: z.string().min(1).max(300).nullable().optional(),
   worksiteId: z.string().min(1),
   finding: z.string().trim().min(3).max(3000),
+  potentialDamageDescription: z.string().trim().max(3000).nullable().optional(),
   immediateMeasure: z.string().trim().max(3000).nullable().optional(),
   rootCause: z.string().trim().max(3000).nullable().optional(),
   actionDescription: z.string().trim().min(3).max(3000),
@@ -266,6 +267,7 @@ export async function createCapaActionWithClient(
     sourceItemId: data.sourceItemId ?? null,
     worksiteId: data.worksiteId,
     finding: data.finding,
+    potentialDamageDescription: data.potentialDamageDescription ?? null,
     immediateMeasure: data.immediateMeasure ?? null,
     rootCause: data.rootCause ?? null,
     actionDescription: data.actionDescription,

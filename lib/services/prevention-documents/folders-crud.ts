@@ -83,12 +83,14 @@ export async function archiveDocumentFolder(args: {
   const folder = await getFolderOrThrow(args.input.id, args.scope)
   // Archivar con contenido activo dejaba subcarpetas y documentos huérfanos e
   // inaccesibles desde el árbol (el breadcrumb lanza si un ancestro está archivado).
-  const [activeChild] = await db.select({ id: sstDocumentFolders.id }).from(sstDocumentFolders)
-    .where(and(eq(sstDocumentFolders.parentId, folder.id), isNull(sstDocumentFolders.archivedAt)))
-    .limit(1)
-  const [activeDoc] = await db.select({ id: sstDocuments.id }).from(sstDocuments)
-    .where(and(eq(sstDocuments.folderId, folder.id), ne(sstDocuments.status, "archivado")))
-    .limit(1)
+  const [[activeChild], [activeDoc]] = await Promise.all([
+    db.select({ id: sstDocumentFolders.id }).from(sstDocumentFolders)
+      .where(and(eq(sstDocumentFolders.parentId, folder.id), isNull(sstDocumentFolders.archivedAt)))
+      .limit(1),
+    db.select({ id: sstDocuments.id }).from(sstDocuments)
+      .where(and(eq(sstDocuments.folderId, folder.id), ne(sstDocuments.status, "archivado")))
+      .limit(1),
+  ])
   if (activeChild || activeDoc) {
     throw new Error("La carpeta tiene subcarpetas o documentos activos. Muévelos o archívalos antes de archivar la carpeta.")
   }

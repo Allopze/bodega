@@ -96,6 +96,11 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpExecutions)
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpPrograms)
+  await inMemoryDb.delete(schema.preventionEmergencyResourceAssignments)
+  await inMemoryDb.delete(schema.preventionEmergencyResourceEvents)
+  await inMemoryDb.delete(schema.preventionEmergencyResourcePoints)
+  await inMemoryDb.delete(schema.preventionEmergencyResources)
+  await inMemoryDb.delete(schema.preventionEmergencyResourceTypes)
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
   await seedBaseFixtures()
@@ -148,6 +153,59 @@ describe("pdtp checklist templates", () => {
 })
 
 describe("pdtp execution checklist → plan de acción handoff", () => {
+  it("usa el extintor canónico, congela su etiqueta y siembra un snapshot editable", async () => {
+    const { getOrCreateExecutionChecklist, getChecklistResponses } = await import("@/lib/services/pdtp/execution-checklists")
+    await seedChecklistTemplate("act-1", "Inspección de extintores", {
+      code: "ext", version: "01", revisionDate: "2026-01-01", title: "Extintores", tipo: "nuevo",
+      legalFramework: [], applicableTo: "",
+      sections: [{
+        id: "inventario_extintor", title: "Inventario", countsForCompliance: false,
+        items: [
+          { id: "tipo_extintor", label: "Tipo", kind: "select", options: [{ value: "pqs", label: "PQS" }] },
+          { id: "peso_kg", label: "Peso", kind: "text" },
+          { id: "empresa_recarga", label: "Empresa", kind: "text" },
+          { id: "fecha_recarga", label: "Fecha", kind: "date" },
+        ],
+      }],
+      closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
+    })
+    await inMemoryDb.insert(schema.preventionEmergencyResourceTypes).values({
+      id: "ert-pqs-6", resourceClass: "extinguisher", agent: "PQS", capacity: 6,
+      capacityUnit: "kg", canonicalName: "Extintor PQS 6 kg",
+    })
+    await inMemoryDb.insert(schema.preventionEmergencyResources).values({
+      id: "er-1", worksiteId: "w1", assetCode: "EXT-001", typeId: "ert-pqs-6",
+      name: "Extintor EXT-001", kind: "Extintor", location: "Camioneta 01",
+      lastMaintenanceAt: "2026-02-15", status: "operational",
+    })
+
+    const instance = await getOrCreateExecutionChecklist("exec-1", "u1", {
+      subjectType: "extintor",
+      subjectId: "texto-cliente-ignorado",
+      subjectResourceId: "er-1",
+      subjectLabel: "etiqueta-cliente-ignorada",
+    })
+
+    expect(instance.subjectId).toBe("er-1")
+    expect(instance.subjectResourceId).toBe("er-1")
+    expect(instance.subjectLabel).toBe("EXT-001 · Camioneta 01")
+    const snapshot = await getChecklistResponses(instance.id)
+    expect(Object.fromEntries(snapshot.map((row) => [row.itemId, row.observacion]))).toMatchObject({
+      tipo_extintor: "pqs",
+      peso_kg: "6",
+      fecha_recarga: "2026-02-15",
+    })
+
+    await inMemoryDb.insert(schema.worksites).values({ id: "w2", name: "Faena B", code: "FB", isActive: true })
+    await inMemoryDb.insert(schema.preventionEmergencyResources).values({
+      id: "er-2", worksiteId: "w2", assetCode: "EXT-002", typeId: "ert-pqs-6",
+      name: "Extintor EXT-002", kind: "Extintor", location: "Bodega", status: "operational",
+    })
+    await expect(getOrCreateExecutionChecklist("exec-1", "u1", {
+      subjectType: "extintor", subjectResourceId: "er-2",
+    })).rejects.toThrow("no pertenece a la faena")
+  })
+
   it("submitExecutionChecklist completa el checklist y genera acciones para ítems no_cumple", async () => {
     const { getOrCreateExecutionChecklist, upsertChecklistResponses, getExecutionChecklist } = await import("@/lib/services/pdtp/execution-checklists")
     const { submitExecutionChecklist } = await import("@/lib/services/pdtp/action-plan")
@@ -398,13 +456,21 @@ describe("pdtp checklist multi-sujeto", () => {
       }],
       closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
     })
+    await inMemoryDb.insert(schema.preventionEmergencyResourceTypes).values({
+      id: "ert-multi", resourceClass: "extinguisher", agent: "PQS", capacity: 6,
+      capacityUnit: "kg", canonicalName: "Extintor PQS 6 kg",
+    })
+    await inMemoryDb.insert(schema.preventionEmergencyResources).values([
+      { id: "ext-7", worksiteId: "w1", assetCode: "EXT-007", typeId: "ert-multi", name: "Extintor 7", kind: "Extintor", location: "Bodega", status: "operational" },
+      { id: "ext-12", worksiteId: "w1", assetCode: "EXT-012", typeId: "ert-multi", name: "Extintor 12", kind: "Extintor", location: "Camioneta", status: "operational" },
+    ])
 
     // Dos sujetos distintos para la MISMA ejecución.
     const ext7 = await getOrCreateExecutionChecklist("exec-1", "u1", {
-      subjectType: "extintor", subjectId: "ext-7", subjectLabel: "Extintor",
+      subjectType: "extintor", subjectResourceId: "ext-7",
     })
     const ext12 = await getOrCreateExecutionChecklist("exec-1", "u1", {
-      subjectType: "extintor", subjectId: "ext-12", subjectLabel: "Extintor",
+      subjectType: "extintor", subjectResourceId: "ext-12",
     })
     expect(ext7.id).not.toBe(ext12.id)
     expect(ext7.subjectId).toBe("ext-7")
@@ -417,7 +483,7 @@ describe("pdtp checklist multi-sujeto", () => {
 
     // Idempotencia por sujeto: recuperar el mismo sujeto devuelve la misma instancia.
     const ext7Again = await getOrCreateExecutionChecklist("exec-1", "u1", {
-      subjectType: "extintor", subjectId: "ext-7", subjectLabel: "Extintor",
+      subjectType: "extintor", subjectResourceId: "ext-7",
     })
     expect(ext7Again.id).toBe(ext7.id)
 
@@ -433,8 +499,8 @@ describe("pdtp checklist multi-sujeto", () => {
     expect(items).toHaveLength(2)
     const hallazgos = items.map((i) => i.hallazgo).sort()
     expect(hallazgos).toEqual([
-      "[Extintor] Aguja en rojo",
-      "[Extintor] Sello roto",
+      "[EXT-007 · Bodega] Aguja en rojo",
+      "[EXT-012 · Camioneta] Sello roto",
     ])
     const sourceRefs = (await inMemoryDb.select().from(schema.preventionCapaActions))
       .map((row) => row.sourceRef as { checklistInstanceId?: string })

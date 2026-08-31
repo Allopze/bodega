@@ -8,6 +8,7 @@ import {
   deriveFindings,
   effectiveRequiredItems,
   fieldKindAcceptsPartial,
+  inspectionResultOptionsFor,
   resultBadgeVariant,
   summarizeCompliance,
   validateAnswerRow,
@@ -91,6 +92,31 @@ describe("cálculo de cumplimiento", () => {
     const items = [item(), item({ itemId: "i2" }), item({ itemId: "i3" })]
     const answers = [answer(), answer({ itemId: "i2" }), answer({ itemId: "i3", result: "non_conforming" })]
     expect(summarizeCompliance(items, answers).compliancePercent).toBe(67)
+  })
+
+  it("separa el resultado oficial de 22 del normalizado que excluye N/A", () => {
+    const items = Array.from({ length: 22 }, (_, index) => item({ itemId: `i${index}` }))
+    const answers = [
+      ...Array.from({ length: 20 }, (_, index) => answer({ itemId: `i${index}` })),
+      answer({ itemId: "i20", result: "not_applicable", comment: "No corresponde." }),
+      answer({ itemId: "i21", result: "non_conforming", comment: "Desviación." }),
+    ]
+    const summary = summarizeCompliance(items, answers, {
+      official: { mode: "fixed_conforming_denominator", denominator: 22 },
+      normalized: { mode: "weighted_applicable", partialWeightBasisPoints: 5_000 },
+    })
+    expect(summary.officialComplianceBasisPoints).toBe(9_091)
+    expect(summary.normalizedComplianceBasisPoints).toBe(9_524)
+    expect(summary.compliancePercent).toBe(95)
+  })
+
+  it("mantiene nulo el oficial cuando el documento no declara fórmula", () => {
+    const summary = summarizeCompliance([item()], [answer()], {
+      official: { mode: "none" },
+      normalized: { mode: "weighted_applicable", partialWeightBasisPoints: 5_000 },
+    })
+    expect(summary.officialComplianceBasisPoints).toBeNull()
+    expect(summary.normalizedComplianceBasisPoints).toBe(10_000)
   })
 
   describe("'partial' (Regular, escala B/R/M) — H-04, AUDITORIA_BUGS_2026-08-05.md", () => {
@@ -407,9 +433,9 @@ describe("validación de una respuesta contra su ítem", () => {
     expect(validateAnswerRow(item(), answer({ result: "not_applicable", comment: "   " }))).toMatch(/motivo/)
   })
 
-  it("rechaza 'Regular' en un ítem que no es de escala B/R/M", () => {
+  it("rechaza 'Regular' en un ítem que no es de escala B/R/M, nombrando lo que sí admite", () => {
     const problem = validateAnswerRow(item({ kind: "cumple_nocumple_na_obs" }), answer({ result: "partial", comment: "Desgaste." }))
-    expect(problem).toMatch(/no admite la respuesta "Regular"/)
+    expect(problem).toMatch(/se responde Cumple, No cumple, No aplica/)
   })
 
   it("acepta 'Regular' con justificación en un ítem B/R/M", () => {
@@ -428,6 +454,93 @@ describe("validación de una respuesta contra su ítem", () => {
 
   it("la escala manda sobre la justificación: un ítem que no admite Regular se rechaza por eso, no por el comentario", () => {
     expect(validateAnswerRow(item({ kind: "cumple_nocumple_na_obs" }), answer({ result: "partial" })))
-      .toMatch(/no admite la respuesta "Regular"/)
+      .toMatch(/se responde/)
+  })
+})
+
+/**
+ * INS-01 / INS-07 (auditoría 2026-08-27): la pantalla ofrecía "No aplica" en
+ * todos los ítems sin mirar la escala, y el validador no lo rechazaba. Como un
+ * N/A sale del denominador, marcarlo en un Anexo 13 —B/R/M **sin escape**—
+ * subía el cumplimiento de una inspección que el papel obliga a juzgar entera.
+ */
+describe("la escala del ítem gobierna qué puede responderse", () => {
+  const carros = item({ kind: "bueno_regular_malo_obs", label: "Frenos" })
+
+  it("el Anexo 13 (B/R/M sin escape) no admite 'No aplica'", () => {
+    expect(validateAnswerRow(carros, answer({ result: "not_applicable", comment: "no corresponde" })))
+      .toMatch(/se responde Bueno, Regular, Malo/)
+  })
+
+  it("y por eso ya no se puede convertir un incumplimiento en 100%", () => {
+    const items = [carros, { ...carros, itemId: "i2", label: "Luces" }]
+    const conNoCumple = summarizeCompliance(items, [
+      answer({ result: "non_conforming", comment: "Fuga en el circuito." }),
+      answer({ itemId: "i2", result: "conforming" }),
+    ])
+    expect(conNoCumple.compliancePercent).toBe(50)
+    // El camino que inflaba: el mismo ítem marcado "No aplica" salía del
+    // denominador y dejaba la inspección en 100%. Ahora ni siquiera se guarda.
+    expect(validateAnswerRow(carros, answer({ result: "not_applicable", comment: "no corresponde" }))).not.toBeNull()
+  })
+
+  it("el Anexo 3 (B/R/M con N/A) sí lo admite", () => {
+    expect(validateAnswerRow(
+      item({ kind: "bueno_regular_malo_na_obs" }),
+      answer({ result: "not_applicable", comment: "El trabajador no usa este EPP." }),
+    )).toBeNull()
+  })
+
+  it("las opciones llevan la etiqueta del papel, no el vocabulario del motor", () => {
+    expect(inspectionResultOptionsFor("bueno_regular_malo_obs").map((o) => o.label))
+      .toEqual(["Bueno", "Regular", "Malo"])
+    expect(inspectionResultOptionsFor("entregado_obs").map((o) => o.label))
+      .toEqual(["Entregado", "No entregado"])
+  })
+
+  it("un ítem sin kind conserva el conjunto histórico: los snapshots legados siguen ejecutables", () => {
+    expect(inspectionResultOptionsFor(undefined).map((o) => o.result))
+      .toEqual(["conforming", "non_conforming", "not_applicable"])
+    expect(validateAnswerRow(item({ kind: undefined }), answer({ result: "not_applicable", comment: "no corresponde" })))
+      .toBeNull()
+  })
+
+  it("conserva \"No aplica\": la escala decide qué se ofrece, no cómo se llama lo que ya tenía nombre", () => {
+    // El catálogo SST rotula el escape "N/A" (botones estrechos); esta pantalla
+    // siempre dijo "No aplica", igual que la bandeja, el acta y el Excel.
+    expect(inspectionResultOptionsFor("cumple_nocumple_na_obs").map((o) => o.label))
+      .toEqual(["Cumple", "No cumple", "No aplica"])
+  })
+
+  it("un ítem que no puntúa no ofrece opciones de conformidad", () => {
+    expect(inspectionResultOptionsFor("textarea")).toEqual([])
+  })
+})
+
+describe("'not_present' (NT del Anexo 14)", () => {
+  const contenedor = item({ kind: "bueno_regular_malo_na_nt_obs", label: "Extintor del contenedor" })
+
+  it("sólo lo admite la escala que lo declara", () => {
+    expect(validateAnswerRow(contenedor, answer({ result: "not_present" }))).toBeNull()
+    expect(validateAnswerRow(item({ kind: "bueno_regular_malo_obs" }), answer({ result: "not_present" })))
+      .toMatch(/se responde/)
+  })
+
+  it("no exige motivo: es una constatación, no un criterio", () => {
+    expect(validateAnswerRow(contenedor, answer({ result: "not_present" }))).toBeNull()
+  })
+
+  it("sale del denominador igual que 'No aplica', sin castigar el cumplimiento", () => {
+    const items = [contenedor, { ...contenedor, itemId: "i2", label: "Puerta" }]
+    const summary = summarizeCompliance(items, [
+      answer({ result: "not_present" }),
+      answer({ itemId: "i2", result: "conforming" }),
+    ])
+    expect(summary.compliancePercent).toBe(100)
+    expect(summary.notApplicable).toBe(1)
+  })
+
+  it("no se pinta como conformidad", () => {
+    expect(resultBadgeVariant("not_present")).toBe("outline")
   })
 })

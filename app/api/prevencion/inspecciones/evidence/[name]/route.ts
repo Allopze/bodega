@@ -22,6 +22,8 @@ import { db } from "@/db"
 import {
   preventionInspectionAnswerEvidence,
   preventionInspectionAnswers,
+  preventionInspectionFindingEvidence,
+  preventionInspectionFindings,
   preventionInspectionRuns,
 } from "@/db/schema"
 import { logger } from "@/lib/logger"
@@ -53,7 +55,7 @@ export async function GET(
   try {
     // Comparación exacta por `path`, no `LIKE`: el nombre es un nanoid con
     // extensión y la ruta completa está almacenada tal cual.
-    const [row] = await db.select({ worksiteId: preventionInspectionRuns.worksiteId })
+    const [answerRow] = await db.select({ worksiteId: preventionInspectionRuns.worksiteId })
       .from(preventionInspectionAnswerEvidence)
       .innerJoin(preventionInspectionAnswers, eq(preventionInspectionAnswers.id, preventionInspectionAnswerEvidence.answerId))
       .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, preventionInspectionAnswers.runId))
@@ -65,7 +67,19 @@ export async function GET(
           ))
       .limit(1)
 
-    if (!row) {
+    const [findingRow] = answerRow ? [] : await db.select({ worksiteId: preventionInspectionRuns.worksiteId })
+      .from(preventionInspectionFindingEvidence)
+      .innerJoin(preventionInspectionFindings, eq(preventionInspectionFindings.id, preventionInspectionFindingEvidence.findingId))
+      .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, preventionInspectionFindings.runId))
+      .where(scope.mode === "all"
+        ? eq(preventionInspectionFindingEvidence.path, relativePath)
+        : and(
+            eq(preventionInspectionFindingEvidence.path, relativePath),
+            inArray(preventionInspectionRuns.worksiteId, scope.ids),
+          ))
+      .limit(1)
+
+    if (!answerRow && !findingRow) {
       return NextResponse.json({ error: "Evidencia no encontrada" }, { status: 404 })
     }
 

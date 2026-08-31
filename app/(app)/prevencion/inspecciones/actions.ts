@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { guardPermission } from "@/lib/auth/can"
@@ -16,12 +18,15 @@ import {
   createInspectionRun,
   importInspectionTemplate,
   registerDeviation,
+  registerInspectionPreventiveAction,
   remindInspectionReview,
   remindTemplateApproval,
   removeDeviation,
   retireInspectionTemplate,
   reviewInspectionRun,
+  rollbackInspectionTemplate,
   saveInspectionAnswers,
+  saveInspectionParticipants,
   setInspectionTemplatePdtpActivities,
   stopVehicleForFinding,
   transitionInspectionRun,
@@ -66,7 +71,7 @@ async function run(
     revalidatePath(`${BASE}/[runId]`, "page")
     return { ok: true, data: extract?.(result) }
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo completar la operación." }
+    return { ok: false, message: safeActionMessage(error, "No se pudo completar la operación.") }
   }
 }
 
@@ -120,6 +125,12 @@ export async function retireInspectionTemplateAction(input: unknown): Promise<Ac
   return run(accessFromSession(guard.session), (access) => retireInspectionTemplate(input, access))
 }
 
+export async function rollbackInspectionTemplateAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:inspections:approve")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => rollbackInspectionTemplate(input, access))
+}
+
 export async function createInspectionProgramAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:manage")
   if (guard.error) return guard.error
@@ -164,13 +175,30 @@ export async function runProgramNowAction(input: unknown): Promise<ActionState> 
 export async function createInspectionRunAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:execute")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => createInspectionRun(input, access))
+  // Devuelve el id para poder abrir la inspección recién creada, igual que
+  // `runProgramNowAction`: crear y quedarse en la bandeja obligaba a buscar la
+  // fila a mano, y crear una inspección es para ejecutarla ahora (INS-09).
+  return run(
+    accessFromSession(guard.session),
+    (access) => createInspectionRun(input, access),
+    (result) => {
+      const created = (result as { run?: { id?: unknown; code?: unknown } } | null)?.run
+      if (!created || typeof created.id !== "string") return undefined
+      return { runId: created.id, runCode: typeof created.code === "string" ? created.code : undefined }
+    },
+  )
 }
 
 export async function saveInspectionAnswersAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:execute")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => saveInspectionAnswers(input, access), versionAndAnswerRefsOf)
+}
+
+export async function saveInspectionParticipantsAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:inspections:execute")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => saveInspectionParticipants(input, access))
 }
 
 export async function completeInspectionRunAction(input: unknown): Promise<ActionState> {
@@ -288,6 +316,12 @@ export async function registerDeviationAction(input: unknown): Promise<ActionSta
   const guard = await guardPermission("prevention:inspections:execute")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => registerDeviation(input, access))
+}
+
+export async function registerInspectionPreventiveActionAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:inspections:execute")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => registerInspectionPreventiveAction(input, access))
 }
 
 export async function removeDeviationAction(input: unknown): Promise<ActionState> {

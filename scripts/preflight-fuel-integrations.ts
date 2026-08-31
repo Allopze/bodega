@@ -11,6 +11,14 @@ export interface FuelIntegrationsPreflight {
   batchDetailMismatches: number
   unmatchedReconciliationLinks: number
   dteReconciliationMismatches: number
+  /** Dimensiona el rescate del detalle por transacción, antes de escribir nada. */
+  detailTransactions: number
+  detailWithoutOdometer: number
+  detailDuplicateKeys: number
+  detailPlatesWithoutVehicle: number
+  meterReadingsRegressive: number
+  meterReadingsNoChange: number
+  providerPerformanceZero: number
 }
 
 /**
@@ -30,6 +38,13 @@ export async function readFuelIntegrationsPreflight(sql: postgres.Sql): Promise<
     batch_detail_mismatches: number
     unmatched_reconciliation_links: number
     dte_reconciliation_mismatches: number
+    detail_transactions: number
+    detail_without_odometer: number
+    detail_duplicate_keys: number
+    detail_plates_without_vehicle: number
+    meter_readings_regressive: number
+    meter_readings_no_change: number
+    provider_performance_zero: number
   }[]>`
     WITH split_tct_identities AS (
       -- El informe TCT es un agregado mensual POR PATENTE, así que la misma
@@ -72,6 +87,47 @@ export async function readFuelIntegrationsPreflight(sql: postgres.Sql): Promise<
          OR ABS(COALESCE(SUM(r.cantidad_unidad), 0) - b.total_cantidad) > 0.0001
          OR ABS(COALESCE(SUM(r.monto), 0) - b.total_monto) > 0.01
     ),
+    -- El detalle por transacción ya está guardado en raw_row->'detalle': estas
+    -- CTE lo miden SIN escribir nada, para dimensionar el rescate y saber cuánto
+    -- del histórico va a quedar fuera por patente sin vehículo.
+    provider_detail AS (
+      SELECT r.id AS record_id,
+             r.vehicle_id,
+             r.fuente,
+             regexp_replace(upper(trim(d->>'Patente')), '[^A-Z0-9]', '', 'g') AS plate_key,
+             COALESCE(NULLIF(d->>'Guía de Despacho', ''), d->>'transactionId') AS source_ref,
+             NULLIF(COALESCE(d->>'Odómetro (Kms.)', d->>'vehicleOdometer'), '')::numeric AS odometer,
+             -- Fecha Y hora: Copec las entrega en columnas separadas y ordenar
+             -- sólo por fecha desempata al azar las cargas del mismo día, que es
+             -- justo donde aparecen los pares regresivos. Sin la hora el conteo
+             -- no coincide con el que produce el detector.
+             COALESCE(d->>'Fecha Transacción', d->>'transactionDate') || COALESCE(d->>'Hora Transacción', '') AS occurred_on,
+             NULLIF(d->>'Rendimiento (Kms. por Litro)', '')::numeric AS provider_performance
+      FROM fuel_consumption_records r,
+           LATERAL jsonb_array_elements(COALESCE(r.raw_row->'detalle', '[]'::jsonb)) d
+    ),
+    detail_series AS (
+      -- Particionado por equipo Y proveedor, igual que el detector: el odómetro
+      -- que reporta cada portal arrastra su propio desfase.
+      SELECT plate_key, odometer,
+             LAG(odometer) OVER (PARTITION BY plate_key, fuente ORDER BY occurred_on) AS previous_odometer
+      FROM provider_detail
+      WHERE odometer IS NOT NULL AND odometer > 0
+    ),
+    detail_duplicate_keys AS (
+      SELECT source_ref FROM provider_detail
+      WHERE source_ref IS NOT NULL
+      GROUP BY source_ref HAVING COUNT(*) > 1
+    ),
+    detail_plates_without_vehicle AS (
+      SELECT DISTINCT d.plate_key
+      FROM provider_detail d
+      WHERE d.vehicle_id IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM fuel_vehicles v
+          WHERE regexp_replace(upper(trim(v.plate)), '[^A-Z0-9]', '', 'g') = d.plate_key
+        )
+    ),
     dte_reconciliation_mismatches AS (
       SELECT d.id
       FROM dte_documents d
@@ -93,7 +149,14 @@ export async function readFuelIntegrationsPreflight(sql: postgres.Sql): Promise<
       (SELECT COUNT(*)::int FROM projection_plate_duplicates) AS projection_plate_duplicates,
       (SELECT COUNT(*)::int FROM batch_detail_mismatches) AS batch_detail_mismatches,
       (SELECT COUNT(*)::int FROM fuel_reconciliation_links WHERE status IN ('unmatched', 'ambiguous')) AS unmatched_reconciliation_links,
-      (SELECT COUNT(*)::int FROM dte_reconciliation_mismatches) AS dte_reconciliation_mismatches
+      (SELECT COUNT(*)::int FROM dte_reconciliation_mismatches) AS dte_reconciliation_mismatches,
+      (SELECT COUNT(*)::int FROM provider_detail) AS detail_transactions,
+      (SELECT COUNT(*)::int FROM provider_detail WHERE odometer IS NULL OR odometer <= 0) AS detail_without_odometer,
+      (SELECT COUNT(*)::int FROM detail_duplicate_keys) AS detail_duplicate_keys,
+      (SELECT COUNT(*)::int FROM detail_plates_without_vehicle) AS detail_plates_without_vehicle,
+      (SELECT COUNT(*)::int FROM detail_series WHERE previous_odometer IS NOT NULL AND odometer < previous_odometer) AS meter_readings_regressive,
+      (SELECT COUNT(*)::int FROM detail_series WHERE previous_odometer IS NOT NULL AND odometer = previous_odometer) AS meter_readings_no_change,
+      (SELECT COUNT(*)::int FROM provider_detail WHERE provider_performance = 0) AS provider_performance_zero
   `)
 
   return {
@@ -107,6 +170,13 @@ export async function readFuelIntegrationsPreflight(sql: postgres.Sql): Promise<
     batchDetailMismatches: Number(report?.batch_detail_mismatches ?? 0),
     unmatchedReconciliationLinks: Number(report?.unmatched_reconciliation_links ?? 0),
     dteReconciliationMismatches: Number(report?.dte_reconciliation_mismatches ?? 0),
+    detailTransactions: Number(report?.detail_transactions ?? 0),
+    detailWithoutOdometer: Number(report?.detail_without_odometer ?? 0),
+    detailDuplicateKeys: Number(report?.detail_duplicate_keys ?? 0),
+    detailPlatesWithoutVehicle: Number(report?.detail_plates_without_vehicle ?? 0),
+    meterReadingsRegressive: Number(report?.meter_readings_regressive ?? 0),
+    meterReadingsNoChange: Number(report?.meter_readings_no_change ?? 0),
+    providerPerformanceZero: Number(report?.provider_performance_zero ?? 0),
   }
 }
 
@@ -121,4 +191,15 @@ async function main() {
   }
 }
 
-if (process.argv[1]?.includes("preflight-fuel-integrations")) await main()
+// Sin `await` de nivel superior: el runner transpila a CJS y ahí el top-level
+// await es un error de transformación, así que el script fallaba antes de abrir
+// la conexión. El guard sigue permitiendo importar el módulo desde el test.
+if (process.argv[1]?.includes("preflight-fuel-integrations")) {
+  main().then(
+    () => process.exit(0),
+    (error) => {
+      console.error(error instanceof Error ? error.message : error)
+      process.exit(1)
+    },
+  )
+}

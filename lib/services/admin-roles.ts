@@ -41,10 +41,10 @@ function toSlug(input: string): string {
 
 /** Load every persisted role with its permission ids. */
 export async function listRolesWithPermissions(): Promise<RoleWithPermissions[]> {
-  const roleRows = await db.query.roles.findMany({
-    orderBy: (r, { asc }) => [asc(r.label)],
-  })
-  const grants = await db.select().from(rolePermissions)
+  const [roleRows, grants] = await Promise.all([
+    db.query.roles.findMany({ orderBy: (r, { asc }) => [asc(r.label)] }),
+    db.select().from(rolePermissions),
+  ])
   return roleRows.map((r) => ({
     id: r.id,
     name: r.name,

@@ -3,6 +3,7 @@
  */
 
 import { parseDteXml } from "./dte-parser"
+import { decodeXmlBuffer } from "@/lib/services/dte-portal/cached-xml"
 import { extractTextFromPdf } from "./pdf-text-extractor"
 import { parseInvoiceText, type ParsedInvoiceData } from "./invoice-text-parser"
 import { extractInvoiceTextOcr } from "./invoice-ocr"
@@ -222,17 +223,6 @@ function getDataWarnings(data: ParsedInvoiceData) {
   return warnings
 }
 
-function decodeXmlBuffer(buffer: Buffer): string {
-  // XML declarations are ASCII-compatible, so inspect them as latin1 first.
-  // Chilean DTEs frequently declare ISO-8859-1; UTF-8 decoding them corrupts
-  // supplier/product names before the parser sees them.
-  const declaration = buffer.toString("latin1", 0, Math.min(buffer.length, 1024))
-  const encoding = declaration.match(/<\?xml[^>]*encoding=["']([^"']+)["']/i)?.[1]?.toLowerCase()
-  if (encoding && /^(iso-8859-1|iso8859-1|latin-?1|windows-1252)$/i.test(encoding)) {
-    return buffer.toString("latin1")
-  }
-  return buffer.toString("utf8")
-}
 
 /**
  * Reúne las tres señales. `pdfTextConfidence` desapareció con esto: era el mismo

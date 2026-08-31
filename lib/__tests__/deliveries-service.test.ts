@@ -76,6 +76,17 @@ describe("registerWorkerEppDelivery — validation", () => {
     })).rejects.toThrow("mayor a 0")
   })
 
+  it("throws if the EPP quantity is fractional", async () => {
+    await expect(registerWorkerEppDelivery({
+      worksiteId: "ws-1",
+      workerId: "w-1",
+      requestItemId: "item-1",
+      quantity: 0.02,
+      deliveredBy: "u-1",
+    })).rejects.toThrow("cantidades enteras")
+    expect(mockTransaction).not.toHaveBeenCalled()
+  })
+
   it("throws if worksiteIds scope check fails", async () => {
     await expect(registerWorkerEppDelivery({
       worksiteId: "ws-other",

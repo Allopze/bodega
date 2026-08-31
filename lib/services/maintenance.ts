@@ -324,8 +324,8 @@ export async function getUsageMaintenanceAlerts(session: Session, worksiteId?: s
       // Desempate por createdAt: `maintenance_date` es sólo fecha (mismo
       // criterio que el resto de esta remediación).
       .orderBy(maintenanceRecords.vehicleId, desc(maintenanceRecords.maintenanceDate), desc(maintenanceRecords.createdAt)),
-    // Reset de medidor ya ACEPTADO (caso kilometraje_regresivo/horometro_regresivo
-    // resuelto o descartado) sobre una fila del log operacional: la fecha de esa
+    // Reset de medidor ya ACEPTADO (caso regresivo cerrado explícitamente como
+    // `reset_medidor`) sobre una fila del log operacional: la fecha de esa
     // fila es el punto donde la serie "reinicia" — comparar contra una mantención
     // anterior a ese punto ya no es válido y no debe seguir avisando (CO-023, ítem 7).
     db.select({
@@ -339,6 +339,10 @@ export async function getUsageMaintenanceAlerts(session: Session, worksiteId?: s
         eq(fuelAnomalyCases.referenceEntityType, "fuel_operation_record"),
         inArray(fuelAnomalyCases.ruleCode, ["kilometraje_regresivo", "horometro_regresivo"]),
         inArray(fuelAnomalyCases.status, ["resolved", "dismissed"]),
+        // Sólo el reset FÍSICO corta la serie. Un caso cerrado como
+        // "lectura corregida" es un error de tipeo ya arreglado: la mantención
+        // anterior sigue siendo comparable y el aviso debe seguir saliendo.
+        eq(fuelAnomalyCases.resolutionKind, "reset_medidor"),
         inArray(fuelOperationRecords.vehicleId, vehicleIds),
       ))
       .groupBy(fuelOperationRecords.vehicleId, fuelAnomalyCases.ruleCode),

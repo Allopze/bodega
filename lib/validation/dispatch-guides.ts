@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { unitOfMeasureSchema } from "./product-catalogs"
 
 /**
  * Guías de Despacho Internas (GDI) — validación de entrada.
@@ -29,7 +30,7 @@ const optionalText = (max: number) =>
 export const dispatchGuideItemInputSchema = z.object({
   productId:     z.string().trim().min(1, "Selecciona un producto del catálogo"),
   quantity:      z.coerce.number().positive("La cantidad debe ser mayor a 0"),
-  unitOfMeasure: z.string().trim().min(1, "Unidad requerida").max(20).default("unidad"),
+  unitOfMeasure: unitOfMeasureSchema.default("unidad"),
   notes:         optionalText(300),
 })
 

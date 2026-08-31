@@ -36,7 +36,7 @@ function makeRequest(body: unknown): Request {
 describe("POST /api/tae/identity", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockHeaders.mockResolvedValue(new Map([["x-forwarded-for", "10.0.0.1"]]))
+    mockHeaders.mockResolvedValue(new Map([["cf-connecting-ip", "10.0.0.1"]]))
     mockCheckRateLimit.mockResolvedValue({ allowed: true, waitTimeRemainingMs: 0 })
     mockValidateRut.mockReturnValue(true)
     mockGetTaeLinkWorksiteId.mockResolvedValue("ws-1")

@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { todayInChile } from "@/lib/utils"
 import { normalizeEquipmentCode } from "@/lib/products/service-items"
+import { unitOfMeasureSchema } from "./product-catalogs"
 
 // ── Re-export shared ActionState ──────────────────────────────────────────────
 export type { ActionState } from "./masters"
@@ -30,7 +31,7 @@ export const requestItemSchema = z.object({
   productId:           z.string().nullable().optional(),
   productNameFree:     z.string().max(120).nullable().optional().or(z.literal("")),
   quantity:            z.coerce.number().positive("Cantidad debe ser mayor a 0"),
-  unitOfMeasure:       z.string().min(1, "Unidad requerida").max(20).default("unidad"),
+  unitOfMeasure:       unitOfMeasureSchema.default("unidad"),
   urgency:             z.enum(["normal", "high", "critical"]).default("normal"),
   requiredDate:        requiredOperationalDate.optional().nullable(),
   workerId:            z.string().optional().nullable(),
@@ -41,6 +42,7 @@ export const requestItemSchema = z.object({
    */
   equipmentCode:       z.string().trim().max(40).transform(normalizeEquipmentCode)
                          .optional().nullable(),
+  emergencyResourceId: z.string().trim().max(120).optional().nullable(),
   suggestedSupplierId: z.string().nullable().optional(),
   supplierHint:        z.string().max(100).nullable().optional().or(z.literal("")),
   sortOrder:           z.coerce.number().int().default(0),
@@ -115,7 +117,7 @@ export const createOrderItemSchema = z.object({
   productId:       z.string().nullable().optional(),
   productNameFree: z.string().nullable().optional(),
   quantity:        z.coerce.number().refine(Number.isFinite, "Cantidad inválida").positive("Cantidad debe ser mayor a 0"),
-  unitOfMeasure:   z.string().min(1, "Unidad requerida").max(20),
+  unitOfMeasure:   unitOfMeasureSchema,
   unitPrice:       pendingOrKnownMoneySchema,
   discount:        z.coerce.number().refine(Number.isFinite, "Descuento inválido").min(0).max(100).default(0),
   notes:           z.string().max(300).nullable().optional().or(z.literal("")),
@@ -160,6 +162,10 @@ export const receiptItemSchema = z.object({
   quantityRejected:    nonNegativeQuantitySchema.default(0),
   quantityDamaged:     nonNegativeQuantitySchema.default(0),
   notes:               z.string().max(300).nullable().optional().or(z.literal("")),
+  maintenanceDate:     z.string().optional().nullable()
+                         .refine((value) => !value || isRealIsoDate(value), "Fecha de mantención inválida"),
+  nextExpiryDate:      z.string().optional().nullable()
+                         .refine((value) => !value || isRealIsoDate(value), "Próximo vencimiento inválido"),
 }).refine(
   (d) => d.quantityReceived + d.quantityRejected + d.quantityDamaged > 0,
   { message: "Registra al menos una cantidad (recibida, rechazada o dañada)", path: ["quantityReceived"] },

@@ -46,6 +46,7 @@ vi.mock("next-auth", () => ({
 const migrationsFolder = path.resolve(process.cwd(), "db/migrations")
 
 import { getStockExport, getKardexExport } from "@/lib/services/stock"
+import { MOVEMENT_TYPE_LABELS } from "@/lib/movement-labels"
 
 const now = new Date().toISOString()
 const userId = "u-export"
@@ -498,7 +499,10 @@ describe("getKardexExport", () => {
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(Buffer.from(res.buffer) as never)
     const ws = workbook.getWorksheet("Kardex")
-    expect(ws?.getCell("E2").value).toBe("Retiro")
+    // "Baja" y no "Retiro": el vocabulario de movimientos se unificó en
+    // `lib/movement-labels.ts` y la exportación dejó de tener su propio mapa.
+    // "Retiro" además ya nombra otra cosa (`retiro_epp_trabajador`).
+    expect(ws?.getCell("E2").value).toBe(MOVEMENT_TYPE_LABELS.egreso_desecho)
   })
 
   it("maps ajuste movement type to Spanish label", async () => {

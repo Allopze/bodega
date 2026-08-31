@@ -1,6 +1,6 @@
 {
-  "id": "905841f9-16af-4ccb-af90-ac705a1dd195",
-  "prevId": "f03794a0-fd45-482e-8c4c-75577edbcccc",
+  "id": "cc991fd5-e003-461d-a577-4be0eeae9371",
+  "prevId": "3afe4954-a3a1-4c4f-b0f4-15b940618beb",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1792,6 +1792,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "service_subject_kind": {
+          "name": "service_subject_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "reference_price": {
           "name": "reference_price",
           "type": "numeric(12, 2)",
@@ -1866,7 +1872,16 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "products_service_subject_kind_valid": {
+          "name": "products_service_subject_kind_valid",
+          "value": "\"products\".\"service_subject_kind\" IS NULL OR \"products\".\"service_subject_kind\" IN ('service_equipment', 'emergency_resource')"
+        },
+        "products_service_subject_consistent": {
+          "name": "products_service_subject_consistent",
+          "value": "\"products\".\"service_subject_kind\" IS NULL OR \"products\".\"is_service\" = true"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.epp_import_batches": {
@@ -2896,6 +2911,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "emergency_resource_id": {
+          "name": "emergency_resource_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "suggested_supplier_id": {
           "name": "suggested_supplier_id",
           "type": "text",
@@ -2978,6 +2999,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "purchase_request_items_emergency_resource_idx": {
+          "name": "purchase_request_items_emergency_resource_idx",
+          "columns": [
+            {
+              "expression": "emergency_resource_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -3033,6 +3069,19 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
+        "purchase_request_items_emergency_resource_id_prevention_emergency_resources_id_fk": {
+          "name": "purchase_request_items_emergency_resource_id_prevention_emergency_resources_id_fk",
+          "tableFrom": "purchase_request_items",
+          "tableTo": "prevention_emergency_resources",
+          "columnsFrom": [
+            "emergency_resource_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
         "purchase_request_items_suggested_supplier_id_suppliers_id_fk": {
           "name": "purchase_request_items_suggested_supplier_id_suppliers_id_fk",
           "tableFrom": "purchase_request_items",
@@ -3071,6 +3120,10 @@
         "purchase_request_items_state_valid": {
           "name": "purchase_request_items_state_valid",
           "value": "\n    \"purchase_request_items\".\"status\" IN (\n      'draft', 'requested', 'approved', 'rejected',\n      'pending_purchase', 'in_purchase_order', 'purchased',\n      'partially_office_received', 'office_received', 'partially_received',\n      'received', 'partially_delivered', 'delivered'\n    )\n    AND (\"purchase_request_items\".\"urgency\" IS NULL OR \"purchase_request_items\".\"urgency\" IN ('normal', 'high', 'critical'))\n  "
+        },
+        "purchase_request_items_one_service_subject": {
+          "name": "purchase_request_items_one_service_subject",
+          "value": "NOT (\"purchase_request_items\".\"equipment_id\" IS NOT NULL AND \"purchase_request_items\".\"emergency_resource_id\" IS NOT NULL)"
         }
       },
       "isRLSEnabled": false
@@ -10576,6 +10629,413 @@
       },
       "isRLSEnabled": false
     },
+    "public.fleet_gps_latest_positions": {
+      "name": "fleet_gps_latest_positions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'onway'"
+        },
+        "external_device_id": {
+          "name": "external_device_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "external_group_id": {
+          "name": "external_group_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vehicle_id": {
+          "name": "vehicle_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "worksite_id": {
+          "name": "worksite_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_plate": {
+          "name": "source_plate",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "normalized_plate": {
+          "name": "normalized_plate",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "latitude": {
+          "name": "latitude",
+          "type": "numeric(10, 7)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "longitude": {
+          "name": "longitude",
+          "type": "numeric(10, 7)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "speed_kph": {
+          "name": "speed_kph",
+          "type": "numeric(7, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "heading_degrees": {
+          "name": "heading_degrees",
+          "type": "numeric(6, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ignition": {
+          "name": "ignition",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_status": {
+          "name": "source_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "observed_at": {
+          "name": "observed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sync_run_id": {
+          "name": "sync_run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "fleet_gps_latest_positions_device_unique": {
+          "name": "fleet_gps_latest_positions_device_unique",
+          "columns": [
+            {
+              "expression": "provider",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "external_device_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "fleet_gps_latest_positions_vehicle_idx": {
+          "name": "fleet_gps_latest_positions_vehicle_idx",
+          "columns": [
+            {
+              "expression": "vehicle_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "fleet_gps_latest_positions_worksite_idx": {
+          "name": "fleet_gps_latest_positions_worksite_idx",
+          "columns": [
+            {
+              "expression": "worksite_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "fleet_gps_latest_positions_plate_idx": {
+          "name": "fleet_gps_latest_positions_plate_idx",
+          "columns": [
+            {
+              "expression": "normalized_plate",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "fleet_gps_latest_positions_observed_idx": {
+          "name": "fleet_gps_latest_positions_observed_idx",
+          "columns": [
+            {
+              "expression": "observed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fleet_gps_latest_positions_sync_run_id_fleet_gps_sync_runs_id_fk": {
+          "name": "fleet_gps_latest_positions_sync_run_id_fleet_gps_sync_runs_id_fk",
+          "tableFrom": "fleet_gps_latest_positions",
+          "tableTo": "fleet_gps_sync_runs",
+          "columnsFrom": [
+            "sync_run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "fleet_gps_latest_positions_vehicle_worksite_fk": {
+          "name": "fleet_gps_latest_positions_vehicle_worksite_fk",
+          "tableFrom": "fleet_gps_latest_positions",
+          "tableTo": "fuel_vehicles",
+          "columnsFrom": [
+            "vehicle_id",
+            "worksite_id"
+          ],
+          "columnsTo": [
+            "id",
+            "worksite_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "fleet_gps_latest_positions_provider_valid": {
+          "name": "fleet_gps_latest_positions_provider_valid",
+          "value": "\"fleet_gps_latest_positions\".\"provider\" IN ('onway')"
+        },
+        "fleet_gps_latest_positions_vehicle_scope_consistent": {
+          "name": "fleet_gps_latest_positions_vehicle_scope_consistent",
+          "value": "\n    (\"fleet_gps_latest_positions\".\"vehicle_id\" IS NULL AND \"fleet_gps_latest_positions\".\"worksite_id\" IS NULL)\n    OR (\"fleet_gps_latest_positions\".\"vehicle_id\" IS NOT NULL AND \"fleet_gps_latest_positions\".\"worksite_id\" IS NOT NULL)\n  "
+        },
+        "fleet_gps_latest_positions_coordinates_valid": {
+          "name": "fleet_gps_latest_positions_coordinates_valid",
+          "value": "\n    \"fleet_gps_latest_positions\".\"latitude\" BETWEEN -90 AND 90 AND \"fleet_gps_latest_positions\".\"longitude\" BETWEEN -180 AND 180\n  "
+        },
+        "fleet_gps_latest_positions_motion_valid": {
+          "name": "fleet_gps_latest_positions_motion_valid",
+          "value": "\n    \"fleet_gps_latest_positions\".\"speed_kph\" BETWEEN 0 AND 400 AND \"fleet_gps_latest_positions\".\"heading_degrees\" >= 0 AND \"fleet_gps_latest_positions\".\"heading_degrees\" < 360\n  "
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.fleet_gps_sync_runs": {
+      "name": "fleet_gps_sync_runs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'onway'"
+        },
+        "trigger": {
+          "name": "trigger",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'manual'"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'running'"
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "devices_received": {
+          "name": "devices_received",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "devices_accepted": {
+          "name": "devices_accepted",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "devices_rejected": {
+          "name": "devices_rejected",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "devices_unmatched": {
+          "name": "devices_unmatched",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "error_code": {
+          "name": "error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "fleet_gps_sync_runs_started_idx": {
+          "name": "fleet_gps_sync_runs_started_idx",
+          "columns": [
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "fleet_gps_sync_runs_status_idx": {
+          "name": "fleet_gps_sync_runs_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fleet_gps_sync_runs_actor_user_id_users_id_fk": {
+          "name": "fleet_gps_sync_runs_actor_user_id_users_id_fk",
+          "tableFrom": "fleet_gps_sync_runs",
+          "tableTo": "users",
+          "columnsFrom": [
+            "actor_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "fleet_gps_sync_runs_provider_valid": {
+          "name": "fleet_gps_sync_runs_provider_valid",
+          "value": "\"fleet_gps_sync_runs\".\"provider\" IN ('onway')"
+        },
+        "fleet_gps_sync_runs_trigger_valid": {
+          "name": "fleet_gps_sync_runs_trigger_valid",
+          "value": "\"fleet_gps_sync_runs\".\"trigger\" IN ('manual', 'cron')"
+        },
+        "fleet_gps_sync_runs_status_valid": {
+          "name": "fleet_gps_sync_runs_status_valid",
+          "value": "\"fleet_gps_sync_runs\".\"status\" IN ('running', 'success', 'partial', 'failed')"
+        },
+        "fleet_gps_sync_runs_counts_valid": {
+          "name": "fleet_gps_sync_runs_counts_valid",
+          "value": "\n    \"fleet_gps_sync_runs\".\"devices_received\" >= 0 AND \"fleet_gps_sync_runs\".\"devices_accepted\" >= 0\n    AND \"fleet_gps_sync_runs\".\"devices_rejected\" >= 0 AND \"fleet_gps_sync_runs\".\"devices_unmatched\" >= 0\n  "
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.fuel_equipment_types": {
       "name": "fuel_equipment_types",
       "schema": "",
@@ -14963,6 +15423,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "resolution_kind": {
+          "name": "resolution_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "resolved_by_id": {
           "name": "resolved_by_id",
           "type": "text",
@@ -15171,6 +15637,10 @@
         "fuel_anomaly_cases_status_valid": {
           "name": "fuel_anomaly_cases_status_valid",
           "value": "\"fuel_anomaly_cases\".\"status\" IN ('open', 'in_review', 'resolved', 'dismissed', 'reopened')"
+        },
+        "fuel_anomaly_cases_resolution_kind_valid": {
+          "name": "fuel_anomaly_cases_resolution_kind_valid",
+          "value": "\"fuel_anomaly_cases\".\"resolution_kind\" IS NULL OR \"fuel_anomaly_cases\".\"resolution_kind\" IN ('lectura_corregida', 'reset_medidor')"
         }
       },
       "isRLSEnabled": false
@@ -15515,6 +15985,227 @@
         "fuel_anomaly_rules_severity_valid": {
           "name": "fuel_anomaly_rules_severity_valid",
           "value": "\"fuel_anomaly_rules\".\"severity\" IN ('low', 'medium', 'high', 'critical')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.fuel_meter_readings": {
+      "name": "fuel_meter_readings",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "vehicle_id": {
+          "name": "vehicle_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plate": {
+          "name": "plate",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_ref": {
+          "name": "source_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "meter_type": {
+          "name": "meter_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "liters": {
+          "name": "liters",
+          "type": "numeric(14, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "station_name": {
+          "name": "station_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "card_number": {
+          "name": "card_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_performance": {
+          "name": "provider_performance",
+          "type": "numeric(10, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "raw_payload": {
+          "name": "raw_payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "fuel_meter_readings_source_ref_unique": {
+          "name": "fuel_meter_readings_source_ref_unique",
+          "columns": [
+            {
+              "expression": "source",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_ref",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "fuel_meter_readings_series_idx": {
+          "name": "fuel_meter_readings_series_idx",
+          "columns": [
+            {
+              "expression": "vehicle_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "meter_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "fuel_meter_readings_plate_idx": {
+          "name": "fuel_meter_readings_plate_idx",
+          "columns": [
+            {
+              "expression": "plate",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "fuel_meter_readings_occurred_idx": {
+          "name": "fuel_meter_readings_occurred_idx",
+          "columns": [
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fuel_meter_readings_vehicle_id_fuel_vehicles_id_fk": {
+          "name": "fuel_meter_readings_vehicle_id_fuel_vehicles_id_fk",
+          "tableFrom": "fuel_meter_readings",
+          "tableTo": "fuel_vehicles",
+          "columnsFrom": [
+            "vehicle_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "fuel_meter_readings_source_valid": {
+          "name": "fuel_meter_readings_source_valid",
+          "value": "\"fuel_meter_readings\".\"source\" IN ('copec_tct', 'aramco', 'gps_onway')"
+        },
+        "fuel_meter_readings_meter_type_valid": {
+          "name": "fuel_meter_readings_meter_type_valid",
+          "value": "\"fuel_meter_readings\".\"meter_type\" IN ('odometer', 'hour_meter')"
+        },
+        "fuel_meter_readings_value_positive": {
+          "name": "fuel_meter_readings_value_positive",
+          "value": "\"fuel_meter_readings\".\"value\" >= 0"
+        },
+        "fuel_meter_readings_liters_positive": {
+          "name": "fuel_meter_readings_liters_positive",
+          "value": "\"fuel_meter_readings\".\"liters\" IS NULL OR \"fuel_meter_readings\".\"liters\" >= 0"
         }
       },
       "isRLSEnabled": false
@@ -21235,6 +21926,12 @@
           "notNull": true,
           "default": "''"
         },
+        "subject_resource_id": {
+          "name": "subject_resource_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "subject_label": {
           "name": "subject_label",
           "type": "text",
@@ -21272,6 +21969,21 @@
             }
           ],
           "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "pdtp_execution_checklists_subject_resource_idx": {
+          "name": "pdtp_execution_checklists_subject_resource_idx",
+          "columns": [
+            {
+              "expression": "subject_resource_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -21316,12 +22028,29 @@
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
+        },
+        "pdtp_execution_checklists_subject_resource_id_prevention_emergency_resources_id_fk": {
+          "name": "pdtp_execution_checklists_subject_resource_id_prevention_emergency_resources_id_fk",
+          "tableFrom": "pdtp_execution_checklists",
+          "tableTo": "prevention_emergency_resources",
+          "columnsFrom": [
+            "subject_resource_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "pdtp_execution_checklists_extinguisher_subject_fk": {
+          "name": "pdtp_execution_checklists_extinguisher_subject_fk",
+          "value": "\"pdtp_execution_checklists\".\"subject_type\" <> 'extintor' OR \"pdtp_execution_checklists\".\"subject_resource_id\" IS NOT NULL OR \"pdtp_execution_checklists\".\"subject_id\" <> ''"
+        },
         "pdtp_execution_checklists_status_check": {
           "name": "pdtp_execution_checklists_status_check",
           "value": "\"pdtp_execution_checklists\".\"overall_status\" IN ('pendiente', 'en_proceso', 'completado')"
@@ -32468,142 +33197,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.prevention_capa_risk_links": {
-      "name": "prevention_capa_risk_links",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "capa_action_id": {
-          "name": "capa_action_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "risk_entry_id": {
-          "name": "risk_entry_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_by_user_id": {
-          "name": "created_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "prevention_capa_risk_links_unique": {
-          "name": "prevention_capa_risk_links_unique",
-          "columns": [
-            {
-              "expression": "capa_action_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "risk_entry_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "prevention_capa_risk_links_capa_idx": {
-          "name": "prevention_capa_risk_links_capa_idx",
-          "columns": [
-            {
-              "expression": "capa_action_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "prevention_capa_risk_links_risk_entry_idx": {
-          "name": "prevention_capa_risk_links_risk_entry_idx",
-          "columns": [
-            {
-              "expression": "risk_entry_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "prevention_capa_risk_links_capa_action_id_prevention_capa_actions_id_fk": {
-          "name": "prevention_capa_risk_links_capa_action_id_prevention_capa_actions_id_fk",
-          "tableFrom": "prevention_capa_risk_links",
-          "tableTo": "prevention_capa_actions",
-          "columnsFrom": [
-            "capa_action_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "prevention_capa_risk_links_risk_entry_id_prevention_risk_entries_id_fk": {
-          "name": "prevention_capa_risk_links_risk_entry_id_prevention_risk_entries_id_fk",
-          "tableFrom": "prevention_capa_risk_links",
-          "tableTo": "prevention_risk_entries",
-          "columnsFrom": [
-            "risk_entry_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "prevention_capa_risk_links_created_by_user_id_users_id_fk": {
-          "name": "prevention_capa_risk_links_created_by_user_id_users_id_fk",
-          "tableFrom": "prevention_capa_risk_links",
-          "tableTo": "users",
-          "columnsFrom": [
-            "created_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.prevention_legal_applicabilities": {
       "name": "prevention_legal_applicabilities",
       "schema": "",
@@ -34023,12 +34616,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "risk": {
-          "name": "risk",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "risk_factor": {
           "name": "risk_factor",
           "type": "text",
@@ -34075,7 +34662,7 @@
           "name": "inherent_dimensions",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "inherent_score": {
           "name": "inherent_score",
@@ -34087,7 +34674,7 @@
           "name": "inherent_level",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "residual_dimensions": {
           "name": "residual_dimensions",
@@ -34106,79 +34693,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "probability": {
-          "name": "probability",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "consequence": {
-          "name": "consequence",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "risk_magnitude": {
-          "name": "risk_magnitude",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "risk_classification": {
-          "name": "risk_classification",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "evaluation_divergence": {
-          "name": "evaluation_divergence",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "is_routine": {
-          "name": "is_routine",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "specific_workplace": {
-          "name": "specific_workplace",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "exposed_workers_female": {
-          "name": "exposed_workers_female",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "exposed_workers_male": {
-          "name": "exposed_workers_male",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "exposed_workers_other": {
-          "name": "exposed_workers_other",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "control_status_text": {
-          "name": "control_status_text",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "control_deadline_text": {
-          "name": "control_deadline_text",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "is_critical": {
           "name": "is_critical",
@@ -34311,27 +34825,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "prevention_risk_entries_matrix_classification_idx": {
-          "name": "prevention_risk_entries_matrix_classification_idx",
-          "columns": [
-            {
-              "expression": "matrix_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "risk_classification",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -34407,7 +34900,7 @@
       "checkConstraints": {
         "prevention_risk_entries_inherent_level_valid": {
           "name": "prevention_risk_entries_inherent_level_valid",
-          "value": "\"prevention_risk_entries\".\"inherent_level\" IS NULL OR \"prevention_risk_entries\".\"inherent_level\" IN ('low', 'medium', 'high', 'critical')"
+          "value": "\"prevention_risk_entries\".\"inherent_level\" IN ('low', 'medium', 'high', 'critical')"
         },
         "prevention_risk_entries_residual_level_valid": {
           "name": "prevention_risk_entries_residual_level_valid",
@@ -34420,30 +34913,6 @@
         "prevention_risk_entries_version_positive": {
           "name": "prevention_risk_entries_version_positive",
           "value": "\"prevention_risk_entries\".\"version\" > 0"
-        },
-        "prevention_risk_entries_probability_valid": {
-          "name": "prevention_risk_entries_probability_valid",
-          "value": "\"prevention_risk_entries\".\"probability\" IS NULL OR \"prevention_risk_entries\".\"probability\" IN (1, 2, 4)"
-        },
-        "prevention_risk_entries_consequence_valid": {
-          "name": "prevention_risk_entries_consequence_valid",
-          "value": "\"prevention_risk_entries\".\"consequence\" IS NULL OR \"prevention_risk_entries\".\"consequence\" IN (1, 2, 4)"
-        },
-        "prevention_risk_entries_magnitude_product": {
-          "name": "prevention_risk_entries_magnitude_product",
-          "value": "\"prevention_risk_entries\".\"risk_magnitude\" IS NULL OR (\"prevention_risk_entries\".\"probability\" IS NOT NULL AND \"prevention_risk_entries\".\"consequence\" IS NOT NULL AND \"prevention_risk_entries\".\"risk_magnitude\" = \"prevention_risk_entries\".\"probability\" * \"prevention_risk_entries\".\"consequence\")"
-        },
-        "prevention_risk_entries_classification_valid": {
-          "name": "prevention_risk_entries_classification_valid",
-          "value": "\"prevention_risk_entries\".\"risk_classification\" IS NULL OR \"prevention_risk_entries\".\"risk_classification\" IN ('tolerable', 'moderado', 'importante', 'intolerable')"
-        },
-        "prevention_risk_entries_control_status_text_valid": {
-          "name": "prevention_risk_entries_control_status_text_valid",
-          "value": "\"prevention_risk_entries\".\"control_status_text\" IS NULL OR \"prevention_risk_entries\".\"control_status_text\" IN ('controlled', 'partial', 'partial_immediate')"
-        },
-        "prevention_risk_entries_exposed_workers_valid": {
-          "name": "prevention_risk_entries_exposed_workers_valid",
-          "value": "(\"prevention_risk_entries\".\"exposed_workers_female\" IS NULL OR \"prevention_risk_entries\".\"exposed_workers_female\" >= 0) AND (\"prevention_risk_entries\".\"exposed_workers_male\" IS NULL OR \"prevention_risk_entries\".\"exposed_workers_male\" >= 0) AND (\"prevention_risk_entries\".\"exposed_workers_other\" IS NULL OR \"prevention_risk_entries\".\"exposed_workers_other\" >= 0)"
         }
       },
       "isRLSEnabled": false
@@ -35609,148 +36078,6 @@
         "prevention_risk_matrices_publish_evidence": {
           "name": "prevention_risk_matrices_publish_evidence",
           "value": "\"prevention_risk_matrices\".\"status\" NOT IN ('approved', 'published', 'superseded') OR (\"prevention_risk_matrices\".\"reviewed_by_user_id\" IS NOT NULL AND \"prevention_risk_matrices\".\"approved_by_user_id\" IS NOT NULL)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.prevention_risk_matrix_approvals": {
-      "name": "prevention_risk_matrix_approvals",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "matrix_id": {
-          "name": "matrix_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "domain": {
-          "name": "domain",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decision": {
-          "name": "decision",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decided_at": {
-          "name": "decided_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "migrated_from_legacy": {
-          "name": "migrated_from_legacy",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "prevention_risk_matrix_approvals_unique": {
-          "name": "prevention_risk_matrix_approvals_unique",
-          "columns": [
-            {
-              "expression": "matrix_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "domain",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "prevention_risk_matrix_approvals_matrix_idx": {
-          "name": "prevention_risk_matrix_approvals_matrix_idx",
-          "columns": [
-            {
-              "expression": "matrix_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "prevention_risk_matrix_approvals_matrix_id_prevention_risk_matrices_id_fk": {
-          "name": "prevention_risk_matrix_approvals_matrix_id_prevention_risk_matrices_id_fk",
-          "tableFrom": "prevention_risk_matrix_approvals",
-          "tableTo": "prevention_risk_matrices",
-          "columnsFrom": [
-            "matrix_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "prevention_risk_matrix_approvals_user_id_users_id_fk": {
-          "name": "prevention_risk_matrix_approvals_user_id_users_id_fk",
-          "tableFrom": "prevention_risk_matrix_approvals",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "prevention_risk_matrix_approvals_domain_valid": {
-          "name": "prevention_risk_matrix_approvals_domain_valid",
-          "value": "\"prevention_risk_matrix_approvals\".\"domain\" IN ('prevention', 'operations')"
-        },
-        "prevention_risk_matrix_approvals_decision_valid": {
-          "name": "prevention_risk_matrix_approvals_decision_valid",
-          "value": "\"prevention_risk_matrix_approvals\".\"decision\" IN ('approved', 'rejected')"
         }
       },
       "isRLSEnabled": false
@@ -39755,7 +40082,7 @@
       "checkConstraints": {
         "prevention_inspection_answer_result_valid": {
           "name": "prevention_inspection_answer_result_valid",
-          "value": "\"prevention_inspection_answers\".\"result\" IN ('conforming', 'partial', 'non_conforming', 'not_applicable', 'recorded')"
+          "value": "\"prevention_inspection_answers\".\"result\" IN ('conforming', 'partial', 'non_conforming', 'not_applicable', 'not_present', 'recorded')"
         },
         "prevention_inspection_answer_recorded_has_value": {
           "name": "prevention_inspection_answer_recorded_has_value",
@@ -45682,6 +46009,814 @@
       },
       "isRLSEnabled": false
     },
+    "public.prevention_emergency_resource_assignments": {
+      "name": "prevention_emergency_resource_assignments",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "point_id": {
+          "name": "point_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resource_id": {
+          "name": "resource_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assigned_at": {
+          "name": "assigned_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "unassigned_at": {
+          "name": "unassigned_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "prevention_emergency_resource_assignment_active_point_unique": {
+          "name": "prevention_emergency_resource_assignment_active_point_unique",
+          "columns": [
+            {
+              "expression": "point_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"prevention_emergency_resource_assignments\".\"unassigned_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "prevention_emergency_resource_assignment_active_resource_unique": {
+          "name": "prevention_emergency_resource_assignment_active_resource_unique",
+          "columns": [
+            {
+              "expression": "resource_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"prevention_emergency_resource_assignments\".\"unassigned_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "prevention_emergency_resource_assignment_resource_history_idx": {
+          "name": "prevention_emergency_resource_assignment_resource_history_idx",
+          "columns": [
+            {
+              "expression": "resource_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "assigned_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "prevention_emergency_resource_assignments_point_id_prevention_emergency_resource_points_id_fk": {
+          "name": "prevention_emergency_resource_assignments_point_id_prevention_emergency_resource_points_id_fk",
+          "tableFrom": "prevention_emergency_resource_assignments",
+          "tableTo": "prevention_emergency_resource_points",
+          "columnsFrom": [
+            "point_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "prevention_emergency_resource_assignments_resource_id_prevention_emergency_resources_id_fk": {
+          "name": "prevention_emergency_resource_assignments_resource_id_prevention_emergency_resources_id_fk",
+          "tableFrom": "prevention_emergency_resource_assignments",
+          "tableTo": "prevention_emergency_resources",
+          "columnsFrom": [
+            "resource_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "prevention_emergency_resource_assignments_actor_user_id_users_id_fk": {
+          "name": "prevention_emergency_resource_assignments_actor_user_id_users_id_fk",
+          "tableFrom": "prevention_emergency_resource_assignments",
+          "tableTo": "users",
+          "columnsFrom": [
+            "actor_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "prevention_emergency_resource_assignment_dates_valid": {
+          "name": "prevention_emergency_resource_assignment_dates_valid",
+          "value": "\"prevention_emergency_resource_assignments\".\"unassigned_at\" IS NULL OR \"prevention_emergency_resource_assignments\".\"unassigned_at\" >= \"prevention_emergency_resource_assignments\".\"assigned_at\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.prevention_emergency_resource_events": {
+      "name": "prevention_emergency_resource_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "worksite_id": {
+          "name": "worksite_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resource_id": {
+          "name": "resource_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_type": {
+          "name": "source_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_id": {
+          "name": "source_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "snapshot": {
+          "name": "snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "prevention_emergency_resource_event_timeline_idx": {
+          "name": "prevention_emergency_resource_event_timeline_idx",
+          "columns": [
+            {
+              "expression": "resource_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "prevention_emergency_resource_event_worksite_idx": {
+          "name": "prevention_emergency_resource_event_worksite_idx",
+          "columns": [
+            {
+              "expression": "worksite_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "prevention_emergency_resource_events_worksite_id_worksites_id_fk": {
+          "name": "prevention_emergency_resource_events_worksite_id_worksites_id_fk",
+          "tableFrom": "prevention_emergency_resource_events",
+          "tableTo": "worksites",
+          "columnsFrom": [
+            "worksite_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "prevention_emergency_resource_events_resource_id_prevention_emergency_resources_id_fk": {
+          "name": "prevention_emergency_resource_events_resource_id_prevention_emergency_resources_id_fk",
+          "tableFrom": "prevention_emergency_resource_events",
+          "tableTo": "prevention_emergency_resources",
+          "columnsFrom": [
+            "resource_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "prevention_emergency_resource_events_actor_user_id_users_id_fk": {
+          "name": "prevention_emergency_resource_events_actor_user_id_users_id_fk",
+          "tableFrom": "prevention_emergency_resource_events",
+          "tableTo": "users",
+          "columnsFrom": [
+            "actor_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "prevention_emergency_resource_event_type_valid": {
+          "name": "prevention_emergency_resource_event_type_valid",
+          "value": "\"prevention_emergency_resource_events\".\"event_type\" IN ('used', 'service_requested', 'service_completed', 'reassigned', 'retired', 'imported', 'classified')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.prevention_emergency_resource_import_batches": {
+      "name": "prevention_emergency_resource_import_batches",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "worksite_id": {
+          "name": "worksite_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "file_name": {
+          "name": "file_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "file_fingerprint": {
+          "name": "file_fingerprint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "file_size": {
+          "name": "file_size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'applied'"
+        },
+        "summary": {
+          "name": "summary",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "snapshots": {
+          "name": "snapshots",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "rolled_back_at": {
+          "name": "rolled_back_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "prevention_emergency_resource_import_worksite_fingerprint_unique": {
+          "name": "prevention_emergency_resource_import_worksite_fingerprint_unique",
+          "columns": [
+            {
+              "expression": "worksite_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "file_fingerprint",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "prevention_emergency_resource_import_batches_worksite_id_worksites_id_fk": {
+          "name": "prevention_emergency_resource_import_batches_worksite_id_worksites_id_fk",
+          "tableFrom": "prevention_emergency_resource_import_batches",
+          "tableTo": "worksites",
+          "columnsFrom": [
+            "worksite_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "prevention_emergency_resource_import_batches_created_by_user_id_users_id_fk": {
+          "name": "prevention_emergency_resource_import_batches_created_by_user_id_users_id_fk",
+          "tableFrom": "prevention_emergency_resource_import_batches",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "prevention_emergency_resource_import_status_valid": {
+          "name": "prevention_emergency_resource_import_status_valid",
+          "value": "\"prevention_emergency_resource_import_batches\".\"status\" IN ('applied', 'superseded', 'rolled_back')"
+        },
+        "prevention_emergency_resource_import_size_valid": {
+          "name": "prevention_emergency_resource_import_size_valid",
+          "value": "\"prevention_emergency_resource_import_batches\".\"file_size\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.prevention_emergency_resource_points": {
+      "name": "prevention_emergency_resource_points",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "worksite_id": {
+          "name": "worksite_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "point_kind": {
+          "name": "point_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vehicle_id": {
+          "name": "vehicle_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fixed_location": {
+          "name": "fixed_location",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "required_type_id": {
+          "name": "required_type_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "prevention_emergency_resource_point_worksite_code_unique": {
+          "name": "prevention_emergency_resource_point_worksite_code_unique",
+          "columns": [
+            {
+              "expression": "worksite_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "code",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "prevention_emergency_resource_point_worksite_active_idx": {
+          "name": "prevention_emergency_resource_point_worksite_active_idx",
+          "columns": [
+            {
+              "expression": "worksite_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "is_active",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "prevention_emergency_resource_point_vehicle_idx": {
+          "name": "prevention_emergency_resource_point_vehicle_idx",
+          "columns": [
+            {
+              "expression": "vehicle_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "prevention_emergency_resource_points_worksite_id_worksites_id_fk": {
+          "name": "prevention_emergency_resource_points_worksite_id_worksites_id_fk",
+          "tableFrom": "prevention_emergency_resource_points",
+          "tableTo": "worksites",
+          "columnsFrom": [
+            "worksite_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "prevention_emergency_resource_points_vehicle_id_fuel_vehicles_id_fk": {
+          "name": "prevention_emergency_resource_points_vehicle_id_fuel_vehicles_id_fk",
+          "tableFrom": "prevention_emergency_resource_points",
+          "tableTo": "fuel_vehicles",
+          "columnsFrom": [
+            "vehicle_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "prevention_emergency_resource_points_required_type_id_prevention_emergency_resource_types_id_fk": {
+          "name": "prevention_emergency_resource_points_required_type_id_prevention_emergency_resource_types_id_fk",
+          "tableFrom": "prevention_emergency_resource_points",
+          "tableTo": "prevention_emergency_resource_types",
+          "columnsFrom": [
+            "required_type_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "prevention_emergency_resource_point_kind_valid": {
+          "name": "prevention_emergency_resource_point_kind_valid",
+          "value": "\"prevention_emergency_resource_points\".\"point_kind\" IN ('vehicle', 'fixed')"
+        },
+        "prevention_emergency_resource_point_target_valid": {
+          "name": "prevention_emergency_resource_point_target_valid",
+          "value": "\n    (\"prevention_emergency_resource_points\".\"point_kind\" = 'vehicle' AND \"prevention_emergency_resource_points\".\"vehicle_id\" IS NOT NULL AND \"prevention_emergency_resource_points\".\"fixed_location\" IS NULL)\n    OR (\"prevention_emergency_resource_points\".\"point_kind\" = 'fixed' AND \"prevention_emergency_resource_points\".\"vehicle_id\" IS NULL AND \"prevention_emergency_resource_points\".\"fixed_location\" IS NOT NULL)\n  "
+        },
+        "prevention_emergency_resource_point_version_positive": {
+          "name": "prevention_emergency_resource_point_version_positive",
+          "value": "\"prevention_emergency_resource_points\".\"version\" >= 1"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.prevention_emergency_resource_types": {
+      "name": "prevention_emergency_resource_types",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "resource_class": {
+          "name": "resource_class",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent": {
+          "name": "agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "capacity": {
+          "name": "capacity",
+          "type": "numeric(10, 3)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "capacity_unit": {
+          "name": "capacity_unit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "canonical_name": {
+          "name": "canonical_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "service_product_id": {
+          "name": "service_product_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "prevention_emergency_resource_type_spec_unique": {
+          "name": "prevention_emergency_resource_type_spec_unique",
+          "columns": [
+            {
+              "expression": "resource_class",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "agent",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "capacity",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "capacity_unit",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "prevention_emergency_resource_type_service_product_idx": {
+          "name": "prevention_emergency_resource_type_service_product_idx",
+          "columns": [
+            {
+              "expression": "service_product_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "prevention_emergency_resource_types_service_product_id_products_id_fk": {
+          "name": "prevention_emergency_resource_types_service_product_id_products_id_fk",
+          "tableFrom": "prevention_emergency_resource_types",
+          "tableTo": "products",
+          "columnsFrom": [
+            "service_product_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "prevention_emergency_resource_type_class_valid": {
+          "name": "prevention_emergency_resource_type_class_valid",
+          "value": "\"prevention_emergency_resource_types\".\"resource_class\" IN ('extinguisher', 'first_aid_kit', 'spill_kit', 'stretcher', 'defibrillator', 'other')"
+        },
+        "prevention_emergency_resource_type_capacity_positive": {
+          "name": "prevention_emergency_resource_type_capacity_positive",
+          "value": "\"prevention_emergency_resource_types\".\"capacity\" IS NULL OR \"prevention_emergency_resource_types\".\"capacity\" > 0"
+        },
+        "prevention_emergency_resource_type_extinguisher_complete": {
+          "name": "prevention_emergency_resource_type_extinguisher_complete",
+          "value": "\"prevention_emergency_resource_types\".\"resource_class\" <> 'extinguisher' OR (\"prevention_emergency_resource_types\".\"agent\" IS NOT NULL AND \"prevention_emergency_resource_types\".\"capacity\" IS NOT NULL AND \"prevention_emergency_resource_types\".\"capacity_unit\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.prevention_emergency_resources": {
       "name": "prevention_emergency_resources",
       "schema": "",
@@ -45700,6 +46835,18 @@
         },
         "plan_id": {
           "name": "plan_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "asset_code": {
+          "name": "asset_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "type_id": {
+          "name": "type_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -45728,6 +46875,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "last_maintenance_at": {
+          "name": "last_maintenance_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "last_inspected_at": {
           "name": "last_inspected_at",
           "type": "text",
@@ -45752,6 +46905,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'operational'"
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
         },
         "created_at": {
           "name": "created_at",
@@ -45789,6 +46949,43 @@
           "columns": [
             {
               "expression": "worksite_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "prevention_emergency_resource_worksite_asset_code_unique": {
+          "name": "prevention_emergency_resource_worksite_asset_code_unique",
+          "columns": [
+            {
+              "expression": "worksite_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "asset_code",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"prevention_emergency_resources\".\"asset_code\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "prevention_emergency_resource_type_idx": {
+          "name": "prevention_emergency_resource_type_idx",
+          "columns": [
+            {
+              "expression": "type_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -45856,6 +47053,19 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
+        },
+        "prevention_emergency_resources_type_id_prevention_emergency_resource_types_id_fk": {
+          "name": "prevention_emergency_resources_type_id_prevention_emergency_resource_types_id_fk",
+          "tableFrom": "prevention_emergency_resources",
+          "tableTo": "prevention_emergency_resource_types",
+          "columnsFrom": [
+            "type_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -45865,6 +47075,10 @@
         "prevention_emergency_resource_status_valid": {
           "name": "prevention_emergency_resource_status_valid",
           "value": "\"prevention_emergency_resources\".\"status\" IN ('operational', 'needs_maintenance', 'out_of_service')"
+        },
+        "prevention_emergency_resource_version_positive": {
+          "name": "prevention_emergency_resource_version_positive",
+          "value": "\"prevention_emergency_resources\".\"version\" >= 1"
         }
       },
       "isRLSEnabled": false
@@ -46062,6 +47276,222 @@
         "prevention_emergency_scenario_type_valid": {
           "name": "prevention_emergency_scenario_type_valid",
           "value": "\"prevention_emergency_scenarios\".\"type\" IN ('incendio', 'derrame', 'fuga', 'volcamiento', 'exposicion', 'rescate', 'sismo', 'clima', 'otro')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.prevention_emergency_resource_service_cases": {
+      "name": "prevention_emergency_resource_service_cases",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "resource_id": {
+          "name": "resource_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "previous_point_id": {
+          "name": "previous_point_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "request_item_id": {
+          "name": "request_item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "completed_receipt_item_id": {
+          "name": "completed_receipt_item_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
+        },
+        "opened_by_user_id": {
+          "name": "opened_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "completed_by_user_id": {
+          "name": "completed_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "opened_at": {
+          "name": "opened_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "prevention_emergency_resource_service_case_request_item_unique": {
+          "name": "prevention_emergency_resource_service_case_request_item_unique",
+          "columns": [
+            {
+              "expression": "request_item_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "prevention_emergency_resource_service_case_open_resource_unique": {
+          "name": "prevention_emergency_resource_service_case_open_resource_unique",
+          "columns": [
+            {
+              "expression": "resource_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"prevention_emergency_resource_service_cases\".\"status\" = 'open'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "prevention_emergency_resource_service_case_resource_idx": {
+          "name": "prevention_emergency_resource_service_case_resource_idx",
+          "columns": [
+            {
+              "expression": "resource_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "opened_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "prevention_emergency_resource_service_cases_resource_id_prevention_emergency_resources_id_fk": {
+          "name": "prevention_emergency_resource_service_cases_resource_id_prevention_emergency_resources_id_fk",
+          "tableFrom": "prevention_emergency_resource_service_cases",
+          "tableTo": "prevention_emergency_resources",
+          "columnsFrom": [
+            "resource_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "prevention_emergency_resource_service_cases_previous_point_id_prevention_emergency_resource_points_id_fk": {
+          "name": "prevention_emergency_resource_service_cases_previous_point_id_prevention_emergency_resource_points_id_fk",
+          "tableFrom": "prevention_emergency_resource_service_cases",
+          "tableTo": "prevention_emergency_resource_points",
+          "columnsFrom": [
+            "previous_point_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "prevention_emergency_resource_service_cases_request_item_id_purchase_request_items_id_fk": {
+          "name": "prevention_emergency_resource_service_cases_request_item_id_purchase_request_items_id_fk",
+          "tableFrom": "prevention_emergency_resource_service_cases",
+          "tableTo": "purchase_request_items",
+          "columnsFrom": [
+            "request_item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "prevention_emergency_resource_service_cases_completed_receipt_item_id_receipt_items_id_fk": {
+          "name": "prevention_emergency_resource_service_cases_completed_receipt_item_id_receipt_items_id_fk",
+          "tableFrom": "prevention_emergency_resource_service_cases",
+          "tableTo": "receipt_items",
+          "columnsFrom": [
+            "completed_receipt_item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "prevention_emergency_resource_service_cases_opened_by_user_id_users_id_fk": {
+          "name": "prevention_emergency_resource_service_cases_opened_by_user_id_users_id_fk",
+          "tableFrom": "prevention_emergency_resource_service_cases",
+          "tableTo": "users",
+          "columnsFrom": [
+            "opened_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "prevention_emergency_resource_service_cases_completed_by_user_id_users_id_fk": {
+          "name": "prevention_emergency_resource_service_cases_completed_by_user_id_users_id_fk",
+          "tableFrom": "prevention_emergency_resource_service_cases",
+          "tableTo": "users",
+          "columnsFrom": [
+            "completed_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "prevention_emergency_resource_service_case_status_valid": {
+          "name": "prevention_emergency_resource_service_case_status_valid",
+          "value": "\"prevention_emergency_resource_service_cases\".\"status\" IN ('open', 'completed', 'cancelled')"
+        },
+        "prevention_emergency_resource_service_case_completion_valid": {
+          "name": "prevention_emergency_resource_service_case_completion_valid",
+          "value": "\n    (\"prevention_emergency_resource_service_cases\".\"status\" = 'completed' AND \"prevention_emergency_resource_service_cases\".\"completed_at\" IS NOT NULL AND \"prevention_emergency_resource_service_cases\".\"completed_receipt_item_id\" IS NOT NULL)\n    OR (\"prevention_emergency_resource_service_cases\".\"status\" <> 'completed' AND \"prevention_emergency_resource_service_cases\".\"completed_at\" IS NULL)\n  "
         }
       },
       "isRLSEnabled": false
@@ -47729,6 +49159,12 @@
         "line_enriched_at": {
           "name": "line_enriched_at",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "referenced_order_codes": {
+          "name": "referenced_order_codes",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },

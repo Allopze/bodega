@@ -15,8 +15,8 @@ import { REPORTE_EQUIPOS_SECTIONS } from './reporte-equipos-sections'
  */
 export const REPORTE_EQUIPOS: ChecklistDefinition = {
   code: 'reporte_equipos',
-  version: '01',
-  revisionDate: '2026-08-19',
+  version: '02',
+  revisionDate: '2026-08-30',
   tipo: 'seguimiento',
   title: 'Reporte de Equipos',
   subtitle: 'Reporte diario de uso: una instancia por equipo y por turno.',

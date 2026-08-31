@@ -22,18 +22,44 @@ describe('CHECKLIST_DEFINITIONS', () => {
     expect(isPersonEvaluationDefinition('inspeccion_taller')).toBe(false)
   })
 
-  it('deja la Observación Planeada fuera del motor de inspecciones sin sacarla del catálogo', () => {
-    // El Anexo 7 es un relato libre sin ítems puntuables: en Inspecciones su
-    // cumplimiento es siempre null y no puede derivar un solo hallazgo. Se
-    // conserva la definición —sigue siendo el formulario de la actividad PDTP
-    // n=39— pero deja de ofrecerse como plantilla.
-    expect(isNonInspectionDefinition('observacion_planeada')).toBe(true)
+  it('digitaliza el Anexo 7 y el Anexo 08 dentro del motor sin puntaje oficial', () => {
+    expect(isNonInspectionDefinition('observacion_planeada')).toBe(false)
     expect(CHECKLIST_DEFINITIONS['observacion_planeada']).toBeDefined()
-    // Las otras dos observaciones sí puntúan y se quedan.
+    expect(CHECKLIST_DEFINITIONS['observacion_planeada']?.version).toBe('03')
+    expect(CHECKLIST_DEFINITIONS['observacion_planeada']?.recordsPreventiveActions).toBe(true)
+    expect(CHECKLIST_DEFINITIONS['inspeccion_no_planeada']?.recordsDeviations).toBe(true)
     expect(isNonInspectionDefinition('observacion_ampliroll')).toBe(false)
     expect(isNonInspectionDefinition('observacion_maquinaria')).toBe(false)
     expect(isNonInspectionDefinition('inspeccion_taller')).toBe(false)
     expect(Object.keys(CHECKLIST_DEFINITIONS).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it.each([
+    ['inspeccion_equipos_moviles', '02', 52],
+    ['inspeccion_extintores', '02', 5],
+    ['inspeccion_epp', '03', 20],
+    ['observacion_ampliroll', '02', 22],
+    ['observacion_maquinaria', '02', 22],
+    ['inspeccion_taller', '02', 16],
+    ['inspeccion_carros', '03', 22],
+    ['inspeccion_contenedores', '03', 14],
+  ])('mantiene la paridad de %s v%s con %i respuestas puntuables', (code, version, expected) => {
+    const definition = CHECKLIST_DEFINITIONS[code]
+    expect(definition?.version).toBe(version)
+    const scorable = definition?.sections.flatMap((section) => section.countsForCompliance === false ? [] : section.items)
+      .filter((item) => !['text', 'textarea', 'number', 'date', 'select', 'multiselect', 'signature', 'readonly'].includes(item.kind))
+    expect(scorable).toHaveLength(expected)
+  })
+
+  it('presenta EPP como matriz de respuestas independientes', () => {
+    const items = CHECKLIST_DEFINITIONS.inspeccion_epp!.sections
+      .filter((section) => section.countsForCompliance !== false)
+      .flatMap((section) => section.items)
+    expect(items.every((item) => item.matrix)).toBe(true)
+    expect(items.filter((item) => item.matrix?.rowId === 'bloqueador_solar').map((item) => item.matrix?.columnLabel)).toEqual([
+      'Usa (Sí/No/N/A)',
+      'Registro (Sí/No)',
+    ])
   })
 })
 

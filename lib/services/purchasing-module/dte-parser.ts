@@ -29,6 +29,11 @@ export interface DteData {
   taxAmount:     number
   totalAmount:   number
   items:         DteItem[]
+  /**
+   * Códigos de orden de compra que el proveedor citó en `<Referencia>`,
+   * normalizados con `normalizeOrderCodeRef`. Ver `extractOrderCodeRefs`.
+   */
+  referencedOrderCodes: string[]
 }
 
 const xmlParser = new XMLParser({
@@ -123,6 +128,7 @@ export function parseDteXml(xmlString: string): DteData | null {
       taxAmount:     iva,
       totalAmount,
       items,
+      referencedOrderCodes: extractOrderCodeRefs(documento),
     }
   } catch {
     return null
@@ -210,6 +216,55 @@ function extractProductCode(itemNode: Record<string, unknown>): string | null {
     if (code) return code
   }
   return null
+}
+
+/**
+ * Códigos de OC que el proveedor citó en `<Referencia>` con `TpoDocRef` 801
+ * ("Orden de Compra" en la tabla de documentos no tributarios del SII).
+ *
+ * Es la evidencia más fuerte que existe para decir a qué orden pertenece una
+ * factura —la escribió el proveedor mirando nuestra OC— y hasta ahora el parser
+ * la descartaba entera. Sobre las 667 facturas reales de APRO y TRECK en
+ * `docs/facturas_apro_treck_kupfer`, **654 (98%) traen una referencia 801**, y
+ * todas las emitidas desde que la plataforma existe citan el código en su forma
+ * canónica sin prefijo: `2026-0025` para `OC-2026-0025`.
+ *
+ * Las que no calzan son las anteriores a la plataforma, con la numeración
+ * interna vieja del proveedor (`4477`, `585.`) — y las sucias que mandan igual:
+ * `OC206`, `SINOC080426`, `1 8 9`, `25/09/2025`. Por eso esto NO intenta
+ * interpretar: normaliza y deja que la comparación exacta decida. Un código que
+ * no calce con ninguna OC simplemente no aporta señal, que es el mismo lugar
+ * donde estábamos antes.
+ */
+function extractOrderCodeRefs(documento: Record<string, unknown>): string[] {
+  const codes = new Set<string>()
+  for (const referencia of asArray(child(documento, "Referencia"))) {
+    const record = asRecord(referencia)
+    if (!record) continue
+    const tipo = field(record, "TpoDocRef")?.trim().toUpperCase()
+    if (tipo !== "801" && tipo !== "OC") continue
+    const code = normalizeOrderCodeRef(field(record, "FolioRef"))
+    if (code) codes.add(code)
+  }
+  return [...codes]
+}
+
+/**
+ * Forma comparable de un código de OC, para los dos lados del cruce: el
+ * `FolioRef` del proveedor y el `purchase_orders.code` nuestro tienen que pasar
+ * por acá antes de compararse.
+ *
+ * `OC-2026-0025`, `2026-0025` y `OC 2026 0025` colapsan todos a `20260025`. Se
+ * descarta lo de menos de 3 caracteres (`N`, `-`): no identifica una orden y
+ * abarataría una coincidencia que después se muestra como certeza.
+ */
+export function normalizeOrderCodeRef(value: string | null | undefined): string | null {
+  if (!value) return null
+  const compact = value.toUpperCase().replace(/[^A-Z0-9]/g, "")
+  // El prefijo es nuestro, no del documento: los proveedores lo omiten tanto
+  // como lo escriben, y sin quitarlo `OC-2026-0025` nunca calzaría con `2026-0025`.
+  const withoutPrefix = compact.startsWith("OC") ? compact.slice(2) : compact
+  return withoutPrefix.length >= 3 ? withoutPrefix : null
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

@@ -9,11 +9,10 @@ import { and, eq, sql } from "drizzle-orm"
 import { getStockAlerts, type StockAlert } from "./stock-alerts"
 
 export async function getEppStockAlerts(): Promise<StockAlert[]> {
-  const allAlerts = await getStockAlerts()
-  const eppProductRows = await db
-    .select({ id: products.id })
-    .from(products)
-    .where(eq(products.isEpp, true))
+  const [allAlerts, eppProductRows] = await Promise.all([
+    getStockAlerts(),
+    db.select({ id: products.id }).from(products).where(eq(products.isEpp, true)),
+  ])
 
   const eppIds = new Set(eppProductRows.map((p) => p.id))
   return allAlerts.filter((alert) => eppIds.has(alert.productId))

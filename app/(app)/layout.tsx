@@ -13,7 +13,7 @@ import { AppShell } from "@/components/layout/app-shell"
 import { SessionProvider } from "@/components/providers/session-provider"
 import { QueryProvider } from "@/components/providers/query-provider"
 import { NavigationProgress } from "@/components/layout/navigation-progress"
-import { Toaster } from "sonner"
+import { AppToaster } from "@/components/ui/app-toaster"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { can } from "@/lib/auth/can"
 import { getNavigationToggleState, routeIsEnabled, type NavigationToggleState } from "@/lib/services/module-toggles"
@@ -159,25 +159,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       >
         {children}
       </AppShell>
-      <Toaster
-        position="top-right"
-        visibleToasts={4}
-        expand
-        closeButton
-        offset={16}
-        gap={8}
-        toastOptions={{
-          duration: 4000,
-          classNames: {
-            toast:
-              "font-sans text-sm shadow-[var(--shadow-md)] border border-[var(--color-border)] " +
-              "data-[swipe=end]:opacity-0 data-[swipe=end]:translate-x-full " +
-              "!transition-all !duration-[var(--duration-default)] !ease-[var(--ease-out)]",
-            title:       "font-medium text-[var(--color-text)]",
-            description: "text-[var(--color-text-muted)]",
-          },
-        }}
-      />
+      <AppToaster />
     </SessionProvider>
     </QueryProvider>
   )

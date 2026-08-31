@@ -23,9 +23,9 @@ import {
   FINDING_STATUS_LABELS,
   INSPECTION_KIND_LABELS,
   INSPECTION_ORIGIN_LABELS,
-  INSPECTION_RESULT_LABELS,
-  fieldKindAcceptsPartial,
   fieldKindIsScorable,
+  inspectionResultLabel,
+  inspectionResultOptionsFor,
   formatSignatureRole,
   resultBadgeVariant,
   resultSelectToneClass,
@@ -37,7 +37,7 @@ import {
   type InspectionAnswerInput,
   type InspectionItemSpec,
 } from "@/lib/prevention/inspections"
-import type { FieldKind } from "@/lib/sst/types"
+import type { ChecklistDefinition, FieldKind } from "@/lib/sst/types"
 import { formatDate, formatDateTime, todayInChile } from "@/lib/utils"
 import {
   cancelInspectionRunAction,
@@ -45,17 +45,26 @@ import {
   completeInspectionRunAction,
   createFindingCapaAction,
   registerDeviationAction,
+  registerInspectionPreventiveActionAction,
   remindInspectionReviewAction,
   removeDeviationAction,
   reopenInspectionRunAction,
   reviewInspectionRunAction,
   saveInspectionAnswersAction,
+  saveInspectionParticipantsAction,
   stopVehicleForFindingAction,
 } from "../actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { autosaveStatusLabel, useDebouncedAutosave } from "@/lib/hooks/use-debounced-autosave"
+import {
+  clearInspectionDraft,
+  readInspectionDraft,
+  writeInspectionDraft,
+} from "@/lib/prevention/inspection-draft-storage"
 import { compressPhoto } from "@/lib/pwa/image-compress"
 import { inspectionSubjectTypeLabel, inspectionTaskStatusLabel } from "@/lib/prevention/inspection-list-query"
+import type { OfflineInspectionSubmission } from "./offline-inspection-queue"
 
 interface RunInfo {
   id: string
@@ -64,6 +73,7 @@ interface RunInfo {
   origin: string
   subjectType: string | null
   subjectLabel: string | null
+  subjectResourceId: string | null
   /** Equipo de flota inspeccionado; habilita derivar a mantención. */
   subjectVehicleId: string | null
   scheduledFor: string | null
@@ -75,6 +85,8 @@ interface RunInfo {
   nonConformingCount: number
   notApplicableCount: number
   compliancePercent: number | null
+  officialComplianceBasisPoints: number | null
+  normalizedComplianceBasisPoints: number | null
   executedByUserId: string | null
   closingResult: string | null
   closingRestrictions: string | null
@@ -93,6 +105,7 @@ interface ItemInfo {
   danoPotencial: string | null
   options?: { value: string; label: string }[]
   placeholder?: string
+  matrix?: { rowId: string; rowLabel: string; columnLabel: string }
 }
 
 interface SectionInfo {
@@ -124,6 +137,10 @@ interface FindingInfo {
   capaActionId: string | null
   /** `derived` lo levantó un ítem; `deviation` lo registró una persona. */
   origin: string
+  potentialDamageDescription: string | null
+  immediateMeasure: string | null
+  applicableLaw: string | null
+  evidence: { id: string; path: string; caption: string | null }[]
 }
 
 type ResultValue = "" | "conforming" | "partial" | "non_conforming" | "not_applicable" | "recorded"
@@ -142,6 +159,7 @@ interface Props {
   templateKind: string
   /** El instrumento registra desviaciones en vez de puntuar ítems. */
   recordsDeviations: boolean
+  recordsPreventiveActions: boolean
   /** Catálogo activo del instrumento: de acá sale la gravedad de cada desviación. */
   deviationCatalog: { id: string; label: string; danoPotencial: string; criticality: string }[]
   /** Actividades del programa anual que esta inspección acredita al ejecutarse. */
@@ -155,6 +173,8 @@ interface Props {
   sections: SectionInfo[]
   answers: AnswerInfo[]
   findings: FindingInfo[]
+  isUnplannedInspection: boolean
+  participants: { id: string; name: string; position: string; userId: string | null }[]
   currentUserId: string
   assignees: { id: string; name: string }[]
   /** I-08: quién puede cerrarla en esta faena; se resuelve sólo cuando el bloqueo aplica. */
@@ -162,6 +182,7 @@ interface Props {
   canExecute: boolean
   canReview: boolean
   canManage: boolean
+  canRequestRecharge: boolean
   /** `combustibles:manage_vehicles`: confirma sacar el equipo de servicio. */
   canStopVehicle: boolean
   /** Planillas físicas adjuntas al run. */
@@ -170,6 +191,7 @@ interface Props {
   canIngest: boolean
   /** Acta que declara la plantilla; `null` si no exige uno. */
   closingAct: ClosingActSpec | null
+  scoringPolicy?: ChecklistDefinition["scoringPolicy"]
   /** Reporte de Equipos: el papel es el insumo que el jefe de faena transcribe. */
   physicalSourceRequired: boolean
 }
@@ -213,11 +235,6 @@ function sectionNavLabel(title: string, index: number) {
 }
 
 /**
- * Diálogo genérico de "acción con motivo obligatorio": cancelar, reabrir,
- * cerrar hallazgo. Las tres son la misma interacción, y el servicio exige el
- * mismo mínimo de 10 caracteres en todas.
- */
-/**
  * I-08: recordatorio manual para quien puede cerrar una inspección bloqueada.
  * `createNotifications` deduplica por día, así que el botón nunca satura —
  * clics repetidos el mismo día son inocuos.
@@ -256,6 +273,11 @@ function RemindReviewButton({ runId }: { runId: string }) {
  */
 const GHOST_DANGER_CLASS = "text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-tint)] hover:text-[var(--color-danger-ink)]"
 
+/**
+ * Diálogo genérico de "acción con motivo obligatorio": cancelar, reabrir,
+ * cerrar hallazgo. Las tres son la misma interacción, y el servicio exige el
+ * mismo mínimo de 10 caracteres en todas.
+ */
 function ReasonDialog({ trigger, title, description, action, onDone, variant = "ghost", confirmLabel }: {
   trigger: string
   title: string
@@ -379,6 +401,68 @@ function inspectionEvidenceFileName(path: string) {
   return path.split("/").pop() ?? ""
 }
 
+function FindingEvidence({ findingId, evidence, editable }: {
+  findingId: string
+  evidence: { id: string; path: string; caption: string | null }[]
+  editable: boolean
+}) {
+  const [uploadedItems, setUploadedItems] = React.useState<typeof evidence>([])
+  const [caption, setCaption] = React.useState("")
+  const [busy, setBusy] = React.useState(false)
+  const [error, setError] = React.useState("")
+  const inputRef = React.useRef<HTMLInputElement>(null)
+  const items = React.useMemo(() => {
+    const byId = new Map(evidence.map((item) => [item.id, item]))
+    for (const item of uploadedItems) byId.set(item.id, item)
+    return [...byId.values()]
+  }, [evidence, uploadedItems])
+
+  async function upload(files: FileList | null) {
+    if (!files?.length) return
+    setBusy(true)
+    setError("")
+    try {
+      for (const file of Array.from(files)) {
+        const compressed = await compressPhoto(file)
+        const body = new FormData()
+        body.set("file", compressed)
+        body.set("findingId", findingId)
+        body.set("caption", caption)
+        const response = await fetch("/api/prevencion/inspecciones/finding-evidence", { method: "POST", body })
+        if (!response.ok) {
+          const failure = await response.json().catch(() => ({}))
+          throw new Error(failure.error ?? "No se pudo subir la evidencia.")
+        }
+        const json = await response.json()
+        setUploadedItems((current) => [...current, { id: json.id, path: json.path, caption: json.caption }])
+      }
+      setCaption("")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo subir la evidencia.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      {items.length > 0 && <div className="flex flex-wrap gap-2">{items.map((item) => {
+        const name = inspectionEvidenceFileName(item.path)
+        return <a key={item.id} href={`/api/prevencion/inspecciones/evidence/${name}`} target="_blank" rel="noreferrer">
+          {/* eslint-disable-next-line @next/next/no-img-element -- URL autenticada y dinámica. */}
+          <img src={`/api/prevencion/inspecciones/evidence/${name}`} alt={item.caption ?? "Evidencia del hallazgo"} className="h-16 w-16 rounded border border-[var(--color-border)] object-cover" />
+        </a>
+      })}</div>}
+      {editable && <div className="flex flex-wrap items-end gap-2">
+        <Field label="Leyenda de la evidencia"><Input value={caption} onChange={(event) => setCaption(event.target.value)} maxLength={500} /></Field>
+        <input ref={inputRef} type="file" accept="image/*" multiple aria-label="Adjuntar evidencias del hallazgo" className="sr-only" onChange={(event) => { void upload(event.target.files); event.target.value = "" }} />
+        <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => inputRef.current?.click()}>{busy ? "Subiendo…" : "Adjuntar fotos"}</Button>
+      </div>}
+      {error && <p role="status" className="text-xs text-[var(--color-danger-ink)]">{error}</p>}
+    </div>
+  )
+}
+
 export function AnswerEvidence({ answerId, evidence, editable, readyToPersist, ensureAnswerId }: {
   answerId: string | null
   evidence: { id: string; path: string; caption: string | null }[]
@@ -477,11 +561,12 @@ export function AnswerEvidence({ answerId, evidence, editable, readyToPersist, e
 }
 
 export function InspectionRunDetail({
-  run, templateKind, recordsDeviations, deviationCatalog,
+  run, templateKind, recordsDeviations, recordsPreventiveActions, deviationCatalog,
   pdtpActivityNumbers, pdtpReviewActivityNumbers,
   worksiteName, assigneeName, executorName, reviewerName,
-  sections, answers, findings, currentUserId, assignees, reviewers, canExecute, canReview, canManage, canStopVehicle,
+  sections, answers, findings, isUnplannedInspection, participants, currentUserId, assignees, reviewers, canExecute, canReview, canManage, canStopVehicle, canRequestRecharge,
   documents, canIngest, closingAct,
+  scoringPolicy,
   physicalSourceRequired,
 }: Props) {
   const editable = canExecute && ["planned", "in_progress"].includes(run.status)
@@ -503,6 +588,39 @@ export function InspectionRunDetail({
     return initial
   })
   const operation = useOperation()
+  /* INS-02: el hook de autoguardado vigila un primitivo por valor, así que un
+   * contador que sube en cada edición cumple sin serializar el mapa completo en
+   * cada render. Mismo patrón que `use-checklist-responses.ts` en el motor SST. */
+  const [revision, setRevision] = React.useState(0)
+  const [restoredDraft, setRestoredDraft] = React.useState(false)
+
+  /* Espejo local recuperado. Sólo se aplica si es MÁS nuevo que lo que trae el
+   * servidor (misma versión del run): si alguien guardó desde otra sesión, lo
+   * persistido manda y el espejo se descarta, o restaurar pisaría trabajo ajeno
+   * con un borrador viejo del dispositivo. */
+  React.useEffect(() => {
+    if (!editable) return
+    const snapshot = readInspectionDraft(run.id)
+    if (!snapshot || snapshot.version !== run.version) {
+      if (snapshot) clearInspectionDraft(run.id)
+      return
+    }
+    setDrafts((current) => {
+      const restored = { ...current }
+      for (const [key, draft] of Object.entries(snapshot.drafts)) {
+        restored[key] = {
+          result: draft.result as ResultValue,
+          comment: draft.comment ?? "",
+          value: draft.value ?? "",
+          needsConfirmation: draft.needsConfirmation ?? false,
+        }
+      }
+      return restored
+    })
+    setRestoredDraft(true)
+    // Sólo al montar: después manda lo que la persona esté tecleando.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run.id])
 
   // C-02: el guardado ahora sube `version`, así que el CAS del siguiente envío
   // debe usar la que devolvió el servidor y no la de las props, que quedó
@@ -551,9 +669,20 @@ export function InspectionRunDetail({
       return { ok: response.ok, message: response.message, retriable: response.ok ? undefined : false }
     })
     if (result.synchronized > 0) setOfflineNote("Inspección sincronizada.")
-    else if (result.rejected > 0) setOfflineNote("La sincronización fue rechazada; revisa los datos.")
+    else if (result.rejected > 0) {
+      /* INS-19: el rechazo decía "revisa los datos" y el motivo real quedaba
+       * en IndexedDB sin que nadie lo leyera — típicamente que la inspección
+       * cambió en otra sesión y el CAS ya no cuadra. Sin el motivo, quien
+       * ejecutó no sabe si rehacer el cierre o pedir ayuda. */
+      const { listQueuedInspectionSubmissions } = await import("./offline-inspection-queue")
+      const entries = await listQueuedInspectionSubmissions()
+      const failed = entries.find((entry) => entry.payload.runId === run.id)
+      setOfflineNote(failed?.lastError
+        ? `La sincronización fue rechazada: ${failed.lastError}`
+        : "La sincronización fue rechazada; revisa los datos.")
+    }
     await refreshQueue()
-  }, [refreshQueue])
+  }, [refreshQueue, run.id])
 
   React.useEffect(() => {
     void refreshQueue()
@@ -580,6 +709,7 @@ export function InspectionRunDetail({
   }
 
   function update(sectionId: string, itemId: string, patch: Partial<Draft>) {
+    setRevision((value) => value + 1)
     setDrafts((current) => {
       const key = draftKey(sectionId, itemId)
       const base = current[key] ?? { result: "" as ResultValue, comment: "", value: "", needsConfirmation: false }
@@ -595,6 +725,7 @@ export function InspectionRunDetail({
 
   /** Ratifica lo que leyó la máquina sin cambiar la respuesta. */
   function confirmRead(sectionId: string, itemId: string) {
+    setRevision((value) => value + 1)
     setDrafts((current) => {
       const key = draftKey(sectionId, itemId)
       const base = current[key]
@@ -624,7 +755,7 @@ export function InspectionRunDetail({
     () => assessRunCompletion(items, currentAnswers, { spec: closingAct, act: closingAct ? closing : null }),
     [items, currentAnswers, closingAct, closing],
   )
-  const summary = React.useMemo(() => summarizeCompliance(items, currentAnswers), [items, currentAnswers])
+  const summary = React.useMemo(() => summarizeCompliance(items, currentAnswers, scoringPolicy), [items, currentAnswers, scoringPolicy])
   const answeredCount = currentAnswers.length
   // I-02: mismo conjunto que exige `assessRunCompletion` — antes el contador
   // usaba sólo `item.required`, y 11 de 12 plantillas del catálogo no declaran
@@ -694,28 +825,19 @@ export function InspectionRunDetail({
   }
 
   async function queueOffline() {
-    const { queueInspectionSubmission, createInspectionSubmissionId } = await import("./offline-inspection-queue")
+    const { queueInspectionSubmission } = await import("./offline-inspection-queue")
     try {
+      /* INS-18/INS-19: el mismo payload que manda el cierre en línea, sin
+       * recomponerlo a mano. Antes se omitía `needsConfirmation` —hoy inocuo
+       * porque el gate del cliente ya exige ratificar antes de habilitar el
+       * botón, pero era una divergencia esperando a que esa condición cambie—
+       * y viajaba un `clientSubmissionId` que `completeInspectionRun` descarta:
+       * su Zod no lo declara. La idempotencia del reintento la da el bloque
+       * `alreadyCompleted` del servicio (mismo ejecutante + ya ejecutada), no
+       * ese campo. */
       await queueInspectionSubmission({
-        clientSubmissionId: createInspectionSubmissionId(),
+        ...(completePayload() as unknown as Omit<OfflineInspectionSubmission, "runId">),
         runId: run.id,
-        expectedVersion: version,
-        answers: currentAnswers.map((answer) => ({
-          sectionId: answer.sectionId,
-          itemId: answer.itemId,
-          result: answer.result,
-          value: answer.value ?? null,
-          comment: answer.comment ?? null,
-        })),
-        locationLatitude: coords?.lat ?? null,
-        locationLongitude: coords?.lon ?? null,
-        closingAct: closingAct
-          ? {
-              result: closing.result,
-              restrictions: closing.restrictions || null,
-              signatures: closing.signatures.filter((item) => item.name.trim().length > 0),
-            }
-          : undefined,
       })
       setOfflineNote("Guardada en el dispositivo. Se enviará al recuperar conexión.")
       await refreshQueue()
@@ -779,6 +901,37 @@ export function InspectionRunDetail({
     operation.run(() => saveInspectionAnswersAction(answersPayload()), applySavedAnswerRefs)
   }
 
+  /* INS-02: espejo del borrador en el propio dispositivo. Se escribe en cada
+   * edición, antes y con independencia del autoguardado: en terreno el envío
+   * al servidor es justo lo que falla, y el espejo es lo único que sobrevive a
+   * cerrar la pestaña sin señal. */
+  React.useEffect(() => {
+    if (!editable || revision === 0) return
+    writeInspectionDraft(run.id, { version, savedAt: new Date().toISOString(), drafts })
+  }, [editable, revision, drafts, run.id, version])
+
+  /* Autoguardado contra el servidor, con el mismo camino de escritura que el
+   * botón. Reusa el hook que ya usa el motor SST para sus checklists — hasta
+   * ahora Inspecciones era el único que obligaba a acordarse de guardar, y es
+   * el que se ejecuta en terreno con 54 y hasta 75 ítems por delante.
+   *
+   * No se autoguarda con respuestas inválidas: el servidor las rechazaría
+   * igual y el hook reintentaría en bucle contra una guarda. */
+  const autosave = useDebouncedAutosave({
+    watchKey: revision,
+    isDirty: revision > 0,
+    onSave: () => saveInspectionAnswersAction(answersPayload()),
+    onSaved: (result) => {
+      applySavedAnswerRefs(result)
+      // Persistido: el espejo dejó de tener nada que rescatar.
+      clearInspectionDraft(run.id)
+      setRestoredDraft(false)
+    },
+    enabled: editable && rowProblems.length === 0,
+    debounceMs: 1200,
+  })
+  const savingAnswers = autosave.status === "saving"
+
   const facts = [
     { label: "Estado", value: inspectionTaskStatusLabel(run.status) },
     { label: "Tipo", value: INSPECTION_KIND_LABELS[templateKind] ?? templateKind },
@@ -788,7 +941,18 @@ export function InspectionRunDetail({
     { label: "Asignada a", value: assigneeName ?? "Sin asignar" },
     { label: "Programada para", value: run.scheduledFor ? formatDate(run.scheduledFor) : "Sin fecha" },
     { label: "Ejecutada por", value: executorName ? `${executorName} · ${formatDateTime(run.executedAt!)}` : "Sin ejecutar" },
-    { label: "Cumplimiento", value: run.compliancePercent === null ? (summary.compliancePercent === null ? "Aún no calculable" : `${summary.compliancePercent}% de ${summary.conforming + summary.partial + summary.nonConforming} evaluados`) : `${run.compliancePercent}%` },
+    {
+      label: "Resultado oficial",
+      value: (run.officialComplianceBasisPoints ?? summary.officialComplianceBasisPoints) === null
+        ? "Sin fórmula en el documento"
+        : `${(run.officialComplianceBasisPoints ?? summary.officialComplianceBasisPoints)! / 100}%`,
+    },
+    {
+      label: "Resultado normalizado",
+      value: (run.normalizedComplianceBasisPoints ?? summary.normalizedComplianceBasisPoints) === null
+        ? "Aún no calculable"
+        : `${(run.normalizedComplianceBasisPoints ?? summary.normalizedComplianceBasisPoints)! / 100}%`,
+    },
     { label: "Ubicación", value: coords ? `${coords.lat}, ${coords.lon} · dato de apoyo opcional` : "No capturada · opcional" },
     // Qué acredita en el programa anual, y en qué etapa. El estado del run dice
     // si ya ocurrió: `completed` cierra la primera, `reviewed` la segunda.
@@ -817,7 +981,16 @@ export function InspectionRunDetail({
   const findingsFirst = !editable && (run.status === "completed" || run.status === "reviewed")
   const findingsSection = (run.status === "completed" || run.status === "reviewed") ? (
     <section id="hallazgos" className="scroll-mt-16 space-y-3">
-      <h2 className="text-sm font-semibold">Hallazgos ({findings.length})</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold">Hallazgos ({findings.length})</h2>
+        {findings.length > 0 && run.subjectResourceId && canRequestRecharge && (
+          <Button asChild size="sm" variant="secondary">
+            <Link href={`/solicitudes/nueva?tipo=otro&recursoEmergencia=${encodeURIComponent(run.subjectResourceId)}`}>
+              Solicitar recarga
+            </Link>
+          </Button>
+        )}
+      </div>
       {findings.length === 0 ? (
         <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">Sin hallazgos: todos los ítems evaluables cumplieron.</p>
       ) : (
@@ -931,9 +1104,16 @@ export function InspectionRunDetail({
             </Button>
           )}
           {editable && (
-            <Button className="hidden md:inline-flex" type="button" size="sm" variant="secondary" disabled={operation.pending || rowProblems.length > 0} onClick={saveAnswers}>
-              Guardar respuestas
-            </Button>
+            <>
+              <Button className="hidden md:inline-flex" type="button" size="sm" variant="secondary" disabled={operation.pending || savingAnswers || rowProblems.length > 0} onClick={saveAnswers}>
+                {savingAnswers ? "Guardando…" : "Guardar respuestas"}
+              </Button>
+              {/* INS-02: el autoguardado necesita decir en qué estado está, o
+                  quien ejecuta no sabe si puede irse de la pantalla. */}
+              <span role="status" className="hidden self-center text-xs text-[var(--color-text-subtle)] md:inline">
+                {autosaveStatusLabel(autosave.status)}
+              </span>
+            </>
           )}
           {/* Función #3: el acta de LA inspección. El export Excel es agregado
               y en fiscalización se pide esta. */}
@@ -942,7 +1122,7 @@ export function InspectionRunDetail({
               <a href={`/prevencion/inspecciones/${run.id}/print`} target="_blank" rel="noreferrer">Acta PDF</a>
             </Button>
           )}
-          {editable && <span className="hidden md:inline-flex"><CompleteDialog run={run} completion={completion} rowProblems={rowProblems} payload={completePayload} onSaved={applyVersion} /></span>}
+          {editable && <span className="hidden md:inline-flex"><CompleteDialog run={run} completion={completion} rowProblems={rowProblems} payload={completePayload} onSaved={applyVersion} saving={savingAnswers} /></span>}
           {canCurrentUserReview && (
             <span className="hidden md:inline-flex"><ReviewDialog run={run} findings={findings} currentUserId={currentUserId} version={version} assignees={assignees} canExecute={canExecute} /></span>
           )}
@@ -972,6 +1152,23 @@ export function InspectionRunDetail({
       </div>
 
       {operation.message && <p role="status" className="rounded-lg border border-[var(--color-success-line)] bg-[var(--color-success-tint)] px-3 py-2 text-sm text-[var(--color-success-ink)] md:static">{operation.message}</p>}
+
+      {/* INS-02: el borrador que sobrevivió en el dispositivo. Se dice, no se
+          aplica en silencio: quien vuelve tiene que saber que lo que ve son sus
+          respuestas sin enviar y no lo que el servidor tiene guardado. */}
+      {restoredDraft && (
+        <p role="status" className="rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-sm text-[var(--color-warning-ink)]">
+          Se recuperaron respuestas sin enviar de este dispositivo. Se guardarán solas al recuperar conexión, o pulsa «Guardar respuestas».
+        </p>
+      )}
+
+      {/* El hook reintenta solo, pero callarlo dejaría a alguien creyendo que
+          su trabajo está a salvo cuando la faena no tiene señal. */}
+      {autosave.error && (
+        <p role="status" className="rounded-lg border border-[var(--color-danger-line)] bg-[var(--color-surface-2)] px-3 py-2 text-sm">
+          {autosave.error} Tus respuestas siguen guardadas en este dispositivo.
+        </p>
+      )}
 
       {reviewBlocked && (
         <div className="rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-sm text-[var(--color-warning-ink)]">
@@ -1075,7 +1272,10 @@ export function InspectionRunDetail({
                 return (
                   <article key={item.id} id={`item-mobile-${key}`} className="scroll-mt-28 space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
                     <div className="flex items-start justify-between gap-3">
-                      <h3 className="text-sm font-semibold leading-snug">{itemIndex + 1}. {item.label}</h3>
+                      <h3 className="text-sm font-semibold leading-snug">
+                        {itemIndex + 1}. {item.matrix?.rowLabel ?? item.label}
+                        {item.matrix && <span className="ml-2 text-xs font-medium text-[var(--color-text-subtle)]">{item.matrix.columnLabel}</span>}
+                      </h3>
                       {item.required ? <Badge variant="outline">Obligatorio</Badge> : <span className="text-xs text-[var(--color-text-subtle)]">Opcional</span>}
                     </div>
                     {draft.needsConfirmation && (
@@ -1093,15 +1293,18 @@ export function InspectionRunDetail({
                               <SelectTrigger aria-label={`Resultado de ${item.label}`} className={resultSelectToneClass(draft.result)}><SelectValue placeholder="Sin responder" /></SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="__unset__">Sin responder</SelectItem>
-                                {Object.entries(INSPECTION_RESULT_LABELS)
-                                  .filter(([value]) => value !== "recorded")
-                                  .filter(([value]) => value !== "partial" || fieldKindAcceptsPartial(item.kind))
-                                  .map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                                {/* INS-01: las opciones salen de la escala del ítem, no del
+                                    mapa global. Ofrecer "No aplica" en un Anexo 13 dejaba
+                                    sacar del denominador un ítem que el papel obliga a
+                                    juzgar; y ahora la etiqueta es la del anexo ("Bueno"). */}
+                                {inspectionResultOptionsFor(item.kind).map((option) => (
+                                  <SelectItem key={option.result} value={option.result}>{option.label}</SelectItem>
+                                ))}
                               </SelectContent>
                             </Select>
-                          ) : draft.result ? <Badge variant={resultBadgeVariant(draft.result)}>{INSPECTION_RESULT_LABELS[draft.result] ?? draft.result}</Badge> : <span>Sin respuesta</span>}
+                          ) : draft.result ? <Badge variant={resultBadgeVariant(draft.result)}>{inspectionResultLabel(item.kind, draft.result)}</Badge> : <span>Sin respuesta</span>}
                         </Field>
-                        <Field label="Comentario" hint={needsComment ? "Obligatorio para No cumple, Regular o No aplica; mínimo 3 caracteres." : "Opcional, salvo que el resultado requiera justificación."}>
+                        <Field label="Comentario" hint={needsComment ? `Obligatorio para "${inspectionResultLabel(item.kind, draft.result)}"; mínimo 3 caracteres.` : "Opcional, salvo que el resultado requiera justificación."}>
                           {editable ? <Textarea value={draft.comment} onChange={(event) => update(section.id, item.id, { comment: event.target.value })} rows={3} aria-label={`Comentario de ${item.label}`} /> : <p className="text-sm">{draft.comment || "Sin comentario"}</p>}
                         </Field>
                       </>
@@ -1142,8 +1345,8 @@ export function InspectionRunDetail({
                     // 'Regular' exige justificarse por escrito igual que 'No aplica'
                     // — mismo criterio que el motor SST (requiresObservation).
                     // I-05: "No cumple" exige motivo igual que "No aplica"/"Regular" — es
-                // el resultado que genera el hallazgo.
-                const needsComment = draft.result === "not_applicable" || draft.result === "partial" || draft.result === "non_conforming"
+                    // el resultado que genera el hallazgo.
+                    const needsComment = draft.result === "not_applicable" || draft.result === "partial" || draft.result === "non_conforming"
                     // B-08: un ítem que no expresa conformidad se responde con
                     // su contenido. Antes se le ofrecía "Cumple / No cumple" y
                     // el texto no tenía dónde guardarse.
@@ -1151,7 +1354,9 @@ export function InspectionRunDetail({
                     return (
                       <TableRow key={item.id} id={`item-desktop-${key}`} className="scroll-mt-20">
                         <TableCell className="text-sm">
-                          {item.label}
+                          {item.matrix ? (
+                            <span><span className="font-medium">{item.matrix.rowLabel}</span><span className="ml-2 text-xs text-[var(--color-text-subtle)]">{item.matrix.columnLabel}</span></span>
+                          ) : item.label}
                           {item.required && <Badge variant="outline" className="ml-2">Obligatorio</Badge>}
                           {draft.needsConfirmation && (
                             <span className="mt-1 flex flex-wrap items-center gap-2">
@@ -1177,15 +1382,14 @@ export function InspectionRunDetail({
                                   <SelectTrigger aria-label={`Resultado de ${item.label}`}><SelectValue placeholder="Sin responder" /></SelectTrigger>
                                   <SelectContent>
                                     <SelectItem value="__unset__">Sin responder</SelectItem>
-                                    {Object.entries(INSPECTION_RESULT_LABELS)
-                                      .filter(([value]) => value !== "recorded")
-                                      .filter(([value]) => value !== "partial" || fieldKindAcceptsPartial(item.kind))
-                                      .map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                                    {inspectionResultOptionsFor(item.kind).map((option) => (
+                                      <SelectItem key={option.result} value={option.result}>{option.label}</SelectItem>
+                                    ))}
                                   </SelectContent>
                                 </Select>
                               ) : draft.result ? (
                                 <Badge variant={resultBadgeVariant(draft.result)}>
-                                  {INSPECTION_RESULT_LABELS[draft.result] ?? draft.result}
+                                  {inspectionResultLabel(item.kind, draft.result)}
                                 </Badge>
                               ) : "—"}
                             </TableCell>
@@ -1194,7 +1398,9 @@ export function InspectionRunDetail({
                                 <Input
                                   value={draft.comment}
                                   onChange={(event) => update(section.id, item.id, { comment: event.target.value })}
-                                  placeholder={needsComment ? (draft.result === "partial" ? "Motivo del Regular (mínimo 3 caracteres)" : draft.result === "non_conforming" ? "Motivo del No cumple (mínimo 3 caracteres)" : "Motivo por el que no aplica (mínimo 3 caracteres)") : "Opcional"}
+                                  // El motivo nombra el resultado como lo nombra el instrumento:
+                                  // en un Anexo B/R/M pide "Motivo del Malo", no "del No cumple".
+                                  placeholder={needsComment ? `Motivo del "${inspectionResultLabel(item.kind, draft.result)}" (mínimo 3 caracteres)` : "Opcional"}
                                   aria-label={`Comentario de ${item.label}`}
                                 />
                               ) : (
@@ -1251,13 +1457,22 @@ export function InspectionRunDetail({
           gravedad la trae el catálogo, así que el plazo de la acción correctiva
           no depende de quien está en terreno. */}
       {recordsDeviations && (
+        <>
+        {isUnplannedInspection && (
+          <ParticipantsPanel runId={run.id} participants={participants} editable={editable && canExecute} />
+        )}
         <DeviationsPanel
           runId={run.id}
           editable={editable}
           canExecute={canExecute}
           catalog={deviationCatalog}
           registered={findings.filter((finding) => finding.origin === "deviation")}
+          narrative={isUnplannedInspection}
         />
+        </>
+      )}
+      {recordsPreventiveActions && (
+        <PreventiveActionsPanel runId={run.id} actions={findings.filter((finding) => finding.origin === "deviation")} assignees={assignees} editable={editable && canExecute} />
       )}
 
       {!physicalSourceRequired && canIngest && editable && <SourceFormUpload runId={run.id} hasDocuments={documents.length > 0} />}
@@ -1341,8 +1556,8 @@ export function InspectionRunDetail({
         <div className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 grid grid-cols-2 gap-2 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-[var(--shadow-lg)] md:hidden">
           {editable ? (
             <>
-              <Button type="button" variant="secondary" disabled={operation.pending || rowProblems.length > 0} onClick={saveAnswers}>Guardar</Button>
-              <CompleteDialog run={run} completion={completion} rowProblems={rowProblems} payload={completePayload} onSaved={applyVersion} />
+              <Button type="button" variant="secondary" disabled={operation.pending || savingAnswers || rowProblems.length > 0} onClick={saveAnswers}>{savingAnswers ? "Guardando…" : "Guardar"}</Button>
+              <CompleteDialog run={run} completion={completion} rowProblems={rowProblems} payload={completePayload} onSaved={applyVersion} saving={savingAnswers} />
             </>
           ) : canCurrentUserReview ? (
             <div className="col-span-2"><ReviewDialog run={run} findings={findings} currentUserId={currentUserId} version={version} assignees={assignees} canExecute={canExecute} /></div>
@@ -1365,6 +1580,95 @@ export function InspectionRunDetail({
  * en la cola que Prevención resuelve desde el creador.
  */
 
+function PreventiveActionsPanel({ runId, actions, assignees, editable }: {
+  runId: string
+  actions: FindingInfo[]
+  assignees: { id: string; name: string }[]
+  editable: boolean
+}) {
+  const [open, setOpen] = React.useState(false)
+  const [responsibleUserId, setResponsibleUserId] = React.useState("")
+  const [targetDate, setTargetDate] = React.useState("")
+  const operation = useOperation()
+  return <section className="space-y-3">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <h2 className="text-sm font-semibold">Acciones preventivas ({actions.length}/6)</h2>
+      {editable && actions.length < 6 && <Button type="button" size="sm" variant="secondary" onClick={() => setOpen(true)}>Agregar acción</Button>}
+    </div>
+    {actions.length === 0 ? <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">Sin acciones preventivas acordadas.</p> : <ol className="space-y-2">{actions.map((action, index) => <li key={action.id} className="rounded-lg border border-[var(--color-border)] p-3 text-sm"><span className="font-semibold">{index + 1}.</span> {action.description} {action.capaActionId && <Badge variant="success" className="ml-2">CAPA creada</Badge>}</li>)}</ol>}
+    <Dialog open={open} onOpenChange={setOpen}><DialogContent><form className="space-y-4" onSubmit={(event) => {
+      event.preventDefault()
+      const actionDescription = String(new FormData(event.currentTarget).get("actionDescription") ?? "")
+      operation.run(() => registerInspectionPreventiveActionAction({ runId, actionDescription, responsibleUserId, targetDate }), () => setOpen(false))
+    }}>
+      <DialogHeader><DialogTitle>Acción preventiva</DialogTitle><DialogDescription>La acción quedará creada directamente en CAPA/PDTP con responsable y fecha de control.</DialogDescription></DialogHeader>
+      <Field label="Acción acordada" required><Textarea name="actionDescription" required minLength={10} maxLength={3000} /></Field>
+      <Field label="Responsable" required><Select value={responsibleUserId} onValueChange={setResponsibleUserId}><SelectTrigger aria-label="Responsable de la acción"><SelectValue placeholder="Selecciona responsable" /></SelectTrigger><SelectContent>{assignees.map((person) => <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>)}</SelectContent></Select></Field>
+      <Field label="Fecha de control" required><DatePicker value={targetDate} onChange={setTargetDate} /></Field>
+      {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+      <DialogFooter><Button type="submit" disabled={operation.pending || !responsibleUserId || !targetDate}>Crear acción CAPA</Button></DialogFooter>
+    </form></DialogContent></Dialog>
+  </section>
+}
+
+function ParticipantsPanel({ runId, participants, editable }: {
+  runId: string
+  participants: { id: string; name: string; position: string; userId: string | null }[]
+  editable: boolean
+}) {
+  const [rows, setRows] = React.useState(() => participants.map(({ id, name, position, userId }) => ({ id, name, position, userId })))
+  const operation = useOperation()
+
+  function updateRow(index: number, patch: Partial<{ name: string; position: string }>) {
+    setRows((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row))
+  }
+
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold">Participantes ({rows.length})</h2>
+        {editable && (
+          <Button type="button" size="sm" variant="secondary" onClick={() => setRows((current) => [...current, { id: `participant-${Date.now()}-${current.length}`, name: "", position: "", userId: null }])}>
+            Agregar participante
+          </Button>
+        )}
+      </div>
+      {rows.length === 0 ? (
+        <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">
+          Registra al menos una persona participante, con su nombre y cargo.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {rows.map((row, index) => (
+            <div key={row.id} className="grid gap-2 rounded-lg border border-[var(--color-border)] p-3 md:grid-cols-[1fr_1fr_auto]">
+              {editable ? (
+                <>
+                  <Field label={`Nombre ${index + 1}`} required><Input value={row.name} onChange={(event) => updateRow(index, { name: event.target.value })} /></Field>
+                  <Field label="Cargo" required><Input value={row.position} onChange={(event) => updateRow(index, { position: event.target.value })} /></Field>
+                  <Button type="button" size="sm" variant="ghost" className="self-end" onClick={() => setRows((current) => current.filter((_, rowIndex) => rowIndex !== index))}>Quitar</Button>
+                </>
+              ) : (
+                <p className="md:col-span-3"><span className="font-medium">{row.name}</span> · {row.position}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {editable && (
+        <Button
+          type="button"
+          size="sm"
+          disabled={operation.pending || rows.length === 0 || rows.some((row) => row.name.trim().length < 2 || row.position.trim().length < 2)}
+          onClick={() => operation.run(() => saveInspectionParticipantsAction({ runId, participants: rows }))}
+        >
+          {operation.pending ? "Guardando…" : "Guardar participantes"}
+        </Button>
+      )}
+      {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+    </section>
+  )
+}
+
 const DEVIATION_PLAZO: Record<string, string> = {
   critical: "3 días y detención",
   high: "7 días",
@@ -1372,12 +1676,13 @@ const DEVIATION_PLAZO: Record<string, string> = {
   low: "30 días",
 }
 
-function DeviationsPanel({ runId, editable, canExecute, catalog, registered }: {
+function DeviationsPanel({ runId, editable, canExecute, catalog, registered, narrative }: {
   runId: string
   editable: boolean
   canExecute: boolean
   catalog: { id: string; label: string; danoPotencial: string; criticality: string }[]
   registered: FindingInfo[]
+  narrative: boolean
 }) {
   const [entryId, setEntryId] = React.useState("")
   const [otherOpen, setOtherOpen] = React.useState(false)
@@ -1390,7 +1695,7 @@ function DeviationsPanel({ runId, editable, canExecute, catalog, registered }: {
         <h2 className="text-sm font-semibold">Desviaciones encontradas ({registered.length})</h2>
         {puedeRegistrar && (
           <div className="flex flex-wrap items-center gap-2">
-            {catalog.length > 0 && (
+            {!narrative && catalog.length > 0 && (
               <>
                 <Select value={entryId} onValueChange={setEntryId}>
                   <SelectTrigger className="w-72" aria-label="Desviación del catálogo">
@@ -1418,13 +1723,13 @@ function DeviationsPanel({ runId, editable, canExecute, catalog, registered }: {
               </>
             )}
             <Button type="button" size="sm" variant="secondary" onClick={() => setOtherOpen(true)}>
-              Otra desviación
+              {narrative ? "Registrar hallazgo" : "Otra desviación"}
             </Button>
           </div>
         )}
       </div>
 
-      {catalog.length === 0 && puedeRegistrar && (
+      {!narrative && catalog.length === 0 && puedeRegistrar && (
         <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-xs">
           Este instrumento aún no tiene catálogo de desviaciones. Prevención lo arma desde Inspecciones → Plantillas;
           mientras tanto se pueden registrar con «Otra desviación».
@@ -1449,7 +1754,8 @@ function DeviationsPanel({ runId, editable, canExecute, catalog, registered }: {
             </TableHeader>
             <TableBody>
               {registered.map((finding) => (
-                <TableRow key={finding.id}>
+                <React.Fragment key={finding.id}>
+                <TableRow>
                   <TableCell className="text-sm">{finding.description}</TableCell>
                   <TableCell>
                     <Badge variant={criticalityBadgeVariant(finding.criticality)}>
@@ -1478,6 +1784,19 @@ function DeviationsPanel({ runId, editable, canExecute, catalog, registered }: {
                     </TableCell>
                   )}
                 </TableRow>
+                {narrative && (finding.potentialDamageDescription || finding.immediateMeasure || finding.applicableLaw) && (
+                  <TableRow>
+                    <TableCell colSpan={puedeRegistrar ? 5 : 4} className="bg-[var(--color-surface-2)] text-xs">
+                      <dl className="grid gap-2 md:grid-cols-3">
+                        <div><dt className="font-semibold">Daño potencial</dt><dd>{finding.potentialDamageDescription ?? "—"}</dd></div>
+                        <div><dt className="font-semibold">Medida preventiva</dt><dd>{finding.immediateMeasure ?? "—"}</dd></div>
+                        <div><dt className="font-semibold">Normativa</dt><dd>{finding.applicableLaw ?? "—"}</dd></div>
+                      </dl>
+                      <div className="mt-3"><FindingEvidence findingId={finding.id} evidence={finding.evidence} editable={puedeRegistrar} /></div>
+                    </TableCell>
+                  </TableRow>
+                )}
+                </React.Fragment>
               ))}
             </TableBody>
           </Table>
@@ -1485,7 +1804,7 @@ function DeviationsPanel({ runId, editable, canExecute, catalog, registered }: {
       )}
       {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
 
-      <OtherDeviationDialog runId={runId} open={otherOpen} onOpenChange={setOtherOpen} />
+      <OtherDeviationDialog runId={runId} open={otherOpen} onOpenChange={setOtherOpen} narrative={narrative} />
     </section>
   )
 }
@@ -1495,10 +1814,11 @@ function DeviationsPanel({ runId, editable, canExecute, catalog, registered }: {
  * Queda sin entrada de catálogo, y por eso aparece en la cola de clasificación
  * del creador para que Prevención la incorpore con la gravedad oficial.
  */
-function OtherDeviationDialog({ runId, open, onOpenChange }: {
+function OtherDeviationDialog({ runId, open, onOpenChange, narrative }: {
   runId: string
   open: boolean
   onOpenChange: (next: boolean) => void
+  narrative: boolean
 }) {
   const [dano, setDano] = React.useState("moderado")
   const operation = useOperation()
@@ -1510,23 +1830,45 @@ function OtherDeviationDialog({ runId, open, onOpenChange }: {
           className="space-y-4"
           onSubmit={(event) => {
             event.preventDefault()
-            const description = String(new FormData(event.currentTarget).get("description") ?? "").trim()
+            const form = new FormData(event.currentTarget)
+            const description = String(form.get("description") ?? "").trim()
             operation.run(
-              () => registerDeviationAction({ runId, description, danoPotencial: dano }),
+              () => registerDeviationAction({
+                runId,
+                description,
+                danoPotencial: dano,
+                potentialDamageDescription: narrative ? String(form.get("potentialDamageDescription") ?? "").trim() : undefined,
+                immediateMeasure: narrative ? String(form.get("immediateMeasure") ?? "").trim() : undefined,
+                applicableLaw: narrative ? String(form.get("applicableLaw") ?? "").trim() : undefined,
+              }),
               () => onOpenChange(false),
             )
           }}
         >
           <DialogHeader>
-            <DialogTitle>Otra desviación</DialogTitle>
+            <DialogTitle>{narrative ? "Registrar hallazgo del Anexo 08" : "Otra desviación"}</DialogTitle>
             <DialogDescription>
-              Para lo que no está en el catálogo. Prevención la revisará y, si corresponde, la incorporará con su
-              gravedad oficial — hasta entonces rige la que elijas acá.
+              {narrative
+                ? "Completa los antecedentes documentales del hallazgo. La clasificación interna determina la prioridad y el plazo CAPA."
+                : "Para lo que no está en el catálogo. Prevención la revisará y, si corresponde, la incorporará con su gravedad oficial — hasta entonces rige la que elijas acá."}
             </DialogDescription>
           </DialogHeader>
           <Field label="Qué se encontró" required>
             <Textarea name="description" required minLength={3} maxLength={3000} rows={3} aria-label="Descripción de la desviación" />
           </Field>
+          {narrative && (
+            <>
+              <Field label="Descripción narrativa del daño potencial" required>
+                <Textarea name="potentialDamageDescription" required minLength={3} maxLength={3000} rows={3} />
+              </Field>
+              <Field label="Medida preventiva" required>
+                <Textarea name="immediateMeasure" required minLength={3} maxLength={3000} rows={3} />
+              </Field>
+              <Field label="Normativa legal aplicable" required>
+                <Input name="applicableLaw" required minLength={2} maxLength={1000} />
+              </Field>
+            </>
+          )}
           <Field label="Gravedad" required>
             <Select value={dano} onValueChange={setDano}>
               <SelectTrigger aria-label="Gravedad de la desviación"><SelectValue /></SelectTrigger>
@@ -1557,16 +1899,18 @@ function OtherDeviationDialog({ runId, open, onOpenChange }: {
  * inspector que corregía tres ítems y pulsaba "Declarar ejecutada" sin volver a
  * guardar firmaba cumplimiento y hallazgos con los valores viejos, sin aviso.
  */
-function CompleteDialog({ run, completion, rowProblems, payload, onSaved }: {
+function CompleteDialog({ run, completion, rowProblems, payload, onSaved, saving = false }: {
   run: RunInfo
   completion: { allowed: boolean; blockers: { kind: string; detail: string }[] }
   rowProblems: string[]
   payload: () => Record<string, unknown>
   onSaved: (result: { data?: Record<string, unknown> }) => void
+  /** Autoguardado en vuelo: cerrar ahora mandaría un `expectedVersion` viejo. */
+  saving?: boolean
 }) {
   const [open, setOpen] = React.useState(false)
   const operation = useOperation()
-  const blocked = !completion.allowed || rowProblems.length > 0
+  const blocked = !completion.allowed || rowProblems.length > 0 || saving
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -1577,6 +1921,8 @@ function CompleteDialog({ run, completion, rowProblems, payload, onSaved }: {
             event.preventDefault()
             operation.run(() => completeInspectionRunAction(payload()), (result) => {
               onSaved(result)
+              // Declarada ejecutada: el borrador del dispositivo ya no aplica.
+              clearInspectionDraft(run.id)
               setOpen(false)
             })
           }}
@@ -1607,6 +1953,7 @@ function CompleteDialog({ run, completion, rowProblems, payload, onSaved }: {
             </div>
           )}
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+          {saving && <p className="text-sm text-[var(--color-text-subtle)]">Guardando las últimas respuestas…</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending || blocked}>Declarar ejecutada</Button></DialogFooter>
         </form>
       </DialogContent>
@@ -1823,8 +2170,11 @@ function SourceFormUpload({ runId, hasDocuments }: { runId: string; hasDocuments
         const failure = await response.json().catch(() => ({}))
         throw new Error(failure?.error ?? "No se pudo subir la planilla.")
       }
-      // Actualiza el documento del Server Component y conserva el estado del
-      // checklist cliente; una recarga completa destruía el borrador.
+      /* INS-10: `router.refresh()` en una ruta con `loading.tsx` vuelve a
+       * suspender, y React puede desmontar el árbol de cliente y montar uno
+       * nuevo — el borrador en `useState` se iría con él. Lo que sostiene la
+       * promesa de abajo no es el refresh: es el espejo en el dispositivo
+       * (`inspection-draft-storage`), que se restaura al volver a montar. */
       setMessage("Planilla cargada. Tu borrador de respuestas se conserva.")
       router.refresh()
     } catch (error) {
@@ -1844,7 +2194,7 @@ function SourceFormUpload({ runId, hasDocuments }: { runId: string; hasDocuments
         ref={inputRef}
         type="file"
         aria-label={hasDocuments ? "Agregar otra hoja del reporte físico" : "Subir la planilla física"}
-        accept="image/jpeg,image/png,application/pdf"
+        accept="image/jpeg,image/png,application/pdf,.docx,.xlsx,.xls"
         className="sr-only"
         onChange={(event) => {
           const file = event.target.files?.[0]
@@ -1882,7 +2232,7 @@ function ReviewDialog({ run, findings, currentUserId, version, assignees, canExe
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button size="sm" variant="secondary">Revisar y cerrar{!review.allowed ? ` · ${review.blockers.length} bloqueo(s)` : ""}</Button></DialogTrigger>
+      <DialogTrigger asChild><Button size="sm" variant="secondary">Revisar y cerrar{!review.allowed ? ` · ${review.blockers.length} bloqueo${review.blockers.length === 1 ? "" : "s"}` : ""}</Button></DialogTrigger>
       <DialogContent>
         <form
           onSubmit={(event) => {

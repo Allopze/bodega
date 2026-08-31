@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { can, guardPermission } from "@/lib/auth/can"
 import { getAppBaseUrl, sendInvitationEmail } from "@/lib/email/smtp"
@@ -31,7 +33,7 @@ export async function createTemporarySubstituteAction(input: unknown): Promise<A
         pendingInviteUrl = inviteUrl
       }
     } catch (error) {
-      const reason = error instanceof Error ? error.message : "error desconocido"
+      const reason = safeActionMessage(error, "error desconocido")
       message = `Cuenta temporal creada para ${created.name}, pero no se pudo enviar la invitación (${reason}).`
       pendingInviteUrl = inviteUrl
     }
@@ -42,7 +44,7 @@ export async function createTemporarySubstituteAction(input: unknown): Promise<A
       data: pendingInviteUrl ? { email: created.email, inviteUrl: pendingInviteUrl } : undefined,
     }
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "No se pudo crear la cuenta temporal"
+    const msg = safeActionMessage(error, "No se pudo crear la cuenta temporal")
     return { ok: false, message: msg }
   }
 }
@@ -55,7 +57,7 @@ export async function extendTemporarySubstituteAction(args: { userId: string; ad
     revalidatePath(ROOT)
     return { ok: true, message: `Vigencia extendida por ${args.additionalDays} días` }
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "No se pudo extender la vigencia"
+    const msg = safeActionMessage(error, "No se pudo extender la vigencia")
     return { ok: false, message: msg }
   }
 }
@@ -68,7 +70,7 @@ export async function revokeTemporarySubstituteAction(userId: string): Promise<A
     revalidatePath(ROOT)
     return { ok: true, message: "Cuenta temporal de reemplazo revocada" }
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : "No se pudo revocar la cuenta temporal"
+    const msg = safeActionMessage(error, "No se pudo revocar la cuenta temporal")
     return { ok: false, message: msg }
   }
 }

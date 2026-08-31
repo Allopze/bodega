@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { ZodError } from "zod"
 import { guardPermission } from "@/lib/auth/can"
@@ -24,7 +26,7 @@ async function run(access: CphsAccess, operation: (access: CphsAccess) => Promis
     return { ok: true }
   } catch (error) {
     if (error instanceof ZodError) return { ok: false, message: "Revisa los campos marcados.", fieldErrors: error.flatten().fieldErrors as Record<string, string[]> }
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo completar la operación." }
+    return { ok: false, message: safeActionMessage(error, "No se pudo completar la operación.") }
   }
 }
 

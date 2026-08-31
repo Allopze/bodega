@@ -1,6 +1,16 @@
 import { createHash } from "node:crypto"
+import { plateMatchKey } from "@/lib/combustibles/xlsx-utils"
 
 export type FuelProvider = "copec" | "aramco"
+
+/**
+ * Qué representa una fila de la fuente.
+ *
+ * `period_aggregate` es el informe TCT de Copec: una fila por patente y MES.
+ * No se puede cruzar contra una carga interna por fecha y monto, así que la
+ * conciliación la salta explícitamente.
+ */
+export type ProviderRowGranularity = "transaction" | "period_aggregate"
 
 export interface ProviderRowInput {
   provider: FuelProvider
@@ -13,6 +23,8 @@ export interface ProviderRowInput {
   quantity: unknown
   amount: unknown
   payload: unknown
+  /** Por defecto `transaction`: sólo Copec TCT declara agregado. */
+  granularity?: ProviderRowGranularity
 }
 
 export type ProviderValidationCode =
@@ -42,13 +54,26 @@ export interface AcceptedProviderRow {
   identityKey: string
   fingerprint: string
   occurredAt: string
+  /** Clave de comparación (`plateMatchKey`), para resolver el vehículo. */
   plate: string
+  /**
+   * Patente TAL COMO la entregó la fuente.
+   *
+   * `fuel_provider_transactions.source_plate` guardaba la forma compacta para
+   * las filas aceptadas y la CRUDA para las rechazadas y pendientes, o sea dos
+   * representaciones distintas en la misma columna. La columna significa "lo
+   * que mandó el proveedor" —así la usa la exportación de calidad, donde el
+   * operador va a buscar esa patente al portal— y el matching ya normaliza por
+   * su cuenta. Mismo par que `sourceProduct`/`product`.
+   */
+  sourcePlate: string | null
   sourceProduct: string | null
   product: string
   quantity: number
   amount: number
   unitPrice: number | null
   payload: unknown
+  granularity: ProviderRowGranularity
 }
 
 export interface ProviderValidationResult {
@@ -64,22 +89,43 @@ const productAliases: Array<[string, string]> = [
   ["bluemax", "bluemax"],
   ["adblue", "bluemax"],
   ["aditivoblue", "bluemax"],
+  ["gasolina", "gasolina"],
+  ["bencina", "gasolina"],
+  ["kerosene", "kerosene"],
+  ["keroseno", "kerosene"],
+  ["parafina", "kerosene"],
 ]
 
 function compact(value: string): string {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase()
 }
 
-function normalizePlate(value: string): string {
-  return compact(value).toUpperCase()
-}
+// La normalización de patente ya vivía en `xlsx-utils.plateMatchKey`, con la
+// MISMA semántica (mayúsculas sin separadores). Tener una copia local llamada
+// `normalizePlate` era peor que una duplicación: en `xlsx-utils` ese nombre
+// designa otra cosa (conserva los guiones), así que el módulo tenía un tercer
+// significado del mismo identificador.
 
+/**
+ * Nombre externo de producto -> producto canónico, o `null` si no se reconoce.
+ *
+ * Gasolina y kerosene se reconocen desde 2026-08-28: antes caían en `null`, la
+ * fila quedaba `pending` por "producto sin mapping canónico" y sus litros nunca
+ * llegaban a un lote — con lo cual la fuente `Aramco Fleet Otros`, que existe
+ * exactamente para recogerlos, era inalcanzable. Un producto que de verdad no
+ * se reconozca SIGUE yendo a revisión: la puerta no se abrió, se completó el
+ * catálogo de lo que las cuentas tienen habilitado.
+ */
 function canonicalProduct(value: string | null): string | null {
   if (!value) return null
   const key = compact(value)
   return productAliases.find(([alias]) => alias === key)?.[1]
-    ?? (key.includes("adblue") || key.includes("bluemax") || key.includes("blue") ? "bluemax" : null)
+    // El orden es el mismo que en `fuelProductIdForLegacy`: la familia BLUE
+    // gana sobre DIESEL porque "Aditivo BlueMax Diesel" es aditivo.
+    ?? (key.includes("adblue") || key.includes("bluemax") || key.includes("blue") || key.includes("flua") ? "bluemax" : null)
     ?? (key.includes("diesel") ? "diesel" : null)
+    ?? (key.includes("gasolina") || key.includes("bencina") || key.includes("gasoline") ? "gasolina" : null)
+    ?? (key.includes("kerosen") || key.includes("parafina") ? "kerosene" : null)
 }
 
 function validPlainDate(value: string): boolean {
@@ -106,7 +152,7 @@ export function fingerprintProviderRow(input: ProviderRowInput): string {
     input.sourceRowKey,
     input.externalId ?? "",
     input.occurredAt ?? "",
-    input.plate ? normalizePlate(input.plate) : "",
+    input.plate ? plateMatchKey(input.plate) : "",
     input.product ? compact(input.product) : "",
     typeof input.quantity === "number" ? input.quantity : String(input.quantity ?? ""),
     typeof input.amount === "number" ? input.amount : String(input.amount ?? ""),
@@ -181,7 +227,7 @@ export function validateProviderRows(
       pending.push(issue(input, "unknown_product", "El producto externo no tiene mapping canónico; requiere revisión"))
       continue
     }
-    const plate = input.plate ? normalizePlate(input.plate) : ""
+    const plate = input.plate ? plateMatchKey(input.plate) : ""
     if (!plate) {
       pending.push(issue(input, "missing_plate", "La transacción no trae patente para resolver vehículo y faena"))
       continue
@@ -196,12 +242,14 @@ export function validateProviderRows(
       fingerprint: fingerprintProviderRow(input),
       occurredAt: input.occurredAt,
       plate,
+      sourcePlate: input.plate,
       sourceProduct: input.product,
       product,
       quantity: input.quantity,
       amount: input.amount,
       unitPrice: input.quantity > 0 ? Math.round(input.amount / input.quantity * 10_000) / 10_000 : null,
       payload: input.payload,
+      granularity: input.granularity ?? "transaction",
     })
   }
 

@@ -166,8 +166,21 @@ describe("getFleetOverview corta la ventana de comparación en un reset aceptado
     expect(vehicle?.kmDriven).toBe(5_000)
   })
 
+  it("cerrar el caso como lectura corregida NO corta la ventana: fue un error de tipeo, no un medidor nuevo", async () => {
+    await inMemoryDb.update(schema.fuelAnomalyCases)
+      .set({ status: "resolved", resolutionKind: "lectura_corregida" })
+      .where(eq(schema.fuelAnomalyCases.id, caseId))
+
+    const fleet = await getFleetOverview(session2())
+    const vehicle = fleet.find((row) => row.id === vehicleId2)
+    // Igual que con el caso abierto: la serie del equipo sigue siendo una sola.
+    expect(vehicle?.kmDriven).toBe(5_000)
+  })
+
   it("al aceptar el reset (caso resuelto), la ventana se corta ahí y el recorrido usa la lectura del reset como base", async () => {
-    await inMemoryDb.update(schema.fuelAnomalyCases).set({ status: "resolved" }).where(eq(schema.fuelAnomalyCases.id, caseId))
+    await inMemoryDb.update(schema.fuelAnomalyCases)
+      .set({ status: "resolved", resolutionKind: "reset_medidor" })
+      .where(eq(schema.fuelAnomalyCases.id, caseId))
 
     const fleet = await getFleetOverview(session2())
     const vehicle = fleet.find((row) => row.id === vehicleId2)

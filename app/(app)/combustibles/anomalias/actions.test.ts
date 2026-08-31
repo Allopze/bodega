@@ -55,7 +55,7 @@ describe("updateAnomalyStatusAction — permiso según el estado destino", () =>
     mockUpdateStatus.mockResolvedValueOnce({})
     const res = await updateAnomalyStatusAction({ caseId: "c-1", expectedStatus: "in_review", status: "resolved", resolution: "motivo" })
     expect(res.ok).toBe(true)
-    expect(mockUpdateStatus).toHaveBeenCalledWith(session, "c-1", "in_review", "resolved", "motivo")
+    expect(mockUpdateStatus).toHaveBeenCalledWith(session, "c-1", "in_review", "resolved", "motivo", undefined)
   })
 
   it("rechaza estado actual o destino fuera del contrato antes de consultar permisos", async () => {

@@ -1,4 +1,4 @@
-export { createFuelLoadAction, updateFuelLoadAction, deleteFuelLoadAction, registerFuelLoadAction } from "./loads"
+export { createFuelLoadAction, updateFuelLoadAction, deleteFuelLoadAction, registerFuelLoadAction, correctFuelLoadMeterAction } from "./loads"
 export { createFuelVehicleAction, updateFuelVehicleAction, toggleFuelVehicleActiveAction, bulkToggleFuelVehicleActiveAction, importFuelVehiclesFromXlsx } from "./vehicles"
 export { createFuelSupplierAction, updateFuelSupplierAction, toggleFuelSupplierActive, deleteFuelSupplierAction } from "./suppliers"
 export { createMonthlyStatementAction, addPaymentAction } from "./statements"

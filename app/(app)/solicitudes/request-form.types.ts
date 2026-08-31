@@ -15,6 +15,7 @@ export interface ProductOption {
   requiresWorker:  boolean
   /** Familia de equipos que atiende el servicio ('monogas', 'alcotest'). */
   equipmentKind:   string | null
+  serviceSubjectKind?: string | null
   unitOfMeasure:   string
   categoryName:    string
   referencePrice:  number | null
@@ -85,6 +86,8 @@ export interface EditItem {
   /** Equipo del registro (mantención de monogás, calibración de alcotest). */
   equipmentCode:       string | null
   equipmentLabel:      string | null
+  emergencyResourceId?: string | null
+  emergencyResourceLabel?: string | null
   attributes:          { attributeId: string | null; attributeName: string; value: string }[]
 }
 
@@ -109,6 +112,8 @@ export interface ItemRow {
   /** Código interno del equipo; el registro lo da de alta si no lo tenía. */
   equipmentCode:       string
   equipmentLabel:      string
+  emergencyResourceId?: string
+  emergencyResourceLabel?: string
   isEpp:               boolean
   productName:         string
   showAttrs:           boolean
@@ -140,6 +145,8 @@ export interface PrefillItem {
   workerName?:          string | null
   equipmentCode?:       string | null
   equipmentLabel?:      string | null
+  emergencyResourceId?: string | null
+  emergencyResourceLabel?: string | null
   suggestedSupplierId?: string | null
   supplierHint?:        string | null
   replenishmentGapKey?: string

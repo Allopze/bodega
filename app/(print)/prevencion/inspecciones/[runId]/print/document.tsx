@@ -14,11 +14,12 @@ import { getInspectionRunDetail } from "@/lib/services/prevention-inspections"
 import {
   closingActFromDefinition,
   fieldKindIsScorable,
+  formatSignatureRole,
   FINDING_CRITICALITY_LABELS,
   FINDING_STATUS_LABELS,
   INSPECTION_KIND_LABELS,
   INSPECTION_ORIGIN_LABELS,
-  INSPECTION_RESULT_LABELS,
+  inspectionResultLabel,
   INSPECTION_RUN_STATUS_LABELS,
 } from "@/lib/prevention/inspections"
 import type { ChecklistDefinition } from "@/lib/sst/types"
@@ -83,6 +84,14 @@ export function InspectionActaDocument({ data }: { data: InspectionActaData }) {
           label="Cumplimiento"
           value={run.compliancePercent === null ? "No calculable" : `${run.compliancePercent}%`}
         />
+        {/* INS-17: la ubicación se capturaba en terreno y no salía en el acta,
+            que es donde sirve como respaldo de dónde se hizo la inspección. */}
+        <FieldRow
+          label="Ubicación"
+          value={run.locationLatitude && run.locationLongitude
+            ? `${run.locationLatitude}, ${run.locationLongitude}`
+            : "No capturada"}
+        />
       </section>
 
       {definition.sections?.map((section) => (
@@ -91,9 +100,12 @@ export function InspectionActaDocument({ data }: { data: InspectionActaData }) {
           <table>
             <thead>
               <tr>
-                <th style={{ width: "45%" }}>Ítem</th>
-                <th style={{ width: "18%" }}>Resultado</th>
+                <th style={{ width: "40%" }}>Ítem</th>
+                <th style={{ width: "16%" }}>Resultado</th>
                 <th>Observación</th>
+                {/* INS-17: el acta no decía qué ítems tienen respaldo
+                    fotográfico, que es lo primero que se pide al fiscalizar. */}
+                <th style={{ width: "12%" }}>Evidencia</th>
               </tr>
             </thead>
             <tbody>
@@ -107,10 +119,13 @@ export function InspectionActaDocument({ data }: { data: InspectionActaData }) {
                       {/* Un ítem que no puntúa responde con su contenido, no con
                           un juicio de conformidad (B-08). */}
                       {!answer ? "—" : scorable
-                        ? INSPECTION_RESULT_LABELS[answer.result] ?? answer.result
+                        ? inspectionResultLabel(item.kind, answer.result)
                         : (answer.value || "—")}
                     </td>
                     <td>{scorable ? (answer?.comment ?? "") : ""}</td>
+                    <td>{answer?.evidence?.length
+                      ? `${answer.evidence.length} ${answer.evidence.length === 1 ? "foto" : "fotos"}`
+                      : ""}</td>
                   </tr>
                 )
               })}
@@ -178,7 +193,10 @@ export function InspectionActaDocument({ data }: { data: InspectionActaData }) {
                   const signature = run.closingSignatures?.find((item) => item.role === role)
                   return (
                     <tr key={role}>
-                      <td>{role}</td>
+                      {/* I-21 creó `formatSignatureRole` justo para esto y el
+                          acta —el documento que se entrega en fiscalización—
+                          seguía imprimiendo la clave cruda ("jefe_area"). */}
+                      <td>{formatSignatureRole(role)}</td>
                       <td>{signature?.name ?? ""}</td>
                       {/* Línea en blanco para la firma manuscrita sobre el papel:
                           el sistema registra quién y cuándo, no el trazo. */}

@@ -142,4 +142,21 @@ describe("parseConsumptionExcel", () => {
     expect(result.rows).toHaveLength(1)
     expect(result.errors).toHaveLength(0)
   })
+
+  it("no copia los RUT del informe a la fila de consumo", async () => {
+    // `withoutPersonalData` se aplicaba sólo al `raw_payload` de
+    // `fuel_meter_readings`. `rawRow.detalle` guardaba el registro COMPLETO —
+    // los mismos RUT que se decidió no persistir, y en la tabla más consultada.
+    const buffer = await createTestExcel([
+      { "Producto": "Diésel", "Tarjeta": "1001", "Patente": "AA-BB11", "Fecha Transacción": "01-01-2026", "Volumen": "10,5", "Monto": "10.000", "RUT Chofer": "11.111.111-1", "RUT Atendedor": "22.222.222-2" },
+    ])
+
+    const result = await parseConsumptionExcel(buffer)
+
+    const detalle = result.rows[0]!.rawRow.detalle as Record<string, unknown>[]
+    expect(Object.keys(detalle[0]!)).not.toContain("RUT Chofer")
+    expect(Object.keys(detalle[0]!)).not.toContain("RUT Atendedor")
+    // Lo que no identifica a nadie sí se conserva para auditar.
+    expect(detalle[0]).toMatchObject({ "Tarjeta": "1001" })
+  })
 })

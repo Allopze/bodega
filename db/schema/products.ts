@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, timestamp, numeric, uniqueIndex } from "drizzle-orm/pg-core"
+import { pgTable, text, integer, boolean, timestamp, numeric, uniqueIndex, check } from "drizzle-orm/pg-core"
 import { relations, sql } from "drizzle-orm"
 import { suppliers } from "./worksites"
 import { eppTypes } from "./epp-types"
@@ -62,12 +62,20 @@ export const products = pgTable("products", {
    * registro (`service_equipment`) en vez de re-escribir su código a mano.
    */
   equipmentKind:       text("equipment_kind"),
+  /**
+   * Destino canónico de un servicio. Mantiene `equipmentKind` intacto para
+   * instrumentos y permite que la recarga apunte a un activo de emergencia.
+   */
+  serviceSubjectKind:  text("service_subject_kind"),
   referencePrice:      numeric("reference_price", { precision: 12, scale: 2, mode: "number" }),
   isActive:            boolean("is_active").notNull().default(true),
   notes:               text("notes"),
   createdAt:           timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:           timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-})
+}, (table) => [
+  check("products_service_subject_kind_valid", sql`${table.serviceSubjectKind} IS NULL OR ${table.serviceSubjectKind} IN ('service_equipment', 'emergency_resource')`),
+  check("products_service_subject_consistent", sql`${table.serviceSubjectKind} IS NULL OR ${table.isService} = true`),
+])
 
 /* ── Product Attributes (talla, color, medida, modelo, etc.) ─────────────── */
 export const productAttributes = pgTable("product_attributes", {

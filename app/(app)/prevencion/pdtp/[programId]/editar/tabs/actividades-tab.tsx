@@ -18,13 +18,26 @@ import {
   deletePdtpActivityAction,
   reorderPdtpActivitiesAction,
 } from "../../../actions"
-import { describePdtpRecurrenceImpact, type PdtpRecurrenceFrequency, type PdtpRecurrenceRule } from "@/lib/services/pdtp/recurrence"
+import {
+  derivePdtpScheduleSource,
+  deriveScheduleHorizon,
+  describePdtpRecurrenceImpact,
+  diffScheduleCells,
+  projectRecurrenceToLegacySchedule,
+  recurrenceRulesEqual,
+  type PdtpRecurrenceFrequency,
+  type PdtpRecurrenceRule,
+  type PdtpScheduleCell,
+  type PdtpScheduleHorizon,
+} from "@/lib/services/pdtp/recurrence"
 import { todayLocalISO } from "@/lib/sst/date"
 import { formatDate } from "@/lib/utils"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 
-import type { PdtpActivityRow } from "./types"
+import type { PdtpActivityRow, PdtpScheduleRow } from "./types"
+
+const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
 export function ActividadesTab({
   programId,
@@ -32,6 +45,7 @@ export function ActividadesTab({
   periodStart,
   periodEnd,
   activities,
+  schedule,
   responsibleCatalog,
 }: {
   programId: string
@@ -39,6 +53,9 @@ export function ActividadesTab({
   periodStart: string | null
   periodEnd: string | null
   activities: PdtpActivityRow[]
+  /** Celdas del año del programa. El diálogo de edición las necesita para saber
+   *  si la planificación vigente se ajustó a mano antes de reemplazarla. */
+  schedule: PdtpScheduleRow[]
   responsibleCatalog: Array<{ slug: string; displayName: string }>
 }) {
   const router = useRouter()
@@ -48,6 +65,19 @@ export function ActividadesTab({
     const today = todayLocalISO()
     return today >= effectivePeriodStart && today <= effectivePeriodEnd ? today : effectivePeriodStart
   })()
+  const horizon = React.useMemo(
+    () => deriveScheduleHorizon({ year: programYear, periodStart, periodEnd }),
+    [programYear, periodStart, periodEnd],
+  )
+  const cellsByActivity = React.useMemo(() => {
+    const map = new Map<string, PdtpScheduleCell[]>()
+    for (const cell of schedule) {
+      const cells = map.get(cell.activityId) ?? []
+      cells.push({ month: cell.month, week: cell.week, plannedQuantity: Number(cell.plannedQuantity) })
+      map.set(cell.activityId, cells)
+    }
+    return map
+  }, [schedule])
   const [items, setItems] = React.useState(activities)
   const [editing, setEditing] = React.useState<PdtpActivityRow | null>(null)
   const [retiring, setRetiring] = React.useState<PdtpActivityRow | null>(null)
@@ -198,7 +228,13 @@ export function ActividadesTab({
         </div>
       )}
 
-      <EditActivityDialog activity={editing} onClose={() => setEditing(null)} onSaved={() => router.refresh()} />
+      <EditActivityDialog
+        activity={editing}
+        horizon={horizon}
+        currentCells={editing ? cellsByActivity.get(editing.id) ?? [] : []}
+        onClose={() => setEditing(null)}
+        onSaved={() => router.refresh()}
+      />
       <BatchEditActivitiesDialog
         open={batchOpen}
         onOpenChange={setBatchOpen}
@@ -300,8 +336,10 @@ function BatchEditActivitiesDialog({ open, onOpenChange, programId, activityIds,
   )
 }
 
-function EditActivityDialog({ activity, onClose, onSaved }: {
+function EditActivityDialog({ activity, horizon, currentCells, onClose, onSaved }: {
   activity: PdtpActivityRow | null
+  horizon: PdtpScheduleHorizon
+  currentCells: PdtpScheduleCell[]
   onClose: () => void
   onSaved: () => void
 }) {
@@ -313,6 +351,8 @@ function EditActivityDialog({ activity, onClose, onSaved }: {
   const [interval, setRecurrenceInterval] = React.useState(1)
   const [plannedQuantity, setPlannedQuantity] = React.useState(1)
   const [weekOfMonth, setWeekOfMonth] = React.useState(1)
+  const [months, setMonths] = React.useState<number[]>([])
+  const [replaceConfirmed, setReplaceConfirmed] = React.useState(false)
   const [triggerDescription, setTriggerDescription] = React.useState("")
   const [dueDays, setDueDays] = React.useState(5)
   const [pending, setPending] = React.useState(false)
@@ -331,20 +371,52 @@ function EditActivityDialog({ activity, onClose, onSaved }: {
       setRecurrenceInterval(rule?.interval ?? 1)
       setPlannedQuantity(rule?.plannedQuantity ?? 1)
       setWeekOfMonth(rule?.weekOfMonth ?? 1)
+      // `months` se hidrata y se reenvía siempre: descartarlo hacía que una
+      // actividad con frecuencia "meses seleccionados" fuera inguardable, y
+      // por tanto ineditable incluso para corregir su texto.
+      setMonths(rule?.months ?? [])
+      setReplaceConfirmed(false)
       setTriggerDescription(activity.triggerDescription ?? "")
       setDueDays(activity.dueDays ?? 5)
       setError(null)
     }
   }
 
+  const nextRule: PdtpRecurrenceRule | null = scheduleMode === "scheduled"
+    ? { frequency, interval, plannedQuantity, weekOfMonth, ...(frequency === "custom" ? { months } : {}) }
+    : null
+
+  // Qué pasaría con la planificación vigente si se guarda esto. Se calcula con
+  // los mismos helpers que usa el servidor, así que el aviso y la puerta de
+  // confirmación del servicio no pueden discrepar.
+  const currentSource = activity
+    ? derivePdtpScheduleSource({
+        cells: currentCells,
+        scheduleMode: (activity.scheduleMode ?? "scheduled") as "scheduled" | "on_demand" | "triggered",
+        recurrenceRule: activity.recurrenceRule as PdtpRecurrenceRule | null,
+        horizon,
+      })
+    : "none"
+  const nextCells = scheduleMode === "scheduled" && nextRule
+    ? projectRecurrenceToLegacySchedule(nextRule, horizon)
+    : []
+  const scheduleDiff = diffScheduleCells(currentCells, nextCells)
+  // Solo se reescribe el calendario si el modo o la regla cambian de verdad
+  // (mismo criterio que resolveScheduleWrite en el servicio). Sin esta guarda,
+  // abrir el diálogo para corregir un texto ya avisaría y bloquearía Guardar en
+  // toda actividad con matriz manual.
+  const scheduleWouldBeRewritten = activity !== null
+    && (scheduleMode !== (activity.scheduleMode ?? "scheduled")
+      || !recurrenceRulesEqual(nextRule, activity.recurrenceRule as PdtpRecurrenceRule | null))
+  const wouldReplaceManualSchedule = scheduleWouldBeRewritten
+    && currentSource === "manual"
+    && (scheduleDiff.removedCells.length > 0 || scheduleDiff.changedCells.some((cell) => cell.to < cell.from))
+
   async function handleSave() {
     if (!activity) return
     setPending(true)
     setError(null)
     try {
-      const recurrenceRule: PdtpRecurrenceRule | null = scheduleMode === "scheduled"
-        ? { frequency, interval, plannedQuantity, weekOfMonth }
-        : null
       const result = await updatePdtpActivityAction({
         activityId: activity.id,
         activity: activityText,
@@ -352,9 +424,10 @@ function EditActivityDialog({ activity, onClose, onSaved }: {
         notes,
         scheduleMode,
         scheduleClassificationStatus: "confirmed",
-        recurrenceRule,
+        recurrenceRule: nextRule,
         triggerDescription: scheduleMode === "triggered" ? triggerDescription : null,
         dueDays: scheduleMode === "scheduled" ? null : dueDays,
+        ...(replaceConfirmed ? { scheduleReplaceConfirmed: true } : {}),
       })
       if (!result.ok) {
         setError(result.message ?? "Error al guardar.")
@@ -401,6 +474,7 @@ function EditActivityDialog({ activity, onClose, onSaved }: {
                     <SelectItem value="quarterly">Trimestral</SelectItem>
                     <SelectItem value="semiannual">Semestral</SelectItem>
                     <SelectItem value="annual">Anual</SelectItem>
+                    <SelectItem value="custom">Meses seleccionados</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>
@@ -408,19 +482,57 @@ function EditActivityDialog({ activity, onClose, onSaved }: {
               <Field label="Cantidad" htmlFor="edit-planned-quantity"><Input id="edit-planned-quantity" type="number" min={0.01} step={0.25} value={plannedQuantity} onChange={(event) => setPlannedQuantity(Number(event.target.value))} /></Field>
               <Field label="Semana" htmlFor="edit-week"><Input id="edit-week" type="number" min={1} max={4} value={weekOfMonth} onChange={(event) => setWeekOfMonth(Number(event.target.value))} /></Field>
             </div>
-          ) : scheduleMode === "triggered" ? (
+          ) : null}
+          {scheduleMode === "scheduled" && frequency === "custom" ? (
+            <fieldset className="rounded-[var(--radius)] border border-[var(--color-border)] p-3">
+              <legend className="px-1 text-xs font-medium text-[var(--color-text-muted)]">Meses en que se realiza</legend>
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
+                {MONTH_LABELS.map((label, index) => {
+                  const month = index + 1
+                  return (
+                    <Checkbox
+                      key={month}
+                      label={label}
+                      checked={months.includes(month)}
+                      onChange={(event) => setMonths((prev) => (
+                        event.target.checked ? [...prev, month].sort((a, b) => a - b) : prev.filter((m) => m !== month)
+                      ))}
+                    />
+                  )
+                })}
+              </div>
+            </fieldset>
+          ) : null}
+          {scheduleMode === "triggered" ? (
             <div className="grid gap-3 sm:grid-cols-[1fr_8rem]">
               <Field label="Evento disparador" htmlFor="edit-trigger" required><Input id="edit-trigger" value={triggerDescription} onChange={(event) => setTriggerDescription(event.target.value)} required /></Field>
               <Field label="Plazo (días)" htmlFor="edit-trigger-days"><Input id="edit-trigger-days" type="number" min={0} max={3650} value={dueDays} onChange={(event) => setDueDays(Number(event.target.value))} /></Field>
             </div>
-          ) : (
+          ) : scheduleMode === "on_demand" ? (
             <Field label="Plazo objetivo cuando haya un caso" htmlFor="edit-demand-days"><Input id="edit-demand-days" type="number" min={0} max={3650} value={dueDays} onChange={(event) => setDueDays(Number(event.target.value))} /></Field>
-          )}
+          ) : null}
           {activity && <RecurrenceImpactPreview
             activity={activity}
+            horizon={horizon}
             nextMode={scheduleMode}
-            nextRule={scheduleMode === "scheduled" ? { frequency, interval, plannedQuantity, weekOfMonth } : null}
+            nextRule={nextRule}
           />}
+          {wouldReplaceManualSchedule && (
+            <div className="rounded-[var(--radius)] border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-xs text-[var(--color-warning-ink)]">
+              <p>
+                Esta actividad tiene {currentCells.length} semana(s) planificadas que no vienen de esta frecuencia.
+                Guardar las reemplaza: {scheduleDiff.removedCells.length} semana(s) se eliminan y la cantidad planificada
+                pasa de {scheduleDiff.currentPlannedTotal} a {scheduleDiff.nextPlannedTotal}.
+              </p>
+              <div className="mt-2">
+                <Checkbox
+                  label="Entiendo que se reemplazará la planificación ajustada manualmente"
+                  checked={replaceConfirmed}
+                  onChange={(event) => setReplaceConfirmed(event.target.checked)}
+                />
+              </div>
+            </div>
+          )}
           <Field label="Notas" htmlFor="edit-notes">
             <Textarea id="edit-notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
           </Field>
@@ -432,7 +544,14 @@ function EditActivityDialog({ activity, onClose, onSaved }: {
         </FieldGroup>
         <DialogFooter>
           <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={pending}>Cancelar</Button>
-          <Button type="button" size="sm" onClick={handleSave} disabled={pending}>{pending ? "Guardando..." : "Guardar"}</Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleSave}
+            disabled={pending || (wouldReplaceManualSchedule && !replaceConfirmed)}
+          >
+            {pending ? "Guardando..." : "Guardar"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -441,19 +560,24 @@ function EditActivityDialog({ activity, onClose, onSaved }: {
 
 function RecurrenceImpactPreview({
   activity,
+  horizon,
   nextMode,
   nextRule,
 }: {
   activity: PdtpActivityRow
+  horizon: PdtpScheduleHorizon
   nextMode: "scheduled" | "on_demand" | "triggered"
   nextRule: PdtpRecurrenceRule | null
 }) {
   const currentRule = activity.recurrenceRule as PdtpRecurrenceRule | null
+  // Con `horizon`: sin él el conteo se calculaba sobre 12 meses y no coincidía
+  // con lo que se guarda en un programa de período parcial.
   const { currentCount, nextCount, changed } = describePdtpRecurrenceImpact(
     (activity.scheduleMode ?? "scheduled") as "scheduled" | "on_demand" | "triggered",
     currentRule,
     nextMode,
     nextRule,
+    horizon,
   )
   return (
     <p className="rounded-lg border border-[var(--color-info-line)] bg-[var(--color-info-tint)] px-3 py-2 text-xs text-[var(--color-info-ink)]">

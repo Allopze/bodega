@@ -3,8 +3,10 @@ import { redirect, notFound } from "next/navigation"
 import { db }                 from "@/db"
 import {
   purchaseOrders,
+  purchaseRequestItems,
+  preventionEmergencyResources,
 } from "@/db/schema"
-import { eq } from "drizzle-orm"
+import { eq, inArray } from "drizzle-orm"
 import { requireAuth, can, canAny, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -68,11 +70,25 @@ export default async function NuevaRecepcionPage({
   const productRows = productIds.length > 0
     ? await db.query.products.findMany({
         where: (p, { inArray }) => inArray(p.id, productIds),
-        columns: { id: true, sku: true, name: true },
+        columns: { id: true, sku: true, name: true, serviceSubjectKind: true },
       })
     : []
 
   const productMap = Object.fromEntries(productRows.map((p) => [p.id, p]))
+  const requestItemIds = order.items.flatMap((item) => item.requestItemId ? [item.requestItemId] : [])
+  const emergencySubjectRows = requestItemIds.length > 0
+    ? await db.select({
+      requestItemId: purchaseRequestItems.id,
+      assetCode: preventionEmergencyResources.assetCode,
+      name: preventionEmergencyResources.name,
+    }).from(purchaseRequestItems)
+      .innerJoin(preventionEmergencyResources, eq(purchaseRequestItems.emergencyResourceId, preventionEmergencyResources.id))
+      .where(inArray(purchaseRequestItems.id, requestItemIds))
+    : []
+  const emergencySubjectMap = new Map(emergencySubjectRows.map((row) => [
+    row.requestItemId,
+    row.assetCode ? `${row.assetCode} · ${row.name}` : row.name,
+  ]))
   const officeName = await officeWorksiteLabel()
 
   const assignableReceiptStages = [
@@ -132,6 +148,8 @@ export default async function NuevaRecepcionPage({
       quantityReceived: item.quantityReceived ?? 0,
       unitOfMeasure:    item.unitOfMeasure,
       notes:            item.notes,
+      isEmergencyService: product?.serviceSubjectKind === "emergency_resource",
+      emergencyResourceLabel: item.requestItemId ? (emergencySubjectMap.get(item.requestItemId) ?? null) : null,
     }
   })
 

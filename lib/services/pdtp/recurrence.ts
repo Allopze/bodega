@@ -121,6 +121,138 @@ export function describePdtpRecurrenceImpact(
 ) {
   const currentCount = currentMode === "scheduled" && currentRule ? projectRecurrenceToLegacySchedule(currentRule, horizon).length : 0
   const nextCount = nextMode === "scheduled" && nextRule ? projectRecurrenceToLegacySchedule(nextRule, horizon).length : 0
-  const changed = currentMode !== nextMode || JSON.stringify(currentRule) !== JSON.stringify(nextRule)
+  const changed = currentMode !== nextMode || !recurrenceRulesEqual(currentRule, nextRule)
   return { currentCount, nextCount, changed }
+}
+
+/**
+ * Igualdad de reglas de recurrencia, campo a campo.
+ *
+ * No se compara con `JSON.stringify`: la regla vive en una columna `jsonb`, y
+ * Postgres no conserva ahí el orden de las claves ni la forma numérica (`1`
+ * frente a `1.0`). Con `months` presente eso da un falso "cambió" —el cliente
+ * lo serializa al final y `jsonb` lo devuelve entre `interval` y
+ * `plannedQuantity`— y un falso "cambió" no es cosmético: dispara la
+ * re-proyección de la recurrencia, que reescribe el calendario del año.
+ */
+export function recurrenceRulesEqual(a: PdtpRecurrenceRule | null | undefined, b: PdtpRecurrenceRule | null | undefined): boolean {
+  if (!a || !b) return !a && !b
+  if (a.frequency !== b.frequency) return false
+  if (Number(a.interval) !== Number(b.interval)) return false
+  if (Number(a.plannedQuantity) !== Number(b.plannedQuantity)) return false
+  if (Number(a.weekOfMonth) !== Number(b.weekOfMonth)) return false
+  const monthsA = [...new Set(a.months ?? [])].sort((x, y) => x - y)
+  const monthsB = [...new Set(b.months ?? [])].sort((x, y) => x - y)
+  return monthsA.length === monthsB.length && monthsA.every((month, index) => month === monthsB[index])
+}
+
+/**
+ * Huella canónica de un conjunto de celdas: independiente del orden y de la
+ * diferencia entre "ausente" y "cero" (la tabla no guarda ceros, así que ambas
+ * representan lo mismo). Sirve para comparar planificaciones en el servidor y
+ * en el cliente con exactamente el mismo criterio.
+ */
+export function scheduleCellsFingerprint(cells: Array<{ month: number; week: number; plannedQuantity: number }>): string {
+  return cells
+    .filter((cell) => Number(cell.plannedQuantity) > 0)
+    .map((cell) => ({ month: Number(cell.month), week: Number(cell.week), quantity: Number(cell.plannedQuantity) }))
+    .sort((a, b) => a.month - b.month || a.week - b.week)
+    .map((cell) => `${cell.month}-${cell.week}=${cell.quantity.toFixed(2)}`)
+    .join(",")
+}
+
+export type PdtpScheduleDiff = {
+  addedCells: PdtpScheduleCell[]
+  removedCells: PdtpScheduleCell[]
+  changedCells: Array<{ month: number; week: number; from: number; to: number }>
+  currentPlannedTotal: number
+  nextPlannedTotal: number
+}
+
+const cellKey = (cell: { month: number; week: number }) => `${Number(cell.month)}-${Number(cell.week)}`
+
+function positiveCellMap(cells: Array<{ month: number; week: number; plannedQuantity: number }>) {
+  const map = new Map<string, PdtpScheduleCell>()
+  for (const cell of cells) {
+    const quantity = Number(cell.plannedQuantity)
+    if (!(quantity > 0)) continue
+    map.set(cellKey(cell), { month: Number(cell.month), week: Number(cell.week), plannedQuantity: quantity })
+  }
+  return map
+}
+
+/** Qué cambia al pasar de `current` a `next`. `removedCells` y las bajas de
+ * `changedCells` son la pérdida de cantidad planificada, que es el denominador
+ * del indicador de cumplimiento: por eso se cuentan por separado. */
+export function diffScheduleCells(
+  current: Array<{ month: number; week: number; plannedQuantity: number }>,
+  next: Array<{ month: number; week: number; plannedQuantity: number }>,
+): PdtpScheduleDiff {
+  const currentMap = positiveCellMap(current)
+  const nextMap = positiveCellMap(next)
+  const addedCells: PdtpScheduleCell[] = []
+  const removedCells: PdtpScheduleCell[] = []
+  const changedCells: PdtpScheduleDiff["changedCells"] = []
+
+  for (const [key, cell] of nextMap) {
+    const before = currentMap.get(key)
+    if (!before) addedCells.push(cell)
+    else if (before.plannedQuantity !== cell.plannedQuantity) {
+      changedCells.push({ month: cell.month, week: cell.week, from: before.plannedQuantity, to: cell.plannedQuantity })
+    }
+  }
+  for (const [key, cell] of currentMap) {
+    if (!nextMap.has(key)) removedCells.push(cell)
+  }
+
+  const total = (map: Map<string, PdtpScheduleCell>) => [...map.values()].reduce((sum, cell) => sum + cell.plannedQuantity, 0)
+  const byPeriod = (a: { month: number; week: number }, b: { month: number; week: number }) => a.month - b.month || a.week - b.week
+  return {
+    addedCells: addedCells.sort(byPeriod),
+    removedCells: removedCells.sort(byPeriod),
+    changedCells: changedCells.sort(byPeriod),
+    currentPlannedTotal: total(currentMap),
+    nextPlannedTotal: total(nextMap),
+  }
+}
+
+export type PdtpScheduleSource = "rule" | "manual" | "none"
+
+/**
+ * De dónde viene realmente la planificación de una actividad, **derivado** de
+ * las celdas guardadas y no almacenado.
+ *
+ * Se deriva a propósito: un campo persistido puede desincronizarse de las
+ * celdas —que es justo el defecto que esta función existe para cerrar—, y
+ * cualquier backfill tendría que calcularse así de todos modos.
+ *
+ * Límites conocidos: no distingue una edición manual que coincide por
+ * casualidad con la proyección (inofensivo, ambas lecturas producen la misma
+ * escritura), ni permite declarar "manual, hoy idéntica a la regla, pero no la
+ * re-proyectes nunca más". Ese último caso queda cubierto por la confirmación
+ * explícita del lado destructivo.
+ */
+export function derivePdtpScheduleSource({
+  cells,
+  scheduleMode,
+  recurrenceRule,
+  horizon,
+}: {
+  cells: Array<{ month: number; week: number; plannedQuantity: number }>
+  scheduleMode: PdtpScheduleMode
+  recurrenceRule: PdtpRecurrenceRule | null
+  horizon: PdtpScheduleHorizon
+}): PdtpScheduleSource {
+  const fingerprint = scheduleCellsFingerprint(cells)
+  if (fingerprint === "") return "none"
+  if (scheduleMode !== "scheduled" || !recurrenceRule) return "manual"
+  return fingerprint === scheduleCellsFingerprint(projectRecurrenceToLegacySchedule(recurrenceRule, horizon))
+    ? "rule"
+    : "manual"
+}
+
+export function describePdtpScheduleSource(source: PdtpScheduleSource, cellCount: number): string {
+  if (source === "none") return "Sin semanas planificadas."
+  if (source === "rule") return `${cellCount} semana(s) proyectadas por la recurrencia.`
+  return `${cellCount} semana(s) ajustadas manualmente; la recurrencia guardada ya no coincide.`
 }

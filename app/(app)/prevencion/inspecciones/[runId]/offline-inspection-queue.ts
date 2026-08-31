@@ -1,9 +1,14 @@
 /**
  * Cola offline de ejecuciones de inspección (función #9).
  *
- * La idempotencia del servidor ya existía: `clientSubmissionId`, su índice
- * único parcial y el retorno `idempotentReplay`. Lo que faltaba era el cliente
- * — nada la usaba nunca.
+ * La idempotencia del reintento la da el servidor: `completeInspectionRun`
+ * devuelve el run como éxito cuando ya quedó ejecutado por ESTE usuario, así
+ * que un eco de la cola no duplica nada y la entrada puede borrarse.
+ *
+ * NO la da `clientSubmissionId`: ese campo y su índice único parcial sólo
+ * gobiernan la CREACIÓN de la inspección (`createInspectionRun`), y el Zod del
+ * cierre ni siquiera lo declara — viajaba y se descartaba en silencio
+ * (INS-19). Se dejó de mandar.
  *
  * Alcance deliberado: encola el CIERRE de una inspección ya creada y abierta en
  * el dispositivo. No se soporta crear inspecciones offline, porque exigiría
@@ -16,10 +21,8 @@
  * rechazo permanente del fallo de red. Un elemento venenoso que gasta los 8
  * reintentos quedaría como zombi invisible durante 30 días.
  */
-import { nanoid } from "@/lib/id"
 
 export interface OfflineInspectionSubmission {
-  clientSubmissionId: string
   runId: string
   expectedVersion: number
   answers: {
@@ -28,6 +31,9 @@ export interface OfflineInspectionSubmission {
     result: string
     value?: string | null
     comment?: string | null
+    /** La marca la ingesta al pre-llenar un ítem `fatal`; viaja para que el
+     *  servidor pueda bloquear el cierre de lo que nadie ratificó. */
+    needsConfirmation?: boolean
   }[]
   locationLatitude?: string | null
   locationLongitude?: string | null
@@ -81,10 +87,6 @@ function transactionPromise<T>(request: IDBRequest<T>) {
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => reject(request.error ?? new Error("Error de almacenamiento offline."))
   })
-}
-
-export function createInspectionSubmissionId() {
-  return `offline-${nanoid()}`
 }
 
 export async function queueInspectionSubmission(payload: OfflineInspectionSubmission) {

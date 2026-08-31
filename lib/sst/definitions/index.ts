@@ -14,6 +14,7 @@ import { INSPECCION_AREA } from './inspeccion-area'
 import { CAMINATA_SEGURIDAD } from './caminata-seguridad'
 import { AUDITORIA_SGSST } from './auditoria-sgsst'
 import { REPORTE_EQUIPOS } from './reporte-equipos'
+import { INSPECCION_NO_PLANEADA } from './inspeccion-no-planeada'
 import type { ChecklistDefinition } from '../types'
 
 /**
@@ -46,9 +47,7 @@ export function isPersonEvaluationDefinition(code: string): code is typeof PERSO
  * hace. La definición se conserva: el Anexo 7 sigue siendo el formulario de la
  * actividad PDTP n=39, que pasa a acreditarse a mano.
  */
-export const NON_INSPECTION_DEFINITION_CODES = [
-  'observacion_planeada',
-] as const
+export const NON_INSPECTION_DEFINITION_CODES = [] as const
 
 export function isNonInspectionDefinition(code: string): boolean {
   return (NON_INSPECTION_DEFINITION_CODES as readonly string[]).includes(code)
@@ -59,6 +58,7 @@ export const CHECKLIST_DEFINITIONS: Record<string, ChecklistDefinition> = {
   'trabajador_antiguo': TRABAJADOR_ANTIGUO,
   'inspeccion_taller': INSPECCION_TALLER,
   'observacion_planeada': OBSERVACION_PLANEADA,
+  'inspeccion_no_planeada': INSPECCION_NO_PLANEADA,
   'inspeccion_extintores': INSPECCION_EXTINTORES,
   'inspeccion_contenedores': INSPECCION_CONTENEDORES,
   'inspeccion_carros': INSPECCION_CARROS,
@@ -93,5 +93,6 @@ export {
   INSPECCION_EQUIPOS_MOVILES, INSPECCION_EPP,
   OBSERVACION_AMPLIROLL, OBSERVACION_MAQUINARIA,
   AUDITORIA_SGSST, REPORTE_EQUIPOS,
+  INSPECCION_NO_PLANEADA,
   OBSERVACION_CONDUCTAS, INSPECCION_AREA, CAMINATA_SEGURIDAD,
 }

@@ -17,6 +17,7 @@ const row: DeliveryRow = {
   workerName: "Trabajador E2E",
   receiverName: null,
   itemSummary: "Casco EPP E2E",
+  quantityCorrected: false,
   requestCode: "SOL-2026-EPP",
   deliveredAt: "2026-06-29T12:00:00.000Z",
   attachmentId: null,
@@ -29,5 +30,11 @@ describe("DeliveriesTable", () => {
     const links = screen.getAllByRole("link", { name: /Comprobante/ })
     expect(links.length).toBeGreaterThanOrEqual(1)
     expect(links[0]).toHaveAttribute("href", "/entregas/del-1/print")
+  })
+
+  it("identifica una cantidad histórica regularizada", () => {
+    render(<DeliveriesTable deliveries={[{ ...row, quantityCorrected: true }]} />)
+
+    expect(screen.getAllByText(/Regularizada/i).length).toBeGreaterThanOrEqual(1)
   })
 })

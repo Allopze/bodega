@@ -1,5 +1,6 @@
 import type { ChecklistDefinition } from '../types'
 import { CONTENEDORES_SECTIONS } from './inspeccion-contenedores-sections'
+import { NORMALIZED_ONLY_SCORING } from '../scoring-policies'
 
 /**
  * Inspección de Contenedores — módulo 08.
@@ -14,8 +15,8 @@ import { CONTENEDORES_SECTIONS } from './inspeccion-contenedores-sections'
  */
 export const INSPECCION_CONTENEDORES: ChecklistDefinition = {
   code: 'inspeccion_contenedores',
-  version: '02',
-  revisionDate: '2026-08-04',
+  version: '03',
+  revisionDate: '2026-08-30',
   tipo: 'seguimiento',
   title: 'Inspección de Contenedores',
   subtitle: 'Verificación por contenedor: uno por instancia de checklist.',
@@ -32,6 +33,7 @@ export const INSPECCION_CONTENEDORES: ChecklistDefinition = {
   evaluationCriteria:
     'Escala del anexo: Bueno / Regular / Malo / N/A (no aplica) / No tiene. Bueno suma 1 punto, Regular 0.5 y Malo 0; N/A y No tiene salen del cálculo. Regular y Malo exigen observación y definen la prioridad de la acción correctiva.',
   sections: CONTENEDORES_SECTIONS,
+  scoringPolicy: NORMALIZED_ONLY_SCORING,
   closingAct: {
     title: 'Cierre de inspección del contenedor',
     resultOptions: [

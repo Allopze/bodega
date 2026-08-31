@@ -1,5 +1,6 @@
 import type { ChecklistDefinition } from '../types'
 import { EXTINTORES_SECTIONS } from './inspeccion-extintores-sections'
+import { NORMALIZED_ONLY_SCORING } from '../scoring-policies'
 
 /**
  * Inspección Estado de Extintores — módulo 10.
@@ -15,8 +16,8 @@ import { EXTINTORES_SECTIONS } from './inspeccion-extintores-sections'
  */
 export const INSPECCION_EXTINTORES: ChecklistDefinition = {
   code: 'inspeccion_extintores',
-  version: '01',
-  revisionDate: '2026-07-14',
+  version: '02',
+  revisionDate: '2026-08-30',
   tipo: 'seguimiento',
   title: 'Inspección de Estado de Extintores',
   subtitle: 'Verificación por extintor: uno por instancia de checklist.',
@@ -32,8 +33,9 @@ export const INSPECCION_EXTINTORES: ChecklistDefinition = {
     'Verificar el estado operativo y la documentación de cada extintor, levantando acciones por unidad defectuosa.',
   frequencySuggested: 'Mensual, por cada extintor.',
   evaluationCriteria:
-    'Cada ítem de estado se evalúa como Cumple / No cumple / N/A. "Sin certificado CECMEC" se marca N/A con observación. Los ítems No cumple generan automáticamente acciones del plan de acción PDTP.',
+    'Escala documental B/M: Bueno / Malo, sin N/A. Los ítems en Malo generan automáticamente acciones del plan de acción PDTP.',
   sections: EXTINTORES_SECTIONS,
+  scoringPolicy: NORMALIZED_ONLY_SCORING,
   closingAct: {
     title: 'Cierre de inspección del extintor',
     resultOptions: [

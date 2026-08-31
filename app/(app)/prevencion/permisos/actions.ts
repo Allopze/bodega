@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { guardPermission } from "@/lib/auth/can"
 import type { Permission } from "@/modules/permissions"
@@ -38,7 +40,7 @@ async function run(access: PermitAccess, operation: (access: PermitAccess) => Pr
     revalidatePath(`${BASE}/[permitId]`, "page")
     return { ok: true }
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo completar la operación." }
+    return { ok: false, message: safeActionMessage(error, "No se pudo completar la operación.") }
   }
 }
 

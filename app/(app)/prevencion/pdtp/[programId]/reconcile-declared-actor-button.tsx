@@ -36,13 +36,17 @@ export function ReconcileDeclaredActorButton({
   async function save() {
     setPending(true)
     setError(null)
-    const result = await reconcilePdtpDeclaredActorAction({
-      programId,
-      historyEntryId,
-      linkedUserId: selected === UNLINKED ? null : selected,
-      reason,
-    })
-    setPending(false)
+    let result
+    try {
+      result = await reconcilePdtpDeclaredActorAction({
+        programId,
+        historyEntryId,
+        linkedUserId: selected === UNLINKED ? null : selected,
+        reason,
+      })
+    } finally {
+      setPending(false)
+    }
     if (!result.ok) { setError(result.message ?? "No se pudo guardar el vínculo."); return }
     setOpen(false)
     setReason("")

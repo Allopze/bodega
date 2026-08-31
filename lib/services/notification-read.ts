@@ -125,21 +125,15 @@ export interface NotificationStats {
 
 /** Admin: notification counters for the maintenance page. */
 export async function getNotificationMaintenanceStats(): Promise<NotificationStats> {
-  const [unreadRow] = await db
-    .select({ count: count() })
-    .from(notifications)
-    .where(eq(notifications.isRead, false))
-
-  const [totalRow] = await db
-    .select({ count: count() })
-    .from(notifications)
-
-  const [oldestReadRow] = await db
-    .select({ createdAt: notifications.createdAt })
-    .from(notifications)
-    .where(eq(notifications.isRead, true))
-    .orderBy(notifications.createdAt)
-    .limit(1)
+  const [[unreadRow], [totalRow], [oldestReadRow]] = await Promise.all([
+    db.select({ count: count() }).from(notifications).where(eq(notifications.isRead, false)),
+    db.select({ count: count() }).from(notifications),
+    db.select({ createdAt: notifications.createdAt })
+      .from(notifications)
+      .where(eq(notifications.isRead, true))
+      .orderBy(notifications.createdAt)
+      .limit(1),
+  ])
 
   return {
     unreadCount: unreadRow?.count ?? 0,

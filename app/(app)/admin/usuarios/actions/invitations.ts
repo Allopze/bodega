@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { and, eq, inArray, isNull } from "drizzle-orm"
 import { db } from "@/db"
@@ -204,7 +206,7 @@ export async function resendInvitation(
       pendingInviteUrl = inviteUrl
     }
   } catch (error) {
-    const reason = error instanceof Error ? error.message : "error desconocido"
+    const reason = safeActionMessage(error, "error desconocido")
     message = `Invitación recreada, pero no se pudo enviar el correo (${reason}).`
     pendingInviteUrl = inviteUrl
   }

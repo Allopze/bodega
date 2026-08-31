@@ -32,11 +32,19 @@ function request() {
 describe("GET /api/cron/fuel-copec-sync", () => {
   beforeEach(() => {
     process.env.CRON_SECRET = "cron-secret"
+    // Sin credenciales la ruta responde `disabled` a propósito (ver el caso de
+    // abajo): los casos de corrida necesitan una integración configurada.
+    process.env.COPEC_USERNAME = "usuario"
+    process.env.COPEC_PASSWORD = "clave"
+    delete process.env.COPEC_SYNC_ENABLED
     vi.clearAllMocks()
     mocks.verifyCronSecret.mockReturnValue(true)
     mocks.verifyCronRequest.mockReturnValue(true)
     mocks.isRouteOperational.mockResolvedValue(true)
     mocks.withCronLock.mockImplementation(async (_job: string, run: () => Promise<unknown>) => run())
+    // `clearAllMocks` limpia llamadas, no implementaciones: sin esto el
+    // `mockResolvedValue` del caso de rate limit se filtra a los siguientes.
+    mocks.consumeFixedWindowLimit.mockResolvedValue({ allowed: true, remaining: 9 })
     mocks.syncCopecReports.mockResolvedValue({ from: "2026-08-01", to: "2026-08-31", imported: 10, received: 3, pending: 0, reports: ["Diesel:x.xlsx"], unavailable: [], unmappedCards: [] })
   })
 
@@ -82,6 +90,25 @@ describe("GET /api/cron/fuel-copec-sync", () => {
     const response = await GET(request())
     expect(response.status).toBe(429)
     expect(await response.json()).toMatchObject({ outcome: "rate_limited", code: "FUEL_CRON_RATE_LIMITED" })
+    expect(mocks.syncCopecReports).not.toHaveBeenCalled()
+  })
+
+  it("reports disabled instead of failed when the server has no Copec credentials", async () => {
+    // Antes `env()` lanzaba DENTRO de la corrida y la ruta devolvía `failed`:
+    // una alerta diaria por una integración que nadie configuró.
+    delete process.env.COPEC_USERNAME
+    delete process.env.COPEC_PASSWORD
+
+    const response = await GET(request())
+    expect(await response.json()).toMatchObject({ outcome: "disabled", reason: "sin credenciales" })
+    expect(mocks.syncCopecReports).not.toHaveBeenCalled()
+  })
+
+  it("honours the COPEC_SYNC_ENABLED kill switch", async () => {
+    process.env.COPEC_SYNC_ENABLED = "false"
+
+    const response = await GET(request())
+    expect(await response.json()).toMatchObject({ outcome: "disabled", reason: "sync deshabilitado" })
     expect(mocks.syncCopecReports).not.toHaveBeenCalled()
   })
 })

@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
 import { withCronLock } from "@/lib/services/cron-lock"
+import { isRouteOperational } from "@/lib/services/module-toggles"
 import { runFeedbackSlaReminders } from "@/lib/services/feedback-sla-reminders"
 
 export const runtime = "nodejs"
@@ -13,6 +14,12 @@ export async function GET(request: NextRequest) {
   if (!secret) return NextResponse.json({ ok: false, outcome: "failed", code: "FEEDBACK_CRON_CONFIGURATION" }, { status: 500 })
   if (!verifyCronSecret(request.headers.get("authorization"), secret)) {
     return NextResponse.json({ ok: false, outcome: "unauthorized", code: "FEEDBACK_CRON_UNAUTHORIZED" }, { status: 401 })
+  }
+  // El cron estaba fuera del sistema de toggles: apagar Soporte cerraba la UI
+  // pero los recordatorios de SLA seguían saliendo por correo. Es el mismo
+  // guard que ya aplicaban los demás crons.
+  if (!await isRouteOperational("/soporte")) {
+    return NextResponse.json({ ok: true, outcome: "disabled", code: "FEEDBACK_CRON_DISABLED" }, { status: 200 })
   }
 
   try {

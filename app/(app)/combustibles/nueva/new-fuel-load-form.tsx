@@ -7,6 +7,7 @@ import type { ActionState } from "@/lib/validation/masters"
 import { calculateFuelAmounts } from "@/lib/combustibles/calculations"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -141,6 +142,17 @@ export function NewFuelLoadForm({ data, rates }: { data: NewFuelLoadData; rates:
               <Label htmlFor="hourMeterReading">Horómetro</Label>
               <Input id="hourMeterReading" name="hourMeterReading" type="number" step="0.01" min="0" inputMode="decimal" />
               {state.fieldErrors?.hourMeterReading && <p className="text-sm text-[var(--color-danger-ink)]">{state.fieldErrors.hourMeterReading[0]}</p>}
+            </div>
+
+            <div className="space-y-2 sm:col-span-2">
+              <Checkbox
+                name="meterReplaced"
+                value="1"
+                label="El medidor fue reemplazado o reiniciado"
+              />
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Márcalo sólo si el equipo estrenó medidor. Sin esto, una lectura menor que la anterior se rechaza como error de tipeo.
+              </p>
             </div>
           </CardContent>
         </Card>

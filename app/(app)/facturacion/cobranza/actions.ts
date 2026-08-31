@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { and, eq, sql } from "drizzle-orm"
@@ -131,7 +133,7 @@ export async function recordCollectionActionAction(input: unknown): Promise<Acti
     revalidatePath(`/facturacion/facturas/${data.invoiceId}`)
     return { ok: true, message: "Gestión registrada" }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "No se pudo registrar la gestión"
+    const message = safeActionMessage(err, "No se pudo registrar la gestión")
     logger.error("[billing/recordCollectionAction]", { message })
     return { ok: false, message }
   }
@@ -247,7 +249,7 @@ export async function registerManualPaymentAction(input: unknown): Promise<Actio
     revalidatePath("/facturacion")
     return { ok: true, message: `Pago registrado. La factura queda ${PAYMENT_STATUS_TEXT[snapshot.paymentStatus]}.` }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "No se pudo registrar el pago"
+    const message = safeActionMessage(err, "No se pudo registrar el pago")
     logger.error("[billing/registerManualPayment]", { message })
     return { ok: false, message }
   }
@@ -368,7 +370,7 @@ export async function resolvePaymentSuggestionAction(input: unknown): Promise<Ac
     revalidatePath("/facturacion")
     return { ok: true, message: `Pago confirmado. La factura queda ${PAYMENT_STATUS_TEXT[snapshot.paymentStatus]}.` }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "No se pudo resolver la sugerencia"
+    const message = safeActionMessage(err, "No se pudo resolver la sugerencia")
     logger.error("[billing/resolveSuggestion]", { message })
     return { ok: false, message }
   }
@@ -435,7 +437,7 @@ export async function revertPaymentAction(input: unknown): Promise<ActionResult>
     revalidatePath("/facturacion")
     return { ok: true, message: `Pago revertido. La factura queda ${PAYMENT_STATUS_TEXT[snapshot.paymentStatus]}.` }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "No se pudo revertir el pago"
+    const message = safeActionMessage(err, "No se pudo revertir el pago")
     logger.error("[billing/revertPayment]", { message })
     return { ok: false, message }
   }
@@ -471,7 +473,7 @@ export async function generateSuggestionsAction(): Promise<ActionResult> {
       message: `${result.suggestionsCreated} sugerencias nuevas sobre ${result.invoicesConsidered} facturas abiertas y ${result.transactionsConsidered} movimientos. Ninguna se confirma sola.`,
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : "No se pudieron generar sugerencias"
+    const message = safeActionMessage(err, "No se pudieron generar sugerencias")
     logger.error("[billing/generateSuggestions]", { message })
     return { ok: false, message }
   }

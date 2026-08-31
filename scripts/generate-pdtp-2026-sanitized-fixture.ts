@@ -62,7 +62,13 @@ async function main() {
     activityNumbers.forEach((activityNumber, index) => {
       const activity = activityByNumber.get(activityNumber)
       if (!activity) throw new Error(`Actividad ${activityNumber} ausente del catálogo 2026.`)
-      const rowNumber = sheetCode === "pdtp_general" ? 13 + activityNumber : 14 + index
+      // Siempre por POSICIÓN en la vista, nunca por número de actividad. En
+      // `pdtp_general` faltan la 4 y la 8, así que `13 + activityNumber`
+      // desplazaba una fila todo lo que viene después del primer hueco y las
+      // celdas E caían fuera de donde el contrato las fija (`F18` para la
+      // actividad 6, no `F19`). El extractor lee secuencialmente, así que los
+      // conteos seguían cuadrando y el desfase no se veía.
+      const rowNumber = 14 + index
       const row = sheet.getRow(rowNumber)
       row.getCell(1).value = activity.n
       row.getCell(2).value = activity.activity

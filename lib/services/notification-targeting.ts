@@ -95,32 +95,34 @@ export async function getUserIdsWithPermissionForWorksite(
   const candidateIds = await getUserIdsWithPermission(permissionName)
   if (candidateIds.length === 0) return []
 
-  const activeScopeRows = await db
-    .select({
-      userId: users.id,
-      assignedWorksiteId: worksiteUsers.worksiteId,
-    })
-    .from(users)
-    .leftJoin(
-      worksiteUsers,
-      and(
-        eq(worksiteUsers.userId, users.id),
-        eq(worksiteUsers.worksiteId, worksiteId),
-      ),
-    )
-    .where(and(
-      inArray(users.id, candidateIds),
-      eq(users.isActive, true),
-    ))
-
-  const globalRoleRows = await db
-    .select({ userId: userRoles.userId })
-    .from(userRoles)
-    .innerJoin(roles, eq(roles.id, userRoles.roleId))
-    .where(and(
-      inArray(userRoles.userId, candidateIds),
-      eq(roles.isGlobal, true),
-    ))
+  // Las dos lecturas dependen sólo de `candidateIds`: se resuelven en paralelo.
+  const [activeScopeRows, globalRoleRows] = await Promise.all([
+    db
+      .select({
+        userId: users.id,
+        assignedWorksiteId: worksiteUsers.worksiteId,
+      })
+      .from(users)
+      .leftJoin(
+        worksiteUsers,
+        and(
+          eq(worksiteUsers.userId, users.id),
+          eq(worksiteUsers.worksiteId, worksiteId),
+        ),
+      )
+      .where(and(
+        inArray(users.id, candidateIds),
+        eq(users.isActive, true),
+      )),
+    db
+      .select({ userId: userRoles.userId })
+      .from(userRoles)
+      .innerJoin(roles, eq(roles.id, userRoles.roleId))
+      .where(and(
+        inArray(userRoles.userId, candidateIds),
+        eq(roles.isGlobal, true),
+      )),
+  ])
 
   const globalUserIds = new Set(globalRoleRows.map((row) => row.userId))
 

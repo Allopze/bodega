@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { PropsWithChildren } from "react"
 import { INITIAL_STATE } from "@/lib/form-state"
+import { toast } from "@/lib/toast"
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: vi.fn() }),
@@ -56,6 +57,44 @@ afterEach(cleanup)
 import { DeliveryForm } from "./delivery-form"
 
 describe("DeliveryForm", () => {
+  it("usa cantidades enteras para EPP y rechaza una fracción antes de agregarla", () => {
+    vi.mocked(toast.error).mockClear()
+    render(
+      <DeliveryForm
+        today="2026-08-31"
+        worksites={[{ id: "faena-1", name: "Faena Santa Fe" }]}
+        workers={[{
+          id: "worker-1",
+          name: "Andrea Rojas",
+          worksiteId: "faena-1",
+          worksiteName: "Faena Santa Fe",
+          position: "Operaria",
+          rut: "12.345.678-9",
+        }]}
+        stockProducts={[{
+          sourceWorksiteId: "faena-1",
+          productId: "helmet",
+          productName: "Casco dieléctrico",
+          productSku: "EPP-001",
+          isEpp: true,
+          unitOfMeasure: "unidad",
+          stockQuantity: 4,
+        }]}
+      />,
+    )
+
+    fireEvent.change(screen.getAllByTestId("select")[2]!, { target: { value: "helmet" } })
+    const quantityInput = screen.getByLabelText("Cantidad (máx. 4 unidades)")
+    expect(quantityInput).toHaveAttribute("min", "1")
+    expect(quantityInput).toHaveAttribute("step", "1")
+
+    fireEvent.change(quantityInput, { target: { value: "0.02" } })
+    fireEvent.click(screen.getByRole("button", { name: "Agregar" }))
+
+    expect(toast.error).toHaveBeenCalledWith("Los EPP se entregan en cantidades enteras")
+    expect(screen.getByText("Agrega uno o más productos con stock para continuar.")).toBeDefined()
+  })
+
   it("permite seleccionar cualquier fecha pasada y limita sólo el futuro", () => {
     render(
       <DeliveryForm
@@ -74,6 +113,7 @@ describe("DeliveryForm", () => {
           productId: "helmet",
           productName: "Casco dieléctrico",
           productSku: "EPP-001",
+          isEpp: true,
           unitOfMeasure: "unidad",
           stockQuantity: 4,
         }]}
@@ -117,6 +157,7 @@ describe("DeliveryForm", () => {
           productId: "helmet",
           productName: "Casco dieléctrico",
           productSku: "EPP-001",
+          isEpp: true,
           unitOfMeasure: "unidad",
           stockQuantity: 4,
         }]}
@@ -158,6 +199,7 @@ describe("DeliveryForm", () => {
             productId: "gloves",
             productName: "Guantes",
             productSku: "EPP-002",
+            isEpp: true,
             unitOfMeasure: "unidad",
             stockQuantity: 10,
           },
@@ -166,6 +208,7 @@ describe("DeliveryForm", () => {
             productId: "helmet",
             productName: "Casco dieléctrico",
             productSku: "EPP-001",
+            isEpp: true,
             unitOfMeasure: "unidad",
             stockQuantity: 4,
           },

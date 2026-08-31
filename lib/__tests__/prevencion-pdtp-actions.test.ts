@@ -31,7 +31,15 @@ const mockGetPdtpProgram = vi.hoisted(() => vi.fn(async () => null as unknown))
 const mockAssertAllRequiredApproved = vi.hoisted(() => vi.fn(async () => undefined))
 const mockApprovePdtpExecution = vi.hoisted(() => vi.fn(async () => undefined))
 const mockRejectPdtpExecution = vi.hoisted(() => vi.fn(async () => undefined))
-const mockUpdatePdtpActivity = vi.hoisted(() => vi.fn(async () => undefined))
+const mockUpdatePdtpActivity = vi.hoisted(() => vi.fn(async () => ({ programId: "prog-1" })))
+// La action distingue el conflicto de planificación de un fallo inesperado con
+// `instanceof`, así que el módulo mockeado tiene que exponer la clase.
+const MockPdtpScheduleConflictError = vi.hoisted(() => class PdtpScheduleConflictError extends Error {
+  constructor(readonly detail: Record<string, unknown>) {
+    super("Confirma el reemplazo para continuar.")
+    this.name = "PdtpScheduleConflictError"
+  }
+})
 const mockAddPdtpActivity = vi.hoisted(() => vi.fn(async () => undefined))
 const mockRetirePdtpActivity = vi.hoisted(() => vi.fn(async () => undefined))
 const mockReorderPdtpActivities = vi.hoisted(() => vi.fn(async () => undefined))
@@ -43,6 +51,7 @@ const mockDeletePdtpProgram = vi.hoisted(() => vi.fn(async () => undefined))
 const mockCreatePdtpSheet = vi.hoisted(() => vi.fn(async () => undefined))
 const mockDeletePdtpSheet = vi.hoisted(() => vi.fn(async () => undefined))
 const mockReconcilePdtpDeclaredActor = vi.hoisted(() => vi.fn(async () => undefined))
+const mockRevalidatePath = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({
   guardAuth: mockGuardAuth,
@@ -78,8 +87,9 @@ vi.mock("@/lib/services/prevention-pdtp", () => ({
   createPdtpSheet: mockCreatePdtpSheet,
   deletePdtpSheet: mockDeletePdtpSheet,
   reconcilePdtpDeclaredActor: mockReconcilePdtpDeclaredActor,
+  PdtpScheduleConflictError: MockPdtpScheduleConflictError,
 }))
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath, revalidateTag: vi.fn() }))
 vi.mock("next/navigation", () => ({ redirect: mockRedirect }))
 
 import {
@@ -272,6 +282,61 @@ describe("Activity edit/add actions", () => {
     expect(res.ok).toBe(true)
     expect(mockGuardPermission).toHaveBeenCalledWith("prevention:pdtp:program:manage")
     expect(mockUpdatePdtpActivity).toHaveBeenCalled()
+  })
+
+  it("updatePdtpActivityAction revalida el programa y su ruta de edición", async () => {
+    const res = await updatePdtpActivityAction({ activityId: "act-1", activity: "Nueva descripción" })
+    expect(res.ok).toBe(true)
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/prevencion/pdtp")
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/prevencion/pdtp/prog-1")
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/prevencion/pdtp/prog-1/editar")
+  })
+
+  it("updatePdtpActivityAction devuelve el conflicto de planificación con su detalle, no un error inesperado", async () => {
+    const detail = {
+      reason: "manual_schedule_would_be_replaced",
+      scheduleSource: "manual",
+      currentCellCount: 2,
+      nextCellCount: 4,
+      removedCellCount: 1,
+      currentPlannedTotal: 5,
+      nextPlannedTotal: 4,
+    }
+    mockUpdatePdtpActivity.mockRejectedValueOnce(new MockPdtpScheduleConflictError(detail))
+
+    const res = await updatePdtpActivityAction({ activityId: "act-1", activity: "X" })
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("Confirma el reemplazo")
+    expect(res.data?.scheduleConflict).toEqual(detail)
+    // Un conflicto no debe presentarse como error de campos.
+    expect(res.fieldErrors).toBeUndefined()
+  })
+
+  it("updatePdtpActivityAction rechaza semanas repetidas y cantidades fuera de rango", async () => {
+    const duplicated = await updatePdtpActivityAction({
+      activityId: "act-1",
+      scheduleOverrides: [
+        { month: 3, week: 2, plannedQuantity: 1 },
+        { month: 3, week: 2, plannedQuantity: 2 },
+      ],
+    })
+    expect(duplicated.ok).toBe(false)
+
+    const tooLarge = await updatePdtpActivityAction({
+      activityId: "act-1",
+      scheduleOverrides: [{ month: 3, week: 2, plannedQuantity: 100001 }],
+    })
+    expect(tooLarge.ok).toBe(false)
+  })
+
+  it("updatePdtpActivityAction exige describir el evento en modo por evento", async () => {
+    const res = await updatePdtpActivityAction({
+      activityId: "act-1",
+      scheduleMode: "triggered",
+      triggerDescription: "   ",
+    })
+    expect(res.ok).toBe(false)
+    expect(res.fieldErrors?.triggerDescription).toBeDefined()
   })
 
   it("updatePdtpActivityAction retorna error con input inválido", async () => {

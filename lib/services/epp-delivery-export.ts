@@ -49,6 +49,7 @@ export async function getEppDeliveryExport(
       productName:   products.name,
       productSku:    products.sku,
       quantity:      deliveryItems.quantity,
+      quantityOriginal: deliveryItems.quantityOriginal,
       unitOfMeasure: deliveryItems.unitOfMeasure,
       requestCode:   purchaseRequests.code,
     })
@@ -79,6 +80,7 @@ export async function getEppDeliveryExport(
       "Código", "Fecha entrega", "Faena",
       "Trabajador", "RUT", "Cargo",
       "EPP entregado", "SKU", "Cantidad", "U/M",
+      "Cantidad originalmente registrada", "Regularizada",
       "Solicitud origen", "Evidencia de firma histórica",
     ],
     rows: limited.map((r) => [
@@ -92,6 +94,8 @@ export async function getEppDeliveryExport(
       r.productSku ?? "",
       r.quantity,
       r.unitOfMeasure,
+      r.quantityOriginal ?? "",
+      r.quantityOriginal !== null ? "Sí" : "No",
       r.requestCode ?? "",
       r.hasSig ? "Sí" : "—",
     ]),

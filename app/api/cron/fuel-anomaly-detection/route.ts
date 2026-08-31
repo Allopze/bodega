@@ -12,7 +12,7 @@
 
 import { type NextRequest, NextResponse } from "next/server"
 import { runAllBatchRules } from "@/lib/combustibles/anomaly-detector"
-import { seedAnomalyRulesIfEmpty } from "@/lib/combustibles/anomaly-cases"
+import { syncAnomalyRuleCatalog } from "@/lib/combustibles/anomaly-cases"
 import { fuelCronContractFor } from "@/lib/combustibles/fuel-cron-contract"
 import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
@@ -41,7 +41,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   try {
     const outcome = await withCronLock("fuel-anomaly-detection", async () => {
-      await seedAnomalyRulesIfEmpty()
+      await syncAnomalyRuleCatalog()
       return runAllBatchRules()
     })
     if ("skipped" in outcome) {

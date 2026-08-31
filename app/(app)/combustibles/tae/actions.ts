@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import { and, desc, eq, ilike, or, sql } from "drizzle-orm"
@@ -34,7 +36,7 @@ export async function createTaePublicLinkAction(input: { worksiteId: string; loa
     return { ok: true, data: link }
   } catch (error) {
     logger.error("[createTaePublicLinkAction]", error)
-    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : error instanceof Error ? error.message : "No se pudo generar el enlace"
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudo generar el enlace")
     return { ok: false, message: msg }
   }
 }
@@ -115,7 +117,7 @@ export async function reviewTaeSubmissionAction(input: { id: string; expectedSta
     return { ok: true, message: "Carga TAE actualizada" }
   } catch (error) {
     logger.error("[reviewTaeSubmissionAction]", error)
-    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : error instanceof Error ? error.message : "No se pudo actualizar la carga"
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudo actualizar la carga")
     return { ok: false, message: msg }
   }
 }
@@ -166,7 +168,7 @@ export async function updateTaeMeterReadingAction(input: {
     })
   } catch (error) {
     logger.error("[updateTaeMeterReadingAction]", error)
-    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : error instanceof Error ? error.message : "No se pudo corregir la lectura"
+    const msg = error instanceof Error && isNetworkError(error) ? "Sin conexión al servidor. Verifica tu conexión a internet e inténtalo nuevamente." : safeActionMessage(error, "No se pudo corregir la lectura")
     return { ok: false, message: msg }
   }
 

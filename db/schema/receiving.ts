@@ -108,6 +108,12 @@ export const deliveryItems = pgTable("delivery_items", {
   productId:        text("product_id").references(() => products.id),
   productNameFree:  text("product_name_free"),
   quantity:         real("quantity").notNull(),
+  // Correcciones automáticas conservan el valor defectuoso en vez de borrar la
+  // evidencia. `quantity` queda como la cantidad operacional efectiva y estas
+  // columnas documentan qué se recibió originalmente y por qué cambió.
+  quantityOriginal: real("quantity_original"),
+  quantityCorrectedAt: timestamp("quantity_corrected_at", { withTimezone: true, mode: "string" }),
+  quantityCorrectionReason: text("quantity_correction_reason"),
   unitOfMeasure:    text("unit_of_measure").notNull().default("unidad"),
   notes:            text("notes"),
   // Return of old/discarded EPP (opcional)
@@ -118,6 +124,15 @@ export const deliveryItems = pgTable("delivery_items", {
   returnNotes:           text("return_notes"),
 }, (table) => [
   check("delivery_items_quantity_positive", sql`${table.quantity} > 0`),
+  check("delivery_items_quantity_correction_valid", sql`
+    (${table.quantityOriginal} IS NULL
+      AND ${table.quantityCorrectedAt} IS NULL
+      AND ${table.quantityCorrectionReason} IS NULL)
+    OR
+    (${table.quantityOriginal} > 0
+      AND ${table.quantityCorrectedAt} IS NOT NULL
+      AND char_length(trim(${table.quantityCorrectionReason})) > 0)
+  `),
   index("idx_delivery_items_request").on(table.requestItemId),
   // DAT-11: FK caliente sin índice — CASCADE de deliveries.
   index("idx_delivery_items_delivery").on(table.deliveryId),

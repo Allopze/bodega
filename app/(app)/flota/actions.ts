@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { revalidatePath } from "next/cache"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import { promises as fs } from "node:fs"
@@ -89,7 +91,7 @@ export async function uploadFleetDocumentAction(
   } catch (e) {
     await fs.unlink(absolutePath).catch(() => undefined)
     logger.error("[uploadFleetDocumentAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al subir documento" }
+    return { ok: false, message: safeActionMessage(e, "Error al subir documento") }
   }
 }
 
@@ -112,7 +114,7 @@ export async function deleteFleetDocumentAction(
     return { ok: true, message: "Documento eliminado" }
   } catch (e) {
     logger.error("[deleteFleetDocumentAction]", e)
-    return { ok: false, message: e instanceof Error ? e.message : "Error al eliminar documento" }
+    return { ok: false, message: safeActionMessage(e, "Error al eliminar documento") }
   }
 }
 

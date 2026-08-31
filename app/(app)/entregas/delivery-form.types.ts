@@ -17,6 +17,7 @@ export interface DeliveryStockProductOption {
   productId: string
   productName: string
   productSku: string | null
+  isEpp: boolean
   unitOfMeasure: string
   stockQuantity: number
 }

@@ -28,9 +28,21 @@ interface OfflineSavedMessageProps {
 export function OfflineSavedMessage({ onRequestNew }: OfflineSavedMessageProps = {}) {
   const router = useRouter()
   const { online, pendingCount, triggerSync, syncing } = usePpaOfflineQueue()
-  const [notifPermission, setNotifPermission] = React.useState<NotificationPermission>(() =>
-    typeof window !== "undefined" ? getNotificationPermission() : "default",
-  )
+  /*
+   * `Notification.permission` y el user-agent sólo existen en el navegador. Al
+   * leerlos durante el primer render, el HTML del servidor y la hidratación
+   * divergían en estructura —el bloque "Activar notificaciones" se renderizaba
+   * en el servidor (siempre "default") y desaparecía al hidratar en un equipo
+   * que ya había concedido el permiso—, y React descarta el subárbol completo.
+   * Se parte del mismo valor que emite el servidor y se corrige tras montar.
+   */
+  const [notifPermission, setNotifPermission] = React.useState<NotificationPermission>("default")
+  const [iosSafari, setIosSafari] = React.useState(false)
+
+  React.useEffect(() => {
+    setNotifPermission(getNotificationPermission())
+    setIosSafari(isIosSafari())
+  }, [])
 
   return (
     <main className="mx-auto w-full max-w-lg px-4 py-8">
@@ -97,7 +109,7 @@ export function OfflineSavedMessage({ onRequestNew }: OfflineSavedMessageProps =
               Recibe una notificación cuando tu PPA se envíe.
             </span>
           </div>
-          {isIosSafari() && (
+          {iosSafari && (
             <p className="mt-2 text-xs text-[var(--color-text-muted)]">
               En iPhone/iPad, primero agrega esta app a tu pantalla de inicio desde el botón de compartir.
             </p>

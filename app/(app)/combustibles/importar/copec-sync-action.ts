@@ -1,11 +1,14 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { db } from "@/db"
 import { desc, eq } from "drizzle-orm"
 import { fuelProviderSyncRuns, systemSettings } from "@/db/schema"
 import { guardPermission } from "@/lib/auth/can"
 import { civilDate, civilDateRange } from "@/lib/validation/dates"
 import { getCopecSyncPlan, setCopecSyncStartDate, syncCopecReportPeriod } from "@/lib/combustibles/copec-sync"
+import { withCronLock } from "@/lib/services/cron-lock"
 import { isOpenPeriod } from "@/lib/combustibles/open-period"
 import { z } from "zod"
 
@@ -68,7 +71,7 @@ export async function getCopecSyncStatusAction(): Promise<
       },
     }
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No fue posible obtener el estado del sync" }
+    return { ok: false, message: safeActionMessage(error, "No fue posible obtener el estado del sync") }
   }
 }
 
@@ -82,7 +85,7 @@ export async function getCopecSyncPlanAction(): Promise<
     const result = await getCopecSyncPlan()
     return { ok: true, from: result.from, to: result.to, periods: result.periods }
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No fue posible preparar la sincronización Copec" }
+    return { ok: false, message: safeActionMessage(error, "No fue posible preparar la sincronización Copec") }
   }
 }
 
@@ -97,7 +100,7 @@ export async function updateCopecSyncStartAction(input: { startDate: string; exp
     if (!parsed.success) return { ok: false, message: "La fecha de inicio no es válida" }
     return { ok: true, data: await setCopecSyncStartDate(parsed.data.startDate, parsed.data.expectedStart) }
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No fue posible actualizar la fecha de inicio" }
+    return { ok: false, message: safeActionMessage(error, "No fue posible actualizar la fecha de inicio") }
   }
 }
 
@@ -123,7 +126,16 @@ export async function runCopecSyncPeriodAction(period: { from: string; to: strin
 
     // La acción manual usa al operador autenticado. El importador configurado
     // queda reservado para el cron, que no tiene sesión de usuario.
-    const result = await syncCopecReportPeriod(periodRange, session.user.id)
+    //
+    // Bajo el MISMO lock que el cron: Copec abre una sesión de navegador con
+    // login por descarga y el portal es de sesión única, así que un botón
+    // manual durante la corrida automática pelea por la sesión del portal y
+    // por el cursor (el `saveState` optimista descarta el avance del perdedor).
+    const outcome = await withCronLock("fuel-copec-sync", () => syncCopecReportPeriod(periodRange, session.user.id))
+    if ("skipped" in outcome) {
+      return { ok: false, message: "La sincronización automática de Copec está corriendo en este momento. Espera a que termine e inténtalo nuevamente." }
+    }
+    const result = outcome
     // `openPeriod` lo decide el servidor: el cliente no puede compararlo contra
     // "hoy" sin arriesgar el desfase de zona horaria que ya costó un bug acá.
     return { ok: true, imported: result.imported, refreshed: result.refreshed, received: result.received, pending: result.pending, rowsReceived: result.rowsReceived, rowsAccepted: result.rowsAccepted, rowsRejected: result.rowsRejected, rowsPending: result.rowsPending, unavailable: result.unavailable, reports: result.reports.length, unmappedCards: result.unmappedCards, openPeriod: isOpenPeriod(periodRange.to) }

@@ -16,6 +16,10 @@ interface WorksiteOption {
 
 export type StockState = "" | "low" | "warn"
 
+const isLowStock = (item: WorksiteStockWithProduct) => item.minStock > 0 && item.quantity <= item.minStock
+const isWarnStock = (item: WorksiteStockWithProduct) =>
+  item.minStock > 0 && item.quantity > item.minStock && item.quantity < item.minStock * 1.5
+
 export function StockSection({
   worksites,
   stockByWorksite,
@@ -37,9 +41,6 @@ export function StockSection({
   truncated?: boolean
   canSetMinStock?: boolean
 }) {
-  const isLowStock = (item: WorksiteStockWithProduct) => item.minStock > 0 && item.quantity <= item.minStock
-  const isWarnStock = (item: WorksiteStockWithProduct) =>
-    item.minStock > 0 && item.quantity > item.minStock && item.quantity < item.minStock * 1.5
 
   // En "bajo el mínimo" también entran las líneas agotadas (cantidad 0) con
   // umbral definido: son exactamente las que cuenta el KPI del encabezado y sin

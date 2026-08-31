@@ -287,11 +287,15 @@ export function VehicleCatalogTable({ vehicles, worksites, users, equipmentTypes
                 fd.set("ids", Array.from(selectedIds).join(","))
                 fd.set("activate", String(bulkActionType === "activate"))
                 fd.set("reason", bulkReason)
-                const res = await bulkToggleFuelVehicleActiveAction({ ok: true, message: "" }, fd)
-                setBulkPending(false)
-                setBulkActionType(null)
-                setSelectedIds(new Set())
-                setBulkReason("")
+                let res
+                try {
+                  res = await bulkToggleFuelVehicleActiveAction({ ok: true, message: "" }, fd)
+                  setBulkActionType(null)
+                  setSelectedIds(new Set())
+                  setBulkReason("")
+                } finally {
+                  setBulkPending(false)
+                }
                 if (res.ok) toast.success(res.message ?? "Operación exitosa")
                 else toast.error(res.message ?? "Error al realizar la operación")
               }}

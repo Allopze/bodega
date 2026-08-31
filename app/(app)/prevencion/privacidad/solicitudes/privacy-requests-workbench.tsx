@@ -73,6 +73,22 @@ type PendingAction = {
   reasonRequired?: boolean
 }
 
+function quickAction(row: PrivacyRequestRow): PendingAction | null {
+  if (row.status === "recibida") return {
+    row, toStatus: "validando_identidad", title: "Iniciar validación de identidad",
+    description: "La solicitud no podrá procesarse ni exportarse hasta confirmar la identidad.",
+  }
+  if (row.status === "validando_identidad") return {
+    row, toStatus: "en_proceso", title: "Confirmar identidad",
+    description: "Esta acción registra tu usuario y la fecha como evidencia de verificación.",
+  }
+  if (row.status === "suspendida_retencion") return {
+    row, toStatus: "en_proceso", title: "Liberar retención legal",
+    description: "Confirma que terminó la causal de retención antes de continuar.", releaseLegalHold: true, reasonRequired: true,
+  }
+  return null
+}
+
 export function PrivacyRequestsWorkbench({ rows, canExport, canExportClinical, pagination }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -98,22 +114,6 @@ export function PrivacyRequestsWorkbench({ rows, canExport, canExportClinical, p
     return rows.filter((row) => [row.id, row.subjectName, row.subjectRut, row.worksiteName, RIGHTS[row.rightType], STATUS[row.status]?.label]
       .filter(Boolean).some((value) => String(value).toLocaleLowerCase("es").includes(query)))
   }, [rows, searchQuery])
-
-  function quickAction(row: PrivacyRequestRow): PendingAction | null {
-    if (row.status === "recibida") return {
-      row, toStatus: "validando_identidad", title: "Iniciar validación de identidad",
-      description: "La solicitud no podrá procesarse ni exportarse hasta confirmar la identidad.",
-    }
-    if (row.status === "validando_identidad") return {
-      row, toStatus: "en_proceso", title: "Confirmar identidad",
-      description: "Esta acción registra tu usuario y la fecha como evidencia de verificación.",
-    }
-    if (row.status === "suspendida_retencion") return {
-      row, toStatus: "en_proceso", title: "Liberar retención legal",
-      description: "Confirma que terminó la causal de retención antes de continuar.", releaseLegalHold: true, reasonRequired: true,
-    }
-    return null
-  }
 
   async function transition() {
     if (!pendingAction) return

@@ -8,6 +8,7 @@ import { SubmitButton } from "@/components/ui/submit-button"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { DatePicker } from "@/components/ui/date-picker"
 import { INITIAL_STATE } from "@/lib/form-state"
 import { registerReceiptAction } from "./actions"
 import { formatQty } from "@/lib/utils"
@@ -66,6 +67,8 @@ export function ReceiptForm({
   const [qtys,    setQtys]    = React.useState<Record<string, number>>({})
   const [rejs,    setRejs]    = React.useState<Record<string, number>>({})
   const [dmgs,    setDmgs]    = React.useState<Record<string, number>>({})
+  const [maintenanceDates, setMaintenanceDates] = React.useState<Record<string, string>>({})
+  const [expiryDates, setExpiryDates] = React.useState<Record<string, string>>({})
 
   const [state, action] = useActionState<ActionState, FormData>(registerReceiptAction, INITIAL_STATE)
 
@@ -99,6 +102,8 @@ export function ReceiptForm({
       quantityReceived:    qtys[i.id]     ?? getRemaining(i, stage),
       quantityRejected:    rejs[i.id]     ?? 0,
       quantityDamaged:     dmgs[i.id]     ?? 0,
+      maintenanceDate:     i.isEmergencyService && stage === "faena" ? (maintenanceDates[i.id] || null) : null,
+      nextExpiryDate:      i.isEmergencyService && stage === "faena" ? (expiryDates[i.id] || null) : null,
       notes:               null,
     }))
   )
@@ -118,6 +123,11 @@ export function ReceiptForm({
     .map((item) => item.id)
   const overBookedItemIdSet = new Set(overBookedItemIds)
   const hasOverBooked = overBookedItemIds.length > 0
+  const emergencyDatesMissing = stage === "faena" && items.some((item) =>
+    item.isEmergencyService
+      && (qtys[item.id] ?? getRemaining(item, stage)) > 0
+      && (!maintenanceDates[item.id] || !expiryDates[item.id]),
+  )
 
   return (
     <form action={action} className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
@@ -336,6 +346,47 @@ export function ReceiptForm({
         </p>
         </div>
 
+        {stage === "faena" && items.some((item) => item.isEmergencyService && getRemaining(item, stage) > 0) && (
+          <section aria-labelledby="emergency-service-receipt-title" className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+            <h2 id="emergency-service-receipt-title" className="text-base font-semibold text-[var(--color-text)]">Datos de mantención de extintores</h2>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+              La recepción final conforme reactiva el activo. El certificado es opcional y queda como evidencia del caso.
+            </p>
+            <div className="mt-4 space-y-4">
+              {items.filter((item) => item.isEmergencyService && getRemaining(item, stage) > 0).map((item) => (
+                <fieldset key={item.id} className="grid gap-3 rounded-[var(--radius)] border border-[var(--color-border)] p-3 md:grid-cols-3">
+                  <legend className="px-1 text-sm font-medium text-[var(--color-text)]">
+                    {item.emergencyResourceLabel ?? item.productName}
+                  </legend>
+                  <Field label="Fecha de mantención" required>
+                    <DatePicker
+                      value={maintenanceDates[item.id] ?? ""}
+                      onChange={(value) => setMaintenanceDates((current) => ({ ...current, [item.id]: value }))}
+                      ariaLabel={`Fecha de mantención de ${item.emergencyResourceLabel ?? item.productName}`}
+                    />
+                  </Field>
+                  <Field label="Próximo vencimiento" required>
+                    <DatePicker
+                      value={expiryDates[item.id] ?? ""}
+                      onChange={(value) => setExpiryDates((current) => ({ ...current, [item.id]: value }))}
+                      min={maintenanceDates[item.id] || undefined}
+                      ariaLabel={`Próximo vencimiento de ${item.emergencyResourceLabel ?? item.productName}`}
+                    />
+                  </Field>
+                  <Field label="Certificado" hint="Opcional. PDF o imagen.">
+                    <Input
+                      type="file"
+                      name={`certificate-${item.id}`}
+                      accept="application/pdf,image/png,image/jpeg"
+                      aria-label={`Certificado de ${item.emergencyResourceLabel ?? item.productName}`}
+                    />
+                  </Field>
+                </fieldset>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* Notes */}
         <Field label="Observaciones de recepción" htmlFor="receiptNotes" error={state.fieldErrors?.notes?.[0]}>
           <Textarea
@@ -373,7 +424,7 @@ export function ReceiptForm({
             label={submitLabel}
             loadingLabel="Guardando..."
             variant="primary"
-            disabled={hasOverBooked}
+            disabled={hasOverBooked || emergencyDatesMissing}
           />
         </div>
       </div>

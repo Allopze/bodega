@@ -12,11 +12,13 @@ import {
   DELIVERY_BACKDATE_BUSINESS_DAYS,
   formatFileSize,
   formatQty,
+  quantityStep,
   pluralize,
   toCode,
   formatDate,
   formatDateRelative,
   formatDateTime,
+  formatDateLong,
   toTitleCase,
   getInitials,
   escapeHtml,
@@ -78,6 +80,33 @@ describe("formatQty()", () => {
 
   it("formats zero without unit", () => {
     expect(formatQty(0)).toBe("0")
+  })
+})
+
+describe("quantityStep()", () => {
+  // El bug que motiva el helper: `min="0.01" step="0.01"` sobre un campo vacío
+  // convierte cada clic de la flecha en un centésimo. Seis clics para seis
+  // buzos registraron 0,06 en producción, catorce veces.
+  it("counts whole units for everything the catálogo usa", () => {
+    expect(quantityStep("unidad")).toBe(1)
+    expect(quantityStep("par")).toBe(1)
+    expect(quantityStep("caja")).toBe(1)
+    expect(quantityStep("dosis")).toBe(1)
+    expect(quantityStep("servicio")).toBe(1)
+  })
+
+  it("allows fractions only for measurable units", () => {
+    expect(quantityStep("kg")).toBe(0.01)
+    expect(quantityStep("litros")).toBe(0.01)
+    expect(quantityStep("m2")).toBe(0.01)
+  })
+
+  it("normalises case and whitespace, and defaults to whole units", () => {
+    expect(quantityStep(" KG ")).toBe(0.01)
+    expect(quantityStep("Unidad")).toBe(1)
+    expect(quantityStep(undefined)).toBe(1)
+    expect(quantityStep(null)).toBe(1)
+    expect(quantityStep("")).toBe(1)
   })
 })
 
@@ -219,6 +248,30 @@ describe("formatDateTime()", () => {
 
   it("gives a plain date a midnight time component", () => {
     expect(formatDateTime("2026-03-01")).toBe("01-03-2026 00:00")
+  })
+})
+
+describe("formatDateLong()", () => {
+  it("renders weekday, day and month in es-CL", () => {
+    // 2026-08-29 15:00Z son las 12:00 en Santiago (UTC-3 en invierno): sigue
+    // siendo sábado 29 en Chile. es-CL inserta una coma entre el día de la
+    // semana y el resto, por eso la forma es "weekday, day de month".
+    const out = formatDateLong(new Date("2026-08-29T15:00:00Z"))
+    expect(out.toLowerCase()).toBe("sábado, 29 de agosto")
+  })
+
+  it("uses the Chilean day, not the UTC day, across the date boundary", () => {
+    // 03:00Z del 23 son las 23:00 del 22 en Santiago (invierno, UTC-4). Si el
+    // helper midiera en UTC diría "jueves, 23"; debe decir "miércoles, 22".
+    const out = formatDateLong(new Date("2026-07-23T03:00:00Z"))
+    expect(out.toLowerCase()).toBe("miércoles, 22 de julio")
+  })
+
+  it("returns VALUE_MISSING for null / undefined / empty / garbage", () => {
+    expect(formatDateLong(null)).toBe("—")
+    expect(formatDateLong(undefined)).toBe("—")
+    expect(formatDateLong("")).toBe("—")
+    expect(formatDateLong("basura")).toBe("—")
   })
 })
 

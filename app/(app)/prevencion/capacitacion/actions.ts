@@ -1,5 +1,7 @@
 "use server"
 
+import { safeActionMessage } from "@/lib/action-error"
+
 import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
 import { guardPermission } from "@/lib/auth/can"
@@ -44,7 +46,7 @@ async function run(access: TrainingAccess, operation: (access: TrainingAccess) =
     revalidatePath(`${BASE}/[sessionId]`, "page")
     return { ok: true }
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : "No se pudo completar la operación." }
+    return { ok: false, message: safeActionMessage(error, "No se pudo completar la operación.") }
   }
 }
 
