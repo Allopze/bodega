@@ -72,6 +72,8 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
           nonConformingCount: detail.run.nonConformingCount,
           notApplicableCount: detail.run.notApplicableCount,
           compliancePercent: detail.run.compliancePercent,
+          officialComplianceBasisPoints: detail.run.officialComplianceBasisPoints,
+          normalizedComplianceBasisPoints: detail.run.normalizedComplianceBasisPoints,
           executedByUserId: detail.run.executedByUserId,
           closingResult: detail.run.closingResult,
           closingRestrictions: detail.run.closingRestrictions,
@@ -81,8 +83,10 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
           version: detail.run.version,
         }}
         closingAct={closingActFromDefinition(definition)}
+        scoringPolicy={definition.scoringPolicy}
         templateKind={detail.templateKind}
         recordsDeviations={detail.recordsDeviations}
+        recordsPreventiveActions={detail.recordsPreventiveActions}
         deviationCatalog={detail.deviationCatalog}
         pdtpActivityNumbers={detail.pdtpActivityNumbers ?? []}
         pdtpReviewActivityNumbers={detail.pdtpReviewActivityNumbers ?? []}
@@ -110,6 +114,7 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
             // B-08: sin las opciones, un ítem `select` no se puede responder.
             options: item.options,
             placeholder: item.placeholder,
+            matrix: item.matrix,
           })),
         }))}
         answers={detail.answers.map((item) => ({
@@ -129,7 +134,13 @@ export default async function InspeccionPage({ params }: { params: Promise<{ run
           status: item.status,
           capaActionId: item.capaActionId,
           origin: item.origin,
+          potentialDamageDescription: item.potentialDamageDescription,
+          immediateMeasure: item.immediateMeasure,
+          applicableLaw: item.applicableLaw,
+          evidence: item.evidence.map((file) => ({ id: file.id, path: file.path, caption: file.caption })),
         }))}
+        isUnplannedInspection={detail.sourceDefinitionCode === "inspeccion_no_planeada"}
+        participants={detail.participants.map((item) => ({ id: item.id, name: item.name, position: item.position, userId: item.userId }))}
         currentUserId={auth.user.id}
         assignees={assignees}
         reviewers={reviewers}

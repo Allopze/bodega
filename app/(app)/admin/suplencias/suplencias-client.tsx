@@ -48,6 +48,16 @@ interface SuplenciasClientProps {
   substitutions: SubstitutionRow[]
 }
 
+const getStatusBadge = (user: typeof users.$inferSelect, nowMs: number) => {
+  if (!user.isActive) return <Badge variant="danger">Revocada / Inactiva</Badge>
+  if (!user.validUntil) return <Badge variant="outline">Sin límite</Badge>
+  const validUntilDate = new Date(user.validUntil)
+  const diffDays = Math.ceil((validUntilDate.getTime() - nowMs) / (1000 * 3600 * 24))
+  if (diffDays <= 0) return <Badge variant="danger">Vencida</Badge>
+  if (diffDays <= 5) return <Badge variant="warning">Vence en {diffDays} días</Badge>
+  return <Badge variant="success">Vigente ({diffDays} días)</Badge>
+}
+
 export function SuplenciasClient({ activeUsers, substitutions }: SuplenciasClientProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -118,16 +128,6 @@ export function SuplenciasClient({ activeUsers, substitutions }: SuplenciasClien
         setError(res.message || "Error al revocar la suplencia.")
       }
     })
-  }
-
-  const getStatusBadge = (user: typeof users.$inferSelect, nowMs: number) => {
-    if (!user.isActive) return <Badge variant="danger">Revocada / Inactiva</Badge>
-    if (!user.validUntil) return <Badge variant="outline">Sin límite</Badge>
-    const validUntilDate = new Date(user.validUntil)
-    const diffDays = Math.ceil((validUntilDate.getTime() - nowMs) / (1000 * 3600 * 24))
-    if (diffDays <= 0) return <Badge variant="danger">Vencida</Badge>
-    if (diffDays <= 5) return <Badge variant="warning">Vence en {diffDays} días</Badge>
-    return <Badge variant="success">Vigente ({diffDays} días)</Badge>
   }
 
   const [nowMs] = useState(() => Date.now())

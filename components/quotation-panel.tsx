@@ -59,6 +59,9 @@ export interface QuotationPanelProps {
   selectQuotationAction:  (prev: ActionState, formData: FormData) => Promise<ActionState>
 }
 
+const supplierLabel = (q: QuotationRow) =>
+  q.supplierName ?? q.supplierNameFree ?? "Proveedor sin nombre"
+
 export function QuotationPanel({
   requestId,
   requestStatus,
@@ -124,9 +127,6 @@ export function QuotationPanel({
     },
     { ok: false },
   )
-
-  const supplierLabel = (q: QuotationRow) =>
-    q.supplierName ?? q.supplierNameFree ?? "Proveedor sin nombre"
 
   return (
     <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-6 space-y-4">

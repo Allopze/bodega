@@ -22,6 +22,7 @@ import { resolveInspectionEvidenceFile } from "@/lib/storage/config"
 import { db } from "@/db"
 import { preventionInspectionRunDocuments, preventionInspectionRuns } from "@/db/schema"
 import { logger } from "@/lib/logger"
+import { encodeContentDisposition } from "@/lib/utils"
 
 const INSPECTION_EVIDENCE_PREFIX = "storage/inspection-evidence/"
 
@@ -48,7 +49,11 @@ export async function GET(
   }
 
   try {
-    const [row] = await db.select({ worksiteId: preventionInspectionRuns.worksiteId })
+    const [row] = await db.select({
+      worksiteId: preventionInspectionRuns.worksiteId,
+      fileName: preventionInspectionRunDocuments.fileName,
+      mimeType: preventionInspectionRunDocuments.mimeType,
+    })
       .from(preventionInspectionRunDocuments)
       .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, preventionInspectionRunDocuments.runId))
       .where(scope.mode === "all"
@@ -64,10 +69,14 @@ export async function GET(
     }
 
     const buffer = await fs.readFile(absolutePath)
+    const mimeType = row.mimeType ?? inferContentType(row.fileName ?? name)
+    const inline = mimeType === "application/pdf" || mimeType.startsWith("image/")
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
-        "Content-Type": inferContentType(name),
+        "Content-Type": mimeType,
+        "Content-Disposition": encodeContentDisposition(row.fileName ?? name, inline ? "inline" : "attachment"),
+        "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, max-age=300",
       },
     })

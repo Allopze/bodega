@@ -1,6 +1,11 @@
 import { inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { preventionInspectionAnswers, preventionInspectionFindings } from "@/db/schema"
+import {
+  preventionInspectionAnswers,
+  preventionInspectionFindingEvidence,
+  preventionInspectionFindings,
+  preventionInspectionRunParticipants,
+} from "@/db/schema"
 import {
   FINDING_CRITICALITY_LABELS,
   FINDING_STATUS_LABELS,
@@ -82,15 +87,28 @@ export async function buildInspectionExport(
   const templateOfRun = new Map(runs.map((row) => [row.run.id, row.run.templateId]))
   const contextOf = (runId: string, sectionId: string, itemId: string) =>
     itemContext.get(`${templateOfRun.get(runId) ?? ""}::${sectionId}::${itemId}`)
-  const [answers, findings] = ids.length === 0 ? [[], []] : await Promise.all([
+  const [answers, findings, participants] = ids.length === 0 ? [[], [], []] : await Promise.all([
     db.select().from(preventionInspectionAnswers).where(inArray(preventionInspectionAnswers.runId, ids)),
     db.select().from(preventionInspectionFindings).where(inArray(preventionInspectionFindings.runId, ids)),
+    db.select().from(preventionInspectionRunParticipants).where(inArray(preventionInspectionRunParticipants.runId, ids)),
   ])
+  const findingEvidence = findings.length === 0 ? [] : await db.select({
+    findingId: preventionInspectionFindingEvidence.findingId,
+  }).from(preventionInspectionFindingEvidence)
+    .where(inArray(preventionInspectionFindingEvidence.findingId, findings.map((row) => row.id)))
+  const evidenceCount = new Map<string, number>()
+  for (const row of findingEvidence) evidenceCount.set(row.findingId, (evidenceCount.get(row.findingId) ?? 0) + 1)
+  const participantNames = new Map<string, string[]>()
+  for (const participant of participants) {
+    const list = participantNames.get(participant.runId) ?? []
+    list.push(`${participant.name} (${participant.position})`)
+    participantNames.set(participant.runId, list)
+  }
 
   const sheets: ReportSheet[] = [
     sheet(
       "Inspecciones",
-      ["Código", "Plantilla", "Tipo", "Origen", "Faena", "Sujeto", "Estado", "Ejecutada", "Ejecutó", "Revisó", "Cumple", "Regular", "No cumple", "No aplica", "Cumplimiento %", "Comentario de revisión"],
+      ["Código", "Plantilla", "Tipo", "Origen", "Faena", "Sujeto", "Estado", "Ejecutada", "Ejecutó", "Revisó", "Cumple", "Regular", "No cumple", "No aplica", "Resultado oficial %", "Resultado normalizado %", "Procedencia documental", "Revisión documental", "Checksum documental", "Hash digital", "Participantes", "Comentario de revisión"],
       runs.map((row) => [
         safeCell(row.run.code), safeCell(row.templateName), label(INSPECTION_KIND_LABELS, row.templateKind),
         label(INSPECTION_ORIGIN_LABELS, row.run.origin),
@@ -98,7 +116,13 @@ export async function buildInspectionExport(
         // A-07: antes iban los IDs internos de usuario.
         row.run.executedAt, safeCell(row.executorName), safeCell(row.reviewerName),
         row.run.conformingCount, row.run.partialCount, row.run.nonConformingCount, row.run.notApplicableCount,
-        row.run.compliancePercent === null ? "No calculable" : row.run.compliancePercent,
+        row.run.officialComplianceBasisPoints === null ? "Sin fórmula documental" : row.run.officialComplianceBasisPoints / 100,
+        row.run.normalizedComplianceBasisPoints === null ? "No calculable" : row.run.normalizedComplianceBasisPoints / 100,
+        row.templateProvenanceKind,
+        safeCell((row.templateSourceSnapshot as { revision?: string } | null)?.revision),
+        safeCell((row.templateSourceSnapshot as { checksumSha256?: string } | null)?.checksumSha256),
+        safeCell(row.templateContentHash),
+        safeCell((participantNames.get(row.run.id) ?? []).join("; ")),
         safeCell(row.run.reviewComment),
       ]),
     ),
@@ -120,11 +144,12 @@ export async function buildInspectionExport(
     ),
     sheet(
       "Hallazgos",
-      ["Inspección", "Descripción", "Criticidad", "Estado", "Medida inmediata", "CAPA", "Cerrado"],
+      ["Inspección", "Descripción", "Daño potencial narrativo", "Clasificación de daño", "Normativa aplicable", "Criticidad", "Estado", "Medida preventiva", "CAPA", "Evidencias", "Cerrado"],
       findings.map((row) => [
         safeCell(code.get(row.runId)), safeCell(row.description),
+        safeCell(row.potentialDamageDescription), safeCell(row.danoPotencial), safeCell(row.applicableLaw),
         label(FINDING_CRITICALITY_LABELS, row.criticality), label(FINDING_STATUS_LABELS, row.status),
-        safeCell(row.immediateMeasure), safeCell(row.capaActionId), row.closedAt,
+        safeCell(row.immediateMeasure), safeCell(row.capaActionId), evidenceCount.get(row.id) ?? 0, row.closedAt,
       ]),
     ),
     sheet(

@@ -8,6 +8,7 @@ import {
   listDeviationCatalogs,
   listImportableDefinitions,
   listInspectionPdtpActivityOptions,
+  listInspectionDocumentSources,
   listInspectionTemplates,
   listUnclassifiedDeviationsFor,
 } from "@/lib/services/prevention-inspections"
@@ -31,9 +32,10 @@ export default async function PlantillasInspeccionPage() {
     permissions: session.user.permissions,
   }
   const canManage = session.user.permissions.includes("prevention:inspections:manage")
-  const [templates, pdtpOptions] = await Promise.all([
+  const [templates, pdtpOptions, documentSources] = await Promise.all([
     listInspectionTemplates(access),
     listInspectionPdtpActivityOptions(access),
+    canManage ? listInspectionDocumentSources(access) : Promise.resolve([]),
   ])
 
   /* Catálogo de desviaciones por instrumento, más las que se registraron como
@@ -69,6 +71,11 @@ export default async function PlantillasInspeccionPage() {
     sourceDefinitionCode: row.sourceDefinitionCode,
     definitionDrifted: row.definitionDrifted,
     definitionMissing: row.definitionMissing,
+    provenanceKind: row.provenanceKind,
+    sourceDocumentVersionId: row.sourceDocumentVersionId,
+    sourceSnapshot: row.sourceSnapshot,
+    parityReport: row.parityReport,
+    contentHash: row.contentHash,
     deviations: (deviationsByTemplate.get(row.id) ?? []).map((entry) => ({
       id: entry.id,
       label: entry.label,
@@ -91,7 +98,7 @@ export default async function PlantillasInspeccionPage() {
           { label: "Inspecciones", href: "/prevencion/inspecciones" },
           { label: "Plantillas" },
         ]} />}
-        actions={canManage && importable.length > 0 ? <ImportTemplateDialog importable={importable} templates={templateItems} /> : undefined}
+        actions={canManage && importable.length > 0 ? <ImportTemplateDialog importable={importable} templates={templateItems} documentSources={documentSources} /> : undefined}
       />
       <InspectionTemplatesPanel
         templates={templateItems}

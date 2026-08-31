@@ -18,6 +18,8 @@ import type { InspectionSubjectOption } from "@/lib/prevention/inspection-list-q
 import { todayInChile } from "@/lib/utils"
 import { buildInspectionExportQuery, parseInspectionListQuery } from "@/lib/prevention/inspection-list-query"
 import { inspectionProgramIsOverdue } from "@/lib/prevention/inspections"
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
 
 /**
  * Realizar una inspección: la bandeja de ejecuciones del motor.
@@ -80,6 +82,7 @@ export async function InspectionsScreen({ searchParams }: {
         ]} />}
         actions={
           <>
+            <Button asChild variant="secondary"><Link href="/prevencion/inspecciones/seguimiento">Seguimiento</Link></Button>
             {/* Esta pantalla ES "realizar una inspección": su verbo va primero
                 y en el encabezado, no dentro de la barra de filtros. */}
             <InspectionPageActions

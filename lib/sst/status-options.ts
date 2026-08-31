@@ -41,15 +41,26 @@ export function statusOptionsForKind(kind: FieldKind | null | undefined): Status
     if (kind === 'cumple_nocumple_na_obs') {
       options.push({ value: 'na', label: 'N/A', variant: 'neutral' })
     }
+  } else if (kind === 'bueno_malo_obs') {
+    options.push({ value: 'cumple', label: 'Bueno', variant: 'positive' })
+    options.push({ value: 'no_cumple', label: 'Malo', variant: 'negative' })
+  } else if (kind === 'cumple_parcial_nocumple_na_obs') {
+    options.push({ value: 'cumple', label: 'Cumple', variant: 'positive' })
+    options.push({ value: 'regular', label: 'Cumple parcialmente', variant: 'neutral' })
+    options.push({ value: 'no_cumple', label: 'No cumple', variant: 'negative' })
+    options.push({ value: 'na', label: 'N/A', variant: 'neutral' })
   } else if (kind === 'entregado_obs') {
     options.push({ value: 'entregado', label: 'Entregado', variant: 'positive' })
     options.push({ value: 'no_entregado', label: 'No entregado', variant: 'negative' })
   } else if (kind === 'apto_obs') {
     options.push({ value: 'apto', label: 'Apto', variant: 'positive' })
     options.push({ value: 'no_apto', label: 'No apto', variant: 'negative' })
-  } else if (kind === 'si_no_obs') {
+  } else if (kind === 'si_no_obs' || kind === 'si_no_na_obs') {
     options.push({ value: 'si', label: 'Sí', variant: 'positive' })
     options.push({ value: 'no', label: 'No', variant: 'negative' })
+    if (kind === 'si_no_na_obs') {
+      options.push({ value: 'na', label: 'N/A', variant: 'neutral' })
+    }
   } else if (kind && BRM_KINDS.includes(kind)) {
     // Escala B/R/M de los anexos de inspección. Regular puntúa 0.5.
     options.push({ value: 'cumple', label: 'Bueno', variant: 'positive' })

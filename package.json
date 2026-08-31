@@ -27,7 +27,8 @@
     "perf:queries": "tsx scripts/measure-operational-queries.ts",
     "prepare": "husky",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "npm run db:preflight-pdtp-annual && npm run db:preflight-migrations && drizzle-kit migrate",
+    "db:migrate": "npm run db:preflight-pdtp-annual && npm run db:preflight-migrations && node --env-file-if-exists=.env.local scripts/migrate.mjs && npm run db:reconcile-epp-delivery-scale",
+    "db:reconcile-epp-delivery-scale": "tsx --env-file-if-exists=.env.local scripts/reconcile-epp-delivery-scale.ts --apply",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx --env-file=.env.local db/seed.ts",
     "db:seed-pdtp-inspection-templates": "tsx --env-file=.env.local scripts/seed-pdtp-inspection-templates-2026.ts",
@@ -43,6 +44,7 @@
     "db:preflight-dte-single-link": "tsx --env-file-if-exists=.env.local scripts/preflight-dte-single-link.ts",
     "db:preflight-fuel-integrations": "tsx --env-file-if-exists=.env.local scripts/preflight-fuel-integrations.ts",
     "db:preflight-inspection-na-scale": "tsx --env-file-if-exists=.env.local scripts/preflight-inspection-na-scale.ts",
+    "inspections:reconcile-history": "tsx --env-file-if-exists=.env.local scripts/reconcile-inspection-history.ts",
     "db:repair-dte-single-link": "tsx --env-file-if-exists=.env.local scripts/repair-dte-single-link.ts",
     "db:diagnose-orphan-stock": "tsx --env-file=.env.local scripts/diagnose-orphan-stock.ts",
     "db:normalize-epp-families": "tsx --env-file=.env.local scripts/normalize-epp-families.ts",
@@ -161,6 +163,12 @@
     }
   },
   "allowScripts": {
-    "cli-progress@3.12.0": true
+    "cli-progress@3.12.0": true,
+    "@sentry/cli@2.58.6": true,
+    "core-js@3.49.0": true,
+    "sharp@0.34.5": true,
+    "tesseract.js@5.1.1": true,
+    "unrs-resolver@1.12.2": true,
+    "esbuild@0.28.1": true
   }
 }

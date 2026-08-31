@@ -137,6 +137,11 @@ const SelectTrigger = React.forwardRef<
 SelectTrigger.displayName = SelectPrimitive.Trigger.displayName
 
 // ─── SelectContent ──────────────────────────────────────────────────
+function handleSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+  if (["ArrowUp", "ArrowDown", "Home", "End", "Tab", "Escape"].includes(event.key)) return
+  event.stopPropagation()
+}
+
 const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
@@ -154,11 +159,6 @@ const SelectContent = React.forwardRef<
     if (stoleInitialFocusRef.current || event.target === searchInputRef.current) return
     stoleInitialFocusRef.current = true
     searchInputRef.current?.focus()
-  }
-
-  function handleSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
-    if (["ArrowUp", "ArrowDown", "Home", "End", "Tab", "Escape"].includes(event.key)) return
-    event.stopPropagation()
   }
 
   return (

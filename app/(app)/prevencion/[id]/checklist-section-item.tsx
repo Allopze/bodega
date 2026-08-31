@@ -78,7 +78,8 @@ export function ItemField({
   // "Malo" de la escala B/R/M se persiste como no_cumple, así que también pide
   // acción correctiva.
   const needsCorrectiveAction = [
-    "cumple_nocumple_obs", "cumple_nocumple_na_obs", ...BRM_KINDS,
+    "cumple_nocumple_obs", "cumple_nocumple_na_obs", "bueno_malo_obs",
+    "si_no_na_obs", "cumple_parcial_nocumple_na_obs", ...BRM_KINDS,
   ].includes(item.kind) && resp.estado === "no_cumple"
 
   function setEstado(estado: StatusValue) {
@@ -227,7 +228,7 @@ export function ItemField({
 
   if ([
     "cumple_nocumple_obs", "cumple_nocumple_na_obs", "entregado_obs", "apto_obs", "si_no_obs",
-    ...BRM_KINDS,
+    "bueno_malo_obs", "si_no_na_obs", "cumple_parcial_nocumple_na_obs", ...BRM_KINDS,
   ].includes(kind)) {
     return renderStatusButtons()
   }

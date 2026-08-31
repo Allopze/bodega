@@ -34,22 +34,28 @@ export function AnomalyCaseCard({ anomalyCase, canReview, canResolve }: { anomal
 
   async function doStatus(status: AnomalyCaseStatus) {
     setPending(true)
-    const result = await updateAnomalyStatusAction({
-      caseId: anomalyCase.id, expectedStatus: anomalyCase.status, status, resolution,
-      resolutionKind: needsKind && resolutionKind ? resolutionKind : undefined,
-    })
-    if (result.ok) { toast.success(result.message ?? "Actualizado"); setResolution(""); setResolutionKind(""); router.refresh() }
-    else toast.error(result.message)
-    setPending(false)
+    try {
+      const result = await updateAnomalyStatusAction({
+        caseId: anomalyCase.id, expectedStatus: anomalyCase.status, status, resolution,
+        resolutionKind: needsKind && resolutionKind ? resolutionKind : undefined,
+      })
+      if (result.ok) { toast.success(result.message ?? "Actualizado"); setResolution(""); setResolutionKind(""); router.refresh() }
+      else toast.error(result.message)
+    } finally {
+      setPending(false)
+    }
   }
 
   async function doComment() {
     if (!comment.trim()) return
     setPending(true)
-    const result = await commentAnomalyAction({ caseId: anomalyCase.id, body: comment })
-    if (result.ok) { toast.success("Comentario añadido"); setComment(""); router.refresh() }
-    else toast.error(result.message)
-    setPending(false)
+    try {
+      const result = await commentAnomalyAction({ caseId: anomalyCase.id, body: comment })
+      if (result.ok) { toast.success("Comentario añadido"); setComment(""); router.refresh() }
+      else toast.error(result.message)
+    } finally {
+      setPending(false)
+    }
   }
 
   return (

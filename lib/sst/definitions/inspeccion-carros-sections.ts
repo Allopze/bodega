@@ -21,9 +21,9 @@ import type { ChecklistSection } from '../types'
  * con DOCUMENTOS). Se transcribe el contenido correcto; los `id` son estables
  * y únicos por sección.
  *
- * Deltas contra el XLS Rev. 00 pendientes de confirmar con el cliente:
- *   · `pernos_rueda` no aparece en el XLS (sí en el markdown 07). Se conserva:
- *     borrar un ítem de seguridad pide confirmación explícita.
+ * Paridad con el XLS Rev. 00:
+ *   · `pernos_rueda` no aparece en el XLS y se retira de esta versión; el
+ *     apriete de tuercas conserva la verificación documental de la rueda.
  *   · El XLS lista "Gancho" donde el markdown decía "Sistema de tiro (muela)".
  *     Se adopta el rótulo del XLS; el `id` se mantiene para no romper el
  *     historial de respuestas, que va indexado por itemId.
@@ -81,9 +81,6 @@ export const CARROS_SECTIONS: ChecklistSection[] = [
         danoPotencial: 'fatal',
       },
       { id: 'llantas',                 label: 'Llantas.', kind: 'bueno_regular_malo_obs',
-        danoPotencial: 'fatal',
-      },
-      { id: 'pernos_rueda',            label: 'Pernos de rueda.', kind: 'bueno_regular_malo_obs',
         danoPotencial: 'fatal',
       },
       { id: 'cadena_sujecion_repuesto', label: 'Cadena de sujeción del neumático de repuesto.', kind: 'bueno_regular_malo_obs',

@@ -37,7 +37,7 @@ import {
   type InspectionAnswerInput,
   type InspectionItemSpec,
 } from "@/lib/prevention/inspections"
-import type { FieldKind } from "@/lib/sst/types"
+import type { ChecklistDefinition, FieldKind } from "@/lib/sst/types"
 import { formatDate, formatDateTime, todayInChile } from "@/lib/utils"
 import {
   cancelInspectionRunAction,
@@ -45,11 +45,13 @@ import {
   completeInspectionRunAction,
   createFindingCapaAction,
   registerDeviationAction,
+  registerInspectionPreventiveActionAction,
   remindInspectionReviewAction,
   removeDeviationAction,
   reopenInspectionRunAction,
   reviewInspectionRunAction,
   saveInspectionAnswersAction,
+  saveInspectionParticipantsAction,
   stopVehicleForFindingAction,
 } from "../actions"
 import { Field } from "@/components/ui/field"
@@ -83,6 +85,8 @@ interface RunInfo {
   nonConformingCount: number
   notApplicableCount: number
   compliancePercent: number | null
+  officialComplianceBasisPoints: number | null
+  normalizedComplianceBasisPoints: number | null
   executedByUserId: string | null
   closingResult: string | null
   closingRestrictions: string | null
@@ -101,6 +105,7 @@ interface ItemInfo {
   danoPotencial: string | null
   options?: { value: string; label: string }[]
   placeholder?: string
+  matrix?: { rowId: string; rowLabel: string; columnLabel: string }
 }
 
 interface SectionInfo {
@@ -132,6 +137,10 @@ interface FindingInfo {
   capaActionId: string | null
   /** `derived` lo levantó un ítem; `deviation` lo registró una persona. */
   origin: string
+  potentialDamageDescription: string | null
+  immediateMeasure: string | null
+  applicableLaw: string | null
+  evidence: { id: string; path: string; caption: string | null }[]
 }
 
 type ResultValue = "" | "conforming" | "partial" | "non_conforming" | "not_applicable" | "recorded"
@@ -150,6 +159,7 @@ interface Props {
   templateKind: string
   /** El instrumento registra desviaciones en vez de puntuar ítems. */
   recordsDeviations: boolean
+  recordsPreventiveActions: boolean
   /** Catálogo activo del instrumento: de acá sale la gravedad de cada desviación. */
   deviationCatalog: { id: string; label: string; danoPotencial: string; criticality: string }[]
   /** Actividades del programa anual que esta inspección acredita al ejecutarse. */
@@ -163,6 +173,8 @@ interface Props {
   sections: SectionInfo[]
   answers: AnswerInfo[]
   findings: FindingInfo[]
+  isUnplannedInspection: boolean
+  participants: { id: string; name: string; position: string; userId: string | null }[]
   currentUserId: string
   assignees: { id: string; name: string }[]
   /** I-08: quién puede cerrarla en esta faena; se resuelve sólo cuando el bloqueo aplica. */
@@ -179,6 +191,7 @@ interface Props {
   canIngest: boolean
   /** Acta que declara la plantilla; `null` si no exige uno. */
   closingAct: ClosingActSpec | null
+  scoringPolicy?: ChecklistDefinition["scoringPolicy"]
   /** Reporte de Equipos: el papel es el insumo que el jefe de faena transcribe. */
   physicalSourceRequired: boolean
 }
@@ -388,6 +401,68 @@ function inspectionEvidenceFileName(path: string) {
   return path.split("/").pop() ?? ""
 }
 
+function FindingEvidence({ findingId, evidence, editable }: {
+  findingId: string
+  evidence: { id: string; path: string; caption: string | null }[]
+  editable: boolean
+}) {
+  const [uploadedItems, setUploadedItems] = React.useState<typeof evidence>([])
+  const [caption, setCaption] = React.useState("")
+  const [busy, setBusy] = React.useState(false)
+  const [error, setError] = React.useState("")
+  const inputRef = React.useRef<HTMLInputElement>(null)
+  const items = React.useMemo(() => {
+    const byId = new Map(evidence.map((item) => [item.id, item]))
+    for (const item of uploadedItems) byId.set(item.id, item)
+    return [...byId.values()]
+  }, [evidence, uploadedItems])
+
+  async function upload(files: FileList | null) {
+    if (!files?.length) return
+    setBusy(true)
+    setError("")
+    try {
+      for (const file of Array.from(files)) {
+        const compressed = await compressPhoto(file)
+        const body = new FormData()
+        body.set("file", compressed)
+        body.set("findingId", findingId)
+        body.set("caption", caption)
+        const response = await fetch("/api/prevencion/inspecciones/finding-evidence", { method: "POST", body })
+        if (!response.ok) {
+          const failure = await response.json().catch(() => ({}))
+          throw new Error(failure.error ?? "No se pudo subir la evidencia.")
+        }
+        const json = await response.json()
+        setUploadedItems((current) => [...current, { id: json.id, path: json.path, caption: json.caption }])
+      }
+      setCaption("")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo subir la evidencia.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      {items.length > 0 && <div className="flex flex-wrap gap-2">{items.map((item) => {
+        const name = inspectionEvidenceFileName(item.path)
+        return <a key={item.id} href={`/api/prevencion/inspecciones/evidence/${name}`} target="_blank" rel="noreferrer">
+          {/* eslint-disable-next-line @next/next/no-img-element -- URL autenticada y dinámica. */}
+          <img src={`/api/prevencion/inspecciones/evidence/${name}`} alt={item.caption ?? "Evidencia del hallazgo"} className="h-16 w-16 rounded border border-[var(--color-border)] object-cover" />
+        </a>
+      })}</div>}
+      {editable && <div className="flex flex-wrap items-end gap-2">
+        <Field label="Leyenda de la evidencia"><Input value={caption} onChange={(event) => setCaption(event.target.value)} maxLength={500} /></Field>
+        <input ref={inputRef} type="file" accept="image/*" multiple aria-label="Adjuntar evidencias del hallazgo" className="sr-only" onChange={(event) => { void upload(event.target.files); event.target.value = "" }} />
+        <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => inputRef.current?.click()}>{busy ? "Subiendo…" : "Adjuntar fotos"}</Button>
+      </div>}
+      {error && <p role="status" className="text-xs text-[var(--color-danger-ink)]">{error}</p>}
+    </div>
+  )
+}
+
 export function AnswerEvidence({ answerId, evidence, editable, readyToPersist, ensureAnswerId }: {
   answerId: string | null
   evidence: { id: string; path: string; caption: string | null }[]
@@ -486,11 +561,12 @@ export function AnswerEvidence({ answerId, evidence, editable, readyToPersist, e
 }
 
 export function InspectionRunDetail({
-  run, templateKind, recordsDeviations, deviationCatalog,
+  run, templateKind, recordsDeviations, recordsPreventiveActions, deviationCatalog,
   pdtpActivityNumbers, pdtpReviewActivityNumbers,
   worksiteName, assigneeName, executorName, reviewerName,
-  sections, answers, findings, currentUserId, assignees, reviewers, canExecute, canReview, canManage, canStopVehicle, canRequestRecharge,
+  sections, answers, findings, isUnplannedInspection, participants, currentUserId, assignees, reviewers, canExecute, canReview, canManage, canStopVehicle, canRequestRecharge,
   documents, canIngest, closingAct,
+  scoringPolicy,
   physicalSourceRequired,
 }: Props) {
   const editable = canExecute && ["planned", "in_progress"].includes(run.status)
@@ -679,7 +755,7 @@ export function InspectionRunDetail({
     () => assessRunCompletion(items, currentAnswers, { spec: closingAct, act: closingAct ? closing : null }),
     [items, currentAnswers, closingAct, closing],
   )
-  const summary = React.useMemo(() => summarizeCompliance(items, currentAnswers), [items, currentAnswers])
+  const summary = React.useMemo(() => summarizeCompliance(items, currentAnswers, scoringPolicy), [items, currentAnswers, scoringPolicy])
   const answeredCount = currentAnswers.length
   // I-02: mismo conjunto que exige `assessRunCompletion` — antes el contador
   // usaba sólo `item.required`, y 11 de 12 plantillas del catálogo no declaran
@@ -865,7 +941,18 @@ export function InspectionRunDetail({
     { label: "Asignada a", value: assigneeName ?? "Sin asignar" },
     { label: "Programada para", value: run.scheduledFor ? formatDate(run.scheduledFor) : "Sin fecha" },
     { label: "Ejecutada por", value: executorName ? `${executorName} · ${formatDateTime(run.executedAt!)}` : "Sin ejecutar" },
-    { label: "Cumplimiento", value: run.compliancePercent === null ? (summary.compliancePercent === null ? "Aún no calculable" : `${summary.compliancePercent}% de ${summary.conforming + summary.partial + summary.nonConforming} evaluados`) : `${run.compliancePercent}%` },
+    {
+      label: "Resultado oficial",
+      value: (run.officialComplianceBasisPoints ?? summary.officialComplianceBasisPoints) === null
+        ? "Sin fórmula en el documento"
+        : `${(run.officialComplianceBasisPoints ?? summary.officialComplianceBasisPoints)! / 100}%`,
+    },
+    {
+      label: "Resultado normalizado",
+      value: (run.normalizedComplianceBasisPoints ?? summary.normalizedComplianceBasisPoints) === null
+        ? "Aún no calculable"
+        : `${(run.normalizedComplianceBasisPoints ?? summary.normalizedComplianceBasisPoints)! / 100}%`,
+    },
     { label: "Ubicación", value: coords ? `${coords.lat}, ${coords.lon} · dato de apoyo opcional` : "No capturada · opcional" },
     // Qué acredita en el programa anual, y en qué etapa. El estado del run dice
     // si ya ocurrió: `completed` cierra la primera, `reviewed` la segunda.
@@ -1185,7 +1272,10 @@ export function InspectionRunDetail({
                 return (
                   <article key={item.id} id={`item-mobile-${key}`} className="scroll-mt-28 space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
                     <div className="flex items-start justify-between gap-3">
-                      <h3 className="text-sm font-semibold leading-snug">{itemIndex + 1}. {item.label}</h3>
+                      <h3 className="text-sm font-semibold leading-snug">
+                        {itemIndex + 1}. {item.matrix?.rowLabel ?? item.label}
+                        {item.matrix && <span className="ml-2 text-xs font-medium text-[var(--color-text-subtle)]">{item.matrix.columnLabel}</span>}
+                      </h3>
                       {item.required ? <Badge variant="outline">Obligatorio</Badge> : <span className="text-xs text-[var(--color-text-subtle)]">Opcional</span>}
                     </div>
                     {draft.needsConfirmation && (
@@ -1264,7 +1354,9 @@ export function InspectionRunDetail({
                     return (
                       <TableRow key={item.id} id={`item-desktop-${key}`} className="scroll-mt-20">
                         <TableCell className="text-sm">
-                          {item.label}
+                          {item.matrix ? (
+                            <span><span className="font-medium">{item.matrix.rowLabel}</span><span className="ml-2 text-xs text-[var(--color-text-subtle)]">{item.matrix.columnLabel}</span></span>
+                          ) : item.label}
                           {item.required && <Badge variant="outline" className="ml-2">Obligatorio</Badge>}
                           {draft.needsConfirmation && (
                             <span className="mt-1 flex flex-wrap items-center gap-2">
@@ -1365,13 +1457,22 @@ export function InspectionRunDetail({
           gravedad la trae el catálogo, así que el plazo de la acción correctiva
           no depende de quien está en terreno. */}
       {recordsDeviations && (
+        <>
+        {isUnplannedInspection && (
+          <ParticipantsPanel runId={run.id} participants={participants} editable={editable && canExecute} />
+        )}
         <DeviationsPanel
           runId={run.id}
           editable={editable}
           canExecute={canExecute}
           catalog={deviationCatalog}
           registered={findings.filter((finding) => finding.origin === "deviation")}
+          narrative={isUnplannedInspection}
         />
+        </>
+      )}
+      {recordsPreventiveActions && (
+        <PreventiveActionsPanel runId={run.id} actions={findings.filter((finding) => finding.origin === "deviation")} assignees={assignees} editable={editable && canExecute} />
       )}
 
       {!physicalSourceRequired && canIngest && editable && <SourceFormUpload runId={run.id} hasDocuments={documents.length > 0} />}
@@ -1479,6 +1580,95 @@ export function InspectionRunDetail({
  * en la cola que Prevención resuelve desde el creador.
  */
 
+function PreventiveActionsPanel({ runId, actions, assignees, editable }: {
+  runId: string
+  actions: FindingInfo[]
+  assignees: { id: string; name: string }[]
+  editable: boolean
+}) {
+  const [open, setOpen] = React.useState(false)
+  const [responsibleUserId, setResponsibleUserId] = React.useState("")
+  const [targetDate, setTargetDate] = React.useState("")
+  const operation = useOperation()
+  return <section className="space-y-3">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <h2 className="text-sm font-semibold">Acciones preventivas ({actions.length}/6)</h2>
+      {editable && actions.length < 6 && <Button type="button" size="sm" variant="secondary" onClick={() => setOpen(true)}>Agregar acción</Button>}
+    </div>
+    {actions.length === 0 ? <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">Sin acciones preventivas acordadas.</p> : <ol className="space-y-2">{actions.map((action, index) => <li key={action.id} className="rounded-lg border border-[var(--color-border)] p-3 text-sm"><span className="font-semibold">{index + 1}.</span> {action.description} {action.capaActionId && <Badge variant="success" className="ml-2">CAPA creada</Badge>}</li>)}</ol>}
+    <Dialog open={open} onOpenChange={setOpen}><DialogContent><form className="space-y-4" onSubmit={(event) => {
+      event.preventDefault()
+      const actionDescription = String(new FormData(event.currentTarget).get("actionDescription") ?? "")
+      operation.run(() => registerInspectionPreventiveActionAction({ runId, actionDescription, responsibleUserId, targetDate }), () => setOpen(false))
+    }}>
+      <DialogHeader><DialogTitle>Acción preventiva</DialogTitle><DialogDescription>La acción quedará creada directamente en CAPA/PDTP con responsable y fecha de control.</DialogDescription></DialogHeader>
+      <Field label="Acción acordada" required><Textarea name="actionDescription" required minLength={10} maxLength={3000} /></Field>
+      <Field label="Responsable" required><Select value={responsibleUserId} onValueChange={setResponsibleUserId}><SelectTrigger aria-label="Responsable de la acción"><SelectValue placeholder="Selecciona responsable" /></SelectTrigger><SelectContent>{assignees.map((person) => <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>)}</SelectContent></Select></Field>
+      <Field label="Fecha de control" required><DatePicker value={targetDate} onChange={setTargetDate} /></Field>
+      {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+      <DialogFooter><Button type="submit" disabled={operation.pending || !responsibleUserId || !targetDate}>Crear acción CAPA</Button></DialogFooter>
+    </form></DialogContent></Dialog>
+  </section>
+}
+
+function ParticipantsPanel({ runId, participants, editable }: {
+  runId: string
+  participants: { id: string; name: string; position: string; userId: string | null }[]
+  editable: boolean
+}) {
+  const [rows, setRows] = React.useState(() => participants.map(({ id, name, position, userId }) => ({ id, name, position, userId })))
+  const operation = useOperation()
+
+  function updateRow(index: number, patch: Partial<{ name: string; position: string }>) {
+    setRows((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row))
+  }
+
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold">Participantes ({rows.length})</h2>
+        {editable && (
+          <Button type="button" size="sm" variant="secondary" onClick={() => setRows((current) => [...current, { id: `participant-${Date.now()}-${current.length}`, name: "", position: "", userId: null }])}>
+            Agregar participante
+          </Button>
+        )}
+      </div>
+      {rows.length === 0 ? (
+        <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">
+          Registra al menos una persona participante, con su nombre y cargo.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {rows.map((row, index) => (
+            <div key={row.id} className="grid gap-2 rounded-lg border border-[var(--color-border)] p-3 md:grid-cols-[1fr_1fr_auto]">
+              {editable ? (
+                <>
+                  <Field label={`Nombre ${index + 1}`} required><Input value={row.name} onChange={(event) => updateRow(index, { name: event.target.value })} /></Field>
+                  <Field label="Cargo" required><Input value={row.position} onChange={(event) => updateRow(index, { position: event.target.value })} /></Field>
+                  <Button type="button" size="sm" variant="ghost" className="self-end" onClick={() => setRows((current) => current.filter((_, rowIndex) => rowIndex !== index))}>Quitar</Button>
+                </>
+              ) : (
+                <p className="md:col-span-3"><span className="font-medium">{row.name}</span> · {row.position}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {editable && (
+        <Button
+          type="button"
+          size="sm"
+          disabled={operation.pending || rows.length === 0 || rows.some((row) => row.name.trim().length < 2 || row.position.trim().length < 2)}
+          onClick={() => operation.run(() => saveInspectionParticipantsAction({ runId, participants: rows }))}
+        >
+          {operation.pending ? "Guardando…" : "Guardar participantes"}
+        </Button>
+      )}
+      {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
+    </section>
+  )
+}
+
 const DEVIATION_PLAZO: Record<string, string> = {
   critical: "3 días y detención",
   high: "7 días",
@@ -1486,12 +1676,13 @@ const DEVIATION_PLAZO: Record<string, string> = {
   low: "30 días",
 }
 
-function DeviationsPanel({ runId, editable, canExecute, catalog, registered }: {
+function DeviationsPanel({ runId, editable, canExecute, catalog, registered, narrative }: {
   runId: string
   editable: boolean
   canExecute: boolean
   catalog: { id: string; label: string; danoPotencial: string; criticality: string }[]
   registered: FindingInfo[]
+  narrative: boolean
 }) {
   const [entryId, setEntryId] = React.useState("")
   const [otherOpen, setOtherOpen] = React.useState(false)
@@ -1504,7 +1695,7 @@ function DeviationsPanel({ runId, editable, canExecute, catalog, registered }: {
         <h2 className="text-sm font-semibold">Desviaciones encontradas ({registered.length})</h2>
         {puedeRegistrar && (
           <div className="flex flex-wrap items-center gap-2">
-            {catalog.length > 0 && (
+            {!narrative && catalog.length > 0 && (
               <>
                 <Select value={entryId} onValueChange={setEntryId}>
                   <SelectTrigger className="w-72" aria-label="Desviación del catálogo">
@@ -1532,13 +1723,13 @@ function DeviationsPanel({ runId, editable, canExecute, catalog, registered }: {
               </>
             )}
             <Button type="button" size="sm" variant="secondary" onClick={() => setOtherOpen(true)}>
-              Otra desviación
+              {narrative ? "Registrar hallazgo" : "Otra desviación"}
             </Button>
           </div>
         )}
       </div>
 
-      {catalog.length === 0 && puedeRegistrar && (
+      {!narrative && catalog.length === 0 && puedeRegistrar && (
         <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-xs">
           Este instrumento aún no tiene catálogo de desviaciones. Prevención lo arma desde Inspecciones → Plantillas;
           mientras tanto se pueden registrar con «Otra desviación».
@@ -1563,7 +1754,8 @@ function DeviationsPanel({ runId, editable, canExecute, catalog, registered }: {
             </TableHeader>
             <TableBody>
               {registered.map((finding) => (
-                <TableRow key={finding.id}>
+                <React.Fragment key={finding.id}>
+                <TableRow>
                   <TableCell className="text-sm">{finding.description}</TableCell>
                   <TableCell>
                     <Badge variant={criticalityBadgeVariant(finding.criticality)}>
@@ -1592,6 +1784,19 @@ function DeviationsPanel({ runId, editable, canExecute, catalog, registered }: {
                     </TableCell>
                   )}
                 </TableRow>
+                {narrative && (finding.potentialDamageDescription || finding.immediateMeasure || finding.applicableLaw) && (
+                  <TableRow>
+                    <TableCell colSpan={puedeRegistrar ? 5 : 4} className="bg-[var(--color-surface-2)] text-xs">
+                      <dl className="grid gap-2 md:grid-cols-3">
+                        <div><dt className="font-semibold">Daño potencial</dt><dd>{finding.potentialDamageDescription ?? "—"}</dd></div>
+                        <div><dt className="font-semibold">Medida preventiva</dt><dd>{finding.immediateMeasure ?? "—"}</dd></div>
+                        <div><dt className="font-semibold">Normativa</dt><dd>{finding.applicableLaw ?? "—"}</dd></div>
+                      </dl>
+                      <div className="mt-3"><FindingEvidence findingId={finding.id} evidence={finding.evidence} editable={puedeRegistrar} /></div>
+                    </TableCell>
+                  </TableRow>
+                )}
+                </React.Fragment>
               ))}
             </TableBody>
           </Table>
@@ -1599,7 +1804,7 @@ function DeviationsPanel({ runId, editable, canExecute, catalog, registered }: {
       )}
       {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
 
-      <OtherDeviationDialog runId={runId} open={otherOpen} onOpenChange={setOtherOpen} />
+      <OtherDeviationDialog runId={runId} open={otherOpen} onOpenChange={setOtherOpen} narrative={narrative} />
     </section>
   )
 }
@@ -1609,10 +1814,11 @@ function DeviationsPanel({ runId, editable, canExecute, catalog, registered }: {
  * Queda sin entrada de catálogo, y por eso aparece en la cola de clasificación
  * del creador para que Prevención la incorpore con la gravedad oficial.
  */
-function OtherDeviationDialog({ runId, open, onOpenChange }: {
+function OtherDeviationDialog({ runId, open, onOpenChange, narrative }: {
   runId: string
   open: boolean
   onOpenChange: (next: boolean) => void
+  narrative: boolean
 }) {
   const [dano, setDano] = React.useState("moderado")
   const operation = useOperation()
@@ -1624,23 +1830,45 @@ function OtherDeviationDialog({ runId, open, onOpenChange }: {
           className="space-y-4"
           onSubmit={(event) => {
             event.preventDefault()
-            const description = String(new FormData(event.currentTarget).get("description") ?? "").trim()
+            const form = new FormData(event.currentTarget)
+            const description = String(form.get("description") ?? "").trim()
             operation.run(
-              () => registerDeviationAction({ runId, description, danoPotencial: dano }),
+              () => registerDeviationAction({
+                runId,
+                description,
+                danoPotencial: dano,
+                potentialDamageDescription: narrative ? String(form.get("potentialDamageDescription") ?? "").trim() : undefined,
+                immediateMeasure: narrative ? String(form.get("immediateMeasure") ?? "").trim() : undefined,
+                applicableLaw: narrative ? String(form.get("applicableLaw") ?? "").trim() : undefined,
+              }),
               () => onOpenChange(false),
             )
           }}
         >
           <DialogHeader>
-            <DialogTitle>Otra desviación</DialogTitle>
+            <DialogTitle>{narrative ? "Registrar hallazgo del Anexo 08" : "Otra desviación"}</DialogTitle>
             <DialogDescription>
-              Para lo que no está en el catálogo. Prevención la revisará y, si corresponde, la incorporará con su
-              gravedad oficial — hasta entonces rige la que elijas acá.
+              {narrative
+                ? "Completa los antecedentes documentales del hallazgo. La clasificación interna determina la prioridad y el plazo CAPA."
+                : "Para lo que no está en el catálogo. Prevención la revisará y, si corresponde, la incorporará con su gravedad oficial — hasta entonces rige la que elijas acá."}
             </DialogDescription>
           </DialogHeader>
           <Field label="Qué se encontró" required>
             <Textarea name="description" required minLength={3} maxLength={3000} rows={3} aria-label="Descripción de la desviación" />
           </Field>
+          {narrative && (
+            <>
+              <Field label="Descripción narrativa del daño potencial" required>
+                <Textarea name="potentialDamageDescription" required minLength={3} maxLength={3000} rows={3} />
+              </Field>
+              <Field label="Medida preventiva" required>
+                <Textarea name="immediateMeasure" required minLength={3} maxLength={3000} rows={3} />
+              </Field>
+              <Field label="Normativa legal aplicable" required>
+                <Input name="applicableLaw" required minLength={2} maxLength={1000} />
+              </Field>
+            </>
+          )}
           <Field label="Gravedad" required>
             <Select value={dano} onValueChange={setDano}>
               <SelectTrigger aria-label="Gravedad de la desviación"><SelectValue /></SelectTrigger>
@@ -1966,7 +2194,7 @@ function SourceFormUpload({ runId, hasDocuments }: { runId: string; hasDocuments
         ref={inputRef}
         type="file"
         aria-label={hasDocuments ? "Agregar otra hoja del reporte físico" : "Subir la planilla física"}
-        accept="image/jpeg,image/png,application/pdf"
+        accept="image/jpeg,image/png,application/pdf,.docx,.xlsx,.xls"
         className="sr-only"
         onChange={(event) => {
           const file = event.target.files?.[0]

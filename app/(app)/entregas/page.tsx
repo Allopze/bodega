@@ -99,6 +99,7 @@ export default async function Page({
         quantity:   worksiteStock.quantity,
         productName: products.name,
         productSku: products.sku,
+        isEpp: products.isEpp,
         unitOfMeasure: products.unitOfMeasure,
       })
       .from(worksiteStock)
@@ -175,6 +176,7 @@ export default async function Page({
     productId: row.productId,
     productName: row.productName,
     productSku: row.productSku,
+    isEpp: row.isEpp,
     unitOfMeasure: row.unitOfMeasure,
     stockQuantity: row.quantity,
   }))
@@ -293,6 +295,7 @@ export default async function Page({
             requestItemId: deliveryItems.requestItemId,
             productNameFree: deliveryItems.productNameFree,
             quantity: deliveryItems.quantity,
+            quantityOriginal: deliveryItems.quantityOriginal,
             unitOfMeasure: deliveryItems.unitOfMeasure,
             productName: products.name,
             requestCode: purchaseRequests.code,
@@ -342,6 +345,7 @@ export default async function Page({
       workerName: delivery.workerId ? (workerNameById.get(delivery.workerId) ?? "Trabajador") : "Trabajador",
       receiverName: delivery.receiverName ?? null,
       itemSummary,
+      quantityCorrected: items.some((item) => item.quantityOriginal !== null),
       requestCode: firstItem?.requestCode ?? null,
       deliveredAt: delivery.deliveredAt,
       attachmentId: attachmentByDeliveryId.get(delivery.id) ?? null,

@@ -1,5 +1,6 @@
 import type { ChecklistDefinition } from '../types'
 import { CARROS_SECTIONS } from './inspeccion-carros-sections'
+import { NORMALIZED_ONLY_SCORING } from '../scoring-policies'
 
 /**
  * Inspección de Carros — módulo 07.
@@ -14,8 +15,8 @@ import { CARROS_SECTIONS } from './inspeccion-carros-sections'
  */
 export const INSPECCION_CARROS: ChecklistDefinition = {
   code: 'inspeccion_carros',
-  version: '02',
-  revisionDate: '2026-08-04',
+  version: '03',
+  revisionDate: '2026-08-30',
   tipo: 'seguimiento',
   title: 'Inspección de Carros',
   subtitle: 'Verificación por carro: uno por instancia de checklist.',
@@ -32,6 +33,7 @@ export const INSPECCION_CARROS: ChecklistDefinition = {
   evaluationCriteria:
     'Escala del anexo: Bueno / Regular / Malo. Bueno suma 1 punto, Regular 0.5 y Malo 0. Regular y Malo exigen observación. Los ítems en Malo generan automáticamente acciones del plan de acción PDTP.',
   sections: CARROS_SECTIONS,
+  scoringPolicy: NORMALIZED_ONLY_SCORING,
   closingAct: {
     title: 'Cierre de inspección del carro',
     resultOptions: [

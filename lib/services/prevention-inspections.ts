@@ -9,9 +9,11 @@ import {
   preventionInspectionAnswers,
   preventionInspectionDeviationCatalog,
   preventionInspectionFindings,
+  preventionInspectionFindingEvidence,
   preventionInspectionHistory,
   preventionInspectionPrograms,
   preventionInspectionRunDocuments,
+  preventionInspectionRunParticipants,
   preventionInspectionRuns,
   preventionInspectionTemplates,
   preventionEmergencyResources,
@@ -20,6 +22,8 @@ import {
   pdtpPrograms,
   preventionRiskEntries,
   preventionRiskMatrices,
+  sstDocuments,
+  sstDocumentVersions,
   users,
   worksites,
   type PreventionInspectionDeviationEntry,
@@ -55,6 +59,7 @@ import { listWorksiteVehicles, setVehicleOperationalStatus, vehicleLabel } from 
 import { createMaintenanceRecordWithClient } from "@/lib/services/maintenance"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { CHECKLIST_DEFINITIONS, isNonInspectionDefinition, isPersonEvaluationDefinition } from "@/lib/sst/definitions"
+import { officialInspectionSourceFor } from "@/lib/sst/official-inspection-sources"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { onInspectionCompleted, onInspectionReverted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { defaultPdtpActivityNumbers, defaultPdtpReviewActivityNumbers, inspectionTemplateCodeFor, pdtpActivityCandidatesFor } from "@/lib/services/pdtp-adapters/inspection-templates-2026"
@@ -144,6 +149,14 @@ const importTemplateSchema = z.object({
   pdtpActivityNumbers: z.array(z.number().int().positive()).max(20).optional(),
   /** Actividades que acredita al revisarse (la firma del supervisor, no la ejecución). */
   pdtpReviewActivityNumbers: z.array(z.number().int().positive()).max(20).optional(),
+  sourceDocumentVersionId: z.string().min(1).optional(),
+  sourceRevision: z.string().trim().max(120).nullable().optional(),
+  parityReport: z.object({
+    status: z.enum(["pending", "passed", "failed"]),
+    expectedItems: z.number().int().nonnegative().nullable(),
+    actualItems: z.number().int().nonnegative().nullable(),
+    differences: z.array(z.string().trim().min(1).max(500)).max(200),
+  }).optional(),
 })
 
 /**
@@ -174,6 +187,7 @@ export function itemsFromDefinition(definition: ChecklistDefinition): Inspection
         // campo de texto — y esos ítems quedaban sin forma de responderse.
         options: item.options,
         placeholder: item.placeholder,
+        matrix: item.matrix,
       })
     }
   }
@@ -277,9 +291,47 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
   const pdtpReviewActivityNumbers = data.pdtpReviewActivityNumbers ?? defaultPdtpReviewActivityNumbers(data.definitionCode)
   const snapshot = definition as unknown as Record<string, unknown>
   const contentHash = contentHashOf(snapshot)
+  const officialSource = officialInspectionSourceFor(data.definitionCode)
+  const needsOfficialSource = Boolean(officialSource) || data.definitionCode === "reporte_equipos"
 
   try {
     return await db.transaction(async (tx) => {
+      let sourceSnapshot: {
+        documentId: string
+        versionId: string
+        fileName: string
+        revision: string | null
+        effectiveFrom: string | null
+        checksumSha256: string
+      } | null = null
+      if (data.sourceDocumentVersionId) {
+        const [source] = await tx.select({ version: sstDocumentVersions, document: sstDocuments })
+          .from(sstDocumentVersions)
+          .innerJoin(sstDocuments, eq(sstDocuments.id, sstDocumentVersions.documentId))
+          .where(eq(sstDocumentVersions.id, data.sourceDocumentVersionId)).limit(1)
+        if (!source || !["aprobado", "vigente"].includes(source.version.status)) {
+          throw new Error("La fuente documental debe existir y estar aprobada o vigente.")
+        }
+        if (officialSource && source.version.checksum !== officialSource.sha256) {
+          throw new Error("El archivo seleccionado no coincide con el checksum de la fuente oficial SGI.")
+        }
+        sourceSnapshot = {
+          documentId: source.document.id,
+          versionId: source.version.id,
+          fileName: source.version.fileName,
+          revision: data.sourceRevision ?? officialSource?.revision ?? null,
+          effectiveFrom: source.version.effectiveFrom ?? officialSource?.effectiveDate ?? null,
+          checksumSha256: source.version.checksum,
+        }
+      }
+      const parityReport = {
+        status: data.parityReport?.status ?? (needsOfficialSource ? "pending" : "passed"),
+        verifiedAt: data.parityReport?.status === "passed" ? nowIso() : null,
+        verifiedByUserId: data.parityReport?.status === "passed" ? access.userId : null,
+        expectedItems: data.parityReport?.expectedItems ?? null,
+        actualItems: data.parityReport?.actualItems ?? null,
+        differences: data.parityReport?.differences ?? [],
+      } as const
       const [created] = await tx.insert(preventionInspectionTemplates).values({
         id: `instpl-${nanoid()}`,
         // I-03: dos filas que comparten definición (EPP JT/PRF) son dos
@@ -290,6 +342,10 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
         name: definition.title,
         kind: data.kind,
         sourceDefinitionCode: data.definitionCode,
+        provenanceKind: needsOfficialSource ? "official_document" : "platform_definition",
+        sourceDocumentVersionId: data.sourceDocumentVersionId ?? null,
+        sourceSnapshot,
+        parityReport,
         definitionSnapshot: snapshot,
         contentHash,
         // Nace en borrador: incorporar y habilitar son dos actos distintos, y
@@ -389,6 +445,21 @@ export async function approveInspectionTemplate(input: unknown, access: Inspecti
     if (!template) throw new Error(NOT_FOUND)
     if (template.version !== data.expectedVersion) throw new Error("La plantilla cambió mientras la revisabas. Recarga y reintenta.")
     if (template.status !== "draft") throw new Error("Sólo una plantilla en borrador puede aprobarse.")
+    if (template.provenanceKind === "official_document") {
+      if (!template.sourceDocumentVersionId || !template.sourceSnapshot) {
+        throw new Error("La plantilla documental no puede aprobarse sin una versión oficial vinculada.")
+      }
+      const parity = template.parityReport as { status?: string; differences?: string[] } | null
+      if (parity?.status !== "passed" || (parity.differences?.length ?? 0) > 0) {
+        throw new Error("La plantilla no puede aprobarse hasta completar la paridad documental sin diferencias bloqueantes.")
+      }
+      const [source] = await tx.select({ status: sstDocumentVersions.status, checksum: sstDocumentVersions.checksum })
+        .from(sstDocumentVersions).where(eq(sstDocumentVersions.id, template.sourceDocumentVersionId)).limit(1)
+      const snapshot = template.sourceSnapshot as { checksumSha256?: string }
+      if (!source || !["aprobado", "vigente"].includes(source.status) || source.checksum !== snapshot.checksumSha256) {
+        throw new Error("La versión documental vinculada ya no está vigente o cambió su integridad.")
+      }
+    }
     // Sin segregación en plantillas, a diferencia de las ejecuciones. El
     // contenido no lo redacta nadie acá: viene del catálogo versionado en el
     // repositorio, ya revisado, y quien "incorpora" sólo elige cuál instalar.
@@ -398,6 +469,13 @@ export async function approveInspectionTemplate(input: unknown, access: Inspecti
     // inspección no sea quien la ejecutó— sigue intacta en `assessRunReview`.
 
     const now = nowIso()
+    const previousApproved = await tx.select({ id: preventionInspectionTemplates.id })
+      .from(preventionInspectionTemplates)
+      .where(and(
+        eq(preventionInspectionTemplates.code, template.code),
+        eq(preventionInspectionTemplates.status, "approved"),
+        ne(preventionInspectionTemplates.id, template.id),
+      ))
     // Aprobar una versión reemplaza a la anterior vigente del mismo código.
     await supersedePreviousApproved(tx, { code: template.code, keepTemplateId: template.id, now })
 
@@ -409,8 +487,72 @@ export async function approveInspectionTemplate(input: unknown, access: Inspecti
       updatedAt: now,
     }).where(and(eq(preventionInspectionTemplates.id, template.id), eq(preventionInspectionTemplates.version, data.expectedVersion))).returning()
     if (!updated) throw new Error("La plantilla cambió mientras la revisabas. Recarga y reintenta.")
+    const previousIds = previousApproved.map((item) => item.id)
+    if (previousIds.length > 0) {
+      const movedPrograms = await tx.update(preventionInspectionPrograms).set({
+        templateId: updated.id,
+        version: sql`${preventionInspectionPrograms.version} + 1`,
+        updatedAt: now,
+      }).where(inArray(preventionInspectionPrograms.templateId, previousIds)).returning({ id: preventionInspectionPrograms.id })
+      const movedRuns = await tx.update(preventionInspectionRuns).set({
+        templateId: updated.id,
+        version: sql`${preventionInspectionRuns.version} + 1`,
+        updatedAt: now,
+      }).where(and(
+        inArray(preventionInspectionRuns.templateId, previousIds),
+        eq(preventionInspectionRuns.status, "planned"),
+      )).returning({ id: preventionInspectionRuns.id })
+      await history(tx, {
+        entityType: "template", entityId: template.id, changeType: "dependents_rebound",
+        reason: `Reasignados ${movedPrograms.length} programa(s) y ${movedRuns.length} ejecución(es) no iniciadas a ${updated.versionLabel}.`,
+        beforeState: { templateIds: previousIds },
+        afterState: { templateId: updated.id, programIds: movedPrograms.map((item) => item.id), runIds: movedRuns.map((item) => item.id) },
+        actorUserId: access.userId,
+      })
+    }
     await history(tx, { entityType: "template", entityId: template.id, changeType: "approved", reason: data.reason, beforeState: template, afterState: updated, actorUserId: access.userId })
     return updated
+  })
+}
+
+/** Revierte la versión vigente sin tocar ejecuciones iniciadas ni evidencia. */
+export async function rollbackInspectionTemplate(input: unknown, access: InspectionAccess) {
+  requireAccess(access, "prevention:inspections:approve")
+  const data = z.object({
+    currentTemplateId: z.string().min(1),
+    previousTemplateId: z.string().min(1),
+    reason: z.string().trim().min(10).max(2000),
+  }).parse(input)
+  return db.transaction(async (tx) => {
+    const rows = await tx.select().from(preventionInspectionTemplates)
+      .where(inArray(preventionInspectionTemplates.id, [data.currentTemplateId, data.previousTemplateId]))
+      .for("update")
+    const current = rows.find((row) => row.id === data.currentTemplateId)
+    const previous = rows.find((row) => row.id === data.previousTemplateId)
+    if (!current || !previous || current.code !== previous.code) throw new Error("Las versiones no pertenecen al mismo instrumento.")
+    if (current.status !== "approved" || previous.status !== "superseded") throw new Error("La reversión exige una versión vigente y una anterior reemplazada.")
+    const now = nowIso()
+    await tx.update(preventionInspectionTemplates).set({
+      status: "superseded", supersededAt: now, supersededByTemplateId: previous.id,
+      version: current.version + 1, updatedAt: now,
+    }).where(eq(preventionInspectionTemplates.id, current.id))
+    await tx.update(preventionInspectionTemplates).set({
+      status: "approved", supersededAt: null, supersededByTemplateId: null,
+      approvedByUserId: access.userId, approvedAt: now,
+      version: previous.version + 1, updatedAt: now,
+    }).where(eq(preventionInspectionTemplates.id, previous.id))
+    const programs = await tx.update(preventionInspectionPrograms).set({ templateId: previous.id, updatedAt: now })
+      .where(eq(preventionInspectionPrograms.templateId, current.id)).returning({ id: preventionInspectionPrograms.id })
+    const planned = await tx.update(preventionInspectionRuns).set({ templateId: previous.id, updatedAt: now })
+      .where(and(eq(preventionInspectionRuns.templateId, current.id), eq(preventionInspectionRuns.status, "planned")))
+      .returning({ id: preventionInspectionRuns.id })
+    await history(tx, {
+      entityType: "template", entityId: current.id, changeType: "version_rolled_back", reason: data.reason,
+      beforeState: { currentTemplateId: current.id },
+      afterState: { restoredTemplateId: previous.id, programs: programs.length, plannedRuns: planned.length },
+      actorUserId: access.userId,
+    })
+    return { restored: previous.id, programs: programs.length, plannedRuns: planned.length }
   })
 }
 
@@ -1144,7 +1286,14 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
     if (!existing) throw new Error(NOT_FOUND)
     requireAccess(access, "prevention:inspections:execute", existing.worksiteId)
     if ((existing.status === "completed" || existing.status === "reviewed") && existing.executedByUserId === access.userId) {
-      return { run: existing, findings: 0, compliancePercent: existing.compliancePercent, alreadyCompleted: true as const }
+      return {
+        run: existing,
+        findings: 0,
+        compliancePercent: existing.compliancePercent,
+        officialCompliancePercent: existing.officialComplianceBasisPoints === null ? null : existing.officialComplianceBasisPoints / 100,
+        normalizedCompliancePercent: existing.normalizedComplianceBasisPoints === null ? null : existing.normalizedComplianceBasisPoints / 100,
+        alreadyCompleted: true as const,
+      }
     }
 
     // El guardado ya valida alcance, estado editable y versión, y devuelve el
@@ -1173,7 +1322,14 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
     const [template] = await tx.select().from(preventionInspectionTemplates)
       .where(eq(preventionInspectionTemplates.id, run.templateId)).limit(1)
     if (!template) throw new Error(NOT_FOUND)
-    const items = itemsFromDefinition(template.definitionSnapshot as unknown as ChecklistDefinition)
+    const definition = template.definitionSnapshot as unknown as ChecklistDefinition
+    const items = itemsFromDefinition(definition)
+    if (template.sourceDefinitionCode === "inspeccion_no_planeada") {
+      const participants = await tx.select({ id: preventionInspectionRunParticipants.id })
+        .from(preventionInspectionRunParticipants)
+        .where(eq(preventionInspectionRunParticipants.runId, run.id))
+      if (participants.length === 0) throw new Error("El Anexo 08 exige registrar al menos una persona participante.")
+    }
 
     const stored = await tx.select().from(preventionInspectionAnswers)
       .where(eq(preventionInspectionAnswers.runId, run.id))
@@ -1197,7 +1353,7 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
       throw new Error(`No se puede declarar ejecutada: ${completion.blockers.map((item) => item.detail).join(", ")}`)
     }
 
-    const summary = summarizeCompliance(items, answers)
+    const summary = summarizeCompliance(items, answers, definition.scoringPolicy)
     const derived = deriveFindings(items, answers)
     const answerId = new Map(stored.map((row) => [`${row.sectionId}::${row.itemId}`, row.id]))
     const now = nowIso()
@@ -1221,6 +1377,7 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
         runId: run.id,
         answerId: answerId.get(`${finding.sectionId}::${finding.itemId}`) ?? null,
         description: finding.description,
+        danoPotencial: finding.danoPotencial,
         criticality: finding.criticality,
         origin: "derived" as const,
         status: "open" as const,
@@ -1271,6 +1428,8 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
       nonConformingCount: summary.nonConforming,
       notApplicableCount: summary.notApplicable,
       compliancePercent: summary.compliancePercent,
+      officialComplianceBasisPoints: summary.officialComplianceBasisPoints,
+      normalizedComplianceBasisPoints: summary.normalizedComplianceBasisPoints,
       closingResult: data.closingAct?.result ?? null,
       closingRestrictions: data.closingAct?.restrictions ?? null,
       // `signedAt` lo estampa el servidor: la hora de firma no la declara el
@@ -1342,7 +1501,13 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
       }
     }
 
-    return { run: updated, findings: derived.length, compliancePercent: summary.compliancePercent }
+    return {
+      run: updated,
+      findings: derived.length,
+      compliancePercent: summary.compliancePercent,
+      officialCompliancePercent: summary.officialComplianceBasisPoints === null ? null : summary.officialComplianceBasisPoints / 100,
+      normalizedCompliancePercent: summary.normalizedComplianceBasisPoints === null ? null : summary.normalizedComplianceBasisPoints / 100,
+    }
   })
 
   if (accreditation) await onInspectionCompleted(accreditation)
@@ -1446,6 +1611,7 @@ export async function createFindingCapa(input: unknown, access: InspectionAccess
       sourceId: row.run.id,
       worksiteId: row.run.worksiteId,
       finding: row.finding.description,
+      potentialDamageDescription: row.finding.potentialDamageDescription,
       immediateMeasure: data.immediateMeasure ?? row.finding.immediateMeasure ?? null,
       actionDescription: data.actionDescription,
       responsibleUserId: data.responsibleUserId,
@@ -1453,6 +1619,8 @@ export async function createFindingCapa(input: unknown, access: InspectionAccess
       targetDate: addDays(todayInChile(), dueInDays),
       evidenceRequired: true,
       requiresImmediateStop,
+      danoPotencial: row.finding.danoPotencial as "leve" | "moderado" | "grave" | "fatal" | null,
+      normativaLegal: row.finding.applicableLaw,
     }, access.userId)
 
     const now = nowIso()
@@ -1615,6 +1783,8 @@ function transitionChangeSet(toStatus: string, actorUserId: string, reason: stri
     executedByUserId: null, executedAt: null,
     reviewedByUserId: null, reviewedAt: null, reviewComment: null,
     compliancePercent: null,
+    officialComplianceBasisPoints: null,
+    normalizedComplianceBasisPoints: null,
     conformingCount: 0, partialCount: 0, nonConformingCount: 0, notApplicableCount: 0,
   }
 }
@@ -1784,6 +1954,10 @@ async function requireEditableAnswer(client: Client, answerId: string, access: I
 export async function addRunDocument(input: {
   runId: string
   path: string
+  fileName?: string | null
+  mimeType?: string | null
+  fileSize?: number | null
+  checksumSha256?: string | null
   caption?: string | null
   kind?: "source_form" | "attachment"
   /**
@@ -1807,6 +1981,10 @@ export async function addRunDocument(input: {
     id: `insdoc-${nanoid()}`,
     runId: input.runId,
     path: input.path,
+    fileName: input.fileName ?? null,
+    mimeType: input.mimeType ?? null,
+    fileSize: input.fileSize ?? null,
+    checksumSha256: input.checksumSha256 ?? null,
     kind: input.kind ?? "source_form",
     caption: input.caption ?? null,
     extraction: input.extraction ?? null,
@@ -1862,6 +2040,64 @@ export async function addAnswerEvidence(input: {
   await history(db, {
     entityType: "answer", entityId: data.answerId, worksiteId: row.run.worksiteId,
     changeType: "evidence_added", reason: `Evidencia adjuntada a "${row.answer.itemLabel}"`,
+    actorUserId: access.userId,
+  })
+  return created
+}
+
+async function requireFindingEvidenceTarget(findingId: string, access: InspectionAccess) {
+  const [row] = await db.select({ finding: preventionInspectionFindings, run: preventionInspectionRuns })
+    .from(preventionInspectionFindings)
+    .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, preventionInspectionFindings.runId))
+    .where(eq(preventionInspectionFindings.id, findingId)).limit(1)
+  if (!row) throw new Error(NOT_FOUND)
+  requireAccess(access, "prevention:inspections:execute", row.run.worksiteId)
+  if (!["planned", "in_progress", "completed"].includes(row.run.status)) {
+    throw new Error("No se puede adjuntar evidencia a una inspección cerrada o cancelada.")
+  }
+  return row
+}
+
+/** Valida autorización y estado antes de escribir el archivo físico. */
+export async function assertFindingEvidenceUploadAllowed(findingId: string, access: InspectionAccess) {
+  await requireFindingEvidenceTarget(z.string().min(1).parse(findingId), access)
+}
+
+export async function addFindingEvidence(input: {
+  findingId: string
+  path: string
+  fileName: string
+  mimeType: string
+  fileSize: number
+  checksumSha256: string
+  caption?: string | null
+}, access: InspectionAccess) {
+  const data = z.object({
+    findingId: z.string().min(1),
+    path: z.string().regex(/^storage\/inspection-evidence\/[A-Za-z0-9._-]+$/, "Ruta de evidencia inválida."),
+    fileName: z.string().trim().min(1).max(500),
+    mimeType: z.string().trim().min(1).max(200),
+    fileSize: z.number().int().positive().max(25 * 1024 * 1024),
+    checksumSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    caption: z.string().trim().max(500).nullable().optional(),
+  }).parse(input)
+
+  const row = await requireFindingEvidenceTarget(data.findingId, access)
+  const [created] = await db.insert(preventionInspectionFindingEvidence).values({
+    id: `insfev-${nanoid()}`,
+    findingId: row.finding.id,
+    path: data.path,
+    fileName: data.fileName,
+    mimeType: data.mimeType,
+    fileSize: data.fileSize,
+    checksumSha256: data.checksumSha256,
+    caption: data.caption ?? null,
+    uploadedByUserId: access.userId,
+  }).returning()
+  if (!created) throw new Error("No se pudo adjuntar la evidencia al hallazgo.")
+  await history(db, {
+    entityType: "finding", entityId: row.finding.id, worksiteId: row.run.worksiteId,
+    changeType: "evidence_added", reason: data.caption ?? data.fileName,
     actorUserId: access.userId,
   })
   return created
@@ -2157,6 +2393,10 @@ export async function listAllInspectionRunsForExport(access: InspectionAccess, f
     // (INS-07/INS-13). No va en `runListSelection`: la bandeja paginada no lo
     // usa y arrastraría el JSON completo en cada página.
     templateSnapshot: preventionInspectionTemplates.definitionSnapshot,
+    templateProvenanceKind: preventionInspectionTemplates.provenanceKind,
+    templateSourceSnapshot: preventionInspectionTemplates.sourceSnapshot,
+    templateContentHash: preventionInspectionTemplates.contentHash,
+    templateParityReport: preventionInspectionTemplates.parityReport,
   })
     .from(preventionInspectionRuns)
     .innerJoin(preventionInspectionTemplates, eq(preventionInspectionRuns.templateId, preventionInspectionTemplates.id))
@@ -2212,12 +2452,15 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
     .where(eq(preventionInspectionRuns.id, runId)).limit(1)
   if (!run || !scopeAllows(access.scope, run.run.worksiteId)) return null
 
-  const [answers, findings, documents] = await Promise.all([
+  const [answers, findings, documents, participants] = await Promise.all([
     db.select().from(preventionInspectionAnswers).where(eq(preventionInspectionAnswers.runId, runId)),
     db.select().from(preventionInspectionFindings).where(eq(preventionInspectionFindings.runId, runId)),
     db.select().from(preventionInspectionRunDocuments)
       .where(eq(preventionInspectionRunDocuments.runId, runId))
       .orderBy(asc(preventionInspectionRunDocuments.createdAt)),
+    db.select().from(preventionInspectionRunParticipants)
+      .where(eq(preventionInspectionRunParticipants.runId, runId))
+      .orderBy(asc(preventionInspectionRunParticipants.sortOrder)),
   ])
   // Evidencia por respuesta (función #1). Se consulta aparte y se agrupa en
   // memoria: son pocas filas por inspección y evita un join que duplicaría
@@ -2230,6 +2473,15 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
     const list = evidenceByAnswer.get(item.answerId) ?? []
     list.push(item)
     evidenceByAnswer.set(item.answerId, list)
+  }
+  const findingEvidence = findings.length === 0 ? [] : await db.select()
+    .from(preventionInspectionFindingEvidence)
+    .where(inArray(preventionInspectionFindingEvidence.findingId, findings.map((row) => row.id)))
+  const evidenceByFinding = new Map<string, typeof findingEvidence>()
+  for (const item of findingEvidence) {
+    const list = evidenceByFinding.get(item.findingId) ?? []
+    list.push(item)
+    evidenceByFinding.set(item.findingId, list)
   }
   /* Catálogo activo del instrumento, sólo si registra desviaciones. Una
    * plantilla de checklist no lo necesita: ahí la gravedad la declara el ítem. */
@@ -2251,15 +2503,95 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
   return {
     ...run,
     answers: answers.map((row) => ({ ...row, evidence: evidenceByAnswer.get(row.id) ?? [] })),
-    findings,
+    findings: findings.map((row) => ({ ...row, evidence: evidenceByFinding.get(row.id) ?? [] })),
     documents,
+    participants,
     /** El instrumento registra desviaciones en vez de puntuar ítems. */
     recordsDeviations: Boolean(definition?.recordsDeviations),
+    recordsPreventiveActions: Boolean(definition?.recordsPreventiveActions),
     deviationCatalog: deviationCatalog.map((entry) => ({
       ...entry,
       criticality: criticalityFromDanoPotencial(entry.danoPotencial),
     })),
   }
+}
+
+/** Reemplaza atómicamente la lista ordenada de participantes del Anexo 08. */
+export async function saveInspectionParticipants(input: unknown, access: InspectionAccess) {
+  const data = z.object({
+    runId: z.string().min(1),
+    participants: z.array(z.object({
+      name: z.string().trim().min(2).max(200),
+      position: z.string().trim().min(2).max(200),
+      userId: z.string().min(1).nullable().optional(),
+    })).min(1).max(30),
+  }).parse(input)
+
+  return db.transaction(async (tx) => {
+    const { run, sourceDefinitionCode } = await requireEditableRunForDeviation(tx, data.runId, access)
+    if (sourceDefinitionCode !== "inspeccion_no_planeada") {
+      throw new Error("Los participantes estructurados corresponden al Anexo 08.")
+    }
+    await tx.delete(preventionInspectionRunParticipants)
+      .where(eq(preventionInspectionRunParticipants.runId, run.id))
+    await tx.insert(preventionInspectionRunParticipants).values(data.participants.map((participant, sortOrder) => ({
+      id: `inspar-${nanoid()}`,
+      runId: run.id,
+      name: participant.name,
+      position: participant.position,
+      userId: participant.userId ?? null,
+      sortOrder,
+    })))
+    await history(tx, {
+      entityType: "run",
+      entityId: run.id,
+      worksiteId: run.worksiteId,
+      changeType: "participants_saved",
+      reason: `${data.participants.length} participante(s) registrados`,
+      afterState: { participants: data.participants },
+      actorUserId: access.userId,
+    })
+    return { saved: data.participants.length }
+  })
+}
+
+/** Anexo 7: registra una acción preventiva directamente en CAPA (máximo seis). */
+export async function registerInspectionPreventiveAction(input: unknown, access: InspectionAccess) {
+  const data = z.object({
+    runId: z.string().min(1),
+    actionDescription: z.string().trim().min(10).max(3000),
+    responsibleUserId: z.string().min(1),
+    targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  }).parse(input)
+  return db.transaction(async (tx) => {
+    const { run, sourceDefinitionCode } = await requireEditableRunForDeviation(tx, data.runId, access)
+    if (sourceDefinitionCode !== "observacion_planeada") throw new Error("Las acciones preventivas directas corresponden al Anexo 7.")
+    const existing = await tx.select({ id: preventionInspectionFindings.id })
+      .from(preventionInspectionFindings)
+      .where(and(eq(preventionInspectionFindings.runId, run.id), eq(preventionInspectionFindings.origin, "deviation")))
+    if (existing.length >= 6) throw new Error("El Anexo 7 admite hasta seis acciones preventivas.")
+    const [finding] = await tx.insert(preventionInspectionFindings).values({
+      id: `insfnd-${nanoid()}`, runId: run.id, origin: "deviation", answerId: null,
+      description: data.actionDescription, criticality: "medium", status: "open",
+    }).returning()
+    if (!finding) throw new Error("No se pudo registrar la acción preventiva.")
+    const capa = await createCapaActionWithClient(tx, {
+      sourceType: "inspection", sourceId: run.id, worksiteId: run.worksiteId,
+      finding: data.actionDescription, actionDescription: data.actionDescription,
+      responsibleUserId: data.responsibleUserId, priority: "medium", targetDate: data.targetDate,
+      evidenceRequired: true,
+    }, access.userId)
+    await tx.update(preventionInspectionFindings).set({ capaActionId: capa.id, status: "capa_linked", updatedAt: nowIso() })
+      .where(eq(preventionInspectionFindings.id, finding.id))
+    if (run.status === "planned") await tx.update(preventionInspectionRuns).set({ status: "in_progress", version: run.version + 1, updatedAt: nowIso() })
+      .where(and(eq(preventionInspectionRuns.id, run.id), eq(preventionInspectionRuns.version, run.version)))
+    await history(tx, {
+      entityType: "run", entityId: run.id, worksiteId: run.worksiteId,
+      changeType: "preventive_action_created", reason: data.actionDescription,
+      afterState: { findingId: finding.id, capaActionId: capa.id, targetDate: data.targetDate }, actorUserId: access.userId,
+    })
+    return { findingId: finding.id, capaActionId: capa.id }
+  })
 }
 
 export async function listInspectionTemplates(access: InspectionAccess, filter: InspectionKindFilter = {}) {
@@ -2286,6 +2618,24 @@ export async function listInspectionTemplates(access: InspectionAccess, filter: 
       definitionDrifted: Boolean(source) && contentHashOf(source!) !== template.contentHash,
     }
   })
+}
+
+/** Versiones aprobadas/vigentes de la Biblioteca SST elegibles como fuente. */
+export async function listInspectionDocumentSources(access: InspectionAccess) {
+  requireAccess(access, "prevention:inspections:manage")
+  return db.select({
+    id: sstDocumentVersions.id,
+    documentId: sstDocuments.id,
+    documentCode: sstDocuments.internalCode,
+    documentTitle: sstDocuments.title,
+    fileName: sstDocumentVersions.fileName,
+    checksumSha256: sstDocumentVersions.checksum,
+    status: sstDocumentVersions.status,
+    effectiveFrom: sstDocumentVersions.effectiveFrom,
+  }).from(sstDocumentVersions)
+    .innerJoin(sstDocuments, eq(sstDocuments.id, sstDocumentVersions.documentId))
+    .where(inArray(sstDocumentVersions.status, ["aprobado", "vigente"]))
+    .orderBy(asc(sstDocuments.internalCode), desc(sstDocumentVersions.version))
 }
 
 export async function listInspectionPrograms(access: InspectionAccess, filter: InspectionKindFilter = {}) {
@@ -2707,7 +3057,11 @@ export async function listUnclassifiedDeviations(templateId: string, access: Ins
 
 /** Inspección editable y dentro de alcance, con la plantilla que la gobierna. */
 async function requireEditableRunForDeviation(tx: Tx, runId: string, access: InspectionAccess) {
-  const [row] = await tx.select({ run: preventionInspectionRuns, templateId: preventionInspectionTemplates.id })
+  const [row] = await tx.select({
+    run: preventionInspectionRuns,
+    templateId: preventionInspectionTemplates.id,
+    sourceDefinitionCode: preventionInspectionTemplates.sourceDefinitionCode,
+  })
     .from(preventionInspectionRuns)
     .innerJoin(preventionInspectionTemplates, eq(preventionInspectionTemplates.id, preventionInspectionRuns.templateId))
     .where(eq(preventionInspectionRuns.id, runId)).limit(1)
@@ -2733,17 +3087,30 @@ async function requireEditableRunForDeviation(tx: Tx, runId: string, access: Ins
  * `listUnclassifiedDeviations` para que Prevención la incorpore.
  */
 export async function registerDeviation(input: unknown, access: InspectionAccess) {
+  const narrativeFields = {
+    potentialDamageDescription: z.string().trim().min(3).max(3000).optional(),
+    immediateMeasure: z.string().trim().min(3).max(3000).optional(),
+    applicableLaw: z.string().trim().min(2).max(1000).optional(),
+  }
   const data = z.union([
-    z.object({ runId: z.string().min(1), catalogEntryId: z.string().min(1) }),
+    z.object({ runId: z.string().min(1), catalogEntryId: z.string().min(1), ...narrativeFields }),
     z.object({
       runId: z.string().min(1),
       description: z.string().trim().min(3).max(3000),
       danoPotencial: z.enum(["leve", "moderado", "grave", "fatal"]),
+      ...narrativeFields,
     }),
   ]).parse(input)
 
   return db.transaction(async (tx) => {
-    const { run, templateId } = await requireEditableRunForDeviation(tx, data.runId, access)
+    const { run, templateId, sourceDefinitionCode } = await requireEditableRunForDeviation(tx, data.runId, access)
+
+    if (sourceDefinitionCode === "inspeccion_no_planeada") {
+      if ("catalogEntryId" in data) throw new Error("El Anexo 08 exige describir cada hallazgo; no admite una desviación abreviada del catálogo.")
+      if (!data.potentialDamageDescription || !data.immediateMeasure || !data.applicableLaw) {
+        throw new Error("El Anexo 08 exige daño potencial, medida preventiva y normativa aplicable.")
+      }
+    }
 
     let description: string
     let danoPotencial: string
@@ -2773,7 +3140,11 @@ export async function registerDeviation(input: unknown, access: InspectionAccess
       answerId: null,
       catalogEntryId,
       description,
+      danoPotencial,
       criticality: criticalityFromDanoPotencial(danoPotencial),
+      potentialDamageDescription: data.potentialDamageDescription ?? null,
+      immediateMeasure: data.immediateMeasure ?? null,
+      applicableLaw: data.applicableLaw ?? null,
       status: "open",
     }).returning()
     if (!created) throw new Error("No se pudo registrar la desviación.")

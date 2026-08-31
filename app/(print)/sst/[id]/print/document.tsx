@@ -192,7 +192,9 @@ export function ActaDocument({ data, logoSrc }: { data: ActaData; logoSrc: strin
               </tr>
             </thead>
             <tbody>
-              {actionPlan
+              {/* `.sort()` ordena en sitio: aplicado directo sobre la prop mutaba
+                  el array del componente padre durante el render. Se copia. */}
+              {[...actionPlan]
                 .sort((a, b) => a.n - b.n)
                 .map((p) => (
                   <tr key={p.id}>

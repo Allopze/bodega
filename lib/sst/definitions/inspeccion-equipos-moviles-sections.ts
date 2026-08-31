@@ -32,6 +32,14 @@ import type { ChecklistSection } from '../types'
  * correcto; los `id` son estables y únicos por sección.
  */
 export const EQUIPOS_MOVILES_SECTIONS: ChecklistSection[] = [
+  {
+    id: 'datos_equipo',
+    title: 'Datos del equipo',
+    countsForCompliance: false,
+    items: [
+      { id: 'horometro', label: 'Horómetro', kind: 'number', required: true, placeholder: 'Lectura observada en el equipo…' },
+    ],
+  },
   // ============================================================
   // 3.1 Documentos
   // ============================================================
@@ -223,9 +231,6 @@ export const EQUIPOS_MOVILES_SECTIONS: ChecklistSection[] = [
       { id: 'neumaticos_cortaduras', label: 'Neumáticos sin cortaduras profundas ni abultamientos.', kind: 'cumple_nocumple_na_obs',
         danoPotencial: 'fatal',
       },
-      { id: 'pernos_ruedas',        label: 'Pernos de ruedas.', kind: 'cumple_nocumple_na_obs',
-        danoPotencial: 'fatal',
-      },
     ],
   },
 
@@ -239,9 +244,6 @@ export const EQUIPOS_MOVILES_SECTIONS: ChecklistSection[] = [
     hasActionCorrectiva: true,
     items: [
       { id: 'aire_caliento_frio',  label: 'Estado de aire caliente y frío.', kind: 'cumple_nocumple_na_obs',
-        danoPotencial: 'moderado',
-      },
-      { id: 'aire_acondicionado',  label: 'Aire acondicionado.', kind: 'cumple_nocumple_na_obs',
         danoPotencial: 'moderado',
       },
     ],

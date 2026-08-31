@@ -1,5 +1,6 @@
 import type { ChecklistDefinition } from '../types'
 import { TALLER_SECTIONS } from './inspeccion-taller-sections'
+import { NORMALIZED_ONLY_SCORING } from '../scoring-policies'
 
 /**
  * Inspección Taller de Mantención y Bodega de Acopio RESPEL — módulo 06.
@@ -13,8 +14,8 @@ import { TALLER_SECTIONS } from './inspeccion-taller-sections'
  */
 export const INSPECCION_TALLER: ChecklistDefinition = {
   code: 'inspeccion_taller',
-  version: '01',
-  revisionDate: '2026-07-14',
+  version: '02',
+  revisionDate: '2026-08-30',
   tipo: 'seguimiento',
   title: 'Inspección de Taller de Mantención y Bodega de Acopio RESPEL',
   subtitle: 'Lista de chequeo mensual de condiciones de seguridad del taller y bodega de acopio.',
@@ -30,8 +31,9 @@ export const INSPECCION_TALLER: ChecklistDefinition = {
     'Verificar las condiciones de seguridad estructural, operacional y de almacenamiento del taller de mantención y la bodega de acopio RESPEL, levantando hallazgos y acciones correctivas.',
   frequencySuggested: 'Mensual.',
   evaluationCriteria:
-    'Cada ítem se evalúa como Cumple / No cumple / N/A. "Cumple parcialmente" se registra como No cumple con el detalle en la observación. Los ítems No cumple generan automáticamente acciones del plan de acción PDTP.',
+    'Cada ítem se evalúa como Cumple / Cumple parcialmente / No cumple / N/A. Cumple parcialmente se conserva como estado propio y puntúa 0,5 sólo en la métrica normalizada.',
   sections: TALLER_SECTIONS,
+  scoringPolicy: NORMALIZED_ONLY_SCORING,
   closingAct: {
     title: 'Cierre de inspección',
     resultOptions: [

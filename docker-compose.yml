@@ -267,8 +267,8 @@ services:
       retries: 2
       start_period: 30s
 
-  # One-shot: applies Drizzle migrations, then exits 0. Runs the same image as
-  # `app` but with the standalone migrate runner (scripts/migrate.mjs).
+  # One-shot: applies Drizzle migrations and then idempotently regularizes the
+  # historical EPP scale defect before the application starts.
   migrate:
     build:
       context: .
@@ -280,7 +280,7 @@ services:
         condition: service_healthy
     environment:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
-    command: ["node", "scripts/migrate.mjs"]
+    command: ["sh", "-c", "node scripts/migrate.mjs && node scripts/reconcile-epp-delivery-scale.mjs --apply"]
 
   # One-shot: sync RBAC permissions from module manifests to the database.
   # Run automatically by deploy-prod.sh after migrations. Also run manually:

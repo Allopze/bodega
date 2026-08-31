@@ -217,13 +217,13 @@ export async function officeWorksiteOptions(): Promise<{
   configuredId: string
   resolvedId: string | null
 }> {
-  const [rows, setting] = await Promise.all([
+  const [rows, setting, resolved] = await Promise.all([
     db.select({ id: worksites.id, name: worksites.name, code: worksites.code })
       .from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.code)),
     db.select({ value: systemSettings.value }).from(systemSettings)
       .where(eq(systemSettings.key, OFFICE_WORKSITE_SETTING_KEY)).limit(1),
+    resolveOfficeWorksite().catch(() => null),
   ])
-  const resolved = await resolveOfficeWorksite().catch(() => null)
   return { worksites: rows, configuredId: setting[0]?.value?.trim() ?? "", resolvedId: resolved?.id ?? null }
 }
 

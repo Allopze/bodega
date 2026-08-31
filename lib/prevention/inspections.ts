@@ -1,6 +1,5 @@
-import { PARTIAL_STATUS_WEIGHT } from "@/lib/sst/compliance"
 import { BRM_KINDS, statusOptionsForKind } from "@/lib/sst/status-options"
-import type { FieldKind } from "@/lib/sst/types"
+import type { ChecklistDefinition, FieldKind } from "@/lib/sst/types"
 
 export const INSPECTION_KIND_LABELS: Record<string, string> = {
   inspection: "Inspección",
@@ -163,7 +162,8 @@ export function capaPriorityForCriticality(criticality: string): {
 
 /** ¿Este tipo de ítem admite la respuesta intermedia 'partial' (Regular)? */
 export function fieldKindAcceptsPartial(kind: FieldKind | null | undefined): boolean {
-  return kind !== null && kind !== undefined && BRM_KINDS.includes(kind)
+  return kind === "cumple_parcial_nocumple_na_obs"
+    || (kind !== null && kind !== undefined && BRM_KINDS.includes(kind))
 }
 
 /**
@@ -314,6 +314,8 @@ export interface InspectionItemSpec {
   /** Opciones del `select`. Sin ellas la UI no puede pintar el campo. */
   options?: { value: string; label: string }[]
   placeholder?: string
+  /** Dos o más respuestas independientes presentadas en una misma fila. */
+  matrix?: { rowId: string; rowLabel: string; columnLabel: string }
 }
 
 export type InspectionResult = "conforming" | "partial" | "non_conforming" | "not_applicable" | "not_present" | "recorded"
@@ -420,16 +422,23 @@ export interface ComplianceSummary {
    * puntúe igual sin importar por qué motor pasó (H-04).
    */
   compliancePercent: number | null
+  /** Resultado normalizado exacto, en centésimas de punto porcentual. */
+  normalizedComplianceBasisPoints: number | null
+  /** Resultado definido por el documento; null si la fuente no declara fórmula. */
+  officialComplianceBasisPoints: number | null
 }
 
-export function summarizeCompliance(items: InspectionItemSpec[], answers: InspectionAnswerInput[]): ComplianceSummary {
+export function summarizeCompliance(
+  items: InspectionItemSpec[],
+  answers: InspectionAnswerInput[],
+  scoringPolicy?: ChecklistDefinition["scoringPolicy"],
+): ComplianceSummary {
   const spec = new Map(items.map((item) => [`${item.sectionId}::${item.itemId}`, item]))
   let conforming = 0
   let partial = 0
   let nonConforming = 0
   let notApplicable = 0
   let scored = 0
-  let scoredPoints = 0
 
   for (const answer of answers) {
     const item = spec.get(`${answer.sectionId}::${answer.itemId}`)
@@ -449,16 +458,27 @@ export function summarizeCompliance(items: InspectionItemSpec[], answers: Inspec
     if (!item?.countsForCompliance) continue
     if (isExcludedResult(answer.result) || answer.result === "recorded") continue
     scored += 1
-    if (answer.result === "conforming") scoredPoints += 1
-    else if (answer.result === "partial") scoredPoints += PARTIAL_STATUS_WEIGHT
   }
+
+  const partialWeightBasisPoints = scoringPolicy?.normalized.partialWeightBasisPoints ?? 5_000
+  const normalizedBasisPoints = scored === 0
+    ? null
+    : Math.round(((conforming * 10_000) + (partial * partialWeightBasisPoints)) / scored)
+  const official = scoringPolicy?.official
+  const officialBasisPoints = official?.mode === "fixed_conforming_denominator"
+    ? Math.round((conforming * 10_000) / official.denominator)
+    : null
 
   return {
     conforming,
     partial,
     nonConforming,
     notApplicable,
-    compliancePercent: scored === 0 ? null : Math.round((scoredPoints / scored) * 100),
+    // Alias de compatibilidad: las pantallas antiguas siguen recibiendo un
+    // entero, pero la fuente exacta es el valor normalizado en puntos base.
+    compliancePercent: normalizedBasisPoints === null ? null : Math.round(normalizedBasisPoints / 100),
+    normalizedComplianceBasisPoints: normalizedBasisPoints,
+    officialComplianceBasisPoints: officialBasisPoints,
   }
 }
 
@@ -467,6 +487,7 @@ export interface DerivedFinding {
   itemId: string
   description: string
   criticality: "low" | "medium" | "high" | "critical"
+  danoPotencial: "leve" | "moderado" | "grave" | "fatal" | null
 }
 
 /** Cada respuesta no conforme produce un hallazgo con su criticidad derivada. */
@@ -484,6 +505,7 @@ export function deriveFindings(items: InspectionItemSpec[], answers: InspectionA
       // estructura clave-valor que no es — un guion largo no la insinúa.
       description: answer.comment?.trim() ? `${item.label} — ${answer.comment.trim()}` : item.label,
       criticality: criticalityFromDanoPotencial(item.danoPotencial),
+      danoPotencial: (item.danoPotencial as DerivedFinding["danoPotencial"]) ?? null,
     })
   }
   return findings

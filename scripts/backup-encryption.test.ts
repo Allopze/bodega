@@ -12,6 +12,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, statSync, existsSync 
 import { createHash } from "node:crypto"
 import os from "node:os"
 import path from "node:path"
+import { delimiter } from "node:path"
 
 const root = path.join(__dirname, "..")
 const orchestrator = readFileSync(path.join(root, "scripts/backup-orchestrator.sh"), "utf8")
@@ -175,10 +176,25 @@ describe("costura de cifrado entre backup-orchestrator y catastrophic-restore", 
     const dir = mkdtempSync(path.join(os.tmpdir(), "bodega-verify-"))
     let stdout = ""
     try {
+      // El contrato debe funcionar también en hosts mínimos donde jq no está
+      // instalado. Si jq existe, se oculta sólo para esta prueba y se conserva
+      // el resto del PATH para no convertirla en un test de otro binario.
+      const jqPath = (() => {
+        try {
+          return execFileSync("bash", ["-c", "command -v jq || true"], { encoding: "utf8" }).trim()
+        } catch {
+          return ""
+        }
+      })()
+      const jqDir = jqPath ? path.dirname(jqPath) : null
+      const pathWithoutJq = (process.env.PATH ?? "")
+        .split(delimiter)
+        .filter((entry) => !jqDir || entry !== jqDir)
+        .join(delimiter)
       stdout = execFileSync("bash", [path.join(root, "scripts/backup-verify.sh"), "--json"], {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"],
-        env: { ...process.env, BACKUP_DIR: dir, STORAGE_PATH: path.join(dir, "storage") },
+        env: { ...process.env, PATH: pathWithoutJq, BACKUP_DIR: dir, STORAGE_PATH: path.join(dir, "storage") },
       })
     } catch (err) {
       // Sin respaldos sale con 2 (CRITICAL); el stdout sigue siendo el JSON.

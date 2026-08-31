@@ -33,10 +33,13 @@ export default async function PdtpApprovalsPage({ searchParams }: PdtpApprovalsP
   // real es el del programa (no necesariamente el calendario) nunca
   // aparecía. Con programId filtra por ese programa sin importar su año;
   // sin programId muestra pendientes de todos los años/programas.
-  const pending = await listPendingPdtpExecutions(worksiteIds, program ? { programId: program.id } : {})
   // findPdtpWeeklyPending() recorre TODAS las faenas activas (lo necesita el
-  // cron); acá se filtra al alcance real del usuario antes de mostrarlo.
-  const weeklyPendingAll = await findPdtpWeeklyPending()
+  // cron); acá se filtra al alcance real del usuario antes de mostrarlo. Las
+  // dos lecturas son independientes, así que se resuelven en paralelo.
+  const [pending, weeklyPendingAll] = await Promise.all([
+    listPendingPdtpExecutions(worksiteIds, program ? { programId: program.id } : {}),
+    findPdtpWeeklyPending(),
+  ])
   const weeklyPending = worksiteIds === "all" ? weeklyPendingAll : weeklyPendingAll.filter((target) => worksiteIds.includes(target.worksiteId))
   // H-M4: el description debe reflejar el scope real del usuario para
   // no inducir a error (un usuario de faena solo ve sus faenas).

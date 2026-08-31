@@ -5,6 +5,7 @@ import { DataTable } from "@/components/ui/data-table"
 import { HISTORY_PAGE_SIZE } from "@/lib/constants"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { formatDate } from "@/lib/utils"
 
 export type DeliveryRow = {
@@ -16,6 +17,7 @@ export type DeliveryRow = {
   workerName:   string
   receiverName: string | null
   itemSummary:  string
+  quantityCorrected: boolean
   requestCode:  string | null
   deliveredAt:  string
   attachmentId: string | null
@@ -102,7 +104,12 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false }: { d
             <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
               <div>
                 <dt className="text-[var(--color-text-subtle)]">Productos</dt>
-                <dd className="break-words text-[var(--color-text-muted)]">{delivery.itemSummary}</dd>
+                <dd className="break-words text-[var(--color-text-muted)]">
+                  {delivery.itemSummary}
+                  {delivery.quantityCorrected && (
+                    <Badge variant="info" size="sm" className="mt-1">Cantidad regularizada</Badge>
+                  )}
+                </dd>
               </div>
               <div>
                 <dt className="text-[var(--color-text-subtle)]">Bodega origen</dt>
@@ -152,8 +159,11 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false }: { d
             <TableCell className="text-sm text-[var(--color-text-muted)]">
               {delivery.worksiteName}
             </TableCell>
-            <TableCell className="max-w-64 truncate text-sm text-[var(--color-text-muted)]">
-              {delivery.itemSummary}
+            <TableCell className="max-w-64 text-sm text-[var(--color-text-muted)]">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="truncate">{delivery.itemSummary}</span>
+                {delivery.quantityCorrected && <Badge variant="info" size="sm">Regularizada</Badge>}
+              </div>
             </TableCell>
             <TableCell className="text-xs text-[var(--color-text-subtle)]">
               {formatDate(delivery.deliveredAt)}
