@@ -5,26 +5,37 @@ set -euo pipefail
 # Usage:  npm run deploy:prod
 #         PROD_SSH=usuario@host npm run deploy:prod          # override target
 #         PROD_DIR=/srv/plataforma npm run deploy:prod       # override path
+#         PROD_PUBLIC_URL=https://... npm run deploy:prod     # override edge URL
 #
 # Producción vive en OTRA máquina desde 2026-08-28 (antes compartía el daemon
 # Docker con este checkout). La imagen se sigue construyendo acá, sobre `main`,
 # pero ahora viaja por SSH y todo lo que toca prod pasa por `run_in_prod`.
 # El servidor sólo se alcanza por el túnel de Cloudflare: el puerto 22 no está
 # publicado, así que se entra con `cloudflared access ssh` como ProxyCommand.
-# Steps: tag current image as rollback -> pg_dump -> build -> ship image ->
-# preflight conciliación -> preflight combustible -> migrate -> backfill
-# conciliación (si hace falta) -> backfill referencias OC en DTE (si hace falta)
-# -> backfill lecturas de medidor -> catálogo de reglas de anomalía -> sync-rbac
-# -> catálogo de inspecciones -> recreate app then cron containers ->
-# authenticated smoke check.
+# El .env de prod NO viaja en el repo ni lo escribe este script: es estado del
+# servidor. Por eso el compose sincronizado se contrasta contra él (variables
+# exigidas y variables nuevas) y el nombre de imagen se resuelve ALLÁ.
+# Steps: sync compose -> contrastar .env -> resolver nombre de imagen -> tag
+# current image as rollback -> pg_dump -> build -> ship image -> preflight
+# conciliación -> preflight combustible -> migrate -> backfill conciliación (si
+# hace falta) -> backfill referencias OC en DTE (si hace falta) -> backfill
+# lecturas de medidor -> catálogo de reglas de anomalía -> sync-rbac ->
+# catálogo de inspecciones -> recreate app then cron containers ->
+# authenticated smoke check -> prune -> smoke público por el túnel.
 # ─────────────────────────────────────────────────────────────────────────────
 
 PROD_SSH="${PROD_SSH:-allopze@ssh.portalchome.cl}"
 PROD_DIR="${PROD_DIR:-/srv/plataforma}"
 PROD_SSH_KEY="${PROD_SSH_KEY:-$HOME/.ssh/id_ed25519_migracion}"
+# Si el operador fija IMAGE a mano, manda; si no, el nombre real lo dicta el
+# Compose de prod (ver "Resolviendo el nombre de imagen" más abajo).
+IMAGE_EXPLICIT="${IMAGE:+1}"
 IMAGE="${IMAGE:-ghcr.io/allopze/bodega:latest}"
 PREV_IMAGE="${IMAGE%:*}:prev"
 BUILDER="${BUILDER:-chome-prod}"
+# Lo único que se comprueba desde fuera del servidor: que el túnel publique
+# esta release. Nada de lo demás pasa por el borde de Cloudflare.
+PROD_PUBLIC_URL="${PROD_PUBLIC_URL:-https://plataforma.portalchome.cl}"
 DEPLOY_STARTED_SECONDS=$SECONDS
 
 format_duration() {
@@ -62,6 +73,23 @@ case "${PROD_SSH#*@}" in
   # Si algún día prod queda accesible por IP directa, esto se apaga solo.
   *.portalchome.cl) prod_ssh_opts+=(-o "ProxyCommand=cloudflared access ssh --hostname %h") ;;
 esac
+
+# Con BatchMode el fallo de un binario que falta sale como un error de SSH sin
+# relación aparente. Barato de comprobar acá, caro de diagnosticar allá.
+required_local_tools=(ssh docker curl md5sum)
+case " ${prod_ssh_opts[*]} " in
+  *cloudflared*) required_local_tools+=(cloudflared) ;;
+esac
+for tool in "${required_local_tools[@]}"; do
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "ERROR: falta '$tool' en esta máquina; el deploy lo necesita."
+    if [ "$tool" = cloudflared ]; then
+      echo "       El servidor sólo se alcanza por el túnel: sin cloudflared no hay SSH."
+      echo "       curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cf.deb && sudo dpkg -i /tmp/cf.deb"
+    fi
+    exit 1
+  fi
+done
 
 # Un comando suelto en el servidor de producción, sin `cd`.
 prod_run() {
@@ -113,6 +141,7 @@ fi
 echo "==> Syncing versioned Docker Compose definition"
 prod_run mkdir -p "$PROD_DIR/backups"
 compose_backup=""
+previous_compose=""
 # El compose remoto se compara por hash: traerlo entero para un `cmp` local
 # costaría una ida y vuelta más por despliegue.
 remote_compose_sum="$(prod_sh "md5sum $(printf '%q' "$PROD_DIR/docker-compose.yml") 2>/dev/null | cut -d' ' -f1" | tr -d '\r')"
@@ -120,8 +149,108 @@ if [ -n "$remote_compose_sum" ] && [ "$remote_compose_sum" != "$(md5sum docker-c
   compose_backup="$PROD_DIR/backups/docker-compose-predeploy-$(date +%F-%H%M%S).yml"
   prod_run cp "$PROD_DIR/docker-compose.yml" "$compose_backup"
   echo "    saved previous Compose definition: $compose_backup"
+  # Sólo cuando el compose cambió vale la pena traerlo: con la versión anterior
+  # a mano se puede distinguir "variable que prod nunca tuvo" de "variable que
+  # este deploy acaba de introducir", que es la que de verdad avisa.
+  previous_compose="$(mktemp)"
+  # Se borra abajo tras el contraste; el trap sólo cubre las salidas por error
+  # de aquí a allá (lo reemplaza `rollback_release`, que se instala después).
+  trap 'rm -f "$previous_compose"' EXIT
+  prod_sh "cat $(printf '%q' "$PROD_DIR/docker-compose.yml")" > "$previous_compose"
 fi
 prod_sh "cat > $(printf '%q' "$PROD_DIR/docker-compose.yml")" < docker-compose.yml
+
+# Nombres de variables que el compose interpola: `${VAR}`, `${VAR:-def}`, `${VAR:?err}`.
+compose_var_names() {
+  grep -oE '\$\{[A-Za-z_][A-Za-z0-9_]*' "$1" | cut -c3- | sort -u
+}
+
+# Sólo las marcadas `:?`, que son las que hacen fallar a compose si faltan.
+compose_required_var_names() {
+  grep -oE '\$\{[A-Za-z_][A-Za-z0-9_]*:\?' "$1" | cut -c3- | sed 's/:?$//' | sort -u
+}
+
+prod_env_keys() {
+  prod_sh "grep -oE '^[[:space:]]*(export[[:space:]]+)?[A-Za-z_][A-Za-z0-9_]*=' $(printf '%q' "$PROD_DIR/.env") 2>/dev/null" \
+    | tr -d '\r' | sed -E 's/^[[:space:]]*(export[[:space:]]+)?//; s/=$//' | sort -u
+}
+
+# El valor de UNA variable del .env de prod. Sólo se usa con nombres de este
+# script (POSTGRES_USER / POSTGRES_DB), nunca con entrada del operador.
+prod_env_value() {
+  prod_sh "grep -E '^[[:space:]]*(export[[:space:]]+)?$1=' $(printf '%q' "$PROD_DIR/.env") 2>/dev/null | tail -1" \
+    | tr -d '\r' | sed -E "s/^[[:space:]]*(export[[:space:]]+)?$1=//" | sed -E 's/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/'
+}
+
+# El .env de prod es estado del servidor: no viaja en el repo y este script no
+# lo sobreescribe. Sin este contraste, un compose que empieza a leer una
+# variable nueva despliega verde y la app arranca sin ella.
+echo "==> Contrastando el .env de producción con el Compose recién enviado"
+prod_env_keys_list="$(prod_env_keys)"
+if [ -z "$prod_env_keys_list" ]; then
+  echo "ERROR: $PROD_DIR/.env está vacío o no se pudo leer."
+  exit 1
+fi
+echo "    $(printf '%s\n' "$prod_env_keys_list" | wc -l | tr -d ' ') variables definidas en $PROD_DIR/.env"
+
+missing_required="$(comm -23 <(compose_required_var_names docker-compose.yml) <(printf '%s\n' "$prod_env_keys_list"))"
+if [ -n "$missing_required" ]; then
+  echo "ERROR: el Compose exige estas variables (\${VAR:?}) y no están en $PROD_DIR/.env:"
+  printf '       %s\n' $missing_required
+  echo "       Agrégalas allá antes de desplegar; compose fallaría a mitad de camino."
+  exit 1
+fi
+
+if [ -n "$previous_compose" ]; then
+  new_vars="$(comm -23 <(compose_var_names docker-compose.yml) <(compose_var_names "$previous_compose"))"
+  if [ -n "$new_vars" ]; then
+    missing_new="$(comm -23 <(printf '%s\n' "$new_vars") <(printf '%s\n' "$prod_env_keys_list"))"
+    if [ -n "$missing_new" ]; then
+      echo "    AVISO: variables que este deploy empieza a leer y prod NO define (se usará el default del compose):"
+      printf '           %s\n' $missing_new
+    fi
+  fi
+  rm -f "$previous_compose"
+  previous_compose=""
+  trap - EXIT
+fi
+
+# Antes se expandían `${POSTGRES_USER:-bodega}` en ESTA máquina: si el operador
+# tenía esas variables exportadas para desarrollo, los conteos y la sonda de
+# `CUTOVER_STATE` corrían con credenciales equivocadas contra prod (y un
+# CUTOVER_STATE=unknown bloquea el rollback automático). Se leen de allá.
+PROD_DB_USER="$(prod_env_value POSTGRES_USER)"
+PROD_DB_NAME="$(prod_env_value POSTGRES_DB)"
+PROD_DB_USER="${PROD_DB_USER:-bodega}"
+PROD_DB_NAME="${PROD_DB_NAME:-bodega}"
+echo "    psql/pg_dump usarán $PROD_DB_USER@$PROD_DB_NAME"
+
+# El compose resuelve `ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}`
+# con el .env de allá, no con el de acá. Si se construye y se carga un nombre
+# distinto del que compose va a levantar, `up` no encuentra la imagen y, como el
+# servicio `app` trae su propio `build:`, intenta compilar en $PROD_DIR — que no
+# tiene código. Resolver el nombre en el servidor cierra ese hueco.
+echo "==> Resolviendo el nombre de imagen que usará el Compose de producción"
+prod_image="$(run_in_prod docker compose config --images app 2>/dev/null | tr -d '\r' | grep -v '^[[:space:]]*$' | head -1 || true)"
+if [ -z "$prod_image" ]; then
+  # `config --images` es relativamente nuevo en compose. El repuesto reproduce a
+  # mano la expresión de docker-compose.yml: mantener los mismos defaults.
+  prod_repository="$(prod_env_value GITHUB_REPOSITORY)"
+  prod_image_tag="$(prod_env_value IMAGE_TAG)"
+  prod_image="ghcr.io/${prod_repository:-chome/bodega}:${prod_image_tag:-latest}"
+  echo "    ('docker compose config --images' no disponible; nombre derivado del .env remoto)"
+fi
+if [ "$prod_image" != "$IMAGE" ]; then
+  if [ -n "$IMAGE_EXPLICIT" ]; then
+    echo "ERROR: IMAGE=$IMAGE pero el Compose de prod levanta $prod_image."
+    echo "       Ajusta GITHUB_REPOSITORY/IMAGE_TAG en $PROD_DIR/.env o quita el override de IMAGE."
+    exit 1
+  fi
+  echo "    el Compose de prod levanta $prod_image; se construye y envía con ese nombre"
+  IMAGE="$prod_image"
+  PREV_IMAGE="${IMAGE%:*}:prev"
+fi
+echo "    imagen: $IMAGE (rollback: $PREV_IMAGE)"
 
 echo "==> Tagging current image as rollback ($PREV_IMAGE)"
 HAS_PREVIOUS_IMAGE=0
@@ -177,7 +306,7 @@ dump_production_database() {
   dump_file="$PROD_DIR/backups/prod-$(date +%F-%H%M).dump"
   # El respaldo se queda EN prod, que es donde sirve para el rollback; por eso
   # el `>` va dentro del shell remoto y no acá.
-  prod_sh "cd $(printf '%q' "$PROD_DIR") && docker compose exec -T db pg_dump -U bodega -Fc bodega > $(printf '%q' "$dump_file")"
+  prod_sh "cd $(printf '%q' "$PROD_DIR") && docker compose exec -T db pg_dump -U $(printf '%q' "$PROD_DB_USER") -Fc $(printf '%q' "$PROD_DB_NAME") > $(printf '%q' "$dump_file")"
   echo "    saved: $PROD_SSH:$dump_file ($(prod_run du -h "$dump_file" | cut -f1))"
 }
 
@@ -224,7 +353,7 @@ run_timed "Applying migrations" run_in_prod docker compose run --rm migrate
 # anterior. La versión 2 introduce estados parciales, así que conservar una
 # huella v1 dejaría la pantalla y la cola con semántica antigua.
 echo "==> Proyección de conciliación OC-factura"
-pending_reconciliation="$(run_in_prod docker compose exec -T db psql -U "${POSTGRES_USER:-bodega}" -d "${POSTGRES_DB:-bodega}" -tAc "SELECT COUNT(*) FROM purchase_orders po WHERE (po.invoice_reconciliation_fingerprint IS NULL OR po.invoice_reconciliation_fingerprint NOT LIKE 'v2:%') AND EXISTS (SELECT 1 FROM purchase_order_invoices poi WHERE poi.purchase_order_id = po.id)" 2>/dev/null | tr -d '[:space:]' || true)"
+pending_reconciliation="$(run_in_prod docker compose exec -T db psql -U "$PROD_DB_USER" -d "$PROD_DB_NAME" -tAc "SELECT COUNT(*) FROM purchase_orders po WHERE (po.invoice_reconciliation_fingerprint IS NULL OR po.invoice_reconciliation_fingerprint NOT LIKE 'v2:%') AND EXISTS (SELECT 1 FROM purchase_order_invoices poi WHERE poi.purchase_order_id = po.id)" 2>/dev/null | tr -d '[:space:]' || true)"
 case "$pending_reconciliation" in
   ''|*[!0-9]*)
     echo "    no se pudo contar OC pendientes; se ejecuta el backfill igual (es idempotente)"
@@ -243,7 +372,7 @@ fi
 # NULL significa exactamente eso —cadena vacía es "se leyó y no citaba nada"—,
 # así que contar NULL con XML en disco es contar trabajo real pendiente.
 echo "==> Referencias a OC en los DTE del histórico"
-pending_dte_refs="$(run_in_prod docker compose exec -T db psql -U "${POSTGRES_USER:-bodega}" -d "${POSTGRES_DB:-bodega}" -tAc "SELECT COUNT(*) FROM dte_documents WHERE referenced_order_codes IS NULL AND xml_path IS NOT NULL" 2>/dev/null | tr -d '[:space:]' || true)"
+pending_dte_refs="$(run_in_prod docker compose exec -T db psql -U "$PROD_DB_USER" -d "$PROD_DB_NAME" -tAc "SELECT COUNT(*) FROM dte_documents WHERE referenced_order_codes IS NULL AND xml_path IS NOT NULL" 2>/dev/null | tr -d '[:space:]' || true)"
 case "$pending_dte_refs" in
   ''|*[!0-9]*)
     echo "    no se pudo contar DTE pendientes; se ejecuta el backfill igual (es idempotente)"
@@ -280,7 +409,7 @@ run_timed "Instalando el catálogo de inspecciones cableado al PDTP" run_in_prod
 # the immediately previous image is safe. A failed probe is deliberately
 # conservative: after the app has been replaced, an operator must choose a
 # known encryption-compatible rollback floor instead of reviving a legacy tag.
-CUTOVER_STATE="$(run_in_prod docker compose exec -T db psql -U "${POSTGRES_USER:-bodega}" -d "${POSTGRES_DB:-bodega}" -tAc "SELECT CASE WHEN EXISTS (SELECT 1 FROM system_settings WHERE key = 'dte.encryption_mode' AND value = 'encrypted_only') THEN 'encrypted_only' ELSE 'compat' END" 2>/dev/null | tr -d '[:space:]' || true)"
+CUTOVER_STATE="$(run_in_prod docker compose exec -T db psql -U "$PROD_DB_USER" -d "$PROD_DB_NAME" -tAc "SELECT CASE WHEN EXISTS (SELECT 1 FROM system_settings WHERE key = 'dte.encryption_mode' AND value = 'encrypted_only') THEN 'encrypted_only' ELSE 'compat' END" 2>/dev/null | tr -d '[:space:]' || true)"
 if [ "$CUTOVER_STATE" != "compat" ] && [ "$CUTOVER_STATE" != "encrypted_only" ]; then
   CUTOVER_STATE="unknown"
 fi
@@ -343,12 +472,44 @@ trap - EXIT
 echo
 echo "Deploy complete: app and cron use $IMAGE."
 
+# Cada deploy carga una imagen completa en el servidor y deja la anterior
+# tagueada como `:prev`. Ya no hay un daemon compartido con este checkout que
+# recicle capas, así que sin esto /var/lib/docker crece ~700 MB por despliegue.
+# `prune` sin `-a` sólo borra imágenes sin tag: `:latest` y `:prev` quedan.
+echo "==> Limpiando capas huérfanas en el servidor"
+prod_run docker image prune -f | tail -1
+
+# Lo único que se comprueba desde fuera. Todo el smoke anterior corre DENTRO del
+# servidor, así que no distingue "la release está sana" de "el túnel publica esta
+# release": con cloudflared caído en prod —o todavía vivo en el box viejo— el
+# deploy pasaba verde igual.
+echo "==> Smoke público a través del túnel ($PROD_PUBLIC_URL)"
+public_smoke_ok=0
+for attempt in $(seq 1 6); do
+  if curl -sf --max-time 20 "$PROD_PUBLIC_URL/api/health" >/dev/null; then
+    public_smoke_ok=1
+    break
+  fi
+  sleep 5
+done
+if [ "$public_smoke_ok" -ne 1 ]; then
+  echo
+  echo "ERROR: la release está arriba en el servidor (health y cron pasaron allá),"
+  echo "       pero $PROD_PUBLIC_URL/api/health no responde 200 desde fuera."
+  echo "       Eso apunta al borde, no a la aplicación. Revisa:"
+  echo "         systemctl status cloudflared   # en el servidor de producción"
+  echo "         systemctl status cloudflared   # y que NO esté vivo en el box viejo"
+  echo "       No se hace rollback: la imagen nueva ya se verificó del lado del servidor."
+  exit 1
+fi
+echo "    200 OK desde fuera"
+
 echo
 echo "==> Verificando Base preventiva 2026..."
 
 # Check if the PDTP base 2026 template is published by querying the DB.
 # If not, print instructions for the one-time bootstrap.
-BASE_CHECK=$( (run_in_prod docker compose exec -T db psql -U bodega -d bodega -tAc \
+BASE_CHECK=$( (run_in_prod docker compose exec -T db psql -U "$PROD_DB_USER" -d "$PROD_DB_NAME" -tAc \
   "SELECT pv.version FROM pdtp_program_templates pt \
    JOIN pdtp_program_template_versions pv ON pv.template_id = pt.id \
    WHERE pt.code = 'base_preventiva_2026' AND pt.is_active = true \
