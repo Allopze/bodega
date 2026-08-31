@@ -30,6 +30,9 @@ export async function registerWorkerEppDelivery(
   if (!Number.isFinite(input.quantity) || input.quantity <= 0) {
     throw new Error("La cantidad debe ser mayor a 0")
   }
+  if (!Number.isInteger(input.quantity)) {
+    throw new Error("Los EPP se entregan en cantidades enteras")
+  }
 
   const now = new Date().toISOString()
   const deliveryId = nanoid()

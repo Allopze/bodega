@@ -146,6 +146,10 @@ export function DeliveryForm({
   function addLine() {
     const quantity = Number(pendingQuantity)
     if (!selectedPendingProduct || !Number.isFinite(quantity) || quantity <= 0) return
+    if (selectedPendingProduct.isEpp && !Number.isInteger(quantity)) {
+      toast.error("Los EPP se entregan en cantidades enteras")
+      return
+    }
     if (quantity > selectedPendingProduct.stockQuantity) {
       toast.error(`Stock disponible: ${formatQty(selectedPendingProduct.stockQuantity, selectedPendingProduct.unitOfMeasure)}`)
       return
@@ -285,8 +289,8 @@ export function DeliveryForm({
             <Input
               id="deliveryPendingQuantity"
               type="number"
-              min="0.01"
-              step="0.01"
+              min={selectedPendingProduct?.isEpp ? 1 : 0.01}
+              step={selectedPendingProduct?.isEpp ? 1 : 0.01}
               max={selectedPendingProduct?.stockQuantity}
               value={pendingQuantity}
               onChange={(event) => setPendingQuantity(event.target.value)}
@@ -336,8 +340,8 @@ export function DeliveryForm({
                   <Input
                     aria-label={`Cantidad de ${product?.productName ?? line.productId}`}
                     type="number"
-                    min="0.01"
-                    step="0.01"
+                    min={product?.isEpp ? 1 : 0.01}
+                    step={product?.isEpp ? 1 : 0.01}
                     max={product?.stockQuantity}
                     value={line.quantity || ""}
                     onChange={(event) => updateLineQuantity(line.productId, event.target.value)}
@@ -378,7 +382,15 @@ export function DeliveryForm({
       )}
 
       <div className="flex justify-end border-t border-[var(--color-border)] pt-4">
-        <SubmitButton label="Registrar entrega" loadingLabel="Guardando…" variant="primary" disabled={!sourceWorksiteId || !workerId || lines.length === 0 || lines.some((line) => line.quantity <= 0)} />
+        <SubmitButton
+          label="Registrar entrega"
+          loadingLabel="Guardando…"
+          variant="primary"
+          disabled={!sourceWorksiteId || !workerId || lines.length === 0 || lines.some((line) => {
+            const product = availableStock.find((candidate) => candidate.productId === line.productId)
+            return line.quantity <= 0 || Boolean(product?.isEpp && !Number.isInteger(line.quantity))
+          })}
+        />
       </div>
     </form>
   )

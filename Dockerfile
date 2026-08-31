@@ -49,6 +49,18 @@ RUN ./node_modules/.bin/esbuild scripts/sync-rbac.ts \
     --packages=external \
     --outfile=/tmp/sync-rbac.mjs
 
+# La regularización de las entregas EPP históricas forma parte del deploy, no
+# de una operación manual. Se bundlea porque la imagen slim no incluye `tsx`
+# ni las fuentes TypeScript; deja externos sólo los drivers que sí se copian.
+RUN ./node_modules/.bin/esbuild scripts/reconcile-epp-delivery-scale.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/reconcile-epp-delivery-scale.mjs
+
 # Mismo motivo que sync-rbac: el catálogo de instrumentos del motor de
 # inspecciones se instala cableado a la actividad del PDTP que acredita cada
 # uno, y sin ese paso en el deploy las plantillas quedan sin acreditar y la
@@ -192,6 +204,7 @@ COPY --from=build /app/node_modules/drizzle-orm ./node_modules/drizzle-orm
 COPY --from=build /app/node_modules/postgres ./node_modules/postgres
 
 COPY --from=build /tmp/sync-rbac.mjs ./scripts/sync-rbac.mjs
+COPY --from=build /tmp/reconcile-epp-delivery-scale.mjs ./scripts/reconcile-epp-delivery-scale.mjs
 COPY --from=build /tmp/seed-pdtp-inspection-templates.mjs ./scripts/seed-pdtp-inspection-templates.mjs
 COPY --from=build /tmp/invoice-reconciliation/preflight-purchase-invoice-reconciliation.mjs ./scripts/preflight-purchase-invoice-reconciliation.mjs
 COPY --from=build /tmp/invoice-reconciliation/backfill-purchase-invoice-reconciliation.mjs ./scripts/backfill-purchase-invoice-reconciliation.mjs

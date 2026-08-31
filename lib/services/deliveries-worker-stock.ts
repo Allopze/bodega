@@ -199,6 +199,9 @@ export async function registerWorkerStockDelivery(
       const product = await tx.query.products.findFirst({ where: eq(products.id, item.productId) })
       if (!product || !product.isActive) throw new Error("Producto no disponible")
       if (product.isService) throw new Error("Los servicios no se entregan desde bodega")
+      if (product.isEpp && !Number.isInteger(item.quantity)) {
+        throw new Error("Los EPP se entregan en cantidades enteras")
+      }
 
       const traceableState = await getTraceableItemState(
         tx,

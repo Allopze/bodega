@@ -1,4 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+
+// El registro de proveedores es una prueba unitaria. `isProviderEnabled` lee
+// settings persistidos, pero no debe abrir el PostgreSQL real del entorno de
+// desarrollo: una conexión fuera de servicio quedaba como error no manejado
+// después de que `readChipaxConfig` ya había vuelto al entorno.
+vi.mock("@/db", () => ({
+  db: {
+    select: () => ({
+      from: () => ({ where: async () => [] }),
+    }),
+  },
+}))
+
 import {
   BILLING_PROVIDER_IDS,
   getAllBillingProviders,

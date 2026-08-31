@@ -24,6 +24,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/invoice-reconciliation-service.test.ts",
   "lib/__tests__/preflight-invoice-reconciliation.test.ts",
   "lib/__tests__/epp-stock-availability.test.ts",
+  "lib/__tests__/epp-delivery-scale-reconciliation.test.ts",
   "lib/__tests__/epp-import-family-type.test.ts",
   "lib/__tests__/admin-product-attributes-persistence.test.ts",
   "lib/__tests__/epp-family-form.test.ts",

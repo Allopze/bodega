@@ -67,11 +67,13 @@ async function makeScenario({ workerAtSource = true }: { workerAtSource?: boolea
     {
       id: firstProductId, sku: `ENT-A-${suffix}`, name: `Guante ${suffix}`,
       categoryId, unitOfMeasure: "par", isActive: true, isService: false,
+      isEpp: true,
       createdAt: now, updatedAt: now,
     },
     {
       id: secondProductId, sku: `ENT-B-${suffix}`, name: `Lente ${suffix}`,
       categoryId, unitOfMeasure: "unidad", isActive: true, isService: false,
+      isEpp: true,
       createdAt: now, updatedAt: now,
     },
     {
@@ -208,6 +210,32 @@ describe("registerWorkerStockDelivery", () => {
       deliveredBy: USER_ID,
       items: [{ productId: scenario.serviceProductId, quantity: 1 }],
     })).rejects.toThrow("Los servicios no se entregan desde bodega")
+  })
+
+  it("rejects fractional EPP quantities without changing stock", async () => {
+    const scenario = await makeScenario()
+
+    await expect(registerWorkerStockDelivery({
+      sourceWorksiteId: scenario.sourceWorksiteId,
+      workerId: scenario.workerId,
+      deliveredBy: USER_ID,
+      items: [{ productId: scenario.firstProductId, quantity: 0.02 }],
+    })).rejects.toThrow("Los EPP se entregan en cantidades enteras")
+
+    const stock = await inMemoryDb.query.worksiteStock.findFirst({
+      where: and(
+        eq(schema.worksiteStock.worksiteId, scenario.sourceWorksiteId),
+        eq(schema.worksiteStock.productId, scenario.firstProductId),
+      ),
+    })
+    expect(stock?.quantity).toBe(10)
+    const delivery = await inMemoryDb.query.deliveries.findFirst({
+      where: and(
+        eq(schema.deliveries.sourceWorksiteId, scenario.sourceWorksiteId),
+        eq(schema.deliveries.workerId, scenario.workerId),
+      ),
+    })
+    expect(delivery).toBeUndefined()
   })
 
   it("rejects a worker assigned to a different worksite than the selected source", async () => {
