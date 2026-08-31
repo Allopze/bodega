@@ -34,6 +34,14 @@ import type { DomainSectionsProps } from "./shared"
  * sección, en vez de quedar en las dos.
  */
 
+const dominantCurrency = (amounts: ReadonlyArray<{ currency: string; amount: number }>) =>
+  amounts.reduce<{ currency: string; amount: number } | null>(
+    (top, entry) => (top === null || entry.amount > top.amount ? entry : top), null,
+  )?.currency ?? null
+
+const onlyCurrency = (currency: string | null, all: ReadonlyArray<{ currency: string }>) =>
+  currency && all.some((entry) => entry.currency !== currency) ? ` · sólo ${currency}` : ""
+
 export async function FinanceSection({ session, scope }: DomainSectionsProps) {
   const permissions = session.user.permissions
   const has = (permission: string) => permissions.includes(permission)
@@ -95,16 +103,10 @@ export async function FinanceSection({ session, scope }: DomainSectionsProps) {
    * Se elige la moneda de mayor monto y se declara cuando hay más de una: el
    * resto no se esconde en silencio.
    */
-  const dominantCurrency = (amounts: ReadonlyArray<{ currency: string; amount: number }>) =>
-    amounts.reduce<{ currency: string; amount: number } | null>(
-      (top, entry) => (top === null || entry.amount > top.amount ? entry : top), null,
-    )?.currency ?? null
 
   const debtCurrency = billing ? dominantCurrency(billing.outstandingByCurrency) : null
   const salesCurrency = billing ? dominantCurrency(billing.invoicedByCurrency) : null
   /** Coletilla que declara el recorte, sólo cuando hay algo que recortar. */
-  const onlyCurrency = (currency: string | null, all: ReadonlyArray<{ currency: string }>) =>
-    currency && all.some((entry) => entry.currency !== currency) ? ` · sólo ${currency}` : ""
 
   /*
    * Una cifra de esta sección no puede respetar el filtro de faena y hay que

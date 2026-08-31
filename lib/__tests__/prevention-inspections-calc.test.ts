@@ -94,6 +94,31 @@ describe("cálculo de cumplimiento", () => {
     expect(summarizeCompliance(items, answers).compliancePercent).toBe(67)
   })
 
+  it("separa el resultado oficial de 22 del normalizado que excluye N/A", () => {
+    const items = Array.from({ length: 22 }, (_, index) => item({ itemId: `i${index}` }))
+    const answers = [
+      ...Array.from({ length: 20 }, (_, index) => answer({ itemId: `i${index}` })),
+      answer({ itemId: "i20", result: "not_applicable", comment: "No corresponde." }),
+      answer({ itemId: "i21", result: "non_conforming", comment: "Desviación." }),
+    ]
+    const summary = summarizeCompliance(items, answers, {
+      official: { mode: "fixed_conforming_denominator", denominator: 22 },
+      normalized: { mode: "weighted_applicable", partialWeightBasisPoints: 5_000 },
+    })
+    expect(summary.officialComplianceBasisPoints).toBe(9_091)
+    expect(summary.normalizedComplianceBasisPoints).toBe(9_524)
+    expect(summary.compliancePercent).toBe(95)
+  })
+
+  it("mantiene nulo el oficial cuando el documento no declara fórmula", () => {
+    const summary = summarizeCompliance([item()], [answer()], {
+      official: { mode: "none" },
+      normalized: { mode: "weighted_applicable", partialWeightBasisPoints: 5_000 },
+    })
+    expect(summary.officialComplianceBasisPoints).toBeNull()
+    expect(summary.normalizedComplianceBasisPoints).toBe(10_000)
+  })
+
   describe("'partial' (Regular, escala B/R/M) — H-04, AUDITORIA_BUGS_2026-08-05.md", () => {
     it("puntúa 0,5, no 0 ni 1: 8 buenos y 2 regulares de 10 dan 90%, no 80% ni 100%", () => {
       const items = Array.from({ length: 10 }, (_, i) => item({ itemId: `i${i}` }))

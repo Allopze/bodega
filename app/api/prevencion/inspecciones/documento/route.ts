@@ -3,6 +3,7 @@ export const runtime = "nodejs"
 
 import { NextResponse } from "next/server"
 import path from "node:path"
+import { createHash } from "node:crypto"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { generateStorageName } from "@/lib/services/prevention-documents/utils"
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
   }
 
   const buffer = new Uint8Array(await file.arrayBuffer())
-  const validated = validateFileBuffer(buffer, file.size, MimeType.PROOF)
+  const validated = validateFileBuffer(buffer, file.size, MimeType.INSPECTION_DOCUMENT, file.name)
   if (validated.error) {
     return NextResponse.json({ error: validated.error }, { status: 400 })
   }
@@ -100,6 +101,10 @@ export async function POST(request: Request) {
     const created = await addRunDocument({
       runId,
       path: relativePath,
+      fileName: file.name,
+      mimeType: validated.mimeType,
+      fileSize: file.size,
+      checksumSha256: createHash("sha256").update(buffer).digest("hex"),
       caption,
       extraction: extraction && extraction.cells.length > 0
         ? { layoutVersion: extraction.layoutVersion, cells: extraction.cells }

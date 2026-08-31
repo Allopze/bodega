@@ -1,10 +1,20 @@
 import { describe, it, expect } from "vitest"
+import JSZip from "jszip"
 import { validateFileBuffer, MimeType, friendlyName } from "../file-validation"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeBuf(buf: number[]): Uint8Array {
   return new Uint8Array(buf)
+}
+
+async function officePackage(kind: "word" | "excel", extraEntries: string[] = []) {
+  const zip = new JSZip()
+  zip.file("[Content_Types].xml", "<Types />")
+  zip.file("_rels/.rels", "<Relationships />")
+  zip.file(kind === "word" ? "word/document.xml" : "xl/workbook.xml", "<document />")
+  for (const entry of extraEntries) zip.file(entry, "unsafe")
+  return new Uint8Array(await zip.generateAsync({ type: "uint8array" }))
 }
 
 // ── Magic byte signatures ────────────────────────────────────────────────────
@@ -54,6 +64,27 @@ describe("validateFileBuffer", () => {
     const result = validateFileBuffer(buf, buf.length, MimeType.INVOICE)
     expect(result.error).toBeUndefined()
     expect(result.mimeType).toBe("application/xml")
+  })
+
+  it("accepts structurally valid DOCX and XLSX with matching extensions", async () => {
+    const docx = await officePackage("word")
+    const xlsx = await officePackage("excel")
+    expect(validateFileBuffer(docx, docx.length, MimeType.DOCUMENT_LIBRARY, "form.docx")).toEqual({ mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" })
+    expect(validateFileBuffer(xlsx, xlsx.length, MimeType.DOCUMENT_LIBRARY, "form.xlsx")).toEqual({ mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" })
+  })
+
+  it("rejects Office macros, unsafe ZIP paths and mislabeled extensions", async () => {
+    const macro = await officePackage("word", ["word/vbaProject.bin"])
+    const traversal = await officePackage("word", ["/escape.txt"])
+    const xlsx = await officePackage("excel")
+    expect(validateFileBuffer(macro, macro.length, MimeType.DOCUMENT_LIBRARY, "form.docx").error).toContain("macros")
+    expect(validateFileBuffer(traversal, traversal.length, MimeType.DOCUMENT_LIBRARY, "form.docx").error).toContain("insegura")
+    expect(validateFileBuffer(xlsx, xlsx.length, MimeType.DOCUMENT_LIBRARY, "form.docx").error).toContain("no coincide")
+  })
+
+  it("rejects malformed OOXML even when it starts as ZIP", () => {
+    const malformed = makeBuf([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0])
+    expect(validateFileBuffer(malformed, malformed.length, MimeType.DOCUMENT_LIBRARY, "form.docx").error).toContain("directorio ZIP")
   })
 
   // ── Rejection: wrong content type ────────────────────────────────────────

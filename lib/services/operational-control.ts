@@ -14,6 +14,12 @@ import { can } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import { civilDate } from "@/lib/validation/dates"
+import {
+  FUEL_IMPORT_SOURCE_HEALTH,
+  formatFuelImportBatchStatus,
+  formatFuelVehicleStatus,
+  type FuelImportSourceHealth,
+} from "@/lib/combustibles/validation"
 
 export type OperationalAsset = {
   key: `vehicle:${string}` | `service_equipment:${string}`
@@ -23,13 +29,32 @@ export type OperationalAsset = {
   name: string
   worksiteId: string
   worksiteName: string
+  /** Valor crudo de la columna `operational_status` (`operativo`, `mantencion`,
+   *  `fuera_servicio`); sólo se usa para filtros server-side y búsqueda
+   *  cliente. La UI debe pintar `operationalStatusLabel`. */
   operationalStatus: string
+  /** Etiqueta humana derivada vía `formatFuelVehicleStatus`. Es lo que muestra
+   *  la UI (regla A6: nunca exponer el enum crudo). */
+  operationalStatusLabel: string
   capabilities: readonly ("fuel" | "inspections" | "maintenance" | "service_requests")[]
   maintenanceCount: number
   openMaintenanceCount: number
   inspectionCount: number
   downtimeHours: number
   maintenanceCost: number | null
+}
+
+export type OperationalSourceHealthItem = {
+  key: string
+  label: string
+  status: FuelImportSourceHealth
+  /** Etiqueta humana del estado (regla A6). */
+  statusLabel: string
+  lastRunAt: string | null
+  detail: string
+  /** Identificador del último batch, para enlazar al detalle cuando esté
+   *  disponible. Es null cuando no hay ejecuciones. */
+  lastBatchId: string | null
 }
 
 export interface OperationalControlPeriod {
@@ -120,6 +145,7 @@ export async function getOperationalControlHub(session: Session, input: Partial<
   const vehicleAssets: OperationalAsset[] = vehicles.map((vehicle) => {
     const maintenance = maintenanceByVehicle.get(vehicle.id)
     const inspections = inspectionsByVehicle.get(vehicle.id)
+    const rawStatus = vehicle.isActive ? vehicle.operationalStatus : "inactivo"
     return {
       key: `vehicle:${vehicle.id}`,
       kind: "vehicle",
@@ -128,7 +154,10 @@ export async function getOperationalControlHub(session: Session, input: Partial<
       name: `${vehicle.type} · ${vehicle.plate}`,
       worksiteId: vehicle.worksiteId,
       worksiteName: vehicle.worksiteName,
-      operationalStatus: vehicle.isActive ? vehicle.operationalStatus : "inactivo",
+      operationalStatus: rawStatus,
+      operationalStatusLabel: vehicle.isActive
+        ? formatFuelVehicleStatus(vehicle.operationalStatus)
+        : "Inactivo",
       capabilities: ["fuel", "inspections", "maintenance"] as const,
       maintenanceCount: Number(maintenance?.count ?? 0),
       openMaintenanceCount: Number(maintenance?.openCount ?? 0),
@@ -146,12 +175,17 @@ export async function getOperationalControlHub(session: Session, input: Partial<
     worksiteId: instrument.worksiteId,
     worksiteName: instrument.worksiteName,
     operationalStatus: instrument.isActive ? "operativo" : "inactivo",
+    operationalStatusLabel: instrument.isActive ? "Operativo" : "Inactivo",
     capabilities: ["service_requests"] as const,
     maintenanceCount: 0,
     openMaintenanceCount: 0,
     inspectionCount: 0,
     downtimeHours: 0,
-    maintenanceCost: canViewCosts ? 0 : null,
+    // Los instrumentos de servicio no tienen costo de mantención modelado
+    // todavía; devolver null (no 0) fuerza a la UI a pintar "—" en vez de
+    // "$0" — bug B-05. Cuando el módulo `service_requests` se conecte, esto
+    // será un cálculo real.
+    maintenanceCost: canViewCosts ? null : null,
   }))
 
   const totalIntervalHours = availabilityRows.reduce((sum, row) => sum + Number(row.totalHours), 0)
@@ -176,7 +210,23 @@ export async function getOperationalControlHub(session: Session, input: Partial<
       maintenanceCost: maintenanceAgg.reduce((sum, row) => sum + Number(row.cost), 0),
       canViewCosts,
     }),
-    sourceHealth: [{ key: "fuel_import", label: "Importación combustible", status: latestImport[0]?.status ?? "sin_ejecucion", lastRunAt: latestImport[0]?.createdAt ?? null, detail: latestImport[0] ? `${latestImport[0].validRows} válidas · ${latestImport[0].invalidRows} observadas` : "No hay lotes visibles" }],
+    sourceHealth: (() => {
+      const last = latestImport[0]
+      const rawStatus: FuelImportSourceHealth = (last?.status && (FUEL_IMPORT_SOURCE_HEALTH as readonly string[]).includes(last.status))
+        ? (last.status as FuelImportSourceHealth)
+        : "sin_ejecucion"
+      return [{
+        key: "fuel_import",
+        label: "Importación combustible",
+        status: rawStatus,
+        statusLabel: formatFuelImportBatchStatus(rawStatus),
+        lastRunAt: last?.createdAt ?? null,
+        lastBatchId: last?.id ?? null,
+        detail: last
+          ? `${last.validRows} válidas · ${last.invalidRows} observadas`
+          : "No hay lotes visibles",
+      }]
+    })(),
     permissions: { canViewFleet, canViewMaintenance, canViewInspections, canViewCosts, canViewServiceEquipment },
   }
 }

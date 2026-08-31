@@ -5,6 +5,7 @@ import { users } from "../users"
 import { worksites } from "../worksites"
 import { preventionCapaActions } from "./capa"
 import { preventionEmergencyResources } from "./emergency"
+import { sstDocumentVersions } from "./library"
 import { preventionRiskEntries } from "./risk-legal"
 
 /* ── Plantillas versionadas ───────────────────────────────────────────────
@@ -20,6 +21,25 @@ export const preventionInspectionTemplates = pgTable("prevention_inspection_temp
   name:              text("name").notNull(),
   kind:              text("kind").notNull(),
   sourceDefinitionCode: text("source_definition_code"),
+  provenanceKind:    text("provenance_kind").notNull().default("platform_definition"),
+  sourceDocumentVersionId: text("source_document_version_id").references(() => sstDocumentVersions.id, { onDelete: "restrict" }),
+  /** Copia inmutable de la procedencia al incorporar la plantilla. */
+  sourceSnapshot:    jsonb("source_snapshot").$type<{
+    documentId: string
+    versionId: string
+    fileName: string
+    revision: string | null
+    effectiveFrom: string | null
+    checksumSha256: string
+  } | null>(),
+  parityReport:      jsonb("parity_report").$type<{
+    status: "pending" | "passed" | "failed"
+    verifiedAt: string | null
+    verifiedByUserId: string | null
+    expectedItems: number | null
+    actualItems: number | null
+    differences: string[]
+  }>(),
   definitionSnapshot: jsonb("definition_snapshot").notNull(),
   contentHash:       text("content_hash").notNull(),
   status:            text("status").notNull().default("draft"),
@@ -47,6 +67,8 @@ export const preventionInspectionTemplates = pgTable("prevention_inspection_temp
   uniqueIndex("prevention_inspection_template_version_unique").on(table.code, table.versionLabel),
   index("prevention_inspection_template_status_idx").on(table.code, table.status),
   check("prevention_inspection_template_kind_valid", sql`${table.kind} IN ('inspection', 'observation', 'audit')`),
+  check("prevention_inspection_template_provenance_valid", sql`${table.provenanceKind} IN ('official_document', 'platform_definition')`),
+  check("prevention_inspection_template_official_source_consistent", sql`${table.provenanceKind} <> 'official_document' OR ${table.status} <> 'approved' OR ${table.sourceDocumentVersionId} IS NOT NULL`),
   check("prevention_inspection_template_status_valid", sql`${table.status} IN ('draft', 'approved', 'superseded')`),
   check("prevention_inspection_template_hash_valid", sql`length(${table.contentHash}) = 64`),
   check("prevention_inspection_template_approved_consistent", sql`${table.status} <> 'approved' OR (${table.approvedByUserId} IS NOT NULL AND ${table.approvedAt} IS NOT NULL)`),
@@ -163,6 +185,9 @@ export const preventionInspectionRuns = pgTable("prevention_inspection_runs", {
   nonConformingCount: integer("non_conforming_count").notNull().default(0),
   notApplicableCount: integer("not_applicable_count").notNull().default(0),
   compliancePercent: integer("compliance_percent"),
+  officialComplianceBasisPoints: integer("official_compliance_basis_points"),
+  normalizedComplianceBasisPoints: integer("normalized_compliance_basis_points"),
+  ingestionSource:   text("ingestion_source").notNull().default("digital"),
   locationLatitude:  text("location_latitude"),
   locationLongitude: text("location_longitude"),
   /* Acta de cierre (`ClosingActDefinition` del catálogo SST). Las 12
@@ -194,6 +219,9 @@ export const preventionInspectionRuns = pgTable("prevention_inspection_runs", {
   check("prevention_inspection_run_status_valid", sql`${table.status} IN ('planned', 'in_progress', 'completed', 'reviewed', 'cancelled')`),
   check("prevention_inspection_run_origin_valid", sql`${table.origin} IN ('prevencion', 'cphs', 'mandante')`),
   check("prevention_inspection_run_compliance_valid", sql`${table.compliancePercent} IS NULL OR ${table.compliancePercent} BETWEEN 0 AND 100`),
+  check("prevention_inspection_run_official_bps_valid", sql`${table.officialComplianceBasisPoints} IS NULL OR ${table.officialComplianceBasisPoints} BETWEEN 0 AND 10000`),
+  check("prevention_inspection_run_normalized_bps_valid", sql`${table.normalizedComplianceBasisPoints} IS NULL OR ${table.normalizedComplianceBasisPoints} BETWEEN 0 AND 10000`),
+  check("prevention_inspection_run_ingestion_source_valid", sql`${table.ingestionSource} IN ('digital', 'legacy_document_import', 'legacy_tracking_import')`),
   check("prevention_inspection_run_counts_nonnegative", sql`${table.conformingCount} >= 0 AND ${table.partialCount} >= 0 AND ${table.nonConformingCount} >= 0 AND ${table.notApplicableCount} >= 0`),
   check("prevention_inspection_run_cancel_consistent", sql`(${table.cancelledAt} IS NULL AND ${table.cancelledByUserId} IS NULL) OR (${table.cancelledAt} IS NOT NULL AND ${table.cancelledByUserId} IS NOT NULL AND length(${table.cancellationReason}) >= 5)`),
   check("prevention_inspection_run_review_consistent", sql`(${table.reviewedAt} IS NULL AND ${table.reviewedByUserId} IS NULL) OR (${table.reviewedAt} IS NOT NULL AND ${table.reviewedByUserId} IS NOT NULL)`),
@@ -291,6 +319,10 @@ export const preventionInspectionRunDocuments = pgTable("prevention_inspection_r
   runId:            text("run_id").notNull().references(() => preventionInspectionRuns.id, { onDelete: "cascade" }),
   /** Ruta relativa bajo `storage/inspection-evidence/`, nunca el nombre original. */
   path:             text("path").notNull(),
+  fileName:         text("file_name"),
+  mimeType:         text("mime_type"),
+  fileSize:         integer("file_size"),
+  checksumSha256:   text("checksum_sha256"),
   kind:             text("kind").notNull().default("source_form"),
   caption:          text("caption"),
   /** Lectura de la máquina. `null` = se subió sin reconocimiento. */
@@ -303,6 +335,24 @@ export const preventionInspectionRunDocuments = pgTable("prevention_inspection_r
 }, (table) => [
   index("prevention_inspection_run_document_run_idx").on(table.runId, table.createdAt),
   check("prevention_inspection_run_document_kind_valid", sql`${table.kind} IN ('source_form', 'attachment')`),
+  check("prevention_inspection_run_document_size_valid", sql`${table.fileSize} IS NULL OR ${table.fileSize} > 0`),
+  check("prevention_inspection_run_document_checksum_valid", sql`${table.checksumSha256} IS NULL OR length(${table.checksumSha256}) = 64`),
+])
+
+/** Personas que participaron en una inspección no planeada. */
+export const preventionInspectionRunParticipants = pgTable("prevention_inspection_run_participants", {
+  id:               text("id").primaryKey(),
+  runId:            text("run_id").notNull().references(() => preventionInspectionRuns.id, { onDelete: "cascade" }),
+  name:             text("name").notNull(),
+  position:         text("position").notNull(),
+  userId:           text("user_id").references(() => users.id, { onDelete: "set null" }),
+  sortOrder:        integer("sort_order").notNull().default(0),
+  createdAt:        timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("prevention_inspection_run_participant_order_unique").on(table.runId, table.sortOrder),
+  index("prevention_inspection_run_participant_run_idx").on(table.runId),
+  check("prevention_inspection_run_participant_name_valid", sql`length(${table.name}) >= 2`),
+  check("prevention_inspection_run_participant_position_valid", sql`length(${table.position}) >= 2`),
 ])
 
 /* ── Hallazgos ────────────────────────────────────────────────────────────
@@ -333,8 +383,11 @@ export const preventionInspectionFindings = pgTable("prevention_inspection_findi
    * eso tiene que poder consultarse: es la cola de trabajo del catálogo. */
   catalogEntryId:    text("catalog_entry_id").references(() => preventionInspectionDeviationCatalog.id, { onDelete: "set null" }),
   description:       text("description").notNull(),
+  danoPotencial:     text("dano_potencial"),
   criticality:       text("criticality").notNull(),
   immediateMeasure:  text("immediate_measure"),
+  potentialDamageDescription: text("potential_damage_description"),
+  applicableLaw:     text("applicable_law"),
   capaActionId:      text("capa_action_id").references(() => preventionCapaActions.id, { onDelete: "set null" }),
   status:            text("status").notNull().default("open"),
   closedByUserId:    text("closed_by_user_id").references(() => users.id, { onDelete: "restrict" }),
@@ -347,8 +400,64 @@ export const preventionInspectionFindings = pgTable("prevention_inspection_findi
   // Una desviación no sale de una respuesta: si trae `answer_id`, es derivada.
   check("prevention_inspection_finding_origin_consistent", sql`${table.origin} = 'derived' OR ${table.answerId} IS NULL`),
   check("prevention_inspection_finding_criticality_valid", sql`${table.criticality} IN ('low', 'medium', 'high', 'critical')`),
+  check("prevention_inspection_finding_damage_valid", sql`${table.danoPotencial} IS NULL OR ${table.danoPotencial} IN ('leve', 'moderado', 'grave', 'fatal')`),
   check("prevention_inspection_finding_status_valid", sql`${table.status} IN ('open', 'capa_linked', 'closed')`),
   check("prevention_inspection_finding_closed_consistent", sql`(${table.closedAt} IS NULL AND ${table.closedByUserId} IS NULL) OR (${table.closedAt} IS NOT NULL AND ${table.closedByUserId} IS NOT NULL)`),
+])
+
+/** Fotografías y documentos ligados a una desviación concreta. */
+export const preventionInspectionFindingEvidence = pgTable("prevention_inspection_finding_evidence", {
+  id:               text("id").primaryKey(),
+  findingId:        text("finding_id").notNull().references(() => preventionInspectionFindings.id, { onDelete: "cascade" }),
+  path:             text("path").notNull(),
+  fileName:         text("file_name").notNull(),
+  mimeType:         text("mime_type").notNull(),
+  fileSize:         integer("file_size").notNull(),
+  checksumSha256:   text("checksum_sha256").notNull(),
+  caption:          text("caption"),
+  uploadedByUserId: text("uploaded_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt:        timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  index("prevention_inspection_finding_evidence_finding_idx").on(table.findingId, table.createdAt),
+  check("prevention_inspection_finding_evidence_size_valid", sql`${table.fileSize} > 0`),
+  check("prevention_inspection_finding_evidence_checksum_valid", sql`length(${table.checksumSha256}) = 64`),
+])
+
+/** Staging auditable para los Word y planillas históricas. */
+export const preventionInspectionImportBatches = pgTable("prevention_inspection_import_batches", {
+  id:               text("id").primaryKey(),
+  sourceKind:       text("source_kind").notNull(),
+  sourceFileName:   text("source_file_name").notNull(),
+  sourceChecksumSha256: text("source_checksum_sha256").notNull(),
+  status:           text("status").notNull().default("staged"),
+  summary:          jsonb("summary").notNull().default(sql`'{}'::jsonb`),
+  createdByUserId:  text("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt:        timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  appliedAt:        timestamp("applied_at", { withTimezone: true, mode: "string" }),
+}, (table) => [
+  uniqueIndex("prevention_inspection_import_batch_checksum_unique").on(table.sourceKind, table.sourceChecksumSha256),
+  check("prevention_inspection_import_batch_kind_valid", sql`${table.sourceKind} IN ('annex_08_docx', 'annex_15_xlsx')`),
+  check("prevention_inspection_import_batch_status_valid", sql`${table.status} IN ('staged', 'applied', 'rejected')`),
+  check("prevention_inspection_import_batch_checksum_valid", sql`length(${table.sourceChecksumSha256}) = 64`),
+])
+
+export const preventionInspectionImportRows = pgTable("prevention_inspection_import_rows", {
+  id:               text("id").primaryKey(),
+  batchId:          text("batch_id").notNull().references(() => preventionInspectionImportBatches.id, { onDelete: "cascade" }),
+  sourceKey:        text("source_key").notNull(),
+  rawSnapshot:      jsonb("raw_snapshot").notNull(),
+  status:           text("status").notNull().default("pending_review"),
+  runId:            text("run_id").references(() => preventionInspectionRuns.id, { onDelete: "set null" }),
+  findingId:        text("finding_id").references(() => preventionInspectionFindings.id, { onDelete: "set null" }),
+  capaActionId:     text("capa_action_id").references(() => preventionCapaActions.id, { onDelete: "set null" }),
+  reviewNote:       text("review_note"),
+  reviewedByUserId:text("reviewed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  reviewedAt:       timestamp("reviewed_at", { withTimezone: true, mode: "string" }),
+  createdAt:        timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("prevention_inspection_import_row_source_unique").on(table.batchId, table.sourceKey),
+  index("prevention_inspection_import_row_status_idx").on(table.status, table.createdAt),
+  check("prevention_inspection_import_row_status_valid", sql`${table.status} IN ('pending_review', 'imported', 'duplicate', 'rejected')`),
 ])
 
 /* ── Historial inmutable ──────────────────────────────────────────────────── */
@@ -386,6 +495,7 @@ export const preventionInspectionRunsRelations = relations(preventionInspectionR
   answers: many(preventionInspectionAnswers),
   findings: many(preventionInspectionFindings),
   documents: many(preventionInspectionRunDocuments),
+  participants: many(preventionInspectionRunParticipants),
 }))
 
 export const preventionInspectionRunDocumentsRelations = relations(preventionInspectionRunDocuments, ({ one }) => ({

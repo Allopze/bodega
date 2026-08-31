@@ -335,13 +335,18 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
           ? { supplierId: supplier.supplierId, unitPrice: supplier.unitPrice ? parseFloat(supplier.unitPrice) : null, notes: supplier.notes || undefined }
           : undefined,
       }
-      const result = await createProductVariantBatch(input)
-      setBatchPending(false)
-      if (result.ok) {
-        toast.success(result.message ?? "Productos creados")
-        onClose()
-      } else if (result.message) {
-        toast.error(result.message)
+      try {
+        const result = await createProductVariantBatch(input)
+        if (result.ok) {
+          toast.success(result.message ?? "Productos creados")
+          onClose()
+        } else if (result.message) {
+          toast.error(result.message)
+        }
+      } finally {
+        // Si la acción rechaza (red caída, excepción del servidor) el reset no
+        // se ejecutaba y el formulario quedaba bloqueado hasta recargar.
+        setBatchPending(false)
       }
       return
     }

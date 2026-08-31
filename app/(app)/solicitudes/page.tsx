@@ -30,6 +30,8 @@ const STAGE_GROUPS = [
   { value: "closed,rejected,cancelled",                      label: "Cerradas" },
 ] as const
 
+function escapeLikeLocal(v: string) { return v.replace(/[\\%_]/g, (c) => `\\${c}`) }
+
 export default async function SolicitudesPage({
   searchParams,
 }: {
@@ -67,7 +69,6 @@ export default async function SolicitudesPage({
 
   // Extended text search: match the request code OR any item's product name
   // (free-text or catalogue). Uses EXISTS to avoid row duplication without JOIN.
-  function escapeLikeLocal(v: string) { return v.replace(/[\\%_]/g, (c) => `\\${c}`) }
   const q = listParams.q.trim()
   const likePattern = q ? `%${escapeLikeLocal(q)}%` : null
   const textCondition = likePattern

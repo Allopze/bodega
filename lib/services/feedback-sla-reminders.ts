@@ -15,15 +15,17 @@ export interface FeedbackSlaReminderResult {
 /** Sends one daily, idempotent reminder to support managers for open tickets. */
 export async function runFeedbackSlaReminders(now = new Date()): Promise<FeedbackSlaReminderResult> {
   const warningAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString()
-  const tickets = await db.select({
-    id: feedbackReports.id,
-    titulo: feedbackReports.titulo,
-    dueAt: feedbackReports.dueAt,
-  }).from(feedbackReports).where(and(
-    inArray(feedbackReports.estado, ["abierto", "en_progreso"]),
-    lte(feedbackReports.dueAt, warningAt),
-  ))
-  const managerIds = await getUserIdsWithPermission("feedback:manage")
+  const [tickets, managerIds] = await Promise.all([
+    db.select({
+      id: feedbackReports.id,
+      titulo: feedbackReports.titulo,
+      dueAt: feedbackReports.dueAt,
+    }).from(feedbackReports).where(and(
+      inArray(feedbackReports.estado, ["abierto", "en_progreso"]),
+      lte(feedbackReports.dueAt, warningAt),
+    )),
+    getUserIdsWithPermission("feedback:manage"),
+  ])
   const day = todayInChile(now)
 
   let dueSoon = 0

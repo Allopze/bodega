@@ -670,6 +670,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-inspecciones", path: "/prevencion/inspecciones", auth: true },
   { slug: "prevencion-inspecciones-plantillas", path: "/prevencion/inspecciones/plantillas", auth: true, notes: "Qué se pregunta. Incluye la auditoría del SGSST (DS 44 art. 22 n°4) como un kind más." },
   { slug: "prevencion-inspecciones-programacion", path: "/prevencion/inspecciones/programacion", auth: true, notes: "Cuándo se pregunta: de acá nacen las inspecciones planificadas." },
+  { slug: "prevencion-inspecciones-seguimiento", path: "/prevencion/inspecciones/seguimiento", auth: true, notes: "Anexo 15 derivado de hallazgos, CAPA y seguimientos; no mantiene una base paralela." },
   { slug: "prevencion-inspeccion-detalle", path: "/prevencion/inspecciones/insp-audit-1", auth: true },
   { slug: "prevencion-inspeccion-en-curso", path: "/prevencion/inspecciones/insp-audit-progress", auth: true, notes: "Ejecución en terreno parcialmente respondida: progreso obligatorio, guardado y continuidad." },
   { slug: "prevencion-inspeccion-reporte-equipos", path: "/prevencion/inspecciones/insp-audit-equipment-report", auth: true, notes: "Transcripción de Reporte de Equipos con la planilla física visible junto al formulario." },
@@ -1691,7 +1692,7 @@ async function prepareDatabase(captureDbUrl: string) {
     { id: "unit-audit-unidad", code: "unidad", label: "Unidad", description: "Unidad individual", sortOrder: 1, isActive: true, createdAt: now, updatedAt: now },
     { id: "unit-audit-par", code: "par", label: "Par", description: "EPP entregado por pares", sortOrder: 2, isActive: true, createdAt: now, updatedAt: now },
     { id: "unit-audit-rollo", code: "rollo", label: "Rollo", description: "Material en rollo", sortOrder: 3, isActive: true, createdAt: now, updatedAt: now },
-  ])
+  ]).onConflictDoNothing({ target: schema.productUnits.code })
   await db.insert(schema.productAttributeTemplates).values([
     { id: "template-audit-talla", categoryId: "cat-audit-epp", name: "Talla", type: "select", options: JSON.stringify(["S", "M", "L", "XL"]), isRequired: true, sortOrder: 1, isActive: true, createdAt: now, updatedAt: now },
     { id: "template-audit-color", categoryId: "cat-audit-epp", name: "Color", type: "select", options: JSON.stringify(["Amarillo", "Azul", "Negro", "Rojo"]), isRequired: false, sortOrder: 2, isActive: true, createdAt: now, updatedAt: now },

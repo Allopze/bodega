@@ -188,6 +188,36 @@ export function formatFuelVehicleStatus(value: string | null | undefined): strin
   return FUEL_VEHICLE_STATUS_LABELS[value as keyof typeof FUEL_VEHICLE_STATUS_LABELS] ?? "Estado operacional no reconocido"
 }
 
+/* ── Fuel Import Batch States ─────────────────────────────────────────────── */
+// Esquema en db/schema/fuel-consumption.ts:
+//   fuelImportBatches.estado IN ('importado', 'revertido')
+export const FUEL_IMPORT_BATCH_STATUSES = ["importado", "revertido"] as const
+
+export const FUEL_IMPORT_BATCH_STATUS_LABELS: Record<(typeof FUEL_IMPORT_BATCH_STATUSES)[number], string> = {
+  importado: "Importado",
+  revertido: "Revertido",
+}
+
+/** Estados sintéticos para tarjetas de "salud de fuente": agrupa el estado
+ *  crudo del batch con la ausencia de ejecuciones, así la UI no tiene que
+ *  razonar sobre tres valores disjuntos en cada render. */
+export const FUEL_IMPORT_SOURCE_HEALTH = ["importado", "revertido", "sin_ejecucion"] as const
+
+export type FuelImportSourceHealth = (typeof FUEL_IMPORT_SOURCE_HEALTH)[number]
+
+export const FUEL_IMPORT_SOURCE_HEALTH_LABELS: Record<FuelImportSourceHealth, string> = {
+  importado: "Importado",
+  revertido: "Revertido",
+  sin_ejecucion: "Sin ejecución visible",
+}
+
+export function formatFuelImportBatchStatus(value: string | null | undefined): string {
+  if (!value) return FUEL_IMPORT_SOURCE_HEALTH_LABELS.sin_ejecucion
+  return FUEL_IMPORT_SOURCE_HEALTH_LABELS[value as keyof typeof FUEL_IMPORT_SOURCE_HEALTH_LABELS]
+    ?? FUEL_IMPORT_BATCH_STATUS_LABELS[value as keyof typeof FUEL_IMPORT_BATCH_STATUS_LABELS]
+    ?? "Estado no reconocido"
+}
+
 export const ANOMALY_RULE_SEVERITIES = ["low", "medium", "high", "critical"] as const
 export const ANOMALY_RULE_SEVERITY_LABELS: Record<(typeof ANOMALY_RULE_SEVERITIES)[number], string> = {
   low: "Baja", medium: "Media", high: "Alta", critical: "Crítica",

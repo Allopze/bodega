@@ -23,8 +23,8 @@ export default async function TaxonomySstPage({ searchParams }: PageProps) {
     redirect("/forbidden")
   }
 
-  const params = await searchParams
-  const categories = await listDocumentCategories(false)
+  // `searchParams` y el catálogo no dependen entre sí: se resuelven en paralelo.
+  const [params, categories] = await Promise.all([searchParams, listDocumentCategories(false)])
   const activeSlug = params.category && categories.some((c) => c.slug === params.category)
     ? params.category
     : categories[0]?.slug ?? ""

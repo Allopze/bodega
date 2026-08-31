@@ -44,6 +44,8 @@ export const preventionCapaActions = pgTable("prevention_capa_actions", {
    * tiene daño potencial igual (D11 / A12 del diseño 2026-08-12).
    */
   danoPotencial:         text("dano_potencial"),
+  /** Relato literal del daño potencial del Anexo 08; no reemplaza su clasificación. */
+  potentialDamageDescription: text("potential_damage_description"),
   /** Anexo 8, "Normativa legal aplicable" (p. ej. "Ley 21.512 art. 32, DS 40"). */
   normativaLegal:        text("normativa_legal"),
   createdByUserId:       text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),

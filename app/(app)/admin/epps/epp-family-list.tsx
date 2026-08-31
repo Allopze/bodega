@@ -45,39 +45,42 @@ interface Props {
   eppTypes: { id: string; code: string; label: string }[]
 }
 
-export function EppFamilyList({ families, eppTypes }: Props) {
-  const rows = families.map((f) => ({
-    id: f.id,
-    canonicalName: f.canonicalName,
-    eppTypeId: f.eppTypeId,
-    eppTypeLabel: f.eppTypeLabel ?? "—",
-    brand: f.brand ?? "—",
-    model: f.model ?? "—",
-    certification: f.certification ?? "—",
-    // `lifespanMonths` se cargaba desde la página pero no se mostraba en
-    // ninguna parte, y es justo el campo que enciende el vencimiento de EPP.
-    lifespanLabel: f.lifespanMonths != null ? `${f.lifespanMonths} meses` : "No vence",
-    lifespanMonths: f.lifespanMonths,
-    brandRaw: f.brand,
-    modelRaw: f.model,
-    certificationRaw: f.certification,
-    totalVariants: String(f.totalVariants),
-    categoryName: f.categoryName,
-    activeVariants: f.activeVariants,
-    variants: f.variants,
-  }))
-  type Row = (typeof rows)[number]
+const toRow = (f: EppFamilyRow) => ({
+  id: f.id,
+  canonicalName: f.canonicalName,
+  eppTypeId: f.eppTypeId,
+  eppTypeLabel: f.eppTypeLabel ?? "—",
+  brand: f.brand ?? "—",
+  model: f.model ?? "—",
+  certification: f.certification ?? "—",
+  // `lifespanMonths` se cargaba desde la página pero no se mostraba en
+  // ninguna parte, y es justo el campo que enciende el vencimiento de EPP.
+  lifespanLabel: f.lifespanMonths != null ? `${f.lifespanMonths} meses` : "No vence",
+  lifespanMonths: f.lifespanMonths,
+  brandRaw: f.brand,
+  modelRaw: f.model,
+  certificationRaw: f.certification,
+  totalVariants: String(f.totalVariants),
+  categoryName: f.categoryName,
+  activeVariants: f.activeVariants,
+  variants: f.variants,
+})
 
-  // La fila lleva valores de presentación ("—", "No vence"); el formulario
-  // necesita los crudos o guardaría el guión como marca.
-  const toEditRow = (row: Row): EppFamilyEditRow => ({
-    id: row.id,
-    canonicalName: row.canonicalName,
-    brand: row.brandRaw,
-    model: row.modelRaw,
-    certification: row.certificationRaw,
-    lifespanMonths: row.lifespanMonths,
-  })
+type Row = ReturnType<typeof toRow>
+
+// La fila lleva valores de presentación ("—", "No vence"); el formulario
+// necesita los crudos o guardaría el guión como marca.
+const toEditRow = (row: Row): EppFamilyEditRow => ({
+  id: row.id,
+  canonicalName: row.canonicalName,
+  brand: row.brandRaw,
+  model: row.modelRaw,
+  certification: row.certificationRaw,
+  lifespanMonths: row.lifespanMonths,
+})
+
+export function EppFamilyList({ families, eppTypes }: Props) {
+  const rows = families.map(toRow)
 
   // Una familia sin ninguna variante activa está dada de baja: se muestra
   // aparte para no mezclarla con el catálogo vigente.

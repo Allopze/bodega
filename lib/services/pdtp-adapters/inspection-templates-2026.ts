@@ -102,7 +102,7 @@ export const PDTP_2026_INSPECTION_SPECS: readonly InspectionTemplateSpec[] = [
    * fue excluido del motor por no tener ítems puntuables, así que los dos
    * formularios que sí existían se estacionaron en los números vecinos que
    * estaban vacíos. Se sueltan: ninguna de las dos era su actividad. */
-  { n: 39, definitionCode: "observacion_conductas",     name: "Observación de conductas en terreno",             kind: "observation" },
+  { n: 39, definitionCode: "observacion_planeada",     name: "Observación planeada (Anexo 7)",                  kind: "observation" },
   { n: 40, definitionCode: "inspeccion_area",           name: "Inspección de área de trabajo",                   kind: "inspection" },
   { n: 41, definitionCode: "caminata_seguridad",        name: "Caminata de seguridad",                           kind: "inspection" },
   /* Los dos formularios conductuales por operador (PR-SGC-24 y PR-SGC-25) se
@@ -112,6 +112,7 @@ export const PDTP_2026_INSPECTION_SPECS: readonly InspectionTemplateSpec[] = [
    * decisión de Prevención, no una que se adivine acá. */
   { n: null, definitionCode: "observacion_ampliroll",   name: "Observación de Seguridad: Camión Ampliroll",      kind: "observation" },
   { n: null, definitionCode: "observacion_maquinaria",  name: "Observación de Seguridad: Maquinaria Pesada",     kind: "observation" },
+  { n: null, definitionCode: "inspeccion_no_planeada", name: "Inspección no planeada (Anexo 08)",               kind: "inspection" },
   { n: 64, definitionCode: "inspeccion_epp",            name: "Inspección de Uso y Estado de EPP (JT)",          kind: "inspection", versionSuffix: "jt" },
   { n: 65, definitionCode: "inspeccion_epp",            name: "Inspección de Uso y Estado de EPP (PRF)",         kind: "inspection", versionSuffix: "prf" },
   // Sin actividad PDTP: la auditoría interna del SGSST la exige el DS 44

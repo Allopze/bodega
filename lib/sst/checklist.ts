@@ -8,9 +8,12 @@ import type { ChecklistDefinition, ChecklistSection, ChecklistItem, FieldKind, S
 const STATUS_KINDS: FieldKind[] = [
   'cumple_nocumple_obs',
   'cumple_nocumple_na_obs',
+  'cumple_parcial_nocumple_na_obs',
   'entregado_obs',
   'apto_obs',
   'si_no_obs',
+  'si_no_na_obs',
+  'bueno_malo_obs',
   'bueno_regular_malo_obs',
   'bueno_regular_malo_na_obs',
   'bueno_regular_malo_na_nt_obs'

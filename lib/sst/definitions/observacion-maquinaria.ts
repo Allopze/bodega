@@ -1,5 +1,6 @@
 import type { ChecklistDefinition } from '../types'
 import { OBSERVACION_MAQUINARIA_SECTIONS } from './observacion-seguridad-sections'
+import { OBSERVATION_22_SCORING } from '../scoring-policies'
 
 /**
  * Observación de Seguridad: Maquinaria Pesada — módulo 13 (PR-SGC-25).
@@ -19,8 +20,8 @@ import { OBSERVACION_MAQUINARIA_SECTIONS } from './observacion-seguridad-section
  */
 export const OBSERVACION_MAQUINARIA: ChecklistDefinition = {
   code: 'observacion_maquinaria',
-  version: '01',
-  revisionDate: '2026-07-14',
+  version: '02',
+  revisionDate: '2026-08-30',
   tipo: 'seguimiento',
   title: 'Observación de Seguridad: Maquinaria Pesada',
   subtitle: 'Observación conductual por operador (PR-SGC-25). Una instancia por operador.',
@@ -38,6 +39,7 @@ export const OBSERVACION_MAQUINARIA: ChecklistDefinition = {
   evaluationCriteria:
     'Cada ítem se evalúa como Cumple (Sí) / No cumple (No) / N/A. El % = buenas/22. Cualquier No cumple sugiere reinstrucción del operador. Los ítems No cumple generan automáticamente acciones del plan de acción PDTP.',
   sections: OBSERVACION_MAQUINARIA_SECTIONS,
+  scoringPolicy: OBSERVATION_22_SCORING,
   closingAct: {
     title: 'Cierre de observación',
     resultOptions: [

@@ -194,12 +194,16 @@ function CreateObligationDialog({ open, onOpenChange, activities, worksites, onS
 
   async function save() {
     setPending(true); setError(null)
-    const result = await createPdtpObligationAction({
-      activityId, worksiteId, origin: "manual", clientRequestId: requestId,
-      sourceType: sourceType || null, sourceId: sourceId || null,
-      plannedQuantity: quantity, manualReason: reason, sourceMetadata: {},
-    })
-    setPending(false)
+    let result
+    try {
+      result = await createPdtpObligationAction({
+        activityId, worksiteId, origin: "manual", clientRequestId: requestId,
+        sourceType: sourceType || null, sourceId: sourceId || null,
+        plannedQuantity: quantity, manualReason: reason, sourceMetadata: {},
+      })
+    } finally {
+      setPending(false)
+    }
     if (!result.ok) { setError(result.message ?? "No se pudo registrar el caso."); return }
     onOpenChange(false); setReason(""); setSourceType(""); setSourceId(""); onSaved()
   }
@@ -232,8 +236,12 @@ function ReportObligationDialog({ row, onClose, onSaved }: { row: ObligationRow 
   async function save() {
     if (!row) return
     setPending(true); setError(null)
-    const result = await reportPdtpObligationAction({ obligationId: row.obligation.id, executedQuantity: quantity, evidenceText: evidence, evidencePhotos: [] })
-    setPending(false)
+    let result
+    try {
+      result = await reportPdtpObligationAction({ obligationId: row.obligation.id, executedQuantity: quantity, evidenceText: evidence, evidencePhotos: [] })
+    } finally {
+      setPending(false)
+    }
     if (!result.ok) { setError(result.message ?? "No se pudo reportar el trabajo."); return }
     onClose(); onSaved()
   }
@@ -256,8 +264,12 @@ function CancelObligationDialog({ row, onClose, onSaved }: { row: ObligationRow 
   async function save() {
     if (!row) return
     setPending(true); setError(null)
-    const result = await cancelPdtpObligationAction({ obligationId: row.obligation.id, reason })
-    setPending(false)
+    let result
+    try {
+      result = await cancelPdtpObligationAction({ obligationId: row.obligation.id, reason })
+    } finally {
+      setPending(false)
+    }
     if (!result.ok) { setError(result.message ?? "No se pudo cancelar la obligación."); return }
     onClose(); onSaved()
   }

@@ -404,18 +404,23 @@ export async function previewEmergencyInventoryImport(
   if (!worksite) throw new Error("La faena no existe.")
 
   const fileFingerprint = fingerprint(input.fileBuffer)
-  const [existingBatch] = await db.select({ id: preventionEmergencyResourceImportBatches.id })
-    .from(preventionEmergencyResourceImportBatches)
-    .where(and(
-      eq(preventionEmergencyResourceImportBatches.worksiteId, worksiteId),
-      eq(preventionEmergencyResourceImportBatches.fileFingerprint, fileFingerprint),
-      or(
-        eq(preventionEmergencyResourceImportBatches.status, "applied"),
-        eq(preventionEmergencyResourceImportBatches.status, "superseded"),
-      ),
-    )).limit(1)
-  const context = await loadEmergencyImportContext(db, worksiteId)
+  // El lote previo y el contexto del import no dependen entre sí. `preview` sí
+  // necesita `context`, así que se encadena después.
+  const [[existingBatch], context] = await Promise.all([
+    db.select({ id: preventionEmergencyResourceImportBatches.id })
+      .from(preventionEmergencyResourceImportBatches)
+      .where(and(
+        eq(preventionEmergencyResourceImportBatches.worksiteId, worksiteId),
+        eq(preventionEmergencyResourceImportBatches.fileFingerprint, fileFingerprint),
+        or(
+          eq(preventionEmergencyResourceImportBatches.status, "applied"),
+          eq(preventionEmergencyResourceImportBatches.status, "superseded"),
+        ),
+      )).limit(1),
+    loadEmergencyImportContext(db, worksiteId),
+  ])
   const preview = await buildEmergencyInventoryPreview(input.fileBuffer, context)
+
   return { ...preview, fingerprint: fileFingerprint, alreadyApplied: Boolean(existingBatch) }
 }
 

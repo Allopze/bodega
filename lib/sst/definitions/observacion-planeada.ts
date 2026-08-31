@@ -1,10 +1,11 @@
 import type { ChecklistDefinition } from '../types'
 import { OBSERVACION_PLANEADA_SECTIONS } from './observacion-planeada-sections'
+import { NORMALIZED_ONLY_SCORING } from '../scoring-policies'
 
 /**
  * Observación Planeada — módulo 14 (Anexo 7, Rev. 01).
  *
- * v02 reemplaza la plantilla genérica provisional de la v01. Aquella se
+ * v03 reemplaza la plantilla genérica provisional de la v01. Aquella se
  * redactó a ciegas —el Anexo 7 no estaba en `docx revisado/`— e inventó 17
  * ítems Cumple/No cumple/N/A repartidos en tres secciones de cumplimiento.
  * El formulario real no tiene ninguno: es un relato libre firmado por
@@ -26,8 +27,8 @@ import { OBSERVACION_PLANEADA_SECTIONS } from './observacion-planeada-sections'
  */
 export const OBSERVACION_PLANEADA: ChecklistDefinition = {
   code: 'observacion_planeada',
-  version: '02',
-  revisionDate: '2026-08-04',
+  version: '03',
+  revisionDate: '2026-08-30',
   tipo: 'seguimiento',
   title: 'Observación Planeada',
   subtitle:
@@ -45,6 +46,8 @@ export const OBSERVACION_PLANEADA: ChecklistDefinition = {
   evaluationCriteria:
     'El formulario no puntúa: es un registro narrativo. Cada acción preventiva acordada se levanta como acción del plan de acción PDTP, con responsable y fecha de control.',
   sections: OBSERVACION_PLANEADA_SECTIONS,
+  scoringPolicy: NORMALIZED_ONLY_SCORING,
+  recordsPreventiveActions: true,
   closingAct: {
     title: 'Cierre de la observación',
     resultOptions: [

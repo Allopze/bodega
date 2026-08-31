@@ -111,10 +111,11 @@ function ReviewToggle({ row }: { row: EnrichedRow }) {
   )
 }
 
+const rowKey = (row: EnrichedRow) => `${row.source}:${row.id}`
+
 export function BitacoraTable({ rows }: { rows: EnrichedRow[] }) {
   const [visible, setVisible] = React.useState<Set<string>>(() => new Set(COLUMNS.filter((c) => c.defaultVisible).map((c) => c.key)))
   const [selected, setSelected] = React.useState<Set<string>>(new Set())
-  const rowKey = (row: EnrichedRow) => `${row.source}:${row.id}`
   const columns = COLUMNS.filter((c) => visible.has(c.key))
   const allSelected = rows.length > 0 && rows.every((row) => selected.has(rowKey(row)))
 

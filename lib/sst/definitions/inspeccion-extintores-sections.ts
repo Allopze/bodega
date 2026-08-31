@@ -17,9 +17,7 @@ import type { ChecklistSection } from '../types'
  *     Se capturan para trazabilidad/export; no generan acciones ni afectan el %.
  *
  * Normalización B/M (regla §5): B=cumple, M=no_cumple. El estado CECMEC del
- * markdown tiene 3 valores (bueno/malo/sin_certificado); se modela como
- * `cumple_nocumple_na_obs` donde `na`=sin certificado (no bloquea el % pero
- * deja evidencia en la observación).
+ * La fuente vigente sólo declara B/M; no existe salida N/A.
  */
 export const EXTINTORES_SECTIONS: ChecklistSection[] = [
   // ============================================================
@@ -77,19 +75,19 @@ export const EXTINTORES_SECTIONS: ChecklistSection[] = [
     countsForCompliance: true,
     hasActionCorrectiva: true,
     items: [
-      { id: 'manometro',       label: 'Manómetro: aguja en zona verde.', kind: 'cumple_nocumple_na_obs',
+      { id: 'manometro',       label: 'Manómetro: aguja en zona verde.', kind: 'bueno_malo_obs',
         danoPotencial: 'grave',
       },
-      { id: 'sello',           label: 'Sello de seguridad intacto (no manipulado).', kind: 'cumple_nocumple_na_obs',
+      { id: 'sello',           label: 'Sello de seguridad intacto (no manipulado).', kind: 'bueno_malo_obs',
         danoPotencial: 'moderado',
       },
-      { id: 'rotulado',        label: 'Rótulo/etiqueta legible y en buen estado.', kind: 'cumple_nocumple_na_obs',
+      { id: 'rotulado',        label: 'Rótulo/etiqueta legible y en buen estado.', kind: 'bueno_malo_obs',
         danoPotencial: 'moderado',
       },
-      { id: 'manguera',        label: 'Manguera sin cortes ni obstrucciones.', kind: 'cumple_nocumple_na_obs',
+      { id: 'manguera',        label: 'Manguera sin cortes ni obstrucciones.', kind: 'bueno_malo_obs',
         danoPotencial: 'grave',
       },
-      { id: 'cecmec',          label: 'Certificado CECMEC vigente (Centro de Certificación de Metrología y Control). Marca N/A si no aplica.', kind: 'cumple_nocumple_na_obs',
+      { id: 'cecmec',          label: 'Certificado CECMEC vigente (Centro de Certificación de Metrología y Control).', kind: 'bueno_malo_obs',
         danoPotencial: 'moderado',
       },
     ],
