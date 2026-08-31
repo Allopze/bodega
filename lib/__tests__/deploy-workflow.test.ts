@@ -134,6 +134,16 @@ describe("deploy workflow", () => {
     expect(deployScript).not.toContain('if "$@"; then')
   })
 
+  it("gives the Docker production build enough Node heap for TypeScript", () => {
+    const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
+    const buildRun = dockerfile.match(
+      /RUN --mount=type=cache,id=chome-next,target=\/app\/\.next\/cache,sharing=locked[\s\S]*?npm run build/,
+    )?.[0]
+
+    expect(buildRun).toBeDefined()
+    expect(buildRun).toContain("NODE_OPTIONS=--max-old-space-size=8192")
+  })
+
   it("propagates a nested pg_dump failure and stops the failing function immediately", () => {
     const result = runTimedHarness(`
 dump_production_database() {

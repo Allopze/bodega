@@ -37,6 +37,7 @@ FROM dev AS build
 # connection (all routes using @/db are force-dynamic), so a placeholder
 # URL is safe here.  The real DATABASE_URL is injected at runtime only.
 RUN --mount=type=cache,id=chome-next,target=/app/.next/cache,sharing=locked \
+    NODE_OPTIONS=--max-old-space-size=8192 \
     DATABASE_URL=postgres://build:build@localhost:5432/build npm run build
 
 # Bundle the RBAC synchronizer while its TypeScript sources, path aliases and
