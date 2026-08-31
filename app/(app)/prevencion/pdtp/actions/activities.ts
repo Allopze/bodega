@@ -17,6 +17,7 @@ import {
   deletePdtpActivityOverride,
   reconcilePdtpDeclaredActor,
   setPdtpActivityWorksiteAdjustment,
+  PdtpScheduleConflictError,
 } from "@/lib/services/prevention-pdtp"
 import type { ActionState } from "@/lib/validation/prevention"
 import {
@@ -40,6 +41,13 @@ function scopeToIds(scope: ReturnType<typeof resolveWorksiteScope>): string[] | 
 }
 
 function fail(error: unknown): ActionState {
+  // Un conflicto de planificación no es un fallo inesperado: es la respuesta a
+  // una operación que habría borrado cantidad planificada. Se devuelve con su
+  // detalle para que la UI pueda pedir confirmación, en vez de registrarse
+  // como bug.
+  if (error instanceof PdtpScheduleConflictError) {
+    return { ok: false, message: error.message, data: { scheduleConflict: error.detail } }
+  }
   if (error instanceof ZodError) {
     return {
       ok: false,
@@ -58,8 +66,10 @@ export async function updatePdtpActivityAction(input: unknown): Promise<ActionSt
   const session = guard.session
   try {
     const parsed = pdtpActivityUpdateSchema.parse(input)
-    await updatePdtpActivity(parsed, session.user.id)
+    const updated = await updatePdtpActivity(parsed, session.user.id)
     revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${updated.programId}`)
+    revalidatePath(`${REVALIDATE}/${updated.programId}/editar`)
     return { ok: true }
   } catch (e) {
     return fail(e)

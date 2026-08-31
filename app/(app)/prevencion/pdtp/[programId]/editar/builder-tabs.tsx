@@ -13,6 +13,7 @@ import type {
 } from "@/db/schema"
 import type { PdtpChecklistTemplate } from "@/lib/services/prevention-pdtp"
 import type { PdtpBaseComparison } from "@/lib/services/prevention-pdtp"
+import { deriveScheduleHorizon } from "@/lib/services/pdtp/recurrence"
 import { ChecklistTab } from "./checklist-tab"
 import { GuidedActivityForm } from "./guided-activity-form"
 import { ImportExcelSection } from "./import-excel-section"
@@ -23,6 +24,7 @@ import { PlanificacionTab, ScheduleOverview } from "./tabs/planificacion-tab"
 import { ReviewTab } from "./tabs/revision-tab"
 import { SheetsTab } from "./tabs/sheets-tab"
 
+export { ActividadesTab } from "./tabs/actividades-tab"
 export { MetadataTab, WorksiteScopePanel } from "./tabs/metadata-tab"
 export { PlanificacionTab } from "./tabs/planificacion-tab"
 export { AudiencePreviewPanel } from "./tabs/revision-tab"
@@ -123,6 +125,7 @@ export function PdtpBuilderTabs({
   }
 
   const activeActivities = activities.filter((activity) => activity.status === "active")
+  const scheduleHorizon = deriveScheduleHorizon({ year: program.year, periodStart: program.periodStart, periodEnd: program.periodEnd })
   const generalViewCode = sheets.find((sheet) => sheet.programId === program.id && sheet.code === "pdtp_general")?.code
     ?? sheets.find((sheet) => sheet.programId === program.id)?.code
     ?? "pdtp_general"
@@ -165,6 +168,7 @@ export function PdtpBuilderTabs({
             periodStart={program.periodStart}
             periodEnd={program.periodEnd}
             activities={activities}
+            schedule={schedule}
             responsibleCatalog={responsibleCatalog}
           />
         </section>
@@ -174,7 +178,7 @@ export function PdtpBuilderTabs({
             Programación global avanzada
           </summary>
           <div className="space-y-4 border-t border-[var(--color-border)] p-4">
-            <ScheduleOverview activities={activeActivities} schedule={schedule} />
+            <ScheduleOverview activities={activeActivities} schedule={schedule} horizon={scheduleHorizon} />
             <PlanificacionTab
               programId={program.id}
               year={program.year}

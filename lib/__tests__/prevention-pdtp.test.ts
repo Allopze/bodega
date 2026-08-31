@@ -1495,6 +1495,217 @@ describe("prevention PDTP service", () => {
     expect(log.some((entry) => entry.section === `activity:1`)).toBe(true)
   })
 
+  it("listPdtpProgramScheduleForYear: acota al año pedido y no mezcla celdas de otros años", async () => {
+    const { listPdtpProgramScheduleForYear } = await import("@/lib/services/prevention-pdtp")
+    const { program } = await loadCatalog()
+
+    const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 1))
+
+    // Una celda del año siguiente con el MISMO (mes, semana) que una del año
+    // del programa: es el caso que corrompía la matriz del editor, porque
+    // indexa por `mes-semana` y la del año equivocado ganaba.
+    await inMemoryDb.insert(schema.pdtpActivitySchedule).values([
+      { id: `${activity!.id}-s-${program.year}-03-2`, activityId: activity!.id, year: program.year, month: 3, week: 2, plannedQuantity: 1, sourceColumn: "manual" },
+      { id: `${activity!.id}-s-${program.year + 1}-03-2`, activityId: activity!.id, year: program.year + 1, month: 3, week: 2, plannedQuantity: 99, sourceColumn: "manual" },
+    ]).onConflictDoNothing()
+
+    const rows = await listPdtpProgramScheduleForYear([activity!.id], program.year)
+    expect(rows.every((row) => row.year === program.year)).toBe(true)
+    expect(rows.some((row) => row.plannedQuantity === 99)).toBe(false)
+    expect(rows.find((row) => row.month === 3 && row.week === 2)?.plannedQuantity).toBe(1)
+
+    expect(await listPdtpProgramScheduleForYear([], program.year)).toEqual([])
+  })
+
+  it("updatePdtpActivity: editar texto no reescribe la planificación ajustada a mano (regresión)", async () => {
+    const { updatePdtpActivity } = await import("@/lib/services/prevention-pdtp")
+    const { program } = await loadCatalog()
+    const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 1))
+
+    const rule = { frequency: "monthly" as const, interval: 1, plannedQuantity: 1, weekOfMonth: 2 }
+    // Primera asignación de frecuencia sobre las celdas heredadas del Excel:
+    // reemplaza planificación de origen desconocido, así que se confirma.
+    await updatePdtpActivity({ activityId: activity!.id, scheduleMode: "scheduled", recurrenceRule: rule, scheduleReplaceConfirmed: true }, "user-1")
+    // Ajuste manual: dos semanas que la regla mensual no genera.
+    await updatePdtpActivity({
+      activityId: activity!.id,
+      scheduleOverrides: [
+        { month: 1, week: 1, plannedQuantity: 3 },
+        { month: 7, week: 4, plannedQuantity: 2 },
+      ],
+    }, "user-1")
+
+    const before = await inMemoryDb.select().from(schema.pdtpActivitySchedule)
+      .where(and(eq(schema.pdtpActivitySchedule.activityId, activity!.id), eq(schema.pdtpActivitySchedule.year, program.year)))
+    expect(before).toHaveLength(2)
+
+    // El diálogo de edición manda SIEMPRE scheduleMode y recurrenceRule: antes
+    // esto re-proyectaba la recurrencia y borraba las dos celdas manuales.
+    await updatePdtpActivity({
+      activityId: activity!.id,
+      activity: "Texto editado sin tocar el calendario",
+      scheduleMode: "scheduled",
+      recurrenceRule: { weekOfMonth: 2, plannedQuantity: 1, interval: 1, frequency: "monthly" },
+    }, "user-1")
+
+    const after = await inMemoryDb.select().from(schema.pdtpActivitySchedule)
+      .where(and(eq(schema.pdtpActivitySchedule.activityId, activity!.id), eq(schema.pdtpActivitySchedule.year, program.year)))
+    expect(after).toHaveLength(2)
+    expect(after.map((row) => `${row.month}-${row.week}=${row.plannedQuantity}`).sort())
+      .toEqual(["1-1=3", "7-4=2"])
+  })
+
+  it("updatePdtpActivity: cambiar la recurrencia sobre celdas manuales exige confirmación explícita", async () => {
+    const { updatePdtpActivity, PdtpScheduleConflictError } = await import("@/lib/services/prevention-pdtp")
+    const { program } = await loadCatalog()
+    const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 1))
+
+    await updatePdtpActivity({
+      activityId: activity!.id,
+      scheduleMode: "scheduled",
+      recurrenceRule: { frequency: "monthly", interval: 1, plannedQuantity: 1, weekOfMonth: 2 },
+      scheduleReplaceConfirmed: true,
+    }, "user-1")
+    await updatePdtpActivity({
+      activityId: activity!.id,
+      scheduleOverrides: [{ month: 1, week: 1, plannedQuantity: 3 }, { month: 7, week: 4, plannedQuantity: 2 }],
+    }, "user-1")
+
+    const logsBefore = await inMemoryDb.select().from(schema.pdtpChangeLog).where(eq(schema.pdtpChangeLog.programId, program.id))
+
+    await expect(updatePdtpActivity({
+      activityId: activity!.id,
+      activity: "No debe persistir",
+      scheduleMode: "scheduled",
+      recurrenceRule: { frequency: "quarterly", interval: 1, plannedQuantity: 1, weekOfMonth: 1 },
+    }, "user-1")).rejects.toThrow(PdtpScheduleConflictError)
+
+    // El rechazo ocurre dentro de la transacción, antes de cualquier escritura:
+    // ni el texto ni el changelog se movieron.
+    const [untouched] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.id, activity!.id))
+    expect(untouched!.activity).not.toBe("No debe persistir")
+    const logsAfter = await inMemoryDb.select().from(schema.pdtpChangeLog).where(eq(schema.pdtpChangeLog.programId, program.id))
+    expect(logsAfter).toHaveLength(logsBefore.length)
+    expect(await inMemoryDb.select().from(schema.pdtpActivitySchedule)
+      .where(and(eq(schema.pdtpActivitySchedule.activityId, activity!.id), eq(schema.pdtpActivitySchedule.year, program.year)))).toHaveLength(2)
+
+    const logIdsBeforeConfirm = new Set((await inMemoryDb.select().from(schema.pdtpChangeLog)
+      .where(eq(schema.pdtpChangeLog.programId, program.id))).map((entry) => entry.id))
+
+    await updatePdtpActivity({
+      activityId: activity!.id,
+      scheduleMode: "scheduled",
+      recurrenceRule: { frequency: "quarterly", interval: 1, plannedQuantity: 1, weekOfMonth: 1 },
+      scheduleReplaceConfirmed: true,
+    }, "user-1")
+
+    const replaced = await inMemoryDb.select().from(schema.pdtpActivitySchedule)
+      .where(and(eq(schema.pdtpActivitySchedule.activityId, activity!.id), eq(schema.pdtpActivitySchedule.year, program.year)))
+    expect(replaced.map((row) => row.month).sort((a, b) => a - b)).toEqual([1, 4, 7, 10])
+
+    const confirmedLog = (await inMemoryDb.select().from(schema.pdtpChangeLog).where(eq(schema.pdtpChangeLog.programId, program.id)))
+      .find((entry) => !logIdsBeforeConfirm.has(entry.id))
+    expect(confirmedLog).toBeDefined()
+    expect((confirmedLog!.after as Record<string, unknown>).scheduleReplaceConfirmed).toBe(true)
+    const auditedAfter = confirmedLog!.after as Record<string, unknown>
+    // 7-4 desaparece; 1-1 no se elimina, baja de 3 a 1 (también es pérdida).
+    expect(auditedAfter.scheduleRemovedCellCount).toBe(1)
+    expect(auditedAfter.scheduleSourceBefore).toBe("manual")
+    expect(auditedAfter.schedulePlannedTotal).toEqual({ from: 5, to: 4 })
+    // El estado previo queda registrado de verdad, no como "see after".
+    expect(confirmedLog!.before as Record<string, unknown>).toHaveProperty("schedule")
+  })
+
+  it("updatePdtpActivity: reproyecta sin fricción cuando las celdas venían de la propia regla", async () => {
+    const { updatePdtpActivity } = await import("@/lib/services/prevention-pdtp")
+    const { program } = await loadCatalog()
+    const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 1))
+
+    await updatePdtpActivity({
+      activityId: activity!.id,
+      scheduleMode: "scheduled",
+      recurrenceRule: { frequency: "monthly", interval: 1, plannedQuantity: 1, weekOfMonth: 2 },
+      scheduleReplaceConfirmed: true,
+    }, "user-1")
+    // Ya alineada con su propia regla: cambiarla no necesita confirmación.
+    await updatePdtpActivity({
+      activityId: activity!.id,
+      scheduleMode: "scheduled",
+      recurrenceRule: { frequency: "quarterly", interval: 1, plannedQuantity: 1, weekOfMonth: 1 },
+    }, "user-1")
+
+    const cells = await inMemoryDb.select().from(schema.pdtpActivitySchedule)
+      .where(and(eq(schema.pdtpActivitySchedule.activityId, activity!.id), eq(schema.pdtpActivitySchedule.year, program.year)))
+    expect(cells.map((row) => row.month).sort((a, b) => a - b)).toEqual([1, 4, 7, 10])
+  })
+
+  it("updatePdtpActivity: guardar la matriz conserva la recurrencia declarada y la marca desalineada", async () => {
+    const { updatePdtpActivity } = await import("@/lib/services/prevention-pdtp")
+    const { derivePdtpScheduleSource, deriveScheduleHorizon } = await import("@/lib/services/pdtp/recurrence")
+    const { program } = await loadCatalog()
+    const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 1))
+
+    const rule = { frequency: "monthly" as const, interval: 1, plannedQuantity: 1, weekOfMonth: 2 }
+    await updatePdtpActivity({ activityId: activity!.id, scheduleMode: "scheduled", recurrenceRule: rule, scheduleReplaceConfirmed: true }, "user-1")
+    const updated = await updatePdtpActivity({
+      activityId: activity!.id,
+      scheduleOverrides: [{ month: 5, week: 3, plannedQuantity: 4 }],
+    }, "user-1")
+
+    expect(updated.recurrenceRule).toMatchObject({ frequency: "monthly" })
+    const cells = await inMemoryDb.select().from(schema.pdtpActivitySchedule)
+      .where(and(eq(schema.pdtpActivitySchedule.activityId, activity!.id), eq(schema.pdtpActivitySchedule.year, program.year)))
+    expect(derivePdtpScheduleSource({
+      cells: cells.map((row) => ({ month: row.month, week: row.week, plannedQuantity: Number(row.plannedQuantity) })),
+      scheduleMode: "scheduled",
+      recurrenceRule: rule,
+      horizon: deriveScheduleHorizon(program),
+    })).toBe("manual")
+  })
+
+  it("updatePdtpActivity: rechaza la escritura cuando la planificación cambió en otra sesión", async () => {
+    const { updatePdtpActivity, PdtpScheduleConflictError } = await import("@/lib/services/prevention-pdtp")
+    const { scheduleCellsFingerprint } = await import("@/lib/services/pdtp/recurrence")
+    const { program } = await loadCatalog()
+    const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 1))
+
+    await updatePdtpActivity({
+      activityId: activity!.id,
+      scheduleOverrides: [{ month: 2, week: 1, plannedQuantity: 1 }],
+    }, "user-1")
+    const stale = scheduleCellsFingerprint([{ month: 9, week: 1, plannedQuantity: 7 }])
+
+    await expect(updatePdtpActivity({
+      activityId: activity!.id,
+      scheduleOverrides: [{ month: 2, week: 1, plannedQuantity: 2 }],
+      expectedScheduleFingerprint: stale,
+    }, "user-1")).rejects.toThrow(PdtpScheduleConflictError)
+
+    const cells = await inMemoryDb.select().from(schema.pdtpActivitySchedule)
+      .where(and(eq(schema.pdtpActivitySchedule.activityId, activity!.id), eq(schema.pdtpActivitySchedule.year, program.year)))
+    expect(cells.map((row) => Number(row.plannedQuantity))).toEqual([1])
+  })
+
+  it("updatePdtpActivity: un período parcial acota la proyección a sus meses", async () => {
+    const { updatePdtpActivity } = await import("@/lib/services/prevention-pdtp")
+    const { program } = await loadCatalog()
+    await inMemoryDb.update(schema.pdtpPrograms)
+      .set({ periodStart: `${program.year}-04-01`, periodEnd: `${program.year}-09-30` })
+      .where(eq(schema.pdtpPrograms.id, program.id))
+    const [activity] = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.n, 1))
+
+    await updatePdtpActivity({
+      activityId: activity!.id,
+      scheduleMode: "scheduled",
+      recurrenceRule: { frequency: "monthly", interval: 1, plannedQuantity: 1, weekOfMonth: 1 },
+      scheduleReplaceConfirmed: true,
+    }, "user-1")
+
+    const cells = await inMemoryDb.select().from(schema.pdtpActivitySchedule)
+      .where(and(eq(schema.pdtpActivitySchedule.activityId, activity!.id), eq(schema.pdtpActivitySchedule.year, program.year)))
+    expect(cells.map((row) => row.month).sort((a, b) => a - b)).toEqual([4, 5, 6, 7, 8, 9])
+  })
+
   it("updatePdtpActivity: throws if program is not draft", async () => {
     const { updatePdtpActivity, approvePdtpProgramJdpr, signPdtpProgramLegal, activatePdtpProgram } = await import("@/lib/services/prevention-pdtp")
     const { program } = await loadCatalog()

@@ -43,7 +43,27 @@ export const pdtpExecutionRejectionSchema = z.object({
 export const pdtpScheduleCellSchema = z.object({
   month: z.coerce.number().int().min(1).max(12),
   week: z.coerce.number().int().min(1).max(4),
-  plannedQuantity: z.coerce.number().min(0),
+  // El techo evita que un valor absurdo llegue a `numeric(10,2)` y reviente
+  // como error de base de datos en vez de como error de formulario.
+  plannedQuantity: z.coerce.number().min(0).max(100000),
+})
+
+/** 12 meses × 4 semanas: el máximo que admiten los CHECK de
+ *  `pdtp_activity_schedule`. */
+const MAX_SCHEDULE_CELLS = 48
+
+const scheduleCellArraySchema = z.array(pdtpScheduleCellSchema).max(MAX_SCHEDULE_CELLS).superRefine((cells, ctx) => {
+  // Dos celdas con el mismo (mes, semana) generan el mismo id determinista:
+  // una pisaría a la otra y la lista de celdas a conservar quedaría sucia.
+  const seen = new Set<string>()
+  for (const cell of cells) {
+    const key = `${cell.month}-${cell.week}`
+    if (seen.has(key)) {
+      ctx.addIssue({ code: "custom", message: `Semana repetida en la planificación (mes ${cell.month}, semana ${cell.week})` })
+      return
+    }
+    seen.add(key)
+  }
 })
 
 export const pdtpRecurrenceRuleSchema = z.object({
@@ -84,7 +104,18 @@ export const pdtpActivityUpdateSchema = z.object({
   indicatorMode: pdtpIndicatorModeSchema.optional(),
   targetValue: z.coerce.number().min(0).max(1000000).nullable().optional(),
   targetUnit: z.string().trim().max(80).nullable().optional(),
-  scheduleOverrides: z.array(pdtpScheduleCellSchema).optional(),
+  scheduleOverrides: scheduleCellArraySchema.optional(),
+  scheduleReplaceConfirmed: z.coerce.boolean().optional(),
+  expectedScheduleFingerprint: z.string().max(4000).nullable().optional(),
+}).superRefine((value, ctx) => {
+  // Paridad con pdtpActivityAddSchema: sin esto se podía dejar una actividad
+  // "por evento" sin decir cuál es el evento.
+  if (value.scheduleMode === "triggered" && value.triggerDescription !== undefined && !value.triggerDescription?.trim()) {
+    ctx.addIssue({ code: "custom", path: ["triggerDescription"], message: "Describe el evento que genera la obligación" })
+  }
+  if (value.scheduleMode === "scheduled" && value.recurrenceRule === null) {
+    ctx.addIssue({ code: "custom", path: ["recurrenceRule"], message: "Define una frecuencia para una actividad programada" })
+  }
 })
 
 export const pdtpActivityAddSchema = z.object({
@@ -106,7 +137,7 @@ export const pdtpActivityAddSchema = z.object({
   targetUnit: z.string().trim().max(80).nullable().optional(),
   notes: z.string().max(5000).optional().or(z.literal("")),
   sheetCodes: z.array(z.string().min(1)).min(1, "Al menos una hoja"),
-  schedule: z.array(pdtpScheduleCellSchema).optional(),
+  schedule: scheduleCellArraySchema.optional(),
 }).superRefine((value, ctx) => {
   if (value.scheduleMode === "triggered" && !value.triggerDescription?.trim()) {
     ctx.addIssue({ code: "custom", path: ["triggerDescription"], message: "Describe el evento que genera la obligación" })

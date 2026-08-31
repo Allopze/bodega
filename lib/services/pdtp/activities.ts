@@ -2,7 +2,18 @@ import { and, eq, inArray, notInArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpActivityChecklists, pdtpActivitySchedule, pdtpPrograms, pdtpSheetActivities } from "@/db/schema"
 import { addPdtpChangeLogEntry, assertPdtpProgramEditableState, pdtpActivityId, pdtpScheduleId, pdtpSheetActivityId, resolveSheetForProgram } from "./helpers"
-import { deriveScheduleHorizon, projectRecurrenceToLegacySchedule, type PdtpRecurrenceRule } from "./recurrence"
+import {
+  derivePdtpScheduleSource,
+  deriveScheduleHorizon,
+  diffScheduleCells,
+  projectRecurrenceToLegacySchedule,
+  recurrenceRulesEqual,
+  scheduleCellsFingerprint,
+  type PdtpRecurrenceRule,
+  type PdtpScheduleCell,
+  type PdtpScheduleHorizon,
+  type PdtpScheduleSource,
+} from "./recurrence"
 import { pdtpActivityChecklistId } from "./checklist-domain"
 
 /** Todas las actividades de un programa, ordenadas por N°. Para el tab
@@ -12,6 +23,83 @@ export async function listPdtpProgramActivities(programId: string) {
   return db.select().from(pdtpActivities)
     .where(eq(pdtpActivities.programId, programId))
     .orderBy(pdtpActivities.displayOrder, pdtpActivities.n)
+}
+
+/**
+ * Celdas de planificación de un conjunto de actividades **acotadas a un año**.
+ *
+ * El filtro de año no es cosmético: `pdtpActivitySchedule` es única por
+ * (actividad, año, mes, semana), pero las vistas que la editan indexan por
+ * `mes-semana` — sin acotar el año, una celda de otro año se pinta como si
+ * fuera del año en curso y al guardar se escribe en él, fabricando cantidad
+ * planificada que nadie planificó (y que es el denominador del indicador de
+ * cumplimiento). El borrado autoritativo de `updatePdtpActivity` también está
+ * acotado al año del programa, así que ambos lados tienen que coincidir.
+ */
+export type PdtpScheduleConflictDetail = {
+  reason: "manual_schedule_would_be_replaced" | "schedule_changed_elsewhere"
+  scheduleSource: PdtpScheduleSource
+  currentCellCount: number
+  nextCellCount: number
+  removedCellCount: number
+  currentPlannedTotal: number
+  nextPlannedTotal: number
+}
+
+/**
+ * La escritura se detuvo para no destruir planificación en silencio.
+ *
+ * No es un fallo inesperado: es la respuesta esperada a una operación que
+ * habría borrado cantidad planificada que nadie pidió borrar. El llamador debe
+ * mostrar el detalle y, si el usuario lo confirma, reintentar con
+ * `scheduleReplaceConfirmed`.
+ */
+export class PdtpScheduleConflictError extends Error {
+  constructor(readonly detail: PdtpScheduleConflictDetail) {
+    super(detail.reason === "schedule_changed_elsewhere"
+      ? "La planificación de esta actividad cambió en otra sesión. Recarga antes de guardar."
+      : `Esta actividad tiene ${detail.currentCellCount} semana(s) ajustadas manualmente. Guardar la recurrencia las reemplaza y la cantidad planificada pasaría de ${detail.currentPlannedTotal} a ${detail.nextPlannedTotal}. Confirma el reemplazo para continuar.`)
+    this.name = "PdtpScheduleConflictError"
+  }
+}
+
+/**
+ * Qué celdas debe quedar escritas y de dónde salen.
+ *
+ * La condición es **que el modo o la regla hayan cambiado de verdad**, no que
+ * vengan en el input. Antes bastaba con que `recurrenceRule` estuviera
+ * presente, y el diálogo de edición la manda siempre: editar el texto de una
+ * actividad re-proyectaba la recurrencia y borraba su planificación manual.
+ */
+function resolveScheduleWrite({ input, activity, horizon }: {
+  input: PdtpActivityUpdateInput
+  activity: typeof pdtpActivities.$inferSelect
+  horizon: PdtpScheduleHorizon
+}): { cells: PdtpScheduleCell[] | undefined; origin: "manual_matrix" | "rule_projection" | "none" } {
+  if (input.scheduleOverrides !== undefined) {
+    const cells = input.scheduleOverrides.map((cell) => ({
+      month: Number(cell.month), week: Number(cell.week), plannedQuantity: Number(cell.plannedQuantity),
+    }))
+    return { cells, origin: "manual_matrix" }
+  }
+
+  const modeChanged = input.scheduleMode !== undefined && input.scheduleMode !== activity.scheduleMode
+  const ruleChanged = input.recurrenceRule !== undefined
+    && !recurrenceRulesEqual(input.recurrenceRule, activity.recurrenceRule as PdtpRecurrenceRule | null)
+  if (!modeChanged && !ruleChanged) return { cells: undefined, origin: "none" }
+
+  const nextMode = input.scheduleMode ?? activity.scheduleMode
+  const nextRule = (input.recurrenceRule !== undefined ? input.recurrenceRule : activity.recurrenceRule) as PdtpRecurrenceRule | null
+  return {
+    cells: nextMode === "scheduled" && nextRule ? projectRecurrenceToLegacySchedule(nextRule, horizon) : [],
+    origin: "rule_projection",
+  }
+}
+
+export async function listPdtpProgramScheduleForYear(activityIds: string[], year: number) {
+  if (activityIds.length === 0) return []
+  return db.select().from(pdtpActivitySchedule)
+    .where(and(inArray(pdtpActivitySchedule.activityId, activityIds), eq(pdtpActivitySchedule.year, year)))
 }
 
 export type PdtpActivityUpdateInput = {
@@ -33,6 +121,14 @@ export type PdtpActivityUpdateInput = {
   targetValue?: number | null
   targetUnit?: string | null
   scheduleOverrides?: Array<{ month: number; week: number; plannedQuantity: number }>
+  /** Autoriza reemplazar una planificación ajustada a mano por la proyección de
+   *  la recurrencia. Sin esto, esa reescritura se rechaza (ver
+   *  `PdtpScheduleConflictError`). */
+  scheduleReplaceConfirmed?: boolean
+  /** Huella de las celdas que el cliente creía vigentes. Si no coincide con la
+   *  que hay en la base, otra sesión editó la planificación entremedio y la
+   *  escritura se rechaza en vez de pisarla. */
+  expectedScheduleFingerprint?: string | null
 }
 
 export type PdtpActivityAddInput = {
@@ -142,20 +238,20 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
     "dueDays", "evidenceRequirement", "indicatorMode", "targetValue", "targetUnit",
   ] as const
   for (const field of configurableFields) {
-    if (input[field] !== undefined && JSON.stringify(input[field]) !== JSON.stringify(activity[field])) {
-      before[field] = activity[field]
-      after[field] = input[field]
-      updates[field] = input[field] as never
-    }
+    if (input[field] === undefined) continue
+    // `recurrenceRule` vive en jsonb: comparar su serialización da falsos
+    // cambios por orden de claves (ver recurrenceRulesEqual).
+    const unchanged = field === "recurrenceRule"
+      ? recurrenceRulesEqual(input.recurrenceRule, activity.recurrenceRule as PdtpRecurrenceRule | null)
+      : JSON.stringify(input[field]) === JSON.stringify(activity[field])
+    if (unchanged) continue
+    before[field] = activity[field]
+    after[field] = input[field]
+    updates[field] = input[field] as never
   }
 
-  const effectiveSchedule = input.scheduleOverrides !== undefined
-    ? input.scheduleOverrides
-    : (input.scheduleMode !== undefined || input.recurrenceRule !== undefined)
-      ? ((input.scheduleMode ?? activity.scheduleMode) === "scheduled" && (input.recurrenceRule ?? activity.recurrenceRule)
-          ? projectRecurrenceToLegacySchedule((input.recurrenceRule ?? activity.recurrenceRule) as PdtpRecurrenceRule, deriveScheduleHorizon(program))
-          : [])
-      : undefined
+  const horizon = deriveScheduleHorizon(program)
+  const { cells: effectiveSchedule, origin: scheduleWriteOrigin } = resolveScheduleWrite({ input, activity, horizon })
 
   // Actividad + calendario + changelog en una sola transacción. El borrado de
   // celdas obsoletas es autoritativo, así que si commiteaba y los inserts
@@ -163,11 +259,72 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
   // silenciosa de cantidad planificada, que es el denominador del indicador—
   // y sin entrada de changelog que lo dejara trazado.
   return db.transaction(async (tx) => {
+    // Bloquea la fila antes de leer el calendario: la comprobación de "esto
+    // borraría trabajo manual" no vale nada si otra transacción puede cambiar
+    // las celdas entre la lectura y la escritura. Mismo patrón que
+    // retirePdtpActivity.
+    await tx.select({ id: pdtpActivities.id }).from(pdtpActivities)
+      .where(eq(pdtpActivities.id, input.activityId)).for("update")
+
+    const currentCells = (await tx.select().from(pdtpActivitySchedule).where(and(
+      eq(pdtpActivitySchedule.activityId, input.activityId),
+      eq(pdtpActivitySchedule.year, program.year),
+    ))).map((row) => ({ month: row.month, week: row.week, plannedQuantity: Number(row.plannedQuantity) }))
+    const currentSource = derivePdtpScheduleSource({
+      cells: currentCells,
+      scheduleMode: activity.scheduleMode as "scheduled" | "on_demand" | "triggered",
+      recurrenceRule: activity.recurrenceRule as PdtpRecurrenceRule | null,
+      horizon,
+    })
+
+    if (input.expectedScheduleFingerprint != null
+      && input.expectedScheduleFingerprint !== scheduleCellsFingerprint(currentCells)) {
+      throw new PdtpScheduleConflictError({
+        reason: "schedule_changed_elsewhere",
+        scheduleSource: currentSource,
+        currentCellCount: currentCells.length,
+        nextCellCount: effectiveSchedule?.length ?? currentCells.length,
+        removedCellCount: 0,
+        currentPlannedTotal: currentCells.reduce((sum, cell) => sum + cell.plannedQuantity, 0),
+        nextPlannedTotal: (effectiveSchedule ?? currentCells).reduce((sum, cell) => sum + cell.plannedQuantity, 0),
+      })
+    }
+
+    const scheduleDiff = effectiveSchedule === undefined ? null : diffScheduleCells(currentCells, effectiveSchedule)
+    if (scheduleDiff && scheduleWriteOrigin === "rule_projection" && currentSource !== "rule"
+      && !input.scheduleReplaceConfirmed) {
+      // La proyección de la recurrencia solo puede pisar una planificación que
+      // ella misma generó. Si las celdas vigentes no coinciden con la regla
+      // guardada, alguien las ajustó a mano y hace falta un sí explícito.
+      const destructive = scheduleDiff.removedCells.length > 0
+        || scheduleDiff.changedCells.some((cell) => cell.to < cell.from)
+      if (destructive) {
+        throw new PdtpScheduleConflictError({
+          reason: "manual_schedule_would_be_replaced",
+          scheduleSource: currentSource,
+          currentCellCount: currentCells.length,
+          nextCellCount: effectiveSchedule!.length,
+          removedCellCount: scheduleDiff.removedCells.length,
+          currentPlannedTotal: scheduleDiff.currentPlannedTotal,
+          nextPlannedTotal: scheduleDiff.nextPlannedTotal,
+        })
+      }
+    }
+
     const [updated] = await tx.update(pdtpActivities).set(updates).where(eq(pdtpActivities.id, input.activityId)).returning()
     if (!updated) throw new Error("No se pudo actualizar la actividad PDTP.")
 
-    if (effectiveSchedule !== undefined) {
-      before.scheduleOverrides = "see after"; after.scheduleOverrides = effectiveSchedule
+    if (effectiveSchedule !== undefined && scheduleDiff) {
+      // El estado previo se registra de verdad: con "see after" el changelog
+      // que firman los aprobadores no podía responder qué planificación se
+      // perdió.
+      before.schedule = currentCells
+      after.schedule = effectiveSchedule
+      after.scheduleWriteOrigin = scheduleWriteOrigin
+      after.scheduleSourceBefore = currentSource
+      after.scheduleRemovedCellCount = scheduleDiff.removedCells.length
+      after.schedulePlannedTotal = { from: scheduleDiff.currentPlannedTotal, to: scheduleDiff.nextPlannedTotal }
+      if (input.scheduleReplaceConfirmed) after.scheduleReplaceConfirmed = true
       // El set entrante es autoritativo para el año del programa: borra
       // celdas existentes que ya no aparecen (semana quitada en la UI) antes
       // de upsertear las que sí. Antes esto solo insertaba/actualizaba y
@@ -193,7 +350,10 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
     }
 
     if (Object.keys(after).length > 0) {
-      await addPdtpChangeLogEntry(activity.programId, program.version, userId, `activity:${activity.n}`, before, after, `Actividad ${activity.n} actualizada.`, tx)
+      const note = scheduleDiff
+        ? `Actividad ${activity.n} actualizada; planificación ${scheduleDiff.currentPlannedTotal} → ${scheduleDiff.nextPlannedTotal} (${currentCells.length} → ${effectiveSchedule!.length} celda(s)).`
+        : `Actividad ${activity.n} actualizada.`
+      await addPdtpChangeLogEntry(activity.programId, program.version, userId, `activity:${activity.n}`, before, after, note, tx)
     }
     return updated
   })
