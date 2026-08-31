@@ -6,7 +6,7 @@
  * serializar una fila; no hay una lista completa enviada al navegador.
  */
 import type { Session } from "next-auth"
-import { and, count, eq, inArray, isNotNull, lte, ne, notInArray, or, sql, type SQL } from "drizzle-orm"
+import { and, eq, inArray, notInArray, or, sql, type SQL } from "drizzle-orm"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
@@ -44,12 +44,11 @@ import {
   worksites,
 } from "@/db/schema"
 import { approvalQueueFilter, TERMINAL_REQUEST_STATUSES } from "@/lib/approvals-queue"
-import { itemHasNoActiveOrderSql, pendingPurchaseWhere } from "@/lib/adquisiciones/pending-purchase"
+import { itemHasNoActiveOrderSql } from "@/lib/adquisiciones/pending-purchase"
 import { resolveWorksiteScope, type WorksiteScope } from "@/lib/auth/scope"
 import { logger } from "@/lib/logger"
 import { sentry } from "@/lib/sentry"
 import {
-  DELIVERY_ITEM_STATUSES,
   DIRECT_FAENA_RECEIVABLE_STATUSES,
   FAENA_RECEIVABLE_STATUSES,
   INVOICE_DUE_ORDER_STATUSES,
@@ -1412,213 +1411,52 @@ export async function getOperationalWorkQueue(session: Session, rawFilters: Oper
 }
 
 /**
- * Conteo para navegación: mantiene la semántica de las etapas de la cola sin
- * construirlas ni cargar asignaciones. Cada consulta queda limitada a su
- * agregado y una fuente fallida no bloquea el shell completo.
+ * Conteo para el badge de navegación.
+ *
+ * Es un `COUNT(*)` sobre **exactamente la misma unión** que arma la cola, no un
+ * recuento paralelo. Antes eran ~200 líneas que replicaban a mano el predicado
+ * de cada fuente, y esa duplicación derivó tres veces (A-03 aprobaciones, A-06
+ * inspecciones, la rama `select_quotation`): cuando el badge y la lista se
+ * separan, el rail dice 7 y la página muestra 2. Al momento de unificarlo le
+ * faltaban además la fuente de actividades PDTP y las tres de CPHS, que nunca
+ * se agregaron al recuento.
+ *
+ * La resiliencia se conserva sin duplicar nada: si la unión falla se prueban
+ * las ramas una a una y se cuenta con las sanas, igual que hace la cola.
  */
-export async function getOperationalWorkCount(session: Session) {
+export async function getOperationalWorkCount(session: Session): Promise<number> {
   const scope = resolveWorksiteScope(session)
   if (scope.mode === "none") return 0
 
-  const today = startOfChileDay()
-  const requestScope = scopeCondition(scope, purchaseRequests.worksiteId)
-  const orderScope = scopeCondition(scope, purchaseOrders.worksiteId)
-  const pdtpScope = scopeCondition(scope, pdtpObligations.worksiteId)
-  const capaScope = scopeCondition(scope, preventionCapaActions.worksiteId)
-  const inspectionScope = scopeCondition(scope, preventionInspectionRuns.worksiteId)
-  const documentScope = scopeCondition(scope, sstDocuments.worksiteId)
-  const ppaScope = scopeCondition(scope, ppaSubmissions.worksiteId)
-  const countRows = (query: Promise<Array<{ total: number }>>) => query.then(([row]) => Number(row?.total ?? 0))
-  const counts: Array<Promise<number>> = []
+  const branches = operationalSourceBranches(session, scope)
+  if (branches.length === 0) return 0
 
-  const canViewRequests = hasPermission(session, "requests:view_own") || hasPermission(session, "requests:view_all")
-  if (canViewRequests) {
-    counts.push(countRows(
-      db.select({ total: count() }).from(purchaseRequests).where(and(
-        requestScope,
-        inArray(purchaseRequests.status, ["draft", "submitted", "in_review", "partially_approved", "approved", "in_purchasing"]),
-        hasPermission(session, "requests:view_all") ? undefined : eq(purchaseRequests.requesterId, session.user.id),
-      )),
-    ))
+  const countBranches = async (list: OperationalSourceBranch[]) => {
+    const result = await db.execute(sql`
+      SELECT COUNT(*)::int AS total FROM (${unionOperationalSourceBranches(list)}) AS operational_work_count
+    `)
+    // postgres-js devuelve el arreglo directo; PGlite lo envuelve en `rows`.
+    const row = ((result as unknown as { rows?: unknown[] }).rows?.[0] ?? result[0]) as { total: number | string } | undefined
+    return Number(row?.total ?? 0)
   }
 
-  // Mismos criterios que las fuentes de la cola: el badge contaba ítems de
-  // solicitudes terminales y de tipos que `/aprobaciones` descarta, así que el
-  // rail decía 12 donde la página mostraba 9 (auditoría UI/UX 2026-07-29, A-03).
-  const liveRequest = notInArray(purchaseRequests.status, [...TERMINAL_REQUEST_STATUSES])
-
-  if (hasPermission(session, "approvals:approve")) {
-    counts.push(countRows(
-      db.select({ total: count() })
-        .from(purchaseRequestItems)
-        .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-        .where(and(
-          requestScope,
-          liveRequest,
-          eq(purchaseRequestItems.status, "requested"),
-          approvalQueueFilter({ isGlobal: true, worksiteIds: [] }),
-        )),
-    ))
+  try {
+    return await countBranches(branches)
+  } catch (error) {
+    logger.warn("Operational count unified query failed; probing source branches", {
+      event: "operational_count_unified_query_failed",
+      sourceCount: branches.length,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    const recovery = await probeOperationalSourceBranches(branches)
+    if (recovery.healthy.length === 0) return 0
+    try {
+      return await countBranches(recovery.healthy)
+    } catch {
+      // El badge degrada a 0 antes que tumbar el shell entero.
+      return 0
+    }
   }
-  // Espejo de la fuente `select_quotation`: repuestos y servicios se aprueban
-  // eligiendo la cotización ganadora, no ítem a ítem. Sin esta rama, quien sólo
-  // tuviera ese trabajo veía el badge en 0 mientras /pendientes listaba tareas.
-  const quotationApprovalTypes: string[] = []
-  if (hasPermission(session, "repuestos:approve")) quotationApprovalTypes.push("repuestos")
-  if (hasPermission(session, "servicios:approve")) quotationApprovalTypes.push("servicios")
-  if (quotationApprovalTypes.length > 0) {
-    counts.push(countRows(
-      db.select({ total: count() })
-        .from(purchaseRequests)
-        .where(and(
-          requestScope,
-          inArray(purchaseRequests.requestType, quotationApprovalTypes),
-          inArray(purchaseRequests.status, ["submitted", "in_review"]),
-        )),
-    ))
-  }
-
-  if (hasPermission(session, "purchasing:create_order")) {
-    // `pendingPurchaseWhere` ya trae los estados, la guarda de solicitud
-    // terminal y la exclusión por cobertura activa: el mismo predicado que la
-    // fuente `create_order` de la cola y que el resumen y la tabla de /compras.
-    counts.push(countRows(
-      db.select({ total: count() })
-        .from(purchaseRequestItems)
-        .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-        .where(pendingPurchaseWhere(requestScope)),
-    ))
-  }
-  if (hasPermission(session, "deliveries:create")) {
-    counts.push(countRows(
-      db.select({ total: count() })
-        .from(purchaseRequestItems)
-        .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
-        .where(and(
-          requestScope,
-          liveRequest,
-          inArray(purchaseRequestItems.status, [...DELIVERY_ITEM_STATUSES]),
-          isNotNull(purchaseRequestItems.productId),
-          sql`EXISTS (
-            SELECT 1 FROM ${worksiteStock}
-            WHERE ${worksiteStock.worksiteId} = ${purchaseRequests.worksiteId}
-              AND ${worksiteStock.productId} = ${purchaseRequestItems.productId}
-              AND ${worksiteStock.quantity} > 0
-          )`,
-        )),
-    ))
-  }
-  if (hasPermission(session, "purchasing:send_order")) {
-    counts.push(countRows(
-      db.select({ total: count() }).from(purchaseOrders).where(and(orderScope, eq(purchaseOrders.status, "draft"))),
-    ))
-    // Espejo de la fuente `invoice` de la cola: mismo predicado, mismo permiso.
-    counts.push(countRows(
-      db.select({ total: count() }).from(purchaseOrders).where(and(
-        orderScope,
-        orderNeedsInvoiceWork,
-      )),
-    ))
-  }
-  if (hasPermission(session, "receiving:register_office")) {
-    counts.push(countRows(
-      db.select({ total: count() }).from(purchaseOrders).where(and(
-        orderScope,
-        inArray(purchaseOrders.status, [...OFFICE_RECEIVABLE_STATUSES]),
-        sql`${purchaseOrders.deliveryMode} <> 'directo_faena'`,
-      )),
-    ))
-  }
-  if (hasPermission(session, "receiving:register_faena")) {
-    counts.push(countRows(
-      db.select({ total: count() }).from(purchaseOrders).where(and(
-        orderScope,
-        or(
-          and(eq(purchaseOrders.deliveryMode, "directo_faena"), inArray(purchaseOrders.status, [...DIRECT_FAENA_RECEIVABLE_STATUSES])),
-          and(sql`${purchaseOrders.deliveryMode} <> 'directo_faena'`, inArray(purchaseOrders.status, [...FAENA_RECEIVABLE_STATUSES])),
-        ),
-      )),
-    ))
-  }
-
-  if (hasPermission(session, "prevention:pdtp:view")) {
-    counts.push(countRows(
-      db.select({ total: count() }).from(pdtpObligations).where(and(
-        pdtpScope,
-        inArray(pdtpObligations.status, ["pending", "overdue", "reported"]),
-      )),
-    ))
-    // Mismo reparto por origen que las fuentes de la cola (D11): la acción del
-    // PDTP se cuenta aquí y se excluye de la rama CAPA, así el badge no la
-    // cuenta dos veces para quien tiene los dos permisos.
-    counts.push(countRows(
-      db.select({ total: count() }).from(preventionCapaActions).where(and(
-        capaScope,
-        eq(preventionCapaActions.sourceType, "pdtp"),
-        inArray(preventionCapaActions.status, CAPA_OPEN_STATUSES),
-      )),
-    ))
-  }
-  if (hasPermission(session, "prevention:capa:view")) {
-    counts.push(countRows(
-      db.select({ total: count() }).from(preventionCapaActions).where(and(
-        capaScope,
-        hasPermission(session, "prevention:pdtp:view")
-          ? ne(preventionCapaActions.sourceType, "pdtp")
-          : undefined,
-        inArray(preventionCapaActions.status, CAPA_OPEN_STATUSES),
-      )),
-    ))
-  }
-  // A-06: mismo predicado que la fuente de la cola. Con `:view` a secas el
-  // badge contaba tarjetas que la lista no muestra y cuya acción sería negada.
-  const inspectionCountStatuses = inspectionQueueStatuses(session)
-  if (inspectionCountStatuses.length > 0) {
-    counts.push(countRows(
-      db.select({ total: count() }).from(preventionInspectionRuns).where(and(
-        inspectionScope,
-        inArray(preventionInspectionRuns.status, inspectionCountStatuses),
-      )),
-    ))
-  }
-  if (hasPermission(session, "prevention:docs:view")) {
-    counts.push(countRows(
-      db.select({ total: count() }).from(sstDocuments).where(and(
-        documentScope,
-        eq(sstDocuments.confidentiality, "publico_interno"),
-        eq(sstDocuments.dataClass, "operational"),
-        or(
-          eq(sstDocuments.status, "en_revision"),
-          eq(sstDocuments.status, "observado"),
-          eq(sstDocuments.status, "vencido"),
-          and(isNotNull(sstDocuments.expiresAt), lte(sstDocuments.expiresAt, today)),
-        ),
-      )),
-    ))
-  }
-  if (hasPermission(session, "ppa:view")) {
-    counts.push(countRows(
-      db.select({ total: count() }).from(ppaSubmissions).where(and(
-        ppaScope,
-        inArray(ppaSubmissions.estado, ["detenido", "en_correccion", "pendiente_verificacion"]),
-      )),
-    ))
-  }
-  if (hasPermission(session, "sst:view")) {
-    counts.push(countRows(
-      db.select({ total: count() })
-        .from(sstScheduledFollowups)
-        .innerJoin(sstEvaluations, eq(sstScheduledFollowups.evaluationId, sstEvaluations.id))
-        .where(and(
-          scopeCondition(scope, sstEvaluations.worksiteId),
-          eq(sstScheduledFollowups.realizado, false),
-          lte(sstScheduledFollowups.fechaProgramada, today),
-        )),
-    ))
-  }
-
-  const results = await Promise.allSettled(counts)
-  return results.reduce((total, result) => total + (result.status === "fulfilled" ? result.value : 0), 0)
 }
 
 export function parseOperationalQueueFilters(input: Record<string, string | string[] | undefined>): OperationalQueueFilters {

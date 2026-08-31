@@ -7,7 +7,7 @@ import { SubmitButton } from "@/components/ui/submit-button"
 import { INITIAL_STATE } from "@/lib/form-state"
 import { Input } from "@/components/ui/input"
 import { toast } from "@/lib/toast"
-import { matchesQuery } from "@/lib/utils"
+import { matchesQuery, quantityStep } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import { setMinStockBulkAction } from "./actions"
 import type { WorksiteProductOption } from "./movement-options"
@@ -108,7 +108,7 @@ export function MinStockPanel({
                     name="minStockValue"
                     type="number"
                     min="0"
-                    step="0.01"
+                    step={quantityStep(product.unitOfMeasure)}
                     placeholder={product.minStock > 0 ? String(product.minStock) : "—"}
                     className="h-8 text-right tabular-nums"
                   />

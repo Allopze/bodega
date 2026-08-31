@@ -10,7 +10,7 @@ import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/lib/toast"
-import { matchesQuery } from "@/lib/utils"
+import { matchesQuery, quantityStep } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import { closePhysicalInventoryCountAction, savePhysicalInventoryDraftAction } from "./actions"
 import type { WorksiteProductOption } from "./movement-options"
@@ -119,7 +119,7 @@ export function PhysicalInventoryPanel({
                     name="countedQuantity"
                     type="number"
                     min="0"
-                    step="0.01"
+                    step={quantityStep(product.unitOfMeasure)}
                     placeholder="—"
                     defaultValue={draftByProduct.has(product.productId) ? String(draftByProduct.get(product.productId)) : ""}
                     className="h-8 text-right tabular-nums"

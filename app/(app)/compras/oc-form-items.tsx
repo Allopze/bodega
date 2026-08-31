@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { formatQty, formatCLP } from "@/lib/utils"
+import { formatCLP, formatQty, quantityStep } from "@/lib/utils"
 import { priceHint, suggestedSupplierLabel } from "./oc-form.helpers"
 import type { SupplierOption, PendingItemOption } from "./oc-form.types"
 
@@ -184,7 +184,7 @@ export function OcFormItems({
                       </label>
                       <Input
                         id={`qty-${item.id}`}
-                        type="number" step="0.01" min="0.01" max={item.quantity}
+                        type="number" step={quantityStep(item.unitOfMeasure)} min={quantityStep(item.unitOfMeasure)} max={item.quantity}
                         value={qty}
                         onChange={(e) => setItemQuantity(item, e.target.value)}
                         className="h-7 w-20 text-sm tabular-nums"

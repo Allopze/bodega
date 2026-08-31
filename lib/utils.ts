@@ -67,6 +67,37 @@ export function pluralizeUnit(n: number, unit: string): string {
 }
 
 /**
+ * Unidades que admiten fracción. Todo lo demás se cuenta entero.
+ *
+ * La lista va por el lado permisivo a propósito: un `step` fraccionario sobre
+ * una unidad contable convierte cada clic de la flecha del `<input
+ * type="number">` en un centésimo. En producción eso registró 14 entregas de
+ * EPP de entre 0,01 y 0,07 unidades —el operador subía el spinner desde un
+ * campo vacío esperando unidades enteras— que descontaron stock por centésimos
+ * y dejaron sus solicitudes abiertas para siempre. Si aparece una unidad
+ * divisible nueva y no está acá, el operador ve un mensaje de validación del
+ * navegador; al revés, el dato se corrompe en silencio ×100.
+ */
+const FRACTIONAL_UNITS = new Set([
+  "kg", "kilo", "kilos", "kilogramo", "kilogramos", "g", "gr", "gramo", "gramos",
+  "l", "lt", "lts", "litro", "litros", "ml", "cc",
+  "m", "mt", "mts", "metro", "metros", "m2", "m3", "cm", "mm",
+  "ton", "tonelada", "toneladas", "gal", "galon", "galón", "galones",
+  "hora", "horas", "hr", "h",
+])
+
+/**
+ * Paso de un control de cantidad de producto según su unidad de medida.
+ *
+ * Úsalo para `step` **y** para `min` de todo `<input type="number">` que capture
+ * una cantidad de catálogo: un `min` fraccionario sobre un campo vacío hace que
+ * la primera flecha arriba aterrice en el fraccionario en vez de en 1.
+ */
+export function quantityStep(unit?: string | null): number {
+  return unit && FRACTIONAL_UNITS.has(unit.trim().toLowerCase()) ? 0.01 : 1
+}
+
+/**
  * Pluraliza un sustantivo español de forma sistemática (auditoría UI/UX
  * §4.4 — "1 submódulo / 2 submódulos" ya no se resuelve a mano en cada
  * sitio). Reglas: vocal → +s, consonante → +es, -z → -ces, -ión → -iones,

@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { formatQty } from "@/lib/utils"
+import { formatQty, quantityStep } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import { registerWorkerDeliveryAction } from "./actions"
 import type {
@@ -107,6 +107,19 @@ export function DeliveryForm({
     && item.productId === pendingProductId
     && selectedWorker?.worksiteId === sourceWorksiteId
   ))
+  const pendingStep = quantityStep(selectedPendingProduct?.unitOfMeasure)
+
+  // El vínculo dejó de ser opcional cuando existe: sin él `deliverItemTx` no
+  // corre, el ítem de solicitud se queda en `received` para siempre y la
+  // solicitud nunca puede cerrar. En producción 12 de 14 líneas salieron sin
+  // vincular y ninguna solicitud llegó jamás a `closed`. Con un solo candidato
+  // se elige solo; con varios, el operador tiene que decir cuál.
+  const onlyTraceOption = traceOptions.length === 1 ? traceOptions[0] : undefined
+  React.useEffect(() => {
+    if (onlyTraceOption && !pendingRequestItemId) {
+      setPendingRequestItemId(onlyTraceOption.requestItemId)
+    }
+  }, [onlyTraceOption, pendingRequestItemId])
 
   React.useEffect(() => {
     if (state.ok && state.message) {
@@ -155,6 +168,10 @@ export function DeliveryForm({
       return
     }
     const selectedTrace = traceOptions.find((item) => item.requestItemId === pendingRequestItemId)
+    if (!selectedTrace && traceOptions.length > 0) {
+      toast.error("Este producto tiene saldo pendiente de una solicitud recibida. Elige a cuál se imputa la entrega.")
+      return
+    }
     if (selectedTrace && quantity > selectedTrace.remainingQuantity) {
       toast.error(`Saldo trazable: ${formatQty(selectedTrace.remainingQuantity, selectedTrace.unitOfMeasure)}`)
       return
@@ -289,8 +306,10 @@ export function DeliveryForm({
             <Input
               id="deliveryPendingQuantity"
               type="number"
-              min={selectedPendingProduct?.isEpp ? 1 : 0.01}
-              step={selectedPendingProduct?.isEpp ? 1 : 0.01}
+              // `min`/`step` salen de la unidad: con 0,01 sobre una unidad
+              // contable la primera flecha arriba aterriza en 0,01 en vez de 1.
+              min={selectedPendingProduct?.isEpp ? 1 : pendingStep}
+              step={selectedPendingProduct?.isEpp ? 1 : pendingStep}
               max={selectedPendingProduct?.stockQuantity}
               value={pendingQuantity}
               onChange={(event) => setPendingQuantity(event.target.value)}
@@ -305,11 +324,15 @@ export function DeliveryForm({
         </div>
 
         {selectedPendingProduct && traceOptions.length > 0 && (
-          <Field label="Vincular a solicitud recibida (opcional)" htmlFor="deliveryTraceItem" helper="Sólo aplica cuando el trabajador pertenece a la misma faena de la bodega origen.">
-            <Select searchable value={pendingRequestItemId} onValueChange={(value) => setPendingRequestItemId(value === "__none_trace" ? "" : value)}>
-              <SelectTrigger id="deliveryTraceItem"><SelectValue placeholder="Sin vínculo de solicitud" /></SelectTrigger>
+          <Field
+            label="Imputar a solicitud recibida"
+            htmlFor="deliveryTraceItem"
+            required
+            helper="Este producto llegó a faena por una solicitud. Sin imputarla, la solicitud queda abierta para siempre."
+          >
+            <Select searchable value={pendingRequestItemId} onValueChange={setPendingRequestItemId}>
+              <SelectTrigger id="deliveryTraceItem"><SelectValue placeholder="Elige la solicitud" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="__none_trace">Sin vínculo de solicitud</SelectItem>
                 {traceOptions.map((item) => (
                   <SelectItem key={item.requestItemId} value={item.requestItemId}>
                     {item.requestCode} · saldo {formatQty(item.remainingQuantity, item.unitOfMeasure)}
@@ -340,8 +363,8 @@ export function DeliveryForm({
                   <Input
                     aria-label={`Cantidad de ${product?.productName ?? line.productId}`}
                     type="number"
-                    min={product?.isEpp ? 1 : 0.01}
-                    step={product?.isEpp ? 1 : 0.01}
+                    min={product?.isEpp ? 1 : quantityStep(product?.unitOfMeasure)}
+                    step={product?.isEpp ? 1 : quantityStep(product?.unitOfMeasure)}
                     max={product?.stockQuantity}
                     value={line.quantity || ""}
                     onChange={(event) => updateLineQuantity(line.productId, event.target.value)}

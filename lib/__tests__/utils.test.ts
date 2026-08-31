@@ -12,6 +12,7 @@ import {
   DELIVERY_BACKDATE_BUSINESS_DAYS,
   formatFileSize,
   formatQty,
+  quantityStep,
   pluralize,
   toCode,
   formatDate,
@@ -79,6 +80,33 @@ describe("formatQty()", () => {
 
   it("formats zero without unit", () => {
     expect(formatQty(0)).toBe("0")
+  })
+})
+
+describe("quantityStep()", () => {
+  // El bug que motiva el helper: `min="0.01" step="0.01"` sobre un campo vacío
+  // convierte cada clic de la flecha en un centésimo. Seis clics para seis
+  // buzos registraron 0,06 en producción, catorce veces.
+  it("counts whole units for everything the catálogo usa", () => {
+    expect(quantityStep("unidad")).toBe(1)
+    expect(quantityStep("par")).toBe(1)
+    expect(quantityStep("caja")).toBe(1)
+    expect(quantityStep("dosis")).toBe(1)
+    expect(quantityStep("servicio")).toBe(1)
+  })
+
+  it("allows fractions only for measurable units", () => {
+    expect(quantityStep("kg")).toBe(0.01)
+    expect(quantityStep("litros")).toBe(0.01)
+    expect(quantityStep("m2")).toBe(0.01)
+  })
+
+  it("normalises case and whitespace, and defaults to whole units", () => {
+    expect(quantityStep(" KG ")).toBe(0.01)
+    expect(quantityStep("Unidad")).toBe(1)
+    expect(quantityStep(undefined)).toBe(1)
+    expect(quantityStep(null)).toBe(1)
+    expect(quantityStep("")).toBe(1)
   })
 })
 
