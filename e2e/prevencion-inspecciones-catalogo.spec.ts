@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test"
+import { test, expect, type Locator, type Page } from "@playwright/test"
 import { expectPageTitle, login } from "./helpers"
 
 /**
@@ -32,6 +32,21 @@ function filaPlantilla(page: Page, version: string) {
 /** Abre el alta de programación, esté la pestaña vacía o con filas. */
 async function nuevoPrograma(page: Page) {
   await page.getByRole("button", { name: "Nuevo programa" }).first().click()
+}
+
+/**
+ * I-01 (auditoría UI/UX 2026-08-25): cada materialización avanza `nextDueOn`
+ * un intervalo completo, así que a partir del segundo clic el programa queda
+ * fuera de ciclo y el botón abre un `ConfirmDialog` en vez de navegar directo.
+ * El primer clic sobre una vencida sigue sin pedir confirmación.
+ */
+async function crearYAbrirInspeccion(page: Page, fila: Locator) {
+  await fila.getByRole("button", { name: "Crear y abrir inspección" }).click()
+  const confirmacion = page.getByRole("dialog", { name: "Esta programación aún no vence" })
+  if (await confirmacion.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    await confirmacion.getByRole("button", { name: "Crear igual y mover la fecha" }).click()
+  }
+  await expect(page).toHaveURL(/\/prevencion\/inspecciones\/[^/]+$/)
 }
 
 /** Incorpora `inspeccion_contenedores` con una etiqueta propia; queda en borrador. */
@@ -156,7 +171,10 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
 
     await page.reload()
-    await expect(fila.getByText("N° 1, 2")).toBeVisible({ timeout: 15_000 })
+    // I-22: la celda ahora resuelve el nombre de cada actividad ("N° 1 — Nombre,
+    // N° 2 — Nombre"), no sólo el número — se verifica cada número, no el join literal.
+    await expect(fila.getByText("N° 1 —")).toBeVisible({ timeout: 15_000 })
+    await expect(fila.getByText("N° 2 —")).toBeVisible()
   })
 
   /**
@@ -214,6 +232,9 @@ test.describe("Inspecciones — programación por faena y frecuencia", () => {
       fecha.setUTCDate(fecha.getUTCDate() + dias)
       return fecha.toISOString().slice(0, 10)
     }
+    // I-17: la columna "Próxima" se renderiza con `formatDate` (dd-mm-yyyy,
+    // es-CL), no como la cadena ISO cruda — la celda hay que buscarla en ese formato.
+    const comoCelda = (iso: string) => iso.split("-").reverse().join("-")
 
     await nuevoPrograma(page)
     const dialog = page.getByRole("dialog", { name: "Nueva programación" })
@@ -236,7 +257,7 @@ test.describe("Inspecciones — programación por faena y frecuencia", () => {
     // distingue por el intervalo propio que sólo esta programación declara.
     let fila = page.getByRole("row")
       .filter({ hasText: "Inspección de Estado de Extintores" })
-      .filter({ hasText: `cada ${intervalo} día(s)` })
+      .filter({ hasText: `cada ${intervalo} días` })
     await expect(fila).toHaveCount(1, { timeout: 15_000 })
     await expect(fila.getByText("Mensual")).toBeVisible()
     await expect(fila.getByText("Sin asignar")).toBeVisible()
@@ -247,19 +268,20 @@ test.describe("Inspecciones — programación por faena y frecuencia", () => {
     // crea la del período vigente y corre `nextDueOn` un intervalo. Que la
     // fecha avance es la prueba de que se materializó: el índice único
     // (programId, scheduledFor) sólo se defendería de un choque con el cron.
-    await expect(fila.getByRole("cell", { name: hoy })).toBeVisible()
+    await expect(fila.getByRole("cell", { name: comoCelda(hoy) })).toBeVisible()
 
-    await fila.getByRole("button", { name: "Crear y abrir inspección" }).click()
-    await expect(page).toHaveURL(/\/prevencion\/inspecciones\/[^/]+$/)
+    // Este primer clic regulariza el ciclo vigente (nextDueOn == hoy, no pide
+    // confirmación); de acá en adelante cada clic cae fuera de ciclo y el
+    // helper confirma el diálogo de I-01 antes de navegar.
+    await crearYAbrirInspeccion(page, fila)
     await page.goto("/prevencion/inspecciones/programacion")
-    fila = page.getByRole("row").filter({ hasText: "Inspección de Estado de Extintores" }).filter({ hasText: `cada ${intervalo} día(s)` })
-    await expect(fila.getByRole("cell", { name: enDias(paso) })).toBeVisible({ timeout: 15_000 })
+    fila = page.getByRole("row").filter({ hasText: "Inspección de Estado de Extintores" }).filter({ hasText: `cada ${intervalo} días` })
+    await expect(fila.getByRole("cell", { name: comoCelda(enDias(paso)) })).toBeVisible({ timeout: 15_000 })
 
-    await fila.getByRole("button", { name: "Crear y abrir inspección" }).click()
-    await expect(page).toHaveURL(/\/prevencion\/inspecciones\/[^/]+$/)
+    await crearYAbrirInspeccion(page, fila)
     await page.goto("/prevencion/inspecciones/programacion")
-    fila = page.getByRole("row").filter({ hasText: "Inspección de Estado de Extintores" }).filter({ hasText: `cada ${intervalo} día(s)` })
-    await expect(fila.getByRole("cell", { name: enDias(paso * 2) })).toBeVisible({ timeout: 15_000 })
+    fila = page.getByRole("row").filter({ hasText: "Inspección de Estado de Extintores" }).filter({ hasText: `cada ${intervalo} días` })
+    await expect(fila.getByRole("cell", { name: comoCelda(enDias(paso * 2)) })).toBeVisible({ timeout: 15_000 })
 
     await fila.getByRole("button", { name: "Editar" }).click()
     const editar = page.getByRole("dialog", { name: "Editar programación" })

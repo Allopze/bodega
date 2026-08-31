@@ -582,7 +582,7 @@ function ProgramActions({ program, assignees, subjectsByWorksite, riskEntriesByW
         // lector de pantalla ni en móvil (sin hover); el texto siempre visible
         // dice lo mismo en ambos casos, sin JS.
         : <p className="max-w-64 text-right text-xs text-[var(--color-warning-ink)]">
-            No producirá inspecciones: su plantilla ya no está aprobada. Apúntala a una vigente o reactívala en Plantillas.
+            No producirá inspecciones: su plantilla ya no está aprobada. Detén este programa y crea uno nuevo apuntando a una plantilla vigente.
           </p>)}
     </div>
   )

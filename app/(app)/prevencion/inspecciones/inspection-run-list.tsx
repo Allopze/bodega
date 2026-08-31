@@ -507,23 +507,22 @@ export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksi
           </Field>
           {/* I-25: antes este campo aparecía/desaparecía al elegir faena,
               desplazando el resto del formulario. Ahora ocupa su lugar siempre,
-              con un estado explícito mientras no hay faena elegida. */}
-          {(!worksiteId || (subjectsByWorksite[worksiteId]?.length ?? 0) > 0) && (
-            <Field label="Sujeto inspeccionado" hint={worksiteId ? "Opcional. Un recurso del inventario actualiza su última inspección al completar; un equipo habilita derivar la falla a mantención." : "Selecciona una faena para ver su inventario."}>
-              <Select value={subjectRef} onValueChange={setSubjectRef} disabled={!worksiteId}>
-                <SelectTrigger aria-label="Sujeto inspeccionado"><SelectValue placeholder={worksiteId ? "Otro / texto libre" : "Selecciona una faena primero"} /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">Otro / texto libre</SelectItem>
-                  {(subjectsByWorksite[worksiteId] ?? []).map((subject) => (
-                    <SelectItem key={subjectRefOf(subject)} value={subjectRefOf(subject)}>
-                      {subject.source === "vehicle" ? "Equipo" : "Recurso"} · {subject.name}
-                      {subject.location ? ` · ${subject.location}` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-          )}
+              con un estado explícito mientras no hay faena elegida o su
+              inventario está vacío. */}
+          <Field label="Sujeto inspeccionado" hint={worksiteId ? "Opcional. Un recurso del inventario actualiza su última inspección al completar; un equipo habilita derivar la falla a mantención." : "Selecciona una faena para ver su inventario."}>
+            <Select value={subjectRef} onValueChange={setSubjectRef} disabled={!worksiteId}>
+              <SelectTrigger aria-label="Sujeto inspeccionado"><SelectValue placeholder={worksiteId ? "Otro / texto libre" : "Selecciona una faena primero"} /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_none">Otro / texto libre</SelectItem>
+                {(subjectsByWorksite[worksiteId] ?? []).map((subject) => (
+                  <SelectItem key={subjectRefOf(subject)} value={subjectRefOf(subject)}>
+                    {subject.source === "vehicle" ? "Equipo" : "Recurso"} · {subject.name}
+                    {subject.location ? ` · ${subject.location}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
           {subjectRef === "_none" ? <div className="grid gap-3 md:grid-cols-2">
             <Field label="Tipo de sujeto" hint="Opcional. Ej: extintor, camión, contenedor."><Input name="subjectType" maxLength={120} /></Field>
             <Field label="Identificación del sujeto" hint="Úsalo sólo si el elemento no existe en el inventario."><Input name="subjectLabel" maxLength={300} /></Field>

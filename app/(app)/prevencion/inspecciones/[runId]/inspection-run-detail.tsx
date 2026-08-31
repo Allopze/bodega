@@ -235,11 +235,6 @@ function sectionNavLabel(title: string, index: number) {
 }
 
 /**
- * Diálogo genérico de "acción con motivo obligatorio": cancelar, reabrir,
- * cerrar hallazgo. Las tres son la misma interacción, y el servicio exige el
- * mismo mínimo de 10 caracteres en todas.
- */
-/**
  * I-08: recordatorio manual para quien puede cerrar una inspección bloqueada.
  * `createNotifications` deduplica por día, así que el botón nunca satura —
  * clics repetidos el mismo día son inocuos.
@@ -278,6 +273,11 @@ function RemindReviewButton({ runId }: { runId: string }) {
  */
 const GHOST_DANGER_CLASS = "text-[var(--color-danger-ink)] hover:bg-[var(--color-danger-tint)] hover:text-[var(--color-danger-ink)]"
 
+/**
+ * Diálogo genérico de "acción con motivo obligatorio": cancelar, reabrir,
+ * cerrar hallazgo. Las tres son la misma interacción, y el servicio exige el
+ * mismo mínimo de 10 caracteres en todas.
+ */
 function ReasonDialog({ trigger, title, description, action, onDone, variant = "ghost", confirmLabel }: {
   trigger: string
   title: string
@@ -1345,8 +1345,8 @@ export function InspectionRunDetail({
                     // 'Regular' exige justificarse por escrito igual que 'No aplica'
                     // — mismo criterio que el motor SST (requiresObservation).
                     // I-05: "No cumple" exige motivo igual que "No aplica"/"Regular" — es
-                // el resultado que genera el hallazgo.
-                const needsComment = draft.result === "not_applicable" || draft.result === "partial" || draft.result === "non_conforming"
+                    // el resultado que genera el hallazgo.
+                    const needsComment = draft.result === "not_applicable" || draft.result === "partial" || draft.result === "non_conforming"
                     // B-08: un ítem que no expresa conformidad se responde con
                     // su contenido. Antes se le ofrecía "Cumple / No cumple" y
                     // el texto no tenía dónde guardarse.
@@ -2232,7 +2232,7 @@ function ReviewDialog({ run, findings, currentUserId, version, assignees, canExe
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild><Button size="sm" variant="secondary">Revisar y cerrar{!review.allowed ? ` · ${review.blockers.length} bloqueo(s)` : ""}</Button></DialogTrigger>
+      <DialogTrigger asChild><Button size="sm" variant="secondary">Revisar y cerrar{!review.allowed ? ` · ${review.blockers.length} bloqueo${review.blockers.length === 1 ? "" : "s"}` : ""}</Button></DialogTrigger>
       <DialogContent>
         <form
           onSubmit={(event) => {
