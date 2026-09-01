@@ -7,6 +7,12 @@
  * que antes.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
+
+/* `approveSchema` exige que la revisión posterior quede DESPUÉS de la fecha de
+ * aprobación, así que una fecha fija caduca: "2026-09-01" pasó hasta el
+ * 31-08-2026 y desde entonces fallaba para siempre. Se calcula relativa a hoy. */
+const FUTURE_REVIEW_DATE = addDaysToPlainDate(todayInChile(), 30)
 
 const mockGuardPermission = vi.hoisted(() => vi.fn())
 const mockResolveWorksiteScope = vi.hoisted(() => vi.fn())
@@ -137,7 +143,7 @@ describe("evaluateChangeDimensionAction", () => {
 describe("approveChangeRequestAction", () => {
   it("forwards validated input to the service on success", async () => {
     const { approveChangeRequestAction } = await import("@/app/(app)/prevencion/gestion-cambio/actions")
-    const input = { changeRequestId: "chg-1", expectedVersion: 2, plannedReviewDate: "2026-09-01" }
+    const input = { changeRequestId: "chg-1", expectedVersion: 2, plannedReviewDate: FUTURE_REVIEW_DATE }
 
     const res = await approveChangeRequestAction(input)
 
@@ -165,7 +171,7 @@ describe("approveChangeRequestAction", () => {
     })
     const { approveChangeRequestAction } = await import("@/app/(app)/prevencion/gestion-cambio/actions")
 
-    const res = await approveChangeRequestAction({ changeRequestId: "chg-1", expectedVersion: 2, plannedReviewDate: "2026-09-01" })
+    const res = await approveChangeRequestAction({ changeRequestId: "chg-1", expectedVersion: 2, plannedReviewDate: FUTURE_REVIEW_DATE })
 
     expect(res.ok).toBe(false)
     expect(mockApproveChangeRequest).not.toHaveBeenCalled()

@@ -6,6 +6,14 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
 import type { CampaignAccess } from "@/lib/services/prevention-campaigns"
+import { chileDateParts } from "@/lib/utils"
+
+/* El motor sólo acredita cuando el año del programa coincide con el del evento
+ * (ver `accreditation.ts`: "El evento ocurrió fuera del año del programa
+ * activo"). Con el año fijo en 2026 estas pruebas dejaban de ejercitar el
+ * camino feliz al cambiar de año civil. Se siembran con el año en curso. */
+const PROGRAM_YEAR = chileDateParts().year
+
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -84,9 +92,9 @@ beforeEach(async () => {
 
   await inMemoryDb.insert(schema.pdtpPrograms).values({
     id: PROGRAM_ID,
-    year: 2026,
+    year: PROGRAM_YEAR,
     version: 1,
-    title: "PDTP 2026 Campañas Test",
+    title: `PDTP ${PROGRAM_YEAR} Campañas Test`,
     status: "active",
     elaboratedByName: "Prevencionista",
     elaboratedByTitle: "Experto",

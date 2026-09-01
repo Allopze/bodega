@@ -17,13 +17,14 @@ const mockConfig = vi.hoisted(() => vi.fn())
 vi.mock("@/lib/auth/auth", () => ({ auth: mockAuth }))
 vi.mock("@/lib/auth/can", () => ({ can: mockCan }))
 vi.mock("node:child_process", () => ({ execFile: mockExecFile }))
-vi.mock("node:fs", () => ({ existsSync: () => true }))
 vi.mock("@/lib/services/backups", () => ({
   getBackupStats: mockStats,
   getLatestBackup: mockLatest,
   getDriveHealth: mockDrive,
   getBackupConfig: mockConfig,
 }))
+
+type ExecFileCallback = (err: unknown, result?: { stdout: string; stderr: string }) => void
 
 import { GET } from "./route"
 
@@ -83,11 +84,29 @@ describe("GET /api/backups/status", () => {
     expect((await res.json()).status).toBe("error")
   })
 
-  it("no se cae si el script no existe o devuelve basura", async () => {
-    mockExecFile.mockImplementation((_file, _args, _opts, cb) =>
-      cb(Object.assign(new Error("ENOENT"), { code: "ENOENT" })))
+  it("no se cae si el verificador no existe o devuelve basura", async () => {
+    /* Falla SÓLO `backup-verify.sh`. La comprobación de existencia dejó de ser
+     * `existsSync` y pasó a ser `test -f` por execFile, así que un mock que
+     * rechaza toda llamada ya no mide "el verificador se cayó" sino "faltan
+     * todos los scripts" —que es el caso siguiente, y sí debe degradar—. */
+    mockExecFile.mockImplementation((file: string, _args: string[], _opts: unknown, cb: ExecFileCallback) => {
+      if (String(file).endsWith("backup-verify.sh")) {
+        return cb(Object.assign(new Error("ENOENT"), { code: "ENOENT" }))
+      }
+      cb(null, { stdout: "", stderr: "" })
+    })
     const res = await GET()
     expect(res.status).toBe(200)
     expect((await res.json()).status).toBe("ok")
+  })
+
+  it("degrada cuando falta alguno de los scripts de respaldo", async () => {
+    mockExecFile.mockImplementation((file: string, _args: string[], _opts: unknown, cb: ExecFileCallback) => {
+      if (String(file) === "test") return cb(Object.assign(new Error("no existe"), { code: 1 }))
+      cb(null, { stdout: "", stderr: "" })
+    })
+    const res = await GET()
+    expect(res.status).toBe(200)
+    expect((await res.json()).status).toBe("degraded")
   })
 })

@@ -23,7 +23,9 @@ export default defineConfig({
       PGHOST:       "/var/run/postgresql",
     },
     server: { deps: { inline: ["next-auth"] } },
-    // Paralelizado: tests sin PGlite no competen por CPU
+    // Paralelizado, pero acotado: el default de Vitest 4 sería CPU-1 workers
+    // (11 en este servidor), suficiente para dejar sshd sin tiempo de CPU.
+    maxWorkers: process.env.CI ? undefined : 3,
     fileParallelism: true,
     testTimeout: 20_000,
     hookTimeout: 30_000,

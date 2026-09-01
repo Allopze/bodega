@@ -6,6 +6,20 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
 import type { IncidentAccess } from "@/lib/services/prevention-incidents"
+import { chileDateParts } from "@/lib/utils"
+
+/* El motor sólo acredita cuando el año del programa coincide con el del evento
+ * (ver `accreditation.ts`: "El evento ocurrió fuera del año del programa
+ * activo"). Con el año fijo en 2026 estas pruebas dejaban de ejercitar el
+ * camino feliz al cambiar de año civil. Se siembran con el año en curso. */
+const PROGRAM_YEAR = chileDateParts().year
+
+/* El incidente ocurre "hace un rato": así cae siempre dentro del año del
+ * programa y los SLA (aviso 3 h, declaración 24 h) se miden sobre una ventana
+ * fresca, no sobre una fecha de mayo de 2026 que envejece. */
+const OCCURRED_AT = new Date(Date.now() - 60 * 60_000).toISOString()
+const KNOWN_AT = new Date(Date.now() - 50 * 60_000).toISOString()
+
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -68,9 +82,9 @@ beforeEach(async () => {
 
   await inMemoryDb.insert(schema.pdtpPrograms).values({
     id: PROGRAM_ID,
-    year: 2026,
+    year: PROGRAM_YEAR,
     version: 1,
-    title: "PDTP 2026 RE-20 Test",
+    title: `PDTP ${PROGRAM_YEAR} RE-20 Test`,
     status: "active",
     elaboratedByName: "Investigador",
     elaboratedByTitle: "Experto SST",
@@ -119,8 +133,8 @@ describe("Módulo de Investigación RE-20 y Auto-acreditación PDTP (66-78)", ()
         worksiteId: WS_ID,
         companyName: "Empresa Test",
         eventType: "work_accident",
-        occurredAt: "2026-05-10T08:00:00.000Z",
-        knownAt: "2026-05-10T08:10:00.000Z",
+        occurredAt: OCCURRED_AT,
+        knownAt: KNOWN_AT,
         location: "Planta Principal",
         initialNarrative: "Caída de altura desde plataforma",
         actualSeverity: "medical_treatment",
@@ -150,8 +164,8 @@ describe("Módulo de Investigación RE-20 y Auto-acreditación PDTP (66-78)", ()
         worksiteId: WS_ID,
         companyName: "Empresa Test",
         eventType: "work_accident",
-        occurredAt: "2026-05-10T08:00:00.000Z",
-        knownAt: "2026-05-10T08:10:00.000Z",
+        occurredAt: OCCURRED_AT,
+        knownAt: KNOWN_AT,
         location: "Planta Principal",
         initialNarrative: "Caída de altura",
         people: [],
@@ -182,8 +196,8 @@ describe("Módulo de Investigación RE-20 y Auto-acreditación PDTP (66-78)", ()
         worksiteId: WS_ID,
         companyName: "Empresa Test",
         eventType: "work_accident",
-        occurredAt: "2026-05-10T08:00:00.000Z",
-        knownAt: "2026-05-10T08:10:00.000Z",
+        occurredAt: OCCURRED_AT,
+        knownAt: KNOWN_AT,
         location: "Planta Principal",
         initialNarrative: "Golpe en mano",
         people: [],
@@ -215,8 +229,8 @@ describe("Módulo de Investigación RE-20 y Auto-acreditación PDTP (66-78)", ()
         worksiteId: WS_ID,
         companyName: "Empresa Test",
         eventType: "work_accident",
-        occurredAt: "2026-05-10T08:00:00.000Z",
-        knownAt: "2026-05-10T08:10:00.000Z",
+        occurredAt: OCCURRED_AT,
+        knownAt: KNOWN_AT,
         location: "Planta Principal",
         initialNarrative: "Incidente en bodega",
         people: [],
@@ -263,8 +277,8 @@ describe("Expediente cerrado e independencia del reinicio (F-04, F-09)", () => {
         worksiteId: WS_ID,
         companyName: "Empresa Test",
         eventType: "work_accident",
-        occurredAt: "2026-05-10T08:00:00.000Z",
-        knownAt: "2026-05-10T08:10:00.000Z",
+        occurredAt: OCCURRED_AT,
+        knownAt: KNOWN_AT,
         location: "Planta Principal",
         initialNarrative: "Atrapamiento con lesión grave en la línea de clasificación.",
         actualSeverity: "serious",

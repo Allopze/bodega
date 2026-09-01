@@ -30,11 +30,15 @@ vi.mock("@/db", () => ({
 const migrationsFolder = path.resolve(process.cwd(), "db/migrations")
 
 import { getOperationalWorkQueue } from "@/lib/services/operational-work-queue"
+import { chileDateParts } from "@/lib/utils"
 
 describe("cola operacional — actividades programadas del PDTP", () => {
   const now = "2026-08-13T12:00:00.000Z"
-  const year = new Date().getUTCFullYear()
-  const month = new Date().getUTCMonth() + 1
+  /* En hora de Chile, no UTC: la consulta deriva el período con `chileNow`
+   * (`operational-work-queue.ts`), así que sembrar con `getUTCMonth()` dejaba
+   * el test rojo cada fin de mes entre las 20:00 y la medianoche — el schedule
+   * nacía en el mes siguiente y el filtro `month <= currentMonth` lo excluía. */
+  const { year, month } = chileDateParts()
   const worksiteA = "ws-pdtpq-a"
   const worksiteB = "ws-pdtpq-b"
   const programId = "prog-pdtpq"

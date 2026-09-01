@@ -21,6 +21,10 @@ export default defineConfig({
     env: {
       DATABASE_URL: "postgres:///bodega_test",
     },
+    // En local Vitest 4 usaría CPU-1 workers (11 en este servidor). Tres
+    // conservan paralelismo sin desplazar sshd, Next y Postgres. CI mantiene
+    // su política propia; VITEST_MAX_WORKERS permite un override explícito.
+    maxWorkers: process.env.CI ? undefined : 3,
     fileParallelism: true,
     testTimeout: 20_000,
     hookTimeout: 30_000,

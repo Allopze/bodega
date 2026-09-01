@@ -296,7 +296,10 @@ const pdtpChecklistItemSchema = z.object({
   label: z.string().trim().min(1),
   kind: z.enum([
     "cumple_nocumple_obs", "cumple_nocumple_na_obs", "entregado_obs", "apto_obs",
-    "si_no_obs", "bueno_regular_malo_obs", "bueno_regular_malo_na_obs", "bueno_regular_malo_na_nt_obs",
+    // `si_no_na_obs` es la columna "Usa" del Anexo 3 (Sí/No/N/A) y estaba en el
+    // catálogo (`lib/sst/types.ts`) pero no acá, así que la definición de EPP
+    // no pasaba su propio validador.
+    "si_no_obs", "si_no_na_obs", "bueno_regular_malo_obs", "bueno_regular_malo_na_obs", "bueno_regular_malo_na_nt_obs",
     "text", "textarea", "date", "select", "multiselect", "signature", "readonly",
   ]),
   options: z.array(z.object({ value: z.string(), label: z.string() })).optional(),

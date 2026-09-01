@@ -24,6 +24,14 @@ const testGlobal = globalThis as typeof globalThis & { __db?: typeof inMemoryDb 
 testGlobal.__db = inMemoryDb
 
 import { vi } from "vitest"
+import { chileDateParts } from "@/lib/utils"
+
+/* El motor sólo acredita cuando el año del programa coincide con el del evento
+ * (ver `accreditation.ts`: "El evento ocurrió fuera del año del programa
+ * activo"). Con el año fijo en 2026 estas pruebas dejaban de ejercitar el
+ * camino feliz al cambiar de año civil. Se siembran con el año en curso. */
+const PROGRAM_YEAR = chileDateParts().year
+
 
 vi.mock("@/db", () => ({
   get db() {
@@ -91,8 +99,8 @@ beforeEach(async () => {
   await inMemoryDb.insert(schema.pdtpPrograms).values({
     id: PROGRAM_ID,
     version: 1,
-    year: 2026,
-    title: "PDTP 2026 test",
+    year: PROGRAM_YEAR,
+    title: `PDTP ${PROGRAM_YEAR} test`,
     status: "active",
     elaboratedByName: "Prevencionista Test",
     elaboratedByTitle: "Experto en Prevención",
@@ -147,7 +155,7 @@ describe("accreditPdtpFromEvent", () => {
       sourceId: "run-001",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-04-15T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
       executedQuantity: 1,
     })
 
@@ -177,7 +185,7 @@ describe("accreditPdtpFromEvent", () => {
       sourceId: "run-002",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-04-15T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
     })
 
     // Segundo intento con mismo sourceId
@@ -186,7 +194,7 @@ describe("accreditPdtpFromEvent", () => {
       sourceId: "run-002",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-04-15T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
     })
 
     expect(result.accredited).toHaveLength(1)
@@ -215,7 +223,7 @@ describe("accreditPdtpFromEvent", () => {
       sourceId: "run-003",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-04-15T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
     })
 
     expect(result.accredited).toHaveLength(0)
@@ -234,7 +242,7 @@ describe("accreditPdtpFromEvent", () => {
       sourceId: "run-004",
       worksiteId: WS_ID,
       activityNumbers: [999],  // No existe
-      occurredAt: "2026-04-15T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
     })
 
     expect(result.accredited).toHaveLength(0)
@@ -250,7 +258,7 @@ describe("accreditPdtpFromEvent", () => {
       sourceId: "run-005",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-04-15T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
     })
     const executionId = r1.accredited[0]!.executionId
 
@@ -265,7 +273,7 @@ describe("accreditPdtpFromEvent", () => {
       sourceId: "run-005",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-04-15T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
       executedQuantity: 5,  // Diferente cantidad — NO debe actualizarse
     })
 
@@ -292,7 +300,7 @@ describe("accreditPdtpFromEvent", () => {
         sourceId: "run-006",
         worksiteId: WS_ID,
         activityNumbers: [ACT_N],
-        occurredAt: "2026-04-15T10:00:00.000Z",
+        occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
       }),
     ).rejects.toThrow(/Sin programa PDTP activo/)
   })
@@ -319,7 +327,7 @@ describe("accreditPdtpFromEvent", () => {
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
       programId: PROGRAM_ID,
-      occurredAt: "2026-04-15T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
       autoApproveByUserId: USER_ID,
     })).rejects.toThrow(/no pertenece al programa/)
   })
@@ -332,7 +340,7 @@ describe("accreditPdtpFromEvent", () => {
       sourceId: "run-007",
       worksiteId: WS_ID,
       activityNumbers: [],
-      occurredAt: "2026-04-15T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
     })
 
     expect(result.accredited).toHaveLength(0)
@@ -349,7 +357,7 @@ describe("accreditPdtpFromEvent", () => {
       sourceId: "sess-001",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-03-01T12:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-03-01T12:00:00.000Z`,
     })
 
     const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
@@ -365,7 +373,7 @@ describe("accreditPdtpFromEvent", () => {
       sourceId: "session-auto-invalid",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-03-01T12:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-03-01T12:00:00.000Z`,
       autoApproveByUserId: USER_ID,
     })).rejects.toThrow("Sólo las inspecciones")
   })
@@ -380,7 +388,7 @@ describe("revokePdtpAccreditation", () => {
       sourceId: "run-rev-1",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-04-15T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
     })
 
     const result = await revokePdtpAccreditation({
@@ -409,7 +417,7 @@ describe("revokePdtpAccreditation", () => {
       sourceId: "run-rev-2",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-04-15T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
     })
 
     // Aprobar manualmente
@@ -439,7 +447,7 @@ describe("revokePdtpAccreditation", () => {
       sourceId: "run-rev-auto",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-04-15T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
       autoApproveByUserId: USER_ID,
     })
 
@@ -470,7 +478,7 @@ describe("revokePdtpAccreditation", () => {
       sourceId: "run-auto-then-manual",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-04-15T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
       autoApproveByUserId: USER_ID,
     })
     const executionId = accredited.accredited[0]!.executionId
@@ -507,7 +515,7 @@ describe("revokePdtpAccreditation", () => {
       id: "legacy-aggregate",
       activityId: ACT_ID,
       worksiteId: WS_ID,
-      year: 2026,
+      year: PROGRAM_YEAR,
       month: 4,
       week: 3,
       executedQuantity: 2,
@@ -559,19 +567,19 @@ describe("evento fuera del año del programa", () => {
   it("no acredita y lo reporta, en vez de sellar la fila con el año del programa", async () => {
     const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
 
-    // Único programa activo: 2026. El evento ocurre en 2027.
+    // Único programa activo: el del año en curso. El evento ocurre al año siguiente.
     const result = await accreditPdtpFromEvent({
       sourceType: "capacitacion",
-      sourceId: "sesion-2027",
+      sourceId: "sesion-anio-siguiente",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2027-01-20T12:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR + 1}-01-20T12:00:00.000Z`,
     })
 
     expect(result.accredited).toHaveLength(0)
-    expect(result.skippedOutOfPeriod).toMatchObject({ occurredYear: 2027, programYear: 2026 })
+    expect(result.skippedOutOfPeriod).toMatchObject({ occurredYear: PROGRAM_YEAR + 1, programYear: PROGRAM_YEAR })
 
-    // Antes esto creaba una ejecución year=2026, month=1 indistinguible de una real.
+    // Antes esto creaba una ejecución del año del programa, mes 1, indistinguible de una real.
     const rows = await inMemoryDb.select().from(schema.pdtpExecutions)
     expect(rows).toHaveLength(0)
   })
@@ -580,13 +588,13 @@ describe("evento fuera del año del programa", () => {
     const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
     await accreditPdtpFromEvent({
       sourceType: "capacitacion",
-      sourceId: "sesion-2026",
+      sourceId: "sesion-anio-programa",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-01-20T12:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-01-20T12:00:00.000Z`,
     })
     const [row] = await inMemoryDb.select().from(schema.pdtpExecutions)
-    expect(row!.year).toBe(2026)
+    expect(row!.year).toBe(PROGRAM_YEAR)
     expect(row!.month).toBe(1)
   })
 })
@@ -598,7 +606,7 @@ describe("dos eventos en la misma celda de período", () => {
       sourceType: "inspeccion" as const,
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-03-03T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-03-03T10:00:00.000Z`,
       autoApproveByUserId: USER_ID,
     }
 
@@ -606,7 +614,7 @@ describe("dos eventos en la misma celda de período", () => {
     const second = await accreditPdtpFromEvent({
       ...base,
       sourceId: "run-auto-B",
-      occurredAt: "2026-03-05T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-03-05T10:00:00.000Z`,
     })
 
     expect(second.accredited).toHaveLength(1)
@@ -622,11 +630,11 @@ describe("dos eventos en la misma celda de período", () => {
       sourceType: "inspeccion" as const,
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-03-03T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-03-03T10:00:00.000Z`,
       autoApproveByUserId: USER_ID,
     }
     await accreditPdtpFromEvent({ ...base, sourceId: "run-auto-keep" })
-    await accreditPdtpFromEvent({ ...base, sourceId: "run-auto-reopen", occurredAt: "2026-03-05T10:00:00.000Z" })
+    await accreditPdtpFromEvent({ ...base, sourceId: "run-auto-reopen", occurredAt: `${PROGRAM_YEAR}-03-05T10:00:00.000Z` })
 
     const revoked = await revokePdtpAccreditation({
       sourceType: "inspeccion",
@@ -649,12 +657,12 @@ describe("dos eventos en la misma celda de período", () => {
       sourceType: "inspeccion" as const,
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-03-03T10:00:00.000Z", // misma semana 1 de marzo
+      occurredAt: `${PROGRAM_YEAR}-03-03T10:00:00.000Z`, // misma semana 1 de marzo
     }
 
     const [first, second] = await Promise.all([
       accreditPdtpFromEvent({ ...base, sourceId: "run-A" }),
-      accreditPdtpFromEvent({ ...base, sourceId: "run-B", occurredAt: "2026-03-05T10:00:00.000Z" }),
+      accreditPdtpFromEvent({ ...base, sourceId: "run-B", occurredAt: `${PROGRAM_YEAR}-03-05T10:00:00.000Z` }),
     ])
 
     expect(first.accredited).toHaveLength(1)
@@ -671,11 +679,11 @@ describe("dos eventos en la misma celda de período", () => {
       sourceType: "inspeccion" as const,
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-03-03T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-03-03T10:00:00.000Z`,
     }
     await accreditPdtpFromEvent({ ...base, sourceId: "run-A" })
-    await accreditPdtpFromEvent({ ...base, sourceId: "run-B", occurredAt: "2026-03-05T10:00:00.000Z" })
-    await accreditPdtpFromEvent({ ...base, sourceId: "run-B", occurredAt: "2026-03-05T10:00:00.000Z" })
+    await accreditPdtpFromEvent({ ...base, sourceId: "run-B", occurredAt: `${PROGRAM_YEAR}-03-05T10:00:00.000Z` })
+    await accreditPdtpFromEvent({ ...base, sourceId: "run-B", occurredAt: `${PROGRAM_YEAR}-03-05T10:00:00.000Z` })
 
     const rows = await inMemoryDb.select().from(schema.pdtpExecutions)
     expect(rows).toHaveLength(2)
@@ -688,7 +696,7 @@ describe("dos eventos en la misma celda de período", () => {
       id: "manual-same-period",
       activityId: ACT_ID,
       worksiteId: WS_ID,
-      year: 2026,
+      year: PROGRAM_YEAR,
       month: 3,
       week: 1,
       executedQuantity: 4,
@@ -703,7 +711,7 @@ describe("dos eventos en la misma celda de período", () => {
       sourceId: "run-auto-with-manual",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-03-05T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-03-05T10:00:00.000Z`,
       autoApproveByUserId: USER_ID,
     })
 
@@ -719,7 +727,7 @@ describe("dos eventos en la misma celda de período", () => {
     await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
       id: "schedule-dedup-sources",
       activityId: ACT_ID,
-      year: 2026,
+      year: PROGRAM_YEAR,
       month: 4,
       week: 3,
       plannedQuantity: 2,
@@ -729,23 +737,23 @@ describe("dos eventos en la misma celda de período", () => {
       id: "manual-same-inspection",
       activityId: ACT_ID,
       worksiteId: WS_ID,
-      year: 2026,
+      year: PROGRAM_YEAR,
       month: 4,
       week: 3,
       executedQuantity: 1,
       status: "approved",
       origin: "manual",
       approvedByUserId: USER_ID,
-      approvedAt: "2026-04-15T12:00:00.000Z",
-      createdAt: "2026-04-15T12:00:00.000Z",
-      updatedAt: "2026-04-15T12:00:00.000Z",
+      approvedAt: `${PROGRAM_YEAR}-04-15T12:00:00.000Z`,
+      createdAt: `${PROGRAM_YEAR}-04-15T12:00:00.000Z`,
+      updatedAt: `${PROGRAM_YEAR}-04-15T12:00:00.000Z`,
     })
     await accreditPdtpFromEvent({
       sourceType: "inspeccion",
       sourceId: "run-also-recorded-manually",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-04-15T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
       autoApproveByUserId: USER_ID,
     })
 
@@ -790,20 +798,20 @@ describe("una inspección acreditada alimenta los ejes de verificación y cierre
       status: "completed",
       compliancePercent,
       executedByUserId: USER_ID,
-      executedAt: "2026-04-15T10:00:00.000Z",
+      executedAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
       createdByUserId: USER_ID,
     })
   }
 
   it("cuenta el cumplimiento al declarar ejecutada aunque el hallazgo siga abierto", async () => {
     vi.useFakeTimers()
-    vi.setSystemTime(new Date("2026-04-15T10:00:00.000Z"))
+    vi.setSystemTime(new Date(`${PROGRAM_YEAR}-04-15T10:00:00.000Z`))
     const service = await import("@/lib/services/prevention-inspections")
     const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
     await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
       id: "schedule-inspection-immediate",
       activityId: ACT_ID,
-      year: 2026,
+      year: PROGRAM_YEAR,
       month: 4,
       week: 3,
       plannedQuantity: 1,
@@ -950,7 +958,7 @@ describe("una inspección acreditada alimenta los ejes de verificación y cierre
       sourceId: RUN_ID,
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-04-15T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
     })
     // El índice integral sólo considera ejecuciones aprobadas.
     await inMemoryDb.update(schema.pdtpExecutions).set({ status: "approved" })
@@ -977,7 +985,7 @@ describe("una inspección acreditada alimenta los ejes de verificación y cierre
       sourceId: RUN_ID,
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-04-15T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
     })
     await inMemoryDb.update(schema.pdtpExecutions).set({ status: "approved" })
 
@@ -992,7 +1000,7 @@ describe("una inspección acreditada alimenta los ejes de verificación y cierre
     await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
       id: "schedule-inspection-april",
       activityId: ACT_ID,
-      year: 2026,
+      year: PROGRAM_YEAR,
       month: 4,
       week: 1,
       plannedQuantity: 1,
@@ -1003,7 +1011,7 @@ describe("una inspección acreditada alimenta los ejes de verificación y cierre
       sourceId: RUN_ID,
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-04-15T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
     })
     await inMemoryDb.update(schema.pdtpExecutions).set({ status: "approved" })
     await inMemoryDb.insert(schema.preventionInspectionFindings).values({
@@ -1020,7 +1028,7 @@ describe("una inspección acreditada alimenta los ejes de verificación y cierre
     await inMemoryDb.update(schema.preventionInspectionFindings).set({
       status: "closed",
       closedByUserId: USER_ID,
-      closedAt: "2026-04-20T10:00:00.000Z",
+      closedAt: `${PROGRAM_YEAR}-04-20T10:00:00.000Z`,
     }).where(eq(schema.preventionInspectionFindings.id, "insfind-formal-compliance"))
 
     const withClosedFinding = await getPdtpComplianceIndicators(PROGRAM_ID, WS_ID)
@@ -1073,7 +1081,7 @@ describe("revisar y firmar acredita su propia actividad", () => {
       status: "completed",
       compliancePercent: 100,
       executedByUserId: USER_ID,
-      executedAt: "2026-04-15T10:00:00.000Z",
+      executedAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
       createdByUserId: USER_ID,
     }).returning()
     return run!
@@ -1180,7 +1188,7 @@ describe("cancelar o reabrir devuelve la acreditación al programa", () => {
       status: "completed",
       compliancePercent: 100,
       executedByUserId: USER_ID,
-      executedAt: "2026-04-15T10:00:00.000Z",
+      executedAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
       createdByUserId: USER_ID,
     }).returning()
 
@@ -1191,7 +1199,7 @@ describe("cancelar o reabrir devuelve la acreditación al programa", () => {
       sourceId: RUN,
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-04-15T10:00:00.000Z",
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
     })
     return run!
   }

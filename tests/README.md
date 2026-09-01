@@ -6,29 +6,31 @@ Los tests están divididos en **dos grupos** para optimizar el tiempo de iteraci
 
 | Grupo | Archivos | Paralelismo | Tiempo aprox |
 |---|---|---|---|
-| **no-PGlite** | ~168 tests (sin base de datos) | `fileParallelism: true` | ~19s ⚡ |
-| **PGlite** | ~31 tests (Postgres WASM in-memory) | `fileParallelism: false` | ~220s |
+| **no-PGlite** | tests sin base de datos | paralelo, máximo 3 workers en local | depende del cambio |
+| **PGlite** | tests registrados con Postgres WASM in-memory | secuencial | depende del cambio |
 
 ---
 
 ## Scripts disponibles
 
-### `npm test` — Suite completa (retrocompatible)
+### `npm test` — Tests sin PGlite
 
-Ejecuta **todos** los tests secuencialmente, igual que antes de la división.
+Usa `vitest.config.ts`, que excluye las suites PGlite. La validación completa
+requiere también `npm run test:pglite`.
 
 ```bash
 npm test
-# → ~504s (8.4 min), 199 test files
+npm run test:pglite
 ```
 
 ### `npm run test:fast` — Solo tests sin PGlite (iteración rápida)
 
-Ejecuta solo los tests que **no** usan `@electric-sql/pglite`, en paralelo. Ideal para el ciclo de desarrollo diario: cambios → test rápido → feedback en segundos.
+Ejecuta solo los tests que **no** usan `@electric-sql/pglite`, en paralelo. En
+desarrollo se limita a 3 workers para no bloquear el servidor; CI conserva su
+propia política. Ideal para el ciclo diario: cambios → test rápido → feedback.
 
 ```bash
 npm run test:fast
-# → ~19s, 168 test files ⚡
 ```
 
 Ejecuta con coverage:
@@ -39,10 +41,10 @@ npx vitest run --config vitest.non-pglite.config.ts --coverage
 
 ### `npm run test:pglite` — Solo tests PGlite
 
-Ejecuta únicamente los 31 tests que usan PGlite, en secuencia. Útil para:
+Ejecuta únicamente los tests registrados que usan PGlite, en secuencia. Útil para:
 
 - Validar cambios en la lógica de base de datos antes de hacer `npm test`
-- Depurar un test PGlite problemático sin esperar los 168 tests no-PGlite
+- Depurar un test PGlite problemático sin esperar los tests no-PGlite
 
 ```bash
 npm run test:pglite
@@ -103,12 +105,27 @@ export const pgliteTestFiles = [
 ## Arquitectura de los configs
 
 ```
-vitest.config.ts              → Config original (npm test), secuencial, suite completa
-vitest.non-pglite.config.ts   → Solo tests no-PGlite, en paralelo (~19s)
-vitest.pglite.config.ts       → Solo tests PGlite, secuencial (~220s)
+vitest.config.ts              → npm test, sin PGlite, máximo 3 workers en local
+vitest.non-pglite.config.ts   → Solo tests no-PGlite, máximo 3 workers en local
+vitest.pglite.config.ts       → Solo tests PGlite, secuencial
 tests/pglite-files.ts          → Lista compartida de archivos PGlite (fuente única de verdad)
 ```
 
 - `resolve.alias` con `@/` → raíz del proyecto está presente en los tres configs.
-- Coverage solo se mide desde `vitest.config.ts` (suite completa) y `vitest.non-pglite.config.ts`.
+- La cobertura combinada se obtiene con `npm run test:coverage:all`.
 - El proyecto PGlite tiene `coverage: { enabled: false }` para evitar umbrales inconsistentes en una ejecución parcial.
+
+## Protección de recursos del servidor
+
+Los scripts pesados pasan por `scripts/run-resource-guard.sh`. En desarrollo:
+
+- sólo uno de ellos se ejecuta a la vez para este usuario, incluso entre
+  distintos agentes o worktrees;
+- Vitest y el build usan como máximo 3 workers;
+- Playwright usa un navegador local a la vez;
+- cada proceso Node recibe un heap de 4096 MiB si el llamador no fijó otro límite;
+- el proceso baja su prioridad de CPU e I/O y es preferible para el OOM killer.
+
+Los valores se pueden ajustar puntualmente con `BODEGA_MAX_WORKERS`,
+`BODEGA_NODE_HEAP_MB` y `BODEGA_NICE_LEVEL`. `BODEGA_RESOURCE_GUARD=0`
+desactiva el guard de forma explícita. No lo desactives en el servidor compartido.

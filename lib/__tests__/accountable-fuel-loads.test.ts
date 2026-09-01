@@ -14,6 +14,17 @@ import { beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import { nanoid } from "@/lib/id"
+import { chileDateParts } from "@/lib/utils"
+
+/* Las cargas se siembran en el mes en curso y no en junio de 2026:
+ * `getFleetOverview` sólo mira los últimos 12 meses
+ * (`FLEET_OVERVIEW_LOOKBACK_MONTHS`), así que una fecha fija se cae de la
+ * ventana al cumplirse el año y los tests pasan a medir cero sin que nada
+ * cambie en el código. */
+const { year: PERIOD_YEAR, month: PERIOD_MONTH } = chileDateParts()
+const MONTH = `${PERIOD_YEAR}-${String(PERIOD_MONTH).padStart(2, "0")}`
+/** Día del mes en curso. Se usan sólo días ≤ 15, válidos en cualquier mes. */
+const dayOf = (day: number) => `${MONTH}-${String(day).padStart(2, "0")}`
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -53,7 +64,7 @@ function session(): Session {
 }
 
 const load = (status: string, liters: number, amount: number) => ({
-  id: nanoid(), loadDate: "2026-06-10", month: "2026-06", serviceType: "TCT", vehicleId,
+  id: nanoid(), loadDate: dayOf(10), month: MONTH, serviceType: "TCT", vehicleId,
   fuelSupplierId: supplierId, worksiteId, product: "PETROLEO DIESEL", productId,
   liters, baseAmount: amount, totalAmount: amount, status, createdBy: userId,
 })
@@ -79,15 +90,15 @@ describe("predicado canónico de cargas contabilizables", () => {
   })
 
   it("los reportes de gasto ignoran borradores y anuladas", async () => {
-    const data = await getFuelReportsData(session(), { startDate: "2026-06-01", endDate: "2026-06-30" })
-    const june = data.byMonth.find((row) => row.group === "2026-06")
+    const data = await getFuelReportsData(session(), { startDate: dayOf(1), endDate: dayOf(28) })
+    const june = data.byMonth.find((row) => row.group === MONTH)
     // `numeric` vuelve como string desde el driver; lo que se compara es la cifra.
     expect(Number(june?.totalLiters)).toBe(150)
     expect(Number(june?.totalAmount)).toBe(150_000)
   })
 
   it("el ciclo físico compara contra las mismas cargas", async () => {
-    const cycle = await getFuelCycleComparison(session(), { from: "2026-06-01", to: "2026-06-30" })
+    const cycle = await getFuelCycleComparison(session(), { from: dayOf(1), to: dayOf(28) })
     expect(cycle.registered).toMatchObject({ liters: 150, records: 2 })
   })
 
@@ -145,9 +156,9 @@ describe("getFleetOverview corta la ventana de comparación en un reset aceptado
     // donde el bug se nota: sin cortar la ventana, "primera lectura" seguía
     // siendo la de antes del reset y el recorrido salía muy por debajo del real.
     await inMemoryDb.insert(schema.fuelLoads).values([
-      { id: nanoid(), loadDate: "2026-06-01", month: "2026-06", serviceType: "TCT", vehicleId: vehicleId2, fuelSupplierId: supplierId2, worksiteId: worksiteId2, product: "PETROLEO DIESEL", productId: productId2, liters: 50, baseAmount: 50_000, totalAmount: 50_000, status: "registered", createdBy: userId2, odometerReading: 10_000 },
-      { id: resetLoadId, loadDate: "2026-06-05", month: "2026-06", serviceType: "TCT", vehicleId: vehicleId2, fuelSupplierId: supplierId2, worksiteId: worksiteId2, product: "PETROLEO DIESEL", productId: productId2, liters: 50, baseAmount: 50_000, totalAmount: 50_000, status: "registered", createdBy: userId2, odometerReading: 1_000 },
-      { id: nanoid(), loadDate: "2026-06-10", month: "2026-06", serviceType: "TCT", vehicleId: vehicleId2, fuelSupplierId: supplierId2, worksiteId: worksiteId2, product: "PETROLEO DIESEL", productId: productId2, liters: 50, baseAmount: 50_000, totalAmount: 50_000, status: "registered", createdBy: userId2, odometerReading: 15_000 },
+      { id: nanoid(), loadDate: dayOf(1), month: MONTH, serviceType: "TCT", vehicleId: vehicleId2, fuelSupplierId: supplierId2, worksiteId: worksiteId2, product: "PETROLEO DIESEL", productId: productId2, liters: 50, baseAmount: 50_000, totalAmount: 50_000, status: "registered", createdBy: userId2, odometerReading: 10_000 },
+      { id: resetLoadId, loadDate: dayOf(5), month: MONTH, serviceType: "TCT", vehicleId: vehicleId2, fuelSupplierId: supplierId2, worksiteId: worksiteId2, product: "PETROLEO DIESEL", productId: productId2, liters: 50, baseAmount: 50_000, totalAmount: 50_000, status: "registered", createdBy: userId2, odometerReading: 1_000 },
+      { id: nanoid(), loadDate: dayOf(10), month: MONTH, serviceType: "TCT", vehicleId: vehicleId2, fuelSupplierId: supplierId2, worksiteId: worksiteId2, product: "PETROLEO DIESEL", productId: productId2, liters: 50, baseAmount: 50_000, totalAmount: 50_000, status: "registered", createdBy: userId2, odometerReading: 15_000 },
     ])
     caseId = nanoid()
     await inMemoryDb.insert(schema.fuelAnomalyCases).values({
@@ -223,13 +234,13 @@ describe("getFleetVehicleDetail desempata dos lecturas del mismo día por hora",
     })
     await inMemoryDb.insert(schema.fuelOperationBatches).values({
       id: batchId3, archivoNombre: "desempate.xlsx", hashArchivo: nanoid(),
-      periodoDesde: "2026-06-01", periodoHasta: "2026-06-30", importadoPor: userId3,
+      periodoDesde: dayOf(1), periodoHasta: dayOf(28), importadoPor: userId3,
     })
     // Mismo día, dos horas distintas: la de las 16:00 es la lectura real más
     // reciente aunque se inserte primero.
     await inMemoryDb.insert(schema.fuelOperationRecords).values([
-      { id: nanoid(), batchId: batchId3, worksiteId: worksiteId3, vehicleId: vehicleId3, plate: "TB", fecha: "2026-06-15", horaCarga: "16:00", horometro: 20_000, medidoPor: "km", liters: 40 },
-      { id: nanoid(), batchId: batchId3, worksiteId: worksiteId3, vehicleId: vehicleId3, plate: "TB", fecha: "2026-06-15", horaCarga: "08:00", horometro: 19_500, medidoPor: "km", liters: 40 },
+      { id: nanoid(), batchId: batchId3, worksiteId: worksiteId3, vehicleId: vehicleId3, plate: "TB", fecha: dayOf(15), horaCarga: "16:00", horometro: 20_000, medidoPor: "km", liters: 40 },
+      { id: nanoid(), batchId: batchId3, worksiteId: worksiteId3, vehicleId: vehicleId3, plate: "TB", fecha: dayOf(15), horaCarga: "08:00", horometro: 19_500, medidoPor: "km", liters: 40 },
     ])
   })
 

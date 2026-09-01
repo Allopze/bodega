@@ -823,9 +823,15 @@ describe("definiciones migradas a B/R/M", () => {
     expect(kinds(INSPECCION_CARROS)).toContain("bueno_regular_malo_obs")
     // Contenedores: la única con NT ("no tiene").
     expect(kinds(INSPECCION_CONTENEDORES)).toContain("bueno_regular_malo_na_nt_obs")
-    // EPP: B/R/M + N/A, y el bloqueador sigue siendo registro de entrega.
-    expect(kinds(INSPECCION_EPP)).toContain("bueno_regular_malo_na_obs")
-    expect(kinds(INSPECCION_EPP)).toContain("entregado_obs")
+    /* EPP: el Anexo 3 es una matriz con DOS columnas por EPP —"Usa" (Sí/No/N/A)
+     * y "Estado" (B/R/M)—, así que el N/A vive en la columna de uso y no en la
+     * de estado. La expectativa anterior (`bueno_regular_malo_na_obs` +
+     * `entregado_obs`) describía la versión de una sola columna, anterior al
+     * refactor a `eppMatrixRow`. */
+    expect(kinds(INSPECCION_EPP)).toContain("si_no_na_obs")
+    expect(kinds(INSPECCION_EPP)).toContain("bueno_regular_malo_obs")
+    // El bloqueador solar conserva su registro de entrega como columna propia.
+    expect(kinds(INSPECCION_EPP)).toContain("si_no_obs")
   })
 
   it("las tres pasan el validador del PDTP", async () => {

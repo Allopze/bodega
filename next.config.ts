@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
+const configuredBuildWorkers = Number.parseInt(process.env.BODEGA_BUILD_WORKERS ?? "", 10);
+const buildWorkers = Number.isSafeInteger(configuredBuildWorkers) && configuredBuildWorkers > 0
+  ? configuredBuildWorkers
+  : undefined;
+
 // NOTE: la Content-Security-Policy se define en el middleware (`proxy.ts` →
 // `lib/security/csp.ts`) con nonce por request + 'strict-dynamic'. No se
 // duplica aquí para evitar dos cabeceras CSP en conflicto.
@@ -15,6 +20,9 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   output: "standalone",
   experimental: {
+    // scripts/run-resource-guard.sh fija 3 en desarrollo. Sin la variable
+    // (por ejemplo en CI) Next conserva su política nativa de workers.
+    ...(buildWorkers ? { cpus: buildWorkers } : {}),
     serverActions: {
       // The largest Server Action upload is 20 MB. Leave multipart overhead
       // headroom while keeping the framework cap below the configured storage
