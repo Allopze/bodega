@@ -1,7 +1,6 @@
 import { and, desc, eq, gte, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import { fleetGpsAlertRules, fleetGpsAlerts, fuelVehicles } from "@/db/schema"
-import { nanoid } from "@/lib/id"
 import { createMaintenanceRecordWithClient } from "@/lib/services/maintenance"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notification-targeting"

@@ -14,7 +14,6 @@ const reactCheck = await page.evaluate(() => {
   const btn = document.querySelector('button[type="submit"]')
   if (!btn) return 'no btn'
   // React 18+ marca el root con un comentario
-  const root = document.querySelector('main')
   const reactKey = Object.keys(btn).find(k => k.startsWith('__reactProps') || k.startsWith('__reactFiber'))
   return {
     hasReactKey: !!reactKey,
