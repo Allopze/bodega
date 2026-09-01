@@ -71,7 +71,7 @@ function nextStep(program: ProgramLifecycle, pendingStep: ApprovalStepProgress |
   if (program.status === "closed") return "El expediente está cerrado y no admite nuevas ejecuciones."
   if (program.status === "archived") return "Esta versión se conserva solo como expediente histórico."
   if (pendingStep) return `Contenido congelado; falta completar: ${pendingStep.label}.`
-  return "Todas las decisiones están completas; falta activar la versión."
+  return "Todas las decisiones están completas; falta aceptar y activar la versión. La vigencia comenzará en ese momento."
 }
 
 export function ProgramLifecycleControls({
@@ -158,7 +158,7 @@ export function ProgramLifecycleControls({
           )}
           {program.status === "in_review" && !pendingStep && permissions.canActivate && (
             <Button size="sm" loading={pending} onClick={() => run(() => activatePdtpProgramAction(program.id))}>
-              Activar versión
+              Aceptar y activar versión
             </Button>
           )}
           {canDecideCurrentStep && pendingStep && (

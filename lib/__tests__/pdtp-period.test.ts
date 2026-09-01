@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { currentPdtpPeriod, deriveActivityStatus, type PdtpPeriod } from "@/lib/services/pdtp/period"
+import {
+  currentPdtpPeriod,
+  deriveActivityStatus,
+  filterPdtpRowsFromActivation,
+  isPdtpPeriodOnOrAfterActivation,
+  type PdtpPeriod,
+} from "@/lib/services/pdtp/period"
 
 // El período se resuelve en hora de Chile, así que los casos se expresan como
 // instantes UTC explícitos (mediodía chileno) y no con `new Date(y, m, d)`, que
@@ -50,6 +56,34 @@ describe("currentPdtpPeriod", () => {
     const now = currentPdtpPeriod(new Date())
     expect(period.year).toBe(now.year)
     expect(period.month).toBe(now.month)
+  })
+})
+
+describe("vigencia del programa PDTP", () => {
+  const activatedAt = "2026-07-15T15:00:00.000Z"
+
+  it("incluye la semana de aceptación y todas las posteriores hasta fin de año", () => {
+    expect(isPdtpPeriodOnOrAfterActivation({ year: 2026, month: 7, week: 2 }, activatedAt)).toBe(false)
+    expect(isPdtpPeriodOnOrAfterActivation({ year: 2026, month: 7, week: 3 }, activatedAt)).toBe(true)
+    expect(isPdtpPeriodOnOrAfterActivation({ year: 2026, month: 12, week: 4 }, activatedAt)).toBe(true)
+  })
+
+  it("excluye filas anteriores y conserva programas históricos sin activatedAt", () => {
+    const rows = [
+      { year: 2026, month: 1, week: 1, value: "antes" },
+      { year: 2026, month: 7, week: 3, value: "aceptación" },
+      { year: 2026, month: 10, week: 1, value: "después" },
+    ]
+    expect(filterPdtpRowsFromActivation(rows, activatedAt).map((row) => row.value))
+      .toEqual(["aceptación", "después"])
+    expect(filterPdtpRowsFromActivation(rows, null)).toBe(rows)
+  })
+
+  it("resuelve la aceptación con fecha chilena cerca de medianoche UTC", () => {
+    // En Chile aún es 14 de julio (semana 2), aunque en UTC ya sea día 15.
+    const nearMidnight = "2026-07-15T02:30:00.000Z"
+    expect(isPdtpPeriodOnOrAfterActivation({ year: 2026, month: 7, week: 1 }, nearMidnight)).toBe(false)
+    expect(isPdtpPeriodOnOrAfterActivation({ year: 2026, month: 7, week: 2 }, nearMidnight)).toBe(true)
   })
 })
 

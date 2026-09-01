@@ -9,6 +9,7 @@ import { db } from "@/db"
 import { pdtpActivities, pdtpActivityWorksiteParams, pdtpPrograms } from "@/db/schema"
 import { assertWorksiteAccess, loadProgramScheduleAndExecutions, type WorksiteScope } from "./helpers"
 import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
+import { filterPdtpRowsFromActivation } from "./period"
 
 export type PdtpManagementReportActivityRow = {
   activityNumber: number
@@ -126,9 +127,11 @@ export async function getPdtpManagementReport(input: {
   })
 
   const activityIds = scheduledActivities.map((a) => a.id)
-  const { scheduleRows, executionRows } = activityIds.length > 0
+  const loaded = activityIds.length > 0
     ? await loadProgramScheduleAndExecutions(activityIds, program.year, input.worksiteId)
     : { scheduleRows: [], executionRows: [] }
+  const scheduleRows = filterPdtpRowsFromActivation(loaded.scheduleRows, program.activatedAt)
+  const executionRows = filterPdtpRowsFromActivation(loaded.executionRows, program.activatedAt)
   const approvedExecutions = executionRows.filter((row) => row.status === "approved")
 
   const inPeriod = (month: number) => (filters.monthFrom === undefined || month >= filters.monthFrom) && (filters.monthTo === undefined || month <= filters.monthTo)

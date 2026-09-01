@@ -13,6 +13,7 @@ import {
 import { PDTP_ESTADOS_CERRADOS } from "./checklist-domain"
 import { capaEstado } from "./capa-view"
 import { loadApprovedExecutionsForWorksites, loadProgramScheduleAndExecutions } from "./helpers"
+import { filterPdtpRowsFromActivation } from "./period"
 
 export type PdtpComplianceMonth = {
   month: number
@@ -108,7 +109,9 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
   }
 
   const allActivityIds = activityRows.map((row) => row.id)
-  const { scheduleRows, executionRows } = await loadProgramScheduleAndExecutions(allActivityIds, year, worksiteId)
+  const loaded = await loadProgramScheduleAndExecutions(allActivityIds, year, worksiteId)
+  const scheduleRows = filterPdtpRowsFromActivation(loaded.scheduleRows, program.activatedAt)
+  const executionRows = filterPdtpRowsFromActivation(loaded.executionRows, program.activatedAt)
   // El cumplimiento formal solo incorpora ejecuciones validadas. Las
   // submitted siguen visibles en el tablero operativo y en aprobaciones.
   const approvedExecutionRows = executionRows.filter((row) => row.status === "approved")
@@ -313,11 +316,13 @@ export async function getPdtpComplianceByCategoryForScope(
   if (scorable.length === 0) return []
   const categoryByActivity = new Map(scorable.map((row) => [row.id, row.program || "General"]))
 
-  const { scheduleRows, executionRows } = await loadApprovedExecutionsForWorksites(
+  const loaded = await loadApprovedExecutionsForWorksites(
     scorable.map((row) => row.id),
     program.year,
     worksiteIds,
   )
+  const scheduleRows = filterPdtpRowsFromActivation(loaded.scheduleRows, program.activatedAt)
+  const executionRows = filterPdtpRowsFromActivation(loaded.executionRows, program.activatedAt)
 
   const totals = new Map<string, { planned: number; executed: number }>()
   const bump = (activityId: string, field: "planned" | "executed", amount: number) => {
@@ -478,11 +483,12 @@ export async function getPdtpIntegralComplianceForScope(
 
   const activityRows = await db.select({ id: pdtpActivities.id }).from(pdtpActivities)
     .where(eq(pdtpActivities.programId, program.id))
-  const { executionRows } = await loadApprovedExecutionsForWorksites(
+  const loaded = await loadApprovedExecutionsForWorksites(
     activityRows.map((row) => row.id),
     program.year,
     worksiteIds,
   )
+  const executionRows = filterPdtpRowsFromActivation(loaded.executionRows, program.activatedAt)
   const { verificacion, cierre } = await computeVerificacionYCierre(executionRows.map((row) => row.id))
 
   return weightIntegral(program, { ejecucion, verificacion, cierre })
@@ -519,7 +525,8 @@ export async function getPdtpIntegralCompliance(
 
   let approvedExecutionIds: string[] = []
   if (activityIds.length > 0) {
-    const { executionRows } = await loadProgramScheduleAndExecutions(activityIds, program.year, worksiteId)
+    const loaded = await loadProgramScheduleAndExecutions(activityIds, program.year, worksiteId)
+    const executionRows = filterPdtpRowsFromActivation(loaded.executionRows, program.activatedAt)
     // El indicador integral es formal: checklist y acciones también requieren
     // que la ejecución base haya sido aprobada.
     approvedExecutionIds = executionRows.reduce<string[]>((ids, execution) => {

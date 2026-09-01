@@ -104,6 +104,20 @@ describe("ProgramLifecycleControls", () => {
     expect(screen.queryByRole("button", { name: "Aprobar: Revisión JDPR" })).not.toBeInTheDocument()
   })
 
+  it("makes acceptance the explicit start of program validity", () => {
+    render(<ProgramLifecycleControls program={{
+      ...baseProgram,
+      status: "in_review",
+      contentDigest: "a".repeat(64),
+      reviewStartedAt: "2026-07-21T12:00:00.000Z",
+      approvedByJdprAt: "2026-07-21T13:00:00.000Z",
+      approvedByLegalAt: "2026-07-21T14:00:00.000Z",
+    }} permissions={permissions} />)
+
+    expect(screen.getByText(/La vigencia comenzará en ese momento/)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Aceptar y activar versión" })).toBeInTheDocument()
+  })
+
   it("renders the next configured step instead of assuming fixed cargos", () => {
     render(<ProgramLifecycleControls
       program={{

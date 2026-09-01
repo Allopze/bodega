@@ -126,6 +126,12 @@ describe("prevention PDTP service", () => {
     await approvePdtpProgramJdpr(program.id, "user-jdpr")
     await signPdtpProgramLegal(program.id, "user-legal")
     await activatePdtpProgram(program.id, "user-jdpr")
+    // La mayoría de estos casos ejercita reglas históricas del catálogo base,
+    // no el corte de vigencia. Fijamos el inicio al primer bloque del año para
+    // que la fecha real en que corre Vitest no cambie sus denominadores.
+    await inMemoryDb.update(schema.pdtpPrograms)
+      .set({ activatedAt: "2026-01-01T15:00:00.000Z" })
+      .where(eq(schema.pdtpPrograms.id, program.id))
     return program
   }
 
@@ -769,6 +775,125 @@ describe("prevention PDTP service", () => {
     expect(result!.annual.executed).toBe(0)
     // Month 1 (January) has programmed activities in the Excel
     expect(result!.monthly[0]!.planned).toBe(76)
+  })
+
+  it("empieza el cumplimiento en la semana de aceptación y no castiga actividades anteriores", async () => {
+    const {
+      createLegacyPdtpProgramForTests,
+      addPdtpActivity,
+      submitPdtpProgramForReview,
+      approvePdtpProgramJdpr,
+      signPdtpProgramLegal,
+      activatePdtpProgram,
+      buildPdtpExport,
+      getPdtpComplianceIndicators,
+      getPdtpComplianceByCategoryForScope,
+      getPdtpIntegralCompliance,
+      getPdtpIntegralComplianceForScope,
+      getPdtpManagementReport,
+      getPdtpSheetViewByProgram,
+      markPdtpExecution,
+    } = await import("@/lib/services/prevention-pdtp")
+
+    const program = await createLegacyPdtpProgramForTests({
+      year: 2035,
+      title: "Programa aceptado a mitad de año",
+      userId: "user-1",
+    })
+    const activity = await addPdtpActivity({
+      programId: program.id,
+      activity: "Actividad mensual desde la aceptación",
+      program: "Gestión preventiva",
+      responsibleSlugs: ["prf"],
+      responsibleDisplay: "Prevencionista",
+      scheduleMode: "scheduled",
+      recurrenceRule: { frequency: "monthly", interval: 1, plannedQuantity: 1, weekOfMonth: 3 },
+      evidenceRequirement: "Registro verificable",
+      indicatorMode: "planned_vs_completed",
+      sheetCodes: ["pdtp_general"],
+    }, "user-1")
+    await prepareProgramForReview(program.id)
+    await submitPdtpProgramForReview(program.id, "user-1")
+    await approvePdtpProgramJdpr(program.id, "user-jdpr")
+    await signPdtpProgramLegal(program.id, "user-legal")
+    await activatePdtpProgram(program.id, "user-jdpr")
+    await inMemoryDb.update(schema.pdtpPrograms)
+      .set({ activatedAt: "2035-07-15T15:00:00.000Z" })
+      .where(eq(schema.pdtpPrograms.id, program.id))
+
+    // Simula una evidencia histórica/importada anterior a la activación. Debe
+    // conservarse en el expediente, pero nunca sumar al cumplimiento exigible.
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.pdtpExecutions).values({
+      id: "execution-before-midyear-activation",
+      activityId: activity.id,
+      worksiteId: "ws-1",
+      year: 2035,
+      month: 1,
+      week: 3,
+      executedQuantity: 1,
+      status: "approved",
+      evidenceText: "Evidencia histórica de enero conservada para trazabilidad",
+      evidencePhotos: [],
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    const result = await getPdtpComplianceIndicators(program.id, "ws-1")
+
+    expect(result!.monthly.slice(0, 6).every((month) => month.planned === 0 && month.percent === null)).toBe(true)
+    expect(result!.monthly.slice(6).every((month) => month.planned === 1)).toBe(true)
+    expect(result!.annual).toEqual({ planned: 6, executed: 0, percent: 0 })
+
+    const report = await getPdtpManagementReport({
+      programId: program.id,
+      worksiteId: "ws-1",
+      scope: ["ws-1"],
+    })
+    expect(report!.activities).toHaveLength(1)
+    expect(report!.activities[0]!.planned).toBe(6)
+
+    await expect(getPdtpComplianceByCategoryForScope(program.id, ["ws-1"]))
+      .resolves.toEqual([{ category: "Gestión preventiva", planned: 6, executed: 0, percent: 0 }])
+    await expect(getPdtpIntegralCompliance(program.id, "ws-1"))
+      .resolves.toMatchObject({ ejecucion: 0, verificacion: null, cierre: null })
+    await expect(getPdtpIntegralComplianceForScope(program.id, ["ws-1"]))
+      .resolves.toMatchObject({ ejecucion: 0, verificacion: null, cierre: null })
+
+    const view = await getPdtpSheetViewByProgram(program.id, "pdtp_general", "ws-1")
+    expect(view!.activities[0]).toMatchObject({
+      monthlyPlanned: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+      effectiveMonthlyPlanned: [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1],
+      totalPlanned: 12,
+      effectiveTotalPlanned: 6,
+    })
+    expect(view!.activities[0]!.executions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "execution-before-midyear-activation",
+        evidenceText: "Evidencia histórica de enero conservada para trazabilidad",
+      }),
+    ]))
+
+    const exported = await buildPdtpExport({
+      programId: program.id,
+      year: 2035,
+      sheetCode: "pdtp_general",
+      worksiteId: "ws-1",
+      scope: ["ws-1"],
+    })
+    const januaryPlannedIndex = exported.headers.indexOf("Ene P")
+    const januaryExecutedIndex = exported.headers.indexOf("Ene E")
+    expect(exported.rows[0]?.[januaryPlannedIndex]).toBe(1)
+    expect(exported.rows[0]?.[januaryExecutedIndex]).toBe(1)
+
+    await expect(markPdtpExecution({
+      activityId: activity.id,
+      worksiteId: "ws-1",
+      year: 2035,
+      month: 2,
+      week: 3,
+      executedQuantity: 1,
+    }, "user-1", ["ws-1"])).rejects.toThrow(/aún no estaba activo/i)
   })
 
   it("getPdtpComplianceIndicators suma solo cantidades aprobadas", async () => {

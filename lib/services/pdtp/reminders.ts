@@ -11,7 +11,7 @@
 import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpExecutions, pdtpObligationReminders, pdtpPrograms, pdtpProgramWorksites, worksites } from "@/db/schema"
-import { currentPdtpPeriod, type PdtpPeriod } from "./period"
+import { currentPdtpPeriod, isPdtpPeriodOnOrAfterActivation, type PdtpPeriod } from "./period"
 import { logger } from "@/lib/logger"
 import { createNotifications, getUserIdsWithPermissionForWorksite } from "@/lib/services/notifications"
 import { listVencidas } from "./followups"
@@ -52,6 +52,9 @@ export async function findPdtpWeeklyPending(period: PdtpPeriod = currentPdtpPeri
     .where(and(eq(pdtpPrograms.year, period.year), eq(pdtpPrograms.status, "active")))
     .limit(1)
   if (!program) return []
+  // Una consulta retrospectiva (o un cron desfasado) no puede reclamar trabajo
+  // de una semana en que la versión aún no estaba activa.
+  if (!isPdtpPeriodOnOrAfterActivation(period, program.activatedAt)) return []
 
   const activityRows = await db
     .select({

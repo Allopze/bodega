@@ -41,7 +41,8 @@ describe("findPdtpWeeklyPending", () => {
     ])
     await inMemoryDb.insert(schema.pdtpPrograms).values({
       id: "program-2026", year: 2026, version: 1, status: "active", title: "PDTP 2026",
-      elaboratedByName: "Prevención", elaboratedByTitle: "PR", createdAt: now, updatedAt: now,
+      elaboratedByName: "Prevención", elaboratedByTitle: "PR", activatedAt: "2026-07-08T15:00:00.000Z",
+      createdAt: now, updatedAt: now,
     })
     await inMemoryDb.insert(schema.pdtpActivities).values([
       { id: "act-pending", programId: "program-2026", n: 1, activity: "Pendiente", program: "P", responsibleSlugs: [], responsibleDisplay: "PR", sourceSheetRow: 1, createdAt: now, updatedAt: now },
@@ -70,6 +71,10 @@ describe("findPdtpWeeklyPending", () => {
     expect(targets).toEqual([
       { worksiteId: "ws-active", worksiteName: "Faena activa", activityIds: ["act-pending"] },
     ])
+
+    // La semana 1 tenía planificación, pero la versión todavía no estaba
+    // aceptada: una consulta retrospectiva no debe generar ese pendiente.
+    await expect(findPdtpWeeklyPending({ year: 2026, month: 7, week: 1 })).resolves.toEqual([])
   })
 })
 

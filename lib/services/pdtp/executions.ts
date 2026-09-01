@@ -11,6 +11,7 @@ import { existsSync } from "node:fs"
 import { logger } from "@/lib/logger"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
+import { isPdtpPeriodOnOrAfterActivation } from "./period"
 
 export async function markPdtpExecution(input: unknown, userId: string, scope: WorksiteScope) {
   const data = pdtpExecutionSchema.parse(input)
@@ -23,7 +24,11 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
   }).from(pdtpActivities).where(eq(pdtpActivities.id, data.activityId)).limit(1)
   if (!activity) throw new Error("Actividad PDTP no encontrada.")
 
-  const [program] = await db.select({ status: pdtpPrograms.status, year: pdtpPrograms.year }).from(pdtpPrograms).where(eq(pdtpPrograms.id, activity.programId)).limit(1)
+  const [program] = await db.select({
+    status: pdtpPrograms.status,
+    year: pdtpPrograms.year,
+    activatedAt: pdtpPrograms.activatedAt,
+  }).from(pdtpPrograms).where(eq(pdtpPrograms.id, activity.programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
   if (program.status !== "active") throw new Error("Solo se pueden registrar ejecuciones contra programas PDTP en estado activo.")
   // Si el programa declara membresía de faenas, una faena fuera de ella no
@@ -34,6 +39,9 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
   // /aprobaciones consultan por `program.year`, así que nunca aparecería.
   if (program.year !== data.year) {
     throw new Error(`La ejecución debe corresponder al año del programa (${program.year}).`)
+  }
+  if (!isPdtpPeriodOnOrAfterActivation(data, program.activatedAt)) {
+    throw new Error("El programa aún no estaba activo en el período seleccionado. Registra actividades desde su semana de activación.")
   }
   if (!isPdtpActivityEffectiveForPeriod(activity, data.year, data.month, data.week)) {
     throw new Error("La actividad está retirada para el período seleccionado y no admite nuevas ejecuciones.")

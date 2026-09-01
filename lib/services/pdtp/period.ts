@@ -8,6 +8,12 @@ export type PdtpPeriod = {
 
 export type PdtpActivityStatus = "pending" | "executed" | "overdue" | "not_scheduled"
 
+type PdtpPeriodRow = {
+  year: number
+  month: number
+  week: number
+}
+
 /**
  * Compute the current PDTP period (year, month, week).
  * Week is calculated as: day 1-7 → week 1, day 8-14 → week 2, day 15-21 → week 3, day 22-31 → week 4
@@ -20,6 +26,42 @@ export function currentPdtpPeriod(now: Date = new Date()): PdtpPeriod {
   const week = Math.min(4, Math.ceil(day / 7))
 
   return { year, month, week }
+}
+
+/**
+ * El PDTP se vuelve exigible cuando se activa la versión ya aprobada. Como el
+ * calendario firmado solo tiene granularidad mes/semana, la semana de
+ * activación se conserva completa: todavía puede ejecutarse durante ese mismo
+ * bloque; únicamente salen las celdas de semanas anteriores.
+ *
+ * `activatedAt = null` conserva el comportamiento histórico de programas
+ * importados que ya estaban activos antes de que se registrara esta huella.
+ */
+export function isPdtpPeriodOnOrAfterActivation(
+  period: PdtpPeriodRow,
+  activatedAt: string | null | undefined,
+): boolean {
+  const activationPeriod = pdtpActivationPeriod(activatedAt)
+  if (!activationPeriod) return true
+  if (period.year !== activationPeriod.year) return period.year > activationPeriod.year
+  if (period.month !== activationPeriod.month) return period.month > activationPeriod.month
+  return period.week >= activationPeriod.week
+}
+
+export function pdtpActivationPeriod(activatedAt: string | null | undefined): PdtpPeriod | null {
+  if (!activatedAt) return null
+  const activationDate = new Date(activatedAt)
+  return Number.isNaN(activationDate.getTime()) ? null : currentPdtpPeriod(activationDate)
+}
+
+/** Excluye del cómputo las obligaciones anteriores a la activación. */
+export function filterPdtpRowsFromActivation<T extends PdtpPeriodRow>(
+  rows: T[],
+  activatedAt: string | null | undefined,
+): T[] {
+  return activatedAt
+    ? rows.filter((row) => isPdtpPeriodOnOrAfterActivation(row, activatedAt))
+    : rows
 }
 
 /**

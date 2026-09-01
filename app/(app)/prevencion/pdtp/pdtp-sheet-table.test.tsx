@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { PdtpSheetTable } from "./pdtp-sheet-table"
+import { PdtpExecutionForm } from "./pdtp-execution-form"
 import type { PdtpSheetView } from "@/lib/services/prevention-pdtp"
 import type { PdtpPeriod } from "@/lib/services/pdtp/period"
 
@@ -31,19 +32,25 @@ function makeActivity(
 ): PdtpSheetView["activities"][number] {
   const totalPlanned = monthlyPlanned.reduce((s, v) => s + v, 0)
   const totalExecuted = monthlyExecuted.reduce((s, v) => s + v, 0)
+  const schedule = monthlyPlanned.flatMap((plannedQuantity, index) => plannedQuantity > 0
+    ? [{ month: index + 1, week: 2, plannedQuantity }]
+    : [])
   return {
     id,
     n,
     activity,
     program: "Programa X",
     responsibleDisplay: "Responsable X",
-    schedule: monthlyPlanned.flatMap((plannedQuantity, index) => plannedQuantity > 0
-      ? [{ month: index + 1, week: 2, plannedQuantity }]
-      : []),
+    schedule,
+    effectiveSchedule: schedule,
     monthlyPlanned,
     monthlyExecuted,
+    effectiveMonthlyPlanned: monthlyPlanned,
+    effectiveMonthlyExecuted: monthlyExecuted,
     totalPlanned,
     totalExecuted,
+    effectiveTotalPlanned: totalPlanned,
+    effectiveTotalExecuted: totalExecuted,
     executions,
     notes,
   } as unknown as PdtpSheetView["activities"][number]
@@ -122,6 +129,7 @@ describe("PdtpSheetTable — weekly filter", () => {
     const thisWeek = makeActivity("act-this-week", "5", "Actividad de esta semana", withPlanned(7, 1), ZERO12)
     const laterWeek = makeActivity("act-later-week", "6", "Actividad de otra semana", withPlanned(7, 1), ZERO12)
     laterWeek.schedule = [{ month: 7, week: 3, plannedQuantity: 1 }] as never
+    laterWeek.effectiveSchedule = laterWeek.schedule
     const view = makeView([thisWeek, laterWeek])
 
     render(<PdtpSheetTable view={view} viewMode="semana" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
@@ -158,6 +166,31 @@ describe("PdtpSheetTable — weekly filter", () => {
     expect(screen.getByText("No programada en este período")).toBeDefined()
   })
 
+  it("preserves the signed annual plan but does not mark pre-activation months overdue", () => {
+    const activity = makeActivity(
+      "act-midyear",
+      "7",
+      "Actividad aceptada en julio",
+      [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+      ZERO12,
+    )
+    activity.effectiveSchedule = [{ month: 7, week: 2, plannedQuantity: 1 }] as never
+    activity.effectiveMonthlyPlanned = withPlanned(7, 1)
+    activity.effectiveTotalPlanned = 1
+
+    render(<PdtpSheetTable
+      view={makeView([activity])}
+      viewMode="anual"
+      currentPeriod={CURRENT_PERIOD}
+      sheetCode="pdtp_general"
+    />)
+
+    const row = screen.getByText("Actividad aceptada en julio").closest("tr")!
+    expect(within(row).getByText("Pendiente")).toBeInTheDocument()
+    expect(within(row).queryByText(/Atrasado/)).not.toBeInTheDocument()
+    expect(row.lastElementChild).toHaveTextContent("2")
+  })
+
   it("uses user-facing period and status labels in the annual execution details", () => {
     const execution = {
       id: "exec-1",
@@ -192,6 +225,27 @@ describe("PdtpSheetTable — weekly filter", () => {
     const noteEl = container.querySelector(`p[title="Esta es una nota de prueba sobre la actividad"]`)
     expect(noteEl).toBeTruthy()
     expect(noteEl?.textContent).toContain("Esta es una nota de prueba")
+  })
+})
+
+describe("PdtpExecutionForm — vigencia", () => {
+  it("no ofrece períodos anteriores y parte en la semana de aceptación", () => {
+    render(<PdtpExecutionForm
+      activityId="act-midyear"
+      worksiteId="ws-1"
+      year={2026}
+      defaultMonth={7}
+      defaultWeek={2}
+      effectiveFrom={{ year: 2026, month: 7, week: 3 }}
+    />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Registrar" }))
+    expect(screen.getByRole("combobox", { name: "Semana" })).toHaveTextContent("3")
+
+    fireEvent.click(screen.getByRole("combobox", { name: "Mes" }))
+    expect(screen.queryByRole("option", { name: "Jun" })).not.toBeInTheDocument()
+    expect(screen.getByRole("option", { name: "Jul" })).toBeInTheDocument()
+    expect(screen.getByRole("option", { name: "Dic" })).toBeInTheDocument()
   })
 })
 

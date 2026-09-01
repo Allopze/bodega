@@ -15,17 +15,24 @@ import { listActionsByProgram, countActionsByExecution } from "./action-plan"
 import { listFollowups } from "./followups"
 import { countNoCumpleByExecution } from "./execution-checklists"
 import { readPdtpActivityContent } from "./activity-content"
-import { deriveActivityStatus, type PdtpActivityStatus, type PdtpPeriod } from "./period"
+import { deriveActivityStatus, filterPdtpRowsFromActivation, type PdtpActivityStatus, type PdtpPeriod } from "./period"
 
 export type PdtpSheetView = {
   program: typeof pdtpPrograms.$inferSelect
   sheet: typeof pdtpSheets.$inferSelect
   activities: Array<typeof pdtpActivities.$inferSelect & {
     schedule: Array<typeof pdtpActivitySchedule.$inferSelect>
+    /** Cronograma exigible desde la activación; `schedule` conserva el plan
+     * histórico completo para trazabilidad y exportación. */
+    effectiveSchedule: Array<typeof pdtpActivitySchedule.$inferSelect>
     totalPlanned: number
     totalExecuted: number
     monthlyPlanned: number[]
     monthlyExecuted: number[]
+    effectiveTotalPlanned: number
+    effectiveTotalExecuted: number
+    effectiveMonthlyPlanned: number[]
+    effectiveMonthlyExecuted: number[]
     executions: Array<{
       id: string
       year: number
@@ -41,7 +48,9 @@ export type PdtpSheetView = {
       actionsOverdue: number
     }>
   }>
-  /** `percent` aquí es entero 0-100 (no fracción). No confundir con
+  /** Estos totales conservan el plan y avance históricos completos. Los
+   * estados y KPI exigibles deben usar los campos `effective*` de actividad.
+   * `percent` aquí es entero 0-100 (no fracción). No confundir con
    * `PdtpComplianceIndicators.percent`, que es fracción 0-1 para compararse
    * directo contra `complianceTarget`. Hoy `monthlyTotals[].percent` no se
    * renderiza en ninguna UI (solo `planned`/`executed`); si se consume, usar
@@ -89,19 +98,26 @@ export async function getPdtpAggregatedSheetViewByProgram(
   if (memberships.length === 0) return { program, sheet, activities: [], monthlyTotals: emptyMonthlyTotals(), aggregate: true, worksiteSummaries: [] }
 
   const activityIds = memberships.map((membership) => membership.activityId)
-  const [activityRows, perWorksite] = await Promise.all([
+  const [activityRows, loadedPerWorksite] = await Promise.all([
     db.select().from(pdtpActivities).where(and(inArray(pdtpActivities.id, activityIds), eq(pdtpActivities.programId, programId))),
     Promise.all(authorizedWorksiteIds.map(async (worksiteId) => ({ worksiteId, ...(await loadProgramScheduleAndExecutions(activityIds, program.year, worksiteId)) }))),
   ])
+  const effectivePerWorksite = loadedPerWorksite.map((entry) => ({
+    ...entry,
+    scheduleRows: filterPdtpRowsFromActivation(entry.scheduleRows, program.activatedAt),
+    executionRows: filterPdtpRowsFromActivation(entry.executionRows, program.activatedAt),
+  }))
   const activityById = new Map(activityRows.map((activity) => [activity.id, activity]))
   const schedulesByActivity = new Map<string, Array<typeof pdtpActivitySchedule.$inferSelect>>()
   const executionsByActivity = new Map<string, Array<typeof pdtpExecutions.$inferSelect>>()
-  const worksiteSummaries = perWorksite.map(({ worksiteId, scheduleRows, executionRows }) => ({
+  const effectiveSchedulesByActivity = new Map<string, Array<typeof pdtpActivitySchedule.$inferSelect>>()
+  const effectiveExecutionsByActivity = new Map<string, Array<typeof pdtpExecutions.$inferSelect>>()
+  const worksiteSummaries = effectivePerWorksite.map(({ worksiteId, scheduleRows, executionRows }) => ({
     worksiteId,
     planned: scheduleRows.reduce((total, row) => total + row.plannedQuantity, 0),
     executed: executionRows.filter((row) => row.status === "approved").reduce((total, row) => total + row.executedQuantity, 0),
   }))
-  for (const { scheduleRows, executionRows } of perWorksite) {
+  for (const { scheduleRows, executionRows } of loadedPerWorksite) {
     for (const row of scheduleRows) {
       const rows = schedulesByActivity.get(row.activityId) ?? []
       rows.push(row)
@@ -113,14 +129,29 @@ export async function getPdtpAggregatedSheetViewByProgram(
       executionsByActivity.set(row.activityId, rows)
     }
   }
+  for (const { scheduleRows, executionRows } of effectivePerWorksite) {
+    for (const row of scheduleRows) {
+      const rows = effectiveSchedulesByActivity.get(row.activityId) ?? []
+      rows.push(row)
+      effectiveSchedulesByActivity.set(row.activityId, rows)
+    }
+    for (const row of executionRows) {
+      const rows = effectiveExecutionsByActivity.get(row.activityId) ?? []
+      rows.push(row)
+      effectiveExecutionsByActivity.set(row.activityId, rows)
+    }
+  }
   const monthlyTotals = emptyMonthlyTotals()
   const activities: PdtpAggregatedSheetView["activities"] = []
   for (const membership of memberships) {
     const activity = activityById.get(membership.activityId)
     if (!activity) continue
     const schedule = (schedulesByActivity.get(activity.id) ?? []).sort((a, b) => a.month - b.month || a.week - b.week)
+    const effectiveSchedule = (effectiveSchedulesByActivity.get(activity.id) ?? []).sort((a, b) => a.month - b.month || a.week - b.week)
     const monthlyPlanned = Array.from({ length: 12 }, () => 0)
     const monthlyExecuted = Array.from({ length: 12 }, () => 0)
+    const effectiveMonthlyPlanned = Array.from({ length: 12 }, () => 0)
+    const effectiveMonthlyExecuted = Array.from({ length: 12 }, () => 0)
     for (const row of schedule) {
       monthlyPlanned[row.month - 1]! += row.plannedQuantity
       monthlyTotals[row.month - 1]!.planned += row.plannedQuantity
@@ -130,7 +161,11 @@ export async function getPdtpAggregatedSheetViewByProgram(
       monthlyExecuted[row.month - 1]! += row.executedQuantity
       monthlyTotals[row.month - 1]!.executed += row.executedQuantity
     }
-    const activityWorksiteSummaries = perWorksite.map(({ worksiteId, scheduleRows, executionRows }) => {
+    for (const row of effectiveSchedule) effectiveMonthlyPlanned[row.month - 1]! += row.plannedQuantity
+    for (const row of effectiveExecutionsByActivity.get(activity.id) ?? []) {
+      if (row.status === "approved") effectiveMonthlyExecuted[row.month - 1]! += row.executedQuantity
+    }
+    const activityWorksiteSummaries = effectivePerWorksite.map(({ worksiteId, scheduleRows, executionRows }) => {
       const plannedByMonth = Array.from({ length: 12 }, () => 0)
       const executedByMonth = Array.from({ length: 12 }, () => 0)
       for (const row of scheduleRows) if (row.activityId === activity.id) plannedByMonth[row.month - 1]! += row.plannedQuantity
@@ -142,7 +177,21 @@ export async function getPdtpAggregatedSheetViewByProgram(
         status: deriveActivityStatus(plannedByMonth, executedByMonth, period),
       }
     })
-    activities.push({ ...activity, schedule, monthlyPlanned, monthlyExecuted, totalPlanned: monthlyPlanned.reduce((sum, value) => sum + value, 0), totalExecuted: monthlyExecuted.reduce((sum, value) => sum + value, 0), executions: [], worksiteSummaries: activityWorksiteSummaries })
+    activities.push({
+      ...activity,
+      schedule,
+      effectiveSchedule,
+      monthlyPlanned,
+      monthlyExecuted,
+      effectiveMonthlyPlanned,
+      effectiveMonthlyExecuted,
+      totalPlanned: monthlyPlanned.reduce((sum, value) => sum + value, 0),
+      totalExecuted: monthlyExecuted.reduce((sum, value) => sum + value, 0),
+      effectiveTotalPlanned: effectiveMonthlyPlanned.reduce((sum, value) => sum + value, 0),
+      effectiveTotalExecuted: effectiveMonthlyExecuted.reduce((sum, value) => sum + value, 0),
+      executions: [],
+      worksiteSummaries: activityWorksiteSummaries,
+    })
   }
   for (const month of monthlyTotals) month.percent = month.planned > 0 ? Math.round((month.executed / month.planned) * 100) : null
   return { program, sheet, activities, monthlyTotals, aggregate: true, worksiteSummaries }
@@ -167,13 +216,17 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
   }
 
   const activityIds = memberships.map((m) => m.activityId)
-  const [activityRows, { scheduleRows, executionRows }] = await Promise.all([
+  const [activityRows, loaded] = await Promise.all([
     db.select().from(pdtpActivities).where(and(
       inArray(pdtpActivities.id, activityIds),
       eq(pdtpActivities.programId, programId),
     )),
     loadProgramScheduleAndExecutions(activityIds, program.year, worksiteId),
   ])
+  // La vista conserva el cronograma y las ejecuciones completas. El recorte de
+  // vigencia vive en campos `effective*`, usados sólo por estados y KPI.
+  const scheduleRows = loaded.scheduleRows
+  const executionRows = loaded.executionRows
 
   const activityById = new Map(activityRows.map((a) => [a.id, a]))
   const scheduleByActivity = new Map<string, Array<typeof pdtpActivitySchedule.$inferSelect>>()
@@ -206,8 +259,11 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
     // from a different program that was filtered out above).
     if (!activity) continue
     const schedule = (scheduleByActivity.get(activity.id) ?? []).sort((a, b) => a.month - b.month || a.week - b.week)
+    const effectiveSchedule = filterPdtpRowsFromActivation(schedule, program.activatedAt)
     const monthlyPlanned = Array.from({ length: 12 }, () => 0)
     const monthlyExecuted = Array.from({ length: 12 }, () => 0)
+    const effectiveMonthlyPlanned = Array.from({ length: 12 }, () => 0)
+    const effectiveMonthlyExecuted = Array.from({ length: 12 }, () => 0)
 
     for (const cell of schedule) {
       monthlyPlanned[cell.month - 1] = (monthlyPlanned[cell.month - 1] ?? 0) + cell.plannedQuantity
@@ -218,11 +274,20 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
       monthlyExecuted[execution.month - 1] = (monthlyExecuted[execution.month - 1] ?? 0) + execution.executedQuantity
       monthlyTotals[execution.month - 1]!.executed += execution.executedQuantity
     }
+    for (const cell of effectiveSchedule) {
+      effectiveMonthlyPlanned[cell.month - 1] = (effectiveMonthlyPlanned[cell.month - 1] ?? 0) + cell.plannedQuantity
+    }
+    for (const execution of filterPdtpRowsFromActivation(activityExecutions, program.activatedAt)) {
+      effectiveMonthlyExecuted[execution.month - 1] = (effectiveMonthlyExecuted[execution.month - 1] ?? 0) + execution.executedQuantity
+    }
 
     activities.push({
-      ...activity, schedule, monthlyPlanned, monthlyExecuted,
+      ...activity, schedule, effectiveSchedule, monthlyPlanned, monthlyExecuted,
+      effectiveMonthlyPlanned, effectiveMonthlyExecuted,
       totalPlanned: monthlyPlanned.reduce((s, v) => s + v, 0),
       totalExecuted: monthlyExecuted.reduce((s, v) => s + v, 0),
+      effectiveTotalPlanned: effectiveMonthlyPlanned.reduce((s, v) => s + v, 0),
+      effectiveTotalExecuted: effectiveMonthlyExecuted.reduce((s, v) => s + v, 0),
       executions: activityExecutions
         .filter((e) => e.evidenceUrl || (Array.isArray(e.evidencePhotos) && e.evidencePhotos.length > 0) || e.evidenceText)
         .map((e) => ({

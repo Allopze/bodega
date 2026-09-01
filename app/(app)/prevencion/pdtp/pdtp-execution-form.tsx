@@ -16,6 +16,8 @@ import {
 } from "@/components/ui/dialog"
 import { PencilSimple } from "@phosphor-icons/react"
 import { markPdtpExecutionFormAction } from "./actions"
+import type { PdtpPeriod } from "@/lib/services/pdtp/period"
+import { codeYear } from "@/lib/utils"
 
 const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
@@ -27,11 +29,30 @@ type PdtpExecutionFormProps = {
   year?: number
   defaultMonth?: number
   defaultWeek?: number
+  effectiveFrom?: PdtpPeriod | null
 }
 
-export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, defaultWeek }: PdtpExecutionFormProps) {
+export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, defaultWeek, effectiveFrom }: PdtpExecutionFormProps) {
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [open, setOpen] = React.useState(false)
+  const programYear = year ?? codeYear()
+  const firstEffectiveMonth = effectiveFrom?.year === programYear ? effectiveFrom.month : 1
+  const allowedMonths = Array.from(
+    { length: MONTH_LABELS.length - firstEffectiveMonth + 1 },
+    (_, index) => index + firstEffectiveMonth,
+  )
+  const initialMonth = Math.max(firstEffectiveMonth, defaultMonth ?? firstEffectiveMonth)
+  const weeksForMonth = (month: number) => [1, 2, 3, 4].filter((week) => (
+    effectiveFrom?.year !== programYear
+    || month !== effectiveFrom.month
+    || week >= effectiveFrom.week
+  ))
+  const initialWeeks = weeksForMonth(initialMonth)
+  const initialWeekCandidate = defaultWeek ?? initialWeeks[0] ?? 1
+  const [selectedMonth, setSelectedMonth] = React.useState(String(initialMonth))
+  const [selectedWeek, setSelectedWeek] = React.useState(String(
+    initialWeeks.includes(initialWeekCandidate) ? initialWeekCandidate : initialWeeks[0] ?? 1,
+  ))
   const [state, formAction] = React.useActionState<ExecState, FormData>(
     async (_prev, formData) => {
       const { toast } = await import("@/lib/toast")
@@ -89,11 +110,19 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
         >
           <input type="hidden" name="activityId" value={activityId} />
           <input type="hidden" name="worksiteId" value={worksiteId} />
-          <input type="hidden" name="year" value={year ?? new Date().getFullYear()} />
+          <input type="hidden" name="year" value={programYear} />
 
           <div className="grid grid-cols-3 gap-3">
             <Field label="Mes" htmlFor="exec-month">
-              <Select name="month" defaultValue={String(defaultMonth ?? 1)}>
+              <Select
+                name="month"
+                value={selectedMonth}
+                onValueChange={(value) => {
+                  setSelectedMonth(value)
+                  const allowedWeeks = weeksForMonth(Number(value))
+                  if (!allowedWeeks.includes(Number(selectedWeek))) setSelectedWeek(String(allowedWeeks[0]))
+                }}
+              >
                 <SelectTrigger
                   id="exec-month"
                   className="h-9 text-sm"
@@ -103,14 +132,14 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {MONTH_LABELS.map((label, index) => (
-                    <SelectItem key={label} value={String(index + 1)}>{label}</SelectItem>
+                  {allowedMonths.map((month) => (
+                    <SelectItem key={month} value={String(month)}>{MONTH_LABELS[month - 1]}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </Field>
             <Field label="Semana" htmlFor="exec-week">
-              <Select name="week" defaultValue={String(defaultWeek ?? 1)}>
+              <Select name="week" value={selectedWeek} onValueChange={setSelectedWeek}>
                 <SelectTrigger
                   id="exec-week"
                   className="h-9 text-sm"
@@ -120,7 +149,7 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {[1, 2, 3, 4].map((week) => (
+                  {weeksForMonth(Number(selectedMonth)).map((week) => (
                     <SelectItem key={week} value={String(week)}>{week}</SelectItem>
                   ))}
                 </SelectContent>

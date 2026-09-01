@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import type { PdtpAggregateActivityWorksite, PdtpSheetView } from "@/lib/services/prevention-pdtp"
-import { deriveActivityStatus, countOverdueMonths, type PdtpActivityStatus, type PdtpPeriod } from "@/lib/services/pdtp/period"
+import { deriveActivityStatus, countOverdueMonths, pdtpActivationPeriod, type PdtpActivityStatus, type PdtpPeriod } from "@/lib/services/pdtp/period"
 import { PdtpExecutionForm } from "./pdtp-execution-form"
 import { PdtpApprovalButtons } from "./pdtp-approval-buttons"
 import { PdtpOverrideForm } from "./pdtp-override-form"
@@ -107,9 +107,10 @@ export function PdtpSheetTable({
   React.useEffect(() => setStatusFilter(initialStatusFilter), [initialStatusFilter])
   const [density, toggleDensity] = usePdtpDensity()
   const [visibleMonths, monthsExpanded, toggleMonthsExpanded] = usePdtpMonthWindow(currentPeriod.month)
+  const effectiveFrom = pdtpActivationPeriod(view.program.activatedAt)
 
   const plannedQuantityForCurrentWeek = (activity: PdtpSheetView["activities"][number]) =>
-    activity.schedule
+    activity.effectiveSchedule
       .filter((cell) => cell.month === currentPeriod.month && cell.week === currentPeriod.week)
       .reduce((total, cell) => total + cell.plannedQuantity, 0)
 
@@ -127,7 +128,7 @@ export function PdtpSheetTable({
   const statusCounts: PdtpStatusCounts = React.useMemo(() => {
     const counts = { executed: 0, pending: 0, overdue: 0, not_scheduled: 0 }
     for (const activity of sourceActivities) {
-      const s = deriveActivityStatus(activity.monthlyPlanned, activity.monthlyExecuted, currentPeriod)
+      const s = deriveActivityStatus(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod)
       counts[s]++
     }
     return counts
@@ -137,7 +138,7 @@ export function PdtpSheetTable({
   const filteredActivities = statusFilter === "all"
     ? sourceActivities
     : sourceActivities.filter((activity) =>
-        deriveActivityStatus(activity.monthlyPlanned, activity.monthlyExecuted, currentPeriod) === statusFilter,
+        deriveActivityStatus(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod) === statusFilter,
       )
 
   // La paginación se mide sobre lo que realmente se ve: si el filtro de estado
@@ -222,8 +223,8 @@ export function PdtpSheetTable({
                       </TableCell>
                     </TableRow>
                     {group.activities.map((activity) => {
-                      const status = deriveActivityStatus(activity.monthlyPlanned, activity.monthlyExecuted, currentPeriod)
-                      const overdueMonths = countOverdueMonths(activity.monthlyPlanned, activity.monthlyExecuted, currentPeriod)
+                      const status = deriveActivityStatus(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod)
+                      const overdueMonths = countOverdueMonths(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod)
                       return (
                         <TableRow key={activity.id}>
                           <TableCell className={`font-mono text-xs text-[var(--color-text-faint)] ${rowPy}`}>
@@ -287,6 +288,7 @@ export function PdtpSheetTable({
                                   year={view.program.year}
                                   defaultMonth={currentPeriod.month}
                                   defaultWeek={currentPeriod.week}
+                                  effectiveFrom={effectiveFrom}
                                 />}
                                 {canManageProgram && <PdtpOverrideForm
                                   programId={view.program.id}
@@ -354,8 +356,8 @@ export function PdtpSheetTable({
                       </TableCell>
                     </TableRow>
                     {group.activities.map((activity) => {
-                      const status = deriveActivityStatus(activity.monthlyPlanned, activity.monthlyExecuted, currentPeriod)
-                      const overdueMonths = countOverdueMonths(activity.monthlyPlanned, activity.monthlyExecuted, currentPeriod)
+                      const status = deriveActivityStatus(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod)
+                      const overdueMonths = countOverdueMonths(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod)
                       // `group` + `group-hover` en las celdas sticky: su fondo
                       // sólido tapaba el hover de la fila y el gris se veía solo
                       // de ESTADO a la derecha — la "fila cortada" de la
@@ -442,7 +444,14 @@ export function PdtpSheetTable({
                           {canOperate && worksiteId && (
                             <TableCell className={rowPy}>
                               <div className="flex flex-wrap items-center gap-1.5">
-                                {canExecute && <PdtpExecutionForm activityId={activity.id} worksiteId={worksiteId} year={view.program.year} />}
+                                {canExecute && <PdtpExecutionForm
+                                  activityId={activity.id}
+                                  worksiteId={worksiteId}
+                                  year={view.program.year}
+                                  defaultMonth={currentPeriod.month}
+                                  defaultWeek={currentPeriod.week}
+                                  effectiveFrom={effectiveFrom}
+                                />}
                                 {canManageProgram && <PdtpOverrideForm
                                   programId={view.program.id}
                                   activityId={activity.id}
