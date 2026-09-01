@@ -13,13 +13,28 @@ set -euo pipefail
 
 PATTERN='\.orderBy\(sql`[a-z_][a-zA-Z0-9_]* (desc|asc)'
 
-if rg --quiet --glob '*.ts' "$PATTERN" lib/ app/; then
+if command -v rg >/dev/null 2>&1; then
+  SEARCH=(rg --glob '*.ts' "$PATTERN" lib/ app/)
+else
+  SEARCH=(grep -rEn --include='*.ts' -E "$PATTERN" lib/ app/)
+fi
+
+set +e
+MATCHES="$("${SEARCH[@]}" 2>&1)"
+SEARCH_STATUS=$?
+set -e
+
+if [[ $SEARCH_STATUS -eq 0 ]]; then
   echo "ERROR: Se encontraron .orderBy(sql\`alias (desc|asc)\`) con alias falsos."
   echo "       Drizzle no alía sql\`...\` fragments en el SQL generado."
   echo "       Reemplaza con: .orderBy(desc(expresionReal)) o .orderBy(asc(expresionReal))."
   echo ""
-  rg --glob '*.ts' "$PATTERN" lib/ app/
+  echo "$MATCHES"
   exit 1
-else
+elif [[ $SEARCH_STATUS -eq 1 ]]; then
   echo "✓ No se encontraron alias falsos en .orderBy(sql\`...\`)"
+else
+  echo "ERROR: No fue posible inspeccionar los archivos TypeScript."
+  echo "$MATCHES"
+  exit "$SEARCH_STATUS"
 fi

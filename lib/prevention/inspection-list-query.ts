@@ -80,6 +80,7 @@ const SUBJECT_TYPE_LABELS: Record<string, string> = {
   vehicle: "Vehículo",
   vehiculo: "Vehículo",
   camion: "Camión",
+  contenedor: "Contenedor",
 }
 
 /** Traduce sólo valores técnicos conocidos; los tipos libres siguen intactos. */
@@ -101,12 +102,12 @@ export function safeNewInspectionDefaults() {
  */
 
 /**
- * Sujeto inspeccionable: recurso del inventario de emergencias o equipo de
- * flota. `source` discrimina a cuál de las dos FK va el id — el CHECK
- * `prevention_inspection_run_single_subject` no admite ambas.
+ * Sujeto inspeccionable: recurso del inventario de emergencias, equipo de flota
+ * o contenedor del catálogo. `source` discrimina a cuál de las tres FK va el
+ * id — el CHECK `prevention_inspection_run_single_subject` no admite dos.
  */
 export type InspectionSubjectOption = {
-  source: "resource" | "vehicle"
+  source: "resource" | "vehicle" | "container"
   id: string
   name: string
   kind: string
@@ -126,10 +127,12 @@ export const NO_SUBJECT = "_none"
 export function subjectIdsFromRef(ref: string): {
   subjectResourceId: string | null
   subjectVehicleId: string | null
+  subjectContainerId: string | null
 } {
   return {
     subjectResourceId: ref.startsWith("resource:") ? ref.slice("resource:".length) : null,
     subjectVehicleId: ref.startsWith("vehicle:") ? ref.slice("vehicle:".length) : null,
+    subjectContainerId: ref.startsWith("container:") ? ref.slice("container:".length) : null,
   }
 }
 
@@ -137,8 +140,23 @@ export function subjectIdsFromRef(ref: string): {
 export function subjectRefFromIds(subject: {
   subjectResourceId?: string | null
   subjectVehicleId?: string | null
+  subjectContainerId?: string | null
 }): string {
   if (subject.subjectResourceId) return `resource:${subject.subjectResourceId}`
   if (subject.subjectVehicleId) return `vehicle:${subject.subjectVehicleId}`
+  if (subject.subjectContainerId) return `container:${subject.subjectContainerId}`
   return NO_SUBJECT
+}
+
+/**
+ * Código de definición de la plantilla que exige sujeto del catálogo.
+ *
+ * El servicio rechaza el alta sin contenedor (`assertContainerSubject`); acá
+ * sirve para no ofrecer siquiera el texto libre en el selector, que era la vía
+ * por la que entraban las etiquetas escritas a mano.
+ */
+export const CONTAINER_DEFINITION_CODE = "inspeccion_contenedores"
+
+export function templateRequiresContainer(sourceDefinitionCode: string | null | undefined) {
+  return sourceDefinitionCode === CONTAINER_DEFINITION_CODE
 }

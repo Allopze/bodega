@@ -172,31 +172,31 @@ describe("soporte/page.tsx — permission gate", () => {
 
   it("redirects to /forbidden for unauthenticated users", async () => {
     mockAuthFn.mockResolvedValue(null)
-    await expect(SoportePage()).rejects.toThrow("NEXT_REDIRECT")
+    await expect(SoportePage({ searchParams: Promise.resolve({}) })).rejects.toThrow("NEXT_REDIRECT")
     expect(mockRedirect).toHaveBeenCalledWith(expect.stringMatching(/^\/forbidden(\?|$)/))
   })
 
   it("redirects to /forbidden for users without feedback:view_own AND without feedback:view_all AND without feedback:manage", async () => {
     mockAuthFn.mockResolvedValue(makeSession({ permissions: ["some:other"] }))
-    await expect(SoportePage()).rejects.toThrow("NEXT_REDIRECT")
+    await expect(SoportePage({ searchParams: Promise.resolve({}) })).rejects.toThrow("NEXT_REDIRECT")
     expect(mockRedirect).toHaveBeenCalledWith(expect.stringMatching(/^\/forbidden(\?|$)/))
   })
 
   it("allows users with only feedback:view_own through the gate", async () => {
     mockAuthFn.mockResolvedValue(makeSession({ permissions: ["feedback:view_own"] }))
-    await expect(SoportePage()).resolves.toBeDefined()
+    await expect(SoportePage({ searchParams: Promise.resolve({}) })).resolves.toBeDefined()
     expect(mockRedirect).not.toHaveBeenCalledWith(expect.stringMatching(/^\/forbidden(\?|$)/))
   })
 
   it("allows users with only feedback:view_all through the gate", async () => {
     mockAuthFn.mockResolvedValue(makeSession({ permissions: ["feedback:view_all"] }))
-    await expect(SoportePage()).resolves.toBeDefined()
+    await expect(SoportePage({ searchParams: Promise.resolve({}) })).resolves.toBeDefined()
     expect(mockRedirect).not.toHaveBeenCalledWith(expect.stringMatching(/^\/forbidden(\?|$)/))
   })
 
   it("allows users with only feedback:manage through the gate", async () => {
     mockAuthFn.mockResolvedValue(makeSession({ permissions: ["feedback:manage"] }))
-    await expect(SoportePage()).resolves.toBeDefined()
+    await expect(SoportePage({ searchParams: Promise.resolve({}) })).resolves.toBeDefined()
     expect(mockRedirect).not.toHaveBeenCalledWith(expect.stringMatching(/^\/forbidden(\?|$)/))
   })
 })

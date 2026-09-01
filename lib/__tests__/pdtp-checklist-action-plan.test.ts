@@ -101,6 +101,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.preventionEmergencyResourcePoints)
   await inMemoryDb.delete(schema.preventionEmergencyResources)
   await inMemoryDb.delete(schema.preventionEmergencyResourceTypes)
+  await inMemoryDb.delete(schema.preventionContainers)
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
   await seedBaseFixtures()
@@ -204,6 +205,59 @@ describe("pdtp execution checklist → plan de acción handoff", () => {
     await expect(getOrCreateExecutionChecklist("exec-1", "u1", {
       subjectType: "extintor", subjectResourceId: "er-2",
     })).rejects.toThrow("no pertenece a la faena")
+  })
+
+  it("usa el contenedor del catálogo y congela su etiqueta, en vez del slug del texto libre", async () => {
+    const { getOrCreateExecutionChecklist } = await import("@/lib/services/pdtp/execution-checklists")
+    await seedChecklistTemplate("act-1", "Inspección de contenedores", {
+      code: "cont", version: "01", revisionDate: "2026-01-01", title: "Contenedores", tipo: "nuevo",
+      legalFramework: [], applicableTo: "",
+      sections: [{
+        id: "estructura_contenedor", title: "Estructura",
+        items: [{ id: "soportes_levante", label: "Soportes", kind: "cumple_nocumple_obs" }],
+      }],
+      closingAct: { title: "Cierre", resultOptions: [], signatureRoles: [] },
+    })
+    await inMemoryDb.insert(schema.worksites).values({ id: "w2", name: "Faena B", code: "FB", isActive: true })
+    await inMemoryDb.insert(schema.preventionContainers).values([
+      {
+        id: "cont-1", worksiteId: "w1", code: "CT-014", location: "Acopio norte",
+        status: "operational", isActive: true, version: 1, createdByUserId: "u1",
+      },
+      {
+        id: "cont-otra", worksiteId: "w2", code: "CT-099", location: "Patio ajeno",
+        status: "operational", isActive: true, version: 1, createdByUserId: "u1",
+      },
+    ])
+
+    const instance = await getOrCreateExecutionChecklist("exec-1", "u1", {
+      subjectType: "contenedor",
+      subjectId: "contenedor-respel-n2",
+      subjectContainerId: "cont-1",
+      subjectLabel: "etiqueta-cliente-ignorada",
+    })
+    // El id canónico manda: si no, dos etiquetas del mismo contenedor abrirían
+    // dos instancias en la misma ejecución.
+    expect(instance.subjectId).toBe("cont-1")
+    expect(instance.subjectContainerId).toBe("cont-1")
+    expect(instance.subjectLabel).toBe("CT-014 · Acopio norte")
+
+    await expect(getOrCreateExecutionChecklist("exec-1", "u1", {
+      subjectType: "contenedor",
+    })).rejects.toThrow(/contenedor del catálogo/i)
+
+    await expect(getOrCreateExecutionChecklist("exec-1", "u1", {
+      subjectType: "contenedor", subjectContainerId: "cont-otra",
+    })).rejects.toThrow("no pertenece a la faena")
+
+    // Retirado del catálogo: abrir un checklist es trabajo nuevo y no procede.
+    await inMemoryDb.insert(schema.preventionContainers).values({
+      id: "cont-retirado", worksiteId: "w1", code: "CT-OFF", location: "Bodega",
+      status: "out_of_service", isActive: false, version: 1, createdByUserId: "u1",
+    })
+    await expect(getOrCreateExecutionChecklist("exec-1", "u1", {
+      subjectType: "contenedor", subjectContainerId: "cont-retirado",
+    })).rejects.toThrow(/retirado del catálogo/i)
   })
 
   it("submitExecutionChecklist completa el checklist y genera acciones para ítems no_cumple", async () => {

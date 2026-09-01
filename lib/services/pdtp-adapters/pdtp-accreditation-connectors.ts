@@ -20,19 +20,19 @@
  * - Emergencia/Simulacro → actividades pasadas explícitamente o configuradas
  *   en el plan de emergencia.
  *
- * Todos los conectores son fire-and-forget en el contexto del caller: si la
- * acreditación falla (sin programa activo, actividad excluida, etc.) loggeamos
- * pero no revertimos la transacción del evento fuente. La acreditación puede
- * reintentarse; el evento real ya ocurrió.
+ * Los conectores generales siguen siendo tolerantes a fallos post-commit. El
+ * conector de inspecciones acepta además la transacción fuente: cierre/reapertura
+ * y cumplimiento se confirman entonces como una sola operación atómica.
  */
 
 import { and, eq } from "drizzle-orm"
-import { db } from "@/db"
+import { db, type Tx } from "@/db"
 import { pdtpProgramWorksites, worksites } from "@/db/schema"
 import { logger } from "@/lib/logger"
 import {
   accreditPdtpFromEvent,
   revokePdtpAccreditation,
+  revokePdtpAccreditationWithClient,
   type AccreditationInput,
 } from "@/lib/services/pdtp/accreditation"
 import { PDTP_CPHS_ACTIVITY_NUMBERS } from "@/lib/services/pdtp/worksites"
@@ -80,8 +80,9 @@ export async function onInspectionCompleted(input: {
   runId: string
   worksiteId: string
   completedAt: string
+  completedByUserId: string
   activityNumbers: number[]
-}): Promise<void> {
+}, client?: Tx): Promise<void> {
   if (input.activityNumbers.length === 0) return
 
   // Cantidad 1 porque el modelo es una inspección por sujeto: el run declara su
@@ -93,7 +94,7 @@ export async function onInspectionCompleted(input: {
   // regla que no corre leída en el código se confunde con una que sí.
   const executedQuantity = 1
 
-  await safeAccredit({
+  const accreditation: AccreditationInput = {
     sourceType: "inspeccion",
     sourceId: input.runId,
     worksiteId: input.worksiteId,
@@ -101,7 +102,23 @@ export async function onInspectionCompleted(input: {
     occurredAt: input.completedAt,
     executedQuantity,
     evidenceRef: `Inspección completada: ${input.runId}`,
-  })
+    autoApproveByUserId: input.completedByUserId,
+  }
+  if (client) {
+    const result = await accreditPdtpFromEvent(accreditation, client)
+    if (result.skippedNotFound.length > 0) {
+      throw new Error(
+        `La plantilla de inspección referencia actividades PDTP inexistentes: ${result.skippedNotFound.join(", ")}.`,
+      )
+    }
+    if (result.skippedOutOfPeriod) {
+      throw new Error(
+        `La inspección ocurrió en ${result.skippedOutOfPeriod.occurredYear}, fuera del programa PDTP ${result.skippedOutOfPeriod.programYear}.`,
+      )
+    }
+  } else {
+    await safeAccredit(accreditation)
+  }
 }
 
 /**
@@ -122,15 +139,20 @@ export async function onInspectionReverted(input: {
   worksiteId: string
   reason: string
   revokedBy?: string
-}): Promise<void> {
+}, client?: Tx): Promise<void> {
+  const revocation = {
+    sourceType: "inspeccion" as const,
+    sourceId: input.runId,
+    worksiteId: input.worksiteId,
+    revokedBy: input.revokedBy,
+    reason: input.reason,
+  }
+  if (client) {
+    await revokePdtpAccreditationWithClient(revocation, client)
+    return
+  }
   try {
-    await revokePdtpAccreditation({
-      sourceType: "inspeccion",
-      sourceId: input.runId,
-      worksiteId: input.worksiteId,
-      revokedBy: input.revokedBy,
-      reason: input.reason,
-    })
+    await revokePdtpAccreditation(revocation)
   } catch (err) {
     logger.error(
       { err, runId: input.runId, worksiteId: input.worksiteId },

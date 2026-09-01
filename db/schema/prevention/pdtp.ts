@@ -3,6 +3,7 @@ import { boolean, check, date, index, integer, jsonb, numeric, real, text, times
 import { pgTable } from "drizzle-orm/pg-core"
 import { users } from "../users"
 import { worksites } from "../worksites"
+import { preventionContainers } from "./containers"
 import { preventionEmergencyResources } from "./emergency"
 
 export const pdtpPrograms = pgTable("pdtp_programs", {
@@ -411,7 +412,11 @@ export const pdtpExecutions = pgTable("pdtp_executions", {
   createdAt:        timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   updatedAt:        timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
-  uniqueIndex("pdtp_executions_activity_scope_period_unique").on(table.activityId, table.worksiteId, table.year, table.month, table.week).where(sql`${table.obligationId} IS NULL`),
+  // Una sola carga editable/manual por celda. Las integraciones tienen su propia
+  // identidad (`idempotency_key`) y pueden coexistir en el mismo período: así
+  // una inspección no aprueba ni sobrescribe una carga humana pendiente y dos
+  // inspecciones simultáneas no compiten por la misma fila física.
+  uniqueIndex("pdtp_executions_activity_scope_period_unique").on(table.activityId, table.worksiteId, table.year, table.month, table.week).where(sql`${table.obligationId} IS NULL AND ${table.origin} <> 'integration'`),
   uniqueIndex("pdtp_executions_obligation_unique").on(table.obligationId),
   index("pdtp_executions_worksite_period_idx").on(table.worksiteId, table.year, table.month),
   index("pdtp_executions_status_idx").on(table.status),
@@ -540,6 +545,8 @@ export const pdtpExecutionChecklists = pgTable("pdtp_execution_checklists", {
   subjectId:              text("subject_id").notNull().default(""),
   /** FK canónica para nuevas instancias de extintor; subjectId queda histórico. */
   subjectResourceId:      text("subject_resource_id").references(() => preventionEmergencyResources.id, { onDelete: "restrict" }),
+  /** FK canónica para nuevas instancias de contenedor; subjectId queda histórico. */
+  subjectContainerId:     text("subject_container_id").references(() => preventionContainers.id, { onDelete: "restrict" }),
   // Denormalizado para mostrar/exportar: patente, nombre, "Extintor #7 / acopio".
   subjectLabel:           text("subject_label"),
   createdAt:              timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
@@ -548,7 +555,11 @@ export const pdtpExecutionChecklists = pgTable("pdtp_execution_checklists", {
   // Una instancia por (ejecución, sujeto). subjectId='' → instancia única de faena.
   uniqueIndex("pdtp_execution_checklists_execution_subject_unique").on(table.executionId, table.subjectId),
   index("pdtp_execution_checklists_subject_resource_idx").on(table.subjectResourceId),
+  index("pdtp_execution_checklists_subject_container_idx").on(table.subjectContainerId),
   check("pdtp_execution_checklists_extinguisher_subject_fk", sql`${table.subjectType} <> 'extintor' OR ${table.subjectResourceId} IS NOT NULL OR ${table.subjectId} <> ''`),
+  // Mismo criterio laxo que el extintor: las instancias anteriores al catálogo
+  // escribían el slug del texto libre en `subjectId` y deben seguir siendo válidas.
+  check("pdtp_execution_checklists_container_subject_fk", sql`${table.subjectType} <> 'contenedor' OR ${table.subjectContainerId} IS NOT NULL OR ${table.subjectId} <> ''`),
   check("pdtp_execution_checklists_status_check", sql`${table.overallStatus} IN ('pendiente', 'en_proceso', 'completado')`),
 ])
 

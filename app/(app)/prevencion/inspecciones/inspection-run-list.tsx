@@ -31,6 +31,7 @@ import {
   safeNewInspectionDefaults,
   subjectIdsFromRef,
   subjectRefOf,
+  templateRequiresContainer,
   type InspectionSubjectOption,
 } from "@/lib/prevention/inspection-list-query"
 
@@ -39,6 +40,10 @@ interface TemplateOption {
   name: string
   versionLabel: string
   kind: string
+  /* Necesario acá y no sólo en el servicio: la plantilla de contenedores exige
+   * sujeto del catálogo, así que el diálogo no debe siquiera ofrecer el texto
+   * libre que era la vía de entrada de las etiquetas escritas a mano. */
+  sourceDefinitionCode: string | null
 }
 
 interface RunItem {
@@ -457,10 +462,28 @@ export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksi
     setSubjectRef("_none")
   }
 
+  const template = templates.find((item) => item.id === templateId)
+  const requiresContainer = templateRequiresContainer(template?.sourceDefinitionCode)
+  const worksiteSubjects = subjectsByWorksite[worksiteId] ?? []
+  const subjectOptions = requiresContainer
+    ? worksiteSubjects.filter((subject) => subject.source === "container")
+    : worksiteSubjects
+
+  function handleTemplateChange(nextTemplateId: string) {
+    setTemplateId(nextTemplateId)
+    // Cambiar de plantilla puede invalidar el sujeto elegido (un extintor no
+    // sirve para la inspección de contenedores).
+    setSubjectRef("_none")
+  }
+
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!templateId || !worksiteId) {
       operation.setMessage("Selecciona conscientemente la plantilla y la faena antes de crear.")
+      return
+    }
+    if (requiresContainer && !subjectRef.startsWith("container:")) {
+      operation.setMessage("Selecciona un contenedor del catálogo de la faena.")
       return
     }
     const form = new FormData(event.currentTarget)
@@ -497,7 +520,7 @@ export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksi
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
           <Field label="Plantilla" required>
-            <Select value={templateId} onValueChange={setTemplateId}><SelectTrigger aria-label="Plantilla"><SelectValue placeholder="Selecciona una plantilla" /></SelectTrigger><SelectContent>{templates.map((item) => <SelectItem key={item.id} value={item.id}>{INSPECTION_KIND_LABELS[item.kind] ?? item.kind} · {item.name} · {item.versionLabel}</SelectItem>)}</SelectContent></Select><input type="hidden" name="templateId" value={templateId} />
+            <Select value={templateId} onValueChange={handleTemplateChange}><SelectTrigger aria-label="Plantilla"><SelectValue placeholder="Selecciona una plantilla" /></SelectTrigger><SelectContent>{templates.map((item) => <SelectItem key={item.id} value={item.id}>{INSPECTION_KIND_LABELS[item.kind] ?? item.kind} · {item.name} · {item.versionLabel}</SelectItem>)}</SelectContent></Select><input type="hidden" name="templateId" value={templateId} />
           </Field>
           <Field label="Faena" required>
             <Select value={worksiteId} onValueChange={handleWorksiteChange}><SelectTrigger aria-label="Faena de la inspección"><SelectValue placeholder="Selecciona la faena" /></SelectTrigger><SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="worksiteId" value={worksiteId} />
@@ -509,24 +532,43 @@ export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksi
               desplazando el resto del formulario. Ahora ocupa su lugar siempre,
               con un estado explícito mientras no hay faena elegida o su
               inventario está vacío. */}
-          <Field label="Sujeto inspeccionado" hint={worksiteId ? "Opcional. Un recurso del inventario actualiza su última inspección al completar; un equipo habilita derivar la falla a mantención." : "Selecciona una faena para ver su inventario."}>
+          <Field
+            label={requiresContainer ? "Contenedor inspeccionado" : "Sujeto inspeccionado"}
+            required={requiresContainer}
+            hint={!worksiteId
+              ? "Selecciona una faena para ver su inventario."
+              : requiresContainer
+                ? "Obligatorio: esta inspección se hace por contenedor del catálogo."
+                : "Opcional. Un recurso del inventario actualiza su última inspección al completar; un equipo habilita derivar la falla a mantención."}
+          >
             <Select value={subjectRef} onValueChange={setSubjectRef} disabled={!worksiteId}>
-              <SelectTrigger aria-label="Sujeto inspeccionado"><SelectValue placeholder={worksiteId ? "Otro / texto libre" : "Selecciona una faena primero"} /></SelectTrigger>
+              <SelectTrigger aria-label={requiresContainer ? "Contenedor inspeccionado" : "Sujeto inspeccionado"}>
+                <SelectValue placeholder={!worksiteId
+                  ? "Selecciona una faena primero"
+                  : requiresContainer ? "Selecciona un contenedor" : "Otro / texto libre"} />
+              </SelectTrigger>
               <SelectContent>
-                <SelectItem value="_none">Otro / texto libre</SelectItem>
-                {(subjectsByWorksite[worksiteId] ?? []).map((subject) => (
+                {!requiresContainer && <SelectItem value="_none">Otro / texto libre</SelectItem>}
+                {subjectOptions.map((subject) => (
                   <SelectItem key={subjectRefOf(subject)} value={subjectRefOf(subject)}>
-                    {subject.source === "vehicle" ? "Equipo" : "Recurso"} · {subject.name}
-                    {subject.location ? ` · ${subject.location}` : ""}
+                    {subject.source === "vehicle" ? "Equipo" : subject.source === "container" ? "Contenedor" : "Recurso"} · {subject.name}
+                    {subject.source !== "container" && subject.location ? ` · ${subject.location}` : ""}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </Field>
-          {subjectRef === "_none" ? <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Tipo de sujeto" hint="Opcional. Ej: extintor, camión, contenedor."><Input name="subjectType" maxLength={120} /></Field>
-            <Field label="Identificación del sujeto" hint="Úsalo sólo si el elemento no existe en el inventario."><Input name="subjectLabel" maxLength={300} /></Field>
-          </div> : <p className="rounded-lg bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-text-muted)]">Se usará el sujeto seleccionado del inventario; los campos de texto libre no aplican.</p>}
+          {requiresContainer && worksiteId && subjectOptions.length === 0
+            ? <p role="status" className="rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-xs text-[var(--color-warning-ink)]">
+                Esta faena todavía no tiene contenedores en el catálogo. Cárgalos en <Link href="/admin/contenedores" className="underline">Administración › Contenedores</Link> para poder inspeccionarlos.
+              </p>
+            : null}
+          {requiresContainer
+            ? null
+            : subjectRef === "_none" ? <div className="grid gap-3 md:grid-cols-2">
+                <Field label="Tipo de sujeto" hint="Opcional. Ej: extintor, camión."><Input name="subjectType" maxLength={120} /></Field>
+                <Field label="Identificación del sujeto" hint="Úsalo sólo si el elemento no existe en el inventario."><Input name="subjectLabel" maxLength={300} /></Field>
+              </div> : <p className="rounded-lg bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-text-muted)]">Se usará el sujeto seleccionado del inventario; los campos de texto libre no aplican.</p>}
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Programada para" hint="Opcional."><DatePicker name="scheduledFor" /></Field>
             <Field label="Asignada a" hint="Vacío = quien la crea.">
@@ -536,7 +578,7 @@ export function NewRunDialog({ templates, worksites, assignees, subjectsByWorksi
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           </div>
           <DialogFooter className="mt-0 shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-6 py-4">
-            <Button type="submit" disabled={operation.pending || !templateId || !worksiteId}>{operation.pending ? "Creando…" : "Crear inspección"}</Button>
+            <Button type="submit" disabled={operation.pending || !templateId || !worksiteId || (requiresContainer && !subjectRef.startsWith("container:"))}>{operation.pending ? "Creando…" : "Crear inspección"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

@@ -32,6 +32,7 @@ export const adminModule = {
     "admin:service_equipment",
     "admin:worksite_inventory",
     "admin:worksite_inventory_service",
+    "admin:containers",
     // Prevención / SST
     "admin:document_taxonomy",
     "admin:pdtp_catalog",
@@ -64,6 +65,7 @@ export const adminModule = {
     "admin:service_equipment": { id: "p-adm-equip", description: "Gestionar el registro de equipos de servicio (monogás, alcotest)" },
     "admin:worksite_inventory": { id: "p-adm-wsinv", description: "Cargar y mantener el inventario físico de cada faena (extintores, kits de derrame y otros recursos)" },
     "admin:worksite_inventory_service": { id: "p-adm-wsinvsrv", description: "Gestionar cobertura, asignaciones y recargas de activos de emergencia dentro de las faenas autorizadas" },
+    "admin:containers":        { id: "p-adm-cont",  description: "Mantener el catálogo de contenedores de cada faena (código, ubicación y estado operativo)" },
     "admin:epp_import_upload": { id: "p-adm-epp-up", description: "Cargar archivos de importación EPP" },
     "admin:epp_import_review": { id: "p-adm-epp-rv", description: "Revisar y resolver importaciones EPP" },
     "admin:epp_import_confirm": { id: "p-adm-epp-cf", description: "Confirmar importaciones EPP" },
@@ -111,6 +113,7 @@ export const adminModule = {
     { roleSlug: "administrador", permission: "admin:product_catalogs" },
     { roleSlug: "administrador", permission: "admin:service_equipment" },
     { roleSlug: "administrador", permission: "admin:worksite_inventory" },
+    { roleSlug: "administrador", permission: "admin:containers" },
     { roleSlug: "administrador", permission: "admin:worksite_inventory_service" },
     { roleSlug: "administrador", permission: "admin:document_taxonomy" },
     { roleSlug: "administrador", permission: "admin:pdtp_catalog" },
@@ -141,6 +144,7 @@ export const adminModule = {
     // extintor al programar la inspección. Los roles acotados a una faena
     // quedan fuera a propósito: la pantalla es global.
     { roleSlug: "secretaria", permission: "admin:worksite_inventory" },
+    { roleSlug: "secretaria", permission: "admin:containers" },
     { roleSlug: "secretaria", permission: "admin:fleet_vehicles" },
     { roleSlug: "admin_contrato", permission: "admin:fleet_vehicles" },
     { roleSlug: "prevencionista_faena", permission: "admin:fleet_vehicles" },
@@ -151,6 +155,7 @@ export const adminModule = {
      * del sistema, así que `db:sync-rbac` lo revoca también en una base ya
      * poblada, no sólo en un seed nuevo. */
     { roleSlug: "prevencionista", permission: "admin:worksite_inventory" },
+    { roleSlug: "prevencionista", permission: "admin:containers" },
     { roleSlug: "prevencionista", permission: "admin:worksite_inventory_service" },
     { roleSlug: "prevencionista_faena", permission: "admin:worksite_inventory_service" },
     // Jefa Chome (Jefatura)

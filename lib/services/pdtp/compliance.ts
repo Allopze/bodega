@@ -37,6 +37,48 @@ export type PdtpComplianceIndicators = {
   lastExecutionUpdatedAt: string | null
 }
 
+type ApprovedExecution = Awaited<ReturnType<typeof loadProgramScheduleAndExecutions>>["executionRows"][number]
+
+/**
+ * Una ejecución manual/XLS y la integración de una inspección pueden describir
+ * el mismo trabajo. Por celda semanal se toma la mayor cobertura entre ambas
+ * fuentes alternativas; otras integraciones siguen sumando porque representan
+ * mecanismos distintos (capacitación, EPP, etc.).
+ */
+function effectiveApprovedExecutions(rows: ApprovedExecution[]) {
+  const cells = new Map<string, {
+    activityId: string
+    month: number
+    inspectionQuantity: number
+    legacyQuantity: number
+    otherIntegrationQuantity: number
+  }>()
+  for (const row of rows) {
+    const key = `${row.activityId}:${row.worksiteId}:${row.year}:${row.month}:${row.week}`
+    const cell = cells.get(key) ?? {
+      activityId: row.activityId,
+      month: row.month,
+      inspectionQuantity: 0,
+      legacyQuantity: 0,
+      otherIntegrationQuantity: 0,
+    }
+    if (row.origin === "integration" && row.sourceType === "inspeccion") {
+      cell.inspectionQuantity += row.executedQuantity
+    } else if (row.origin === "integration") {
+      cell.otherIntegrationQuantity += row.executedQuantity
+    } else {
+      cell.legacyQuantity += row.executedQuantity
+    }
+    cells.set(key, cell)
+  }
+  return [...cells.values()].map((cell) => ({
+    activityId: cell.activityId,
+    month: cell.month,
+    executedQuantity: Math.max(cell.inspectionQuantity, cell.legacyQuantity)
+      + cell.otherIntegrationQuantity,
+  }))
+}
+
 export async function getPdtpComplianceIndicators(yearOrProgramId: number | string, worksiteId?: string): Promise<PdtpComplianceIndicators | null> {
   let program: typeof pdtpPrograms.$inferSelect | null = null
 
@@ -70,6 +112,7 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
   // El cumplimiento formal solo incorpora ejecuciones validadas. Las
   // submitted siguen visibles en el tablero operativo y en aprobaciones.
   const approvedExecutionRows = executionRows.filter((row) => row.status === "approved")
+  const effectiveExecutionRows = effectiveApprovedExecutions(approvedExecutionRows)
 
   // Modo de indicador por actividad: 'coverage' se calcula todo-o-nada; el resto
   // se capa en lo planificado (R3). El cómputo es por actividad-mes para poder
@@ -113,7 +156,7 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     plannedByActivityMonth.set(key, (plannedByActivityMonth.get(key) ?? 0) + row.plannedQuantity)
   }
   const executedByActivityMonth = new Map<string, number>()
-  for (const row of approvedExecutionRows) {
+  for (const row of effectiveExecutionRows) {
     const key = `${row.activityId}:${row.month}`
     executedByActivityMonth.set(key, (executedByActivityMonth.get(key) ?? 0) + row.executedQuantity)
   }
@@ -285,7 +328,9 @@ export async function getPdtpComplianceByCategoryForScope(
     totals.set(category, entry)
   }
   for (const row of scheduleRows) bump(row.activityId, "planned", row.plannedQuantity)
-  for (const row of executionRows) bump(row.activityId, "executed", row.executedQuantity)
+  for (const row of effectiveApprovedExecutions(executionRows)) {
+    bump(row.activityId, "executed", row.executedQuantity)
+  }
 
   return [...totals.entries()]
     .map(([category, { planned, executed }]) => {

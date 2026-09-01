@@ -62,9 +62,9 @@ export default async function ProgramacionInspeccionPage({ searchParams }: {
     subjectsByWorksite = subjects
   }
 
-  const approvedTemplates = templates
-    .filter((item) => item.status === "approved")
-    .map((item) => ({ id: item.id, name: item.name, versionLabel: item.versionLabel }))
+  const approvedTemplates = templates.flatMap((item) => item.status === "approved"
+    ? [{ id: item.id, name: item.name, versionLabel: item.versionLabel, sourceDefinitionCode: item.sourceDefinitionCode }]
+    : [])
 
   return (
     <PageContainer>
@@ -100,6 +100,8 @@ export default async function ProgramacionInspeccionPage({ searchParams }: {
           subjectType: row.program.subjectType,
           subjectResourceId: row.program.subjectResourceId,
           subjectVehicleId: row.program.subjectVehicleId,
+          subjectContainerId: row.program.subjectContainerId,
+          templateDefinitionCode: row.templateDefinitionCode,
           isActive: row.program.isActive,
           // I-04: la plantilla puede haber quedado `superseded` desde que se
           // creó el programa; ese estado decide si el botón operativo aplica.

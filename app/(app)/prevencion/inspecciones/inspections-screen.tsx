@@ -61,7 +61,7 @@ export async function InspectionsScreen({ searchParams }: {
   ])
 
   const approvedTemplates = templates.flatMap((item) => item.status === "approved"
-    ? [{ id: item.id, name: item.name, versionLabel: item.versionLabel, kind: item.kind }]
+    ? [{ id: item.id, name: item.name, versionLabel: item.versionLabel, kind: item.kind, sourceDefinitionCode: item.sourceDefinitionCode }]
     : [])
 
   // Función #11: inventario por faena para el picker de sujeto. Son pocas

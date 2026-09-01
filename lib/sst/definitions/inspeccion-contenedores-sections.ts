@@ -6,9 +6,9 @@ import type { ChecklistSection } from '../types'
  * Fuente: `docx revisado/08-inspeccion-contenedores.md`.
  * Actividad PDTP 2026: n=29 ("Lista de chequeo contenedores").
  *
- * Patrón C (multi-sujeto): una instancia por contenedor. Sujeto = contenedor
- * por `subjectLabel` libre en v1 (no hay inventario permanente; PLAN_INTEGRACION
- * §7). El inventario + alerta de estado operativo es follow-up (no v1).
+ * Patrón C (multi-sujeto): una instancia por contenedor. Sujeto = contenedor del
+ * catálogo (`prevention_containers`), obligatorio: el texto libre existía sólo
+ * mientras no había padrón permanente.
  *
  * Escala nativa B/R/M/NA/NT (`bueno_regular_malo_na_nt_obs`), tal como la
  * leyenda del Anexo 14: "B= BUENO  R= REGULAR  M= MALO  NA= NO APLICA

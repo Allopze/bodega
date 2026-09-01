@@ -251,10 +251,10 @@ export async function getDriveHealth(): Promise<DriveHealth> {
     const childProcessModule = "node:child_process"
     const utilModule = "node:util"
     const fsModule = "node:fs"
-    const { execFile } = await import(/* turbopackIgnore: true */ childProcessModule)
-    const { promisify } = await import(/* turbopackIgnore: true */ utilModule)
+    const { execFile } = await import(/* webpackIgnore: true */ childProcessModule)
+    const { promisify } = await import(/* webpackIgnore: true */ utilModule)
     const execFileAsync = promisify(execFile)
-    const { existsSync, readFileSync } = await import(/* turbopackIgnore: true */ fsModule)
+    const { existsSync, readFileSync } = await import(/* webpackIgnore: true */ fsModule)
 
     // 1. Verificar archivo rclone.conf
     const home = process.env.HOME || "/root"

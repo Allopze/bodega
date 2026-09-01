@@ -135,7 +135,7 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
       evidencePhotos: dedupedPhotos, executedByUserId: userId, executedAt: now, createdAt: now, updatedAt: now,
     }).onConflictDoUpdate({
       target: [pdtpExecutions.activityId, pdtpExecutions.worksiteId, pdtpExecutions.year, pdtpExecutions.month, pdtpExecutions.week],
-      targetWhere: sql`${pdtpExecutions.obligationId} IS NULL`,
+      targetWhere: sql`${pdtpExecutions.obligationId} IS NULL AND ${pdtpExecutions.origin} <> 'integration'`,
       set: {
         executedQuantity: data.executedQuantity, status: "submitted",
         evidenceText: data.evidenceText || null, evidenceUrl: nextEvidenceUrl,
@@ -185,6 +185,12 @@ export async function approvePdtpExecution(executionId: string, userId: string, 
         rejectedByUserId: null,
         rejectedAt: null,
         rejectionReason: null,
+        sourceMetadataJson: {
+          ...((execution.sourceMetadataJson ?? {}) as Record<string, unknown>),
+          approvalMode: "manual",
+          manuallyApprovedByUserId: userId,
+          manuallyApprovedAt: now,
+        },
         updatedAt: now,
       })
       .where(and(

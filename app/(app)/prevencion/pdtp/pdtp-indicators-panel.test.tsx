@@ -44,10 +44,11 @@ const INTEGRAL: PdtpIntegralCompliance = {
 }
 
 describe("PdtpIndicatorsPanel — render compacto actual", () => {
-  it("muestra integral, cumplimiento anual y meta siempre visibles, fuera del <details>", () => {
+  it("separa el índice de gestión del cumplimiento anual basado en ejecuciones", () => {
     render(<PdtpIndicatorsPanel data={DATA} integral={INTEGRAL} />)
 
-    expect(screen.getByText("Cumplimiento integral")).toBeInTheDocument()
+    expect(screen.getByText("Índice de gestión preventiva")).toBeInTheDocument()
+    expect(screen.queryByText("Cumplimiento integral")).not.toBeInTheDocument()
     expect(screen.getByText("62%")).toBeInTheDocument()
     expect(screen.getByText(/Ejecución/).parentElement).toHaveTextContent("Ejecución 45%")
     expect(screen.getByText(/Verificación/).parentElement).toHaveTextContent("Verificación 80%")
@@ -63,7 +64,7 @@ describe("PdtpIndicatorsPanel — render compacto actual", () => {
 
   it("renderiza sin el tile de integral cuando no se pasa la prop", () => {
     render(<PdtpIndicatorsPanel data={DATA} />)
-    expect(screen.queryByText("Cumplimiento integral")).not.toBeInTheDocument()
+    expect(screen.queryByText("Índice de gestión preventiva")).not.toBeInTheDocument()
   })
 
   it("el desglose mensual/trimestral vive en un <details> colapsado por defecto", () => {

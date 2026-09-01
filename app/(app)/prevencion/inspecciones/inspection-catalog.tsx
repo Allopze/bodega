@@ -42,6 +42,7 @@ import {
   subjectIdsFromRef,
   subjectRefFromIds,
   subjectRefOf,
+  templateRequiresContainer,
   type InspectionSubjectOption,
 } from "@/lib/prevention/inspection-list-query"
 
@@ -130,6 +131,9 @@ interface ProgramItem {
   /** Sujeto del inventario; excluyente con `subjectVehicleId` (INS-04). */
   subjectResourceId: string | null
   subjectVehicleId: string | null
+  subjectContainerId: string | null
+  /** Define si esta programación exige contenedor del catálogo. */
+  templateDefinitionCode: string | null
   isActive: boolean
   /** I-04: la plantilla puede haber quedado `superseded` desde que se creó el programa. */
   templateApproved: boolean
@@ -1107,10 +1111,21 @@ function EditProgramDialog({ program, assignees, subjects, riskEntries }: {
   const [riskEntryId, setRiskEntryId] = React.useState(program.riskEntryId ?? "_none")
   const operation = useOperation()
 
+  const requiresContainer = templateRequiresContainer(program.templateDefinitionCode)
+  const subjectOptions = requiresContainer
+    ? subjects.filter((subject) => subject.source === "container")
+    : subjects
+
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
     const subjectType = String(form.get("subjectType") ?? "").trim()
+    // Quitarle el contenedor a un programa de contenedores lo dejaría
+    // generando inspecciones sin sujeto; el servicio también lo rechaza.
+    if (requiresContainer && !subjectRef.startsWith("container:")) {
+      operation.setMessage("Selecciona un contenedor del catálogo de la faena.")
+      return
+    }
     operation.run(() => updateInspectionProgramAction({
       programId: program.id,
       expectedVersion: program.version,
@@ -1159,20 +1174,33 @@ function EditProgramDialog({ program, assignees, subjects, riskEntries }: {
               <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger aria-label="Asignada a"><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select>
             </Field>
           </div>
-          {subjects.length > 0 && (
-            <Field label="Sujeto inspeccionado" hint="Opcional. Cada inspección generada apuntará a este recurso o equipo; un recurso del inventario actualiza su última inspección al completarse.">
+          {(subjectOptions.length > 0 || requiresContainer) && (
+            <Field
+              label={requiresContainer ? "Contenedor inspeccionado" : "Sujeto inspeccionado"}
+              required={requiresContainer}
+              hint={requiresContainer
+                ? "Obligatorio: cada inspección generada apuntará a este contenedor del catálogo."
+                : "Opcional. Cada inspección generada apuntará a este recurso o equipo; un recurso del inventario actualiza su última inspección al completarse."}
+            >
               <Select value={subjectRef} onValueChange={setSubjectRef}>
-                <SelectTrigger aria-label="Sujeto inspeccionado"><SelectValue placeholder="Sin sujeto del inventario" /></SelectTrigger>
+                <SelectTrigger aria-label={requiresContainer ? "Contenedor inspeccionado" : "Sujeto inspeccionado"}>
+                  <SelectValue placeholder={requiresContainer ? "Selecciona un contenedor" : "Sin sujeto del inventario"} />
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={NO_SUBJECT}>Sin sujeto del inventario</SelectItem>
-                  {subjects.map((subject) => (
+                  {!requiresContainer && <SelectItem value={NO_SUBJECT}>Sin sujeto del inventario</SelectItem>}
+                  {subjectOptions.map((subject) => (
                     <SelectItem key={subjectRefOf(subject)} value={subjectRefOf(subject)}>
-                      {subject.source === "vehicle" ? "Equipo" : "Recurso"} · {subject.name}
-                      {subject.location ? ` · ${subject.location}` : ""}
+                      {subject.source === "vehicle" ? "Equipo" : subject.source === "container" ? "Contenedor" : "Recurso"} · {subject.name}
+                      {subject.source !== "container" && subject.location ? ` · ${subject.location}` : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {requiresContainer && subjectOptions.length === 0 && (
+                <p role="status" className="mt-2 rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-xs text-[var(--color-warning-ink)]">
+                  Esta faena todavía no tiene contenedores en el catálogo. Cárgalos en <Link href="/admin/contenedores" className="underline">Administración › Contenedores</Link>.
+                </p>
+              )}
             </Field>
           )}
           <div className="grid gap-3 md:grid-cols-2">
@@ -1290,7 +1318,7 @@ function RunProgramNowButton({ program }: { program: ProgramItem }) {
 /* ── Alta de programación ─────────────────────────────────────────────────── */
 
 export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWorksite, subjectsByWorksite = {} }: {
-  templates: { id: string; name: string; versionLabel: string }[]
+  templates: { id: string; name: string; versionLabel: string; sourceDefinitionCode?: string | null }[]
   worksites: { id: string; name: string }[]
   assignees: { id: string; name: string }[]
   riskEntriesByWorksite: Record<string, { id: string; hazardCode: string; hazard: string }[]>
@@ -1308,6 +1336,15 @@ export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWo
   const [subjectRef, setSubjectRef] = React.useState(NO_SUBJECT)
   const operation = useOperation()
 
+  /* La programación de contenedores exige sujeto por el mismo motivo que la
+   * ejecución: un programa sin contenedor produce runs sin sujeto. */
+  const requiresContainer = templateRequiresContainer(
+    templates.find((item) => item.id === templateId)?.sourceDefinitionCode)
+  const worksiteSubjects = subjectsByWorksite[worksiteId] ?? []
+  const subjectOptions = requiresContainer
+    ? worksiteSubjects.filter((subject) => subject.source === "container")
+    : worksiteSubjects
+
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
@@ -1316,6 +1353,10 @@ export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWo
     const riskEntry = String(form.get("riskEntryId") ?? "").trim()
     if (!templateId || !worksiteId || !startsOn) {
       operation.setMessage("Selecciona conscientemente la plantilla, la faena y la primera fecha.")
+      return
+    }
+    if (requiresContainer && !subjectRef.startsWith("container:")) {
+      operation.setMessage("Selecciona un contenedor del catálogo de la faena.")
       return
     }
     operation.run(() => createInspectionProgramAction({
@@ -1377,20 +1418,35 @@ export function ProgramDialog({ templates, worksites, assignees, riskEntriesByWo
               <Select value={assignedToUserId} onValueChange={setAssignedToUserId}><SelectTrigger aria-label="Asignada a"><SelectValue placeholder="Sin asignar" /></SelectTrigger><SelectContent><SelectItem value="_none">Sin asignar</SelectItem>{assignees.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select><input type="hidden" name="assignedToUserId" value={assignedToUserId === "_none" ? "" : assignedToUserId} />
             </Field>
           </div>
-          {(subjectsByWorksite[worksiteId]?.length ?? 0) > 0 && (
-            <Field label="Sujeto inspeccionado" hint="Opcional. Cada inspección generada apuntará a este recurso o equipo, y el prevencionista sabrá qué va a inspeccionar.">
+          {/* Con plantilla de contenedores el campo se muestra siempre, incluso
+              sin opciones: desaparecer dejaba pasar el alta sin sujeto. */}
+          {(subjectOptions.length > 0 || requiresContainer) && (
+            <Field
+              label={requiresContainer ? "Contenedor inspeccionado" : "Sujeto inspeccionado"}
+              required={requiresContainer}
+              hint={requiresContainer
+                ? "Obligatorio: cada inspección generada apuntará a este contenedor del catálogo."
+                : "Opcional. Cada inspección generada apuntará a este recurso o equipo, y el prevencionista sabrá qué va a inspeccionar."}
+            >
               <Select value={subjectRef} onValueChange={setSubjectRef}>
-                <SelectTrigger aria-label="Sujeto inspeccionado"><SelectValue placeholder="Sin sujeto del inventario" /></SelectTrigger>
+                <SelectTrigger aria-label={requiresContainer ? "Contenedor inspeccionado" : "Sujeto inspeccionado"}>
+                  <SelectValue placeholder={requiresContainer ? "Selecciona un contenedor" : "Sin sujeto del inventario"} />
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={NO_SUBJECT}>Sin sujeto del inventario</SelectItem>
-                  {(subjectsByWorksite[worksiteId] ?? []).map((subject) => (
+                  {!requiresContainer && <SelectItem value={NO_SUBJECT}>Sin sujeto del inventario</SelectItem>}
+                  {subjectOptions.map((subject) => (
                     <SelectItem key={subjectRefOf(subject)} value={subjectRefOf(subject)}>
-                      {subject.source === "vehicle" ? "Equipo" : "Recurso"} · {subject.name}
-                      {subject.location ? ` · ${subject.location}` : ""}
+                      {subject.source === "vehicle" ? "Equipo" : subject.source === "container" ? "Contenedor" : "Recurso"} · {subject.name}
+                      {subject.source !== "container" && subject.location ? ` · ${subject.location}` : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {requiresContainer && subjectOptions.length === 0 && (
+                <p role="status" className="mt-2 rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-xs text-[var(--color-warning-ink)]">
+                  Esta faena todavía no tiene contenedores en el catálogo. Cárgalos en <Link href="/admin/contenedores" className="underline">Administración › Contenedores</Link>.
+                </p>
+              )}
             </Field>
           )}
           <div className="grid gap-3 md:grid-cols-2">

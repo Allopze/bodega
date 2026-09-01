@@ -99,7 +99,7 @@ export function PdtpComplianceCard(props: PdtpComplianceCardProps) {
         </span>
         <span className="mb-0.5 text-xs text-[var(--color-text-subtle)]">avance real</span>
         {integralPercent !== null && (
-          <span className="mb-0.5 text-xs text-[var(--color-text-faint)]">· integral {integralPercent}%</span>
+          <span className="mb-0.5 text-xs text-[var(--color-text-faint)]">· gestión {integralPercent}%</span>
         )}
       </div>
 

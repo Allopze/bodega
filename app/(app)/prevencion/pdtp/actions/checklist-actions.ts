@@ -120,6 +120,7 @@ export async function startPdtpExecutionChecklistAction(input: unknown): Promise
       subjectType: parsed.subjectType,
       subjectId: parsed.subjectId,
       subjectResourceId: parsed.subjectResourceId,
+      subjectContainerId: parsed.subjectContainerId,
       subjectLabel: parsed.subjectLabel,
     })
     return { ok: true, instanceId: instance.id }

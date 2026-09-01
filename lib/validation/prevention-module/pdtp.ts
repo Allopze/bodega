@@ -374,6 +374,7 @@ export const pdtpChecklistStartSchema = z.object({
   subjectType: z.enum(["equipo", "trabajador", "contenedor", "extintor", "carro"]).nullish(),
   subjectId: z.string().trim().max(100).optional(),
   subjectResourceId: z.string().trim().max(100).optional(),
+  subjectContainerId: z.string().trim().max(100).optional(),
   subjectLabel: z.string().trim().max(200).nullish(),
 }).superRefine((value, ctx) => {
   if (value.subjectType === "extintor" && !value.subjectResourceId) {
@@ -381,6 +382,15 @@ export const pdtpChecklistStartSchema = z.object({
       code: "custom",
       path: ["subjectResourceId"],
       message: "Selecciona un extintor del inventario de la faena.",
+    })
+  }
+  // El contenedor era el único sujeto que seguía siendo texto libre, por no
+  // haber padrón. Con el catálogo en pie, se exige igual que el extintor.
+  if (value.subjectType === "contenedor" && !value.subjectContainerId) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["subjectContainerId"],
+      message: "Selecciona un contenedor del catálogo de la faena.",
     })
   }
 })

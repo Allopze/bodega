@@ -6,7 +6,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import Link from "next/link"
 import {
-  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear, FileText, ArrowRight, EnvelopeSimple, ToggleLeft, HardDrives, Receipt, Package,
+  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear, FileText, ArrowRight, EnvelopeSimple, ToggleLeft, HardDrives, Receipt, Package, ShippingContainer,
 } from "@phosphor-icons/react/dist/ssr"
 
 export const metadata: Metadata = { title: "Panel de Administración" }
@@ -66,6 +66,14 @@ const modules = [
     href:        "/admin/inventario-faena",
     icon:        Package,
     permission:  "admin:worksite_inventory",
+    group:       "catalogos",
+  },
+  {
+    title:       "Contenedores",
+    description: "Padrón de contenedores por faena. Prevención los inspecciona eligiéndolos del catálogo; el alta y el traslado se hacen acá.",
+    href:        "/admin/contenedores",
+    icon:        ShippingContainer,
+    permission:  "admin:containers",
     group:       "catalogos",
   },
   {

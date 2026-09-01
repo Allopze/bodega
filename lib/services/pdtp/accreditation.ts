@@ -17,16 +17,19 @@
  *   vacío sin error.
  */
 
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm"
-import { db } from "@/db"
+import { and, desc, eq, inArray, sql } from "drizzle-orm"
+import { db, type DB, type Tx } from "@/db"
 import {
   pdtpActivities,
   pdtpActivityWorksiteExclusions,
   pdtpExecutions,
+  pdtpProgramWorksites,
   pdtpPrograms,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
+
+type AccreditationClient = DB | Tx
 
 // ── Tipos públicos ────────────────────────────────────────────────────────────
 
@@ -75,6 +78,12 @@ export type AccreditationInput = {
   evidenceRef?: string
   /** Metadatos adicionales que se persisten en sourceMetadataJson. */
   metadata?: Record<string, unknown>
+  /**
+   * El evento fuente ya constituye validación suficiente. Se usa sólo desde
+   * conectores cuyo cierre es el hecho que el programa busca medir, como una
+   * inspección declarada ejecutada.
+   */
+  autoApproveByUserId?: string
 }
 
 // ── Helpers internos ──────────────────────────────────────────────────────────
@@ -128,13 +137,19 @@ function accreditationKey(
  * Acredita automáticamente las actividades PDTP indicadas a partir de un
  * evento operacional real. Es idempotente: si ya existe una ejecución con
  * la misma clave, la retorna sin crear una nueva (a menos que esté en estado
- * `draft` o `rejected`, en cuyo caso la actualiza a `submitted`).
+ * `draft` o `rejected`, en cuyo caso la actualiza a `submitted`, o a
+ * `approved` cuando una inspección ejecutada constituye la validación).
  *
- * Una ejecución `approved` nunca se modifica aquí.
+ * Una aprobación manual nunca se modifica aquí. Cada evento de integración
+ * conserva una fila propia, incluso cuando comparte período con otro evento.
  */
 export async function accreditPdtpFromEvent(
   input: AccreditationInput,
+  client: AccreditationClient = db,
 ): Promise<AccreditationResult> {
+  if (input.autoApproveByUserId && input.sourceType !== "inspeccion") {
+    throw new Error("Sólo las inspecciones pueden aprobar automáticamente su cumplimiento al ejecutarse.")
+  }
   if (input.activityNumbers.length === 0) {
     return { accredited: [], skippedExcluded: [], skippedNotFound: [] }
   }
@@ -153,7 +168,7 @@ export async function accreditPdtpFromEvent(
   // 1. Resolver el programa activo de la faena
   let program: typeof pdtpPrograms.$inferSelect | null = null
   if (input.programId) {
-    const [found] = await db
+    const [found] = await client
       .select()
       .from(pdtpPrograms)
       .where(eq(pdtpPrograms.id, input.programId))
@@ -162,13 +177,29 @@ export async function accreditPdtpFromEvent(
   } else {
     // Buscar el programa activo cuyo año coincida con el año del evento.
     // Si no hay uno del mismo año, usar el más reciente activo.
-    const programs = await db
+    const programs = await client
       .select()
       .from(pdtpPrograms)
       .where(eq(pdtpPrograms.status, "active"))
       .orderBy(desc(pdtpPrograms.year), desc(pdtpPrograms.version))
-      .limit(10)
-    program = programs.find((p) => p.year === occurredYear) ?? programs[0] ?? null
+    const memberships = programs.length === 0 ? [] : await client
+      .select({ programId: pdtpProgramWorksites.programId, worksiteId: pdtpProgramWorksites.worksiteId })
+      .from(pdtpProgramWorksites)
+      .where(and(
+        inArray(pdtpProgramWorksites.programId, programs.map((candidate) => candidate.id)),
+        eq(pdtpProgramWorksites.isActive, true),
+      ))
+    const membersByProgram = new Map<string, string[]>()
+    for (const member of memberships) {
+      const current = membersByProgram.get(member.programId) ?? []
+      current.push(member.worksiteId)
+      membersByProgram.set(member.programId, current)
+    }
+    const applicable = programs.filter((candidate) => {
+      const members = membersByProgram.get(candidate.id) ?? []
+      return members.length === 0 || members.includes(input.worksiteId)
+    })
+    program = applicable.find((p) => p.year === occurredYear) ?? applicable[0] ?? null
   }
 
   if (!program) {
@@ -181,6 +212,17 @@ export async function accreditPdtpFromEvent(
     throw new Error(
       `[accreditPdtpFromEvent] El programa ${program.id} no está activo (estado: ${program.status}).`,
     )
+  }
+
+  const explicitMemberships = await client
+    .select({ worksiteId: pdtpProgramWorksites.worksiteId })
+    .from(pdtpProgramWorksites)
+    .where(and(
+      eq(pdtpProgramWorksites.programId, program.id),
+      eq(pdtpProgramWorksites.isActive, true),
+    ))
+  if (explicitMemberships.length > 0 && !explicitMemberships.some((member) => member.worksiteId === input.worksiteId)) {
+    throw new Error(`[accreditPdtpFromEvent] La faena ${input.worksiteId} no pertenece al programa ${program.id}.`)
   }
 
   // El programa resuelto tiene que cubrir el año en que ocurrió el evento. La
@@ -207,7 +249,7 @@ export async function accreditPdtpFromEvent(
   }
 
   // 2. Resolver las actividades del programa por número
-  const activityRows = await db
+  const activityRows = await client
     .select({ id: pdtpActivities.id, n: pdtpActivities.n })
     .from(pdtpActivities)
     .where(
@@ -231,7 +273,7 @@ export async function accreditPdtpFromEvent(
   }
 
   // 3. Filtrar actividades excluidas de esta faena (R4)
-  const exclusionRows = await db
+  const exclusionRows = await client
     .select({ activityId: pdtpActivityWorksiteExclusions.activityId })
     .from(pdtpActivityWorksiteExclusions)
     .where(
@@ -263,7 +305,7 @@ export async function accreditPdtpFromEvent(
     )
 
     // Verificar si ya existe
-    const [existing] = await db
+    const [existing] = await client
       .select({ id: pdtpExecutions.id, status: pdtpExecutions.status })
       .from(pdtpExecutions)
       .where(eq(pdtpExecutions.idempotencyKey, idempotencyKey))
@@ -280,74 +322,23 @@ export async function accreditPdtpFromEvent(
       sourceType: input.sourceType,
       sourceId: input.sourceId,
       occurredAt: input.occurredAt,
+      ...(input.autoApproveByUserId ? {
+        approvalMode: "automatic_source_event",
+        automaticApprovedByUserId: input.autoApproveByUserId,
+        automaticApprovalActors: { [idempotencyKey]: input.autoApproveByUserId },
+      } : {}),
       ...(input.metadata ?? {}),
-    }
-
-    // Celda del período (`pdtp_executions_activity_scope_period_unique`). Si ya
-    // hay una ejecución ahí y no es la nuestra, insertar levanta un 23505 que
-    // `safeAccredit` se traga: la segunda inspección de la semana —o la primera,
-    // si ya había una carga manual en esa celda— desaparecía sin rastro.
-    const [periodRow] = existing ? [] : await db
-      .select({
-        id: pdtpExecutions.id,
-        status: pdtpExecutions.status,
-        executedQuantity: pdtpExecutions.executedQuantity,
-        sourceMetadataJson: pdtpExecutions.sourceMetadataJson,
-      })
-      .from(pdtpExecutions)
-      .where(and(
-        eq(pdtpExecutions.activityId, activity.id),
-        eq(pdtpExecutions.worksiteId, input.worksiteId),
-        eq(pdtpExecutions.year, occurredYear),
-        eq(pdtpExecutions.month, slot.month),
-        eq(pdtpExecutions.week, slot.week),
-        isNull(pdtpExecutions.obligationId),
-      ))
-      .limit(1)
-
-    if (periodRow) {
-      // Sumamos el evento a la celda en vez de perderlo. La lista de claves ya
-      // contabilizadas mantiene la idempotencia: reintentar el mismo evento no
-      // vuelve a sumar. Una ejecución aprobada no se toca.
-      const meta = (periodRow.sourceMetadataJson ?? {}) as Record<string, unknown>
-      const contributed = Array.isArray(meta.accreditedKeys) ? (meta.accreditedKeys as string[]) : []
-      if (contributed.includes(idempotencyKey)) {
-        accredited.push({ activityId: activity.id, activityN: activity.n, executionId: periodRow.id, created: false })
-      } else if (periodRow.status === "approved") {
-        logger.warn(
-          { executionId: periodRow.id, sourceType: input.sourceType, sourceId: input.sourceId, activityN: activity.n },
-          "[accreditPdtpFromEvent] La celda del período ya tiene una ejecución aprobada; no se suma el evento.",
-        )
-      } else {
-        // La suma y el append de la clave se hacen EN SQL, no con los valores
-        // leídos arriba: dos eventos distintos de la misma celda leían ambos
-        // `executedQuantity = n` y escribían `n + 1`, perdiendo un evento y su
-        // clave — con lo que un reintento posterior volvía a sumarlo. El
-        // `NOT (... @> clave)` del WHERE hace que la idempotencia también sea
-        // atómica en vez de depender del `contributed.includes` de arriba.
-        const keyJson = sql`to_jsonb(${idempotencyKey}::text)`
-        const currentKeys = sql`coalesce(${pdtpExecutions.sourceMetadataJson}->'accreditedKeys', '[]'::jsonb)`
-        await db.update(pdtpExecutions).set({
-          executedQuantity: sql`${pdtpExecutions.executedQuantity} + ${executedQuantity}`,
-          sourceMetadataJson: sql`jsonb_set(coalesce(${pdtpExecutions.sourceMetadataJson}, '{}'::jsonb), '{accreditedKeys}', ${currentKeys} || ${keyJson})`,
-          updatedAt: now,
-        }).where(and(
-          eq(pdtpExecutions.id, periodRow.id),
-          sql`${pdtpExecutions.status} <> 'approved'`,
-          sql`NOT (${currentKeys} @> ${keyJson})`,
-        ))
-        accredited.push({ activityId: activity.id, activityN: activity.n, executionId: periodRow.id, created: false })
-      }
-      continue
     }
 
     if (existing) {
       // Actualizar ejecución existente (estaba en draft/rejected/submitted)
-      await db
+      const [updated] = await client
         .update(pdtpExecutions)
         .set({
           executedQuantity,
-          status: "submitted",
+          status: input.autoApproveByUserId ? "approved" : "submitted",
+          approvedByUserId: input.autoApproveByUserId ?? null,
+          approvedAt: input.autoApproveByUserId ? now : null,
           evidenceText: isStorageRef ? null : (input.evidenceRef ?? null),
           evidenceUrl: isStorageRef ? input.evidenceRef : null,
           evidenceStatus: isRealEvidence ? "provided" : "not_required",
@@ -361,10 +352,11 @@ export async function accreditPdtpFromEvent(
             sql`${pdtpExecutions.status} <> 'approved'`,
           ),
         )
-      accredited.push({ activityId: activity.id, activityN: activity.n, executionId: existing.id, created: false })
+        .returning({ id: pdtpExecutions.id })
+      if (updated) accredited.push({ activityId: activity.id, activityN: activity.n, executionId: existing.id, created: false })
     } else {
       // Crear nueva ejecución de integración
-      const [created] = await db
+      const [created] = await client
         .insert(pdtpExecutions)
         .values({
           id: executionId,
@@ -376,7 +368,9 @@ export async function accreditPdtpFromEvent(
           month: slot.month,
           week: slot.week,
           executedQuantity,
-          status: "submitted",
+          status: input.autoApproveByUserId ? "approved" : "submitted",
+          approvedByUserId: input.autoApproveByUserId ?? null,
+          approvedAt: input.autoApproveByUserId ? now : null,
           evidenceText: isStorageRef ? null : (input.evidenceRef ?? null),
           evidenceUrl: isStorageRef ? input.evidenceRef : null,
           evidencePhotos: [],
@@ -384,50 +378,27 @@ export async function accreditPdtpFromEvent(
           sourceType: input.sourceType,
           sourceId: input.sourceId,
           idempotencyKey,
-          sourceMetadataJson: { ...sourceMetadata, accreditedKeys: [idempotencyKey] },
+          sourceMetadataJson: sourceMetadata,
           evidenceStatus: isRealEvidence ? "provided" : "not_required",
           createdAt: now,
           updatedAt: now,
         })
-        // Sin `target`: cubre tanto la clave idempotente como el índice único de
-        // período, que es el que puede chocar en una carrera con otra fuente.
+        // La única colisión posible entre integraciones es la clave idempotente:
+        // cada evento tiene su propia fila y puede coexistir con cargas manuales.
         .onConflictDoNothing()
         .returning({ id: pdtpExecutions.id })
 
       if (created) {
         accredited.push({ activityId: activity.id, activityN: activity.n, executionId: created.id, created: true })
       } else {
-        // Conflicto de unicidad: alguien más insertó mientras tanto — leemos.
-        // Puede haber chocado por la clave idempotente (mismo evento en paralelo)
-        // o por el índice de período (otra fuente ganó la celda entre nuestro
-        // SELECT y este INSERT); hay que mirar las dos, o el evento se pierde.
-        const [concurrent] = await db
+        // El mismo evento entró en paralelo: la clave única decide y releemos.
+        const [concurrent] = await client
           .select({ id: pdtpExecutions.id, status: pdtpExecutions.status })
           .from(pdtpExecutions)
           .where(eq(pdtpExecutions.idempotencyKey, idempotencyKey))
           .limit(1)
-        if (concurrent) {
-          accredited.push({ activityId: activity.id, activityN: activity.n, executionId: concurrent.id, created: false })
-        } else {
-          const [concurrentPeriod] = await db
-            .select({ id: pdtpExecutions.id })
-            .from(pdtpExecutions)
-            .where(and(
-              eq(pdtpExecutions.activityId, activity.id),
-              eq(pdtpExecutions.worksiteId, input.worksiteId),
-              eq(pdtpExecutions.year, occurredYear),
-              eq(pdtpExecutions.month, slot.month),
-              eq(pdtpExecutions.week, slot.week),
-              isNull(pdtpExecutions.obligationId),
-            ))
-            .limit(1)
-          if (concurrentPeriod) {
-            logger.warn(
-              { executionId: concurrentPeriod.id, sourceType: input.sourceType, sourceId: input.sourceId },
-              "[accreditPdtpFromEvent] Otra fuente tomó la celda del período en paralelo; el evento no se sumó.",
-            )
-          }
-        }
+        if (!concurrent) throw new Error("La acreditación colisionó sin una ejecución idempotente recuperable.")
+        accredited.push({ activityId: activity.id, activityN: activity.n, executionId: concurrent.id, created: false })
       }
     }
   }
@@ -457,57 +428,118 @@ export type RevocationResult = {
 
 /**
  * Revierte las ejecuciones auto-acreditadas para un evento dado.
- * Las ejecuciones `approved` no se tocan (se reportan en `skippedApproved`).
- * Las demás pasan a `draft` con nota de reversión en `sourceMetadataJson`.
+ * Las aprobaciones manuales no se tocan (se reportan en `skippedApproved`).
+ * Las demás, incluidas las aprobadas automáticamente por el propio evento,
+ * pasan a `draft` con nota de reversión en `sourceMetadataJson`.
  *
  * Llamar desde el flujo de cancelación del evento original (inspección
  * cancelada, sesión cancelada, etc.).
  */
-export async function revokePdtpAccreditation(input: {
+export type RevocationInput = {
   sourceType: PdtpAccreditationSourceType
   sourceId: string
   worksiteId: string
   programId?: string
   revokedBy?: string
   reason?: string
-}): Promise<RevocationResult> {
-  const keyPrefix = `pdtp-accredit:%:${input.worksiteId}:${input.sourceType}:${input.sourceId}`
+}
 
-  // Buscar todas las ejecuciones que coincidan con este evento (sin conocer activityId)
-  const executions = await db
+/** Variante transaccional para callers que ya poseen la transacción fuente. */
+export async function revokePdtpAccreditationWithClient(
+  input: RevocationInput,
+  client: Tx,
+): Promise<RevocationResult> {
+  // Las filas nuevas son una por evento. `accreditedKeys` se conserva sólo para
+  // poder revertir correctamente filas históricas que agregaban varias
+  // inspecciones antes de separar las integraciones del índice de período.
+  const executions = await client
     .select({
       id: pdtpExecutions.id,
       activityId: pdtpExecutions.activityId,
       status: pdtpExecutions.status,
+      executedQuantity: pdtpExecutions.executedQuantity,
+      approvedByUserId: pdtpExecutions.approvedByUserId,
+      idempotencyKey: pdtpExecutions.idempotencyKey,
+      sourceType: pdtpExecutions.sourceType,
+      sourceId: pdtpExecutions.sourceId,
       sourceMetadataJson: pdtpExecutions.sourceMetadataJson,
     })
     .from(pdtpExecutions)
     .where(
       and(
-        eq(pdtpExecutions.sourceType, input.sourceType),
-        eq(pdtpExecutions.sourceId, input.sourceId),
         eq(pdtpExecutions.worksiteId, input.worksiteId),
         eq(pdtpExecutions.origin, "integration"),
       ),
     )
+    .orderBy(pdtpExecutions.id)
+    .for("update")
 
-  const matching = executions  // WHERE ya filtra por source; no-op in-memory
+  const matching = executions.filter((execution) => {
+    const metadata = (execution.sourceMetadataJson ?? {}) as Record<string, unknown>
+    const keys = Array.isArray(metadata.accreditedKeys) ? metadata.accreditedKeys as string[] : []
+    const targetKey = accreditationKey(execution.activityId, input.worksiteId, input.sourceType, input.sourceId)
+    return (execution.sourceType === input.sourceType && execution.sourceId === input.sourceId)
+      || keys.includes(targetKey)
+  })
 
   const revoked: RevocationResult["revoked"] = []
   const skippedApproved: RevocationResult["skippedApproved"] = []
   const now = new Date().toISOString()
 
   for (const execution of matching) {
-    if (execution.status === "approved") {
+    const prevMetadata = (execution.sourceMetadataJson ?? {}) as Record<string, unknown>
+    const contributed = Array.isArray(prevMetadata.accreditedKeys) ? prevMetadata.accreditedKeys as string[] : []
+    const targetKey = accreditationKey(execution.activityId, input.worksiteId, input.sourceType, input.sourceId)
+    const automaticallyApproved = execution.status === "approved"
+      && prevMetadata.approvalMode === "automatic_source_event"
+      && ((prevMetadata.sourceType === input.sourceType && prevMetadata.sourceId === input.sourceId)
+        || contributed.includes(targetKey))
+    if (execution.status === "approved" && !automaticallyApproved) {
       skippedApproved.push({ activityId: execution.activityId, executionId: execution.id })
       continue
     }
 
-    const prevMetadata = (execution.sourceMetadataJson ?? {}) as Record<string, unknown>
-    await db
+    const remainingKeys = contributed.filter((key) => key !== targetKey)
+    if (automaticallyApproved && contributed.includes(targetKey) && remainingKeys.length > 0) {
+      const actors = prevMetadata.automaticApprovalActors && typeof prevMetadata.automaticApprovalActors === "object"
+        ? prevMetadata.automaticApprovalActors as Record<string, string>
+        : {}
+      const remainingActors = Object.fromEntries(remainingKeys.flatMap((key) => actors[key] ? [[key, actors[key]]] : []))
+      const nextPrimaryKey = execution.idempotencyKey === targetKey ? remainingKeys[0]! : execution.idempotencyKey
+      const sourcePrefix = `pdtp-accredit:${execution.activityId}:${input.worksiteId}:${input.sourceType}:`
+      const nextSourceId = execution.sourceId === input.sourceId && nextPrimaryKey?.startsWith(sourcePrefix)
+        ? nextPrimaryKey.slice(sourcePrefix.length)
+        : execution.sourceId
+      const nextApprover = remainingActors[nextPrimaryKey ?? ""] ?? Object.values(remainingActors)[0] ?? execution.approvedByUserId
+      const [updated] = await client.update(pdtpExecutions).set({
+        executedQuantity: Math.max(0, execution.executedQuantity - 1),
+        approvedByUserId: nextApprover,
+        idempotencyKey: nextPrimaryKey,
+        sourceId: nextSourceId,
+        sourceMetadataJson: {
+          ...prevMetadata,
+          sourceId: nextSourceId,
+          accreditedKeys: remainingKeys,
+          automaticApprovalActors: remainingActors,
+          revokedAt: now,
+          revokedBy: input.revokedBy ?? null,
+          revocationReason: input.reason ?? "Evento fuente cancelado o anulado.",
+        },
+        updatedAt: now,
+      }).where(and(
+        eq(pdtpExecutions.id, execution.id),
+        eq(pdtpExecutions.status, "approved"),
+      )).returning({ id: pdtpExecutions.id })
+      if (updated) revoked.push({ activityId: execution.activityId, executionId: execution.id })
+      continue
+    }
+
+    const [updated] = await client
       .update(pdtpExecutions)
       .set({
         status: "draft",
+        approvedByUserId: null,
+        approvedAt: null,
         sourceMetadataJson: {
           ...prevMetadata,
           revokedAt: now,
@@ -519,13 +551,12 @@ export async function revokePdtpAccreditation(input: {
       .where(
         and(
           eq(pdtpExecutions.id, execution.id),
-          sql`${pdtpExecutions.status} <> 'approved'`,
+          eq(pdtpExecutions.status, execution.status),
         ),
       )
-    revoked.push({ activityId: execution.activityId, executionId: execution.id })
+      .returning({ id: pdtpExecutions.id })
+    if (updated) revoked.push({ activityId: execution.activityId, executionId: execution.id })
   }
-
-  void keyPrefix // suppress unused warning (kept for documentation clarity)
 
   logger.info(
     {
@@ -539,4 +570,8 @@ export async function revokePdtpAccreditation(input: {
   )
 
   return { revoked, skippedApproved }
+}
+
+export async function revokePdtpAccreditation(input: RevocationInput): Promise<RevocationResult> {
+  return db.transaction((tx) => revokePdtpAccreditationWithClient(input, tx))
 }

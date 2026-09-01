@@ -99,7 +99,9 @@ export function MaintenanceRowActions({
       {(record.status === "scheduled" || record.status === "in_progress") && (
         <Button size="sm" variant="primary" onClick={() => openTransition("complete")}>Completar</Button>
       )}
-      {record.status === "completed" && <Button size="sm" variant="secondary" onClick={() => openTransition("reopen")}>Reabrir</Button>}
+      {(record.status === "completed" || record.status === "cancelled") && (
+        <Button size="sm" variant="secondary" onClick={() => openTransition("reopen")}>Reabrir</Button>
+      )}
       {record.status !== "cancelled" && (
         <Button size="sm" variant="destructive" onClick={() => openTransition("cancel")}>Cancelar</Button>
       )}

@@ -19,7 +19,6 @@ import { can } from "@/lib/auth/can"
 import { getBackupStats, getLatestBackup, getDriveHealth, getBackupConfig } from "@/lib/services/backups"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
-import { existsSync } from "node:fs"
 
 const execFileAsync = promisify(execFile)
 
@@ -96,13 +95,19 @@ export async function GET() {
     timestamp: new Date().toISOString(),
   }
 
-  // 1. Check script existence
-  for (const name of BACKUP_SCRIPT_NAMES) {
+  // 1. Check script existence at runtime. Passing the path as an argv value
+  // keeps Next's build tracer from treating the configurable directory as a
+  // source glob and bundling the whole repository.
+  const scriptChecks = await Promise.all(BACKUP_SCRIPT_NAMES.map(async (name) => {
     try {
-      result.scripts[name] = existsSync(`${SCRIPTS_DIR}/${name}`)
+      await execFileAsync("test", ["-f", `${SCRIPTS_DIR}/${name}`], { timeout: 1000 })
+      return [name, true] as const
     } catch {
-      result.scripts[name] = false
+      return [name, false] as const
     }
+  }))
+  for (const [name, exists] of scriptChecks) {
+    result.scripts[name] = exists
     if (!result.scripts[name]) {
       result.status = "degraded"
     }

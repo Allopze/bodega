@@ -226,7 +226,7 @@ test.describe("Inspecciones — falla de un equipo de flota", () => {
     await dialog.locator('textarea[name="actionDescription"]').fill("Reparar el sistema y verificar en taller.")
     await dialog.getByLabel("Responsable de la CAPA").click()
     await page.getByRole("option", { name: "Admin E2E", exact: true }).click()
-    await dialog.getByRole("checkbox", { name: "Programar mantención del equipo" }).check()
+    await expect(dialog.getByText(/Se abrirá automáticamente una OT correctiva/)).toBeVisible()
     await dialog.getByRole("button", { name: "Derivar" }).click()
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
 

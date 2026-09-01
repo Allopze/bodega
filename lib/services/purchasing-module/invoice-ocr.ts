@@ -149,7 +149,10 @@ async function rasterizePdfPages(buffer: Buffer): Promise<Buffer[]> {
   const canvasModule = "@napi-rs/canvas"
   const [{ getDocument }, canvas] = await Promise.all([
     import("pdfjs-dist/legacy/build/pdf.mjs"),
-    import(/* turbopackIgnore: true */ canvasModule),
+    // Next 16 reconoce `webpackIgnore` tanto en Webpack como en Turbopack.
+    // No combinar dos claves en el mismo comentario: Turbopack dejaba de
+    // preservar este import y trataba de colocar el binario nativo en ESM.
+    import(/* webpackIgnore: true */ canvasModule),
   ])
   const document = await getDocument({ data: new Uint8Array(buffer) }).promise
   try {

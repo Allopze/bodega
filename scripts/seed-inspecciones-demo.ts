@@ -18,6 +18,7 @@ import {
   saveInspectionAnswers,
   type InspectionAccess,
 } from "@/lib/services/prevention-inspections"
+import { createContainer, listContainersForWorksite } from "@/lib/services/prevention-containers"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { closingActFromDefinition, fieldKindAcceptsPartial, fieldKindIsScorable } from "@/lib/prevention/inspections"
 
@@ -31,6 +32,25 @@ const ALL: InspectionAccess = {
   ],
 }
 const asUser = (userId: string): InspectionAccess => ({ ...ALL, userId })
+
+/** Acceso al catálogo de contenedores, que es dato maestro de Administración. */
+const CONTAINER_ACCESS = {
+  userId: "demo-user-prevencionista",
+  permissions: ["admin:containers"],
+  scope: "all" as const,
+}
+
+/**
+ * El contenedor dejó de ser texto libre: la inspección del Anexo 14 exige uno
+ * del catálogo, así que la demo tiene que sembrarlo antes de ejecutarla.
+ */
+async function ensureDemoContainer(worksiteId: string, code: string, location: string) {
+  const existing = await listContainersForWorksite(worksiteId)
+  const found = existing.find((item) => item.code === code)
+  if (found) return found.id
+  const created = await createContainer({ worksiteId, code, location }, CONTAINER_ACCESS)
+  return created.id
+}
 
 function daysFromToday(delta: number) {
   const d = new Date()
@@ -119,10 +139,11 @@ async function main() {
   }
 
   console.log("3) Creando ejecuciones con respuestas reales…")
+  const contenedorRespel = await ensureDemoContainer("ws-biodiversa", "CT-RESPEL-02", "Patio de residuos")
   const runPlan = [
     // planificadas (una vencida)
     { template: byName("extintores"), worksite: "ws-arauco-horcones", scheduledFor: daysFromToday(-6), assignee: "demo-user-prevencionista_faena", stage: "planned" as const, subject: "Extintor PQS 10 kg — Portería" },
-    { template: byName("contenedores"), worksite: "ws-biodiversa", scheduledFor: daysFromToday(3), assignee: "demo-user-prevencionista_faena", stage: "planned" as const, subject: "Contenedor RESPEL N°2" },
+    { template: byName("contenedores"), worksite: "ws-biodiversa", scheduledFor: daysFromToday(3), assignee: "demo-user-prevencionista_faena", stage: "planned" as const, subject: "Contenedor RESPEL N°2", containerId: contenedorRespel },
     // en curso (parcialmente respondidas)
     { template: byName("Reporte de Uso Diario"), worksite: "ws-administracion", scheduledFor: daysFromToday(0), assignee: "demo-user-jefe_terreno", stage: "in_progress" as const, subject: "Cargador CAT 950 — turno mañana" },
     { template: byName("Maquinaria Pesada"), worksite: "ws-arauco-horcones", scheduledFor: daysFromToday(-8), assignee: "demo-user-prevencionista_faena", stage: "in_progress" as const, subject: "Operador excavadora EX-07" },
@@ -145,6 +166,8 @@ async function main() {
         templateId: plan.template.id, worksiteId: plan.worksite,
         origin: plan.template.kind === "audit" ? "prevencion" : "prevencion",
         subjectType: null, subjectLabel: plan.subject,
+        // El resto de los sujetos sigue siendo etiqueta libre; el contenedor no.
+        subjectContainerId: "containerId" in plan ? plan.containerId : undefined,
         scheduledFor: plan.scheduledFor, assignedToUserId: plan.assignee,
       }, ALL)
 

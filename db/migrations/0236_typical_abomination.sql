@@ -1,0 +1,2 @@
+DROP INDEX "pdtp_executions_activity_scope_period_unique";--> statement-breakpoint
+CREATE UNIQUE INDEX "pdtp_executions_activity_scope_period_unique" ON "pdtp_executions" USING btree ("activity_id","worksite_id","year","month","week") WHERE "pdtp_executions"."obligation_id" IS NULL AND "pdtp_executions"."origin" <> 'integration';

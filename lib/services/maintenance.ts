@@ -15,6 +15,7 @@ import {
   maintenanceParts,
   maintenancePlans,
   maintenanceTasks,
+  preventionCapaActions,
   preventionCapaEvidence,
   preventionCapaTransitions,
   preventionInspectionFindings,
@@ -1061,10 +1062,24 @@ async function activateMaintenanceCapaEvidence(
   },
 ) {
   if (!args.record.inspectionFindingId) return
-  const [finding] = await client.select({ capaActionId: preventionInspectionFindings.capaActionId })
+  const [finding] = await client.select({
+    id: preventionInspectionFindings.id,
+    capaActionId: preventionInspectionFindings.capaActionId,
+  })
     .from(preventionInspectionFindings)
-    .where(eq(preventionInspectionFindings.id, args.record.inspectionFindingId)).limit(1)
+    .where(eq(preventionInspectionFindings.id, args.record.inspectionFindingId)).for("update").limit(1)
   if (!finding?.capaActionId) return
+  const [capa] = await client.select({
+    id: preventionCapaActions.id,
+    status: preventionCapaActions.status,
+    startedByUserId: preventionCapaActions.startedByUserId,
+    startedAt: preventionCapaActions.startedAt,
+  }).from(preventionCapaActions)
+    .where(eq(preventionCapaActions.id, finding.capaActionId)).for("update").limit(1)
+  if (!capa) return
+  if (capa.status === "cancelled") {
+    throw new Error("La acción correctiva vinculada está cancelada; reactívala antes de completar la OT")
+  }
   const now = new Date().toISOString()
   const [evidence] = await client.insert(preventionCapaEvidence).values({
     id: nanoid(),
@@ -1099,6 +1114,54 @@ async function activateMaintenanceCapaEvidence(
     actorUserId: args.actorUserId,
     createdAt: now,
   })
+
+  await client.update(preventionInspectionFindings).set({
+    status: "closed",
+    closedByUserId: args.actorUserId,
+    closedAt: now,
+    updatedAt: now,
+  }).where(eq(preventionInspectionFindings.id, finding.id))
+
+  if (["pending", "in_progress", "reopened"].includes(capa.status)) {
+    const startsFromPending = capa.status === "pending" || capa.status === "reopened"
+    if (startsFromPending) {
+      await client.insert(preventionCapaTransitions).values({
+        id: `capat-${nanoid()}`,
+        actionId: capa.id,
+        changeType: "status",
+        fromStatus: capa.status,
+        toStatus: "in_progress",
+        reason: "Mantención correctiva ejecutada",
+        changeSet: { maintenanceId: args.record.id, lifecycle: "started" },
+        actorUserId: args.actorUserId,
+        createdAt: now,
+      })
+    }
+    await client.update(preventionCapaActions).set({
+      status: "pending_verification",
+      startedByUserId: capa.startedByUserId ?? args.actorUserId,
+      startedAt: capa.startedAt ?? now,
+      completedByUserId: args.actorUserId,
+      completedAt: now,
+      effectivenessStatus: "pending",
+      effectivenessAssessment: null,
+      effectivenessAssessedByUserId: null,
+      effectivenessAssessedAt: null,
+      version: sql`${preventionCapaActions.version} + 1`,
+      updatedAt: now,
+    }).where(eq(preventionCapaActions.id, capa.id))
+    await client.insert(preventionCapaTransitions).values({
+      id: `capat-${nanoid()}`,
+      actionId: capa.id,
+      changeType: "status",
+      fromStatus: startsFromPending ? "in_progress" : capa.status,
+      toStatus: "pending_verification",
+      reason: "Mantención correctiva completada",
+      changeSet: { maintenanceId: args.record.id, lifecycle: "completed" },
+      actorUserId: args.actorUserId,
+      createdAt: now,
+    })
+  }
 }
 
 async function supersedeMaintenanceCapaEvidence(
@@ -1110,10 +1173,26 @@ async function supersedeMaintenanceCapaEvidence(
   },
 ) {
   if (!args.record.inspectionFindingId) return
-  const [finding] = await client.select({ capaActionId: preventionInspectionFindings.capaActionId })
+  const [finding] = await client.select({
+    id: preventionInspectionFindings.id,
+    capaActionId: preventionInspectionFindings.capaActionId,
+  })
     .from(preventionInspectionFindings)
-    .where(eq(preventionInspectionFindings.id, args.record.inspectionFindingId)).limit(1)
+    .where(eq(preventionInspectionFindings.id, args.record.inspectionFindingId)).for("update").limit(1)
   if (!finding?.capaActionId) return
+  const [capa] = await client.select({
+    id: preventionCapaActions.id,
+    status: preventionCapaActions.status,
+  }).from(preventionCapaActions)
+    .where(eq(preventionCapaActions.id, finding.capaActionId)).for("update").limit(1)
+  if (!capa) return
+  if (["verified", "closed", "cancelled"].includes(capa.status)) {
+    throw new Error(
+      capa.status === "cancelled"
+        ? "La CAPA vinculada está cancelada y no puede reabrirse desde Mantención."
+        : "La CAPA vinculada ya fue verificada o cerrada; debe reabrirla un usuario autorizado de Prevención antes de reabrir la OT.",
+    )
+  }
   const now = new Date().toISOString()
   const [evidence] = await client.update(preventionCapaEvidence).set({
     status: "superseded",
@@ -1125,22 +1204,67 @@ async function supersedeMaintenanceCapaEvidence(
     eq(preventionCapaEvidence.reference, `mantencion:${args.record.id}`),
     eq(preventionCapaEvidence.status, "active"),
   )).returning({ id: preventionCapaEvidence.id })
-  if (!evidence) return
-  await client.insert(preventionCapaTransitions).values({
-    id: `capat-${nanoid()}`,
-    actionId: finding.capaActionId,
-    changeType: "evidence",
-    reason: args.reason,
-    changeSet: { evidenceId: evidence.id, lifecycle: "superseded", maintenanceId: args.record.id },
-    actorUserId: args.actorUserId,
-    createdAt: now,
-  })
+  if (evidence) {
+    await client.insert(preventionCapaTransitions).values({
+      id: `capat-${nanoid()}`,
+      actionId: finding.capaActionId,
+      changeType: "evidence",
+      reason: args.reason,
+      changeSet: { evidenceId: evidence.id, lifecycle: "superseded", maintenanceId: args.record.id },
+      actorUserId: args.actorUserId,
+      createdAt: now,
+    })
+  }
+
+  await client.update(preventionInspectionFindings).set({
+    status: "capa_linked",
+    closedByUserId: null,
+    closedAt: null,
+    updatedAt: now,
+  }).where(eq(preventionInspectionFindings.id, finding.id))
+
+  if (capa.status === "pending_verification") {
+    await client.update(preventionCapaActions).set({
+      status: "reopened",
+      completedByUserId: null,
+      completedAt: null,
+      verifiedByUserId: null,
+      verifiedAt: null,
+      closedByUserId: null,
+      closedAt: null,
+      effectivenessStatus: "pending",
+      effectivenessAssessment: null,
+      effectivenessAssessedByUserId: null,
+      effectivenessAssessedAt: null,
+      reopenedByUserId: args.actorUserId,
+      reopenedAt: now,
+      reopenedReason: args.reason,
+      cancelledByUserId: null,
+      cancelledAt: null,
+      cancellationReason: null,
+      version: sql`${preventionCapaActions.version} + 1`,
+      updatedAt: now,
+    }).where(eq(preventionCapaActions.id, capa.id))
+    await client.insert(preventionCapaTransitions).values({
+      id: `capat-${nanoid()}`,
+      actionId: capa.id,
+      changeType: "status",
+      fromStatus: capa.status,
+      toStatus: "reopened",
+      reason: args.reason,
+      changeSet: { maintenanceId: args.record.id, lifecycle: "reopened" },
+      actorUserId: args.actorUserId,
+      createdAt: now,
+    })
+  }
 }
 
 const TRANSITION_RULES: Record<MaintenanceTransition, { from: readonly string[]; to: string }> = {
   start: { from: ["scheduled"], to: "in_progress" },
   complete: { from: ["scheduled", "in_progress"], to: "completed" },
-  reopen: { from: ["completed"], to: "in_progress" },
+  // Una OT cancelada antes de ejecutar no puede quedar como callejón sin salida:
+  // el índice garantiza una sola OT por hallazgo, así que se retoma la misma.
+  reopen: { from: ["completed", "cancelled"], to: "in_progress" },
   cancel: { from: ["scheduled", "in_progress", "completed"], to: "cancelled" },
 }
 

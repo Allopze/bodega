@@ -18,6 +18,7 @@ import {
   pdtpExecutionChecklistResponses,
   pdtpExecutionChecklists,
   pdtpExecutions,
+  preventionContainers,
   preventionEmergencyResources,
   preventionEmergencyResourceTypes,
   preventionEmergencyResourceServiceCases,
@@ -28,6 +29,7 @@ import {
 import type { ChecklistDefinition, StatusValue } from "@/lib/sst/types"
 import { getApplicableItems } from "@/lib/sst/checklist"
 import { PARTIAL_STATUS_WEIGHT, isExcludedStatus } from "@/lib/sst/compliance"
+import { containerLabel } from "@/lib/prevention/containers"
 import { getActivePdtpActivityChecklist } from "./checklists"
 import {
   pdtpChecklistResponseId,
@@ -52,6 +54,7 @@ export type PdtpChecklistSubject = {
   subjectType?: string | null
   subjectId?: string
   subjectResourceId?: string
+  subjectContainerId?: string
   subjectLabel?: string | null
 }
 
@@ -68,6 +71,7 @@ type NormalizedSubject = {
   subjectType: string | null
   subjectId: string
   subjectResourceId: string | null
+  subjectContainerId: string | null
   subjectLabel: string | null
 }
 
@@ -77,6 +81,7 @@ function normalizeSubject(subject?: PdtpChecklistSubject): NormalizedSubject {
     subjectType: subject?.subjectType?.trim() || null,
     subjectId: (subject?.subjectId ?? "").trim(),
     subjectResourceId: subject?.subjectResourceId?.trim() || null,
+    subjectContainerId: subject?.subjectContainerId?.trim() || null,
     subjectLabel: subject?.subjectLabel?.trim() || null,
   }
 }
@@ -158,6 +163,36 @@ export async function getOrCreateExecutionChecklist(
     ].filter((item) => item.observacion)
   }
 
+  /* Contenedor: misma forma que el extintor. El id canónico reemplaza al
+   * `subjectId` recibido porque la unicidad de la instancia es
+   * `(executionId, subjectId)`; con el slug del texto libre, dos formas de
+   * escribir el mismo contenedor abrían dos instancias. */
+  if (norm.subjectType === "contenedor") {
+    if (!norm.subjectContainerId) throw new Error("Selecciona un contenedor del catálogo de la faena.")
+    const [canonical] = await db.select({
+      id: preventionContainers.id,
+      worksiteId: preventionContainers.worksiteId,
+      code: preventionContainers.code,
+      location: preventionContainers.location,
+      isActive: preventionContainers.isActive,
+    }).from(preventionContainers)
+      .where(eq(preventionContainers.id, norm.subjectContainerId))
+      .limit(1)
+    if (!canonical || canonical.worksiteId !== execution.worksiteId) {
+      throw new Error("El contenedor no pertenece a la faena de esta ejecución.")
+    }
+    // Abrir un checklist es trabajo nuevo: una ficha retirada no lo recibe.
+    if (!canonical.isActive) {
+      throw new Error("Ese contenedor está retirado del catálogo. Reactívalo o elige otro.")
+    }
+    norm = {
+      ...norm,
+      subjectId: canonical.id,
+      subjectContainerId: canonical.id,
+      subjectLabel: containerLabel(canonical),
+    }
+  }
+
   // Verificar si ya existe la instancia para (executionId, subjectId).
   const [existing] = await db.select().from(pdtpExecutionChecklists)
     .where(and(
@@ -192,6 +227,7 @@ export async function getOrCreateExecutionChecklist(
       subjectType: norm.subjectType,
       subjectId: norm.subjectId,
       subjectResourceId: norm.subjectResourceId,
+      subjectContainerId: norm.subjectContainerId,
       subjectLabel: norm.subjectLabel,
       completedByUserId: null,
       completedAt: null,

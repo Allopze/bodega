@@ -444,7 +444,8 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     }, AUTHOR)
     expect(linked.finding).toMatchObject({ status: "capa_linked" })
     expect(linked.finding.capaActionId).toBeTruthy()
-    // Sin `createMaintenance`, derivar no abre ninguna orden de taller.
+    // Un hallazgo sin equipo sigue sólo en CAPA: no existe un activo sobre el
+    // cual abrir una orden de taller.
     expect(linked.maintenanceId).toBeNull()
 
     const capa = await getDb().select().from(schema.preventionCapaActions)
@@ -914,7 +915,6 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
         findingId: finding!.id,
         actionDescription: "Cambiar cilindro maestro y purgar el sistema de frenos.",
         responsibleUserId: AUTHOR.userId,
-        createMaintenance: true,
       }, AUTHOR)
       expect(linked.maintenanceId).toBeTruthy()
 
@@ -973,6 +973,20 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
         status: "active",
         checksumSha256: null,
       })
+      const [closedFinding] = await getDb().select().from(schema.preventionInspectionFindings)
+        .where(eq(schema.preventionInspectionFindings.id, finding!.id))
+      expect(closedFinding).toMatchObject({
+        status: "closed",
+        closedByUserId: MAINT_SESSION.user.id,
+      })
+      expect(closedFinding!.closedAt).toBeTruthy()
+      const [pendingVerification] = await getDb().select().from(schema.preventionCapaActions)
+        .where(eq(schema.preventionCapaActions.id, finding!.capaActionId!))
+      expect(pendingVerification).toMatchObject({
+        status: "pending_verification",
+        completedByUserId: MAINT_SESSION.user.id,
+      })
+      expect(pendingVerification!.completedAt).toBeTruthy()
 
       await maintenance.transitionMaintenanceRecord(MAINT_SESSION, {
         id: record!.id,
@@ -988,6 +1002,16 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
         description: `Evidencia automática de la mantención correctiva programada para el ${record!.maintenanceDate}.`,
       })
       expect(superseded!.description).not.toMatch(/estado vigente/i)
+      const [reopenedFinding] = await getDb().select().from(schema.preventionInspectionFindings)
+        .where(eq(schema.preventionInspectionFindings.id, finding!.id))
+      expect(reopenedFinding).toMatchObject({
+        status: "capa_linked",
+        closedByUserId: null,
+        closedAt: null,
+      })
+      const [reopenedCapa] = await getDb().select().from(schema.preventionCapaActions)
+        .where(eq(schema.preventionCapaActions.id, finding!.capaActionId!))
+      expect(reopenedCapa).toMatchObject({ status: "reopened" })
 
       const attempts = await Promise.allSettled([
         maintenance.transitionMaintenanceRecord(MAINT_SESSION, {
@@ -1024,7 +1048,7 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       // La segunda derivación se rechaza antes por la CAPA ya enlazada; el
       // índice único parcial es la red por debajo.
       await expect(service.createFindingCapa({
-        findingId: finding!.id, actionDescription: "Otra acción distinta.", responsibleUserId: AUTHOR.userId, createMaintenance: true,
+        findingId: finding!.id, actionDescription: "Otra acción distinta.", responsibleUserId: AUTHOR.userId,
       }, AUTHOR)).rejects.toThrow(/ya tiene una acción CAPA/i)
     })
 

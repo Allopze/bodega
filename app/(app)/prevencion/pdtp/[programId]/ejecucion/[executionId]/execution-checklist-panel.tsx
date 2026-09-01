@@ -35,17 +35,18 @@ type SubjectOption = { id: string; label: string }
 
 /** Catálogo de tipos de sujeto (multi-sujeto, PLAN_INTEGRACION §4).
  *  'equipo'|'carro' → selector de flota; 'trabajador' → selector de trabajadores;
- *  'extintor' → padrón canónico; sólo 'contenedor' conserva texto libre. */
+ *  'extintor' y 'contenedor' → padrón canónico. Ninguno usa ya texto libre: el
+ *  contenedor era el último, por no tener padrón, y ahora tiene catálogo. */
 const SUBJECT_TYPES = [
   { value: "extintor", label: "Extintor", libre: false },
   { value: "equipo", label: "Equipo / Vehículo", libre: false },
   { value: "carro", label: "Carro", libre: false },
-  { value: "contenedor", label: "Contenedor", libre: true },
+  { value: "contenedor", label: "Contenedor", libre: false },
   { value: "trabajador", label: "Trabajador", libre: false },
 ] as const
 
 export function ExecutionChecklistPanel({
-  executionId, programId, instances, responsesByInstance, canFill, vehicles, worksiteWorkers, emergencyResources = [],
+  executionId, programId, instances, responsesByInstance, canFill, vehicles, worksiteWorkers, emergencyResources = [], containers = [],
 }: {
   executionId: string
   programId: string
@@ -55,6 +56,8 @@ export function ExecutionChecklistPanel({
   vehicles: { id: string; plate: string; code: string | null; brand: string | null; model: string | null }[]
   worksiteWorkers: { id: string; firstName: string; lastName: string; position: string | null; rut: string | null }[]
   emergencyResources?: SubjectOption[]
+  /** Contenedores del catálogo de la faena (sujeto del Anexo 14). */
+  containers?: SubjectOption[]
 }) {
   const router = useRouter()
   const [pending, setPending] = React.useState(false)
@@ -218,6 +221,7 @@ export function ExecutionChecklistPanel({
             vehicles={vehicles}
             worksiteWorkers={worksiteWorkers}
             emergencyResources={emergencyResources}
+            containers={containers}
           />
         )}
       </div>
@@ -328,13 +332,14 @@ function InstanceCard({
 // ── "Agregar sujeto" — selectores canónicos de la faena ────────────────────
 
 function AddSubjectButton({
-  executionId, disabled, vehicles, worksiteWorkers, emergencyResources,
+  executionId, disabled, vehicles, worksiteWorkers, emergencyResources, containers,
 }: {
   executionId: string
   disabled: boolean
   vehicles: { id: string; plate: string; code: string | null; brand: string | null; model: string | null }[]
   worksiteWorkers: { id: string; firstName: string; lastName: string; position: string | null; rut: string | null }[]
   emergencyResources: SubjectOption[]
+  containers: SubjectOption[]
 }) {
   const router = useRouter()
   const [open, setOpen] = React.useState(false)
@@ -363,8 +368,9 @@ function AddSubjectButton({
       }))
     }
     if (subjectType === "extintor") return emergencyResources
+    if (subjectType === "contenedor") return containers
     return []
-  }, [subjectType, vehicles, worksiteWorkers, emergencyResources])
+  }, [subjectType, vehicles, worksiteWorkers, emergencyResources, containers])
 
   // Resetea la selección al cambiar de tipo de sujeto. Se hace en el handler y
   // no en un efecto: si no, queda un frame con el id del sujeto anterior
@@ -409,6 +415,7 @@ function AddSubjectButton({
         subjectType,
         subjectId,
         subjectResourceId: subjectType === "extintor" ? subjectId : undefined,
+        subjectContainerId: subjectType === "contenedor" ? subjectId : undefined,
         subjectLabel,
       })
       if (!result.ok) setError(result.message ?? "Error al agregar el sujeto.")
@@ -464,10 +471,13 @@ function AddSubjectButton({
                     ? "Trabajador de la faena"
                     : subjectType === "extintor"
                       ? "Extintor del inventario"
-                      : "Equipo / Vehículo de la faena"}>
+                      : subjectType === "contenedor"
+                        ? "Contenedor del catálogo"
+                        : "Equipo / Vehículo de la faena"}>
                 {options.length === 0 ? (
                   <p className="rounded-(--radius) border border-(--color-border) bg-(--color-surface-2) px-3 py-2 text-xs text-text-subtle">
-                    No hay {subjectType === "trabajador" ? "trabajadores" : subjectType === "extintor" ? "extintores" : "vehículos"} disponibles en esta faena.
+                    No hay {subjectType === "trabajador" ? "trabajadores" : subjectType === "extintor" ? "extintores" : subjectType === "contenedor" ? "contenedores" : "vehículos"} disponibles en esta faena.
+                    {subjectType === "contenedor" && <> Cárgalos en <Link href="/admin/contenedores" className="underline">Administración › Contenedores</Link>.</>}
                   </p>
                 ) : (
                   <Select value={selectedId} onValueChange={setSelectedId}>

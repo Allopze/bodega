@@ -715,6 +715,8 @@ const routeTargets: RouteTarget[] = [
   { slug: "admin-dte", path: "/admin/dte", auth: true, notes: "Credenciales del portal DTE e historial de corridas." },
   { slug: "admin-equipos", path: "/admin/equipos", auth: true },
   { slug: "admin-inventario-faena", path: "/admin/inventario-faena", auth: true, notes: "Padrón físico por faena (extintores, kits). Prevención lo consume; el alta y la carga masiva viven acá." },
+  { slug: "admin-contenedores", path: "/admin/contenedores", auth: true, notes: "Catálogo de contenedores por faena. Es el sujeto que exige la inspección del Anexo 14." },
+  { slug: "admin-contenedores-detalle", path: "/admin/contenedores/container-audit-1", auth: true, notes: "Ficha de un contenedor: faena, ubicación, estado e historial de inspecciones." },
   { slug: "admin-inventario-faena-detalle", path: "/admin/inventario-faena/inventory-audit-1", auth: true, notes: "Ficha de un extintor del padrón: ubicación, vigencias, asignaciones e historial." },
   { slug: "admin-equipo-detalle", path: "/admin/equipos/equip-audit-1", auth: true, notes: "Ficha del instrumento con su historial de intervenciones." },
   { slug: "admin-faenas", path: "/admin/faenas", auth: true },
@@ -785,6 +787,7 @@ const seedCoverage: CaptureSeedArea[] = [
   { section: "prevencion", fixtures: ["fiscalización de la Dirección del Trabajo con medida prescrita", "coordinación de información entregada al mandante", "evaluación nueva", "evaluación seguimiento", "plan de acción", "acción CAPA en progreso con evidencia y seguimiento", "requisito legal publicado con aplicabilidad por faena", "solicitud de privacidad con identidad verificada", "incidente en investigación con evidencia y difusión RE-20", "inspección revisada con hallazgo CAPA", "inspección en curso con respuestas parciales", "Reporte de Equipos en transcripción con planilla física", "ejecución PDTP aprobada con checklist y plan de acción", "sesión de capacitación cerrada con asistencia", "gestión de cambio evaluada con CAPA", "plan de emergencia con simulacro y roles", "permiso activo con AST, medición y aislamiento", "comité CPHS paritario con acta", "grupo de exposición con medición", "programa de vigilancia con matrículas", "documento vigente distribuido con acuse", "control MIPER crítico verificado", "indicadores mensuales de seguridad y salud en el trabajo", "indicadores material y ambiental"] },
   { section: "admin-faenas", fixtures: ["faenas activas", "faena que representa la bodega de la oficina central"] },
   { section: "admin-inventario-faena", fixtures: ["extintor operativo con plan de emergencias, asignaciones y eventos", "kit de derrame sin asignar a punto"] },
+  { section: "admin-contenedores", fixtures: ["contenedor operativo con inspección ejecutada", "contenedor sin inspecciones"] },
   { section: "admin-equipos", fixtures: ["detector monogás con historial de calibración", "alcotest en otra faena"] },
   { section: "admin-plantillas", fixtures: ["plantillas de correo del sistema"] },
   { section: "admin-productos", fixtures: ["categorías", "productos EPP", "productos insumo", "proveedores preferidos", "lote EPP pendiente de revisión"] },
@@ -2492,6 +2495,64 @@ async function prepareDatabase(captureDbUrl: string) {
     expiresAt: "2027-04-12",
     status: "operational",
     version: 1,
+    createdAt: now,
+    updatedAt: now,
+  })
+  /*
+   * Catálogo de contenedores: la ficha `/admin/contenedores/[id]` muestra el
+   * historial de inspecciones, así que sembrar el contenedor sin ninguna
+   * dejaría la captura vacía justo en lo que la ficha existe para mostrar.
+   */
+  await db.insert(schema.preventionContainers).values([
+    {
+      id: "container-audit-1",
+      worksiteId,
+      code: "CT-014",
+      location: "Acopio norte",
+      status: "operational",
+      isActive: true,
+      version: 1,
+      createdByUserId: userId,
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "container-audit-2",
+      worksiteId,
+      code: "CT-021",
+      location: "Portería",
+      status: "observed",
+      isActive: true,
+      version: 1,
+      createdByUserId: userId,
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
+  /* La ficha del contenedor existe para mostrar su historial, así que la
+   * captura necesita una inspección que lo tome como sujeto: sin esto el panel
+   * salía vacío y la cobertura declarada ("con inspección ejecutada") mentía. */
+  await db.insert(schema.preventionInspectionRuns).values({
+    id: "insp-audit-contenedor",
+    code: "INSP-2026-0007",
+    templateId: "inspection-template-audit-1",
+    worksiteId,
+    subjectType: "contenedor",
+    subjectLabel: "CT-014 · Acopio norte",
+    subjectContainerId: "container-audit-1",
+    scheduledFor: "2026-06-20",
+    status: "reviewed",
+    assignedToUserId: "user-audit-prevencion",
+    executedByUserId: "user-audit-prevencion",
+    executedAt: "2026-06-20T10:15:00.000Z",
+    reviewedByUserId: userId,
+    reviewedAt: "2026-06-20T16:00:00.000Z",
+    conformingCount: 8,
+    nonConformingCount: 1,
+    notApplicableCount: 1,
+    compliancePercent: 89,
+    version: 1,
+    createdByUserId: userId,
     createdAt: now,
     updatedAt: now,
   })

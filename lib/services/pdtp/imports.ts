@@ -548,6 +548,7 @@ export async function applyPdtpImportBatch(input: {
         eq(pdtpExecutions.activityId, activityId), eq(pdtpExecutions.worksiteId, input.worksiteId),
         eq(pdtpExecutions.year, program.year), eq(pdtpExecutions.month, execution.month), eq(pdtpExecutions.week, execution.week),
         isNull(pdtpExecutions.obligationId),
+        ne(pdtpExecutions.origin, "integration"),
       )).limit(1)
       const idempotencyKey = `pdtp-xlsx:${batch.sourceChecksumSha256}:${execution.sourceSheet}:${execution.sourceCell}:${execution.activityNumber}:${input.worksiteId}`
       if (conflict && conflict.idempotencyKey !== idempotencyKey) {

@@ -98,6 +98,7 @@ export async function materializeProgramRuns(options: { programId?: string } = {
           worksiteId: program.worksiteId,
           subjectResourceId: program.subjectResourceId,
           subjectVehicleId: program.subjectVehicleId,
+          subjectContainerId: program.subjectContainerId,
         })
         const [inserted] = await tx.insert(preventionInspectionRuns).values({
           id: `insrun-${nanoid()}`,
@@ -111,6 +112,7 @@ export async function materializeProgramRuns(options: { programId?: string } = {
           // ejecución quedaba sin saber qué inspeccionar.
           subjectResourceId: program.subjectResourceId,
           subjectVehicleId: program.subjectVehicleId,
+          subjectContainerId: program.subjectContainerId,
           subjectLabel,
           scheduledFor,
           status: "planned",

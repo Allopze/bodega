@@ -5,7 +5,6 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Input } from "@/components/ui/input"
@@ -1970,9 +1969,6 @@ function CapaDialog({ finding, assignees, hasVehicle }: {
 }) {
   const [open, setOpen] = React.useState(false)
   const [responsibleUserId, setResponsibleUserId] = React.useState("")
-  // Sólo tiene sentido con un equipo de flota como sujeto; el servicio lo
-  // rechaza igual, pero ofrecerlo sin equipo sería un botón que siempre falla.
-  const [createMaintenance, setCreateMaintenance] = React.useState(false)
   const operation = useOperation()
   const capaRule = capaPriorityForCriticality(finding.criticality)
   const targetDate = addDays(todayInChile(), capaRule.dueInDays)
@@ -1987,7 +1983,6 @@ function CapaDialog({ finding, assignees, hasVehicle }: {
       actionDescription: form.get("actionDescription"),
       responsibleUserId,
       immediateMeasure: immediateMeasure || null,
-      createMaintenance: hasVehicle && createMaintenance,
     }), () => setOpen(false))
   }
 
@@ -2019,16 +2014,9 @@ function CapaDialog({ finding, assignees, hasVehicle }: {
             <Textarea name="immediateMeasure" maxLength={3000} />
           </Field>
           {hasVehicle && (
-            <div className="space-y-1">
-              <Checkbox
-                checked={createMaintenance}
-                onChange={(event) => setCreateMaintenance(event.target.checked)}
-                label="Programar mantención del equipo"
-              />
-              <p className="pl-6 text-xs text-[var(--color-text-subtle)]">
-                Abre una mantención correctiva para el plazo de esta acción. Al completarla, queda como evidencia de la CAPA.
-              </p>
-            </div>
+            <p className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm text-[var(--color-text-subtle)]">
+              Se abrirá automáticamente una OT correctiva para este equipo con el mismo plazo de la CAPA. Al completarla, se cerrará el hallazgo y la acción quedará pendiente de verificación.
+            </p>
           )}
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending || !responsibleUserId}>Derivar con responsable</Button></DialogFooter>

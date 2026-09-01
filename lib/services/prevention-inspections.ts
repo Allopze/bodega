@@ -16,6 +16,7 @@ import {
   preventionInspectionRunParticipants,
   preventionInspectionRuns,
   preventionInspectionTemplates,
+  preventionContainers,
   preventionEmergencyResources,
   fuelVehicles,
   pdtpActivities,
@@ -30,6 +31,8 @@ import {
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
+import { containerLabel } from "@/lib/prevention/containers"
+import { listContainersByWorksite, listContainersForWorksite } from "@/lib/services/prevention-containers"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import { getUserIdsWithPermission, getUserIdsWithPermissionForWorksite } from "@/lib/services/notification-targeting"
 import { createNotifications } from "@/lib/services/notifications"
@@ -633,6 +636,8 @@ const programSchema = z.object({
    * imposible. Se activa acá junto con el equipo de flota. */
   subjectResourceId: z.string().min(1).nullable().optional(),
   subjectVehicleId: z.string().min(1).nullable().optional(),
+  /** Contenedor del catálogo; obligatorio en la plantilla de contenedores. */
+  subjectContainerId: z.string().min(1).nullable().optional(),
 })
 
 export async function createInspectionProgram(input: unknown, access: InspectionAccess) {
@@ -644,11 +649,13 @@ export async function createInspectionProgram(input: unknown, access: Inspection
   if (!template) throw new Error(NOT_FOUND)
   if (template.status !== "approved") throw new Error("Sólo puede programarse una plantilla aprobada.")
   if (data.riskEntryId) await assertRiskEntryInWorksite(db, data.riskEntryId, data.worksiteId)
+  assertContainerSubject(template.sourceDefinitionCode, data.subjectContainerId)
   await resolveSubject(db, {
     worksiteId: data.worksiteId,
     subjectResourceId: data.subjectResourceId,
     subjectVehicleId: data.subjectVehicleId,
-  })
+    subjectContainerId: data.subjectContainerId,
+  }, true)
 
   const [created] = await db.insert(preventionInspectionPrograms).values({
     id: `insprog-${nanoid()}`,
@@ -659,9 +666,10 @@ export async function createInspectionProgram(input: unknown, access: Inspection
     nextDueOn: data.startsOn,
     assignedToUserId: data.assignedToUserId ?? null,
     riskEntryId: data.riskEntryId ?? null,
-    subjectType: data.subjectType ?? null,
+    subjectType: data.subjectType ?? (data.subjectContainerId ? "contenedor" : null),
     subjectResourceId: data.subjectResourceId ?? null,
     subjectVehicleId: data.subjectVehicleId ?? null,
+    subjectContainerId: data.subjectContainerId ?? null,
     createdByUserId: access.userId,
   }).returning()
   if (!created) throw new Error("No se pudo crear la programación.")
@@ -688,6 +696,7 @@ export async function updateInspectionProgram(input: unknown, access: Inspection
     subjectType: z.string().trim().max(120).nullable().optional(),
     subjectResourceId: z.string().min(1).nullable().optional(),
     subjectVehicleId: z.string().min(1).nullable().optional(),
+    subjectContainerId: z.string().min(1).nullable().optional(),
     isActive: z.boolean().optional(),
     reason: z.string().trim().min(10).max(2000).optional(),
   }).parse(input)
@@ -708,11 +717,25 @@ export async function updateInspectionProgram(input: unknown, access: Inspection
     // no el enviado, o cambiar sólo uno de los dos dejaría pasar el par.
     const nextResourceId = data.subjectResourceId === undefined ? program.subjectResourceId : data.subjectResourceId
     const nextVehicleId = data.subjectVehicleId === undefined ? program.subjectVehicleId : data.subjectVehicleId
+    const nextContainerId = data.subjectContainerId === undefined ? program.subjectContainerId : data.subjectContainerId
+    const [template] = await tx.select({ sourceDefinitionCode: preventionInspectionTemplates.sourceDefinitionCode })
+      .from(preventionInspectionTemplates)
+      .where(eq(preventionInspectionTemplates.id, program.templateId)).limit(1)
+    /* Sólo cuando el llamador toca el sujeto. Aplicarlo a toda edición dejaba
+     * sin poder detener las programaciones de contenedores anteriores al
+     * catálogo —su columna es nula y "Detener" no envía sujeto—, mientras el
+     * materializador, que no pasa por acá, las seguía ejecutando. */
+    if (data.subjectContainerId !== undefined) {
+      assertContainerSubject(template?.sourceDefinitionCode ?? null, nextContainerId)
+    }
     await resolveSubject(tx, {
       worksiteId: program.worksiteId,
       subjectResourceId: nextResourceId,
       subjectVehicleId: nextVehicleId,
-    })
+      subjectContainerId: nextContainerId,
+      // Vigencia sólo si el sujeto es el que se está eligiendo ahora: si no,
+      // retirar una ficha bloquearía hasta el botón de detener el programa.
+    }, data.subjectContainerId !== undefined)
 
     const now = nowIso()
     const [updated] = await tx.update(preventionInspectionPrograms).set({
@@ -728,6 +751,7 @@ export async function updateInspectionProgram(input: unknown, access: Inspection
       subjectType: data.subjectType === undefined ? program.subjectType : data.subjectType,
       subjectResourceId: nextResourceId,
       subjectVehicleId: nextVehicleId,
+      subjectContainerId: nextContainerId,
       isActive: data.isActive ?? program.isActive,
       version: program.version + 1,
       updatedAt: now,
@@ -794,10 +818,19 @@ export async function assertProgramInScope(programId: string, access: Inspection
  */
 export async function resolveSubject(
   client: Client,
-  args: { worksiteId: string; subjectResourceId?: string | null; subjectVehicleId?: string | null },
+  args: {
+    worksiteId: string
+    subjectResourceId?: string | null
+    subjectVehicleId?: string | null
+    subjectContainerId?: string | null
+  },
+  /** Alta nueva: exige que el sujeto siga vigente. El cron no lo exige. */
+  requireActiveSubject = false,
 ): Promise<string | null> {
-  if (args.subjectResourceId && args.subjectVehicleId) {
-    throw new Error("Una inspección tiene un solo sujeto: recurso de emergencia o equipo, no ambos.")
+  const declared = [args.subjectResourceId, args.subjectVehicleId, args.subjectContainerId]
+    .filter(Boolean).length
+  if (declared > 1) {
+    throw new Error("Una inspección tiene un solo sujeto: recurso de emergencia, equipo o contenedor, no varios.")
   }
   if (args.subjectResourceId) {
     const [found] = await client.select({ name: preventionEmergencyResources.name })
@@ -819,7 +852,49 @@ export async function resolveSubject(
     if (!found) throw new Error("El equipo no existe o pertenece a otra faena.")
     return vehicleLabel(found)
   }
+  if (args.subjectContainerId) {
+    const [found] = await client.select({
+      code: preventionContainers.code,
+      location: preventionContainers.location,
+      isActive: preventionContainers.isActive,
+    })
+      .from(preventionContainers)
+      .where(and(
+        eq(preventionContainers.id, args.subjectContainerId),
+        eq(preventionContainers.worksiteId, args.worksiteId),
+      )).limit(1)
+    if (!found) throw new Error("El contenedor no existe o pertenece a otra faena.")
+    /* Retirado del catálogo = no recibe trabajo nuevo. La comprobación es de
+     * alta y no de resolución: el materializador también pasa por acá, y
+     * hacerlo fallar dejaría a un programa vivo sin generar nada y en silencio.
+     * Retirar un contenedor con programación es, por eso, un acto en dos pasos:
+     * detener el programa y luego retirar la ficha. */
+    if (requireActiveSubject && !found.isActive) {
+      throw new Error("Ese contenedor está retirado del catálogo. Reactívalo o elige otro.")
+    }
+    return containerLabel(found)
+  }
   return null
+}
+
+/**
+ * Plantillas que exigen sujeto del catálogo, por `sourceDefinitionCode`.
+ *
+ * La inspección de contenedores nombraba su sujeto con texto libre porque el
+ * catálogo no existía: dos inspectores escribían la misma unidad de dos formas
+ * y el historial por contenedor era imposible de armar. Con el padrón en pie,
+ * el texto libre deja de ser una opción para esta plantilla.
+ */
+const CONTAINER_DEFINITION_CODE = "inspeccion_contenedores"
+
+function assertContainerSubject(
+  sourceDefinitionCode: string | null,
+  subjectContainerId: string | null | undefined,
+) {
+  if (sourceDefinitionCode !== CONTAINER_DEFINITION_CODE) return
+  if (!subjectContainerId) {
+    throw new Error("Selecciona un contenedor del catálogo de la faena.")
+  }
 }
 
 /**
@@ -833,7 +908,7 @@ export async function resolveSubject(
  */
 export async function listInspectionSubjects(worksiteId: string, access: InspectionAccess) {
   requireAccess(access, "prevention:inspections:view", worksiteId)
-  const [resources, vehicles] = await Promise.all([
+  const [resources, vehicles, containers] = await Promise.all([
     db.select({
       id: preventionEmergencyResources.id,
       name: preventionEmergencyResources.name,
@@ -848,6 +923,9 @@ export async function listInspectionSubjects(worksiteId: string, access: Inspect
     // El inventario de emergencias no modela camiones ni maquinaria; el padrón
     // de equipos vive en flota y hasta ahora sólo llegaba como texto libre.
     listWorksiteVehicles({ worksiteId }),
+    // Tercer padrón: los contenedores del Anexo 14, que hasta que existió el
+    // catálogo sólo llegaban como etiqueta escrita a mano.
+    listContainersForWorksite(worksiteId),
   ])
   return [
     ...resources.map((item) => ({
@@ -865,6 +943,14 @@ export async function listInspectionSubjects(worksiteId: string, access: Inspect
       kind: item.type,
       location: "",
       serialNumber: item.plate,
+    })),
+    ...containers.map((item) => ({
+      source: "container" as const,
+      id: item.id,
+      name: containerLabel(item),
+      kind: "Contenedor",
+      location: item.location,
+      serialNumber: item.code,
     })),
   ]
 }
@@ -887,7 +973,7 @@ export async function listInspectionSubjectsByWorksite(
   if (allowed.length === 0) return grouped
   requireAccess(access, "prevention:inspections:view")
 
-  const [resources, vehicles] = await Promise.all([
+  const [resources, vehicles, containersByWorksite] = await Promise.all([
     db.select({
       worksiteId: preventionEmergencyResources.worksiteId,
       id: preventionEmergencyResources.id,
@@ -909,6 +995,7 @@ export async function listInspectionSubjectsByWorksite(
     })
       .from(fuelVehicles)
       .where(and(inArray(fuelVehicles.worksiteId, allowed), eq(fuelVehicles.isActive, true))),
+    listContainersByWorksite(allowed),
   ])
 
   for (const item of resources) {
@@ -922,6 +1009,14 @@ export async function listInspectionSubjectsByWorksite(
       source: "vehicle", id: item.id, name: vehicleLabel(item), kind: item.type,
       location: "", serialNumber: item.plate,
     })
+  }
+  for (const [worksiteId, containers] of Object.entries(containersByWorksite)) {
+    for (const item of containers) {
+      grouped[worksiteId]?.push({
+        source: "container", id: item.id, name: containerLabel(item), kind: "Contenedor",
+        location: item.location, serialNumber: item.code,
+      })
+    }
   }
   return grouped
 }
@@ -953,6 +1048,8 @@ const runSchema = z.object({
   subjectResourceId: z.string().min(1).nullable().optional(),
   /** Equipo de flota inspeccionado. Excluyente con `subjectResourceId`. */
   subjectVehicleId: z.string().min(1).nullable().optional(),
+  /** Contenedor del catálogo; obligatorio en la plantilla de contenedores. */
+  subjectContainerId: z.string().min(1).nullable().optional(),
   origin: z.enum(["prevencion", "cphs", "mandante"]).default("prevencion"),
   scheduledFor: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   assignedToUserId: z.string().min(1).nullable().optional(),
@@ -982,11 +1079,13 @@ export async function createInspectionRun(input: unknown, access: InspectionAcce
 
   // El sujeto debe existir y pertenecer a la faena: sin esto, un id de otra
   // faena entraría por la acción y filtraría el nombre del recurso ajeno.
+  assertContainerSubject(template.sourceDefinitionCode, data.subjectContainerId)
   const subjectName = await resolveSubject(db, {
     worksiteId: data.worksiteId,
     subjectResourceId: data.subjectResourceId,
     subjectVehicleId: data.subjectVehicleId,
-  })
+    subjectContainerId: data.subjectContainerId,
+  }, true)
 
   // La sincronización offline reenvía: el identificador de envío hace la
   // creación idempotente en vez de duplicar la inspección.
@@ -1002,12 +1101,13 @@ export async function createInspectionRun(input: unknown, access: InspectionAcce
     templateId: data.templateId,
     programId: data.programId ?? null,
     worksiteId: data.worksiteId,
-    subjectType: data.subjectType ?? null,
+    subjectType: data.subjectType ?? (data.subjectContainerId ? "contenedor" : null),
     // El nombre del recurso se congela como etiqueta: renombrarlo después no
     // debe cambiar qué decía la inspección que se inspeccionó.
     subjectLabel: subjectName ?? data.subjectLabel ?? null,
     subjectResourceId: data.subjectResourceId ?? null,
     subjectVehicleId: data.subjectVehicleId ?? null,
+    subjectContainerId: data.subjectContainerId ?? null,
     origin: data.origin,
     scheduledFor: data.scheduledFor ?? null,
     status: "planned",
@@ -1272,7 +1372,6 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
     }).optional(),
   }).parse(input)
 
-  let accreditation: Parameters<typeof onInspectionCompleted>[0] | null = null
   const result = await db.transaction(async (tx) => {
     // Función #9: el reintento de una cola offline vuelve a mandar el mismo
     // cierre. Si el run ya quedó ejecutado por ESTE mismo usuario, la primera
@@ -1286,6 +1385,19 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
     if (!existing) throw new Error(NOT_FOUND)
     requireAccess(access, "prevention:inspections:execute", existing.worksiteId)
     if ((existing.status === "completed" || existing.status === "reviewed") && existing.executedByUserId === access.userId) {
+      const [template] = await tx.select({ numbers: preventionInspectionTemplates.pdtpActivityNumbers })
+        .from(preventionInspectionTemplates)
+        .where(eq(preventionInspectionTemplates.id, existing.templateId)).limit(1)
+      const activityNumbers = Array.isArray(template?.numbers) ? template.numbers : []
+      if (activityNumbers.length > 0 && existing.executedAt) {
+        await onInspectionCompleted({
+          runId: existing.id,
+          worksiteId: existing.worksiteId,
+          completedAt: existing.executedAt,
+          completedByUserId: existing.executedByUserId,
+          activityNumbers,
+        }, tx)
+      }
       return {
         run: existing,
         findings: 0,
@@ -1486,19 +1598,20 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
       payload: { nonConforming: summary.nonConforming, findings: derived.length },
     }, tx)
 
-    // Auto-acreditación PDTP: actividades declaradas en la plantilla. Se dispara
-    // DESPUÉS del commit (ver abajo) para no dejar ejecuciones huérfanas si la
-    // transacción se revierte.
+    // Auto-acreditación PDTP: actividades declaradas en la plantilla. Comparte
+    // la transacción con el cierre: nunca puede quedar el run completado sin su
+    // cumplimiento ni una ejecución PDTP sin la inspección que la respalda.
     const pdtpActivityNumbers = Array.isArray((template as { pdtpActivityNumbers?: number[] }).pdtpActivityNumbers)
       ? (template as { pdtpActivityNumbers?: number[] }).pdtpActivityNumbers!
       : []
     if (pdtpActivityNumbers.length > 0) {
-      accreditation = {
+      await onInspectionCompleted({
         runId: run.id,
         worksiteId: run.worksiteId,
         completedAt: updated.executedAt ?? now,
+        completedByUserId: access.userId,
         activityNumbers: pdtpActivityNumbers,
-      }
+      }, tx)
     }
 
     return {
@@ -1509,8 +1622,6 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
       normalizedCompliancePercent: summary.normalizedComplianceBasisPoints === null ? null : summary.normalizedComplianceBasisPoints / 100,
     }
   })
-
-  if (accreditation) await onInspectionCompleted(accreditation)
 
   // Un reintento offline no vuelve a notificar. El `dedupeKey` ya lo evitaría,
   // pero salir temprano ahorra la consulta de destinatarios.
@@ -1592,8 +1703,6 @@ export async function createFindingCapa(input: unknown, access: InspectionAccess
     actionDescription: z.string().trim().min(10).max(3000),
     responsibleUserId: z.string().min(1),
     immediateMeasure: z.string().trim().max(3000).nullable().optional(),
-    /** Abre además la mantención correctiva del equipo (sólo con sujeto de flota). */
-    createMaintenance: z.boolean().optional(),
   }).parse(input)
 
   const result = await db.transaction(async (tx) => {
@@ -1633,15 +1742,13 @@ export async function createFindingCapa(input: unknown, access: InspectionAccess
     if (!updated) throw new Error("No se pudo enlazar la acción CAPA.")
     await history(tx, { entityType: "finding", entityId: data.findingId, worksiteId: row.run.worksiteId, changeType: "capa_linked", reason: data.actionDescription, actorUserId: access.userId })
 
-    // Mantención propuesta. Se engancha acá y no en `completeInspectionRun`
+    // Mantención correctiva automática. Se engancha acá y no en `completeInspectionRun`
     // porque completar borra y recrea los hallazgos abiertos sin CAPA: colgarlo
     // de ahí dejaría órdenes huérfanas cada vez que alguien reabre y vuelve a
-    // cerrar. Derivar, en cambio, es un acto deliberado de una persona.
+    // cerrar. Derivar, en cambio, es el acto deliberado que confirma el hallazgo
+    // y, cuando el sujeto es un equipo, debe abrir siempre su trabajo correctivo.
     let maintenanceId: string | null = null
-    if (data.createMaintenance) {
-      if (!row.run.subjectVehicleId) {
-        throw new Error("Sólo puede programarse una mantención si la inspección tiene un equipo como sujeto.")
-      }
+    if (row.run.subjectVehicleId) {
       const meter = await readMeterFromRun(tx, row.run.id)
       const [vehicle] = await tx.select({ meterType: fuelVehicles.meterType, worksiteId: fuelVehicles.worksiteId })
         .from(fuelVehicles).where(eq(fuelVehicles.id, row.run.subjectVehicleId)).limit(1)
@@ -1792,16 +1899,9 @@ function transitionChangeSet(toStatus: string, actorUserId: string, reason: stri
 export async function transitionInspectionRun(input: unknown, access: InspectionAccess) {
   const data = runTransitionSchema.parse(input)
 
-  // Acreditación de la revisión (n=26): se arma dentro de la transacción y se
-  // dispara DESPUÉS del commit, igual que la de la ejecución. Si se lanzara
-  // dentro y la transacción se revirtiera, quedaría una ocurrencia del programa
-  // anual afirmando una firma que no existe.
-  let accreditation: Parameters<typeof onInspectionCompleted>[0] | null = null
-  /* Cancelar y reabrir destruyen la ejecución que el PDTP estaba contando, así
-   * que la acreditación tiene que caer con ella. Va post-commit igual que la
-   * acreditación: revocar sobre una transacción que después se revierte dejaría
-   * el programa sin un cumplimiento que sí existe. */
-  let revocation: Parameters<typeof onInspectionReverted>[0] | null = null
+  // La acreditación de revisión y su reversión comparten esta transacción. La
+  // firma de la inspección y el cumplimiento anual son una única verdad de BD:
+  // o se confirman ambos, o ninguno.
   const result = await db.transaction(async (tx) => {
     const [run] = await tx.select().from(preventionInspectionRuns)
       .where(eq(preventionInspectionRuns.id, data.runId)).limit(1)
@@ -1888,34 +1988,31 @@ export async function transitionInspectionRun(input: unknown, access: Inspection
         .where(eq(preventionInspectionTemplates.id, run.templateId)).limit(1)
       const activityNumbers = Array.isArray(template?.numbers) ? template.numbers : []
       if (activityNumbers.length > 0) {
-        accreditation = {
+        await onInspectionCompleted({
           runId: run.id,
           worksiteId: run.worksiteId,
           completedAt: updated.reviewedAt ?? now,
+          completedByUserId: access.userId,
           activityNumbers,
-        }
+        }, tx)
       }
     }
     // Sólo se revoca lo que alguna vez se acreditó: un run que nunca pasó de
     // `planned` no tiene nada que devolver, y llamar igual gastaría una consulta
     // por cada cancelación de una inspección jamás ejecutada.
     if ((data.toStatus === "cancelled" || data.toStatus === "in_progress") && run.executedAt) {
-      revocation = {
+      await onInspectionReverted({
         runId: run.id,
         worksiteId: run.worksiteId,
         reason: data.toStatus === "cancelled"
           ? `Inspección ${run.code} cancelada: ${data.reason ?? "sin motivo declarado"}`
           : `Inspección ${run.code} reabierta para rectificar: ${data.reason ?? "sin motivo declarado"}`,
         revokedBy: access.userId,
-      }
+      }, tx)
     }
     return updated
   })
 
-  // La clave de idempotencia del PDTP incluye la actividad, así que acreditar
-  // n=26 desde el mismo run que ya acreditó n=25 no colisiona ni duplica.
-  if (accreditation) await onInspectionCompleted(accreditation)
-  if (revocation) await onInspectionReverted(revocation)
   return result
 }
 
@@ -2647,6 +2744,9 @@ export async function listInspectionPrograms(access: InspectionAccess, filter: I
     // veía "Activa: Sí" con botón operativo, aunque el materializador ya la
     // salta. El join contra la plantilla ya existía para el nombre.
     templateStatus: preventionInspectionTemplates.status,
+    /* La plantilla decide si el programa exige contenedor del catálogo: el
+     * formulario de edición lo necesita para no dejar quitarle el sujeto. */
+    templateDefinitionCode: preventionInspectionTemplates.sourceDefinitionCode,
     worksiteName: worksites.name,
     assigneeName: users.name,
     riskHazardCode: preventionRiskEntries.hazardCode,

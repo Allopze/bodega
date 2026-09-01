@@ -1984,6 +1984,21 @@ async function main() {
     updatedAt: now,
   })
 
+  /* Contenedor del catálogo: la tercera rama de `listInspectionSubjects`, y el
+   * sujeto que la inspección del Anexo 14 exige. */
+  await db.insert(schema.preventionContainers).values({
+    id: "cont-insp-e2e",
+    worksiteId: "ws-e2e",
+    code: "CT-E2E-001",
+    location: "Acopio norte E2E",
+    status: "operational",
+    isActive: true,
+    version: 1,
+    createdByUserId: "user-admin-e2e",
+    createdAt: now,
+    updatedAt: now,
+  })
+
   /* Sujeto del inventario de emergencias: la otra rama de `listInspectionSubjects`. */
   await db.insert(schema.preventionEmergencyResources).values({
     id: "emres-insp-e2e",

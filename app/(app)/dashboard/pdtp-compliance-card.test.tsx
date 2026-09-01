@@ -27,6 +27,8 @@ describe("PdtpComplianceCard", () => {
 
     expect(screen.getByText("92%")).toBeDefined()
     expect(screen.getByText(/meta 90%/)).toBeDefined()
+    expect(screen.getByText(/gestión 88%/)).toBeDefined()
+    expect(screen.queryByText(/integral 88%/)).toBeNull()
     expect(container.querySelector('[style="width: 92%;"]')).toBeTruthy()
   })
 

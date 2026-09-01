@@ -17,10 +17,10 @@ import { FeedbackFilters } from "./feedback-filters"
 export const metadata: Metadata = { title: "Soporte" }
 
 export default async function SoportePage({
-  searchParams = Promise.resolve({}),
+  searchParams,
 }: {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>
-} = {}) {
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}) {
   let session
   try { session = await requireAuth() }
   catch { redirect("/forbidden") }

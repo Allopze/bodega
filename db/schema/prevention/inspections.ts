@@ -4,6 +4,7 @@ import { fuelVehicles } from "../fuel-vehicles"
 import { users } from "../users"
 import { worksites } from "../worksites"
 import { preventionCapaActions } from "./capa"
+import { preventionContainers } from "./containers"
 import { preventionEmergencyResources } from "./emergency"
 import { sstDocumentVersions } from "./library"
 import { preventionRiskEntries } from "./risk-legal"
@@ -127,6 +128,8 @@ export const preventionInspectionPrograms = pgTable("prevention_inspection_progr
    * eso —`subjectId` referencia `fuelVehicles.id`/`workers.id` sin FK física—
    * y por eso no puede garantizar que el sujeto exista. */
   subjectVehicleId:  text("subject_vehicle_id").references(() => fuelVehicles.id, { onDelete: "set null" }),
+  /** Contenedor del catálogo programado. Tercera alternativa excluyente. */
+  subjectContainerId: text("subject_container_id").references(() => preventionContainers.id, { onDelete: "set null" }),
   isActive:          boolean("is_active").notNull().default(true),
   version:           integer("version").notNull().default(1),
   createdByUserId:   text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
@@ -164,6 +167,11 @@ export const preventionInspectionRuns = pgTable("prevention_inspection_runs", {
    * congelando cómo se llamaba el equipo al inspeccionarlo: renombrar la
    * patente después no debe reescribir la evidencia. */
   subjectVehicleId:  text("subject_vehicle_id").references(() => fuelVehicles.id, { onDelete: "set null" }),
+  /* Contenedor inspeccionado. Excluyente con los dos anteriores. El catálogo
+   * llegó después que la inspección del Anexo 14, que hasta entonces nombraba
+   * el contenedor sólo por `subjectLabel` libre; las ejecuciones anteriores a
+   * esta columna la conservan nula y su etiqueta intacta. */
+  subjectContainerId: text("subject_container_id").references(() => preventionContainers.id, { onDelete: "set null" }),
   /* Quién origina la inspección. La certificación Mutual distingue las del
    * comité paritario de las del Departamento de Prevención, y las del mandante
    * no son ni una ni otra. Por defecto Prevención, que es el caso histórico. */
@@ -215,6 +223,7 @@ export const preventionInspectionRuns = pgTable("prevention_inspection_runs", {
   index("prevention_inspection_run_worksite_idx").on(table.worksiteId, table.status),
   index("prevention_inspection_run_subject_idx").on(table.subjectResourceId),
   index("prevention_inspection_run_subject_vehicle_idx").on(table.subjectVehicleId),
+  index("prevention_inspection_run_subject_container_idx").on(table.subjectContainerId),
   index("prevention_inspection_run_template_idx").on(table.templateId, table.executedAt),
   check("prevention_inspection_run_status_valid", sql`${table.status} IN ('planned', 'in_progress', 'completed', 'reviewed', 'cancelled')`),
   check("prevention_inspection_run_origin_valid", sql`${table.origin} IN ('prevencion', 'cphs', 'mandante')`),
@@ -228,7 +237,7 @@ export const preventionInspectionRuns = pgTable("prevention_inspection_runs", {
   check("prevention_inspection_run_version_positive", sql`${table.version} >= 1`),
   // Un run inspecciona a lo más un sujeto tipado. Sin esta invariante el
   // servicio tendría que elegir a cuál creerle al construir `subjectLabel`.
-  check("prevention_inspection_run_single_subject", sql`num_nonnulls(${table.subjectResourceId}, ${table.subjectVehicleId}) <= 1`),
+  check("prevention_inspection_run_single_subject", sql`num_nonnulls(${table.subjectResourceId}, ${table.subjectVehicleId}, ${table.subjectContainerId}) <= 1`),
 ])
 
 /* ── Respuestas ───────────────────────────────────────────────────────────── */

@@ -128,6 +128,9 @@ export async function transitionMaintenanceRecordAction(rawInput: unknown): Prom
     revalidatePath("/flota")
     revalidatePath("/analitica")
     revalidatePath("/prevencion/capa")
+    revalidatePath("/prevencion/inspecciones")
+    revalidatePath("/prevencion/inspecciones/seguimiento")
+    revalidatePath("/prevencion/inspecciones/[runId]", "page")
     return { ok: true, message: "Estado de mantención actualizado", data: result }
   } catch (error) {
     logger.error("transitionMaintenanceRecordAction", { error })

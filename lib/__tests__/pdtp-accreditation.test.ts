@@ -13,7 +13,7 @@ import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
 import { eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
-import { afterAll, beforeEach, describe, expect, it } from "vitest"
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
 
@@ -45,6 +45,8 @@ afterAll(async () => {
   delete testGlobal.__db
   await pg.close()
 })
+
+afterEach(() => vi.useRealTimers())
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -295,6 +297,33 @@ describe("accreditPdtpFromEvent", () => {
     ).rejects.toThrow(/Sin programa PDTP activo/)
   })
 
+  it("no acredita una faena fuera de la membresía explícita del programa", async () => {
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    await inMemoryDb.insert(schema.worksites).values({
+      id: "ws-member-only",
+      name: "Faena miembro",
+      code: "FM",
+      isActive: true,
+    })
+    await inMemoryDb.insert(schema.pdtpProgramWorksites).values({
+      id: "program-member-only",
+      programId: PROGRAM_ID,
+      worksiteId: "ws-member-only",
+      isActive: true,
+      addedAt: new Date().toISOString(),
+    })
+
+    await expect(accreditPdtpFromEvent({
+      sourceType: "inspeccion",
+      sourceId: "run-outside-membership",
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      programId: PROGRAM_ID,
+      occurredAt: "2026-04-15T10:00:00.000Z",
+      autoApproveByUserId: USER_ID,
+    })).rejects.toThrow(/no pertenece al programa/)
+  })
+
   it("array vacío de activityNumbers es no-op", async () => {
     const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
 
@@ -327,6 +356,18 @@ describe("accreditPdtpFromEvent", () => {
       .where(eq(schema.pdtpExecutions.activityId, ACT_ID))
     expect(execution!.month).toBe(3)
     expect(execution!.week).toBe(1)
+  })
+
+  it("reserva la aprobación automática inmediata para inspecciones", async () => {
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    await expect(accreditPdtpFromEvent({
+      sourceType: "capacitacion",
+      sourceId: "session-auto-invalid",
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: "2026-03-01T12:00:00.000Z",
+      autoApproveByUserId: USER_ID,
+    })).rejects.toThrow("Sólo las inspecciones")
   })
 })
 
@@ -391,6 +432,113 @@ describe("revokePdtpAccreditation", () => {
     expect(execution!.status).toBe("approved")
   })
 
+  it("revierte una aprobación automática cuando la inspección se reabre", async () => {
+    const { accreditPdtpFromEvent, revokePdtpAccreditation } = await import("@/lib/services/pdtp/accreditation")
+    const accredited = await accreditPdtpFromEvent({
+      sourceType: "inspeccion",
+      sourceId: "run-rev-auto",
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: "2026-04-15T10:00:00.000Z",
+      autoApproveByUserId: USER_ID,
+    })
+
+    const result = await revokePdtpAccreditation({
+      sourceType: "inspeccion",
+      sourceId: "run-rev-auto",
+      worksiteId: WS_ID,
+      revokedBy: USER_ID,
+      reason: "Inspección reabierta para corregir sus respuestas.",
+    })
+
+    expect(result.revoked).toEqual([{ activityId: ACT_ID, executionId: accredited.accredited[0]!.executionId }])
+    expect(result.skippedApproved).toEqual([])
+    const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.id, accredited.accredited[0]!.executionId))
+    expect(execution).toMatchObject({
+      status: "draft",
+      approvedByUserId: null,
+      approvedAt: null,
+    })
+  })
+
+  it("una aprobación humana posterior prevalece y ya no puede revocarse por el run", async () => {
+    const { accreditPdtpFromEvent, revokePdtpAccreditation } = await import("@/lib/services/pdtp/accreditation")
+    const { approvePdtpExecution } = await import("@/lib/services/pdtp/executions")
+    const accredited = await accreditPdtpFromEvent({
+      sourceType: "inspeccion",
+      sourceId: "run-auto-then-manual",
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: "2026-04-15T10:00:00.000Z",
+      autoApproveByUserId: USER_ID,
+    })
+    const executionId = accredited.accredited[0]!.executionId
+    await revokePdtpAccreditation({
+      sourceType: "inspeccion",
+      sourceId: "run-auto-then-manual",
+      worksiteId: WS_ID,
+      reason: "Se rectifica la inspección.",
+    })
+    await inMemoryDb.update(schema.pdtpExecutions).set({ status: "submitted" })
+      .where(eq(schema.pdtpExecutions.id, executionId))
+    await approvePdtpExecution(executionId, USER_ID, "all")
+
+    const revoked = await revokePdtpAccreditation({
+      sourceType: "inspeccion",
+      sourceId: "run-auto-then-manual",
+      worksiteId: WS_ID,
+      reason: "El run se cancela después de la aprobación humana.",
+    })
+
+    expect(revoked.revoked).toEqual([])
+    expect(revoked.skippedApproved).toEqual([{ activityId: ACT_ID, executionId }])
+    const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.id, executionId))
+    expect(execution!.status).toBe("approved")
+    expect((execution!.sourceMetadataJson as Record<string, unknown>).approvalMode).toBe("manual")
+  })
+
+  it("serializa dos revocaciones simultáneas de una fila agregada histórica", async () => {
+    const { revokePdtpAccreditation } = await import("@/lib/services/pdtp/accreditation")
+    const keyA = `pdtp-accredit:${ACT_ID}:${WS_ID}:inspeccion:legacy-A`
+    const keyB = `pdtp-accredit:${ACT_ID}:${WS_ID}:inspeccion:legacy-B`
+    await inMemoryDb.insert(schema.pdtpExecutions).values({
+      id: "legacy-aggregate",
+      activityId: ACT_ID,
+      worksiteId: WS_ID,
+      year: 2026,
+      month: 4,
+      week: 3,
+      executedQuantity: 2,
+      status: "approved",
+      approvedByUserId: USER_ID,
+      approvedAt: new Date().toISOString(),
+      origin: "integration",
+      sourceType: "inspeccion",
+      sourceId: "legacy-A",
+      idempotencyKey: keyA,
+      sourceMetadataJson: {
+        sourceType: "inspeccion",
+        sourceId: "legacy-A",
+        approvalMode: "automatic_source_event",
+        accreditedKeys: [keyA, keyB],
+        automaticApprovalActors: { [keyA]: USER_ID, [keyB]: USER_ID },
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
+
+    await Promise.all([
+      revokePdtpAccreditation({ sourceType: "inspeccion", sourceId: "legacy-A", worksiteId: WS_ID }),
+      revokePdtpAccreditation({ sourceType: "inspeccion", sourceId: "legacy-B", worksiteId: WS_ID }),
+    ])
+
+    const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.id, "legacy-aggregate"))
+    expect(execution).toMatchObject({ status: "draft", approvedByUserId: null, approvedAt: null })
+  })
+
   it("es no-op cuando no existe ninguna acreditación para ese evento", async () => {
     const { revokePdtpAccreditation } = await import("@/lib/services/pdtp/accreditation")
 
@@ -444,7 +592,58 @@ describe("evento fuera del año del programa", () => {
 })
 
 describe("dos eventos en la misma celda de período", () => {
-  it("suma el segundo en vez de perderlo por el índice único", async () => {
+  it("mantiene dos inspecciones autoaprobadas independientes en el mismo período", async () => {
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    const base = {
+      sourceType: "inspeccion" as const,
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: "2026-03-03T10:00:00.000Z",
+      autoApproveByUserId: USER_ID,
+    }
+
+    await accreditPdtpFromEvent({ ...base, sourceId: "run-auto-A" })
+    const second = await accreditPdtpFromEvent({
+      ...base,
+      sourceId: "run-auto-B",
+      occurredAt: "2026-03-05T10:00:00.000Z",
+    })
+
+    expect(second.accredited).toHaveLength(1)
+    const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
+    expect(executions).toHaveLength(2)
+    expect(executions.every((execution) => execution.status === "approved")).toBe(true)
+    expect(executions.reduce((sum, execution) => sum + execution.executedQuantity, 0)).toBe(2)
+  })
+
+  it("reabrir una de dos inspecciones conserva la acreditación de la otra", async () => {
+    const { accreditPdtpFromEvent, revokePdtpAccreditation } = await import("@/lib/services/pdtp/accreditation")
+    const base = {
+      sourceType: "inspeccion" as const,
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: "2026-03-03T10:00:00.000Z",
+      autoApproveByUserId: USER_ID,
+    }
+    await accreditPdtpFromEvent({ ...base, sourceId: "run-auto-keep" })
+    await accreditPdtpFromEvent({ ...base, sourceId: "run-auto-reopen", occurredAt: "2026-03-05T10:00:00.000Z" })
+
+    const revoked = await revokePdtpAccreditation({
+      sourceType: "inspeccion",
+      sourceId: "run-auto-reopen",
+      worksiteId: WS_ID,
+      revokedBy: USER_ID,
+      reason: "Inspección reabierta para rectificar.",
+    })
+
+    expect(revoked.revoked).toHaveLength(1)
+    const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
+    expect(executions).toHaveLength(2)
+    expect(executions.find((execution) => execution.sourceId === "run-auto-keep")?.status).toBe("approved")
+    expect(executions.find((execution) => execution.sourceId === "run-auto-reopen")?.status).toBe("draft")
+  })
+
+  it("conserva ambos eventos cuando llegan en paralelo", async () => {
     const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
     const base = {
       sourceType: "inspeccion" as const,
@@ -453,17 +652,17 @@ describe("dos eventos en la misma celda de período", () => {
       occurredAt: "2026-03-03T10:00:00.000Z", // misma semana 1 de marzo
     }
 
-    const first = await accreditPdtpFromEvent({ ...base, sourceId: "run-A" })
-    // Antes: 23505 sobre pdtp_executions_activity_scope_period_unique, tragado
-    // por safeAccredit; la segunda inspección desaparecía sin rastro.
-    const second = await accreditPdtpFromEvent({ ...base, sourceId: "run-B", occurredAt: "2026-03-05T10:00:00.000Z" })
+    const [first, second] = await Promise.all([
+      accreditPdtpFromEvent({ ...base, sourceId: "run-A" }),
+      accreditPdtpFromEvent({ ...base, sourceId: "run-B", occurredAt: "2026-03-05T10:00:00.000Z" }),
+    ])
 
     expect(first.accredited).toHaveLength(1)
     expect(second.accredited).toHaveLength(1)
 
     const rows = await inMemoryDb.select().from(schema.pdtpExecutions)
-    expect(rows).toHaveLength(1)
-    expect(rows[0]!.executedQuantity).toBe(2)
+    expect(rows).toHaveLength(2)
+    expect(rows.reduce((sum, row) => sum + row.executedQuantity, 0)).toBe(2)
   })
 
   it("reintentar el mismo evento no vuelve a sumar", async () => {
@@ -479,27 +678,86 @@ describe("dos eventos en la misma celda de período", () => {
     await accreditPdtpFromEvent({ ...base, sourceId: "run-B", occurredAt: "2026-03-05T10:00:00.000Z" })
 
     const rows = await inMemoryDb.select().from(schema.pdtpExecutions)
-    expect(rows).toHaveLength(1)
-    expect(rows[0]!.executedQuantity).toBe(2)
+    expect(rows).toHaveLength(2)
+    expect(rows.reduce((sum, row) => sum + row.executedQuantity, 0)).toBe(2)
   })
 
-  it("no suma sobre una ejecución ya aprobada", async () => {
+  it("no aprueba ni altera una carga manual pendiente del mismo período", async () => {
     const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
-    const base = {
-      sourceType: "inspeccion" as const,
+    await inMemoryDb.insert(schema.pdtpExecutions).values({
+      id: "manual-same-period",
+      activityId: ACT_ID,
+      worksiteId: WS_ID,
+      year: 2026,
+      month: 3,
+      week: 1,
+      executedQuantity: 4,
+      status: "submitted",
+      origin: "manual",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
+
+    await accreditPdtpFromEvent({
+      sourceType: "inspeccion",
+      sourceId: "run-auto-with-manual",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      occurredAt: "2026-03-03T10:00:00.000Z",
-    }
-    await accreditPdtpFromEvent({ ...base, sourceId: "run-A" })
-    await inMemoryDb.update(schema.pdtpExecutions).set({ status: "approved" })
-
-    await accreditPdtpFromEvent({ ...base, sourceId: "run-B", occurredAt: "2026-03-05T10:00:00.000Z" })
+      occurredAt: "2026-03-05T10:00:00.000Z",
+      autoApproveByUserId: USER_ID,
+    })
 
     const rows = await inMemoryDb.select().from(schema.pdtpExecutions)
-    expect(rows).toHaveLength(1)
-    expect(rows[0]!.executedQuantity).toBe(1)
-    expect(rows[0]!.status).toBe("approved")
+    expect(rows).toHaveLength(2)
+    expect(rows.find((row) => row.id === "manual-same-period")).toMatchObject({ status: "submitted", executedQuantity: 4 })
+    expect(rows.find((row) => row.sourceId === "run-auto-with-manual")).toMatchObject({ status: "approved", executedQuantity: 1 })
+  })
+
+  it("no suma dos veces una inspección acreditada también como carga manual", async () => {
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    const { getPdtpComplianceByCategoryForScope, getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
+    await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
+      id: "schedule-dedup-sources",
+      activityId: ACT_ID,
+      year: 2026,
+      month: 4,
+      week: 3,
+      plannedQuantity: 2,
+      sourceColumn: "ABRIL S3",
+    })
+    await inMemoryDb.insert(schema.pdtpExecutions).values({
+      id: "manual-same-inspection",
+      activityId: ACT_ID,
+      worksiteId: WS_ID,
+      year: 2026,
+      month: 4,
+      week: 3,
+      executedQuantity: 1,
+      status: "approved",
+      origin: "manual",
+      approvedByUserId: USER_ID,
+      approvedAt: "2026-04-15T12:00:00.000Z",
+      createdAt: "2026-04-15T12:00:00.000Z",
+      updatedAt: "2026-04-15T12:00:00.000Z",
+    })
+    await accreditPdtpFromEvent({
+      sourceType: "inspeccion",
+      sourceId: "run-also-recorded-manually",
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: "2026-04-15T10:00:00.000Z",
+      autoApproveByUserId: USER_ID,
+    })
+
+    const compliance = await getPdtpComplianceIndicators(PROGRAM_ID, WS_ID)
+    expect(compliance!.annual).toEqual({ planned: 2, executed: 1, percent: 0.5 })
+    const categories = await getPdtpComplianceByCategoryForScope(PROGRAM_ID, [WS_ID])
+    expect(categories).toEqual([{
+      category: "Prevención PDTP 2026",
+      planned: 2,
+      executed: 1,
+      percent: 0.5,
+    }])
   })
 })
 
@@ -536,6 +794,151 @@ describe("una inspección acreditada alimenta los ejes de verificación y cierre
       createdByUserId: USER_ID,
     })
   }
+
+  it("cuenta el cumplimiento al declarar ejecutada aunque el hallazgo siga abierto", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-04-15T10:00:00.000Z"))
+    const service = await import("@/lib/services/prevention-inspections")
+    const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
+    await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
+      id: "schedule-inspection-immediate",
+      activityId: ACT_ID,
+      year: 2026,
+      month: 4,
+      week: 3,
+      plannedQuantity: 1,
+      sourceColumn: "ABRIL S3",
+    })
+    await inMemoryDb.insert(schema.preventionInspectionTemplates).values({
+      id: "instpl-immediate-compliance",
+      code: "inspeccion_inmediata",
+      versionLabel: "01",
+      name: "Inspección con cumplimiento inmediato",
+      kind: "inspection",
+      definitionSnapshot: { sections: [] },
+      contentHash: "f".repeat(64),
+      status: "approved",
+      pdtpActivityNumbers: [ACT_N],
+      authorUserId: USER_ID,
+      approvedByUserId: USER_ID,
+      approvedAt: new Date().toISOString(),
+    })
+    const [run] = await inMemoryDb.insert(schema.preventionInspectionRuns).values({
+      id: "insrun-immediate-compliance",
+      code: "INS-IMMEDIATE-001",
+      templateId: "instpl-immediate-compliance",
+      worksiteId: WS_ID,
+      status: "in_progress",
+      createdByUserId: USER_ID,
+    }).returning()
+    await inMemoryDb.insert(schema.preventionInspectionFindings).values({
+      id: "insfind-immediate-compliance",
+      runId: run!.id,
+      description: "Luces de freno sin funcionamiento",
+      criticality: "high",
+      origin: "deviation",
+      status: "open",
+    })
+
+    const completed = await service.completeInspectionRun({
+      runId: run!.id,
+      expectedVersion: run!.version,
+    }, {
+      userId: USER_ID,
+      scope: { mode: "all", ids: [] },
+      permissions: ["prevention:inspections:execute", "prevention:inspections:view"],
+    })
+
+    const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.sourceId, completed.run.id))
+    expect(execution).toMatchObject({
+      status: "approved",
+      approvedByUserId: USER_ID,
+      sourceType: "inspeccion",
+    })
+    const compliance = await getPdtpComplianceIndicators(PROGRAM_ID, WS_ID)
+    expect(compliance!.annual).toEqual({ planned: 1, executed: 1, percent: 1 })
+  })
+
+  it("no confirma el run si su acreditación vinculada no puede persistirse", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    await inMemoryDb.insert(schema.preventionInspectionTemplates).values({
+      id: "instpl-atomic-accreditation",
+      code: "inspeccion_atomica",
+      versionLabel: "01",
+      name: "Inspección con acreditación atómica",
+      kind: "inspection",
+      definitionSnapshot: { sections: [] },
+      contentHash: "e".repeat(64),
+      status: "approved",
+      pdtpActivityNumbers: [ACT_N],
+      authorUserId: USER_ID,
+      approvedByUserId: USER_ID,
+      approvedAt: new Date().toISOString(),
+    })
+    const [run] = await inMemoryDb.insert(schema.preventionInspectionRuns).values({
+      id: "insrun-atomic-accreditation",
+      code: "INS-ATOMIC-001",
+      templateId: "instpl-atomic-accreditation",
+      worksiteId: WS_ID,
+      status: "in_progress",
+      createdByUserId: USER_ID,
+    }).returning()
+    await inMemoryDb.update(schema.pdtpPrograms).set({ status: "draft" })
+      .where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
+
+    await expect(service.completeInspectionRun({
+      runId: run!.id,
+      expectedVersion: run!.version,
+    }, {
+      userId: USER_ID,
+      scope: { mode: "all", ids: [] },
+      permissions: ["prevention:inspections:execute", "prevention:inspections:view"],
+    })).rejects.toThrow(/Sin programa PDTP activo/)
+
+    const [persisted] = await inMemoryDb.select().from(schema.preventionInspectionRuns)
+      .where(eq(schema.preventionInspectionRuns.id, run!.id))
+    expect(persisted).toMatchObject({ status: "in_progress", executedAt: null, executedByUserId: null })
+  })
+
+  it("no confirma el run si la plantilla referencia una actividad PDTP inexistente", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    await inMemoryDb.insert(schema.preventionInspectionTemplates).values({
+      id: "instpl-missing-activity",
+      code: "inspeccion_actividad_inexistente",
+      versionLabel: "01",
+      name: "Inspección con vínculo inválido",
+      kind: "inspection",
+      definitionSnapshot: { sections: [] },
+      contentHash: "f".repeat(64),
+      status: "approved",
+      pdtpActivityNumbers: [999],
+      authorUserId: USER_ID,
+      approvedByUserId: USER_ID,
+      approvedAt: new Date().toISOString(),
+    })
+    const [run] = await inMemoryDb.insert(schema.preventionInspectionRuns).values({
+      id: "insrun-missing-activity",
+      code: "INS-MISSING-ACTIVITY-001",
+      templateId: "instpl-missing-activity",
+      worksiteId: WS_ID,
+      status: "in_progress",
+      createdByUserId: USER_ID,
+    }).returning()
+
+    await expect(service.completeInspectionRun({
+      runId: run!.id,
+      expectedVersion: run!.version,
+    }, {
+      userId: USER_ID,
+      scope: { mode: "all", ids: [] },
+      permissions: ["prevention:inspections:execute", "prevention:inspections:view"],
+    })).rejects.toThrow(/actividades PDTP inexistentes: 999/)
+
+    const [persisted] = await inMemoryDb.select().from(schema.preventionInspectionRuns)
+      .where(eq(schema.preventionInspectionRuns.id, run!.id))
+    expect(persisted).toMatchObject({ status: "in_progress", executedAt: null, executedByUserId: null })
+  })
 
   it("el % de la inspección entra al eje de verificación", async () => {
     const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
@@ -580,6 +983,48 @@ describe("una inspección acreditada alimenta los ejes de verificación y cierre
 
     const integral = await getPdtpIntegralCompliance(PROGRAM_ID, WS_ID)
     expect(integral!.cierre).toBe(0)
+  })
+
+  it("el cumplimiento formal depende de realizar la inspección, no de cerrar sus hallazgos", async () => {
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
+    await seedInspection(20)
+    await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
+      id: "schedule-inspection-april",
+      activityId: ACT_ID,
+      year: 2026,
+      month: 4,
+      week: 1,
+      plannedQuantity: 1,
+      sourceColumn: "ABRIL S1",
+    })
+    await accreditPdtpFromEvent({
+      sourceType: "inspeccion",
+      sourceId: RUN_ID,
+      worksiteId: WS_ID,
+      activityNumbers: [ACT_N],
+      occurredAt: "2026-04-15T10:00:00.000Z",
+    })
+    await inMemoryDb.update(schema.pdtpExecutions).set({ status: "approved" })
+    await inMemoryDb.insert(schema.preventionInspectionFindings).values({
+      id: "insfind-formal-compliance",
+      runId: RUN_ID,
+      description: "Freno de servicio con respuesta deficiente",
+      criticality: "critical",
+      status: "open",
+    })
+
+    const withOpenFinding = await getPdtpComplianceIndicators(PROGRAM_ID, WS_ID)
+    expect(withOpenFinding!.annual).toEqual({ planned: 1, executed: 1, percent: 1 })
+
+    await inMemoryDb.update(schema.preventionInspectionFindings).set({
+      status: "closed",
+      closedByUserId: USER_ID,
+      closedAt: "2026-04-20T10:00:00.000Z",
+    }).where(eq(schema.preventionInspectionFindings.id, "insfind-formal-compliance"))
+
+    const withClosedFinding = await getPdtpComplianceIndicators(PROGRAM_ID, WS_ID)
+    expect(withClosedFinding!.annual).toEqual(withOpenFinding!.annual)
   })
 })
 

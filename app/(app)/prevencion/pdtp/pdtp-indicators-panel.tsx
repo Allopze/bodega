@@ -44,7 +44,7 @@ export function PdtpIndicatorsPanel({ data, integral, asOf }: { data: PdtpCompli
         </p>
       </div>
 
-      {/* Cabecera compacta: integral (con desglose de ejes en una línea) + anual + meta.
+      {/* Cabecera compacta: gestión preventiva (con desglose de ejes en una línea) + anual + meta.
           Los trimestres viven en el desglose plegable para no saturar la entrada. */}
       <div className="overflow-hidden border-y border-[var(--color-border)]">
         <div className="-ml-px -mt-px flex flex-wrap">
@@ -164,8 +164,9 @@ export function PdtpIndicatorsPanel({ data, integral, asOf }: { data: PdtpCompli
 }
 
 /**
- * Cumplimiento integral en un solo tile: el resultado combinado grande y, debajo,
- * los tres ejes ponderados en una línea compacta (antes eran tres tiles aparte).
+ * Índice de gestión preventiva en un solo tile: combina ejecución, verificación
+ * y cierre sin reemplazar el cumplimiento formal, que depende sólo de realizar
+ * las actividades programadas. Los tres ejes se muestran en una línea compacta.
  * El peso de cada eje va en el `title` para no cargar la vista con "peso 50%".
  */
 function IntegralTile({ integral }: { integral: PdtpIntegralCompliance }) {
@@ -182,9 +183,9 @@ function IntegralTile({ integral }: { integral: PdtpIntegralCompliance }) {
           <ChartBar size={13} className="shrink-0 text-[var(--color-text-faint)]" />
           <span
             className="text-eyebrow"
-            title="Resultado combinado del programa: 50% ejecución + 30% verificación + 20% cierre"
+            title="Indicador de gestión: 50% ejecución + 30% verificación + 20% cierre. No modifica el cumplimiento formal del programa."
           >
-            Cumplimiento integral
+            Índice de gestión preventiva
           </span>
         </div>
         <div className="mt-2 flex items-end gap-2">
@@ -194,7 +195,7 @@ function IntegralTile({ integral }: { integral: PdtpIntegralCompliance }) {
         </div>
         <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-[var(--color-text-muted)]">
           {axes.map((axis) => (
-            <span key={axis.label} title={`Peso ${Math.round(axis.weight * 100)}% en el cumplimiento integral`}>
+            <span key={axis.label} title={`Peso ${Math.round(axis.weight * 100)}% en el índice de gestión preventiva`}>
               {axis.label} <span className="font-mono font-semibold text-[var(--color-text)]">{axis.value !== null ? `${Math.round(axis.value)}%` : "—"}</span>
             </span>
           ))}

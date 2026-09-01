@@ -8,8 +8,10 @@ import { NORMALIZED_ONLY_SCORING } from '../scoring-policies'
  * Patrón C (multi-sujeto). Se siembra como plantilla de la actividad PDTP
  * n=29 del programa 2026. Ver `scripts/seed-pdtp-checklists-2026.ts`.
  *
- * Sujeto = contenedor por `subjectLabel` libre en v1 (no hay inventario;
- * PLAN_INTEGRACION §7).
+ * Sujeto = contenedor del catálogo (`prevention_containers`, Administración ›
+ * Contenedores). Fue `subjectLabel` libre mientras no hubo padrón; desde que
+ * existe, el motor exige elegir uno del catálogo (`assertContainerSubject`).
+ * Las ejecuciones anteriores conservan su etiqueta congelada y FK nula.
  *
  * Firmas (markdown 08): jefe de terreno + prevencionista.
  */

@@ -391,7 +391,8 @@ describe("Maintenance Service (transitionMaintenanceRecord)", () => {
       [{ equipmentTypeId: "fet-camion" }],
       [],
       [],
-      [{ capaActionId: "capa-1" }],
+      [{ id: "finding-1", capaActionId: "capa-1" }],
+      [{ id: "capa-1", status: "pending", startedByUserId: null, startedAt: null }],
     )
     mutationResults.push([], [{ id: "evidence-1" }], [])
 
@@ -411,6 +412,14 @@ describe("Maintenance Service (transitionMaintenanceRecord)", () => {
     expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({
       changeSet: expect.objectContaining({ evidenceId: "evidence-1", lifecycle: "activated" }),
     }))
+    expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({
+      status: "closed",
+      closedByUserId: "operator",
+    }))
+    expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({
+      status: "pending_verification",
+      completedByUserId: "operator",
+    }))
   })
 
   it("reabre y supersede la evidencia sin borrarla", async () => {
@@ -418,7 +427,8 @@ describe("Maintenance Service (transitionMaintenanceRecord)", () => {
       [{ id: "man-1", vehicleId: "veh-1", worksiteId: "ws-1", status: "completed", inspectionFindingId: "finding-1", maintenanceType: "preventiva", maintenanceDate: "2026-08-07", operationalImpact: "none", managesOperationalStatus: false, costApprovalStatus: "not_required" }],
       [{ equipmentTypeId: "fet-camion" }],
       [],
-      [{ capaActionId: "capa-1" }],
+      [{ id: "finding-1", capaActionId: "capa-1" }],
+      [{ id: "capa-1", status: "pending_verification" }],
     )
     mutationResults.push([], [{ id: "evidence-1" }], [])
 
@@ -435,6 +445,14 @@ describe("Maintenance Service (transitionMaintenanceRecord)", () => {
     }))
     expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({
       changeSet: expect.objectContaining({ evidenceId: "evidence-1", lifecycle: "superseded" }),
+    }))
+    expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({
+      status: "capa_linked",
+      closedAt: null,
+    }))
+    expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({
+      status: "reopened",
+      reopenedByUserId: "operator",
     }))
   })
 

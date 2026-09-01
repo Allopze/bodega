@@ -4,6 +4,8 @@ import { redirect, notFound } from "next/navigation"
 import { and, eq } from "drizzle-orm"
 import { ClipboardText } from "@phosphor-icons/react/dist/ssr"
 import { requireAuth, can } from "@/lib/auth/can"
+import { containerLabel } from "@/lib/prevention/containers"
+import { listContainersForWorksite } from "@/lib/services/prevention-containers"
 import { canAccessWorksite } from "@/lib/auth/scope"
 import { db } from "@/db"
 import {
@@ -66,7 +68,7 @@ export default async function PdtpExecutionDetailPage({ params }: Props) {
 
   // Sujetos disponibles para el selector "Agregar sujeto": vehículos y
   // trabajadores activos de la faena de la ejecución (PLAN_INTEGRACION §7).
-  const [vehicles, worksiteWorkers, emergencyResources] = await Promise.all([
+  const [vehicles, worksiteWorkers, emergencyResources, containers] = await Promise.all([
     db.select({
       id: fuelVehicles.id,
       plate: fuelVehicles.plate,
@@ -95,6 +97,8 @@ export default async function PdtpExecutionDetailPage({ params }: Props) {
       .leftJoin(preventionEmergencyResourceTypes, eq(preventionEmergencyResources.typeId, preventionEmergencyResourceTypes.id))
       .where(eq(preventionEmergencyResources.worksiteId, execution.worksiteId))
       .orderBy(preventionEmergencyResources.assetCode, preventionEmergencyResources.name),
+    // Cuarto padrón: el contenedor dejó de ser texto libre al existir catálogo.
+    listContainersForWorksite(execution.worksiteId),
   ])
 
   const canFill = can(session, "prevention:pdtp:checklist:fill")
@@ -140,6 +144,10 @@ export default async function PdtpExecutionDetailPage({ params }: Props) {
             emergencyResources={emergencyResources.map((resource) => ({
               id: resource.id,
               label: [resource.assetCode ?? resource.name, resource.canonicalType, resource.location].filter(Boolean).join(" · "),
+            }))}
+            containers={containers.map((container) => ({
+              id: container.id,
+              label: containerLabel(container),
             }))}
           />
         )}

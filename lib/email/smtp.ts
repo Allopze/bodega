@@ -109,6 +109,3 @@ export async function sendBatchEmails(
   if (error) return { sent: false, reason: error.message }
   return { sent: true, count: messages.length }
 }
-
-// Re-export Buffer so callers that import it from here keep working.
-export { Buffer }
