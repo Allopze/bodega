@@ -229,17 +229,30 @@ echo "    psql/pg_dump usarán $PROD_DB_USER@$PROD_DB_NAME"
 # con el .env de allá, no con el de acá. Si se construye y se carga un nombre
 # distinto del que compose va a levantar, `up` no encuentra la imagen y, como el
 # servicio `app` trae su propio `build:`, intenta compilar en $PROD_DIR — que no
-# tiene código. Resolver el nombre en el servidor cierra ese hueco.
-echo "==> Resolviendo el nombre de imagen que usará el Compose de producción"
-prod_image="$(run_in_prod docker compose config --images app 2>/dev/null | tr -d '\r' | grep -v '^[[:space:]]*$' | head -1 || true)"
-if [ -z "$prod_image" ]; then
-  # `config --images` es relativamente nuevo en compose. El repuesto reproduce a
-  # mano la expresión de docker-compose.yml: mantener los mismos defaults.
+# tiene código. Resolver el nombre con el mismo contrato y verificar que aparece
+# exactamente entre las imagenes configuradas para `app` cierra ese hueco.
+resolve_prod_image() {
+  local prod_repository prod_image_tag configured_images
+
   prod_repository="$(prod_env_value GITHUB_REPOSITORY)"
   prod_image_tag="$(prod_env_value IMAGE_TAG)"
   prod_image="ghcr.io/${prod_repository:-chome/bodega}:${prod_image_tag:-latest}"
-  echo "    ('docker compose config --images' no disponible; nombre derivado del .env remoto)"
-fi
+
+  # `docker compose config --images app` incluye tambien las dependencias de
+  # app. Su orden no es estable entre versiones de Compose: tomar la primera
+  # puede seleccionar `postgres:16-alpine` y reemplazar la base por la imagen
+  # de Next.js. Solo aceptamos la coincidencia exacta con el contrato anterior.
+  configured_images="$(run_in_prod docker compose config --images app 2>/dev/null | tr -d '\r')"
+  if ! printf '%s\n' "$configured_images" | grep -Fxq "$prod_image"; then
+    echo "ERROR: el Compose de prod no configura $prod_image para el servicio app."
+    echo "       Imagenes que Compose asocia a app y sus dependencias:"
+    printf '       %s\n' "$configured_images"
+    return 1
+  fi
+}
+
+echo "==> Resolviendo el nombre de imagen que usará el Compose de producción"
+resolve_prod_image
 if [ "$prod_image" != "$IMAGE" ]; then
   if [ -n "$IMAGE_EXPLICIT" ]; then
     echo "ERROR: IMAGE=$IMAGE pero el Compose de prod levanta $prod_image."

@@ -66,6 +66,31 @@ function runTimedHarness(command: string) {
   return spawnSync("bash", ["-c", source], { encoding: "utf8" })
 }
 
+function resolveProdImageHarness(configuredImages: string) {
+  const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
+  const source = [
+    "set -u -o pipefail",
+    deployFunction(deployScript, "resolve_prod_image"),
+    `prod_env_value() {
+  case "$1" in
+    GITHUB_REPOSITORY) printf '%s\\n' 'allopze/bodega' ;;
+    IMAGE_TAG) printf '%s\\n' 'latest' ;;
+  esac
+}`,
+    `run_in_prod() { printf '%s\\n' ${configuredImages
+      .split("\n")
+      .filter(Boolean)
+      .map((image) => `'${image}'`)
+      .join(" ")}; }`,
+    "resolve_prod_image",
+    "status=$?",
+    'printf "resolved=%s\\n" "${prod_image:-}"',
+    "exit $status",
+  ].join("\n\n")
+
+  return spawnSync("bash", ["-c", source], { encoding: "utf8" })
+}
+
 describe("deploy workflow", () => {
   it("builds and publishes the production Docker stage", () => {
     const workflow = readFileSync(path.join(repoRoot, ".github/workflows/deploy.yml"), "utf8")
@@ -132,6 +157,21 @@ describe("deploy workflow", () => {
     expect(deployScript).toContain('docker buildx build --builder "$BUILDER" --target prod --tag "$IMAGE" --load --progress=plain .')
     expect(deployScript).toContain("run_timed")
     expect(deployScript).not.toContain('if "$@"; then')
+  })
+
+  it("selects the app image even when Compose lists PostgreSQL first", () => {
+    const result = resolveProdImageHarness("postgres:16-alpine\nghcr.io/allopze/bodega:latest")
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain("resolved=ghcr.io/allopze/bodega:latest")
+    expect(result.stdout).not.toContain("resolved=postgres:16-alpine")
+  })
+
+  it("fails closed when the expected app image is absent from Compose", () => {
+    const result = resolveProdImageHarness("postgres:16-alpine")
+
+    expect(result.status).not.toBe(0)
+    expect(result.stdout).toContain("el Compose de prod no configura ghcr.io/allopze/bodega:latest")
   })
 
   it("gives the Docker production build enough Node heap for TypeScript", () => {
