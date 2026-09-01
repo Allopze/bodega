@@ -9,6 +9,7 @@ import {
   getPdtpComplianceIndicators,
   getPdtpIntegralCompliance,
   getPdtpApprovalProgress,
+  getPdtpSubmitReviewBlockers,
   getPdtpDocumentMetadata,
   listPdtpReconciliationCandidates,
   listPdtpProgramSheets,
@@ -97,6 +98,9 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
       : Promise.resolve([null, null, null] as const),
     getPdtpApprovalProgress(programId),
   ])
+  // El envío a revisión exige requisitos de contenido; se consultan aquí para
+  // mostrarlos en la tarjeta de estado en vez de dejar que el envío falle.
+  const submitBlockers = program.status === "draft" ? await getPdtpSubmitReviewBlockers(programId) : []
 
   const canApprove = can(session, "prevention:pdtp:approve")
 
@@ -201,6 +205,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         <ProgramLifecycleControls
           program={program}
           permissions={{ canSubmitReview, canApprove, canSignLegal, canActivate, canManageLifecycle }}
+          submitBlockers={submitBlockers}
           approvalSteps={approvalProgress.map((step) => ({
             id: step.id,
             code: step.code,

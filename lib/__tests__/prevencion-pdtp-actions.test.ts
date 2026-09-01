@@ -243,11 +243,23 @@ describe("Program lifecycle actions", () => {
     expect(mockArchivePdtpProgram).toHaveBeenCalledWith("prog-1", "user-1", "Será reemplazado por una versión vigente.")
   })
 
-  it("oculta el detalle interno de un error de servicio", async () => {
-    mockActivatePdtpProgram.mockRejectedValueOnce(new Error("Programa ya activo"))
+  it("oculta el detalle interno de un error de driver", async () => {
+    const driverError = new Error("Failed query: update pdtp_programs set status = $1")
+    driverError.cause = { code: "23505" }
+    mockActivatePdtpProgram.mockRejectedValueOnce(driverError)
     const res = await activatePdtpProgramAction("prog-1")
     expect(res.ok).toBe(false)
     expect(res.message).toBe("No se pudo completar la acción. Intenta nuevamente.")
+  })
+
+  it("muestra el motivo de negocio por el que no se puede enviar a revisión", async () => {
+    mockSubmitPdtpProgramForReview.mockRejectedValueOnce(new Error(
+      "22 actividad(es) aún requieren confirmar cuándo se realizan. "
+      + "Clasifícalas como periódicas, a demanda o por evento antes de enviar el programa a revisión.",
+    ))
+    const res = await submitPdtpProgramForReviewAction("prog-1")
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("22 actividad(es) aún requieren confirmar cuándo se realizan")
   })
 })
 
@@ -273,6 +285,13 @@ describe("Execution approval actions", () => {
     const res = await rejectPdtpExecutionAction("exec-1", "Evidencia insuficiente")
     expect(res.ok).toBe(true)
     expect(mockRejectPdtpExecution).toHaveBeenCalledWith("exec-1", "user-1", "Evidencia insuficiente", "all")
+  })
+
+  it("muestra el motivo de negocio por el que no se puede aprobar una ejecución", async () => {
+    mockApprovePdtpExecution.mockRejectedValueOnce(new Error("La ejecución no tiene evidencia adjunta."))
+    const res = await approvePdtpExecutionAction("exec-1")
+    expect(res.ok).toBe(false)
+    expect(res.message).toBe("La ejecución no tiene evidencia adjunta.")
   })
 })
 
@@ -337,6 +356,22 @@ describe("Activity edit/add actions", () => {
     })
     expect(res.ok).toBe(false)
     expect(res.fieldErrors?.triggerDescription).toBeDefined()
+  })
+
+  it("muestra el motivo de negocio por el que no se puede editar la actividad", async () => {
+    mockUpdatePdtpActivity.mockRejectedValueOnce(new Error("El programa está congelado: reábrelo como nueva versión para editarlo."))
+    const res = await updatePdtpActivityAction({ activityId: "act-1", activity: "X" })
+    expect(res.ok).toBe(false)
+    expect(res.message).toBe("El programa está congelado: reábrelo como nueva versión para editarlo.")
+  })
+
+  it("oculta el detalle de un error de driver al editar la actividad", async () => {
+    const driverError = new Error("Failed query: update pdtp_activities set activity = $1")
+    driverError.cause = { code: "23505" }
+    mockUpdatePdtpActivity.mockRejectedValueOnce(driverError)
+    const res = await updatePdtpActivityAction({ activityId: "act-1", activity: "X" })
+    expect(res.ok).toBe(false)
+    expect(res.message).toBe("No se pudo completar la acción. Intenta nuevamente.")
   })
 
   it("updatePdtpActivityAction retorna error con input inválido", async () => {
@@ -549,6 +584,14 @@ describe("Program CRUD actions", () => {
     const fd = makeFormData({ programId: "prog-1", complianceTargetPercent: "150" })
     const res = await updatePdtpProgramAction(null, fd)
     expect(res.ok).toBe(false)
+  })
+
+  it("muestra el motivo de negocio por el que no se puede actualizar el programa", async () => {
+    mockUpdatePdtpProgram.mockRejectedValueOnce(new Error("El programa está en revisión y su contenido está bloqueado."))
+    const fd = makeFormData({ programId: "prog-1", title: "Título actualizado" })
+    const res = await updatePdtpProgramAction(null, fd)
+    expect(res.ok).toBe(false)
+    expect(res.message).toBe("El programa está en revisión y su contenido está bloqueado.")
   })
 
   it("deletePdtpProgramAction elimina programa válido", async () => {

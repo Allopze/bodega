@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { ZodError } from "zod"
 import { guardPermission } from "@/lib/auth/can"
-import { unexpectedActionError } from "@/lib/actions/safe-server-action"
+import { safeActionMessage } from "@/lib/action-error"
 import {
   createAnnualPdtpProgram,
   updatePdtpProgram,
@@ -31,7 +31,11 @@ function fail(error: unknown): ActionState {
       fieldErrors: error.flatten().fieldErrors as Record<string, string[]>,
     }
   }
-  return unexpectedActionError(error, "prevencion/pdtp/actions/program-crud")
+  // Los servicios PDTP lanzan sus reglas de negocio como `new Error("texto
+  // para el operador")` y son la única pista de por qué la operación no
+  // avanza. `safeActionMessage` las deja pasar y sigue ocultando los errores
+  // de driver y de esquema.
+  return { ok: false, message: safeActionMessage(error, "No se pudo completar la acción. Intenta nuevamente.") }
 }
 
 // ── Program CRUD ─────────────────────────────────────────────────────────────

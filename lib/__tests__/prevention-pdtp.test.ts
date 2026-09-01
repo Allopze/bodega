@@ -1166,6 +1166,17 @@ describe("prevention PDTP service", () => {
     }, "user-1")
 
     await expect(submitPdtpProgramForReview(program.id, "user-1")).rejects.toThrow(/requieren confirmar cuándo/i)
+    // El mismo motivo tiene que poder consultarse ANTES de pulsar el botón,
+    // para que la tarjeta de estado lo muestre en vez de dejar que el envío
+    // falle.
+    const { getPdtpSubmitReviewBlockers } = await import("@/lib/services/prevention-pdtp")
+    // La consulta previa lista TODOS los motivos, no sólo el primero que
+    // haría fallar el envío: esa actividad incumple dos reglas a la vez.
+    const blockers = await getPdtpSubmitReviewBlockers(program.id)
+    expect(blockers).toHaveLength(2)
+    expect(blockers[0]).toMatch(/requieren confirmar cuándo/i)
+    expect(blockers[1]).toMatch(/no tienen SLA, evidencia, disparador/i)
+
     await updatePdtpActivity({
       activityId: activity.id,
       scheduleMode: "triggered",
@@ -1176,6 +1187,7 @@ describe("prevention PDTP service", () => {
       evidenceRequirement: "Registro de la desviación y cierre verificable",
       indicatorMode: "closed_on_time",
     }, "user-1")
+    expect(await getPdtpSubmitReviewBlockers(program.id)).toEqual([])
     await expect(submitPdtpProgramForReview(program.id, "user-1")).resolves.toMatchObject({ status: "in_review" })
   })
 

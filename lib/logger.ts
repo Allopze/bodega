@@ -51,6 +51,17 @@ function redact(value: unknown, depth = 0, seen = new WeakSet<object>()): unknow
   if (seen.has(value as object)) return "[circular]"
   seen.add(value as object)
 
+  // `Object.entries(new Error(...))` es `[]`: sin esta rama un error registrado
+  // junto a un contexto (`logger.error("[accion]", error)`) sale como `{}` y el
+  // fallo queda sin diagnóstico.
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: redactString(value.message),
+      stack: redactString(value.stack ?? value.message),
+    }
+  }
+
   if (Array.isArray(value)) return value.map((v) => redact(v, depth + 1, seen))
 
   const out: Record<string, unknown> = {}

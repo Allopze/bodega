@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { ZodError } from "zod"
 import { guardAuth, guardPermission } from "@/lib/auth/can"
-import { unexpectedActionError } from "@/lib/actions/safe-server-action"
+import { safeActionMessage } from "@/lib/action-error"
 import {
   submitPdtpProgramForReview,
   approvePdtpProgramJdpr,
@@ -33,7 +33,11 @@ function fail(error: unknown): ActionState {
       fieldErrors: error.flatten().fieldErrors as Record<string, string[]>,
     }
   }
-  return unexpectedActionError(error, "prevencion/pdtp/actions/program-lifecycle")
+  // Las reglas de ciclo de vida se lanzan como `new Error("texto para el
+  // operador")` y son la única pista de por qué no se puede avanzar (p. ej.
+  // actividades sin clasificar antes de enviar a revisión). `safeActionMessage`
+  // las deja pasar y sigue ocultando los errores de driver y de esquema.
+  return { ok: false, message: safeActionMessage(error, "No se pudo completar la acción. Intenta nuevamente.") }
 }
 
 async function activatePdtpIfAllStepsApproved(programId: string, userId: string): Promise<void> {

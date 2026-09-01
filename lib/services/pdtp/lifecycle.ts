@@ -30,6 +30,48 @@ export async function getActivePdtpProgram(year: number) {
   return program ?? null
 }
 
+type PdtpActivityRow = typeof pdtpActivities.$inferSelect
+
+/**
+ * Requisitos de contenido para enviar un programa a revisión, en el mismo orden
+ * en que se comunican al operador.
+ *
+ * Vive aparte de la transacción porque la tarjeta de estado necesita mostrar el
+ * bloqueo ANTES de que el envío falle: la regla es una sola, consultada desde
+ * los dos lados.
+ */
+export function pdtpSubmitReviewBlockers(activities: PdtpActivityRow[]): string[] {
+  if (activities.length === 0) return ["Agrega al menos una actividad antes de enviar el programa a revisión."]
+
+  const blockers: string[] = []
+  const unresolvedScheduleClassifications = activities.filter((activity) => activity.scheduleClassificationStatus === "needs_review")
+  if (unresolvedScheduleClassifications.length > 0) {
+    blockers.push(
+      `${unresolvedScheduleClassifications.length} actividad(es) aún requieren confirmar cuándo se realizan. ` +
+      "Clasifícalas como periódicas, a demanda o por evento antes de enviar el programa a revisión.",
+    )
+  }
+  const incompleteDemandActivities = activities.filter((activity) => {
+    if (activity.scheduleMode !== "on_demand" && activity.scheduleMode !== "triggered") return false
+    return activity.dueDays === null
+      || !activity.evidenceRequirement?.trim()
+      || (activity.scheduleMode === "triggered" && (!activity.triggerType?.trim() || !activity.triggerDescription?.trim()))
+      || activity.indicatorMode === "planned_vs_completed"
+  })
+  if (incompleteDemandActivities.length > 0) {
+    blockers.push(
+      `${incompleteDemandActivities.length} actividad(es) a demanda o por evento no tienen SLA, evidencia, disparador o regla de indicador completos.`,
+    )
+  }
+  return blockers
+}
+
+/** Los motivos por los que hoy no se puede enviar el programa a revisión. */
+export async function getPdtpSubmitReviewBlockers(programId: string): Promise<string[]> {
+  const activities = await db.select().from(pdtpActivities).where(eq(pdtpActivities.programId, programId))
+  return pdtpSubmitReviewBlockers(activities)
+}
+
 export async function submitPdtpProgramForReview(programId: string, userId: string) {
   return db.transaction(async (tx) => {
     const [program] = await tx.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
@@ -42,26 +84,10 @@ export async function submitPdtpProgramForReview(programId: string, userId: stri
 
     const activities = await tx.select().from(pdtpActivities)
       .where(eq(pdtpActivities.programId, programId))
-    if (activities.length === 0) throw new Error("Agrega al menos una actividad antes de enviar el programa a revisión.")
-    const unresolvedScheduleClassifications = activities.filter((activity) => activity.scheduleClassificationStatus === "needs_review")
-    if (unresolvedScheduleClassifications.length > 0) {
-      throw new Error(
-        `${unresolvedScheduleClassifications.length} actividad(es) aún requieren confirmar cuándo se realizan. ` +
-        "Clasifícalas como periódicas, a demanda o por evento antes de enviar el programa a revisión.",
-      )
-    }
-    const incompleteDemandActivities = activities.filter((activity) => {
-      if (activity.scheduleMode !== "on_demand" && activity.scheduleMode !== "triggered") return false
-      return activity.dueDays === null
-        || !activity.evidenceRequirement?.trim()
-        || (activity.scheduleMode === "triggered" && (!activity.triggerType?.trim() || !activity.triggerDescription?.trim()))
-        || activity.indicatorMode === "planned_vs_completed"
-    })
-    if (incompleteDemandActivities.length > 0) {
-      throw new Error(
-        `${incompleteDemandActivities.length} actividad(es) a demanda o por evento no tienen SLA, evidencia, disparador o regla de indicador completos.`,
-      )
-    }
+    const [firstBlocker] = pdtpSubmitReviewBlockers(activities)
+    // Se lanza sólo el primero: el mensaje viaja como texto único al operador y
+    // concatenarlos lo dejaría fuera del límite de un error mostrable.
+    if (firstBlocker) throw new Error(firstBlocker)
 
     const steps = await ensureDefaultPdtpApprovalSteps(programId, tx)
     if (steps.length === 0) throw new Error("El programa debe tener al menos un paso de aprobación.")

@@ -64,8 +64,12 @@ const STATUS_VARIANT: Record<string, "default" | "warning" | "danger" | "success
   archived: "outline",
 }
 
-function nextStep(program: ProgramLifecycle, pendingStep: ApprovalStepProgress | undefined): string {
-  if (program.status === "draft") return "Completa el contenido y envía una versión a revisión."
+function nextStep(program: ProgramLifecycle, pendingStep: ApprovalStepProgress | undefined, submitBlockers: string[]): string {
+  if (program.status === "draft") {
+    return submitBlockers.length > 0
+      ? "Resuelve los puntos pendientes para poder enviar esta versión a revisión."
+      : "Completa el contenido y envía una versión a revisión."
+  }
   if (program.status === "rejected") return "Corrige las observaciones y reabre una nueva versión de contenido."
   if (program.status === "active") return "La versión aprobada está vigente y su contenido base permanece bloqueado."
   if (program.status === "closed") return "El expediente está cerrado y no admite nuevas ejecuciones."
@@ -78,11 +82,16 @@ export function ProgramLifecycleControls({
   program,
   permissions,
   approvalSteps,
+  submitBlockers = [],
   children,
 }: {
   program: ProgramLifecycle
   permissions: LifecyclePermissions
   approvalSteps?: ApprovalStepProgress[]
+  /** Motivos por los que el contenido todavía no se puede enviar a revisión.
+   *  El servidor los vuelve a comprobar; aquí se anticipan para que el operador
+   *  no descubra el bloqueo recién al pulsar el botón. */
+  submitBlockers?: string[]
   /** Sección adicional (p. ej. metadata del documento importado) que se
    *  pliega dentro de la misma tarjeta en vez de vivir en un bloque aparte. */
   children?: React.ReactNode
@@ -129,7 +138,15 @@ export function ProgramLifecycleControls({
               </code>
             )}
           </div>
-          <p className="mt-1 text-sm text-[var(--color-text-muted)]">{nextStep(program, pendingStep)}</p>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">{nextStep(program, pendingStep, submitBlockers)}</p>
+          {program.status === "draft" && submitBlockers.length > 0 && (
+            <div className="mt-2 max-w-3xl rounded-md border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-sm text-[var(--color-warning-ink)]">
+              <p className="font-semibold">Pendiente antes de enviar a revisión:</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                {submitBlockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+              </ul>
+            </div>
+          )}
           {program.status === "rejected" && program.rejectionReason && (
             <p className="mt-2 max-w-3xl rounded-md border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-sm text-[var(--color-danger-ink)]">
               <span className="font-semibold">Observación:</span> {program.rejectionReason}
@@ -144,6 +161,8 @@ export function ProgramLifecycleControls({
               description="Se calculará una huella del programa y el contenido quedará bloqueado hasta que sea rechazado y reabierto como una nueva versión."
               confirmLabel="Enviar a revisión"
               pending={pending}
+              disabled={submitBlockers.length > 0}
+              disabledReason="Resuelve primero los puntos pendientes listados arriba."
               onConfirm={() => run(() => submitPdtpProgramForReviewAction(program.id))}
             />
           )}
@@ -257,14 +276,23 @@ function ConfirmAction({
   description,
   confirmLabel,
   pending,
+  disabled = false,
+  disabledReason,
   onConfirm,
 }: {
   title: string
   description: string
   confirmLabel: string
   pending: boolean
+  disabled?: boolean
+  disabledReason?: string
   onConfirm: () => void
 }) {
+  if (disabled) {
+    // Un botón deshabilitado sin explicación es un callejón sin salida; el
+    // motivo viaja por `title` y por el texto accesible del propio bloque.
+    return <Button size="sm" disabled title={disabledReason}>{confirmLabel}</Button>
+  }
   return (
     <Dialog>
       <DialogTrigger asChild><Button size="sm">{confirmLabel}</Button></DialogTrigger>

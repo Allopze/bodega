@@ -54,6 +54,8 @@ export {
 export { getActivePdtpProgram } from "./lifecycle"
 export { buildPdtpProgramContentSnapshot, computePdtpProgramContentDigest } from "./content-digest"
 export {
+  pdtpSubmitReviewBlockers,
+  getPdtpSubmitReviewBlockers,
   submitPdtpProgramForReview,
   approvePdtpProgramJdpr,
   signPdtpProgramLegal,

@@ -47,6 +47,16 @@ describe("ProgramLifecycleControls", () => {
     expect(screen.queryByRole("button", { name: /Aprobar:/ })).not.toBeInTheDocument()
   })
 
+  it("explains what blocks the submission instead of letting the action fail", () => {
+    render(<ProgramLifecycleControls
+      program={baseProgram}
+      permissions={permissions}
+      submitBlockers={["22 actividad(es) aún requieren confirmar cuándo se realizan."]}
+    />)
+    expect(screen.getByText(/22 actividad\(es\) aún requieren confirmar/)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Enviar a revisión" })).toBeDisabled()
+  })
+
   it("shows the signed content version and only the next valid technical decision", () => {
     render(<ProgramLifecycleControls program={{
       ...baseProgram,

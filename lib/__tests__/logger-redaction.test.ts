@@ -105,6 +105,16 @@ describe("logger PII redaction and formatting", () => {
     expect(out).toContain("[circular]")
   })
 
+  it("keeps the Error detail when it is logged after a context string", () => {
+    // `logger.error("[accion]", error)` es el patrón de las server actions:
+    // si el Error se serializa como `{}` el fallo queda sin diagnóstico.
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    logger.error("[accion]", new Error("22 actividades sin clasificar"))
+    const out = lastConsoleOutput("error")
+    expect(out).toContain('"message":"[accion]"')
+    expect(out).toContain("22 actividades sin clasificar")
+  })
+
   it("redacts message and stack when an Error object is logged", () => {
     vi.spyOn(console, "error").mockImplementation(() => {})
     const err = new Error("Failed validation for email dummy@chome.cl")
