@@ -21,13 +21,9 @@ import { PriorityBadge } from "@/components/ui/priority-badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { chileDateParts, cn } from "@/lib/utils"
 import type { WorkPriority, WorkTask, WorkTaskType } from "@/lib/work-queue"
-import type { OperationalWorkItem } from "@/lib/services/operational-work-queue"
-import { WorkCommitmentControl } from "../../pendientes/work-commitment-control"
 import type { DashboardScope } from "../dashboard-scope"
 
-export type DashboardTask = WorkTask & {
-  operationalItem?: OperationalWorkItem
-}
+export type DashboardTask = WorkTask
 
 /**
  * Atajo a `/pendientes` con el conteo de la **población completa**.
@@ -54,8 +50,8 @@ const SORT_OPTIONS: SortOption[] = ["priority", "oldest", "newest"]
  * viajar en la URL.
  *
  * `sessionStorage` y no la URL para el orden porque cualquier `router.refresh()`
- * —el de `WorkCommitmentControl`, por ejemplo— desmonta el árbol (hay
- * `loading.tsx`) y borraría un estado que viviera sólo en React.
+ * desmonta el árbol (hay `loading.tsx`) y borraría un estado que viviera sólo
+ * en React.
  */
 const FILTERS_STORAGE_KEY = "dashboard:queue-filters"
 
@@ -105,7 +101,6 @@ export function TrabajoView({
   queueSummary,
   queueShortcuts,
   scope,
-  canAssign,
   refreshedAt,
 }: {
   /**
@@ -117,7 +112,6 @@ export function TrabajoView({
   /** Atajos con conteos de población completa, ya filtrados por permiso. */
   queueShortcuts: QueueShortcut[]
   scope: DashboardScope
-  canAssign: boolean
   refreshedAt: string
 }) {
   const { searchQuery } = useSafeShellHeader()
@@ -230,7 +224,7 @@ export function TrabajoView({
               <span className="text-right">Acción</span>
             </div>
             <ul className="divide-y divide-[var(--color-border)]">
-              {filteredTasks.map((task) => <WorkQueueRow key={task.id} task={task} refreshedAt={refreshedAt} canAssign={canAssign} />)}
+              {filteredTasks.map((task) => <WorkQueueRow key={task.id} task={task} refreshedAt={refreshedAt} />)}
             </ul>
           </div>
         </div>
@@ -286,13 +280,11 @@ function FilterSelect({ label, value, onValueChange, children }: {
  * —que en un portátil de 1440px con el sidebar abierto son ~676px útiles— y la
  * cola scrolleaba horizontalmente siempre (L-02). Con cuatro cabe con holgura.
  */
-function WorkQueueRow({ task, refreshedAt, canAssign }: { task: DashboardTask; refreshedAt: string; canAssign: boolean }) {
+function WorkQueueRow({ task, refreshedAt }: { task: DashboardTask; refreshedAt: string }) {
   const { label: moduleLabel, Icon } = moduleMeta(task.type)
   return (
     // Mobile: apilada (badge+edad / título / meta / acciones). Desktop: grid de
-    // 4 columnas. La celda de acción envuelve (`flex-wrap`) en vez de
-    // `whitespace-nowrap`: "Comprometer fecha" + CTA medían ~230px en una columna de 9rem
-    // y desbordaban ENCIMA de "56 días" (I-06).
+    // 4 columnas.
     <li className="flex flex-col gap-2 px-4 py-3 text-sm transition-colors hover:bg-[var(--color-surface-2)] sm:grid sm:grid-cols-[5.5rem_minmax(12rem,1fr)_5rem_9rem] sm:items-center sm:gap-3">
       <PriorityBadge priority={task.priority} size="sm" className="self-start sm:justify-self-start" />
       <div className="min-w-0">
@@ -309,7 +301,6 @@ function WorkQueueRow({ task, refreshedAt, canAssign }: { task: DashboardTask; r
       </div>
       <time dateTime={task.createdAt} className="font-mono text-xs tabular-nums text-[var(--color-text-subtle)]">{relativeAge(task.createdAt, refreshedAt)}</time>
       <span className="flex flex-wrap items-center gap-1 sm:justify-end sm:justify-self-end">
-        {canAssign && task.operationalItem?.assignable ? <WorkCommitmentControl item={task.operationalItem} /> : null}
         <Button asChild size="sm" variant="link"><Link href={task.href}>{task.ctaLabel}</Link></Button>
       </span>
     </li>

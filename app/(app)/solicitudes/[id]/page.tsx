@@ -28,6 +28,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import {
   buildRequestProgress,
+  CLOSED_REQUEST_STATUSES,
   PURCHASE_ITEM_STATUSES,
   RECEIVE_ITEM_STATUSES,
   DELIVERY_ITEM_STATUSES,
@@ -332,8 +333,9 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
     || can(session, "receiving:register_faena")
   )
 
-  const purchaseCta =
-    purchasableItem && can(session, "purchasing:create_order")
+  const purchaseCta = CLOSED_REQUEST_STATUSES.has(request.status)
+    ? undefined
+    : purchasableItem && can(session, "purchasing:create_order")
       ? (
         <Button size="sm" variant="primary" asChild>
           <Link href={`/compras/nueva?faena=${request.worksiteId}&item=${purchasableItem.id}`}>

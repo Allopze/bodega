@@ -58,67 +58,6 @@ function normalizeItems(items: WorkerStockDeliveryItemInput[]): WorkerStockDeliv
   return [...items].sort((left, right) => left.productId.localeCompare(right.productId))
 }
 
-/**
- * Rechaza una línea sin imputar cuando el producto SÍ tiene saldo pendiente de
- * una solicitud recibida de ese trabajador en esa faena.
- *
- * Es el cierre de la fuga: sin `requestItemId` no corre `deliverItemTx`, el
- * ítem se queda en `received` y su solicitud no puede llegar nunca a `closed`
- * —exige que todos sus ítems terminen `delivered` o `rejected`—, así que la
- * tarea "Entregar …" y la de "Revisar solicitud" quedan en la cola para
- * siempre. En producción 12 de 14 líneas salieron sin imputar y la base no
- * tenía un solo ítem `delivered`. El guardia va acá, en el único punto por el
- * que pasan todas las líneas, y no en el formulario: la pantalla ayuda a
- * elegir, pero quien decide qué se puede escribir es el servicio.
- *
- * Sólo aplica cuando se despacha desde la bodega de la propia faena del
- * trabajador: un ítem trazable no se puede imputar desde otra bodega, así que
- * ahí no hay nada que exigir.
- */
-async function assertNoPendingTraceableItem(
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-  item: WorkerStockDeliveryItemInput,
-  workerId: string,
-  workerWorksiteId: string,
-  sourceWorksiteId: string,
-): Promise<void> {
-  if (sourceWorksiteId !== workerWorksiteId) return
-
-  const candidates = await tx
-    .select({
-      code:      purchaseRequests.code,
-      quantity:  purchaseRequestItems.quantity,
-      received:  sql<number>`coalesce((
-        SELECT sum(${purchaseOrderItems.quantityReceived}) FROM ${purchaseOrderItems}
-        WHERE ${purchaseOrderItems.requestItemId} = ${purchaseRequestItems.id}
-      ), 0)`,
-      delivered: sql<number>`coalesce((
-        SELECT sum(${deliveryItems.quantity}) FROM ${deliveryItems}
-        WHERE ${deliveryItems.requestItemId} = ${purchaseRequestItems.id}
-      ), 0)`,
-    })
-    .from(purchaseRequestItems)
-    .innerJoin(purchaseRequests, eq(purchaseRequests.id, purchaseRequestItems.requestId))
-    .where(sql`
-      ${purchaseRequestItems.productId} = ${item.productId}
-      AND ${purchaseRequests.worksiteId} = ${workerWorksiteId}
-      AND ${purchaseRequestItems.status} IN ('partially_received', 'received', 'partially_delivered')
-      AND (${purchaseRequestItems.workerId} IS NULL OR ${purchaseRequestItems.workerId} = ${workerId})
-    `)
-
-  const pendiente = candidates.find((candidate) => getTraceableDeliveryBalance({
-    requestedQuantity: candidate.quantity,
-    receivedAtFaena:   Number(candidate.received ?? 0),
-    deliveredQuantity: Number(candidate.delivered ?? 0),
-  }) > 0)
-
-  if (pendiente) {
-    throw new Error(
-      `Este producto tiene saldo pendiente de la solicitud ${pendiente.code} en esta faena. Imputa la entrega a esa solicitud: si no, queda abierta indefinidamente.`,
-    )
-  }
-}
-
 async function getTraceableItemState(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   item: WorkerStockDeliveryItemInput,
@@ -126,10 +65,7 @@ async function getTraceableItemState(
   workerWorksiteId: string,
   sourceWorksiteId: string,
 ): Promise<TraceableItemState | null> {
-  if (!item.requestItemId) {
-    await assertNoPendingTraceableItem(tx, item, workerId, workerWorksiteId, sourceWorksiteId)
-    return null
-  }
+  if (!item.requestItemId) return null
 
   if (sourceWorksiteId !== workerWorksiteId) {
     throw new Error("Un ítem trazable debe entregarse desde el stock de la faena del trabajador")

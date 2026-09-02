@@ -4,9 +4,9 @@ import { users } from "./users"
 import { worksites } from "./worksites"
 
 /**
- * Fecha de compromiso para una etapa concreta de una entidad operacional. No
- * reemplaza la fecha nativa de solicitudes, ítems u órdenes de compra: la cola
- * toma la que venza antes. Quién la fijó queda en la bitácora de auditoría.
+ * Legacy histórico. La cola operacional ya no lee ni escribe esta tabla: las
+ * etapas se muestran con su fecha de origen y las responsabilidades nativas de
+ * cada módulo. Se conserva para no borrar registros antiguos.
  */
 export const workItemAssignments = pgTable("work_item_assignments", {
   id:               text("id").primaryKey(),

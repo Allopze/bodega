@@ -13,7 +13,6 @@ import { PriorityBadge } from "@/components/ui/priority-badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn, formatDate, formatDateTime } from "@/lib/utils"
 import type { OperationalQueueResult, OperationalWorkItem } from "@/lib/services/operational-work-queue"
-import { WorkCommitmentControl } from "./work-commitment-control"
 import { Table, TableBody, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 const QUICK_FILTERS = [
@@ -272,7 +271,7 @@ export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
 }
 
 /**
- * Una fila de la cola. Compara la fecha efectiva contra hoy — misma regla que
+ * Una fila de la cola. Compara la fecha de origen contra hoy — misma regla que
  * usa el chip "Vencidas" (auditoría UI/UX 2026-07-29, A-04). El atraso se
  * muestra sólo en el texto de fecha ("Vencida hace N días"); el badge de
  * `statusLabel` ya no cambia de variante por vencimiento (antes saltaba a
@@ -281,8 +280,8 @@ export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
  * texto de fecha que ya lo dice).
  */
 function dueState(item: OperationalWorkItem, today: string) {
-  const overdue = item.effectiveDueAt !== null && item.effectiveDueAt < today
-  const daysLate = overdue ? Math.floor((Date.parse(today) - Date.parse(item.effectiveDueAt!)) / 86_400_000) : 0
+  const overdue = item.sourceDueAt !== null && item.sourceDueAt < today
+  const daysLate = overdue ? Math.floor((Date.parse(today) - Date.parse(item.sourceDueAt!)) / 86_400_000) : 0
   return { overdue, daysLate }
 }
 
@@ -305,16 +304,15 @@ function QueueCard({ item, today }: { item: OperationalWorkItem; today: string }
           {item.blocked ? "Bloqueada · " : ""}{item.statusLabel}
         </Badge>
         <span className="text-[11px] text-[var(--color-text-subtle)]">
-          {item.effectiveDueAt
+          {item.sourceDueAt
             ? overdue
               ? `Vencida hace ${daysLate} día${daysLate === 1 ? "" : "s"}`
-              : `Vence ${formatDate(item.effectiveDueAt)}`
+              : `Vence ${formatDate(item.sourceDueAt)}`
             : "Sin fecha"}
           {" · "}{relativeAge(item.createdAt)}
         </span>
       </div>
       <div className="mt-3 flex items-center justify-between gap-2">
-        <WorkCommitmentControl item={item} />
         <Button asChild size="sm" variant="secondary">
           <Link href={item.href}>{item.ctaLabel}<ArrowRight size={14} /></Link>
         </Button>
@@ -341,22 +339,21 @@ function QueueRow({ item, today }: { item: OperationalWorkItem; today: string })
       </td>
       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{relativeAge(item.createdAt)}</td>
       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">
-        {item.effectiveDueAt ? (
+        {item.sourceDueAt ? (
           <>
-            <time dateTime={item.effectiveDueAt} className={overdue ? "font-medium text-[var(--color-warning-ink)]" : undefined}>
-              {formatDate(item.effectiveDueAt)}
+            <time dateTime={item.sourceDueAt} className={overdue ? "font-medium text-[var(--color-warning-ink)]" : undefined}>
+              {formatDate(item.sourceDueAt)}
             </time>
             <span className="block text-[11px] text-[var(--color-text-subtle)]">
               {overdue
                 ? `Vencida hace ${daysLate} día${daysLate === 1 ? "" : "s"}`
-                : item.dueSource === "commitment" ? "Compromiso" : "Fecha origen"}
+                : "Fecha de origen"}
             </span>
           </>
         ) : "Sin fecha"}
       </td>
       <td className="px-3 py-2.5">
         <div className="flex items-center justify-end gap-1">
-          <WorkCommitmentControl item={item} />
           <Button asChild size="sm" variant="ghost"><Link href={item.href}>{item.ctaLabel}<ArrowRight size={14} /></Link></Button>
         </div>
       </td>

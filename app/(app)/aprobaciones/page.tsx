@@ -18,8 +18,6 @@ import type { ServerListFilterOption } from "@/components/ui/server-list-filters
 import { ApprovalPanel } from "./approval-panel"
 import { canApproveEpp, canSetDispatch } from "./roles"
 import type { ApprovalItem, ApprovalRequest } from "./types"
-import { getOperationalAssignmentRecords } from "@/lib/services/operational-assignments"
-import { buildOperationalWorkItem, operationalAssignmentKey } from "@/lib/services/operational-work-queue"
 
 export const metadata: Metadata = { title: "Aprobaciones" }
 
@@ -33,7 +31,6 @@ export default async function AprobacionesPage({
   let session
   try { session = await requirePermission("approvals:approve") }
   catch { redirect("/forbidden") }
-  const canAssignWork = session.user.permissions.includes("operations:assign_work")
   const sp = await searchParams
   const listParams = parseListParams(sp)
   const selectedRequestId = typeof sp.solicitud === "string" ? sp.solicitud : ""
@@ -107,7 +104,7 @@ export default async function AprobacionesPage({
             ]} />
           }
         />
-        <ApprovalPanel requests={[]} canApproveEpp={false} canSetDispatch={false} canAssignWork={canAssignWork} worksiteOptions={worksiteOptions} />
+        <ApprovalPanel requests={[]} canApproveEpp={false} canSetDispatch={false} worksiteOptions={worksiteOptions} />
         <ServerPagination pagination={pagination} hrefForPage={pageHref} />
       </PageContainer>
     )
@@ -149,8 +146,7 @@ export default async function AprobacionesPage({
   const supplierIds = [...new Set(pendingItems.flatMap((i) => i.suggestedSupplierId ? [i.suggestedSupplierId] : []))]
 
   // Batch load everything else in parallel
-  const worksiteByRequestId = new Map(visible.map((request) => [request.id, request.worksiteId]))
-  const [allAttrs, wsRows, requesterRows, productRows, supplierRows, assignmentRecords] = await Promise.all([
+  const [allAttrs, wsRows, requesterRows, productRows, supplierRows] = await Promise.all([
     pendingItemIds.length > 0
       ? db
           .select({
@@ -187,21 +183,6 @@ export default async function AprobacionesPage({
           .from(suppliers)
           .where(inArray(suppliers.id, supplierIds))
       : Promise.resolve([]),
-
-    canAssignWork
-      ? getOperationalAssignmentRecords(
-          pendingItems.flatMap((item) => {
-            const worksiteId = worksiteByRequestId.get(item.requestId)
-            return worksiteId ? [{
-              sourceType: "purchase_request_item" as const,
-              sourceId: item.id,
-              actionKey: "approve" as const,
-              worksiteId,
-            }] : []
-          }),
-          session,
-        )
-      : Promise.resolve(new Map()),
   ])
 
   // Build lookup maps
@@ -239,28 +220,6 @@ export default async function AprobacionesPage({
           attributes:            attrsMap[item.id] ?? [],
           suggestedSupplierName: item.suggestedSupplierId ? supplierMap[item.suggestedSupplierId] : null,
           supplierHint:          item.supplierHint,
-          operationalItem: canAssignWork
-            ? buildOperationalWorkItem({
-                sourceType: "purchase_request_item",
-                sourceId: item.id,
-                actionKey: "approve",
-                module: "aprobaciones",
-                code: r.code,
-                title: `Aprobar ${product?.name ?? item.productNameFree ?? "ítem solicitado"}`,
-                subtitle: `${r.code} · ${wsMap[r.worksiteId] ?? r.worksiteId}`,
-                worksiteId: r.worksiteId,
-                worksiteName: wsMap[r.worksiteId] ?? r.worksiteId,
-                status: item.status,
-                statusLabel: "Necesita aprobación",
-                priority: item.urgency === "critical" ? "critical" : item.urgency === "high" ? "high" : "normal",
-                blocked: false,
-                createdAt: item.createdAt,
-                sourceDueAt: item.requiredDate,
-                href: `/aprobaciones?solicitud=${r.id}`,
-                ctaLabel: "Aprobar o rechazar",
-                assignable: true,
-              }, assignmentRecords.get(operationalAssignmentKey("purchase_request_item", item.id, "approve")))
-            : undefined,
         }
       })
       result.push({
@@ -316,7 +275,6 @@ export default async function AprobacionesPage({
         // Fuente única de verdad compartida con el backend (./roles) — evita H-1.
         canApproveEpp={canApproveEpp(session.user.roles)}
         canSetDispatch={canSetDispatch(session.user.roles)}
-        canAssignWork={canAssignWork}
         worksiteOptions={worksiteOptions}
       />
       <ServerPagination pagination={pagination} hrefForPage={pageHref} />

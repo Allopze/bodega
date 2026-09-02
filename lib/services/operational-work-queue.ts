@@ -39,7 +39,6 @@ import {
   sstEvaluations,
   sstScheduledFollowups,
   users,
-  workItemAssignments,
   worksiteStock,
   worksites,
 } from "@/db/schema"
@@ -142,25 +141,12 @@ export interface OperationalWorkItem {
   blocked: boolean
   createdAt: string
   sourceDueAt: string | null
-  committedDueAt: string | null
-  effectiveDueAt: string | null
-  dueSource: "origin" | "commitment" | null
   assignee: OperationalAssignee | null
   href: string
   ctaLabel: string
-  /** La fecha de compromiso está disponible sólo para etapas compatibles. */
-  assignable: boolean
 }
 
-/** Compromiso de fecha registrado para una etapa estable. */
-export interface OperationalWorkItemAssignment {
-  committedDueAt: string | null
-}
-
-export type OperationalWorkItemBase = Omit<
-  OperationalWorkItem,
-  "id" | "committedDueAt" | "effectiveDueAt" | "dueSource" | "assignee"
->
+export type OperationalWorkItemBase = Omit<OperationalWorkItem, "id" | "assignee">
 
 export interface OperationalQueueFilters {
   q?: string
@@ -236,34 +222,15 @@ function startOfChileDay(now = new Date()) {
   return CHILE_DATE_FORMATTER.format(now)
 }
 
-function effectiveDue(sourceDueAt: string | null, committedDueAt: string | null): { effectiveDueAt: string | null; dueSource: "origin" | "commitment" | null } {
-  if (!sourceDueAt && !committedDueAt) return { effectiveDueAt: null, dueSource: null }
-  if (!sourceDueAt) return { effectiveDueAt: committedDueAt, dueSource: "commitment" as const }
-  if (!committedDueAt) return { effectiveDueAt: sourceDueAt, dueSource: "origin" as const }
-  return sourceDueAt <= committedDueAt
-    ? { effectiveDueAt: sourceDueAt, dueSource: "origin" as const }
-    : { effectiveDueAt: committedDueAt, dueSource: "commitment" as const }
-}
-
-export function operationalAssignmentKey(sourceType: string, sourceId: string, actionKey: string) {
+function itemId(sourceType: string, sourceId: string, actionKey: string) {
   return `${sourceType}:${sourceId}:${actionKey}`
 }
 
-function itemId(sourceType: string, sourceId: string, actionKey: string) {
-  return operationalAssignmentKey(sourceType, sourceId, actionKey)
-}
-
 /** Construye la misma proyección que usa la cola para mostrar una etapa en su origen. */
-export function buildOperationalWorkItem(
-  base: OperationalWorkItemBase,
-  assignment?: OperationalWorkItemAssignment | null,
-): OperationalWorkItem {
-  const dates = effectiveDue(base.sourceDueAt, assignment?.committedDueAt ?? null)
+export function buildOperationalWorkItem(base: OperationalWorkItemBase): OperationalWorkItem {
   return {
     ...base,
     id: itemId(base.sourceType, base.sourceId, base.actionKey),
-    committedDueAt: assignment?.committedDueAt ?? null,
-    ...dates,
     // Las vistas de origen no proyectan el responsable nativo; la cola sí.
     assignee: null,
   }
@@ -271,7 +238,7 @@ export function buildOperationalWorkItem(
 
 /**
  * Lee una única etapa desde su entidad origen. Evita reconstruir la cola
- * transversal cuando un detalle sólo necesita mostrar su asignación vigente.
+ * transversal cuando un detalle sólo necesita mostrar la etapa vigente.
  */
 export async function getOperationalDetailWorkItem(
   session: Session,
@@ -309,12 +276,6 @@ export async function getOperationalDetailWorkItem(
 
     if (!request || (!canViewAll && request.requesterId !== session.user.id)) return null
     const actionKey = request.status === "draft" ? "complete" : "follow_up"
-    const assignment = await getAssignmentForSource({
-      sourceType: source.sourceType,
-      sourceId: source.sourceId,
-      actionKey,
-      worksiteId: request.worksiteId,
-    })
     return buildOperationalWorkItem({
       sourceType: "purchase_request",
       sourceId: request.id,
@@ -334,8 +295,7 @@ export async function getOperationalDetailWorkItem(
       sourceDueAt: request.requiredDate ?? null,
       href: `/solicitudes/${request.id}`,
       ctaLabel: actionKey === "complete" ? "Completar solicitud" : "Revisar solicitud",
-      assignable: true,
-    }, assignment)
+    })
   }
 
   const [order] = await db
@@ -388,12 +348,6 @@ export async function getOperationalDetailWorkItem(
             : null
 
   if (!stage) return null
-  const assignment = await getAssignmentForSource({
-    sourceType: source.sourceType,
-    sourceId: source.sourceId,
-    actionKey: stage.actionKey,
-    worksiteId: order.worksiteId,
-  })
   return buildOperationalWorkItem({
     sourceType: "purchase_order",
     sourceId: order.id,
@@ -413,22 +367,7 @@ export async function getOperationalDetailWorkItem(
     sourceDueAt: order.estimatedDelivery ?? null,
     href: ("href" in stage && stage.href) || `/compras/${order.id}`,
     ctaLabel: stage.ctaLabel,
-    assignable: true,
-  }, assignment)
-}
-
-async function getAssignmentForSource(reference: OperationalDetailSource & { actionKey: string; worksiteId: string }): Promise<OperationalWorkItemAssignment | null> {
-  const [row] = await db
-    .select({ committedDueAt: workItemAssignments.committedDueAt })
-    .from(workItemAssignments)
-    .where(and(
-      eq(workItemAssignments.sourceType, reference.sourceType),
-      eq(workItemAssignments.sourceId, reference.sourceId),
-      eq(workItemAssignments.actionKey, reference.actionKey),
-      eq(workItemAssignments.worksiteId, reference.worksiteId),
-    ))
-    .limit(1)
-  return row ?? null
+  })
 }
 
 const PRIORITY_RANK: Record<WorkPriority, number> = { critical: 0, high: 1, normal: 2, low: 3 }
@@ -437,13 +376,13 @@ function compareItems(left: OperationalWorkItem, right: OperationalWorkItem, sor
   if (sort === "priority") {
     const rank = PRIORITY_RANK[left.priority] - PRIORITY_RANK[right.priority]
     if (rank !== 0) return rank
-    const leftDue = left.effectiveDueAt ?? "9999-12-31"
-    const rightDue = right.effectiveDueAt ?? "9999-12-31"
+    const leftDue = left.sourceDueAt ?? "9999-12-31"
+    const rightDue = right.sourceDueAt ?? "9999-12-31"
     if (leftDue !== rightDue) return leftDue.localeCompare(rightDue)
   }
   if (sort === "due") {
-    const leftDue = left.effectiveDueAt ?? "9999-12-31"
-    const rightDue = right.effectiveDueAt ?? "9999-12-31"
+    const leftDue = left.sourceDueAt ?? "9999-12-31"
+    const rightDue = right.sourceDueAt ?? "9999-12-31"
     if (leftDue !== rightDue) return leftDue.localeCompare(rightDue)
   }
   const compareCreated = left.createdAt.localeCompare(right.createdAt)
@@ -455,7 +394,7 @@ function sortItems(items: OperationalWorkItem[], sort: OperationalSort) {
   return [...items].sort((left, right) => compareItems(left, right, sort))
 }
 
-type QueueCursor = Pick<OperationalWorkItem, "id" | "priority" | "effectiveDueAt" | "createdAt"> & {
+type QueueCursor = Pick<OperationalWorkItem, "id" | "priority" | "sourceDueAt" | "createdAt"> & {
   version: 1
   sort: OperationalSort
 }
@@ -478,7 +417,7 @@ function decodeCursor(cursor: string | undefined): QueueCursor | null {
       version: 1,
       id: value.id,
       priority: value.priority,
-      effectiveDueAt: value.effectiveDueAt ?? null,
+      sourceDueAt: value.sourceDueAt ?? null,
       createdAt: value.createdAt,
       sort: value.sort,
     } as QueueCursor
@@ -491,7 +430,7 @@ function encodeCursor(item: OperationalWorkItem, sort: OperationalSort) {
     sort,
     id: item.id,
     priority: item.priority,
-    effectiveDueAt: item.effectiveDueAt,
+    sourceDueAt: item.sourceDueAt,
     createdAt: item.createdAt,
   }
   return Buffer.from(JSON.stringify(value)).toString("base64url")
@@ -505,7 +444,7 @@ function compareItemToCursor(item: OperationalWorkItem, cursor: QueueCursor, sor
     ...item,
     id: cursor.id,
     priority: cursor.priority,
-    effectiveDueAt: cursor.effectiveDueAt,
+    sourceDueAt: cursor.sourceDueAt,
     createdAt: cursor.createdAt,
   }
   return compareItems(item, cursorItem, sort)
@@ -587,7 +526,7 @@ function capaQueueSource(
       (${preventionCapaActions.reconciliationStatus} <> 'reconciled') AS blocked, ${preventionCapaActions.createdAt}::text AS created_at,
       LEFT(${preventionCapaActions.targetDate}::text, 10) AS source_due_at, ${preventionCapaActions.responsibleUserId} AS native_assignee_user_id,
       (SELECT ${users.name} FROM ${users} WHERE ${users.id} = ${preventionCapaActions.responsibleUserId} LIMIT 1) AS native_assignee_name,
-      ${opts.href} AS href, ${opts.ctaLabel} AS cta_label, false AS assignable
+      ${opts.href} AS href, ${opts.ctaLabel} AS cta_label
     FROM ${preventionCapaActions}
     INNER JOIN ${worksites} ON ${worksites.id} = ${preventionCapaActions.worksiteId}
     WHERE ${inScope(preventionCapaActions.worksiteId)}
@@ -632,8 +571,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
         LEFT(${purchaseRequests.requiredDate}::text, 10) AS source_due_at,
         ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
         CONCAT('/solicitudes/', ${purchaseRequests.id}) AS href,
-        CASE WHEN ${purchaseRequests.status} = 'draft' THEN 'Completar solicitud' ELSE 'Revisar solicitud' END AS cta_label,
-        true AS assignable
+        CASE WHEN ${purchaseRequests.status} = 'draft' THEN 'Completar solicitud' ELSE 'Revisar solicitud' END AS cta_label
       FROM ${purchaseRequests}
       INNER JOIN ${worksites} ON ${worksites.id} = ${purchaseRequests.worksiteId}
       WHERE ${inScope(purchaseRequests.worksiteId)}
@@ -674,7 +612,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       ${worksites.name} AS worksite_name, ${purchaseRequestItems.status} AS status, 'Necesita aprobación'::text AS status_label,
       ${itemPriority} AS priority, false AS blocked, ${purchaseRequestItems.createdAt}::text AS created_at, LEFT((${itemDue})::text, 10) AS source_due_at,
       ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
-      CONCAT('/aprobaciones?solicitud=', ${purchaseRequests.id}) AS href, 'Aprobar o rechazar'::text AS cta_label, true AS assignable
+      CONCAT('/aprobaciones?solicitud=', ${purchaseRequests.id}) AS href, 'Aprobar o rechazar'::text AS cta_label
     ${itemBase} AND ${purchaseRequestItems.status} = 'requested'
       AND ${approvalQueueFilter(approvalScope)}
   `)
@@ -695,7 +633,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
         false AS blocked, COALESCE(${purchaseRequests.submittedAt}, ${purchaseRequests.createdAt}::text) AS created_at,
         LEFT(${purchaseRequests.requiredDate}::text, 10) AS source_due_at,
         ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
-        CONCAT('/solicitudes/', ${purchaseRequests.id}) AS href, 'Seleccionar cotización ganadora'::text AS cta_label, true AS assignable
+        CONCAT('/solicitudes/', ${purchaseRequests.id}) AS href, 'Seleccionar cotización ganadora'::text AS cta_label
       FROM ${purchaseRequests}
       INNER JOIN ${worksites} ON ${worksites.id} = ${purchaseRequests.worksiteId}
       WHERE ${inScope(purchaseRequests.worksiteId)}
@@ -711,7 +649,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       ${worksites.name} AS worksite_name, ${purchaseRequestItems.status} AS status, 'Listo para comprar'::text AS status_label,
       ${itemPriority} AS priority, false AS blocked, ${purchaseRequestItems.createdAt}::text AS created_at, LEFT((${itemDue})::text, 10) AS source_due_at,
       ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
-      CONCAT('/compras/nueva?faena=', ${purchaseRequests.worksiteId}, '&item=', ${purchaseRequestItems.id}) AS href, 'Crear orden de compra'::text AS cta_label, true AS assignable
+      CONCAT('/compras/nueva?faena=', ${purchaseRequests.worksiteId}, '&item=', ${purchaseRequestItems.id}) AS href, 'Crear orden de compra'::text AS cta_label
     ${itemBase} AND ${purchaseRequestItems.status} IN ('approved', 'pending_purchase')
       -- El predicado canónico de la cola de Compras. Sin él esta fuente ofrecía
       -- "Comprar …" sobre un ítem que ya tenía cobertura activa y el selector de
@@ -727,7 +665,6 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       ${worksites.name} AS worksite_name, ${purchaseRequestItems.status} AS status,
       CASE ${purchaseRequestItems.status}
         WHEN 'partially_received' THEN 'Recibido parcial'
-        WHEN 'received' THEN 'Recibido, por entregar'
         WHEN 'partially_delivered' THEN 'Entrega parcial'
         ELSE ${purchaseRequestItems.status} END AS status_label, ${itemPriority} AS priority, false AS blocked,
       ${purchaseRequestItems.createdAt}::text AS created_at, LEFT((${itemDue})::text, 10) AS source_due_at,
@@ -738,8 +675,8 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       CASE WHEN ${products.isEpp} THEN
         CONCAT('/entregas?faena=', ${purchaseRequests.worksiteId}, '&item=', ${purchaseRequestItems.id})
       ELSE CONCAT('/bodega?faena=', ${purchaseRequests.worksiteId}) END AS href,
-      CASE WHEN ${products.isEpp} THEN 'Registrar entrega' ELSE 'Despachar desde bodega' END::text AS cta_label, true AS assignable
-    ${itemBase} AND ${purchaseRequestItems.status} IN ('partially_received', 'received', 'partially_delivered')
+      CASE WHEN ${products.isEpp} THEN 'Registrar entrega' ELSE 'Despachar desde bodega' END::text AS cta_label
+    ${itemBase} AND ${purchaseRequestItems.status} IN ('partially_received', 'partially_delivered')
       AND EXISTS (
         SELECT 1 FROM ${worksiteStock}
         WHERE ${worksiteStock.productId} = ${purchaseRequestItems.productId}
@@ -761,7 +698,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
     ${worksites.name} AS worksite_name, ${purchaseOrders.status} AS status, ${statusLabel}::text AS status_label,
     'normal'::text AS priority, false AS blocked, ${createdAt} AS created_at, LEFT(${purchaseOrders.estimatedDelivery}::text, 10) AS source_due_at,
     ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
-    ${href} AS href, ${ctaLabel}::text AS cta_label, true AS assignable
+    ${href} AS href, ${ctaLabel}::text AS cta_label
   `
   if (hasPermission(session, "purchasing:send_order")) add("compras", sql`
     SELECT ${orderFields('issue', 'compras', sql`CONCAT('Emitir y enviar ', ${purchaseOrders.code})`, 'OC en borrador', sql`CONCAT('/compras/', ${purchaseOrders.id})`, 'Emitir y enviar', sql`${purchaseOrders.createdAt}::text`)}
@@ -851,7 +788,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
             WHEN 'constancia' THEN 'Dejar constancia'
             WHEN 'enganche' THEN 'Ver cómo se cumple'
             ELSE 'Registrar cumplimiento'
-          END AS cta_label, false AS assignable
+          END AS cta_label
         FROM ${pdtpActivities}
         INNER JOIN ${pdtpPrograms} ON ${pdtpPrograms.id} = ${pdtpActivities.programId}
         -- Misma regla que resolveProgramWorksiteIds: sin membresía declarada el
@@ -901,9 +838,17 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
           AND EXISTS (
             SELECT 1 FROM jsonb_array_elements_text(${pdtpActivities.responsibleSlugs}) AS slug
             WHERE slug.value IN (
+              -- El dueño puede ser el rol del responsable o el rol que opera la
+              -- plataforma por él: los conductores y operadores son el
+              -- responsable declarado de la N°25 y no tienen cuenta, así que sin
+              -- operated_by_role_name esa actividad no producía tarea para
+              -- nadie (D21).
               SELECT ${pdtpResponsibleCatalog.slug} FROM ${pdtpResponsibleCatalog}
               WHERE ${pdtpResponsibleCatalog.isActive}
-                AND ${inArray(pdtpResponsibleCatalog.roleName, session.user.roles)}
+                AND (
+                  ${inArray(pdtpResponsibleCatalog.roleName, session.user.roles)}
+                  OR ${inArray(pdtpResponsibleCatalog.operatedByRoleName, session.user.roles)}
+                )
             )
           )
       `)
@@ -916,7 +861,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
         CASE WHEN ${pdtpObligations.status} = 'overdue' THEN 'high' ELSE 'normal' END AS priority, false AS blocked,
         ${pdtpObligations.createdAt}::text AS created_at, LEFT(${pdtpObligations.dueAt}::text, 10) AS source_due_at,
         ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
-        '/prevencion/pdtp/obligaciones'::text AS href, 'Registrar cumplimiento'::text AS cta_label, false AS assignable
+        '/prevencion/pdtp/obligaciones'::text AS href, 'Registrar cumplimiento'::text AS cta_label
       FROM ${pdtpObligations}
       INNER JOIN ${worksites} ON ${worksites.id} = ${pdtpObligations.worksiteId}
       WHERE ${inScope(pdtpObligations.worksiteId)} AND ${pdtpObligations.status} IN ('pending', 'overdue', 'reported')
@@ -984,7 +929,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       LEFT(${preventionInspectionRuns.scheduledFor}::text, 10) AS source_due_at, ${preventionInspectionRuns.assignedToUserId} AS native_assignee_user_id,
       (SELECT ${users.name} FROM ${users} WHERE ${users.id} = ${preventionInspectionRuns.assignedToUserId} LIMIT 1) AS native_assignee_name,
       CONCAT('/prevencion/inspecciones/', ${preventionInspectionRuns.id}) AS href,
-      CASE WHEN ${preventionInspectionRuns.status} = 'completed' THEN 'Revisar inspección' ELSE 'Abrir inspección' END AS cta_label, false AS assignable
+      CASE WHEN ${preventionInspectionRuns.status} = 'completed' THEN 'Revisar inspección' ELSE 'Abrir inspección' END AS cta_label
     FROM ${preventionInspectionRuns}
     INNER JOIN ${worksites} ON ${worksites.id} = ${preventionInspectionRuns.worksiteId}
     INNER JOIN ${preventionInspectionTemplates} ON ${preventionInspectionTemplates.id} = ${preventionInspectionRuns.templateId}
@@ -1003,7 +948,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       ${sstDocuments.responsibleUserId} AS native_assignee_user_id,
       (SELECT ${users.name} FROM ${users} WHERE ${users.id} = ${sstDocuments.responsibleUserId} LIMIT 1) AS native_assignee_name,
       CONCAT('/prevencion/documentacion/', ${sstDocuments.id}) AS href,
-      CASE WHEN ${sstDocuments.status} = 'en_revision' THEN 'Revisar documento' ELSE 'Abrir documento' END AS cta_label, false AS assignable
+      CASE WHEN ${sstDocuments.status} = 'en_revision' THEN 'Revisar documento' ELSE 'Abrir documento' END AS cta_label
     FROM ${sstDocuments}
     INNER JOIN ${worksites} ON ${worksites.id} = ${sstDocuments.worksiteId}
     WHERE ${inScope(sstDocuments.worksiteId)} AND ${sstDocuments.confidentiality} = 'publico_interno' AND ${sstDocuments.dataClass} = 'operational'
@@ -1018,7 +963,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       CASE WHEN ${ppaSubmissions.esCritica} THEN 'critical' ELSE 'high' END AS priority,
       (${ppaSubmissions.estado} = 'detenido') AS blocked, ${ppaSubmissions.createdAt}::text AS created_at, NULL::text AS source_due_at,
       ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
-      CONCAT('/prevencion/ppa/', ${ppaSubmissions.id}) AS href, 'Revisar caso PPA'::text AS cta_label, false AS assignable
+      CONCAT('/prevencion/ppa/', ${ppaSubmissions.id}) AS href, 'Revisar caso PPA'::text AS cta_label
     FROM ${ppaSubmissions}
     INNER JOIN ${worksites} ON ${worksites.id} = ${ppaSubmissions.worksiteId}
     WHERE ${inScope(ppaSubmissions.worksiteId)} AND ${ppaSubmissions.estado} IN ('detenido', 'en_correccion', 'pendiente_verificacion')
@@ -1031,7 +976,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       CONCAT('Pendiente · ', REPLACE(${sstScheduledFollowups.instancia}, '_', ' ')) AS status_label,
       'normal'::text AS priority, false AS blocked, ${sstEvaluations.createdAt}::text AS created_at, LEFT(${sstScheduledFollowups.fechaProgramada}::text, 10) AS source_due_at,
       ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
-      '/prevencion/evaluaciones'::text AS href, 'Registrar seguimiento'::text AS cta_label, false AS assignable
+      '/prevencion/evaluaciones'::text AS href, 'Registrar seguimiento'::text AS cta_label
     FROM ${sstScheduledFollowups}
     INNER JOIN ${sstEvaluations} ON ${sstEvaluations.id} = ${sstScheduledFollowups.evaluationId}
     INNER JOIN ${worksites} ON ${worksites.id} = ${sstEvaluations.worksiteId}
@@ -1052,7 +997,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
         'Cadencia vencida'::text AS status_label, 'high'::text AS priority, false AS blocked,
         ${preventionCommittees.createdAt}::text AS created_at, NULL::text AS source_due_at,
         ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
-        CONCAT('/prevencion/cphs/', ${preventionCommittees.id}) AS href, 'Convocar sesión'::text AS cta_label, false AS assignable
+        CONCAT('/prevencion/cphs/', ${preventionCommittees.id}) AS href, 'Convocar sesión'::text AS cta_label
       FROM ${preventionCommittees}
       INNER JOIN ${worksites} ON ${worksites.id} = ${preventionCommittees.worksiteId}
       WHERE ${inScope(preventionCommittees.worksiteId)} AND ${preventionCommittees.status} = 'active'
@@ -1076,7 +1021,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
         false AS blocked, ${preventionCommittees.createdAt}::text AS created_at,
         ${preventionCommittees.mandateEndsOn} AS source_due_at,
         ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
-        CONCAT('/prevencion/cphs/', ${preventionCommittees.id}) AS href, 'Revisar mandato'::text AS cta_label, false AS assignable
+        CONCAT('/prevencion/cphs/', ${preventionCommittees.id}) AS href, 'Revisar mandato'::text AS cta_label
       FROM ${preventionCommittees}
       INNER JOIN ${worksites} ON ${worksites.id} = ${preventionCommittees.worksiteId}
       WHERE ${inScope(preventionCommittees.worksiteId)} AND ${preventionCommittees.status} = 'active'
@@ -1098,7 +1043,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
             + INTERVAL '1 month' - INTERVAL '1 day'), 'YYYY-MM-DD')) AS source_due_at,
         ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
         CONCAT('/prevencion/cphs/', ${preventionCommittees.id}, '/programa?programa=', ${preventionCommitteePrograms.id}) AS href,
-        'Cerrar actividad'::text AS cta_label, false AS assignable
+        'Cerrar actividad'::text AS cta_label
       FROM ${preventionCommitteeProgramActivities}
       INNER JOIN ${preventionCommitteePrograms} ON ${preventionCommitteePrograms.id} = ${preventionCommitteeProgramActivities.programId}
       INNER JOIN ${preventionCommittees} ON ${preventionCommittees.id} = ${preventionCommitteePrograms.committeeId}
@@ -1121,7 +1066,7 @@ function unionOperationalSourceBranches(branches: OperationalSourceBranch[]): SQ
       NULL::text AS code, NULL::text AS title, NULL::text AS subtitle, NULL::text AS worksite_id, NULL::text AS worksite_name,
       NULL::text AS status, NULL::text AS status_label, NULL::text AS priority, false AS blocked, NULL::text AS created_at,
       NULL::text AS source_due_at, NULL::text AS native_assignee_user_id, NULL::text AS native_assignee_name,
-      NULL::text AS href, NULL::text AS cta_label, false AS assignable WHERE false
+      NULL::text AS href, NULL::text AS cta_label WHERE false
   `
 }
 
@@ -1165,7 +1110,7 @@ function queueOrderSql(sort: OperationalSort): SQL {
 
 function queueCursorSql(cursor: QueueCursor | null, sort: OperationalSort): SQL {
   if (!cursor || cursor.sort !== sort) return sql`true`
-  const due = cursor.effectiveDueAt ?? "9999-12-31"
+  const due = cursor.sourceDueAt ?? "9999-12-31"
   if (sort === "due") return sql`
     (due_sort > ${due} OR (due_sort = ${due} AND (created_at > ${cursor.createdAt} OR (created_at = ${cursor.createdAt} AND id > ${cursor.id}))))
   `
@@ -1196,8 +1141,8 @@ function quickFilterSql(quick: OperationalQuickFilter, session: Session): SQL | 
     case "unassigned": return sql`assignee_user_id IS NULL`
     case "critical":   return sql`priority = 'critical'`
     case "blocked":    return sql`blocked = true`
-    case "overdue":    return sql`effective_due_at IS NOT NULL AND effective_due_at < ${startOfChileDay()}`
-    case "today":      return sql`effective_due_at = ${startOfChileDay()}`
+    case "overdue":    return sql`source_due_at IS NOT NULL AND source_due_at < ${startOfChileDay()}`
+    case "today":      return sql`source_due_at = ${startOfChileDay()}`
     default:           return null
   }
 }
@@ -1272,38 +1217,12 @@ async function getOperationalWorkQueuePage(
       SELECT
         source.source_type || ':' || source.source_id || ':' || source.action_key AS id,
         source.source_type, source.source_id, source.action_key, source.module, source.code, source.title, source.subtitle, source.worksite_id, source.worksite_name,
-        source.status, source.status_label, source.priority, source.blocked, source.created_at, source.source_due_at, source.href, source.cta_label, source.assignable,
-        LEFT(${workItemAssignments.committedDueAt}::text, 10) AS committed_due_at,
-        CASE
-          WHEN source.source_due_at IS NULL THEN LEFT(${workItemAssignments.committedDueAt}::text, 10)
-          WHEN ${workItemAssignments.committedDueAt} IS NULL THEN source.source_due_at
-          WHEN source.source_due_at <= LEFT(${workItemAssignments.committedDueAt}::text, 10) THEN source.source_due_at
-          ELSE LEFT(${workItemAssignments.committedDueAt}::text, 10)
-        END AS effective_due_at,
-        CASE
-          WHEN source.source_due_at IS NULL AND ${workItemAssignments.committedDueAt} IS NOT NULL THEN 'commitment'
-          WHEN source.source_due_at IS NOT NULL AND (${workItemAssignments.committedDueAt} IS NULL OR source.source_due_at <= LEFT(${workItemAssignments.committedDueAt}::text, 10)) THEN 'origin'
-          WHEN ${workItemAssignments.committedDueAt} IS NOT NULL THEN 'commitment'
-          ELSE NULL
-        END AS due_source,
+        source.status, source.status_label, source.priority, source.blocked, source.created_at, source.source_due_at, source.href, source.cta_label,
         source.native_assignee_user_id AS assignee_user_id,
         source.native_assignee_name AS assignee_name,
         CASE source.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END AS priority_rank,
-        COALESCE(
-          CASE
-            WHEN source.source_due_at IS NULL THEN LEFT(${workItemAssignments.committedDueAt}::text, 10)
-            WHEN ${workItemAssignments.committedDueAt} IS NULL THEN source.source_due_at
-            WHEN source.source_due_at <= LEFT(${workItemAssignments.committedDueAt}::text, 10) THEN source.source_due_at
-            ELSE LEFT(${workItemAssignments.committedDueAt}::text, 10)
-          END,
-          '9999-12-31'
-        ) AS due_sort
+        COALESCE(source.source_due_at, '9999-12-31') AS due_sort
       FROM source_items AS source
-      LEFT JOIN ${workItemAssignments}
-        ON ${workItemAssignments.sourceType} = source.source_type
-        AND ${workItemAssignments.sourceId} = source.source_id
-        AND ${workItemAssignments.actionKey} = source.action_key
-        AND ${workItemAssignments.worksiteId} = source.worksite_id
     ), scoped AS (
       SELECT * FROM enriched WHERE ${scopeFilter}
     ), filtered AS (
@@ -1328,9 +1247,9 @@ async function getOperationalWorkQueuePage(
         'id', id, 'sourceType', source_type, 'sourceId', source_id, 'actionKey', action_key, 'module', module,
         'code', code, 'title', title, 'subtitle', subtitle, 'worksiteId', worksite_id, 'worksiteName', worksite_name,
         'status', status, 'statusLabel', status_label, 'priority', priority, 'blocked', blocked, 'createdAt', created_at,
-        'sourceDueAt', source_due_at, 'committedDueAt', committed_due_at, 'effectiveDueAt', effective_due_at, 'dueSource', due_source,
+        'sourceDueAt', source_due_at,
         'assignee', CASE WHEN assignee_user_id IS NULL OR assignee_name IS NULL THEN NULL ELSE jsonb_build_object('userId', assignee_user_id, 'name', assignee_name) END,
-        'href', href, 'ctaLabel', cta_label, 'assignable', assignable
+        'href', href, 'ctaLabel', cta_label
       ) ORDER BY ${order}) FROM paginated), '[]'::jsonb) AS items
   `)
 

@@ -19,13 +19,12 @@ import { INITIAL_STATE } from "@/lib/form-state"
 const EMPTY_SELECTED_IDS: string[] = []
 
 export function RequestGroup({
-  request, canApproveEpp, canSetDispatch, canAssignWork,
+  request, canApproveEpp, canSetDispatch,
   selectedIds = EMPTY_SELECTED_IDS, onToggleItem, onToggleMany,
 }: {
   request: ApprovalRequest
   canApproveEpp: boolean
   canSetDispatch: boolean
-  canAssignWork: boolean
   /** E-3 · selección en lote, gestionada por ApprovalPanel. */
   selectedIds?: string[]
   onToggleItem?: (id: string) => void
@@ -169,7 +168,6 @@ export function RequestGroup({
               key={item.id}
               item={item}
               canApprove={canApproveThisRequest}
-              canAssignWork={canAssignWork}
               selected={selectedSet.has(item.id)}
               onToggleSelect={canApproveThisRequest && onToggleItem ? onToggleItem : undefined}
             />

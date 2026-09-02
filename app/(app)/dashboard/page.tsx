@@ -74,7 +74,6 @@ function toDashboardTask(item: Awaited<ReturnType<typeof getOperationalWorkQueue
     createdAt: item.createdAt,
     href: item.href,
     ctaLabel: item.ctaLabel,
-    operationalItem: item,
   }
 }
 
@@ -198,7 +197,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               }}
               queueShortcuts={buildQueueShortcuts({ queue, scope, canApprove, canReceive, canDeliver })}
               scope={scope}
-              canAssign={session.user.permissions.includes("operations:assign_work")}
               refreshedAt={refreshedAt}
             />
           ) : scope.view === "resumen" ? (

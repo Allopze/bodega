@@ -30,7 +30,6 @@ export function ReceiptForm({
   canOffice,
   canFaena,
   deliveryMode = "via_oficina",
-  assignment,
 }: {
   purchaseOrderId: string
   orderCode:       string
@@ -41,8 +40,6 @@ export function ReceiptForm({
   canOffice:       boolean
   canFaena:        boolean
   deliveryMode?:   "via_oficina" | "directo_faena"
-  /** Bloque opcional de asignación, servido por la página y pintado junto al envío. */
-  assignment?:     React.ReactNode
 }) {
   const getRemaining = React.useCallback((item: ReceiptOcItem, stage: ReceiptStage) => {
     if (stage === "office") return Math.max(0, item.quantity - item.quantityOfficeReceived)
@@ -406,8 +403,6 @@ export function ReceiptForm({
             <Warning size={14} /> {state.message}
           </p>
         )}
-
-        {assignment}
 
         {/* Submit */}
         <div className="flex items-center justify-end gap-3 pt-2 border-t border-[var(--color-border)]">

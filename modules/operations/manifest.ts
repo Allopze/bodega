@@ -4,11 +4,9 @@ export const operationsModule = {
   id: "operations",
   permissions: [
     "operations:view_work",
-    "operations:assign_work",
   ] as const,
   permissionMeta: {
     "operations:view_work": { id: "p-ops-view-work", description: "Ver la cola operacional priorizada dentro de sus permisos y faenas" },
-    "operations:assign_work": { id: "p-ops-assign-work", description: "Fijar la fecha de compromiso de pendientes operacionales en faenas autorizadas" },
   },
   nav: [
     {
@@ -25,16 +23,11 @@ export const operationsModule = {
   ],
   defaultGrants: [
     { roleSlug: "administrador", permission: "operations:view_work" },
-    { roleSlug: "administrador", permission: "operations:assign_work" },
     { roleSlug: "jefa_chome", permission: "operations:view_work" },
-    { roleSlug: "jefa_chome", permission: "operations:assign_work" },
     { roleSlug: "secretaria", permission: "operations:view_work" },
-    { roleSlug: "secretaria", permission: "operations:assign_work" },
     { roleSlug: "prevencionista", permission: "operations:view_work" },
-    { roleSlug: "prevencionista", permission: "operations:assign_work" },
     { roleSlug: "solicitante_faena", permission: "operations:view_work" },
     { roleSlug: "prevencionista_faena", permission: "operations:view_work" },
     { roleSlug: "jefe_mantencion", permission: "operations:view_work" },
-    { roleSlug: "jefe_mantencion", permission: "operations:assign_work" },
   ],
 } as const satisfies ModuleManifest

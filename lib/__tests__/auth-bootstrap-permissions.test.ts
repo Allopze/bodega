@@ -37,6 +37,10 @@ describe("system-rbac → manifest parity", () => {
     expect(SYSTEM_ROLE_PERMISSIONS.length).toBeGreaterThan(50)
   })
 
+  it("does not expose a generic work assignment permission", () => {
+    expect(SYSTEM_PERMISSIONS.map((permission) => permission.name)).not.toContain("operations:assign_work")
+  })
+
   it("expone un rol por responsable PDTP con cargo propio", () => {
     // La planilla distingue SUP de JT, y Legal/RRHH y Subgerencia de operaciones
     // de la Jefatura; antes los tres colapsaban en otro rol y no se podía asignar

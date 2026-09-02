@@ -424,7 +424,7 @@ describe("ítems sin producto de catálogo", () => {
     expect(request!.status).toBe("closed")
   })
 
-  it("un ítem con producto de catálogo sigue quedando en 'received' a la espera de entrega", async () => {
+  it("cierra la solicitud cuando un producto de catálogo llega completo a faena", async () => {
     const now = new Date().toISOString()
     const requestId = `req-cat-${++ocCounter}`
     const requestItemId = `item-cat-${ocCounter}`
@@ -466,6 +466,10 @@ describe("ítems sin producto de catálogo", () => {
       where: eq(schema.purchaseRequestItems.id, requestItemId),
     })
     expect(item!.status).toBe("received")
+    const request = await inMemoryDb.query.purchaseRequests.findFirst({
+      where: eq(schema.purchaseRequests.id, requestId),
+    })
+    expect(request!.status).toBe("closed")
   })
 
   it("recepcionar un producto de servicio no crea stock ni movimiento de inventario", async () => {

@@ -20,18 +20,14 @@ function item(id: string, priority: OperationalWorkItem["priority"], createdAt: 
     blocked: false,
     createdAt,
     sourceDueAt: null,
-    committedDueAt: null,
-    effectiveDueAt: null,
-    dueSource: null,
     assignee: null,
     href: `/solicitudes/${id}`,
     ctaLabel: "Revisar solicitud",
-    assignable: true,
   }
 }
 
 function baseItem(id: string, priority: OperationalWorkItem["priority"], createdAt: string): OperationalWorkItemBase {
-  const { id: _id, committedDueAt: _committedDueAt, effectiveDueAt: _effectiveDueAt, dueSource: _dueSource, assignee: _assignee, ...base } = item(id, priority, createdAt)
+  const { id: _id, assignee: _assignee, ...base } = item(id, priority, createdAt)
   return base
 }
 
@@ -67,16 +63,15 @@ describe("paginateOperationalWorkItems", () => {
 })
 
 describe("buildOperationalWorkItem", () => {
-  it("keeps the native date when it is earlier than the complementary commitment", () => {
+  it("preserves the date supplied by the source stage", () => {
     const result = buildOperationalWorkItem({
       ...baseItem("approval", "high", "2026-07-01T10:00:00.000Z"),
       sourceDueAt: "2026-07-10",
-    }, { committedDueAt: "2026-07-12" })
+    })
 
     expect(result).toMatchObject({
       id: "purchase_request:approval:follow_up",
-      effectiveDueAt: "2026-07-10",
-      dueSource: "origin",
+      sourceDueAt: "2026-07-10",
       assignee: null,
     })
   })

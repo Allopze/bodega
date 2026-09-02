@@ -93,8 +93,12 @@ describe("requestNextAction", () => {
     expect(requestNextAction("in_purchasing", ["purchased"])).toContain("recepción")
   })
 
-  it("has received items (needs delivery)", () => {
-    expect(requestNextAction("in_purchasing", ["received"])).toContain("entrega")
+  it("does not require worker delivery to complete a fully received acquisition", () => {
+    expect(requestNextAction("in_purchasing", ["received"])).toBe("La adquisición ya fue recibida en faena.")
+  })
+
+  it("closed request with received items has no pending action", () => {
+    expect(requestNextAction("closed", ["received"])).toBe("La solicitud ya no requiere acciones.")
   })
 
   it("closed request with all delivered items", () => {
@@ -205,6 +209,15 @@ describe("buildRequestProgress", () => {
     ])
     expect(result.currentStage).toBe("Entrega")
     expect(result.completedStages).toContain("Recepción")
+  })
+
+  it("marks receipt as complete when a closed request has received items", () => {
+    const result = buildRequestProgress("closed", [
+      { id: "1", productName: "Casco", status: "received", quantity: 5, unitOfMeasure: "unidad" },
+    ])
+    expect(result.currentStage).toBe("Recepción")
+    expect(result.completedStages).toContain("Recepción")
+    expect(result.nextAction).toBe("La solicitud ya no requiere acciones.")
   })
 
   it("formats items with correct labels", () => {

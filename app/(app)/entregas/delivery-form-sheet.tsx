@@ -14,7 +14,6 @@ import {
 } from "@/components/ui/sheet"
 import { DeliveryForm } from "./delivery-form"
 import type {
-  DeliverableEppOption,
   DeliveryStockProductOption,
   DeliveryWorkerOption,
   DeliveryWorksiteOption,
@@ -24,10 +23,9 @@ export function DeliveryFormSheet(props: {
   worksites: DeliveryWorksiteOption[]
   workers: DeliveryWorkerOption[]
   stockProducts: DeliveryStockProductOption[]
-  traceableItems: DeliverableEppOption[]
   today: string
   initialSourceWorksiteId?: string
-  initialRequestItemId?: string
+  initialProductId?: string
 }) {
   const [open, setOpen] = React.useState(false)
 

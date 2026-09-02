@@ -345,13 +345,7 @@ describe("registerWorkerStockDelivery", () => {
     expect(stock?.quantity).toBe(3)
   })
 
-  /**
-   * La fuga que dejaba la cola de pendientes creciendo para siempre: sin
-   * `requestItemId` no corre `deliverItemTx`, el ítem se queda en `received` y
-   * su solicitud no puede llegar nunca a `closed`. En producción 12 de 14
-   * líneas salieron así y no existía un solo ítem `delivered`.
-   */
-  it("rejects an unlinked line when that product still owes a received request item", async () => {
+  it("allows an unlinked line when that product also owes a received request item", async () => {
     const scenario = await makeScenario()
     const now = new Date().toISOString()
     const suffix = String(scenarioNumber)
@@ -362,7 +356,7 @@ describe("registerWorkerStockDelivery", () => {
 
     await inMemoryDb.insert(schema.purchaseRequests).values({
       id: requestId, code: `SOL-LEAK-${suffix}`, worksiteId: scenario.workerWorksiteId,
-      requesterId: USER_ID, urgency: "normal", status: "in_purchasing", createdAt: now, updatedAt: now,
+      requesterId: USER_ID, urgency: "normal", status: "closed", createdAt: now, updatedAt: now,
     })
     await inMemoryDb.insert(schema.purchaseRequestItems).values({
       id: requestItemId, requestId, productId: scenario.firstProductId, quantity: 4,
@@ -381,23 +375,36 @@ describe("registerWorkerStockDelivery", () => {
       unitOfMeasure: "par", sortOrder: 0,
     })
 
-    await expect(registerWorkerStockDelivery({
+    const unlinkedDeliveryId = await registerWorkerStockDelivery({
       sourceWorksiteId: scenario.sourceWorksiteId,
       workerId: scenario.workerId,
       deliveredBy: USER_ID,
       items: [{ productId: scenario.firstProductId, quantity: 2 }],
-    })).rejects.toThrow(`SOL-LEAK-${suffix}`)
+    })
 
-    // Y no dejó rastro: ni entrega, ni movimiento, ni stock descontado.
     const stock = await inMemoryDb.query.worksiteStock.findFirst({
       where: and(
         eq(schema.worksiteStock.worksiteId, scenario.sourceWorksiteId),
         eq(schema.worksiteStock.productId, scenario.firstProductId),
       ),
     })
-    expect(stock?.quantity).toBe(10)
+    expect(stock?.quantity).toBe(8)
 
-    // Imputada, la misma línea sí entra y mueve el ítem de solicitud.
+    const unlinkedDeliveryItem = await inMemoryDb.query.deliveryItems.findFirst({
+      where: eq(schema.deliveryItems.deliveryId, unlinkedDeliveryId),
+    })
+    expect(unlinkedDeliveryItem?.requestItemId).toBeNull()
+
+    const requestItemAfterUnlinkedDelivery = await inMemoryDb.query.purchaseRequestItems.findFirst({
+      where: eq(schema.purchaseRequestItems.id, requestItemId),
+    })
+    expect(requestItemAfterUnlinkedDelivery?.status).toBe("received")
+    const requestAfterUnlinkedDelivery = await inMemoryDb.query.purchaseRequests.findFirst({
+      where: eq(schema.purchaseRequests.id, requestId),
+    })
+    expect(requestAfterUnlinkedDelivery?.status).toBe("closed")
+
+    // La trazabilidad sigue disponible cuando el operador decide imputar.
     await registerWorkerStockDelivery({
       sourceWorksiteId: scenario.sourceWorksiteId,
       workerId: scenario.workerId,

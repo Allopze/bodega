@@ -15,13 +15,11 @@ export function ApprovalPanel({
   requests,
   canApproveEpp,
   canSetDispatch,
-  canAssignWork,
   worksiteOptions = [],
 }: {
   requests:        ApprovalRequest[]
   canApproveEpp:   boolean
   canSetDispatch:  boolean
-  canAssignWork:   boolean
   worksiteOptions?: ServerListFilterOption[]
 }) {
   // E-3: la selección vive aquí, no en cada grupo, para poder aprobar ítems de
@@ -104,7 +102,6 @@ export function ApprovalPanel({
             request={req}
             canApproveEpp={canApproveEpp}
             canSetDispatch={canSetDispatch}
-            canAssignWork={canAssignWork}
             selectedIds={selectedIds}
             onToggleItem={toggleItem}
             onToggleMany={toggleMany}

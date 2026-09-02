@@ -25,14 +25,12 @@ import { formatQty, quantityStep } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import { registerWorkerDeliveryAction } from "./actions"
 import type {
-  DeliverableEppOption,
   DeliveryStockProductOption,
   DeliveryWorkerOption,
   DeliveryWorksiteOption,
 } from "./delivery-form.types"
 
 export type {
-  DeliverableEppOption,
   DeliveryStockProductOption,
   DeliveryWorkerOption,
   DeliveryWorksiteOption,
@@ -41,7 +39,6 @@ export type {
 type DeliveryLine = {
   productId: string
   quantity: number
-  requestItemId: string | null
   notes: string | null
 }
 
@@ -49,31 +46,27 @@ export function DeliveryForm({
   worksites,
   workers,
   stockProducts,
-  traceableItems = [],
   today,
   initialSourceWorksiteId,
-  initialRequestItemId,
+  initialProductId,
   onSuccess,
 }: {
   worksites: DeliveryWorksiteOption[]
   workers: DeliveryWorkerOption[]
   stockProducts: DeliveryStockProductOption[]
-  traceableItems?: DeliverableEppOption[]
   /** Hoy en hora de Chile, calculado en el servidor: no depende del reloj del navegador. */
   today: string
   initialSourceWorksiteId?: string
-  initialRequestItemId?: string
+  initialProductId?: string
   onSuccess?: () => void
 }) {
   const router = useRouter()
   const [state, action] = useActionState<ActionState, FormData>(registerWorkerDeliveryAction, INITIAL_STATE)
-  const initialTraceItem = traceableItems.find((item) => item.requestItemId === initialRequestItemId)
   // Sin intención explícita, se abre en la primera bodega (ordenadas por nombre)
   // que tenga stock **y** dotación activa. Elegir sólo por stock caía en la
   // bodega de oficina, que casi nunca tiene trabajadores de faena, y dejaba el
   // selector de trabajador vacío como si el padrón no existiera.
   const defaultSourceWorksiteId = initialSourceWorksiteId
-    ?? initialTraceItem?.worksiteId
     ?? worksites.find((worksite) => (
       stockProducts.some((product) => product.sourceWorksiteId === worksite.id)
       && workers.some((worker) => worker.worksiteId === worksite.id)
@@ -84,9 +77,8 @@ export function DeliveryForm({
   const [sourceWorksiteId, setSourceWorksiteId] = React.useState(defaultSourceWorksiteId)
   const [workerId, setWorkerId] = React.useState("")
   const [deliveredAt, setDeliveredAt] = React.useState(today)
-  const [pendingProductId, setPendingProductId] = React.useState(initialTraceItem?.productId ?? "")
+  const [pendingProductId, setPendingProductId] = React.useState(initialProductId ?? "")
   const [pendingQuantity, setPendingQuantity] = React.useState("")
-  const [pendingRequestItemId, setPendingRequestItemId] = React.useState(initialTraceItem?.requestItemId ?? "")
   const [lines, setLines] = React.useState<DeliveryLine[]>([])
   const formRef = React.useRef<HTMLFormElement>(null)
   useEnterAdvancesFields(formRef)
@@ -99,27 +91,9 @@ export function DeliveryForm({
     () => workers.filter((worker) => worker.worksiteId === sourceWorksiteId),
     [sourceWorksiteId, workers],
   )
-  const selectedWorker = availableWorkers.find((worker) => worker.id === workerId)
   const selectableProducts = availableStock.filter((product) => !lines.some((line) => line.productId === product.productId))
   const selectedPendingProduct = availableStock.find((product) => product.productId === pendingProductId)
-  const traceOptions = traceableItems.filter((item) => (
-    item.worksiteId === sourceWorksiteId
-    && item.productId === pendingProductId
-    && selectedWorker?.worksiteId === sourceWorksiteId
-  ))
   const pendingStep = quantityStep(selectedPendingProduct?.unitOfMeasure)
-
-  // El vínculo dejó de ser opcional cuando existe: sin él `deliverItemTx` no
-  // corre, el ítem de solicitud se queda en `received` para siempre y la
-  // solicitud nunca puede cerrar. En producción 12 de 14 líneas salieron sin
-  // vincular y ninguna solicitud llegó jamás a `closed`. Con un solo candidato
-  // se elige solo; con varios, el operador tiene que decir cuál.
-  const onlyTraceOption = traceOptions.length === 1 ? traceOptions[0] : undefined
-  React.useEffect(() => {
-    if (onlyTraceOption && !pendingRequestItemId) {
-      setPendingRequestItemId(onlyTraceOption.requestItemId)
-    }
-  }, [onlyTraceOption, pendingRequestItemId])
 
   React.useEffect(() => {
     if (state.ok && state.message) {
@@ -132,7 +106,6 @@ export function DeliveryForm({
       setLines([])
       setPendingProductId("")
       setPendingQuantity("")
-      setPendingRequestItemId("")
       onSuccess?.()
     } else if (state.ok === false && state.message && state !== INITIAL_STATE) {
       toast.error(state.message)
@@ -145,15 +118,10 @@ export function DeliveryForm({
     setLines([])
     setPendingProductId("")
     setPendingQuantity("")
-    setPendingRequestItemId("")
   }
 
   function changeWorker(nextWorkerId: string) {
     setWorkerId(nextWorkerId)
-    // A named request item is traceable only at its worker's faena. Keep the
-    // physical product lines but unlink them if the recipient changes.
-    setLines((current) => current.map((line) => ({ ...line, requestItemId: null })))
-    setPendingRequestItemId("")
   }
 
   function addLine() {
@@ -167,27 +135,16 @@ export function DeliveryForm({
       toast.error(`Stock disponible: ${formatQty(selectedPendingProduct.stockQuantity, selectedPendingProduct.unitOfMeasure)}`)
       return
     }
-    const selectedTrace = traceOptions.find((item) => item.requestItemId === pendingRequestItemId)
-    if (!selectedTrace && traceOptions.length > 0) {
-      toast.error("Este producto tiene saldo pendiente de una solicitud recibida. Elige a cuál se imputa la entrega.")
-      return
-    }
-    if (selectedTrace && quantity > selectedTrace.remainingQuantity) {
-      toast.error(`Saldo trazable: ${formatQty(selectedTrace.remainingQuantity, selectedTrace.unitOfMeasure)}`)
-      return
-    }
     setLines((current) => [
       ...current,
       {
         productId: selectedPendingProduct.productId,
         quantity,
-        requestItemId: selectedTrace?.requestItemId ?? null,
         notes: null,
       },
     ])
     setPendingProductId("")
     setPendingQuantity("")
-    setPendingRequestItemId("")
   }
 
   function updateLineQuantity(productId: string, value: string) {
@@ -282,10 +239,7 @@ export function DeliveryForm({
 
         <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_9rem_auto]">
           <Field label="Producto con stock" htmlFor="deliveryProduct">
-            <Select searchable value={pendingProductId} onValueChange={(value) => {
-              setPendingProductId(value)
-              setPendingRequestItemId("")
-            }} disabled={!sourceWorksiteId || selectableProducts.length === 0}>
+            <Select searchable value={pendingProductId} onValueChange={setPendingProductId} disabled={!sourceWorksiteId || selectableProducts.length === 0}>
               <SelectTrigger id="deliveryProduct">
                 <SelectValue placeholder={sourceWorksiteId ? "Busca producto o SKU" : "Elige una bodega"} />
               </SelectTrigger>
@@ -323,26 +277,6 @@ export function DeliveryForm({
           </Button>
         </div>
 
-        {selectedPendingProduct && traceOptions.length > 0 && (
-          <Field
-            label="Imputar a solicitud recibida"
-            htmlFor="deliveryTraceItem"
-            required
-            helper="Este producto llegó a faena por una solicitud. Sin imputarla, la solicitud queda abierta para siempre."
-          >
-            <Select searchable value={pendingRequestItemId} onValueChange={setPendingRequestItemId}>
-              <SelectTrigger id="deliveryTraceItem"><SelectValue placeholder="Elige la solicitud" /></SelectTrigger>
-              <SelectContent>
-                {traceOptions.map((item) => (
-                  <SelectItem key={item.requestItemId} value={item.requestItemId}>
-                    {item.requestCode} · saldo {formatQty(item.remainingQuantity, item.unitOfMeasure)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-        )}
-
         {lines.length === 0 ? (
           <p className="mt-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3 text-sm text-[var(--color-text-muted)]">
             Agrega uno o más productos con stock para continuar.
@@ -357,7 +291,6 @@ export function DeliveryForm({
                     <p className="truncate text-sm font-medium text-[var(--color-text)]">{product?.productName ?? line.productId}</p>
                     <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
                       {product?.productSku ? `${product.productSku} · ` : ""}Disponible: {formatQty(product?.stockQuantity ?? 0, product?.unitOfMeasure ?? "unidad")}
-                      {line.requestItemId ? " · Vinculado a solicitud" : ""}
                     </p>
                   </div>
                   <Input

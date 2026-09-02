@@ -90,7 +90,11 @@ export async function rollupRequestStatus(
   const pendingReview = ["requested"].some((s) => statuses.includes(s))
   const anyApproved   = statuses.some((s) => ["approved", "pending_purchase", "in_purchase_order", "purchased", "partially_office_received", "office_received", "partially_received", "received", "partially_delivered", "delivered"].includes(s))
   const allRejected   = statuses.every((s) => s === "rejected")
-  const allClosed     = statuses.every((s) => ["rejected", "delivered"].includes(s))
+  // La adquisición termina cuando el ítem llegó completo a faena (`received`).
+  // `delivered` queda soportado para solicitudes antiguas y para el vínculo
+  // explícito de una entrega a trabajador; esa distribución es posterior y no
+  // debe ser requisito para cerrar la compra.
+  const allClosed     = statuses.every((s) => ["rejected", "received", "delivered"].includes(s))
   const anyPurchasing = statuses.some((s) => ["in_purchase_order", "purchased", "partially_office_received", "office_received", "partially_received", "received", "partially_delivered"].includes(s))
   const allResolved   = !pendingReview
 

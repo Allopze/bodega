@@ -26,11 +26,8 @@ import { Button } from "@/components/ui/button"
 import { DownloadSimple, Package, User } from "@phosphor-icons/react/dist/ssr"
 import { and, asc, count, desc, eq, gt, inArray, isNotNull, sql } from "drizzle-orm"
 import { DeliveriesTable, type DeliveryRow } from "./deliveries-table"
-import { type DeliverableEppOption, type DeliveryStockProductOption } from "./delivery-form"
+import type { DeliverableEppOption, DeliveryStockProductOption } from "./delivery-form.types"
 import { DeliveryFormSheet } from "./delivery-form-sheet"
-import { WorkCommitmentControl } from "../pendientes/work-commitment-control"
-import { getOperationalAssignmentRecords } from "@/lib/services/operational-assignments"
-import { buildOperationalWorkItem, operationalAssignmentKey } from "@/lib/services/operational-work-queue"
 import { getTraceableDeliveryBalance } from "@/lib/services/delivery-eligibility"
 
 export const metadata: Metadata = { title: "Entregas" }
@@ -45,7 +42,6 @@ export default async function Page({
   let session
   try { session = await requirePermission("deliveries:view") }
   catch { redirect("/forbidden") }
-  const canAssignWork = session.user.permissions.includes("operations:assign_work")
   const canViewTraceability = session.user.permissions.includes("traceability:view")
   const canCreateDelivery = session.user.permissions.includes("deliveries:create")
 
@@ -130,7 +126,7 @@ export default async function Page({
       .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
       .innerJoin(products, eq(purchaseRequestItems.productId, products.id))
       .where(and(
-        inArray(purchaseRequestItems.status, ["partially_received", "received", "partially_delivered"]),
+        inArray(purchaseRequestItems.status, ["partially_received", "partially_delivered"]),
         isNotNull(purchaseRequestItems.productId),
         eq(products.isEpp, true),
         worksiteScopeSql(session, purchaseRequests.worksiteId),
@@ -248,42 +244,9 @@ export default async function Page({
   // stock pero no trabajadores de faena.
   const initialWorksiteId = initialDeliverable?.worksiteId
     ?? (requestedWorksiteId && visibleWorksiteIds.has(requestedWorksiteId) ? requestedWorksiteId : undefined)
-  const initialDeliverySource = initialDeliverable
-    ? receivedItems.find((item) => item.id === initialDeliverable.requestItemId)
-    : undefined
   const worksiteScopeLabel = requestedWorksiteId && visibleWorksiteIds.has(requestedWorksiteId)
     ? worksiteNameById.get(requestedWorksiteId) ?? "faena seleccionada"
     : "todas las faenas permitidas"
-  const deliveryAssignmentRecords = canAssignWork && initialDeliverySource
-    ? await getOperationalAssignmentRecords([{
-        sourceType: "purchase_request_item",
-        sourceId: initialDeliverySource.id,
-        actionKey: "deliver",
-        worksiteId: initialDeliverySource.requestWorksiteId,
-      }], session)
-    : new Map()
-  const deliveryAssignmentItem = canAssignWork && initialDeliverySource && initialDeliverable
-    ? buildOperationalWorkItem({
-        sourceType: "purchase_request_item",
-        sourceId: initialDeliverySource.id,
-        actionKey: "deliver",
-        module: "entregas",
-        code: initialDeliverySource.requestCode,
-        title: `Entregar ${initialDeliverable.productName}`,
-        subtitle: `${initialDeliverySource.requestCode} · ${worksiteNameById.get(initialDeliverySource.requestWorksiteId) ?? "Faena"}`,
-        worksiteId: initialDeliverySource.requestWorksiteId,
-        worksiteName: worksiteNameById.get(initialDeliverySource.requestWorksiteId) ?? "Faena",
-        status: initialDeliverySource.status,
-        statusLabel: "Lista para entrega",
-        priority: initialDeliverySource.urgency === "critical" ? "critical" : initialDeliverySource.urgency === "high" ? "high" : "normal",
-        blocked: false,
-        createdAt: initialDeliverySource.createdAt,
-        sourceDueAt: initialDeliverySource.requiredDate,
-        href: `/entregas?faena=${initialDeliverySource.requestWorksiteId}&item=${initialDeliverySource.id}`,
-        ctaLabel: "Registrar entrega",
-        assignable: true,
-      }, deliveryAssignmentRecords.get(operationalAssignmentKey("purchase_request_item", initialDeliverySource.id, "deliver")))
-    : null
 
   const visibleHistory = historyRows
   const historyDeliveryIds = visibleHistory.map((delivery) => delivery.id)
@@ -391,10 +354,9 @@ export default async function Page({
                 worksites={worksiteOptions}
                 workers={workerOptions}
                 stockProducts={stockProducts}
-                traceableItems={deliverableItems}
                 today={todayInChile()}
                 initialSourceWorksiteId={initialWorksiteId}
-                initialRequestItemId={initialDeliverable?.requestItemId}
+                initialProductId={initialDeliverable?.productId}
               />
             )}
             <Button asChild variant="secondary" size="sm">
@@ -441,18 +403,6 @@ export default async function Page({
             <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
               Selecciona “Registrar entrega” para entregar uno o más productos. El trabajador se busca en el padrón activo y su faena se muestra junto a su nombre.
             </p>
-          </section>
-        )}
-
-        {deliveryAssignmentItem && (
-          <section className="border-t border-[var(--color-border)] pt-4" aria-labelledby="delivery-assignment-title">
-            <div className="flex flex-col gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <h2 id="delivery-assignment-title" className="text-base font-semibold text-[var(--color-text)]">Responsable de esta entrega</h2>
-                <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">{deliveryAssignmentItem.title}. La fecha del ítem sigue siendo la prioridad operativa.</p>
-              </div>
-              <WorkCommitmentControl item={deliveryAssignmentItem} />
-            </div>
           </section>
         )}
 

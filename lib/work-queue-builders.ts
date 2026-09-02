@@ -32,10 +32,13 @@ export function buildRequestProgress(requestStatus: string, items: RequestProgre
   const statuses = items.map((item) => item.status)
   const currentStage = requestCurrentStage(requestStatus, statuses)
   const currentIndex = Math.max(0, STAGES.indexOf(currentStage))
+  const completedStages = requestStatus === "closed"
+    ? STAGES.slice(0, currentIndex + 1)
+    : STAGES.slice(0, currentIndex)
 
   return {
     currentStage,
-    completedStages: STAGES.slice(0, currentIndex),
+    completedStages,
     nextAction: requestNextAction(requestStatus, statuses),
     items: itemSummaries,
   }

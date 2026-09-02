@@ -7,7 +7,6 @@ import type { WorkTask } from "@/lib/work-queue"
 import { TrabajoView } from "./trabajo-view"
 import type { DashboardScope } from "../dashboard-scope"
 
-// `WorkCommitmentControl` usa el router de Next; en jsdom no hay uno.
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
 }))
@@ -50,7 +49,6 @@ function renderQueue(props: Partial<React.ComponentProps<typeof TrabajoView>> = 
       queueSummary={{ total: 2, critical: 1, overdue: 0, deliveries: 0 }}
       queueShortcuts={[]}
       scope={allWorksitesScope}
-      canAssign={false}
       refreshedAt="2026-07-25T12:00:00.000Z"
       {...props}
     />,

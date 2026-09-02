@@ -95,6 +95,42 @@ describe("DeliveryForm", () => {
     expect(screen.getByText("Agrega uno o más productos con stock para continuar.")).toBeDefined()
   })
 
+  it("no muestra selector de solicitud y permite entregar stock general", () => {
+    render(
+      <DeliveryForm
+        today="2026-08-31"
+        worksites={[{ id: "faena-1", name: "Faena Santa Fe" }]}
+        workers={[{
+          id: "worker-1",
+          name: "Andrea Rojas",
+          worksiteId: "faena-1",
+          worksiteName: "Faena Santa Fe",
+          position: "Operaria",
+          rut: "12.345.678-9",
+        }]}
+        stockProducts={[{
+          sourceWorksiteId: "faena-1",
+          productId: "helmet",
+          productName: "Casco dieléctrico",
+          productSku: "EPP-001",
+          isEpp: true,
+          unitOfMeasure: "unidad",
+          stockQuantity: 4,
+        }]}
+        initialSourceWorksiteId="faena-1"
+      />,
+    )
+
+    fireEvent.change(screen.getAllByTestId("select")[1]!, { target: { value: "worker-1" } })
+    fireEvent.change(screen.getAllByTestId("select")[2]!, { target: { value: "helmet" } })
+    fireEvent.change(screen.getByLabelText("Cantidad (máx. 4 unidades)"), { target: { value: "1" } })
+    fireEvent.click(screen.getByRole("button", { name: "Agregar" }))
+
+    expect(screen.queryByText("Agrega uno o más productos con stock para continuar.")).toBeNull()
+    expect(screen.queryByText(/Vincular a solicitud/)).toBeNull()
+    expect(screen.queryByText(/Sin vínculo de solicitud/)).toBeNull()
+  })
+
   it("permite seleccionar cualquier fecha pasada y limita sólo el futuro", () => {
     render(
       <DeliveryForm
@@ -161,7 +197,6 @@ describe("DeliveryForm", () => {
           unitOfMeasure: "unidad",
           stockQuantity: 4,
         }]}
-        traceableItems={[]}
         initialSourceWorksiteId="faena-1"
       />,
     )
@@ -213,7 +248,6 @@ describe("DeliveryForm", () => {
             stockQuantity: 4,
           },
         ]}
-        traceableItems={[]}
       />,
     )
 

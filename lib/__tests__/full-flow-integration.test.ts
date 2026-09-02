@@ -10,7 +10,7 @@
  * 6. Create Purchase Order (OC) (transitions item to in_purchase_order, creates draft OC)
  * 7. Issue OC (transitions OC to issued)
  * 8. Send OC (transitions OC to sent, item to purchased)
- * 9. Register Receipt of OC items into worksite (transitions item to received, OC to received, request remains in_purchasing until delivery)
+ * 9. Register Receipt of OC items into worksite (transitions item to received, OC and request to closed)
  * 10. Verify worksite stock is correctly incremented
  * 11. Register EPP delivery to a worker and verify stock + traceability
  */
@@ -316,13 +316,14 @@ describe("Full procurement workflow integration", () => {
     })
     expect(finalOrder?.status).toBe("closed")
 
-    // Verify Request item transitioned to "received" and Request header stays in_purchasing until delivery
+    // La adquisición termina al recibir en faena; la entrega al trabajador es
+    // un movimiento posterior de stock.
     const finalReq = await inMemoryDb.query.purchaseRequests.findFirst({
       where: eq(schema.purchaseRequests.id, requestId),
       with: { items: true },
     })
     expect(finalReq?.items[0]?.status).toBe("received")
-    expect(finalReq?.status).toBe("in_purchasing")
+    expect(finalReq?.status).toBe("closed")
 
     // 10. Verify worksite stock is correctly incremented
     const stock = await inMemoryDb.query.worksiteStock.findFirst({

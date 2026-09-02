@@ -30,7 +30,7 @@ export const APPROVAL_ITEM_STATUSES = new Set(["requested"])
 export const PURCHASE_ITEM_STATUSES = new Set(["approved", "pending_purchase"])
 /** Ítem ya comprado que espera llegada — el par de item de una OC recibible. */
 export const RECEIVE_ITEM_STATUSES = new Set(["purchased", "partially_office_received", "partially_received"])
-export const DELIVERY_ITEM_STATUSES = new Set(["partially_received", "received", "partially_delivered"])
+export const DELIVERY_ITEM_STATUSES = new Set(["partially_received", "partially_delivered"])
 export const OFFICE_RECEIVABLE_STATUSES = new Set(["sent", "partially_office_received"])
 export const FAENA_RECEIVABLE_STATUSES = new Set(["partially_office_received", "office_received", "partially_received"])
 export const DIRECT_FAENA_RECEIVABLE_STATUSES = new Set(["sent", "partially_received"])
@@ -94,6 +94,12 @@ export function requestNextAction(requestStatus: string, statuses: string[]): st
   if (statuses.length === 0) return "Agrega ítems para enviar la solicitud."
   if (statuses.every((status) => status === "delivered")) return "Pedido entregado en faena."
   if (statuses.every((status) => status === "rejected")) return "Solicitud cerrada sin ítems aprobados."
+  if (statuses.every((status) => ["received", "delivered", "rejected"].includes(status))) {
+    return requestStatus === "closed"
+      ? "La solicitud ya no requiere acciones."
+      : "La adquisición ya fue recibida en faena."
+  }
+  if (requestStatus === "closed") return "La solicitud ya no requiere acciones."
   if (statuses.some((status) => status === "draft")) return "Adjunta las cotizaciones y envía la solicitud a aprobación."
   if (statuses.some((status) => status === "requested")) return "Aprobación debe revisar los ítems pendientes."
   // A-17: nombraban un módulo en lugar de un siguiente paso, y la pantalla no
@@ -102,8 +108,7 @@ export function requestNextAction(requestStatus: string, statuses: string[]): st
   if (statuses.some((status) => status === "in_purchase_order")) return "En una orden de compra, pendiente de emitir y enviar al proveedor."
   if (statuses.some((status) => ["purchased", "partially_received"].includes(status))) return "Esperando recepción en oficina o bodega."
   if (statuses.some((status) => ["partially_office_received", "office_received"].includes(status))) return "Preparar el despacho pendiente a faena."
-  if (statuses.some((status) => ["received", "partially_delivered"].includes(status))) return "Registra la entrega al trabajador desde el stock disponible."
-  if (CLOSED_REQUEST_STATUSES.has(requestStatus)) return "La solicitud ya no requiere acciones."
+  if (statuses.some((status) => ["partially_received", "partially_delivered"].includes(status))) return "Registra la entrega al trabajador desde el stock disponible."
   return "Revisa el detalle para ver el siguiente paso."
 }
 
