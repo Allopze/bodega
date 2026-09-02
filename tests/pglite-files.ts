@@ -75,6 +75,8 @@ export const pgliteTestFiles = [
   "lib/__tests__/prevention-capa-list.test.ts",
   "lib/__tests__/prevention-cphs-program-persistence.test.ts",
   "lib/__tests__/prevention-cphs-certification-persistence.test.ts",
+  "lib/__tests__/prevention-hygiene-pdtp-accreditation.test.ts",
+  "lib/__tests__/pdtp-worker-onboarding-accreditation.test.ts",
   "lib/__tests__/worksite-lifecycle.test.ts",
   "lib/__tests__/prevention-emergency-list.test.ts",
   "lib/__tests__/emergency-resource-inventory-pglite.test.ts",

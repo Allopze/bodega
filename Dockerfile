@@ -73,6 +73,39 @@ RUN ./node_modules/.bin/esbuild scripts/seed-pdtp-inspection-templates-2026.ts \
     --packages=external \
     --outfile=/tmp/seed-pdtp-inspection-templates.mjs
 
+# Las decisiones de catálogo del programa 2026 (retiros, corresponsables, textos
+# y modo de indicador) son datos del programa, no del código: si no corren en el
+# deploy quedan esperando que alguien las aplique a mano, que es exactamente lo
+# que pasó entre agosto y septiembre de 2026.
+RUN ./node_modules/.bin/esbuild scripts/apply-pdtp-2026-catalog-decisions.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --packages=external \
+    --outfile=/tmp/apply-pdtp-catalog-decisions.mjs
+
+# Los cursos, los planes y las campañas declaran qué actividad del PDTP acredita
+# cada uno. Sin ese dato el conector existe y no hace nada: la sesión se cierra y
+# el programa anual no se entera.
+RUN ./node_modules/.bin/esbuild scripts/apply-pdtp-2026-program-data.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --packages=external \
+    --outfile=/tmp/apply-pdtp-program-data.mjs
+
+# La clasificación por mecanismo (enganche / constancia / compuesta) dice qué
+# actividad espera un evento de otro módulo y qué actividad se marca a mano. El
+# submódulo Constancias filtra por esa columna, así que sin este paso llegaría
+# vacío a producción. Se aplicó a mano en dev en septiembre de 2026 y nunca en
+# producción: acá deja de depender de que alguien se acuerde.
+RUN ./node_modules/.bin/esbuild scripts/apply-pdtp-2026-mechanisms.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --packages=external \
+    --outfile=/tmp/apply-pdtp-mechanisms.mjs
+
 # Mismo motivo que sync-rbac: los one-shots de conciliación OC-factura viven en
 # TypeScript con alias `@/`, y la imagen de producción no lleva ni `tsx` ni el
 # source. Se bundlean acá y se corren con `node` desde `docker-compose.yml`.
@@ -207,6 +240,9 @@ COPY --from=build /app/node_modules/postgres ./node_modules/postgres
 COPY --from=build /tmp/sync-rbac.mjs ./scripts/sync-rbac.mjs
 COPY --from=build /tmp/reconcile-epp-delivery-scale.mjs ./scripts/reconcile-epp-delivery-scale.mjs
 COPY --from=build /tmp/seed-pdtp-inspection-templates.mjs ./scripts/seed-pdtp-inspection-templates.mjs
+COPY --from=build /tmp/apply-pdtp-catalog-decisions.mjs ./scripts/apply-pdtp-catalog-decisions.mjs
+COPY --from=build /tmp/apply-pdtp-program-data.mjs ./scripts/apply-pdtp-program-data.mjs
+COPY --from=build /tmp/apply-pdtp-mechanisms.mjs ./scripts/apply-pdtp-mechanisms.mjs
 COPY --from=build /tmp/invoice-reconciliation/preflight-purchase-invoice-reconciliation.mjs ./scripts/preflight-purchase-invoice-reconciliation.mjs
 COPY --from=build /tmp/invoice-reconciliation/backfill-purchase-invoice-reconciliation.mjs ./scripts/backfill-purchase-invoice-reconciliation.mjs
 COPY --from=build /tmp/invoice-reconciliation/rollback-purchase-invoice-reconciliation-statuses.mjs ./scripts/rollback-purchase-invoice-reconciliation-statuses.mjs

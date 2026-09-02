@@ -38,6 +38,7 @@
     "db:seed-cphs-orientation-course": "tsx --env-file=.env.local scripts/seed-prevention-cphs-orientation-course.ts",
     "pdtp:apply-catalog-decisions": "tsx --env-file=.env.local scripts/apply-pdtp-2026-catalog-decisions.ts",
     "pdtp:apply-mechanisms": "tsx --env-file=.env.local scripts/apply-pdtp-2026-mechanisms.ts",
+    "pdtp:apply-program-data": "tsx --env-file=.env.local scripts/apply-pdtp-2026-program-data.ts",
     "pdtp:bootstrap-2026": "tsx --env-file=.env.local scripts/bootstrap-pdtp-2026.ts",
     "pdtp:reconcile-annual": "tsx --env-file=.env.local scripts/reconcile-pdtp-annual-programs.ts",
     "db:preflight-pdtp-annual": "tsx --env-file-if-exists=.env.local scripts/reconcile-pdtp-annual-programs.ts --apply",

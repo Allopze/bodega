@@ -326,6 +326,66 @@ services:
       - SEED_DRY_RUN=${SEED_DRY_RUN:-}
     command: ["node", "scripts/seed-pdtp-inspection-templates.mjs"]
 
+  # One-shot: aplica al programa PDTP 2026 las decisiones de catálogo de la
+  # jefatura de prevención (retiros, corresponsables, textos y modo de
+  # indicador). Corre en cada deploy y es idempotente por ítem: lo ya aplicado
+  # se omite. `PDTP_DECISIONS_DEPLOY_MODE` evita que el despliegue aborte cuando
+  # el programa del año todavía no existe, no hay administrador, o el programa
+  # ya está firmado y cerrado a ediciones.
+  apply-pdtp-catalog-decisions:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - PDTP_DECISIONS_DEPLOY_MODE=true
+      - PDTP_DECISIONS_ACTOR_USER_ID=${PDTP_DECISIONS_ACTOR_USER_ID:-}
+      - PDTP_DECISIONS_DRY_RUN=${PDTP_DECISIONS_DRY_RUN:-}
+    command: ["node", "scripts/apply-pdtp-catalog-decisions.mjs"]
+
+  # One-shot: declara en cursos, planes de emergencia y campañas qué actividad
+  # del PDTP acredita cada uno. Idempotente por el `code` de cada registro.
+  apply-pdtp-program-data:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - PDTP_PROGRAM_DATA_DEPLOY_MODE=true
+      - PDTP_PROGRAM_DATA_ACTOR_USER_ID=${PDTP_PROGRAM_DATA_ACTOR_USER_ID:-}
+      - PDTP_PROGRAM_DATA_DRY_RUN=${PDTP_PROGRAM_DATA_DRY_RUN:-}
+    command: ["node", "scripts/apply-pdtp-program-data.mjs"]
+
+  # One-shot: clasifica cada actividad activa por mecanismo de acreditación
+  # (enganche / constancia / compuesta). Idempotente por el número de actividad.
+  apply-pdtp-mechanisms:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - PDTP_MECHANISMS_DEPLOY_MODE=true
+      - PDTP_MECHANISMS_DRY_RUN=${PDTP_MECHANISMS_DRY_RUN:-}
+    command: ["node", "scripts/apply-pdtp-mechanisms.mjs"]
+
   # One-shot: diagnóstico READ ONLY de la conciliación OC-factura. No depende de
   # las columnas de proyección, así que deploy-prod.sh lo corre ANTES de migrar
   # para dejar registrado cuánta deriva traía la base. Nunca falla por hallazgos:

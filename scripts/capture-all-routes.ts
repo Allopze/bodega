@@ -21,6 +21,11 @@ import {
   getRedactedDatabaseIdentifier,
   quotePostgresIdentifier,
 } from "../lib/testing/destructive-database-guard"
+import {
+  discoverRoutePatterns,
+  routePatternMatches,
+  type DiscoveredRoutePattern,
+} from "./capture-route-inventory"
 
 /**
  * capture-all-routes.ts  —  Auditoría visual automatizada de Chome
@@ -96,17 +101,21 @@ import {
  *
  * ── ARQUITECTURA ──────────────────────────────────────────────────────────
  *
- *   1. Prepara BD:   resetea esquema → migraciones → inserta fixtures
- *   2. Si hay más de un viewport y no existe build, compila `next build` una
+ *   1. Descubre páginas `page.*` bajo `app/`: agrega páginas estáticas nuevas y exige
+ *      fixtures explícitos para las páginas dinámicas.
+ *   2. Prepara BD:   resetea esquema → migraciones → inserta fixtures
+ *   3. Si hay más de un viewport y no existe build, compila `next build` una
  *      vez para que los servidores paralelos sirvan desde `.next` sin pisarse
- *   3. Inicia server Next.js embebido en CAPTURE_PORT
- *   4. Abre Chromium y captura en 1 o 2 viewports según filtro:
+ *   4. Inicia server Next.js embebido en CAPTURE_PORT
+ *   5. Abre Chromium y captura en 1 o 2 viewports según filtro:
  *       a) Rutas públicas (sin auth)
  *       b) Login como admin.audit@chome.cl
  *       c) Rutas autenticadas
- *   5. Barra de progreso en vivo con spinner, ⏱ tiempo transcurrido y ETA
- *   6. Genera manifest.json con resultados y metadatos
- *   7. Cierra servidor y navegador
+ *      Durante cada captura recoge los enlaces internos renderizados para
+ *      detectar navegación fuera del inventario.
+ *   6. Barra de progreso en vivo con spinner, ⏱ tiempo transcurrido y ETA
+ *   7. Genera manifest.json con resultados, inventario y metadatos
+ *   8. Cierra servidor y navegador
  */
 
 loadEnvConfig(process.cwd())
@@ -199,6 +208,60 @@ const horizontalOverflows: HorizontalOverflow[] = []
 interface ClientError { viewport: string; slug: string; messages: string[] }
 const clientErrors: ClientError[] = []
 
+export type NavigationDiscovery = {
+  path: string
+  sources: string[]
+  matchesAppRoute: boolean
+}
+
+/** Internal links observed while rendering captured pages. */
+const discoveredNavigationSources = new Map<string, Set<string>>()
+
+/**
+ * Normalizes only same-origin HTML links to a pathname. Query strings are
+ * intentionally omitted: a query is usually a view/filter state, not a new
+ * App Router page, and keeping it would create an unbounded route inventory.
+ */
+export function normalizeInternalNavigationPath(href: string, serverBaseUrl: string): string | null {
+  let parsed: URL
+  try {
+    parsed = new URL(href, serverBaseUrl)
+  } catch {
+    return null
+  }
+
+  if (parsed.origin !== new URL(serverBaseUrl).origin) return null
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null
+  if (parsed.pathname.startsWith("/_next/") || parsed.pathname.startsWith("/api/")) {
+    return null
+  }
+  return parsed.pathname === "/" ? "/" : parsed.pathname.replace(/\/+$/, "")
+}
+
+function navigationDiscoveryReport(discovered: readonly DiscoveredRoutePattern[]): NavigationDiscovery[] {
+  return [...discoveredNavigationSources.entries()]
+    .map(([path, sources]) => ({
+      path,
+      sources: [...sources].sort(),
+      matchesAppRoute: discovered.some((pattern) => routePatternMatches(pattern.pattern, path)),
+    }))
+    .sort((a, b) => a.path.localeCompare(b.path))
+}
+
+async function discoverRenderedNavigation(page: Page, serverBaseUrl: string, sourceSlug: string) {
+  const hrefs = await page.locator("a[href]").evaluateAll((anchors) =>
+    anchors.map((anchor) => (anchor as HTMLAnchorElement).href),
+  ).catch(() => [] as string[])
+
+  for (const href of hrefs) {
+    const path = normalizeInternalNavigationPath(href, serverBaseUrl)
+    if (!path) continue
+    const sources = discoveredNavigationSources.get(path) ?? new Set<string>()
+    sources.add(sourceSlug)
+    discoveredNavigationSources.set(path, sources)
+  }
+}
+
 export type ModalTarget = {
   slug: string
   triggerSelector: string
@@ -210,6 +273,8 @@ export type RouteTarget = {
   slug: string
   path: string
   auth: boolean
+  /** `filesystem` targets are generated from new static App Router pages. */
+  source?: "manual" | "filesystem"
   expectedStatus?: number
   /** Exact pathname+query values allowed after navigation. Defaults to `path`. */
   allowedPaths?: string[]
@@ -820,13 +885,111 @@ const moduleAliases: Record<string, string[]> = {
   monitoreo: ["flota-monitoreo"],
 }
 
-export function getCaptureRoutes(filter?: string) {
-  const routes = routeTargets.map((route) => ({ ...route }))
-  if (!filter) return routes
+export type CaptureRouteInventory = {
+  discovered: DiscoveredRoutePattern[]
+  routes: RouteTarget[]
+  autoDiscovered: RouteTarget[]
+  unresolvedDynamicPatterns: DiscoveredRoutePattern[]
+}
+
+let captureRouteInventoryCache: CaptureRouteInventory | undefined
+
+function pathnameOf(routePath: string) {
+  return new URL(routePath, "http://capture-route").pathname
+}
+
+function routePatternToSlug(pattern: string) {
+  if (pattern === "/") return "home"
+  return pattern
+    .split("/")
+    .filter(Boolean)
+    .map((segment) => segment.startsWith("[") ? segment.slice(1, -1) : segment)
+    .join("-")
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "") || "home"
+}
+
+function routeMatchesModuleFilter(pathOrSlug: string, filter: string | undefined) {
+  if (!filter) return true
   const allowedPrefixes = moduleAliases[filter] ?? [filter]
-  return routes.filter(
-    (r) => allowedPrefixes.some((prefix) => r.slug.startsWith(prefix)),
+  return allowedPrefixes.some((prefix) => pathOrSlug.startsWith(prefix))
+}
+
+function patternMatchesAnyRoute(pattern: DiscoveredRoutePattern, routes: readonly RouteTarget[]) {
+  return routes.some((route) => routePatternMatches(pattern.pattern, pathnameOf(route.path)))
+}
+
+/**
+ * Adds capture targets for static pages that are not represented by a manual
+ * target. Query variants, dynamic fixtures and interaction scenarios remain
+ * explicit because they carry business-state intent that the filesystem
+ * cannot infer.
+ */
+export function createDiscoveredCaptureRoutes(
+  patterns: readonly DiscoveredRoutePattern[],
+  declaredRoutes: readonly RouteTarget[],
+): RouteTarget[] {
+  const usedSlugs = new Set(declaredRoutes.map((route) => route.slug))
+  const discovered: RouteTarget[] = []
+
+  for (const pattern of patterns) {
+    if (pattern.dynamic || patternMatchesAnyRoute(pattern, declaredRoutes)) continue
+
+    const baseSlug = routePatternToSlug(pattern.pattern)
+    let slug = baseSlug
+    let suffix = 2
+    while (usedSlugs.has(slug)) {
+      slug = `${baseSlug}-${suffix}`
+      suffix += 1
+    }
+    usedSlugs.add(slug)
+    discovered.push({
+      slug,
+      path: pattern.pattern,
+      auth: pattern.auth,
+      source: "filesystem",
+      notes: `Ruta descubierta automáticamente desde ${pattern.source}.`,
+    })
+  }
+
+  return discovered
+}
+
+/**
+ * Builds the complete route inventory. `unresolvedDynamicPatterns` is kept
+ * separate from automatic targets so a new `[id]` page cannot silently become
+ * a capture of a made-up record.
+ */
+function buildCaptureRouteInventory(): CaptureRouteInventory {
+  const discovered = discoverRoutePatterns(path.join(root, "app"))
+  const declaredRoutes = routeTargets.map((route) => ({ ...route }))
+  const autoDiscovered = createDiscoveredCaptureRoutes(discovered, declaredRoutes)
+  const allRoutes = [...declaredRoutes, ...autoDiscovered]
+  const unresolvedDynamicPatterns = discovered.filter((pattern) =>
+    pattern.dynamic
+    && !patternMatchesAnyRoute(pattern, allRoutes)
   )
+
+  return { discovered, routes: allRoutes, autoDiscovered, unresolvedDynamicPatterns }
+}
+
+export function getCaptureRouteInventory(filter?: string): CaptureRouteInventory {
+  const inventory = captureRouteInventoryCache ??= buildCaptureRouteInventory()
+  if (!filter) return inventory
+
+  return {
+    ...inventory,
+    routes: inventory.routes.filter((route) => routeMatchesModuleFilter(route.slug, filter)),
+    autoDiscovered: inventory.autoDiscovered.filter((route) => routeMatchesModuleFilter(route.slug, filter)),
+    unresolvedDynamicPatterns: inventory.unresolvedDynamicPatterns.filter((pattern) =>
+      routeMatchesModuleFilter(routePatternToSlug(pattern.pattern), filter),
+    ),
+  }
+}
+
+export function getCaptureRoutes(filter?: string) {
+  return getCaptureRouteInventory(filter).routes
 }
 
 export function getCaptureSeedCoverage() {
@@ -978,7 +1141,10 @@ async function captureRouteBatch(
 
 async function main() {
   const captureDbUrl = requireCaptureDatabaseUrl()
-  const routes = getCaptureRoutes(moduleFilter)
+  const routeInventory = getCaptureRouteInventory(moduleFilter)
+  const routes = routeInventory.routes
+
+  discoveredNavigationSources.clear()
 
   // F4: marca el inicio de la corrida ANTES de limpiar y capturar, para que la
   // reconciliación distinga PNG heredados (más viejos que este instante) de
@@ -989,6 +1155,15 @@ async function main() {
     console.log(`📷 Módulo filtrado: "${moduleFilter}" → ${routes.length} rutas específicas`)
   } else {
     console.log(`📷 Capturando todas las rutas (${routes.length} total)`)
+  }
+  if (routeInventory.autoDiscovered.length > 0) {
+    console.log(`🧭 ${routeInventory.autoDiscovered.length} ruta(s) estática(s) descubierta(s) desde app/`)
+  }
+  if (routeInventory.unresolvedDynamicPatterns.length > 0) {
+    console.warn(`⚠ ${routeInventory.unresolvedDynamicPatterns.length} ruta(s) dinámica(s) necesitan un fixture explícito`)
+    for (const pattern of routeInventory.unresolvedDynamicPatterns) {
+      console.warn(`   ${pattern.pattern} ← ${pattern.source}`)
+    }
   }
   if (viewportFilter) {
     console.log(`📐 Viewport filtrado: "${viewportFilter}"`)
@@ -1072,6 +1247,7 @@ async function main() {
   // referencia, ni su archivo borrado aparecer como fichero faltante.
   const prunedInteractions = pruneRedundantInteractionCaptures(root, results)
   const artifactReconciliation = reconcileCaptureArtifacts(outputDir, results, { runStartedAt })
+  const renderedNavigation = navigationDiscoveryReport(routeInventory.discovered)
   const manifest = {
     generatedAt: new Date().toISOString(),
     runStartedAt: new Date(runStartedAt).toISOString(),
@@ -1085,6 +1261,13 @@ async function main() {
       password: "chome2026",
     },
     seedCoverage,
+    routeInventory: {
+      discovered: routeInventory.discovered,
+      autoDiscovered: routeInventory.autoDiscovered,
+      unresolvedDynamicPatterns: routeInventory.unresolvedDynamicPatterns,
+      renderedNavigation,
+      renderedNavigationOutsideApp: renderedNavigation.filter((entry) => !entry.matchesAppRoute),
+    },
     horizontalOverflows,
     clientErrors,
     routes,
@@ -1133,6 +1316,14 @@ async function main() {
     process.exitCode = 1
   } else {
     console.log("Integridad de capturas: sin URL inválida, huérfano, referencia o hash duplicado ✓")
+  }
+  if (routeInventory.unresolvedDynamicPatterns.length > 0) {
+    console.error("\n✖ Inventario de rutas: hay páginas dinámicas sin fixture de captura.")
+    process.exitCode = 1
+  }
+  const navigationOutsideInventory = renderedNavigation.filter((entry) => !entry.matchesAppRoute)
+  if (navigationOutsideInventory.length > 0) {
+    console.warn(`ℹ ${navigationOutsideInventory.length} enlace(s) interno(s) no coinciden con un page.tsx; revisar renderedNavigationOutsideApp en el manifest.`)
   }
   if (prunedInteractions.length > 0) {
     console.warn(`ℹ ${prunedInteractions.length} captura(s) de interacción retiradas por ser idénticas a su ruta canónica: ${prunedInteractions.join(", ")}`)
@@ -6094,6 +6285,7 @@ async function captureRoute(context: BrowserContext, viewport: string, route: Ro
       const finalUrl = page.url()
       const state = resolveCaptureState(route, status, finalUrl)
       const mainOk = isExpectedStatus(status, route) && isSuccessfulCaptureState(state)
+      await discoverRenderedNavigation(page, serverBaseUrl, route.slug)
       const shouldCaptureView = route.captureView !== false
       if (shouldCaptureView) {
         await page.screenshot({ path: screenshot, fullPage: true })

@@ -20,7 +20,9 @@ set -euo pipefail
 # conciliación -> preflight combustible -> migrate -> backfill conciliación (si
 # hace falta) -> backfill referencias OC en DTE (si hace falta) -> backfill
 # lecturas de medidor -> catálogo de reglas de anomalía -> sync-rbac ->
-# catálogo de inspecciones -> recreate app then cron containers ->
+# decisiones de catálogo PDTP -> dato de cursos/planes/campañas ->
+# catálogo de inspecciones -> recreate app then
+# cron containers ->
 # authenticated smoke check -> prune -> smoke público por el túnel.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -411,6 +413,26 @@ run_timed "Rescate de lecturas de odómetro del detalle de proveedor" run_in_pro
 run_timed "Catálogo de reglas de anomalía de combustible" run_in_prod docker compose run --rm seed-fuel-anomaly-rules
 
 run_timed "Syncing RBAC permissions from module manifests" run_in_prod docker compose run --rm sync-rbac
+
+# Las decisiones de la jefatura de prevención sobre el programa 2026 —retiros,
+# corresponsables, textos y qué actividades se miden por cobertura— son datos
+# del programa, no del código. Estuvieron escritas y sin aplicar entre agosto y
+# septiembre de 2026 justamente porque dependían de que alguien se acordara de
+# correr el script: acá dejan de depender de eso.
+#
+# Va antes del catálogo de inspecciones porque decide qué actividades siguen
+# vivas, y antes del swap porque la app debe levantar con el programa ya
+# depurado. No aborta el deploy si el programa todavía no existe o ya está
+# firmado (PDTP_DECISIONS_DEPLOY_MODE); sí lo aborta si falla por otra razón.
+run_timed "Aplicando decisiones de catálogo del PDTP" run_in_prod docker compose run --rm apply-pdtp-catalog-decisions
+
+# Después de las decisiones de catálogo: primero se decide qué actividades viven,
+# luego se declara qué registro acredita cada una.
+run_timed "Declarando el dato de cursos, planes y campañas del PDTP" run_in_prod docker compose run --rm apply-pdtp-program-data
+
+# Después de los retiros: clasifica sólo lo que sigue activo, así que correrlo
+# antes dejaría clasificada una actividad que el paso anterior acaba de retirar.
+run_timed "Clasificando las actividades del PDTP por mecanismo" run_in_prod docker compose run --rm apply-pdtp-mechanisms
 
 # Idempotente y antes del swap: si falla, el deploy aborta con la app anterior
 # todavía en pie. Va acá y no después porque la app debe levantar con el

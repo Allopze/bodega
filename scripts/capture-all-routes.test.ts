@@ -4,11 +4,14 @@ import path from "node:path"
 import { describe, expect, it } from "vitest"
 import {
   cleanOutputDir,
+  createDiscoveredCaptureRoutes,
   getAllowedCapturePaths,
   getCaptureRoutes,
+  getCaptureRouteInventory,
   getCaptureSeedCoverage,
   isCaptureInteractionUrlAllowed,
   isCaptureUrlAllowed,
+  normalizeInternalNavigationPath,
   pruneRedundantInteractionCaptures,
   reconcileCaptureArtifacts,
   requireCaptureDatabaseUrl,
@@ -17,6 +20,11 @@ import {
   shouldUseProductionCaptureServer,
   uniqueInteractionSlug,
 } from "./capture-all-routes"
+import {
+  discoverRoutePatterns,
+  pageFileToRoutePattern,
+  routePatternMatches,
+} from "./capture-route-inventory"
 
 const root = process.cwd()
 
@@ -73,16 +81,60 @@ describe("capture-all-routes route inventory", () => {
    * Antes esto comparaba contra once rutas escritas a mano y por eso no vio
    * nada cuando el script se quedó 27 pantallas atrás (Facturación entera,
    * las GDI, el mapa de riesgos, los equipos de servicio…). El inventario se
-   * deriva de `app/`: una pantalla nueva sin captura rompe la prueba, que es
-   * el único momento en que alguien se acuerda de esta lista.
+   * deriva de `app/`: las páginas estáticas nuevas se agregan solas y las
+   * dinámicas sin un fixture resoluble rompen la prueba.
    */
-  it("declara una captura para cada page.tsx del App Router", () => {
-    const declared = declaredPathnames()
-    const uncovered = discoverRoutePatterns().filter(
-      (pattern) => !declared.some((pathname) => routePatternMatches(pattern, pathname)),
+  it("declara una captura para cada página del App Router", () => {
+    const inventory = getCaptureRouteInventory()
+    const uncoveredStatic = inventory.discovered.filter((pattern) =>
+      !pattern.dynamic
+      && !inventory.routes.some((route) => routePatternMatches(
+        pattern.pattern,
+        new URL(route.path, "http://localhost").pathname,
+      )),
     )
 
-    expect(uncovered).toEqual([])
+    expect(uncoveredStatic).toEqual([])
+    expect(inventory.unresolvedDynamicPatterns).toEqual([])
+  })
+
+  it("auto-descubre páginas estáticas y deja dinámicas sin fixture explícito", () => {
+    const appDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "capture-route-inventory-"))
+    const staticPage = path.join(appDirectory, "(app)", "inventario", "nueva", "page.tsx")
+    const dynamicPage = path.join(appDirectory, "(app)", "inventario", "[id]", "page.tsx")
+    const catchAllPage = path.join(appDirectory, "(app)", "[[...slug]]", "page.tsx")
+
+    try {
+      fs.mkdirSync(path.dirname(staticPage), { recursive: true })
+      fs.mkdirSync(path.dirname(dynamicPage), { recursive: true })
+      fs.mkdirSync(path.dirname(catchAllPage), { recursive: true })
+      fs.writeFileSync(staticPage, "export default function Page() { return null }")
+      fs.writeFileSync(dynamicPage, "export default function Page() { return null }")
+      fs.writeFileSync(catchAllPage, "export default function Page() { return null }")
+
+      const discovered = discoverRoutePatterns(appDirectory)
+      expect(discovered).toEqual([
+        expect.objectContaining({ pattern: "/inventario/[id]", dynamic: true, auth: true }),
+        expect.objectContaining({ pattern: "/inventario/nueva", dynamic: false, auth: true }),
+      ])
+      expect(pageFileToRoutePattern(staticPage, appDirectory)).toBe("/inventario/nueva")
+      expect(routePatternMatches("/inventario/[id]", "/inventario/record-1")).toBe(true)
+      expect(routePatternMatches("/inventario/[id]", "/inventario")).toBe(false)
+
+      const autoRoutes = createDiscoveredCaptureRoutes(discovered, [
+        { slug: "inventario", path: "/inventario", auth: true },
+      ])
+      expect(autoRoutes).toEqual([
+        expect.objectContaining({
+          slug: "inventario-nueva",
+          path: "/inventario/nueva",
+          auth: true,
+          source: "filesystem",
+        }),
+      ])
+    } finally {
+      fs.rmSync(appDirectory, { recursive: true, force: true })
+    }
   })
 
   /*
@@ -103,7 +155,7 @@ describe("capture-all-routes route inventory", () => {
     ]
     const orphans = declaredPathnames().filter(
       (pathname) => !intentional.includes(pathname)
-        && !patterns.some((pattern) => routePatternMatches(pattern, pathname)),
+        && !patterns.some((pattern) => routePatternMatches(pattern.pattern, pathname)),
     )
 
     expect(orphans).toEqual([])
@@ -139,6 +191,17 @@ describe("capture-all-routes route inventory", () => {
       "soporte",
     ]))
     expect(getCaptureSeedCoverage().every((area) => area.fixtures.length > 0)).toBe(true)
+  })
+
+  it("descubre sólo enlaces internos navegables y elimina su estado de vista", () => {
+    const base = "http://127.0.0.1:3127"
+
+    expect(normalizeInternalNavigationPath("/compras?tab=avance#items", base)).toBe("/compras")
+    expect(normalizeInternalNavigationPath(`${base}/dashboard?vista=trabajo`, base)).toBe("/dashboard")
+    expect(normalizeInternalNavigationPath("https://example.com/compras", base)).toBeNull()
+    expect(normalizeInternalNavigationPath("mailto:qa@example.com", base)).toBeNull()
+    expect(normalizeInternalNavigationPath(`${base}/_next/static/chunk.js`, base)).toBeNull()
+    expect(normalizeInternalNavigationPath(`${base}/api/health`, base)).toBeNull()
   })
 
   it("keeps a public TAE result backed by a named capture fixture", () => {
@@ -355,52 +418,9 @@ describe("capture-all-routes artifact reconciliation (C3/F4)", () => {
   })
 })
 
-/** Patrones de ruta de todo `app/`, con los segmentos dinámicos sin resolver. */
-function discoverRoutePatterns() {
-  return [...new Set(
-    findPageFiles(path.join(root, "app"))
-      .map((file) => pageFileToRoutePattern(file))
-      .filter((route): route is string => route !== null),
-  )].sort()
-}
-
 /** Pathnames declarados en el script, ya sin querystring. */
 function declaredPathnames() {
   return getCaptureRoutes().map((route) => new URL(route.path, "http://localhost").pathname)
-}
-
-/**
- * ¿Este pathname concreto es una instancia del patrón? Compara segmento a
- * segmento y deja que `[algo]` haga de comodín, que es lo que evita mantener a
- * mano un ID de ejemplo por cada ruta dinámica.
- */
-function routePatternMatches(pattern: string, pathname: string) {
-  const expected = pattern.split("/")
-  const actual = pathname.split("/")
-  if (expected.length !== actual.length) return false
-  return expected.every((segment, index) =>
-    segment.startsWith("[") ? actual[index]!.length > 0 : segment === actual[index])
-}
-
-function findPageFiles(directory: string): string[] {
-  const entries = fs.readdirSync(directory, { withFileTypes: true })
-  return entries.flatMap((entry) => {
-    const fullPath = path.join(directory, entry.name)
-    if (entry.isDirectory()) return findPageFiles(fullPath)
-    return entry.isFile() && entry.name === "page.tsx" ? [fullPath] : []
-  })
-}
-
-function pageFileToRoutePattern(file: string) {
-  const relative = path.relative(path.join(root, "app"), path.dirname(file))
-  const segments = relative.split(path.sep).filter(Boolean)
-
-  if (segments.some((segment) => segment === "api")) return null
-  if (segments.some((segment) => segment.startsWith("[..."))) return null
-
-  const urlSegments = segments.filter((segment) => !segment.startsWith("("))
-  const route = `/${urlSegments.join("/")}`
-  return route === "/" ? "/" : route.replace(/\/$/, "")
 }
 
 describe("poda de interacciones redundantes", () => {
