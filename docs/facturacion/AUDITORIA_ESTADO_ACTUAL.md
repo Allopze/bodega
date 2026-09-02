@@ -192,9 +192,8 @@ capacidades reales), `AUDITORIA_OCR_FACTURAS_2026-07-30.md`,
   `purchase_order_invoice_items`; `receipts`/`receipt_items`.
 - `dte_documents` / `dte_sync_runs`.
 - `attachments`, `audit_log`, `status_history`, `notifications`,
-  `operational_activity_events`, `work_item_assignments` (responsable por etapa de
-  cualquier entidad, vía `source_type` + `source_id` + `action_key` — **reutilizable**
-  para asignar responsable de cobranza sin tabla nueva).
+  `operational_activity_events`; `work_item_assignments` queda como tabla legacy
+  histórica y no participa en la cola operacional activa.
 - `system_settings` (KV), `code_sequences` (folios internos).
 
 **Lo que falta por completo:** clientes, contratos, servicios ejecutados, estados de
@@ -220,7 +219,7 @@ contrato, faena, período de servicio, pagos y adjuntos: **no**.
 | Normalización de RUT | `lib/rut.ts::cleanRut` |
 | Auditoría | `lib/audit.ts::recordAudit` |
 | Permisos, scope por faena, guardas de acción | `lib/auth/*` |
-| Responsable por etapa | `work_item_assignments` |
+| Actividad operacional histórica | `operational_activity_events` |
 | Adjuntos | `attachments` |
 | Exportaciones con protección anti-fórmula | `lib/reports/export-module/*` |
 | UI: cabecera, filtros persistentes, tabla responsive, KPIs, vacíos, paginación server, confirmaciones | `components/ui/*` |
