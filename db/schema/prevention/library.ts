@@ -24,6 +24,28 @@ export const sstDocumentTypes = pgTable("sst_document_types", {
   defaultValidityMonths:  integer("default_validity_months"),
   requiresApproval:       boolean("requires_approval").notNull().default(true),
   requiresAcknowledgment: boolean("requires_acknowledgment").notNull().default(false),
+  /**
+   * Qué actividades del PDTP acredita un documento de este tipo.
+   *
+   * Va en el **tipo** y no en el documento porque el tipo es el catálogo —igual
+   * que un curso de capacitación frente a una sesión—: declarar que los
+   * "procedimientos de trabajo seguro" acreditan la N°43 vale para todos, sin
+   * configurar uno por uno. Sigue el mismo patrón
+   * que las plantillas de inspección, los cursos, las campañas y los planes de
+   * emergencia: el módulo origen declara su relación con el programa anual.
+   *
+   * Se acredita en dos momentos distintos según la actividad:
+   *
+   *   al publicar una versión   la N°43 (procedimientos de trabajo seguro): el
+   *                             hecho es que existe una versión vigente
+   *   al acumular acuses        la N°36 (difusión de la matriz MIPER): el hecho
+   *                             es que la gente la recibió, así que se mide por
+   *                             cobertura sobre los destinatarios
+   *
+   * `null` significa que el tipo no está vinculado al programa, que es el caso
+   * de la enorme mayoría.
+   */
+  pdtpActivityNumbers: jsonb("pdtp_activity_numbers").$type<number[]>(),
   isActive:      boolean("is_active").notNull().default(true),
   createdAt:     timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   updatedAt:     timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),

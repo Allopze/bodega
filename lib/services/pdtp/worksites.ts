@@ -298,7 +298,24 @@ export async function assertPdtpWorksiteCanOperateProgram(programId: string, wor
   }
 }
 
-/** Parámetros específicos de actividad por faena (R1 sujetos esperados, R2 % meta cobertura). */
+/**
+ * Parámetros específicos de actividad por faena (R1 sujetos esperados, R2 % meta
+ * cobertura). **Primitiva sin política**: escribe la fila y no consulta el estado
+ * del programa.
+ *
+ * No se exporta desde `index.ts` a propósito, igual que
+ * `revokePdtpAccreditationWithClient`. La política vive en
+ * `setPdtpActivityWorksiteAdjustment`, que es lo que usa la aplicación y lo que
+ * decide qué se puede tocar con el programa ya firmado: el padrón sí —dejó de ser
+ * contenido firmado, ver `content-digest.ts`—, la meta y el responsable por faena
+ * no.
+ *
+ * **Blindada el 2026-09-02 (D17).** Antes era una primitiva sin política y podía
+ * escribir contenido firmado sin mirar el estado del programa, que era un hueco
+ * esperando a que alguien la cableara a una acción. Ahora aplica la misma regla
+ * que el ajuste unificado: el padrón se corrige siempre, la meta y el responsable
+ * sólo con el programa editable.
+ */
 export async function setPdtpActivityWorksiteParams(
   activityId: string,
   worksiteId: string,
@@ -315,6 +332,29 @@ export async function setPdtpActivityWorksiteParams(
   const [existing] = await db.select().from(pdtpActivityWorksiteParams)
     .where(and(eq(pdtpActivityWorksiteParams.activityId, activityId), eq(pdtpActivityWorksiteParams.worksiteId, worksiteId)))
     .limit(1)
+
+  // El padrón no es contenido firmado —es cuántos sujetos hay hoy— así que se
+  // corrige con el programa ya firmado. La meta y el responsable por faena sí lo
+  // son. Se compara contra el estado actual: reenviar el mismo valor no es un
+  // cambio.
+  const changesTarget = params.targetCoveragePercent !== undefined
+    && (params.targetCoveragePercent ?? null) !== (existing?.targetCoveragePercent ?? null)
+  const changesResponsible = (params.responsibleSlugs !== undefined
+      && JSON.stringify(params.responsibleSlugs ?? null) !== JSON.stringify(existing?.responsibleSlugs ?? null))
+    || (params.responsibleDisplay !== undefined
+      && (params.responsibleDisplay ?? null) !== (existing?.responsibleDisplay ?? null))
+    || (params.responsibleReason !== undefined
+      && (params.responsibleReason ?? null) !== (existing?.responsibleReason ?? null))
+
+  if (changesTarget || changesResponsible) {
+    const [activity] = await db.select({ programId: pdtpActivities.programId })
+      .from(pdtpActivities).where(eq(pdtpActivities.id, activityId)).limit(1)
+    if (!activity) throw new Error("Actividad PDTP no encontrada.")
+    const [program] = await db.select().from(pdtpPrograms)
+      .where(eq(pdtpPrograms.id, activity.programId)).limit(1)
+    if (!program) throw new Error("Programa PDTP no encontrado.")
+    assertPdtpProgramEditableState(program)
+  }
 
   if (existing) {
     const [updated] = await db.update(pdtpActivityWorksiteParams)
@@ -436,15 +476,8 @@ export async function setPdtpActivityWorksiteAdjustment(
     if (!activity || activity.programId !== program.id) throw new Error("Actividad PDTP no encontrada.")
     if (!worksite) throw new Error("La faena seleccionada no existe o está inactiva.")
     if (activity.status === "retired") throw new Error("Una actividad retirada no admite ajustes por faena.")
-    assertPdtpProgramEditableState(program)
     if (members.length > 0 && !members.some((member) => member.worksiteId === input.worksiteId)) {
       throw new Error("Esta faena no está habilitada para operar este programa PDTP.")
-    }
-
-    if (Array.isArray(responsibleSlugs)) {
-      const catalog = await tx.select({ slug: pdtpResponsibleCatalog.slug }).from(pdtpResponsibleCatalog)
-        .where(inArray(pdtpResponsibleCatalog.slug, responsibleSlugs))
-      if (catalog.length !== responsibleSlugs.length) throw new Error("Uno o más responsables no existen en el catálogo PDTP.")
     }
 
     const [beforeExclusion, beforeParams, beforeSchedule] = await Promise.all([
@@ -462,6 +495,45 @@ export async function setPdtpActivityWorksiteAdjustment(
         eq(pdtpActivityScheduleOverrides.year, program.year),
       )),
     ])
+
+    /**
+     * El programa firmado bloquea su contenido, pero el padrón dejó de ser
+     * contenido (ver `content-digest.ts`): es cuántos sujetos hay hoy, y cambia
+     * cuando entra o sale gente del GES mientras el compromiso firmado sigue
+     * igual. Todo lo demás de esta proyección sí es compromiso —si la actividad
+     * aplica, a quién se le exige, con qué meta, en qué semanas— y sigue
+     * bloqueado tras la firma.
+     *
+     * Se compara contra el estado actual en vez de mirar qué campos trae la
+     * llamada: el formulario envía la proyección completa en cada guardado, así
+     * que la presencia de un campo no distingue un cambio real de un reenvío del
+     * mismo valor.
+     */
+    const previousExclusion = beforeExclusion[0]
+    const currentParams = beforeParams[0]
+    const changesExclusion = input.excluded !== Boolean(previousExclusion)
+      || (input.excluded && previousExclusion?.reason !== reason)
+    const changesTarget = input.targetCoveragePercent !== undefined
+      && (input.targetCoveragePercent ?? null) !== (currentParams?.targetCoveragePercent ?? null)
+    const changesResponsible = input.responsibleSlugs !== undefined && (
+      JSON.stringify(responsibleSlugs ?? null) !== JSON.stringify(currentParams?.responsibleSlugs ?? null)
+      || (responsibleSlugs ? input.responsibleDisplay!.trim() : null) !== (currentParams?.responsibleDisplay ?? null)
+      || (responsibleSlugs ? reason : null) !== (currentParams?.responsibleReason ?? null)
+    )
+    const normalizeSchedule = (cells: Array<{ month: number; week: number; plannedQuantity: number }>) => cells
+      .map((cell) => `${cell.month}:${cell.week}:${cell.plannedQuantity}`).sort().join("|")
+    const changesSchedule = input.schedule !== undefined
+      && normalizeSchedule(input.schedule ?? []) !== normalizeSchedule(beforeSchedule)
+
+    if (changesExclusion || changesTarget || changesResponsible || changesSchedule) {
+      assertPdtpProgramEditableState(program)
+    }
+
+    if (Array.isArray(responsibleSlugs)) {
+      const catalog = await tx.select({ slug: pdtpResponsibleCatalog.slug }).from(pdtpResponsibleCatalog)
+        .where(inArray(pdtpResponsibleCatalog.slug, responsibleSlugs))
+      if (catalog.length !== responsibleSlugs.length) throw new Error("Uno o más responsables no existen en el catálogo PDTP.")
+    }
 
     if (input.excluded) {
       await tx.insert(pdtpActivityWorksiteExclusions).values({
@@ -482,7 +554,7 @@ export async function setPdtpActivityWorksiteAdjustment(
       ))
     }
 
-    const previousParams = beforeParams[0]
+    const previousParams = currentParams
     const paramsValues = {
       expectedSubjectCount: input.expectedSubjectCount !== undefined
         ? input.expectedSubjectCount

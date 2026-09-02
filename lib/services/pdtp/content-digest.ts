@@ -103,6 +103,9 @@ export async function buildPdtpProgramContentSnapshot(
     dueDays: pdtpActivities.dueDays,
     evidenceRequirement: pdtpActivities.evidenceRequirement,
     indicatorMode: pdtpActivities.indicatorMode,
+    // El método se firma —de qué población se mide— aunque el conteo no:
+    // ver la nota de `activityWorksiteAdjustments` más abajo.
+    subjectSource: pdtpActivities.subjectSource,
     targetValue: pdtpActivities.targetValue,
     targetUnit: pdtpActivities.targetUnit,
     notes: pdtpActivities.notes,
@@ -227,18 +230,39 @@ export async function buildPdtpProgramContentSnapshot(
         .orderBy(asc(pdtpActivityWorksiteExclusions.activityId), asc(pdtpActivityWorksiteExclusions.worksiteId))
     : []
 
+  /**
+   * `expected_subject_count` NO entra en la huella, a diferencia del resto de la
+   * fila.
+   *
+   * El programa firmado es un compromiso: a quién se le exige cada actividad
+   * (`responsible*`), con qué meta (`target_coverage_percent`) y en qué faenas
+   * aplica. El padrón es otra cosa: es cuántos sujetos existen hoy —expuestos en
+   * un GES, equipos en la faena—, un hecho del mundo que cambia cuando entra o
+   * sale gente mientras el compromiso sigue igual. Firmarlo obligaba a abrir una
+   * revisión nueva del programa para corregir un conteo, y el propio motivo para
+   * firmarlo no se sostiene: los indicadores no se persisten, se recalculan en
+   * vivo, así que el porcentaje ya se mueve con cada aprobación o revocación.
+   * Congelar sólo el padrón daba una reproducibilidad aparente.
+   *
+   * Por eso además se descartan las filas que quedan sin contenido firmado: si
+   * no se filtraran, cargar un padrón por primera vez seguiría alterando la
+   * huella por la simple aparición de la fila en el arreglo.
+   */
   const activityWorksiteAdjustments = activityIds.length > 0
-    ? await client.select({
+    ? (await client.select({
         activityId: pdtpActivityWorksiteParams.activityId,
         worksiteId: pdtpActivityWorksiteParams.worksiteId,
-        expectedSubjectCount: pdtpActivityWorksiteParams.expectedSubjectCount,
         targetCoveragePercent: pdtpActivityWorksiteParams.targetCoveragePercent,
         responsibleSlugs: pdtpActivityWorksiteParams.responsibleSlugs,
         responsibleDisplay: pdtpActivityWorksiteParams.responsibleDisplay,
         responsibleReason: pdtpActivityWorksiteParams.responsibleReason,
       }).from(pdtpActivityWorksiteParams)
         .where(inArray(pdtpActivityWorksiteParams.activityId, activityIds))
-        .orderBy(asc(pdtpActivityWorksiteParams.activityId), asc(pdtpActivityWorksiteParams.worksiteId))
+        .orderBy(asc(pdtpActivityWorksiteParams.activityId), asc(pdtpActivityWorksiteParams.worksiteId)))
+        .filter((row) => row.targetCoveragePercent !== null
+          || row.responsibleSlugs !== null
+          || row.responsibleDisplay !== null
+          || row.responsibleReason !== null)
     : []
 
   const activityScheduleOverrides = activityIds.length > 0
@@ -271,7 +295,15 @@ export async function buildPdtpProgramContentSnapshot(
     .orderBy(asc(pdtpRoleLegendEntries.code))
 
   return stableJson({
-    schemaVersion: 8,
+    // 10: `subject_source` entra al snapshot. Declarar contra qué población se
+    // mide una actividad es un compromiso del programa, a diferencia de cuántos
+    // sujetos hay hoy, que es un hecho del mundo.
+    // 9: `expected_subject_count` salió de `activityWorksiteAdjustments`. Un
+    // snapshot con otra forma tiene que declarar otra versión, o dos
+    // definiciones distintas comparten número y la huella deja de ser
+    // interpretable. Ninguna firma existente se invalida: no hay programas
+    // firmados (confirmado el 2026-09-02).
+    schemaVersion: 10,
     program,
     approvalSteps,
     activities: activities.map(({ id: _id, ...activity }) => activity),

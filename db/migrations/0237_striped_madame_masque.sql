@@ -1,0 +1,3 @@
+ALTER TABLE "pdtp_activities" ADD COLUMN "subject_source" text;--> statement-breakpoint
+ALTER TABLE "pdtp_activities" ADD CONSTRAINT "pdtp_activities_subject_source_check" CHECK ("pdtp_activities"."subject_source" IS NULL OR "pdtp_activities"."subject_source" IN ('dotacion', 'extintores', 'expuestos_ges', 'equipos', 'trabajadores_nuevos'));--> statement-breakpoint
+ALTER TABLE "pdtp_activities" ADD CONSTRAINT "pdtp_activities_subject_source_requires_coverage" CHECK ("pdtp_activities"."subject_source" IS NULL OR "pdtp_activities"."indicator_mode" = 'coverage');

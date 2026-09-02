@@ -1914,12 +1914,21 @@ export async function transitionInspectionRun(input: unknown, access: Inspection
     const findings = await tx.select().from(preventionInspectionFindings)
       .where(eq(preventionInspectionFindings.runId, run.id))
 
+    // Quién es el ejecutante de registro lo declara la plantilla: en el report de
+    // uso diario lo ejecuta el operador en papel y quien completa el run sólo lo
+    // transcribe, así que el candado de independencia no debe bloquearle la firma
+    // (D04). Ver `assessRunReview`.
+    const [runTemplate] = await tx.select({ executorOfRecord: preventionInspectionTemplates.executorOfRecord })
+      .from(preventionInspectionTemplates)
+      .where(eq(preventionInspectionTemplates.id, run.templateId)).limit(1)
+
     assertInspectionRunTransition({
       fromStatus: run.status as InspectionRunStatus,
       toStatus: data.toStatus,
       permissions: access.permissions,
       actorUserId: access.userId,
       executedByUserId: run.executedByUserId,
+      executorOfRecord: runTemplate?.executorOfRecord ?? null,
       reason: data.reason,
       findings: findings.map((finding) => ({
         id: finding.id,

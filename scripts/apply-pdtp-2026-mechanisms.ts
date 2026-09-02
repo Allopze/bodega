@@ -7,13 +7,18 @@
  * actividades le corresponden, y el motor de acreditación qué actividades
  * espera un evento externo.
  *
- * Los números son los del catálogo 2026. Las actividades retiradas (N°2, 5, 12,
- * 13, 14) no aparecen a propósito.
+ * Los números son los del catálogo 2026. Las actividades retiradas por G12 (N°2,
+ * 5, 12, 13, 14 y 21) no aparecen a propósito.
  *
  *   npm run pdtp:apply-mechanisms
  *   PDTP_MECHANISMS_DRY_RUN=true npm run pdtp:apply-mechanisms
  *
  * Idempotente: reejecutar no cambia nada si ya está aplicado.
+ *
+ * `PDTP_MECHANISMS_DEPLOY_MODE` lo vuelve tolerante a que el programa del año
+ * todavía no exista —el bootstrap del PDTP es un paso aparte—, que en un deploy
+ * es información y no una falla. Corre después de las decisiones de catálogo,
+ * porque clasifica sólo las actividades que siguen activas.
  */
 
 import { and, eq, inArray } from "drizzle-orm"
@@ -22,6 +27,22 @@ import { pdtpActivities, pdtpPrograms } from "@/db/schema"
 
 const PROGRAM_YEAR = 2026
 const DRY_RUN = process.env.PDTP_MECHANISMS_DRY_RUN === "true"
+const DEPLOY_MODE = process.env.PDTP_MECHANISMS_DEPLOY_MODE === "true"
+
+/**
+ * Corta la ejecución por una condición que en el deploy no es un error.
+ *
+ * Invocado a mano el script tiene que fallar fuerte. Dentro del deploy abortar
+ * dejaría la app anterior en pie por un dato que no bloquea el arranque.
+ */
+function bail(reason: string): never {
+  if (DEPLOY_MODE) {
+    console.warn(`  ⚠ ${reason}`)
+    console.warn("    Modo deploy: se omite el paso sin abortar el despliegue.")
+    process.exit(0)
+  }
+  throw new Error(reason)
+}
 
 type Mechanism = "enganche" | "constancia" | "formulario" | "compuesta"
 
@@ -36,13 +57,17 @@ const ENGANCHE = [
   9,           // revisión por la dirección
   11,          // constituir el comité paritario
   19,          // carpeta de requisitos legales → Documentación SST
-  21,          // cierre de incidente
+  // La N°21 salió del programa por la D02: medía lo mismo que las N°66–78.
   24, 27, 29, 33, 34, 39, 40, 41, 64, 65,  // inspecciones y observaciones
-  28,          // revisión y cierre de inspecciones de equipos
+  // El report de uso diario y su revisión: la plantilla `reporte_equipos` los
+  // declara juntos (`PDTP_2026_INSPECTION_SPECS`), así que transcribir el
+  // reporte acredita ambos. Estaban en FORMULARIO por la decisión A7, que se
+  // cerró el 2026-08-23.
+  25, 26,
   35, 36,      // MIPER: matriz y su difusión
   37, 38,      // charlas de seguridad
   43,          // procedimientos de trabajo seguro → Documentación SST
-  44, 45,      // evaluaciones de higiene por mutual
+  45,          // evaluación cuantitativa por mutual → medición de exposición
   46, 47, 48, 49,  // protocolos MINSAL (PREXOR, TMERT, PSICOSOCIAL, UV)
   50,          // trabajadores en programa de vigilancia
   51,          // capacitación según detección de necesidades
@@ -64,8 +89,22 @@ const CONSTANCIA = [
   10,          // condiciones ambientales DS 594 (hasta que exista su checklist)
   20,          // reunión con la empresa mandante
   22,          // control de plataformas de la empresa y del mandante
+  // Revisar y cerrar las inspecciones de equipos. Manual por decisión de
+  // jefatura (2026-08-21) y no por falta de mecanismo: es un acto semanal sobre
+  // el CONJUNTO de inspecciones recibidas, no sobre un run, así que acreditarla
+  // por inspección haría que una semana con doce reportara doce cumplimientos
+  // de una actividad planificada como uno. `PDTP_2026_INSPECTION_SPECS` ya la
+  // excluye con la misma explicación.
+  28,
   30, 31, 32,  // alcotest — no existe módulo
   42,          // control documental de sanitización y plagas
+  // Evaluación cualitativa por mutual. No hay evento cualitativo que enganchar:
+  // `prevention_exposure_measurements.value` es numérico obligatorio en las tres
+  // capas —schema (`db/schema/prevention/hygiene.ts`), Zod
+  // (`lib/validation/prevention-module/hygiene.ts`) y el formulario—, así que
+  // registrarla como medición obligaría a inventar un número que la evaluación
+  // no tiene. Su hermana cuantitativa (N°45) sí engancha.
+  44,
   61,          // certificados de idoneidad de EPP
   79, 80, 81,  // CGRD: constitución, matriz GRD y actas — no existe módulo
   82,          // mapa de riesgo por área
@@ -77,10 +116,15 @@ const COMPUESTA = [
   52,                  // la inducción completa: se cierra con sus componentes
 ] as const
 
-/** 📝 Formulario propio — pendientes de decisión (A7). */
-const FORMULARIO = [
-  25, 26,  // report de uso diario de equipos y su revisión
-] as const
+/**
+ * 📝 Formulario propio — ninguna actividad lo usa hoy.
+ *
+ * Sus dos únicas ocupantes (N°25 y N°26) pasaron a `enganche` cuando la
+ * decisión A7 se cerró el 2026-08-23. El mecanismo se conserva en el vocabulario
+ * porque sigue siendo una opción válida del diseño: una actividad cuyo registro
+ * hay que crear dentro del PDTP porque ningún módulo lo produce.
+ */
+const FORMULARIO = [] as const
 
 const ASSIGNMENTS: Array<{ mechanism: Mechanism; numbers: readonly number[] }> = [
   { mechanism: "enganche", numbers: ENGANCHE },
@@ -92,7 +136,7 @@ const ASSIGNMENTS: Array<{ mechanism: Mechanism; numbers: readonly number[] }> =
 async function main() {
   const programs = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.year, PROGRAM_YEAR))
   const program = programs.find((item) => item.status === "active") ?? programs.at(-1)
-  if (!program) throw new Error(`No existe ningún programa PDTP para el año ${PROGRAM_YEAR}.`)
+  if (!program) bail(`No existe ningún programa PDTP para el año ${PROGRAM_YEAR}.`)
 
   console.log(`Mecanismos PDTP ${PROGRAM_YEAR} — ${DRY_RUN ? "[DRY RUN]" : "escribiendo"}`)
   console.log(`  Programa: ${program.id} (status=${program.status})`)

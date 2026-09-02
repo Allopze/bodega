@@ -1,0 +1,2 @@
+ALTER TABLE "prevention_inspection_templates" ADD COLUMN "executor_of_record" text DEFAULT 'platform_user' NOT NULL;--> statement-breakpoint
+ALTER TABLE "prevention_inspection_templates" ADD CONSTRAINT "prevention_inspection_template_executor_of_record_valid" CHECK ("prevention_inspection_templates"."executor_of_record" IN ('platform_user', 'declared_in_form'));

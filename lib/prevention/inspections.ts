@@ -729,9 +729,17 @@ export function assessRunReview(args: {
   executedByUserId: string | null
   reviewerUserId: string
   findings: { id: string; description: string; criticality: string; capaActionId: string | null }[]
+  /**
+   * De la plantilla. Con `declared_in_form`, `executedByUserId` es quien
+   * transcribió y no quien ejecutó el acto, así que no hay conflicto de
+   * independencia en que firme: la persona que lo hizo está nombrada dentro del
+   * formulario. Ver el comentario del campo en el esquema (D04).
+   */
+  executorOfRecord?: string | null
 }): { allowed: boolean; blockers: ReviewBlocker[] } {
   const blockers: ReviewBlocker[] = []
-  if (args.executedByUserId && args.executedByUserId === args.reviewerUserId) {
+  const transcribed = args.executorOfRecord === "declared_in_form"
+  if (!transcribed && args.executedByUserId && args.executedByUserId === args.reviewerUserId) {
     blockers.push({ kind: "executor_is_reviewer", detail: "Quien ejecutó la inspección no puede revisarla y cerrarla." })
   }
   for (const finding of args.findings) {
@@ -802,6 +810,8 @@ export function assertInspectionRunTransition(args: {
   executedByUserId?: string | null
   reason?: string
   findings?: { id: string; description: string; criticality: string; capaActionId: string | null }[]
+  /** De la plantilla del run; ver `assessRunReview`. */
+  executorOfRecord?: string | null
 }) {
   if (!RUN_TRANSITIONS[args.fromStatus].includes(args.toStatus)) {
     throw new Error(`Transición inválida: ${INSPECTION_RUN_STATUS_LABELS[args.fromStatus] ?? args.fromStatus} → ${INSPECTION_RUN_STATUS_LABELS[args.toStatus] ?? args.toStatus}.`)
@@ -819,6 +829,7 @@ export function assertInspectionRunTransition(args: {
       executedByUserId: args.executedByUserId ?? null,
       reviewerUserId: args.actorUserId,
       findings: args.findings ?? [],
+      executorOfRecord: args.executorOfRecord ?? null,
     })
     if (!review.allowed) {
       throw new Error(`No se puede cerrar la inspección: ${review.blockers.map((item) => item.detail).join(" ")}`)

@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<title>Decisiones tomadas del PDTP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+<style>
+:root{
+ --ground:#eef1f4; --panel:#fbfcfd; --panel-2:#f4f6f8; --ink:#12181f; --ink-2:#3d4854; --ink-3:#6b7885;
+ --rule:#d5dbe1; --rule-2:#e4e9ed; --accent:#0e5a63; --accent-soft:#dceaeb; --accent-ink:#0a464d;
+ --alto:#a33b2a; --medio:#8a6109; --bajo:#67707c;
+ --alto-bg:#f7e2de; --medio-bg:#f6ead2; --bajo-bg:#e7eaee;
+ --jefa:#0e5a63; --tec:#3f5570;
+ --shadow:0 1px 2px rgba(18,24,31,.05),0 4px 14px rgba(18,24,31,.05);
+ --sans:"IBM Plex Sans Condensed",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+ --serif:"IBM Plex Serif",Georgia,"Times New Roman",serif;
+ --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+ --ground:#0d1116; --panel:#151b22; --panel-2:#1b222b; --ink:#e6ebf0; --ink-2:#aeb9c4; --ink-3:#7d8894;
+ --rule:#2a333d; --rule-2:#222a33; --accent:#5cc2cc; --accent-soft:#16323a; --accent-ink:#8ad7de;
+ --alto:#e08a78; --medio:#dcae53; --bajo:#98a3af;
+ --alto-bg:#361f1b; --medio-bg:#33280f; --bajo-bg:#232a32;
+ --jefa:#5cc2cc; --tec:#94aacd;
+ --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.3);
+}}
+:root[data-theme="dark"]{
+ --ground:#0d1116; --panel:#151b22; --panel-2:#1b222b; --ink:#e6ebf0; --ink-2:#aeb9c4; --ink-3:#7d8894;
+ --rule:#2a333d; --rule-2:#222a33; --accent:#5cc2cc; --accent-soft:#16323a; --accent-ink:#8ad7de;
+ --alto:#e08a78; --medio:#dcae53; --bajo:#98a3af;
+ --alto-bg:#361f1b; --medio-bg:#33280f; --bajo-bg:#232a32;
+ --jefa:#5cc2cc; --tec:#94aacd;
+ --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--serif);font-size:15px;line-height:1.6;
+ -webkit-font-smoothing:antialiased}
+.wrap{max-width:940px;margin:0 auto;padding:0 24px 96px}
+h1,h2,h3{font-family:var(--sans);text-wrap:balance;margin:0;line-height:1.15}
+code{font-family:var(--mono);font-size:.86em;background:var(--panel-2);border:1px solid var(--rule-2);
+ border-radius:3px;padding:.08em .32em;color:var(--ink-2)}
+
+header.top{padding:52px 0 30px;border-bottom:2px solid var(--ink)}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+ color:var(--accent);margin:0 0 13px;display:flex;gap:10px;flex-wrap:wrap}
+.eyebrow span{color:var(--ink-3)}
+h1{font-size:clamp(32px,5.5vw,48px);font-weight:700;letter-spacing:-.02em;max-width:20ch}
+.stand{font-size:17px;color:var(--ink-2);max-width:64ch;margin:16px 0 0}
+.tally{display:flex;flex-wrap:wrap;gap:0;margin-top:28px;border:1px solid var(--rule);border-radius:6px;
+ overflow:hidden;background:var(--panel)}
+.tally div{flex:1 1 130px;padding:12px 16px;border-right:1px solid var(--rule-2)}
+.tally div:last-child{border-right:0}
+.tally dt{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.tally dd{margin:3px 0 0;font-family:var(--sans);font-weight:600;font-size:19px;font-variant-numeric:tabular-nums}
+
+.note{margin:32px 0 0;padding:20px 24px;background:var(--accent-soft);border-radius:4px;
+ border-left:3px solid var(--accent)}
+.note p{margin:0;color:var(--accent-ink);max-width:70ch}
+
+.controls{position:sticky;top:0;z-index:5;background:var(--ground);padding:22px 0 12px;
+ border-bottom:1px solid var(--rule);display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:34px}
+.chip{font-family:var(--sans);font-size:13px;font-weight:500;color:var(--ink-2);background:var(--panel);
+ border:1px solid var(--rule);border-radius:20px;padding:6px 13px;cursor:pointer;display:flex;
+ align-items:center;gap:7px;transition:border-color .12s}
+.chip:hover{border-color:var(--ink-3)}
+.chip.on{background:var(--ink);color:var(--ground);border-color:var(--ink)}
+.chip b{font-family:var(--mono);font-size:11px;font-weight:500;opacity:.6;font-variant-numeric:tabular-nums}
+.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+h2.grp{font-family:var(--mono);font-size:12px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
+ margin:46px 0 16px;padding-bottom:8px;border-bottom:1px solid var(--rule);display:flex;
+ justify-content:space-between;align-items:baseline}
+h2.grp .cnt{color:var(--ink-3)}
+h2.g-jefa{color:var(--jefa)}
+h2.g-tec{color:var(--tec)}
+h2.grp[hidden]{display:none}
+
+.list{display:flex;flex-direction:column;gap:14px}
+.dec{background:var(--panel);border:1px solid var(--rule);border-radius:5px;padding:20px 22px;
+ box-shadow:var(--shadow)}
+.dec[hidden]{display:none}
+.dec-h{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+.did{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--ink-3);letter-spacing:.04em;
+ padding-top:2px}
+.dec-h h3{font-size:18px;font-weight:600;flex:1 1 320px}
+.peso{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+ padding:3px 8px;border-radius:3px;white-space:nowrap}
+.p-alto{background:var(--alto-bg);color:var(--alto)}
+.p-medio{background:var(--medio-bg);color:var(--medio)}
+.p-bajo{background:var(--bajo-bg);color:var(--bajo)}
+.q{margin:11px 0 0;font-size:14.5px;line-height:1.55;color:var(--ink-2);max-width:74ch}
+.opts{list-style:none;margin:16px 0 0;padding:0;display:flex;flex-direction:column;gap:1px;
+ background:var(--rule-2);border:1px solid var(--rule-2);border-radius:4px;overflow:hidden}
+.opts li{background:var(--panel-2);padding:11px 14px;display:grid;grid-template-columns:1fr;gap:3px}
+.opts li.sel{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+.opts li.otra .opt-l{color:var(--accent-ink)}
+.opt-l{font-family:var(--sans);font-weight:600;font-size:14px;display:flex;gap:9px;align-items:baseline;
+ flex-wrap:wrap}
+.opts li.sel .opt-l{color:var(--accent-ink)}
+.opt-l em{font-family:var(--mono);font-style:normal;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+ color:var(--accent-ink);border:1px solid currentColor;border-radius:3px;padding:1px 5px}
+.opt-w{font-size:13.5px;line-height:1.5;color:var(--ink-2)}
+.opts li.sel .opt-w{color:var(--accent-ink)}
+.opt-l em.was{color:var(--ink-3);border-color:var(--rule)}
+.dec-f{margin:14px 0 0;padding-top:12px;border-top:1px solid var(--rule-2);font-size:13px;color:var(--ink-3)}
+.fl{font-family:var(--mono);font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);
+ margin-right:7px}
+#empty{padding:38px 20px;text-align:center;color:var(--ink-3)}
+footer.end{margin-top:52px;padding-top:20px;border-top:1px solid var(--rule);font-family:var(--mono);
+ font-size:11.5px;color:var(--ink-3);line-height:1.75}
+@media (max-width:640px){
+ .controls{position:static}
+ .dec{padding:17px 15px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+ <p class="eyebrow">Decisiones tomadas · Programa de Trabajo Preventivo SG-SST 2026 <span>2 de septiembre de 2026</span></p>
+ <h1>Decisiones tomadas del PDTP</h1>
+ <p class="stand">Las 22 decisiones que quedaron abiertas tras auditar los mecanismos de acreditación, resueltas el 2 de septiembre. Cada una con la opción elegida y qué destraba.</p>
+ <dl class="tally">
+  <div><dt>Decisiones</dt><dd>22</dd></div>
+  <div><dt>De la jefa</dt><dd>13</dd></div>
+  <div><dt>Técnicas</dt><dd>9</dd></div>
+  <div><dt>Peso alto</dt><dd>6</dd></div>
+  <div><dt>Resueltas</dt><dd>22 de 22</dd></div>
+ </dl>
+</header>
+
+<div class="note">
+ <p><strong>Por dónde empezar:</strong> la D01 destraba las otras 21. Mientras el programa 2026 siga en borrador no se puede registrar cumplimiento de ninguna actividad, así que ninguna de las demás decisiones se puede verificar en la práctica.</p>
+ <p style="margin-top:11px"><strong>Dos cambiaron de forma:</strong> en la D04 y la D21 no se eligió ninguna de las opciones planteadas, y la resolución exige código que no estaba previsto. El detalle está en <code>PDTP_DECISIONES_TOMADAS_2026-09-02.md</code>.</p>
+</div>
+
+<div class="controls">
+ <button class="chip on" data-f="todas">Todas<b>22</b></button>
+ <button class="chip" data-f="jefa">Jefa de prevención<b>13</b></button>
+ <button class="chip" data-f="tec">Equipo técnico<b>9</b></button>
+ <button class="chip" data-f="alto">Peso alto<b>6</b></button>
+ <button class="chip" data-f="bloq">Destraban trabajo<b>15</b></button>
+</div>
+
+<h2 class="grp g-jefa" id="h-jefa">Jefa de prevención <span class="cnt">normativa y operación</span></h2>
+<div class="list" id="l-jefa">
+<article class="dec" data-d="jefa" data-peso="alto" data-bloq="si">
+ <header class="dec-h">
+  <span class="did">D01</span>
+  <h3>Desde cuándo arranca el programa 2026</h3>
+  <span class="peso p-alto">alto</span>
+ </header>
+ <p class="q">Activar el programa sella su huella de contenido y define qué períodos entran al cómputo. Arrancar desde enero cuenta como vencido todo lo que nunca se registró.</p>
+ <ul class="opts">
+  <li class="sel">
+   <span class="opt-l">Desde el mes en curso<em>decidida</em></span>
+   <span class="opt-w">Arranca limpio. Se pierde del cómputo enero a agosto, que de todos modos no tiene ni una ejecución registrada.</span>
+  </li><li class="">
+   <span class="opt-l">Desde enero</span>
+   <span class="opt-w">Refleja la verdad —nunca se registró nada— pero cada responsable recibe de golpe lo vencido: 46 actividades el PRF de Cholguán, 13 el administrador de contrato, 11 el jefe de terreno.</span>
+  </li><li class="">
+   <span class="opt-l">Escalonado por faena</span>
+   <span class="opt-w">Cada faena arranca cuando su PRF está listo. Más justo, pero el programa es uno y su activación también.</span>
+  </li>
+  
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> Las 87. Sin programa activo no se registra nada.</footer>
+</article>
+<article class="dec" data-d="jefa" data-peso="alto" data-bloq="si">
+ <header class="dec-h">
+  <span class="did">D02</span>
+  <h3>N°21 — retirarla o conservarla</h3>
+  <span class="peso p-alto">alto</span>
+ </header>
+ <p class="q">"Informes, cierres y seguimiento de accidentes" es exactamente la suma de las N°66 a 78, que desde agosto se acreditan solas desde el módulo de Incidentes. Conservarla cuenta dos veces el mismo trabajo.</p>
+ <ul class="opts">
+  <li class="sel">
+   <span class="opt-l">Retirarla<em>decidida</em></span>
+   <span class="opt-w">Con motivo y fecha efectiva en el change log, como las otras cinco bajas. El trabajo sigue midiéndose, una sola vez.</span>
+  </li><li class="">
+   <span class="opt-l">Conservarla</span>
+   <span class="opt-w">Si la jefatura la quiere como resumen visible del bloque, se queda — pero hay que aceptar que infla el denominador de dos responsables.</span>
+  </li>
+  
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> El denominador del PRF y del administrador de contrato.</footer>
+</article>
+<article class="dec" data-d="jefa" data-peso="alto" data-bloq="si">
+ <header class="dec-h">
+  <span class="did">D03</span>
+  <h3>A qué instrumento corresponden la N°40 y la N°41</h3>
+  <span class="peso p-alto">alto</span>
+ </header>
+ <p class="q">Venían cableadas a observaciones de Camión Ampliroll y Maquinaria Pesada, que son conductuales por operador — la descripción de la N°39, no de ellas. El código ya las soltó y las apunta a instrumentos nuevos, pero la decisión no está escrita.</p>
+ <ul class="opts">
+  <li class="sel">
+   <span class="opt-l">Confirmar lo que el código propone<em>decidida</em></span>
+   <span class="opt-w">N°40 → inspección de área de trabajo, N°41 → caminata de seguridad. Es lo que dice el texto de cada actividad.</span>
+  </li><li class="">
+   <span class="opt-l">Reasignar los formularios conductuales</span>
+   <span class="opt-w">Si el ampliroll y la maquinaria pesada corresponden a la N°39, declararlo ahí y dejar la 40/41 con los instrumentos nuevos.</span>
+  </li><li class="">
+   <span class="opt-l">Dejarlas sin instrumento</span>
+   <span class="opt-w">Se marcan a mano hasta definirlo.</span>
+  </li>
+  
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> Instalar las 11 plantillas de inspección pendientes.</footer>
+</article>
+<article class="dec" data-d="jefa" data-peso="medio" data-bloq="si">
+ <header class="dec-h">
+  <span class="did">D04</span>
+  <h3>Quién firma el report de uso diario de equipos</h3>
+  <span class="peso p-medio">medio</span>
+ </header>
+ <p class="q">El candado de independencia impide que quien ejecuta una inspección la revise. Si el jefe de terreno sube la planilla y además la completa, no puede firmarla, y la N°26 se acreditaría a otra persona.</p>
+ <ul class="opts">
+  <li class="">
+   <span class="opt-l">El JT sube, otro teclea, el JT firma<em class="was">era la recomendada</em></span>
+   <span class="opt-w">Subir la foto con el permiso de ingesta no convierte en ejecutante, así que la firma queda para el responsable. Se resuelve sin código, sólo comunicándolo.</span>
+  </li><li class="">
+   <span class="opt-l">El JT ejecuta y otro firma</span>
+   <span class="opt-w">Más simple de operar, pero la N°26 queda acreditada a nombre de quien no es su responsable.</span>
+  </li>
+  <li class="sel otra">
+   <span class="opt-l">Ninguna de las dos<em>decidida</em></span>
+   <span class="opt-w">El JT sube y firma. El report lo hizo el operador, cuyo nombre figura en el formulario, así que quien transcribe no es el ejecutante del acto y no hay conflicto de independencia.</span>
+  </li>
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> Que la N°26 acredite al responsable que el programa declara.</footer>
+</article>
+<article class="dec" data-d="jefa" data-peso="bajo" data-bloq="si">
+ <header class="dec-h">
+  <span class="did">D05</span>
+  <h3>El ítem de capacitación de EPP del acta, ¿cierra la N°63?</h3>
+  <span class="peso p-bajo">bajo</span>
+ </header>
+ <p class="q">El acta de trabajador nuevo tiene el ítem "Capacitación: gestión de los elementos de protección personal". La N°63 es "Capacitación sobre uso correcto de EPP, reposición y eliminación".</p>
+ <ul class="opts">
+  <li class="sel">
+   <span class="opt-l">Sí, la cierra<em>decidida</em></span>
+   <span class="opt-w">El texto del ítem y el de la actividad describen lo mismo. Acreditar al cerrar el acta.</span>
+  </li><li class="">
+   <span class="opt-l">No: la N°63 es una capacitación formal aparte</span>
+   <span class="opt-w">El ítem del acta sólo verifica que se hizo; la actividad exige la sesión con registro de asistencia, que va por el módulo de Capacitación.</span>
+  </li>
+  
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> Una actividad más acreditada desde el acta de trabajador nuevo.</footer>
+</article>
+<article class="dec" data-d="jefa" data-peso="medio" data-bloq="si">
+ <header class="dec-h">
+  <span class="did">D06</span>
+  <h3>La declaración de salud del acta, ¿es el RE-28?</h3>
+  <span class="peso p-medio">medio</span>
+ </header>
+ <p class="q">La N°17 es "Identificación de personas trabajadoras especialmente sensibles (RE-28)", y su guía dice "todas las personas trabajadoras". El acta de trabajador nuevo tiene un ítem "Declaración de salud".</p>
+ <ul class="opts">
+  <li class="sel">
+   <span class="opt-l">No son lo mismo<em>decidida</em></span>
+   <span class="opt-w">El RE-28 es un formulario propio con su propio criterio de sensibilidad. Dejar la N°17 midiéndose por cobertura contra la dotación, y no acreditarla desde el acta.</span>
+  </li><li class="">
+   <span class="opt-l">Sí, la declaración de salud lo cubre</span>
+   <span class="opt-w">Se acredita la N°17 al cerrar cada acta. Más simple, pero cambia el sujeto de "toda la dotación" a "quien pasó por una habilitación".</span>
+  </li>
+  
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> El padrón y el enganche de la N°17.</footer>
+</article>
+<article class="dec" data-d="jefa" data-peso="medio" data-bloq="no">
+ <header class="dec-h">
+  <span class="did">D07</span>
+  <h3>Declarar que un protocolo MINSAL no aplica, ¿cuenta como hacer la actividad?</h3>
+  <span class="peso p-medio">medio</span>
+ </header>
+ <p class="q">Las N°46 a 49 dicen "Desarrollo protocolo MINSAL y seguimiento". Hoy el conector acredita cualquier pronunciamiento salvo "por evaluar", incluido declarar que el protocolo no aplica a la faena.</p>
+ <ul class="opts">
+  <li class="sel">
+   <span class="opt-l">Sí, acredita<em>decidida</em></span>
+   <span class="opt-w">Pronunciarse con justificación obligatoria y respaldo del asesor mutual ES la evaluación que la actividad pide. Es el comportamiento actual.</span>
+  </li><li class="">
+   <span class="opt-l">No, sólo si aplica</span>
+   <span class="opt-w">El "seguimiento" sólo existe si el protocolo aplica. Un descarte quedaría registrado en el módulo pero no acreditaría la actividad.</span>
+  </li>
+  
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> Nada. Es una condición de una línea en el conector.</footer>
+</article>
+<article class="dec" data-d="jefa" data-peso="bajo" data-bloq="no">
+ <header class="dec-h">
+  <span class="did">D08</span>
+  <h3>Alcotest — ¿merece módulo propio?</h3>
+  <span class="peso p-bajo">bajo</span>
+ </header>
+ <p class="q">Las N°30, 31 y 32 tienen calendario semanal. Lo único que existe hoy es el equipo físico como ítem de servicio, para su calibración.</p>
+ <ul class="opts">
+  <li class="">
+   <span class="opt-l">No por ahora<em class="was">era la recomendada</em></span>
+   <span class="opt-w">Se marcan como constancia en la planilla con su registro adjunto. Tres actividades no justifican un módulo.</span>
+  </li><li class="sel">
+   <span class="opt-l">Sí, módulo propio<em>decidida</em></span>
+   <span class="opt-w">Un registro por control con trabajador, equipo y resultado. Es lo que el DO-48 pide enviar, así que el envío de la N°32 se acreditaría solo.</span>
+  </li>
+  
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> Nada. Hoy son constancia manual y funciona.</footer>
+</article>
+<article class="dec" data-d="jefa" data-peso="medio" data-bloq="no">
+ <header class="dec-h">
+  <span class="did">D09</span>
+  <h3>CGRD — ¿merece módulo propio?</h3>
+  <span class="peso p-medio">medio</span>
+ </header>
+ <p class="q">El Comité de Gestión de Riesgos de Desastres del DS 44 es distinto del paritario: tiene su matriz, sus actas y su plan de trabajo. Son las N°79, 80 y 81, hoy constancia.</p>
+ <ul class="opts">
+  <li class="sel">
+   <span class="opt-l">Sí, es el mismo patrón que llevó al CPHS a tener módulo<em>decidida</em></span>
+   <span class="opt-w">Tres actividades con actas y plan propio. La estructura del módulo de CPHS sirve de molde.</span>
+  </li><li class="">
+   <span class="opt-l">No, quedan como constancia</span>
+   <span class="opt-w">Se marcan a mano con el acta adjunta. Cumple ante fiscalización, sin trazabilidad interna.</span>
+  </li>
+  
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> Nada hoy, pero es deuda normativa del DS 44.</footer>
+</article>
+<article class="dec" data-d="jefa" data-peso="alto" data-bloq="si">
+ <header class="dec-h">
+  <span class="did">D10</span>
+  <h3>El calendario de la N°50 es un solo mes</h3>
+  <span class="peso p-alto">alto</span>
+ </header>
+ <p class="q">"Controlar trabajadores expuestos a programa de vigilancia" tiene una sola celda planificada: febrero, semana 2. En modo cobertura la actividad sólo cuenta en meses con planificación, así que un control hecho en julio no aportaría nada.</p>
+ <ul class="opts">
+  <li class="sel">
+   <span class="opt-l">Repartir el calendario por faena<em>decidida</em></span>
+   <span class="opt-w">Cargarlo en la ventana de borrador según cuándo ocurren los controles de verdad en cada faena.</span>
+  </li><li class="">
+   <span class="opt-l">Dejarla en modo cantidad</span>
+   <span class="opt-w">Cada control registrado cuenta, en cualquier mes. Se pierde la métrica de padrón: no se sabe cuántos de cuántos.</span>
+  </li><li class="">
+   <span class="opt-l">Dejar febrero</span>
+   <span class="opt-w">Sólo cuenta lo de febrero. Es lo que dice la planilla original del cliente.</span>
+  </li>
+  
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> Que la N°50 mida algo real durante el año.</footer>
+</article>
+<article class="dec" data-d="jefa" data-peso="bajo" data-bloq="si">
+ <header class="dec-h">
+  <span class="did">D11</span>
+  <h3>¿Se escribe el checklist de condiciones ambientales DS 594?</h3>
+  <span class="peso p-bajo">bajo</span>
+ </header>
+ <p class="q">La N°10 verifica las condiciones ambientales básicas de los lugares de trabajo. Es constancia manual sólo porque su checklist no existe: el resto del motor de inspecciones está listo para recibirla.</p>
+ <ul class="opts">
+  <li class="sel">
+   <span class="opt-l">Sí, escribirlo<em>decidida</em></span>
+   <span class="opt-w">Una vez instalado, completar la inspección acredita la actividad sola, como las otras once plantillas.</span>
+  </li><li class="">
+   <span class="opt-l">No, sigue como constancia</span>
+   <span class="opt-w">Se marca a mano con la evidencia del recorrido.</span>
+  </li>
+  
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> Subir la N°10 de constancia a enganche por inspección.</footer>
+</article>
+<article class="dec" data-d="jefa" data-peso="medio" data-bloq="si">
+ <header class="dec-h">
+  <span class="did">D12</span>
+  <h3>Qué documentos exige la carpeta de requisitos legales, por faena</h3>
+  <span class="peso p-medio">medio</span>
+ </header>
+ <p class="q">La N°19 pide mantener actualizada la carpeta de requisitos legales. Para que el módulo de Documentación SST pueda decir "está completa", necesita la lista de qué documentos son obligatorios en cada faena.</p>
+ <ul class="opts">
+  <li class="sel">
+   <span class="opt-l">Definir la lista por faena<em>decidida</em></span>
+   <span class="opt-w">Es la única forma de que el sistema sepa si la carpeta está completa o le falta algo.</span>
+  </li><li class="">
+   <span class="opt-l">Una lista única para todas</span>
+   <span class="opt-w">Más simple de mantener; sobra o falta según la faena.</span>
+  </li>
+  
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> El enganche de la N°19 (Documentación SST).</footer>
+</article>
+<article class="dec" data-d="jefa" data-peso="bajo" data-bloq="si">
+ <header class="dec-h">
+  <span class="did">D13</span>
+  <h3>El plan de emergencia, ¿se cuenta por plan o por amenaza?</h3>
+  <span class="peso p-bajo">bajo</span>
+ </header>
+ <p class="q">La N°83 es "Plan emergencia por cada amenaza". Hoy nada la acredita: el módulo sólo dispara al completar un simulacro, que es la N°84.</p>
+ <ul class="opts">
+  <li class="sel">
+   <span class="opt-l">Por amenaza<em>decidida</em></span>
+   <span class="opt-w">El denominador son los escenarios del plan, que es lo que el texto dice.</span>
+  </li><li class="">
+   <span class="opt-l">Por plan</span>
+   <span class="opt-w">Un plan publicado por faena cierra la actividad, sin importar cuántas amenazas cubra.</span>
+  </li>
+  
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> El conector de la N°83.</footer>
+</article></div>
+
+<h2 class="grp g-tec" id="h-tec">Equipo técnico <span class="cnt">implementación</span></h2>
+<div class="list" id="l-tec">
+<article class="dec" data-d="tec" data-peso="alto" data-bloq="no">
+ <header class="dec-h">
+  <span class="did">D14</span>
+  <h3>¿Se mantiene el cambio del padrón inferido?</h3>
+  <span class="peso p-alto">alto</span>
+ </header>
+ <p class="q">Se retiró la inferencia que tomaba la dotación de la faena como padrón cuando nadie lo había cargado. Era una decisión deliberada y con test, correcta para las actividades cuyo sujeto es la dotación y absurda para las otras dos.</p>
+ <ul class="opts">
+  <li class="sel">
+   <span class="opt-l">Mantenerlo<em>decidida</em></span>
+   <span class="opt-w">Ninguna actividad mide contra una población inventada. Costo: la N°17, 18 y 23 necesitan su padrón para volver a medirse por cobertura, y la pantalla ya avisa cuando falta.</span>
+  </li><li class="">
+   <span class="opt-l">Revertir a la ruta conservadora</span>
+   <span class="opt-w">Dejar la inferencia y sacar de cobertura sólo la N°24 y la N°50. Cero riesgo de regresión, pero la trampa queda para la próxima actividad que alguien ponga en cobertura.</span>
+  </li>
+  
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> Nada. Ya está implementado y en verde.</footer>
+</article>
+<article class="dec" data-d="tec" data-peso="alto" data-bloq="si">
+ <header class="dec-h">
+  <span class="did">D15</span>
+  <h3>Alcance del plan del padrón derivado</h3>
+  <span class="peso p-alto">alto</span>
+ </header>
+ <p class="q">El plan tiene cuatro fases. Las tres primeras derivan el padrón y acreditan desde el acta de trabajador nuevo. La cuarta implementa un modo de indicador que hoy está declarado y vacío.</p>
+ <ul class="opts">
+  <li class="sel">
+   <span class="opt-l">Fases 1 a 3<em>decidida</em></span>
+   <span class="opt-w">Deriva el padrón de cinco actividades y engancha el acta. Acotado y verificable.</span>
+  </li><li class="">
+   <span class="opt-l">Las cuatro</span>
+   <span class="opt-w">Suma implementar el modo por obligaciones, que habilita 22 actividades hoy invisibles en la métrica. Es el cambio más grande: toca el porcentaje que el cliente reporta.</span>
+  </li><li class="">
+   <span class="opt-l">Sólo fases 1 y 2</span>
+   <span class="opt-w">Deriva el padrón y no toca el módulo SST. Deja la N°18 y la N°23 sin acreditación automática.</span>
+  </li>
+  
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> El arranque de la implementación del padrón derivado.</footer>
+</article>
+<article class="dec" data-d="tec" data-peso="bajo" data-bloq="si">
+ <header class="dec-h">
+  <span class="did">D16</span>
+  <h3>El padrón de extintores, ¿los que hay o los que debería haber?</h3>
+  <span class="peso p-bajo">bajo</span>
+ </header>
+ <p class="q">El inventario de recursos de emergencia tiene dos padrones posibles: los extintores existentes en la faena, y los puntos que la faena exige tener cubiertos.</p>
+ <ul class="opts">
+  <li class="sel">
+   <span class="opt-l">Los existentes<em>decidida</em></span>
+   <span class="opt-w">El catálogo dice "por cada extintor existente en la faena y en los talleres". Mide lo que la actividad pide: inspeccionar lo que hay.</span>
+  </li><li class="">
+   <span class="opt-l">Los puntos exigidos</span>
+   <span class="opt-w">Mediría si el plan de emergencia está cubierto, que es otra cosa y merece su propia actividad.</span>
+  </li>
+  
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> La fuente del padrón de la N°24.</footer>
+</article>
+<article class="dec" data-d="tec" data-peso="bajo" data-bloq="no">
+ <header class="dec-h">
+  <span class="did">D17</span>
+  <h3>¿Se blinda el escritor de parámetros por faena?</h3>
+  <span class="peso p-bajo">bajo</span>
+ </header>
+ <p class="q">Al hacer condicional el guard de edición, quedó una función que puede escribir la meta de cobertura y el responsable por faena sin verificar si el programa está firmado. No se exporta al exterior del módulo y sólo la usan dos tests.</p>
+ <ul class="opts">
+  <li class="">
+   <span class="opt-l">Dejarla documentada<em class="was">era la recomendada</em></span>
+   <span class="opt-w">Es una primitiva sin política, como otras del módulo. La regla vive en la función que usa la aplicación.</span>
+  </li><li class="sel">
+   <span class="opt-l">Blindarla igual<em>decidida</em></span>
+   <span class="opt-w">Diez minutos más y ajustar dos tests que montan estado sobre un programa activo.</span>
+  </li>
+  
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> Nada. Está documentado como primitiva sin política.</footer>
+</article>
+<article class="dec" data-d="tec" data-peso="bajo" data-bloq="no">
+ <header class="dec-h">
+  <span class="did">D18</span>
+  <h3>¿Se construye el submódulo Constancias?</h3>
+  <span class="peso p-bajo">bajo</span>
+ </header>
+ <p class="q">El diseño lo acordó como el lugar donde se marcan las actividades que son "se hizo o no se hizo, con evidencia". Hoy se marcan igual, desde la planilla.</p>
+ <ul class="opts">
+  <li class="">
+   <span class="opt-l">No por ahora<em class="was">era la recomendada</em></span>
+   <span class="opt-w">No destraba nada. El valor sería reunirlas en un solo lugar y resolver su relación con la cola de pendientes.</span>
+  </li><li class="sel">
+   <span class="opt-l">Sí, construirlo<em>decidida</em></span>
+   <span class="opt-w">Mejora la experiencia del PRF, que hoy busca sus constancias entre 82 filas.</span>
+  </li>
+  
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> Nada. Las 15 constancias ya se marcan desde la planilla.</footer>
+</article>
+<article class="dec" data-d="tec" data-peso="bajo" data-bloq="no">
+ <header class="dec-h">
+  <span class="did">D19</span>
+  <h3>El permiso de higiene del PRF es más ancho de lo necesario</h3>
+  <span class="peso p-bajo">bajo</span>
+ </header>
+ <p class="q">Para que el PRF pudiera pronunciarse sobre protocolos y registrar controles de vigilancia se le dio el permiso de gestión de higiene. Ese mismo permiso habilita crear agentes del catálogo, que es global y no tiene faena.</p>
+ <ul class="opts">
+  <li class="">
+   <span class="opt-l">Dejarlo así<em class="was">era la recomendada</em></span>
+   <span class="opt-w">El riesgo es bajo y el catálogo de agentes es normativo, no operacional.</span>
+  </li><li class="sel">
+   <span class="opt-l">Permiso nuevo más fino<em>decidida</em></span>
+   <span class="opt-w">Separar la evaluación de protocolos y vigilancia de la administración del catálogo. Más preciso, suma un permiso a la matriz de roles.</span>
+  </li>
+  
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> Nada. Queda anotado como deuda.</footer>
+</article>
+<article class="dec" data-d="tec" data-peso="medio" data-bloq="si">
+ <header class="dec-h">
+  <span class="did">D20</span>
+  <h3>El número de campaña, ¿editable después de crearla?</h3>
+  <span class="peso p-medio">medio</span>
+ </header>
+ <p class="q">El diálogo de creación fija la actividad N°85 literal, y no hay editor posterior. Hay que agregar el selector; la pregunta es si además se permite corregirlo después.</p>
+ <ul class="opts">
+  <li class="sel">
+   <span class="opt-l">Sí, editable<em>decidida</em></span>
+   <span class="opt-w">Una campaña mal declarada se corrige sin borrarla y volver a crearla.</span>
+  </li><li class="">
+   <span class="opt-l">Sólo al crear</span>
+   <span class="opt-w">Más simple. Un error obliga a rehacer la campaña con su registro de asistencia.</span>
+  </li>
+  
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> Las campañas N°86 a N°89.</footer>
+</article>
+<article class="dec" data-d="tec" data-peso="medio" data-bloq="si">
+ <header class="dec-h">
+  <span class="did">D21</span>
+  <h3>El responsable de la N°25 no existe como rol</h3>
+  <span class="peso p-medio">medio</span>
+ </header>
+ <p class="q">"Realizar report de uso diario de equipos" tiene como responsable a los conductores y operadores, que no tienen cuenta en la plataforma ni rol asignable.</p>
+ <ul class="opts">
+  <li class="">
+   <span class="opt-l">Reasignar el responsable<em class="was">era la recomendada</em></span>
+   <span class="opt-w">El formulario ya tiene el operador como campo obligatorio, precisamente porque no tiene cuenta. El responsable en la plataforma pasa a ser quien transcribe.</span>
+  </li><li class="">
+   <span class="opt-l">Crear el rol</span>
+   <span class="opt-w">Coherente con la planilla, pero un rol sin cuentas no recibe trabajo ni notificaciones.</span>
+  </li>
+  <li class="sel otra">
+   <span class="opt-l">Ninguna de las dos<em>decidida</em></span>
+   <span class="opt-w">El responsable declarado sigue siendo conductores y operadores: la responsabilidad es documental, no de cuenta. El JT sube el report y el nombre del operador figura en el formulario.</span>
+  </li>
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> Que la N°25 tenga un responsable que exista.</footer>
+</article>
+<article class="dec" data-d="tec" data-peso="medio" data-bloq="si">
+ <header class="dec-h">
+  <span class="did">D22</span>
+  <h3>G11 parte de una premisa falsa</h3>
+  <span class="peso p-medio">medio</span>
+ </header>
+ <p class="q">El grupo Habilitación del trabajador dice "no existe ruta, servicio ni tabla". Existe: el acta de trabajador nuevo, con sus rutas, su servicio, sus respuestas por ítem y su cierre firmado inmutable por DS 44.</p>
+ <ul class="opts">
+  <li class="sel">
+   <span class="opt-l">Reescribirlo como "cablear el acta"<em>decidida</em></span>
+   <span class="opt-w">Sus ocho tareas pasan de construir un submódulo a conectar uno que ya está. Es la diferencia entre semanas y días.</span>
+  </li><li class="">
+   <span class="opt-l">Construir el submódulo aparte igual</span>
+   <span class="opt-w">Si el acta no cubre todo lo que Habilitación necesita, conviven — con el riesgo de dos caminos para el mismo hecho.</span>
+  </li>
+  
+ </ul>
+ <footer class="dec-f"><span class="fl">Destraba</span> El plan de trabajo del grupo de Habilitación del trabajador.</footer>
+</article></div>
+
+<p id="empty" hidden>Ninguna decisión calza con el filtro.</p>
+
+<footer class="end">
+Deriva de la auditoría del 2026-09-01 y del trabajo posterior sobre el padrón de cobertura.<br>
+Detalle técnico en <code>AUDITORIA_PDTP_ACREDITACION_2026-09-01.md</code> y <code>tasks/TODO_PDTP_ACREDITACION_2026-09-01.md</code>.<br>
+Constancia de lo resuelto. Las opciones no elegidas se conservan para que el criterio quede documentado.
+</footer>
+</div>
+
+<script>
+(function(){
+ var chips=[].slice.call(document.querySelectorAll(".chip"));
+ var decs=[].slice.call(document.querySelectorAll(".dec"));
+ var empty=document.getElementById("empty");
+ var groups=[["jefa",document.getElementById("h-jefa"),document.getElementById("l-jefa")],
+             ["tec",document.getElementById("h-tec"),document.getElementById("l-tec")]];
+ function apply(f){
+  var shown=0;
+  decs.forEach(function(d){
+   var ok = f==="todas"
+     || (f==="jefa"||f==="tec" ? d.dataset.d===f : false)
+     || (f==="alto" ? d.dataset.peso==="alto" : false)
+     || (f==="bloq" ? d.dataset.bloq==="si" : false);
+   d.hidden=!ok; if(ok)shown++;
+  });
+  groups.forEach(function(g){
+   var any=[].slice.call(g[2].querySelectorAll(".dec")).some(function(d){return !d.hidden});
+   g[1].hidden=!any; g[2].hidden=!any;
+  });
+  empty.hidden=shown>0;
+ }
+ chips.forEach(function(c){c.addEventListener("click",function(){
+  chips.forEach(function(o){o.classList.remove("on")});
+  c.classList.add("on"); apply(c.dataset.f);
+ })});
+})();
+</script>
+</body>
+</html>

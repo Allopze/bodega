@@ -41,6 +41,10 @@ import { PDTP_CPHS_ACTIVITY_NUMBERS } from "@/lib/services/pdtp/worksites"
 const PDTP_MANAGEMENT_REVIEW_ACTIVITY_NUMBER = 9
 /** N°1: "Aprobar el Programa de Prevención de Riesgos". */
 const PDTP_PROGRAM_APPROVAL_ACTIVITY_NUMBER = 1
+/** N°35: "Mantener y actualizar inventario de riesgos MIPER". */
+const PDTP_MIPER_ACTIVITY_NUMBER = 35
+/** N°83: "Plan emergencia por cada amenaza". */
+const PDTP_EMERGENCY_PLAN_ACTIVITY_NUMBER = 83
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 
@@ -365,4 +369,130 @@ export async function onPdtpProgramLegallyApproved(input: {
       evidenceRef: `Programa aprobado por Legal y RRHH: ${input.programId}`,
     })
   }
+}
+
+// ── Conector: MIPER ───────────────────────────────────────────────────────────
+
+/**
+ * Llama desde `transitionRiskMatrix` cuando la matriz pasa a `published`,
+ * después del commit.
+ *
+ * Publicar es el hecho que la N°35 mide ("mantener y actualizar el inventario de
+ * riesgos"), y no aprobar: la matriz aprobada todavía no rige. La publicación
+ * además sella un hash del contenido y jubila la anterior, así que es un evento
+ * confirmado en sentido estricto.
+ *
+ * `sourceId` lleva la matriz publicada, que es una por revisión: republicar la
+ * misma no vuelve a sumar, y la revisión siguiente es otra fila.
+ */
+export async function onRiskMatrixPublished(input: {
+  matrixId: string
+  worksiteId: string
+  matrixVersion: number
+  publishedAt: string
+  entryCount: number
+}): Promise<void> {
+  await safeAccredit({
+    sourceType: "miper",
+    sourceId: `miper:${input.matrixId}`,
+    worksiteId: input.worksiteId,
+    activityNumbers: [PDTP_MIPER_ACTIVITY_NUMBER],
+    occurredAt: input.publishedAt,
+    executedQuantity: 1,
+    evidenceRef: `MIPER v${input.matrixVersion} publicada: ${input.matrixId}`,
+    metadata: { matrixVersion: input.matrixVersion, entryCount: input.entryCount },
+  })
+}
+
+// ── Conector: Documentación SST ───────────────────────────────────────────────
+
+/**
+ * Llama desde `publishDocumentVersion` cuando la versión queda vigente.
+ *
+ * @param activityNumbers - Los que declara el **tipo** del documento
+ *   (`sst_document_types.pdtp_activity_numbers`). Vacío es no-op: la enorme
+ *   mayoría de los documentos no acredita nada del programa.
+ */
+export async function onDocumentVersionPublished(input: {
+  documentId: string
+  versionId: string
+  worksiteId: string
+  publishedAt: string
+  activityNumbers: number[]
+}): Promise<void> {
+  if (input.activityNumbers.length === 0) return
+
+  await safeAccredit({
+    sourceType: "documento",
+    sourceId: `documento:${input.versionId}`,
+    worksiteId: input.worksiteId,
+    activityNumbers: input.activityNumbers,
+    occurredAt: input.publishedAt,
+    executedQuantity: 1,
+    evidenceRef: `Versión de documento publicada: ${input.versionId}`,
+    metadata: { documentId: input.documentId },
+  })
+}
+
+/**
+ * Llama desde `acknowledgeDocumentVersion` cuando una persona acusa recibo.
+ *
+ * La difusión se mide por cobertura: una acreditación por acuse, y el padrón son
+ * los destinatarios. Por eso el `sourceId` lleva al destinatario y no a la
+ * versión — si llevara la versión, el segundo acuse sería un reintento
+ * idempotente del primero y la cobertura nunca pasaría de uno.
+ */
+export async function onDocumentAcknowledged(input: {
+  versionId: string
+  targetId: string
+  worksiteId: string
+  acknowledgedAt: string
+  activityNumbers: number[]
+}): Promise<void> {
+  if (input.activityNumbers.length === 0) return
+
+  await safeAccredit({
+    sourceType: "documento",
+    sourceId: `acuse:${input.versionId}:${input.targetId}`,
+    worksiteId: input.worksiteId,
+    activityNumbers: input.activityNumbers,
+    occurredAt: input.acknowledgedAt,
+    executedQuantity: 1,
+    evidenceRef: `Acuse de recibo registrado: ${input.targetId}`,
+    metadata: { versionId: input.versionId },
+  })
+}
+
+// ── Conector: plan de emergencia publicado ────────────────────────────────────
+
+/**
+ * Llama desde `approveEmergencyPlan`, después del commit. Acredita la N°83
+ * ("Plan emergencia por cada amenaza").
+ *
+ * Es un conector aparte de `onEmergencyDrillCompleted` a propósito: hasta ahora
+ * lo único que acreditaba en el módulo era completar un simulacro, así que la
+ * N°83 quedaba huérfana —declarar su número en el plan sólo la habría acreditado
+ * al correr un simulacro, que es la N°84 y es otra cosa—.
+ *
+ * La cantidad son los **escenarios**, no el plan: el programa la planifica por
+ * amenaza (decisión D13), y la aprobación ya exige que el plan tenga al menos un
+ * escenario, así que el número nunca es cero.
+ */
+export async function onEmergencyPlanApproved(input: {
+  planId: string
+  worksiteId: string
+  planCode: string
+  approvedAt: string
+  scenarioCount: number
+}): Promise<void> {
+  await safeAccredit({
+    sourceType: "emergencia",
+    sourceId: `plan:${input.planId}`,
+    worksiteId: input.worksiteId,
+    activityNumbers: [PDTP_EMERGENCY_PLAN_ACTIVITY_NUMBER],
+    occurredAt: input.approvedAt,
+    executedQuantity: Math.max(1, input.scenarioCount),
+    evidenceRef: `Plan de emergencia aprobado: ${input.planCode}`,
+    metadata: { planCode: input.planCode, scenarioCount: input.scenarioCount },
+  })
 }

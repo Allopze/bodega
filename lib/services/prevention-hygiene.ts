@@ -17,6 +17,12 @@ import {
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { findMinsalProtocol, summarizeProtocolCoverage } from "@/lib/prevention/minsal-protocols"
+import {
+  onExposureMeasurementRecorded,
+  onProtocolApplicabilityAssessed,
+  onSurveillanceControlAttended,
+  onSurveillanceControlReverted,
+} from "@/lib/services/pdtp-adapters/hygiene-accreditation-connector"
 import { exposureMeasurementSchema, protocolApplicabilitySchema } from "@/lib/validation/prevention-module/hygiene"
 import {
   assessMeasurement,
@@ -125,7 +131,7 @@ const groupSchema = z.object({
 
 export async function createExposureGroup(input: unknown, access: HygieneAccess) {
   const data = groupSchema.parse(input)
-  requireAccess(access, "prevention:hygiene:manage", data.worksiteId)
+  requireAccess(access, "prevention:hygiene:assess", data.worksiteId)
 
   const [agent] = await db.select().from(preventionExposureAgents)
     .where(eq(preventionExposureAgents.id, data.agentId)).limit(1)
@@ -157,7 +163,7 @@ export async function addExposureGroupMember(input: unknown, access: HygieneAcce
     const [group] = await tx.select().from(preventionExposureGroups)
       .where(eq(preventionExposureGroups.id, data.groupId)).limit(1)
     if (!group) throw new Error(NOT_FOUND)
-    requireAccess(access, "prevention:hygiene:manage", group.worksiteId)
+    requireAccess(access, "prevention:hygiene:assess", group.worksiteId)
 
     const [worker] = await tx.select().from(workers).where(eq(workers.id, data.workerId)).limit(1)
     if (!worker || !worker.isActive) throw new Error("La persona no existe o está inactiva.")
@@ -188,7 +194,8 @@ export async function addExposureGroupMember(input: unknown, access: HygieneAcce
 export async function recordExposureMeasurement(input: unknown, access: HygieneAccess) {
   const data = exposureMeasurementSchema.parse(input)
 
-  return db.transaction(async (tx) => {
+  let accreditation: Parameters<typeof onExposureMeasurementRecorded>[0] | null = null
+  const result = await db.transaction(async (tx) => {
     // `FOR UPDATE` sobre el GES: la obligación de vigilancia se deriva del
     // historial COMPLETO de mediciones, así que dos registros concurrentes
     // recalculaban cada uno sin ver la medición del otro. Con una medición
@@ -251,8 +258,28 @@ export async function recordExposureMeasurement(input: unknown, access: HygieneA
       reason: `${data.value} ${row.agent.unit} · ${obligation.basis}`,
       afterState: created, actorUserId: access.userId,
     })
+
+    // N°45 del PDTP ("Evaluación cuantitativas por mutual"). Se prepara aquí y
+    // se dispara DESPUÉS del commit: el motor escribe con su propia conexión,
+    // así que llamarlo dentro dejaría una ejecución PDTP huérfana si la
+    // transacción revierte.
+    accreditation = {
+      measurementId: created.id,
+      worksiteId: row.group.worksiteId,
+      groupCode: row.group.code,
+      agentCode: row.agent.code,
+      outcome: assessment.outcome,
+      measuredOn: data.measuredOn,
+      reportReference: created.reportReference,
+    }
+
     return { measurement: created, assessment, surveillanceRequired: obligation.required, basis: obligation.basis }
   })
+
+  // `safeAccredit` absorbe los errores (programa inactivo, actividad excluida)
+  // sin afectar la medición ya registrada.
+  if (accreditation) await onExposureMeasurementRecorded(accreditation)
+  return result
 }
 
 /* ── Vigilancia ───────────────────────────────────────────────────────────── */
@@ -269,7 +296,7 @@ const programSchema = z.object({
 
 export async function createSurveillanceProgram(input: unknown, access: HygieneAccess) {
   const data = programSchema.parse(input)
-  requireAccess(access, "prevention:hygiene:manage", data.worksiteId)
+  requireAccess(access, "prevention:hygiene:assess", data.worksiteId)
 
   const [created] = await db.insert(preventionSurveillancePrograms).values({
     id: `survpr-${nanoid()}`,
@@ -303,7 +330,7 @@ export async function enrollGroupInSurveillance(input: unknown, access: HygieneA
     const [program] = await tx.select().from(preventionSurveillancePrograms)
       .where(eq(preventionSurveillancePrograms.id, data.programId)).limit(1)
     if (!program) throw new Error(NOT_FOUND)
-    requireAccess(access, "prevention:hygiene:manage", program.worksiteId)
+    requireAccess(access, "prevention:hygiene:assess", program.worksiteId)
     if (program.status !== "active") throw new Error("Sólo un programa vigente admite matrículas.")
 
     const [group] = await tx.select().from(preventionExposureGroups)
@@ -350,13 +377,15 @@ export async function recordSurveillanceOutcome(input: unknown, access: HygieneA
     absenceReason: z.string().trim().max(1000).nullable().optional(),
   }).parse(input)
 
-  return db.transaction(async (tx) => {
+  let accreditation: Parameters<typeof onSurveillanceControlAttended>[0] | null = null
+  let revocation: Parameters<typeof onSurveillanceControlReverted>[0] | null = null
+  const result = await db.transaction(async (tx) => {
     const [row] = await tx.select({ enrollment: preventionSurveillanceEnrollments, program: preventionSurveillancePrograms })
       .from(preventionSurveillanceEnrollments)
       .innerJoin(preventionSurveillancePrograms, eq(preventionSurveillanceEnrollments.programId, preventionSurveillancePrograms.id))
       .where(eq(preventionSurveillanceEnrollments.id, data.enrollmentId)).limit(1)
     if (!row) throw new Error(NOT_FOUND)
-    requireAccess(access, "prevention:hygiene:manage", row.program.worksiteId)
+    requireAccess(access, "prevention:hygiene:assess", row.program.worksiteId)
 
     if (data.status === "attended" && !data.attendedOn) {
       throw new Error("Registrar asistencia exige la fecha del control.")
@@ -376,8 +405,35 @@ export async function recordSurveillanceOutcome(input: unknown, access: HygieneA
     }).where(eq(preventionSurveillanceEnrollments.id, data.enrollmentId)).returning()
     if (!updated) throw new Error("No se pudo registrar el resultado.")
     await history(tx, { entityType: "enrollment", entityId: data.enrollmentId, worksiteId: row.program.worksiteId, changeType: data.status, reason: data.absenceReason ?? `Control ${data.status}`, actorUserId: access.userId })
+
+    // N°50 del PDTP, una ejecución por persona controlada. El evento es
+    // bidireccional: corregir un `attended` a `absent` retira el control que
+    // sostenía la cobertura, así que hay que devolver la ejecución al programa.
+    if (data.status === "attended" && updated.attendedOn) {
+      accreditation = {
+        enrollmentId: updated.id,
+        worksiteId: row.program.worksiteId,
+        surveillanceProgramId: row.program.id,
+        protocol: row.program.protocol,
+        workerId: row.enrollment.workerId,
+        groupId: row.enrollment.groupId,
+        attendedOn: updated.attendedOn,
+      }
+    } else if (row.enrollment.status === "attended") {
+      revocation = {
+        enrollmentId: updated.id,
+        worksiteId: row.program.worksiteId,
+        revokedBy: access.userId,
+        reason: `El control de vigilancia dejó de estar asistido: ahora es ${data.status}.`,
+      }
+    }
+
     return updated
   })
+
+  if (accreditation) await onSurveillanceControlAttended(accreditation)
+  if (revocation) await onSurveillanceControlReverted(revocation)
+  return result
 }
 
 /* ── Consultas ────────────────────────────────────────────────────────────── */
@@ -591,12 +647,13 @@ export async function listProtocolApplicabilities(access: HygieneAccess) {
  */
 export async function setProtocolApplicability(input: unknown, access: HygieneAccess) {
   const data = protocolApplicabilitySchema.parse(input)
-  requireAccess(access, "prevention:hygiene:manage", data.worksiteId)
+  requireAccess(access, "prevention:hygiene:assess", data.worksiteId)
 
   const protocol = findMinsalProtocol(data.protocolCode)
   if (!protocol) throw new Error("Protocolo MINSAL desconocido.")
 
-  return db.transaction(async (tx) => {
+  let accreditation: Parameters<typeof onProtocolApplicabilityAssessed>[0] | null = null
+  const result = await db.transaction(async (tx) => {
     const [existing] = await tx.select().from(preventionProtocolApplicabilities)
       .where(and(
         eq(preventionProtocolApplicabilities.worksiteId, data.worksiteId),
@@ -651,6 +708,26 @@ export async function setProtocolApplicability(input: unknown, access: HygieneAc
       afterState: saved,
       actorUserId: access.userId,
     })
+
+    // N°46 a N°49 del PDTP, según el protocolo. Se dispara después del commit
+    // por la misma razón que la medición. El `version` que viaja es el ya
+    // incrementado por el UPDATE de arriba: es lo que distingue el seguimiento
+    // de este trimestre del anterior, porque la clave idempotente del motor no
+    // lleva mes y el pronunciamiento vive en una sola fila por faena.
+    accreditation = {
+      applicabilityId: saved!.id,
+      worksiteId: data.worksiteId,
+      protocolCode: data.protocolCode,
+      protocolShortName: protocol.shortName,
+      status: saved!.status as "applicable" | "not_applicable" | "pending_assessment",
+      version: saved!.version,
+      assessedOn: lastAssessedOn,
+      nextAssessmentOn: saved!.nextAssessmentOn,
+    }
+
     return saved
   })
+
+  if (accreditation) await onProtocolApplicabilityAssessed(accreditation)
+  return result
 }

@@ -10,6 +10,18 @@
 import { ROLE_RESPONSIBLE_SLUGS } from "./sheet-meta-2026"
 
 /**
+ * Quién opera la plataforma por un responsable que no tiene cuenta.
+ *
+ * Los conductores y operadores llenan el report de uso diario en papel —son el
+ * responsable declarado de la N°25— y el jefe de terreno lo transcribe. Sin esto
+ * la actividad no producía tarea para nadie en `/pendientes`, porque la cola
+ * matchea el rol RBAC del responsable y este no tiene ninguno (D21).
+ */
+const OPERATED_BY_ROLE_BY_SLUG: Record<string, string> = {
+  conductores_operadores_choferes: "jefe_terreno",
+}
+
+/**
  * Nombre visible por slug. Son cargos, no áreas: la planilla abrevia ("JDPR",
  * "SUP") y nombraba departamentos ("Jefatura de terreno"); aquí se expanden al
  * título de la persona responsable, que es como aparece en la UI y el Excel
@@ -39,13 +51,14 @@ export function displayNameForActivity(slugs: string[], fallback: string) {
 }
 
 export function collectResponsibleCatalog(catalog: { activities: Array<{ responsibleSlugs: string[]; responsibleDisplay: string }> }) {
-  const bySlug = new Map<string, { slug: string; displayName: string; roleName: string | null; kind: string; notes: string | null }>()
+  const bySlug = new Map<string, { slug: string; displayName: string; roleName: string | null; operatedByRoleName: string | null; kind: string; notes: string | null }>()
   for (const activity of catalog.activities) {
     for (const slug of activity.responsibleSlugs) {
       if (bySlug.has(slug)) continue
       bySlug.set(slug, {
         slug, displayName: displayNameForSlug(slug, activity.responsibleDisplay),
         roleName: ROLE_RESPONSIBLE_SLUGS.get(slug) ?? null,
+        operatedByRoleName: OPERATED_BY_ROLE_BY_SLUG[slug] ?? null,
         kind: ROLE_RESPONSIBLE_SLUGS.has(slug) ? "rbac_role" : "worker_group",
         notes: "Responsable extraido desde PROGRAMA DE TRABAJO PREVENTIVO SG-SST 2026.xlsx.",
       })

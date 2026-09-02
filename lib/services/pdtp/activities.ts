@@ -118,6 +118,8 @@ export type PdtpActivityUpdateInput = {
   dueDays?: number | null
   evidenceRequirement?: string | null
   indicatorMode?: "planned_vs_completed" | "closed_on_time" | "completed_count" | "not_applicable" | "coverage"
+  /** De qué registro sale el padrón; sólo tiene sentido con `coverage`. */
+  subjectSource?: "dotacion" | "extintores" | "expuestos_ges" | "equipos" | "trabajadores_nuevos" | null
   targetValue?: number | null
   targetUnit?: string | null
   scheduleOverrides?: Array<{ month: number; week: number; plannedQuantity: number }>
@@ -146,6 +148,8 @@ export type PdtpActivityAddInput = {
   dueDays?: number | null
   evidenceRequirement?: string | null
   indicatorMode?: "planned_vs_completed" | "closed_on_time" | "completed_count" | "not_applicable" | "coverage"
+  /** De qué registro sale el padrón; sólo tiene sentido con `coverage`. */
+  subjectSource?: "dotacion" | "extintores" | "expuestos_ges" | "equipos" | "trabajadores_nuevos" | null
   targetValue?: number | null
   targetUnit?: string | null
   notes?: string
@@ -236,6 +240,9 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
   const configurableFields = [
     "audienceRoles", "scheduleMode", "scheduleClassificationStatus", "recurrenceRule", "triggerType", "triggerDescription",
     "dueDays", "evidenceRequirement", "indicatorMode", "targetValue", "targetUnit",
+    // Va junto a `indicatorMode` porque son la misma declaración partida en dos:
+    // el modo dice "cuántos de cuántos" y la fuente dice de cuántos.
+    "subjectSource",
   ] as const
   for (const field of configurableFields) {
     if (input[field] === undefined) continue

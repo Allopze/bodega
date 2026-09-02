@@ -123,13 +123,13 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
     expect(ws1Activities.map((a) => a.id)).toContain(activity.id)
   })
 
-  it("agregar membresía o una exclusión cambia el digest firmable (schemaVersion 8)", async () => {
+  it("agregar membresía o una exclusión cambia el digest firmable (schemaVersion 10)", async () => {
     const { setPdtpProgramWorksites, excludeActivityForWorksite } = await import("@/lib/services/pdtp/worksites")
     const { computePdtpProgramContentDigest } = await import("@/lib/services/pdtp/content-digest")
     const { program, activity } = await createDraftProgramWithActivity(2042)
 
     const baseline = await computePdtpProgramContentDigest(program.id)
-    expect(baseline.snapshot).toMatchObject({ schemaVersion: 8 })
+    expect(baseline.snapshot).toMatchObject({ schemaVersion: 10 })
 
     await setPdtpProgramWorksites(program.id, ["ws-1"], "user-1")
     const afterMembership = await computePdtpProgramContentDigest(program.id)
@@ -148,6 +148,94 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
 
     await expect(setPdtpProgramWorksites(program.id, ["ws-1"], "user-1")).rejects.toThrow(/revisión/)
     await expect(excludeActivityForWorksite(activity.id, "ws-1", "Motivo de exclusión suficientemente largo", "user-1")).rejects.toThrow(/revisión/)
+  })
+
+  /**
+   * El padrón (`expectedSubjectCount`) no es contenido firmado del programa.
+   *
+   * El programa compromete a quién se le exige cada actividad, con qué meta y en
+   * qué faenas aplica. Cuántos sujetos existen hoy es un hecho del mundo que
+   * cambia cuando entra o sale gente de un GES, mientras el compromiso sigue
+   * igual. Estaba en la huella por arrastre —vive en la misma fila que la meta y
+   * el responsable por faena—, y eso obligaba a abrir una revisión nueva del
+   * programa para corregir un conteo.
+   */
+  it("cargar el padrón no altera el digest; cambiar la meta sí", async () => {
+    const { setPdtpActivityWorksiteAdjustment } = await import("@/lib/services/pdtp/worksites")
+    const { computePdtpProgramContentDigest } = await import("@/lib/services/pdtp/content-digest")
+    const { program, activity } = await createDraftProgramWithActivity(2046)
+
+    const baseline = await computePdtpProgramContentDigest(program.id)
+
+    // Aparece la fila de parámetros por primera vez: sin el filtro de filas sin
+    // contenido firmado, esto solo bastaría para mover la huella.
+    await setPdtpActivityWorksiteAdjustment({
+      activityId: activity.id,
+      worksiteId: "ws-1",
+      excluded: false,
+      reason: "Padrón de expuestos declarado para la faena.",
+      expectedSubjectCount: 6,
+    }, "user-1", ["ws-1"])
+    expect((await computePdtpProgramContentDigest(program.id)).digest).toBe(baseline.digest)
+
+    // Y corregirlo después tampoco: es el caso real, gente que entra al GES.
+    await setPdtpActivityWorksiteAdjustment({
+      activityId: activity.id,
+      worksiteId: "ws-1",
+      excluded: false,
+      reason: "Se incorporaron dos personas al grupo de exposición.",
+      expectedSubjectCount: 8,
+    }, "user-1", ["ws-1"])
+    expect((await computePdtpProgramContentDigest(program.id)).digest).toBe(baseline.digest)
+
+    // La meta sí es un compromiso del programa.
+    await setPdtpActivityWorksiteAdjustment({
+      activityId: activity.id,
+      worksiteId: "ws-1",
+      excluded: false,
+      reason: "Meta de cobertura acordada con la jefatura.",
+      targetCoveragePercent: 90,
+    }, "user-1", ["ws-1"])
+    expect((await computePdtpProgramContentDigest(program.id)).digest).not.toBe(baseline.digest)
+  })
+
+  it("el programa firmado admite corregir el padrón, no el resto de la proyección", async () => {
+    const { setPdtpActivityWorksiteAdjustment, listPdtpActivityWorksiteParams } = await import("@/lib/services/pdtp/worksites")
+    const { program, activity } = await createDraftProgramWithActivity(2047)
+
+    await inMemoryDb.update(schema.pdtpPrograms)
+      .set({ status: "in_review", contentDigest: "a".repeat(64) })
+      .where(eq(schema.pdtpPrograms.id, program.id))
+
+    const base = {
+      activityId: activity.id,
+      worksiteId: "ws-1",
+      excluded: false,
+      reason: "Ajuste sobre un programa ya firmado.",
+    }
+
+    // El padrón pasa: no es contenido firmado.
+    await setPdtpActivityWorksiteAdjustment({ ...base, expectedSubjectCount: 12 }, "user-1", ["ws-1"])
+    const params = await listPdtpActivityWorksiteParams([activity.id], "ws-1")
+    expect(params[0]!.expectedSubjectCount).toBe(12)
+
+    // Reenviar el mismo padrón tampoco choca: la comparación es contra el estado
+    // actual, no contra qué campos trae la llamada.
+    await expect(setPdtpActivityWorksiteAdjustment({ ...base, expectedSubjectCount: 12 }, "user-1", ["ws-1"]))
+      .resolves.toBeDefined()
+
+    // Todo lo que sí es compromiso sigue bloqueado.
+    await expect(setPdtpActivityWorksiteAdjustment({ ...base, targetCoveragePercent: 90 }, "user-1", ["ws-1"]))
+      .rejects.toThrow(/revisión/)
+    await expect(setPdtpActivityWorksiteAdjustment({
+      ...base, responsibleSlugs: ["prevencionista"], responsibleDisplay: "PRF",
+    }, "user-1", ["ws-1"])).rejects.toThrow(/revisión/)
+    await expect(setPdtpActivityWorksiteAdjustment({
+      ...base, schedule: [{ month: 3, week: 1, plannedQuantity: 2 }],
+    }, "user-1", ["ws-1"])).rejects.toThrow(/revisión/)
+    await expect(setPdtpActivityWorksiteAdjustment({
+      ...base, excluded: true, reason: "La actividad no aplica al alcance local.",
+    }, "user-1", ["ws-1"])).rejects.toThrow(/revisión/)
   })
 
   it("el ajuste unificado falla cerrado fuera del alcance de faena", async () => {

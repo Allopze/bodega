@@ -9,6 +9,7 @@ import {
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
+import { onDocumentVersionPublished } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import {
   assessRiohsCompleteness,
   RIOHS_DOCUMENT_TYPE_CODE,
@@ -240,7 +241,8 @@ export function approveDocumentVersion(args: WorkflowInput) {
 export async function publishDocumentVersion(args: WorkflowInput) {
   if (!args.versionId) throw new Error("Versión requerida.")
 
-  return db.transaction(async (tx) => {
+  let accreditation: Parameters<typeof onDocumentVersionPublished>[0] | null = null
+  const result = await db.transaction(async (tx) => {
     const { doc, version } = await lockWorkflowContext(tx, args.versionId)
     authorizeWorkflowContext(args, doc)
     if (version.status !== "aprobado") {
@@ -333,8 +335,30 @@ export async function publishDocumentVersion(args: WorkflowInput) {
         payload: { fromStatus: version.status, toStatus: "vigente" },
       }, tx)
     }
+
+    // La actividad que acredita la declara el TIPO del documento, que es el
+    // catálogo — igual que un curso frente a una sesión. Un documento
+    // corporativo no tiene faena, y el programa se mide por faena, así que ahí
+    // no hay nada que acreditar. Se dispara después del commit.
+    if (doc.worksiteId && doc.typeId) {
+      const [type] = await tx.select({ numbers: sstDocumentTypes.pdtpActivityNumbers })
+        .from(sstDocumentTypes).where(eq(sstDocumentTypes.id, doc.typeId)).limit(1)
+      const activityNumbers = Array.isArray(type?.numbers) ? type.numbers as number[] : []
+      if (activityNumbers.length > 0) {
+        accreditation = {
+          documentId: doc.id,
+          versionId: published.id,
+          worksiteId: doc.worksiteId,
+          publishedAt: now,
+          activityNumbers,
+        }
+      }
+    }
     return published
   })
+
+  if (accreditation) await onDocumentVersionPublished(accreditation)
+  return result
 }
 
 

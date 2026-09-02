@@ -197,7 +197,20 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
                     {param?.targetCoveragePercent != null && (
                       <div>Meta R2: {param.targetCoveragePercent}%</div>
                     )}
-                    {!param?.expectedSubjectCount && !param?.targetCoveragePercent && (
+                    {/* Una actividad de cobertura sin padrón no se puede medir "X de Y":
+                        el cálculo cae a la cantidad planificada del mes, que responde
+                        otra pregunta. Antes esto se veía igual que una actividad que no
+                        necesita padrón —un guion— y no había forma de notarlo. */}
+                    {act.indicatorMode === "coverage" && param?.expectedSubjectCount == null && (
+                      <Badge
+                        variant="warning"
+                        className="w-fit text-[10px] font-sans"
+                        title="Mide por cobertura pero nadie cargó su padrón. Mientras falte, se mide por la cantidad planificada del mes en vez de contra el total de sujetos."
+                      >
+                        Sin padrón
+                      </Badge>
+                    )}
+                    {act.indicatorMode !== "coverage" && !param?.expectedSubjectCount && !param?.targetCoveragePercent && (
                       <span className="text-[var(--color-text-muted)]">—</span>
                     )}
                   </TableCell>

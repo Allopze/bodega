@@ -36,7 +36,9 @@ import {
   closeCampaignAction,
   createCampaignAction,
   recordCampaignAttendanceAction,
+  setCampaignPdtpActivitiesAction,
 } from "./actions"
+import { PDTP_CAMPAIGN_ACTIVITIES } from "@/lib/services/prevention-campaigns"
 import type { preventionCampaigns } from "@/db/schema"
 
 export type CampaignWithStats = typeof preventionCampaigns.$inferSelect & {
@@ -83,12 +85,13 @@ export function CampanasClient({
   const [newTitle, setNewTitle] = useState("")
   const [newDescription, setNewDescription] = useState("")
   const [newWorksiteId, setNewWorksiteId] = useState("")
+  const [newActivity, setNewActivity] = useState("")
   const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([])
   const [evidenceUrl, setEvidenceUrl] = useState("")
 
   const handleCreate = () => {
-    if (!newWorksiteId || !newTitle.trim()) {
-      setError("Completa el título y la faena.")
+    if (!newWorksiteId || !newTitle.trim() || !newActivity) {
+      setError("Completa la faena, el título y la actividad que acredita.")
       return
     }
     setError(null)
@@ -97,17 +100,36 @@ export function CampanasClient({
         worksiteId: newWorksiteId,
         title: newTitle,
         description: newDescription,
-        pdtpActivityNumbers: [85],
+        pdtpActivityNumbers: [Number(newActivity)],
       })
       if (res.ok) {
         setIsCreateOpen(false)
         setNewTitle("")
         setNewDescription("")
         setNewWorksiteId("")
+        setNewActivity("")
         router.refresh()
       } else {
         setError(res.message ?? "Ocurrió un error")
       }
+    })
+  }
+
+  /** El número declarado, o el primero si la campaña declara más de uno. */
+  const activityOf = (campaign: CampaignWithStats): number => {
+    const numbers = campaign.pdtpActivityNumbers
+    return Array.isArray(numbers) && numbers.length > 0 ? Number(numbers[0]) : 85
+  }
+
+  const handleSetActivity = (campaignId: string, value: string) => {
+    setError(null)
+    startTransition(async () => {
+      const res = await setCampaignPdtpActivitiesAction({
+        campaignId,
+        pdtpActivityNumbers: [Number(value)],
+      })
+      if (res.ok) router.refresh()
+      else setError(res.message ?? "Ocurrió un error")
     })
   }
 
@@ -193,6 +215,7 @@ export function CampanasClient({
               <TableHeader>
                 <TableRow>
                   <TableHead>Código</TableHead><TableHead>Título / Descripción</TableHead><TableHead>Faena</TableHead>
+                  <TableHead>Acredita</TableHead>
                   <TableHead>Asistentes</TableHead><TableHead>Estado</TableHead><TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
@@ -209,6 +232,32 @@ export function CampanasClient({
                       )}
                     </TableCell>
                     <TableCell className="text-[var(--color-text-muted)]">{cmp.worksiteName}</TableCell>
+                    <TableCell>
+                      {/* Corregible mientras no esté cerrada: una campaña completada ya
+                          acreditó, y cambiarle el número dejaría la ejecución apuntando a
+                          otra actividad. */}
+                      {canManage && cmp.status !== "completed" && cmp.status !== "cancelled" ? (
+                        <Select
+                          value={String(activityOf(cmp))}
+                          onValueChange={(value) => handleSetActivity(cmp.id, value)}
+                        >
+                          <SelectTrigger className="h-8 w-[130px] text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {PDTP_CAMPAIGN_ACTIVITIES.map((activity) => (
+                              <SelectItem key={activity.n} value={String(activity.n)}>
+                                N°{activity.n}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="font-mono text-xs text-[var(--color-text-muted)]">
+                          N°{activityOf(cmp)}
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell className="font-semibold text-[var(--color-primary-ink)]">
                       {cmp.attendanceCount} trabajadores
                     </TableCell>
@@ -281,6 +330,25 @@ export function CampanasClient({
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
               />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Actividad del programa que acredita</Label>
+              <Select value={newActivity} onValueChange={setNewActivity}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona la actividad" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PDTP_CAMPAIGN_ACTIVITIES.map((activity) => (
+                    <SelectItem key={activity.n} value={String(activity.n)}>
+                      N°{activity.n} — {activity.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Antes quedaba fijo en la N°85, así que las otras cuatro campañas del programa no se podían
+                declarar desde acá. Se puede corregir mientras la campaña no esté cerrada.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label>Descripción / Alcance (Opcional)</Label>

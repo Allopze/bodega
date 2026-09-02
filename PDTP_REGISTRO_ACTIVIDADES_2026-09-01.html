@@ -1,0 +1,1443 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<title>Acreditación del PDTP 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+<style>
+:root{
+ --ground:#eef1f4; --panel:#fbfcfd; --panel-2:#f4f6f8; --ink:#12181f; --ink-2:#3d4854; --ink-3:#6b7885;
+ --rule:#d5dbe1; --rule-2:#e4e9ed; --accent:#0e5a63; --accent-soft:#dceaeb;
+ --auto:#1b6e4b; --config:#8a6109; --manual:#3f5570; --gap:#a33b2a; --compuesta:#6b4a70; --baja:#67707c;
+ --auto-bg:#e2f0e8; --config-bg:#f6ead2; --manual-bg:#e4e9f1; --gap-bg:#f7e2de; --compuesta-bg:#efe4f0; --baja-bg:#e7eaee;
+ --on-seg:#ffffff;
+ --shadow:0 1px 2px rgba(18,24,31,.05),0 4px 14px rgba(18,24,31,.05);
+ --sans:"IBM Plex Sans Condensed",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+ --serif:"IBM Plex Serif",Georgia,"Times New Roman",serif;
+ --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+ --ground:#0d1116; --panel:#151b22; --panel-2:#1b222b; --ink:#e6ebf0; --ink-2:#aeb9c4; --ink-3:#7d8894;
+ --rule:#2a333d; --rule-2:#222a33; --accent:#5cc2cc; --accent-soft:#16323a;
+ --auto:#6ec695; --config:#dcae53; --manual:#94aacd; --gap:#e08a78; --compuesta:#c299c7; --baja:#98a3af;
+ --auto-bg:#163024; --config-bg:#33280f; --manual-bg:#1e2735; --gap-bg:#361f1b; --compuesta-bg:#2b1f2d; --baja-bg:#232a32;
+ --on-seg:#0d1116;
+ --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.3);
+}}
+:root[data-theme="dark"]{
+ --ground:#0d1116; --panel:#151b22; --panel-2:#1b222b; --ink:#e6ebf0; --ink-2:#aeb9c4; --ink-3:#7d8894;
+ --rule:#2a333d; --rule-2:#222a33; --accent:#5cc2cc; --accent-soft:#16323a;
+ --auto:#6ec695; --config:#dcae53; --manual:#94aacd; --gap:#e08a78; --compuesta:#c299c7; --baja:#98a3af;
+ --auto-bg:#163024; --config-bg:#33280f; --manual-bg:#1e2735; --gap-bg:#361f1b; --compuesta-bg:#2b1f2d; --baja-bg:#232a32;
+ --on-seg:#0d1116;
+ --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 14px rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--serif);font-size:15px;line-height:1.6;
+ -webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px 96px}
+h1,h2,h3,h4{font-family:var(--sans);text-wrap:balance;margin:0;line-height:1.15}
+code{font-family:var(--mono);font-size:.86em;background:var(--panel-2);border:1px solid var(--rule-2);
+ border-radius:3px;padding:.08em .32em;color:var(--ink-2);white-space:nowrap}
+strong{font-weight:600;color:var(--ink)}
+
+/* ── Cabecera ── */
+header{padding:56px 0 36px;border-bottom:2px solid var(--ink)}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+ color:var(--accent);margin:0 0 14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.eyebrow span{color:var(--ink-3)}
+h1{font-size:clamp(34px,6vw,54px);font-weight:700;letter-spacing:-.02em;max-width:19ch}
+.standfirst{font-size:18px;color:var(--ink-2);max-width:62ch;margin:18px 0 0}
+.factbar{display:flex;flex-wrap:wrap;gap:0;margin-top:30px;border:1px solid var(--rule);
+ border-radius:6px;overflow:hidden;background:var(--panel)}
+.fact{flex:1 1 150px;padding:13px 16px;border-right:1px solid var(--rule-2)}
+.fact:last-child{border-right:0}
+.fact dt{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.fact dd{margin:3px 0 0;font-family:var(--sans);font-weight:600;font-size:15px;font-variant-numeric:tabular-nums}
+
+/* ── Veredicto ── */
+.verdict{margin:44px 0 0;padding:30px 32px;background:var(--panel);border:1px solid var(--rule);
+ border-left:4px solid var(--accent);border-radius:4px;box-shadow:var(--shadow)}
+.verdict h2{font-size:24px;font-weight:600;letter-spacing:-.01em}
+.verdict p{margin:14px 0 0;max-width:70ch;color:var(--ink-2)}
+.verdict p+p{margin-top:11px}
+
+h2.sec{font-size:13px;font-family:var(--mono);font-weight:500;letter-spacing:.14em;text-transform:uppercase;
+ color:var(--ink-3);margin:56px 0 20px;padding-bottom:9px;border-bottom:1px solid var(--rule)}
+
+/* ── Barra de proporción ── */
+.bar{display:flex;height:46px;border-radius:5px;overflow:hidden;border:1px solid var(--rule)}
+.seg{display:grid;place-items:center;min-width:34px;font-family:var(--mono);font-size:13px;font-weight:600;color:var(--on-seg)}
+.s-auto{background:var(--auto)}.s-config{background:var(--config)}.s-manual{background:var(--manual)}
+.s-gap{background:var(--gap)}.s-compuesta{background:var(--compuesta)}.s-baja{background:var(--baja)}
+.legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:1px;margin-top:1px;
+ background:var(--rule);border:1px solid var(--rule);border-top:0;border-radius:0 0 5px 5px;overflow:hidden}
+.leg{background:var(--panel);padding:15px 16px}
+.leg-n{font-family:var(--mono);font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;display:block}
+.leg h4{font-size:14px;font-weight:600;margin:2px 0 4px}
+.leg p{margin:0;font-size:13px;line-height:1.45;color:var(--ink-3)}
+.l-auto .leg-n{color:var(--auto)}.l-config .leg-n{color:var(--config)}.l-manual .leg-n{color:var(--manual)}
+.l-gap .leg-n{color:var(--gap)}.l-compuesta .leg-n{color:var(--compuesta)}.l-baja .leg-n{color:var(--baja)}
+
+/* ── Bloqueos ── */
+.blocks{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.block{background:var(--panel);border:1px solid var(--rule);border-radius:5px;padding:20px 22px}
+.block h3{font-size:16px;font-weight:600;margin-bottom:8px;display:flex;align-items:baseline;gap:9px}
+.block h3 em{font-family:var(--mono);font-style:normal;font-size:11px;letter-spacing:.08em;
+ text-transform:uppercase;color:var(--gap);border:1px solid var(--gap);border-radius:3px;padding:1px 6px}
+.block p{margin:0;font-size:14px;color:var(--ink-2)}
+
+/* ── Controles ── */
+.controls{position:sticky;top:0;z-index:5;background:var(--ground);padding:14px 0 12px;
+ border-bottom:1px solid var(--rule);display:flex;flex-wrap:wrap;gap:9px;align-items:center}
+.chip{font-family:var(--sans);font-size:13px;font-weight:500;color:var(--ink-2);background:var(--panel);
+ border:1px solid var(--rule);border-radius:20px;padding:6px 13px;cursor:pointer;display:flex;
+ align-items:center;gap:7px;transition:border-color .12s,color .12s}
+.chip:hover{border-color:var(--ink-3)}
+.chip.on{background:var(--ink);color:var(--ground);border-color:var(--ink)}
+.chip b{font-family:var(--mono);font-size:11px;font-weight:500;opacity:.65;font-variant-numeric:tabular-nums}
+.chip:focus-visible,#q:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}
+.d-auto{background:var(--auto)}.d-config{background:var(--config)}.d-manual{background:var(--manual)}
+.d-gap{background:var(--gap)}.d-compuesta{background:var(--compuesta)}.d-baja{background:var(--baja)}
+#q{margin-left:auto;font-family:var(--sans);font-size:13px;padding:7px 13px;border-radius:20px;
+ border:1px solid var(--rule);background:var(--panel);color:var(--ink);min-width:190px}
+#q::placeholder{color:var(--ink-3)}
+
+/* ── Registro ── */
+.register{display:flex;flex-direction:column;gap:1px;background:var(--rule-2);
+ border:1px solid var(--rule);border-top:0;border-radius:0 0 5px 5px;overflow:hidden}
+.reg{display:grid;grid-template-columns:74px 1fr 172px;gap:20px;padding:17px 20px;background:var(--panel);
+ align-items:start;border-left:3px solid transparent}
+.reg[data-estado="auto"]{border-left-color:var(--auto)}
+.reg[data-estado="config"]{border-left-color:var(--config)}
+.reg[data-estado="manual"]{border-left-color:var(--manual)}
+.reg[data-estado="gap"]{border-left-color:var(--gap)}
+.reg[data-estado="compuesta"]{border-left-color:var(--compuesta)}
+.reg[data-estado="baja"]{border-left-color:var(--baja)}
+.reg[hidden]{display:none}
+.reg-n .num{font-family:var(--mono);font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;
+ display:block;line-height:1.1}
+.reg-n .mode{font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--ink-3);
+ display:block;margin-top:3px}
+.reg-main h3{font-size:16px;font-weight:600;line-height:1.3}
+.nota{margin:7px 0 0;font-size:14px;line-height:1.55;color:var(--ink-2);max-width:74ch}
+.meta{display:flex;flex-wrap:wrap;gap:0 22px;margin:11px 0 0}
+.meta div{display:flex;gap:6px;align-items:baseline}
+.meta dt{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.meta dd{margin:0;font-family:var(--sans);font-size:13px;color:var(--ink-2)}
+.pill{font-family:var(--sans);font-size:12px;font-weight:600;padding:4px 10px;border-radius:3px;
+ display:inline-block;line-height:1.35}
+.p-auto{background:var(--auto-bg);color:var(--auto)}
+.p-config{background:var(--config-bg);color:var(--config)}
+.p-manual{background:var(--manual-bg);color:var(--manual)}
+.p-gap{background:var(--gap-bg);color:var(--gap)}
+.p-compuesta{background:var(--compuesta-bg);color:var(--compuesta)}
+.p-baja{background:var(--baja-bg);color:var(--baja)}
+#empty{padding:40px 20px;text-align:center;color:var(--ink-3);background:var(--panel)}
+
+/* ── Cierre ── */
+.todo{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+.card{background:var(--panel);border:1px solid var(--rule);border-radius:5px;padding:24px 26px}
+.card>h3{font-size:19px;font-weight:600;margin-bottom:4px}
+.card>p.lead{margin:0 0 16px;font-size:14px;color:var(--ink-3)}
+.card ol{margin:0;padding:0;list-style:none;counter-reset:step;display:flex;flex-direction:column;gap:13px}
+.card li{counter-increment:step;display:grid;grid-template-columns:26px 1fr;gap:12px;font-size:14px;
+ line-height:1.5;color:var(--ink-2)}
+.card li::before{content:counter(step,decimal-leading-zero);font-family:var(--mono);font-size:11px;
+ font-weight:500;color:var(--accent);padding-top:3px}
+.card li b{color:var(--ink);font-weight:600}
+footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--rule);font-family:var(--mono);
+ font-size:11.5px;color:var(--ink-3);line-height:1.7}
+@media (max-width:760px){
+ .reg{grid-template-columns:52px 1fr;gap:14px;padding:15px 14px}
+ .reg-estado{grid-column:2}
+ .verdict{padding:24px 20px}
+ .controls{position:static}
+ #q{margin-left:0;width:100%}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+ <p class="eyebrow">Auditoría de mecanismos · Plataforma Chome <span>1 de septiembre de 2026</span></p>
+ <h1>¿Se puede marcar cumplimiento en las 87?</h1>
+ <p class="standfirst">Revisión actividad por actividad del Programa de Trabajo Preventivo SG-SST 2026, contrastando el catálogo con los conectores que existen hoy en el código.</p>
+ <dl class="factbar">
+  <div class="fact"><dt>Programa</dt><dd>pdtp-2026-v1</dd></div>
+  <div class="fact"><dt>Actividades activas</dt><dd>87</dd></div>
+  <div class="fact"><dt>Estado</dt><dd>draft</dd></div>
+  <div class="fact"><dt>Con camino automático</dt><dd>47 de 87</dd></div>
+  <div class="fact"><dt>Automáticas hoy</dt><dd>17 de 87</dd></div>
+ </dl>
+</header>
+
+<section class="verdict">
+ <h2>Sí, las 87 se pueden marcar a mano — pero primero hay que activar el programa</h2>
+ <p>El formulario de registro se dibuja en <strong>todas</strong> las filas de la planilla, sin mirar el mecanismo de la actividad: sólo exige el permiso <code>prevention:pdtp:execute</code> y una faena seleccionada. No hay ninguna actividad que la plataforma impida marcar.</p>
+ <p>El bloqueo real es otro: <code>markPdtpExecution</code> rechaza toda ejecución mientras el programa no esté <code>active</code>, y el de 2026 sigue en <code>draft</code>. Hoy no se puede registrar nada, en ninguna de las 87.</p>
+ <p>La pregunta que sí discrimina es <em>cuántas se cierran solas</em>. Ahí el número baja: <strong>17 se acreditan sin que nadie toque el PDTP</strong>, otras <strong>30 tienen el conector cableado pero les falta declarar un dato</strong>, y las <strong>40 restantes dependen de que alguien las marque a mano</strong> — 15 por decisión de diseño y 25 porque el enganche que el diseño les prometió no está construido.</p>
+</section>
+
+<h2 class="sec">Reparto de las 87</h2>
+<div class="bar"><span class="seg s-auto" style="flex:17" title="Automática: 17"><b>17</b></span><span class="seg s-config" style="flex:30" title="Automática por configurar: 30"><b>30</b></span><span class="seg s-manual" style="flex:15" title="Sólo manual: 15"><b>15</b></span><span class="seg s-gap" style="flex:14" title="Brecha de código: 14"><b>14</b></span><span class="seg s-compuesta" style="flex:6" title="Submódulo inexistente: 6"><b>6</b></span><span class="seg s-baja" style="flex:5" title="Baja sin aplicar: 5"><b>5</b></span></div>
+<div class="legend">
+ <div class="leg l-auto">
+  <span class="leg-n">17</span>
+  <h4>Automática</h4>
+  <p>Cae sola, sin configurar nada</p>
+ </div>
+ <div class="leg l-config">
+  <span class="leg-n">30</span>
+  <h4>Automática por configurar</h4>
+  <p>Conector cableado, falta declarar el número</p>
+ </div>
+ <div class="leg l-manual">
+  <span class="leg-n">15</span>
+  <h4>Sólo manual</h4>
+  <p>Constancia en la planilla, por diseño</p>
+ </div>
+ <div class="leg l-gap">
+  <span class="leg-n">14</span>
+  <h4>Brecha de código</h4>
+  <p>Declarada enganche, sin conector</p>
+ </div>
+ <div class="leg l-compuesta">
+  <span class="leg-n">6</span>
+  <h4>Submódulo inexistente</h4>
+  <p>Depende de Habilitación del trabajador</p>
+ </div>
+ <div class="leg l-baja">
+  <span class="leg-n">5</span>
+  <h4>Baja sin aplicar</h4>
+  <p>El diseño la retiró; sigue activa</p>
+ </div></div>
+
+<h2 class="sec">Dos bloqueos transversales</h2>
+<div class="blocks">
+ <div class="block">
+  <h3>El programa está en borrador <em>bloquea todo</em></h3>
+  <p>Ninguna ejecución entra mientras <code>pdtp_programs.status</code> siga en <code>draft</code>. Al activarlo, además, cada responsable recibe de golpe todo lo vencido del año: en Cholguán son 46 actividades para el PRF, 13 para el administrador de contrato y 11 para el jefe de terreno.</p>
+ </div>
+ <div class="block">
+  <h3>El campo <code>mechanism</code> está vacío <em>sin aplicar</em></h3>
+  <p>Las 87 tienen <code>mechanism = 'sin_definir'</code>. La clasificación existe en <code>scripts/apply-pdtp-2026-mechanisms.ts</code> y nunca se corrió aquí, así que cualquier vista que filtre por mecanismo se ve vacía. Se arregla con <code>npm run pdtp:apply-mechanisms</code>.</p>
+ </div>
+</div>
+
+<h2 class="sec">Registro actividad por actividad</h2>
+<div class="controls"><button class="chip on" data-filter="todas">
+   Todas<b>87</b></button><button class="chip" data-filter="auto">
+   <i class="dot d-auto"></i>Automática<b>17</b></button><button class="chip" data-filter="config">
+   <i class="dot d-config"></i>Automática por configurar<b>30</b></button><button class="chip" data-filter="manual">
+   <i class="dot d-manual"></i>Sólo manual<b>15</b></button><button class="chip" data-filter="gap">
+   <i class="dot d-gap"></i>Brecha de código<b>14</b></button><button class="chip" data-filter="compuesta">
+   <i class="dot d-compuesta"></i>Submódulo inexistente<b>6</b></button><button class="chip" data-filter="baja">
+   <i class="dot d-baja"></i>Baja sin aplicar<b>5</b></button><input id="q" type="search" placeholder="Buscar actividad, responsable, módulo…" aria-label="Buscar en el registro"></div>
+<div class="register" id="register">
+<article class="reg" data-estado="auto" data-q="1 aprobar el programa de prevención de riesgos aprobación del programa jefe del departamento de prevención de riesgos">
+ <div class="reg-n"><span class="num">1</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Aprobar el Programa de Prevención de Riesgos</h3>
+  <p class="nota"><code>decidePdtpApprovalStep</code> → <code>onPdtpProgramLegallyApproved</code>. La firma de Legal y RRHH la acredita en todas las faenas del programa.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Jefe del Departamento de Prevención de Riesgos</dd></div>
+   <div><dt>Vía</dt><dd>Aprobación del programa</dd></div>
+   <div><dt>Quién marca</dt><dd>Nadie: cae sola</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-auto">Automática</span></div>
+</article>
+<article class="reg" data-estado="baja" data-q="2 difundir el plan a todos los niveles de la gerencias y subgerencia — jefe del departamento de prevención de riesgos">
+ <div class="reg-n"><span class="num">2</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Difundir el Plan a todos los niveles de la gerencias y subgerencia</h3>
+  <p class="nota">El diseño la dio de baja (difundir a gerencias), pero sigue <code>active</code> en la base.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Jefe del Departamento de Prevención de Riesgos</dd></div>
+   <div><dt>Vía</dt><dd>—</dd></div>
+   <div><dt>Quién marca</dt><dd>Jefe del Departamento de Prevención de Riesgos</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-baja">Baja sin aplicar</span></div>
+</article>
+<article class="reg" data-estado="manual" data-q="3 difundir el plan a todos los niveles de la organización en las faenas y cphs planilla pdtp prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">3</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Difundir el Plan a todos los niveles de la organización en las faenas y CPHS</h3>
+  <p class="nota">Difusión del plan: no hay módulo. Se marca en la planilla con el acta o la lista de asistencia como evidencia.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Planilla PDTP</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-manual">Sólo manual</span></div>
+</article>
+<article class="reg" data-estado="baja" data-q="5 control de cumplimiento de las actividades de gestión preventiva de la linea de mando. — subgerente de operaciones">
+ <div class="reg-n"><span class="num">5</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Control de cumplimiento de las actividades de gestión preventiva de la linea de mando.</h3>
+  <p class="nota">El diseño la dio de baja (control de la línea de mando), pero sigue <code>active</code> en la base.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Subgerente de operaciones</dd></div>
+   <div><dt>Vía</dt><dd>—</dd></div>
+   <div><dt>Quién marca</dt><dd>Subgerente de operaciones</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-baja">Baja sin aplicar</span></div>
+</article>
+<article class="reg" data-estado="manual" data-q="6 reunión revisión actividades sg-sst (chome y planta) incidentes etc. planilla pdtp prevencionista de riesgos en faena, administrador de contrato, supervisor de terreno, jefe de terreno">
+ <div class="reg-n"><span class="num">6</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Reunión revisión actividades SG-SST (chome y planta) Incidentes etc.</h3>
+  <p class="nota">Reunión de revisión SG-SST: no hay objeto "reunión" fuera del CPHS. Constancia con acta.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato, Supervisor de terreno, Jefe de terreno</dd></div>
+   <div><dt>Vía</dt><dd>Planilla PDTP</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato, Supervisor de terreno, Jefe de terreno</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-manual">Sólo manual</span></div>
+</article>
+<article class="reg" data-estado="gap" data-q="7 envio de estadistica de cada faena (indicadores de seguriadad) indicadores prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">7</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Envio de estadistica de cada faena (indicadores de seguriadad)</h3>
+  <p class="nota">El diseño la engancha al ingreso de indicadores de la faena, pero <code>indicadores</code> ni siquiera existe en el union <code>PdtpAccreditationSourceType</code>.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Indicadores</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-gap">Brecha de código</span></div>
+</article>
+<article class="reg" data-estado="auto" data-q="9 reunión revisión gestión preventiva sg-sst cphs · revisión por la dirección gerencia legal y recursos humanos, jefe del departamento de prevención de riesgos, prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">9</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Reunión revisión gestión preventiva SG-SST</h3>
+  <p class="nota"><code>closeManagementReview</code> → <code>onManagementReviewClosed</code>. Número fijo en el conector.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Gerencia Legal y Recursos Humanos, Jefe del Departamento de Prevención de Riesgos, Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>CPHS · Revisión por la dirección</dd></div>
+   <div><dt>Quién marca</dt><dd>Nadie: cae sola</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-auto">Automática</span></div>
+</article>
+<article class="reg" data-estado="manual" data-q="10 verificar el cumplimiento de las condiciones ambientales básicas en los lugares de trabajo, según lo establecido en el ds nº 594. planilla pdtp prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">10</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Verificar el cumplimiento de las condiciones ambientales básicas en los lugares de trabajo, según lo establecido en el DS Nº 594.</h3>
+  <p class="nota">Condiciones ambientales DS 594: la definición de checklist no existe (<code>lib/sst/definitions/</code> no tiene DS 594). Constancia hasta construirla.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Planilla PDTP</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-manual">Sólo manual</span></div>
+</article>
+<article class="reg" data-estado="auto" data-q="11 constituir el o los comités paritarios cuando proceda y velar por el cumplimiento de sus funciones, según lo establecido en el ds nº 44 cphs prevencionista de riesgos en faena, administrador de contrato">
+ <div class="reg-n"><span class="num">11</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Constituir el o los Comités Paritarios cuando proceda y velar por el cumplimiento de sus funciones, según lo establecido en el DS Nº 44</h3>
+  <p class="nota"><code>constituteCommittee</code> → <code>onCphsCommitteeConstituted</code>. Crear el comité en la faena la cierra.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+   <div><dt>Vía</dt><dd>CPHS</dd></div>
+   <div><dt>Quién marca</dt><dd>Nadie: cae sola</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-auto">Automática</span></div>
+</article>
+<article class="reg" data-estado="baja" data-q="12 los integrantes del comité paritario deben cumplir con los cursos de acuerdo a lo que indica el ds n°44 — prevencionista de riesgos en faena, administrador de contrato">
+ <div class="reg-n"><span class="num">12</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Los integrantes del comité paritario deben cumplir con los cursos de acuerdo a lo que indica el DS N°44</h3>
+  <p class="nota">El diseño la trasladó al programa propio del CPHS (D5); sigue <code>active</code> en el PDTP.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+   <div><dt>Vía</dt><dd>—</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-baja">Baja sin aplicar</span></div>
+</article>
+<article class="reg" data-estado="baja" data-q="13 comité paritario debera reunir una vez al mes dejando evidencia de dicha reunión o cada vez que ocurra un accidente — prevencionista de riesgos en faena, administrador de contrato">
+ <div class="reg-n"><span class="num">13</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Comité paritario debera reunir una vez al mes dejando evidencia de dicha reunión o cada vez que ocurra un accidente</h3>
+  <p class="nota">El diseño la trasladó al programa propio del CPHS (D5); sigue <code>active</code> en el PDTP.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+   <div><dt>Vía</dt><dd>—</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-baja">Baja sin aplicar</span></div>
+</article>
+<article class="reg" data-estado="baja" data-q="14 crear programa con plan de trabajo para comité paritario (cumplir todad las actividades de dicho programa de acuerdo a la certificación plata mutual) — prevencionista de riesgos en faena, administrador de contrato, comité paritario de higiene y seguridad">
+ <div class="reg-n"><span class="num">14</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Crear programa con plan de trabajo para comité paritario (cumplir todad las actividades de dicho programa de acuerdo a la certificación plata mutual)</h3>
+  <p class="nota">El diseño la trasladó al programa propio del CPHS (D5); sigue <code>active</code> en el PDTP.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato, Comité Paritario de Higiene y Seguridad</dd></div>
+   <div><dt>Vía</dt><dd>—</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato, Comité Paritario de Higiene y Seguridad</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-baja">Baja sin aplicar</span></div>
+</article>
+<article class="reg" data-estado="compuesta" data-q="15 dictar charlas de inducción al personal nuevo (irl) o que sea cambiado de puesto de trabajo o cargo de acuerdo a lo que indica ds. n° 44 habilitación del trabajador prevencionista de riesgos en faena, supervisor de terreno, jefe de terreno, comité paritario de higiene y seguridad">
+ <div class="reg-n"><span class="num">15</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Dictar charlas de inducción al personal nuevo (IRL) o que sea cambiado de puesto de trabajo o cargo de acuerdo a lo que indica DS. N° 44</h3>
+  <p class="nota">Rol en el submódulo: Charlas de inducción IRL. <strong>El submódulo no existe</strong> — no hay ruta, servicio ni tabla. Su medición es por cobertura y <code>indicator_mode</code> sigue en <code>planned_vs_completed</code>.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena, Supervisor de terreno, Jefe de terreno, Comité Paritario de Higiene y Seguridad</dd></div>
+   <div><dt>Vía</dt><dd>Habilitación del trabajador</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena, Supervisor de terreno, Jefe de terreno, Comité Paritario de Higiene y Seguridad</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-compuesta">Submódulo inexistente</span></div>
+</article>
+<article class="reg" data-estado="compuesta" data-q="16 realizar prueba de evaluación capacitación irl habilitación del trabajador prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">16</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Realizar Prueba de evaluación capacitación IRL</h3>
+  <p class="nota">Rol en el submódulo: Prueba de evaluación IRL. <strong>El submódulo no existe</strong> — no hay ruta, servicio ni tabla. Su medición es por cobertura y <code>indicator_mode</code> sigue en <code>planned_vs_completed</code>.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Habilitación del trabajador</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-compuesta">Submódulo inexistente</span></div>
+</article>
+<article class="reg" data-estado="compuesta" data-q="17 identificación de personas trabajadoras especialmente sencibles (re-28) habilitación del trabajador prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">17</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Identificación de personas trabajadoras especialmente sencibles (RE-28)</h3>
+  <p class="nota">Rol en el submódulo: Identificación RE-28. <strong>El submódulo no existe</strong> — no hay ruta, servicio ni tabla. Su medición es por cobertura y <code>indicator_mode</code> sigue en <code>planned_vs_completed</code>.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Habilitación del trabajador</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-compuesta">Submódulo inexistente</span></div>
+</article>
+<article class="reg" data-estado="compuesta" data-q="18 entregar al momento de la incorporación a la empresa del reglamento interno de orden higiene y seguridad a cada trabajador (talana digital). habilitación del trabajador prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">18</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Entregar al momento de la incorporación a la empresa del Reglamento Interno de Orden Higiene y Seguridad a cada trabajador (TALANA digital).</h3>
+  <p class="nota">Rol en el submódulo: Entrega de RIOHS. <strong>El submódulo no existe</strong> — no hay ruta, servicio ni tabla. Su medición es por cobertura y <code>indicator_mode</code> sigue en <code>planned_vs_completed</code>.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Habilitación del trabajador</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-compuesta">Submódulo inexistente</span></div>
+</article>
+<article class="reg" data-estado="gap" data-q="19 mantener actualizada la carpeta de requisitos legales de las empresas, , entrega epp, irl,riohs con cartas de seremi e inspección documentación sst prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">19</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Mantener actualizada la carpeta de requisitos legales de las empresas, , entrega EPP, IRL,RIOHS con cartas de seremi e inspección</h3>
+  <p class="nota"><code>documento</code> no está en el union de <code>sourceType</code> y ningún servicio de documentación llama al motor. Además el módulo está en 0 filas.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Documentación SST</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-gap">Brecha de código</span></div>
+</article>
+<article class="reg" data-estado="manual" data-q="20 reunión con empresa mandante y programas de trabajo empresas mandante planilla pdtp prevencionista de riesgos en faena, administrador de contrato">
+ <div class="reg-n"><span class="num">20</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Reunión con empresa mandante y programas de trabajo empresas mandante</h3>
+  <p class="nota">Reunión con la empresa mandante: sin módulo, y el diseño decidió no inventarlo.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+   <div><dt>Vía</dt><dd>Planilla PDTP</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-manual">Sólo manual</span></div>
+</article>
+<article class="reg" data-estado="gap" data-q="21 informes, cierres y seguimiento de accidentes e incidentes incidentes prevencionista de riesgos en faena, administrador de contrato">
+ <div class="reg-n"><span class="num">21</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Informes, cierres y seguimiento de accidentes e incidentes</h3>
+  <p class="nota">Ningún punto del módulo la acredita. El diseño (C6) recomienda retirarla: mide lo mismo que las N°66–78 e infla el denominador.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+   <div><dt>Vía</dt><dd>Incidentes</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-gap">Brecha de código</span></div>
+</article>
+<article class="reg" data-estado="manual" data-q="22 mantener control de las plataformas de la empresa y de la empresa mandante. planilla pdtp prevencionista de riesgos en faena, administrador de contrato">
+ <div class="reg-n"><span class="num">22</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Mantener control de las plataformas de la Empresa y de la empresa mandante.</h3>
+  <p class="nota">Control de plataformas de la empresa y del mandante: su objeto vive fuera de la plataforma.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+   <div><dt>Vía</dt><dd>Planilla PDTP</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-manual">Sólo manual</span></div>
+</article>
+<article class="reg" data-estado="compuesta" data-q="23 registro entrega de elementos de protección personal (epp) de acuerdo al cargo habilitación del trabajador prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">23</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Registro entrega de Elementos de protección personal (EPP) de acuerdo al cargo</h3>
+  <p class="nota">Rol en el submódulo: Entrega inicial de EPP según cargo. <strong>El submódulo no existe</strong> — no hay ruta, servicio ni tabla. Su medición es por cobertura y <code>indicator_mode</code> sigue en <code>planned_vs_completed</code>.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Habilitación del trabajador</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-compuesta">Submódulo inexistente</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="24 inspección estado de extintores inspecciones prevencionista de riesgos en faena, supervisor de terreno, jefe de terreno">
+ <div class="reg-n"><span class="num">24</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Inspección estado de extintores</h3>
+  <p class="nota">Plantilla <code>inspeccion_extintores</code>. El conector <code>onInspectionCompleted</code> lee <code>pdtp_activity_numbers</code> de la plantilla. <strong>Sin declarar en la base de desarrollo</strong>: hoy el conector es no-op. Se corrige con <code>npm run db:seed-pdtp-inspection-templates</code>, sin código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena, Supervisor de terreno, Jefe de terreno</dd></div>
+   <div><dt>Vía</dt><dd>Inspecciones</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien completa la inspección</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="25 realizar report de uso diario de equipos inspecciones conductores, operadores y choferes">
+ <div class="reg-n"><span class="num">25</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Realizar report de uso diario de equipos</h3>
+  <p class="nota">Plantilla <code>reporte_equipos</code>. El conector <code>onInspectionCompleted</code> lee <code>pdtp_activity_numbers</code> de la plantilla. <strong>Sin declarar en la base de desarrollo</strong>: hoy el conector es no-op. Se corrige con <code>npm run db:seed-pdtp-inspection-templates</code>, sin código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Conductores, operadores y choferes</dd></div>
+   <div><dt>Vía</dt><dd>Inspecciones</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien completa la inspección</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="26 revisión y firma del report de uso diario de equipos inspecciones supervisor de terreno, jefe de terreno">
+ <div class="reg-n"><span class="num">26</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Revisión y firma del report de uso diario de equipos</h3>
+  <p class="nota">Plantilla <code>reporte_equipos</code>. El conector <code>onInspectionCompleted</code> lee <code>pdtp_activity_numbers</code> de la plantilla. <strong>Sin declarar en la base de desarrollo</strong>: hoy el conector es no-op. Se corrige con <code>npm run db:seed-pdtp-inspection-templates</code>, sin código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Supervisor de terreno, Jefe de terreno</dd></div>
+   <div><dt>Vía</dt><dd>Inspecciones</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien completa la inspección</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="27 inspección taller de mantención y bodega de acopio respel inspecciones prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">27</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Inspección taller de mantención y bodega de acopio RESPEL</h3>
+  <p class="nota">Plantilla <code>inspeccion_taller</code>. El conector <code>onInspectionCompleted</code> lee <code>pdtp_activity_numbers</code> de la plantilla. Ya declarada en la base de desarrollo.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Inspecciones</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien completa la inspección</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="manual" data-q="28 revisar y cierra las inspecciones de estado de equipos (camiones, equipos,carros, contenedores) planilla pdtp jefe de mantención, administrador de contrato">
+ <div class="reg-n"><span class="num">28</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Revisar y cierra las inspecciones de estado de equipos (camiones, equipos,carros, contenedores)</h3>
+  <p class="nota">Manual por decisión de jefatura (2026-08-21), no por falta de mecanismo: es un acto semanal sobre el conjunto de inspecciones recibidas, no sobre un run. <code>PDTP_2026_INSPECTION_SPECS</code> la excluye explícitamente.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Jefe de mantención, Administrador de contrato</dd></div>
+   <div><dt>Vía</dt><dd>Planilla PDTP</dd></div>
+   <div><dt>Quién marca</dt><dd>Jefe de mantención, Administrador de contrato</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-manual">Sólo manual</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="29 realizar lista de chequeo contedores, de acuerdo a numero de contenedores de la faena inspecciones supervisor de terreno, jefe de terreno">
+ <div class="reg-n"><span class="num">29</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Realizar lista de chequeo contedores, de acuerdo a numero de contenedores de la faena</h3>
+  <p class="nota">Plantilla <code>inspeccion_contenedores</code>. El conector <code>onInspectionCompleted</code> lee <code>pdtp_activity_numbers</code> de la plantilla. <strong>Sin declarar en la base de desarrollo</strong>: hoy el conector es no-op. Se corrige con <code>npm run db:seed-pdtp-inspection-templates</code>, sin código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Supervisor de terreno, Jefe de terreno</dd></div>
+   <div><dt>Vía</dt><dd>Inspecciones</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien completa la inspección</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="manual" data-q="30 realizar alcotest planilla pdtp prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">30</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Realizar alcotest</h3>
+  <p class="nota">Alcotest: no existe módulo. Lo único que hay es el equipo físico como ítem de servicio para su calibración.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Planilla PDTP</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-manual">Sólo manual</span></div>
+</article>
+<article class="reg" data-estado="manual" data-q="31 realizar alcotest planilla pdtp supervisor de terreno, jefe de terreno">
+ <div class="reg-n"><span class="num">31</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Realizar alcotest</h3>
+  <p class="nota">Alcotest por turno: mismo caso que la N°30.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Supervisor de terreno, Jefe de terreno</dd></div>
+   <div><dt>Vía</dt><dd>Planilla PDTP</dd></div>
+   <div><dt>Quién marca</dt><dd>Supervisor de terreno, Jefe de terreno</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-manual">Sólo manual</span></div>
+</article>
+<article class="reg" data-estado="manual" data-q="32 envio registros alcotest, según do-48 planilla pdtp prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">32</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Envio registros alcotest, según DO-48</h3>
+  <p class="nota">Envío de registros de alcotest (DO-48): depende de las N°30/31, que tampoco tienen módulo.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Planilla PDTP</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-manual">Sólo manual</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="33 realizar lista de chequeo estado de equipos y documentación de maquinarias (camiones y equipos, carros, bateas) cantidad de inspecciones de acuerdo a los equipos en faena inspecciones prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">33</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Realizar lista de chequeo estado de equipos y documentación de maquinarias (camiones y equipos, carros, bateas) Cantidad de inspecciones de acuerdo a los equipos en faena</h3>
+  <p class="nota">Plantilla <code>inspeccion_equipos_moviles</code>. El conector <code>onInspectionCompleted</code> lee <code>pdtp_activity_numbers</code> de la plantilla. <strong>Sin declarar en la base de desarrollo</strong>: hoy el conector es no-op. Se corrige con <code>npm run db:seed-pdtp-inspection-templates</code>, sin código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Inspecciones</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien completa la inspección</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="34 realizar lista de chequeo estado de equipos y documentación de maquinarias (camiones y equipos, carros, bateas) cantidad de inspecciones de acuerdo a los equipos en faena inspecciones supervisor de terreno, jefe de terreno">
+ <div class="reg-n"><span class="num">34</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Realizar lista de chequeo estado de equipos y documentación de maquinarias (camiones y equipos, carros, bateas) Cantidad de inspecciones de acuerdo a los equipos en faena</h3>
+  <p class="nota">Plantilla <code>inspeccion_carros</code>. El conector <code>onInspectionCompleted</code> lee <code>pdtp_activity_numbers</code> de la plantilla. <strong>Sin declarar en la base de desarrollo</strong>: hoy el conector es no-op. Se corrige con <code>npm run db:seed-pdtp-inspection-templates</code>, sin código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Supervisor de terreno, Jefe de terreno</dd></div>
+   <div><dt>Vía</dt><dd>Inspecciones</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien completa la inspección</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="gap" data-q="35 mantener y actualizar inventario de riesgos miper , identificando los procesos, cargos,equipos, materiales y áreas. miper prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">35</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Mantener y actualizar inventario de riesgos MIPER , identificando los procesos, cargos,equipos, materiales y áreas.</h3>
+  <p class="nota">Ningún servicio de MIPER importa el motor de acreditación, pese a los 9 matrices y 30 entradas que hay en la base.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>MIPER</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-gap">Brecha de código</span></div>
+</article>
+<article class="reg" data-estado="gap" data-q="36 difusión de matriz de riesgos miper miper / documentación sst prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">36</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Difusión de matriz de riesgos MIPER</h3>
+  <p class="nota">Requiere acuse de recibo por cargo, que vive en Documentación SST — sin conector.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>MIPER / Documentación SST</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-gap">Brecha de código</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="37 realizar charlas de seguridad para reforzar las conductas seguras. estas charlas tienen como objetivo generar un espacio de diálogo entre la jefatura y el personal, que también permiten reforzar de manera permanente el concepto de seguridad en las personas.(consulta y participación) capacitación prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">37</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Realizar Charlas de Seguridad para reforzar las conductas seguras. Estas charlas tienen como objetivo generar un espacio de diálogo entre la jefatura y el personal, que también permiten reforzar de manera permanente el concepto de seguridad en las personas.(Consulta y participación)</h3>
+  <p class="nota"><code>onTrainingSessionClosed</code> acredita con los <code>pdtp_activity_numbers</code> del curso al cerrar la sesión. <strong>Ningún curso los declara hoy</strong> (el único cargado, B-01, trae <code>[]</code>). Es dato, no código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Capacitación</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien cierra la sesión</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="38 realizar charlas de seguridad para reforzar las conductas seguras. estas charlas tienen como objetivo generar un espacio de diálogo entre la jefatura y el personal, que también permiten reforzar de manera permanente el concepto de seguridad en las personas.(consulta y participación) capacitación supervisor de terreno, jefe de terreno">
+ <div class="reg-n"><span class="num">38</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Realizar Charlas de Seguridad para reforzar las conductas seguras. Estas charlas tienen como objetivo generar un espacio de diálogo entre la jefatura y el personal, que también permiten reforzar de manera permanente el concepto de seguridad en las personas.(Consulta y participación)</h3>
+  <p class="nota"><code>onTrainingSessionClosed</code> acredita con los <code>pdtp_activity_numbers</code> del curso al cerrar la sesión. <strong>Ningún curso los declara hoy</strong> (el único cargado, B-01, trae <code>[]</code>). Es dato, no código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Supervisor de terreno, Jefe de terreno</dd></div>
+   <div><dt>Vía</dt><dd>Capacitación</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien cierra la sesión</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="39 realizar obeservación para corregir desviaciones de conductas incorrectas sobre normas, procedimientos y/o estandares inspecciones supervisor de terreno, jefe de terreno">
+ <div class="reg-n"><span class="num">39</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Realizar Obeservación para corregir desviaciones de conductas incorrectas sobre normas, procedimientos y/o estandares</h3>
+  <p class="nota">Plantilla <code>observacion_planeada</code>. El conector <code>onInspectionCompleted</code> lee <code>pdtp_activity_numbers</code> de la plantilla. <strong>Sin declarar en la base de desarrollo</strong>: hoy el conector es no-op. Se corrige con <code>npm run db:seed-pdtp-inspection-templates</code>, sin código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Supervisor de terreno, Jefe de terreno</dd></div>
+   <div><dt>Vía</dt><dd>Inspecciones</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien completa la inspección</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="40 realizar inspecciones para corregir desviaciones en las área de trabajo. inspecciones supervisor de terreno, jefe de terreno">
+ <div class="reg-n"><span class="num">40</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Realizar Inspecciones para corregir desviaciones en las área de trabajo.</h3>
+  <p class="nota">Plantilla <code>inspeccion_area</code>. El conector <code>onInspectionCompleted</code> lee <code>pdtp_activity_numbers</code> de la plantilla. <strong>Sin declarar en la base de desarrollo</strong>: hoy el conector es no-op. Se corrige con <code>npm run db:seed-pdtp-inspection-templates</code>, sin código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Supervisor de terreno, Jefe de terreno</dd></div>
+   <div><dt>Vía</dt><dd>Inspecciones</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien completa la inspección</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="41 caminatas de seguridad, levantamiento de inspecciones y observaciones en terreno inspecciones prevencionista de riesgos en faena, administrador de contrato">
+ <div class="reg-n"><span class="num">41</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Caminatas de seguridad, levantamiento de inspecciones y observaciones en terreno</h3>
+  <p class="nota">Plantilla <code>caminata_seguridad</code>. El conector <code>onInspectionCompleted</code> lee <code>pdtp_activity_numbers</code> de la plantilla. <strong>Sin declarar en la base de desarrollo</strong>: hoy el conector es no-op. Se corrige con <code>npm run db:seed-pdtp-inspection-templates</code>, sin código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+   <div><dt>Vía</dt><dd>Inspecciones</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien completa la inspección</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="manual" data-q="42 controlar documentación de la empresa que realiza el control de sanitización y plagas planilla pdtp prevencionista de riesgos en faena, administrador de contrato">
+ <div class="reg-n"><span class="num">42</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Controlar documentación de la empresa que realiza el control de sanitización y plagas</h3>
+  <p class="nota">Sanitización y control de plagas: lo ejecuta una empresa externa, no hay registro propio.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+   <div><dt>Vía</dt><dd>Planilla PDTP</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-manual">Sólo manual</span></div>
+</article>
+<article class="reg" data-estado="gap" data-q="43 realizar y revisar los procedimiento de trabajo seguro, estandares operacionales u otros documentos que tienen relación con la operación segura. documentación sst prevencionista de riesgos en faena, administrador de contrato">
+ <div class="reg-n"><span class="num">43</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Realizar y revisar los procedimiento de trabajo seguro, estandares operacionales u otros documentos que tienen relación con la operación segura.</h3>
+  <p class="nota">Publicar una versión del procedimiento debería cerrarla; no hay conector.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+   <div><dt>Vía</dt><dd>Documentación SST</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-gap">Brecha de código</span></div>
+</article>
+<article class="reg" data-estado="gap" data-q="44 evaluación cualitativa por mutual higiene prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">44</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Evaluación cualitativa por mutual</h3>
+  <p class="nota"><code>prevention-hygiene.ts</code> no importa el motor. Además el diseño duda de que el módulo admita evaluación cualitativa.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Higiene</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-gap">Brecha de código</span></div>
+</article>
+<article class="reg" data-estado="gap" data-q="45 evaluación cuantitativas por mutual higiene prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">45</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Evaluación cuantitativas por mutual</h3>
+  <p class="nota"><code>prevention_exposure_measurements</code> existe (18 filas) pero nada acredita desde ahí.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Higiene</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-gap">Brecha de código</span></div>
+</article>
+<article class="reg" data-estado="gap" data-q="46 desarrollo protocolo minsal y seguimiento prexor vigilancia prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">46</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Desarrollo protocolo MINSAL y seguimiento PREXOR</h3>
+  <p class="nota"><code>prevention_surveillance_programs.protocol</code> calza exacto con PREXOR, pero no hay conector.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Vigilancia</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-gap">Brecha de código</span></div>
+</article>
+<article class="reg" data-estado="gap" data-q="47 desarrollo protocolo minsal y seguimiento tmert/mmc vigilancia prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">47</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Desarrollo protocolo MINSAL y seguimiento TMERT/MMC</h3>
+  <p class="nota">Mismo caso que la N°46 (TMERT/MMC).</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Vigilancia</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-gap">Brecha de código</span></div>
+</article>
+<article class="reg" data-estado="gap" data-q="48 desarrollo protocolo minsal y seguimiento psicosocial vigilancia prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">48</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Desarrollo protocolo MINSAL y seguimiento PSICOSOCIAL</h3>
+  <p class="nota">Mismo caso que la N°46 (PSICOSOCIAL).</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Vigilancia</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-gap">Brecha de código</span></div>
+</article>
+<article class="reg" data-estado="gap" data-q="49 desarrollo protocolo minsal y seguimiento uv vigilancia prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">49</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Desarrollo protocolo MINSAL y seguimiento UV</h3>
+  <p class="nota">Mismo caso que la N°46 (UV).</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Vigilancia</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-gap">Brecha de código</span></div>
+</article>
+<article class="reg" data-estado="gap" data-q="50 controlar trabajadores expuestos a programa de vigilancia vigilancia prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">50</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Controlar trabajadores expuestos a programa de vigilancia</h3>
+  <p class="nota"><code>prevention_surveillance_enrollments</code> daría la cobertura; sin conector, y <code>indicator_mode</code> sigue en <code>planned_vs_completed</code>.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Vigilancia</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-gap">Brecha de código</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="51 capacitaciòn del personal, estas en función de la evaluación de necesidades de capacitación . en base a: (miper, psicosocial (protocolos minsal), accidentes e incidentes, procedimienos de trabajo y de acuerdo al cargo) capacitación prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">51</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Capacitaciòn del personal, estas en función de la evaluación de necesidades de capacitación . En base a: (miper, psicosocial (Protocolos minsal), accidentes e incidentes, procedimienos de trabajo y de acuerdo al cargo)</h3>
+  <p class="nota"><code>onTrainingSessionClosed</code> acredita con los <code>pdtp_activity_numbers</code> del curso al cerrar la sesión. <strong>Ningún curso los declara hoy</strong> (el único cargado, B-01, trae <code>[]</code>). Es dato, no código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Capacitación</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien cierra la sesión</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="compuesta" data-q="52 inducción trabajadores nuevos examén preocupacional de acuerdo al cargo , irl, evaluación, riohs,epp,procedimientos que le aplican operacional, do-06, do-36, do-45, do-46, do-47, do-48, do-50, inducción operacional terreno habilitación del trabajador prevencionista de riesgos en faena, administrador de contrato, supervisor de terreno, jefe de terreno">
+ <div class="reg-n"><span class="num">52</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Inducción trabajadores nuevos Examén preocupacional de acuerdo al cargo , IRL, Evaluación, RIOHS,EPP,Procedimientos que le aplican operacional, DO-06, DO-36, DO-45, DO-46, DO-47, DO-48, DO-50, inducción operacional terreno</h3>
+  <p class="nota">Rol en el submódulo: Inducción completa del trabajador nuevo. <strong>El submódulo no existe</strong> — no hay ruta, servicio ni tabla. Su medición es por cobertura y <code>indicator_mode</code> sigue en <code>planned_vs_completed</code>.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato, Supervisor de terreno, Jefe de terreno</dd></div>
+   <div><dt>Vía</dt><dd>Habilitación del trabajador</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato, Supervisor de terreno, Jefe de terreno</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-compuesta">Submódulo inexistente</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="53 charla diaria de seguridad y salud en el trabajo capacitación supervisor de terreno, jefe de terreno">
+ <div class="reg-n"><span class="num">53</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Charla diaria de seguridad y salud en el trabajo</h3>
+  <p class="nota"><code>onTrainingSessionClosed</code> acredita con los <code>pdtp_activity_numbers</code> del curso al cerrar la sesión. <strong>Ningún curso los declara hoy</strong> (el único cargado, B-01, trae <code>[]</code>). Es dato, no código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Supervisor de terreno, Jefe de terreno</dd></div>
+   <div><dt>Vía</dt><dd>Capacitación</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien cierra la sesión</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="54 capacitación extintores capacitación prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">54</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Capacitación Extintores</h3>
+  <p class="nota"><code>onTrainingSessionClosed</code> acredita con los <code>pdtp_activity_numbers</code> del curso al cerrar la sesión. <strong>Ningún curso los declara hoy</strong> (el único cargado, B-01, trae <code>[]</code>). Es dato, no código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Capacitación</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien cierra la sesión</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="55 capacitación primeros auxilios capacitación jefe del departamento de prevención de riesgos">
+ <div class="reg-n"><span class="num">55</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Capacitación Primeros auxilios</h3>
+  <p class="nota"><code>onTrainingSessionClosed</code> acredita con los <code>pdtp_activity_numbers</code> del curso al cerrar la sesión. <strong>Ningún curso los declara hoy</strong> (el único cargado, B-01, trae <code>[]</code>). Es dato, no código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Jefe del Departamento de Prevención de Riesgos</dd></div>
+   <div><dt>Vía</dt><dd>Capacitación</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien cierra la sesión</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="56 manejo a la defensiva capacitación prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">56</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Manejo a la defensiva</h3>
+  <p class="nota"><code>onTrainingSessionClosed</code> acredita con los <code>pdtp_activity_numbers</code> del curso al cerrar la sesión. <strong>Ningún curso los declara hoy</strong> (el único cargado, B-01, trae <code>[]</code>). Es dato, no código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Capacitación</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien cierra la sesión</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="57 comunicación efectiva capacitación prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">57</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Comunicación Efectiva</h3>
+  <p class="nota"><code>onTrainingSessionClosed</code> acredita con los <code>pdtp_activity_numbers</code> del curso al cerrar la sesión. <strong>Ningún curso los declara hoy</strong> (el único cargado, B-01, trae <code>[]</code>). Es dato, no código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Capacitación</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien cierra la sesión</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="58 capacitación coordinador grd capacitación prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">58</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Capacitación Coordinador GRD</h3>
+  <p class="nota"><code>onTrainingSessionClosed</code> acredita con los <code>pdtp_activity_numbers</code> del curso al cerrar la sesión. <strong>Ningún curso los declara hoy</strong> (el único cargado, B-01, trae <code>[]</code>). Es dato, no código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Capacitación</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien cierra la sesión</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="59 capacitación investigación accidente árbol causal. capacitación prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">59</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Capacitación investigación accidente árbol causal.</h3>
+  <p class="nota"><code>onTrainingSessionClosed</code> acredita con los <code>pdtp_activity_numbers</code> del curso al cerrar la sesión. <strong>Ningún curso los declara hoy</strong> (el único cargado, B-01, trae <code>[]</code>). Es dato, no código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Capacitación</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien cierra la sesión</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="60 liderazgo para linea de mando capacitación prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">60</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Liderazgo para Linea de Mando</h3>
+  <p class="nota"><code>onTrainingSessionClosed</code> acredita con los <code>pdtp_activity_numbers</code> del curso al cerrar la sesión. <strong>Ningún curso los declara hoy</strong> (el único cargado, B-01, trae <code>[]</code>). Es dato, no código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Capacitación</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien cierra la sesión</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="manual" data-q="61 controlar los certificados que acrediten la idoneidad del producto planilla pdtp prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">61</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Controlar los certificados que acrediten la idoneidad del producto</h3>
+  <p class="nota">Certificados de idoneidad de EPP: se solicitan a Adquisiciones, sin objeto en prevención.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Planilla PDTP</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-manual">Sólo manual</span></div>
+</article>
+<article class="reg" data-estado="auto" data-q="62 registrar la entrega de los elementos de protección personal y dejar documentada su entrega a los trabajadores. entregas · epp prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">62</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Registrar la entrega de los Elementos de Protección Personal y dejar documentada su entrega a los trabajadores.</h3>
+  <p class="nota"><code>registerWorkerEppDelivery</code> → <code>onEppDeliveryCompleted</code>. Número fijo; una entrega por trabajador.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Entregas · EPP</dd></div>
+   <div><dt>Quién marca</dt><dd>Nadie: cae sola</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-auto">Automática</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="63 capacitación sobre uso correcto de elementos de protección personal, reposción y eliminación de estos. capacitación prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">63</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Capacitación sobre uso correcto de elementos de protección personal, reposción y eliminación de estos.</h3>
+  <p class="nota"><code>onTrainingSessionClosed</code> acredita con los <code>pdtp_activity_numbers</code> del curso al cerrar la sesión. <strong>Ningún curso los declara hoy</strong> (el único cargado, B-01, trae <code>[]</code>). Es dato, no código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Capacitación</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien cierra la sesión</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="64 check list de uso y estado de epp inspecciones jefe de terreno">
+ <div class="reg-n"><span class="num">64</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Check list de uso y estado de EPP</h3>
+  <p class="nota">Plantilla <code>inspeccion_epp (jt)</code>. El conector <code>onInspectionCompleted</code> lee <code>pdtp_activity_numbers</code> de la plantilla. <strong>Sin declarar en la base de desarrollo</strong>: hoy el conector es no-op. Se corrige con <code>npm run db:seed-pdtp-inspection-templates</code>, sin código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Jefe de terreno</dd></div>
+   <div><dt>Vía</dt><dd>Inspecciones</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien completa la inspección</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="65 check list de uso y estado de epp inspecciones prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">65</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Check list de uso y estado de EPP</h3>
+  <p class="nota">Plantilla <code>inspeccion_epp (prf)</code>. El conector <code>onInspectionCompleted</code> lee <code>pdtp_activity_numbers</code> de la plantilla. <strong>Sin declarar en la base de desarrollo</strong>: hoy el conector es no-op. Se corrige con <code>npm run db:seed-pdtp-inspection-templates</code>, sin código.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Inspecciones</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien completa la inspección</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="auto" data-q="66 informar inmediatamente al adm. contrato y prevencionista faena después de ocurrido un accidente o incidente por menor que parezca la lesión o daño materiales o medioambieentales incidentes jefe de terreno">
+ <div class="reg-n"><span class="num">66</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Informar inmediatamente al adm. Contrato y prevencionista faena después de ocurrido un accidente o incidente por menor que parezca la lesión o daño materiales o medioambieentales</h3>
+  <p class="nota"><code>onIncidentReported</code> al registrar el evento (junto con la N°67).</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Jefe de terreno</dd></div>
+   <div><dt>Vía</dt><dd>Incidentes</dd></div>
+   <div><dt>Quién marca</dt><dd>Nadie: cae sola</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-auto">Automática</span></div>
+</article>
+<article class="reg" data-estado="auto" data-q="67 informar inmediatamente a jdpr, después de ocurrido un accidente o incidente por menor que parezca la lesión o daños materiales, medioambientales. (llamado, correo, whatsapp) incidentes prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">67</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Informar inmediatamente a JDPR, después de ocurrido un accidente o incidente por menor que parezca la lesión o daños materiales, medioambientales. (llamado, correo, whatsapp)</h3>
+  <p class="nota"><code>onIncidentReported</code> al registrar el evento (junto con la N°66).</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Incidentes</dd></div>
+   <div><dt>Quién marca</dt><dd>Nadie: cae sola</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-auto">Automática</span></div>
+</article>
+<article class="reg" data-estado="auto" data-q="68 envio informe preliminar de acuerdo al plazo establecido en procedimiento do -36 (3 horas de ocurrido el accidente e incidente) incidentes jefe de terreno">
+ <div class="reg-n"><span class="num">68</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Envio Informe Preliminar de acuerdo al plazo establecido en procedimiento DO -36 (3 horas de ocurrido el accidente e incidente)</h3>
+  <p class="nota"><code>onIncidentPreliminaryReported</code> al enviar el informe preliminar (junto con la N°70).</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Jefe de terreno</dd></div>
+   <div><dt>Vía</dt><dd>Incidentes</dd></div>
+   <div><dt>Quién marca</dt><dd>Nadie: cae sola</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-auto">Automática</span></div>
+</article>
+<article class="reg" data-estado="auto" data-q="69 encuesta o declaración de la persona trabajadora accidentea o involucarad en el incidente. incidentes supervisor de terreno, jefe de terreno">
+ <div class="reg-n"><span class="num">69</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Encuesta o declaración de la persona trabajadora accidentea o involucarad en el incidente.</h3>
+  <p class="nota"><code>onIncidentStatementRecorded</code> al firmar la declaración.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Supervisor de terreno, Jefe de terreno</dd></div>
+   <div><dt>Vía</dt><dd>Incidentes</dd></div>
+   <div><dt>Quién marca</dt><dd>Nadie: cae sola</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-auto">Automática</span></div>
+</article>
+<article class="reg" data-estado="auto" data-q="70 envio informe preliminar de acuerdo al plazo establecido en procedimiento do -36 (3 horas de ocurrido el accidente e incidente) incidentes administrador de contrato, prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">70</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Envio Informe Preliminar de acuerdo al plazo establecido en procedimiento DO -36 (3 horas de ocurrido el accidente e incidente)</h3>
+  <p class="nota"><code>onIncidentPreliminaryReported</code> al enviar el informe preliminar (junto con la N°68).</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Administrador de contrato, Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Incidentes</dd></div>
+   <div><dt>Quién marca</dt><dd>Nadie: cae sola</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-auto">Automática</span></div>
+</article>
+<article class="reg" data-estado="auto" data-q="71 difusión del incidente, en el turno que ocurrio el accidente e incidente y los demas turnos incidentes jefe de terreno">
+ <div class="reg-n"><span class="num">71</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Difusión del incidente, en el turno que ocurrio el accidente e incidente y los demas turnos</h3>
+  <p class="nota"><code>onIncidentShiftDiffused</code> al confirmar la difusión por turno.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Jefe de terreno</dd></div>
+   <div><dt>Vía</dt><dd>Incidentes</dd></div>
+   <div><dt>Quién marca</dt><dd>Nadie: cae sola</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-auto">Automática</span></div>
+</article>
+<article class="reg" data-estado="auto" data-q="72 emitir la declaración individual de accidente del trabajo.si corresponde a lesión a personas y derivación a mutual incidentes administrador de contrato">
+ <div class="reg-n"><span class="num">72</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Emitir la Declaración Individual de Accidente del Trabajo.Si corresponde a lesión a personas y derivación a Mutual</h3>
+  <p class="nota"><code>onIncidentDiatIssued</code> al emitir la DIAT.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Administrador de contrato</dd></div>
+   <div><dt>Vía</dt><dd>Incidentes</dd></div>
+   <div><dt>Quién marca</dt><dd>Nadie: cae sola</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-auto">Automática</span></div>
+</article>
+<article class="reg" data-estado="auto" data-q="73 realizar la investigación del accidente e incidente, analizar las causas y determinar e implementar las medidas correctivas. 72 horas despues de ocurrido el accidente e incidente incidentes administrador de contrato, prevencionista de riesgos en faena, supervisor de terreno, jefe de terreno, comité paritario de higiene y seguridad">
+ <div class="reg-n"><span class="num">73</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Realizar la investigación del accidente e incidente, analizar las causas y determinar e implementar las medidas correctivas. 72 horas despues de ocurrido el accidente e incidente</h3>
+  <p class="nota"><code>onIncidentInvestigationCompleted</code> al cerrar la investigación (junto con la N°74).</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Administrador de contrato, Prevencionista de riesgos en faena, Supervisor de terreno, Jefe de terreno, Comité Paritario de Higiene y Seguridad</dd></div>
+   <div><dt>Vía</dt><dd>Incidentes</dd></div>
+   <div><dt>Quién marca</dt><dd>Nadie: cae sola</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-auto">Automática</span></div>
+</article>
+<article class="reg" data-estado="auto" data-q="74 envio del informe definitivo de investigación de accidente e incidente incidentes administrador de contrato, prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">74</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Envio del informe definitivo de investigación de accidente e incidente</h3>
+  <p class="nota"><code>onIncidentInvestigationCompleted</code> al cerrar la investigación (junto con la N°73).</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Administrador de contrato, Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Incidentes</dd></div>
+   <div><dt>Quién marca</dt><dd>Nadie: cae sola</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-auto">Automática</span></div>
+</article>
+<article class="reg" data-estado="auto" data-q="75 difusión medidas preventivas de acuerdo al informe de investigación incidentes jefe de terreno, prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">75</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Difusión medidas preventivas de acuerdo al informe de investigación</h3>
+  <p class="nota"><code>onIncidentMeasuresDiffused</code> al difundir las medidas correctivas.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Jefe de terreno, Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Incidentes</dd></div>
+   <div><dt>Quién marca</dt><dd>Nadie: cae sola</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-auto">Automática</span></div>
+</article>
+<article class="reg" data-estado="auto" data-q="76 realizar seguimiento de las medidas correctivas y recomendaciones que surjan de las investigaciones de accidentes. incidentes administrador de contrato, prevencionista de riesgos en faena, supervisor de terreno, jefe de terreno, comité paritario de higiene y seguridad">
+ <div class="reg-n"><span class="num">76</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Realizar seguimiento de las medidas correctivas y recomendaciones que surjan de las investigaciones de accidentes.</h3>
+  <p class="nota"><code>onIncidentFollowupRecorded</code> en cada seguimiento quincenal.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Administrador de contrato, Prevencionista de riesgos en faena, Supervisor de terreno, Jefe de terreno, Comité Paritario de Higiene y Seguridad</dd></div>
+   <div><dt>Vía</dt><dd>Incidentes</dd></div>
+   <div><dt>Quién marca</dt><dd>Nadie: cae sola</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-auto">Automática</span></div>
+</article>
+<article class="reg" data-estado="auto" data-q="77 archivar todos los documento del accidente e incidente (informe preliminar, ) incidentes prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">77</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Archivar todos los documento del accidente e incidente (Informe preliminar, )</h3>
+  <p class="nota"><code>onIncidentClosed</code> al archivar el expediente.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Incidentes</dd></div>
+   <div><dt>Quién marca</dt><dd>Nadie: cae sola</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-auto">Automática</span></div>
+</article>
+<article class="reg" data-estado="auto" data-q="78 envio de difusión de one page incidentes jefe del departamento de prevención de riesgos">
+ <div class="reg-n"><span class="num">78</span><span class="mode">a demanda</span></div>
+ <div class="reg-main">
+  <h3>Envio de difusión de ONE PAGE</h3>
+  <p class="nota"><code>onIncidentOnePageDiffused</code> al difundir el ONE PAGE RE-20-06.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Jefe del Departamento de Prevención de Riesgos</dd></div>
+   <div><dt>Vía</dt><dd>Incidentes</dd></div>
+   <div><dt>Quién marca</dt><dd>Nadie: cae sola</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-auto">Automática</span></div>
+</article>
+<article class="reg" data-estado="manual" data-q="79 constitución comité de gestión de riesgos de desastres (cgrd), de acuerdo al ds. n°44 planilla pdtp prevencionista de riesgos en faena, administrador de contrato">
+ <div class="reg-n"><span class="num">79</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Constitución Comité de Gestión de Riesgos de desastres (CGRD), de acuerdo al DS. N°44</h3>
+  <p class="nota">CGRD (DS 44): no existe módulo del Comité de Gestión de Riesgos de Desastres. Es un comité distinto del paritario.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+   <div><dt>Vía</dt><dd>Planilla PDTP</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-manual">Sólo manual</span></div>
+</article>
+<article class="reg" data-estado="manual" data-q="80 implementación de matriz grd (analisis historico, amenaza, evaluación legal, plan de trabajo y plan de emergencia por cada amenaza obligatoria y detectada) planilla pdtp prevencionista de riesgos en faena, administrador de contrato">
+ <div class="reg-n"><span class="num">80</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Implementación de matriz GRD (analisis historico, amenaza, evaluación legal, plan de trabajo y plan de emergencia por cada amenaza obligatoria y detectada)</h3>
+  <p class="nota">Matriz GRD: MIPER es de riesgos laborales, no de desastres. Sin módulo.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+   <div><dt>Vía</dt><dd>Planilla PDTP</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-manual">Sólo manual</span></div>
+</article>
+<article class="reg" data-estado="manual" data-q="81 actas de reunión cgrd de acuerdo a ds.n°44 planilla pdtp prevencionista de riesgos en faena, administrador de contrato">
+ <div class="reg-n"><span class="num">81</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Actas de reunión CGRD de acuerdo a DS.N°44</h3>
+  <p class="nota">Actas de reunión del CGRD: sin módulo, mismo caso que la N°79.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+   <div><dt>Vía</dt><dd>Planilla PDTP</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-manual">Sólo manual</span></div>
+</article>
+<article class="reg" data-estado="manual" data-q="82 mapa de riesgo planilla pdtp prevencionista de riesgos en faena, administrador de contrato">
+ <div class="reg-n"><span class="num">82</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Mapa de riesgo</h3>
+  <p class="nota">Mapa de riesgo por área: constancia documental.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+   <div><dt>Vía</dt><dd>Planilla PDTP</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-manual">Sólo manual</span></div>
+</article>
+<article class="reg" data-estado="gap" data-q="83 plan emergencia por cada amenaza emergencias prevencionista de riesgos en faena, administrador de contrato, jefe de mantención">
+ <div class="reg-n"><span class="num">83</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Plan emergencia por cada amenaza</h3>
+  <p class="nota">Sólo el simulacro completado acredita (<code>onEmergencyDrillCompleted</code>). Crear el plan de emergencia por amenaza no dispara nada, así que el número queda huérfano.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato, Jefe de mantención</dd></div>
+   <div><dt>Vía</dt><dd>Emergencias</dd></div>
+   <div><dt>Quién marca</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato, Jefe de mantención</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-gap">Brecha de código</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="84 simulacros emergencias prevencionista de riesgos en faena, administrador de contrato, jefe de mantención">
+ <div class="reg-n"><span class="num">84</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Simulacros</h3>
+  <p class="nota"><code>completeEmergencyDrill</code> → <code>onEmergencyDrillCompleted</code>, con los <code>pdtp_activity_numbers</code> <strong>del plan</strong>. Hay 14 simulacros, pero ningún plan declara el número.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena, Administrador de contrato, Jefe de mantención</dd></div>
+   <div><dt>Vía</dt><dd>Emergencias</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien completa el simulacro</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="85 módulos vida saludable, alimentación saludable, actividad fisica. cargar respaldos para avanzar y certificar en este programa de vida saludable. campañas prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">85</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Módulos vida saludable, alimentación saludable, actividad fisica. Cargar respaldos para avanzar y certificar en este programa de vida saludable.</h3>
+  <p class="nota"><code>prevention-campaigns.ts</code> llama al motor con los <code>pdtp_activity_numbers</code> de la campaña (default <code>[85]</code>). <strong>0 campañas cargadas</strong>: hay que crearlas y declarar el número.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Campañas</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien cierra la campaña</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="86 manejo del estrés campañas prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">86</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Manejo del estrés</h3>
+  <p class="nota"><code>prevention-campaigns.ts</code> llama al motor con los <code>pdtp_activity_numbers</code> de la campaña (default <code>[85]</code>). <strong>0 campañas cargadas</strong>: hay que crearlas y declarar el número.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Campañas</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien cierra la campaña</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="87 alcohol y drogas no van al volante campañas administrador de contrato, prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">87</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Alcohol y Drogas No Van Al Volante</h3>
+  <p class="nota"><code>prevention-campaigns.ts</code> llama al motor con los <code>pdtp_activity_numbers</code> de la campaña (default <code>[85]</code>). <strong>0 campañas cargadas</strong>: hay que crearlas y declarar el número.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Administrador de contrato, Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Campañas</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien cierra la campaña</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="88 seguridad vial campañas prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">88</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Seguridad Vial</h3>
+  <p class="nota"><code>prevention-campaigns.ts</code> llama al motor con los <code>pdtp_activity_numbers</code> de la campaña (default <code>[85]</code>). <strong>0 campañas cargadas</strong>: hay que crearlas y declarar el número.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Campañas</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien cierra la campaña</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article>
+<article class="reg" data-estado="config" data-q="89 puntos ciegos en la conducción y operación campañas prevencionista de riesgos en faena">
+ <div class="reg-n"><span class="num">89</span><span class="mode">planificada</span></div>
+ <div class="reg-main">
+  <h3>Puntos ciegos en la conducción y operación</h3>
+  <p class="nota"><code>prevention-campaigns.ts</code> llama al motor con los <code>pdtp_activity_numbers</code> de la campaña (default <code>[85]</code>). <strong>0 campañas cargadas</strong>: hay que crearlas y declarar el número.</p>
+  <dl class="meta">
+   <div><dt>Responsable</dt><dd>Prevencionista de riesgos en faena</dd></div>
+   <div><dt>Vía</dt><dd>Campañas</dd></div>
+   <div><dt>Quién marca</dt><dd>Quien cierra la campaña</dd></div>
+  </dl>
+ </div>
+ <div class="reg-estado"><span class="pill p-config">Automática por configurar</span></div>
+</article><p id="empty" hidden>Ninguna actividad calza con el filtro.</p></div>
+
+<h2 class="sec">Qué falta para cerrar la brecha</h2>
+<div class="todo">
+ <div class="card">
+  <h3>Sin escribir código</h3>
+  <p class="lead">Sube de 17 a 47 actividades automáticas.</p>
+  <ol>
+   <li><b>Activar el programa 2026.</b> Sin esto no se puede registrar ni una ejecución, automática o manual.</li>
+   <li><b>Instalar las plantillas de inspección</b> con <code>npm run db:seed-pdtp-inspection-templates</code>. Sólo <code>inspeccion_taller</code> declara su número hoy; las otras 11 dejan el conector en no-op.</li>
+   <li><b>Declarar <code>pdtp_activity_numbers</code> en los cursos</b> de capacitación. Cierra 12 actividades y el único curso cargado trae <code>[]</code>.</li>
+   <li><b>Crear las campañas</b> de las N°85 a N°89 con su número declarado. Hay cero campañas cargadas.</li>
+   <li><b>Declarar el número en el plan de emergencia</b> para que los simulacros acrediten la N°84.</li>
+   <li><b>Correr <code>npm run pdtp:apply-mechanisms</code></b> para que el campo deje de estar vacío.</li>
+  </ol>
+ </div>
+ <div class="card">
+  <h3>Requiere código</h3>
+  <p class="lead">Las 25 que ningún dato resuelve.</p>
+  <ol>
+   <li><b>Ampliar <code>PdtpAccreditationSourceType</code>.</b> Hoy admite ocho fuentes; faltan <code>documento</code>, <code>indicadores</code>, <code>miper</code>, <code>higiene</code> y <code>vigilancia</code>, que son las que sostienen 14 enganches prometidos.</li>
+   <li><b>Conectar Documentación SST</b> — N°19, N°36 y N°43. El módulo además está en cero filas.</li>
+   <li><b>Conectar Higiene y Vigilancia</b> — N°44 a N°50. Las tablas ya existen y <code>surveillance_programs.protocol</code> calza exacto con los cuatro protocolos MINSAL.</li>
+   <li><b>Conectar MIPER</b> — N°35 y N°36. Hay 9 matrices y 30 entradas sin acreditar nada.</li>
+   <li><b>Acreditar la N°83 al publicar el plan</b> de emergencia, no al completar el simulacro: hoy el número queda huérfano.</li>
+   <li><b>Construir Habilitación del trabajador</b> — N°15, 16, 17, 18, 23 y 52, más el modo de cobertura que ninguna actividad usa todavía.</li>
+   <li><b>Decidir la N°21</b>: mide lo mismo que las N°66–78 e infla el denominador del PRF y del administrador.</li>
+   <li><b>Aplicar las bajas</b> de las N°2 y N°5 y el traslado de las N°12, 13 y 14 al programa del CPHS.</li>
+  </ol>
+ </div>
+</div>
+
+<footer>
+Verificado contra el código en HEAD y la base <code>bodega_dev</code> el 2026-09-01.<br>
+Fuentes: <code>lib/services/pdtp/accreditation.ts</code> · <code>lib/services/pdtp-adapters/</code> · <code>scripts/apply-pdtp-2026-mechanisms.ts</code> · <code>db/seed/pdtp-catalog-2026.json</code> · <code>docs/superpowers/specs/2026-08-12-pdtp-actividades-accionables-design.md</code><br>
+Los conteos de filas por módulo salen de la base de desarrollo y no representan producción.
+</footer>
+</div>
+
+<script>
+(function(){
+ var chips=[].slice.call(document.querySelectorAll(".chip"));
+ var regs=[].slice.call(document.querySelectorAll(".reg"));
+ var q=document.getElementById("q");
+ var empty=document.getElementById("empty");
+ var filter="todas";
+ function apply(){
+  var term=q.value.trim().toLowerCase();
+  var shown=0;
+  regs.forEach(function(r){
+   var ok=(filter==="todas"||r.dataset.estado===filter)&&(!term||r.dataset.q.indexOf(term)>-1);
+   r.hidden=!ok; if(ok)shown++;
+  });
+  empty.hidden=shown>0;
+ }
+ chips.forEach(function(c){c.addEventListener("click",function(){
+  chips.forEach(function(o){o.classList.remove("on")});
+  c.classList.add("on"); filter=c.dataset.filter; apply();
+ })});
+ q.addEventListener("input",apply);
+})();
+</script>
+</body>
+</html>

@@ -20,7 +20,7 @@ import { nanoid } from "@/lib/id"
 import { assessDrillCompletion, assessPlanReadiness } from "@/lib/prevention/emergency"
 import type { EmergencyQuickFilter } from "@/lib/prevention/emergency-list-filters"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
-import { onEmergencyDrillCompleted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
+import { onEmergencyDrillCompleted, onEmergencyPlanApproved } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 import { codeYear, todayInChile } from "@/lib/utils"
 
@@ -374,7 +374,8 @@ const approvePlanSchema = z.object({
  */
 export async function approveEmergencyPlan(input: unknown, access: EmergencyAccess) {
   const data = approvePlanSchema.parse(input)
-  return db.transaction(async (tx) => {
+  let accreditation: Parameters<typeof onEmergencyPlanApproved>[0] | null = null
+  const result = await db.transaction(async (tx) => {
     const [plan] = await tx.select().from(preventionEmergencyPlans).where(eq(preventionEmergencyPlans.id, data.planId)).limit(1)
     if (!plan) throw new EmergencyDomainError(NOT_FOUND)
     requireAccess(access, "prevention:emergency:approve", plan.worksiteId)
@@ -403,8 +404,22 @@ export async function approveEmergencyPlan(input: unknown, access: EmergencyAcce
     )).returning()
     if (!updated) throw new EmergencyDomainError("El plan cambió mientras lo editabas. Recarga y reintenta.")
     await history(tx, { entityType: "plan", entityId: plan.id, worksiteId: plan.worksiteId, changeType: "approved", reason: "Plan aprobado", beforeState: plan, afterState: updated, actorUserId: access.userId })
+
+    // N°83 del PDTP ("Plan emergencia por cada amenaza"). La cantidad son los
+    // escenarios, no el plan: el programa la planifica por amenaza (D13), y la
+    // aprobación ya exigió que haya al menos uno. Se dispara después del commit.
+    accreditation = {
+      planId: plan.id,
+      worksiteId: plan.worksiteId,
+      planCode: plan.code,
+      approvedAt: updated.approvedAt ?? now,
+      scenarioCount: scenarios.length,
+    }
     return updated
   })
+
+  if (accreditation) await onEmergencyPlanApproved(accreditation)
+  return result
 }
 
 /**

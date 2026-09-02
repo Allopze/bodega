@@ -9,6 +9,7 @@ import { addDays } from "@/lib/sst/date"
 import { getDefinition } from "@/lib/sst/definitions/index"
 import { isPersonEvaluationDefinition } from "@/lib/sst/definitions"
 import { calculateCompliance, getAutomaticResultadoFinal, classifyEfficacy, requiresObservation } from "@/lib/sst/compliance"
+import { onWorkerOnboardingClosed } from "@/lib/services/pdtp-adapters/worker-onboarding-connector"
 import { sstEvaluationCreateSchema, sstCloseEvaluationSchema } from "@/lib/validation/sst"
 import type { StatusValue, EvaluatorRole } from "@/lib/sst/types"
 import { transitionCapaActionWithClient } from "@/lib/services/prevention-capa"
@@ -210,6 +211,7 @@ export async function closeEvaluation(id: string, input: z.infer<typeof sstClose
   const applicableSet = new Set(applicableItems.map((ai) => `${ai.seccionId}::${ai.item.id}`))
 
   let updated: SstEvaluation | undefined
+  let accreditation: Parameters<typeof onWorkerOnboardingClosed>[0] | null = null
   await db.transaction(async (tx) => {
     await assertEditable(id, tx)
     const allResponses = await tx.select().from(sstResponses).where(eq(sstResponses.evaluationId, id))
@@ -250,8 +252,32 @@ export async function closeEvaluation(id: string, input: z.infer<typeof sstClose
     await tx.update(sstEvaluations).set({ estado: "cerrado", porcentajeCumplimiento: percentage, resultadoFinal, resultadoEficacia, restricciones: data.restricciones ?? null, observacionesGenerales: data.observacionesGenerales ?? null, schemaJson: JSON.stringify(definition), updatedAt: now }).where(eq(sstEvaluations.id, id))
     const [row] = await tx.select().from(sstEvaluations).where(eq(sstEvaluations.id, id)).limit(1)
     updated = row
+
+    // Acreditación PDTP del acta de trabajador nuevo (N°15, 18, 23, 52 y 63,
+    // según qué ítems quedaron conformes). Se prepara acá y se dispara DESPUÉS
+    // del commit: el motor escribe con su propia conexión, así que llamarlo
+    // dentro dejaría una ejecución PDTP huérfana si la transacción revierte.
+    //
+    // Sólo el acta de trabajador nuevo: la de trabajador antiguo es seguimiento,
+    // no habilitación, y no cierra estas actividades.
+    if (evaluation.definicionCode === "trabajador_nuevo" && row) {
+      accreditation = {
+        evaluationId: row.id,
+        worksiteId: row.worksiteId,
+        workerId: row.workerId,
+        fechaEvaluacion: row.fechaEvaluacion,
+        resultadoFinal: row.resultadoFinal,
+        responses: applicableResponses.map((r) => ({
+          seccionId: r.seccionId, itemId: r.itemId, estado: r.estado,
+        })),
+      }
+    }
   })
   if (!updated) throw new Error("Evaluation not found after update")
+
+  // `safeAccredit` absorbe el error: el acta ya está cerrada y es inmutable, así
+  // que una acreditación fallida no puede tumbarla.
+  if (accreditation) await onWorkerOnboardingClosed(accreditation)
   return updated
 }
 

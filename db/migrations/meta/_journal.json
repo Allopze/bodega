@@ -1660,6 +1660,34 @@
       "when": 1788229972647,
       "tag": "0236_typical_abomination",
       "breakpoints": true
+    },
+    {
+      "idx": 237,
+      "version": "7",
+      "when": 1788377723442,
+      "tag": "0237_striped_madame_masque",
+      "breakpoints": true
+    },
+    {
+      "idx": 238,
+      "version": "7",
+      "when": 1788378361051,
+      "tag": "0238_right_king_bedlam",
+      "breakpoints": true
+    },
+    {
+      "idx": 239,
+      "version": "7",
+      "when": 1788378822321,
+      "tag": "0239_dizzy_medusa",
+      "breakpoints": true
+    },
+    {
+      "idx": 240,
+      "version": "7",
+      "when": 1788379014101,
+      "tag": "0240_unique_ken_ellis",
+      "breakpoints": true
     }
   ]
 }

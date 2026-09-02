@@ -999,7 +999,17 @@ describe("prevention PDTP service", () => {
       getPdtpComplianceIndicators,
     } = await import("@/lib/services/prevention-pdtp")
 
-    // Padrón inferido: 4 trabajadores activos en ws-1 (+1 inactivo que no cuenta).
+    // Este test nació apoyándose en un padrón INFERIDO de la dotación activa de
+    // la faena (4 activos + 1 inactivo que no contaba), según la respuesta 1 del
+    // cuestionario 2026-07: "meta de cobertura = trabajadores esperados de la
+    // faena". Esa inferencia se retiró de `compliance.ts`: era correcta para las
+    // actividades cuyo sujeto ES la dotación (N°17, 18, 23), pero fabricaba un
+    // denominador para las que no —el sujeto de la N°24 son los extintores y el
+    // de la N°50 los expuestos, un subconjunto—, dando 0 % permanente sin que
+    // nada fallara. Ahora el padrón se declara, y lo que este test cubre sigue
+    // siendo lo suyo: la regla de todo-o-nada por mes.
+    //
+    // La dotación se siembra igual, precisamente para probar que YA NO se usa.
     const now0 = new Date().toISOString()
     await inMemoryDb.insert(schema.workers).values(
       [1, 2, 3, 4].map((i) => ({ id: `wk-cov-${i}`, rut: `9.000.00${i}-0`, firstName: `T${i}`, lastName: "Cobertura", position: "Operador", worksiteId: "ws-1", isActive: true, createdAt: now0 }))
@@ -1027,7 +1037,12 @@ describe("prevention PDTP service", () => {
     await signPdtpProgramLegal(program.id, "user-legal")
     await activatePdtpProgram(program.id, "user-jdpr")
 
-    // Padrón inferido de la dotación activa = 4 (no del plannedQuantity=3).
+    // Padrón declarado = 4 por actividad, distinto del plannedQuantity=3 para que
+    // se vea que el umbral es el padrón y no lo planificado.
+    const { setPdtpActivityWorksiteParams } = await import("@/lib/services/pdtp/worksites")
+    await setPdtpActivityWorksiteParams(actUnder.id, "ws-1", { expectedSubjectCount: 4 }, "user-1")
+    await setPdtpActivityWorksiteParams(actFull.id, "ws-1", { expectedSubjectCount: 4 }, "user-1")
+
     // actUnder cubre 3 (<4) → no acredita nada (todo o nada).
     const e1 = await markPdtpExecution({ activityId: actUnder.id, worksiteId: "ws-1", year: 2031, month: 1, week: 1, executedQuantity: 3 }, "user-1", ["ws-1"])
     await approvePdtpExecution(e1.id, "user-1", ["ws-1"])
@@ -1036,7 +1051,7 @@ describe("prevention PDTP service", () => {
     await approvePdtpExecution(e2.id, "user-1", ["ws-1"])
 
     const result = await getPdtpComplianceIndicators(program.id, "ws-1")
-    // Mes 1: meta inferida = 4 por actividad; denominador = 4 + 4 = 8;
+    // Mes 1: padrón = 4 por actividad; denominador = 4 + 4 = 8;
     // ejecutado = 0 (incompleta) + 4 (completa) = 4.
     expect(result!.monthly[0]).toMatchObject({ planned: 8, executed: 4, percent: 0.5 })
   })

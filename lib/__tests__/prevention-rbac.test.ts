@@ -369,6 +369,17 @@ describe("prevention module RBAC", () => {
     // La vista de higiene es agregada y anonimizada: puede concederse amplio.
     expect(rolesFor("prevention:hygiene:view")).toContain("cphs")
     expect(rolesFor("prevention:hygiene:view")).toContain("jefe_terreno")
+    // El PRF es el responsable declarado de las actividades N°44 a N°50 del
+    // PDTP, así que necesita pronunciarse sobre protocolos y registrar controles
+    // de vigilancia. Eso es `assess`.
+    expect(rolesFor("prevention:hygiene:assess")).toContain("prevencionista_faena")
+    // Pero NO `manage`: ese permiso habilita el catálogo de agentes, que es
+    // normativo y global —no tiene faena— así que un PRF de una faena podría
+    // editar el catálogo de todas (D19).
+    expect(rolesFor("prevention:hygiene:manage")).not.toContain("prevencionista_faena")
+    // Ver no habilita a operar: el CPHS y el jefe de terreno siguen sólo mirando.
+    expect(rolesFor("prevention:hygiene:assess")).not.toContain("cphs")
+    expect(rolesFor("prevention:hygiene:assess")).not.toContain("jefe_terreno")
     // El resultado clínico individual sigue sin grants por defecto.
     expect(rolesFor("prevention:health:view_clinical")).toEqual([])
   })

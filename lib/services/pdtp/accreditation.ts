@@ -42,6 +42,25 @@ export type PdtpAccreditationSourceType =
   | "emergencia"
   | "campana"
   | "incident"
+  /**
+   * Higiene industrial: la medición cuantitativa de exposición (N°45) y el
+   * pronunciamiento sobre un protocolo MINSAL (N°46-49).
+   */
+  | "higiene"
+  /** Vigilancia médica ocupacional: control efectivamente realizado (N°50). */
+  | "vigilancia"
+  /**
+   * Acta de trabajador nuevo cerrada (`sst_evaluations`): habilitación de una
+   * persona. Cierra la N°15, 18, 23, 52 y 63 según sus ítems conformes.
+   */
+  | "evaluacion_sst"
+  /**
+   * Documentación SST: una versión publicada (N°43) o los acuses de recibo de
+   * una difusión (N°36). El número lo declara el tipo de documento.
+   */
+  | "documento"
+  /** MIPER: la publicación de una revisión de la matriz de la faena (N°35). */
+  | "miper"
   /** El propio ciclo de aprobación del programa (N°1: "Aprobar el Programa"). */
   | "aprobacion_programa"
 

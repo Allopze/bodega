@@ -48,13 +48,13 @@ export async function createExposureAgentAction(input: unknown): Promise<ActionS
 }
 
 export async function createExposureGroupAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:hygiene:manage")
+  const guard = await guardPermission("prevention:hygiene:assess")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => createExposureGroup(input, access))
 }
 
 export async function addExposureGroupMemberAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:hygiene:manage")
+  const guard = await guardPermission("prevention:hygiene:assess")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => addExposureGroupMember(input, access))
 }
@@ -66,26 +66,26 @@ export async function recordExposureMeasurementAction(input: unknown): Promise<A
 }
 
 export async function createSurveillanceProgramAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:hygiene:manage")
+  const guard = await guardPermission("prevention:hygiene:assess")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => createSurveillanceProgram(input, access))
 }
 
 export async function enrollGroupInSurveillanceAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:hygiene:manage")
+  const guard = await guardPermission("prevention:hygiene:assess")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => enrollGroupInSurveillance(input, access))
 }
 
 export async function recordSurveillanceOutcomeAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:hygiene:manage")
+  const guard = await guardPermission("prevention:hygiene:assess")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => recordSurveillanceOutcome(input, access))
 }
 
 /** Declara si un protocolo MINSAL aplica a una faena (DS 44 título V). */
 export async function setProtocolApplicabilityAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:hygiene:manage")
+  const guard = await guardPermission("prevention:hygiene:assess")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => setProtocolApplicability(input, access))
 }

@@ -78,6 +78,50 @@ const attendanceRecordSchema = z.object({
   evidenceRef: z.string().optional(),
 })
 
+/**
+ * Las cinco campañas que el programa 2026 planifica, con la actividad que cada
+ * una acredita. El diálogo de creación las ofrece en vez de fijar la N°85
+ * literal, que era el motivo por el que las N°86 a N°89 eran inalcanzables desde
+ * la aplicación (D20).
+ */
+export const PDTP_CAMPAIGN_ACTIVITIES = [
+  { n: 85, label: "Vida saludable, alimentación y actividad física" },
+  { n: 86, label: "Manejo del estrés" },
+  { n: 87, label: "Alcohol y drogas no van al volante" },
+  { n: 88, label: "Seguridad vial" },
+  { n: 89, label: "Puntos ciegos en la conducción y operación" },
+] as const
+
+const setCampaignActivitySchema = z.object({
+  campaignId: z.string().min(1),
+  pdtpActivityNumbers: z.array(z.number().int().positive()).min(1, "Selecciona la actividad que acredita"),
+})
+
+/**
+ * Corrige qué actividad del PDTP acredita una campaña.
+ *
+ * Existe porque el número se declaraba sólo al crear y sin editor posterior: una
+ * campaña mal declarada obligaba a borrarla y rehacerla, perdiendo su registro de
+ * asistencia. Sólo antes de cerrarla: una campaña completada ya acreditó, y
+ * cambiarle el número después dejaría la ejecución apuntando a otra actividad.
+ */
+export async function setCampaignPdtpActivities(input: unknown, access: CampaignAccess) {
+  const data = setCampaignActivitySchema.parse(input)
+  const [campaign] = await db.select().from(preventionCampaigns)
+    .where(eq(preventionCampaigns.id, data.campaignId)).limit(1)
+  if (!campaign) throw new CampaignDomainError("Campaña no encontrada.")
+  requireAccess(access, "prevention:campaign:manage", campaign.worksiteId)
+  if (campaign.status === "completed") {
+    throw new CampaignDomainError("La campaña ya está cerrada y acreditó su actividad: no se puede cambiar cuál acredita.")
+  }
+
+  const [updated] = await db.update(preventionCampaigns)
+    .set({ pdtpActivityNumbers: data.pdtpActivityNumbers, updatedAt: new Date().toISOString() })
+    .where(eq(preventionCampaigns.id, data.campaignId))
+    .returning()
+  return updated
+}
+
 export async function recordCampaignAttendance(input: unknown, access: CampaignAccess) {
   const data = attendanceRecordSchema.parse(input)
   const [campaign] = await db.select().from(preventionCampaigns).where(eq(preventionCampaigns.id, data.campaignId)).limit(1)

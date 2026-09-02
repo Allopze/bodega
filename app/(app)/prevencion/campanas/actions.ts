@@ -11,6 +11,7 @@ import {
   closeCampaign,
   createCampaign,
   recordCampaignAttendance,
+  setCampaignPdtpActivities,
   type CampaignAccess,
 } from "@/lib/services/prevention-campaigns"
 
@@ -18,7 +19,9 @@ const createCampaignSchema = z.object({
   worksiteId: z.string().min(1, "Selecciona una faena"),
   title: z.string().trim().min(3, "El título debe tener al menos 3 caracteres"),
   description: z.string().trim().optional(),
-  pdtpActivityNumbers: z.array(z.number().int()).default([85]),
+  // Sin default: el diálogo ofrece las cinco del programa y quien crea la
+  // campaña elige. Fijarlo acá era lo que dejaba las N°86 a N°89 inalcanzables.
+  pdtpActivityNumbers: z.array(z.number().int().positive()).min(1, "Selecciona la actividad que acredita"),
 })
 
 const attendanceSchema = z.object({
@@ -69,6 +72,17 @@ export async function createCampaignAction(formData: unknown): Promise<ActionSta
     return { ok: true }
   } catch (err: unknown) {
     return campaignFailure(err, "createCampaign")
+  }
+}
+
+export async function setCampaignPdtpActivitiesAction(formData: unknown): Promise<ActionState> {
+  try {
+    const access = await getAccess()
+    await setCampaignPdtpActivities(formData, access)
+    revalidatePath("/prevencion/campanas")
+    return { ok: true }
+  } catch (err: unknown) {
+    return campaignFailure(err, "setCampaignPdtpActivities")
   }
 }
 

@@ -103,6 +103,7 @@ export const preventionModule = {
     "prevention:governance:review",
     "prevention:hygiene:view",
     "prevention:hygiene:manage",
+    "prevention:hygiene:assess",
     "prevention:hygiene:measure",
     "prevention:emergency:view",
     "prevention:emergency:manage",
@@ -215,7 +216,8 @@ export const preventionModule = {
     "prevention:cphs:certify": { id: "p-prev-cphs-certify", description: "Gestionar el expediente de certificación CPHS de Mutual y registrar su resultado" },
     "prevention:governance:review": { id: "p-prev-gov-review", description: "Registrar y cerrar la revisión por la dirección del SG-SST" },
     "prevention:hygiene:view": { id: "p-prev-hyg-view", description: "Ver agentes, grupos de exposición, mediciones y cobertura de vigilancia" },
-    "prevention:hygiene:manage": { id: "p-prev-hyg-manage", description: "Administrar agentes, grupos de exposición y programas de vigilancia ocupacional" },
+    "prevention:hygiene:manage": { id: "p-prev-hyg-manage", description: "Administrar el catálogo normativo de agentes de exposición, que es global y no tiene faena" },
+    "prevention:hygiene:assess": { id: "p-prev-hyg-assess", description: "Gestionar grupos de exposición, programas de vigilancia y el pronunciamiento sobre protocolos MINSAL de su faena" },
     "prevention:hygiene:measure": { id: "p-prev-hyg-measure", description: "Registrar mediciones de exposición contra el límite permisible" },
     "prevention:emergency:view": { id: "p-prev-emg-view", description: "Ver planes de emergencia, escenarios, organigrama, recursos y simulacros" },
     "prevention:emergency:manage": { id: "p-prev-emg-manage", description: "Crear planes de emergencia y administrar escenarios, organigrama, recursos y contactos" },
@@ -898,15 +900,28 @@ export const preventionModule = {
     // en el dominio sensible con sus propios permisos nominativos.
     { roleSlug: "prevencionista",       permission: "prevention:hygiene:view" },
     { roleSlug: "prevencionista",       permission: "prevention:hygiene:manage" },
+    { roleSlug: "prevencionista",       permission: "prevention:hygiene:assess" },
     { roleSlug: "prevencionista",       permission: "prevention:hygiene:measure" },
     { roleSlug: "prevencionista_faena", permission: "prevention:hygiene:view" },
     { roleSlug: "prevencionista_faena", permission: "prevention:hygiene:measure" },
+    // El `PRF` del catálogo 2026 es el responsable declarado de las N°44 a N°50,
+    // y con sólo `measure` podía registrar mediciones (N°45) pero no pronunciarse
+    // sobre un protocolo MINSAL (N°46-49) ni registrar un control de vigilancia
+    // (N°50).
+    //
+    // Se le dio `assess` y no `manage` (D19): `manage` habilita además el catálogo
+    // de agentes, que es normativo y **global** —no tiene faena— así que un PRF de
+    // una faena podía editar el catálogo de todas. `assess` cubre exactamente lo
+    // que sus actividades exigen, y nada más.
+    { roleSlug: "prevencionista_faena", permission: "prevention:hygiene:assess" },
     { roleSlug: "cphs",                 permission: "prevention:hygiene:view" },
     { roleSlug: "jefe_terreno",         permission: "prevention:hygiene:view" },
     { roleSlug: "jefa_chome",           permission: "prevention:hygiene:view" },
     { roleSlug: "jefa_chome",           permission: "prevention:hygiene:manage" },
+    { roleSlug: "jefa_chome",           permission: "prevention:hygiene:assess" },
     { roleSlug: "administrador",        permission: "prevention:hygiene:view" },
     { roleSlug: "administrador",        permission: "prevention:hygiene:manage" },
+    { roleSlug: "administrador",        permission: "prevention:hygiene:assess" },
     { roleSlug: "administrador",        permission: "prevention:hygiene:measure" },
     // Emergencias. Aprobar queda reservado a jefatura: la segregación real
     // (quien crea el plan no puede aprobarlo) se valida en el servicio, no

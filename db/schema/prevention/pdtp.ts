@@ -255,6 +255,20 @@ export const pdtpResponsibleCatalog = pgTable("pdtp_responsible_catalog", {
   slug:        text("slug").primaryKey(),
   displayName: text("display_name").notNull(),
   roleName:    text("role_name"),
+  /**
+   * Quién opera la plataforma por este responsable, cuando el responsable no
+   * tiene cuenta.
+   *
+   * Los conductores y operadores son el responsable declarado de la N°25 —el
+   * report de uso diario lo llena quien opera el equipo— pero no tienen cuenta,
+   * así que su `roleName` es nulo y la cola de pendientes nunca les asignaba
+   * trabajo: la actividad quedaba sin dueño visible. La responsabilidad es
+   * documental (el nombre del operador va en el formulario) y la operación en la
+   * plataforma la hace el jefe de terreno. Decisión D21 del 2026-09-02.
+   *
+   * No reemplaza al responsable: `displayName` sigue diciendo quién responde.
+   */
+  operatedByRoleName: text("operated_by_role_name"),
   kind:        text("kind").notNull(),
   notes:       text("notes"),
   isActive:    boolean("is_active").notNull().default(true),
@@ -298,6 +312,26 @@ export const pdtpActivities = pgTable("pdtp_activities", {
    */
   mechanism:           text("mechanism").notNull().default("sin_definir"),
   indicatorMode:       text("indicator_mode").notNull().default("planned_vs_completed"),
+  /**
+   * De qué registro sale el padrón cuando `indicatorMode = 'coverage'`.
+   *
+   * Es la hermana de `indicatorMode`: esa columna dice "mídase cuántos de
+   * cuántos" y esta dice contra qué. Sin ella la base declaraba el modo y no la
+   * población, que para un programa que se firma y se audita es un hueco.
+   *
+   *   `dotacion`            trabajadores activos de la faena
+   *   `extintores`          extintores del inventario de recursos de emergencia
+   *   `expuestos_ges`       personas en un GES con vigilancia requerida
+   *   `equipos`             vehículos y equipos activos de la faena
+   *   `trabajadores_nuevos` actas de trabajador nuevo cerradas en el período
+   *   `null`                sin fuente: se usa el padrón cargado a mano y, si no
+   *                         hay, la cantidad planificada del mes
+   *
+   * Las cuatro primeras son de **stock** —cuántos sujetos existen ahora— y la
+   * última de **flujo**: cuántos casos ocurrieron en el mes. La diferencia
+   * importa en el cálculo, porque un flujo debe contar en meses sin calendario.
+   */
+  subjectSource:       text("subject_source"),
   targetValue:         numeric("target_value", { precision: 10, scale: 2, mode: "number" }),
   targetUnit:          text("target_unit"),
   sourceSheetRow:     integer("source_sheet_row").notNull(),
@@ -320,6 +354,10 @@ export const pdtpActivities = pgTable("pdtp_activities", {
   check("pdtp_activities_due_days_check", sql`${table.dueDays} IS NULL OR ${table.dueDays} >= 0`),
   check("pdtp_activities_mechanism_check", sql`${table.mechanism} IN ('enganche', 'constancia', 'formulario', 'compuesta', 'sin_definir')`),
   check("prevention_pdtp_activity_indicator_mode_valid", sql`${table.indicatorMode} IN ('planned_vs_completed', 'closed_on_time', 'completed_count', 'not_applicable', 'coverage')`),
+  check("pdtp_activities_subject_source_check", sql`${table.subjectSource} IS NULL OR ${table.subjectSource} IN ('dotacion', 'extintores', 'expuestos_ges', 'equipos', 'trabajadores_nuevos')`),
+  // Declarar una fuente de padrón sin medir por cobertura no significa nada: el
+  // resto de los modos no tiene denominador de sujetos.
+  check("pdtp_activities_subject_source_requires_coverage", sql`${table.subjectSource} IS NULL OR ${table.indicatorMode} = 'coverage'`),
   check("pdtp_activities_target_value_check", sql`${table.targetValue} IS NULL OR ${table.targetValue} >= 0`),
 ])
 

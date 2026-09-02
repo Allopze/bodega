@@ -1,0 +1,1 @@
+ALTER TABLE "sst_document_types" ADD COLUMN "pdtp_activity_numbers" jsonb;

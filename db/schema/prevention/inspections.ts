@@ -53,6 +53,24 @@ export const preventionInspectionTemplates = pgTable("prevention_inspection_temp
   /** Números de actividad PDTP (campo `n`) que esta plantilla acredita al
    * completar un run. Null = no vinculado al PDTP (comportamiento previo). */
   pdtpActivityNumbers: jsonb("pdtp_activity_numbers").$type<number[]>(),
+  /**
+   * Quién es el ejecutante de registro de esta plantilla, para el candado de
+   * independencia del revisor.
+   *
+   *   `platform_user`      quien completa el run en la plataforma. El caso normal.
+   *   `declared_in_form`   la persona nombrada dentro del formulario.
+   *
+   * El segundo existe por el report de uso diario de equipos: lo ejecuta el
+   * conductor u operador en papel —no tiene cuenta, y por eso el formulario tiene
+   * su nombre como campo obligatorio— y el jefe de terreno sólo lo transcribe.
+   * Bloquearle la firma por haber tecleado lo que otro hizo dejaba la N°26
+   * acreditada a nombre de quien no es su responsable. Decisión de jefatura del
+   * 2026-09-02 (D04).
+   *
+   * Es declarativo y no una excepción por nombre de plantilla: mañana puede
+   * haber otro instrumento que se transcriba igual.
+   */
+  executorOfRecord: text("executor_of_record").notNull().default("platform_user"),
   /* Actividades que acredita al REVISARSE, no al ejecutarse. Conjunto aparte y
    * no un flag sobre el anterior: el programa distingue el acto de llenar el
    * instrumento del acto de revisarlo y firmarlo —n=25 la hace el operador,
@@ -68,6 +86,7 @@ export const preventionInspectionTemplates = pgTable("prevention_inspection_temp
   uniqueIndex("prevention_inspection_template_version_unique").on(table.code, table.versionLabel),
   index("prevention_inspection_template_status_idx").on(table.code, table.status),
   check("prevention_inspection_template_kind_valid", sql`${table.kind} IN ('inspection', 'observation', 'audit')`),
+  check("prevention_inspection_template_executor_of_record_valid", sql`${table.executorOfRecord} IN ('platform_user', 'declared_in_form')`),
   check("prevention_inspection_template_provenance_valid", sql`${table.provenanceKind} IN ('official_document', 'platform_definition')`),
   check("prevention_inspection_template_official_source_consistent", sql`${table.provenanceKind} <> 'official_document' OR ${table.status} <> 'approved' OR ${table.sourceDocumentVersionId} IS NOT NULL`),
   check("prevention_inspection_template_status_valid", sql`${table.status} IN ('draft', 'approved', 'superseded')`),

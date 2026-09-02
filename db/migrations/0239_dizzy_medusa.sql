@@ -1,0 +1,1 @@
+ALTER TABLE "pdtp_responsible_catalog" ADD COLUMN "operated_by_role_name" text;

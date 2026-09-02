@@ -6,6 +6,7 @@ import {
   sstDocumentAudit,
   sstDocumentDistributionTargets,
   sstDocuments,
+  sstDocumentTypes,
   sstDocumentVersions,
   users,
   workers,
@@ -13,6 +14,7 @@ import {
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
+import { onDocumentAcknowledged } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import {
   assertConfidentialityAllowed,
   assertScopeAccess,
@@ -219,7 +221,8 @@ export async function acknowledgeDocumentVersion(args: DistributionContext & {
   const { doc, version } = await getPublishedVersionContext(args.versionId)
   authorizeDistribution(args, doc)
 
-  return db.transaction(async (tx) => {
+  let accreditation: Parameters<typeof onDocumentAcknowledged>[0] | null = null
+  const result = await db.transaction(async (tx) => {
     const [user] = await tx.select({ workerId: users.workerId, isActive: users.isActive })
       .from(users).where(eq(users.id, args.ctx.userId))
     if (!user?.isActive) throw new Error("Usuario no disponible para registrar acuse.")
@@ -279,8 +282,30 @@ export async function acknowledgeDocumentVersion(args: DistributionContext & {
       ip: args.ctx.ip ?? null,
       createdAt: acknowledgedAt,
     })
+
+    // N°36 del PDTP: la difusión se mide por cobertura, una acreditación por
+    // acuse. El número lo declara el tipo del documento, y un documento
+    // corporativo no tiene faena, así que no puede acreditar una actividad que se
+    // mide por faena. Se dispara después del commit.
+    if (doc.worksiteId && doc.typeId) {
+      const [type] = await tx.select({ numbers: sstDocumentTypes.pdtpActivityNumbers })
+        .from(sstDocumentTypes).where(eq(sstDocumentTypes.id, doc.typeId)).limit(1)
+      const activityNumbers = Array.isArray(type?.numbers) ? type.numbers as number[] : []
+      if (activityNumbers.length > 0) {
+        accreditation = {
+          versionId: version.id,
+          targetId: target.id,
+          worksiteId: doc.worksiteId,
+          acknowledgedAt,
+          activityNumbers,
+        }
+      }
+    }
     return ack
   })
+
+  if (accreditation) await onDocumentAcknowledged(accreditation)
+  return result
 }
 
 export async function exemptDocumentDistributionTarget(args: DistributionContext & {

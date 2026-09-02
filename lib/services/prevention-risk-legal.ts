@@ -40,6 +40,7 @@ import {
   worksites,
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
+import { onRiskMatrixPublished } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { nanoid } from "@/lib/id"
 import { LEGAL_COMPLIANCE_STATUS_LABELS } from "@/lib/prevention/badges"
 import { CAPA_STATUS_LABELS } from "@/lib/prevention/capa"
@@ -482,7 +483,8 @@ async function repointRiskMapMarkers(
 
 export async function transitionRiskMatrix(input: unknown, access: RiskLegalAccess) {
   const data = riskMatrixTransitionSchema.parse(input)
-  return db.transaction(async (tx) => {
+  let accreditation: Parameters<typeof onRiskMatrixPublished>[0] | null = null
+  const result = await db.transaction(async (tx) => {
     const [matrix] = await tx.select().from(preventionRiskMatrices).where(eq(preventionRiskMatrices.id, data.matrixId)).limit(1)
     if (!matrix) throw new Error("MIPER no encontrada o fuera de alcance.")
     requireAccess(access, MATRIX_PERMISSION[data.toStatus]!, matrix.worksiteId)
@@ -560,9 +562,25 @@ export async function transitionRiskMatrix(input: unknown, access: RiskLegalAcce
       if (matrix.sourceImportBatchId) {
         await tx.update(preventionRiskImportBatches).set({ status: "activated", activatedMatrixId: matrix.id, activatedByUserId: access.userId, activatedAt: now }).where(eq(preventionRiskImportBatches.id, matrix.sourceImportBatchId))
       }
+
+      // N°35 del PDTP. Se prepara acá y se dispara DESPUÉS del commit: el motor
+      // escribe con su propia conexión, así que llamarlo dentro dejaría una
+      // ejecución huérfana si la transacción revierte.
+      const entries = await tx.select({ id: preventionRiskEntries.id }).from(preventionRiskEntries)
+        .where(eq(preventionRiskEntries.matrixId, matrix.id))
+      accreditation = {
+        matrixId: matrix.id,
+        worksiteId: matrix.worksiteId,
+        matrixVersion: matrix.matrixVersion,
+        publishedAt: updated.publishedAt ?? now,
+        entryCount: entries.length,
+      }
     }
     return updated
   })
+
+  if (accreditation) await onRiskMatrixPublished(accreditation)
+  return result
 }
 
 /**

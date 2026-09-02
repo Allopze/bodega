@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm"
+import { and, desc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import {
   pdtpActivities,
@@ -8,11 +8,11 @@ import {
   preventionCapaActions,
   preventionInspectionFindings,
   preventionInspectionRuns,
-  workers,
 } from "@/db/schema"
 import { PDTP_ESTADOS_CERRADOS } from "./checklist-domain"
 import { capaEstado } from "./capa-view"
 import { loadApprovedExecutionsForWorksites, loadProgramScheduleAndExecutions } from "./helpers"
+import { isFlowSubjectSource, resolvePdtpSubjectCount } from "./subject-registry"
 import { filterPdtpRowsFromActivation } from "./period"
 
 export type PdtpComplianceMonth = {
@@ -95,7 +95,11 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
   if (!program) return null
   const year = program.year
 
-  const activityRows = await db.select({ id: pdtpActivities.id, indicatorMode: pdtpActivities.indicatorMode }).from(pdtpActivities)
+  const activityRows = await db.select({
+    id: pdtpActivities.id,
+    indicatorMode: pdtpActivities.indicatorMode,
+    subjectSource: pdtpActivities.subjectSource,
+  }).from(pdtpActivities)
     .where(eq(pdtpActivities.programId, program.id))
 
   if (activityRows.length === 0) {
@@ -122,35 +126,71 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
   // aplicar reglas distintas por actividad y no dejar que una compense a otra.
   const modeByActivity = new Map(activityRows.map((a) => [a.id, a.indicatorMode]))
 
-  // Padrón por actividad (R1/R2, respuesta 1 del cuestionario 2026-07): meta de
-  // cobertura = trabajadores esperados de la faena. Solo se conoce con faena
-  // explícita. Prioridad: parámetro cargado a mano → dotación activa de la faena
-  // (inferida) → cantidad planificada del mes.
+  /**
+   * Padrón por actividad. La cadena es: **override manual → padrón derivado del
+   * registro de sujetos → cantidad planificada del mes**.
+   *
+   * El derivado es lo nuevo (`subject_source`): el padrón deja de ser un número
+   * que alguien teclea y pasa a leerse de donde los sujetos ya viven —la
+   * dotación, el inventario de extintores, los expuestos de un GES—. Un número
+   * guardado envejece; una consulta no.
+   *
+   * Se conserva el override porque sigue habiendo sujetos sin registro propio, y
+   * gana sobre lo derivado: si alguien lo cargó a mano, sabe algo que la consulta
+   * no.
+   *
+   * Un registro vacío **no** es un padrón de cero: se cae a lo planificado. Con
+   * cero, la actividad aportaría 0 al denominador y desaparecería del cómputo,
+   * que es exactamente el sesgo que premia el no configurar. Que una faena no
+   * tenga extintores se declara excluyendo la actividad (R4).
+   */
   const expectedByActivity = new Map<string, number>()
-  // Meta de cobertura por faena (R2). Mueve el umbral de acreditación; el
-  // denominador sigue siendo el padrón completo.
   const coverageTargetPctByActivity = new Map<string, number>()
-  let activeWorkerCount = 0
+  /** Padrón derivado. Las fuentes de stock se resuelven una vez; las de flujo, por mes. */
+  const derivedStockByActivity = new Map<string, number>()
+  const derivedFlowByActivityMonth = new Map<string, number>()
+  const sourceByActivity = new Map<string, string | null>(activityRows.map((a) => [a.id, a.subjectSource]))
+
   if (worksiteId) {
-    const hasCoverage = activityRows.some((a) => a.indicatorMode === "coverage")
-    const [paramRows, workerCountRow] = await Promise.all([
-      db.select({
-        activityId: pdtpActivityWorksiteParams.activityId,
-        expectedSubjectCount: pdtpActivityWorksiteParams.expectedSubjectCount,
-        targetCoveragePercent: pdtpActivityWorksiteParams.targetCoveragePercent,
-      })
-        .from(pdtpActivityWorksiteParams)
-        .where(and(inArray(pdtpActivityWorksiteParams.activityId, allActivityIds), eq(pdtpActivityWorksiteParams.worksiteId, worksiteId))),
-      // Solo se cuenta la dotación si hay actividades de cobertura (evita el query de más).
-      hasCoverage
-        ? db.select({ count: sql<number>`count(*)::int` }).from(workers).where(and(eq(workers.worksiteId, worksiteId), eq(workers.isActive, true)))
-        : Promise.resolve([{ count: 0 }]),
-    ])
+    const paramRows = await db.select({
+      activityId: pdtpActivityWorksiteParams.activityId,
+      expectedSubjectCount: pdtpActivityWorksiteParams.expectedSubjectCount,
+      targetCoveragePercent: pdtpActivityWorksiteParams.targetCoveragePercent,
+    })
+      .from(pdtpActivityWorksiteParams)
+      .where(and(inArray(pdtpActivityWorksiteParams.activityId, allActivityIds), eq(pdtpActivityWorksiteParams.worksiteId, worksiteId)))
     for (const row of paramRows) {
       if (row.expectedSubjectCount != null) expectedByActivity.set(row.activityId, row.expectedSubjectCount)
       if (row.targetCoveragePercent != null) coverageTargetPctByActivity.set(row.activityId, Number(row.targetCoveragePercent))
     }
-    activeWorkerCount = workerCountRow[0]?.count ?? 0
+
+    // Sólo se consulta el registro de las actividades que de verdad miden por
+    // cobertura, declaran fuente y no tienen override: lo demás sería trabajo de
+    // más sobre un dato que no se va a usar.
+    const needDerived = activityRows.filter((a) => a.indicatorMode === "coverage"
+      && a.subjectSource !== null
+      && !expectedByActivity.has(a.id))
+
+    for (const activity of needDerived) {
+      if (isFlowSubjectSource(activity.subjectSource)) {
+        for (let month = 1; month <= 12; month++) {
+          const count = await resolvePdtpSubjectCount(activity.subjectSource, worksiteId, { year, month })
+          if (count != null && count > 0) derivedFlowByActivityMonth.set(`${activity.id}:${month}`, count)
+        }
+        continue
+      }
+      const count = await resolvePdtpSubjectCount(activity.subjectSource, worksiteId, { year, month: 1 })
+      if (count != null && count > 0) derivedStockByActivity.set(activity.id, count)
+    }
+  }
+
+  /** Padrón efectivo de una celda actividad-mes, o `null` si no hay ninguno. */
+  const padronFor = (activityId: string, month: number): number | null => {
+    const manual = expectedByActivity.get(activityId)
+    if (manual != null) return manual
+    const flow = derivedFlowByActivityMonth.get(`${activityId}:${month}`)
+    if (flow != null) return flow
+    return derivedStockByActivity.get(activityId) ?? null
   }
 
   const plannedByActivityMonth = new Map<string, number>()
@@ -178,12 +218,16 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
       const p = plannedByActivityMonth.get(`${activityId}:${month}`) ?? 0
       const rawExecuted = executedByActivityMonth.get(`${activityId}:${month}`) ?? 0
       if (modeByActivity.get(activityId) === "coverage") {
-        // Cobertura solo cuenta en los meses en que está programada. Meta = padrón
-        // esperado de la faena (o lo planificado si no hay padrón cargado); sin
-        // crédito parcial: o se alcanza el umbral o no cuenta.
-        if (p === 0) continue
-        // Padrón manual → dotación activa inferida (si hay) → planificado.
-        const target = expectedByActivity.get(activityId) ?? (activeWorkerCount > 0 ? activeWorkerCount : p)
+        const derived = padronFor(activityId, month)
+        // Una fuente de stock se barre según calendario, así que sin planificación
+        // en el mes no hay nada que exigir. Una de flujo es al revés: el
+        // denominador son los casos que ocurrieron, y ocurren cuando ocurren — la
+        // N°18 no tiene calendario y aun así debe contar el mes que entró gente.
+        const esFlujo = isFlowSubjectSource(sourceByActivity.get(activityId) ?? null)
+        if (p === 0 && !(esFlujo && derived != null)) continue
+        // Override manual → padrón derivado → cantidad planificada. Sin ninguno,
+        // se mide por lo planificado y no contra una población inventada.
+        const target = derived ?? p
         // R2: `targetCoveragePercent` baja el umbral de acreditación sin tocar el
         // denominador — con meta 90 % y padrón 50, acreditan 45 ejecuciones y el
         // aporte sigue siendo 50/50. Sin meta configurada se exige el padrón

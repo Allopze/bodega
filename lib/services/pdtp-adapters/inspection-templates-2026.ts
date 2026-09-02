@@ -64,6 +64,13 @@ type InspectionTemplateSpec = {
    * acreditarlas una a una.
    */
   reviewN?: number
+  /**
+   * Quién es el ejecutante de registro. Sólo el report de uso diario lo cambia:
+   * lo ejecuta el operador en papel y el jefe de terreno lo transcribe, así que
+   * el candado de independencia no debe impedirle firmar. Decisión D04 del
+   * 2026-09-02; el detalle está en el comentario del campo en el esquema.
+   */
+  executorOfRecord?: "platform_user" | "declared_in_form"
 }
 
 export const PDTP_2026_INSPECTION_SPECS: readonly InspectionTemplateSpec[] = [
@@ -86,7 +93,7 @@ export const PDTP_2026_INSPECTION_SPECS: readonly InspectionTemplateSpec[] = [
   // CONJUNTO recibido y sobre el cierre de los hallazgos, no sobre una
   // inspección. Acreditarla por run haría que una semana con doce inspecciones
   // reportara doce cumplimientos de una actividad planificada como uno.
-  { n: [25, 26], definitionCode: "reporte_equipos",      name: "Reporte de Uso Diario de Equipos",                kind: "inspection" },
+  { n: [25, 26], definitionCode: "reporte_equipos",      name: "Reporte de Uso Diario de Equipos",                kind: "inspection", executorOfRecord: "declared_in_form" },
   { n: 27, definitionCode: "inspeccion_taller",         name: "Inspección Taller de Mantención y Bodega RESPEL", kind: "inspection" },
   { n: 29, definitionCode: "inspeccion_contenedores",   name: "Inspección de Contenedores",                      kind: "inspection" },
   { n: 33, definitionCode: "inspeccion_equipos_moviles", name: "Inspección de Equipos Móviles",                  kind: "inspection" },
@@ -223,8 +230,13 @@ export async function ensurePdtp2026InspectionTemplates(input: {
     if (existing) {
       const current = Array.isArray(existing.pdtpActivityNumbers) ? existing.pdtpActivityNumbers as number[] : null
       const currentReview = Array.isArray(existing.pdtpReviewActivityNumbers) ? existing.pdtpReviewActivityNumbers as number[] : null
+      // `executorOfRecord` entra en la comparación: una plantilla ya cableada a
+      // sus actividades pero con el ejecutante equivocado seguiría bloqueando la
+      // firma del JT (D04), y saltarla como "ya instalada" lo dejaría así para
+      // siempre.
       const wired = sameNumbers(current, completionNumbers(spec))
         && sameNumbers(currentReview, spec.reviewN === undefined ? null : [spec.reviewN])
+        && existing.executorOfRecord === (spec.executorOfRecord ?? "platform_user")
       if (wired) {
         result.skipped.push({ n: spec.n, templateId: existing.id, reason: "already_installed" })
         continue
@@ -234,6 +246,7 @@ export async function ensurePdtp2026InspectionTemplates(input: {
           .set({
             pdtpActivityNumbers: completionNumbers(spec),
             pdtpReviewActivityNumbers: spec.reviewN === undefined ? null : [spec.reviewN],
+            executorOfRecord: spec.executorOfRecord ?? "platform_user",
             version: existing.version + 1,
             updatedAt: now,
           })
@@ -263,6 +276,7 @@ export async function ensurePdtp2026InspectionTemplates(input: {
         legalFramework: definition.legalFramework?.join(" · ") ?? null,
         pdtpActivityNumbers: completionNumbers(spec),
         pdtpReviewActivityNumbers: spec.reviewN === undefined ? null : [spec.reviewN],
+        executorOfRecord: spec.executorOfRecord ?? "platform_user",
         authorUserId: input.actorUserId,
         createdAt: now,
         updatedAt: now,
