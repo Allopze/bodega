@@ -5,11 +5,13 @@ export const deliveriesModule = {
   permissions: [
     "deliveries:view",
     "deliveries:create",
+    "deliveries:void",
   ] as const,
 
   permissionMeta: {
     "deliveries:view":   { id: "p-del-view",   description: "Ver historial de entregas" },
     "deliveries:create": { id: "p-del-create", description: "Registrar entregas a trabajadores" },
+    "deliveries:void":   { id: "p-del-void",   description: "Anular entregas y reponer su stock" },
   },
   nav: [
     {
@@ -27,6 +29,10 @@ export const deliveriesModule = {
   defaultGrants: [
     { roleSlug: "administrador",       permission: "deliveries:view" },
     { roleSlug: "administrador",       permission: "deliveries:create" },
+    // Anular repone stock: se concede a quien responde por el inventario, no a
+    // todo el que puede registrar una entrega.
+    { roleSlug: "administrador",       permission: "deliveries:void" },
+    { roleSlug: "jefa_chome",          permission: "deliveries:void" },
     { roleSlug: "jefa_chome",          permission: "deliveries:view" },
     { roleSlug: "secretaria",          permission: "deliveries:view" },
     { roleSlug: "secretaria",          permission: "deliveries:create" },

@@ -9,6 +9,7 @@ import { logger } from "@/lib/logger"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { registerWorkerStockDelivery, type DeliveryAttachmentInput } from "@/lib/services/deliveries"
+import { voidWorkerStockDelivery } from "@/lib/services/deliveries-void"
 import { workerStockDeliverySchema, type ActionState } from "@/lib/validation/operations"
 
 import { createDeliveryAttachmentPath, resolveDeliveriesDir } from "@/lib/storage/config"
@@ -140,4 +141,41 @@ function sanitizeFileName(name: string) {
     .replace(/[^a-zA-Z0-9._-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 120) || "comprobante"
+}
+
+export async function voidDeliveryAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("deliveries:void") }
+  catch { return { ok: false, message: "Sin permisos para anular entregas" } }
+
+  const deliveryId = formData.get("deliveryId")
+  const reason = formData.get("reason")
+  if (typeof deliveryId !== "string" || !deliveryId) {
+    return { ok: false, message: "Entrega no indicada" }
+  }
+  if (typeof reason !== "string" || reason.trim().length < 10) {
+    return {
+      ok: false,
+      message: "Explica por qué se anula (mínimo 10 caracteres)",
+      fieldErrors: { reason: ["Mínimo 10 caracteres"] },
+    }
+  }
+
+  try {
+    await voidWorkerStockDelivery({
+      deliveryId,
+      reason,
+      voidedBy: session.user.id,
+      userEmail: session.user.email ?? undefined,
+    }, serviceWorksiteScope(session))
+
+    revalidateOperationalViews(["/entregas", "/bodega", "/trazabilidad", "/solicitudes"])
+    return { ok: true, message: "Entrega anulada y stock repuesto" }
+  } catch (e) {
+    logger.error("[voidDeliveryAction]", e)
+    return { ok: false, message: safeActionMessage(e, "Error al anular la entrega") }
+  }
 }

@@ -20,6 +20,7 @@ export type MovementType =
   | "ajuste"               // +/-: manual inventory adjustment with mandatory reason
   | "egreso_traslado"      // - : salida por guía de despacho interna (oficina → faena)
   | "ingreso_traslado"     // + : entrada por guía de despacho interna en la faena destino
+  | "ingreso_anulacion"    // + : reverso de una entrega anulada (el egreso nunca debió existir)
 
 /* ── Apply movement ─────────────────────────────────────────────────────────── */
 
@@ -147,6 +148,7 @@ export async function registerStockReturn(
         quantity: deliveryItems.quantity,
         worksiteId: deliveries.worksiteId,
         destinationType: deliveries.destinationType,
+        voidedAt: deliveries.voidedAt,
       })
       .from(deliveryItems)
       .innerJoin(deliveries, eq(deliveryItems.deliveryId, deliveries.id))
@@ -155,6 +157,10 @@ export async function registerStockReturn(
 
     if (!deliveryItem || deliveryItem.destinationType !== "faena" || !deliveryItem.worksiteId || !deliveryItem.productId) {
       throw new Error("La línea de entrega no está disponible para devolución a stock")
+    }
+    // La anulación ya repuso ese stock: devolverlo otra vez lo duplicaría.
+    if (deliveryItem.voidedAt) {
+      throw new Error("La entrega fue anulada: su stock ya volvió a la bodega")
     }
     if (worksiteIds !== "all" && !worksiteIds.includes(deliveryItem.worksiteId)) {
       throw new Error("No tienes acceso a esta faena")

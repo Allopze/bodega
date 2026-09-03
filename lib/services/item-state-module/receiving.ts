@@ -214,3 +214,74 @@ export async function deliverItemTx(
 
     await rollupRequestStatus(item.requestId, tx, userId)
 }
+
+/**
+ * Devuelve un ítem trazable al estado que le corresponde después de anular una
+ * entrega.
+ *
+ * No es una transición del flujo normal —`canTransition` sólo describe avances—
+ * sino un reverso explícito, así que el estado no se "recuerda": se recalcula
+ * desde los hechos que quedan en pie. Con saldo entregado todavía positivo el
+ * ítem queda `partially_delivered`; sin saldo vuelve a `received` o
+ * `partially_received` según lo que la faena tenga efectivamente recibido.
+ *
+ * Recalcular en vez de guardar el estado anterior evita que dos anulaciones
+ * seguidas, o una anulación después de una recepción, dejen un estado que ya no
+ * corresponde a las cantidades reales.
+ */
+export async function revertDeliveredItemTx(
+  tx: Tx,
+  itemId: string,
+  userId: string,
+  opts: {
+    userEmail?: string
+    /** Entregado que queda vigente después de descontar la entrega anulada. */
+    totalDelivered: number
+    /** Recibido en faena, para decidir entre `received` y `partially_received`. */
+    receivedAtFaena: number
+    reason: string
+  },
+): Promise<void> {
+  const [item] = await tx
+    .select()
+    .from(purchaseRequestItems)
+    .where(eq(purchaseRequestItems.id, itemId))
+    .for("update")
+  if (!item) throw new Error(`Item ${itemId} not found`)
+  await lockRequestsForRollupTx(tx, [item.requestId])
+
+  const targetStatus: ItemStatus = opts.totalDelivered > 0
+    ? getDeliveryTargetStatus(item.quantity, opts.totalDelivered)
+    : opts.receivedAtFaena >= item.quantity
+      ? "received"
+      : "partially_received"
+
+  if (item.status === targetStatus) return
+
+  const now = new Date().toISOString()
+  const [updated] = await tx
+    .update(purchaseRequestItems)
+    .set({ status: targetStatus, updatedAt: now })
+    .where(and(eq(purchaseRequestItems.id, itemId), eq(purchaseRequestItems.status, item.status)))
+    .returning({ id: purchaseRequestItems.id })
+  if (!updated) throw new Error("El ítem ya no está disponible: posible concurrencia")
+
+  await recordStatusChange({
+    entityType: "request_item",
+    entityId:   itemId,
+    fromStatus: item.status,
+    toStatus:   targetStatus,
+    changedBy:  userId,
+  }, tx)
+  await recordAudit({
+    userId,
+    userEmail:  opts.userEmail,
+    action:     "status_change",
+    entityType: "request_item",
+    entityId:   itemId,
+    oldState:   { status: item.status },
+    newState:   { status: targetStatus, totalDelivered: opts.totalDelivered, reason: opts.reason },
+  }, tx)
+
+  await rollupRequestStatus(item.requestId, tx, userId)
+}

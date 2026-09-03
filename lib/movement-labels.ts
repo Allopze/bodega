@@ -19,6 +19,9 @@ export const MOVEMENT_TYPE_LABELS: Record<string, string> = {
   egreso_traslado:       "Salida por guía",
   ingreso_traslado:      "Ingreso por guía",
   retiro_epp_trabajador: "Retiro EPP usado",
+  // Reverso de una entrega anulada. No es una devolución: el material nunca
+  // salió, la entrega estaba mal registrada.
+  ingreso_anulacion:     "Reverso por anulación",
 }
 
 /**
@@ -30,6 +33,7 @@ export const MOVEMENT_TONE_CLASS: Record<string, string> = {
   ingreso_oc:            "text-[var(--color-success)] font-medium",
   ingreso_devolucion:    "text-[var(--color-success)]",
   ingreso_traslado:      "text-[var(--color-success)]",
+  ingreso_anulacion:     "text-[var(--color-success)]",
   egreso_entrega:        "text-[var(--color-danger)]",
   egreso_traslado:       "text-[var(--color-danger)]",
   retiro_epp_trabajador: "text-[var(--color-danger)]",
