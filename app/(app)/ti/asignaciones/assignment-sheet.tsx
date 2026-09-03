@@ -7,11 +7,12 @@ import { toast } from "@/lib/toast"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import {
   Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter,
-  SheetTitle, SheetDescription, SheetCloseButton,
+  SheetTitle, SheetDescription, SheetCloseButton, SheetTrigger,
 } from "@/components/admin/sheet"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { DateTimePicker } from "@/components/ui/date-time-picker"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toLocalInputValue } from "@/lib/utils"
@@ -53,6 +54,14 @@ export function AssignmentSheet({ trigger, assetId, workers, worksites, assets =
   React.useEffect(() => {
     pendingPhotoIdsRef.current = photos.map((photo) => photo.id)
   }, [photos])
+
+  const previewUrlsRef = React.useRef<string[]>([])
+  React.useEffect(() => {
+    previewUrlsRef.current = photos.map((photo) => photo.previewUrl)
+  }, [photos])
+  React.useEffect(() => () => {
+    previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
+  }, [])
 
   async function discardPendingPhotos(ids = pendingPhotoIdsRef.current) {
     await Promise.all(ids.map(async (id) => {
@@ -105,9 +114,18 @@ export function AssignmentSheet({ trigger, assetId, workers, worksites, assets =
       form.append("stage", "delivery")
       form.append("caption", caption)
       const response = await fetch("/api/ti/photos", { method: "POST", body: form })
-      const payload = await response.json()
+      let payload: { id?: unknown; error?: string } = {}
+      try {
+        payload = await response.json() as { id?: unknown; error?: string }
+      } catch {
+        // A proxy/runtime error can return an empty or non-JSON body.
+      }
       if (!response.ok) {
         toast.error(payload.error ?? "No se pudo subir la fotografía")
+        return
+      }
+      if (typeof payload.id !== "string" || !payload.id) {
+        toast.error("La fotografía se subió sin un identificador válido")
         return
       }
       setPhotos((prev) => [...prev, { id: payload.id as string, previewUrl: URL.createObjectURL(file), caption }])
@@ -128,7 +146,7 @@ export function AssignmentSheet({ trigger, assetId, workers, worksites, assets =
 
   return (
     <Sheet open={open} onOpenChange={(v) => { if (!v) closeSheet(); else setOpen(true) }}>
-      <span onClick={() => setOpen(true)}>{trigger}</span>
+      <SheetTrigger asChild>{trigger}</SheetTrigger>
       <SheetContent className="sm:max-w-xl">
         <form action={formAction} className="flex flex-col flex-1 min-h-0">
           <input type="hidden" name="accessoriesJson" value={JSON.stringify(accessories)} />
@@ -154,7 +172,7 @@ export function AssignmentSheet({ trigger, assetId, workers, worksites, assets =
             <FieldGroup>
               {!assetId && (
                 <Field label="Activo" required error={state.fieldErrors?.assetId?.[0]} helper="Solo se listan activos disponibles o en bodega.">
-                  <Select value={selectedAsset || ALL} onValueChange={setSelectedAsset}>
+                  <Select value={selectedAsset || ALL} onValueChange={(value) => setSelectedAsset(value === ALL ? "" : value)}>
                     <SelectTrigger aria-label="Activo">
                       <SelectValue placeholder="Selecciona un activo" />
                     </SelectTrigger>
@@ -207,7 +225,7 @@ export function AssignmentSheet({ trigger, assetId, workers, worksites, assets =
                   </Select>
                 </Field>
                 <Field label="Fecha y hora de entrega" required error={state.fieldErrors?.deliveredAt?.[0]}>
-                  <Input name="deliveredAt" type="datetime-local" value={deliveredAt} onChange={(e) => setDeliveredAt(e.target.value)} />
+                  <DateTimePicker name="deliveredAt" value={deliveredAt} onChange={setDeliveredAt} />
                 </Field>
                 <Field label="Estado físico" required helper="Cómo se entrega el equipo.">
                   <Select name="physicalState" value={physicalState} onValueChange={setPhysicalState}>

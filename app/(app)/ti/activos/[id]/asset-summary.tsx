@@ -1,6 +1,7 @@
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import { formatDate, formatCLP } from "@/lib/utils"
+import { isCivilDateBefore } from "@/lib/services/ti/civil-dates"
 import { IT_ASSET_STATUS_META } from "@/lib/services/ti/constants"
 import { itStatusLabel } from "@/lib/services/ti/constants"
 import { Laptop, Wrench, Ticket, ShieldCheck, Warning } from "@phosphor-icons/react/dist/ssr"
@@ -53,7 +54,7 @@ function DataRow({ label, value, mono }: { label: string; value: React.ReactNode
 
 export function AssetSummary({ asset, activeAssignment, canManage }: AssetSummaryProps) {
   const statusMeta = IT_ASSET_STATUS_META[asset.status]
-  const warrantyActive = asset.warrantyEndDate && new Date(asset.warrantyEndDate) >= new Date()
+  const warrantyActive = asset.warrantyEndDate && !isCivilDateBefore(asset.warrantyEndDate)
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_360px]">

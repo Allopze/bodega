@@ -4,6 +4,7 @@ export const runtime = "nodejs"
 import { NextResponse } from "next/server"
 import path from "node:path"
 import { guardPermission } from "@/lib/auth/can"
+import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { generateStorageName } from "@/lib/services/prevention-documents/utils"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { mkdirp, removeFile, writeBuffer } from "@/lib/storage/helpers"
@@ -77,7 +78,7 @@ export async function POST(request: Request) {
       mimeType: validated.mimeType ?? file.type,
       caption,
       uploadedByUserId: guard.session!.user.id,
-    })
+    }, serviceWorksiteScope(guard.session))
     return NextResponse.json({ id }, { status: 201 })
   } catch (error) {
     // La DB o la validación del acta falló: no dejamos basura en disco.

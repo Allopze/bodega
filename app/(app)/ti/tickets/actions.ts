@@ -64,7 +64,6 @@ export async function transitionTicketAction(_prev: ActionState, formData: FormD
   try {
     await transitionTicket({
       ...parsed.data,
-      assigneeUserId: session.user.id,
     }, {
       userId: session.user.id,
       userEmail: session.user.email ?? undefined,

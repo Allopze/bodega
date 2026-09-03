@@ -262,6 +262,7 @@ export const itAccessSystems = pgTable("it_access_systems", {
   updatedAt:   timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   index("it_access_systems_active_idx").on(table.isActive),
+  uniqueIndex("it_access_systems_name_unique").on(sql`lower(${table.name})`),
 ])
 
 /** Qué accesos tiene cada trabajador. Nunca se almacenan contraseñas. */

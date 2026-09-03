@@ -4,6 +4,7 @@ import { itMaintenances, itAssets, suppliers, users } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { appendAssetHistory } from "./history"
+import { assertTiWorksiteAccess, type TiWorksiteScope } from "./scope"
 
 
 export interface CreateMaintenanceInput {
@@ -29,7 +30,7 @@ const textOrNull = (v: string | null | undefined, max = 500) => {
 export async function createMaintenance(
   input: CreateMaintenanceInput,
   actor: { userId: string; userEmail?: string },
-  worksiteIds: string[] | "all" = "all",
+  worksiteIds: TiWorksiteScope = "all",
 ): Promise<string> {
   const id = nanoid()
   await db.transaction(async (tx) => {
@@ -37,9 +38,7 @@ export async function createMaintenance(
       .from(itAssets)
       .where(and(eq(itAssets.id, input.assetId), isNull(itAssets.deletedAt))).for("update")
     if (!asset) throw new Error("Activo no encontrado")
-    if (worksiteIds !== "all" && asset.worksiteId && !worksiteIds.includes(asset.worksiteId)) {
-      throw new Error("No tienes acceso a esta faena")
-    }
+    assertTiWorksiteAccess(worksiteIds, asset.worksiteId)
 
     await tx.insert(itMaintenances).values({
       id,
@@ -79,7 +78,7 @@ export async function createMaintenance(
 export async function updateMaintenance(
   input: CreateMaintenanceInput & { id: string },
   actor: { userId: string; userEmail?: string },
-  worksiteIds: string[] | "all" = "all",
+  worksiteIds: TiWorksiteScope = "all",
 ): Promise<void> {
   await db.transaction(async (tx) => {
     const [existing] = await tx.select().from(itMaintenances).where(eq(itMaintenances.id, input.id)).for("update")
@@ -90,9 +89,7 @@ export async function updateMaintenance(
       .from(itAssets)
       .where(and(eq(itAssets.id, existing.assetId), isNull(itAssets.deletedAt)))
     if (!asset) throw new Error("Activo no encontrado")
-    if (worksiteIds !== "all" && asset.worksiteId && !worksiteIds.includes(asset.worksiteId)) {
-      throw new Error("No tienes acceso a esta faena")
-    }
+    assertTiWorksiteAccess(worksiteIds, asset.worksiteId)
 
     await tx.update(itMaintenances).set({
       type: input.type,
@@ -129,7 +126,7 @@ export async function updateMaintenance(
 }
 
 export async function listMaintenances(filters: { assetId?: string; scope?: SQL; search?: string }) {
-  const conditions: SQL[] = []
+  const conditions: SQL[] = [isNull(itAssets.deletedAt)]
   if (filters.assetId) conditions.push(eq(itMaintenances.assetId, filters.assetId))
   if (filters.scope) conditions.push(filters.scope)
   if (filters.search) {
@@ -166,7 +163,7 @@ export async function listMaintenances(filters: { assetId?: string; scope?: SQL;
 
 /** Resumen de costo por activo: identifica equipos que conviene reemplazar. */
 export async function maintenanceCostByAsset(scope?: SQL) {
-  const conditions: SQL[] = []
+  const conditions: SQL[] = [isNull(itAssets.deletedAt)]
   if (scope) conditions.push(scope)
   return db
     .select({

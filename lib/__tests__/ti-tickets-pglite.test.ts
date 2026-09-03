@@ -149,6 +149,8 @@ describe("módulo TI — tickets (mesa de ayuda)", () => {
     await transitionTicket({ ticketId: id, status: "en_progreso", reason: "Volvió a fallar" }, actor)
     const reopened = await getTicketById(id)
     expect(reopened?.status).toBe("en_progreso")
+    expect(reopened?.resolvedAt).toBeNull()
+    expect(reopened?.resolution).toBeNull()
   })
 
   it("separa comentarios internos de los visibles al autor", async () => {

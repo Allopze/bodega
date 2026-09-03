@@ -5,6 +5,7 @@ import { useActionState } from "react"
 import { toast } from "@/lib/toast"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
@@ -73,7 +74,12 @@ export function ChecklistsPanel({ checklists, workers, canManage }: {
       </div>
 
       {checklists.length === 0 ? (
-        <p className="mt-4 text-sm italic text-[var(--color-text-subtle)]">Sin checklists todavía.</p>
+        <EmptyState
+          compact
+          align="start"
+          title="Sin checklists todavía"
+          description={canManage ? "Crea un checklist de alta o baja para comenzar a registrar las tareas." : "Los checklists de alta y baja aparecerán aquí cuando se registren."}
+        />
       ) : (
         <ul className="mt-4 space-y-3">
           {checklists.map((checklist) => {

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { requirePermission } from "@/lib/auth/can"
+import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { safeActionMessage } from "@/lib/action-error"
 import { parseZ } from "@/lib/actions/parse-z"
 import { logger } from "@/lib/logger"
@@ -33,7 +34,7 @@ export async function createAccessSystemAction(_prev: ActionState, formData: For
     await createAccessSystem(parsed.data, {
       userId: session.user.id,
       userEmail: session.user.email ?? undefined,
-    })
+    }, serviceWorksiteScope(session))
     revalidatePath("/ti/accesos")
     return { ok: true, message: "Sistema creado" }
   } catch (error) {
@@ -55,7 +56,7 @@ export async function toggleAccessSystemAction(_prev: ActionState, formData: For
     await toggleAccessSystem(systemId, isActive, {
       userId: session.user.id,
       userEmail: session.user.email ?? undefined,
-    })
+    }, serviceWorksiteScope(session))
     revalidatePath("/ti/accesos")
     return { ok: true, message: isActive ? "Sistema activado" : "Sistema desactivado" }
   } catch (error) {
@@ -74,7 +75,7 @@ export async function upsertSystemAccessAction(_prev: ActionState, formData: For
     workerId: formData.get("workerId"),
     status: formData.get("status") || undefined,
     responsibleUserId: session.user.id,
-    notes: formData.get("notes"),
+    notes: String(formData.get("notes") ?? "").trim() || undefined,
   }, "Revisa los datos del acceso")
   if (!parsed.ok) return parsed
 
@@ -82,7 +83,7 @@ export async function upsertSystemAccessAction(_prev: ActionState, formData: For
     await upsertSystemAccess(parsed.data, {
       userId: session.user.id,
       userEmail: session.user.email ?? undefined,
-    })
+    }, serviceWorksiteScope(session))
     revalidatePath("/ti/accesos")
     return { ok: true, message: "Acceso actualizado" }
   } catch (error) {
@@ -107,7 +108,7 @@ export async function createChecklistAction(_prev: ActionState, formData: FormDa
     await createChecklist(parsed.data, {
       userId: session.user.id,
       userEmail: session.user.email ?? undefined,
-    })
+    }, serviceWorksiteScope(session))
     revalidatePath("/ti/accesos")
     return { ok: true, message: "Checklist creado" }
   } catch (error) {
@@ -132,7 +133,7 @@ export async function toggleChecklistTaskAction(_prev: ActionState, formData: Fo
     await toggleChecklistTask(parsed.data, {
       userId: session.user.id,
       userEmail: session.user.email ?? undefined,
-    })
+    }, serviceWorksiteScope(session))
     revalidatePath("/ti/accesos")
     return { ok: true, message: parsed.data.done ? "Tarea completada" : "Tarea reabierta" }
   } catch (error) {

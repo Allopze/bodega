@@ -6,11 +6,12 @@ import { toast } from "@/lib/toast"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import {
   Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter,
-  SheetTitle, SheetDescription, SheetCloseButton,
+  SheetTitle, SheetDescription, SheetCloseButton, SheetTrigger,
 } from "@/components/admin/sheet"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { DateTimePicker } from "@/components/ui/date-time-picker"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toLocalInputValue } from "@/lib/utils"
@@ -51,7 +52,7 @@ export function TransferSheet({ trigger, assignment, workers, worksites }: Trans
 
   return (
     <Sheet open={open} onOpenChange={(value) => setOpen(value)}>
-      <span onClick={() => setOpen(true)}>{trigger}</span>
+      <SheetTrigger asChild>{trigger}</SheetTrigger>
       <SheetContent className="sm:max-w-xl">
         <form action={formAction} className="flex min-h-0 flex-1 flex-col">
           <input type="hidden" name="assignmentId" value={assignment.id} />
@@ -75,7 +76,7 @@ export function TransferSheet({ trigger, assignment, workers, worksites }: Trans
             <FieldGroup>
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Fecha y hora de entrega anterior" required error={state.fieldErrors?.returnedAt?.[0]}>
-                  <Input name="returnedAt" type="datetime-local" value={returnedAt} onChange={(event) => setReturnedAt(event.target.value)} />
+                  <DateTimePicker name="returnedAt" value={returnedAt} onChange={setReturnedAt} />
                 </Field>
                 <Field label="Estado físico al transferir" required>
                   <Select name="returnPhysicalState" value={returnPhysicalState} onValueChange={setReturnPhysicalState}>
@@ -106,7 +107,7 @@ export function TransferSheet({ trigger, assignment, workers, worksites }: Trans
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Fecha y hora de nueva entrega" required error={state.fieldErrors?.deliveredAt?.[0]}>
-                  <Input name="newDeliveredAt" type="datetime-local" value={newDeliveredAt} onChange={(event) => setNewDeliveredAt(event.target.value)} />
+                  <DateTimePicker name="newDeliveredAt" value={newDeliveredAt} onChange={setNewDeliveredAt} />
                 </Field>
                 <Field label="Estado físico en nueva entrega" required>
                   <Select name="newPhysicalState" value={newPhysicalState} onValueChange={setNewPhysicalState}>

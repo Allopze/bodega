@@ -5,6 +5,7 @@ import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { removeFile } from "@/lib/storage/helpers"
 import { resolveTiFile } from "@/lib/storage/config"
+import { assertTiWorksiteAccess, type TiWorksiteScope } from "./scope"
 
 export interface PersistPendingPhotoInput {
   stage: "delivery" | "return"
@@ -24,17 +25,18 @@ export interface PersistPendingPhotoInput {
  * evidencia inmutable. Así cancelar un Sheet no deja filas ni archivos
  * mostrables como si fueran parte de un acta.
  */
-export async function persistPendingPhoto(input: PersistPendingPhotoInput): Promise<string> {
+export async function persistPendingPhoto(input: PersistPendingPhotoInput, worksiteIds: TiWorksiteScope = "all"): Promise<string> {
   const id = nanoid()
   await db.transaction(async (tx) => {
     if (input.stage === "return") {
       if (!input.pendingAssignmentId) throw new Error("La devolución requiere una asignación")
-      const [assignment] = await tx.select({ id: itAssetAssignments.id, returnedAt: itAssetAssignments.returnedAt })
+      const [assignment] = await tx.select({ id: itAssetAssignments.id, returnedAt: itAssetAssignments.returnedAt, worksiteId: itAssetAssignments.worksiteId })
         .from(itAssetAssignments)
         .where(eq(itAssetAssignments.id, input.pendingAssignmentId))
       if (!assignment || assignment.returnedAt) {
         throw new Error("La asignación no está vigente para recibir una devolución")
       }
+      assertTiWorksiteAccess(worksiteIds, assignment.worksiteId)
     } else if (input.pendingAssignmentId) {
       throw new Error("Una fotografía de entrega no puede apuntar a una asignación existente")
     }
@@ -114,7 +116,11 @@ export async function deletePendingPhoto(id: string, uploadedByUserId: string): 
 export async function cleanupOrphanPhotos(olderThanMinutes = 60): Promise<number> {
   const threshold = new Date(Date.now() - olderThanMinutes * 60_000).toISOString()
   const removed = await db.delete(itAssignmentPhotos)
-    .where(and(isNull(itAssignmentPhotos.assignmentId), lt(itAssignmentPhotos.createdAt, threshold)))
+    .where(and(
+      isNull(itAssignmentPhotos.assignmentId),
+      isNull(itAssignmentPhotos.pendingAssignmentId),
+      lt(itAssignmentPhotos.createdAt, threshold),
+    ))
     .returning({ filePath: itAssignmentPhotos.filePath })
 
   await Promise.all(removed.map(async ({ filePath }) => {

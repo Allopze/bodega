@@ -113,6 +113,7 @@ describe("ti:createAssetAction", () => {
     expect(mockCreateAsset).toHaveBeenCalledWith(
       expect.objectContaining({ code: "TI-NB-0042", cost: 1000 }),
       expect.objectContaining({ userId: "user-ti-1" }),
+      expect.anything(),
     )
   })
 })
@@ -125,7 +126,7 @@ describe("ti:updateAssetAction", () => {
   })
 
   it("edita los datos maestros sin exigir el estado inicial de creación", async () => {
-    mockAuthFn.mockResolvedValue(makeSession(["ti:manage_assets"]))
+    mockAuthFn.mockResolvedValue(makeSession(["ti:manage_assets"], ["ws-ti-norte"], ["admin_contrato"]))
     const result = await updateAssetAction(
       { ok: false, message: "" },
       formOf({ id: "asset-1", code: "TI-NB-0042", assetTypeId: "t1", brand: "Lenovo" }),
@@ -135,6 +136,7 @@ describe("ti:updateAssetAction", () => {
     expect(mockUpdateAsset).toHaveBeenCalledWith(
       expect.objectContaining({ id: "asset-1", code: "TI-NB-0042" }),
       expect.objectContaining({ userId: "user-ti-1" }),
+      ["ws-ti-norte"],
     )
   })
 })
@@ -207,5 +209,20 @@ describe("ti:transitionTicketAction", () => {
     )
     expect(result.ok).toBe(false)
     expect(mockTransitionTicket).not.toHaveBeenCalled()
+  })
+
+  it("no reasigna silenciosamente el ticket al usuario que cambia el estado", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:manage_tickets"], ["ws-ti-norte"], ["admin_contrato"]))
+    const result = await transitionTicketAction(
+      { ok: false, message: "" },
+      formOf({ ticketId: "t1", status: "en_progreso", reason: "Comienza diagnóstico" }),
+    )
+
+    expect(result.ok).toBe(true)
+    expect(mockTransitionTicket).toHaveBeenCalledWith(
+      { ticketId: "t1", status: "en_progreso", reason: "Comienza diagnóstico", resolution: null },
+      expect.objectContaining({ userId: "user-ti-1" }),
+      ["ws-ti-norte"],
+    )
   })
 })

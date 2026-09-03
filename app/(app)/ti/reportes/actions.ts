@@ -14,6 +14,7 @@ import { logger } from "@/lib/logger"
 import { todayInChile } from "@/lib/utils"
 import type { ExportActionResult } from "@/components/ui/export-button"
 import { IT_ASSET_STATUS_META } from "@/lib/services/ti/constants"
+import { civilDaysUntil } from "@/lib/services/ti/civil-dates"
 
 export type TiReportType =
   | "inventario_general"
@@ -141,7 +142,9 @@ export async function exportTiReport(type: TiReportType, assetId?: string): Prom
       }
       case "historial_activo": {
         if (!assetId) return { ok: false, message: "Selecciona un activo para su historial" }
-        const [asset] = await db.select({ code: itAssets.code }).from(itAssets).where(eq(itAssets.id, assetId)).limit(1)
+        const [asset] = await db.select({ code: itAssets.code }).from(itAssets)
+          .where(and(eq(itAssets.id, assetId), isNull(itAssets.deletedAt), scope))
+          .limit(1)
         if (!asset) return { ok: false, message: "Activo no encontrado" }
         const history = await db
           .select({
@@ -171,7 +174,7 @@ export async function exportTiReport(type: TiReportType, assetId?: string): Prom
           })
           .from(itMaintenances)
           .innerJoin(itAssets, eq(itMaintenances.assetId, itAssets.id))
-          .where(scope ? and(scope) : undefined)
+          .where(and(isNull(itAssets.deletedAt), scope ?? sql`true`))
           .groupBy(itAssets.code, itAssets.brand, itAssets.model)
           .orderBy(sql`coalesce(sum(${itMaintenances.cost}), 0) DESC`)
         sheets = [{
@@ -198,7 +201,7 @@ export async function exportTiReport(type: TiReportType, assetId?: string): Prom
           headers: ["Código", "Equipo", "Estado", "Fecha compra", "Años de uso"],
           rows: rows.map((r) => {
             const years = r.purchaseDate
-              ? Math.round((new Date(today).getTime() - new Date(r.purchaseDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000) * 10) / 10
+              ? Math.round(civilDaysUntil(today, r.purchaseDate) / 365.25 * 10) / 10
               : ""
             return [r.code, assetName(r.brand, r.model), IT_ASSET_STATUS_META[r.status]?.label ?? r.status, r.purchaseDate ?? "", years]
           }),
@@ -224,7 +227,7 @@ export async function exportTiReport(type: TiReportType, assetId?: string): Prom
           headers: ["Código", "Equipo", "Vencimiento", "Días restantes", "Proveedor", "Estado"],
           rows: rows.map((r) => {
             const days = r.warrantyEndDate
-              ? Math.ceil((new Date(r.warrantyEndDate).getTime() - new Date(`${today}T00:00:00`).getTime()) / (1000 * 60 * 60 * 24))
+              ? civilDaysUntil(r.warrantyEndDate, today)
               : ""
             return [r.code, assetName(r.brand, r.model), r.warrantyEndDate ?? "", days, r.supplierName ?? "", IT_ASSET_STATUS_META[r.status]?.label ?? r.status]
           }),

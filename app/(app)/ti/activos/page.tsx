@@ -5,10 +5,11 @@ import { can, requirePermission } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { db } from "@/db"
 import { itAssets, workers, worksites, suppliers } from "@/db/schema"
-import { eq, asc } from "drizzle-orm"
+import { and, eq, asc } from "drizzle-orm"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Button } from "@/components/ui/button"
+import { EmptyState } from "@/components/ui/empty-state"
 import { Plus } from "@phosphor-icons/react/dist/ssr"
 import { listAssets, type AssetListFilters } from "@/lib/services/ti/assets"
 import { listAssetTypes } from "@/lib/services/ti/asset-types"
@@ -32,6 +33,8 @@ export default async function InventarioPage({
   const status = typeof sp.estado === "string" ? sp.estado : undefined
 
   const scope = worksiteScopeSql(session, itAssets.worksiteId)
+  const workerScope = worksiteScopeSql(session, workers.worksiteId)
+  const worksiteScope = worksiteScopeSql(session, worksites.id)
 
   const filters: AssetListFilters = {
     typeId: typeof sp.tipo === "string" ? sp.tipo : undefined,
@@ -53,9 +56,9 @@ export default async function InventarioPage({
     listAssets(filters),
     listAssetTypes({ includeInactive: true }),
     db.select({ id: workers.id, name: workers.firstName, lastName: workers.lastName })
-      .from(workers).where(eq(workers.isActive, true)).orderBy(asc(workers.firstName), asc(workers.lastName)),
+      .from(workers).where(and(eq(workers.isActive, true), workerScope)).orderBy(asc(workers.firstName), asc(workers.lastName)),
     db.select({ id: worksites.id, name: worksites.name })
-      .from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
+      .from(worksites).where(and(eq(worksites.isActive, true), worksiteScope)).orderBy(asc(worksites.name)),
     db.select({ id: suppliers.id, name: suppliers.name })
       .from(suppliers).where(eq(suppliers.isActive, true)).orderBy(asc(suppliers.name)),
   ])
@@ -91,10 +94,13 @@ export default async function InventarioPage({
       <AssetTable rows={assets as AssetRow[]} canManage={canManage} />
 
       {assets.length === 0 && (
-        <p className="mt-4 text-sm text-[var(--color-text-muted)]">
-          No hay activos que coincidan con los filtros.{" "}
-          {canManage && <Link href="/ti/activos" className="font-semibold text-[var(--color-primary)] hover:underline">Limpiar filtros</Link>}
-        </p>
+        <EmptyState
+          className="mt-4"
+          compact
+          title="No hay activos con estos filtros"
+          description={canManage ? "Limpia los filtros o registra un activo para comenzar." : "Prueba con otros filtros o términos de búsqueda."}
+          action={canManage ? <Link href="/ti/activos"><Button variant="secondary" size="sm">Limpiar filtros</Button></Link> : undefined}
+        />
       )}
     </PageContainer>
   )

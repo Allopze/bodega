@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { formatDateTime } from "@/lib/utils"
 import { IT_ASSIGNMENT_KIND_META, IT_PHYSICAL_STATE_META } from "@/lib/services/ti/constants"
@@ -80,11 +81,11 @@ export function AssignmentsTable({ rows, canManage, workers, worksites }: {
                 {canManage && !row.returnedAt && (
                   <>
                     <ReturnSheet
-                      trigger={<span className="cursor-pointer text-xs font-semibold text-[var(--color-primary)] hover:underline">Devolver</span>}
+                      trigger={<Button type="button" variant="link" size="sm">Devolver</Button>}
                       assignment={row}
                     />
                     <TransferSheet
-                      trigger={<span className="cursor-pointer text-xs font-semibold text-[var(--color-primary)] hover:underline">Transferir</span>}
+                      trigger={<Button type="button" variant="link" size="sm">Transferir</Button>}
                       assignment={row}
                       workers={workers}
                       worksites={worksites}
@@ -102,16 +103,37 @@ export function AssignmentsTable({ rows, canManage, workers, worksites }: {
       renderMobileCard={(raw) => {
         const row = raw as unknown as Row
         return (
-          <Link key={row.id} href={`/ti/activos/${row.assetId}`} className="flex items-center justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-            <div>
-              <div className="font-mono text-xs font-semibold text-[var(--color-primary)]">{row.code}</div>
-              <div className="text-sm text-[var(--color-text)]">{row.workerName} · {row.assetCode}</div>
-              <div className="mt-1 flex items-center gap-2">
-                {row.returnedAt ? <Badge variant="default">Devuelto</Badge> : <Badge variant="info" dot>Vigente</Badge>}
-                <span className="text-xs text-[var(--color-text-muted)]">{row.worksiteName}</span>
+          <div key={row.id} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+            <Link href={`/ti/activos/${row.assetId}`} className="block">
+              <div>
+                <div className="font-mono text-xs font-semibold text-[var(--color-primary)]">{row.code}</div>
+                <div className="text-sm text-[var(--color-text)]">{row.workerName} · {row.assetCode}</div>
+                <div className="mt-1 flex items-center gap-2">
+                  {row.returnedAt ? <Badge variant="default">Devuelto</Badge> : <Badge variant="info" dot>Vigente</Badge>}
+                  <span className="text-xs text-[var(--color-text-muted)]">{row.worksiteName}</span>
+                </div>
               </div>
+            </Link>
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] pt-3">
+              {canManage && !row.returnedAt && (
+                <>
+                  <ReturnSheet
+                    trigger={<Button type="button" variant="link" size="sm">Devolver</Button>}
+                    assignment={row}
+                  />
+                  <TransferSheet
+                    trigger={<Button type="button" variant="link" size="sm">Transferir</Button>}
+                    assignment={row}
+                    workers={workers}
+                    worksites={worksites}
+                  />
+                </>
+              )}
+              <Link href={`/ti/activos/${row.assetId}`} className="text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text)]">
+                Ver activo
+              </Link>
             </div>
-          </Link>
+          </div>
         )
       }}
       emptyTitle="Sin asignaciones"

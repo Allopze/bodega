@@ -70,6 +70,16 @@ describe("módulo TI — licencias, accesos y checklists", () => {
       expect(rows.find((l) => l.id === id)?.assignedQuantity).toBe(1)
     })
 
+    it("no permite reducir la compra por debajo de las asignaciones vigentes", async () => {
+      const id = await createLicense({ name: "Licencia con cupos", purchasedQuantity: 2, periodicity: "anual" }, actor)
+      await assignLicense({ licenseId: id, workerId: "wk-ti-juan" }, actor)
+      await assignLicense({ licenseId: id, workerId: "wk-ti-maria" }, actor)
+
+      await expect(updateLicense({
+        id, name: "Licencia con cupos", purchasedQuantity: 1, periodicity: "anual", isActive: true,
+      }, actor)).rejects.toThrow(/asignaciones vigentes/)
+    })
+
     it("no asigna sobre una licencia inactiva", async () => {
       const id = await createLicense({ name: "Antivirus", purchasedQuantity: 5, periodicity: "anual" }, actor)
       await updateLicense({
@@ -78,6 +88,22 @@ describe("módulo TI — licencias, accesos y checklists", () => {
 
       await expect(assignLicense({ licenseId: id, assetId: "as-cualquiera" }, actor))
         .rejects.toThrow(/licencia está inactiva/)
+    })
+
+    it("rechaza asignar una licencia a un trabajador fuera del scope", async () => {
+      const id = await createLicense({ name: "Licencia acotada", purchasedQuantity: 2, periodicity: "anual" }, actor)
+
+      await expect(assignLicense({ licenseId: id, workerId: "wk-ti-maria" }, actor, ["ws-ti-norte"]))
+        .rejects.toThrow(/No tienes acceso a esta faena/)
+    })
+
+    it("limita el contador visible de asignaciones a la faena del usuario", async () => {
+      const id = await createLicense({ name: "Licencia con alcance", purchasedQuantity: 3, periodicity: "anual" }, actor)
+      await assignLicense({ licenseId: id, workerId: "wk-ti-juan" }, actor)
+      await assignLicense({ licenseId: id, workerId: "wk-ti-maria" }, actor)
+
+      const scoped = await listLicenses(undefined, ["ws-ti-norte"])
+      expect(scoped.find((license) => license.id === id)?.assignedQuantity).toBe(1)
     })
 
     it("exige al menos un destino en la asignación (check de BD)", async () => {
@@ -117,6 +143,17 @@ describe("módulo TI — licencias, accesos y checklists", () => {
       expect(vpn?.name).toBe("VPN CHOME")
     })
 
+    it("rechaza nombres de sistema duplicados sin distinguir mayúsculas", async () => {
+      await createAccessSystem({ name: "Sistema Único" }, actor)
+
+      await expect(createAccessSystem({ name: " sistema único " }, actor)).rejects.toThrow()
+    })
+
+    it("reserva el catálogo global de sistemas para sesiones con alcance global", async () => {
+      await expect(createAccessSystem({ name: "Sistema global protegido" }, actor, ["ws-ti-norte"]))
+        .rejects.toThrow(/alcance global/)
+    })
+
     it("hace upsert sobre el par (sistema, trabajador) y revoca con 'baja'", async () => {
       const systemId = await createAccessSystem({ name: "SAP" }, actor)
 
@@ -130,6 +167,17 @@ describe("módulo TI — licencias, accesos y checklists", () => {
       const row = workerAccess.find((a) => a.systemId === systemId)
       expect(row?.status).toBe("baja")
       expect(row?.revokedAt).toBeTruthy()
+    })
+
+    it("limpia la revocación y conserva las notas al reactivar un acceso", async () => {
+      const systemId = await createAccessSystem({ name: "Sistema Reactivación" }, actor)
+      await upsertSystemAccess({ systemId, workerId: "wk-ti-juan", status: "baja", notes: "Ticket de salida" }, actor)
+      await upsertSystemAccess({ systemId, workerId: "wk-ti-juan", status: "activo" }, actor)
+
+      const row = (await listWorkerAccess("wk-ti-juan")).find((a) => a.systemId === systemId)
+      expect(row?.status).toBe("activo")
+      expect(row?.revokedAt).toBeNull()
+      expect(row?.notes).toBe("Ticket de salida")
     })
 
     it("oculta los sistemas inactivos del listado por defecto", async () => {
@@ -169,6 +217,10 @@ describe("módulo TI — licencias, accesos y checklists", () => {
       const row = rows.find((c) => c.id === id)
       expect(row?.doneTasks).toBe(row?.totalTasks)
       expect(row?.completedAt).toBeTruthy()
+
+      await toggleChecklistTask({ taskId: tasks[0]!.id, done: false }, actor)
+      const reopened = (await listChecklists({})).find((c) => c.id === id)
+      expect(reopened?.completedAt).toBeNull()
     })
   })
 })

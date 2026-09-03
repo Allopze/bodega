@@ -5,6 +5,7 @@ import { useActionState } from "react"
 import { toast } from "@/lib/toast"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
@@ -76,7 +77,14 @@ export function AccessSystemsPanel({ systems, canManage }: { systems: SystemRow[
           </li>
         ))}
         {systems.length === 0 && (
-          <li className="text-sm italic text-[var(--color-text-subtle)]">Sin sistemas configurados.</li>
+          <li className="w-full">
+            <EmptyState
+              compact
+              align="start"
+              title="Sin sistemas configurados"
+              description={canManage ? "Crea el primer sistema para registrar los accesos de los trabajadores." : "El catálogo de sistemas aparecerá aquí cuando se configure."}
+            />
+          </li>
         )}
       </ul>
 

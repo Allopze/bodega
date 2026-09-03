@@ -1,4 +1,5 @@
 import { formatDate } from "@/lib/utils"
+import { EmptyState } from "@/components/ui/empty-state"
 
 interface HistoryRow {
   id: string
@@ -50,7 +51,12 @@ export function AssetHistory({ assetId: _assetId, rows, retirements }: AssetHist
       <p className="mt-1 text-xs text-[var(--color-text-muted)]">Todo lo que le ha ocurrido al equipo desde que ingresó. Nada se sobrescribe.</p>
 
       {rows.length === 0 ? (
-        <p className="mt-4 text-sm text-[var(--color-text-subtle)] italic">Sin registros en el historial.</p>
+        <EmptyState
+          compact
+          className="mt-4"
+          title="Sin registros en el historial"
+          description="Los movimientos del activo aparecerán aquí cuando se registre una entrega, mantención o cambio de estado."
+        />
       ) : (
         <ol className="relative mt-5 space-y-6 border-l border-[var(--color-border)] pl-6">
           {rows.map((row) => (

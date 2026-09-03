@@ -5,6 +5,7 @@ import { DataTable } from "@/components/ui/data-table"
 import { Badge } from "@/components/ui/badge"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { formatDate, formatCLP, cn } from "@/lib/utils"
+import { isCivilDateBefore } from "@/lib/services/ti/civil-dates"
 import { IT_ASSET_STATUS_META } from "@/lib/services/ti/constants"
 import { ArrowRight, Wrench } from "@phosphor-icons/react"
 import type { AssetRow } from "./page"
@@ -62,7 +63,7 @@ export function AssetTable({ rows, canManage }: { rows: AssetRow[]; canManage: b
               {row.warrantyEndDate ? (
                 <span className={cn(
                   "text-xs",
-                  new Date(row.warrantyEndDate) < new Date()
+                  isCivilDateBefore(row.warrantyEndDate)
                     ? "text-[var(--color-danger-ink)]"
                     : "text-[var(--color-text-muted)]",
                 )}>

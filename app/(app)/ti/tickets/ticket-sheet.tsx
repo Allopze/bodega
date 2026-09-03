@@ -6,13 +6,14 @@ import { toast } from "@/lib/toast"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import {
   Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter,
-  SheetTitle, SheetDescription, SheetCloseButton,
+  SheetTitle, SheetDescription, SheetCloseButton, SheetTrigger,
 } from "@/components/admin/sheet"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { OptionSelect } from "@/components/ui/option-select"
 import { createTicketAction } from "./actions"
 import { IT_TICKET_CATEGORIES, IT_TICKET_PRIORITIES } from "@/lib/validation/ti"
 import { IT_TICKET_CATEGORY_META, IT_TICKET_PRIORITY_META } from "@/lib/services/ti/constants"
@@ -41,8 +42,8 @@ export function TicketSheet({ trigger, workers, worksites, assets = [] }: Ticket
   }, INITIAL_STATE)
 
   return (
-    <Sheet open={open} onOpenChange={(v) => { if (!v) setOpen(false) }}>
-      <span onClick={() => setOpen(true)}>{trigger}</span>
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>{trigger}</SheetTrigger>
       <SheetContent className="sm:max-w-xl">
         <form action={formAction} className="flex flex-col flex-1 min-h-0">
           <SheetHeader>
@@ -107,32 +108,24 @@ export function TicketSheet({ trigger, workers, worksites, assets = [] }: Ticket
                   </Select>
                 </Field>
                 <Field label="Trabajador afectado" helper="Opcional: el trabajador que tiene el problema.">
-                  <Select name="workerId">
-                    <SelectTrigger aria-label="Trabajador afectado">
-                      <SelectValue placeholder="Sin trabajador específico" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">Sin trabajador</SelectItem>
-                      {workers.map((w) => (
-                        <SelectItem key={w.id} value={w.id}>{w.name} {w.lastName}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <OptionSelect
+                    name="workerId"
+                    emptyLabel="Sin trabajador"
+                    placeholder="Sin trabajador específico"
+                    aria-label="Trabajador afectado"
+                    options={workers.map((w) => ({ value: w.id, label: `${w.name} ${w.lastName}` }))}
+                  />
                 </Field>
               </div>
 
               <Field label="Activo relacionado" helper="Opcional: el equipo que presenta el problema.">
-                <Select name="assetId">
-                  <SelectTrigger aria-label="Activo relacionado">
-                    <SelectValue placeholder="Sin activo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">Sin activo</SelectItem>
-                    {assets.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>{a.code} · {a.typeName}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <OptionSelect
+                  name="assetId"
+                  emptyLabel="Sin activo"
+                  placeholder="Sin activo"
+                  aria-label="Activo relacionado"
+                  options={assets.map((a) => ({ value: a.id, label: `${a.code} · ${a.typeName}` }))}
+                />
               </Field>
             </FieldGroup>
           </SheetBody>

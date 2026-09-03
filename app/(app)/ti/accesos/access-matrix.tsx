@@ -5,6 +5,7 @@ import { useActionState } from "react"
 import { toast } from "@/lib/toast"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
@@ -22,7 +23,7 @@ interface WorkerAccess {
   name: string
   worksiteId: string
   worksiteName: string
-  accesses: { systemName: string; status: string }[]
+  accesses: { systemId: string; systemName: string; status: string; notes?: string | null }[]
 }
 
 interface AccessMatrixProps {
@@ -34,7 +35,7 @@ interface AccessMatrixProps {
 }
 
 export function AccessMatrix({ workers, systems, canManage }: AccessMatrixProps) {
-  const [editing, setEditing] = React.useState<{ workerId: string; systemId: string } | null>(null)
+  const [editing, setEditing] = React.useState<{ workerId: string; systemId: string; status?: string } | null>(null)
 
   return (
     <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
@@ -48,9 +49,19 @@ export function AccessMatrix({ workers, systems, canManage }: AccessMatrixProps)
       </div>
 
       {systems.length === 0 ? (
-        <p className="mt-4 text-sm italic text-[var(--color-text-subtle)]">
-          Crea al menos un sistema para registrar accesos.
-        </p>
+        <EmptyState
+          compact
+          title="Aún no hay sistemas"
+          description="Crea un sistema en el catálogo superior para comenzar a registrar accesos."
+          align="start"
+        />
+      ) : workers.length === 0 ? (
+        <EmptyState
+          compact
+          title="No hay trabajadores para estos filtros"
+          description="Ajusta la faena o la búsqueda para encontrar trabajadores activos."
+          align="start"
+        />
       ) : (
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[640px] border-collapse text-sm">
@@ -70,14 +81,14 @@ export function AccessMatrix({ workers, systems, canManage }: AccessMatrixProps)
                     <span className="block text-xs text-[var(--color-text-muted)]">{worker.worksiteName}</span>
                   </td>
                   {systems.map((system) => {
-                    const access = worker.accesses.find((a) => a.systemName === system.name)
+                    const access = worker.accesses.find((a) => a.systemId === system.id)
                     return (
                       <td key={system.id} className="px-1 py-2 text-center">
                         {access ? (
                           <button
                             type="button"
                             disabled={!canManage}
-                            onClick={() => setEditing({ workerId: worker.id, systemId: system.id })}
+                            onClick={() => setEditing({ workerId: worker.id, systemId: system.id, status: access.status })}
                             className="inline-flex items-center gap-1"
                             title={access.status}
                           >
@@ -110,8 +121,10 @@ export function AccessMatrix({ workers, systems, canManage }: AccessMatrixProps)
         <AccessEditSheet
           workerId={editing.workerId}
           systemId={editing.systemId}
+          status={editing.status}
           systems={systems}
           workerName={workers.find((w) => w.id === editing.workerId)?.name ?? ""}
+          notes={workers.find((w) => w.id === editing.workerId)?.accesses.find((a) => a.systemId === editing.systemId)?.notes}
           onClose={() => setEditing(null)}
         />
       )}
@@ -119,11 +132,13 @@ export function AccessMatrix({ workers, systems, canManage }: AccessMatrixProps)
   )
 }
 
-function AccessEditSheet({ workerId, systemId, systems, workerName, onClose }: {
+function AccessEditSheet({ workerId, systemId, systems, workerName, status = "activo", notes, onClose }: {
   workerId: string
   systemId: string
   systems: { id: string; name: string }[]
   workerName: string
+  status?: string
+  notes?: string | null
   onClose: () => void
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(async (prev, formData) => {
@@ -157,14 +172,14 @@ function AccessEditSheet({ workerId, systemId, systems, workerName, onClose }: {
                 <div className="flex gap-2">
                   {Object.entries(IT_ACCESS_STATUS_META).map(([value, meta]) => (
                     <label key={value} className="flex flex-1 cursor-pointer items-center justify-center gap-1 rounded-lg border border-[var(--color-border)] px-2 py-2 text-xs has-[:checked]:border-[var(--color-primary)] has-[:checked]:bg-[var(--color-primary-tint)]">
-                      <input type="radio" name="status" value={value} defaultChecked={value === "activo"} className="sr-only" />
+                      <input type="radio" name="status" value={value} defaultChecked={value === status} className="sr-only" />
                       {meta.label}
                     </label>
                   ))}
                 </div>
               </Field>
               <Field label="Notas" helper="Fecha de alta, ticket asociado, motivo…">
-                <Input name="notes" maxLength={300} />
+                <Input name="notes" maxLength={300} defaultValue={notes ?? ""} />
               </Field>
             </FieldGroup>
           </SheetBody>

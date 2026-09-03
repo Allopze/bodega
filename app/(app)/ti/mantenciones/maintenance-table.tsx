@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { formatDate, formatCLP } from "@/lib/utils"
 import { IT_MAINTENANCE_TYPE_META } from "@/lib/services/ti/constants"
@@ -74,7 +75,7 @@ export function MaintenanceTable({ rows, canManage = false, suppliers = [] }: {
             <TableCell className="w-20 text-right">
               {canManage && (
                 <MaintenanceSheet
-                  trigger={<span className="cursor-pointer text-xs font-semibold text-[var(--color-primary)] hover:underline">Editar</span>}
+                  trigger={<Button type="button" variant="link" size="sm">Editar</Button>}
                   suppliers={suppliers}
                   editMaintenance={row}
                 />

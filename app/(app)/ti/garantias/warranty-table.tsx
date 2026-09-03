@@ -4,7 +4,8 @@ import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
 import { Badge } from "@/components/ui/badge"
 import { TableRow, TableCell } from "@/components/ui/table"
-import { formatDate } from "@/lib/utils"
+import { formatDate, todayInChile } from "@/lib/utils"
+import { civilDaysUntil } from "@/lib/services/ti/civil-dates"
 
 interface Row {
   id: string
@@ -19,9 +20,7 @@ interface Row {
 }
 
 function warrantyStatus(date: string): { label: string; variant: "success" | "warning" | "danger" | "default" } {
-  const end = new Date(date)
-  const now = new Date()
-  const days = Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+  const days = civilDaysUntil(date, todayInChile())
   if (days < 0) return { label: "Vencida", variant: "danger" }
   if (days <= 30) return { label: `Vence en ${days} d`, variant: "danger" }
   if (days <= 60) return { label: `Vence en ${days} d`, variant: "warning" }

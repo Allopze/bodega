@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation"
 import { can, requirePermission } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { db } from "@/db"
-import { itAssets, itTickets, attachments, users, suppliers } from "@/db/schema"
+import { itAssets, itTickets, attachments, users, suppliers, workers, worksites } from "@/db/schema"
 import { eq, and } from "drizzle-orm"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -38,6 +38,8 @@ export default async function AssetDetailPage({
 
   const { id } = await params
   const scope = worksiteScopeSql(session, itAssets.worksiteId)
+  const workerScope = worksiteScopeSql(session, workers.worksiteId)
+  const worksiteListScope = worksiteScopeSql(session, worksites.id)
 
   const asset = await getAssetById(id, scope)
   if (!asset) notFound()
@@ -62,14 +64,10 @@ export default async function AssetDetailPage({
     listAssetTypes({ includeInactive: true }),
     db.select({ id: suppliers.id, name: suppliers.name })
       .from(suppliers).where(eq(suppliers.isActive, true)),
-    db.query.worksites.findMany({
-      columns: { id: true, name: true },
-      where: (w, { eq }) => eq(w.isActive, true),
-    }),
-    db.query.workers.findMany({
-      columns: { id: true, firstName: true, lastName: true },
-      where: (w, { eq }) => eq(w.isActive, true),
-    }),
+    db.select({ id: worksites.id, name: worksites.name })
+      .from(worksites).where(and(eq(worksites.isActive, true), worksiteListScope)),
+    db.select({ id: workers.id, firstName: workers.firstName, lastName: workers.lastName })
+      .from(workers).where(and(eq(workers.isActive, true), workerScope)),
   ])
 
   // Fotos por asignación para la comparación entrega/devolución.

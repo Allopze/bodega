@@ -7,6 +7,9 @@ import {
 import { nanoid } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { appendAssetHistory } from "./history"
+import { assertTiWorksiteAccess, type TiWorksiteScope } from "./scope"
+import { MANUAL_ASSET_STATUSES } from "@/lib/validation/ti"
+import { todayInChile } from "@/lib/utils"
 
 export interface CreateAssetInput {
   code: string
@@ -55,12 +58,14 @@ const textOrNull = (v: string | null | undefined, max = 500) => {
 export async function createAsset(
   input: CreateAssetInput,
   actor: { userId: string; userEmail?: string },
+  worksiteIds: TiWorksiteScope = "all",
 ): Promise<string> {
   const id = nanoid()
   await db.transaction(async (tx) => {
     if (input.status && input.status !== "disponible") {
       throw new Error("El estado inicial debe ser disponible; usa el flujo de custodia o cambio de estado")
     }
+    assertTiWorksiteAccess(worksiteIds, input.worksiteId)
     const [assetType] = await tx.select().from(itAssetTypes).where(eq(itAssetTypes.id, input.assetTypeId))
     if (!assetType) throw new Error("Tipo de activo no encontrado")
     if (!assetType.isActive) throw new Error("El tipo de activo está inactivo")
@@ -112,11 +117,22 @@ export async function createAsset(
 export async function updateAsset(
   input: UpdateAssetInput,
   actor: { userId: string; userEmail?: string },
+  worksiteIds: TiWorksiteScope = "all",
 ): Promise<void> {
   await db.transaction(async (tx) => {
     const [existing] = await tx.select().from(itAssets)
       .where(and(eq(itAssets.id, input.id), isNull(itAssets.deletedAt))).for("update")
     if (!existing) throw new Error("Activo no encontrado")
+    assertTiWorksiteAccess(worksiteIds, existing.worksiteId)
+    assertTiWorksiteAccess(worksiteIds, input.worksiteId)
+
+    if (existing.worksiteId !== input.worksiteId) {
+      const [openAssignment] = await tx.select({ id: itAssetAssignments.id })
+        .from(itAssetAssignments)
+        .where(and(eq(itAssetAssignments.assetId, input.id), isNull(itAssetAssignments.returnedAt)))
+        .limit(1)
+      if (openAssignment) throw new Error("No puedes cambiar la faena de un activo con custodia abierta")
+    }
 
     const [assetType] = await tx.select().from(itAssetTypes).where(eq(itAssetTypes.id, input.assetTypeId))
     if (!assetType) throw new Error("Tipo de activo no encontrado")
@@ -175,11 +191,13 @@ export async function updateAsset(
 export async function softDeleteAsset(
   assetId: string,
   actor: { userId: string; userEmail?: string },
+  worksiteIds: TiWorksiteScope = "all",
 ): Promise<void> {
   await db.transaction(async (tx) => {
     const [existing] = await tx.select().from(itAssets)
       .where(and(eq(itAssets.id, assetId), isNull(itAssets.deletedAt))).for("update")
     if (!existing) throw new Error("Activo no encontrado")
+    assertTiWorksiteAccess(worksiteIds, existing.worksiteId)
 
     const [openAssignment] = await tx.select({ id: itAssetAssignments.id, code: itAssetAssignments.code })
       .from(itAssetAssignments)
@@ -213,11 +231,13 @@ export async function softDeleteAsset(
 export async function changeAssetStatus(
   input: { assetId: string; status: string; reason: string },
   actor: { userId: string; userEmail?: string },
+  worksiteIds: TiWorksiteScope = "all",
 ): Promise<void> {
   await db.transaction(async (tx) => {
     const [existing] = await tx.select().from(itAssets)
       .where(and(eq(itAssets.id, input.assetId), isNull(itAssets.deletedAt))).for("update")
     if (!existing) throw new Error("Activo no encontrado")
+    assertTiWorksiteAccess(worksiteIds, existing.worksiteId)
 
     if (input.status === "asignado") {
       const [openAssignment] = await tx.select({ id: itAssetAssignments.id })
@@ -225,6 +245,16 @@ export async function changeAssetStatus(
         .where(and(eq(itAssetAssignments.assetId, input.assetId), sql`${itAssetAssignments.returnedAt} IS NULL`))
         .limit(1)
       if (!openAssignment) throw new Error("Solo una entrega registrada puede dejar el activo en 'asignado'")
+    } else if (!(MANUAL_ASSET_STATUSES as readonly string[]).includes(input.status)) {
+      throw new Error("El estado debe cambiarse mediante su flujo formal de custodia o baja")
+    }
+
+    if (input.status !== "asignado") {
+      const [openAssignment] = await tx.select({ id: itAssetAssignments.id })
+        .from(itAssetAssignments)
+        .where(and(eq(itAssetAssignments.assetId, input.assetId), isNull(itAssetAssignments.returnedAt)))
+        .limit(1)
+      if (openAssignment) throw new Error("Cierra la asignación abierta antes de cambiar el estado del activo")
     }
 
     await tx.update(itAssets).set({
@@ -288,7 +318,7 @@ export async function listAssets(filters: AssetListFilters) {
   if (filters.supplierId) conditions.push(eq(itAssets.supplierId, filters.supplierId))
   if (filters.scope) conditions.push(filters.scope)
 
-  const today = sql`current_date::text`
+  const today = todayInChile()
   if (filters.warrantyWindow === "active") conditions.push(sql`${itAssets.warrantyEndDate} IS NOT NULL AND ${itAssets.warrantyEndDate} >= ${today}`)
   if (filters.warrantyWindow === "expiring_30") conditions.push(sql`${itAssets.warrantyEndDate} IS NOT NULL AND ${itAssets.warrantyEndDate} >= ${today} AND ${itAssets.warrantyEndDate} <= (${today}::date + 30)::text`)
   if (filters.warrantyWindow === "expiring_60") conditions.push(sql`${itAssets.warrantyEndDate} IS NOT NULL AND ${itAssets.warrantyEndDate} >= ${today} AND ${itAssets.warrantyEndDate} <= (${today}::date + 60)::text`)

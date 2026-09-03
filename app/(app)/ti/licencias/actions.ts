@@ -2,11 +2,12 @@
 
 import { revalidatePath } from "next/cache"
 import { requirePermission } from "@/lib/auth/can"
+import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { safeActionMessage } from "@/lib/action-error"
 import { parseZ } from "@/lib/actions/parse-z"
 import { logger } from "@/lib/logger"
 import {
-  createLicense, assignLicense, revokeLicenseAssignment,
+  createLicense, updateLicense, assignLicense, revokeLicenseAssignment,
 } from "@/lib/services/ti/licenses"
 import { itLicenseSchema, itLicenseAssignmentSchema } from "@/lib/validation/ti"
 import type { ActionState } from "@/lib/validation/masters"
@@ -34,13 +35,49 @@ export async function createLicenseAction(_prev: ActionState, formData: FormData
     await createLicense(parsed.data, {
       userId: session.user.id,
       userEmail: session.user.email ?? undefined,
-    })
+    }, serviceWorksiteScope(session))
     revalidatePath("/ti")
     revalidatePath("/ti/licencias")
     return { ok: true, message: "Licencia registrada" }
   } catch (error) {
     logger.error("[ti:createLicense]", error)
     return { ok: false, message: safeActionMessage(error, "Error al registrar la licencia") }
+  }
+}
+
+export async function updateLicenseAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("ti:manage_licenses") }
+  catch { return { ok: false, message: "Sin permisos para gestionar licencias" } }
+
+  const parsed = parseZ(itLicenseSchema, {
+    id: formData.get("id"),
+    name: formData.get("name"),
+    supplierId: formData.get("supplierId"),
+    type: formData.get("type"),
+    purchasedQuantity: formData.get("purchasedQuantity"),
+    cost: formData.get("cost"),
+    periodicity: formData.get("periodicity") || undefined,
+    startDate: formData.get("startDate"),
+    renewalDate: formData.get("renewalDate"),
+    responsibleUserId: formData.get("responsibleUserId"),
+    notes: formData.get("notes"),
+    isActive: formData.get("isActive"),
+  }, "Revisa los datos de la licencia")
+  if (!parsed.ok) return parsed
+  if (!parsed.data.id) return { ok: false, message: "Licencia no especificada" }
+
+  try {
+    await updateLicense({ ...parsed.data, id: parsed.data.id }, {
+      userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
+    }, serviceWorksiteScope(session))
+    revalidatePath("/ti")
+    revalidatePath("/ti/licencias")
+    return { ok: true, message: "Licencia actualizada" }
+  } catch (error) {
+    logger.error("[ti:updateLicense]", error)
+    return { ok: false, message: safeActionMessage(error, "Error al actualizar la licencia") }
   }
 }
 
@@ -63,7 +100,7 @@ export async function assignLicenseAction(_prev: ActionState, formData: FormData
     await assignLicense(parsed.data, {
       userId: session.user.id,
       userEmail: session.user.email ?? undefined,
-    })
+    }, serviceWorksiteScope(session))
     revalidatePath("/ti")
     revalidatePath("/ti/licencias")
     return { ok: true, message: "Licencia asignada" }
@@ -85,7 +122,7 @@ export async function revokeLicenseAction(_prev: ActionState, formData: FormData
     await revokeLicenseAssignment(assignmentId, {
       userId: session.user.id,
       userEmail: session.user.email ?? undefined,
-    })
+    }, serviceWorksiteScope(session))
     revalidatePath("/ti")
     revalidatePath("/ti/licencias")
     return { ok: true, message: "Asignación revocada" }

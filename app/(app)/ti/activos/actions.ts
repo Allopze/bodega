@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { requirePermission } from "@/lib/auth/can"
+import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { safeActionMessage } from "@/lib/action-error"
 import { parseZ } from "@/lib/actions/parse-z"
 import { logger } from "@/lib/logger"
@@ -59,7 +60,7 @@ export async function createAssetAction(_prev: ActionState, formData: FormData):
     const id = await createAsset(formToInput(parsed.data), {
       userId: session.user.id,
       userEmail: session.user.email ?? undefined,
-    })
+    }, serviceWorksiteScope(session))
     revalidatePath("/ti")
     revalidatePath("/ti/activos")
     revalidatePath(`/ti/activos/${id}`)
@@ -83,7 +84,7 @@ export async function updateAssetAction(_prev: ActionState, formData: FormData):
     await updateAsset({ ...formToInput(rest as ItAssetFormData), id }, {
       userId: session.user.id,
       userEmail: session.user.email ?? undefined,
-    })
+    }, serviceWorksiteScope(session))
     revalidatePath("/ti")
     revalidatePath("/ti/activos")
     revalidatePath(`/ti/activos/${id}`)
@@ -103,7 +104,7 @@ export async function deleteAssetAction(_prev: ActionState, formData: FormData):
   if (!assetId) return { ok: false, message: "Activo no especificado" }
 
   try {
-    await softDeleteAsset(assetId, { userId: session.user.id, userEmail: session.user.email ?? undefined })
+    await softDeleteAsset(assetId, { userId: session.user.id, userEmail: session.user.email ?? undefined }, serviceWorksiteScope(session))
     revalidatePath("/ti")
     revalidatePath("/ti/activos")
     return { ok: true, message: "Activo eliminado del inventario (su historial se conserva)" }
@@ -126,7 +127,7 @@ export async function changeAssetStatusAction(_prev: ActionState, formData: Form
   if (!parsed.ok) return parsed
 
   try {
-    await changeAssetStatus(parsed.data, { userId: session.user.id, userEmail: session.user.email ?? undefined })
+    await changeAssetStatus(parsed.data, { userId: session.user.id, userEmail: session.user.email ?? undefined }, serviceWorksiteScope(session))
     revalidatePath("/ti")
     revalidatePath("/ti/activos")
     revalidatePath(`/ti/activos/${parsed.data.assetId}`)

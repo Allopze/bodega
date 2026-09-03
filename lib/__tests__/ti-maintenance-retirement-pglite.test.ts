@@ -21,7 +21,7 @@ vi.mock("@/db", () => ({
 import { createMaintenance, updateMaintenance, listMaintenances, maintenanceCostByAsset } from "@/lib/services/ti/maintenance"
 import { retireAsset, retirementTargetStatus, listRetirements } from "@/lib/services/ti/retirements"
 import { createSupplierLink, deleteSupplierLink, listSupplierLinks, listAssetsByWarranty } from "@/lib/services/ti/supplier-links"
-import { createAsset } from "@/lib/services/ti/assets"
+import { createAsset, softDeleteAsset } from "@/lib/services/ti/assets"
 
 describe("módulo TI — mantenciones, bajas, proveedores y garantías", () => {
   let typeId: string
@@ -96,6 +96,17 @@ describe("módulo TI — mantenciones, bajas, proveedores y garantías", () => {
         id, assetId, type: "revision", date: "2026-07-02", workDone: "Revisión actualizada",
       }, actor, ["ws-ti-norte"])).rejects.toThrow(/No tienes acceso a esta faena/)
     })
+
+    it("excluye del historial operativo los activos eliminados lógicamente", async () => {
+      const assetId = await makeAsset("TI-M-0005")
+      await createMaintenance({
+        assetId, type: "revision", date: "2026-07-01", workDone: "Revisión histórica", cost: 40_000,
+      }, actor)
+      await softDeleteAsset(assetId, actor)
+
+      expect(await listMaintenances({ assetId })).toHaveLength(0)
+      expect((await maintenanceCostByAsset()).some((row) => row.assetId === assetId)).toBe(false)
+    })
   })
 
   describe("bajas", () => {
@@ -125,6 +136,10 @@ describe("módulo TI — mantenciones, bajas, proveedores y garantías", () => {
       }, actor)
       const asset = await testDb.select().from(schema.itAssets).where(eq(schema.itAssets.id, assetId))
       expect(asset[0]?.status).toBe("perdido")
+      const assignment = await testDb.select().from(schema.itAssetAssignments)
+        .where(eq(schema.itAssetAssignments.assetId, assetId))
+      expect(assignment[0]?.returnedAt).toBeTruthy()
+      expect(assignment[0]?.returnObservations).toMatch(/pérdida/i)
     })
 
     it("da de baja un activo sin custodio y deja la auditoría en el historial", async () => {

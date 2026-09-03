@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 // ── Re-export Dialog root primitives unchanged ────────────────────────────────
 const Sheet      = DialogPrimitive.Root
 const SheetClose = DialogPrimitive.Close
+const SheetTrigger = DialogPrimitive.Trigger
 
 // ── Overlay ───────────────────────────────────────────────────────────────────
 const SheetOverlay = React.forwardRef<
@@ -151,6 +152,7 @@ function SheetCloseButton({ onClick }: { onClick?: React.MouseEventHandler<HTMLB
 export {
   Sheet,
   SheetClose,
+  SheetTrigger,
   SheetContent,
   SheetHeader,
   SheetBody,

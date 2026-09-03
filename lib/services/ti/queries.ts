@@ -4,6 +4,7 @@ import {
   itAssets, itAssetTypes, itMaintenances, itTickets, itLicenses,
   itAssetAssignments, worksites,
 } from "@/db/schema"
+import { todayInChile } from "@/lib/utils"
 
 /* ── Agregados del dashboard y reportes TI ───────────────────────────────── */
 
@@ -25,7 +26,7 @@ export interface TiDashboardCounts {
 
 export async function getTiDashboardCounts(assetScope?: SQL, ticketScope?: SQL): Promise<TiDashboardCounts> {
   const assetWhere = assetScope ? and(isNull(itAssets.deletedAt), assetScope) : isNull(itAssets.deletedAt)
-  const today = sql`current_date::text`
+  const today = todayInChile()
 
   const [assets, tickets, warranties, licenses, maintenance, assignments] = await Promise.all([
     db.select({
@@ -60,6 +61,7 @@ export async function getTiDashboardCounts(assetScope?: SQL, ticketScope?: SQL):
       .innerJoin(itAssets, eq(itMaintenances.assetId, itAssets.id))
       .where(and(
         sql`${itMaintenances.date} >= (${today}::date - interval '1 year')::text`,
+        isNull(itAssets.deletedAt),
         assetScope ?? sql`true`,
       )),
 
@@ -67,7 +69,11 @@ export async function getTiDashboardCounts(assetScope?: SQL, ticketScope?: SQL):
       active: sql<number>`count(*)::int`,
     }).from(itAssetAssignments)
       .innerJoin(itAssets, eq(itAssetAssignments.assetId, itAssets.id))
-      .where(and(isNull(itAssetAssignments.returnedAt), assetScope ?? sql`true`)),
+      .where(and(
+        isNull(itAssetAssignments.returnedAt),
+        isNull(itAssets.deletedAt),
+        assetScope ?? sql`true`,
+      )),
   ])
 
   return {
@@ -138,7 +144,8 @@ export async function getMaintenanceCostByMonth(assetScope?: SQL) {
     .from(itMaintenances)
     .innerJoin(itAssets, eq(itMaintenances.assetId, itAssets.id))
     .where(and(
-      sql`${itMaintenances.date} >= (current_date - interval '12 months')::text`,
+      sql`${itMaintenances.date} >= (${todayInChile()}::date - interval '12 months')::text`,
+      isNull(itAssets.deletedAt),
       assetScope ?? sql`true`,
     ))
     .groupBy(sql`date_trunc('month', ${itMaintenances.date}::date)`)
@@ -152,9 +159,9 @@ export async function getAssetsByAge(scope?: SQL) {
     .select({
       tramo: sql<string>`CASE
         WHEN ${itAssets.purchaseDate} IS NULL THEN 'sin fecha'
-        WHEN (current_date - ${itAssets.purchaseDate}::date) <= 365 THEN '0-1 año'
-        WHEN (current_date - ${itAssets.purchaseDate}::date) <= 1095 THEN '1-3 años'
-        WHEN (current_date - ${itAssets.purchaseDate}::date) <= 1825 THEN '3-5 años'
+        WHEN (${todayInChile()}::date - ${itAssets.purchaseDate}::date) <= 365 THEN '0-1 año'
+        WHEN (${todayInChile()}::date - ${itAssets.purchaseDate}::date) <= 1095 THEN '1-3 años'
+        WHEN (${todayInChile()}::date - ${itAssets.purchaseDate}::date) <= 1825 THEN '3-5 años'
         ELSE '5+ años'
       END`,
       total: sql<number>`count(*)::int`,
@@ -163,9 +170,9 @@ export async function getAssetsByAge(scope?: SQL) {
     .where(where)
     .groupBy(sql`CASE
       WHEN ${itAssets.purchaseDate} IS NULL THEN 'sin fecha'
-      WHEN (current_date - ${itAssets.purchaseDate}::date) <= 365 THEN '0-1 año'
-      WHEN (current_date - ${itAssets.purchaseDate}::date) <= 1095 THEN '1-3 años'
-      WHEN (current_date - ${itAssets.purchaseDate}::date) <= 1825 THEN '3-5 años'
+      WHEN (${todayInChile()}::date - ${itAssets.purchaseDate}::date) <= 365 THEN '0-1 año'
+      WHEN (${todayInChile()}::date - ${itAssets.purchaseDate}::date) <= 1095 THEN '1-3 años'
+      WHEN (${todayInChile()}::date - ${itAssets.purchaseDate}::date) <= 1825 THEN '3-5 años'
       ELSE '5+ años'
     END`)
 }

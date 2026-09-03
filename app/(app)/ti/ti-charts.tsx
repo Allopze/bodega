@@ -94,7 +94,7 @@ function WorksiteBar({ data }: { data: { worksiteName: string; total: number }[]
  * pegados al piso junto a los montos. Eje doble (regla A5b).
  */
 function MaintenanceTrend({ data }: { data: { month: string; cost: number; count: number }[] }) {
-  if (!data.some((row) => row.cost > 0)) return null
+  if (data.length === 0) return null
   return (
     <div className={CARD}>
       <ChartTitle title="Reparaciones por mes" description="Gasto y cantidad de intervenciones (últimos 12 meses)" />

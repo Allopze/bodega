@@ -4,6 +4,7 @@ import { can, requirePermission } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { db } from "@/db"
 import { itAssets } from "@/db/schema"
+import { and, isNull } from "drizzle-orm"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { ReportCard } from "./report-card"
@@ -33,7 +34,7 @@ export default async function ReportesPage() {
   const assets = await db
     .select({ id: itAssets.id, code: itAssets.code })
     .from(itAssets)
-    .where(scope ?? undefined)
+    .where(and(isNull(itAssets.deletedAt), scope ?? undefined))
     .orderBy(itAssets.code)
 
   return (

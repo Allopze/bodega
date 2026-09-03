@@ -22,6 +22,7 @@ import {
   createAsset, updateAsset, softDeleteAsset, changeAssetStatus, listAssets, getAssetById, listAssetOptions,
 } from "@/lib/services/ti/assets"
 import { getAssetHistory } from "@/lib/services/ti/history"
+import { retireAsset } from "@/lib/services/ti/retirements"
 
 describe("módulo TI — activos", () => {
   let typeId: string
@@ -134,6 +135,38 @@ describe("módulo TI — activos", () => {
     expect(history.some((h) => h.action === "edited")).toBe(true)
   })
 
+  it("rechaza editar o cambiar el estado de un activo fuera del scope de faena", async () => {
+    const id = await createAsset({ code: "TI-SCOPE-0001", assetTypeId: typeId, worksiteId: "ws-ti-sur" }, actor)
+
+    await expect(updateAsset({
+      id,
+      code: "TI-SCOPE-0001",
+      assetTypeId: typeId,
+      worksiteId: "ws-ti-sur",
+    }, actor, ["ws-ti-norte"])).rejects.toThrow(/No tienes acceso a esta faena/)
+
+    await expect(changeAssetStatus({ assetId: id, status: "en_reparacion", reason: "Diagnóstico" }, actor, ["ws-ti-norte"]))
+      .rejects.toThrow(/No tienes acceso a esta faena/)
+  })
+
+  it("no permite usar el cambio manual para dar de baja un activo con custodia abierta", async () => {
+    const id = await createAsset({ code: "TI-STATUS-0001", assetTypeId: typeId, worksiteId: "ws-ti-norte" }, actor)
+    await testDb.insert(schema.itAssetAssignments).values({
+      id: "asg-status-bypass",
+      code: "ACT-2099-STATUS",
+      assetId: id,
+      workerId: "wk-ti-juan",
+      worksiteId: "ws-ti-norte",
+      kind: "delivery",
+      deliveredAt: new Date().toISOString(),
+      deliveredByUserId: actor.userId,
+      physicalState: "bueno",
+    })
+
+    await expect(changeAssetStatus({ assetId: id, status: "dado_de_baja", reason: "Baja directa" }, actor))
+      .rejects.toThrow(/flujo formal|estado manual|baja/i)
+  })
+
   it("filtra por estado y por ventana de garantía", async () => {
     const disponibles = await listAssets({ status: "disponible" })
     expect(disponibles.some((a) => a.code === "TI-NB-0001")).toBe(true)
@@ -147,7 +180,13 @@ describe("módulo TI — activos", () => {
 
   it("excluye los activos dados de baja del inventario salvo includeRetired", async () => {
     const id = await createAsset({ code: "TI-NB-0003", assetTypeId: typeId }, actor)
-    await changeAssetStatus({ assetId: id, status: "dado_de_baja", reason: "Obsolescencia" }, actor)
+    await retireAsset({
+      assetId: id,
+      date: "2026-09-03",
+      reason: "reciclaje",
+      responsibleUserId: actor.userId,
+      authorizedByUserId: actor.userId,
+    }, actor)
 
     const activos = await listAssets({})
     expect(activos.map((a) => a.code)).not.toContain("TI-NB-0003")

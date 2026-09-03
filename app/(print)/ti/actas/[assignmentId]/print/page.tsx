@@ -41,12 +41,10 @@ export default async function ActaPrintPage({ params }: PageProps) {
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: ACTA_PRINT_STYLES }} />
-      <div className="print-toolbar">
-        <PrintTrigger
-          pdfHref={`/ti/actas/${assignmentId}/print/pdf`}
-          suggestedFilename={suggestedFilename}
-        />
-      </div>
+      <PrintTrigger
+        pdfHref={`/ti/actas/${assignmentId}/print/pdf`}
+        suggestedFilename={suggestedFilename}
+      />
 
       <article className="acta-sheet">
         <header className="header">

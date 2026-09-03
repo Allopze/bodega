@@ -6,7 +6,7 @@ import { toast } from "@/lib/toast"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import {
   Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter,
-  SheetTitle, SheetDescription, SheetCloseButton,
+  SheetTitle, SheetDescription, SheetCloseButton, SheetTrigger,
 } from "@/components/admin/sheet"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
@@ -42,8 +42,8 @@ export function RetirementSheet({ trigger, assets, users }: RetirementSheetProps
   }, INITIAL_STATE)
 
   return (
-    <Sheet open={open} onOpenChange={(v) => { if (!v) setOpen(false) }}>
-      <span onClick={() => setOpen(true)}>{trigger}</span>
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>{trigger}</SheetTrigger>
       <SheetContent className="sm:max-w-xl">
         <form action={formAction} className="flex flex-col flex-1 min-h-0">
           <SheetHeader>

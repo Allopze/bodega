@@ -24,7 +24,7 @@ import {
 } from "@/lib/services/ti/assignments"
 import { createAsset } from "@/lib/services/ti/assets"
 import { getAssetHistory } from "@/lib/services/ti/history"
-import { deletePendingPhoto, persistPendingPhoto } from "@/lib/services/ti/assignment-photos"
+import { cleanupOrphanPhotos, deletePendingPhoto, persistPendingPhoto } from "@/lib/services/ti/assignment-photos"
 
 describe("módulo TI — asignaciones (custodia)", () => {
   let typeId: string
@@ -158,6 +158,19 @@ describe("módulo TI — asignaciones (custodia)", () => {
     }, actor, ["ws-ti-norte"])).rejects.toThrow(/No tienes acceso a esta faena/)
   })
 
+  it("no permite que una faena tome un activo que pertenece a otra faena", async () => {
+    const assetId = await makeAsset("TI-A-SCOPE-ORIGEN", "ws-ti-norte")
+    await expect(createAssignment({
+      assetId,
+      workerId: "wk-ti-maria",
+      worksiteId: "ws-ti-sur",
+      deliveredAt: "2026-09-01T10:00",
+      physicalState: "bueno",
+      accessoryNames: [],
+      photoIds: [],
+    }, actor, ["ws-ti-sur"])).rejects.toThrow(/No tienes acceso a esta faena/)
+  })
+
   it("exige que la faena de la asignación coincida con la del trabajador", async () => {
     const assetId = await makeAsset("TI-A-FAENA-TRABAJADOR")
 
@@ -237,6 +250,58 @@ describe("módulo TI — asignaciones (custodia)", () => {
       .from(schema.itAssignmentPhotos)
       .where(eq(schema.itAssignmentPhotos.id, photoId))
     expect(remaining).toEqual([])
+  })
+
+  it("conserva las fotos de devolución pendientes durante la limpieza de huérfanos", async () => {
+    const assetId = await makeAsset("TI-A-FOTO-PENDIENTE")
+    const assignmentId = await createAssignment({
+      assetId,
+      workerId: "wk-ti-juan",
+      worksiteId: "ws-ti-norte",
+      deliveredAt: "2026-09-01T10:00",
+      physicalState: "bueno",
+      accessoryNames: [],
+      photoIds: [],
+    }, actor)
+    await testDb.insert(schema.itAssignmentPhotos).values({
+      id: "ph-devol-pendiente-antigua",
+      assignmentId: null,
+      pendingAssignmentId: assignmentId,
+      stage: "return",
+      fileName: "devolucion.jpg",
+      filePath: "storage/ti/devolucion.jpg",
+      fileSize: 1024,
+      mimeType: "image/jpeg",
+      uploadedByUserId: actor.userId,
+      createdAt: new Date(Date.now() - 2 * 3_600_000).toISOString(),
+    })
+
+    expect(await cleanupOrphanPhotos(60)).toBe(0)
+    expect((await testDb.select({ id: schema.itAssignmentPhotos.id }).from(schema.itAssignmentPhotos)
+      .where(eq(schema.itAssignmentPhotos.id, "ph-devol-pendiente-antigua")))).toHaveLength(1)
+  })
+
+  it("no permite preparar evidencia de devolución fuera del scope de la faena", async () => {
+    const assetId = await makeAsset("TI-A-FOTO-SCOPE", "ws-ti-sur")
+    const assignmentId = await createAssignment({
+      assetId,
+      workerId: "wk-ti-maria",
+      worksiteId: "ws-ti-sur",
+      deliveredAt: "2026-09-01T10:00",
+      physicalState: "bueno",
+      accessoryNames: [],
+      photoIds: [],
+    }, actor)
+
+    await expect(persistPendingPhoto({
+      stage: "return",
+      pendingAssignmentId: assignmentId,
+      fileName: "fuera-scope.jpg",
+      filePath: "storage/ti/fuera-scope.jpg",
+      fileSize: 1024,
+      mimeType: "image/jpeg",
+      uploadedByUserId: actor.userId,
+    }, ["ws-ti-norte"])).rejects.toThrow(/No tienes acceso a esta faena/)
   })
 
   it("devuelve el activo, restaura 'disponible' y conserva fotos de devolución", async () => {

@@ -6,7 +6,7 @@ import { toast } from "@/lib/toast"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import {
   Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter,
-  SheetTitle, SheetDescription, SheetCloseButton,
+  SheetTitle, SheetDescription, SheetCloseButton, SheetTrigger,
 } from "@/components/admin/sheet"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { OptionSelect } from "@/components/ui/option-select"
 import { createAssetAction, updateAssetAction } from "./actions"
 import { IT_ASSET_STATUS_META } from "@/lib/services/ti/constants"
 import type { ItAssetFormData } from "@/lib/validation/ti"
@@ -48,8 +49,8 @@ export function AssetFormSheet({ trigger, assetTypes, suppliers, worksites, edit
   const showSpecs = Boolean(selectedType?.hasSpecs)
 
   return (
-    <Sheet open={open} onOpenChange={(v) => { if (!v) setOpen(false) }}>
-      <span onClick={() => setOpen(true)}>{trigger}</span>
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>{trigger}</SheetTrigger>
       <SheetContent className="sm:max-w-xl">
         <form action={formAction} className="flex flex-col flex-1 min-h-0">
           {editAsset && <input type="hidden" name="id" value={editAsset.id} />}
@@ -75,7 +76,6 @@ export function AssetFormSheet({ trigger, assetTypes, suppliers, worksites, edit
                 </Field>
                 <Field label="Tipo de activo" required error={state.fieldErrors?.assetTypeId?.[0]}>
                   <Select
-                    name="assetTypeId"
                     value={typeId}
                     onValueChange={setTypeId}
                   >
@@ -118,15 +118,7 @@ export function AssetFormSheet({ trigger, assetTypes, suppliers, worksites, edit
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Faena" helper="Faena u oficina donde se ubica (opcional).">
-                  <Select name="worksiteId" defaultValue={editAsset?.worksiteId ?? ""}>
-                    <SelectTrigger aria-label="Faena">
-                      <SelectValue placeholder="Sin faena asignada" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">Sin faena</SelectItem>
-                      {worksites.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <OptionSelect name="worksiteId" defaultValue={editAsset?.worksiteId ?? ""} emptyLabel="Sin faena" placeholder="Sin faena asignada" aria-label="Faena" options={worksites.map((worksite) => ({ value: worksite.id, label: worksite.name }))} />
                 </Field>
                 <Field label="Ubicación" helper="Oficina, bodega o detalle libre.">
                   <Input name="location" defaultValue={editAsset?.location ?? ""} maxLength={120} />
@@ -138,15 +130,7 @@ export function AssetFormSheet({ trigger, assetTypes, suppliers, worksites, edit
                   <DatePicker name="purchaseDate" defaultValue={editAsset?.purchaseDate ?? ""} placeholder="Sin fecha" />
                 </Field>
                 <Field label="Proveedor">
-                  <Select name="supplierId" defaultValue={editAsset?.supplierId ?? ""}>
-                    <SelectTrigger aria-label="Proveedor">
-                      <SelectValue placeholder="Sin proveedor" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">Sin proveedor</SelectItem>
-                      {suppliers.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <OptionSelect name="supplierId" defaultValue={editAsset?.supplierId ?? ""} emptyLabel="Sin proveedor" placeholder="Sin proveedor" aria-label="Proveedor" options={suppliers.map((supplier) => ({ value: supplier.id, label: supplier.name }))} />
                 </Field>
                 <Field label="Costo (CLP)">
                   <Input name="cost" type="number" min={0} step={1} defaultValue={editAsset?.cost != null ? String(editAsset.cost) : ""} placeholder="0" />
@@ -155,17 +139,14 @@ export function AssetFormSheet({ trigger, assetTypes, suppliers, worksites, edit
 
               <div className="grid gap-4 sm:grid-cols-3">
                 <Field label="Documento de compra">
-                  <Select name="purchaseDocType" defaultValue={editAsset?.purchaseDocType ?? ""}>
-                    <SelectTrigger aria-label="Tipo de documento">
-                      <SelectValue placeholder="Sin documento" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">Sin documento</SelectItem>
-                      <SelectItem value="factura">Factura</SelectItem>
-                      <SelectItem value="oc">Orden de compra</SelectItem>
-                      <SelectItem value="otro">Otro</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <OptionSelect
+                    name="purchaseDocType"
+                    defaultValue={editAsset?.purchaseDocType ?? ""}
+                    emptyLabel="Sin documento"
+                    placeholder="Sin documento"
+                    aria-label="Tipo de documento"
+                    options={[{ value: "factura", label: "Factura" }, { value: "oc", label: "Orden de compra" }, { value: "otro", label: "Otro" }]}
+                  />
                 </Field>
                 <Field label="Nº documento">
                   <Input name="purchaseDocRef" defaultValue={editAsset?.purchaseDocRef ?? ""} maxLength={80} />

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "it_access_systems_name_unique" ON "it_access_systems" USING btree (lower("name"));

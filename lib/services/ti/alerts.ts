@@ -6,6 +6,8 @@ import {
 import { createNotification } from "@/lib/services/notification-create"
 import { logger } from "@/lib/logger"
 import { cleanupOrphanPhotos } from "./assignment-photos"
+import { civilDaysUntil } from "./civil-dates"
+import { todayInChile } from "@/lib/utils"
 
 /* ── Alertas TI diarias (cron) ──────────────────────────────────────────────
  * Notifican solo lo accionable, deduplicadas por día (dedupeKey), para no
@@ -28,6 +30,7 @@ export interface TiAlert {
 
 export async function collectTiAlerts(): Promise<TiAlert[]> {
   const alerts: TiAlert[] = []
+  const today = todayInChile()
 
   // Garantías por vencer (≤30 días).
   const warranties = await db
@@ -43,12 +46,12 @@ export async function collectTiAlerts(): Promise<TiAlert[]> {
       isNull(itAssets.deletedAt),
       sql`${itAssets.status} NOT IN ('dado_de_baja', 'perdido', 'robado')`,
       sql`${itAssets.warrantyEndDate} IS NOT NULL`,
-      sql`${itAssets.warrantyEndDate} >= current_date::text`,
-      sql`${itAssets.warrantyEndDate} <= (current_date + 30)::text`,
+      sql`${itAssets.warrantyEndDate} >= ${today}`,
+      sql`${itAssets.warrantyEndDate} <= (${today}::date + 30)::text`,
     ))
   for (const asset of warranties) {
     const days = asset.warrantyEndDate
-      ? Math.ceil((new Date(asset.warrantyEndDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+      ? civilDaysUntil(asset.warrantyEndDate, today)
       : 30
     alerts.push({
       type: "ti_warranty_expiring",
@@ -68,12 +71,12 @@ export async function collectTiAlerts(): Promise<TiAlert[]> {
     .where(and(
       eq(itLicenses.isActive, true),
       sql`${itLicenses.renewalDate} IS NOT NULL`,
-      sql`${itLicenses.renewalDate} >= current_date::text`,
-      sql`${itLicenses.renewalDate} <= (current_date + 14)::text`,
+      sql`${itLicenses.renewalDate} >= ${today}`,
+      sql`${itLicenses.renewalDate} <= (${today}::date + 14)::text`,
     ))
   for (const license of licenses) {
     const days = license.renewalDate
-      ? Math.ceil((new Date(license.renewalDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+      ? civilDaysUntil(license.renewalDate, today)
       : 14
     alerts.push({
       type: "ti_license_renewal",

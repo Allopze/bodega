@@ -81,7 +81,7 @@ export const itAssetUpdateSchema = itAssetCreateSchema
 /** Cambio manual de estado: exige motivo para que la timeline nunca quede muda. */
 export const itAssetStatusChangeSchema = z.object({
   assetId: z.string().min(1),
-  status: z.enum(IT_ASSET_STATUSES, { message: "Estado no reconocido" }),
+  status: z.enum(MANUAL_ASSET_STATUSES, { message: "Ese estado requiere su flujo formal" }),
   reason: z.string().trim().min(3, "Indica el motivo (mínimo 3 caracteres)").max(300),
 })
 

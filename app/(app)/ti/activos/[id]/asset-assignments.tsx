@@ -5,6 +5,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { formatDate, formatDateTime } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { X } from "@phosphor-icons/react"
 import { IT_ASSIGNMENT_KIND_META, IT_PHYSICAL_STATE_META } from "@/lib/services/ti/constants"
@@ -145,13 +146,13 @@ export function AssetAssignments({ assetId, rows, activeAssignment, canManage, w
           </div>
           <div className="flex items-center gap-2">
             <TransferSheet
-              trigger={<span className="inline-flex h-9 cursor-pointer items-center rounded-lg border border-[var(--color-border-control)] bg-[var(--color-surface)] px-3 text-xs font-semibold text-[var(--color-text)] hover:bg-[var(--color-surface-2)]">Transferir</span>}
+              trigger={<Button type="button" variant="secondary" size="sm">Transferir</Button>}
               assignment={activeAssignment}
               workers={workers}
               worksites={worksites}
             />
             <ReturnSheet
-              trigger={<span className="inline-flex h-9 cursor-pointer items-center rounded-lg border border-[var(--color-border-control)] bg-[var(--color-surface)] px-3 text-xs font-semibold text-[var(--color-text)] hover:bg-[var(--color-surface-2)]">Registrar devolución</span>}
+              trigger={<Button type="button" variant="secondary" size="sm">Registrar devolución</Button>}
               assignment={activeAssignment}
             />
           </div>
@@ -164,7 +165,7 @@ export function AssetAssignments({ assetId, rows, activeAssignment, canManage, w
           description="Este activo aún no tiene entregas registradas."
           action={canManage ? (
             <AssignmentSheet
-              trigger={<span className="text-sm font-semibold text-[var(--color-primary)] hover:underline cursor-pointer">Registrar entrega</span>}
+              trigger={<Button type="button" variant="link" size="sm">Registrar entrega</Button>}
               assetId={assetId}
               workers={workers}
               worksites={worksites}

@@ -1,10 +1,11 @@
-import { eq, and, asc, sql, type SQL } from "drizzle-orm"
+import { eq, and, asc, isNull, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import {
   itSupplierLinks, suppliers, itAssets, itMaintenances, itLicenses, workers,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
+import { todayInChile } from "@/lib/utils"
 
 export interface CreateSupplierLinkInput {
   supplierId: string
@@ -108,11 +109,11 @@ export async function listAssetsByWarranty(filters: {
   supplierId?: string
   scope?: SQL
 }) {
-  const conditions: SQL[] = [sql`${itAssets.warrantyEndDate} IS NOT NULL`]
+  const conditions: SQL[] = [isNull(itAssets.deletedAt), sql`${itAssets.warrantyEndDate} IS NOT NULL`]
   if (filters.supplierId) conditions.push(eq(itAssets.supplierId, filters.supplierId))
   if (filters.scope) conditions.push(filters.scope)
 
-  const today = sql`current_date::text`
+  const today = sql`${todayInChile()}`
   if (filters.window === "active") conditions.push(sql`${itAssets.warrantyEndDate} >= ${today}`)
   if (filters.window === "expiring_30") conditions.push(sql`${itAssets.warrantyEndDate} >= ${today} AND ${itAssets.warrantyEndDate} <= (${today}::date + 30)::text`)
   if (filters.window === "expiring_60") conditions.push(sql`${itAssets.warrantyEndDate} >= ${today} AND ${itAssets.warrantyEndDate} <= (${today}::date + 60)::text`)

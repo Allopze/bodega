@@ -9,6 +9,7 @@ import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
 import { chileLocalDateTimeToUtc, codeYear } from "@/lib/utils"
 import { appendAssetHistory } from "./history"
+import { assertTiWorksiteAccess, type TiWorksiteScope } from "./scope"
 
 export interface CreateAssignmentInput {
   assetId: string
@@ -28,7 +29,7 @@ const ASSIGNABLE_STATUSES = ["disponible", "en_bodega"]
 export async function createAssignment(
   input: CreateAssignmentInput,
   actor: { userId: string; userEmail?: string },
-  worksiteIds: string[] | "all" = "all",
+  worksiteIds: TiWorksiteScope = "all",
 ): Promise<string> {
   const id = nanoid()
   await db.transaction(async (tx) => {
@@ -39,6 +40,7 @@ export async function createAssignment(
     const [asset] = await tx.select().from(itAssets)
       .where(and(eq(itAssets.id, input.assetId), isNull(itAssets.deletedAt))).for("update")
     if (!asset) throw new Error("Activo no encontrado")
+    assertTiWorksiteAccess(worksiteIds, asset.worksiteId)
     if (!ASSIGNABLE_STATUSES.includes(asset.status)) {
       throw new Error(`El activo está en estado '${asset.status}' y no puede entregarse`)
     }

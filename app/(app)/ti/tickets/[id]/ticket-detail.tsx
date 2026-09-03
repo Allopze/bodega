@@ -6,6 +6,7 @@ import { useActionState } from "react"
 import { toast } from "@/lib/toast"
 import { formatDateTime, formatDate } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
+import { EmptyState } from "@/components/ui/empty-state"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { SubmitButton } from "@/components/ui/submit-button"
@@ -103,7 +104,7 @@ export function TicketDetail({ ticket, comments, canManage, canInternal, canComm
             Comentarios ({comments.length})
           </h3>
           {comments.length === 0 ? (
-            <p className="mt-3 text-sm text-[var(--color-text-subtle)] italic">Sin comentarios todavía.</p>
+            <EmptyState compact align="start" title="Sin comentarios todavía" description="Las actualizaciones del caso aparecerán aquí." />
           ) : (
             <ul className="mt-3 space-y-3">
               {comments.map((comment) => (

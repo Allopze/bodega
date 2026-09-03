@@ -6,7 +6,7 @@ import { toast } from "@/lib/toast"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import {
   Sheet, SheetContent, SheetHeader, SheetBody, SheetFooter,
-  SheetTitle, SheetDescription, SheetCloseButton,
+  SheetTitle, SheetDescription, SheetCloseButton, SheetTrigger,
 } from "@/components/admin/sheet"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { OptionSelect } from "@/components/ui/option-select"
 import { todayInChile } from "@/lib/utils"
 import { createMaintenanceAction, updateMaintenanceAction } from "./actions"
 import { IT_MAINTENANCE_TYPES } from "@/lib/validation/ti"
@@ -60,11 +61,11 @@ export function MaintenanceSheet({ trigger, assetId, suppliers, assets = [], edi
   }, INITIAL_STATE)
 
   return (
-    <Sheet open={open} onOpenChange={(v) => { if (!v) setOpen(false) }}>
-      <span onClick={() => setOpen(true)}>{trigger}</span>
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>{trigger}</SheetTrigger>
       <SheetContent className="sm:max-w-xl">
         <form action={formAction} className="flex flex-col flex-1 min-h-0">
-          <input type="hidden" name="assetId" value={effectiveAssetId} />
+          {effectiveAssetId && <input type="hidden" name="assetId" value={effectiveAssetId} />}
           {editMaintenance && <input type="hidden" name="id" value={editMaintenance.id} />}
           <SheetHeader>
             <div>
@@ -128,15 +129,7 @@ export function MaintenanceSheet({ trigger, assetId, suppliers, assets = [], edi
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Proveedor">
-                  <Select name="supplierId" defaultValue={editMaintenance?.supplierId ?? ""}>
-                    <SelectTrigger aria-label="Proveedor">
-                      <SelectValue placeholder="Sin proveedor" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">Sin proveedor</SelectItem>
-                      {suppliers.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <OptionSelect name="supplierId" defaultValue={editMaintenance?.supplierId ?? ""} emptyLabel="Sin proveedor" placeholder="Sin proveedor" aria-label="Proveedor" options={suppliers.map((supplier) => ({ value: supplier.id, label: supplier.name }))} />
                 </Field>
                 <Field label="Técnico responsable">
                   <Input name="technicianName" defaultValue={editMaintenance?.technicianName ?? ""} maxLength={80} placeholder="Nombre del técnico (interno o externo)" />

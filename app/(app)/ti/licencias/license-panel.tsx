@@ -16,7 +16,8 @@ import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Field, FieldGroup } from "@/components/ui/field"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { OptionSelect } from "@/components/ui/option-select"
+import { LicenseSheet } from "./license-sheet"
 
 interface Assignment {
   id: string
@@ -36,6 +37,7 @@ interface LicensePanelProps {
   license: {
     id: string
     name: string
+    supplierId: string | null
     supplierName: string | null
     type: string | null
     purchasedQuantity: number
@@ -45,6 +47,7 @@ interface LicensePanelProps {
     startDate: string | null
     renewalDate: string | null
     responsibleName: string | null
+    responsibleUserId: string | null
     notes: string | null
     isActive: boolean
     assignments: Assignment[]
@@ -53,9 +56,11 @@ interface LicensePanelProps {
   workers: { id: string; name: string; lastName: string }[]
   worksites: { id: string; name: string }[]
   assets: { id: string; code: string; typeName: string }[]
+  suppliers: { id: string; name: string }[]
+  users: { id: string; name: string }[]
 }
 
-export function LicensePanel({ license, canManage, workers, worksites, assets }: LicensePanelProps) {
+export function LicensePanel({ license, canManage, workers, worksites, assets, suppliers, users }: LicensePanelProps) {
   const [open, setOpen] = React.useState(false)
   const available = Math.max(0, license.purchasedQuantity - license.assignedQuantity)
 
@@ -90,7 +95,7 @@ export function LicensePanel({ license, canManage, workers, worksites, assets }:
             {license.cost != null && ` · ${formatCLP(license.cost)}`}
           </p>
         </div>
-        <div className="flex gap-4 text-center">
+        <div className="flex flex-wrap items-start gap-4 text-center">
           <div>
             <p className="text-xs text-[var(--color-text-muted)]">Compradas</p>
             <p className="font-mono text-lg font-bold text-[var(--color-text)]">{license.purchasedQuantity}</p>
@@ -103,6 +108,14 @@ export function LicensePanel({ license, canManage, workers, worksites, assets }:
             <p className="text-xs text-[var(--color-text-muted)]">Disponibles</p>
             <p className={`font-mono text-lg font-bold ${available === 0 && license.purchasedQuantity > 0 ? "text-[var(--color-danger-ink)]" : "text-[var(--color-success-ink)]"}`}>{available}</p>
           </div>
+          {canManage && (
+            <LicenseSheet
+              trigger={<Button type="button" variant="secondary" size="sm">Editar</Button>}
+              suppliers={suppliers}
+              users={users}
+              editLicense={license}
+            />
+          )}
         </div>
       </div>
 
@@ -155,40 +168,16 @@ export function LicensePanel({ license, canManage, workers, worksites, assets }:
               )}
               <FieldGroup>
                 <Field label="Trabajador">
-                  <Select name="workerId">
-                    <SelectTrigger aria-label="Trabajador">
-                      <SelectValue placeholder="Sin trabajador" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">Sin trabajador</SelectItem>
-                      {workers.map((w) => <SelectItem key={w.id} value={w.id}>{w.name} {w.lastName}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <OptionSelect name="workerId" emptyLabel="Sin trabajador" placeholder="Sin trabajador" aria-label="Trabajador" options={workers.map((worker) => ({ value: worker.id, label: `${worker.name} ${worker.lastName}` }))} />
                 </Field>
                 <Field label="Equipo">
-                  <Select name="assetId">
-                    <SelectTrigger aria-label="Equipo">
-                      <SelectValue placeholder="Sin equipo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">Sin equipo</SelectItem>
-                      {assets.map((a) => <SelectItem key={a.id} value={a.id}>{a.code}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <OptionSelect name="assetId" emptyLabel="Sin equipo" placeholder="Sin equipo" aria-label="Equipo" options={assets.map((asset) => ({ value: asset.id, label: asset.code }))} />
                 </Field>
                 <Field label="Área" helper="Texto libre: gerencia, prevención, TI…">
                   <Input name="area" maxLength={80} />
                 </Field>
                 <Field label="Faena">
-                  <Select name="worksiteId">
-                    <SelectTrigger aria-label="Faena">
-                      <SelectValue placeholder="Sin faena" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="">Sin faena</SelectItem>
-                      {worksites.map((w) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <OptionSelect name="worksiteId" emptyLabel="Sin faena" placeholder="Sin faena" aria-label="Faena" options={worksites.map((worksite) => ({ value: worksite.id, label: worksite.name }))} />
                 </Field>
                 <Field label="Notas">
                   <Input name="notes" maxLength={300} />

@@ -1,5 +1,6 @@
 import { formatDate, formatCLP } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { IT_MAINTENANCE_TYPE_META } from "@/lib/services/ti/constants"
 import { MaintenanceSheet } from "../../mantenciones/maintenance-sheet"
@@ -55,7 +56,7 @@ export function AssetMaintenance({ assetId, rows, canManage, suppliers }: AssetM
         </div>
         {canManage && (
           <MaintenanceSheet
-            trigger={<span className="inline-flex h-9 cursor-pointer items-center rounded-lg border border-[var(--color-border-control)] bg-[var(--color-surface)] px-3 text-xs font-semibold text-[var(--color-text)] hover:bg-[var(--color-surface-2)]">Registrar mantención</span>}
+            trigger={<Button type="button" variant="secondary" size="sm">Registrar mantención</Button>}
             assetId={assetId}
             suppliers={suppliers}
           />
@@ -79,7 +80,7 @@ export function AssetMaintenance({ assetId, rows, canManage, suppliers }: AssetM
                 <span className="font-mono text-sm font-semibold text-[var(--color-text)]">{formatCLP(Number(row.cost ?? 0))}</span>
                 {canManage && (
                   <MaintenanceSheet
-                    trigger={<span className="cursor-pointer text-xs font-semibold text-[var(--color-primary)] hover:underline">Editar</span>}
+                    trigger={<Button type="button" variant="link" size="sm">Editar</Button>}
                     suppliers={suppliers}
                     editMaintenance={row}
                   />

@@ -136,11 +136,12 @@ export async function transitionTicket(
     }
 
     const now = new Date().toISOString()
+    const reopening = input.status === "en_progreso" && ["resuelto", "cerrado"].includes(ticket.status)
     await tx.update(itTickets).set({
       status: input.status,
       assigneeUserId: input.assigneeUserId ?? ticket.assigneeUserId,
-      resolvedAt: input.status === "resuelto" ? now : ticket.resolvedAt,
-      resolution: input.status === "resuelto" ? (input.resolution?.trim() || null) : ticket.resolution,
+      resolvedAt: input.status === "resuelto" ? now : reopening ? null : ticket.resolvedAt,
+      resolution: input.status === "resuelto" ? (input.resolution?.trim() || null) : reopening ? null : ticket.resolution,
       updatedAt: now,
     }).where(eq(itTickets.id, input.ticketId))
 

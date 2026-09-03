@@ -8,6 +8,7 @@ import { eq, asc } from "drizzle-orm"
 import { formatCLP } from "@/lib/utils"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { EmptyState } from "@/components/ui/empty-state"
 import { listMaintenances, maintenanceCostByAsset } from "@/lib/services/ti/maintenance"
 import { listAssetOptions } from "@/lib/services/ti/assets"
 import { MaintenanceTable } from "./maintenance-table"
@@ -54,7 +55,12 @@ export default async function MantencionesPage() {
         <h2 className="text-h2">Mayor gasto acumulado por equipo</h2>
         <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">Los primeros de la lista son candidatos a reemplazo.</p>
         {costRanking.length === 0 ? (
-          <p className="mt-3 text-sm text-[var(--color-text-subtle)] italic">Sin mantenciones registradas todavía.</p>
+          <EmptyState
+            compact
+            align="start"
+            title="Sin mantenciones registradas"
+            description={canManage ? "Registra una mantención para construir el ranking de costos." : "El ranking aparecerá cuando existan intervenciones técnicas."}
+          />
         ) : (
           <ul className="mt-3 space-y-1">
             {costRanking.slice(0, 10).map((row) => (
