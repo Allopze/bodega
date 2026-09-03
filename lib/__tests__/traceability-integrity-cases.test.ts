@@ -33,7 +33,7 @@ const session = {
     primaryWorksiteId: null,
     avatarColor: null,
     isActive: true,
-    permissions: ["traceability:reconcile_integrity"],
+    permissions: ["warehouse:reconcile_integrity"],
   },
 } as Session
 

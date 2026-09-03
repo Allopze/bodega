@@ -15,6 +15,8 @@ export const warehouseModule = {
     "warehouse:dispatch_guide",
     "warehouse:receive_guide",
     "warehouse:cancel_guide",
+    "warehouse:view_traceability",
+    "warehouse:reconcile_integrity",
   ] as const,
 
   permissionMeta: {
@@ -26,6 +28,8 @@ export const warehouseModule = {
     "warehouse:dispatch_guide":     { id: "p-wh-gdi-dispatch", description: "Despachar guías (mueve stock de oficina a faena)" },
     "warehouse:receive_guide":      { id: "p-wh-gdi-receive",  description: "Confirmar recepción de guías en faena" },
     "warehouse:cancel_guide":       { id: "p-wh-gdi-cancel",   description: "Anular guías de despacho" },
+    "warehouse:view_traceability":  { id: "p-wh-trace-view",   description: "Ver trazabilidad y seguimiento de solicitudes por faena" },
+    "warehouse:reconcile_integrity": { id: "p-wh-trace-reconcile-integrity", description: "Detectar y regularizar excepciones históricas de trazabilidad" },
   },
   nav: [
     {
@@ -37,6 +41,12 @@ export const warehouseModule = {
           iconName:    "Warehouse",
           permissions: ["warehouse:view_stock"],
           badge:       "count" as const,
+        },
+        {
+          label:       "Trazabilidad",
+          href:        "/bodega/trazabilidad",
+          iconName:    "Path",
+          permissions: ["warehouse:view_traceability"],
         },
         {
           // Las guías de despacho internas eran un módulo completo (lista,
@@ -90,15 +100,21 @@ export const warehouseModule = {
     { roleSlug: "administrador",  permission: "warehouse:view_stock" },
     { roleSlug: "administrador",  permission: "warehouse:register_movement" },
     { roleSlug: "administrador",  permission: "warehouse:adjust_stock" },
+    { roleSlug: "administrador",  permission: "warehouse:view_traceability" },
+    { roleSlug: "administrador",  permission: "warehouse:reconcile_integrity" },
     { roleSlug: "jefa_chome",     permission: "warehouse:view_stock" },
+    { roleSlug: "jefa_chome",     permission: "warehouse:view_traceability" },
     { roleSlug: "secretaria",     permission: "warehouse:view_stock" },
     { roleSlug: "secretaria",     permission: "warehouse:register_movement" },
+    { roleSlug: "secretaria",     permission: "warehouse:view_traceability" },
     { roleSlug: "prevencionista", permission: "warehouse:view_stock" },
     { roleSlug: "prevencionista", permission: "warehouse:register_movement" },
+    { roleSlug: "prevencionista", permission: "warehouse:view_traceability" },
     { roleSlug: "solicitante_faena", permission: "warehouse:view_stock" },
     { roleSlug: "solicitante_faena", permission: "warehouse:register_movement" },
     { roleSlug: "prevencionista_faena", permission: "warehouse:view_stock" },
     { roleSlug: "prevencionista_faena", permission: "warehouse:register_movement" },
     { roleSlug: "jefe_mantencion", permission: "warehouse:view_stock" },
+    { roleSlug: "jefe_mantencion", permission: "warehouse:view_traceability" },
   ],
 } as const satisfies ModuleManifest

@@ -38,7 +38,7 @@ export async function scanTraceabilityIntegrityAction(
 
   try {
     const { findings, recordedCount } = await scanTraceabilityIntegrity(session)
-    revalidatePath("/trazabilidad")
+    revalidatePath("/bodega/trazabilidad")
     return {
       ok: true,
       message: recordedCount > 0
@@ -75,7 +75,7 @@ export async function resolveTraceabilityIntegrityCaseAction(
       userEmail: session.user.email,
       session,
     })
-    revalidatePath("/trazabilidad")
+    revalidatePath("/bodega/trazabilidad")
     return { ok: true, message: "La excepción quedó regularizada con evidencia append-only" }
   } catch (error) {
     return { ok: false, message: safeActionMessage(error, "No fue posible regularizar la excepción") }

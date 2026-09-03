@@ -110,12 +110,12 @@ export async function DocumentChainStrip({ chain, current, currentCode, classNam
   const total = chainDocuments(chain).length
   if (total <= 1 && current) return null
 
-  // El expediente completo vive detrás de `traceability:view`, permiso que no
+  // El expediente completo vive detrás de `warehouse:view_traceability`, permiso que no
   // tienen los roles de faena que sí ven solicitudes y recepciones. Sin él el
   // enlace sólo lleva a /forbidden, así que no se pinta. Se resuelve después de
   // los early-returns para no pagar `auth()` cuando la tira ni se muestra.
-  const dossierHref = currentCode && can(await auth(), "traceability:view")
-    ? `/trazabilidad/documento?codigo=${encodeURIComponent(currentCode)}`
+  const dossierHref = currentCode && can(await auth(), "warehouse:view_traceability")
+    ? `/bodega/trazabilidad?tab=documento&codigo=${encodeURIComponent(currentCode)}`
     : null
 
   return (

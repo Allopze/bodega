@@ -1,7 +1,7 @@
 /**
- * GET /api/trazabilidad/export?from=<date>&to=<date>&faena=<id>
+ * GET /api/bodega/trazabilidad/export?from=<date>&to=<date>&faena=<id>
  *
- * Returns the trazabilidad matrix as an Excel download with optional filters.
+ * Returns the consolidated tracking report as an Excel download.
  */
 import { type NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
@@ -22,8 +22,8 @@ export async function GET(req: NextRequest) {
   }
 
   const filters = {
-    fromDate:   req.nextUrl.searchParams.get("from") ?? undefined,
-    toDate:     req.nextUrl.searchParams.get("to") ?? undefined,
+    fromDate:   req.nextUrl.searchParams.get("from") ?? req.nextUrl.searchParams.get("desde") ?? undefined,
+    toDate:     req.nextUrl.searchParams.get("to") ?? req.nextUrl.searchParams.get("hasta") ?? undefined,
     worksiteId: req.nextUrl.searchParams.get("faena") ?? undefined,
   }
 
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
       },
     })
   } catch (err) {
-    logger.error("[trazabilidad/export]", err)
+    logger.error("[bodega/trazabilidad/export]", err)
     return NextResponse.json({ error: "Error al generar el archivo" }, { status: 500 })
   }
 }

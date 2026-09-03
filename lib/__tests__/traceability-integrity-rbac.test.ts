@@ -1,13 +1,20 @@
 import { describe, expect, it } from "vitest"
-import { traceabilityModule } from "@/modules/traceability/manifest"
+import { warehouseModule } from "@/modules/warehouse/manifest"
 
 describe("traceability integrity RBAC manifest", () => {
-  it("declares and grants the integrity reconciliation permission to administrators", () => {
-    expect(traceabilityModule.permissions).toContain("traceability:reconcile_integrity")
-    expect(traceabilityModule.permissionMeta).toHaveProperty("traceability:reconcile_integrity")
-    expect(traceabilityModule.defaultGrants).toContainEqual({
+  it("declares and grants the integrity reconciliation and traceability view permissions", () => {
+    expect(warehouseModule.permissions).toContain("warehouse:reconcile_integrity")
+    expect(warehouseModule.permissionMeta).toHaveProperty("warehouse:reconcile_integrity")
+    expect(warehouseModule.defaultGrants).toContainEqual({
       roleSlug: "administrador",
-      permission: "traceability:reconcile_integrity",
+      permission: "warehouse:reconcile_integrity",
+    })
+
+    expect(warehouseModule.permissions).toContain("warehouse:view_traceability")
+    expect(warehouseModule.permissionMeta).toHaveProperty("warehouse:view_traceability")
+    expect(warehouseModule.defaultGrants).toContainEqual({
+      roleSlug: "administrador",
+      permission: "warehouse:view_traceability",
     })
   })
 })

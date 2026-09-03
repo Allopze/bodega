@@ -26,16 +26,16 @@ async function markup(permissions: string[]) {
 }
 
 /**
- * El expediente completo exige `traceability:view`, permiso que no tienen los
+ * El expediente completo exige `warehouse:view_traceability`, permiso que no tienen los
  * roles de faena que sí ven solicitudes y recepciones: sin el gate el enlace
  * los mandaba a /forbidden.
  */
 describe("DocumentChainStrip", () => {
-  it("enlaza al expediente cuando la persona tiene traceability:view", async () => {
-    expect(await markup(["receiving:view", "traceability:view"])).toContain("Ver expediente")
+  it("enlaza al expediente cuando la persona tiene warehouse:view_traceability", async () => {
+    expect(await markup(["receiving:view", "warehouse:view_traceability"])).toContain("Ver expediente")
   })
 
-  it("oculta el enlace al expediente sin traceability:view", async () => {
+  it("oculta el enlace al expediente sin warehouse:view_traceability", async () => {
     const html = await markup(["receiving:view"])
     expect(html).not.toContain("Ver expediente")
     expect(html).toContain("SOL-0001")

@@ -137,7 +137,7 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false }: { d
               <div className="min-w-0">
                 {delivery.workerId && canViewTraceability ? (
                   <a
-                    href={`/trazabilidad/trabajador/${delivery.workerId}`}
+                    href={`/bodega/trazabilidad/trabajador/${delivery.workerId}`}
                     className="block truncate text-sm font-medium text-[var(--color-primary)] hover:underline"
                   >
                     {delivery.workerName}

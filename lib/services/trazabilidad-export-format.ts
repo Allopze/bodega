@@ -6,9 +6,26 @@ export interface TrazabilidadExportRow {
   productSku: string | null
   worksiteName: string
   requestCode: string
+  requestDate?: string
+  requesterName?: string
+  categoryName?: string
+  uom?: string
   requested: number
   approved: number | null
   inOc: number
+  suppliers?: string
+  ocCodes?: string
+  receivedOffice?: number
+  dispatched?: number
+  receivedFaena?: number
+  stockInFaena?: number | null
+  delivered?: number
+  pendingTotal?: number
+  notYetOrdered?: number
+  pendingFromSupplier?: number
+  inOffice?: number
+  inTransit?: number
+  inFaenaAvailable?: number
   received: number
   status: string
   alert: boolean
@@ -16,29 +33,61 @@ export interface TrazabilidadExportRow {
 
 export function buildTrazabilidadReportData(rows: TrazabilidadExportRow[]): ReportData {
   return {
-    filenameBase: `trazabilidad-${todayInChile()}`,
-    worksheetName: "Trazabilidad",
+    filenameBase: `seguimiento-trazabilidad-${todayInChile()}`,
+    worksheetName: "Trazabilidad por Faena",
     headers: [
-      "Producto",
-      "SKU",
       "Faena",
       "Solicitud",
+      "Fecha",
+      "Solicitante",
+      "Categoría",
+      "Producto",
+      "SKU",
+      "Unidad",
       "Solicitado",
       "Aprobado",
       "En OC",
-      "Recibido",
-      "Estado",
+      "Proveedores",
+      "Órdenes de Compra",
+      "Recibido Oficina",
+      "Despachado a Faena",
+      "Recibido Faena",
+      "Stock en Faena",
+      "Entregado",
+      "Pendiente Total",
+      "Pend. Compra",
+      "Pend. Proveedor",
+      "En Oficina",
+      "En Camino",
+      "En Faena por Entregar",
+      "Estado Consolidado",
       "Alerta",
     ],
     rows: rows.map((row) => [
-      row.productName,
-      row.productSku ?? "",
       row.worksiteName,
       row.requestCode,
+      row.requestDate ? row.requestDate.slice(0, 10) : "",
+      row.requesterName ?? "",
+      row.categoryName ?? "",
+      row.productName,
+      row.productSku ?? "",
+      row.uom ?? "unidad",
       row.requested,
       row.approved ?? "",
       row.inOc,
-      row.received,
+      row.suppliers ?? "",
+      row.ocCodes ?? "",
+      row.receivedOffice ?? 0,
+      row.dispatched ?? 0,
+      row.receivedFaena ?? row.received,
+      row.stockInFaena !== null && row.stockInFaena !== undefined ? row.stockInFaena : "",
+      row.delivered ?? 0,
+      row.pendingTotal ?? Math.max(0, row.requested - (row.delivered ?? 0)),
+      row.notYetOrdered ?? "",
+      row.pendingFromSupplier ?? "",
+      row.inOffice ?? "",
+      row.inTransit ?? "",
+      row.inFaenaAvailable ?? "",
       row.status,
       row.alert ? "Sí" : "No",
     ]),

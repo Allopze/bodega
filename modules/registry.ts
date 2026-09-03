@@ -17,7 +17,6 @@ import { purchasingModule }   from "@/modules/purchasing/manifest"
 import { receivingModule }    from "@/modules/receiving/manifest"
 import { warehouseModule }    from "@/modules/warehouse/manifest"
 import { deliveriesModule }   from "@/modules/deliveries/manifest"
-import { traceabilityModule } from "@/modules/traceability/manifest"
 import { reportsModule }      from "@/modules/reports/manifest"
 import { analyticsModule }    from "@/modules/analytics/manifest"
 import { repuestosModule }   from "@/modules/repuestos/manifest"
@@ -47,7 +46,6 @@ export const registry = [
   receivingModule,
   warehouseModule,
   deliveriesModule,
-  traceabilityModule,
   reportsModule,
   analyticsModule,
   repuestosModule,

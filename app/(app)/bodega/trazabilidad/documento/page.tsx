@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 
-export default async function TrazabilidadDocumentoRedirectPage({
+export default async function DocumentoRedirectPage({
   searchParams,
 }: {
   searchParams: Promise<{ codigo?: string }>
