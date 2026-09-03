@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/select"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
-import { COMPUTED_STATUS_METAS, type ComputedStatus } from "@/lib/services/trazabilidad-consolidated"
+import { COMPUTED_STATUS_METAS, type ComputedStatus } from "@/lib/services/trazabilidad-consolidated.types"
 import { ConsolidatedFiltersAdvanced } from "./consolidated-filters-advanced"
 
 interface Props {

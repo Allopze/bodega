@@ -21,6 +21,7 @@ const BANNED_SPECIFIERS = [
   "@/db",
   "@/lib/services/prevention-documents-library",
   "@/lib/services/sst",
+  "@/lib/services/trazabilidad-consolidated",
 ]
 
 function findSourceFiles(dir: string): string[] {
