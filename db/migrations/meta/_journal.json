@@ -1688,6 +1688,69 @@
       "when": 1788379014101,
       "tag": "0240_unique_ken_ellis",
       "breakpoints": true
+    },
+    {
+      "idx": 241,
+      "version": "7",
+      "when": 1788386288129,
+      "tag": "0241_lowly_karma",
+      "breakpoints": true
+    },
+    {
+      "idx": 242,
+      "version": "7",
+      "when": 1788387372663,
+      "tag": "0242_round_adam_destine",
+      "breakpoints": true
+    },
+    {
+      "idx": 243,
+      "version": "7",
+      "when": 1788399342440,
+      "tag": "0243_robust_rafael_vega",
+      "breakpoints": true
+    },
+    {
+      "idx": 244,
+      "version": "7",
+      "when": 1788400340951,
+      "tag": "0244_lonely_cerise",
+      "breakpoints": true
+    },
+    {
+      "idx": 245,
+      "version": "7",
+      "when": 1788401108269,
+      "tag": "0245_round_paper_doll",
+      "breakpoints": true
+    },
+    {
+      "idx": 246,
+      "version": "7",
+      "when": 1788403761386,
+      "tag": "0246_remarkable_thunderbolts",
+      "breakpoints": true
+    },
+    {
+      "idx": 247,
+      "version": "7",
+      "when": 1788404401965,
+      "tag": "0247_little_warpath",
+      "breakpoints": true
+    },
+    {
+      "idx": 248,
+      "version": "7",
+      "when": 1788408500631,
+      "tag": "0248_special_iron_monger",
+      "breakpoints": true
+    },
+    {
+      "idx": 249,
+      "version": "7",
+      "when": 1788408687948,
+      "tag": "0249_next_eddie_brock",
+      "breakpoints": true
     }
   ]
 }

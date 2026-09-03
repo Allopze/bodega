@@ -1,0 +1,3 @@
+ALTER TABLE "pdtp_activities" ADD COLUMN "due_hours" integer;--> statement-breakpoint
+ALTER TABLE "pdtp_activities" ADD CONSTRAINT "pdtp_activities_due_hours_check" CHECK ("pdtp_activities"."due_hours" IS NULL OR "pdtp_activities"."due_hours" >= 0);--> statement-breakpoint
+ALTER TABLE "pdtp_activities" ADD CONSTRAINT "pdtp_activities_due_days_hours_exclusive" CHECK ("pdtp_activities"."due_days" IS NULL OR "pdtp_activities"."due_hours" IS NULL);
