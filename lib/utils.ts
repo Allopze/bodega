@@ -393,6 +393,44 @@ export function codeYear(date: Date | string | number = new Date()): number {
   return chileDateParts(date).year
 }
 
+const CHILE_LOCAL_DATE_TIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/
+const CHILE_WALL_CLOCK_FORMAT = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/Santiago",
+  hour12: false,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+})
+
+function chileOffsetMs(instant: Date): number {
+  const parts = CHILE_WALL_CLOCK_FORMAT.formatToParts(instant)
+  const part = (type: string) => Number(parts.find((value) => value.type === type)?.value)
+  const wallAsUtc = Date.UTC(
+    part("year"), part("month") - 1, part("day"),
+    part("hour") % 24, part("minute"), part("second"),
+  )
+  return wallAsUtc - instant.getTime()
+}
+
+/**
+ * Convierte un valor de `<input type="datetime-local">` a un instante UTC sin
+ * fijar -03/-04: Chile cambia el desfase por horario de verano.
+ */
+export function chileLocalDateTimeToUtc(value: string): string {
+  const match = CHILE_LOCAL_DATE_TIME.exec(value)
+  if (!match) throw new Error("Fecha y hora local chilena inválida")
+  const wall = Date.UTC(
+    Number(match[1]), Number(match[2]) - 1, Number(match[3]),
+    Number(match[4]), Number(match[5]), 0,
+  )
+  let utc = wall - chileOffsetMs(new Date(wall))
+  utc = wall - chileOffsetMs(new Date(utc))
+  return new Date(utc).toISOString()
+}
+
 /** Desplaza `days` días sobre una fecha civil "YYYY-MM-DD" sin que la mueva el cambio de hora. */
 export function addDaysToPlainDate(plainDate: string, days: number): string {
   return new Date(Date.parse(`${plainDate}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10)
@@ -515,4 +553,3 @@ export function toLocalInputValue(date: Date): string {
 export function linesToArray(value: string): string[] {
   return value.split("\n").map((line) => line.trim()).filter(Boolean)
 }
-

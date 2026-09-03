@@ -14,6 +14,7 @@ export const GLOBAL_ROLES = new Set([
   "jefe_mantencion",
   "gerente_legal_rrhh",
   "subgerente_operaciones",
+  "tecnico_ti",
 ])
 
 /**

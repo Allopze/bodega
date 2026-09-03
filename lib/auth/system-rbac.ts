@@ -30,6 +30,7 @@ export const SYSTEM_ROLES = [
   { id: "rol-cphs", name: "cphs", label: "Comité Paritario de Higiene y Seguridad", description: "Miembro del Comite Paritario de Higiene y Seguridad con acceso a programa, reuniones e indicadores", isGlobal: false },
   { id: "rol-gerente-legal", name: "gerente_legal_rrhh", label: "Gerencia Legal y Recursos Humanos", description: "Responsable de las actividades del PDTP asignadas a Legal y Recursos Humanos", isGlobal: true },
   { id: "rol-subgerente-ops", name: "subgerente_operaciones", label: "Subgerente de operaciones", description: "Responsable de las actividades del PDTP asignadas a la subgerencia de operaciones y mantenimiento", isGlobal: true },
+  { id: "rol-tecnico-ti", name: "tecnico_ti", label: "Técnico TI", description: "Administra activos, asignaciones, tickets, mantenciones y licencias del módulo TI", isGlobal: true },
 ] satisfies Array<typeof roles.$inferInsert>
 
 // ── Permissions (auto-derived from module manifests) ──────────────────────────

@@ -14,6 +14,7 @@ const FUEL_IMPORT_PREFIX = "storage/imports/"
 const FUEL_TAE_EVIDENCE_PREFIX = "storage/fuel-tae/"
 const PREVENTION_SENSITIVE_FILE_PREFIX = "storage/prevention-sensitive/"
 const EMERGENCY_RESOURCE_CERTIFICATE_PREFIX = "storage/emergency-resource-certificates/"
+const TI_FILE_PREFIX = "storage/ti/"
 
 /**
  * Resolves the base storage directory.
@@ -398,4 +399,27 @@ export function resolveEmergencyResourceCertificateFile(filePath: string): strin
   const storageName = filePath.slice(EMERGENCY_RESOURCE_CERTIFICATE_PREFIX.length)
   if (!isSafeStorageName(storageName)) return null
   return path.join(/*turbopackIgnore: true*/ resolveEmergencyResourceCertificatesDir(), storageName)
+}
+
+/* ── Archivos y evidencia fotográfica TI ────────────────────────────────────
+ *
+ * Espacio propio para fotos de entrega/devolución y documentos del módulo TI.
+ * La evidencia ya anclada al acta es inmutable; una carga pendiente que se
+ * cancela antes del acta se elimina junto a su fila. Mismo criterio
+ * anti-traversal que el resto de prefijos.
+ */
+export function resolveTiDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "ti")
+}
+
+export function createTiFilePath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) throw new Error("Invalid TI file storage name")
+  return `${TI_FILE_PREFIX}${storageName}`
+}
+
+export function resolveTiFile(filePath: string): string | null {
+  if (!filePath.startsWith(TI_FILE_PREFIX)) return null
+  const storageName = filePath.slice(TI_FILE_PREFIX.length)
+  if (!isSafeStorageName(storageName)) return null
+  return path.join(/*turbopackIgnore: true*/ resolveTiDir(), storageName)
 }

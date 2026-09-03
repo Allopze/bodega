@@ -85,6 +85,12 @@ const JOBS = Object.freeze({
     kind: "sync",
     codePrefix: "FEEDBACK_CRON_",
   },
+  "ti-alerts": {
+    url: "http://app:3000/api/cron/ti-alerts",
+    timeoutMs: 5 * 60 * 1_000,
+    kind: "sync",
+    codePrefix: "TI_CRON_",
+  },
 })
 
 // Mapa de sufijos: cada job combina esto con su propio `codePrefix`, así que

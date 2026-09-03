@@ -1,0 +1,3 @@
+ALTER TABLE "it_assignment_photos" ADD COLUMN "pending_assignment_id" text;--> statement-breakpoint
+ALTER TABLE "it_assignment_photos" ADD CONSTRAINT "it_assignment_photos_pending_assignment_id_it_asset_assignments_id_fk" FOREIGN KEY ("pending_assignment_id") REFERENCES "public"."it_asset_assignments"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "it_assignment_photos_pending_assignment_idx" ON "it_assignment_photos" USING btree ("pending_assignment_id","stage","created_at");

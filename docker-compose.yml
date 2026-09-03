@@ -253,6 +253,9 @@ services:
         0 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs maintenance-reminders >/proc/1/fd/1 2>&1
         # Soporte — alerta diaria a gestores por tickets próximos a vencer o fuera de SLA.
         15 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs feedback-sla-reminders >/proc/1/fd/1 2>&1
+        # TI — alertas diarias: garantías por vencer, licencias por renovar,
+        # reparaciones demoradas y tickets sin actualización.
+        45 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs ti-alerts >/proc/1/fd/1 2>&1
         EOF
         # Si el montaje de zoneinfo se rompe, esto lo delata: debe decir -04 o
         # -03, nunca UTC. Los horarios de abajo se leen contra esta hora.
