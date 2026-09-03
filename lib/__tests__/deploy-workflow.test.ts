@@ -192,7 +192,6 @@ describe("deploy workflow", () => {
       ["apply-pdtp-2026-program-data", "apply-pdtp-program-data"],
       ["apply-pdtp-2026-mechanisms", "apply-pdtp-mechanisms"],
       ["apply-pdtp-2026-demand-slas", "apply-pdtp-demand-slas"],
-      ["reconcile-pdtp-fulfillment-events", "reconcile-pdtp-fulfillment-events"],
     ] as const
 
     for (const [script, artifact] of scripts) {
@@ -205,6 +204,19 @@ describe("deploy workflow", () => {
       expect(build, script).toContain("--external:drizzle-orm")
       expect(build, script).toContain("--external:postgres")
     }
+  })
+
+  it("emits the Sentry-dependent PDTP reconciler as CommonJS", () => {
+    const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
+    const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
+    const build = dockerfile.match(
+      /RUN .\/node_modules\/.bin\/esbuild scripts\/reconcile-pdtp-fulfillment-events\.ts[\s\S]*?--outfile=\/tmp\/reconcile-pdtp-fulfillment-events\.cjs/,
+    )?.[0]
+
+    expect(build).toBeDefined()
+    expect(build).toContain("--format=cjs")
+    expect(dockerfile).toContain("/tmp/reconcile-pdtp-fulfillment-events.cjs ./scripts/reconcile-pdtp-fulfillment-events.cjs")
+    expect(compose).toContain('command: ["node", "scripts/reconcile-pdtp-fulfillment-events.cjs"]')
   })
 
   it("propagates a nested pg_dump failure and stops the failing function immediately", () => {

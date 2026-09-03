@@ -135,11 +135,11 @@ RUN ./node_modules/.bin/esbuild scripts/apply-pdtp-2026-demand-slas.ts \
 RUN ./node_modules/.bin/esbuild scripts/reconcile-pdtp-fulfillment-events.ts \
     --bundle \
     --platform=node \
-    --format=esm \
+    --format=cjs \
     --external:drizzle-orm \
     --external:drizzle-orm/* \
     --external:postgres \
-    --outfile=/tmp/reconcile-pdtp-fulfillment-events.mjs
+    --outfile=/tmp/reconcile-pdtp-fulfillment-events.cjs
 
 # Mismo motivo que sync-rbac: los one-shots de conciliación OC-factura viven en
 # TypeScript con alias `@/`, y la imagen de producción no lleva ni `tsx` ni el
@@ -279,7 +279,7 @@ COPY --from=build /tmp/apply-pdtp-catalog-decisions.mjs ./scripts/apply-pdtp-cat
 COPY --from=build /tmp/apply-pdtp-program-data.mjs ./scripts/apply-pdtp-program-data.mjs
 COPY --from=build /tmp/apply-pdtp-mechanisms.mjs ./scripts/apply-pdtp-mechanisms.mjs
 COPY --from=build /tmp/apply-pdtp-demand-slas.mjs ./scripts/apply-pdtp-demand-slas.mjs
-COPY --from=build /tmp/reconcile-pdtp-fulfillment-events.mjs ./scripts/reconcile-pdtp-fulfillment-events.mjs
+COPY --from=build /tmp/reconcile-pdtp-fulfillment-events.cjs ./scripts/reconcile-pdtp-fulfillment-events.cjs
 COPY --from=build /tmp/invoice-reconciliation/preflight-purchase-invoice-reconciliation.mjs ./scripts/preflight-purchase-invoice-reconciliation.mjs
 COPY --from=build /tmp/invoice-reconciliation/backfill-purchase-invoice-reconciliation.mjs ./scripts/backfill-purchase-invoice-reconciliation.mjs
 COPY --from=build /tmp/invoice-reconciliation/rollback-purchase-invoice-reconciliation-statuses.mjs ./scripts/rollback-purchase-invoice-reconciliation-statuses.mjs
