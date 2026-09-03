@@ -3,6 +3,8 @@ import { notFound, redirect } from "next/navigation"
 import { db } from "@/db"
 import { deliveries, products } from "@/db/schema"
 import { eq, inArray } from "drizzle-orm"
+import { formatSizedProductName } from "@/lib/products/product-size"
+import { getProductSizesByIds } from "@/lib/services/product-sizes"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
 import { formatDate, formatQty } from "@/lib/utils"
@@ -42,11 +44,20 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
     if (item.returnProductId) ids.push(item.returnProductId)
     return ids
   }, [])
+  // La talla es parte de lo que el trabajador acusa recibo de haber recibido:
+  // el catálogo guarda el mismo nombre en todas las tallas de una familia, así
+  // que sin ella el comprobante firmado no dice qué talla se entregó.
   const productMap = productIds.length > 0
-    ? new Map(
-      (await db.query.products.findMany({ where: inArray(products.id, productIds) }))
-        .map((product) => [product.id, product.name]),
-    )
+    ? await (async () => {
+      const [rows, sizeById] = await Promise.all([
+        db.query.products.findMany({ where: inArray(products.id, productIds) }),
+        getProductSizesByIds(productIds),
+      ])
+      return new Map(rows.map((product) => [
+        product.id,
+        formatSizedProductName(product.name, sizeById.get(product.id)),
+      ]))
+    })()
     : new Map<string, string>()
 
   const workerName = delivery.worker

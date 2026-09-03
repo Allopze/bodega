@@ -10,13 +10,15 @@
  * corrían antes de evaluar el permiso que las gatea.
  */
 import { type NextRequest, NextResponse } from "next/server"
-import { and, asc, eq, sql } from "drizzle-orm"
+import { and, asc, eq, isNull, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { deliveries, deliveryItems, products, stockReturns, worksites, worksiteStock } from "@/db/schema"
 import { auth } from "@/lib/auth/auth"
 import { can, canAccessWorksite } from "@/lib/auth/can"
 import { getOpenPhysicalInventoryCount } from "@/lib/services/physical-inventory"
 import { logger } from "@/lib/logger"
+import { getProductSizesByIds } from "@/lib/services/product-sizes"
+import { formatSizedProductName } from "@/lib/products/product-size"
 
 export async function GET(req: NextRequest) {
   const session = await auth()
@@ -78,6 +80,7 @@ export async function GET(req: NextRequest) {
           .select({
             deliveryItemId: deliveryItems.id,
             deliveryCode: deliveries.code,
+            productId: deliveryItems.productId,
             productName: products.name,
             productSku: products.sku,
             unitOfMeasure: products.unitOfMeasure,
@@ -90,10 +93,14 @@ export async function GET(req: NextRequest) {
           .where(and(
             eq(deliveries.destinationType, "faena"),
             eq(deliveries.worksiteId, worksiteId),
+            // Su stock ya volvió por la anulación: ofrecerla para devolver lo
+            // duplicaría.
+            isNull(deliveries.voidedAt),
           ))
           .groupBy(
             deliveryItems.id,
             deliveryItems.quantity,
+            deliveryItems.productId,
             deliveries.code,
             products.name,
             products.sku,
@@ -107,17 +114,29 @@ export async function GET(req: NextRequest) {
     // obligar a recontar la faena entera.
     const openCount = canAdjust ? await getOpenPhysicalInventoryCount(worksiteId) : null
 
+    // Ajustar, desechar o devolver una talla equivocada corrige el saldo de la
+    // variante que no era. El nombre a secas no distingue las variantes.
+    const sizeById = await getProductSizesByIds([
+      ...catalogRows.map((row) => row.productId),
+      ...returnRows.map((row) => row.productId).filter((id): id is string => Boolean(id)),
+    ])
+
     return NextResponse.json({
       openCount,
       worksiteId: worksite.id,
       worksiteName: worksite.name,
       products: catalogRows.map((row) => ({
         ...row,
+        productName: formatSizedProductName(row.productName, sizeById.get(row.productId)),
         quantity: Number(row.quantity),
         minStock: Number(row.minStock),
       })),
       returns: returnRows.map((row) => ({
         ...row,
+        productName: formatSizedProductName(
+          row.productName,
+          row.productId ? sizeById.get(row.productId) : null,
+        ),
         remainingQuantity: Number(row.remainingQuantity),
       })),
     })

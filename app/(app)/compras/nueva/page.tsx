@@ -16,6 +16,8 @@ import { OcForm } from "../oc-form"
 import type { PendingItemOption, SupplierOption, WorksiteOption } from "../oc-form"
 import Link from "next/link"
 import { getPurchasableCoverage } from "@/lib/services/purchasing-module/purchasable-coverage"
+import { getProductSizesByIds } from "@/lib/services/product-sizes"
+import { formatSizedProductName } from "@/lib/products/product-size"
 
 /** Tope del selector de ítems; +1 en la consulta para detectar que hay más. */
 const PICKER_ITEM_LIMIT = 500
@@ -139,6 +141,9 @@ export default async function NuevaOcPage({
 
   const reqMap     = Object.fromEntries(requestRows.map((r) => [r.id, r]))
   const productMap = Object.fromEntries(productRows.map((p) => [p.id, p]))
+  // El comprador tiene que saber qué talla pedirle al proveedor sin volver a
+  // abrir la solicitud.
+  const sizeById = await getProductSizesByIds(productIds)
   const wsMap      = Object.fromEntries(allWorksites.map((w) => [w.id, w.name]))
   const supplierPriceMap = supplierPriceRows.reduce<Record<string, Record<string, number>>>((acc, row) => {
     if (row.unitPrice === null) return acc
@@ -167,7 +172,9 @@ export default async function NuevaOcPage({
         requestCode:     req.code,
         worksiteId:      req.worksiteId,
         worksiteName:    wsMap[req.worksiteId] ?? req.worksiteId,
-        productName:     product?.name ?? item.productNameFree ?? "(sin nombre)",
+        productName:     product
+          ? formatSizedProductName(product.name, sizeById.get(product.id))
+          : item.productNameFree ?? "(sin nombre)",
         productSku:      product?.sku ?? null,
         productId:       item.productId,
         // Un servicio entra a la OC sin precio si todavía no se conoce.

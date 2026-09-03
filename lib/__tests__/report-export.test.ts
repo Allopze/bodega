@@ -196,10 +196,11 @@ describe("report export helpers", () => {
     const session = { user: { id: "user-1", email: "admin@test.com" } } as Session
     const data = await getReportData("items_sin_oc", session, {})
     expect(data.filenameBase).toBe("items-sin-oc")
-    expect(data.headers).toEqual(["Producto", "SKU", "Faena", "Solicitud", "Cantidad", "U/M", "Estado", "Fecha creación"])
+    expect(data.headers).toEqual(["Producto", "Talla", "SKU", "Faena", "Solicitud", "Cantidad", "U/M", "Estado", "Fecha creación"])
     expect(data.rows).toHaveLength(2)
-    expect(data.rows[0]).toEqual(["Martillo", "MART-123", "Faena Uno", "SOL-1", 5, "un", "approved", "01-01-2026"])
-    expect(data.rows[1]).toEqual(["Clavos", "", "Faena Dos", "SOL-2", 100, "kg", "pending_purchase", "02-01-2026"])
+    // Ni el martillo ni los clavos usan talla: la celda queda vacía, no inventada.
+    expect(data.rows[0]).toEqual(["Martillo", "", "MART-123", "Faena Uno", "SOL-1", 5, "un", "approved", "01-01-2026"])
+    expect(data.rows[1]).toEqual(["Clavos", "", "", "Faena Dos", "SOL-2", 100, "kg", "pending_purchase", "02-01-2026"])
   })
 
   it("items_sin_oc report data returning empty rows", async () => {

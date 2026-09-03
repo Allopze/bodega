@@ -6,6 +6,7 @@ import { formatDate } from "@/lib/utils"
 import { pendingPurchaseWhere } from "@/lib/adquisiciones/pending-purchase"
 import { buildWorksiteFilter, buildDateFilter } from "./utils"
 import type { ReportData, ExportFilters } from "./types"
+import { getProductSizesByIds } from "@/lib/services/product-sizes"
 
 export async function itemsSinOc(session: Session | null, filters: ExportFilters, limit: number): Promise<ReportData> {
   const alertStates = filters.status ? [filters.status] : ["approved", "pending_purchase"]
@@ -39,7 +40,7 @@ export async function itemsSinOc(session: Session | null, filters: ExportFilters
   const rowLimitApplied = items.length > limit
   const limited = rowLimitApplied ? items.slice(0, limit) : items
 
-  const headers = ["Producto", "SKU", "Faena", "Solicitud", "Cantidad", "U/M", "Estado", "Fecha creación"]
+  const headers = ["Producto", "Talla", "SKU", "Faena", "Solicitud", "Cantidad", "U/M", "Estado", "Fecha creación"]
   if (limited.length === 0) {
     return {
       filenameBase: "items-sin-oc",
@@ -64,6 +65,9 @@ export async function itemsSinOc(session: Session | null, filters: ExportFilters
     ? await db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, wsIds))
     : []
 
+  // Lo que falta comprar se pide por talla: el reporte sin ella no es accionable.
+  const sizeById = await getProductSizesByIds(prodIds)
+
   const reqMap  = Object.fromEntries(reqRows.map((r) => [r.id, r]))
   const prodMap = Object.fromEntries(prodRows.map((p) => [p.id, p]))
   const wsMap   = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
@@ -77,6 +81,7 @@ export async function itemsSinOc(session: Session | null, filters: ExportFilters
       const product = i.productId ? prodMap[i.productId] : null
       return [
         product?.name ?? i.productNameFree ?? "",
+        (i.productId ? sizeById.get(i.productId)?.label : null) ?? "",
         product?.sku ?? "",
         req ? (wsMap[req.worksiteId] ?? req.worksiteId) : "",
         req?.code ?? "",

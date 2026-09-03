@@ -21,6 +21,8 @@ import { BodegaFilters } from "./bodega-filters"
 import { resolveFaena, ALL_WORKSITES } from "./faena-scope"
 import type { WorksiteStockWithProduct, InventoryMovementWithRelations } from "./types"
 import { KARDEX_PAGE_SIZE } from "@/lib/constants"
+import { getProductSizesByIds } from "@/lib/services/product-sizes"
+import { formatSizedProductName } from "@/lib/products/product-size"
 
 export const metadata: Metadata = { title: "Bodega" }
 
@@ -258,6 +260,19 @@ export default async function BodegaPage({
   // El selector y los exports siguen recibiendo todas las faenas del alcance.
   const visibleWorksites = faena ? worksiteOptions.filter((w) => w.id === faena) : worksiteOptions
 
+  // El catálogo guarda el mismo `products.name` en todas las tallas de una
+  // familia, así que sin la talla la tabla muestra filas idénticas con saldos
+  // distintos y no hay forma de saber cuál ajustar, desechar o contar. Se
+  // resuelve acá, en el único punto por donde pasan tabla, kardex, ajustes,
+  // desechos, stock mínimo e inventario físico.
+  const sizeById = await getProductSizesByIds([
+    ...stockRows.map((row) => row.productId),
+    ...movements.map((row) => row.productId),
+    ...kardexProducts.map((row) => row.id),
+  ])
+  const sizedName = (productId: string, name: string) =>
+    formatSizedProductName(name, sizeById.get(productId))
+
   const stockByWorksite: Record<string, WorksiteStockWithProduct[]> = {}
   for (const row of stockRows) {
     const item: WorksiteStockWithProduct = {
@@ -268,7 +283,7 @@ export default async function BodegaPage({
       minStock: row.minStock,
       lastMovementAt: row.lastMovementAt,
       updatedAt: row.updatedAt,
-      product: { name: row.productName, sku: row.productSku, unitOfMeasure: row.unitOfMeasure },
+      product: { name: sizedName(row.productId, row.productName), sku: row.productSku, unitOfMeasure: row.unitOfMeasure },
       worksite: { name: row.worksiteName },
     }
     ;(stockByWorksite[row.worksiteId] ??= []).push(item)
@@ -288,13 +303,20 @@ export default async function BodegaPage({
     referenceType: row.referenceType,
     referenceId: row.referenceId,
     performedByName: row.performedByName,
-    product: { name: row.productName },
+    product: { name: sizedName(row.productId, row.productName) },
     worksite: { name: row.worksiteName },
   }))
 
   // La bodega propia es el punto de partida, no un filtro: contarla como tal
   // haría que el vacío dijera "sin coincidencias" cuando lo que ocurre es que
   // esa bodega no tiene stock.
+  // El selector del filtro de kardex necesita la misma etiqueta: si no, ofrece
+  // varias opciones con el mismo texto.
+  const sizedKardexProducts = kardexProducts.map((product) => ({
+    ...product,
+    name: sizedName(product.id, product.name),
+  }))
+
   const faenaFiltered = Boolean(faena) && faena !== ownWorksiteId
   const hasFilters = Boolean(filters.q || faenaFiltered || stockState || tipo || producto || filters.desde || filters.hasta)
 
@@ -337,7 +359,7 @@ export default async function BodegaPage({
       <BodegaFilters
         view={view}
         worksites={worksiteOptions}
-        products={kardexProducts}
+        products={sizedKardexProducts}
         ownWorksiteId={ownWorksiteId}
         current={{
           q: filters.q,

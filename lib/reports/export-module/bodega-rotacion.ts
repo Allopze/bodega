@@ -5,6 +5,7 @@ import { inventoryMovements, products, worksites, worksiteStock } from "@/db/sch
 import { buildWorksiteFilter } from "./utils"
 import { formatDate } from "@/lib/utils"
 import type { ReportData, ExportFilters } from "./types"
+import { getProductSizesByIds } from "@/lib/services/product-sizes"
 
 const DEFAULT_WINDOW_DAYS = 90
 const DEAD_STOCK_DAYS = 90
@@ -84,6 +85,10 @@ export async function bodegaRotacion(
   deadCutoff.setUTCDate(deadCutoff.getUTCDate() - DEAD_STOCK_DAYS)
   const deadCutoffIso = deadCutoff.toISOString().slice(0, 10)
 
+  // La rotación se lee por variante: una talla puede ser stock muerto mientras
+  // otra de la misma familia se agota. Sin la columna, las filas se confunden.
+  const sizeById = await getProductSizesByIds(limited.map((row) => row.productId))
+
   const rows = limited.map((row) => {
     const consumed = consumptionByKey.get(`${row.worksiteId}:${row.productId}`) ?? 0
     const dailyRate = consumed / days
@@ -96,6 +101,7 @@ export async function bodegaRotacion(
     return [
       row.worksiteName,
       row.productName,
+      sizeById.get(row.productId)?.label ?? "",
       row.productSku ?? "",
       row.unitOfMeasure,
       row.quantity,
@@ -112,7 +118,7 @@ export async function bodegaRotacion(
     filenameBase: "bodega-rotacion",
     worksheetName: "Rotación",
     headers: [
-      "Faena", "Producto", "SKU", "U/M", "Stock actual", "Stock mínimo",
+      "Faena", "Producto", "Talla", "SKU", "U/M", "Stock actual", "Stock mínimo",
       `Consumo ${days} d`, "Consumo diario", "Cobertura (días)", "Último movimiento", "Stock muerto",
     ],
     rows,

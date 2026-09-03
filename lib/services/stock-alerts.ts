@@ -7,6 +7,8 @@
 import { db } from "@/db"
 import { worksiteStock, worksites, products } from "@/db/schema"
 import { and, eq, inArray, sql } from "drizzle-orm"
+import { getProductSizesByIds } from "@/lib/services/product-sizes"
+import { formatSizedProductName } from "@/lib/products/product-size"
 
 export interface StockAlert {
   worksiteId:    string
@@ -60,15 +62,19 @@ export async function getStockAlerts(worksiteIds: string[] | "all" = "all"): Pro
           AND ${worksiteStock.quantity} <= ${worksiteStock.minStock} * 2.0`,
     ))
 
-  return rows
-    .filter((row) => row.currentQty < row.minStock * WARNING_RATIO)
+  const alerting = rows.filter((row) => row.currentQty < row.minStock * WARNING_RATIO)
+  // Sin la talla, una familia bajo mínimo produce varias alertas con el mismo
+  // texto y el bodeguero no sabe cuál talla reponer.
+  const sizeById = await getProductSizesByIds(alerting.map((row) => row.productId))
+
+  return alerting
     .map((row) => {
       const deficit = row.minStock - row.currentQty
       return {
         worksiteId:   row.worksiteId,
         worksiteName: row.worksiteName,
         productId:    row.productId,
-        productName:  row.productName,
+        productName:  formatSizedProductName(row.productName, sizeById.get(row.productId)),
         productSku:   row.productSku,
         currentQty:   row.currentQty,
         minStock:     row.minStock,

@@ -17,6 +17,7 @@ import {
   equipmentFromAttributes, parseAttributeOptions, requestStatusLabel,
 } from "./request-form.helpers"
 import { groupProductVariants } from "@/lib/products/variant-grouping"
+import { normalizeSizeLabel, suggestedWorkerSize } from "@/lib/products/product-size"
 
 const AUTOSAVE_INTERVAL_MS = 60_000
 
@@ -66,20 +67,13 @@ function isEppStockWarning(value: ActionState["data"]): value is EppStockWarning
   })
 }
 
-const SIZE_FIELD_MAP: Record<string, keyof Pick<WorkerOption, "sizeTop" | "sizeBottom" | "sizeShoe" | "sizeGloves" | "sizeHelmet">> = {
-  Talla:              "sizeTop",
-  "Talla superior":   "sizeTop",
-  "Talla inferior":   "sizeBottom",
-  "Talla calzado":    "sizeShoe",
-  "Talla guantes":    "sizeGloves",
-  "Talla casco":      "sizeHelmet",
-}
-
+/**
+ * Talla habitual del trabajador para un atributo. El mapa atributo → campo del
+ * padrón vive en `lib/products/product-size`: la copia local exigía el nombre
+ * exacto («Talla calzado» y no «talla calzado») y no cruzaba `T42` con `42`.
+ */
 function suggestSize(attributeName: string, worker: WorkerOption | undefined): string | null {
-  if (!worker) return null
-  const field = SIZE_FIELD_MAP[attributeName]
-  if (!field) return null
-  return (worker[field] as string | null | undefined) ?? null
+  return suggestedWorkerSize(attributeName, worker)
 }
 
 interface AutosaveSnapshot {
@@ -440,13 +434,16 @@ export function useRequestForm({
         : []
       const matchingVariant = variants.find((variant) => variant.attributes.some((attribute) => {
         const suggestedSize = suggestSize(attribute.name, worker)
-        const options = new Set(parseAttributeOptions(attribute.options))
+        const options = new Set(parseAttributeOptions(attribute.options).map(normalizeSizeLabel))
         return suggestedSize != null && options.has(suggestedSize)
       }))
       const product = matchingVariant ?? selectedProduct
       const attrs = (product ? buildAttrsFromProduct(product) : i.attributes).map((a) => {
         const size = suggestSize(a.attributeName, worker)
-        return size && a.options.includes(size) ? { ...a, value: size } : a
+        // Se guarda la etiqueta del catálogo, no la normalizada: el valor de la
+        // solicitud tiene que ser una de las opciones declaradas.
+        const match = size ? a.options.find((option) => normalizeSizeLabel(option) === size) : undefined
+        return match ? { ...a, value: match } : a
       })
       return {
         ...i,

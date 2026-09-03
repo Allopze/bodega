@@ -54,6 +54,8 @@ import {
 } from "@/db/schema"
 import { textSearchSql } from "@/lib/adquisiciones/list-query"
 import { nanoid } from "@/lib/id"
+import { getProductSizesByIds } from "@/lib/services/product-sizes"
+import { formatSizedProductName } from "@/lib/products/product-size"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
@@ -699,7 +701,7 @@ async function lockGuide(tx: Tx, guideId: string) {
 }
 
 async function guideItemsTx(tx: Tx, guideId: string) {
-  return tx
+  const rows = await tx
     .select({
       id:        dispatchGuideItems.id,
       productId: dispatchGuideItems.productId,
@@ -715,6 +717,14 @@ async function guideItemsTx(tx: Tx, guideId: string) {
     .innerJoin(products, eq(dispatchGuideItems.productId, products.id))
     .where(eq(dispatchGuideItems.guideId, guideId))
     .orderBy(asc(dispatchGuideItems.sortOrder))
+
+  // La guía es el documento que viaja con la carga y se coteja en faena: sin la
+  // talla, «Zapato SteelPro ×10» no se puede verificar contra lo que llegó.
+  const sizeById = await getProductSizesByIds(rows.map((row) => row.productId), tx)
+  return rows.map((row) => ({
+    ...row,
+    name: formatSizedProductName(row.name, sizeById.get(row.productId)),
+  }))
 }
 
 /**

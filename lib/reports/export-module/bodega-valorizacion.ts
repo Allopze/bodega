@@ -4,6 +4,7 @@ import { db } from "@/db"
 import { productCategories, products, worksites, worksiteStock } from "@/db/schema"
 import { buildWorksiteFilter } from "./utils"
 import type { ReportData, ExportFilters } from "./types"
+import { getProductSizesByIds } from "@/lib/services/product-sizes"
 
 /**
  * Valorización del inventario: existencias × precio de referencia.
@@ -24,6 +25,7 @@ export async function bodegaValorizacion(
   const rows = await db
     .select({
       worksiteName:  worksites.name,
+      productId:     worksiteStock.productId,
       productName:   products.name,
       productSku:    products.sku,
       categoryName:  productCategories.name,
@@ -46,15 +48,20 @@ export async function bodegaValorizacion(
   const unpriced = limited.filter((row) => row.referencePrice === null || row.referencePrice === undefined)
 
   const totalValue = priced.reduce((sum, row) => sum + row.quantity * Number(row.referencePrice), 0)
+  // Columna propia y no pegada al nombre: una valorización se dinamiza por talla
+  // para saber qué variante concentra el capital inmovilizado.
+  const sizeById = await getProductSizesByIds(limited.map((row) => row.productId))
+  const sizeOf = (productId: string) => sizeById.get(productId)?.label ?? ""
 
   return {
     filenameBase: "bodega-valorizacion",
     worksheetName: "Valorización",
-    headers: ["Faena", "Producto", "SKU", "Categoría", "U/M", "Cantidad", "Precio referencia", "Valor"],
+    headers: ["Faena", "Producto", "Talla", "SKU", "Categoría", "U/M", "Cantidad", "Precio referencia", "Valor"],
     rows: [
       ...priced.map((row) => [
         row.worksiteName,
         row.productName,
+        sizeOf(row.productId),
         row.productSku ?? "",
         row.categoryName ?? "",
         row.unitOfMeasure,
@@ -62,17 +69,18 @@ export async function bodegaValorizacion(
         Number(row.referencePrice),
         row.quantity * Number(row.referencePrice),
       ]),
-      ["", "", "", "", "", "", "TOTAL VALORIZADO", totalValue],
+      ["", "", "", "", "", "", "", "TOTAL VALORIZADO", totalValue],
     ],
     sheets: [
       {
         worksheetName: "Sin precio",
-        headers: ["Faena", "Producto", "SKU", "U/M", "Cantidad"],
+        headers: ["Faena", "Producto", "Talla", "SKU", "U/M", "Cantidad"],
         rows: unpriced.length === 0
-          ? [["", "Todos los productos con stock tienen precio de referencia", "", "", ""]]
+          ? [["", "Todos los productos con stock tienen precio de referencia", "", "", "", ""]]
           : unpriced.map((row) => [
               row.worksiteName,
               row.productName,
+              sizeOf(row.productId),
               row.productSku ?? "",
               row.unitOfMeasure,
               row.quantity,

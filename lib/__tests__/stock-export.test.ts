@@ -167,9 +167,39 @@ describe("getStockExport", () => {
     expect(ws).toBeDefined()
 
     expect((ws?.getRow(1).values as unknown[]).slice(1)).toEqual([
-      "Faena", "Producto", "SKU", "U/M", "Cantidad", "Stock mínimo", "Último movimiento",
+      "Faena", "Producto", "Talla", "SKU", "U/M", "Cantidad", "Stock mínimo", "Último movimiento",
     ])
     expect(ws?.actualRowCount).toBe(3) // header + 2 data rows
+  })
+
+  it("exporta la talla de cada variante en su propia columna", async () => {
+    // El catálogo guarda una fila por talla con el mismo nombre: sin la columna
+    // «Talla» la planilla no distingue la bota 42 de la 40.
+    await inMemoryDb.insert(schema.productAttributes).values({
+      id: "attr-bota-42", productId: PROD_2, categoryId: null,
+      name: "Talla calzado", type: "select", isRequired: true,
+      options: JSON.stringify(["42"]), sizeFamily: "calzado", sortOrder: 0,
+    })
+    try {
+      await inMemoryDb.insert(schema.worksiteStock).values([
+        { id: "stk-s1", worksiteId: WS_1, productId: PROD_1, quantity: 5, minStock: 0, lastMovementAt: now, updatedAt: now },
+        { id: "stk-s2", worksiteId: WS_1, productId: PROD_2, quantity: 7, minStock: 0, lastMovementAt: now, updatedAt: now },
+      ])
+
+      const res = await getStockExport(globalSession())
+      const workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(Buffer.from(res.buffer) as never)
+      const ws = workbook.getWorksheet("Stock")
+
+      // Ordena por nombre de producto: «Bota Seguridad» antes que «Guantes».
+      expect(ws?.getCell("B2").value).toBe("Bota Seguridad")
+      expect(ws?.getCell("C2").value).toBe("42")
+      // Un producto sin talla deja la celda vacía, no un valor inventado.
+      expect(ws?.getCell("B3").value).toBe("Guantes Nitrilo")
+      expect(ws?.getCell("C3").value).toBe("")
+    } finally {
+      await inMemoryDb.delete(schema.productAttributes)
+    }
   })
 
   it("filters by worksiteId", async () => {
@@ -305,14 +335,14 @@ describe("getKardexExport", () => {
     expect(ws).toBeDefined()
 
     expect((ws?.getRow(1).values as unknown[]).slice(1)).toEqual([
-      "Fecha", "Faena", "Producto", "SKU", "Tipo de movimiento",
+      "Fecha", "Faena", "Producto", "Talla", "SKU", "Tipo de movimiento",
       "Cantidad", "Stock anterior", "Stock posterior",
       "Responsable", "Motivo", "Observaciones",
     ])
     expect(ws?.actualRowCount).toBe(3) // header + 2
 
-    expect(ws?.getCell("E2").value).toBe("Ingreso OC")
-    expect(ws?.getCell("E3").value).toBe("Entrega")
+    expect(ws?.getCell("F2").value).toBe("Ingreso OC")
+    expect(ws?.getCell("F3").value).toBe("Entrega")
   })
 
   it("filters by worksiteId", async () => {
@@ -502,7 +532,7 @@ describe("getKardexExport", () => {
     // "Baja" y no "Retiro": el vocabulario de movimientos se unificó en
     // `lib/movement-labels.ts` y la exportación dejó de tener su propio mapa.
     // "Retiro" además ya nombra otra cosa (`retiro_epp_trabajador`).
-    expect(ws?.getCell("E2").value).toBe(MOVEMENT_TYPE_LABELS.egreso_desecho)
+    expect(ws?.getCell("F2").value).toBe(MOVEMENT_TYPE_LABELS.egreso_desecho)
   })
 
   it("maps ajuste movement type to Spanish label", async () => {
@@ -518,7 +548,7 @@ describe("getKardexExport", () => {
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(Buffer.from(res.buffer) as never)
     const ws = workbook.getWorksheet("Kardex")
-    expect(ws?.getCell("E2").value).toBe("Ajuste")
+    expect(ws?.getCell("F2").value).toBe("Ajuste")
   })
 
   it("includes reason and notes in Excel rows", async () => {
@@ -535,9 +565,9 @@ describe("getKardexExport", () => {
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(Buffer.from(res.buffer) as never)
     const ws = workbook.getWorksheet("Kardex")
-    // Column J = Motivo, Column K = Observaciones
-    expect(ws?.getCell("J2").value).toBe("Entrega a Juan Pérez")
-    expect(ws?.getCell("K2").value).toBe("Turno mañana")
+    // Column K = Motivo, Column L = Observaciones
+    expect(ws?.getCell("K2").value).toBe("Entrega a Juan Pérez")
+    expect(ws?.getCell("L2").value).toBe("Turno mañana")
   })
 
   it("renders empty strings for null reason and notes", async () => {
@@ -553,7 +583,7 @@ describe("getKardexExport", () => {
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(Buffer.from(res.buffer) as never)
     const ws = workbook.getWorksheet("Kardex")
-    expect(ws?.getCell("J2").value).toBe("")
     expect(ws?.getCell("K2").value).toBe("")
+    expect(ws?.getCell("L2").value).toBe("")
   })
 })
