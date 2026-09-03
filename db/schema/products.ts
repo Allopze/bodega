@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, timestamp, numeric, uniqueIndex, check } from "drizzle-orm/pg-core"
+import { pgTable, text, integer, boolean, timestamp, numeric, index, uniqueIndex, check } from "drizzle-orm/pg-core"
 import { relations, sql } from "drizzle-orm"
 import { suppliers } from "./worksites"
 import { eppTypes } from "./epp-types"
@@ -73,6 +73,9 @@ export const products = pgTable("products", {
   createdAt:           timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:           timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
+  // Agrupar variantes por familia (Solicitudes y Entregas) recorría la tabla
+  // completa: la FK no tenía índice.
+  index("products_family_id_idx").on(table.familyId),
   check("products_service_subject_kind_valid", sql`${table.serviceSubjectKind} IS NULL OR ${table.serviceSubjectKind} IN ('service_equipment', 'emergency_resource')`),
   check("products_service_subject_consistent", sql`${table.serviceSubjectKind} IS NULL OR ${table.isService} = true`),
 ])
@@ -104,6 +107,10 @@ export const productAttributes = pgTable("product_attributes", {
   uniqueIndex("product_attributes_one_quantity_driver")
     .on(table.productId)
     .where(sql`${table.drivesQuantity} = true`),
+  // La talla de una variante se lee por `product_id` en cada pantalla que
+  // entrega, solicita o inventaría. El único índice existente era parcial
+  // (`drives_quantity = true`), así que esas lecturas no lo podían usar.
+  index("product_attributes_product_id_idx").on(table.productId),
 ])
 
 /* ── Product ↔ Supplier (preferred suppliers + price history) ────────────── */

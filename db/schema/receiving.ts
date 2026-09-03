@@ -93,9 +93,26 @@ export const deliveries = pgTable("deliveries", {
   signedProofFileName: text("signed_proof_file_name"),
   signedProofPath: text("signed_proof_path"),
   notes:           text("notes"),
+  /**
+   * Anulación. Una entrega es un documento: no se borra ni se reescribe, se
+   * anula, y las líneas y su histórico siguen ahí para poder auditarlas. Todo
+   * conteo de "cuánto se entregó" debe excluir las anuladas — el saldo por
+   * entregar, la elegibilidad de devolución y el balance trazable.
+   */
+  voidedAt:        timestamp("voided_at", { withTimezone: true, mode: "string" }),
+  voidedBy:        text("voided_by").references(() => users.id),
+  voidReason:      text("void_reason"),
   createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   check("deliveries_destination_type_valid", sql`${table.destinationType} IN ('faena', 'worker')`),
+  // Anular es un acto con responsable y motivo: los tres campos van juntos o
+  // ninguno. Sin esto quedaba anulable en silencio y sin quién responda.
+  check("deliveries_void_complete", sql`
+    (${table.voidedAt} IS NULL AND ${table.voidedBy} IS NULL AND ${table.voidReason} IS NULL)
+    OR (${table.voidedAt} IS NOT NULL AND ${table.voidedBy} IS NOT NULL
+        AND char_length(trim(${table.voidReason})) >= 10)
+  `),
+  index("idx_deliveries_voided_at").on(table.voidedAt),
   index("idx_deliveries_worksite_date").on(table.worksiteId, table.deliveredAt),
   index("idx_deliveries_source_worksite_date").on(table.sourceWorksiteId, table.deliveredAt),
 ])
