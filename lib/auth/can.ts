@@ -96,6 +96,45 @@ export async function guardPermission(permission: Permission, operationPathname?
 }
 
 /**
+ * Igual que `requirePermission`, pero autoriza con cualquiera de varios
+ * permisos — para una acción de servicio compartida por dos módulos que se
+ * conceden por separado (p. ej. `pdtp:execute` y `constancias:execute` sobre
+ * `markPdtpExecution`), donde ninguno de los dos debe ser prerrequisito del
+ * otro.
+ */
+export async function requireAnyPermission(permissions: Permission[], operationPathname?: string): Promise<Session> {
+  const session = await auth()
+  if (!session) throw new Error("Unauthorized: not authenticated")
+  const granted = permissions.find((permission) => can(session, permission))
+  if (!granted) throw new Error(`Forbidden: missing permission ${permissions.join(" or ")}`)
+  let pathname: string | null = null
+  try { pathname = (await headers()).get("x-chome-pathname") }
+  catch { pathname = null }
+  await assertPermissionModuleEnabled(granted, pathname ?? undefined, operationPathname)
+  return session
+}
+
+/** Safe wrapper for Server Actions, análogo a `guardPermission` pero con `requireAnyPermission`. */
+export async function guardAnyPermission(permissions: Permission[], operationPathname?: string): Promise<
+  | { session: Session; error: null }
+  | { session: null; error: { ok: false; message: string } }
+> {
+  try {
+    const session = await requireAnyPermission(permissions, operationPathname)
+    return { session, error: null }
+  } catch (err) {
+    logger.warn("[guardAnyPermission]", permissions, err)
+    if (err instanceof ModuleDisabledError) {
+      return { session: null, error: { ok: false, message: "El módulo está inactivo temporalmente" } }
+    }
+    if (err instanceof ModuleToggleUnavailableError) {
+      return { session: null, error: { ok: false, message: "No se pudo verificar el estado del módulo. Reintenta." } }
+    }
+    return { session: null, error: { ok: false, message: "No tienes permisos para realizar esta acción" } }
+  }
+}
+
+/**
  * Safe wrapper for Server Actions. Returns an ActionState instead of throwing.
  */
 export async function guardAuth(): Promise<

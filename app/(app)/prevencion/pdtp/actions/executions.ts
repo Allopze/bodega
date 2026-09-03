@@ -1,10 +1,11 @@
 "use server"
 
 import { ZodError } from "zod"
-import { guardPermission } from "@/lib/auth/can"
+import { can, guardAnyPermission, guardPermission } from "@/lib/auth/can"
 import { safeActionMessage } from "@/lib/action-error"
 import {
   approvePdtpExecution,
+  assertPdtpActivityMechanism,
   rejectPdtpExecution,
   markPdtpExecution,
 } from "@/lib/services/prevention-pdtp"
@@ -42,7 +43,10 @@ function fail(error: unknown): ActionState {
 }
 
 export async function markPdtpExecutionAction(formData: FormData): Promise<ActionState> {
-  const guard = await guardPermission("prevention:pdtp:execute")
+  // `PdtpExecutionForm` es la misma pieza en la planilla y en Constancias
+  // (G17): un permiso no debe ser prerrequisito del otro, así que se acepta
+  // cualquiera de los dos y se acota el alcance por mecanismo más abajo.
+  const guard = await guardAnyPermission(["prevention:pdtp:execute", "prevention:constancias:execute"])
   if (guard.error) return guard.error
   const session = guard.session
 
@@ -61,8 +65,13 @@ export async function markPdtpExecutionAction(formData: FormData): Promise<Actio
   if (!parsed.ok) return parsed
 
   try {
+    // Sin `prevention:pdtp:execute`, sólo puede haber entrado por Constancias:
+    // el server action no confía en que la UI ya filtró la actividad.
+    if (!can(session, "prevention:pdtp:execute")) {
+      await assertPdtpActivityMechanism(parsed.data.activityId, "constancia")
+    }
     await markPdtpExecution(parsed.data, session.user.id, scopeToIds(resolveWorksiteScope(session)))
-    revalidateOperationalViews([REVALIDATE])
+    revalidateOperationalViews([REVALIDATE, "/prevencion/constancias"])
     return { ok: true }
   } catch (e) {
     return fail(e)

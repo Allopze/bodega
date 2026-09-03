@@ -5,12 +5,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 
 const mockGuardPermission = vi.hoisted(() => vi.fn())
+const mockGuardAnyPermission = vi.hoisted(() => vi.fn())
 const mockResolveWorksiteScope = vi.hoisted(() => vi.fn())
 const mockMarkPdtpExecution = vi.hoisted(() => vi.fn())
 
-vi.mock("@/lib/auth/can", () => ({
-  guardPermission: mockGuardPermission,
-}))
+vi.mock("@/lib/auth/can", async (importOriginal) => {
+  // `can(session, "prevention:pdtp:execute")` sigue siendo el real: el action
+  // lo usa para decidir si exige `assertPdtpActivityMechanism` (G17), y
+  // reemplazarlo por un mock roto habría hecho que la acción fallara con
+  // "can is not a function" antes de llegar a markPdtpExecution.
+  const actual = await importOriginal<typeof import("@/lib/auth/can")>()
+  return {
+    ...actual,
+    guardPermission: mockGuardPermission,
+    guardAnyPermission: mockGuardAnyPermission,
+  }
+})
 vi.mock("@/lib/auth/scope", () => ({
   resolveWorksiteScope: mockResolveWorksiteScope,
 }))
@@ -22,6 +32,9 @@ vi.mock("@/lib/services/prevention-pdtp", () => ({
   approvePdtpExecution: vi.fn(),
   updatePdtpActivity: vi.fn(),
   addPdtpActivity: vi.fn(),
+  // G17: sólo se ejercita cuando la sesión no tiene prevention:pdtp:execute;
+  // estos tests siempre lo tienen, así que basta con que exista.
+  assertPdtpActivityMechanism: vi.fn().mockResolvedValue(undefined),
 }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }))
@@ -43,6 +56,10 @@ describe("markPdtpExecutionAction", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGuardPermission.mockResolvedValue({ session, error: null })
+    // markPdtpExecutionAction pasó a guardAnyPermission(["prevention:pdtp:execute",
+    // "prevention:constancias:execute"]) desde G17 (2026-09-02): un permiso no
+    // debe ser prerrequisito del otro.
+    mockGuardAnyPermission.mockResolvedValue({ session, error: null })
     mockResolveWorksiteScope.mockReturnValue({ mode: "all", ids: [] })
     mockMarkPdtpExecution.mockResolvedValue({ id: "exec-1" })
   })
@@ -64,7 +81,7 @@ describe("markPdtpExecutionAction", () => {
     const res = await markPdtpExecutionAction(fd)
 
     expect(res.ok).toBe(true)
-    expect(mockGuardPermission).toHaveBeenCalledWith("prevention:pdtp:execute")
+    expect(mockGuardAnyPermission).toHaveBeenCalledWith(["prevention:pdtp:execute", "prevention:constancias:execute"])
     expect(mockMarkPdtpExecution).toHaveBeenCalledTimes(1)
     const input = mockMarkPdtpExecution.mock.calls[0]![0]
     expect(input.evidenceUrl).toBe("storage/pdtp-evidence/abc123.pdf")
