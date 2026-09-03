@@ -177,6 +177,46 @@ async function main() {
     vehicleId: "fuel-veh-e2e",
     productId: "fuel-diesel",
   })
+
+  // ── TI fixture: un tipo, un activo y un ticket para el módulo de TI
+  // (e2e/ti-modulo.spec.ts). El admin e2e ya tiene todos los permisos `ti:*`
+  // porque se derivan de SYSTEM_PERMISSIONS más arriba.
+  await db.insert(schema.itAssetTypes).values({
+    id: "it-type-e2e",
+    name: "Notebook",
+    category: "computacion",
+    hasSpecs: true,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.itAssets).values({
+    id: "it-asset-e2e",
+    code: "TI-E2E-0001",
+    assetTypeId: "it-type-e2e",
+    brand: "Lenovo",
+    model: "ThinkPad T14",
+    serialNumber: "E2E-SN-0001",
+    status: "disponible",
+    worksiteId: "ws-e2e",
+    location: "Oficina central E2E",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.itTickets).values({
+    id: "it-ticket-e2e",
+    code: "INC-E2E-0001",
+    subject: "Notebook no enciende",
+    description: "Ticket de prueba E2E para el módulo TI.",
+    category: "hardware",
+    priority: "normal",
+    status: "nuevo",
+    requesterUserId: "user-admin-e2e",
+    worksiteId: "ws-e2e",
+    createdAt: now,
+    updatedAt: now,
+  })
+
   // Second worksite for scope testing
   await db.insert(schema.worksites).values({
     id: "ws-restricted-e2e",

@@ -253,6 +253,9 @@ services:
         0 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs maintenance-reminders >/proc/1/fd/1 2>&1
         # Soporte — alerta diaria a gestores por tickets próximos a vencer o fuera de SLA.
         15 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs feedback-sla-reminders >/proc/1/fd/1 2>&1
+        # TI — alertas diarias: garantías por vencer, licencias por renovar,
+        # reparaciones demoradas y tickets sin actualización.
+        45 6 * * * CRON_SECRET="$$CRON_SECRET" node /app/scripts/cron-runner.mjs ti-alerts >/proc/1/fd/1 2>&1
         EOF
         # Si el montaje de zoneinfo se rompe, esto lo delata: debe decir -04 o
         # -03, nunca UTC. Los horarios de abajo se leen contra esta hora.
@@ -385,6 +388,43 @@ services:
       - PDTP_MECHANISMS_DEPLOY_MODE=true
       - PDTP_MECHANISMS_DRY_RUN=${PDTP_MECHANISMS_DRY_RUN:-}
     command: ["node", "scripts/apply-pdtp-mechanisms.mjs"]
+
+  # One-shot: SLA y evidencia mínima de las actividades a demanda del programa.
+  # Sin esto no se puede ni enviar el programa a revisión. Idempotente por
+  # actividad.
+  apply-pdtp-demand-slas:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - PDTP_DEMAND_SLAS_DEPLOY_MODE=true
+      - PDTP_DEMAND_SLAS_DRY_RUN=${PDTP_DEMAND_SLAS_DRY_RUN:-}
+    command: ["node", "scripts/apply-pdtp-demand-slas.mjs"]
+
+  # One-shot: reprocesa los eventos de cumplimiento PDTP que quedaron
+  # pending/error (programa que se activó después del hecho, mapeo corregido).
+  # Idempotente por idempotency_key.
+  reconcile-pdtp-fulfillment-events:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - PDTP_RECONCILE_LIMIT=${PDTP_RECONCILE_LIMIT:-}
+    command: ["node", "scripts/reconcile-pdtp-fulfillment-events.mjs"]
 
   # One-shot: diagnóstico READ ONLY de la conciliación OC-factura. No depende de
   # las columnas de proyección, así que deploy-prod.sh lo corre ANTES de migrar

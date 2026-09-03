@@ -324,6 +324,7 @@ jobs:
           PREVENTION_PERMITS_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           PREVENTION_INSPECTIONS_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           PREVENTION_CPHS_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          PREVENTION_CGRD_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           PREVENTION_HYGIENE_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           PREVENTION_EMERGENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           PREVENTION_CHANGE_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
@@ -342,6 +343,7 @@ jobs:
           PREVENTION_PERMITS_ALLOW_DESTRUCTIVE_RESET: "true"
           PREVENTION_INSPECTIONS_ALLOW_DESTRUCTIVE_RESET: "true"
           PREVENTION_CPHS_ALLOW_DESTRUCTIVE_RESET: "true"
+          PREVENTION_CGRD_ALLOW_DESTRUCTIVE_RESET: "true"
           PREVENTION_HYGIENE_ALLOW_DESTRUCTIVE_RESET: "true"
           PREVENTION_EMERGENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           PREVENTION_CHANGE_ALLOW_DESTRUCTIVE_RESET: "true"

@@ -18,6 +18,18 @@ export const preventionModule = {
     "prevention:pdtp:action:manage",
     "prevention:pdtp:action:verify",
     "prevention:pdtp:obligation:cancel",
+    "prevention:constancias:view",
+    "prevention:constancias:execute",
+    "prevention:alcotest:view",
+    "prevention:alcotest:register",
+    "prevention:alcotest:dispatch",
+    "prevention:cgrd:view",
+    "prevention:cgrd:committee:manage",
+    "prevention:cgrd:matrix:edit",
+    "prevention:cgrd:matrix:review",
+    "prevention:cgrd:matrix:approve",
+    "prevention:cgrd:matrix:publish",
+    "prevention:cgrd:meeting:manage",
     "prevention:campaign:view",
     "prevention:campaign:manage",
     "prevention:engagement:view",
@@ -132,6 +144,25 @@ export const preventionModule = {
     "prevention:pdtp:action:manage":    { id: "p-prev-pdtp-act-manage", description: "Crear/editar acciones correctivas y su seguimiento en el PDTP" },
     "prevention:pdtp:action:verify":    { id: "p-prev-pdtp-act-verify", description: "Verificar el cierre de acciones correctivas del PDTP" },
     "prevention:pdtp:obligation:cancel": { id: "p-prev-pdtp-obl-cancel", description: "Cancelar necesidades y eventos del PDTP" },
+    // Permiso propio (no `prevention:pdtp:execute`): quien sólo deja
+    // constancias no debe poder tocar el resto de la planilla, y viceversa.
+    "prevention:constancias:view":    { id: "p-prev-constancias-view",    description: "Ver el submódulo de Constancias del Programa de Trabajo Preventivo" },
+    "prevention:constancias:execute": { id: "p-prev-constancias-execute", description: "Dejar constancia de una actividad del Programa de Trabajo Preventivo" },
+    // `prevention:alcohol_tests:view` está retirado y prohibido de reintroducir
+    // (prevention-rbac.test.ts): el módulo nuevo usa el slug `alcotest`.
+    "prevention:alcotest:view":     { id: "p-prev-alcotest-view",     description: "Ver los controles de alcotest y sus envíos de registro" },
+    "prevention:alcotest:register": { id: "p-prev-alcotest-register", description: "Registrar un control de alcotest (DO-48)" },
+    "prevention:alcotest:dispatch": { id: "p-prev-alcotest-dispatch", description: "Registrar el envío mensual de los registros de alcotest" },
+    // CGRD del DS 44 (G15): comité propio, distinto del CPHS. La matriz GRD
+    // (N°80) es evidencia oponible ante fiscalizador — mismas cuatro firmas
+    // segregadas que la MIPER (edit/review/approve/publish).
+    "prevention:cgrd:view":             { id: "p-prev-cgrd-view",             description: "Ver el Comité de Gestión de Riesgos de Desastres, su matriz y sus actas" },
+    "prevention:cgrd:committee:manage": { id: "p-prev-cgrd-committee-manage", description: "Constituir o disolver el CGRD y gestionar sus integrantes" },
+    "prevention:cgrd:matrix:edit":      { id: "p-prev-cgrd-matrix-edit",      description: "Crear versiones de la matriz GRD y gestionar sus amenazas" },
+    "prevention:cgrd:matrix:review":    { id: "p-prev-cgrd-matrix-review",    description: "Revisar técnicamente versiones de la matriz GRD de forma segregada" },
+    "prevention:cgrd:matrix:approve":   { id: "p-prev-cgrd-matrix-approve",   description: "Aprobar versiones de la matriz GRD de forma segregada" },
+    "prevention:cgrd:matrix:publish":   { id: "p-prev-cgrd-matrix-publish",   description: "Publicar una versión de la matriz GRD inmutable" },
+    "prevention:cgrd:meeting:manage":   { id: "p-prev-cgrd-meeting-manage",   description: "Convocar, cerrar o cancelar actas de reunión del CGRD" },
     "prevention:campaign:view":         { id: "p-prev-camp-v",    description: "Ver campañas preventivas" },
     "prevention:campaign:manage":       { id: "p-prev-camp-m",    description: "Crear, registrar asistencia y cerrar campañas preventivas" },
     "prevention:engagement:view":       { id: "p-prev-engage-v", description: "Ver coordinaciones con el mandante, fiscalizaciones y visitas del organismo administrador" },
@@ -286,6 +317,19 @@ export const preventionModule = {
               href: "/prevencion/pdtp/aprobaciones",
               permissions: ["prevention:pdtp:approve"],
             },
+            {
+              // Vive fuera de /prevencion/pdtp porque así la enruta ya la cola
+              // operacional (D12); moverla ahí bajo /pdtp requeriría cambiar
+              // ese href también.
+              label: "Constancias",
+              href: "/prevencion/constancias",
+              permissions: ["prevention:constancias:view"],
+            },
+            {
+              label: "Alcotest",
+              href: "/prevencion/alcotest",
+              permissions: ["prevention:alcotest:view"],
+            },
           ],
         },
         {
@@ -422,6 +466,14 @@ export const preventionModule = {
           iconName: "UsersThree",
           group: "Cumplimiento del programa",
           permissions: ["prevention:cphs:view"],
+        },
+        {
+          // DS 44: comité propio de riesgo de desastres, distinto del CPHS.
+          label: "Gestión de riesgos de desastres",
+          href: "/prevencion/cgrd",
+          iconName: "Mountains",
+          group: "Cumplimiento del programa",
+          permissions: ["prevention:cgrd:view"],
         },
 
         // ── En terreno ──────────────────────────────────────────────────────
@@ -580,6 +632,72 @@ export const preventionModule = {
     // el cumplimiento es trabajo de terreno, anular el compromiso es gestión.
     { roleSlug: "prevencionista",      permission: "prevention:pdtp:obligation:cancel" },
     { roleSlug: "administrador",       permission: "prevention:pdtp:obligation:cancel" },
+    // Constancias — mismo reparto que view/execute del PDTP, bajo permiso
+    // propio (G17): quien sólo tiene éste no debe poder tocar el resto de la
+    // planilla, y viceversa.
+    { roleSlug: "prevencionista",      permission: "prevention:constancias:view" },
+    { roleSlug: "prevencionista",      permission: "prevention:constancias:execute" },
+    { roleSlug: "jefa_chome",          permission: "prevention:constancias:view" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:constancias:view" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:constancias:execute" },
+    { roleSlug: "admin_contrato",      permission: "prevention:constancias:view" },
+    { roleSlug: "admin_contrato",      permission: "prevention:constancias:execute" },
+    { roleSlug: "jefe_terreno",        permission: "prevention:constancias:view" },
+    { roleSlug: "jefe_terreno",        permission: "prevention:constancias:execute" },
+    { roleSlug: "supervisor_terreno", permission: "prevention:constancias:view" },
+    { roleSlug: "supervisor_terreno", permission: "prevention:constancias:execute" },
+    { roleSlug: "gerente_legal_rrhh",  permission: "prevention:constancias:view" },
+    { roleSlug: "gerente_legal_rrhh",  permission: "prevention:constancias:execute" },
+    { roleSlug: "subgerente_operaciones", permission: "prevention:constancias:view" },
+    { roleSlug: "subgerente_operaciones", permission: "prevention:constancias:execute" },
+    { roleSlug: "jefe_mantencion",     permission: "prevention:constancias:view" },
+    { roleSlug: "jefe_mantencion",     permission: "prevention:constancias:execute" },
+    { roleSlug: "administrador",       permission: "prevention:constancias:view" },
+    { roleSlug: "administrador",       permission: "prevention:constancias:execute" },
+    // Alcotest (G14, DS 44 / DO-48). Registrar (N°30/N°31): PRF y quien
+    // controla en terreno — el conector decide cuál de las dos cierra según
+    // el rol de quien registra. Envío (N°32): sólo PRF, según el catálogo.
+    { roleSlug: "prevencionista",      permission: "prevention:alcotest:view" },
+    { roleSlug: "prevencionista",      permission: "prevention:alcotest:register" },
+    { roleSlug: "prevencionista",      permission: "prevention:alcotest:dispatch" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:alcotest:view" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:alcotest:register" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:alcotest:dispatch" },
+    { roleSlug: "supervisor_terreno", permission: "prevention:alcotest:view" },
+    { roleSlug: "supervisor_terreno", permission: "prevention:alcotest:register" },
+    { roleSlug: "jefe_terreno",        permission: "prevention:alcotest:view" },
+    { roleSlug: "jefe_terreno",        permission: "prevention:alcotest:register" },
+    { roleSlug: "administrador",       permission: "prevention:alcotest:view" },
+    { roleSlug: "administrador",       permission: "prevention:alcotest:register" },
+    { roleSlug: "administrador",       permission: "prevention:alcotest:dispatch" },
+    // CGRD del DS 44 (G15). Comité y actas: mismo reparto que CPHS
+    // (`prevention:cphs:manage`). Matriz GRD: mismo reparto segregado que
+    // MIPER (edit en terreno, review/approve/publish en jefatura).
+    { roleSlug: "cphs",                 permission: "prevention:cgrd:view" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:cgrd:view" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:cgrd:committee:manage" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:cgrd:meeting:manage" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:cgrd:matrix:edit" },
+    { roleSlug: "prevencionista",       permission: "prevention:cgrd:view" },
+    { roleSlug: "prevencionista",       permission: "prevention:cgrd:committee:manage" },
+    { roleSlug: "prevencionista",       permission: "prevention:cgrd:meeting:manage" },
+    { roleSlug: "prevencionista",       permission: "prevention:cgrd:matrix:edit" },
+    { roleSlug: "prevencionista",       permission: "prevention:cgrd:matrix:review" },
+    { roleSlug: "jefe_terreno",         permission: "prevention:cgrd:view" },
+    { roleSlug: "admin_contrato",       permission: "prevention:cgrd:view" },
+    { roleSlug: "jefa_chome",           permission: "prevention:cgrd:view" },
+    { roleSlug: "jefa_chome",           permission: "prevention:cgrd:committee:manage" },
+    { roleSlug: "jefa_chome",           permission: "prevention:cgrd:meeting:manage" },
+    { roleSlug: "jefa_chome",           permission: "prevention:cgrd:matrix:review" },
+    { roleSlug: "jefa_chome",           permission: "prevention:cgrd:matrix:approve" },
+    { roleSlug: "jefa_chome",           permission: "prevention:cgrd:matrix:publish" },
+    { roleSlug: "administrador",        permission: "prevention:cgrd:view" },
+    { roleSlug: "administrador",        permission: "prevention:cgrd:committee:manage" },
+    { roleSlug: "administrador",        permission: "prevention:cgrd:meeting:manage" },
+    { roleSlug: "administrador",        permission: "prevention:cgrd:matrix:edit" },
+    { roleSlug: "administrador",        permission: "prevention:cgrd:matrix:review" },
+    { roleSlug: "administrador",        permission: "prevention:cgrd:matrix:approve" },
+    { roleSlug: "administrador",        permission: "prevention:cgrd:matrix:publish" },
     // Campañas preventivas — antes reusaban `prevention:pdtp:program:manage`,
     // que es el permiso para editar el programa anual, no para correr campañas.
     { roleSlug: "prevencionista",      permission: "prevention:campaign:view" },

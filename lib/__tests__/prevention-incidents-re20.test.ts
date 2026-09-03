@@ -54,6 +54,7 @@ const WS_ID = "ws-re20-1"
 const PROGRAM_ID = "pdtp-re20-prog"
 
 beforeEach(async () => {
+  await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
   await inMemoryDb.delete(schema.pdtpExecutions)
   await inMemoryDb.delete(schema.preventionCapaActions)
   await inMemoryDb.delete(schema.preventionIncidentFollowups)
@@ -97,7 +98,10 @@ beforeEach(async () => {
     updatedAt: new Date().toISOString(),
   })
 
-  // Actividades PDTP RE-20 (66-78)
+  // Actividades PDTP RE-20 (66-78). Doce de las trece (todas salvo la 76)
+  // pasan por obligación desde la Fase 3 (2026-09-02): `createPdtpObligation`
+  // exige `dueDays`/`dueHours` y `evidenceRequirement`, así que el fixture
+  // los declara igual que lo haría `apply-pdtp-2026-demand-slas.ts`.
   const actNumbers = [66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78]
   for (const n of actNumbers) {
     await inMemoryDb.insert(schema.pdtpActivities).values({
@@ -108,8 +112,12 @@ beforeEach(async () => {
       program: "Prevención",
       responsibleSlugs: ["prevencionista"],
       responsibleDisplay: "Prevencionista",
-      scheduleMode: "triggered",
+      scheduleMode: "on_demand",
       scheduleClassificationStatus: "confirmed",
+      dueHours: 24,
+      evidenceRequirement: "Evidencia del RE-20",
+      indicatorMode: "closed_on_time",
+      mechanism: "enganche",
       sourceSheetRow: n,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -179,12 +187,14 @@ describe("Módulo de Investigación RE-20 y Auto-acreditación PDTP (66-78)", ()
       access: access as unknown as Parameters<typeof createPreliminaryReport>[0]["access"],
     })
 
+    // Desde la Fase 3, el reporte preliminar REPORTA la obligación creada al
+    // abrirse el caso — el `sourceId` de la ejecución es el propio incidente
+    // (compartido entre las doce actividades), así que se filtra por actividad.
     const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
-      .where(eq(schema.pdtpExecutions.sourceId, `${res.incident.id}:preliminar`))
+      .where(inArray(schema.pdtpExecutions.activityId, ["act-68", "act-70"]))
 
-    const actIds = executions.map((e) => e.activityId)
-    expect(actIds).toContain("act-68")
-    expect(actIds).toContain("act-70")
+    expect(executions).toHaveLength(2)
+    expect(executions.every((e) => e.status === "submitted" && e.obligationId)).toBe(true)
   })
 
   it("registra declaración de involucrado (SLA 24h) y auto-acredita 69", async () => {
@@ -214,10 +224,11 @@ describe("Módulo de Investigación RE-20 y Auto-acreditación PDTP (66-78)", ()
     })
 
     const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
-      .where(eq(schema.pdtpExecutions.sourceId, `${res.incident.id}:declaracion`))
+      .where(eq(schema.pdtpExecutions.activityId, "act-69"))
 
     expect(executions).toHaveLength(1)
-    expect(executions[0]!.activityId).toBe("act-69")
+    expect(executions[0]!.status).toBe("submitted")
+    expect(executions[0]!.obligationId).toBeTruthy()
   })
 
   it("difunde ONE PAGE RE-20-06 (SLA 24h) y auto-acredita 78", async () => {
@@ -247,10 +258,11 @@ describe("Módulo de Investigación RE-20 y Auto-acreditación PDTP (66-78)", ()
     })
 
     const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
-      .where(eq(schema.pdtpExecutions.sourceId, `${res.incident.id}:one-page`))
+      .where(eq(schema.pdtpExecutions.activityId, "act-78"))
 
     expect(executions).toHaveLength(1)
-    expect(executions[0]!.activityId).toBe("act-78")
+    expect(executions[0]!.status).toBe("submitted")
+    expect(executions[0]!.obligationId).toBeTruthy()
   })
 })
 

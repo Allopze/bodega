@@ -1,0 +1,2 @@
+ALTER TABLE "alcohol_tests" ADD COLUMN "tested_person_name" text;--> statement-breakpoint
+ALTER TABLE "alcohol_tests" ADD CONSTRAINT "alcohol_tests_subject_valid" CHECK (("alcohol_tests"."tested_worker_id" IS NOT NULL AND "alcohol_tests"."tested_person_name" IS NULL) OR ("alcohol_tests"."tested_worker_id" IS NULL AND length("alcohol_tests"."tested_person_name") >= 3));

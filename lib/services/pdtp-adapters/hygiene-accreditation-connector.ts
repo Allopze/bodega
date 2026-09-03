@@ -23,12 +23,8 @@
  * repetir el hecho, nunca tumba el registro.
  */
 
-import { logger } from "@/lib/logger"
-import {
-  accreditPdtpFromEvent,
-  revokePdtpAccreditation,
-  type AccreditationInput,
-} from "@/lib/services/pdtp/accreditation"
+import type { AccreditationInput } from "@/lib/services/pdtp/accreditation"
+import { recordPdtpFulfillmentEvent, recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
 
 /** N°45: "Evaluación cuantitativas por mutual". */
 const PDTP_QUANTITATIVE_MEASUREMENT_ACTIVITY_NUMBER = 45
@@ -71,22 +67,9 @@ function occurredAtFromChileDate(plainDate: string): string {
   return `${plainDate}T12:00:00.000Z`
 }
 
-/** Ejecuta la acreditación y absorbe el error: el registro de higiene ya existe. */
+/** Ejecuta la acreditación de forma durable: el registro de higiene ya existe. */
 async function safeAccredit(input: AccreditationInput): Promise<void> {
-  try {
-    const result = await accreditPdtpFromEvent(input)
-    if (result.skippedNotFound.length > 0) {
-      logger.warn(
-        { sourceType: input.sourceType, sourceId: input.sourceId, skippedNotFound: result.skippedNotFound },
-        "[hygiene-pdtp-connector] Actividades no encontradas en el programa activo.",
-      )
-    }
-  } catch (err) {
-    logger.error(
-      { err, sourceType: input.sourceType, sourceId: input.sourceId, worksiteId: input.worksiteId },
-      "[hygiene-pdtp-connector] Error en auto-acreditación PDTP (no crítico para el registro de higiene).",
-    )
-  }
+  await recordPdtpFulfillmentEvent(input)
 }
 
 // ── N°45: medición cuantitativa de exposición ─────────────────────────────────
@@ -233,18 +216,11 @@ export async function onSurveillanceControlReverted(input: {
   revokedBy?: string
   reason: string
 }): Promise<void> {
-  try {
-    await revokePdtpAccreditation({
-      sourceType: "vigilancia",
-      sourceId: `vigilancia:${input.enrollmentId}`,
-      worksiteId: input.worksiteId,
-      revokedBy: input.revokedBy,
-      reason: input.reason,
-    })
-  } catch (err) {
-    logger.error(
-      { err, enrollmentId: input.enrollmentId, worksiteId: input.worksiteId },
-      "[hygiene-pdtp-connector] Error al revertir la acreditación de un control de vigilancia.",
-    )
-  }
+  await recordPdtpFulfillmentRevocation({
+    sourceType: "vigilancia",
+    sourceId: `vigilancia:${input.enrollmentId}`,
+    worksiteId: input.worksiteId,
+    revokedBy: input.revokedBy,
+    reason: input.reason,
+  })
 }

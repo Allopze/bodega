@@ -73,6 +73,10 @@ export type NotificationType =
   | "sst_document_expired"
   | "maintenance_due_soon"
   | "maintenance_overdue"
+  | "ti_warranty_expiring"
+  | "ti_license_renewal"
+  | "ti_repair_stuck"
+  | "ti_ticket_stale"
 
 export const notifications = pgTable("notifications", {
   id:           text("id").primaryKey(),

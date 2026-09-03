@@ -18,8 +18,10 @@ import {
   UsersThree,
   WarningDiamond,
   Wrench, Toolbox, HardHat, Lifebuoy, ChatCircleText, GasPump, Car, Upload, QrCode,
-  TreeStructure, Leaf, Plant, Tree, LockKey, MegaphoneSimple,
+  TreeStructure, Leaf, Plant, Tree, LockKey, LockKeyOpen, MegaphoneSimple,
   Receipt, CurrencyDollar, ArrowsClockwise,
+  Desktop, Laptop, UserCirclePlus, Ticket, Key, Archive,
+  Mountains,
 } from "@phosphor-icons/react"
 
 export type IconCmp = React.ComponentType<{ size?: number; weight?: IconWeight; className?: string }>
@@ -43,6 +45,8 @@ export const NAV_ICONS: Record<string, IconCmp> = {
   UsersThree,
   WarningDiamond,
   Wrench, Toolbox, HardHat, Lifebuoy, ChatCircleText, GasPump, Car, Upload, QrCode,
-  TreeStructure, Leaf, Plant, Tree, LockKey, MegaphoneSimple,
+  TreeStructure, Leaf, Plant, Tree, LockKey, LockKeyOpen, MegaphoneSimple,
   Receipt, CurrencyDollar, ArrowsClockwise,
+  Desktop, Laptop, UserCirclePlus, Ticket, Key, Archive,
+  Mountains,
 }

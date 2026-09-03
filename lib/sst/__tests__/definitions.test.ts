@@ -43,6 +43,7 @@ describe('CHECKLIST_DEFINITIONS', () => {
     ['inspeccion_taller', '02', 16],
     ['inspeccion_carros', '03', 22],
     ['inspeccion_contenedores', '03', 14],
+    ['inspeccion_condiciones_ambientales', '01', 12],
   ])('mantiene la paridad de %s v%s con %i respuestas puntuables', (code, version, expected) => {
     const definition = CHECKLIST_DEFINITIONS[code]
     expect(definition?.version).toBe(version)

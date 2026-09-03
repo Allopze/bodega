@@ -106,6 +106,29 @@ RUN ./node_modules/.bin/esbuild scripts/apply-pdtp-2026-mechanisms.ts \
     --packages=external \
     --outfile=/tmp/apply-pdtp-mechanisms.mjs
 
+# El SLA y la evidencia mínima de las actividades a demanda del programa: sin
+# esto no se puede ni enviar el programa a revisión
+# (`pdtpSubmitReviewBlockers`). Va después de las decisiones de catálogo (que
+# deciden qué actividades siguen vivas) y de la clasificación por mecanismo.
+RUN ./node_modules/.bin/esbuild scripts/apply-pdtp-2026-demand-slas.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --packages=external \
+    --outfile=/tmp/apply-pdtp-demand-slas.mjs
+
+# Reprocesa los eventos de cumplimiento que quedaron `pending`/`error` en
+# `pdtp_fulfillment_events` — un hecho ocurrido con el programa todavía en
+# borrador, o un mapeo que se acaba de corregir. Idempotente: no duplica lo ya
+# acreditado. Va al final de los pasos del PDTP, cuando el resto del dato ya
+# quedó declarado.
+RUN ./node_modules/.bin/esbuild scripts/reconcile-pdtp-fulfillment-events.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --packages=external \
+    --outfile=/tmp/reconcile-pdtp-fulfillment-events.mjs
+
 # Mismo motivo que sync-rbac: los one-shots de conciliación OC-factura viven en
 # TypeScript con alias `@/`, y la imagen de producción no lleva ni `tsx` ni el
 # source. Se bundlean acá y se corren con `node` desde `docker-compose.yml`.
@@ -243,6 +266,8 @@ COPY --from=build /tmp/seed-pdtp-inspection-templates.mjs ./scripts/seed-pdtp-in
 COPY --from=build /tmp/apply-pdtp-catalog-decisions.mjs ./scripts/apply-pdtp-catalog-decisions.mjs
 COPY --from=build /tmp/apply-pdtp-program-data.mjs ./scripts/apply-pdtp-program-data.mjs
 COPY --from=build /tmp/apply-pdtp-mechanisms.mjs ./scripts/apply-pdtp-mechanisms.mjs
+COPY --from=build /tmp/apply-pdtp-demand-slas.mjs ./scripts/apply-pdtp-demand-slas.mjs
+COPY --from=build /tmp/reconcile-pdtp-fulfillment-events.mjs ./scripts/reconcile-pdtp-fulfillment-events.mjs
 COPY --from=build /tmp/invoice-reconciliation/preflight-purchase-invoice-reconciliation.mjs ./scripts/preflight-purchase-invoice-reconciliation.mjs
 COPY --from=build /tmp/invoice-reconciliation/backfill-purchase-invoice-reconciliation.mjs ./scripts/backfill-purchase-invoice-reconciliation.mjs
 COPY --from=build /tmp/invoice-reconciliation/rollback-purchase-invoice-reconciliation-statuses.mjs ./scripts/rollback-purchase-invoice-reconciliation-statuses.mjs

@@ -31,6 +31,7 @@ import { mantencionesModule }  from "@/modules/mantenciones/manifest"
 import { preventionModule }    from "@/modules/prevention/manifest"
 import { operationsModule }    from "@/modules/operations/manifest"
 import { billingModule }       from "@/modules/billing/manifest"
+import { tiModule }            from "@/modules/ti/manifest"
 
 /**
  * Registry central — array `as const` de todos los módulos registrados.
@@ -66,6 +67,8 @@ export const registry = [
   mantencionesModule,
   // ── Prevención ampliada: IPER, incidentes, capacitaciones ────────────────
   preventionModule,
+  // ── TI ───────────────────────────────────────────────────────────────────
+  tiModule,
   // incidentesModule,
   // inspeccionesModule,
   // iperModule,

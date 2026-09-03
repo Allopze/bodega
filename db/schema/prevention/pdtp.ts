@@ -297,6 +297,15 @@ export const pdtpActivities = pgTable("pdtp_activities", {
   triggerType:         text("trigger_type"),
   triggerDescription:  text("trigger_description"),
   dueDays:             integer("due_days"),
+  /**
+   * Plazo en horas, para las obligaciones que la norma fija por debajo de un
+   * día (la DIAT, el informe preliminar del RE-20). `dueDays` no alcanza para
+   * "≤3 horas" porque es un entero de días — en vez de forzar esos casos a
+   * redondear a un día completo, se agrega esta columna hermana. Sólo una de
+   * las dos debe estar presente por actividad (ver el CHECK); el resolutor de
+   * `dueAt` usa horas si están, si no cae a días.
+   */
+  dueHours:            integer("due_hours"),
   evidenceRequirement: text("evidence_requirement"),
   /**
    * Cómo se cumple esta actividad (D4 del diseño 2026-08-12). Hasta ahora la
@@ -352,6 +361,11 @@ export const pdtpActivities = pgTable("pdtp_activities", {
   check("pdtp_activities_schedule_mode_check", sql`${table.scheduleMode} IN ('scheduled', 'on_demand', 'triggered')`),
   check("pdtp_activities_schedule_classification_check", sql`${table.scheduleClassificationStatus} IN ('confirmed', 'needs_review')`),
   check("pdtp_activities_due_days_check", sql`${table.dueDays} IS NULL OR ${table.dueDays} >= 0`),
+  check("pdtp_activities_due_hours_check", sql`${table.dueHours} IS NULL OR ${table.dueHours} >= 0`),
+  // Un plazo se declara en una sola unidad. Las dos juntas serían ambiguas
+  // (¿se suman? ¿manda la más corta?) y ninguna actividad del catálogo 2026
+  // necesita ambas.
+  check("pdtp_activities_due_days_hours_exclusive", sql`${table.dueDays} IS NULL OR ${table.dueHours} IS NULL`),
   check("pdtp_activities_mechanism_check", sql`${table.mechanism} IN ('enganche', 'constancia', 'formulario', 'compuesta', 'sin_definir')`),
   check("prevention_pdtp_activity_indicator_mode_valid", sql`${table.indicatorMode} IN ('planned_vs_completed', 'closed_on_time', 'completed_count', 'not_applicable', 'coverage')`),
   check("pdtp_activities_subject_source_check", sql`${table.subjectSource} IS NULL OR ${table.subjectSource} IN ('dotacion', 'extintores', 'expuestos_ges', 'equipos', 'trabajadores_nuevos')`),
@@ -466,6 +480,67 @@ export const pdtpExecutions = pgTable("pdtp_executions", {
   check("pdtp_executions_quantity_check", sql`${table.executedQuantity} >= 0`),
   check("pdtp_executions_origin_check", sql`${table.origin} IN ('manual', 'xlsx_import', 'integration')`),
   check("pdtp_executions_evidence_status_check", sql`${table.evidenceStatus} IN ('pending', 'provided', 'not_required', 'migrated_without_attachment')`),
+])
+
+/**
+ * Libro durable de eventos de cumplimiento (Fase 2 de la plataforma de
+ * cumplimiento, 2026-09-02).
+ *
+ * `accreditPdtpFromEvent` lanza si el programa no está activo o si falta el
+ * mapeo, y cada conector se lo traga con `logger.error`: mientras el programa
+ * está en `draft`, todo hecho operacional que ocurre se pierde sin rastro.
+ * Este libro es lo que evita eso — cada intento de acreditación queda
+ * registrado, se pueda o no completar en el momento, y un reconciliador puede
+ * reprocesar los `pending`/`error` más tarde sin perder el hecho original.
+ *
+ * No sustituye a `pdtp_executions`: cuando la acreditación se logra, esta fila
+ * queda enlazada a la ejecución que produjo (`execution_id`), pero el libro
+ * existe incluso cuando la acreditación falla — que es justamente el caso que
+ * `pdtp_executions` no puede representar.
+ */
+export const pdtpFulfillmentEvents = pgTable("pdtp_fulfillment_events", {
+  id:              text("id").primaryKey(),
+  sourceType:      text("source_type").notNull(),
+  sourceId:        text("source_id").notNull(),
+  eventType:       text("event_type").notNull(),
+  /** Versión del contrato anual que resolvió el destino (ver
+   *  `fulfillment-contract-2026.ts`). Sin esto, un contrato 2027 con otro mapa
+   *  de actividades no podría distinguirse de un evento 2026 reprocesado. */
+  sourceVersion:   text("source_version"),
+  worksiteId:      text("worksite_id").notNull().references(() => worksites.id),
+  occurredAt:      timestamp("occurred_at", { withTimezone: true, mode: "string" }).notNull(),
+  quantity:        numeric("quantity", { precision: 10, scale: 2, mode: "number" }).notNull().default(1),
+  evidenceRef:     text("evidence_ref"),
+  returnHref:      text("return_href"),
+  idempotencyKey:  text("idempotency_key").notNull(),
+  status:          text("status").notNull().default("pending"),
+  programId:       text("program_id").references(() => pdtpPrograms.id, { onDelete: "set null" }),
+  /**
+   * Números de actividad (`pdtp_activities.n`, no el id) que este evento
+   * intenta acreditar — el mismo vocabulario que `AccreditationInput`. Un solo
+   * hecho operacional puede acreditar más de una actividad (N°25 y N°26 juntas
+   * desde un mismo reporte de uso diario), así que no hay una sola
+   * `activity_id` que lo represente: sería falso para el caso compuesto y
+   * arbitrario para elegir cuál de las dos.
+   */
+  activityNumbers: jsonb("activity_numbers").notNull().default([]),
+  /** Snapshot del `AccreditationResult`: qué se acreditó, qué se omitió y por
+   *  qué. Diagnóstico para el reconciliador y para la compuerta 81/81. */
+  resultJson:      jsonb("result_json").notNull().default({}),
+  attempts:        integer("attempts").notNull().default(0),
+  lastError:       text("last_error"),
+  reconciledAt:    timestamp("reconciled_at", { withTimezone: true, mode: "string" }),
+  createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:       timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("pdtp_fulfillment_events_idempotency_key_unique").on(table.idempotencyKey),
+  index("pdtp_fulfillment_events_status_idx").on(table.status),
+  index("pdtp_fulfillment_events_worksite_period_idx").on(table.worksiteId, table.occurredAt),
+  index("pdtp_fulfillment_events_source_idx").on(table.sourceType, table.sourceId),
+  check("pdtp_fulfillment_events_event_type_check", sql`${table.eventType} IN ('completed', 'revoked')`),
+  check("pdtp_fulfillment_events_status_check", sql`${table.status} IN ('pending', 'accredited', 'rejected', 'revoked', 'error')`),
+  check("pdtp_fulfillment_events_quantity_check", sql`${table.quantity} >= 0`),
+  check("pdtp_fulfillment_events_attempts_check", sql`${table.attempts} >= 0`),
 ])
 
 export const pdtpObligationReminders = pgTable("pdtp_obligation_reminders", {
@@ -671,6 +746,10 @@ export const pdtpActivityWorksiteParams = pgTable("pdtp_activity_worksite_params
   uniqueIndex("pdtp_activity_worksite_params_unique").on(table.activityId, table.worksiteId),
   index("pdtp_activity_worksite_params_worksite_idx").on(table.worksiteId),
   check("pdtp_activity_worksite_params_subject_count_check", sql`${table.expectedSubjectCount} IS NULL OR ${table.expectedSubjectCount} >= 0`),
+  // El 0-100 lo imponía sólo Zod, y `setPdtpActivityWorksiteParams` escribe sin
+  // pasar por ahí: un 900 % de meta habría bajado el umbral de acreditación a
+  // un número imposible de alcanzar, callado.
+  check("pdtp_activity_worksite_params_coverage_target_check", sql`${table.targetCoveragePercent} IS NULL OR (${table.targetCoveragePercent} > 0 AND ${table.targetCoveragePercent} <= 100)`),
   check("pdtp_activity_worksite_params_responsible_check", sql`${table.responsibleSlugs} IS NULL OR (
     jsonb_typeof(${table.responsibleSlugs}) = 'array'
     AND jsonb_array_length(${table.responsibleSlugs}) > 0
@@ -772,6 +851,11 @@ export const pdtpExecutionsRelations = relations(pdtpExecutions, ({ one }) => ({
   executedByUser: one(users, { fields: [pdtpExecutions.executedByUserId], references: [users.id] }),
   approvedByUser: one(users, { fields: [pdtpExecutions.approvedByUserId], references: [users.id] }),
   checklistInstance: one(pdtpExecutionChecklists),
+}))
+
+export const pdtpFulfillmentEventsRelations = relations(pdtpFulfillmentEvents, ({ one }) => ({
+  worksite: one(worksites, { fields: [pdtpFulfillmentEvents.worksiteId], references: [worksites.id] }),
+  program: one(pdtpPrograms, { fields: [pdtpFulfillmentEvents.programId], references: [pdtpPrograms.id] }),
 }))
 
 export const pdtpObligationsRelations = relations(pdtpObligations, ({ one, many }) => ({

@@ -644,7 +644,7 @@ export async function reportPreventionIncident(args: {
   })
 
   // Auto-acreditación PDTP: Actividades 66, 67 (fuera de la transacción)
-  await onIncidentReported({ incidentId: result.incident.id, worksiteId: result.incident.worksiteId, reportedAt: result.incident.createdAt })
+  await onIncidentReported({ incidentId: result.incident.id, worksiteId: result.incident.worksiteId, reportedAt: result.incident.createdAt, userId: args.access.ctx.userId })
 
   return result
 }
@@ -1119,7 +1119,7 @@ export async function transitionPreventionIncident(args: {
   // Auto-acreditación PDTP (Actividad 77: expediente cerrado/archivado), fuera
   // de la transacción para no dejar una ejecución huérfana ante un rollback.
   if (updated.status === "closed" && updated.closedAt) {
-    await onIncidentClosed({ incidentId: updated.id, worksiteId: updated.worksiteId, closedAt: updated.closedAt })
+    await onIncidentClosed({ incidentId: updated.id, worksiteId: updated.worksiteId, closedAt: updated.closedAt, userId: args.access.ctx.userId })
   }
 
   return updated
@@ -1251,6 +1251,7 @@ export async function savePreventionIncidentInvestigation(args: {
       incidentId: result.incident.id,
       worksiteId: result.incident.worksiteId,
       completedAt: result.incident.updatedAt,
+      userId: args.access.ctx.userId,
     })
   }
 
@@ -1354,7 +1355,7 @@ export async function recordPreventionIncidentNotification(args: {
 
   // Auto-acreditación PDTP (Actividad 72: DIAT emitida), fuera de la transacción.
   if (input.notificationType === "diat") {
-    await onIncidentDiatIssued({ incidentId: updated.id, worksiteId: updated.worksiteId, issuedAt: input.sentAt })
+    await onIncidentDiatIssued({ incidentId: updated.id, worksiteId: updated.worksiteId, issuedAt: input.sentAt, userId: args.access.ctx.userId })
   }
 
   return updated
@@ -1589,7 +1590,7 @@ export async function createPreliminaryReport(args: {
 
   // Auto-acreditación PDTP: Actividades 68, 70 (preliminar ≤3h). Fuera de la
   // transacción, como el resto del archivo.
-  await onIncidentPreliminaryReported({ incidentId: incident.id, worksiteId: incident.worksiteId, reportedAt: now })
+  await onIncidentPreliminaryReported({ incidentId: incident.id, worksiteId: incident.worksiteId, reportedAt: now, userId: args.access.ctx.userId })
 
   return { incidentId: incident.id, preliminaryReportAt: now }
 }
@@ -1621,7 +1622,7 @@ export async function recordIncidentStatement(args: {
   })
 
   // Auto-acreditación PDTP: Actividad 69 (declaración ≤24h)
-  await onIncidentStatementRecorded({ incidentId: incident.id, worksiteId: incident.worksiteId, recordedAt: now })
+  await onIncidentStatementRecorded({ incidentId: incident.id, worksiteId: incident.worksiteId, recordedAt: now, userId: args.access.ctx.userId })
 
   return created
 }
@@ -1653,7 +1654,7 @@ export async function publishOnePageDiffusion(args: {
   })
 
   // Auto-acreditación PDTP: Actividad 78 (ONE PAGE ≤24h)
-  await onIncidentOnePageDiffused({ incidentId: incident.id, worksiteId: incident.worksiteId, diffusedAt: now })
+  await onIncidentOnePageDiffused({ incidentId: incident.id, worksiteId: incident.worksiteId, diffusedAt: now, userId: args.access.ctx.userId })
 
   return created
 }
@@ -1761,9 +1762,9 @@ export async function confirmIncidentDiffusion(args: {
 
   // Auto-acreditación PDTP al confirmar: Act. 71 (turnos) o 75 (medidas).
   if (updated.kind === "shift") {
-    await onIncidentShiftDiffused({ incidentId: updated.incidentId, worksiteId: row.worksiteId, diffusedAt: now })
+    await onIncidentShiftDiffused({ incidentId: updated.incidentId, worksiteId: row.worksiteId, diffusedAt: now, userId: args.access.ctx.userId })
   } else {
-    await onIncidentMeasuresDiffused({ incidentId: updated.incidentId, worksiteId: row.worksiteId, diffusedAt: now })
+    await onIncidentMeasuresDiffused({ incidentId: updated.incidentId, worksiteId: row.worksiteId, diffusedAt: now, userId: args.access.ctx.userId })
   }
   return updated
 }

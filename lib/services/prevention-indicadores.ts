@@ -16,6 +16,7 @@ import {
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { INCIDENT_EVENT_LABELS, INCIDENT_SEVERITY_LABELS } from "@/lib/prevention/incidents"
+import { onSafetyIndicatorPeriodClosed } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import {
   calculateCanonicalIndicatorPeriod,
@@ -728,7 +729,7 @@ export async function closeSafetyIndicatorPeriod(
 ) {
   const data = closeSafetyIndicatorPeriodSchema.parse(input)
   assertWorksiteAccess(data.worksiteId, scope)
-  return db.transaction(async (tx) => {
+  const outcome = await db.transaction(async (tx) => {
     const [worksite] = await tx.select({ id: worksites.id }).from(worksites).where(eq(worksites.id, data.worksiteId)).limit(1)
     if (!worksite) throw new Error("Faena no encontrada o sin acceso.")
     const { snapshot, result, legacyComparison } = await createApprovedSnapshot(tx, {
@@ -757,6 +758,19 @@ export async function closeSafetyIndicatorPeriod(
     })
     return { period, snapshot, result, legacyComparison }
   })
+
+  // Auto-acreditación PDTP (N°7), después del commit: el motor escribe con su
+  // propia conexión, y llamarlo dentro de la transacción dejaría una
+  // ejecución huérfana si ésta revierte.
+  await onSafetyIndicatorPeriodClosed({
+    worksiteId: data.worksiteId,
+    snapshotId: outcome.snapshot.id,
+    year: data.year,
+    month: data.month,
+    closedAt: outcome.period.closedAt!,
+  })
+
+  return outcome
 }
 
 export async function invalidateClosedIndicatorPeriodWithClient(client: IndicatorClient, args: {

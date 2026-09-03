@@ -15,6 +15,7 @@ import { CAMINATA_SEGURIDAD } from './caminata-seguridad'
 import { AUDITORIA_SGSST } from './auditoria-sgsst'
 import { REPORTE_EQUIPOS } from './reporte-equipos'
 import { INSPECCION_NO_PLANEADA } from './inspeccion-no-planeada'
+import { INSPECCION_CONDICIONES_AMBIENTALES } from './inspeccion-condiciones-ambientales'
 import type { ChecklistDefinition } from '../types'
 
 /**
@@ -79,6 +80,9 @@ export const CHECKLIST_DEFINITIONS: Record<string, ChecklistDefinition> = {
   'observacion_conductas': OBSERVACION_CONDUCTAS,
   'inspeccion_area': INSPECCION_AREA,
   'caminata_seguridad': CAMINATA_SEGURIDAD,
+  // PDTP n=10. Sin anexo/formulario fuente del cliente: el contenido se
+  // escribió directo desde la Ley 21.512 (ex DS 594). Ver D11, 2026-09-02.
+  'inspeccion_condiciones_ambientales': INSPECCION_CONDICIONES_AMBIENTALES,
 }
 
 export function getDefinition(code: string, _version?: string): ChecklistDefinition {
@@ -95,4 +99,5 @@ export {
   AUDITORIA_SGSST, REPORTE_EQUIPOS,
   INSPECCION_NO_PLANEADA,
   OBSERVACION_CONDUCTAS, INSPECCION_AREA, CAMINATA_SEGURIDAD,
+  INSPECCION_CONDICIONES_AMBIENTALES,
 }

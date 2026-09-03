@@ -63,6 +63,15 @@ export type PdtpAccreditationSourceType =
   | "miper"
   /** El propio ciclo de aprobación del programa (N°1: "Aprobar el Programa"). */
   | "aprobacion_programa"
+  /** Indicadores de faena: cierre del período mensual (N°7). */
+  | "indicadores"
+  /** Alcotest (G14, DO-48): un control (N°30/N°31) o un envío mensual de registros (N°32). */
+  | "alcotest"
+  /**
+   * CGRD del DS 44 (G15): constitución del comité (N°79), publicación de la
+   * matriz GRD (N°80) o acta de reunión cerrada (N°81).
+   */
+  | "cgrd"
 
 export type AccreditationResult = {
   /** Ejecuciones creadas o actualizadas (una por actividad acreditada). */
@@ -150,39 +159,34 @@ function accreditationKey(
   return `pdtp-accredit:${activityId}:${worksiteId}:${sourceType}:${sourceId}`
 }
 
-// ── Función principal ─────────────────────────────────────────────────────────
+// ── Resolución compartida de programa y actividades ─────────────────────────
+
+type ResolvedProgramEvent =
+  | { ok: true; program: typeof pdtpPrograms.$inferSelect; occurredYear: number; slot: { month: number; week: number } }
+  // El programa existe y está activo, pero no cubre el año del evento. Se
+  // conserva `programYear` para que el caller (accreditPdtpFromEvent) pueda
+  // seguir reportando `skippedOutOfPeriod` con el dato real, no un relleno.
+  | { ok: false; occurredYear: number; programYear: number }
 
 /**
- * Acredita automáticamente las actividades PDTP indicadas a partir de un
- * evento operacional real. Es idempotente: si ya existe una ejecución con
- * la misma clave, la retorna sin crear una nueva (a menos que esté en estado
- * `draft` o `rejected`, en cuyo caso la actualiza a `submitted`, o a
- * `approved` cuando una inspección ejecutada constituye la validación).
+ * Resuelve el programa activo aplicable a un evento (faena + fecha), con las
+ * mismas reglas que usaba `accreditPdtpFromEvent`: activo, con la faena
+ * dentro de su membresía explícita (si declara alguna), y del año del evento.
+ * Compartida con `resolvePdtpActivityIdsForNumbers`, que además la usan las
+ * obligaciones a demanda (Fase 3) para resolver a qué actividad apuntan.
  *
- * Una aprobación manual nunca se modifica aquí. Cada evento de integración
- * conserva una fila propia, incluso cuando comparte período con otro evento.
+ * Lanza para "sin programa", "programa no activo" o "faena fuera del
+ * programa" — son errores de configuración, no un caso normal. "Fuera del
+ * año del programa" no lanza: devuelve `{ ok: false }` y deja rastro en el
+ * log, porque ahí el trabajo sí ocurrió y no hay plan vigente que lo
+ * contemple.
  */
-export async function accreditPdtpFromEvent(
-  input: AccreditationInput,
-  client: AccreditationClient = db,
-): Promise<AccreditationResult> {
-  if (input.autoApproveByUserId && input.sourceType !== "inspeccion") {
-    throw new Error("Sólo las inspecciones pueden aprobar automáticamente su cumplimiento al ejecutarse.")
-  }
-  if (input.activityNumbers.length === 0) {
-    return { accredited: [], skippedExcluded: [], skippedNotFound: [] }
-  }
-
+async function resolvePdtpActiveProgramForEvent(
+  input: { worksiteId: string; occurredAt: string; programId?: string; sourceType: string; sourceId: string },
+  client: AccreditationClient,
+): Promise<ResolvedProgramEvent> {
   const occurredYear = yearOfOccurrence(input.occurredAt)
   const slot = periodSlot(input.occurredAt)
-  const executedQuantity = input.executedQuantity ?? 1
-  const now = new Date().toISOString()
-
-  // Un `evidenceRef` que sea un artefacto real (ruta de storage o URL) cuenta
-  // como evidencia entregada; un rótulo descriptivo ("Inspección completada: …")
-  // no debe inflar la métrica de evidencia → queda "not_required".
-  const isStorageRef = input.evidenceRef?.startsWith("storage/") ?? false
-  const isRealEvidence = isStorageRef || /^https?:\/\//.test(input.evidenceRef ?? "")
 
   // 1. Resolver el programa activo de la faena
   let program: typeof pdtpPrograms.$inferSelect | null = null
@@ -223,14 +227,12 @@ export async function accreditPdtpFromEvent(
 
   if (!program) {
     throw new Error(
-      `[accreditPdtpFromEvent] Sin programa PDTP activo para acreditar el evento ${input.sourceType}:${input.sourceId} en faena ${input.worksiteId}.`,
+      `Sin programa PDTP activo para el evento ${input.sourceType}:${input.sourceId} en faena ${input.worksiteId}.`,
     )
   }
 
   if (program.status !== "active") {
-    throw new Error(
-      `[accreditPdtpFromEvent] El programa ${program.id} no está activo (estado: ${program.status}).`,
-    )
+    throw new Error(`El programa ${program.id} no está activo (estado: ${program.status}).`)
   }
 
   const explicitMemberships = await client
@@ -241,7 +243,7 @@ export async function accreditPdtpFromEvent(
       eq(pdtpProgramWorksites.isActive, true),
     ))
   if (explicitMemberships.length > 0 && !explicitMemberships.some((member) => member.worksiteId === input.worksiteId)) {
-    throw new Error(`[accreditPdtpFromEvent] La faena ${input.worksiteId} no pertenece al programa ${program.id}.`)
+    throw new Error(`La faena ${input.worksiteId} no pertenece al programa ${program.id}.`)
   }
 
   // El programa resuelto tiene que cubrir el año en que ocurrió el evento. La
@@ -257,15 +259,87 @@ export async function accreditPdtpFromEvent(
         sourceType: input.sourceType, sourceId: input.sourceId, worksiteId: input.worksiteId,
         programId: program.id, programYear: program.year, occurredYear,
       },
-      "[accreditPdtpFromEvent] El evento ocurrió fuera del año del programa activo; no se acredita.",
+      "[resolvePdtpActiveProgramForEvent] El evento ocurrió fuera del año del programa activo.",
     )
+    return { ok: false, occurredYear, programYear: program.year }
+  }
+
+  return { ok: true, program, occurredYear, slot }
+}
+
+/**
+ * Resuelve el programa activo y mapea números de actividad a sus ids, para
+ * quien necesite el destino sin pasar por `accreditPdtpFromEvent` — hoy,
+ * `createPdtpObligation` desde el conector de incidentes (Fase 3).
+ *
+ * Devuelve `null` si el evento cae fuera del año del programa (mismo criterio
+ * tolerante que el motor); lanza para el resto de las condiciones de
+ * configuración, porque ahí sí es un error, no un caso normal.
+ */
+export async function resolvePdtpActivityIdsForNumbers(
+  input: { worksiteId: string; occurredAt: string; activityNumbers: number[]; programId?: string; sourceType: string; sourceId: string },
+  client: AccreditationClient = db,
+): Promise<{ programId: string; activityIdByN: Map<number, string>; skippedNotFound: number[] } | null> {
+  const resolved = await resolvePdtpActiveProgramForEvent(input, client)
+  if (!resolved.ok) return null
+
+  const activityRows = await client
+    .select({ id: pdtpActivities.id, n: pdtpActivities.n })
+    .from(pdtpActivities)
+    .where(and(
+      eq(pdtpActivities.programId, resolved.program.id),
+      inArray(pdtpActivities.n, input.activityNumbers),
+    ))
+  const activityIdByN = new Map(activityRows.map((a) => [a.n, a.id]))
+  const skippedNotFound = input.activityNumbers.filter((n) => !activityIdByN.has(n))
+  return { programId: resolved.program.id, activityIdByN, skippedNotFound }
+}
+
+// ── Función principal ─────────────────────────────────────────────────────────
+
+/**
+ * Acredita automáticamente las actividades PDTP indicadas a partir de un
+ * evento operacional real. Es idempotente: si ya existe una ejecución con
+ * la misma clave, la retorna sin crear una nueva (a menos que esté en estado
+ * `draft` o `rejected`, en cuyo caso la actualiza a `submitted`, o a
+ * `approved` cuando una inspección ejecutada constituye la validación).
+ *
+ * Una aprobación manual nunca se modifica aquí. Cada evento de integración
+ * conserva una fila propia, incluso cuando comparte período con otro evento.
+ */
+export async function accreditPdtpFromEvent(
+  input: AccreditationInput,
+  client: AccreditationClient = db,
+): Promise<AccreditationResult> {
+  if (input.autoApproveByUserId && input.sourceType !== "inspeccion") {
+    throw new Error("Sólo las inspecciones pueden aprobar automáticamente su cumplimiento al ejecutarse.")
+  }
+  if (input.activityNumbers.length === 0) {
+    return { accredited: [], skippedExcluded: [], skippedNotFound: [] }
+  }
+
+  const executedQuantity = input.executedQuantity ?? 1
+  const now = new Date().toISOString()
+
+  // Un `evidenceRef` que sea un artefacto real (ruta de storage o URL) cuenta
+  // como evidencia entregada; un rótulo descriptivo ("Inspección completada: …")
+  // no debe inflar la métrica de evidencia → queda "not_required".
+  const isStorageRef = input.evidenceRef?.startsWith("storage/") ?? false
+  const isRealEvidence = isStorageRef || /^https?:\/\//.test(input.evidenceRef ?? "")
+
+  const resolved = await resolvePdtpActiveProgramForEvent(
+    { worksiteId: input.worksiteId, occurredAt: input.occurredAt, programId: input.programId, sourceType: input.sourceType, sourceId: input.sourceId },
+    client,
+  )
+  if (!resolved.ok) {
     return {
       accredited: [],
       skippedExcluded: [],
       skippedNotFound: [],
-      skippedOutOfPeriod: { occurredYear, programYear: program.year, activityNumbers: input.activityNumbers },
+      skippedOutOfPeriod: { occurredYear: resolved.occurredYear, programYear: resolved.programYear, activityNumbers: input.activityNumbers },
     }
   }
+  const { program, occurredYear, slot } = resolved
 
   // 2. Resolver las actividades del programa por número
   const activityRows = await client

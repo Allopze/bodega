@@ -21,9 +21,15 @@ import type { ActionState } from "@/lib/validation/prevention"
 
 const REVALIDATE = "/prevencion/indicadores"
 
-function refresh(year?: number, month?: number) {
+/**
+ * `/prevencion/indicadores/${year}/${month}` no existe: el módulo tiene una
+ * sola `page.tsx` que resuelve el período por query param. Revalidar esa ruta
+ * fantasma no fallaba —`revalidatePath` no verifica que exista— pero tampoco
+ * hacía nada, y sugería una ruta dinámica que nadie escribió. Se dejó sólo la
+ * raíz, que es la que sirve la página real.
+ */
+function refresh() {
   revalidatePath(REVALIDATE)
-  if (year && month) revalidatePath(`${REVALIDATE}/${year}/${month}`, "page")
 }
 
 export async function saveSafetyIndicatorMonthAction(input: unknown): Promise<ActionState> {
@@ -34,16 +40,11 @@ export async function saveSafetyIndicatorMonthAction(input: unknown): Promise<Ac
   if (!parsed.ok) return parsed
   try {
     await upsertSafetyIndicatorMonth(parsed.data, session.user.id, resolveWorksiteScope(session), session.user.permissions.includes("prevention:indicadores:close"))
-    revalidatePath(REVALIDATE)
-    const data = input as Record<string, unknown> | null | undefined
-    if (data && typeof data.year === "number" && typeof data.month === "number") {
-      revalidatePath(`${REVALIDATE}/${String(data.year)}/${String(data.month)}`, "page")
-    }
+    refresh()
     return { ok: true }
   } catch (e) {
     return unexpectedActionError(e, "prevencion/indicadores/actions")
   }
-  return { ok: true }
 }
 
 export async function closeSafetyIndicatorPeriodAction(input: unknown): Promise<ActionState> {
@@ -53,7 +54,7 @@ export async function closeSafetyIndicatorPeriodAction(input: unknown): Promise<
   if (!parsed.ok) return parsed
   try {
     await closeSafetyIndicatorPeriod(parsed.data, guard.session.user.id, resolveWorksiteScope(guard.session))
-    refresh(parsed.data.year, parsed.data.month)
+    refresh()
     return { ok: true }
   } catch (e) {
     return unexpectedActionError(e, "prevencion/indicadores/actions")

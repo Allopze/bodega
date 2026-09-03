@@ -82,15 +82,10 @@ const attendanceRecordSchema = z.object({
  * Las cinco campañas que el programa 2026 planifica, con la actividad que cada
  * una acredita. El diálogo de creación las ofrece en vez de fijar la N°85
  * literal, que era el motivo por el que las N°86 a N°89 eran inalcanzables desde
- * la aplicación (D20).
+ * la aplicación (D20). Se mantiene el re-export para no romper importadores;
+ * el catálogo vive en `./prevention-campaigns.catalog` (seguro para cliente).
  */
-export const PDTP_CAMPAIGN_ACTIVITIES = [
-  { n: 85, label: "Vida saludable, alimentación y actividad física" },
-  { n: 86, label: "Manejo del estrés" },
-  { n: 87, label: "Alcohol y drogas no van al volante" },
-  { n: 88, label: "Seguridad vial" },
-  { n: 89, label: "Puntos ciegos en la conducción y operación" },
-] as const
+export { PDTP_CAMPAIGN_ACTIVITIES } from "./prevention-campaigns.catalog"
 
 const setCampaignActivitySchema = z.object({
   campaignId: z.string().min(1),

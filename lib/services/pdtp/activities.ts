@@ -116,6 +116,7 @@ export type PdtpActivityUpdateInput = {
   triggerType?: string | null
   triggerDescription?: string | null
   dueDays?: number | null
+  dueHours?: number | null
   evidenceRequirement?: string | null
   indicatorMode?: "planned_vs_completed" | "closed_on_time" | "completed_count" | "not_applicable" | "coverage"
   /** De qué registro sale el padrón; sólo tiene sentido con `coverage`. */
@@ -146,6 +147,7 @@ export type PdtpActivityAddInput = {
   triggerType?: string | null
   triggerDescription?: string | null
   dueDays?: number | null
+  dueHours?: number | null
   evidenceRequirement?: string | null
   indicatorMode?: "planned_vs_completed" | "closed_on_time" | "completed_count" | "not_applicable" | "coverage"
   /** De qué registro sale el padrón; sólo tiene sentido con `coverage`. */
@@ -239,7 +241,7 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
   }
   const configurableFields = [
     "audienceRoles", "scheduleMode", "scheduleClassificationStatus", "recurrenceRule", "triggerType", "triggerDescription",
-    "dueDays", "evidenceRequirement", "indicatorMode", "targetValue", "targetUnit",
+    "dueDays", "dueHours", "evidenceRequirement", "indicatorMode", "targetValue", "targetUnit",
     // Va junto a `indicatorMode` porque son la misma declaración partida en dos:
     // el modo dice "cuántos de cuántos" y la fuente dice de cuántos.
     "subjectSource",
@@ -403,6 +405,7 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
       scheduleClassificationStatus: input.scheduleClassificationStatus ?? "confirmed",
       recurrenceRule: input.recurrenceRule ?? null, triggerType: input.triggerType ?? null,
       triggerDescription: input.triggerDescription ?? null, dueDays: input.dueDays ?? null,
+      dueHours: input.dueHours ?? null,
       evidenceRequirement: input.evidenceRequirement ?? null, indicatorMode: input.indicatorMode ?? "planned_vs_completed",
       targetValue: input.targetValue ?? null, targetUnit: input.targetUnit ?? null,
       sourceSheetRow: 0, notes: input.notes ?? null, createdAt: now, updatedAt: now,
@@ -514,6 +517,7 @@ export async function duplicatePdtpActivity(activityId: string, userId: string) 
       triggerType: source.triggerType,
       triggerDescription: source.triggerDescription,
       dueDays: source.dueDays,
+      dueHours: source.dueHours,
       evidenceRequirement: source.evidenceRequirement,
       indicatorMode: source.indicatorMode,
       targetValue: source.targetValue,

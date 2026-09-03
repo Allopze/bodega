@@ -85,6 +85,9 @@ const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "mantenciones", submoduleHref: "/mantenciones", prefix: "/api/mantenciones" },
   { moduleId: "warehouse", submoduleHref: "/bodega", prefix: "/api/bodega" },
   { moduleId: "deliveries", submoduleHref: "/entregas", prefix: "/api/entregas" },
+  // Módulo TI: fotos y adjuntos sirven evidencia de asignaciones/actas.
+  { moduleId: "ti", submoduleHref: "/ti", prefix: "/api/ti" },
+  { moduleId: "ti", submoduleHref: "/ti", prefix: "/api/cron/ti-alerts" },
   // Sirve exclusivamente evidencia de entregas (ver S-08 en el handler).
   { moduleId: "deliveries", submoduleHref: "/entregas", prefix: "/api/attachments" },
   // Las facturas tienen toggle propio. Debe ir antes del owner general de

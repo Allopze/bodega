@@ -780,6 +780,13 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
           -- una actividad de enganche se cumple haciendo el trabajo en el
           -- módulo que corresponde, y por eso su fila apunta a la planilla
           -- —que muestra el estado— y no a un formulario que no existe.
+          -- Espeja resolvePdtpFulfillmentTarget en lib/services/pdtp/
+          -- fulfillment.ts, está duplicado en SQL, no delegado, porque esta
+          -- proyección es una sola consulta UNION ALL con las demás fuentes de
+          -- pendientes, todas resueltas en SQL. Si cambia uno, cambia el otro.
+          -- /prevencion/constancias existe desde G17 (lib/services/pdtp/
+          -- constancias.ts): lista, por (actividad, faena), la misma deuda
+          -- del primer mes impago que calcula este impago.mes.
           CASE ${pdtpActivities.mechanism}
             WHEN 'constancia' THEN CONCAT('/prevencion/constancias?faena=', ${worksites.id})
             ELSE CONCAT('/prevencion/pdtp/actividades?faena=', ${worksites.id}, '&vista=semana')

@@ -41,10 +41,10 @@ el trabajo grande; G17 conviene al final, cuando se sepa cuántas constancias qu
 | G11 Cablear el acta de trabajador nuevo | 5 | sí | G19 | reescrito por D22 |
 | ~~G12 Limpieza del catálogo~~ | 6 | no | G0 | ✅ hecho, N°21 incluida |
 | ~~G13 Decisiones sin módulo~~ | — | — | — | ✅ resuelto, ver G14–G17 |
-| G14 Módulo de alcotest | 3 | sí, módulo nuevo | G0 | |
-| G15 Módulo de CGRD (DS 44) | 3 | sí, módulo nuevo | G0 | |
+| G14 Módulo de alcotest | 3 | ✅ hecho | G0 | ver detalle abajo |
+| G15 Módulo de CGRD (DS 44) | 3 | ✅ hecho | G0 | ver detalle abajo |
 | G16 Checklist DS 594 | 1 | sí, menor | G1 | |
-| G17 Submódulo Constancias | 8 | sí | G14, G15, G16 | al final |
+| G17 Submódulo Constancias | 9 | ✅ hecho | G14, G15, G16 | ruta y permiso propios, ver detalle abajo |
 | G18 Correcciones de las decisiones | — | sí | G0 | |
 | G19 Padrón derivado | mide 3 | sí | G0 | reemplaza T36/T37 |
 
@@ -184,11 +184,16 @@ ya está implementado en [compliance.ts](../lib/services/pdtp/compliance.ts) y n
 
 **Cierra la medición de:** N°17, 18, 23, 24, 50, 54, 56.
 
-- [x] T34 `indicator_mode = 'coverage'` puesto en **N°17, 18, 23, 24 y 50** por
-      `pdtp:apply-catalog-decisions`, que ahora corre en el deploy. Faltan la **N°54 y la N°56**: no están en
-      la lista del script porque dependen de que existan sus cursos (G2), y ponerlas en cobertura antes sería
-      medir contra un padrón que nadie alimenta.
-- [ ] T35 Cargar `target_coverage_percent = 90` para N°54 y N°56, que declaran meta explícita.
+- [x] T34 `indicator_mode = 'coverage'` puesto en **las siete**: N°17, 18, 23, 24, 50 desde antes, y **N°54 y
+      N°56 el 2026-09-02** (G2 ya aplicado, así que el padrón de cursos existe).
+- [x] T35 `target_coverage_percent = 90` cargado en `pdtp_activity_worksite_params` para N°54 y N°56, en las 7
+      faenas del programa (`pdtp_program_worksites` vacía → todas las activas). Corrección al enunciado
+      original: la columna no está en `pdtp_activities`, es **por faena**; `COVERAGE_TARGETS` en
+      `apply-pdtp-2026-catalog-decisions.ts` itera faenas y llama `setPdtpActivityWorksiteAdjustment`,
+      preservando la exclusión existente si la hubiera. La N°54 usa `subjectSource: 'dotacion'`; **la N°56
+      queda sin fuente declarada** — mide "conductores, operadores y quienes conducen vehículos livianos", un
+      subconjunto que el CHECK de `subject_source` no admite (`equipos` cuenta vehículos, no personas). Cae al
+      comportamiento de siempre (cantidad planificada). Hueco de diseño anterior a T35, no creado por él.
 - [ ] ~~T36~~ **Superada por G19:** el padrón se deriva en vez de cargarse. Antes decía: cargar el padrón por faena donde la dotación activa no sirva
       de denominador. Para N°33/34 y N°25/26 el padrón existe: `fuel_vehicles` — que también está en cero filas.
 - [ ] ~~T37~~ **Superada por G19 y D16:** el inventario ya existe (`prevention_emergency_resources`). Antes decía: requiere inventario de extintores como sujeto; existe el
@@ -247,9 +252,18 @@ y los pasos de datos de G5/Fase 5 (padrón de la N°50) **en la ventana de borra
 - [x] T44 Sumar `documento` al union `PdtpAccreditationSourceType`.
 - [x] T45 N°43 — acreditar al publicar una versión nueva del procedimiento de trabajo seguro.
 - [x] T46 N°36 — acreditar la difusión de la matriz MIPER por acuse de recibo, en modo cobertura por cargo.
-- [ ] T47 N°19 — definir la lista de documentos exigidos por faena (D9 del diseño) y acreditar la carpeta de
-      requisitos legales contra esa lista.
-- [ ] T48 Poblar el módulo: hoy no hay ningún documento cargado, así que el enganche no es verificable.
+- [x] T47 **Reinterpretada, no D9.** El catálogo dice algo más concreto que "requisitos legales genéricos":
+      *"Mantener actualizada la carpeta de… entrega EPP, IRL, RIOHS"* — son las carpetas de trabajador, el
+      mismo hecho que ya cierra G11 (N°15, 18, 23). `onboardingActivityNumbers` en
+      `worker-onboarding-connector.ts` agrega la N°19 cuando esas tres ya cerraron: la carpeta queda al día
+      con los mismos tres componentes, archivados. Sin migración, sin `subject_source` — es
+      `planned_vs_completed`, no `coverage` (ya lo declaraba así el catálogo). Las cartas del SEREMI quedan
+      como evidencia de respaldo del expediente, sin ítem propio en el acta que las registre. La lista de
+      documentos por faena de D12 (la N°19 original del diseño de agosto, que SÍ mapeaba a "carpeta de
+      requisitos legales" en `prevention_legal_requirements`) sigue sin resolver — ver T48.
+- [ ] T48 **Dos brechas de dato distintas**, ninguna resuelta: (a) Documentación SST (`sst_documents`) sigue en
+      cero filas, así que N°36/43 no son verificables con datos reales; (b) la lista de documentos exigidos
+      por faena de la D12 —si se quiere ese registro además de la carpeta de trabajador— sigue sin definir.
 
 **Verificación:** publicar una versión y confirmar la ejecución. Para la N°36, registrar acuses hasta pasar el
 umbral de cobertura.
@@ -266,8 +280,10 @@ queda verificado por tests y no por datos reales.
 
 - [x] T49 Sumar `miper` al union `PdtpAccreditationSourceType`.
 - [x] T50 Conector al publicar una revisión de la matriz de la faena.
-- [ ] T51 Revisar la interacción con `createRiskReviewTrigger`, que ya crea disparadores de revisión MIPER
-      desde incidentes: la actividad se cierra al publicar, no al abrir el disparador.
+- [x] T51 **Verificado, sin cambio (2026-09-02):** `createRiskReviewTriggerWithClient` sólo inserta en
+      `prevention_risk_review_triggers` e historial — cero llamadas al motor. `onRiskMatrixPublished` tiene un
+      único punto de invocación, dentro de `transitionRiskMatrix(toStatus: 'published')`. Un disparador abierto
+      desde un incidente no puede acreditar la N°35 por ningún camino.
 
 **Verificación:** publicar una revisión y ver la ejecución.
 
@@ -279,11 +295,23 @@ queda verificado por tests y no por datos reales.
 
 **Cierra:** N°7.
 
-- [ ] T52 Sumar `indicadores` al union `PdtpAccreditationSourceType`.
-- [ ] T53 Identificar el punto exacto de ingreso de indicadores que constituye el cumplimiento.
-- [ ] T54 Conector desde ese punto.
+- [x] T52 Sumado `indicadores` al union `PdtpAccreditationSourceType`. Sin migración: `source_type` es `text`
+      sin CHECK.
+- [x] T53 El evento es `closeSafetyIndicatorPeriod`, no los upserts: `upsertSafetyIndicatorMonth` es un teclado
+      sin estado (`manual_legacy`) y `upsertSafetyIndicatorDenominator` deja el mes en `draft`/`pending_review`.
+      `closeSafetyIndicatorPeriod` aborta si el período no está conciliado.
+- [x] T54 Conector `onSafetyIndicatorPeriodClosed` en `pdtp-accreditation-connectors.ts`, llamado después del
+      commit de `closeSafetyIndicatorPeriod`. `sourceId` lleva el snapshot (un re-cierre genera snapshot nuevo
+      y por tanto otra fila). `occurredAt` es `closedAt`, no el mes que se cierra.
+      **Falta la revocación**: `onSafetyIndicatorPeriodReopened` está escrita pero no cableada a
+      `reopenClosedPeriod` — esa función corre dentro de transacciones abiertas en tres puntos
+      (`invalidateClosedIndicatorPeriodWithClient`, `upsertSafetyIndicatorDenominator`, y su caller en
+      `prevention-incidents.ts`), y enhebrar el disparo post-commit por los tres sin arriesgar el mismo
+      deadlock de conexión única que ya apareció una vez en esta fase queda pendiente.
 
-**Verificación:** ingresar los indicadores de un mes y ver la ejecución en ese período.
+**Verificación:** ingresar los indicadores de un mes y ver la ejecución en ese período. Verificado el conector
+en aislamiento contra `bodega_dev`: cierra genera 1 ejecución `submitted`, reintentar el mismo snapshot no
+duplica.
 
 ---
 
@@ -406,52 +434,176 @@ Ninguno estaba en el plan original. Salen de las resoluciones D04, D08, D09, D11
 
 ---
 
-## G14 — Módulo de alcotest (D08)
+## G14 — Módulo de alcotest (D08) — ✅ hecho el 2026-09-02 (Fase 5.2)
 
-**Cierra:** N°30, 31, 32. Salen de constancia manual.
+**Cierra:** N°30, 31, 32. Salen de constancia manual, pasan a `enganche` (`apply-pdtp-2026-mechanisms.ts`,
+aplicado en `bodega_dev`).
 
-- [ ] T76 Modelar el registro: control por trabajador con equipo, fecha, resultado y quién lo aplicó. El equipo
-      ya existe como ítem de servicio (`service_equipment`, con `kind` normalizado y faena), así que el
-      alcotómetro es el sujeto y su calibración ya se controla ahí.
-- [ ] T77 Conector al motor: `sourceType` nuevo, N°30 para el control del PRF y N°31 para el del Sup/JT.
-- [ ] T78 N°32 — el envío de registros según DO-48 se acredita desde el propio módulo, no a mano.
+- [x] T76 `alcohol_tests` recuperada con sus columnas originales de `0011_late_madrox.sql` (se borró en la poda
+      de 2026-07-02) más `equipment_id`, FK a `service_equipment` (kind='alcotest') — el alcotómetro es un
+      ítem existente, no una tabla nueva, y su calibración ya se controla ahí. `alcohol_test_dispatches` es la
+      entidad nueva del envío mensual (N°32): lote con período (año, mes), destinatario, evidencia y
+      `test_count`, único por (faena, año, mes). Migración `0243_robust_rafael_vega.sql`.
+      `db/schema/prevention/alcotest.ts`.
+- [x] T77 `sourceType: "alcotest"` nuevo en `PdtpAccreditationSourceType` (sin migración: `source_type` es texto
+      libre). `lib/services/prevention-alcotest.ts`: `resolveAlcotestActivityNumber(roles)` — función pura,
+      N°30 si el rol mapea a PRF (`prevencionista_faena`/`prevencionista`), N°31 si mapea a Sup/JT
+      (`supervisor_terreno`/`jefe_terreno`), `null` si no mapea a ninguno (mismo criterio que la N°64/65 de
+      EPP: dos instrumentos por rol, no un campo de la fila). `recordAlcoholTest` valida alcance, resuelve el
+      número, inserta y llama `recordPdtpFulfillmentEvent` — nace `submitted`, no autoaprobado
+      (`autoApproveByUserId` es sólo para `"inspeccion"`, `accreditation.ts:169-171`).
+- [x] T78 `recordAlcoholTestDispatch`: cuenta los controles del (faena, año, mes) pedido, inserta el envío y
+      acredita la N°32 con `sourceId = alcotest-dispatch:${id}` — un acto sobre el lote, no sobre cada control
+      (mismo error que ya documentó la N°28 si se acreditara por control). Guarda friendly ante reenvío del
+      mismo período (el índice único lo bloquearía con un error de driver, no uno legible).
+
+Permisos propios `prevention:alcotest:view/register/dispatch` (no `alcohol_tests`, retirado y prohibido en
+`prevention-rbac.test.ts`). N°30/31/32 sumados a `STRUCTURALLY_WIRED_ACTIVITY_NUMBERS`
+(`lib/services/pdtp/fulfillment.ts`) para que la compuerta 81/81 los reconozca como `enganche` con conector
+real. Ruta `/prevencion/alcotest`: registrar control y envío mensual, listar ambos por faena.
+21 tests PGlite en `lib/__tests__/prevention-alcotest.test.ts`.
+
+**Completado el 2026-09-02, segunda pasada (persona evaluada y equipo).** El primer corte dejó
+`tested_worker_id` sin exponer en la UI, lo que acreditaba bien pero dejaba un registro flojo como evidencia:
+un alcotest que no dice a quién se le tomó no es oponible ante un fiscalizador. Cerrado así
+(migración `0246_remarkable_thunderbolts.sql`):
+
+- **Columna nueva `tested_person_name`** y CHECK `alcohol_tests_subject_valid` excluyente —o trabajador de la
+  dotación, o nombre de un tercero, nunca ambos ni ninguno. El fallback por nombre no es un atajo: el alcotest
+  se aplica también al chofer de un proveedor, que no está en `workers`. Mismo patrón que
+  `prevention_committee_attendance` con integrante vs invitado.
+- **Pertenencia a la faena validada en las dos FK**: la persona evaluada y el alcotómetro deben ser de la faena
+  del control, y estar activos. Un control atribuido a alguien o a un equipo de otra faena no se sostiene.
+- **`equipment_id` expuesto**, con `listAlcotestEquipment` filtrando `kind = 'alcotest'` e `isActive`. La razón
+  de enlazarlo es que la calibración se controla en `service_equipment`: un control hecho con un equipo
+  descalibrado no prueba nada, y sin el enlace el sistema no podía distinguirlo. Sigue siendo opcional porque
+  no todo alcotómetro está dado de alta todavía.
 
 ---
 
-## G15 — Módulo de CGRD, DS 44 (D09)
+## G15 — Módulo de CGRD, DS 44 (D09) — ✅ hecho el 2026-09-02 (Fase 5.1)
 
-**Cierra:** N°79, 80, 81. Deuda normativa: es un comité que el DS 44 exige, distinto del paritario.
+**Cierra:** N°79, 80, 81. Deuda normativa: es un comité que el DS 44 exige, distinto del paritario. Pasan de
+`constancia` a `enganche` (`apply-pdtp-2026-mechanisms.ts`, aplicado en `bodega_dev`).
 
-- [ ] T79 Comité: constitución por faena, integrantes y vigencia. El molde es el módulo de CPHS.
-- [ ] T80 Matriz GRD: análisis histórico, amenazas, evaluación legal y plan de trabajo. **No es MIPER** —
-      MIPER es de riesgos laborales, no de desastres.
-- [ ] T81 Actas de reunión, con el patrón de las actas del CPHS.
-- [ ] T82 Conector: N°79 al constituir, N°80 al publicar la matriz, N°81 por acta cerrada.
+- [x] T79 Comité: `prevention_grd_committees` + `prevention_grd_members`, molde de CPHS (constitución por
+      faena, integrantes con rol, vigencia, un solo comité activo por faena — índice único parcial).
+- [x] **Umbral de dotación resuelto el 2026-09-03** (norma aportada por el usuario, migración
+      `0249_next_eddie_brock.sql`). DS 44 y la guía de GRD: **hasta 25 personas corresponde designar un
+      Coordinador de Gestión del Riesgo de Desastres; desde 26, constituir el Comité.** Es otra figura que el
+      **Delegado de SST** (otro cuerpo normativo, entre 10 y 25 cuando no hay Comité Paritario) y pueden
+      coexistir. Implementado como `prevention_grd_coordinators` (molde de `prevention_worksite_delegates`),
+      `resolveGrdStructure`/`grdStructureSatisfies`/`GRD_COMMITTEE_MIN_HEADCOUNT` en `lib/prevention/cgrd.ts`
+      y `getGrdStructureStatus` para que UI y compuerta lean la misma regla. Reglas:
+      - Designar coordinador con 26 o más **se rechaza**: es el mínimo de la norma, no una preferencia.
+      - Constituir comité en faena chica **se permite**: la norma fija un mínimo y sobrecumplirlo no es
+        incumplir.
+      - Constituir el comité **termina** la designación del coordinador, con motivo en la bitácora: es el
+        camino de migración de la faena que cruza el umbral, y dos órganos vigentes afirmarían algo que la
+        norma no pide.
+      - La **N°79 se acredita con el órgano que corresponda**: en una faena de hasta 25 el acto exigible es
+        la designación, no un comité.
+      - `getGrdStructureStatus` deja visible la brecha del coordinador que dejó de bastar porque la faena
+        creció (`satisfied: false`).
+- [x] T80 `prevention_grd_matrices` + `prevention_grd_threats`: la **máquina completa de la MIPER** (D09 lo
+      pedía así, no la de Emergencias), `draft → in_review → reviewed → approved → published → superseded`,
+      tres firmas segregadas, `published_hash_sha256`, una sola publicada por faena. **No es MIPER** — tabla
+      de amenazas propia (`origin` obligatoria/detectada, análisis histórico, evaluación legal y plan de
+      trabajo por amenaza — los tres componentes que el enum cerrado de
+      `prevention_emergency_scenarios.type` no tiene dónde guardar), con puente opcional
+      `emergency_scenario_id` al componente 5 (la matriz referencia el plan de emergencia aprobado, no lo
+      duplica — la N°83 se sigue acreditando aparte por escenarios, D13).
+- [x] T81 `prevention_grd_meetings`: patrón de actas del CPHS (convocar → cerrar con acta → o cancelar).
+      **Sin quórum calculado, y ya no por falta de dato: el DS 44 no fija quórum para las reuniones del
+      CGRD** (confirmado el 2026-09-03). No hay regla que computar — el `assessQuorum` del CPHS mide mayoría
+      de titulares *y* presencia de ambas representaciones porque ese órgano es bipartito por DS 54, y el CGRD
+      no lo es. Quien cierra el acta declara si hubo quórum, y queda con autor y fecha en la bitácora. Esto
+      deja de ser una simplificación pendiente: es la conducta correcta.
+- [x] **Acuerdos del acta derivados a CAPA** (segunda pasada del 2026-09-02, migración
+      `0247_little_warpath.sql`). El primer corte los dejó como prosa dentro del texto del acta, sin que nadie
+      los persiguiera. Ahora `prevention_grd_agreements` con el mismo criterio que el CPHS: cada acuerdo abre
+      una CAPA (`sourceType: 'cgrd'`, valor nuevo en el CHECK de `prevention_capa_actions` y en el enum Zod de
+      `capaCreateSchema`) y el acuerdo **no** tiene columna `status` — el estado del acuerdo ES el de su CAPA,
+      decisión "CAPA motor único" que prohíbe el espejo porque se desincroniza y miente. Las CAPA se crean
+      **antes** del UPDATE del acta: si una falla —un responsable inactivo, por ejemplo— revierte todo y el
+      acta no queda cerrada a medias con acuerdos perdidos ni con la N°81 acreditada.
+- [x] T82 Tres conectores en `pdtp-accreditation-connectors.ts`: `onGrdCommitteeConstituted` (N°79),
+      `onGrdMatrixPublished` (N°80), `onGrdMeetingClosed` (N°81) — `sourceType: "cgrd"` nuevo, sin migración
+      (`pdtp_executions.source_type` es texto libre). Sumados a `STRUCTURALLY_WIRED_ACTIVITY_NUMBERS`
+      (compuerta 81/81).
+
+Migración `0244_lonely_cerise.sql`: las cinco tablas más `'cgrd'` en el CHECK de
+`prevention_pdtp_source_links.source_type` y `'grd_committee'`/`'grd_matrix'`/`'grd_meeting'` en el de
+`sst_document_links.entity_type`. Permisos propios (`prevention:cgrd:view` + `committee:manage` +
+`matrix:edit/review/approve/publish` + `meeting:manage`, mismo reparto segregado que la MIPER). Helpers puros
+en `lib/prevention/cgrd.ts` (máquina de transición + permiso por estado, con sus propios tests). Ruta
+`/prevencion/cgrd`: selector de faena, comité + integrantes, matriz (crear versión, agregar/quitar amenaza,
+transicionar) y actas (convocar/cerrar/cancelar) en una sola pantalla.
+
+13 tests PGlite (`lib/__tests__/prevention-cgrd.test.ts`): constitución + duplicado bloqueado + fuera de
+alcance, integrantes, máquina de estados completa con segregación, supersede, actas con acreditación y
+cancelación, y los tres casos de acuerdos (CAPA creada con plazo y prioridad, acta sin acuerdos, y el rollback
+completo cuando un acuerdo es inválido). Suite adicional sobre Postgres real (`lib/__tests__/prevention-cgrd-postgres.test.ts`, molde de
+`prevention-cphs-postgres.test.ts`) para el mismo invariante de "una sola publicada por faena" — con
+`PREVENTION_CGRD_DATABASE_URL`/`PREVENTION_CGRD_ALLOW_DESTRUCTIVE_RESET` ya en `ci.yml`, para que el
+`describeIf` no la salte en verde sin que nadie lo note.
 
 ---
 
 ## G16 — Checklist de condiciones ambientales DS 594 (D11)
 
-**Cierra:** N°10. Es el grupo más chico de los nuevos.
+**Cierra:** N°10. ✅ Hecho el 2026-09-02.
 
-- [ ] T83 Escribir la definición en `lib/sst/definitions/`, con el molde de las otras once.
-- [ ] T84 Declararla en `PDTP_2026_INSPECTION_SPECS` con `n: 10` e instalarla.
-- [ ] T85 Sacar la N°10 de `CONSTANCIA` en el script de mecanismos.
+- [x] T83 `INSPECCION_CONDICIONES_AMBIENTALES` en `lib/sst/definitions/`, molde de `inspeccion_taller`. Doce
+      ítems (`cumple_parcial_nocumple_na_obs`) desde la Ley 21.512 (ex DS 594): agua potable, servicios
+      higiénicos, duchas, vestidores, comedor, residuos, ventilación, iluminación, orden y aseo, plagas. Sin
+      ruido ni temperatura, que ya tienen protocolo propio (N°45-49).
+- [x] T84 Declarada en `PDTP_2026_INSPECTION_SPECS` con `n: 10`. Instalada en dev:
+      `npm run db:seed-pdtp-inspection-templates` la crea en `draft` (queda T09, habilitarla, como el resto).
+- [x] T85 Sacada de `CONSTANCIA`, agregada a `ENGANCHE`. Aplicado en dev con `npm run pdtp:apply-mechanisms`:
+      N°10 pasó a `enganche`.
+
+**Verificación:** paridad de 12 ítems puntuables fijada en `lib/sst/__tests__/definitions.test.ts`; test de
+definición propio en `lib/__tests__/inspeccion-condiciones-ambientales-definition.test.ts`. Confirmado en
+`bodega_dev`: `mechanism = 'enganche'` para la N°10.
 
 ---
 
-## G17 — Submódulo Constancias (D18)
+## G17 — Submódulo Constancias (D18) — ✅ hecho el 2026-09-02 (Fase 4.5)
 
-**Cierra:** ocho actividades — N°3, 6, 20, 22, 28, 42, 61, 82 — que **ya se pueden marcar hoy** desde la
-planilla. El valor es reunirlas, no habilitarlas.
+**Cierra:** nueve actividades — N°3, 6, 20, 22, 28, 42, **44** (el TODO la había omitido), 61, 82 — que **ya se
+podían marcar hoy** desde la planilla. El valor es reunirlas, no habilitarlas. Baja a un número más chico
+cuando G14/G15 reclasifiquen 30–32 y 79–81 de `constancia` a `enganche`: la ruta no lo necesita saber, filtra
+por `mechanism = 'constancia'` en el momento, así que el conteo se ajusta solo.
 
-Su alcance bajó de quince a ocho por las decisiones vecinas: la D11 se lleva la N°10, la D08 las N°30–32 y la
-D09 las N°79–81. Conviene hacerlo al final, cuando el número esté firme.
+- [x] T86 Ruta `/prevencion/constancias` (`app/(app)/prevencion/constancias/`) y
+      `listPdtpConstanciaActivities` (`lib/services/pdtp/constancias.ts`): una fila por (actividad, faena),
+      anclada al primer mes impago — misma regla `impago.mes` que la cola operacional (D12), para que el badge
+      de `/pendientes` y esta lista cuenten lo mismo.
+- [x] T87 `PdtpExecutionForm` reutilizado sin cambios. Permiso propio (`prevention:constancias:view`/`:execute`,
+      no `prevention:pdtp:execute`): `markPdtpExecutionAction` acepta cualquiera de los dos
+      (`guardAnyPermission`, nuevo en `lib/auth/can.ts`) y, cuando quien registra sólo tiene el de Constancias,
+      exige `assertPdtpActivityMechanism(activityId, 'constancia')` antes de escribir — la UI ya filtra, pero el
+      server action no confiaba en eso por su cuenta.
+- [x] T88 **Resuelto: complementan, no compiten (ya era la decisión A4 implementada en el SQL).** La cola avisa
+      con el CTA "Dejar constancia" → `/prevencion/constancias?faena=…`; Constancias es donde se marca. El 404
+      que arrastraba esa ruta (meses en producción sin que ningún test lo detectara) queda cerrado y cubierto
+      por un test que lee el literal real de la consulta
+      (`lib/__tests__/navigation-targets-exist.test.ts`), no una copia a mano.
 
-- [ ] T86 Ruta y listado filtrando por `mechanism = 'constancia'`, que ya está poblado en la base.
-- [ ] T87 Marcar hecho con evidencia u observación, reutilizando el formulario de ejecución de la planilla.
-- [ ] T88 Resolver su relación con `/pendientes` (decisión A4 del diseño, todavía abierta): la cola avisa y
-      Constancias es donde se marca, o el marcado vive en los dos.
+11 tests nuevos en `lib/__tests__/pdtp-constancias.test.ts` (PGlite): primer-mes-impago, vencida vs pendiente,
+`submitted`/`approved` saldan la deuda y `draft` no, alcance por faena, exclusión R4, mecanismo `enganche`
+fuera de la lista, sin programa activo. RBAC: bloque nuevo en `prevention-rbac.test.ts`.
+
+**Hallazgo de paso, no de G17:** al ejercer esta fase con PGlite ya disponible salieron 5 fallas reales en
+`prevention-pdtp.test.ts` que la salida intermitente de PGlite había dejado sin verificar desde que se cableó
+`closed_on_time` (Fase 3): (a) el fixture compartido `prepareProgramForReview` fijaba `indicatorMode =
+'closed_on_time'` en **todas** las actividades del programa de prueba, no sólo en las `on_demand`/`triggered` —
+inerte antes de Fase 3, rompía `getPdtpComplianceIndicators` en cualquier test de `planned_vs_completed` en
+cuanto ese modo empezó a leerse de verdad; y (b) el `beforeEach` borraba `pdtp_obligations` antes que
+`pdtp_executions`, así que la cascada `ON DELETE SET NULL` podía anular dos ejecuciones de la misma celda a la
+vez y chocar contra el índice único parcial. Las dos corregidas en el fixture/orden de limpieza del test, no en
+el código de producción.
 
 ---
 
@@ -529,6 +681,77 @@ para las de flujo, que es lo que hace medible a la N°18. Ocho tests nuevos.
 - **T51** — revisar la interacción de MIPER con `createRiskReviewTrigger`.
 - **T52 a T54 (G9)** — el conector de indicadores de faena, que nunca se empezó.
 - **G14 a G17** — los módulos nuevos de alcotest y CGRD, el checklist DS 594 y el submódulo Constancias.
+
+### El programa quedó sin bloqueadores el 2026-09-03
+
+Verificado contra `bodega_dev`: `getPdtpSubmitReviewBlockers('pdtp-2026-v1')` devuelve **0**, y la compuerta
+reporta **80/81 listas**. El único pendiente es informativo y no frena el envío: la N°56 midiéndose por
+cobertura sin fuente de padrón declarable, que sigue esperando el dato de Prevención.
+
+Antes de esto había un bloqueador vivo con 10 actividades, que **contradecía lo que este documento y mis
+informes venían diciendo** ("T05 es sólo una decisión operativa"). Eran dos cosas:
+
+- **Las nueve constancias no declaraban evidencia mínima.** La compuerta la exige —una constancia sin
+  evidencia declarada es "alguien dijo que se hizo"— y nada la sembraba: el script de Fase 1 sólo cubrió las
+  19 `on_demand`. Ahora `apply-pdtp-2026-demand-slas.ts` trae `CONSTANCIA_EVIDENCE` con las nueve, derivando
+  cada texto de la **guía de ejecución del propio catálogo** (columna que viaja en `pdtp_activities.program`)
+  y marcándolo como propuesto en `notes`: la guía dice cómo se hace la actividad, no necesariamente qué
+  documento queda. `apply-pdtp-2026-mechanisms.ts` quedó con el aviso cruzado, para que quien agregue una
+  constancia declare su evidencia en el mismo movimiento.
+- **La N°19 era un error mío.** En la reinterpretación de T47 cablée su acreditación en el conector de
+  trabajador nuevo —cierra junto con la N°15, N°18 y N°23— pero no la agregué a
+  `STRUCTURALLY_WIRED_ACTIVITY_NUMBERS`, así que la compuerta la veía como enganche sin destino declarado.
+
+### Corregido el 2026-09-03 (repaso de huecos de código)
+
+- **La compuerta 81/81 verificaba medio permiso.** Comprobaba que el responsable declarado mapeara a un rol
+  RBAC, y ahí se detenía: una actividad pasaba con un responsable que abría su tarjeta en `/pendientes` y se
+  encontraba con un 403. Ahora exige además que ese rol **tenga el permiso del módulo donde el cumplimiento
+  se registra**, leído de `role_permissions` en base y no del manifest (el manifest es la semilla; lo que
+  decide es el grant cargado). `constancia` pide `prevention:constancias:execute`, `formulario`/`compuesta`
+  piden `prevention:pdtp:execute`.
+  - **`enganche` queda sin verificar a propósito**: su módulo destino depende de la actividad —una cierra en
+    Inspecciones, otra en Capacitación, otra en EPP— y no existe el mapa actividad → módulo. Ese mapa es el
+    contrato anual que el plan pedía en `fulfillment-contract-2026.ts` y que sigue sin escribirse; mientras
+    no exista, la compuerta prefiere no afirmar nada antes que verificar contra el módulo equivocado. Es la
+    dependencia que hace que ese archivo pendiente importe más de lo que parecía.
+  - De paso: la etiqueta agrupada de `permission_gap` decía "sin un responsable que mapee a un rol real", que
+    **mentía** en el caso nuevo (el rol existe, le falta el grant). Ahora dice "sin un responsable que pueda
+    registrar el cumplimiento", que cubre los dos.
+- **El informe clasificado ya se puede ver.** `getPdtpCoverageReport` + `CoverageReportPanel` en la ficha del
+  programa: cuántas de las activas están listas y, por clasificación, cuáles y por qué. Antes
+  `PdtpFulfillmentCoverageStatus` distinguía cinco estados y `getPdtpSubmitReviewBlockers` los colapsaba a una
+  línea —lo que cabe en un mensaje de error—, así que para saber *cuáles* había que leer la base actividad por
+  actividad: justo el trabajo que la compuerta vino a evitar. Se muestra sólo mientras el programa no está
+  activo, que es cuando es una decisión pendiente.
+- **Fixture de `prevention-pdtp.test.ts`:** el RBAC pasó a sembrarse una sola vez tras las migraciones, con
+  los nueve roles que el catálogo real 2026 declara, en vez de por test. Es dato de referencia —ningún caso lo
+  modifica— y reinsertarlo 70 veces sólo gastaba tiempo.
+
+- **El desglose por eje perdía 18 de las 81 actividades.** `getPdtpComplianceByCategoryForScope` metía las
+  `closed_on_time` en el bucket puntuable pero contaba sus celdas de cronograma, que no existen (son
+  `on_demand`): aportaban `planned = 0` y desaparecían en silencio de su eje SG-SST. Ahora cuentan por
+  **caso** —obligación vencida en el denominador, cierre dentro de plazo en el numerador—, que es
+  proporcional y del mismo orden que "12 inspecciones planificadas". Las de `coverage` siguen fuera, y ahora
+  el comentario explica por qué de verdad: su denominador es un padrón de 50 personas, que dominaría un eje
+  que cuenta instancias. `loadClosedOnTimeByActivityMonth` pasó a recibir una lista de faenas, así que la
+  vista por faena y el desglose por eje comparten consulta y regla.
+- **Aviso sobre mi propio informe anterior:** reporté que el agregado mensual mostraba 0 % donde la vista por
+  faena mostraba el valor real. **Es falso.** `getPdtpComplianceIndicatorsForScope` ya resolvía bien —calcula
+  por faena y suma— y sus dos consumidores de UI siempre pasan faena. El camino sin faena existe en la firma
+  pero no es alcanzable desde la aplicación.
+- **`prevention_capa_source_type_valid` rechazaba `gps_onway`, y no era teórico.**
+  `onway-automation.ts` crea una CAPA con ese `sourceType` cuando una alerta GPS cae en una regla con acción
+  CAPA; el CHECK la rechazaba y el cron de OnWay revertía la transacción completa. El enum de Zod y el
+  mapeador de href ya lo tenían: sólo el CHECK estaba atrasado. Agregado (migración `0248`). No es del PDTP;
+  apareció al sumar `'cgrd'` al mismo CHECK.
+- **`target_coverage_percent` sin CHECK de rango.** El 0-100 lo imponía sólo Zod y
+  `setPdtpActivityWorksiteParams` escribe sin pasar por ahí, así que una meta de 900 % habría subido el
+  umbral de acreditación a un número inalcanzable, callada. Agregado `> 0 AND <= 100` (migración `0248`).
+- **`/prevencion/indicadores/${year}/${month}` no existe.** Dos `revalidatePath` apuntaban a esa ruta
+  fantasma —el módulo tiene una sola `page.tsx` que resuelve el período por query param—. No fallaba, pero
+  tampoco hacía nada y sugería una ruta dinámica que nadie escribió. Quedó sólo la raíz, y de paso se eliminó
+  un `return` inalcanzable en `saveSafetyIndicatorMonthAction`.
 
 ### Corregido el 2026-09-02, segunda pasada
 

@@ -99,6 +99,7 @@ async function seedEnrollment(id: string, workerId: string, dueOn: string) {
 }
 
 beforeEach(async () => {
+  await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
   await inMemoryDb.delete(schema.pdtpExecutions)
   await inMemoryDb.delete(schema.pdtpActivityWorksiteParams)
   await inMemoryDb.delete(schema.pdtpActivityWorksiteExclusions)

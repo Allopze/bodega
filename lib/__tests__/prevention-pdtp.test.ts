@@ -39,6 +39,32 @@ vi.mock("@/lib/storage/config", () => ({
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
+/**
+ * RBAC como dato de referencia, sembrado una vez: la compuerta 81/81 exige que
+ * el rol del responsable tenga permiso en el módulo donde el cumplimiento se
+ * registra, y esos nueve roles son los que el catálogo real 2026 declara
+ * (consultado en `pdtp_responsible_catalog`). Va fuera del `beforeEach` porque
+ * no es estado de test: ningún caso lo modifica, y reinsertarlo 70 veces sólo
+ * gastaría tiempo.
+ */
+const CATALOG_ROLES = [
+  "prevencionista_faena", "cphs", "prevencionista", "jefe_terreno", "jefe_mantencion",
+  "admin_contrato", "subgerente_operaciones", "gerente_legal_rrhh", "supervisor_terreno",
+] as const
+await inMemoryDb.insert(schema.roles).values(
+  CATALOG_ROLES.map((name) => ({ id: `role-${name}`, name, label: name })),
+)
+await inMemoryDb.insert(schema.permissions).values([
+  { id: "perm-constancias-execute", name: "prevention:constancias:execute", module: "prevention" },
+  { id: "perm-pdtp-execute", name: "prevention:pdtp:execute", module: "prevention" },
+])
+await inMemoryDb.insert(schema.rolePermissions).values(
+  CATALOG_ROLES.flatMap((name) => [
+    { roleId: `role-${name}`, permissionId: "perm-constancias-execute" },
+    { roleId: `role-${name}`, permissionId: "perm-pdtp-execute" },
+  ]),
+)
+
 afterAll(async () => {
   delete testGlobal.__db
   await pg.close()
@@ -47,6 +73,16 @@ afterAll(async () => {
 beforeEach(async () => {
   await inMemoryDb.delete(schema.operationalActivityEvents)
   await inMemoryDb.delete(schema.preventionRiskLegalHistory)
+  // pdtpExecutions.obligationId es `onDelete: "set null"`: si `pdtpObligations`
+  // se borra primero, la cascada anula ese campo en TODAS las ejecuciones
+  // huérfanas de una sola vez, y si dos de ellas (de dos obligaciones
+  // distintas) comparten (actividad, faena, año, mes, semana) — un caso legítimo
+  // mientras cada una cuelga de su propia obligación — la puesta a NULL
+  // simultánea choca contra `pdtp_executions_activity_scope_period_unique`
+  // (única para `obligation_id IS NULL`). Borrar las ejecuciones primero evita
+  // que la cascada llegue a dispararse.
+  await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
+  await inMemoryDb.delete(schema.pdtpExecutions)
   await inMemoryDb.delete(schema.pdtpObligationReminders)
   await inMemoryDb.delete(schema.pdtpObligations)
   await inMemoryDb.delete(schema.pdtpProgramTemplateVersions)
@@ -56,11 +92,9 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpActivitySchedule)
   // createActionPlanItem (usado por el test del expediente auditor) crea un
   // registro CAPA espejo por cada acción PDTP (pdtp_action_plan.capa_action_id
-  // referencia prevention_capa_actions con onDelete: "restrict"). Hay que
-  // borrar pdtpExecutions primero (cascada a pdtpActionPlan) y solo entonces
-  // las tablas CAPA, o el DELETE de prevention_capa_actions queda bloqueado
-  // por filas de pdtp_action_plan que todavía la referencian.
-  await inMemoryDb.delete(schema.pdtpExecutions)
+  // referencia prevention_capa_actions con onDelete: "restrict"). pdtpExecutions
+  // ya se borró arriba (cascada a pdtpActionPlan), así que las tablas CAPA
+  // pueden borrarse ahora sin que pdtp_action_plan las bloquee.
   await inMemoryDb.delete(schema.preventionCapaEvidence)
   await inMemoryDb.delete(schema.preventionCapaFollowups)
   await inMemoryDb.delete(schema.preventionCapaTransitions)
@@ -85,6 +119,10 @@ beforeEach(async () => {
     { id: "user-jdpr", name: "Jefatura DPR", email: "jdpr@example.test", hashedPassword: "x" },
     { id: "user-jdpr-2", name: "Jefatura DPR suplente", email: "jdpr2@example.test", hashedPassword: "x" },
     { id: "user-legal", name: "Legal", email: "legal@example.test", hashedPassword: "x" },
+    // Segregación en `approvePdtpExecution`: quien registra el cumplimiento no
+    // puede aprobarlo (hallazgo del 2026-09-02). Los tests de este archivo
+    // ejecutan como "user-1"; este es el aprobador distinto que necesitan.
+    { id: "user-approver", name: "Aprobadora", email: "aprobadora@example.test", hashedPassword: "x" },
   ])
   await inMemoryDb.insert(schema.worksites).values({
     id: "ws-1",
@@ -92,6 +130,18 @@ beforeEach(async () => {
     code: "FA",
     isActive: true,
   })
+  // Compuerta 81/81 (`assertPdtpFulfillmentCoverage`): exige que el
+  // responsable declarado mapee a un rol RBAC real. `loadPdtpCatalog` siembra
+  // esto solo desde el catálogo real 2026; los fixtures de este archivo que
+  // arman una actividad a mano usan estos mismos slugs (ver
+  // `ROLE_RESPONSIBLE_SLUGS` en `sheet-meta-2026.ts`).
+  await inMemoryDb.insert(schema.pdtpResponsibleCatalog).values([
+    { slug: "prf", displayName: "Prevencionista de riesgos en faena", roleName: "prevencionista_faena", kind: "rbac_role" },
+    { slug: "jdpr", displayName: "Jefatura DPR", roleName: "prevencionista", kind: "rbac_role" },
+    { slug: "jt", displayName: "Jefe de terreno", roleName: "jefe_terreno", kind: "rbac_role" },
+    { slug: "cphs", displayName: "Comité Paritario", roleName: "cphs", kind: "rbac_role" },
+    { slug: "prevencionista", displayName: "Prevencionista", roleName: "prevencionista", kind: "rbac_role" },
+  ])
 })
 
 describe("prevention PDTP service", () => {
@@ -99,9 +149,32 @@ describe("prevention PDTP service", () => {
     await inMemoryDb.update(schema.pdtpActivities)
       .set({ scheduleClassificationStatus: "confirmed" })
       .where(eq(schema.pdtpActivities.programId, programId))
+    // El SLA (dueDays) y closed_on_time sólo son exigibles —y sólo tienen
+    // sentido— para on_demand/triggered (lifecycle.ts:87), igual que el script
+    // real `apply-pdtp-2026-demand-slas.ts`. Aplicarlo también a las
+    // `scheduled` reclasificaba su indicatorMode y dejaba `executed` en 0 para
+    // cualquier test que las ejecutara por planilla: closed_on_time no cuenta
+    // ejecuciones, cuenta obligaciones (Fase 3).
     await inMemoryDb.update(schema.pdtpActivities)
-      .set({ dueDays: 5, evidenceRequirement: "Registro verificable del caso", indicatorMode: "closed_on_time" })
+      .set({ dueDays: 5, indicatorMode: "closed_on_time" })
+      .where(and(
+        eq(schema.pdtpActivities.programId, programId),
+        inArray(schema.pdtpActivities.scheduleMode, ["on_demand", "triggered"]),
+      ))
+    // La evidencia mínima sí se declara para todas: la compuerta 81/81
+    // (`assertPdtpFulfillmentCoverage`) la exige de cualquier actividad
+    // `constancia`, no sólo de las on_demand/triggered.
+    await inMemoryDb.update(schema.pdtpActivities)
+      .set({ evidenceRequirement: "Registro verificable del caso" })
       .where(eq(schema.pdtpActivities.programId, programId))
+    // Compuerta 81/81 (`assertPdtpFulfillmentCoverage`): toda actividad activa
+    // necesita un mecanismo clasificado y evidencia mínima si es `constancia`.
+    // El script real (`apply-pdtp-2026-mechanisms.ts`) lo hace por catálogo;
+    // acá basta un valor uniforme porque los tests de este archivo ejercitan
+    // el ciclo de vida del programa, no la clasificación por mecanismo.
+    await inMemoryDb.update(schema.pdtpActivities)
+      .set({ mechanism: "constancia" })
+      .where(and(eq(schema.pdtpActivities.programId, programId), eq(schema.pdtpActivities.mechanism, "sin_definir")))
   }
 
   const loadCatalog = async () => {
@@ -922,7 +995,7 @@ describe("prevention PDTP service", () => {
       week: 1,
       executedQuantity: 2,
     }, "user-1", ["ws-1"])
-    await approvePdtpExecution(exec2.id, "user-1", ["ws-1"])
+    await approvePdtpExecution(exec2.id, "user-approver", ["ws-1"])
 
     // Force a draft execution (directly insert)
     const act3 = activities[2]!
@@ -979,7 +1052,7 @@ describe("prevention PDTP service", () => {
     const execution = await markPdtpExecution({
       activityId: activity.id, worksiteId: "ws-1", year: 2029, month: 1, week: 1, executedQuantity: 3,
     }, "user-1", ["ws-1"])
-    await approvePdtpExecution(execution.id, "user-1", ["ws-1"])
+    await approvePdtpExecution(execution.id, "user-approver", ["ws-1"])
 
     const result = await getPdtpComplianceIndicators(program.id, "ws-1")
     // Techo (R3): la celda aporta min(3,1)=1 al indicador, no 3; el mes no
@@ -1045,10 +1118,10 @@ describe("prevention PDTP service", () => {
 
     // actUnder cubre 3 (<4) → no acredita nada (todo o nada).
     const e1 = await markPdtpExecution({ activityId: actUnder.id, worksiteId: "ws-1", year: 2031, month: 1, week: 1, executedQuantity: 3 }, "user-1", ["ws-1"])
-    await approvePdtpExecution(e1.id, "user-1", ["ws-1"])
+    await approvePdtpExecution(e1.id, "user-approver", ["ws-1"])
     // actFull cubre 4 (=4) → acredita completo.
     const e2 = await markPdtpExecution({ activityId: actFull.id, worksiteId: "ws-1", year: 2031, month: 1, week: 1, executedQuantity: 4 }, "user-1", ["ws-1"])
-    await approvePdtpExecution(e2.id, "user-1", ["ws-1"])
+    await approvePdtpExecution(e2.id, "user-approver", ["ws-1"])
 
     const result = await getPdtpComplianceIndicators(program.id, "ws-1")
     // Mes 1: padrón = 4 por actividad; denominador = 4 + 4 = 8;
@@ -1068,11 +1141,11 @@ describe("prevention PDTP service", () => {
     const exec1 = await markPdtpExecution({
       activityId: act1.id, worksiteId: "ws-1", year: 2026, month: 1, week: 1, executedQuantity: 3,
     }, "user-1", ["ws-1"])
-    await approvePdtpExecution(exec1.id, "user-1", ["ws-1"])
+    await approvePdtpExecution(exec1.id, "user-approver", ["ws-1"])
     const exec2 = await markPdtpExecution({
       activityId: act2.id, worksiteId: "ws-2", year: 2026, month: 1, week: 1, executedQuantity: 2,
     }, "user-1", ["ws-2"])
-    await approvePdtpExecution(exec2.id, "user-1", ["ws-2"])
+    await approvePdtpExecution(exec2.id, "user-approver", ["ws-2"])
 
     // Sin faena, executed queda estructuralmente en 0 aunque haya avance real.
     const unscoped = await getPdtpComplianceIndicators(2026)
@@ -1179,6 +1252,10 @@ describe("prevention PDTP service", () => {
       scheduleClassificationStatus: "needs_review",
       sheetCodes: ["pdtp_general"],
     }, "user-1")
+    // Mecanismo clasificado a mano: esta prueba fija los bloqueadores de
+    // calendario y SLA, no los de la compuerta 81/81 (`assertPdtpFulfillmentCoverage`).
+    await inMemoryDb.update(schema.pdtpActivities).set({ mechanism: "constancia", evidenceRequirement: "Registro verificable" })
+      .where(eq(schema.pdtpActivities.id, activity.id))
 
     await expect(submitPdtpProgramForReview(program.id, "user-1")).rejects.toThrow(/requieren confirmar cuándo/i)
     // El mismo motivo tiene que poder consultarse ANTES de pulsar el botón,
@@ -1202,6 +1279,51 @@ describe("prevention PDTP service", () => {
       evidenceRequirement: "Registro de la desviación y cierre verificable",
       indicatorMode: "closed_on_time",
     }, "user-1")
+    expect(await getPdtpSubmitReviewBlockers(program.id)).toEqual([])
+    await expect(submitPdtpProgramForReview(program.id, "user-1")).resolves.toMatchObject({ status: "in_review" })
+  })
+
+  it("does not block review on a retired activity with an unresolved classification", async () => {
+    // Hallazgo real (2026-09-02): las N°12, 14 y 21 quedaron retiradas por G12
+    // con `schedule_classification_status = 'needs_review'` sin resolver — se
+    // retiraron antes de que ese dato importara — y bloqueaban el envío del
+    // programa para siempre, porque nadie vuelve a tocar una actividad ya
+    // retirada. Una actividad activa sana debe bastar para enviar a revisión.
+    const { addPdtpActivity, createLegacyPdtpProgramForTests, retirePdtpActivity, submitPdtpProgramForReview } =
+      await import("@/lib/services/prevention-pdtp")
+    const program = await createLegacyPdtpProgramForTests({ year: 2033, title: "Programa con retirada pendiente", userId: "user-1" })
+    const retired = await addPdtpActivity({
+      programId: program.id,
+      activity: "Actividad que se va a retirar",
+      program: "Guía por confirmar",
+      responsibleSlugs: ["prf"],
+      responsibleDisplay: "PRF",
+      scheduleMode: "on_demand",
+      scheduleClassificationStatus: "needs_review",
+      sheetCodes: ["pdtp_general"],
+    }, "user-1")
+    await retirePdtpActivity({
+      activityId: retired.id,
+      reason: "Duplica otra actividad del programa.",
+      effectiveFrom: "2033-01-01",
+    }, "user-1")
+    const active = await addPdtpActivity({
+      programId: program.id,
+      activity: "Actividad activa y completa",
+      program: "Guía confirmada",
+      responsibleSlugs: ["prf"],
+      responsibleDisplay: "PRF",
+      scheduleMode: "scheduled",
+      scheduleClassificationStatus: "confirmed",
+      sheetCodes: ["pdtp_general"],
+    }, "user-1")
+    // `mechanism` no está en el whitelist de `updatePdtpActivity` — sólo lo
+    // escribe el script de clasificación (ver `apply-pdtp-2026-mechanisms.ts`),
+    // igual que en producción.
+    await inMemoryDb.update(schema.pdtpActivities).set({ mechanism: "constancia", evidenceRequirement: "Registro verificable" })
+      .where(eq(schema.pdtpActivities.id, active.id))
+
+    const { getPdtpSubmitReviewBlockers } = await import("@/lib/services/prevention-pdtp")
     expect(await getPdtpSubmitReviewBlockers(program.id)).toEqual([])
     await expect(submitPdtpProgramForReview(program.id, "user-1")).resolves.toMatchObject({ status: "in_review" })
   })
@@ -1543,12 +1665,12 @@ describe("prevention PDTP service", () => {
     expect(exec.status).toBe("submitted")
 
     // Wrong scope → rejected
-    await expect(approvePdtpExecution(exec.id, "user-1", ["ws-other"])).rejects.toThrow(/sin acceso/i)
+    await expect(approvePdtpExecution(exec.id, "user-approver", ["ws-other"])).rejects.toThrow(/sin acceso/i)
 
     // Correct scope → approved
-    const approved = await approvePdtpExecution(exec.id, "user-1", ["ws-1"])
+    const approved = await approvePdtpExecution(exec.id, "user-approver", ["ws-1"])
     expect(approved.status).toBe("approved")
-    expect(approved.approvedByUserId).toBe("user-1")
+    expect(approved.approvedByUserId).toBe("user-approver")
 
     const events = await inMemoryDb.select().from(schema.operationalActivityEvents)
       .where(eq(schema.operationalActivityEvents.entityId, exec.id))
@@ -1556,10 +1678,12 @@ describe("prevention PDTP service", () => {
       "pdtp.execution_submitted",
       "pdtp.execution_approved",
     ])
-    expect(events.every((event) => event.worksiteId === "ws-1" && event.actorUserId === "user-1")).toBe(true)
+    expect(events.every((event) => event.worksiteId === "ws-1")).toBe(true)
+    expect(events.find((event) => event.eventType === "pdtp.execution_submitted")?.actorUserId).toBe("user-1")
+    expect(events.find((event) => event.eventType === "pdtp.execution_approved")?.actorUserId).toBe("user-approver")
 
     // Already approved → throws
-    await expect(approvePdtpExecution(exec.id, "user-1", ["ws-1"])).rejects.toThrow(/ya fue aprobada/i)
+    await expect(approvePdtpExecution(exec.id, "user-approver", ["ws-1"])).rejects.toThrow(/ya fue aprobada/i)
   })
 
   it("solo permite una transición terminal cuando aprobar y rechazar compiten", async () => {
@@ -1577,7 +1701,7 @@ describe("prevention PDTP service", () => {
     }, "user-1", ["ws-1"])
 
     const results = await Promise.allSettled([
-      approvePdtpExecution(execution.id, "user-1", ["ws-1"]),
+      approvePdtpExecution(execution.id, "user-approver", ["ws-1"]),
       rejectPdtpExecution(execution.id, "user-1", "Revisión concurrente", ["ws-1"]),
     ])
 
@@ -1608,7 +1732,7 @@ describe("prevention PDTP service", () => {
     const exec3 = await markPdtpExecution({
       activityId: act3!.id, worksiteId: "ws-1", year: 2026, month: 1, week: 1, executedQuantity: 1,
     }, "user-1", ["ws-1"])
-    await approvePdtpExecution(exec3.id, "user-1", ["ws-1"])
+    await approvePdtpExecution(exec3.id, "user-approver", ["ws-1"])
 
     const all = await listPendingPdtpExecutions("all", { year: 2026 })
     expect(all).toHaveLength(2)
@@ -1975,9 +2099,9 @@ describe("prevention PDTP service", () => {
     expect(resubmitted.executedQuantity).toBe(3)
 
     // Ahora se puede aprobar normalmente
-    const approved = await approvePdtpExecution(resubmitted.id, "user-1", ["ws-1"])
+    const approved = await approvePdtpExecution(resubmitted.id, "user-approver", ["ws-1"])
     expect(approved.status).toBe("approved")
-    expect(approved.approvedByUserId).toBe("user-1")
+    expect(approved.approvedByUserId).toBe("user-approver")
   })
 
   it("markPdtpExecution: rechaza modificar una ejecución ya aprobada", async () => {
@@ -1993,7 +2117,7 @@ describe("prevention PDTP service", () => {
       week: 1,
       executedQuantity: 1,
     }, "user-1", ["ws-1"])
-    await approvePdtpExecution(exec.id, "user-1", ["ws-1"])
+    await approvePdtpExecution(exec.id, "user-approver", ["ws-1"])
 
     // Re-envío debe fallar
     await expect(markPdtpExecution({
@@ -2422,7 +2546,7 @@ describe("prevention PDTP service", () => {
     const execution = await markPdtpExecution({
       activityId: target.id, worksiteId: "ws-1", year: program.year, month: 1, week: 1, executedQuantity: 1,
     }, "user-1", ["ws-1"])
-    await approvePdtpExecution(execution.id, "user-1", ["ws-1"])
+    await approvePdtpExecution(execution.id, "user-approver", ["ws-1"])
 
     // La ejecucion vive en su propia tabla: no reescribe la planificacion...
     const scheduleAfter = await inMemoryDb.select().from(schema.pdtpActivitySchedule)
@@ -2514,7 +2638,7 @@ describe("prevention PDTP service", () => {
     const execution = await markPdtpExecution({
       activityId: target.id, worksiteId: "ws-1", year: program.year, month: 1, week: 1, executedQuantity: 1,
     }, "user-1", ["ws-1"])
-    await approvePdtpExecution(execution.id, "user-1", ["ws-1"])
+    await approvePdtpExecution(execution.id, "user-approver", ["ws-1"])
 
     const updated = await getPdtpManagementReport({ programId: program.id, worksiteId: "ws-1", scope: ["ws-1"] })
     const updatedTarget = updated!.activities.find((row) => row.activityNumber === target.n)!
@@ -2548,7 +2672,7 @@ describe("prevention PDTP service", () => {
       activityId: target.id, worksiteId: "ws-1", year: program.year, month: 1, week: 1, executedQuantity: 1,
       evidenceText: "Registro fotográfico revisado en terreno",
     }, "user-1", ["ws-1"])
-    await approvePdtpExecution(execution.id, "user-1", ["ws-1"])
+    await approvePdtpExecution(execution.id, "user-approver", ["ws-1"])
 
     const action = await createActionPlanItem({
       executionId: execution.id, hallazgo: "Hallazgo de auditoría", accion: "Corregir",
@@ -3045,6 +3169,8 @@ describe("prevention PDTP service", () => {
       targetUnit: "%",
       sheetCodes: ["pdtp_general"],
     }, "user-1")
+    await inMemoryDb.update(schema.pdtpActivities).set({ mechanism: "constancia" })
+      .where(eq(schema.pdtpActivities.id, activity.id))
     await submitPdtpProgramForReview(program.id, "user-1")
     await approvePdtpProgramJdpr(program.id, "user-jdpr")
     await signPdtpProgramLegal(program.id, "user-legal")
@@ -3163,5 +3289,94 @@ describe("prevention PDTP service", () => {
     ])
     expect(closed[0]?.status).toBe("completed")
     expect(cancelled[0]).toMatchObject({ status: "cancelled", cancellationReason: "El caso fue fusionado formalmente con otro expediente" })
+  })
+
+  it("getPdtpComplianceIndicators mide closed_on_time por obligaciones vencidas ese mes (Fase 3, 2026-09-02)", async () => {
+    const {
+      addPdtpActivity,
+      approvePdtpExecution,
+      approvePdtpProgramJdpr,
+      cancelPdtpObligation,
+      createPdtpObligation,
+      createLegacyPdtpProgramForTests,
+      getPdtpComplianceIndicators,
+      getPdtpComplianceByCategoryForScope,
+      reportPdtpObligation,
+      signPdtpProgramLegal,
+      submitPdtpProgramForReview,
+      activatePdtpProgram,
+    } = await import("@/lib/services/prevention-pdtp")
+    const program = await createLegacyPdtpProgramForTests({ year: 2026, title: "Programa closed_on_time", userId: "user-1" })
+    const activity = await addPdtpActivity({
+      programId: program.id,
+      activity: "Cerrar el caso dentro del plazo del RE-20",
+      program: "Abrir, investigar y cerrar cada caso",
+      responsibleSlugs: ["prf"],
+      responsibleDisplay: "PRF",
+      scheduleMode: "on_demand",
+      scheduleClassificationStatus: "confirmed",
+      dueDays: 2,
+      evidenceRequirement: "Evidencia del cierre",
+      indicatorMode: "closed_on_time",
+      sheetCodes: ["pdtp_general"],
+    }, "user-1")
+    await inMemoryDb.update(schema.pdtpActivities).set({ mechanism: "constancia" })
+      .where(eq(schema.pdtpActivities.id, activity.id))
+    await submitPdtpProgramForReview(program.id, "user-1")
+    await approvePdtpProgramJdpr(program.id, "user-jdpr")
+    await signPdtpProgramLegal(program.id, "user-legal")
+    await activatePdtpProgram(program.id, "user-jdpr")
+    await inMemoryDb.update(schema.pdtpPrograms).set({ activatedAt: "2026-01-01T15:00:00.000Z" }).where(eq(schema.pdtpPrograms.id, program.id))
+
+    // Sin casos en marzo: el mes no debe aportar ni planned ni executed.
+    const beforeAny = await getPdtpComplianceIndicators(program.id, "ws-1")
+    expect(beforeAny?.monthly[2]).toMatchObject({ planned: 0, executed: 0, percent: null })
+
+    // Caso 1: vence el 3 de marzo (occurredAt 1 de marzo + dueDays 2), se
+    // reporta y aprueba a tiempo.
+    const onTime = await createPdtpObligation({
+      activityId: activity.id, worksiteId: "ws-1", origin: "integration",
+      sourceType: "incident", sourceId: "case-on-time", sourceOccurredAt: "2026-03-01T12:00:00.000Z",
+      userId: "user-1", scope: ["ws-1"],
+    })
+    const onTimeReport = await reportPdtpObligation({
+      obligationId: onTime.obligation.id, executedQuantity: 1, evidenceText: "Cierre a tiempo",
+      reportedAt: "2026-03-02T12:00:00.000Z", userId: "user-1", scope: ["ws-1"],
+    })
+    await approvePdtpExecution(onTimeReport.execution.id, "user-jdpr", ["ws-1"])
+
+    // Caso 2: mismo mes de vencimiento, se reporta después del plazo.
+    const late = await createPdtpObligation({
+      activityId: activity.id, worksiteId: "ws-1", origin: "integration",
+      sourceType: "incident", sourceId: "case-late", sourceOccurredAt: "2026-03-05T12:00:00.000Z",
+      userId: "user-1", scope: ["ws-1"],
+    })
+    const lateReport = await reportPdtpObligation({
+      obligationId: late.obligation.id, executedQuantity: 1, evidenceText: "Cierre fuera de plazo",
+      reportedAt: "2026-03-10T12:00:00.000Z", userId: "user-1", scope: ["ws-1"],
+    })
+    await approvePdtpExecution(lateReport.execution.id, "user-jdpr", ["ws-1"])
+
+    // Caso 3: cancelado — no debe contar ni en el denominador.
+    const cancelledCase = await createPdtpObligation({
+      activityId: activity.id, worksiteId: "ws-1", origin: "integration",
+      sourceType: "incident", sourceId: "case-cancelled", sourceOccurredAt: "2026-03-08T12:00:00.000Z",
+      userId: "user-1", scope: ["ws-1"],
+    })
+    await cancelPdtpObligation({ obligationId: cancelledCase.obligation.id, reason: "Caso duplicado, se fusionó con otro expediente", userId: "user-1", scope: ["ws-1"] })
+
+    const result = await getPdtpComplianceIndicators(program.id, "ws-1")
+    // Denominador 2 (el cancelado no cuenta), numerador 1 (sólo el cerrado a tiempo).
+    expect(result?.monthly[2]).toMatchObject({ planned: 2, executed: 1, percent: 0.5 })
+    // Un mes sin casos sigue sin aportar nada, no un 0 %.
+    expect(result?.monthly[5]).toMatchObject({ planned: 0, executed: 0, percent: null })
+
+    // El desglose por eje también los cuenta (2026-09-03): antes estas
+    // actividades aportaban planned=0 y desaparecían de su eje, porque son
+    // `on_demand` y no tienen celdas de cronograma. La unidad es el caso.
+    const byCategory = await getPdtpComplianceByCategoryForScope(program.id, ["ws-1"])
+    expect(byCategory).toEqual([
+      { category: "Abrir, investigar y cerrar cada caso", planned: 2, executed: 1, percent: 0.5 },
+    ])
   })
 })

@@ -28,7 +28,13 @@ function validIso(value: string | undefined, fallback: Date) {
   return parsed
 }
 
-function dueDate(occurredAt: Date, days: number | null) {
+/**
+ * `dueHours` manda sobre `dueDays` cuando ambos vinieran presentes, pero el
+ * CHECK `pdtp_activities_due_days_hours_exclusive` ya impide que eso ocurra —
+ * el orden acá es sólo defensivo.
+ */
+function dueDate(occurredAt: Date, days: number | null, hours: number | null) {
+  if (hours !== null) return new Date(occurredAt.getTime() + hours * 60 * 60 * 1000).toISOString()
   if (days === null) return null
   const result = new Date(occurredAt)
   result.setUTCDate(result.getUTCDate() + days)
@@ -75,7 +81,7 @@ export async function createPdtpObligation(input: {
   if (activity.scheduleMode !== "on_demand" && activity.scheduleMode !== "triggered") {
     throw new Error("Las obligaciones sólo corresponden a actividades a demanda o disparadas.")
   }
-  if (activity.dueDays === null) throw new Error("La actividad debe tener un plazo objetivo configurado.")
+  if (activity.dueDays === null && activity.dueHours === null) throw new Error("La actividad debe tener un plazo objetivo configurado.")
   if (!activity.evidenceRequirement?.trim()) throw new Error("La actividad debe definir su evidencia mínima antes de crear obligaciones.")
   const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, activity.programId)).limit(1)
   if (!program || program.status !== "active") throw new Error("Las obligaciones sólo se crean en programas activos.")
@@ -132,7 +138,7 @@ export async function createPdtpObligation(input: {
       sourceType,
       sourceId,
       sourceOccurredAt: occurredAt.toISOString(),
-      dueAt: dueDate(occurredAt, activity.dueDays),
+      dueAt: dueDate(occurredAt, activity.dueDays, activity.dueHours),
       plannedQuantity,
       completedQuantity: 0,
       idempotencyKey,
@@ -338,6 +344,16 @@ export async function cancelPdtpObligation(input: {
     }, tx)
     return updated
   })
+}
+
+/**
+ * Busca una obligación por su clave idempotente, sin exigir scope — usada por
+ * los conectores de integración (RE-20) para encontrar la obligación que
+ * `createPdtpObligation` ya creó, antes de reportarla en un hito posterior.
+ */
+export async function findPdtpObligationByIdempotencyKey(idempotencyKey: string) {
+  const [obligation] = await db.select().from(pdtpObligations).where(eq(pdtpObligations.idempotencyKey, idempotencyKey)).limit(1)
+  return obligation ?? null
 }
 
 export async function listPdtpObligations(input: {
