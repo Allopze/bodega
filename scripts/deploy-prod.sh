@@ -434,11 +434,23 @@ run_timed "Declarando el dato de cursos, planes y campañas del PDTP" run_in_pro
 # antes dejaría clasificada una actividad que el paso anterior acaba de retirar.
 run_timed "Clasificando las actividades del PDTP por mecanismo" run_in_prod docker compose run --rm apply-pdtp-mechanisms
 
+# Después de los retiros y de la clasificación: sin SLA ni evidencia mínima en
+# las actividades a demanda, el programa no se puede ni enviar a revisión
+# (`pdtpSubmitReviewBlockers`). No aborta el deploy si el programa todavía no
+# existe o ya está firmado (PDTP_DEMAND_SLAS_DEPLOY_MODE).
+run_timed "Declarando el SLA de las actividades a demanda del PDTP" run_in_prod docker compose run --rm apply-pdtp-demand-slas
+
 # Idempotente y antes del swap: si falla, el deploy aborta con la app anterior
 # todavía en pie. Va acá y no después porque la app debe levantar con el
 # catálogo ya cableado — una plantilla sin `pdtpActivityNumbers` ejecuta la
 # inspección sin acreditar nada en el programa anual.
 run_timed "Instalando el catálogo de inspecciones cableado al PDTP" run_in_prod docker compose run --rm seed-inspection-templates
+
+# Al final de los pasos del PDTP: reprocesa los eventos de cumplimiento que
+# quedaron pending/error en pdtp_fulfillment_events — un hecho ocurrido con el
+# programa en borrador o un mapeo que se acaba de corregir en los pasos
+# anteriores. Idempotente; nunca aborta el deploy por su cuenta.
+run_timed "Reconciliando eventos de cumplimiento pendientes del PDTP" run_in_prod docker compose run --rm reconcile-pdtp-fulfillment-events
 
 # The durable database marker, not merely a host env var, determines whether
 # the immediately previous image is safe. A failed probe is deliberately
