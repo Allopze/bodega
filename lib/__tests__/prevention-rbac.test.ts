@@ -212,6 +212,53 @@ describe("prevention module RBAC", () => {
     ])
     expect(rolesFor("prevention:pdtp:obligation:cancel"))
       .not.toEqual(rolesFor("prevention:pdtp:execute"))
+
+    // Constancias (G17): permiso propio, no `prevention:pdtp:execute` — quien
+    // sólo deja constancias no debe poder tocar el resto de la planilla, y
+    // viceversa.
+    for (const permission of ["prevention:constancias:view", "prevention:constancias:execute"]) {
+      expect(preventionModule.permissions).toContain(permission)
+      expect(Object.keys(preventionModule.permissionMeta)).toContain(permission)
+      expect(ALL_MODULE_PERMISSIONS).toContain(permission)
+    }
+    expect(rolesFor("prevention:constancias:execute").sort()).toEqual([
+      "administrador", "admin_contrato", "gerente_legal_rrhh", "jefe_mantencion",
+      "jefe_terreno", "prevencionista", "prevencionista_faena", "subgerente_operaciones", "supervisor_terreno",
+    ].sort())
+
+    // Alcotest (G14): slug nuevo, no `alcohol_tests` — ese está retirado y
+    // prohibido más abajo (`deleted`). Envío (N°32) es sólo PRF, según catálogo.
+    for (const permission of ["prevention:alcotest:view", "prevention:alcotest:register", "prevention:alcotest:dispatch"]) {
+      expect(preventionModule.permissions).toContain(permission)
+      expect(Object.keys(preventionModule.permissionMeta)).toContain(permission)
+      expect(ALL_MODULE_PERMISSIONS).toContain(permission)
+    }
+    expect(rolesFor("prevention:alcotest:dispatch").sort()).toEqual([
+      "administrador", "prevencionista", "prevencionista_faena",
+    ].sort())
+    expect(rolesFor("prevention:alcotest:register").sort()).toEqual([
+      "administrador", "jefe_terreno", "prevencionista", "prevencionista_faena", "supervisor_terreno",
+    ].sort())
+
+    // CGRD del DS 44 (G15): comité propio, distinto del CPHS. Matriz GRD con
+    // las mismas cuatro firmas segregadas que la MIPER.
+    for (const permission of [
+      "prevention:cgrd:view", "prevention:cgrd:committee:manage", "prevention:cgrd:matrix:edit",
+      "prevention:cgrd:matrix:review", "prevention:cgrd:matrix:approve", "prevention:cgrd:matrix:publish",
+      "prevention:cgrd:meeting:manage",
+    ]) {
+      expect(preventionModule.permissions).toContain(permission)
+      expect(Object.keys(preventionModule.permissionMeta)).toContain(permission)
+      expect(ALL_MODULE_PERMISSIONS).toContain(permission)
+    }
+    // Segregación: quien edita la matriz no debe tener, por defecto, el mismo
+    // permiso de aprobación o publicación — mismo criterio que MIPER.
+    expect(rolesFor("prevention:cgrd:matrix:edit").sort())
+      .not.toEqual(rolesFor("prevention:cgrd:matrix:approve").sort())
+    expect(rolesFor("prevention:cgrd:matrix:approve").sort()).toEqual([
+      "administrador", "jefa_chome",
+    ].sort())
+    expect(rolesFor("prevention:cgrd:matrix:publish").sort()).toEqual(rolesFor("prevention:cgrd:matrix:approve").sort())
   })
 
   it("separates document preparation from approval/publication and restricts sensitive files", () => {

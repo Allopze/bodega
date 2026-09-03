@@ -66,6 +66,10 @@ export const pgliteTestFiles = [
   "lib/__tests__/pending-purchase-queue.test.ts",
   "lib/__tests__/pdtp-coverage-r2.test.ts",
   "lib/__tests__/pdtp-checklist-action-plan.test.ts",
+  "lib/__tests__/pdtp-fulfillment.test.ts",
+  "lib/__tests__/pdtp-constancias.test.ts",
+  "lib/__tests__/prevention-alcotest.test.ts",
+  "lib/__tests__/prevention-cgrd.test.ts",
   "lib/__tests__/pdtp-coverage-sources.test.ts",
   "lib/__tests__/pdtp-evidence-gc.test.ts",
   "lib/__tests__/pdtp-reminders-dedup.test.ts",
@@ -108,4 +112,11 @@ export const pgliteTestFiles = [
   "lib/__tests__/trazabilidad-item.test.ts",
   "lib/__tests__/traceability-integrity-cases.test.ts",
   "lib/__tests__/trazabilidad-matrix.test.ts",
+  // ── Módulo TI ─────────────────────────────────────────────────────────────
+  "lib/__tests__/ti-assets-pglite.test.ts",
+  "lib/__tests__/ti-assignments-pglite.test.ts",
+  "lib/__tests__/ti-tickets-pglite.test.ts",
+  "lib/__tests__/ti-licenses-access-pglite.test.ts",
+  "lib/__tests__/ti-maintenance-retirement-pglite.test.ts",
+  "lib/__tests__/ti-alerts-pglite.test.ts",
 ]
