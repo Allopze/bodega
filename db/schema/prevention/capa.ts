@@ -94,7 +94,12 @@ export const preventionCapaActions = pgTable("prevention_capa_actions", {
   index("prevention_capa_source_idx").on(table.sourceType, table.sourceId),
   index("prevention_capa_responsible_status_idx").on(table.responsibleUserId, table.status),
   index("prevention_capa_target_date_idx").on(table.targetDate),
-  check("prevention_capa_source_type_valid", sql`${table.sourceType} IN ('pdtp', 'sst_evaluation', 'ppa', 'incident', 'risk', 'legal_requirement', 'training', 'work_permit', 'inspection', 'cphs', 'emergency', 'change', 'epp', 'external_engagement', 'manual')`),
+  // `gps_onway` faltaba y no era teórico: `onway-automation.ts` crea una CAPA
+  // con ese `sourceType` cuando una alerta GPS cae en una regla con acción
+  // CAPA, y ese insert violaba el CHECK — el cron de OnWay revertía la
+  // transacción completa. El enum de Zod (`capaCreateSchema`) y el mapeador de
+  // href (`lib/prevention/capa.ts`) ya lo tenían: sólo el CHECK estaba atrasado.
+  check("prevention_capa_source_type_valid", sql`${table.sourceType} IN ('pdtp', 'sst_evaluation', 'ppa', 'incident', 'risk', 'legal_requirement', 'training', 'work_permit', 'inspection', 'cphs', 'emergency', 'change', 'epp', 'external_engagement', 'cgrd', 'gps_onway', 'manual')`),
   check("prevention_capa_priority_valid", sql`${table.priority} IN ('low', 'medium', 'high', 'critical')`),
   check("prevention_capa_status_valid", sql`${table.status} IN ('pending', 'in_progress', 'pending_verification', 'verified', 'closed', 'reopened', 'cancelled')`),
   check("prevention_capa_effectiveness_valid", sql`${table.effectivenessStatus} IN ('pending', 'effective', 'ineffective', 'not_required', 'legacy_not_assessed')`),

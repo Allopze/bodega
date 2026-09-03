@@ -444,7 +444,7 @@ export const preventionPdtpSourceLinks = pgTable("prevention_pdtp_source_links",
   // el zod enum) y duplicaba a 'incident_capa', que es el vínculo con sentido —
   // lo que cubre una actividad del programa es la acción correctiva del
   // incidente, no el incidente en sí. Ninguna fila puede tenerlo.
-  check("prevention_pdtp_source_links_type_valid", sql`${table.sourceType} IN ('risk_control', 'legal_requirement', 'incident_capa', 'audit', 'contractual_obligation', 'capacitacion', 'inspeccion', 'cphs', 'epp', 'emergencia', 'campana', 'protocolo_minsal')`),
+  check("prevention_pdtp_source_links_type_valid", sql`${table.sourceType} IN ('risk_control', 'legal_requirement', 'incident_capa', 'audit', 'contractual_obligation', 'capacitacion', 'inspeccion', 'cphs', 'epp', 'emergencia', 'campana', 'protocolo_minsal', 'cgrd')`),
 ])
 
 export const preventionPdtpUpdateObligations = pgTable("prevention_pdtp_update_obligations", {

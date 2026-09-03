@@ -159,7 +159,7 @@ export const sstDocumentLinks = pgTable("sst_document_links", {
     .on(table.documentId, table.entityType, table.entityId)
     .where(sql`${table.removedAt} IS NULL`),
   index("sst_document_links_entity_idx").on(table.entityType, table.entityId),
-  check("sst_document_links_entity_type_valid", sql`${table.entityType} IN ('worker', 'worksite', 'vehicle', 'equipment', 'incident', 'training', 'committee', 'epp_delivery', 'corrective_action', 'emergency_plan', 'pdtp_activity', 'pdtp_execution', 'pdtp_checklist', 'sst_evaluation', 'ppa', 'external_engagement')`),
+  check("sst_document_links_entity_type_valid", sql`${table.entityType} IN ('worker', 'worksite', 'vehicle', 'equipment', 'incident', 'training', 'committee', 'epp_delivery', 'corrective_action', 'emergency_plan', 'pdtp_activity', 'pdtp_execution', 'pdtp_checklist', 'sst_evaluation', 'ppa', 'external_engagement', 'grd_committee', 'grd_matrix', 'grd_meeting')`),
   check("sst_document_links_removal_valid", sql`(${table.removedAt} IS NULL AND ${table.removedByUserId} IS NULL AND ${table.removalReason} IS NULL) OR (${table.removedAt} IS NOT NULL AND ${table.removedByUserId} IS NOT NULL AND length(${table.removalReason}) >= 3)`),
 ])
 
