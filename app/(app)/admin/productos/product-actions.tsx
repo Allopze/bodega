@@ -8,7 +8,7 @@ import { ProductForm } from "./product-form"
 import { ProductImportPanel } from "./product-import-panel"
 import { CatalogImportPanel } from "@/components/admin/catalog-import-panel"
 import { importProductsFromXlsx } from "./actions"
-import type { AttributeTemplateOption, ProductUnitOption } from "./product-form.types"
+import type { AttributeTemplateOption, SizeFamilyOption, ProductUnitOption } from "./product-form.types"
 
 interface CategoryItem {
   id: string; name: string; slug: string
@@ -21,9 +21,10 @@ interface ProductActionsProps {
   allSuppliers: SupplierItem[]
   units: ProductUnitOption[]
   templates: AttributeTemplateOption[]
+  sizeFamilies: SizeFamilyOption[]
 }
 
-export function ProductActions({ categories, allSuppliers, units, templates }: ProductActionsProps) {
+export function ProductActions({ categories, allSuppliers, units, templates, sizeFamilies }: ProductActionsProps) {
   const [productFormOpen, setProductFormOpen] = useState(false)
   const [importChoiceOpen, setImportChoiceOpen] = useState(false)
   const [importSheetOpen, setImportSheetOpen] = useState(false)
@@ -54,6 +55,7 @@ export function ProductActions({ categories, allSuppliers, units, templates }: P
         allSuppliers={allSuppliers}
         units={units}
         templates={templates}
+        sizeFamilies={sizeFamilies}
         editProduct={null}
       />
 

@@ -5,22 +5,38 @@ import { X } from "@phosphor-icons/react"
 import { Tooltip } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import type { AttributeMultiValues } from "./product-form.types"
+import type { AttributeMultiValues, SizeFamilyOption } from "./product-form.types"
 
 // ── Attribute presets for quick-add ────────────────────────────────────────────
 
-const EPP_ATTRIBUTE_PRESETS: Array<{ name: string; options: string[]; sizeFamily?: string }> = [
-  { name: "Talla",          options: ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"], sizeFamily: "ropa" },
-  { name: "Talla calzado",  options: ["36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46"], sizeFamily: "calzado" },
-  { name: "Talla guantes",  options: ["XS", "S", "M", "L", "XL", "2XL"], sizeFamily: "guantes" },
-  { name: "Color",          options: ["Amarillo", "Azul", "Blanco", "Gris", "Negro", "Naranja", "Rojo", "Verde"] },
-]
+/**
+ * El color no es una talla y no vive en `size_catalog`: sigue siendo una lista
+ * fija. Las tallas llegan por props desde la base.
+ */
+const COLOR_PRESET = {
+  name: "Color",
+  options: ["Amarillo", "Azul", "Blanco", "Gris", "Negro", "Naranja", "Rojo", "Verde"],
+} as const
+
+type AttributePreset = { name: string; options: string[]; sizeFamily?: string }
+
+function buildPresets(sizeFamilies: SizeFamilyOption[]): AttributePreset[] {
+  return [
+    ...sizeFamilies.map((family) => ({
+      name: family.attributeName,
+      options: family.codes,
+      sizeFamily: family.family,
+    })),
+    { name: COLOR_PRESET.name, options: [...COLOR_PRESET.options] },
+  ]
+}
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 export interface VariantGeneratorProps {
   wizAttrs: AttributeMultiValues[]
   isEpp: boolean
+  sizeFamilies: SizeFamilyOption[]
   onToggleAttr: (preset: { name: string; options: string[]; sizeFamily?: string }) => void
   onUpdateAttrValues: (name: string, values: string[]) => void
   /**
@@ -82,6 +98,7 @@ function AddValueInput({ attributeName, onAdd }: { attributeName: string; onAdd:
 export function VariantGenerator({
   wizAttrs,
   isEpp,
+  sizeFamilies,
   onToggleAttr,
   onUpdateAttrValues,
   onRemoveAttr,
@@ -91,6 +108,8 @@ export function VariantGenerator({
   variantWarnAt,
   onMarkDirty,
 }: VariantGeneratorProps) {
+  const presets = React.useMemo(() => buildPresets(sizeFamilies), [sizeFamilies])
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-[var(--color-text-muted)]">
@@ -102,7 +121,7 @@ export function VariantGenerator({
       <div className="rounded-(--radius) border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
         <p className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Atajos para EPP</p>
         <div className="flex flex-wrap gap-2">
-          {EPP_ATTRIBUTE_PRESETS.map((preset) => {
+          {presets.map((preset) => {
             const isActive = wizAttrs.some((a) => a.name === preset.name)
             const tooltipContent = isActive
               ? `Quitar «${preset.name}» del producto`
@@ -134,7 +153,7 @@ export function VariantGenerator({
       ) : (
         <div className="space-y-3">
           {wizAttrs.map((attr) => {
-            const preset = EPP_ATTRIBUTE_PRESETS.find((p) => p.name === attr.name)
+            const preset = presets.find((p) => p.name === attr.name)
             // Un atributo que no es preset (viene de una plantilla de categoría)
             // trae sus opciones en `values`: sin este fallback se dibujaba una
             // caja sin chips, `values` quedaba vacío y «Generar variantes» no se

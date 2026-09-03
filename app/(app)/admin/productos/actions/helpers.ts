@@ -2,7 +2,7 @@ import { nanoid } from "@/lib/id"
 import { buildEppFamilyIdentityKey } from "@/lib/services/epp-import"
 import { type DB, type Tx } from "@/db"
 import { eppProductFamilies, products, productCategories } from "@/db/schema"
-import { eq } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 
 export const REVALIDATE = "/admin/productos"
 
@@ -43,34 +43,34 @@ export function displayOptionsText(options: string | null): string {
 }
 
 /**
- * Genera `count` SKU únicos de una sola consulta.
+ * Genera `count` SKU secuenciales dentro de una transacción.
  *
- * Recibe el cliente en vez de tomar `db` del módulo por dos razones:
- *  - el lote de variantes corre dentro de una transacción, y consultar por
- *    fuera no ve sus propias filas sin commitear (y con un driver de conexión
- *    única, como PGlite en las pruebas, directamente se autobloquea);
- *  - los SKU se deduplican **dentro** del lote con un `Set` local: antes cada
- *    uno se comprobaba sólo contra la BD, así que dos variantes del mismo lote
- *    podían sacar el mismo nanoid y reventar toda la transacción con un error
- *    de constraint crudo en vez de un mensaje.
+ * Usa secuencias numéricas consecutivas: EPP-001, EPP-002, ... (EPP)
+ * o PRD-001, PRD-002, ... (no-EPP). El arranque se calcula desde el máximo
+ * existente en la BD para el prefijo dado, de modo que siempre continúa la
+ * secuencia sin colisiones.
+ *
+ * Dentro de una transacción de lote variantes, el `Set` local evita
+ * duplicados si dos lotes concurrentes leen el mismo max al inicio.
  */
 export async function generateUniqueSkus(client: DB | Tx, count: number, isEpp: boolean): Promise<string[]> {
   const prefix = isEpp ? "EPP" : "PRD"
-  const existing = await client.select({ sku: products.sku }).from(products)
-  const taken = new Set(existing.map((row) => row.sku))
+
+  const rows = await client
+    .select({ sku: products.sku })
+    .from(products)
+    .where(sql`${products.sku} LIKE ${prefix + '-%'}`)
+
+  let maxNum = 0
+  for (const row of rows) {
+    const num = parseInt(row.sku.slice(prefix.length + 1), 10)
+    if (!isNaN(num) && num > maxNum) maxNum = num
+  }
 
   const generated: string[] = []
   for (let i = 0; i < count; i++) {
-    let sku: string | null = null
-    for (let attempt = 0; attempt < 10; attempt++) {
-      const candidate = `${prefix}-${nanoid(6).toUpperCase().replace(/[^A-Z0-9]/g, "X")}`
-      if (taken.has(candidate)) continue
-      sku = candidate
-      break
-    }
-    if (!sku) throw new Error("No se pudo generar un SKU único")
-    taken.add(sku)
-    generated.push(sku)
+    maxNum++
+    generated.push(`${prefix}-${String(maxNum).padStart(3, "0")}`)
   }
   return generated
 }

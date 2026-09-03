@@ -10,6 +10,7 @@ import { TableRow, TableCell } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { toggleWorkerActive } from "./actions"
 import { COLUMNS, CONTRACT } from "./catalog-contract"
+import type { SizeFamilyOption } from "@/app/(app)/admin/productos/product-form.types"
 
 interface WorksiteOption { id: string; name: string }
 
@@ -31,10 +32,11 @@ type WorkerRow = {
 }
 
 export function WorkerList({
-  workers, worksites,
+  workers, worksites, sizeFamilies,
 }: {
   workers:   WorkerRow[]
   worksites: WorksiteOption[]
+  sizeFamilies: SizeFamilyOption[]
 }) {
   const {
     sheetOpen, editRow: editWorker,
@@ -171,6 +173,7 @@ export function WorkerList({
         onClose={closeSheet}
         editWorker={editWorker}
         worksites={worksites}
+        sizeFamilies={sizeFamilies}
       />
     </>
   )

@@ -37,7 +37,7 @@ const VARIANT_LIMIT = 500
 /** Cantidad a partir de la cual se muestra una advertencia visual. */
 const VARIANT_WARN_AT = 400
 
-export function ProductForm({ open, onClose, categories, allSuppliers, units, templates, editProduct, variant = "sheet" }: ProductFormProps) {
+export function ProductForm({ open, onClose, categories, allSuppliers, units, templates, sizeFamilies, editProduct, variant = "sheet" }: ProductFormProps) {
   const isEdit = !!editProduct
   const action = isEdit ? updateProduct : createProduct
 
@@ -594,6 +594,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
         return (
           <div className="space-y-4">
             <VariantGenerator
+              sizeFamilies={sizeFamilies}
               wizAttrs={wizAttrs}
               isEpp={general.isEpp}
               onToggleAttr={toggleAttrPreset}

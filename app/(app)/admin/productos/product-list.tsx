@@ -19,7 +19,7 @@ import { formatCLP, formatDateTime } from "@/lib/utils"
 import { toggleProductActive, getProductForEdit, bulkToggleProductActiveAction } from "./actions"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { getProductWarnings, getFamilyWarnings, type ProductAttributeSummary } from "./product-list.helpers"
-import type { AttributeTemplateOption, ProductUnitOption } from "./product-form.types"
+import type { AttributeTemplateOption, SizeFamilyOption, ProductUnitOption } from "./product-form.types"
 import { formatProductVariant, groupProductVariants } from "@/lib/products/variant-grouping"
 import { COLUMNS, CONTRACT } from "./catalog-contract"
 
@@ -60,12 +60,13 @@ type ProductFamilyRow = {
   variantSearchText: string
 }
 
-export function ProductList({ products, categories, allSuppliers, units, templates, recentBatches }: {
+export function ProductList({ products, categories, allSuppliers, units, templates, sizeFamilies, recentBatches }: {
   products:      ProductRow[]
   categories:    CategoryItem[]
   allSuppliers:  SupplierItem[]
   units:         ProductUnitOption[]
   templates:     AttributeTemplateOption[]
+  sizeFamilies:  SizeFamilyOption[]
   recentBatches?: RecentBatch[]
 }) {
   const [catSheetOpen, setCatSheetOpen] = React.useState(false)
@@ -550,6 +551,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
         allSuppliers={allSuppliers}
         units={units}
         templates={templates}
+        sizeFamilies={sizeFamilies}
         editProduct={editProductFull}
       />
     </>

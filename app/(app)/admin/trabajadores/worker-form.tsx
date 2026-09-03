@@ -9,14 +9,21 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
 import { createWorker, updateWorker } from "./actions"
+import type { SizeFamilyOption } from "@/app/(app)/admin/productos/product-form.types"
 
-const SIZE_PRESETS = {
-  top:    ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"],
-  bottom: ["28","30","32","34","36","38","40","42","44","46","48"],
-  shoe:   ["36","37","38","39","40","41","42","43","44","45","46"],
-  gloves: ["XS","S","M","L","XL","2XL"],
-  helmet: ["Única"],
-}
+/**
+ * Qué campo del padrón alimenta cada familia del catálogo. La lista de tallas
+ * ya no vive acá: era la cuarta copia y la que más se había separado del resto
+ * —el casco ofrecía sólo «Única», que ningún producto puede tener, así que esa
+ * talla del padrón nunca cruzaba con una variante.
+ */
+const SIZE_FIELD_FAMILY = {
+  sizeTop:    "ropa",
+  sizeBottom: "pantalon",
+  sizeShoe:   "calzado",
+  sizeGloves: "guantes",
+  sizeHelmet: "casco",
+} as const
 
 interface WorksiteOption { id: string; name: string }
 
@@ -40,9 +47,14 @@ interface WorkerFormProps {
   onClose:     () => void
   editWorker?: WorkerForEdit | null
   worksites:   WorksiteOption[]
+  /** Familias de `size_catalog`, resueltas en el servidor. */
+  sizeFamilies: SizeFamilyOption[]
 }
 
-export function WorkerForm({ open, onClose, editWorker, worksites }: WorkerFormProps) {
+export function WorkerForm({ open, onClose, editWorker, worksites, sizeFamilies }: WorkerFormProps) {
+  const codesByFamily = new Map(sizeFamilies.map((family) => [family.family, family.codes]))
+  const presetsFor = (field: keyof typeof SIZE_FIELD_FAMILY) =>
+    codesByFamily.get(SIZE_FIELD_FAMILY[field]) ?? []
   const isEdit = !!editWorker
   const [selectedWorksiteId, setSelectedWorksiteId] = useState(editWorker?.worksiteId ?? "")
   const [sizes, setSizes] = useState({
@@ -119,11 +131,11 @@ export function WorkerForm({ open, onClose, editWorker, worksites }: WorkerFormP
           <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
             <p className="mb-3 text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Tallas EPP</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <SizeSelect label="Camisa/Polera" value={sizes.sizeTop} onChange={(v) => setSize("sizeTop", v)} presets={SIZE_PRESETS.top} id="wrk-sizeTop" />
-              <SizeSelect label="Pantalón" value={sizes.sizeBottom} onChange={(v) => setSize("sizeBottom", v)} presets={SIZE_PRESETS.bottom} id="wrk-sizeBottom" />
-              <SizeSelect label="Calzado" value={sizes.sizeShoe} onChange={(v) => setSize("sizeShoe", v)} presets={SIZE_PRESETS.shoe} id="wrk-sizeShoe" />
-              <SizeSelect label="Guantes" value={sizes.sizeGloves} onChange={(v) => setSize("sizeGloves", v)} presets={SIZE_PRESETS.gloves} id="wrk-sizeGloves" />
-              <SizeSelect label="Casco" value={sizes.sizeHelmet} onChange={(v) => setSize("sizeHelmet", v)} presets={SIZE_PRESETS.helmet} id="wrk-sizeHelmet" />
+              <SizeSelect label="Camisa/Polera" value={sizes.sizeTop} onChange={(v) => setSize("sizeTop", v)} presets={presetsFor("sizeTop")} id="wrk-sizeTop" />
+              <SizeSelect label="Pantalón" value={sizes.sizeBottom} onChange={(v) => setSize("sizeBottom", v)} presets={presetsFor("sizeBottom")} id="wrk-sizeBottom" />
+              <SizeSelect label="Calzado" value={sizes.sizeShoe} onChange={(v) => setSize("sizeShoe", v)} presets={presetsFor("sizeShoe")} id="wrk-sizeShoe" />
+              <SizeSelect label="Guantes" value={sizes.sizeGloves} onChange={(v) => setSize("sizeGloves", v)} presets={presetsFor("sizeGloves")} id="wrk-sizeGloves" />
+              <SizeSelect label="Casco" value={sizes.sizeHelmet} onChange={(v) => setSize("sizeHelmet", v)} presets={presetsFor("sizeHelmet")} id="wrk-sizeHelmet" />
             </div>
           </div>
         </FieldGroup>
@@ -138,6 +150,10 @@ export function WorkerForm({ open, onClose, editWorker, worksites }: WorkerFormP
 const NONE = "_none"
 
 function SizeSelect({ label, value, onChange, presets, id }: { label: string; value: string; onChange: (v: string) => void; presets: string[]; id: string }) {
+  // Una talla guardada que el catálogo ya no ofrece sigue siendo elegible: si
+  // desapareciera de la lista, abrir la ficha y guardar la borraría en silencio.
+  const options = value && !presets.includes(value) ? [...presets, value] : presets
+
   return (
     <Field label={label} htmlFor={id}>
       <Select value={value || NONE} onValueChange={(v) => onChange(v === NONE ? "" : v)}>
@@ -146,7 +162,7 @@ function SizeSelect({ label, value, onChange, presets, id }: { label: string; va
         </SelectTrigger>
         <SelectContent>
           <SelectItem value={NONE}>—</SelectItem>
-          {presets.map((size) => (
+          {options.map((size) => (
             <SelectItem key={size} value={size}>{size}</SelectItem>
           ))}
         </SelectContent>

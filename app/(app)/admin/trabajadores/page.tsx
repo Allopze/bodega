@@ -10,6 +10,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
 import { WorkerActions } from "./worker-actions"
 import { WorkerList } from "./worker-list"
+import { getSizeFamilyOptions } from "@/lib/services/sizes"
 
 export const metadata: Metadata = { title: "Trabajadores" }
 
@@ -18,7 +19,7 @@ export default async function TrabajadoresPage() {
   try { session = await requirePermission("admin:workers") }
   catch { redirect("/forbidden") }
 
-  const [allWorkers, allWorksites] = await Promise.all([
+  const [allWorkers, allWorksites, sizeFamilies] = await Promise.all([
     db.query.workers.findMany({
       with:    { worksite: true },
       where:   worksiteScopeSql(session, workers.worksiteId),
@@ -28,6 +29,9 @@ export default async function TrabajadoresPage() {
       where: and(eq(worksites.isActive, true), worksiteScopeSql(session, worksites.id)),
       orderBy: (ws, { asc }) => [asc(ws.name)],
     }),
+    // Las tallas del padrón salen de `size_catalog`, la misma fuente que usa el
+    // asistente de variantes: sin eso el padrón y el catálogo se separaban.
+    getSizeFamilyOptions(),
   ])
 
   const activeCount = allWorkers.filter((w) => w.isActive).length
@@ -55,7 +59,7 @@ export default async function TrabajadoresPage() {
           ]} />
         }
         headerActions={<HeaderSignals signals={headerSignals} />}
-        actions={<WorkerActions worksites={allWorksites.map((ws) => ({ id: ws.id, name: ws.name }))} />}
+        actions={<WorkerActions worksites={allWorksites.map((ws) => ({ id: ws.id, name: ws.name }))} sizeFamilies={sizeFamilies} />}
       />
       <WorkerList
         workers={allWorkers.map((w) => ({
@@ -75,6 +79,7 @@ export default async function TrabajadoresPage() {
           sizeHelmet:   w.sizeHelmet,
         }))}
         worksites={allWorksites.map((ws) => ({ id: ws.id, name: ws.name }))}
+        sizeFamilies={sizeFamilies}
       />
     </PageContainer>
   )

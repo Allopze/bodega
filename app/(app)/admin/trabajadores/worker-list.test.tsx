@@ -33,7 +33,7 @@ afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 describe("WorkerList", () => {
   it("separa a los desactivados en su propia pestaña", () => {
-    render(<WorkerList workers={WORKERS} worksites={[{ id: "ws-1", name: "Faena Uno" }]} />)
+    render(<WorkerList sizeFamilies={[]} workers={WORKERS} worksites={[{ id: "ws-1", name: "Faena Uno" }]} />)
 
     expect(table().queryByText("Ana Prueba")).not.toBeNull()
     expect(table().queryByText("Beto Prueba")).toBeNull()

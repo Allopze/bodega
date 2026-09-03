@@ -6,10 +6,11 @@ import { Button } from "@/components/ui/button"
 import { CatalogImportPanel } from "@/components/admin/catalog-import-panel"
 import { WorkerForm } from "./worker-form"
 import { importWorkersFromXlsx } from "./actions"
+import type { SizeFamilyOption } from "@/app/(app)/admin/productos/product-form.types"
 
 interface WorksiteOption { id: string; name: string }
 
-export function WorkerActions({ worksites }: { worksites: WorksiteOption[] }) {
+export function WorkerActions({ worksites, sizeFamilies }: { worksites: WorksiteOption[]; sizeFamilies: SizeFamilyOption[] }) {
   const [formOpen, setFormOpen] = React.useState(false)
   const [importOpen, setImportOpen] = React.useState(false)
 
@@ -35,6 +36,7 @@ export function WorkerActions({ worksites }: { worksites: WorksiteOption[] }) {
         onClose={() => setFormOpen(false)}
         editWorker={null}
         worksites={worksites}
+        sizeFamilies={sizeFamilies}
       />
 
       <CatalogImportPanel

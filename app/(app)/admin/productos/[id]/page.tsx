@@ -8,6 +8,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { getProductForEdit } from "../actions"
 import { ProductRouteSheet } from "../product-route-sheet"
+import { getSizeFamilyOptions } from "@/lib/services/sizes"
 
 export const metadata: Metadata = { title: "Editar producto" }
 
@@ -16,7 +17,7 @@ export default async function EditarProductoPage({ params }: { params: Promise<{
   catch { redirect(`/forbidden?desde=${encodeURIComponent("/admin/productos")}`) }
 
   const { id } = await params
-  const [product, allCategories, allSuppliers, units, templates] = await Promise.all([
+  const [product, allCategories, allSuppliers, units, templates, sizeFamilies] = await Promise.all([
     getProductForEdit(id),
     db.query.productCategories.findMany({
       orderBy: (c, { asc }) => [asc(c.sortOrder), asc(c.name)],
@@ -34,6 +35,8 @@ export default async function EditarProductoPage({ params }: { params: Promise<{
       with: { category: true },
       orderBy: (template, { asc }) => [asc(template.sortOrder), asc(template.name)],
     }),
+    // Las tallas del asistente salen de `size_catalog`, no del bundle.
+    getSizeFamilyOptions(),
   ])
 
   if (!product) notFound()
@@ -67,6 +70,7 @@ export default async function EditarProductoPage({ params }: { params: Promise<{
           sizeFamily: template.sizeFamily ?? undefined,
           sortOrder: template.sortOrder,
         }))}
+        sizeFamilies={sizeFamilies}
         editProduct={product}
       />
     </PageContainer>

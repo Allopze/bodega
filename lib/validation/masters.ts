@@ -3,6 +3,7 @@ import { cleanRut, validateRut } from "@/lib/rut"
 import { normalizeEquipmentCode } from "@/lib/products/service-items"
 import { duplicateNormalizedNames } from "@/lib/products/attribute-names"
 import { unitOfMeasureSchema } from "./product-catalogs"
+import { normalizeSizeLabel } from "@/lib/products/product-size"
 
 // ── Chilean RUT helper ────────────────────────────────────────────────────────
 // Canonical cleaning/validation lives in @/lib/rut (audit A-15).
@@ -225,6 +226,21 @@ export const productSchema = z.object({
 })
 
 // ── Worker (Trabajador) ───────────────────────────────────────────────────────
+/**
+ * Talla habitual del trabajador, en forma canónica.
+ *
+ * `normalizeSizeLabel` sólo ordena la escritura (`T42` → `42`, `Mediana` → `M`,
+ * `XXL` → `2XL`); un valor que no reconoce lo devuelve tal cual en vez de
+ * rechazarlo, porque el padrón no es un catálogo cerrado y perder la talla de
+ * un trabajador es peor que guardarla con una escritura rara.
+ */
+const workerSize = z
+  .string()
+  .max(20)
+  .optional()
+  .or(z.literal(""))
+  .transform((value) => (value ? normalizeSizeLabel(value) : value))
+
 export const workerSchema = z.object({
   id:          z.string().optional(),
   rut:         rutSchema,
@@ -233,11 +249,16 @@ export const workerSchema = z.object({
   position:    z.string().max(80).optional().or(z.literal("")),
   worksiteId:  z.string().min(1, "Selecciona una faena"),
   isActive:    z.coerce.boolean().default(true),
-  sizeTop:     z.string().max(10).optional().or(z.literal("")),
-  sizeBottom:  z.string().max(10).optional().or(z.literal("")),
-  sizeShoe:    z.string().max(10).optional().or(z.literal("")),
-  sizeGloves:  z.string().max(10).optional().or(z.literal("")),
-  sizeHelmet:  z.string().max(10).optional().or(z.literal("")),
+  // Las tallas habituales se guardan en forma canónica. El padrón admitía texto
+  // libre y acumulaba `42`, `42.0`, `T42`, `m` y `Mediana` para la misma talla,
+  // así que la sugerencia al entregar fallaba por una diferencia de escritura.
+  // La normalización no rechaza lo que no reconoce: lo deja como está, sólo
+  // ordenado (mayúsculas, sin acentos, sin espacios sobrantes).
+  sizeTop:     workerSize,
+  sizeBottom:  workerSize,
+  sizeShoe:    workerSize,
+  sizeGloves:  workerSize,
+  sizeHelmet:  workerSize,
 })
 
 

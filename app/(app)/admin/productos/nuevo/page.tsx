@@ -7,6 +7,7 @@ import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { ProductRouteSheet } from "../product-route-sheet"
+import { getSizeFamilyOptions } from "@/lib/services/sizes"
 
 export const metadata: Metadata = { title: "Nuevo producto" }
 
@@ -14,7 +15,7 @@ export default async function NuevoProductoPage() {
   try { await requirePermission("admin:products") }
   catch { redirect("/forbidden") }
 
-  const [allCategories, allSuppliers, units, templates] = await Promise.all([
+  const [allCategories, allSuppliers, units, templates, sizeFamilies] = await Promise.all([
     db.query.productCategories.findMany({
       orderBy: (c, { asc }) => [asc(c.sortOrder), asc(c.name)],
     }),
@@ -31,6 +32,8 @@ export default async function NuevoProductoPage() {
       with: { category: true },
       orderBy: (template, { asc }) => [asc(template.sortOrder), asc(template.name)],
     }),
+    // Las tallas del asistente salen de `size_catalog`, no del bundle.
+    getSizeFamilyOptions(),
   ])
 
   return (
@@ -62,6 +65,7 @@ export default async function NuevoProductoPage() {
           sizeFamily: template.sizeFamily ?? undefined,
           sortOrder: template.sortOrder,
         }))}
+        sizeFamilies={sizeFamilies}
       />
     </PageContainer>
   )

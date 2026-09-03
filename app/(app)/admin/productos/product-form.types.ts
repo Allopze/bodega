@@ -53,6 +53,12 @@ export interface ProductForEdit {
   suppliers:          SupplierRow[]
 }
 
+export interface SizeFamilyOption {
+  family:        string
+  attributeName: string
+  codes:         string[]
+}
+
 export interface ProductFormProps {
   open:          boolean
   onClose:       () => void
@@ -60,6 +66,12 @@ export interface ProductFormProps {
   allSuppliers:  Supplier[]
   units:         ProductUnitOption[]
   templates:     AttributeTemplateOption[]
+  /**
+   * Familias de tallas del catálogo (`size_catalog`). Llegan del servidor y no
+   * de una constante del bundle: agregar una talla 47 es una fila, no un
+   * despliegue.
+   */
+  sizeFamilies:  SizeFamilyOption[]
   editProduct?:  ProductForEdit | null
   variant?:      "sheet" | "embedded"
 }

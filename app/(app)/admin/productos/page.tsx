@@ -8,6 +8,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { ProductList } from "./product-list"
 import { ProductActions } from "./product-actions"
+import { getSizeFamilyOptions } from "@/lib/services/sizes"
 
 export const metadata: Metadata = { title: "Catálogo de productos" }
 
@@ -15,7 +16,7 @@ export default async function ProductosPage() {
   try { await requirePermission("admin:products") }
   catch { redirect("/forbidden") }
 
-  const [allProducts, allCategories, allSuppliers, recentBatches, units, templates] = await Promise.all([
+  const [allProducts, allCategories, allSuppliers, recentBatches, units, templates, sizeFamilies] = await Promise.all([
     db.query.products.findMany({
       with: {
         category: true,
@@ -46,6 +47,8 @@ export default async function ProductosPage() {
       with: { category: true },
       orderBy: (template, { asc }) => [asc(template.sortOrder), asc(template.name)],
     }),
+    // Las tallas del asistente salen de `size_catalog`, no del bundle.
+    getSizeFamilyOptions(),
   ])
 
   return (
@@ -76,6 +79,7 @@ export default async function ProductosPage() {
               sizeFamily: template.sizeFamily ?? undefined,
               sortOrder: template.sortOrder,
             }))}
+            sizeFamilies={sizeFamilies}
           />
         }
       />
@@ -109,6 +113,7 @@ export default async function ProductosPage() {
           sizeFamily: template.sizeFamily ?? undefined,
           sortOrder: template.sortOrder,
         }))}
+        sizeFamilies={sizeFamilies}
         recentBatches={recentBatches.map((batch) => {
           let rowCount: number | null = null
           try {

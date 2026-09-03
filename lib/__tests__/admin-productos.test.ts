@@ -15,10 +15,14 @@ const mockSetProductSupplierPriceTx = vi.hoisted(() => vi.fn().mockResolvedValue
 const mockAuthFn = vi.hoisted(() => vi.fn())
 const mockRecordAudit = vi.hoisted(() => vi.fn())
 const mockSelectForUpdate = vi.fn().mockResolvedValue([])
-const mockSelectWhere = vi.fn(() => ({ for: mockSelectForUpdate }))
-// `.from(...)` tiene que ser encadenable Y esperable: la generación de SKU lo
-// espera directo (`select({sku}).from(products)`) mientras el resto encadena
-// `.where(...)`. Un objeto con `then` cubre ambos usos.
+const mockSelectWhere = vi.fn(() => ({
+  for: mockSelectForUpdate,
+  then: (resolve: (rows: unknown[]) => unknown) => resolve([]),
+}))
+// `.from(...)` tiene que ser encadenable Y esperable: la generación de SKU
+// encadena `.select().from().where()` y espera el resultado, mientras que
+// otras rutas usan `.select().from()` directo. `then` vive al final de la
+// cadena para que ambas rutas resuelvan correctamente.
 const mockSelectFrom = vi.fn(() => ({
   where: mockSelectWhere,
   then: (resolve: (rows: unknown[]) => unknown) => resolve([]),
@@ -195,7 +199,7 @@ describe("admin/productos actions", () => {
       const fd = new FormData(); fd.set("name", "Casco"); fd.set("sku", "CUALQUIER-COSA"); fd.set("categoryId", "cat-1"); fd.set("unitOfMeasure", "unidad")
       const r = await createProduct({ ok: false }, fd)
       expect(r.ok).toBe(true)
-      expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({ sku: expect.stringMatching(/^PRD-[A-Z0-9]{6}$/) }))
+      expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({ sku: expect.stringMatching(/^PRD-\d{3}$/) }))
     })
 
     it("normalizes EPP talla/color options as JSON for request dropdowns", async () => {
@@ -390,11 +394,6 @@ describe("admin/productos actions", () => {
       mockAuthFn.mockResolvedValue(makeSession("admin:products"))
       mockDb.query.productCategories.findFirst.mockResolvedValue({ id: "cat-epp", name: "EPP", slug: "epp" })
       mockDb.query.eppProductFamilies.findFirst.mockResolvedValue(null)
-      // generateUniqueSkus calls findFirst per SKU (null = unique); post-tx audit returns { sku } for tracing
-      mockDb.query.products.findFirst
-        .mockResolvedValueOnce(null)  // SKU 1: not found → unique, use it
-        .mockResolvedValueOnce(null)  // SKU 2: not found → unique, use it
-        .mockResolvedValue({ sku: "EPP-ABC123" }) // audit query
 
       const { createProductVariantBatch } = await import("@/app/(app)/admin/productos/actions")
       const r = await createProductVariantBatch(VALID_INPUT)
@@ -424,9 +423,6 @@ describe("admin/productos actions", () => {
       mockAuthFn.mockResolvedValue(makeSession("admin:products"))
       mockDb.query.productCategories.findFirst.mockResolvedValue({ id: "cat-epp", name: "EPP", slug: "epp" })
       mockDb.query.eppProductFamilies.findFirst.mockResolvedValue(null)
-      mockDb.query.products.findFirst
-        .mockResolvedValueOnce(null)
-        .mockResolvedValue({ sku: "EPP-ABC123" })
 
       const { createProductVariantBatch } = await import("@/app/(app)/admin/productos/actions")
       const withSupplier = {
@@ -453,7 +449,6 @@ describe("admin/productos actions", () => {
       mockAuthFn.mockResolvedValue(makeSession("admin:products"))
       mockDb.query.productCategories.findFirst.mockResolvedValue({ id: "cat-epp", name: "EPP", slug: "epp" })
       mockDb.query.eppProductFamilies.findFirst.mockResolvedValue(null)
-      mockDb.query.products.findFirst.mockResolvedValue(null)  // cada SKU generado es único
 
       const { createProductVariantBatch } = await import("@/app/(app)/admin/productos/actions")
       const r = await createProductVariantBatch(VALID_INPUT)
