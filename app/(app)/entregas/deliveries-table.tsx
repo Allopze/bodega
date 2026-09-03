@@ -7,10 +7,14 @@ import { TableCell, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { formatDate } from "@/lib/utils"
+import { VoidDeliveryDialog } from "./void-delivery-dialog"
 
 export type DeliveryRow = {
   id:           string
   code:         string
+  /** Fecha de anulación, o null. Una entrega anulada no cuenta como entregada. */
+  voidedAt:     string | null
+  voidReason:   string | null
   sourceWorksiteName: string
   worksiteName: string
   workerId?:    string | null
@@ -39,7 +43,7 @@ const COLUMNS = [
  * sin el gate el nombre enlazaba derecho a /forbidden. Es cliente, así que la
  * sesión la resuelve la página.
  */
-export function DeliveriesTable({ deliveries, canViewTraceability = false }: { deliveries: DeliveryRow[]; canViewTraceability?: boolean }) {
+export function DeliveriesTable({ deliveries, canViewTraceability = false, canVoid = false }: { deliveries: DeliveryRow[]; canViewTraceability?: boolean; canVoid?: boolean }) {
   return (
     <DataTable
       caption="Entregas"
@@ -57,7 +61,10 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false }: { d
               <div className="min-w-0 flex items-start gap-2">
                 <User size={18} className="mt-0.5 shrink-0 text-[var(--color-text-subtle)]" />
                 <div className="min-w-0">
-                  <p className="font-mono text-xs text-[var(--color-text-subtle)]">{delivery.code}</p>
+                  <p className="flex items-center gap-1.5 font-mono text-xs text-[var(--color-text-subtle)]">
+                    <span className={delivery.voidedAt ? "line-through" : undefined}>{delivery.code}</span>
+                    {delivery.voidedAt && <Badge variant="danger" size="sm">Anulada</Badge>}
+                  </p>
                   {delivery.workerId && canViewTraceability ? (
                     <a
                       href={`/trazabilidad/trabajador/${delivery.workerId}`}
@@ -131,7 +138,14 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false }: { d
         return (
           <TableRow key={delivery.id}>
             <TableCell>
-              <span className="font-mono text-xs">{delivery.code}</span>
+              <span className={`font-mono text-xs${delivery.voidedAt ? " line-through text-[var(--color-text-subtle)]" : ""}`}>
+                {delivery.code}
+              </span>
+              {delivery.voidedAt && (
+                <Badge variant="danger" size="sm" className="ml-1.5 align-middle" title={delivery.voidReason ?? undefined}>
+                  Anulada
+                </Badge>
+              )}
             </TableCell>
             <TableCell>
               <div className="min-w-0">
@@ -192,6 +206,13 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false }: { d
                       Archivo
                     </a>
                   </Button>
+                )}
+                {canVoid && !delivery.voidedAt && (
+                  <VoidDeliveryDialog
+                    deliveryId={delivery.id}
+                    deliveryCode={delivery.code}
+                    workerName={delivery.workerName}
+                  />
                 )}
               </div>
             </TableCell>

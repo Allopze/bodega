@@ -1,6 +1,8 @@
 import { and, asc, eq, inArray } from "drizzle-orm"
 import type { DB } from "@/db"
 import { products, worksites, worksiteStock } from "@/db/schema"
+import { getProductSizesByIds } from "@/lib/services/product-sizes"
+import { formatSizedProductName } from "@/lib/products/product-size"
 
 /**
  * A read-only subset shared by the root DB client and a Drizzle transaction.
@@ -150,6 +152,10 @@ export async function readEppStockAvailabilityForLockedWorksite(
     .orderBy(asc(products.id))
     .for("share")
 
+  // El aviso nombra el producto del que no hay stock: sin la talla, «no hay
+  // stock de Zapato SteelPro» no dice de cuál de las cinco variantes.
+  const sizeById = await getProductSizesByIds(productIds, reader)
+
   const productById = new Map(productRows.map((product) => [product.id, product]))
   const missingProductIds = productIds.filter((productId) => !productById.has(productId))
   if (missingProductIds.length > 0) {
@@ -157,7 +163,7 @@ export async function readEppStockAvailabilityForLockedWorksite(
   }
   const inactiveProducts = productRows.filter((product) => !product.isActive)
   if (inactiveProducts.length > 0) {
-    throw new EppStockAvailabilityError(`Los siguientes productos están inactivos y no pueden solicitarse: ${inactiveProducts.map((product) => product.name).join(", ")}`)
+    throw new EppStockAvailabilityError(`Los siguientes productos están inactivos y no pueden solicitarse: ${inactiveProducts.map((product) => formatSizedProductName(product.name, sizeById.get(product.id))).join(", ")}`)
   }
 
   const eppProductIds = productRows.filter((product) => product.isEpp).map((product) => product.id)
@@ -185,7 +191,7 @@ export async function readEppStockAvailabilityForLockedWorksite(
     const product = productById.get(productId)!
     return {
       productId,
-      productName: product.name,
+      productName: formatSizedProductName(product.name, sizeById.get(product.id)),
       requestedQuantity: requestedByProductId.get(productId)!,
       availableQuantity: availableByProductId.get(productId) ?? 0,
       locationName: worksite.name,

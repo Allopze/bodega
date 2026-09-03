@@ -14,6 +14,7 @@ import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { buildXlsxBuffer } from "@/lib/reports/export"
 import type { Session } from "next-auth"
 import { formatDate, todayInChile} from "@/lib/utils"
+import { getProductSizesByIds } from "@/lib/services/product-sizes"
 
 export interface EppDeliveryExportFilters {
   worksiteId?: string
@@ -46,6 +47,7 @@ export async function getEppDeliveryExport(
       workerRut:     workers.rut,
       workerPos:     workers.position,
       hasSig:        deliveries.signaturePath,
+      productId:     deliveryItems.productId,
       productName:   products.name,
       productSku:    products.sku,
       quantity:      deliveryItems.quantity,
@@ -71,6 +73,11 @@ export async function getEppDeliveryExport(
 
   const truncated = rows.length > maxRows
   const limited = truncated ? rows.slice(0, maxRows) : rows
+  // La talla entregada es parte del registro: sin ella el export no distingue
+  // el zapato 42 del 40, que son filas de catálogo distintas con el mismo nombre.
+  const sizeById = await getProductSizesByIds(
+    limited.map((r) => r.productId).filter((id): id is string => Boolean(id)),
+  )
 
   const filename = `entregas-epp-${todayInChile()}.xlsx`
   const buffer = await buildXlsxBuffer({
@@ -79,7 +86,7 @@ export async function getEppDeliveryExport(
     headers: [
       "Código", "Fecha entrega", "Faena",
       "Trabajador", "RUT", "Cargo",
-      "EPP entregado", "SKU", "Cantidad", "U/M",
+      "EPP entregado", "Talla", "SKU", "Cantidad", "U/M",
       "Cantidad originalmente registrada", "Regularizada",
       "Solicitud origen", "Evidencia de firma histórica",
     ],
@@ -91,6 +98,7 @@ export async function getEppDeliveryExport(
       r.workerRut,
       r.workerPos ?? "",
       r.productName ?? "",
+      (r.productId ? sizeById.get(r.productId)?.label : null) ?? "",
       r.productSku ?? "",
       r.quantity,
       r.unitOfMeasure,

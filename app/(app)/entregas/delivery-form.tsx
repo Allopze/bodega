@@ -21,7 +21,9 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
 import { formatQty, quantityStep } from "@/lib/utils"
+import { buildDeliveryStockGroups, requiresSizeChoice } from "./delivery-size-options"
 import type { ActionState } from "@/lib/validation/operations"
 import { registerWorkerDeliveryAction } from "./actions"
 import type {
@@ -79,6 +81,15 @@ export function DeliveryForm({
   const [deliveredAt, setDeliveredAt] = React.useState(today)
   const [pendingProductId, setPendingProductId] = React.useState(initialProductId ?? "")
   const [pendingQuantity, setPendingQuantity] = React.useState("")
+  // La familia del producto que se está agregando. La línea sigue guardando el
+  // `productId` de la variante: esto es sólo el primer paso de la elección.
+  const [pendingGroupKey, setPendingGroupKey] = React.useState(() => {
+    if (!initialProductId) return ""
+    const preselected = stockProducts.find((product) => product.productId === initialProductId)
+    return preselected
+      ? buildDeliveryStockGroups([preselected])[0]?.key ?? ""
+      : ""
+  })
   const [lines, setLines] = React.useState<DeliveryLine[]>([])
   const formRef = React.useRef<HTMLFormElement>(null)
   useEnterAdvancesFields(formRef)
@@ -91,7 +102,20 @@ export function DeliveryForm({
     () => workers.filter((worker) => worker.worksiteId === sourceWorksiteId),
     [sourceWorksiteId, workers],
   )
-  const selectableProducts = availableStock.filter((product) => !lines.some((line) => line.productId === product.productId))
+  const selectedWorker = React.useMemo(
+    () => availableWorkers.find((worker) => worker.id === workerId),
+    [availableWorkers, workerId],
+  )
+  // Familia → talla: el bodeguero elige primero qué entrega y después cuál de
+  // las tallas que hay en la bodega. Sin este paso el selector repetía el mismo
+  // nombre una vez por talla y la talla era, en la práctica, inelegible.
+  const stockGroups = React.useMemo(
+    () => buildDeliveryStockGroups(availableStock, selectedWorker),
+    [availableStock, selectedWorker],
+  )
+  const addedProductIds = React.useMemo(() => new Set(lines.map((line) => line.productId)), [lines])
+  const selectedGroup = stockGroups.find((group) => group.key === pendingGroupKey)
+  const needsSize = requiresSizeChoice(selectedGroup)
   const selectedPendingProduct = availableStock.find((product) => product.productId === pendingProductId)
   const pendingStep = quantityStep(selectedPendingProduct?.unitOfMeasure)
 
@@ -104,6 +128,7 @@ export function DeliveryForm({
       // `reset()` no alcanza al estado controlado del selector de fecha.
       setDeliveredAt(today)
       setLines([])
+      setPendingGroupKey("")
       setPendingProductId("")
       setPendingQuantity("")
       onSuccess?.()
@@ -116,8 +141,23 @@ export function DeliveryForm({
     setSourceWorksiteId(nextSourceWorksiteId)
     setWorkerId("")
     setLines([])
+    setPendingGroupKey("")
     setPendingProductId("")
     setPendingQuantity("")
+  }
+
+  /**
+   * Cambiar de producto nunca conserva la talla anterior: una talla pertenece a
+   * una variante concreta, y arrastrar la «M» de un guante a un zapato pondría
+   * a descontar stock de otro producto.
+   */
+  function changeGroup(nextGroupKey: string) {
+    setPendingGroupKey(nextGroupKey)
+    setPendingQuantity("")
+    const group = stockGroups.find((candidate) => candidate.key === nextGroupKey)
+    setPendingProductId(
+      group && !requiresSizeChoice(group) ? group.choices[0]?.productId ?? "" : "",
+    )
   }
 
   function changeWorker(nextWorkerId: string) {
@@ -143,6 +183,7 @@ export function DeliveryForm({
         notes: null,
       },
     ])
+    setPendingGroupKey("")
     setPendingProductId("")
     setPendingQuantity("")
   }
@@ -237,24 +278,72 @@ export function DeliveryForm({
           </span>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_9rem_auto]">
+        <div className={`mt-4 grid gap-3 ${needsSize ? "sm:grid-cols-[minmax(0,1fr)_11rem_9rem_auto]" : "sm:grid-cols-[minmax(0,1fr)_9rem_auto]"}`}>
           <Field label="Producto con stock" htmlFor="deliveryProduct">
-            <Select searchable value={pendingProductId} onValueChange={setPendingProductId} disabled={!sourceWorksiteId || selectableProducts.length === 0}>
+            <Select searchable value={pendingGroupKey} onValueChange={changeGroup} disabled={!sourceWorksiteId || stockGroups.length === 0}>
               <SelectTrigger id="deliveryProduct">
                 <SelectValue placeholder={sourceWorksiteId ? "Busca producto o SKU" : "Elige una bodega"} />
               </SelectTrigger>
               <SelectContent>
-                {selectableProducts.map((product) => (
-                  <SelectItem key={product.productId} value={product.productId} textValue={`${product.productName} ${product.productSku ?? ""}`}>
-                    {product.productName}{product.productSku ? ` · ${product.productSku}` : ""} · {formatQty(product.stockQuantity, product.unitOfMeasure)}
-                  </SelectItem>
-                ))}
-                {selectableProducts.length === 0 && (
+                {stockGroups.map((group) => {
+                  const searchText = group.choices.map((choice) => `${choice.productName} ${choice.productSku ?? ""}`).join(" ")
+                  const remaining = group.choices.filter((choice) => !addedProductIds.has(choice.productId))
+                  return (
+                    <SelectItem
+                      key={group.key}
+                      value={group.key}
+                      textValue={`${group.label} ${searchText}`}
+                      disabled={remaining.length === 0}
+                    >
+                      {group.label}
+                      {group.sizeAttributeName
+                        ? ` · ${group.choices.length} ${group.choices.length === 1 ? "talla" : "tallas"}`
+                        : group.choices[0]?.productSku ? ` · ${group.choices[0].productSku}` : ""}
+                      {" · "}{formatQty(group.totalStock, group.unitOfMeasure)}
+                    </SelectItem>
+                  )
+                })}
+                {stockGroups.length === 0 && (
                   <SelectItem value="__no-stock-products" disabled>Sin productos físicos disponibles</SelectItem>
                 )}
               </SelectContent>
             </Select>
           </Field>
+
+          {/* El selector de talla sólo existe para los productos que la usan:
+              un casco o unos lentes no deben pedir una talla vacía. */}
+          {needsSize && selectedGroup && (
+            <Field
+              label={selectedGroup.sizeAttributeName ?? "Talla"}
+              htmlFor="deliveryProductSize"
+              required
+              helper={selectedGroup.habitualSizeMissing
+                ? `Talla habitual ${selectedGroup.habitualSize}: sin stock en esta bodega.`
+                : undefined}
+            >
+              <Select value={pendingProductId} onValueChange={setPendingProductId}>
+                <SelectTrigger id="deliveryProductSize">
+                  <SelectValue placeholder="Selecciona talla" />
+                </SelectTrigger>
+                <SelectContent>
+                  {selectedGroup.choices.map((choice) => (
+                    <SelectItem
+                      key={choice.productId}
+                      value={choice.productId}
+                      disabled={addedProductIds.has(choice.productId)}
+                      textValue={choice.sizeLabel ?? choice.productName}
+                    >
+                      {choice.sizeLabel ?? "Sin talla"}
+                      {" · "}{formatQty(choice.stockQuantity, choice.unitOfMeasure)}
+                      {addedProductIds.has(choice.productId)
+                        ? " · ya agregada"
+                        : choice.isHabitual ? " · talla habitual" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
 
           <Field label={selectedPendingProduct ? `Cantidad (máx. ${formatQty(selectedPendingProduct.stockQuantity, selectedPendingProduct.unitOfMeasure)})` : "Cantidad"} htmlFor="deliveryPendingQuantity">
             <Input
@@ -288,13 +377,22 @@ export function DeliveryForm({
               return (
                 <li key={line.productId} className="flex items-center gap-3 px-3 py-3">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-[var(--color-text)]">{product?.productName ?? line.productId}</p>
+                    <p className="flex items-center gap-1.5 text-sm font-medium text-[var(--color-text)]">
+                      <span className="truncate">{product?.productName ?? line.productId}</span>
+                      {/* La talla queda visible en la línea: es parte de lo
+                          que el trabajador acusa recibo de haber recibido. */}
+                      {product?.sizeLabel && (
+                        <Badge variant="outline" size="sm" className="shrink-0 font-normal">
+                          {product.sizeAttributeName ?? "Talla"} {product.sizeLabel}
+                        </Badge>
+                      )}
+                    </p>
                     <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
                       {product?.productSku ? `${product.productSku} · ` : ""}Disponible: {formatQty(product?.stockQuantity ?? 0, product?.unitOfMeasure ?? "unidad")}
                     </p>
                   </div>
                   <Input
-                    aria-label={`Cantidad de ${product?.productName ?? line.productId}`}
+                    aria-label={`Cantidad de ${product?.productName ?? line.productId}${product?.sizeLabel ? ` talla ${product.sizeLabel}` : ""}`}
                     type="number"
                     min={product?.isEpp ? 1 : quantityStep(product?.unitOfMeasure)}
                     step={product?.isEpp ? 1 : quantityStep(product?.unitOfMeasure)}
@@ -307,7 +405,7 @@ export function DeliveryForm({
                     type="button"
                     variant="ghost"
                     size="icon-mobile-sm"
-                    aria-label={`Quitar ${product?.productName ?? "producto"}`}
+                    aria-label={`Quitar ${product?.productName ?? "producto"}${product?.sizeLabel ? ` talla ${product.sizeLabel}` : ""}`}
                     onClick={() => setLines((current) => current.filter((candidate) => candidate.productId !== line.productId))}
                     className="text-[var(--color-danger)] hover:text-[var(--color-danger)]"
                   >

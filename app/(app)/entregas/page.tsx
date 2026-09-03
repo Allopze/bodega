@@ -6,6 +6,7 @@ import {
   attachments,
   deliveries,
   deliveryItems,
+  eppProductFamilies,
   products,
   purchaseOrderItems,
   purchaseRequestItems,
@@ -24,10 +25,11 @@ import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Button } from "@/components/ui/button"
 import { DownloadSimple, Package, User } from "@phosphor-icons/react/dist/ssr"
-import { and, asc, count, desc, eq, gt, inArray, isNotNull, sql } from "drizzle-orm"
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm"
 import { DeliveriesTable, type DeliveryRow } from "./deliveries-table"
 import type { DeliverableEppOption, DeliveryStockProductOption } from "./delivery-form.types"
 import { DeliveryFormSheet } from "./delivery-form-sheet"
+import { getProductSizesByIds } from "@/lib/services/product-sizes"
 import { getTraceableDeliveryBalance } from "@/lib/services/delivery-eligibility"
 
 export const metadata: Metadata = { title: "Entregas" }
@@ -42,8 +44,9 @@ export default async function Page({
   let session
   try { session = await requirePermission("deliveries:view") }
   catch { redirect("/forbidden") }
-  const canViewTraceability = session.user.permissions.includes("traceability:view")
+  const canViewTraceability = session.user.permissions.includes("warehouse:view_traceability")
   const canCreateDelivery = session.user.permissions.includes("deliveries:create")
+  const canVoidDelivery = session.user.permissions.includes("deliveries:void")
 
   const sp = await searchParams
   const requestedWorksiteId = typeof sp.faena === "string" ? sp.faena : ""
@@ -82,6 +85,11 @@ export default async function Page({
         lastName: workers.lastName,
         position: workers.position,
         worksiteId: workers.worksiteId,
+        sizeTop: workers.sizeTop,
+        sizeBottom: workers.sizeBottom,
+        sizeShoe: workers.sizeShoe,
+        sizeGloves: workers.sizeGloves,
+        sizeHelmet: workers.sizeHelmet,
       })
       .from(workers)
       .where(and(eq(workers.isActive, true), worksiteScopeSql(session, workers.worksiteId)))
@@ -97,9 +105,12 @@ export default async function Page({
         productSku: products.sku,
         isEpp: products.isEpp,
         unitOfMeasure: products.unitOfMeasure,
+        familyId: products.familyId,
+        familyName: eppProductFamilies.canonicalName,
       })
       .from(worksiteStock)
       .innerJoin(products, eq(worksiteStock.productId, products.id))
+      .leftJoin(eppProductFamilies, eq(products.familyId, eppProductFamilies.id))
       .where(and(
         worksiteScopeSql(session, worksiteStock.worksiteId),
         gt(worksiteStock.quantity, 0),
@@ -140,6 +151,8 @@ export default async function Page({
         workerId: deliveries.workerId,
         receiverName: deliveries.receiverName,
         deliveredAt: deliveries.deliveredAt,
+        voidedAt: deliveries.voidedAt,
+        voidReason: deliveries.voidReason,
       })
       .from(deliveries)
       .where(historyScope)
@@ -160,6 +173,11 @@ export default async function Page({
       name: `${worker.firstName} ${worker.lastName}`,
       rut: worker.rut,
       position: worker.position,
+      sizeTop: worker.sizeTop,
+      sizeBottom: worker.sizeBottom,
+      sizeShoe: worker.sizeShoe,
+      sizeGloves: worker.sizeGloves,
+      sizeHelmet: worker.sizeHelmet,
     }))
 
   const stockByWorksiteProduct = new Map<string, number>()
@@ -167,15 +185,26 @@ export default async function Page({
     stockByWorksiteProduct.set(`${row.worksiteId}:${row.productId}`, row.quantity)
   }
 
-  const stockProducts: DeliveryStockProductOption[] = stockRows.map((row) => ({
-    sourceWorksiteId: row.worksiteId,
-    productId: row.productId,
-    productName: row.productName,
-    productSku: row.productSku,
-    isEpp: row.isEpp,
-    unitOfMeasure: row.unitOfMeasure,
-    stockQuantity: row.quantity,
-  }))
+  // La talla vive en `product_attributes` de la variante: una sola consulta por
+  // el conjunto de productos con stock, no una por fila.
+  const sizeById = await getProductSizesByIds(stockRows.map((row) => row.productId))
+
+  const stockProducts: DeliveryStockProductOption[] = stockRows.map((row) => {
+    const size = sizeById.get(row.productId)
+    return {
+      sourceWorksiteId: row.worksiteId,
+      productId: row.productId,
+      productName: row.productName,
+      productSku: row.productSku,
+      isEpp: row.isEpp,
+      unitOfMeasure: row.unitOfMeasure,
+      stockQuantity: row.quantity,
+      familyId: row.familyId,
+      familyName: row.familyName,
+      sizeLabel: size?.label ?? null,
+      sizeAttributeName: size?.attributeName ?? null,
+    }
+  })
 
   const receivedItemIds = receivedItems.map((item) => item.id)
   const [deliveredRows, faenaReceiptRows] = receivedItemIds.length > 0
@@ -183,7 +212,13 @@ export default async function Page({
         db
           .select({ requestItemId: deliveryItems.requestItemId, quantity: deliveryItems.quantity })
           .from(deliveryItems)
-          .where(inArray(deliveryItems.requestItemId, receivedItemIds)),
+          // Una entrega anulada no consumió saldo: el ítem vuelve a estar
+          // disponible para entregar.
+          .innerJoin(deliveries, eq(deliveryItems.deliveryId, deliveries.id))
+          .where(and(
+            inArray(deliveryItems.requestItemId, receivedItemIds),
+            isNull(deliveries.voidedAt),
+          )),
         db
           .select({
             requestItemId: purchaseOrderItems.requestItemId,
@@ -311,6 +346,8 @@ export default async function Page({
       quantityCorrected: items.some((item) => item.quantityOriginal !== null),
       requestCode: firstItem?.requestCode ?? null,
       deliveredAt: delivery.deliveredAt,
+      voidedAt: delivery.voidedAt ?? null,
+      voidReason: delivery.voidReason ?? null,
       attachmentId: attachmentByDeliveryId.get(delivery.id) ?? null,
     }
   })
@@ -425,7 +462,7 @@ export default async function Page({
               />
             </div>
           ) : (
-            <DeliveriesTable deliveries={deliveriesForTable} canViewTraceability={canViewTraceability} />
+            <DeliveriesTable deliveries={deliveriesForTable} canViewTraceability={canViewTraceability} canVoid={canVoidDelivery} />
           )}
           <ServerPagination pagination={historyPagination} hrefForPage={pageHref} />
         </section>

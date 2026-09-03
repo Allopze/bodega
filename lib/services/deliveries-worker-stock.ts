@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm"
+import { and, eq, isNull, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   attachments,
@@ -98,10 +98,16 @@ async function getTraceableItemState(
     throw new Error("El ítem no pertenece a la faena del trabajador")
   }
 
+  // Una entrega anulada no entregó nada: contarla dejaría saldo bloqueado que
+  // ya no corresponde a ninguna entrega vigente.
   const previousDeliveries = await tx
     .select({ quantity: deliveryItems.quantity })
     .from(deliveryItems)
-    .where(eq(deliveryItems.requestItemId, item.requestItemId))
+    .innerJoin(deliveries, eq(deliveryItems.deliveryId, deliveries.id))
+    .where(and(
+      eq(deliveryItems.requestItemId, item.requestItemId),
+      isNull(deliveries.voidedAt),
+    ))
   const alreadyDelivered = previousDeliveries.reduce((sum, delivery) => sum + delivery.quantity, 0)
 
   const [receivedRow] = await tx

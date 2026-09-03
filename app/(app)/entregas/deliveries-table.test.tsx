@@ -21,6 +21,8 @@ const row: DeliveryRow = {
   requestCode: "SOL-2026-EPP",
   deliveredAt: "2026-06-29T12:00:00.000Z",
   attachmentId: null,
+  voidedAt: null,
+  voidReason: null,
 }
 
 describe("DeliveriesTable", () => {
