@@ -34,6 +34,8 @@
     "db:seed": "tsx --env-file=.env.local db/seed.ts",
     "db:seed-pdtp-inspection-templates": "tsx --env-file=.env.local scripts/seed-pdtp-inspection-templates-2026.ts",
     "db:seed-document-root-folders": "tsx --env-file=.env.local scripts/seed-document-root-folders.ts",
+    "db:preflight-worker-sizes": "tsx --env-file-if-exists=.env.local scripts/preflight-worker-sizes.ts",
+    "db:seed-size-catalog": "tsx --env-file-if-exists=.env.local scripts/seed-size-catalog.ts",
     "db:seed-fuel-anomaly-rules": "tsx --env-file-if-exists=.env.local scripts/seed-fuel-anomaly-rules.ts",
     "db:seed-cphs-orientation-course": "tsx --env-file=.env.local scripts/seed-prevention-cphs-orientation-course.ts",
     "pdtp:apply-catalog-decisions": "tsx --env-file=.env.local scripts/apply-pdtp-2026-catalog-decisions.ts",

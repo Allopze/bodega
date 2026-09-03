@@ -21,6 +21,19 @@ function normalizedProductName(name: string) {
   return name.trim().normalize("NFD").replace(/\p{Diacritic}/gu, "").toLocaleLowerCase("es-CL")
 }
 
+/**
+ * Clave de la familia a la que pertenece una variante.
+ *
+ * `familyId` es la relación real; el nombre normalizado es el respaldo para el
+ * catálogo previo a las familias, donde las variantes sólo se reconocían por
+ * compartir nombre. Exportada porque Entregas agrupa el stock por la misma
+ * regla: dos criterios distintos dejaban la talla elegible en Solicitudes e
+ * inseleccionable en Entregas.
+ */
+export function variantGroupKey(product: Pick<ProductVariantLike, "name" | "familyId">): string {
+  return product.familyId ?? normalizedProductName(product.name)
+}
+
 function parseOptions(options: string | null | undefined) {
   if (!options) return []
   try {
@@ -48,7 +61,7 @@ export function groupProductVariants<T extends ProductVariantLike>(products: T[]
   const groups = new Map<string, ProductVariantGroup<T>>()
 
   for (const product of products) {
-    const id = product.familyId ?? normalizedProductName(product.name)
+    const id = variantGroupKey(product)
     const group = groups.get(id)
     if (group) group.variants.push(product)
     else groups.set(id, { id, name: product.name, variants: [product] })
