@@ -38,7 +38,7 @@ import {
   recordCampaignAttendanceAction,
   setCampaignPdtpActivitiesAction,
 } from "./actions"
-import { PDTP_CAMPAIGN_ACTIVITIES } from "@/lib/services/prevention-campaigns"
+import { PDTP_CAMPAIGN_ACTIVITIES } from "@/lib/services/prevention-campaigns.catalog"
 import type { preventionCampaigns } from "@/db/schema"
 
 export type CampaignWithStats = typeof preventionCampaigns.$inferSelect & {
