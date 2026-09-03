@@ -304,6 +304,26 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
     command: ["node", "scripts/sync-rbac.mjs"]
 
+  # One-shot: normaliza SKUs de productos EPP y servicios a formato secuencial
+  # (EPP-001, EPP-002, ... / SRV-001, SRV-002, ...). Idempotente: si ya está
+  # normalizado, no cambia nada. Corre después de migraciones.
+  #
+  #   docker compose run --rm normalize-epp-skus
+  #
+  normalize-epp-skus:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+    command: ["node", "scripts/normalize-epp-skus.mjs", "--apply"]
+
   # One-shot: instala el catálogo del motor de inspecciones cableado a las
   # actividades del PDTP que acredita cada instrumento. Idempotente: la
   # identidad es (code, versionLabel), así que repetirlo no crea versiones —

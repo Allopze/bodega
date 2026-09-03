@@ -364,6 +364,8 @@ run_timed "Diagnóstico de integraciones de combustible (previo a migrar)" run_i
 
 run_timed "Applying migrations" run_in_prod docker compose run --rm migrate
 
+run_timed "Normalizando SKUs de EPP y servicios" run_in_prod docker compose run --rm normalize-epp-skus
+
 # El backfill recalcula tanto OC nunca proyectadas como huellas de una versión
 # anterior. La versión 2 introduce estados parciales, así que conservar una
 # huella v1 dejaría la pantalla y la cola con semántica antigua.

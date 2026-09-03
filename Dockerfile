@@ -206,6 +206,15 @@ RUN ./node_modules/.bin/esbuild scripts/preflight-fuel-integrations.ts \
     --external:postgres \
     --outfile=/tmp/preflight-fuel-integrations.mjs
 
+# Normalización de SKUs de EPP y servicios a formato secuencial (EPP-NNN, SRV-NNN).
+# Corre en deploy una sola vez: es idempotente (si ya está normalizado, no cambia nada).
+RUN ./node_modules/.bin/esbuild scripts/normalize-epp-skus.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:postgres \
+    --outfile=/tmp/normalize-epp-skus.mjs
+
 
 # ── Production stage: standalone build, minimal runtime ──
 FROM node:22.13-alpine AS prod
@@ -287,6 +296,7 @@ COPY --from=build /tmp/backfill-dte-order-refs.mjs ./scripts/backfill-dte-order-
 COPY --from=build /tmp/fuel/backfill-fuel-meter-readings.mjs ./scripts/backfill-fuel-meter-readings.mjs
 COPY --from=build /tmp/fuel/seed-fuel-anomaly-rules.mjs ./scripts/seed-fuel-anomaly-rules.mjs
 COPY --from=build /tmp/preflight-fuel-integrations.mjs ./scripts/preflight-fuel-integrations.mjs
+COPY --from=build /tmp/normalize-epp-skus.mjs ./scripts/normalize-epp-skus.mjs
 # Cron service uses this bounded internal HTTP runner instead of an inline
 # wget command. It is copied explicitly because Next standalone does not trace
 # scripts invoked only by Compose.
