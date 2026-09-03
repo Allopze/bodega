@@ -123,13 +123,13 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
     expect(ws1Activities.map((a) => a.id)).toContain(activity.id)
   })
 
-  it("agregar membresía o una exclusión cambia el digest firmable (schemaVersion 10)", async () => {
+  it("agregar membresía o una exclusión cambia el digest firmable (schemaVersion 11)", async () => {
     const { setPdtpProgramWorksites, excludeActivityForWorksite } = await import("@/lib/services/pdtp/worksites")
     const { computePdtpProgramContentDigest } = await import("@/lib/services/pdtp/content-digest")
     const { program, activity } = await createDraftProgramWithActivity(2042)
 
     const baseline = await computePdtpProgramContentDigest(program.id)
-    expect(baseline.snapshot).toMatchObject({ schemaVersion: 10 })
+    expect(baseline.snapshot).toMatchObject({ schemaVersion: 11 })
 
     await setPdtpProgramWorksites(program.id, ["ws-1"], "user-1")
     const afterMembership = await computePdtpProgramContentDigest(program.id)

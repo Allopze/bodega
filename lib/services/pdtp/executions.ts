@@ -182,6 +182,15 @@ export async function approvePdtpExecution(executionId: string, userId: string, 
     if (execution.status !== "submitted" && execution.status !== "rejected") {
       throw new Error("Solo se pueden aprobar ejecuciones en estado 'submitted' o 'rejected'.")
     }
+    // Segregación: quien registró el cumplimiento no puede ser quien lo
+    // aprueba. `executedByUserId` es null en las de `origin: 'integration'`
+    // (nadie "tecleó" nada), así que esto sólo aplica a las manuales —mismo
+    // criterio que el resto de Prevención (`prevention-risk-legal.ts`,
+    // `prevention-indicadores.ts`). Faltaba acá: un usuario con `execute` y
+    // `approve` podía aprobar lo suyo (hallazgo del 2026-09-02).
+    if (execution.executedByUserId && execution.executedByUserId === userId) {
+      throw new Error("Quien registró el cumplimiento no puede aprobarlo. Debe hacerlo otra persona.")
+    }
     assertWorksiteAccess(execution.worksiteId, scope)
 
     const now = new Date().toISOString()
