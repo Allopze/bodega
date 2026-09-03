@@ -70,7 +70,9 @@ RUN ./node_modules/.bin/esbuild scripts/seed-pdtp-inspection-templates-2026.ts \
     --bundle \
     --platform=node \
     --format=esm \
-    --packages=external \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
     --outfile=/tmp/seed-pdtp-inspection-templates.mjs
 
 # Las decisiones de catálogo del programa 2026 (retiros, corresponsables, textos
@@ -81,7 +83,9 @@ RUN ./node_modules/.bin/esbuild scripts/apply-pdtp-2026-catalog-decisions.ts \
     --bundle \
     --platform=node \
     --format=esm \
-    --packages=external \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
     --outfile=/tmp/apply-pdtp-catalog-decisions.mjs
 
 # Los cursos, los planes y las campañas declaran qué actividad del PDTP acredita
@@ -91,7 +95,9 @@ RUN ./node_modules/.bin/esbuild scripts/apply-pdtp-2026-program-data.ts \
     --bundle \
     --platform=node \
     --format=esm \
-    --packages=external \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
     --outfile=/tmp/apply-pdtp-program-data.mjs
 
 # La clasificación por mecanismo (enganche / constancia / compuesta) dice qué
@@ -103,7 +109,9 @@ RUN ./node_modules/.bin/esbuild scripts/apply-pdtp-2026-mechanisms.ts \
     --bundle \
     --platform=node \
     --format=esm \
-    --packages=external \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
     --outfile=/tmp/apply-pdtp-mechanisms.mjs
 
 # El SLA y la evidencia mínima de las actividades a demanda del programa: sin
@@ -114,7 +122,9 @@ RUN ./node_modules/.bin/esbuild scripts/apply-pdtp-2026-demand-slas.ts \
     --bundle \
     --platform=node \
     --format=esm \
-    --packages=external \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
     --outfile=/tmp/apply-pdtp-demand-slas.mjs
 
 # Reprocesa los eventos de cumplimiento que quedaron `pending`/`error` en
@@ -126,7 +136,9 @@ RUN ./node_modules/.bin/esbuild scripts/reconcile-pdtp-fulfillment-events.ts \
     --bundle \
     --platform=node \
     --format=esm \
-    --packages=external \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
     --outfile=/tmp/reconcile-pdtp-fulfillment-events.mjs
 
 # Mismo motivo que sync-rbac: los one-shots de conciliación OC-factura viven en

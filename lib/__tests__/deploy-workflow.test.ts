@@ -184,6 +184,29 @@ describe("deploy workflow", () => {
     expect(buildRun).toContain("NODE_OPTIONS=--max-old-space-size=8192")
   })
 
+  it("bundles application dependencies for every PDTP deploy one-shot", () => {
+    const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
+    const scripts = [
+      ["seed-pdtp-inspection-templates-2026", "seed-pdtp-inspection-templates"],
+      ["apply-pdtp-2026-catalog-decisions", "apply-pdtp-catalog-decisions"],
+      ["apply-pdtp-2026-program-data", "apply-pdtp-program-data"],
+      ["apply-pdtp-2026-mechanisms", "apply-pdtp-mechanisms"],
+      ["apply-pdtp-2026-demand-slas", "apply-pdtp-demand-slas"],
+      ["reconcile-pdtp-fulfillment-events", "reconcile-pdtp-fulfillment-events"],
+    ] as const
+
+    for (const [script, artifact] of scripts) {
+      const build = dockerfile.match(new RegExp(
+        `RUN ./node_modules/.bin/esbuild scripts/${script}\\.ts[\\s\\S]*?--outfile=/tmp/${artifact}\\.mjs`,
+      ))?.[0]
+
+      expect(build, script).toBeDefined()
+      expect(build, script).not.toContain("--packages=external")
+      expect(build, script).toContain("--external:drizzle-orm")
+      expect(build, script).toContain("--external:postgres")
+    }
+  })
+
   it("propagates a nested pg_dump failure and stops the failing function immediately", () => {
     const result = runTimedHarness(`
 dump_production_database() {
