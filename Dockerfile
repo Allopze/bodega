@@ -323,8 +323,8 @@ RUN chmod +x ./scripts/backup-*.sh ./scripts/restore-all.sh ./scripts/catastroph
 # UID/GID 1001 (Docker copies the mountpoint's ownership into an empty volume).
 # Otherwise the volume defaults to root and `mkdir /data/storage/<repuestos|...>`
 # at runtime fails with EACCES.
-RUN mkdir -p /app/storage /app/.next/cache /data/storage && \
-    chown nextjs:nodejs /app/storage /data/storage && \
+RUN mkdir -p /app/storage /app/.next/cache /data/storage /app/backups && \
+    chown nextjs:nodejs /app/storage /data/storage /app/backups && \
     chown -R nextjs:nodejs /app/.next/cache
 
 USER nextjs

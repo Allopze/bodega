@@ -14,12 +14,59 @@
 import postgres from "postgres"
 import * as fs from "fs"
 import * as path from "path"
+import * as os from "os"
 
 const DRY_RUN = !process.argv.includes("--apply")
 const ROLLBACK = process.argv.includes("--rollback")
 
-const BACKUP_DIR = path.join(process.cwd(), "backups")
-const BACKUP_FILE = path.join(BACKUP_DIR, `sku-normalize-${new Date().toISOString().slice(0, 10)}.json`)
+function getBackupDir(): string {
+  const custom = process.env.BACKUP_DIR
+  const candidates = [
+    ...(custom ? [custom] : []),
+    path.join(process.cwd(), "backups"),
+    path.join("/tmp", "backups"),
+    path.join(os.tmpdir(), "backups"),
+    os.tmpdir(),
+  ]
+
+  for (const dir of candidates) {
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true })
+      }
+      fs.accessSync(dir, fs.constants.W_OK)
+      return dir
+    } catch {
+      continue
+    }
+  }
+
+  return os.tmpdir()
+}
+
+function findBackupFile(): string | null {
+  const candidateDirs: string[] = [
+    ...(process.env.BACKUP_DIR ? [process.env.BACKUP_DIR] : []),
+    path.join(process.cwd(), "backups"),
+    path.join("/tmp", "backups"),
+    path.join(os.tmpdir(), "backups"),
+    os.tmpdir(),
+  ]
+
+  for (const dir of candidateDirs) {
+    if (!fs.existsSync(dir)) continue
+    try {
+      const files = fs.readdirSync(dir).filter((f) => f.startsWith("sku-normalize-") && f.endsWith(".json"))
+      if (files.length > 0) {
+        files.sort().reverse()
+        return path.join(dir, files[0]!)
+      }
+    } catch {
+      continue
+    }
+  }
+  return null
+}
 
 // ── Unit of measure corrections ──────────────────────────────────────────────
 const UOM_CHANGES: Array<{ nameLike: string; newUom: string }> = [
@@ -50,9 +97,17 @@ async function main() {
     WHERE p.is_active = true
   `
 
-  if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true })
-  fs.writeFileSync(BACKUP_FILE, JSON.stringify(backup, null, 2))
-  console.log(`   → ${backup.length} productos respaldados en ${BACKUP_FILE}`)
+  const backupDir = getBackupDir()
+  const backupFile = path.join(backupDir, `sku-normalize-${new Date().toISOString().slice(0, 10)}.json`)
+
+  try {
+    if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true })
+    fs.writeFileSync(backupFile, JSON.stringify(backup, null, 2))
+    console.log(`   → ${backup.length} productos respaldados en ${backupFile}`)
+  } catch (err) {
+    console.warn(`   ⚠️  No se pudo escribir archivo de backup en ${backupFile}: ${(err as Error).message}`)
+    console.log(`   (Se continúa porque el despliegue cuenta con pg_dump previo)`)
+  }
 
   // ── 2. Query EPP y SRV ──────────────────────────────────────────────────
   const eppRows = await sql`
@@ -131,10 +186,17 @@ async function main() {
 
   await sql.begin(async (tx) => {
     let updated = 0
-    for (const row of skuMap) {
-      if (row.oldSku === row.newSku) continue
-      await tx`UPDATE products SET sku = ${row.newSku} WHERE id = ${row.id}`
-      updated++
+    const toUpdate = skuMap.filter((row) => row.oldSku !== row.newSku)
+    if (toUpdate.length > 0) {
+      // Fase 1: prefijo temporal para evitar colisiones con el constraint unique
+      for (const row of toUpdate) {
+        await tx`UPDATE products SET sku = ${"__tmp__" + row.id} WHERE id = ${row.id}`
+      }
+      // Fase 2: asignar el nuevo SKU definitivo
+      for (const row of toUpdate) {
+        await tx`UPDATE products SET sku = ${row.newSku} WHERE id = ${row.id}`
+        updated++
+      }
     }
     console.log(`   ✓ ${updated} SKUs actualizados`)
 
@@ -156,16 +218,17 @@ async function main() {
 }
 
 async function rollback(sql: postgres.Sql) {
-  if (!fs.existsSync(BACKUP_FILE)) {
-    console.error(`❌ No se encontró backup en ${BACKUP_FILE}`)
+  const backupFile = findBackupFile()
+  if (!backupFile) {
+    console.error(`❌ No se encontró ningún archivo de backup sku-normalize-*.json`)
     process.exit(1)
   }
 
   const backup: Array<{ id: string; sku: string; name: string; unit_of_measure: string }> = JSON.parse(
-    fs.readFileSync(BACKUP_FILE, "utf-8"),
+    fs.readFileSync(backupFile, "utf-8"),
   )
 
-  console.log(`🔄 Revirtiendo ${backup.length} productos desde ${BACKUP_FILE}...`)
+  console.log(`🔄 Revirtiendo ${backup.length} productos desde ${backupFile}...`)
 
   await sql.begin(async (tx) => {
     for (const row of backup) {
