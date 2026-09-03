@@ -33,7 +33,9 @@ describe("validación zod del módulo TI", () => {
     const base = { code: "TI-NB-0001", assetTypeId: "t1" }
     expect(itAssetCreateSchema.safeParse(base).success).toBe(true)
     expect(itAssetCreateSchema.safeParse({ ...base, code: "" }).success).toBe(false)
-    expect(itAssetCreateSchema.safeParse({ ...base, status: "en_reparacion" }).success).toBe(true)
+    // El alta siempre parte disponible: los cambios de estado deben pasar por
+    // el flujo trazable de custodia o cambio manual con motivo.
+    expect(itAssetCreateSchema.safeParse({ ...base, status: "en_reparacion" }).success).toBe(false)
     expect(itAssetCreateSchema.safeParse({ ...base, status: "flotando" }).success).toBe(false)
     expect(itAssetCreateSchema.safeParse({ ...base, cost: -1 }).success).toBe(false)
     expect(itAssetCreateSchema.safeParse({ ...base, cost: "150000" }).success).toBe(true) // coerce

@@ -647,6 +647,13 @@ const routeTargets: RouteTarget[] = [
   { slug: "mantenciones-detalle", path: "/mantenciones/maint-audit-1", auth: true },
   { slug: "mantenciones-planes", path: "/mantenciones/planes", auth: true },
   { slug: "mantenciones-politicas-documentales", path: "/mantenciones/politicas-documentales", auth: true },
+  { slug: "ti", path: "/ti", auth: true },
+  { slug: "ti-activos", path: "/ti/activos", auth: true },
+  { slug: "ti-activo-detalle", path: "/ti/activos/it-asset-audit-1", auth: true },
+  { slug: "ti-asignaciones", path: "/ti/asignaciones", auth: true },
+  { slug: "ti-acta-print", path: "/ti/actas/it-assignment-audit-1/print", auth: true },
+  { slug: "ti-tickets", path: "/ti/tickets", auth: true },
+  { slug: "ti-ticket-detalle", path: "/ti/tickets/it-ticket-audit-1", auth: true },
   // ── Combustibles ──────────────────────────────────────────────────────
   { slug: "combustibles", path: "/combustibles", auth: true },
   { slug: "combustibles-nueva", path: "/combustibles/nueva", auth: true },
@@ -846,6 +853,7 @@ const seedCoverage: CaptureSeedArea[] = [
   { section: "analitica", fixtures: ["compras", "combustible", "flota", "stock crítico", "EPP"] },
   { section: "flota", fixtures: ["vehículos activos", "cargas de combustible", "mantenciones"] },
   { section: "mantenciones", fixtures: ["vehículos", "proveedores", "mantenciones registradas"] },
+  { section: "ti", fixtures: ["activo asignado con acta de custodia", "ticket TI abierto asociado a activo"] },
   { section: "combustibles", fixtures: ["cargas de combustible", "lote de consumos con registros asociados y sin asociar", "lote de log operacional con faena pendiente de asociar", "carga TAE con resultado público", "lote TAE histórico con carga observada y rechazo", "vehículos de combustible", "proveedores de combustible", "cuentas corrientes", "reportes mensuales"] },
   { section: "repuestos", fixtures: ["solicitud de repuestos", "ítem libre", "cotización pendiente"] },
   { section: "servicios", fixtures: ["solicitud de servicios", "ítem libre", "cotización pendiente"] },
@@ -1716,6 +1724,21 @@ async function prepareDatabase(captureDbUrl: string) {
     { id: "worker-audit-2", rut: "17.444.555-6", firstName: "Marco", lastName: "Silva", position: "Mecánico", worksiteId, isActive: true, createdAt: now },
     { id: "worker-audit-3", rut: "16.777.888-9", firstName: "Paula", lastName: "Mella", position: "Supervisora", worksiteId: "ws-audit-2", isActive: true, createdAt: now },
   ])
+
+  // Detalles TI: las páginas dinámicas y el acta se respaldan en una misma
+  // custodia abierta, no en IDs inventados que oculten un 404 durante la QA.
+  await db.insert(schema.itAssetTypes).values({
+    id: "it-asset-type-audit-1", name: "Notebook corporativo", category: "computacion", hasSpecs: true, isActive: true, createdAt: now, updatedAt: now,
+  })
+  await db.insert(schema.itAssets).values({
+    id: "it-asset-audit-1", code: "TI-NB-0001", assetTypeId: "it-asset-type-audit-1", brand: "Lenovo", model: "ThinkPad T14", serialNumber: "CAPTURE-TI-0001", status: "asignado", workerId: "worker-audit-1", worksiteId, location: "Oficina de operaciones", createdAt: now, updatedAt: now,
+  })
+  await db.insert(schema.itAssetAssignments).values({
+    id: "it-assignment-audit-1", code: "ACT-2026-0001", assetId: "it-asset-audit-1", workerId: "worker-audit-1", worksiteId, kind: "delivery", deliveredAt: now, deliveredByUserId: userId, physicalState: "bueno", acceptedAt: now, acceptedByUserId: userId, createdAt: now, updatedAt: now,
+  })
+  await db.insert(schema.itTickets).values({
+    id: "it-ticket-audit-1", code: "INC-2026-0001", subject: "Revisión de equipo asignado", description: "El notebook asignado requiere diagnóstico de conectividad VPN.", category: "internet", priority: "normal", status: "en_diagnostico", requesterUserId: userId, workerId: "worker-audit-1", worksiteId, assetId: "it-asset-audit-1", assigneeUserId: userId, createdAt: now, updatedAt: now,
+  })
 
   // Solicitud ARCO con un titular dentro de la faena autorizada. El workbench
   // resuelve al titular desde `workers` y rechaza cualquier solicitud fuera
