@@ -18,8 +18,8 @@
  * "no cumple" prueba que no se entregó, así que no puede cerrar la N°18.
  */
 
-import { logger } from "@/lib/logger"
-import { accreditPdtpFromEvent, type AccreditationInput } from "@/lib/services/pdtp/accreditation"
+import type { AccreditationInput } from "@/lib/services/pdtp/accreditation"
+import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
 
 /**
  * Ítem del acta → actividad del PDTP que cierra.
@@ -50,6 +50,19 @@ const EPP_SECTION_ID = "epp"
 const EPP_ACTIVITY_NUMBER = 23
 
 /**
+ * N°19 ("mantener actualizada la carpeta de… entrega EPP, IRL, RIOHS con
+ * cartas de SEREMI e inspección") es `planned_vs_completed`, mensual (1
+ * unidad planificada por mes), no `coverage`: no mide qué fracción de la
+ * dotación tiene carpeta completa, mide si la carpeta se mantuvo ese mes. La
+ * carpeta de un trabajador se considera al día con los mismos tres
+ * componentes que ya cierran la N°15, la N°18 y la N°23 —es el mismo hecho,
+ * archivado—, así que cierra junto con ellas y no necesita su propio ítem del
+ * acta. Las cartas del SEREMI quedan como evidencia de respaldo del
+ * expediente, sin entrar al cómputo: no hay un ítem del acta que las registre.
+ */
+const STARTER_FOLDER_ACTIVITY_NUMBER = 19
+
+/**
  * N°52, la inducción completa. Es la actividad **compuesta** del programa: se
  * cierra cuando sus componentes están, y el acta ya expresa exactamente eso en
  * su resultado final. Sólo la habilitación plena cuenta — una habilitación con
@@ -76,20 +89,7 @@ function occurredAtFromChileDate(plainDate: string): string {
 }
 
 async function safeAccredit(input: AccreditationInput): Promise<void> {
-  try {
-    const result = await accreditPdtpFromEvent(input)
-    if (result.skippedNotFound.length > 0) {
-      logger.warn(
-        { sourceId: input.sourceId, skippedNotFound: result.skippedNotFound },
-        "[onboarding-pdtp-connector] Actividades no encontradas en el programa activo.",
-      )
-    }
-  } catch (err) {
-    logger.error(
-      { err, sourceId: input.sourceId, worksiteId: input.worksiteId },
-      "[onboarding-pdtp-connector] Error en auto-acreditación PDTP (no crítico para el acta cerrada).",
-    )
-  }
+  await recordPdtpFulfillmentEvent(input)
 }
 
 /**
@@ -119,6 +119,12 @@ export function onboardingActivityNumbers(input: {
   }
 
   if (input.resultadoFinal === ONBOARDING_PASSING_RESULT) numbers.push(ONBOARDING_ACTIVITY_NUMBER)
+
+  // N°19: la carpeta del trabajador queda al día cuando los tres componentes
+  // que la componen (inducción IRL, RIOHS, EPP inicial) ya cerraron.
+  if (numbers.includes(15) && numbers.includes(18) && numbers.includes(EPP_ACTIVITY_NUMBER)) {
+    numbers.push(STARTER_FOLDER_ACTIVITY_NUMBER)
+  }
 
   return numbers.sort((a, b) => a - b)
 }

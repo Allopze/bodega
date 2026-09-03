@@ -54,7 +54,7 @@ const PROGRAM_ID = "pdtp-onb-v1"
 const EVAL_ID = "sstev-onb-1"
 
 /** Las cinco que el acta cierra, más la N°17 que a propósito no (decisión D06). */
-const ACTIVITY_NUMBERS = [15, 17, 18, 23, 52, 63] as const
+const ACTIVITY_NUMBERS = [15, 17, 18, 19, 23, 52, 63] as const
 const activityId = (n: number) => `${PROGRAM_ID}-a-${String(n).padStart(3, "0")}`
 
 /** El valor conforme depende de la escala del ítem. */
@@ -100,6 +100,7 @@ async function answerAll(overrides: Record<string, { estado: string; observacion
 }
 
 beforeEach(async () => {
+  await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
   await inMemoryDb.delete(schema.pdtpExecutions)
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpPrograms)
@@ -142,13 +143,15 @@ beforeEach(async () => {
 })
 
 describe("El acta de trabajador nuevo acredita al cerrarse", () => {
-  it("cierra las cinco actividades cuando todos los ítems quedan conformes", async () => {
+  it("cierra las seis actividades cuando todos los ítems quedan conformes", async () => {
     const answered = await answerAll()
     expect(answered).toBeGreaterThan(0)
 
     await closeEvaluation(EVAL_ID, { evaluationId: EVAL_ID }, "all")
 
-    for (const n of [15, 18, 23, 52, 63]) {
+    // N°19 cierra junto con las otras: la carpeta del trabajador queda al día
+    // con los mismos tres componentes que ya cierran la N°15, N°18 y N°23.
+    for (const n of [15, 18, 19, 23, 52, 63]) {
       const rows = await executionsFor(n)
       expect(rows, `N°${n}`).toHaveLength(1)
       expect(rows[0], `N°${n}`).toMatchObject({
@@ -183,6 +186,8 @@ describe("El acta de trabajador nuevo acredita al cerrarse", () => {
     expect(await executionsFor(18)).toHaveLength(0)
     // La inducción IRL sí se hizo, así que la N°15 no se ve arrastrada.
     expect(await executionsFor(15)).toHaveLength(1)
+    // La carpeta no queda al día si falta uno de sus tres componentes.
+    expect(await executionsFor(19)).toHaveLength(0)
   })
 
   it("la entrega de EPP exige la sección completa, no una prenda", async () => {
@@ -226,7 +231,8 @@ describe("onboardingActivityNumbers — el mapa, sin base de datos", () => {
         { seccionId: "epp", itemId: "casco_seguridad", estado: "entregado" },
       ],
     })
-    expect(numbers).toEqual([15, 18, 23, 52, 63])
+    // N°19 cierra junto con las tres: es el mismo hecho archivado.
+    expect(numbers).toEqual([15, 18, 19, 23, 52, 63])
   })
 
   it("una habilitación con restricciones no es la inducción completa", async () => {
@@ -235,7 +241,22 @@ describe("onboardingActivityNumbers — el mapa, sin base de datos", () => {
       resultadoFinal: "habilitado_restricciones",
       responses: [{ seccionId: "induccion_capacitacion", itemId: "riohs", estado: "cumple" }],
     })
+    // Sólo el RIOHS: faltan la inducción y el EPP, así que la carpeta (N°19)
+    // tampoco queda al día.
     expect(numbers).toEqual([18])
+  })
+
+  it("la carpeta (N°19) no cierra si falta uno de sus tres componentes", async () => {
+    const { onboardingActivityNumbers } = await import("@/lib/services/pdtp-adapters/worker-onboarding-connector")
+    const numbers = onboardingActivityNumbers({
+      resultadoFinal: null,
+      responses: [
+        { seccionId: "induccion_capacitacion", itemId: "induccion_irl", estado: "cumple" },
+        { seccionId: "induccion_capacitacion", itemId: "riohs", estado: "cumple" },
+        // Sin EPP entregado.
+      ],
+    })
+    expect(numbers).toEqual([15, 18])
   })
 
   it("los ítems de EPP no aplicables al cargo no cuentan en contra", async () => {

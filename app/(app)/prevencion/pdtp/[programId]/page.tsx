@@ -10,6 +10,7 @@ import {
   getPdtpIntegralCompliance,
   getPdtpApprovalProgress,
   getPdtpSubmitReviewBlockers,
+  getPdtpCoverageReport,
   getPdtpDocumentMetadata,
   listPdtpReconciliationCandidates,
   listPdtpProgramSheets,
@@ -35,6 +36,7 @@ import { PdtpIndicatorsPanel } from "../pdtp-indicators-panel"
 import { PdtpImportExcelDialog } from "../pdtp-import-excel-dialog"
 import { resolveSelectedWorksiteId } from "../pdtp-context"
 import type { PdtpActivityStatus } from "@/lib/services/pdtp/period"
+import { CoverageReportPanel } from "./coverage-report-panel"
 import { ProgramLifecycleControls } from "./program-lifecycle-controls"
 import { ReconcileDeclaredActorButton } from "./reconcile-declared-actor-button"
 
@@ -101,6 +103,10 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   // El envío a revisión exige requisitos de contenido; se consultan aquí para
   // mostrarlos en la tarjeta de estado en vez de dejar que el envío falle.
   const submitBlockers = program.status === "draft" ? await getPdtpSubmitReviewBlockers(programId) : []
+  // El informe por actividad se muestra mientras el programa no está activo:
+  // es lo que hay que resolver antes de firmarlo, y una vez activo deja de
+  // ser una decisión pendiente.
+  const coverageReport = program.status === "active" ? null : await getPdtpCoverageReport(programId)
 
   const canApprove = can(session, "prevention:pdtp:approve")
 
@@ -202,6 +208,8 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
 
       <div className="space-y-4">
         {/* Program lifecycle status block, con la metadata del documento importado plegada dentro */}
+        {coverageReport && <CoverageReportPanel report={coverageReport} />}
+
         <ProgramLifecycleControls
           program={program}
           permissions={{ canSubmitReview, canApprove, canSignLegal, canActivate, canManageLifecycle }}

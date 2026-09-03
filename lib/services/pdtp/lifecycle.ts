@@ -3,12 +3,42 @@ import { db } from "@/db"
 import { pdtpActivities, pdtpPrograms } from "@/db/schema"
 import { addPdtpChangeLogEntry } from "./helpers"
 import { computePdtpProgramContentDigest } from "./content-digest"
+import { assertPdtpFulfillmentCoverage, type PdtpFulfillmentCoverageIssue } from "./fulfillment"
 import {
   assertAllRequiredPdtpApprovalStepsApproved,
   decidePdtpApprovalStep,
   ensureDefaultPdtpApprovalSteps,
   listPdtpApprovalProgress,
 } from "./approval-flow"
+
+/** Agrupa los problemas de la compuerta 81/81 en mensajes legibles, uno por
+ *  clasificación, en el mismo estilo que los otros bloqueadores de envío. */
+function fulfillmentCoverageBlockers(issues: PdtpFulfillmentCoverageIssue[]): string[] {
+  if (issues.length === 0) return []
+  const byStatus = new Map<PdtpFulfillmentCoverageIssue["status"], number[]>()
+  for (const issue of issues) {
+    const list = byStatus.get(issue.status) ?? []
+    list.push(issue.n)
+    byStatus.set(issue.status, list)
+  }
+  const labels: Record<PdtpFulfillmentCoverageIssue["status"], string> = {
+    ready: "listas", // no se agrupan mensajes para éste: nunca es un problema.
+    code_gap: "sin mecanismo de acreditación clasificado",
+    config_required: "sin la configuración que su enganche o constancia necesita",
+    // Cubre los dos casos que la compuerta clasifica igual: el responsable no
+    // mapea a ningún rol, o mapea a uno que no tiene permiso en el módulo
+    // donde el trabajo se registra. Decir sólo "no mapea a un rol real" mentía
+    // en el segundo caso, que es el más común.
+    permission_gap: "sin un responsable que pueda registrar el cumplimiento",
+    decision_required: "midiéndose por cobertura sin padrón declarado",
+  }
+  const messages: string[] = []
+  for (const [status, numbers] of byStatus) {
+    if (status === "decision_required") continue // informativo, no bloquea el envío.
+    messages.push(`${numbers.length} actividad(es) ${labels[status]}: N°${numbers.join(", N°")}.`)
+  }
+  return messages
+}
 
 function lifecycleReason(value: string, label: string): string {
   const reason = value.trim()
@@ -41,19 +71,25 @@ type PdtpActivityRow = typeof pdtpActivities.$inferSelect
  * los dos lados.
  */
 export function pdtpSubmitReviewBlockers(activities: PdtpActivityRow[]): string[] {
-  if (activities.length === 0) return ["Agrega al menos una actividad antes de enviar el programa a revisión."]
+  // Una actividad retirada no participa del contenido que se revisa ni se
+  // ejecuta: exigirle SLA o clasificación bloquearía el envío para siempre,
+  // porque nadie vuelve a tocar una actividad ya retirada (hallazgo real: las
+  // N°12, 14 y 21 quedaron retiradas con `needs_review` sin resolver y
+  // bloqueaban el envío del programa 2026-09-02).
+  const active = activities.filter((activity) => activity.status === "active")
+  if (active.length === 0) return ["Agrega al menos una actividad antes de enviar el programa a revisión."]
 
   const blockers: string[] = []
-  const unresolvedScheduleClassifications = activities.filter((activity) => activity.scheduleClassificationStatus === "needs_review")
+  const unresolvedScheduleClassifications = active.filter((activity) => activity.scheduleClassificationStatus === "needs_review")
   if (unresolvedScheduleClassifications.length > 0) {
     blockers.push(
       `${unresolvedScheduleClassifications.length} actividad(es) aún requieren confirmar cuándo se realizan. ` +
       "Clasifícalas como periódicas, a demanda o por evento antes de enviar el programa a revisión.",
     )
   }
-  const incompleteDemandActivities = activities.filter((activity) => {
+  const incompleteDemandActivities = active.filter((activity) => {
     if (activity.scheduleMode !== "on_demand" && activity.scheduleMode !== "triggered") return false
-    return activity.dueDays === null
+    return (activity.dueDays === null && activity.dueHours === null)
       || !activity.evidenceRequirement?.trim()
       || (activity.scheduleMode === "triggered" && (!activity.triggerType?.trim() || !activity.triggerDescription?.trim()))
       || activity.indicatorMode === "planned_vs_completed"
@@ -69,7 +105,67 @@ export function pdtpSubmitReviewBlockers(activities: PdtpActivityRow[]): string[
 /** Los motivos por los que hoy no se puede enviar el programa a revisión. */
 export async function getPdtpSubmitReviewBlockers(programId: string): Promise<string[]> {
   const activities = await db.select().from(pdtpActivities).where(eq(pdtpActivities.programId, programId))
-  return pdtpSubmitReviewBlockers(activities)
+  const coverageIssues = await assertPdtpFulfillmentCoverage(programId)
+  return [...pdtpSubmitReviewBlockers(activities), ...fulfillmentCoverageBlockers(coverageIssues)]
+}
+
+export type PdtpCoverageReport = {
+  /** Actividades activas del programa: el denominador de la compuerta. */
+  total: number
+  /** Las que no tienen ningún problema declarado. */
+  ready: number
+  /** Problemas agrupados por clasificación, cada uno con sus actividades. */
+  groups: Array<{
+    status: PdtpFulfillmentCoverageIssue["status"]
+    label: string
+    /** `false` para `decision_required`, que se informa sin frenar el envío. */
+    blocks: boolean
+    issues: PdtpFulfillmentCoverageIssue[]
+  }>
+}
+
+const COVERAGE_STATUS_LABELS: Record<PdtpFulfillmentCoverageIssue["status"], string> = {
+  ready: "Listas",
+  code_gap: "Sin mecanismo de acreditación clasificado",
+  config_required: "Sin la configuración que su enganche o constancia necesita",
+  permission_gap: "Sin un responsable que pueda registrar el cumplimiento",
+  decision_required: "Midiéndose por cobertura sin padrón declarado",
+}
+
+/**
+ * El informe por actividad de la compuerta, para mostrarlo antes de decidir la
+ * activación. `getPdtpSubmitReviewBlockers` colapsa lo mismo a una línea por
+ * clasificación —es lo que cabe en un mensaje de error—, así que sin esto la
+ * clasificación existía en el tipo y nadie podía verla desagregada: había que
+ * ir a leer la base actividad por actividad, que es exactamente el trabajo que
+ * la compuerta vino a evitar.
+ */
+export async function getPdtpCoverageReport(programId: string): Promise<PdtpCoverageReport> {
+  const [activities, issues] = await Promise.all([
+    db.select({ id: pdtpActivities.id }).from(pdtpActivities)
+      .where(and(eq(pdtpActivities.programId, programId), eq(pdtpActivities.status, "active"))),
+    assertPdtpFulfillmentCoverage(programId),
+  ])
+  const byStatus = new Map<PdtpFulfillmentCoverageIssue["status"], PdtpFulfillmentCoverageIssue[]>()
+  for (const issue of issues) {
+    const list = byStatus.get(issue.status) ?? []
+    list.push(issue)
+    byStatus.set(issue.status, list)
+  }
+  const withIssues = new Set(issues.map((issue) => issue.n))
+  return {
+    total: activities.length,
+    ready: activities.length - withIssues.size,
+    groups: [...byStatus.entries()]
+      .map(([status, list]) => ({
+        status,
+        label: COVERAGE_STATUS_LABELS[status],
+        blocks: status !== "decision_required",
+        issues: [...list].sort((a, b) => a.n - b.n),
+      }))
+      // Lo que frena la activación primero.
+      .sort((a, b) => Number(b.blocks) - Number(a.blocks) || a.label.localeCompare(b.label, "es-CL")),
+  }
 }
 
 export async function submitPdtpProgramForReview(programId: string, userId: string) {
@@ -86,8 +182,13 @@ export async function submitPdtpProgramForReview(programId: string, userId: stri
       .where(eq(pdtpActivities.programId, programId))
     const [firstBlocker] = pdtpSubmitReviewBlockers(activities)
     // Se lanza sólo el primero: el mensaje viaja como texto único al operador y
-    // concatenarlos lo dejaría fuera del límite de un error mostrable.
+    // concatenarlos lo dejaría fuera del límite de un error mostrable. El
+    // mismo orden que `getPdtpSubmitReviewBlockers`: calendario/SLA antes que
+    // la compuerta 81/81, porque un programa con clasificación pendiente tiene
+    // un problema más básico que su cobertura de destinos.
     if (firstBlocker) throw new Error(firstBlocker)
+    const [firstCoverageBlocker] = fulfillmentCoverageBlockers(await assertPdtpFulfillmentCoverage(programId, tx))
+    if (firstCoverageBlocker) throw new Error(firstCoverageBlocker)
 
     const steps = await ensureDefaultPdtpApprovalSteps(programId, tx)
     if (steps.length === 0) throw new Error("El programa debe tener al menos un paso de aprobación.")
@@ -189,6 +290,13 @@ export async function activatePdtpProgram(programId: string, userId: string) {
     }
     if (program.status !== "in_review") throw new Error("Solo se pueden activar programas que estén en revisión.")
     if (!program.contentDigest) throw new Error("La revisión no tiene una huella de contenido válida.")
+
+    // Compuerta 81/81: se comprueba después de los guards de estado (activar
+    // un borrador es un error de flujo, no un problema de cobertura), pero
+    // antes de tocar nada — no debe volver a ser posible activar un programa
+    // que promete trabajo sin ofrecer dónde realizarlo.
+    const [firstCoverageBlocker] = fulfillmentCoverageBlockers(await assertPdtpFulfillmentCoverage(programId, tx))
+    if (firstCoverageBlocker) throw new Error(firstCoverageBlocker)
 
     await assertAllRequiredPdtpApprovalStepsApproved(programId, program.contentVersion, program.contentDigest, tx)
     const { digest } = await computePdtpProgramContentDigest(programId, tx)

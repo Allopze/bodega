@@ -56,6 +56,7 @@ export { buildPdtpProgramContentSnapshot, computePdtpProgramContentDigest } from
 export {
   pdtpSubmitReviewBlockers,
   getPdtpSubmitReviewBlockers,
+  getPdtpCoverageReport,
   submitPdtpProgramForReview,
   approvePdtpProgramJdpr,
   signPdtpProgramLegal,
@@ -65,7 +66,7 @@ export {
   reopenRejectedPdtpProgram,
   archivePdtpProgram,
 } from "./lifecycle"
-export type { PdtpApprovalDecisionValue } from "./lifecycle"
+export type { PdtpApprovalDecisionValue, PdtpCoverageReport } from "./lifecycle"
 export {
   DEFAULT_PDTP_APPROVAL_STEPS,
   ensureDefaultPdtpApprovalSteps,
@@ -126,6 +127,8 @@ export {
 } from "./obligations"
 export type { PdtpObligationOrigin, PdtpObligationStatus, PdtpReminderWindow } from "./obligations"
 export { createPdtpSheet, deletePdtpSheet, listPdtpProgramSheets } from "./sheet-management"
+export { listPdtpConstanciaActivities, assertPdtpActivityMechanism } from "./constancias"
+export type { PdtpConstanciaView, PdtpConstanciaDebt } from "./constancias"
 
 // ── Checklist → Plan de Acción → Seguimiento ─────────────────────────────────
 export type { PdtpChecklistTemplateInput, PdtpChecklistTemplate } from "./checklists"
