@@ -36,9 +36,10 @@
 
 import { and, eq } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpPrograms, roles, userRoles } from "@/db/schema"
+import { pdtpActivities, pdtpActivityWorksiteExclusions, pdtpActivityWorksiteParams, pdtpProgramWorksites, pdtpPrograms, roles, userRoles, worksites } from "@/db/schema"
 import { retirePdtpActivity, updatePdtpActivity } from "@/lib/services/pdtp/activities"
 import { assertPdtpProgramEditableState } from "@/lib/services/pdtp/helpers"
+import { resolveProgramWorksiteIds, setPdtpActivityWorksiteAdjustment } from "@/lib/services/pdtp/worksites"
 
 const PROGRAM_YEAR = 2026
 const DRY_RUN = process.env.PDTP_DECISIONS_DRY_RUN === "true"
@@ -105,7 +106,7 @@ const TEXT_FIXES: Array<{ n: number; field: "activity" | "program"; from: string
  * el padrón de cada una, y `compliance.ts` lo consulta. Sin fuente declarada ni
  * override manual, la actividad se mide por la cantidad planificada del mes.
  */
-const COVERAGE_ACTIVITIES = [17, 18, 23, 24, 50]
+const COVERAGE_ACTIVITIES = [17, 18, 23, 24, 50, 54, 56]
 
 /**
  * De qué registro sale el padrón de cada actividad de cobertura. Es la hermana
@@ -124,6 +125,56 @@ const SUBJECT_SOURCES: Array<{ n: number; source: string }> = [
   { n: 23, source: "trabajadores_nuevos" },
   { n: 24, source: "extintores" },
   { n: 50, source: "expuestos_ges" },
+  // La N°54 mide sobre "los trabajadores" (su guía), así que barre la dotación
+  // como la N°17. La N°56 mide sobre "conductores, operadores y quienes
+  // conducen vehículos livianos" — un subconjunto sin fuente declarable en el
+  // CHECK de `subject_source` (`equipos` cuenta vehículos, no personas) — así
+  // que queda sin fuente derivada y su padrón cae a la cantidad planificada,
+  // igual que hoy. Es un hueco de diseño anterior a T35, no creado por él.
+  { n: 54, source: "dotacion" },
+]
+
+/**
+ * D_ (T35): metas de cobertura que la propia guía del catálogo declara
+ * explícitamente. La N°54 dice "…dos fechas para logras el 90% de los
+ * trabajadores…"; la N°56, "…al 90% de los conductores, operadores…". Sin
+ * esto, `compliance.ts` exige el padrón completo (100%), que es más estricto
+ * que lo que el programa realmente promete.
+ *
+ * A diferencia de `COVERAGE_ACTIVITIES`/`SUBJECT_SOURCES` (columnas de
+ * `pdtp_activities`), la meta vive **por faena** en
+ * `pdtp_activity_worksite_params` — `updatePdtpActivity` no la toca.
+ */
+const COVERAGE_TARGETS: Array<{ n: number; percent: number }> = [
+  { n: 54, percent: 90 },
+  { n: 56, percent: 90 },
+]
+
+/**
+ * Evidencia mínima de las actividades `constancia` (Fase 4, 2026-09-02).
+ *
+ * La compuerta 81/81 (`assertPdtpFulfillmentCoverage`) exige que toda
+ * actividad `constancia` declare qué hay que adjuntar — sin eso, "es
+ * constancia" no dice qué prueba el cumplimiento. Ninguna la tenía: el
+ * catálogo trae la guía de a qué atenerse, pero no un texto de evidencia
+ * exigible. La N°19 no está en esta lista porque pasó a `enganche` (T47).
+ */
+const CONSTANCIA_EVIDENCE: Array<{ n: number; evidenceRequirement: string }> = [
+  { n: 3, evidenceRequirement: "Acta o registro de la reunión de difusión del plan, con asistencia." },
+  { n: 6, evidenceRequirement: "Acta de la reunión de revisión SG-SST, con los temas tratados y los asistentes." },
+  { n: 20, evidenceRequirement: "Acta o correo de la reunión con la empresa mandante." },
+  { n: 22, evidenceRequirement: "Registro de la revisión de la plataforma, con vencimientos y coordinaciones informadas." },
+  { n: 28, evidenceRequirement: "Registro de la revisión semanal de inspecciones recibidas, con los hallazgos derivados a cierre." },
+  { n: 30, evidenceRequirement: "Registro del alcotest realizado por el PRF en turno administrativo, según DO-48." },
+  { n: 31, evidenceRequirement: "Registro del alcotest realizado por el Sup/JT en los turnos, según DO-48." },
+  { n: 32, evidenceRequirement: "Correo de envío de los registros de alcotest del mes, según DO-48." },
+  { n: 42, evidenceRequirement: "Informe de visitas de la empresa de sanitización y control de plagas." },
+  { n: 44, evidenceRequirement: "Registro de la coordinación con el asesor de la mutual." },
+  { n: 61, evidenceRequirement: "Certificados que acreditan la idoneidad de los EPP utilizados en la faena." },
+  { n: 79, evidenceRequirement: "Acta de constitución del Comité de Gestión de Riesgos de Desastres, según el DS 44." },
+  { n: 80, evidenceRequirement: "Matriz GRD con análisis histórico, amenazas, evaluación legal y plan de trabajo." },
+  { n: 81, evidenceRequirement: "Acta de reunión del CGRD, según el DS 44." },
+  { n: 82, evidenceRequirement: "Mapa de riesgo por área de la faena." },
 ]
 
 async function resolveActorUserId(): Promise<string> {
@@ -244,6 +295,62 @@ async function main() {
     if (activity.subjectSource === item.source) { console.log(`  · N°${item.n}: su padrón ya sale de \`${item.source}\`.`); continue }
     if (!planOnly) await updatePdtpActivity({ activityId: activity.id, subjectSource: item.source as never }, actorUserId)
     console.log(`  ✓ N°${item.n}: padrón derivado de \`${item.source}\`.`)
+    changes++
+  }
+
+  // Meta de cobertura: vive por faena (`pdtp_activity_worksite_params`), no en
+  // `pdtp_activities`, así que aquí sí hace falta resolver a qué faenas
+  // aplica el programa — misma regla que el resto del PDTP: sin membresía
+  // declarada en `pdtp_program_worksites`, todas las faenas activas.
+  if (COVERAGE_TARGETS.length > 0) {
+    const [allWorksites, memberships] = await Promise.all([
+      db.select({ id: worksites.id }).from(worksites).where(eq(worksites.isActive, true)),
+      db.select({ worksiteId: pdtpProgramWorksites.worksiteId }).from(pdtpProgramWorksites)
+        .where(and(eq(pdtpProgramWorksites.programId, program.id), eq(pdtpProgramWorksites.isActive, true))),
+    ])
+    const applicableWorksiteIds = resolveProgramWorksiteIds(
+      memberships.map((m) => m.worksiteId), "all", allWorksites.map((w) => w.id),
+    )
+
+    for (const item of COVERAGE_TARGETS) {
+      const activity = byN.get(item.n)
+      if (!activity) { console.warn(`  ? N°${item.n}: no existe en el programa, se omite.`); continue }
+      if (activity.status === "retired") { console.log(`  · N°${item.n}: retirada, se omite.`); continue }
+
+      let applied = 0
+      for (const worksiteId of applicableWorksiteIds) {
+        const [exclusion, params] = await Promise.all([
+          db.select({ id: pdtpActivityWorksiteExclusions.id }).from(pdtpActivityWorksiteExclusions)
+            .where(and(eq(pdtpActivityWorksiteExclusions.activityId, activity.id), eq(pdtpActivityWorksiteExclusions.worksiteId, worksiteId))).limit(1),
+          db.select({ targetCoveragePercent: pdtpActivityWorksiteParams.targetCoveragePercent }).from(pdtpActivityWorksiteParams)
+            .where(and(eq(pdtpActivityWorksiteParams.activityId, activity.id), eq(pdtpActivityWorksiteParams.worksiteId, worksiteId))).limit(1),
+        ])
+        if (Number(params[0]?.targetCoveragePercent) === item.percent) continue // ya aplicada, sin tocar la exclusión que hubiera.
+
+        if (!planOnly) {
+          await setPdtpActivityWorksiteAdjustment({
+            activityId: activity.id,
+            worksiteId,
+            excluded: Boolean(exclusion[0]), // se preserva: este script no decide exclusiones.
+            targetCoveragePercent: item.percent,
+            reason: `Meta de cobertura ${item.percent}% declarada en la guía del catálogo (T35, 2026-09-02).`,
+          }, actorUserId)
+        }
+        applied++
+        changes++
+      }
+      if (applied === 0) console.log(`  · N°${item.n}: meta de cobertura ${item.percent}% ya aplicada en las ${applicableWorksiteIds.length} faena(s).`)
+      else console.log(`  ✓ N°${item.n}: meta de cobertura ${item.percent}% aplicada en ${applied} de ${applicableWorksiteIds.length} faena(s).`)
+    }
+  }
+
+  for (const item of CONSTANCIA_EVIDENCE) {
+    const activity = byN.get(item.n)
+    if (!activity) { console.warn(`  ? N°${item.n}: no existe en el programa, se omite.`); continue }
+    if (activity.status === "retired") { console.log(`  · N°${item.n}: retirada, se omite.`); continue }
+    if (activity.evidenceRequirement?.trim()) { console.log(`  · N°${item.n}: ya declara evidencia mínima.`); continue }
+    if (!planOnly) await updatePdtpActivity({ activityId: activity.id, evidenceRequirement: item.evidenceRequirement }, actorUserId)
+    console.log(`  ✓ N°${item.n}: evidencia mínima declarada.`)
     changes++
   }
 

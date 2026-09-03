@@ -57,6 +57,17 @@ const ENGANCHE = [
   9,           // revisión por la dirección
   11,          // constituir el comité paritario
   19,          // carpeta de requisitos legales → Documentación SST
+  // Verificación de condiciones ambientales DS 594: sin anexo/formulario
+  // fuente, así que el checklist se escribió directo desde la ley (D11,
+  // 2026-09-02). `PDTP_2026_INSPECTION_SPECS` ya la declara.
+  10,
+  // Alcotest (G14, 2026-09-02): `alcohol_tests` recuperada y
+  // `prevention-alcotest.ts` cablea el control (N°30 PRF, N°31 Sup/JT según
+  // rol de quien registra) y el envío mensual de registros (N°32).
+  30, 31, 32,
+  // CGRD del DS 44 (G15, 2026-09-02): `prevention-cgrd.ts` cablea la
+  // constitución del comité, la publicación de la matriz GRD y el acta cerrada.
+  79, 80, 81,
   // La N°21 salió del programa por la D02: medía lo mismo que las N°66–78.
   24, 27, 29, 33, 34, 39, 40, 41, 64, 65,  // inspecciones y observaciones
   // El report de uso diario y su revisión: la plantilla `reporte_equipos` los
@@ -75,18 +86,25 @@ const ENGANCHE = [
   62,          // registro de entrega de EPP
   83, 84,      // plan de emergencia y simulacros
   85, 86, 87, 88, 89,  // campañas
-  // Bloque 6: los 13 pasos del flujo de accidentes. El módulo de Incidentes se
-  // construyó desde el DO-36 y cada paso tiene su campo exacto —incluido
-  // `notification_type = 'diat'` para la N°72 y `one_page_summary` para la
-  // N°78—. Falta cablear las 13 llamadas al motor de acreditación.
+  // Bloque 6: los 13 pasos del flujo de accidentes (RE-20). Doce pasan por
+  // obligación desde la Fase 3 (2026-09-02, `incident-accreditation-
+  // connector.ts`) y se miden por `closed_on_time`; la N°76 (seguimiento
+  // quincenal) sigue acreditando directo porque puede repetirse un número no
+  // acotado de veces por incidente.
   66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78,
 ] as const
 
-/** ✍️ Constancia — se hizo o no se hizo, con evidencia u observación. */
+/**
+ * ✍️ Constancia — se hizo o no se hizo, con evidencia u observación.
+ *
+ * ⚠️ Al agregar un número acá, declara también su **evidencia mínima** en
+ * `CONSTANCIA_EVIDENCE` de `apply-pdtp-2026-demand-slas.ts`: la compuerta 81/81
+ * rechaza una constancia sin evidencia declarada, y sin ella el programa no se
+ * puede enviar a revisión.
+ */
 const CONSTANCIA = [
   3,           // difusión del plan en faenas
   6,           // reunión de revisión SG-SST
-  10,          // condiciones ambientales DS 594 (hasta que exista su checklist)
   20,          // reunión con la empresa mandante
   22,          // control de plataformas de la empresa y del mandante
   // Revisar y cerrar las inspecciones de equipos. Manual por decisión de
@@ -96,7 +114,6 @@ const CONSTANCIA = [
   // de una actividad planificada como uno. `PDTP_2026_INSPECTION_SPECS` ya la
   // excluye con la misma explicación.
   28,
-  30, 31, 32,  // alcotest — no existe módulo
   42,          // control documental de sanitización y plagas
   // Evaluación cualitativa por mutual. No hay evento cualitativo que enganchar:
   // `prevention_exposure_measurements.value` es numérico obligatorio en las tres
@@ -106,7 +123,6 @@ const CONSTANCIA = [
   // no tiene. Su hermana cuantitativa (N°45) sí engancha.
   44,
   61,          // certificados de idoneidad de EPP
-  79, 80, 81,  // CGRD: constitución, matriz GRD y actas — no existe módulo
   82,          // mapa de riesgo por área
 ] as const
 

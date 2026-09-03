@@ -28,13 +28,12 @@
 import { and, eq } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import { pdtpProgramWorksites, worksites } from "@/db/schema"
-import { logger } from "@/lib/logger"
 import {
   accreditPdtpFromEvent,
-  revokePdtpAccreditation,
   revokePdtpAccreditationWithClient,
   type AccreditationInput,
 } from "@/lib/services/pdtp/accreditation"
+import { recordPdtpFulfillmentEvent, recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
 import { PDTP_CPHS_ACTIVITY_NUMBERS } from "@/lib/services/pdtp/worksites"
 
 /** N°9: "Reunión revisión gestión preventiva SG-SST". */
@@ -45,6 +44,14 @@ const PDTP_PROGRAM_APPROVAL_ACTIVITY_NUMBER = 1
 const PDTP_MIPER_ACTIVITY_NUMBER = 35
 /** N°83: "Plan emergencia por cada amenaza". */
 const PDTP_EMERGENCY_PLAN_ACTIVITY_NUMBER = 83
+/** N°7: "Envío de estadística de cada faena (indicadores de seguridad)". */
+const PDTP_INDICATORS_ACTIVITY_NUMBER = 7
+/** N°79: "Constitución Comité de Gestión de Riesgos de desastres (CGRD)". */
+const PDTP_GRD_COMMITTEE_ACTIVITY_NUMBER = 79
+/** N°80: "Implementación de matriz GRD". */
+const PDTP_GRD_MATRIX_ACTIVITY_NUMBER = 80
+/** N°81: "Actas de reunión CGRD". */
+const PDTP_GRD_MEETING_ACTIVITY_NUMBER = 81
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 
@@ -54,20 +61,7 @@ const PDTP_EMERGENCY_PLAN_ACTIVITY_NUMBER = 83
  * porque el evento ya fue persistido en su propia transacción.
  */
 async function safeAccredit(input: AccreditationInput): Promise<void> {
-  try {
-    const result = await accreditPdtpFromEvent(input)
-    if (result.skippedNotFound.length > 0) {
-      logger.warn(
-        { sourceType: input.sourceType, sourceId: input.sourceId, skippedNotFound: result.skippedNotFound },
-        "[pdtp-connector] Actividades no encontradas en el programa activo.",
-      )
-    }
-  } catch (err) {
-    logger.error(
-      { err, sourceType: input.sourceType, sourceId: input.sourceId, worksiteId: input.worksiteId },
-      "[pdtp-connector] Error en auto-acreditación PDTP (no crítico para el evento fuente).",
-    )
-  }
+  await recordPdtpFulfillmentEvent(input)
 }
 
 // ── Conector: Inspecciones ────────────────────────────────────────────────────
@@ -155,14 +149,7 @@ export async function onInspectionReverted(input: {
     await revokePdtpAccreditationWithClient(revocation, client)
     return
   }
-  try {
-    await revokePdtpAccreditation(revocation)
-  } catch (err) {
-    logger.error(
-      { err, runId: input.runId, worksiteId: input.worksiteId },
-      "[pdtp-connector] Error al revertir la acreditación de una inspección anulada o reabierta.",
-    )
-  }
+  await recordPdtpFulfillmentRevocation(revocation)
 }
 
 // ── Conector: Capacitación ────────────────────────────────────────────────────
@@ -202,20 +189,13 @@ export async function onTrainingSessionCancelled(input: {
   worksiteId: string
   cancelledBy?: string
 }): Promise<void> {
-  try {
-    await revokePdtpAccreditation({
-      sourceType: "capacitacion",
-      sourceId: input.sessionId,
-      worksiteId: input.worksiteId,
-      revokedBy: input.cancelledBy,
-      reason: "Sesión de capacitación cancelada.",
-    })
-  } catch (err) {
-    logger.error(
-      { err, sessionId: input.sessionId, worksiteId: input.worksiteId },
-      "[pdtp-connector] Error al revertir acreditación de sesión cancelada.",
-    )
-  }
+  await recordPdtpFulfillmentRevocation({
+    sourceType: "capacitacion",
+    sourceId: input.sessionId,
+    worksiteId: input.worksiteId,
+    revokedBy: input.cancelledBy,
+    reason: "Sesión de capacitación cancelada.",
+  })
 }
 
 // ── Conector: EPP ─────────────────────────────────────────────────────────────
@@ -494,5 +474,141 @@ export async function onEmergencyPlanApproved(input: {
     executedQuantity: Math.max(1, input.scenarioCount),
     evidenceRef: `Plan de emergencia aprobado: ${input.planCode}`,
     metadata: { planCode: input.planCode, scenarioCount: input.scenarioCount },
+  })
+}
+
+// ── Conector: cierre del período de indicadores ───────────────────────────────
+
+/**
+ * Llama desde `closeSafetyIndicatorPeriod`, después del commit. Acredita la
+ * N°7 ("Envío de estadística de cada faena"): el hecho que la actividad mide
+ * es el cierre del mes, no el simple ingreso de cifras —`upsertSafetyIndicatorMonth`
+ * es un teclado sin estado y `upsertSafetyIndicatorDenominator` deja el mes en
+ * `draft`/`pending_review`, ninguno de los dos es un cumplimiento—.
+ *
+ * `sourceId` lleva el snapshot, no el período: un re-cierre (`closeReason`
+ * corregido) genera un snapshot nuevo y por tanto una fila propia, coherente
+ * con que cada snapshot es la versión vigente de ese mes.
+ *
+ * `occurredAt` es el `closedAt`, no el mes que se cierra: un diciembre cerrado
+ * en enero cae fuera del año del programa si se sellara con el mes, y el
+ * motor no acreditaría nada. El cierre real ocurrió cuando se pulsó "cerrar".
+ */
+export async function onSafetyIndicatorPeriodClosed(input: {
+  worksiteId: string
+  snapshotId: string
+  year: number
+  month: number
+  closedAt: string
+}): Promise<void> {
+  await safeAccredit({
+    sourceType: "indicadores",
+    sourceId: `indicadores:${input.snapshotId}`,
+    worksiteId: input.worksiteId,
+    activityNumbers: [PDTP_INDICATORS_ACTIVITY_NUMBER],
+    occurredAt: input.closedAt,
+    executedQuantity: 1,
+    evidenceRef: `Período de indicadores ${input.year}-${String(input.month).padStart(2, "0")} cerrado.`,
+    metadata: { year: input.year, month: input.month },
+  })
+}
+
+/**
+ * Revierte la N°7 cuando un período cerrado se reabre. Escrita para cerrar el
+ * par acreditar/revertir, pero **todavía no está cableada**: `reopenClosedPeriod`
+ * se llama desde dentro de transacciones abiertas en tres puntos distintos
+ * (`invalidateClosedIndicatorPeriodWithClient`, `upsertSafetyIndicatorDenominator`,
+ * y el propio caller en `prevention-incidents.ts`), y esta función —como
+ * `safeAccredit`— necesita correr después del commit con su propia conexión.
+ * Enhebrar eso a través de los tres puntos sin arriesgar el mismo deadlock que
+ * ya apareció una vez en esta fase (dos transacciones esperándose por la única
+ * conexión de PGlite) exige más que este cambio. Queda declarada y sin usar,
+ * documentada en `tasks/TODO_PDTP_ACREDITACION_2026-09-01.md`.
+ */
+export async function onSafetyIndicatorPeriodReopened(input: {
+  worksiteId: string
+  reason: string
+}): Promise<void> {
+  await recordPdtpFulfillmentRevocation({
+    sourceType: "indicadores",
+    sourceId: `indicadores:${input.worksiteId}`,
+    worksiteId: input.worksiteId,
+    reason: input.reason,
+  })
+}
+
+// ── Conector: CGRD del DS 44 (G15) ────────────────────────────────────────────
+
+/**
+ * Llama desde `constituteGrdCommittee` o desde `designateGrdCoordinator`: la
+ * N°79 se cumple con **el órgano que corresponda a la dotación** —hasta 25
+ * personas, coordinador; desde 26, comité— y las dos vías acreditan la misma
+ * actividad.
+ *
+ * `kind` no es cosmético: entra en el `sourceId` (para que un comité y un
+ * coordinador de la misma faena no compartan clave idempotente) y decide el
+ * texto de la evidencia. Antes la vía del coordinador reusaba el conector del
+ * comité pasándole `committeeId: "coordinator:<id>"`, así que la ejecución
+ * quedaba con una referencia que afirmaba un comité constituido donde sólo
+ * hubo una designación — falso ante quien audite el expediente.
+ */
+export async function onGrdStructureEstablished(input: {
+  kind: "committee" | "coordinator"
+  id: string
+  worksiteId: string
+  establishedOn: string
+}): Promise<void> {
+  await safeAccredit({
+    sourceType: "cgrd",
+    sourceId: `cgrd-${input.kind}:${input.id}`,
+    worksiteId: input.worksiteId,
+    activityNumbers: [PDTP_GRD_COMMITTEE_ACTIVITY_NUMBER],
+    occurredAt: input.establishedOn,
+    executedQuantity: 1,
+    evidenceRef: input.kind === "committee"
+      ? `Comité de Gestión del Riesgo de Desastres constituido: ${input.id}`
+      : `Coordinador de Gestión del Riesgo de Desastres designado: ${input.id}`,
+    metadata: { kind: input.kind },
+  })
+}
+
+/** Llama desde `transitionGrdMatrix` cuando la matriz GRD queda `published`. */
+export async function onGrdMatrixPublished(input: {
+  matrixId: string
+  worksiteId: string
+  matrixVersion: number
+  publishedAt: string
+  threatCount: number
+}): Promise<void> {
+  await safeAccredit({
+    sourceType: "cgrd",
+    sourceId: `cgrd-matrix:${input.matrixId}`,
+    worksiteId: input.worksiteId,
+    activityNumbers: [PDTP_GRD_MATRIX_ACTIVITY_NUMBER],
+    occurredAt: input.publishedAt,
+    executedQuantity: 1,
+    evidenceRef: `Matriz GRD v${input.matrixVersion} publicada: ${input.matrixId}`,
+    metadata: { matrixVersion: input.matrixVersion, threatCount: input.threatCount },
+  })
+}
+
+/**
+ * Llama desde `closeGrdMeeting` cuando el acta queda cerrada. A diferencia
+ * del CPHS —que no acredita su reunión mensual porque esa actividad salió
+ * del PDTP (D5)— la N°81 sí es una actividad propia del programa.
+ */
+export async function onGrdMeetingClosed(input: {
+  meetingId: string
+  worksiteId: string
+  closedAt: string
+}): Promise<void> {
+  await safeAccredit({
+    sourceType: "cgrd",
+    sourceId: `cgrd-meeting:${input.meetingId}`,
+    worksiteId: input.worksiteId,
+    activityNumbers: [PDTP_GRD_MEETING_ACTIVITY_NUMBER],
+    occurredAt: input.closedAt,
+    executedQuantity: 1,
+    evidenceRef: `Acta CGRD cerrada: ${input.meetingId}`,
   })
 }

@@ -74,6 +74,11 @@ type InspectionTemplateSpec = {
 }
 
 export const PDTP_2026_INSPECTION_SPECS: readonly InspectionTemplateSpec[] = [
+  // Sin anexo/formulario fuente del cliente: el contenido se escribió directo
+  // desde la Ley 21.512 (ex DS 594). Antes constancia por falta de checklist
+  // (D11, 2026-09-02); mover el número a ENGANCHE en
+  // `apply-pdtp-2026-mechanisms.ts` es parte del mismo cambio.
+  { n: 10, definitionCode: "inspeccion_condiciones_ambientales", name: "Verificación de Condiciones Ambientales Básicas (DS 594)", kind: "inspection" },
   { n: 24, definitionCode: "inspeccion_extintores",     name: "Inspección de Estado de Extintores",              kind: "inspection" },
   /* n=25 y n=26 en el mismo acto, por decisión de Prevención (2026-08-23): el
    * operador llena el reporte en papel y el administrador de contrato o el
