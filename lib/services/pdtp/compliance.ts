@@ -1,9 +1,10 @@
-import { and, desc, eq, inArray } from "drizzle-orm"
+import { and, desc, eq, inArray, ne } from "drizzle-orm"
 import { db } from "@/db"
 import {
   pdtpActivities,
   pdtpActivityWorksiteParams,
   pdtpExecutions,
+  pdtpObligations,
   pdtpPrograms,
   preventionCapaActions,
   preventionInspectionFindings,
@@ -39,6 +40,52 @@ export type PdtpComplianceIndicators = {
 }
 
 type ApprovedExecution = Awaited<ReturnType<typeof loadProgramScheduleAndExecutions>>["executionRows"][number]
+
+const CHILE_MONTH_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago", month: "numeric" })
+
+/** Mes (1-12) en que cae una fecha, contado en hora de Chile. */
+function chileMonthOf(iso: string): number {
+  return Number(CHILE_MONTH_FORMAT.format(new Date(iso)))
+}
+
+/**
+ * Denominador y numerador de `closed_on_time` por actividad-mes: cuántas
+ * obligaciones vencían ese mes (según `dueAt`) y cuántas de ésas se cerraron
+ * dentro de plazo. `completed` es el único estado que cuenta como cierre —
+ * `reported` es un cumplimiento todavía sin aprobar, igual que una ejecución
+ * `submitted` no cuenta para el resto de los modos.
+ *
+ * Toma una lista de faenas, no una sola: la vista por faena pasa `[id]` y el
+ * desglose por eje pasa el alcance completo, con la misma consulta y la misma
+ * regla. Sin faenas no hay a qué obligaciones mirar y devuelve vacío, mismo
+ * límite que el padrón derivado de `coverage`.
+ */
+async function loadClosedOnTimeByActivityMonth(activityIds: string[], worksiteIds: string[]) {
+  const planned = new Map<string, number>()
+  const executed = new Map<string, number>()
+  if (worksiteIds.length === 0 || activityIds.length === 0) return { planned, executed }
+
+  const rows = await db.select({
+    activityId: pdtpObligations.activityId,
+    status: pdtpObligations.status,
+    dueAt: pdtpObligations.dueAt,
+    reportedAt: pdtpObligations.reportedAt,
+  }).from(pdtpObligations)
+    .where(and(
+      inArray(pdtpObligations.activityId, activityIds),
+      inArray(pdtpObligations.worksiteId, worksiteIds),
+      ne(pdtpObligations.status, "cancelled"),
+    ))
+
+  for (const row of rows) {
+    if (!row.dueAt) continue // sin plazo no hay mes al que asignarla.
+    const key = `${row.activityId}:${chileMonthOf(row.dueAt)}`
+    planned.set(key, (planned.get(key) ?? 0) + 1)
+    const onTime = row.status === "completed" && (!!row.reportedAt && row.reportedAt <= row.dueAt)
+    if (onTime) executed.set(key, (executed.get(key) ?? 0) + 1)
+  }
+  return { planned, executed }
+}
 
 /**
  * Una ejecución manual/XLS y la integración de una inspección pueden describir
@@ -204,6 +251,9 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     executedByActivityMonth.set(key, (executedByActivityMonth.get(key) ?? 0) + row.executedQuantity)
   }
 
+  const closedOnTimeActivityIds = activityRows.filter((a) => a.indicatorMode === "closed_on_time").map((a) => a.id)
+  const { planned: closedOnTimePlanned, executed: closedOnTimeExecuted } = await loadClosedOnTimeByActivityMonth(closedOnTimeActivityIds, worksiteId ? [worksiteId] : [])
+
   const monthly: PdtpComplianceMonth[] = Array.from({ length: 12 }, (_, i) => {
     const month = i + 1
     // Actividades de cobertura: todo o nada por actividad (respuesta 2.2).
@@ -236,6 +286,18 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
         const threshold = targetPct != null ? Math.ceil((target * targetPct) / 100) : target
         coveragePlanned += target
         coverageExecuted += threshold > 0 && rawExecuted >= threshold ? target : 0
+      } else if (modeByActivity.get(activityId) === "closed_on_time") {
+        // A demanda: no hay calendario contra el cual medir, así que `p` es
+        // siempre 0 (no confundir con "sin casos": es que esta actividad
+        // nunca tuvo celdas planificadas). El denominador son los casos que
+        // vencieron este mes, y el numerador los que se cerraron a tiempo —
+        // se suman a `coverage*` porque comparten la misma regla todo-o-nada
+        // por caso (cada obligación pesa 1, no se prorratea).
+        const key = `${activityId}:${month}`
+        const casesDue = closedOnTimePlanned.get(key) ?? 0
+        if (casesDue === 0) continue // sin casos este mes: no es un 0%, es nada que medir.
+        coveragePlanned += casesDue
+        coverageExecuted += closedOnTimeExecuted.get(key) ?? 0
       } else {
         // Resto: se agrupa por total del mes (respuesta 2.4 = "por mes"), sin
         // condicionar el ejecutado a que la misma actividad tuviera planificado
@@ -338,9 +400,20 @@ export type PdtpCategoryCompliance = {
  * reglas que el indicador mensual —solo ejecuciones aprobadas y techo de
  * sobrecumplimiento— pero agrupando por `program` en vez de por mes.
  *
- * Las actividades de cobertura quedan **fuera**: se puntúan todo-o-nada contra
- * un padrón, así que sumarlas aquí mezclaría dos unidades. La regla vive en
- * `getPdtpComplianceIndicators` y duplicarla en dos sitios es pedir que diverjan.
+ * Las actividades de cobertura quedan **fuera**: su denominador es un padrón
+ * (50 trabajadores) que se puntúa todo-o-nada, así que sumarlo a un eje que
+ * cuenta instancias de actividad (12 inspecciones) dejaría que una sola
+ * actividad de cobertura domine el eje completo. Esa es la mezcla de unidades
+ * que se evita.
+ *
+ * Las de `closed_on_time` sí entran, con sus **casos** como unidad: 3
+ * obligaciones vencidas y 2 cerradas a tiempo es 2/3, proporcional y del mismo
+ * orden de magnitud que "12 inspecciones planificadas". Hasta el 2026-09-03
+ * quedaban dentro del bucket pero aportando planned=0 —son `on_demand`, no
+ * tienen `scheduleRows`—, así que 18 de las 81 actividades desaparecían en
+ * silencio de su eje. Cuentan por obligación, nunca por sus celdas de
+ * calendario: si una `closed_on_time` tuviera cronograma, sus celdas se
+ * ignoran igual que en el cálculo mensual.
  */
 export async function getPdtpComplianceByCategoryForScope(
   programId: string,
@@ -360,8 +433,13 @@ export async function getPdtpComplianceByCategoryForScope(
   if (scorable.length === 0) return []
   const categoryByActivity = new Map(scorable.map((row) => [row.id, row.program || "General"]))
 
+  // Las por plazo no se miden por calendario: se excluyen de la carga de
+  // cronograma/ejecuciones y entran más abajo contando obligaciones.
+  const closedOnTimeIds = scorable.filter((row) => row.indicatorMode === "closed_on_time").map((row) => row.id)
+  const scheduledIds = scorable.filter((row) => row.indicatorMode !== "closed_on_time").map((row) => row.id)
+
   const loaded = await loadApprovedExecutionsForWorksites(
-    scorable.map((row) => row.id),
+    scheduledIds,
     program.year,
     worksiteIds,
   )
@@ -379,6 +457,18 @@ export async function getPdtpComplianceByCategoryForScope(
   for (const row of scheduleRows) bump(row.activityId, "planned", row.plannedQuantity)
   for (const row of effectiveApprovedExecutions(executionRows)) {
     bump(row.activityId, "executed", row.executedQuantity)
+  }
+
+  // Casos por plazo: cada obligación vencida pesa 1 en el denominador y cada
+  // cierre dentro de plazo pesa 1 en el numerador, con la misma regla que el
+  // cálculo mensual (`loadClosedOnTimeByActivityMonth`). Se suma sobre todos
+  // los meses porque este desglose agrupa por eje, no por mes.
+  const closedOnTime = await loadClosedOnTimeByActivityMonth(closedOnTimeIds, worksiteIds)
+  for (const [key, cases] of closedOnTime.planned) {
+    bump(key.slice(0, key.lastIndexOf(":")), "planned", cases)
+  }
+  for (const [key, onTime] of closedOnTime.executed) {
+    bump(key.slice(0, key.lastIndexOf(":")), "executed", onTime)
   }
 
   return [...totals.entries()]
