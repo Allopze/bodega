@@ -618,11 +618,19 @@ const routeTargets: RouteTarget[] = [
   { slug: "bodega-guias-nueva-legacy", path: "/bodega/guias/nueva", auth: true, allowedPaths: ["/recepcion"], captureView: false, notes: "Compatibilidad: no existe alta independiente de GDI." },
   { slug: "entregas", path: "/entregas", auth: true },
   { slug: "entregas-print", path: "/entregas/del-audit-1/print", auth: true },
-  { slug: "trazabilidad", path: "/trazabilidad", auth: true },
-  { slug: "trazabilidad-detalle", path: "/trazabilidad/req-item-audit-1", auth: true },
-  { slug: "trazabilidad-trabajador", path: "/trazabilidad/trabajador/worker-audit-1", auth: true },
-  { slug: "trazabilidad-documento", path: "/trazabilidad/documento", auth: true, notes: "Buscador por código, sin consulta" },
-  { slug: "trazabilidad-documento-resultado", path: "/trazabilidad/documento?codigo=OC-2026-0001", auth: true, notes: "Expediente resuelto desde el código de la OC" },
+  /* Trazabilidad vive bajo Bodega desde que se consolidó el seguimiento por
+     faena; `/trazabilidad/*` quedó como redirección. Se capturan las dos: las
+     canónicas por su contenido, y las legadas para que el redirect siga
+     demostrado y su patrón dinámico no quede sin fixture. */
+  { slug: "bodega-trazabilidad", path: "/bodega/trazabilidad", auth: true },
+  { slug: "bodega-trazabilidad-detalle", path: "/bodega/trazabilidad/req-item-audit-1", auth: true },
+  { slug: "bodega-trazabilidad-trabajador", path: "/bodega/trazabilidad/trabajador/worker-audit-1", auth: true },
+  { slug: "bodega-trazabilidad-documento", path: "/bodega/trazabilidad/documento", auth: true, notes: "Buscador por código, sin consulta" },
+  { slug: "bodega-trazabilidad-documento-resultado", path: "/bodega/trazabilidad/documento?codigo=OC-2026-0001", auth: true, notes: "Expediente resuelto desde el código de la OC" },
+  { slug: "trazabilidad", path: "/trazabilidad", auth: true, allowedPaths: ["/bodega/trazabilidad"], captureView: false, notes: "Compatibilidad: redirige a Bodega › Trazabilidad." },
+  { slug: "trazabilidad-detalle", path: "/trazabilidad/req-item-audit-1", auth: true, allowedPaths: ["/bodega/trazabilidad/req-item-audit-1"], captureView: false, notes: "Compatibilidad: redirección." },
+  { slug: "trazabilidad-trabajador", path: "/trazabilidad/trabajador/worker-audit-1", auth: true, allowedPaths: ["/bodega/trazabilidad/trabajador/worker-audit-1"], captureView: false, notes: "Compatibilidad: redirección." },
+  { slug: "trazabilidad-documento", path: "/trazabilidad/documento", auth: true, allowedPaths: ["/bodega/trazabilidad/documento"], captureView: false, notes: "Compatibilidad: redirección." },
   { slug: "reportes", path: "/reportes", auth: true },
   { slug: "analitica", path: "/analitica", auth: true },
   // ── Facturación y cobranza ────────────────────────────────────────────

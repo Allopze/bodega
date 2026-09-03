@@ -98,6 +98,11 @@ const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "reports", submoduleHref: "/reportes", prefix: "/api/reportes" },
   { moduleId: "warehouse", submoduleHref: "/bodega/trazabilidad", prefix: "/api/bodega/trazabilidad" },
   { moduleId: "warehouse", submoduleHref: "/bodega/trazabilidad", prefix: "/api/trazabilidad" },
+  // Trazabilidad se mudó bajo Bodega y `/trazabilidad/*` quedó como
+  // redirección. Las páginas legadas siguen siendo superficie del módulo: sin
+  // esto quedaban fuera del inventario y el toggle no las alcanzaba. El prefijo
+  // de la API ya estaba; faltaba el de las páginas.
+  { moduleId: "warehouse", submoduleHref: "/bodega/trazabilidad", prefix: "/trazabilidad" },
   { moduleId: "feedback", submoduleHref: "/soporte", prefix: "/api/soporte" },
   { moduleId: "repuestos", prefix: "/api/repuestos" },
   { moduleId: "servicios", prefix: "/api/servicios" },
