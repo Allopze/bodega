@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { redirect, notFound } from "next/navigation"
+import Link from "next/link"
 import { and, desc, eq } from "drizzle-orm"
 import { db } from "@/db"
 import {
@@ -11,9 +12,9 @@ import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Badge } from "@/components/ui/badge"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatDate, formatQty } from "@/lib/utils"
-import { User, HardHat, CheckCircle, Warning } from "@phosphor-icons/react/dist/ssr"
+import { ArrowSquareOut, User, HardHat, CheckCircle, Warning } from "@phosphor-icons/react/dist/ssr"
 import { listEppCoverageGaps } from "@/lib/services/prevention-epp"
 import { getProductSizesByIds } from "@/lib/services/product-sizes"
 import { formatSizedProductName } from "@/lib/products/product-size"
@@ -27,7 +28,7 @@ export default async function WorkerEppTraceabilityPage({
 }) {
   let session
   try { session = await requirePermission("warehouse:view_traceability") }
-  catch { redirect(`/forbidden?desde=${encodeURIComponent("/bodega/trazabilidad/trabajador")}`) }
+  catch { redirect(`/forbidden?desde=${encodeURIComponent("/bodega/trazabilidad")}`) }
 
   const { workerId } = await params
 
@@ -49,6 +50,11 @@ export default async function WorkerEppTraceabilityPage({
       deliveredAt: deliveries.deliveredAt,
       receiverName: deliveries.receiverName,
       hasSig: deliveries.signaturePath,
+      // La anulación es parte de la hoja de vida: la fila se queda, marcada.
+      // Mostrarla como una entrega válida acreditaba un EPP que volvió a
+      // bodega — y esta pantalla es evidencia de cumplimiento.
+      voidedAt: deliveries.voidedAt,
+      voidReason: deliveries.voidReason,
       productId: deliveryItems.productId,
       productName: products.name,
       productSku: products.sku,
@@ -75,6 +81,9 @@ export default async function WorkerEppTraceabilityPage({
   const deliveredName = (row: { productId: string | null; productName: string | null }) =>
     formatSizedProductName(row.productName ?? "EPP", row.productId ? sizeById.get(row.productId) : null)
 
+  const validDeliveries = deliveryRows.filter((row) => row.voidedAt == null)
+  const voidedCount = deliveryRows.length - validDeliveries.length
+
   // 2. Fetch coverage gaps for this worker
   const access = {
     userId: session.user.id,
@@ -83,7 +92,7 @@ export default async function WorkerEppTraceabilityPage({
   }
   const canViewEppGaps = can(session, "prevention:epp:view")
   const workerGaps = canViewEppGaps
-    ? (await listEppCoverageGaps(access)).filter((g) => g.workerId === workerId)
+    ? await listEppCoverageGaps(access, { workerId })
     : []
 
   return (
@@ -167,7 +176,15 @@ export default async function WorkerEppTraceabilityPage({
 
       {/* ── Historial de Entregas ── */}
       <section className="space-y-3">
-        <h2 className="text-base font-semibold text-[var(--color-text)]">Historial de Entregas EPP</h2>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-base font-semibold text-[var(--color-text)]">Historial de Entregas EPP</h2>
+          {voidedCount > 0 && (
+            <p className="text-xs text-[var(--color-text-subtle)]">
+              {validDeliveries.length} {validDeliveries.length === 1 ? "entrega vigente" : "entregas vigentes"} ·{" "}
+              {voidedCount} {voidedCount === 1 ? "anulada" : "anuladas"} (no acreditan cobertura)
+            </p>
+          )}
+        </div>
         {deliveryRows.length === 0 ? (
           <div className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] p-6 text-center text-sm text-[var(--color-text-subtle)]">
             Sin entregas de EPP registradas para este trabajador.
@@ -176,6 +193,9 @@ export default async function WorkerEppTraceabilityPage({
           <>
           <div className="hidden overflow-x-auto rounded-lg border border-[var(--color-border)] md:block">
             <Table>
+              <TableCaption className="sr-only">
+                Historial de entregas de EPP al trabajador, con su comprobante, talla y devolución del EPP antiguo.
+              </TableCaption>
               <TableHeader>
                 <TableRow>
                   <TableHead>Código</TableHead>
@@ -187,51 +207,104 @@ export default async function WorkerEppTraceabilityPage({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {deliveryRows.map((r) => (
-                  <TableRow key={r.deliveryItemId}>
-                    <TableCell className="font-mono text-xs text-[var(--color-text)]">{r.code}</TableCell>
-                    <TableCell className="text-xs text-[var(--color-text-subtle)]">{r.deliveredAt ? formatDate(r.deliveredAt) : ""}</TableCell>
-                    <TableCell className="text-sm font-medium text-[var(--color-text)]">{deliveredName(r)}</TableCell>
-                    <TableCell className="text-xs font-mono">{formatQty(Number(r.quantity), r.unitOfMeasure ?? undefined)}</TableCell>
-                    <TableCell className="text-xs">
-                      {r.hasSig ? (
-                        <span className="font-medium text-[var(--color-success)]">Archivo de firma adjunto</span>
-                      ) : (
-                        <span className="text-[var(--color-text-subtle)]">Sin archivo de firma</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-xs text-[var(--color-text-subtle)]">
-                      {r.returnQuantity ? `${r.returnProductName ?? "EPP"} (${r.returnQuantity} un)` : "—"}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {deliveryRows.map((r) => {
+                  const voided = r.voidedAt != null
+                  return (
+                    <TableRow key={r.deliveryItemId} className={voided ? "opacity-60" : undefined}>
+                      <TableCell className="text-xs">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <Link
+                            href={`/entregas/${r.deliveryId}/print`}
+                            className="inline-flex items-center gap-1 font-mono text-[var(--color-primary)] hover:underline underline-offset-2"
+                          >
+                            {r.code}
+                            <ArrowSquareOut className="h-3 w-3 shrink-0" aria-hidden />
+                          </Link>
+                          {voided && (
+                            <span className="rounded-[var(--radius-full)] bg-[var(--color-surface-2)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-text-muted)]">
+                              Anulada
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs text-[var(--color-text-subtle)]">{r.deliveredAt ? formatDate(r.deliveredAt) : ""}</TableCell>
+                      <TableCell className="text-sm font-medium text-[var(--color-text)]">{deliveredName(r)}</TableCell>
+                      <TableCell className={voided ? "text-xs font-mono line-through text-[var(--color-text-subtle)]" : "text-xs font-mono"}>
+                        {formatQty(Number(r.quantity), r.unitOfMeasure ?? undefined)}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {r.hasSig ? (
+                          <span className="font-medium text-[var(--color-success)]">Archivo de firma adjunto</span>
+                        ) : (
+                          <span className="text-[var(--color-text-subtle)]">Sin archivo de firma</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs text-[var(--color-text-subtle)]">
+                        {voided
+                          ? `Anulada: ${r.voidReason ?? "sin motivo registrado"}`
+                          : r.returnQuantity
+                            ? `${r.returnProductName ?? "EPP"} (${formatQty(Number(r.returnQuantity), r.unitOfMeasure ?? undefined)})`
+                            : "—"}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
           </div>
           <div className="grid gap-3 md:hidden">
-            {deliveryRows.map((row) => (
-              <article key={row.deliveryItemId} className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-mono text-xs text-[var(--color-text)]">{row.code}</p>
-                    <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">{row.deliveredAt ? formatDate(row.deliveredAt) : "Sin fecha"}</p>
+            {deliveryRows.map((row) => {
+              const voided = row.voidedAt != null
+              return (
+                <article
+                  key={row.deliveryItemId}
+                  className={`rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-3 ${voided ? "opacity-60" : ""}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Link
+                          href={`/entregas/${row.deliveryId}/print`}
+                          className="inline-flex items-center gap-1 font-mono text-xs text-[var(--color-primary)] hover:underline underline-offset-2"
+                        >
+                          {row.code}
+                          <ArrowSquareOut className="h-3 w-3 shrink-0" aria-hidden />
+                        </Link>
+                        {voided && (
+                          <span className="rounded-[var(--radius-full)] bg-[var(--color-surface-2)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-text-muted)]">
+                            Anulada
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">{row.deliveredAt ? formatDate(row.deliveredAt) : "Sin fecha"}</p>
+                    </div>
+                    <span className={`text-xs font-medium ${row.hasSig ? "text-[var(--color-success)]" : "text-[var(--color-text-subtle)]"}`}>
+                      {row.hasSig ? "Archivo de firma adjunto" : "Sin archivo de firma"}
+                    </span>
                   </div>
-                  <span className={`text-xs font-medium ${row.hasSig ? "text-[var(--color-success)]" : "text-[var(--color-text-subtle)]"}`}>
-                    {row.hasSig ? "Archivo de firma adjunto" : "Sin archivo de firma"}
-                  </span>
-                </div>
-                <dl className="mt-3 grid gap-2 text-xs">
-                  <div>
-                    <dt className="text-[var(--color-text-subtle)]">EPP entregado</dt>
-                    <dd className="mt-0.5 font-medium text-[var(--color-text)]">{deliveredName(row)} · {formatQty(Number(row.quantity), row.unitOfMeasure ?? undefined)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[var(--color-text-subtle)]">Devolución de EPP antiguo</dt>
-                    <dd className="mt-0.5 text-[var(--color-text)]">{row.returnQuantity ? `${row.returnProductName ?? "EPP"} (${formatQty(Number(row.returnQuantity), row.unitOfMeasure ?? undefined)})` : "Sin devolución registrada"}</dd>
-                  </div>
-                </dl>
-              </article>
-            ))}
+                  <dl className="mt-3 grid gap-2 text-xs">
+                    <div>
+                      <dt className="text-[var(--color-text-subtle)]">EPP entregado</dt>
+                      <dd className={`mt-0.5 font-medium text-[var(--color-text)] ${voided ? "line-through" : ""}`}>
+                        {deliveredName(row)} · {formatQty(Number(row.quantity), row.unitOfMeasure ?? undefined)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[var(--color-text-subtle)]">
+                        {voided ? "Motivo de anulación" : "Devolución de EPP antiguo"}
+                      </dt>
+                      <dd className="mt-0.5 text-[var(--color-text)]">
+                        {voided
+                          ? (row.voidReason ?? "Sin motivo registrado")
+                          : row.returnQuantity
+                            ? `${row.returnProductName ?? "EPP"} (${formatQty(Number(row.returnQuantity), row.unitOfMeasure ?? undefined)})`
+                            : "Sin devolución registrada"}
+                      </dd>
+                    </div>
+                  </dl>
+                </article>
+              )
+            })}
           </div>
           </>
         )}

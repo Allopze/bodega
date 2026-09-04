@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm"
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm"
 import { z } from "zod"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
@@ -219,13 +219,23 @@ export async function deactivateEppRequirement(input: unknown, access: EppAccess
 
 /* ── Cobertura y escalamiento ─────────────────────────────────────────────── */
 
-export async function listEppCoverageGaps(access: EppAccess): Promise<EppCoverageGap[]> {
+export async function listEppCoverageGaps(
+  access: EppAccess,
+  options: {
+    /**
+     * Acota el cálculo a una persona. La hoja de vida de un trabajador pedía
+     * las brechas de toda la faena para quedarse con las de uno solo.
+     */
+    workerId?: string
+  } = {},
+): Promise<EppCoverageGap[]> {
   requireAccess(access, "prevention:epp:view")
   const workerScope = scopeCondition(access.scope, workers.worksiteId)
+  const workerFilter = options.workerId ? eq(workers.id, options.workerId) : undefined
 
   const [workerRows, requirementRows, deliveryRows] = await Promise.all([
     db.select({ id: workers.id, firstName: workers.firstName, lastName: workers.lastName, position: workers.position, worksiteId: workers.worksiteId, isActive: workers.isActive })
-      .from(workers).where(and(eq(workers.isActive, true), workerScope)),
+      .from(workers).where(and(eq(workers.isActive, true), workerScope, workerFilter)),
     db.select({
       id: preventionEppRequirements.id,
       eppTypeId: preventionEppRequirements.eppTypeId,
@@ -255,7 +265,13 @@ export async function listEppCoverageGaps(access: EppAccess): Promise<EppCoverag
       .where(and(
         eq(deliveries.destinationType, "worker"),
         isNotNull(deliveries.workerId),
+        // Una entrega anulada no acredita cobertura: dejaba a un trabajador
+        // como cubierto por un EPP que la anulación devolvió a bodega. Mismo
+        // criterio que el resto de los conteos de entregas (ver
+        // `deliveries.voidedAt` en el esquema).
+        isNull(deliveries.voidedAt),
         workerScope,
+        workerFilter,
       )),
   ])
 
