@@ -463,4 +463,76 @@ describe("getItemDetail", () => {
       expect(result).toBeNull()
     })
   })
+  // ── Anulaciones y evidencia ────────────────────────────────────────────
+
+  describe("anulaciones", () => {
+    it("marca la línea de OC anulada para que no sume en el resumen", async () => {
+      // El detalle no excluía las OC anuladas mientras la lista consolidada
+      // sí: el mismo ítem mostraba dos cantidades pedidas distintas según
+      // dónde se lo mirara.
+      await inMemoryDb.insert(schema.purchaseOrders).values({
+        id: "oc-tz-void", code: "OC-2026-ANUL", worksiteId: WS_1,
+        supplierId: SUP, createdBy: USER_BOD, status: "cancelled",
+        createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseOrderItems).values({
+        id: "poi-tz-void", purchaseOrderId: "oc-tz-void", requestItemId: ITEM,
+        productId: PROD_1, quantity: 99, unitOfMeasure: "par",
+        unitPrice: 1000, subtotal: 99000, status: "cancelled",
+      })
+
+      const result = await getItemDetail(globalSession(), ITEM)
+      expect(result).not.toBeNull()
+
+      const cancelled = result!.ocItems.find((oi) => oi.ocCode === "OC-2026-ANUL")
+      const active = result!.ocItems.find((oi) => oi.ocCode === "OC-2026-001")
+      expect(cancelled?.cancelled).toBe(true)
+      expect(active?.cancelled).toBe(false)
+    })
+
+    it("conserva la entrega anulada, marcada y con su motivo", async () => {
+      await inMemoryDb.insert(schema.deliveries).values({
+        id: "del-tz-void", code: "ENT-2026-ANUL", deliveredBy: USER_BOD,
+        destinationType: "faena", worksiteId: WS_1,
+        receiverName: "Jefe de faena", deliveredAt: now, createdAt: now,
+        voidedAt: now, voidedBy: USER_BOD, voidReason: "Anulada por error de digitación",
+      })
+      await inMemoryDb.insert(schema.deliveryItems).values({
+        id: "deli-tz-void", deliveryId: "del-tz-void",
+        requestItemId: ITEM, productId: PROD_1,
+        quantity: 7, unitOfMeasure: "par",
+      })
+
+      const result = await getItemDetail(globalSession(), ITEM)
+      expect(result).not.toBeNull()
+
+      // Se conserva —es evidencia— pero viaja marcada para que la página la
+      // descarte del total entregado y la muestre tachada.
+      const voided = result!.deliveries.find((d) => d.code === "ENT-2026-ANUL")
+      expect(voided?.voidedAt).not.toBeNull()
+      expect(voided?.voidReason).toBe("Anulada por error de digitación")
+      expect(voided?.deliveryId).toBe("del-tz-void")
+
+      const valid = result!.deliveries.find((d) => d.code === "ENT-2026-001")
+      expect(valid?.voidedAt).toBeNull()
+    })
+
+    it("cada línea de recepción trae su propio id, no el del documento", async () => {
+      // Una recepción que cubre dos líneas de OC del mismo ítem generaba dos
+      // filas con la misma key de React.
+      await inMemoryDb.insert(schema.receiptItems).values({
+        id: "reci-tz-2", receiptId: "rec-tz-1",
+        purchaseOrderItemId: "poi-tz-void",
+        quantityReceived: 1, quantityRejected: 0,
+      })
+
+      const result = await getItemDetail(globalSession(), ITEM)
+      expect(result).not.toBeNull()
+
+      const ids = result!.receipts.map((r) => r.id)
+      expect(new Set(ids).size).toBe(ids.length)
+      // El id del documento sigue disponible para enlazar la recepción.
+      expect(result!.receipts.every((r) => r.receiptId === "rec-tz-1")).toBe(true)
+    })
+  })
 })

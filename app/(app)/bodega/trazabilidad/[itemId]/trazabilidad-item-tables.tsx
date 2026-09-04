@@ -19,9 +19,11 @@ interface TablesProps {
 }
 
 export function ApprovalsTable({ approvals, item }: { approvals: TablesProps["approvals"]; item: TablesProps["item"] }) {
-  if (approvals.length === 0) return null
   return (
-    <SectionTable title="Decisiones de aprobación">
+    <SectionTable
+      title="Decisiones de aprobación"
+      empty={approvals.length === 0 ? "Nadie ha aprobado ni rechazado este ítem todavía." : undefined}
+    >
       <TableRoot>
         <Table>
           <TableHeader>
@@ -42,7 +44,7 @@ export function ApprovalsTable({ approvals, item }: { approvals: TablesProps["ap
                 </TableCell>
                 <TableCell className="text-xs">{a.decidedByName}</TableCell>
                 <TableCellNum className="text-xs">
-                  {a.modifiedQty != null ? `${a.modifiedQty} ${item.unitOfMeasure}` : "—"}
+                  {a.modifiedQty != null ? formatQty(a.modifiedQty, item.unitOfMeasure) : "—"}
                 </TableCellNum>
                 <TableCell className="text-xs max-w-[200px] truncate text-[var(--color-text-muted)]">
                   {a.reason ?? "—"}
@@ -57,9 +59,11 @@ export function ApprovalsTable({ approvals, item }: { approvals: TablesProps["ap
 }
 
 export function OcItemsTable({ ocItems, item }: { ocItems: TablesProps["ocItems"]; item: TablesProps["item"] }) {
-  if (ocItems.length === 0) return null
   return (
-    <SectionTable title="Órdenes de compra">
+    <SectionTable
+      title="Órdenes de compra"
+      empty={ocItems.length === 0 ? "Este ítem no se ha llevado a ninguna orden de compra." : undefined}
+    >
       <TableRoot>
         <Table>
           <TableHeader>
@@ -74,7 +78,7 @@ export function OcItemsTable({ ocItems, item }: { ocItems: TablesProps["ocItems"
           </TableHeader>
           <TableBody>
             {ocItems.map((oi) => (
-              <TableRow key={oi.id}>
+              <TableRow key={oi.id} className={oi.cancelled ? "opacity-60" : undefined}>
                 <TableCell>
                   <Link
                     href={`/compras/${oi.ocId}`}
@@ -85,8 +89,17 @@ export function OcItemsTable({ ocItems, item }: { ocItems: TablesProps["ocItems"
                   </Link>
                 </TableCell>
                 <TableCell className="text-xs">{oi.supplierName}</TableCell>
-                <TableCell><StateBadge state={oi.ocStatus} entity="oc" size="sm" /></TableCell>
-                <TableCellNum className="text-xs">{formatQty(oi.quantity, item.unitOfMeasure)}</TableCellNum>
+                <TableCell>
+                  {oi.cancelled
+                    ? <VoidedBadge label="Anulada" />
+                    : <StateBadge state={oi.ocStatus} entity="oc" size="sm" />}
+                </TableCell>
+                {/* Una línea anulada no pidió nada: su cantidad va tachada para
+                    que la suma que el usuario haga a ojo coincida con el
+                    "En OC" del resumen. */}
+                <TableCellNum className={oi.cancelled ? "text-xs line-through text-[var(--color-text-subtle)]" : "text-xs"}>
+                  {formatQty(oi.quantity, item.unitOfMeasure)}
+                </TableCellNum>
                 <TableCellNum className="text-xs">{formatQty(oi.receivedAtOffice, item.unitOfMeasure)}</TableCellNum>
                 <TableCellNum className="text-xs">{formatQty(oi.receivedAtFaena, item.unitOfMeasure)}</TableCellNum>
               </TableRow>
@@ -99,9 +112,11 @@ export function OcItemsTable({ ocItems, item }: { ocItems: TablesProps["ocItems"
 }
 
 export function ReceiptsTable({ receipts, item }: { receipts: TablesProps["receipts"]; item: TablesProps["item"] }) {
-  if (receipts.length === 0) return null
   return (
-    <SectionTable title="Recepciones">
+    <SectionTable
+      title="Recepciones"
+      empty={receipts.length === 0 ? "Todavía no se ha recepcionado nada de este ítem." : undefined}
+    >
       <TableRoot>
         <Table>
           <TableHeader>
@@ -117,7 +132,15 @@ export function ReceiptsTable({ receipts, item }: { receipts: TablesProps["recei
           <TableBody>
             {receipts.map((r) => (
               <TableRow key={r.id}>
-                <TableCell className="font-mono text-xs">{r.code}</TableCell>
+                <TableCell>
+                  <Link
+                    href={`/recepcion/${r.receiptId}`}
+                    className="inline-flex items-center gap-1 font-mono text-xs text-[var(--color-primary)] hover:underline underline-offset-2"
+                  >
+                    {r.code}
+                    <ArrowSquareOut className="h-3 w-3 shrink-0" aria-hidden />
+                  </Link>
+                </TableCell>
                 <TableCell>
                   <LocationBadge locationType={r.locationType} />
                 </TableCell>
@@ -139,9 +162,11 @@ export function ReceiptsTable({ receipts, item }: { receipts: TablesProps["recei
 }
 
 export function DeliveriesTable({ deliveries, item }: { deliveries: TablesProps["deliveries"]; item: TablesProps["item"] }) {
-  if (deliveries.length === 0) return null
   return (
-    <SectionTable title="Entregas">
+    <SectionTable
+      title="Entregas"
+      empty={deliveries.length === 0 ? "Este ítem no se ha entregado a nadie todavía." : undefined}
+    >
       <TableRoot>
         <Table>
           <TableHeader>
@@ -155,27 +180,49 @@ export function DeliveriesTable({ deliveries, item }: { deliveries: TablesProps[
             </TableRow>
           </TableHeader>
           <TableBody>
-            {deliveries.map((d) => (
-              <TableRow key={d.id}>
-                <TableCell className="font-mono text-xs">{d.code}</TableCell>
-                <TableCell className="text-xs">
-                  {d.destinationType === "worker"
-                    ? <span>{d.workerName ?? "Trabajador"}</span>
-                    : <span>{d.worksiteName ?? "Faena"}</span>}
-                </TableCell>
-                <TableCell className="text-xs">{d.deliveredByName}</TableCell>
-                <TableCell className="text-xs">{formatDate(d.deliveredAt)}</TableCell>
-                <TableCellNum className="text-xs">{formatQty(d.quantity, item.unitOfMeasure)}</TableCellNum>
-                <TableCell className="text-xs">
-                  {d.returnQuantity != null && d.returnQuantity > 0 ? (
-                    <span className="text-[var(--color-warning-ink)]">
-                      {formatQty(d.returnQuantity, item.unitOfMeasure)}
-                      {d.returnReason && <span className="text-[var(--color-text-subtle)] ml-1">({d.returnReason})</span>}
-                    </span>
-                  ) : "—"}
-                </TableCell>
-              </TableRow>
-            ))}
+            {deliveries.map((d) => {
+              const voided = d.voidedAt != null
+              return (
+                <TableRow key={d.id} className={voided ? "opacity-60" : undefined}>
+                  <TableCell>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Link
+                        href={`/entregas/${d.deliveryId}/print`}
+                        className="inline-flex items-center gap-1 font-mono text-xs text-[var(--color-primary)] hover:underline underline-offset-2"
+                      >
+                        {d.code}
+                        <ArrowSquareOut className="h-3 w-3 shrink-0" aria-hidden />
+                      </Link>
+                      {voided && <VoidedBadge label="Anulada" />}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    {d.destinationType === "worker"
+                      ? <span>{d.workerName ?? "Trabajador"}</span>
+                      : <span>{d.worksiteName ?? "Faena"}</span>}
+                  </TableCell>
+                  <TableCell className="text-xs">{d.deliveredByName}</TableCell>
+                  <TableCell className="text-xs">{formatDate(d.deliveredAt)}</TableCell>
+                  {/* Tachada porque no cuenta como entregada: el resumen de
+                      arriba la descarta y las dos cifras tienen que cuadrar. */}
+                  <TableCellNum className={voided ? "text-xs line-through text-[var(--color-text-subtle)]" : "text-xs"}>
+                    {formatQty(d.quantity, item.unitOfMeasure)}
+                  </TableCellNum>
+                  <TableCell className="text-xs">
+                    {voided ? (
+                      <span className="text-[var(--color-text-subtle)]">
+                        Anulada: {d.voidReason ?? "sin motivo registrado"}
+                      </span>
+                    ) : d.returnQuantity != null && d.returnQuantity > 0 ? (
+                      <span className="text-[var(--color-warning-ink)]">
+                        {formatQty(d.returnQuantity, item.unitOfMeasure)}
+                        {d.returnReason && <span className="text-[var(--color-text-subtle)] ml-1">({d.returnReason})</span>}
+                      </span>
+                    ) : "—"}
+                  </TableCell>
+                </TableRow>
+              )
+            })}
           </TableBody>
         </Table>
       </TableRoot>
@@ -186,7 +233,10 @@ export function DeliveriesTable({ deliveries, item }: { deliveries: TablesProps[
 export function InventoryMovementsTable({ movements, item }: { movements: TablesProps["inventoryMovements"]; item: TablesProps["item"] }) {
   if (movements.length === 0) return null
   return (
-    <SectionTable title="Movimientos de inventario" subtitle="Ajustes, devoluciones y desechos registrados para este producto en la faena.">
+    <SectionTable
+      title="Movimientos de inventario del producto en la faena"
+      subtitle="Contexto de bodega, no movimientos de este ítem: son los últimos 50 ajustes, devoluciones y desechos del producto en esta faena, sin importar de qué solicitud vinieron."
+    >
       <TableRoot>
         <Table>
           <TableHeader>
@@ -231,14 +281,33 @@ export function InventoryMovementsTable({ movements, item }: { movements: Tables
 
 // ── Shared helpers ────────────────────────────────────────────────────────
 
-function SectionTable({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
+/**
+ * Una etapa vacía se dice, no se esconde.
+ *
+ * Las tablas devolvían `null` cuando no tenían filas, así que un expediente
+ * sin recepciones se veía igual que uno donde nadie había mirado: en un
+ * dossier de trazabilidad la ausencia de evidencia es información.
+ */
+function SectionTable({
+  title,
+  subtitle,
+  empty,
+  children,
+}: {
+  title: string
+  subtitle?: string
+  empty?: string
+  children: ReactNode
+}) {
   return (
     <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] border border-[var(--color-border)]">
       <div className="border-b border-[var(--color-border)] px-5 py-3">
         <h2 className="text-h2 text-[var(--color-text)]">{title}</h2>
         {subtitle && <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{subtitle}</p>}
       </div>
-      {children}
+      {empty
+        ? <p className="px-5 py-4 text-sm text-[var(--color-text-subtle)]">{empty}</p>
+        : children}
     </section>
   )
 }
@@ -255,6 +324,14 @@ function ApprovalTypeBadge({ type }: { type: string }) {
       {type === "approve" ? "Aprobado" :
        type === "reject" ? "Rechazado" :
        type === "modify" ? "Modificado" : "Devuelto"}
+    </span>
+  )
+}
+
+function VoidedBadge({ label }: { label: string }) {
+  return (
+    <span className="inline-flex items-center rounded-[var(--radius-full)] bg-[var(--color-surface-2)] px-2 py-0.5 text-xs font-medium text-[var(--color-text-muted)]">
+      {label}
     </span>
   )
 }

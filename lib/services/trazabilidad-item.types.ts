@@ -44,9 +44,19 @@ export interface ItemDetailData {
     unitPrice: number | null
     receivedAtFaena: number
     receivedAtOffice: number
+    /**
+     * La línea o su OC están anuladas. Sigue en el expediente como evidencia,
+     * pero no suma en "En OC": la lista consolidada ya la excluía y el detalle
+     * mostraba otra cantidad pedida para el mismo ítem.
+     */
+    cancelled: boolean
   }>
   receipts: Array<{
+    /** Id de la línea de recepción, no del documento: una recepción puede
+     * cubrir dos líneas de OC del mismo ítem y con el id del documento las dos
+     * filas colisionaban. */
     id: string
+    receiptId: string
     code: string
     locationType: string
     receivedByName: string
@@ -57,6 +67,7 @@ export interface ItemDetailData {
   }>
   deliveries: Array<{
     id: string
+    deliveryId: string
     code: string
     destinationType: string
     deliveredByName: string
@@ -68,6 +79,9 @@ export interface ItemDetailData {
     returnQuantity: number | null
     returnReason: string | null
     notes: string | null
+    /** Anulada: no cuenta como entregado, pero se conserva visible. */
+    voidedAt: string | null
+    voidReason: string | null
   }>
   timeline: Array<{
     id: string

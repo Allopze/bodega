@@ -38,10 +38,18 @@ export default async function TrazabilidadItemPage({
   if (!detail) notFound()
 
   const { item, approvals, ocItems, receipts, deliveries, timeline, inventoryMovements } = detail
-  const totalReceivedAtFaena = ocItems.reduce((sum, oi) => sum + oi.receivedAtFaena, 0)
-  const totalOrdered = ocItems.reduce((sum, oi) => sum + oi.quantity, 0)
-  const totalDelivered = deliveries.reduce((sum, d) => sum + d.quantity, 0)
-  const totalReturned = deliveries.reduce((sum, d) => sum + (d.returnQuantity ?? 0), 0)
+
+  /**
+   * Los totales del expediente descartan lo anulado, igual que la lista
+   * consolidada: una OC anulada no pidió nada y una entrega anulada no entregó
+   * nada. Las filas siguen en sus tablas, marcadas, porque son evidencia.
+   */
+  const activeOcItems = ocItems.filter((oi) => !oi.cancelled)
+  const validDeliveries = deliveries.filter((d) => d.voidedAt == null)
+  const totalReceivedAtFaena = activeOcItems.reduce((sum, oi) => sum + oi.receivedAtFaena, 0)
+  const totalOrdered = activeOcItems.reduce((sum, oi) => sum + oi.quantity, 0)
+  const totalDelivered = validDeliveries.reduce((sum, d) => sum + d.quantity, 0)
+  const totalReturned = validDeliveries.reduce((sum, d) => sum + (d.returnQuantity ?? 0), 0)
 
   return (
     <PageContainer width="workbench">

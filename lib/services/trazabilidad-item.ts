@@ -106,6 +106,7 @@ export async function getItemDetail(
         unitPrice:        purchaseOrderItems.unitPrice,
         quantityReceived: purchaseOrderItems.quantityReceived,
         quantityOfficeReceived: purchaseOrderItems.quantityOfficeReceived,
+        lineStatus:       purchaseOrderItems.status,
       })
       .from(purchaseOrderItems)
       .innerJoin(purchaseOrders, eq(purchaseOrderItems.purchaseOrderId, purchaseOrders.id))
@@ -116,7 +117,10 @@ export async function getItemDetail(
     db
       .select({
         id:               deliveryItems.id,
+        deliveryId:       deliveries.id,
         deliveryCode:     deliveries.code,
+        voidedAt:         deliveries.voidedAt,
+        voidReason:       deliveries.voidReason,
         destinationType:  deliveries.destinationType,
         deliveredByName:  users.name,
         deliveredAt:      deliveries.deliveredAt,
@@ -166,6 +170,7 @@ export async function getItemDetail(
     ocItemIds.length > 0
       ? db
           .select({
+            id:               receiptItems.id,
             receiptId:        receiptItems.receiptId,
             receiptCode:      receipts.code,
             locationType:     receipts.locationType,
@@ -250,9 +255,11 @@ export async function getItemDetail(
       unitPrice:        oi.unitPrice,
       receivedAtFaena:  oi.quantityReceived,
       receivedAtOffice: oi.quantityOfficeReceived,
+      cancelled:        oi.lineStatus === "cancelled" || oi.ocStatus === "cancelled",
     })),
     receipts: receiptRows.map((r) => ({
-      id:               r.receiptId,
+      id:               r.id,
+      receiptId:        r.receiptId,
       code:             r.receiptCode,
       locationType:     r.locationType,
       receivedByName:   r.receivedByName,
@@ -263,7 +270,10 @@ export async function getItemDetail(
     })),
     deliveries: deliveryRows.map((d) => ({
       id:               d.id,
+      deliveryId:       d.deliveryId,
       code:             d.deliveryCode,
+      voidedAt:         d.voidedAt,
+      voidReason:       d.voidReason,
       destinationType:  d.destinationType,
       deliveredByName:  d.deliveredByName,
       deliveredAt:      d.deliveredAt,
