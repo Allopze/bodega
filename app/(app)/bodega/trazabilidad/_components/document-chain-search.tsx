@@ -15,13 +15,16 @@ import { formatDate } from "@/lib/utils"
 interface Props {
   query: string
   result: { anchor: ChainAnchor; chain: DocumentChain } | null
+  /** Se reenvía para no perder la faena activa al buscar por código. */
+  faena?: string
 }
 
-export function DocumentChainSearch({ query, result }: Props) {
+export function DocumentChainSearch({ query, result, faena }: Props) {
   return (
     <div className="space-y-6">
       <form method="get" role="search" className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <input type="hidden" name="tab" value="documento" />
+        {faena && <input type="hidden" name="faena" value={faena} />}
         <label htmlFor="codigo" className="sr-only">
           Código del documento
         </label>
@@ -36,7 +39,6 @@ export function DocumentChainSearch({ query, result }: Props) {
             name="codigo"
             type="search"
             defaultValue={query}
-            autoFocus
             placeholder="SOL-0004, OC-2026-0003, REC-2026-0007, ENT-2026-0002…"
             className="h-11 w-full rounded-(--radius) border border-(--color-border-control) bg-(--color-surface) pl-9 pr-3 text-sm text-(--color-text) outline-none placeholder:text-(--color-text-subtle) focus:border-(--color-primary) focus:ring-2 focus:ring-(--color-primary-line) sm:h-10"
           />

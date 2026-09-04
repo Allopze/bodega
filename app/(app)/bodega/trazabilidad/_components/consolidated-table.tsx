@@ -44,7 +44,8 @@ export function ConsolidatedTable({ rows }: Props) {
     <TableRoot stickyHeader className="hidden md:block">
       <Table>
         <TableCaption className="sr-only">
-          Tabla consolidada de seguimiento de solicitudes y materiales por faena.
+          Tabla consolidada de seguimiento de solicitudes y materiales por faena. Las cantidades
+          están expresadas en la unidad de medida de cada ítem, indicada bajo su nombre.
         </TableCaption>
         <TableHeader>
           <TableRow>
@@ -66,6 +67,7 @@ export function ConsolidatedTable({ rows }: Props) {
           {rows.map((row) => {
             const isExpanded = expandedIds.has(row.itemId)
             const hasPending = row.pendingTotal > 0
+            const detailId = `trazabilidad-detalle-${row.itemId}`
 
             return (
               <React.Fragment key={row.itemId}>
@@ -86,6 +88,7 @@ export function ConsolidatedTable({ rows }: Props) {
                       type="button"
                       aria-label={isExpanded ? "Contraer detalle" : "Expandir detalle"}
                       aria-expanded={isExpanded}
+                      aria-controls={detailId}
                       onClick={(e) => {
                         e.stopPropagation()
                         toggleRow(row.itemId)
@@ -100,14 +103,17 @@ export function ConsolidatedTable({ rows }: Props) {
                     </button>
                   </TableCell>
 
-                  {/* Ítem / Producto */}
+                  {/* Ítem / Producto — la unidad va acá una sola vez: repetirla
+                      en las ocho columnas numéricas llenaba cada fila de
+                      "unidades" y tapaba los números, que son el dato. */}
                   <TableCell className="max-w-[240px]">
                     <div className="font-semibold text-slate-900 truncate" title={row.productName}>
                       {row.productName}
                     </div>
-                    <div className="flex items-center gap-2 text-[11px] text-slate-500 font-mono">
+                    <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-mono">
                       {row.productSku && <span>SKU {row.productSku}</span>}
                       {row.categoryName && <span>· {row.categoryName}</span>}
+                      <span>· {row.uom}</span>
                     </div>
                   </TableCell>
 
@@ -131,14 +137,18 @@ export function ConsolidatedTable({ rows }: Props) {
 
                   {/* Solicitado */}
                   <TableCellNum className="font-mono text-xs">
-                    {formatQty(row.requested, row.uom)}
+                    {formatQty(row.requested)}
                   </TableCellNum>
 
                   {/* En OC */}
                   <TableCellNum className="font-mono text-xs">
                     <div className="flex items-center justify-end gap-1">
-                      <span className={row.inOc < row.requested ? "text-amber-700 font-semibold" : ""}>
-                        {formatQty(row.inOc, row.uom)}
+                      <span
+                        className={
+                          row.pendingBreakdown.notYetOrdered > 0 ? "text-amber-700 font-semibold" : ""
+                        }
+                      >
+                        {formatQty(row.inOc)}
                       </span>
                       {row.alert && (
                         <Warning
@@ -146,9 +156,9 @@ export function ConsolidatedTable({ rows }: Props) {
                           weight="fill"
                           className="text-amber-600 shrink-0"
                           aria-label={`Faltan ${formatQty(
-                            (row.approved ?? row.requested) - row.inOc,
+                            row.pendingBreakdown.notYetOrdered,
                             row.uom,
-                          )} en OC`}
+                          )} por comprar`}
                         />
                       )}
                     </div>
@@ -156,19 +166,19 @@ export function ConsolidatedTable({ rows }: Props) {
 
                   {/* Recibido Oficina */}
                   <TableCellNum className="font-mono text-xs text-slate-600">
-                    {formatQty(row.receivedOffice, row.uom)}
+                    {formatQty(row.receivedOffice)}
                   </TableCellNum>
 
                   {/* Recibido Faena */}
                   <TableCellNum className="font-mono text-xs text-slate-700 font-medium">
-                    {formatQty(row.receivedFaena, row.uom)}
+                    {formatQty(row.receivedFaena)}
                   </TableCellNum>
 
                   {/* Stock en Faena (contextual) */}
                   <TableCellNum className="font-mono text-xs text-slate-500">
                     {row.stockInFaena !== null ? (
-                      <span title="Stock físico del producto actualmente en esta faena">
-                        {formatQty(row.stockInFaena, row.uom)}
+                      <span title="Stock físico total del producto en esta faena, de cualquier procedencia — no es el saldo de este ítem">
+                        {formatQty(row.stockInFaena)}
                       </span>
                     ) : (
                       "—"
@@ -177,14 +187,14 @@ export function ConsolidatedTable({ rows }: Props) {
 
                   {/* Entregado */}
                   <TableCellNum className="font-mono text-xs font-semibold text-emerald-800">
-                    {formatQty(row.delivered, row.uom)}
+                    {formatQty(row.delivered)}
                   </TableCellNum>
 
                   {/* Pendiente Total */}
                   <TableCellNum className="font-mono text-xs">
                     {hasPending ? (
                       <span className="font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                        {formatQty(row.pendingTotal, row.uom)}
+                        {formatQty(row.pendingTotal)}
                       </span>
                     ) : (
                       <span className="text-slate-400 font-normal">0</span>
@@ -214,7 +224,7 @@ export function ConsolidatedTable({ rows }: Props) {
                 {/* Fila expandible con timeline y desglose */}
                 {isExpanded && (
                   <TableRow className="bg-slate-50/60 border-b border-slate-200">
-                    <TableCell colSpan={12} className="p-4 sm:p-5">
+                    <TableCell colSpan={12} className="p-4 sm:p-5" id={detailId}>
                       <ConsolidatedTableAccordion row={row} />
                     </TableCell>
                   </TableRow>

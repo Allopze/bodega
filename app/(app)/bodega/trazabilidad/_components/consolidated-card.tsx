@@ -15,8 +15,18 @@ interface Props {
   row: ConsolidatedRow
 }
 
+const TIMELINE_LINK_LABEL: Partial<Record<ConsolidatedRow["timeline"][number]["type"], string>> = {
+  request: "Ver solicitud",
+  purchase_order: "Ver orden de compra",
+  receipt_office: "Ver recepción",
+  receipt_faena: "Ver recepción",
+  dispatch_guide: "Ver guía",
+  delivery: "Ver comprobante",
+}
+
 export function ConsolidatedCard({ row }: Props) {
   const [isExpanded, setIsExpanded] = React.useState(false)
+  const detailId = `trazabilidad-card-detalle-${row.itemId}`
 
   return (
     <article
@@ -24,18 +34,18 @@ export function ConsolidatedCard({ row }: Props) {
         row.alert ? "border-amber-200 bg-amber-50/20" : "border-slate-200/70"
       }`}
     >
-      <div
-        className="cursor-pointer"
+      {/*
+        El disparador es un <button> de verdad y no envuelve ningún enlace: el
+        `div role="button"` anterior contenía el link a la solicitud, un
+        control dentro de otro control, que ni los lectores de pantalla ni el
+        teclado saben resolver.
+      */}
+      <button
+        type="button"
+        className="w-full text-left cursor-pointer"
         onClick={() => setIsExpanded(!isExpanded)}
-        role="button"
-        tabIndex={0}
         aria-expanded={isExpanded}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault()
-            setIsExpanded(!isExpanded)
-          }
-        }}
+        aria-controls={detailId}
       >
         {/* Encabezado: Producto y Estado */}
         <div className="flex items-start justify-between gap-2">
@@ -43,9 +53,10 @@ export function ConsolidatedCard({ row }: Props) {
             <h3 className="font-bold text-slate-900 text-sm truncate" title={row.productName}>
               {row.productName}
             </h3>
-            <div className="flex items-center gap-2 text-[11px] text-slate-500 font-mono mt-0.5">
+            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-mono mt-0.5">
               {row.productSku && <span>SKU {row.productSku}</span>}
               {row.categoryName && <span>· {row.categoryName}</span>}
+              <span>· {row.uom}</span>
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -58,43 +69,19 @@ export function ConsolidatedCard({ row }: Props) {
           </div>
         </div>
 
-        {/* Solicitud info */}
-        <div className="mt-2.5 flex items-center justify-between text-xs text-slate-600 border-t border-slate-100 pt-2">
-          <div className="flex items-center gap-1.5 font-mono">
-            <span className="text-slate-400">Solicitud:</span>
-            <Link
-              href={`/solicitudes/${row.requestId}`}
-              onClick={(e) => e.stopPropagation()}
-              className="font-bold text-blue-600 hover:underline inline-flex items-center gap-1"
-            >
-              {row.requestCode}
-              <ArrowSquareOut size={11} />
-            </Link>
-          </div>
-          <span className="text-slate-500 text-[11px] truncate max-w-[150px]" title={row.requesterName}>
-            {row.requesterName}
-          </span>
-        </div>
-
-        {/* Grid de cantidades principales */}
+        {/* Grid de cantidades principales — la unidad ya va en la cabecera */}
         <div className="mt-3 grid grid-cols-4 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-center font-mono">
           <div>
             <span className="text-[10px] text-slate-500 block uppercase">Solic.</span>
-            <span className="text-xs font-bold text-slate-800">
-              {formatQty(row.requested, row.uom)}
-            </span>
+            <span className="text-xs font-bold text-slate-800">{formatQty(row.requested)}</span>
           </div>
           <div>
             <span className="text-[10px] text-slate-500 block uppercase">En OC</span>
-            <span className="text-xs font-bold text-blue-700">
-              {formatQty(row.inOc, row.uom)}
-            </span>
+            <span className="text-xs font-bold text-blue-700">{formatQty(row.inOc)}</span>
           </div>
           <div>
             <span className="text-[10px] text-slate-500 block uppercase">Entreg.</span>
-            <span className="text-xs font-bold text-emerald-800">
-              {formatQty(row.delivered, row.uom)}
-            </span>
+            <span className="text-xs font-bold text-emerald-800">{formatQty(row.delivered)}</span>
           </div>
           <div>
             <span className="text-[10px] text-slate-500 block uppercase">Pend.</span>
@@ -103,15 +90,32 @@ export function ConsolidatedCard({ row }: Props) {
                 row.pendingTotal > 0 ? "text-amber-700 font-extrabold" : "text-slate-400"
               }`}
             >
-              {formatQty(row.pendingTotal, row.uom)}
+              {formatQty(row.pendingTotal)}
             </span>
           </div>
         </div>
+      </button>
+
+      {/* Solicitud: fuera del disparador porque lleva su propio enlace */}
+      <div className="mt-2.5 flex items-center justify-between text-xs text-slate-600 border-t border-slate-100 pt-2">
+        <div className="flex items-center gap-1.5 font-mono">
+          <span className="text-slate-400">Solicitud:</span>
+          <Link
+            href={`/solicitudes/${row.requestId}`}
+            className="font-bold text-blue-600 hover:underline inline-flex items-center gap-1"
+          >
+            {row.requestCode}
+            <ArrowSquareOut size={11} />
+          </Link>
+        </div>
+        <span className="text-slate-500 text-[11px] truncate max-w-[150px]" title={row.requesterName}>
+          {row.requesterName}
+        </span>
       </div>
 
       {/* Detalle expandible */}
       {isExpanded && (
-        <div className="mt-4 pt-3 border-t border-slate-200 space-y-4">
+        <div id={detailId} className="mt-4 pt-3 border-t border-slate-200 space-y-4">
           {/* Desglose de etapas */}
           <div>
             <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">
@@ -167,10 +171,14 @@ export function ConsolidatedCard({ row }: Props) {
                 {row.timeline.map((event) => (
                   <div
                     key={event.id}
-                    className="p-2 bg-slate-50 rounded-lg border border-slate-100 text-xs"
+                    className={`p-2 bg-slate-50 rounded-lg border border-slate-100 text-xs ${
+                      event.voided ? "opacity-70" : ""
+                    }`}
                   >
                     <div className="flex items-center justify-between text-[10px] text-slate-400">
-                      <span className="font-semibold text-slate-700">{event.title}</span>
+                      <span className={`font-semibold text-slate-700 ${event.voided ? "line-through" : ""}`}>
+                        {event.title}
+                      </span>
                       <span className="font-mono">{formatDateTime(event.date)}</span>
                     </div>
                     <p className="mt-1 text-slate-600 text-[11px]">{event.description}</p>
@@ -179,7 +187,7 @@ export function ConsolidatedCard({ row }: Props) {
                         href={event.href}
                         className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 hover:underline"
                       >
-                        Ver documento
+                        {TIMELINE_LINK_LABEL[event.type] ?? "Ver documento"}
                         <ArrowSquareOut size={10} />
                       </Link>
                     )}

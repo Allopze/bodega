@@ -1,6 +1,7 @@
 "use client"
 
 import { useActionState, useEffect, useState } from "react"
+import Link from "next/link"
 import { CheckCircle, Scan, Warning } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
@@ -58,6 +59,34 @@ export function TraceabilityIntegrityCases({
 
   if (cases.length === 0 && !canReconcile) return null
 
+  const scanButton = canReconcile && (
+    <form action={scanAction}>
+      <Button size="sm" type="submit" variant="secondary" disabled={scanPending}>
+        <Scan size={15} aria-hidden />
+        {scanPending ? "Revisando…" : "Revisar historial"}
+      </Button>
+    </form>
+  )
+
+  /**
+   * Sin excepciones no hay nada que alertar.
+   *
+   * El bloque iba siempre en color de señal, con título de advertencia y el
+   * texto "aún no hay excepciones": una alarma permanente que decía que todo
+   * estaba bien. Vacío se reduce a una línea neutra con su botón.
+   */
+  if (cases.length === 0) {
+    return (
+      <section className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-(--radius-2xl) border border-(--color-border) bg-(--color-surface) px-4 py-3">
+        <p className="text-xs text-(--color-text-muted)">
+          <span className="font-medium text-(--color-text)">Integridad de trazabilidad:</span>{" "}
+          sin excepciones registradas en tu alcance de faena.
+        </p>
+        {scanButton}
+      </section>
+    )
+  }
+
   return (
     <section className="mb-4 rounded-(--radius-2xl) border border-[var(--color-signal-line)] bg-[var(--color-signal-tint)] p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -70,27 +99,25 @@ export function TraceabilityIntegrityCases({
             Se conservan con su snapshot original; una salida libre de bodega no se evalúa como trazabilidad de solicitud.
           </p>
         </div>
-        {canReconcile && (
-          <form action={scanAction}>
-            <Button size="sm" type="submit" variant="secondary" disabled={scanPending}>
-              <Scan size={15} aria-hidden />
-              {scanPending ? "Revisando…" : "Revisar historial"}
-            </Button>
-          </form>
-        )}
+        {scanButton}
       </div>
 
-      {cases.length === 0 ? (
-        <p className="mt-3 text-xs text-[var(--color-signal-ink)]">Aún no hay excepciones registradas en tu alcance de faena.</p>
-      ) : (
-        <ul className="mt-3 space-y-2">
+      <ul className="mt-3 space-y-2">
           {cases.map((caseRow) => (
             <li key={caseRow.id} className="rounded-(--radius-lg) border border-[var(--color-signal-line)] bg-(--color-surface) p-3">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <p className="text-xs font-semibold text-(--color-text)">{CASE_LABELS[caseRow.findingCode] ?? caseRow.findingCode}</p>
                   <p className="mt-0.5 text-[11px] text-(--color-text-subtle)">
-                    Detectado {formatDateTime(caseRow.detectedAt)} · ítem {caseRow.requestItemId}
+                    Detectado {formatDateTime(caseRow.detectedAt)} ·{" "}
+                    {/* El id suelto no le decía nada a nadie: abre el
+                        expediente donde se ve qué pasó con ese ítem. */}
+                    <Link
+                      href={`/bodega/trazabilidad/${caseRow.requestItemId}`}
+                      className="font-mono text-(--color-primary) hover:underline underline-offset-2"
+                    >
+                      ver expediente del ítem
+                    </Link>
                   </p>
                 </div>
                 {caseRow.resolutionId ? (
@@ -114,8 +141,7 @@ export function TraceabilityIntegrityCases({
               )}
             </li>
           ))}
-        </ul>
-      )}
+      </ul>
     </section>
   )
 }

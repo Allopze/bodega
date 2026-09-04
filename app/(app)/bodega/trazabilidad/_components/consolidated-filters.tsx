@@ -20,22 +20,47 @@ import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { COMPUTED_STATUS_METAS, type ComputedStatus } from "@/lib/services/trazabilidad-consolidated.types"
 import { ConsolidatedFiltersAdvanced } from "./consolidated-filters-advanced"
 
+interface CurrentFilters {
+  faena: string
+  estado: string
+  categoria: string
+  solicitante: string
+  proveedor: string
+  q: string
+  desde: string
+  hasta: string
+  pendientes: boolean
+}
+
 interface Props {
   worksites: Array<{ id: string; name: string }>
   categories: Array<{ id: string; name: string }>
   requesters: Array<{ id: string; name: string }>
   suppliers: Array<{ id: string; name: string }>
-  current: {
-    faena: string
-    estado: string
-    categoria: string
-    solicitante: string
-    proveedor: string
-    q: string
-    desde: string
-    hasta: string
-    pendientes: boolean
-  }
+  current: CurrentFilters
+}
+
+/**
+ * El Excel tiene que traer lo que el usuario está mirando.
+ *
+ * Antes sólo viajaban faena y fechas: con un filtro de estado o una búsqueda
+ * aplicados, el archivo descargaba otro universo de filas que el de la tabla.
+ */
+function buildExportUrl(current: CurrentFilters): string {
+  const params = new URLSearchParams()
+  if (current.faena) params.set("faena", current.faena)
+  if (current.estado) params.set("estado", current.estado)
+  if (current.categoria) params.set("categoria", current.categoria)
+  if (current.solicitante) params.set("solicitante", current.solicitante)
+  if (current.proveedor) params.set("proveedor", current.proveedor)
+  if (current.q) params.set("q", current.q)
+  if (current.desde) params.set("desde", current.desde)
+  if (current.hasta) params.set("hasta", current.hasta)
+  if (current.pendientes) params.set("pendientes", "true")
+  const query = params.toString()
+  return query
+    ? `/api/bodega/trazabilidad/export?${query}`
+    : "/api/bodega/trazabilidad/export"
 }
 
 export function ConsolidatedFilters({
@@ -58,13 +83,14 @@ export function ConsolidatedFilters({
     setFilter("q", searchValue.trim())
   }
 
-  // Chips para filtros activos
+  /**
+   * Chips de los filtros activos. La faena no lleva chip a propósito: su
+   * selector está al lado mostrando cuál es, y la X del chip no podía
+   * quitarla —la vista siempre necesita una faena y el servicio volvía a
+   * poner la de por defecto—, así que era un botón que no hacía nada.
+   */
   const chips: ActiveFilterChip[] = []
 
-  if (current.faena) {
-    const wsName = worksites.find((w) => w.id === current.faena)?.name ?? current.faena
-    chips.push({ key: "faena", label: "Faena", value: current.faena, displayValue: wsName })
-  }
   if (current.estado) {
     const label = COMPUTED_STATUS_METAS[current.estado as ComputedStatus]?.label ?? current.estado
     chips.push({ key: "estado", label: "Estado", value: current.estado, displayValue: label })
@@ -94,12 +120,6 @@ export function ConsolidatedFilters({
     chips.push({ key: "hasta", label: "Hasta", value: current.hasta, displayValue: current.hasta })
   }
 
-  const exportUrl = `/api/bodega/trazabilidad/export?${new URLSearchParams({
-    ...(current.faena ? { faena: current.faena } : {}),
-    ...(current.desde ? { desde: current.desde } : {}),
-    ...(current.hasta ? { hasta: current.hasta } : {}),
-  }).toString()}`
-
   return (
     <div className="mb-4">
       <FilterToolbar
@@ -110,12 +130,17 @@ export function ConsolidatedFilters({
         }}
         onClearAll={() => {
           setSearchValue("")
+          // La faena sobrevive al "limpiar": es el eje de la vista, no un filtro.
           clearFilters(["faena"])
         }}
-        hasActiveFilters={chips.length > 1 || (chips.length === 1 && chips[0]?.key !== "faena")}
+        hasActiveFilters={chips.length > 0}
         actions={
           <Button asChild variant="secondary" size="sm" className="gap-1.5 shrink-0">
-            <a href={exportUrl} download aria-label="Exportar trazabilidad consolidada a Excel">
+            <a
+              href={buildExportUrl(current)}
+              download
+              aria-label="Exportar a Excel la trazabilidad con los filtros aplicados"
+            >
               <DownloadSimple size={14} weight="bold" />
               Exportar Excel
             </a>
@@ -128,8 +153,8 @@ export function ConsolidatedFilters({
             Faena:
           </label>
           <Select
-            value={current.faena || "all"}
-            onValueChange={(val) => setFilter("faena", val === "all" ? "" : val)}
+            value={current.faena}
+            onValueChange={(val) => setFilter("faena", val)}
           >
             <SelectTrigger id="filter-faena-select" className="w-56 font-semibold" aria-label="Seleccionar faena">
               <SelectValue placeholder="Seleccionar faena" />
@@ -206,7 +231,6 @@ export function ConsolidatedFilters({
         requesters={requesters}
         suppliers={suppliers}
         current={current}
-        setFilter={setFilter}
         setFilters={setFilters}
       />
     </div>

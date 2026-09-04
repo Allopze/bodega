@@ -18,6 +18,20 @@ interface Props {
   row: ConsolidatedRow
 }
 
+/**
+ * Cada eslabón enlaza a su propio documento, así que el enlace lo nombra.
+ * "Ver documento original" bajo una entrega llevaba al listado completo de
+ * entregas, no al comprobante.
+ */
+const TIMELINE_LINK_LABEL: Partial<Record<ConsolidatedRow["timeline"][number]["type"], string>> = {
+  request: "Ver solicitud",
+  purchase_order: "Ver orden de compra",
+  receipt_office: "Ver recepción",
+  receipt_faena: "Ver recepción",
+  dispatch_guide: "Ver guía de despacho",
+  delivery: "Ver comprobante de entrega",
+}
+
 export function ConsolidatedTableAccordion({ row }: Props) {
   return (
     <div className="space-y-4">
@@ -61,7 +75,7 @@ export function ConsolidatedTableAccordion({ row }: Props) {
               {formatQty(row.pendingBreakdown.inOffice, row.uom)}
             </span>
             <span className="block text-[10px] text-slate-400 mt-0.5">
-              Recib: {row.receivedOffice} · Desp: {row.dispatched}
+              Recib: {formatQty(row.receivedOffice)} · Desp: {formatQty(row.dispatched)}
             </span>
           </div>
 
@@ -148,8 +162,17 @@ export function ConsolidatedTableAccordion({ row }: Props) {
                 iconBg = "bg-emerald-100 text-emerald-800"
               }
 
+              // Un movimiento anulado se muestra apagado y tachado: sacarlo
+              // del historial escondería justo lo que hay que auditar.
+              if (event.voided) {
+                iconBg = "bg-slate-100 text-slate-400"
+              }
+
               return (
-                <div key={event.id} className="relative flex items-start gap-3 text-xs">
+                <div
+                  key={event.id}
+                  className={`relative flex items-start gap-3 text-xs ${event.voided ? "opacity-70" : ""}`}
+                >
                   <span
                     className={`absolute -left-6 top-0.5 flex h-5 w-5 items-center justify-center rounded-full ring-4 ring-white ${iconBg}`}
                   >
@@ -157,7 +180,7 @@ export function ConsolidatedTableAccordion({ row }: Props) {
                   </span>
                   <div className="flex-1 min-w-0 bg-slate-50/70 p-2.5 rounded-lg border border-slate-100">
                     <div className="flex flex-wrap items-center justify-between gap-1">
-                      <span className="font-bold text-slate-900">
+                      <span className={`font-bold text-slate-900 ${event.voided ? "line-through" : ""}`}>
                         {event.title}
                       </span>
                       <span className="text-[11px] text-slate-400 font-mono">
@@ -171,7 +194,7 @@ export function ConsolidatedTableAccordion({ row }: Props) {
                           href={event.href}
                           className="text-[11px] text-blue-600 hover:underline font-semibold inline-flex items-center gap-1"
                         >
-                          Ver documento original
+                          {TIMELINE_LINK_LABEL[event.type] ?? "Ver documento original"}
                           <ArrowSquareOut size={11} />
                         </Link>
                       </div>

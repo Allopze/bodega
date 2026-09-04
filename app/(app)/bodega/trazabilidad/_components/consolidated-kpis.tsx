@@ -12,9 +12,15 @@ import type { ConsolidatedFaenaKPIs } from "@/lib/services/trazabilidad-consolid
 
 interface Props {
   kpis: ConsolidatedFaenaKPIs
+  /**
+   * Hay filtros aplicados además de la faena. Los KPIs resumen lo filtrado
+   * —antes se calculaban sobre la faena completa y contradecían a la tabla—,
+   * así que conviene decir sobre qué están contando.
+   */
+  filtered?: boolean
 }
 
-export function ConsolidatedKpis({ kpis }: Props) {
+export function ConsolidatedKpis({ kpis, filtered = false }: Props) {
   const cards = [
     {
       label: "Solicitudes abiertas",
@@ -70,7 +76,15 @@ export function ConsolidatedKpis({ kpis }: Props) {
   ]
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7 mb-5">
+    <div className="mb-5">
+      {filtered && (
+        <p className="mb-2 text-[11px] text-slate-500">
+          Las métricas resumen los ítems que pasan los filtros aplicados, no la faena completa.
+        </p>
+      )}
+      {/* Las columnas siguen al esqueleto de `loading.tsx` (2/4/7): con 3 en
+          `sm` la grilla se reacomodaba al llegar los datos. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
       {cards.map((card) => {
         const Icon = card.icon
         return (
@@ -96,6 +110,7 @@ export function ConsolidatedKpis({ kpis }: Props) {
           </div>
         )
       })}
+      </div>
     </div>
   )
 }
