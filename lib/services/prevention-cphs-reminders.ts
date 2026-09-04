@@ -10,6 +10,7 @@ import {
 import { assessMeetingCadence, isMandateExpired } from "@/lib/prevention/cphs"
 import { activityDeadline } from "@/lib/prevention/cphs-program"
 import { expireLapsedCommittees } from "@/lib/services/prevention-cphs"
+import { sweepPreventiveOrganizationObligations } from "@/lib/services/pdtp-adapters/preventive-organization-connector"
 import {
   createNotifications,
   getUserIdsWithPermissionForWorksite,
@@ -22,6 +23,11 @@ export interface CphsReminderResult {
   cadenceWarnings: number
   overdueActivities: number
   notifiedUsers: number
+  /**
+   * Obligaciones de la N°11 abiertas por el barrido de organización preventiva:
+   * faenas cuya dotación exige comité o delegado y no lo tienen.
+   */
+  preventiveOrganization: { evaluated: number; opened: number; alreadyOpen: number; skipped: number; errors: number }
   /** Entidades omitidas por error, para que una corrida degradada sea visible. */
   errors: number
 }
@@ -56,6 +62,11 @@ export async function runPreventionCphsReminders(): Promise<CphsReminderResult> 
   let errors = 0
   const { expired } = await expireLapsedCommittees()
 
+  // Después de vencer los mandatos, no antes: la brecha se evalúa contra la
+  // verdad post-vencimiento. Y antes del corte por "no hay comités", porque una
+  // faena sin ningún comité es justamente el caso que este barrido busca.
+  const preventiveOrganization = await sweepPreventiveOrganizationObligations()
+
   const committees = await db.select({
     id: preventionCommittees.id,
     name: preventionCommittees.name,
@@ -71,7 +82,7 @@ export async function runPreventionCphsReminders(): Promise<CphsReminderResult> 
   let overdueActivities = 0
 
   if (committees.length === 0) {
-    return { expiredCommittees: expired, mandateWarnings, cadenceWarnings, overdueActivities, notifiedUsers: 0, errors }
+    return { expiredCommittees: expired, mandateWarnings, cadenceWarnings, overdueActivities, notifiedUsers: 0, preventiveOrganization, errors }
   }
 
   const committeeIds = committees.map((row) => row.id)
@@ -187,6 +198,7 @@ export async function runPreventionCphsReminders(): Promise<CphsReminderResult> 
     cadenceWarnings,
     overdueActivities,
     notifiedUsers: notified.size,
+    preventiveOrganization,
     errors
   }
 }

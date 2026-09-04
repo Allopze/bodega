@@ -17,6 +17,7 @@ import {
   EMERGENCY_PLAN_STATUS_LABELS,
   EMERGENCY_RESOURCE_STATUS_LABELS,
   EMERGENCY_SCENARIO_TYPE_LABELS,
+  emergencyScenarioTypeLabel,
   emergencyPlanStatusBadgeVariant,
 } from "@/lib/prevention/emergency"
 import { formatDateTime } from "@/lib/utils"
@@ -166,7 +167,7 @@ export function PlanDetail({
               <TableBody>
                 {scenarios.map((scenario) => (
                   <TableRow key={scenario.id}>
-                    <TableCell className="text-sm">{EMERGENCY_SCENARIO_TYPE_LABELS[scenario.type] ?? scenario.type}</TableCell>
+                    <TableCell className="text-sm">{emergencyScenarioTypeLabel(scenario.type)}</TableCell>
                     <TableCell className="text-sm font-medium">{scenario.title}</TableCell>
                     <TableCell className="max-w-md text-sm text-[var(--color-text-subtle)]">{scenario.responseProcedure}</TableCell>
                   </TableRow>
@@ -312,7 +313,7 @@ export function PlanDetail({
               <TableBody>
                 {drills.map((drill) => (
                   <TableRow key={drill.id}>
-                    <TableCell className="text-sm">{EMERGENCY_SCENARIO_TYPE_LABELS[drill.scenarioType] ?? drill.scenarioType}</TableCell>
+                    <TableCell className="text-sm">{emergencyScenarioTypeLabel(drill.scenarioType)}</TableCell>
                     <TableCell className="text-sm tabular-nums">{formatDateTime(drill.scheduledFor)}</TableCell>
                     <TableCell>
                       <Badge variant={drill.status === "completed" ? "success" : drill.status === "cancelled" ? "outline" : "default"}>
@@ -375,7 +376,7 @@ function AddScenarioDialog({ planId }: { planId: string }) {
             <DialogDescription>Cada escenario declara su propio procedimiento de respuesta.</DialogDescription>
           </DialogHeader>
           <Field label="Tipo">
-            <Select value={type} onValueChange={setType}><SelectTrigger><SelectValue placeholder="Selecciona un tipo" /></SelectTrigger><SelectContent>{SCENARIO_TYPES.map((t) => <SelectItem key={t} value={t}>{EMERGENCY_SCENARIO_TYPE_LABELS[t]}</SelectItem>)}</SelectContent></Select><input type="hidden" name="type" value={type} />
+            <Select value={type} onValueChange={setType}><SelectTrigger><SelectValue placeholder="Selecciona un tipo" /></SelectTrigger><SelectContent>{SCENARIO_TYPES.map((t) => <SelectItem key={t} value={t}>{emergencyScenarioTypeLabel(t)}</SelectItem>)}</SelectContent></Select><input type="hidden" name="type" value={type} />
           </Field>
           <Field label="Título"><Input name="title" required minLength={3} maxLength={200} /></Field>
           <Field label="Descripción" hint="Opcional."><Textarea name="description" maxLength={3000} /></Field>
@@ -740,7 +741,7 @@ function ScheduleDrillDialog({ planId }: { planId: string }) {
             <DialogDescription>Sólo un plan aprobado puede programar simulacros.</DialogDescription>
           </DialogHeader>
           <Field label="Escenario">
-            <Select value={scenarioType} onValueChange={setScenarioType}><SelectTrigger><SelectValue placeholder="Selecciona un tipo" /></SelectTrigger><SelectContent>{SCENARIO_TYPES.map((t) => <SelectItem key={t} value={t}>{EMERGENCY_SCENARIO_TYPE_LABELS[t]}</SelectItem>)}</SelectContent></Select><input type="hidden" name="scenarioType" value={scenarioType} />
+            <Select value={scenarioType} onValueChange={setScenarioType}><SelectTrigger><SelectValue placeholder="Selecciona un tipo" /></SelectTrigger><SelectContent>{SCENARIO_TYPES.map((t) => <SelectItem key={t} value={t}>{emergencyScenarioTypeLabel(t)}</SelectItem>)}</SelectContent></Select><input type="hidden" name="scenarioType" value={scenarioType} />
           </Field>
           <Field label="Fecha y hora"><Input name="scheduledFor" type="datetime-local" required defaultValue={defaultValue} /></Field>
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}

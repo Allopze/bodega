@@ -38,10 +38,12 @@ import {
   preventionCampaigns,
   preventionEmergencyPlans,
   preventionInspectionTemplates,
+  pdtpProgramWorksites,
   preventionTrainingCourses,
   rolePermissions,
   roles,
   sstDocumentTypes,
+  worksites,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
@@ -52,6 +54,7 @@ import {
   type AccreditationResult,
   type RevocationInput,
 } from "./accreditation"
+import { engancheDestinationFor } from "@/lib/services/pdtp-adapters/fulfillment-contract-2026"
 
 type QueryClient = DB | Tx
 
@@ -290,7 +293,7 @@ export type PdtpFulfillmentTarget = {
  * y produce el 404 de `/prevencion/constancias`. Único lugar que debe decidir
  * esto; `/pendientes`, el tablero y la planilla consumen esta respuesta.
  */
-export function resolvePdtpFulfillmentTarget(activity: { mechanism: string }, worksiteId: string): PdtpFulfillmentTarget {
+export function resolvePdtpFulfillmentTarget(activity: { mechanism: string; n?: number }, worksiteId: string): PdtpFulfillmentTarget {
   if (activity.mechanism === "constancia") {
     return {
       module: "constancias",
@@ -300,6 +303,17 @@ export function resolvePdtpFulfillmentTarget(activity: { mechanism: string }, wo
     }
   }
   if (activity.mechanism === "enganche") {
+    // Con el contrato de cumplimiento se manda al módulo donde el trabajo se
+    // hace de verdad, en vez de devolver a todo el mundo a la planilla.
+    const destination = activity.n === undefined ? null : engancheDestinationFor(activity.n)
+    if (destination && destination.module !== "pdtp") {
+      return {
+        module: destination.module,
+        href: destination.href(worksiteId),
+        ctaLabel: "Ir a cumplirla",
+        event: "registro del módulo de origen",
+      }
+    }
     return {
       module: "pdtp",
       href: `/prevencion/pdtp/actividades?faena=${worksiteId}&vista=semana`,
@@ -317,7 +331,22 @@ export function resolvePdtpFulfillmentTarget(activity: { mechanism: string }, wo
 
 // ── Compuerta 81/81 ──────────────────────────────────────────────────────
 
-export type PdtpFulfillmentCoverageStatus = "ready" | "config_required" | "code_gap" | "permission_gap" | "decision_required"
+export type PdtpFulfillmentCoverageStatus =
+  | "ready"
+  | "config_required"
+  | "code_gap"
+  | "permission_gap"
+  | "decision_required"
+  /**
+   * El destino de una actividad de enganche declara un permiso que ninguno de
+   * sus responsables tiene. **No bloquea**, y no es un descuido: buena parte de
+   * estos casos son segregación de deberes, no errores de RBAC —quien redacta
+   * el plan de emergencia no es quien lo firma—. Se reporta para que una
+   * persona revise la lista y decida cuáles son grants faltantes y cuáles son
+   * la norma funcionando. Promoverlo a bloqueante antes de esa revisión es
+   * repetir el episodio de la N°84.
+   */
+  | "destination_review"
 
 export type PdtpFulfillmentCoverageIssue = {
   n: number
@@ -327,23 +356,33 @@ export type PdtpFulfillmentCoverageIssue = {
 }
 
 /**
- * Actividades con conector de acreditación construido en código, sin que su
- * número aparezca declarado en ninguna tabla de configuración (courses,
- * templates, campañas, planes, tipos de documento). Se mantiene a mano porque
- * no hay un registro único de "qué número acredita cada conector" — es la
- * misma razón por la que el diagnóstico de agosto tuvo que auditarse actividad
- * por actividad. Actualizarla es el costo de agregar un conector nuevo.
+ * Actividades cuyo número está **fijo en el código de un conector**, y que por
+ * eso no aparecen —ni tienen por qué aparecer— en ninguna tabla de
+ * configuración.
+ *
+ * El criterio es literal y no admite parientes: el número es una constante en
+ * el conector. Que un conector *reciba* el número no basta. La N°36, la N°43 y
+ * la N°84 estuvieron acá por esa confusión —sus números vienen de
+ * `sst_document_types` y de `prevention_emergency_plans`— y estar en la lista
+ * las eximía justo de la verificación que les correspondía: la compuerta las
+ * daba por listas con las dos tablas vacías. La N°83 sí pertenece:
+ * `PDTP_EMERGENCY_PLAN_ACTIVITY_NUMBER` es una constante del conector.
+ *
+ * Se mantiene a mano porque no hay un registro único de "qué número acredita
+ * cada conector" — es la misma razón por la que el diagnóstico de agosto tuvo
+ * que auditarse actividad por actividad. Actualizarla es el costo de agregar un
+ * conector nuevo.
  */
 const STRUCTURALLY_WIRED_ACTIVITY_NUMBERS = new Set([
   1, 9, 11,           // programa, revisión por la dirección, CPHS
   7,                  // indicadores de faena (Fase 4.1)
   15, 18, 19, 23, 52, 63, // acta de trabajador nuevo (la N°19 es la carpeta, T47)
+  17,                 // RE-28 de personas sensibles (worker-sensitivity-connector)
   35,                 // MIPER
-  36, 43,             // documentación SST
   45, 46, 47, 48, 49, 50, // higiene y vigilancia
   62,                 // entrega de EPP
   66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, // incidentes RE-20
-  83, 84,             // emergencias
+  83,                 // plan de emergencia aprobado (la N°84 la declara el plan)
   30, 31, 32,         // alcotest (G14, prevention-alcotest.ts)
   79, 80, 81,         // CGRD del DS 44 (G15, prevention-cgrd.ts)
 ])
@@ -396,19 +435,122 @@ function destinationPermissionFor(mechanism: string): string | null {
   return null
 }
 
-async function activityNumbersDeclaredInConfig(client: QueryClient): Promise<Set<number>> {
-  const [templates, courses, campaigns, plans, docTypes] = await Promise.all([
+/**
+ * El permiso del acto que acredita una actividad de enganche, según el contrato
+ * de cumplimiento 2026. `null` cuando no hay módulo de destino, cuando la
+ * actividad no está en el mapa, o cuando su cumplimiento está segregado a
+ * propósito del responsable declarado.
+ */
+function engancheDestinationPermissionFor(n: number): { permission: string; module: string } | null {
+  const destination = engancheDestinationFor(n)
+  if (!destination || !destination.permission || destination.segregated) return null
+  return { permission: destination.permission, module: destination.module }
+}
+
+/**
+ * Números declarados en catálogos **globales**: una plantilla, un curso o un
+ * tipo de documento vale para todo el programa.
+ *
+ * Los dos arreglos de `sst_document_types` se unen a propósito: uno acredita al
+ * publicar y el otro por acuse de recibo, pero para "¿tiene destino declarado?"
+ * cualquiera de los dos sirve.
+ */
+async function activityNumbersDeclaredGlobally(client: QueryClient): Promise<Set<number>> {
+  const [templates, courses, docTypes] = await Promise.all([
     client.select({ n: preventionInspectionTemplates.pdtpActivityNumbers }).from(preventionInspectionTemplates),
     client.select({ n: preventionTrainingCourses.pdtpActivityNumbers }).from(preventionTrainingCourses),
-    client.select({ n: preventionCampaigns.pdtpActivityNumbers }).from(preventionCampaigns),
-    client.select({ n: preventionEmergencyPlans.pdtpActivityNumbers }).from(preventionEmergencyPlans),
-    client.select({ n: sstDocumentTypes.pdtpActivityNumbers }).from(sstDocumentTypes),
+    client.select({
+      n: sstDocumentTypes.pdtpActivityNumbers,
+      ack: sstDocumentTypes.pdtpAcknowledgmentActivityNumbers,
+    }).from(sstDocumentTypes),
   ])
   const set = new Set<number>()
-  for (const rows of [templates, courses, campaigns, plans, docTypes]) {
-    for (const row of rows) for (const n of (row.n as number[] | null) ?? []) set.add(n)
+  for (const row of templates) for (const n of (row.n as number[] | null) ?? []) set.add(n)
+  for (const row of courses) for (const n of (row.n as number[] | null) ?? []) set.add(n)
+  for (const row of docTypes) {
+    for (const n of (row.n as number[] | null) ?? []) set.add(n)
+    for (const n of (row.ack as number[] | null) ?? []) set.add(n)
   }
   return set
+}
+
+/**
+ * Números declarados en registros que existen **por faena**: los planes de
+ * emergencia y las campañas.
+ *
+ * Se cuentan aparte porque un solo plan en una faena no acredita nada en las
+ * otras seis. Antes las cinco tablas se leían juntas y globalmente, así que un
+ * plan en cualquier parte daba la N°84 por resuelta en todo el programa —
+ * exactamente la respuesta que impedía que el informe dijera "no hay plan en la
+ * faena X", que es lo único accionable.
+ */
+async function activityNumbersDeclaredPerWorksite(client: QueryClient): Promise<Map<number, Set<string>>> {
+  const [campaigns, plans] = await Promise.all([
+    client.select({ n: preventionCampaigns.pdtpActivityNumbers, worksiteId: preventionCampaigns.worksiteId }).from(preventionCampaigns),
+    client.select({ n: preventionEmergencyPlans.pdtpActivityNumbers, worksiteId: preventionEmergencyPlans.worksiteId }).from(preventionEmergencyPlans),
+  ])
+  const byNumber = new Map<number, Set<string>>()
+  for (const rows of [campaigns, plans]) {
+    for (const row of rows) {
+      for (const n of (row.n as number[] | null) ?? []) {
+        const set = byNumber.get(n) ?? new Set<string>()
+        set.add(row.worksiteId)
+        byNumber.set(n, set)
+      }
+    }
+  }
+  return byNumber
+}
+
+/**
+ * Faenas contra las que se exige la declaración por faena: las miembros del
+ * programa, o todas las activas cuando el programa no declara membresía —que es
+ * el mismo criterio con que el motor decide si una faena puede operarlo.
+ */
+async function programWorksiteIds(client: QueryClient, programId: string): Promise<string[]> {
+  const members = await client.select({ worksiteId: pdtpProgramWorksites.worksiteId })
+    .from(pdtpProgramWorksites)
+    .where(and(eq(pdtpProgramWorksites.programId, programId), eq(pdtpProgramWorksites.isActive, true)))
+  if (members.length > 0) return members.map((row) => row.worksiteId)
+  const active = await client.select({ id: worksites.id }).from(worksites).where(eq(worksites.isActive, true))
+  return active.map((row) => row.id)
+}
+
+/**
+ * Por qué una actividad de enganche o compuesta no tiene destino declarado, si
+ * es que no lo tiene.
+ *
+ * Un número respaldado sólo por una tabla **por faena** está cableado si y sólo
+ * si **todas** las faenas del programa lo declaran: prometer simulacros en siete
+ * faenas y tener el plan en una es tener seis faenas sin dónde cumplir.
+ */
+function wiringIssueFor(
+  activity: { n: number; activity: string },
+  ctx: {
+    declaredGlobally: Set<number>
+    declaredPerWorksite: Map<number, Set<string>>
+    worksiteIds: string[]
+    worksiteNameById: Map<string, string>
+  },
+): PdtpFulfillmentCoverageIssue | null {
+  if (STRUCTURALLY_WIRED_ACTIVITY_NUMBERS.has(activity.n)) return null
+  if (ctx.declaredGlobally.has(activity.n)) return null
+
+  const declaringWorksites = ctx.declaredPerWorksite.get(activity.n)
+  if (declaringWorksites) {
+    const missing = ctx.worksiteIds.filter((id) => !declaringWorksites.has(id))
+    if (missing.length === 0) return null
+    const names = missing.map((id) => ctx.worksiteNameById.get(id) ?? id)
+    return {
+      n: activity.n, activity: activity.activity, status: "config_required",
+      reason: `Su número no está declarado en ${missing.length} de las ${ctx.worksiteIds.length} faenas del programa: ${names.join(", ")}.`,
+    }
+  }
+
+  return {
+    n: activity.n, activity: activity.activity, status: "config_required",
+    reason: "Su número no está declarado en ninguna plantilla, curso, campaña, plan o tipo de documento.",
+  }
 }
 
 /**
@@ -425,7 +567,12 @@ export async function assertPdtpFulfillmentCoverage(programId: string, client: Q
     .where(and(eq(pdtpActivities.programId, programId), eq(pdtpActivities.status, "active")))
   if (activities.length === 0) return []
 
-  const declaredInConfig = await activityNumbersDeclaredInConfig(client)
+  const declaredGlobally = await activityNumbersDeclaredGlobally(client)
+  const declaredPerWorksite = await activityNumbersDeclaredPerWorksite(client)
+  const worksiteIds = await programWorksiteIds(client, programId)
+  const worksiteNameById = new Map(
+    (await client.select({ id: worksites.id, name: worksites.name }).from(worksites)).map((row) => [row.id, row.name]),
+  )
   const responsibleRows = await client.select().from(pdtpResponsibleCatalog)
   const roleBySlug = new Map(responsibleRows.map((row) => [row.slug, row.roleName ?? row.operatedByRoleName]))
   const permissionsByRole = await permissionsByRoleName(client)
@@ -465,12 +612,33 @@ export async function assertPdtpFulfillmentCoverage(programId: string, client: Q
       continue
     }
 
+    // `compuesta` entra en la verificación de cableado igual que `enganche`.
+    // La exención que tenía estaba razonada para el chequeo de PERMISO —nadie
+    // la ejecuta, se cumple cuando sus componentes cierran— y se arrastró hasta
+    // acá, donde no aplica: una compuesta sin ningún componente que la acredite
+    // no se cumple sola, no se cumple nunca. Es lo que dejaba pasar a la N°16 y
+    // la N°17.
+    if (activity.mechanism === "enganche" || activity.mechanism === "compuesta") {
+      const issue = wiringIssueFor(activity, {
+        declaredGlobally, declaredPerWorksite, worksiteIds, worksiteNameById,
+      })
+      if (issue) {
+        issues.push(issue)
+        continue
+      }
+    }
+
+    // Enganche con destino conocido: se **reporta**, no se bloquea. El mapa es
+    // nuevo y buena parte de lo que encuentra es segregación de deberes —quien
+    // redacta el plan de emergencia no es quien lo firma—, no grants que
+    // falten. Va después de la verificación de cableado: una actividad sin
+    // destino declarado ya salió como `config_required` y repetirlo sería ruido.
     if (activity.mechanism === "enganche") {
-      const wired = STRUCTURALLY_WIRED_ACTIVITY_NUMBERS.has(activity.n) || declaredInConfig.has(activity.n)
-      if (!wired) {
+      const destination = engancheDestinationPermissionFor(activity.n)
+      if (destination && !roles.some((role) => permissionsByRole.get(role)?.has(destination.permission))) {
         issues.push({
-          n: activity.n, activity: activity.activity, status: "config_required",
-          reason: "Es enganche y su número no está declarado en ninguna plantilla, curso, campaña, plan o tipo de documento.",
+          n: activity.n, activity: activity.activity, status: "destination_review",
+          reason: `Se cumple en ${destination.module} y ninguno de sus responsables (${roles.join(", ")}) tiene ${destination.permission}.`,
         })
         continue
       }

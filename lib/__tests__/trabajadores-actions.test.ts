@@ -10,6 +10,11 @@ const mockFindFirstWorker = vi.hoisted(() => vi.fn())
 const mockInsert = vi.hoisted(() => vi.fn())
 const mockUpdate = vi.hoisted(() => vi.fn())
 const mockRecordAudit = vi.hoisted(() => vi.fn())
+const mockInsertWorker = vi.hoisted(() => vi.fn())
+const mockUpdateWorkerFields = vi.hoisted(() => vi.fn())
+const mockSetWorkerActive = vi.hoisted(() => vi.fn())
+const mockOnWorkerEnteredDotacion = vi.hoisted(() => vi.fn())
+const mockEvaluateWorksitePreventiveOrganization = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: mockRequirePermission,
@@ -23,6 +28,23 @@ vi.mock("@/db", () => ({
     insert: mockInsert,
     update: mockUpdate,
   },
+}))
+// La persistencia se mockea en su servicio y no como un ORM de mentira sobre
+// `@/db`: lo que esta suite verifica es el trabajo de la action —permiso,
+// alcance, validación y auditoría—, no cómo escribe Drizzle. El doble anterior
+// se rompía cada vez que el servicio agregaba una consulta, y la falla parecía
+// un bug del código nuevo.
+vi.mock("@/lib/services/workers", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/services/workers")>()),
+  insertWorker: mockInsertWorker,
+  updateWorkerFields: mockUpdateWorkerFields,
+  setWorkerActive: mockSetWorkerActive,
+}))
+vi.mock("@/lib/services/pdtp-adapters/worker-lifecycle-connector", () => ({
+  onWorkerEnteredDotacion: mockOnWorkerEnteredDotacion,
+}))
+vi.mock("@/lib/services/pdtp-adapters/preventive-organization-connector", () => ({
+  evaluateWorksitePreventiveOrganization: mockEvaluateWorksitePreventiveOrganization,
 }))
 vi.mock("@/lib/audit", () => ({
   recordAudit: mockRecordAudit,
@@ -65,6 +87,12 @@ function setupDbMocks() {
   const setFn = vi.fn().mockReturnValue(setChain)
   mockInsert.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) })
   mockUpdate.mockReturnValue({ set: setFn })
+  const written = { worker: { id: "w-1", worksiteId: "ws-1", isActive: true }, events: [] }
+  mockInsertWorker.mockResolvedValue(written)
+  mockUpdateWorkerFields.mockResolvedValue(written)
+  mockSetWorkerActive.mockResolvedValue(written)
+  mockOnWorkerEnteredDotacion.mockResolvedValue(undefined)
+  mockEvaluateWorksitePreventiveOrganization.mockResolvedValue(undefined)
 }
 
 describe("createWorker", () => {

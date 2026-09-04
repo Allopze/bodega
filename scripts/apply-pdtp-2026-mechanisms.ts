@@ -56,6 +56,8 @@ const ENGANCHE = [
   7,           // ingreso de indicadores de la faena
   9,           // revisión por la dirección
   11,          // constituir el comité paritario
+  16,          // prueba de evaluación IRL → sesión del curso PDTP-16 aprobada
+  17,          // RE-28 de personas sensibles → acta `identificacion_sensibles`
   19,          // carpeta de requisitos legales → Documentación SST
   // Verificación de condiciones ambientales DS 594: sin anexo/formulario
   // fuente, así que el checklist se escribió directo desde la ley (D11,
@@ -126,10 +128,20 @@ const CONSTANCIA = [
   82,          // mapa de riesgo por área
 ] as const
 
-/** 🧩 Compuesta — se cumple cuando sus componentes están completos. */
+/**
+ * 🧩 Compuesta — se cumple cuando sus componentes están completos.
+ *
+ * La **N°16** salió de acá el 2026-09-03: la acredita el cierre de una sesión
+ * del curso `PDTP-16`, con la evaluación aprobada, así que es un enganche
+ * corriente y no una composición de otras actividades. Ver `ENGANCHE`.
+ *
+ * La **N°17** también, por el camino contrario: tiene instrumento propio desde
+ * que se escribió el RE-28 (`identificacion_sensibles`), y lo acredita cerrar
+ * su acta.
+ */
 const COMPUESTA = [
-  15, 16, 17, 18, 23,  // registros de Habilitación del trabajador
-  52,                  // la inducción completa: se cierra con sus componentes
+  15, 18, 23,  // registros de Habilitación del trabajador
+  52,          // la inducción completa: se cierra con sus componentes
 ] as const
 
 /**

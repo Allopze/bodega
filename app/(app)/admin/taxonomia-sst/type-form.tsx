@@ -165,6 +165,26 @@ export function TypeForm({ open, onClose, editType, categorySlug }: TypeFormProp
                 defaultChecked={editType?.requiresAcknowledgment ?? false}
                 label="Requiere acuse de recibo del trabajador"
               />
+              {/* Dos campos y no uno: publicar una versión y acusar recibo son
+                  hechos distintos del programa. Un tipo de difusión que
+                  declarara su número en el campo de publicación acreditaría al
+                  publicar, sin que nadie hubiera acusado nada. */}
+              <Field label="Actividades PDTP al publicar" htmlFor="type-pdtp-publish" hint="Números separados por coma. Se acreditan al publicar una versión vigente.">
+                <Input
+                  id="type-pdtp-publish"
+                  name="pdtpActivityNumbers"
+                  defaultValue={(editType?.pdtpActivityNumbers ?? []).join(", ")}
+                  placeholder="43"
+                />
+              </Field>
+              <Field label="Actividades PDTP por acuse de recibo" htmlFor="type-pdtp-ack" hint="Se acreditan una vez por cada acuse, no al publicar. Es la forma de medir difusión por cobertura.">
+                <Input
+                  id="type-pdtp-ack"
+                  name="pdtpAcknowledgmentActivityNumbers"
+                  defaultValue={(editType?.pdtpAcknowledgmentActivityNumbers ?? []).join(", ")}
+                  placeholder="36"
+                />
+              </Field>
               <Checkbox
                 id="type-active"
                 name="isActive"

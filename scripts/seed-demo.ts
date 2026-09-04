@@ -784,7 +784,7 @@ async function main() {
       id: id("drill"),
       planId: plan.id,
       worksiteId: pick(worksites).id,
-      scenarioType: pick(["incendio", "derrame", "sismo", "rescate", "fuga"] as const),
+      scenarioType: pick(["incendio_estructural", "derrame", "sismo", "rescate", "fuga"] as const),
       scheduledFor: day(daysAgo(d)),
       status: ejecutado ? "completed" : "scheduled",
       executedAt: ejecutado ? iso(daysAgo(d)) : null,

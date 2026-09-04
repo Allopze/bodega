@@ -138,7 +138,7 @@ export async function closeEvaluationAction(
 
   let evaluation: SstEvaluation
   try {
-    evaluation = await closeEvaluation(id, input, worksiteIds)
+    evaluation = await closeEvaluation(id, input, worksiteIds, session.user.id)
     revalidatePath(REVALIDATE)
     revalidatePath(`${REVALIDATE}/${id}`)
   } catch (e) {

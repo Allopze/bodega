@@ -66,6 +66,11 @@ const COURSES: Array<{
   validityMonths?: number
 }> = [
   { code: "B-01", name: "Manejo a la defensiva", n: 56, kind: "practical_training", minutes: 480, validityMonths: 24 },
+  // N°16. No hacía falta ningún conector nuevo: `closeTrainingSession` ya cuenta
+  // como acreditados a los asistentes con evaluación aprobada, que es
+  // literalmente "rindió y pasó la prueba de la inducción IRL". Lo único que
+  // faltaba era la fila del curso.
+  { code: "PDTP-16", name: "Prueba de evaluación de la inducción IRL", n: 16, kind: "practical_training", minutes: 60 },
   { code: "PDTP-37", name: "Charla de seguridad (Prevencionista de faena)", n: 37, kind: "operational_talk", minutes: 30 },
   { code: "PDTP-38", name: "Charla de seguridad por turno (Supervisor / Jefe de terreno)", n: 38, kind: "operational_talk", minutes: 30 },
   { code: "PDTP-51", name: "Capacitación según detección de necesidades", n: 51, kind: "practical_training", minutes: 240 },
@@ -187,11 +192,21 @@ async function applyDrillPlans(): Promise<number> {
     numbers: preventionEmergencyPlans.pdtpActivityNumbers,
   }).from(preventionEmergencyPlans)
 
-  if (plans.length === 0) {
-    console.log("  ⚠ No hay ningún plan de emergencia cargado. Un plan lleva amenazas y escenarios:")
-    console.log("    lo redacta Prevención, no este script. Reejecutar cuando existan.")
-    return 0
+  // La cobertura se mide **por faena**, no globalmente: un plan en una faena no
+  // acredita nada en las otras seis, y decir "hay planes" cuando faltan cinco es
+  // exactamente el aviso que nadie acciona.
+  const activeWorksites = await db.select({ id: worksites.id, name: worksites.name })
+    .from(worksites).where(eq(worksites.isActive, true))
+  const worksitesWithPlan = new Set(plans.map((plan) => plan.worksiteId))
+  const missing = activeWorksites.filter((worksite) => !worksitesWithPlan.has(worksite.id))
+  if (missing.length > 0) {
+    console.log(`  ⚠ ${missing.length} de ${activeWorksites.length} faena(s) sin plan de emergencia:`)
+    for (const worksite of missing) console.log(`      · ${worksite.name}`)
+    console.log("    Un plan lleva amenazas y escenarios: lo redacta Prevención, no este script.")
+    console.log("    Sin plan, ni la N°83 (aprobar el plan) ni la N°84 (simulacro) pueden acreditar en esa faena.")
   }
+
+  if (plans.length === 0) return 0
 
   let changes = 0
   for (const plan of plans) {
@@ -318,9 +333,9 @@ async function main() {
 
   console.log("")
   console.log(`Resumen: ${courses} curso(s), ${plans} plan(es), ${campaigns} campaña(s) y ${operated} responsable(s).`)
-  if (plans === 0) {
-    console.log("Nota: la N°84 sigue sin declarar hasta que exista al menos un plan de emergencia.")
-  }
+  // `plans` cuenta CAMBIOS, no planes: cero significa "nada que corregir", que
+  // es el caso normal una vez que `seed-emergency-plans` los dejó declarados.
+  // El aviso de faenas sin plan lo da `applyDrillPlans`, por nombre.
   process.exit(0)
 }
 

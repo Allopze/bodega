@@ -31,6 +31,17 @@ function readFormBool(form: FormData, key: string, fallback: boolean): boolean {
   return raw === "on" || raw === "true" || raw === "1"
 }
 
+/**
+ * "43" o "36, 43" → [43] / [36, 43]. Vacío es "no acredita nada", que es el
+ * caso de casi todos los tipos documentales.
+ */
+function readActivityNumbers(formData: FormData, field: string): number[] {
+  const raw = (formData.get(field) as string | null)?.trim()
+  if (!raw) return []
+  return [...new Set(raw.split(/[\s,]+/).map((part) => Number.parseInt(part, 10)).filter((n) => Number.isInteger(n) && n > 0))]
+    .sort((a, b) => a - b)
+}
+
 export async function saveDocumentCategoryAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
   try {
@@ -104,6 +115,8 @@ export async function saveDocumentTypeAction(_prev: ActionState, formData: FormD
       defaultValidityMonths,
       requiresApproval: readFormBool(formData, "requiresApproval", true),
       requiresAcknowledgment: readFormBool(formData, "requiresAcknowledgment", false),
+      pdtpActivityNumbers: readActivityNumbers(formData, "pdtpActivityNumbers"),
+      pdtpAcknowledgmentActivityNumbers: readActivityNumbers(formData, "pdtpAcknowledgmentActivityNumbers"),
       isActive: readFormBool(formData, "isActive", true),
     })
     if (!row) return errorState("El tipo no se pudo guardar")

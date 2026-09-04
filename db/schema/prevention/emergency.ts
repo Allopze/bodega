@@ -48,7 +48,7 @@ export const preventionEmergencyScenarios = pgTable("prevention_emergency_scenar
   createdAt:         timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   index("prevention_emergency_scenario_plan_idx").on(table.planId),
-  check("prevention_emergency_scenario_type_valid", sql`${table.type} IN ('incendio', 'derrame', 'fuga', 'volcamiento', 'exposicion', 'rescate', 'sismo', 'clima', 'otro')`),
+  check("prevention_emergency_scenario_type_valid", sql`${table.type} IN ('sismo', 'tsunami', 'aluvion', 'incendio_estructural', 'incendio_forestal', 'asalto_robo', 'erupcion_volcanica', 'inundacion_lluvia', 'inundacion_cauce', 'nevada', 'marejada', 'corte_energia', 'corte_agua', 'desorden_publico', 'otra_amenaza', 'derrame', 'fuga', 'volcamiento', 'exposicion', 'rescate')`),
 ])
 
 /* ── Organigrama de emergencia ─────────────────────────────────────────────
@@ -247,7 +247,7 @@ export const preventionEmergencyDrills = pgTable("prevention_emergency_drills", 
   updatedAt:         timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   index("prevention_emergency_drill_plan_idx").on(table.planId, table.scheduledFor),
-  check("prevention_emergency_drill_scenario_type_valid", sql`${table.scenarioType} IN ('incendio', 'derrame', 'fuga', 'volcamiento', 'exposicion', 'rescate', 'sismo', 'clima', 'otro')`),
+  check("prevention_emergency_drill_scenario_type_valid", sql`${table.scenarioType} IN ('sismo', 'tsunami', 'aluvion', 'incendio_estructural', 'incendio_forestal', 'asalto_robo', 'erupcion_volcanica', 'inundacion_lluvia', 'inundacion_cauce', 'nevada', 'marejada', 'corte_energia', 'corte_agua', 'desorden_publico', 'otra_amenaza', 'derrame', 'fuga', 'volcamiento', 'exposicion', 'rescate')`),
   check("prevention_emergency_drill_status_valid", sql`${table.status} IN ('scheduled', 'completed', 'cancelled')`),
   check("prevention_emergency_drill_outcome_valid", sql`${table.outcome} IS NULL OR ${table.outcome} IN ('satisfactory', 'needs_improvement')`),
   check("prevention_emergency_drill_completed_consistent", sql`${table.status} <> 'completed' OR (${table.executedAt} IS NOT NULL AND ${table.outcome} IS NOT NULL)`),

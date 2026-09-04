@@ -13,6 +13,7 @@ import {
   getUserIdsWithPermissionForWorksite,
 } from "@/lib/services/notifications"
 import { expireLapsedCompetencies } from "@/lib/services/prevention-training"
+import { sweepCompetencyGapObligations } from "@/lib/services/pdtp-adapters/competency-gap-connector"
 import { todayInChile } from "@/lib/utils"
 
 export interface TrainingReminderResult {
@@ -20,6 +21,11 @@ export interface TrainingReminderResult {
   expiringSoon: number
   blockingGaps: number
   notifiedUsers: number
+  /**
+   * Obligaciones del PDTP abiertas por brecha de competencia (la N°57 y
+   * cualquier otra actividad a demanda que un curso acredite).
+   */
+  competencyObligations: { gaps: number; opened: number; alreadyOpen: number; skipped: number; errors: number }
   /** Entidades omitidas por error, para que una corrida degradada sea visible. */
   errors: number
 }
@@ -51,6 +57,10 @@ export async function runPreventionTrainingReminders(): Promise<TrainingReminder
   const notified = new Set<string>()
 
   const { expired } = await expireLapsedCompetencies()
+
+  // Después de caducar lo que caducó: la brecha se evalúa contra esa verdad, o
+  // una competencia vencida hoy no abriría su compromiso hasta mañana.
+  const competencyObligations = await sweepCompetencyGapObligations()
 
   // Una faena se repite en muchas filas: resolver sus gestores una sola vez
   // evita un N+1 de permisos dentro de los bucles de notificación.
@@ -160,6 +170,7 @@ export async function runPreventionTrainingReminders(): Promise<TrainingReminder
   }
 
   return {
+    competencyObligations,
     expiredCompetencies: expired,
     expiringSoon: expiring.length,
     blockingGaps: blocking.length,

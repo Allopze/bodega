@@ -17,7 +17,7 @@ import {
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
-import { assessDrillCompletion, assessPlanReadiness } from "@/lib/prevention/emergency"
+import { assessDrillCompletion, assessPlanReadiness, EMERGENCY_SCENARIO_TYPES } from "@/lib/prevention/emergency"
 import type { EmergencyQuickFilter } from "@/lib/prevention/emergency-list-filters"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { onEmergencyDrillCompleted, onEmergencyPlanApproved } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
@@ -179,7 +179,7 @@ async function loadEditablePlan(tx: Tx, planId: string, access: EmergencyAccess)
 
 const scenarioSchema = z.object({
   planId: z.string().min(1),
-  type: z.enum(["incendio", "derrame", "fuga", "volcamiento", "exposicion", "rescate", "sismo", "clima", "otro"]),
+  type: z.enum(EMERGENCY_SCENARIO_TYPES),
   title: z.string().trim().min(3).max(200),
   description: z.string().trim().max(3000).nullable().optional(),
   responseProcedure: z.string().trim().min(10).max(10_000),
@@ -526,7 +526,7 @@ const FUTURE_CLOCK_SKEW_MS = 5 * 60 * 1000
 
 const scheduleDrillSchema = z.object({
   planId: z.string().min(1),
-  scenarioType: z.enum(["incendio", "derrame", "fuga", "volcamiento", "exposicion", "rescate", "sismo", "clima", "otro"]),
+  scenarioType: z.enum(EMERGENCY_SCENARIO_TYPES),
   scheduledFor: z.string().datetime({ offset: true }),
 })
 

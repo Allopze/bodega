@@ -514,24 +514,29 @@ export async function onSafetyIndicatorPeriodClosed(input: {
 }
 
 /**
- * Revierte la N°7 cuando un período cerrado se reabre. Escrita para cerrar el
- * par acreditar/revertir, pero **todavía no está cableada**: `reopenClosedPeriod`
- * se llama desde dentro de transacciones abiertas en tres puntos distintos
- * (`invalidateClosedIndicatorPeriodWithClient`, `upsertSafetyIndicatorDenominator`,
- * y el propio caller en `prevention-incidents.ts`), y esta función —como
- * `safeAccredit`— necesita correr después del commit con su propia conexión.
- * Enhebrar eso a través de los tres puntos sin arriesgar el mismo deadlock que
- * ya apareció una vez en esta fase (dos transacciones esperándose por la única
- * conexión de PGlite) exige más que este cambio. Queda declarada y sin usar,
- * documentada en `tasks/TODO_PDTP_ACREDITACION_2026-09-01.md`.
+ * Revierte la N°7 cuando un período cerrado se reabre.
+ *
+ * **El `snapshotId` es obligatorio y no es un detalle.** La revocación busca la
+ * ejecución por `sourceType` y `sourceId` exactos, y el cierre la selló con
+ * `indicadores:${snapshotId}`. Esta función estuvo escrita —y sin cablear—
+ * usando el `worksiteId` en su lugar: conectada así habría revocado **cero**
+ * ejecuciones y habría dejado un evento `revoked` en el libro afirmando algo
+ * que no ocurrió. Un par acreditar/revertir que no comparte clave no es un par.
+ *
+ * Se dispara después del commit, con el patrón acumulador: `reopenClosedPeriod`
+ * devuelve qué hay que revocar y no revoca nada por su cuenta, porque corre
+ * dentro de la transacción de quien la llama y esta función abre la suya.
  */
 export async function onSafetyIndicatorPeriodReopened(input: {
   worksiteId: string
+  snapshotId: string
+  year: number
+  month: number
   reason: string
 }): Promise<void> {
   await recordPdtpFulfillmentRevocation({
     sourceType: "indicadores",
-    sourceId: `indicadores:${input.worksiteId}`,
+    sourceId: `indicadores:${input.snapshotId}`,
     worksiteId: input.worksiteId,
     reason: input.reason,
   })

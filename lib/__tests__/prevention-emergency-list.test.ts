@@ -77,7 +77,7 @@ function drill(id: string, overrides: Partial<typeof schema.preventionEmergencyD
     id: `emergency-list-${id}`,
     planId: "emergency-list-approved",
     worksiteId: "ws-emergency-list",
-    scenarioType: "incendio",
+    scenarioType: "incendio_estructural",
     scheduledFor: "2026-08-01T10:00:00.000Z",
     status: "scheduled",
     createdByUserId: "emergency-list-user",

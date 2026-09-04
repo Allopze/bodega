@@ -42,7 +42,11 @@ const baseContext: EmergencyImportContext = {
 
 describe("buildEmergencyInventoryPreview", () => {
   it("reconoce el manifiesto real de Biodiversa sin cargar datos", async () => {
-    const file = await readFile(path.resolve(process.cwd(), "docs/SGI Chome_2026/Inventario extintores/INVENTARIO DE EXTINTORES FAENA BIODIVERSA 2026.xlsx"))
+    // El manifiesto vive en la raíz del repositorio. Apuntaba a
+    // `docs/SGI Chome_2026/Inventario extintores/`, que dejó de existir cuando
+    // la documentación se reorganizó bajo `docs/prevención/` sin que esa
+    // carpeta viajara con ella.
+    const file = await readFile(path.resolve(process.cwd(), "INVENTARIO DE EXTINTORES FAENA BIODIVERSA 2026.xlsx"))
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(file as never)
     const sheet = workbook.worksheets[0]!

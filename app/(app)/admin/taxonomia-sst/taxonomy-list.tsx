@@ -43,6 +43,10 @@ export interface TypeRow {
   defaultValidityMonths: number | null
   requiresApproval: boolean
   requiresAcknowledgment: boolean
+  /** Actividades del PDTP que acredita publicar una versión de este tipo. */
+  pdtpActivityNumbers: number[] | null
+  /** Actividades que acredita cada acuse de recibo. */
+  pdtpAcknowledgmentActivityNumbers: number[] | null
   isActive: boolean
 }
 

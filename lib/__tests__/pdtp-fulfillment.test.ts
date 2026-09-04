@@ -77,6 +77,10 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpActivityWorksiteExclusions)
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpPrograms)
+  await inMemoryDb.delete(schema.preventionInspectionTemplates)
+  await inMemoryDb.delete(schema.preventionEmergencyPlans)
+  await inMemoryDb.delete(schema.sstDocumentTypes)
+  await inMemoryDb.delete(schema.sstDocumentCategories)
   await inMemoryDb.delete(schema.pdtpResponsibleCatalog)
   await inMemoryDb.delete(schema.rolePermissions)
   await inMemoryDb.delete(schema.permissions)
@@ -284,6 +288,122 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
   it("un enganche declarado en STRUCTURALLY_WIRED_ACTIVITY_NUMBERS pasa (N°35, MIPER)", async () => {
     await seedProgram("draft")
     await seedActivity({ mechanism: "enganche", n: 35 })
+    expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([])
+  })
+
+  it("la N°84 exige un plan en TODAS las faenas del programa, no en cualquiera", async () => {
+    // Antes las cinco tablas se leían juntas y globalmente, así que un plan en
+    // una faena daba la N°84 por resuelta en las siete. El informe no podía
+    // decir "no hay plan en la faena X", que es lo único accionable.
+    await inMemoryDb.insert(schema.worksites).values({ id: "ws-fulfill-2", name: "Faena Sin Plan", code: "FSP", isActive: true })
+    await seedProgram("draft")
+    await seedActivity({ mechanism: "enganche", n: 84 })
+
+    const sinPlanes = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
+    expect(sinPlanes).toEqual([expect.objectContaining({ n: 84, status: "config_required" })])
+
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.preventionEmergencyPlans).values({
+      id: "plan-fulfill-1", worksiteId: WS_ID, code: "PE-01", title: "Plan de emergencia",
+      status: "draft", version: 1, pdtpActivityNumbers: [84],
+      createdByUserId: USER_ID, createdAt: now, updatedAt: now,
+    })
+
+    const conUnPlan = (await assertPdtpFulfillmentCoverage(PROGRAM_ID)).filter((i) => i.status === "config_required")
+    expect(conUnPlan).toHaveLength(1)
+    expect(conUnPlan[0]!.reason).toContain("Faena Sin Plan")
+
+    await inMemoryDb.insert(schema.preventionEmergencyPlans).values({
+      id: "plan-fulfill-2", worksiteId: "ws-fulfill-2", code: "PE-02", title: "Plan de emergencia",
+      status: "draft", version: 1, pdtpActivityNumbers: [84],
+      createdByUserId: USER_ID, createdAt: now, updatedAt: now,
+    })
+    // Ya no hay problema de configuración. Queda un `destination_review`, que
+    // es otra cosa y no bloquea: el responsable del fixture no tiene el permiso
+    // de simulacros.
+    expect((await assertPdtpFulfillmentCoverage(PROGRAM_ID)).filter((i) => i.status === "config_required")).toEqual([])
+  })
+
+  it("una compuesta sin destino declarado ya no pasa gratis", async () => {
+    // La verificación de cableado corría sólo para `enganche`. La exención de
+    // `compuesta` estaba razonada para el chequeo de PERMISO —nadie la ejecuta—
+    // y se había arrastrado hasta acá, que es lo que dejaba pasar a la N°16 y la
+    // N°17 sin ningún componente que las acreditara.
+    await seedProgram("draft")
+    await seedActivity({ mechanism: "compuesta", n: 98 })
+    const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
+    expect(issues).toEqual([expect.objectContaining({ n: 98, status: "config_required" })])
+  })
+
+  it("una compuesta con conector propio sigue pasando (N°52)", async () => {
+    await seedProgram("draft")
+    await seedActivity({ mechanism: "compuesta", n: 52 })
+    expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([])
+  })
+
+  it("la N°43 la declara el tipo de documento al publicar", async () => {
+    await seedProgram("draft")
+    await seedActivity({ mechanism: "enganche", n: 43 })
+    expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([
+      expect.objectContaining({ n: 43, status: "config_required" }),
+    ])
+
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.sstDocumentCategories).values({
+      slug: "gestion_preventiva", name: "Gestión preventiva", sortOrder: 10, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.sstDocumentTypes).values({
+      id: "sstdt-pts", categorySlug: "gestion_preventiva", code: "PTS", name: "Procedimiento de trabajo seguro",
+      pdtpActivityNumbers: [43], createdAt: now, updatedAt: now,
+    })
+    expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([])
+  })
+
+  it("la N°36 declarada sólo en la columna de acuse también cuenta como cableada", async () => {
+    // Son dos columnas porque son dos momentos, pero para "¿tiene destino?"
+    // cualquiera de las dos sirve.
+    await seedProgram("draft")
+    await seedActivity({ mechanism: "enganche", n: 36 })
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.sstDocumentCategories).values({
+      slug: "gestion_preventiva", name: "Gestión preventiva", sortOrder: 10, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.sstDocumentTypes).values({
+      id: "sstdt-miper-dif", categorySlug: "gestion_preventiva", code: "MIPER-DIF", name: "Difusión MIPER",
+      pdtpActivityNumbers: null, pdtpAcknowledgmentActivityNumbers: [36], createdAt: now, updatedAt: now,
+    })
+    expect((await assertPdtpFulfillmentCoverage(PROGRAM_ID)).filter((i) => i.status === "config_required")).toEqual([])
+  })
+
+  it("un enganche cuyo responsable no tiene el permiso del destino se reporta, no bloquea", async () => {
+    // El mapa de destinos es nuevo y buena parte de lo que encuentra es
+    // segregación de deberes, no grants faltantes. Promoverlo a bloqueante
+    // antes de que alguien revise la lista sería repetir el episodio de la N°84.
+    await seedProgram("draft")
+    // La N°24 se cumple en Inspecciones y exige `inspections:execute`; el rol
+    // del fixture sólo tiene el permiso de constancias.
+    await seedActivity({ mechanism: "enganche", n: 24 })
+    await inMemoryDb.insert(schema.preventionInspectionTemplates).values({
+      id: "tpl-fulfill-24", code: "inspeccion_extintores", versionLabel: "01",
+      name: "Inspección de extintores", kind: "inspection", definitionSnapshot: {},
+      contentHash: "x".repeat(64), status: "approved", authorUserId: USER_ID,
+      // El CHECK `prevention_inspection_template_approved_consistent` exige
+      // firmante y fecha en una plantilla aprobada.
+      approvedByUserId: USER_ID, approvedAt: new Date().toISOString(),
+      pdtpActivityNumbers: [24],
+    })
+
+    const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
+    expect(issues).toEqual([expect.objectContaining({ n: 24, status: "destination_review" })])
+    expect(issues[0]!.reason).toContain("inspecciones")
+  })
+
+  it("una actividad de enganche segregada a propósito no se reporta", async () => {
+    // La N°83 la redacta el prevencionista de faena y la firma otra persona:
+    // `approveEmergencyPlan` rechaza que coincidan. Exigirle el permiso de
+    // aprobar contradiría esa regla.
+    await seedProgram("draft")
+    await seedActivity({ mechanism: "enganche", n: 83 })
     expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([])
   })
 

@@ -212,6 +212,18 @@ export function getAutomaticResultadoFinal(
 ): ResultadoFinal {
   const isNuevo = code === 'trabajador_nuevo'
 
+  // El RE-28 no habilita ni deshabilita a nadie para operar: registra una
+  // condición y qué se hizo con ella. Su resultado NO puede salir del
+  // porcentaje —el instrumento no puntúa nada, así que el porcentaje es
+  // siempre 0— sino de lo que el propio formulario preguntó: si el puesto
+  // exige reubicar, ajustar o limitar tareas, o si hay exposición relevante
+  // para la condición declarada, el registro se cierra con restricciones.
+  if (code === 'identificacion_sensibles') {
+    const conRestriccion = respuestas.some((r) =>
+      (r.itemId === 'requiere_ajuste' || r.itemId === 'exposicion_agentes') && r.estado === 'si')
+    return conRestriccion ? 'habilitado_restricciones' : 'habilitado_autonomo'
+  }
+
   // Blocker section check
   const isBlockerSection = (seccionId: string) => {
     if (isNuevo) {

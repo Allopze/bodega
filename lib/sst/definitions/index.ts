@@ -16,6 +16,7 @@ import { AUDITORIA_SGSST } from './auditoria-sgsst'
 import { REPORTE_EQUIPOS } from './reporte-equipos'
 import { INSPECCION_NO_PLANEADA } from './inspeccion-no-planeada'
 import { INSPECCION_CONDICIONES_AMBIENTALES } from './inspeccion-condiciones-ambientales'
+import { IDENTIFICACION_SENSIBLES } from './identificacion-sensibles'
 import type { ChecklistDefinition } from '../types'
 
 /**
@@ -26,6 +27,11 @@ import type { ChecklistDefinition } from '../types'
 export const PERSON_EVALUATION_DEFINITION_CODES = [
   'trabajador_nuevo',
   'trabajador_antiguo',
+  // RE-28. Estar acá hace dos cosas de una vez: la deja creable desde
+  // /prevencion/nueva y la mantiene fuera del catálogo de inspecciones, que es
+  // exactamente donde no debe estar — registra datos de salud y el motor de
+  // inspecciones no tiene control de acceso a nivel de sección.
+  'identificacion_sensibles',
 ] as const
 
 export function isPersonEvaluationDefinition(code: string): code is typeof PERSON_EVALUATION_DEFINITION_CODES[number] {
@@ -56,6 +62,7 @@ export function isNonInspectionDefinition(code: string): boolean {
 
 export const CHECKLIST_DEFINITIONS: Record<string, ChecklistDefinition> = {
   'trabajador_nuevo': TRABAJADOR_NUEVO,
+  'identificacion_sensibles': IDENTIFICACION_SENSIBLES,
   'trabajador_antiguo': TRABAJADOR_ANTIGUO,
   'inspeccion_taller': INSPECCION_TALLER,
   'observacion_planeada': OBSERVACION_PLANEADA,

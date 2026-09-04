@@ -41,6 +41,24 @@ function dueDate(occurredAt: Date, days: number | null, hours: number | null) {
   return result.toISOString()
 }
 
+/**
+ * La clave idempotente de una obligación integrada. Vivía en línea acá y
+ * copiada a mano en el conector del RE-20, acopladas por convención: cambiar
+ * el formato en un lado rompía el otro en silencio. Los conectores la
+ * construyen desde acá.
+ *
+ * La rama manual conserva su literal propio (`manual:${requestId}`): es otro
+ * espacio de nombres y no lo comparte nadie.
+ */
+export function pdtpObligationIdempotencyKey(input: {
+  activityId: string
+  worksiteId: string
+  sourceType: string
+  sourceId: string
+}): string {
+  return `pdtp-obligation:${input.activityId}:${input.worksiteId}:${input.sourceType}:${input.sourceId}`
+}
+
 const CHILE_MONTH_DAY_FORMAT = new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/Santiago", month: "numeric", day: "numeric",
 })
@@ -66,7 +84,12 @@ export async function createPdtpObligation(input: {
   manualReason?: string
   clientRequestId?: string
   sourceMetadata?: Record<string, unknown>
-  userId: string
+  /**
+   * Puede ser null: los barridos de cron no tienen actor humano y la columna
+   * `created_by_user_id` es nullable. No se inventa un usuario de sistema —
+   * es FK real a `users` y un id falso rompería la constraint.
+   */
+  userId: string | null
   scope: WorksiteScope
 }) {
   assertWorksiteAccess(input.worksiteId, input.scope)
@@ -110,7 +133,7 @@ export async function createPdtpObligation(input: {
   if (input.origin === "integration") {
     if (!sourceType || !sourceId) throw new Error("Una obligación integrada exige tipo e identificador de fuente.")
     if (!input.sourceOccurredAt) throw new Error("Una obligación integrada exige la fecha y hora del evento de origen.")
-    idempotencyKey = `pdtp-obligation:${activity.id}:${input.worksiteId}:${sourceType}:${sourceId}`
+    idempotencyKey = pdtpObligationIdempotencyKey({ activityId: activity.id, worksiteId: input.worksiteId, sourceType, sourceId })
   } else {
     if ((manualReason?.length ?? 0) < 10) throw new Error("La creación manual exige un motivo de al menos 10 caracteres.")
     const requestId = input.clientRequestId?.trim()
@@ -353,6 +376,36 @@ export async function cancelPdtpObligation(input: {
  */
 export async function findPdtpObligationByIdempotencyKey(idempotencyKey: string) {
   const [obligation] = await db.select().from(pdtpObligations).where(eq(pdtpObligations.idempotencyKey, idempotencyKey)).limit(1)
+  return obligation ?? null
+}
+
+/**
+ * La obligación abierta más antigua de un sujeto recurrente: una faena sin
+ * comité, una persona sin inducción, una persona sin cierta competencia.
+ *
+ * El sujeto viaja en `source_metadata_json->>'subjectKey'` y **no** se deduce
+ * del `source_id` con un LIKE por prefijo: los ids de `nanoid()` incluyen `_`
+ * y `-`, que en LIKE son comodines, así que un prefijo podría casar con el
+ * sujeto equivocado.
+ *
+ * Devuelve la más antigua a propósito: con dos casos abiertos de la misma
+ * persona, el hecho que llega cierra el que lleva más tiempo esperando, y el
+ * más nuevo sigue su propio plazo.
+ */
+export async function findOpenPdtpObligationBySubject(input: {
+  activityId: string
+  worksiteId: string
+  subjectKey: string
+}) {
+  const [obligation] = await db.select().from(pdtpObligations)
+    .where(and(
+      eq(pdtpObligations.activityId, input.activityId),
+      eq(pdtpObligations.worksiteId, input.worksiteId),
+      inArray(pdtpObligations.status, ["pending", "overdue"]),
+      sql`${pdtpObligations.sourceMetadataJson}->>'subjectKey' = ${input.subjectKey}`,
+    ))
+    .orderBy(asc(pdtpObligations.sourceOccurredAt))
+    .limit(1)
   return obligation ?? null
 }
 

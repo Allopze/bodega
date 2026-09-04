@@ -121,6 +121,17 @@ export interface ChecklistDefinition {
   evaluationCriteria?: string
   sections: ChecklistSection[]
   /**
+   * Si abrir una evaluación de este tipo debe programar los cuatro seguimientos
+   * de día 0/7/15/30.
+   *
+   * Por omisión los programa toda evaluación `tipo: 'seguimiento'`, que era una
+   * regla escrita cuando el único instrumento de ese tipo era el control
+   * post-incidente del trabajador antiguo. Un registro de una sola vez —el
+   * RE-28 de personas sensibles— comparte el `tipo` pero no la cadencia, y sin
+   * este campo nacería con cuatro seguimientos que nadie va a realizar.
+   */
+  schedulesFollowups?: boolean
+  /**
    * Política congelada junto al formulario. El resultado documental sólo se
    * calcula cuando el papel declara una fórmula; el normalizado conserva la
    * métrica transversal de la plataforma.

@@ -106,7 +106,7 @@ const TEXT_FIXES: Array<{ n: number; field: "activity" | "program"; from: string
  * el padrón de cada una, y `compliance.ts` lo consulta. Sin fuente declarada ni
  * override manual, la actividad se mide por la cantidad planificada del mes.
  */
-const COVERAGE_ACTIVITIES = [17, 18, 23, 24, 50, 54, 56]
+const COVERAGE_ACTIVITIES = [16, 17, 18, 23, 24, 50, 54, 56]
 
 /**
  * De qué registro sale el padrón de cada actividad de cobertura. Es la hermana
@@ -120,6 +120,11 @@ const COVERAGE_ACTIVITIES = [17, 18, 23, 24, 50, 54, 56]
  * saber de antemano cuándo entrará alguien.
  */
 const SUBJECT_SOURCES: Array<{ n: number; source: string }> = [
+  // La N°16 mide sobre quien acaba de pasar por la inducción, no sobre toda la
+  // dotación: la prueba de evaluación es del trabajador nuevo. Es el mismo
+  // denominador de flujo que ya usan la N°18 y la N°23, y es lo que la hace
+  // medible sin necesidad de un compromiso por persona.
+  { n: 16, source: "trabajadores_nuevos" },
   { n: 17, source: "dotacion" },
   { n: 18, source: "trabajadores_nuevos" },
   { n: 23, source: "trabajadores_nuevos" },
@@ -148,6 +153,19 @@ const SUBJECT_SOURCES: Array<{ n: number; source: string }> = [
 const COVERAGE_TARGETS: Array<{ n: number; percent: number }> = [
   { n: 54, percent: 90 },
   { n: 56, percent: 90 },
+  // N°17 (RE-28). Su padrón es la dotación completa de la faena, y exigir el
+  // 100 % cada mes convierte cualquier licencia, vacación o ausencia en un 0 %
+  // del mes entero. El 95 % baja el umbral de acreditación sin encoger el
+  // denominador, que es la semántica correcta acá.
+  //
+  // Queda pendiente una decisión que este script NO toma: la N°17 tiene **9
+  // meses planificados** contra un padrón de stock, así que marcará 0 % los
+  // meses en que nadie barre. El procedimiento DO-47 (punto 6.4) fija la
+  // cadencia real: "actualización del registro cada 6 meses o cuando haya un
+  // cambio en la condición", o sea dos barridos al año, no nueve. Alinear el
+  // calendario con eso es cambiar lo que el programa promete —va con motivo y
+  // change log— y por eso lo decide Prevención y no un script.
+  { n: 17, percent: 95 },
 ]
 
 /**

@@ -75,6 +75,42 @@ RUN ./node_modules/.bin/esbuild scripts/seed-pdtp-inspection-templates-2026.ts \
     --external:postgres \
     --outfile=/tmp/seed-pdtp-inspection-templates.mjs
 
+# El catálogo de Documentación SST (categorías y tipos). Estaba sólo detrás de
+# un botón del panel de administración, así que en producción llegó vacío — y
+# con él vacío la N°36 y la N°43 no tienen dónde declarar su número.
+RUN ./node_modules/.bin/esbuild scripts/apply-sst-document-taxonomy.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/apply-sst-document-taxonomy.mjs
+
+# El plan de emergencia por faena. Sin él la N°84 no tiene dónde declararse y el
+# programa anual no se puede activar.
+RUN ./node_modules/.bin/esbuild scripts/seed-prevention-emergency-plans.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/seed-emergency-plans.mjs
+
+# Diagnóstico del cableado entre el programa anual y los módulos que lo
+# acreditan. Sólo lectura y nunca aborta: corre DESPUÉS de sembrar el catálogo
+# para dejar en el log del deploy qué quedó pendiente de aprobar. La compuerta
+# real es `assertPdtpFulfillmentCoverage`, al enviar el programa a revisión.
+RUN ./node_modules/.bin/esbuild scripts/preflight-pdtp-accreditation-wiring.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/preflight-pdtp-accreditation-wiring.mjs
+
 # Las decisiones de catálogo del programa 2026 (retiros, corresponsables, textos
 # y modo de indicador) son datos del programa, no del código: si no corren en el
 # deploy quedan esperando que alguien las aplique a mano, que es exactamente lo
@@ -284,6 +320,9 @@ COPY --from=build /app/node_modules/postgres ./node_modules/postgres
 COPY --from=build /tmp/sync-rbac.mjs ./scripts/sync-rbac.mjs
 COPY --from=build /tmp/reconcile-epp-delivery-scale.mjs ./scripts/reconcile-epp-delivery-scale.mjs
 COPY --from=build /tmp/seed-pdtp-inspection-templates.mjs ./scripts/seed-pdtp-inspection-templates.mjs
+COPY --from=build /tmp/apply-sst-document-taxonomy.mjs ./scripts/apply-sst-document-taxonomy.mjs
+COPY --from=build /tmp/seed-emergency-plans.mjs ./scripts/seed-emergency-plans.mjs
+COPY --from=build /tmp/preflight-pdtp-accreditation-wiring.mjs ./scripts/preflight-pdtp-accreditation-wiring.mjs
 COPY --from=build /tmp/apply-pdtp-catalog-decisions.mjs ./scripts/apply-pdtp-catalog-decisions.mjs
 COPY --from=build /tmp/apply-pdtp-program-data.mjs ./scripts/apply-pdtp-program-data.mjs
 COPY --from=build /tmp/apply-pdtp-mechanisms.mjs ./scripts/apply-pdtp-mechanisms.mjs

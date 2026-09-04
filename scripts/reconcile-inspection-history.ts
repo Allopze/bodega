@@ -8,7 +8,7 @@ import { preventionInspectionImportBatches, preventionInspectionImportRows } fro
 import { nanoid } from "@/lib/id"
 import { sanitizeCell } from "@/lib/reports/export-module/excel-builder"
 
-const ROOT = path.resolve("docs/SGI Chome_2026/8 Operación/3_Faenas/Faena Biodiversa/3_Documentos SST/8.Inpecciones y Observaciones/Inspecciones a Plantas de Essbio/Biodiversa")
+const ROOT = path.resolve("docs/prevención/SGI Chome_2026/8 Operación/3_Faenas/Faena Biodiversa/3_Documentos SST/8.Inpecciones y Observaciones/Inspecciones a Plantas de Essbio/Biodiversa")
 const ANNEX_15 = path.join(ROOT, "Anexo 15 Seguimiento y Control de Observaciones e Inspecciones 2026.xlsx")
 const ANNEX_15_COPY = path.join(ROOT, "ENERO 2026/Anexo 15 Seguimiento y Control de Observaciones e Inspecciones 2026.xlsx")
 const OUTPUT = path.resolve("qa/reports/inspection-history-reconciliation.xlsx")

@@ -20,6 +20,8 @@
 
 import type { AccreditationInput } from "@/lib/services/pdtp/accreditation"
 import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
+import { reportSubjectObligation } from "./obligation-kit"
+import { workerSubjectKey } from "./worker-lifecycle-connector"
 
 /**
  * Ítem del acta → actividad del PDTP que cierra.
@@ -70,6 +72,22 @@ const STARTER_FOLDER_ACTIVITY_NUMBER = 19
  */
 const ONBOARDING_ACTIVITY_NUMBER = 52
 const ONBOARDING_PASSING_RESULT = "habilitado_autonomo"
+
+/**
+ * Las dos que se miden por plazo de cierre (`closed_on_time`) y por lo tanto
+ * **cierran una obligación**, no una acreditación directa.
+ *
+ * No es una regresión que dejen de acreditar directo: para una actividad
+ * `closed_on_time` el indicador ignora las ejecuciones y sólo mira obligaciones
+ * vencidas y cerradas a tiempo (`lib/services/pdtp/compliance.ts`), así que la
+ * fila directa no aportaba nada y sólo habría duplicado el registro en la
+ * planilla. Si no hay obligación abierta, el kit deja un `warn`: ésa es la
+ * señal de que la entrada del trabajador no abrió su compromiso.
+ *
+ * Las otras cuatro (18, 19, 23, 63) siguen igual: no son a demanda y no tienen
+ * obligación contra la cual reportarse.
+ */
+const OBLIGATION_ACTIVITY_NUMBERS = new Set([15, ONBOARDING_ACTIVITY_NUMBER])
 
 /** Estados que cuentan como conforme, por tipo de escala del ítem. */
 const CONFORMING = new Set(["cumple", "entregado", "apto", "si"])
@@ -145,25 +163,46 @@ export async function onWorkerOnboardingClosed(input: {
   fechaEvaluacion: string
   resultadoFinal: string | null
   responses: OnboardingResponse[]
+  actorUserId: string
 }): Promise<void> {
+  // El filtro va DESPUÉS del mapeador y nunca dentro: la N°19 es un número
+  // derivado de que estén la 15, la 18 y la 23, así que sacar la 15 antes de
+  // esa cuenta dejaría la carpeta del trabajador sin acreditar.
   const activityNumbers = onboardingActivityNumbers(input)
   if (activityNumbers.length === 0) return
 
-  await safeAccredit({
-    sourceType: "evaluacion_sst",
-    sourceId: `habilitacion:${input.evaluationId}`,
-    worksiteId: input.worksiteId,
-    activityNumbers,
-    occurredAt: occurredAtFromChileDate(input.fechaEvaluacion),
-    // Una persona habilitada. El padrón del mes son las actas cerradas, así que
-    // numerador y denominador se cuentan en la misma unidad.
-    executedQuantity: 1,
-    evidenceRef: `Acta de trabajador nuevo cerrada: ${input.evaluationId}`,
-    metadata: {
-      workerId: input.workerId,
-      resultadoFinal: input.resultadoFinal,
-      fechaEvaluacion: input.fechaEvaluacion,
-      accreditedItems: activityNumbers,
-    },
-  })
+  const direct = activityNumbers.filter((n) => !OBLIGATION_ACTIVITY_NUMBERS.has(n))
+  const byObligation = activityNumbers.filter((n) => OBLIGATION_ACTIVITY_NUMBERS.has(n))
+  const occurredAt = occurredAtFromChileDate(input.fechaEvaluacion)
+
+  if (direct.length > 0) {
+    await safeAccredit({
+      sourceType: "evaluacion_sst",
+      sourceId: `habilitacion:${input.evaluationId}`,
+      worksiteId: input.worksiteId,
+      activityNumbers: direct,
+      occurredAt,
+      // Una persona habilitada. El padrón del mes son las actas cerradas, así que
+      // numerador y denominador se cuentan en la misma unidad.
+      executedQuantity: 1,
+      evidenceRef: `Acta de trabajador nuevo cerrada: ${input.evaluationId}`,
+      metadata: {
+        workerId: input.workerId,
+        resultadoFinal: input.resultadoFinal,
+        fechaEvaluacion: input.fechaEvaluacion,
+        accreditedItems: direct,
+      },
+    })
+  }
+
+  for (const activityNumber of byObligation) {
+    await reportSubjectObligation({
+      activityNumber,
+      worksiteId: input.worksiteId,
+      subjectKey: workerSubjectKey(input.workerId),
+      occurredAt,
+      evidenceText: `Acta de trabajador nuevo cerrada: ${input.evaluationId}`,
+      userId: input.actorUserId,
+    })
+  }
 }

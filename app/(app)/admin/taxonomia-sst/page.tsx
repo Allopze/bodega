@@ -62,6 +62,8 @@ export default async function TaxonomySstPage({ searchParams }: PageProps) {
           defaultValidityMonths: t.defaultValidityMonths ?? null,
           requiresApproval: t.requiresApproval,
           requiresAcknowledgment: t.requiresAcknowledgment,
+          pdtpActivityNumbers: t.pdtpActivityNumbers,
+          pdtpAcknowledgmentActivityNumbers: t.pdtpAcknowledgmentActivityNumbers,
           isActive: t.isActive,
         }))}
       />

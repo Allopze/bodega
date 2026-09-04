@@ -55,6 +55,8 @@ export async function upsertDocumentType(input: unknown) {
     defaultValidityMonths: data.defaultValidityMonths ?? null,
     requiresApproval: data.requiresApproval,
     requiresAcknowledgment: data.requiresAcknowledgment,
+    pdtpActivityNumbers: data.pdtpActivityNumbers.length > 0 ? data.pdtpActivityNumbers : null,
+    pdtpAcknowledgmentActivityNumbers: data.pdtpAcknowledgmentActivityNumbers.length > 0 ? data.pdtpAcknowledgmentActivityNumbers : null,
     isActive: data.isActive,
     createdAt: now,
     updatedAt: now,
@@ -65,6 +67,8 @@ export async function upsertDocumentType(input: unknown) {
       description: data.description || null, defaultConfidentiality: data.defaultConfidentiality,
       defaultValidityMonths: data.defaultValidityMonths ?? null,
       requiresApproval: data.requiresApproval, requiresAcknowledgment: data.requiresAcknowledgment,
+      pdtpActivityNumbers: data.pdtpActivityNumbers.length > 0 ? data.pdtpActivityNumbers : null,
+      pdtpAcknowledgmentActivityNumbers: data.pdtpAcknowledgmentActivityNumbers.length > 0 ? data.pdtpAcknowledgmentActivityNumbers : null,
       isActive: data.isActive, updatedAt: now,
     },
   })
@@ -100,6 +104,10 @@ export const DEFAULT_DOCUMENT_TYPES: Array<{
   description: string
   requiresAcknowledgment: boolean
   defaultValidityMonths: number | null
+  /** Actividades que acredita **publicar** una versión. */
+  pdtpActivityNumbers?: number[]
+  /** Actividades que acredita **cada acuse de recibo**. */
+  pdtpAcknowledgmentActivityNumbers?: number[]
 }> = [
   {
     categorySlug: "legal_normativa",
@@ -108,6 +116,50 @@ export const DEFAULT_DOCUMENT_TYPES: Array<{
     description: "DS 44 arts. 56-61. Contenido mínimo del art. 58, entrega nominativa a toda la dotación.",
     requiresAcknowledgment: true,
     defaultValidityMonths: 12,
+  },
+  // ── Tipos derivados del RE-08 ───────────────────────────────────────────
+  //
+  // El listado maestro no declara el tipo en ninguna columna —la de "TIPO
+  // DOCUMENTO" dice "Interno" en las 99 filas—, así que se deriva del prefijo
+  // del código y del nombre.
+  //
+  // **Ninguno lleva `pdtpActivityNumbers`, y eso es deliberado.** Tipar como
+  // `PTS` los dieciocho procedimientos operativos del listado (DO-14 Ampliroll,
+  // DO-15 Maquinaria pesada, DO-23 Retroexcavadora…) haría que el día que se
+  // publiquen sus versiones se acrediten dieciocho unidades de una actividad
+  // planificada por mes. Reservar el `PTS` para los procedimientos de tarea
+  // crítica es una decisión de Prevención, documento por documento, no de un
+  // sembrador.
+  { categorySlug: "gestion_preventiva", code: "PROC", name: "Procedimiento", description: "Procedimiento documentado del sistema de gestión integrado.", requiresAcknowledgment: false, defaultValidityMonths: null },
+  { categorySlug: "gestion_preventiva", code: "INSTR", name: "Instructivo", description: "Instructivo operativo de una tarea concreta.", requiresAcknowledgment: false, defaultValidityMonths: null },
+  { categorySlug: "gestion_preventiva", code: "POL", name: "Política", description: "Política declarada por la Gerencia General.", requiresAcknowledgment: true, defaultValidityMonths: null },
+  { categorySlug: "gestion_preventiva", code: "PROG", name: "Programa o plan de gestión", description: "Programa anual o plan de gestión de un ámbito del sistema.", requiresAcknowledgment: false, defaultValidityMonths: 12 },
+  { categorySlug: "gestion_preventiva", code: "MATRIZ", name: "Matriz o listado maestro", description: "Matriz de identificación, evaluación o control, y listados maestros.", requiresAcknowledgment: false, defaultValidityMonths: null },
+  { categorySlug: "gestion_preventiva", code: "FORMATO", name: "Formato de registro", description: "Formato en blanco que se completa cada vez que se ejecuta la actividad.", requiresAcknowledgment: false, defaultValidityMonths: null },
+  {
+    // N°43. El hecho es que exista una versión vigente del procedimiento, así
+    // que acredita al publicar. No exige acuse: la actividad del catálogo dice
+    // "realizar y revisar", no difundir.
+    categorySlug: "gestion_preventiva",
+    code: "PTS",
+    name: "Procedimiento de trabajo seguro",
+    description: "Procedimientos de trabajo seguro por tarea crítica. Acredita la N°43 del programa al publicar una versión.",
+    requiresAcknowledgment: false,
+    defaultValidityMonths: 24,
+    pdtpActivityNumbers: [43],
+  },
+  {
+    // N°36. Acá el hecho es el opuesto: la difusión se prueba con los acuses,
+    // no con la publicación. El número va SÓLO en la columna de acuse — en la
+    // otra, publicar la matriz saldaría el mes de una difusión que nadie
+    // recibió.
+    categorySlug: "gestion_preventiva",
+    code: "MIPER-DIF",
+    name: "Difusión de la matriz de riesgos MIPER",
+    description: "Difusión de la matriz MIPER a la dotación. Acredita la N°36 por cobertura, un acuse a la vez.",
+    requiresAcknowledgment: true,
+    defaultValidityMonths: 12,
+    pdtpAcknowledgmentActivityNumbers: [36],
   },
 ]
 
@@ -123,6 +175,8 @@ export async function seedDefaultDocumentTypes() {
       requiresApproval: true,
       requiresAcknowledgment: type.requiresAcknowledgment,
       defaultValidityMonths: type.defaultValidityMonths,
+      pdtpActivityNumbers: type.pdtpActivityNumbers ?? null,
+      pdtpAcknowledgmentActivityNumbers: type.pdtpAcknowledgmentActivityNumbers ?? null,
       isActive: true,
       createdAt: now,
       updatedAt: now,
@@ -133,6 +187,11 @@ export async function seedDefaultDocumentTypes() {
         description: type.description,
         requiresAcknowledgment: type.requiresAcknowledgment,
         defaultValidityMonths: type.defaultValidityMonths,
+        // El cableado al PDTP entra en el UPDATE y no sólo en el INSERT: un
+        // catálogo sembrado antes de que estas columnas existieran se queda
+        // sin ellas para siempre si el conflicto no las corrige.
+        pdtpActivityNumbers: type.pdtpActivityNumbers ?? null,
+        pdtpAcknowledgmentActivityNumbers: type.pdtpAcknowledgmentActivityNumbers ?? null,
         isActive: true,
         updatedAt: now,
       },

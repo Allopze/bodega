@@ -4,7 +4,6 @@ import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
 import {
   preventionCapaActions,
-  preventionCommitteeMembers,
   preventionCompetencyRequirements,
   preventionTrainingAttendance,
   preventionTrainingCourseVersions,
@@ -21,7 +20,6 @@ import { nanoid } from "@/lib/id"
 import {
   assessLegalFloor,
   competencyExpiry,
-  computeCompetencyGaps,
   type CompetencyGap,
 } from "@/lib/prevention/training"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
@@ -38,6 +36,8 @@ import { competencyConvalidationSchema,
   trainingVersionTransitionSchema,
 } from "@/lib/validation/prevention-module/training"
 import { onTrainingSessionCancelled, onTrainingSessionClosed } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
+import { onCompetencyObtained } from "@/lib/services/pdtp-adapters/competency-gap-connector"
+import { computeCompetencyGapsForScope } from "@/lib/services/prevention-training-gaps"
 import { codeYear, todayInChile } from "@/lib/utils"
 
 type Client = DB | Tx
@@ -369,6 +369,7 @@ export async function recordTrainingAttendance(input: unknown, access: TrainingA
 export async function closeTrainingSession(input: unknown, access: TrainingAccess) {
   const data = trainingSessionCloseSchema.parse(input)
   let accreditation: Parameters<typeof onTrainingSessionClosed>[0] | null = null
+  let competencyReport: Parameters<typeof onCompetencyObtained>[0] | null = null
   const result = await db.transaction(async (tx) => {
     const [session] = await tx.select().from(preventionTrainingSessions)
       .where(eq(preventionTrainingSessions.id, data.sessionId)).limit(1)
@@ -464,6 +465,17 @@ export async function closeTrainingSession(input: unknown, access: TrainingAcces
         attendedCount: granted.length,
         activityNumbers: pdtpActivityNumbers,
       }
+      // Y el cierre en abanico de las obligaciones por persona, para los cursos
+      // cuya actividad se mide por plazo (la N°57). Es una lista de personas y
+      // no un conteo: la obligación es de cada una, no de la sesión.
+      competencyReport = {
+        sessionId: session.id,
+        worksiteId: session.worksiteId,
+        courseId: course.id,
+        closedAt: updated.closedAt ?? now,
+        grantedWorkerIds: granted.map((item) => item.workerId),
+        userId: access.userId,
+      }
     }
 
     return { session: updated, grantedCount: granted.length, convenedCount: attendance.length }
@@ -472,6 +484,7 @@ export async function closeTrainingSession(input: unknown, access: TrainingAcces
   // Auto-acreditación PDTP fuera de la transacción; safeAccredit absorbe errores
   // (programa inactivo, curso no vinculado) sin afectar el cierre ya confirmado.
   if (accreditation) await onTrainingSessionClosed(accreditation)
+  if (competencyReport) await onCompetencyObtained(competencyReport)
 
   return result
 }
@@ -665,61 +678,7 @@ export async function createCompetencyRequirement(input: unknown, access: Traini
 
 export async function listCompetencyGaps(access: TrainingAccess): Promise<CompetencyGap[]> {
   requireAccess(access, "prevention:training:view")
-  const workerScope = scopeCondition(access.scope, workers.worksiteId)
-
-  const [workerRows, requirementRows, competencyRows] = await Promise.all([
-    db.select({ id: workers.id, firstName: workers.firstName, lastName: workers.lastName, position: workers.position, worksiteId: workers.worksiteId, isActive: workers.isActive })
-      .from(workers).where(and(eq(workers.isActive, true), workerScope)),
-    db.select({
-      id: preventionCompetencyRequirements.id,
-      courseId: preventionCompetencyRequirements.courseId,
-      courseName: preventionTrainingCourses.name,
-      scopeType: preventionCompetencyRequirements.scopeType,
-      scopeValue: preventionCompetencyRequirements.scopeValue,
-      worksiteId: preventionCompetencyRequirements.worksiteId,
-      enforcement: preventionCompetencyRequirements.enforcement,
-      reason: preventionCompetencyRequirements.reason,
-      isActive: preventionCompetencyRequirements.isActive,
-    }).from(preventionCompetencyRequirements)
-      .innerJoin(preventionTrainingCourses, eq(preventionCompetencyRequirements.courseId, preventionTrainingCourses.id))
-      .where(and(eq(preventionCompetencyRequirements.isActive, true), eq(preventionTrainingCourses.isActive, true))),
-    db.select({ workerId: preventionWorkerCompetencies.workerId, courseId: preventionWorkerCompetencies.courseId, status: preventionWorkerCompetencies.status, expiresAt: preventionWorkerCompetencies.expiresAt })
-      .from(preventionWorkerCompetencies)
-      .innerJoin(workers, eq(preventionWorkerCompetencies.workerId, workers.id))
-      .where(workerScope),
-  ])
-
-  // El padrón de comités sólo se consulta si algún requisito lo necesita: la
-  // gran mayoría de los requisitos son por cargo o faena.
-  const committeeMembers = requirementRows.some((row) => row.scopeType === "committee")
-    ? await loadCommitteeMemberIds()
-    : undefined
-
-  return computeCompetencyGaps({
-    workers: workerRows,
-    requirements: requirementRows,
-    competencies: competencyRows,
-    asOf: todayInChile(),
-    committeeMembers,
-  })
-}
-
-/** `committeeId` → ids de trabajadores que hoy integran ese comité. */
-async function loadCommitteeMemberIds(): Promise<Map<string, Set<string>>> {
-  const rows = await db.select({
-    committeeId: preventionCommitteeMembers.committeeId,
-    workerId: preventionCommitteeMembers.workerId,
-  })
-    .from(preventionCommitteeMembers)
-    .where(eq(preventionCommitteeMembers.status, "active"))
-
-  const byCommittee = new Map<string, Set<string>>()
-  for (const row of rows) {
-    const set = byCommittee.get(row.committeeId)
-    if (set) set.add(row.workerId)
-    else byCommittee.set(row.committeeId, new Set([row.workerId]))
-  }
-  return byCommittee
+  return computeCompetencyGapsForScope(access.scope)
 }
 
 /**

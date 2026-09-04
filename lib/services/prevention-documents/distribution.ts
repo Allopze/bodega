@@ -284,11 +284,13 @@ export async function acknowledgeDocumentVersion(args: DistributionContext & {
     })
 
     // N°36 del PDTP: la difusión se mide por cobertura, una acreditación por
-    // acuse. El número lo declara el tipo del documento, y un documento
+    // acuse. El número lo declara el tipo del documento —en su columna de
+    // **acuse**, no en la de publicación: son dos hechos distintos y confundirlos
+    // haría que publicar saldara una difusión que nadie recibió—. Un documento
     // corporativo no tiene faena, así que no puede acreditar una actividad que se
     // mide por faena. Se dispara después del commit.
     if (doc.worksiteId && doc.typeId) {
-      const [type] = await tx.select({ numbers: sstDocumentTypes.pdtpActivityNumbers })
+      const [type] = await tx.select({ numbers: sstDocumentTypes.pdtpAcknowledgmentActivityNumbers })
         .from(sstDocumentTypes).where(eq(sstDocumentTypes.id, doc.typeId)).limit(1)
       const activityNumbers = Array.isArray(type?.numbers) ? type.numbers as number[] : []
       if (activityNumbers.length > 0) {

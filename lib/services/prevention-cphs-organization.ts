@@ -7,7 +7,7 @@
  * y se cruza una cosa con la otra.
  */
 
-import { and, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm"
+import { and, desc, eq, gte, isNull, lt, or, sql } from "drizzle-orm"
 import { z } from "zod"
 import { db } from "@/db"
 import {
@@ -32,6 +32,8 @@ import {
   requireCphsAccess,
   type CphsAccess,
 } from "@/lib/services/prevention-cphs-access"
+import { onPreventiveOrganizationSatisfied } from "@/lib/services/pdtp-adapters/preventive-organization-connector"
+import { loadWorksiteOrganizationRows, type WorksiteOrganizationSummary } from "@/lib/services/prevention-cphs-organization-read"
 import { todayInChile } from "@/lib/utils"
 
 /** Trabajadores propios activos de la faena. Los de contratistas no cuentan. */
@@ -57,7 +59,7 @@ export async function designateDelegate(input: unknown, access: CphsAccess) {
   const data = delegateSchema.parse(input)
   requireCphsAccess(access, "prevention:cphs:manage", data.worksiteId)
 
-  return db.transaction(async (tx) => {
+  const created = await db.transaction(async (tx) => {
     const [worker] = await tx.select().from(workers).where(eq(workers.id, data.workerId)).limit(1)
     if (!worker || !worker.isActive) throw new Error("La persona designada no existe o no está activa.")
     if (worker.worksiteId !== data.worksiteId) {
@@ -130,6 +132,21 @@ export async function designateDelegate(input: unknown, access: CphsAccess) {
     })
     return created
   })
+
+  // Después del commit: el motor del PDTP escribe con su propia conexión, así
+  // que llamarlo dentro dejaría un compromiso cerrado contra una designación
+  // que la transacción todavía podía revertir.
+  //
+  // El conector re-evalúa la exigencia antes de reportar: en una faena que
+  // supera el umbral de comité, designar un delegado NO cierra la N°11.
+  await onPreventiveOrganizationSatisfied({
+    worksiteId: data.worksiteId,
+    kind: "delegate",
+    entityId: created.id,
+    occurredAt: data.designatedOn,
+    userId: access.userId,
+  })
+  return created
 }
 
 const endDelegateSchema = z.object({
@@ -196,92 +213,12 @@ export async function listDelegates(access: CphsAccess) {
     .limit(500)
 }
 
-export interface WorksiteOrganizationSummary {
-  worksiteId: string
-  worksiteName: string
-  worksiteCode: string | null
-  headcount: number
-  committeeId: string | null
-  committeeName: string | null
-  mandateEndsOn: string | null
-  mandateExpired: boolean
-  delegateName: string | null
-  compliance: OrganizationCompliance
-}
+export { loadWorksiteOrganizationRows, type WorksiteOrganizationSummary }
 
-/**
- * Una fila por faena del alcance. Se resuelve en cuatro consultas agregadas en
- * vez de una por faena: la lista completa se pinta de una sola pasada.
- */
+/** Las faenas del alcance de quien pregunta. */
 export async function listWorksiteOrganizations(access: CphsAccess): Promise<WorksiteOrganizationSummary[]> {
   requireCphsAccess(access, "prevention:cphs:view")
-  const scoped = cphsScopeCondition(access.scope, worksites.id)
-  const today = todayInChile()
-
-  const worksiteRows = await db.select({ id: worksites.id, name: worksites.name, code: worksites.code })
-    .from(worksites)
-    .where(scoped ? and(eq(worksites.isActive, true), scoped) : eq(worksites.isActive, true))
-    .orderBy(worksites.name)
-  if (worksiteRows.length === 0) return []
-
-  const ids = worksiteRows.map((row) => row.id)
-  const [headcounts, committeeRows, delegateRows] = await Promise.all([
-    db.select({ worksiteId: workers.worksiteId, count: sql<number>`count(*)::int` })
-      .from(workers)
-      .where(and(inArray(workers.worksiteId, ids), eq(workers.isActive, true)))
-      .groupBy(workers.worksiteId),
-    db.select({
-      id: preventionCommittees.id,
-      worksiteId: preventionCommittees.worksiteId,
-      name: preventionCommittees.name,
-      mandateEndsOn: preventionCommittees.mandateEndsOn,
-    })
-      .from(preventionCommittees)
-      .where(and(inArray(preventionCommittees.worksiteId, ids), eq(preventionCommittees.status, "active"))),
-    db.select({
-      worksiteId: preventionWorksiteDelegates.worksiteId,
-      firstName: workers.firstName,
-      lastName: workers.lastName,
-    })
-      .from(preventionWorksiteDelegates)
-      .innerJoin(workers, eq(workers.id, preventionWorksiteDelegates.workerId))
-      .where(and(
-        inArray(preventionWorksiteDelegates.worksiteId, ids),
-        eq(preventionWorksiteDelegates.status, "active"),
-        or(
-          isNull(preventionWorksiteDelegates.termEndsOn),
-          gte(preventionWorksiteDelegates.termEndsOn, today),
-        ),
-      )),
-  ])
-
-  const headcountBy = new Map(headcounts.map((row) => [row.worksiteId, row.count]))
-  const committeeBy = new Map(committeeRows.map((row) => [row.worksiteId, row]))
-  const delegateBy = new Map(delegateRows.map((row) => [row.worksiteId, row]))
-
-  return worksiteRows.map((worksite) => {
-    const headcount = headcountBy.get(worksite.id) ?? 0
-    const committee = committeeBy.get(worksite.id)
-    const delegate = delegateBy.get(worksite.id)
-    const mandateExpired = committee ? isMandateExpired(committee.mandateEndsOn, today) : false
-
-    return {
-      worksiteId: worksite.id,
-      worksiteName: worksite.name,
-      worksiteCode: worksite.code,
-      headcount,
-      committeeId: committee?.id ?? null,
-      committeeName: committee?.name ?? null,
-      mandateEndsOn: committee?.mandateEndsOn ?? null,
-      mandateExpired,
-      delegateName: delegate ? `${delegate.lastName}, ${delegate.firstName}` : null,
-      compliance: assessOrganizationCompliance({
-        headcount,
-        hasActiveCommittee: Boolean(committee) && !mandateExpired,
-        hasActiveDelegate: Boolean(delegate),
-      }),
-    }
-  })
+  return loadWorksiteOrganizationRows(cphsScopeCondition(access.scope, worksites.id))
 }
 
 export interface WorksiteOrganizationStatus {

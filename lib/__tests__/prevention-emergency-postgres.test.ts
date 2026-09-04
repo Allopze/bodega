@@ -118,7 +118,7 @@ describeIf("Emergencias on real PostgreSQL", () => {
   it("adds a scenario and a role, rejecting a role assignee from another worksite", async () => {
     const service = await import("@/lib/services/prevention-emergency")
     await service.addEmergencyScenario({
-      planId, type: "incendio", title: "Incendio en bodega de insumos",
+      planId, type: "incendio_estructural", title: "Incendio en bodega de insumos",
       responseProcedure: "Activar alarma, evacuar por ruta señalizada y usar extintores del sector.",
     }, MANAGER)
 
@@ -209,7 +209,7 @@ describeIf("Emergencias on real PostgreSQL", () => {
   it("schedules a drill only once the plan is approved", async () => {
     const service = await import("@/lib/services/prevention-emergency")
     const drill = await service.scheduleEmergencyDrill({
-      planId, scenarioType: "incendio", scheduledFor: DRILL_SCHEDULED_FOR,
+      planId, scenarioType: "incendio_estructural", scheduledFor: DRILL_SCHEDULED_FOR,
     }, EXECUTOR)
     drillId = drill.id
     drillVersion = drill.version
@@ -409,7 +409,7 @@ describeIf("Emergencias on real PostgreSQL", () => {
 
     accredit.mockClear()
     const mudo = await service.scheduleEmergencyDrill({
-      planId, scenarioType: "clima", scheduledFor: iso(-2 * HORA),
+      planId, scenarioType: "nevada", scheduledFor: iso(-2 * HORA),
     }, EXECUTOR)
     await service.completeEmergencyDrill({
       drillId: mudo.id, expectedVersion: mudo.version, executedAt: iso(-1 * HORA),

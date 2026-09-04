@@ -10,6 +10,9 @@ import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { logger } from "@/lib/logger"
 import { parseCatalogWorkbook } from "@/lib/services/catalog-import"
+import { onWorkerEnteredDotacion } from "@/lib/services/pdtp-adapters/worker-lifecycle-connector"
+import { evaluateWorksitePreventiveOrganization } from "@/lib/services/pdtp-adapters/preventive-organization-connector"
+import { importLifecycleEvents, insertWorker, setWorkerActive, updateWorkerFields, type WorkerLifecycleEvent } from "@/lib/services/workers"
 import { workerSchema, type ActionState } from "@/lib/validation/masters"
 
 const REVALIDATE = "/admin/trabajadores"
@@ -45,7 +48,7 @@ export async function createWorker(_prev: ActionState, formData: FormData): Prom
   }
 
   const id = nanoid()
-  await db.insert(workers).values({
+  const { events } = await insertWorker({
     id,
     rut:        d.rut ?? null,
     firstName:  d.firstName,
@@ -68,6 +71,8 @@ export async function createWorker(_prev: ActionState, formData: FormData): Prom
     entityId:   id,
     newState:   { firstName: d.firstName, lastName: d.lastName, rut: d.rut },
   })
+
+  await notifyDotacionChange(events, session.user.id)
 
   revalidatePath(REVALIDATE)
   return { ok: true, message: `Trabajador ${d.firstName} ${d.lastName} creado` }
@@ -107,7 +112,7 @@ export async function updateWorker(_prev: ActionState, formData: FormData): Prom
     return { ok: false, message: "No tienes acceso a la faena seleccionada" }
   }
 
-  await db.update(workers).set({
+  const { events } = await updateWorkerFields(d.id, {
     rut:        d.rut ?? null,
     firstName:  d.firstName,
     lastName:   d.lastName,
@@ -119,7 +124,7 @@ export async function updateWorker(_prev: ActionState, formData: FormData): Prom
     sizeShoe:   d.sizeShoe || null,
     sizeGloves: d.sizeGloves || null,
     sizeHelmet: d.sizeHelmet || null,
-  }).where(eq(workers.id, d.id))
+  }, current)
 
   await recordAudit({
     userId:     session.user.id,
@@ -130,6 +135,8 @@ export async function updateWorker(_prev: ActionState, formData: FormData): Prom
     oldState:   { firstName: current.firstName, lastName: current.lastName },
     newState:   { firstName: d.firstName, lastName: d.lastName, rut: d.rut },
   })
+
+  await notifyDotacionChange(events, session.user.id)
 
   revalidatePath(REVALIDATE)
   return { ok: true, message: `Trabajador ${d.firstName} ${d.lastName} actualizado` }
@@ -150,7 +157,7 @@ export async function toggleWorkerActive(_prev: ActionState, formData: FormData)
     return { ok: false, message: "No tienes acceso a la faena de este trabajador" }
   }
 
-  await db.update(workers).set({ isActive: activate }).where(eq(workers.id, id))
+  const { events } = await setWorkerActive(id, activate, current)
 
   await recordAudit({
     userId:     session.user.id,
@@ -161,6 +168,8 @@ export async function toggleWorkerActive(_prev: ActionState, formData: FormData)
     oldState:   { isActive: !activate },
     newState:   { isActive: activate },
   })
+
+  await notifyDotacionChange(events, session.user.id)
 
   revalidatePath(REVALIDATE)
   return { ok: true, message: activate ? "Trabajador activado" : "Trabajador desactivado" }
@@ -180,6 +189,10 @@ export async function importWorkersFromXlsx(_prev: ActionState, formData: FormDa
   if (!result.ok) return { ok: false, message: result.errors.join("; ") }
 
   let created = 0; let updated = 0; let skipped = 0
+  // Estado antes/después de cada fila escrita, para derivar los eventos de
+  // entrada a la dotación con la misma regla que el alta manual. Se acumula
+  // dentro de la transacción y se consume después del commit.
+  const lifecyclePairs: Parameters<typeof importLifecycleEvents>[0][number][] = []
 
   try {
     await db.transaction(async (tx) => {
@@ -194,11 +207,15 @@ export async function importWorkersFromXlsx(_prev: ActionState, formData: FormDa
         .map((row) => row.existingId!)
       const visibleWorkers = updateIds.length > 0
         ? await tx.query.workers.findMany({
-            columns: { id: true },
+            // `worksiteId` e `isActive` viajan además del id para derivar el
+            // evento de entrada: una fila que pasa de inactiva a activa es una
+            // reincorporación y vuelve a hacer exigible la inducción.
+            columns: { id: true, worksiteId: true, isActive: true },
             where: and(inArray(workers.id, updateIds), worksiteScopeSql(session, workers.worksiteId)),
           })
         : []
       const visibleWorkerIds = new Set(visibleWorkers.map((worker) => worker.id))
+      const stateBefore = new Map(visibleWorkers.map((worker) => [worker.id, { worksiteId: worker.worksiteId, isActive: worker.isActive }]))
 
       for (const row of result.rows) {
         if (!row.existingId || row.decision !== "update") continue
@@ -237,13 +254,19 @@ export async function importWorkersFromXlsx(_prev: ActionState, formData: FormDa
           if (changed.length !== 1) {
             throw new Error(`Fila ${row.rowNumber}: el trabajador dejó de pertenecer a una faena de tu alcance`)
           }
+          const before = stateBefore.get(row.existingId)
+          // La rama de actualización no mueve `worksiteId`, así que la faena de
+          // después es la de antes: el único evento posible acá es reincorporar.
+          if (before) lifecyclePairs.push({ before, after: { id: row.existingId, worksiteId: before.worksiteId, isActive } })
           updated++
         } else {
           const worksiteId = destinationByRow.get(row.rowNumber)
           if (!worksiteId) throw new Error(`Fila ${row.rowNumber}: falta una faena destino accesible`)
           created++
+          const newId = nanoid()
+          lifecyclePairs.push({ before: null, after: { id: newId, worksiteId, isActive } })
           await tx.insert(workers).values({
-            id: nanoid(), rut: (v["RUT"] ?? "").trim() || null,
+            id: newId, rut: (v["RUT"] ?? "").trim() || null,
             firstName, lastName,
             position: (v["Cargo"] ?? "").trim() || null,
             supervisor: (v["Supervisor"] ?? "").trim() || null,
@@ -256,11 +279,35 @@ export async function importWorkersFromXlsx(_prev: ActionState, formData: FormDa
       }
     })
     await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "create", entityType: "worker", entityId: "import_xlsx", newState: { created, updated, skipped } })
+    await notifyDotacionChange(importLifecycleEvents(lifecyclePairs), session.user.id)
     revalidatePath(REVALIDATE)
     return { ok: true, message: `Importados: ${created} creados, ${updated} actualizados, ${skipped} omitidos`, data: { created, updated, skipped } }
   } catch (err) {
     logger.error("[admin/trabajadores] importXlsx", err)
     return { ok: false, message: (err as Error).message }
+  }
+}
+
+/**
+ * Lo que el resto de la plataforma tiene que saber cuando cambia la dotación.
+ *
+ * Va **después** del commit y nunca propaga su error: el trabajador ya está
+ * escrito, y un problema del PDTP no puede deshacerlo ni hacer fallar la
+ * pantalla de administración.
+ *
+ * Dos cosas distintas cuelgan de acá. La entrada de una persona abre su
+ * inducción (N°15, N°16, N°52). Y la faena que la recibe puede haber cruzado el
+ * umbral de dotación que obliga a constituir comité paritario (N°11): el
+ * barrido diario lo detectaría igual, pero evaluarlo acá hace que se note el
+ * mismo día en que ocurre.
+ */
+async function notifyDotacionChange(events: WorkerLifecycleEvent[], userId: string): Promise<void> {
+  if (events.length === 0) return
+  try {
+    await onWorkerEnteredDotacion(events, userId)
+    await evaluateWorksitePreventiveOrganization(events.map((event) => event.worksiteId))
+  } catch (err) {
+    logger.error("[admin/trabajadores] no se pudo registrar el cambio de dotación en el PDTP", err)
   }
 }
 

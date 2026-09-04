@@ -46,7 +46,8 @@ import {
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import type { RequestContext } from "@/lib/services/prevention-documents/utils"
 import { getUserIdsWithPermissionForWorksite } from "@/lib/services/notifications"
-import { invalidateClosedIndicatorPeriodWithClient } from "@/lib/services/prevention-indicadores"
+import { onSafetyIndicatorPeriodReopened } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
+import { invalidateClosedIndicatorPeriodWithClient, type ReopenedPeriodRevocation } from "@/lib/services/prevention-indicadores"
 import { createRiskReviewTriggerWithClient } from "@/lib/services/prevention-risk-legal"
 import { codeYear, todayInChile } from "@/lib/utils"
 
@@ -659,7 +660,12 @@ export async function classifyIncidentPersonForIndicators(args: {
 }) {
   requireAccess(args.access, "prevention:incidents:investigate")
   const input = indicatorClassificationSchema.parse(args.input)
-  return db.transaction(async (tx) => {
+  // Reclasificar a una persona puede reabrir el período de indicadores ya
+  // cerrado de ese mes, y eso deja sin efecto la acreditación de la N°7. La
+  // revocación se prepara acá y se dispara después del commit: el conector abre
+  // su propia conexión.
+  let revocation: ReopenedPeriodRevocation | null = null
+  const result = await db.transaction(async (tx) => {
     const [current] = await tx.select({
       person: preventionIncidentPeople,
       incident: preventionIncidents,
@@ -708,13 +714,14 @@ export async function classifyIncidentPersonForIndicators(args: {
       ? totalAbsenceDays(periods.map((period) => ({ startDate: period.startDate, endDate: period.endDate ?? null })), todayInChile())
       : input.absenceDays
     const absenceAllocation = hasPeriods ? "periods" : current.person.absenceAllocation
-    await invalidateClosedIndicatorPeriodWithClient(tx, {
+    const reopened = await invalidateClosedIndicatorPeriodWithClient(tx, {
       worksiteId: current.incident.worksiteId,
       occurredAt: current.incident.occurredAt,
       actorUserId: args.access.ctx.userId,
       reason: input.reason,
       permissions: args.access.permissions,
     })
+    revocation = reopened.revocation
     const now = nowIso()
     const [person] = await tx.update(preventionIncidentPeople).set({
       absenceAtLeastNormalShift: input.absenceAtLeastNormalShift,
@@ -781,6 +788,9 @@ export async function classifyIncidentPersonForIndicators(args: {
     })
     return { incident, person }
   })
+
+  if (revocation) await onSafetyIndicatorPeriodReopened(revocation)
+  return result
 }
 
 export async function listPreventionIncidents(args: {

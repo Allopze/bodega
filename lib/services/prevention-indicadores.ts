@@ -16,7 +16,7 @@ import {
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { INCIDENT_EVENT_LABELS, INCIDENT_SEVERITY_LABELS } from "@/lib/prevention/incidents"
-import { onSafetyIndicatorPeriodClosed } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
+import { onSafetyIndicatorPeriodClosed, onSafetyIndicatorPeriodReopened } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import {
   calculateCanonicalIndicatorPeriod,
@@ -502,14 +502,32 @@ async function appendIndicatorHistory(client: IndicatorClient, input: Omit<typeo
   await client.insert(safetyIndicatorHistory).values({ id: `sih-${nanoid()}`, ...input, createdAt: new Date().toISOString() })
 }
 
-async function reopenClosedPeriod(client: IndicatorClient, args: { worksiteId: string; year: number; month: number; actorUserId: string; reason: string }) {
+/**
+ * Lo que hay que revocar en el PDTP cuando un período cerrado se reabre.
+ *
+ * Se devuelve en vez de dispararse: `reopenClosedPeriod` corre **dentro** de la
+ * transacción de quien la llama, y el conector abre la suya. Dispararlo acá
+ * sería poner dos transacciones a esperarse por la misma conexión.
+ */
+export type ReopenedPeriodRevocation = {
+  worksiteId: string
+  snapshotId: string
+  year: number
+  month: number
+  reason: string
+}
+
+async function reopenClosedPeriod(
+  client: IndicatorClient,
+  args: { worksiteId: string; year: number; month: number; actorUserId: string; reason: string },
+): Promise<{ reopened: boolean; revocation: ReopenedPeriodRevocation | null }> {
   const [period] = await client.select().from(safetyIndicatorPeriods).where(and(
     eq(safetyIndicatorPeriods.worksiteId, args.worksiteId),
     eq(safetyIndicatorPeriods.year, args.year),
     eq(safetyIndicatorPeriods.month, args.month),
     eq(safetyIndicatorPeriods.status, "closed"),
   )).limit(1)
-  if (!period) return false
+  if (!period) return { reopened: false, revocation: null }
   const now = new Date().toISOString()
   if (period.snapshotId) {
     await client.update(safetyIndicatorSnapshots).set({ status: "superseded" }).where(eq(safetyIndicatorSnapshots.id, period.snapshotId))
@@ -526,14 +544,22 @@ async function reopenClosedPeriod(client: IndicatorClient, args: { worksiteId: s
     changeType: "superseded", entityType: "period", entityId: period.id,
     reason: args.reason, beforeState: { status: "closed", snapshotId: period.snapshotId }, afterState: { status: "reopened" }, actorUserId: args.actorUserId,
   })
-  return true
+  // Sin snapshot no hubo cierre acreditado y no hay nada que revocar: la N°7 se
+  // selló con el id del snapshot, no con el del período ni el de la faena.
+  return {
+    reopened: true,
+    revocation: period.snapshotId
+      ? { worksiteId: args.worksiteId, snapshotId: period.snapshotId, year: args.year, month: args.month, reason: args.reason }
+      : null,
+  }
 }
 
 export async function upsertSafetyIndicatorDenominator(input: unknown, access: IndicatorAccess) {
   requireIndicatorAccess(access, "prevention:indicadores:manage")
   const data = safetyIndicatorDenominatorSchema.parse(input)
   requireIndicatorAccess(access, "prevention:indicadores:manage", data.worksiteId)
-  return db.transaction(async (tx) => {
+  let revocation: ReopenedPeriodRevocation | null = null
+  const result = await db.transaction(async (tx) => {
     const [existing] = await tx.select().from(safetyIndicatorDenominators).where(and(
       eq(safetyIndicatorDenominators.worksiteId, data.worksiteId),
       eq(safetyIndicatorDenominators.year, data.year),
@@ -543,10 +569,13 @@ export async function upsertSafetyIndicatorDenominator(input: unknown, access: I
     if (existing?.status === "approved") {
       requireIndicatorAccess(access, "prevention:indicadores:close", data.worksiteId)
       if (!data.correctionReason) throw new Error("Corregir un denominador aprobado exige un motivo trazable.")
-      await reopenClosedPeriod(tx, {
+      // Se prepara acá y se dispara DESPUÉS del commit: el conector abre su
+      // propia conexión, y llamarlo dentro dejaría dos transacciones esperándose.
+      const reopened = await reopenClosedPeriod(tx, {
         worksiteId: data.worksiteId, year: data.year, month: data.month,
         actorUserId: access.userId, reason: data.correctionReason,
       })
+      revocation = reopened.revocation
     }
     const now = new Date().toISOString()
     const status = data.submitForReview ? "pending_review" : "draft"
@@ -601,6 +630,12 @@ export async function upsertSafetyIndicatorDenominator(input: unknown, access: I
     })
     return saved
   })
+
+  // Fuera de la transacción: el conector abre la suya, y corriendo dentro las
+  // dos se esperarían por la misma conexión. Reabrir un período cerrado deja sin
+  // efecto la acreditación de la N°7 de ese mes.
+  if (revocation) await onSafetyIndicatorPeriodReopened(revocation)
+  return result
 }
 
 export async function approveSafetyIndicatorDenominator(input: unknown, access: IndicatorAccess) {
@@ -791,13 +826,22 @@ export async function invalidateClosedIndicatorPeriodWithClient(client: Indicato
     eq(safetyIndicatorPeriods.month, month),
     eq(safetyIndicatorPeriods.status, "closed"),
   )).limit(1)
-  if (!closed) return false
+  if (!closed) return { reopened: false, revocation: null }
   if (!args.permissions.includes("prevention:indicadores:close")) throw new Error("Corregir una fuente de un período cerrado exige permiso de cierre de indicadores.")
   return reopenClosedPeriod(client, {
     worksiteId: args.worksiteId, year, month, actorUserId: args.actorUserId, reason: args.reason,
   })
 }
 
+/**
+ * Envoltorio transaccional de `invalidateClosedIndicatorPeriodWithClient`, con
+ * el disparo de la revocación después del commit.
+ *
+ * No tiene llamadores hoy —quien invalida un período lo hace desde dentro de su
+ * propia transacción, en `prevention-incidents.ts`— y se conserva por eso
+ * mismo: es la forma correcta de usarla desde fuera, y tenerla escrita evita
+ * que el próximo llamador arme la suya olvidando el post-commit.
+ */
 export async function invalidateClosedIndicatorPeriod(args: {
   worksiteId: string
   occurredAt: string
@@ -805,7 +849,9 @@ export async function invalidateClosedIndicatorPeriod(args: {
   reason: string
   permissions: readonly string[]
 }) {
-  return db.transaction((tx) => invalidateClosedIndicatorPeriodWithClient(tx, args))
+  const result = await db.transaction((tx) => invalidateClosedIndicatorPeriodWithClient(tx, args))
+  if (result.revocation) await onSafetyIndicatorPeriodReopened(result.revocation)
+  return result
 }
 
 export function safetyIndicatorPeriodIdentity(worksiteId: string, year: number, month: number) {

@@ -303,11 +303,14 @@ queda verificado por tests y no por datos reales.
 - [x] T54 Conector `onSafetyIndicatorPeriodClosed` en `pdtp-accreditation-connectors.ts`, llamado después del
       commit de `closeSafetyIndicatorPeriod`. `sourceId` lleva el snapshot (un re-cierre genera snapshot nuevo
       y por tanto otra fila). `occurredAt` es `closedAt`, no el mes que se cierra.
-      **Falta la revocación**: `onSafetyIndicatorPeriodReopened` está escrita pero no cableada a
-      `reopenClosedPeriod` — esa función corre dentro de transacciones abiertas en tres puntos
-      (`invalidateClosedIndicatorPeriodWithClient`, `upsertSafetyIndicatorDenominator`, y su caller en
-      `prevention-incidents.ts`), y enhebrar el disparo post-commit por los tres sin arriesgar el mismo
-      deadlock de conexión única que ya apareció una vez en esta fase queda pendiente.
+      **Revocación cableada el 2026-09-03.** `reopenClosedPeriod` devuelve qué revocar en vez de
+      revocarlo, y las dos entradas reales —`upsertSafetyIndicatorDenominator` y
+      `classifyIncidentPersonForIndicators`— disparan después del commit con el patrón acumulador, que
+      es lo que evita el deadlock de conexión única. La tercera entrada,
+      `invalidateClosedIndicatorPeriod`, no tenía llamadores: se conservó como el envoltorio correcto.
+      De paso salió un defecto mayor que la desconexión: el conector sellaba la revocación con
+      `indicadores:${worksiteId}` mientras el cierre usa `indicadores:${snapshotId}`, así que cableado
+      tal cual habría revocado cero ejecuciones y dejado un evento `revoked` mintiendo.
 
 **Verificación:** ingresar los indicadores de un mes y ver la ejecución en ese período. Verificado el conector
 en aislamiento contra `bodega_dev`: cierra genera 1 ejecución `submitted`, reintentar el mismo snapshot no

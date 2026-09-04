@@ -39,6 +39,7 @@ const { chileDateParts } = await import("@/lib/utils")
 const { closeEvaluation } = await import("@/lib/services/sst-module/evaluations")
 const { getDefinition } = await import("@/lib/sst/definitions")
 const { getEvaluationApplicableItems } = await import("@/lib/services/sst-module/helpers")
+const { onWorkerEnteredDotacion } = await import("@/lib/services/pdtp-adapters/worker-lifecycle-connector")
 
 afterAll(async () => {
   delete testGlobal.__db
@@ -55,6 +56,13 @@ const EVAL_ID = "sstev-onb-1"
 
 /** Las cinco que el acta cierra, más la N°17 que a propósito no (decisión D06). */
 const ACTIVITY_NUMBERS = [15, 17, 18, 19, 23, 52, 63] as const
+
+/**
+ * La N°15 y la N°52 se miden por plazo de cierre, así que ya no acreditan
+ * directo: reportan la obligación que abrió la entrada del trabajador. Las
+ * otras cuatro siguen acreditando directo.
+ */
+const BY_OBLIGATION = new Set([15, 52])
 const activityId = (n: number) => `${PROGRAM_ID}-a-${String(n).padStart(3, "0")}`
 
 /** El valor conforme depende de la escala del ítem. */
@@ -73,6 +81,14 @@ function conformingFor(kind: string): string {
 async function executionsFor(n: number) {
   return inMemoryDb.select().from(schema.pdtpExecutions)
     .where(eq(schema.pdtpExecutions.activityId, activityId(n)))
+}
+
+/** El alta del trabajador, que es lo que abre las obligaciones de entrada. */
+async function openEntryObligations() {
+  return onWorkerEnteredDotacion([{
+    workerId: WORKER_ID, worksiteId: WS_ID, kind: "alta",
+    occurredAt: `${PROGRAM_YEAR}-04-01T12:00:00.000Z`,
+  }], USER_ID)
 }
 
 /**
@@ -101,7 +117,11 @@ async function answerAll(overrides: Record<string, { estado: string; observacion
 
 beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
+  // Las ejecuciones antes que las obligaciones: `obligation_id` es
+  // `ON DELETE SET NULL`, y anular dos de la misma celda a la vez choca contra
+  // el índice único parcial de período.
   await inMemoryDb.delete(schema.pdtpExecutions)
+  await inMemoryDb.delete(schema.pdtpObligations)
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.sstResponses)
@@ -131,6 +151,11 @@ beforeEach(async () => {
     activity: `Actividad de habilitación N°${n}`, program: "Habilitación del trabajador",
     responsibleSlugs: ["prevencionista_faena"], responsibleDisplay: "PRF",
     scheduleMode: "on_demand", scheduleClassificationStatus: "confirmed",
+    // Los cinco campos que `createPdtpObligation` exige para poder abrir un
+    // caso: sin ellos la N°15 y la N°52 no tendrían obligación que reportar.
+    dueDays: 0,
+    evidenceRequirement: "Acta de trabajador nuevo firmada.",
+    indicatorMode: BY_OBLIGATION.has(n) ? "closed_on_time" : "planned_vs_completed",
     sourceSheetRow: n, createdAt: now, updatedAt: now,
   })))
 
@@ -144,6 +169,7 @@ beforeEach(async () => {
 
 describe("El acta de trabajador nuevo acredita al cerrarse", () => {
   it("cierra las seis actividades cuando todos los ítems quedan conformes", async () => {
+    await openEntryObligations()
     const answered = await answerAll()
     expect(answered).toBeGreaterThan(0)
 
@@ -151,7 +177,7 @@ describe("El acta de trabajador nuevo acredita al cerrarse", () => {
 
     // N°19 cierra junto con las otras: la carpeta del trabajador queda al día
     // con los mismos tres componentes que ya cierran la N°15, N°18 y N°23.
-    for (const n of [15, 18, 19, 23, 52, 63]) {
+    for (const n of [18, 19, 23, 63]) {
       const rows = await executionsFor(n)
       expect(rows, `N°${n}`).toHaveLength(1)
       expect(rows[0], `N°${n}`).toMatchObject({
@@ -164,13 +190,28 @@ describe("El acta de trabajador nuevo acredita al cerrarse", () => {
         year: PROGRAM_YEAR,
         month: 4,
         week: 1,
+        // Acreditación directa: no cuelga de ninguna obligación.
+        obligationId: null,
       })
     }
+
+    // La N°15 y la N°52 cierran su obligación en vez de acreditar directo, que
+    // es lo único que el indicador de plazo mira.
+    for (const n of [15, 52]) {
+      const rows = await executionsFor(n)
+      expect(rows, `N°${n}`).toHaveLength(1)
+      expect(rows[0]!.obligationId, `N°${n}`).toBeTruthy()
+      expect(rows[0], `N°${n}`).toMatchObject({ status: "submitted", worksiteId: WS_ID })
+    }
+    const obligations = await inMemoryDb.select().from(schema.pdtpObligations)
+    expect(obligations).toHaveLength(2)
+    expect(obligations.every((o) => o.status === "reported")).toBe(true)
   })
 
   it("no acredita la N°17: el RE-28 no es la declaración de salud del acta", async () => {
     // Decisión D06. El acta tiene "Declaración de salud", que no es el RE-28 ni
     // tiene su criterio de sensibilidad.
+    await openEntryObligations()
     await answerAll()
     await closeEvaluation(EVAL_ID, { evaluationId: EVAL_ID }, "all")
     expect(await executionsFor(17)).toHaveLength(0)
@@ -178,6 +219,7 @@ describe("El acta de trabajador nuevo acredita al cerrarse", () => {
 
   it("un ítem no conforme no cierra su actividad", async () => {
     // El RIOHS marcado "no cumple" prueba que no se entregó.
+    await openEntryObligations()
     await answerAll({
       "induccion_capacitacion::riohs": { estado: "no_cumple", observacion: "No se alcanzó a entregar en la incorporación." },
     })
@@ -191,6 +233,7 @@ describe("El acta de trabajador nuevo acredita al cerrarse", () => {
   })
 
   it("la entrega de EPP exige la sección completa, no una prenda", async () => {
+    await openEntryObligations()
     await answerAll({
       "epp::guantes_seguridad": { estado: "no_entregado", observacion: "Sin stock de la talla al momento del ingreso." },
     })
@@ -199,12 +242,30 @@ describe("El acta de trabajador nuevo acredita al cerrarse", () => {
   })
 
   it("cerrar dos veces no vuelve a sumar", async () => {
+    await openEntryObligations()
     await answerAll()
     await closeEvaluation(EVAL_ID, { evaluationId: EVAL_ID }, "all")
     // El servicio devuelve el acta tal cual si ya estaba cerrada; la clave
     // idempotente del motor cubre el resto.
     await closeEvaluation(EVAL_ID, { evaluationId: EVAL_ID }, "all")
     expect(await executionsFor(15)).toHaveLength(1)
+  })
+
+  it("sin obligación abierta, el acta cierra igual y las directas acreditan", async () => {
+    // El caso del trabajador que entró antes de que existiera el abridor. El
+    // kit deja un `warn` y sigue: perder la N°15 es el costo de no haber
+    // registrado su entrada, y no puede arrastrar a las otras cuatro.
+    await answerAll()
+
+    const closed = await closeEvaluation(EVAL_ID, { evaluationId: EVAL_ID }, "all")
+
+    expect(closed.estado).toBe("cerrado")
+    expect(await inMemoryDb.select().from(schema.pdtpObligations)).toHaveLength(0)
+    expect(await executionsFor(15)).toHaveLength(0)
+    expect(await executionsFor(52)).toHaveLength(0)
+    for (const n of [18, 19, 23, 63]) {
+      expect(await executionsFor(n), `N°${n}`).toHaveLength(1)
+    }
   })
 
   it("el acta se cierra igual sin programa PDTP activo", async () => {

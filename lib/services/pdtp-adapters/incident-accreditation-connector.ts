@@ -33,13 +33,13 @@
 import { logger } from "@/lib/logger"
 import { resolvePdtpActivityIdsForNumbers } from "@/lib/services/pdtp/accreditation"
 import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
-import { createPdtpObligation, findPdtpObligationByIdempotencyKey, reportPdtpObligation } from "@/lib/services/pdtp/obligations"
+import { createPdtpObligation, findPdtpObligationByIdempotencyKey, pdtpObligationIdempotencyKey, reportPdtpObligation } from "@/lib/services/pdtp/obligations"
 
 /** Las doce actividades del RE-20 que pasan por obligación. La N°76 no está. */
 const RE20_OBLIGATION_ACTIVITY_NUMBERS = [66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 77, 78]
 
 function incidentObligationIdempotencyKey(activityId: string, worksiteId: string, incidentId: string): string {
-  return `pdtp-obligation:${activityId}:${worksiteId}:incident:${incidentId}`
+  return pdtpObligationIdempotencyKey({ activityId, worksiteId, sourceType: "incident", sourceId: incidentId })
 }
 
 /**

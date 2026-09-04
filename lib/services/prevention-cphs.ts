@@ -35,6 +35,7 @@ import {
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 import { onCphsCommitteeConstituted, onManagementReviewClosed } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
+import { onPreventiveOrganizationSatisfied } from "@/lib/services/pdtp-adapters/preventive-organization-connector"
 import { codeYear, todayInChile } from "@/lib/utils"
 
 const NOT_FOUND = CPHS_NOT_FOUND
@@ -80,6 +81,16 @@ export async function constituteCommittee(input: unknown, access: CphsAccess) {
     committeeId: created.id,
     worksiteId: data.worksiteId,
     constitutedOn: data.constitutedOn,
+  })
+  // Y cierra la obligación abierta por la brecha de organización preventiva, si
+  // la había: la acreditación directa de arriba deja la ejecución en la
+  // planilla, pero el indicador de plazo de la N°11 sólo mira obligaciones.
+  await onPreventiveOrganizationSatisfied({
+    worksiteId: data.worksiteId,
+    kind: "committee",
+    entityId: created.id,
+    occurredAt: data.constitutedOn,
+    userId: access.userId,
   })
   return created
 }

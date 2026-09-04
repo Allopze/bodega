@@ -1779,6 +1779,20 @@
       "when": 1788456757231,
       "tag": "0253_dry_the_hood",
       "breakpoints": true
+    },
+    {
+      "idx": 254,
+      "version": "7",
+      "when": 1788486196704,
+      "tag": "0254_exotic_marten_broadcloak",
+      "breakpoints": true
+    },
+    {
+      "idx": 255,
+      "version": "7",
+      "when": 1788492532173,
+      "tag": "0255_confused_medusa",
+      "breakpoints": true
     }
   ]
 }

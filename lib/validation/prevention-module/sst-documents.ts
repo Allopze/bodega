@@ -139,6 +139,16 @@ export const sstDocumentTypeUpsertSchema = z.object({
   defaultValidityMonths:  z.coerce.number().int().positive().max(600).optional(),
   requiresApproval:       z.boolean().default(true),
   requiresAcknowledgment: z.boolean().default(false),
+  /**
+   * Las dos vías por las que un tipo documental acredita en el programa anual.
+   * Son campos distintos porque son momentos distintos: publicar una versión
+   * prueba que el documento existe; un acuse prueba que alguien lo recibió.
+   *
+   * Sin exponerlos acá, la única forma de enganchar un tipo al PDTP era editar
+   * `DEFAULT_DOCUMENT_TYPES` y desplegar.
+   */
+  pdtpActivityNumbers:               z.array(z.number().int().positive()).default([]),
+  pdtpAcknowledgmentActivityNumbers: z.array(z.number().int().positive()).default([]),
   isActive:    z.boolean().default(true),
 })
 

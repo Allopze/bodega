@@ -31,10 +31,16 @@ function fulfillmentCoverageBlockers(issues: PdtpFulfillmentCoverageIssue[]): st
     // en el segundo caso, que es el más común.
     permission_gap: "sin un responsable que pueda registrar el cumplimiento",
     decision_required: "midiéndose por cobertura sin padrón declarado",
+    destination_review: "con un destino de enganche cuyo permiso ningún responsable tiene",
   }
   const messages: string[] = []
   for (const [status, numbers] of byStatus) {
-    if (status === "decision_required") continue // informativo, no bloquea el envío.
+    // Los dos informativos. `destination_review` no bloquea a propósito: el
+    // mapa de destinos es nuevo y buena parte de lo que encuentra es
+    // segregación de deberes —quien redacta el plan de emergencia no es quien
+    // lo firma—, no grants faltantes. Se promueve a bloqueante cuando alguien
+    // revise la lista y la deje vacía, no antes.
+    if (status === "decision_required" || status === "destination_review") continue
     messages.push(`${numbers.length} actividad(es) ${labels[status]}: N°${numbers.join(", N°")}.`)
   }
   return messages
@@ -118,7 +124,7 @@ export type PdtpCoverageReport = {
   groups: Array<{
     status: PdtpFulfillmentCoverageIssue["status"]
     label: string
-    /** `false` para `decision_required`, que se informa sin frenar el envío. */
+    /** `false` para `decision_required` y `destination_review`: informan sin frenar el envío. */
     blocks: boolean
     issues: PdtpFulfillmentCoverageIssue[]
   }>
@@ -130,6 +136,7 @@ const COVERAGE_STATUS_LABELS: Record<PdtpFulfillmentCoverageIssue["status"], str
   config_required: "Sin la configuración que su enganche o constancia necesita",
   permission_gap: "Sin un responsable que pueda registrar el cumplimiento",
   decision_required: "Midiéndose por cobertura sin padrón declarado",
+  destination_review: "Con un destino de enganche por revisar",
 }
 
 /**
@@ -160,7 +167,7 @@ export async function getPdtpCoverageReport(programId: string): Promise<PdtpCove
       .map(([status, list]) => ({
         status,
         label: COVERAGE_STATUS_LABELS[status],
-        blocks: status !== "decision_required",
+        blocks: status !== "decision_required" && status !== "destination_review",
         issues: [...list].sort((a, b) => a.n - b.n),
       }))
       // Lo que frena la activación primero.

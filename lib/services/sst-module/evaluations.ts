@@ -9,6 +9,7 @@ import { addDays } from "@/lib/sst/date"
 import { getDefinition } from "@/lib/sst/definitions/index"
 import { isPersonEvaluationDefinition } from "@/lib/sst/definitions"
 import { calculateCompliance, getAutomaticResultadoFinal, classifyEfficacy, requiresObservation } from "@/lib/sst/compliance"
+import { onSensitiveWorkerIdentificationClosed } from "@/lib/services/pdtp-adapters/worker-sensitivity-connector"
 import { onWorkerOnboardingClosed } from "@/lib/services/pdtp-adapters/worker-onboarding-connector"
 import { sstEvaluationCreateSchema, sstCloseEvaluationSchema } from "@/lib/validation/sst"
 import type { StatusValue, EvaluatorRole } from "@/lib/sst/types"
@@ -55,7 +56,9 @@ export async function createEvaluation(input: z.infer<typeof sstEvaluationCreate
       observacionesGenerales: null, schemaJson: null, createdAt: now, updatedAt: now,
     })
 
-    if (data.tipo === "seguimiento") {
+    // El `tipo` no basta: un registro de una sola vez comparte `seguimiento`
+    // con el control post-incidente y no tiene sus hitos. La definición decide.
+    if (data.tipo === "seguimiento" && definition.schedulesFollowups !== false) {
       const followups = [
         { instancia: "dia_0", days: 0 },
         { instancia: "dia_7", days: 7 },
@@ -199,7 +202,13 @@ export async function listEvaluationsGroupedByWorker(worksiteIds: string[] | "al
   return [...groupMap.values()]
 }
 
-export async function closeEvaluation(id: string, input: z.infer<typeof sstCloseEvaluationSchema>, worksiteIds: string[] | "all"): Promise<SstEvaluation> {
+/**
+ * `actorUserId` es opcional y cae a `createdBy` del acta: los llamadores que no
+ * lo pasan siguen funcionando, y quien cierra queda atribuido igual. Se necesita
+ * porque la N°15 y la N°52 ya no acreditan directo sino reportando su
+ * obligación, y un reporte lleva autor.
+ */
+export async function closeEvaluation(id: string, input: z.infer<typeof sstCloseEvaluationSchema>, worksiteIds: string[] | "all", actorUserId?: string): Promise<SstEvaluation> {
   const evaluation = await getEvaluation(id, worksiteIds)
   if (!evaluation) throw new Error("Evaluación no encontrada o sin acceso.")
   if (evaluation.estado === "cerrado") return evaluation
@@ -212,6 +221,7 @@ export async function closeEvaluation(id: string, input: z.infer<typeof sstClose
 
   let updated: SstEvaluation | undefined
   let accreditation: Parameters<typeof onWorkerOnboardingClosed>[0] | null = null
+  let sensitiveAccreditation: Parameters<typeof onSensitiveWorkerIdentificationClosed>[0] | null = null
   await db.transaction(async (tx) => {
     await assertEditable(id, tx)
     const allResponses = await tx.select().from(sstResponses).where(eq(sstResponses.evaluationId, id))
@@ -237,7 +247,12 @@ export async function closeEvaluation(id: string, input: z.infer<typeof sstClose
       }
     }
     const { percentage } = calculateCompliance(complianceInput)
-    const responsesForResultado = applicableResponses.map((r) => ({ seccionId: r.seccionId, itemId: r.itemId, estado: r.estado as StatusValue }))
+    // El RE-28 no tiene ítems puntuables —nada suyo entra en `applicableResponses`—
+    // pero su resultado sí depende de lo que se respondió: si el puesto exige
+    // reubicar o ajustar tareas. Para ese instrumento se leen las respuestas
+    // crudas; para el resto se conserva el criterio de siempre.
+    const resultadoSource = evaluation.definicionCode === "identificacion_sensibles" ? allResponses : applicableResponses
+    const responsesForResultado = resultadoSource.map((r) => ({ seccionId: r.seccionId, itemId: r.itemId, estado: r.estado as StatusValue }))
     const resultadoFinal = getAutomaticResultadoFinal(evaluation.definicionCode, percentage, responsesForResultado, data.hasCriticalDeviation ?? false, data.hasReincidence ?? false)
 
     let resultadoEficacia: string | null = null
@@ -270,6 +285,19 @@ export async function closeEvaluation(id: string, input: z.infer<typeof sstClose
         responses: applicableResponses.map((r) => ({
           seccionId: r.seccionId, itemId: r.itemId, estado: r.estado,
         })),
+        actorUserId: actorUserId ?? row.createdBy,
+      }
+    }
+
+    // N°17: el RE-28 tiene su propia acta y su propio conector. La D06 separó
+    // las dos y acá se mantienen separadas.
+    if (evaluation.definicionCode === "identificacion_sensibles" && row) {
+      sensitiveAccreditation = {
+        evaluationId: row.id,
+        worksiteId: row.worksiteId,
+        workerId: row.workerId,
+        fechaEvaluacion: row.fechaEvaluacion,
+        resultadoFinal: row.resultadoFinal,
       }
     }
   })
@@ -278,6 +306,7 @@ export async function closeEvaluation(id: string, input: z.infer<typeof sstClose
   // `safeAccredit` absorbe el error: el acta ya está cerrada y es inmutable, así
   // que una acreditación fallida no puede tumbarla.
   if (accreditation) await onWorkerOnboardingClosed(accreditation)
+  if (sensitiveAccreditation) await onSensitiveWorkerIdentificationClosed(sensitiveAccreditation)
   return updated
 }
 

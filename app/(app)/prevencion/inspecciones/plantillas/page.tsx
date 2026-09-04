@@ -69,6 +69,7 @@ export default async function PlantillasInspeccionPage() {
     pdtpActivityNumbers: row.pdtpActivityNumbers,
     pdtpReviewActivityNumbers: row.pdtpReviewActivityNumbers,
     sourceDefinitionCode: row.sourceDefinitionCode,
+    executorOfRecord: row.executorOfRecord,
     definitionDrifted: row.definitionDrifted,
     definitionMissing: row.definitionMissing,
     provenanceKind: row.provenanceKind,

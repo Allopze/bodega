@@ -349,6 +349,67 @@ services:
       - SEED_DRY_RUN=${SEED_DRY_RUN:-}
     command: ["node", "scripts/seed-pdtp-inspection-templates.mjs"]
 
+  # One-shot: siembra categorías y tipos de Documentación SST, incluido el
+  # cableado de la N°43 (al publicar) y la N°36 (por acuse). Idempotente por
+  # (categoría, código).
+  #
+  #   docker compose run --rm apply-sst-taxonomy
+  apply-sst-taxonomy:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - SST_TAXONOMY_DRY_RUN=${SST_TAXONOMY_DRY_RUN:-}
+      - SST_TAXONOMY_DEPLOY_MODE=true
+    command: ["node", "scripts/apply-sst-document-taxonomy.mjs"]
+
+  # One-shot: un plan de emergencia en borrador por faena activa, con sus
+  # amenazas obligatorias y su organigrama mínimo. No aprueba nada.
+  #
+  #   docker compose run --rm seed-emergency-plans
+  seed-emergency-plans:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - EMERGENCY_PLANS_ACTOR_USER_ID=${EMERGENCY_PLANS_ACTOR_USER_ID:-}
+      - EMERGENCY_PLANS_DRY_RUN=${EMERGENCY_PLANS_DRY_RUN:-}
+      - EMERGENCY_PLANS_DEPLOY_MODE=true
+    command: ["node", "scripts/seed-emergency-plans.mjs"]
+
+  # One-shot de sólo lectura: qué actividades del programa no tienen un
+  # instrumento vigente que las acredite, y qué plantillas vigentes se están
+  # ejecutando sin declarar ninguna. Nunca sale con error — es un informe.
+  #
+  #   docker compose run --rm preflight-pdtp-wiring
+  preflight-pdtp-wiring:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+    command: ["node", "scripts/preflight-pdtp-accreditation-wiring.mjs"]
+
   # One-shot: aplica al programa PDTP 2026 las decisiones de catálogo de la
   # jefatura de prevención (retiros, corresponsables, textos y modo de
   # indicador). Corre en cada deploy y es idempotente por ítem: lo ya aplicado

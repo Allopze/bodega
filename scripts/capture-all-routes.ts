@@ -2646,7 +2646,7 @@ async function prepareDatabase(captureDbUrl: string) {
   await db.insert(schema.preventionEmergencyScenarios).values({
     id: "emergency-scenario-audit-1",
     planId: "plan-audit-1",
-    type: "incendio",
+    type: "incendio_estructural",
     title: "Incendio en línea de corte",
     description: "Foco incipiente en zona de equipos con presencia de cuadrilla.",
     responseProcedure: "Detener operación, activar alarma, evacuar al punto seguro y coordinar con Bomberos.",
@@ -2821,7 +2821,7 @@ async function prepareDatabase(captureDbUrl: string) {
     id: "emergency-drill-audit-1",
     planId: "plan-audit-1",
     worksiteId,
-    scenarioType: "incendio",
+    scenarioType: "incendio_estructural",
     scheduledFor: "2026-06-09T10:00:00.000Z",
     executedAt: "2026-06-09T10:00:00.000Z",
     status: "completed",

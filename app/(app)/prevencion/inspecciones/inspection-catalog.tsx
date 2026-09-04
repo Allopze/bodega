@@ -33,6 +33,7 @@ import {
   updateDeviationCatalogEntryAction,
   updateInspectionProgramAction,
 } from "./actions"
+import { classifyPdtp2026InspectionWiring } from "@/lib/prevention/inspection-wiring"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { formatDate, todayInChile } from "@/lib/utils"
@@ -73,6 +74,8 @@ export interface TemplateItem {
   unclassifiedDeviations: { description: string; criticality: string; occurrences: number }[]
   /** Definición de `lib/sst/definitions` de la que salió el snapshot. */
   sourceDefinitionCode: string | null
+  /** Quién es el ejecutante de registro (D04). */
+  executorOfRecord: string
   /** El catálogo en código difiere del snapshot congelado (A-03). */
   definitionDrifted: boolean
   /** La definición de origen ya no existe en el catálogo en código. */
@@ -210,6 +213,44 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, canManage, ca
   const pdtpNameByNumber = React.useMemo(() => new Map(pdtpOptions.map((option) => [option.n, option.name])), [pdtpOptions])
   const pdtpLabel = (n: number) => `N° ${n}${pdtpNameByNumber.has(n) ? ` — ${pdtpNameByNumber.get(n)}` : ""}`
 
+  /**
+   * El estado del cableado, con la misma función que usa el preflight del
+   * despliegue. Compartirla es el punto: una pantalla que opine distinto del
+   * informe del deploy es peor que no tener pantalla.
+   */
+  const wiring = React.useMemo(() => classifyPdtp2026InspectionWiring(templates.map((item) => ({
+    id: item.id,
+    code: item.code,
+    versionLabel: item.versionLabel,
+    status: item.status,
+    sourceDefinitionCode: item.sourceDefinitionCode,
+    pdtpActivityNumbers: item.pdtpActivityNumbers,
+    executorOfRecord: item.executorOfRecord,
+  }))), [templates])
+
+  /** Por plantilla vigente mal cableada: qué declara el borrador que la espera. */
+  const silentlyUnwiredById = React.useMemo(() => {
+    const map = new Map<string, { declares: number[]; draftVersionLabel: string }>()
+    for (const gap of wiring.gaps) {
+      if (gap.kind !== "silently_unwired") continue
+      map.set(gap.approved.id, { declares: gap.draft.declares, draftVersionLabel: gap.draft.versionLabel })
+    }
+    return map
+  }, [wiring])
+
+  /** Vigentes cuyo reemplazo cambió de código: aprobar el borrador no las retira. */
+  const orphanApprovedById = React.useMemo(() => {
+    const map = new Map<string, string[]>()
+    for (const gap of wiring.gaps) {
+      if (gap.kind !== "orphan_approved") continue
+      map.set(gap.approved.id, gap.replacedByCodes)
+    }
+    return map
+  }, [wiring])
+
+  const pendingApprovalCount = wiring.gaps.filter((gap) => gap.kind === "pending_approval").length
+  const silentCount = silentlyUnwiredById.size + orphanApprovedById.size
+
   return (
     <div className="space-y-4">
       <div className="grid gap-2 sm:grid-cols-[minmax(14rem,1fr)_12rem_12rem]">
@@ -221,7 +262,30 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, canManage, ca
         <Select value={status} onValueChange={(value) => setFilters({ estado: value === "all" ? null : value })}><SelectTrigger aria-label="Filtrar plantillas por estado"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">Todos los estados</SelectItem><SelectItem value="draft">Borradores</SelectItem><SelectItem value="approved">Aprobadas</SelectItem><SelectItem value="superseded">Reemplazadas</SelectItem></SelectContent></Select>
       </div>
 
-      {visibleTemplates.length === 0 ? (
+      {silentCount > 0 && (
+        <div className="rounded-lg border border-[var(--color-danger-border,var(--color-border))] bg-[var(--color-danger-tint)] px-3 py-2 text-sm text-[var(--color-danger-ink)]">
+          <p className="font-medium">
+            {silentCount === 1 ? "Un instrumento vigente no acredita" : `${silentCount} instrumentos vigentes no acreditan`} en el programa anual.
+          </p>
+          <p className="mt-0.5 text-xs">
+            Se pueden ejecutar y cerrar con normalidad, y el PDTP no se entera. Su borrador sí declara la actividad: aprobarlo lo corrige.
+          </p>
+        </div>
+      )}
+      {pendingApprovalCount > 0 && (
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-warning-tint)] px-3 py-2 text-sm text-[var(--color-warning-ink)]">
+          <p>
+            {pendingApprovalCount === 1
+              ? "Un instrumento del programa 2026 está en borrador."
+              : `${pendingApprovalCount} instrumentos del programa 2026 están en borrador.`}{" "}
+            Mientras no se aprueben, sus actividades del PDTP no acreditan.
+          </p>
+          <Button variant="ghost" size="sm" className="mt-1 h-7 px-2 text-xs" onClick={() => setFilters({ estado: "draft" })}>
+            Ver borradores
+          </Button>
+        </div>
+      )}
+            {visibleTemplates.length === 0 ? (
         <EmptyState
           icon={<ClipboardText size={20} />}
           title={templates.length === 0 ? "No hay instrumentos incorporados" : "No hay plantillas con estos filtros"}
@@ -244,7 +308,17 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, canManage, ca
               <dl className="grid grid-cols-2 gap-3 text-xs">
                 {/* I-29: la fracción no se explicaba por sí sola. */}
                 <div><dt className="text-[var(--color-text-subtle)]" title="Ítems con gravedad asignada; el resto usa una gravedad por defecto al generar hallazgos.">Gravedad declarada</dt><dd className="mt-0.5 font-medium">{coverageLabel(item.coverage)}</dd></div>
-                <div><dt className="text-[var(--color-text-subtle)]">PDTP</dt><dd className="mt-0.5 font-medium">{item.pdtpActivityNumbers?.length ? `Ejecutar ${item.pdtpActivityNumbers.map(pdtpLabel).join(", ")}` : "No acredita"}</dd></div>
+                <div><dt className="text-[var(--color-text-subtle)]">PDTP</dt><dd className="mt-0.5 font-medium">{
+                  item.pdtpActivityNumbers?.length
+                    ? item.status === "approved"
+                      ? `Ejecutar ${item.pdtpActivityNumbers.map(pdtpLabel).join(", ")}`
+                      : `Acreditará ${item.pdtpActivityNumbers.map(pdtpLabel).join(", ")} al aprobarse`
+                    : silentlyUnwiredById.has(item.id)
+                      ? `No acredita · el borrador v${silentlyUnwiredById.get(item.id)!.draftVersionLabel} sí declara`
+                      : orphanApprovedById.has(item.id)
+                        ? "No acredita · reemplazada por un código nuevo, retírala"
+                        : "No acredita"
+                }</dd></div>
                 <div className="col-span-2"><dt className="text-[var(--color-text-subtle)]">Fuente y paridad</dt><dd className="mt-0.5 font-medium">{item.sourceSnapshot ? <><a className="underline" href={`/api/prevencion/documentacion/${item.sourceSnapshot.documentId}/version/${item.sourceSnapshot.versionId}`}>{item.sourceSnapshot.fileName}</a> · {item.sourceSnapshot.revision ?? "sin revisión"} · {parityStatusLabel(item.parityReport?.status)}</> : isOfficialProvenance(item.provenanceKind) ? "Documento oficial pendiente" : "Definición propia de plataforma"}</dd></div>
               </dl>
               <TemplateActions item={item} templates={templates} pdtpOptions={pdtpOptions} canManage={canManage} canApprove={canApprove} />
@@ -307,13 +381,29 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, canManage, ca
                     {coverageLabel(item.coverage)}
                     {item.coverage.criticalityInert && <span className="ml-1 text-xs text-[var(--color-warning-ink)]">sin gravedad: toda falla saldrá de criticidad media</span>}
                   </TableCell>
-                  {/* Sin actividades declaradas, completar un run no acredita
-                      nada en el programa anual: el conector es un no-op. */}
+                  {/* Tres casos distintos que antes se pintaban igual:
+                      - un borrador imprimía sus números como si ya rigieran;
+                      - una vigente sin números por estar reemplazada se leía
+                        igual que la auditoría del SGSST, que legítimamente no
+                        acredita ninguna actividad del programa. */}
                   <TableCell className="text-sm">
                     {item.pdtpActivityNumbers && item.pdtpActivityNumbers.length > 0 ? (
-                      <span className="font-mono text-xs">{item.pdtpActivityNumbers.map(pdtpLabel).join(", ")}</span>
+                      <span className={item.status === "approved" ? "font-mono text-xs" : "text-xs text-[var(--color-text-subtle)]"}>
+                        {item.status === "approved"
+                          ? item.pdtpActivityNumbers.map(pdtpLabel).join(", ")
+                          : `Acreditará ${item.pdtpActivityNumbers.map(pdtpLabel).join(", ")} al aprobarse`}
+                      </span>
+                    ) : silentlyUnwiredById.has(item.id) ? (
+                      <span className="text-xs text-[var(--color-danger-ink)]">
+                        No acredita · el borrador v{silentlyUnwiredById.get(item.id)!.draftVersionLabel} declara{" "}
+                        {silentlyUnwiredById.get(item.id)!.declares.map((n) => `N° ${n}`).join(", ")}
+                      </span>
+                    ) : orphanApprovedById.has(item.id) ? (
+                      <span className="text-xs text-[var(--color-danger-ink)]">
+                        No acredita · reemplazada por {orphanApprovedById.get(item.id)!.join(" y ")}, retírala a mano
+                      </span>
                     ) : (
-                      <span className="text-xs text-[var(--color-warning-ink)]">No acredita</span>
+                      <span className="text-xs text-[var(--color-text-subtle)]">No acredita</span>
                     )}
                     {/* Al revisar es otra ocurrencia y otro responsable: la
                         n=25 la ejecuta el operador, la n=26 la firma el Sup/JT. */}

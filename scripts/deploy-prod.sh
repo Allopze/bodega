@@ -430,6 +430,17 @@ run_timed "Aplicando decisiones de catálogo del PDTP" run_in_prod docker compos
 
 # Después de las decisiones de catálogo: primero se decide qué actividades viven,
 # luego se declara qué registro acredita cada una.
+# Antes que el dato del PDTP: los tipos documentales son el catálogo donde la
+# N°43 y la N°36 declaran su número, así que Documentación SST es prerrequisito
+# y no al revés.
+run_timed "Sembrando el catálogo de Documentación SST" run_in_prod docker compose run --rm apply-sst-taxonomy
+
+# El plan de emergencia de cada faena, en borrador. Es lo que permite que la
+# N°84 declare su número y, con eso, que el programa anual pueda activarse.
+# Aprobarlo NO se automatiza: el servicio exige que quien aprueba no sea quien
+# creó, y aprobar es el acto que acredita la N°83.
+run_timed "Sembrando el plan de emergencia de cada faena" run_in_prod docker compose run --rm seed-emergency-plans
+
 run_timed "Declarando el dato de cursos, planes y campañas del PDTP" run_in_prod docker compose run --rm apply-pdtp-program-data
 
 # Después de los retiros: clasifica sólo lo que sigue activo, así que correrlo
@@ -447,6 +458,12 @@ run_timed "Declarando el SLA de las actividades a demanda del PDTP" run_in_prod 
 # catálogo ya cableado — una plantilla sin `pdtpActivityNumbers` ejecuta la
 # inspección sin acreditar nada en el programa anual.
 run_timed "Instalando el catálogo de inspecciones cableado al PDTP" run_in_prod docker compose run --rm seed-inspection-templates
+
+# Informe, no compuerta: deja en el log del deploy qué actividades quedaron sin
+# instrumento vigente y qué plantillas vigentes se están ejecutando sin declarar
+# ninguna. Aprobar un instrumento es un acto de una persona y no se automatiza;
+# lo que sí se automatiza es que nadie pueda decir que no lo sabía.
+run_timed "Diagnóstico del cableado de acreditación del PDTP" run_in_prod docker compose run --rm preflight-pdtp-wiring
 
 # Al final de los pasos del PDTP: reprocesa los eventos de cumplimiento que
 # quedaron pending/error en pdtp_fulfillment_events — un hecho ocurrido con el

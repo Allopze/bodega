@@ -30,6 +30,7 @@ import {
   SST_DOCUMENT_STATUSES,
 } from "@/lib/validation/prevention"
 import { DEFAULT_CATEGORIES, todayIso } from "@/lib/services/prevention-documents-library"
+import { DEFAULT_DOCUMENT_TYPES } from "@/lib/services/prevention-documents/taxonomy"
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -140,6 +141,41 @@ describe("seed: seedDefaultCategories", () => {
       expect(typeof c.name).toBe("string")
       expect(c.slug.length).toBeGreaterThan(0)
       expect(c.name.length).toBeGreaterThan(0)
+    }
+  })
+})
+
+describe("seed: DEFAULT_DOCUMENT_TYPES — cableado al PDTP", () => {
+  const byCode = new Map(DEFAULT_DOCUMENT_TYPES.map((type) => [type.code, type]))
+
+  it("el procedimiento de trabajo seguro acredita la N°43 al publicar", () => {
+    const pts = byCode.get("PTS")
+    expect(pts?.pdtpActivityNumbers).toEqual([43])
+    expect(pts?.pdtpAcknowledgmentActivityNumbers).toBeUndefined()
+  })
+
+  it("la difusión de la MIPER acredita la N°36 por acuse, NO al publicar", () => {
+    // Es la distinción que motivó la columna nueva: la N°36 mide difusión, y
+    // con una sola columna publicar la matriz habría saldado el mes entero de
+    // una difusión que nadie recibió.
+    const dif = byCode.get("MIPER-DIF")
+    expect(dif?.pdtpAcknowledgmentActivityNumbers).toEqual([36])
+    expect(dif?.pdtpActivityNumbers).toBeUndefined()
+    expect(dif?.requiresAcknowledgment).toBe(true)
+  })
+
+  it("ningún tipo declara el mismo número en los dos momentos", () => {
+    for (const type of DEFAULT_DOCUMENT_TYPES) {
+      const publish = new Set(type.pdtpActivityNumbers ?? [])
+      const ack = type.pdtpAcknowledgmentActivityNumbers ?? []
+      expect(ack.filter((n) => publish.has(n)), type.code).toEqual([])
+    }
+  })
+
+  it("cada tipo apunta a una categoría del catálogo", () => {
+    const slugs = new Set(DEFAULT_CATEGORIES.map((c) => c.slug))
+    for (const type of DEFAULT_DOCUMENT_TYPES) {
+      expect(slugs.has(type.categorySlug), type.code).toBe(true)
     }
   })
 })

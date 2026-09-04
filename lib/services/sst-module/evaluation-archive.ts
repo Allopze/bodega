@@ -100,7 +100,16 @@ export async function archiveEvaluationPdf(evaluationId: string, session: Sessio
         id: docId, categorySlug: "salud_ocupacional", typeId: null, folderId: folder.id,
         internalCode: null, title: suggestedFilename.replace(/\.pdf$/i, ""),
         description: "Copia automática de la evaluación SST generada al cerrarse.",
-        worksiteId: evaluation.worksiteId, status: "vigente", confidentiality: "restringido",
+        worksiteId: evaluation.worksiteId,
+        status: "vigente",
+        // El RE-28 registra condiciones de salud declaradas por la persona; el
+        // resto de las actas registra desempeño. Clasificarlas igual metía datos
+        // sensibles en la biblioteca general con la etiqueta de siempre.
+        // `sensible` + `sensitive_preventive` es lo que activa la relocación
+        // cifrada y la auditoría de acceso de `prevention-sensitive-files.ts`.
+        ...(evaluation.definicionCode === "identificacion_sensibles"
+          ? { confidentiality: "sensible" as const, dataClass: "sensitive_preventive" as const }
+          : { confidentiality: "restringido" as const }),
         currentVersionId: null, effectiveFrom: now.slice(0, 10), expiresAt: null,
         responsibleUserId: null, uploadedBy: session.user.id, reviewedBy: null,
         approvedBy: session.user.id, approvedAt: now, requiresAcknowledgment: false,
