@@ -1,45 +1,16 @@
 /**
- * GET /api/trazabilidad/export?from=<date>&to=<date>&faena=<id>
+ * GET /api/trazabilidad/export — compatibilidad.
  *
- * Returns the trazabilidad matrix as an Excel download with optional filters.
+ * La trazabilidad se mudó bajo Bodega y este endpoint quedó duplicado con
+ * `/api/bodega/trazabilidad/export`: dos copias del mismo handler que había
+ * que mantener sincronizadas (y que ya habían divergido en los alias de
+ * fecha). Redirige preservando la query en vez de reimplementar.
  */
 import { type NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth/auth"
-import { can } from "@/lib/auth/can"
-import { getTrazabilidadXlsx } from "@/lib/services/trazabilidad-export"
-import { logger } from "@/lib/logger"
-import { encodeContentDisposition } from "@/lib/utils"
 
-const MAX_EXPORT_ROWS = 10_000
-
-export async function GET(req: NextRequest) {
-  const session = await auth()
-  if (!session) {
-    return NextResponse.json({ error: "No autenticado" }, { status: 401 })
-  }
-  if (!can(session, "warehouse:view_traceability")) {
-    return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
-  }
-
-  const filters = {
-    fromDate:   req.nextUrl.searchParams.get("from") ?? undefined,
-    toDate:     req.nextUrl.searchParams.get("to") ?? undefined,
-    worksiteId: req.nextUrl.searchParams.get("faena") ?? undefined,
-  }
-
-  try {
-    const { buffer, filename, truncated } = await getTrazabilidadXlsx(session, filters, MAX_EXPORT_ROWS)
-
-    return new NextResponse(buffer, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": encodeContentDisposition(filename, "attachment"),
-        ...(truncated ? { "X-Row-Limit-Applied": "true" } : {}),
-      },
-    })
-  } catch (err) {
-    logger.error("[trazabilidad/export]", err)
-    return NextResponse.json({ error: "Error al generar el archivo" }, { status: 500 })
-  }
+export function GET(req: NextRequest) {
+  const target = new URL("/api/bodega/trazabilidad/export", req.nextUrl.origin)
+  target.search = req.nextUrl.search
+  // 308: preserva el método y le dice al cliente que la mudanza es permanente.
+  return NextResponse.redirect(target, 308)
 }

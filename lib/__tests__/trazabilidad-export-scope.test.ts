@@ -22,10 +22,18 @@ vi.mock("@/lib/auth/auth", () => ({ auth: vi.fn() }))
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 import { buildTrazabilidadRows, getTrazabilidadXlsx } from "@/lib/services/trazabilidad-export"
+import type { Session } from "next-auth"
 
+/**
+ * El export corre sobre el mismo pipeline consolidado que la pantalla, así que
+ * estas pruebas cubren las dos superficies: alcance de faena, filtros, y que
+ * las cantidades del archivo sean las que se ven en la tabla.
+ */
 describe("trazabilidad export scoping and filter tests", () => {
   beforeEach(async () => {
     // Truncate tables for test isolation
+    await inMemoryDb.delete(schema.deliveryItems)
+    await inMemoryDb.delete(schema.deliveries)
     await inMemoryDb.delete(schema.receiptItems)
     await inMemoryDb.delete(schema.receipts)
     await inMemoryDb.delete(schema.purchaseOrderItems)
@@ -129,7 +137,7 @@ describe("trazabilidad export scoping and filter tests", () => {
       },
     ])
 
-    const rows = await buildTrazabilidadRows(scopedSession(["ws-visible"]))
+    const { rows } = await buildTrazabilidadRows(scopedSession(["ws-visible"]))
 
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({
@@ -137,16 +145,37 @@ describe("trazabilidad export scoping and filter tests", () => {
       worksiteName: "Faena Visible",
       requestCode: "SOL-2026-VISIBLE",
       requested: 3,
+      requesterName: "Usuario Faena",
+      uom: "par",
     })
   })
 
+  it("una faena fuera del alcance no devuelve sus filas ni pidiéndola por id", async () => {
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.worksites).values({
+      id: "ws-hidden", name: "Faena Oculta", code: "F-OCULTA", isActive: true, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequests).values({
+      id: "req-hidden", code: "SOL-OCULTA", worksiteId: "ws-hidden", requesterId: "u-1",
+      status: "submitted", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequestItems).values({
+      id: "item-hidden", requestId: "req-hidden", productNameFree: "Guantes", quantity: 1,
+      unitOfMeasure: "par", status: "approved", createdAt: now, updatedAt: now,
+    })
+
+    const { rows } = await buildTrazabilidadRows(scopedSession(["ws-otra"]), { worksiteId: "ws-hidden" })
+
+    expect(rows).toEqual([])
+  })
+
   it("returns empty array for scoped session with no allowed worksites", async () => {
-    const rows = await buildTrazabilidadRows(scopedSession([]))
+    const { rows } = await buildTrazabilidadRows(scopedSession([]))
     expect(rows).toEqual([])
   })
 
   it("returns empty array when no requests match criteria", async () => {
-    const rows = await buildTrazabilidadRows(globalSession())
+    const { rows } = await buildTrazabilidadRows(globalSession())
     expect(rows).toEqual([])
   })
 
@@ -170,7 +199,7 @@ describe("trazabilidad export scoping and filter tests", () => {
       updatedAt: now,
     })
 
-    const rows = await buildTrazabilidadRows(globalSession())
+    const { rows } = await buildTrazabilidadRows(globalSession())
     expect(rows).toEqual([])
   })
 
@@ -228,7 +257,7 @@ describe("trazabilidad export scoping and filter tests", () => {
     ])
 
     // Query filtering by date range
-    const rows = await buildTrazabilidadRows(globalSession(), {
+    const { rows } = await buildTrazabilidadRows(globalSession(), {
       fromDate: "2026-06-10",
       toDate: "2026-06-18",
       worksiteId: "ws-1",
@@ -238,7 +267,31 @@ describe("trazabilidad export scoping and filter tests", () => {
     expect(rows[0]?.productName).toBe("New Item")
   })
 
-  it("handles full matrix with products, purchase orders, approval decisions and receipt items", async () => {
+  it("una fecha inválida se ignora en vez de reventar la consulta", async () => {
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.worksites).values({
+      id: "ws-1", name: "Faena 1", code: "F-1", isActive: true, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequests).values({
+      id: "req-1", code: "SOL-0001", worksiteId: "ws-1", requesterId: "u-1",
+      status: "submitted", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequestItems).values({
+      id: "item-1", requestId: "req-1", productNameFree: "Guantes", quantity: 2,
+      unitOfMeasure: "par", status: "approved", createdAt: now, updatedAt: now,
+    })
+
+    // `?desde=ayer` se interpolaba como literal de timestamp y Postgres
+    // abortaba la consulta: la pantalla entera respondía 500.
+    const { rows } = await buildTrazabilidadRows(globalSession(), {
+      fromDate: "ayer",
+      toDate: "2026-13-45",
+    })
+
+    expect(rows).toHaveLength(1)
+  })
+
+  it("handles full matrix with products, purchase orders, approval decisions and receipts", async () => {
     const now = new Date().toISOString()
     await inMemoryDb.insert(schema.worksites).values({
       id: "ws-1",
@@ -293,7 +346,6 @@ describe("trazabilidad export scoping and filter tests", () => {
       decidedAt: now,
     })
 
-    // Seed supplier
     await inMemoryDb.insert(schema.suppliers).values({
       id: "sup-1",
       name: "Proveedor 1",
@@ -302,7 +354,6 @@ describe("trazabilidad export scoping and filter tests", () => {
       updatedAt: now,
     })
 
-    // Seed purchase order first!
     await inMemoryDb.insert(schema.purchaseOrders).values({
       id: "po-1",
       code: "OC-2026-0001",
@@ -314,7 +365,9 @@ describe("trazabilidad export scoping and filter tests", () => {
       updatedAt: now,
     })
 
-    // Seed purchase order items
+    // `quantityReceived` es el contador canónico de lo recibido en faena
+    // (ARQ-12 en el esquema de purchase_order_items): la vista y el export
+    // leen de ahí, no de la suma de líneas de recepción.
     await inMemoryDb.insert(schema.purchaseOrderItems).values({
       id: "poi-1",
       purchaseOrderId: "po-1",
@@ -324,9 +377,9 @@ describe("trazabilidad export scoping and filter tests", () => {
       unitOfMeasure: "par",
       unitPrice: 15000,
       subtotal: 90000,
+      quantityReceived: 5,
     })
 
-    // Seed receipts at faena
     await inMemoryDb.insert(schema.receipts).values({
       id: "rec-1",
       code: "REC-0001",
@@ -337,7 +390,6 @@ describe("trazabilidad export scoping and filter tests", () => {
       createdAt: now,
     })
 
-    // Seed receipt items (received 5 items)
     await inMemoryDb.insert(schema.receiptItems).values({
       id: "reci-1",
       receiptId: "rec-1",
@@ -345,19 +397,28 @@ describe("trazabilidad export scoping and filter tests", () => {
       quantityReceived: 5,
     })
 
-    const rows = await buildTrazabilidadRows(globalSession())
+    const { rows } = await buildTrazabilidadRows(globalSession())
 
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({
       productName: "Bota de seguridad",
       productSku: "BOTA-SEC-01",
+      categoryName: "Calzado",
+      suppliers: "Proveedor 1",
+      ocCodes: "OC-2026-0001",
       requested: 10,
       approved: 8,
       inOc: 6,
-      received: 5,
+      receivedFaena: 5,
+      delivered: 0,
+      // El pendiente se mide contra lo aprobado (8), no contra lo pedido (10).
+      pendingTotal: 8,
+      notYetOrdered: 2,
       alert: true,
     })
-    expect(rows[0]?.alert).toBe(true)
+    // La columna dice "Estado Consolidado": tiene que traer la etiqueta que se
+    // ve en la tabla, no el `status` crudo del ítem.
+    expect(rows[0]?.status).toBe("Parcial en faena")
   })
 
   it("excludes cancelled purchase order items from inOc totals", async () => {
@@ -440,10 +501,77 @@ describe("trazabilidad export scoping and filter tests", () => {
       },
     ])
 
-    const rows = await buildTrazabilidadRows(globalSession())
+    const { rows } = await buildTrazabilidadRows(globalSession())
 
     expect(rows).toHaveLength(1)
     expect(rows[0]?.inOc).toBe(10)
+    expect(rows[0]?.ocCodes).toBe("OC-ACTIVE")
+  })
+
+  it("una entrega anulada no cuenta como entregada", async () => {
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.worksites).values({
+      id: "ws-1", name: "Faena 1", code: "F-1", isActive: true, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequests).values({
+      id: "req-1", code: "SOL-0001", worksiteId: "ws-1", requesterId: "u-1",
+      status: "approved", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequestItems).values({
+      id: "item-1", requestId: "req-1", productNameFree: "Guantes", quantity: 10,
+      unitOfMeasure: "par", status: "approved", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.deliveries).values([
+      {
+        id: "del-ok", code: "ENT-0001", deliveredBy: "u-1", deliveredAt: now,
+        destinationType: "faena", worksiteId: "ws-1", createdAt: now,
+      },
+      {
+        id: "del-void", code: "ENT-0002", deliveredBy: "u-1", deliveredAt: now,
+        destinationType: "faena", worksiteId: "ws-1", createdAt: now,
+        voidedAt: now, voidedBy: "u-1", voidReason: "Se anuló por error de digitación",
+      },
+    ])
+    await inMemoryDb.insert(schema.deliveryItems).values([
+      { id: "di-ok", deliveryId: "del-ok", requestItemId: "item-1", quantity: 4, unitOfMeasure: "par" },
+      { id: "di-void", deliveryId: "del-void", requestItemId: "item-1", quantity: 6, unitOfMeasure: "par" },
+    ])
+
+    const { rows } = await buildTrazabilidadRows(globalSession())
+
+    expect(rows).toHaveLength(1)
+    // Con la anulada contada, `delivered` daba 10 y el ítem salía "Entregado"
+    // con 6 pares todavía en la faena.
+    expect(rows[0]?.delivered).toBe(4)
+    expect(rows[0]?.pendingTotal).toBe(6)
+    expect(rows[0]?.status).toBe("Parcialmente entregado")
+  })
+
+  it("el export respeta los filtros de la pantalla", async () => {
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.worksites).values({
+      id: "ws-1", name: "Faena 1", code: "F-1", isActive: true, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequests).values({
+      id: "req-1", code: "SOL-0001", worksiteId: "ws-1", requesterId: "u-1",
+      status: "submitted", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequestItems).values([
+      {
+        id: "item-guantes", requestId: "req-1", productNameFree: "Guantes de cabritilla",
+        quantity: 5, unitOfMeasure: "par", status: "requested", createdAt: now, updatedAt: now,
+      },
+      {
+        id: "item-casco", requestId: "req-1", productNameFree: "Casco dieléctrico",
+        quantity: 2, unitOfMeasure: "unidad", status: "requested", createdAt: now, updatedAt: now,
+      },
+    ])
+
+    // Antes sólo viajaban faena y fechas: el archivo traía las dos filas
+    // aunque la tabla mostrara una.
+    const { rows } = await buildTrazabilidadRows(globalSession(), { q: "casco" })
+
+    expect(rows.map((r) => r.productName)).toEqual(["Casco dieléctrico"])
   })
 
   it("getTrazabilidadXlsx constructs excel workbook buffer and truncates rows if requested", async () => {
@@ -473,7 +601,7 @@ describe("trazabilidad export scoping and filter tests", () => {
   })
 })
 
-function scopedSession(worksiteIds: string[]): Parameters<typeof buildTrazabilidadRows>[0] {
+function scopedSession(worksiteIds: string[]): Session {
   return {
     expires: new Date(Date.now() + 60_000).toISOString(),
     user: {
@@ -490,7 +618,7 @@ function scopedSession(worksiteIds: string[]): Parameters<typeof buildTrazabilid
   }
 }
 
-function globalSession(): Parameters<typeof buildTrazabilidadRows>[0] {
+function globalSession(): Session {
   return {
     expires: new Date(Date.now() + 60_000).toISOString(),
     user: {

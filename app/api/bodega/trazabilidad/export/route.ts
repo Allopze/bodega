@@ -1,7 +1,11 @@
 /**
- * GET /api/bodega/trazabilidad/export?from=<date>&to=<date>&faena=<id>
+ * GET /api/bodega/trazabilidad/export
  *
- * Returns the consolidated tracking report as an Excel download.
+ * Devuelve la trazabilidad consolidada como descarga Excel. Acepta los mismos
+ * filtros que la pantalla (`faena`, `estado`, `categoria`, `solicitante`,
+ * `proveedor`, `q`, `pendientes`, `desde`/`hasta` — con los alias históricos
+ * `from`/`to`): el archivo tiene que traer lo que el usuario está mirando, no
+ * la faena completa.
  */
 import { type NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
@@ -9,8 +13,6 @@ import { can } from "@/lib/auth/can"
 import { getTrazabilidadXlsx } from "@/lib/services/trazabilidad-export"
 import { logger } from "@/lib/logger"
 import { encodeContentDisposition } from "@/lib/utils"
-
-const MAX_EXPORT_ROWS = 10_000
 
 export async function GET(req: NextRequest) {
   const session = await auth()
@@ -21,14 +23,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Sin permisos" }, { status: 403 })
   }
 
+  const sp = req.nextUrl.searchParams
+  const param = (name: string) => sp.get(name) ?? undefined
+
   const filters = {
-    fromDate:   req.nextUrl.searchParams.get("from") ?? req.nextUrl.searchParams.get("desde") ?? undefined,
-    toDate:     req.nextUrl.searchParams.get("to") ?? req.nextUrl.searchParams.get("hasta") ?? undefined,
-    worksiteId: req.nextUrl.searchParams.get("faena") ?? undefined,
+    fromDate:   param("desde") ?? param("from"),
+    toDate:     param("hasta") ?? param("to"),
+    worksiteId: param("faena"),
+    estado:     param("estado"),
+    categoria:  param("categoria"),
+    solicitante: param("solicitante"),
+    proveedor:  param("proveedor"),
+    q:          param("q"),
+    pendientes: sp.get("pendientes") === "true" || sp.get("pendientes") === "1",
   }
 
   try {
-    const { buffer, filename, truncated } = await getTrazabilidadXlsx(session, filters, MAX_EXPORT_ROWS)
+    // El techo de filas lo fija el servicio (`TRAZABILIDAD_EXPORT_MAX_ROWS`):
+    // tenerlo también acá eran dos números que había que mantener iguales.
+    const { buffer, filename, truncated } = await getTrazabilidadXlsx(session, filters)
 
     return new NextResponse(buffer, {
       status: 200,

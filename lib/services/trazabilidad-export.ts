@@ -1,213 +1,122 @@
 /**
- * Trazabilidad Excel export.
+ * Exportación Excel de la trazabilidad consolidada.
  *
- * Reuses the same matrix-building queries as the trazabilidad page
- * but returns workbook data instead of rendering JSX.
+ * Corre sobre el mismo pipeline que la pantalla (`collectConsolidatedRows`),
+ * faena por faena. Antes tenía su propio recorrido de consultas —la matriz
+ * vieja— y el archivo salía con "Entregado" en 0, "Pendiente Total" igual a lo
+ * solicitado y el estado crudo del ítem (`pending_purchase`) bajo un encabezado
+ * que prometía el estado consolidado.
  */
-import { db } from "@/db"
-import {
-  purchaseRequests, purchaseRequestItems,
-  purchaseOrders, purchaseOrderItems, receipts, receiptItems,
-  approvalDecisions, products, worksites,
-} from "@/db/schema"
-import { and, asc, eq, inArray, sql } from "drizzle-orm"
 import type { Session } from "next-auth"
-import { canAccessWorksite, isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { buildXlsxBuffer } from "@/lib/reports/export"
 import { buildTrazabilidadReportData, type TrazabilidadExportRow } from "@/lib/services/trazabilidad-export-format"
+import { fetchTraceabilityAuxiliaryData } from "@/lib/services/trazabilidad-consolidated-queries"
+import {
+  collectConsolidatedRows,
+  normalizeConsolidatedFilters,
+  type ConsolidatedFilterSet,
+} from "@/lib/services/trazabilidad-consolidated"
+import type { ConsolidatedRow } from "@/lib/services/trazabilidad-consolidated.types"
 
-interface TrazabilidadFilters {
-  fromDate?:   string
-  toDate?:     string
+/** Techo de filas del archivo. Más allá, el libro sería inmanejable. */
+export const TRAZABILIDAD_EXPORT_MAX_ROWS = 10_000
+
+export interface TrazabilidadFilters extends Partial<ConsolidatedFilterSet> {
+  /** Alias históricos de `desde`/`hasta` que usaba la API antigua. */
+  fromDate?: string
+  toDate?: string
   worksiteId?: string
 }
 
-const APPROVED_STATES = new Set([
-  "approved", "pending_purchase", "in_purchase_order", "purchased",
-  "partially_received", "received",
-])
+function toFilterSet(filters: TrazabilidadFilters): ConsolidatedFilterSet {
+  return normalizeConsolidatedFilters({
+    estado: filters.estado,
+    categoria: filters.categoria,
+    solicitante: filters.solicitante,
+    proveedor: filters.proveedor,
+    q: filters.q,
+    desde: filters.desde ?? filters.fromDate,
+    hasta: filters.hasta ?? filters.toDate,
+    pendientes: filters.pendientes ? "true" : "",
+  })
+}
+
+function toExportRow(row: ConsolidatedRow): TrazabilidadExportRow {
+  return {
+    worksiteName: row.worksiteName,
+    requestCode: row.requestCode,
+    requestDate: row.requestDate,
+    requesterName: row.requesterName,
+    categoryName: row.categoryName,
+    productName: row.productName,
+    productSku: row.productSku,
+    uom: row.uom,
+    requested: row.requested,
+    approved: row.approved,
+    inOc: row.inOc,
+    suppliers: row.supplierNames.join(", "),
+    ocCodes: row.ocCodes.map((oc) => oc.code).join(", "),
+    receivedOffice: row.receivedOffice,
+    dispatched: row.dispatched,
+    receivedFaena: row.receivedFaena,
+    stockInFaena: row.stockInFaena,
+    delivered: row.delivered,
+    pendingTotal: row.pendingTotal,
+    notYetOrdered: row.pendingBreakdown.notYetOrdered,
+    pendingFromSupplier: row.pendingBreakdown.pendingFromSupplier,
+    inOffice: row.pendingBreakdown.inOffice,
+    inTransit: row.pendingBreakdown.inTransit,
+    inFaenaAvailable: row.pendingBreakdown.inFaenaAvailable,
+    status: row.computedStatusLabel,
+    alert: row.alert,
+  }
+}
 
 /**
- * Builds the full trazabilidad matrix (same logic as the trazabilidad page).
- * `requestLimit` caps the number of purchase_requests fetched from DB to avoid
- * loading unbounded data into memory (A-07). Defaults to 5 000 requests.
+ * Filas del export. Sin `worksiteId` recorre todas las faenas visibles.
+ *
+ * El recorrido es secuencial a propósito: cada faena son varias consultas
+ * pesadas y un export es una descarga esporádica, no vale abrirle N ráfagas
+ * simultáneas a la base para ganar unos segundos.
  */
-export async function buildTrazabilidadRows(session: Session, filters: TrazabilidadFilters = {}, requestLimit = 5_000): Promise<TrazabilidadExportRow[]> {
-  const userHasGlobalScope = isGlobalRole(session)
-  const allowedWorksiteIds = visibleWorksiteIds(session)
+export async function buildTrazabilidadRows(
+  session: Session,
+  filters: TrazabilidadFilters = {},
+  maxRows = TRAZABILIDAD_EXPORT_MAX_ROWS,
+): Promise<{ rows: TrazabilidadExportRow[]; truncated: boolean }> {
+  const { allWorksites } = await fetchTraceabilityAuxiliaryData(session)
 
-  if (!userHasGlobalScope && allowedWorksiteIds.length === 0) {
-    return []
-  }
+  // Intersecta con el alcance: una faena fuera del permiso no devuelve sus
+  // filas, devuelve ninguna.
+  const targets = filters.worksiteId
+    ? allWorksites.filter((w) => w.id === filters.worksiteId)
+    : allWorksites
 
-  const dateConditions = []
-  if (filters.fromDate) dateConditions.push(sql`${purchaseRequests.createdAt} >= ${filters.fromDate}`)
-  if (filters.toDate) dateConditions.push(sql`${purchaseRequests.createdAt} <= ${filters.toDate + "T23:59:59"}`)
-  const dateFilter = dateConditions.length > 0 ? and(...dateConditions) : undefined
+  if (targets.length === 0) return { rows: [], truncated: false }
 
-  const requestFilter = and(
-    userHasGlobalScope ? undefined : inArray(purchaseRequests.worksiteId, allowedWorksiteIds),
-    filters.worksiteId ? eq(purchaseRequests.worksiteId, filters.worksiteId) : undefined,
-    dateFilter,
-  )
-
-  const requestQuery = db.select({
-      id:         purchaseRequests.id,
-      code:       purchaseRequests.code,
-      worksiteId: purchaseRequests.worksiteId,
-    }).from(purchaseRequests)
-    .where(requestFilter)
-
-  const allRequests = await requestQuery.limit(requestLimit)
-
-  if (allRequests.length === 0) {
-    return []
-  }
-
-  const requestIds = allRequests.map((request) => request.id)
-  const worksiteIds = [...new Set(allRequests.map((request) => request.worksiteId))]
-
-  const allItems = await db.select({
-    id:              purchaseRequestItems.id,
-    requestId:       purchaseRequestItems.requestId,
-    productId:       purchaseRequestItems.productId,
-    productNameFree: purchaseRequestItems.productNameFree,
-    quantity:        purchaseRequestItems.quantity,
-    unitOfMeasure:   purchaseRequestItems.unitOfMeasure,
-    status:          purchaseRequestItems.status,
-  })
-    .from(purchaseRequestItems)
-    .where(inArray(purchaseRequestItems.requestId, requestIds))
-    .orderBy(asc(purchaseRequestItems.createdAt))
-
-  if (allItems.length === 0) {
-    return []
-  }
-
-  const itemIds = allItems.map((item) => item.id)
-  const productIds = [
-    ...new Set(allItems.flatMap((item) => item.productId ? [item.productId] : [])),
-  ]
-
-  const [
-    allProducts, allWorksites,
-    allOcItems, allApproveDecisions,
-  ] = await Promise.all([
-    productIds.length > 0
-      ? db.select({ id: products.id, name: products.name, sku: products.sku })
-        .from(products)
-        .where(inArray(products.id, productIds))
-      : Promise.resolve([]),
-
-    db.select({ id: worksites.id, name: worksites.name })
-      .from(worksites)
-      .where(and(eq(worksites.isActive, true), inArray(worksites.id, worksiteIds)))
-      .orderBy(asc(worksites.name)),
-
-    db.select({
-      id:            purchaseOrderItems.id,
-      purchaseOrderId: purchaseOrderItems.purchaseOrderId,
-      requestItemId: purchaseOrderItems.requestItemId,
-      quantity:      purchaseOrderItems.quantity,
-    })
-      .from(purchaseOrderItems)
-      .innerJoin(purchaseOrders, eq(purchaseOrderItems.purchaseOrderId, purchaseOrders.id))
-      .where(and(
-        inArray(purchaseOrderItems.requestItemId, itemIds),
-        sql`${purchaseOrderItems.status} <> 'cancelled'`,
-        sql`${purchaseOrders.status} <> 'cancelled'`,
-      )),
-
-    db.select({
-      requestItemId: approvalDecisions.requestItemId,
-      modifiedQty:   approvalDecisions.modifiedQty,
-    })
-      .from(approvalDecisions)
-      .where(and(
-        inArray(approvalDecisions.requestItemId, itemIds),
-        inArray(approvalDecisions.type, ["approve", "modify"]),
-      )),
-  ])
-
-  const ocItemIds = allOcItems.map((item) => item.id)
-  const allReceiptItems = ocItemIds.length > 0
-    ? await db.select({
-      purchaseOrderItemId: receiptItems.purchaseOrderItemId,
-      quantityReceived:    receiptItems.quantityReceived,
-    })
-      .from(receiptItems)
-      .innerJoin(receipts, eq(receiptItems.receiptId, receipts.id))
-      .where(and(
-        eq(receipts.locationType, "faena"),
-        inArray(receiptItems.purchaseOrderItemId, ocItemIds),
-      ))
-    : []
-
-  const requestMap    = Object.fromEntries(allRequests.map((r) => [r.id, r]))
-  const productMap    = Object.fromEntries(allProducts.map((p) => [p.id, p]))
-  const worksiteMap   = Object.fromEntries(allWorksites.map((w) => [w.id, w.name]))
-
-  const ocByItemId = new Map<string, Array<{ id: string; purchaseOrderId: string; quantity: number }>>()
-  for (const oi of allOcItems) {
-    if (!oi.requestItemId) continue
-    const arr = ocByItemId.get(oi.requestItemId) ?? []
-    arr.push({ id: oi.id, purchaseOrderId: oi.purchaseOrderId, quantity: oi.quantity })
-    ocByItemId.set(oi.requestItemId, arr)
-  }
-
-  const receivedByOcItem = new Map<string, number>()
-  for (const ri of allReceiptItems) {
-    receivedByOcItem.set(
-      ri.purchaseOrderItemId,
-      (receivedByOcItem.get(ri.purchaseOrderItemId) ?? 0) + ri.quantityReceived,
-    )
-  }
-
-  const modifiedQtyByItemId = new Map<string, number | null>()
-  for (const d of allApproveDecisions) {
-    if (!d.requestItemId) continue
-    modifiedQtyByItemId.set(d.requestItemId, d.modifiedQty)
-  }
-
+  const filterSet = toFilterSet(filters)
   const rows: TrazabilidadExportRow[] = []
+  let truncated = false
 
-  for (const item of allItems) {
-    const request = requestMap[item.requestId]
-    if (!request) continue
-    if (!canAccessWorksite(session, request.worksiteId)) continue
-
-    const ocItems = ocByItemId.get(item.id) ?? []
-    const inOc     = ocItems.reduce((s, oi) => s + oi.quantity, 0)
-    const received = ocItems.reduce((s, oi) => s + (receivedByOcItem.get(oi.id) ?? 0), 0)
-
-    const isApproved = APPROVED_STATES.has(item.status)
-    let approved: number | null = null
-    if (isApproved) {
-      const mod = modifiedQtyByItemId.get(item.id)
-      approved = mod !== undefined ? (mod ?? item.quantity) : item.quantity
+  for (const worksite of targets) {
+    if (rows.length >= maxRows) {
+      truncated = true
+      break
     }
 
-    const alert = isApproved && approved !== null && inOc < approved
+    const collected = await collectConsolidatedRows(session, worksite, filterSet)
+    if (collected.truncated) truncated = true
 
-    const product     = item.productId ? productMap[item.productId] : null
-    const productName = product?.name ?? item.productNameFree ?? "—"
-    const productSku  = product?.sku ?? null
-
-    rows.push({
-      productName,
-      productSku,
-      worksiteName: worksiteMap[request.worksiteId] ?? request.worksiteId,
-      requestCode:  request.code,
-      requested:    item.quantity,
-      approved,
-      inOc,
-      received,
-      status:       item.status,
-      alert,
-    })
+    for (const row of collected.rows) {
+      if (rows.length >= maxRows) {
+        truncated = true
+        break
+      }
+      rows.push(toExportRow(row))
+    }
   }
 
-  return rows
+  return { rows, truncated }
 }
 
 /**
@@ -216,17 +125,13 @@ export async function buildTrazabilidadRows(session: Session, filters: Trazabili
 export async function getTrazabilidadXlsx(
   session: Session,
   filters: TrazabilidadFilters = {},
-  maxRows?: number,
+  maxRows = TRAZABILIDAD_EXPORT_MAX_ROWS,
 ): Promise<{
   buffer: ArrayBuffer
   filename: string
   truncated: boolean
 }> {
-  // Pass maxRows + 1 as requestLimit so we can detect if there are more rows than requested (A-07).
-  const limit = maxRows !== undefined ? maxRows + 1 : 5_000
-  let rows = await buildTrazabilidadRows(session, filters, limit)
-  const truncated = maxRows !== undefined && rows.length > maxRows
-  if (truncated) rows = rows.slice(0, maxRows)
+  const { rows, truncated } = await buildTrazabilidadRows(session, filters, maxRows)
   const report = buildTrazabilidadReportData(rows)
   return {
     buffer: await buildXlsxBuffer(report),

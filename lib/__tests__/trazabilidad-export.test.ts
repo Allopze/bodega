@@ -39,8 +39,7 @@ describe("trazabilidad Excel export", () => {
     inOffice: 5,
     inTransit: 0,
     inFaenaAvailable: 4,
-    received: 10,
-    status: "partially_delivered",
+    status: "Parcialmente entregado",
     alert: true,
   }
 
@@ -91,21 +90,23 @@ describe("trazabilidad Excel export", () => {
     // Un cero afirma «no hay»; el vacío dice «no se sabe». Confundirlos haría
     // leer un aprobado ausente como un rechazo.
     const worksheet = await loadSheet([{
+      ...row,
       productName: "Casco",
       productSku: null,
-      worksiteName: "Faena Mininco",
       requestCode: "SO/2026/0002",
       requested: 5,
       approved: null,
       inOc: 0,
-      received: 0,
-      status: "requested",
+      stockInFaena: null,
+      delivered: 0,
+      pendingTotal: 5,
+      status: "Solicitado",
       alert: false,
     }])
 
     expect(worksheet?.getCell("J2").value).toBe("")   // Aprobado desconocido
     expect(worksheet?.getCell("G2").value).toBe("")   // Sin SKU
-    expect(worksheet?.getCell("Q2").value).toBe("")   // Stock en faena desconocido
+    expect(worksheet?.getCell("Q2").value).toBe("")   // Sin producto de catálogo: stock desconocido
     expect(worksheet?.getCell("Z2").value).toBe("No")
     // Lo que sí se sabe sigue siendo numérico.
     expect(worksheet?.getCell("I2").value).toBe(5)

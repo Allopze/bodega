@@ -1,32 +1,42 @@
 import type { ReportData } from "@/lib/reports/export"
 import { todayInChile } from "@/lib/utils"
 
+/**
+ * Una fila del Excel consolidado.
+ *
+ * Los campos eran opcionales cuando el export corría sobre la matriz vieja y
+ * no sabía calcular las etapas: la mitad de las 26 columnas salía vacía o en
+ * cero pese a tener encabezado. Ahora las produce el mismo pipeline que la
+ * pantalla, así que son obligatorios; sólo siguen admitiendo `null` los dos
+ * datos que de verdad pueden no existir (una cantidad aprobada que nadie
+ * decidió y el stock de un ítem sin producto de catálogo).
+ */
 export interface TrazabilidadExportRow {
-  productName: string
-  productSku: string | null
   worksiteName: string
   requestCode: string
-  requestDate?: string
-  requesterName?: string
-  categoryName?: string
-  uom?: string
+  requestDate: string
+  requesterName: string
+  categoryName: string
+  productName: string
+  productSku: string | null
+  uom: string
   requested: number
   approved: number | null
   inOc: number
-  suppliers?: string
-  ocCodes?: string
-  receivedOffice?: number
-  dispatched?: number
-  receivedFaena?: number
-  stockInFaena?: number | null
-  delivered?: number
-  pendingTotal?: number
-  notYetOrdered?: number
-  pendingFromSupplier?: number
-  inOffice?: number
-  inTransit?: number
-  inFaenaAvailable?: number
-  received: number
+  suppliers: string
+  ocCodes: string
+  receivedOffice: number
+  dispatched: number
+  receivedFaena: number
+  stockInFaena: number | null
+  delivered: number
+  pendingTotal: number
+  notYetOrdered: number
+  pendingFromSupplier: number
+  inOffice: number
+  inTransit: number
+  inFaenaAvailable: number
+  /** Etiqueta del estado consolidado, la misma que muestra la tabla. */
   status: string
   alert: boolean
 }
@@ -67,27 +77,29 @@ export function buildTrazabilidadReportData(rows: TrazabilidadExportRow[]): Repo
       row.worksiteName,
       row.requestCode,
       row.requestDate ? row.requestDate.slice(0, 10) : "",
-      row.requesterName ?? "",
-      row.categoryName ?? "",
+      row.requesterName,
+      row.categoryName,
       row.productName,
       row.productSku ?? "",
-      row.uom ?? "unidad",
+      row.uom,
       row.requested,
+      // Un cero afirma «no hay»; el vacío dice «no se sabe». Un aprobado
+      // ausente leído como cero se confundiría con un rechazo.
       row.approved ?? "",
       row.inOc,
-      row.suppliers ?? "",
-      row.ocCodes ?? "",
-      row.receivedOffice ?? 0,
-      row.dispatched ?? 0,
-      row.receivedFaena ?? row.received,
-      row.stockInFaena !== null && row.stockInFaena !== undefined ? row.stockInFaena : "",
-      row.delivered ?? 0,
-      row.pendingTotal ?? Math.max(0, row.requested - (row.delivered ?? 0)),
-      row.notYetOrdered ?? "",
-      row.pendingFromSupplier ?? "",
-      row.inOffice ?? "",
-      row.inTransit ?? "",
-      row.inFaenaAvailable ?? "",
+      row.suppliers,
+      row.ocCodes,
+      row.receivedOffice,
+      row.dispatched,
+      row.receivedFaena,
+      row.stockInFaena ?? "",
+      row.delivered,
+      row.pendingTotal,
+      row.notYetOrdered,
+      row.pendingFromSupplier,
+      row.inOffice,
+      row.inTransit,
+      row.inFaenaAvailable,
       row.status,
       row.alert ? "Sí" : "No",
     ]),
