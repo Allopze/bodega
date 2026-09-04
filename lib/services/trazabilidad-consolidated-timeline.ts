@@ -11,6 +11,7 @@ interface TimelineBuildParams {
   }
   approvals: Array<{
     id: string
+    type: string
     decidedAt: string
     decidedByName: string
     modifiedQty: number | null
@@ -47,6 +48,7 @@ interface TimelineBuildParams {
   }>>
   deliveries: Array<{
     id: string
+    deliveryId: string
     deliveryCode: string
     deliveredAt: string
     deliveredByName: string
@@ -55,7 +57,15 @@ interface TimelineBuildParams {
     workerLastName: string | null
     quantity: number
     returnQuantity: number | null
+    voidedAt: string | null
+    voidReason: string | null
   }>
+}
+
+const GUIDE_STATUS_LABEL: Record<string, string> = {
+  received: "Recibido en faena",
+  partially_received: "Recibido parcialmente en faena",
+  dispatched: "En camino",
 }
 
 /**
@@ -79,13 +89,16 @@ export function buildItemTimeline(params: TimelineBuildParams): TimelineEvent[] 
 
   // 2. Aprobaciones
   for (const app of approvals) {
+    // `modifiedQty` de 0 es una decisión real —"aprobado sin unidades"— y con
+    // un chequeo por truthiness se describía como una aprobación sin ajuste.
+    const hasAdjustment = app.modifiedQty != null
     timeline.push({
       id: `app-${app.id}`,
       date: app.decidedAt,
       type: "approval",
-      title: "Aprobación de ítem",
-      description: app.modifiedQty
-        ? `Aprobado con cantidad ajustada a ${app.modifiedQty} ${item.uom}. Motivo: ${app.reason ?? "Sin notas"}`
+      title: app.type === "modify" ? "Aprobación con ajuste de cantidad" : "Aprobación de ítem",
+      description: hasAdjustment
+        ? `${app.decidedByName} aprobó con cantidad ajustada a ${app.modifiedQty} ${item.uom}. Motivo: ${app.reason ?? "Sin notas"}`
         : `Aprobado por ${app.decidedByName}. Motivo: ${app.reason ?? "Sin notas"}`,
       quantity: app.modifiedQty ?? item.quantity,
       actor: app.decidedByName,
@@ -129,7 +142,7 @@ export function buildItemTimeline(params: TimelineBuildParams): TimelineEvent[] 
         type: "dispatch_guide",
         title: `Guía de despacho ${gdi.guideCode}`,
         description: `Despacho de ${gdi.quantity} ${item.uom} a faena. Estado: ${
-          gdi.guideStatus === "received" ? "Recibido en faena" : "En camino"
+          GUIDE_STATUS_LABEL[gdi.guideStatus] ?? gdi.guideStatus
         }`,
         quantity: gdi.quantity,
         actor: gdi.dispatchedByName ?? undefined,
@@ -145,17 +158,24 @@ export function buildItemTimeline(params: TimelineBuildParams): TimelineEvent[] 
         ? `${del.workerFirstName} ${del.workerLastName}`
         : (del.receiverName ?? "Personal en faena")
 
+    const voided = del.voidedAt != null
+
     timeline.push({
       id: `del-${del.id}`,
       date: del.deliveredAt,
       type: "delivery",
-      title: `Entrega ${del.deliveryCode}`,
-      description: `Entrega de ${del.quantity} ${item.uom} a ${recipient} por ${del.deliveredByName}${
-        del.returnQuantity ? ` (Devolución: ${del.returnQuantity})` : ""
-      }`,
+      title: voided ? `Entrega ${del.deliveryCode} (anulada)` : `Entrega ${del.deliveryCode}`,
+      description: voided
+        ? `Entrega anulada de ${del.quantity} ${item.uom} a ${recipient}. No cuenta como entregado. Motivo: ${del.voidReason ?? "Sin motivo registrado"}`
+        : `Entrega de ${del.quantity} ${item.uom} a ${recipient} por ${del.deliveredByName}${
+            del.returnQuantity ? ` (Devolución: ${del.returnQuantity})` : ""
+          }`,
       quantity: del.quantity,
       actor: del.deliveredByName,
-      href: `/entregas`,
+      voided,
+      // El documento de la entrega es su comprobante firmado, no el listado
+      // completo de entregas al que apuntaba antes.
+      href: `/entregas/${del.deliveryId}/print`,
     })
   }
 

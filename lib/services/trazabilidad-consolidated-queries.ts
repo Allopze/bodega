@@ -24,7 +24,24 @@ import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import type { Session } from "next-auth"
 
-export async function fetchTraceabilityAuxiliaryData(session: Session, filterFaenaId: string) {
+/**
+ * Techo de ítems que la vista consolidada carga en memoria.
+ *
+ * El filtrado secundario, los KPIs y la paginación se hacen sobre el conjunto
+ * completo de la faena, así que sin tope una faena con años de historia
+ * arrastraba todo a RAM en cada carga. Cuando se alcanza, la vista lo dice en
+ * pantalla en vez de mentir con totales cortados en silencio.
+ */
+export const TRACEABILITY_MAX_ITEM_ROWS = 2_000
+
+/**
+ * Catálogos que no dependen de la faena elegida (faenas visibles, categorías y
+ * proveedores). Se separó de `fetchTraceabilityRequesters` porque el servicio
+ * necesitaba los solicitantes recién después de resolver la faena y terminaba
+ * llamando dos veces a la misma función: las tres consultas de catálogo se
+ * ejecutaban duplicadas en cada carga de la página.
+ */
+export async function fetchTraceabilityAuxiliaryData(session: Session) {
   const allWorksites = await db
     .select({ id: worksites.id, name: worksites.name })
     .from(worksites)
@@ -43,16 +60,18 @@ export async function fetchTraceabilityAuxiliaryData(session: Session, filterFae
       .orderBy(asc(suppliers.name)),
   ])
 
-  const requestersList = filterFaenaId
-    ? await db
-        .selectDistinct({ id: users.id, name: users.name })
-        .from(purchaseRequests)
-        .innerJoin(users, eq(purchaseRequests.requesterId, users.id))
-        .where(eq(purchaseRequests.worksiteId, filterFaenaId))
-        .orderBy(asc(users.name))
-    : []
+  return { allWorksites, categoriesList, suppliersList }
+}
 
-  return { allWorksites, categoriesList, suppliersList, requestersList }
+/** Solicitantes que efectivamente pidieron algo en la faena activa. */
+export async function fetchTraceabilityRequesters(filterFaenaId: string) {
+  if (!filterFaenaId) return []
+  return db
+    .selectDistinct({ id: users.id, name: users.name })
+    .from(purchaseRequests)
+    .innerJoin(users, eq(purchaseRequests.requesterId, users.id))
+    .where(eq(purchaseRequests.worksiteId, filterFaenaId))
+    .orderBy(asc(users.name))
 }
 
 export interface TraceabilityItemFilters {
@@ -106,6 +125,7 @@ export async function fetchRawItemRows(session: Session, filters: TraceabilityIt
     .leftJoin(productCategories, eq(products.categoryId, productCategories.id))
     .where(and(...requestConditions))
     .orderBy(desc(purchaseRequestItems.createdAt))
+    .limit(TRACEABILITY_MAX_ITEM_ROWS)
 }
 
 export async function fetchLinkedTraceabilityData(
@@ -131,7 +151,12 @@ export async function fetchLinkedTraceabilityData(
           inArray(approvalDecisions.requestItemId, allItemIds),
           inArray(approvalDecisions.type, ["approve", "modify"]),
         ),
-      ),
+      )
+      // La cantidad aprobada la fija la última decisión, así que el orden es
+      // parte del resultado: sin `ORDER BY`, un ítem con `modify` + `approve`
+      // tomaba la que Postgres devolviera primero y la cantidad aprobada
+      // cambiaba entre cargas de la misma página.
+      .orderBy(asc(approvalDecisions.decidedAt), asc(approvalDecisions.id)),
 
     db
       .select({
@@ -173,6 +198,12 @@ export async function fetchLinkedTraceabilityData(
         workerLastName: workers.lastName,
         quantity: deliveryItems.quantity,
         returnQuantity: deliveryItems.returnQuantity,
+        // Una entrega anulada sigue existiendo como documento pero no entregó
+        // nada. Viaja con su marca en vez de filtrarse en el SQL: los totales
+        // la descartan (ver `buildConsolidatedRows`) y el historial la sigue
+        // mostrando anulada, que es justo lo que una auditoría necesita ver.
+        voidedAt: deliveries.voidedAt,
+        voidReason: deliveries.voidReason,
       })
       .from(deliveryItems)
       .innerJoin(deliveries, eq(deliveryItems.deliveryId, deliveries.id))

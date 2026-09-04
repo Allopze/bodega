@@ -21,6 +21,15 @@ export interface StatusMeta {
   color: "success" | "warning" | "info" | "neutral" | "danger" | "signal"
 }
 
+/**
+ * El `?estado=` de la URL lo escribe cualquiera. Sin esta guarda un valor
+ * inventado no coincidía con ningún `computedStatus` y la tabla salía vacía
+ * como si la faena no tuviera nada, en vez de ignorar el filtro.
+ */
+export function isComputedStatus(value: string): value is ComputedStatus {
+  return Object.hasOwn(COMPUTED_STATUS_METAS, value)
+}
+
 export const COMPUTED_STATUS_METAS: Record<ComputedStatus, StatusMeta> = {
   entregado: { label: "Entregado", color: "success" },
   parcialmente_entregado: { label: "Parcialmente entregado", color: "warning" },
@@ -76,6 +85,12 @@ export interface TimelineEvent {
   actor?: string
   badgeLabel?: string
   href?: string
+  /**
+   * El movimiento existe como documento pero fue anulado y no cuenta en
+   * ninguna cantidad. Se muestra tachado: borrarlo del historial escondería
+   * justo lo que una auditoría viene a revisar.
+   */
+  voided?: boolean
 }
 
 export interface ConsolidatedRow {
@@ -91,6 +106,7 @@ export interface ConsolidatedRow {
   productId: string | null
   productName: string
   productSku: string | null
+  categoryId: string | null
   categoryName: string
   notes: string | null
   uom: string
@@ -127,7 +143,6 @@ export interface ConsolidatedFaenaKPIs {
   pendingPurchase: number
   awaitingSupplier: number
   inOffice: number
-  pendingDispatch: number
   inFaena: number
   partiallyDelivered: number
   fullyDelivered: number
@@ -138,6 +153,12 @@ export interface ConsolidatedTraceabilityResult {
   totalFiltered: number
   totalPages: number
   safePage: number
+  /**
+   * `true` cuando la faena tiene más ítems que el techo que la vista carga en
+   * memoria (`TRACEABILITY_MAX_ITEM_ROWS`). Los totales y KPIs cubren sólo los
+   * ítems cargados —los más recientes— y la pantalla debe decirlo.
+   */
+  truncated: boolean
   activeWorksite: { id: string; name: string } | null
   visibleWorksites: Array<{ id: string; name: string }>
   categories: Array<{ id: string; name: string }>

@@ -7,18 +7,24 @@
 import type { Session } from "next-auth"
 import {
   TRACEABILITY_CONSOLIDATED_PAGE_SIZE,
+  isComputedStatus,
   type ConsolidatedFaenaKPIs,
+  type ConsolidatedRow,
   type ConsolidatedTraceabilityResult,
 } from "./trazabilidad-consolidated.types"
 import {
   fetchTraceabilityAuxiliaryData,
+  fetchTraceabilityRequesters,
   fetchRawItemRows,
   fetchLinkedTraceabilityData,
+  TRACEABILITY_MAX_ITEM_ROWS,
 } from "./trazabilidad-consolidated-queries"
 import {
   buildConsolidatedRows,
+  attachTimelines,
   computeFaenaKPIs,
   applySecondaryFilters,
+  type LinkedMaps,
 } from "./trazabilidad-consolidated-builder"
 
 // Re-exportar tipos y helpers para mantener retrocompatibilidad completa
@@ -26,113 +32,104 @@ export * from "./trazabilidad-consolidated.types"
 export * from "./trazabilidad-consolidated-calc"
 export * from "./trazabilidad-consolidated-timeline"
 export * from "./trazabilidad-consolidated-builder"
+export { TRACEABILITY_MAX_ITEM_ROWS } from "./trazabilidad-consolidated-queries"
 
-export async function getConsolidatedTraceability(
-  searchParams: Record<string, string | string[] | undefined>,
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * Un `?desde=` inválido no es un filtro raro: es una consulta que Postgres
+ * rechaza. La fecha se interpola en el `WHERE` como literal de timestamp, así
+ * que `?desde=ayer` reventaba la página entera con un 500. Se exige el formato
+ * de los inputs `type="date"` y se comprueba que la fecha exista de verdad
+ * (`2026-02-31` parsea sin error pero no es un día).
+ */
+export function normalizeTraceabilityDateParam(value: string | string[] | undefined): string {
+  const raw = Array.isArray(value) ? value[0] : value
+  if (typeof raw !== "string" || !ISO_DATE.test(raw)) return ""
+  const parsed = new Date(`${raw}T00:00:00Z`)
+  if (Number.isNaN(parsed.getTime())) return ""
+  return parsed.toISOString().slice(0, 10) === raw ? raw : ""
+}
+
+function readParam(value: string | string[] | undefined): string {
+  return typeof value === "string" ? value : ""
+}
+
+/** Filtros ya normalizados que comparten la pantalla y la exportación. */
+export interface ConsolidatedFilterSet {
+  estado: string
+  categoria: string
+  solicitante: string
+  proveedor: string
+  q: string
+  desde: string
+  hasta: string
+  pendientes: boolean
+}
+
+export function normalizeConsolidatedFilters(
+  sp: Record<string, string | string[] | undefined>,
+): ConsolidatedFilterSet {
+  const rawEstado = readParam(sp.estado)
+  return {
+    estado: isComputedStatus(rawEstado) ? rawEstado : "",
+    categoria: readParam(sp.categoria),
+    solicitante: readParam(sp.solicitante),
+    proveedor: readParam(sp.proveedor),
+    q: readParam(sp.q).trim(),
+    desde: normalizeTraceabilityDateParam(sp.desde),
+    hasta: normalizeTraceabilityDateParam(sp.hasta),
+    pendientes: sp.pendientes === "true" || sp.pendientes === "1",
+  }
+}
+
+export interface CollectedConsolidatedRows {
+  /** Filas ya filtradas y sin paginar, sin historial cronológico colgado. */
+  rows: ConsolidatedRow[]
+  maps: LinkedMaps
+  truncated: boolean
+}
+
+/**
+ * Pipeline consolidado de una faena: consulta → agregación → filtros.
+ *
+ * Es el único lugar donde vive el cálculo, y de él comen la pantalla y el
+ * Excel. Antes la exportación tenía su propio recorrido de consultas (la
+ * matriz vieja) y el archivo salía con "Entregado" en 0 y el estado crudo del
+ * ítem bajo un encabezado que decía "Estado Consolidado".
+ */
+export async function collectConsolidatedRows(
   session: Session,
-): Promise<ConsolidatedTraceabilityResult> {
-  const sp = searchParams
-
-  // 1. Resolver faenas visibles
-  const { allWorksites, categoriesList, suppliersList } = await fetchTraceabilityAuxiliaryData(session, "")
-
-  const defaultFaenaId =
-    session.user.primaryWorksiteId && allWorksites.some((w) => w.id === session.user.primaryWorksiteId)
-      ? session.user.primaryWorksiteId
-      : allWorksites[0]?.id ?? ""
-
-  const filterFaenaId =
-    typeof sp.faena === "string" && sp.faena
-      ? allWorksites.some((w) => w.id === sp.faena)
-        ? sp.faena
-        : defaultFaenaId
-      : defaultFaenaId
-
-  const activeWorksite = allWorksites.find((w) => w.id === filterFaenaId) ?? null
-
-  const filterEstado = typeof sp.estado === "string" ? sp.estado : ""
-  const filterCategoria = typeof sp.categoria === "string" ? sp.categoria : ""
-  const filterSolicitante = typeof sp.solicitante === "string" ? sp.solicitante : ""
-  const filterProveedor = typeof sp.proveedor === "string" ? sp.proveedor : ""
-  const filterQ = typeof sp.q === "string" ? sp.q.trim() : ""
-  const filterDesde = typeof sp.desde === "string" ? sp.desde : ""
-  const filterHasta = typeof sp.hasta === "string" ? sp.hasta : ""
-  const filterPendientes = sp.pendientes === "true" || sp.pendientes === "1"
-  const currentPage = Math.max(1, typeof sp.page === "string" ? parseInt(sp.page, 10) || 1 : 1)
-
-  const emptyKpis: ConsolidatedFaenaKPIs = {
-    openRequests: 0,
-    pendingPurchase: 0,
-    awaitingSupplier: 0,
-    inOffice: 0,
-    pendingDispatch: 0,
-    inFaena: 0,
-    partiallyDelivered: 0,
-    fullyDelivered: 0,
+  worksite: { id: string; name: string },
+  filters: ConsolidatedFilterSet,
+): Promise<CollectedConsolidatedRows> {
+  const emptyMaps: LinkedMaps = {
+    approvalsByItem: new Map(),
+    ocsByItem: new Map(),
+    deliveriesByItem: new Map(),
+    receiptsByOcItem: new Map(),
+    gdisByOcItem: new Map(),
+    stockByProduct: new Map(),
   }
 
-  const currentFilters = {
-    faena: filterFaenaId,
-    estado: filterEstado,
-    categoria: filterCategoria,
-    solicitante: filterSolicitante,
-    proveedor: filterProveedor,
-    q: filterQ,
-    desde: filterDesde,
-    hasta: filterHasta,
-    pendientes: filterPendientes,
-  }
-
-  if (!filterFaenaId) {
-    return {
-      rows: [],
-      totalFiltered: 0,
-      totalPages: 1,
-      safePage: 1,
-      activeWorksite: null,
-      visibleWorksites: allWorksites,
-      categories: categoriesList,
-      requesters: [],
-      suppliers: suppliersList,
-      kpis: emptyKpis,
-      filters: { ...currentFilters, faena: "" },
-    }
-  }
-
-  const { requestersList } = await fetchTraceabilityAuxiliaryData(session, filterFaenaId)
-
-  // 2. Traer ítems de solicitudes de esta faena
   const rawItemRows = await fetchRawItemRows(session, {
-    filterFaenaId,
-    filterSolicitante,
-    filterDesde,
-    filterHasta,
+    filterFaenaId: worksite.id,
+    filterSolicitante: filters.solicitante,
+    filterDesde: filters.desde,
+    filterHasta: filters.hasta,
   })
 
   if (rawItemRows.length === 0) {
-    return {
-      rows: [],
-      totalFiltered: 0,
-      totalPages: 1,
-      safePage: 1,
-      activeWorksite,
-      visibleWorksites: allWorksites,
-      categories: categoriesList,
-      requesters: requestersList,
-      suppliers: suppliersList,
-      kpis: emptyKpis,
-      filters: currentFilters,
-    }
+    return { rows: [], maps: emptyMaps, truncated: false }
   }
 
+  const truncated = rawItemRows.length >= TRACEABILITY_MAX_ITEM_ROWS
   const allItemIds = rawItemRows.map((r) => r.itemId)
   const allProductIds = [...new Set(rawItemRows.flatMap((r) => (r.productId ? [r.productId] : [])))]
 
-  // 3. Cargar en paralelo todos los datos vinculados
   const { approvalRows, ocRows, deliveryRows, stockRows, receiptRows, gdiRows } =
-    await fetchLinkedTraceabilityData(allItemIds, allProductIds, filterFaenaId)
+    await fetchLinkedTraceabilityData(allItemIds, allProductIds, worksite.id)
 
-  // 4. Mapas en memoria
   const approvalsByItem = new Map<string, typeof approvalRows>()
   for (const a of approvalRows) {
     if (!a.requestItemId) continue
@@ -177,46 +174,111 @@ export async function getConsolidatedTraceability(
     stockByProduct.set(s.productId, s.quantity)
   }
 
-  // 5. Construcción y cálculo consolidado
-  const consolidatedList = buildConsolidatedRows(
-    rawItemRows,
-    {
-      approvalsByItem,
-      ocsByItem,
-      deliveriesByItem,
-      receiptsByOcItem,
-      gdisByOcItem,
-      stockByProduct,
-    },
-    filterFaenaId,
-    activeWorksite?.name ?? "Faena",
-  )
+  const maps: LinkedMaps = {
+    approvalsByItem,
+    ocsByItem,
+    deliveriesByItem,
+    receiptsByOcItem,
+    gdisByOcItem,
+    stockByProduct,
+  }
 
-  // 6. KPIs de faena
-  const kpis = computeFaenaKPIs(consolidatedList)
+  const consolidatedList = buildConsolidatedRows(rawItemRows, maps, worksite.id, worksite.name)
 
-  // 7. Filtros secundarios en memoria
-  const filteredList = applySecondaryFilters(consolidatedList, {
-    filterEstado,
-    filterCategoria,
-    filterProveedor,
-    filterPendientes,
-    filterQ,
-    rawItemRows,
+  const rows = applySecondaryFilters(consolidatedList, {
+    filterEstado: filters.estado,
+    filterCategoria: filters.categoria,
+    filterProveedor: filters.proveedor,
+    filterPendientes: filters.pendientes,
+    filterQ: filters.q,
     ocsByItem,
   })
 
-  const totalFiltered = filteredList.length
+  return { rows, maps, truncated }
+}
+
+export async function getConsolidatedTraceability(
+  searchParams: Record<string, string | string[] | undefined>,
+  session: Session,
+): Promise<ConsolidatedTraceabilityResult> {
+  const sp = searchParams
+
+  // 1. Resolver faenas visibles
+  const { allWorksites, categoriesList, suppliersList } = await fetchTraceabilityAuxiliaryData(session)
+
+  const defaultFaenaId =
+    session.user.primaryWorksiteId && allWorksites.some((w) => w.id === session.user.primaryWorksiteId)
+      ? session.user.primaryWorksiteId
+      : allWorksites[0]?.id ?? ""
+
+  const requestedFaena = readParam(sp.faena)
+  const filterFaenaId = requestedFaena && allWorksites.some((w) => w.id === requestedFaena)
+    ? requestedFaena
+    : defaultFaenaId
+
+  const activeWorksite = allWorksites.find((w) => w.id === filterFaenaId) ?? null
+  const filters = normalizeConsolidatedFilters(sp)
+  const currentPage = Math.max(1, Number.parseInt(readParam(sp.page), 10) || 1)
+
+  const emptyKpis: ConsolidatedFaenaKPIs = {
+    openRequests: 0,
+    pendingPurchase: 0,
+    awaitingSupplier: 0,
+    inOffice: 0,
+    inFaena: 0,
+    partiallyDelivered: 0,
+    fullyDelivered: 0,
+  }
+
+  const currentFilters = { faena: filterFaenaId, ...filters }
+
+  if (!activeWorksite) {
+    return {
+      rows: [],
+      totalFiltered: 0,
+      totalPages: 1,
+      safePage: 1,
+      truncated: false,
+      activeWorksite: null,
+      visibleWorksites: allWorksites,
+      categories: categoriesList,
+      requesters: [],
+      suppliers: suppliersList,
+      kpis: emptyKpis,
+      filters: { ...currentFilters, faena: "" },
+    }
+  }
+
+  // 2. Solicitantes de la faena activa + pipeline consolidado
+  const [requestersList, collected] = await Promise.all([
+    fetchTraceabilityRequesters(activeWorksite.id),
+    collectConsolidatedRows(session, activeWorksite, filters),
+  ])
+
+  /**
+   * 3. KPIs sobre lo filtrado, no sobre la faena completa.
+   *
+   * Calcularlos antes de los filtros dejaba la pantalla contradiciéndose:
+   * "Sin resultados para los filtros seleccionados" encima de siete tarjetas
+   * con números. Los KPIs son el resumen de lo que se está mirando.
+   */
+  const kpis = computeFaenaKPIs(collected.rows)
+
+  const totalFiltered = collected.rows.length
   const totalPages = Math.max(1, Math.ceil(totalFiltered / TRACEABILITY_CONSOLIDATED_PAGE_SIZE))
   const safePage = Math.min(currentPage, totalPages)
   const offset = (safePage - 1) * TRACEABILITY_CONSOLIDATED_PAGE_SIZE
-  const paginatedRows = filteredList.slice(offset, offset + TRACEABILITY_CONSOLIDATED_PAGE_SIZE)
+  const paginatedRows = attachTimelines(
+    collected.rows.slice(offset, offset + TRACEABILITY_CONSOLIDATED_PAGE_SIZE),
+    collected.maps,
+  )
 
   return {
     rows: paginatedRows,
     totalFiltered,
     totalPages,
     safePage,
+    truncated: collected.truncated,
     activeWorksite,
     visibleWorksites: allWorksites,
     categories: categoriesList,
