@@ -391,7 +391,7 @@ services:
       - EMERGENCY_PLANS_ACTOR_USER_ID=${EMERGENCY_PLANS_ACTOR_USER_ID:-}
       - EMERGENCY_PLANS_DRY_RUN=${EMERGENCY_PLANS_DRY_RUN:-}
       - EMERGENCY_PLANS_DEPLOY_MODE=true
-    command: ["node", "scripts/seed-emergency-plans.mjs"]
+    command: ["node", "scripts/seed-emergency-plans.cjs"]
 
   # One-shot de sólo lectura: qué actividades del programa no tienen un
   # instrumento vigente que las acredite, y qué plantillas vigentes se están

@@ -219,6 +219,19 @@ describe("deploy workflow", () => {
     expect(compose).toContain('command: ["node", "scripts/reconcile-pdtp-fulfillment-events.cjs"]')
   })
 
+  it("emits the ExcelJS-dependent emergency seed as CommonJS", () => {
+    const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
+    const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
+    const build = dockerfile.match(
+      /RUN \.\/node_modules\/\.bin\/esbuild scripts\/seed-prevention-emergency-plans\.ts[\s\S]*?--outfile=\/tmp\/seed-emergency-plans\.cjs/,
+    )?.[0]
+
+    expect(build).toBeDefined()
+    expect(build).toContain("--format=cjs")
+    expect(dockerfile).toContain("/tmp/seed-emergency-plans.cjs ./scripts/seed-emergency-plans.cjs")
+    expect(compose).toContain('command: ["node", "scripts/seed-emergency-plans.cjs"]')
+  })
+
   it("propagates a nested pg_dump failure and stops the failing function immediately", () => {
     const result = runTimedHarness(`
 dump_production_database() {

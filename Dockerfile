@@ -88,15 +88,17 @@ RUN ./node_modules/.bin/esbuild scripts/apply-sst-document-taxonomy.ts \
     --outfile=/tmp/apply-sst-document-taxonomy.mjs
 
 # El plan de emergencia por faena. Sin él la N°84 no tiene dónde declararse y el
-# programa anual no se puede activar.
+# programa anual no se puede activar. ExcelJS usa `require("crypto")` dinámico,
+# así que este artefacto debe conservar el formato CommonJS para ejecutarse con
+# Node en la imagen slim.
 RUN ./node_modules/.bin/esbuild scripts/seed-prevention-emergency-plans.ts \
     --bundle \
     --platform=node \
-    --format=esm \
+    --format=cjs \
     --external:drizzle-orm \
     --external:drizzle-orm/* \
     --external:postgres \
-    --outfile=/tmp/seed-emergency-plans.mjs
+    --outfile=/tmp/seed-emergency-plans.cjs
 
 # Diagnóstico del cableado entre el programa anual y los módulos que lo
 # acreditan. Sólo lectura y nunca aborta: corre DESPUÉS de sembrar el catálogo
@@ -322,7 +324,7 @@ COPY --from=build /tmp/sync-rbac.mjs ./scripts/sync-rbac.mjs
 COPY --from=build /tmp/reconcile-epp-delivery-scale.mjs ./scripts/reconcile-epp-delivery-scale.mjs
 COPY --from=build /tmp/seed-pdtp-inspection-templates.mjs ./scripts/seed-pdtp-inspection-templates.mjs
 COPY --from=build /tmp/apply-sst-document-taxonomy.mjs ./scripts/apply-sst-document-taxonomy.mjs
-COPY --from=build /tmp/seed-emergency-plans.mjs ./scripts/seed-emergency-plans.mjs
+COPY --from=build /tmp/seed-emergency-plans.cjs ./scripts/seed-emergency-plans.cjs
 COPY --from=build /tmp/preflight-pdtp-accreditation-wiring.mjs ./scripts/preflight-pdtp-accreditation-wiring.mjs
 COPY --from=build /tmp/apply-pdtp-catalog-decisions.mjs ./scripts/apply-pdtp-catalog-decisions.mjs
 COPY --from=build /tmp/apply-pdtp-program-data.mjs ./scripts/apply-pdtp-program-data.mjs
