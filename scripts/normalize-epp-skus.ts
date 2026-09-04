@@ -3,6 +3,10 @@
  *   EPP-001, EPP-002, ... (EPP)
  *   SRV-001, SRV-002, ... (servicios)
  *
+ * Sólo renumera productos activos. Los productos inactivos conservan su SKU
+ * para preservar la trazabilidad histórica; sus códigos quedan reservados y
+ * pueden producir saltos en la secuencia activa.
+ *
  * También ajusta unit_of_measure de productos que requieren presentación
  * distinta de "unidad".
  *
@@ -15,9 +19,17 @@ import postgres from "postgres"
 import * as fs from "fs"
 import * as path from "path"
 import * as os from "os"
+import { buildSequentialSkuMap } from "./normalize-epp-skus-logic"
 
 const DRY_RUN = !process.argv.includes("--apply")
 const ROLLBACK = process.argv.includes("--rollback")
+
+type AllProductRow = {
+  id: string
+  sku: string
+  name: string
+  is_active: boolean
+}
 
 function getBackupDir(): string {
   const custom = process.env.BACKUP_DIR
@@ -126,32 +138,41 @@ async function main() {
     ORDER BY p.name
   `
 
+  const allProducts = await sql<AllProductRow[]>`
+    SELECT p.id, p.sku, p.name, p.is_active
+    FROM products p
+    WHERE p.sku IS NOT NULL
+  `
+
   // ── 3. Construir mapeo ──────────────────────────────────────────────────
   const backupMap = new Map(backup.map((r) => [r.id, r]))
-  const skuMap: Array<{ id: string; oldSku: string; newSku: string; name: string }> = []
+  const skuMap = buildSequentialSkuMap({
+    rows: [
+      ...eppRows.map((row) => ({
+        id: row.id,
+        oldSku: backupMap.get(row.id)?.sku ?? "?",
+        name: row.name,
+        prefix: "EPP" as const,
+      })),
+      ...srvRows.map((row) => ({
+        id: row.id,
+        oldSku: backupMap.get(row.id)?.sku ?? "?",
+        name: row.name,
+        prefix: "SRV" as const,
+      })),
+    ],
+    existingProducts: allProducts.map((row) => ({ id: row.id, sku: row.sku })),
+  })
 
-  for (let i = 0; i < eppRows.length; i++) {
-    const row = eppRows[i]
-    if (!row) continue
-    const oldSku = backupMap.get(row.id)?.sku ?? "?"
-    skuMap.push({
-      id: row.id,
-      oldSku,
-      newSku: `EPP-${String(i + 1).padStart(3, "0")}`,
-      name: row.name,
-    })
-  }
-
-  for (let i = 0; i < srvRows.length; i++) {
-    const row = srvRows[i]
-    if (!row) continue
-    const oldSku = backupMap.get(row.id)?.sku ?? "?"
-    skuMap.push({
-      id: row.id,
-      oldSku,
-      newSku: `SRV-${String(i + 1).padStart(3, "0")}`,
-      name: row.name,
-    })
+  const normalizableIds = new Set(skuMap.map((row) => row.id))
+  const reservedProducts = allProducts.filter(
+    (row) => !normalizableIds.has(row.id) && /^(EPP|SRV)-\d+$/.test(row.sku),
+  )
+  if (reservedProducts.length > 0) {
+    console.log(`\n🔒 SKUs conservados fuera de la renumeración (${reservedProducts.length}):`)
+    for (const row of reservedProducts) {
+      console.log(`   ${row.sku.padEnd(12)} | ${row.name.slice(0, 60)}${row.is_active ? "" : " (inactivo)"}`)
+    }
   }
 
   // ── 4. Mostrar preview ──────────────────────────────────────────────────
@@ -190,7 +211,7 @@ async function main() {
     if (toUpdate.length > 0) {
       // Fase 1: prefijo temporal para evitar colisiones con el constraint unique
       for (const row of toUpdate) {
-        await tx`UPDATE products SET sku = ${"__tmp__" + row.id} WHERE id = ${row.id}`
+        await tx`UPDATE products SET sku = ${"__sku_normalize_tmp__" + row.id} WHERE id = ${row.id}`
       }
       // Fase 2: asignar el nuevo SKU definitivo
       for (const row of toUpdate) {
@@ -231,7 +252,15 @@ async function rollback(sql: postgres.Sql) {
   console.log(`🔄 Revirtiendo ${backup.length} productos desde ${backupFile}...`)
 
   await sql.begin(async (tx) => {
-    for (const row of backup) {
+    const toRestore = backup
+
+    // Stage all changed rows first so rollback also handles SKU cycles (A ↔ B)
+    // without violating products.sku_unique midway through the transaction.
+    for (const row of toRestore) {
+      await tx`UPDATE products SET sku = ${"__sku_rollback_tmp__" + row.id} WHERE id = ${row.id} AND sku != ${row.sku}`
+    }
+
+    for (const row of toRestore) {
       await tx`
         UPDATE products
         SET sku = ${row.sku}, unit_of_measure = ${row.unit_of_measure}

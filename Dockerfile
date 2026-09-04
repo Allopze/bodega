@@ -242,7 +242,8 @@ RUN ./node_modules/.bin/esbuild scripts/preflight-fuel-integrations.ts \
     --external:postgres \
     --outfile=/tmp/preflight-fuel-integrations.mjs
 
-# Normalización de SKUs de EPP y servicios a formato secuencial (EPP-NNN, SRV-NNN).
+# Normalización de SKUs activos de EPP y servicios a formato secuencial
+# (EPP-NNN, SRV-NNN), preservando los SKU de productos fuera del conjunto.
 # Corre en deploy una sola vez: es idempotente (si ya está normalizado, no cambia nada).
 RUN ./node_modules/.bin/esbuild scripts/normalize-epp-skus.ts \
     --bundle \

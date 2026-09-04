@@ -305,8 +305,10 @@ services:
     command: ["node", "scripts/sync-rbac.mjs"]
 
   # One-shot: normaliza SKUs de productos EPP y servicios a formato secuencial
-  # (EPP-001, EPP-002, ... / SRV-001, SRV-002, ...). Idempotente: si ya está
-  # normalizado, no cambia nada. Corre después de migraciones.
+  # (EPP-001, EPP-002, ... / SRV-001, SRV-002, ...). Conserva los SKU de
+  # productos fuera del conjunto activo, por lo que puede dejar saltos. Es
+  # idempotente: si ya está normalizado, no cambia nada. Corre después de
+  # migraciones.
   #
   #   docker compose run --rm normalize-epp-skus
   #
