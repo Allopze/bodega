@@ -11,7 +11,6 @@ import type { Session } from "next-auth"
 import { buildXlsxBuffer } from "@/lib/reports/export"
 import {
   buildTrazabilidadConsolidadaReportData,
-  buildTrazabilidadReportData,
   type TrazabilidadExportRow,
 } from "@/lib/services/trazabilidad-export-format"
 import { fetchTraceabilityAuxiliaryData } from "@/lib/services/trazabilidad-consolidated-queries"
@@ -20,6 +19,7 @@ import {
   collectConsolidatedRows,
   normalizeConsolidatedFilters,
   type ConsolidatedFilterSet,
+  type LinkedMaps,
 } from "@/lib/services/trazabilidad-consolidated"
 import type {
   ConsolidatedOrder,
@@ -162,8 +162,24 @@ export async function buildTrazabilidadConsolidada(
 
   const filterSet = toFilterSet(filters)
   const requests: ConsolidatedRequest[] = []
-  const orders = new Map<string, ConsolidatedOrder>()
   const lineRows: TrazabilidadExportRow[] = []
+  // TR-B1 (auditoría 2026-09-05): la hoja de OCs se construía desde
+  // `request.orders`, una proyección por solicitud cuyo `rowsById` sólo
+  // contiene las líneas de ESA solicitud. El `requestIds` de una OC compartida
+  // quedaba truncado a la solicitud en curso y el `Map.set(...)` que la
+  // recorría después la sobrescribía con ese conjunto incompleto — la hoja
+  // perdía solicitudes vinculadas de forma no determinista. Para deduplicar las
+  // OCs con todos sus `requestIds` se acumulan las líneas y los mapas de todas
+  // las faenas y se corre un solo agregado global al final.
+  const allLines: ConsolidatedRow[] = []
+  const allMaps: LinkedMaps = {
+    approvalsByItem: new Map(),
+    ocsByItem: new Map(),
+    deliveriesByItem: new Map(),
+    receiptsByOcItem: new Map(),
+    gdisByOcItem: new Map(),
+    stockByProduct: new Map(),
+  }
   let truncated = false
 
   for (const worksite of targets) {
@@ -174,19 +190,33 @@ export async function buildTrazabilidadConsolidada(
     const collected = await collectConsolidatedRows(session, worksite, filterSet)
     if (collected.truncated) truncated = true
 
-    const aggregates = aggregateConsolidatedRows(collected.rows, collected.maps)
-    for (const request of aggregates.requests) {
+    for (const request of collected.requests) {
       if (requests.length >= maxRows) {
         truncated = true
         break
       }
       requests.push(request)
-      for (const line of request.lines) lineRows.push(toExportRow(line))
-      for (const order of request.orders) orders.set(order.orderId, order)
+      for (const line of request.lines) {
+        allLines.push(line)
+        lineRows.push(toExportRow(line))
+      }
     }
+    // Concatenamos cada mapa con su destino correspondiente. Los ids de ítem,
+    // línea de OC y producto son únicos por faena, así que las claves no
+    // colisionan al unir los mapas de distintas faenas.
+    for (const [key, value] of collected.maps.approvalsByItem) allMaps.approvalsByItem.set(key, value)
+    for (const [key, value] of collected.maps.ocsByItem) allMaps.ocsByItem.set(key, value)
+    for (const [key, value] of collected.maps.deliveriesByItem) allMaps.deliveriesByItem.set(key, value)
+    for (const [key, value] of collected.maps.receiptsByOcItem) allMaps.receiptsByOcItem.set(key, value)
+    for (const [key, value] of collected.maps.gdisByOcItem) allMaps.gdisByOcItem.set(key, value)
+    for (const [key, value] of collected.maps.stockByProduct) allMaps.stockByProduct.set(key, value)
   }
 
-  return { requests, orders: [...orders.values()], lineRows, truncated }
+  // El agregado global deduplica OCs por purchaseOrderId conservando todos los
+  // requestIds de las líneas que las integran, sin importar el orden de faena.
+  const globalOrders = aggregateConsolidatedRows(allLines, allMaps).orders
+
+  return { requests, orders: globalOrders, lineRows, truncated }
 }
 
 /**

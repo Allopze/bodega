@@ -1,5 +1,6 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
+import ExcelJS from "exceljs"
 import path from "node:path"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
@@ -631,6 +632,61 @@ describe("trazabilidad export scoping and filter tests", () => {
     expect(res.truncated).toBe(true)
     expect(res.filename).toContain("trazabilidad-")
     expect(res.buffer).toBeInstanceOf(ArrayBuffer)
+  })
+
+  // TR-B1 (auditoría 2026-09-05): la hoja "Órdenes de compra" se construía con
+  // `request.orders`, cuya proyección por solicitud truncaba los `requestIds`
+  // de una OC compartida. Si dos solicitudes comparten la misma OC, la hoja
+  // debe listar UNA OC con AMBAS solicitudes vinculadas, sin importar el orden
+  // de recorrido de las faenas.
+  it("deduplica una OC compartida conservando todas sus solicitudes en el Excel (TR-B1)", async () => {
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.worksites).values({
+      id: "ws-1", name: "Faena 1", code: "F-1", isActive: true, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.productCategories).values({
+      id: "cat-1", name: "Calzado", slug: "calzado",
+    })
+    await inMemoryDb.insert(schema.products).values({
+      id: "prod-1", name: "Bota compartida", sku: "BOTA-COMP", categoryId: "cat-1",
+      isActive: true, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.suppliers).values({
+      id: "sup-1", name: "Proveedor Uno", isActive: true, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequests).values([
+      { id: "req-a", code: "SOL-0001", worksiteId: "ws-1", requesterId: "u-1", status: "submitted", createdAt: now, updatedAt: now },
+      { id: "req-b", code: "SOL-0002", worksiteId: "ws-1", requesterId: "u-1", status: "submitted", createdAt: now, updatedAt: now },
+    ])
+    await inMemoryDb.insert(schema.purchaseRequestItems).values([
+      { id: "item-a1", requestId: "req-a", productId: "prod-1", quantity: 2, unitOfMeasure: "unidad", status: "approved", createdAt: now, updatedAt: now },
+      { id: "item-b1", requestId: "req-b", productId: "prod-1", quantity: 3, unitOfMeasure: "unidad", status: "approved", createdAt: now, updatedAt: now },
+    ])
+    // La misma OC mezcla líneas de ambas solicitudes (compartida).
+    await inMemoryDb.insert(schema.purchaseOrders).values({
+      id: "po-shared", code: "OC-2026-SHARED", worksiteId: "ws-1", supplierId: "sup-1",
+      createdBy: "u-1", status: "sent", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseOrderItems).values([
+      { id: "poi-a1", purchaseOrderId: "po-shared", requestItemId: "item-a1", productId: "prod-1", quantity: 2, unitOfMeasure: "unidad", unitPrice: 100, subtotal: 200 },
+      { id: "poi-b1", purchaseOrderId: "po-shared", requestItemId: "item-b1", productId: "prod-1", quantity: 3, unitOfMeasure: "unidad", unitPrice: 100, subtotal: 300 },
+    ])
+
+    const res = await getTrazabilidadXlsx(globalSession(), { worksiteId: "ws-1" })
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(Buffer.from(res.buffer) as never)
+
+    const ordersSheet = workbook.getWorksheet("Órdenes de compra")
+    expect(ordersSheet).toBeDefined()
+    // Encabezado + una fila: la OC compartida aparece una sola vez.
+    expect(ordersSheet?.rowCount).toBe(2)
+    expect(ordersSheet?.getCell("A2").value).toBe("OC-2026-SHARED")
+    // "Solicitudes vinculadas" conserva TODAS las solicitudes que la integran
+    // (por id; es el contrato del DTO `ConsolidatedOrder.requestIds`). Antes
+    // sólo aparecía la de la última faena recorrida.
+    const linked = String(ordersSheet?.getCell("D2").value ?? "")
+    expect(linked).toContain("req-a")
+    expect(linked).toContain("req-b")
   })
 })
 

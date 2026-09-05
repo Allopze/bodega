@@ -72,7 +72,16 @@ export function ConsolidatedKpis({ kpis, filters, filtered = false }: Props) {
       icon: Truck,
       color: "text-blue-700",
       bg: "bg-blue-50",
-      href: hrefWith(filters, { estado: "pedido_proveedor" }),
+      // TR-B2 (auditoría 2026-09-05): este KPI cuenta OCs emitidas/enviadas con
+      // saldo por recibir (`awaitingSupplier`), pero `?estado=pedido_proveedor`
+      // filtra por ESTADO DE ÍTEM ("Pedido a proveedor"), un universo distinto:
+      // un ítem con OC parcialmente recibida ya no está en ese estado aunque su
+      // OC siga esperando. Hasta que exista un filtro por OC con saldo (TR-F1),
+      // el KPI se muestra como informativo, sin enlace, para no llevar a un
+      // subconjunto que contradiga el número.
+      href: null,
+      title:
+        "Órdenes de compra emitidas/enviadas con saldo por recibir. No hay filtro por OC aún; se muestra como dato informativo.",
     },
     {
       label: "Cerrados / entregados",
@@ -94,12 +103,9 @@ export function ConsolidatedKpis({ kpis, filters, filtered = false }: Props) {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {primaryCards.map((card) => {
           const Icon = card.icon
-          return (
-            <Link
-              key={card.label}
-              href={card.href}
-              data-kpi-card
-              className={`flex flex-col justify-between rounded-xl border bg-white p-3.5 shadow-xs transition-shadow hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-line)] ${
+          const inner = (
+            <div
+              className={`flex flex-col justify-between rounded-xl border bg-white p-3.5 shadow-xs ${
                 card.highlight
                   ? "border-amber-200/80 bg-amber-50/20"
                   : "border-slate-200/70"
@@ -116,7 +122,22 @@ export function ConsolidatedKpis({ kpis, filters, filtered = false }: Props) {
               <div className="mt-2 text-2xl font-bold tracking-tight text-slate-900 font-mono">
                 {card.value}
               </div>
+            </div>
+          )
+          return card.href ? (
+            <Link
+              key={card.label}
+              href={card.href}
+              data-kpi-card
+              title={card.title}
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-line)]"
+            >
+              {inner}
             </Link>
+          ) : (
+            <div key={card.label} data-kpi-card title={card.title}>
+              {inner}
+            </div>
           )
         })}
       </div>
