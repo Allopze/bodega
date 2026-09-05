@@ -39,6 +39,7 @@ export {
 export type {
   ConsolidatedRequest,
   ConsolidatedOrder,
+  ConsolidatedOrderQuantitySummary,
   ConsolidatedAggregateResult,
 } from "./trazabilidad-consolidated.types"
 export { TRACEABILITY_MAX_ITEM_ROWS } from "./trazabilidad-consolidated-queries"

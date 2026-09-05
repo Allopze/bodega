@@ -210,25 +210,61 @@ describe("aggregateConsolidatedRows", () => {
     expect(result.orders[0]?.quantitiesByUom).toEqual([
       {
         uom: "par",
-        requested: 2,
-        approved: 2,
         inOc: 2,
         receivedOffice: 1,
         receivedFaena: 1,
-        delivered: 4 / 3,
-        pendingTotal: 2 / 3,
       },
     ])
     expect(result.orders[1]?.quantitiesByUom).toEqual([
       {
         uom: "par",
-        requested: 4,
-        approved: 4,
         inOc: 4,
         receivedOffice: 3,
         receivedFaena: 3,
-        delivered: 8 / 3,
-        pendingTotal: 4 / 3,
+      },
+    ])
+  })
+
+  it("expone sólo cantidades exactas de OC cuando una línea está parcialmente ordenada", () => {
+    const partiallyOrdered = row({
+      requested: 10,
+      approved: 10,
+      inOc: 4,
+      receivedOffice: 3,
+      receivedFaena: 2,
+      delivered: 1,
+      pendingTotal: 9,
+    })
+
+    const result = aggregateConsolidatedRows(
+      [partiallyOrdered],
+      linkedMaps([
+        oc({
+          quantity: 4,
+          quantityOfficeReceived: 3,
+          quantityReceived: 2,
+        }),
+      ]),
+    )
+
+    expect(result.requests[0]?.quantitiesByUom).toEqual([
+      {
+        uom: "par",
+        requested: 10,
+        approved: 10,
+        inOc: 4,
+        receivedOffice: 3,
+        receivedFaena: 2,
+        delivered: 1,
+        pendingTotal: 9,
+      },
+    ])
+    expect(result.orders[0]?.quantitiesByUom).toEqual([
+      {
+        uom: "par",
+        inOc: 4,
+        receivedOffice: 3,
+        receivedFaena: 2,
       },
     ])
   })

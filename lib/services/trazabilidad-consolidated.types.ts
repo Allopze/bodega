@@ -152,6 +152,13 @@ export interface ConsolidatedQuantitySummary {
   pendingTotal: number
 }
 
+export interface ConsolidatedOrderQuantitySummary {
+  uom: string
+  inOc: number
+  receivedOffice: number
+  receivedFaena: number
+}
+
 export interface ConsolidatedOrder {
   orderId: string
   code: string
@@ -160,7 +167,7 @@ export interface ConsolidatedOrder {
   requestIds: string[]
   lineIds: string[]
   lineCount: number
-  quantitiesByUom: ConsolidatedQuantitySummary[]
+  quantitiesByUom: ConsolidatedOrderQuantitySummary[]
   lastUpdated: string
 }
 

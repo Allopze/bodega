@@ -4,6 +4,7 @@ import {
   type ComputedStatus,
   type ConsolidatedAggregateResult,
   type ConsolidatedOrder,
+  type ConsolidatedOrderQuantitySummary,
   type ConsolidatedQuantitySummary,
   type ConsolidatedRequest,
   type ConsolidatedRow,
@@ -67,7 +68,6 @@ function uniqueOcRows(ocRows: OcRow[]): OcRow[] {
 function buildOrder(
   ocRows: OcRow[],
   rowsById: Map<string, ConsolidatedRow>,
-  orderedQuantityByLine: Map<string, number>,
 ): ConsolidatedOrder {
   const uniqueRows = uniqueOcRows(ocRows)
   const firstOrder = uniqueRows[0]
@@ -87,32 +87,19 @@ function buildOrder(
     const line = rowsById.get(lineId)
     return line ? [line] : []
   })
-  const summaryByUom = new Map<string, MutableQuantitySummary>()
+  const summaryByUom = new Map<string, ConsolidatedOrderQuantitySummary>()
 
   for (const [lineId, lineOrders] of ocRowsByLine) {
     const line = rowsById.get(lineId)
     if (!line) continue
-    const allocated = lineOrders.reduce((total, order) => total + order.quantity, 0)
-    const totalOrdered = orderedQuantityByLine.get(lineId) ?? allocated
-    const allocationShare = totalOrdered > 0 ? allocated / totalOrdered : 0
     const current = summaryByUom.get(line.uom) ?? {
       uom: line.uom,
-      requested: 0,
-      approved: 0,
-      hasApproved: false,
       inOc: 0,
       receivedOffice: 0,
       receivedFaena: 0,
-      delivered: 0,
-      pendingTotal: 0,
     }
 
-    current.requested += line.requested * allocationShare
-    if (line.approved !== null) {
-      current.approved += line.approved * allocationShare
-      current.hasApproved = true
-    }
-    current.inOc += allocated
+    current.inOc += lineOrders.reduce((total, order) => total + order.quantity, 0)
     current.receivedOffice += lineOrders.reduce(
       (total, order) => total + order.quantityOfficeReceived,
       0,
@@ -121,15 +108,10 @@ function buildOrder(
       (total, order) => total + order.quantityReceived,
       0,
     )
-    current.delivered += line.delivered * allocationShare
-    current.pendingTotal += line.pendingTotal * allocationShare
     summaryByUom.set(line.uom, current)
   }
 
-  const quantitiesByUom = [...summaryByUom.values()].map(({ hasApproved, ...summary }) => ({
-    ...summary,
-    approved: hasApproved ? summary.approved : null,
-  }))
+  const quantitiesByUom = [...summaryByUom.values()]
 
   return {
     orderId: firstOrder.purchaseOrderId,
@@ -196,7 +178,6 @@ export function aggregateConsolidatedRows(
   const requestLines = new Map<string, ConsolidatedRow[]>()
   const orderRows = new Map<string, OcRow[]>()
   const requestOrderRows = new Map<string, Map<string, OcRow[]>>()
-  const orderedQuantityByLine = new Map<string, number>()
 
   for (const row of rows) {
     const lines = requestLines.get(row.requestId) ?? []
@@ -213,17 +194,10 @@ export function aggregateConsolidatedRows(
       requestGroup.push(order)
       ordersForRequest.set(order.purchaseOrderId, requestGroup)
       requestOrderRows.set(row.requestId, ordersForRequest)
-
-      orderedQuantityByLine.set(
-        row.itemId,
-        (orderedQuantityByLine.get(row.itemId) ?? 0) + order.quantity,
-      )
     }
   }
 
-  const orders = [...orderRows.values()].map((group) =>
-    buildOrder(group, rowsById, orderedQuantityByLine),
-  )
+  const orders = [...orderRows.values()].map((group) => buildOrder(group, rowsById))
 
   const requests = [...requestLines.values()].map((lines): ConsolidatedRequest => {
     const firstLine = lines[0]
@@ -232,7 +206,7 @@ export function aggregateConsolidatedRows(
     }
 
     const requestOrders = [...(requestOrderRows.get(firstLine.requestId)?.values() ?? [])].map(
-      (group) => buildOrder(group, rowsById, orderedQuantityByLine),
+      (group) => buildOrder(group, rowsById),
     )
     const aggregateStatus = computeAggregateStatus(lines)
     const quantitiesByUom = summarizeRows(lines)
