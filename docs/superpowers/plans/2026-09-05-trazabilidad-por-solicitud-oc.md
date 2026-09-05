@@ -73,7 +73,7 @@
 
 - [ ] **Step 2: Ejecutar sólo los tests nuevos para confirmar el fallo.**
 
-  Run: `npm run test:pglite -- lib/services/trazabilidad-consolidated-aggregate.test.ts`
+  Run: `npm run test:fast -- lib/services/trazabilidad-consolidated-aggregate.test.ts`
 
   Expected: FAIL porque las interfaces y la función de agregación aún no
   existen.
@@ -91,7 +91,16 @@
     receivedOffice: number
     receivedFaena: number
     delivered: number
-    pendingTotal: number
+    /** null when more than one UOM prevents a scalar total. */
+    pendingTotal: number | null
+    hasPending: boolean
+  }
+
+  export interface ConsolidatedOrderQuantitySummary {
+    uom: string
+    inOc: number
+    receivedOffice: number
+    receivedFaena: number
   }
 
   export interface ConsolidatedOrder {
@@ -102,7 +111,7 @@
     requestIds: string[]
     lineIds: string[]
     lineCount: number
-    quantitiesByUom: ConsolidatedQuantitySummary[]
+    quantitiesByUom: ConsolidatedOrderQuantitySummary[]
     lastUpdated: string
   }
 
@@ -125,7 +134,8 @@
     statusLabel: string
     statusColor: StatusMeta["color"]
     statusCounts: Partial<Record<ComputedStatus, number>>
-    pendingTotal: number
+    pendingTotal: number | null
+    hasPending: boolean
     alert: boolean
     lastUpdated: string
   }
@@ -138,7 +148,9 @@
 
   `ConsolidatedRequest.lines` contiene las filas de evidencia sin cambiar sus
   cálculos actuales; nunca se suman cantidades de UOM diferentes en el
-  resumen.
+  resumen. `pendingTotal` sólo será numérico para una única UOM; en una
+  solicitud con UOM heterogéneas será `null` y `hasPending` señalará si existe
+  algún saldo pendiente.
 
 - [ ] **Step 4: Implementar agrupación y estado agregado.**
 
@@ -158,7 +170,10 @@
   Agrupar solicitudes por `requestId` y OCs por `purchaseOrderId`. Deduplificar
   `requestIds` y `lineIds`, sumar sólo dentro de la misma UOM, usar la fecha más
   reciente como `lastUpdated` y conservar líneas sin OC en la solicitud sin
-  inventar una orden.
+  inventar una orden. En los grupos de OC sólo proyectar cantidades que el
+  esquema vincula directamente al `purchaseOrderItem` (`inOc`,
+  `receivedOffice`, `receivedFaena`); no atribuir `requested`, `delivered` ni
+  `pendingTotal` a una OC porque las entregas sólo enlazan al ítem de solicitud.
 
   El estado agregado será `entregado` si todas las líneas aplicables están
   entregadas, `parcialmente_entregado` si hay avance y saldo, y en los demás
@@ -184,7 +199,7 @@
 
 - [ ] **Step 5: Ejecutar la suite de agregación y las regresiones existentes.**
 
-  Run: `npm run test:pglite -- lib/services/trazabilidad-consolidated-aggregate.test.ts lib/services/trazabilidad-consolidated.test.ts`
+  Run: `npm run test:fast -- lib/services/trazabilidad-consolidated-aggregate.test.ts lib/services/trazabilidad-consolidated.test.ts`
 
   Expected: PASS, sin cambiar las expectativas de cálculo de las filas por
   ítem.
@@ -234,7 +249,7 @@
 
 - [ ] **Step 2: Ejecutar el test de regresión para confirmar el fallo.**
 
-  Run: `npm run test:pglite -- lib/services/trazabilidad-consolidated.test.ts`
+  Run: `npm run test:fast -- lib/services/trazabilidad-consolidated.test.ts`
 
   Expected: FAIL porque el resultado actual sólo expone `rows` por ítem.
 
@@ -302,7 +317,9 @@
 
 - [ ] **Step 6: Ejecutar servicio, PGlite y typecheck dirigido.**
 
-  Run: `npm run test:pglite -- lib/services/trazabilidad-consolidated.test.ts lib/__tests__/trazabilidad-export-scope.test.ts`
+  Run: `npm run test:fast -- lib/services/trazabilidad-consolidated.test.ts`
+
+  Run: `npm run test:pglite -- lib/__tests__/trazabilidad-export-scope.test.ts`
 
   Run: `NODE_OPTIONS=--max-old-space-size=8192 npm run typecheck -- --pretty false`
 
@@ -589,7 +606,8 @@
   Run sequentially through the resource guard:
 
   ```bash
-  npm run test:pglite -- lib/services/trazabilidad-consolidated-aggregate.test.ts lib/services/trazabilidad-consolidated.test.ts lib/__tests__/trazabilidad-export.test.ts lib/__tests__/trazabilidad-export-scope.test.ts
+  npm run test:fast -- lib/services/trazabilidad-consolidated-aggregate.test.ts lib/services/trazabilidad-consolidated.test.ts lib/__tests__/trazabilidad-export.test.ts
+  npm run test:pglite -- lib/__tests__/trazabilidad-export-scope.test.ts
   npm run test:e2e -- e2e/trazabilidad-activos.spec.ts
   ./node_modules/.bin/eslint lib/services/trazabilidad-consolidated-aggregate.ts lib/services/trazabilidad-consolidated.ts lib/services/trazabilidad-export.ts 'app/(app)/bodega/trazabilidad/page.tsx' 'app/(app)/bodega/trazabilidad/_components/consolidated-card.tsx' 'app/(app)/bodega/trazabilidad/_components/consolidated-table.tsx'
   NODE_OPTIONS=--max-old-space-size=8192 npm run typecheck -- --pretty false

@@ -70,6 +70,12 @@ Las cantidades no se sumarán entre unidades de medida diferentes. Cuando una
 solicitud tenga UOM heterogéneas, el agregado mostrará conteos por UOM y las
 cantidades permanecerán en el detalle de líneas.
 
+El resumen específico de una OC sólo mostrará cantidades enlazadas directamente
+a sus ítems de OC: ordenado, recibido en oficina y recibido en faena. Las
+entregas y los pendientes permanecerán a nivel de solicitud/línea, porque el
+modelo actual enlaza las entregas al ítem de solicitud y no a un ítem de OC;
+repartirlas entre OCs introduciría una atribución que los datos no prueban.
+
 Los identificadores de OC se deduplicarán globalmente para KPIs y filtros. Una
 OC compartida puede aparecer dentro de más de una solicitud por sus líneas
 atribuibles, pero no aumentará dos veces el KPI global de OCs.
