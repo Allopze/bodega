@@ -48,6 +48,9 @@ export interface ChainDocument {
   /** Fecha relevante del documento, en ISO. */
   at:         string | null
   worksiteId: string | null
+  /** TR-08: la cadena documental no la exponía; una entrega anulada se veía
+   *  como vigente. Las presentaciones la marcan como Anulada. */
+  voided?:    boolean
 }
 
 export interface DocumentChain {
@@ -271,13 +274,19 @@ export async function getDocumentChain(session: Session, anchor: ChainAnchor): P
 
     // ── Entregas de esas líneas ────────────────────────────────────────────────
     canSeeDeliveries && itemIds.length > 0
-      ? db
+      ? // TR-08 (auditoría 2026-09-05): la cadena seleccionaba estado, código y
+        // fecha pero no `voidedAt`; una entrega anulada se mostraba como si
+        // estuviera vigente con su destino. Se trae la marca para exponerla en
+        // la tira y en los resultados.
+        db
           .select({
             id:              deliveries.id,
             code:            deliveries.code,
             destinationType: deliveries.destinationType,
             worksiteId:      deliveries.worksiteId,
             deliveredAt:     deliveries.deliveredAt,
+            voidedAt:        deliveries.voidedAt,
+            voidReason:      deliveries.voidReason,
           })
           .from(deliveryItems)
           .innerJoin(deliveries, eq(deliveries.id, deliveryItems.deliveryId))
@@ -356,6 +365,12 @@ export async function getDocumentChain(session: Session, anchor: ChainAnchor): P
   // de su orden, que es la que decide quién puede verla.
   const orderWorksite = new Map(orderRows.map((row) => [row.id, row.worksiteId]))
 
+  // OP-07 (auditoría 2026-09-05): un `worksiteId` nulo se considera visible
+  // para quien tiene el permiso del libro. Es la decisión documentada: una
+  // recepción o entrega histórica sin faena no tiene otra faena a la que
+  // atribuirse, así que mostrarla a un rol con permiso de ver ese libro no
+  // filtra datos de una faena ajena. El alcance sí se aplica línea a línea
+  // cuando la faena existe (nível inferior, TR-09).
   const inScope = (worksiteId: string | null) =>
     worksiteId === null || canAccessWorksite(session, worksiteId)
 
@@ -368,7 +383,7 @@ export async function getDocumentChain(session: Session, anchor: ChainAnchor): P
     return [...byId.values()].sort((a, b) => a.code.localeCompare(b.code))
   }
 
-  return {
+  const chain: DocumentChain = {
     requests: collect(requestRows.map((row) => ({
       kind: "request" as const,
       id: row.id,
@@ -415,8 +430,50 @@ export async function getDocumentChain(session: Session, anchor: ChainAnchor): P
       status: row.destinationType,
       at: row.deliveredAt,
       worksiteId: row.worksiteId,
+      // TR-08: la marca de anulación viaja ahora en la fila y se expone en la
+      // tira; una entrega anulada ya no se confunde con una vigente.
+      voided: row.voidedAt != null,
     }))),
   }
+
+  // TR-01 (auditoría 2026-09-05): una entrega válida sin solicitud —salida
+  // libre de stock— se perdía de la búsqueda por código. Su ancla tiene todos
+  // los `requestItemId` nulos, así que `seedFromAnchor` devolvía `itemIds`
+  // vacíos y la cadena quedaba vacía ("no encontrado") aunque la entrega
+  // existiera y el usuario tuviera permiso. El ancla siempre se incluye en su
+  // propio libro, respetando permisos y alcance.
+  if (anchor.kind === "delivery") {
+    const exists = chain.deliveries.some((doc) => doc.id === anchor.id)
+    if (!exists && canSeeDeliveries) {
+      const [anchorDelivery] = await db
+        .select({
+          id: deliveries.id,
+          code: deliveries.code,
+          destinationType: deliveries.destinationType,
+          worksiteId: deliveries.worksiteId,
+          deliveredAt: deliveries.deliveredAt,
+          voidedAt: deliveries.voidedAt,
+          voidReason: deliveries.voidReason,
+        })
+        .from(deliveries)
+        .where(eq(deliveries.id, anchor.id))
+        .limit(1)
+      if (anchorDelivery && inScope(anchorDelivery.worksiteId)) {
+        chain.deliveries = [{
+          kind: "delivery" as const,
+          id: anchorDelivery.id,
+          href: `/entregas/${anchorDelivery.id}/print`,
+          code: anchorDelivery.code,
+          status: anchorDelivery.destinationType,
+          at: anchorDelivery.deliveredAt,
+          worksiteId: anchorDelivery.worksiteId,
+          voided: anchorDelivery.voidedAt != null,
+        }, ...chain.deliveries]
+      }
+    }
+  }
+
+  return chain
 }
 
 /** Atajo: resuelve un código y devuelve su cadena en una sola llamada. */

@@ -83,11 +83,23 @@ function ChainCode({ doc, current }: { doc: ChainDocument; current: boolean }) {
 
   // El documento en el que ya estás no se enlaza a sí mismo.
   if (current) {
-    return <span className={className} title={documentTitle(doc)} aria-current="page">{doc.code}</span>
+    return (
+      <span
+        className={cn(className, doc.voided && "opacity-60 line-through")}
+        title={documentTitle(doc)}
+        aria-current="page"
+      >
+        {doc.voided ? `${doc.code} · Anulada` : doc.code}
+      </span>
+    )
   }
   return (
-    <Link href={doc.href} className={className} title={documentTitle(doc)}>
-      {doc.code}
+    <Link
+      href={doc.href}
+      className={cn(className, doc.voided && "opacity-60 line-through")}
+      title={documentTitle(doc)}
+    >
+      {doc.voided ? `${doc.code} · Anulada` : doc.code}
     </Link>
   )
 }

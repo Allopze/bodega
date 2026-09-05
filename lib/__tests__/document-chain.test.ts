@@ -200,6 +200,52 @@ describe("expediente de documentos", () => {
     expect(codes(chain.deliveries)).toEqual(["ENT-2026-0001"])
   })
 
+  // TR-01 (auditoría 2026-09-05): una entrega válida sin solicitud (salida
+  // libre de stock) tiene todos sus `requestItemId` nulos. El recorrido
+  // partía de esas líneas, así que la cadena quedaba vacía y la búsqueda por
+  // código respondía "no encontrado" aunque la entrega existiera y el usuario
+  // tuviera permiso. El ancla debe conservarse como documento en su propio
+  // libro.
+  it("conserva una entrega libre de stock como ancla de la cadena (TR-01)", async () => {
+    await inMemoryDb.insert(schema.deliveries).values({
+      id: "ent-free", code: "ENT-2026-FREE", deliveredBy: "user-chain", deliveredAt: now,
+      destinationType: "faena", worksiteId: "ws-norte", createdAt: now,
+    })
+    await inMemoryDb.insert(schema.deliveryItems).values({
+      id: "enti-free", deliveryId: "ent-free", requestItemId: null, productNameFree: "Salida libre",
+      quantity: 1, unitOfMeasure: "unidad",
+    })
+
+    const chain = await getDocumentChain(session(), { kind: "delivery", id: "ent-free" })
+    expect(codes(chain.deliveries)).toEqual(["ENT-2026-FREE"])
+    expect(chain.requests).toEqual([])
+    expect(chain.orders).toEqual([])
+
+    const byCode = await getDocumentChainByCode(session(), "ENT-2026-FREE")
+    expect(byCode).not.toBeNull()
+    expect(byCode?.anchor).toEqual({ kind: "delivery", id: "ent-free" })
+  })
+
+  // TR-08 (auditoría 2026-09-05): la cadena documental no exponía `voidedAt`;
+  // una entrega anulada se mostraba como vigente con su destino. La entrega
+  // debe salir marcada como anulada.
+  it("expone la anulación de una entrega en la cadena (TR-08)", async () => {
+    await inMemoryDb.insert(schema.deliveries).values({
+      id: "ent-void", code: "ENT-2026-VOID", deliveredBy: "user-chain", deliveredAt: now,
+      destinationType: "faena", worksiteId: "ws-norte", createdAt: now,
+      voidedAt: now, voidedBy: "user-chain", voidReason: "Error de digitación en la salida",
+    })
+    await inMemoryDb.insert(schema.deliveryItems).values({
+      id: "enti-void", deliveryId: "ent-void", requestItemId: null, productNameFree: "Salida anulada",
+      quantity: 1, unitOfMeasure: "unidad",
+    })
+
+    const chain = await getDocumentChain(session(), { kind: "delivery", id: "ent-void" })
+    const delivery = chain.deliveries.find((d) => d.code === "ENT-2026-VOID")
+    expect(delivery).toBeDefined()
+    expect(delivery?.voided).toBe(true)
+  })
+
   it("omite los libros que el usuario no puede ver, en vez de mostrarlos sin enlace", async () => {
     const chain = await getDocumentChain(
       session({ permissions: ["requests:view_all"] }),
