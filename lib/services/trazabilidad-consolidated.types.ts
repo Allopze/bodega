@@ -101,7 +101,10 @@ export interface ConsolidatedRow {
   requesterId: string
   requesterName: string
   deliveryMode: string
+  /** Override de urgencia propio de la línea, si existe. */
   urgency: string | null
+  /** Urgencia heredada de la solicitud, independiente de los overrides. */
+  requestUrgency: string | null
 
   productId: string | null
   productName: string
@@ -180,7 +183,10 @@ export interface ConsolidatedRequest {
   statusLabel: string
   statusColor: StatusMeta["color"]
   statusCounts: Partial<Record<ComputedStatus, number>>
-  pendingTotal: number
+  /** Sólo es numérico cuando toda la solicitud usa una única UOM. */
+  pendingTotal: number | null
+  /** Indicador seguro para filtros cuando `pendingTotal` no se puede sumar. */
+  hasPending: boolean
   alert: boolean
   lastUpdated: string
 }

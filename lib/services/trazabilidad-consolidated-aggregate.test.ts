@@ -17,6 +17,7 @@ function row(overrides: Partial<ConsolidatedRow> = {}): ConsolidatedRow {
     requesterName: "Ana Solicitante",
     deliveryMode: "via_oficina",
     urgency: null,
+    requestUrgency: "normal",
     productId: "prod-1",
     productName: "Bota de seguridad",
     productSku: "BOTA-01",
@@ -159,6 +160,7 @@ describe("aggregateConsolidatedRows", () => {
       lineCount: 2,
       orderCount: 1,
       pendingTotal: 6,
+      hasPending: true,
       lastUpdated: "2026-08-09T12:00:00.000Z",
     })
     expect(result.requests[0]?.lines).toEqual(rows)
@@ -187,14 +189,16 @@ describe("aggregateConsolidatedRows", () => {
   it("relaciona una solicitud con varias OCs sin multiplicar sus líneas", () => {
     const rows = [row()]
     const maps = linkedMaps([
-      oc({ quantity: 3 }),
+      oc({ quantity: 2, quantityOfficeReceived: 1, quantityReceived: 1 }),
       oc({
         id: "poi-2",
         purchaseOrderId: "po-2",
         orderCode: "OC-2026-0002",
         supplierId: "sup-2",
         supplierName: "Proveedor Dos",
-        quantity: 3,
+        quantity: 4,
+        quantityOfficeReceived: 3,
+        quantityReceived: 3,
       }),
     ])
 
@@ -203,6 +207,30 @@ describe("aggregateConsolidatedRows", () => {
     expect(result.requests[0]).toMatchObject({ lineCount: 1, orderCount: 2 })
     expect(result.requests[0]?.orders.map((order) => order.orderId)).toEqual(["po-1", "po-2"])
     expect(result.orders).toHaveLength(2)
+    expect(result.orders[0]?.quantitiesByUom).toEqual([
+      {
+        uom: "par",
+        requested: 2,
+        approved: 2,
+        inOc: 2,
+        receivedOffice: 1,
+        receivedFaena: 1,
+        delivered: 4 / 3,
+        pendingTotal: 2 / 3,
+      },
+    ])
+    expect(result.orders[1]?.quantitiesByUom).toEqual([
+      {
+        uom: "par",
+        requested: 4,
+        approved: 4,
+        inOc: 4,
+        receivedOffice: 3,
+        receivedFaena: 3,
+        delivered: 8 / 3,
+        pendingTotal: 4 / 3,
+      },
+    ])
   })
 
   it("deduplica globalmente una OC compartida y limita cada proyección a su solicitud", () => {
@@ -317,10 +345,35 @@ describe("aggregateConsolidatedRows", () => {
         pendingTotal: 2,
       },
     ])
+    expect(result.requests[0]).toMatchObject({
+      pendingTotal: null,
+      hasPending: true,
+    })
+  })
+
+  it("conserva la urgencia de la solicitud y resuelve overrides sin depender del orden", () => {
+    const inherited = aggregateConsolidatedRows(
+      [row({ urgency: null, requestUrgency: "high" })],
+      linkedMaps(),
+    )
+    const withOverrides = aggregateConsolidatedRows(
+      [
+        row({ itemId: "item-1", urgency: "normal", requestUrgency: null }),
+        row({ itemId: "item-2", urgency: "critical", requestUrgency: null }),
+      ].reverse(),
+      linkedMaps(),
+    )
+
+    expect(inherited.requests[0]?.urgency).toBe("high")
+    expect(withOverrides.requests[0]?.urgency).toBe("critical")
   })
 })
 
 describe("computeAggregateStatus", () => {
+  it("rechaza un conjunto vacío porque no existe una solicitud que clasificar", () => {
+    expect(() => computeAggregateStatus([])).toThrow("sin líneas")
+  })
+
   it("marca parcialmente entregada una solicitud con avance y saldo", () => {
     const result = computeAggregateStatus([
       row({ computedStatus: "entregado", delivered: 6, pendingTotal: 0 }),

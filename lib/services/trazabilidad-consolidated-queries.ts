@@ -104,6 +104,7 @@ export async function fetchRawItemRows(session: Session, filters: TraceabilityIt
       requesterId: purchaseRequests.requesterId,
       requesterName: users.name,
       deliveryMode: purchaseRequests.deliveryMode,
+      requestUrgency: purchaseRequests.urgency,
       urgency: purchaseRequestItems.urgency,
 
       productId: purchaseRequestItems.productId,

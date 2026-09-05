@@ -4,6 +4,60 @@ import type {
   PendingBreakdown,
 } from "./trazabilidad-consolidated.types"
 
+const COMPUTED_STATUS_PROGRESS: Record<ComputedStatus, number> = {
+  solicitado: 0,
+  aprobado: 1,
+  pedido_proveedor: 2,
+  parcialmente_recibido_oficina: 3,
+  en_oficina: 4,
+  parcialmente_enviado_faena: 5,
+  enviado_faena: 6,
+  parcialmente_recibido_faena: 7,
+  en_faena: 8,
+  parcialmente_entregado: 9,
+  entregado: 10,
+  rechazado: 11,
+  cancelado: 12,
+  borrador: 13,
+}
+
+const COMPUTED_STATUS_APPLICABILITY: Record<ComputedStatus, boolean> = {
+  solicitado: true,
+  aprobado: true,
+  pedido_proveedor: true,
+  parcialmente_recibido_oficina: true,
+  en_oficina: true,
+  parcialmente_enviado_faena: true,
+  enviado_faena: true,
+  parcialmente_recibido_faena: true,
+  en_faena: true,
+  parcialmente_entregado: true,
+  entregado: true,
+  rechazado: false,
+  cancelado: false,
+  borrador: false,
+}
+
+/** Semántica canónica compartida por estados de ítem y agregados. */
+export function isApplicableComputedStatus(status: ComputedStatus): boolean {
+  return COMPUTED_STATUS_APPLICABILITY[status]
+}
+
+/** Devuelve el estado menos avanzado según la secuencia de `computeItemStatus`. */
+export function leastAdvancedComputedStatus(
+  statuses: readonly ComputedStatus[],
+): ComputedStatus {
+  if (statuses.length === 0) {
+    throw new Error("No se puede determinar un estado sin líneas")
+  }
+
+  return statuses.reduce((leastAdvanced, status) =>
+    COMPUTED_STATUS_PROGRESS[status] < COMPUTED_STATUS_PROGRESS[leastAdvanced]
+      ? status
+      : leastAdvanced,
+  )
+}
+
 /**
  * Lo que hay que entregar es lo que se autorizó, no lo que se pidió.
  *

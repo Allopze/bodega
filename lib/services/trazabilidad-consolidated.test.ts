@@ -341,6 +341,7 @@ function rawItem(overrides: Partial<RawItemRow> = {}): RawItemRow {
     requesterId: "u-1",
     requesterName: "Ana Solicitante",
     deliveryMode: "via_oficina",
+    requestUrgency: "normal",
     urgency: null,
     productId: "prod-1",
     productNameCatalog: "Bota de seguridad",
@@ -575,6 +576,18 @@ describe("buildConsolidatedRows", () => {
       delivered: 2,
       pendingTotal: 6,
     })
+  })
+
+  it("conserva la urgencia de la solicitud separada del override del ítem", () => {
+    const rows = buildConsolidatedRows(
+      [rawItem({ requestUrgency: "high", urgency: null })],
+      linkedMaps(),
+      "ws-1",
+      "Faena Uno",
+    )
+
+    expect(rows[0]).toMatchObject({ requestUrgency: "high", urgency: null })
+    expect(aggregateConsolidatedRows(rows, linkedMaps()).requests[0]?.urgency).toBe("high")
   })
 })
 

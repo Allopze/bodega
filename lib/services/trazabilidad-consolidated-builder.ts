@@ -154,6 +154,7 @@ export function buildConsolidatedRows(
       requesterName: item.requesterName,
       deliveryMode: item.deliveryMode,
       urgency: item.urgency,
+      requestUrgency: item.requestUrgency,
 
       productId: item.productId,
       productName,
