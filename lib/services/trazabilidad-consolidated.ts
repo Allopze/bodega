@@ -6,9 +6,10 @@
 
 import type { Session } from "next-auth"
 import {
-  TRACEABILITY_CONSOLIDATED_PAGE_SIZE,
   isComputedStatus,
   type ConsolidatedFaenaKPIs,
+  type ConsolidatedOrder,
+  type ConsolidatedRequest,
   type ConsolidatedRow,
   type ConsolidatedTraceabilityResult,
 } from "./trazabilidad-consolidated.types"
@@ -21,11 +22,13 @@ import {
 } from "./trazabilidad-consolidated-queries"
 import {
   buildConsolidatedRows,
-  attachTimelines,
-  computeFaenaKPIs,
   applySecondaryFilters,
+  applyAggregateFilters,
+  computeAggregateKPIs,
+  paginateAggregateRequests,
   type LinkedMaps,
 } from "./trazabilidad-consolidated-builder"
+import { aggregateConsolidatedRows } from "./trazabilidad-consolidated-aggregate"
 
 // Re-exportar tipos y helpers para mantener retrocompatibilidad completa
 export * from "./trazabilidad-consolidated.types"
@@ -94,8 +97,14 @@ export function normalizeConsolidatedFilters(
 }
 
 export interface CollectedConsolidatedRows {
-  /** Filas ya filtradas y sin paginar, sin historial cronológico colgado. */
+  /** Filas de evidencia ya filtradas, sin paginar ni historial cronológico. */
+  itemRows: ConsolidatedRow[]
+  /** Compatibilidad con el export por línea; se elimina al migrarlo en Task 3. */
   rows: ConsolidatedRow[]
+  /** Solicitudes filtradas como unidad principal, todavía sin paginar. */
+  requests: ConsolidatedRequest[]
+  /** OCs únicas dentro del alcance de las solicitudes filtradas. */
+  orders: ConsolidatedOrder[]
   maps: LinkedMaps
   truncated: boolean
 }
@@ -130,7 +139,14 @@ export async function collectConsolidatedRows(
   })
 
   if (rawItemRows.length === 0) {
-    return { rows: [], maps: emptyMaps, truncated: false }
+    return {
+      itemRows: [],
+      rows: [],
+      requests: [],
+      orders: [],
+      maps: emptyMaps,
+      truncated: false,
+    }
   }
 
   const truncated = rawItemRows.length >= TRACEABILITY_MAX_ITEM_ROWS
@@ -195,7 +211,9 @@ export async function collectConsolidatedRows(
 
   const consolidatedList = buildConsolidatedRows(rawItemRows, maps, worksite.id, worksite.name)
 
-  const rows = applySecondaryFilters(consolidatedList, {
+  // Compatibilidad transitoria del export por línea. El pipeline principal
+  // filtra solicitudes completas abajo y Task 3 migrará el archivo al agregado.
+  const itemRows = applySecondaryFilters(consolidatedList, {
     filterEstado: filters.estado,
     filterCategoria: filters.categoria,
     filterProveedor: filters.proveedor,
@@ -204,7 +222,28 @@ export async function collectConsolidatedRows(
     ocsByItem,
   })
 
-  return { rows, maps, truncated }
+  const aggregated = aggregateConsolidatedRows(consolidatedList, maps)
+  const requests = applyAggregateFilters(aggregated.requests, {
+    filterEstado: filters.estado,
+    filterCategoria: filters.categoria,
+    filterProveedor: filters.proveedor,
+    filterPendientes: filters.pendientes,
+    filterQ: filters.q,
+    ocsByItem,
+  })
+  const orders = aggregateConsolidatedRows(
+    requests.flatMap((request) => request.lines),
+    maps,
+  ).orders
+
+  return {
+    itemRows,
+    rows: itemRows,
+    requests,
+    orders,
+    maps,
+    truncated,
+  }
 }
 
 export async function getConsolidatedTraceability(
@@ -244,6 +283,8 @@ export async function getConsolidatedTraceability(
 
   if (!activeWorksite) {
     return {
+      requests: [],
+      orders: [],
       rows: [],
       totalFiltered: 0,
       totalPages: 1,
@@ -272,22 +313,17 @@ export async function getConsolidatedTraceability(
    * "Sin resultados para los filtros seleccionados" encima de siete tarjetas
    * con números. Los KPIs son el resumen de lo que se está mirando.
    */
-  const kpis = computeFaenaKPIs(collected.rows)
-
-  const totalFiltered = collected.rows.length
-  const totalPages = Math.max(1, Math.ceil(totalFiltered / TRACEABILITY_CONSOLIDATED_PAGE_SIZE))
-  const safePage = Math.min(currentPage, totalPages)
-  const offset = (safePage - 1) * TRACEABILITY_CONSOLIDATED_PAGE_SIZE
-  const paginatedRows = attachTimelines(
-    collected.rows.slice(offset, offset + TRACEABILITY_CONSOLIDATED_PAGE_SIZE),
-    collected.maps,
-  )
+  const kpis = computeAggregateKPIs(collected.requests, collected.orders)
+  const page = paginateAggregateRequests(collected.requests, currentPage, collected.maps)
+  const pageOrders = aggregateConsolidatedRows(page.rows, collected.maps).orders
 
   return {
-    rows: paginatedRows,
-    totalFiltered,
-    totalPages,
-    safePage,
+    requests: page.requests,
+    orders: pageOrders,
+    rows: page.rows,
+    totalFiltered: page.totalFiltered,
+    totalPages: page.totalPages,
+    safePage: page.safePage,
     truncated: collected.truncated,
     activeWorksite,
     visibleWorksites: allWorksites,

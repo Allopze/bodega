@@ -182,6 +182,8 @@ export interface ConsolidatedRequest {
   deliveryMode: string
   urgency: string | null
   lineCount: number
+  /** Líneas que explican la coincidencia con los filtros agregados actuales. */
+  matchingLineCount?: number
   orderCount: number
   orders: ConsolidatedOrder[]
   lines: ConsolidatedRow[]
@@ -214,14 +216,18 @@ export interface ConsolidatedFaenaKPIs {
 }
 
 export interface ConsolidatedTraceabilityResult {
+  /** Solicitudes de la página actual, con sus líneas completas como evidencia. */
+  requests: ConsolidatedRequest[]
+  /** OCs únicas relacionadas con las solicitudes de la página actual. */
+  orders: ConsolidatedOrder[]
+  /** Compatibilidad interna: se elimina al conectar la página en Task 5. */
   rows: ConsolidatedRow[]
   totalFiltered: number
   totalPages: number
   safePage: number
   /**
-   * `true` cuando la faena tiene más ítems que el techo que la vista carga en
-   * memoria (`TRACEABILITY_MAX_ITEM_ROWS`). Los totales y KPIs cubren sólo los
-   * ítems cargados —los más recientes— y la pantalla debe decirlo.
+   * `true` cuando el techo de líneas limita las solicitudes recientes que el
+   * pipeline pudo cargar. Los totales y KPIs cubren sólo ese alcance cargado.
    */
   truncated: boolean
   activeWorksite: { id: string; name: string } | null

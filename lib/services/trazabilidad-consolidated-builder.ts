@@ -1,6 +1,9 @@
 import {
   COMPUTED_STATUS_METAS,
+  TRACEABILITY_CONSOLIDATED_PAGE_SIZE,
   isComputedStatus,
+  type ConsolidatedOrder,
+  type ConsolidatedRequest,
   type ConsolidatedRow,
   type ConsolidatedFaenaKPIs,
 } from "./trazabilidad-consolidated.types"
@@ -309,4 +312,174 @@ export function applySecondaryFilters(
   }
 
   return filtered
+}
+
+export interface AggregateFilters {
+  filterEstado: string
+  filterCategoria: string
+  filterProveedor: string
+  filterPendientes: boolean
+  filterQ: string
+  /** Permite resolver el id de proveedor sin añadir atribuciones al DTO de OC. */
+  ocsByItem?: Map<string, OcRow[]>
+}
+
+/**
+ * Filtra solicitudes como unidad, conservando todas sus líneas de evidencia.
+ * `matchingLineCount` indica cuántas líneas explican la coincidencia cuando
+ * los filtros sólo abarcan parte de la solicitud.
+ */
+export function applyAggregateFilters(
+  requests: ConsolidatedRequest[],
+  filters: AggregateFilters,
+): ConsolidatedRequest[] {
+  const {
+    filterEstado,
+    filterCategoria,
+    filterProveedor,
+    filterPendientes,
+    filterQ,
+    ocsByItem,
+  } = filters
+  const qLower = filterQ.toLowerCase()
+
+  return requests.flatMap((request) => {
+    if (
+      filterEstado &&
+      isComputedStatus(filterEstado) &&
+      request.status !== filterEstado
+    ) {
+      return []
+    }
+
+    const requestMatchesText = qLower !== "" && [
+      request.requestCode,
+      request.requesterName,
+      request.worksiteName,
+      request.statusLabel,
+    ].some((value) => value.toLowerCase().includes(qLower))
+
+    const matchingLines = request.lines.filter((line) => {
+      if (filterCategoria && line.categoryId !== filterCategoria) return false
+
+      if (filterProveedor) {
+        const linkedOrders = ocsByItem?.get(line.itemId)
+        const matchesSupplier = linkedOrders
+          ? linkedOrders.some((order) => order.supplierId === filterProveedor)
+          : line.supplierNames.some((supplier) => supplier === filterProveedor)
+        if (!matchesSupplier) return false
+      }
+
+      if (filterPendientes && line.pendingTotal <= 0) return false
+
+      if (qLower && !requestMatchesText) {
+        const matchesLine = [
+          line.productName,
+          line.productSku,
+          line.notes,
+          line.categoryName,
+          ...line.supplierNames,
+          ...line.ocCodes.flatMap((order) => [order.code, order.supplierName]),
+        ].some((value) => value?.toLowerCase().includes(qLower))
+        if (!matchesLine) return false
+      }
+
+      return true
+    })
+
+    if (matchingLines.length === 0) return []
+    return [{ ...request, matchingLineCount: matchingLines.length }]
+  })
+}
+
+/** Cuenta solicitudes u OCs únicas según la etapa operativa de cada KPI. */
+export function computeAggregateKPIs(
+  requests: ConsolidatedRequest[],
+  orders?: ConsolidatedOrder[],
+): ConsolidatedFaenaKPIs {
+  const uniqueOpenRequests = new Set<string>()
+  const pendingPurchase = new Set<string>()
+  const inOffice = new Set<string>()
+  const inFaena = new Set<string>()
+  const partiallyDelivered = new Set<string>()
+  const fullyDelivered = new Set<string>()
+  const uniqueOrders = new Set<string>()
+
+  for (const request of requests) {
+    if (!["entregado", "cancelado", "rechazado"].includes(request.status)) {
+      uniqueOpenRequests.add(request.requestId)
+    }
+    if (request.lines.some((line) => line.pendingBreakdown.notYetOrdered > 0)) {
+      pendingPurchase.add(request.requestId)
+    }
+    if (request.lines.some((line) => line.pendingBreakdown.inOffice > 0)) {
+      inOffice.add(request.requestId)
+    }
+    if (request.lines.some((line) => line.pendingBreakdown.inFaenaAvailable > 0)) {
+      inFaena.add(request.requestId)
+    }
+    if (request.status === "parcialmente_entregado") {
+      partiallyDelivered.add(request.requestId)
+    }
+    if (request.status === "entregado") fullyDelivered.add(request.requestId)
+    for (const order of request.orders) uniqueOrders.add(order.orderId)
+  }
+
+  const ordersById = new Map<string, ConsolidatedOrder>()
+  for (const order of orders ?? requests.flatMap((request) => request.orders)) {
+    if (uniqueOrders.has(order.orderId)) ordersById.set(order.orderId, order)
+  }
+  const awaitingSupplier = new Set<string>()
+  for (const order of ordersById.values()) {
+    if (order.quantitiesByUom.some((summary) => summary.receivedOffice < summary.inOc)) {
+      awaitingSupplier.add(order.orderId)
+    }
+  }
+
+  return {
+    openRequests: uniqueOpenRequests.size,
+    pendingPurchase: pendingPurchase.size,
+    awaitingSupplier: awaitingSupplier.size,
+    inOffice: inOffice.size,
+    inFaena: inFaena.size,
+    partiallyDelivered: partiallyDelivered.size,
+    fullyDelivered: fullyDelivered.size,
+  }
+}
+
+export interface AggregateRequestPage {
+  requests: ConsolidatedRequest[]
+  rows: ConsolidatedRow[]
+  totalFiltered: number
+  totalPages: number
+  safePage: number
+}
+
+/** Pagina solicitudes completas y recién entonces construye sus timelines. */
+export function paginateAggregateRequests(
+  requests: ConsolidatedRequest[],
+  currentPage: number,
+  maps: LinkedMaps,
+): AggregateRequestPage {
+  const totalFiltered = requests.length
+  const totalPages = Math.max(
+    1,
+    Math.ceil(totalFiltered / TRACEABILITY_CONSOLIDATED_PAGE_SIZE),
+  )
+  const safePage = Math.min(Math.max(1, currentPage), totalPages)
+  const offset = (safePage - 1) * TRACEABILITY_CONSOLIDATED_PAGE_SIZE
+  const pageRequests = requests
+    .slice(offset, offset + TRACEABILITY_CONSOLIDATED_PAGE_SIZE)
+    .map((request) => ({
+      ...request,
+      lines: attachTimelines(request.lines, maps),
+    }))
+
+  return {
+    requests: pageRequests,
+    rows: pageRequests.flatMap((request) => request.lines),
+    totalFiltered,
+    totalPages,
+    safePage,
+  }
 }

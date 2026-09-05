@@ -10,6 +10,9 @@ import {
   computeFaenaKPIs,
   applySecondaryFilters,
   aggregateConsolidatedRows,
+  applyAggregateFilters,
+  computeAggregateKPIs,
+  paginateAggregateRequests,
   type LinkedMaps,
   type RawItemRow,
   type ApprovalRow,
@@ -660,5 +663,123 @@ describe("computeFaenaKPIs", () => {
     expect(onlyDelivered.fullyDelivered).toBe(1)
     expect(onlyDelivered.pendingPurchase).toBe(0)
     expect(onlyDelivered.openRequests).toBe(0)
+  })
+})
+
+describe("filtros, KPIs y paginación por solicitud", () => {
+  it("conserva una solicitud completa e informa cuántas líneas coinciden", () => {
+    const itemRows = buildConsolidatedRows(
+      [
+        rawItem({
+          itemId: "item-1",
+          categoryId: "cat-1",
+          categoryName: "Calzado",
+          productNameCatalog: "Bota de seguridad",
+          status: "delivered",
+        }),
+        rawItem({
+          itemId: "item-2",
+          productId: "prod-2",
+          categoryId: "cat-2",
+          categoryName: "Protección de cabeza",
+          productNameCatalog: "Casco dieléctrico",
+          productSku: "CASCO-01",
+          status: "pending_purchase",
+        }),
+      ],
+      {
+        ...linkedMaps(),
+        deliveriesByItem: new Map([["item-1", [delivery({ quantity: 10 })]]]),
+        ocsByItem: new Map([
+          ["item-2", [oc({ id: "poi-2", requestItemId: "item-2", supplierId: "sup-2", supplierName: "Proveedor Dos", quantity: 6 })]],
+        ]),
+      },
+      "ws-1",
+      "Faena Uno",
+    )
+    const maps: LinkedMaps = {
+      ...linkedMaps(),
+      deliveriesByItem: new Map([["item-1", [delivery({ quantity: 10 })]]]),
+      ocsByItem: new Map([
+        ["item-2", [oc({ id: "poi-2", requestItemId: "item-2", supplierId: "sup-2", supplierName: "Proveedor Dos", quantity: 6 })]],
+      ]),
+    }
+    const aggregated = aggregateConsolidatedRows(itemRows, maps)
+    const baseFilters = {
+      filterCategoria: "",
+      filterEstado: "",
+      filterProveedor: "",
+      filterPendientes: false,
+      filterQ: "",
+      ocsByItem: maps.ocsByItem,
+    }
+
+    for (const filters of [
+      { ...baseFilters, filterCategoria: "cat-2" },
+      { ...baseFilters, filterProveedor: "sup-2" },
+      { ...baseFilters, filterPendientes: true },
+      { ...baseFilters, filterQ: "casco-01" },
+    ]) {
+      const filtered = applyAggregateFilters(aggregated.requests, filters)
+      expect(filtered.map((request) => request.requestId)).toEqual(["req-1"])
+      expect(filtered[0]).toMatchObject({ lineCount: 2, matchingLineCount: 1 })
+      expect(filtered[0]?.lines).toHaveLength(2)
+      expect(computeAggregateKPIs(filtered).openRequests).toBe(1)
+      expect(computeAggregateKPIs(filtered).pendingPurchase).toBe(1)
+    }
+  })
+
+  it("deduplica una OC compartida en los KPIs", () => {
+    const itemRows = buildConsolidatedRows(
+      [
+        rawItem({ itemId: "item-1", requestId: "req-1", requestCode: "SOL-0001", status: "in_purchase_order" }),
+        rawItem({ itemId: "item-2", requestId: "req-2", requestCode: "SOL-0002", status: "in_purchase_order" }),
+      ],
+      {
+        ...linkedMaps(),
+        ocsByItem: new Map([
+          ["item-1", [oc({ requestItemId: "item-1" })]],
+          ["item-2", [oc({ id: "poi-2", requestItemId: "item-2" })]],
+        ]),
+      },
+      "ws-1",
+      "Faena Uno",
+    )
+    const maps: LinkedMaps = {
+      ...linkedMaps(),
+      ocsByItem: new Map([
+        ["item-1", [oc({ requestItemId: "item-1" })]],
+        ["item-2", [oc({ id: "poi-2", requestItemId: "item-2" })]],
+      ]),
+    }
+    const aggregated = aggregateConsolidatedRows(itemRows, maps)
+
+    expect(computeAggregateKPIs(aggregated.requests, aggregated.orders)).toMatchObject({
+      openRequests: 2,
+      awaitingSupplier: 1,
+    })
+  })
+
+  it("pagina solicitudes sin dividir sus líneas entre páginas", () => {
+    const rawItems = Array.from({ length: 27 }, (_, index) => {
+      const requestNumber = index <= 1 ? 1 : index
+      return rawItem({
+        itemId: `item-${index}`,
+        requestId: `req-${requestNumber}`,
+        requestCode: `SOL-${requestNumber}`,
+        productId: `prod-${index}`,
+      })
+    })
+    const maps = linkedMaps()
+    const aggregated = aggregateConsolidatedRows(
+      buildConsolidatedRows(rawItems, maps, "ws-1", "Faena Uno"),
+      maps,
+    )
+
+    const page = paginateAggregateRequests(aggregated.requests, 2, maps)
+
+    expect(page).toMatchObject({ totalFiltered: 26, totalPages: 2, safePage: 2 })
+    expect(page.requests.map((request) => request.requestId)).toEqual(["req-26"])
+    expect(page.rows.map((row) => row.itemId)).toEqual(["item-26"])
   })
 })
