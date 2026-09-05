@@ -138,6 +138,58 @@ export interface ConsolidatedRow {
   timeline: TimelineEvent[]
 }
 
+export interface ConsolidatedQuantitySummary {
+  uom: string
+  requested: number
+  approved: number | null
+  inOc: number
+  receivedOffice: number
+  receivedFaena: number
+  delivered: number
+  pendingTotal: number
+}
+
+export interface ConsolidatedOrder {
+  orderId: string
+  code: string
+  supplierName: string
+  orderStatus: string
+  requestIds: string[]
+  lineIds: string[]
+  lineCount: number
+  quantitiesByUom: ConsolidatedQuantitySummary[]
+  lastUpdated: string
+}
+
+export interface ConsolidatedRequest {
+  requestId: string
+  requestCode: string
+  requestDate: string
+  requesterId: string
+  requesterName: string
+  worksiteId: string
+  worksiteName: string
+  deliveryMode: string
+  urgency: string | null
+  lineCount: number
+  orderCount: number
+  orders: ConsolidatedOrder[]
+  lines: ConsolidatedRow[]
+  quantitiesByUom: ConsolidatedQuantitySummary[]
+  status: ComputedStatus
+  statusLabel: string
+  statusColor: StatusMeta["color"]
+  statusCounts: Partial<Record<ComputedStatus, number>>
+  pendingTotal: number
+  alert: boolean
+  lastUpdated: string
+}
+
+export interface ConsolidatedAggregateResult {
+  requests: ConsolidatedRequest[]
+  orders: ConsolidatedOrder[]
+}
+
 export interface ConsolidatedFaenaKPIs {
   openRequests: number
   pendingPurchase: number

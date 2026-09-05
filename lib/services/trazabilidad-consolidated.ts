@@ -32,6 +32,15 @@ export * from "./trazabilidad-consolidated.types"
 export * from "./trazabilidad-consolidated-calc"
 export * from "./trazabilidad-consolidated-timeline"
 export * from "./trazabilidad-consolidated-builder"
+export {
+  aggregateConsolidatedRows,
+  computeAggregateStatus,
+} from "./trazabilidad-consolidated-aggregate"
+export type {
+  ConsolidatedRequest,
+  ConsolidatedOrder,
+  ConsolidatedAggregateResult,
+} from "./trazabilidad-consolidated.types"
 export { TRACEABILITY_MAX_ITEM_ROWS } from "./trazabilidad-consolidated-queries"
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/

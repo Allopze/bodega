@@ -9,6 +9,7 @@ import {
   attachTimelines,
   computeFaenaKPIs,
   applySecondaryFilters,
+  aggregateConsolidatedRows,
   type LinkedMaps,
   type RawItemRow,
   type ApprovalRow,
@@ -552,6 +553,28 @@ describe("buildConsolidatedRows", () => {
     expect(event?.voided).toBe(true)
     expect(event?.title).toContain("anulada")
     expect(event?.description).toContain("Error de digitación")
+  })
+
+  it("conserva intactas las filas calculadas al construir el agregado", () => {
+    const maps = linkedMaps({
+      approvals: [approval({ modifiedQty: 8 })],
+      ocs: [oc({ quantity: 8, quantityOfficeReceived: 5, quantityReceived: 3 })],
+      deliveries: [delivery({ quantity: 2 })],
+    })
+    const rows = buildConsolidatedRows([rawItem()], maps, "ws-1", "Faena Uno")
+
+    const result = aggregateConsolidatedRows(rows, maps)
+
+    expect(result.requests[0]?.lines).toEqual(rows)
+    expect(result.requests[0]?.lines[0]).toMatchObject({
+      requested: 10,
+      approved: 8,
+      inOc: 8,
+      receivedOffice: 5,
+      receivedFaena: 3,
+      delivered: 2,
+      pendingTotal: 6,
+    })
   })
 })
 
