@@ -13,11 +13,13 @@ interface Props {
 /** Una cifra del flujo de cantidades de la solicitud (TR-F2). */
 function FlowStat({ label, value, uom }: { label: string; value: number; uom: string }) {
   return (
-    <div className="bg-slate-50 rounded-lg p-2 min-w-0">
-      <span className="text-[10px] text-[var(--color-text-muted)] block uppercase">{label}</span>
-      <span className="font-mono text-xs font-bold text-slate-800 tabular-nums">
+    <div className="bg-slate-50 rounded-lg p-2 min-w-0 text-center">
+      <dt className="text-[10px] text-[var(--color-text-muted)] block uppercase">{label}</dt>
+      {/* TR-O2: la cantidad va como `<dd>` dentro del `<dl>` para que el lector
+          de pantalla asocie cada cifra a su etapa sin depender sólo del color. */}
+      <dd className="font-mono text-xs font-bold text-slate-800 tabular-nums">
         {formatQty(value, uom)}
-      </span>
+      </dd>
     </div>
   )
 }
@@ -81,29 +83,35 @@ export function ConsolidatedRequestsSummary({ requests }: Props) {
               </p>
             ) : (
               request.quantitiesByUom.map((sum) => (
-                <div key={sum.uom}>
+                // TR-O2: el avance de cantidades se expone como lista descriptiva
+                // (`<dl>`/`<dt>`/`<dd>`) para lectores de pantalla, no sólo como
+                // cajas coloreadas.
+                <dl
+                  key={sum.uom}
+                  aria-label={`Cantidades de la solicitud ${request.requestCode}${request.quantitiesByUom.length > 1 ? ` en ${sum.uom}` : ""}`}
+                >
                   {request.quantitiesByUom.length > 1 && (
-                    <p className="text-[10px] uppercase tracking-wide text-[var(--color-text-muted)] mb-1">
+                    <dt className="text-[10px] uppercase tracking-wide text-[var(--color-text-muted)] mb-1">
                       {sum.uom}
-                    </p>
+                    </dt>
                   )}
                   <div className="grid grid-cols-5 gap-1.5">
                     <FlowStat label="Solicitado" value={sum.requested} uom={sum.uom} />
                     <FlowStat label="En OC" value={sum.inOc} uom={sum.uom} />
                     <FlowStat label="Rec. faena" value={sum.receivedFaena} uom={sum.uom} />
                     <FlowStat label="Entregado" value={sum.delivered} uom={sum.uom} />
-                    <div className="bg-amber-50/60 border border-amber-100 rounded-lg p-2 min-w-0">
-                      <span className="text-[10px] text-amber-800 block uppercase">Pendiente</span>
-                      <span
+                    <div className="bg-amber-50/60 border border-amber-100 rounded-lg p-2 min-w-0 text-center">
+                      <dt className="text-[10px] text-amber-800 block uppercase">Pendiente</dt>
+                      <dd
                         className={`font-mono text-xs font-bold tabular-nums ${
                           sum.pendingTotal > 0 ? "text-amber-700" : "text-emerald-700"
                         }`}
                       >
                         {formatQty(sum.pendingTotal, sum.uom)}
-                      </span>
+                      </dd>
                     </div>
                   </div>
-                </div>
+                </dl>
               ))
             )}
           </div>

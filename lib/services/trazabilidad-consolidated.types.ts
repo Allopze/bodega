@@ -216,10 +216,8 @@ export interface ConsolidatedFaenaKPIs {
 }
 
 export interface ConsolidatedTraceabilityResult {
-  /** Solicitudes de la página actual, con sus líneas completas como evidencia. */
+  /** Solicitudes de la página actual, con sus líneas y OCs (evidencia). */
   requests: ConsolidatedRequest[]
-  /** OCs únicas relacionadas con las solicitudes de la página actual. */
-  orders: ConsolidatedOrder[]
   /** Compatibilidad interna: se elimina al conectar la página en Task 5. */
   rows: ConsolidatedRow[]
   totalFiltered: number

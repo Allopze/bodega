@@ -288,7 +288,6 @@ export async function getConsolidatedTraceability(
   if (!activeWorksite) {
     return {
       requests: [],
-      orders: [],
       rows: [],
       totalFiltered: 0,
       totalPages: 1,
@@ -319,11 +318,12 @@ export async function getConsolidatedTraceability(
    */
   const kpis = computeAggregateKPIs(collected.requests, collected.orders)
   const page = paginateAggregateRequests(collected.requests, currentPage, collected.maps)
-  const pageOrders = aggregateConsolidatedRows(page.rows, collected.maps).orders
 
+  // TR-O1 (plan 2026-09-05): el resultado de página exponía `orders` globales
+  // que ningún consumidor lee — cada `ConsolidatedRequest` ya trae sus propias
+  // OCs (`request.orders`). Se retira del contrato para no dejar código muerto.
   return {
     requests: page.requests,
-    orders: pageOrders,
     rows: page.rows,
     totalFiltered: page.totalFiltered,
     totalPages: page.totalPages,
