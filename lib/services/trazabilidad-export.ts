@@ -9,14 +9,23 @@
  */
 import type { Session } from "next-auth"
 import { buildXlsxBuffer } from "@/lib/reports/export"
-import { buildTrazabilidadReportData, type TrazabilidadExportRow } from "@/lib/services/trazabilidad-export-format"
+import {
+  buildTrazabilidadConsolidadaReportData,
+  buildTrazabilidadReportData,
+  type TrazabilidadExportRow,
+} from "@/lib/services/trazabilidad-export-format"
 import { fetchTraceabilityAuxiliaryData } from "@/lib/services/trazabilidad-consolidated-queries"
 import {
+  aggregateConsolidatedRows,
   collectConsolidatedRows,
   normalizeConsolidatedFilters,
   type ConsolidatedFilterSet,
 } from "@/lib/services/trazabilidad-consolidated"
-import type { ConsolidatedRow } from "@/lib/services/trazabilidad-consolidated.types"
+import type {
+  ConsolidatedOrder,
+  ConsolidatedRequest,
+  ConsolidatedRow,
+} from "@/lib/services/trazabilidad-consolidated.types"
 
 /** Techo de filas del archivo. Más allá, el libro sería inmanejable. */
 export const TRAZABILIDAD_EXPORT_MAX_ROWS = 10_000
@@ -120,6 +129,67 @@ export async function buildTrazabilidadRows(
 }
 
 /**
+ * Datos agregados del export por solicitud/OC (Task 3 de la migración).
+ */
+export interface TrazabilidadConsolidadaExport {
+  requests: ConsolidatedRequest[]
+  orders: ConsolidatedOrder[]
+  lineRows: TrazabilidadExportRow[]
+  truncated: boolean
+}
+
+/**
+ * Recoge y agrega la trazabilidad de cada faena visible, faena por faena.
+ *
+ * El límite de filas se aplica sobre las solicitudes agregadas (`requests`):
+ * una OC compartida entre varias solicitudes se deduplica en la hoja de OCs.
+ * `lineRows` conserva el detalle de líneas como evidencia para la exportación
+ * legada mientras dura la migración.
+ */
+export async function buildTrazabilidadConsolidada(
+  session: Session,
+  filters: TrazabilidadFilters = {},
+  maxRows = TRAZABILIDAD_EXPORT_MAX_ROWS,
+): Promise<TrazabilidadConsolidadaExport> {
+  const { allWorksites } = await fetchTraceabilityAuxiliaryData(session)
+  const targets = filters.worksiteId
+    ? allWorksites.filter((w) => w.id === filters.worksiteId)
+    : allWorksites
+
+  if (targets.length === 0) {
+    return { requests: [], orders: [], lineRows: [], truncated: false }
+  }
+
+  const filterSet = toFilterSet(filters)
+  const requests: ConsolidatedRequest[] = []
+  const orders = new Map<string, ConsolidatedOrder>()
+  const lineRows: TrazabilidadExportRow[] = []
+  let truncated = false
+
+  for (const worksite of targets) {
+    if (requests.length >= maxRows) {
+      truncated = true
+      break
+    }
+    const collected = await collectConsolidatedRows(session, worksite, filterSet)
+    if (collected.truncated) truncated = true
+
+    const aggregates = aggregateConsolidatedRows(collected.rows, collected.maps)
+    for (const request of aggregates.requests) {
+      if (requests.length >= maxRows) {
+        truncated = true
+        break
+      }
+      requests.push(request)
+      for (const line of request.lines) lineRows.push(toExportRow(line))
+      for (const order of request.orders) orders.set(order.orderId, order)
+    }
+  }
+
+  return { requests, orders: [...orders.values()], lineRows, truncated }
+}
+
+/**
  * GET handler helper: returns Excel bytes + filename for the trazabilidad export.
  */
 export async function getTrazabilidadXlsx(
@@ -131,8 +201,17 @@ export async function getTrazabilidadXlsx(
   filename: string
   truncated: boolean
 }> {
-  const { rows, truncated } = await buildTrazabilidadRows(session, filters, maxRows)
-  const report = buildTrazabilidadReportData(rows)
+  const { requests, orders, truncated } = await buildTrazabilidadConsolidada(session, filters, maxRows)
+  const report = buildTrazabilidadConsolidadaReportData({
+    requests,
+    orders,
+    meta: {
+      desde: filters.desde ?? filters.fromDate,
+      hasta: filters.hasta ?? filters.toDate,
+      faena: filters.worksiteId,
+      truncado: truncated,
+    },
+  })
   return {
     buffer: await buildXlsxBuffer(report),
     filename: `${report.filenameBase}.xlsx`,
