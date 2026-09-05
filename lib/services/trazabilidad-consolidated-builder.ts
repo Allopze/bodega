@@ -83,6 +83,15 @@ export function buildConsolidatedRows(
 
     const approved = isApproved ? (modifiedQty ?? item.quantity) : null
     const inOc = ocs.reduce((acc, o) => acc + o.quantity, 0)
+    // TR-04 (auditoría 2026-09-05): una OC en borrador se está armando, no es
+    // un compromiso con el proveedor. Sin esta separación el ítem salía
+    // "Pedido a proveedor" en cuanto se creaba la orden y el KPI "Esperando
+    // proveedor" la contaba, pese a que todavía es editable. `inOc` conserva
+    // la columna visible (incluye la preparación) e `inOcActive` sólo cuenta
+    // las órdenes emitidas/enviadas, que son las que mueven el estado.
+    const inOcActive = ocs
+      .filter((o) => o.orderStatus !== "draft")
+      .reduce((acc, o) => acc + o.quantity, 0)
     const receivedOffice = ocs.reduce((acc, o) => acc + o.quantityOfficeReceived, 0)
     const receivedFaena = ocs.reduce((acc, o) => acc + o.quantityReceived, 0)
 
@@ -105,7 +114,7 @@ export function buildConsolidatedRows(
       requestStatus: item.requestStatus,
       requested: item.quantity,
       approved,
-      inOc,
+      inOc: inOcActive,
       receivedOffice,
       dispatched,
       receivedFaena,
@@ -117,12 +126,22 @@ export function buildConsolidatedRows(
     const pendingBreakdown = computePendingBreakdown({
       requested: item.quantity,
       approved,
-      inOc,
+      inOc: inOcActive,
       receivedOffice,
       dispatched,
       receivedFaena,
       delivered,
     })
+
+    // TR-03 (auditoría 2026-09-05): los estados cerrados dejaron de tener
+    // obligación pendiente. El desglose se calcula con los contadores físicos
+    // y no conoce el estado, así que una línea rechazada/cancelada sin entregas
+    // seguía aportando su cantidad completa a "Pendientes de compra", a los
+    // KPIs y al filtro "Solo pendientes" — para siempre. La historia se
+    // conserva intacta en el timeline; sólo se anula la obligación vigente.
+    const effectiveBreakdown = CLOSED_STATUSES.has(computedStatus)
+      ? { pendingTotal: 0, notYetOrdered: 0, pendingFromSupplier: 0, inOffice: 0, inTransit: 0, inFaenaAvailable: 0 }
+      : pendingBreakdown
 
     const productName = item.productNameCatalog ?? item.productNameFree ?? "—"
     const categoryName = item.categoryName ?? "Sin categoría"
@@ -144,8 +163,8 @@ export function buildConsolidatedRows(
      * segundo.
      */
     const alert =
-      pendingBreakdown.notYetOrdered > 0 &&
-      pendingBreakdown.pendingTotal > 0 &&
+      effectiveBreakdown.notYetOrdered > 0 &&
+      effectiveBreakdown.pendingTotal > 0 &&
       !CLOSED_STATUSES.has(computedStatus)
 
     consolidatedList.push({
@@ -179,8 +198,8 @@ export function buildConsolidatedRows(
       stockInFaena,
       delivered,
 
-      pendingTotal: pendingBreakdown.pendingTotal,
-      pendingBreakdown,
+      pendingTotal: effectiveBreakdown.pendingTotal,
+      pendingBreakdown: effectiveBreakdown,
 
       computedStatus,
       computedStatusLabel: statusMeta.label,
@@ -431,6 +450,10 @@ export function computeAggregateKPIs(
   }
   const awaitingSupplier = new Set<string>()
   for (const order of ordersById.values()) {
+    // TR-04 (auditoría 2026-09-05): una OC en borrador no es un compromiso con
+    // el proveedor; tampoco cuenta como "Esperando proveedor". Sólo las órdenes
+    // emitidas/enviadas con saldo por recibir figuran en este KPI.
+    if (order.orderStatus === "draft") continue
     if (
       order.quantitiesByUom.some(
         (summary) => Math.max(summary.receivedOffice, summary.receivedFaena) < summary.inOc,

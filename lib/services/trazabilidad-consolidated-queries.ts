@@ -22,6 +22,7 @@ import {
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
 import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { addDaysToPlainDate, chileLocalDateTimeToUtc } from "@/lib/utils"
 import type { Session } from "next-auth"
 
 /**
@@ -86,12 +87,26 @@ export async function fetchRawItemRows(session: Session, filters: TraceabilityIt
   const scopedWorksiteIds = visibleWorksiteIds(session)
   const { filterFaenaId, filterSolicitante, filterDesde, filterHasta } = filters
 
+  // TR-05 (auditoría 2026-09-05): los filtros de fecha consultaban días UTC
+  // mientras la interfaz muestra días chilenos. `createdAt` está en UTC, así
+  // que `>= '2026-09-04' AND <= '2026-09-04T23:59:59'` cubría el día civil de
+  // Reino Unido, no el de Chile: una solicitud de las 20:00 o 22:00 chilenas
+  // quedaba fuera del "hoy" que el usuario seleccionó, y otra de la madrugada
+  // chilena entraba en el día anterior. Se convierten los límites del día
+  // civil chileno a instantes explícitos y se usa un intervalo semiabierto
+  // `[inicio, inicio del día siguiente)` para no perder las fracciones del
+  // último segundo.
+  const dateBounds = {
+    from: filterDesde ? chileLocalDateTimeToUtc(`${filterDesde}T00:00`) : null,
+    to: filterHasta ? chileLocalDateTimeToUtc(`${addDaysToPlainDate(filterHasta, 1)}T00:00`) : null,
+  }
+
   const requestConditions = [
     eq(purchaseRequests.worksiteId, filterFaenaId),
     !isGlobal ? inArray(purchaseRequests.worksiteId, scopedWorksiteIds) : undefined,
     filterSolicitante ? eq(purchaseRequests.requesterId, filterSolicitante) : undefined,
-    filterDesde ? sql`${purchaseRequests.createdAt} >= ${filterDesde}` : undefined,
-    filterHasta ? sql`${purchaseRequests.createdAt} <= ${filterHasta + "T23:59:59"}` : undefined,
+    dateBounds.from ? sql`${purchaseRequests.createdAt} >= ${dateBounds.from}` : undefined,
+    dateBounds.to ? sql`${purchaseRequests.createdAt} < ${dateBounds.to}` : undefined,
   ].filter(Boolean)
 
   return db

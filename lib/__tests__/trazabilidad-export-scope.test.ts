@@ -291,6 +291,39 @@ describe("trazabilidad export scoping and filter tests", () => {
     expect(rows).toHaveLength(1)
   })
 
+  // TR-05 (auditoría 2026-09-05): los filtros de fecha consultaban días UTC
+  // mientras la interfaz muestra días chilenos. Una solicitud de las 22:00 de
+  // Chile (02:00 UTC del día siguiente en septiembre, -03) quedaba fuera del
+  // día que el usuario seleccionaba. El 04-09 el día civil chileno abarca
+  // [2026-09-04T03:00Z, 2026-09-05T03:00Z): la solicitud de las 01:00Z del
+  // 05-09 pertenece al 04-09 en Chile y debe aparecer en el filtro.
+  it("incluye una solicitud de la noche chilena dentro del día seleccionado (TR-05)", async () => {
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.worksites).values({
+      id: "ws-1", name: "Faena 1", code: "F-1", isActive: true, createdAt: now, updatedAt: now,
+    })
+    // 22:00 Chile en septiembre (-03) = 01:00 UTC del 05-09.
+    await inMemoryDb.insert(schema.purchaseRequests).values({
+      id: "req-chile-night", code: "SOL-2026-NOCHE", worksiteId: "ws-1", requesterId: "u-1",
+      status: "submitted",
+      createdAt: "2026-09-05T01:00:00.000Z",
+      updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequestItems).values({
+      id: "item-chile-night", requestId: "req-chile-night", productNameFree: "Casco nocturno",
+      quantity: 1, unitOfMeasure: "unidad", status: "approved", createdAt: now, updatedAt: now,
+    })
+
+    const { rows } = await buildTrazabilidadRows(globalSession(), {
+      fromDate: "2026-09-04",
+      toDate: "2026-09-04",
+      worksiteId: "ws-1",
+    })
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.productName).toBe("Casco nocturno")
+  })
+
   it("handles full matrix with products, purchase orders, approval decisions and receipts", async () => {
     const now = new Date().toISOString()
     await inMemoryDb.insert(schema.worksites).values({

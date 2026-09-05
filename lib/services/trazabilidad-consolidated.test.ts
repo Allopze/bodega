@@ -592,6 +592,137 @@ describe("buildConsolidatedRows", () => {
     expect(rows[0]).toMatchObject({ requestUrgency: "high", urgency: null })
     expect(aggregateConsolidatedRows(rows, linkedMaps()).requests[0]?.urgency).toBe("high")
   })
+
+  // TR-10 (auditoría 2026-09-05): la compra parcial reduce el ítem original y
+  // crea un hermano remanente, pero la decisión histórica con `modifiedQty`
+  // quedaba sobre el original reclamando la cantidad previa al split. El
+  // consolidado sumaba ese `modifiedQty` del original (10) al remanente del
+  // hermano (4) → aprobado total 14 para un solicitado de 10. Una vez el fijo
+  // registra la decisión de reparto con la porción comprada (6), la última
+  // decisión del original ya no duplica: el agregado muestra aprobado 10.
+  it("no duplica la aprobación al consolidar un ítem dividido por compra parcial (TR-10)", () => {
+    // Original ya reducido a 6 por el split, con la decisión VIEJA (modify 10)
+    // sobre él. Sin el arreglo nadie corregía esa decisión y el consolidado
+    // contaba 10 aquí.
+    const maps = linkedMaps({
+      approvals: [
+        approval({ id: "dec-split-old", type: "modify", modifiedQty: 10, decidedAt: "2026-08-01T10:00:00.000Z" }),
+        approval({ id: "dec-split-new", type: "modify", modifiedQty: 6, decidedAt: "2026-08-02T10:00:00.000Z" }),
+      ],
+      ocs: [oc({ quantity: 6 })],
+    })
+    const original = buildConsolidatedRows(
+      [rawItem({ itemId: "item-1", quantity: 6, status: "in_purchase_order" })],
+      maps,
+      "ws-1",
+      "Faena Uno",
+    )[0]
+
+    // Hermano remanente de 4, sin decisiones, estado aprobado.
+    const siblingMaps = linkedMaps()
+    const sibling = buildConsolidatedRows(
+      [rawItem({ itemId: "item-sibling", quantity: 4, status: "approved" })],
+      siblingMaps,
+      "ws-1",
+      "Faena Uno",
+    )[0]
+
+    expect(original).toMatchObject({ requested: 6, approved: 6, inOc: 6 })
+    expect(sibling).toMatchObject({ requested: 4, approved: 4, inOc: 0 })
+
+    // Agregado: solicitado 6+4=10, aprobado 6+4=10, nunca 14.
+    const aggregated = aggregateConsolidatedRows([original!, sibling!], {
+      ...linkedMaps(),
+      ocsByItem: new Map([
+        ["item-1", [oc({ quantity: 6 })]],
+      ]),
+    })
+    expect(aggregated.requests[0]?.quantitiesByUom[0]).toMatchObject({
+      requested: 10,
+      approved: 10,
+      inOc: 6,
+    })
+  })
+
+  // TR-03 (auditoría 2026-09-05): un estado cerrado no tiene obligación
+  // pendiente. El desglose se calculaba con los contadores físicos sin conocer
+  // el estado, así que una línea rechazada/cancelada sin entregas seguía
+  // aportando su cantidad completa a "Pendientes de compra" y al filtro "Solo
+  // pendientes", para siempre.
+  it("una línea rechazada o cancelada no deja nada pendiente (TR-03)", () => {
+    for (const status of ["rejected", "cancelled", "draft"]) {
+      const rows = buildConsolidatedRows(
+        [rawItem({ status })],
+        linkedMaps({ ocs: [oc({ quantity: 10 })] }),
+        "ws-1",
+        "Faena Uno",
+      )
+      expect(rows[0]).toMatchObject({ computedStatus: status === "draft" ? "borrador" : status === "rejected" ? "rechazado" : "cancelado", pendingTotal: 0 })
+      expect(rows[0]).toMatchObject({
+        pendingBreakdown: {
+          pendingTotal: 0,
+          notYetOrdered: 0,
+          pendingFromSupplier: 0,
+          inOffice: 0,
+          inTransit: 0,
+          inFaenaAvailable: 0,
+        },
+      })
+    }
+  })
+
+  // TR-03 (auditoría 2026-09-05): el KPI agregado y el filtro "Solo pendientes"
+  // se alimentan de `pendingTotal`; una vez que la línea cerrada aporta cero,
+  // la solicitud deja de inflar "Pendientes de compra".
+  it("una solicitud con líneas cerradas no cuenta pendientes de compra (TR-03)", () => {
+    const maps = linkedMaps({ ocs: [oc({ quantity: 5 })] })
+    const rows = buildConsolidatedRows(
+      [rawItem({ status: "rejected" })],
+      maps,
+      "ws-1",
+      "Faena Uno",
+    )
+    const aggregated = aggregateConsolidatedRows(rows, maps)
+
+    expect(aggregated.requests[0]?.hasPending).toBe(false)
+    const kpis = computeAggregateKPIs(aggregated.requests, aggregated.orders)
+    expect(kpis.pendingPurchase).toBe(0)
+    // La solicitud rechazada no aparece como abierta.
+    expect(kpis.openRequests).toBe(0)
+  })
+
+  // TR-04 (auditoría 2026-09-05): una OC en borrador se está armando y no es
+  // un compromiso con el proveedor. Sin la separación el ítem salía "Pedido a
+  // proveedor" ya con el borrador creado y el KPI "Esperando proveedor" lo
+  // contaba.
+  it("una OC en borrador no marca el ítem como pedido a proveedor (TR-04)", () => {
+    const maps = linkedMaps({ ocs: [oc({ orderStatus: "draft", quantity: 10 })] })
+    const rows = buildConsolidatedRows(
+      [rawItem({ status: "in_purchase_order" })],
+      maps,
+      "ws-1",
+      "Faena Uno",
+    )
+
+    expect(rows[0]).toMatchObject({ computedStatus: "aprobado" })
+    expect(rows[0]?.pendingBreakdown.pendingFromSupplier).toBe(0)
+    // La columna "En OC" sí refleja la orden en preparación.
+    expect(rows[0]?.inOc).toBe(10)
+  })
+
+  it("una OC enviada sí marca pedido a proveedor y cuenta en el KPI (TR-04)", () => {
+    const maps = linkedMaps({ ocs: [oc({ orderStatus: "sent", quantity: 10 })] })
+    const rows = buildConsolidatedRows(
+      [rawItem({ status: "in_purchase_order" })],
+      maps,
+      "ws-1",
+      "Faena Uno",
+    )
+    const aggregated = aggregateConsolidatedRows(rows, maps)
+
+    expect(rows[0]).toMatchObject({ computedStatus: "pedido_proveedor" })
+    expect(computeAggregateKPIs(aggregated.requests, aggregated.orders).awaitingSupplier).toBe(1)
+  })
 })
 
 /* ── Filtros secundarios y KPIs ───────────────────────────────────────────── */
