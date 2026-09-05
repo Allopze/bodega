@@ -19,6 +19,15 @@ const TableRoot = React.forwardRef<HTMLDivElement, TableRootProps>(
   ({ className, stickyHeader = false, ...props }, ref) => (
     <div
       ref={ref}
+      // UI-03 (auditoría 2026-09-05): Axe detectaba esta región desplazable
+      // sin contenido enfocable: `overflow-x-auto` crea un scroll que el
+      // teclado no puede atravesar cuando la tabla no tiene enlaces ni botones.
+      // `tabIndex={0}` + `role="region"` + una etiqueta descriptiva permiten
+      // enfocar y desplazarse con flechas. `aria-label` se puede sobrescribir
+      // desde el consumer con `aria-label`.
+      tabIndex={0}
+      role="region"
+      aria-label="Tabla con desplazamiento horizontal"
       className={cn(
         // `relative` es lo que hace que el recorte funcione de verdad: sin un
         // ancestro posicionado, los descendientes `absolute` —como el

@@ -53,7 +53,7 @@ export function ConsolidatedCard({ row }: Props) {
             <h3 className="font-bold text-slate-900 text-sm truncate" title={row.productName}>
               {row.productName}
             </h3>
-            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-mono mt-0.5">
+            <div className="flex items-center gap-1.5 text-[11px] text-[var(--color-text-muted)] font-mono mt-0.5">
               {row.productSku && <span>SKU {row.productSku}</span>}
               {row.categoryName && <span>· {row.categoryName}</span>}
               <span>· {row.uom}</span>
@@ -72,19 +72,19 @@ export function ConsolidatedCard({ row }: Props) {
         {/* Grid de cantidades principales — la unidad ya va en la cabecera */}
         <div className="mt-3 grid grid-cols-4 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-center font-mono">
           <div>
-            <span className="text-[10px] text-slate-500 block uppercase">Solic.</span>
+            <span className="text-[10px] text-[var(--color-text-muted)] block uppercase">Solic.</span>
             <span className="text-xs font-bold text-slate-800">{formatQty(row.requested)}</span>
           </div>
           <div>
-            <span className="text-[10px] text-slate-500 block uppercase">En OC</span>
+            <span className="text-[10px] text-[var(--color-text-muted)] block uppercase">En OC</span>
             <span className="text-xs font-bold text-blue-700">{formatQty(row.inOc)}</span>
           </div>
           <div>
-            <span className="text-[10px] text-slate-500 block uppercase">Entreg.</span>
+            <span className="text-[10px] text-[var(--color-text-muted)] block uppercase">Entreg.</span>
             <span className="text-xs font-bold text-emerald-800">{formatQty(row.delivered)}</span>
           </div>
           <div>
-            <span className="text-[10px] text-slate-500 block uppercase">Pend.</span>
+            <span className="text-[10px] text-[var(--color-text-muted)] block uppercase">Pend.</span>
             <span
               className={`text-xs font-bold ${
                 row.pendingTotal > 0 ? "text-amber-700 font-extrabold" : "text-slate-400"
@@ -99,7 +99,11 @@ export function ConsolidatedCard({ row }: Props) {
       {/* Solicitud: fuera del disparador porque lleva su propio enlace */}
       <div className="mt-2.5 flex items-center justify-between text-xs text-slate-600 border-t border-slate-100 pt-2">
         <div className="flex items-center gap-1.5 font-mono">
-          <span className="text-slate-400">Solicitud:</span>
+          {/* UI-02 (auditoría 2026-09-05): `text-slate-400` para información
+              medía 2,63:1 sobre blanco, lejos del mínimo 4,5:1 de WCAG 1.4.3.
+              Los tokens `--color-text-muted` ocupan su lugar para texto legible;
+              `slate-400` queda reservado a decoración. */}
+          <span className="text-[var(--color-text-muted)]">Solicitud:</span>
           <Link
             href={`/solicitudes/${row.requestId}`}
             className="font-bold text-blue-600 hover:underline inline-flex items-center gap-1"
@@ -108,7 +112,7 @@ export function ConsolidatedCard({ row }: Props) {
             <ArrowSquareOut size={11} />
           </Link>
         </div>
-        <span className="text-slate-500 text-[11px] truncate max-w-[150px]" title={row.requesterName}>
+        <span className="text-[var(--color-text-muted)] text-[11px] truncate max-w-[150px]" title={row.requesterName}>
           {row.requesterName}
         </span>
       </div>
@@ -118,30 +122,30 @@ export function ConsolidatedCard({ row }: Props) {
         <div id={detailId} className="mt-4 pt-3 border-t border-slate-200 space-y-4">
           {/* Desglose de etapas */}
           <div>
-            <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+            <h4 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-subtle)] mb-2">
               Desglose de pendientes por etapa
             </h4>
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                <span className="text-[10px] text-slate-500 block">Pendiente Proveedor</span>
+                <span className="text-[10px] text-[var(--color-text-subtle)] block">Pendiente Proveedor</span>
                 <span className="font-mono font-bold text-blue-700">
                   {formatQty(row.pendingBreakdown.pendingFromSupplier, row.uom)}
                 </span>
               </div>
               <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                <span className="text-[10px] text-slate-500 block">En Oficina</span>
+                <span className="text-[10px] text-[var(--color-text-subtle)] block">En Oficina</span>
                 <span className="font-mono font-bold text-orange-700">
                   {formatQty(row.pendingBreakdown.inOffice, row.uom)}
                 </span>
               </div>
               <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                <span className="text-[10px] text-slate-500 block">En Camino a Faena</span>
+                <span className="text-[10px] text-[var(--color-text-subtle)] block">En Camino a Faena</span>
                 <span className="font-mono font-bold text-indigo-700">
                   {formatQty(row.pendingBreakdown.inTransit, row.uom)}
                 </span>
               </div>
               <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                <span className="text-[10px] text-slate-500 block">En Faena (Sin Entregar)</span>
+                <span className="text-[10px] text-[var(--color-text-subtle)] block">En Faena (Sin Entregar)</span>
                 <span className="font-mono font-bold text-cyan-800">
                   {formatQty(row.pendingBreakdown.inFaenaAvailable, row.uom)}
                 </span>
@@ -152,7 +156,7 @@ export function ConsolidatedCard({ row }: Props) {
           {/* Timeline de movimientos */}
           <div>
             <div className="flex items-center justify-between gap-1 mb-2">
-              <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              <h4 className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-subtle)]">
                 Historial cronológico
               </h4>
               <Link
@@ -165,7 +169,7 @@ export function ConsolidatedCard({ row }: Props) {
             </div>
 
             {row.timeline.length === 0 ? (
-              <p className="text-xs text-slate-400 italic">Sin movimientos registrados</p>
+              <p className="text-xs text-[var(--color-text-muted)] italic">Sin movimientos registrados</p>
             ) : (
               <div className="space-y-2.5">
                 {row.timeline.map((event) => (
@@ -175,7 +179,7 @@ export function ConsolidatedCard({ row }: Props) {
                       event.voided ? "opacity-70" : ""
                     }`}
                   >
-                    <div className="flex items-center justify-between text-[10px] text-slate-400">
+                    <div className="flex items-center justify-between text-[10px] text-[var(--color-text-muted)]">
                       <span className={`font-semibold text-slate-700 ${event.voided ? "line-through" : ""}`}>
                         {event.title}
                       </span>

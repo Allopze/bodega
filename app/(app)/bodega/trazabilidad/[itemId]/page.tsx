@@ -96,7 +96,7 @@ export default async function TrazabilidadItemPage({
         {/* Quantity flow visualization */}
         <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] border border-[var(--color-border)] p-6">
           <h2 className="text-h2 text-[var(--color-text)] mb-4">Flujo de cantidades</h2>
-          <div className="flex items-center gap-3 text-sm">
+          <div className="grid grid-cols-2 gap-x-2 gap-y-3 sm:flex sm:items-center sm:gap-3 text-sm">
             {[
               { label: "Solicitado", value: item.quantity },
               { label: "En OC", value: totalOrdered },
@@ -104,8 +104,15 @@ export default async function TrazabilidadItemPage({
               { label: "Entregado", value: totalDelivered },
             ].map((step, i) => (
               <div key={step.label} className="flex items-center gap-3">
-                {i > 0 && <span className="text-[var(--color-border-strong)]" aria-hidden>→</span>}
-                <div className="text-center">
+                {i > 0 && (
+                  <span
+                    className="hidden text-[var(--color-border-strong)] sm:inline"
+                    aria-hidden
+                  >
+                    →
+                  </span>
+                )}
+                <div className="text-center sm:w-auto">
                   <p className="font-mono text-lg font-semibold tabular-nums text-[var(--color-text)]">
                     {formatQty(step.value, item.unitOfMeasure)}
                   </p>

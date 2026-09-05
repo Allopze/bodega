@@ -38,10 +38,10 @@ export function ConsolidatedTableAccordion({ row }: Props) {
       {/* 1. Desglose de etapas y pendientes */}
       <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-2xs">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-subtle)]">
             Etapa de las cantidades
           </h4>
-          <div className="text-xs text-slate-500">
+          <div className="text-xs text-[var(--color-text-muted)]">
             {row.deliveryMode === "directo_faena" ? "Envío directo a faena" : "Despacho vía oficina central"}
           </div>
         </div>
@@ -49,7 +49,7 @@ export function ConsolidatedTableAccordion({ row }: Props) {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {/* Solicitado */}
           <div className="border border-slate-100 rounded-lg p-2.5 bg-slate-50/50">
-            <span className="text-[11px] text-slate-500 block">Solicitado</span>
+            <span className="text-[11px] text-[var(--color-text-muted)] block">Solicitado</span>
             <span className="font-mono text-base font-bold text-slate-900">
               {formatQty(row.requested, row.uom)}
             </span>
@@ -57,7 +57,7 @@ export function ConsolidatedTableAccordion({ row }: Props) {
 
           {/* En OC / Proveedor */}
           <div className="border border-slate-100 rounded-lg p-2.5 bg-slate-50/50">
-            <span className="text-[11px] text-slate-500 block">En OC con proveedor</span>
+            <span className="text-[11px] text-[var(--color-text-muted)] block">En OC con proveedor</span>
             <span className="font-mono text-base font-bold text-blue-700">
               {formatQty(row.inOc, row.uom)}
             </span>
@@ -70,33 +70,33 @@ export function ConsolidatedTableAccordion({ row }: Props) {
 
           {/* En oficina */}
           <div className="border border-slate-100 rounded-lg p-2.5 bg-slate-50/50">
-            <span className="text-[11px] text-slate-500 block">En oficina central</span>
+            <span className="text-[11px] text-[var(--color-text-muted)] block">En oficina central</span>
             <span className="font-mono text-base font-bold text-orange-700">
               {formatQty(row.pendingBreakdown.inOffice, row.uom)}
             </span>
-            <span className="block text-[10px] text-slate-400 mt-0.5">
+            <span className="block text-[10px] text-[var(--color-text-muted)] mt-0.5">
               Recib: {formatQty(row.receivedOffice)} · Desp: {formatQty(row.dispatched)}
             </span>
           </div>
 
           {/* En tránsito */}
           <div className="border border-slate-100 rounded-lg p-2.5 bg-slate-50/50">
-            <span className="text-[11px] text-slate-500 block">En camino a faena</span>
+            <span className="text-[11px] text-[var(--color-text-muted)] block">En camino a faena</span>
             <span className="font-mono text-base font-bold text-indigo-700">
               {formatQty(row.pendingBreakdown.inTransit, row.uom)}
             </span>
-            <span className="block text-[10px] text-slate-400 mt-0.5">
+            <span className="block text-[10px] text-[var(--color-text-muted)] mt-0.5">
               Despachado vía GDI
             </span>
           </div>
 
           {/* En faena sin entregar */}
           <div className="border border-slate-100 rounded-lg p-2.5 bg-slate-50/50">
-            <span className="text-[11px] text-slate-500 block">En faena (por entregar)</span>
+            <span className="text-[11px] text-[var(--color-text-muted)] block">En faena (por entregar)</span>
             <span className="font-mono text-base font-bold text-cyan-800">
               {formatQty(row.pendingBreakdown.inFaenaAvailable, row.uom)}
             </span>
-            <span className="block text-[10px] text-slate-400 mt-0.5">
+            <span className="block text-[10px] text-[var(--color-text-muted)] mt-0.5">
               Recibido en faena
             </span>
           </div>
@@ -117,7 +117,7 @@ export function ConsolidatedTableAccordion({ row }: Props) {
       {/* 2. Historial cronológico (Timeline) */}
       <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-2xs">
         <div className="flex items-center justify-between gap-2 mb-3">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-subtle)]">
             Trazabilidad cronológica de movimientos
           </h4>
           <Link
@@ -130,7 +130,7 @@ export function ConsolidatedTableAccordion({ row }: Props) {
         </div>
 
         {row.timeline.length === 0 ? (
-          <p className="text-xs text-slate-500 italic">
+          <p className="text-xs text-[var(--color-text-muted)] italic">
             No hay movimientos registrados para este ítem.
           </p>
         ) : (
@@ -183,7 +183,7 @@ export function ConsolidatedTableAccordion({ row }: Props) {
                       <span className={`font-bold text-slate-900 ${event.voided ? "line-through" : ""}`}>
                         {event.title}
                       </span>
-                      <span className="text-[11px] text-slate-400 font-mono">
+                      <span className="text-[11px] text-[var(--color-text-muted)] font-mono">
                         {formatDateTime(event.date)}
                       </span>
                     </div>
