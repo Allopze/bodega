@@ -1,10 +1,17 @@
 import type { ReportData, ReportSheet } from "@/lib/reports/export"
 import { todayInChile } from "@/lib/utils"
+import { OC_STATE_META } from "@/components/states/state-badge"
 import type {
   ConsolidatedOrder,
   ConsolidatedRequest,
-  ConsolidatedRow,
 } from "./trazabilidad-consolidated.types"
+
+/** TR-I3: el estado de OC se exporta con el vocabulario del producto (OC_STATE_META),
+ *  no con el valor crudo de la columna (sent, partially_received, ...). */
+function ocStatusDisplay(status: string | null | undefined): string {
+  if (!status) return ""
+  return OC_STATE_META[status as keyof typeof OC_STATE_META]?.label ?? status
+}
 
 /**
  * Una fila del Excel consolidado.
@@ -196,7 +203,7 @@ export function buildTrazabilidadConsolidadaReportData(
     })).map((o) => [
       o.code,
       o.supplierName,
-      o.orderStatus === "draft" ? "Borrador" : o.orderStatus,
+      ocStatusDisplay(o.orderStatus),
       o.requests,
       o.quantities.map((s) => `${s.inOc} ${s.uom}`).join(" / "),
       o.quantities.map((s) => `${s.receivedOffice} ${s.uom}`).join(" / "),

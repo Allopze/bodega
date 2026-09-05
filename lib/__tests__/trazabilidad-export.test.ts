@@ -225,6 +225,9 @@ describe("buildTrazabilidadConsolidadaReportData", () => {
     const ordersSheet = workbook.getWorksheet("Órdenes de compra")
     expect(ordersSheet?.rowCount).toBe(2)
     expect(ordersSheet?.getCell("A2").value).toBe("OC-2026-0001")
+    // TR-I3: el estado de la OC se exporta con el vocabulario en español, no
+    // con el valor crudo de la columna ("sent").
+    expect(ordersSheet?.getCell("C2").value).toBe("Pendiente de recepción")
 
     // El detalle de líneas conserva la evidencia por ítem.
     const linesSheet = workbook.getWorksheet("Detalle de líneas")

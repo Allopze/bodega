@@ -19,7 +19,6 @@ import { getDocumentChainByCode } from "@/lib/services/document-chain"
 import { ConsolidatedKpis } from "./_components/consolidated-kpis"
 import { ConsolidatedFilters } from "./_components/consolidated-filters"
 import { ConsolidatedTable } from "./_components/consolidated-table"
-import { ConsolidatedCard } from "./_components/consolidated-card"
 import { ConsolidatedRequestsSummary } from "./_components/consolidated-requests-summary"
 import { TraceabilityIntegrityCases } from "./_components/traceability-integrity-cases"
 import { DocumentChainSearch } from "./_components/document-chain-search"
@@ -217,19 +216,14 @@ export default async function TrazabilidadPage({ searchParams }: PageProps) {
             />
           ) : (
             <div className="rounded-2xl border border-slate-200/70 bg-white shadow-xs overflow-hidden">
-              {/* Resumen por solicitud/OC: la unidad principal navegable. */}
-              <div className="p-4">
+              {/* TR-I1: la tabla ya es por solicitud (desktop) y el resumen por
+                  solicitud (mobile). Ambos cuentan el mismo universo que la
+                  paginación, que opera sobre solicitudes. */}
+              <ConsolidatedTable requests={consolidatedData.requests} />
+
+              {/* Tarjetas mobile por solicitud */}
+              <div className="md:hidden">
                 <ConsolidatedRequestsSummary requests={consolidatedData.requests} />
-              </div>
-
-              {/* Tabla desktop con filas expandibles — evidencia por ítem */}
-              <ConsolidatedTable rows={consolidatedData.rows} />
-
-              {/* Tarjetas mobile */}
-              <div className="divide-y divide-slate-100 p-3 space-y-3 md:hidden">
-                {consolidatedData.rows.map((row) => (
-                  <ConsolidatedCard key={row.itemId} row={row} />
-                ))}
               </div>
 
               {/* Paginación */}
