@@ -12,6 +12,7 @@ import {
   applyAggregateFilters,
   computeAggregateKPIs,
   paginateAggregateRequests,
+  ocHasPendingBalance,
   type LinkedMaps,
   type RawItemRow,
   type ApprovalRow,
@@ -907,5 +908,65 @@ describe("filtros, KPIs y paginación por solicitud", () => {
     expect(page).toMatchObject({ totalFiltered: 26, totalPages: 2, safePage: 2 })
     expect(page.requests.map((request) => request.requestId)).toEqual(["req-26"])
     expect(page.rows.map((row) => row.itemId)).toEqual(["item-26"])
+  })
+
+  // TR-F1 (plan 2026-09-05): el filtro "OC pendiente" busca solicitudes con al
+  // menos una OC no-borrador con saldo por recibir. Coincide con el KPI
+  // "Esperando proveedor" y es el filtro al que éste enlaza.
+  it("filtra por OC pendiente de recepción (TR-F1)", () => {
+    const maps: LinkedMaps = {
+      ...linkedMaps(),
+      ocsByItem: new Map([
+        [
+          "item-1",
+          [
+            oc({ purchaseOrderId: "po-draft", orderCode: "OC-DRAFT", orderStatus: "draft", quantity: 5 }),
+            oc({ purchaseOrderId: "po-sent", orderCode: "OC-SENT", orderStatus: "sent", quantity: 10, quantityReceived: 6 }),
+          ],
+        ],
+      ]),
+    }
+    const withPending = buildConsolidatedRows(
+      [rawItem({ status: "in_purchase_order" })],
+      maps,
+      "ws-1",
+      "Faena Uno",
+    )
+    const aggregated = aggregateConsolidatedRows(withPending, maps)
+
+    expect(aggregated.requests[0]?.orders.some(ocHasPendingBalance)).toBe(true)
+
+    const kept = applyAggregateFilters(aggregated.requests, {
+      filterEstado: "",
+      filterCategoria: "",
+      filterProveedor: "",
+      filterPendientes: false,
+      filterOcPendiente: true,
+      filterQ: "",
+      ocsByItem: maps.ocsByItem,
+    })
+    expect(kept).toHaveLength(1)
+
+    // Una OC totalmente recibida no debe aparecer como pendiente.
+    const receivedMaps = linkedMaps({ ocs: [oc({ quantity: 10, quantityReceived: 10 })] })
+    const receivedAggregated = aggregateConsolidatedRows(
+      buildConsolidatedRows([rawItem({ status: "received" })], receivedMaps, "ws-1", "Faena Uno"),
+      receivedMaps,
+    )
+    const received = applyAggregateFilters(receivedAggregated.requests, {
+      filterEstado: "",
+      filterCategoria: "",
+      filterProveedor: "",
+      filterPendientes: false,
+      filterOcPendiente: true,
+      filterQ: "",
+    })
+    expect(received).toHaveLength(0)
+  })
+
+  it("representa correctamente si una OC tiene saldo por recibir (TR-F1)", () => {
+    expect(ocHasPendingBalance({ orderStatus: "draft", quantitiesByUom: [{ uom: "un", inOc: 10, receivedOffice: 0, receivedFaena: 0 }] })).toBe(false)
+    expect(ocHasPendingBalance({ orderStatus: "sent", quantitiesByUom: [{ uom: "un", inOc: 10, receivedOffice: 6, receivedFaena: 6 }] })).toBe(true)
+    expect(ocHasPendingBalance({ orderStatus: "sent", quantitiesByUom: [{ uom: "un", inOc: 10, receivedOffice: 10, receivedFaena: 10 }] })).toBe(false)
   })
 })

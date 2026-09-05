@@ -246,5 +246,6 @@ export interface ConsolidatedTraceabilityResult {
     desde: string
     hasta: string
     pendientes: boolean
+    ocPendiente: boolean
   }
 }

@@ -213,8 +213,20 @@ describe("buildTrazabilidadConsolidadaReportData", () => {
     expect(names).toContain("Solicitudes")
     expect(names).toContain("Órdenes de compra")
     expect(names).toContain("Detalle de líneas")
+    // TR-F3: el libro expone su propio alcance en una hoja de metadatos.
+    expect(names).toContain("Metadatos")
     // OP-02: el truncamiento se anuncia dentro del propio libro.
     expect(names).toContain("Advertencias")
+
+    // La hoja de metadatos refleja el filtro de faena y el truncamiento.
+    const metaSheet = workbook.getWorksheet("Metadatos")
+    const metaRows = Array.from(metaSheet?.getRows(2, metaSheet?.rowCount ?? 0) ?? []).map((r) => [
+      r.getCell(1).value,
+      r.getCell(2).value,
+    ])
+    const metaObj = Object.fromEntries(metaRows)
+    expect(metaObj["Truncado por límite de filas"]).toBe("Sí")
+    expect(metaObj["Desde"]).toBe("(sin límite)")
 
     // Una solicitud genera una fila en "Solicitudes" (encabezado + 1).
     const requestsSheet = workbook.getWorksheet("Solicitudes")

@@ -3,19 +3,34 @@
 import Link from "next/link"
 import { ArrowSquareOut } from "@phosphor-icons/react"
 import { Badge } from "@/components/ui/badge"
-import { formatDate } from "@/lib/utils"
+import { formatDate, formatQty } from "@/lib/utils"
 import type { ConsolidatedRequest } from "@/lib/services/trazabilidad-consolidated.types"
 
 interface Props {
   requests: ConsolidatedRequest[]
 }
 
+/** Una cifra del flujo de cantidades de la solicitud (TR-F2). */
+function FlowStat({ label, value, uom }: { label: string; value: number; uom: string }) {
+  return (
+    <div className="bg-slate-50 rounded-lg p-2 min-w-0">
+      <span className="text-[10px] text-[var(--color-text-muted)] block uppercase">{label}</span>
+      <span className="font-mono text-xs font-bold text-slate-800 tabular-nums">
+        {formatQty(value, uom)}
+      </span>
+    </div>
+  )
+}
+
 /**
  * Vista resumida por solicitud (Task 4 de la migración 2026-09-05).
  *
  * Cada tarjeta es una solicitud navegable a `/solicitudes/<id>` y expone sus
- * órdenes de compra como enlaces a `/compras/<id>`. Es la unidad principal del
- * seguimiento: los ítems siguen como evidencia en la tabla/detalle de debajo.
+ * órdenes de compra como enlaces a `/compras/<id>`. Con TR-F2 se suma el avance
+ * de cantidades (solicitado → en OC → recibido faena → entregado → pendiente)
+ * para ver de un vistazo qué le falta a cada solicitud sin bajar a la tabla.
+ * Es la unidad principal del seguimiento; los ítems quedan como evidencia en el
+ * detalle/expediente.
  */
 export function ConsolidatedRequestsSummary({ requests }: Props) {
   return (
@@ -53,6 +68,43 @@ export function ConsolidatedRequestsSummary({ requests }: Props) {
               <span className="rounded-[var(--radius-full)] bg-[var(--color-signal-tint)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-signal-ink)]">
                 Tiene pendientes de compra
               </span>
+            )}
+          </div>
+
+          {/* TR-F2: avance de cantidades por UOM. Si la solicitud usa una sola
+              unidad se muestran totales escalares de un vistazo; si mezcla, se
+              detalla por UOM sin sumar unidades distintas. */}
+          <div className="mt-3 space-y-1.5">
+            {request.quantitiesByUom.length === 0 ? (
+              <p className="text-xs text-[var(--color-text-muted)] italic">
+                Sin cantidades registradas para las líneas de esta solicitud en el alcance filtrado.
+              </p>
+            ) : (
+              request.quantitiesByUom.map((sum) => (
+                <div key={sum.uom}>
+                  {request.quantitiesByUom.length > 1 && (
+                    <p className="text-[10px] uppercase tracking-wide text-[var(--color-text-muted)] mb-1">
+                      {sum.uom}
+                    </p>
+                  )}
+                  <div className="grid grid-cols-5 gap-1.5">
+                    <FlowStat label="Solicitado" value={sum.requested} uom={sum.uom} />
+                    <FlowStat label="En OC" value={sum.inOc} uom={sum.uom} />
+                    <FlowStat label="Rec. faena" value={sum.receivedFaena} uom={sum.uom} />
+                    <FlowStat label="Entregado" value={sum.delivered} uom={sum.uom} />
+                    <div className="bg-amber-50/60 border border-amber-100 rounded-lg p-2 min-w-0">
+                      <span className="text-[10px] text-amber-800 block uppercase">Pendiente</span>
+                      <span
+                        className={`font-mono text-xs font-bold tabular-nums ${
+                          sum.pendingTotal > 0 ? "text-amber-700" : "text-emerald-700"
+                        }`}
+                      >
+                        {formatQty(sum.pendingTotal, sum.uom)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))
             )}
           </div>
 

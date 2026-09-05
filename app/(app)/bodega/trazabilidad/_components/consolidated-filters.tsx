@@ -30,6 +30,7 @@ interface CurrentFilters {
   desde: string
   hasta: string
   pendientes: boolean
+  ocPendiente: boolean
 }
 
 interface Props {
@@ -57,6 +58,7 @@ function buildExportUrl(current: CurrentFilters): string {
   if (current.desde) params.set("desde", current.desde)
   if (current.hasta) params.set("hasta", current.hasta)
   if (current.pendientes) params.set("pendientes", "true")
+  if (current.ocPendiente) params.set("oc_pendiente", "true")
   const query = params.toString()
   return query
     ? `/api/bodega/trazabilidad/export?${query}`
@@ -109,6 +111,11 @@ export function ConsolidatedFilters({
   }
   if (current.pendientes) {
     chips.push({ key: "pendientes", label: "Filtro", value: "true", displayValue: "Solo pendientes" })
+  }
+  // TR-F1: chip del filtro por OC con saldo por recibir (coherente con el KPI
+  // "Esperando proveedor").
+  if (current.ocPendiente) {
+    chips.push({ key: "oc_pendiente", label: "OC", value: "true", displayValue: "OC pendiente de recepción" })
   }
   if (current.q) {
     chips.push({ key: "q", label: "Búsqueda", value: current.q, displayValue: `"${current.q}"` })

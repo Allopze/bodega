@@ -25,6 +25,7 @@ interface Props {
     desde: string
     hasta: string
     pendientes: boolean
+    ocPendiente: boolean
   }
   /**
    * Hay filtros aplicados además de la faena. Los KPIs resumen lo filtrado
@@ -72,16 +73,12 @@ export function ConsolidatedKpis({ kpis, filters, filtered = false }: Props) {
       icon: Truck,
       color: "text-blue-700",
       bg: "bg-blue-50",
-      // TR-B2 (auditoría 2026-09-05): este KPI cuenta OCs emitidas/enviadas con
-      // saldo por recibir (`awaitingSupplier`), pero `?estado=pedido_proveedor`
-      // filtra por ESTADO DE ÍTEM ("Pedido a proveedor"), un universo distinto:
-      // un ítem con OC parcialmente recibida ya no está en ese estado aunque su
-      // OC siga esperando. Hasta que exista un filtro por OC con saldo (TR-F1),
-      // el KPI se muestra como informativo, sin enlace, para no llevar a un
-      // subconjunto que contradiga el número.
-      href: null,
-      title:
-        "Órdenes de compra emitidas/enviadas con saldo por recibir. No hay filtro por OC aún; se muestra como dato informativo.",
+      // TR-B2 resuelto por TR-F1 (plan 2026-09-05): antes este KPI contaba OCs
+      // con saldo por recibir pero enlazaba a `?estado=pedido_proveedor`, que
+      // filtra por ESTADO DE ÍTEM, un universo distinto. Ahora hay un filtro
+      // real por OC con saldo (`oc_pendiente=true`), así que el enlace es
+      // correcto y el número coincide con lo que se ve.
+      href: hrefWith(filters, { oc_pendiente: "true" }),
     },
     {
       label: "Cerrados / entregados",
@@ -129,13 +126,12 @@ export function ConsolidatedKpis({ kpis, filters, filtered = false }: Props) {
               key={card.label}
               href={card.href}
               data-kpi-card
-              title={card.title}
               className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-line)]"
             >
               {inner}
             </Link>
           ) : (
-            <div key={card.label} data-kpi-card title={card.title}>
+            <div key={card.label} data-kpi-card>
               {inner}
             </div>
           )

@@ -78,6 +78,8 @@ export interface ConsolidatedFilterSet {
   desde: string
   hasta: string
   pendientes: boolean
+  /** TR-F1: sólo solicitudes con al menos una OC no-borrador con saldo por recibir. */
+  ocPendiente: boolean
 }
 
 export function normalizeConsolidatedFilters(
@@ -93,6 +95,7 @@ export function normalizeConsolidatedFilters(
     desde: normalizeTraceabilityDateParam(sp.desde),
     hasta: normalizeTraceabilityDateParam(sp.hasta),
     pendientes: sp.pendientes === "true" || sp.pendientes === "1",
+    ocPendiente: sp.oc_pendiente === "true" || sp.oc_pendiente === "1",
   }
 }
 
@@ -228,6 +231,7 @@ export async function collectConsolidatedRows(
     filterCategoria: filters.categoria,
     filterProveedor: filters.proveedor,
     filterPendientes: filters.pendientes,
+    filterOcPendiente: filters.ocPendiente,
     filterQ: filters.q,
     ocsByItem,
   })

@@ -251,6 +251,22 @@ export function buildTrazabilidadConsolidadaReportData(
 
   const sheets: ReportSheet[] = [requestsSheet, ordersSheet, linesSheet]
 
+  // TR-F3 (auditoría/plan 2026-09-05): un Excel descargado no decía a qué
+  // faena/período correspondía salvo por el contenido. Se anade una hoja de
+  // metadatos con el alcance, el filtro de fechas, la fecha de generacion y si
+  // el archivo fue truncado, para que se entienda sola sin inferir del detalle.
+  sheets.push({
+    worksheetName: "Metadatos",
+    headers: ["Campo", "Valor"],
+    rows: [
+      ["Faena", report.meta.faena ? `ID ${report.meta.faena}` : "(todas las faenas visibles)"],
+      ["Desde", report.meta.desde ?? "(sin límite)"],
+      ["Hasta", report.meta.hasta ?? "(sin límite)"],
+      ["Fecha de generación", todayInChile()],
+      ["Truncado por límite de filas", report.meta.truncado ? "Sí" : "No"],
+    ],
+  })
+
   // OP-02 (auditoría 2026-09-05): el truncamiento por límite de filas no llegaba
   // al libro —sólo viajaba en la cabecera `X-Row-Limit-Applied`, que el enlace
   // de descarga no leía. Una hoja de advertencia hace evidente, dentro del

@@ -302,9 +302,19 @@ export interface AggregateFilters {
   filterCategoria: string
   filterProveedor: string
   filterPendientes: boolean
+  /** TR-F1: sólo solicitudes con al menos una OC no-borrador con saldo por recibir. */
+  filterOcPendiente?: boolean
   filterQ: string
   /** Permite resolver el id de proveedor sin añadir atribuciones al DTO de OC. */
   ocsByItem?: Map<string, OcRow[]>
+}
+
+/** TR-F1: una OC "a la espera del proveedor" es no-borrador y con saldo por recibir. */
+export function ocHasPendingBalance(order: Pick<ConsolidatedOrder, "orderStatus" | "quantitiesByUom">): boolean {
+  if (order.orderStatus === "draft") return false
+  return order.quantitiesByUom.some(
+    (summary) => Math.max(summary.receivedOffice, summary.receivedFaena) < summary.inOc,
+  )
 }
 
 /**
@@ -321,6 +331,7 @@ export function applyAggregateFilters(
     filterCategoria,
     filterProveedor,
     filterPendientes,
+    filterOcPendiente,
     filterQ,
     ocsByItem,
   } = filters
@@ -332,6 +343,13 @@ export function applyAggregateFilters(
       isComputedStatus(filterEstado) &&
       request.status !== filterEstado
     ) {
+      return []
+    }
+
+    // TR-F1: el filtro "OC pendiente" busca solicitudes con al menos una OC
+    // emitida/enviada que aún espera mercadería. Coincide con el KPI
+    // "Esperando proveedor" (`awaitingSupplier`).
+    if (filterOcPendiente && !request.orders.some(ocHasPendingBalance)) {
       return []
     }
 
