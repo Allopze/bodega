@@ -395,7 +395,7 @@ export function applyAggregateFilters(
 /** Cuenta solicitudes u OCs únicas según la etapa operativa de cada KPI. */
 export function computeAggregateKPIs(
   requests: ConsolidatedRequest[],
-  orders?: ConsolidatedOrder[],
+  orders: ConsolidatedOrder[],
 ): ConsolidatedFaenaKPIs {
   const uniqueOpenRequests = new Set<string>()
   const pendingPurchase = new Set<string>()
@@ -426,12 +426,16 @@ export function computeAggregateKPIs(
   }
 
   const ordersById = new Map<string, ConsolidatedOrder>()
-  for (const order of orders ?? requests.flatMap((request) => request.orders)) {
+  for (const order of orders) {
     if (uniqueOrders.has(order.orderId)) ordersById.set(order.orderId, order)
   }
   const awaitingSupplier = new Set<string>()
   for (const order of ordersById.values()) {
-    if (order.quantitiesByUom.some((summary) => summary.receivedOffice < summary.inOc)) {
+    if (
+      order.quantitiesByUom.some(
+        (summary) => Math.max(summary.receivedOffice, summary.receivedFaena) < summary.inOc,
+      )
+    ) {
       awaitingSupplier.add(order.orderId)
     }
   }

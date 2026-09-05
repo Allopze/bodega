@@ -721,11 +721,12 @@ describe("filtros, KPIs y paginación por solicitud", () => {
       { ...baseFilters, filterQ: "casco-01" },
     ]) {
       const filtered = applyAggregateFilters(aggregated.requests, filters)
+      const kpis = computeAggregateKPIs(filtered, aggregated.orders)
       expect(filtered.map((request) => request.requestId)).toEqual(["req-1"])
       expect(filtered[0]).toMatchObject({ lineCount: 2, matchingLineCount: 1 })
       expect(filtered[0]?.lines).toHaveLength(2)
-      expect(computeAggregateKPIs(filtered).openRequests).toBe(1)
-      expect(computeAggregateKPIs(filtered).pendingPurchase).toBe(1)
+      expect(kpis.openRequests).toBe(1)
+      expect(kpis.pendingPurchase).toBe(1)
     }
   })
 
@@ -758,6 +759,29 @@ describe("filtros, KPIs y paginación por solicitud", () => {
       openRequests: 2,
       awaitingSupplier: 1,
     })
+  })
+
+  it("no espera al proveedor cuando la OC fue recibida directamente en faena", () => {
+    const maps: LinkedMaps = {
+      ...linkedMaps(),
+      ocsByItem: new Map([
+        [
+          "item-1",
+          [oc({ quantity: 10, quantityOfficeReceived: 0, quantityReceived: 10 })],
+        ],
+      ]),
+    }
+    const aggregated = aggregateConsolidatedRows(
+      buildConsolidatedRows(
+        [rawItem({ status: "received" })],
+        maps,
+        "ws-1",
+        "Faena Uno",
+      ),
+      maps,
+    )
+
+    expect(computeAggregateKPIs(aggregated.requests, aggregated.orders).awaitingSupplier).toBe(0)
   })
 
   it("pagina solicitudes sin dividir sus líneas entre páginas", () => {
