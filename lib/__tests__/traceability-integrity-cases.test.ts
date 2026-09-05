@@ -53,6 +53,12 @@ describe("traceability integrity case resolution", () => {
       id: "integrity-product", sku: "INT-001", name: "Casco integridad", categoryId: "integrity-cat",
       unitOfMeasure: "unidad", isActive: true, createdAt: now, updatedAt: now,
     })
+    // Producto distinto para OP-04: un ajuste de otro material no compensa un
+    // exceso de cascos.
+    await inMemoryDb.insert(schema.products).values({
+      id: "integrity-product-other", sku: "INT-002", name: "Bota de seguridad", categoryId: "integrity-cat",
+      unitOfMeasure: "par", isActive: true, createdAt: now, updatedAt: now,
+    })
     await inMemoryDb.insert(schema.purchaseRequests).values({
       id: "integrity-request", code: "SOL-INTEGRITY", worksiteId: "integrity-ws", requesterId: "integrity-user",
       requestType: "epp", urgency: "normal", status: "approved", createdAt: now, updatedAt: now,
@@ -72,6 +78,16 @@ describe("traceability integrity case resolution", () => {
         requestItemId: "integrity-request-item", worksiteId: "integrity-ws",
         findingCode: "DELIVERY_BEFORE_FAENA_RECEIPT", snapshot: { firstFaenaReceiptAt: now }, detectedAt: now,
       },
+      {
+        // OP-04 (auditoría 2026-09-05): el ajuste compensatorio debe reparar
+        // materialmente el caso — mismo producto y magnitud suficiente. La
+        // reproducción vincula un ajuste de botas a un exceso de cascos y el
+        // caso quedaba regularizado pese a no compensar nada.
+        id: "integrity-case-excess", findingKey: "integrity-case-excess-key",
+        requestItemId: "integrity-request-item", worksiteId: "integrity-ws",
+        findingCode: "DELIVERY_EXCEEDS_FAENA_RECEIPT",
+        snapshot: { receivedAtFaena: 0, delivered: 10, excessQuantity: 10 }, detectedAt: now,
+      },
     ])
     await inMemoryDb.insert(schema.inventoryMovements).values([
       {
@@ -81,6 +97,14 @@ describe("traceability integrity case resolution", () => {
       {
         id: "integrity-adjustment-own", worksiteId: "integrity-ws", productId: "integrity-product", type: "ajuste",
         quantity: 1, stockBefore: 0, stockAfter: 1, performedBy: "integrity-user", performedAt: now, reason: "Ajuste de conciliación",
+      },
+      {
+        id: "integrity-adjustment-wrong-product", worksiteId: "integrity-ws", productId: "integrity-product-other", type: "ajuste",
+        quantity: 10, stockBefore: 0, stockAfter: 10, performedBy: "integrity-user", performedAt: now, reason: "Ajuste de botas",
+      },
+      {
+        id: "integrity-adjustment-insufficient", worksiteId: "integrity-ws", productId: "integrity-product", type: "ajuste",
+        quantity: 3, stockBefore: 0, stockAfter: 3, performedBy: "integrity-user", performedAt: now, reason: "Ajuste insuficiente",
       },
     ])
   })
@@ -140,5 +164,85 @@ describe("traceability integrity case resolution", () => {
     const result = await scanTraceabilityIntegrity(session)
     expect(result.findings).toEqual([])
     expect(result.recordedCount).toBe(0)
+  })
+
+  // TR-02 (auditoría 2026-09-05): una entrega anulada no entregó nada y no
+  // puede abastecer el balance trazable. El detector SIGUE contándola porque
+  // su consulta no filtra `voidedAt`, así que una entrega de 10 anulada sin
+  // recepción genera `DELIVERY_EXCEEDS_FAENA_RECEIPT` con exceso 10 y guarda
+  // un caso falso que contamina los pendientes de integridad. Este test
+  // describe el comportamiento esperado tras el arreglo: encontrar 0.
+  it("no trata una entrega anulada como material entregado (TR-02)", async () => {
+    await inMemoryDb.insert(schema.deliveries).values({
+      id: "integrity-voided-delivery", code: "ENT-INTEGRITY-VOIDED", deliveredBy: "integrity-user",
+      deliveredAt: now, destinationType: "faena", worksiteId: "integrity-ws", createdAt: now,
+      voidedAt: now, voidedBy: "integrity-user", voidReason: "Error de digitación en la entrega",
+    })
+    await inMemoryDb.insert(schema.deliveryItems).values({
+      id: "integrity-voided-delivery-item", deliveryId: "integrity-voided-delivery",
+      requestItemId: "integrity-request-item", productId: "integrity-product", quantity: 10,
+      unitOfMeasure: "unidad",
+    })
+
+    const result = await scanTraceabilityIntegrity(session)
+    expect(result.findings).toEqual([])
+    expect(result.recordedCount).toBe(0)
+  })
+
+  // OP-04 (auditoría 2026-09-05): el ajuste compensatorio debe reparar
+  // materialmente el caso. Antes bastaba con la misma faena y un tipo
+  // `ajuste`: un ajuste de botas "compensaba" un exceso de cascos y el caso
+  // quedaba regularizado con evidencia que no respaldaba la corrección.
+  it("rechaza un ajuste compensatorio de otro producto (OP-04)", async () => {
+    await expect(resolveTraceabilityIntegrityCase({
+      caseId: "integrity-case-excess",
+      action: "compensating_movement",
+      compensatingMovementId: "integrity-adjustment-wrong-product",
+      reason: "Se intenta compensar el exceso con un ajuste de botas, no de cascos.",
+      userId: "integrity-user",
+      userEmail: "integrity@test.local",
+      session,
+    })).rejects.toThrow("mismo producto")
+
+    const resolutions = await inMemoryDb.select().from(schema.traceabilityIntegrityResolutions)
+    expect(resolutions.some((r) => r.compensatingMovementId === "integrity-adjustment-wrong-product")).toBe(false)
+  })
+
+  it("rechaza un ajuste compensatorio de magnitud insuficiente (OP-04)", async () => {
+    await expect(resolveTraceabilityIntegrityCase({
+      caseId: "integrity-case-excess",
+      action: "compensating_movement",
+      compensatingMovementId: "integrity-adjustment-insufficient",
+      reason: "Se intenta compensar un exceso de 10 unidades con un ajuste de 3.",
+      userId: "integrity-user",
+      userEmail: "integrity@test.local",
+      session,
+    })).rejects.toThrow("al menos el exceso")
+
+    const resolutions = await inMemoryDb.select().from(schema.traceabilityIntegrityResolutions)
+    expect(resolutions.some((r) => r.compensatingMovementId === "integrity-adjustment-insufficient")).toBe(false)
+  })
+
+  it("acepta un ajuste compensatorio del mismo producto con magnitud suficiente (OP-04)", async () => {
+    // `integrity-adjustment-own` es del mismo producto y cantidad 1; para
+    // cubrir un exceso de 10 hace falta uno mayor. Se usa un ajuste propio
+    // del mismo producto con cantidad 10, que sí compensa.
+    await inMemoryDb.insert(schema.inventoryMovements).values({
+      id: "integrity-adjustment-sufficient", worksiteId: "integrity-ws", productId: "integrity-product", type: "ajuste",
+      quantity: 10, stockBefore: 0, stockAfter: 10, performedBy: "integrity-user", performedAt: now, reason: "Ajuste que compensa el exceso",
+    })
+
+    await resolveTraceabilityIntegrityCase({
+      caseId: "integrity-case-excess",
+      action: "compensating_movement",
+      compensatingMovementId: "integrity-adjustment-sufficient",
+      reason: "Se vincula el ajuste de 10 unidades que compensa el exceso detectado.",
+      userId: "integrity-user",
+      userEmail: "integrity@test.local",
+      session,
+    })
+
+    const resolutions = await inMemoryDb.select().from(schema.traceabilityIntegrityResolutions)
+    expect(resolutions.some((r) => r.compensatingMovementId === "integrity-adjustment-sufficient")).toBe(true)
   })
 })

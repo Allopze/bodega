@@ -96,11 +96,24 @@ export function detectTraceabilityIntegrity({
     }
     const findings: TraceabilityIntegrityFinding[] = []
 
-    if (delivered - receivedAtFaena > QUANTITY_EPSILON) {
-      const excessQuantity = delivered - receivedAtFaena
+    // TR-06 (auditoría 2026-09-05): el comparar totales históricos dejaba un
+    // déficit intermedio tapado por una recepción posterior. Recorrer los
+    // eventos por fecha, acumulando el saldo en faena, detecta el exceso en el
+    // momento de la salida aunque el total vuelva a cuadrar después. Las
+    // entregas anteriores a la primera recepción no cuentan en este código: ese
+    // caso ya se reporta con `DELIVERY_BEFORE_FAENA_RECEIPT`, que describe
+    // mejor un flujo salido antes de que existiera stock.
+    const balanceExcess = detectIntermediateExcessAfterFirstReceipt(item, effectiveFaenaReceipts)
+
+    // Un saldo negativo cronológico puede ser mayor que el exceso de totales
+    // (p.ej. 5 recibidos, 10 entregados, 5 recibidos → 5). Se conserva como
+    // `DELIVERY_EXCEEDS_FAENA_RECEIPT` con el exceso máximo durante el flujo.
+    const totalExcess = Math.max(0, delivered - receivedAtFaena)
+    const excessQuantity = Math.max(totalExcess, balanceExcess)
+    if (excessQuantity > QUANTITY_EPSILON) {
       findings.push({
         code: "DELIVERY_EXCEEDS_FAENA_RECEIPT",
-        findingKey: `${item.requestItemId}:delivery-exceeds-faena-receipt:${receivedAtFaena}:${delivered}`,
+        findingKey: `${item.requestItemId}:delivery-exceeds-faena-receipt:${receivedAtFaena}:${delivered}:${balanceExcess}`,
         requestItemId: item.requestItemId,
         worksiteId: item.worksiteId,
         excessQuantity,
@@ -120,4 +133,68 @@ export function detectTraceabilityIntegrity({
 
     return findings
   })
+}
+
+/**
+ * Mayor exceso intermedio de entregas sobre el saldo recibido en faena, para
+ * entregas que ocurren DESPUÉS de la primera recepción.
+ *
+ * Convierte recepciones y entregas en una línea de tiempo, aplica cada
+ * recepción primero cuando dos eventos comparten instante (una recepción
+ * registrada al mismo timestamp que una entrega es anterior en el flujo) y
+ * devuelve cuántas unidades se entregaron sin respaldo en el momento de la
+ * salida. 0 indica que ningún flujo posterior a la primera recepción salió por
+ * encima del saldo acumulado. Las entregas anteriores a cualquier recepción se
+ * ignoran: están cubiertas por `DELIVERY_BEFORE_FAENA_RECEIPT`.
+ */
+function detectIntermediateExcessAfterFirstReceipt(
+  item: TraceabilityIntegrityItem,
+  faenaReceipts: TraceabilityReceiptCheckpoint[],
+): number {
+  const firstReceiptAt = faenaReceipts
+    .map((receipt) => receipt.receivedAt)
+    .filter(Boolean)
+    .sort()[0]
+
+  interface ChronoEvent {
+    at: string
+    kind: "receipt" | "delivery"
+    amount: number
+  }
+  const events: ChronoEvent[] = [
+    ...faenaReceipts.map((receipt) => ({
+      at: receipt.receivedAt,
+      kind: "receipt" as const,
+      amount: receiptQuantity(receipt, "quantityReceived"),
+    })),
+    ...item.deliveries
+      // Sólo entregas con fecha, posteriores o simultáneas a la primera
+      // recepción. Las anteriores están reportadas por otro código.
+      .filter((delivery) => firstReceiptAt && delivery.deliveredAt >= firstReceiptAt)
+      .map((delivery) => ({
+        at: delivery.deliveredAt,
+        kind: "delivery" as const,
+        amount: quantity(delivery.quantity),
+      })),
+  ].sort((a, b) => {
+    // Desempate estable: mismo instante, la recepción va antes que la salida.
+    if (a.at !== b.at) return a.at < b.at ? -1 : 1
+    if (a.kind !== b.kind) return a.kind === "receipt" ? -1 : 1
+    return 0
+  })
+
+  let balance = 0
+  let maxExcess = 0
+  for (const event of events) {
+    if (event.kind === "receipt") {
+      balance += event.amount
+    } else {
+      const over = event.amount - balance
+      if (over > maxExcess) maxExcess = over
+      // Las unidades sin respaldo se restan del balance igualmente: el déficit
+      // no se recupera entregando dos veces lo mismo.
+      balance = Math.max(0, balance - event.amount)
+    }
+  }
+  return maxExcess
 }

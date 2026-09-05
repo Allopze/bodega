@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull } from "drizzle-orm"
+import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
 import {
@@ -33,6 +33,9 @@ const ACTIVE_ORDER_STATUSES = new Set([
   "received",
   "closed",
 ])
+
+/** Tolerancia al comparar cantidades del ajuste compensatorio con el exceso. */
+const QUANTITY_NUDGE = 0.000_001
 
 function worksiteConditions(session: Session) {
   const scope = resolveWorksiteScope(session)
@@ -103,6 +106,7 @@ export async function scanTraceabilityIntegrity(session: Session): Promise<{
       .from(deliveryItems)
       .innerJoin(deliveries, eq(deliveryItems.deliveryId, deliveries.id))
       .where(and(
+        isNull(deliveries.voidedAt),
         isNotNull(deliveryItems.requestItemId),
         inArray(deliveryItems.requestItemId, itemIds),
       )),
@@ -205,12 +209,31 @@ export async function resolveTraceabilityIntegrityCase(input: ResolveTraceabilit
 
     let compensatingMovementId: string | null = null
     if (input.action === "compensating_movement") {
-      const [movement] = await tx.select({ id: inventoryMovements.id, worksiteId: inventoryMovements.worksiteId, type: inventoryMovements.type })
+      const [movement] = await tx.select({ id: inventoryMovements.id, worksiteId: inventoryMovements.worksiteId, type: inventoryMovements.type, productId: inventoryMovements.productId, quantity: inventoryMovements.quantity })
         .from(inventoryMovements)
         .where(eq(inventoryMovements.id, input.compensatingMovementId!))
         .limit(1)
       if (!movement || movement.worksiteId !== caseRow.worksiteId || movement.type !== "ajuste") {
         throw new Error("El movimiento compensatorio debe ser un ajuste de la misma faena")
+      }
+      // OP-04 (auditoría 2026-09-05): la resolución sólo comprobaba faena y
+      // tipo, así que un ajuste de botas podía "compensar" un exceso de
+      // cascos. Un movimiento compensatorio debe reparar materialmente el
+      // caso: mismo producto que la línea del ítem y magnitud suficiente.
+      const [itemRow] = await tx
+        .select({ productId: purchaseRequestItems.productId })
+        .from(purchaseRequestItems)
+        .where(eq(purchaseRequestItems.id, caseRow.requestItemId))
+        .limit(1)
+      if (!itemRow?.productId) {
+        throw new Error("El ítem del caso no tiene producto: no se puede vincular un ajuste compensatorio")
+      }
+      if (movement.productId !== itemRow.productId) {
+        throw new Error("El movimiento compensatorio debe ser un ajuste del mismo producto que el caso")
+      }
+      const excessQty = Number(caseRow.snapshot.excessQuantity ?? 0)
+      if (excessQty > 0 && Math.abs(movement.quantity) < excessQty - QUANTITY_NUDGE) {
+        throw new Error("El ajuste compensatorio debe cubrir al menos el exceso detectado en el caso")
       }
       compensatingMovementId = movement.id
     }

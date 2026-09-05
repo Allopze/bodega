@@ -94,4 +94,32 @@ describe("detectTraceabilityIntegrity", () => {
 
     expect(findings).toEqual([])
   })
+
+  // TR-06 (auditoría 2026-09-05): el detector comparaba totales históricos
+  // (Σ recibidos vs Σ entregados). Una recepción posterior equilibraba el
+  // total y tapaba el déficit intermedio: recibir 5 el día 1, entregar 10 el
+  // día 2 —cuando sólo había 5 en faena— y recibir otros 5 el día 3 no
+  // generaba ninguna excepción, aunque al entregar faltaban 5. El saldo debe
+  // comprobarse en cada salida, conservando la excepción aunque después se
+  // equilibre.
+  it("preserves an intermediate deficit even when a later receipt balances the total (TR-06)", () => {
+    const findings = detectTraceabilityIntegrity({
+      items: [{
+        ...base,
+        receipts: [
+          { quantityReceived: 5, locationType: "faena", worksiteId: "faena-1", receivedAt: "2026-08-01T10:00:00Z" },
+          { quantityReceived: 5, locationType: "faena", worksiteId: "faena-1", receivedAt: "2026-08-03T10:00:00Z" },
+        ],
+        deliveries: [{ quantity: 10, deliveredAt: "2026-08-02T10:00:00Z" }],
+      }],
+    })
+
+    // Σ recibidos = 10 y Σ entregados = 10, pero al entregar el día 2 el saldo
+    // acumulado era 5: hay un exceso intermedio de 5 que el total esconde.
+    expect(findings).toMatchObject([{
+      code: "DELIVERY_EXCEEDS_FAENA_RECEIPT",
+      requestItemId: "item-1",
+      excessQuantity: 5,
+    }])
+  })
 })
