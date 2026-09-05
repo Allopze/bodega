@@ -20,6 +20,7 @@ import { ConsolidatedKpis } from "./_components/consolidated-kpis"
 import { ConsolidatedFilters } from "./_components/consolidated-filters"
 import { ConsolidatedTable } from "./_components/consolidated-table"
 import { ConsolidatedCard } from "./_components/consolidated-card"
+import { ConsolidatedRequestsSummary } from "./_components/consolidated-requests-summary"
 import { TraceabilityIntegrityCases } from "./_components/traceability-integrity-cases"
 import { DocumentChainSearch } from "./_components/document-chain-search"
 import { Path, MagnifyingGlass, Warning } from "@phosphor-icons/react/dist/ssr"
@@ -216,7 +217,12 @@ export default async function TrazabilidadPage({ searchParams }: PageProps) {
             />
           ) : (
             <div className="rounded-2xl border border-slate-200/70 bg-white shadow-xs overflow-hidden">
-              {/* Tabla desktop con filas expandibles */}
+              {/* Resumen por solicitud/OC: la unidad principal navegable. */}
+              <div className="p-4">
+                <ConsolidatedRequestsSummary requests={consolidatedData.requests} />
+              </div>
+
+              {/* Tabla desktop con filas expandibles — evidencia por ítem */}
               <ConsolidatedTable rows={consolidatedData.rows} />
 
               {/* Tarjetas mobile */}
