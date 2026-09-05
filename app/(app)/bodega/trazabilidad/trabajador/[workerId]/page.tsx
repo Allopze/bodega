@@ -69,6 +69,13 @@ export default async function WorkerEppTraceabilityPage({
     .where(and(
       eq(deliveries.destinationType, "worker"),
       eq(deliveries.workerId, workerId),
+      // TR-09 (auditoría 2026-09-05): la consulta inicial acotaba el trabajador
+      // a la faena de la sesión, pero las entregas se buscaban sólo por
+      // `workerId`. Un usuario acotado a su faena podía ver códigos, fechas y
+      // cantidades de entregas hechas en una faena ajena por un trabajador que
+      // cambió de faena. Se aplica el mismo alcance sobre la faena de entrega
+      // para que la hoja de vida no filtre datos de otra faena.
+      worksiteScopeSql(session, deliveries.worksiteId),
     ))
     .orderBy(desc(deliveries.deliveredAt))
 

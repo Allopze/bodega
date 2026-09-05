@@ -735,4 +735,90 @@ describe("Full procurement workflow integration", () => {
     expect(itemA?.status).toBe("in_purchase_order")
     expect(itemB?.status).toBe("in_purchase_order")
   })
+
+  // TR-10 (auditoría 2026-09-05): una compra parcial duplicaba parte de la
+  // cantidad aprobada. Aprobado a 10, se compran 6: el split reduce el original
+  // a 6 y crea un remanente de 4, pero el `modifiedQty` de la última decisión
+  // seguía sobre el original reclamando 10. El consolidado sumaba ese 10 al
+  // remanente de 4 → aprobado 14 para un solicitado de 10. Este test fija que
+  // `createOrder` con cantidades menores reparta la aprobación: la última
+  // decisión del original debe quedar en 6 (la porción comprada) y el remanente
+  // aporta su propia cantidad.
+  it("una compra parcial reparte la aprobación sin duplicar la cantidad (TR-10)", async () => {
+    const now = new Date().toISOString()
+    const userId = "u-split"
+    const worksiteId = "ws-split"
+    const supplierId = "sup-split"
+    const categoryId = "cat-split"
+    const productId = "prod-split"
+    const requestId = "req-split"
+    const requestItemId = "item-split"
+
+    await inMemoryDb.insert(schema.users).values({
+      id: userId, name: "Comprador Split", email: "split@chome.cl", hashedPassword: "x",
+      isActive: true, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.worksites).values([
+      { id: worksiteId, name: "Faena Split", code: "F-SPLIT", isActive: true, createdAt: now, updatedAt: now },
+    ])
+    await inMemoryDb.insert(schema.suppliers).values({
+      id: supplierId, name: "Proveedor Split", rut: "77.123.456-7", isActive: true, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.productCategories).values({
+      id: categoryId, name: "Categoría Split", slug: "categoria-split", sortOrder: 1,
+    })
+    await inMemoryDb.insert(schema.products).values({
+      id: productId, sku: "SPLIT-001", name: "Ítem dividible", categoryId,
+      unitOfMeasure: "unidad", isActive: true, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequests).values({
+      id: requestId, code: "SOL-2026-SPLIT", worksiteId, requesterId: userId,
+      urgency: "normal", status: "approved", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequestItems).values({
+      id: requestItemId, requestId, productId, quantity: 10, unitOfMeasure: "unidad",
+      status: "approved", createdAt: now, updatedAt: now,
+    })
+    // La aprobación previa ajustó la cantidad a 10 (mismo valor en este caso,
+    // pero es quien manda en el consolidado porque `requestItem.quantity` ya
+    // quedó en 10 tras el approve con modifiedQty).
+    await inMemoryDb.insert(schema.approvalDecisions).values({
+      id: "approval-split-1", requestItemId, requestId, type: "modify", decidedBy: userId,
+      decidedAt: now, reason: "Se aprueban 10 unidades", modifiedQty: 10, roleContext: null,
+    })
+
+    // Compra parcial: 6 de las 10 unidades van a la OC.
+    await createOrder({
+      worksiteId, supplierId, createdBy: userId, userEmail: "split@chome.cl",
+      items: [{ requestItemId, productId, productNameFree: null, quantity: 6, unitOfMeasure: "unidad", unitPrice: 1000 }],
+    })
+
+    // Original reducido a 6.
+    const original = await inMemoryDb.query.purchaseRequestItems.findFirst({
+      where: eq(schema.purchaseRequestItems.id, requestItemId),
+    })
+    expect(original?.quantity).toBe(6)
+
+    // Hermano remanente de 4, que conserva el estado y apunta al original.
+    const siblings = await inMemoryDb.select().from(schema.purchaseRequestItems)
+      .where(eq(schema.purchaseRequestItems.splitFromItemId, requestItemId))
+    expect(siblings).toHaveLength(1)
+    expect(siblings[0]?.quantity).toBe(4)
+    expect(siblings[0]?.requestId).toBe(requestId)
+
+    // La última decisión del original ya NO reclama 10: quedó en 6.
+    const decisions = await inMemoryDb.select().from(schema.approvalDecisions)
+      .where(eq(schema.approvalDecisions.requestItemId, requestItemId))
+    expect(decisions[decisions.length - 1]).toMatchObject({
+      type: "modify",
+      modifiedQty: 6,
+    })
+    expect(decisions[decisions.length - 1]?.reason).toContain("Compra parcial")
+
+    // Total solicitado de la solicitud = 10 (6 + 4), no 14 ni 20.
+    const reqItems = await inMemoryDb.select().from(schema.purchaseRequestItems)
+      .where(eq(schema.purchaseRequestItems.requestId, requestId))
+    const totalRequested = reqItems.reduce((sum, item) => sum + item.quantity, 0)
+    expect(totalRequested).toBe(10)
+  })
 })

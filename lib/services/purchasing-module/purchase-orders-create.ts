@@ -4,7 +4,7 @@
 
 import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { products, purchaseOrders, purchaseOrderItems, purchaseRequestItems, purchaseRequests, requestItemAttributes, suppliers } from "@/db/schema"
+import { approvalDecisions, products, purchaseOrders, purchaseOrderItems, purchaseRequestItems, purchaseRequests, requestItemAttributes, suppliers } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit } from "@/lib/audit"
@@ -257,6 +257,27 @@ export async function createOrdersBySupplier(input: CreateOrdersBySupplierInput)
             .update(purchaseRequestItems)
             .set({ quantity: item.quantity, updatedAt: new Date().toISOString() })
             .where(eq(purchaseRequestItems.id, requestItem.id))
+
+          // TR-10 (auditoría 2026-09-05): la comisión histórica de `modifiedQty`
+          // reclamaba la cantidad previa al split. Si el ítem original tenía una
+          // aprobación ajustada a 10 y se divide en 6 + 4, la última decisión
+          // seguía diciendo 10 sobre un ítem que ahora pide 6; el consolidado
+          // sumaba ese 10 al remanente de 4 y el "aprobado" total duplicaba la
+          // cantidad. Registrar una decisión de reparto con la porción comprada
+          // hace que la última decisión del original sea la cantidad vigente de
+          // la línea, y el hermano conserva su estado sin decisiones aportando su
+          // propia cantidad: 6 + 4 = 10, sin inflar nada.
+          await tx.insert(approvalDecisions).values({
+            id:            nanoid(),
+            requestItemId: requestItem.id,
+            requestId:     requestItem.requestId,
+            type:          "modify",
+            decidedBy:     input.createdBy,
+            decidedAt:     new Date().toISOString(),
+            reason:        `Compra parcial: ${item.quantity} unidades pasan a la OC y el remanente de ${remainder} queda como línea separada`,
+            modifiedQty:   item.quantity,
+            roleContext:   null,
+          })
 
           await recordAudit({
             userId:     input.createdBy,
