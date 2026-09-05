@@ -84,16 +84,27 @@ export default async function TrazabilidadPage({ searchParams }: PageProps) {
   }
 
   /**
-   * Las dos pestañas conservan la faena elegida.
+   * Las pestañas conservan los filtros de seguimiento (OP-06, auditoría
+   * 2026-09-05).
    *
-   * Ir a "Buscar por código" y volver dejaba al usuario en la faena por
-   * defecto: el eje de toda la vista se perdía por cambiar de pestaña.
+   * Antes sólo viajaba la faena: ir a "Buscar por código" y volver perdía
+   * `estado`, `desde`/`hasta`, el solicitante y el resto de filtros, dejando
+   * al usuario en la faena sin su contexto de búsqueda. La pestaña "Seguimiento"
+   * reconstruye la URL con todos los filtros vigentes; "Documento" conserva sólo
+   * la faena y el código que se esté mirando.
    */
+  const FILTER_KEYS = ["faena", "estado", "categoria", "solicitante", "proveedor", "desde", "hasta", "pendientes"] as const
   const faenaParam = typeof sp.faena === "string" && sp.faena ? sp.faena : ""
   const tabHref = (tab: "seguimiento" | "documento") => {
     const params = new URLSearchParams()
     if (tab === "documento") params.set("tab", "documento")
-    if (faenaParam) params.set("faena", faenaParam)
+    for (const key of FILTER_KEYS) {
+      const value = sp[key]
+      if (typeof value === "string" && value) params.set(key, value)
+    }
+    if (tab === "documento" && typeof sp.codigo === "string" && sp.codigo.trim()) {
+      params.set("codigo", sp.codigo.trim())
+    }
     const query = params.toString()
     return query ? `/bodega/trazabilidad?${query}` : "/bodega/trazabilidad"
   }
@@ -173,7 +184,11 @@ export default async function TrazabilidadPage({ searchParams }: PageProps) {
           )}
 
           {/* Métricas / KPIs superiores */}
-          <ConsolidatedKpis kpis={consolidatedData.kpis} filtered={hasSecondaryFilters} />
+          <ConsolidatedKpis
+            kpis={consolidatedData.kpis}
+            filters={consolidatedData.filters}
+            filtered={hasSecondaryFilters}
+          />
 
           {/* Barra de filtros y selector de faena */}
           <ConsolidatedFilters

@@ -7,7 +7,6 @@ import {
   normalizeTraceabilityDateParam,
   buildConsolidatedRows,
   attachTimelines,
-  computeFaenaKPIs,
   applySecondaryFilters,
   aggregateConsolidatedRows,
   applyAggregateFilters,
@@ -766,34 +765,6 @@ describe("applySecondaryFilters", () => {
     expect(applySecondaryFilters(rows, { ...noFilters, filterQ: "casco" }).map((r) => r.itemId))
       .toEqual(["item-2"])
     expect(applySecondaryFilters(rows, { ...noFilters, filterQ: "BOTA-01" })).toHaveLength(2)
-  })
-})
-
-describe("computeFaenaKPIs", () => {
-  it("cuenta sobre las filas que recibe, que son las ya filtradas", () => {
-    const rows = buildConsolidatedRows(
-      [
-        rawItem({ itemId: "item-1", status: "delivered" }),
-        rawItem({ itemId: "item-2", status: "pending_purchase" }),
-      ],
-      {
-        ...linkedMaps(),
-        deliveriesByItem: new Map([["item-1", [delivery({ quantity: 10 })]]]),
-      },
-      "ws-1",
-      "Faena Uno",
-    )
-
-    const all = computeFaenaKPIs(rows)
-    expect(all.fullyDelivered).toBe(1)
-    expect(all.pendingPurchase).toBe(1)
-
-    // Calcularlos antes de los filtros dejaba "Sin resultados" encima de
-    // siete tarjetas con números.
-    const onlyDelivered = computeFaenaKPIs(rows.filter((r) => r.computedStatus === "entregado"))
-    expect(onlyDelivered.fullyDelivered).toBe(1)
-    expect(onlyDelivered.pendingPurchase).toBe(0)
-    expect(onlyDelivered.openRequests).toBe(0)
   })
 })
 

@@ -241,42 +241,6 @@ export function attachTimelines(rows: ConsolidatedRow[], maps: LinkedMaps): Cons
   }))
 }
 
-export function computeFaenaKPIs(rows: ConsolidatedRow[]): ConsolidatedFaenaKPIs {
-  const openRequestsSet = new Set<string>()
-  let pendingPurchase = 0
-  let awaitingSupplier = 0
-  let inOffice = 0
-  let inFaena = 0
-  let partiallyDelivered = 0
-  let fullyDelivered = 0
-
-  for (const row of rows) {
-    if (
-      row.computedStatus !== "entregado" &&
-      row.computedStatus !== "cancelado" &&
-      row.computedStatus !== "rechazado"
-    ) {
-      openRequestsSet.add(row.requestId)
-    }
-    if (row.pendingBreakdown.notYetOrdered > 0) pendingPurchase++
-    if (row.pendingBreakdown.pendingFromSupplier > 0) awaitingSupplier++
-    if (row.pendingBreakdown.inOffice > 0) inOffice++
-    if (row.pendingBreakdown.inFaenaAvailable > 0) inFaena++
-    if (row.computedStatus === "parcialmente_entregado") partiallyDelivered++
-    if (row.computedStatus === "entregado") fullyDelivered++
-  }
-
-  return {
-    openRequests: openRequestsSet.size,
-    pendingPurchase,
-    awaitingSupplier,
-    inOffice,
-    inFaena,
-    partiallyDelivered,
-    fullyDelivered,
-  }
-}
-
 export interface SecondaryFilters {
   filterEstado: string
   filterCategoria: string
