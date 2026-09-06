@@ -49,6 +49,7 @@
     "pdtp:reconcile-fulfillment-events": "tsx --env-file=.env.local scripts/reconcile-pdtp-fulfillment-events.ts",
     "pdtp:bootstrap-2026": "tsx --env-file=.env.local scripts/bootstrap-pdtp-2026.ts",
     "pdtp:reconcile-annual": "tsx --env-file=.env.local scripts/reconcile-pdtp-annual-programs.ts",
+    "pdtp:reprogram-2026-schedule": "tsx --env-file=.env.local scripts/reprogram-pdtp-2026-schedule.ts",
     "db:preflight-pdtp-annual": "tsx --env-file-if-exists=.env.local scripts/reconcile-pdtp-annual-programs.ts --apply",
     "db:preflight-migrations": "node --env-file-if-exists=.env.local scripts/migration-preflight.mjs",
     "db:preflight-dte-single-link": "tsx --env-file-if-exists=.env.local scripts/preflight-dte-single-link.ts",
