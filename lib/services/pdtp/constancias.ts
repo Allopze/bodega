@@ -10,7 +10,7 @@
 import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpPrograms, pdtpProgramWorksites, worksites } from "@/db/schema"
-import { currentPdtpPeriod, pdtpActivationPeriod, type PdtpPeriod } from "./period"
+import { currentPdtpPeriod, filterPdtpRowsFromActivation, pdtpActivationPeriod, type PdtpPeriod } from "./period"
 import { loadProgramScheduleAndExecutions, type WorksiteScope } from "./helpers"
 import { resolveProgramWorksiteIds } from "./worksites"
 
@@ -90,8 +90,11 @@ export async function listPdtpConstanciaActivities(scope: WorksiteScope): Promis
     for (const activityId of activityIds) {
       const activity = activityById.get(activityId)
       if (!activity) continue
-      const plannedMonths = scheduleRows
-        .filter((row) => row.activityId === activityId && row.month <= period.month && row.plannedQuantity > 0)
+      const plannedMonths = filterPdtpRowsFromActivation(scheduleRows, program.activatedAt)
+        .filter((row) => row.activityId === activityId
+          && row.year === program.year
+          && row.month <= period.month
+          && row.plannedQuantity > 0)
         .map((row) => row.month)
       if (plannedMonths.length === 0) continue
       const paidMonths = new Set(

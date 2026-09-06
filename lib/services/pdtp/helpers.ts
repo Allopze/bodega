@@ -175,7 +175,10 @@ export async function addPdtpChangeLogEntry(
 
 export async function loadProgramScheduleAndExecutions(activityIds: string[], year: number, worksiteId?: string) {
   const [scheduleRows, executionRows, overrideRows, exclusionRows, activityRows] = await Promise.all([
-    db.select().from(pdtpActivitySchedule).where(inArray(pdtpActivitySchedule.activityId, activityIds)),
+    db.select().from(pdtpActivitySchedule).where(and(
+      inArray(pdtpActivitySchedule.activityId, activityIds),
+      eq(pdtpActivitySchedule.year, year),
+    )),
     worksiteId
       ? db.select().from(pdtpExecutions).where(and(inArray(pdtpExecutions.activityId, activityIds), eq(pdtpExecutions.worksiteId, worksiteId), eq(pdtpExecutions.year, year), isNull(pdtpExecutions.obligationId)))
       : Promise.resolve([] as Array<typeof pdtpExecutions.$inferSelect>),

@@ -245,4 +245,29 @@ describe("cola operacional — actividades programadas del PDTP", () => {
     expect(items[0]!.status).toBe("pending")
     expect(items[0]!.statusLabel).toBe("Pendiente")
   })
+
+  it("no ofrece deuda de un período anterior a la activación del programa", async () => {
+    if (previousMonth === null) return // enero: no hay mes anterior dentro del año
+    // Celda de un mes anterior a la activación: exigible antes de este cambio,
+    // fantasma después — `markPdtpExecution` la rechazaría igual.
+    await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
+      id: "sch-jt-prev-act", activityId: "act-pdtpq-jt", year, month: previousMonth,
+      week: 1, plannedQuantity: 1, sourceColumn: "test",
+    })
+    // El programa se activó este mes: las celdas de meses anteriores ya no son
+    // exigibles. `new Date()`, no el `now` fijo del fixture: la consulta
+    // compara contra el reloj real (`chileNow` en operational-work-queue.ts),
+    // no contra este fixture.
+    await inMemoryDb.update(schema.pdtpPrograms).set({ activatedAt: new Date().toISOString() })
+      .where(eq(schema.pdtpPrograms.id, programId))
+    try {
+      const items = await pdtpItems(makeSession(["jefe_terreno"], [worksiteA]))
+      expect(items.every((item) => item.statusLabel !== "Vencida")).toBe(true)
+    } finally {
+      await inMemoryDb.update(schema.pdtpPrograms).set({ activatedAt: null })
+        .where(eq(schema.pdtpPrograms.id, programId))
+      await inMemoryDb.delete(schema.pdtpActivitySchedule)
+        .where(eq(schema.pdtpActivitySchedule.id, "sch-jt-prev-act"))
+    }
+  })
 })

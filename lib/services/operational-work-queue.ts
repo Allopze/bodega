@@ -816,6 +816,20 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
             AND ${pdtpActivitySchedule.year} = ${currentYear}
             AND ${pdtpActivitySchedule.month} <= ${currentMonth}
             AND ${pdtpActivitySchedule.plannedQuantity} > 0
+            -- El programa no es exigible antes de su semana de activación
+            -- (isPdtpPeriodOnOrAfterActivation): sin esto la tarjeta dice
+            -- "Vencida · enero" y el formulario no ofrece enero, así que la deuda
+            -- no se puede saldar nunca. activatedAt nulo es un programa
+            -- importado ya activo: sin filtro, mismo criterio que period.ts.
+            AND (
+              ${pdtpPrograms.activatedAt} IS NULL
+              OR (${pdtpActivitySchedule.year}, ${pdtpActivitySchedule.month}, ${pdtpActivitySchedule.week})
+                 >= (
+                   EXTRACT(YEAR  FROM (${pdtpPrograms.activatedAt} AT TIME ZONE 'America/Santiago'))::int,
+                   EXTRACT(MONTH FROM (${pdtpPrograms.activatedAt} AT TIME ZONE 'America/Santiago'))::int,
+                   LEAST(4, CEIL(EXTRACT(DAY FROM (${pdtpPrograms.activatedAt} AT TIME ZONE 'America/Santiago'))::numeric / 7))::int
+                 )
+            )
             AND NOT EXISTS (
               SELECT 1 FROM ${pdtpExecutions}
               WHERE ${pdtpExecutions.activityId} = ${pdtpActivities.id}

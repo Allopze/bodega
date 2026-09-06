@@ -45,11 +45,12 @@ const WS_B = "ws-constancias-b"
 const ACT_N = 61
 const ACT_ID = `${PROGRAM_ID}-a-${String(ACT_N).padStart(3, "0")}`
 
-async function seedProgram(status: "draft" | "active" = "active") {
+async function seedProgram(status: "draft" | "active" = "active", activatedAt: string | null = null) {
   await inMemoryDb.insert(schema.pdtpPrograms).values({
     id: PROGRAM_ID, version: 1, year: PROGRAM_YEAR, title: `PDTP ${PROGRAM_YEAR} constancias`,
     status, elaboratedByName: "Prevencionista", elaboratedByTitle: "Experto en Prevención",
     creationMode: "blank", complianceTarget: 0.9, pesoEjecucion: 0.5, pesoVerificacion: 0.3, pesoCierre: 0.2,
+    activatedAt,
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   })
 }
@@ -193,6 +194,20 @@ describe("listPdtpConstanciaActivities", () => {
     const view = await listPdtpConstanciaActivities("all")
     expect(view?.debts).toHaveLength(0)
     expect(view?.programId).toBe(PROGRAM_ID)
+  })
+
+  it("no ofrece deuda de un período anterior a la activación del programa", async () => {
+    if (PREVIOUS_MONTH === null) return // enero: no hay mes anterior en el año
+    // El programa se activó este mes: la celda del mes anterior ya no es
+    // exigible — `markPdtpExecution` la rechazaría igual.
+    await seedProgram("active", new Date().toISOString())
+    await seedActivity()
+    await seedSchedule(WS_A, PREVIOUS_MONTH)
+    await seedSchedule(WS_A, CURRENT_MONTH)
+
+    const view = await listPdtpConstanciaActivities([WS_A])
+    expect(view?.debts).toHaveLength(1)
+    expect(view?.debts[0]).toMatchObject({ dueMonth: CURRENT_MONTH, status: "pending", overdueMonths: 0 })
   })
 })
 
