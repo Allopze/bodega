@@ -3,12 +3,17 @@ import { resolve } from "node:path"
 import { and, count, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import {
+  pdtpActivities,
   pdtpPrograms,
+  pdtpResponsibleCatalog,
+  permissions,
   preventionEmergencyPlans,
   preventionInspectionRuns,
   preventionInspectionTemplates,
   preventionTrainingCourses,
   preventionTrainingCourseVersions,
+  rolePermissions,
+  roles,
   worksites,
 } from "@/db/schema"
 import {
@@ -19,6 +24,10 @@ import {
   classifyPdtp2026InspectionWiring,
   type InspectionWiringGap,
 } from "@/lib/prevention/inspection-wiring"
+import {
+  classifyPdtpResponsibleExecution,
+  type ResponsibleExecutionReport,
+} from "@/lib/services/pdtp/responsible-execution"
 
 /**
  * Diagnóstico del cableado entre el programa anual y los módulos que lo
@@ -64,6 +73,16 @@ export interface PdtpWiringReport {
   destinationsToReview: { n: number; activity: string; reason: string }[]
   /** Faenas del programa sin plan de emergencia: la N°83 y la N°84 no pueden acreditar. */
   worksitesWithoutEmergencyPlan: string[]
+  /**
+   * La misma pregunta que `destinationsToReview`, mirada por persona en vez de
+   * por actividad, y con la segregación declarada separada del resto.
+   *
+   * `destinationsToReview` sale de la compuerta y sólo ve las actividades cuyo
+   * destino conoce; ésta recorre las 81 y además resume por rol —"declarado en
+   * 15, puede ejecutar 2"— que es el número que hizo visible el problema del
+   * supervisor de terreno. `null` si no hay ningún programa que mirar.
+   */
+  responsibleExecution: ResponsibleExecutionReport | null
 }
 
 export async function findPdtpAccreditationWiringGaps(): Promise<PdtpWiringReport> {
@@ -138,10 +157,12 @@ export async function findPdtpAccreditationWiringGaps(): Promise<PdtpWiringRepor
   let coverageIssues: PdtpFulfillmentCoverageIssue[] = []
   let worksitesWithoutEmergencyPlan: string[] = []
 
+  let responsibleExecution: ResponsibleExecutionReport | null = null
   if (program) {
     coverageIssues = await assertPdtpFulfillmentCoverage(program.id)
     const plans = await db.select({ worksiteId: preventionEmergencyPlans.worksiteId }).from(preventionEmergencyPlans)
     worksitesWithoutEmergencyPlan = await resolveWorksitesWithoutPlan(new Set(plans.map((row) => row.worksiteId)))
+    responsibleExecution = await buildResponsibleExecutionReport(program.id)
   }
 
   const destinationsToReview = coverageIssues
@@ -162,7 +183,55 @@ export async function findPdtpAccreditationWiringGaps(): Promise<PdtpWiringRepor
     coverageIssues,
     destinationsToReview,
     worksitesWithoutEmergencyPlan,
+    responsibleExecution,
   }
+}
+
+/**
+ * Los grants se leen de la base y no del manifest: el manifest es la semilla y
+ * lo que decide si alguien entra es lo que `sync-rbac` dejó cargado. Mismo
+ * criterio que `permissionsByRoleName` en la compuerta.
+ */
+async function buildResponsibleExecutionReport(programId: string): Promise<ResponsibleExecutionReport> {
+  const [activities, catalog, grants] = await Promise.all([
+    db.select({
+      n: pdtpActivities.n,
+      activity: pdtpActivities.activity,
+      mechanism: pdtpActivities.mechanism,
+      responsibleSlugs: pdtpActivities.responsibleSlugs,
+    }).from(pdtpActivities).where(and(
+      eq(pdtpActivities.programId, programId),
+      eq(pdtpActivities.status, "active"),
+    )),
+    db.select().from(pdtpResponsibleCatalog),
+    db.select({ role: roles.name, permission: permissions.name })
+      .from(rolePermissions)
+      .innerJoin(roles, eq(rolePermissions.roleId, roles.id))
+      .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id)),
+  ])
+
+  const permissionsByRole = new Map<string, Set<string>>()
+  for (const grant of grants) {
+    const set = permissionsByRole.get(grant.role) ?? new Set<string>()
+    set.add(grant.permission)
+    permissionsByRole.set(grant.role, set)
+  }
+
+  return classifyPdtpResponsibleExecution({
+    activities: activities.map((row) => ({
+      n: row.n,
+      activity: row.activity,
+      mechanism: row.mechanism,
+      responsibleSlugs: (row.responsibleSlugs as string[] | null) ?? [],
+    })),
+    catalog: catalog.map((row) => ({
+      slug: row.slug,
+      roleName: row.roleName,
+      operatedByRoleName: row.operatedByRoleName,
+      isActive: row.isActive,
+    })),
+    permissionsByRole,
+  })
 }
 
 async function resolveWorksitesWithoutPlan(withPlan: Set<string>): Promise<string[]> {

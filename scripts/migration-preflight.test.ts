@@ -13,6 +13,7 @@ function cleanReport(): MigrationPreflightReport {
     pdtp: { legacyObjectiveLinks: 0, duplicateYears: 0 },
     legal: { duplicateApplicabilities: 0 },
     inspections: { duplicateProgramSlots: 0 },
+    migrations: { appliedCount: 0, journalCount: 0, skipped: [] },
     skippedRelations: [],
   }
 }
@@ -70,5 +71,29 @@ describe("migration preflight", () => {
     report.skippedRelations.push("dte_documents")
 
     expect(assertMigrationPreflightReport(report)).toBe(report)
+  })
+})
+
+/* El migrador de Drizzle usa una sola marca de agua (`MAX(created_at)`) y un
+ * `<` estricto: una migración que entra al repositorio con un `when` anterior
+ * al de otra ya aplicada queda saltada para siempre, sin error. Pasó con la
+ * 0236 —la que separa las integraciones del índice de período de
+ * `pdtp_executions`— y el síntoma apareció meses después. */
+describe("migraciones saltadas", () => {
+  it("bloquea cuando la base pasó de largo una migración del artefacto", () => {
+    const report = cleanReport()
+    report.migrations = { appliedCount: 255, journalCount: 256, skipped: ["0236_typical_abomination"] }
+
+    expect(() => assertMigrationPreflightReport(report)).toThrow(/0236_typical_abomination/)
+    expect(() => assertMigrationPreflightReport(report)).toThrow(/no las reintenta/)
+  })
+
+  it("no bloquea por las migraciones que todavía faltan por aplicar", () => {
+    // `skipped` sólo trae las anteriores a la última aplicada; las pendientes
+    // al final de la lista son el estado normal antes de migrar.
+    const report = cleanReport()
+    report.migrations = { appliedCount: 250, journalCount: 256, skipped: [] }
+
+    expect(() => assertMigrationPreflightReport(report)).not.toThrow()
   })
 })

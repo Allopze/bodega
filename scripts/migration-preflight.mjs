@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import path from "node:path"
 import postgres from "postgres"
@@ -16,6 +18,7 @@ export const LEGACY_ACTION_TABLES = Object.freeze([
  * @property {{ legacyObjectiveLinks: number, duplicateYears: number }} pdtp
  * @property {{ duplicateApplicabilities: number }} legal
  * @property {{ duplicateProgramSlots: number }} inspections
+ * @property {{ appliedCount: number, journalCount: number, skipped: string[] }} migrations
  * @property {string[]} skippedRelations
  */
 
@@ -58,6 +61,28 @@ export function assertMigrationPreflightReport(report) {
   if (report.inspections.duplicateProgramSlots > 0) {
     blockers.push(`INSPECTIONS duplicateProgramSlots=${report.inspections.duplicateProgramSlots}`)
   }
+  /* Migraciones saltadas. El migrador de Drizzle decide qué aplicar con **una
+   * sola marca de agua** —`MAX(created_at)` de `drizzle.__drizzle_migrations`—
+   * y un `<` estricto contra el `when` del journal; el hash lo calcula y no lo
+   * usa para decidir. Una migración que entra al repositorio con un `when`
+   * anterior al de otra ya aplicada —dos ramas generando migraciones en
+   * paralelo, y la base corrió primero la de la otra rama— queda saltada **para
+   * siempre**, sin error ni warning.
+   *
+   * Pasó: `bodega_dev` llegó a 255 de 256 con la 0236 ausente, y la 0236 es la
+   * que saca a las integraciones del índice de período de `pdtp_executions`. El
+   * síntoma no aparece al migrar sino meses después, cuando dos inspecciones de
+   * la misma semana chocan y la acreditación se cae.
+   *
+   * Ninguna de las dos herramientas que había podía verlo:
+   * `verify-migration-chain.mjs` lo dice él mismo —*"This does not inspect the
+   * database"*— y este preflight miraba datos, no el estado del migrador. */
+  if (report.migrations.skipped.length > 0) {
+    blockers.push(
+      `MIGRATIONS saltadas=${report.migrations.skipped.length} (${report.migrations.skipped.join(", ")}) ` +
+      "— aplícalas a mano y registra su fila en drizzle.__drizzle_migrations; el migrador no las reintenta.",
+    )
+  }
   if (blockers.length > 0) {
     throw new Error(
       "MIGRATION_PREFLIGHT_BLOCKED: la base requiere reconciliación explícita antes de migrar. " +
@@ -94,8 +119,14 @@ export async function inspectMigrationPreconditions(sql) {
     pdtp: { legacyObjectiveLinks: 0, duplicateYears: 0 },
     legal: { duplicateApplicabilities: 0 },
     inspections: { duplicateProgramSlots: 0 },
+    migrations: { appliedCount: 0, journalCount: 0, skipped: [] },
     skippedRelations: [],
   }
+
+  report.migrations = await inspectSkippedMigrations(
+    sql,
+    path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), "db", "migrations"),
+  )
 
   for (const table of LEGACY_ACTION_TABLES) {
     if (!await relationExists(sql, table)) {
@@ -180,6 +211,49 @@ export async function inspectMigrationPreconditions(sql) {
   }
 
   return report
+}
+
+/**
+ * Migraciones del artefacto que la base **no** aplicó.
+ *
+ * El hash es el mismo que escribe el migrador: `sha256` del contenido crudo del
+ * `.sql` (`drizzle-orm/migrator.js`). Se compara por hash y no por `created_at`
+ * porque el timestamp es justamente el dato que falla — dos migraciones pueden
+ * compartir marca de agua y una de ellas no estar.
+ *
+ * Tolera base nueva: sin el esquema `drizzle` no hay nada que comparar.
+ *
+ * @param {import("postgres").Sql} sql
+ * @param {string} migrationsDir
+ */
+export async function inspectSkippedMigrations(sql, migrationsDir) {
+  const [exists] = await sql`select to_regclass('drizzle.__drizzle_migrations') as relation`
+  if (!exists?.relation) return { appliedCount: 0, journalCount: 0, skipped: [] }
+
+  const journal = JSON.parse(readFileSync(path.join(migrationsDir, "meta", "_journal.json"), "utf8"))
+  const applied = await sql`select hash from drizzle.__drizzle_migrations`
+  const appliedHashes = new Set(applied.map((row) => row.hash))
+
+  const skipped = []
+  for (const entry of journal.entries) {
+    const file = path.join(migrationsDir, `${entry.tag}.sql`)
+    const hash = createHash("sha256").update(readFileSync(file, "utf8")).digest("hex")
+    if (!appliedHashes.has(hash)) skipped.push(entry.tag)
+  }
+
+  /* Sólo las que la base ya pasó de largo. Las pendientes al final de la lista
+   * son lo normal antes de migrar: el migrador las va a aplicar en seguida, y
+   * bloquear por ellas convertiría el preflight en un candado permanente. Se
+   * corta en la última aplicada del journal. */
+  const lastAppliedIndex = journal.entries.reduce((last, entry, index) => {
+    const hash = createHash("sha256")
+      .update(readFileSync(path.join(migrationsDir, `${entry.tag}.sql`), "utf8"))
+      .digest("hex")
+    return appliedHashes.has(hash) ? index : last
+  }, -1)
+  const trulySkipped = skipped.filter((tag) => journal.entries.findIndex((e) => e.tag === tag) < lastAppliedIndex)
+
+  return { appliedCount: appliedHashes.size, journalCount: journal.entries.length, skipped: trulySkipped }
 }
 
 export async function runMigrationPreflight(sql) {
