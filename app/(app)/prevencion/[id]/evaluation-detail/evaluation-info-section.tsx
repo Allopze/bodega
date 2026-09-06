@@ -9,7 +9,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import { Field } from "@/components/ui/field"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { formatDateDisplay } from "@/lib/sst/date"
 import { RESULTADO_LABELS, resultadoBadgeVariant, estadoBadgeVariant, tipoBadgeVariant } from "@/lib/sst/badges"
 import { Check, LockSimple, Printer, Warning } from "@phosphor-icons/react"
@@ -89,9 +89,7 @@ export function EvaluationInfoSection({
             <h2 className="text-lg font-bold text-(--color-text)">{workerName}</h2>
             {workerRut && <span className="text-sm text-text-subtle">RUT {workerRut}</span>}
             {evaluation.evaluatorRole && (
-              <Badge variant="outline">
-                Rol: {evaluatorRoleLabel(evaluation.evaluatorRole, worksiteAdminContratoLabel)}
-              </Badge>
+              <MetaBadge meta={{ label: `Rol: ${evaluatorRoleLabel(evaluation.evaluatorRole, worksiteAdminContratoLabel)}`, variant: "outline" }} />
             )}
           </div>
           <p className="text-sm text-(--color-text-muted)">{worksiteName}</p>
@@ -105,13 +103,9 @@ export function EvaluationInfoSection({
 
         <div className="flex flex-col items-end gap-2">
           <div className="flex items-center gap-2">
-            <Badge variant={estadoBadgeVariant(evaluation.estado)}>
-              {isCerrado ? "Cerrado" : "Borrador"}
-            </Badge>
+            <MetaBadge meta={{ label: `${isCerrado ? "Cerrado" : "Borrador"}`, variant: estadoBadgeVariant(evaluation.estado) }} />
             {evaluation.tipo === "seguimiento" && (
-              <Badge variant={tipoBadgeVariant(evaluation.tipo)}>
-                Seguimiento
-              </Badge>
+              <MetaBadge meta={{ label: "Seguimiento", variant: tipoBadgeVariant(evaluation.tipo) }} />
             )}
           </div>
 
@@ -143,9 +137,7 @@ export function EvaluationInfoSection({
           )}
 
           {canViewFullEvaluation && evaluation.resultadoFinal && (
-            <Badge variant={resultadoBadgeVariant(evaluation.resultadoFinal)}>
-              {RESULTADO_LABELS[evaluation.resultadoFinal] ?? evaluation.resultadoFinal}
-            </Badge>
+            <MetaBadge meta={{ label: `${RESULTADO_LABELS[evaluation.resultadoFinal] ?? evaluation.resultadoFinal}`, variant: resultadoBadgeVariant(evaluation.resultadoFinal) }} />
           )}
         </div>
       </div>

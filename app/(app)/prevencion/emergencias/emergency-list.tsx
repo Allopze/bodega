@@ -5,7 +5,7 @@ import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
 import { DataTable } from "@/components/ui/data-table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { Pagination } from "@/components/ui/pagination"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
@@ -210,7 +210,7 @@ export function EmergencyList({ plans, drills, worksites, canManage, plansPagina
               <ResponsiveDataListCard
                 title={<Link href={`/prevencion/emergencias/${item.id}`} className="hover:underline">{item.title}</Link>}
                 description={<span className="font-mono">{item.code}</span>}
-                status={<Badge variant={emergencyPlanStatusBadgeVariant(item.status)}>{EMERGENCY_PLAN_STATUS_LABELS[item.status] ?? item.status}</Badge>}
+                status={<MetaBadge meta={{ label: EMERGENCY_PLAN_STATUS_LABELS[item.status] ?? item.status, variant: emergencyPlanStatusBadgeVariant(item.status) }} />}
                 actions={<Link href={`/prevencion/emergencias/${item.id}`} className="inline-flex min-h-11 items-center text-xs font-medium text-[var(--color-primary-ink)] hover:underline">Ver plan</Link>}
               >
                 <ResponsiveDataListField label="Faena">{item.worksiteName}</ResponsiveDataListField>
@@ -231,9 +231,7 @@ export function EmergencyList({ plans, drills, worksites, canManage, plansPagina
                   <span className="block text-xs text-[var(--color-text-subtle)]">{item.worksiteName}</span>
                 </TableCell>
                 <TableCell>
-                  <Badge variant={emergencyPlanStatusBadgeVariant(item.status)}>
-                    {EMERGENCY_PLAN_STATUS_LABELS[item.status] ?? item.status}
-                  </Badge>
+                  <MetaBadge meta={{ label: EMERGENCY_PLAN_STATUS_LABELS[item.status] ?? item.status, variant: emergencyPlanStatusBadgeVariant(item.status) }} />
                 </TableCell>
                 <TableCell className="text-right font-mono text-sm tabular-nums">{item.scenarios}</TableCell>
                 <TableCell className="text-right font-mono text-sm tabular-nums">{item.roles}</TableCell>
@@ -265,13 +263,13 @@ export function EmergencyList({ plans, drills, worksites, canManage, plansPagina
               <ResponsiveDataListCard
                 title={item.planTitle}
                 description={item.worksiteName}
-                status={<Badge variant={item.status === "completed" ? "success" : item.status === "cancelled" ? "outline" : "default"}>{EMERGENCY_DRILL_STATUS_LABELS[item.status] ?? item.status}</Badge>}
+                status={<MetaBadge meta={{ label: EMERGENCY_DRILL_STATUS_LABELS[item.status] ?? item.status, variant: item.status === "completed" ? "success" : item.status === "cancelled" ? "outline" : "default" }} />}
               >
                 <ResponsiveDataListField label="Escenario">{item.scenarioType}</ResponsiveDataListField>
                 <ResponsiveDataListField label="Programado">{formatDateTime(item.scheduledFor)}</ResponsiveDataListField>
                 <ResponsiveDataListField label="Resultado" className="col-span-2">
                   {item.outcome
-                    ? <Badge variant={item.outcome === "satisfactory" ? "success" : "warning"}>{EMERGENCY_DRILL_OUTCOME_LABELS[item.outcome] ?? item.outcome}</Badge>
+                    ? <MetaBadge meta={{ label: EMERGENCY_DRILL_OUTCOME_LABELS[item.outcome] ?? item.outcome, variant: item.outcome === "satisfactory" ? "success" : "warning" }} />
                     : "Sin resultado registrado"}
                 </ResponsiveDataListField>
               </ResponsiveDataListCard>
@@ -287,13 +285,11 @@ export function EmergencyList({ plans, drills, worksites, canManage, plansPagina
                 <TableCell className="text-sm">{item.scenarioType}</TableCell>
                 <TableCell className="text-sm tabular-nums">{formatDateTime(item.scheduledFor)}</TableCell>
                 <TableCell>
-                  <Badge variant={item.status === "completed" ? "success" : item.status === "cancelled" ? "outline" : "default"}>
-                    {EMERGENCY_DRILL_STATUS_LABELS[item.status] ?? item.status}
-                  </Badge>
+                  <MetaBadge meta={{ label: EMERGENCY_DRILL_STATUS_LABELS[item.status] ?? item.status, variant: item.status === "completed" ? "success" : item.status === "cancelled" ? "outline" : "default" }} />
                 </TableCell>
                 <TableCell>
                   {item.outcome
-                    ? <Badge variant={item.outcome === "satisfactory" ? "success" : "warning"}>{EMERGENCY_DRILL_OUTCOME_LABELS[item.outcome] ?? item.outcome}</Badge>
+                    ? <MetaBadge meta={{ label: EMERGENCY_DRILL_OUTCOME_LABELS[item.outcome] ?? item.outcome, variant: item.outcome === "satisfactory" ? "success" : "warning" }} />
                     : <span className="text-sm text-[var(--color-text-subtle)]">—</span>}
                 </TableCell>
               </TableRow>

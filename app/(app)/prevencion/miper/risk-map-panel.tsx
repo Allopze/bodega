@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { MapTrifold } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -300,9 +300,7 @@ function MarkerDetailDialog({ marker, canEdit, onClose }: { marker: RiskMapMarke
           <DialogTitle>{marker.hazard}</DialogTitle>
           <DialogDescription>{marker.label ?? "Sin etiqueta."}</DialogDescription>
         </DialogHeader>
-        <Badge variant={["high", "critical"].includes(normalizeRiskLevel(marker.residualLevel) ?? "") ? "danger" : "warning"}>
-          {riskLevelLabel(marker.residualLevel)}
-        </Badge>
+        <MetaBadge meta={{ label: `${riskLevelLabel(marker.residualLevel)}`, variant: ["high", "critical"].includes(normalizeRiskLevel(marker.residualLevel) ?? "") ? "danger" : "warning" }} />
         {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
         <DialogFooter>
           {canEdit && (

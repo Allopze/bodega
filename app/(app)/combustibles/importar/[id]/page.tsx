@@ -9,7 +9,7 @@ import { buildFuelVehiclesWhere } from "@/lib/combustibles/queries"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatCLP, formatQty, formatDateTime } from "@/lib/utils"
 import { RevertBatchButton, LinkPlateForm } from "../batch-detail-actions"
@@ -53,9 +53,7 @@ export default async function ImportBatchDetailPage({ params }: { params: Promis
       <Card className="mb-6">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Resumen del lote</CardTitle>
-          <Badge variant={batch.estado === "revertido" ? "danger" : "success"}>
-            {batch.estado === "revertido" ? "Revertido" : "Importado"}
-          </Badge>
+          <MetaBadge meta={{ label: `${batch.estado === "revertido" ? "Revertido" : "Importado"}`, variant: batch.estado === "revertido" ? "danger" : "success" }} />
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Field label="Faena" value={batch.worksite?.name ?? "—"} />
@@ -108,7 +106,7 @@ export default async function ImportBatchDetailPage({ params }: { params: Promis
                 {batch.records.map((r) => (
                   <TableRow key={r.id} className={r.vehicle ? undefined : "bg-[var(--color-warning-tint)]"}>
                     <TableCell className="font-mono text-sm">{r.patente}</TableCell>
-                    <TableCell>{r.vehicle?.plate ?? <Badge variant="warning" size="sm">Sin asociar</Badge>}</TableCell>
+                    <TableCell>{r.vehicle?.plate ?? <MetaBadge meta={{ label: "Sin asociar", variant: "warning" }} />}</TableCell>
                     <TableCell className="text-right font-mono">{formatQty(r.numeroTarjetas)}</TableCell>
                     <TableCell className="text-right font-mono">{formatQty(r.numeroTransacciones)}</TableCell>
                     <TableCell className="text-right font-mono">{formatQty(r.cantidadUnidad, "L")}</TableCell>

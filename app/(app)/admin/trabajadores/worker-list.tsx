@@ -5,7 +5,7 @@ import { DataTable } from "@/components/ui/data-table"
 import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
 import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
 import { WorkerForm } from "./worker-form"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { toggleWorkerActive } from "./actions"
@@ -57,9 +57,7 @@ export function WorkerList({
             </h2>
             <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{w.rut ?? "—"}</p>
           </div>
-          <Badge variant={w.isActive ? "success" : "default"} dot>
-            {w.isActive ? "Activo" : "Inactivo"}
-          </Badge>
+          <MetaBadge meta={{ label: `${w.isActive ? "Activo" : "Inactivo"}`, variant: w.isActive ? "success" : "default" }} dot />
         </div>
   
         <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
@@ -106,9 +104,7 @@ export function WorkerList({
           {w.worksiteName}
         </TableCell>
         <TableCell>
-          <Badge variant={w.isActive ? "success" : "default"} dot className="w-20 justify-center">
-            {w.isActive ? "Activo" : "Inactivo"}
-          </Badge>
+          <MetaBadge meta={{ label: `${w.isActive ? "Activo" : "Inactivo"}`, variant: w.isActive ? "success" : "default" }} dot className="w-20 justify-center" />
         </TableCell>
         <TableCell>
           <div className="flex items-center gap-2 justify-end">

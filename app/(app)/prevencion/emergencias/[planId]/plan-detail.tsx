@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -134,7 +134,7 @@ export function PlanDetail({
 
       {plan.status !== "archived" && (
         <div className="flex flex-wrap items-center gap-3">
-          <Badge variant={emergencyPlanStatusBadgeVariant(plan.status)}>{EMERGENCY_PLAN_STATUS_LABELS[plan.status]}</Badge>
+          <MetaBadge meta={{ label: `${EMERGENCY_PLAN_STATUS_LABELS[plan.status]}`, variant: emergencyPlanStatusBadgeVariant(plan.status) }} />
           {canApproveThis && (
             <Button size="sm" disabled={!readiness.ready || approveOperation.pending} onClick={approve}>Aprobar plan</Button>
           )}
@@ -239,9 +239,7 @@ export function PlanDetail({
                     <TableCell className="text-sm tabular-nums">{resource.nextInspectionAt ?? "—"}</TableCell>
                     <TableCell className="text-sm tabular-nums">{resource.expiresAt ?? "—"}</TableCell>
                     <TableCell>
-                      <Badge variant={resource.status === "operational" ? "success" : resource.status === "out_of_service" ? "danger" : "warning"}>
-                        {EMERGENCY_RESOURCE_STATUS_LABELS[resource.status] ?? resource.status}
-                      </Badge>
+                      <MetaBadge meta={{ label: `${EMERGENCY_RESOURCE_STATUS_LABELS[resource.status] ?? resource.status}`, variant: resource.status === "operational" ? "success" : resource.status === "out_of_service" ? "danger" : "warning" }} />
                     </TableCell>
                     {canManage && (
                       <TableCell className="text-right">
@@ -316,13 +314,11 @@ export function PlanDetail({
                     <TableCell className="text-sm">{emergencyScenarioTypeLabel(drill.scenarioType)}</TableCell>
                     <TableCell className="text-sm tabular-nums">{formatDateTime(drill.scheduledFor)}</TableCell>
                     <TableCell>
-                      <Badge variant={drill.status === "completed" ? "success" : drill.status === "cancelled" ? "outline" : "default"}>
-                        {EMERGENCY_DRILL_STATUS_LABELS[drill.status] ?? drill.status}
-                      </Badge>
+                      <MetaBadge meta={{ label: `${EMERGENCY_DRILL_STATUS_LABELS[drill.status] ?? drill.status}`, variant: drill.status === "completed" ? "success" : drill.status === "cancelled" ? "outline" : "default" }} />
                     </TableCell>
                     <TableCell>
                       {drill.outcome
-                        ? <Badge variant={drill.outcome === "satisfactory" ? "success" : "warning"}>{EMERGENCY_DRILL_OUTCOME_LABELS[drill.outcome] ?? drill.outcome}</Badge>
+                        ? <MetaBadge meta={{ label: `${EMERGENCY_DRILL_OUTCOME_LABELS[drill.outcome] ?? drill.outcome}`, variant: drill.outcome === "satisfactory" ? "success" : "warning" }} />
                         : <span className="text-sm text-[var(--color-text-subtle)]">—</span>}
                     </TableCell>
                     {canExecuteDrill && (

@@ -9,9 +9,8 @@ import { hasServerListFilters, ServerListFilters, type ServerListFilterOption } 
 import { StageTabs, type StageTab } from "@/components/ui/stage-tabs"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
 import { TableRow, TableCell } from "@/components/ui/table"
-import { StateBadge } from "@/components/states/state-badge"
+import { MetaBadge, StateBadge } from "@/components/states/state-badge"
 import { StateLegend } from "@/components/states/state-legend"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { formatDate } from "@/lib/utils"
 import { canRegisterReceiptForOrder } from "./recepcion-table.helpers"
@@ -150,13 +149,13 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, guideMap, canOff
             </TableCell>
             <TableCell>
               {activeGuide?.status === "draft"
-                ? <Badge variant="warning" size="sm">Pendiente de despacho</Badge>
+                ? <MetaBadge meta={{ label: "Pendiente de despacho", variant: "warning" }} />
                 : activeGuide?.status === "dispatched"
-                  ? <Badge variant="info" size="sm">En traslado</Badge>
+                  ? <MetaBadge meta={{ label: "En traslado", variant: "info" }} />
                   : activeGuide?.status === "partially_received"
-                    ? <Badge variant="danger" size="sm">Diferencia en faena</Badge>
+                    ? <MetaBadge meta={{ label: "Diferencia en faena", variant: "danger" }} />
                     : (gapMap[o.id] ?? 0) > 0
-                      ? <Badge variant="warning" size="sm">{gapMap[o.id]} {gapMap[o.id] === 1 ? "ítem" : "ítems"}</Badge>
+                      ? <MetaBadge meta={{ label: `${gapMap[o.id]}${gapMap[o.id] === 1 ? "ítem" : "ítems"}`, variant: "warning" }} />
                       : <span className="text-xs text-[var(--color-text-subtle)]">—</span>}
             </TableCell>
             <TableCell className="text-xs text-[var(--color-text-subtle)]">
@@ -205,9 +204,7 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, guideMap, canOff
             </dl>
             {gap > 0 && (
               <div className="mt-2">
-                <Badge variant="warning" size="sm">
-                  {gap} {gap === 1 ? "ítem pendiente de recepción en faena" : "ítems pendientes de recepción en faena"}
-                </Badge>
+                <MetaBadge meta={{ label: `${gap}${gap === 1 ? "ítem pendiente de recepción en faena" : "ítems pendientes de recepción en faena"}`, variant: "warning" }} />
               </div>
             )}
             {activeGuide ? (

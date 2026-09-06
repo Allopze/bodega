@@ -10,7 +10,7 @@ import { dteTipoLabel, estadoPlataformaLabel } from "@/lib/services/dte-portal/l
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { formatCLP } from "@/lib/utils"
 import { PeriodPicker } from "@/components/ui/period-picker"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
@@ -181,13 +181,13 @@ export default async function DteListPage({
                     <TableCell className="whitespace-nowrap font-mono tabular-nums text-[var(--color-text)]">{formatCLP(r.montoTotal)}</TableCell>
                     <TableCell className="whitespace-nowrap">
                       {r.estadoPlataforma
-                        ? <Badge variant={estadoPlataformaTone(r.estadoPlataforma)} size="sm">{estadoPlataformaLabel(r.estadoPlataforma)}</Badge>
+                        ? <MetaBadge meta={{ label: `${estadoPlataformaLabel(r.estadoPlataforma)}`, variant: estadoPlataformaTone(r.estadoPlataforma) }} />
                         : <span className="text-xs text-[var(--color-text-faint)]">—</span>}
                     </TableCell>
                     <TableCell className="hidden whitespace-nowrap lg:table-cell">
-                      {r.vinculoTipo === "oc" && <Badge variant="success" size="sm">Vinculado a OC</Badge>}
-                      {r.vinculoTipo === "combustible" && <Badge variant="info" size="sm">Vinculado a combustible</Badge>}
-                      {r.vinculoTipo === "ninguno" && <Badge variant="outline" size="sm">Sin vínculo</Badge>}
+                      {r.vinculoTipo === "oc" && <MetaBadge meta={{ label: "Vinculado a OC", variant: "success" }} />}
+                      {r.vinculoTipo === "combustible" && <MetaBadge meta={{ label: "Vinculado a combustible", variant: "info" }} />}
+                      {r.vinculoTipo === "ninguno" && <MetaBadge meta={{ label: "Sin vínculo", variant: "outline" }} />}
                     </TableCell>
                     <TableCell className="hidden whitespace-nowrap lg:table-cell">
                       {r.discrepancy !== null && r.discrepancy > DISCREPANCY_TOLERANCE_CLP

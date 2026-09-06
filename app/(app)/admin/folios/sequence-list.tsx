@@ -5,7 +5,7 @@ import { formatDateTime } from "@/lib/utils"
 import { useActionState, useEffect } from "react"
 import { PencilSimple, Warning } from "@phosphor-icons/react"
 import { DataTable } from "@/components/ui/data-table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { TableRow, TableCell } from "@/components/ui/table"
@@ -97,7 +97,7 @@ export function SequenceList({ rows }: SequenceListProps) {
               >
                 <ResponsiveDataListField label="Prefijo"><span className="font-mono">{r.prefix}</span></ResponsiveDataListField>
                 <ResponsiveDataListField label="Año"><span className="font-mono tabular-nums text-[var(--color-text)]">{r.year}</span></ResponsiveDataListField>
-                <ResponsiveDataListField label="Próximo folio"><Badge variant="default">{r.nextValue}</Badge></ResponsiveDataListField>
+                <ResponsiveDataListField label="Próximo folio"><MetaBadge meta={{ label: String(r.nextValue), variant: "default" }} /></ResponsiveDataListField>
                 <ResponsiveDataListField label="Actualización">{r.updatedAt ? formatDateTime(r.updatedAt) : "—"}</ResponsiveDataListField>
               </ResponsiveDataListCard>
             )
@@ -110,7 +110,7 @@ export function SequenceList({ rows }: SequenceListProps) {
                   <TableCell className="font-mono text-xs">{r.prefix}</TableCell>
                   <TableCell className="text-right">{r.year}</TableCell>
                   <TableCell className="text-right font-mono">
-                    <Badge variant="default">{r.nextValue}</Badge>
+                    <MetaBadge meta={{ label: String(r.nextValue), variant: "default" }} />
                   </TableCell>
                   <TableCell className="text-xs text-[var(--color-text-muted)]">
                     {r.updatedAt ? formatDateTime(r.updatedAt) : "—"}

@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { TableCell, TableRow } from "@/components/ui/table"
@@ -81,13 +81,13 @@ export function ChangeList({ changes, worksites, canManage }: Props) {
             <ResponsiveDataListCard
               title={<Link href={`/prevencion/gestion-cambio/${item.id}`} className="hover:underline">{item.title}</Link>}
               description={<span className="font-mono">{item.code}</span>}
-              status={<Badge variant={changeStatusBadgeVariant(item.status)}>{CHANGE_STATUS_LABELS[item.status] ?? item.status}</Badge>}
+              status={<MetaBadge meta={{ label: `${CHANGE_STATUS_LABELS[item.status] ?? item.status}`, variant: changeStatusBadgeVariant(item.status) }} />}
               actions={<Button asChild type="button" variant="ghost" size="sm"><Link href={`/prevencion/gestion-cambio/${item.id}`}>Ver cambio</Link></Button>}
             >
               <ResponsiveDataListField label="Faena">{item.worksiteName}</ResponsiveDataListField>
               <ResponsiveDataListField label="Tipo">{CHANGE_TYPE_LABELS[item.changeType] ?? item.changeType}</ResponsiveDataListField>
               <ResponsiveDataListField label="Riesgo">
-                <Badge variant={item.riskLevel === "critical" || item.riskLevel === "high" ? "danger" : "outline"}>{CHANGE_RISK_LEVEL_LABELS[item.riskLevel] ?? item.riskLevel}</Badge>
+                <MetaBadge meta={{ label: `${CHANGE_RISK_LEVEL_LABELS[item.riskLevel] ?? item.riskLevel}`, variant: item.riskLevel === "critical" || item.riskLevel === "high" ? "danger" : "outline" }} />
               </ResponsiveDataListField>
               <ResponsiveDataListField label="Dimensiones evaluadas">
                 <span className="font-mono tabular-nums text-[var(--color-text)]">{item.evaluatedCount} / {CHANGE_DIMENSIONS.length}</span>
@@ -107,12 +107,10 @@ export function ChangeList({ changes, worksites, canManage }: Props) {
               </TableCell>
               <TableCell className="text-sm">{CHANGE_TYPE_LABELS[item.changeType] ?? item.changeType}</TableCell>
               <TableCell>
-                <Badge variant={item.riskLevel === "critical" || item.riskLevel === "high" ? "danger" : "outline"}>
-                  {CHANGE_RISK_LEVEL_LABELS[item.riskLevel] ?? item.riskLevel}
-                </Badge>
+                <MetaBadge meta={{ label: `${CHANGE_RISK_LEVEL_LABELS[item.riskLevel] ?? item.riskLevel}`, variant: item.riskLevel === "critical" || item.riskLevel === "high" ? "danger" : "outline" }} />
               </TableCell>
               <TableCell>
-                <Badge variant={changeStatusBadgeVariant(item.status)}>{CHANGE_STATUS_LABELS[item.status] ?? item.status}</Badge>
+                <MetaBadge meta={{ label: `${CHANGE_STATUS_LABELS[item.status] ?? item.status}`, variant: changeStatusBadgeVariant(item.status) }} />
               </TableCell>
               <TableCell className="text-right font-mono text-sm tabular-nums">{item.evaluatedCount} / {CHANGE_DIMENSIONS.length}</TableCell>
             </TableRow>

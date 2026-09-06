@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { DotsThree, MagnifyingGlass } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -288,7 +288,7 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
                     <span className="font-mono text-xs text-[var(--color-text-subtle)]">{item.code}</span>
                     <h2 className="mt-0.5 text-sm font-semibold text-[var(--color-text)]">{item.templateName}</h2>
                   </div>
-                  <Badge variant={runStatusBadgeVariant(item.status)}>{inspectionTaskStatusLabel(item.status)}</Badge>
+                  <MetaBadge meta={{ label: `${inspectionTaskStatusLabel(item.status)}`, variant: runStatusBadgeVariant(item.status) }} />
                 </div>
                 <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                   <div className="col-span-2">
@@ -345,9 +345,7 @@ export function InspectionRunList({ runs, summary, page, pageSize, overdueProgra
                     {item.subjectLabel && <span className="block text-xs text-[var(--color-text-subtle)]">{item.subjectLabel}</span>}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={runStatusBadgeVariant(item.status)}>
-                      {inspectionTaskStatusLabel(item.status)}
-                    </Badge>
+                    <MetaBadge meta={{ label: `${inspectionTaskStatusLabel(item.status)}`, variant: runStatusBadgeVariant(item.status) }} />
                   </TableCell>
                   <TableCell className="text-sm tabular-nums">
                     {item.executedAt

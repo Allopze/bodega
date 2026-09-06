@@ -18,7 +18,7 @@ import {
 } from "@/lib/services/billing/labels"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { SyncControls } from "./sync-controls"
 import { ProviderHealthButton } from "./provider-health-button"
 import { ChipaxSettingsDialog } from "./chipax-settings-dialog"
@@ -119,7 +119,7 @@ export default async function BillingSyncPage() {
             >
               <header className="flex items-start justify-between gap-3">
                 <h3 className="text-sm font-semibold text-[var(--color-text)]">{card.label}</h3>
-                <Badge variant={card.status.tone}>{card.status.label}</Badge>
+                <MetaBadge meta={card.status} />
               </header>
 
               <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">{card.status.detail}</p>
@@ -255,7 +255,7 @@ export default async function BillingSyncPage() {
                         <td className="px-4 py-2.5 text-right tabular-nums text-[var(--color-text-muted)]">{run.conflictsDetected}</td>
                         <td className="px-4 py-2.5 text-right tabular-nums text-[var(--color-text-muted)]">{run.errorsCount}</td>
                         <td className="px-4 py-2.5">
-                          <Badge variant={status.tone}>{status.label}</Badge>
+                          <MetaBadge meta={status} />
                           {run.errorSummary && (
                             // El resumen puede traer decenas de mensajes concatenados
                             // con " | " y reventaba la celda a ~1.500px de alto

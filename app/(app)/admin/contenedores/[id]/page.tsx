@@ -3,7 +3,7 @@ import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import { can, requireAuth } from "@/lib/auth/can"
 import { serviceWorksiteScope } from "@/lib/auth/scope"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
@@ -51,9 +51,7 @@ export default async function ContenedorDetallePage({ params }: { params: Promis
             <p id="container-status-heading" className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Estado actual</p>
             <h2 className="mt-1 text-lg font-semibold text-[var(--color-text)]">{container.code}</h2>
           </div>
-          <Badge variant={containerStatusVariant(status)} dot>
-            {CONTAINER_STATUS_LABELS[status] ?? container.status}
-          </Badge>
+          <MetaBadge meta={{ label: `${CONTAINER_STATUS_LABELS[status] ?? container.status}`, variant: containerStatusVariant(status) }} dot />
         </div>
         <dl className="mt-5 grid gap-x-6 gap-y-4 sm:grid-cols-2">
           <div>

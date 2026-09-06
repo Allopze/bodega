@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
 import { TableCell, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge, metaFor } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { formatCLP, formatDate, formatQty } from "@/lib/utils"
 import { FUEL_STATEMENT_STATUS_LABELS as statusLabels } from "@/lib/combustibles/labels"
@@ -56,7 +56,7 @@ export function StatementsTable({ statements, today }: { statements: StatementRo
       emptyTitle="Sin resúmenes mensuales"
       emptyDescription='Crea uno desde "+ Nuevo resumen".'
       renderRow={(s) => {
-        const st = statusLabels[s.displayStatus] ?? { label: s.displayStatus, variant: "default" as const }
+        const st = metaFor(statusLabels, s.displayStatus)
         return (
           <TableRow key={s.id}>
             <TableCell className="font-mono">{s.month}</TableCell>
@@ -66,7 +66,7 @@ export function StatementsTable({ statements, today }: { statements: StatementRo
             <TableCell className="text-right font-mono text-[var(--color-success-ink)]">{formatCLP(s.paidAmount)}</TableCell>
             <TableCell className="text-right font-mono text-[var(--color-warning-ink)]">{formatCLP(s.pending)}</TableCell>
             <TableCell className="font-mono text-sm">{s.dueDate ? formatDate(s.dueDate) : "—"}</TableCell>
-            <TableCell><Badge variant={st.variant}>{st.label}</Badge></TableCell>
+            <TableCell><MetaBadge meta={st} /></TableCell>
             <TableCell>
               <Button asChild variant="ghost" size="sm">
                 <Link href={`/combustibles/cuenta-corriente/${s.id}`}>Ver</Link>

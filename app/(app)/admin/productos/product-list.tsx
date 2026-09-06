@@ -9,7 +9,7 @@ import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
 import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
 import { CategoryPanel, type CategoryForEdit } from "./category-panel"
 import { ProductForm } from "./product-form"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge, metaFor, type StateMetaInput } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -46,10 +46,11 @@ interface RecentBatch {
   rowCount: number | null
 }
 
-const STATUS_LABELS: Record<string, { label: string; variant: "info" | "warning" | "success" | "danger" | "default" }> = {
-  review: { label: "En revisión", variant: "warning" },
-  confirmed: { label: "Confirmado", variant: "success" },
-  cancelled: { label: "Cancelado", variant: "default" },
+/** Label + variante en un solo mapa (MetaBadge). */
+const STATUS_META: Record<string, StateMetaInput> = {
+  review:    { label: "En revisión", variant: "warning" },
+  confirmed: { label: "Confirmado",  variant: "success" },
+  cancelled: { label: "Cancelado",   variant: "default" },
 }
 type ProductFamilyRow = {
   id: string
@@ -203,8 +204,8 @@ export function ProductList({ products, categories, allSuppliers, units, templat
         <TableCell>
           <p className="line-clamp-2 text-sm font-medium text-[var(--color-text)]" title={p.name}>{p.name}</p>
           <div className="flex items-center gap-1 mt-0.5">
-            {p.isEpp           && <Badge variant="info"    size="sm">EPP</Badge>}
-            {p.requiresPrevencion && <Badge variant="warning" size="sm">Prevención</Badge>}
+            {p.isEpp           && <MetaBadge meta={{ label: "EPP", variant: "info" }} />}
+            {p.requiresPrevencion && <MetaBadge meta={{ label: "Prevención", variant: "warning" }} />}
             {warningsFor(p).length > 0 && (
               <Warning size={14} weight="fill" className="text-warning" alt={warningsFor(p).join(" · ")} />
             )}
@@ -233,9 +234,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
           {p.referencePrice != null ? formatCLP(p.referencePrice) : "—"}
         </TableCellNum>
         <TableCell>
-          <Badge variant={p.isActive ? "success" : "default"} dot className="w-20 justify-center">
-            {p.isActive ? "Activo" : "Inactivo"}
-          </Badge>
+          <MetaBadge meta={p.isActive ? { label: "Activo", variant: "success" } : { label: "Inactivo", variant: "default" }} dot className="w-20 justify-center" />
         </TableCell>
         <TableCell>
           <div className="flex items-center gap-2 justify-end">
@@ -274,8 +273,8 @@ export function ProductList({ products, categories, allSuppliers, units, templat
               </div>
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-1 ml-6">
-              {p.isEpp && <Badge variant="info" size="sm">EPP</Badge>}
-              {p.requiresPrevencion && <Badge variant="warning" size="sm">Prevención</Badge>}
+              {p.isEpp && <MetaBadge meta={{ label: "EPP", variant: "info" }} />}
+              {p.requiresPrevencion && <MetaBadge meta={{ label: "Prevención", variant: "warning" }} />}
               {warningsFor(p).length > 0 && (
                 <Warning size={14} weight="fill" className="text-warning" alt={warningsFor(p).join(" · ")} />
               )}
@@ -284,9 +283,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
               )}
             </div>
           </div>
-          <Badge variant={p.isActive ? "success" : "default"} dot className="shrink-0">
-            {p.isActive ? "Activo" : "Inactivo"}
-          </Badge>
+          <MetaBadge meta={p.isActive ? { label: "Activo", variant: "success" } : { label: "Inactivo", variant: "default" }} dot className="shrink-0" />
         </div>
 
         <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
@@ -477,13 +474,13 @@ export function ProductList({ products, categories, allSuppliers, units, templat
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {recentBatches.map((batch) => {
-              const statusInfo = STATUS_LABELS[batch.status] ?? { label: batch.status, variant: "default" as const }
+              const statusInfo = metaFor(STATUS_META, batch.status)
               return (
                 <div key={batch.id} className="group flex items-center justify-between w-full gap-2 px-4 py-3 text-sm rounded-[var(--radius-md)] bg-[var(--color-surface-2)] hover:bg-[var(--color-primary-tint)] transition-colors duration-[var(--duration-fast)]">
                   <div className="min-w-0 flex-1">
                     <p title={batch.fileName} className="text-[var(--color-text)] truncate font-medium">{batch.fileName}</p>
                     <div className="mt-1 flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
-                      <Badge variant={statusInfo.variant} size="sm">{statusInfo.label}</Badge>
+                      <MetaBadge meta={statusInfo} />
                       {batch.rowCount != null && <span>{batch.rowCount} filas</span>}
                       <span>{formatDateTime(batch.createdAt)}</span>
                     </div>
@@ -524,7 +521,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
               >
                 <span title={c.name} className="text-[var(--color-text)] truncate">{c.name}</span>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {c.isEpp && <Badge variant="info" size="sm">EPP</Badge>}
+                  {c.isEpp && <MetaBadge meta={{ label: "EPP", variant: "info" }} />}
                   <PencilSimple size={14} className="text-[var(--color-text-subtle)] group-hover:text-[var(--color-primary)] transition-colors" />
                 </div>
               </button>

@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Certificate } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DatePicker } from "@/components/ui/date-picker"
@@ -141,9 +141,7 @@ export function CertificationPanel({ committeeId, dossiers, selected, canCertify
           }))}
           className="w-56"
         />
-        <Badge variant={selected.status === "certified" ? "success" : selected.status === "rejected" ? "danger" : selected.status === "submitted" ? "warning" : "default"}>
-          {DOSSIER_STATUS_LABELS[selected.status] ?? selected.status}
-        </Badge>
+        <MetaBadge meta={{ label: DOSSIER_STATUS_LABELS[selected.status] ?? selected.status, variant: selected.status === "certified" ? "success" : selected.status === "rejected" ? "danger" : selected.status === "submitted" ? "warning" : "default" }} />
       </div>
 
       {selected.frozen && (
@@ -211,9 +209,7 @@ export function CertificationPanel({ committeeId, dossiers, selected, canCertify
                       {requirement.source === "auto" ? "Automático" : "Declarado"}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={STATUS_BADGE[requirement.status] ?? "default"}>
-                        {EVALUATION_STATUS_LABELS[requirement.status] ?? requirement.status}
-                      </Badge>
+                      <MetaBadge meta={{ label: EVALUATION_STATUS_LABELS[requirement.status] ?? requirement.status, variant: STATUS_BADGE[requirement.status] ?? "default" }} />
                       <span className="mt-1 block max-w-md text-xs text-[var(--color-text-subtle)]">{requirement.detail}</span>
                       {requirement.evidenceReference && (
                         <span className="mt-1 block max-w-md text-xs text-[var(--color-text-subtle)]">

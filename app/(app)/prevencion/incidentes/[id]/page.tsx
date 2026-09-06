@@ -5,7 +5,7 @@ import { ArrowLeft, DownloadSimple, LockKeyOpen } from "@phosphor-icons/react/di
 import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { formatDateTime } from "@/lib/utils"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/field"
@@ -88,7 +88,7 @@ export default async function IncidentDetailPage({ params, searchParams }: PageP
 
       <div className="space-y-5">
         <section className="grid gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 md:grid-cols-2 lg:grid-cols-4">
-          <div><p className="text-eyebrow">Estado</p><Badge className="mt-2" variant={incidentStatusBadgeVariant(incident.status)}>{INCIDENT_STATUS_LABELS[incident.status as IncidentStatus] ?? incident.status}</Badge></div>
+          <div><p className="text-eyebrow">Estado</p><MetaBadge meta={{ label: `${INCIDENT_STATUS_LABELS[incident.status as IncidentStatus] ?? incident.status}`, variant: incidentStatusBadgeVariant(incident.status) }} className="mt-2" /></div>
           <div><p className="text-eyebrow">Ocurrencia</p><p className="mt-2 text-sm font-medium">{dateTime(incident.occurredAt)}</p></div>
           <div><p className="text-eyebrow">Gravedad real</p><p className="mt-2 text-sm font-medium">{INCIDENT_SEVERITY_LABELS[incident.actualSeverity] ?? incident.actualSeverity}</p></div>
           <div><p className="text-eyebrow">Plazo crítico</p><p className={`mt-2 text-sm font-medium ${bundle.notifications.some((lane) => lane.status === "overdue") ? "text-[var(--color-danger)]" : ""}`}>{bundle.notifications.some((lane) => lane.status === "overdue") ? "Existe carril atrasado" : "Sin atraso abierto"}</p></div>
@@ -136,7 +136,7 @@ export default async function IncidentDetailPage({ params, searchParams }: PageP
           <aside className="space-y-5">
             <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
               <h2 className="font-semibold">Carriles legales</h2>
-              {bundle.notifications.length === 0 ? <p className="mt-2 text-sm text-[var(--color-text-subtle)]">Este tipo no genera DIAT/DIEP o notificación fatal-grave.</p> : <ul className="mt-3 space-y-3">{bundle.notifications.map((lane) => <li key={lane.id} className="border-b border-[var(--color-border)] pb-3 last:border-0"><div className="flex justify-between gap-2"><strong className="text-sm uppercase">{lane.notificationType.replaceAll("_", " ")}</strong><Badge variant={lane.status === "overdue" ? "danger" : lane.status === "pending" ? "warning" : "success"}>{notificationStatusLabel(lane.status)}</Badge></div><p className="mt-1 text-xs text-[var(--color-text-subtle)]">Plazo: {dateTime(lane.deadlineAt)}</p>{lane.evidenceReference && <p className="mt-1 break-all text-xs">Evidencia: {lane.evidenceReference}</p>}</li>)}</ul>}
+              {bundle.notifications.length === 0 ? <p className="mt-2 text-sm text-[var(--color-text-subtle)]">Este tipo no genera DIAT/DIEP o notificación fatal-grave.</p> : <ul className="mt-3 space-y-3">{bundle.notifications.map((lane) => <li key={lane.id} className="border-b border-[var(--color-border)] pb-3 last:border-0"><div className="flex justify-between gap-2"><strong className="text-sm uppercase">{lane.notificationType.replaceAll("_", " ")}</strong><MetaBadge meta={{ label: `${notificationStatusLabel(lane.status)}`, variant: lane.status === "overdue" ? "danger" : lane.status === "pending" ? "warning" : "success" }} /></div><p className="mt-1 text-xs text-[var(--color-text-subtle)]">Plazo: {dateTime(lane.deadlineAt)}</p>{lane.evidenceReference && <p className="mt-1 break-all text-xs">Evidencia: {lane.evidenceReference}</p>}</li>)}</ul>}
             </section>
 
             <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">

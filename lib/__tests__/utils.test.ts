@@ -23,6 +23,9 @@ import {
   getInitials,
   escapeHtml,
   matchesQuery,
+  MONTH_LABELS,
+  QUARTER_LABELS,
+  formatPricePerLiter,
 } from "@/lib/utils"
 
 describe("cn()", () => {
@@ -406,5 +409,43 @@ describe("subtractBusinessDays()", () => {
 
   it("con 0 días es la identidad", () => {
     expect(subtractBusinessDays("2026-08-16", 0)).toBe("2026-08-16")
+  })
+})
+
+/**
+ * `MONTH_LABELS` es la única fuente de rótulos de mes (vivía copiada en ~13
+ * archivos). El contrato que consumen todos los call sites: índice = mes - 1.
+ */
+describe("MONTH_LABELS", () => {
+  it("tiene 12 meses en orden calendario", () => {
+    expect(MONTH_LABELS).toHaveLength(12)
+    expect(MONTH_LABELS[0]).toBe("Ene")
+    expect(MONTH_LABELS[11]).toBe("Dic")
+  })
+})
+
+describe("QUARTER_LABELS", () => {
+  it("tiene 4 trimestres", () => {
+    expect(QUARTER_LABELS).toHaveLength(4)
+  })
+})
+
+/**
+ * `formatPricePerLiter` reemplaza dos copias locales de los charts de
+ * combustibles. Debe respetar el mismo contrato de formato que el resto del
+ * dinero: miles con separador es-CL y sin decimales.
+ */
+describe("formatPricePerLiter()", () => {
+  it("formato `$1.234/L` con separador de miles es-CL", () => {
+    expect(formatPricePerLiter(1234)).toBe("$1.234/L")
+  })
+
+  it("redondea a pesos enteros", () => {
+    expect(formatPricePerLiter(1234.6)).toBe("$1.235/L")
+  })
+
+  it("devuelve VALUE_MISSING para valores no representables", () => {
+    expect(formatPricePerLiter(NaN)).toBe("—")
+    expect(formatPricePerLiter(Infinity)).toBe("—")
   })
 })

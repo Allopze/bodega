@@ -1,18 +1,19 @@
 "use client"
 
 import * as React from "react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge, metaFor, type StateMetaInput } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { FileText } from "@phosphor-icons/react"
 import { formatDate, formatQty } from "@/lib/utils"
 import type { StockDocumentRow, StockCountDetailItem } from "@/lib/services/stock-documents"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
-const KIND_META: Record<string, { label: string; variant: "neutral" | "warning" | "success" | "info" }> = {
-  ajuste:     { label: "Ajuste",      variant: "neutral" },
-  desecho:    { label: "Baja",        variant: "warning" },
-  devolucion: { label: "Devolución",  variant: "success" },
-  conteo:     { label: "Conteo",      variant: "info" },
+/** Label + variante en un solo mapa (MetaBadge): el color lo decide el tipo. */
+const KIND_META: Record<string, StateMetaInput> = {
+  ajuste:     { label: "Ajuste",     variant: "neutral" },
+  desecho:    { label: "Baja",       variant: "warning" },
+  devolucion: { label: "Devolución", variant: "success" },
+  conteo:     { label: "Conteo",     variant: "info"    },
 }
 
 export interface DocumentsTableProps {
@@ -58,7 +59,7 @@ export function DocumentsTable({ documents, detail, highlightId }: DocumentsTabl
           </TableHeader>
           <TableBody>
             {documents.map((doc) => {
-              const meta = KIND_META[doc.kind] ?? { label: doc.kind, variant: "neutral" as const }
+              const meta = metaFor(KIND_META, doc.kind)
               const isCount = doc.kind === "conteo"
               const isOpen = expanded === doc.id
               return (
@@ -82,7 +83,7 @@ export function DocumentsTable({ documents, detail, highlightId }: DocumentsTabl
                       ) : doc.folio}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={meta.variant}>{meta.label}</Badge>
+                      <MetaBadge meta={meta} />
                     </TableCell>
                     <TableCell className="text-xs tabular-nums text-[var(--color-text-muted)]">{formatDate(doc.at)}</TableCell>
                     <TableCell className="text-xs text-[var(--color-text-muted)]">{doc.worksiteName}</TableCell>
@@ -159,7 +160,7 @@ export function DocumentsTable({ documents, detail, highlightId }: DocumentsTabl
 
       <div className="grid gap-3 p-5 md:hidden">
         {documents.map((doc) => {
-          const meta = KIND_META[doc.kind] ?? { label: doc.kind, variant: "neutral" as const }
+          const meta = metaFor(KIND_META, doc.kind)
           return (
             <article key={doc.id} className="rounded-[var(--radius-lg)] border border-[var(--color-border)] p-4">
               <div className="flex items-start justify-between gap-3">
@@ -167,7 +168,7 @@ export function DocumentsTable({ documents, detail, highlightId }: DocumentsTabl
                   <p className="font-mono text-xs font-semibold text-[var(--color-text)]">{doc.folio}</p>
                   <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">{doc.worksiteName}</p>
                 </div>
-                <Badge variant={meta.variant} className="shrink-0">{meta.label}</Badge>
+                <MetaBadge meta={meta} className="shrink-0" />
               </div>
               <p className="mt-2 text-xs text-[var(--color-text-muted)]">
                 {doc.productName ? `${doc.productName} · ` : ""}{doc.reason ?? "—"}

@@ -4,7 +4,7 @@ import * as React from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { formatDate, formatDateTime } from "@/lib/utils"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { X } from "@phosphor-icons/react"
@@ -178,7 +178,7 @@ export function AssetAssignments({ assetId, rows, activeAssignment, canManage, w
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs font-semibold text-[var(--color-primary)]">{row.code}</span>
-                <Badge variant={row.returnedAt ? "default" : "info"}>{row.returnedAt ? "Devuelto" : "Vigente"}</Badge>
+                <MetaBadge meta={{ label: `${row.returnedAt ? "Devuelto" : "Vigente"}`, variant: row.returnedAt ? "default" : "info" }} />
                 <span className="text-xs text-[var(--color-text-muted)]">{IT_ASSIGNMENT_KIND_META[row.kind] ?? row.kind}</span>
               </div>
               <div className="flex items-center gap-3">
@@ -214,9 +214,7 @@ export function AssetAssignments({ assetId, rows, activeAssignment, canManage, w
                 <dt className="text-xs text-[var(--color-text-muted)]">Accesorios</dt>
                 <dd className="mt-1 flex flex-wrap gap-1.5">
                   {row.accessories.map((acc) => (
-                    <Badge key={acc.id} variant={acc.returnedAt ? "default" : "outline"}>
-                      {acc.name}{acc.returnedAt ? " (devuelto)" : ""}
-                    </Badge>
+                    <MetaBadge key={acc.id} meta={{ label: `${acc.name}${acc.returnedAt ? " (devuelto)" : ""}`, variant: acc.returnedAt ? "default" : "outline" }} />
                   ))}
                 </dd>
               </div>

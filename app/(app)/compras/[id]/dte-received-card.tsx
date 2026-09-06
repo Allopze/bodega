@@ -3,8 +3,8 @@
 import { useState, useTransition } from "react"
 import { FileXls, Receipt } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
+import { MetaBadge, metaFor, type StateMetaInput } from "@/components/states/state-badge"
 import { formatCLP } from "@/lib/utils"
 import { toast } from "@/lib/toast"
 import { dteTipoLabel } from "@/lib/services/dte-portal/labels"
@@ -22,7 +22,7 @@ export interface DteReceivedRow {
   estadoSii: string | null
 }
 
-const ESTADO_SII_LABEL: Record<string, { label: string; variant: "success" | "warning" | "danger" | "neutral" }> = {
+const ESTADO_SII_META: Record<string, StateMetaInput> = {
   aceptado: { label: "Aceptado SII", variant: "success" },
   enviado: { label: "Enviado SII", variant: "neutral" },
   pendiente_envio: { label: "Pendiente envío SII", variant: "warning" },
@@ -61,7 +61,7 @@ function DteReceivedRow({ doc }: { doc: DteReceivedRow }) {
   const [isPending, startTransition] = useTransition()
   const [detail, setDetail] = useState<DteXmlDetail | null>(null)
 
-  const estadoSii = doc.estadoSii ? ESTADO_SII_LABEL[doc.estadoSii] : null
+  const estadoSii = doc.estadoSii ? metaFor(ESTADO_SII_META, doc.estadoSii) : null
 
   function handleViewXml() {
     startTransition(async () => {
@@ -85,7 +85,7 @@ function DteReceivedRow({ doc }: { doc: DteReceivedRow }) {
             {doc.razonSocialEmisor} · {doc.rutEmisor}
           </p>
           {estadoSii && (
-            <Badge variant={estadoSii.variant} size="sm" className="mt-1.5">{estadoSii.label}</Badge>
+            <MetaBadge meta={estadoSii} className="mt-1.5" />
           )}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-2">

@@ -3,7 +3,7 @@ import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { getCapaActionBundle, listAssignableCapaUsers, listCapaWorksites, type CapaStatus } from "@/lib/services/prevention-capa"
@@ -52,7 +52,7 @@ export default async function CapaDetailPage({ params }: { params: Promise<{ id:
           { label: "Acciones CAPA", href: "/prevencion/capa" },
           { label: bundle.action.code },
         ]} />}
-        headerActions={<Badge variant={capaStatusBadgeVariant(bundle.action.status)}>{capaStatusLabel(bundle.action.status)}</Badge>}
+        headerActions={<MetaBadge meta={{ label: `${capaStatusLabel(bundle.action.status)}`, variant: capaStatusBadgeVariant(bundle.action.status) }} />}
       />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
@@ -92,7 +92,7 @@ export default async function CapaDetailPage({ params }: { params: Promise<{ id:
                   <li key={item.id} className="border-l-2 border-[var(--color-border-strong)] pl-3 text-sm">
                     <p className="flex flex-wrap items-center gap-2 font-medium">
                       <span>{capaEvidenceKindLabel(item.kind)} · {item.reference}</span>
-                      {item.status === "superseded" && <Badge variant="default">Supersedida</Badge>}
+                      {item.status === "superseded" && <MetaBadge meta={{ label: "Supersedida", variant: "default" }} />}
                     </p>
                     <p className="text-xs text-[var(--color-text-subtle)]">{item.description || "Sin descripción"} · {formatDateTime(item.createdAt)}</p>
                     {item.supersessionReason && (

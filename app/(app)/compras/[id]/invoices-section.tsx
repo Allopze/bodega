@@ -16,7 +16,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { formatCLP, formatDate, formatDateTime } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import { areEquivalentUnits, matchInvoiceItemsToPurchaseOrderItems } from "@/lib/services/purchasing-module/invoice-item-matching"
@@ -1161,18 +1161,16 @@ function DteResolutionDialog({
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <Badge variant={proposed?.matchType === "supplier_alias" ? "success" : proposed?.matchType === "unit_mismatch" || proposed?.matchType === "ambiguous" ? "warning" : "default"}>
-                        {dteMatchLabel(proposed?.matchType ?? "none")}
-                      </Badge>
+                      <MetaBadge meta={{ label: `${dteMatchLabel(proposed?.matchType ?? "none")}`, variant: proposed?.matchType === "supplier_alias" ? "success" : proposed?.matchType === "unit_mismatch" || proposed?.matchType === "ambiguous" ? "warning" : "default" }} />
                       {/* La cifra existía en `proposedLinks` y sólo se resumía
                           en la fila ("N cantidad(es) excedida(s)"), lejos del
                           select donde se decide. Facturar más de lo que queda
                           por facturar es el error caro de esta pantalla. */}
                       {proposed?.quantityStatus === "over" && (
-                        <Badge variant="warning">Excede lo pendiente</Badge>
+                        <MetaBadge meta={{ label: "Excede lo pendiente", variant: "warning" }} />
                       )}
                       {proposed?.quantityStatus === "under" && (
-                        <Badge variant="info">Cubre parte de la línea</Badge>
+                        <MetaBadge meta={{ label: "Cubre parte de la línea", variant: "info" }} />
                       )}
                     </div>
                   </div>
@@ -1270,20 +1268,15 @@ function DteCandidateRow({
           {/* Va antes que el monto: nombrar lo que el documento DICE pesa más
               que lo que dedujimos comparando cifras. */}
           {doc.referencesOrder && (
-            <Badge variant="success" className="ml-2">Cita esta OC</Badge>
+            <MetaBadge meta={{ label: "Cita esta OC", variant: "success" }} className="ml-2" />
           )}
           {/* La marca va sobre el monto, que es lo que la distingue.
               Se nombra lo que se comparó en vez de decir "sugerido":
               el operador tiene que poder discutirla. */}
           {doc.amountMatches && (
-            <Badge variant="success" className="ml-2">Calza con el saldo</Badge>
+            <MetaBadge meta={{ label: "Calza con el saldo", variant: "success" }} className="ml-2" />
           )}
-          <Badge
-            variant={doc.confidence === "high" ? "success" : doc.confidence === "medium" ? "info" : doc.confidence === "low" ? "warning" : "default"}
-            className="ml-2"
-          >
-            {doc.confidence === "high" ? "Confianza alta" : doc.confidence === "medium" ? "Confianza media" : doc.confidence === "low" ? "Confianza baja" : "Pendiente de análisis"}
-          </Badge>
+          <MetaBadge meta={{ label: `${doc.confidence === "high" ? "Confianza alta" : doc.confidence === "medium" ? "Confianza media" : doc.confidence === "low" ? "Confianza baja" : "Pendiente de análisis"}`, variant: doc.confidence === "high" ? "success" : doc.confidence === "medium" ? "info" : doc.confidence === "low" ? "warning" : "default" }} className="ml-2" />
         </span>
         <div className="flex items-center gap-1.5">
           <Button asChild variant="ghost" size="sm">

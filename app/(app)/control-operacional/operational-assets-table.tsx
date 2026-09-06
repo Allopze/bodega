@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { formatCLP } from "@/lib/utils"
@@ -51,9 +51,7 @@ const renderMobileCard = (asset: OperationalAsset) => (
         <p className="font-mono text-sm font-semibold">{asset.code}</p>
         <p className="text-sm text-[var(--color-text-muted)]">{asset.name}</p>
       </div>
-      <Badge variant={statusVariant(asset.operationalStatusLabel)}>
-        {asset.operationalStatusLabel}
-      </Badge>
+      <MetaBadge meta={{ label: asset.operationalStatusLabel, variant: statusVariant(asset.operationalStatusLabel) }} />
     </div>
     <dl className="mt-3 grid grid-cols-3 gap-2 text-xs">
       <div>
@@ -94,9 +92,7 @@ export function OperationalAssetsTable({
       </TableCell>
       <TableCell>{asset.worksiteName}</TableCell>
       <TableCell>
-        <Badge variant={statusVariant(asset.operationalStatusLabel)}>
-          {asset.operationalStatusLabel}
-        </Badge>
+        <MetaBadge meta={{ label: asset.operationalStatusLabel, variant: statusVariant(asset.operationalStatusLabel) }} />
       </TableCell>
       <TableCell className="text-right font-mono">{asset.openMaintenanceCount}</TableCell>
       <TableCell className="text-right font-mono">{asset.inspectionCount}</TableCell>

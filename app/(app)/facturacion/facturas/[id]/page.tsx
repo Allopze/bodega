@@ -28,7 +28,7 @@ import {
 import { PageContainer } from "@/components/ui/page-container"
 import { Table, TableRoot } from "@/components/ui/table"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { InvoiceInternalPanel } from "./internal-panel"
 
 export const dynamic = "force-dynamic"
@@ -108,10 +108,10 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
         }
         actions={
           <div className="flex flex-wrap gap-1.5">
-            <Badge variant={document.tone}>{document.label}</Badge>
-            <Badge variant={payment.tone}>{payment.label}</Badge>
-            {invoice.collectionStatus !== "none" && <Badge variant={collection.tone}>{collection.label}</Badge>}
-            {due && <Badge variant={due.tone}>{due.label}</Badge>}
+            <MetaBadge meta={document} />
+            <MetaBadge meta={payment} />
+            {invoice.collectionStatus !== "none" && <MetaBadge meta={collection} />}
+            {due && <MetaBadge meta={due} />}
           </div>
         }
       />
@@ -236,8 +236,8 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
                           )}
                         </div>
                         <div className="flex shrink-0 items-center gap-1.5">
-                          {confidence && <Badge variant={confidence.tone}>{confidence.label}</Badge>}
-                          <Badge variant={status.tone}>{status.label}</Badge>
+                          {confidence && <MetaBadge meta={confidence} />}
+                          <MetaBadge meta={status} />
                         </div>
                       </div>
                     </li>
@@ -282,8 +282,8 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
                         )}
                       </div>
                       <div className="flex items-center gap-1.5">
-                        {confidence && <Badge variant={confidence.tone}>{confidence.label}</Badge>}
-                        <Badge variant={status.tone}>{status.label}</Badge>
+                        {confidence && <MetaBadge meta={confidence} />}
+                        <MetaBadge meta={status} />
                       </div>
                     </li>
                   )
@@ -314,7 +314,7 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
                         <p className="font-medium text-[var(--color-text)]">
                           {actionTypeLabel(entry.action.actionType)} · {formatDate(entry.action.actionDate)}
                         </p>
-                        <Badge variant={outcome.tone}>{outcome.label}</Badge>
+                        <MetaBadge meta={outcome} />
                       </div>
                       {entry.action.commitmentDate && (
                         <p className="text-xs text-[var(--color-text-muted)]">

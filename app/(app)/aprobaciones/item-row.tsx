@@ -2,10 +2,9 @@
 
 import * as React from "react"
 import { CheckCircle, XCircle } from "@phosphor-icons/react"
-import { StateBadge } from "@/components/states/state-badge"
+import { MetaBadge, StateBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Badge } from "@/components/ui/badge"
 import { formatQty, formatDate } from "@/lib/utils"
 import { PriorityBadge } from "@/components/ui/priority-badge"
 import type { ApprovalItem } from "./types"
@@ -113,9 +112,7 @@ export function ItemRow({
               producto. `default` es prose y neutro. */}
           {(item.suggestedSupplierName || item.supplierHint) && (
             <div className="mt-1 flex gap-1.5 flex-wrap items-center">
-              <Badge variant="default" size="sm" className="shrink-0">
-                Sugerido: {item.suggestedSupplierName || item.supplierHint}
-              </Badge>
+              <MetaBadge meta={{ label: `Sugerido: ${item.suggestedSupplierName || item.supplierHint}`, variant: "default" }} className="shrink-0" />
             </div>
           )}
 

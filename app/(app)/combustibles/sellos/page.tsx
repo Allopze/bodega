@@ -13,7 +13,7 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { formatDateTime } from "@/lib/utils"
 import { FilterSelect } from "../filter-select"
@@ -104,9 +104,9 @@ export default async function SealHistoryPage({ searchParams }: { searchParams: 
                 <TableCell className="font-mono">{m.removedSeal ?? "—"}</TableCell>
                 <TableCell className="font-mono">
                   {m.installedSeal ?? "—"}
-                  {m.installedRepeated && <Badge variant="warning" size="sm" className="ml-1">repetido</Badge>}
+                  {m.installedRepeated && <MetaBadge meta={{ label: "repetido", variant: "warning" }} className="ml-1" />}
                 </TableCell>
-                <TableCell className="text-xs">{m.nextRemovedBy && m.nextRemovedAt ? `${m.nextRemovedBy} · ${formatDateTime(m.nextRemovedAt)}` : m.continuityBroken ? <Badge variant="warning" size="sm">sin siguiente</Badge> : "—"}</TableCell>
+                <TableCell className="text-xs">{m.nextRemovedBy && m.nextRemovedAt ? `${m.nextRemovedBy} · ${formatDateTime(m.nextRemovedAt)}` : m.continuityBroken ? <MetaBadge meta={{ label: "sin siguiente", variant: "warning" }} /> : "—"}</TableCell>
                 <TableCell><Link href={`/combustibles/tae/${m.submissionId}`} className="text-xs text-(--color-primary-ink) hover:underline">Ver carga</Link></TableCell>
               </TableRow>
             ))}

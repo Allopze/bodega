@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import {
   TableRoot, Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
@@ -104,13 +104,9 @@ export function EvaluationList({ workerGroups, canCreate }: Props) {
                 <TableCell>
                   {prevEval ? (
                     <div className="flex flex-col gap-1 items-start">
-                      <Badge variant={estadoBadgeVariant(prevEval.estado)}>
-                        {estadoLabel(prevEval.estado)}
-                      </Badge>
+                      <MetaBadge meta={{ label: `${estadoLabel(prevEval.estado)}`, variant: estadoBadgeVariant(prevEval.estado) }} />
                       {prevEval.resultadoFinal && (
-                        <Badge variant={resultadoBadgeVariant(prevEval.resultadoFinal)}>
-                          {RESULTADO_LABELS[prevEval.resultadoFinal] ?? prevEval.resultadoFinal}
-                        </Badge>
+                        <MetaBadge meta={{ label: `${RESULTADO_LABELS[prevEval.resultadoFinal] ?? prevEval.resultadoFinal}`, variant: resultadoBadgeVariant(prevEval.resultadoFinal) }} />
                       )}
                     </div>
                   ) : (
@@ -120,13 +116,9 @@ export function EvaluationList({ workerGroups, canCreate }: Props) {
                 <TableCell>
                   {adminEval ? (
                     <div className="flex flex-col gap-1 items-start">
-                      <Badge variant={estadoBadgeVariant(adminEval.estado)}>
-                        {estadoLabel(adminEval.estado)}
-                      </Badge>
+                      <MetaBadge meta={{ label: `${estadoLabel(adminEval.estado)}`, variant: estadoBadgeVariant(adminEval.estado) }} />
                       {adminEval.resultadoFinal && (
-                        <Badge variant={resultadoBadgeVariant(adminEval.resultadoFinal)}>
-                          {RESULTADO_LABELS[adminEval.resultadoFinal] ?? adminEval.resultadoFinal}
-                        </Badge>
+                        <MetaBadge meta={{ label: `${RESULTADO_LABELS[adminEval.resultadoFinal] ?? adminEval.resultadoFinal}`, variant: resultadoBadgeVariant(adminEval.resultadoFinal) }} />
                       )}
                     </div>
                   ) : (
@@ -136,13 +128,9 @@ export function EvaluationList({ workerGroups, canCreate }: Props) {
                 <TableCell>
                   {condEval ? (
                     <div className="flex flex-col gap-1 items-start">
-                      <Badge variant={estadoBadgeVariant(condEval.estado)}>
-                        {estadoLabel(condEval.estado)}
-                      </Badge>
+                      <MetaBadge meta={{ label: `${estadoLabel(condEval.estado)}`, variant: estadoBadgeVariant(condEval.estado) }} />
                       {condEval.resultadoFinal && (
-                        <Badge variant={resultadoBadgeVariant(condEval.resultadoFinal)}>
-                          {RESULTADO_LABELS[condEval.resultadoFinal] ?? condEval.resultadoFinal}
-                        </Badge>
+                        <MetaBadge meta={{ label: `${RESULTADO_LABELS[condEval.resultadoFinal] ?? condEval.resultadoFinal}`, variant: resultadoBadgeVariant(condEval.resultadoFinal) }} />
                       )}
                     </div>
                   ) : (

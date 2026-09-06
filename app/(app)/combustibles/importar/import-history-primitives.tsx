@@ -1,10 +1,10 @@
 "use client"
 
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export function ImportBatchStatusBadge({ status }: { status: string }) {
-  return <Badge variant={status === "revertido" ? "danger" : "success"} size="sm">{status === "revertido" ? "Revertido" : "Importado"}</Badge>
+  return <MetaBadge meta={status === "revertido" ? { label: "Revertido", variant: "danger" } : { label: "Importado", variant: "success" }} />
 }
 
 export function ImportStatusFilter({ value, onValueChange }: { value: string; onValueChange: (value: string) => void }) {

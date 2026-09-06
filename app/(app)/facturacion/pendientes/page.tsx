@@ -16,7 +16,7 @@ import { formatPeriod, proposalStatusLabel } from "@/lib/services/billing/labels
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { ProposalDialog } from "../propuestas/proposal-dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
@@ -187,10 +187,10 @@ export default async function PendingBillingPage() {
                               (UI/UX 2026-08-05, M4). Con propuesta, el detalle sí
                               varía y se muestra. */}
                           {proposalStatus
-                            ? <Badge variant={proposalStatus.tone}>{proposalStatus.label}</Badge>
+                            ? <MetaBadge meta={proposalStatus} />
                             : (
                               <span title={[item.reason, item.blocker].filter(Boolean).join(" · ")}>
-                                <Badge variant="neutral">Sin propuesta</Badge>
+                                <MetaBadge meta={{ label: "Sin propuesta", variant: "neutral" }} />
                               </span>
                             )}
                           {proposalStatus && (

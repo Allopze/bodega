@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react"
 import { DatePicker } from "@/components/ui/date-picker"
 import { buttonVariants } from "@/components/ui/button"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
@@ -55,6 +56,9 @@ export function InvoiceInternalPanel({
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [clientId, setClientId] = useState("")
+  // ConfirmDialog en vez de confirm() nativo (misma sustitución que el resto
+  // de facturación): el nativo no se puede estilizar, traducir ni probar.
+  const [discardingLink, setDiscardingLink] = useState<{ id: string; label: string } | null>(null)
 
   // Solo se ofrecen contratos del cliente elegido: un contrato de otro cliente
   // sería un vínculo inconsistente, y el backend lo rechaza igual.
@@ -107,10 +111,7 @@ export function InvoiceInternalPanel({
                 <button
                   type="button"
                   disabled={isPending}
-                  onClick={() => {
-                    if (!confirm("¿Descartar este vínculo? Queda registrado en el historial.")) return
-                    run(() => rejectInvoiceLinkAction(link.id))
-                  }}
+                  onClick={() => setDiscardingLink({ id: link.id, label: link.label })}
                   className="text-[var(--color-text-muted)] hover:underline"
                 >
                   Descartar
@@ -247,6 +248,24 @@ export function InvoiceInternalPanel({
           Guardar datos internos
         </button>
       </form>
+
+      <ConfirmDialog
+        open={discardingLink !== null}
+        onOpenChange={(open) => !open && setDiscardingLink(null)}
+        title="Descartar vínculo"
+        description={
+          discardingLink
+            ? `Se descartará el vínculo con "${discardingLink.label}". Queda registrado en el historial.`
+            : "Queda registrado en el historial."
+        }
+        confirmLabel="Descartar"
+        variant="warning"
+        onConfirm={() => {
+          if (!discardingLink) return
+          run(() => rejectInvoiceLinkAction(discardingLink.id))
+          setDiscardingLink(null)
+        }}
+      />
     </section>
   )
 }

@@ -4,8 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { MagnifyingGlass, ShieldCheck } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
-import { StateBadge } from "@/components/states/state-badge"
+import { MetaBadge, StateBadge } from "@/components/states/state-badge"
 import { Input } from "@/components/ui/input"
 import {
   TableRoot, Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
@@ -280,7 +279,7 @@ export function PpaList({
                         <Link href={href} className="block">
                           {r.workerName}
                           {r.manualIdentificacion && (
-                            <Badge variant="warning" size="sm" className="ml-2">Manual</Badge>
+                            <MetaBadge meta={{ label: "Manual", variant: "warning" }} className="ml-2" />
                           )}
                         </Link>
                       </TableCell>
@@ -319,7 +318,7 @@ export function PpaList({
                   <span className="font-medium">
                     {r.workerName}
                     {r.manualIdentificacion && (
-                      <Badge variant="warning" size="sm" className="ml-2">Manual</Badge>
+                      <MetaBadge meta={{ label: "Manual", variant: "warning" }} className="ml-2" />
                     )}
                   </span>
                   <StateBadge state={r.estado} entity="ppa" size="sm" />

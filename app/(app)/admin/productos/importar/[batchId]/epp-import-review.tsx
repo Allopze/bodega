@@ -3,7 +3,7 @@
 import { useActionState, useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { CheckCircle, WarningCircle, XCircle, CaretDown, CaretUp, Info } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cancelEppImportBatchAction, confirmEppImportBatchAction, reviewEppImportRowAction } from "../../actions"
@@ -216,8 +216,8 @@ export function EppImportReview({ batch }: { batch: { id: string; status: string
           </p>
         </div>
         <div className="flex gap-2">
-          <Badge variant={blocked ? "danger" : "success"}>{blocked} bloqueantes</Badge>
-          <Badge variant={pending ? "warning" : "success"}>{pending} por resolver</Badge>
+          <MetaBadge meta={{ label: `${blocked} bloqueantes`, variant: blocked ? "danger" : "success" }} />
+          <MetaBadge meta={{ label: `${pending} por resolver`, variant: pending ? "warning" : "success" }} />
         </div>
       </div>
 
@@ -558,7 +558,7 @@ function DetailPanel({
 }
 
 function SeverityBadge({ severity, decision, blockingCount }: { severity: string; decision: string; blockingCount: number }) {
-  if (severity === "blocking" || blockingCount > 0) return <Badge variant="danger"><XCircle size={13} />{blockingCount} bloqueo{blockingCount !== 1 ? "s" : ""}</Badge>
-  if (severity === "warning") return <Badge variant="warning"><WarningCircle size={13} />Revisar</Badge>
-  return <Badge variant="success"><CheckCircle size={13} />{decision === "create" ? "Lista" : decision}</Badge>
+  if (severity === "blocking" || blockingCount > 0) return <MetaBadge meta={{ label: `${blockingCount} bloqueo${blockingCount !== 1 ? "s" : ""}`, variant: "danger" }}><XCircle size={13} />{blockingCount} bloqueo{blockingCount !== 1 ? "s" : ""}</MetaBadge>
+  if (severity === "warning") return <MetaBadge meta={{ label: "Revisar", variant: "warning" }}><WarningCircle size={13} />Revisar</MetaBadge>
+  return <MetaBadge meta={{ label: decision === "create" ? "Lista" : decision, variant: "success" }}><CheckCircle size={13} />{decision === "create" ? "Lista" : decision}</MetaBadge>
 }

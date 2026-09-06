@@ -3,7 +3,7 @@
 import * as React from "react"
 import { PencilSimple } from "@phosphor-icons/react"
 import { DataTable } from "@/components/ui/data-table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { TableRow, TableCell } from "@/components/ui/table"
@@ -55,7 +55,7 @@ export function RoleList({ roles, groupedPermissions, permissions }: RoleListPro
             <ResponsiveDataListCard
               title={r.label}
               description={r.description}
-              status={r.isGlobal ? <Badge variant="info">Global</Badge> : <Badge variant="default">Faena</Badge>}
+              status={r.isGlobal ? <MetaBadge meta={{ label: "Global", variant: "info" }} /> : <MetaBadge meta={{ label: "Faena", variant: "default" }} />}
               actions={
                 <Button type="button" variant="ghost" size="sm" onClick={() => openEdit(r)}>
                   <PencilSimple size={15} />Editar
@@ -91,8 +91,8 @@ export function RoleList({ roles, groupedPermissions, permissions }: RoleListPro
                 </TableCell>
                 <TableCell>
                   {r.isGlobal
-                    ? <Badge variant="info">Global</Badge>
-                    : <Badge variant="default">Faena</Badge>}
+                    ? <MetaBadge meta={{ label: "Global", variant: "info" }} />
+                    : <MetaBadge meta={{ label: "Faena", variant: "default" }} />}
                 </TableCell>
                 <TableCell className="text-right font-mono text-xs">{r.permissionCount}</TableCell>
                 <TableCell>

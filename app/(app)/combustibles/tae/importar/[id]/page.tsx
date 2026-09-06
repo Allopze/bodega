@@ -8,7 +8,7 @@ import { worksiteScopeSql } from "@/lib/auth/scope"
 import { taeLedgerIsGlobal } from "@/lib/combustibles/tae-import-ledger"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatDateTime, formatQty } from "@/lib/utils"
@@ -119,7 +119,7 @@ export default async function TaeImportBatchDetailPage({ params }: { params: Pro
       />
 
       <Card className="mb-5">
-        <CardHeader className="flex flex-row items-center justify-between"><CardTitle>{isGlobal ? "Resumen del lote" : "Resumen de tus faenas en el lote"}</CardTitle><Badge variant={batch.status === "reverted" ? "danger" : "success"}>{batch.status === "reverted" ? "Revertido" : "Importado"}</Badge></CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between"><CardTitle>{isGlobal ? "Resumen del lote" : "Resumen de tus faenas en el lote"}</CardTitle><MetaBadge meta={{ label: `${batch.status === "reverted" ? "Revertido" : "Importado"}`, variant: batch.status === "reverted" ? "danger" : "success" }} /></CardHeader>
         <CardContent className="grid grid-cols-2 gap-4 md:grid-cols-4">
           {isGlobal && <Field label="Filas totales" value={formatQty(batch.totalRows)} />}
           <Field label="Importadas" value={formatQty(scopedSummary?.validRows ?? batch.validRows)} />
@@ -140,7 +140,7 @@ export default async function TaeImportBatchDetailPage({ params }: { params: Pro
             <Table className="min-w-[960px]">
               <TableHeader><TableRow><TableHead>Fecha carga</TableHead><TableHead>Faena</TableHead><TableHead>Equipo</TableHead><TableHead>Producto</TableHead><TableHead>Conductor</TableHead><TableHead>Supervisor</TableHead><TableHead>Medidor</TableHead><TableHead className="text-right">Litros</TableHead><TableHead>Estado</TableHead></TableRow></TableHeader>
               <TableBody>
-                {batch.submissions.map((submission) => <TableRow key={submission.id}><TableCell>{formatDateTime(submission.loadedAt)}</TableCell><TableCell>{submission.worksite?.name ?? "—"}</TableCell><TableCell>{submission.vehicle?.code ?? submission.equipmentCodeSnapshot}{(submission.vehicle?.plate ?? submission.plateSnapshot) ? ` · ${submission.vehicle?.plate ?? submission.plateSnapshot}` : ""}</TableCell><TableCell>{submission.product?.name ?? "—"}</TableCell><TableCell>{submission.driverNameSnapshot}</TableCell><TableCell>{submission.supervisorNameSnapshot}</TableCell><TableCell className="font-mono">{submission.meterReading == null ? "—" : formatQty(Number(submission.meterReading))}</TableCell><TableCell className="text-right font-mono">{formatQty(Number(submission.liters), "L")}</TableCell><TableCell><Badge variant={submission.status === "observed" ? "warning" : "success"}>{submission.status === "observed" ? "Observada" : "Validada"}</Badge></TableCell></TableRow>)}
+                {batch.submissions.map((submission) => <TableRow key={submission.id}><TableCell>{formatDateTime(submission.loadedAt)}</TableCell><TableCell>{submission.worksite?.name ?? "—"}</TableCell><TableCell>{submission.vehicle?.code ?? submission.equipmentCodeSnapshot}{(submission.vehicle?.plate ?? submission.plateSnapshot) ? ` · ${submission.vehicle?.plate ?? submission.plateSnapshot}` : ""}</TableCell><TableCell>{submission.product?.name ?? "—"}</TableCell><TableCell>{submission.driverNameSnapshot}</TableCell><TableCell>{submission.supervisorNameSnapshot}</TableCell><TableCell className="font-mono">{submission.meterReading == null ? "—" : formatQty(Number(submission.meterReading))}</TableCell><TableCell className="text-right font-mono">{formatQty(Number(submission.liters), "L")}</TableCell><TableCell><MetaBadge meta={{ label: `${submission.status === "observed" ? "Observada" : "Validada"}`, variant: submission.status === "observed" ? "warning" : "success" }} /></TableCell></TableRow>)}
                 {batch.submissions.length === 0 && <TableRow><TableCell colSpan={9} className="py-10 text-center text-(--color-text-muted)">No hay cargas vigentes en este lote.</TableCell></TableRow>}
               </TableBody>
             </Table>

@@ -11,7 +11,7 @@ import type { Session } from "next-auth"
 import { db } from "@/db"
 import { fuelLoads, fuelVehicles, maintenanceRecords } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
-import { chileDateParts } from "@/lib/utils"
+import { chileDateParts, MONTH_LABELS } from "@/lib/utils"
 import { can } from "@/lib/auth/can"
 import { accountableFuelLoadsWhere } from "@/lib/combustibles/load-status"
 
@@ -45,8 +45,6 @@ export interface MaintenanceDashboardSummary {
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-
-const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

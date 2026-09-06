@@ -3,7 +3,7 @@
 import { useActionState, useEffect } from "react"
 import { Trash, Calendar } from "@phosphor-icons/react"
 import { DataTable } from "@/components/ui/data-table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { TableRow, TableCell } from "@/components/ui/table"
@@ -81,7 +81,7 @@ export function NotificationAdminList({ rows, oldestReadDate, retentionDays }: N
             <ResponsiveDataListCard
               title={r.title}
               description={r.body}
-              status={r.isRead ? <Badge variant="success">Leída</Badge> : <Badge variant="warning">Sin leer</Badge>}
+              status={r.isRead ? <MetaBadge meta={{ label: "Leída", variant: "success" }} /> : <MetaBadge meta={{ label: "Sin leer", variant: "warning" }} />}
             >
               <ResponsiveDataListField label="Tipo">{r.type}</ResponsiveDataListField>
               <ResponsiveDataListField label="Usuario">
@@ -115,7 +115,7 @@ export function NotificationAdminList({ rows, oldestReadDate, retentionDays }: N
                   <span>{r.userEmail}</span>
                 </TableCell>
                 <TableCell>
-                  {r.isRead ? <Badge variant="success">Leída</Badge> : <Badge variant="warning">Sin leer</Badge>}
+                  {r.isRead ? <MetaBadge meta={{ label: "Leída", variant: "success" }} /> : <MetaBadge meta={{ label: "Sin leer", variant: "warning" }} />}
                 </TableCell>
                 <TableCell className="text-xs text-[var(--color-text-muted)]">
                   {formatDateTime(r.createdAt)}

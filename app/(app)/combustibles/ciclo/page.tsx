@@ -11,7 +11,7 @@ import { getFuelCycleComparison, getFuelStorageBalances, differenceSeverity, typ
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { addDaysToPlainDate, formatQty, todayInChile } from "@/lib/utils"
 import { CycleWorkbench } from "./cycle-workbench"
@@ -284,7 +284,7 @@ function DifferenceMetric({ label, difference, trace }: { label: string; differe
   const badge = SEVERITY_BADGE[severity]
   return (
     <div className="bg-[var(--color-surface)] p-4">
-      <div className="flex items-center justify-between gap-2"><p className="text-xs font-medium text-[var(--color-text-muted)]">{label}</p><Badge variant={badge.variant} size="sm">{badge.label}</Badge></div>
+      <div className="flex items-center justify-between gap-2"><p className="text-xs font-medium text-[var(--color-text-muted)]">{label}</p><MetaBadge meta={{ label: `${badge.label}`, variant: badge.variant }} /></div>
       <p className="mt-2 text-xl font-semibold tracking-tight">{difference.status === "available" ? `${formatQty(difference.absolute, undefined, { maximumFractionDigits: 2 })} L` : "—"}</p>
       <p className="mt-1 text-xs text-[var(--color-text-muted)]">{difference.status === "available" ? (difference.percent === null ? "base cero" : `${difference.percent.toFixed(1)}%`) : "Registra las dos etapas para comparar"}</p>
       {trace && <div className="mt-3">{trace}</div>}

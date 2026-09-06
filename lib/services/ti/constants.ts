@@ -3,12 +3,11 @@
  * BD se mapean acá a label en español + variante de badge. El timeline
  * (it_asset_history) guarda el valor crudo; la UI nunca lo pinta directo. */
 
-export type TiBadgeVariant = "default" | "primary" | "success" | "warning" | "signal" | "info" | "danger" | "neutral"
+import type { StateMetaInput } from "@/components/states/state-badge"
 
-interface TiLabelMeta {
-  label: string
-  variant: TiBadgeVariant
-}
+export type TiBadgeVariant = StateMetaInput["variant"]
+
+export type TiLabelMeta = StateMetaInput
 
 export const IT_ASSET_STATUS_META: Record<string, TiLabelMeta> = {
   disponible:    { label: "Disponible",     variant: "success" },
@@ -66,7 +65,7 @@ export const IT_TICKET_CATEGORY_META: Record<string, string> = {
   otro:       "Otros",
 }
 
-export const IT_TICKET_PRIORITY_META: Record<string, { label: string; variant: TiBadgeVariant }> = {
+export const IT_TICKET_PRIORITY_META: Record<string, TiLabelMeta> = {
   baja:    { label: "Baja",    variant: "default" },
   normal:  { label: "Normal",  variant: "info" },
   alta:    { label: "Alta",    variant: "warning" },

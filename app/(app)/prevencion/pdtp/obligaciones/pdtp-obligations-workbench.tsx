@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { useSafeShellHeader } from "@/components/layout/header-context"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge, metaFor, type StateMetaInput } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -21,20 +21,13 @@ type DemandActivity = Awaited<ReturnType<typeof listPdtpDemandActivities>>[numbe
 type ObligationRow = Awaited<ReturnType<typeof listPdtpObligations>>[number]
 type Worksite = { id: string; name: string }
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: "Pendiente",
-  overdue: "Vencida",
-  reported: "Reportada",
-  completed: "Completada",
-  cancelled: "Cancelada",
-}
-
-function statusVariant(status: string): "warning" | "danger" | "info" | "success" | "outline" {
-  if (status === "overdue") return "danger"
-  if (status === "pending") return "warning"
-  if (status === "reported") return "info"
-  if (status === "completed") return "success"
-  return "outline"
+/** Label + variante en un solo mapa: el color lo decide el estado. */
+const STATUS_META: Record<string, StateMetaInput> = {
+  pending:   { label: "Pendiente",   variant: "warning" },
+  overdue:   { label: "Vencida",     variant: "danger"  },
+  reported:  { label: "Reportada",   variant: "info"    },
+  completed: { label: "Completada",  variant: "success" },
+  cancelled: { label: "Cancelada",   variant: "neutral" },
 }
 
 /** Formato de fecha canónico del design system; el nulo mantiene su "Sin plazo". */
@@ -138,7 +131,7 @@ export function PdtpObligationsWorkbench({
             <article key={row.obligation.id} className="grid gap-3 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_15rem_auto] lg:items-center">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={statusVariant(row.effectiveStatus)} dot>{STATUS_LABEL[row.effectiveStatus] ?? row.effectiveStatus}</Badge>
+                  <MetaBadge meta={metaFor(STATUS_META, row.effectiveStatus)} dot />
                   <span className="font-mono text-xs text-[var(--color-text-subtle)]">Actividad {row.activityNumber}</span>
                   <span className="text-xs text-[var(--color-text-subtle)]">{row.worksiteName}</span>
                 </div>

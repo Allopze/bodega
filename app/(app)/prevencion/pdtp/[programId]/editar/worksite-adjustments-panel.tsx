@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Field, FieldGroup } from "@/components/ui/field"
@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { setPdtpActivityWorksiteAdjustmentAction } from "../../actions"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { MONTH_LABELS } from "@/lib/utils"
 import type { PdtpActivityRow, PdtpScheduleRow } from "./tabs/types"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
@@ -33,7 +34,8 @@ type ScheduleOverride = {
   plannedQuantity: number
 }
 
-const MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+/** Mes del período PDTP (1–12); etiqueta en `MONTH_LABELS[mes - 1]`. */
+const PDTP_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const
 const INHERIT = "__inherit__"
 
 export function WorksiteAdjustmentsPanel({
@@ -120,9 +122,7 @@ export function WorksiteAdjustmentsPanel({
                     {param?.responsibleDisplay || activity.responsibleDisplay || "Sin responsable global"}
                   </p>
                 </div>
-                <Badge variant={state === "Retirado" ? "outline" : state === "Excluido" ? "danger" : state === "Ajustado" ? "warning" : "default"}>
-                  {state}
-                </Badge>
+                <MetaBadge meta={{ label: `${state}`, variant: state === "Retirado" ? "outline" : state === "Excluido" ? "danger" : state === "Ajustado" ? "warning" : "default" }} />
                 <div className="text-right">
                   <Button type="button" size="sm" variant="ghost" disabled={activity.status === "retired"} onClick={() => setEditing(activity)}>
                     Configurar
@@ -288,11 +288,11 @@ function AdjustmentDialog({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {MONTHS.map((month, monthIndex) => (
+                    {PDTP_MONTHS.map((month) => (
                       <TableRow key={month}>
-                        <TableHead scope="row" className="font-medium">{month}</TableHead>
+                        <TableHead scope="row" className="font-medium">{MONTH_LABELS[month - 1]}</TableHead>
                         {[1, 2, 3, 4].map((week) => {
-                          const key = `${monthIndex + 1}:${week}`
+                          const key = `${month}:${week}`
                           return (
                             <TableCell key={week}>
                               <Input

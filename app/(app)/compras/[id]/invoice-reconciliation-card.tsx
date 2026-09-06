@@ -5,7 +5,7 @@ import { useActionState } from "react"
 import { CheckCircle, ClockCounterClockwise, Warning } from "@phosphor-icons/react"
 import { INITIAL_STATE } from "@/lib/form-state"
 import { SubmitButton } from "@/components/ui/submit-button"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -118,7 +118,7 @@ export function InvoiceReconciliationCard({
             Compara OC, entrega aceptada del proveedor y factura, además de unidades y precios efectivos netos. Tolerancia monetaria: $1.
           </p>
         </div>
-        <Badge variant={status.variant}>{status.label}</Badge>
+        <MetaBadge meta={status} />
       </div>
 
       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-y border-(--color-border) py-3 sm:grid-cols-4">

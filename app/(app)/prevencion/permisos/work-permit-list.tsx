@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
@@ -181,7 +181,7 @@ export function WorkPermitList({ permits, canManage, canRequest, types, worksite
             <ResponsiveDataListCard
               title={<Link href={`/prevencion/permisos/${item.id}`} className="font-mono hover:underline">{item.code}</Link>}
               description={item.taskDescription}
-              status={<Badge variant={permitStatusBadgeVariant(item.status)}>{PERMIT_STATUS_LABELS[item.status] ?? item.status}</Badge>}
+              status={<MetaBadge meta={{ label: `${PERMIT_STATUS_LABELS[item.status] ?? item.status}`, variant: permitStatusBadgeVariant(item.status) }} />}
               actions={<Button asChild type="button" variant="ghost" size="sm"><Link href={`/prevencion/permisos/${item.id}`}>Ver permiso</Link></Button>}
             >
               <ResponsiveDataListField label="Tipo">{item.typeName}</ResponsiveDataListField>
@@ -213,9 +213,7 @@ export function WorkPermitList({ permits, canManage, canRequest, types, worksite
                 <span className="block text-xs text-[var(--color-text-subtle)]">{item.location}</span>
               </TableCell>
               <TableCell>
-                <Badge variant={permitStatusBadgeVariant(item.status)}>
-                  {PERMIT_STATUS_LABELS[item.status] ?? item.status}
-                </Badge>
+                <MetaBadge meta={{ label: `${PERMIT_STATUS_LABELS[item.status] ?? item.status}`, variant: permitStatusBadgeVariant(item.status) }} />
                 {item.suspensionReason && (
                   <span className="mt-1 block max-w-xs text-xs text-[var(--color-text-subtle)]">{item.suspensionReason}</span>
                 )}

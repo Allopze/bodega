@@ -1,5 +1,4 @@
 import type { Metadata } from "next"
-import type { ReactNode } from "react"
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import { and, asc, desc, eq } from "drizzle-orm"
@@ -13,6 +12,7 @@ import { StateBadge } from "@/components/states/state-badge"
 import { EntityTimeline } from "@/components/states/entity-timeline"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatDate, formatDateTime, formatQty } from "@/lib/utils"
+import { DetailItem } from "@/components/ui/detail-item"
 import { getDispatchGuideDetail, OFFICE_ORIGIN_LABEL } from "@/lib/services/dispatch-guides"
 import { GuideActions } from "./guide-actions"
 
@@ -23,14 +23,6 @@ const MOVEMENT_TYPE_LABELS: Record<string, string> = {
   ingreso_traslado: "Ingreso por guía",
 }
 
-function DetailLine({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div>
-      <dt className="text-[11px] uppercase tracking-[0.06em] text-[var(--color-text-subtle)]">{label}</dt>
-      <dd className="mt-0.5 text-sm text-[var(--color-text)]">{value}</dd>
-    </div>
-  )
-}
 
 function workerLabel(worker: { firstName: string; lastName: string; rut: string | null } | null | undefined) {
   if (!worker) return null
@@ -165,7 +157,7 @@ export default async function DispatchGuideDetailPage({ params }: { params: Prom
             <StateBadge state={guide.status} entity="dispatch_guide" />
           </div>
           <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <DetailLine
+            <DetailItem layout="stacked"
               label="Origen"
               value={
                 <>
@@ -176,16 +168,16 @@ export default async function DispatchGuideDetailPage({ params }: { params: Prom
                 </>
               }
             />
-            <DetailLine label="Destino" value={guide.destinationWorksite?.name ?? "—"} />
-            <DetailLine label="Fecha de emisión" value={formatDateTime(guide.issuedAt)} />
-            <DetailLine
+            <DetailItem layout="stacked" label="Destino" value={guide.destinationWorksite?.name ?? "—"} />
+            <DetailItem layout="stacked" label="Fecha de emisión" value={formatDateTime(guide.issuedAt)} />
+            <DetailItem layout="stacked"
               label="Emitida por"
               value={guide.issuedByUser?.name ?? guide.issuedByUser?.email ?? "—"}
             />
-            <DetailLine label="Responsable del despacho" value={dispatcherName} />
-            <DetailLine label="Responsable de recepción" value={workerLabel(guide.receiverWorker) ?? "—"} />
+            <DetailItem layout="stacked" label="Responsable del despacho" value={dispatcherName} />
+            <DetailItem layout="stacked" label="Responsable de recepción" value={workerLabel(guide.receiverWorker) ?? "—"} />
             {guide.vehicle && (
-              <DetailLine
+              <DetailItem layout="stacked"
                 label="Vehículo"
                 value={
                   <>
@@ -199,10 +191,10 @@ export default async function DispatchGuideDetailPage({ params }: { params: Prom
               />
             )}
             {guide.driverWorker && (
-              <DetailLine label="Conductor" value={workerLabel(guide.driverWorker)} />
+              <DetailItem layout="stacked" label="Conductor" value={workerLabel(guide.driverWorker)} />
             )}
             {guide.dispatchedAt && (
-              <DetailLine
+              <DetailItem layout="stacked"
                 label="Despachada"
                 value={
                   <>
@@ -215,7 +207,7 @@ export default async function DispatchGuideDetailPage({ params }: { params: Prom
               />
             )}
             {guide.receivedAt && (
-              <DetailLine
+              <DetailItem layout="stacked"
                 label="Recibida en faena"
                 value={
                   <>

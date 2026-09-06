@@ -13,7 +13,7 @@ import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge, metaFor } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { TaeAccessPanel } from "./tae-access-panel"
 import { TaeExportButton } from "./tae-export-button"
@@ -172,7 +172,7 @@ export default async function TaeControlPage({ searchParams }: { searchParams: P
 
       <div className="overflow-x-auto border border-(--color-border)">
         <Table className="min-w-[920px]"><TableHeader><TableRow><TableHead>Fecha</TableHead><TableHead>Faena</TableHead><TableHead>Punto</TableHead><TableHead>Equipo</TableHead><TableHead>Producto</TableHead><TableHead>Litros</TableHead><TableHead>Supervisor</TableHead><TableHead>Estado</TableHead><TableHead className="text-right">Acción</TableHead></TableRow></TableHeader><TableBody>
-          {submissions.length === 0 ? <TableRow><TableCell colSpan={9} className="py-10 text-center text-[var(--color-text-muted)]">Aún no hay cargas TAE. Genera un QR y compártelo en el punto de carga.</TableCell></TableRow> : submissions.map((item) => { const status = STATUS[item.status] ?? { label: "Recibida", variant: "primary" as const }; return <TableRow key={item.id}><TableCell className="font-mono text-xs">{formatDateTime(item.loadedAt)}</TableCell><TableCell>{item.worksite?.name ?? "—"}</TableCell><TableCell>{item.loadingPoint?.name ?? "—"}</TableCell><TableCell className="font-mono">{item.equipmentCodeSnapshot}</TableCell><TableCell>{item.product?.name ?? "—"}</TableCell><TableCell className="font-mono text-right">{Number(item.liters).toLocaleString("es-CL")} L</TableCell><TableCell>{item.supervisorNameSnapshot}</TableCell><TableCell><Badge variant={status.variant}>{status.label}</Badge></TableCell><TableCell className="text-right"><Button asChild variant="ghost" size="sm"><Link href={`/combustibles/tae/${item.id}`}>Revisar</Link></Button></TableCell></TableRow> })}
+          {submissions.length === 0 ? <TableRow><TableCell colSpan={9} className="py-10 text-center text-[var(--color-text-muted)]">Aún no hay cargas TAE. Genera un QR y compártelo en el punto de carga.</TableCell></TableRow> : submissions.map((item) => { const status = metaFor(STATUS, item.status); return <TableRow key={item.id}><TableCell className="font-mono text-xs">{formatDateTime(item.loadedAt)}</TableCell><TableCell>{item.worksite?.name ?? "—"}</TableCell><TableCell>{item.loadingPoint?.name ?? "—"}</TableCell><TableCell className="font-mono">{item.equipmentCodeSnapshot}</TableCell><TableCell>{item.product?.name ?? "—"}</TableCell><TableCell className="font-mono text-right">{Number(item.liters).toLocaleString("es-CL")} L</TableCell><TableCell>{item.supervisorNameSnapshot}</TableCell><TableCell><MetaBadge meta={status} /></TableCell><TableCell className="text-right"><Button asChild variant="ghost" size="sm"><Link href={`/combustibles/tae/${item.id}`}>Revisar</Link></Button></TableCell></TableRow> })}
         </TableBody></Table>
       </div>
       <ServerPagination pagination={pagination} hrefForPage={(target) => buildPaginationHref("/combustibles/tae", raw, target)} />

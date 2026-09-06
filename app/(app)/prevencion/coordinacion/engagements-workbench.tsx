@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -144,7 +144,7 @@ export function EngagementsWorkbench({ engagements, worksites, responsibles, can
                 <TableRow key={row.id}>
                   <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{row.occurredOn}</TableCell>
                   <TableCell>
-                    <Badge variant={engagementKindBadgeVariant(row.kind)}>{ENGAGEMENT_KIND_LABELS[row.kind] ?? row.kind}</Badge>
+                    <MetaBadge meta={{ label: `${ENGAGEMENT_KIND_LABELS[row.kind] ?? row.kind}`, variant: engagementKindBadgeVariant(row.kind) }} />
                     {row.kind === "coordinacion" && (
                       <span className="mt-1 block text-xs text-[var(--color-text-muted)]">
                         {ENGAGEMENT_DIRECTION_LABELS[row.direction] ?? row.direction}
@@ -168,10 +168,10 @@ export function EngagementsWorkbench({ engagements, worksites, responsibles, can
                   <TableCell className="whitespace-nowrap">
                     {row.totalMeasures === 0
                       ? <span className="text-[var(--color-text-muted)]">—</span>
-                      : <Badge variant={row.openMeasures > 0 ? "warning" : "success"}>{row.openMeasures}/{row.totalMeasures} abiertas</Badge>}
+                      : <MetaBadge meta={{ label: `${row.openMeasures}/${row.totalMeasures} abiertas`, variant: row.openMeasures > 0 ? "warning" : "success" }} />}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={row.closedAt ? "success" : "outline"}>{row.closedAt ? "Cerrada" : "Abierta"}</Badge>
+                    <MetaBadge meta={{ label: `${row.closedAt ? "Cerrada" : "Abierta"}`, variant: row.closedAt ? "success" : "outline" }} />
                   </TableCell>
                   {canManage && (
                     <TableCell>

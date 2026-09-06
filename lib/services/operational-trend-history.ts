@@ -15,6 +15,7 @@ import type { Session } from "next-auth"
 import { db } from "@/db"
 import { deliveries, purchaseOrders, purchaseRequests, receipts } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { MONTH_LABELS } from "@/lib/utils"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -31,8 +32,6 @@ export interface OperationalTrendPoint {
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-
-const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

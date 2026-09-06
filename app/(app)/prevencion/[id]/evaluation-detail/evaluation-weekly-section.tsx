@@ -1,7 +1,7 @@
 "use client"
 
 import { TabsContent } from "@/components/ui/tabs"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { formatDateDisplay } from "@/lib/sst/date"
 import { ChecklistSectionPanel } from "../checklist-section"
@@ -48,9 +48,7 @@ export function EvaluationWeeklySection({
         <div className="flex justify-between items-center">
           <h3 className="text-base font-semibold text-(--color-text)">{section.title}</h3>
           {weekly && (
-            <Badge variant={weekly.estado === 'completada' ? 'success' : isWeekLockedVal ? 'outline' : 'warning'}>
-              {weekly.estado === 'completada' ? 'Completada' : isWeekLockedVal ? 'Bloqueada' : 'Pendiente'}
-            </Badge>
+            <MetaBadge meta={{ label: `${weekly.estado === 'completada' ? 'Completada' : isWeekLockedVal ? 'Bloqueada' : 'Pendiente'}`, variant: weekly.estado === 'completada' ? 'success' : isWeekLockedVal ? 'outline' : 'warning' }} />
           )}
         </div>
 

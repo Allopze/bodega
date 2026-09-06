@@ -4,10 +4,11 @@ import * as React from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { ArrowRight, FunnelSimple, WarningCircle } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
+import { Callout } from "@/components/ui/callout"
 import { OPERATIONAL_MODULE_LABELS } from "@/lib/work-queue"
 import { PriorityBadge } from "@/components/ui/priority-badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -228,10 +229,9 @@ export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
       </FilterToolbar>
 
       {result.sourceErrors.length > 0 && (
-        <div role="status" className="flex gap-2 rounded-[var(--radius)] border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-sm text-[var(--color-warning-ink)]">
-          <WarningCircle size={18} className="mt-0.5 shrink-0" />
-          <span>{result.sourceErrors.map((error) => error.message).join(" ")}</span>
-        </div>
+        <Callout tone="warning" icon={<WarningCircle size={18} />} className="px-3 py-2">
+          {result.sourceErrors.map((error) => error.message).join(" ")}
+        </Callout>
       )}
 
       {result.items.length === 0 ? (
@@ -300,9 +300,7 @@ function QueueCard({ item, today }: { item: OperationalWorkItem; today: string }
         {item.code && <span>{item.code} · </span>}{OPERATIONAL_MODULE_LABELS[item.module]} · {item.worksiteName}
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <Badge variant={item.blocked ? "danger" : "info"} size="sm">
-          {item.blocked ? "Bloqueada · " : ""}{item.statusLabel}
-        </Badge>
+        <MetaBadge meta={{ label: `${item.blocked ? "Bloqueada · " : ""}${item.statusLabel}`, variant: item.blocked ? "danger" : "info" }} />
         <span className="text-[11px] text-[var(--color-text-subtle)]">
           {item.sourceDueAt
             ? overdue
@@ -333,9 +331,7 @@ function QueueRow({ item, today }: { item: OperationalWorkItem; today: string })
       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{OPERATIONAL_MODULE_LABELS[item.module]}</td>
       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{item.worksiteName}</td>
       <td className="px-3 py-2.5">
-        <Badge variant={item.blocked ? "danger" : "info"} size="sm">
-          {item.blocked ? "Bloqueada · " : ""}{item.statusLabel}
-        </Badge>
+        <MetaBadge meta={{ label: `${item.blocked ? "Bloqueada · " : ""}${item.statusLabel}`, variant: item.blocked ? "danger" : "info" }} />
       </td>
       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{relativeAge(item.createdAt)}</td>
       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">

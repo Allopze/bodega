@@ -2,7 +2,7 @@
 
 import { useRef, useTransition } from "react"
 import { UploadSimple } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -98,10 +98,10 @@ export function VersionsTab({
                   <TableRow key={v.id}>
                     <TableCell>
                       <span className="font-mono">v{v.version}</span>
-                      {v.id === currentVersionId ? <Badge variant="outline" className="ml-2">Actual</Badge> : null}
+                      {v.id === currentVersionId ? <MetaBadge meta={{ label: "Actual", variant: "outline" }} className="ml-2" /> : null}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={statusBadgeVariant(v.status)}>{SST_DOCUMENT_STATUS_LABELS[v.status] ?? v.status}</Badge>
+                      <MetaBadge meta={{ label: SST_DOCUMENT_STATUS_LABELS[v.status] ?? v.status, variant: statusBadgeVariant(v.status) }} />
                     </TableCell>
                     <TableCell className="text-xs">{v.fileName}</TableCell>
                     <TableCell className="text-xs">{userMap[v.uploadedBy]?.name ?? v.uploadedBy}</TableCell>

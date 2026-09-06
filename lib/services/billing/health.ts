@@ -129,7 +129,7 @@ export type ProviderStatusKind =
 export interface ProviderStatus {
   kind: ProviderStatusKind
   label: string
-  tone: "success" | "danger" | "warning" | "neutral"
+  variant: "success" | "danger" | "warning" | "neutral"
   /** Explicación en una línea. */
   detail: string
   /** Cuándo se tomó el estado; null si nunca se comprobó. */
@@ -153,7 +153,7 @@ export function deriveProviderStatus(input: {
     return {
       kind: "disabled",
       label: "Inactivo",
-      tone: "neutral",
+      variant: "neutral",
       detail: "Desactivado por configuración del servidor.",
       checkedAt: null,
     }
@@ -163,7 +163,7 @@ export function deriveProviderStatus(input: {
     return {
       kind: "unconfigured",
       label: "Sin configurar",
-      tone: "warning",
+      variant: "warning",
       detail: "Faltan credenciales en el servidor. No es una falla: está pendiente de configurar.",
       checkedAt: null,
     }
@@ -173,7 +173,7 @@ export function deriveProviderStatus(input: {
     return {
       kind: "unchecked",
       label: "Sin comprobar",
-      tone: "neutral",
+      variant: "neutral",
       detail: "Todavía nadie probó la conexión con este proveedor.",
       checkedAt: null,
     }
@@ -190,7 +190,7 @@ export function deriveProviderStatus(input: {
     return {
       kind: "stale",
       label: "Comprobación vencida",
-      tone: "warning",
+      variant: "warning",
       detail: input.stored.ok
         ? "La última comprobación exitosa tiene más de 24 horas; vuelve a comprobar el proveedor."
         : `La última comprobación tiene más de 24 horas y había fallado: ${input.stored.detail}`,
@@ -201,7 +201,7 @@ export function deriveProviderStatus(input: {
   return {
     kind: input.stored.ok ? "ok" : "failing",
     label: input.stored.ok ? "Operativo" : "Con problema",
-    tone: input.stored.ok ? "success" : "danger",
+    variant: input.stored.ok ? "success" : "danger",
     detail: input.stored.detail,
     checkedAt: input.stored.checkedAt,
   }

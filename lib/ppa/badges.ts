@@ -3,9 +3,10 @@
  * Labels y variantes de badge para estados/decisiones del PPA.
  */
 
+import type { StateMetaInput } from "@/components/states/state-badge"
 import type { EstadoPpa, PpaDecision } from "./types"
 
-type BadgeVariant = "default" | "success" | "warning" | "danger" | "info" | "outline"
+type BadgeVariant = StateMetaInput["variant"]
 
 export const ESTADO_PPA_LABELS: Record<EstadoPpa, string> = {
   aprobado_auto: "Aprobado automáticamente",

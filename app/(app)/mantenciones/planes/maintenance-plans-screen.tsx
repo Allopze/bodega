@@ -6,7 +6,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -98,7 +98,7 @@ function PlanCard({ plan, canEdit, onEdit }: { plan: Plan; canEdit: boolean; onE
   return <Card>
     <CardHeader className="flex-row items-start justify-between gap-3">
       <div><CardTitle className="text-base">{plan.name}</CardTitle><p className="mt-1 text-sm text-[var(--color-text-muted)]">{plan.vehicle.code ? `${plan.vehicle.code} · ` : ""}{plan.vehicle.plate} · {plan.worksite.name}</p></div>
-      <Badge variant={plan.isActive ? "success" : "outline"}>{plan.isActive ? "Activo" : "Pausado"}</Badge>
+      <MetaBadge meta={{ label: `${plan.isActive ? "Activo" : "Pausado"}`, variant: plan.isActive ? "success" : "outline" }} />
     </CardHeader>
     <CardContent className="space-y-3 text-sm">
       <dl className="grid grid-cols-2 gap-3">

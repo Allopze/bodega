@@ -5,7 +5,7 @@ import { useActionState, useEffect, useState } from "react"
 import Link from "next/link"
 import { PencilSimple, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
 import { DataTable } from "@/components/ui/data-table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { TableRow, TableCell } from "@/components/ui/table"
@@ -113,7 +113,7 @@ export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: Cat
               return (
                 <ResponsiveDataListCard
                   title={r.displayName}
-                  status={r.isActive ? <Badge variant="success">Activo</Badge> : <Badge variant="default">Inactivo</Badge>}
+                  status={r.isActive ? <MetaBadge meta={{ label: "Activo", variant: "success" }} /> : <MetaBadge meta={{ label: "Inactivo", variant: "default" }} />}
                   actions={
                     <>
                       <Button type="button" variant="ghost" size="sm" onClick={() => { setEditResp(r); setRespSheetOpen(true) }}><PencilSimple size={15} />Editar</Button>
@@ -129,7 +129,7 @@ export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: Cat
                   }
                 >
                   <ResponsiveDataListField label="Rol">{r.roleName || "Sin rol"}</ResponsiveDataListField>
-                  <ResponsiveDataListField label="Tipo"><Badge variant="default">{r.kind}</Badge></ResponsiveDataListField>
+                  <ResponsiveDataListField label="Tipo"><MetaBadge meta={{ label: r.kind, variant: "default" }} /></ResponsiveDataListField>
                   <ResponsiveDataListField label="Notas" className="col-span-2">{r.notes || "Sin notas"}</ResponsiveDataListField>
                 </ResponsiveDataListCard>
               )
@@ -143,12 +143,12 @@ export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: Cat
                     <TableCell className="font-mono text-xs text-[var(--color-text-muted)]">
                       {r.roleName || "—"}
                     </TableCell>
-                    <TableCell>{<Badge variant="default">{r.kind}</Badge>}</TableCell>
+                    <TableCell>{<MetaBadge meta={{ label: r.kind, variant: "default" }} />}</TableCell>
                     <TableCell className="text-xs text-[var(--color-text-muted)]">{r.notes || "—"}</TableCell>
                     <TableCell>
                       {r.isActive
-                        ? <Badge variant="success">Activo</Badge>
-                        : <Badge variant="default">Inactivo</Badge>}
+                        ? <MetaBadge meta={{ label: "Activo", variant: "success" }} />
+                        : <MetaBadge meta={{ label: "Inactivo", variant: "default" }} />}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
@@ -208,7 +208,7 @@ export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: Cat
                 <ResponsiveDataListCard
                   title={s.label}
                   description={<span className="font-mono">{s.code}</span>}
-                  status={s.isActive ? <Badge variant="success">Activa</Badge> : <Badge variant="default">Inactiva</Badge>}
+                  status={s.isActive ? <MetaBadge meta={{ label: "Activa", variant: "success" }} /> : <MetaBadge meta={{ label: "Inactiva", variant: "default" }} />}
                   actions={
                     <>
                       <Button type="button" variant="ghost" size="sm" onClick={() => { setEditSheet(s); setSheetSheetOpen(true) }}><PencilSimple size={15} />Editar</Button>
@@ -226,7 +226,7 @@ export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: Cat
                   <ResponsiveDataListField label="Área">{s.area}</ResponsiveDataListField>
                   <ResponsiveDataListField label="Programa"><span className="font-mono">{s.programId || "—"}</span></ResponsiveDataListField>
                   <ResponsiveDataListField label="Alcance" className="col-span-2">
-                    {s.defaultScopeRoles.length === 0 ? "Sin roles predeterminados" : <span className="flex flex-wrap gap-1">{s.defaultScopeRoles.map((role) => <Badge key={role} variant="default">{role}</Badge>)}</span>}
+                    {s.defaultScopeRoles.length === 0 ? "Sin roles predeterminados" : <span className="flex flex-wrap gap-1">{s.defaultScopeRoles.map((role) => <MetaBadge key={role} meta={{ label: `${role}`, variant: "default" }} />)}</span>}
                   </ResponsiveDataListField>
                 </ResponsiveDataListCard>
               )
@@ -248,15 +248,15 @@ export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: Cat
                           <span className="text-xs text-[var(--color-text-muted)]">—</span>
                         ) : (
                           s.defaultScopeRoles.map((r) => (
-                            <Badge key={r} variant="default">{r}</Badge>
+                            <MetaBadge key={r} meta={{ label: `${r}`, variant: "default" }} />
                           ))
                         )}
                       </div>
                     </TableCell>
                     <TableCell>
                       {s.isActive
-                        ? <Badge variant="success">Activa</Badge>
-                        : <Badge variant="default">Inactiva</Badge>}
+                        ? <MetaBadge meta={{ label: "Activa", variant: "success" }} />
+                        : <MetaBadge meta={{ label: "Inactiva", variant: "default" }} />}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
@@ -335,7 +335,7 @@ function ProgramTable({ programs }: { programs: ProgramSummary[] }) {
         return (
           <ResponsiveDataListCard
             title={<Link href={p.href} className="hover:underline">{p.title}</Link>}
-            status={<Badge variant={p.status === "active" ? "success" : p.status === "closed" ? "default" : "warning"}>{p.status}</Badge>}
+            status={<MetaBadge meta={{ label: `${p.status}`, variant: p.status === "active" ? "success" : p.status === "closed" ? "default" : "warning" }} />}
             actions={<Button asChild type="button" variant="ghost" size="sm"><Link href={p.href}>Ver programa</Link></Button>}
           >
             <ResponsiveDataListField label="Año"><span className="font-mono tabular-nums text-[var(--color-text)]">{p.year}</span></ResponsiveDataListField>
@@ -355,9 +355,7 @@ function ProgramTable({ programs }: { programs: ProgramSummary[] }) {
             <TableCell className="text-right">{p.year}</TableCell>
             <TableCell className="text-right">{p.version}</TableCell>
             <TableCell>
-              <Badge variant={p.status === "active" ? "success" : p.status === "closed" ? "default" : "warning"}>
-                {p.status}
-              </Badge>
+              <MetaBadge meta={{ label: `${p.status}`, variant: p.status === "active" ? "success" : p.status === "closed" ? "default" : "warning" }} />
             </TableCell>
           </TableRow>
         )

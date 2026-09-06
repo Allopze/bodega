@@ -20,6 +20,7 @@ import { and, eq, gte, inArray, lte, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { fuelConsumptionRecords, fuelEquipmentTypes, fuelOperationRecords, fuelVehicles, worksites } from "@/db/schema"
 import { worksiteScopeSql } from "@/lib/auth/scope"
+import { MONTH_LABELS } from "@/lib/utils"
 import { describe, linearTrend, periodVariation, sampleReliability, type DescriptiveStats, type SampleReliability, type TrendLine } from "./performance-statistics"
 
 export type PerformanceUnit = "km_per_liter" | "liters_per_hour"
@@ -233,13 +234,12 @@ function periodWindows(from: string, to: string): Array<{ from: string; to: stri
   const desiredSegments = Math.min(Math.max(Math.round(spanMs / (30 * 24 * 60 * 60 * 1000)), 2), MAX_TREND_PERIODS)
   const segmentMs = spanMs / desiredSegments
 
-  const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
   const windows: Array<{ from: string; to: string; label: string }> = []
 
   for (let i = 0; i < desiredSegments; i++) {
     const wStart = new Date(start.getTime() + i * segmentMs)
     const wEnd = new Date(i === desiredSegments - 1 ? end.getTime() : start.getTime() + (i + 1) * segmentMs - 24 * 60 * 60 * 1000)
-    const midMonth = monthNames[wStart.getUTCMonth()] ?? ""
+    const midMonth = MONTH_LABELS[wStart.getUTCMonth()] ?? ""
     windows.push({
       from: wStart.toISOString().slice(0, 10),
       to: wEnd.toISOString().slice(0, 10),

@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { CalendarDots, UsersThree } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -194,7 +194,7 @@ export function CommitteeDetail({
                     <TableCell className="text-sm">{member.role ? MEMBER_ROLE_LABELS[member.role] ?? member.role : "—"}</TableCell>
                     <TableCell className="text-sm">{member.hasFuero ? "Sí" : "No"}</TableCell>
                     <TableCell className="text-sm">
-                      <Badge variant={member.status === "active" ? "success" : "outline"}>{MEMBER_STATUS_LABELS[member.status] ?? member.status}</Badge>
+                      <MetaBadge meta={{ label: `${MEMBER_STATUS_LABELS[member.status] ?? member.status}`, variant: member.status === "active" ? "success" : "outline" }} />
                     </TableCell>
                     {canManage && (
                       <TableCell className="text-right">
@@ -257,9 +257,7 @@ export function CommitteeDetail({
                     <TableCell className="text-sm">{MEETING_TYPE_LABELS[meeting.meetingType] ?? meeting.meetingType}</TableCell>
                     <TableCell className="text-sm tabular-nums">{formatDateTime(meeting.scheduledFor)}</TableCell>
                     <TableCell>
-                      <Badge variant={meeting.status === "closed" ? "success" : meeting.status === "cancelled" ? "outline" : "default"}>
-                        {COMMITTEE_MEETING_STATUS_LABELS[meeting.status] ?? meeting.status}
-                      </Badge>
+                      <MetaBadge meta={{ label: `${COMMITTEE_MEETING_STATUS_LABELS[meeting.status] ?? meeting.status}`, variant: meeting.status === "closed" ? "success" : meeting.status === "cancelled" ? "outline" : "default" }} />
                       {meeting.status === "closed" && !meeting.quorumReached && (
                         <span className="block text-xs text-[var(--color-text-subtle)]">Sin quórum</span>
                       )}
@@ -509,7 +507,7 @@ function CloseMeetingDialog({ meeting, members, assignees }: {
 
           <p className="text-sm">
             Quórum: <strong>{quorum.effective} de {quorum.required} requeridos</strong>
-            {" "}{quorum.reached ? <Badge variant="success">Alcanzado</Badge> : <Badge variant="warning">No alcanzado</Badge>}
+            {" "}{quorum.reached ? <MetaBadge meta={{ label: "Alcanzado", variant: "success" }} /> : <MetaBadge meta={{ label: "No alcanzado", variant: "warning" }} />}
             {quorum.missingRepresentations.length > 0 && (
               <span className="mt-1 block text-xs text-[var(--color-text-subtle)]">
                 Sin {quorum.missingRepresentations.map((item) => (REPRESENTATION_LABELS[item] ?? item).toLowerCase()).join(" ni ")} presente.

@@ -6,7 +6,9 @@
  * patrón que @/lib/ppa/badges.
  */
 
-type BadgeVariant = "default" | "primary" | "success" | "warning" | "signal" | "info" | "danger" | "outline"
+import type { StateMetaInput } from "@/components/states/state-badge"
+
+type BadgeVariant = StateMetaInput["variant"]
 
 /* ── Incidentes ──────────────────────────────────────────────────────────── */
 export const INCIDENT_TYPE_LABELS: Record<string, string> = {

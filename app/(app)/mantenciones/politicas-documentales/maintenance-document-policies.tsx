@@ -5,7 +5,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Field } from "@/components/ui/field"
 import { OptionSelect } from "@/components/ui/option-select"
 import { useOperation } from "@/lib/hooks/use-operation"
@@ -25,7 +25,7 @@ export function MaintenanceDocumentPolicies({ data, canEdit }: { data: Data; can
 
 function PolicyRow({ policy, canEdit }: { policy: Data["policies"][number]; canEdit: boolean }) {
   const operation = useOperation()
-  return <div className="flex min-h-14 items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] px-3 py-2"><div><p className="text-sm font-medium">{policy.equipmentType.name} · {TYPES.find((item) => item.value === policy.documentType)?.label ?? policy.documentType}</p><p className="text-xs text-[var(--color-text-muted)]">{MOMENTS.find((item) => item.value === policy.requiredAt)?.label ?? policy.requiredAt}</p></div><div className="flex items-center gap-2"><Badge variant={policy.isActive ? "success" : "outline"}>{policy.isActive ? "Activa" : "Pausada"}</Badge>{canEdit && <Button size="sm" variant="ghost" disabled={operation.pending} onClick={() => operation.run(() => setMaintenanceDocumentPolicyActiveAction({ id: policy.id, active: !policy.isActive }))}>{policy.isActive ? "Pausar" : "Activar"}</Button>}</div></div>
+  return <div className="flex min-h-14 items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] px-3 py-2"><div><p className="text-sm font-medium">{policy.equipmentType.name} · {TYPES.find((item) => item.value === policy.documentType)?.label ?? policy.documentType}</p><p className="text-xs text-[var(--color-text-muted)]">{MOMENTS.find((item) => item.value === policy.requiredAt)?.label ?? policy.requiredAt}</p></div><div className="flex items-center gap-2"><MetaBadge meta={{ label: `${policy.isActive ? "Activa" : "Pausada"}`, variant: policy.isActive ? "success" : "outline" }} />{canEdit && <Button size="sm" variant="ghost" disabled={operation.pending} onClick={() => operation.run(() => setMaintenanceDocumentPolicyActiveAction({ id: policy.id, active: !policy.isActive }))}>{policy.isActive ? "Pausar" : "Activar"}</Button>}</div></div>
 }
 
 function PolicyForm({ equipmentTypes }: { equipmentTypes: Data["equipmentTypes"] }) {

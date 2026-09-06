@@ -10,7 +10,7 @@ import { getEquipmentPerformanceAnalysis, PRESET_LABEL, trendLabel, type Aggrega
 import { histogram } from "@/lib/combustibles/performance-statistics"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge, metaFor, type StateMetaInput } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -29,7 +29,7 @@ const AGGREGATIONS: Array<{ value: AggregationLevel; label: string }> = [
   { value: "equipmentType", label: "Por tipo de equipo" },
 ]
 const UNIT_LABEL: Record<string, string> = { km_per_liter: "km/L", liters_per_hour: "L/h" }
-const RELIABILITY_BADGE: Record<string, { label: string; variant: "danger" | "warning" | "success" }> = {
+const RELIABILITY_META: Record<string, StateMetaInput> = {
   insuficiente: { label: "Muestra no concluyente", variant: "danger" },
   baja: { label: "Confiabilidad baja", variant: "warning" },
   confiable: { label: "Confiable", variant: "success" },
@@ -162,11 +162,11 @@ export default async function EquipmentPerformancePage({ searchParams }: { searc
             </TableHeader>
             <TableBody>
               {groups.map((group) => {
-                const badge = RELIABILITY_BADGE[group.reliability]!
+                const badge = metaFor(RELIABILITY_META, group.reliability)
                 return (
                   <TableRow key={group.key}>
                     <TableCell className="font-medium">{group.label}</TableCell><TableCell className="font-mono text-xs">{UNIT_LABEL[group.unit] ?? group.unit}</TableCell>
-                    <TableCell><Badge variant={badge.variant} size="sm">{group.stats.count} · {badge.label}</Badge></TableCell><TableCell className="font-mono">{group.stats.mean}</TableCell>
+                    <TableCell><MetaBadge meta={{ label: `${group.stats.count} · ${badge.label}`, variant: badge.variant }}>{group.stats.count} · {badge.label}</MetaBadge></TableCell><TableCell className="font-mono">{group.stats.mean}</TableCell>
                     <TableCell className="font-mono">{group.stats.median}</TableCell><TableCell className="font-mono">{group.stats.min} / {group.stats.max}</TableCell>
                     <TableCell className="font-mono">{group.stats.stdDev}</TableCell><TableCell className="font-mono">{group.stats.coefficientOfVariation == null ? "—" : `${group.stats.coefficientOfVariation}%`}</TableCell>
                     <TableCell className="font-mono">{group.stats.p10} – {group.stats.p90}</TableCell><TableCell className="font-mono text-(--color-text-muted)">{group.expectedRange ? `${group.expectedRange.low} – ${group.expectedRange.high}` : "—"}</TableCell>

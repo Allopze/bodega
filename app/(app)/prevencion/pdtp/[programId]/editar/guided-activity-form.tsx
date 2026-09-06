@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -181,7 +181,7 @@ export function GuidedActivityForm({
           <h3 className="text-base font-semibold text-[var(--color-text)]">Agregar una actividad</h3>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">Describe qué debe ocurrir; la plataforma generará la planificación correspondiente.</p>
         </div>
-        <Badge variant="outline" size="sm">{hydrated ? "Borrador local guardado" : "Preparando borrador"}</Badge>
+        <MetaBadge meta={{ label: hydrated ? "Borrador local guardado" : "Preparando borrador", variant: "outline" }} />
       </div>
 
       <FieldGroup className="gap-4">

@@ -4,7 +4,7 @@ import * as React from "react"
 import { DataTable } from "@/components/ui/data-table"
 import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
 import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { setCostCenterActiveAction } from "./actions"
 import { COLUMNS as CC_COLUMNS, CONTRACT } from "./catalog-contract"
@@ -42,9 +42,7 @@ export function CostCenterList({ costCenters, worksites, canCreate }: CostCenter
                   <p className="font-mono text-xs text-[var(--color-text-subtle)]">{cc.code}</p>
                   <h2 title={cc.name} className="mt-0.5 truncate text-sm font-medium text-[var(--color-text)]">{cc.name}</h2>
                 </div>
-                <Badge variant={cc.isActive ? "success" : "default"} dot>
-                  {cc.isActive ? "Activo" : "Inactivo"}
-                </Badge>
+                <MetaBadge meta={{ label: `${cc.isActive ? "Activo" : "Inactivo"}`, variant: cc.isActive ? "success" : "default" }} dot />
               </div>
               <p className="mt-3 text-xs text-[var(--color-text-muted)]">{cc.worksiteName || "Sin faena asociada"}</p>
               {canCreate && (
@@ -71,8 +69,8 @@ export function CostCenterList({ costCenters, worksites, canCreate }: CostCenter
                 <TableCell className="text-[var(--color-text-muted)]">{cc.worksiteName || "—"}</TableCell>
                 <TableCell>
                   {cc.isActive
-                    ? <Badge variant="success">Activo</Badge>
-                    : <Badge variant="default">Inactivo</Badge>}
+                    ? <MetaBadge meta={{ label: "Activo", variant: "success" }} />
+                    : <MetaBadge meta={{ label: "Inactivo", variant: "default" }} />}
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-1">

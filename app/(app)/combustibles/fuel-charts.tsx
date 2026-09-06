@@ -3,7 +3,7 @@ import { ChartEmpty } from "@/components/ui/chart-empty"
 
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts"
 import { chartTooltipStyle } from "@/lib/chart-palette"
-import { formatCompactCLP, formatCompactQty } from "@/lib/utils"
+import { formatCompactCLP, formatCompactQty, formatPricePerLiter } from "@/lib/utils"
 
 interface ChartDataPoint {
   group: string | null
@@ -26,8 +26,6 @@ const COLORS = [
 const AMOUNT_COLOR = "var(--color-info)"
 const PRICE_COLOR = "var(--color-signal)"
 
-// Precio por litro: la métrica que explica el gasto (volumen vs. precio).
-const formatPricePerLiter = (n: number) => `$${Math.round(n).toLocaleString("es-CL")}/L`
 
 function groupSmallProductSlices(data: ChartDataPoint[]) {
   const chartData = data

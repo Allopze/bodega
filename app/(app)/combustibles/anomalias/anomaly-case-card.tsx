@@ -2,7 +2,7 @@
 
 import React, { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { OptionSelect } from "@/components/ui/option-select"
@@ -63,8 +63,8 @@ export function AnomalyCaseCard({ anomalyCase, canReview, canResolve }: { anomal
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant={sv.variant} size="sm">{sv.label}</Badge>
-            <Badge variant="outline" size="sm">{ANOMALY_STATUS_LABELS[anomalyCase.status] ?? anomalyCase.status}</Badge>
+            <MetaBadge meta={{ label: `${sv.label}`, variant: sv.variant }} />
+            <MetaBadge meta={{ label: ANOMALY_STATUS_LABELS[anomalyCase.status] ?? anomalyCase.status, variant: "outline" }} />
             {anomalyCase.ruleName && <span className="text-sm font-medium">{anomalyCase.ruleName}</span>}
           </div>
           <p className="mt-2 text-sm">{anomalyCase.description}</p>

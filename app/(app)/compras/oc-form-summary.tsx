@@ -1,6 +1,6 @@
 "use client"
 
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { formatCLP, countOf, pluralize } from "@/lib/utils"
 import type { OcItemRow } from "./oc-form.types"
 
@@ -32,9 +32,7 @@ export function OcFormSummary({
           </p>
         </div>
         {supplierGroupCount > 1 && (
-          <Badge variant="info" size="sm">
-            {supplierGroupCount} OC
-          </Badge>
+          <MetaBadge meta={{ label: `${supplierGroupCount} OC`, variant: "info" }} />
         )}
       </div>
 

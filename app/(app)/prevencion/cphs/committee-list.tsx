@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { UsersThree } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
@@ -151,9 +151,7 @@ export function CommitteeList({ committees, meetings, reviews, worksites, assign
                     <span className="block text-xs text-[var(--color-text-subtle)]">{item.worksiteName}</span>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={committeeStatusBadgeVariant(item.mandateExpired ? "expired" : item.status)}>
-                      {COMMITTEE_STATUS_LABELS[item.mandateExpired ? "expired" : item.status] ?? item.status}
-                    </Badge>
+                    <MetaBadge meta={{ label: COMMITTEE_STATUS_LABELS[item.mandateExpired ? "expired" : item.status] ?? item.status, variant: committeeStatusBadgeVariant(item.mandateExpired ? "expired" : item.status) }} />
                   </TableCell>
                   <TableCell className="text-sm tabular-nums">
                     {item.constitutedOn}
@@ -163,7 +161,7 @@ export function CommitteeList({ committees, meetings, reviews, worksites, assign
                   <TableCell className="text-right font-mono text-sm tabular-nums">{item.closedMeetings}</TableCell>
                   <TableCell>
                     {item.cadenceOverdue
-                      ? <Badge variant="warning">Sin sesionar</Badge>
+                      ? <MetaBadge meta={{ label: "Sin sesionar", variant: "warning" }} />
                       : <span className="text-sm text-[var(--color-text-subtle)]">Al día</span>}
                   </TableCell>
                 </TableRow>
@@ -205,9 +203,7 @@ export function CommitteeList({ committees, meetings, reviews, worksites, assign
                   <TableCell className="text-sm">{MEETING_TYPE_LABELS[item.meetingType] ?? item.meetingType}</TableCell>
                   <TableCell className="text-sm tabular-nums">{formatDateTime(item.scheduledFor)}</TableCell>
                   <TableCell>
-                    <Badge variant={item.status === "closed" ? "success" : item.status === "cancelled" ? "outline" : "default"}>
-                      {COMMITTEE_MEETING_STATUS_LABELS[item.status] ?? item.status}
-                    </Badge>
+                    <MetaBadge meta={{ label: COMMITTEE_MEETING_STATUS_LABELS[item.status] ?? item.status, variant: item.status === "closed" ? "success" : item.status === "cancelled" ? "outline" : "default" }} />
                     {item.status === "closed" && !item.quorumReached && (
                       <span className="block text-xs text-[var(--color-text-subtle)]">Sin quórum</span>
                     )}
@@ -252,9 +248,7 @@ export function CommitteeList({ committees, meetings, reviews, worksites, assign
                   <TableCell className="text-sm">{item.worksiteName ?? "Toda la organización"}</TableCell>
                   <TableCell className="text-sm tabular-nums">{formatDateTime(item.heldAt)}</TableCell>
                   <TableCell>
-                    <Badge variant={item.status === "closed" ? "success" : "default"}>
-                      {MANAGEMENT_REVIEW_STATUS_LABELS[item.status] ?? item.status}
-                    </Badge>
+                    <MetaBadge meta={{ label: MANAGEMENT_REVIEW_STATUS_LABELS[item.status] ?? item.status, variant: item.status === "closed" ? "success" : "default" }} />
                     {item.conclusions && <span className="mt-1 block max-w-sm text-xs text-[var(--color-text-subtle)]">{item.conclusions}</span>}
                   </TableCell>
                   {canReview && (

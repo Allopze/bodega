@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useActionState } from "react"
 import { toast } from "@/lib/toast"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
@@ -64,7 +64,7 @@ export function AccessSystemsPanel({ systems, canManage }: { systems: SystemRow[
         {systems.map((system) => (
           <li key={system.id} className="flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5">
             <span className={`text-sm ${system.isActive ? "text-[var(--color-text)]" : "text-[var(--color-text-subtle)] line-through"}`}>{system.name}</span>
-            <Badge variant="outline" size="sm">{system.accessCount} activos</Badge>
+            <MetaBadge meta={{ label: `${system.accessCount} activos`, variant: "outline" }} />
             {canManage && (
               <form action={toggleAction} className="flex items-center">
                 <input type="hidden" name="systemId" value={system.id} />

@@ -4,8 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { ArrowSquareOut, Camera, ClockCounterClockwise, Flag, GearSix } from "@phosphor-icons/react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
-import { StateBadge } from "@/components/states/state-badge"
+import { MetaBadge, StateBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -34,7 +33,7 @@ interface ColumnDef {
 
 const COLUMNS: ColumnDef[] = [
   { key: "occurredAt", label: "Fecha y hora", defaultVisible: true, render: (r) => <span className="font-mono text-xs">{formatDateTime(r.occurredAt)}</span> },
-  { key: "source", label: "Fuente", defaultVisible: true, render: (r) => <Badge variant={SOURCE_BADGE[r.source]} size="sm">{FUEL_LOG_SOURCE_LABEL[r.source]}</Badge> },
+  { key: "source", label: "Fuente", defaultVisible: true, render: (r) => <MetaBadge meta={{ label: `${FUEL_LOG_SOURCE_LABEL[r.source]}`, variant: SOURCE_BADGE[r.source] }} /> },
   { key: "worksiteName", label: "Faena", defaultVisible: true, render: (r) => r.worksiteName ?? "—" },
   {
     key: "equipment", label: "Equipo", defaultVisible: true,
@@ -67,7 +66,7 @@ const COLUMNS: ColumnDef[] = [
   { key: "statusLabel", label: "Estado", defaultVisible: true, render: (r) => r.statusLabel ? <StateBadge state={r.statusLabel} entity="fuel_log" size="sm" /> : "—" },
   { key: "createdByName", label: "Creado por", defaultVisible: false, render: (r) => r.createdByName ?? "—" },
   { key: "updatedByName", label: "Modificado por", defaultVisible: false, render: (r) => r.updatedByName ?? "—" },
-  { key: "anomalyCount", label: "Anomalías", defaultVisible: true, render: (r) => r.anomalyCount != null && r.anomalyCount > 0 ? <Link href={`/combustibles/anomalias?ref=${r.source}:${r.id}`}><Badge variant="danger" size="sm">{r.anomalyCount}</Badge></Link> : <span className="text-[var(--color-text-muted)]">—</span> },
+  { key: "anomalyCount", label: "Anomalías", defaultVisible: true, render: (r) => r.anomalyCount != null && r.anomalyCount > 0 ? <Link href={`/combustibles/anomalias?ref=${r.source}:${r.id}`}><MetaBadge meta={{ label: String(r.anomalyCount), variant: "danger" }} /></Link> : <span className="text-[var(--color-text-muted)]">—</span> },
   { key: "reviewMark", label: "Revisión", defaultVisible: true, render: (r) => r.reviewMark ? <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400" title={r.reviewMarkNotes ?? "Marcado para revisión"}><Flag size={14} weight="fill" />{r.reviewMarkNotes ? <span className="text-xs max-w-[120px] truncate">{r.reviewMarkNotes}</span> : null}</span> : null },
   { key: "createdAt", label: "Creado", defaultVisible: false, render: (r) => r.createdAt ? formatDateTime(r.createdAt) : "—" },
   { key: "updatedAt", label: "Modificado", defaultVisible: false, render: (r) => r.updatedAt ? formatDateTime(r.updatedAt) : "—" },

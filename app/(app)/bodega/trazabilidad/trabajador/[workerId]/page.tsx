@@ -11,7 +11,7 @@ import { can, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatDate, formatQty } from "@/lib/utils"
 import { ArrowSquareOut, User, HardHat, CheckCircle, Warning } from "@phosphor-icons/react/dist/ssr"
@@ -140,11 +140,11 @@ export default async function WorkerEppTraceabilityPage({
             <span>Tallas Registradas</span>
           </div>
           <div className="flex flex-wrap gap-1.5 text-xs">
-            {worker.sizeTop && <Badge variant="outline">Superior: {worker.sizeTop}</Badge>}
-            {worker.sizeBottom && <Badge variant="outline">Inferior: {worker.sizeBottom}</Badge>}
-            {worker.sizeShoe && <Badge variant="outline">Calzado: {worker.sizeShoe}</Badge>}
-            {worker.sizeGloves && <Badge variant="outline">Guantes: {worker.sizeGloves}</Badge>}
-            {worker.sizeHelmet && <Badge variant="outline">Casco: {worker.sizeHelmet}</Badge>}
+            {worker.sizeTop && <MetaBadge meta={{ label: `Superior: ${worker.sizeTop}`, variant: "outline" }} />}
+            {worker.sizeBottom && <MetaBadge meta={{ label: `Inferior: ${worker.sizeBottom}`, variant: "outline" }} />}
+            {worker.sizeShoe && <MetaBadge meta={{ label: `Calzado: ${worker.sizeShoe}`, variant: "outline" }} />}
+            {worker.sizeGloves && <MetaBadge meta={{ label: `Guantes: ${worker.sizeGloves}`, variant: "outline" }} />}
+            {worker.sizeHelmet && <MetaBadge meta={{ label: `Casco: ${worker.sizeHelmet}`, variant: "outline" }} />}
             {!worker.sizeTop && !worker.sizeBottom && !worker.sizeShoe && !worker.sizeGloves && !worker.sizeHelmet && (
               <span className="text-[var(--color-text-subtle)]">Sin tallas registradas</span>
             )}
@@ -171,9 +171,7 @@ export default async function WorkerEppTraceabilityPage({
               {workerGaps.map((g) => (
                 <div key={g.requirementId} className="flex items-center justify-between text-xs">
                   <span className="text-[var(--color-text)]">{g.eppTypeLabel}</span>
-                  <Badge variant={g.enforcement === "blocking" ? "danger" : "warning"} size="sm">
-                    {g.gapType === "expired" ? "Vencido" : "Faltante"}
-                  </Badge>
+                  <MetaBadge meta={{ label: `${g.gapType === "expired" ? "Vencido" : "Faltante"}`, variant: g.enforcement === "blocking" ? "danger" : "warning" }} />
                 </div>
               ))}
             </div>

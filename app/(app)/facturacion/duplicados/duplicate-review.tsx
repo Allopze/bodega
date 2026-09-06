@@ -6,7 +6,8 @@ import { cn } from "@/lib/utils"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge, metaFor, type StateMetaInput } from "@/components/states/state-badge"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { formatMoney } from "@/lib/services/billing/money"
 import { docTypeShortLabel, documentStatusLabel, formatDateShort, providerLabel } from "@/lib/services/billing/labels"
 import { detectDuplicatesAction, resolveDuplicateAction } from "./actions"
@@ -56,6 +57,14 @@ export function DuplicateReview({ candidates }: { candidates: DuplicateCandidate
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [merging, setMerging] = useState<string | null>(null)
+  // ConfirmDialog en vez de confirm() nativo: fusión de documentos es una
+  // acción con consecuencias, merece confirmación estilizada y accesible.
+  const [mergingSide, setMergingSide] = useState<{
+    candidateId: string
+    keepId: string
+    keepLabel: string
+    voidLabel: string
+  } | null>(null)
 
   function resolve(candidateId: string, decision: "merge" | "dismiss", keepId?: string) {
     startTransition(async () => {
@@ -102,9 +111,7 @@ export function DuplicateReview({ candidates }: { candidates: DuplicateCandidate
                 {candidate.notes.map((note) => <li key={note}>· {note}</li>)}
               </ul>
             </div>
-            <Badge variant={CLASSIFICATION_TONES[candidate.classification] ?? "neutral"}>
-              {CLASSIFICATION_LABELS[candidate.classification] ?? candidate.classification}
-            </Badge>
+            <MetaBadge meta={metaFor(CLASSIFICATION_META, candidate.classification)} />
           </header>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -137,16 +144,14 @@ export function DuplicateReview({ candidates }: { candidates: DuplicateCandidate
                   <button
                     type="button"
                     disabled={isPending}
-                    onClick={() => {
-                      const confirmed = confirm(
-                        `Conservar ${docTypeShortLabel(side.docType)} ${side.folio} y anular ` +
-                        `${docTypeShortLabel(other.docType)} ${other.folio}?\n\n` +
-                        `Las referencias externas, vínculos y pagos de la anulada se mueven a la que conservas. ` +
-                        `Nada se borra: la anulada conserva su historia.`,
-                      )
-                      if (!confirmed) return
-                      resolve(candidate.id, "merge", side.id)
-                    }}
+                    onClick={() =>
+                      setMergingSide({
+                        candidateId: candidate.id,
+                        keepId: side.id,
+                        keepLabel: `${docTypeShortLabel(side.docType)} ${side.folio}`,
+                        voidLabel: `${docTypeShortLabel(other.docType)} ${other.folio}`,
+                      })
+                    }
                     className={cn(buttonVariants({ size: "sm" }), "mt-2 w-full")}
                   >
                     Conservar esta
@@ -170,30 +175,43 @@ export function DuplicateReview({ candidates }: { candidates: DuplicateCandidate
               >
                 Fusionar: elegir cuál conservar
               </button>
-            )}
-            <button
+            )}            <button
               type="button"
               disabled={isPending}
               onClick={() => resolve(candidate.id, "dismiss")}
               className="text-[var(--color-text-muted)] hover:underline disabled:opacity-60"
             >
+
               No son el mismo documento
             </button>
           </div>
         </article>
       ))}
+
+      <ConfirmDialog
+        open={mergingSide !== null}
+        onOpenChange={(open) => !open && setMergingSide(null)}
+        title="Confirmar fusión"
+        description={
+          mergingSide
+            ? `Conservar ${mergingSide.keepLabel} y anular ${mergingSide.voidLabel}? Las referencias externas, vínculos y pagos de la anulada se mueven a la que conservas. Nada se borra: la anulada conserva su historia.`
+            : ""
+        }
+        confirmLabel="Fusionar"
+        variant="warning"
+        onConfirm={() => {
+          if (!mergingSide) return
+          resolve(mergingSide.candidateId, "merge", mergingSide.keepId)
+          setMergingSide(null)
+        }}
+      />
     </div>
   )
 }
 
-const CLASSIFICATION_LABELS: Record<string, string> = {
-  probable: "Probable duplicado",
-  possible: "Posible duplicado",
-  conflict: "Conflicto de datos",
-}
-
-const CLASSIFICATION_TONES: Record<string, "warning" | "info" | "danger"> = {
-  probable: "warning",
-  possible: "info",
-  conflict: "danger",
+/** Label + variante en un solo mapa (MetaBadge): el color lo decide el estado. */
+const CLASSIFICATION_META: Record<string, StateMetaInput> = {
+  probable: { label: "Probable duplicado",  variant: "warning" },
+  possible: { label: "Posible duplicado",   variant: "info" },
+  conflict: { label: "Conflicto de datos",  variant: "danger" },
 }

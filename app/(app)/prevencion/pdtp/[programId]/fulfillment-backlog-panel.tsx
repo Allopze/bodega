@@ -1,4 +1,4 @@
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { countPdtpFulfillmentBacklog } from "@/lib/services/pdtp/backlog"
 
 /**
@@ -21,19 +21,19 @@ export async function FulfillmentBacklogPanel({ programId }: { programId: string
       <div className="mt-3 flex flex-wrap gap-3">
         {backlog.errored > 0 && (
           <div className="flex items-center gap-2">
-            <Badge variant="danger" dot>{backlog.errored}</Badge>
+            <MetaBadge meta={{ label: String(backlog.errored), variant: "danger" }} dot />
             <span className="text-sm text-[var(--color-text-muted)]">evento(s) en error, sin acreditar</span>
           </div>
         )}
         {backlog.pending > 0 && (
           <div className="flex items-center gap-2">
-            <Badge variant="warning" dot>{backlog.pending}</Badge>
+            <MetaBadge meta={{ label: String(backlog.pending), variant: "warning" }} dot />
             <span className="text-sm text-[var(--color-text-muted)]">evento(s) pendiente(s) de reintento</span>
           </div>
         )}
         {backlog.digestDrift && (
           <div className="flex items-center gap-2">
-            <Badge variant="warning" dot>1</Badge>
+            <MetaBadge meta={{ label: "1", variant: "warning" }} dot />
             <span className="text-sm text-[var(--color-text-muted)]">
               el contenido vigente ya no coincide con lo firmado
             </span>

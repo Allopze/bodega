@@ -8,8 +8,7 @@ import { can, canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { StateBadge } from "@/components/states/state-badge"
+import { MetaBadge, StateBadge } from "@/components/states/state-badge"
 import { RequestProgressPanel } from "@/components/states/request-progress-panel"
 import { buildOcProgress } from "@/lib/work-queue"
 import {
@@ -20,6 +19,7 @@ import { getDocumentChain } from "@/lib/services/document-chain"
 import { listDispatchGuidesForReceipt, officeWorksiteLabel } from "@/lib/services/dispatch-guides"
 import { DocumentChainStrip } from "@/components/documents/document-chain-strip"
 import { cn, formatCLP, formatDateTime, formatQty, formatWorksiteLabel } from "@/lib/utils"
+import { DetailItem as DetailItemShared } from "@/components/ui/detail-item"
 import { ArrowSquareOut } from "@phosphor-icons/react/dist/ssr"
 import { ReceiptGuideActions } from "./receipt-guide-actions"
 
@@ -197,10 +197,10 @@ export default async function RecepcionDetallePage({
                           {flagged && (
                             <div className="mt-1 flex flex-wrap gap-1.5">
                               {(item.quantityRejected ?? 0) > 0 && (
-                                <Badge variant="danger" size="sm">Rechazado {formatQty(item.quantityRejected, ocItem.unitOfMeasure)}</Badge>
+                                <MetaBadge meta={{ label: `Rechazado ${formatQty(item.quantityRejected, ocItem.unitOfMeasure)}`, variant: "danger" }} />
                               )}
                               {(item.quantityDamaged ?? 0) > 0 && (
-                                <Badge variant="warning" size="sm">Dañado {formatQty(item.quantityDamaged, ocItem.unitOfMeasure)}</Badge>
+                                <MetaBadge meta={{ label: `Dañado ${formatQty(item.quantityDamaged, ocItem.unitOfMeasure)}`, variant: "warning" }} />
                               )}
                             </div>
                           )}
@@ -299,9 +299,7 @@ export default async function RecepcionDetallePage({
           <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-sm font-semibold text-[var(--color-text)]">Recepción</h2>
-              <Badge variant={receipt.status === "closed" ? "success" : "info"} size="sm" dot>
-                {receipt.status === "closed" ? "Cerrada" : "Abierta"}
-              </Badge>
+              <MetaBadge meta={{ label: `${receipt.status === "closed" ? "Cerrada" : "Abierta"}`, variant: receipt.status === "closed" ? "success" : "info" }} dot />
             </div>
             {/* A-33: el glosario de estados sólo existía en la bandeja, y aquí
                 "Abierta"/"Cerrada" quedaba sin explicación — que es donde más
@@ -312,10 +310,10 @@ export default async function RecepcionDetallePage({
                 : "Quedan líneas por conciliar en esta recepción; aún admite ajustes."}
             </p>
             <dl className="mt-3 divide-y divide-[var(--color-border)]">
-              <DetailLine label="Destino" value={destinationLabel} />
-              <DetailLine label="Guía" value={receipt.dispatchGuideNo ?? "Sin guía"} mono />
-              <DetailLine label="Recibido por" value={receipt.receivedBy?.name ?? "Usuario"} />
-              <DetailLine label="Fecha" value={formatDateTime(receipt.receivedAt)} mono />
+              <DetailItemShared label="Destino" value={destinationLabel} />
+              <DetailItemShared label="Guía" value={receipt.dispatchGuideNo ?? "Sin guía"} mono />
+              <DetailItemShared label="Recibido por" value={receipt.receivedBy?.name ?? "Usuario"} />
+              <DetailItemShared label="Fecha" value={formatDateTime(receipt.receivedAt)} mono />
             </dl>
           </section>
 
@@ -325,10 +323,10 @@ export default async function RecepcionDetallePage({
               <StateBadge state={receipt.purchaseOrder.status} entity="oc" size="sm" />
             </div>
             <dl className="mt-3 divide-y divide-[var(--color-border)]">
-              <DetailLine label="OC" value={receipt.purchaseOrder.code} mono />
-              <DetailLine label="Proveedor" value={receipt.purchaseOrder.supplier?.name ?? "—"} />
-              <DetailLine label="Faena" value={receipt.purchaseOrder.worksite?.name ?? "—"} />
-              <DetailLine label="Total OC" value={formatCLP(receipt.purchaseOrder.totalAmount)} mono />
+              <DetailItemShared label="OC" value={receipt.purchaseOrder.code} mono />
+              <DetailItemShared label="Proveedor" value={receipt.purchaseOrder.supplier?.name ?? "—"} />
+              <DetailItemShared label="Faena" value={receipt.purchaseOrder.worksite?.name ?? "—"} />
+              <DetailItemShared label="Total OC" value={formatCLP(receipt.purchaseOrder.totalAmount)} mono />
             </dl>
             <Button asChild variant="secondary" size="sm" className="mt-3 w-full">
               <Link href={`/compras/${receipt.purchaseOrderId}`}>
@@ -391,19 +389,7 @@ export default async function RecepcionDetallePage({
   )
 }
 
-function DetailLine({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="flex items-center justify-between gap-3 py-2.5">
-      <dt className="text-xs text-[var(--color-text-subtle)]">{label}</dt>
-      <dd className={cn(
-        "text-right text-xs font-medium text-[var(--color-text)]",
-        mono && "font-mono tabular-nums",
-      )}>
-        {value}
-      </dd>
-    </div>
-  )
-}
+// Detalle: mismo patrón que el resto de las fichas (`DetailItem`).
 
 function QtyLine({ label, value, signal = false }: { label: string; value: number; signal?: boolean }) {
   return (

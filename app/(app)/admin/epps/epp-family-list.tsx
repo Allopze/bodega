@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { DataTable } from "@/components/ui/data-table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -119,7 +119,7 @@ export function EppFamilyList({ families, eppTypes }: Props) {
   const renderMobileCard = (row: Row) => (
     <ResponsiveDataListCard
       title={row.canonicalName}
-      status={row.eppTypeId ? <Badge variant="info">{row.eppTypeLabel}</Badge> : <Badge variant="warning">Sin clasificar</Badge>}
+      status={row.eppTypeId ? <MetaBadge meta={{ label: row.eppTypeLabel, variant: "info" }} /> : <MetaBadge meta={{ label: "Sin clasificar", variant: "warning" }} />}
     >
       <ResponsiveDataListField label="Tipo de EPP" className="col-span-2">{typeSelect(row)}</ResponsiveDataListField>
       <ResponsiveDataListField label="Marca / modelo">{row.brand} · {row.model}</ResponsiveDataListField>
@@ -143,12 +143,10 @@ export function EppFamilyList({ families, eppTypes }: Props) {
         <span className="text-sm font-medium text-(--color-text)">{row.canonicalName}</span>
         <span className="ml-2 inline-flex flex-wrap gap-1 align-middle">
           {row.variants.slice(0, 4).map((v) => (
-            <Badge key={v.id} variant="default" size="sm">
-              {v.sku}
-            </Badge>
+            <MetaBadge key={v.id} meta={{ label: `${v.sku}`, variant: "default" }} />
           ))}
           {row.variants.length > 4 && (
-            <Badge variant="default" size="sm">+{row.variants.length - 4}</Badge>
+            <MetaBadge meta={{ label: `+${row.variants.length - 4}`, variant: "default" }} />
           )}
         </span>
       </td>

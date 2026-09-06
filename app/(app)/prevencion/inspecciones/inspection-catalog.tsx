@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { ClipboardText, MagnifyingGlass } from "@phosphor-icons/react"
 import { useRouter } from "next/navigation"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -299,9 +299,9 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, canManage, ca
               <div className="flex items-start justify-between gap-3">
                 <div><span className="font-mono text-xs text-[var(--color-text-subtle)]">{item.code} · {item.versionLabel}</span><h2 className="mt-0.5 text-sm font-semibold">{item.name}</h2><p className="mt-1 text-xs text-[var(--color-text-subtle)]">{INSPECTION_KIND_LABELS[item.kind] ?? item.kind}</p></div>
                 <div className="flex flex-col items-end gap-1">
-                  <Badge variant={templateStatusVariant(item.status)}>{item.status === "approved" ? "Aprobada" : item.status === "superseded" ? "Reemplazada" : "Borrador"}</Badge>
+                  <MetaBadge meta={{ label: `${item.status === "approved" ? "Aprobada" : item.status === "superseded" ? "Reemplazada" : "Borrador"}`, variant: templateStatusVariant(item.status) }} />
                   {/* I-28: la plantilla demo (y cualquier otra sin origen de catálogo) quedaba indistinguible de un instrumento real. */}
-                  {!item.sourceDefinitionCode && <Badge variant="outline">Sin origen en catálogo</Badge>}
+                  {!item.sourceDefinitionCode && <MetaBadge meta={{ label: "Sin origen en catálogo", variant: "outline" }} />}
                 </div>
               </div>
               {item.definitionMissing && <p className="rounded-lg bg-[var(--color-warning-tint)] px-3 py-2 text-xs text-[var(--color-warning-ink)]">La fuente fue retirada del catálogo, pero esta versión {item.status === "approved" ? "sigue ejecutable desde su checklist congelado hasta que la retires" : "se conserva sólo como historial"}.</p>}
@@ -347,7 +347,7 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, canManage, ca
                     <span className="font-mono text-xs">{item.code}</span>
                     <span className="block text-sm">{item.name}</span>
                     {/* I-28: la plantilla demo (y cualquier otra sin origen de catálogo) quedaba indistinguible de un instrumento real. */}
-                    {!item.sourceDefinitionCode && <Badge variant="outline" className="mt-1">Sin origen en catálogo</Badge>}
+                    {!item.sourceDefinitionCode && <MetaBadge meta={{ label: "Sin origen en catálogo", variant: "outline" }} className="mt-1" />}
                   </TableCell>
                   <TableCell className="text-sm">{INSPECTION_KIND_LABELS[item.kind] ?? item.kind}</TableCell>
                   <TableCell className="font-mono text-xs">{item.versionLabel}</TableCell>
@@ -360,7 +360,7 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, canManage, ca
                     </> : isOfficialProvenance(item.provenanceKind) ? <span className="text-[var(--color-warning-ink)]">Documento oficial pendiente</span> : "Definición de plataforma"}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={templateStatusVariant(item.status)}>{item.status === "approved" ? "Aprobada" : item.status === "superseded" ? "Reemplazada" : "Borrador"}</Badge>
+                    <MetaBadge meta={{ label: `${item.status === "approved" ? "Aprobada" : item.status === "superseded" ? "Reemplazada" : "Borrador"}`, variant: templateStatusVariant(item.status) }} />
                     {/* A-03: el snapshot está congelado a propósito, así que la
                         deriva no es un error — es la señal de que toca publicar
                         una versión nueva. Sólo interesa mientras la plantilla
@@ -584,9 +584,7 @@ export function InspectionProgramsPanel({ programs, assignees, subjectsByWorksit
               <article key={item.id} className="space-y-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div><h2 className="text-sm font-semibold">{item.templateName}</h2><p className="mt-1 text-xs text-[var(--color-text-subtle)]">{item.worksiteName}</p></div>
-                  <Badge variant={!item.templateApproved ? "warning" : !item.isActive ? "outline" : overdue ? "warning" : "success"}>
-                    {!item.templateApproved ? "Plantilla reemplazada" : !item.isActive ? "Detenida" : overdue ? "Vencida" : "Activa"}
-                  </Badge>
+                  <MetaBadge meta={{ label: `${!item.templateApproved ? "Plantilla reemplazada" : !item.isActive ? "Detenida" : overdue ? "Vencida" : "Activa"}`, variant: !item.templateApproved ? "warning" : !item.isActive ? "outline" : overdue ? "warning" : "success" }} />
                 </div>
                 <dl className="grid grid-cols-2 gap-3 text-xs">
                   <div><dt className="text-[var(--color-text-subtle)]">Cadencia</dt><dd className="mt-0.5 font-medium">{INSPECTION_FREQUENCY_LABELS[item.frequency] ?? item.frequency} · {item.intervalDays} días</dd></div>
@@ -636,7 +634,7 @@ export function InspectionProgramsPanel({ programs, assignees, subjectsByWorksit
                   </TableCell>
                   <TableCell className="text-sm">
                     {!item.templateApproved
-                      ? <Badge variant="warning">Plantilla reemplazada</Badge>
+                      ? <MetaBadge meta={{ label: "Plantilla reemplazada", variant: "warning" }} />
                       : item.isActive ? "Sí" : "No"}
                   </TableCell>
                   {canManage && (

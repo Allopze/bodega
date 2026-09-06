@@ -9,6 +9,7 @@ import { readOnwayAdminStatus } from "@/lib/integrations/onway/onway-settings"
 import { can } from "@/lib/auth/can"
 import { getFleetGpsAlerts, getFleetGpsMonitoring } from "@/lib/services/fleet-gps"
 import { formatDateTime } from "@/lib/utils"
+import { Callout } from "@/components/ui/callout"
 import { FleetGpsWorkspace } from "./fleet-gps-workspace"
 import { OnwayControls } from "./onway-controls"
 
@@ -66,24 +67,28 @@ export default async function FleetGpsMonitoringPage() {
       <SummaryBar stats={stats} />
 
       {captureIsStale && latestCapture ? (
-        <p role="status" className="mt-3 rounded-[var(--radius)] border border-[var(--color-warning)] bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">
+        <Callout tone="warning" className="mt-3">
           <strong>Captura desactualizada:</strong> la última posición se tomó hace {staleSinceLabel(latestCapture)}. Las ubicaciones son el último dato conocido, no una lectura en tiempo real.
           {monitoring.canManage ? <span> Si OnWay no responde, ejecuta <em>Actualizar ahora</em> desde la barra superior.</span> : null}
-        </p>
+        </Callout>
       ) : null}
 
       {monitoring.canManage && monitoring.latestRun?.status === "failed" ? (
-        <p role="alert" className="mt-3 flex flex-wrap items-start justify-between gap-2 rounded-[var(--radius)] border border-[var(--color-danger)] bg-[var(--color-danger-tint)] p-3 text-sm text-[var(--color-danger-ink)]">
-          <span><strong>Última sincronización de OnWay falló.</strong> Revisa las credenciales en <em>Configurar</em> (arriba a la derecha) o ejecuta una corrida manual.</span>
-          {monitoring.latestRun.errorCode ? <span className="rounded bg-[var(--color-surface-2)] px-2 py-0.5 font-mono text-xs">{monitoring.latestRun.errorCode}</span> : null}
-        </p>
+        <Callout tone="danger" role="alert" className="mt-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <span><strong>Última sincronización de OnWay falló.</strong> Revisa las credenciales en <em>Configurar</em> (arriba a la derecha) o ejecuta una corrida manual.</span>
+            {monitoring.latestRun.errorCode ? <span className="rounded bg-[var(--color-surface-2)] px-2 py-0.5 font-mono text-xs">{monitoring.latestRun.errorCode}</span> : null}
+          </div>
+        </Callout>
       ) : null}
 
       {monitoring.canManage && Number(monitoring.unmatched ?? 0) > 0 ? (
-        <p role="status" className="mt-3 flex flex-wrap items-start justify-between gap-2 rounded-[var(--radius)] border border-[var(--color-warning)] bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">
-          <span><strong>{monitoring.unmatched} dispositivo{monitoring.unmatched === 1 ? "" : "s"} de OnWay sin patente única</strong> en el catálogo de Flota. La posición se descarta hasta corregirlo.</span>
-          <Link href="/admin/flota-catalogos/vehiculos" className="shrink-0 font-semibold underline">Revisar catálogo de vehículos</Link>
-        </p>
+        <Callout tone="warning" className="mt-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <span><strong>{monitoring.unmatched} dispositivo{monitoring.unmatched === 1 ? "" : "s"} de OnWay sin patente única</strong> en el catálogo de Flota. La posición se descarta hasta corregirlo.</span>
+            <Link href="/admin/flota-catalogos/vehiculos" className="shrink-0 font-semibold underline">Revisar catálogo de vehículos</Link>
+          </div>
+        </Callout>
       ) : null}
 
       {!hasData ? (

@@ -8,7 +8,7 @@ import { DatePicker } from "@/components/ui/date-picker"
 import { Field } from "@/components/ui/field"
 import { toast } from "@/lib/toast"
 import { saveActionPlanItemAction, deleteActionPlanItemAction } from "@/app/(app)/prevencion/actions"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ESTADO_LABELS, estadoPlanBadgeVariant } from "@/lib/sst/badges"
 import type { SstActionPlanItemView } from "@/lib/services/sst-module/capa-view"
@@ -149,9 +149,7 @@ export function ActionPlanPanel({ evaluationId, items, readOnly, onUpdate }: Pro
                   <TableCell>{item.responsable}</TableCell>
                   <TableCell className="tabular-nums">{formatDateDisplay(item.plazo)}</TableCell>
                   <TableCell>
-                    <Badge variant={estadoPlanBadgeVariant(item.estado)}>
-                      {ESTADO_LABELS[item.estado] ?? item.estado}
-                    </Badge>
+                    <MetaBadge meta={{ label: `${ESTADO_LABELS[item.estado] ?? item.estado}`, variant: estadoPlanBadgeVariant(item.estado) }} />
                   </TableCell>
                   {!readOnly && (
                     <TableCell>

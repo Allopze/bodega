@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { relateProposalToInvoiceAction, transitionProposalAction } from "./actions"
 import type { ProposalStatus, ProposalTransition } from "@/lib/services/billing/proposal-rules"
 
@@ -46,6 +47,9 @@ export function ProposalActions({
   const [isPending, startTransition] = useTransition()
   const [reasonFor, setReasonFor] = useState<ProposalTransition | null>(null)
   const [linking, setLinking] = useState(false)
+  // ConfirmDialog en vez de confirm() nativo: mismo texto, pero estilizado,
+  // accesible y probable en tests.
+  const [confirming, setConfirming] = useState<{ transition: ProposalTransition; message: string } | null>(null)
 
   function run(transition: ProposalTransition, reason?: string) {
     startTransition(async () => {
@@ -104,7 +108,10 @@ export function ProposalActions({
                 setReasonFor(action.transition)
                 return
               }
-              if (action.confirm && !confirm(action.confirm)) return
+              if (action.confirm) {
+                setConfirming({ transition: action.transition, message: action.confirm })
+                return
+              }
               run(action.transition)
             }}
             className={
@@ -204,6 +211,20 @@ export function ProposalActions({
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={confirming !== null}
+        onOpenChange={(open) => !open && setConfirming(null)}
+        title="Confirmar acción"
+        description={confirming?.message ?? ""}
+        confirmLabel="Confirmar"
+        variant="warning"
+        onConfirm={() => {
+          if (!confirming) return
+          run(confirming.transition)
+          setConfirming(null)
+        }}
+      />
     </>
   )
 }

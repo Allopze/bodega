@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useSafeShellHeader } from "@/components/layout/header-context"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Pagination } from "@/components/ui/pagination"
@@ -224,7 +224,7 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
                       </TableCell>
                       <TableCell className="max-w-md">
                         {item.requiresImmediateStop && (
-                          <Badge variant="danger" className="mb-1">Detener la tarea</Badge>
+                          <MetaBadge meta={{ label: "Detener la tarea", variant: "danger" }} className="mb-1" />
                         )}
                         <p className="line-clamp-1 text-sm font-medium">{item.finding}</p>
                         <p className="mt-1 line-clamp-1 text-xs text-[var(--color-text-subtle)]">{item.actionDescription}</p>
@@ -236,7 +236,7 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
                         <p className="text-xs text-[var(--color-text-subtle)]">{PRIORITY_LABEL[item.priority] ?? item.priority}</p>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={capaStatusBadgeVariant(item.status)}>{CAPA_STATUS_LABELS[item.status as CapaStatus] ?? item.status}</Badge>
+                        <MetaBadge meta={{ label: `${CAPA_STATUS_LABELS[item.status as CapaStatus] ?? item.status}`, variant: capaStatusBadgeVariant(item.status) }} />
                         {item.reconciliationStatus !== "reconciled" && <p className="mt-1 text-xs text-[var(--color-warning-ink)]">Por conciliar</p>}
                       </TableCell>
                     </TableRow>

@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useActionState } from "react"
 import { CaretDown } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { SubmitButton } from "@/components/ui/submit-button"
@@ -79,9 +79,7 @@ export function RequestGroup({
           <span className="font-mono text-sm font-semibold text-[var(--color-text)]">
             {request.code}
           </span>
-          <Badge variant={REQUEST_TYPE_VARIANTS[request.requestType] ?? "default"} size="sm" className="shrink-0">
-            {REQUEST_TYPE_LABELS[request.requestType] ?? request.requestType}
-          </Badge>
+          <MetaBadge meta={{ label: `${REQUEST_TYPE_LABELS[request.requestType] ?? request.requestType}`, variant: REQUEST_TYPE_VARIANTS[request.requestType] ?? "default" }} className="shrink-0" />
           <span className="text-sm text-[var(--color-text-muted)]">·</span>
           <span className="text-sm text-[var(--color-text-muted)] truncate">
             {request.worksiteName}
@@ -126,9 +124,7 @@ export function RequestGroup({
               </Select>
             </form>
           ) : (
-            <Badge variant="outline" size="sm" className="shrink-0 text-xs">
-              {mode === "directo_faena" ? "Directo a faena" : "Vía oficina"}
-            </Badge>
+            <MetaBadge meta={{ label: mode === "directo_faena" ? "Directo a faena" : "Vía oficina", variant: "outline" }} className="shrink-0 text-xs" />
           )}
 
           {!allApproved && canApproveThisRequest && onToggleMany && (

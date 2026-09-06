@@ -11,7 +11,7 @@ import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/can"
 import { pendingPurchaseWhere } from "@/lib/adquisiciones/pending-purchase"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { formatCLP } from "@/lib/utils"
 import { and, count, eq, inArray, isNull, sql, sum, asc } from "drizzle-orm"
 import { ChartBar, ShoppingCart, Truck } from "@phosphor-icons/react/dist/ssr"
@@ -182,7 +182,7 @@ export default async function Page() {
                 <ChartBar size={16} className="text-[var(--color-text-subtle)]" />
                 <h2 className="text-sm font-medium text-[var(--color-text)]">{metric.label}</h2>
               </div>
-              <Badge variant="outline">{metric.value}</Badge>
+              <MetaBadge meta={{ label: String(metric.value), variant: "outline" }} />
             </div>
             <p className="mt-3 text-sm text-[var(--color-text-muted)]">{metric.detail}</p>
           </Link>

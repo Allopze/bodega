@@ -5,7 +5,7 @@ import { DataTable } from "@/components/ui/data-table"
 import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
 import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
 import { SupplierForm } from "./supplier-form"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toggleSupplierActive } from "./actions"
 import { COLUMNS, CONTRACT } from "./catalog-contract"
@@ -43,9 +43,7 @@ export function SupplierList({ suppliers }: { suppliers: SupplierRow[] }) {
                   <h2 title={s.name} className="text-sm font-medium text-[var(--color-text)] truncate">{s.name}</h2>
                   <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{s.rut ?? "—"}</p>
                 </div>
-                <Badge variant={s.isActive ? "success" : "default"} dot>
-                  {s.isActive ? "Activo" : "Inactivo"}
-                </Badge>
+                <MetaBadge meta={{ label: `${s.isActive ? "Activo" : "Inactivo"}`, variant: s.isActive ? "success" : "default" }} dot />
               </div>
 
               <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
@@ -92,9 +90,7 @@ export function SupplierList({ suppliers }: { suppliers: SupplierRow[] }) {
               </TableCell>
               <TableCell className="text-xs text-[var(--color-text-muted)]">{s.paymentTerms ?? "—"}</TableCell>
               <TableCell>
-                <Badge variant={s.isActive ? "success" : "default"} dot className="w-20 justify-center">
-                  {s.isActive ? "Activo" : "Inactivo"}
-                </Badge>
+                <MetaBadge meta={{ label: `${s.isActive ? "Activo" : "Inactivo"}`, variant: s.isActive ? "success" : "default" }} dot className="w-20 justify-center" />
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-2 justify-end">

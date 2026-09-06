@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { formatDate, formatCLP } from "@/lib/utils"
@@ -63,7 +63,7 @@ export function MaintenanceTable({ rows, canManage = false, suppliers = [] }: {
               </Link>
               <span className="ml-2 text-xs text-[var(--color-text-subtle)]">{[row.assetBrand, row.assetModel].filter(Boolean).join(" ")}</span>
             </TableCell>
-            <TableCell className="w-28"><Badge variant="warning">{IT_MAINTENANCE_TYPE_META[row.type] ?? row.type}</Badge></TableCell>
+            <TableCell className="w-28"><MetaBadge meta={{ label: IT_MAINTENANCE_TYPE_META[row.type] ?? row.type, variant: "warning" }} /></TableCell>
             <TableCell className="max-w-[240px] truncate">{row.reportedIssue ?? "—"}</TableCell>
             <TableCell className="max-w-[280px] truncate">{row.workDone}</TableCell>
             <TableCell className="w-40">

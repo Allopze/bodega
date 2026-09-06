@@ -14,7 +14,7 @@ import {
   TableRoot,
   TableRow,
 } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import type { PdtpAggregateActivityWorksite, PdtpSheetView } from "@/lib/services/prevention-pdtp"
 import { deriveActivityStatus, countOverdueMonths, pdtpActivationPeriod, type PdtpActivityStatus, type PdtpPeriod } from "@/lib/services/pdtp/period"
 import { PdtpExecutionForm } from "./pdtp-execution-form"
@@ -32,8 +32,11 @@ import {
   usePdtpMonthWindow,
   type PdtpStatusCounts,
 } from "./pdtp-sheet-table-ui"
+import { MONTH_LABELS } from "@/lib/utils"
 
-const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+/** Mes del período PDTP (1–12); etiqueta en `MONTH_LABELS[mes - 1]`. */
+const PDTP_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const
+
 const EMPTY_PENDING_APPROVALS: PendingApproval[] = []
 
 type PendingApproval = { id: string; activityId: string; month: number; week: number }
@@ -46,13 +49,13 @@ function PdtpExecutionBadges({ exec }: { exec: ExecutionForBadges }) {
   return (
     <>
       {exec.noCumpleCount > 0 && (
-        <Badge variant="warning" size="sm">{exec.noCumpleCount} no cumple</Badge>
+        <MetaBadge meta={{ label: `${exec.noCumpleCount} no cumple`, variant: "warning" }} />
       )}
       {exec.actionsOverdue > 0 && (
-        <Badge variant="danger" size="sm">{exec.actionsOverdue} vencidas</Badge>
+        <MetaBadge meta={{ label: `${exec.actionsOverdue} vencidas`, variant: "danger" }} />
       )}
       {exec.actionsPending > 0 && (
-        <Badge variant="outline" size="sm">{exec.actionsPending} pendientes</Badge>
+        <MetaBadge meta={{ label: `${exec.actionsPending} pendientes`, variant: "outline" }} />
       )}
     </>
   )
@@ -60,7 +63,7 @@ function PdtpExecutionBadges({ exec }: { exec: ExecutionForBadges }) {
 
 function PdtpAggregateBreakdown({ summaries, worksiteNames, bare = false }: { summaries: PdtpAggregateActivityWorksite[]; worksiteNames: Record<string, string>; bare?: boolean }) {
   if (summaries.length === 0) return null
-  const chips = <div className="mt-1 flex flex-wrap gap-1.5">{summaries.map((summary) => <Badge key={summary.worksiteId} variant="outline" size="sm">{worksiteNames[summary.worksiteId] ?? "Faena"}: {summary.executed}/{summary.planned} · {summary.status === "executed" ? "Ejecutada" : summary.status === "overdue" ? "Atrasada" : summary.status === "pending" ? "Pendiente" : "No programada"}</Badge>)}</div>
+  const chips = <div className="mt-1 flex flex-wrap gap-1.5">{summaries.map((summary) => <MetaBadge key={summary.worksiteId} meta={{ label: `${worksiteNames[summary.worksiteId] ?? "Faena"}: ${summary.executed}/${summary.planned} · ${summary.status === "executed" ? "Ejecutada" : summary.status === "overdue" ? "Atrasada" : summary.status === "pending" ? "Pendiente" : "No programada"}`, variant: "outline" }} />)}</div>
   // `bare`: sin <details> propio, para vivir dentro del expander único de la
   // vista anual (UI/UX 2026-08-05, B1b — antes había dos expanders por fila).
   if (bare) return chips
@@ -333,7 +336,7 @@ export function PdtpSheetTable({
                   <TableHead className="sticky left-12 z-20 min-w-[22rem] bg-[var(--color-surface-2)] shadow-[1px_0_0_var(--color-border)]">Actividad</TableHead>
                   <TableHead>Estado</TableHead>
                   {visibleMonths.map((mi) => (
-                    <TableHead key={mi} className="text-right">{MONTH_LABELS[mi]}</TableHead>
+                    <TableHead key={mi} className="text-right">{MONTH_LABELS[(PDTP_MONTHS[mi] ?? mi + 1) - 1]}</TableHead>
                   ))}
                   <TableHead className="min-w-[7.5rem] text-right">Plan / ejecutado</TableHead>
                   {canOperate && worksiteId && <TableHead className="w-48">Registrar</TableHead>}

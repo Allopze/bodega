@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Certificate } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -140,7 +140,7 @@ export function TrainingCatalog({ courses, versions, requirements, worksites, ca
                   </TableCell>
                   <TableCell>
                     {item.publishedVersionLabel
-                      ? <Badge variant="success">{item.publishedVersionLabel}</Badge>
+                      ? <MetaBadge meta={{ label: item.publishedVersionLabel, variant: "success" }} />
                       : <span className="text-xs text-[var(--color-text-subtle)]">Sin versión publicada</span>}
                   </TableCell>
                 </TableRow>
@@ -175,9 +175,7 @@ export function TrainingCatalog({ courses, versions, requirements, worksites, ca
                   <TableCell className="text-sm">{item.courseName}</TableCell>
                   <TableCell className="font-mono text-xs">{item.versionLabel}</TableCell>
                   <TableCell>
-                    <Badge variant={versionStatusVariant(item.status)}>
-                      {TRAINING_VERSION_STATUS_LABELS[item.status] ?? item.status}
-                    </Badge>
+                    <MetaBadge meta={{ label: TRAINING_VERSION_STATUS_LABELS[item.status] ?? item.status, variant: versionStatusVariant(item.status) }} />
                     {item.observationComment && (
                       <span className="mt-1 block max-w-xs text-xs text-[var(--color-text-subtle)]">{item.observationComment}</span>
                     )}
@@ -223,9 +221,7 @@ export function TrainingCatalog({ courses, versions, requirements, worksites, ca
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={item.enforcement === "blocking" ? "danger" : "warning"}>
-                      {item.enforcement === "blocking" ? "Bloqueante" : "Advertencia"}
-                    </Badge>
+                    <MetaBadge meta={item.enforcement === "blocking" ? { label: "Bloqueante", variant: "danger" } : { label: "Advertencia", variant: "warning" }} />
                   </TableCell>
                   <TableCell className="text-sm">{item.isActive ? "Sí" : "No"}</TableCell>
                 </TableRow>

@@ -4,7 +4,7 @@ import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
 import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
 import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { toggleServiceEquipmentActive } from "./actions"
 import { EquipmentForm, type EquipmentForEdit } from "./equipment-form"
@@ -19,9 +19,7 @@ export type EquipmentRow = EquipmentForEdit & { worksiteName: string; needsRevie
  */
 function NeedsReviewBadge() {
   return (
-    <Badge variant="warning" size="sm" className="font-normal" title="Se dio de alta sola desde una solicitud: revisa nombre, marca, modelo y número de serie.">
-      Por completar
-    </Badge>
+    <MetaBadge meta={{ label: "Por completar", variant: "warning" }} title="Se dio de alta sola desde una solicitud: revisa nombre, marca, modelo y número de serie." className="font-normal" />
   )
 }
 
@@ -54,9 +52,7 @@ export function EquipmentList({
                   {e.code}
                 </Link>
               </div>
-              <Badge variant={e.isActive ? "success" : "default"} dot>
-                {e.isActive ? "Activo" : "De baja"}
-              </Badge>
+              <MetaBadge meta={{ label: `${e.isActive ? "Activo" : "De baja"}`, variant: e.isActive ? "success" : "default" }} dot />
             </div>
             <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
               <div>
@@ -112,9 +108,7 @@ export function EquipmentList({
               <span className="font-mono text-xs text-[var(--color-text-muted)]">{e.serialNumber ?? "—"}</span>
             </TableCell>
             <TableCell>
-              <Badge variant={e.isActive ? "success" : "default"} dot className="w-20 justify-center">
-                {e.isActive ? "Activo" : "De baja"}
-              </Badge>
+              <MetaBadge meta={{ label: `${e.isActive ? "Activo" : "De baja"}`, variant: e.isActive ? "success" : "default" }} dot className="w-20 justify-center" />
             </TableCell>
             <TableCell>
               <div className="flex items-center gap-2 justify-end">

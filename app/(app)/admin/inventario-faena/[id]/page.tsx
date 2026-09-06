@@ -7,7 +7,7 @@ import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { getEmergencyResourceDetail } from "@/lib/services/worksite-inventory"
 import { formatDate, formatDateTime, todayInChile } from "@/lib/utils"
 import { EMERGENCY_RESOURCE_STATUS_LABELS, emergencyResourceStatusVariant } from "@/lib/prevention/emergency"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
@@ -144,9 +144,7 @@ export default async function EmergencyResourceDetailPage({ params }: Props) {
             <p id="resource-status-heading" className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Estado actual</p>
             <h2 className="mt-1 text-lg font-semibold text-[var(--color-text)]">{resource.name}</h2>
           </div>
-          <Badge variant={emergencyResourceStatusVariant(resource.status)} dot>
-            {EMERGENCY_RESOURCE_STATUS_LABELS[resource.status] ?? resource.status}
-          </Badge>
+          <MetaBadge meta={{ label: `${EMERGENCY_RESOURCE_STATUS_LABELS[resource.status] ?? resource.status}`, variant: emergencyResourceStatusVariant(resource.status) }} dot />
         </div>
         <dl className="mt-5 grid gap-x-6 gap-y-4 sm:grid-cols-2">
           <div>
@@ -218,7 +216,7 @@ export default async function EmergencyResourceDetailPage({ params }: Props) {
               <li key={`${service.id}-${service.orderId ?? "no-oc"}`} className="rounded-xl border border-[var(--color-border)] p-3 text-sm">
                 <div className="flex items-center justify-between gap-2">
                   <Link className="font-semibold text-[var(--color-primary)] hover:underline" href={`/solicitudes/${service.requestId}`}>{service.requestCode}</Link>
-                  <Badge variant={service.status === "completed" ? "success" : "warning"} dot>{service.status === "completed" ? "Completado" : "Abierto"}</Badge>
+                  <MetaBadge meta={{ label: `${service.status === "completed" ? "Completado" : "Abierto"}`, variant: service.status === "completed" ? "success" : "warning" }} dot />
                 </div>
                 {service.orderId ? (
                   <p className="mt-1">

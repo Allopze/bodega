@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Trash } from "@phosphor-icons/react"
@@ -67,9 +67,7 @@ export function EvaluationCard({
           </div>
         </div>
         {evaluation && (
-          <Badge variant={estadoBadgeVariant(evaluation.estado)}>
-            {estadoLabel(evaluation.estado)}
-          </Badge>
+          <MetaBadge meta={{ label: `${estadoLabel(evaluation.estado)}`, variant: estadoBadgeVariant(evaluation.estado) }} />
         )}
       </CardHeader>
       <CardContent className="flex flex-col flex-1 p-5 space-y-4">
@@ -99,9 +97,7 @@ export function EvaluationCard({
               {evaluation.resultadoFinal && (
                 <div className="flex justify-between text-sm items-center">
                   <span className="text-(--color-text-muted)">Resultado:</span>
-                  <Badge variant={resultadoBadgeVariant(evaluation.resultadoFinal)}>
-                    {RESULTADO_LABELS[evaluation.resultadoFinal] ?? evaluation.resultadoFinal}
-                  </Badge>
+                  <MetaBadge meta={{ label: `${RESULTADO_LABELS[evaluation.resultadoFinal] ?? evaluation.resultadoFinal}`, variant: resultadoBadgeVariant(evaluation.resultadoFinal) }} />
                 </div>
               )}
 

@@ -10,16 +10,23 @@
  * paso.
  */
 
-export type BadgeVariant = "primary" | "default" | "info" | "warning" | "success" | "signal" | "danger" | "outline"
+/** Misma unión que acepta `Badge`/`MetaBadge` (components/states/state-badge). */
+export type BadgeVariant =
+  | "default" | "neutral" | "primary" | "success" | "warning" | "signal" | "info" | "danger" | "outline"
 
-export const FUEL_LOAD_STATUS_LABELS: Record<string, { label: string; variant: BadgeVariant }> = {
+export interface FuelLabelMeta {
+  label: string
+  variant: BadgeVariant
+}
+
+export const FUEL_LOAD_STATUS_LABELS: Record<string, FuelLabelMeta> = {
   draft:      { label: "Borrador",   variant: "default" },
   registered: { label: "Registrado", variant: "primary" },
   reconciled: { label: "Conciliado", variant: "outline" },
   cancelled:  { label: "Anulado",    variant: "danger" },
 }
 
-export const FUEL_STATEMENT_STATUS_LABELS: Record<string, { label: string; variant: BadgeVariant }> = {
+export const FUEL_STATEMENT_STATUS_LABELS: Record<string, FuelLabelMeta> = {
   open:     { label: "Abierto",      variant: "default" },
   partial:  { label: "Pago parcial", variant: "outline" },
   paid:     { label: "Pagado",       variant: "success" },
@@ -28,7 +35,7 @@ export const FUEL_STATEMENT_STATUS_LABELS: Record<string, { label: string; varia
 }
 
 /** "Recibida" es el canónico — es el que usa el filtro de /combustibles/tae. */
-export const TAE_STATUS_LABELS: Record<string, { label: string; variant: BadgeVariant }> = {
+export const TAE_STATUS_LABELS: Record<string, FuelLabelMeta> = {
   submitted: { label: "Recibida",  variant: "primary" },
   observed:  { label: "Observada", variant: "warning" },
   validated: { label: "Validada",  variant: "success" },

@@ -3,8 +3,7 @@
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ComposedChart } from "recharts"
 import type { MaterialEnvironmentalData } from "./material-environmental-dashboard"
 import { chartTooltipStyle } from "@/lib/chart-palette"
-
-const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+import { MONTH_LABELS } from "@/lib/utils"
 
 function ChartCard({ title, summary, children }: { title: string; summary?: React.ReactNode; children: React.ReactNode }) {
   return (

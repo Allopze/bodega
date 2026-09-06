@@ -4,7 +4,7 @@ import { notFound, redirect } from "next/navigation"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { can, requirePermission } from "@/lib/auth/can"
 import { getFleetVehicleDetail } from "@/lib/services/fleet"
@@ -63,7 +63,7 @@ export default async function FlotaVehiclePage({
             <Fact label="Capacidad" value={vehicle.tankCapacityLiters != null ? formatQty(Number(vehicle.tankCapacityLiters), "L") : "Sin información"} />
             <Fact label="Proveedor habitual" value={vehicle.usualFuelSupplier?.name ?? "No asignado"} />
             <Fact label="Responsable" value={vehicle.responsibleUser?.name ?? vehicle.responsibleUser?.email ?? "—"} />
-            <Fact label="Estado" value={<Badge variant={vehicle.operationalStatus === "operativo" ? "success" : "outline"}>{formatFuelVehicleStatus(vehicle.operationalStatus)}</Badge>} />
+            <Fact label="Estado" value={<MetaBadge meta={{ label: `${formatFuelVehicleStatus(vehicle.operationalStatus)}`, variant: vehicle.operationalStatus === "operativo" ? "success" : "outline" }} />} />
             <Fact label="Próximo vencimiento" value={detail.nextExpiryDate ? formatDate(detail.nextExpiryDate) : "—"} />
           </CardContent>
         </Card>
@@ -135,9 +135,7 @@ export default async function FlotaVehiclePage({
             <ol className="divide-y divide-[var(--color-border)]">
               {detail.operationalIntervals.map((interval) => (
                 <li key={interval.id} className="grid gap-1 py-3 text-sm sm:grid-cols-[10rem_1fr_auto] sm:items-center sm:gap-4">
-                  <Badge variant={interval.status === "operativo" ? "success" : interval.status === "mantencion" ? "warning" : "danger"}>
-                    {formatFuelVehicleStatus(interval.status)}
-                  </Badge>
+                  <MetaBadge meta={{ label: `${formatFuelVehicleStatus(interval.status)}`, variant: interval.status === "operativo" ? "success" : interval.status === "mantencion" ? "warning" : "danger" }} />
                   <div>
                     <p>{interval.reason ?? "Sin motivo informado"}</p>
                     <p className="text-xs text-[var(--color-text-muted)]">{interval.changedByUser?.name ?? interval.changedByUser?.email ?? "Usuario no disponible"}</p>
@@ -164,7 +162,7 @@ export default async function FlotaVehiclePage({
                 return (
                   <li key={m.id} className="grid gap-1 py-3 text-sm sm:grid-cols-[10rem_1fr_auto] sm:items-center sm:gap-4">
                     <span className="capitalize">{m.maintenanceType}</span>
-                    <Badge variant={MAINTENANCE_STATUS_VARIANTS[m.status as MaintenanceStatus] ?? "default"}>{MAINTENANCE_STATUS_LABELS[m.status as MaintenanceStatus] ?? m.status}</Badge>
+                    <MetaBadge meta={{ label: `${MAINTENANCE_STATUS_LABELS[m.status as MaintenanceStatus] ?? m.status}`, variant: MAINTENANCE_STATUS_VARIANTS[m.status as MaintenanceStatus] ?? "default" }} />
                     <p className="text-xs text-[var(--color-text-muted)] sm:text-right">
                       {formatDate(m.maintenanceDate)}
                       {impact && (impact.avgBefore != null || impact.avgAfter != null) ? (

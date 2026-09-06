@@ -5,8 +5,9 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Sparkle, Warning } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Input } from "@/components/ui/input"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { formatMoney } from "@/lib/services/billing/money"
 import { confidenceLabel, formatDateShort } from "@/lib/services/billing/labels"
 import { generateSuggestionsAction, resolvePaymentSuggestionAction } from "./actions"
@@ -36,6 +37,9 @@ export function SuggestionsPanel({ suggestions }: { suggestions: SuggestionRow[]
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [rejecting, setRejecting] = useState<string | null>(null)
+  // ConfirmDialog en vez de confirm() nativo (el mensaje depende de si el pago
+  // quedaría parcial): el nativo no se puede estilizar, traducir ni probar.
+  const [confirming, setConfirming] = useState<{ paymentId: string; message: string } | null>(null)
 
   function resolve(paymentId: string, decision: "confirm" | "reject", reason?: string) {
     startTransition(async () => {
@@ -115,7 +119,7 @@ export function SuggestionsPanel({ suggestions }: { suggestions: SuggestionRow[]
                       {isPartial && " (quedaría pago parcial)"}
                     </p>
                   </div>
-                  {confidence && <Badge variant={confidence.tone}>{confidence.label}</Badge>}
+                  {confidence && <MetaBadge meta={confidence} />}
                 </div>
 
                 {evidence.length > 0 && (
@@ -153,13 +157,14 @@ export function SuggestionsPanel({ suggestions }: { suggestions: SuggestionRow[]
                     <button
                       type="button"
                       disabled={isPending}
-                      onClick={() => {
-                        const message = isPartial
-                          ? `Confirmar ${formatMoney(suggestion.amount, suggestion.currency)} como pago PARCIAL del folio ${suggestion.folio}?`
-                          : `Confirmar ${formatMoney(suggestion.amount, suggestion.currency)} como pago del folio ${suggestion.folio}?`
-                        if (!confirm(message)) return
-                        resolve(suggestion.paymentId, "confirm")
-                      }}
+                      onClick={() =>
+                        setConfirming({
+                          paymentId: suggestion.paymentId,
+                          message: isPartial
+                            ? `Confirmar ${formatMoney(suggestion.amount, suggestion.currency)} como pago PARCIAL del folio ${suggestion.folio}?`
+                            : `Confirmar ${formatMoney(suggestion.amount, suggestion.currency)} como pago del folio ${suggestion.folio}?`,
+                        })
+                      }
                       className="font-medium text-[var(--color-primary-ink)] hover:underline disabled:opacity-60"
                     >
                       Confirmar pago
@@ -179,6 +184,19 @@ export function SuggestionsPanel({ suggestions }: { suggestions: SuggestionRow[]
           })}
         </ul>
       )}
+
+      <ConfirmDialog
+        open={confirming !== null}
+        onOpenChange={(open) => !open && setConfirming(null)}
+        title="Confirmar pago"
+        description={confirming?.message ?? ""}
+        confirmLabel="Confirmar"
+        onConfirm={() => {
+          if (!confirming) return
+          resolve(confirming.paymentId, "confirm")
+          setConfirming(null)
+        }}
+      />
     </section>
   )
 }

@@ -5,7 +5,7 @@ import { DataTable } from "@/components/ui/data-table"
 import { HISTORY_PAGE_SIZE } from "@/lib/constants"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { formatDate } from "@/lib/utils"
 import { VoidDeliveryDialog } from "./void-delivery-dialog"
 
@@ -63,7 +63,7 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false, canVo
                 <div className="min-w-0">
                   <p className="flex items-center gap-1.5 font-mono text-xs text-[var(--color-text-subtle)]">
                     <span className={delivery.voidedAt ? "line-through" : undefined}>{delivery.code}</span>
-                    {delivery.voidedAt && <Badge variant="danger" size="sm">Anulada</Badge>}
+                    {delivery.voidedAt && <MetaBadge meta={{ label: "Anulada", variant: "danger" }} />}
                   </p>
                   {delivery.workerId && canViewTraceability ? (
                     <a
@@ -114,7 +114,7 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false, canVo
                 <dd className="break-words text-[var(--color-text-muted)]">
                   {delivery.itemSummary}
                   {delivery.quantityCorrected && (
-                    <Badge variant="info" size="sm" className="mt-1">Cantidad regularizada</Badge>
+                    <MetaBadge meta={{ label: "Cantidad regularizada", variant: "info" }} className="mt-1" />
                   )}
                 </dd>
               </div>
@@ -142,9 +142,7 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false, canVo
                 {delivery.code}
               </span>
               {delivery.voidedAt && (
-                <Badge variant="danger" size="sm" className="ml-1.5 align-middle" title={delivery.voidReason ?? undefined}>
-                  Anulada
-                </Badge>
+                <MetaBadge meta={{ label: "Anulada", variant: "danger" }} title={delivery.voidReason ?? undefined} className="ml-1.5 align-middle" />
               )}
             </TableCell>
             <TableCell>
@@ -176,7 +174,7 @@ export function DeliveriesTable({ deliveries, canViewTraceability = false, canVo
             <TableCell className="max-w-64 text-sm text-[var(--color-text-muted)]">
               <div className="flex min-w-0 items-center gap-2">
                 <span className="truncate">{delivery.itemSummary}</span>
-                {delivery.quantityCorrected && <Badge variant="info" size="sm">Regularizada</Badge>}
+                {delivery.quantityCorrected && <MetaBadge meta={{ label: "Regularizada", variant: "info" }} />}
               </div>
             </TableCell>
             <TableCell className="text-xs text-[var(--color-text-subtle)]">

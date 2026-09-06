@@ -5,7 +5,7 @@ import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import Link from "next/link"
 import { HardHat } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -150,9 +150,7 @@ export function EppGapList({ gaps, canEscalate }: Props) {
                   <TableCell className="text-sm">{gap.eppTypeLabel}</TableCell>
                   <TableCell className="text-sm">{EPP_GAP_TYPE_LABELS[gap.gapType]}</TableCell>
                   <TableCell>
-                    <Badge variant={gap.enforcement === "blocking" ? "danger" : "warning"}>
-                      {gap.enforcement === "blocking" ? "Bloqueante" : "Advertencia"}
-                    </Badge>
+                    <MetaBadge meta={{ label: `${gap.enforcement === "blocking" ? "Bloqueante" : "Advertencia"}`, variant: gap.enforcement === "blocking" ? "danger" : "warning" }} />
                   </TableCell>
                   <TableCell className="text-sm tabular-nums">{gap.lastDeliveredAt ?? "—"}</TableCell>
                   <TableCell className="max-w-md text-xs text-[var(--color-text-subtle)]">{gap.reason}</TableCell>

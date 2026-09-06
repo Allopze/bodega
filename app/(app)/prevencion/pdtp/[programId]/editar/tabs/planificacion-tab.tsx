@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Input } from "@/components/ui/input"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
@@ -14,7 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { cn, pluralize } from "@/lib/utils"
+import { cn, pluralize, MONTH_LABELS } from "@/lib/utils"
 import { PdtpDensityToggle, usePdtpDensity } from "../../../pdtp-sheet-table-ui"
 import { updatePdtpActivityAction } from "../../../actions"
 import {
@@ -93,8 +93,8 @@ export function ScheduleOverview({ activities, schedule, horizon = DEFAULT_SCHED
                 )}
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-1">
-                <Badge variant={needsReview || (mode === "scheduled" && !rule) ? "warning" : "outline"} size="sm">{label}</Badge>
-                {divergent && <Badge variant="warning" size="sm">Matriz manual</Badge>}
+                <MetaBadge meta={{ label, variant: needsReview || (mode === "scheduled" && !rule) ? "warning" : "outline" }} size="sm" />
+                {divergent && <MetaBadge meta={{ label: "Matriz manual", variant: "warning" }} />}
               </div>
             </li>
           )
@@ -103,8 +103,6 @@ export function ScheduleOverview({ activities, schedule, horizon = DEFAULT_SCHED
     </div>
   )
 }
-
-const PLAN_MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
 function scheduleKey(month: number, week: number) {
   return `${month}-${week}`
@@ -273,7 +271,7 @@ export function PlanificacionTab({ programId: _programId, year, periodStart, per
                   colSpan={horizon.weeksPerMonth}
                   className={cn("min-w-[6.5rem] text-center", isQuarterStart(month) && "border-l border-[var(--color-border-strong)]")}
                 >
-                  {PLAN_MONTH_LABELS[month - 1]}
+                  {MONTH_LABELS[month - 1]}
                 </TableHead>
               ))}
               <TableHead rowSpan={2} className="min-w-[5rem] text-right">Total</TableHead>
@@ -512,8 +510,8 @@ function PlanificacionRow({ activity, initial, horizon, weeks, source, onStateCh
             </p>
             <div className="mt-1 flex flex-wrap items-center gap-1">
               <RowStatusBadge status={status} isDirty={isDirty} conflict={conflict} />
-              {source === "manual" && <Badge variant="outline" size="sm">Manual</Badge>}
-              {invalidCells && <Badge variant="danger" size="sm">Revisa las cantidades</Badge>}
+              {source === "manual" && <MetaBadge meta={{ label: "Manual", variant: "outline" }} />}
+              {invalidCells && <MetaBadge meta={{ label: "Revisa las cantidades", variant: "danger" }} />}
             </div>
           </div>
           <DropdownMenu>
@@ -556,8 +554,8 @@ function PlanificacionRow({ activity, initial, horizon, weeks, source, onStateCh
                   value={draft ?? (values[key] ? String(values[key]) : "")}
                   error={draft !== undefined}
                   onChange={(event) => setCell(month, week, event.target.value)}
-                  title={`${PLAN_MONTH_LABELS[month - 1]} · Semana ${week}`}
-                  aria-label={`N°${activity.n} ${activity.activity} · ${PLAN_MONTH_LABELS[month - 1]} · Semana ${week}`}
+                  title={`${MONTH_LABELS[month - 1]} · Semana ${week}`}
+                  aria-label={`N°${activity.n} ${activity.activity} · ${MONTH_LABELS[month - 1]} · Semana ${week}`}
                   data-plan-cell={key}
                   className="h-7 w-11 px-1 text-center text-[11px] sm:h-7 sm:text-[11px]"
                 />
@@ -576,9 +574,9 @@ function RowStatusBadge({ status, isDirty, conflict }: {
   isDirty: boolean
   conflict: boolean
 }) {
-  if (conflict) return <Badge variant="danger" size="sm">Cambió en otra sesión</Badge>
-  if (status === "error") return <Badge variant="danger" size="sm">Error al guardar</Badge>
-  if (status === "saving") return <Badge variant="neutral" size="sm">Guardando…</Badge>
-  if (isDirty) return <Badge variant="warning" size="sm">Sin guardar</Badge>
+  if (conflict) return <MetaBadge meta={{ label: "Cambió en otra sesión", variant: "danger" }} />
+  if (status === "error") return <MetaBadge meta={{ label: "Error al guardar", variant: "danger" }} />
+  if (status === "saving") return <MetaBadge meta={{ label: "Guardando…", variant: "neutral" }} />
+  if (isDirty) return <MetaBadge meta={{ label: "Sin guardar", variant: "warning" }} />
   return null
 }

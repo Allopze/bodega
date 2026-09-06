@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { formatDateTime } from "@/lib/utils"
 import { IT_TICKET_STATUS_META, IT_TICKET_PRIORITY_META, IT_TICKET_CATEGORY_META } from "@/lib/services/ti/constants"
@@ -61,14 +61,10 @@ export function TicketsTable({ rows }: { rows: Row[]; canManage: boolean }) {
               {row.assetCode && <span className="ml-2 text-xs text-[var(--color-text-subtle)]">· {row.assetCode}</span>}
             </TableCell>
             <TableCell className="w-36">
-              <Badge variant={IT_TICKET_STATUS_META[row.status]?.variant ?? "default"} dot>
-                {IT_TICKET_STATUS_META[row.status]?.label ?? row.status}
-              </Badge>
+              <MetaBadge meta={{ label: `${IT_TICKET_STATUS_META[row.status]?.label ?? row.status}`, variant: IT_TICKET_STATUS_META[row.status]?.variant ?? "default" }} dot />
             </TableCell>
             <TableCell className="w-24">
-              <Badge variant={IT_TICKET_PRIORITY_META[row.priority]?.variant ?? "default"}>
-                {IT_TICKET_PRIORITY_META[row.priority]?.label ?? row.priority}
-              </Badge>
+              <MetaBadge meta={{ label: `${IT_TICKET_PRIORITY_META[row.priority]?.label ?? row.priority}`, variant: IT_TICKET_PRIORITY_META[row.priority]?.variant ?? "default" }} />
             </TableCell>
             <TableCell className="w-32">{IT_TICKET_CATEGORY_META[row.category] ?? row.category}</TableCell>
             <TableCell>{row.workerName ?? "—"}</TableCell>
@@ -86,7 +82,7 @@ export function TicketsTable({ rows }: { rows: Row[]; canManage: boolean }) {
               <div className="font-mono text-xs font-semibold text-[var(--color-primary)]">{row.code}</div>
               <div className="text-sm text-[var(--color-text)]">{row.subject}</div>
               <div className="mt-1 flex items-center gap-2">
-                <Badge variant={IT_TICKET_STATUS_META[row.status]?.variant ?? "default"}>{IT_TICKET_STATUS_META[row.status]?.label ?? row.status}</Badge>
+                <MetaBadge meta={{ label: `${IT_TICKET_STATUS_META[row.status]?.label ?? row.status}`, variant: IT_TICKET_STATUS_META[row.status]?.variant ?? "default" }} />
                 <span className="text-xs text-[var(--color-text-muted)]">{row.worksiteName}</span>
               </div>
             </div>

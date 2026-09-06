@@ -5,7 +5,7 @@ import Link from "next/link"
 import { useActionState } from "react"
 import { toast } from "@/lib/toast"
 import { formatDateTime, formatDate } from "@/lib/utils"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -77,13 +77,9 @@ export function TicketDetail({ ticket, comments, canManage, canInternal, canComm
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs font-semibold text-[var(--color-primary)]">{ticket.code}</span>
-              <Badge variant={IT_TICKET_STATUS_META[ticket.status]?.variant ?? "default"} dot>
-                {IT_TICKET_STATUS_META[ticket.status]?.label ?? ticket.status}
-              </Badge>
-              <Badge variant={IT_TICKET_PRIORITY_META[ticket.priority]?.variant ?? "default"}>
-                {IT_TICKET_PRIORITY_META[ticket.priority]?.label ?? ticket.priority}
-              </Badge>
-              <Badge variant="outline">{IT_TICKET_CATEGORY_META[ticket.category] ?? ticket.category}</Badge>
+              <MetaBadge meta={{ label: `${IT_TICKET_STATUS_META[ticket.status]?.label ?? ticket.status}`, variant: IT_TICKET_STATUS_META[ticket.status]?.variant ?? "default" }} dot />
+              <MetaBadge meta={{ label: `${IT_TICKET_PRIORITY_META[ticket.priority]?.label ?? ticket.priority}`, variant: IT_TICKET_PRIORITY_META[ticket.priority]?.variant ?? "default" }} />
+              <MetaBadge meta={{ label: IT_TICKET_CATEGORY_META[ticket.category] ?? ticket.category, variant: "outline" }} />
             </div>
             <span className="text-xs text-[var(--color-text-muted)]">Actualizado {formatDateTime(ticket.updatedAt)}</span>
           </div>

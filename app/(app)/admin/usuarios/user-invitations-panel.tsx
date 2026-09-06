@@ -4,7 +4,7 @@ import * as React from "react"
 import { useActionState, useEffect, useMemo, useState } from "react"
 import { ArrowClockwise, Check, Copy, Prohibit, X } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge, type StateMetaInput } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Button } from "@/components/ui/button"
 import { Field } from "@/components/ui/field"
@@ -30,20 +30,13 @@ export interface InvitationRow {
   sendCount: number
 }
 
-const STATUS_LABEL: Record<InvitationRow["status"], string> = {
-  pending: "Pendiente",
-  accepted: "Aceptada",
-  cancelled: "Cancelada",
-  replaced: "Reemplazada",
-  expired: "Expirada",
-}
-
-const STATUS_VARIANT: Record<InvitationRow["status"], React.ComponentProps<typeof Badge>["variant"]> = {
-  pending: "warning",
-  accepted: "success",
-  cancelled: "danger",
-  replaced: "default",
-  expired: "default",
+/** Label + variante en un solo mapa (MetaBadge): el color lo decide el estado. */
+const STATUS_META: Record<InvitationRow["status"], StateMetaInput> = {
+  pending:   { label: "Pendiente",   variant: "warning" },
+  accepted:  { label: "Aceptada",    variant: "success" },
+  cancelled: { label: "Cancelada",   variant: "danger"  },
+  replaced:  { label: "Reemplazada", variant: "default" },
+  expired:   { label: "Expirada",    variant: "default" },
 }
 
 export function UserInvitationsPanel({ invitations }: { invitations: InvitationRow[] }) {
@@ -157,13 +150,11 @@ export function UserInvitationsPanel({ invitations }: { invitations: InvitationR
             <div className="min-w-0 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="truncate text-sm font-medium text-[var(--color-text)]">{invitation.name || invitation.email}</p>
-                <Badge variant={STATUS_VARIANT[invitation.status]} dot>
-                  {STATUS_LABEL[invitation.status]}
-                </Badge>
+                <MetaBadge meta={STATUS_META[invitation.status]} dot />
               </div>
               <p title={invitation.email} className="truncate text-xs text-[var(--color-text-subtle)]">{invitation.email}</p>
               <div className="flex flex-wrap items-center gap-1">
-                {invitation.roleLabels.slice(0, 3).map((label) => <Badge key={label} size="sm">{label}</Badge>)}
+                {invitation.roleLabels.slice(0, 3).map((label) => <MetaBadge key={label} meta={{ label, variant: "default" }} />)}
                 {invitation.roleLabels.length > 3 && (
                   <span className="text-[10px] font-medium text-[var(--color-text-subtle)]">+{invitation.roleLabels.length - 3} más</span>
                 )}

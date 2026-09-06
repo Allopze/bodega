@@ -4,7 +4,7 @@ import { redirect } from "next/navigation"
 import { ClipboardText } from "@phosphor-icons/react/dist/ssr"
 import { can, requireAuth } from "@/lib/auth/can"
 import { listPdtpTemplatesWithVersions } from "@/lib/services/prevention-pdtp"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
@@ -51,7 +51,7 @@ export default async function PdtpTemplatesPage() {
                   <h2 className="font-semibold text-[var(--color-text)]">{template.name}</h2>
                   <p className="mt-1 text-sm text-[var(--color-text-muted)]">{template.description || "Base reutilizable sin descripción."}</p>
                 </div>
-                <Badge variant={template.isActive ? "success" : "default"}>{template.isActive ? "Activa" : "Inactiva"}</Badge>
+                <MetaBadge meta={{ label: `${template.isActive ? "Activa" : "Inactiva"}`, variant: template.isActive ? "success" : "default" }} />
               </div>
               <div className="divide-y divide-[var(--color-border)]">
                 {template.versions.map((version, index) => (
@@ -59,7 +59,7 @@ export default async function PdtpTemplatesPage() {
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-semibold text-[var(--color-text)]">Versión {version.version}</span>
-                        {index === 0 && <Badge variant="info" size="sm">Actual</Badge>}
+                        {index === 0 && <MetaBadge meta={{ label: "Actual", variant: "info" }} />}
                       </div>
                       <p className="mt-1 font-mono text-[11px] text-[var(--color-text-subtle)]" title={version.contentDigest}>
                         Huella {version.contentDigest.slice(0, 12)}…

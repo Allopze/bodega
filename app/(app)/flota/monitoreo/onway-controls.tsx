@@ -18,6 +18,7 @@ import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { useOperation } from "@/lib/hooks/use-operation"
+import { Callout } from "@/components/ui/callout"
 import type { OnwayAdminStatus } from "@/lib/integrations/onway/onway-settings"
 import { toast } from "@/lib/toast"
 import type { ActionState } from "@/lib/validation/masters"
@@ -91,10 +92,10 @@ export function OnwayControls({ status }: { status: OnwayAdminStatus }) {
             </DialogHeader>
 
             {!status.canStoreSecrets && (
-              <p role="alert" className="rounded-[var(--radius)] border border-[var(--color-warning)] bg-[var(--color-warning-tint)] p-3 text-xs text-[var(--color-warning-ink)]">
+              <Callout tone="warning" role="alert" className="text-xs">
                 Este servidor no tiene keyring de cifrado. Puedes usar ONWAY_USERNAME y ONWAY_PASSWORD en el entorno,
                 pero no guardar credenciales desde esta pantalla.
-              </p>
+              </Callout>
             )}
 
             <Field

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react"
 import { Table, TableBody, TableCell, TableCellNum, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { ChartEmpty } from "@/components/ui/chart-empty"
 import type { AnalyticsAlertSeverity } from "@/lib/services/analytics"
 
@@ -54,10 +54,10 @@ export function RankingTable({
 }
 
 export function SeverityBadge({ severity }: { severity: AnalyticsAlertSeverity }) {
-  if (severity === "critical") return <Badge variant="signal" size="sm" dot>Crítica</Badge>
-  if (severity === "high") return <Badge variant="warning" size="sm" dot>Alta</Badge>
-  if (severity === "medium") return <Badge variant="default" size="sm">Media</Badge>
-  return <Badge variant="outline" size="sm">Baja</Badge>
+  if (severity === "critical") return <MetaBadge meta={{ label: "Crítica", variant: "signal" }} dot />
+  if (severity === "high") return <MetaBadge meta={{ label: "Alta", variant: "warning" }} dot />
+  if (severity === "medium") return <MetaBadge meta={{ label: "Media", variant: "default" }} />
+  return <MetaBadge meta={{ label: "Baja", variant: "outline" }} />
 }
 
 export function EmptyText({ text }: { text: string }) {

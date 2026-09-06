@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { DatePicker } from "@/components/ui/date-picker"
@@ -1007,7 +1007,7 @@ export function InspectionRunDetail({
               {findings.map((finding) => (
                 <TableRow key={finding.id}>
                   <TableCell className="text-sm">{finding.description}</TableCell>
-                  <TableCell><Badge variant={criticalityBadgeVariant(finding.criticality)}>{FINDING_CRITICALITY_LABELS[finding.criticality] ?? finding.criticality}</Badge></TableCell>
+                  <TableCell><MetaBadge meta={{ label: `${FINDING_CRITICALITY_LABELS[finding.criticality] ?? finding.criticality}`, variant: criticalityBadgeVariant(finding.criticality) }} /></TableCell>
                   <TableCell className="text-sm">
                     {FINDING_STATUS_LABELS[finding.status] ?? finding.status}
                     {finding.capaActionId && (
@@ -1053,7 +1053,7 @@ export function InspectionRunDetail({
             <p className="text-eyebrow">Trabajo actual</p>
             <p className="mt-1 text-base font-semibold">{worksiteName}{run.subjectLabel ? ` · ${run.subjectLabel}` : ""}</p>
           </div>
-          <Badge variant={runStatusBadgeVariant(run.status)}>{inspectionTaskStatusLabel(run.status)}</Badge>
+          <MetaBadge meta={{ label: `${inspectionTaskStatusLabel(run.status)}`, variant: runStatusBadgeVariant(run.status) }} />
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
           <div><span className="block text-[var(--color-text-subtle)]">Responsable</span><span className="mt-0.5 block font-medium">{assigneeName ?? "Sin asignar"}</span></div>
@@ -1084,7 +1084,7 @@ export function InspectionRunDetail({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Badge variant={runStatusBadgeVariant(run.status)}>{inspectionTaskStatusLabel(run.status)}</Badge>
+          <MetaBadge meta={{ label: `${inspectionTaskStatusLabel(run.status)}`, variant: runStatusBadgeVariant(run.status) }} />
           <span className="text-sm text-[var(--color-text-subtle)]">
             {requiredItems.length > 0 && `${answeredRequired} de ${requiredItems.length} obligatorios · `}
             {answeredCount} de {items.length} {requiredItems.length > 0 ? "totales" : "respondidos"}
@@ -1275,11 +1275,11 @@ export function InspectionRunDetail({
                         {itemIndex + 1}. {item.matrix?.rowLabel ?? item.label}
                         {item.matrix && <span className="ml-2 text-xs font-medium text-[var(--color-text-subtle)]">{item.matrix.columnLabel}</span>}
                       </h3>
-                      {item.required ? <Badge variant="outline">Obligatorio</Badge> : <span className="text-xs text-[var(--color-text-subtle)]">Opcional</span>}
+                      {item.required ? <MetaBadge meta={{ label: "Obligatorio", variant: "outline" }} /> : <span className="text-xs text-[var(--color-text-subtle)]">Opcional</span>}
                     </div>
                     {draft.needsConfirmation && (
                       <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="warning">Leído de la planilla</Badge>
+                        <MetaBadge meta={{ label: "Leído de la planilla", variant: "warning" }} />
                         {editable && <Button type="button" size="sm" variant="secondary" onClick={() => confirmRead(section.id, item.id)}>Confirmar contra la foto</Button>}
                       </div>
                     )}
@@ -1301,7 +1301,7 @@ export function InspectionRunDetail({
                                 ))}
                               </SelectContent>
                             </Select>
-                          ) : draft.result ? <Badge variant={resultBadgeVariant(draft.result)}>{inspectionResultLabel(item.kind, draft.result)}</Badge> : <span>Sin respuesta</span>}
+                          ) : draft.result ? <MetaBadge meta={{ label: `${inspectionResultLabel(item.kind, draft.result)}`, variant: resultBadgeVariant(draft.result) }} /> : <span>Sin respuesta</span>}
                         </Field>
                         <Field label="Comentario" hint={needsComment ? `Obligatorio para "${inspectionResultLabel(item.kind, draft.result)}"; mínimo 3 caracteres.` : "Opcional, salvo que el resultado requiera justificación."}>
                           {editable ? <Textarea value={draft.comment} onChange={(event) => update(section.id, item.id, { comment: event.target.value })} rows={3} aria-label={`Comentario de ${item.label}`} /> : <p className="text-sm">{draft.comment || "Sin comentario"}</p>}
@@ -1356,10 +1356,10 @@ export function InspectionRunDetail({
                           {item.matrix ? (
                             <span><span className="font-medium">{item.matrix.rowLabel}</span><span className="ml-2 text-xs text-[var(--color-text-subtle)]">{item.matrix.columnLabel}</span></span>
                           ) : item.label}
-                          {item.required && <Badge variant="outline" className="ml-2">Obligatorio</Badge>}
+                          {item.required && <MetaBadge meta={{ label: "Obligatorio", variant: "outline" }} className="ml-2" />}
                           {draft.needsConfirmation && (
                             <span className="mt-1 flex flex-wrap items-center gap-2">
-                              <Badge variant="warning">Leído de la planilla</Badge>
+                              <MetaBadge meta={{ label: "Leído de la planilla", variant: "warning" }} />
                               {editable && (
                                 <Button
                                   type="button"
@@ -1387,9 +1387,7 @@ export function InspectionRunDetail({
                                   </SelectContent>
                                 </Select>
                               ) : draft.result ? (
-                                <Badge variant={resultBadgeVariant(draft.result)}>
-                                  {inspectionResultLabel(item.kind, draft.result)}
-                                </Badge>
+                                <MetaBadge meta={{ label: `${inspectionResultLabel(item.kind, draft.result)}`, variant: resultBadgeVariant(draft.result) }} />
                               ) : "—"}
                             </TableCell>
                             <TableCell>
@@ -1594,7 +1592,7 @@ function PreventiveActionsPanel({ runId, actions, assignees, editable }: {
       <h2 className="text-sm font-semibold">Acciones preventivas ({actions.length}/6)</h2>
       {editable && actions.length < 6 && <Button type="button" size="sm" variant="secondary" onClick={() => setOpen(true)}>Agregar acción</Button>}
     </div>
-    {actions.length === 0 ? <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">Sin acciones preventivas acordadas.</p> : <ol className="space-y-2">{actions.map((action, index) => <li key={action.id} className="rounded-lg border border-[var(--color-border)] p-3 text-sm"><span className="font-semibold">{index + 1}.</span> {action.description} {action.capaActionId && <Badge variant="success" className="ml-2">CAPA creada</Badge>}</li>)}</ol>}
+    {actions.length === 0 ? <p className="rounded-lg border border-[var(--color-border)] p-4 text-sm text-[var(--color-text-subtle)]">Sin acciones preventivas acordadas.</p> : <ol className="space-y-2">{actions.map((action, index) => <li key={action.id} className="rounded-lg border border-[var(--color-border)] p-3 text-sm"><span className="font-semibold">{index + 1}.</span> {action.description} {action.capaActionId && <MetaBadge meta={{ label: "CAPA creada", variant: "success" }} className="ml-2" />}</li>)}</ol>}
     <Dialog open={open} onOpenChange={setOpen}><DialogContent><form className="space-y-4" onSubmit={(event) => {
       event.preventDefault()
       const actionDescription = String(new FormData(event.currentTarget).get("actionDescription") ?? "")
@@ -1757,9 +1755,7 @@ function DeviationsPanel({ runId, editable, canExecute, catalog, registered, nar
                 <TableRow>
                   <TableCell className="text-sm">{finding.description}</TableCell>
                   <TableCell>
-                    <Badge variant={criticalityBadgeVariant(finding.criticality)}>
-                      {FINDING_CRITICALITY_LABELS[finding.criticality] ?? finding.criticality}
-                    </Badge>
+                    <MetaBadge meta={{ label: `${FINDING_CRITICALITY_LABELS[finding.criticality] ?? finding.criticality}`, variant: criticalityBadgeVariant(finding.criticality) }} />
                   </TableCell>
                   <TableCell className="text-sm">{DEVIATION_PLAZO[finding.criticality] ?? "—"}</TableCell>
                   <TableCell className="text-sm">{FINDING_STATUS_LABELS[finding.status] ?? finding.status}</TableCell>
@@ -1996,7 +1992,7 @@ function CapaDialog({ finding, assignees, hasVehicle }: {
             <DialogDescription>{finding.description}</DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm">
-            <div><span className="block text-xs text-[var(--color-text-subtle)]">Gravedad</span><Badge className="mt-1" variant={criticalityBadgeVariant(finding.criticality)}>{FINDING_CRITICALITY_LABELS[finding.criticality] ?? finding.criticality}</Badge></div>
+            <div><span className="block text-xs text-[var(--color-text-subtle)]">Gravedad</span><MetaBadge meta={{ label: `${FINDING_CRITICALITY_LABELS[finding.criticality] ?? finding.criticality}`, variant: criticalityBadgeVariant(finding.criticality) }} className="mt-1" /></div>
             {/* I-24: "Compromiso automático" no explicaba por qué ese plazo — es
                 política según gravedad, no un dato libre; se mantiene no editable. */}
             <div><span className="block text-xs text-[var(--color-text-subtle)]">Plazo según gravedad</span><span className="mt-1 block font-semibold">{capaRule.dueInDays} días · {formatDate(targetDate)}</span></div>

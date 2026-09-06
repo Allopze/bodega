@@ -2,9 +2,9 @@
 
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
+import { MetaBadge, metaFor } from "@/components/states/state-badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { formatCLP, formatDate, formatQty } from "@/lib/utils"
 import { FUEL_LOAD_STATUS_LABELS as statusLabels } from "@/lib/combustibles/labels"
 import { ServerPagination } from "@/components/ui/server-pagination"
@@ -76,7 +76,7 @@ export function FuelLoadTable({ rows, page, total, pageSize }: FuelLoadTableProp
               </TableRow>
             ) : (
               rows.map((row) => {
-                const st = statusLabels[row.status] ?? { label: row.status, variant: "default" as const }
+                const st = metaFor(statusLabels, row.status)
                 return (
                   <TableRow key={row.id}>
                     <TableCell className="font-mono text-sm">{formatDate(row.loadDate)}</TableCell>
@@ -91,7 +91,7 @@ export function FuelLoadTable({ rows, page, total, pageSize }: FuelLoadTableProp
                     </TableCell>
                     <TableCell className="text-right font-mono">{formatQty(row.liters)}</TableCell>
                     <TableCell className="text-right font-mono">{formatCLP(row.totalAmount)}</TableCell>
-                    <TableCell><Badge variant={st.variant}>{st.label}</Badge></TableCell>
+                    <TableCell><MetaBadge meta={st} /></TableCell>
                     <TableCell>
                       <Button asChild variant="ghost" size="sm">
                         <Link href={`/combustibles/${row.id}`}>Ver</Link>

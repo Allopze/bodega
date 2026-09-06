@@ -4,7 +4,7 @@ import * as React from "react"
 import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -119,7 +119,7 @@ export function CompetencyGapList({ gaps, canEscalate }: Props) {
             <ResponsiveDataListCard
               title={<Link href={workerHref} className="hover:underline">{gap.workerName}</Link>}
               description={gap.position ?? "Sin cargo"}
-              status={<Badge variant={gap.enforcement === "blocking" ? "danger" : "warning"}>{gap.enforcement === "blocking" ? "Bloqueante" : "Advertencia"}</Badge>}
+              status={<MetaBadge meta={{ label: `${gap.enforcement === "blocking" ? "Bloqueante" : "Advertencia"}`, variant: gap.enforcement === "blocking" ? "danger" : "warning" }} />}
               actions={<Button asChild type="button" variant="ghost" size="sm"><Link href={workerHref}>Ver competencia</Link></Button>}
             >
               <ResponsiveDataListField label="Curso exigido">{gap.courseName}</ResponsiveDataListField>
@@ -141,9 +141,7 @@ export function CompetencyGapList({ gaps, canEscalate }: Props) {
               <TableCell className="text-sm">{gap.courseName}</TableCell>
               <TableCell className="text-sm">{GAP_TYPE_LABELS[gap.gapType]}</TableCell>
               <TableCell>
-                <Badge variant={gap.enforcement === "blocking" ? "danger" : "warning"}>
-                  {gap.enforcement === "blocking" ? "Bloqueante" : "Advertencia"}
-                </Badge>
+                <MetaBadge meta={{ label: `${gap.enforcement === "blocking" ? "Bloqueante" : "Advertencia"}`, variant: gap.enforcement === "blocking" ? "danger" : "warning" }} />
               </TableCell>
               <TableCell className="text-sm tabular-nums">{gap.expiredAt ?? "—"}</TableCell>
               <TableCell className="max-w-md text-xs text-[var(--color-text-subtle)]">{gap.reason}</TableCell>

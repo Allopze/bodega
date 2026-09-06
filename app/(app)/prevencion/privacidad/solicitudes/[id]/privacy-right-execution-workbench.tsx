@@ -2,14 +2,13 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Field } from "@/components/ui/field"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
-import { PPA_STATE_META } from "@/components/states/state-badge"
+import { MetaBadge, PPA_STATE_META } from "@/components/states/state-badge"
 import { toast } from "@/lib/toast"
 import { formatDate } from "@/lib/utils"
 import type { getPreventionPrivacyRequestWorkbench } from "@/lib/services/prevention-privacy-rights"
@@ -143,7 +142,7 @@ export function PrivacyRightExecutionWorkbench({ bundle }: { bundle: Bundle }) {
                   const rectificationUnsupported = operation === "rectification" && row.domain === "document"
                   return <TableRow key={`${row.domain}:${row.id}`}>
                     <TableCell><p className="font-medium">{row.label}</p><p className="font-mono text-[10px] text-(--color-text-muted)">{row.id}</p></TableCell>
-                    <TableCell><Badge variant="outline">{row.status || "Sin estado"}</Badge></TableCell>
+                    <TableCell><MetaBadge meta={{ label: row.status || "Sin estado", variant: "outline" }} /></TableCell>
                     <TableCell className="text-right">
                       {executable && !rectificationUnsupported ? <Button type="button" size="sm" variant="secondary" onClick={() => openExecution(row)}>Ejecutar</Button> : null}
                     </TableCell>

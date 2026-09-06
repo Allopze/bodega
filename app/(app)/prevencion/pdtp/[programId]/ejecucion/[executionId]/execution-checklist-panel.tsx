@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ClipboardText, Plus } from "@phosphor-icons/react"
 import { ChecklistSectionPanel, type ItemResponse } from "@/app/(app)/prevencion/[id]/checklist-section"
@@ -274,11 +274,9 @@ function InstanceCard({
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant={instance.overallStatus === "completado" ? "success" : "warning"}>
-            {instance.overallStatus === "completado" ? "Completado" : instance.overallStatus === "en_proceso" ? "En proceso" : "Pendiente"}
-          </Badge>
+          <MetaBadge meta={{ label: `${instance.overallStatus === "completado" ? "Completado" : instance.overallStatus === "en_proceso" ? "En proceso" : "Pendiente"}`, variant: instance.overallStatus === "completado" ? "success" : "warning" }} />
           {instance.porcentajeCumplimiento !== null && (
-            <Badge variant="info">{instance.porcentajeCumplimiento}% cumplimiento</Badge>
+            <MetaBadge meta={{ label: `${instance.porcentajeCumplimiento}% cumplimiento`, variant: "info" }} />
           )}
         </div>
       </div>

@@ -17,9 +17,7 @@ import {
 import { PencilSimple } from "@phosphor-icons/react"
 import { markPdtpExecutionFormAction } from "./actions"
 import type { PdtpPeriod } from "@/lib/services/pdtp/period"
-import { codeYear } from "@/lib/utils"
-
-const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+import { codeYear, MONTH_LABELS } from "@/lib/utils"
 
 type ExecState = { ok: boolean; message?: string; fieldErrors?: Record<string, string[]> } | null
 
@@ -177,7 +175,7 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
             </p>
           )}
 
-          <Field label="Observación" htmlFor="exec-obs">
+          <Field label={evidenceRequirement ? "Observación (obligatoria si no adjuntas evidencia)" : "Observación"} htmlFor="exec-obs">
             <input
               id="exec-obs"
               name="evidenceText"

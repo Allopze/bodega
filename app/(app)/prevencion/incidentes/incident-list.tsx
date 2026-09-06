@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
@@ -146,7 +146,7 @@ export function IncidentList({ incidents, worksites, counts, canReport, indicato
             <ResponsiveDataListCard
               title={<Link href={`/prevencion/incidentes/${incident.id}`} className="hover:underline">{incident.code}</Link>}
               description={INCIDENT_EVENT_LABELS[incident.eventType] ?? incident.eventType}
-              status={<Badge variant={incidentStatusBadgeVariant(incident.status)}>{INCIDENT_STATUS_LABELS[incident.status as IncidentStatus] ?? incident.status}</Badge>}
+              status={<MetaBadge meta={{ label: `${INCIDENT_STATUS_LABELS[incident.status as IncidentStatus] ?? incident.status}`, variant: incidentStatusBadgeVariant(incident.status) }} />}
               actions={<Button asChild type="button" variant="ghost" size="sm"><Link href={`/prevencion/incidentes/${incident.id}`}>Ver incidente</Link></Button>}
             >
               <ResponsiveDataListField label="Faena">{incident.worksiteName}</ResponsiveDataListField>
@@ -155,7 +155,7 @@ export function IncidentList({ incidents, worksites, counts, canReport, indicato
                 {formatDateTime(incident.occurredAt)}
               </ResponsiveDataListField>
               <ResponsiveDataListField label="Gravedad">
-                <Badge variant={incident.isFatalOrSerious ? "danger" : "default"}>{INCIDENT_SEVERITY_LABELS[incident.actualSeverity] ?? incident.actualSeverity}</Badge>
+                <MetaBadge meta={{ label: `${INCIDENT_SEVERITY_LABELS[incident.actualSeverity] ?? incident.actualSeverity}`, variant: incident.isFatalOrSerious ? "danger" : "default" }} />
               </ResponsiveDataListField>
               <ResponsiveDataListField label="Ubicación" className="col-span-2">{incident.location}</ResponsiveDataListField>
             </ResponsiveDataListCard>
@@ -167,8 +167,8 @@ export function IncidentList({ incidents, worksites, counts, canReport, indicato
               <TableCell><Link href={`/prevencion/incidentes/${incident.id}`} className="font-mono text-xs font-semibold text-[var(--color-primary-ink)] hover:underline">{incident.code}</Link><p className="mt-1 text-xs text-[var(--color-text-subtle)]">{INCIDENT_EVENT_LABELS[incident.eventType] ?? incident.eventType}</p></TableCell>
               <TableCell><p className="font-medium">{incident.worksiteName}</p><p className="text-xs text-[var(--color-text-subtle)]">{incident.companyName}</p></TableCell>
               <TableCell><p className="tabular-nums">{formatDateTime(incident.occurredAt)}</p><p className="max-w-56 truncate text-xs text-[var(--color-text-subtle)]">{incident.location}</p></TableCell>
-              <TableCell><Badge variant={incident.isFatalOrSerious ? "danger" : "default"}>{INCIDENT_SEVERITY_LABELS[incident.actualSeverity] ?? incident.actualSeverity}</Badge><p className="mt-1 text-xs text-[var(--color-text-subtle)]">Potencial {INCIDENT_SEVERITY_LABELS[incident.potentialSeverity] ?? incident.potentialSeverity}</p></TableCell>
-              <TableCell><Badge variant={incidentStatusBadgeVariant(incident.status)}>{INCIDENT_STATUS_LABELS[incident.status as IncidentStatus] ?? incident.status}</Badge></TableCell>
+              <TableCell><MetaBadge meta={{ label: `${INCIDENT_SEVERITY_LABELS[incident.actualSeverity] ?? incident.actualSeverity}`, variant: incident.isFatalOrSerious ? "danger" : "default" }} /><p className="mt-1 text-xs text-[var(--color-text-subtle)]">Potencial {INCIDENT_SEVERITY_LABELS[incident.potentialSeverity] ?? incident.potentialSeverity}</p></TableCell>
+              <TableCell><MetaBadge meta={{ label: `${INCIDENT_STATUS_LABELS[incident.status as IncidentStatus] ?? incident.status}`, variant: incidentStatusBadgeVariant(incident.status) }} /></TableCell>
             </TableRow>
           )
         }}

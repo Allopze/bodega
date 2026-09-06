@@ -2,6 +2,7 @@
 import { describe, it, expect } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 
 describe("Badge", () => {
   it("renders children", () => {
@@ -10,20 +11,20 @@ describe("Badge", () => {
   })
 
   it("renders dot indicator when dot=true", () => {
-    const { container } = render(<Badge dot>Alerta</Badge>)
+    const { container } = render(<MetaBadge meta={{ label: "Alerta", variant: "default" }} dot />)
     // The dot is a span with aria-hidden
     const dot = container.querySelector("[aria-hidden]")
     expect(dot).toBeDefined()
   })
 
   it("applies variant class", () => {
-    const { container } = render(<Badge variant="success">OK</Badge>)
+    const { container } = render(<MetaBadge meta={{ label: "OK", variant: "success" }} />)
     const el = container.firstChild as HTMLElement
     expect(el.className).toMatch(/success/)
   })
 
   it("applies extra className", () => {
-    const { container } = render(<Badge className="my-custom">X</Badge>)
+    const { container } = render(<MetaBadge meta={{ label: "X", variant: "default" }} className="my-custom" />)
     const el = container.firstChild as HTMLElement
     expect(el.className).toContain("my-custom")
   })

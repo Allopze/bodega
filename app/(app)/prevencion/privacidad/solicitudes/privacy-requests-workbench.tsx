@@ -5,7 +5,6 @@ import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { DownloadSimple, ShieldWarning } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Pagination } from "@/components/ui/pagination"
@@ -20,6 +19,7 @@ import {
 } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Field } from "@/components/ui/field"
+import { MetaBadge, metaFor, type StateMetaInput } from "@/components/states/state-badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 
@@ -46,7 +46,7 @@ interface Props {
   pagination: PaginationState
 }
 
-const STATUS: Record<string, { label: string; variant: "default" | "warning" | "success" | "danger" | "info" }> = {
+const STATUS: Record<string, StateMetaInput> = {
   recibida: { label: "Recibida", variant: "default" },
   validando_identidad: { label: "Validando identidad", variant: "warning" },
   en_proceso: { label: "En proceso", variant: "info" },
@@ -111,7 +111,7 @@ export function PrivacyRequestsWorkbench({ rows, canExport, canExportClinical, p
   const filtered = React.useMemo(() => {
     const query = searchQuery.trim().toLocaleLowerCase("es")
     if (!query) return rows
-    return rows.filter((row) => [row.id, row.subjectName, row.subjectRut, row.worksiteName, RIGHTS[row.rightType], STATUS[row.status]?.label]
+    return rows.filter((row) => [row.id, row.subjectName, row.subjectRut, row.worksiteName, RIGHTS[row.rightType], STATUS[row.status]?.label ?? row.status]
       .filter(Boolean).some((value) => String(value).toLocaleLowerCase("es").includes(query)))
   }, [rows, searchQuery])
 
@@ -184,7 +184,7 @@ export function PrivacyRequestsWorkbench({ rows, canExport, canExportClinical, p
               <TableRow key={row.id}>
                 <TableCell><div className="font-medium">{row.subjectName}</div><div className="text-xs text-[var(--color-text-subtle)]">{row.subjectRut ?? "Sin RUT"} · {row.worksiteName}</div></TableCell>
                 <TableCell>{RIGHTS[row.rightType] ?? row.rightType}</TableCell>
-                <TableCell><Badge variant={STATUS[row.status]?.variant ?? "default"}>{STATUS[row.status]?.label ?? row.status}</Badge></TableCell>
+                <TableCell><MetaBadge meta={metaFor(STATUS, row.status)} /></TableCell>
                 <TableCell className="text-xs">{row.receivedAt.slice(0, 10)}{row.dueAt ? <div>Vence {row.dueAt.slice(0, 10)}</div> : null}</TableCell>
                 <TableCell className="max-w-sm text-xs">{row.requestScope}</TableCell>
                 <TableCell><div className="flex justify-end gap-1.5">

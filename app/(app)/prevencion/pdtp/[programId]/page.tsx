@@ -21,7 +21,7 @@ import { getPendingPdtpApprovalsForView, getPdtpChangeLog } from "@/lib/services
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import {
   DropdownMenu,
@@ -333,7 +333,7 @@ async function PdtpDocumentMetadataSection({ programId, canReconcile }: { progra
                   {linkedUserName && <p className="mt-1 text-xs text-[var(--color-success)]">Reconciliado con {linkedUserName}</p>}
                 </div>
                 <div className="flex items-center gap-2">
-                  {adapterCode && <Badge variant="outline">{adapterCode}</Badge>}
+                  {adapterCode && <MetaBadge meta={{ label: adapterCode, variant: "outline" }} />}
                   {canReconcile && entry.declaredActorName && (
                     <ReconcileDeclaredActorButton
                       programId={programId}

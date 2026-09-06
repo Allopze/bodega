@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
 import { TableCell } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { formatFuelVehicleStatus } from "@/lib/combustibles/validation"
 import { formatCLP, formatDate, formatQty } from "@/lib/utils"
 import type { getFleetOverview } from "@/lib/services/fleet"
@@ -54,9 +54,7 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
                 {[vehicle.brand, vehicle.model, vehicle.year].filter(Boolean).join(" ") || vehicle.type}
               </p>
             </div>
-            <Badge variant={vehicle.isActive && vehicle.operationalStatus === "operativo" ? "success" : "outline"}>
-              {vehicle.isActive ? formatFuelVehicleStatus(vehicle.operationalStatus) : "Inactivo"}
-            </Badge>
+            <MetaBadge meta={{ label: vehicle.isActive ? formatFuelVehicleStatus(vehicle.operationalStatus) : "Inactivo", variant: vehicle.isActive && vehicle.operationalStatus === "operativo" ? "success" : "outline" }} />
           </div>
           <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
             <div><dt className="text-[var(--color-text-subtle)]">Faena</dt><dd>{vehicle.worksiteName}</dd></div>
@@ -80,9 +78,7 @@ export function FleetTable({ vehicles, hasAnyVehicle, canViewCosts, canViewFuel,
             </TableCell>
             <TableCell>{vehicle.worksiteName}</TableCell>
             <TableCell>
-              <Badge variant={vehicle.isActive && vehicle.operationalStatus === "operativo" ? "success" : "outline"}>
-                {vehicle.isActive ? formatFuelVehicleStatus(vehicle.operationalStatus) : "Inactivo"}
-              </Badge>
+              <MetaBadge meta={{ label: vehicle.isActive ? formatFuelVehicleStatus(vehicle.operationalStatus) : "Inactivo", variant: vehicle.isActive && vehicle.operationalStatus === "operativo" ? "success" : "outline" }} />
             </TableCell>
             <TableCell>{vehicle.responsibleName ?? "—"}</TableCell>
             <TableCell>{vehicle.nextExpiryDate ? formatDate(vehicle.nextExpiryDate) : "—"}</TableCell>

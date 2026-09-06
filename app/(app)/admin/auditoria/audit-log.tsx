@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { DataTable } from "@/components/ui/data-table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { formatDateTime } from "@/lib/utils"
 
@@ -63,9 +63,7 @@ export function AuditLog({ entries }: { entries: AuditRow[] }) {
           <article className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <Badge variant={ACTION_VARIANTS[e.action] ?? "default"} size="sm">
-                  {e.action}
-                </Badge>
+                <MetaBadge meta={{ label: `${e.action}`, variant: ACTION_VARIANTS[e.action] ?? "default" }} />
                 <p className="mt-1 text-xs text-[var(--color-text-muted)]">
                   {ENTITY_LABELS[e.entityType] ?? e.entityType}
                 </p>
@@ -106,9 +104,7 @@ export function AuditLog({ entries }: { entries: AuditRow[] }) {
               {e.userEmail ?? <span className="text-[var(--color-text-subtle)]">Sistema</span>}
             </TableCell>
             <TableCell>
-              <Badge variant={ACTION_VARIANTS[e.action] ?? "default"} size="sm">
-                {e.action}
-              </Badge>
+              <MetaBadge meta={{ label: `${e.action}`, variant: ACTION_VARIANTS[e.action] ?? "default" }} />
             </TableCell>
             <TableCell className="text-xs text-[var(--color-text-muted)]">
               {ENTITY_LABELS[e.entityType] ?? e.entityType}

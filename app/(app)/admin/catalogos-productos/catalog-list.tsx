@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useActionState, useEffect } from "react"
 import { PencilSimple, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { DataTable } from "@/components/ui/data-table"
 import { Button } from "@/components/ui/button"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
@@ -119,7 +119,7 @@ export function CatalogList({ units, templates, categories, legacyUnits }: Catal
                 <ResponsiveDataListCard
                   title={u.label}
                   description={<span className="font-mono">{u.code}</span>}
-                  status={u.isActive ? <Badge variant="success">Activa</Badge> : <Badge variant="default">Inactiva</Badge>}
+                  status={u.isActive ? <MetaBadge meta={{ label: "Activa", variant: "success" }} /> : <MetaBadge meta={{ label: "Inactiva", variant: "default" }} />}
                   actions={
                     <>
                       <Button type="button" variant="ghost" size="sm" onClick={() => { setEditUnit(u); setUnitSheetOpen(true) }}>
@@ -149,7 +149,7 @@ export function CatalogList({ units, templates, categories, legacyUnits }: Catal
                     <TableCell>{u.label}</TableCell>
                     <TableCell className="text-[var(--color-text-muted)]">{u.description || "—"}</TableCell>
                     <TableCell>
-                      {u.isActive ? <Badge variant="success">Activa</Badge> : <Badge variant="default">Inactiva</Badge>}
+                      {u.isActive ? <MetaBadge meta={{ label: "Activa", variant: "success" }} /> : <MetaBadge meta={{ label: "Inactiva", variant: "default" }} />}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
@@ -194,7 +194,7 @@ export function CatalogList({ units, templates, categories, legacyUnits }: Catal
               return (
                 <ResponsiveDataListCard
                   title={t.name}
-                  status={t.isActive ? <Badge variant="success">Activa</Badge> : <Badge variant="default">Inactiva</Badge>}
+                  status={t.isActive ? <MetaBadge meta={{ label: "Activa", variant: "success" }} /> : <MetaBadge meta={{ label: "Inactiva", variant: "default" }} />}
                   actions={
                     <>
                       <Button type="button" variant="ghost" size="sm" onClick={() => { setEditAttr(t); setAttrSheetOpen(true) }}>
@@ -211,7 +211,7 @@ export function CatalogList({ units, templates, categories, legacyUnits }: Catal
                     </>
                   }
                 >
-                  <ResponsiveDataListField label="Tipo"><Badge variant="default">{t.type}</Badge></ResponsiveDataListField>
+                  <ResponsiveDataListField label="Tipo"><MetaBadge meta={{ label: t.type, variant: "default" }} /></ResponsiveDataListField>
                   <ResponsiveDataListField label="Categoría">{t.categoryName || "Todas"}</ResponsiveDataListField>
                   <ResponsiveDataListField label="Requerido" className="col-span-2">{t.isRequired ? "Sí" : "No"}</ResponsiveDataListField>
                 </ResponsiveDataListCard>
@@ -223,11 +223,11 @@ export function CatalogList({ units, templates, categories, legacyUnits }: Catal
                 <React.Fragment key={t.id}>
                   <TableRow>
                     <TableCell>{t.name}</TableCell>
-                    <TableCell className="font-mono text-xs"><Badge variant="default">{t.type}</Badge></TableCell>
+                    <TableCell className="font-mono text-xs"><MetaBadge meta={{ label: t.type, variant: "default" }} /></TableCell>
                     <TableCell className="text-xs text-[var(--color-text-muted)]">{t.categoryName || "Todas"}</TableCell>
-                    <TableCell>{t.isRequired ? <Badge variant="warning">Sí</Badge> : <Badge variant="default">No</Badge>}</TableCell>
+                    <TableCell>{t.isRequired ? <MetaBadge meta={{ label: "Sí", variant: "warning" }} /> : <MetaBadge meta={{ label: "No", variant: "default" }} />}</TableCell>
                     <TableCell>
-                      {t.isActive ? <Badge variant="success">Activa</Badge> : <Badge variant="default">Inactiva</Badge>}
+                      {t.isActive ? <MetaBadge meta={{ label: "Activa", variant: "success" }} /> : <MetaBadge meta={{ label: "Inactiva", variant: "default" }} />}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">

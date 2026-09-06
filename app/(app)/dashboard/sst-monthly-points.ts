@@ -6,7 +6,9 @@
  * y tendencias" en las secciones por dominio (Fase 3). Queda sola en su módulo
  * porque es pura, tiene test propio y la consumen las secciones.
  */
-export const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+import { MONTH_LABELS } from "@/lib/utils"
+
+export { MONTH_LABELS }
 
 /** Forma mínima que `toSstMonthlyPoints` necesita de `CanonicalIndicatorResult`. */
 interface CanonicalMonthlySlice {

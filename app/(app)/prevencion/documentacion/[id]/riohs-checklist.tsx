@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { assessRiohsCompleteness, RIOHS_SECTIONS } from "@/lib/prevention/riohs"
@@ -49,9 +49,7 @@ export function RiohsChecklist({ documentId, currentVersionId, sections, canMana
             DS 44 arts. 58 a 61. No se puede publicar una versión a la que le falte un capítulo obligatorio.
           </p>
         </div>
-        <Badge variant={completeness.complete ? "success" : "warning"}>
-          {completeness.percent}% declarado
-        </Badge>
+        <MetaBadge meta={{ label: `${completeness.percent}% declarado`, variant: completeness.complete ? "success" : "warning" }} />
       </div>
 
       {!completeness.complete && (

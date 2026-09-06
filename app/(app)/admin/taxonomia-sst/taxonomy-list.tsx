@@ -11,7 +11,7 @@ import {
   ArrowsClockwise,
 } from "@phosphor-icons/react"
 import { DataTable } from "@/components/ui/data-table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { TableRow, TableCell } from "@/components/ui/table"
@@ -145,7 +145,7 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
                   </Link>
                 }
                 description={c.description || undefined}
-                status={c.isActive ? <Badge variant="success">Activa</Badge> : <Badge variant="default">Inactiva</Badge>}
+                status={c.isActive ? <MetaBadge meta={{ label: "Activa", variant: "success" }} /> : <MetaBadge meta={{ label: "Inactiva", variant: "default" }} />}
                 actions={
                   <>
                     <Button type="button" variant="ghost" size="sm" onClick={() => { setEditCategory(c); setCatSheetOpen(true) }}>
@@ -189,8 +189,8 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
                   <TableCell className="text-[var(--color-text-muted)]">{c.description || "—"}</TableCell>
                   <TableCell>
                     {c.isActive
-                      ? <Badge variant="success">Activa</Badge>
-                      : <Badge variant="default">Inactiva</Badge>}
+                      ? <MetaBadge meta={{ label: "Activa", variant: "success" }} />
+                      : <MetaBadge meta={{ label: "Inactiva", variant: "default" }} />}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
@@ -253,7 +253,7 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
                 <ResponsiveDataListCard
                   title={t.name}
                   description={t.description || undefined}
-                  status={t.isActive ? <Badge variant="success">Activo</Badge> : <Badge variant="default">Inactivo</Badge>}
+                  status={t.isActive ? <MetaBadge meta={{ label: "Activo", variant: "success" }} /> : <MetaBadge meta={{ label: "Inactivo", variant: "default" }} />}
                   actions={
                     <>
                       <Button type="button" variant="ghost" size="sm" onClick={() => { setEditType(t); setTypeSheetOpen(true) }}>
@@ -294,8 +294,8 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
                     </TableCell>
                     <TableCell>
                       {t.isActive
-                        ? <Badge variant="success">Activo</Badge>
-                        : <Badge variant="default">Inactivo</Badge>}
+                        ? <MetaBadge meta={{ label: "Activo", variant: "success" }} />
+                        : <MetaBadge meta={{ label: "Inactivo", variant: "default" }} />}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">

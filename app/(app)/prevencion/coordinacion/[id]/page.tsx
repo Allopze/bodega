@@ -3,7 +3,7 @@ import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import { requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
@@ -53,7 +53,7 @@ export default async function EngagementDetailPage({ params }: { params: Promise
           { label: "Visitas y coordinación", href: "/prevencion/coordinacion" },
           { label: engagement.code },
         ]} />}
-        actions={<Badge variant={engagement.closedAt ? "success" : "outline"}>{engagement.closedAt ? "Cerrada" : "Abierta"}</Badge>}
+        actions={<MetaBadge meta={{ label: `${engagement.closedAt ? "Cerrada" : "Abierta"}`, variant: engagement.closedAt ? "success" : "outline" }} />}
       />
 
       <dl className="grid gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -114,7 +114,7 @@ export default async function EngagementDetailPage({ params }: { params: Promise
                     </TableCell>
                     <TableCell className="text-sm">{measure.responsibleSnapshot ?? "—"}</TableCell>
                     <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{measure.targetDate}</TableCell>
-                    <TableCell><Badge variant={capaStatusBadgeVariant(measure.status)}>{capaStatusLabel(measure.status)}</Badge></TableCell>
+                    <TableCell><MetaBadge meta={{ label: `${capaStatusLabel(measure.status)}`, variant: capaStatusBadgeVariant(measure.status) }} /></TableCell>
                   </TableRow>
                 ))}
               </TableBody>

@@ -2,9 +2,12 @@
 
 import { useRouter } from "next/navigation"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { MONTH_LABELS } from "@/lib/utils"
 
 const ALL = "__all__"
-const MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+
+/** Mes del período (1–12); etiqueta en `MONTH_LABELS[mes - 1]`. */
+const PDTP_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const
 
 type Filters = {
   faena?: string
@@ -83,14 +86,14 @@ export function ReporteGestionFilters({
         <SelectTrigger className="w-32" aria-label="Desde"><SelectValue placeholder="Desde" /></SelectTrigger>
         <SelectContent>
           <SelectItem value={ALL}>Desde</SelectItem>
-          {MONTHS.map((label, index) => <SelectItem key={label} value={String(index + 1)}>{label}</SelectItem>)}
+          {PDTP_MONTHS.map((month) => <SelectItem key={MONTH_LABELS[month - 1]} value={String(month)}>{MONTH_LABELS[month - 1]}</SelectItem>)}
         </SelectContent>
       </Select>
       <Select value={current.hasta !== undefined ? String(current.hasta) : ALL} onValueChange={(value) => navigate({ hasta: value === ALL ? undefined : Number(value) })}>
         <SelectTrigger className="w-32" aria-label="Hasta"><SelectValue placeholder="Hasta" /></SelectTrigger>
         <SelectContent>
           <SelectItem value={ALL}>Hasta</SelectItem>
-          {MONTHS.map((label, index) => <SelectItem key={label} value={String(index + 1)}>{label}</SelectItem>)}
+          {PDTP_MONTHS.map((month) => <SelectItem key={MONTH_LABELS[month - 1]} value={String(month)}>{MONTH_LABELS[month - 1]}</SelectItem>)}
         </SelectContent>
       </Select>
     </div>

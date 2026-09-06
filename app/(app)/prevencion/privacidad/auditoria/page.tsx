@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -54,7 +54,7 @@ export default async function PreventionPrivacyAuditPage() {
                   <TableCell className="text-xs">{entry.createdAt.slice(0, 16).replace("T", " ")}</TableCell>
                   <TableCell className="font-mono text-xs">{entry.domain}</TableCell>
                   <TableCell className="font-mono text-xs">{entry.action}</TableCell>
-                  <TableCell><Badge variant={entry.outcome === "granted" ? "success" : "danger"}>{entry.outcome === "granted" ? "Permitido" : "Denegado"}</Badge></TableCell>
+                  <TableCell><MetaBadge meta={{ label: `${entry.outcome === "granted" ? "Permitido" : "Denegado"}`, variant: entry.outcome === "granted" ? "success" : "danger" }} /></TableCell>
                   <TableCell className="font-mono text-xs">{entry.actorUserId ?? "sistema"}</TableCell>
                   <TableCell className="max-w-lg text-xs">{entry.purpose}</TableCell>
                 </TableRow>

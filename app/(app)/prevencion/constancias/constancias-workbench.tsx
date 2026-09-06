@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
@@ -94,7 +94,7 @@ export function ConstanciasWorkbench({
                 <article key={`${row.activityId}:${row.worksiteId}`} className="grid gap-3 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_14rem_auto] lg:items-center">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant={row.status === "overdue" ? "danger" : "warning"} dot>{row.status === "overdue" ? "Vencida" : "Pendiente"}</Badge>
+                      <MetaBadge meta={{ label: `${row.status === "overdue" ? "Vencida" : "Pendiente"}`, variant: row.status === "overdue" ? "danger" : "warning" }} dot />
                       <span className="font-mono text-xs text-[var(--color-text-subtle)]">Actividad {row.n}</span>
                       <span className="text-xs text-[var(--color-text-subtle)]">{row.worksiteName}</span>
                     </div>

@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState, useTransition } from "react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -215,7 +215,7 @@ export function DistributionTab(props: Props) {
 }
 
 function DistributionStatus({ status }: { status: string }) {
-  if (status === "acusado") return <Badge variant="success">Acusado</Badge>
-  if (status === "exento") return <Badge variant="outline">Exento</Badge>
-  return <Badge variant="warning">Pendiente</Badge>
+  if (status === "acusado") return <MetaBadge meta={{ label: "Acusado", variant: "success" }} />
+  if (status === "exento") return <MetaBadge meta={{ label: "Exento", variant: "outline" }} />
+  return <MetaBadge meta={{ label: "Pendiente", variant: "warning" }} />
 }

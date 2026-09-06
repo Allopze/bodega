@@ -14,7 +14,7 @@ import {
   Warehouse,
 } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PriorityBadge } from "@/components/ui/priority-badge"
@@ -293,7 +293,7 @@ function WorkQueueRow({ task, refreshedAt }: { task: DashboardTask; refreshedAt:
           <span className="flex shrink-0 items-center gap-1 text-xs text-[var(--color-text-muted)]" title={moduleLabel}>
             <Icon size={13} aria-hidden />{moduleLabel}
           </span>
-          <Badge variant="default" size="sm" className="shrink-0">{task.statusLabel}</Badge>
+          <MetaBadge meta={{ label: task.statusLabel, variant: "default" }} className="shrink-0" />
           <span className="truncate text-xs text-[var(--color-text-muted)]" title={[task.worksiteName, task.subtitle].filter(Boolean).join(" · ")}>
             {[task.worksiteName, task.subtitle].filter(Boolean).join(" · ")}
           </span>

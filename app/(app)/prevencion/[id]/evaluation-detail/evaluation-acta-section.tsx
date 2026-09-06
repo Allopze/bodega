@@ -1,7 +1,7 @@
 "use client"
 
 import { TabsContent } from "@/components/ui/tabs"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { RESULTADO_LABELS, MOTIVO_LABELS, resultadoBadgeVariant } from "@/lib/sst/badges"
 import { SIGNATURE_ROLE_LABELS } from "@/lib/sst/cargos"
@@ -47,9 +47,7 @@ export function EvaluationActaSection({
         {isCerrado && evaluation.resultadoFinal && (
           <div>
             <p className="text-xs font-medium text-text-subtle uppercase tracking-wide mb-1">Resultado Final</p>
-            <Badge variant={resultadoBadgeVariant(evaluation.resultadoFinal)}>
-              {RESULTADO_LABELS[evaluation.resultadoFinal] ?? evaluation.resultadoFinal}
-            </Badge>
+            <MetaBadge meta={{ label: `${RESULTADO_LABELS[evaluation.resultadoFinal] ?? evaluation.resultadoFinal}`, variant: resultadoBadgeVariant(evaluation.resultadoFinal) }} />
             {evaluation.porcentajeCumplimiento !== null && (
               <p className="mt-1 text-sm text-text-subtle">
                 Cumplimiento: {evaluation.porcentajeCumplimiento!.toFixed(1)}%

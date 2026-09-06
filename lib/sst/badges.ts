@@ -45,9 +45,13 @@ export const ESTADO_LABELS: Record<string, string> = Object.fromEntries(
   ESTADO_OPTIONS.map(({ value, label }) => [value, label])
 )
 
-// ── Variant-returning helpers (Badge component API) ───────────────────────────
+// ── Variant-returning helpers (badge variant API) ──────────────────────────
+// Non-optional: these feed `variant` inside `StateMetaInput` (MetaBadge), where
+// undefined is not assignable.
 
-export function resultadoBadgeVariant(resultado: string): BadgeProps["variant"] {
+type BadgeVariant = NonNullable<BadgeProps["variant"]>
+
+export function resultadoBadgeVariant(resultado: string): BadgeVariant {
   switch (resultado) {
     case "habilitado_autonomo":      return "success"
     case "habilitado_restricciones": return "warning"
@@ -57,15 +61,15 @@ export function resultadoBadgeVariant(resultado: string): BadgeProps["variant"] 
   }
 }
 
-export function estadoBadgeVariant(estado: string): BadgeProps["variant"] {
+export function estadoBadgeVariant(estado: string): BadgeVariant {
   return estado === "cerrado" ? "default" : "signal"
 }
 
-export function tipoBadgeVariant(tipo: string): BadgeProps["variant"] {
+export function tipoBadgeVariant(tipo: string): BadgeVariant {
   return tipo === "seguimiento" ? "info" : "default"
 }
 
-export function estadoPlanBadgeVariant(estado: string): BadgeProps["variant"] {
+export function estadoPlanBadgeVariant(estado: string): BadgeVariant {
   switch (estado) {
     case "cerrado":    return "success"
     case "en_proceso": return "warning"

@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -95,7 +95,7 @@ export function AlcotestWorkbench({
                       {worksiteName.get(test.worksiteId) ?? test.worksiteId} · {formatDateTime(test.performedAt)} · turno {SHIFT_LABEL[test.shift] ?? test.shift}
                     </p>
                   </div>
-                  <Badge variant={test.result === "positivo" ? "danger" : "success"} dot>{test.result === "positivo" ? "Positivo" : "Negativo"}</Badge>
+                  <MetaBadge meta={{ label: `${test.result === "positivo" ? "Positivo" : "Negativo"}`, variant: test.result === "positivo" ? "danger" : "success" }} dot />
                   <span className="text-xs text-[var(--color-text-subtle)]">
                     {test.procedureCode}{device ? ` · ${device.code}` : " · sin equipo"}
                   </span>

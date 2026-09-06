@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { formatCLP, formatQty } from "@/lib/utils"
 import { buildConsumptionHref } from "./consumption-url"
 import { ServerPagination } from "@/components/ui/server-pagination"
@@ -79,7 +79,7 @@ export function ConsumptionDetailTable({ rows, page, total, pageSize, canViewCos
                   <TableCell>
                     {row.vehicle
                       ? row.vehicle.plate
-                      : <Badge variant="warning" size="sm">Sin asociar</Badge>}
+                      : <MetaBadge meta={{ label: "Sin asociar", variant: "warning" }} />}
                   </TableCell>
                   <TableCell className="text-right font-mono">{formatQty(row.numeroTarjetas)}</TableCell>
                   <TableCell className="text-right font-mono">{formatQty(row.numeroTransacciones)}</TableCell>

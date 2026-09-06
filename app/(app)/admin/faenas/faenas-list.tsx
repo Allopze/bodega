@@ -5,7 +5,7 @@ import { DataTable } from "@/components/ui/data-table"
 import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
 import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
 import { WorksiteForm } from "./worksite-form"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -71,9 +71,7 @@ export function FaenasList({
             <h2 title={ws.name} className="text-sm font-medium text-[var(--color-text)] truncate">{ws.name}</h2>
             <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{ws.code}</p>
           </div>
-          <Badge variant={ws.isActive ? "success" : "default"} dot>
-            {ws.isActive ? "Activa" : "Inactiva"}
-          </Badge>
+          <MetaBadge meta={{ label: `${ws.isActive ? "Activa" : "Inactiva"}`, variant: ws.isActive ? "success" : "default" }} dot />
         </div>
 
         <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
@@ -108,9 +106,7 @@ export function FaenasList({
           <TableCell><span className="font-mono text-xs">{ws.code}</span></TableCell>
           <TableCell className="text-sm text-text-muted">{ws.region ?? "—"}</TableCell>
           <TableCell>
-            <Badge variant={ws.isActive ? "success" : "default"} dot className="w-20 justify-center">
-              {ws.isActive ? "Activa" : "Inactiva"}
-            </Badge>
+            <MetaBadge meta={{ label: `${ws.isActive ? "Activa" : "Inactiva"}`, variant: ws.isActive ? "success" : "default" }} dot className="w-20 justify-center" />
           </TableCell>
           <TableCell>
             <div className="flex items-center gap-2 justify-end">

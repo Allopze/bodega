@@ -3,7 +3,7 @@
 import * as React from "react"
 import { Funnel, X } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter, SheetCloseButton, SheetBody,
 } from "@/components/admin/sheet"
@@ -61,9 +61,7 @@ export function FilterToolbar({
                 <Funnel size={14} className="mr-1.5" />
                 Más filtros
                 {activeCount > 0 && (
-                  <Badge variant="signal" size="sm" className="ml-1.5 px-1.5 py-0 font-mono text-[10px]">
-                    {activeCount}
-                  </Badge>
+                  <MetaBadge meta={{ label: String(activeCount), variant: "signal" }} className="ml-1.5 px-1.5 py-0 font-mono text-[10px]" />
                 )}
               </Button>
 

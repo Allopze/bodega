@@ -22,7 +22,7 @@ import {
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { InvoiceFiltersBar } from "./invoice-filters"
 import { Table, TableRoot } from "@/components/ui/table"
 
@@ -195,7 +195,7 @@ export default async function InvoicesPage({
                         <td className="whitespace-nowrap px-4 py-2.5">
                           <div className="tabular-nums text-[var(--color-text-muted)]">{formatDateShort(row.dueDate)}</div>
                           {due && (
-                            <div className={due.tone === "danger" ? "text-xs text-[var(--color-danger-ink)]" : "text-xs text-[var(--color-text-subtle)]"}>
+                            <div className={due.variant === "danger" ? "text-xs text-[var(--color-danger-ink)]" : "text-xs text-[var(--color-text-subtle)]"}>
                               {due.label}
                             </div>
                           )}
@@ -214,9 +214,9 @@ export default async function InvoicesPage({
                         </td>
                         <td className="px-4 py-2.5">
                           <div className="flex flex-wrap gap-1">
-                            <Badge variant={payment.tone}>{payment.label}</Badge>
+                            <MetaBadge meta={payment} />
                             {row.collectionStatus !== "none" && (
-                              <Badge variant={collection.tone}>{collection.label}</Badge>
+                              <MetaBadge meta={collection} />
                             )}
                           </div>
                         </td>

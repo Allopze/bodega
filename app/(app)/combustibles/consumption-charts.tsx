@@ -10,7 +10,7 @@ import {
 import { ChartLineUp } from "@phosphor-icons/react"
 import type { PeriodoRow, PatenteRankingRow, RendimientoRow } from "@/lib/combustibles/consumption-dashboard"
 import { buildConsumptionHref } from "./consumption-url"
-import { formatCompactCLP, formatCompactQty } from "@/lib/utils"
+import { formatCompactCLP, formatCompactQty, formatPricePerLiter } from "@/lib/utils"
 
 const MONTO_COLOR = "var(--color-info)"
 const CANTIDAD_COLOR = "var(--color-primary)"
@@ -20,8 +20,6 @@ const ATIPICO_COLOR = "var(--color-warning-ink)"
 const GRID_COLOR = "var(--color-border)"
 
 const shortMonths = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
-
-const formatPricePerLiter = (value: number) => `$${Math.round(value).toLocaleString("es-CL")}/L`
 
 function formatPeriod(period: string | number) {
   const value = String(period)

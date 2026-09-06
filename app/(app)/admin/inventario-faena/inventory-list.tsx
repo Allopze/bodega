@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { ArrowSquareOut, FireExtinguisher, Package, Warning } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge, type StateMetaInput } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -84,13 +84,13 @@ type PreviewResult = {
   alreadyApplied: boolean
 }
 
-const COVERAGE_LABELS: Record<CoveragePointRow["state"], string> = {
-  covered: "Cubierto",
-  uncovered: "Brecha",
-  attention: "Atención",
-  incomplete: "Incompleto",
+/** Label + variante en un solo mapa (MetaBadge): el color lo decide el estado. */
+const COVERAGE_META: Record<CoveragePointRow["state"], StateMetaInput> = {
+  covered:    { label: "Cubierto",   variant: "success" },
+  uncovered:  { label: "Brecha",     variant: "danger"  },
+  attention:  { label: "Atención",   variant: "warning" },
+  incomplete: { label: "Incompleto", variant: "neutral" },
 }
-const COVERAGE_VARIANTS = { covered: "success", uncovered: "danger", attention: "warning", incomplete: "neutral" } as const
 
 function MetricButton({ label, value, onClick, tone }: { label: string; value: string | number; onClick: () => void; tone?: string }) {
   return <button type="button" onClick={onClick} className="rounded-2xl border border-slate-200/70 bg-white p-4 text-left shadow-xs transition-colors hover:border-slate-300">
@@ -127,7 +127,7 @@ export function InventoryList({ rows, points, worksites, canManage, canService, 
     if (name) chips.push({ key: "faena", label: "Faena", value: worksite, displayValue: name })
   }
   if (kind !== "all" && view === "activos") chips.push({ key: "tipo", label: "Tipo", value: kind, displayValue: kind })
-  if (coverageFilter !== "all" && view === "puntos") chips.push({ key: "cobertura", label: "Cobertura", value: coverageFilter, displayValue: coverageFilter === "gap" ? "Brechas" : COVERAGE_LABELS[coverageFilter as CoveragePointRow["state"]] ?? coverageFilter })
+  if (coverageFilter !== "all" && view === "puntos") chips.push({ key: "cobertura", label: "Cobertura", value: coverageFilter, displayValue: coverageFilter === "gap" ? "Brechas" : COVERAGE_META[coverageFilter as CoveragePointRow["state"]]?.label ?? coverageFilter })
 
   const covered = points.filter((point) => point.state === "covered" || point.state === "attention").length
   const gaps = points.filter((point) => point.state === "uncovered" || point.state === "incomplete").length
@@ -172,7 +172,7 @@ function AssetsTable({ rows, canManage, canService }: { rows: InventoryRow[]; ca
       <TableCell className="text-sm"><span className="block">{row.worksiteName}</span><span className="text-xs text-text-subtle">{row.location}</span></TableCell>
       <TableCell className="text-sm">{row.canonicalType ?? row.kind}<span className="block text-xs text-text-subtle">{row.agent && row.capacity ? `${row.agent} · ${row.capacity} ${row.capacityUnit ?? ""}` : "Especificación pendiente"}</span></TableCell>
       <TableCell className="text-sm tabular-nums">{row.lastMaintenanceAt ?? "—"}</TableCell><TableCell className="text-sm tabular-nums">{row.expiresAt ?? "—"}</TableCell>
-      <TableCell><Badge variant={emergencyResourceStatusVariant(row.status)}>{EMERGENCY_RESOURCE_STATUS_LABELS[row.status] ?? row.status}</Badge></TableCell>
+      <TableCell><MetaBadge meta={{ label: EMERGENCY_RESOURCE_STATUS_LABELS[row.status] ?? row.status, variant: emergencyResourceStatusVariant(row.status) }} /></TableCell>
       <TableCell><div className="flex justify-end gap-1">
         {canService && row.status !== "out_of_service" && row.typeId && <Button asChild size="sm" variant="secondary"><Link href={`/solicitudes/nueva?tipo=otro&faena=${encodeURIComponent(row.worksiteId)}&recursoEmergencia=${encodeURIComponent(row.id)}`}>Solicitar recarga</Link></Button>}
         <Button asChild size="sm" variant="ghost"><Link href={`/admin/inventario-faena/${row.id}`} aria-label={`Abrir ${row.assetCode ?? row.name}`}><ArrowSquareOut size={16} /></Link></Button>
@@ -190,7 +190,7 @@ function CoverageTable({ points, resources, canService, today }: { points: Cover
       <TableCell><span className="font-medium">{point.label}</span><span className="block text-xs text-text-subtle">{point.code}</span></TableCell>
       <TableCell className="text-sm">{point.pointKind === "vehicle" ? [point.vehiclePlate, point.vehicleBrand, point.vehicleCategory].filter(Boolean).join(" · ") : point.label}</TableCell>
       <TableCell className="text-sm">{point.assignedResourceId ? <Link href={`/admin/inventario-faena/${point.assignedResourceId}`} className="text-(--color-primary) hover:underline">{point.assignedAssetCode ?? point.assignedResourceName}</Link> : <span className="text-(--color-danger)">Sin reemplazo</span>}</TableCell>
-      <TableCell><Badge variant={COVERAGE_VARIANTS[point.state]}>{COVERAGE_LABELS[point.state]}</Badge>{point.reasons.length > 0 && <span className="mt-1 block max-w-64 text-xs text-text-subtle">{point.reasons.join(" · ")}</span>}</TableCell>
+      <TableCell><MetaBadge meta={COVERAGE_META[point.state]} />{point.reasons.length > 0 && <span className="mt-1 block max-w-64 text-xs text-text-subtle">{point.reasons.join(" · ")}</span>}</TableCell>
       <TableCell className="text-right">{canService && <AssignResourceDialog point={point} resources={resources} today={today} />}</TableCell>
     </TableRow>)}</TableBody>
   </Table></div>
@@ -250,7 +250,7 @@ function ImportDialog({ worksites }: { worksites: { id: string; name: string }[]
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{(["create", "update", "unchanged", "conflict"] as const).map((key) => <div key={key} className="rounded-lg border border-(--color-border) bg-(--color-surface-2) p-3"><span className="block text-xs text-text-subtle">{{ create: "Altas", update: "Actualizaciones", unchanged: "Sin cambios", conflict: "Conflictos" }[key]}</span><strong className="text-lg tabular-nums">{preview.counts[key]}</strong></div>)}</div>
         {preview.alreadyApplied && <p className="rounded-lg border border-(--color-warning-line) bg-(--color-warning-tint) p-3 text-sm text-(--color-warning-ink)">Este mismo archivo ya fue aplicado a la faena.</p>}
         {preview.conflicts.length > 0 && <div className="rounded-lg border border-(--color-danger-line) bg-(--color-danger-tint) p-3"><p className="flex items-center gap-2 text-sm font-semibold text-(--color-danger-ink)"><Warning size={16} />Conflictos que bloquean la confirmación</p><ul className="mt-2 space-y-1 text-xs text-(--color-danger-ink)">{preview.conflicts.map((item) => <li key={`${item.line}-${item.message}`}>Fila {item.line}: {item.message}</li>)}</ul><p className="mt-2 text-xs text-(--color-danger-ink)">Corrige la patente en Flota o en el Excel y vuelve a ejecutar el preview.</p></div>}
-        <div className="max-h-64 overflow-auto rounded-lg border border-(--color-border)"><Table><TableHeader><TableRow><TableHead>Fila</TableHead><TableHead>Activo</TableHead><TableHead>Punto</TableHead><TableHead>Decisión</TableHead></TableRow></TableHeader><TableBody>{preview.rows.map((row) => <TableRow key={row.line}><TableCell>{row.line}</TableCell><TableCell>{row.assetCode}</TableCell><TableCell>{row.plate ?? row.fixedLocation ?? "—"}</TableCell><TableCell><Badge variant={row.decision === "conflict" ? "danger" : row.decision === "create" ? "success" : "neutral"}>{row.decision}</Badge>{row.error && <span className="block text-xs text-(--color-danger)">{row.error}</span>}</TableCell></TableRow>)}</TableBody></Table></div>
+        <div className="max-h-64 overflow-auto rounded-lg border border-(--color-border)"><Table><TableHeader><TableRow><TableHead>Fila</TableHead><TableHead>Activo</TableHead><TableHead>Punto</TableHead><TableHead>Decisión</TableHead></TableRow></TableHeader><TableBody>{preview.rows.map((row) => <TableRow key={row.line}><TableCell>{row.line}</TableCell><TableCell>{row.assetCode}</TableCell><TableCell>{row.plate ?? row.fixedLocation ?? "—"}</TableCell><TableCell><MetaBadge meta={{ label: row.decision, variant: row.decision === "conflict" ? "danger" : row.decision === "create" ? "success" : "neutral" }} />{row.error && <span className="block text-xs text-(--color-danger)">{row.error}</span>}</TableCell></TableRow>)}</TableBody></Table></div>
       </div>}
       {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
       <DialogFooter>{!preview ? <Button type="button" disabled={operation.pending || !file || !worksiteId} onClick={() => operation.run(() => previewEmergencyInventoryImportAction(formData()), (state) => setPreview(state.data as unknown as PreviewResult))}>Generar preview</Button> : <><Button type="button" variant="secondary" onClick={() => setPreview(null)}>Cambiar archivo</Button><Button type="button" disabled={operation.pending || !preview.canConfirm || preview.alreadyApplied} onClick={() => operation.run(() => confirmEmergencyInventoryImportAction(formData()), () => setOpen(false))}>Confirmar lote</Button></>}</DialogFooter>

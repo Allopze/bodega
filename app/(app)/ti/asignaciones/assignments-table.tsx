@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { formatDateTime } from "@/lib/utils"
@@ -73,8 +73,8 @@ export function AssignmentsTable({ rows, canManage, workers, worksites }: {
             <TableCell className="w-32">{IT_PHYSICAL_STATE_META[row.physicalState]?.label ?? row.physicalState}</TableCell>
             <TableCell className="w-28">
               {row.returnedAt
-                ? <Badge variant="default">Devuelto</Badge>
-                : <Badge variant="info" dot>Vigente</Badge>}
+                ? <MetaBadge meta={{ label: "Devuelto", variant: "default" }} />
+                : <MetaBadge meta={{ label: "Vigente", variant: "info" }} dot />}
             </TableCell>
             <TableCell className="w-56">
               <div className="flex items-center justify-end gap-2">
@@ -109,7 +109,7 @@ export function AssignmentsTable({ rows, canManage, workers, worksites }: {
                 <div className="font-mono text-xs font-semibold text-[var(--color-primary)]">{row.code}</div>
                 <div className="text-sm text-[var(--color-text)]">{row.workerName} · {row.assetCode}</div>
                 <div className="mt-1 flex items-center gap-2">
-                  {row.returnedAt ? <Badge variant="default">Devuelto</Badge> : <Badge variant="info" dot>Vigente</Badge>}
+                  {row.returnedAt ? <MetaBadge meta={{ label: "Devuelto", variant: "default" }} /> : <MetaBadge meta={{ label: "Vigente", variant: "info" }} dot />}
                   <span className="text-xs text-[var(--color-text-muted)]">{row.worksiteName}</span>
                 </div>
               </div>

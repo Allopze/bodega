@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useActionState } from "react"
 import { toast } from "@/lib/toast"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
@@ -97,9 +97,7 @@ export function ChecklistsPanel({ checklists, workers, canManage }: {
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant={checklist.completedAt ? "success" : progress > 0 ? "warning" : "default"}>
-                      {checklist.doneTasks}/{checklist.totalTasks}
-                    </Badge>
+                    <MetaBadge meta={{ label: `${checklist.doneTasks}/${checklist.totalTasks}`, variant: checklist.completedAt ? "success" : progress > 0 ? "warning" : "default" }} />
                   </div>
                 </div>
                 <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-border)]">

@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Plus, PencilSimple, Power } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
@@ -38,7 +38,7 @@ export function EquipmentTypeCatalog({ rows }: { rows: EquipmentTypeRow[] }) {
           <TableCell>{FUEL_METER_TYPE_LABELS[row.defaultMeterType as keyof typeof FUEL_METER_TYPE_LABELS] ?? row.defaultMeterType}</TableCell>
           <TableCell>{FUEL_PERFORMANCE_UNIT_LABELS[row.defaultPerformanceUnit as keyof typeof FUEL_PERFORMANCE_UNIT_LABELS] ?? row.defaultPerformanceUnit}</TableCell>
           <TableCell className="font-mono">{row.vehicleCount.toLocaleString("es-CL")}</TableCell>
-          <TableCell><Badge variant={row.isActive ? "success" : "default"}>{row.isActive ? "Activo" : "Inactivo"}</Badge></TableCell>
+          <TableCell><MetaBadge meta={{ label: `${row.isActive ? "Activo" : "Inactivo"}`, variant: row.isActive ? "success" : "default" }} /></TableCell>
           <TableCell><div className="flex justify-end gap-2"><Button size="sm" variant="ghost" onClick={() => edit(row)}><PencilSimple size={15} />Editar</Button><Button size="sm" variant="secondary" disabled={pendingId === row.id} onClick={() => toggle(row)}><Power size={15} />{row.isActive ? "Desactivar" : "Activar"}</Button></div></TableCell>
         </TableRow>)}</TableBody>
       </Table>

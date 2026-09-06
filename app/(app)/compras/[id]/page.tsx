@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button"
 import { OcReceptionCta, pendingReceptionStage } from "./oc-reception-cta"
 import { OcInvoiceCta } from "./oc-invoice-cta"
 import { OcDetailItems } from "./oc-detail-items"
-import { DetailLine, AmountLine } from "./oc-detail-page.helpers"
+import { DetailItem } from "@/components/ui/detail-item"
 import { getOcReconciliation } from "@/lib/services/oc-reconciliation"
 import { getDocumentChain } from "@/lib/services/document-chain"
 import { DocumentChainStrip } from "@/components/documents/document-chain-strip"
@@ -699,10 +699,10 @@ export default async function OcDetailPage({
             </div>
 
             <dl className="mt-4 divide-y divide-(--color-border)">
-              <DetailLine label="Proveedor" value={order.supplier?.name ?? "—"} />
-              <DetailLine label="Faena" value={order.worksite?.name ?? "—"} />
-              <DetailLine label="Condición de pago" value={order.paymentTerms ?? "—"} />
-              <DetailLine label="Entrega estimada" value={order.estimatedDelivery ? formatDate(order.estimatedDelivery) : "—"} />
+              <DetailItem label="Proveedor" value={order.supplier?.name ?? "—"} />
+              <DetailItem label="Faena" value={order.worksite?.name ?? "—"} />
+              <DetailItem label="Condición de pago" value={order.paymentTerms ?? "—"} />
+              <DetailItem label="Entrega estimada" value={order.estimatedDelivery ? formatDate(order.estimatedDelivery) : "—"} />
             </dl>
             <OcReceptionCta
               orderId={order.id}
@@ -730,8 +730,8 @@ export default async function OcDetailPage({
           <section className="rounded-(--radius-2xl) bg-(--color-surface) shadow-(--shadow-card) p-4">
             <h2 className="text-sm font-semibold text-(--color-text)">Totales</h2>
             <dl className="mt-3 space-y-2 text-sm">
-              <AmountLine label={pendingCostLines > 0 ? "Neto conocido" : "Neto"} value={formatCLP(order.netAmount)} />
-              <AmountLine label="IVA (19%)" value={formatCLP(order.taxAmount)} muted />
+              <DetailItem label={pendingCostLines > 0 ? "Neto conocido" : "Neto"} value={formatCLP(order.netAmount)} mono />
+              <DetailItem label="IVA (19%)" value={formatCLP(order.taxAmount)} mono muted />
               <div className="flex items-center justify-between gap-3 border-t border-(--color-border) pt-3">
                 <dt className="font-semibold text-(--color-text)">{pendingCostLines > 0 ? "Total conocido" : "Total"}</dt>
                 <dd className="font-mono font-bold tabular-nums text-(--color-text)">{formatCLP(order.totalAmount)}</dd>

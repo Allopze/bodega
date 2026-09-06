@@ -7,7 +7,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatDateTime, formatQty } from "@/lib/utils"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
@@ -44,7 +44,7 @@ export default async function TaeImportHistoryPage({ searchParams }: { searchPar
             {batches.map((batch) => (
               <TableRow key={batch.id}>
                 <TableCell><Link className="font-medium text-(--color-primary-ink) hover:underline" href={`/combustibles/tae/importar/${batch.id}`}>{batch.fileName}</Link></TableCell>
-                <TableCell><Badge variant={batch.status === "reverted" ? "danger" : "success"}>{batch.status === "reverted" ? "Revertido" : "Importado"}</Badge></TableCell>
+                <TableCell><MetaBadge meta={{ label: `${batch.status === "reverted" ? "Revertido" : "Importado"}`, variant: batch.status === "reverted" ? "danger" : "success" }} /></TableCell>
                 <TableCell className="text-right font-mono">{formatQty(batch.validRows)}</TableCell>
                 <TableCell className="text-right font-mono">{formatQty(batch.observedRows)}</TableCell>
                 {isGlobal && <TableCell className="text-right font-mono">{formatQty(batch.invalidRows ?? 0)}</TableCell>}

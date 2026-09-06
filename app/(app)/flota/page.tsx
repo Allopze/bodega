@@ -5,6 +5,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
+import { Callout } from "@/components/ui/callout"
 import { Button } from "@/components/ui/button"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { can, requirePermission } from "@/lib/auth/can"
@@ -127,16 +128,16 @@ export default async function FlotaPage({
       {(expiredVehicles.length > 0 || expiringSoon.length > 0) && (
         <div className="flex flex-col gap-2">
           {expiredVehicles.length > 0 && (
-            <div className="rounded-lg border border-[var(--color-danger)] bg-[var(--color-danger-tint)] p-3 text-sm text-[var(--color-danger-ink)]">
+            <Callout tone="danger">
               <strong>Documentos vencidos:</strong>{" "}
               {expiredVehicles.map((v) => v.plate).join(", ")}
-            </div>
+            </Callout>
           )}
           {expiringSoon.length > 0 && (
-            <div className="rounded-lg border border-[var(--color-warning)] bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">
+            <Callout tone="warning">
               <strong>Próximos a vencer ({warningDays} días):</strong>{" "}
               {expiringSoon.map((v) => v.plate).join(", ")}
-            </div>
+            </Callout>
           )}
         </div>
       )}

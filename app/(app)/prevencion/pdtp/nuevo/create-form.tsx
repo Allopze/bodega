@@ -4,7 +4,7 @@ import * as React from "react"
 import { useActionState } from "react"
 import { ArrowRight, CheckCircle, FileXls } from "@phosphor-icons/react"
 import { SubmitButton } from "@/components/ui/submit-button"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { createPdtpProgramAction } from "../actions"
@@ -57,7 +57,7 @@ function PdtpCreateProgramFields({
             required
           />
         </Field>
-        {alreadyExists && <Badge variant="outline">Existente</Badge>}
+        {alreadyExists && <MetaBadge meta={{ label: "Existente", variant: "outline" }} />}
       </div>
 
       {baseRevision ? (

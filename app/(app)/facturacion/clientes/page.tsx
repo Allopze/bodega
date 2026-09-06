@@ -13,7 +13,7 @@ import { formatDateShort } from "@/lib/services/billing/labels"
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge, metaFor, type StateMetaInput } from "@/components/states/state-badge"
 import { ClientContractManager } from "./client-contract-manager"
 import { Table, TableRoot } from "@/components/ui/table"
 
@@ -84,7 +84,7 @@ export default async function ClientsPage() {
                 <div className="min-w-0">
                   <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
                     {client.name}
-                    {!client.isActive && <Badge variant="neutral">Inactivo</Badge>}
+                    {!client.isActive && <MetaBadge meta={{ label: "Inactivo", variant: "neutral" }} />}
                   </h2>
                   <p className="text-xs tabular-nums text-[var(--color-text-muted)]">
                     {client.rut}
@@ -149,9 +149,7 @@ export default async function ClientsPage() {
                             {contract.paymentTermsDays === null ? "—" : `${contract.paymentTermsDays} d`}
                           </td>
                           <td className="px-4 py-2">
-                            <Badge variant={STATUS_TONES[contract.status] ?? "neutral"}>
-                              {STATUS_LABELS[contract.status] ?? contract.status}
-                            </Badge>
+                            <MetaBadge meta={metaFor(CONTRACT_STATUS_META, contract.status)} />
                           </td>
                         </tr>
                       ))}
@@ -173,16 +171,9 @@ const CYCLE_LABELS: Record<string, string> = {
   none:      "Sin calendario",
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  active:    "Vigente",
-  suspended: "Suspendido",
-  closed:    "Cerrado",
-}
-
-// `neutral` y no `outline`: misma columna, misma tipografía que VIGENTE
-// (UI/UX 2026-08-05, M1).
-const STATUS_TONES: Record<string, "success" | "warning" | "neutral"> = {
-  active:    "success",
-  suspended: "warning",
-  closed:    "neutral",
+/** Label + variante en un solo mapa: el color lo decide el estado, no cada página. */
+const CONTRACT_STATUS_META: Record<string, StateMetaInput> = {
+  active:    { label: "Vigente",    variant: "success" },
+  suspended: { label: "Suspendido", variant: "warning" },
+  closed:    { label: "Cerrado",    variant: "neutral" },
 }

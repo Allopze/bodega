@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { ClipboardText } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
 import {
@@ -166,9 +166,7 @@ export function ProgramPanel({ committeeId, committeeActive, programs, selected,
           options={programs.map((program) => ({ value: program.id, label: `Programa ${program.year}` }))}
           className="w-48"
         />
-        <Badge variant={selected.status === "active" ? "success" : selected.status === "closed" ? "outline" : "default"}>
-          {COMMITTEE_PROGRAM_STATUS_LABELS[selected.status] ?? selected.status}
-        </Badge>
+        <MetaBadge meta={{ label: `${COMMITTEE_PROGRAM_STATUS_LABELS[selected.status] ?? selected.status}`, variant: selected.status === "active" ? "success" : selected.status === "closed" ? "outline" : "default" }} />
       </div>
 
       {selected.activities.length === 0 ? (
@@ -221,9 +219,7 @@ export function ProgramPanel({ committeeId, committeeActive, programs, selected,
                       {activity.riskTopic ? PROGRAM_RISK_TOPIC_LABELS[activity.riskTopic] ?? activity.riskTopic : "—"}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={DERIVED_BADGE[derived] ?? "default"}>
-                        {PROGRAM_ACTIVITY_DERIVED_LABELS[derived] ?? derived}
-                      </Badge>
+                      <MetaBadge meta={{ label: `${PROGRAM_ACTIVITY_DERIVED_LABELS[derived] ?? derived}`, variant: DERIVED_BADGE[derived] ?? "default" }} />
                       {activity.completionNote && (
                         <span className="mt-1 block max-w-xs text-xs text-[var(--color-text-subtle)]">{activity.completionNote}</span>
                       )}

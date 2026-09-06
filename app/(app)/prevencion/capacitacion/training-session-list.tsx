@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { Certificate } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -286,9 +286,7 @@ export function TrainingSessionList({
                   <TableCell className="text-sm">{TRAINING_KIND_LABELS[item.courseKind] ?? item.courseKind}</TableCell>
                   <TableCell className="text-sm">{item.worksiteName}</TableCell>
                   <TableCell>
-                    <Badge variant={statusBadgeVariant(item.status)}>
-                      {TRAINING_SESSION_STATUS_LABELS[item.status] ?? item.status}
-                    </Badge>
+                    <MetaBadge meta={{ label: TRAINING_SESSION_STATUS_LABELS[item.status] ?? item.status, variant: statusBadgeVariant(item.status) }} />
                   </TableCell>
                   <TableCell className="text-sm tabular-nums">{showDateTime(item.scheduledAt)}</TableCell>
                   <TableCell className="text-right font-mono text-sm tabular-nums">

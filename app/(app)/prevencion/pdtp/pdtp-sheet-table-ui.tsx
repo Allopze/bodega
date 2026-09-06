@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { ListDashes, Rows } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip } from "@/components/ui/tooltip"
@@ -11,6 +11,7 @@ import type { PdtpActivityStatus } from "@/lib/services/pdtp/period"
 import { pdtpExecutionStatusLabel } from "@/lib/prevention/pdtp"
 import { countOf } from "@/lib/utils"
 import { useLocalStorageState } from "@/lib/hooks/use-local-storage-state"
+import { MONTH_LABELS } from "@/lib/utils"
 
 // ---------------------------------------------------------------------------
 // PdtpStatusBadge
@@ -41,9 +42,9 @@ export function PdtpStatusBadge({
   const showDot = status === "overdue" || status === "pending"
 
   return (
-    <Badge variant={variant} dot={showDot} size={status === "overdue" && overdueMonths > 0 ? "lg" : "default"}>
+    <MetaBadge meta={{ label: displayLabel, variant }} dot={showDot} size={status === "overdue" && overdueMonths > 0 ? "lg" : "default"}>
       {displayLabel}
-    </Badge>
+    </MetaBadge>
   )
 }
 
@@ -59,7 +60,7 @@ const EXECUTION_STATUS_VARIANT: Record<string, "default" | "success" | "danger" 
 }
 
 export function PdtpExecutionStatusBadge({ status }: { status: string }) {
-  return <Badge variant={EXECUTION_STATUS_VARIANT[status] ?? "default"} size="sm">{pdtpExecutionStatusLabel(status)}</Badge>
+  return <MetaBadge meta={{ label: pdtpExecutionStatusLabel(status), variant: EXECUTION_STATUS_VARIANT[status] ?? "default" }} />
 }
 
 // ---------------------------------------------------------------------------
@@ -87,7 +88,7 @@ export function PdtpResponsibleChips({ display }: { display: string }) {
       </span>
       <Tooltip side="top" content={rest.join(", ")}>
         <span className="cursor-default">
-          <Badge variant="outline" size="sm">+{rest.length}</Badge>
+          <MetaBadge meta={{ label: `+${rest.length}`, variant: "outline" }} />
         </span>
       </Tooltip>
     </div>
@@ -295,9 +296,9 @@ export function PdtpActivitySummary({
             ].join(" ")}
             aria-pressed={isActive}
           >
-            <Badge variant={item.variant} size="sm">
+            <MetaBadge meta={item} size="sm">
               {item.label} {item.count}
-            </Badge>
+            </MetaBadge>
           </button>
         )
       })}
@@ -394,7 +395,9 @@ export { MONTH_INDICES as PDT_SHEET_MONTH_INDICES }
 // ---------------------------------------------------------------------------
 
 const PDT_BASE = "/prevencion/pdtp"
-const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+
+/** Mes del período PDTP (1–12); etiqueta en `MONTH_LABELS[mes - 1]`. */
+const PDTP_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const
 
 export function PdtpWorksitePicker({
   current,
@@ -673,7 +676,7 @@ export function PdtpPeriodPicker({
       <span className="text-eyebrow shrink-0 text-[var(--color-text-faint)]">Período</span>
       <Select value={String(month)} onValueChange={(value) => navigate(Number(value), week)}>
         <SelectTrigger className="w-28" aria-label="Seleccionar mes"><SelectValue /></SelectTrigger>
-        <SelectContent>{MONTH_LABELS.map((label, index) => <SelectItem key={label} value={String(index + 1)}>{label}</SelectItem>)}</SelectContent>
+        <SelectContent>{PDTP_MONTHS.map((month) => <SelectItem key={MONTH_LABELS[month - 1]} value={String(month)}>{MONTH_LABELS[month - 1]}</SelectItem>)}</SelectContent>
       </Select>
       <Select value={String(week)} onValueChange={(value) => navigate(month, Number(value))}>
         <SelectTrigger className="w-24" aria-label="Seleccionar semana"><SelectValue /></SelectTrigger>

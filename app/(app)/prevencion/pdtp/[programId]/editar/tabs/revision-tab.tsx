@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 import type { pdtpPrograms } from "@/db/schema"
@@ -50,7 +50,7 @@ export function ReviewTab({
           <h3 className="text-base font-semibold text-[var(--color-text)]">Revisión antes de enviar</h3>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">Comprueba el resultado preventivo; no necesitas revisar una grilla del Excel.</p>
         </div>
-        <Badge variant={ready ? "success" : "warning"} dot>{ready ? "Listo para revisar" : "Faltan datos"}</Badge>
+        <MetaBadge meta={{ label: `${ready ? "Listo para revisar" : "Faltan datos"}`, variant: ready ? "success" : "warning" }} dot />
       </div>
       <ul className="divide-y divide-[var(--color-border)]">
         {checks.map((check) => (
@@ -94,7 +94,7 @@ function BaseComparisonPanel({ comparison }: { comparison: PdtpBaseComparison })
           </p>
         </div>
         {comparison.missingActivities > 0 && (
-          <Badge variant="danger">{comparison.missingActivities} eliminada(s) físicamente</Badge>
+          <MetaBadge meta={{ label: `${comparison.missingActivities} eliminada(s) físicamente`, variant: "danger" }} />
         )}
       </div>
       <dl className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-border)] sm:grid-cols-3">

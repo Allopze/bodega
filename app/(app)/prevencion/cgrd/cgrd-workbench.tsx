@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -131,7 +131,7 @@ export function CgrdWorkbench({
           ) : (
             <div className="mt-3 space-y-3">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={MATRIX_STATUS_VARIANT[latestMatrix.status] ?? "outline"} dot>{GRD_MATRIX_STATUS_LABELS[latestMatrix.status as keyof typeof GRD_MATRIX_STATUS_LABELS] ?? latestMatrix.status}</Badge>
+                <MetaBadge meta={{ label: GRD_MATRIX_STATUS_LABELS[latestMatrix.status as keyof typeof GRD_MATRIX_STATUS_LABELS] ?? latestMatrix.status, variant: MATRIX_STATUS_VARIANT[latestMatrix.status] ?? "outline" }} dot />
                 <span className="text-sm font-medium">{latestMatrix.title} · v{latestMatrix.matrixVersion}</span>
               </div>
 
@@ -296,7 +296,7 @@ export function CgrdWorkbench({
                 {meetings.map((meeting) => (
                   <li key={meeting.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                     <div>
-                      <Badge variant={meeting.status === "closed" ? "success" : meeting.status === "cancelled" ? "outline" : "warning"} dot>{GRD_MEETING_STATUS_LABELS[meeting.status as keyof typeof GRD_MEETING_STATUS_LABELS] ?? meeting.status}</Badge>
+                      <MetaBadge meta={{ label: GRD_MEETING_STATUS_LABELS[meeting.status as keyof typeof GRD_MEETING_STATUS_LABELS] ?? meeting.status, variant: meeting.status === "closed" ? "success" : meeting.status === "cancelled" ? "outline" : "warning" }} dot />
                       <span className="ml-2">{meeting.code} · {formatDateTime(meeting.scheduledFor)}</span>
                     </div>
                     {meeting.status === "scheduled" && canManageMeetings && (
@@ -329,9 +329,7 @@ export function CgrdWorkbench({
                     <span className="min-w-0 flex-1">{agreement.description}</span>
                     <span className="flex items-center gap-2">
                       {agreement.capaStatus && (
-                        <Badge variant={agreement.capaStatus === "closed" || agreement.capaStatus === "verified" ? "success" : "warning"} dot>
-                          {CAPA_STATUS_LABELS[agreement.capaStatus as keyof typeof CAPA_STATUS_LABELS] ?? agreement.capaStatus}
-                        </Badge>
+                        <MetaBadge meta={{ label: CAPA_STATUS_LABELS[agreement.capaStatus as keyof typeof CAPA_STATUS_LABELS] ?? agreement.capaStatus, variant: agreement.capaStatus === "closed" || agreement.capaStatus === "verified" ? "success" : "warning" }} dot />
                       )}
                       <span className="font-mono text-xs text-[var(--color-text-subtle)]">
                         {agreement.capaCode ?? "sin CAPA"}{agreement.capaTargetDate ? ` · ${agreement.capaTargetDate}` : ""}

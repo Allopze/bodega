@@ -2,13 +2,18 @@ import * as React from "react"
 import { Badge } from "@/components/ui/badge"
 import type { ItemStatus } from "@/lib/services/item-state"
 import { cn } from "@/lib/utils"
+import type { VariantProps } from "class-variance-authority"
+import { badgeVariants } from "@/components/ui/badge"
 import { FEEDBACK_ESTADO_LABELS, FEEDBACK_TIPO_LABELS } from "@/lib/validation/feedback"
 import type { FeedbackEstado, FeedbackTipo } from "@/lib/validation/feedback"
 export type { FeedbackEstado, FeedbackTipo }
 export { FEEDBACK_TIPO_LABELS }
 
 /* ── State families ──────────────────────────────────────────────────────── */
-type BadgeVariant = "default" | "primary" | "success" | "warning" | "signal" | "info" | "danger"
+/* Derivado de `badgeVariants` (badge.tsx): una sola fuente para la lista de
+ * variantes — incluir "neutral"/"outline" aquí fue exactamente lo que una
+ * lista manual deja pasar. */
+type BadgeVariant = NonNullable<VariantProps<typeof badgeVariants>["variant"]>
 
 interface StateMeta {
   label:   string
@@ -205,3 +210,49 @@ export function StateBadge({
 
 /* ── Exports for external use ─────────────────────────────────────────────── */
 export { ITEM_STATE_META, REQUEST_STATE_META, OC_STATE_META, PPA_STATE_META, FUEL_STATE_META, DISPATCH_GUIDE_STATE_META }
+
+/* ── MetaBadge: vocabulario de estado fuera de las entidades canónicas ────── */
+
+/**
+ * `{ label, variant }` con los mismos valores de `variant` que acepta `Badge`.
+ *
+ * Los módulos sin estado canónico (conciliación TAE/TCT, SII, garantías,
+ * bloqueos de seguridad, privacidad) solían copiar el mapa `label → { label,
+ * variant }` y re-decidir el color: el mismo concepto "pendiente" renderizaba
+ * `warning` en un módulo y `signal` en otro. MetaBadge reutiliza el vocabulario
+ * de `StateMeta` para que el color lo decida la familia del estado, una sola vez.
+ */
+export interface StateMetaInput {
+  label: string
+  variant: BadgeVariant
+}
+
+/** Mapea un estado cualquiera a su meta; si no está en el mapa, lo muestra tal cual en neutro. */
+export function metaFor(
+  map: Record<string, StateMetaInput>,
+  state: string | null | undefined,
+): StateMetaInput {
+  if (state == null) return { label: "—", variant: "default" }
+  return map[state] ?? { label: state, variant: "default" }
+}
+
+interface MetaBadgeProps extends Omit<React.ComponentProps<typeof Badge>, "variant"> {
+  meta: StateMetaInput
+  /** Nombre real de la faena-oficina u contexto, si quien renderiza lo tiene. */
+  title?: string
+}
+
+/** Badge que recibe la meta `{ label, variant }` ya resuelta (ver `metaFor`). */
+export function MetaBadge({ meta, size = "default", title, className, children, ...props }: MetaBadgeProps) {
+  return (
+    <Badge
+      variant={meta.variant}
+      size={size}
+      title={title}
+      className={cn(meta.variant === "signal" && "border-[1.5px]", className)}
+      {...props}
+    >
+      {children ?? meta.label}
+    </Badge>
+  )
+}

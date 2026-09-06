@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge, type StateMetaInput } from "@/components/states/state-badge"
 import {
   TableRoot, Table, TableHeader, TableBody,
   TableRow, TableHead, TableCell, TableCellNum,
@@ -16,7 +16,7 @@ export interface OcProgressRow {
 }
 
 /** Estado consolidado de un ítem según recibido y facturado vs pedido. */
-function itemState(row: OcProgressRow): { label: string; variant: "success" | "warning" | "signal" } {
+function itemState(row: OcProgressRow): StateMetaInput {
   const fullyReceived = row.received >= row.ordered
   const fullyInvoiced = row.invoiced >= row.ordered
   if (fullyReceived && fullyInvoiced) return { label: "Completo", variant: "success" }
@@ -63,7 +63,7 @@ export function OcProgressTable({ rows }: { rows: OcProgressRow[] }) {
                   {formatQty(pending, row.unitOfMeasure)}
                 </TableCellNum>
                 <TableCell>
-                  <Badge variant={state.variant} size="sm" dot>{state.label}</Badge>
+                  <MetaBadge meta={state} dot />
                 </TableCell>
               </TableRow>
             )

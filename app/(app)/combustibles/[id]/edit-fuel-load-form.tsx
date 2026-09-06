@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { toast } from "@/lib/toast"
 import { deleteFuelLoadAction, registerFuelLoadAction } from "../actions"
@@ -106,9 +106,7 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <Badge variant={FUEL_LOAD_STATUS_LABELS[load.status]?.variant ?? "danger"}>
-          {FUEL_LOAD_STATUS_LABELS[load.status]?.label ?? load.status}
-        </Badge>
+        <MetaBadge meta={{ label: `${FUEL_LOAD_STATUS_LABELS[load.status]?.label ?? load.status}`, variant: FUEL_LOAD_STATUS_LABELS[load.status]?.variant ?? "danger" }} />
         {isEditable && (
           <Button size="sm" onClick={handleRegister}>Registrar</Button>
         )}

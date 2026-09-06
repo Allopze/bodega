@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { formatDate } from "@/lib/utils"
 import { IT_RETIREMENT_REASON_META } from "@/lib/services/ti/constants"
@@ -58,7 +58,7 @@ export function RetirementTable({ rows }: { rows: Row[] }) {
               <span className="ml-2 text-xs text-[var(--color-text-subtle)]">{[row.brand, row.model].filter(Boolean).join(" ")}</span>
             </TableCell>
             <TableCell className="w-32">
-              <Badge variant={REASON_VARIANT[row.reason] ?? "default"}>{IT_RETIREMENT_REASON_META[row.reason] ?? row.reason}</Badge>
+              <MetaBadge meta={{ label: `${IT_RETIREMENT_REASON_META[row.reason] ?? row.reason}`, variant: REASON_VARIANT[row.reason] ?? "default" }} />
             </TableCell>
             <TableCell className="w-40">{row.destination ?? "—"}</TableCell>
             <TableCell className="w-44">{row.responsibleName}</TableCell>

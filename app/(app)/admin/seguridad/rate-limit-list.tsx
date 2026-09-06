@@ -5,7 +5,7 @@ import { formatDateTime } from "@/lib/utils"
 import { useActionState, useEffect } from "react"
 import { LockOpen, Trash } from "@phosphor-icons/react"
 import { DataTable } from "@/components/ui/data-table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge, type StateMetaInput } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { TableRow, TableCell } from "@/components/ui/table"
@@ -35,7 +35,7 @@ interface RateLimitListProps {
   total: number
 }
 
-function lockStatus(lockUntil: number): { label: string; variant: "default" | "success" | "danger" | "warning" } {
+function lockStatus(lockUntil: number): StateMetaInput {
   if (lockUntil > Date.now()) return { label: "Bloqueado", variant: "danger" }
   if (lockUntil > 0) return { label: "Expirado", variant: "warning" }
   return { label: "Activo", variant: "success" }
@@ -93,7 +93,7 @@ export function RateLimitList({ rows, total }: RateLimitListProps) {
           return (
             <ResponsiveDataListCard
               title={<span className="font-mono">{r.key}</span>}
-              status={<Badge variant={status.variant}>{status.label}</Badge>}
+              status={<MetaBadge meta={status} />}
               actions={
                 <form action={clearAction}>
                   <input type="hidden" name="key" value={r.key} />
@@ -128,7 +128,7 @@ export function RateLimitList({ rows, total }: RateLimitListProps) {
                 <TableCell className="text-right">{r.count}</TableCell>
                 <TableCell className="text-right text-[var(--color-text-muted)]">{r.successCount}</TableCell>
                 <TableCell>
-                  <Badge variant={status.variant}>{status.label}</Badge>
+                  <MetaBadge meta={status} />
                 </TableCell>
                 <TableCell className="text-xs text-[var(--color-text-muted)]">
                   {formatLockUntil(r.lockUntil)}

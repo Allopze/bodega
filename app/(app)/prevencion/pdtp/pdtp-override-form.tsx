@@ -19,8 +19,7 @@ import { Sliders } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
 import { Tooltip } from "@/components/ui/tooltip"
 import { setPdtpActivityOverrideFormAction } from "./actions"
-
-const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
+import { MONTH_LABELS } from "@/lib/utils"
 
 type Props = {
   programId: string

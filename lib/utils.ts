@@ -185,6 +185,31 @@ export function formatCompactQty(value: number): string {
 }
 
 /**
+ * Etiquetas cortas de mes, indexadas por `monthNumber - 1`.
+ *
+ * La lista vivía copiada en ~13 archivos (predominio en prevencion/pdtp) con
+ * variantes de nombre (`PLAN_MONTH_LABELS`, `monthNames`) y hasta de casing
+ * ("ene" en consumption-charts). Una sola fuente: el día en que se decida
+ * rotular distinto un mes, no puede quedar un archivo afuera.
+ */
+export const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"] as const
+
+/** Etiquetas de trimestre, indexadas por `quarterNumber - 1` (1–4). */
+export const QUARTER_LABELS = ["Trim. 1", "Trim. 2", "Trim. 3", "Trim. 4"] as const
+
+/**
+ * Precio por litro para ejes y tooltips: `$1.234/L`.
+ *
+ * Dos copias exactas en los charts de combustibles; aquí la versión única.
+ * Redondeo a pesos enteros: el precio relevante para decidir es el entero,
+ * igual que el resto del dinero que muestra la plataforma.
+ */
+export function formatPricePerLiter(value: number): string {
+  if (!Number.isFinite(value)) return VALUE_MISSING
+  return `$${QTY_FORMAT.format(Math.round(value))}/L`
+}
+
+/**
  * Parámetro `?page=` numérico y ≥ 1. Un valor no numérico devuelve 1, no NaN
  * (el offset salía NaN y la vista de Registros quedaba vacía rotulada
  * "Página NaN"). Antes /combustibles y /anomalias tenían este guard copiado.

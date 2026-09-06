@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge, type StateMetaInput } from "@/components/states/state-badge"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { formatDate, todayInChile } from "@/lib/utils"
 import { civilDaysUntil } from "@/lib/services/ti/civil-dates"
@@ -19,7 +19,7 @@ interface Row {
   workerName: string | null
 }
 
-function warrantyStatus(date: string): { label: string; variant: "success" | "warning" | "danger" | "default" } {
+function warrantyStatus(date: string): StateMetaInput {
   const days = civilDaysUntil(date, todayInChile())
   if (days < 0) return { label: "Vencida", variant: "danger" }
   if (days <= 30) return { label: `Vence en ${days} d`, variant: "danger" }
@@ -60,7 +60,7 @@ export function WarrantyTable({ rows }: { rows: Row[] }) {
             </TableCell>
             <TableCell className="w-32">{row.warrantyEndDate ? formatDate(row.warrantyEndDate) : "—"}</TableCell>
             <TableCell className="w-32">
-              {status ? <Badge variant={status.variant} dot>{status.label}</Badge> : <Badge variant="default">Sin garantía</Badge>}
+              {status ? <MetaBadge meta={status} dot /> : <MetaBadge meta={{ label: "Sin garantía", variant: "default" }} />}
             </TableCell>
             <TableCell>{row.supplierName ?? "—"}</TableCell>
             <TableCell>{row.workerName ?? "—"}</TableCell>
@@ -76,7 +76,7 @@ export function WarrantyTable({ rows }: { rows: Row[] }) {
               <div className="font-mono text-xs font-semibold text-[var(--color-primary)]">{row.code}</div>
               <div className="text-sm text-[var(--color-text)]">{[row.brand, row.model].filter(Boolean).join(" ") || "—"}</div>
             </div>
-            {status && <Badge variant={status.variant} dot>{status.label}</Badge>}
+            {status && <MetaBadge meta={status} dot />}
           </Link>
         )
       }}

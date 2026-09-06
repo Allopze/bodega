@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { ArrowSquareOut } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -120,11 +120,11 @@ export function ContainerList({ rows, worksites, canManage }: {
                   {row.code}
                   <ArrowSquareOut size={14} aria-hidden="true" />
                 </Link>
-                {!row.isActive && <Badge variant="neutral" className="ml-2">Retirado</Badge>}
+                {!row.isActive && <MetaBadge meta={{ label: "Retirado", variant: "neutral" }} className="ml-2" />}
               </TableCell>
               <TableCell>{row.worksiteName}</TableCell>
               <TableCell>{row.location}</TableCell>
-              <TableCell><Badge variant={containerStatusVariant(row.status)}>{statusLabel(row.status)}</Badge></TableCell>
+              <TableCell><MetaBadge meta={{ label: `${statusLabel(row.status)}`, variant: containerStatusVariant(row.status) }} /></TableCell>
               <TableCell className="text-right tabular-nums">{row.inspectionCount}</TableCell>
               <TableCell className="text-right">
                 {canManage && <div className="flex justify-end gap-1">

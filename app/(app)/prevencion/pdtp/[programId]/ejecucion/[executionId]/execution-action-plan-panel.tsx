@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Field } from "@/components/ui/field"
 import { FileInput } from "@/components/ui/file-input"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ListBullets, Plus } from "@phosphor-icons/react"
 import { PdtpEvidenceThumbs } from "../../../pdtp-evidence-thumbs"
@@ -95,10 +95,8 @@ export function ExecutionActionPlanPanel({ executionId, worksiteId, items, follo
                 <p className="truncate text-xs text-text-subtle">{item.accion} · Responsable: {item.responsable} · Plazo: {item.plazo}</p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <Badge variant={pdtpActionStatusVariant(item.estado, item.vencida)}>
-                  {item.vencida ? "Vencida" : PDTP_ACTION_STATUS_LABELS[item.estado as keyof typeof PDTP_ACTION_STATUS_LABELS] ?? item.estado}
-                </Badge>
-                <Badge variant="outline">{item.prioridad}</Badge>
+                <MetaBadge meta={{ label: `${item.vencida ? "Vencida" : PDTP_ACTION_STATUS_LABELS[item.estado as keyof typeof PDTP_ACTION_STATUS_LABELS] ?? item.estado}`, variant: pdtpActionStatusVariant(item.estado, item.vencida) }} />
+                <MetaBadge meta={{ label: item.prioridad, variant: "outline" }} />
               </div>
             </button>
             {expandedId === item.id && (

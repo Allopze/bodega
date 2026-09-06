@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { can, requireAuth } from "@/lib/auth/can"
@@ -50,7 +50,7 @@ export default async function PrivacyRequestDetailPage({ params }: Props) {
       <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-1 border-y border-(--color-border) py-2 text-sm">
         <span><strong>Faena:</strong> {bundle.worksite?.name ?? bundle.subject.worksiteId}</span>
         <span><strong>RUT:</strong> {bundle.subject.rut ?? "Sin RUT"}</span>
-        <Badge variant={bundle.request.legalHold ? "danger" : bundle.request.status === "completada" ? "success" : "info"}>{bundle.request.status}</Badge>
+        <MetaBadge meta={{ label: `${bundle.request.status}`, variant: bundle.request.legalHold ? "danger" : bundle.request.status === "completada" ? "success" : "info" }} />
       </div>
       <PrivacyRightExecutionWorkbench bundle={bundle} />
     </PageContainer>

@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useActionState } from "react"
 import { toast } from "@/lib/toast"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import { formatCLP, formatDate } from "@/lib/utils"
 import { IT_LICENSE_PERIODICITY_META } from "@/lib/services/ti/constants"
@@ -87,7 +87,7 @@ export function LicensePanel({ license, canManage, workers, worksites, assets, s
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-semibold text-[var(--color-text)]">{license.name}</h2>
-            {!license.isActive && <Badge variant="default">Inactiva</Badge>}
+            {!license.isActive && <MetaBadge meta={{ label: "Inactiva", variant: "default" }} />}
           </div>
           <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
             {[license.supplierName, license.type, IT_LICENSE_PERIODICITY_META[license.periodicity]].filter(Boolean).join(" · ") || "—"}
@@ -129,8 +129,8 @@ export function LicensePanel({ license, canManage, workers, worksites, assets, s
               </span>
               <span className="flex items-center gap-2">
                 {assignment.revokedAt
-                  ? <Badge variant="default">Revocada</Badge>
-                  : <Badge variant="success" dot>Activa</Badge>}
+                  ? <MetaBadge meta={{ label: "Revocada", variant: "default" }} />
+                  : <MetaBadge meta={{ label: "Activa", variant: "success" }} dot />}
                 {canManage && !assignment.revokedAt && (
                   <form action={revokeAction}>
                     <input type="hidden" name="assignmentId" value={assignment.id} />

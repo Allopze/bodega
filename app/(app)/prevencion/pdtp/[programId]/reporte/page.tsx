@@ -6,7 +6,7 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getPdtpManagementReport, getPdtpProgram } from "@/lib/services/prevention-pdtp"
 import { listScopedWorksites } from "@/lib/services/ppa"
 import { resolveSelectedWorksiteId } from "../../pdtp-context"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PageContainer } from "@/components/ui/page-container"
@@ -138,7 +138,7 @@ export default async function PdtpManagementReportPage({ params, searchParams }:
                   <TableCellNum>{row.executed}</TableCellNum>
                   <TableCellNum className="font-semibold">{row.percent !== null ? `${Math.round(row.percent * 100)}%` : "—"}</TableCellNum>
                   <TableCell>
-                    <Badge variant={row.meetsTarget ? "success" : "warning"} dot>{row.meetsTarget ? "Cumple meta" : "En desviación"}</Badge>
+                    <MetaBadge meta={{ label: `${row.meetsTarget ? "Cumple meta" : "En desviación"}`, variant: row.meetsTarget ? "success" : "warning" }} dot />
                   </TableCell>
                   <TableCell className="max-w-xs text-xs text-[var(--color-text-muted)]">{row.responsibles.join(", ") || "Sin responsable"}</TableCell>
                   <TableCell>

@@ -6,12 +6,11 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Plus, Trash } from "@phosphor-icons/react"
 import { DataTable } from "@/components/ui/data-table"
 import { SOLICITUDES_PAGE_SIZE } from "@/lib/constants"
-import { StateBadge } from "@/components/states/state-badge"
+import { MetaBadge, StateBadge } from "@/components/states/state-badge"
 import { hasServerListFilters, ServerListFilters, type ServerListFilterOption } from "@/components/ui/server-list-filters"
 import { StageTabs, type StageTab } from "@/components/ui/stage-tabs"
 import { OnboardingHint } from "@/components/ui/onboarding-hint"
 import { TableRow, TableCell, TableCellNum } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { formatDate } from "@/lib/utils"
@@ -194,9 +193,7 @@ export function RequestList({
                 <div className="min-w-0">
                   <p className="font-mono text-xs text-[var(--color-text-subtle)]">{r.code}</p>
                   <div className="mt-1 flex flex-wrap gap-1">
-                    <Badge variant={REQUEST_TYPE_VARIANTS[r.requestType] ?? "default"} size="sm">
-                      {REQUEST_TYPE_LABELS[r.requestType] ?? r.requestType}
-                    </Badge>
+                    <MetaBadge meta={{ label: `${REQUEST_TYPE_LABELS[r.requestType] ?? r.requestType}`, variant: REQUEST_TYPE_VARIANTS[r.requestType] ?? "default" }} />
                     <PriorityBadge priority={r.urgency} size="sm" />
                   </div>
                 </div>
@@ -259,9 +256,7 @@ export function RequestList({
                 >{r.code}</Link>
               </TableCell>
               <TableCell>
-                <Badge variant={REQUEST_TYPE_VARIANTS[r.requestType] ?? "default"} size="sm">
-                  {REQUEST_TYPE_LABELS[r.requestType] ?? r.requestType}
-                </Badge>
+                <MetaBadge meta={{ label: `${REQUEST_TYPE_LABELS[r.requestType] ?? r.requestType}`, variant: REQUEST_TYPE_VARIANTS[r.requestType] ?? "default" }} />
               </TableCell>
               <TableCell className="text-sm text-[var(--color-text-muted)]">
                 {r.worksiteName}

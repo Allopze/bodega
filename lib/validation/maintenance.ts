@@ -24,6 +24,8 @@ export const MAINTENANCE_STATUS_LABELS: Record<MaintenanceStatus, string> = {
 }
 
 export type MaintenanceStatusVariant = "default" | "warning" | "success" | "danger" | "outline"
+// Igual a `StateMetaInput["variant"]` en los valores que el módulo usa; se
+// mantiene literal para que el schema de validación no dependa de UI.
 
 /** Variant de presentación canónico (2026-08-25): `cancelled` es `danger`, no
  *  `default` — la anulación es un estado terminal negativo. La ficha de flota

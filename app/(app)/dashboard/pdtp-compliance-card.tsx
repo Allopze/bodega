@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { ChartLineUp } from "@phosphor-icons/react/dist/ssr"
-import { cn, formatDateTime } from "@/lib/utils"
+import { cn, formatDateTime, MONTH_LABELS } from "@/lib/utils"
 import { getPdtpComplianceIndicators, getPdtpIntegralCompliance } from "@/lib/services/prevention-pdtp"
 import { listPendingPdtpExecutions } from "@/lib/services/prevention-pdtp"
 import { getPdtpComplianceIndicatorsForScope } from "@/lib/services/pdtp/compliance"
@@ -26,8 +26,6 @@ type PdtpComplianceCardProps = {
   month: number
   week: number
 }
-
-const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
 /**
  * Tarjeta compacta de cumplimiento PDTP para el dashboard.

@@ -1,7 +1,7 @@
 import { Archive } from "@phosphor-icons/react/dist/ssr"
 import { formatDateTime } from "@/lib/utils"
-import { Badge } from "@/components/ui/badge"
 import { syncStatusLabel } from "@/lib/services/billing/labels"
+import { MetaBadge, type StateMetaInput } from "@/components/states/state-badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 export interface DteSyncRunRow {
@@ -57,11 +57,11 @@ export function DteSyncList({ runs }: { runs: DteSyncRunRow[] }) {
                   <TableCell className="whitespace-nowrap font-medium text-[var(--color-text)]">{run.periodo}</TableCell>
                   <TableCell className="whitespace-nowrap text-[var(--color-text-muted)]">{formatDateTime(run.startedAt)}</TableCell>
                   <TableCell>
-                    <Badge variant={statusInfo.tone}>{statusInfo.label}</Badge>
+                    <MetaBadge meta={statusInfo} />
                     {run.error && <p className="mt-1 max-w-[40ch] text-xs text-[var(--color-text-muted)]">{run.error}</p>}
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
-                    <Badge variant={reconciliationInfo(run.reconciliationStatus).tone}>{reconciliationInfo(run.reconciliationStatus).label}</Badge>
+                    <MetaBadge meta={reconciliationMeta(run.reconciliationStatus)} />
                     {run.reconciliationError && <p className="mt-1 max-w-[32ch] truncate text-xs text-[var(--color-text-muted)]">{run.reconciliationError}</p>}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-[var(--color-text-muted)]">{TRIGGER_LABELS[run.trigger]}</TableCell>
@@ -79,11 +79,11 @@ export function DteSyncList({ runs }: { runs: DteSyncRunRow[] }) {
   )
 }
 
-function reconciliationInfo(status: DteSyncRunRow["reconciliationStatus"]): { label: string; tone: "neutral" | "success" | "warning" | "danger" } {
+function reconciliationMeta(status: DteSyncRunRow["reconciliationStatus"]): StateMetaInput {
   switch (status) {
-    case "success": return { label: "Conciliada", tone: "success" }
-    case "partial": return { label: "Parcial", tone: "warning" }
-    case "failed": return { label: "Fallida", tone: "danger" }
-    default: return { label: "No ejecutada", tone: "neutral" }
+    case "success": return { label: "Conciliada", variant: "success" }
+    case "partial": return { label: "Parcial", variant: "warning" }
+    case "failed": return { label: "Fallida", variant: "danger" }
+    default: return { label: "No ejecutada", variant: "neutral" }
   }
 }

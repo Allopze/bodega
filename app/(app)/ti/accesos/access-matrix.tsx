@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useActionState } from "react"
 import { toast } from "@/lib/toast"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
@@ -93,8 +93,8 @@ export function AccessMatrix({ workers, systems, canManage }: AccessMatrixProps)
                             title={access.status}
                           >
                             {access.status === "activo" && <Check size={14} className="text-[var(--color-success-ink)]" />}
-                            {access.status === "suspendido" && <Badge variant="warning" size="sm">Suspendido</Badge>}
-                            {access.status === "baja" && <Badge variant="default" size="sm">Baja</Badge>}
+                            {access.status === "suspendido" && <MetaBadge meta={{ label: "Suspendido", variant: "warning" }} />}
+                            {access.status === "baja" && <MetaBadge meta={{ label: "Baja", variant: "default" }} />}
                           </button>
                         ) : (
                           <button

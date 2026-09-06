@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { MapPin, Truck } from "@phosphor-icons/react/dist/ssr"
 import { useSafeShellHeader } from "@/components/layout/header-context"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import {
@@ -79,9 +79,7 @@ export function FleetGpsTable({ positions }: { positions: FleetGpsPosition[] }) 
               </TableCell>
               <TableCell>{position.worksiteName}</TableCell>
               <TableCell>
-                <Badge variant={position.ignition ? "success" : "neutral"} dot>
-                  {position.ignition ? "Encendido" : "Apagado"}
-                </Badge>
+                <MetaBadge meta={{ label: `${position.ignition ? "Encendido" : "Apagado"}`, variant: position.ignition ? "success" : "neutral" }} dot />
               </TableCell>
               <TableCellNum>{Math.round(position.speedKph)} km/h</TableCellNum>
               <TableCell>

@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -67,8 +67,8 @@ export function ProtocolsPanel({ worksites, applicabilities, today, canManage }:
           <SelectTrigger className="w-64" aria-label="Faena"><SelectValue /></SelectTrigger>
           <SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
         </Select>
-        {pending > 0 && <Badge variant="warning">{pending} sin pronunciamiento</Badge>}
-        {overdue > 0 && <Badge variant="danger">{overdue} con reevaluación vencida</Badge>}
+        {pending > 0 && <MetaBadge meta={{ label: `${pending} sin pronunciamiento`, variant: "warning" }} />}
+        {overdue > 0 && <MetaBadge meta={{ label: `${overdue} con reevaluación vencida`, variant: "danger" }} />}
       </div>
 
       {pending > 0 && (
@@ -101,7 +101,7 @@ export function ProtocolsPanel({ worksites, applicabilities, today, canManage }:
                   <TableCell className="text-sm">{item.name}</TableCell>
                   <TableCell className="text-xs text-[var(--color-text-muted)]">{item.legalBasis}</TableCell>
                   <TableCell>
-                    <Badge variant={statusVariant(item.status)}>{PROTOCOL_APPLICABILITY_LABELS[item.status]}</Badge>
+                    <MetaBadge meta={{ label: PROTOCOL_APPLICABILITY_LABELS[item.status], variant: statusVariant(item.status) }} />
                   </TableCell>
                   <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">
                     {item.nextAssessmentOn

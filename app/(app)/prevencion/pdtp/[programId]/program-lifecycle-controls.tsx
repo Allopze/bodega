@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Tooltip } from "@/components/ui/tooltip"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge, type StateMetaInput } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -55,7 +55,7 @@ type ApprovalStepProgress = {
 }
 
 // El texto viene del vocabulario compartido; aquí sólo vive el color.
-const STATUS_VARIANT: Record<string, "default" | "warning" | "danger" | "success" | "outline"> = {
+const STATUS_VARIANT: Record<string, StateMetaInput["variant"]> = {
   draft: "default",
   in_review: "warning",
   rejected: "danger",
@@ -130,7 +130,7 @@ export function ProgramLifecycleControls({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 id="program-lifecycle-title" className="text-sm font-semibold text-[var(--color-text)]">Estado del programa</h2>
-            <Badge variant={statusVariant} dot>{pdtpProgramStatusLabel(program.status)}</Badge>
+            <MetaBadge meta={{ label: pdtpProgramStatusLabel(program.status), variant: statusVariant }} dot />
             <span className="font-mono text-[11px] text-[var(--color-text-subtle)]">contenido v{program.contentVersion}</span>
             {program.contentDigest && (
               <code title={program.contentDigest} className="rounded bg-[var(--color-surface-2)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-muted)]">

@@ -9,14 +9,14 @@ describe("deriveProviderStatus", () => {
     expect(status.label).toBe("Sin configurar")
     // El rojo se reserva para fallas reales: pintar de rojo una tarea pendiente
     // enseña a ignorar el rojo.
-    expect(status.tone).not.toBe("danger")
+    expect(status.variant).not.toBe("danger")
     expect(status.detail).toMatch(/no es una falla/i)
   })
 
   it("un proveedor apagado por flag se muestra neutro, no como error", () => {
     const status = deriveProviderStatus({ enabled: false, configured: true, stored: null })
     expect(status.kind).toBe("disabled")
-    expect(status.tone).toBe("neutral")
+    expect(status.variant).toBe("neutral")
   })
 
   it("el flag apagado manda sobre la falta de credenciales", () => {
@@ -28,7 +28,7 @@ describe("deriveProviderStatus", () => {
     const status = deriveProviderStatus({ enabled: true, configured: true, stored: null })
 
     expect(status.kind).toBe("unchecked")
-    expect(status.tone).toBe("neutral")
+    expect(status.variant).toBe("neutral")
     // Sin fecha de comprobación no se puede afirmar nada sobre el proveedor.
     expect(status.checkedAt).toBeNull()
   })
@@ -42,7 +42,7 @@ describe("deriveProviderStatus", () => {
       now: new Date(),
     })
     expect(ok.kind).toBe("ok")
-    expect(ok.tone).toBe("success")
+    expect(ok.variant).toBe("success")
     expect(ok.checkedAt).toBe(checkedAt)
 
     const failing = deriveProviderStatus({
@@ -51,7 +51,7 @@ describe("deriveProviderStatus", () => {
       now: new Date(),
     })
     expect(failing.kind).toBe("failing")
-    expect(failing.tone).toBe("danger")
+    expect(failing.variant).toBe("danger")
     // El detalle del proveedor se muestra tal cual: ya viene redactado.
     expect(failing.detail).toBe("El portal no respondió.")
   })

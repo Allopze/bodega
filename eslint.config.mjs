@@ -12,7 +12,7 @@ import nextTs from "eslint-config-next/typescript";
 
 /** Regla ESLint custom: detecta .orderBy(sql`alias desc`) donde el "alias"
  *  no existe en el SQL generado porque Drizzle no alía los sql`...` fragments.
- *  Ver: https://github.com/drizzle-team/drizzle-orm/discussions/… 
+ *  Ver: https://github.com/drizzle-team/drizzle-orm/discussions/…
  *  El patrón seguro siempre interpola ${drizzleColumn} dentro del template. */
 const noSqlAliasOrderBy = {
   meta: {
@@ -87,7 +87,95 @@ const noBareToLocale = {
   },
 };
 
-/** Grupo B de la auditoría 2026-08-16: calcular HOY en UTC.
+// ── Rule: ban raw <Badge variant={...}> driven by a local state/variant map ──
+// El vocabulario de variant puede vivir en MetaBadge/state-badge.tsx o en
+// wrappers canónicos del dominio (ej. StateBadge). Este rule está diseñado para
+// ser conservador: reporta solo cuando el valor de `variant` parece derivarse de
+// un mapa/local helper en vez de invocar directamente a una primitiva canónica.
+// Nota importante: el detector `hasLocalVariantMapPattern` también reporta
+// variant conditionally-driven (ternarios/conjunción lógica) porque esos son
+// típicamente los reemplazos más naturales de MetaBadge/metaFor.
+const noRawBadgeVariantMap = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Prohíbe montar <Badge variant={...}> a partir de un mapa de estado/variant local; usa MetaBadge (ver components/states/state-badge.tsx) o el wrapper canónico del dominio.",
+    },
+    schema: [],
+  },
+  create(context) {
+    return {
+      JSXAttribute(node) {
+        if (context.getFilename().endsWith("components/states/state-badge.tsx")) return;
+        if (node.name.type !== "JSXIdentifier") return;
+        if (node.name.name !== "variant") return;
+        if (node.parent?.type !== "JSXOpeningElement") return;
+        const openingElement = node.parent;
+        if (openingElement.name.type !== "JSXIdentifier") return;
+        if (openingElement.name.name !== "Badge") return;
+
+        const value = node.value;
+        if (!value) return;
+        if (value.type !== "JSXExpressionContainer") return;
+        const expr = value.expression;
+        if (!expr) return;
+
+        if (!hasLocalVariantMapPattern(expr)) {
+          return;
+        }
+
+        context.report({
+          node,
+          message:
+            "No uses <Badge variant={…}> con un mapa de estado/variant local; reemplaza por MetaBadge (components/states/state-badge.tsx) o usa el wrapper canónico del dominio.",
+        });
+      },
+    };
+  },
+};
+
+function hasLocalVariantMapPattern(expr) {
+  if (expr.type === "Identifier") {
+    return false;
+  }
+
+  if (expr.type === "CallExpression") {
+    if (expr.callee.type === "Identifier") {
+      const name = expr.callee.name;
+      if (/BadgeVariant|variantFor|getBadgeVariant|variantOf|statusVariant/i.test(name)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (expr.type === "MemberExpression") {
+    const property = expr.property;
+    if (!property) return false;
+    const propertyName = property.type === "Identifier" ? property.name : null;
+    if (!propertyName) return false;
+
+    if (/variant|variantField/.test(propertyName)) {
+      return true;
+    }
+    if (expr.object.type === "Identifier") {
+      const name = expr.object.name;
+      if (/map|variant|status|meta|badge/i.test(name)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (expr.type === "ConditionalExpression" || expr.type === "LogicalExpression") {
+    return true;
+  }
+
+  return false;
+}
+
+/** grupo B de la auditoría 2026-08-16: calcular HOY en UTC.
  *
  *  Se restringe a la forma "ahora mismo" (`new Date()` sin argumentos) y no a
  *  `getUTCFullYear()`/`toISOString().slice(0,10)` en general: sobre una fecha ya
@@ -115,7 +203,7 @@ const UTC_TODAY_RESTRICTIONS = [
     message:
       "new Date().getUTCFullYear() es el año en UTC: la noche del 31 de diciembre chileno ya es el año siguiente. Usa codeYear() de @/lib/utils.",
   },
-]
+];
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -138,12 +226,14 @@ const eslintConfig = defineConfig([
         rules: {
           "no-sql-alias-order-by": noSqlAliasOrderBy,
           "no-bare-to-locale": noBareToLocale,
+          "no-raw-badge-variant-map": noRawBadgeVariantMap,
         },
       },
     },
     rules: {
       "local/no-sql-alias-order-by": "error",
       "local/no-bare-to-locale": "error",
+      "local/no-raw-badge-variant-map": "error",
       "no-restricted-syntax": ["error", ...UTC_TODAY_RESTRICTIONS],
       "@typescript-eslint/no-unused-vars": [
         "warn",
@@ -172,42 +262,6 @@ const eslintConfig = defineConfig([
       "e2e/**/*.{ts,tsx}",
     ],
     rules: { "no-restricted-syntax": "off" },
-  },
-  // ── Freeze: prevent importing stale module scaffolding ─────────────────────
-  // app/, lib/, components/ are the source of truth. The old copies in
-  // modules/*/{services,actions,schema,validation} and core/ were pruned.
-  // This rule prevents reintroducing stale logic by mistake.
-  {
-    files: ["app/**/*.{ts,tsx}", "lib/**/*.{ts,tsx}", "components/**/*.{ts,tsx}"],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          patterns: [
-            {
-              group: [
-                "@/modules/*/services/*",
-                "@/modules/*/actions/*",
-                "@/modules/*/schema",
-                "@/modules/*/validation",
-              ],
-              message:
-                "[freeze] No importes las copias stale de modules/*. Fuente de verdad: lib/ + app/ (ver modules/README.md).",
-            },
-            {
-              group: ["@/core/*", "@/core"],
-              message:
-                "[freeze] core/ fue removido; usa las primitivas equivalentes en lib/.",
-            },
-            {
-              group: ["**/*-form-kit*", "**/form-kit*"],
-              message:
-                "[design-system] No crees ni importes archivos form-kit locales. Usa useOperation de @/lib/hooks/use-operation y Field de @/components/ui/field (ver AGENTS.md).",
-            },
-          ],
-        },
-      ],
-    },
   },
   // ── Design system: el feedback pasa siempre por el wrapper de toast ────────
   // lib/toast.ts añade barra de progreso y duración de error consistentes.

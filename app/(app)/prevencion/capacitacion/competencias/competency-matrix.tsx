@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { Certificate } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { FilterToolbar } from "@/components/ui/filter-toolbar"
@@ -175,9 +175,7 @@ export function CompetencyMatrix({ competencies, requirements, courseCount, canR
                       {item.externalIssuer && <span className="block text-xs text-[var(--color-text-subtle)]">{item.externalIssuer}</span>}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={competencyStatusBadgeVariant(item.status)}>
-                        {COMPETENCY_STATUS_LABELS[item.status] ?? item.status}
-                      </Badge>
+                      <MetaBadge meta={{ label: COMPETENCY_STATUS_LABELS[item.status] ?? item.status, variant: competencyStatusBadgeVariant(item.status) }} />
                       {item.revocationReason && <span className="block text-xs text-[var(--color-text-subtle)]">{item.revocationReason}</span>}
                     </TableCell>
                     <TableCell className="text-sm tabular-nums">{item.grantedAt}</TableCell>
@@ -226,9 +224,7 @@ export function CompetencyMatrix({ competencies, requirements, courseCount, canR
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={item.enforcement === "blocking" ? "danger" : "warning"}>
-                      {item.enforcement === "blocking" ? "Bloqueante" : "Advertencia"}
-                    </Badge>
+                    <MetaBadge meta={item.enforcement === "blocking" ? { label: "Bloqueante", variant: "danger" } : { label: "Advertencia", variant: "warning" }} />
                   </TableCell>
                   <TableCell className="text-sm">{item.isActive ? "Sí" : "No"}</TableCell>
                   <TableCell className="max-w-md text-xs text-[var(--color-text-subtle)]">{item.reason}</TableCell>

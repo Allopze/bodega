@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -49,13 +49,13 @@ interface SuplenciasClientProps {
 }
 
 const getStatusBadge = (user: typeof users.$inferSelect, nowMs: number) => {
-  if (!user.isActive) return <Badge variant="danger">Revocada / Inactiva</Badge>
-  if (!user.validUntil) return <Badge variant="outline">Sin límite</Badge>
+  if (!user.isActive) return <MetaBadge meta={{ label: "Revocada / Inactiva", variant: "danger" }} />
+  if (!user.validUntil) return <MetaBadge meta={{ label: "Sin límite", variant: "outline" }} />
   const validUntilDate = new Date(user.validUntil)
   const diffDays = Math.ceil((validUntilDate.getTime() - nowMs) / (1000 * 3600 * 24))
-  if (diffDays <= 0) return <Badge variant="danger">Vencida</Badge>
-  if (diffDays <= 5) return <Badge variant="warning">Vence en {diffDays} días</Badge>
-  return <Badge variant="success">Vigente ({diffDays} días)</Badge>
+  if (diffDays <= 0) return <MetaBadge meta={{ label: "Vencida", variant: "danger" }} />
+  if (diffDays <= 5) return <MetaBadge meta={{ label: `Vence en ${diffDays} días`, variant: "warning" }} />
+  return <MetaBadge meta={{ label: `Vigente (${diffDays} días)`, variant: "success" }} />
 }
 
 export function SuplenciasClient({ activeUsers, substitutions }: SuplenciasClientProps) {

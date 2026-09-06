@@ -17,7 +17,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { FileInput } from "@/components/ui/file-input"
@@ -175,7 +175,7 @@ export function ImportExcelSection({ programId, visibleWorksites }: ImportExcelS
               <p className="text-sm font-semibold text-[var(--color-text)]">Preview listo: {preview.source.fileName}</p>
               <p className="mt-1 font-mono text-[11px] text-[var(--color-text-subtle)]">SHA-256 {preview.source.checksumSha256.slice(0, 16)}…</p>
             </div>
-            <Badge variant="info" size="sm">Sin aplicar</Badge>
+            <MetaBadge meta={{ label: "Sin aplicar", variant: "info" }} />
           </div>
           <dl className="grid gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
             {[

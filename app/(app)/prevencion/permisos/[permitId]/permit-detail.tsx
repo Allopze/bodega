@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -215,7 +215,7 @@ export function PermitDetail({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Badge variant={permitStatusBadgeVariant(permit.status)}>{PERMIT_STATUS_LABELS[permit.status] ?? permit.status}</Badge>
+          <MetaBadge meta={{ label: PERMIT_STATUS_LABELS[permit.status] ?? permit.status, variant: permitStatusBadgeVariant(permit.status) }} />
           {note?.text && <span className="text-sm text-[var(--color-text-subtle)]">{note.label}: {note.text}</span>}
         </div>
         <div className="flex flex-wrap gap-2">
@@ -263,9 +263,7 @@ export function PermitDetail({
               <div key={step.stepOrder} className="rounded-lg border border-[var(--color-border)] p-3 text-sm">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-medium">Paso {step.stepOrder} · {step.stepDescription}</span>
-                  <Badge variant={step.residualRisk === "critical" || step.residualRisk === "high" ? "danger" : step.residualRisk === "medium" ? "warning" : "default"}>
-                    Riesgo residual {RESIDUAL_RISK_LABELS[step.residualRisk] ?? step.residualRisk}
-                  </Badge>
+                  <MetaBadge meta={{ label: `Riesgo residual ${RESIDUAL_RISK_LABELS[step.residualRisk] ?? step.residualRisk}`, variant: step.residualRisk === "critical" || step.residualRisk === "high" ? "danger" : step.residualRisk === "medium" ? "warning" : "default" }} />
                 </div>
                 <div className="mt-2 grid gap-2 md:grid-cols-2">
                   <div>
@@ -302,14 +300,14 @@ export function PermitDetail({
                   <TableRow key={control.id}>
                     <TableCell className="text-sm">
                       {control.description}
-                      {control.isMandatory && <Badge variant="outline" className="ml-2">Obligatorio</Badge>}
+                      {control.isMandatory && <MetaBadge meta={{ label: "Obligatorio", variant: "outline" }} className="ml-2" />}
                     </TableCell>
                     <TableCell className="text-sm">
                       {control.verified
-                        ? <Badge variant="success">Verificado</Badge>
+                        ? <MetaBadge meta={{ label: "Verificado", variant: "success" }} />
                         : control.notApplicableReason
                           ? <span className="text-[var(--color-text-subtle)]">No aplica: {control.notApplicableReason}</span>
-                          : <Badge variant="warning">Pendiente</Badge>}
+                          : <MetaBadge meta={{ label: "Pendiente", variant: "warning" }} />}
                     </TableCell>
                     {canVerify && !terminal && (
                       <TableCell className="text-right"><ControlVerifyDialog control={control} /></TableCell>
@@ -351,12 +349,12 @@ export function PermitDetail({
                     <TableCell className="text-sm">{ENERGY_SOURCE_LABELS[item.energySource] ?? item.energySource}</TableCell>
                     <TableCell className="text-sm">
                       {item.removedAt
-                        ? <Badge variant="outline">Retirado {formatDateTime(item.removedAt)}</Badge>
+                        ? <MetaBadge meta={{ label: `Retirado ${formatDateTime(item.removedAt)}`, variant: "outline" }} />
                         : item.appliedAt
                           ? item.verifiedZeroEnergy
-                            ? <Badge variant="success">Aplicado · energía cero verificada</Badge>
-                            : <Badge variant="warning">Aplicado sin verificar energía cero</Badge>
-                          : <Badge variant="warning">Sin aplicar</Badge>}
+                            ? <MetaBadge meta={{ label: "Aplicado · energía cero verificada", variant: "success" }} />
+                            : <MetaBadge meta={{ label: "Aplicado sin verificar energía cero", variant: "warning" }} />
+                          : <MetaBadge meta={{ label: "Sin aplicar", variant: "warning" }} />}
                     </TableCell>
                     {canVerify && !terminal && (
                       <TableCell className="text-right">
@@ -406,7 +404,7 @@ export function PermitDetail({
                       {item.acceptableMin ?? "—"} – {item.acceptableMax ?? "—"}
                     </TableCell>
                     <TableCell className="text-sm">
-                      <Badge variant={item.withinRange ? "success" : "danger"}>{item.withinRange ? "En rango" : "Fuera de rango"}</Badge>
+                      <MetaBadge meta={{ label: item.withinRange ? "En rango" : "Fuera de rango", variant: item.withinRange ? "success" : "danger" }} />
                     </TableCell>
                     <TableCell className="text-sm tabular-nums">{formatDateTime(item.takenAt)}</TableCell>
                   </TableRow>
@@ -438,7 +436,7 @@ export function PermitDetail({
                     <TableCell className="text-sm">{member.workerName}</TableCell>
                     <TableCell className="text-sm">{PERMIT_CREW_ROLE_LABELS[member.role] ?? member.role}</TableCell>
                     <TableCell className="text-sm">
-                      {member.hasCompetencyGap ? <Badge variant="danger">Sin competencia vigente</Badge> : <Badge variant="success">Habilitado</Badge>}
+                      {member.hasCompetencyGap ? <MetaBadge meta={{ label: "Sin competencia vigente", variant: "danger" }} /> : <MetaBadge meta={{ label: "Habilitado", variant: "success" }} />}
                     </TableCell>
                     <TableCell className="text-sm">
                       {member.acknowledgedAt

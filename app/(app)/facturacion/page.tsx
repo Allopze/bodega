@@ -17,7 +17,7 @@ import {
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { MoneyStat } from "./money-stat"
 import { PeriodPicker } from "@/components/ui/period-picker"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
@@ -215,7 +215,7 @@ export default async function BillingSummaryPage({
                             <p className="mt-0.5 line-clamp-2 text-xs text-[var(--color-danger-ink)]">{run.errorSummary}</p>
                           )}
                         </div>
-                        <Badge variant={status.tone}>{status.label}</Badge>
+                        <MetaBadge meta={status} />
                       </li>
                     )
                   })}

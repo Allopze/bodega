@@ -4,7 +4,7 @@ import * as React from "react"
 import { DataTable } from "@/components/ui/data-table"
 import { useCatalogSheet } from "@/components/admin/use-catalog-sheet"
 import { CatalogRowActions } from "@/components/admin/catalog-row-actions"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { TableCell, TableRow } from "@/components/ui/table"
@@ -39,7 +39,7 @@ export function FuelSupplierList({ suppliers, generalSuppliers }: { suppliers: F
                   <h2 title={supplier.name} className="truncate text-sm font-medium text-[var(--color-text)]">{supplier.name}</h2>
                   <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{supplier.rut ?? "—"}</p>
                 </div>
-                <Badge variant={supplier.isActive ? "success" : "default"} dot>{supplier.isActive ? "Activo" : "Inactivo"}</Badge>
+                <MetaBadge meta={{ label: `${supplier.isActive ? "Activo" : "Inactivo"}`, variant: supplier.isActive ? "success" : "default" }} dot />
               </div>
               <p className="mt-3 text-xs text-[var(--color-text-muted)]">{supplier.contactName ?? "Sin contacto"}</p>
               <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--color-border)] pt-2">
@@ -64,7 +64,7 @@ export function FuelSupplierList({ suppliers, generalSuppliers }: { suppliers: F
               <TableCell>{supplier.contactName ?? "—"}</TableCell>
               <TableCell>{supplier.contactPhone ?? "—"}</TableCell>
               <TableCell>{supplier.contactEmail ?? "—"}</TableCell>
-              <TableCell><Badge variant={supplier.isActive ? "success" : "default"} dot>{supplier.isActive ? "Activo" : "Inactivo"}</Badge></TableCell>
+              <TableCell><MetaBadge meta={{ label: `${supplier.isActive ? "Activo" : "Inactivo"}`, variant: supplier.isActive ? "success" : "default" }} dot /></TableCell>
               <TableCell>
                 <div className="flex justify-end gap-2">
                   <CatalogRowActions

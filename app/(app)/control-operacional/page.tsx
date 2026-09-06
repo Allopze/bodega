@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Field } from "@/components/ui/field"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { KpiCard } from "@/components/ui/kpi-card"
 import { can, canAny, requireAuth } from "@/lib/auth/can"
 import {
@@ -223,7 +223,7 @@ export default async function OperationalControlPage({
                 <li key={source.key} className="rounded-lg border border-[var(--color-border)] p-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium">{source.label}</span>
-                    <Badge variant={sourceHealthVariant(source.status)}>{source.statusLabel}</Badge>
+                    <MetaBadge meta={{ label: `${source.statusLabel}`, variant: sourceHealthVariant(source.status) }} />
                   </div>
                   <p className="mt-1 text-xs text-[var(--color-text-muted)]">{source.detail}</p>
                   <p className="mt-1 text-xs text-[var(--color-text-subtle)]">

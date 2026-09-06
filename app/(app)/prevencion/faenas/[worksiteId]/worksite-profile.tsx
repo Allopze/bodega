@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { Buildings, UserCircle } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
 import {
@@ -83,9 +83,7 @@ export function WorksiteProfile({ profile, eligibleWorkers, canManage }: {
         ? "border-[var(--color-border)]"
         : "border-[var(--color-danger-line)] bg-[var(--color-surface-2)]"}`}>
         <div className="flex items-center gap-2">
-          <Badge variant={profile.compliance.compliant ? "success" : "danger"}>
-            {profile.compliance.compliant ? "Al día" : "Brecha"}
-          </Badge>
+          <MetaBadge meta={{ label: `${profile.compliance.compliant ? "Al día" : "Brecha"}`, variant: profile.compliance.compliant ? "success" : "danger" }} />
           <span>{profile.compliance.detail}</span>
         </div>
       </div>
@@ -106,9 +104,7 @@ export function WorksiteProfile({ profile, eligibleWorkers, canManage }: {
               <Link href={`/prevencion/cphs/${profile.committee.id}`} className="text-sm font-medium hover:underline">
                 {profile.committee.name}
               </Link>
-              <Badge variant={profile.committee.mandateExpired ? "warning" : "success"}>
-                {profile.committee.mandateExpired ? "Mandato vencido" : "Vigente"}
-              </Badge>
+              <MetaBadge meta={{ label: `${profile.committee.mandateExpired ? "Mandato vencido" : "Vigente"}`, variant: profile.committee.mandateExpired ? "warning" : "success" }} />
             </div>
             <p className="text-sm text-[var(--color-text-subtle)]">Mandato hasta {formatDate(profile.committee.mandateEndsOn)}</p>
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border)] pt-3">

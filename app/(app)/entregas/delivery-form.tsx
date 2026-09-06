@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { formatQty, quantityStep } from "@/lib/utils"
 import { buildDeliveryStockGroups, requiresSizeChoice } from "./delivery-size-options"
 import type { ActionState } from "@/lib/validation/operations"
@@ -382,9 +382,7 @@ export function DeliveryForm({
                       {/* La talla queda visible en la línea: es parte de lo
                           que el trabajador acusa recibo de haber recibido. */}
                       {product?.sizeLabel && (
-                        <Badge variant="outline" size="sm" className="shrink-0 font-normal">
-                          {product.sizeAttributeName ?? "Talla"} {product.sizeLabel}
-                        </Badge>
+                        <MetaBadge meta={{ label: `${product.sizeAttributeName ?? "Talla"}${product.sizeLabel}`, variant: "outline" }} className="shrink-0 font-normal" />
                       )}
                     </p>
                     <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">

@@ -6,7 +6,7 @@ import { useActionState } from "react"
 import { toast } from "@/lib/toast"
 import { CaretDown, CaretRight, Check, PencilSimple, X } from "@phosphor-icons/react"
 import type { WorksiteStockWithProduct } from "./types"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Input } from "@/components/ui/input"
@@ -419,7 +419,7 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                             <p className="mt-0.5 font-mono text-xs text-[var(--color-text-subtle)]">{subtitle}</p>
                           )}
                         </div>
-                        {lowStock && <Badge variant="signal" dot className="shrink-0">Bajo mínimo</Badge>}
+                        {lowStock && <MetaBadge meta={{ label: "Bajo mínimo", variant: "signal" }} dot className="shrink-0" />}
                       </div>
                       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                         <div>
@@ -542,7 +542,7 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                           <TableCell>
                             {lowStock && (
                               <div className="flex flex-col items-start gap-1">
-                                <Badge variant="signal" dot>Bajo mínimo</Badge>
+                                <MetaBadge meta={{ label: "Bajo mínimo", variant: "signal" }} dot />
                                 {/* Detectar el quiebre y no poder pedirlo era el
                                     ciclo que quedaba abierto: el enlace abre el
                                     creador con faena, producto y déficit. */}

@@ -20,7 +20,7 @@ import {
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { CollectionActionDialog } from "./collection-action-dialog"
 import { SuggestionsPanel } from "./suggestions-panel"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
@@ -185,7 +185,7 @@ export default async function CollectionsPage({
                         <TableCell className="whitespace-nowrap">
                           <div className="tabular-nums text-[var(--color-text-muted)]">{formatDateShort(row.dueDate)}</div>
                           {due && (
-                            <div className={due.tone === "danger" ? "text-xs text-[var(--color-danger-ink)]" : "text-xs text-[var(--color-text-subtle)]"}>
+                            <div className={due.variant === "danger" ? "text-xs text-[var(--color-danger-ink)]" : "text-xs text-[var(--color-text-subtle)]"}>
                               {due.label}
                             </div>
                           )}
@@ -202,9 +202,9 @@ export default async function CollectionsPage({
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
-                            <Badge variant={payment.tone}>{payment.label}</Badge>
+                            <MetaBadge meta={payment} />
                             {row.collectionStatus !== "none" && (
-                              <Badge variant={collection.tone}>{collection.label}</Badge>
+                              <MetaBadge meta={collection} />
                             )}
                           </div>
                           {row.commitmentDate && (

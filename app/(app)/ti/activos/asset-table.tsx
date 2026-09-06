@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { formatDate, formatCLP, cn } from "@/lib/utils"
 import { isCivilDateBefore } from "@/lib/services/ti/civil-dates"
@@ -25,11 +25,9 @@ const COLUMNS = [
 
 function StatusBadge({ status }: { status: string }) {
   const meta = IT_ASSET_STATUS_META[status]
-  if (!meta) return <Badge variant="default">{status}</Badge>
+  if (!meta) return <MetaBadge meta={{ label: status, variant: "default" }} />
   return (
-    <Badge variant={meta.variant} dot>
-      {meta.label}
-    </Badge>
+    <MetaBadge meta={{ label: `${meta.label}`, variant: meta.variant }} dot />
   )
 }
 

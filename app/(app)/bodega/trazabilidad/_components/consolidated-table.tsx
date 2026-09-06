@@ -18,7 +18,7 @@ import {
   TableCellNum,
   TableCaption,
 } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { formatQty } from "@/lib/utils"
 import type { ConsolidatedRequest } from "@/lib/services/trazabilidad-consolidated"
 import { ConsolidatedTableAccordion } from "./consolidated-table-accordion"
@@ -158,18 +158,14 @@ export function ConsolidatedTable({ requests }: Props) {
                       artesanal se reemplaza por el Badge del producto. */}
                   <TableCellNum>
                     {pending !== null && pending > 0 ? (
-                      <Badge variant="signal" size="sm">
-                        {formatQty(pending)}
-                      </Badge>
+                      <MetaBadge meta={{ label: formatQty(pending), variant: "signal" }} />
                     ) : (
                       <span className="text-[var(--color-text-subtle)]">0</span>
                     )}
                   </TableCellNum>
 
                   <TableCell>
-                    <Badge variant={request.statusColor} size="sm">
-                      {request.statusLabel}
-                    </Badge>
+                    <MetaBadge meta={{ label: `${request.statusLabel}`, variant: request.statusColor }} />
                   </TableCell>
 
                   {/* Link al detalle del expediente */}

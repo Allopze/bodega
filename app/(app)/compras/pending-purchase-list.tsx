@@ -6,8 +6,7 @@ import { CaretDown, CaretRight, CheckCircle, Warning } from "@phosphor-icons/rea
 import { DataTable } from "@/components/ui/data-table"
 import { PENDING_PURCHASE_PAGE_SIZE } from "@/lib/constants"
 import { TableRow, TableCell, TableCellNum } from "@/components/ui/table"
-import { StateBadge } from "@/components/states/state-badge"
-import { Badge } from "@/components/ui/badge"
+import { StateBadge, MetaBadge, type StateMetaInput } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { PriorityBadge } from "@/components/ui/priority-badge"
 import { formatDate } from "@/lib/utils"
@@ -42,7 +41,8 @@ const COLUMNS = [
  * cuatro están para que una aprobación parcial no se lea como si toda la
  * solicitud estuviese esperando compra.
  */
-const STAGE_META: Record<PendingPurchaseItemStage, { label: string; variant: "signal" | "info" | "danger" | "default" | "success" }> = {
+/** Label + variante en un solo mapa (MetaBadge): el color lo decide la etapa. */
+const STAGE_META: Record<PendingPurchaseItemStage, StateMetaInput> = {
   pending_order:     { label: "Aprobado · sin OC",   variant: "signal"  },
   in_order:          { label: "En OC",               variant: "info"    },
   rejected:          { label: "Rechazado",           variant: "danger"  },
@@ -65,7 +65,7 @@ function ItemBreakdown({ items }: { items: PendingPurchaseItem[] }) {
     <ul className="flex flex-col gap-1.5">
       {sorted.map((item) => (
         <li key={item.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-          <Badge variant={STAGE_META[item.stage].variant} size="sm">{STAGE_META[item.stage].label}</Badge>
+          <MetaBadge meta={STAGE_META[item.stage]} />
           <span className="font-medium text-(--color-text)">{item.productName}</span>
           <span className="font-mono tabular-nums text-(--color-text-muted)">
             {item.quantity} {item.unitOfMeasure}

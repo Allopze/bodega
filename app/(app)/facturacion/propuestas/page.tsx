@@ -15,7 +15,7 @@ import { formatDateTime, formatPeriod, proposalStatusLabel } from "@/lib/service
 import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { ProposalDialog } from "./proposal-dialog"
 import { ProposalActions } from "./proposal-actions"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
@@ -149,7 +149,7 @@ export default async function ProposalsPage({
                         {formatMoney(proposal.estimatedTotal, proposal.currency)}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={status.tone}>{status.label}</Badge>
+                        <MetaBadge meta={status} />
                         {proposal.missingDocuments && (
                           <p className="mt-1 max-w-[28ch] text-xs text-[var(--color-warning-ink)]">
                             Antecedentes pendientes: {proposal.missingDocuments}

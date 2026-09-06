@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -129,7 +129,7 @@ export function ChangeDetail({
                 <TableRow key={assessment.id}>
                   <TableCell className="text-sm font-medium">{CHANGE_DIMENSION_LABELS[assessment.dimension as keyof typeof CHANGE_DIMENSION_LABELS] ?? assessment.dimension}</TableCell>
                   <TableCell>
-                    <Badge variant={assessment.evaluated ? "success" : "outline"}>{assessment.evaluated ? "Evaluada" : "Pendiente"}</Badge>
+                    <MetaBadge meta={{ label: `${assessment.evaluated ? "Evaluada" : "Pendiente"}`, variant: assessment.evaluated ? "success" : "outline" }} />
                   </TableCell>
                   <TableCell className="text-sm">{assessment.evaluated ? (assessment.impacted ? "Sí" : "No") : "—"}</TableCell>
                   <TableCell className="max-w-xs text-sm text-[var(--color-text-subtle)]">{assessment.notes ?? "—"}</TableCell>

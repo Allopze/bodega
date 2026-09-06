@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -127,9 +127,7 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
               </SelectContent>
             </Select>
             {currentWorksite && (
-              <Badge variant={currentWorksite.workerCount >= 25 ? "primary" : "outline"}>
-                {currentWorksite.workerCount} trabajadores (CPHS: {currentWorksite.workerCount >= 25 ? "Aplica" : "No aplica <25"})
-              </Badge>
+              <MetaBadge meta={{ label: `${currentWorksite.workerCount} trabajadores (CPHS: ${currentWorksite.workerCount >= 25 ? "Aplica" : "No aplica <25"})`, variant: currentWorksite.workerCount >= 25 ? "primary" : "outline" }} />
             )}
           </div>
         </div>
@@ -169,25 +167,19 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col gap-1">
-                      <Badge variant="outline" className="w-fit text-[10px]">
-                        {act.scheduleMode}
-                      </Badge>
+                      <MetaBadge meta={{ label: act.scheduleMode, variant: "outline" }} className="w-fit text-[10px]" />
                       <span className="text-xs text-[var(--color-text-muted)] font-mono">{act.indicatorMode}</span>
                     </div>
                   </TableCell>
                   <TableCell>
                     {isExcluded ? (
-                      <Badge variant="danger" title={exclusion?.reason}>
-                        Excluida
-                      </Badge>
+                      <MetaBadge meta={{ label: "Excluida", variant: "danger" }} title={exclusion?.reason} />
                     ) : isAutoExcludedCphs ? (
-                      <Badge variant="warning" title="Auto-excluida por CPHS < 25 trabajadores (R4)">
-                        No aplica (&lt;25 trab.)
-                      </Badge>
+                      <MetaBadge meta={{ label: "No aplica (&lt;25 trab.)", variant: "warning" }} title="Auto-excluida por CPHS < 25 trabajadores (R4)" />
                     ) : (
-                      <Badge variant="success">
+                      <MetaBadge meta={{ label: "Aplica", variant: "success" }}>
                         <Check size={12} className="mr-1 inline" /> Aplica
-                      </Badge>
+                      </MetaBadge>
                     )}
                   </TableCell>
                   <TableCell className="text-xs font-mono">
@@ -202,13 +194,7 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
                         otra pregunta. Antes esto se veía igual que una actividad que no
                         necesita padrón —un guion— y no había forma de notarlo. */}
                     {act.indicatorMode === "coverage" && param?.expectedSubjectCount == null && (
-                      <Badge
-                        variant="warning"
-                        className="w-fit text-[10px] font-sans"
-                        title="Mide por cobertura pero nadie cargó su padrón. Mientras falte, se mide por la cantidad planificada del mes en vez de contra el total de sujetos."
-                      >
-                        Sin padrón
-                      </Badge>
+                      <MetaBadge meta={{ label: "Sin padrón", variant: "warning" }} title="Mide por cobertura pero nadie cargó su padrón. Mientras falte, se mide por la cantidad planificada del mes en vez de contra el total de sujetos." className="w-fit text-[10px] font-sans" />
                     )}
                     {act.indicatorMode !== "coverage" && !param?.expectedSubjectCount && !param?.targetCoveragePercent && (
                       <span className="text-[var(--color-text-muted)]">—</span>

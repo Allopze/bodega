@@ -2,10 +2,10 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useRouter, usePathname, useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { DataTable } from "@/components/ui/data-table"
 import { TableCell, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
@@ -41,7 +41,6 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
   programId: string
 }) {
   const router = useRouter()
-  const pathname = usePathname()
   const searchParams = useSearchParams()
 
   function updateFilter(key: string, value: string | null) {
@@ -131,11 +130,9 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
               <TableCell className="text-xs text-(--color-text-muted)">{item.worksite}</TableCell>
               <TableCell>{item.responsable}</TableCell>
               <TableCell className="tabular-nums">{item.plazo}</TableCell>
-              <TableCell><Badge variant="outline">{item.prioridad}</Badge></TableCell>
+              <TableCell><MetaBadge meta={{ label: item.prioridad, variant: "outline" }} /></TableCell>
               <TableCell>
-                <Badge variant={pdtpActionStatusVariant(item.estado, item.vencida)}>
-                  {item.vencida ? "Vencida" : PDTP_ACTION_STATUS_LABELS[item.estado as keyof typeof PDTP_ACTION_STATUS_LABELS] ?? item.estado}
-                </Badge>
+                <MetaBadge meta={{ label: `${item.vencida ? "Vencida" : PDTP_ACTION_STATUS_LABELS[item.estado as keyof typeof PDTP_ACTION_STATUS_LABELS] ?? item.estado}`, variant: pdtpActionStatusVariant(item.estado, item.vencida) }} />
               </TableCell>
             </TableRow>
           )
@@ -151,9 +148,7 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
             >
               <div className="flex items-start justify-between gap-3">
                 <p title={item.hallazgo} className="min-w-0 flex-1 truncate text-sm font-medium text-(--color-text)">{item.hallazgo}</p>
-                <Badge variant={pdtpActionStatusVariant(item.estado, item.vencida)} size="sm">
-                  {item.vencida ? "Vencida" : PDTP_ACTION_STATUS_LABELS[item.estado as keyof typeof PDTP_ACTION_STATUS_LABELS] ?? item.estado}
-                </Badge>
+                <MetaBadge meta={{ label: `${item.vencida ? "Vencida" : PDTP_ACTION_STATUS_LABELS[item.estado as keyof typeof PDTP_ACTION_STATUS_LABELS] ?? item.estado}`, variant: pdtpActionStatusVariant(item.estado, item.vencida) }} />
               </div>
               <p title={item.activity} className="mt-0.5 truncate text-xs text-(--color-text-muted)">{item.activity}</p>
               <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
@@ -165,7 +160,7 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
                 <dd className="truncate text-right text-(--color-text)">{item.worksite}</dd>
               </dl>
               <div className="mt-2">
-                <Badge variant="outline" size="sm">{item.prioridad}</Badge>
+                <MetaBadge meta={{ label: item.prioridad, variant: "outline" }} />
               </div>
             </Link>
           )

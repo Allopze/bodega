@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Field } from "@/components/ui/field"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import {
@@ -103,9 +103,9 @@ function ChecklistRow({ programId, activity, template, copySources }: {
           <span className="font-medium text-[var(--color-text)]">{activity.activity}</span>
         </span>
         {template ? (
-          <Badge variant="success">Editar checklist ({itemCount} ítems) v{template.version}</Badge>
+          <MetaBadge meta={{ label: `Editar checklist (${itemCount} ítems) v${template.version}`, variant: "success" }} />
         ) : (
-          <Badge variant="outline">Definir checklist</Badge>
+          <MetaBadge meta={{ label: "Definir checklist", variant: "outline" }} />
         )}
       </summary>
       <div className="border-t border-[var(--color-border)] p-4">
@@ -375,7 +375,7 @@ function ChecklistEditor({ programId, activity, template, copySources, onSaved }
               </p>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {parsedDefinition.closingAct.resultOptions.map((o) => (
-                  <Badge key={o.value} variant="outline">{o.label}</Badge>
+                  <MetaBadge key={o.value} meta={{ label: `${o.label}`, variant: "outline" }} />
                 ))}
               </div>
             </div>

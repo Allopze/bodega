@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -102,7 +102,7 @@ export function GroupDetail({ group, worksiteName, agent, members, measurements,
         <p><strong>Proceso:</strong> {group.processDescription}</p>
         <p className="mt-2">
           <strong>Vigilancia:</strong>{" "}
-          {group.surveillanceRequired ? <Badge variant="danger">Requerida</Badge> : <Badge variant="success">No requerida</Badge>}
+          {group.surveillanceRequired ? <MetaBadge meta={{ label: "Requerida", variant: "danger" }} /> : <MetaBadge meta={{ label: "No requerida", variant: "success" }} />}
         </p>
         {group.surveillanceReason && <p className="mt-1 text-[var(--color-text-subtle)]">{group.surveillanceReason}</p>}
       </div>
@@ -171,7 +171,7 @@ export function GroupDetail({ group, worksiteName, agent, members, measurements,
                     <TableCell className="text-sm tabular-nums">
                       {item.permissibleLimitSnapshot ? `${item.permissibleLimitSnapshot} / ${item.actionLevelSnapshot} ${item.unit}` : "Sin límite a la fecha"}
                     </TableCell>
-                    <TableCell><Badge variant={measurementOutcomeBadgeVariant(item.outcome)}>{MEASUREMENT_OUTCOME_LABELS[item.outcome] ?? item.outcome}</Badge></TableCell>
+                    <TableCell><MetaBadge meta={{ label: `${MEASUREMENT_OUTCOME_LABELS[item.outcome] ?? item.outcome}`, variant: measurementOutcomeBadgeVariant(item.outcome) }} /></TableCell>
                     <TableCell className="text-sm">{item.method}{item.laboratoryName && ` · ${item.laboratoryName}`}</TableCell>
                     <TableCell className="text-sm">{item.equipmentTag}</TableCell>
                   </TableRow>
@@ -288,7 +288,7 @@ function AddMeasurementDialog({ groupId, agent }: { groupId: string; agent: Agen
           </div>
           {preview && (
             <p className="text-sm">
-              Resultado previsto: <Badge variant={measurementOutcomeBadgeVariant(preview.outcome)}>{MEASUREMENT_OUTCOME_LABELS[preview.outcome] ?? preview.outcome}</Badge>
+              Resultado previsto: <MetaBadge meta={{ label: `${MEASUREMENT_OUTCOME_LABELS[preview.outcome] ?? preview.outcome}`, variant: measurementOutcomeBadgeVariant(preview.outcome) }} />
               {preview.triggersSurveillance && <span className="ml-2 text-xs text-[var(--color-warning-ink)]">Obliga a vigilancia</span>}
             </p>
           )}

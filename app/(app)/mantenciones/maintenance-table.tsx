@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { DataTable } from "@/components/ui/data-table"
 import { TableCell, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { formatCLP, formatDate, formatQty } from "@/lib/utils"
 import { maintenanceStatusMeta } from "@/lib/validation/maintenance"
@@ -92,7 +92,7 @@ export function MaintenanceTable({
                 <p className="font-medium text-[var(--color-text)]">{record.plate}</p>
                 <p className="text-xs text-[var(--color-text-muted)]">{maintenanceTypeLabel(record.maintenanceType)} · {formatDate(record.maintenanceDate)}</p>
               </div>
-              <Badge variant={statusMeta.variant}>{statusMeta.label}</Badge>
+              <MetaBadge meta={statusMeta} />
             </div>
             <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
               <div><dt className="text-[var(--color-text-subtle)]">Faena</dt><dd>{record.worksite?.name ?? "—"}</dd></div>
@@ -149,7 +149,7 @@ export function MaintenanceTable({
             <TableCell>{maintenanceTypeLabel(record.maintenanceType)}</TableCell>
             <TableCell>{record.supplier?.name ?? "—"}</TableCell>
             <TableCell>{record.worksite?.name ?? "—"}</TableCell>
-            <TableCell><Badge variant={statusMeta.variant}>{statusMeta.label}</Badge></TableCell>
+            <TableCell><MetaBadge meta={statusMeta} /></TableCell>
             <TableCell className="text-right font-mono">{formatNumber(record.odometerReading)}</TableCell>
             <TableCell className="text-right font-mono">{formatNumber(record.hourMeterReading)}</TableCell>
             <TableCell>{record.costCenterLabel || "—"}</TableCell>

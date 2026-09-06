@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { PencilSimple, Power } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
@@ -36,9 +36,9 @@ export function AnomalyRuleCatalog({ rows }: { rows: AnomalyRuleRow[] }) {
         <TableHeader><TableRow><TableHead>Regla</TableHead><TableHead>Severidad</TableHead><TableHead>Configuración</TableHead><TableHead>Estado</TableHead><TableHead className="text-right">Acciones</TableHead></TableRow></TableHeader>
         <TableBody>{rows.length === 0 ? <TableRow><TableCell colSpan={5} className="py-10 text-center text-[var(--color-text-muted)]">No hay reglas configuradas.</TableCell></TableRow> : rows.map((row) => <TableRow key={row.id}>
           <TableCell><span className="font-medium">{row.name}</span><span className="block font-mono text-xs text-[var(--color-text-muted)]">{row.code}</span></TableCell>
-          <TableCell><Badge variant={SEVERITY_VARIANT[row.severity] ?? "info"} size="sm">{ANOMALY_RULE_SEVERITY_LABELS[row.severity as keyof typeof ANOMALY_RULE_SEVERITY_LABELS] ?? row.severity}</Badge></TableCell>
+          <TableCell><MetaBadge meta={{ label: ANOMALY_RULE_SEVERITY_LABELS[row.severity as keyof typeof ANOMALY_RULE_SEVERITY_LABELS] ?? row.severity, variant: SEVERITY_VARIANT[row.severity] ?? "info" }} /></TableCell>
           <TableCell className="max-w-[280px] truncate font-mono text-xs text-[var(--color-text-muted)]" title={row.config ?? "{}"}>{row.config ?? "{}"}</TableCell>
-          <TableCell><Badge variant={row.isActive ? "success" : "default"}>{row.isActive ? "Activa" : "Inactiva"}</Badge></TableCell>
+          <TableCell><MetaBadge meta={row.isActive ? { label: "Activa", variant: "success" } : { label: "Inactiva", variant: "default" }} /></TableCell>
           <TableCell><div className="flex justify-end gap-2"><Button size="sm" variant="ghost" onClick={() => edit(row)}><PencilSimple size={15} />Editar</Button><Button size="sm" variant="secondary" disabled={pendingId === row.id} onClick={() => toggle(row)}><Power size={15} />{row.isActive ? "Desactivar" : "Activar"}</Button></div></TableCell>
         </TableRow>)}</TableBody>
       </Table>

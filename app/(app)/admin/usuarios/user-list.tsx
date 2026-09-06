@@ -10,7 +10,7 @@ import { UserForm } from "./user-form"
 import { UserInvitationsPanel, type InvitationRow } from "./user-invitations-panel"
 import { Avatar } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { formatDate } from "@/lib/utils"
@@ -121,7 +121,7 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
               <TableCell>
                 <div className="flex flex-wrap items-center gap-1 max-w-[280px]">
                   {u.roleLabels.slice(0, 3).map((label) => (
-                    <Badge key={label} variant="default" size="sm">{label}</Badge>
+                    <MetaBadge key={label} meta={{ label: `${label}`, variant: "default" }} />
                   ))}
                   {u.roleLabels.length > 3 && (
                     <span className="text-[10px] font-medium text-[var(--color-text-subtle)] whitespace-nowrap">
@@ -136,13 +136,7 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
               </TableCell>
               {/* Status */}
               <TableCell>
-                <Badge
-                  variant={u.passwordSetupPending ? "warning" : u.isActive ? "success" : "neutral"}
-                  dot
-                  className="w-24 justify-center"
-                >
-                  {u.passwordSetupPending ? "Pendiente" : u.isActive ? "Activo" : "Inactivo"}
-                </Badge>
+                <MetaBadge meta={{ label: `${u.passwordSetupPending ? "Pendiente" : u.isActive ? "Activo" : "Inactivo"}`, variant: u.passwordSetupPending ? "warning" : u.isActive ? "success" : "neutral" }} dot className="w-24 justify-center" />
               </TableCell>
               {/* Created */}
               <TableCell className="text-xs text-[var(--color-text-muted)]">
@@ -200,14 +194,12 @@ export function UserList({ users, invitations, allRoles, allPermissions, allWork
                     <p title={u.email} className="truncate text-xs text-[var(--color-text-subtle)]">{u.email}</p>
                   </div>
                 </div>
-                <Badge variant={u.passwordSetupPending ? "warning" : u.isActive ? "success" : "neutral"} dot>
-                  {u.passwordSetupPending ? "Pendiente" : u.isActive ? "Activo" : "Inactivo"}
-                </Badge>
+                <MetaBadge meta={{ label: `${u.passwordSetupPending ? "Pendiente" : u.isActive ? "Activo" : "Inactivo"}`, variant: u.passwordSetupPending ? "warning" : u.isActive ? "success" : "neutral" }} dot />
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-1">
                 {u.roleLabels.slice(0, 3).map((label) => (
-                  <Badge key={label} variant="default" size="sm">{label}</Badge>
+                  <MetaBadge key={label} meta={{ label: `${label}`, variant: "default" }} />
                 ))}
                 {u.roleLabels.length > 3 && (
                   <span className="text-[10px] font-medium text-[var(--color-text-subtle)] whitespace-nowrap">

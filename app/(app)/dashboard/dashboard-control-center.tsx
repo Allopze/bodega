@@ -1,7 +1,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { CheckCircle, WarningCircle } from "@phosphor-icons/react/dist/ssr"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge, type StateMetaInput } from "@/components/states/state-badge"
 import { DashboardGrid } from "@/components/ui/dashboard-grid"
 import { EmptyState } from "@/components/ui/empty-state"
 import { periodFlowTitle, type DashboardScope } from "./dashboard-scope"
@@ -52,10 +52,10 @@ interface DashboardResumenBodyProps {
   asideSlot?: React.ReactNode
 }
 
-const SEVERITY_META = {
-  critical: { label: "Crítica", variant: "danger" as const },
-  warning:  { label: "Atención", variant: "warning" as const },
-  info:     { label: "Pendiente", variant: "info" as const },
+const SEVERITY_META: Record<string, StateMetaInput> = {
+  critical: { label: "Crítica", variant: "danger" },
+  warning:  { label: "Atención", variant: "warning" },
+  info:     { label: "Pendiente", variant: "info" },
 }
 
 /**
@@ -168,7 +168,7 @@ function CompactMetricList({ id, title, entries }: {
 }
 
 function OperationalAlert({ alert }: { alert: DashboardAlert }) {
-  const meta = SEVERITY_META[alert.severity]
+  const meta = SEVERITY_META[alert.severity] ?? { label: alert.severity, variant: "default" as const }
   const content = (
     <>
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[var(--color-surface-2)] text-[var(--color-text-muted)]">
@@ -178,7 +178,7 @@ function OperationalAlert({ alert }: { alert: DashboardAlert }) {
         <span className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-lg font-semibold tabular-nums text-[var(--color-text)]">{alert.count}</span>
           <span className="text-sm font-semibold text-[var(--color-text)]">{alert.title}</span>
-          <Badge variant={meta.variant} size="sm" dot>{meta.label}</Badge>
+          <MetaBadge meta={meta} dot />
         </span>
         <span className="mt-1 block text-xs leading-5 text-[var(--color-text-muted)]">{alert.description}</span>
       </span>

@@ -4,7 +4,7 @@ import * as React from "react"
 import { Package, Trash } from "@phosphor-icons/react"
 import { Input } from "@/components/ui/input"
 import { Field } from "@/components/ui/field"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Combobox } from "@/components/ui/combobox"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
@@ -133,13 +133,7 @@ export function ItemEditor({
               <span className="flex-1 text-sm font-medium text-(--color-text)">
                 {item.productName}
                 {selectedProduct?.isService && (
-                  <Badge
-                    variant="outline" size="sm"
-                    className="ml-1.5 font-normal align-middle"
-                    title="El precio de este servicio se conoce al ejecutarlo o facturarlo; se registra sobre la orden de compra."
-                  >
-                    {COST_PENDING_LABEL}
-                  </Badge>
+                  <MetaBadge meta={{ label: `${COST_PENDING_LABEL}`, variant: "outline" }} title="El precio de este servicio se conoce al ejecutarlo o facturarlo; se registra sobre la orden de compra." className="ml-1.5 font-normal align-middle" />
                 )}
                 {selectedProduct?.isInactive && (
                   <span className="ml-1.5 inline-flex items-center rounded-full bg-(--color-warning-tint) border border-(--color-warning-line) px-1.5 py-px text-[10px] font-medium text-(--color-warning-ink)" title="Este producto fue desactivado del catálogo">

@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { ArrowSquareOut } from "@phosphor-icons/react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { formatDate, formatQty } from "@/lib/utils"
 import type { ConsolidatedRequest } from "@/lib/services/trazabilidad-consolidated.types"
 
@@ -55,9 +55,7 @@ export function ConsolidatedRequestsSummary({ requests }: Props) {
                   {request.requestCode}
                   <ArrowSquareOut size={12} className="shrink-0" aria-hidden />
                 </Link>
-                <Badge variant={request.statusColor} size="sm">
-                  {request.statusLabel}
-                </Badge>
+                <MetaBadge meta={{ label: `${request.statusLabel}`, variant: request.statusColor }} />
               </div>
               <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
                 {request.requesterName} · {formatDate(request.requestDate)} ·{" "}

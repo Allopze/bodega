@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -177,9 +177,7 @@ export function SessionDetail({ session, course, attendance, canDeliver, canMana
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-semibold">Asistencia ({attendance.length} convocados)</h2>
-          <Badge variant={statusBadgeVariant(session.status)}>
-            {TRAINING_SESSION_STATUS_LABELS[session.status] ?? session.status}
-          </Badge>
+          <MetaBadge meta={{ label: TRAINING_SESSION_STATUS_LABELS[session.status] ?? session.status, variant: statusBadgeVariant(session.status) }} />
         </div>
         <div className="flex flex-wrap gap-2">
           {editable && attendance.length > 0 && (
@@ -241,9 +239,7 @@ export function SessionDetail({ session, course, attendance, canDeliver, canMana
                             </SelectContent>
                           </Select>
                         ) : (
-                          <Badge variant={attendanceBadgeVariant(row.status)}>
-                            {TRAINING_ATTENDANCE_STATUS_LABELS[row.status] ?? row.status}
-                          </Badge>
+                          <MetaBadge meta={{ label: TRAINING_ATTENDANCE_STATUS_LABELS[row.status] ?? row.status, variant: attendanceBadgeVariant(row.status) }} />
                         )}
                       </TableCell>
                       <TableCell className="text-right">

@@ -4,7 +4,7 @@ import * as React from "react"
 import { Package, MagnifyingGlass } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -146,23 +146,15 @@ export function OcFormItems({
                     <span className="text-xs text-[var(--color-text-subtle)]">
                       · SOL {item.requestCode}
                     </span>
-                    <Badge variant="outline" size="sm" className="font-normal shrink-0 text-[11px]">
-                      {MODE_LABELS[item.deliveryMode] ?? item.deliveryMode}
-                    </Badge>
+                    <MetaBadge meta={{ label: MODE_LABELS[item.deliveryMode] ?? item.deliveryMode, variant: "outline" }} className="font-normal shrink-0 text-[11px]" />
                     {URGENCY_LABELS[item.urgency] && (
-                      <Badge variant="warning" size="sm" className="font-normal shrink-0">
-                        {URGENCY_LABELS[item.urgency]}
-                      </Badge>
+                      <MetaBadge meta={{ label: URGENCY_LABELS[item.urgency]!, variant: "warning" }} className="font-normal shrink-0" />
                     )}
                     {supLabel && (
-                      <Badge variant="warning" size="sm" className="font-normal shrink-0">
-                        Sugerido: {supLabel}
-                      </Badge>
+                      <MetaBadge meta={{ label: `Sugerido: ${supLabel}`, variant: "warning" }} className="font-normal shrink-0" />
                     )}
                     {item.isService && (
-                      <Badge variant="outline" size="sm" className="font-normal shrink-0">
-                        Servicio
-                      </Badge>
+                      <MetaBadge meta={{ label: "Servicio", variant: "outline" }} className="font-normal shrink-0" />
                     )}
                   </div>
                   <div className="mt-1 text-xs text-[var(--color-text-muted)]">

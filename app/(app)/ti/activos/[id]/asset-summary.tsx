@@ -1,6 +1,7 @@
 import Link from "next/link"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { formatDate, formatCLP } from "@/lib/utils"
+import { DetailItem } from "@/components/ui/detail-item"
 import { isCivilDateBefore } from "@/lib/services/ti/civil-dates"
 import { IT_ASSET_STATUS_META } from "@/lib/services/ti/constants"
 import { itStatusLabel } from "@/lib/services/ti/constants"
@@ -43,14 +44,8 @@ interface AssetSummaryProps {
   canManage: boolean
 }
 
-function DataRow({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
-  return (
-    <div className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] py-2.5 last:border-b-0">
-      <span className="text-xs text-[var(--color-text-muted)]">{label}</span>
-      <span className={`text-right text-sm text-[var(--color-text)] ${mono ? "font-mono text-xs" : "font-medium"}`}>{value}</span>
-    </div>
-  )
-}
+// Detalle: mismo patrón que el resto de las fichas (`DetailItem`), con
+// separadores horizontales vía `className`.
 
 export function AssetSummary({ asset, activeAssignment, canManage }: AssetSummaryProps) {
   const statusMeta = IT_ASSET_STATUS_META[asset.status]
@@ -72,24 +67,25 @@ export function AssetSummary({ asset, activeAssignment, canManage }: AssetSummar
             </div>
           </div>
           {statusMeta ? (
-            <Badge variant={statusMeta.variant} dot size="lg">{statusMeta.label}</Badge>
+            <MetaBadge meta={statusMeta} dot size="lg" />
           ) : (
-            <Badge variant="default">{asset.status}</Badge>
+            <MetaBadge meta={{ label: asset.status, variant: "default" }} />
           )}
         </div>
 
         <div className="grid gap-x-8 sm:grid-cols-2">
           <div>
-            <DataRow label="Asignado a" value={asset.workerName ?? "—"} />
-            <DataRow label="Faena" value={asset.worksiteName ?? "—"} />
-            <DataRow label="Ubicación" value={asset.location ?? "—"} />
-            <DataRow label="Número de serie" value={asset.serialNumber ?? "—"} mono />
-            <DataRow label="Tipo" value={asset.typeName} />
+            <DetailItem className="border-b border-[var(--color-border)] last:border-b-0" label="Asignado a" value={asset.workerName ?? "—"} />
+            <DetailItem className="border-b border-[var(--color-border)] last:border-b-0" label="Faena" value={asset.worksiteName ?? "—"} />
+            <DetailItem className="border-b border-[var(--color-border)] last:border-b-0" label="Ubicación" value={asset.location ?? "—"} />
+            <DetailItem className="border-b border-[var(--color-border)] last:border-b-0" label="Número de serie" value={asset.serialNumber ?? "—"} mono />
+            <DetailItem className="border-b border-[var(--color-border)] last:border-b-0" label="Tipo" value={asset.typeName} />
           </div>
           <div>
-            <DataRow label="Fecha de compra" value={asset.purchaseDate ? formatDate(asset.purchaseDate) : "—"} />
-            <DataRow label="Costo" value={asset.cost != null ? formatCLP(asset.cost) : "—"} mono />
-            <DataRow
+            <DetailItem className="border-b border-[var(--color-border)] last:border-b-0" label="Fecha de compra" value={asset.purchaseDate ? formatDate(asset.purchaseDate) : "—"} />
+            <DetailItem className="border-b border-[var(--color-border)] last:border-b-0" label="Costo" value={asset.cost != null ? formatCLP(asset.cost) : "—"} mono />
+            <DetailItem
+  className="border-b border-[var(--color-border)] last:border-b-0"
               label="Garantía"
               value={
                 asset.warrantyEndDate ? (
@@ -102,9 +98,9 @@ export function AssetSummary({ asset, activeAssignment, canManage }: AssetSummar
                 ) : "Sin garantía"
               }
             />
-            <DataRow label="Mantenciones" value={`${asset.maintenanceCount} · ${formatCLP(asset.maintenanceCost)} acumulado`} />
-            <DataRow label="Última mantención" value={asset.lastMaintenanceDate ? formatDate(asset.lastMaintenanceDate) : "—"} />
-            <DataRow label="Tickets" value={String(asset.ticketCount)} />
+            <DetailItem className="border-b border-[var(--color-border)] last:border-b-0" label="Mantenciones" value={`${asset.maintenanceCount} · ${formatCLP(asset.maintenanceCost)} acumulado`} />
+            <DetailItem className="border-b border-[var(--color-border)] last:border-b-0" label="Última mantención" value={asset.lastMaintenanceDate ? formatDate(asset.lastMaintenanceDate) : "—"} />
+            <DetailItem className="border-b border-[var(--color-border)] last:border-b-0" label="Tickets" value={String(asset.ticketCount)} />
           </div>
         </div>
 

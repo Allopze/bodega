@@ -6,6 +6,7 @@ import { OptionSelect } from "@/components/ui/option-select"
 import { useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
 import { triggerBillingSyncAction } from "../actions"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { syncScopeLabel } from "@/lib/services/billing/labels"
 import { formatPeriodOption, recentPeriods } from "@/components/ui/period-picker"
 import type { BillingProviderId } from "@/db/schema"
@@ -71,6 +72,9 @@ export function SyncControls({
   const [period, setPeriod] = useState(defaultPeriod)
   const [scope, setScope] = useState<SyncScope>("sales_invoices")
   const [lastResult, setLastResult] = useState<string | null>(null)
+  // ConfirmDialog en vez de confirm() nativo: escribir un período histórico
+  // merece una confirmación visible, no un popup del navegador.
+  const [confirmingPastPeriod, setConfirmingPastPeriod] = useState(false)
 
   const selected = providers.find((entry) => entry.id === provider)
   const automationEnabled = Boolean(provider && automationEnabledByProvider[provider])
@@ -98,13 +102,13 @@ export function SyncControls({
   function execute(dryRun: boolean) {
     if (!provider) return
     if (!dryRun && !isCurrentPeriod) {
-      const confirmed = confirm(
-        `Vas a sincronizar el período ${period}, que no es el mes en curso. ` +
-        `Se escribirán en la plataforma todos los documentos que la fuente entregue para ese período. ¿Continuar?`,
-      )
-      if (!confirmed) return
+      setConfirmingPastPeriod(true)
+      return
     }
+    startSync(dryRun)
+  }
 
+  function startSync(dryRun: boolean) {
     startTransition(async () => {
       const result = await triggerBillingSyncAction({
         provider,
@@ -237,6 +241,21 @@ export function SyncControls({
           {lastResult}
         </output>
       )}
+
+      <ConfirmDialog
+        open={confirmingPastPeriod}
+        onOpenChange={setConfirmingPastPeriod}
+        title={`Sincronizar el período ${period}`}
+        description={
+          `No es el mes en curso. Se escribirán en la plataforma todos los documentos que la fuente entregue para ese período. ¿Continuar?`
+        }
+        confirmLabel="Sincronizar"
+        variant="warning"
+        onConfirm={() => {
+          setConfirmingPastPeriod(false)
+          startSync(false)
+        }}
+      />
     </section>
   )
 }

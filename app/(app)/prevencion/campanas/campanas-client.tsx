@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -262,9 +262,9 @@ export function CampanasClient({
                       {cmp.attendanceCount} trabajadores
                     </TableCell>
                     <TableCell>
-                      {cmp.status === "active" && <Badge variant="primary">Activa</Badge>}
-                      {cmp.status === "completed" && <Badge variant="success">Completada</Badge>}
-                      {cmp.status === "cancelled" && <Badge variant="danger">Cancelada</Badge>}
+                      {cmp.status === "active" && <MetaBadge meta={{ label: "Activa", variant: "primary" }} />}
+                      {cmp.status === "completed" && <MetaBadge meta={{ label: "Completada", variant: "success" }} />}
+                      {cmp.status === "cancelled" && <MetaBadge meta={{ label: "Cancelada", variant: "danger" }} />}
                     </TableCell>
                     <TableCell className="text-right space-x-2">
                       {canManage && cmp.status === "active" && (

@@ -6,7 +6,7 @@ import { getPpa, getPpaCorrectiveAction, getPpaStatusHistory } from "@/lib/servi
 import { getCapaActionBundle } from "@/lib/services/prevention-capa"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { cn, formatDateTime } from "@/lib/utils"
 import { estadoPpaLabel, estadoPpaBadgeVariant, decisionPpaLabel, isPendienteRevision } from "@/lib/ppa/badges"
 import {
@@ -138,7 +138,7 @@ export default async function PpaDetailPage({
           ]} />
         }
         headerActions={
-          <Badge variant={estadoPpaBadgeVariant(ppa.estado)}>{estadoPpaLabel(ppa.estado)}</Badge>
+          <MetaBadge meta={{ label: estadoPpaLabel(ppa.estado), variant: estadoPpaBadgeVariant(ppa.estado) }} />
         }
       />
 
@@ -152,7 +152,7 @@ export default async function PpaDetailPage({
                 <span>
                   {ppa.workerName}
                   {ppa.manualIdentificacion && (
-                    <Badge variant="warning" size="sm" className="ml-2">Identificación manual: validar</Badge>
+                    <MetaBadge meta={{ label: "Identificación manual: validar", variant: "warning" }} className="ml-2" />
                   )}
                 </span>
               } />

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
@@ -111,7 +111,7 @@ export function ProgramDetail({ program, enrollments, eligibleGroups, canManage 
                     <TableCell className="text-sm tabular-nums">{item.enrolledOn}</TableCell>
                     <TableCell className="text-sm tabular-nums">{item.dueOn}</TableCell>
                     <TableCell>
-                      <Badge variant={statusBadgeVariant(item.status)}>{SURVEILLANCE_STATUS_LABELS[item.status] ?? item.status}</Badge>
+                      <MetaBadge meta={{ label: SURVEILLANCE_STATUS_LABELS[item.status] ?? item.status, variant: statusBadgeVariant(item.status) }} />
                       {item.status === "absent" && item.absenceReason && (
                         <span className="mt-1 block text-xs text-[var(--color-text-subtle)]">{item.absenceReason}</span>
                       )}

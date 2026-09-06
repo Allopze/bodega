@@ -7,24 +7,15 @@ import { serviceEquipment, worksites } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
-import { Badge } from "@/components/ui/badge"
-import { StateBadge } from "@/components/states/state-badge"
+import { MetaBadge, StateBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table"
 import { getEquipmentServiceHistory } from "@/lib/services/service-equipment-history"
 import { formatCLP, formatDate, formatDateTime } from "@/lib/utils"
 import { equipmentKindLabel } from "../catalog-contract"
+import { DetailItem } from "@/components/ui/detail-item"
 
 export const metadata: Metadata = { title: "Equipo de servicio" }
-
-function DetailLine({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-3 py-2.5">
-      <dt className="text-xs text-[var(--color-text-subtle)]">{label}</dt>
-      <dd className="text-right text-xs font-medium text-[var(--color-text)]">{value}</dd>
-    </div>
-  )
-}
 
 /**
  * Ficha de un instrumento y su historial de intervenciones. Es lo que el
@@ -73,11 +64,9 @@ export default async function EquipoDetailPage({ params }: { params: Promise<{ i
             {/* La ficha la dio de alta una solicitud: le falta nombre real,
                 marca, modelo y serie. Se apaga al editarla desde la lista. */}
             {equipment.needsReview && (
-              <Badge variant="warning">Por completar</Badge>
+              <MetaBadge meta={{ label: "Por completar", variant: "warning" }} />
             )}
-            <Badge variant={equipment.isActive ? "success" : "default"} dot>
-              {equipment.isActive ? "Activo" : "De baja"}
-            </Badge>
+            <MetaBadge meta={{ label: `${equipment.isActive ? "Activo" : "De baja"}`, variant: equipment.isActive ? "success" : "default" }} dot />
           </div>
         }
       />
@@ -86,14 +75,14 @@ export default async function EquipoDetailPage({ params }: { params: Promise<{ i
         <aside className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4 lg:sticky lg:top-6">
           <h2 className="text-sm font-semibold text-[var(--color-text)]">Ficha</h2>
           <dl className="mt-3 divide-y divide-[var(--color-border)]">
-            <DetailLine label="Código interno" value={<span className="font-mono">{equipment.code}</span>} />
-            <DetailLine label="Tipo" value={equipmentKindLabel(equipment.kind)} />
-            <DetailLine label="Faena" value={equipment.worksiteName} />
-            <DetailLine label="Marca" value={equipment.brand ?? "—"} />
-            <DetailLine label="Modelo" value={equipment.model ?? "—"} />
-            <DetailLine label="N° de serie" value={<span className="font-mono">{equipment.serialNumber ?? "—"}</span>} />
-            <DetailLine label="Alta en el registro" value={formatDate(equipment.createdAt)} />
-            <DetailLine
+            <DetailItem label="Código interno" value={equipment.code} mono />
+            <DetailItem label="Tipo" value={equipmentKindLabel(equipment.kind)} />
+            <DetailItem label="Faena" value={equipment.worksiteName} />
+            <DetailItem label="Marca" value={equipment.brand ?? "—"} />
+            <DetailItem label="Modelo" value={equipment.model ?? "—"} />
+            <DetailItem label="N° de serie" value={equipment.serialNumber ?? "—"} mono />
+            <DetailItem label="Alta en el registro" value={formatDate(equipment.createdAt)} />
+            <DetailItem
               label="Última intervención"
               value={lastServiced ? formatDate(lastServiced.requestedAt) : "Sin registro"}
             />

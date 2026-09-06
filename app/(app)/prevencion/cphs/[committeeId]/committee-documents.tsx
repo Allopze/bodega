@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { FileText } from "@phosphor-icons/react/dist/ssr"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { SST_DOCUMENT_STATUS_LABELS } from "@/lib/prevention/privacy-inventory"
@@ -47,9 +47,7 @@ export function CommitteeDocuments({ documents }: { documents: DocumentRow[] }) 
                   <span className="block text-xs text-[var(--color-text-subtle)]">{document.notes}</span>
                 )}
               </div>
-              <Badge variant={document.status === "vigente" || document.status === "aprobado" ? "success" : document.status === "vencido" || document.status === "observado" ? "danger" : "outline"}>
-                {SST_DOCUMENT_STATUS_LABELS[document.status] ?? document.status}
-              </Badge>
+              <MetaBadge meta={{ label: SST_DOCUMENT_STATUS_LABELS[document.status] ?? document.status, variant: document.status === "vigente" || document.status === "aprobado" ? "success" : document.status === "vencido" || document.status === "observado" ? "danger" : "outline" }} />
             </li>
           ))}
         </ul>

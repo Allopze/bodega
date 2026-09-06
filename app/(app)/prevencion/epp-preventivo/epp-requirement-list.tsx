@@ -1,6 +1,6 @@
 "use client"
 
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { HardHat } from "@phosphor-icons/react"
@@ -63,9 +63,7 @@ export function EppRequirementList({ requirements, eppTypes, families, worksites
                     {item.scopeType === "position" && item.scopeValue && <span className="block text-xs text-[var(--color-text-subtle)]">{item.scopeValue}</span>}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={item.enforcement === "blocking" ? "danger" : "warning"}>
-                      {item.enforcement === "blocking" ? "Bloqueante" : "Advertencia"}
-                    </Badge>
+                    <MetaBadge meta={item.enforcement === "blocking" ? { label: "Bloqueante", variant: "danger" } : { label: "Advertencia", variant: "warning" }} />
                   </TableCell>
                   <TableCell className="max-w-md text-xs text-[var(--color-text-subtle)]">{item.reason}</TableCell>
                   {canManage && (

@@ -1,11 +1,8 @@
 import { CheckCircle, Target, ChartBar } from "@phosphor-icons/react/dist/ssr"
-import { cn } from "@/lib/utils"
+import { cn, MONTH_LABELS, QUARTER_LABELS } from "@/lib/utils"
 import { Table, TableBody, TableCell, TableCellNum, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { PersistedDetails } from "./persisted-details"
 import type { PdtpComplianceIndicators, PdtpIntegralCompliance } from "@/lib/services/prevention-pdtp"
-
-const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
-const QUARTER_LABELS = ["Trim. 1", "Trim. 2", "Trim. 3", "Trim. 4"]
 
 function fmtPct(ratio: number | null): string {
   if (ratio === null) return "—"

@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { formatDateTime } from "@/lib/utils"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { IT_TICKET_STATUS_META, IT_TICKET_PRIORITY_META } from "@/lib/services/ti/constants"
 
@@ -36,13 +36,9 @@ export function AssetTickets({ rows }: { rows: TicketRow[] }) {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs font-semibold text-[var(--color-primary)]">{row.code}</span>
-              <Badge variant={IT_TICKET_STATUS_META[row.status]?.variant ?? "default"}>
-                {IT_TICKET_STATUS_META[row.status]?.label ?? row.status}
-              </Badge>
+              <MetaBadge meta={{ label: `${IT_TICKET_STATUS_META[row.status]?.label ?? row.status}`, variant: IT_TICKET_STATUS_META[row.status]?.variant ?? "default" }} />
             </div>
-            <Badge variant={IT_TICKET_PRIORITY_META[row.priority]?.variant ?? "default"}>
-              {IT_TICKET_PRIORITY_META[row.priority]?.label ?? row.priority}
-            </Badge>
+            <MetaBadge meta={{ label: `${IT_TICKET_PRIORITY_META[row.priority]?.label ?? row.priority}`, variant: IT_TICKET_PRIORITY_META[row.priority]?.variant ?? "default" }} />
           </div>
           <p className="mt-2 text-sm font-medium text-[var(--color-text)]">{row.subject}</p>
           <p className="mt-1 text-xs text-[var(--color-text-muted)]">

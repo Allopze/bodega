@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest"
 import { render, screen } from "@testing-library/react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "./responsive-data-list"
 
 describe("ResponsiveDataListCard", () => {
@@ -10,7 +10,7 @@ describe("ResponsiveDataListCard", () => {
       <ResponsiveDataListCard
         title="Administrador de faena"
         description="Gestiona permisos locales"
-        status={<Badge variant="success">Activo</Badge>}
+        status={<MetaBadge meta={{ label: "Activo", variant: "success" }} />}
         actions={<button type="button">Editar</button>}
       >
         <ResponsiveDataListField label="Permisos">12</ResponsiveDataListField>

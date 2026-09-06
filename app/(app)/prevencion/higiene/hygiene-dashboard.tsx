@@ -3,7 +3,7 @@ import Link from "next/link"
 import { Heartbeat } from "@phosphor-icons/react"
 import { ProtocolsPanel, type ApplicabilityRow } from "./protocols-panel"
 import { useSafeShellHeader } from "@/components/layout/header-context"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -196,14 +196,12 @@ export function HygieneDashboard({ groups, programs, summary, agents, worksites,
                   <TableCell className="text-right font-mono text-sm tabular-nums">{item.memberCount}</TableCell>
                   <TableCell>
                     {item.latestOutcome
-                      ? <Badge variant={measurementOutcomeBadgeVariant(item.latestOutcome)}>
-                          {MEASUREMENT_OUTCOME_LABELS[item.latestOutcome] ?? item.latestOutcome}
-                        </Badge>
+                      ? <MetaBadge meta={{ label: MEASUREMENT_OUTCOME_LABELS[item.latestOutcome] ?? item.latestOutcome, variant: measurementOutcomeBadgeVariant(item.latestOutcome) }} />
                       : <span className="text-sm text-[var(--color-text-subtle)]">Sin mediciones</span>}
                   </TableCell>
                   <TableCell>
                     {item.surveillanceRequired
-                      ? <><Badge variant="danger">Requerida</Badge>
+                      ? <><MetaBadge meta={{ label: "Requerida", variant: "danger" }} />
                           {item.surveillanceReason && <span className="mt-1 block max-w-xs text-xs text-[var(--color-text-subtle)]">{item.surveillanceReason}</span>}</>
                       : <span className="text-sm text-[var(--color-text-subtle)]">No requerida</span>}
                   </TableCell>
@@ -249,9 +247,7 @@ export function HygieneDashboard({ groups, programs, summary, agents, worksites,
                   <TableCell className="text-sm">{item.protocol}</TableCell>
                   <TableCell className="text-sm">{item.worksiteName}</TableCell>
                   <TableCell>
-                    <Badge variant={item.status === "active" ? "success" : "outline"}>
-                      {PROGRAM_STATUS_LABELS[item.status] ?? item.status}
-                    </Badge>
+                    <MetaBadge meta={{ label: PROGRAM_STATUS_LABELS[item.status] ?? item.status, variant: item.status === "active" ? "success" : "outline" }} />
                   </TableCell>
                   <TableCell className="text-right text-sm tabular-nums">{item.periodicityMonths} meses</TableCell>
                   <TableCell className="text-right font-mono text-sm tabular-nums">{item.attended} / {item.enrolled}</TableCell>
@@ -292,9 +288,7 @@ export function HygieneDashboard({ groups, programs, summary, agents, worksites,
                       <TableCell className="text-right font-mono text-sm tabular-nums">{item.exposedCount}</TableCell>
                       <TableCell>
                         {item.latestOutcome
-                          ? <Badge variant={measurementOutcomeBadgeVariant(item.latestOutcome)}>
-                              {MEASUREMENT_OUTCOME_LABELS[item.latestOutcome] ?? item.latestOutcome}
-                            </Badge>
+                          ? <MetaBadge meta={{ label: MEASUREMENT_OUTCOME_LABELS[item.latestOutcome] ?? item.latestOutcome, variant: measurementOutcomeBadgeVariant(item.latestOutcome) }} />
                           : <span className="text-sm text-[var(--color-text-subtle)]">Sin mediciones</span>}
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm tabular-nums">

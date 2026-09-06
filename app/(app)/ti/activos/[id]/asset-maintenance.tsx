@@ -1,5 +1,5 @@
 import { formatDate, formatCLP } from "@/lib/utils"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { IT_MAINTENANCE_TYPE_META } from "@/lib/services/ti/constants"
@@ -73,7 +73,7 @@ export function AssetMaintenance({ assetId, rows, canManage, suppliers }: AssetM
           <article key={row.id} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <Badge variant="warning">{IT_MAINTENANCE_TYPE_META[row.type] ?? row.type}</Badge>
+                <MetaBadge meta={{ label: IT_MAINTENANCE_TYPE_META[row.type] ?? row.type, variant: "warning" }} />
                 <span className="text-xs text-[var(--color-text-muted)]">{formatDate(row.date)}</span>
               </div>
               <div className="flex items-center gap-3">

@@ -14,7 +14,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
   DialogFooter, DialogClose,
 } from "@/components/ui/dialog"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { toast } from "@/lib/toast"
 
 const CLP_FORMAT = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP" })
@@ -176,9 +176,7 @@ export function QuotationPanel({
                   <span className="text-sm font-medium text-[var(--color-text)] truncate">
                     {supplierLabel(q)}
                   </span>
-                  <Badge variant={STATUS_VARIANTS[q.status] ?? "default"} size="sm">
-                    {STATUS_LABELS[q.status] ?? q.status}
-                  </Badge>
+                  <MetaBadge meta={{ label: STATUS_LABELS[q.status] ?? q.status, variant: STATUS_VARIANTS[q.status] ?? "default" }} />
                 </div>
                 <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-[var(--color-text-muted)]">
                   <span className="flex items-center gap-1">

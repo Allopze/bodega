@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
 import type { DocumentIntegrityFinding, DocumentIntegrityResolutionAction } from "@/lib/services/prevention-documents-library"
@@ -142,9 +142,7 @@ export function DocumentIntegrityWorkbench({ findings }: { findings: DocumentInt
             return (
               <TableRow key={key}>
                 <TableCell>
-                  <Badge variant={finding.severity === "critico" ? "danger" : "warning"}>
-                    {finding.severity === "critico" ? "Crítico" : "Alto"}
-                  </Badge>
+                  <MetaBadge meta={{ label: `${finding.severity === "critico" ? "Crítico" : "Alto"}`, variant: finding.severity === "critico" ? "danger" : "warning" }} />
                 </TableCell>
                 <TableCell className="min-w-56">
                   <Link className="font-medium text-[var(--color-primary)] hover:underline" href={`/prevencion/documentacion/${finding.documentId}`}>

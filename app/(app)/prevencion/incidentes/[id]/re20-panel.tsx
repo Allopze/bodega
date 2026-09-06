@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -175,7 +175,7 @@ export function RE20Panel({
             Cada hito completado dentro del plazo auto-acredita en PDTP (Actividades 66-78).
           </p>
         </div>
-        <Badge variant="primary">RE-20 Versión 2</Badge>
+        <MetaBadge meta={{ label: "RE-20 Versión 2", variant: "primary" }} />
       </div>
 
       {message && (
@@ -446,11 +446,12 @@ export function RE20Panel({
                   <div className="space-y-1">
                     <div className="text-sm font-medium text-[var(--color-text)]">{diffusionKindLabel(d.kind)}</div>
                     <p className="text-xs text-[var(--color-text-muted)]">{d.summary}</p>
-                    <Badge variant={d.status === "confirmed" ? "success" : "warning"}>
-                      {d.status === "confirmed"
+                    <MetaBadge meta={{
+                      label: d.status === "confirmed"
                         ? `Confirmada${d.confirmedAt ? ` el ${formatDateTime(d.confirmedAt)}` : ""}`
-                        : "Pendiente de confirmación"}
-                    </Badge>
+                        : "Pendiente de confirmación",
+                      variant: d.status === "confirmed" ? "success" : "warning",
+                    }} />
                   </div>
                   {d.status === "pending_confirmation" && canConfirmDiffusion && (
                     <Button size="sm" variant="secondary" onClick={() => handleConfirmDiffusion(d.id)} disabled={isPending}>

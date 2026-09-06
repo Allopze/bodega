@@ -5,7 +5,7 @@ import { useActionState } from "react"
 import { LinkSimple } from "@phosphor-icons/react"
 import { INITIAL_STATE } from "@/lib/form-state"
 import { SubmitButton } from "@/components/ui/submit-button"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -102,9 +102,7 @@ export function InvoiceReceiptAssociationDialog({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs font-semibold text-(--color-text)">Sugerencia explicable</p>
                 <div className="flex items-center gap-2">
-                  <Badge variant={suggestion.confidence === "high" ? "success" : "info"}>
-                    Confianza {suggestion.confidence === "high" ? "alta" : suggestion.confidence === "medium" ? "media" : "baja"}
-                  </Badge>
+                  <MetaBadge meta={{ label: `Confianza ${suggestion.confidence === "high" ? "alta" : suggestion.confidence === "medium" ? "media" : "baja"}`, variant: suggestion.confidence === "high" ? "success" : "info" }} />
                   <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedIds(suggestion.receiptIds)}>
                     Aplicar sugerencia
                   </Button>

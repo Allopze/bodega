@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import {
   updatePdtpActivityAction,
   duplicatePdtpActivityAction,
@@ -31,13 +31,11 @@ import {
   type PdtpScheduleHorizon,
 } from "@/lib/services/pdtp/recurrence"
 import { todayLocalISO } from "@/lib/sst/date"
-import { formatDate } from "@/lib/utils"
+import { formatDate, MONTH_LABELS } from "@/lib/utils"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 
 import type { PdtpActivityRow, PdtpScheduleRow } from "./types"
-
-const MONTH_LABELS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 
 export function ActividadesTab({
   programId,
@@ -191,7 +189,7 @@ export function ActividadesTab({
                   <TableCell>
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-medium text-[var(--color-text)]">{activity.activity}</p>
-                      {activity.status === "retired" && <Badge variant="outline">Retirada</Badge>}
+                      {activity.status === "retired" && <MetaBadge meta={{ label: "Retirada", variant: "outline" }} />}
                     </div>
                     {activity.status === "retired" && activity.retiredReason && (
                       <p className="mt-1 text-xs text-[var(--color-text-subtle)]">

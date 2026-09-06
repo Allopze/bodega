@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { MapPin } from "@phosphor-icons/react"
 import { useSafeShellHeader } from "@/components/layout/header-context"
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -120,9 +120,7 @@ export function WorksiteOrganizationList({ worksites }: { worksites: WorksiteRow
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={item.compliance.compliant ? "success" : "danger"}>
-                      {item.compliance.compliant ? "Al día" : "Brecha"}
-                    </Badge>
+                    <MetaBadge meta={item.compliance.compliant ? { label: "Al día", variant: "success" } : { label: "Brecha", variant: "danger" }} />
                     <span className="mt-1 block max-w-md text-xs text-[var(--color-text-subtle)]">{item.compliance.detail}</span>
                   </TableCell>
                 </TableRow>
