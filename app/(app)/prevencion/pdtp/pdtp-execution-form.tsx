@@ -30,9 +30,10 @@ type PdtpExecutionFormProps = {
   defaultMonth?: number
   defaultWeek?: number
   effectiveFrom?: PdtpPeriod | null
+  evidenceRequirement?: string | null
 }
 
-export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, defaultWeek, effectiveFrom }: PdtpExecutionFormProps) {
+export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, defaultWeek, effectiveFrom, evidenceRequirement }: PdtpExecutionFormProps) {
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [open, setOpen] = React.useState(false)
   const programYear = year ?? codeYear()
@@ -170,13 +171,20 @@ export function PdtpExecutionForm({ activityId, worksiteId, year, defaultMonth, 
             </Field>
           </div>
 
+          {evidenceRequirement && (
+            <p className="rounded-md bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
+              Esta actividad exige evidencia: {evidenceRequirement}
+            </p>
+          )}
+
           <Field label="Observación" htmlFor="exec-obs">
             <input
               id="exec-obs"
               name="evidenceText"
               type="text"
-              placeholder="Opcional"
+              placeholder={evidenceRequirement ? evidenceRequirement : "Opcional"}
               aria-label="Observación"
+              aria-required={!!evidenceRequirement}
               className="h-9 w-full rounded-md border border-[var(--color-border-control)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]"
             />
           </Field>

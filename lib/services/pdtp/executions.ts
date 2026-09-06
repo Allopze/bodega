@@ -21,6 +21,7 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
     programId: pdtpActivities.programId,
     status: pdtpActivities.status,
     retiredEffectiveFrom: pdtpActivities.retiredEffectiveFrom,
+    evidenceRequirement: pdtpActivities.evidenceRequirement,
   }).from(pdtpActivities).where(eq(pdtpActivities.id, data.activityId)).limit(1)
   if (!activity) throw new Error("Actividad PDTP no encontrada.")
 
@@ -42,6 +43,18 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
   }
   if (!isPdtpPeriodOnOrAfterActivation(data, program.activatedAt)) {
     throw new Error("El programa aún no estaba activo en el período seleccionado. Registra actividades desde su semana de activación.")
+  }
+  // La actividad declara qué evidencia exige y hasta ahora eso era sólo un
+  // texto en la tarjeta: el esquema deja la evidencia opcional y la única red
+  // era el aprobador. Lo acreditado por integración (accreditPdtpFromEvent)
+  // no pasa por acá y queda exento a propósito — su evidencia es el registro
+  // del módulo de origen.
+  const requirement = activity.evidenceRequirement?.trim()
+  const hasEvidence = Boolean(data.evidenceText?.trim())
+    || Boolean(data.evidenceUrl?.trim())
+    || (data.evidencePhotos?.length ?? 0) > 0
+  if (requirement && !hasEvidence) {
+    throw new Error(`Esta actividad exige evidencia: ${requirement}`)
   }
   if (!isPdtpActivityEffectiveForPeriod(activity, data.year, data.month, data.week)) {
     throw new Error("La actividad está retirada para el período seleccionado y no admite nuevas ejecuciones.")

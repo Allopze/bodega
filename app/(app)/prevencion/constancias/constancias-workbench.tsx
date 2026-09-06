@@ -119,6 +119,7 @@ export function ConstanciasWorkbench({
                         year={view.programYear}
                         defaultMonth={row.dueMonth}
                         effectiveFrom={view.effectiveFrom}
+                        evidenceRequirement={row.evidenceRequirement}
                       />
                     </div>
                   )}

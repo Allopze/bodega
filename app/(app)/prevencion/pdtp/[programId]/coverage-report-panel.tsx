@@ -1,4 +1,4 @@
-import { MetaBadge } from "@/components/states/state-badge"
+import { Badge } from "@/components/ui/badge"
 import type { PdtpCoverageReport } from "@/lib/services/prevention-pdtp"
 
 /**
@@ -50,13 +50,9 @@ export function CoverageReportPanel({ report }: { report: PdtpCoverageReport }) 
         {[...blockingSubmission, ...blocksActivationOnly, ...informative].map((group) => (
           <div key={group.status}>
             <div className="flex flex-wrap items-center gap-2">
-              <MetaBadge
-                meta={{
-                  label: `${group.issues.length}`,
-                  variant: group.blocksSubmission ? "danger" : group.blocks ? "warning" : "warning",
-                }}
-                dot
-              />
+              <Badge variant={group.blocksSubmission ? "danger" : group.blocks ? "warning" : "outline"} dot>
+                {group.issues.length}
+              </Badge>
               <h3 className="text-xs font-semibold uppercase text-[var(--color-text-subtle)]">{group.label}</h3>
               {!group.blocksSubmission && group.blocks && (
                 <span className="text-xs text-[var(--color-text-subtle)]">(no frena el envío, sí la activación)</span>

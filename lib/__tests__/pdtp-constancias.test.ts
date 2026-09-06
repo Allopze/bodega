@@ -34,6 +34,7 @@ afterAll(async () => {
 })
 
 const { listPdtpConstanciaActivities, assertPdtpActivityMechanism } = await import("@/lib/services/pdtp/constancias")
+const { markPdtpExecution } = await import("@/lib/services/pdtp/executions")
 
 const { year: PROGRAM_YEAR, month: CURRENT_MONTH } = chileDateParts()
 /** Enero no tiene mes anterior dentro del año: el caso "vencida" se apoya en
@@ -208,6 +209,34 @@ describe("listPdtpConstanciaActivities", () => {
     const view = await listPdtpConstanciaActivities([WS_A])
     expect(view?.debts).toHaveLength(1)
     expect(view?.debts[0]).toMatchObject({ dueMonth: CURRENT_MONTH, status: "pending", overdueMonths: 0 })
+  })
+})
+
+describe("markPdtpExecution — evidencia mínima declarada", () => {
+  // Task 9: las 9 actividades de mecanismo 'constancia' declaran su
+  // evidencia mínima en evidenceRequirement, y hasta ahora eso era sólo un
+  // texto en la tarjeta — el esquema deja la evidencia opcional y
+  // markPdtpExecution nunca la exigía. Aquí ACT_ID declara "Certificado
+  // vigente" (ver seedActivity), así que una constancia sin nada de
+  // evidencia debe rechazarse, y una con observación escrita debe aceptarse.
+  beforeEach(async () => {
+    await seedProgram("active")
+    await seedActivity()
+    await seedSchedule(WS_A, CURRENT_MONTH)
+  })
+
+  it("rechaza una constancia sin evidencia cuando la actividad declara una", async () => {
+    await expect(markPdtpExecution({
+      activityId: ACT_ID, worksiteId: WS_A, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1,
+      executedQuantity: 1, evidenceText: "", evidenceUrl: "", evidencePhotos: [],
+    }, "user-constancias-1", "all")).rejects.toThrow(/evidencia/i)
+  })
+
+  it("acepta la misma constancia con una observación que la respalda", async () => {
+    await expect(markPdtpExecution({
+      activityId: ACT_ID, worksiteId: WS_A, year: PROGRAM_YEAR, month: CURRENT_MONTH, week: 1,
+      executedQuantity: 1, evidenceText: "Acta firmada por los 12 asistentes", evidenceUrl: "", evidencePhotos: [],
+    }, "user-constancias-1", "all")).resolves.toBeDefined()
   })
 })
 
