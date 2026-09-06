@@ -1,4 +1,4 @@
-import { Badge } from "@/components/ui/badge"
+import { MetaBadge } from "@/components/states/state-badge"
 import type { PdtpCoverageReport } from "@/lib/services/prevention-pdtp"
 
 /**
@@ -7,11 +7,18 @@ import type { PdtpCoverageReport } from "@/lib/services/prevention-pdtp"
  * esto dice cuáles y por qué, que es lo que hay que resolver antes de firmar
  * el programa. Sin esta vista la clasificación existía en el tipo y había que
  * leer la base a mano para verla.
+ *
+ * Tres niveles, no dos: `blocksSubmission` frena el envío a revisión hoy;
+ * `blocks && !blocksSubmission` (el caso de `instrument_required`) no frena el
+ * envío pero sí va a frenar la ACTIVACIÓN si sigue así —declarado no es
+ * vigente—; el resto es puramente informativo. Colapsar los dos primeros bajo
+ * un solo "bloquea" mentía sobre cuándo exactamente se frena algo.
  */
 export function CoverageReportPanel({ report }: { report: PdtpCoverageReport }) {
   if (report.total === 0) return null
 
-  const blocking = report.groups.filter((group) => group.blocks)
+  const blockingSubmission = report.groups.filter((group) => group.blocksSubmission)
+  const blocksActivationOnly = report.groups.filter((group) => group.blocks && !group.blocksSubmission)
   const informative = report.groups.filter((group) => !group.blocks)
 
   return (
@@ -23,7 +30,7 @@ export function CoverageReportPanel({ report }: { report: PdtpCoverageReport }) 
         </span>
       </div>
 
-      {blocking.length === 0 ? (
+      {blockingSubmission.length === 0 ? (
         <p className="mt-2 text-sm text-[var(--color-text-muted)]">
           Todas las actividades activas declaran dónde se registra su cumplimiento y quién puede hacerlo.
         </p>
@@ -32,15 +39,28 @@ export function CoverageReportPanel({ report }: { report: PdtpCoverageReport }) 
           Estas actividades prometen trabajo sin ofrecer dónde realizarlo, así que frenan el envío a revisión.
         </p>
       )}
+      {blocksActivationOnly.length > 0 && (
+        <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+          Estas actividades declaran su número, pero el instrumento que lo acredita no está vigente: no frenan el
+          envío, pero van a frenar la activación si no se resuelven antes.
+        </p>
+      )}
 
       <div className="mt-3 space-y-3">
-        {[...blocking, ...informative].map((group) => (
+        {[...blockingSubmission, ...blocksActivationOnly, ...informative].map((group) => (
           <div key={group.status}>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={group.blocks ? "danger" : "warning"} dot>
-                {group.issues.length}
-              </Badge>
+              <MetaBadge
+                meta={{
+                  label: `${group.issues.length}`,
+                  variant: group.blocksSubmission ? "danger" : group.blocks ? "warning" : "warning",
+                }}
+                dot
+              />
               <h3 className="text-xs font-semibold uppercase text-[var(--color-text-subtle)]">{group.label}</h3>
+              {!group.blocksSubmission && group.blocks && (
+                <span className="text-xs text-[var(--color-text-subtle)]">(no frena el envío, sí la activación)</span>
+              )}
               {!group.blocks && (
                 <span className="text-xs text-[var(--color-text-subtle)]">(informativo, no frena el envío)</span>
               )}

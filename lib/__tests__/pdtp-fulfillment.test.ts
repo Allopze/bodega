@@ -333,6 +333,45 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
     expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([])
   })
 
+  it("una plantilla en borrador declara el número pero no lo vuelve ejecutable", async () => {
+    await seedProgram("draft")
+    await seedActivity({ n: 24, mechanism: "enganche", evidenceRequirement: null })
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.preventionInspectionTemplates).values({
+      id: "tpl-draft-24", code: "inspeccion_extintores", versionLabel: "02", status: "draft",
+      name: "Inspección de extintores", kind: "inspection", executorOfRecord: "platform_user",
+      definitionSnapshot: {}, contentHash: "a".repeat(64),
+      pdtpActivityNumbers: [24], authorUserId: USER_ID, createdAt: now, updatedAt: now,
+    })
+
+    const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
+    const n24 = issues.filter((issue) => issue.n === 24)
+    expect(n24).toEqual([expect.objectContaining({ status: "instrument_required" })])
+    expect(n24[0]!.reason).toContain("aprobada")
+  })
+
+  it("aprobar la plantilla limpia el bloqueo de instrumento", async () => {
+    await seedProgram("draft")
+    await seedActivity({ n: 24, mechanism: "enganche", evidenceRequirement: null })
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.preventionInspectionTemplates).values({
+      id: "tpl-approved-24", code: "inspeccion_extintores", versionLabel: "02", status: "approved",
+      name: "Inspección de extintores", kind: "inspection", executorOfRecord: "platform_user",
+      definitionSnapshot: {}, contentHash: "a".repeat(64),
+      pdtpActivityNumbers: [24], authorUserId: USER_ID, createdAt: now, updatedAt: now,
+      approvedByUserId: USER_ID, approvedAt: now,
+    })
+
+    // El destino de la N°24 (Inspecciones) es otra pregunta —`destination_review`,
+    // no bloqueante, y ya cubierta por el test de arriba con el mismo n=24—; lo
+    // que este test verifica es específicamente que aprobar la plantilla apague
+    // el `instrument_required`/`config_required`, no que la actividad quede sin
+    // ningún issue.
+    const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
+    const blockingIssues = issues.filter((issue) => issue.n === 24 && issue.status !== "destination_review")
+    expect(blockingIssues).toEqual([])
+  })
+
   it("la N°84 exige un plan en TODAS las faenas del programa, no en cualquiera", async () => {
     // Antes las cinco tablas se leían juntas y globalmente, así que un plan en
     // una faena daba la N°84 por resuelta en las siete. El informe no podía

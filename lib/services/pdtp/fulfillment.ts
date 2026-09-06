@@ -56,6 +56,7 @@ import {
   type RevocationInput,
 } from "./accreditation"
 import { engancheDestinationFor } from "@/lib/services/pdtp-adapters/fulfillment-contract-2026"
+import { usablePdtpInstrumentNumbers } from "./instruments"
 
 type QueryClient = DB | Tx
 
@@ -412,6 +413,25 @@ export type PdtpFulfillmentCoverageStatus =
    * repetir el episodio de la N°84.
    */
   | "destination_review"
+  /**
+   * El número está declarado —hay plantilla, curso o plan con ese `n`— pero el
+   * instrumento no está vigente: la plantilla sigue en `draft`, el curso no
+   * tiene ninguna versión `published`, o el plan de emergencia no está
+   * `approved`. Declarar no es poder ejecutar: sólo una plantilla `approved` se
+   * puede programar o ejecutar, `createTrainingSession` rechaza cualquier curso
+   * sin versión `published`, y la N°84 necesita un plan `approved` para poder
+   * programar un simulacro.
+   *
+   * **Bloquea la activación y sólo advierte al enviar a revisión.** Enviar a
+   * revisión es sobre el contenido firmado —el catálogo de actividades—;
+   * activar es sobre que el programa sea ejecutable. La separación no crea un
+   * candado circular: aprobar plantillas, publicar versiones de curso y
+   * aprobar planes de emergencia no tocan ninguna tabla `pdtp_*`, así que toda
+   * esa configuración puede resolverse entre el envío a revisión y la
+   * activación sin invalidar las firmas (`computePdtpProgramContentDigest`
+   * sólo lee tablas `pdtp_*`).
+   */
+  | "instrument_required"
 
 export type PdtpFulfillmentCoverageIssue = {
   n: number
@@ -650,6 +670,48 @@ function wiringIssueFor(
 }
 
 /**
+ * Declarado no es vigente. Espeja a `wiringIssueFor` —misma resta de
+ * exclusiones, misma lógica por faena— pero mira si el instrumento que declara
+ * el número está en un estado que de verdad se puede ejecutar: una plantilla
+ * `approved`, un curso con versión `published`, un plan de emergencia
+ * `approved`. Sólo se llama para números que `wiringIssueFor` ya dejó pasar
+ * (declarados en algún lado): repetir el chequeo de "¿está declarado?" acá
+ * sería ruido.
+ */
+function instrumentIssueFor(
+  activity: { n: number; activity: string },
+  ctx: {
+    usableGlobally: Set<number>
+    usablePerWorksite: Map<number, Set<string>>
+    worksiteIds: string[]
+    worksiteNameById: Map<string, string>
+    excludedWorksiteIds: Set<string>
+  },
+): PdtpFulfillmentCoverageIssue | null {
+  if (STRUCTURALLY_WIRED_ACTIVITY_NUMBERS.has(activity.n)) return null
+  if (ctx.usableGlobally.has(activity.n)) return null
+
+  const applicableWorksiteIds = ctx.worksiteIds.filter((id) => !ctx.excludedWorksiteIds.has(id))
+  if (applicableWorksiteIds.length === 0) return null
+
+  const usableWorksites = ctx.usablePerWorksite.get(activity.n)
+  if (usableWorksites) {
+    const missing = applicableWorksiteIds.filter((id) => !usableWorksites.has(id))
+    if (missing.length === 0) return null
+    const names = missing.map((id) => ctx.worksiteNameById.get(id) ?? id)
+    return {
+      n: activity.n, activity: activity.activity, status: "instrument_required",
+      reason: `Su plan de emergencia no está aprobado en ${missing.length} de las ${applicableWorksiteIds.length} faenas donde aplica: ${names.join(", ")}.`,
+    }
+  }
+
+  return {
+    n: activity.n, activity: activity.activity, status: "instrument_required",
+    reason: "Su número está declarado, pero su plantilla no tiene una versión aprobada o su curso no tiene ninguna versión publicada.",
+  }
+}
+
+/**
  * Compuerta que exige, por actividad activa del programa, un destino externo
  * declarado y verificable. Se llama desde `pdtpSubmitReviewBlockers` y desde
  * `activatePdtpProgram`: no debe volver a ser posible activar un programa que
@@ -665,6 +727,7 @@ export async function assertPdtpFulfillmentCoverage(programId: string, client: Q
 
   const declaredGlobally = await activityNumbersDeclaredGlobally(client)
   const declaredPerWorksite = await activityNumbersDeclaredPerWorksite(client)
+  const { global: usableGlobally, perWorksite: usablePerWorksite } = await usablePdtpInstrumentNumbers(client)
   const worksiteIds = await programWorksiteIds(client, programId)
   const worksiteNameById = new Map(
     (await client.select({ id: worksites.id, name: worksites.name }).from(worksites)).map((row) => [row.id, row.name]),
@@ -723,6 +786,21 @@ export async function assertPdtpFulfillmentCoverage(programId: string, client: Q
       if (issue) {
         issues.push(issue)
         continue
+      }
+
+      // Declarado no es vigente. Va después del cableado —una actividad sin
+      // número declarado ya salió como `config_required` y repetirlo sería
+      // ruido— y antes del destino, porque sin instrumento el permiso del
+      // destino es una pregunta prematura.
+      if (!STRUCTURALLY_WIRED_ACTIVITY_NUMBERS.has(activity.n)) {
+        const instrumentIssue = instrumentIssueFor(activity, {
+          usableGlobally, usablePerWorksite, worksiteIds, worksiteNameById,
+          excludedWorksiteIds: excludedByActivity.get(activity.id) ?? new Set<string>(),
+        })
+        if (instrumentIssue) {
+          issues.push(instrumentIssue)
+          continue
+        }
       }
     }
 

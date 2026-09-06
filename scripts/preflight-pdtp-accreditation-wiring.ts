@@ -181,6 +181,12 @@ export async function findPdtpAccreditationWiringGaps(): Promise<PdtpWiringRepor
   // Cada condición es una fuente de gaps distinta; se listan una por línea a
   // propósito para que sumar una nueva (la Tarea 8 agrega la suya) no
   // implique tocar ni reordenar las anteriores.
+  // `instrument_required` (Tarea 8) fluye por este mismo filtro: la compuerta
+  // ya lo excluye de sus dos únicos estados que no cuentan como problema
+  // (`decision_required` y `destination_review`), así que no hace falta un
+  // clause nuevo acá — sólo dejar constancia de que el `ok` de este preflight
+  // se pone en rojo por instrumentos declarados-pero-no-vigentes igual que por
+  // cualquier otro `config_required`/`permission_gap`/`code_gap`.
   const ok = gaps.length === 0
     && activitiesWithoutApprovedInstrument.length === 0
     && coverageIssues.filter((issue) => issue.status !== "decision_required" && issue.status !== "destination_review").length === 0
