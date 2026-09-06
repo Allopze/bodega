@@ -22,6 +22,7 @@ import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import * as schema from "@/db/schema"
+import type { Tx } from "@/db"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -45,7 +46,32 @@ const {
   onSafetyIndicatorPeriodClosed,
   onSafetyIndicatorPeriodReopened,
 } = await import("@/lib/services/pdtp-adapters/pdtp-accreditation-connectors")
-const { invalidateClosedIndicatorPeriod } = await import("@/lib/services/prevention-indicadores")
+const { invalidateClosedIndicatorPeriodWithClient } = await import("@/lib/services/prevention-indicadores")
+
+/**
+ * `invalidateClosedIndicatorPeriod` (el envoltorio transaccional bare, sin
+ * llamadores en producción) se retiró como código muerto (Tarea 10):
+ * `prevention-incidents.ts` siempre llamó a
+ * `invalidateClosedIndicatorPeriodWithClient` directamente, dentro de su
+ * propia transacción, y dispara la revocación por su cuenta después del
+ * commit. Este helper reproduce exactamente ese patrón para no perder la
+ * cobertura de la pareja transacción/revocación.
+ */
+async function invalidateClosedIndicatorPeriod(args: {
+  worksiteId: string
+  occurredAt: string
+  actorUserId: string
+  reason: string
+  permissions: readonly string[]
+}) {
+  // El tipo de la transacción de PGlite no unifica estructuralmente con `Tx`
+  // (basado en el driver postgres-js de producción); en runtime `@/db` está
+  // mockeado a esta misma instancia, así que el cast es seguro. Mismo patrón
+  // que `full-flow-integration.test.ts`.
+  const result = await inMemoryDb.transaction((tx) => invalidateClosedIndicatorPeriodWithClient(tx as unknown as Tx, args))
+  if (result.revocation) await onSafetyIndicatorPeriodReopened(result.revocation)
+  return result
+}
 
 afterAll(async () => {
   delete testGlobal.__db

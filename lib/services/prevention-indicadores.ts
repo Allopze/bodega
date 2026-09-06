@@ -833,27 +833,6 @@ export async function invalidateClosedIndicatorPeriodWithClient(client: Indicato
   })
 }
 
-/**
- * Envoltorio transaccional de `invalidateClosedIndicatorPeriodWithClient`, con
- * el disparo de la revocación después del commit.
- *
- * No tiene llamadores hoy —quien invalida un período lo hace desde dentro de su
- * propia transacción, en `prevention-incidents.ts`— y se conserva por eso
- * mismo: es la forma correcta de usarla desde fuera, y tenerla escrita evita
- * que el próximo llamador arme la suya olvidando el post-commit.
- */
-export async function invalidateClosedIndicatorPeriod(args: {
-  worksiteId: string
-  occurredAt: string
-  actorUserId: string
-  reason: string
-  permissions: readonly string[]
-}) {
-  const result = await db.transaction((tx) => invalidateClosedIndicatorPeriodWithClient(tx, args))
-  if (result.revocation) await onSafetyIndicatorPeriodReopened(result.revocation)
-  return result
-}
-
 export function safetyIndicatorPeriodIdentity(worksiteId: string, year: number, month: number) {
   return periodKey(worksiteId, year, month)
 }

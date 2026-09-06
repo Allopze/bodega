@@ -11,6 +11,7 @@ import { isPersonEvaluationDefinition } from "@/lib/sst/definitions"
 import { calculateCompliance, getAutomaticResultadoFinal, classifyEfficacy, requiresObservation } from "@/lib/sst/compliance"
 import { onSensitiveWorkerIdentificationClosed } from "@/lib/services/pdtp-adapters/worker-sensitivity-connector"
 import { onWorkerOnboardingClosed } from "@/lib/services/pdtp-adapters/worker-onboarding-connector"
+import { recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
 import { sstEvaluationCreateSchema, sstCloseEvaluationSchema } from "@/lib/validation/sst"
 import type { StatusValue, EvaluatorRole } from "@/lib/sst/types"
 import { transitionCapaActionWithClient } from "@/lib/services/prevention-capa"
@@ -310,7 +311,21 @@ export async function closeEvaluation(id: string, input: z.infer<typeof sstClose
   return updated
 }
 
+/**
+ * El conector de trabajador nuevo (`worker-onboarding-connector.ts`) se
+ * justificó diciendo que el acta es inmutable por DS 44/2024 y por eso "no
+ * necesita camino de reversión" — pero esta misma función existe y la
+ * contradice: si borrar un acta fuera posible, la premisa de inmutabilidad ya
+ * no sería cierta. En la práctica sí se niega a borrar una cerrada (ver el
+ * guard de abajo), que es justamente la que acredita, así que hoy esta
+ * revocación nunca encuentra nada que revertir. Se agrega de todas formas como
+ * defensa en profundidad: si ese guard cambiara, o una vía administrativa
+ * lograra invalidar un acta cerrada por otro camino, la acreditación huérfana
+ * no debe sobrevivir.
+ */
 export async function deleteEvaluation(id: string, worksiteIds: string[] | "all", actorUserId: string): Promise<void> {
+  let revocation: Parameters<typeof recordPdtpFulfillmentRevocation>[0] | null = null
+
   await db.transaction(async (tx) => {
     const [evaluation] = await tx.select().from(sstEvaluations)
       .where(eq(sstEvaluations.id, id))
@@ -355,7 +370,31 @@ export async function deleteEvaluation(id: string, worksiteIds: string[] | "all"
     await tx.delete(sstScheduledFollowups).where(eq(sstScheduledFollowups.evaluationId, id))
     await tx.delete(sstResponses).where(eq(sstResponses.evaluationId, id))
     await tx.delete(sstEvaluations).where(eq(sstEvaluations.id, id))
+
+    // El sourceId depende de qué conector acreditó, no del que borra: el de
+    // trabajador nuevo sella con `habilitacion:`, el de personas sensibles con
+    // `sensibles:` (ver worker-onboarding-connector.ts y
+    // worker-sensitivity-connector.ts). Cualquier otra definición no acredita
+    // nada bajo `evaluacion_sst` y no tiene nada que revocar.
+    const sourceId = evaluation.definicionCode === "trabajador_nuevo"
+      ? `habilitacion:${evaluation.id}`
+      : evaluation.definicionCode === "identificacion_sensibles"
+        ? `sensibles:${evaluation.id}`
+        : null
+    if (sourceId) {
+      revocation = {
+        sourceType: "evaluacion_sst",
+        sourceId,
+        worksiteId: evaluation.worksiteId,
+        revokedBy: actorUserId,
+        reason: "El acta que sostenía la acreditación fue eliminada.",
+      }
+    }
   })
+
+  // Fuera de la transacción y sin propagar el error, mismo patrón que el resto
+  // de los conectores post-commit.
+  if (revocation) await recordPdtpFulfillmentRevocation(revocation)
 }
 
 export async function closeEvaluationVisit(visitId: string, worksiteIds: string[] | "all", userId: string) {

@@ -17,9 +17,6 @@
  * dotación ya está confirmada y un problema del PDTP no puede deshacerla.
  */
 
-import { eq } from "drizzle-orm"
-import { db } from "@/db"
-import { pdtpPrograms } from "@/db/schema"
 import type { WorkerLifecycleEvent } from "@/lib/services/workers"
 import { resolvePdtpActivityIdsForNumbers } from "@/lib/services/pdtp/accreditation"
 import { resolvePdtpEffectiveActivitiesForWorksite } from "@/lib/services/pdtp/worksites"
@@ -127,11 +124,4 @@ export async function onWorkerEnteredDotacion(
   }
 
   return { ...counters, events: events.length }
-}
-
-/** Para llamadores sin sesión (barridos, reconciliaciones). */
-export async function resolveWorkerEntryActor(): Promise<string | null> {
-  const [program] = await db.select({ id: pdtpPrograms.id }).from(pdtpPrograms)
-    .where(eq(pdtpPrograms.status, "active")).limit(1)
-  return program ? resolvePdtpProgramActorUserId(program.id) : null
 }

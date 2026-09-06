@@ -25,6 +25,12 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
+  // `deleteEvaluation` ahora dispara una revocación PDTP (Tarea 10) que deja
+  // una fila en `pdtp_fulfillment_events` referenciando la faena, incluso
+  // cuando el acta nunca acreditó nada: sin borrarla, la faena queda con una
+  // referencia viva y el `delete(worksites)` de más abajo falla por FK.
+  await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
+  await inMemoryDb.delete(schema.pdtpExecutions)
   await inMemoryDb.delete(schema.preventionCapaTransitions)
   await inMemoryDb.delete(schema.preventionCapaActions)
   await inMemoryDb.delete(schema.sstScheduledFollowups)

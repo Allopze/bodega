@@ -55,6 +55,7 @@ import {
   onGrdMatrixPublished,
   onGrdMeetingClosed,
 } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
+import { recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
 import {
   grdCommitteeConstituteSchema,
   grdCommitteeDissolveSchema,
@@ -263,7 +264,9 @@ export async function constituteGrdCommittee(input: unknown, access: CgrdAccess)
 
 export async function dissolveGrdCommittee(input: unknown, access: CgrdAccess) {
   const data = grdCommitteeDissolveSchema.parse(input)
-  return db.transaction(async (tx) => {
+  let revocation: Parameters<typeof recordPdtpFulfillmentRevocation>[0] | null = null
+
+  const updated = await db.transaction(async (tx) => {
     const [committee] = await tx.select().from(preventionGrdCommittees).where(eq(preventionGrdCommittees.id, data.committeeId)).limit(1)
     if (!committee) throw new Error(GRD_NOT_FOUND)
     requireGrdAccess(access, "prevention:cgrd:committee:manage", committee.worksiteId)
@@ -279,8 +282,23 @@ export async function dissolveGrdCommittee(input: unknown, access: CgrdAccess) {
       entityType: "grd_committee", entityId: updated.id, worksiteId: committee.worksiteId,
       changeType: "dissolved", reason: data.reason, beforeState: committee, afterState: updated, actorUserId: access.userId,
     })
+
+    // Revertir la N°79: el mismo `sourceId` con prefijo que usó
+    // `onGrdStructureEstablished` (kind "committee") al constituirlo. Se
+    // dispara DESPUÉS del commit, sin propagar el error.
+    revocation = {
+      sourceType: "cgrd",
+      sourceId: `cgrd-committee:${updated.id}`,
+      worksiteId: committee.worksiteId,
+      revokedBy: access.userId,
+      reason: data.reason,
+    }
     return updated
   })
+
+  if (revocation) await recordPdtpFulfillmentRevocation(revocation)
+
+  return updated
 }
 
 export async function addGrdMember(input: unknown, access: CgrdAccess) {
@@ -643,7 +661,9 @@ export async function closeGrdMeeting(input: unknown, access: CgrdAccess) {
 
 export async function cancelGrdMeeting(input: unknown, access: CgrdAccess) {
   const data = grdMeetingCancelSchema.parse(input)
-  return db.transaction(async (tx) => {
+  let revocation: Parameters<typeof recordPdtpFulfillmentRevocation>[0] | null = null
+
+  const updated = await db.transaction(async (tx) => {
     const [row] = await tx.select({ meeting: preventionGrdMeetings, committee: preventionGrdCommittees })
       .from(preventionGrdMeetings)
       .innerJoin(preventionGrdCommittees, eq(preventionGrdMeetings.committeeId, preventionGrdCommittees.id))
@@ -662,8 +682,25 @@ export async function cancelGrdMeeting(input: unknown, access: CgrdAccess) {
       entityType: "grd_meeting", entityId: updated.id, worksiteId: row.committee.worksiteId,
       changeType: "cancelled", reason: data.reason, beforeState: row.meeting, afterState: updated, actorUserId: access.userId,
     })
+
+    // Revertir la N°81 con el mismo `sourceId` con prefijo que usó
+    // `onGrdMeetingClosed`. Defensa en profundidad: el guard de arriba sólo deja
+    // cancelar una sesión "scheduled", el mismo estado que `closeGrdMeeting`
+    // excluye, así que hoy esta rama nunca encuentra una acreditación viva que
+    // revocar — se deja cableada para si esa vía cambia.
+    revocation = {
+      sourceType: "cgrd",
+      sourceId: `cgrd-meeting:${updated.id}`,
+      worksiteId: row.committee.worksiteId,
+      revokedBy: access.userId,
+      reason: data.reason,
+    }
     return updated
   })
+
+  if (revocation) await recordPdtpFulfillmentRevocation(revocation)
+
+  return updated
 }
 
 /**

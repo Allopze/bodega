@@ -36,6 +36,7 @@ import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 import { onCphsCommitteeConstituted, onManagementReviewClosed } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { onPreventiveOrganizationSatisfied } from "@/lib/services/pdtp-adapters/preventive-organization-connector"
+import { recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
 import { codeYear, todayInChile } from "@/lib/utils"
 
 const NOT_FOUND = CPHS_NOT_FOUND
@@ -148,8 +149,9 @@ const dissolveSchema = z.object({
  */
 export async function dissolveCommittee(input: unknown, access: CphsAccess) {
   const data = dissolveSchema.parse(input)
+  let revocation: Parameters<typeof recordPdtpFulfillmentRevocation>[0] | null = null
 
-  return db.transaction(async (tx) => {
+  const updated = await db.transaction(async (tx) => {
     const [committee] = await tx.select().from(preventionCommittees)
       .where(eq(preventionCommittees.id, data.committeeId)).limit(1)
     if (!committee) throw new Error(NOT_FOUND)
@@ -172,8 +174,23 @@ export async function dissolveCommittee(input: unknown, access: CphsAccess) {
     if (!updated) throw new Error("El comité cambió mientras lo editabas. Recarga y reintenta.")
 
     await history(tx, { entityType: "committee", entityId: updated.id, worksiteId: committee.worksiteId, changeType: "dissolved", reason: data.reason, beforeState: committee, afterState: updated, actorUserId: access.userId })
+
+    // Revertir la N°11: el comité que `onCphsCommitteeConstituted` acreditó al
+    // crearse ya no existe. Se dispara DESPUÉS del commit (patrón
+    // `cancelTrainingSession`), sin propagar el error.
+    revocation = {
+      sourceType: "cphs",
+      sourceId: updated.id,
+      worksiteId: committee.worksiteId,
+      revokedBy: access.userId,
+      reason: data.reason,
+    }
     return updated
   })
+
+  if (revocation) await recordPdtpFulfillmentRevocation(revocation)
+
+  return updated
 }
 
 const dtRegistrationSchema = z.object({
@@ -962,7 +979,7 @@ export async function closeManagementReview(input: unknown, access: CphsAccess) 
  */
 export async function expireLapsedCommittees() {
   const today = todayInChile()
-  return db.transaction(async (tx) => {
+  const updated = await db.transaction(async (tx) => {
     const updated = await tx.update(preventionCommittees)
       .set({ status: "expired", version: sql`${preventionCommittees.version} + 1`, updatedAt: nowIso() })
       .where(and(
@@ -982,8 +999,22 @@ export async function expireLapsedCommittees() {
         actorUserId: null,
       })
     }
-    return { expired: updated.length }
+    return updated
   })
+
+  // Revertir la N°11 de cada comité vencido, uno por uno y DESPUÉS del commit:
+  // `recordPdtpFulfillmentRevocation` no propaga sus propios errores, así que
+  // uno fallando nunca aborta el resto del barrido.
+  for (const committee of updated) {
+    await recordPdtpFulfillmentRevocation({
+      sourceType: "cphs",
+      sourceId: committee.id,
+      worksiteId: committee.worksiteId,
+      reason: `Mandato vencido el ${committee.mandateEndsOn}`,
+    })
+  }
+
+  return { expired: updated.length }
 }
 
 /* ── Consultas ────────────────────────────────────────────────────────────── */

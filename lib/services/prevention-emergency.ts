@@ -21,6 +21,7 @@ import { assessDrillCompletion, assessPlanReadiness, EMERGENCY_SCENARIO_TYPES } 
 import type { EmergencyQuickFilter } from "@/lib/prevention/emergency-list-filters"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { onEmergencyDrillCompleted, onEmergencyPlanApproved } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
+import { recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 import { codeYear, todayInChile } from "@/lib/utils"
 
@@ -734,7 +735,9 @@ const cancelDrillSchema = z.object({
  */
 export async function cancelEmergencyDrill(input: unknown, access: EmergencyAccess) {
   const data = cancelDrillSchema.parse(input)
-  return db.transaction(async (tx) => {
+  let revocation: Parameters<typeof recordPdtpFulfillmentRevocation>[0] | null = null
+
+  const updated = await db.transaction(async (tx) => {
     const [drill] = await tx.select().from(preventionEmergencyDrills).where(eq(preventionEmergencyDrills.id, data.drillId)).limit(1)
     if (!drill) throw new EmergencyDomainError(NOT_FOUND)
     requireAccess(access, "prevention:emergency:drill_execute", drill.worksiteId)
@@ -752,8 +755,26 @@ export async function cancelEmergencyDrill(input: unknown, access: EmergencyAcce
     )).returning()
     if (!updated) throw new EmergencyDomainError("El simulacro cambió mientras lo editabas. Recarga y reintenta.")
     await history(tx, { entityType: "drill", entityId: drill.id, worksiteId: drill.worksiteId, changeType: "cancelled", reason: data.reason, beforeState: drill, afterState: updated, actorUserId: access.userId })
+
+    // Revertir la N°84 con el mismo `sourceId` (el propio drillId) que usó
+    // `onEmergencyDrillCompleted`. Defensa en profundidad: el guard de arriba
+    // sólo deja cancelar un simulacro "scheduled", el mismo estado que
+    // `completeEmergencyDrill` excluye, así que hoy esta rama nunca encuentra
+    // una acreditación viva que revocar — se deja cableada por si esa vía
+    // cambia (o una anulación administrativa reabre un simulacro completado).
+    revocation = {
+      sourceType: "emergencia",
+      sourceId: updated.id,
+      worksiteId: drill.worksiteId,
+      revokedBy: access.userId,
+      reason: data.reason,
+    }
     return updated
   })
+
+  if (revocation) await recordPdtpFulfillmentRevocation(revocation)
+
+  return updated
 }
 
 /* ── Consultas ────────────────────────────────────────────────────────────── */

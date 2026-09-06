@@ -79,6 +79,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/pdtp-coverage-sources.test.ts",
   "lib/__tests__/pdtp-evidence-gc.test.ts",
   "lib/__tests__/pdtp-reminders-dedup.test.ts",
+  "lib/__tests__/pdtp-revocations.test.ts",
   "lib/__tests__/pdtp-worksites.test.ts",
   "lib/__tests__/physical-inventory-service.test.ts",
   "lib/__tests__/prevention-pdtp.test.ts",
