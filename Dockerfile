@@ -126,6 +126,19 @@ RUN ./node_modules/.bin/esbuild scripts/apply-pdtp-2026-catalog-decisions.ts \
     --external:postgres \
     --outfile=/tmp/apply-pdtp-catalog-decisions.mjs
 
+# Qué faenas operan el programa 2026 y qué actividades no les aplican dentro de
+# las que sí lo operan. Sin este paso `pdtp_program_worksites` llega vacío a
+# producción y la regla del motor ("sin membresía declarada, todas las faenas
+# activas") deja las 81 actividades exigibles también en Oficina Central.
+RUN ./node_modules/.bin/esbuild scripts/apply-pdtp-2026-worksite-scope.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/apply-pdtp-worksite-scope.mjs
+
 # Los cursos, los planes y las campañas declaran qué actividad del PDTP acredita
 # cada uno. Sin ese dato el conector existe y no hace nada: la sesión se cierra y
 # el programa anual no se entera.
@@ -327,6 +340,7 @@ COPY --from=build /tmp/apply-sst-document-taxonomy.mjs ./scripts/apply-sst-docum
 COPY --from=build /tmp/seed-emergency-plans.cjs ./scripts/seed-emergency-plans.cjs
 COPY --from=build /tmp/preflight-pdtp-accreditation-wiring.mjs ./scripts/preflight-pdtp-accreditation-wiring.mjs
 COPY --from=build /tmp/apply-pdtp-catalog-decisions.mjs ./scripts/apply-pdtp-catalog-decisions.mjs
+COPY --from=build /tmp/apply-pdtp-worksite-scope.mjs ./scripts/apply-pdtp-worksite-scope.mjs
 COPY --from=build /tmp/apply-pdtp-program-data.mjs ./scripts/apply-pdtp-program-data.mjs
 COPY --from=build /tmp/apply-pdtp-mechanisms.mjs ./scripts/apply-pdtp-mechanisms.mjs
 COPY --from=build /tmp/apply-pdtp-demand-slas.mjs ./scripts/apply-pdtp-demand-slas.mjs

@@ -428,6 +428,17 @@ run_timed "Syncing RBAC permissions from module manifests" run_in_prod docker co
 # firmado (PDTP_DECISIONS_DEPLOY_MODE); sí lo aborta si falla por otra razón.
 run_timed "Aplicando decisiones de catálogo del PDTP" run_in_prod docker compose run --rm apply-pdtp-catalog-decisions
 
+# Qué faenas operan el programa y qué actividades no les aplican dentro de las
+# que sí lo operan. Sin esto `pdtp_program_worksites` queda vacío y la regla
+# del motor es "sin membresía declarada, todas las faenas activas": las 81
+# actividades quedarían exigibles también en Oficina Central. Va después de las
+# decisiones de catálogo (que deciden qué actividades siguen vivas, para no
+# intentar excluir una ya retirada) y antes del diagnóstico de cableado, que
+# debe reportar sobre la membresía ya declarada. No aborta el deploy si el
+# programa todavía no existe, no hay administrador, o ya está firmado
+# (PDTP_WORKSITE_SCOPE_DEPLOY_MODE).
+run_timed "Declarando el alcance por faena del PDTP" run_in_prod docker compose run --rm apply-pdtp-worksite-scope
+
 # Después de las decisiones de catálogo: primero se decide qué actividades viven,
 # luego se declara qué registro acredita cada una.
 # Antes que el dato del PDTP: los tipos documentales son el catálogo donde la

@@ -435,6 +435,30 @@ services:
       - PDTP_DECISIONS_DRY_RUN=${PDTP_DECISIONS_DRY_RUN:-}
     command: ["node", "scripts/apply-pdtp-catalog-decisions.mjs"]
 
+  # One-shot: declara qué faenas operan el programa PDTP 2026
+  # (`pdtp_program_worksites`) y qué actividades no aplican dentro de las que sí
+  # lo operan (`pdtp_activity_worksite_exclusions`). Idempotente: reejecutar no
+  # cambia nada si la membresía y las exclusiones ya coinciden con lo declarado
+  # en el script. `PDTP_WORKSITE_SCOPE_DEPLOY_MODE` evita que el despliegue
+  # aborte cuando el programa del año todavía no existe, no hay administrador,
+  # o el programa ya está firmado y cerrado a ediciones.
+  apply-pdtp-worksite-scope:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - PDTP_WORKSITE_SCOPE_DEPLOY_MODE=true
+      - PDTP_WORKSITE_SCOPE_ACTOR_USER_ID=${PDTP_WORKSITE_SCOPE_ACTOR_USER_ID:-}
+      - PDTP_WORKSITE_SCOPE_DRY_RUN=${PDTP_WORKSITE_SCOPE_DRY_RUN:-}
+    command: ["node", "scripts/apply-pdtp-worksite-scope.mjs"]
+
   # One-shot: declara en cursos, planes de emergencia y campañas qué actividad
   # del PDTP acredita cada uno. Idempotente por el `code` de cada registro.
   apply-pdtp-program-data:

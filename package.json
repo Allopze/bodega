@@ -42,6 +42,7 @@
     "db:seed-cphs-orientation-course": "tsx --env-file=.env.local scripts/seed-prevention-cphs-orientation-course.ts",
     "pdtp:apply-all": "bash scripts/apply-pdtp-data.sh",
     "pdtp:apply-catalog-decisions": "tsx --env-file=.env.local scripts/apply-pdtp-2026-catalog-decisions.ts",
+    "pdtp:apply-worksite-scope": "tsx --env-file=.env.local scripts/apply-pdtp-2026-worksite-scope.ts",
     "pdtp:apply-mechanisms": "tsx --env-file=.env.local scripts/apply-pdtp-2026-mechanisms.ts",
     "pdtp:apply-program-data": "tsx --env-file=.env.local scripts/apply-pdtp-2026-program-data.ts",
     "pdtp:apply-demand-slas": "tsx --env-file=.env.local scripts/apply-pdtp-2026-demand-slas.ts",

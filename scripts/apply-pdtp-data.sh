@@ -32,6 +32,7 @@ set -euo pipefail
 PDTP_DATA_STEPS=(
   "db:sync-rbac|sync-rbac"
   "pdtp:apply-catalog-decisions|apply-pdtp-catalog-decisions"
+  "pdtp:apply-worksite-scope|apply-pdtp-worksite-scope"
   "db:apply-sst-taxonomy|apply-sst-taxonomy"
   "db:seed-emergency-plans|seed-emergency-plans"
   "pdtp:apply-program-data|apply-pdtp-program-data"
@@ -64,6 +65,7 @@ if [[ "${PDTP_APPLY_DRY_RUN:-}" == "true" ]]; then
   export SEED_DRY_RUN=true
   export SST_TAXONOMY_DRY_RUN=true
   export PDTP_DECISIONS_DRY_RUN=true
+  export PDTP_WORKSITE_SCOPE_DRY_RUN=true
   export PDTP_MECHANISMS_DRY_RUN=true
   export PDTP_PROGRAM_DATA_DRY_RUN=true
   export PDTP_DEMAND_SLAS_DRY_RUN=true
