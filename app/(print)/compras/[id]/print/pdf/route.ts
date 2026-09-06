@@ -1,27 +1,47 @@
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseOrders } from "@/db/schema"
-import { requireAuth, canAny, canAccessWorksite } from "@/lib/auth/can"
+import { requireAuth, can, canAny, canAccessWorksite } from "@/lib/auth/can"
 import { encodeContentDisposition } from "@/lib/utils"
 import { withBrowserContext } from "@/lib/pdf/browser-pool"
 import { resolvePdfRenderOrigin } from "@/lib/pdf/render-origin"
 import { a4PdfOptions } from "@/lib/pdf/page-options"
+import { parsePdfEngine, resolvePdfEngine } from "@/lib/pdf/engines"
+import { getPdfEngineFor } from "@/lib/services/system-settings"
 import { ocPdfFilename } from "../filename"
+import { loadOcPrintDataOrNull } from "../oc-print-data"
+import { renderOcPdf } from "../oc-pdfcn-render"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 /**
- * Server-side PDF of the orden de compra. Renders the existing print page with
- * a pooled headless Chromium context, producing a clean A4 PDF without browser
- * chrome (date / URL / page number) — unlike window.print(). This lets the UI
- * offer a direct download instead of opening the browser print dialog.
+ * PDF de la orden de compra. Hay dos motores y el que se use lo decide el ajuste
+ * de administración (`pdf.engine.oc`), con un override por query string para
+ * poder comparar los dos sin cambiar el estado global mientras otros trabajan.
  *
- * The session cookie is forwarded so the headless browser loads the page as
- * the requesting user. PDF_MAX_CONCURRENT (default 2) caps the number of
- * simultaneous Chromium contexts; further requests queue rather than spawning
- * additional browser processes.
+ * - `chromium`: renderiza la página de impresión existente con un contexto
+ *   headless del pool, produciendo un A4 limpio sin el cromo del navegador
+ *   (fecha / URL / numeración) que añadiría `window.print()`. Se reenvía la
+ *   cookie de sesión para que el navegador cargue la página como el usuario que
+ *   pide el PDF. `PDF_MAX_CONCURRENT` (2 por defecto) limita los contextos
+ *   simultáneos; el resto hace cola en vez de abrir más procesos.
+ * - `pdfcn`: compone el documento con Takumi dentro de este proceso, sin
+ *   navegador ni petición HTTP a sí mismo.
  */
+function pdfResponse(pdf: Uint8Array, filename: string): Response {
+  // Copia a un buffer propio, como en `app/api/purchase-orders/dtes/[id]/pdf`:
+  // `Uint8Array<ArrayBufferLike>` no satisface `BodyInit`.
+  const body = Uint8Array.from(pdf)
+  return new Response(body, {
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": encodeContentDisposition(filename, "attachment"),
+      "Cache-Control": "no-store",
+    },
+  })
+}
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -38,6 +58,24 @@ export async function GET(
   }
 
   const { id } = await params
+
+  // El override es una herramienta de administración: quien puede cambiar el
+  // ajuste puede saltárselo puntualmente. Para el resto se ignora en silencio,
+  // no se rechaza la petición: el PDF sigue saliendo con el motor configurado.
+  const override = can(session, "admin:ops_settings")
+    ? parsePdfEngine("oc", new URL(req.url).searchParams.get("motor"))
+    : null
+
+  const engine = resolvePdfEngine("oc", {
+    override,
+    configured: await getPdfEngineFor("oc"),
+  })
+
+  if (engine === "pdfcn") {
+    const data = await loadOcPrintDataOrNull(id, session)
+    if (!data) return new Response("No encontrado", { status: 404 })
+    return pdfResponse(await renderOcPdf(data), data.suggestedFilename)
+  }
 
   // Enforce access and get the code (for the filename) before touching the pool.
   const order = await db.query.purchaseOrders.findFirst({
@@ -65,11 +103,5 @@ export async function GET(
     },
   )
 
-  return new Response(new Uint8Array(pdf), {
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": encodeContentDisposition(ocPdfFilename(order.code), "attachment"),
-      "Cache-Control": "no-store",
-    },
-  })
+  return pdfResponse(pdf, ocPdfFilename(order.code))
 }

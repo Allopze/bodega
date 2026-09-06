@@ -46,14 +46,26 @@ async function loadOrderWithRelations(id: string) {
   })
 }
 
-export async function loadOcPrintData(id: string, session: Session): Promise<OcPrintData> {
+/**
+ * Igual que `loadOcPrintData`, pero devuelve `null` en vez de lanzar
+ * `notFound()` cuando la OC no existe o la faena no es accesible.
+ *
+ * `notFound()` sirve en una página, no en un route handler: la ruta del PDF
+ * necesita decidir ella misma el 404 —y hacerlo igual en las dos ramas de
+ * motor—. Los dos casos colapsan a `null` a propósito: hacia afuera ya eran
+ * indistinguibles, la ruta responde 404 para ambos.
+ */
+export async function loadOcPrintDataOrNull(
+  id: string,
+  session: Session,
+): Promise<OcPrintData | null> {
   const [order, company] = await Promise.all([
     loadOrderWithRelations(id),
     getCompanyProfile(),
   ])
 
-  if (!order) notFound()
-  if (!canAccessWorksite(session, order.worksiteId)) notFound()
+  if (!order) return null
+  if (!canAccessWorksite(session, order.worksiteId)) return null
 
   const productIds = order.items.map((i) => i.productId).filter((v): v is string => v !== null)
   const products = productIds.length > 0
@@ -97,4 +109,11 @@ export async function loadOcPrintData(id: string, session: Session): Promise<OcP
     orderDetailLines,
     totalInWords,
   }
+}
+
+/** Variante para la página de impresión: un fallo es un 404 de Next. */
+export async function loadOcPrintData(id: string, session: Session): Promise<OcPrintData> {
+  const data = await loadOcPrintDataOrNull(id, session)
+  if (!data) notFound()
+  return data
 }

@@ -254,6 +254,21 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  {
+    // Código vendorizado de pdfcn (ver components/pdf/README.md). Sus `<img>` y
+    // demás etiquetas no son DOM: son primitivas que el renderer de Takumi
+    // interpreta para componer el PDF, así que las reglas pensadas para páginas
+    // web no aplican. Se limita a este árbol para no relajarlas en la app.
+    files: ["components/pdf/**/*.{ts,tsx}"],
+    // Los `eslint-disable` que trae el original apuntan a la configuración de
+    // upstream; aquí sobran, pero borrarlos sólo aumenta la diferencia con el
+    // registro sin ganar nada.
+    linterOptions: { reportUnusedDisableDirectives: "off" },
+    rules: {
+      "@next/next/no-img-element": "off",
+      "jsx-a11y/alt-text": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

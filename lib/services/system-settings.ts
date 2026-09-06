@@ -1,8 +1,14 @@
-import { db } from "@/db"
+import { db, type DB } from "@/db"
 import { systemSettings } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
+import {
+  PDF_DOCUMENT_LIST,
+  parsePdfEngine,
+  type PdfDocumentId,
+  type PdfEngine,
+} from "@/lib/pdf/engines"
 
 export interface CompanyProfile {
   name:             string
@@ -48,11 +54,30 @@ const OPS_VALIDATION: Record<keyof OperationalSettings, { min: number; max: numb
   pdtpEvidenceRetentionDays:  { min: 30,     max: 3650 },
 }
 
-async function readSystemSetting(key: string): Promise<string | null> {
+/**
+ * `db` exposes both the relational query API and the core builder; a Drizzle
+ * transaction reliably exposes the latter. Keeping `query` optional also
+ * preserves the lightweight relational mocks used by older callers/tests.
+ */
+type SettingsClient = Pick<DB, "select" | "insert"> & Partial<Pick<DB, "query">>
+
+async function readSystemSetting(
+  key: string,
+  client: SettingsClient = db,
+): Promise<string | null> {
   try {
-    const row = await db.query.systemSettings.findFirst({
-      where: eq(systemSettings.key, key),
-    })
+    if (client.query?.systemSettings?.findFirst) {
+      const row = await client.query.systemSettings.findFirst({
+        where: eq(systemSettings.key, key),
+      })
+      return row?.value ?? null
+    }
+
+    const [row] = await client
+      .select({ value: systemSettings.value })
+      .from(systemSettings)
+      .where(eq(systemSettings.key, key))
+      .limit(1)
     return row?.value ?? null
   } catch (err) {
     logger.error(`Error reading setting ${key}:`, err)
@@ -67,10 +92,12 @@ function parseIntStrict(value: string | null | undefined, fallback: number): num
   return Math.trunc(n)
 }
 
-export async function getOperationalSettings(): Promise<OperationalSettings> {
+export async function getOperationalSettings(
+  client: SettingsClient = db,
+): Promise<OperationalSettings> {
   const stored = await Promise.all(
     (Object.keys(OPS_SETTING_KEYS) as Array<keyof OperationalSettings>).map((k) =>
-      readSystemSetting(OPS_SETTING_KEYS[k]),
+      readSystemSetting(OPS_SETTING_KEYS[k], client),
     ),
   )
   const raw = Object.fromEntries(
@@ -101,9 +128,10 @@ export interface AuditActor {
 export async function updateOperationalSettings(
   input: unknown,
   actor: AuditActor,
+  client: SettingsClient = db,
 ): Promise<OperationalSettings> {
   const partial = (input ?? {}) as Partial<Record<keyof OperationalSettings, unknown>>
-  const merged: OperationalSettings = { ...(await getOperationalSettings()) }
+  const merged: OperationalSettings = { ...(await getOperationalSettings(client)) }
   const changes: { key: string; before: number; after: number }[] = []
 
   for (const k of Object.keys(OPS_SETTING_KEYS) as Array<keyof OperationalSettings>) {
@@ -132,7 +160,7 @@ export async function updateOperationalSettings(
 
   const now = new Date().toISOString()
   for (const change of changes) {
-    await db
+    await client
       .insert(systemSettings)
       .values({
         key: OPS_SETTING_KEYS[change.key as keyof OperationalSettings],
@@ -153,7 +181,109 @@ export async function updateOperationalSettings(
     entityId:   "batch",
     oldState:   Object.fromEntries(changes.map((c) => [c.key, c.before])),
     newState:   Object.fromEntries(changes.map((c) => [c.key, c.after])),
-  })
+  }, client)
+
+  return merged
+}
+
+/**
+ * Qué motor arma cada documento PDF. El catálogo de documentos y la validación
+ * viven en `lib/pdf/engines.ts`; aquí solo está la persistencia.
+ */
+export type PdfEngineSettings = Record<PdfDocumentId, PdfEngine>
+
+export async function getPdfEngineSettings(
+  client: SettingsClient = db,
+): Promise<PdfEngineSettings> {
+  const stored = await Promise.all(
+    PDF_DOCUMENT_LIST.map((spec) => readSystemSetting(spec.settingKey, client)),
+  )
+  return Object.fromEntries(
+    PDF_DOCUMENT_LIST.map((spec, i) => [
+      spec.id,
+      // Un valor corrupto o huérfano degrada al motor por defecto en silencio:
+      // la opción segura es que el documento se siga generando.
+      parsePdfEngine(spec.id, stored[i]) ?? spec.defaultEngine,
+    ]),
+  ) as PdfEngineSettings
+}
+
+/** Atajo para las rutas de PDF, que solo necesitan su propio documento. */
+export async function getPdfEngineFor(
+  doc: PdfDocumentId,
+  client: SettingsClient = db,
+): Promise<PdfEngine> {
+  const spec = PDF_DOCUMENT_LIST.find((candidate) => candidate.id === doc)
+  if (!spec) return "chromium"
+  return parsePdfEngine(doc, await readSystemSetting(spec.settingKey, client)) ?? spec.defaultEngine
+}
+
+/** Valida el payload completo antes de abrir una transacción de ajustes. */
+export function validatePdfEngineSettings(
+  input: unknown,
+): Partial<Record<PdfDocumentId, PdfEngine>> {
+  const partial = (input ?? {}) as Partial<Record<PdfDocumentId, unknown>>
+  const validated: Partial<Record<PdfDocumentId, PdfEngine>> = {}
+
+  for (const spec of PDF_DOCUMENT_LIST) {
+    const raw = partial[spec.id]
+    if (raw === undefined || raw === null) continue
+    const next = parsePdfEngine(spec.id, typeof raw === "string" ? raw : String(raw))
+    if (!next) {
+      throw new Error(`Motor de PDF no válido para ${spec.label}: ${String(raw)}`)
+    }
+    validated[spec.id] = next
+  }
+
+  return validated
+}
+
+export async function updatePdfEngineSettings(
+  input: unknown,
+  actor: AuditActor,
+  client: SettingsClient = db,
+): Promise<PdfEngineSettings> {
+  const partial = validatePdfEngineSettings(input)
+  const merged: PdfEngineSettings = { ...(await getPdfEngineSettings(client)) }
+  const changes: { id: PdfDocumentId; settingKey: string; before: PdfEngine; after: PdfEngine }[] = []
+
+  for (const spec of PDF_DOCUMENT_LIST) {
+    const raw = partial[spec.id]
+    if (raw === undefined || raw === null) continue
+    const next = raw
+    if (next !== merged[spec.id]) {
+      changes.push({ id: spec.id, settingKey: spec.settingKey, before: merged[spec.id], after: next })
+      merged[spec.id] = next
+    }
+  }
+
+  if (changes.length === 0) {
+    return merged
+  }
+
+  const now = new Date().toISOString()
+  for (const change of changes) {
+    await client
+      .insert(systemSettings)
+      .values({ key: change.settingKey, value: change.after, updatedAt: now })
+      .onConflictDoUpdate({
+        target: systemSettings.key,
+        set: { value: change.after, updatedAt: now },
+      })
+  }
+
+  // `entityType` propio y no "operational_settings": la pantalla es la misma,
+  // pero el grupo no. Así la auditoría puede responder quién cambió el motor de
+  // PDF sin leer el diff de cada parámetro operativo.
+  await recordAudit({
+    userId: actor.userId,
+    userEmail: actor.userEmail,
+    action: "update",
+    entityType: "pdf_engine_settings",
+    entityId:   "batch",
+    oldState:   Object.fromEntries(changes.map((c) => [c.id, c.before])),
+    newState:   Object.fromEntries(changes.map((c) => [c.id, c.after])),
+  }, client)
 
   return merged
 }

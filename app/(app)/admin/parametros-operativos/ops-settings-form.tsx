@@ -6,10 +6,13 @@ import { Card } from "@/components/ui/card"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { OptionSelect } from "@/components/ui/option-select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { toast } from "@/lib/toast"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import { saveOperationalSettingsAction } from "./actions"
+import { PDF_DOCUMENT_LIST, PDF_ENGINE_LABELS } from "@/lib/pdf/engines"
+import type { PdfEngineSettings } from "@/lib/services/system-settings"
 
 interface OpsSettingsFormProps {
   current: {
@@ -25,9 +28,10 @@ interface OpsSettingsFormProps {
     configuredId: string
     resolvedId: string | null
   }
+  pdfEngines: PdfEngineSettings
 }
 
-export function OpsSettingsForm({ current, defaults, office }: OpsSettingsFormProps) {
+export function OpsSettingsForm({ current, defaults, office, pdfEngines }: OpsSettingsFormProps) {
   const resuelta = office.worksites.find((w) => w.id === office.resolvedId)
   const [state, formAction] = useActionState<ActionState, FormData>(
     async (prev, formData) => {
@@ -175,6 +179,52 @@ export function OpsSettingsForm({ current, defaults, office }: OpsSettingsFormPr
             />
           </Field>
         </div>
+      </Section>
+
+      <Section
+        title="Motor de generación de PDF"
+        description="Qué motor arma cada documento. Chromium abre la vista de impresión en un navegador sin interfaz; pdfcn compone el PDF directamente en el servidor."
+      >
+        <TableRoot>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead scope="col">Documento</TableHead>
+                <TableHead scope="col">Motor</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {PDF_DOCUMENT_LIST.map((spec) => {
+                const unico = spec.engines.length === 1
+                return (
+                  <TableRow key={spec.id}>
+                    <TableCell>
+                      <label htmlFor={`pdfEngine-${spec.id}`}>{spec.label}</label>
+                    </TableCell>
+                    <TableCell>
+                      <OptionSelect
+                        id={`pdfEngine-${spec.id}`}
+                        name={`pdfEngine.${spec.id}`}
+                        defaultValue={pdfEngines[spec.id]}
+                        disabled={unico}
+                        options={spec.engines.map((engine) => ({
+                          value: engine,
+                          label: PDF_ENGINE_LABELS[engine],
+                        }))}
+                        error={!!state.fieldErrors?.[`pdfEngine.${spec.id}`]}
+                      />
+                      {unico && (
+                        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                          Solo Chromium por ahora.
+                        </p>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </TableRoot>
       </Section>
 
       <div className="flex justify-end gap-2 pt-2">

@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "registry": {
+    "utils": {
+      "url": "https://pdfcn.dev/r/takumi/utils.json",
+      "sha256": "6d6271f72524602ecf4bdf72d5c83399b0fc93946a452ed8a14f79442d539ed1"
+    },
+    "theme-professional": {
+      "url": "https://pdfcn.dev/r/takumi/theme-professional.json",
+      "sha256": "7706c8ac44dc58f74dc0d62492b3f81e57be4067c09fdea5a63ae77b7673d9c7"
+    },
+    "text": {
+      "url": "https://pdfcn.dev/r/takumi/text.json",
+      "sha256": "117e308cf66520a4165cdb076988a3091f93564606e090dc07839eed4c8f726d"
+    },
+    "heading": {
+      "url": "https://pdfcn.dev/r/takumi/heading.json",
+      "sha256": "e67bba31e5ef0d2a2c2cf3cc041d560ad6ce51eaa52bdaf39cd18322aacc4323"
+    },
+    "stack": {
+      "url": "https://pdfcn.dev/r/takumi/stack.json",
+      "sha256": "46551f1aee8a77f476d17bddf3dc45318b2e4fa483988bb724b57d7f251051a2"
+    },
+    "section": {
+      "url": "https://pdfcn.dev/r/takumi/section.json",
+      "sha256": "59f79d2a2a69b86b3449331cafcfa5eef82712445e938d4bf329f8341e0322dc"
+    },
+    "divider": {
+      "url": "https://pdfcn.dev/r/takumi/divider.json",
+      "sha256": "8d8200f3d69c62fa2de2edccd3c23d89fb67290f4dce81025c0f4b2e333c8124"
+    },
+    "key-value": {
+      "url": "https://pdfcn.dev/r/takumi/key-value.json",
+      "sha256": "8957141ccecb27ed4d6ea94c1bb8f180bbdc60b2cca9d128290afd8119afe857"
+    },
+    "table": {
+      "url": "https://pdfcn.dev/r/takumi/table.json",
+      "sha256": "be055ed10b6dac088e6f75b45842bf991b71da3e1e3c5e7d42b5c8d889eeb5ce"
+    },
+    "data-table": {
+      "url": "https://pdfcn.dev/r/takumi/data-table.json",
+      "sha256": "96fc53ada030a7428ac1fbdffa8b1c4da77007986f808a7110d2428d2d6bbb87"
+    },
+    "pdf-image": {
+      "url": "https://pdfcn.dev/r/takumi/pdf-image.json",
+      "sha256": "635e44caeb77788bd358ec7c659421ec6678a891759f66212382e11b49cd8af4"
+    },
+    "list": {
+      "url": "https://pdfcn.dev/r/takumi/list.json",
+      "sha256": "499bf6f87f67a59f7c30770d1a0afb0eb168fa3ff0d4d1ad1e799b931dbdba04"
+    },
+    "signature": {
+      "url": "https://pdfcn.dev/r/takumi/signature.json",
+      "sha256": "08708d0d863893cfa84db74717506b8bdc5ee9812594d17cba1f53a1f9a0c708"
+    }
+  },
+  "extras": {
+    "registry/types/pdf-components.ts": {
+      "url": "https://raw.githubusercontent.com/shadcn-labs/pdfcn/c692a8acef5507e59e6b35573dc6d61c66d61d9b/registry/types/pdf-components.ts",
+      "sha256": "772faf3045a91c54bdd885ee9707189150c4dc387f54307b0327f95f979d5bba"
+    },
+    "registry/types/pdf-themes.ts": {
+      "url": "https://raw.githubusercontent.com/shadcn-labs/pdfcn/c692a8acef5507e59e6b35573dc6d61c66d61d9b/registry/types/pdf-themes.ts",
+      "sha256": "13e07bc9a2480456b2e632e77844d462be3f4977e59e4e47fcb49983bceca532"
+    }
+  }
+}

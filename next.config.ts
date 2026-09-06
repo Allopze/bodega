@@ -40,7 +40,12 @@ const nextConfig: NextConfig = {
   // inexistente— y `getDocument()` falla con "Setting up fake worker failed",
   // dejando la extracción de facturas siempre en `manual`. Externo conserva la
   // ruta real dentro de node_modules (ya trazado en outputFileTracingIncludes).
-  serverExternalPackages: ["postgres", "tesseract.js", "tesseract.js-core", "pdfjs-dist"],
+  // takumi-pdf está en el mismo registro que pdfjs-dist: su entry Node resuelve
+  // el binario wasm (`takumi_pdf_wasm_bg.wasm`) con una ruta relativa al módulo
+  // en runtime. Si el bundler lo integra al chunk del route handler, ese
+  // `import.meta.url` apunta a .next/server/chunks/ y el render de la OC con
+  // pdfcn falla **sólo en producción**: en `next dev` funciona.
+  serverExternalPackages: ["postgres", "tesseract.js", "tesseract.js-core", "pdfjs-dist", "takumi-pdf"],
   images: {
     formats: ["image/avif", "image/webp"],
     deviceSizes: [360, 480, 640, 750, 828, 1080, 1200, 1920],
@@ -101,6 +106,10 @@ const nextConfig: NextConfig = {
       // conservar el wrapper y el binario resuelto para Linux/musl.
       "./node_modules/@napi-rs/canvas/**/*",
       "./node_modules/@napi-rs/canvas-*/**/*",
+      // Motor pdfcn/Takumi de la OC: el .wasm y los helpers no los alcanza el
+      // trazado porque sólo se cargan tras resolver el ajuste de motor.
+      "./node_modules/takumi-pdf/**/*",
+      "./node_modules/@takumi-rs/**/*",
     ],
   },
   outputFileTracingExcludes: {

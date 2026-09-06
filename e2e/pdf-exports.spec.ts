@@ -28,7 +28,11 @@ async function parsePdf(buf: Buffer) {
   const parser = new PDFParse({ data: buf })
   try {
     const result = await parser.getText()
-    return { pageCount: result.total, text: result.text }
+    return {
+      pageCount: result.total,
+      pages: result.pages.map((page) => page.text),
+      text: result.text,
+    }
   } finally {
     await parser.destroy()
   }
@@ -235,5 +239,97 @@ test.describe("PDF exports — content integrity", () => {
     // lo tiene, así que el comprobante no debe inventar un espacio de firma.
     expect(text).not.toContain("Evidencia histórica")
     expect(text).not.toContain("firma")
+  })
+})
+
+// ── OC con el motor pdfcn/Takumi ─────────────────────────────────────────────
+
+/**
+ * El segundo motor se pide con `?motor=pdfcn` en vez de dejar el ajuste
+ * `pdf.engine.oc` sembrado: así las aserciones de arriba siguen midiendo la
+ * rama Chromium intacta, y las de aquí miden Takumi sobre la misma OC. El
+ * override exige `admin:ops_settings`, que la cuenta de e2e tiene.
+ */
+test.describe("PDF exports — OC con motor pdfcn", () => {
+  async function fetchOcPdf(page: import("@playwright/test").Page,
+                            request: import("@playwright/test").APIRequestContext,
+                            id: string) {
+    await login(page)
+    const response = await request.get(`/compras/${id}/print/pdf?motor=pdfcn`, {
+      headers: {
+        cookie: (await page.context().cookies()).map((c) => `${c.name}=${c.value}`).join("; "),
+      },
+    })
+    return response
+  }
+
+  test("OC pdfcn: PDF válido, mismo nombre de archivo y contenido presente", async ({
+    page,
+    request,
+  }) => {
+    const response = await fetchOcPdf(page, request, OC_FIXTURE_ID)
+
+    expect(response.status()).toBe(200)
+    expect(response.headers()["content-type"]).toContain("application/pdf")
+    // El nombre no depende del motor: es el mismo que produce la rama Chromium.
+    expect(response.headers()["content-disposition"]).toContain("OC 2026-0001.pdf")
+
+    const body = await response.body()
+    expect(body.subarray(0, 5).toString("ascii")).toBe("%PDF-")
+    expect(body.toString("latin1")).toContain("Producer(takumi-pdf 0.14.2)")
+
+    const { pageCount, text } = await parsePdf(body)
+    expect(pageCount).toBeGreaterThanOrEqual(1)
+
+    expect(text).toContain("Orden de Compra")
+    expect(text).toContain("2026-0001")
+    expect(text).toContain("Autorización de emisión")
+    // Los atributos del ítem viajan como sub-notas de la celda Detalle.
+    expect(text).toContain("Talla")
+    expect(text).toContain("Azul")
+    // El monto en palabras lo calcula el mismo helper que la vista Chromium.
+    expect(text).toContain("SON:")
+  })
+
+  test("OC pdfcn multipágina: numera cada hoja y no repite el cierre", async ({
+    page,
+    request,
+  }) => {
+    const response = await fetchOcPdf(page, request, OC_MULTIPAGE_FIXTURE_ID)
+    expect(response.status()).toBe(200)
+
+    const { pageCount, pages, text } = await parsePdf(await response.body())
+
+    expect(pageCount).toBeGreaterThan(1)
+    expect(occurrences(text, "Página")).toBeGreaterThanOrEqual(pageCount)
+    expect(text).toContain(`de ${pageCount}`)
+    expect(occurrences(text, "Autorización de emisión")).toBe(1)
+
+    const itemPages = pages.filter((pageText) => pageText.includes("P. Unitario"))
+    expect(itemPages.length).toBeGreaterThan(1)
+    for (const pageText of itemPages) {
+      expect(pageText).toContain("Articulo")
+      expect(pageText).toContain("Detalle")
+      expect(pageText).toContain("Orden de Compra")
+    }
+  })
+
+  test("sin el override, la misma OC sigue saliendo por Chromium", async ({
+    page,
+    request,
+  }) => {
+    // Fija que el ajuste por defecto no cambió al añadir el motor nuevo.
+    await login(page)
+    const response = await request.get(`/compras/${OC_FIXTURE_ID}/print/pdf`, {
+      headers: {
+        cookie: (await page.context().cookies()).map((c) => `${c.name}=${c.value}`).join("; "),
+      },
+    })
+
+    expect(response.status()).toBe(200)
+    const body = await response.body()
+    const { text } = await parsePdf(body)
+    expect(text).toContain("ORDEN DE COMPRA")
+    expect(body.toString("latin1")).not.toContain("Producer(takumi-pdf 0.14.2)")
   })
 })

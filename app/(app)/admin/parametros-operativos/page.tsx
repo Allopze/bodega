@@ -4,6 +4,7 @@ import { requirePermission } from "@/lib/auth/can"
 import {
   DEFAULT_OPS_SETTINGS,
   getOperationalSettings,
+  getPdfEngineSettings,
 } from "@/lib/services/system-settings"
 import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -19,23 +20,24 @@ export default async function OpsSettingsPage() {
     redirect("/forbidden")
   }
 
-  const [current, office] = await Promise.all([
+  const [current, office, pdfEngines] = await Promise.all([
     getOperationalSettings(),
     officeWorksiteOptions(),
+    getPdfEngineSettings(),
   ])
 
   return (
     <PageContainer width="form">
       <PageHeader
         title="Parámetros operativos"
-        description="Ajustes avanzados que gobiernan la bodega de origen, exportaciones, retención de notificaciones y límites de adjuntos."
+        description="Ajustes avanzados que gobiernan la bodega de origen, exportaciones, retención de notificaciones, límites de adjuntos y el motor de generación de PDF."
         breadcrumb={[
           { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
           { label: "Parámetros operativos" },
         ]}
       />
-      <OpsSettingsForm current={current} defaults={DEFAULT_OPS_SETTINGS} office={office} />
+      <OpsSettingsForm current={current} defaults={DEFAULT_OPS_SETTINGS} office={office} pdfEngines={pdfEngines} />
     </PageContainer>
   )
 }

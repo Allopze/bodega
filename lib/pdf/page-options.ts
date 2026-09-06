@@ -44,3 +44,29 @@ export function a4PdfOptions(margin: PdfMargin = A4_MARGIN) {
     margin,
   }
 }
+
+/**
+ * Los márgenes de arriba están en milímetros porque el `@page` del CSS los
+ * quiere así. Takumi no parsea `@page`: recibe la caja por opción y **en px CSS
+ * a 96 dpi**. Esta conversión existe para que los dos motores deriven de
+ * `A4_MARGIN` y no puedan divergir en la caja de página.
+ */
+const PX_PER_MM = 96 / 25.4
+
+function mmToPx(value: string): number {
+  const match = value.trim().match(/^(-?\d+(?:\.\d+)?)\s*mm$/)
+  if (!match) throw new Error(`Margen no expresado en mm: ${value}`)
+  return Number(match[1]) * PX_PER_MM
+}
+
+export type PdfMarginPx = { top: number; right: number; bottom: number; left: number }
+
+/** Convierte una caja en mm a px CSS para `takumi-pdf`. */
+export function parseMmMargin(margin: PdfMargin = A4_MARGIN): PdfMarginPx {
+  return {
+    top:    mmToPx(margin.top),
+    right:  mmToPx(margin.right),
+    bottom: mmToPx(margin.bottom),
+    left:   mmToPx(margin.left),
+  }
+}

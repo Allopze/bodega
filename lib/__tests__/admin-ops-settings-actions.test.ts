@@ -8,6 +8,13 @@ const mockRequirePermission = vi.hoisted(() => vi.fn())
 const mockRecordAudit = vi.hoisted(() => vi.fn())
 const mockGetOrganicSettings = vi.hoisted(() => vi.fn())
 const mockUpdateOpsSettings = vi.hoisted(() => vi.fn())
+const mockUpdatePdfEngines = vi.hoisted(() => vi.fn())
+const mockValidatePdfEngines = vi.hoisted(() => vi.fn())
+const mockTransaction = vi.hoisted(() => vi.fn())
+
+vi.mock("@/db", () => ({
+  db: { transaction: mockTransaction },
+}))
 
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: mockRequirePermission,
@@ -18,6 +25,8 @@ vi.mock("@/lib/audit", () => ({
 vi.mock("@/lib/services/system-settings", () => ({
   getOperationalSettings: mockGetOrganicSettings,
   updateOperationalSettings: mockUpdateOpsSettings,
+  updatePdfEngineSettings: mockUpdatePdfEngines,
+  validatePdfEngineSettings: mockValidatePdfEngines,
 }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
@@ -25,6 +34,12 @@ import { saveOperationalSettingsAction } from "@/app/(app)/admin/parametros-oper
 import type { ActionState } from "@/lib/validation/masters"
 
 const prevState: ActionState = { ok: false, message: "" }
+
+function resetActionMocks() {
+  vi.resetAllMocks()
+  mockTransaction.mockImplementation(async (callback: (tx: unknown) => unknown) => callback({ id: "tx-1" }))
+  mockValidatePdfEngines.mockImplementation(() => ({}))
+}
 
 function makeSession() {
   return {
@@ -58,13 +73,14 @@ function makeFormData(fields: Record<string, string> = {}): FormData {
 }
 
 describe("saveOperationalSettingsAction", () => {
-  beforeEach(() => vi.resetAllMocks())
+  beforeEach(resetActionMocks)
 
   it("requires admin:ops_settings", async () => {
     mockRequirePermission.mockRejectedValueOnce(new Error("No permission"))
     const res = await saveOperationalSettingsAction(prevState, makeFormData())
     expect(res.ok).toBe(false)
     expect(res.message).toContain("Sin permisos")
+    expect(mockTransaction).not.toHaveBeenCalled()
   })
 
   it("rejects values out of range", async () => {
@@ -107,6 +123,7 @@ describe("saveOperationalSettingsAction", () => {
         notificationRetentionDays: "60",
       }),
       expect.objectContaining({ userId: "user-1" }),
+      expect.anything(),
     )
   })
 })
@@ -114,7 +131,7 @@ describe("saveOperationalSettingsAction", () => {
 import { getOperationalSettings } from "@/lib/services/system-settings"
 
 describe("getOperationalSettings (defaults)", () => {
-  beforeEach(() => vi.resetAllMocks())
+  beforeEach(resetActionMocks)
 
   it("returns defaults when nothing is stored", async () => {
     mockGetOrganicSettings.mockResolvedValueOnce({
@@ -127,5 +144,64 @@ describe("getOperationalSettings (defaults)", () => {
     const settings = await getOperationalSettings()
     expect(settings.exportMaxRows).toBe(10_000)
     expect(settings.notificationRetentionDays).toBe(90)
+  })
+
+  it("guarda el motor de PDF elegido para cada documento", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    const res = await saveOperationalSettingsAction(
+      prevState,
+      makeFormData({ "pdfEngine.oc": "chromium", "pdfEngine.sst": "chromium" }),
+    )
+
+    expect(res.ok).toBe(true)
+    expect(mockUpdatePdfEngines).toHaveBeenCalledWith(
+      { oc: "chromium", sst: "chromium" },
+      expect.objectContaining({ userId: "user-1", userEmail: "admin@test.cl" }),
+      expect.anything(),
+    )
+  })
+
+  it("omite los documentos que el formulario no envió", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    await saveOperationalSettingsAction(prevState, makeFormData())
+
+    expect(mockUpdatePdfEngines).toHaveBeenCalledWith({}, expect.anything(), expect.anything())
+  })
+
+  it("propaga como error de formulario un motor rechazado por el servicio", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockValidatePdfEngines.mockImplementationOnce(() => {
+      throw new Error(
+        "Motor de PDF no válido para Orden de compra: basura",
+      )
+    })
+    mockUpdatePdfEngines.mockRejectedValueOnce(
+      new Error("Motor de PDF no válido para Orden de compra: basura"),
+    )
+
+    const res = await saveOperationalSettingsAction(
+      prevState,
+      makeFormData({ "pdfEngine.oc": "basura" }),
+    )
+
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("Motor de PDF no válido")
+    expect(mockTransaction).not.toHaveBeenCalled()
+    expect(mockUpdateOpsSettings).not.toHaveBeenCalled()
+    expect(mockUpdatePdfEngines).not.toHaveBeenCalled()
+  })
+
+  it("persiste todos los grupos dentro de una sola transacción", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+
+    await saveOperationalSettingsAction(prevState, makeFormData({ "pdfEngine.oc": "chromium" }))
+
+    expect(mockTransaction).toHaveBeenCalledTimes(1)
+  })
+
+  it("no toca el motor de PDF cuando falta el permiso", async () => {
+    mockRequirePermission.mockRejectedValueOnce(new Error("No permission"))
+    await saveOperationalSettingsAction(prevState, makeFormData({ "pdfEngine.oc": "chromium" }))
+    expect(mockUpdatePdfEngines).not.toHaveBeenCalled()
   })
 })
