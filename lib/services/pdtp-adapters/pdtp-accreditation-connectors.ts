@@ -237,6 +237,7 @@ export async function onEppDeliveryCompleted(input: {
   deliveredAt: string
   workerCount: number
   activityNumbers: number[]
+  evidenceRef?: string
 }): Promise<void> {
   if (input.activityNumbers.length === 0) return
 
@@ -247,7 +248,7 @@ export async function onEppDeliveryCompleted(input: {
     activityNumbers: input.activityNumbers,
     occurredAt: input.deliveredAt,
     executedQuantity: Math.max(1, input.workerCount),
-    evidenceRef: `Entrega EPP: ${input.deliveryId}`,
+    evidenceRef: input.evidenceRef ?? `Entrega EPP: ${input.deliveryId}`,
   })
 }
 

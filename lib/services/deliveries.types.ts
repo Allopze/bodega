@@ -32,21 +32,3 @@ export interface RegisterWorkerStockDeliveryInput {
   notes?: string | null
   proofAttachment?: DeliveryAttachmentInput | null
 }
-
-export interface RegisterWorkerEppDeliveryInput {
-  worksiteId: string
-  workerId: string
-  requestItemId: string
-  quantity: number
-  deliveredBy: string
-  userEmail?: string
-  receiverName?: string | null
-  notes?: string | null
-  proofAttachment?: DeliveryAttachmentInput | null
-  // Return of old/discarded EPP (opcional)
-  returnProductId?: string | null
-  returnProductNameFree?: string | null
-  returnQuantity?: number | null
-  returnReason?: string | null
-  returnNotes?: string | null
-}

@@ -16,12 +16,16 @@ import { nextCodeTx } from "@/lib/code-sequences"
 import { nanoid } from "@/lib/id"
 import { getTraceableDeliveryBalance } from "@/lib/services/delivery-eligibility"
 import { deliverItemTx } from "@/lib/services/item-state"
+import { onEppDeliveryCompleted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { applyMovementTx } from "@/lib/services/stock"
 import { codeYear, todayInChile } from "@/lib/utils"
 import type {
   RegisterWorkerStockDeliveryInput,
   WorkerStockDeliveryItemInput,
 } from "./deliveries.types"
+
+/** N°62: "Registrar la entrega de los EPP y dejar documentada su entrega". */
+const PDTP_EPP_DELIVERY_ACTIVITY_NUMBER = 62
 
 interface TraceableItemState {
   requestItemId: string
@@ -159,6 +163,9 @@ export async function registerWorkerStockDelivery(
     : now
   const year = codeYear()
 
+  let deliveredEpp = false
+  let proofStoragePath: string | undefined
+
   await db.transaction(async (tx) => {
     const [sourceWorksite, worker] = await Promise.all([
       tx.query.worksites.findFirst({ where: eq(worksites.id, input.sourceWorksiteId) }),
@@ -208,6 +215,7 @@ export async function registerWorkerStockDelivery(
       if (product.isEpp && !Number.isInteger(item.quantity)) {
         throw new Error("Los EPP se entregan en cantidades enteras")
       }
+      if (product.isEpp) deliveredEpp = true
 
       const traceableState = await getTraceableItemState(
         tx,
@@ -257,17 +265,19 @@ export async function registerWorkerStockDelivery(
     }
 
     if (input.proofAttachment) {
+      const filePath = input.proofAttachment.filePath
       await tx.insert(attachments).values({
         id: nanoid(),
         entityType: "delivery",
         entityId: deliveryId,
         fileName: input.proofAttachment.fileName,
-        filePath: input.proofAttachment.filePath,
+        filePath,
         fileSize: input.proofAttachment.fileSize,
         mimeType: input.proofAttachment.mimeType,
         uploadedBy: input.deliveredBy,
         uploadedAt: now,
       })
+      proofStoragePath = filePath
     }
 
     await recordAudit({
@@ -287,6 +297,28 @@ export async function registerWorkerStockDelivery(
       },
     }, tx)
   })
+
+  // N°62 del PDTP. Va fuera de la transacción y no propaga: la entrega ya está
+  // registrada y `recordPdtpFulfillmentEvent` deja el intento en el libro
+  // durable para que el reconciliador lo retome.
+  //
+  // El conector vivía en `deliveries-worker-epp.ts`, un servicio sin llamador,
+  // así que la actividad nunca acreditó. `worksiteId` es la faena de origen: el
+  // servicio ya exige que el trabajador pertenezca a ella, así que es también
+  // la faena de la persona equipada.
+  if (deliveredEpp) {
+    await onEppDeliveryCompleted({
+      deliveryId,
+      worksiteId: input.sourceWorksiteId,
+      deliveredAt,
+      workerCount: 1,
+      activityNumbers: [PDTP_EPP_DELIVERY_ACTIVITY_NUMBER],
+      // Sin un artefacto real, el motor marca la ejecución
+      // `evidenceStatus: "not_required"` y la N°62 —"dejar documentada su
+      // entrega"— quedaría acreditada sin documento.
+      evidenceRef: proofStoragePath ?? undefined,
+    })
+  }
 
   return deliveryId
 }

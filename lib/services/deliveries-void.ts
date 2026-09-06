@@ -10,6 +10,7 @@ import {
 } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { revertDeliveredItemTx } from "@/lib/services/item-state"
+import { recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
 import { applyMovementTx } from "@/lib/services/stock"
 
 /**
@@ -46,6 +47,8 @@ export async function voidWorkerStockDelivery(
     throw new Error("La anulación requiere un motivo de al menos 10 caracteres")
   }
 
+  let sourceWorksiteId: string | null = null
+
   await db.transaction(async (tx) => {
     const [delivery] = await tx
       .select()
@@ -61,7 +64,7 @@ export async function voidWorkerStockDelivery(
 
     // El stock vuelve a donde salió. Sin bodega de origen conocida no hay a
     // dónde reponer, y adivinarla inventaría existencias en una faena.
-    const sourceWorksiteId = delivery.sourceWorksiteId
+    sourceWorksiteId = delivery.sourceWorksiteId
     if (!sourceWorksiteId) {
       throw new Error("La entrega no registra bodega de origen: no se puede reponer el stock")
     }
@@ -175,5 +178,16 @@ export async function voidWorkerStockDelivery(
       newState: { voidedAt: now, voidReason: reason, restoredItems: auditItems },
       reason,
     }, tx)
+  })
+
+  // Revierte la N°62. Mismo patrón que `cancelTrainingSession`: post-commit,
+  // sin propagar, con el motivo de la anulación como evidencia del evento para
+  // que la revocación se audite sin volver a la guía.
+  await recordPdtpFulfillmentRevocation({
+    sourceType: "epp",
+    sourceId: input.deliveryId,
+    worksiteId: sourceWorksiteId!,
+    revokedBy: input.voidedBy,
+    reason: `Entrega anulada: ${reason}`,
   })
 }

@@ -49,7 +49,7 @@ import { submitItemTx, approveItem } from "@/lib/services/item-state"
 import { createOrder, createOrdersBySupplier, issueAndSendOrder } from "@/lib/services/purchasing"
 import { registerReceipt } from "@/lib/services/receiving"
 import { confirmDispatchGuideReceipt, dispatchDispatchGuide, getDispatchGuideDetail } from "@/lib/services/dispatch-guides"
-import { registerWorkerEppDelivery } from "@/lib/services/deliveries"
+import { registerWorkerStockDelivery } from "@/lib/services/deliveries"
 
 describe("Full procurement workflow integration", () => {
   afterAll(async () => {
@@ -334,13 +334,12 @@ describe("Full procurement workflow integration", () => {
     expect(stock?.quantity).toBe(10) // 10 cascos in worksite stock
 
     // 11. Deliver received EPP to a worker
-    const deliveryId = await registerWorkerEppDelivery({
-      worksiteId,
+    const deliveryId = await registerWorkerStockDelivery({
+      sourceWorksiteId: worksiteId,
       workerId,
-      requestItemId,
-      quantity: 10,
       deliveredBy: userId,
       userEmail: "juan@chome.cl",
+      items: [{ productId, quantity: 10, requestItemId }],
     })
 
     const delivery = await inMemoryDb.query.deliveries.findFirst({
@@ -371,200 +370,6 @@ describe("Full procurement workflow integration", () => {
     })
     expect(deliveredReq?.items[0]?.status).toBe("delivered")
     expect(deliveredReq?.status).toBe("closed")
-  })
-
-  it("registers a worker delivery with old EPP return and creates egreso_desecho movement", async () => {
-    const now = new Date().toISOString()
-
-    // Seed minimal data
-    const userId = "u-return-test"
-    await inMemoryDb.insert(schema.users).values({
-      id: userId, name: "Return Tester", email: "return@chome.cl",
-      hashedPassword: "x", isActive: true, createdAt: now, updatedAt: now,
-    })
-
-    const worksiteId = "ws-return"
-    await inMemoryDb.insert(schema.worksites).values({
-      id: worksiteId, name: "Faena Return", code: "F-RETURN",
-      isActive: true, createdAt: now, updatedAt: now,
-    })
-
-    const categoryId = "cat-return"
-    await inMemoryDb.insert(schema.productCategories).values({
-      id: categoryId, name: "EPP Return", slug: "epp-return", isEpp: true, sortOrder: 1,
-    })
-
-    const productId = "prod-new"
-    await inMemoryDb.insert(schema.products).values({
-      id: productId, sku: "NEW-001", name: "Casco Nuevo",
-      categoryId, unitOfMeasure: "unidad", isEpp: true, isActive: true,
-      createdAt: now, updatedAt: now,
-    })
-
-    const returnProductId = "prod-old"
-    await inMemoryDb.insert(schema.products).values({
-      id: returnProductId, sku: "OLD-001", name: "Casco Antiguo",
-      categoryId, unitOfMeasure: "unidad", isEpp: true, isActive: true,
-      createdAt: now, updatedAt: now,
-    })
-
-    const workerId = "worker-return"
-    await inMemoryDb.insert(schema.workers).values({
-      id: workerId, rut: "22.222.222-2", firstName: "Maria", lastName: "Lopez",
-      position: "Operadora", worksiteId, isActive: true, createdAt: now,
-    })
-
-    // Seed stock for the new product
-    await inMemoryDb.insert(schema.worksiteStock).values({
-      id: "stock-return", worksiteId, productId, quantity: 10, minStock: 0,
-      lastMovementAt: now, updatedAt: now,
-    })
-    // Seed a request item in "received" status
-    const requestId = "req-return"
-    await inMemoryDb.insert(schema.purchaseRequests).values({
-      id: requestId, code: "SOL-RETURN-001", worksiteId, requesterId: userId,
-      urgency: "normal", status: "closed", createdAt: now, updatedAt: now,
-    })
-
-    const requestItemId = "item-return"
-    await inMemoryDb.insert(schema.purchaseRequestItems).values({
-      id: requestItemId, requestId, productId, quantity: 5,
-      unitOfMeasure: "unidad", status: "received", createdAt: now, updatedAt: now,
-    })
-
-    // LOG-5: la entrega ahora topa contra lo realmente recibido en faena, no
-    // solo contra la cantidad solicitada — necesita una línea de OC recibida.
-    const supplierId = "sup-return"
-    await inMemoryDb.insert(schema.suppliers).values({
-      id: supplierId, name: "Proveedor Return", createdAt: now, updatedAt: now,
-    })
-    const orderId = "oc-return"
-    await inMemoryDb.insert(schema.purchaseOrders).values({
-      id: orderId, code: "OC-RETURN-001", worksiteId, supplierId, createdBy: userId,
-      status: "received", createdAt: now, updatedAt: now,
-    })
-    await inMemoryDb.insert(schema.purchaseOrderItems).values({
-      id: "oci-return", purchaseOrderId: orderId, requestItemId, productId,
-      quantity: 5, unitOfMeasure: "unidad", quantityReceived: 5, status: "issued",
-    })
-
-    // Register delivery with return
-    const deliveryId = await registerWorkerEppDelivery({
-      worksiteId, workerId, requestItemId, quantity: 2,
-      deliveredBy: userId, userEmail: "return@chome.cl",
-      returnProductId, returnQuantity: 1, returnReason: "desgastado",
-      returnNotes: "Casco con golpes",
-    })
-
-    // Verify delivery item has return fields
-    const delivery = await inMemoryDb.query.deliveries.findFirst({
-      where: eq(schema.deliveries.id, deliveryId),
-      with: { items: true },
-    })
-    expect(delivery).toBeDefined()
-    const item = delivery!.items[0]!
-    expect(item.returnQuantity).toBe(1)
-    expect(item.returnProductId).toBe(returnProductId)
-    expect(item.returnReason).toBe("desgastado")
-    expect(item.returnNotes).toBe("Casco con golpes")
-
-    // Verify worker-EPP retirement was recorded without deducting warehouse stock.
-    const movements = await inMemoryDb
-      .select()
-      .from(schema.inventoryMovements)
-      .where(eq(schema.inventoryMovements.type, "retiro_epp_trabajador"))
-    expect(movements.length).toBeGreaterThanOrEqual(1)
-    const retireMovement = movements.find((m: typeof schema.inventoryMovements.$inferSelect) => m.referenceId === deliveryId)
-    expect(retireMovement).toBeDefined()
-    expect(retireMovement!.productId).toBe(returnProductId)
-    expect(retireMovement!.quantity).toBe(0) // record-only: prod-old had no stock to deduct
-
-    // Verify stock was NOT affected by the return (prod-new stock unchanged)
-    const stock = await inMemoryDb.query.worksiteStock.findFirst({
-      where: eq(schema.worksiteStock.worksiteId, worksiteId),
-    })
-    expect(stock!.quantity).toBe(8) // 10 - 2 delivered, return didn't touch prod-new stock
-  })
-
-  it("rejects delivering more than what was actually received in faena for this item, even with extra stock from another origin (LOG-5)", async () => {
-    const now = new Date().toISOString()
-    const userId = "u-overdeliver"
-    await inMemoryDb.insert(schema.users).values({
-      id: userId, name: "Overdeliver Tester", email: "overdeliver@chome.cl",
-      hashedPassword: "x", isActive: true, createdAt: now, updatedAt: now,
-    })
-
-    const worksiteId = "ws-overdeliver"
-    await inMemoryDb.insert(schema.worksites).values({
-      id: worksiteId, name: "Faena Overdeliver", code: "F-OVERDELIVER",
-      isActive: true, createdAt: now, updatedAt: now,
-    })
-
-    const categoryId = "cat-overdeliver"
-    await inMemoryDb.insert(schema.productCategories).values({
-      id: categoryId, name: "EPP Overdeliver", slug: "epp-overdeliver", isEpp: true, sortOrder: 1,
-    })
-    const productId = "prod-overdeliver"
-    await inMemoryDb.insert(schema.products).values({
-      id: productId, sku: "OVR-001", name: "Casco Overdeliver",
-      categoryId, unitOfMeasure: "unidad", isEpp: true, isActive: true,
-      createdAt: now, updatedAt: now,
-    })
-
-    const workerId = "worker-overdeliver"
-    await inMemoryDb.insert(schema.workers).values({
-      id: workerId, rut: "23.333.333-3", firstName: "Diego", lastName: "Soto",
-      position: "Operador", worksiteId, isActive: true, createdAt: now,
-    })
-
-    // El stock agregado de la faena tiene 10 unidades (por otro ingreso), pero
-    // el ítem trazable en cuestión sólo recibió 4 de las 10 que se pidieron.
-    await inMemoryDb.insert(schema.worksiteStock).values({
-      id: "stock-overdeliver", worksiteId, productId, quantity: 10, minStock: 0,
-      lastMovementAt: now, updatedAt: now,
-    })
-
-    const requestId = "req-overdeliver"
-    await inMemoryDb.insert(schema.purchaseRequests).values({
-      id: requestId, code: "SOL-OVERDELIVER-001", worksiteId, requesterId: userId,
-      urgency: "normal", status: "in_purchasing", createdAt: now, updatedAt: now,
-    })
-    const requestItemId = "item-overdeliver"
-    await inMemoryDb.insert(schema.purchaseRequestItems).values({
-      id: requestItemId, requestId, productId, quantity: 10,
-      unitOfMeasure: "unidad", status: "partially_received", createdAt: now, updatedAt: now,
-    })
-
-    const supplierId = "sup-overdeliver"
-    await inMemoryDb.insert(schema.suppliers).values({
-      id: supplierId, name: "Proveedor Overdeliver", createdAt: now, updatedAt: now,
-    })
-    const orderId = "oc-overdeliver"
-    await inMemoryDb.insert(schema.purchaseOrders).values({
-      id: orderId, code: "OC-OVERDELIVER-001", worksiteId, supplierId, createdBy: userId,
-      status: "partially_received", createdAt: now, updatedAt: now,
-    })
-    await inMemoryDb.insert(schema.purchaseOrderItems).values({
-      id: "oci-overdeliver", purchaseOrderId: orderId, requestItemId, productId,
-      quantity: 10, unitOfMeasure: "unidad", quantityReceived: 4, status: "issued",
-    })
-
-    // Pedir 10 (la cantidad solicitada, y hay 10 en stock) debe rechazarse:
-    // sólo 4 llegaron a faena para este ítem trazable.
-    await expect(registerWorkerEppDelivery({
-      worksiteId, workerId, requestItemId, quantity: 10, deliveredBy: userId,
-    })).rejects.toThrow("La cantidad excede el saldo pendiente de entrega (4)")
-
-    // 4, lo que sí llegó, se entrega sin problema.
-    const deliveryId = await registerWorkerEppDelivery({
-      worksiteId, workerId, requestItemId, quantity: 4, deliveredBy: userId,
-    })
-    expect(deliveryId).toBeTruthy()
-
-    // Una vez entregado todo lo recibido, un quinto no tiene saldo.
-    await expect(registerWorkerEppDelivery({
-      worksiteId, workerId, requestItemId, quantity: 1, deliveredBy: userId,
-    })).rejects.toThrow("No hay saldo recibido en faena pendiente de entregar")
   })
 
   it("creates separate purchase orders for items assigned to different suppliers", async () => {

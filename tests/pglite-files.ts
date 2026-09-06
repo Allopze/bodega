@@ -88,6 +88,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/pdtp-worker-lifecycle-obligation.test.ts",
   "lib/__tests__/pdtp-worker-onboarding-accreditation.test.ts",
   "lib/__tests__/pdtp-worker-sensitivity-accreditation.test.ts",
+  "lib/__tests__/pdtp-epp-delivery-accreditation.test.ts",
   "lib/__tests__/worksite-lifecycle.test.ts",
   "lib/__tests__/prevention-emergency-list.test.ts",
   "lib/__tests__/emergency-resource-inventory-pglite.test.ts",
