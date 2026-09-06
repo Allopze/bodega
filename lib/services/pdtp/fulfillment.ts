@@ -32,6 +32,7 @@ import { and, eq, inArray } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import {
   pdtpActivities,
+  pdtpActivityWorksiteExclusions,
   pdtpFulfillmentEvents,
   pdtpResponsibleCatalog,
   permissions,
@@ -553,12 +554,38 @@ async function programWorksiteIds(client: QueryClient, programId: string): Promi
 }
 
 /**
+ * Faenas donde cada actividad NO aplica. La compuerta las tiene que descontar
+ * del denominador: exigirle plan de emergencia a una faena que declaró no
+ * hacer simulacros es pedir configuración para trabajo que nadie prometió.
+ */
+async function excludedWorksitesByActivity(
+  client: QueryClient,
+  activityIds: string[],
+): Promise<Map<string, Set<string>>> {
+  if (activityIds.length === 0) return new Map()
+  const rows = await client.select({
+    activityId: pdtpActivityWorksiteExclusions.activityId,
+    worksiteId: pdtpActivityWorksiteExclusions.worksiteId,
+  }).from(pdtpActivityWorksiteExclusions)
+    .where(inArray(pdtpActivityWorksiteExclusions.activityId, activityIds))
+  const byActivity = new Map<string, Set<string>>()
+  for (const row of rows) {
+    const set = byActivity.get(row.activityId) ?? new Set<string>()
+    set.add(row.worksiteId)
+    byActivity.set(row.activityId, set)
+  }
+  return byActivity
+}
+
+/**
  * Por qué una actividad de enganche o compuesta no tiene destino declarado, si
  * es que no lo tiene.
  *
  * Un número respaldado sólo por una tabla **por faena** está cableado si y sólo
- * si **todas** las faenas del programa lo declaran: prometer simulacros en siete
- * faenas y tener el plan en una es tener seis faenas sin dónde cumplir.
+ * si **todas** las faenas del programa donde la actividad aplica lo declaran:
+ * prometer simulacros en siete faenas y tener el plan en una es tener seis
+ * faenas sin dónde cumplir. Las faenas que la actividad excluye no son
+ * denominador: nadie prometió trabajo ahí.
  */
 function wiringIssueFor(
   activity: { n: number; activity: string },
@@ -567,19 +594,24 @@ function wiringIssueFor(
     declaredPerWorksite: Map<number, Set<string>>
     worksiteIds: string[]
     worksiteNameById: Map<string, string>
+    excludedWorksiteIds: Set<string>
   },
 ): PdtpFulfillmentCoverageIssue | null {
   if (STRUCTURALLY_WIRED_ACTIVITY_NUMBERS.has(activity.n)) return null
   if (ctx.declaredGlobally.has(activity.n)) return null
 
+  // Las faenas donde la actividad no aplica no son denominador.
+  const applicableWorksiteIds = ctx.worksiteIds.filter((id) => !ctx.excludedWorksiteIds.has(id))
+  if (applicableWorksiteIds.length === 0) return null
+
   const declaringWorksites = ctx.declaredPerWorksite.get(activity.n)
   if (declaringWorksites) {
-    const missing = ctx.worksiteIds.filter((id) => !declaringWorksites.has(id))
+    const missing = applicableWorksiteIds.filter((id) => !declaringWorksites.has(id))
     if (missing.length === 0) return null
     const names = missing.map((id) => ctx.worksiteNameById.get(id) ?? id)
     return {
       n: activity.n, activity: activity.activity, status: "config_required",
-      reason: `Su número no está declarado en ${missing.length} de las ${ctx.worksiteIds.length} faenas del programa: ${names.join(", ")}.`,
+      reason: `Su número no está declarado en ${missing.length} de las ${applicableWorksiteIds.length} faenas donde aplica: ${names.join(", ")}.`,
     }
   }
 
@@ -612,6 +644,7 @@ export async function assertPdtpFulfillmentCoverage(programId: string, client: Q
   const responsibleRows = await client.select().from(pdtpResponsibleCatalog)
   const roleBySlug = new Map(responsibleRows.map((row) => [row.slug, row.roleName ?? row.operatedByRoleName]))
   const permissionsByRole = await permissionsByRoleName(client)
+  const excludedByActivity = await excludedWorksitesByActivity(client, activities.map((a) => a.id))
 
   const issues: PdtpFulfillmentCoverageIssue[] = []
   for (const activity of activities) {
@@ -657,6 +690,7 @@ export async function assertPdtpFulfillmentCoverage(programId: string, client: Q
     if (activity.mechanism === "enganche" || activity.mechanism === "compuesta") {
       const issue = wiringIssueFor(activity, {
         declaredGlobally, declaredPerWorksite, worksiteIds, worksiteNameById,
+        excludedWorksiteIds: excludedByActivity.get(activity.id) ?? new Set<string>(),
       })
       if (issue) {
         issues.push(issue)

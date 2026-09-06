@@ -340,6 +340,37 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
     expect((await assertPdtpFulfillmentCoverage(PROGRAM_ID)).filter((i) => i.status === "config_required")).toEqual([])
   })
 
+  it("una actividad excluida de una faena no exige configuración en esa faena", async () => {
+    // Misma N°84 que arriba, pero con la faena secundaria excluida: ya no
+    // cuenta en el denominador, así que un plan sólo en la faena principal
+    // debería bastar.
+    await inMemoryDb.insert(schema.worksites).values({ id: "ws-fulfill-2", name: "Faena Sin Plan", code: "FSP", isActive: true })
+    await seedProgram("draft")
+    const activityId = `${PROGRAM_ID}-a-084`
+    await seedActivity({ id: activityId, n: 84, mechanism: "enganche", activity: "Simulacros", evidenceRequirement: null })
+    const now = new Date().toISOString()
+
+    // Sólo la faena principal declara el número; la segunda no tiene plan.
+    await inMemoryDb.insert(schema.preventionEmergencyPlans).values({
+      id: "plan-excl-1", worksiteId: WS_ID, code: "PE-01", title: "Plan de emergencia",
+      status: "draft", version: 1, pdtpActivityNumbers: [84],
+      createdByUserId: USER_ID, createdAt: now, updatedAt: now,
+    })
+
+    const antes = (await assertPdtpFulfillmentCoverage(PROGRAM_ID))
+      .filter((i) => i.n === 84 && i.status === "config_required")
+    expect(antes).toHaveLength(1)
+
+    await inMemoryDb.insert(schema.pdtpActivityWorksiteExclusions).values({
+      id: "excl-84-ws2", activityId, worksiteId: "ws-fulfill-2",
+      reason: "Oficina sin operación de terreno", createdByUserId: USER_ID, createdAt: now,
+    })
+
+    const despues = (await assertPdtpFulfillmentCoverage(PROGRAM_ID))
+      .filter((i) => i.n === 84 && i.status === "config_required")
+    expect(despues).toEqual([])
+  })
+
   it("una compuesta sin destino declarado ya no pasa gratis", async () => {
     // La verificación de cableado corría sólo para `enganche`. La exención de
     // `compuesta` estaba razonada para el chequeo de PERMISO —nadie la ejecuta—
