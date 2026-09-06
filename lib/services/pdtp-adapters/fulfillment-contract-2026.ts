@@ -94,8 +94,19 @@ const sinDestino = (reason: string): EngancheDestination => ({
 export const PDTP_2026_ENGANCHE_DESTINATIONS: Readonly<Record<number, EngancheDestination>> = {
   // ── Gobernanza del propio programa ──────────────────────────────────────
   1: sinDestino("Aprobar el programa es un acto del propio PDTP, con su flujo de firmas."),
-  9: sinDestino("La revisión por la dirección la cierra el CPHS; su acta no tiene permiso de destino propio."),
   11: sinDestino("Constituir el comité y designar al delegado son actos de gobernanza del CPHS."),
+
+  /* La cierra `closeManagementReview` en CPHS, que exige
+   * `prevention:governance:review`. Estuvo declarada `sinDestino` —"gobernanza,
+   * sin permiso propio"— y esa exención hacía dos cosas malas: mandaba a su
+   * responsable a la planilla del PDTP en vez de a la reunión, y eximía a la
+   * actividad de la verificación de permiso que sí le correspondía. Ninguno de
+   * sus tres responsables tenía el permiso y la compuerta no lo reportaba. */
+  9: {
+    module: "cphs",
+    permission: "prevention:governance:review",
+    href: (worksiteId) => `/prevencion/cphs?faena=${worksiteId}`,
+  },
 
   // ── Indicadores ─────────────────────────────────────────────────────────
   7: {

@@ -85,4 +85,11 @@ describe("contrato de cumplimiento de las actividades de enganche", () => {
     expect(destino?.href("ws-1")).toContain("ws-1")
     expect(destino?.href("ws-1")).not.toContain("/prevencion/pdtp/")
   })
+
+  it("la N°9 se cumple en CPHS y no en la planilla del programa", () => {
+    const destino = engancheDestinationFor(9)
+    expect(destino?.module).toBe("cphs")
+    expect(destino?.permission).toBe("prevention:governance:review")
+    expect(destino?.href("ws-1")).toBe("/prevencion/cphs?faena=ws-1")
+  })
 })

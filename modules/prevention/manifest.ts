@@ -1108,6 +1108,11 @@ export const preventionModule = {
     { roleSlug: "prevencionista_faena", permission: "prevention:cphs:manage" },
     { roleSlug: "prevencionista",       permission: "prevention:cphs:view" },
     { roleSlug: "prevencionista",       permission: "prevention:cphs:manage" },
+    // La N°9 del PDTP —revisión por la dirección— la cierra `closeManagementReview`
+    // y su responsable declarado incluye a la Jefa del Depto. de Prevención
+    // (decisión E05, 2026-09-06): sin este permiso la actividad sólo podía
+    // marcarse a mano en la planilla del programa.
+    { roleSlug: "prevencionista",       permission: "prevention:governance:review" },
     { roleSlug: "jefe_terreno",         permission: "prevention:cphs:view" },
     { roleSlug: "admin_contrato",       permission: "prevention:cphs:view" },
     { roleSlug: "jefa_chome",           permission: "prevention:cphs:view" },

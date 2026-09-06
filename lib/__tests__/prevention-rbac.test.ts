@@ -473,8 +473,11 @@ describe("prevention module RBAC", () => {
 
     // El comité gestiona su propio órgano.
     expect(rolesFor("prevention:cphs:manage")).toContain("cphs")
-    // La revisión por la dirección es de jefatura, no de terreno ni del comité.
-    expect(rolesFor("prevention:governance:review")).toEqual(["administrador", "jefa_chome"])
+    // La revisión por la dirección la cierra la jefatura, y desde 2026-09-06
+    // también la Jefa del Depto. de Prevención: es la responsable declarada de
+    // la N°9 del programa y sin el permiso la actividad sólo podía marcarse a
+    // mano en la planilla.
+    expect(rolesFor("prevention:governance:review")).toEqual(["administrador", "jefa_chome", "prevencionista"])
     expect(rolesFor("prevention:governance:review")).not.toContain("cphs")
     expect(rolesFor("prevention:governance:review")).not.toContain("jefe_terreno")
   })
