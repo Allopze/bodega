@@ -1101,17 +1101,18 @@ export const preventionModule = {
     { roleSlug: "administrador",        permission: "prevention:inspections:review" },
     { roleSlug: "administrador",        permission: "prevention:inspections:export" },
     // CPHS. El comité es un órgano propio: sus integrantes lo ven y lo
-    // gestionan. La revisión por la dirección es de jefatura, no de terreno.
+    // gestionan. La revisión por la dirección sigue siendo de jefatura, no de
+    // terreno ni del comité — con una excepción deliberada: la Jefa del
+    // Depto. de Prevención (rol `prevencionista`) también la cierra, porque es
+    // la responsable declarada de la N°9 del PDTP (decisión E05, 2026-09-06).
+    // Sin este permiso la actividad sólo podía marcarse a mano en la planilla
+    // del programa; `closeManagementReview` es el acto real que la acredita.
     { roleSlug: "cphs",                 permission: "prevention:cphs:view" },
     { roleSlug: "cphs",                 permission: "prevention:cphs:manage" },
     { roleSlug: "prevencionista_faena", permission: "prevention:cphs:view" },
     { roleSlug: "prevencionista_faena", permission: "prevention:cphs:manage" },
     { roleSlug: "prevencionista",       permission: "prevention:cphs:view" },
     { roleSlug: "prevencionista",       permission: "prevention:cphs:manage" },
-    // La N°9 del PDTP —revisión por la dirección— la cierra `closeManagementReview`
-    // y su responsable declarado incluye a la Jefa del Depto. de Prevención
-    // (decisión E05, 2026-09-06): sin este permiso la actividad sólo podía
-    // marcarse a mano en la planilla del programa.
     { roleSlug: "prevencionista",       permission: "prevention:governance:review" },
     { roleSlug: "jefe_terreno",         permission: "prevention:cphs:view" },
     { roleSlug: "admin_contrato",       permission: "prevention:cphs:view" },
