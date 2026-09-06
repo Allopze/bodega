@@ -28,7 +28,7 @@ function resolveLocalFolderDir(logicalPath: string): string {
 
 /** Crea una carpeta física. Idempotente. */
 export async function createSstFolder(logicalPath: string): Promise<void> {
-  if (resolveSstBackend() === "cloudreve") {
+  if (await resolveSstBackend() === "cloudreve") {
     await mkdirCloudreveCollection(logicalPath)
     return
   }
@@ -37,7 +37,7 @@ export async function createSstFolder(logicalPath: string): Promise<void> {
 
 /** Mueve una carpeta física (y todo su contenido). */
 export async function moveSstFolder(fromLogical: string, toLogical: string): Promise<void> {
-  if (resolveSstBackend() === "cloudreve") {
+  if (await resolveSstBackend() === "cloudreve") {
     await moveCloudreveEntry(fromLogical, toLogical)
     return
   }

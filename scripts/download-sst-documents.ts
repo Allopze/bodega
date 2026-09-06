@@ -1,8 +1,10 @@
 /**
  * Descarga el espacio de documentos SST desde el backend activo hacia un
  * directorio local, preservando la estructura de carpetas. Lo usa el
- * orquestador de backups cuando `SST_STORAGE_BACKEND=cloudreve`: el storage
- * local ya no contiene esos archivos y el backup debe recogerlos desde
+ * orquestador de backups cuando el backend activo es Cloudreve (lo persistido
+ * en `system_settings` desde Administración, con `SST_STORAGE_BACKEND` como
+ * fallback del servidor): el storage local ya no contiene esos archivos y el
+ * backup debe recogerlos desde
  * Cloudreve, con la misma ruta (`storage/sst-documents/<carpetas>/...`) para
  * que `restore-all.sh` siga funcionando sin cambios.
  *

@@ -47,12 +47,36 @@ export function readCloudreveRequestTimeout(): number {
   return Number.isFinite(parsed) && parsed >= 1_000 ? Math.trunc(parsed) : DEFAULT_TIMEOUT_MS
 }
 
-async function davUrl(baseUrl: string, sstPath: string, logicalPath: string): Promise<URL> {
+/**
+ * `<baseUrl>/dav/<clave remota>`, el único punto donde se arma una URL del
+ * WebDAV. Una URL base mal escrita (`cloudreve.chome.cl`, sin esquema) hacía
+ * que `new URL` lanzara un `TypeError: Invalid URL` crudo en mitad de cada
+ * subida y descarga, que ningún caller sabía clasificar; acá se convierte en un
+ * CloudreveError accionable que nombra dónde corregirlo.
+ */
+function davUrlFromKey(baseUrl: string, remoteKey: string, isCollection = false): URL {
   const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`
-  const dav = `${base}dav/`
+  const suffix = remoteKey.split("/").filter(Boolean).map(encodeURIComponent).join("/")
+  const href = encodeURI(`${base}dav/`) + suffix + (isCollection && suffix ? "/" : "")
+
+  let url: URL
+  try {
+    url = new URL(href)
+  } catch {
+    throw new CloudreveError("CLOUDREVE_NOT_CONFIGURED", INVALID_BASE_URL_MESSAGE)
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new CloudreveError("CLOUDREVE_NOT_CONFIGURED", INVALID_BASE_URL_MESSAGE)
+  }
+  return url
+}
+
+const INVALID_BASE_URL_MESSAGE =
+  "La URL base de Cloudreve no es una dirección http(s) válida. Corríjala en Administración › Almacenamiento de documentos."
+
+function davUrl(baseUrl: string, sstPath: string, logicalPath: string): URL {
   // Validación anti-traversal + mapeo a la carpeta remota configurada.
-  const key = remoteSstKey(sstPath, logicalPath)
-  return new URL(encodeURI(dav) + key.split("/").map(encodeURIComponent).join("/"))
+  return davUrlFromKey(baseUrl, remoteSstKey(sstPath, logicalPath))
 }
 
 async function request(
@@ -68,7 +92,7 @@ async function request(
     )
   }
 
-  const url = await davUrl(config.baseUrl, config.sstPath, filePath)
+  const url = davUrl(config.baseUrl, config.sstPath, filePath)
   const auth = Buffer.from(`${config.username}:${config.password}`, "utf8").toString("base64")
 
   let response: Response
@@ -208,10 +232,7 @@ export async function mkdirCloudreveCollection(logicalPath: string): Promise<voi
   if (remoteSegments.length === 0) {
     throw new CloudreveError("CLOUDREVE_IO", "Ruta de colección vacía")
   }
-  const url = new URL(
-    encodeURI(config.baseUrl.endsWith("/") ? `${config.baseUrl}dav/` : `${config.baseUrl}/dav/`)
-    + remoteSegments.map(encodeURIComponent).join("/") + "/",
-  )
+  const url = davUrlFromKey(config.baseUrl, remoteSegments.join("/"), true)
   const auth = Buffer.from(`${config.username}:${config.password}`, "utf8").toString("base64")
 
   let response: Response
@@ -252,9 +273,8 @@ export async function moveCloudreveEntry(fromLogical: string, toLogical: string)
   }
   const fromKey = remoteSstKey(config.sstPath, fromLogical)
   const toKey = remoteSstKey(config.sstPath, toLogical)
-  const base = config.baseUrl.endsWith("/") ? config.baseUrl : `${config.baseUrl}/`
-  const fromUrl = new URL(encodeURI(`${base}dav/`) + fromKey.split("/").map(encodeURIComponent).join("/"))
-  const toUrl = new URL(encodeURI(`${base}dav/`) + toKey.split("/").map(encodeURIComponent).join("/"))
+  const fromUrl = davUrlFromKey(config.baseUrl, fromKey)
+  const toUrl = davUrlFromKey(config.baseUrl, toKey)
   const auth = Buffer.from(`${config.username}:${config.password}`, "utf8").toString("base64")
 
   let response: Response
@@ -355,9 +375,7 @@ async function deleteRemote(remoteKey: string): Promise<void> {
 }
 
 function remoteDavUrl(config: { baseUrl: string }, remoteKey: string): URL {
-  const base = config.baseUrl.endsWith("/") ? config.baseUrl : `${config.baseUrl}/`
-  const suffix = remoteKey.split("/").filter(Boolean).map(encodeURIComponent).join("/")
-  return new URL(encodeURI(`${base}dav/`) + suffix)
+  return davUrlFromKey(config.baseUrl, remoteKey)
 }
 
 /** Pathname (sin slash final) de un href, sea absoluto o relativo a /dav/. */
@@ -368,6 +386,53 @@ function hrefPathname(raw: string): string {
   } catch {
     return trimmed.replace(/\/+$/, "")
   }
+}
+
+/**
+ * Prueba la configuración GUARDADA (no la escrita en el formulario) con un
+ * PROPFIND sobre la carpeta remota del espacio SST —no sobre la raíz del
+ * WebDAV—: la carpeta mal configurada es el error más frecuente y contra la
+ * raíz pasaba la prueba igual. No expone credenciales: el veredicto es acotado.
+ */
+export async function probeCloudreveConnection(): Promise<{ ok: boolean; message: string }> {
+  const config = await readCloudreveConfig()
+  if (!config.hasCredentials) {
+    return { ok: false, message: "Faltan credenciales de Cloudreve: configure URL, usuario y contraseña antes de probar." }
+  }
+
+  let url: URL
+  try {
+    url = davUrlFromKey(config.baseUrl, remoteSstKey(config.sstPath, "storage/sst-documents"), true)
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof CloudreveError ? error.message : "La configuración de Cloudreve no es válida.",
+    }
+  }
+
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method: "PROPFIND",
+      headers: { Authorization: basicAuth(config), Depth: "0", "Content-Type": "application/xml" },
+      signal: AbortSignal.timeout(readCloudreveRequestTimeout()),
+    })
+  } catch {
+    return { ok: false, message: "No se pudo conectar con Cloudreve: revise la URL y que el servidor sea alcanzable." }
+  }
+
+  await response.text().catch(() => undefined)
+  const folderLabel = config.sstPath === "" ? "la raíz de la cuenta WebDAV" : `«${config.sstPath}»`
+  if (response.ok) {
+    return { ok: true, message: `Conexión con Cloudreve verificada sobre ${folderLabel}.` }
+  }
+  if (response.status === 401 || response.status === 403) {
+    return { ok: false, message: "Cloudreve rechazó las credenciales (401/403): revise el usuario y la contraseña." }
+  }
+  if (response.status === 404) {
+    return { ok: false, message: `Cloudreve respondió, pero la carpeta remota ${folderLabel} no existe: revise el campo «Carpeta remota».` }
+  }
+  return { ok: false, message: `Cloudreve respondió ${response.status} en el PROPFIND de verificación.` }
 }
 
 function basicAuth(config: { username: string; password: string }): string {

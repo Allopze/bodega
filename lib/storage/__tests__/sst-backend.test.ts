@@ -12,6 +12,21 @@ const mockStat = vi.hoisted(() => vi.fn(async () => ({ size: 6 })))
 const mockList = vi.hoisted(() => vi.fn(async () => ["Procedimientos/remoto.pdf"]))
 const mockEnsureParent = vi.hoisted(() => vi.fn(async () => undefined))
 const mockMove = vi.hoisted(() => vi.fn(async () => undefined))
+const dbState = vi.hoisted(() => ({ backend: null as string | null }))
+
+vi.mock("@/db", () => ({
+  db: {
+    query: {
+      systemSettings: {
+        findFirst: vi.fn(async () => (dbState.backend ? { value: dbState.backend } : null)),
+      },
+    },
+  },
+}))
+
+vi.mock("@/db/schema", () => ({
+  systemSettings: { key: "key", value: "value", updatedAt: "updatedAt" },
+}))
 
 vi.mock("@/lib/storage/config", () => ({
   createSstDocumentPath: (name: string, segments?: readonly string[]) =>
@@ -55,6 +70,7 @@ vi.mock("@/lib/logger", () => ({ logger: { warn: vi.fn() } }))
 
 import {
   deleteSstDocument,
+  invalidateSstBackendCache,
   listSstStorageFiles,
   moveSstDocument,
   readSstDocument,
@@ -67,6 +83,8 @@ describe("sst-backend", () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     delete process.env.SST_STORAGE_BACKEND
+    dbState.backend = null
+    invalidateSstBackendCache()
     await fs.rm(tmpDir, { recursive: true, force: true })
     await fs.mkdir(tmpDir, { recursive: true })
   })
@@ -79,13 +97,20 @@ describe("sst-backend", () => {
     await fs.rm(tmpDir, { recursive: true, force: true })
   })
 
-  it("defaults to filesystem", () => {
-    expect(resolveSstBackend()).toBe("filesystem")
+  it("defaults to filesystem", async () => {
+    await expect(resolveSstBackend()).resolves.toBe("filesystem")
   })
 
-  it("switches to cloudreve via env", () => {
+  it("uses the persisted setting over env", async () => {
+    process.env.SST_STORAGE_BACKEND = "filesystem"
+    dbState.backend = "cloudreve"
+    invalidateSstBackendCache()
+    await expect(resolveSstBackend()).resolves.toBe("cloudreve")
+  })
+
+  it("falls back to env when nothing is persisted", async () => {
     process.env.SST_STORAGE_BACKEND = "cloudreve"
-    expect(resolveSstBackend()).toBe("cloudreve")
+    await expect(resolveSstBackend()).resolves.toBe("cloudreve")
   })
 
   it("writes and reads nested logical paths through the filesystem backend", async () => {
@@ -142,6 +167,7 @@ describe("sst-backend", () => {
     expect(fsFiles).toEqual([])
 
     process.env.SST_STORAGE_BACKEND = "cloudreve"
+    invalidateSstBackendCache()
     await expect(listSstStorageFiles()).resolves.toEqual([
       "storage/sst-documents/Procedimientos/remoto.pdf",
     ])

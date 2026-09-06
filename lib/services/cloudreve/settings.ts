@@ -23,16 +23,9 @@ import {
   readDteSettingsKeyring,
 } from "@/lib/services/dte-portal/settings-crypto"
 import { normalizeCloudreveSstPath } from "./sst-path"
+import { CLOUDREVE_SETTING_KEYS, type CloudreveSettingField } from "./setting-keys"
 
-/** Keys en `system_settings`. */
-export const CLOUDREVE_SETTING_KEYS = {
-  baseUrl:  "storage.cloudreve.base_url",
-  username: "storage.cloudreve.username",
-  password: "storage.cloudreve.password",
-  sstPath:  "storage.cloudreve.sst_path",
-} as const
-
-export type CloudreveSettingField = keyof typeof CLOUDREVE_SETTING_KEYS
+export { CLOUDREVE_SETTING_KEYS, type CloudreveSettingField } from "./setting-keys"
 
 /** Campos que se guardan cifrados y jamás cruzan al cliente. */
 const SECRET_FIELDS = ["username", "password"] as const
@@ -54,10 +47,20 @@ export interface CloudreveAdminStatus {
   fields: Record<CloudreveSecretField, { configured: boolean; source: CloudreveSettingSource }>
   baseUrl: { configured: boolean; source: CloudreveSettingSource }
   sstPath: { configured: boolean; source: CloudreveSettingSource; value: string }
+  backend: { value: SstBackendSetting; source: CloudreveSettingSource }
+  /**
+   * Backend que quedaría vigente si se borra lo persistido. NO siempre es
+   * `filesystem`: con `SST_STORAGE_BACKEND=cloudreve` en el servidor, borrar la
+   * configuración deja la biblioteca apuntando a Cloudreve. La pantalla lo
+   * necesita para no prometer un rollback que no va a ocurrir.
+   */
+  fallbackBackend: SstBackendSetting
   hasStoredSettings: boolean
   /** False sin keyring: no se puede guardar, porque guardar en claro no es opción. */
   canStoreSecrets: boolean
 }
+
+export type SstBackendSetting = "filesystem" | "cloudreve"
 
 export interface CloudreveSettingsInput {
   /** Vacío o ausente conserva el valor guardado. */
@@ -66,16 +69,50 @@ export interface CloudreveSettingsInput {
   password?: string
   /** Carpeta remota del espacio SST. Vacío conserva el valor guardado. */
   sstPath?: string
+  /** Backend activo del espacio SST (no cifrado: es configuración, no secreto). */
+  backend?: SstBackendSetting
+  /** Borrado explícito de valores persistidos (checkbox en la pantalla). */
+  clearUsername?: boolean
+  clearPassword?: boolean
+  clearSstPath?: boolean
 }
 
+export type CloudreveSettingsErrorCode =
+  | "CLOUDREVE_KEYRING_REQUIRED"
+  /** Activar el backend Cloudreve sin URL + usuario + contraseña vigentes. */
+  | "CLOUDREVE_CREDENTIALS_REQUIRED"
+
 export class CloudreveSettingsError extends Error {
-  constructor(readonly code: "CLOUDREVE_KEYRING_REQUIRED") {
+  constructor(readonly code: CloudreveSettingsErrorCode) {
     super(code)
     this.name = "CloudreveSettingsError"
   }
 }
 
 /* ── Lectura ─────────────────────────────────────────────────────────────── */
+
+/**
+ * La URL base tiene que ser http(s) absoluta. Sin esta validación un valor como
+ * `cloudreve.chome.cl` se persistía sin chistar y reventaba mucho después, como
+ * un `TypeError: Invalid URL` crudo dentro de cada subida y descarga.
+ */
+export function assertValidCloudreveBaseUrl(raw: string): void {
+  let parsed: URL
+  try {
+    parsed = new URL(raw)
+  } catch {
+    throw new Error("La URL base de Cloudreve debe ser una dirección completa, por ejemplo https://cloudreve.chome.cl")
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("La URL base de Cloudreve debe usar http:// o https://")
+  }
+}
+
+/** Backend que el `.env` del servidor impone cuando no hay nada persistido. */
+export function readEnvSstBackend(): SstBackendSetting {
+  const raw = process.env.SST_STORAGE_BACKEND?.trim().toLowerCase()
+  return raw === "cloudreve" || raw === "filesystem" ? raw : "filesystem"
+}
 
 export function readCloudreveEnvConfig(): CloudreveConfig {
   const baseUrl = process.env.CLOUDREVE_BASE_URL?.trim() ?? ""
@@ -204,6 +241,21 @@ export async function readCloudreveAdminStatus(): Promise<CloudreveAdminStatus> 
   const storedSstPath = raw.sstPath !== undefined
     ? normalizeCloudreveSstPath(raw.sstPath)
     : null
+
+  // Backend: system_settings → env → default filesystem.
+  const storedBackend = raw.backend
+  const envSetBackend = process.env.SST_STORAGE_BACKEND?.trim().toLowerCase()
+  const backend: CloudreveAdminStatus["backend"] = storedBackend === "cloudreve" || storedBackend === "filesystem"
+    ? { value: storedBackend, source: "system_settings" as const }
+    : envSetBackend === "cloudreve" || envSetBackend === "filesystem"
+      ? { value: envSetBackend, source: "environment" as const }
+      : { value: "filesystem" as const, source: "missing" as const }
+
+  // `configured` significa lo mismo en los cuatro campos: hay un valor efectivo
+  // y de dónde sale. La carpeta remota lo declaraba siempre `true` —incluso con
+  // `source: "missing"`—, y la pantalla ofrecía borrar algo que no existía.
+  const envSstPathSet = Boolean(process.env.CLOUDREVE_SST_PATH?.trim())
+
   return {
     fields,
     baseUrl: storedBaseUrl
@@ -211,7 +263,9 @@ export async function readCloudreveAdminStatus(): Promise<CloudreveAdminStatus> 
       : { configured: Boolean(env.baseUrl), source: (env.baseUrl ? "environment" : "missing") as CloudreveSettingSource },
     sstPath: storedSstPath !== null
       ? { configured: true, source: "system_settings" as const, value: storedSstPath }
-      : { configured: true, source: (process.env.CLOUDREVE_SST_PATH?.trim() ? "environment" : "missing") as CloudreveSettingSource, value: env.sstPath },
+      : { configured: envSstPathSet, source: (envSstPathSet ? "environment" : "missing") as CloudreveSettingSource, value: env.sstPath },
+    backend,
+    fallbackBackend: readEnvSstBackend(),
     hasStoredSettings: Object.keys(raw).length > 0,
     canStoreSecrets,
   }
@@ -225,9 +279,23 @@ export interface CloudreveSettingsActor {
 }
 
 /**
+ * ¿Quedarían URL + usuario + contraseña vigentes después de aplicar `input`?
+ * Un campo vacío conserva lo que ya había, así que el estado resultante es la
+ * mezcla de lo persistido con lo que trae este envío.
+ */
+async function willHaveCredentials(input: CloudreveSettingsInput): Promise<boolean> {
+  const current = await readCloudreveConfig()
+  const baseUrl = input.baseUrl?.trim().replace(/\/+$/, "") || current.baseUrl
+  const username = input.clearUsername ? "" : (input.username?.trim() || current.username)
+  const password = input.clearPassword ? "" : (input.password?.trim() || current.password)
+  return Boolean(baseUrl && username && password)
+}
+
+/**
  * Un secreto vacío conserva el que ya estaba: evita que abrir el formulario y
  * guardar borre las credenciales sin querer. Sin keyring falla en vez de
- * persistir texto plano.
+ * persistir texto plano. Los borrados son explícitos por checkbox (clear*):
+ * nunca se infieren de un campo vacío.
  */
 export async function saveCloudreveSettings(
   input: CloudreveSettingsInput,
@@ -237,14 +305,48 @@ export async function saveCloudreveSettings(
     .map((field) => [field, input[field]?.trim() ?? ""] as const)
     .filter(([, value]) => value !== "")
 
+  // Borrar y escribir el mismo campo en un envío es una orden contradictoria, y
+  // la transacción la resolvía por orden de ejecución: los DELETE corren después
+  // de los INSERT, así que la credencial recién escrita desaparecía en silencio.
+  const conflicts = [
+    input.clearUsername && input.username?.trim() ? "el usuario" : null,
+    input.clearPassword && input.password?.trim() ? "la contraseña" : null,
+    input.clearSstPath && input.sstPath?.trim() ? "la carpeta remota" : null,
+  ].filter((label): label is string => label !== null)
+  if (conflicts.length > 0) {
+    throw new Error(`No se puede escribir y borrar ${conflicts.join(" y ")} en el mismo guardado: elija una de las dos acciones.`)
+  }
+
+  const deletes: string[] = []
+  if (input.clearUsername) deletes.push(CLOUDREVE_SETTING_KEYS.username)
+  if (input.clearPassword) deletes.push(CLOUDREVE_SETTING_KEYS.password)
+  if (input.clearSstPath) deletes.push(CLOUDREVE_SETTING_KEYS.sstPath)
+
   const writes: { key: string; value: string }[] = []
   const trimmedBaseUrl = input.baseUrl?.trim().replace(/\/+$/, "")
-  if (trimmedBaseUrl) writes.push({ key: CLOUDREVE_SETTING_KEYS.baseUrl, value: trimmedBaseUrl })
+  if (trimmedBaseUrl) {
+    assertValidCloudreveBaseUrl(trimmedBaseUrl)
+    writes.push({ key: CLOUDREVE_SETTING_KEYS.baseUrl, value: trimmedBaseUrl })
+  }
 
-  if (input.sstPath !== undefined) {
+  if (input.sstPath !== undefined && !input.clearSstPath) {
     // Valida la ruta al guardar para fallar temprano, no en el primer request.
     const normalizedSstPath = normalizeCloudreveSstPath(input.sstPath)
     writes.push({ key: CLOUDREVE_SETTING_KEYS.sstPath, value: normalizedSstPath })
+  }
+
+  if (input.backend !== undefined) {
+    if (input.backend !== "filesystem" && input.backend !== "cloudreve") {
+      throw new Error("Backend de almacenamiento inválido")
+    }
+    // Activar Cloudreve sin credenciales completas rompe TODA la biblioteca SST
+    // al instante —cada subida y cada descarga—, así que se rechaza en vez de
+    // avisar: se valida el estado resultante, no el guardado, para que activar
+    // el backend y escribir las credenciales en el mismo envío sí funcione.
+    if (input.backend === "cloudreve" && !(await willHaveCredentials(input))) {
+      throw new CloudreveSettingsError("CLOUDREVE_CREDENTIALS_REQUIRED")
+    }
+    writes.push({ key: CLOUDREVE_SETTING_KEYS.backend, value: input.backend })
   }
 
   if (secrets.length > 0) {
@@ -262,7 +364,7 @@ export async function saveCloudreveSettings(
     }
   }
 
-  if (writes.length === 0) return
+  if (writes.length === 0 && deletes.length === 0) return
 
   const updatedAt = new Date().toISOString()
   await db.transaction(async (tx) => {
@@ -272,18 +374,26 @@ export async function saveCloudreveSettings(
         .values({ key: write.key, value: write.value, updatedAt })
         .onConflictDoUpdate({ target: systemSettings.key, set: { value: write.value, updatedAt } })
     }
+    if (deletes.length > 0) {
+      await tx.delete(systemSettings).where(inArray(systemSettings.key, deletes))
+    }
     await recordAudit({
       userId: actor.userId,
       userEmail: actor.userEmail,
       action: "update",
       entityType: "cloudreve_storage_settings",
       entityId: "cloudreve",
-      // Sólo qué cambió, nunca a qué.
+      // Sólo qué cambió, nunca a qué. Las banderas siguen a las escrituras
+      // reales: un campo vacío conserva el valor y no es un cambio que auditar.
       newState: {
-        baseUrlUpdated: trimmedBaseUrl !== undefined,
-        sstPathUpdated: input.sstPath !== undefined,
+        baseUrlUpdated: Boolean(trimmedBaseUrl),
+        sstPathUpdated: input.sstPath !== undefined && !input.clearSstPath,
+        sstPathCleared: input.clearSstPath === true,
+        backendUpdated: input.backend !== undefined,
         usernameUpdated: secrets.some(([field]) => field === "username"),
+        usernameCleared: input.clearUsername === true,
         passwordUpdated: secrets.some(([field]) => field === "password"),
+        passwordCleared: input.clearPassword === true,
       },
     }, tx)
   })

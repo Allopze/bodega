@@ -24,6 +24,7 @@ import {
   listSstFilesRecursive,
   mkdirCloudreveCollection,
   moveCloudreveEntry,
+  probeCloudreveConnection,
   putCloudreveFile,
   statCloudreveFile,
   CloudreveError,
@@ -233,5 +234,70 @@ describe("cloudreve WebDAV client", () => {
       "raiz.pdf",
       "Carpeta/dentro.pdf",
     ])
+  })
+
+  it("classifies an unusable base URL as a configuration error on a normal read", async () => {
+    fakeConfig.baseUrl = "cloudreve.example.test"
+    await expect(getCloudreveFile("storage/sst-documents/a.pdf")).rejects.toMatchObject({
+      name: "CloudreveError",
+      code: "CLOUDREVE_NOT_CONFIGURED",
+    })
+    expect(mockFetch).not.toHaveBeenCalled()
+  })
+
+  // La carpeta remota mal configurada es el error más frecuente, y un PROPFIND
+  // contra la raíz del WebDAV lo daba por bueno igual.
+  it("probe checks the configured remote folder, not the WebDAV root", async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse(207))
+    const result = await probeCloudreveConnection()
+    expect(result.ok).toBe(true)
+    expect(result.message).toContain("storage/sst-documents")
+
+    const [url, init] = mockFetch.mock.calls[0] as [URL, RequestInit]
+    expect(init.method).toBe("PROPFIND")
+    expect(url.href).toBe("https://cloudreve.example.test/dav/storage/sst-documents/")
+  })
+
+  it("probe uses the WebDAV root when the account is scoped to the platform folder", async () => {
+    fakeConfig.sstPath = ""
+    mockFetch.mockResolvedValueOnce(jsonResponse(207))
+    await expect(probeCloudreveConnection()).resolves.toMatchObject({ ok: true })
+
+    const [url] = mockFetch.mock.calls[0] as [URL, RequestInit]
+    expect(url.href).toBe("https://cloudreve.example.test/dav/")
+  })
+
+  it("probe tells the missing remote folder apart from a rejected credential", async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse(404))
+    const result = await probeCloudreveConnection()
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(/carpeta remota/i)
+  })
+
+  // Una URL base sin esquema hacía que `new URL` lanzara un TypeError crudo que
+  // la server action reportaba como «no tiene permisos».
+  it("probe reports an unusable base URL instead of throwing", async () => {
+    fakeConfig.baseUrl = "cloudreve.example.test"
+    const result = await probeCloudreveConnection()
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(/http\(s\) válida/i)
+    expect(mockFetch).not.toHaveBeenCalled()
+  })
+
+  it("probe reports auth failure without leaking credentials", async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse(401, "unauthorized"))
+    const result = await probeCloudreveConnection()
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain("401")
+    expect(result.message).not.toContain("s3cret")
+  })
+
+  it("probe reports missing credentials", async () => {
+    fakeConfig.hasCredentials = false
+    await expect(probeCloudreveConnection()).resolves.toMatchObject({
+      ok: false,
+      message: expect.stringContaining("Faltan credenciales"),
+    })
+    expect(mockFetch).not.toHaveBeenCalled()
   })
 })

@@ -53,6 +53,8 @@ export const adminModule = {
     "admin:backups",
     // DTE Portal
     "admin:dte_sync",
+    // Almacenamiento de documentos
+    "admin:storage",
   ] as const,
 
   permissionMeta: {
@@ -87,6 +89,7 @@ export const adminModule = {
     "admin:module_management": { id: "p-adm-modules", description: "Activar/desactivar módulos del sistema" },
     "admin:backups":            { id: "p-adm-bkp",   description: "Gestionar respaldos y restauración" },
     "admin:dte_sync":           { id: "p-adm-dte",   description: "Sincronizar documentos tributarios (DTE)" },
+    "admin:storage":            { id: "p-adm-stor",  description: "Configurar almacenamiento de documentos SST" },
   },
 
   // No aparece en el sidebar principal; el TopBar lo descubre dinámicamente
@@ -191,5 +194,10 @@ export const adminModule = {
     // DTE Portal
     { roleSlug: "administrador", permission: "admin:dte_sync" },
     { roleSlug: "jefa_chome", permission: "admin:dte_sync" },
+    /* Almacenamiento de documentos — sólo administrador. Mover el almacén de
+     * toda la biblioteca SST y escribir credenciales WebDAV es infraestructura,
+     * como `admin:security` o `admin:module_management`, no gestión operativa
+     * como `admin:backups`: Jefatura queda fuera a propósito. */
+    { roleSlug: "administrador", permission: "admin:storage" },
   ],
 } as const satisfies ModuleManifest

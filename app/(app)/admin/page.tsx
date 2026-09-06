@@ -197,6 +197,14 @@ const modules = [
     group:       "gobierno",
   },
   {
+    title:       "Almacenamiento de documentos",
+    description: "Dónde se guardan los archivos de la biblioteca SST: filesystem local o Cloudreve.",
+    href:        "/admin/almacenamiento",
+    icon:        HardDrives,
+    permission:  "admin:storage",
+    group:       "gobierno",
+  },
+  {
     title:       "Correo SMTP",
     description: "Configurar el servidor de correo saliente y el interruptor global de envíos.",
     href:        "/admin/correo-smtp",

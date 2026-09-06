@@ -4,8 +4,10 @@
  * la plataforma. One-shot idempotente, estilo `backfill-dte-order-refs`.
  *
  * Reglas:
- * - NO borra el origen local: el rollback (`SST_STORAGE_BACKEND=filesystem`)
- *   necesita el disco intacto.
+ * - NO borra el origen local: el rollback necesita el disco intacto. El
+ *   rollback se hace desde Administración › Almacenamiento de documentos
+ *   (backend = «Filesystem local»), que es lo que manda: `SST_STORAGE_BACKEND`
+ *   quedó como fallback del servidor y NO gana sobre el valor persistido.
  * - Verifica cada archivo: descarga desde Cloudreve y compara SHA-256 contra
  *   `sstDocumentVersions.checksum` (evidencia DS 44). Un mismatch NO se marca
  *   como migrado y queda reportado en `fallidos`.

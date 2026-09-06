@@ -3,21 +3,26 @@
  *
  * El `filePath` lógico en BD (`storage/sst-documents/<nanoid>.<ext>`) es la
  * clave en AMBOS backends: el filesystem la resuelve contra STORAGE_PATH y
- * Cloudreve la usa tal cual como ruta dentro de `/dav/`. Cambiar el backend es
- * cambiar una variable de entorno, sin migrar rutas en la base de datos.
+ * Cloudreve la usa tal cual como ruta dentro de `/dav/`.
  *
- * Default `filesystem` = comportamiento histórico byte a byte. Con
- * `SST_STORAGE_BACKEND=cloudreve` las lecturas/escrituras van al WebDAV.
+ * El backend activo se decide por: `system_settings` (`storage.cloudreve.backend`,
+ * configurable desde Administración) → env `SST_STORAGE_BACKEND` (fallback) →
+ * `filesystem`. Hay una caché de módulo de 10 s para no consultar BD en cada
+ * descarga de archivo; al guardar desde Admin se invalida explícitamente.
  */
 
 import path from "node:path"
 import { promises as fs } from "node:fs"
+import { eq } from "drizzle-orm"
+import { db } from "@/db"
+import { systemSettings } from "@/db/schema"
 import { logger } from "@/lib/logger"
 import { mkdirp, readBuffer, removeFile, writeBuffer } from "@/lib/storage/helpers"
 import {
   resolveSstDocumentFile,
   resolveSstDocumentsDir,
 } from "@/lib/storage/config"
+import { CLOUDREVE_SETTING_KEYS } from "@/lib/services/cloudreve/setting-keys"
 import {
   CloudreveError,
   deleteCloudreveFile,
@@ -31,9 +36,58 @@ import {
 
 export type SstStorageBackend = "filesystem" | "cloudreve"
 
-export function resolveSstBackend(): SstStorageBackend {
+export const SST_BACKEND_SETTING_KEY = CLOUDREVE_SETTING_KEYS.backend
+
+const BACKEND_CACHE_TTL_MS = 10_000
+let cachedBackend: { value: SstStorageBackend; at: number } | null = null
+
+/**
+ * Purga la caché del backend: la server action de Admin la llama al guardar.
+ *
+ * Ojo: la caché es de módulo, o sea por proceso. En un despliegue con varios
+ * workers el resto sigue con el valor viejo hasta que expire el TTL, así que el
+ * cambio de backend se propaga en ≤10 s, no de forma instantánea. La pantalla
+ * lo dice con esas palabras.
+ */
+export function invalidateSstBackendCache(): void {
+  cachedBackend = null
+}
+
+/**
+ * Se lee acá y no vía `readEnvSstBackend()` de `cloudreve/settings` a propósito:
+ * la capa de storage no debe arrastrar el módulo de credenciales (BD, auditoría
+ * y keyring) sólo para mirar una variable de entorno.
+ */
+function envBackend(): SstStorageBackend | null {
   const raw = process.env.SST_STORAGE_BACKEND?.trim().toLowerCase()
-  return raw === "cloudreve" ? "cloudreve" : "filesystem"
+  if (raw === "cloudreve" || raw === "filesystem") return raw
+  return null
+}
+
+export async function resolveSstBackend(): Promise<SstStorageBackend> {
+  if (cachedBackend && Date.now() - cachedBackend.at < BACKEND_CACHE_TTL_MS) {
+    return cachedBackend.value
+  }
+  let value: SstStorageBackend
+  try {
+    const row = await db.query.systemSettings.findFirst({
+      where: eq(systemSettings.key, SST_BACKEND_SETTING_KEY),
+    })
+    const stored = row?.value
+    if (stored === "cloudreve" || stored === "filesystem") {
+      value = stored
+    } else {
+      value = envBackend() ?? "filesystem"
+    }
+  } catch (error) {
+    // BD caída: caer al env en vez de dejar la descarga sin backend.
+    logger.warn("[storage/sst-backend] no se pudo leer el backend persistido; se usa el fallback", {
+      message: error instanceof Error ? error.message : String(error),
+    })
+    value = envBackend() ?? "filesystem"
+  }
+  cachedBackend = { value, at: Date.now() }
+  return value
 }
 
 export function isSstDocumentPath(filePath: string): boolean {
@@ -46,7 +100,7 @@ export function isSstDocumentPath(filePath: string): boolean {
  * el backend filesystem crea los directorios padre que falten.
  */
 export async function writeSstDocument(logicalPath: string, buffer: Buffer): Promise<string> {
-  if (resolveSstBackend() === "cloudreve") {
+  if (await resolveSstBackend() === "cloudreve") {
     await ensureParentDirs(logicalPath)
     await putCloudreveFile(logicalPath, buffer)
     return logicalPath
@@ -63,7 +117,7 @@ export async function writeSstDocument(logicalPath: string, buffer: Buffer): Pro
 export async function readSstDocument(filePath: string): Promise<Buffer> {
   if (!isSstDocumentPath(filePath)) throw new Error("Ruta fuera del espacio de documentos SST")
 
-  if (resolveSstBackend() === "cloudreve") {
+  if (await resolveSstBackend() === "cloudreve") {
     try {
       return await getCloudreveFile(filePath)
     } catch (error) {
@@ -86,7 +140,7 @@ export async function readSstDocument(filePath: string): Promise<Buffer> {
 export async function deleteSstDocument(filePath: string): Promise<void> {
   if (!isSstDocumentPath(filePath)) throw new Error("Ruta fuera del espacio de documentos SST")
 
-  if (resolveSstBackend() === "cloudreve") {
+  if (await resolveSstBackend() === "cloudreve") {
     await deleteCloudreveFile(filePath).catch((error: unknown) => {
       logger.warn("[storage/sst-backend] no se pudo eliminar archivo en Cloudreve", {
         filePath,
@@ -107,7 +161,7 @@ export async function moveSstDocument(fromPath: string, toPath: string): Promise
     throw new Error("Ruta fuera del espacio de documentos SST")
   }
 
-  if (resolveSstBackend() === "cloudreve") {
+  if (await resolveSstBackend() === "cloudreve") {
     await moveCloudreveEntry(fromPath, toPath)
     return
   }
@@ -123,7 +177,7 @@ export async function moveSstDocument(fromPath: string, toPath: string): Promise
 export async function statSstDocument(filePath: string): Promise<{ size: number } | null> {
   if (!isSstDocumentPath(filePath)) throw new Error("Ruta fuera del espacio de documentos SST")
 
-  if (resolveSstBackend() === "cloudreve") {
+  if (await resolveSstBackend() === "cloudreve") {
     return statCloudreveFile(filePath)
   }
 
@@ -142,7 +196,7 @@ export async function statSstDocument(filePath: string): Promise<{ size: number 
  * (backup): `storage/sst-documents/<seg>/.../<name>`.
  */
 export async function listSstStorageFiles(): Promise<string[]> {
-  if (resolveSstBackend() === "cloudreve") {
+  if (await resolveSstBackend() === "cloudreve") {
     // El cliente devuelve paths relativos a la carpeta remota configurada
     // (sstPath); el path lógico de BD es storage/sst-documents/<rel>.
     const relFiles = await listSstFilesRecursive()
