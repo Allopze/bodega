@@ -117,6 +117,32 @@ function bail(reason: string): never {
   throw new Error(reason)
 }
 
+/**
+ * `totalmente_vencida` — cada celda planificada caía antes de `fromMonth`:
+ * es una de las 22 actividades que la decisión E02 tiene en la mira, la que
+ * quedaría sin una sola celda exigible si no se reprograma.
+ * `parcialmente_vencida` — ya tenía celdas dentro de la ventana y además
+ * celdas que mover: el algoritmo la toca igual (la decisión no distingue),
+ * pero es trabajo que ya estaba al día y le cae encima el backlog de otra
+ * parte del año — la jefatura tiene que poder verla aparte antes de firmar.
+ * `sin_cambios` — nada que mover (todas sus celdas ya caían en la ventana, o
+ * no tiene celdas).
+ */
+export type LapseClassification = "totalmente_vencida" | "parcialmente_vencida" | "sin_cambios"
+
+export function classifyScheduleLapse(input: { cells: ScheduleCell[]; fromMonth: number }): LapseClassification {
+  const kept = input.cells.filter((cell) => cell.month >= input.fromMonth && cell.plannedQuantity > 0)
+  const lapsed = input.cells.filter((cell) => cell.month < input.fromMonth && cell.plannedQuantity > 0)
+  if (lapsed.length === 0) return "sin_cambios"
+  return kept.length === 0 ? "totalmente_vencida" : "parcialmente_vencida"
+}
+
+const CLASSIFICATION_LABELS: Record<LapseClassification, string> = {
+  totalmente_vencida: "Totalmente vencida",
+  parcialmente_vencida: "Parcialmente vencida",
+  sin_cambios: "Sin cambios",
+}
+
 async function resolveActorUserId(): Promise<string> {
   const fromEnv = process.env.PDTP_REPROGRAM_ACTOR_USER_ID?.trim()
   if (fromEnv) return fromEnv
@@ -137,6 +163,7 @@ type ActivityRow = {
   totalBefore: number
   totalAfter: number
   changed: boolean
+  classification: LapseClassification
 }
 
 async function main() {
@@ -180,8 +207,14 @@ async function main() {
   // Carga final por mes, agregada sobre TODAS las actividades tocadas por
   // este script (después del plan): E02 comprime trabajo real en la ventana
   // que queda, y ése es el número que la jefatura tiene que ver antes de
-  // firmar — no sólo cuántas actividades se movieron.
-  const monthLoad = new Map<number, number>()
+  // firmar — no sólo cuántas actividades se movieron. Se separa por grupo
+  // (totalmente vencida / parcialmente vencida) para que se note cuánta
+  // carga de un mes viene de actividades que ya estaban al día y les cayó
+  // encima el backlog de otra parte del año, y no sólo de las 22 que la
+  // decisión E02 tenía en la mira.
+  const monthLoadTotal = new Map<number, number>()
+  const monthLoadTotalmenteVencida = new Map<number, number>()
+  const monthLoadParcialmenteVencida = new Map<number, number>()
 
   for (const activity of activities) {
     const currentCells = (await db.select().from(pdtpActivitySchedule).where(and(
@@ -192,6 +225,7 @@ async function main() {
     const currentFingerprint = scheduleCellsFingerprint(currentCells)
     const plan = planScheduleReprogram({ cells: currentCells, fromMonth })
     const planFingerprint = scheduleCellsFingerprint(plan)
+    const classification = classifyScheduleLapse({ cells: currentCells, fromMonth })
 
     const currentEffective = currentCells.filter((cell) => cell.plannedQuantity > 0)
     const totalBefore = currentEffective.reduce((sum, cell) => sum + cell.plannedQuantity, 0)
@@ -206,10 +240,16 @@ async function main() {
       totalBefore,
       totalAfter,
       changed,
+      classification,
     })
 
     for (const cell of plan) {
-      monthLoad.set(cell.month, (monthLoad.get(cell.month) ?? 0) + cell.plannedQuantity)
+      monthLoadTotal.set(cell.month, (monthLoadTotal.get(cell.month) ?? 0) + cell.plannedQuantity)
+      if (classification === "totalmente_vencida") {
+        monthLoadTotalmenteVencida.set(cell.month, (monthLoadTotalmenteVencida.get(cell.month) ?? 0) + cell.plannedQuantity)
+      } else if (classification === "parcialmente_vencida") {
+        monthLoadParcialmenteVencida.set(cell.month, (monthLoadParcialmenteVencida.get(cell.month) ?? 0) + cell.plannedQuantity)
+      }
     }
 
     if (changed && !DRY_RUN) {
@@ -222,33 +262,53 @@ async function main() {
   }
 
   const changedRows = rows.filter((row) => row.changed)
+  const totalmenteVencidaCount = rows.filter((row) => row.classification === "totalmente_vencida").length
+  const parcialmenteVencidaCount = rows.filter((row) => row.classification === "parcialmente_vencida").length
+  const sinCambiosCount = rows.filter((row) => row.classification === "sin_cambios").length
+
   console.log(`Actividad(es) con calendario a mover: ${changedRows.length} de ${rows.length} scheduled.`)
   console.log("")
-  console.log("N°   Actividad".padEnd(60) + "Celdas antes  Celdas después  Total antes  Total después")
+  console.log("N°   Actividad".padEnd(60) + "Celdas antes  Celdas después  Total antes  Total después  Clasificación")
   for (const row of rows) {
     const label = `${row.n}   ${row.activity}`.slice(0, 58).padEnd(60)
     console.log(
-      `${label}${String(row.cellsBefore).padEnd(14)}${String(row.cellsAfter).padEnd(16)}${String(row.totalBefore).padEnd(13)}${row.totalAfter}`
+      `${label}${String(row.cellsBefore).padEnd(14)}${String(row.cellsAfter).padEnd(16)}${String(row.totalBefore).padEnd(13)}${String(row.totalAfter).padEnd(15)}${CLASSIFICATION_LABELS[row.classification]}`
       + (row.changed ? "  ← se mueve" : ""),
     )
   }
 
   console.log("")
-  console.log("Carga resultante por mes (después del plan, todas las actividades scheduled):")
+  console.log(
+    `Clasificación: ${totalmenteVencidaCount} totalmente vencida(s), ${parcialmenteVencidaCount} parcialmente vencida(s), `
+    + `${sinCambiosCount} sin cambios (de ${rows.length} scheduled).`,
+  )
+
+  console.log("")
+  console.log("Carga resultante por mes (después del plan):")
   for (let month = 1; month <= 12; month++) {
-    const total = monthLoad.get(month) ?? 0
-    if (total > 0) console.log(`  ${String(month).padStart(2, "0")}: ${total}`)
+    const total = monthLoadTotal.get(month) ?? 0
+    if (total === 0) continue
+    const monthLabel = String(month).padStart(2, "0")
+    console.log(`  ${monthLabel} · totalmente vencida: ${monthLoadTotalmenteVencida.get(month) ?? 0}`)
+    console.log(`  ${monthLabel} · parcialmente vencida: ${monthLoadParcialmenteVencida.get(month) ?? 0}`)
+    console.log(`  ${monthLabel} · total: ${total}`)
   }
 
   const exportPath = process.env.PDTP_REPROGRAM_EXPORT?.trim()
   if (exportPath) {
-    const activityHeaders = ["N°", "Actividad", "Celdas antes", "Celdas después", "Total antes", "Total después", "¿Se mueve?"]
+    const activityHeaders = ["N°", "Actividad", "Celdas antes", "Celdas después", "Total antes", "Total después", "Clasificación", "¿Se mueve?"]
     const activityRows: ReportCell[][] = rows.map((row) => [
-      row.n, row.activity, row.cellsBefore, row.cellsAfter, row.totalBefore, row.totalAfter, row.changed ? "Sí" : "No",
+      row.n, row.activity, row.cellsBefore, row.cellsAfter, row.totalBefore, row.totalAfter,
+      CLASSIFICATION_LABELS[row.classification], row.changed ? "Sí" : "No",
     ])
+    const monthHeaders = ["Mes", "Grupo", "Cantidad"]
     const monthRows: ReportCell[][] = Array.from({ length: 12 }, (_, index) => index + 1)
-      .filter((month) => (monthLoad.get(month) ?? 0) > 0)
-      .map((month) => [month, monthLoad.get(month) ?? 0])
+      .filter((month) => (monthLoadTotal.get(month) ?? 0) > 0)
+      .flatMap((month) => [
+        [month, CLASSIFICATION_LABELS.totalmente_vencida, monthLoadTotalmenteVencida.get(month) ?? 0],
+        [month, CLASSIFICATION_LABELS.parcialmente_vencida, monthLoadParcialmenteVencida.get(month) ?? 0],
+        [month, "Total", monthLoadTotal.get(month) ?? 0],
+      ])
 
     const buffer = await buildXlsxBuffer({
       filenameBase: "reprogramacion-pdtp-2026",
@@ -257,7 +317,7 @@ async function main() {
       rows: activityRows,
       sheets: [
         { worksheetName: "Reprogramación", headers: activityHeaders, rows: activityRows },
-        { worksheetName: "Carga por mes", headers: ["Mes", "Total planificado"], rows: monthRows },
+        { worksheetName: "Carga por mes", headers: monthHeaders, rows: monthRows },
       ],
     })
     const fs = await import("node:fs/promises")

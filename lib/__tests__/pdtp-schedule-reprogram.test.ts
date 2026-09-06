@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { planScheduleReprogram } from "@/scripts/reprogram-pdtp-2026-schedule"
+import { classifyScheduleLapse, planScheduleReprogram } from "@/scripts/reprogram-pdtp-2026-schedule"
 
 describe("planScheduleReprogram", () => {
   it("mueve las celdas vencidas a la ventana restante conservando la cantidad total", () => {
@@ -40,5 +40,29 @@ describe("planScheduleReprogram", () => {
     const cells = [{ month: 2, week: 3, plannedQuantity: 2 }]
     const once = planScheduleReprogram({ cells, fromMonth: 9 })
     expect(planScheduleReprogram({ cells: once, fromMonth: 9 })).toEqual(once)
+  })
+})
+
+describe("classifyScheduleLapse", () => {
+  it("clasifica totalmente_vencida cuando todas las celdas caen antes del mes destino", () => {
+    const cells = [
+      { month: 1, week: 4, plannedQuantity: 1 },
+      { month: 2, week: 1, plannedQuantity: 1 },
+    ]
+    expect(classifyScheduleLapse({ cells, fromMonth: 9 })).toBe("totalmente_vencida")
+  })
+
+  it("clasifica parcialmente_vencida cuando ya tenía celdas en la ventana y además celdas para mover", () => {
+    const cells = [
+      { month: 3, week: 1, plannedQuantity: 1 },
+      { month: 10, week: 2, plannedQuantity: 1 },
+    ]
+    expect(classifyScheduleLapse({ cells, fromMonth: 9 })).toBe("parcialmente_vencida")
+  })
+
+  it("clasifica sin_cambios cuando no hay ninguna celda para mover", () => {
+    const cells = [{ month: 10, week: 2, plannedQuantity: 1 }]
+    expect(classifyScheduleLapse({ cells, fromMonth: 9 })).toBe("sin_cambios")
+    expect(classifyScheduleLapse({ cells: [], fromMonth: 9 })).toBe("sin_cambios")
   })
 })
