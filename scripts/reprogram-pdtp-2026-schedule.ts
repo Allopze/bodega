@@ -150,6 +150,7 @@ async function resolveActorUserId(): Promise<string> {
     .from(userRoles)
     .innerJoin(roles, eq(roles.id, userRoles.roleId))
     .where(eq(roles.name, "administrador"))
+    .orderBy(userRoles.userId)
     .limit(1)
   if (!row) throw new Error("No hay ningún usuario con rol `administrador`. Pasa PDTP_REPROGRAM_ACTOR_USER_ID explícitamente.")
   return row.userId
@@ -184,9 +185,10 @@ async function main() {
   // script aborta en vez de intentar otra cosa.
   try {
     assertPdtpProgramEditableState(resolvedProgram)
-  } catch {
+  } catch (e) {
+    const original = e instanceof Error ? e.message : String(e)
     bail(
-      `El programa ${resolvedProgram.id} no está en \`draft\` (status=${resolvedProgram.status}). `
+      `El programa ${resolvedProgram.id} no está en \`draft\` (status=${resolvedProgram.status}): ${original} `
       + "El calendario base es contenido firmado y está bloqueado: reabre el programa formalmente antes de reprogramar.",
     )
   }
@@ -215,6 +217,7 @@ async function main() {
   const monthLoadTotal = new Map<number, number>()
   const monthLoadTotalmenteVencida = new Map<number, number>()
   const monthLoadParcialmenteVencida = new Map<number, number>()
+  const monthLoadSinCambios = new Map<number, number>()
 
   for (const activity of activities) {
     const currentCells = (await db.select().from(pdtpActivitySchedule).where(and(
@@ -243,13 +246,17 @@ async function main() {
       classification,
     })
 
+    // Los tres grupos son exhaustivos y disjuntos (`classifyScheduleLapse`
+    // devuelve exactamente uno), así que sumar sus tres mapas por mes debe
+    // dar siempre el mismo número que `monthLoadTotal` — si el total y la
+    // suma de grupos no coinciden, la planilla que firma la jefatura queda
+    // con un número sin explicación.
+    const monthLoadByClassification = classification === "totalmente_vencida" ? monthLoadTotalmenteVencida
+      : classification === "parcialmente_vencida" ? monthLoadParcialmenteVencida
+      : monthLoadSinCambios
     for (const cell of plan) {
       monthLoadTotal.set(cell.month, (monthLoadTotal.get(cell.month) ?? 0) + cell.plannedQuantity)
-      if (classification === "totalmente_vencida") {
-        monthLoadTotalmenteVencida.set(cell.month, (monthLoadTotalmenteVencida.get(cell.month) ?? 0) + cell.plannedQuantity)
-      } else if (classification === "parcialmente_vencida") {
-        monthLoadParcialmenteVencida.set(cell.month, (monthLoadParcialmenteVencida.get(cell.month) ?? 0) + cell.plannedQuantity)
-      }
+      monthLoadByClassification.set(cell.month, (monthLoadByClassification.get(cell.month) ?? 0) + cell.plannedQuantity)
     }
 
     if (changed && !DRY_RUN) {
@@ -291,6 +298,7 @@ async function main() {
     const monthLabel = String(month).padStart(2, "0")
     console.log(`  ${monthLabel} · totalmente vencida: ${monthLoadTotalmenteVencida.get(month) ?? 0}`)
     console.log(`  ${monthLabel} · parcialmente vencida: ${monthLoadParcialmenteVencida.get(month) ?? 0}`)
+    console.log(`  ${monthLabel} · sin cambios: ${monthLoadSinCambios.get(month) ?? 0}`)
     console.log(`  ${monthLabel} · total: ${total}`)
   }
 
@@ -307,6 +315,7 @@ async function main() {
       .flatMap((month) => [
         [month, CLASSIFICATION_LABELS.totalmente_vencida, monthLoadTotalmenteVencida.get(month) ?? 0],
         [month, CLASSIFICATION_LABELS.parcialmente_vencida, monthLoadParcialmenteVencida.get(month) ?? 0],
+        [month, CLASSIFICATION_LABELS.sin_cambios, monthLoadSinCambios.get(month) ?? 0],
         [month, "Total", monthLoadTotal.get(month) ?? 0],
       ])
 
