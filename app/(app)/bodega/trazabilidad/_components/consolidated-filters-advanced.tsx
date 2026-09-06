@@ -185,15 +185,15 @@ function AdvancedFiltersForm({
           </Select>
         </Field>
 
-        <div className="rounded-lg border border-slate-200 p-3 bg-slate-50/50">
+        <div className="rounded-lg border border-[var(--color-border)] p-3 bg-[var(--color-surface-2)]">
           <Checkbox
             id="filter-pendientes"
             checked={draft.pendientes}
             onChange={(e) => patch("pendientes", e.target.checked)}
             label={
               <span>
-                <span className="block text-sm font-medium text-slate-900">Solo con pendientes</span>
-                <span className="block text-xs text-slate-500">
+                <span className="block text-sm font-medium text-[var(--color-text)]">Solo con pendientes</span>
+                <span className="block text-xs text-[var(--color-text-muted)]">
                   Ocultar solicitudes y materiales 100% entregados
                 </span>
               </span>

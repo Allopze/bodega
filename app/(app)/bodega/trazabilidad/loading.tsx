@@ -1,9 +1,13 @@
-import { SkeletonPage } from "@/components/ui/skeleton"
+import { Skeleton, SkeletonPage } from "@/components/ui/skeleton"
+import { PageContainer } from "@/components/ui/page-container"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 
 export default function Loading() {
   return (
-    <>
+    // El esqueleto va dentro del mismo `PageContainer` que la página: era el
+    // único `loading.tsx` de la app sin él, así que cargaba a ancho completo y
+    // el contenido saltaba al `max-w` real cuando llegaban los datos.
+    <PageContainer width="wide">
       <PageHeader
         title="Trazabilidad y Seguimiento por Faena"
         breadcrumb={
@@ -16,23 +20,32 @@ export default function Loading() {
           />
         }
       />
-      <div className="space-y-4">
-        {/* Los KPIs son 4 accionables desde la migración (A1/UI-01): el skeleton
-            tiene que dibujar 4 bloques, no los 7 de la matriz vieja, o la grilla
-            salta de 7 a 4 al llegar los datos. */}
+
+      {/* Selector de vista (SegmentedControl) */}
+      <Skeleton className="mb-5 h-9 w-80 max-w-full rounded-[var(--radius-md)]" />
+
+      <div className="space-y-3">
+        {/* Los KPIs son 4 accionables desde la migración (A1/UI-01): el esqueleto
+            dibuja 4 bloques a la altura del `KpiCard` real —etiqueta, cifra y
+            detalle a dos líneas— para que la grilla no se reacomode al llegar
+            los datos. */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-20 rounded-xl bg-slate-100 animate-pulse" />
+            <Skeleton key={i} className="h-[7.5rem] rounded-[var(--radius-lg)]" />
           ))}
         </div>
-        {/* Fila secundaria compacta de los KPIs informativos. */}
-        <div className="flex flex-wrap gap-x-4 gap-y-1">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-3 w-24 rounded bg-slate-100 animate-pulse" />
-          ))}
+
+        {/* Tira de métricas secundarias (SummaryBar). */}
+        <Skeleton className="h-14 rounded-none" />
+
+        {/* Barra de filtros y selector de faena. */}
+        <Skeleton className="h-10 w-full rounded-[var(--radius-md)]" />
+
+        {/* Tabla: mismo borde y radio que `TableRoot`, que es lo que aparece. */}
+        <div className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
+          <SkeletonPage rows={10} />
         </div>
-        <SkeletonPage rows={10} />
       </div>
-    </>
+    </PageContainer>
   )
 }

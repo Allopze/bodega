@@ -15,6 +15,7 @@ import {
   TableRow,
   TableHead,
   TableCell,
+  TableCellNum,
   TableCaption,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -48,7 +49,10 @@ export function ConsolidatedTable({ requests }: Props) {
   }
 
   return (
-    <TableRoot stickyHeader className="hidden md:block">
+    // Sin `stickyHeader`: la vista pagina, y ahí el sticky sólo servía para
+    // acotar la tabla a `max-h-[70vh]` y abrir un scroll anidado dentro del
+    // pozo, que ya es el contenedor de scroll de la app.
+    <TableRoot className="hidden md:block">
       <Table>
         <TableCaption className="sr-only">
           Solicitudes de compra y sus órdenes de compra por faena. Cada fila es una
@@ -79,12 +83,20 @@ export function ConsolidatedTable({ requests }: Props) {
               <React.Fragment key={request.requestId}>
                 <TableRow
                   data-alert={request.alert ? "true" : undefined}
-                  className={`group transition-colors hover:bg-slate-50/70 cursor-pointer ${
-                    request.alert
-                      ? "bg-[var(--color-signal-tint)]/40"
-                      : isExpanded
-                      ? "bg-slate-50/90 font-medium"
-                      : ""
+                  // `TableRow` ya trae la transición y el hover por token
+                  // (`--color-surface-2`); repetirlos aquí con literales de
+                  // paleta era lo que hacía que la fila reaccionara distinto al
+                  // resto de las tablas de la app.
+                  //
+                  // La fila con pendientes NO se tiñe: el saldo ya se anuncia
+                  // en la columna "Pendiente" con un Badge `signal` y el estado
+                  // en su propio Badge, así que pintar además el fondo repetía
+                  // la misma dimensión tres veces (A5) y —al compartir el
+                  // `signal-tint` con el badge— lo volvía literalmente
+                  // invisible. En la captura de verificación 4 de 5 filas
+                  // salían naranjas y las cifras de pendiente sin recuadro.
+                  className={`group cursor-pointer ${
+                    isExpanded ? "bg-[var(--color-surface-2)] font-medium" : ""
                   }`}
                   onClick={() => toggleRow(request.requestId)}
                 >
@@ -99,7 +111,7 @@ export function ConsolidatedTable({ requests }: Props) {
                         e.stopPropagation()
                         toggleRow(request.requestId)
                       }}
-                      className="p-2 text-slate-400 hover:text-slate-700 rounded transition-colors"
+                      className="p-2 text-[var(--color-text-subtle)] hover:text-[var(--color-text)] rounded transition-colors"
                     >
                       {isExpanded ? (
                         <CaretDown size={14} weight="bold" />
@@ -114,47 +126,45 @@ export function ConsolidatedTable({ requests }: Props) {
                     <Link
                       href={`/solicitudes/${request.requestId}`}
                       onClick={(e) => e.stopPropagation()}
-                      className="font-mono text-xs font-semibold text-blue-600 hover:underline inline-flex items-center gap-1"
+                      className="font-mono text-xs font-semibold text-[var(--color-primary)] hover:underline inline-flex items-center gap-1"
                       title="Ver solicitud original"
                     >
                       {request.requestCode}
                       <ArrowSquareOut size={12} className="shrink-0" />
                     </Link>
-                    <div className="text-[11px] text-slate-500 truncate" title={request.requesterName}>
+                    <div className="text-[11px] text-[var(--color-text-muted)] truncate" title={request.requesterName}>
                       {request.worksiteName}
                     </div>
                   </TableCell>
 
-                  <TableCell className="text-xs text-slate-600">
+                  <TableCell className="text-xs text-[var(--color-text-muted)]">
                     {request.requesterName}
                   </TableCell>
 
-                  <TableCell className="text-right text-xs font-mono">
-                    {request.lineCount}
-                  </TableCell>
+                  <TableCellNum>{request.lineCount}</TableCellNum>
 
-                  <TableCell className="text-right text-xs font-mono">
-                    {request.orderCount}
-                  </TableCell>
+                  <TableCellNum>{request.orderCount}</TableCellNum>
 
-                  <TableCell className="text-right text-xs font-mono">
+                  <TableCellNum>
                     {requested !== null && requested !== undefined ? (
                       formatQty(requested)
                     ) : (
                       byUom.map((s) => formatQty(s.requested ?? 0)).join(" / ")
                     )}
-                  </TableCell>
+                  </TableCellNum>
 
-                  {/* Pendiente Total */}
-                  <TableCell className="text-right text-xs font-mono">
+                  {/* Pendiente Total — el naranja `signal` es el token que el
+                      sistema reserva justo para pendientes, así que el chip
+                      artesanal se reemplaza por el Badge del producto. */}
+                  <TableCellNum>
                     {pending !== null && pending > 0 ? (
-                      <span className="font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                      <Badge variant="signal" size="sm">
                         {formatQty(pending)}
-                      </span>
+                      </Badge>
                     ) : (
-                      <span className="text-slate-400 font-normal">0</span>
+                      <span className="text-[var(--color-text-subtle)]">0</span>
                     )}
-                  </TableCell>
+                  </TableCellNum>
 
                   <TableCell>
                     <Badge variant={request.statusColor} size="sm">
@@ -167,7 +177,7 @@ export function ConsolidatedTable({ requests }: Props) {
                     <Link
                       href={`/bodega/trazabilidad?tab=documento&codigo=${encodeURIComponent(request.requestCode)}`}
                       onClick={(e) => e.stopPropagation()}
-                      className="inline-flex p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded"
+                      className="inline-flex p-1 text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-3)] rounded"
                       title="Buscar el expediente documental de la solicitud"
                     >
                       <ArrowSquareOut size={15} />
@@ -177,11 +187,11 @@ export function ConsolidatedTable({ requests }: Props) {
 
                 {/* Fila expandible con las líneas de la solicitud */}
                 {isExpanded && (
-                  <TableRow className="bg-slate-50/60 border-b border-slate-200">
+                  <TableRow className="bg-[var(--color-surface-2)]">
                     <TableCell colSpan={9} className="p-4 sm:p-5" id={detailId}>
                       <div className="space-y-4">
                         {request.lines.length === 0 ? (
-                          <p className="text-xs text-slate-500 italic">
+                          <p className="text-xs text-[var(--color-text-muted)] italic">
                             Esta solicitud no tiene líneas de evidencia para este rango de filtros.
                           </p>
                         ) : (

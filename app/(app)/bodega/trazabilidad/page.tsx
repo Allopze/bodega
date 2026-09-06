@@ -1,11 +1,11 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
-import Link from "next/link"
 import { can, requirePermission } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ServerPagination } from "@/components/ui/server-pagination"
+import { SegmentedControl } from "@/components/ui/segmented-control"
 import {
   getConsolidatedTraceability,
   TRACEABILITY_CONSOLIDATED_PAGE_SIZE,
@@ -22,7 +22,7 @@ import { ConsolidatedTable } from "./_components/consolidated-table"
 import { ConsolidatedRequestsSummary } from "./_components/consolidated-requests-summary"
 import { TraceabilityIntegrityCases } from "./_components/traceability-integrity-cases"
 import { DocumentChainSearch } from "./_components/document-chain-search"
-import { Path, MagnifyingGlass, Warning } from "@phosphor-icons/react/dist/ssr"
+import { Path, Warning } from "@phosphor-icons/react/dist/ssr"
 import { resolvePagination, type PaginationState } from "@/lib/pagination"
 
 export const metadata: Metadata = {
@@ -109,13 +109,6 @@ export default async function TrazabilidadPage({ searchParams }: PageProps) {
     return query ? `/bodega/trazabilidad?${query}` : "/bodega/trazabilidad"
   }
 
-  const tabClass = (tab: "seguimiento" | "documento") =>
-    `flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
-      activeTab === tab
-        ? "border-blue-600 text-blue-600 font-bold"
-        : "border-transparent text-slate-500 hover:text-slate-900"
-    }`
-
   const hasSecondaryFilters = Boolean(
     consolidatedData &&
     (consolidatedData.filters.q ||
@@ -151,17 +144,28 @@ export default async function TrazabilidadPage({ searchParams }: PageProps) {
         adjustmentOptions={adjustmentOptions}
       />
 
-      {/* Pestañas de la vista */}
-      <div className="flex items-center gap-2 border-b border-slate-200 mb-5">
-        <Link href={tabHref("seguimiento")} className={tabClass("seguimiento")}>
-          <Path size={16} />
-          Seguimiento por faena
-        </Link>
-        <Link href={tabHref("documento")} className={tabClass("documento")}>
-          <MagnifyingGlass size={16} />
-          Buscar por código
-        </Link>
-      </div>
+      {/* Pestañas de la vista. `SegmentedControl` es el primitivo del sistema
+          para selectores sincronizados con la URL: el subrayado azul artesanal
+          que había aquí importaba un color de marca que la paleta no define. */}
+      <SegmentedControl
+        variant="segmented"
+        ariaLabel="Vista de trazabilidad"
+        className="mb-5"
+        items={[
+          {
+            key: "seguimiento",
+            label: "Seguimiento por faena",
+            href: tabHref("seguimiento"),
+            active: activeTab === "seguimiento",
+          },
+          {
+            key: "documento",
+            label: "Buscar por código",
+            href: tabHref("documento"),
+            active: activeTab === "documento",
+          },
+        ]}
+      />
 
       {activeTab === "documento" ? (
         <DocumentChainSearch query={codigoQuery} result={chainResult} faena={faenaParam} />
@@ -215,7 +219,12 @@ export default async function TrazabilidadPage({ searchParams }: PageProps) {
               }
             />
           ) : (
-            <div className="rounded-2xl border border-slate-200/70 bg-white shadow-xs overflow-hidden">
+            /* Sin tarjeta envolvente: `TableRoot` ya aporta borde, radio y
+               superficie por token, y las tarjetas mobile traen los suyos. El
+               `<div>` que había aquí los duplicaba —dos bordes y dos radios
+               anidados a 1px, con un gris distinto al del sistema— y su
+               `overflow-hidden` recortaba la región de scroll de la tabla. */
+            <>
               {/* TR-I1: la tabla ya es por solicitud (desktop) y el resumen por
                   solicitud (mobile). Ambos cuentan el mismo universo que la
                   paginación, que opera sobre solicitudes. */}
@@ -233,7 +242,8 @@ export default async function TrazabilidadPage({ searchParams }: PageProps) {
                   hrefForPage={hrefForPage}
                 />
               )}
-            </div>
+            </>
+
           )}
         </div>
       ) : null}

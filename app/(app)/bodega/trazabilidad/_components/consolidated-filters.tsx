@@ -156,7 +156,7 @@ export function ConsolidatedFilters({
       >
         {/* Selector principal de Faena */}
         <div className="flex items-center gap-1.5">
-          <label htmlFor="filter-faena-select" className="text-xs font-semibold text-slate-700 whitespace-nowrap">
+          <label htmlFor="filter-faena-select" className="text-xs font-semibold text-[var(--color-text)] whitespace-nowrap">
             Faena:
           </label>
           <Select
@@ -181,7 +181,7 @@ export function ConsolidatedFilters({
           <div className="relative w-64 sm:w-72">
             <MagnifyingGlass
               size={14}
-              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-subtle)] pointer-events-none"
             />
             <Input
               type="search"

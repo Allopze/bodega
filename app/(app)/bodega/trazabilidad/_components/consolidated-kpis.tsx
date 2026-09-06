@@ -1,6 +1,5 @@
 "use client"
 
-import Link from "next/link"
 import {
   FileText,
   Clock,
@@ -10,6 +9,8 @@ import {
   HardHat,
   Package,
 } from "@phosphor-icons/react"
+import { KpiCard } from "@/components/ui/kpi-card"
+import { SummaryBar, type SummaryStat } from "@/components/ui/summary-bar"
 import type { ConsolidatedFaenaKPIs } from "@/lib/services/trazabilidad-consolidated"
 
 interface Props {
@@ -35,122 +36,130 @@ interface Props {
   filtered?: boolean
 }
 
-function hrefWith(filters: Props["filters"], patch: Record<string, string>) {
+/** Estados de solicitud que componen el KPI "Solicitudes abiertas". */
+const OPEN_REQUEST_STATUSES = [
+  "draft",
+  "submitted",
+  "in_review",
+  "partially_approved",
+  "approved",
+  "in_purchasing",
+] as const
+
+/** Construye un enlace a la bandeja que es dueña de cada KPI. */
+function hrefForModule(
+  path: string,
+  filters: Props["filters"],
+  patch: Record<string, string> = {},
+) {
   const params = new URLSearchParams()
   if (filters?.faena) params.set("faena", filters.faena)
   for (const [k, v] of Object.entries(patch)) if (v) params.set(k, v)
   const query = params.toString()
-  return query ? `/bodega/trazabilidad?${query}` : "/bodega/trazabilidad"
+  return query ? `${path}?${query}` : path
 }
 
 export function ConsolidatedKpis({ kpis, filters, filtered = false }: Props) {
   // UI-01 / A1 (auditoría 2026-09-05): antes eran siete tarjetas no accionables
   // que desplazaban el trabajo fuera de la primera pantalla y violaban el máximo
   // de cuatro tiles accionables. Se mantienen los cuatro que deciden una acción
-  // —cada uno enlaza a su vista filtrada— y los secundarios bajan a una fila de
-  // texto compacta que no compite por el foco.
+  // —cada uno enlaza a su vista filtrada— y los secundarios bajan a una tira
+  // compacta que no compite por el foco.
+  //
+  // Los tiles son `KpiCard`, el componente de KPI del producto: la versión
+  // artesanal que vivía aquí traía su propio borde, su propia sombra y un chip
+  // de icono teñido por métrica (slate/ámbar/azul/esmeralda), colores que la
+  // paleta del sistema no define y que hacían que la cabecera de esta pantalla
+  // no se pareciera a la de ninguna otra.
   const primaryCards = [
     {
       label: "Solicitudes abiertas",
       value: kpis.openRequests,
-      icon: FileText,
-      color: "text-slate-700",
-      bg: "bg-slate-100",
-      href: hrefWith(filters, {}),
+      detail: "Ni entregadas, ni canceladas, ni rechazadas",
+      icon: <FileText size={14} weight="bold" />,
+      href: hrefForModule("/solicitudes", filters, {
+        estado: OPEN_REQUEST_STATUSES.join(","),
+      }),
     },
     {
       label: "Pendientes de compra",
       value: kpis.pendingPurchase,
-      icon: Clock,
-      color: "text-amber-700",
-      bg: "bg-amber-50",
-      highlight: kpis.pendingPurchase > 0,
-      href: hrefWith(filters, { pendientes: "true" }),
+      detail: "Con líneas que todavía no tienen OC",
+      icon: <Clock size={14} weight="bold" />,
+      // El realce naranja es el `tone="signal"` del sistema, y sólo cuando hay
+      // algo pendiente de verdad.
+      tone: kpis.pendingPurchase > 0 ? ("signal" as const) : ("neutral" as const),
+      href: hrefForModule("/compras", filters),
     },
     {
       label: "Esperando proveedor",
       value: kpis.awaitingSupplier,
-      icon: Truck,
-      color: "text-blue-700",
-      bg: "bg-blue-50",
+      // Este KPI cuenta ÓRDENES, no solicitudes como los otros tres: decirlo en
+      // el detalle evita leer los cuatro números como la misma unidad.
+      detail: "Órdenes de compra emitidas con saldo por recibir",
+      icon: <Truck size={14} weight="bold" />,
       // TR-B2 resuelto por TR-F1 (plan 2026-09-05): antes este KPI contaba OCs
       // con saldo por recibir pero enlazaba a `?estado=pedido_proveedor`, que
-      // filtra por ESTADO DE ÍTEM, un universo distinto. Ahora hay un filtro
-      // real por OC con saldo (`oc_pendiente=true`), así que el enlace es
-      // correcto y el número coincide con lo que se ve.
-      href: hrefWith(filters, { oc_pendiente: "true" }),
+      // filtra por ESTADO DE ÍTEM, un universo distinto. La tarjeta ahora abre
+      // directamente la cola operativa de Recepción, donde se gestionan esas
+      // OCs por faena.
+      href: hrefForModule("/recepcion", filters),
     },
     {
       label: "Cerrados / entregados",
       value: kpis.fullyDelivered,
-      icon: CheckCircle,
-      color: "text-emerald-800",
-      bg: "bg-emerald-100/60",
-      href: hrefWith(filters, { estado: "entregado" }),
+      detail: "Solicitudes con la entrega completa",
+      icon: <CheckCircle size={14} weight="bold" />,
+      href: hrefForModule("/bodega/trazabilidad", filters, { estado: "entregado" }),
+    },
+  ]
+
+  // Métricas secundarias en la tira del sistema: informan sin repetir el tile
+  // accionable ni desplazar el contenido (A1). `SummaryBar` ya atenúa los ceros.
+  const secondaryStats: SummaryStat[] = [
+    {
+      key: "in-office",
+      label: "En oficina",
+      value: kpis.inOffice,
+      icon: <Buildings size={14} aria-hidden />,
+    },
+    {
+      key: "in-faena",
+      label: "Disponibles en faena",
+      value: kpis.inFaena,
+      icon: <HardHat size={14} aria-hidden />,
+    },
+    {
+      key: "partially-delivered",
+      label: "Entrega parcial",
+      value: kpis.partiallyDelivered,
+      icon: <Package size={14} aria-hidden />,
     },
   ]
 
   return (
-    <div className="mb-4">
+    <div className="space-y-3">
       {filtered && (
-        <p className="mb-2 text-[11px] text-[var(--color-text-muted)]">
+        <p className="text-[11px] text-[var(--color-text-muted)]">
           Las métricas resumen los ítems que pasan los filtros aplicados, no la faena completa.
         </p>
       )}
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {primaryCards.map((card) => {
-          const Icon = card.icon
-          const inner = (
-            <div
-              className={`flex flex-col justify-between rounded-xl border bg-white p-3.5 shadow-xs ${
-                card.highlight
-                  ? "border-amber-200/80 bg-amber-50/20"
-                  : "border-slate-200/70"
-              }`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-medium text-[var(--color-text-muted)] line-clamp-1">
-                  {card.label}
-                </span>
-                <span className={`inline-flex p-1 rounded-md ${card.bg} ${card.color}`}>
-                  <Icon size={14} weight="bold" />
-                </span>
-              </div>
-              <div className="mt-2 text-2xl font-bold tracking-tight text-slate-900 font-mono">
-                {card.value}
-              </div>
-            </div>
-          )
-          return card.href ? (
-            <Link
-              key={card.label}
-              href={card.href}
-              data-kpi-card
-              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary-line)]"
-            >
-              {inner}
-            </Link>
-          ) : (
-            <div key={card.label} data-kpi-card>
-              {inner}
-            </div>
-          )
-        })}
+        {primaryCards.map((card) => (
+          <KpiCard
+            key={card.label}
+            icon={card.icon}
+            label={card.label}
+            value={card.value.toLocaleString("es-CL")}
+            detail={card.detail}
+            tone={card.tone}
+            href={card.href}
+          />
+        ))}
       </div>
 
-      {/* Métricas secundarias en fila compacta: informan sin repetir el tile
-          accionable ni desplazar el contenido (A1). */}
-      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[var(--color-text-muted)]">
-        <span className="inline-flex items-center gap-1">
-          <Buildings size={12} aria-hidden /> En oficina: {kpis.inOffice}
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <HardHat size={12} aria-hidden /> Disponibles en faena: {kpis.inFaena}
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <Package size={12} aria-hidden /> Entrega parcial: {kpis.partiallyDelivered}
-        </span>
-      </div>
+      <SummaryBar stats={secondaryStats} />
     </div>
   )
 }

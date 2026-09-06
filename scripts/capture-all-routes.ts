@@ -13,6 +13,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator"
 import { sql } from "drizzle-orm"
 import * as schema from "../db/schema"
 import { SYSTEM_PERMISSIONS } from "@/lib/auth/system-rbac"
+import { chileDateParts } from "@/lib/utils"
 import { REPORTE_EQUIPOS } from "@/lib/sst/definitions/reporte-equipos"
 import {
   assertSafeDestructiveDatabase,
@@ -67,7 +68,7 @@ import {
  *   slug para capturar solo un submódulo. Prefijos disponibles:
  *     combustibles, prevencion, admin, solicitudes, compras, recepcion,
  *     bodega, entregas, trazabilidad, reportes, analitica, flota,
- *     mantenciones, repuestos, servicios, soporte
+ *     mantenciones, repuestos, servicios, soporte, ti, facturacion
  *
  *   Las rutas públicas (login, etc.) siempre se incluyen para permitir
  *   la autenticación.
@@ -662,6 +663,17 @@ const routeTargets: RouteTarget[] = [
   { slug: "ti-acta-print", path: "/ti/actas/it-assignment-audit-1/print", auth: true },
   { slug: "ti-tickets", path: "/ti/tickets", auth: true },
   { slug: "ti-ticket-detalle", path: "/ti/tickets/it-ticket-audit-1", auth: true },
+  // ── TI: submódulos del ciclo de vida del activo (G-septiembre 2026) ────
+  // Se declaran explícitos y no delegan en el auto-descubrimiento porque sus
+  // capturas dependen de fixtures propios (bajas, licencias, mantenciones,
+  // accesos, garantías): sin fixture la página renderiza y la captura
+  // documenta un cascarón vacío que no dice nada del módulo.
+  { slug: "ti-accesos", path: "/ti/accesos", auth: true, notes: "Sistemas de acceso, matriz trabajador-sistema y checklists de alta/baja." },
+  { slug: "ti-bajas", path: "/ti/bajas", auth: true, notes: "Bajas formales de activos con su autorización y destino." },
+  { slug: "ti-garantias", path: "/ti/garantias", auth: true, notes: "Ventanas de garantía por activo y proveedores vinculados a TI." },
+  { slug: "ti-licencias", path: "/ti/licencias", auth: true, notes: "Licencias y suscripciones con sus asignaciones a trabajadores o equipos." },
+  { slug: "ti-mantenciones", path: "/ti/mantenciones", auth: true, notes: "Mantenciones y reparaciones con costo acumulado por activo." },
+  { slug: "ti-reportes", path: "/ti/reportes", auth: true, notes: "Catálogo de exportes Excel del parque tecnológico." },
   // ── Combustibles ──────────────────────────────────────────────────────
   { slug: "combustibles", path: "/combustibles", auth: true },
   { slug: "combustibles-nueva", path: "/combustibles/nueva", auth: true },
@@ -778,6 +790,12 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-documentacion-revisiones", path: "/prevencion/documentacion/revisiones", auth: true, allowedPaths: ["/prevencion/documentacion"], captureView: false },
   { slug: "prevencion-documentacion-vencimientos", path: "/prevencion/documentacion/vencimientos", auth: true, allowedPaths: ["/prevencion/documentacion"], captureView: false },
   { slug: "prevencion-documentacion-regularizacion", path: "/prevencion/documentacion/regularizacion", auth: true },
+  // ── Prevención: G14/G15/G17 (septiembre 2026) ──────────────────────────
+  // Igual que los submódulos TI: explícitos para anclarlos a sus fixtures y
+  // a esta lista, no a una entrada genérica de auto-descubrimiento.
+  { slug: "prevencion-alcotest", path: "/prevencion/alcotest", auth: true, notes: "Controles de alcotest (G14, DO-48): registros por turno, envío mensual del lote y alcotómetros." },
+  { slug: "prevencion-cgrd", path: "/prevencion/cgrd", auth: true, notes: "CGRD (G15, DS 44): comité o coordinador por dotación, matriz GRD y actas con acuerdos derivados a CAPA." },
+  { slug: "prevencion-constancias", path: "/prevencion/constancias", auth: true, notes: "Constancias del Programa de Trabajo Preventivo (G17): deuda por (actividad, faena) del primer mes impago." },
   { slug: "sst-print", path: "/sst/sst-audit-1/print", auth: true },
   { slug: "ppa-form", path: "/ppa", auth: false },
   { slug: "ppa-result", path: "/ppa/result/capture-ppa-token", auth: false },
@@ -861,11 +879,11 @@ const seedCoverage: CaptureSeedArea[] = [
   { section: "analitica", fixtures: ["compras", "combustible", "flota", "stock crítico", "EPP"] },
   { section: "flota", fixtures: ["vehículos activos", "cargas de combustible", "mantenciones"] },
   { section: "mantenciones", fixtures: ["vehículos", "proveedores", "mantenciones registradas"] },
-  { section: "ti", fixtures: ["activo asignado con acta de custodia", "ticket TI abierto asociado a activo"] },
+  { section: "ti", fixtures: ["activo asignado con acta de custodia", "ticket TI abierto asociado a activo", "activo disponible con garantía vigente", "activo con garantía vencida y reparación costosa", "garantía por vencer dentro de 30 días", "licencia con asignaciones a trabajador y equipo", "mantención correctiva con costo alto", "mantención preventiva", "baja de activo autorizada", "sistemas de acceso con trabajador activo y suspendido", "checklist de alta con tareas pendientes", "proveedor TI con vínculo de reparación y de venta"] },
   { section: "combustibles", fixtures: ["cargas de combustible", "lote de consumos con registros asociados y sin asociar", "lote de log operacional con faena pendiente de asociar", "carga TAE con resultado público", "lote TAE histórico con carga observada y rechazo", "vehículos de combustible", "proveedores de combustible", "cuentas corrientes", "reportes mensuales"] },
   { section: "repuestos", fixtures: ["solicitud de repuestos", "ítem libre", "cotización pendiente"] },
   { section: "servicios", fixtures: ["solicitud de servicios", "ítem libre", "cotización pendiente"] },
-  { section: "prevencion", fixtures: ["fiscalización de la Dirección del Trabajo con medida prescrita", "coordinación de información entregada al mandante", "evaluación nueva", "evaluación seguimiento", "plan de acción", "acción CAPA en progreso con evidencia y seguimiento", "requisito legal publicado con aplicabilidad por faena", "solicitud de privacidad con identidad verificada", "incidente en investigación con evidencia y difusión RE-20", "inspección revisada con hallazgo CAPA", "inspección en curso con respuestas parciales", "Reporte de Equipos en transcripción con planilla física", "ejecución PDTP aprobada con checklist y plan de acción", "sesión de capacitación cerrada con asistencia", "gestión de cambio evaluada con CAPA", "plan de emergencia con simulacro y roles", "permiso activo con AST, medición y aislamiento", "comité CPHS paritario con acta", "grupo de exposición con medición", "programa de vigilancia con matrículas", "documento vigente distribuido con acuse", "control MIPER crítico verificado", "indicadores mensuales de seguridad y salud en el trabajo", "indicadores material y ambiental"] },
+  { section: "prevencion", fixtures: ["fiscalización de la Dirección del Trabajo con medida prescrita", "coordinación de información entregada al mandante", "evaluación nueva", "evaluación seguimiento", "plan de acción", "acción CAPA en progreso con evidencia y seguimiento", "requisito legal publicado con aplicabilidad por faena", "solicitud de privacidad con identidad verificada", "incidente en investigación con evidencia y difusión RE-20", "inspección revisada con hallazgo CAPA", "inspección en curso con respuestas parciales", "Reporte de Equipos en transcripción con planilla física", "ejecución PDTP aprobada con checklist y plan de acción", "sesión de capacitación cerrada con asistencia", "gestión de cambio evaluada con CAPA", "plan de emergencia con simulacro y roles", "permiso activo con AST, medición y aislamiento", "comité CPHS paritario con acta", "grupo de exposición con medición", "programa de vigilancia con matrículas", "documento vigente distribuido con acuse", "control MIPER crítico verificado", "indicadores mensuales de seguridad y salud en el trabajo", "indicadores material y ambiental", "control de alcotest negativo con equipo y envío mensual del lote DO-48", "coordinador GRD en faena chica y comité GRD con matriz publicada y acta cerrada", "actividad de constancia PDTP planificada sin ejecución (deuda abierta)"] },
   { section: "admin-faenas", fixtures: ["faenas activas", "faena que representa la bodega de la oficina central"] },
   { section: "admin-inventario-faena", fixtures: ["extintor operativo con plan de emergencias, asignaciones y eventos", "kit de derrame sin asignar a punto"] },
   { section: "admin-contenedores", fixtures: ["contenedor operativo con inspección ejecutada", "contenedor sin inspecciones"] },
@@ -1352,6 +1370,42 @@ async function main() {
   }
 }
 
+/**
+ * Plain date (America/Santiago) desplazado en meses desde HOY, con día fijo
+ * opcional. Los fixtures que representan vigencias —garantías TI, licencias,
+ * renovaciones— usan fechas relativas en vez de absolutas para que las
+ * ventanas "vigente", "por vencer" y "vencida" existan el día que sea que se
+ * corra la captura; una fecha absoluta envejece y la captura deja de mostrar
+ * los estados que dice documentar. HOY es el día de Chile, no el del proceso:
+ * en producción corre en UTC y preguntarle a UTC qué día es hoy contesta el
+ * día siguiente entre las 20:00 y la medianoche chilena.
+ */
+export function shiftCaptureDateMonths(months: number, day?: number): string {
+  const today = chileDateParts()
+  const normalized = new Date(Date.UTC(today.year, today.month - 1 + months, 1))
+  // Day 0 of (monthIndex + 1) = último día del mes desplazado: una fecha como
+  // "hoy + 1 mes, día 31" nunca apunta a un mes inexistente.
+  const lastDay = new Date(Date.UTC(normalized.getUTCFullYear(), normalized.getUTCMonth() + 1, 0)).getUTCDate()
+  const resolvedDay = Math.min(day ?? today.day, lastDay)
+  const m = String(normalized.getUTCMonth() + 1).padStart(2, "0")
+  const d = String(resolvedDay).padStart(2, "0")
+  return `${normalized.getUTCFullYear()}-${m}-${d}`
+}
+
+/**
+ * Plain date (America/Santiago) desplazado en días desde HOY. Para ventanas
+ * cortas —"vence en 30 días"— donde un desplazamiento en meses puede caer
+ * fuera del rango según el día de corrida: +1 mes el día 1º de mes dista 30–31
+ * días, pero el día 28 dista 43. Un desplazamiento en días es determinista.
+ */
+export function shiftCaptureDateDays(days: number): string {
+  const today = chileDateParts()
+  const shifted = new Date(Date.UTC(today.year, today.month - 1, today.day + days))
+  const m = String(shifted.getUTCMonth() + 1).padStart(2, "0")
+  const d = String(shifted.getUTCDate()).padStart(2, "0")
+  return `${shifted.getUTCFullYear()}-${m}-${d}`
+}
+
 async function prepareDatabase(captureDbUrl: string) {
   assertSafeDestructiveDatabase({
     databaseUrl: captureDbUrl,
@@ -1747,10 +1801,6 @@ async function prepareDatabase(captureDbUrl: string) {
   await db.insert(schema.itTickets).values({
     id: "it-ticket-audit-1", code: "INC-2026-0001", subject: "Revisión de equipo asignado", description: "El notebook asignado requiere diagnóstico de conectividad VPN.", category: "internet", priority: "normal", status: "en_diagnostico", requesterUserId: userId, workerId: "worker-audit-1", worksiteId, assetId: "it-asset-audit-1", assigneeUserId: userId, createdAt: now, updatedAt: now,
   })
-
-  // Solicitud ARCO con un titular dentro de la faena autorizada. El workbench
-  // resuelve al titular desde `workers` y rechaza cualquier solicitud fuera
-  // del scope, por lo que el ID por sí solo no era un fixture suficiente.
   await db.insert(schema.preventionPrivacyRequests).values({
     id: "privacy-request-audit-1",
     subjectWorkerId: "worker-audit-1",
@@ -1849,6 +1899,77 @@ async function prepareDatabase(captureDbUrl: string) {
       updatedAt: now,
     },
   ])
+
+  /* ── TI: submódulos del ciclo de vida (septiembre 2026) ──────────────────
+   * Las rutas /ti/bajas, /ti/licencias, /ti/mantenciones, /ti/accesos,
+   * /ti/garantias y /ti/reportes se capturan desde este seed: sin fixtures
+   * cada una renderiza su EmptyState y la auditoría visual documenta una
+   * pantalla vacía que no dice nada del módulo. Las garantías usan fechas
+   * relativas a HOY (hora de Chile) para que las ventanas "vigente",
+   * "vence en 30 días" y "vencida" existan en cualquier fecha de corrida. */
+  await db.insert(schema.itAssets).values([
+    {
+      // Disponible con garantía vigente larga: fila base de /ti/garantias.
+      id: "it-asset-audit-2", code: "TI-RP-0002", assetTypeId: "it-asset-type-audit-1", brand: "Dell", model: "Latitude 5440", serialNumber: "CAPTURE-TI-0002", status: "disponible", worksiteId, location: "Bodega de oficina", purchaseDate: shiftCaptureDateMonths(-14), supplierId: "sup-audit-2", purchaseDocType: "factura", purchaseDocRef: "F-88421", cost: 780000, warrantyEndDate: shiftCaptureDateMonths(10), createdAt: now, updatedAt: now,
+    },
+    {
+      // Garantía por vencer dentro de 20 días: filtra en "Vencen en 30 días"
+      // cualquier día del mes en que se corra la captura.
+      id: "it-asset-audit-3", code: "TI-MV-0003", assetTypeId: "it-asset-type-audit-1", brand: "HP", model: "ProBook 450", serialNumber: "CAPTURE-TI-0003", status: "asignado", workerId: "worker-audit-2", worksiteId: "ws-audit-2", location: "Faena sur", purchaseDate: shiftCaptureDateMonths(-23), supplierId: supplierId, purchaseDocType: "factura", purchaseDocRef: "F-70110", cost: 690000, warrantyEndDate: shiftCaptureDateDays(20), createdAt: now, updatedAt: now,
+    },
+    {
+      // En reparación con garantía vencida: alimenta el ranking de costos.
+      id: "it-asset-audit-4", code: "TI-RP-0004", assetTypeId: "it-asset-type-audit-1", brand: "Lenovo", model: "ThinkPad L14", serialNumber: "CAPTURE-TI-0004", status: "en_reparacion", worksiteId, location: "Taller de mantención", purchaseDate: shiftCaptureDateMonths(-40), supplierId: "sup-audit-2", purchaseDocType: "factura", purchaseDocRef: "F-51203", cost: 540000, warrantyEndDate: shiftCaptureDateMonths(-6), createdAt: now, updatedAt: now,
+    },
+    {
+      // Dado de baja: el sujeto de la baja formal de /ti/bajas.
+      id: "it-asset-audit-5", code: "TI-DT-0005", assetTypeId: "it-asset-type-audit-1", brand: "Acer", model: "TravelMate P2", serialNumber: "CAPTURE-TI-0005", status: "dado_de_baja", worksiteId, location: "Bodega de oficina", purchaseDate: shiftCaptureDateMonths(-72), supplierId: supplierId, purchaseDocType: "factura", purchaseDocRef: "F-20887", cost: 410000, warrantyEndDate: shiftCaptureDateMonths(-60), createdAt: now, updatedAt: now,
+    },
+  ])
+  await db.insert(schema.itMaintenances).values([
+    {
+      // Correctiva con costo alto: encabeza el ranking de costo acumulado.
+      id: "it-maintenance-audit-1", assetId: "it-asset-audit-4", type: "reparacion", date: shiftCaptureDateMonths(-2, 12), reportedIssue: "No enciende y se apaga tras el arranque.", diagnosis: "Falla de placa madre.", workDone: "Reemplazo de placa madre y prueba extendida de 24 horas.", partsUsed: "Placa madre L14 rev.2", supplierId: "sup-audit-2", technicianName: "Servitec Limitada", cost: 185000, observations: "Equipo devuelto al taller por reincidencia; se recomienda evaluación de reemplazo.", createdAt: now, updatedAt: now,
+    },
+    {
+      // Preventiva de rutina sobre el activo asignado.
+      id: "it-maintenance-audit-2", assetId: "it-asset-audit-1", type: "preventiva", date: shiftCaptureDateMonths(-1, 5), workDone: "Limpieza interna, cambio de pasta térmica y actualización de firmware.", technicianUserId: userId, cost: 25000, createdAt: now, updatedAt: now,
+    },
+  ])
+  await db.insert(schema.itLicenses).values({
+    id: "it-license-audit-1", name: "Microsoft 365 Business Standard", supplierId: "sup-audit-2", type: "suscripcion", purchasedQuantity: 25, cost: 132000, periodicity: "mensual", startDate: shiftCaptureDateMonths(-8, 1), renewalDate: shiftCaptureDateMonths(1, 1), responsibleUserId: userId, notes: "Renovación automática; revisar puestos sin uso antes de renovar.", isActive: true, createdAt: now, updatedAt: now,
+  })
+  await db.insert(schema.itLicenseAssignments).values([
+    { id: "it-license-assign-audit-1", licenseId: "it-license-audit-1", workerId: "worker-audit-1", worksiteId, assignedAt: now },
+    { id: "it-license-assign-audit-2", licenseId: "it-license-audit-1", assetId: "it-asset-audit-3", worksiteId: "ws-audit-2", assignedAt: now, notes: "Licencia de equipo compartido de faena." },
+  ])
+  await db.insert(schema.itAccessSystems).values([
+    { id: "it-access-system-audit-1", name: "Plataforma Chome", description: "Sistema interno de gestión operacional.", isActive: true, createdAt: now, updatedAt: now },
+    { id: "it-access-system-audit-2", name: "Portal MOP", description: "Portal de facturación electrónica del proveedor.", isActive: true, createdAt: now, updatedAt: now },
+  ])
+  await db.insert(schema.itSystemAccess).values([
+    { id: "it-system-access-audit-1", systemId: "it-access-system-audit-1", workerId: "worker-audit-1", status: "activo", grantedAt: now, responsibleUserId: userId },
+    { id: "it-system-access-audit-2", systemId: "it-access-system-audit-2", workerId: "worker-audit-2", status: "activo", grantedAt: now, responsibleUserId: userId },
+    { id: "it-system-access-audit-3", systemId: "it-access-system-audit-1", workerId: "worker-audit-2", status: "suspendido", grantedAt: now, responsibleUserId: userId, notes: "Licencia médica; suspensión temporal de accesos." },
+  ])
+  await db.insert(schema.itWorkerChecklists).values({
+    id: "it-checklist-audit-1", workerId: "worker-audit-3", kind: "onboarding", startedAt: now, createdByUserId: userId, notes: "Alta de supervisora en faena sur.", createdAt: now,
+  })
+  await db.insert(schema.itChecklistTasks).values([
+    { id: "it-checklist-task-audit-1", checklistId: "it-checklist-audit-1", name: "Creación de usuario de plataforma y correo.", done: true, doneAt: now, doneByUserId: userId },
+    { id: "it-checklist-task-audit-2", checklistId: "it-checklist-audit-1", name: "Entrega de EPP y dotación de accesos físicos.", done: false },
+  ])
+  await db.insert(schema.itAssetRetirements).values({
+    id: "it-retirement-audit-1", assetId: "it-asset-audit-5", date: shiftCaptureDateMonths(-3, 20), reason: "reciclaje", responsibleUserId: userId, authorizedByUserId: "user-audit-jefa", destination: "Gestora de residuos certificada", observations: "Baja autorizada por reparación no económicamente viable.", createdAt: now,
+  })
+  await db.insert(schema.itSupplierLinks).values([
+    { id: "it-supplier-link-audit-1", supplierId: supplierId, category: "venta_hardware", notes: "Cotiza notebooks y periféricos para reposición anual.", createdAt: now },
+    { id: "it-supplier-link-audit-2", supplierId: "sup-audit-2", category: "reparacion", notes: "Taller autorizado de mantención correctiva.", createdAt: now },
+  ])
+
+  // Solicitud ARCO con un titular dentro de la faena autorizada. El workbench
+  // resuelve al titular desde `workers` y rechaza cualquier solicitud fuera
+  // del scope, por lo que el ID por sí solo no era un fixture suficiente.
 
   await db.insert(schema.productCategories).values([
     { id: "cat-audit-epp", name: "Elementos de protección personal", slug: "epp-audit", isEpp: true, requiresPrevencion: true, sortOrder: 1 },
@@ -3563,6 +3684,174 @@ async function prepareDatabase(captureDbUrl: string) {
     createdAt: now,
   })
 
+  // ── Prevención: CGRD (G15, DS 44) ───────────────────────────────────────
+  // Faena con 3 trabajadores → corresponde coordinador (umbral 26 personas).
+  // El comité activo queda para ws-audit-2: muestra la otra variante de la
+  // estructura y su acta cerrada con acuerdo derivado a CAPA.
+  await db.insert(schema.preventionGrdCoordinators).values({
+    id: "grd-coordinator-audit-1",
+    worksiteId,
+    workerId: "worker-audit-2",
+    designatedOn: shiftCaptureDateMonths(-4, 1),
+    status: "active",
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionGrdCommittees).values({
+    id: "grd-committee-audit-1",
+    worksiteId: "ws-audit-2",
+    name: "CGRD Faena Sur",
+    constitutedOn: shiftCaptureDateMonths(-8, 1),
+    mandateEndsOn: shiftCaptureDateMonths(16, 1),
+    status: "active",
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionGrdMembers).values([
+    { id: "grd-member-audit-1", committeeId: "grd-committee-audit-1", workerId: "worker-audit-3", role: "presidente", status: "active", createdAt: now, updatedAt: now },
+    { id: "grd-member-audit-2", committeeId: "grd-committee-audit-1", workerId: "worker-audit-1", role: "secretario", status: "active", createdAt: now, updatedAt: now },
+  ])
+  await db.insert(schema.preventionGrdMatrices).values({
+    id: "grd-matrix-audit-1",
+    worksiteId: "ws-audit-2",
+    matrixVersion: 1,
+    title: "Matriz GRD Faena Sur v1",
+    status: "published",
+    revisionReason: "Constitución del comité y análisis histórico de amenazas del sector.",
+    publishedHashSha256: crypto.createHash("sha256").update("grd-matrix-audit-1").digest("hex"),
+    createdByUserId: "user-audit-prevencion",
+    reviewedByUserId: "user-audit-prevencion",
+    reviewedAt: now,
+    approvedByUserId: userId,
+    approvedAt: now,
+    publishedByUserId: userId,
+    publishedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionGrdThreats).values([
+    {
+      id: "grd-threat-audit-1",
+      matrixId: "grd-matrix-audit-1",
+      name: "Sismo mayor",
+      origin: "obligatoria",
+      historicalAnalysis: "Chile presenta sismicidad mayor al menos una vez por década en la zona centro-sur.",
+      legalRequirement: "DS 44 art. 62 y Plan Nacional de Gestión Preventiva del Riesgo de Desastres.",
+      workPlan: "Simulacro anual de evacuación por sismo y reposición de kit de emergencia.",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "grd-threat-audit-2",
+      matrixId: "grd-matrix-audit-1",
+      name: "Incendio forestal de interfaz",
+      origin: "detectada",
+      historicalAnalysis: "Temporada 2025 registró incendios a menos de 10 km de la faena.",
+      legalRequirement: "DS 44 art. 62; recomendación ONEMI/SenaPREDE para zonas de interfaz.",
+      workPlan: "Cortafuegos perimetral, protocolo de suspensión de faena y coordinación con CONAF.",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
+  await db.insert(schema.preventionGrdMeetings).values({
+    id: "grd-meeting-audit-1",
+    code: "CGRD-2026-001",
+    committeeId: "grd-committee-audit-1",
+    scheduledFor: now,
+    agenda: "Revisión de matriz GRD v1, plan de trabajo por amenaza y state de simulacros.",
+    minutes: "Se revisó la matriz publicada, se asignó responsable al simulacro anual y se acordó verificar el cortafuegos antes del verano.",
+    status: "closed",
+    quorumReached: true,
+    closedByUserId: userId,
+    closedAt: now,
+    createdByUserId: userId,
+    createdAt: now,
+    updatedAt: now,
+  })
+  // La CAPA nace antes del acuerdo: en producción `closeGrdMeeting` la crea
+  // dentro de la misma transacción que cierra el acta, y el acuerdo cuelga de
+  // ella (FK). El seed respeta el mismo orden de dependencia.
+  await db.insert(schema.preventionCapaActions).values({
+    id: "capa-cgrd-audit-1",
+    code: "CAPA-2026-0902",
+    sourceType: "cgrd",
+    sourceId: "grd-meeting-audit-1",
+    worksiteId: "ws-audit-2",
+    finding: "Cortafuegos perimetral con acumulación de material combustible en el tramo norte.",
+    actionDescription: "Despejar el tramo norte del cortafuegos y programar su revisión trimestral.",
+    responsibleUserId: "user-audit-prevencion",
+    responsibleSnapshot: "Paula Mella",
+    responsibleRole: "Supervisora faena sur",
+    priority: "medium",
+    targetDate: shiftCaptureDateMonths(1, 15),
+    status: "in_progress",
+    evidenceRequired: true,
+    createdByUserId: "user-audit-prevencion",
+    startedByUserId: "user-audit-prevencion",
+    startedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionGrdAgreements).values({
+    id: "grd-agreement-audit-1",
+    meetingId: "grd-meeting-audit-1",
+    description: "Verificar el estado del cortafuegos perimetral y despejar el tramo norte.",
+    capaActionId: "capa-cgrd-audit-1",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.preventionCapaTransitions).values({
+    id: "capat-cgrd-audit-1",
+    actionId: "capa-cgrd-audit-1",
+    changeType: "status",
+    fromStatus: "pending",
+    toStatus: "in_progress",
+    reason: "Despeje programado con cuadrilla forestal.",
+    actorUserId: "user-audit-prevencion",
+    createdAt: now,
+  })
+
+  // ── Prevención: constancias PDTP (G17) ─────────────────────────────────
+  // Actividad de mechanism 'constancia' planificada en meses ya vencidos y
+  // sin ejecución aprobada: así /prevencion/constancias muestra la deuda que
+  // es la razón de ser del submódulo, no un panel vacío.
+  await db.insert(schema.pdtpActivities).values({
+    id: "pdtp-activity-constancia-audit-1",
+    programId: "prog-audit-1",
+    n: 84,
+    displayOrder: 84,
+    status: "active",
+    activity: "Constancia de difusión mensual del reglamento interno",
+    program: "Programa de Trabajo Preventivo 2026",
+    responsibleSlugs: ["prevencion"],
+    responsibleDisplay: "Prevención",
+    scheduleMode: "scheduled",
+    scheduleClassificationStatus: "confirmed",
+    recurrenceRule: { frequency: "monthly" },
+    mechanism: "constancia",
+    evidenceRequirement: "Constancia firmada por el responsable de faena.",
+    indicatorMode: "planned_vs_completed",
+    sourceSheetRow: 84,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.pdtpActivitySchedule).values([
+    { id: "pdtp-schedule-constancia-audit-1", activityId: "pdtp-activity-constancia-audit-1", year: 2026, month: 5, week: 1, plannedQuantity: 1, sourceColumn: "MAY-S1" },
+    { id: "pdtp-schedule-constancia-audit-2", activityId: "pdtp-activity-constancia-audit-1", year: 2026, month: 6, week: 1, plannedQuantity: 1, sourceColumn: "JUN-S1" },
+  ])
+  // La faena auditable es miembro activo del programa; sin membresía el
+  // resolutor de alcance devuelve el vacío y la deuda no aparece.
+  await db.insert(schema.pdtpProgramWorksites).values({
+    id: "pdtp-program-worksite-audit-1",
+    programId: "prog-audit-1",
+    worksiteId,
+    isActive: true,
+    addedByUserId: userId,
+    addedAt: now,
+  })
+
   await db.insert(schema.ppaSubmissions).values([
     {
       id: "ppa-audit-1",
@@ -4720,6 +5009,54 @@ async function prepareDatabase(captureDbUrl: string) {
       updatedAt: now,
     },
   ])
+
+  // ── Prevención: alcotest (G14, DO-48) ───────────────────────────────────
+  // Controles con resultado distinto (uno de tercero, sin worker) y el envío
+  // mensual del lote del mes anterior. Sin esto /prevencion/alcotest se
+  // capturaba vacía. Va después de service_equipment porque el control
+  // referencia al alcotómetro ALC-003 (equip-audit-2).
+  await db.insert(schema.alcoholTests).values([
+    {
+      id: "alcohol-test-audit-1",
+      worksiteId,
+      performedByUserId: "user-audit-prevencion",
+      testedWorkerId: "worker-audit-1",
+      equipmentId: "equip-audit-2",
+      shift: "dia",
+      performedAt: now,
+      result: "negativo",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "alcohol-test-audit-2",
+      worksiteId,
+      performedByUserId: "user-audit-prevencion",
+      testedPersonName: "Chofer proveedor Transportes RB",
+      shift: "noche",
+      performedAt: now,
+      result: "negativo",
+      createdAt: now,
+      updatedAt: now,
+    },
+  ])
+  // DO-48 reporta el lote del mes anterior al envío; chileDateParts().month - 1
+  // con wrap a diciembre del año previo (el CHECK exige mes 1–12).
+  const chileNow = chileDateParts(now)
+  const dispatchReportYear = chileNow.month === 1 ? chileNow.year - 1 : chileNow.year
+  const dispatchReportMonth = chileNow.month === 1 ? 12 : chileNow.month - 1
+  await db.insert(schema.alcoholTestDispatches).values({
+    id: "alcohol-dispatch-audit-1",
+    worksiteId,
+    year: dispatchReportYear,
+    month: dispatchReportMonth,
+    sentByUserId: "user-audit-prevencion",
+    sentAt: now,
+    recipient: "Administrador de contrato — Mandante",
+    testCount: 2,
+    createdAt: now,
+    updatedAt: now,
+  })
 
   // ── Visitas, fiscalizaciones y coordinación (DS 44 art. 20 y 70) ──────────
   await db.insert(schema.preventionExternalEngagements).values([

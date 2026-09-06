@@ -13,11 +13,11 @@ interface Props {
 /** Una cifra del flujo de cantidades de la solicitud (TR-F2). */
 function FlowStat({ label, value, uom }: { label: string; value: number; uom: string }) {
   return (
-    <div className="bg-slate-50 rounded-lg p-2 min-w-0 text-center">
+    <div className="bg-[var(--color-surface-2)] rounded-lg p-2 min-w-0 text-center">
       <dt className="text-[10px] text-[var(--color-text-muted)] block uppercase">{label}</dt>
       {/* TR-O2: la cantidad va como `<dd>` dentro del `<dl>` para que el lector
           de pantalla asocie cada cifra a su etapa sin depender sólo del color. */}
-      <dd className="font-mono text-xs font-bold text-slate-800 tabular-nums">
+      <dd className="font-mono text-xs font-bold text-[var(--color-text)] tabular-nums">
         {formatQty(value, uom)}
       </dd>
     </div>
@@ -43,7 +43,7 @@ export function ConsolidatedRequestsSummary({ requests }: Props) {
       {requests.map((request) => (
         <article
           key={request.requestId}
-          className="rounded-xl border border-slate-200/70 bg-white p-4 shadow-xs"
+          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-xs"
         >
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
@@ -100,11 +100,31 @@ export function ConsolidatedRequestsSummary({ requests }: Props) {
                     <FlowStat label="En OC" value={sum.inOc} uom={sum.uom} />
                     <FlowStat label="Rec. faena" value={sum.receivedFaena} uom={sum.uom} />
                     <FlowStat label="Entregado" value={sum.delivered} uom={sum.uom} />
-                    <div className="bg-amber-50/60 border border-amber-100 rounded-lg p-2 min-w-0 text-center">
-                      <dt className="text-[10px] text-amber-800 block uppercase">Pendiente</dt>
+                    {/* El naranja `signal` está reservado a lo que de verdad
+                        está pendiente: con saldo 0 el recuadro vuelve a neutro
+                        y la cifra al verde de completado, en vez de teñir de
+                        alerta una solicitud que ya no debe nada. */}
+                    <div
+                      className={`rounded-lg border p-2 min-w-0 text-center ${
+                        sum.pendingTotal > 0
+                          ? "bg-[var(--color-signal-tint)] border-[var(--color-signal-line)]"
+                          : "bg-[var(--color-surface-2)] border-[var(--color-border)]"
+                      }`}
+                    >
+                      <dt
+                        className={`text-[10px] block uppercase ${
+                          sum.pendingTotal > 0
+                            ? "text-[var(--color-signal-ink)]"
+                            : "text-[var(--color-text-muted)]"
+                        }`}
+                      >
+                        Pendiente
+                      </dt>
                       <dd
                         className={`font-mono text-xs font-bold tabular-nums ${
-                          sum.pendingTotal > 0 ? "text-amber-700" : "text-emerald-700"
+                          sum.pendingTotal > 0
+                            ? "text-[var(--color-signal-ink)]"
+                            : "text-[var(--color-success-ink)]"
                         }`}
                       >
                         {formatQty(sum.pendingTotal, sum.uom)}
@@ -117,7 +137,7 @@ export function ConsolidatedRequestsSummary({ requests }: Props) {
           </div>
 
           {request.orders.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-1.5 border-t border-slate-100 pt-2">
+            <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[var(--color-border)] pt-2">
               {request.orders.map((order) => (
                 <Link
                   key={order.orderId}

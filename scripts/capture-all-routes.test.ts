@@ -2,6 +2,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
+import { chileDateParts } from "@/lib/utils"
 import {
   cleanOutputDir,
   createDiscoveredCaptureRoutes,
@@ -18,6 +19,7 @@ import {
   resolveCaptureStoragePath,
   resolveServerLaunch,
   shouldUseProductionCaptureServer,
+  shiftCaptureDateMonths,
   uniqueInteractionSlug,
 } from "./capture-all-routes"
 import {
@@ -27,6 +29,40 @@ import {
 } from "./capture-route-inventory"
 
 const root = process.cwd()
+
+describe("shiftCaptureDateMonths", () => {
+  /**
+   * Los fixtures de vigencias (garantías TI, licencias, comité GRD) usan
+   * fechas relativas a HOY: una fecha absoluta envejece y la captura deja de
+   * mostrar los estados que dice documentar. HOY es el día de Chile — una
+   * captura corrida a las 22:00 de un domingo chileno no puede sembrar fechas
+   * de un martes por preguntarle a UTC.
+   */
+  it("resuelve HOY en hora de Chile y acota el día al último del mes desplazado", () => {
+    const { day: dayInChile, month: monthInChile, year: yearInChile } = chileDateParts()
+
+    // Sin día fijo conserva el día corriente (o el último disponible si el mes
+    // destino es más corto, p. ej. 31 → 30/feb).
+    const result = shiftCaptureDateMonths(1)
+    const expectedMonth = monthInChile === 12 ? 1 : monthInChile + 1
+    const expectedYear = monthInChile === 12 ? yearInChile + 1 : yearInChile
+    // El día se acota al último real del mes destino (p. ej. 31-mar → 30-abr).
+    const lastDayOfTarget = new Date(Date.UTC(expectedYear, expectedMonth, 0)).getUTCDate()
+    expect(result.startsWith(`${expectedYear}-`)).toBe(true)
+    expect(Number(result.slice(5, 7))).toBe(expectedMonth)
+    expect(Number(result.slice(8, 10))).toBe(Math.min(dayInChile, lastDayOfTarget))
+
+    // Un día fijo mayor que la longitud del mes destino cae al último día real:
+    // cualquier mes + 1 con día 31 nunca apunta a un día 31 de un mes de 30.
+    const clamped = shiftCaptureDateMonths(1, 31)
+    expect(Number(clamped.slice(8, 10))).toBeGreaterThanOrEqual(28)
+    expect(Number(clamped.slice(8, 10))).toBeLessThanOrEqual(31)
+
+    // Cruce de año hacia atrás y hacia delante: aritmética de meses, no de días.
+    expect(shiftCaptureDateMonths(-14, 10)).toMatch(/^\d{4}-\d{2}-10$/)
+    expect(shiftCaptureDateMonths(16, 1)).toMatch(/^\d{4}-\d{2}-01$/)
+  })
+})
 
 describe("uniqueInteractionSlug", () => {
   it("preserva capturas distintas cuando sus etiquetas producen el mismo slug", () => {
@@ -220,6 +256,7 @@ describe("capture-all-routes route inventory", () => {
     const productFixtures = getCaptureSeedCoverage().find((area) => area.section === "admin-productos")?.fixtures
     const supportFixtures = getCaptureSeedCoverage().find((area) => area.section === "soporte")?.fixtures
     const preventionFixtures = getCaptureSeedCoverage().find((area) => area.section === "prevencion")?.fixtures
+    const tiFixtures = getCaptureSeedCoverage().find((area) => area.section === "ti")?.fixtures
 
     expect(routes).toEqual(expect.arrayContaining([
       expect.objectContaining({ slug: "combustibles-importar-detalle", path: "/combustibles/importar/fuel-import-audit-1" }),
@@ -247,6 +284,30 @@ describe("capture-all-routes route inventory", () => {
       expect.objectContaining({ slug: "prevencion-pdtp-ejecucion", path: "/prevencion/pdtp/prog-audit-1/ejecucion/exec-audit-1" }),
       expect.objectContaining({ slug: "admin-inventario-faena-detalle", path: "/admin/inventario-faena/inventory-audit-1" }),
       expect.objectContaining({ slug: "flota-monitoreo", path: "/flota/monitoreo" }),
+      // Submódulos TI del ciclo de vida (septiembre 2026): explícitos, no
+      // delegados al auto-descubrimiento, porque dependen de fixtures propios.
+      expect.objectContaining({ slug: "ti-accesos", path: "/ti/accesos" }),
+      expect.objectContaining({ slug: "ti-bajas", path: "/ti/bajas" }),
+      expect.objectContaining({ slug: "ti-garantias", path: "/ti/garantias" }),
+      expect.objectContaining({ slug: "ti-licencias", path: "/ti/licencias" }),
+      expect.objectContaining({ slug: "ti-mantenciones", path: "/ti/mantenciones" }),
+      expect.objectContaining({ slug: "ti-reportes", path: "/ti/reportes" }),
+      // G14/G15/G17 de Prevención (septiembre 2026), igual criterio.
+      expect.objectContaining({ slug: "prevencion-alcotest", path: "/prevencion/alcotest" }),
+      expect.objectContaining({ slug: "prevencion-cgrd", path: "/prevencion/cgrd" }),
+      expect.objectContaining({ slug: "prevencion-constancias", path: "/prevencion/constancias" }),
+    ]))
+    expect(preventionFixtures).toEqual(expect.arrayContaining([
+      "control de alcotest negativo con equipo y envío mensual del lote DO-48",
+      "coordinador GRD en faena chica y comité GRD con matriz publicada y acta cerrada",
+      "actividad de constancia PDTP planificada sin ejecución (deuda abierta)",
+    ]))
+    expect(tiFixtures).toEqual(expect.arrayContaining([
+      "activo disponible con garantía vigente",
+      "activo con garantía vencida y reparación costosa",
+      "baja de activo autorizada",
+      "licencia con asignaciones a trabajador y equipo",
+      "sistemas de acceso con trabajador activo y suspendido",
     ]))
     expect(combustibleFixtures).toEqual(expect.arrayContaining([
       "lote de consumos con registros asociados y sin asociar",
