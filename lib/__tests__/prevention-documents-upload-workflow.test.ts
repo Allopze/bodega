@@ -4,7 +4,7 @@ const insertedRows = vi.hoisted(() => [] as Array<Record<string, unknown>>)
 const mockUpdate = vi.hoisted(() => vi.fn())
 const mockWriteBuffer = vi.hoisted(() => vi.fn(async () => undefined))
 const mockMkdirp = vi.hoisted(() => vi.fn(async () => undefined))
-const mockUnlink = vi.hoisted(() => vi.fn(async () => undefined))
+const mockRemoveFile = vi.hoisted(() => vi.fn(async () => undefined))
 const insertState = vi.hoisted(() => ({ succeeds: true }))
 let selectCall = 0
 
@@ -45,16 +45,14 @@ vi.mock("@/db", () => ({
 vi.mock("@/lib/storage/helpers", () => ({
   mkdirp: mockMkdirp,
   writeBuffer: mockWriteBuffer,
+  removeFile: mockRemoveFile,
 }))
 
 vi.mock("@/lib/storage/config", () => ({
   resolveSstDocumentsDir: () => "/tmp/chome-sst-documents-test",
-  createSstDocumentPath: (name: string) => `sst-documents/${name}`,
+  createSstDocumentPath: (name: string) => `storage/sst-documents/${name}`,
   resolveSstDocumentFile: () => "/tmp/chome-sst-documents-test/orphan.pdf",
 }))
-
-vi.mock("node:fs", () => ({ promises: { unlink: mockUnlink } }))
-
 vi.mock("@/lib/audit", () => ({
   recordAudit: vi.fn(),
   recordStatusChange: vi.fn(),
@@ -118,7 +116,7 @@ describe("document version upload containment", () => {
       permissions: ["prevention:docs:manage"],
     })).rejects.toThrow(/registrar la nueva versión/i)
 
-    expect(mockUnlink).toHaveBeenCalledWith("/tmp/chome-sst-documents-test/orphan.pdf")
+    expect(mockRemoveFile).toHaveBeenCalledWith("/tmp/chome-sst-documents-test/orphan.pdf")
     expect(mockUpdate).not.toHaveBeenCalled()
   })
 

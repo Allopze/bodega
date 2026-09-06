@@ -156,11 +156,45 @@ _FAILED_STEP="storage_tar"
 
 STORAGE_FILE="${SNAPSHOT_DIR}/storage.tar.gz"
 
+# Si los documentos SST viven en Cloudreve, el tar local ya no los contiene.
+# Se descargan a un directorio temporal y se mezclan dentro del tar con la MISMA
+# ruta relativa (`storage/sst-documents/`) para que restore-all.sh siga
+# funcionando sin cambios. Si la descarga falla, el backup ABORTA: un backup
+# "exitoso" sin los documentos DS 44 es un respaldo que miente.
+_CLOUDREVE_SST_TMP=""
+if [ "${SST_STORAGE_BACKEND:-filesystem}" = "cloudreve" ]; then
+  _CLOUDREVE_SST_TMP=$(mktemp -d)
+  log "  Descargando documentos SST desde Cloudreve..."
+  if ! node /app/scripts/download-sst-documents.mjs "${_CLOUDREVE_SST_TMP}"; then
+    error "No se pudieron descargar los documentos SST desde Cloudreve. Backup abortado."
+    rm -rf "${_CLOUDREVE_SST_TMP}"
+    exit 1
+  fi
+fi
+
 if [ -d "$STORAGE_PATH" ]; then
-  tar -czf "$STORAGE_FILE" \
-    --exclude='.health-*.tmp' \
-    -C "$(dirname "$STORAGE_PATH")" \
-    "$(basename "$STORAGE_PATH")" 2>&1
+  if [ -n "${_CLOUDREVE_SST_TMP}" ]; then
+    # Staging con copia real (no hardlinks: el volumen de Docker puede vivir en
+    # otro filesystem) para que `tar -C` vea `storage/sst-documents/` con el
+    # contenido fresco desde Cloudreve. El volumen real queda intacto.
+    # cp sin -a no preserva timestamps pero evita fallar si el destino tiene
+    # dueño distinto (volumen Docker); los contenidos son lo que importa.
+    _SST_STAGE=$(mktemp -d "$(dirname "$STORAGE_PATH")/.sst-backup-stage.XXXXXX")
+    cp -a "$STORAGE_PATH" "${_SST_STAGE}/storage" 2>/dev/null || cp -r "$STORAGE_PATH" "${_SST_STAGE}/storage"
+    rm -rf "${_SST_STAGE}/storage/sst-documents"
+    mkdir -p "${_SST_STAGE}/storage/sst-documents"
+    cp -a "${_CLOUDREVE_SST_TMP}/." "${_SST_STAGE}/storage/sst-documents/" 2>/dev/null || cp -r "${_CLOUDREVE_SST_TMP}/." "${_SST_STAGE}/storage/sst-documents/"
+    tar -czf "$STORAGE_FILE" \
+      --exclude='.health-*.tmp' \
+      -C "${_SST_STAGE}" \
+      "storage" 2>&1
+    rm -rf "${_SST_STAGE}" "${_CLOUDREVE_SST_TMP}"
+  else
+    tar -czf "$STORAGE_FILE" \
+      --exclude='.health-*.tmp' \
+      -C "$(dirname "$STORAGE_PATH")" \
+      "$(basename "$STORAGE_PATH")" 2>&1
+  fi
 
   STORAGE_SIZE=$(bytes "$STORAGE_FILE")
   STORAGE_SHA256=$(sha256file "$STORAGE_FILE")
@@ -213,6 +247,12 @@ ENV_WHITELIST=(
   # queda sin forma de volver a sincronizar.
   ARAMCO_DOCUMENT_NUMBER ARAMCO_PASSWORD ARAMCO_SYNC_ENABLED ARAMCO_SYNC_IMPORTER_EMAIL
   ONWAY_USERNAME ONWAY_PASSWORD ONWAY_SYNC_ENABLED
+  # Cloudreve (storage de documentos SST): la URL y el backend son configuración
+  # funcional; las credenciales son el respaldo del .env del servidor (las
+  # cifradas viven en system_settings y viajan en el dump PG). Mismo caso que
+  # Aramco/Copec: sin ellas un restore se queda sin acceso al WebDAV.
+  SST_STORAGE_BACKEND CLOUDREVE_BASE_URL CLOUDREVE_USERNAME CLOUDREVE_PASSWORD
+  CLOUDREVE_SST_PATH CLOUDREVE_REQUEST_TIMEOUT_MS
   TAX_RATE PDF_MAX_CONCURRENT PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
   TAE_OCR_MAX_CONCURRENT
   SENTRY_DSN NEXT_PUBLIC_SENTRY_DSN

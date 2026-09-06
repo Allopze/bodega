@@ -108,6 +108,19 @@ services:
       - RESEND_API_KEY=${RESEND_API_KEY:-}
       - SENTRY_DSN=${SENTRY_DSN:-}
       - STORAGE_PATH=${STORAGE_PATH:-/data/storage}
+      # Backend de documentos SST: filesystem (default) o cloudreve. Solo
+      # `cloudreve` activa las credenciales de abajo.
+      - SST_STORAGE_BACKEND=${SST_STORAGE_BACKEND:-filesystem}
+      # Passthrough, nunca un valor literal: las credenciales de Cloudreve se
+      # guardan cifradas en system_settings o se inyectan desde el .env del host.
+      - CLOUDREVE_BASE_URL=${CLOUDREVE_BASE_URL:-}
+      - CLOUDREVE_USERNAME=${CLOUDREVE_USERNAME:-}
+      - CLOUDREVE_PASSWORD=${CLOUDREVE_PASSWORD:-}
+      - CLOUDREVE_REQUEST_TIMEOUT_MS=${CLOUDREVE_REQUEST_TIMEOUT_MS:-}
+      # Carpeta remota dentro del WebDAV para los documentos SST (default
+      # storage/sst-documents). Ej: Prevención/Plataforma si la app usa una
+      # subcarpeta propia dentro de la carpeta compartida del drive de Chome.
+      - CLOUDREVE_SST_PATH=${CLOUDREVE_SST_PATH:-}
       - BACKUP_DIR=${BACKUP_DIR:-/data/backups}
       - GDRIVE_BACKUPS_DEST=${GDRIVE_BACKUPS_DEST:-}
       - RETENTION_DAYS=${RETENTION_DAYS:-30}
@@ -155,6 +168,18 @@ services:
       - BACKUP_DIR=${BACKUP_DIR:-/data/backups}
       - GDRIVE_BACKUPS_DEST=${GDRIVE_BACKUPS_DEST:-}
       - RETENTION_DAYS=${RETENTION_DAYS:-30}
+      # Para recoger los documentos SST desde Cloudreve cuando
+      # SST_STORAGE_BACKEND=cloudreve: las credenciales del WebDAV (respaldo del
+      # .env; las cifradas viven en system_settings y requieren el keyring DTE).
+      - SST_STORAGE_BACKEND=${SST_STORAGE_BACKEND:-filesystem}
+      - CLOUDREVE_BASE_URL=${CLOUDREVE_BASE_URL:-}
+      - CLOUDREVE_USERNAME=${CLOUDREVE_USERNAME:-}
+      - CLOUDREVE_PASSWORD=${CLOUDREVE_PASSWORD:-}
+      - CLOUDREVE_REQUEST_TIMEOUT_MS=${CLOUDREVE_REQUEST_TIMEOUT_MS:-}
+      - CLOUDREVE_SST_PATH=${CLOUDREVE_SST_PATH:-}
+      - DTE_SETTINGS_KEYRING=${DTE_SETTINGS_KEYRING:-}
+      - DTE_SETTINGS_ACTIVE_KEY_ID=${DTE_SETTINGS_ACTIVE_KEY_ID:-}
+      - DTE_SETTINGS_MODE=${DTE_SETTINGS_MODE:-compat}
       # Passthrough, nunca un valor literal: es la llave con la que
       # backup-orchestrator.sh cifra el snapshot antes de subirlo a Drive. Sin
       # ella acá el respaldo sube EN CLARO aunque el host la tenga configurada
@@ -601,6 +626,41 @@ services:
     volumes:
       - bodega-storage:/data/storage:ro
     command: ["node", "scripts/backfill-dte-order-refs.mjs"]
+
+  # One-shot a demanda: migra los documentos SST del filesystem local a
+  # Cloudreve (WebDAV). Idempotente, verifica SHA-256 contra
+  # `sstDocumentVersions.checksum` y NO borra el origen local (rollback =
+  # volver SST_STORAGE_BACKEND a filesystem).
+  #
+  # Requiere las credenciales de Cloudreve: vienen del .env del host
+  # (CLOUDREVE_*) y/o de system_settings cifradas con el keyring DTE, así que
+  # este servicio recibe también el keyring igual que `app`.
+  #
+  #   docker compose run --rm migrate-sst-to-cloudreve
+  migrate-sst-to-cloudreve:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - STORAGE_PATH=${STORAGE_PATH:-/data/storage}
+      - CLOUDREVE_BASE_URL=${CLOUDREVE_BASE_URL:-}
+      - CLOUDREVE_USERNAME=${CLOUDREVE_USERNAME:-}
+      - CLOUDREVE_PASSWORD=${CLOUDREVE_PASSWORD:-}
+      - CLOUDREVE_REQUEST_TIMEOUT_MS=${CLOUDREVE_REQUEST_TIMEOUT_MS:-}
+      - CLOUDREVE_SST_PATH=${CLOUDREVE_SST_PATH:-}
+      - DTE_SETTINGS_KEYRING=${DTE_SETTINGS_KEYRING:-}
+      - DTE_SETTINGS_ACTIVE_KEY_ID=${DTE_SETTINGS_ACTIVE_KEY_ID:-}
+      - DTE_SETTINGS_MODE=${DTE_SETTINGS_MODE:-compat}
+    volumes:
+      - bodega-storage:/data/storage:ro
+    command: ["node", "scripts/migrate-sst-to-cloudreve.mjs"]
 
   # One-shot de sólo lectura: dimensiona el rescate del detalle de combustible
   # (odómetro por transacción) y la deriva del ledger. No escribe nada — la

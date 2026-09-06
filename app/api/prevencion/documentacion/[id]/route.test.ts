@@ -26,8 +26,7 @@ vi.mock("@/db", () => ({
     }),
   },
 }))
-vi.mock("@/lib/storage/config", () => ({ resolveSstDocumentFile: () => "/tmp/document.pdf" }))
-vi.mock("node:fs", () => ({ promises: { readFile: mockReadFile } }))
+vi.mock("@/lib/storage/sst-backend", () => ({ readSstDocument: mockReadFile }))
 vi.mock("@/lib/services/prevention-documents-library", () => ({
   recordDocumentDownload: vi.fn(),
   recordDocumentView: mockRecordDocumentView,

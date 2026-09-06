@@ -228,6 +228,29 @@ RUN ./node_modules/.bin/esbuild scripts/backfill-dte-order-refs.ts \
     --external:postgres \
     --outfile=/tmp/backfill-dte-order-refs.mjs
 
+# Migración de documentos SST del filesystem local a Cloudreve (WebDAV).
+# Corre a demanda (nunca en el deploy): el operador la ejecuta explícitamente
+# después de verificar la instancia Cloudreve. Externaliza sólo lo que la
+# imagen standalone resuelve (drizzle-orm + postgres); el resto se empaqueta.
+RUN ./node_modules/.bin/esbuild scripts/migrate-sst-to-cloudreve.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/migrate-sst-to-cloudreve.mjs
+
+# Descarga del espacio SST desde el backend activo para el backup. No toca la
+# BD: externaliza sólo postgres por consistencia con el resto (aunque no lo use)
+# y empaqueta el resto para que la imagen standalone lo resuelva.
+RUN ./node_modules/.bin/esbuild scripts/download-sst-documents.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:postgres \
+    --outfile=/tmp/download-sst-documents.mjs
+
 # Mismo motivo, para los one-shot de combustible. El backfill de lecturas de
 # medidor reconstruye la serie de odómetro desde el detalle que ya está guardado
 # en `raw_row`, y el sync del catálogo de reglas deja disponibles las reglas
@@ -349,6 +372,8 @@ COPY --from=build /tmp/invoice-reconciliation/preflight-purchase-invoice-reconci
 COPY --from=build /tmp/invoice-reconciliation/backfill-purchase-invoice-reconciliation.mjs ./scripts/backfill-purchase-invoice-reconciliation.mjs
 COPY --from=build /tmp/invoice-reconciliation/rollback-purchase-invoice-reconciliation-statuses.mjs ./scripts/rollback-purchase-invoice-reconciliation-statuses.mjs
 COPY --from=build /tmp/backfill-dte-order-refs.mjs ./scripts/backfill-dte-order-refs.mjs
+COPY --from=build /tmp/migrate-sst-to-cloudreve.mjs ./scripts/migrate-sst-to-cloudreve.mjs
+COPY --from=build /tmp/download-sst-documents.mjs ./scripts/download-sst-documents.mjs
 COPY --from=build /tmp/fuel/backfill-fuel-meter-readings.mjs ./scripts/backfill-fuel-meter-readings.mjs
 COPY --from=build /tmp/fuel/seed-fuel-anomaly-rules.mjs ./scripts/seed-fuel-anomaly-rules.mjs
 COPY --from=build /tmp/preflight-fuel-integrations.mjs ./scripts/preflight-fuel-integrations.mjs

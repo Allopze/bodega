@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { join, extname } from "node:path"
+import { extname } from "node:path"
 import { db, type DB } from "@/db"
 import {
   sstDocumentAudit,
@@ -7,8 +7,8 @@ import {
   type SstDocumentVersion,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
-import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
-import { resolveSstDocumentsDir, createSstDocumentPath } from "@/lib/storage/config"
+import { createSstDocumentPath } from "@/lib/storage/config"
+import { writeSstDocument } from "@/lib/storage/sst-backend"
 import { type WorksiteScope } from "@/lib/auth/scope"
 import { todayInChile } from "@/lib/utils"
 import { buildFolderOptionLabels } from "./labels"
@@ -220,12 +220,13 @@ export async function readFileToBuffer(
 export async function persistFileOnDisk(
   storageName: string,
   buffer: Uint8Array,
+  folderSegments?: readonly string[],
 ): Promise<string> {
-  const dir = resolveSstDocumentsDir()
-  await mkdirp(dir)
-  const absolutePath = join(dir, storageName)
-  await writeBuffer(absolutePath, Buffer.from(buffer))
-  return createSstDocumentPath(storageName)
+  // El backend activo (filesystem o Cloudreve) decide dónde vive el archivo;
+  // el filePath lógico que se persiste en BD incluye los segmentos de carpeta
+  // para materializar el árbol de la plataforma en el drive.
+  const logicalPath = createSstDocumentPath(storageName, folderSegments)
+  return writeSstDocument(logicalPath, Buffer.from(buffer))
 }
 
 /**

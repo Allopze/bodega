@@ -33,10 +33,9 @@ vi.mock("@/db", () => ({
     }),
   },
 }))
-vi.mock("@/lib/storage/config", () => ({
-  resolveSstDocumentFile: () => "/tmp/document.pdf",
+vi.mock("@/lib/storage/sst-backend", () => ({
+  readSstDocument: mockReadFile,
 }))
-vi.mock("node:fs", () => ({ promises: { readFile: mockReadFile } }))
 vi.mock("@/lib/services/prevention-documents-library", () => ({
   recordDocumentDownload: mockRecordDocumentDownload,
 }))
@@ -119,7 +118,7 @@ describe("GET document version authorization", () => {
     const response = await requestVersion()
 
     expect(response.status).toBe(200)
-    expect(mockReadFile).toHaveBeenCalledWith("/tmp/document.pdf")
+    expect(mockReadFile).toHaveBeenCalledWith("sst-documents/document.pdf")
     expect(mockRecordDocumentDownload).toHaveBeenCalledWith(expect.objectContaining({
       documentId: "sdoc-1",
       versionId: "sdv-draft",

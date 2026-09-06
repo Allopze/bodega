@@ -9,6 +9,7 @@ import {
   folderSlug,
   normalizeFolderName,
 } from "./utils"
+import { ensureSstFolderPhysical } from "./folder-storage"
 
 type FolderRow = typeof sstDocumentFolders.$inferSelect
 
@@ -90,6 +91,12 @@ export async function getOrCreateSystemFolder(args: {
     .where(and(isNull(sstDocumentFolders.parentId), eq(sstDocumentFolders.slug, slug)))
     .limit(1)
   if (!folder) throw new Error("No se pudo crear u obtener la carpeta del sistema.")
+  // Materializa la carpeta física en el storage (idempotente): el archivo de
+  // la evaluación se guardará dentro de ella en el drive.
+  await ensureSstFolderPhysical(folder.id).catch(() => {
+    // Best-effort: si el storage no responde, el upload siguiente con
+    // ensureParentDirs la materializará antes de escribir.
+  })
   return folder
 }
 

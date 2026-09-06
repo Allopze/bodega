@@ -1,7 +1,6 @@
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
-import { promises as fs } from "node:fs"
 import { basename, extname } from "node:path"
 import { NextResponse } from "next/server"
 import { and, eq, inArray } from "drizzle-orm"
@@ -9,7 +8,7 @@ import { db } from "@/db"
 import { sstDocuments, sstDocumentVersions } from "@/db/schema"
 import { auth } from "@/lib/auth/auth"
 import { can, canAccessWorksite } from "@/lib/auth/can"
-import { resolveSstDocumentFile } from "@/lib/storage/config"
+import { readSstDocument, statSstDocument } from "@/lib/storage/sst-backend"
 import { encodeContentDisposition } from "@/lib/utils"
 import { logger } from "@/lib/logger"
 import { recordDocumentDownload } from "@/lib/services/prevention-documents-library"
@@ -49,21 +48,25 @@ export async function GET(request: Request) {
   const readableRows = rows.flatMap((row) => {
     if (row.worksiteId && !canAccessWorksite(session, row.worksiteId)) return []
     if (!canReadDocumentConfidentiality(row.confidentiality, session.user.permissions)) return []
-    const absolutePath = resolveSstDocumentFile(row.filePath)
-    return absolutePath ? [{ row, absolutePath }] : []
+    return [{ row, filePath: row.filePath }]
   })
-  // El tope agregado se decide con `stat`, ANTES de leer los archivos a memoria.
-  // Leyendo primero (50 × 25 MB) el pico eran ~1,25 GB de Buffers, que el
-  // `Buffer.concat` del ZIP volvía a duplicar, para después descartar lo que
-  // sobraba del límite: se pagaba la memoria de todo lo que no se iba a entregar.
-  const sized: Array<{ row: (typeof readableRows)[number]["row"]; absolutePath: string; size: number }> = []
+  // El tope agregado se decide con `stat` (tamaño sin leer), ANTES de leer los
+  // archivos a memoria. Leyendo primero (50 × 25 MB) el pico eran ~1,25 GB de
+  // Buffers, que el `Buffer.concat` del ZIP volvía a duplicar, para después
+  // descartar lo que sobraba del límite: se pagaba la memoria de todo lo que no
+  // se iba a entregar.
+  const sized: Array<{ row: (typeof readableRows)[number]["row"]; filePath: string; size: number }> = []
   let plannedBytes = 0
-  for (const { row, absolutePath } of readableRows) {
-    let size: number
+  for (const { row, filePath } of readableRows) {
+    let size: number | null
     try {
-      size = (await fs.stat(absolutePath)).size
+      size = (await statSstDocument(filePath))?.size ?? null
     } catch (err) {
       logger.warn("[documentacion/bulk-download] no se pudo incluir archivo", { documentId: row.documentId, err })
+      continue
+    }
+    if (size === null) {
+      logger.warn("[documentacion/bulk-download] archivo inexistente", { documentId: row.documentId })
       continue
     }
     if (size > MAX_BULK_BYTES) {
@@ -75,7 +78,7 @@ export async function GET(request: Request) {
       break
     }
     plannedBytes += size
-    sized.push({ row, absolutePath, size })
+    sized.push({ row, filePath, size })
   }
 
   const files: Array<{ name: string; data: Buffer }> = []
@@ -84,7 +87,7 @@ export async function GET(request: Request) {
   for (const entry of sized) {
     let data: Buffer
     try {
-      data = await fs.readFile(entry.absolutePath)
+      data = await readSstDocument(entry.filePath)
     } catch (err) {
       logger.warn("[documentacion/bulk-download] no se pudo leer archivo", { documentId: entry.row.documentId, err })
       continue

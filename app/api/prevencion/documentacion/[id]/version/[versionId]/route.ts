@@ -4,14 +4,13 @@ export const runtime = "nodejs"
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
 import { can, canAccessWorksite, canAny } from "@/lib/auth/can"
-import { resolveSstDocumentFile } from "@/lib/storage/config"
+import { readSstDocument } from "@/lib/storage/sst-backend"
 import { db } from "@/db"
 import { sstDocumentVersions, sstDocuments } from "@/db/schema"
 import { eq } from "drizzle-orm"
 import { encodeContentDisposition } from "@/lib/utils"
 import { logger } from "@/lib/logger"
 import { recordDocumentDownload } from "@/lib/services/prevention-documents-library"
-import { promises as fs } from "node:fs"
 import { canReadDocumentConfidentiality } from "@/lib/services/prevention-documents/utils"
 
 interface RouteCtx {
@@ -65,9 +64,6 @@ export async function GET(_request: Request, ctx: RouteCtx) {
     return NextResponse.json({ error: "Versión no encontrada" }, { status: 404 })
   }
 
-  const absolutePath = resolveSstDocumentFile(version.filePath)
-  if (!absolutePath) return NextResponse.json({ error: "Ruta inválida" }, { status: 400 })
-
   try {
     await recordDocumentDownload({
       documentId: id,
@@ -80,8 +76,8 @@ export async function GET(_request: Request, ctx: RouteCtx) {
   }
 
   try {
-    const file = await fs.readFile(absolutePath)
-    return new Response(file, {
+    const file = await readSstDocument(version.filePath)
+    return new Response(new Blob([new Uint8Array(file)], { type: version.mimeType ?? "application/octet-stream" }), {
       headers: {
         "Content-Type": version.mimeType ?? "application/octet-stream",
         "Content-Disposition": encodeContentDisposition(version.fileName, "attachment"),

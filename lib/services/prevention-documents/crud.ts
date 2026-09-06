@@ -1,5 +1,4 @@
 import { and, eq, ne, sql } from "drizzle-orm"
-import { promises as fs } from "node:fs"
 import { db } from "@/db"
 import {
   sstDocuments,
@@ -7,8 +6,10 @@ import {
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
-import { resolveSstDocumentFile } from "@/lib/storage/config"
+import { deleteSstDocument } from "@/lib/storage/sst-backend"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
+import { getFolderRemoteSegments } from "./folder-storage"
+import { relocateDocumentFiles } from "./folders-move"
 import {
   sstDocumentCreateSchema,
   sstDocumentUpdateSchema,
@@ -96,6 +97,18 @@ export async function updateDocumentMetadata(args: {
   }
 
   const now = new Date().toISOString()
+  // Cambio de carpeta: mover primero los archivos físicos de todas las
+  // versiones (con compensación si falla), y solo después persistir el
+  // folderId nuevo — la BD sigue siendo la fuente de verdad.
+  if (data.folderId !== undefined) {
+    const targetFolderId = data.folderId || null
+    if (targetFolderId !== doc.folderId) {
+      const fromSegments = await getFolderRemoteSegments(doc.folderId)
+      const toSegments = await getFolderRemoteSegments(targetFolderId)
+      await relocateDocumentFiles(doc.id, fromSegments, toSegments)
+    }
+  }
+
   const patch: Record<string, unknown> = { updatedAt: now }
   if (data.title !== undefined) patch.title = data.title
   if (data.folderId !== undefined) patch.folderId = data.folderId || null
@@ -153,7 +166,8 @@ export async function uploadDocumentVersion(args: {
   if (dupe) throw new Error(`Este archivo ya existe como versión ${dupe.version} del documento.`)
 
   const storageName = generateStorageName(file.name)
-  const relativePath = await persistFileOnDisk(storageName, file.buffer)
+  const folderSegments = await getFolderRemoteSegments(doc.folderId)
+  const relativePath = await persistFileOnDisk(storageName, file.buffer, folderSegments)
   const now = new Date().toISOString()
   const id = `sdv-${nanoid()}`
 
@@ -169,7 +183,7 @@ export async function uploadDocumentVersion(args: {
   }).returning()
 
   if (!row) {
-    try { const abs = resolveSstDocumentFile(relativePath); if (abs) await fs.unlink(abs) }
+    try { await deleteSstDocument(relativePath) }
     catch (err) { logger.warn("[documents-library] no se pudo limpiar archivo huérfano", err) }
     throw new Error("No se pudo registrar la nueva versión.")
   }

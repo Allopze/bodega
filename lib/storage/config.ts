@@ -137,6 +137,8 @@ function isSafeStorageName(storageName: string): boolean {
     && storageName !== "."
     && storageName !== ".."
     && storageName === path.posix.basename(storageName)
+    && !storageName.includes("\\")
+    && !/[\u0000-\u001f]/.test(storageName)
 }
 
 export function resolveFleetDir(): string {
@@ -188,22 +190,31 @@ export function resolveSstDocumentsDir(): string {
   return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "sst-documents")
 }
 
-export function createSstDocumentPath(storageName: string): string {
+export function createSstDocumentPath(storageName: string, folderSegments?: readonly string[]): string {
   if (!isSafeStorageName(storageName)) {
     throw new Error("Invalid sst document storage name")
   }
-  return `${SST_DOCUMENT_PREFIX}${storageName}`
+  const safeSegments = (folderSegments ?? []).map((segment) => {
+    if (!isSafeStorageName(segment)) {
+      throw new Error("Invalid sst document folder segment")
+    }
+    return segment
+  })
+  return `${SST_DOCUMENT_PREFIX}${[...safeSegments, storageName].join("/")}`
 }
 
 export function resolveSstDocumentFile(filePath: string): string | null {
   if (!filePath.startsWith(SST_DOCUMENT_PREFIX)) {
     return null
   }
-  const storageName = filePath.slice(SST_DOCUMENT_PREFIX.length)
-  if (!isSafeStorageName(storageName)) {
+  // El path lógico puede ser anidado: storage/sst-documents/<carpetas>/<name>.
+  // Cada segmento se valida por separado (anti-traversal por nivel).
+  const relative = filePath.slice(SST_DOCUMENT_PREFIX.length)
+  const segments = relative.split("/")
+  if (segments.length === 0 || !segments.every(isSafeStorageName)) {
     return null
   }
-  return path.join(/*turbopackIgnore: true*/ resolveSstDocumentsDir(), storageName)
+  return path.join(/*turbopackIgnore: true*/ resolveSstDocumentsDir(), ...segments)
 }
 
 /* Archivos sensibles de Prevención: siempre contienen ciphertext AES-GCM. */

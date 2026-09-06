@@ -27,19 +27,33 @@ vi.mock("@/db", () => ({
 }))
 
 // Los archivos se escriben en disco real (persistFileOnDisk); se redirige a
-// un tmp dir para no depender de la config de storage de producción.
-import { mkdtempSync } from "node:fs"
+// un tmp dir para no depender de la config de storage de producción. El backend
+// conmutable resuelve el prefijo lógico `storage/sst-documents/` contra este
+// tmp dir en modo filesystem.
+import { mkdtempSync, promises as fs } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 const tmpStorageDir = mkdtempSync(join(tmpdir(), "sst-documents-test-"))
 
 vi.mock("@/lib/storage/config", () => ({
   resolveSstDocumentsDir: () => tmpStorageDir,
-  createSstDocumentPath: (name: string) => `sst-documents/${name}`,
+  createSstDocumentPath: (name: string, segments?: readonly string[]) =>
+    `storage/sst-documents/${[...(segments ?? []), name].join("/")}`,
   resolveSstDocumentFile: (filePath: string) => {
-    const prefix = "sst-documents/"
-    return filePath.startsWith(prefix) ? join(tmpStorageDir, filePath.slice(prefix.length)) : null
+    const prefix = "storage/sst-documents/"
+    if (!filePath.startsWith(prefix)) return null
+    const segments = filePath.slice(prefix.length).split("/")
+    const isSafe = (segment: string) =>
+      Boolean(segment) && segment !== "." && segment !== ".." && !segment.includes("\\")
+    if (!segments.every(isSafe)) return null
+    return join(tmpStorageDir, ...segments)
   },
+}))
+vi.mock("@/lib/storage/helpers", () => ({
+  mkdirp: async (dir: string) => fs.mkdir(dir, { recursive: true }),
+  writeBuffer: async (filePath: string, buffer: Buffer) => fs.writeFile(filePath, buffer),
+  readBuffer: async (filePath: string) => fs.readFile(filePath),
+  removeFile: async (filePath: string) => fs.unlink(filePath).catch(() => undefined),
 }))
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
@@ -188,5 +202,37 @@ describe("prevention-documents-library — persistencia real (PGlite)", () => {
       input: { documentId: doc.id, file: { name: "procedimiento.pdf", type: "application/pdf", size: PDF_BYTES.byteLength, buffer: PDF_BYTES } },
       ctx: CTX, scope: SCOPE_WS1, permissions: ["prevention:docs:manage"],
     })).rejects.toThrow(/archivado/i)
+  })
+
+  it("materializa el árbol de carpetas: subir a una carpeta escribe el archivo en su ruta anidada", async () => {
+    const { createDocumentFolder, createDocument, uploadDocumentVersion } = await import("@/lib/services/prevention-documents-library")
+
+    const folder = await createDocumentFolder({
+      input: { name: "Procedimientos", parentId: null, worksiteId: "ws-1" },
+      ctx: CTX, scope: SCOPE_WS1,
+    })
+    const doc = await createDocument({
+      data: {
+        categorySlug: "gestion_preventiva",
+        title: "Procedimiento en carpeta",
+        worksiteId: "ws-1",
+        folderId: folder.id,
+      },
+      ctx: CTX, scope: SCOPE_WS1, permissions: ["prevention:docs:manage"],
+    })
+
+    const version = await uploadDocumentVersion({
+      input: { documentId: doc.id, file: { name: "procedimiento.pdf", type: "application/pdf", size: PDF_BYTES.byteLength, buffer: PDF_BYTES } },
+      ctx: CTX, scope: SCOPE_WS1, permissions: ["prevention:docs:manage"],
+    })
+
+    // El path lógico incluye el segmento de la carpeta y el archivo existe
+    // físicamente en la ruta anidada del backend filesystem.
+    expect(version.filePath).toMatch(/^storage\/sst-documents\/Procedimientos\//)
+    const physical = join(tmpStorageDir, version.filePath.slice("storage/sst-documents/".length))
+    const stat = await fs.stat(physical)
+    expect(stat.isFile()).toBe(true)
+    // La carpeta física existe.
+    expect((await fs.stat(join(tmpStorageDir, "Procedimientos"))).isDirectory()).toBe(true)
   })
 })

@@ -38,6 +38,7 @@ import {
   persistFileOnDisk,
   recordAuditEntry,
   getOrCreateSystemFolder,
+  getFolderRemoteSegments,
 } from "@/lib/services/prevention-documents-library"
 
 const EVALUATIONS_FOLDER_NAME = "Evaluaciones SST"
@@ -87,7 +88,8 @@ export async function archiveEvaluationPdf(evaluationId: string, session: Sessio
     const now = new Date().toISOString()
     const checksum = sha256Hex(pdfBuffer)
     const storageName = generateStorageName(suggestedFilename)
-    const relativePath = await persistFileOnDisk(storageName, pdfBuffer)
+    const folderSegments = await getFolderRemoteSegments(folder.id)
+    const relativePath = await persistFileOnDisk(storageName, pdfBuffer, folderSegments)
 
     // Las cinco escrituras van en una transacción: el documento nace con
     // `currentVersionId = NULL` y sólo el UPDATE posterior lo apunta, así que un

@@ -4,7 +4,7 @@ export const runtime = "nodejs"
 import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
 import { can, canAccessWorksite } from "@/lib/auth/can"
-import { resolveSstDocumentFile } from "@/lib/storage/config"
+import { readSstDocument } from "@/lib/storage/sst-backend"
 import { db } from "@/db"
 import { sstDocumentVersions, sstDocuments } from "@/db/schema"
 import { eq } from "drizzle-orm"
@@ -12,7 +12,6 @@ import { encodeContentDisposition } from "@/lib/utils"
 import { logger } from "@/lib/logger"
 import { recordDocumentDownload, recordDocumentView } from "@/lib/services/prevention-documents-library"
 import { canReadDocumentConfidentiality } from "@/lib/services/prevention-documents/utils"
-import { promises as fs } from "node:fs"
 
 interface RouteCtx {
   params: Promise<{ id: string }>
@@ -62,9 +61,6 @@ export async function GET(request: Request, ctx: RouteCtx) {
     return NextResponse.json({ error: "La publicación vigente es inconsistente" }, { status: 409 })
   }
 
-  const absolutePath = resolveSstDocumentFile(version.filePath)
-  if (!absolutePath) return NextResponse.json({ error: "Ruta inválida" }, { status: 400 })
-
   const { searchParams } = new URL(request.url)
   const shouldDownload = searchParams.get("download") === "1"
 
@@ -83,8 +79,8 @@ export async function GET(request: Request, ctx: RouteCtx) {
   }
 
   try {
-    const file = await fs.readFile(absolutePath)
-    return new Response(file, {
+    const file = await readSstDocument(version.filePath)
+    return new Response(new Blob([new Uint8Array(file)], { type: version.mimeType ?? "application/octet-stream" }), {
       headers: {
         "Content-Type": version.mimeType ?? "application/octet-stream",
         "Content-Disposition": encodeContentDisposition(version.fileName, shouldDownload ? "attachment" : "inline"),

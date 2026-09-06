@@ -22,3 +22,8 @@ export {
   getOrCreateSystemFolder,
   listFolderOptions,
 } from "./folders-queries"
+
+export {
+  getFolderRemoteSegments,
+  ensureSstFolderPhysical,
+} from "./folder-storage"

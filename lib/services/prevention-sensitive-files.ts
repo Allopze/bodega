@@ -24,8 +24,8 @@ import {
   createPreventionSensitiveFilePath,
   resolvePreventionSensitiveFile,
   resolvePreventionSensitiveFilesDir,
-  resolveSstDocumentFile,
 } from "@/lib/storage/config"
+import { readSstDocument } from "@/lib/storage/sst-backend"
 import type { RequestContext } from "@/lib/services/prevention-documents/utils"
 import { assertGeneralLibraryContentAllowed, assertScopeAccess } from "@/lib/services/prevention-documents/utils"
 
@@ -135,9 +135,7 @@ export async function relocateGeneralDocumentToSensitiveDomain(args: {
     )).limit(1)
   if (existing) throw new Error("La versión ya fue reubicada y restringida.")
 
-  const sourcePath = resolveSstDocumentFile(version.filePath)
-  if (!sourcePath) throw new Error("La ruta de origen no es válida.")
-  const sourceBuffer = await readFile(sourcePath)
+  const sourceBuffer = await readSstDocument(version.filePath)
   const sourceChecksum = checksum(sourceBuffer)
   if (sourceChecksum !== version.checksum) throw new Error("El archivo de origen no coincide con el checksum documental.")
 
