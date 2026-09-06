@@ -384,7 +384,13 @@ describe("prevention module RBAC", () => {
     expect(rolesFor("prevention:training:deliver")).toEqual([
       "administrador", "jefe_terreno", "prevencionista", "prevencionista_faena", "supervisor_terreno",
     ])
-    expect(rolesFor("prevention:training:approve")).toEqual(["administrador", "jefa_chome"])
+    // Desde 2026-09-06 la JDPR también aprueba y publica contenido formativo:
+    // es la responsable declarada de los cursos del programa y sin el permiso
+    // dependía de jefatura para dictar cualquier sesión. La segregación se
+    // conserva por actor, no por rol: `prevention:sign_own_work` sólo la exime
+    // del último eslabón (publicar), y aprobar sigue exigiéndole no haber
+    // redactado la versión.
+    expect(rolesFor("prevention:training:approve")).toEqual(["administrador", "jefa_chome", "prevencionista"])
     // Convalidar y revocar alteran la habilitación sin sesión ni evaluación:
     // nunca se conceden a roles de terreno.
     expect(rolesFor("prevention:training:convalidate")).toEqual(["administrador", "jefa_chome"])

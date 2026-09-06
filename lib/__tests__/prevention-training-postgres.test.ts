@@ -24,6 +24,9 @@ let testDb: ReturnType<typeof drizzle<typeof schema>> | undefined
 const AUTHOR = { userId: "tr-author", scope: { mode: "some", ids: ["ws-tr-a"] } as WorksiteScope, permissions: ["prevention:training:view", "prevention:training:manage", "prevention:training:deliver"] }
 const APPROVER = { userId: "tr-approver", scope: { mode: "all", ids: [] } as WorksiteScope, permissions: ["prevention:training:view", "prevention:training:approve", "prevention:training:convalidate", "prevention:training:revoke"] }
 const OUTSIDER = { userId: "tr-outsider", scope: { mode: "some", ids: ["ws-tr-b"] } as WorksiteScope, permissions: ["prevention:training:view", "prevention:training:manage", "prevention:training:deliver"] }
+// La jefatura técnica (JDPR): autora y con la excepción `prevention:sign_own_work`.
+// La excepción sólo alcanza a publicar; aprobar sigue exigiendo no haber redactado.
+const JDPR = { userId: "tr-jdpr", scope: { mode: "all", ids: [] } as WorksiteScope, permissions: ["prevention:training:view", "prevention:training:manage", "prevention:training:approve", "prevention:sign_own_work"] }
 
 function getDb() {
   if (!testDb) throw new Error("Test database not initialised")
@@ -110,6 +113,55 @@ describeIf("Capacitación y competencias on real PostgreSQL", () => {
     await expect(transitionTrainingCourseVersion({
       versionId, toStatus: "published", reason: "Reintento con versión antigua.", expectedVersion: 1,
     }, APPROVER)).rejects.toThrow(/cambió mientras editabas/)
+  })
+
+  it("ni con la excepción puede aprobar la versión que redactó", async () => {
+    const { createTrainingCourse, createTrainingCourseVersion, transitionTrainingCourseVersion } = await import("@/lib/services/prevention-training")
+    const course = await createTrainingCourse({
+      code: "LEG-JDPR-1", name: "Curso JDPR autoaprobación", kind: "legal_mandatory",
+      minimumDurationMinutes: 480, validityMonths: 24, passingScore: 70,
+      requiresAssessment: true, legalBasis: "DS 44/2024 art. 16",
+    }, JDPR)
+    const version = await createTrainingCourseVersion({
+      courseId: course.id, versionLabel: "v1",
+      contentOutline: [{ title: "Marco legal", minutes: 480 }],
+      durationMinutes: 480, modality: "presencial", assessmentType: "theoretical", passingScore: 70,
+    }, JDPR)
+    const inReview = await transitionTrainingCourseVersion({
+      versionId: version.id, toStatus: "in_review", reason: "Contenido listo para revisión técnica.", expectedVersion: version.version,
+    }, JDPR)
+
+    await expect(transitionTrainingCourseVersion({
+      versionId: version.id, toStatus: "approved", reason: "Intento de autoaprobación con la excepción de publicación.", expectedVersion: inReview.version,
+    }, JDPR)).rejects.toThrow(/no puede aprobar/i)
+  })
+
+  it("la jefatura técnica publica su propia versión aprobada, pero no la aprueba", async () => {
+    const { createTrainingCourse, createTrainingCourseVersion, transitionTrainingCourseVersion } = await import("@/lib/services/prevention-training")
+    const course = await createTrainingCourse({
+      code: "LEG-JDPR-2", name: "Curso JDPR publicación", kind: "legal_mandatory",
+      minimumDurationMinutes: 480, validityMonths: 24, passingScore: 70,
+      requiresAssessment: true, legalBasis: "DS 44/2024 art. 16",
+    }, JDPR)
+    const version = await createTrainingCourseVersion({
+      courseId: course.id, versionLabel: "v1",
+      contentOutline: [{ title: "Marco legal", minutes: 480 }],
+      durationMinutes: 480, modality: "presencial", assessmentType: "theoretical", passingScore: 70,
+    }, JDPR)
+    const inReview = await transitionTrainingCourseVersion({
+      versionId: version.id, toStatus: "in_review", reason: "Contenido listo para revisión técnica.", expectedVersion: version.version,
+    }, JDPR)
+    // Aprueba un tercero segregado: la JDPR no puede aprobar lo que redactó.
+    const approved = await transitionTrainingCourseVersion({
+      versionId: version.id, toStatus: "approved", reason: "Contenido conforme al DS 44 art. 16.", expectedVersion: inReview.version,
+    }, APPROVER)
+
+    // Con `prevention:sign_own_work`, la autora puede pasar approved → published.
+    const published = await transitionTrainingCourseVersion({
+      versionId: version.id, toStatus: "published", reason: "Habilitado para dictarse en faena.", expectedVersion: approved.version,
+    }, JDPR)
+    expect(published.status).toBe("published")
+    expect(published.publishedByUserId).toBe("tr-jdpr")
   })
 
   it("refuses to convene a worker from another worksite", async () => {
@@ -328,6 +380,7 @@ async function seedFixture(database: ReturnType<typeof drizzle<typeof schema>>) 
     { id: "tr-author", name: "Autor", email: "tr-author@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "tr-approver", name: "Aprobador", email: "tr-approver@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "tr-outsider", name: "Ajeno", email: "tr-outsider@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
+    { id: "tr-jdpr", name: "JDPR", email: "tr-jdpr@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "tr-worker-a1", name: "Ana Pérez", email: "ana@local.invalid", hashedPassword: "hash", workerId: "wk-a1", createdAt: now, updatedAt: now },
   ])
 }

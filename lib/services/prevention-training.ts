@@ -23,6 +23,7 @@ import {
   type CompetencyGap,
 } from "@/lib/prevention/training"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
+import { canSignOwnWork } from "@/lib/services/prevention-signing"
 import { competencyConvalidationSchema,
   competencyRequirementSchema,
   competencyRevocationSchema,
@@ -200,8 +201,18 @@ export async function transitionTrainingCourseVersion(input: unknown, access: Tr
     if (!allowed[current.status]?.includes(data.toStatus)) {
       throw new Error(`No se permite pasar de ${current.status} a ${data.toStatus}.`)
     }
-    if ((data.toStatus === "approved" || data.toStatus === "published") && current.authorUserId === access.userId) {
-      throw new Error("El autor del contenido no puede aprobar ni publicar su propia versión.")
+    // Aprobar exige no haber redactado, para todos. Publicar —el último
+    // eslabón— admite la única excepción declarada del módulo: la jefatura
+    // técnica responde por el contenido y no puede quedar esperando que un
+    // tercero firme su propio criterio. Misma regla que MIPER, matriz GRD y
+    // documentación SST; ver lib/services/prevention-signing.ts.
+    if (data.toStatus === "approved" && current.authorUserId === access.userId) {
+      throw new Error("El autor del contenido no puede aprobar su propia versión.")
+    }
+    if (data.toStatus === "published"
+      && current.authorUserId === access.userId
+      && !canSignOwnWork(access.permissions)) {
+      throw new Error("El autor del contenido no puede publicar su propia versión.")
     }
     if (data.toStatus === "published" && current.effectiveFrom && current.effectiveFrom > todayInChile()) {
       throw new Error("La versión no puede publicarse antes de su fecha de entrada en vigencia.")

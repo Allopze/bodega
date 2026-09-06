@@ -957,8 +957,16 @@ export const preventionModule = {
     // Capacitación, ODI y competencias. `convalidate` y `revoke` alteran la
     // habilitación de una persona sin que exista sesión ni evaluación: se
     // conceden sólo a jefatura/administración, nunca a roles de terreno.
+    // `approve` sí llega a prevencionista (JDPR) desde 2026-09-06: es la
+    // responsable declarada de los 13 cursos del programa y sin el permiso
+    // dependía de jefatura para publicar cualquiera de ellos. La segregación
+    // se sostiene por actor en el servicio, no por rol aquí: aprobar sigue
+    // exigiéndole no haber redactado la versión; sólo publicar una versión ya
+    // aprobada admite la excepción de `prevention:sign_own_work` (ver el grant
+    // más abajo y lib/services/prevention-signing.ts).
     { roleSlug: "prevencionista",       permission: "prevention:training:view" },
     { roleSlug: "prevencionista",       permission: "prevention:training:manage" },
+    { roleSlug: "prevencionista",       permission: "prevention:training:approve" },
     { roleSlug: "prevencionista",       permission: "prevention:training:deliver" },
     { roleSlug: "prevencionista",       permission: "prevention:training:ack" },
     { roleSlug: "prevencionista",       permission: "prevention:training:export" },
