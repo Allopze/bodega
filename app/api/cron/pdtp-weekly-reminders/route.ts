@@ -47,8 +47,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       signatures: await runPdtpSignaturePendingReminders(),
       // Retoma lo que quedó en el libro de cumplimiento (`pending`/`error`) sin
       // esperar a la activación de un programa o al script manual del deploy.
-      // Candado distinto anidado dentro del de arriba: es seguro porque es otra
-      // clave sobre la misma conexión reservada.
+      // Candado distinto anidado dentro del de arriba: es seguro porque
+      // `withCronLock` (`lib/services/cron-lock.ts`) llama `client.reserve()`
+      // en cada invocación, así que el candado anidado corre sobre una
+      // SEGUNDA conexión reservada, no la misma — dos claves distintas, cada
+      // una con su propia conexión, sin cruce al liberar. El costo real: este
+      // cron mantiene dos conexiones del pool reservadas durante toda la
+      // corrida en vez de una.
       reconciled: await withCronLock("pdtp-fulfillment-reconcile", () => reconcilePdtpFulfillmentEvents({ limit: 200 })),
     }))
     if ("skipped" in chained) return NextResponse.json({ ok: true, ...chained })

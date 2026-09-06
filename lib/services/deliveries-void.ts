@@ -48,6 +48,11 @@ export async function voidWorkerStockDelivery(
   }
 
   let sourceWorksiteId: string | null = null
+  // Espejo de `deliveries-worker-stock.ts`: la acreditación sólo dispara
+  // `if (product.isEpp)`, así que su reverso tiene que respetar la misma
+  // condición — revocar una entrega que nunca tuvo EPP fabricaría un evento en
+  // el libro de cumplimiento que no corresponde a ningún hecho acreditado.
+  let deliveredEpp = false
 
   await db.transaction(async (tx) => {
     const [delivery] = await tx
@@ -114,10 +119,11 @@ export async function voidWorkerStockDelivery(
       // reponer, pero igual deja de contar como entregada.
       if (item.productId) {
         const [product] = await tx
-          .select({ id: products.id, name: products.name })
+          .select({ id: products.id, name: products.name, isEpp: products.isEpp })
           .from(products)
           .where(eq(products.id, item.productId))
         if (!product) throw new Error("El producto de una línea ya no existe")
+        if (product.isEpp) deliveredEpp = true
 
         await applyMovementTx(tx, {
           worksiteId: sourceWorksiteId,
@@ -182,12 +188,15 @@ export async function voidWorkerStockDelivery(
 
   // Revierte la N°62. Mismo patrón que `cancelTrainingSession`: post-commit,
   // sin propagar, con el motivo de la anulación como evidencia del evento para
-  // que la revocación se audite sin volver a la guía.
-  await recordPdtpFulfillmentRevocation({
-    sourceType: "epp",
-    sourceId: input.deliveryId,
-    worksiteId: sourceWorksiteId!,
-    revokedBy: input.voidedBy,
-    reason: `Entrega anulada: ${reason}`,
-  })
+  // que la revocación se audite sin volver a la guía. Sólo si la entrega
+  // acreditó algo en primer lugar (ver `deliveredEpp` arriba).
+  if (deliveredEpp) {
+    await recordPdtpFulfillmentRevocation({
+      sourceType: "epp",
+      sourceId: input.deliveryId,
+      worksiteId: sourceWorksiteId!,
+      revokedBy: input.voidedBy,
+      reason: `Entrega anulada: ${reason}`,
+    })
+  }
 }

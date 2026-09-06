@@ -30,6 +30,15 @@
  *   PDTP_WORKSITE_SCOPE_DRY_RUN=true npm run pdtp:apply-worksite-scope
  *   PDTP_WORKSITE_SCOPE_ACTOR_USER_ID=<id> npm run pdtp:apply-worksite-scope
  *
+ * `PDTP_WORKSITE_SCOPE_ALLOW_REMOVALS=true` autoriza, en `DEPLOY_MODE`, que el
+ * script quite del programa una faena que ya operaba (una que dejó de estar
+ * en `PROGRAM_WORKSITE_NAMES`). Sin ella, `DEPLOY_MODE` con bajas pendientes
+ * hace `bail()` en vez de aplicarlas: `setPdtpProgramWorksites` es
+ * autoritativa, así que una faena creada después de que este script se
+ * escribió y nunca agregada a la lista se caería en silencio en cada
+ * despliegue si no fuera por esta compuerta. Fuera de `DEPLOY_MODE` (corrida
+ * manual) las bajas se aplican igual, con el resumen de "Salen" impreso antes.
+ *
  * Idempotente: reejecutar no vuelve a escribir la membresía si ya coincide con
  * `PROGRAM_WORKSITE_NAMES`, ni reaplica una exclusión ya presente con el mismo
  * motivo.
@@ -63,6 +72,9 @@ import {
 const PROGRAM_YEAR = 2026
 const DRY_RUN = process.env.PDTP_WORKSITE_SCOPE_DRY_RUN === "true"
 const DEPLOY_MODE = process.env.PDTP_WORKSITE_SCOPE_DEPLOY_MODE === "true"
+// Ver el comentario junto a su uso: en DEPLOY_MODE, una baja de faena
+// silenciosa queda bloqueada salvo que se declare explícitamente acá.
+const ALLOW_REMOVALS = process.env.PDTP_WORKSITE_SCOPE_ALLOW_REMOVALS === "true"
 
 /**
  * Corta la ejecución por una condición que en el deploy no es un error.
@@ -106,6 +118,7 @@ async function resolveActorUserId(): Promise<string> {
     .from(userRoles)
     .innerJoin(roles, eq(roles.id, userRoles.roleId))
     .where(eq(roles.name, "administrador"))
+    .orderBy(userRoles.userId)
     .limit(1)
   if (!row) throw new Error("No hay ningún usuario con rol `administrador`. Pasa PDTP_WORKSITE_SCOPE_ACTOR_USER_ID explícitamente.")
   return row.userId
@@ -173,6 +186,20 @@ async function main() {
   } else {
     console.log(`  Entran: ${entering.length > 0 ? entering.map(nameOf).join(", ") : "(ninguna)"}`)
     console.log(`  Salen:  ${leaving.length > 0 ? leaving.map(nameOf).join(", ") : "(ninguna)"}`)
+    // `setPdtpProgramWorksites` es autoritativa: una faena que ya operaba el
+    // programa y no aparece en `PROGRAM_WORKSITE_NAMES` queda excluida en
+    // silencio. En un despliegue rutinario eso no puede ser un efecto
+    // secundario — sacar una faena de un programa de seguridad firmado es una
+    // decisión, no un dato de catálogo. Fuera de DEPLOY_MODE (ejecución
+    // manual) se avisa igual pero se procede, porque quien corre el script a
+    // mano ya está mirando el resultado.
+    if (!planOnly && leaving.length > 0 && DEPLOY_MODE && !ALLOW_REMOVALS) {
+      bail(
+        `El alcance objetivo deja fuera ${leaving.length} faena(s) ya declarada(s): ${leaving.map(nameOf).join(", ")}. `
+        + "Quitar una faena de un programa PDTP firmado no puede ser un efecto secundario de un despliegue rutinario. "
+        + "Define PDTP_WORKSITE_SCOPE_ALLOW_REMOVALS=true para aplicar la baja explícitamente.",
+      )
+    }
     if (!planOnly) await setPdtpProgramWorksites(program.id, targetWorksiteIds, actorUserId, "all")
     membershipChanged = true
   }

@@ -89,7 +89,13 @@ export interface PdtpWiringReport {
    * resolver para el programa vigente. `null` si no hay ningún programa que
    * mirar, igual que `responsibleExecution`.
    */
-  fulfillmentBacklog: { pending: number; errored: number; lastError: string | null; digestDrift: boolean } | null
+  fulfillmentBacklog: {
+    pending: number
+    errored: number
+    erroredWaitingOnActivation: number
+    lastError: string | null
+    digestDrift: boolean
+  } | null
 }
 
 export async function findPdtpAccreditationWiringGaps(): Promise<PdtpWiringReport> {
@@ -187,11 +193,20 @@ export async function findPdtpAccreditationWiringGaps(): Promise<PdtpWiringRepor
   // clause nuevo acá — sólo dejar constancia de que el `ok` de este preflight
   // se pone en rojo por instrumentos declarados-pero-no-vigentes igual que por
   // cualquier otro `config_required`/`permission_gap`/`code_gap`.
+  // La N°1 (y cualquier otra que acredite al firmar el paso legal) queda en
+  // `error` mientras el programa sigue `in_review` — es el hueco esperado
+  // entre firmar y activar, no una brecha de cableado, y el runbook (paso 9)
+  // pide activar viendo `ok: true` antes de que `activatePdtpProgram` dispare
+  // la reconciliación que lo cierra. Se sigue contando en `errored` para que
+  // el número completo no desaparezca del reporte; sólo se excluye de `ok`.
+  const blockingErrored = fulfillmentBacklog === null
+    ? 0
+    : fulfillmentBacklog.errored - fulfillmentBacklog.erroredWaitingOnActivation
   const ok = gaps.length === 0
     && activitiesWithoutApprovedInstrument.length === 0
     && coverageIssues.filter((issue) => issue.status !== "decision_required" && issue.status !== "destination_review").length === 0
     && worksitesWithoutEmergencyPlan.length === 0
-    && (fulfillmentBacklog === null || (fulfillmentBacklog.pending === 0 && fulfillmentBacklog.errored === 0))
+    && (fulfillmentBacklog === null || (fulfillmentBacklog.pending === 0 && blockingErrored === 0))
 
   return {
     ok,

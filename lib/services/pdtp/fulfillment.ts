@@ -51,6 +51,7 @@ import { logger } from "@/lib/logger"
 import {
   accreditPdtpFromEvent,
   revokePdtpAccreditationWithClient,
+  PdtpNoActiveProgramError,
   type AccreditationInput,
   type AccreditationResult,
   type RevocationInput,
@@ -59,6 +60,24 @@ import { engancheDestinationFor } from "@/lib/services/pdtp-adapters/fulfillment
 import { usablePdtpInstrumentNumbers } from "./instruments"
 
 type QueryClient = DB | Tx
+
+/**
+ * Marca al comienzo de `pdtp_fulfillment_events.lastError` cuando la falla fue
+ * `PdtpNoActiveProgramError`: "todavía no hay programa activo" (o el que hay
+ * sigue en revisión), que es el estado normal entre la firma legal y la
+ * activación, no una brecha de cableado. La columna sólo guarda
+ * `err.message` — el `name` de la clase se pierde si no se conserva acá—, así
+ * que este prefijo es la única señal estable que le queda a quien lea el libro
+ * después: `countPdtpFulfillmentBacklog` la usa para no contarlos como error
+ * bloqueante, en vez de adivinar por el texto en español (que puede cambiar).
+ */
+export const NO_ACTIVE_PROGRAM_LAST_ERROR_TAG = "[no-active-program]"
+
+function formatFulfillmentLastError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err)
+  if (err instanceof PdtpNoActiveProgramError) return `${NO_ACTIVE_PROGRAM_LAST_ERROR_TAG} ${message}`
+  return message
+}
 
 function fulfillmentIdempotencyKey(sourceType: string, sourceId: string, eventType: "completed" | "revoked"): string {
   return `pdtp-fulfillment:${eventType}:${sourceType}:${sourceId}`
@@ -211,8 +230,8 @@ export async function recordPdtpFulfillmentEvent(input: AccreditationInput & {
     return result
   } catch (err) {
     const now = new Date().toISOString()
-    const message = err instanceof Error ? err.message : String(err)
-    await db.update(pdtpFulfillmentEvents).set({ status: "error", lastError: message, updatedAt: now })
+    const lastError = formatFulfillmentLastError(err)
+    await db.update(pdtpFulfillmentEvents).set({ status: "error", lastError, updatedAt: now })
       .where(eq(pdtpFulfillmentEvents.id, eventId))
     logger.error(
       { err, sourceType: input.sourceType, sourceId: input.sourceId, worksiteId: input.worksiteId },
@@ -251,8 +270,8 @@ export async function recordPdtpFulfillmentRevocation(input: RevocationInput): P
     }).where(eq(pdtpFulfillmentEvents.id, eventId))
   } catch (err) {
     const now = new Date().toISOString()
-    const message = err instanceof Error ? err.message : String(err)
-    await db.update(pdtpFulfillmentEvents).set({ status: "error", lastError: message, updatedAt: now })
+    const lastError = formatFulfillmentLastError(err)
+    await db.update(pdtpFulfillmentEvents).set({ status: "error", lastError, updatedAt: now })
       .where(eq(pdtpFulfillmentEvents.id, eventId))
     logger.error({ err, sourceType: input.sourceType, sourceId: input.sourceId, worksiteId: input.worksiteId }, "[pdtp-fulfillment] Error al revertir la acreditación PDTP.")
   }
@@ -569,7 +588,15 @@ async function activityNumbersDeclaredGlobally(client: QueryClient): Promise<Set
  * exactamente la respuesta que impedía que el informe dijera "no hay plan en la
  * faena X", que es lo único accionable.
  */
-async function activityNumbersDeclaredPerWorksite(client: QueryClient): Promise<Map<number, Set<string>>> {
+async function activityNumbersDeclaredPerWorksite(client: QueryClient): Promise<{
+  byNumber: Map<number, Set<string>>
+  /** Subconjunto declarado por un plan de emergencia (cualquier estado, no
+   *  sólo `approved`). Sirve para que `instrumentIssueFor` nombre el
+   *  instrumento correcto cuando ninguna faena tiene uno vigente: sin esto, la
+   *  N°84 (que sólo declara plan de emergencia) recibía el mensaje genérico
+   *  de plantilla/curso, que le dice al operador que arregle lo que no tiene. */
+  planNumbers: Set<number>
+}> {
   const [campaigns, plans] = await Promise.all([
     client.select({ n: preventionCampaigns.pdtpActivityNumbers, worksiteId: preventionCampaigns.worksiteId }).from(preventionCampaigns),
     client.select({ n: preventionEmergencyPlans.pdtpActivityNumbers, worksiteId: preventionEmergencyPlans.worksiteId }).from(preventionEmergencyPlans),
@@ -584,7 +611,9 @@ async function activityNumbersDeclaredPerWorksite(client: QueryClient): Promise<
       }
     }
   }
-  return byNumber
+  const planNumbers = new Set<number>()
+  for (const row of plans) for (const n of (row.n as number[] | null) ?? []) planNumbers.add(n)
+  return { byNumber, planNumbers }
 }
 
 /**
@@ -686,6 +715,9 @@ function instrumentIssueFor(
     worksiteIds: string[]
     worksiteNameById: Map<string, string>
     excludedWorksiteIds: Set<string>
+    /** Números declarados por un plan de emergencia (cualquier estado). Ver
+     *  `activityNumbersDeclaredPerWorksite`. */
+    planNumbers: Set<number>
   },
 ): PdtpFulfillmentCoverageIssue | null {
   if (STRUCTURALLY_WIRED_ACTIVITY_NUMBERS.has(activity.n)) return null
@@ -702,6 +734,17 @@ function instrumentIssueFor(
     return {
       n: activity.n, activity: activity.activity, status: "instrument_required",
       reason: `Su plan de emergencia no está aprobado en ${missing.length} de las ${applicableWorksiteIds.length} faenas donde aplica: ${names.join(", ")}.`,
+    }
+  }
+
+  // Ninguna faena tiene un instrumento vigente (`usablePerWorksite` ni
+  // siquiera trae la entrada). Si lo que declaró el número fue un plan de
+  // emergencia — el caso de la N°84 —, decirlo: el mensaje genérico de
+  // plantilla/curso manda al operador a arreglar lo que no tiene.
+  if (ctx.planNumbers.has(activity.n)) {
+    return {
+      n: activity.n, activity: activity.activity, status: "instrument_required",
+      reason: "Su número está declarado en un plan de emergencia, pero ninguna faena donde aplica tiene uno aprobado.",
     }
   }
 
@@ -726,7 +769,7 @@ export async function assertPdtpFulfillmentCoverage(programId: string, client: Q
   if (activities.length === 0) return []
 
   const declaredGlobally = await activityNumbersDeclaredGlobally(client)
-  const declaredPerWorksite = await activityNumbersDeclaredPerWorksite(client)
+  const { byNumber: declaredPerWorksite, planNumbers } = await activityNumbersDeclaredPerWorksite(client)
   const { global: usableGlobally, perWorksite: usablePerWorksite } = await usablePdtpInstrumentNumbers(client)
   const worksiteIds = await programWorksiteIds(client, programId)
   const worksiteNameById = new Map(
@@ -794,7 +837,7 @@ export async function assertPdtpFulfillmentCoverage(programId: string, client: Q
       // destino es una pregunta prematura.
       if (!STRUCTURALLY_WIRED_ACTIVITY_NUMBERS.has(activity.n)) {
         const instrumentIssue = instrumentIssueFor(activity, {
-          usableGlobally, usablePerWorksite, worksiteIds, worksiteNameById,
+          usableGlobally, usablePerWorksite, worksiteIds, worksiteNameById, planNumbers,
           excludedWorksiteIds: excludedByActivity.get(activity.id) ?? new Set<string>(),
         })
         if (instrumentIssue) {

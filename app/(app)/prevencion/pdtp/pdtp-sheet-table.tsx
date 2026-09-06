@@ -289,6 +289,7 @@ export function PdtpSheetTable({
                                   defaultMonth={currentPeriod.month}
                                   defaultWeek={currentPeriod.week}
                                   effectiveFrom={effectiveFrom}
+                                  evidenceRequirement={activity.evidenceRequirement}
                                 />}
                                 {canManageProgram && <PdtpOverrideForm
                                   programId={view.program.id}
@@ -451,6 +452,7 @@ export function PdtpSheetTable({
                                   defaultMonth={currentPeriod.month}
                                   defaultWeek={currentPeriod.week}
                                   effectiveFrom={effectiveFrom}
+                                  evidenceRequirement={activity.evidenceRequirement}
                                 />}
                                 {canManageProgram && <PdtpOverrideForm
                                   programId={view.program.id}

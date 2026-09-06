@@ -1,7 +1,8 @@
-import { count, desc, eq } from "drizzle-orm"
+import { and, count, desc, eq, like } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpFulfillmentEvents, pdtpPrograms } from "@/db/schema"
 import { computePdtpProgramContentDigest } from "@/lib/services/pdtp/content-digest"
+import { NO_ACTIVE_PROGRAM_LAST_ERROR_TAG } from "@/lib/services/pdtp/fulfillment"
 
 /**
  * Lo que el libro de cumplimiento tiene sin resolver, y si el programa vivo
@@ -24,14 +25,28 @@ import { computePdtpProgramContentDigest } from "@/lib/services/pdtp/content-dig
 export async function countPdtpFulfillmentBacklog(programId: string): Promise<{
   pending: number
   errored: number
+  /**
+   * Subconjunto de `errored` cuya causa es `PdtpNoActiveProgramError` (el
+   * programa todavía no está activo, o sigue en revisión): es el estado
+   * normal entre firmar y activar, no una brecha de cableado. Se cuenta
+   * aparte, nunca se resta de `errored`, para que quien mire el número
+   * completo lo siga viendo — sólo cambia lo que decide si el preflight está
+   * `ok`.
+   */
+  erroredWaitingOnActivation: number
   lastError: string | null
   digestDrift: boolean
 }> {
-  const [[pendingRow], [erroredRow], [lastErrorEvent], [program]] = await Promise.all([
+  const [[pendingRow], [erroredRow], [erroredWaitingRow], [lastErrorEvent], [program]] = await Promise.all([
     db.select({ total: count() }).from(pdtpFulfillmentEvents)
       .where(eq(pdtpFulfillmentEvents.status, "pending")),
     db.select({ total: count() }).from(pdtpFulfillmentEvents)
       .where(eq(pdtpFulfillmentEvents.status, "error")),
+    db.select({ total: count() }).from(pdtpFulfillmentEvents)
+      .where(and(
+        eq(pdtpFulfillmentEvents.status, "error"),
+        like(pdtpFulfillmentEvents.lastError, `${NO_ACTIVE_PROGRAM_LAST_ERROR_TAG}%`),
+      )),
     db.select({ lastError: pdtpFulfillmentEvents.lastError }).from(pdtpFulfillmentEvents)
       .where(eq(pdtpFulfillmentEvents.status, "error"))
       .orderBy(desc(pdtpFulfillmentEvents.updatedAt))
@@ -52,6 +67,7 @@ export async function countPdtpFulfillmentBacklog(programId: string): Promise<{
   return {
     pending: Number(pendingRow?.total ?? 0),
     errored: Number(erroredRow?.total ?? 0),
+    erroredWaitingOnActivation: Number(erroredWaitingRow?.total ?? 0),
     lastError: lastErrorEvent?.lastError ?? null,
     digestDrift,
   }

@@ -19,6 +19,7 @@ import {
 } from "@/lib/services/prevention-pdtp"
 import { reconcilePdtpFulfillmentEvents } from "@/lib/services/pdtp/fulfillment"
 import { withCronLock } from "@/lib/services/cron-lock"
+import { logger } from "@/lib/logger"
 import type { ActionState } from "@/lib/validation/prevention"
 import {
   pdtpApprovalDecisionSchema,
@@ -57,8 +58,14 @@ async function activatePdtpIfAllStepsApproved(programId: string, userId: string)
   // `error`. Se espera el resultado (nunca `void`: el contenedor puede
   // congelarse tras la respuesta) y va bajo candado propio, porque el cron
   // semanal recorre las mismas filas y las dos escrituras colisionarían contra
-  // el índice único de ejecuciones.
-  await withCronLock("pdtp-fulfillment-reconcile", () => reconcilePdtpFulfillmentEvents({ limit: 50 }))
+  // el índice único de ejecuciones. El programa ya quedó `active`, así que un
+  // fallo aquí no debe reportarse como fallo de activación: se registra y se
+  // deja para que el cron semanal lo retome.
+  try {
+    await withCronLock("pdtp-fulfillment-reconcile", () => reconcilePdtpFulfillmentEvents({ limit: 50 }))
+  } catch (err) {
+    logger.error({ err, programId }, "[pdtp-lifecycle] No se pudo reconciliar el libro de cumplimiento tras activar.")
+  }
 }
 
 export async function submitPdtpProgramForReviewAction(programId: string): Promise<ActionState> {
@@ -136,8 +143,13 @@ export async function activatePdtpProgramAction(programId: string): Promise<Acti
   try {
     await activatePdtpProgram(programId, session.user.id)
     // Ver el comentario en `activatePdtpIfAllStepsApproved`: mismo motivo,
-    // mismo candado propio.
-    await withCronLock("pdtp-fulfillment-reconcile", () => reconcilePdtpFulfillmentEvents({ limit: 50 }))
+    // mismo candado propio. El programa ya quedó `active`, así que un fallo
+    // de reconciliación no debe reportarse como fallo de activación.
+    try {
+      await withCronLock("pdtp-fulfillment-reconcile", () => reconcilePdtpFulfillmentEvents({ limit: 50 }))
+    } catch (err) {
+      logger.error({ err, programId }, "[pdtp-lifecycle] No se pudo reconciliar el libro de cumplimiento tras activar.")
+    }
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {
