@@ -805,6 +805,7 @@ const routeTargets: RouteTarget[] = [
   { slug: "prevencion-ppa", path: "/prevencion/ppa", auth: true },
   { slug: "prevencion-ppa-detalle", path: "/prevencion/ppa/ppa-audit-1", auth: true },
   { slug: "admin", path: "/admin", auth: true },
+  { slug: "admin-almacenamiento", path: "/admin/almacenamiento", auth: true, notes: "Backend de la biblioteca SST (filesystem o Cloudreve) y credenciales WebDAV." },
   { slug: "admin-auditoria", path: "/admin/auditoria", auth: true },
   { slug: "admin-catalogos-productos", path: "/admin/catalogos-productos", auth: true },
   { slug: "admin-centros-costo", path: "/admin/centros-costo", auth: true },

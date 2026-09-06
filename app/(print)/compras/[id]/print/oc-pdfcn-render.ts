@@ -8,10 +8,17 @@
  * relativo al módulo, que es lo que necesita este proyecto —runtime Node y
  * `output: "standalone"`—, igual que ya se resolvió para `pdfjs-dist`.
  *
- * Advertencia operativa: el render wasm **bloquea el event loop** mientras dura
- * (medido: ~98 ms para 40 líneas, ~260 ms para 300). No hay pool ni semáforo que
- * lo module, a diferencia de la rama Chromium: una OC larga frena las demás
- * peticiones del proceso. Si eso empieza a doler, la salida es un worker thread.
+ * Advertencia operativa: el wasm **bloquea el event loop** mientras dura, y lo
+ * que dura NO es sólo el `render()` final: la paginación mide fragmentos, y esas
+ * mediciones son la mayor parte del costo. Medido en esta máquina, extremo a
+ * extremo: ~0,2 s para 10 líneas, ~0,65 s para 100 y ~2,0 s para 300. Crece de
+ * forma lineal desde que `largestFittingChunk` busca por hoja y no sobre el
+ * documento entero (antes de ese cambio, 300 líneas costaban ~3,9 s).
+ *
+ * No hay pool ni semáforo que lo module, a diferencia de la rama Chromium: una
+ * OC larga frena las demás peticiones del proceso, y un semáforo no lo
+ * arreglaría porque el bloqueo es síncrono. La salida real, si empieza a doler,
+ * es un worker thread.
  */
 
 import { readFile } from "node:fs/promises"
@@ -44,6 +51,13 @@ const PAGE_MARGIN = parseMmMargin(A4_MARGIN)
 const PAGE_CONTENT_WIDTH = A4_CSS_WIDTH - PAGE_MARGIN.left - PAGE_MARGIN.right
 const PAGE_CONTENT_HEIGHT = A4_CSS_HEIGHT - PAGE_MARGIN.top - PAGE_MARGIN.bottom
 
+/**
+ * Punto de partida de la búsqueda de la primera hoja, que además de la tabla
+ * carga la cabecera de empresa y los datos del proveedor. No hace falta que sea
+ * exacto —la búsqueda lo corrige en ambas direcciones—, sólo que esté cerca.
+ */
+const FIRST_PAGE_ROWS_HINT = 10
+
 // El logo no viaja por red: se lee del disco una vez por proceso. Takumi resuelve
 // `src` contra las imágenes pre-cargadas, no contra un origen HTTP, así que esta
 // rama no necesita `resolvePdfRenderOrigin` ni reenviar la cookie de sesión.
@@ -75,20 +89,55 @@ async function measureWithinPage(
   return measured.height
 }
 
+/**
+ * Cuántas filas caben desde `start`, con el menor número de mediciones posible.
+ *
+ * Bisecar sobre TODAS las filas restantes era correcto pero cuadrático: la
+ * primera sonda de cada hoja medía media orden de compra, y cada `measure()`
+ * arma el layout completo del fragmento y bloquea el event loop. Medido antes
+ * de este cambio: 300 líneas tardaban ~3,9 s.
+ *
+ * La búsqueda exponencial parte de `hint` —las filas que cupieron en la hoja
+ * anterior, que es casi siempre la respuesta— y crece un 50 % cuando se queda
+ * corta, así que el intervalo que se bisecta es del tamaño de UNA hoja y no del
+ * resto del documento. Crecer al 50 % en vez de duplicar mide menos de más
+ * cuando la pista ya era buena, que es el caso normal. `fits` es monótona (más
+ * filas ⇒ más alto), y de ahí que valgan tanto el crecimiento como la bisección.
+ */
 async function largestFittingChunk(
   rows: OcPdfRow[],
   start: number,
+  hint: number,
   fits: (candidate: OcPdfRow[]) => Promise<boolean>,
 ): Promise<number> {
   const remaining = rows.length - start
   if (remaining <= 0) return 0
 
-  let low = 1
-  let high = remaining
-  let best = 0
+  const fitsCount = (count: number) => fits(rows.slice(start, start + count))
+
+  let best = 0                       // mayor cantidad que se sabe que cabe
+  let firstFailure = remaining + 1   // menor cantidad que se sabe que NO cabe
+  const probe = Math.min(Math.max(1, hint), remaining)
+
+  if (await fitsCount(probe)) {
+    best = probe
+    while (best < remaining) {
+      const next = Math.min(best + Math.max(1, Math.ceil(best / 2)), remaining)
+      if (!(await fitsCount(next))) {
+        firstFailure = next
+        break
+      }
+      best = next
+    }
+  } else {
+    firstFailure = probe
+  }
+
+  let low = best + 1
+  let high = firstFailure - 1
   while (low <= high) {
     const count = Math.floor((low + high) / 2)
-    if (await fits(rows.slice(start, start + count))) {
+    if (await fitsCount(count)) {
       best = count
       low = count + 1
     } else {
@@ -112,7 +161,7 @@ async function paginateOcRows(data: OcPrintData, logo: Buffer): Promise<OcPdfRow
   const rows = buildOcPdfRows(data)
   if (rows.length === 0) return [[]]
 
-  const firstCount = await largestFittingChunk(rows, 0, async (candidate) => {
+  const firstCount = await largestFittingChunk(rows, 0, FIRST_PAGE_ROWS_HINT, async (candidate) => {
     const height = await measureWithinPage(
       createElement(
         View,
@@ -127,8 +176,12 @@ async function paginateOcRows(data: OcPrintData, logo: Buffer): Promise<OcPdfRow
 
   const chunks: OcPdfRow[][] = [rows.slice(0, firstCount)]
   let start = firstCount
+  // La hoja anterior es la mejor pista para la siguiente: las filas de una misma
+  // OC suelen tener alturas parecidas, así que la primera sonda acierta casi
+  // siempre y la búsqueda termina en dos o tres mediciones.
+  let hint = firstCount
   while (start < rows.length) {
-    const count = await largestFittingChunk(rows, start, async (candidate) => {
+    const count = await largestFittingChunk(rows, start, hint, async (candidate) => {
       const height = await measureWithinPage(
         createElement(OcPdfcnItemsTable, { data, rows: candidate }),
         logo,
@@ -137,6 +190,7 @@ async function paginateOcRows(data: OcPrintData, logo: Buffer): Promise<OcPdfRow
     })
     chunks.push(rows.slice(start, start + count))
     start += count
+    hint = count
   }
   return chunks
 }

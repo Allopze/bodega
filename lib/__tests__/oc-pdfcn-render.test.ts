@@ -7,7 +7,12 @@ import { describe, expect, it } from "vitest"
 import { renderOcPdf } from "@/app/(print)/compras/[id]/print/oc-pdfcn-render"
 import type { OcPrintData } from "@/app/(print)/compras/[id]/print/oc-print-data"
 
-function makeData(itemCount: number): OcPrintData {
+/**
+ * `extraNotes` sube la altura de una fila concreta: la paginación mide el
+ * fragmento que después dibuja, así que un documento donde todas las filas miden
+ * lo mismo no prueba nada sobre el reparto real.
+ */
+function makeData(itemCount: number, extraNotes: (index: number) => number = () => 0): OcPrintData {
   const items = Array.from({ length: itemCount }, (_, i) => ({
     id: `it-${i}`,
     productId: "p-1",
@@ -22,7 +27,14 @@ function makeData(itemCount: number): OcPrintData {
     requestItem: {
       equipment: { code: `EQ-${i}`, name: "Retroexcavadora", serialNumber: `SN-${i}` },
       worker: null,
-      attributes: [{ id: `a-${i}`, attributeName: "Talla", value: "L" }],
+      attributes: [
+        { id: `a-${i}`, attributeName: "Talla", value: "L" },
+        ...Array.from({ length: extraNotes(i) }, (_unused, k) => ({
+          id: `a-${i}-${k}`,
+          attributeName: `Observación ${k}`,
+          value: "detalle adicional de la línea",
+        })),
+      ],
     },
   }))
 
@@ -131,6 +143,24 @@ describe("renderOcPdf", () => {
       expect(page).toContain("Orden de Compra")
     }
   }, 60_000)
+
+  // Con filas de altura dispar, un corte calculado con un «filas por hoja» fijo
+  // —o una pista que no se corrige hacia abajo— desborda a la hoja siguiente, y
+  // esa hoja queda con ítems pero sin caption ni cabecera.
+  it.each([
+    ["alternando líneas cortas y largas", 40, (i: number) => (i % 2 === 0 ? 0 : 12)],
+    ["ráfagas de líneas muy largas",      60, (i: number) => (i % 7 === 0 ? 15 : 0)],
+    ["altura creciente",                  40, (i: number) => i % 20],
+  ])("reparte filas de altura dispar: %s", async (_name, count, extraNotes) => {
+    const { pages } = await parse(await renderOcPdf(makeData(count, extraNotes)))
+
+    // Una hoja con importes de línea pero sin la cabecera es un corte perdido.
+    const huerfanas = pages.filter((page) =>
+      page.includes("Guante de cuero") && !page.includes("P. Unitario"),
+    )
+    expect(huerfanas).toEqual([])
+    expect(pages.filter((page) => page.includes("P. Unitario")).length).toBeGreaterThan(1)
+  }, 120_000)
 
   it("pagina y numera cada hoja con el mismo texto que la rama Chromium", async () => {
     const { pageCount, text } = await parse(await renderOcPdf(makeData(45)))

@@ -30,9 +30,18 @@ import { formatOrderNumber, formatPlainCLP } from "./oc-print-formatters"
 export const OC_LOGO_SRC = "/chome_logo.svg"
 
 /**
- * Anchos en px CSS. La caja útil de un A4 con 12 mm de margen lateral es
- * 793.7 − 2×45.35 ≈ 703 px; las columnas fijas suman ~344 y el resto queda para
- * Detalle, que es la única que crece.
+ * Anchos en **puntos**, no en px CSS: `normalizeTakumiStyle` convierte todo
+ * `width` numérico con `pointToCssPixel` (×96/72), que es la convención de los
+ * componentes pdfcn. Takumi los aplica como caja de borde, así que el padding
+ * de la celda va por dentro del número.
+ *
+ * La caja útil de un A4 con 12 mm de margen lateral es 527,2 pt (703 px CSS).
+ * Las columnas fijas suman 368 pt y dejan 159,2 pt (≈212 px CSS) para Detalle,
+ * que es la única que crece. Verificado sobre un PDF generado, midiendo la
+ * posición de cada cabecera: N° 22 pt, Cod. Articulo 70 pt, etc.
+ *
+ * Si se toca cualquier ancho hay que rehacer esa resta: Detalle se queda con lo
+ * que sobre y es donde se nota, porque es la columna con el texto largo.
  */
 const COLUMNS: DataTableColumn<OcPdfRow>[] = [
   { key: "n",         header: "N°",            width: 22 },
@@ -54,7 +63,7 @@ const COLUMNS: DataTableColumn<OcPdfRow>[] = [
   },
   { key: "cantidad",  header: "Cant.",       align: "right",  width: 40 },
   { key: "unidad",    header: "U.M.",        align: "center", width: 32 },
-  // 76 px y no 62: una línea sin precio imprime "Por definir", y por debajo de
+  // 76 pt y no 62: una línea sin precio imprime "Por definir", y por debajo de
   // ese ancho Takumi la parte en dos ("Por" / "definir"). Vale para las dos
   // columnas que pueden contener esa cadena.
   { key: "unitario",  header: "P. Unitario", align: "right",  width: 76 },
