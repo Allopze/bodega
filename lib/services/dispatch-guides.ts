@@ -96,6 +96,7 @@ export interface OfficeWorksite {
 }
 
 type Reader = Pick<DB, "select">
+type SettingsWriter = Pick<DB, "select" | "insert" | "delete">
 
 function normalizeName(value: string): string {
   return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").trim().toLowerCase()
@@ -174,12 +175,16 @@ export async function officeWorksiteLabel(client: Reader = db): Promise<string> 
  * faena tiene que existir y estar activa: guardar un id muerto convertiría cada
  * despacho en el error que motivó esta pantalla.
  */
-export async function setOfficeWorksite(worksiteId: string, actor: DispatchGuideActor): Promise<void> {
+export async function setOfficeWorksite(
+  worksiteId: string,
+  actor: DispatchGuideActor,
+  client: SettingsWriter = db,
+): Promise<void> {
   const target = worksiteId.trim()
   const now = new Date().toISOString()
 
   if (target) {
-    const [worksite] = await db
+    const [worksite] = await client
       .select({ id: worksites.id, name: worksites.name, isActive: worksites.isActive })
       .from(worksites)
       .where(eq(worksites.id, target))
@@ -188,18 +193,18 @@ export async function setOfficeWorksite(worksiteId: string, actor: DispatchGuide
     if (!worksite.isActive) throw new Error(`La faena "${worksite.name}" no está activa`)
   }
 
-  const [previous] = await db
+  const [previous] = await client
     .select({ value: systemSettings.value })
     .from(systemSettings)
     .where(eq(systemSettings.key, OFFICE_WORKSITE_SETTING_KEY))
     .limit(1)
 
   if (target) {
-    await db.insert(systemSettings)
+    await client.insert(systemSettings)
       .values({ key: OFFICE_WORKSITE_SETTING_KEY, value: target, updatedAt: now })
       .onConflictDoUpdate({ target: systemSettings.key, set: { value: target, updatedAt: now } })
   } else {
-    await db.delete(systemSettings).where(eq(systemSettings.key, OFFICE_WORKSITE_SETTING_KEY))
+    await client.delete(systemSettings).where(eq(systemSettings.key, OFFICE_WORKSITE_SETTING_KEY))
   }
 
   await recordAudit({
@@ -210,7 +215,7 @@ export async function setOfficeWorksite(worksiteId: string, actor: DispatchGuide
     entityId:   OFFICE_WORKSITE_SETTING_KEY,
     oldState:   { worksiteId: previous?.value ?? null },
     newState:   { worksiteId: target || null },
-  })
+  }, client)
 }
 
 /** Faenas activas ofrecibles como oficina, y cuál rige hoy. */
