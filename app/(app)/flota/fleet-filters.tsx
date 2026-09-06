@@ -31,11 +31,11 @@ export function FleetFilters({ operationalStatuses, responsibleUsers, current, w
     } else {
       params.delete(key)
     }
-    router.push(`?${params.toString()}`)
+    router.replace(`?${params.toString()}`, { scroll: false })
   }
 
   function clearFilters() {
-    router.push("/flota")
+    router.replace("/flota", { scroll: false })
   }
 
   const activeChips: ActiveFilterChip[] = []

@@ -28,7 +28,7 @@ export function InvoiceFiltersBar({ clients }: { clients: { id: string; name: st
     else params.delete(key)
     // Cambiar un filtro invalida la página actual.
     params.delete("pagina")
-    startTransition(() => router.push(`${pathname}?${params.toString()}`))
+    startTransition(() => router.replace(`${pathname}?${params.toString()}`, { scroll: false }))
   }
 
   const activeChips = [
@@ -150,7 +150,7 @@ export function InvoiceFiltersBar({ clients }: { clients: { id: string; name: st
           ))}
           <button
             type="button"
-            onClick={() => startTransition(() => router.push(pathname))}
+            onClick={() => startTransition(() => router.replace(pathname, { scroll: false }))}
             className="text-xs font-medium text-[var(--color-primary-ink)] underline underline-offset-2"
           >
             Quitar todos

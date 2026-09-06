@@ -83,7 +83,7 @@ export function MaterialEnvironmentalDashboard({
             ))}
           </SelectContent>
         </Select>
-        <Select value={String(year)} onValueChange={(value) => router.push(`/prevencion/indicadores-material-ambiental?year=${value}`)}>
+        <Select value={String(year)} onValueChange={(value) => router.replace(`/prevencion/indicadores-material-ambiental?year=${value}`, { scroll: false })}>
           <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
           <SelectContent>
             {yearOptions.sort((a, b) => b - a).map((y) => (

@@ -98,7 +98,7 @@ export function CgrdWorkbench({
       />
 
       <div className="mt-4">
-        <Select value={selectedWorksiteId ?? ""} onValueChange={(value) => router.push(`/prevencion/cgrd?faena=${value}`)}>
+        <Select value={selectedWorksiteId ?? ""} onValueChange={(value) => router.replace(`/prevencion/cgrd?faena=${value}`, { scroll: false })}>
           <SelectTrigger className="w-64" aria-label="Faena"><SelectValue /></SelectTrigger>
           <SelectContent>{worksites.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
         </Select>

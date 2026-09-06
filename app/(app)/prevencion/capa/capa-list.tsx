@@ -82,7 +82,7 @@ export function CapaList({ actions, worksites, counts, pagination }: Props) {
     if (p > 1) params.set("page", String(p))
     else params.delete("page")
     const qs = params.toString()
-    router.push(qs ? `?${qs}` : "")
+    router.replace(qs ? `?${qs}` : "", { scroll: false })
   }
 
   const filtered = actions.filter((item) => {

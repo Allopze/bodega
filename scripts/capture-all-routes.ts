@@ -3477,7 +3477,7 @@ async function prepareDatabase(captureDbUrl: string) {
   await db.insert(schema.preventionCapaActions).values([
     {
       id: "capa-sst-audit-1",
-      code: "CAPA-2026-0902",
+      code: `CAPA-2026-0902-${Date.now()}`,
       sourceType: "sst_evaluation",
       sourceId: "sst-audit-1",
       worksiteId,
@@ -3773,9 +3773,10 @@ async function prepareDatabase(captureDbUrl: string) {
   // La CAPA nace antes del acuerdo: en producción `closeGrdMeeting` la crea
   // dentro de la misma transacción que cierra el acta, y el acuerdo cuelga de
   // ella (FK). El seed respeta el mismo orden de dependencia.
+  const capaCgrdId = `capa-cgrd-audit-${Date.now()}`
   await db.insert(schema.preventionCapaActions).values({
-    id: "capa-cgrd-audit-1",
-    code: "CAPA-2026-0902",
+    id: capaCgrdId,
+    code: `CAPA-2026-0902-${Date.now()}`,
     sourceType: "cgrd",
     sourceId: "grd-meeting-audit-1",
     worksiteId: "ws-audit-2",
@@ -3798,13 +3799,13 @@ async function prepareDatabase(captureDbUrl: string) {
     id: "grd-agreement-audit-1",
     meetingId: "grd-meeting-audit-1",
     description: "Verificar el estado del cortafuegos perimetral y despejar el tramo norte.",
-    capaActionId: "capa-cgrd-audit-1",
+    capaActionId: capaCgrdId,
     createdAt: now,
     updatedAt: now,
   })
   await db.insert(schema.preventionCapaTransitions).values({
     id: "capat-cgrd-audit-1",
-    actionId: "capa-cgrd-audit-1",
+    actionId: capaCgrdId,
     changeType: "status",
     fromStatus: "pending",
     toStatus: "in_progress",

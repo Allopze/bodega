@@ -31,7 +31,7 @@ export function MaintenanceFilters({ vehicles, worksites, current }: Maintenance
     } else {
       params.delete(key)
     }
-    router.push(`?${params.toString()}`)
+    router.replace(`?${params.toString()}`, { scroll: false })
   }
 
   return (

@@ -430,7 +430,7 @@ export function PdtpWorksitePicker({
         value={current ?? "all"}
         onValueChange={(worksiteId) => {
           if (worksiteId === "all" && allHref) {
-            router.push(allHref)
+            router.replace(allHref, { scroll: false })
             return
           }
           const params = new URLSearchParams({ hoja: sheetCode, vista: viewMode })
@@ -440,7 +440,7 @@ export function PdtpWorksitePicker({
           if (week) params.set("semana", String(week))
           if (worksiteId !== "all") params.set("faena", worksiteId)
           if (hrefBase && programId) params.set("programa", programId)
-          router.push(hrefBase ? `${hrefBase}?${params}` : programId ? `${PDT_BASE}/${programId}?${params}` : `${PDT_BASE}?${params}`)
+          router.replace(hrefBase ? `${hrefBase}?${params}` : programId ? `${PDT_BASE}/${programId}?${params}` : `${PDT_BASE}?${params}`, { scroll: false })
         }}
       >
         <SelectTrigger className="w-56" aria-label="Seleccionar faena"><SelectValue /></SelectTrigger>
@@ -535,7 +535,7 @@ export function PdtpSheetPicker({
           if (week) params.set("semana", String(week))
           if (worksiteId) params.set("faena", worksiteId)
           if (hrefBase && programId) params.set("programa", programId)
-          router.push(hrefBase ? `${hrefBase}?${params}` : programId ? `${PDT_BASE}/${programId}?${params}` : `${PDT_BASE}?${params}`)
+          router.replace(hrefBase ? `${hrefBase}?${params}` : programId ? `${PDT_BASE}/${programId}?${params}` : `${PDT_BASE}?${params}`, { scroll: false })
         }}
       >
         <SelectTrigger className="w-64" aria-label="Seleccionar hoja"><SelectValue /></SelectTrigger>
@@ -581,7 +581,7 @@ export function PdtpProgramPicker({
         if (month) params.set("mes", String(month))
         if (week) params.set("semana", String(week))
         if (worksiteId) params.set("faena", worksiteId)
-        router.push(`${hrefBase}?${params}`)
+        router.replace(`${hrefBase}?${params}`, { scroll: false })
       }}>
         <SelectTrigger className="w-64" aria-label="Seleccionar programa"><SelectValue /></SelectTrigger>
         <SelectContent>
@@ -629,7 +629,7 @@ export function PdtpYearPicker({
         if (status && status !== "all") params.set("estado", status)
         if (month) params.set("mes", String(month))
         if (week) params.set("semana", String(week))
-        router.push(`${hrefBase}?${params}`)
+        router.replace(`${hrefBase}?${params}`, { scroll: false })
       }}>
         <SelectTrigger className="w-28" aria-label="Seleccionar año"><SelectValue /></SelectTrigger>
         <SelectContent>
@@ -666,7 +666,7 @@ export function PdtpPeriodPicker({
     const params = new URLSearchParams({ programa: programId, hoja: sheetCode, vista: viewMode, anio: String(year), mes: String(nextMonth), semana: String(nextWeek) })
     if (worksiteId) params.set("faena", worksiteId)
     if (status && status !== "all") params.set("estado", status)
-    router.push(`${hrefBase}?${params}`)
+    router.replace(`${hrefBase}?${params}`, { scroll: false })
   }
   return (
     <div className="flex items-center gap-1.5">

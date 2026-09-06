@@ -162,7 +162,7 @@ export function ProgramPanel({ committeeId, committeeActive, programs, selected,
         <OptionSelect
           aria-label="Año del programa"
           value={selected.id}
-          onValueChange={(value) => router.push(`/prevencion/cphs/${committeeId}/programa?programa=${value}`)}
+          onValueChange={(value) => router.replace(`/prevencion/cphs/${committeeId}/programa?programa=${value}`, { scroll: false })}
           options={programs.map((program) => ({ value: program.id, label: `Programa ${program.year}` }))}
           className="w-48"
         />

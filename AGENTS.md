@@ -772,6 +772,104 @@ When reviewing or building a page, explicitly consider:
 These checks also apply when interpreting `qa/reports/latest.md`.
 <!-- END:ui-audit-checklist -->
 
+<!-- BEGIN:navigation-scroll-pattern -->
+# Navigation and scroll preservation pattern
+
+## Problema reportado
+
+Cuando el usuario aplica un filtro o cambio de contexto y luego regresa a la página anterior:
+- Los filtros se pierden
+- El scroll retorna al inicio de la página aunque el usuario había scrolleado hacia abajo
+
+Esto ocurre en todo el sistema porque varios componentes usan `router.push()` o `router.replace()` sin `{ scroll: false }` al actualizar la URL con nuevos parámetros.
+
+## Patrón correcto
+
+### 1. Cambios de filtro (MUST use `router.replace` + `scroll: false`)
+
+ Cuando un componente actualiza parámetros de URL que representan **filtros** o **estado de vista** (no navegación intencional del usuario), debe usar:
+
+ ```tsx
+ router.replace(url, { scroll: false })
+ ```
+
+ Motivos:
+ - `replace` evita llenar el historial con cada cambio de filtro
+ - `scroll: false` preserva la posición de scroll del usuario
+ - Los filtros son estado de la vista, no acciones de navegación
+
+ Ejemplos de lo que debe usar este patrón:
+ - Selección de estado, faena, fecha, búsqueda
+ - Navegación entre páginas de paginación
+ - Apertura/cierre de tabs que viajan en URL
+ - Selección de año, período en dashboards
+
+ ### 2. Navegación intencional del usuario (puede usar `router.push`)
+
+ `router.push()` es apropiado cuando el usuario toma una acción que debería agregar una entrada al historial:
+ - Navegar a un detalle desde una lista
+ - Ir a un formulario de creación
+ - Cambiar a una sección completamente diferente
+
+ Pero incluso en estos casos, si el navigation es dentro de la misma página (ej. cambiar de tab), considerar `router.replace` + `scroll: false`.
+
+ ### 3. `<Link>` en paginación
+
+ Los `<Link>` de Next.js hacen scroll al destino por defecto. Para paginación que debe mantener el scroll:
+
+ ```tsx
+ <Link href={hrefForPage(page)} scroll={false}>...</Link>
+ ```
+
+ ### 4. `router.back()` en formularios
+
+ `router.back()` es correcto para botones "Cancelar/Volver" en formularios, porque navega a la entrada exacta del historial (que debería tener los filtros intactos si la navegación a la entrada actual fue via `<Link>` o `router.replace`).
+
+ Este patrón funciona correctamente cuando:
+ 1. El usuario está en una página con filtros en URL
+ 2. Navega a un formulario vía `<Link>` (agrega entrada al historial)
+ 3. Presiona "Cancelar" → `router.back()` retorna a la URL con filtros
+
+ NO funciona correctamente si la página de origen llegó via una navegación que no conservó los filtros.
+
+## Checklist para nuevos componentes de filtro
+
+- [ ] ¿El cambio actualiza parámetros de URL que representan filtro/estado de vista?
+- [ ] ¿Se usa `router.replace()` en vez de `router.push()`?
+- [ ] ¿Se pasa `{ scroll: false }` a la navegación?
+- [ ] Si es un `<Link>` de paginación, ¿tiene `scroll={false}`?
+- [ ] Si usa `useUrlFilters` hook, ¿verificar que el hook tiene `scroll = false` por defecto?
+
+## Archivos afectados por este patrón
+
+Esta sección documenta los cambios realizados para corregir el problema:
+
+| Componente | Cambio |
+|------------|--------|
+| `flota/fleet-filters.tsx` | `router.push` → `router.replace` + `scroll: false` |
+| `mantenciones/maintenance-filters.tsx` | `router.push` → `router.replace` + `scroll: false` |
+| `bodega/guias/guide-filters.tsx` | `router.push` → `router.replace` + `scroll: false` |
+| `analitica/analytics-filters.tsx` | `router.push` → `router.replace` + `scroll: false` |
+| `facturacion/facturas/invoice-filters.tsx` | `startTransition(() => router.push)` → `router.replace` + `scroll: false` |
+| `combustibles/reportes/reports-view.tsx` | `router.push` → `router.replace` + `scroll: false` |
+| `prevencion/miper/miper-workbench.tsx` | `router.push` → `router.replace` + `scroll: false` (navegación imports) |
+| `prevencion/capa/capa-list.tsx` | `router.push` → `router.replace` + `scroll: false` |
+| `prevencion/pdtp/acciones/acciones-table.tsx` | `router.push` → `router.replace` + `scroll: false` |
+| `prevencion/pdtp/[programId]/reporte/reporte-gestion-filters.tsx` | `router.push` → `router.replace` + `scroll: false` |
+| `prevencion/pdtp/pdtp-sheet-table-ui.tsx` | 6 instancias `router.push` → `router.replace` + `scroll: false` |
+| `prevencion/pdtp/pdtp-sheet-table.tsx` | `router.replace` + `scroll: false` (faltaba) |
+| `ti/activos/asset-filters.tsx` | `router.replace` + `scroll: false` (faltaba) |
+| `prevencion/privacidad/solicitudes/privacy-requests-workbench.tsx` | `router.push` → `router.replace` + `scroll: false` |
+| `prevencion/indicadores-material-ambiental/material-environmental-dashboard.tsx` | `router.push` → `router.replace` + `scroll: false` |
+| `prevencion/cgrd/cgrd-workbench.tsx` | `router.push` → `router.replace` + `scroll: false` |
+| `prevencion/cphs/[committeeId]/programa/program-panel.tsx` | `router.push` → `router.replace` + `scroll: false` |
+| `prevencion/cphs/[committeeId]/certificacion/certification-panel.tsx` | `router.push` → `router.replace` + `scroll: false` |
+| `prevencion/indicadores/canonical-indicators-dashboard.tsx` | `router.push` → `router.replace` + `scroll: false` |
+| `components/ui/server-pagination.tsx` | Agregado `scroll={false}` a `<Link>`s |
+| `components/ui/data-table.tsx` | Ya tenía `scroll: false` (confirmado) |
+
+<!-- END:navigation-scroll-pattern -->
+
 <!-- BEGIN:form-export-patterns -->
 # Form, export and date formatting standards
 

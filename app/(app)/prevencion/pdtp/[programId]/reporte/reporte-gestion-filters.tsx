@@ -39,7 +39,7 @@ export function ReporteGestionFilters({
     if (merged.estado) params.set("estado", merged.estado)
     if (merged.desde !== undefined) params.set("desde", String(merged.desde))
     if (merged.hasta !== undefined) params.set("hasta", String(merged.hasta))
-    router.push(`/prevencion/pdtp/${programId}/reporte?${params}`)
+    router.replace(`/prevencion/pdtp/${programId}/reporte?${params}`, { scroll: false })
   }
 
   return (

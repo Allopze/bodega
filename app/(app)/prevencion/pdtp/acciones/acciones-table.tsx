@@ -48,7 +48,7 @@ export function AccionesTable({ items, activityLabelById, worksiteNameById, work
     const params = new URLSearchParams(searchParams.toString())
     if (value) params.set(key, value)
     else params.delete(key)
-    router.push(`${pathname}?${params.toString()}`)
+    router.replace(params.toString() ? `?${params.toString()}` : "", { scroll: false })
   }
 
   const rows = items.map((item) => ({

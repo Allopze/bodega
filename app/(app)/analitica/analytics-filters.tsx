@@ -45,11 +45,11 @@ export function AnalyticsFiltersBar({
     sync(params, "faena", worksiteId)
     sync(params, "proveedor", supplierId)
     sync(params, "vehiculo", vehicleId)
-    router.push(`/analitica?${params.toString()}`)
+    router.replace(`/analitica?${params.toString()}`, { scroll: false })
   }
 
   function clear() {
-    router.push("/analitica")
+    router.replace("/analitica", { scroll: false })
   }
 
   return (

@@ -134,7 +134,7 @@ export function CertificationPanel({ committeeId, dossiers, selected, canCertify
         <OptionSelect
           aria-label="Expediente"
           value={selected.id}
-          onValueChange={(value) => router.push(`/prevencion/cphs/${committeeId}/certificacion?expediente=${value}`)}
+          onValueChange={(value) => router.replace(`/prevencion/cphs/${committeeId}/certificacion?expediente=${value}`, { scroll: false })}
           options={dossiers.map((dossier) => ({
             value: dossier.id,
             label: `${CERTIFICATION_LEVEL_LABELS[dossier.level as "bronce"] ?? dossier.level} ${dossier.periodYear}`,

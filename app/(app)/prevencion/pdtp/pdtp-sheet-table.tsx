@@ -167,7 +167,7 @@ export function PdtpSheetTable({
               const params = new URLSearchParams(searchParams.toString())
               if (next === "all") params.delete("estado")
               else params.set("estado", next)
-              router.replace(`${pathname}${params.size ? `?${params}` : ""}`)
+              router.replace(`${pathname}${params.size ? `?${params}` : ""}`, { scroll: false })
             }}
           />
           <PdtpDensityToggle density={density} onToggle={toggleDensity} />

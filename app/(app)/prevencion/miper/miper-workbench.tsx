@@ -167,7 +167,7 @@ export function MiperWorkbench({ dashboard, imports, importsTotal, importsPagina
     if (page > 1) params.set("page", String(page))
     else params.delete("page")
     const qs = params.toString()
-    router.push(qs ? `?${qs}` : "")
+    router.replace(qs ? `?${qs}` : "", { scroll: false })
   }, [router, searchParams])
   return (
     <div className="space-y-4">

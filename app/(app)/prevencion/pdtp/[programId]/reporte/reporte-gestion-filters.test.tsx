@@ -3,12 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { ReporteGestionFilters } from "./reporte-gestion-filters"
 
-const mockPush = vi.hoisted(() => vi.fn())
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mockPush }) }))
+const mockReplace = vi.hoisted(() => vi.fn())
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: mockReplace }) }))
 
 afterEach(() => {
   cleanup()
-  mockPush.mockClear()
+  mockReplace.mockClear()
 })
 
 const WORKSITES = [{ id: "ws-1", name: "Faena A" }, { id: "ws-2", name: "Faena B" }]
@@ -28,7 +28,7 @@ describe("ReporteGestionFilters", () => {
     fireEvent.click(screen.getByLabelText("Faena"))
     fireEvent.click(screen.getByText("Faena B"))
 
-    expect(mockPush).toHaveBeenCalledWith("/prevencion/pdtp/prog-1/reporte?faena=ws-2&responsable=prf")
+    expect(mockReplace).toHaveBeenCalledWith("/prevencion/pdtp/prog-1/reporte?faena=ws-2&responsable=prf", { scroll: false })
   })
 
   it("navigates with the estado filter set", () => {
@@ -45,7 +45,7 @@ describe("ReporteGestionFilters", () => {
     fireEvent.click(screen.getByLabelText("Estado"))
     fireEvent.click(screen.getByText("En desviación"))
 
-    expect(mockPush).toHaveBeenCalledWith("/prevencion/pdtp/prog-1/reporte?faena=ws-1&estado=deviates")
+    expect(mockReplace).toHaveBeenCalledWith("/prevencion/pdtp/prog-1/reporte?faena=ws-1&estado=deviates", { scroll: false })
   })
 
   it("clears a filter when 'todos' is selected again", () => {
@@ -62,6 +62,6 @@ describe("ReporteGestionFilters", () => {
     fireEvent.click(screen.getByLabelText("Estado"))
     fireEvent.click(screen.getByText("Todos los estados"))
 
-    expect(mockPush).toHaveBeenCalledWith("/prevencion/pdtp/prog-1/reporte?faena=ws-1")
+    expect(mockReplace).toHaveBeenCalledWith("/prevencion/pdtp/prog-1/reporte?faena=ws-1", { scroll: false })
   })
 })

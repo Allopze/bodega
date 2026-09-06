@@ -67,7 +67,7 @@ export function AssetFilters({ types, workers, worksites, suppliers, current }: 
     if (value && value !== ALL) params.set(key, value)
     else params.delete(key)
     const qs = params.toString()
-    router.replace(qs ? `${pathname}?${qs}` : pathname)
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }
 
   const overflowKeys = ["trabajador", "proveedor", "garantia", "antiguedad"] as const
@@ -110,7 +110,7 @@ export function AssetFilters({ types, workers, worksites, suppliers, current }: 
     <FilterToolbar
       overflowFilters={overflowFilters}
       activeCount={activeCount}
-      onClearAll={() => router.replace(pathname)}
+      onClearAll={() => router.replace(pathname, { scroll: false })}
     >
       <SelectFilter
         value={String(current.tipo ?? "")}

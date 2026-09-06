@@ -47,7 +47,7 @@ export function ReportsView({ byMonth, byWeek, byWorksite, byVehicle, bySupplier
     } else {
       params.delete(key)
     }
-    router.push(`/combustibles/reportes?${params.toString()}`)
+    router.replace(`/combustibles/reportes?${params.toString()}`, { scroll: false })
   }
 
   return (
@@ -63,7 +63,7 @@ export function ReportsView({ byMonth, byWeek, byWorksite, byVehicle, bySupplier
           <DatePicker className="w-44" defaultValue={currentFilters.endDate ?? ""} onChange={(iso) => setDateFilter("hasta", iso)} />
         </div>
         <div className="flex items-end">
-          <Button variant="ghost" size="sm" onClick={() => router.push("/combustibles/reportes")}>Limpiar</Button>
+          <Button variant="ghost" size="sm" onClick={() => router.replace("/combustibles/reportes", { scroll: false })}>Limpiar</Button>
         </div>
       </div>
 

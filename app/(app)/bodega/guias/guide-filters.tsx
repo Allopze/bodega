@@ -35,7 +35,7 @@ export function GuideFilters({ worksites, current }: GuideFiltersProps) {
     else params.delete(key)
     // Cualquier cambio de filtro invalida la página actual del paginador.
     params.delete("page")
-    router.push(`?${params.toString()}`)
+    router.replace(`?${params.toString()}`, { scroll: false })
   }
 
   const activeChips: ActiveFilterChip[] = []
@@ -65,7 +65,7 @@ export function GuideFilters({ worksites, current }: GuideFiltersProps) {
     <FilterToolbar
       activeChips={activeChips}
       onRemoveChip={(key) => setFilter(key, "")}
-      onClearAll={() => router.push("/bodega/guias")}
+      onClearAll={() => router.replace("/bodega/guias", { scroll: false })}
       hasActiveFilters={activeChips.length > 0}
     >
       <FilterSearchInput

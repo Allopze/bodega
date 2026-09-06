@@ -97,7 +97,7 @@ export function PrivacyRequestsWorkbench({ rows, canExport, canExportClinical, p
     if (page > 1) params.set("page", String(page))
     else params.delete("page")
     const qs = params.toString()
-    router.push(qs ? `?${qs}` : "")
+    router.replace(qs ? `?${qs}` : "", { scroll: false })
   }, [router, searchParams])
   const { searchQuery } = useSafeShellHeader()
   const [pendingAction, setPendingAction] = React.useState<PendingAction | null>(null)

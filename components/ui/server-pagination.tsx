@@ -97,6 +97,7 @@ function PageLink({
       aria-label={ariaLabel}
       aria-current={active ? "page" : undefined}
       prefetch={false}
+      scroll={false}
     >
       {children}
     </Link>
