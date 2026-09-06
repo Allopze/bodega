@@ -28,6 +28,7 @@ import {
   classifyPdtpResponsibleExecution,
   type ResponsibleExecutionReport,
 } from "@/lib/services/pdtp/responsible-execution"
+import { countPdtpFulfillmentBacklog } from "@/lib/services/pdtp/backlog"
 
 /**
  * Diagnóstico del cableado entre el programa anual y los módulos que lo
@@ -83,6 +84,12 @@ export interface PdtpWiringReport {
    * supervisor de terreno. `null` si no hay ningún programa que mirar.
    */
   responsibleExecution: ResponsibleExecutionReport | null
+  /**
+   * Lo que el libro de cumplimiento (`pdtp_fulfillment_events`) tiene sin
+   * resolver para el programa vigente. `null` si no hay ningún programa que
+   * mirar, igual que `responsibleExecution`.
+   */
+  fulfillmentBacklog: { pending: number; errored: number; lastError: string | null; digestDrift: boolean } | null
 }
 
 export async function findPdtpAccreditationWiringGaps(): Promise<PdtpWiringReport> {
@@ -158,21 +165,27 @@ export async function findPdtpAccreditationWiringGaps(): Promise<PdtpWiringRepor
   let worksitesWithoutEmergencyPlan: string[] = []
 
   let responsibleExecution: ResponsibleExecutionReport | null = null
+  let fulfillmentBacklog: PdtpWiringReport["fulfillmentBacklog"] = null
   if (program) {
     coverageIssues = await assertPdtpFulfillmentCoverage(program.id)
     const plans = await db.select({ worksiteId: preventionEmergencyPlans.worksiteId }).from(preventionEmergencyPlans)
     worksitesWithoutEmergencyPlan = await resolveWorksitesWithoutPlan(new Set(plans.map((row) => row.worksiteId)))
     responsibleExecution = await buildResponsibleExecutionReport(program.id)
+    fulfillmentBacklog = await countPdtpFulfillmentBacklog(program.id)
   }
 
   const destinationsToReview = coverageIssues
     .filter((issue) => issue.status === "destination_review")
     .map((issue) => ({ n: issue.n, activity: issue.activity, reason: issue.reason }))
 
+  // Cada condición es una fuente de gaps distinta; se listan una por línea a
+  // propósito para que sumar una nueva (la Tarea 8 agrega la suya) no
+  // implique tocar ni reordenar las anteriores.
   const ok = gaps.length === 0
     && activitiesWithoutApprovedInstrument.length === 0
     && coverageIssues.filter((issue) => issue.status !== "decision_required" && issue.status !== "destination_review").length === 0
     && worksitesWithoutEmergencyPlan.length === 0
+    && (fulfillmentBacklog === null || (fulfillmentBacklog.pending === 0 && fulfillmentBacklog.errored === 0))
 
   return {
     ok,
@@ -184,6 +197,7 @@ export async function findPdtpAccreditationWiringGaps(): Promise<PdtpWiringRepor
     destinationsToReview,
     worksitesWithoutEmergencyPlan,
     responsibleExecution,
+    fulfillmentBacklog,
   }
 }
 

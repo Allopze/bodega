@@ -52,6 +52,8 @@ const {
   resolvePdtpFulfillmentTarget,
   assertPdtpFulfillmentCoverage,
 } = await import("@/lib/services/pdtp/fulfillment")
+const { countPdtpFulfillmentBacklog } = await import("@/lib/services/pdtp/backlog")
+const { computePdtpProgramContentDigest } = await import("@/lib/services/pdtp/content-digest")
 
 /* El motor sólo acredita cuando el año del programa coincide con el del
  * evento, así que se siembra con el año en curso. */
@@ -539,6 +541,47 @@ describe("compuerta 81/81 — permiso en el módulo destino (2026-09-03)", () =>
 
     const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
     expect(issues.filter((issue) => issue.n === 35)).toEqual([])
+  })
+})
+
+describe("countPdtpFulfillmentBacklog — el libro de cumplimiento hecho visible", () => {
+  it("cuenta pending y errored por separado, con el último error", async () => {
+    await seedProgram("draft")
+    await seedActivity()
+    // Sin programa activo, este evento queda en error.
+    await recordPdtpFulfillmentEvent({
+      sourceType: "campana", sourceId: "campana-backlog-1", worksiteId: WS_ID,
+      activityNumbers: [ACT_N], occurredAt: new Date().toISOString(),
+    })
+
+    const backlog = await countPdtpFulfillmentBacklog(PROGRAM_ID)
+    expect(backlog.errored).toBe(1)
+    expect(backlog.pending).toBe(0)
+    expect(backlog.lastError).toMatch(/programa PDTP activo/i)
+    expect(backlog.digestDrift).toBe(false)
+  })
+
+  it("un programa sin huella firmada (contentDigest null) nunca reporta deriva", async () => {
+    await seedProgram("draft")
+    await seedActivity()
+    const backlog = await countPdtpFulfillmentBacklog(PROGRAM_ID)
+    expect(backlog.digestDrift).toBe(false)
+  })
+
+  it("compara la huella vigente contra la firmada cuando existe", async () => {
+    await seedProgram("draft")
+    await seedActivity()
+
+    await inMemoryDb.update(schema.pdtpPrograms)
+      .set({ contentDigest: "0".repeat(64) })
+      .where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
+    expect((await countPdtpFulfillmentBacklog(PROGRAM_ID)).digestDrift).toBe(true)
+
+    const { digest } = await computePdtpProgramContentDigest(PROGRAM_ID)
+    await inMemoryDb.update(schema.pdtpPrograms)
+      .set({ contentDigest: digest })
+      .where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
+    expect((await countPdtpFulfillmentBacklog(PROGRAM_ID)).digestDrift).toBe(false)
   })
 })
 

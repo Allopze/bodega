@@ -37,6 +37,7 @@ import { PdtpImportExcelDialog } from "../pdtp-import-excel-dialog"
 import { resolveSelectedWorksiteId } from "../pdtp-context"
 import type { PdtpActivityStatus } from "@/lib/services/pdtp/period"
 import { CoverageReportPanel } from "./coverage-report-panel"
+import { FulfillmentBacklogPanel } from "./fulfillment-backlog-panel"
 import { ProgramLifecycleControls } from "./program-lifecycle-controls"
 import { ReconcileDeclaredActorButton } from "./reconcile-declared-actor-button"
 
@@ -209,6 +210,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
       <div className="space-y-4">
         {/* Program lifecycle status block, con la metadata del documento importado plegada dentro */}
         {coverageReport && <CoverageReportPanel report={coverageReport} />}
+        <FulfillmentBacklogPanel programId={programId} />
 
         <ProgramLifecycleControls
           program={program}

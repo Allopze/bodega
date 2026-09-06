@@ -17,6 +17,8 @@ import {
   getPdtpProgram,
   assertAllRequiredPdtpApprovalStepsApproved,
 } from "@/lib/services/prevention-pdtp"
+import { reconcilePdtpFulfillmentEvents } from "@/lib/services/pdtp/fulfillment"
+import { withCronLock } from "@/lib/services/cron-lock"
 import type { ActionState } from "@/lib/validation/prevention"
 import {
   pdtpApprovalDecisionSchema,
@@ -49,6 +51,14 @@ async function activatePdtpIfAllStepsApproved(programId: string, userId: string)
     return
   }
   await activatePdtpProgram(programId, userId)
+  // Al activar hay que retomar lo que quedó en el libro mientras el programa
+  // estaba en borrador — la N°1 entre otros: se acredita al firmar el paso
+  // legal, con el programa todavía en revisión, así que su evento queda en
+  // `error`. Se espera el resultado (nunca `void`: el contenedor puede
+  // congelarse tras la respuesta) y va bajo candado propio, porque el cron
+  // semanal recorre las mismas filas y las dos escrituras colisionarían contra
+  // el índice único de ejecuciones.
+  await withCronLock("pdtp-fulfillment-reconcile", () => reconcilePdtpFulfillmentEvents({ limit: 50 }))
 }
 
 export async function submitPdtpProgramForReviewAction(programId: string): Promise<ActionState> {
@@ -125,6 +135,9 @@ export async function activatePdtpProgramAction(programId: string): Promise<Acti
   const session = guard.session
   try {
     await activatePdtpProgram(programId, session.user.id)
+    // Ver el comentario en `activatePdtpIfAllStepsApproved`: mismo motivo,
+    // mismo candado propio.
+    await withCronLock("pdtp-fulfillment-reconcile", () => reconcilePdtpFulfillmentEvents({ limit: 50 }))
     revalidatePath(REVALIDATE)
     return { ok: true }
   } catch (e) {
