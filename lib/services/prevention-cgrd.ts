@@ -26,6 +26,7 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm"
 import { createHash } from "node:crypto"
 import { db, type DB, type Tx } from "@/db"
+import { canSignOwnWork } from "@/lib/services/prevention-signing"
 import {
   preventionCapaActions,
   preventionGrdAgreements,
@@ -480,6 +481,12 @@ export async function transitionGrdMatrix(input: unknown, access: CgrdAccess) {
     }
     if (data.toStatus === "approved" && (matrix.createdByUserId === access.userId || matrix.reviewedByUserId === access.userId)) {
       throw new Error("La aprobación debe estar segregada de creación y revisión.")
+    }
+    /* Y publicar, de la aprobación. El contrato de cumplimiento describe la
+     * matriz GRD como firmas segregadas; hasta acá la cuarta no comprobaba
+     * nada. La jefatura técnica del área queda exenta. */
+    if (data.toStatus === "published" && matrix.approvedByUserId === access.userId && !canSignOwnWork(access.permissions)) {
+      throw new Error("Quien aprobó la matriz GRD no puede publicarla: debe firmarla otra persona.")
     }
 
     const now = nowIso()

@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm"
 import { db, type Tx } from "@/db"
+import { canSignOwnWork } from "@/lib/services/prevention-signing"
 import {
   sstDocumentAudit,
   sstDocuments,
@@ -250,6 +251,15 @@ export async function publishDocumentVersion(args: WorkflowInput) {
     }
     if (!version.approvedBy || !version.approvedAt) {
       throw new Error("La aprobación de la versión está incompleta.")
+    }
+    /* Publicar no pasa por `transitionVersion`, así que su segregación va acá,
+     * explícita. Hasta ahora no existía: la separación entre quien aprueba y
+     * quien publica la daba sólo el reparto de permisos, y eso se cae en cuanto
+     * un rol tiene `docs:manage` y `docs:publish` a la vez. Mismo vocabulario
+     * que `preventUploader`/`preventReviewer` de arriba, un eslabón más abajo.
+     * La jefatura técnica del área queda exenta. */
+    if (version.approvedBy === args.ctx.userId && !canSignOwnWork(args.permissions)) {
+      throw new Error("Quien aprobó la versión no puede publicarla: debe firmarla otra persona.")
     }
     if (version.effectiveFrom && version.effectiveFrom > todayIso()) {
       throw new Error(`La versión no puede publicarse antes del ${version.effectiveFrom}.`)

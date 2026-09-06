@@ -73,6 +73,7 @@ export const preventionModule = {
     "prevention:incidents:authorize_restart",
     "prevention:incidents:override_segregation",
     "prevention:incidents:close",
+    "prevention:incidents:diffuse",
     "prevention:incidents:view_sensitive",
     "prevention:incidents:export",
     "prevention:risk:view",
@@ -127,6 +128,7 @@ export const preventionModule = {
     "prevention:change:approve",
     "prevention:epp:view",
     "prevention:epp:manage",
+    "prevention:sign_own_work",
   ] as const,
 
   permissionMeta: {
@@ -206,6 +208,11 @@ export const preventionModule = {
     "prevention:incidents:authorize_restart": { id: "p-prev-inc-restart", description: "Autorizar de forma segregada el reinicio de una operación suspendida" },
     "prevention:incidents:override_segregation": { id: "p-prev-inc-override", description: "Autorizar excepción fundamentada a la segregación de reinicio tras accidente" },
     "prevention:incidents:close": { id: "p-prev-inc-close", description: "Aprobar lotes históricos y cerrar incidentes que cumplan todos los gates" },
+    // Confirmar que la difusión ocurrió no es cerrar el caso. Compartían
+    // permiso, y eso dejaba la n=71 y la n=75 —difundir el incidente en el
+    // turno y difundir las medidas— sin nadie de terreno que pudiera
+    // registrarlas, pese a que la planilla se las asigna al jefe de terreno.
+    "prevention:incidents:diffuse": { id: "p-prev-inc-diffuse", description: "Confirmar que una difusión de incidente o de medidas efectivamente se realizó" },
     "prevention:incidents:view_sensitive": { id: "p-prev-inc-sensitive", description: "Acceder nominativamente a identidad, lesión y evidencia sensible de incidentes por propósito" },
     "prevention:incidents:export": { id: "p-prev-inc-export", description: "Exportar registro y expediente Excel de incidentes dentro del alcance" },
     "prevention:risk:view": { id: "p-prev-risk-view", description: "Ver MIPER, controles críticos, revisiones y cobertura dentro de la faena autorizada" },
@@ -260,6 +267,25 @@ export const preventionModule = {
     "prevention:change:approve": { id: "p-prev-chg-approve", description: "Aprobar o rechazar el cambio de forma segregada de quien lo solicitó" },
     "prevention:epp:view": { id: "p-prev-epp-view", description: "Ver requisitos de EPP obligatorio y brechas de cobertura" },
     "prevention:epp:manage": { id: "p-prev-epp-manage", description: "Crear requisitos de EPP obligatorio y escalar brechas bloqueantes a CAPA" },
+    /**
+     * La única excepción a la segregación por actor de todo el módulo, y por
+     * eso vive sola al final en vez de mezclada con los permisos de su flujo.
+     *
+     * Los servicios de Prevención impiden firmar el propio trabajo comparando
+     * usuarios, no roles: quien creó una versión no la revisa, quien la revisó
+     * no la aprueba, quien la aprobó no la publica, y quien completó una
+     * investigación no cierra su incidente. Este permiso levanta el último
+     * eslabón de esa cadena —el de publicar/cerrar— para la jefatura técnica
+     * del área, que es quien responde por el contenido y no puede quedar
+     * esperando una firma ajena sobre su propio criterio.
+     *
+     * No levanta las etapas anteriores: aprobar sigue exigiendo no haber
+     * creado ni revisado, para todos. Y **no alcanza al Programa de Trabajo
+     * Preventivo**, cuyo paso JDPR tiene su propia regla `not_elaborator` en
+     * `lib/services/pdtp/approval-flow.ts`: nadie aprueba el programa que
+     * elaboró, sin excepciones.
+     */
+    "prevention:sign_own_work": { id: "p-prev-sign-own", description: "Aprobar, publicar o cerrar un registro en cuyas etapas previas la persona ya participó. Reservado a la jefatura técnica del área" },
   },
 
   nav: [
@@ -683,8 +709,13 @@ export const preventionModule = {
     { roleSlug: "prevencionista",       permission: "prevention:cgrd:meeting:manage" },
     { roleSlug: "prevencionista",       permission: "prevention:cgrd:matrix:edit" },
     { roleSlug: "prevencionista",       permission: "prevention:cgrd:matrix:review" },
+    { roleSlug: "prevencionista",       permission: "prevention:cgrd:matrix:approve" },
+    { roleSlug: "prevencionista",       permission: "prevention:cgrd:matrix:publish" },
     { roleSlug: "jefe_terreno",         permission: "prevention:cgrd:view" },
     { roleSlug: "admin_contrato",       permission: "prevention:cgrd:view" },
+    /* Corresponsable de la n=80: crea la versión de la matriz GRD y sus
+     * amenazas. Las tres firmas siguen siendo de otros. */
+    { roleSlug: "admin_contrato",       permission: "prevention:cgrd:matrix:edit" },
     { roleSlug: "jefa_chome",           permission: "prevention:cgrd:view" },
     { roleSlug: "jefa_chome",           permission: "prevention:cgrd:committee:manage" },
     { roleSlug: "jefa_chome",           permission: "prevention:cgrd:meeting:manage" },
@@ -721,6 +752,10 @@ export const preventionModule = {
     { roleSlug: "prevencionista",      permission: "prevention:docs:manage" },
     { roleSlug: "prevencionista",      permission: "prevention:docs:submit_review" },
     { roleSlug: "prevencionista",      permission: "prevention:docs:review" },
+    // Misma razón en el flujo documental: los procedimientos de trabajo seguro
+    // son suyos, y hasta ahora no podía aprobarlos ni publicarlos.
+    { roleSlug: "prevencionista",      permission: "prevention:docs:approve" },
+    { roleSlug: "prevencionista",      permission: "prevention:docs:publish" },
     { roleSlug: "prevencionista",      permission: "prevention:docs:distribute" },
     { roleSlug: "prevencionista",      permission: "prevention:docs:ack" },
     { roleSlug: "prevencionista",      permission: "prevention:docs:link" },
@@ -729,6 +764,11 @@ export const preventionModule = {
     { roleSlug: "prevencionista_faena", permission: "prevention:docs:view" },
     { roleSlug: "prevencionista_faena", permission: "prevention:docs:manage" },
     { roleSlug: "prevencionista_faena", permission: "prevention:docs:submit_review" },
+    /* La n=36 —difundir la matriz MIPER— acredita al asignar destinatarios, no
+     * al publicar: distribuir es un acto del prevencionista de faena sobre un
+     * documento que otro ya publicó, así que no rompe la segregación
+     * autoría/publicación que sí protege `docs:publish`. */
+    { roleSlug: "prevencionista_faena", permission: "prevention:docs:distribute" },
     { roleSlug: "prevencionista_faena", permission: "prevention:docs:ack" },
     { roleSlug: "jefa_chome",          permission: "prevention:docs:view" },
     { roleSlug: "jefa_chome",          permission: "prevention:docs:review" },
@@ -758,6 +798,12 @@ export const preventionModule = {
     { roleSlug: "prevencionista",      permission: "prevention:indicadores:close" },
     { roleSlug: "prevencionista_faena", permission: "prevention:indicadores:view" },
     { roleSlug: "prevencionista_faena", permission: "prevention:indicadores:manage" },
+    /* La n=7 —"envío de estadística de cada faena"— es del prevencionista de
+     * faena, y acredita al CERRAR el período, no al cargar los datos. Sin este
+     * grant cargaba los indicadores y su propia actividad no se cumplía nunca.
+     * El permiso también habilita corregir un período ya cerrado: queda acotado
+     * a su faena por `resolveWorksiteScope` y registrado en la bitácora. */
+    { roleSlug: "prevencionista_faena", permission: "prevention:indicadores:close" },
     { roleSlug: "admin_contrato",       permission: "prevention:indicadores:view" },
     { roleSlug: "admin_contrato",       permission: "prevention:indicadores:manage" },
     { roleSlug: "jefa_chome",          permission: "prevention:indicadores:view" },
@@ -769,6 +815,14 @@ export const preventionModule = {
     { roleSlug: "prevencionista", permission: "prevention:risk:view" },
     { roleSlug: "prevencionista", permission: "prevention:risk:edit" },
     { roleSlug: "prevencionista", permission: "prevention:risk:review" },
+    /* La jefatura del Departamento de Prevención firma la MIPER: es quien
+     * responde por el inventario de riesgos ante el fiscalizador, y dejar la
+     * última firma sólo en Jefatura la volvía un cuello de botella de dos
+     * personas. Aprobar sigue exigiendo no haber creado ni revisado; publicar,
+     * no haber aprobado — salvo por `prevention:sign_own_work`, su excepción
+     * declarada. */
+    { roleSlug: "prevencionista", permission: "prevention:risk:approve" },
+    { roleSlug: "prevencionista", permission: "prevention:risk:publish" },
     { roleSlug: "prevencionista_faena", permission: "prevention:risk:view" },
     { roleSlug: "prevencionista_faena", permission: "prevention:risk:edit" },
     { roleSlug: "jefa_chome", permission: "prevention:risk:view" },
@@ -844,10 +898,30 @@ export const preventionModule = {
     { roleSlug: "prevencionista",       permission: "prevention:incidents:investigate" },
     { roleSlug: "prevencionista",       permission: "prevention:incidents:notify" },
     { roleSlug: "prevencionista",       permission: "prevention:incidents:export" },
+    /* Responsable de la n=42 y la n=43 (procedimientos de trabajo seguro) y sin
+     * acceso al módulo donde viven: publicar sigue segregado, pero no poder
+     * siquiera abrir Documentación no es segregación, es un olvido. */
+    { roleSlug: "admin_contrato",       permission: "prevention:docs:view" },
+    /* La planilla lo declara corresponsable de la n=43 —redactar y revisar los
+     * procedimientos de trabajo seguro— y sólo podía mirarlos. Ahora los
+     * redacta y los envía a revisión; publicar sigue segregado para él. */
+    { roleSlug: "admin_contrato",       permission: "prevention:docs:manage" },
+    { roleSlug: "admin_contrato",       permission: "prevention:docs:submit_review" },
     { roleSlug: "admin_contrato",       permission: "prevention:incidents:report" },
     { roleSlug: "admin_contrato",       permission: "prevention:incidents:view" },
     { roleSlug: "jefe_terreno",         permission: "prevention:incidents:report" },
     { roleSlug: "jefe_terreno",         permission: "prevention:incidents:view" },
+    /* Los pasos del RE-20 que la planilla le asigna al jefe de terreno no son
+     * sólo avisar: la n=68 es el informe preliminar y la n=69 la declaración de
+     * la persona accidentada, y las dos entran por `getInvestigableIncident`.
+     * El supervisor de terreno acompaña en la n=69, la n=73 y la n=76. Los
+     * antecedentes sensibles siguen aparte (`incidents:view_sensitive`). */
+    { roleSlug: "jefe_terreno",         permission: "prevention:incidents:investigate" },
+    { roleSlug: "supervisor_terreno",   permission: "prevention:incidents:report" },
+    { roleSlug: "supervisor_terreno",   permission: "prevention:incidents:view" },
+    { roleSlug: "supervisor_terreno",   permission: "prevention:incidents:investigate" },
+    /* La n=72 —emitir la DIAT— es del administrador de contrato. */
+    { roleSlug: "admin_contrato",       permission: "prevention:incidents:notify" },
     { roleSlug: "cphs",                 permission: "prevention:incidents:view" },
     { roleSlug: "cphs",                 permission: "prevention:incidents:investigate" },
     { roleSlug: "jefa_chome",           permission: "prevention:incidents:view" },
@@ -856,6 +930,19 @@ export const preventionModule = {
     { roleSlug: "jefa_chome",           permission: "prevention:incidents:notify" },
     { roleSlug: "jefa_chome",           permission: "prevention:incidents:authorize_restart" },
     { roleSlug: "jefa_chome",           permission: "prevention:incidents:close" },
+    { roleSlug: "jefa_chome",           permission: "prevention:incidents:diffuse" },
+    /* Confirmar la difusión: quien la marcó no puede confirmarla —el servicio
+     * lo verifica por actor, no sólo por permiso—, así que darlo a terreno no
+     * afloja la regla de las dos personas. */
+    { roleSlug: "jefe_terreno",         permission: "prevention:incidents:diffuse" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:incidents:diffuse" },
+    { roleSlug: "prevencionista",       permission: "prevention:incidents:diffuse" },
+    /* Cerrar el expediente RE-20. Trae además el escalamiento de los carriles
+     * DT/SEREMI vencidos y de los eventos fatales
+     * (`prevention-incident-reminders.ts`), que es donde la jefatura de
+     * Prevención tiene que estar. Quien completó la investigación sigue sin
+     * poder cerrarla, salvo por su exención. */
+    { roleSlug: "prevencionista",       permission: "prevention:incidents:close" },
     { roleSlug: "jefa_chome",           permission: "prevention:incidents:export" },
     { roleSlug: "administrador",        permission: "prevention:incidents:report" },
     { roleSlug: "administrador",        permission: "prevention:incidents:view" },
@@ -865,6 +952,7 @@ export const preventionModule = {
     { roleSlug: "administrador",        permission: "prevention:incidents:authorize_restart" },
     { roleSlug: "administrador",        permission: "prevention:incidents:override_segregation" },
     { roleSlug: "administrador",        permission: "prevention:incidents:close" },
+    { roleSlug: "administrador",        permission: "prevention:incidents:diffuse" },
     { roleSlug: "administrador",        permission: "prevention:incidents:export" },
     // Capacitación, ODI y competencias. `convalidate` y `revoke` alteran la
     // habilitación de una persona sin que exista sesión ni evaluación: se
@@ -881,6 +969,14 @@ export const preventionModule = {
     { roleSlug: "admin_contrato",       permission: "prevention:training:view" },
     { roleSlug: "admin_contrato",       permission: "prevention:training:ack" },
     { roleSlug: "jefe_terreno",         permission: "prevention:training:view" },
+    /* La charla diaria (n=53) y las charlas de refuerzo (n=38) las dicta la
+     * línea de mando en terreno, no Prevención: son las dos actividades que la
+     * planilla asigna al Sup y al JT, y sin `deliver` no podían registrar la
+     * sesión que las acredita. Dictar sigue sin ser aprobar contenido:
+     * `training:approve`, `convalidate` y `revoke` no se tocan. */
+    { roleSlug: "jefe_terreno",         permission: "prevention:training:deliver" },
+    { roleSlug: "supervisor_terreno",   permission: "prevention:training:view" },
+    { roleSlug: "supervisor_terreno",   permission: "prevention:training:deliver" },
     { roleSlug: "jefe_terreno",         permission: "prevention:training:ack" },
     { roleSlug: "cphs",                 permission: "prevention:training:view" },
     { roleSlug: "jefa_chome",           permission: "prevention:training:view" },
@@ -948,6 +1044,14 @@ export const preventionModule = {
     // que quien ejecutó cierre su propia inspección.
     { roleSlug: "jefe_terreno",         permission: "prevention:inspections:view" },
     { roleSlug: "jefe_terreno",         permission: "prevention:inspections:execute" },
+    /* El supervisor de terreno ejecuta junto al jefe de terreno: la planilla lo
+     * declara responsable de la n=24 (extintores), la n=29 (contenedores), la
+     * n=34 (carros), la n=39 (observación planeada) y la n=40 (inspección de
+     * área), y hasta ahora no tenía ni `view` — el módulo no le aparecía en el
+     * menú. `review` sigue fuera, igual que para el jefe de terreno: quien
+     * ejecuta en terreno no cierra. */
+    { roleSlug: "supervisor_terreno",   permission: "prevention:inspections:view" },
+    { roleSlug: "supervisor_terreno",   permission: "prevention:inspections:execute" },
     // El "jefe de faena" del vocabulario de terreno es este rol —
     // `lib/prevention/admin-contrato-label.ts` lo deja dicho: el equivalente
     // RBAC de `jefe_faena` es `jefe_terreno`, y no `admin_contrato`, cuyo
@@ -983,6 +1087,10 @@ export const preventionModule = {
     // recibir — cerrar la mantención, que es lo que acredita la evidencia de
     // la CAPA, ya lo habilita `mantenciones:edit`.
     { roleSlug: "jefe_mantencion",      permission: "prevention:inspections:view" },
+    /* Responsable declarado de la n=83 (plan de emergencia) y la n=84
+     * (simulacros) y sin `emergency:view`: Emergencias no le aparecía en el
+     * menú. Aprobar el plan sigue siendo de otro por segregación. */
+    { roleSlug: "jefe_mantencion",      permission: "prevention:emergency:view" },
     { roleSlug: "jefa_chome",           permission: "prevention:inspections:view" },
     { roleSlug: "jefa_chome",           permission: "prevention:inspections:review" },
     { roleSlug: "jefa_chome",           permission: "prevention:inspections:export" },
@@ -1094,5 +1202,11 @@ export const preventionModule = {
     { roleSlug: "jefa_chome",           permission: "prevention:epp:manage" },
     { roleSlug: "administrador",        permission: "prevention:epp:view" },
     { roleSlug: "administrador",        permission: "prevention:epp:manage" },
+    /* La excepción a la segregación por actor, y la única. Va sola al final
+     * porque no pertenece a ningún flujo: los levanta todos. Sólo el JDPR — el
+     * `administrador` lo recibe por ser quien recibe todos. Ensancharla es una
+     * decisión de gobernanza, no un grant más; `prevention-rbac.test.ts` la
+     * fija con una lista cerrada para que tenga que ser deliberada. */
+    { roleSlug: "prevencionista",       permission: "prevention:sign_own_work" },
   ],
 } as const satisfies ModuleManifest

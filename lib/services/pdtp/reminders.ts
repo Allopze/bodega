@@ -10,7 +10,13 @@
 
 import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpExecutions, pdtpObligationReminders, pdtpPrograms, pdtpProgramWorksites, worksites } from "@/db/schema"
+import {
+  pdtpActivities, pdtpExecutions, pdtpObligationReminders, pdtpPrograms, pdtpProgramWorksites,
+  preventionEmergencyPlans, preventionGrdMatrices, preventionRiskMatrices,
+  sstDocuments, sstDocumentVersions, worksites,
+} from "@/db/schema"
+import { GRD_MATRIX_TRANSITIONS, grdMatrixTransitionPermission, type GrdMatrixStatus } from "@/lib/prevention/cgrd"
+import { MATRIX_PERMISSION, MATRIX_TRANSITIONS } from "@/lib/services/prevention-risk-legal"
 import { currentPdtpPeriod, isPdtpPeriodOnOrAfterActivation, type PdtpPeriod } from "./period"
 import { logger } from "@/lib/logger"
 import { createNotifications, getUserIdsWithPermissionForWorksite } from "@/lib/services/notifications"
@@ -305,4 +311,232 @@ export async function runPdtpActionPlanVencidasReminders(): Promise<PdtpActionVe
   }
 
   return { vencidas: vencidas.length, notifiedUsers: notifiedUserIds.size }
+}
+
+// ── Firma pendiente (N°35, N°43, N°80, N°83) ──────────────────────────────
+
+/**
+ * Cuántos días lleva un registro esperando su firma antes de avisar, y cuántas
+ * veces se avisa.
+ *
+ * Tres escalones y no un aviso diario: el modo de falla de estas actividades es
+ * lento —un plan de emergencia puede pasar semanas en borrador— y un correo
+ * cada mañana se convierte en ruido que nadie abre a la tercera semana.
+ */
+const SIGNATURE_BUCKETS = [
+  { days: 30, bucket: "30d", copy: "lleva más de un mes esperando firma" },
+  { days: 15, bucket: "15d", copy: "lleva más de quince días esperando firma" },
+  { days: 7, bucket: "7d", copy: "lleva más de una semana esperando firma" },
+] as const
+
+export type PdtpSignaturePendingResult = {
+  /** Registros esperando firma, hayan cruzado un escalón o no. */
+  pending: number
+  /**
+   * Los que cruzaron un escalón y tienen a quién avisarle.
+   *
+   * No es "correos enviados": `createNotifications` deduplica por
+   * `(userId, dedupeKey)`, así que la corrida del día siguiente cuenta los
+   * mismos registros y no manda nada. Llamarlo `notificationsCreated` hacía que
+   * el JSON del cron reportara siete avisos nuevos cada mañana.
+   */
+  remindersDue: number
+  notifiedUsers: number
+}
+
+type PendingSignature = {
+  entityType: string
+  entityId: string
+  worksiteId: string
+  title: string
+  status: string
+  updatedAt: string
+  /** Permiso de quien tiene que firmar el paso siguiente. */
+  permission: string
+  href: string
+}
+
+/** El escalón que corresponde, o `null` si todavía no cumple el primero. */
+function signatureBucketFor(updatedAt: string, asOf: Date): typeof SIGNATURE_BUCKETS[number] | null {
+  const elapsedDays = Math.floor((asOf.getTime() - new Date(updatedAt).getTime()) / 86_400_000)
+  return SIGNATURE_BUCKETS.find((step) => elapsedDays >= step.days) ?? null
+}
+
+/**
+ * Actos del programa que quedaron esperando una firma que nadie dio.
+ *
+ * Es el modo de falla propio de las actividades segregadas —la N°35, la N°43,
+ * la N°80 y la N°83—: el responsable hace su parte, el registro queda a la
+ * espera de otra persona, y esa persona no sabe que le toca. Nada lo detectaba;
+ * los 7 planes de emergencia del 2026 llevaban meses en borrador y la N°84
+ * esperando detrás sin que ninguna alerta lo dijera.
+ *
+ * **Mide "días sin movimiento en este estado", no "días desde que se pidió la
+ * firma".** Ninguna de las cuatro tablas tiene `awaiting_signature_since`, así
+ * que se usa `updated_at`, que se reescribe en cada transición. Para las
+ * matrices y los documentos la aproximación es buena —quedaron en ese estado y
+ * nadie las tocó—; para los planes de emergencia es más débil, porque no existe
+ * un estado `in_review`: el plan nace `draft` y salta a `approved`, así que lo
+ * que se mide ahí es un borrador estancado. Sirve para avisar, y no exige
+ * migración. La fecha exacta vive en las tablas de historia
+ * (`prevention_risk_legal_history`, `sst_document_audit`,
+ * `prevention_emergency_history`) si algún día hace falta ser preciso.
+ */
+async function findPendingSignatures(): Promise<PendingSignature[]> {
+  const [plans, riskMatrices, grdMatrices, documentVersions] = await Promise.all([
+    db.select({
+      id: preventionEmergencyPlans.id,
+      worksiteId: preventionEmergencyPlans.worksiteId,
+      title: preventionEmergencyPlans.title,
+      status: preventionEmergencyPlans.status,
+      updatedAt: preventionEmergencyPlans.updatedAt,
+    }).from(preventionEmergencyPlans).where(eq(preventionEmergencyPlans.status, "draft")),
+    db.select({
+      id: preventionRiskMatrices.id,
+      worksiteId: preventionRiskMatrices.worksiteId,
+      title: preventionRiskMatrices.title,
+      status: preventionRiskMatrices.status,
+      updatedAt: preventionRiskMatrices.updatedAt,
+    }).from(preventionRiskMatrices).where(inArray(preventionRiskMatrices.status, ["in_review", "reviewed", "approved"])),
+    db.select({
+      id: preventionGrdMatrices.id,
+      worksiteId: preventionGrdMatrices.worksiteId,
+      title: preventionGrdMatrices.title,
+      status: preventionGrdMatrices.status,
+      updatedAt: preventionGrdMatrices.updatedAt,
+    }).from(preventionGrdMatrices).where(inArray(preventionGrdMatrices.status, ["in_review", "reviewed", "approved"])),
+    db.select({
+      id: sstDocumentVersions.id,
+      status: sstDocumentVersions.status,
+      updatedAt: sstDocumentVersions.updatedAt,
+      documentId: sstDocumentVersions.documentId,
+      title: sstDocuments.title,
+      // La faena cuelga del documento padre, no de la versión.
+      worksiteId: sstDocuments.worksiteId,
+    }).from(sstDocumentVersions)
+      .innerJoin(sstDocuments, eq(sstDocuments.id, sstDocumentVersions.documentId))
+      .where(inArray(sstDocumentVersions.status, ["en_revision", "aprobado"])),
+  ])
+
+  const pending: PendingSignature[] = []
+
+  for (const plan of plans) {
+    pending.push({
+      entityType: "emergency_plan", entityId: plan.id, worksiteId: plan.worksiteId,
+      title: plan.title, status: plan.status, updatedAt: plan.updatedAt,
+      permission: "prevention:emergency:approve",
+      href: `/prevencion/emergencias/${plan.id}`,
+    })
+  }
+
+  /* El permiso sale del paso SIGUIENTE, no del actual: una matriz en
+   * `in_review` espera a quien pueda llevarla a `reviewed`. Los dos mapas son
+   * los del propio servicio de transición — si cambia la máquina de estados,
+   * cambia esto con ella. */
+  for (const matrix of riskMatrices) {
+    const next = MATRIX_TRANSITIONS[matrix.status]?.find((to) => to !== "draft")
+    const permission = next ? MATRIX_PERMISSION[next] : undefined
+    if (!permission) continue
+    pending.push({
+      entityType: "risk_matrix", entityId: matrix.id, worksiteId: matrix.worksiteId,
+      title: matrix.title, status: matrix.status, updatedAt: matrix.updatedAt,
+      permission, href: `/prevencion/miper`,
+    })
+  }
+
+  for (const matrix of grdMatrices) {
+    const next = GRD_MATRIX_TRANSITIONS[matrix.status as GrdMatrixStatus]?.find((to) => to !== "draft")
+    if (!next) continue
+    pending.push({
+      entityType: "grd_matrix", entityId: matrix.id, worksiteId: matrix.worksiteId,
+      title: matrix.title, status: matrix.status, updatedAt: matrix.updatedAt,
+      permission: grdMatrixTransitionPermission(next), href: `/prevencion/cgrd`,
+    })
+  }
+
+  for (const version of documentVersions) {
+    // Sin faena no hay a quién avisarle: los destinatarios se resuelven por
+    // permiso Y faena, y un documento corporativo no tiene una.
+    if (!version.worksiteId) continue
+    pending.push({
+      entityType: "sst_document_version", entityId: version.id, worksiteId: version.worksiteId,
+      title: version.title, status: version.status, updatedAt: version.updatedAt,
+      permission: version.status === "en_revision" ? "prevention:docs:approve" : "prevention:docs:publish",
+      href: `/prevencion/documentacion/${version.documentId}`,
+    })
+  }
+
+  return pending
+}
+
+const SIGNATURE_ENTITY_LABEL: Record<string, string> = {
+  emergency_plan: "El plan de emergencia",
+  risk_matrix: "La matriz MIPER",
+  grd_matrix: "La matriz GRD",
+  sst_document_version: "El documento",
+}
+
+/**
+ * Avisa a quien tiene que firmar. Se encadena en el cron semanal del PDTP, bajo
+ * el mismo lock que los otros tres jobs.
+ */
+export async function runPdtpSignaturePendingReminders(asOf = new Date()): Promise<PdtpSignaturePendingResult> {
+  const pending = await findPendingSignatures()
+  const notifiedUserIds = new Set<string>()
+  let remindersDue = 0
+
+  /* Los destinatarios se resuelven una vez por (permiso, faena) y no una por
+   * registro: son pocas faenas y muchos registros, y `getUserIds…` es una
+   * consulta con dos joins. Mismo criterio que los recordatorios de CAPA. */
+  const recipientsByKey = new Map<string, string[]>()
+  async function recipientsFor(permission: string, worksiteId: string): Promise<string[]> {
+    const key = `${permission}::${worksiteId}`
+    const cached = recipientsByKey.get(key)
+    if (cached) return cached
+    const resolved = await getUserIdsWithPermissionForWorksite(permission, worksiteId)
+    recipientsByKey.set(key, resolved)
+    return resolved
+  }
+
+  for (const item of pending) {
+    const step = signatureBucketFor(item.updatedAt, asOf)
+    if (!step) continue
+
+    let recipients: string[]
+    try {
+      recipients = await recipientsFor(item.permission, item.worksiteId)
+    } catch (err) {
+      // Una faena que falla no debe silenciar las demás.
+      logger.error({ err, entityId: item.entityId, permission: item.permission }, "[pdtp-firma-pendiente] No se pudo resolver destinatarios.")
+      continue
+    }
+    if (recipients.length === 0) {
+      /* Nadie con ese permiso en esa faena: la actividad está esperando una
+       * firma que ninguna persona puede dar. Es más grave que un atraso, así
+       * que queda dicho en el log aunque no haya a quién notificar. */
+      logger.warn(
+        { entityType: item.entityType, entityId: item.entityId, worksiteId: item.worksiteId, permission: item.permission },
+        "[pdtp-firma-pendiente] Registro esperando una firma que nadie en la faena puede dar.",
+      )
+      continue
+    }
+
+    /* El estado va en la clave: si el registro avanza y vuelve a quedarse
+     * esperando, es una espera nueva y merece un aviso nuevo. El escalón evita
+     * repetir el mismo aviso todos los días. */
+    const dedupeKey = `pdtp-firma-pendiente:${item.entityType}:${item.entityId}:${item.status}:${step.bucket}`
+    await createNotifications(recipients, {
+      type: "system_alert",
+      title: "Hay un registro de Prevención esperando tu firma",
+      body: `${SIGNATURE_ENTITY_LABEL[item.entityType] ?? "El registro"} “${item.title}” ${step.copy}.`,
+      entityType: item.entityType,
+      entityId: item.entityId,
+      entityHref: item.href,
+      dedupeKey,
+    })
+    remindersDue += 1
+    for (const userId of recipients) notifiedUserIds.add(userId)
+  }
+
+  return { pending: pending.length, remindersDue, notifiedUsers: notifiedUserIds.size }
 }

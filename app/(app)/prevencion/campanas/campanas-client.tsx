@@ -162,7 +162,7 @@ export function CampanasClient({
       if (res.ok) {
         setCloseCampaignItem(null)
         setEvidenceUrl("")
-        if (res.data?.pdtpAccredited === false) setError(res.message ?? null)
+        if (res.data?.pdtpPending === true) setError(res.message ?? null)
         router.refresh()
       } else {
         setError(res.message ?? "Ocurrió un error")

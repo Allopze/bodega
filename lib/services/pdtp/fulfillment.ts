@@ -73,21 +73,21 @@ async function upsertPendingEvent(input: {
   activityNumbers: number[]
   sourceVersion: string | null
   returnHref: string | null
-}) {
+}, client: QueryClient = db) {
   const idempotencyKey = fulfillmentIdempotencyKey(input.sourceType, input.sourceId, input.eventType)
   const now = new Date().toISOString()
 
-  const [existing] = await db.select().from(pdtpFulfillmentEvents)
+  const [existing] = await client.select().from(pdtpFulfillmentEvents)
     .where(eq(pdtpFulfillmentEvents.idempotencyKey, idempotencyKey)).limit(1)
   if (existing) {
-    await db.update(pdtpFulfillmentEvents)
+    await client.update(pdtpFulfillmentEvents)
       .set({ attempts: existing.attempts + 1, updatedAt: now })
       .where(eq(pdtpFulfillmentEvents.id, existing.id))
     return existing.id
   }
 
   const id = `pdtp-fulfillment-${nanoid()}`
-  const [inserted] = await db.insert(pdtpFulfillmentEvents).values({
+  const [inserted] = await client.insert(pdtpFulfillmentEvents).values({
     id,
     sourceType: input.sourceType,
     sourceId: input.sourceId,
@@ -110,20 +110,56 @@ async function upsertPendingEvent(input: {
 
   // Carrera: otra llamada concurrente insertó primero. Se suma el intento a
   // esa fila en vez de fallar.
-  const [concurrent] = await db.select({ id: pdtpFulfillmentEvents.id, attempts: pdtpFulfillmentEvents.attempts })
+  const [concurrent] = await client.select({ id: pdtpFulfillmentEvents.id, attempts: pdtpFulfillmentEvents.attempts })
     .from(pdtpFulfillmentEvents).where(eq(pdtpFulfillmentEvents.idempotencyKey, idempotencyKey)).limit(1)
   if (!concurrent) throw new Error("No se pudo crear ni recuperar el evento de cumplimiento.")
-  await db.update(pdtpFulfillmentEvents).set({ attempts: concurrent.attempts + 1, updatedAt: now }).where(eq(pdtpFulfillmentEvents.id, concurrent.id))
+  await client.update(pdtpFulfillmentEvents).set({ attempts: concurrent.attempts + 1, updatedAt: now }).where(eq(pdtpFulfillmentEvents.id, concurrent.id))
   return concurrent.id
+}
+
+/**
+ * Deja el hecho anotado como `pending` **dentro de la transacción del módulo
+ * fuente**, sin intentar acreditar.
+ *
+ * Existe para el único caso en que un caller transaccional sabe de antemano que
+ * el motor no puede acreditar —no hay programa activo— pero el hecho igual debe
+ * sobrevivir: cerrar una inspección mientras el programa anual todavía se
+ * redacta. `reconcilePdtpFulfillmentEvents` toma los `pending` y los acredita
+ * cuando el programa se activa.
+ *
+ * **Escribe con el cliente que recibe, y eso es el punto.** Usar la conexión
+ * global desde dentro de una transacción abierta es lo que no se puede hacer:
+ * en producción se arriesga a bloquearse contra los candados de esa misma
+ * transacción, y sobre una sola conexión —PGlite en los tests— directamente
+ * cuelga. Además da la semántica correcta: si el cierre del run se revierte, el
+ * evento se revierte con él y no queda prometido un cumplimiento que nadie hizo.
+ */
+export async function recordPendingPdtpFulfillmentEvent(
+  input: AccreditationInput & { sourceVersion?: string; returnHref?: string },
+  client: QueryClient,
+): Promise<void> {
+  await upsertPendingEvent({
+    sourceType: input.sourceType,
+    sourceId: input.sourceId,
+    eventType: "completed",
+    worksiteId: input.worksiteId,
+    occurredAt: input.occurredAt,
+    quantity: input.executedQuantity ?? 1,
+    evidenceRef: input.evidenceRef ?? null,
+    activityNumbers: input.activityNumbers,
+    sourceVersion: input.sourceVersion ?? null,
+    returnHref: input.returnHref ?? null,
+  }, client)
 }
 
 /**
  * Registra un intento de acreditación de forma durable y lo ejecuta.
  *
  * Reemplaza el patrón `try { accreditPdtpFromEvent(input) } catch { log }` que
- * usan hoy los cuatro adaptadores: la diferencia es que un fallo —programa en
- * borrador, faena fuera del programa, actividad retirada— queda en la base
- * como un evento `pending`/`error` reprocesable, no sólo en un log.
+ * usaban los adaptadores: la diferencia es que un fallo —programa en borrador,
+ * faena fuera del programa, actividad retirada— queda en la base como un evento
+ * `pending`/`error` reprocesable, no sólo en un log. Ya no queda ningún llamador
+ * con el patrón viejo.
  *
  * Nunca lanza: un fallo al escribir el evento durable tampoco debe tumbar la
  * transacción del módulo fuente, que es la misma garantía que ya ofrecía
@@ -415,19 +451,19 @@ async function permissionsByRoleName(client: QueryClient): Promise<Map<string, S
  * - `constancia` se marca en Constancias.
  * - `formulario` se registra dentro del propio PDTP.
  *
- * `enganche` devuelve `null` a propósito: su destino real depende de la
- * actividad —una se cierra en Inspecciones, otra en Capacitación, otra en
- * EPP— y hoy no existe un mapa actividad → módulo. Ese mapa es justamente el
- * contrato anual que el plan pedía en `fulfillment-contract-2026.ts` y que
- * todavía no se escribió: mientras no exista, la compuerta no puede afirmar
- * nada sobre el permiso de destino de las actividades de enganche, y prefiere
- * no verificar antes que verificar contra el módulo equivocado.
+ * `enganche` y `compuesta` devuelven `null` acá a propósito: su destino real
+ * depende de la actividad —una cierra en Inspecciones, otra en Capacitación,
+ * otra en EPP— y lo resuelve `engancheDestinationPermissionFor` contra
+ * `fulfillment-contract-2026.ts`, más abajo. Lo que esta función responde es
+ * sólo "¿qué permiso exige la planilla?", y a esas dos no las cumple la
+ * planilla.
  *
- * `compuesta` tampoco se verifica, y por una razón distinta: **nadie la
- * ejecuta**. Se cumple cuando sus componentes están completos —la N°52 cierra
- * con el acta de trabajador nuevo—, así que exigirle a su responsable el
- * permiso de la planilla comprobaba algo que no hace falta para cumplirla, y
- * podía bloquear el envío del programa por una configuración legítima.
+ * Para `compuesta` la razón es además que **nadie la ejecuta**: se cumple
+ * cuando sus componentes están completos —la N°52 cierra con el acta de
+ * trabajador nuevo—, así que exigirle a su responsable el permiso de la
+ * planilla comprobaba algo que no hace falta para cumplirla, y podía bloquear
+ * el envío del programa por una configuración legítima. Eso vale para este
+ * chequeo y **sólo** para éste: el del acto que la acredita sí le corresponde.
  */
 function destinationPermissionFor(mechanism: string): string | null {
   if (mechanism === "constancia") return "prevention:constancias:execute"
@@ -628,12 +664,21 @@ export async function assertPdtpFulfillmentCoverage(programId: string, client: Q
       }
     }
 
-    // Enganche con destino conocido: se **reporta**, no se bloquea. El mapa es
-    // nuevo y buena parte de lo que encuentra es segregación de deberes —quien
-    // redacta el plan de emergencia no es quien lo firma—, no grants que
-    // falten. Va después de la verificación de cableado: una actividad sin
-    // destino declarado ya salió como `config_required` y repetirlo sería ruido.
-    if (activity.mechanism === "enganche") {
+    // Destino conocido: se **reporta**, no se bloquea. El mapa es nuevo y buena
+    // parte de lo que encuentra es segregación de deberes —quien redacta el plan
+    // de emergencia no es quien lo firma—, no grants que falten. Va después de
+    // la verificación de cableado: una actividad sin destino declarado ya salió
+    // como `config_required` y repetirlo sería ruido.
+    //
+    // `compuesta` entra acá igual que `enganche`, y es la tercera vez que hay
+    // que decir lo mismo: la exención de `compuesta` se razonó una sola vez, para
+    // el chequeo de PERMISO de la planilla —nadie la ejecuta, se cumple cuando
+    // sus componentes cierran— y después se arrastró al chequeo de cableado (ya
+    // corregido) y a éste. Acá tampoco aplica: la N°15, la N°18, la N°23 y la
+    // N°52 se acreditan al cerrar el acta de trabajador nuevo, que exige
+    // `sst:close`, y ninguno de sus responsables lo tiene. Que nadie la "ejecute"
+    // no significa que su acto acreditador no tenga dueño.
+    if (activity.mechanism === "enganche" || activity.mechanism === "compuesta") {
       const destination = engancheDestinationPermissionFor(activity.n)
       if (destination && !roles.some((role) => permissionsByRole.get(role)?.has(destination.permission))) {
         issues.push({

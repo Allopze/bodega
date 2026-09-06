@@ -8,8 +8,7 @@ import {
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
-import { accreditPdtpFromEvent } from "@/lib/services/pdtp/accreditation"
-import { logger } from "@/lib/logger"
+import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
 
 export interface CampaignAccess {
   userId: string
@@ -189,27 +188,37 @@ export async function closeCampaign(input: unknown, access: CampaignAccess) {
 
   if (!updated) throw new Error("No se pudo completar la campaña.")
 
-  // Auto-acreditación PDTP (safe). Sin actividades declaradas en la campaña es
-  // no-op: no inventamos un número por defecto para no acreditar una actividad
-  // ajena a la campaña.
+  // Auto-acreditación PDTP por la capa durable. Sin actividades declaradas en
+  // la campaña es no-op: no inventamos un número por defecto para no acreditar
+  // una actividad ajena a la campaña.
+  //
+  // Pasa por `recordPdtpFulfillmentEvent` y no por `accreditPdtpFromEvent` a
+  // secas: el motor lanza cuando el programa está en borrador o la faena queda
+  // fuera de él, y con el `try/catch` que había antes esos cierres se perdían
+  // en un `logger.error`, sin fila que `reconcilePdtpFulfillmentEvents` pudiera
+  // recuperar al activar el programa. Era el último llamador con ese patrón.
+  //
+  // `pdtpPending` separa "no había nada que acreditar" de "había y todavía no
+  // pudo": el primero no es un problema y el segundo tampoco obliga a marcar a
+  // mano, porque el evento quedó registrado. Decirle "acredita manualmente" a
+  // quien ya tiene su cumplimiento en la fila de reconciliación produce una
+  // ejecución duplicada.
   let pdtpAccredited = false
+  let pdtpPending = false
   const activityNumbers = Array.isArray(campaign.pdtpActivityNumbers) ? campaign.pdtpActivityNumbers : []
   if (activityNumbers.length > 0) {
-    try {
-      await accreditPdtpFromEvent({
-        sourceType: "campana",
-        sourceId: campaign.id,
-        worksiteId: campaign.worksiteId,
-        activityNumbers,
-        occurredAt: now,
-        executedQuantity: Math.max(1, attendance.length),
-        evidenceRef: data.evidenceUrl ?? `Campaña preventiva: ${campaign.code}`,
-      })
-      pdtpAccredited = true
-    } catch (err) {
-      logger.error({ err, campaignId: campaign.id }, "[closeCampaign] Error en auto-acreditación PDTP de campaña")
-    }
+    const result = await recordPdtpFulfillmentEvent({
+      sourceType: "campana",
+      sourceId: campaign.id,
+      worksiteId: campaign.worksiteId,
+      activityNumbers,
+      occurredAt: now,
+      executedQuantity: Math.max(1, attendance.length),
+      evidenceRef: data.evidenceUrl ?? `Campaña preventiva: ${campaign.code}`,
+    })
+    pdtpAccredited = (result?.accredited.length ?? 0) > 0
+    pdtpPending = !pdtpAccredited
   }
 
-  return { campaign: updated, reachedWorkers: attendance.length, pdtpAccredited }
+  return { campaign: updated, reachedWorkers: attendance.length, pdtpAccredited, pdtpPending }
 }

@@ -63,6 +63,9 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     const author = access("risk-author", ["prevention:risk:view", "prevention:risk:edit"])
     const reviewer = access("risk-reviewer", ["prevention:risk:review"])
     const approver = access("risk-approver", ["prevention:risk:approve", "prevention:risk:publish"])
+    /* Publicar dejó de poder hacerlo quien aprobó: la cuarta firma también se
+     * segrega por actor. La jefatura técnica del área es la única exenta. */
+    const publisher = access("risk-publisher", ["prevention:risk:publish"])
     const methodology = await service.ensureIspRiskMethodology(author)
     methodologyId = methodology.id
     const first = await service.createRiskMatrixDraft({
@@ -81,7 +84,8 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     await expect(service.transitionRiskMatrix({ matrixId: first.id, expectedVersion: submitted.version, toStatus: "reviewed", reason: "Autor intenta revisar su propio trabajo" }, access("risk-author", ["prevention:risk:review"]))).rejects.toThrow(/no puede revisarla/i)
     const reviewed = await service.transitionRiskMatrix({ matrixId: first.id, expectedVersion: submitted.version, toStatus: "reviewed", reason: "Metodología, jerarquía y participación verificadas." }, reviewer)
     const approved = await service.transitionRiskMatrix({ matrixId: first.id, expectedVersion: reviewed.version, toStatus: "approved", reason: "Revisión independiente aceptada para publicación." }, approver)
-    const published = await service.transitionRiskMatrix({ matrixId: first.id, expectedVersion: approved.version, toStatus: "published", reason: "Publicación formal de la primera versión MIPER.", effectiveFrom: "2026-07-18" }, approver)
+    await expect(service.transitionRiskMatrix({ matrixId: first.id, expectedVersion: approved.version, toStatus: "published", reason: "Quien aprobó intenta publicar.", effectiveFrom: "2026-07-18" }, approver)).rejects.toThrow(/no puede publicarla/i)
+    const published = await service.transitionRiskMatrix({ matrixId: first.id, expectedVersion: approved.version, toStatus: "published", reason: "Publicación formal de la primera versión MIPER.", effectiveFrom: "2026-07-18" }, publisher)
     expect(published).toMatchObject({ status: "published", effectiveFrom: "2026-07-18", reviewDueAt: "2027-07-18" })
     expect(published.publishedHashSha256).toMatch(/^[a-f0-9]{64}$/)
     const [clock] = await getDb().select().from(schema.preventionPdtpUpdateObligations).where(eq(schema.preventionPdtpUpdateObligations.sourceId, first.id))
@@ -103,7 +107,7 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     const revisionSubmitted = await service.transitionRiskMatrix({ matrixId: revision.id, expectedVersion: revision.version, toStatus: "in_review", reason: "Revisión actualizada enviada al circuito formal." }, author)
     const revisionReviewed = await service.transitionRiskMatrix({ matrixId: revision.id, expectedVersion: revisionSubmitted.version, toStatus: "reviewed", reason: "Cambios y controles contrastados con terreno." }, reviewer)
     const revisionApproved = await service.transitionRiskMatrix({ matrixId: revision.id, expectedVersion: revisionReviewed.version, toStatus: "approved", reason: "Versión revisada aprobada por jefatura segregada." }, approver)
-    const revisionPublished = await service.transitionRiskMatrix({ matrixId: revision.id, expectedVersion: revisionApproved.version, toStatus: "published", reason: "Nueva versión publicada sin sobrescribir la anterior.", effectiveFrom: "2026-08-01" }, approver)
+    const revisionPublished = await service.transitionRiskMatrix({ matrixId: revision.id, expectedVersion: revisionApproved.version, toStatus: "published", reason: "Nueva versión publicada sin sobrescribir la anterior.", effectiveFrom: "2026-08-01" }, publisher)
     currentMatrixId = revisionPublished.id
     const [old] = await getDb().select().from(schema.preventionRiskMatrices).where(eq(schema.preventionRiskMatrices.id, first.id))
     const oldEntriesAfter = await getDb().select().from(schema.preventionRiskEntries).where(eq(schema.preventionRiskEntries.matrixId, first.id))
@@ -1078,13 +1082,14 @@ async function publishMatrixB(
 ) {
   const author = accessB("risk-author", ["prevention:risk:view", "prevention:risk:edit"])
   const reviewer = accessB("risk-reviewer", ["prevention:risk:review"])
-  const approver = accessB("risk-approver", ["prevention:risk:approve", "prevention:risk:publish"])
+  const approver = accessB("risk-approver", ["prevention:risk:approve"])
+  const publisher = accessB("risk-publisher", ["prevention:risk:publish"])
   const draft = await service.createRiskMatrixDraft(matrixDraft(title, sourceMatrixId), author)
   for (const entry of entries) await service.addRiskEntry(riskEntryB(draft.id, entry), author)
   const submitted = await service.transitionRiskMatrix({ matrixId: draft.id, expectedVersion: draft.version, toStatus: "in_review", reason: `Envío a revisión de ${title}.` }, author)
   const reviewed = await service.transitionRiskMatrix({ matrixId: draft.id, expectedVersion: submitted.version, toStatus: "reviewed", reason: `Revisión técnica de ${title}.` }, reviewer)
   const approved = await service.transitionRiskMatrix({ matrixId: draft.id, expectedVersion: reviewed.version, toStatus: "approved", reason: `Aprobación segregada de ${title}.` }, approver)
-  return service.transitionRiskMatrix({ matrixId: draft.id, expectedVersion: approved.version, toStatus: "published", reason: `Publicación de ${title}.` }, approver)
+  return service.transitionRiskMatrix({ matrixId: draft.id, expectedVersion: approved.version, toStatus: "published", reason: `Publicación de ${title}.` }, publisher)
 }
 
 /** `methodologyId` se resuelve en la primera prueba, así que esto es función. */
@@ -1148,6 +1153,7 @@ async function seedFixture(database: ReturnType<typeof drizzle<typeof schema>>) 
     { id: "risk-author", name: "Autor", email: "risk-author@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "risk-reviewer", name: "Revisor", email: "risk-reviewer@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "risk-approver", name: "Aprobador", email: "risk-approver@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
+    { id: "risk-publisher", name: "Publicador", email: "risk-publisher@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "risk-viewer", name: "Lector", email: "risk-viewer@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "risk-outsider", name: "Ajeno", email: "risk-outsider@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
   ])

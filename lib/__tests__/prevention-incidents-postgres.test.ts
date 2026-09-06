@@ -173,6 +173,9 @@ describeIf("canonical incident workflow on real PostgreSQL", () => {
       "prevention:incidents:close", "prevention:capa:manage", "prevention:capa:complete",
     ]
     const manager = access("incident-reporter", managerPermissions)
+    /* Cerrar dejó de poder hacerlo quien completó la investigación: es la
+     * quinta compuerta del cierre, y la única que mira quién firma. */
+    const closer = access("incident-verifier", ["prevention:incidents:view", "prevention:incidents:close"])
     const reported = await incidents.reportPreventionIncident({
       access: manager,
       input: {
@@ -238,7 +241,9 @@ describeIf("canonical incident workflow on real PostgreSQL", () => {
     const riskAccess = (userId: string, permissions: string[]) => ({ userId, scope: { mode: "some" as const, ids: ["ws-incidents"] }, permissions })
     const riskAuthor = riskAccess("incident-reporter", ["prevention:risk:view", "prevention:risk:edit"])
     const riskReviewer = riskAccess("incident-verifier", ["prevention:risk:review"])
-    const riskApprover = riskAccess("incident-risk-approver", ["prevention:risk:approve", "prevention:risk:publish"])
+    const riskApprover = riskAccess("incident-risk-approver", ["prevention:risk:approve"])
+    // Publicar la MIPER exige firma distinta de quien la aprobó.
+    const riskPublisher = riskAccess("incident-risk-publisher", ["prevention:risk:publish"])
     const methodology = await risk.ensureIspRiskMethodology(riskAuthor)
     const matrix = await risk.createRiskMatrixDraft({
       worksiteId: "ws-incidents", title: "MIPER revisada por incidente grave", methodologyId: methodology.id,
@@ -266,7 +271,7 @@ describeIf("canonical incident workflow on real PostgreSQL", () => {
     const submitted = await risk.transitionRiskMatrix({ matrixId: matrix.id, expectedVersion: matrix.version, toStatus: "in_review", reason: "Revisión post incidente enviada al circuito formal." }, riskAuthor)
     const reviewed = await risk.transitionRiskMatrix({ matrixId: matrix.id, expectedVersion: submitted.version, toStatus: "reviewed", reason: "Causas y controles del incidente contrastados en terreno." }, riskReviewer)
     const approvedMatrix = await risk.transitionRiskMatrix({ matrixId: matrix.id, expectedVersion: reviewed.version, toStatus: "approved", reason: "Aprobación segregada de la revisión post incidente." }, riskApprover)
-    await risk.transitionRiskMatrix({ matrixId: matrix.id, expectedVersion: approvedMatrix.version, toStatus: "published", reason: "Publicación de la MIPER revisada por el incidente.", effectiveFrom: "2026-07-18" }, riskApprover)
+    await risk.transitionRiskMatrix({ matrixId: matrix.id, expectedVersion: approvedMatrix.version, toStatus: "published", reason: "Publicación de la MIPER revisada por el incidente.", effectiveFrom: "2026-07-18" }, riskPublisher)
     const resolvedTrigger = await risk.resolveRiskReviewTrigger({
       triggerId: miperTrigger!.id, matrixId: matrix.id,
       resolution: "MIPER republicada incorporando la barrera certificada como control crítico.",
@@ -336,8 +341,12 @@ describeIf("canonical incident workflow on real PostgreSQL", () => {
         evidenceReference: "storage/resoluciones/levantamiento-4321.pdf",
       },
     })
-    incident = await incidents.transitionPreventionIncident({
+    await expect(incidents.transitionPreventionIncident({
       access: manager,
+      input: { incidentId, expectedVersion: incident.version, toStatus: "closed", reason: "Quien investigó intenta cerrar" },
+    })).rejects.toThrow(/no puede cerrar el incidente/i)
+    incident = await incidents.transitionPreventionIncident({
+      access: closer,
       input: { incidentId, expectedVersion: incident.version, toStatus: "closed", reason: "Expediente completo y reinicio controlado" },
     })
     expect(incident).toMatchObject({ status: "closed", operationsSuspended: false })
@@ -433,6 +442,7 @@ async function seedFixture(db: ReturnType<typeof drizzle<typeof schema>>) {
     { id: "incident-verifier", name: "Incident Verifier", email: "incident-verifier@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "incident-outsider", name: "Incident Outsider", email: "incident-outsider@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "incident-risk-approver", name: "Incident Risk Approver", email: "incident-risk-approver@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
+    { id: "incident-risk-publisher", name: "Incident Risk Publisher", email: "incident-risk-publisher@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
   ])
 }
 

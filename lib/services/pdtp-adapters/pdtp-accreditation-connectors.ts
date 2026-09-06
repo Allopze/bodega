@@ -30,10 +30,11 @@ import { db, type Tx } from "@/db"
 import { pdtpProgramWorksites, worksites } from "@/db/schema"
 import {
   accreditPdtpFromEvent,
+  PdtpNoActiveProgramError,
   revokePdtpAccreditationWithClient,
   type AccreditationInput,
 } from "@/lib/services/pdtp/accreditation"
-import { recordPdtpFulfillmentEvent, recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
+import { recordPdtpFulfillmentEvent, recordPendingPdtpFulfillmentEvent, recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
 import { PDTP_CPHS_ACTIVITY_NUMBERS } from "@/lib/services/pdtp/worksites"
 
 /** N°9: "Reunión revisión gestión preventiva SG-SST". */
@@ -103,16 +104,40 @@ export async function onInspectionCompleted(input: {
     autoApproveByUserId: input.completedByUserId,
   }
   if (client) {
-    const result = await accreditPdtpFromEvent(accreditation, client)
-    if (result.skippedNotFound.length > 0) {
-      throw new Error(
-        `La plantilla de inspección referencia actividades PDTP inexistentes: ${result.skippedNotFound.join(", ")}.`,
-      )
-    }
-    if (result.skippedOutOfPeriod) {
-      throw new Error(
-        `La inspección ocurrió en ${result.skippedOutOfPeriod.occurredYear}, fuera del programa PDTP ${result.skippedOutOfPeriod.programYear}.`,
-      )
+    /* Comparte la transacción con el cierre del run: nunca puede quedar el run
+     * completado sin su cumplimiento ni una ejecución PDTP sin la inspección
+     * que la respalda.
+     *
+     * La excepción es "todavía no hay programa activo", y no es una
+     * inconsistencia: es el estado de la plataforma durante todo el período en
+     * que el programa anual se redacta y se firma. Dejarlo propagar revertía la
+     * transacción entera, así que aprobar una plantilla antes de activar el
+     * programa —un orden perfectamente posible, porque activar es una decisión
+     * y aprobar plantillas es un trámite— impedía **cerrar la inspección**, con
+     * un mensaje sobre el PDTP que a quien está en terreno no le dice nada.
+     *
+     * En ese caso el hecho queda anotado como `pending` **en la misma
+     * transacción** y el run se cierra. `reconcilePdtpFulfillmentEvents` lo
+     * acredita al activar el programa. Va en la transacción y no por la
+     * conexión global a propósito: si el cierre se revierte, el evento se
+     * revierte con él. */
+    try {
+      const result = await accreditPdtpFromEvent(accreditation, client)
+      if (result.skippedNotFound.length > 0) {
+        throw new Error(
+          `La plantilla de inspección referencia actividades PDTP inexistentes: ${result.skippedNotFound.join(", ")}.`,
+        )
+      }
+      if (result.skippedOutOfPeriod) {
+        throw new Error(
+          `La inspección ocurrió en ${result.skippedOutOfPeriod.occurredYear}, fuera del programa PDTP ${result.skippedOutOfPeriod.programYear}.`,
+        )
+      }
+    } catch (err) {
+      // Sólo ese caso. Un número inexistente o una faena fuera del programa
+      // siguen tumbando el cierre: ésos sí hay que corregirlos antes de firmar.
+      if (!(err instanceof PdtpNoActiveProgramError)) throw err
+      await recordPendingPdtpFulfillmentEvent(accreditation, client)
     }
   } else {
     await safeAccredit(accreditation)

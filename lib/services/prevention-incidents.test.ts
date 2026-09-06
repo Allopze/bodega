@@ -6,6 +6,9 @@ import {
   requiredIncidentNotificationTypes,
 } from "@/lib/services/prevention-incidents"
 
+const INVESTIGADOR = "u-investiga"
+const CERRADOR = "u-cierra"
+
 const incident = {
   status: "pending_verification",
   eventType: "work_accident",
@@ -34,6 +37,8 @@ describe("prevention incident legal workflow", () => {
       toStatus: "closed",
       permissions: ["prevention:incidents:close"],
       investigationCompleted: true,
+      investigationCompletedByUserId: INVESTIGADOR,
+      actorUserId: CERRADOR,
       capaStatuses: ["closed"],
       notificationLanes: [{ notificationType: "diat", status: "overdue", evidenceReference: null }],
     })).toThrow(/pendientes\/atrasados/i)
@@ -45,6 +50,8 @@ describe("prevention incident legal workflow", () => {
       toStatus: "closed",
       permissions: ["prevention:incidents:close"],
       investigationCompleted: true,
+      investigationCompletedByUserId: INVESTIGADOR,
+      actorUserId: CERRADOR,
       capaStatuses: ["verified"],
       notificationLanes: [{ notificationType: "diat", status: "sent", evidenceReference: "folio-1" }],
     })).toThrow(/CAPA deben estar cerradas/i)
@@ -53,6 +60,8 @@ describe("prevention incident legal workflow", () => {
       toStatus: "closed",
       permissions: ["prevention:incidents:close"],
       investigationCompleted: true,
+      investigationCompletedByUserId: INVESTIGADOR,
+      actorUserId: CERRADOR,
       capaStatuses: ["closed"],
       notificationLanes: [{ notificationType: "diat", status: "sent", evidenceReference: null }],
     })).toThrow(/requieren evidencia/i)
@@ -64,6 +73,8 @@ describe("prevention incident legal workflow", () => {
       toStatus: "closed",
       permissions: ["prevention:incidents:close"],
       investigationCompleted: true,
+      investigationCompletedByUserId: INVESTIGADOR,
+      actorUserId: CERRADOR,
       capaStatuses: ["closed"],
       notificationLanes: [{ notificationType: "diat", status: "sent", evidenceReference: "folio-1" }],
     })).not.toThrow()
@@ -74,4 +85,49 @@ describe("prevention incident legal workflow", () => {
     expect(incidentRequiresCapa({ actualSeverity: "lost_time", potentialSeverity: "low", isFatalOrSerious: false })).toBe(true)
     expect(incidentRequiresCapa({ actualSeverity: "minor", potentialSeverity: "low", isFatalOrSerious: false })).toBe(false)
   })
+
+  /* Quinta compuerta, y la única sobre personas. Las otras cuatro miran el
+   * estado del caso; un expediente cerrado tiene que poder demostrar además
+   * quién lo firmó, y hasta ahora el mismo que investigó podía cerrarlo. */
+  it("blocks closure by the same person who completed the investigation", () => {
+    expect(() => assertIncidentTransition({
+      incident,
+      toStatus: "closed",
+      permissions: ["prevention:incidents:close"],
+      investigationCompleted: true,
+      investigationCompletedByUserId: INVESTIGADOR,
+      actorUserId: INVESTIGADOR,
+      capaStatuses: ["closed"],
+      notificationLanes: [{ notificationType: "diat", status: "sent", evidenceReference: "folio-1" }],
+    })).toThrow(/no puede cerrar el incidente/i)
+  })
+
+  it("lets the technical head close an investigation they completed themselves", () => {
+    expect(() => assertIncidentTransition({
+      incident,
+      toStatus: "closed",
+      permissions: ["prevention:incidents:close", "prevention:sign_own_work"],
+      investigationCompleted: true,
+      investigationCompletedByUserId: INVESTIGADOR,
+      actorUserId: INVESTIGADOR,
+      capaStatuses: ["closed"],
+      notificationLanes: [{ notificationType: "diat", status: "sent", evidenceReference: "folio-1" }],
+    })).not.toThrow()
+  })
+
+  /* La exención levanta el eslabón del actor, no las compuertas de estado: con
+   * `sign_own_work` igual no se cierra un caso con CAPA abiertas. */
+  it("does not let the exemption skip the state gates", () => {
+    expect(() => assertIncidentTransition({
+      incident,
+      toStatus: "closed",
+      permissions: ["prevention:incidents:close", "prevention:sign_own_work"],
+      investigationCompleted: true,
+      investigationCompletedByUserId: INVESTIGADOR,
+      actorUserId: INVESTIGADOR,
+      capaStatuses: ["verified"],
+      notificationLanes: [{ notificationType: "diat", status: "sent", evidenceReference: "folio-1" }],
+    })).toThrow(/CAPA deben estar cerradas/i)
+  })
+
 })

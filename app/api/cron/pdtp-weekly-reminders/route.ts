@@ -10,7 +10,7 @@
  */
 
 import { type NextRequest, NextResponse } from "next/server"
-import { runPdtpWeeklyReminders, runPdtpActionPlanVencidasReminders, runPdtpObligationReminders } from "@/lib/services/prevention-pdtp"
+import { runPdtpWeeklyReminders, runPdtpActionPlanVencidasReminders, runPdtpObligationReminders, runPdtpSignaturePendingReminders } from "@/lib/services/prevention-pdtp"
 import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
 import { withCronLock } from "@/lib/services/cron-lock"
@@ -35,17 +35,20 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    // Un solo lock para los tres: corren encadenados en el mismo request, así
-    // que solapar la corrida solaparía los tres a la vez.
+    // Un solo lock para los cuatro: corren encadenados en el mismo request, así
+    // que solapar la corrida solaparía los cuatro a la vez.
     const chained = await withCronLock("pdtp-weekly-reminders", async () => ({
       result: await runPdtpWeeklyReminders(),
       vencidas: await runPdtpActionPlanVencidasReminders(),
       obligations: await runPdtpObligationReminders(),
+      // Actos segregados esperando una firma que nadie dio: es el modo de falla
+      // de la N°35, la N°43, la N°80 y la N°83, y hasta ahora era silencioso.
+      signatures: await runPdtpSignaturePendingReminders(),
     }))
     if ("skipped" in chained) return NextResponse.json({ ok: true, ...chained })
-    const { result, vencidas, obligations } = chained
-    logger.info("[cron/pdtp-weekly-reminders] Completed", { ...result, vencidas, obligations })
-    return NextResponse.json({ ok: true, ...result, vencidas, obligations })
+    const { result, vencidas, obligations, signatures } = chained
+    logger.info("[cron/pdtp-weekly-reminders] Completed", { ...result, vencidas, obligations, signatures })
+    return NextResponse.json({ ok: true, ...result, vencidas, obligations, signatures })
   } catch (err) {
     // H-B11: en producción, no exponer err.message al cliente porque
     // puede filtrar paths internos, queries SQL, etc. Loguear el

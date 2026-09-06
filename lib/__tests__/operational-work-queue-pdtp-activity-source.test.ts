@@ -90,9 +90,12 @@ describe("cola operacional — actividades programadas del PDTP", () => {
         scheduleMode: "scheduled", mechanism: "constancia", sourceSheetRow: 1, createdAt: now, updatedAt: now,
       },
       {
-        id: "act-pdtpq-prf", programId, n: 2, displayOrder: 2, status: "active",
+        id: "act-pdtpq-prf", programId, n: 10, displayOrder: 2, status: "active",
         activity: "Actividad del prevencionista", program: "Guía",
         responsibleSlugs: ["prf"], responsibleDisplay: "Prevencionista PDTPQ",
+        /* n=10 y no un número cualquiera: es una de las que el contrato mapea a
+         * Inspecciones. Con un número fuera del mapa este caso caía al fallback
+         * de la planilla y pasaba en verde sin ejercitar el enrutamiento. */
         scheduleMode: "scheduled", mechanism: "enganche", sourceSheetRow: 2, createdAt: now, updatedAt: now,
       },
       {
@@ -204,14 +207,36 @@ describe("cola operacional — actividades programadas del PDTP", () => {
       .where(eq(schema.pdtpActivitySchedule.id, "sch-jt-prev"))
   })
 
-  it("una constancia manda a su submódulo; un enganche, a la planilla (D12)", async () => {
+  /* D12: cada mecanismo manda a donde el trabajo se registra de verdad. El
+   * enganche va al módulo que dice el contrato anual —no a la planilla, que es
+   * lo que hacía el CASE de SQL cuando el contrato no existía—: el responsable
+   * que abre su tarjeta tiene que aterrizar donde puede cumplirla. */
+  it("cada mecanismo manda al módulo donde se cumple (D12)", async () => {
     const [constancia] = await pdtpItems(makeSession(["jefe_terreno"], [worksiteA]))
     expect(constancia!.href).toContain("/prevencion/constancias")
     expect(constancia!.ctaLabel).toBe("Dejar constancia")
 
     const [enganche] = await pdtpItems(makeSession(["prevencionista_faena"], [worksiteA]))
-    expect(enganche!.href).toContain("/prevencion/pdtp/actividades")
-    expect(enganche!.ctaLabel).toBe("Ver cómo se cumple")
+    expect(enganche!.href).toContain("/prevencion/inspecciones")
+    expect(enganche!.href).toContain(worksiteA)
+    expect(enganche!.ctaLabel).toBe("Ir a cumplirla")
+    // El módulo de la fila sigue siendo `pdtp`: es lo que filtran los chips.
+    expect(enganche!.module).toBe("pdtp")
+  })
+
+  /* Un enganche sin entrada en el contrato —una actividad nueva todavía sin
+   * cablear— cae a la planilla en vez de a un href inventado. */
+  it("un enganche sin destino declarado cae a la planilla", async () => {
+    await inMemoryDb.update(schema.pdtpActivities).set({ n: 998 })
+      .where(eq(schema.pdtpActivities.id, "act-pdtpq-prf"))
+    try {
+      const [enganche] = await pdtpItems(makeSession(["prevencionista_faena"], [worksiteA]))
+      expect(enganche!.href).toContain("/prevencion/pdtp/actividades")
+      expect(enganche!.ctaLabel).toBe("Ver cómo se cumple")
+    } finally {
+      await inMemoryDb.update(schema.pdtpActivities).set({ n: 10 })
+        .where(eq(schema.pdtpActivities.id, "act-pdtpq-prf"))
+    }
   })
 
   it("lo planificado en el mes en curso sin ejecutar sale como pendiente", async () => {

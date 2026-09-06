@@ -67,6 +67,7 @@ const ACT_ID = `${PROGRAM_ID}-a-042`
 
 beforeEach(async () => {
   // Limpiar en orden correcto (FK)
+  await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
   await inMemoryDb.delete(schema.pdtpExecutions)
   await inMemoryDb.delete(schema.pdtpActivityWorksiteExclusions)
   await inMemoryDb.delete(schema.pdtpActivitySchedule)
@@ -868,7 +869,14 @@ describe("una inspección acreditada alimenta los ejes de verificación y cierre
     expect(compliance!.annual).toEqual({ planned: 1, executed: 1, percent: 1 })
   })
 
-  it("no confirma el run si su acreditación vinculada no puede persistirse", async () => {
+  /* Antes este caso usaba "programa en borrador" para provocar el fallo y
+   * afirmaba que el run quedaba sin cerrar. Las dos cosas no son la misma: que
+   * el programa todavía no esté activo es el estado normal de la plataforma
+   * hasta que Prevención lo firma, y bloquear por eso el cierre de una
+   * inspección en terreno es el defecto, no la garantía. La atomicidad que este
+   * bloque protegía sigue fijada por el caso de abajo —una actividad PDTP
+   * inexistente sí revierte el cierre—, que es una inconsistencia de verdad. */
+  it("cierra el run y deja el cumplimiento pendiente cuando el programa aún no se activa", async () => {
     const service = await import("@/lib/services/prevention-inspections")
     await inMemoryDb.insert(schema.preventionInspectionTemplates).values({
       id: "instpl-atomic-accreditation",
@@ -895,18 +903,33 @@ describe("una inspección acreditada alimenta los ejes de verificación y cierre
     await inMemoryDb.update(schema.pdtpPrograms).set({ status: "draft" })
       .where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
 
-    await expect(service.completeInspectionRun({
+    const completed = await service.completeInspectionRun({
       runId: run!.id,
       expectedVersion: run!.version,
     }, {
       userId: USER_ID,
       scope: { mode: "all", ids: [] },
       permissions: ["prevention:inspections:execute", "prevention:inspections:view"],
-    })).rejects.toThrow(/Sin programa PDTP activo/)
+    })
 
+    expect(completed.run.status).toBe("completed")
     const [persisted] = await inMemoryDb.select().from(schema.preventionInspectionRuns)
       .where(eq(schema.preventionInspectionRuns.id, run!.id))
-    expect(persisted).toMatchObject({ status: "in_progress", executedAt: null, executedByUserId: null })
+    expect(persisted!.status).toBe("completed")
+    expect(persisted!.executedByUserId).toBe(USER_ID)
+
+    // El cumplimiento no se perdió: queda reprocesable para cuando el programa
+    // se active.
+    const events = await inMemoryDb.select().from(schema.pdtpFulfillmentEvents)
+      .where(eq(schema.pdtpFulfillmentEvents.sourceId, run!.id))
+    expect(events).toHaveLength(1)
+    expect(events[0]!.activityNumbers).toEqual([ACT_N])
+    expect(["pending", "error"]).toContain(events[0]!.status)
+
+    // Y no se inventó una ejecución contra un programa que nadie firmó.
+    const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.sourceId, run!.id))
+    expect(executions).toHaveLength(0)
   })
 
   it("no confirma el run si la plantilla referencia una actividad PDTP inexistente", async () => {

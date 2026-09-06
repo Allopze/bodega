@@ -3,6 +3,7 @@ import { automaticChargeDaysForSeverity } from "@/lib/prevention/charge-days"
 import { totalAbsenceDays } from "@/lib/prevention/absence-allocation"
 import { z } from "zod"
 import { db, type DB, type Tx } from "@/db"
+import { canSignOwnWork } from "@/lib/services/prevention-signing"
 import {
   preventionCapaActions,
   preventionIncidentEvidence,
@@ -1054,6 +1055,17 @@ export function assertIncidentTransition(args: {
   toStatus: IncidentStatus
   permissions: readonly string[]
   investigationCompleted: boolean
+  /**
+   * Quién dio la investigación por completada, y quién intenta cerrar.
+   *
+   * El cierre es la evidencia que ve el fiscalizador, y hasta ahora sus cuatro
+   * compuertas comprobaban el estado del caso sin mirar quién firma: el mismo
+   * que investigó podía cerrarlo. Se pasan los dos usuarios en vez de un
+   * booleano ya resuelto para que la regla viva junto a las otras compuertas y
+   * no se pierda en el llamador.
+   */
+  investigationCompletedByUserId: string | null
+  actorUserId: string
   capaStatuses: readonly string[]
   notificationLanes: ReadonlyArray<{ notificationType: string; status: string; evidenceReference: string | null }>
 }) {
@@ -1082,6 +1094,18 @@ export function assertIncidentTransition(args: {
     // a cualquier otro carril.
     const missingEvidence = args.notificationLanes.filter((lane) => lane.status !== "not_required" && !lane.evidenceReference)
     if (missingEvidence.length > 0) throw new Error("Las denuncias/notificaciones requieren evidencia antes del cierre.")
+    /* Quinta compuerta, y la única sobre personas: quien completó la
+     * investigación no la da por cerrada. Las otras cuatro miran el estado del
+     * caso; ésta mira quién firma, que es lo que un expediente cerrado tiene
+     * que poder demostrar. La jefatura técnica del área queda exenta: responde
+     * por la investigación y no puede quedar esperando una firma ajena. */
+    if (
+      args.investigationCompletedByUserId
+      && args.investigationCompletedByUserId === args.actorUserId
+      && !canSignOwnWork(args.permissions)
+    ) {
+      throw new Error("Quien completó la investigación no puede cerrar el incidente: debe firmarlo otra persona.")
+    }
   }
 }
 
@@ -1099,6 +1123,8 @@ export async function transitionPreventionIncident(args: {
       toStatus: input.toStatus,
       permissions: args.access.permissions,
       investigationCompleted: facts.investigation?.status === "completed",
+      investigationCompletedByUserId: facts.investigation?.completedByUserId ?? null,
+      actorUserId: args.access.ctx.userId,
       capaStatuses: facts.capa.map((item) => item.status),
       notificationLanes: facts.notifications,
     })
@@ -1758,8 +1784,19 @@ export async function confirmIncidentDiffusion(args: {
     .innerJoin(preventionIncidents, eq(preventionIncidentShiftDiffusions.incidentId, preventionIncidents.id))
     .where(eq(preventionIncidentShiftDiffusions.id, input.diffusionId)).limit(1)
   if (!row) throw new Error("Difusión no encontrada.")
-  // El supervisor de faena confirma (permiso de cierre, distinto de quien la marcó).
-  requireAccess(args.access, "prevention:incidents:close", row.worksiteId)
+  /* Confirmar tiene permiso propio desde que se separó de cerrar el incidente:
+   * son dos actos con dueños distintos —la n=71 y la n=75 las difunde el jefe
+   * de terreno; cerrar el caso es de jefatura y tiene sus propias compuertas—,
+   * y compartir `incidents:close` dejaba sin vía al responsable declarado.
+   *
+   * La regla de las dos personas la sostenía sólo esa diferencia de permiso, y
+   * eso nunca fue suficiente: quien tuviera los dos podía marcar y confirmar su
+   * propia difusión. Ahora se verifica por actor, que es lo que la regla
+   * siempre quiso decir. */
+  requireAccess(args.access, "prevention:incidents:diffuse", row.worksiteId)
+  if (row.diffusion.markedByUserId === args.access.ctx.userId) {
+    throw new Error("Quien marcó la difusión no puede confirmarla: debe hacerlo otra persona.")
+  }
   if (row.diffusion.status === "confirmed") return row.diffusion // idempotente
 
   const now = new Date().toISOString()

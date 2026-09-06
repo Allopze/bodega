@@ -50,6 +50,7 @@ describe("prevention module RBAC", () => {
       "prevention:incidents:authorize_restart",
       "prevention:incidents:override_segregation",
       "prevention:incidents:close",
+      "prevention:incidents:diffuse",
       "prevention:incidents:export",
       "prevention:risk:view",
       "prevention:risk:edit",
@@ -100,6 +101,7 @@ describe("prevention module RBAC", () => {
       "prevention:change:approve",
       "prevention:epp:view",
       "prevention:epp:manage",
+      "prevention:sign_own_work",
     ]
     for (const permission of expected) {
       expect(ALL_MODULE_PERMISSIONS).toContain(permission)
@@ -251,14 +253,24 @@ describe("prevention module RBAC", () => {
       expect(Object.keys(preventionModule.permissionMeta)).toContain(permission)
       expect(ALL_MODULE_PERMISSIONS).toContain(permission)
     }
-    // Segregación: quien edita la matriz no debe tener, por defecto, el mismo
-    // permiso de aprobación o publicación — mismo criterio que MIPER.
-    expect(rolesFor("prevention:cgrd:matrix:edit").sort())
-      .not.toEqual(rolesFor("prevention:cgrd:matrix:approve").sort())
+    /* Segregación de la matriz GRD. Esto comparaba el reparto de roles de
+     * `edit` contra el de `approve` y daba por segregado que los arreglos
+     * fueran distintos — una comprobación que pasaba aunque un mismo rol
+     * tuviera los dos, mientras hubiera un tercero de diferencia. Nunca protegió
+     * lo que decía proteger, y con la jefatura de Prevención firmando (tiene
+     * `edit`, `review`, `approve` y `publish`) protegería aún menos.
+     *
+     * La garantía real vive en `transitionGrdMatrix`, que compara USUARIOS:
+     * quien creó no revisa, quien creó o revisó no aprueba, y quien aprobó no
+     * publica. Dos personas del mismo rol se firman entre ellas; una sola no se
+     * firma a sí misma. Lo que corresponde fijar acá es quién puede firmar. */
     expect(rolesFor("prevention:cgrd:matrix:approve").sort()).toEqual([
-      "administrador", "jefa_chome",
+      "administrador", "jefa_chome", "prevencionista",
     ].sort())
     expect(rolesFor("prevention:cgrd:matrix:publish").sort()).toEqual(rolesFor("prevention:cgrd:matrix:approve").sort())
+    // El prevencionista de faena redacta la matriz y no la firma en ningún paso.
+    expect(rolesFor("prevention:cgrd:matrix:approve")).not.toContain("prevencionista_faena")
+    expect(rolesFor("prevention:cgrd:matrix:publish")).not.toContain("prevencionista_faena")
   })
 
   it("separates document preparation from approval/publication and restricts sensitive files", () => {
@@ -267,13 +279,23 @@ describe("prevention module RBAC", () => {
       .map((grant) => grant.roleSlug)
       .sort()
 
+    /* Quién redacta y envía a revisión. El administrador de contrato entra
+     * porque la planilla lo declara corresponsable de la n=43 y hasta ahora
+     * sólo podía mirar el documento del que responde. */
     expect(rolesFor("prevention:docs:submit_review")).toEqual([
+      "admin_contrato",
       "administrador",
       "prevencionista",
       "prevencionista_faena",
     ])
-    expect(rolesFor("prevention:docs:approve")).toEqual(["administrador", "jefa_chome"])
-    expect(rolesFor("prevention:docs:publish")).toEqual(["administrador", "jefa_chome"])
+    /* La jefatura del Departamento de Prevención firma los documentos del área.
+     * Quien los redacta —el prevencionista de faena— sigue sin firmarlos, y el
+     * servicio impone además que aprobar no sea quien subió ni revisó, y que
+     * publicar no sea quien aprobó. */
+    expect(rolesFor("prevention:docs:approve")).toEqual(["administrador", "jefa_chome", "prevencionista"])
+    expect(rolesFor("prevention:docs:publish")).toEqual(["administrador", "jefa_chome", "prevencionista"])
+    expect(rolesFor("prevention:docs:approve")).not.toContain("prevencionista_faena")
+    expect(rolesFor("prevention:docs:publish")).not.toContain("prevencionista_faena")
     expect(rolesFor("prevention:docs:manage_sensitive")).toEqual(["administrador", "jefa_chome"])
   })
 
@@ -322,6 +344,30 @@ describe("prevention module RBAC", () => {
     expect(rolesFor("prevention:incidents:override_segregation")).toEqual(["administrador"])
   })
 
+  /* Quién firma la MIPER y quién cierra un expediente RE-20. Ninguno de los
+   * tres tenía lista cerrada, así que un grant nuevo pasaba en verde y en
+   * silencio — que es exactamente lo que no debe ocurrir con la última firma de
+   * una evidencia oponible. */
+  it("pins who signs the MIPER and who closes an incident file", () => {
+    const rolesFor = (permission: string) => preventionModule.defaultGrants
+      .filter((grant) => grant.permission === permission)
+      .map((grant) => grant.roleSlug)
+      .sort()
+
+    expect(rolesFor("prevention:risk:approve")).toEqual(["administrador", "jefa_chome", "prevencionista"])
+    expect(rolesFor("prevention:risk:publish")).toEqual(["administrador", "jefa_chome", "prevencionista"])
+    // Quien levanta la matriz en faena no la firma en ningún paso.
+    expect(rolesFor("prevention:risk:edit")).toContain("prevencionista_faena")
+    expect(rolesFor("prevention:risk:approve")).not.toContain("prevencionista_faena")
+    expect(rolesFor("prevention:risk:publish")).not.toContain("prevencionista_faena")
+
+    // Cerrar el caso es de jefatura; investigarlo y difundirlo, de terreno.
+    expect(rolesFor("prevention:incidents:close")).toEqual(["administrador", "jefa_chome", "prevencionista"])
+    expect(rolesFor("prevention:incidents:close")).not.toContain("jefe_terreno")
+    expect(rolesFor("prevention:incidents:close")).not.toContain("prevencionista_faena")
+    expect(rolesFor("prevention:incidents:diffuse")).toContain("jefe_terreno")
+  })
+
   it("separates training delivery from content approval and competency override", () => {
     const rolesFor = (permission: string) => preventionModule.defaultGrants
       .filter((grant) => grant.permission === permission)
@@ -330,8 +376,13 @@ describe("prevention module RBAC", () => {
 
     // Dictar no aprueba contenido: la segregación autor/aprobador se sostiene
     // además en el servicio, no sólo por RBAC.
+    /* La charla diaria (n=53) y las de refuerzo (n=38) las dicta la línea de
+     * mando en terreno: el jefe y el supervisor de terreno son los responsables
+     * declarados y sin `deliver` no podían registrar la sesión que las
+     * acredita. Dictar sigue sin ser aprobar contenido — la segregación que
+     * este bloque protege son las tres líneas de abajo. */
     expect(rolesFor("prevention:training:deliver")).toEqual([
-      "administrador", "prevencionista", "prevencionista_faena",
+      "administrador", "jefe_terreno", "prevencionista", "prevencionista_faena", "supervisor_terreno",
     ])
     expect(rolesFor("prevention:training:approve")).toEqual(["administrador", "jefa_chome"])
     // Convalidar y revocar alteran la habilitación sin sesión ni evaluación:
@@ -391,6 +442,27 @@ describe("prevention module RBAC", () => {
     expect(rolesFor("prevention:inspections:ingest")).toEqual(["admin_contrato", "jefe_terreno"])
     expect(rolesFor("prevention:inspections:ingest")).not.toContain("jefe_mantencion")
     expect(rolesFor("prevention:inspections:ingest")).not.toContain("prevencionista")
+  })
+
+  /* La excepción a la segregación por actor de todo el módulo. Los servicios
+   * impiden firmar el propio trabajo comparando usuarios; este permiso levanta
+   * el último eslabón —publicar, cerrar— para la jefatura técnica del área.
+   *
+   * Lista cerrada a propósito: es el permiso que, mal repartido, deja a una
+   * persona firmando sola de punta a punta. Que ensancharlo obligue a tocar
+   * este test es el punto. */
+  it("keeps self-signing an exception of the technical head, and nobody else", () => {
+    const rolesFor = (permission: string) => preventionModule.defaultGrants
+      .filter((grant) => grant.permission === permission)
+      .map((grant) => grant.roleSlug)
+      .sort()
+
+    // `administrador` no se declara: recibe todos los permisos por sí mismo.
+    expect(rolesFor("prevention:sign_own_work")).toEqual(["prevencionista"])
+    // Nadie de terreno ni de faena firma lo propio.
+    for (const role of ["prevencionista_faena", "admin_contrato", "jefe_terreno", "supervisor_terreno", "jefa_chome", "cphs"]) {
+      expect(rolesFor("prevention:sign_own_work")).not.toContain(role)
+    }
   })
 
   it("keeps the committee as its own body and management review out of terreno", () => {

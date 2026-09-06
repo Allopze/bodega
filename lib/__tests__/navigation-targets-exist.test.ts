@@ -1,4 +1,6 @@
 import fs from "node:fs"
+import { PDTP_2026_ENGANCHE_DESTINATIONS } from "@/lib/services/pdtp-adapters/fulfillment-contract-2026"
+import { resolvePdtpFulfillmentTarget } from "@/lib/services/pdtp/fulfillment"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
 import { AREA_TREE, DASHBOARD_ITEM } from "@/components/layout/nav-items"
@@ -52,21 +54,30 @@ describe("destinos de navegación", () => {
   })
 
   /**
-   * G17: la cola operacional (`operational-work-queue.ts`) construye el CTA de
-   * las actividades `mechanism = 'constancia'` con un `CONCAT` de SQL, fuera de
-   * `AREA_TREE`, así que el test anterior no lo cubre. `/prevencion/constancias`
-   * llevó meses en pie como un 404 sin que ningún test lo detectara — este lee
-   * el literal real de la consulta, no una copia a mano, para que un futuro
-   * cambio de ruta sin la página correspondiente vuelva a fallar acá.
+   * G17: los destinos de las actividades del PDTP viven fuera de `AREA_TREE`,
+   * así que el test anterior no los cubre. `/prevencion/constancias` llevó meses
+   * en pie como un 404 sin que ningún test lo detectara.
+   *
+   * Antes esto leía el literal SQL del `CASE` de `operational-work-queue.ts`.
+   * Ese `CASE` ya no decide el destino —lo hace `resolvePdtpFulfillmentTarget`
+   * contra el contrato anual— y leer el texto fuente cubría una rama de dos.
+   * Ahora se recorre el contrato completo, que son los treinta y tantos
+   * destinos reales, más el de Constancias y el de la planilla.
    */
-  it("el CTA de Constancias en la cola operacional apunta a una ruta real", () => {
-    const source = fs.readFileSync(path.join(root, "lib/services/operational-work-queue.ts"), "utf8")
-    const match = source.match(/WHEN 'constancia' THEN CONCAT\('([^']+)'/)
-    expect(match, "no se encontró la rama 'constancia' del CASE de href en operational-work-queue.ts").not.toBeNull()
-    const hrefPrefix = match![1]!.split("?")[0]!
-
+  it("todos los destinos del contrato de cumplimiento del PDTP son rutas reales", () => {
     const routes = new Set(collectPageRoutes(path.join(root, "app")))
-    expect(routes.has(hrefPrefix)).toBe(true)
+    const destinos = [
+      // Los dos que no salen del contrato: los produce el propio resolutor.
+      resolvePdtpFulfillmentTarget({ mechanism: "constancia" }, "ws-1").href,
+      resolvePdtpFulfillmentTarget({ mechanism: "formulario" }, "ws-1").href,
+      ...Object.keys(PDTP_2026_ENGANCHE_DESTINATIONS).map(
+        (n) => resolvePdtpFulfillmentTarget({ mechanism: "enganche", n: Number(n) }, "ws-1").href,
+      ),
+    ]
+
+    const faltantes = [...new Set(destinos.map((href) => href.split("?")[0]!))]
+      .filter((prefix) => !routes.has(prefix))
+    expect(faltantes, `destinos del PDTP sin página: ${faltantes.join(", ")}`).toEqual([])
   })
 
   it("ninguna etiqueta se repite dentro de su área", () => {

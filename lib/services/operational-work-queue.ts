@@ -55,6 +55,7 @@ import {
   requestStatusLabel,
   type WorkPriority,
 } from "@/lib/work-queue"
+import { resolvePdtpFulfillmentTarget } from "@/lib/services/pdtp/fulfillment"
 import type { OperationalModule } from "@/lib/work-queue.types"
 
 const DEFAULT_PAGE_SIZE = 50
@@ -775,27 +776,21 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
           ${pdtpActivities.createdAt}::text AS created_at,
           TO_CHAR((make_date(${currentYear}, impago.mes, 1) + INTERVAL '1 month' - INTERVAL '1 day')::date, 'YYYY-MM-DD') AS source_due_at,
           ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
-          -- D12: la cola avisa, Constancias marca. Cada mecanismo manda a donde
-          -- efectivamente se registra: una constancia se marca en su submódulo,
-          -- una actividad de enganche se cumple haciendo el trabajo en el
-          -- módulo que corresponde, y por eso su fila apunta a la planilla
-          -- —que muestra el estado— y no a un formulario que no existe.
-          -- Espeja resolvePdtpFulfillmentTarget en lib/services/pdtp/
-          -- fulfillment.ts, está duplicado en SQL, no delegado, porque esta
-          -- proyección es una sola consulta UNION ALL con las demás fuentes de
-          -- pendientes, todas resueltas en SQL. Si cambia uno, cambia el otro.
-          -- /prevencion/constancias existe desde G17 (lib/services/pdtp/
-          -- constancias.ts): lista, por (actividad, faena), la misma deuda
-          -- del primer mes impago que calcula este impago.mes.
-          CASE ${pdtpActivities.mechanism}
-            WHEN 'constancia' THEN CONCAT('/prevencion/constancias?faena=', ${worksites.id})
-            ELSE CONCAT('/prevencion/pdtp/actividades?faena=', ${worksites.id}, '&vista=semana')
-          END AS href,
-          CASE ${pdtpActivities.mechanism}
-            WHEN 'constancia' THEN 'Dejar constancia'
-            WHEN 'enganche' THEN 'Ver cómo se cumple'
-            ELSE 'Registrar cumplimiento'
-          END AS cta_label
+          -- D12: la cola avisa, el módulo de destino registra. El destino real
+          -- lo decide resolvePdtpFulfillmentTarget, en TypeScript, después de
+          -- que la consulta vuelve: depende del contrato anual
+          -- (fulfillment-contract-2026.ts), que mapea cada número de actividad a
+          -- su módulo, y eso no se puede expresar acá sin arrastrar el mapa al
+          -- SQL. Estos dos valores son el fallback y sólo sobreviven si el
+          -- resolutor no reconoce la fila.
+          --
+          -- Antes el CASE decidía acá y se declaraba espejo de esa función.
+          -- Dejó de serlo cuando se escribió el contrato: la función mandaba la
+          -- n=24 a Inspecciones y esta consulta seguía mandando a la planilla a
+          -- todo lo que no fuera constancia. Un espejo que hay que recordar
+          -- pulir termina sucio; ahora hay una sola fuente.
+          CONCAT('/prevencion/pdtp/actividades?faena=', ${worksites.id}, '&vista=semana') AS href,
+          'Registrar cumplimiento'::text AS cta_label
         FROM ${pdtpActivities}
         INNER JOIN ${pdtpPrograms} ON ${pdtpPrograms.id} = ${pdtpActivities.programId}
         -- Misma regla que resolveProgramWorksiteIds: sin membresía declarada el
@@ -1265,7 +1260,7 @@ async function getOperationalWorkQueuePage(
   const row = ((result as unknown as { rows?: unknown[] }).rows?.[0] ?? result[0]) as OperationalQueueSqlRow | undefined
   if (!row) return { items: [], total: 0, summary: emptySummary(), filterOptions: emptyFilterOptions(), nextCursor: null }
   const candidates = parseJsonColumn<OperationalWorkItem[]>(row.items, [])
-  const items = candidates.slice(0, filters.limit)
+  const items = await resolvePdtpActivityTargets(candidates.slice(0, filters.limit))
   return {
     items,
     total: Number(row.total ?? 0),
@@ -1289,6 +1284,45 @@ async function getOperationalWorkQueuePage(
 }
 
 /** Obtiene una página de trabajo ya autorizada desde la proyección SQL común. */
+/**
+ * Reescribe el destino de las filas de actividad del PDTP con el contrato de
+ * cumplimiento, que es el único que sabe en qué módulo se cumple cada número.
+ *
+ * Se hace acá y no en el SQL porque el mapa vive en TypeScript y la proyección
+ * es un `UNION ALL` de veinte ramas: meterlo en la consulta obligaría a
+ * arrastrar el contrato entero a SQL o a agregarle dos columnas a las veinte.
+ * A cambio cuesta una consulta por página, y sólo cuando hay filas del PDTP.
+ *
+ * `source_id` es `CONCAT(activityId, ':', worksiteId)` —lo arma la propia rama
+ * de arriba— así que el id sale de ahí. No se parsea `code`: `'N°' + n` es
+ * presentación, y colgar el enrutamiento de un texto que existe para leerse es
+ * el mismo error en otra capa.
+ */
+async function resolvePdtpActivityTargets(items: OperationalWorkItem[]): Promise<OperationalWorkItem[]> {
+  const activityIds = new Set<string>()
+  for (const item of items) {
+    if (item.sourceType !== "pdtp_activity") continue
+    const activityId = item.sourceId.split(":")[0]
+    if (activityId) activityIds.add(activityId)
+  }
+  if (activityIds.size === 0) return items
+
+  const rows = await db.select({
+    id: pdtpActivities.id,
+    n: pdtpActivities.n,
+    mechanism: pdtpActivities.mechanism,
+  }).from(pdtpActivities).where(inArray(pdtpActivities.id, [...activityIds]))
+  const byId = new Map(rows.map((row) => [row.id, row]))
+
+  return items.map((item) => {
+    if (item.sourceType !== "pdtp_activity") return item
+    const activity = byId.get(item.sourceId.split(":")[0] ?? "")
+    if (!activity) return item
+    const target = resolvePdtpFulfillmentTarget({ mechanism: activity.mechanism, n: activity.n }, item.worksiteId)
+    return { ...item, href: target.href, ctaLabel: target.ctaLabel }
+  })
+}
+
 export async function getOperationalWorkQueue(session: Session, rawFilters: OperationalQueueFilters = {}): Promise<OperationalQueueResult> {
   const scope = resolveWorksiteScope(session)
   const filters: Required<Pick<OperationalQueueFilters, "quick" | "sort" | "limit">> & OperationalQueueFilters = {

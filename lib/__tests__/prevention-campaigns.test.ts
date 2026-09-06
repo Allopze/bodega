@@ -49,6 +49,7 @@ const WORKER_2 = "wrk-cmp-2"
 const PROGRAM_ID = "pdtp-cmp-prog"
 
 beforeEach(async () => {
+  await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
   await inMemoryDb.delete(schema.pdtpExecutions)
   await inMemoryDb.delete(schema.preventionCampaignAttendance)
   await inMemoryDb.delete(schema.preventionCampaigns)
@@ -197,10 +198,53 @@ describe("Prevention Campaigns Service (R9)", () => {
 
     expect(result.campaign!.status).toBe("completed")
     expect(result.pdtpAccredited).toBe(false)
+    // Sin actividades declaradas no hay nada pendiente: no debe avisarle nada
+    // al operador.
+    expect(result.pdtpPending).toBe(false)
 
     const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
       .where(eq(schema.pdtpExecutions.sourceId, campaign!.id))
     expect(executions).toHaveLength(0)
+  })
+
+  /* Con el programa en borrador el motor lanza ("El programa … no está
+   * activo"). Antes eso se perdía en un `logger.error` y no quedaba nada que
+   * reprocesar: las 35 campañas del 2026 se habrían cerrado en el vacío. El
+   * hecho tiene que sobrevivir como evento durable para que
+   * `reconcilePdtpFulfillmentEvents` lo recupere al activar el programa. */
+  it("deja un evento durable reprocesable cuando el programa no está activo", async () => {
+    const { createCampaign, recordCampaignAttendance, closeCampaign } = await import("@/lib/services/prevention-campaigns")
+
+    await inMemoryDb.update(schema.pdtpPrograms)
+      .set({ status: "draft" })
+      .where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
+
+    const campaign = await createCampaign({
+      worksiteId: WS_ID,
+      title: "Campaña con el programa en borrador",
+      pdtpActivityNumbers: [85],
+    }, access)
+
+    await recordCampaignAttendance({ campaignId: campaign!.id, workerIds: [WORKER_1] }, access)
+
+    const result = await closeCampaign({ campaignId: campaign!.id }, access)
+
+    // La campaña se cierra igual: el PDTP no manda sobre el módulo fuente.
+    expect(result.campaign!.status).toBe("completed")
+    expect(result.pdtpAccredited).toBe(false)
+    // Declaró actividades y no acreditó: es el caso "queda pendiente", distinto
+    // de "no había nada que acreditar".
+    expect(result.pdtpPending).toBe(true)
+
+    const events = await inMemoryDb.select().from(schema.pdtpFulfillmentEvents)
+      .where(eq(schema.pdtpFulfillmentEvents.sourceId, campaign!.id))
+
+    expect(events).toHaveLength(1)
+    expect(events[0]!.sourceType).toBe("campana")
+    expect(events[0]!.activityNumbers).toEqual([85])
+    expect(events[0]!.quantity).toBe(1)
+    // `pending` o `error`: las dos las reprocesa `reconcilePdtpFulfillmentEvents`.
+    expect(["pending", "error"]).toContain(events[0]!.status)
   })
 
   it("rechaza asistencia de un trabajador de otra faena o inactivo (F-06)", async () => {

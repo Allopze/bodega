@@ -60,6 +60,15 @@ const baseArgs = {
   permissions: ["prevention:docs:approve", "prevention:docs:manage_restricted"],
 }
 
+/* Publicar dejó de poder hacerlo quien aprobó, así que los casos de publicación
+ * necesitan un actor propio: `baseArgs` es `approver-1`, el mismo que las
+ * fixtures dejan en `approvedBy`. */
+const publishArgs = {
+  ...baseArgs,
+  ctx: { userId: "publisher-1", userEmail: "publisher@example.test" },
+  permissions: ["prevention:docs:publish", "prevention:docs:manage_restricted"],
+}
+
 function documentRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "sdoc-1",
@@ -160,7 +169,7 @@ describe("document version workflow", () => {
     state.selectRows.push([versionRow({ id: "sdv-current", status: "vigente" })])
     state.updateRows.push([{ ...approved, status: "vigente", supersedesId: "sdv-current" }])
 
-    const published = await publishDocumentVersion({ ...baseArgs, comment: "Publicación controlada" })
+    const published = await publishDocumentVersion({ ...publishArgs, comment: "Publicación controlada" })
 
     expect(published).toEqual(expect.objectContaining({ status: "vigente", supersedesId: "sdv-current" }))
     expect(state.updates).toHaveLength(3)
@@ -185,7 +194,40 @@ describe("document version workflow", () => {
       effectiveFrom: "2999-01-01",
     }))
 
-    await expect(publishDocumentVersion(baseArgs)).rejects.toThrow(/antes del 2999-01-01/i)
+    await expect(publishDocumentVersion(publishArgs)).rejects.toThrow(/antes del 2999-01-01/i)
     expect(state.updates).toHaveLength(0)
+  })
+
+  /* La cuarta firma del flujo documental. `publishDocumentVersion` no pasa por
+   * `transitionVersion`, así que su segregación es explícita y hasta ahora no
+   * existía: la separación entre aprobar y publicar la daba sólo el reparto de
+   * permisos, y se cae en cuanto un rol tiene los dos. */
+  it("prevents the approver from publishing the version they approved", async () => {
+    queueContext(documentRow(), versionRow({
+      status: "aprobado",
+      approvedBy: "approver-1",
+      approvedAt: "2026-07-18T10:00:00.000Z",
+    }))
+
+    await expect(publishDocumentVersion(baseArgs)).rejects.toThrow(/no puede publicarla/i)
+    expect(state.updates).toHaveLength(0)
+  })
+
+  it("lets the technical head publish what they approved themselves", async () => {
+    const approved = versionRow({
+      status: "aprobado",
+      approvedBy: "approver-1",
+      approvedAt: "2026-07-18T10:00:00.000Z",
+    })
+    queueContext(documentRow(), approved)
+    state.selectRows.push([versionRow({ id: "sdv-current", status: "vigente" })])
+    state.updateRows.push([{ ...approved, status: "vigente", supersedesId: "sdv-current" }])
+
+    const published = await publishDocumentVersion({
+      ...baseArgs,
+      permissions: [...baseArgs.permissions, "prevention:docs:publish", "prevention:sign_own_work"],
+      comment: "Publicación de la jefatura técnica",
+    })
+    expect(published).toEqual(expect.objectContaining({ status: "vigente" }))
   })
 })

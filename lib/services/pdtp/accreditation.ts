@@ -161,6 +161,23 @@ function accreditationKey(
 
 // ── Resolución compartida de programa y actividades ─────────────────────────
 
+/**
+ * No hay un programa PDTP activo que cubra este evento: o no existe ninguno, o
+ * el que existe sigue en borrador.
+ *
+ * Es una clase propia porque **no es lo mismo que una inconsistencia**. Un
+ * número de actividad inexistente o una faena fuera del programa son errores
+ * que hay que corregir; "el programa todavía no se activa" es el estado normal
+ * de la plataforma hasta que Prevención lo firma, y no puede impedir que el
+ * trabajo de terreno se registre.
+ */
+export class PdtpNoActiveProgramError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "PdtpNoActiveProgramError"
+  }
+}
+
 type ResolvedProgramEvent =
   | { ok: true; program: typeof pdtpPrograms.$inferSelect; occurredYear: number; slot: { month: number; week: number } }
   // El programa existe y está activo, pero no cubre el año del evento. Se
@@ -180,6 +197,12 @@ type ResolvedProgramEvent =
  * año del programa" no lanza: devuelve `{ ok: false }` y deja rastro en el
  * log, porque ahí el trabajo sí ocurrió y no hay plan vigente que lo
  * contemple.
+ *
+ * Los dos primeros lanzan `PdtpNoActiveProgramError` y no un `Error` pelado,
+ * para que un caller transaccional pueda distinguir "todavía no hay programa"
+ * —que es el estado normal de todo el año antes de activarlo— de una
+ * inconsistencia real de configuración. Ver el comentario de
+ * `onInspectionCompleted`.
  */
 async function resolvePdtpActiveProgramForEvent(
   input: { worksiteId: string; occurredAt: string; programId?: string; sourceType: string; sourceId: string },
@@ -226,13 +249,13 @@ async function resolvePdtpActiveProgramForEvent(
   }
 
   if (!program) {
-    throw new Error(
+    throw new PdtpNoActiveProgramError(
       `Sin programa PDTP activo para el evento ${input.sourceType}:${input.sourceId} en faena ${input.worksiteId}.`,
     )
   }
 
   if (program.status !== "active") {
-    throw new Error(`El programa ${program.id} no está activo (estado: ${program.status}).`)
+    throw new PdtpNoActiveProgramError(`El programa ${program.id} no está activo (estado: ${program.status}).`)
   }
 
   const explicitMemberships = await client

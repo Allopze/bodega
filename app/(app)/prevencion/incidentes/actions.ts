@@ -253,7 +253,10 @@ export async function markIncidentDiffusionAction(args: {
 }
 
 export async function confirmIncidentDiffusionAction(args: { incidentId: string; diffusionId: string }): Promise<ActionState> {
-  const guard = await guardPermission("prevention:incidents:close")
+  // `diffuse`, no `close`: confirmar que la difusión ocurrió es el acto que
+  // acredita la n=71 y la n=75, y su responsable declarado es el jefe de
+  // terreno. Cerrar el incidente es otra cosa, con otras compuertas.
+  const guard = await guardPermission("prevention:incidents:diffuse")
   if (guard.error) return guard.error
   try {
     await confirmIncidentDiffusion({ diffusionId: args.diffusionId, access: access(guard.session) })

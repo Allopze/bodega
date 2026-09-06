@@ -244,10 +244,26 @@ describe("resolvePdtpFulfillmentTarget", () => {
     expect(target.ctaLabel).toBe("Dejar constancia")
   })
 
-  it("un enganche va a la planilla con 'ver cómo se cumple'", () => {
+  it("un enganche sin número declarado cae a la planilla", () => {
     const target = resolvePdtpFulfillmentTarget({ mechanism: "enganche" }, WS_ID)
     expect(target.href).toBe(`/prevencion/pdtp/actividades?faena=${WS_ID}&vista=semana`)
     expect(target.ctaLabel).toBe("Ver cómo se cumple")
+  })
+
+  /* Con número, manda al módulo donde el trabajo se hace. Es lo que la cola de
+   * pendientes consume: sin esto el responsable de la n=10 aterrizaba en la
+   * planilla, que le muestra el estado y no le deja cumplir nada. */
+  it.each([
+    [10, "inspecciones", "/prevencion/inspecciones"],
+    [53, "capacitacion", "/prevencion/capacitacion"],
+    [62, "epp", "/prevencion/epp-preventivo"],
+    [35, "riesgos", "/prevencion/miper"],
+    [84, "emergencias", "/prevencion/emergencias"],
+  ])("la n=%i se cumple en %s", (n, moduleName, prefix) => {
+    const target = resolvePdtpFulfillmentTarget({ mechanism: "enganche", n: n as number }, WS_ID)
+    expect(target.module).toBe(moduleName)
+    expect(target.href).toBe(`${prefix}?faena=${WS_ID}`)
+    expect(target.ctaLabel).toBe("Ir a cumplirla")
   })
 })
 
@@ -335,10 +351,26 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
     expect(issues).toEqual([expect.objectContaining({ n: 98, status: "config_required" })])
   })
 
-  it("una compuesta con conector propio sigue pasando (N°52)", async () => {
+  it("una compuesta con conector propio pasa el cableado (N°52)", async () => {
     await seedProgram("draft")
     await seedActivity({ mechanism: "compuesta", n: 52 })
-    expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([])
+    const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
+    expect(issues.filter((i) => i.status === "config_required")).toEqual([])
+  })
+
+  /* El destino de una `compuesta` se verifica igual que el de un `enganche`.
+   * La exención venía del chequeo de PERMISO de la planilla —nadie la ejecuta—
+   * y no aplica al acto que la acredita: la N°52 cierra con el acta de
+   * trabajador nuevo, que exige `sst:close`, y su responsable no lo tiene. Es
+   * lo que la compuerta dejaba pasar sin decir nada. */
+  it("una compuesta cuyo acto acreditador no tiene dueño sale a revisión", async () => {
+    await seedProgram("draft")
+    await seedActivity({ mechanism: "compuesta", n: 52 })
+    const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
+    expect(issues).toEqual([
+      expect.objectContaining({ n: 52, status: "destination_review" }),
+    ])
+    expect(issues[0]!.reason).toMatch(/sst:close/)
   })
 
   it("la N°43 la declara el tipo de documento al publicar", async () => {

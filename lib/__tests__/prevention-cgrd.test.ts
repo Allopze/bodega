@@ -47,6 +47,9 @@ const WS_B = "ws-cgrd-b"
 const USER_MANAGER = "user-cgrd-manager"
 const USER_REVIEWER = "user-cgrd-reviewer"
 const USER_APPROVER = "user-cgrd-approver"
+const USER_PUBLISHER = "user-cgrd-publisher"
+/* La jefatura técnica del área: única que puede firmar lo suyo. */
+const USER_HEAD = "user-cgrd-head"
 const WORKER_A = "worker-cgrd-a"
 const WORKER_B = "worker-cgrd-b"
 
@@ -59,6 +62,11 @@ const MANAGER = { userId: USER_MANAGER, scope: scopeA, permissions: [
 ] }
 const REVIEWER = { userId: USER_REVIEWER, scope: scopeAll, permissions: ["prevention:cgrd:view", "prevention:cgrd:matrix:review"] }
 const APPROVER = { userId: USER_APPROVER, scope: scopeAll, permissions: ["prevention:cgrd:view", "prevention:cgrd:matrix:approve", "prevention:cgrd:matrix:publish"] }
+const PUBLISHER = { userId: USER_PUBLISHER, scope: scopeAll, permissions: ["prevention:cgrd:view", "prevention:cgrd:matrix:publish"] }
+const HEAD = { userId: USER_HEAD, scope: scopeAll, permissions: [
+  "prevention:cgrd:view", "prevention:cgrd:matrix:edit", "prevention:cgrd:matrix:approve",
+  "prevention:cgrd:matrix:publish", "prevention:sign_own_work",
+] }
 const OUTSIDER = { userId: "user-cgrd-outsider", scope: scopeB, permissions: [
   "prevention:cgrd:view", "prevention:cgrd:committee:manage", "prevention:cgrd:matrix:edit", "prevention:cgrd:meeting:manage",
 ] }
@@ -96,6 +104,8 @@ beforeEach(async () => {
     { id: USER_MANAGER, name: "Gestor CGRD", email: "cgrd-manager@example.test", hashedPassword: "x" },
     { id: USER_REVIEWER, name: "Revisor CGRD", email: "cgrd-reviewer@example.test", hashedPassword: "x" },
     { id: USER_APPROVER, name: "Aprobador CGRD", email: "cgrd-approver@example.test", hashedPassword: "x" },
+    { id: USER_PUBLISHER, name: "Publicador CGRD", email: "cgrd-publisher@example.test", hashedPassword: "x" },
+    { id: USER_HEAD, name: "Jefatura de Prevención", email: "cgrd-head@example.test", hashedPassword: "x" },
     { id: "user-cgrd-outsider", name: "Ajeno", email: "cgrd-outsider@example.test", hashedPassword: "x" },
   ])
   await inMemoryDb.insert(schema.worksites).values([
@@ -164,7 +174,7 @@ describe("matriz GRD — máquina de estados y N°80", () => {
     const inReview = await transitionGrdMatrix({ matrixId: matrix.id, expectedVersion: matrix.version, toStatus: "in_review", reason: "Envío a revisión de prueba" }, MANAGER)
     const reviewed = await transitionGrdMatrix({ matrixId: matrix.id, expectedVersion: inReview.version, toStatus: "reviewed", reason: "Revisión técnica de prueba" }, REVIEWER)
     const approved = await transitionGrdMatrix({ matrixId: matrix.id, expectedVersion: reviewed.version, toStatus: "approved", reason: "Aprobación de prueba" }, APPROVER)
-    const published = await transitionGrdMatrix({ matrixId: matrix.id, expectedVersion: approved.version, toStatus: "published", reason: "Publicación de prueba" }, APPROVER)
+    const published = await transitionGrdMatrix({ matrixId: matrix.id, expectedVersion: approved.version, toStatus: "published", reason: "Publicación de prueba" }, PUBLISHER)
     return { committee, matrix, published }
   }
 
@@ -172,6 +182,49 @@ describe("matriz GRD — máquina de estados y N°80", () => {
     const matrix = await createGrdMatrixDraft({ worksiteId: WS_A, title: "Matriz vacía", revisionReason: "Motivo de prueba suficiente" }, MANAGER)
     await expect(transitionGrdMatrix({ matrixId: matrix.id, expectedVersion: matrix.version, toStatus: "in_review", reason: "Envío a revisión de prueba" }, MANAGER))
       .rejects.toThrow(/sin amenazas/)
+  })
+
+  /* La cuarta firma. Hasta ahora publicar no comprobaba nada: la separación
+   * entre quien aprueba y quien publica la daba sólo el reparto de permisos, y
+   * eso se cae en cuanto un rol tiene los dos. */
+  it("segrega la publicación de la aprobación, y exime a la jefatura técnica", async () => {
+    const matrix = await createGrdMatrixDraft({ worksiteId: WS_A, title: "Matriz publicación", revisionReason: "Motivo de prueba suficiente" }, MANAGER)
+    await addGrdThreat({ matrixId: matrix.id, name: "Sismo", origin: "detectada", historicalAnalysis: "Antecedentes suficientes", legalRequirement: "Requisito legal", workPlan: "Plan de trabajo" }, MANAGER)
+    const inReview = await transitionGrdMatrix({ matrixId: matrix.id, expectedVersion: matrix.version, toStatus: "in_review", reason: "Envío a revisión de prueba" }, MANAGER)
+    const reviewed = await transitionGrdMatrix({ matrixId: matrix.id, expectedVersion: inReview.version, toStatus: "reviewed", reason: "Revisión técnica" }, REVIEWER)
+    const approved = await transitionGrdMatrix({ matrixId: matrix.id, expectedVersion: reviewed.version, toStatus: "approved", reason: "Aprobación de prueba" }, APPROVER)
+
+    await expect(transitionGrdMatrix({ matrixId: matrix.id, expectedVersion: approved.version, toStatus: "published", reason: "Publicación de prueba" }, APPROVER))
+      .rejects.toThrow(/no puede publicarla/)
+
+    const published = await transitionGrdMatrix({ matrixId: matrix.id, expectedVersion: approved.version, toStatus: "published", reason: "Publicación de prueba" }, PUBLISHER)
+    expect(published.status).toBe("published")
+  })
+
+  it("la jefatura técnica publica lo que ella misma aprobó", async () => {
+    const matrix = await createGrdMatrixDraft({ worksiteId: WS_A, title: "Matriz de la jefatura", revisionReason: "Motivo de prueba suficiente" }, MANAGER)
+    await addGrdThreat({ matrixId: matrix.id, name: "Incendio", origin: "detectada", historicalAnalysis: "Antecedentes suficientes", legalRequirement: "Requisito legal", workPlan: "Plan de trabajo" }, MANAGER)
+    const inReview = await transitionGrdMatrix({ matrixId: matrix.id, expectedVersion: matrix.version, toStatus: "in_review", reason: "Envío a revisión de prueba" }, MANAGER)
+    const reviewed = await transitionGrdMatrix({ matrixId: matrix.id, expectedVersion: inReview.version, toStatus: "reviewed", reason: "Revisión técnica" }, REVIEWER)
+    const approved = await transitionGrdMatrix({ matrixId: matrix.id, expectedVersion: reviewed.version, toStatus: "approved", reason: "Aprobación" }, HEAD)
+
+    // El mismo actor que aprobó, publicando: es la excepción, y funciona.
+    const published = await transitionGrdMatrix({ matrixId: matrix.id, expectedVersion: approved.version, toStatus: "published", reason: "Publicación" }, HEAD)
+    expect(published.status).toBe("published")
+    expect(published.approvedByUserId).toBe(USER_HEAD)
+    expect(published.publishedByUserId).toBe(USER_HEAD)
+  })
+
+  /* La exención levanta el último eslabón, no los anteriores: aprobar sigue
+   * exigiendo no haber creado ni revisado, también para la jefatura. */
+  it("la exención no alcanza a la aprobación de lo que la jefatura creó", async () => {
+    const matrix = await createGrdMatrixDraft({ worksiteId: WS_A, title: "Matriz propia", revisionReason: "Motivo de prueba suficiente" }, HEAD)
+    await addGrdThreat({ matrixId: matrix.id, name: "Tsunami", origin: "detectada", historicalAnalysis: "Antecedentes suficientes", legalRequirement: "Requisito legal", workPlan: "Plan de trabajo" }, HEAD)
+    const inReview = await transitionGrdMatrix({ matrixId: matrix.id, expectedVersion: matrix.version, toStatus: "in_review", reason: "Envío a revisión de prueba" }, HEAD)
+    const reviewed = await transitionGrdMatrix({ matrixId: matrix.id, expectedVersion: inReview.version, toStatus: "reviewed", reason: "Revisión técnica" }, REVIEWER)
+
+    await expect(transitionGrdMatrix({ matrixId: matrix.id, expectedVersion: reviewed.version, toStatus: "approved", reason: "Aprobación" }, HEAD))
+      .rejects.toThrow(/segregada de creación y revisión/)
   })
 
   it("segrega creación de revisión y de aprobación", async () => {
@@ -208,7 +261,7 @@ describe("matriz GRD — máquina de estados y N°80", () => {
     const inReview = await transitionGrdMatrix({ matrixId: second.id, expectedVersion: second.version, toStatus: "in_review", reason: "Envío a revisión de prueba" }, MANAGER)
     const reviewed = await transitionGrdMatrix({ matrixId: second.id, expectedVersion: inReview.version, toStatus: "reviewed", reason: "Revisión de prueba" }, REVIEWER)
     const approved = await transitionGrdMatrix({ matrixId: second.id, expectedVersion: reviewed.version, toStatus: "approved", reason: "Aprobación de prueba" }, APPROVER)
-    await transitionGrdMatrix({ matrixId: second.id, expectedVersion: approved.version, toStatus: "published", reason: "Publicación de prueba" }, APPROVER)
+    await transitionGrdMatrix({ matrixId: second.id, expectedVersion: approved.version, toStatus: "published", reason: "Publicación de prueba" }, PUBLISHER)
 
     const [firstAfter] = await inMemoryDb.select().from(schema.preventionGrdMatrices).where(eq(schema.preventionGrdMatrices.id, first.id))
     expect(firstAfter?.status).toBe("superseded")

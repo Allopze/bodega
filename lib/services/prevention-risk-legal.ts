@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, notInArra
 import { z } from "zod"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
+import { canSignOwnWork } from "@/lib/services/prevention-signing"
 import {
   eppTypes,
   pdtpActivities,
@@ -375,7 +376,7 @@ export async function addRiskEntry(input: unknown, access: RiskLegalAccess) {
   return db.transaction(async (tx) => addRiskEntryWithClient(tx, input, access))
 }
 
-const MATRIX_TRANSITIONS: Record<string, readonly string[]> = {
+export const MATRIX_TRANSITIONS: Record<string, readonly string[]> = {
   draft: ["in_review"],
   // MIPER-10: la máquina sólo avanzaba. Una versión enviada a revisión con un
   // peligro mal evaluado quedaba trabada: el revisor no podía devolverla y el
@@ -386,7 +387,13 @@ const MATRIX_TRANSITIONS: Record<string, readonly string[]> = {
   approved: ["published"],
 }
 
-const MATRIX_PERMISSION: Record<string, string> = {
+/**
+ * Permiso de cada paso, indexado por el estado al que se llega. Exportado
+ * porque el recordatorio de firma pendiente necesita la misma respuesta desde
+ * el otro lado —"esta matriz está en `reviewed`, ¿a quién hay que avisarle?"— y
+ * duplicar el mapa lo dejaría desincronizado a la primera.
+ */
+export const MATRIX_PERMISSION: Record<string, string> = {
   draft: "prevention:risk:review",
   in_review: "prevention:risk:edit",
   reviewed: "prevention:risk:review",
@@ -496,6 +503,14 @@ export async function transitionRiskMatrix(input: unknown, access: RiskLegalAcce
     }
     if (data.toStatus === "reviewed" && matrix.createdByUserId === access.userId) throw new Error("Quien creó la versión MIPER no puede revisarla.")
     if (data.toStatus === "approved" && (matrix.createdByUserId === access.userId || matrix.reviewedByUserId === access.userId)) throw new Error("La aprobación MIPER debe estar segregada de creación y revisión.")
+    /* Publicar es la cuarta firma y hasta ahora no comprobaba nada: la separaba
+     * sólo el reparto de permisos, y eso deja de bastar en cuanto un rol tiene
+     * `risk:edit` y `risk:publish` a la vez. La jefatura técnica del área queda
+     * exenta —responde por el contenido de la matriz— y la excepción es un
+     * permiso otorgado a la vista, no un nombre de rol escondido acá. */
+    if (data.toStatus === "published" && matrix.approvedByUserId === access.userId && !canSignOwnWork(access.permissions)) {
+      throw new Error("Quien aprobó la versión de la MIPER no puede publicarla: debe firmarla otra persona.")
+    }
     const now = new Date().toISOString()
     const updates: Partial<typeof preventionRiskMatrices.$inferInsert> = { status: data.toStatus, version: matrix.version + 1, updatedAt: now }
     if (data.toStatus === "reviewed") Object.assign(updates, { reviewedByUserId: access.userId, reviewedAt: now })

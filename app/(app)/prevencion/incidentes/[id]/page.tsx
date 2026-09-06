@@ -128,7 +128,7 @@ export default async function IncidentDetailPage({ params, searchParams }: PageP
               preliminaryReportText={bundle.investigation?.preliminaryReportText}
               preliminaryReportAt={bundle.investigation?.preliminaryReportAt}
               canInvestigate={can(session, "prevention:incidents:investigate") && incident.status !== "closed"}
-              canConfirmDiffusion={can(session, "prevention:incidents:close") && incident.status !== "closed"}
+              canConfirmDiffusion={can(session, "prevention:incidents:diffuse") && incident.status !== "closed"}
               diffusions={diffusions}
             />
           </div>

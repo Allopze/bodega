@@ -42,9 +42,14 @@ export interface EngancheDestination {
   segregated?: string
 }
 
-const inspecciones = (permission: string | null = "prevention:inspections:execute"): EngancheDestination => ({
+/* Todas las actividades de inspección acreditan al declarar el run ejecutado.
+ * El parámetro que permitía pedir `review` se retiró junto con la N°26 y la
+ * N°28: ninguna plantilla declara `pdtpReviewActivityNumbers`, así que el
+ * mecanismo existe en el motor pero hoy no lo usa ninguna actividad, y dejar el
+ * parámetro sugería lo contrario. */
+const inspecciones = (): EngancheDestination => ({
   module: "inspecciones",
-  permission,
+  permission: "prevention:inspections:execute",
   href: (worksiteId) => `/prevencion/inspecciones?faena=${worksiteId}`,
 })
 
@@ -103,11 +108,21 @@ export const PDTP_2026_ENGANCHE_DESTINATIONS: Readonly<Record<number, EngancheDe
   10: inspecciones(), 24: inspecciones(), 25: inspecciones(), 27: inspecciones(),
   29: inspecciones(), 33: inspecciones(), 34: inspecciones(), 39: inspecciones(),
   40: inspecciones(), 41: inspecciones(), 64: inspecciones(), 65: inspecciones(),
-  26: {
-    ...inspecciones("prevention:inspections:review"),
-    segregated: "Es la revisión y firma del report que otra persona ejecutó: exige `review`, no `execute`.",
-  },
-  28: inspecciones("prevention:inspections:review"),
+  /* La N°26 es la revisión y firma del report de uso diario, y aun así exige
+   * `execute` y no `review`: la plantilla `reporte_equipos` declara `[25, 26]`
+   * en `pdtpActivityNumbers` —no en `pdtpReviewActivityNumbers`, que está vacío
+   * en las 25 plantillas— porque el operador llena el reporte en papel y quien
+   * lo transcribe línea por línea ES quien lo revisa y lo firma (decisión de
+   * Prevención del 2026-08-23, en `lib/prevention/inspection-wiring.ts`).
+   * Declararla como `review` describía un segundo paso que el instrumento no
+   * tiene, y la marca `segregated` que lo acompañaba eximía a la actividad de
+   * la verificación que sí correspondía hacerle.
+   *
+   * La N°28 no está en este mapa a propósito: `inspection-wiring.ts` la deja
+   * fuera del catálogo —es un acto semanal sobre el conjunto de inspecciones
+   * recibidas, no sobre una— y su mecanismo es `constancia`, así que
+   * `resolvePdtpFulfillmentTarget` nunca llega a consultarla. */
+  26: inspecciones(),
 
   // ── Capacitación ────────────────────────────────────────────────────────
   16: capacitacion(), 37: capacitacion(), 38: capacitacion(), 51: capacitacion(),
@@ -121,14 +136,14 @@ export const PDTP_2026_ENGANCHE_DESTINATIONS: Readonly<Record<number, EngancheDe
   18: { module: "sst", permission: "sst:close", href: (w) => `/prevencion/nueva?faena=${w}` },
   23: { module: "sst", permission: "sst:close", href: (w) => `/prevencion/nueva?faena=${w}` },
   52: { module: "sst", permission: "sst:close", href: (w) => `/prevencion/nueva?faena=${w}` },
+  /* La N°19 —mantener la carpeta del trabajador— se acredita con el acta y no
+   * en Documentación: `STARTER_FOLDER_ACTIVITY_NUMBER = 19` en
+   * `worker-onboarding-connector.ts`, que documenta que "cierra junto con" la
+   * N°15, la N°18 y la N°23 porque es el mismo hecho, archivado. Apuntarla a
+   * `docs:publish` mandaba a su responsable a un módulo donde no pasa nada. */
+  19: { module: "sst", permission: "sst:close", href: (w) => `/prevencion/nueva?faena=${w}` },
 
   // ── Documentación SST ───────────────────────────────────────────────────
-  19: {
-    module: "documentacion",
-    permission: "prevention:docs:publish",
-    href: (w) => `/prevencion/documentacion?faena=${w}`,
-    segregated: "La carpeta del trabajador se completa con el acta; publicar el expediente es otro acto y otro rol.",
-  },
   43: {
     module: "documentacion",
     permission: "prevention:docs:publish",
@@ -145,7 +160,10 @@ export const PDTP_2026_ENGANCHE_DESTINATIONS: Readonly<Record<number, EngancheDe
   35: {
     module: "riesgos",
     permission: "prevention:risk:publish",
-    href: (w) => `/prevencion/riesgos?faena=${w}`,
+    // `/prevencion/miper`, no `/prevencion/riesgos`: la segunda no existe. Nadie
+    // lo notó porque la cola de pendientes mandaba todo a la planilla y este
+    // href no se usaba.
+    href: (w) => `/prevencion/miper?faena=${w}`,
     segregated: "Publicar una revisión de la matriz exige firma distinta de quien la editó (segregación del módulo MIPER).",
   },
 
@@ -158,7 +176,8 @@ export const PDTP_2026_ENGANCHE_DESTINATIONS: Readonly<Record<number, EngancheDe
   46: higiene(), 47: higiene(), 48: higiene(), 49: higiene(), 50: higiene(),
 
   // ── EPP ─────────────────────────────────────────────────────────────────
-  62: { module: "epp", permission: "prevention:epp:manage", href: (w) => `/prevencion/epp?faena=${w}` },
+  // El módulo es `epp-preventivo`; `/prevencion/epp` era un 404.
+  62: { module: "epp", permission: "prevention:epp:manage", href: (w) => `/prevencion/epp-preventivo?faena=${w}` },
 
   // ── Incidentes (RE-20) ──────────────────────────────────────────────────
   //
@@ -170,12 +189,21 @@ export const PDTP_2026_ENGANCHE_DESTINATIONS: Readonly<Record<number, EngancheDe
   66: { ...incidentes(), permission: "prevention:incidents:report" },
   67: { ...incidentes(), permission: "prevention:incidents:report" },
   68: incidentes(), 69: incidentes(), 70: incidentes(),
-  71: { ...incidentes(), permission: "prevention:incidents:close" },
+  // La n=71 y la n=75 son difusiones: las cierra `confirmIncidentDiffusion`,
+  // que tiene permiso propio desde que se separó de cerrar el incidente.
+  71: { ...incidentes(), permission: "prevention:incidents:diffuse" },
   72: { ...incidentes(), permission: "prevention:incidents:notify" },
   73: incidentes(), 74: incidentes(),
-  75: { ...incidentes(), permission: "prevention:incidents:close" },
+  75: { ...incidentes(), permission: "prevention:incidents:diffuse" },
   76: incidentes(), 78: incidentes(),
-  77: { ...incidentes(), permission: "prevention:incidents:close" },
+  // La n=77 sí acredita al CERRAR el caso (`onIncidentClosed`), y cerrar tiene
+  // sus propias compuertas y es un acto de jefatura. El prevencionista de faena
+  // arma y archiva el expediente; la firma que lo da por cerrado es de otro.
+  77: {
+    ...incidentes(),
+    permission: "prevention:incidents:close",
+    segregated: "Archivar el expediente es del prevencionista de faena; cerrar el incidente es de jefatura, verifica cinco compuertas y exige firma distinta de quien completó la investigación.",
+  },
 
   // ── CGRD del DS 44 ──────────────────────────────────────────────────────
   79: { module: "cgrd", permission: "prevention:cgrd:committee:manage", href: (w) => `/prevencion/cgrd?faena=${w}` },
@@ -183,7 +211,15 @@ export const PDTP_2026_ENGANCHE_DESTINATIONS: Readonly<Record<number, EngancheDe
     module: "cgrd",
     permission: "prevention:cgrd:matrix:publish",
     href: (w) => `/prevencion/cgrd?faena=${w}`,
-    segregated: "La matriz GRD tiene firmas segregadas: editar, revisar, aprobar y publicar son cuatro permisos y cuatro personas.",
+    /* Cuatro permisos y cuatro firmas, ahora sí: `transitionGrdMatrix` compara
+     * usuarios en los cuatro pasos —crear ≠ revisar ≠ aprobar ≠ publicar—. La
+     * cuarta comparación se agregó junto con la firma de la jefatura de
+     * Prevención: sin ella, darle `approve` y `publish` al mismo rol que ya
+     * tenía `edit` habría dejado la cadena entera en una sola persona.
+     *
+     * La única excepción es `prevention:sign_own_work`, y va por cargo y a la
+     * vista en el manifiesto, no escondida en el servicio. */
+    segregated: "La matriz GRD tiene cuatro firmas segregadas por actor: crear, revisar, aprobar y publicar son cuatro personas distintas.",
   },
   81: { module: "cgrd", permission: "prevention:cgrd:meeting:manage", href: (w) => `/prevencion/cgrd?faena=${w}` },
 

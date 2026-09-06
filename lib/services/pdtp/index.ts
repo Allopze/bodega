@@ -86,8 +86,8 @@ export { markPdtpExecution, approvePdtpExecution, rejectPdtpExecution, listPendi
 export { getPdtpComplianceIndicators, getPdtpComplianceIndicatorsForScope, getPdtpComplianceByCategoryForScope } from "./compliance"
 export { updatePdtpActivity, addPdtpActivity, batchUpdatePdtpActivities, duplicatePdtpActivity, retirePdtpActivity, reorderPdtpActivities, listPdtpProgramActivities, listPdtpProgramScheduleForYear } from "./activities"
 export type { PdtpActivityBatchUpdateInput } from "./activities"
-export { findPdtpWeeklyPending, runPdtpWeeklyReminders, runPdtpActionPlanVencidasReminders, runPdtpObligationReminders } from "./reminders"
-export type { PdtpPendingTarget, PdtpWeeklyPendingResult, PdtpActionVencidasReminderResult, PdtpObligationReminderResult } from "./reminders"
+export { findPdtpWeeklyPending, runPdtpWeeklyReminders, runPdtpActionPlanVencidasReminders, runPdtpObligationReminders, runPdtpSignaturePendingReminders } from "./reminders"
+export type { PdtpPendingTarget, PdtpWeeklyPendingResult, PdtpActionVencidasReminderResult, PdtpObligationReminderResult, PdtpSignaturePendingResult } from "./reminders"
 export { setPdtpActivityOverride, deletePdtpActivityOverride, loadPdtpOverrides, applyOverridesToSchedule } from "./overrides"
 export type { PdtpOverrideInput } from "./overrides"
 export {

@@ -38,6 +38,18 @@ export const sstModule = {
     { roleSlug: "prevencionista", permission: "sst:manage" },
     { roleSlug: "prevencionista_faena", permission: "sst:view" },
     { roleSlug: "prevencionista_faena", permission: "sst:create" },
+    /* El acta de trabajador nuevo acredita seis actividades del PDTP —n=15,
+     * 18, 19, 23, 52 y 63— y todas al CERRARLA. El prevencionista de faena es
+     * el responsable declarado de las seis y podía abrirla sin poder cerrarla,
+     * así que su cumplimiento dependía de que alguien de la jefatura entrara a
+     * firmar cada acta de cada faena. El alcance por faena lo acota. */
+    { roleSlug: "prevencionista_faena", permission: "sst:close" },
+    /* El instrumento declara que el Acta de Cierre la firman "supervisor y
+     * prevencionista", y la planilla asigna la n=15 y la n=52 al supervisor y
+     * al jefe de terreno. No tenían ni `sst:view`: el acta que deben firmar no
+     * existía para ellos. Cerrar sigue siendo del prevencionista. */
+    { roleSlug: "jefe_terreno", permission: "sst:view" },
+    { roleSlug: "supervisor_terreno", permission: "sst:view" },
     { roleSlug: "administrador", permission: "sst:view" },
     { roleSlug: "administrador", permission: "sst:create" },
     { roleSlug: "administrador", permission: "sst:close" },

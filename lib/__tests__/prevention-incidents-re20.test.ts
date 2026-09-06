@@ -264,6 +264,78 @@ describe("Módulo de Investigación RE-20 y Auto-acreditación PDTP (66-78)", ()
     expect(executions[0]!.status).toBe("submitted")
     expect(executions[0]!.obligationId).toBeTruthy()
   })
+
+  /* Confirmar una difusión dejó de exigir `incidents:close`. Eran dos actos
+   * distintos con un solo permiso, y el resultado es que la n=71 y la n=75 —que
+   * la planilla asigna al jefe de terreno— sólo las podía cerrar jefatura. La
+   * regla de las dos personas ahora se verifica por actor y no por el permiso,
+   * que es lo que siempre quiso decir. */
+  describe("difusión del incidente: confirmar no es cerrar (n=71, n=75)", () => {
+    const OTRO_USER = "u-re20-confirma"
+
+    async function marcarDifusion() {
+      const { reportPreventionIncident, markIncidentDiffusion } = await import("@/lib/services/prevention-incidents")
+      const res = await reportPreventionIncident({
+        access,
+        input: {
+          worksiteId: WS_ID,
+          companyName: "Empresa Test",
+          eventType: "work_accident",
+          occurredAt: OCCURRED_AT,
+          knownAt: KNOWN_AT,
+          location: "Planta Principal",
+          initialNarrative: "Incidente para difundir en el turno",
+          people: [],
+          clientSubmissionId: `sub-re20-dif-${Math.random().toString(36).slice(2)}`,
+        },
+      })
+      const diffusion = await markIncidentDiffusion({
+        incidentId: res.incident.id,
+        kind: "shift",
+        summary: "Se difundió el incidente al turno entrante en la charla de inicio.",
+        access,
+      })
+      return { incidentId: res.incident.id, diffusionId: diffusion.id }
+    }
+
+    it("quien marcó la difusión no puede confirmarla", async () => {
+      const { confirmIncidentDiffusion } = await import("@/lib/services/prevention-incidents")
+      const { diffusionId } = await marcarDifusion()
+
+      await expect(confirmIncidentDiffusion({
+        diffusionId,
+        // Mismo usuario que la marcó, ahora además con el permiso de confirmar.
+        access: {
+          ctx: { userId: USER_ID },
+          scope: { mode: "all", ids: [] },
+          permissions: [...access.permissions, "prevention:incidents:diffuse"],
+        } as IncidentAccess,
+      })).rejects.toThrow(/no puede confirmarla/i)
+    })
+
+    it("otra persona con `diffuse` la confirma y acredita la n=71, sin `close`", async () => {
+      const { confirmIncidentDiffusion } = await import("@/lib/services/prevention-incidents")
+      const { diffusionId } = await marcarDifusion()
+      await inMemoryDb.insert(schema.users).values({
+        id: OTRO_USER, name: "Jefe de terreno", email: `${OTRO_USER}@example.test`, hashedPassword: "x",
+      }).onConflictDoNothing()
+
+      const confirmed = await confirmIncidentDiffusion({
+        diffusionId,
+        access: {
+          ctx: { userId: OTRO_USER },
+          scope: { mode: "all", ids: [] },
+          // Sin `prevention:incidents:close`: es justo el punto.
+          permissions: ["prevention:incidents:view", "prevention:incidents:diffuse"],
+        } as IncidentAccess,
+      })
+      expect(confirmed.status).toBe("confirmed")
+
+      const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
+        .where(eq(schema.pdtpExecutions.activityId, "act-71"))
+      expect(executions).toHaveLength(1)
+    })
+  })
 })
 
 describe("Expediente cerrado e independencia del reinicio (F-04, F-09)", () => {
