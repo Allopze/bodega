@@ -234,6 +234,30 @@ describe("reconcilePdtpFulfillmentEvents", () => {
     const summary = await reconcilePdtpFulfillmentEvents()
     expect(summary).toMatchObject({ processed: 0 })
   })
+
+  it("no vuelve a acreditar un hecho que ya fue revocado", async () => {
+    await seedProgram("draft") // el completed queda pendiente
+    await seedActivity()
+    await recordPdtpFulfillmentEvent({
+      sourceType: "epp", sourceId: "entrega-1", worksiteId: WS_ID,
+      activityNumbers: [ACT_N], occurredAt: new Date().toISOString(), executedQuantity: 1,
+    })
+    await recordPdtpFulfillmentRevocation({
+      sourceType: "epp", sourceId: "entrega-1", worksiteId: WS_ID, reason: "Entrega anulada",
+    })
+
+    await inMemoryDb.update(schema.pdtpPrograms)
+      .set({ status: "active", activatedAt: new Date().toISOString() })
+      .where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
+
+    await reconcilePdtpFulfillmentEvents({})
+
+    expect(await inMemoryDb.select().from(schema.pdtpExecutions)).toEqual([])
+    const completed = (await inMemoryDb.select().from(schema.pdtpFulfillmentEvents))
+      .find((event) => event.eventType === "completed")
+    expect(completed?.status).toBe("rejected")
+    expect(completed?.lastError).toContain("revocado")
+  })
 })
 
 describe("resolvePdtpFulfillmentTarget", () => {

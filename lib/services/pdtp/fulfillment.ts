@@ -285,8 +285,36 @@ export async function reconcilePdtpFulfillmentEvents(input: { limit?: number } =
   let stillPending = 0
   let errored = 0
 
+  // Un `completed` en pending/error puede tener un `revoked` posterior: las dos
+  // filas coexisten porque la clave idempotente separa por `eventType`.
+  // Reintentar el completed sin mirar eso re-acredita un hecho anulado — el
+  // caso concreto es una entrega de EPP anulada cuyo completed quedó en error
+  // mientras el programa estaba en borrador. Acotado a los `sourceId` del lote
+  // en curso: no escanea toda la tabla de eventos.
+  const pendingSourceIds = pending.map((event) => event.sourceId)
+  const revokedSources = new Set(
+    pendingSourceIds.length === 0 ? [] : (
+      await db.select({ sourceType: pdtpFulfillmentEvents.sourceType, sourceId: pdtpFulfillmentEvents.sourceId })
+        .from(pdtpFulfillmentEvents)
+        .where(and(
+          eq(pdtpFulfillmentEvents.eventType, "revoked"),
+          inArray(pdtpFulfillmentEvents.sourceId, pendingSourceIds),
+        ))
+    ).map((row) => `${row.sourceType}:${row.sourceId}`),
+  )
+
   for (const event of pending) {
     if (event.eventType === "completed") {
+      if (revokedSources.has(`${event.sourceType}:${event.sourceId}`)) {
+        // Terminal, no pendiente: dejarlo en `pending` lo haría reintentar para
+        // siempre contra una fuente que ya no existe.
+        await db.update(pdtpFulfillmentEvents).set({
+          status: "rejected",
+          lastError: "El hecho fue revocado en su módulo de origen: no se reintenta.",
+          updatedAt: new Date().toISOString(),
+        }).where(eq(pdtpFulfillmentEvents.id, event.id))
+        continue
+      }
       const result = await recordPdtpFulfillmentEvent({
         sourceType: event.sourceType as AccreditationInput["sourceType"],
         sourceId: event.sourceId,
