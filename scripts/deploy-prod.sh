@@ -17,12 +17,12 @@ set -euo pipefail
 # exigidas y variables nuevas) y el nombre de imagen se resuelve ALLÁ.
 # Steps: sync compose -> contrastar .env -> resolver nombre de imagen -> tag
 # current image as rollback -> pg_dump -> build -> ship image -> preflight
-# conciliación -> preflight combustible -> migrate -> backfill conciliación (si
-# hace falta) -> backfill referencias OC en DTE (si hace falta) -> backfill
-# lecturas de medidor -> catálogo de reglas de anomalía -> sync-rbac ->
-# decisiones de catálogo PDTP -> dato de cursos/planes/campañas ->
-# catálogo de inspecciones -> recreate app then
-# cron containers ->
+# conciliación -> preflight combustible -> migrate -> migración documental SST
+# a Cloudreve -> normalize EPP -> backfill conciliación (si hace falta) ->
+# backfill referencias OC en DTE (si hace falta) -> backfill lecturas de medidor
+# -> catálogo de reglas de anomalía -> sync-rbac -> decisiones de catálogo PDTP
+# -> dato de cursos/planes/campañas -> catálogo de inspecciones -> recreate app
+# then cron containers ->
 # authenticated smoke check -> prune -> smoke público por el túnel.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -363,6 +363,10 @@ run_timed "Diagnóstico de conciliación OC-factura (previo a migrar)" run_in_pr
 run_timed "Diagnóstico de integraciones de combustible (previo a migrar)" run_in_prod docker compose run --rm preflight-fuel-integrations
 
 run_timed "Applying migrations" run_in_prod docker compose run --rm migrate
+
+# La migración SST es idempotente y conserva el origen local; debe ejecutarse
+# después de que la base ya tenga el esquema y antes de levantar la nueva app.
+run_timed "Migrando documentos SST a Cloudreve" run_in_prod docker compose run --rm migrate-sst-to-cloudreve
 
 run_timed "Normalizando SKUs de EPP y servicios" run_in_prod docker compose run --rm normalize-epp-skus
 

@@ -159,6 +159,18 @@ describe("deploy workflow", () => {
     expect(deployScript).not.toContain('if "$@"; then')
   })
 
+  it("migrates SST documents to Cloudreve after database migrations", () => {
+    const deployScript = readFileSync(path.join(repoRoot, "scripts/deploy-prod.sh"), "utf8")
+    const databaseMigration = 'run_timed "Applying migrations" run_in_prod docker compose run --rm migrate'
+    const cloudreveMigration = 'run_timed "Migrando documentos SST a Cloudreve" run_in_prod docker compose run --rm migrate-sst-to-cloudreve'
+
+    const databaseMigrationIndex = deployScript.indexOf(databaseMigration)
+    const cloudreveMigrationIndex = deployScript.indexOf(cloudreveMigration)
+
+    expect(databaseMigrationIndex).toBeGreaterThanOrEqual(0)
+    expect(cloudreveMigrationIndex).toBeGreaterThan(databaseMigrationIndex)
+  })
+
   it("selects the app image even when Compose lists PostgreSQL first", () => {
     const result = resolveProdImageHarness("postgres:16-alpine\nghcr.io/allopze/bodega:latest")
 

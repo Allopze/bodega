@@ -652,8 +652,9 @@ services:
       - bodega-storage:/data/storage:ro
     command: ["node", "scripts/reparse-dte-order-refs.mjs"]
 
-  # One-shot a demanda: migra los documentos SST del filesystem local a
-  # Cloudreve (WebDAV). Idempotente, verifica SHA-256 contra
+  # One-shot idempotente: `deploy:prod` lo ejecuta automáticamente y también
+  # puede invocarse a demanda. Migra los documentos SST del filesystem local a
+  # Cloudreve (WebDAV) y verifica SHA-256 contra
   # `sstDocumentVersions.checksum` y NO borra el origen local (rollback =
   # volver SST_STORAGE_BACKEND a filesystem).
   #
