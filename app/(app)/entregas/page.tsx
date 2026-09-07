@@ -1,3 +1,5 @@
+import { resolveProductSize } from "@/lib/products/product-size"
+import { formatVariantProductName, resolveVariantAttributes } from "@/lib/products/variant-grouping"
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import Link from "next/link"
@@ -29,7 +31,7 @@ import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, sql } from "
 import { DeliveriesTable, type DeliveryRow } from "./deliveries-table"
 import type { DeliverableEppOption, DeliveryStockProductOption } from "./delivery-form.types"
 import { DeliveryFormSheet } from "./delivery-form-sheet"
-import { getProductSizesByIds } from "@/lib/services/product-sizes"
+import { getProductAttributesByIds } from "@/lib/services/product-sizes"
 import { getTraceableDeliveryBalance } from "@/lib/services/delivery-eligibility"
 
 export const metadata: Metadata = { title: "Entregas" }
@@ -187,14 +189,17 @@ export default async function Page({
 
   // La talla vive en `product_attributes` de la variante: una sola consulta por
   // el conjunto de productos con stock, no una por fila.
-  const sizeById = await getProductSizesByIds(stockRows.map((row) => row.productId))
+  const sizeById = await getProductAttributesByIds(stockRows.map((row) => row.productId))
 
   const stockProducts: DeliveryStockProductOption[] = stockRows.map((row) => {
-    const size = sizeById.get(row.productId)
+    const attributes = sizeById.get(row.productId) ?? []
+    const size = resolveProductSize(attributes)
     return {
       sourceWorksiteId: row.worksiteId,
       productId: row.productId,
       productName: row.productName,
+      variantLabel: resolveVariantAttributes(attributes).map((a) => `${a.name}: ${a.value}`).join(" · "),
+      displayName: formatVariantProductName(row.productName, attributes),
       productSku: row.productSku,
       isEpp: row.isEpp,
       unitOfMeasure: row.unitOfMeasure,
@@ -291,6 +296,7 @@ export default async function Page({
           .select({
             deliveryId: deliveryItems.deliveryId,
             requestItemId: deliveryItems.requestItemId,
+            productId: deliveryItems.productId,
             productNameFree: deliveryItems.productNameFree,
             quantity: deliveryItems.quantity,
             quantityOriginal: deliveryItems.quantityOriginal,
@@ -317,6 +323,7 @@ export default async function Page({
       : Promise.resolve([]),
   ])
 
+  const historyAttributes = await getProductAttributesByIds(historyItemRows.flatMap((item) => item.productId ? [item.productId] : []))
   const historyItemsByDelivery = new Map<string, typeof historyItemRows>()
   for (const item of historyItemRows) {
     const list = historyItemsByDelivery.get(item.deliveryId) ?? []
@@ -330,7 +337,7 @@ export default async function Page({
     const items = historyItemsByDelivery.get(delivery.id) ?? []
     const firstItem = items[0]
     const itemSummary = firstItem
-      ? `${firstItem.productName ?? firstItem.productNameFree ?? "EPP"} · ${formatQty(firstItem.quantity, firstItem.unitOfMeasure)}`
+      ? `${formatVariantProductName(firstItem.productName ?? firstItem.productNameFree ?? "EPP", firstItem.productId ? historyAttributes.get(firstItem.productId) : [])} · ${formatQty(firstItem.quantity, firstItem.unitOfMeasure)}`
       : "Sin ítems"
     return {
       id: delivery.id,

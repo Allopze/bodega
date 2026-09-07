@@ -126,3 +126,15 @@ describe("VariantGenerator con las familias del catálogo", () => {
     expect(screen.queryByRole("button", { name: "46" })).not.toBeInTheDocument()
   })
 })
+
+
+it("muestra una talla personalizada junto al catálogo de atajos", () => {
+  renderGenerator([{ name: "Talla calzado", type: "select", values: ["47"], sizeFamily: "calzado" }])
+  expect(screen.getByRole("button", { name: /47/, pressed: true })).toBeVisible()
+})
+it("al editar una variante, elegir otro color reemplaza el anterior", () => {
+  const props = renderGenerator([{ name: "Color", type: "select", values: ["Azul"] }], { singleVariant: true })
+  fireEvent.click(screen.getByRole("button", { name: "Negro" }))
+  expect(props.onUpdateAttrValues).toHaveBeenCalledWith("Color", ["Negro"])
+  expect(screen.queryByRole("button", { name: /Generar variantes/ })).not.toBeInTheDocument()
+})

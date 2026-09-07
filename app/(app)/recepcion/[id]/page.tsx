@@ -1,3 +1,5 @@
+import { getProductAttributesByIds } from "@/lib/services/product-sizes"
+import { formatVariantProductName } from "@/lib/products/variant-grouping"
 import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
@@ -95,7 +97,8 @@ export default async function RecepcionDetallePage({
       .orderBy(desc(purchaseOrderInvoices.uploadedAt)),
   ])
 
-  const productMap = Object.fromEntries(productRows.map((product) => [product.id, product]))
+  const attributesById = await getProductAttributesByIds(productIds)
+  const productMap = Object.fromEntries(productRows.map((product) => [product.id, { ...product, attributes: attributesById.get(product.id) }]))
   const destinationLabel = receipt.locationType === "office"
     ? officeLabel
     : formatWorksiteLabel(receipt.worksite?.name ?? receipt.purchaseOrder.worksite?.name ?? "").trim()
@@ -115,7 +118,7 @@ export default async function RecepcionDetallePage({
       const product = ocItem.productId ? productMap[ocItem.productId] : null
       return {
         id:               item.id,
-        productName:      product?.name ?? ocItem.productNameFree ?? "(sin nombre)",
+        productName:      formatVariantProductName(product?.name ?? ocItem.productNameFree ?? "(sin nombre)", product?.attributes, ocItem.requestItem?.attributes.map((a) => ({ name: a.attributeName, value: a.value }))),
         quantity:         ocItem.quantity,
         unitOfMeasure:    ocItem.unitOfMeasure,
         quantityReceived: ocItem.quantityReceived ?? 0,
@@ -183,7 +186,7 @@ export default async function RecepcionDetallePage({
                   {receipt.items.map((item) => {
                     const ocItem = item.purchaseOrderItem
                     const product = ocItem.productId ? productMap[ocItem.productId] : null
-                    const productName = product?.name ?? ocItem.productNameFree ?? "(sin nombre)"
+                    const productName = formatVariantProductName(product?.name ?? ocItem.productNameFree ?? "(sin nombre)", product?.attributes, ocItem.requestItem?.attributes.map((a) => ({ name: a.attributeName, value: a.value })))
                     const pendingToFaena = Math.max(0, (ocItem.quantityOfficeReceived ?? 0) - (ocItem.quantityReceived ?? 0))
                     const flagged = (item.quantityRejected ?? 0) > 0 || (item.quantityDamaged ?? 0) > 0
 

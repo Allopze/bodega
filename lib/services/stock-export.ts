@@ -1,3 +1,5 @@
+import { resolveProductSize } from "@/lib/products/product-size"
+import { formatVariantProductName } from "@/lib/products/variant-grouping"
 /**
  * Stock and kardex Excel export functions.
  */
@@ -11,7 +13,7 @@ import { periodSql } from "@/lib/adquisiciones/list-query"
 import { MOVEMENT_TYPE_LABELS } from "@/lib/movement-labels"
 import type { Session } from "next-auth"
 import { todayInChile } from "@/lib/utils"
-import { getProductSizesByIds } from "@/lib/services/product-sizes"
+import { getProductAttributesByIds } from "@/lib/services/product-sizes"
 
 export interface StockExportFilters {
   worksiteId?: string
@@ -65,7 +67,7 @@ export async function getStockExport(
   // La talla va en columna propia y no pegada al nombre: así la planilla se
   // puede filtrar y dinamizar por talla, que es para lo que se exporta. Sin
   // ella todas las variantes de una familia salían con el mismo texto.
-  const sizeById = await getProductSizesByIds(limited.map((r) => r.productId))
+  const sizeById = await getProductAttributesByIds(limited.map((r) => r.productId))
 
   const report: ReportData = {
     filenameBase: "stock-por-faena",
@@ -82,8 +84,8 @@ export async function getStockExport(
     ],
     rows: limited.map((r) => [
       r.worksiteName,
-      r.productName,
-      sizeById.get(r.productId)?.label ?? "",
+      formatVariantProductName(r.productName, sizeById.get(r.productId)),
+      resolveProductSize(sizeById.get(r.productId) ?? [])?.label ?? "",
       r.productSku ?? "",
       r.unitOfMeasure,
       r.quantity,
@@ -166,7 +168,7 @@ export async function getKardexExport(
 
   const truncated = rows.length > maxRows
   const limited = truncated ? rows.slice(0, maxRows) : rows
-  const sizeById = await getProductSizesByIds(limited.map((r) => r.productId))
+  const sizeById = await getProductAttributesByIds(limited.map((r) => r.productId))
 
   const report: ReportData = {
     filenameBase: "kardex-movimientos",
@@ -188,8 +190,8 @@ export async function getKardexExport(
     rows: limited.map((r) => [
       r.performedAt ?? "",
       r.worksiteName,
-      r.productName,
-      sizeById.get(r.productId)?.label ?? "",
+      formatVariantProductName(r.productName, sizeById.get(r.productId)),
+      resolveProductSize(sizeById.get(r.productId) ?? [])?.label ?? "",
       r.productSku ?? "",
       MOVEMENT_TYPE_LABELS[r.type] ?? r.type,
       r.quantity,

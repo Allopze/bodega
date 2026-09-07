@@ -54,8 +54,8 @@ import {
 } from "@/db/schema"
 import { textSearchSql } from "@/lib/adquisiciones/list-query"
 import { nanoid } from "@/lib/id"
-import { getProductSizesByIds } from "@/lib/services/product-sizes"
-import { formatSizedProductName } from "@/lib/products/product-size"
+import { getProductAttributesByIds } from "@/lib/services/product-sizes"
+import { formatVariantProductName } from "@/lib/products/variant-grouping"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
@@ -725,10 +725,10 @@ async function guideItemsTx(tx: Tx, guideId: string) {
 
   // La guía es el documento que viaja con la carga y se coteja en faena: sin la
   // talla, «Zapato SteelPro ×10» no se puede verificar contra lo que llegó.
-  const sizeById = await getProductSizesByIds(rows.map((row) => row.productId), tx)
+  const attributesById = await getProductAttributesByIds(rows.map((row) => row.productId), tx)
   return rows.map((row) => ({
     ...row,
-    name: formatSizedProductName(row.name, sizeById.get(row.productId)),
+    name: formatVariantProductName(row.name, attributesById.get(row.productId)),
   }))
 }
 
@@ -1495,6 +1495,7 @@ export async function getDispatchGuideDetail(guideId: string) {
       worksiteId:  inventoryMovements.worksiteId,
       worksiteName: worksites.name,
       productName: products.name,
+      productId: products.id,
       productSku:  products.sku,
       type:        inventoryMovements.type,
       quantity:    inventoryMovements.quantity,
@@ -1512,7 +1513,13 @@ export async function getDispatchGuideDetail(guideId: string) {
     ))
     .orderBy(asc(inventoryMovements.performedAt))
 
-  return { guide, movements }
+  const attrs = await getProductAttributesByIds([...guide.items.map((i) => i.productId), ...movements.map((m) => m.productId)])
+  return {
+    guide: { ...guide, items: guide.items.map((item) => ({ ...item,
+      product: item.product ? { ...item.product, name: formatVariantProductName(item.product.name, attrs.get(item.productId)) } : item.product,
+    })) },
+    movements: movements.map((movement) => ({ ...movement, productName: formatVariantProductName(movement.productName, attrs.get(movement.productId)) })),
+  }
 }
 
 export interface OfficeStockOption {
@@ -1541,5 +1548,6 @@ export async function listOfficeStockOptions(officeWorksiteId: string): Promise<
       sql`${worksiteStock.quantity} > 0`,
     ))
     .orderBy(asc(products.name))
-  return rows
+  const attrs = await getProductAttributesByIds(rows.map((row) => row.productId))
+  return rows.map((row) => ({ ...row, name: formatVariantProductName(row.name, attrs.get(row.productId)) }))
 }

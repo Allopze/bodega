@@ -117,7 +117,7 @@ export function buildRequestSummaryIssues({
           requiresWorker: product.requiresWorker,
           equipmentKind: product.equipmentKind,
           attributes: product.attributes.map((a) => ({
-            id: a.id, name: a.name, type: a.type, isRequired: a.isRequired,
+            id: a.id, name: a.name, type: a.type, isRequired: a.isRequired, options: a.options,
             drivesQuantity: a.drivesQuantity,
           })),
         },

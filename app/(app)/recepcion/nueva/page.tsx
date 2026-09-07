@@ -1,3 +1,5 @@
+import { getProductAttributesByIds, getRequestItemAttributesByIds } from "@/lib/services/product-sizes"
+import { formatVariantProductName } from "@/lib/products/variant-grouping"
 import type { Metadata } from "next"
 import { redirect, notFound } from "next/navigation"
 import { db }                 from "@/db"
@@ -67,7 +69,8 @@ export default async function NuevaRecepcionPage({
       })
     : []
 
-  const productMap = Object.fromEntries(productRows.map((p) => [p.id, p]))
+  const attributesById = await getProductAttributesByIds(productIds)
+  const productMap = Object.fromEntries(productRows.map((p) => [p.id, { ...p, name: formatVariantProductName(p.name, attributesById.get(p.id)) }]))
   const requestItemIds = order.items.flatMap((item) => item.requestItemId ? [item.requestItemId] : [])
   const emergencySubjectRows = requestItemIds.length > 0
     ? await db.select({
@@ -82,6 +85,7 @@ export default async function NuevaRecepcionPage({
     row.requestItemId,
     row.assetCode ? `${row.assetCode} · ${row.name}` : row.name,
   ]))
+  const recordedById = await getRequestItemAttributesByIds(requestItemIds)
   const officeName = await officeWorksiteLabel()
 
   const items: ReceiptOcItem[] = order.items.map((item) => {
@@ -89,7 +93,7 @@ export default async function NuevaRecepcionPage({
     return {
       id:               item.id,
       requestItemId:    item.requestItemId,
-      productName:      product?.name ?? item.productNameFree ?? "(sin nombre)",
+      productName:      formatVariantProductName(productRows.find((p) => p.id === item.productId)?.name ?? item.productNameFree ?? "(sin nombre)", item.productId ? attributesById.get(item.productId) : [], item.requestItemId ? recordedById.get(item.requestItemId) : []),
       productSku:       product?.sku ?? null,
       quantity:         item.quantity,
       quantityOfficeReceived: item.quantityOfficeReceived ?? 0,

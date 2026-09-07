@@ -17,6 +17,7 @@ import { cleanRut } from "@/lib/rut"
 import { logger } from "@/lib/logger"
 import { localDateToISO } from "@/lib/sst/date"
 import { normalizeFolio, folioRutKey } from "./folio-match"
+import { AUTO_LINK_CLP_TOLERANCE } from "@/lib/services/purchasing-module/money-tolerance"
 
 // ── Tipos de resultado ──────────────────────────────────────────────────────
 
@@ -47,7 +48,7 @@ export interface DteReconciliationSummary {
 }
 
 /** Diferencia máxima (CLP) para vincular automáticamente sin intervención humana. */
-const AUTO_MATCH_AMOUNT_TOLERANCE_CLP = 1
+const AUTO_MATCH_AMOUNT_TOLERANCE_CLP = AUTO_LINK_CLP_TOLERANCE
 
 /**
  * `estado_plataforma` es texto libre del portal (el `title` de `penplata.gif`),

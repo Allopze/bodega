@@ -21,8 +21,8 @@ import { BodegaFilters } from "./bodega-filters"
 import { resolveFaena, ALL_WORKSITES } from "./faena-scope"
 import type { WorksiteStockWithProduct, InventoryMovementWithRelations } from "./types"
 import { KARDEX_PAGE_SIZE } from "@/lib/constants"
-import { getProductSizesByIds } from "@/lib/services/product-sizes"
-import { formatSizedProductName } from "@/lib/products/product-size"
+import { getProductAttributesByIds } from "@/lib/services/product-sizes"
+import { formatVariantProductName } from "@/lib/products/variant-grouping"
 
 export const metadata: Metadata = { title: "Bodega" }
 
@@ -265,13 +265,13 @@ export default async function BodegaPage({
   // distintos y no hay forma de saber cuál ajustar, desechar o contar. Se
   // resuelve acá, en el único punto por donde pasan tabla, kardex, ajustes,
   // desechos, stock mínimo e inventario físico.
-  const sizeById = await getProductSizesByIds([
+  const attributesById = await getProductAttributesByIds([
     ...stockRows.map((row) => row.productId),
     ...movements.map((row) => row.productId),
     ...kardexProducts.map((row) => row.id),
   ])
   const sizedName = (productId: string, name: string) =>
-    formatSizedProductName(name, sizeById.get(productId))
+    formatVariantProductName(name, attributesById.get(productId))
 
   const stockByWorksite: Record<string, WorksiteStockWithProduct[]> = {}
   for (const row of stockRows) {

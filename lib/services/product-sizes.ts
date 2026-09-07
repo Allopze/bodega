@@ -1,13 +1,31 @@
 import { inArray } from "drizzle-orm"
 import { db, type DB } from "@/db"
-import { productAttributes } from "@/db/schema"
+import { productAttributes, requestItemAttributes } from "@/db/schema"
 import { resolveProductSize, type ProductSize } from "@/lib/products/product-size"
+import type { VariantAttribute, ResolvedVariantAttribute } from "@/lib/products/variant-grouping"
 
 /**
  * Cualquier ejecutor que sepa `select`: la conexión, una transacción, o el
  * lector acotado que usa el preflight de stock EPP.
  */
 type SizeReader = Pick<DB, "select">
+
+/** Snapshot of requested values, including legacy products with multiple options. */
+export async function getRequestItemAttributesByIds(ids: readonly string[], executor: SizeReader = db) {
+  const result = new Map<string, ResolvedVariantAttribute[]>()
+  if (!ids.length) return result
+  const rows = await executor.select({
+    itemId: requestItemAttributes.requestItemId,
+    name: requestItemAttributes.attributeName,
+    value: requestItemAttributes.value,
+  }).from(requestItemAttributes).where(inArray(requestItemAttributes.requestItemId, [...new Set(ids)]))
+  for (const row of rows) {
+    const bucket = result.get(row.itemId) ?? []
+    bucket.push({ name: row.name, value: row.value })
+    result.set(row.itemId, bucket)
+  }
+  return result
+}
 
 /**
  * Talla de un conjunto de variantes, en una sola consulta.
@@ -27,6 +45,20 @@ export async function getProductSizesByIds(
   /** Ejecutor alternativo: las guías de despacho leen dentro de su transacción. */
   executor: SizeReader = db,
 ): Promise<Map<string, ProductSize>> {
+  const byProduct = await getProductAttributesByIds(productIds, executor)
+  const sizes = new Map<string, ProductSize>()
+  for (const [productId, attributes] of byProduct) {
+    const size = resolveProductSize(attributes)
+    if (size) sizes.set(productId, size)
+  }
+  return sizes
+}
+
+/** All variant axes, with a single query for each list or document. */
+export async function getProductAttributesByIds(
+  productIds: readonly string[],
+  executor: SizeReader = db,
+): Promise<Map<string, VariantAttribute[]>> {
   const unique = [...new Set(productIds.filter(Boolean))]
   if (unique.length === 0) return new Map()
 
@@ -34,6 +66,7 @@ export async function getProductSizesByIds(
     .select({
       productId:  productAttributes.productId,
       name:       productAttributes.name,
+      type:       productAttributes.type,
       options:    productAttributes.options,
       sizeFamily: productAttributes.sizeFamily,
       sortOrder:  productAttributes.sortOrder,
@@ -52,12 +85,5 @@ export async function getProductSizesByIds(
     else byProduct.set(row.productId, [row])
   }
 
-  const sizes = new Map<string, ProductSize>()
-  for (const [productId, attributes] of byProduct) {
-    const size = resolveProductSize(attributes)
-    // Los productos sin talla simplemente no entran al mapa: el llamador
-    // distingue «sin talla» de «con talla» por la ausencia, no por un centinela.
-    if (size) sizes.set(productId, size)
-  }
-  return sizes
+  return byProduct
 }

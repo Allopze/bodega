@@ -180,6 +180,9 @@ describe("getStockExport", () => {
       name: "Talla calzado", type: "select", isRequired: true,
       options: JSON.stringify(["42"]), sizeFamily: "calzado", sortOrder: 0,
     })
+    await inMemoryDb.insert(schema.productAttributes).values({
+      id: "attr-bota-color", productId: PROD_2, name: "Color", type: "select", options: '["Negro"]', sortOrder: 1,
+    })
     try {
       await inMemoryDb.insert(schema.worksiteStock).values([
         { id: "stk-s1", worksiteId: WS_1, productId: PROD_1, quantity: 5, minStock: 0, lastMovementAt: now, updatedAt: now },
@@ -192,7 +195,7 @@ describe("getStockExport", () => {
       const ws = workbook.getWorksheet("Stock")
 
       // Ordena por nombre de producto: «Bota Seguridad» antes que «Guantes».
-      expect(ws?.getCell("B2").value).toBe("Bota Seguridad")
+      expect(ws?.getCell("B2").value).toBe("Bota Seguridad · Talla calzado: 42 · Color: Negro")
       expect(ws?.getCell("C2").value).toBe("42")
       // Un producto sin talla deja la celda vacía, no un valor inventado.
       expect(ws?.getCell("B3").value).toBe("Guantes Nitrilo")

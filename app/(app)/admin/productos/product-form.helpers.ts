@@ -12,7 +12,7 @@ export function parseOptionsText(text: string): string[] {
   if (!text) return []
   try {
     const parsed: unknown = JSON.parse(text)
-    if (Array.isArray(parsed)) return parsed.map(String)
+    if (Array.isArray(parsed)) return [...new Set(parsed.flatMap((value) => { const trimmed = String(value).trim(); return trimmed ? [trimmed] : [] }))]
   } catch {
     // fall through
   }
@@ -62,7 +62,7 @@ export function buildSuppliersForSubmit(
   if (!primary.hasSupplier || !primary.supplierId) return rest
   return [
     { supplierId: primary.supplierId, unitPrice: primary.unitPrice ? parseFloat(primary.unitPrice) : null, isPreferred: true, notes: primary.notes || null },
-    ...rest,
+    ...rest.filter((row) => row.supplierId !== primary.supplierId),
   ]
 }
 
@@ -84,7 +84,7 @@ export function mergeEditAttributes(
   // La mitad no-`select` sale del editor avanzado (estado vivo), no del
   // snapshot del servidor: si se leyera `original` como antes, cualquier
   // edición del editor avanzado se descartaría en silencio al guardar.
-  const nonSelect = advAttrs.filter((a) => a.type !== "select")
+  const nonSelect = advAttrs.filter((a) => a.type !== "select" && a.name.trim())
   const existingByName = new Map(
     original.filter((a) => a.type === "select").map((a) => [normalizeAttributeName(a.name), a]),
   )
@@ -223,4 +223,16 @@ export function duplicateAttributeNames(wizAttrs: AttributeMultiValues[], advAtt
     ...wizAttrs.map((a) => a.name),
     ...advAttrs.map((a) => a.name),
   ])
+}
+
+/** Preserve the selected variant and its size family on the single-create path. */
+export function buildSingleVariantAttributes(wizAttrs: AttributeMultiValues[], variant?: VariantCombo): AttributeRow[] {
+  const selected = new Map(variant?.attributes.map((a) => [normalizeAttributeName(a.name), a.value]))
+  return wizAttrs.map((attr, i) => ({
+    name: attr.name, type: "select", isRequired: true,
+    options: JSON.stringify(variant
+      ? [selected.get(normalizeAttributeName(attr.name))].filter((value): value is string => value !== undefined)
+      : attr.values),
+    sizeFamily: attr.sizeFamily, sortOrder: i,
+  }))
 }

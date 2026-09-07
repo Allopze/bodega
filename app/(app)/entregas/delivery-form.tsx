@@ -314,7 +314,7 @@ export function DeliveryForm({
               un casco o unos lentes no deben pedir una talla vacía. */}
           {needsSize && selectedGroup && (
             <Field
-              label={selectedGroup.sizeAttributeName ?? "Talla"}
+              label={selectedGroup.sizeAttributeName ?? "Variante"}
               htmlFor="deliveryProductSize"
               required
               helper={selectedGroup.habitualSizeMissing
@@ -323,7 +323,7 @@ export function DeliveryForm({
             >
               <Select value={pendingProductId} onValueChange={setPendingProductId}>
                 <SelectTrigger id="deliveryProductSize">
-                  <SelectValue placeholder="Selecciona talla" />
+                  <SelectValue placeholder="Selecciona la variante" />
                 </SelectTrigger>
                 <SelectContent>
                   {selectedGroup.choices.map((choice) => (
@@ -331,9 +331,9 @@ export function DeliveryForm({
                       key={choice.productId}
                       value={choice.productId}
                       disabled={addedProductIds.has(choice.productId)}
-                      textValue={choice.sizeLabel ?? choice.productName}
+                      textValue={`${choice.variantLabel ?? choice.sizeLabel ?? choice.productName} ${choice.productSku ?? ""}`}
                     >
-                      {choice.sizeLabel ?? "Sin talla"}
+                      {choice.variantLabel || choice.sizeLabel || choice.productName}{choice.productSku ? ` · ${choice.productSku}` : ""}
                       {" · "}{formatQty(choice.stockQuantity, choice.unitOfMeasure)}
                       {addedProductIds.has(choice.productId)
                         ? " · ya agregada"
@@ -378,11 +378,11 @@ export function DeliveryForm({
                 <li key={line.productId} className="flex items-center gap-3 px-3 py-3">
                   <div className="min-w-0 flex-1">
                     <p className="flex items-center gap-1.5 text-sm font-medium text-[var(--color-text)]">
-                      <span className="truncate">{product?.productName ?? line.productId}</span>
+                      <span className="truncate">{product?.displayName ?? product?.productName ?? line.productId}</span>
                       {/* La talla queda visible en la línea: es parte de lo
                           que el trabajador acusa recibo de haber recibido. */}
-                      {product?.sizeLabel && (
-                        <MetaBadge meta={{ label: `${product.sizeAttributeName ?? "Talla"}${product.sizeLabel}`, variant: "outline" }} className="shrink-0 font-normal" />
+                      {product?.sizeLabel && !product.displayName && (
+                        <MetaBadge meta={{ label: `${product.sizeAttributeName ?? "Talla"} ${product.sizeLabel}`, variant: "outline" }} className="shrink-0 font-normal" />
                       )}
                     </p>
                     <p className="mt-0.5 text-xs text-[var(--color-text-subtle)]">
@@ -390,7 +390,7 @@ export function DeliveryForm({
                     </p>
                   </div>
                   <Input
-                    aria-label={`Cantidad de ${product?.productName ?? line.productId}${product?.sizeLabel ? ` talla ${product.sizeLabel}` : ""}`}
+                    aria-label={`Cantidad de ${product?.displayName ?? product?.productName ?? line.productId}${product?.sizeLabel ? ` talla ${product.sizeLabel}` : ""}`}
                     type="number"
                     min={product?.isEpp ? 1 : quantityStep(product?.unitOfMeasure)}
                     step={product?.isEpp ? 1 : quantityStep(product?.unitOfMeasure)}

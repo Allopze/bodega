@@ -1,9 +1,9 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { eq, inArray } from "drizzle-orm"
+import { eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { products, productAttributes, productSuppliers, productCategories, requestItemAttributes } from "@/db/schema"
+import { products, productAttributes, productSuppliers, productCategories, requestItemAttributes, purchaseRequestItems, purchaseOrderItems, inventoryMovements, deliveryItems, worksiteStock } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
@@ -14,10 +14,11 @@ import { productSchema, type ActionState } from "@/lib/validation/masters"
 import { safeActionMessage } from "@/lib/action-error"
 
 import {
-  formString, normalizeSelectOptions, displayOptionsText,
+  formString, normalizeSelectOptions,
   generateUniqueProductSku, generateUniqueSkus,
   resolveManualEppFamily, ensureEppFamilyTx, REVALIDATE,
 } from "./helpers"
+import { resolveVariantAttributes } from "@/lib/products/variant-grouping"
 import { productVariantBatchSchema, type ProductVariantBatchInput } from "./product-variant-batch.schema"
 // Sólo helpers de texto/tipos: no arrastra nada de cliente ni de `@/db`.
 import { normalizeProductAttributeName } from "../product-form.helpers"
@@ -37,8 +38,10 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
   // Parse attributes from JSON-encoded hidden input
   let attributesRaw: unknown[] = []
   let suppliersRaw:  unknown[] = []
-  try { attributesRaw = JSON.parse(formData.get("attributesJson") as string ?? "[]") } catch { logger.warn("[createProduct] attributesJson inválido, se usará arreglo vacío") }
-  try { suppliersRaw  = JSON.parse(formData.get("suppliersJson")  as string ?? "[]") } catch { logger.warn("[createProduct] suppliersJson inválido, se usará arreglo vacío") }
+  try {
+    attributesRaw = JSON.parse(formData.get("attributesJson") as string ?? "[]")
+    suppliersRaw = JSON.parse(formData.get("suppliersJson") as string ?? "[]")
+  } catch { return { ok: false, message: "Los atributos o proveedores no tienen un formato válido. Recarga el formulario." } }
 
   const parsed = productSchema.safeParse({
     name:               formString(formData, "name"),
@@ -127,8 +130,10 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
 
   let attributesRaw: unknown[] = []
   let suppliersRaw:  unknown[] = []
-  try { attributesRaw = JSON.parse(formData.get("attributesJson") as string ?? "[]") } catch { logger.warn("[updateProduct] attributesJson inválido, se usará arreglo vacío") }
-  try { suppliersRaw  = JSON.parse(formData.get("suppliersJson")  as string ?? "[]") } catch { logger.warn("[updateProduct] suppliersJson inválido, se usará arreglo vacío") }
+  try {
+    attributesRaw = JSON.parse(formData.get("attributesJson") as string)
+    suppliersRaw = JSON.parse(formData.get("suppliersJson") as string)
+  } catch { return { ok: false, message: "Los atributos o proveedores no tienen un formato válido. Recarga el formulario." } }
 
   const parsed = productSchema.safeParse({
     id:                 formString(formData, "id"),
@@ -167,9 +172,28 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
     // EPP family identity.
     const lockedProductIds = await lockCatalogProductsForUpdateTx(tx, [productId])
     if (!lockedProductIds.has(productId)) throw new Error("Producto no encontrado")
-    const family = await resolveManualEppFamily(tx, { categoryId: d.categoryId, name: d.name, isEpp: d.isEpp })
+    const lockedProduct = await tx.query.products.findFirst({ where: eq(products.id, productId) })
+    if (!lockedProduct) throw new Error("Producto no encontrado")
+    const oldAttributes = await tx.select().from(productAttributes).where(eq(productAttributes.productId, productId))
+    const identity = (attrs: typeof d.attributes | typeof oldAttributes) => JSON.stringify(
+      resolveVariantAttributes(attrs).map((a) => [normalizeProductAttributeName(a.name), a.value]).sort(),
+    )
+    if (identity(oldAttributes) !== identity(d.attributes)) {
+      const [usage] = await tx.select({ used: sql<boolean>`
+        exists(select 1 from ${purchaseRequestItems} where ${purchaseRequestItems.productId} = ${productId})
+        or exists(select 1 from ${purchaseOrderItems} where ${purchaseOrderItems.productId} = ${productId})
+        or exists(select 1 from ${inventoryMovements} where ${inventoryMovements.productId} = ${productId})
+        or exists(select 1 from ${deliveryItems} where ${deliveryItems.productId} = ${productId} or ${deliveryItems.returnProductId} = ${productId})
+        or exists(select 1 from ${worksiteStock} where ${worksiteStock.productId} = ${productId})
+      ` }).from(products).where(eq(products.id, productId))
+      if (usage?.used) throw new Error("No se puede cambiar la talla, color u otros valores de una variante con solicitudes, compras o inventario. Crea otra variante para conservar el historial.")
+    }
+    // Editing a variant does not create a new family or discard its metadata.
+    const family = lockedProduct.familyId && lockedProduct.categoryId === d.categoryId && lockedProduct.isEpp === d.isEpp
+      ? { id: lockedProduct.familyId }
+      : await resolveManualEppFamily(tx, { categoryId: d.categoryId, name: d.name, isEpp: d.isEpp })
     await tx.update(products).set({
-      sku, name: d.name,
+      name: d.name,
       description: d.description || null,
       categoryId: d.categoryId,
       familyId: family?.id ?? null,
@@ -330,7 +354,7 @@ export async function getProductForEdit(id: string) {
       name:           a.name,
       type:           a.type as "text" | "select" | "number" | "integer",
       isRequired:     a.isRequired,
-      options:        displayOptionsText(a.options),
+      options:        a.options ?? "",
       sizeFamily:     a.sizeFamily ?? undefined,
       drivesQuantity: a.drivesQuantity,
       sortOrder:      a.sortOrder,

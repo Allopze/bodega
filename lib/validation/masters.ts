@@ -118,7 +118,7 @@ export const productAttributeSchema = z.object({
   id:         z.string().optional(),
   productId:  z.string().optional().nullable(),
   categoryId: z.string().optional().nullable(),
-  name:       z.string().min(1, "Nombre requerido").max(60),
+  name:       z.string().trim().min(1, "Nombre requerido").max(60),
   // `integer` es un conteo entero ≥ 1 (nº de dosis, de sesiones).
   type:       z.enum(["text", "select", "number", "integer"]),
   isRequired: z.coerce.boolean().default(false),
@@ -176,7 +176,7 @@ export const productSupplierSchema = z.object({
 // ── Product ───────────────────────────────────────────────────────────────────
 export const productSchema = z.object({
   id:                 z.string().optional(),
-  name:               z.string().min(2, "Nombre requerido").max(120),
+  name:               z.string().trim().min(2, "Nombre requerido").max(120),
   description:        z.string().max(500).optional().or(z.literal("")),
   categoryId:         z.string().min(1, "Selecciona una categoría"),
   unitOfMeasure:      unitOfMeasureSchema.default("unidad"),
@@ -216,6 +216,10 @@ export const productSchema = z.object({
       path: ["attributes"],
     })
   }
+  if (new Set(data.suppliers.map((s) => s.supplierId)).size !== data.suppliers.length) {
+    ctx.addIssue({ code: "custom", path: ["suppliers"], message: "Hay proveedores repetidos" })
+  }
+
   if (data.suppliers.filter((s) => s.isPreferred).length > 1) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,

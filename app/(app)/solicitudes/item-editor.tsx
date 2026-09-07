@@ -19,7 +19,7 @@ import { ItemEditorCotizaciones } from "./item-editor-cotizaciones"
 import { VariantSelector } from "./variant-selector"
 import { getSizeVariantPicker } from "./variant-selector.helpers"
 import { ItemEditorAttributes } from "./item-editor-attributes"
-import { groupProductVariants } from "@/lib/products/variant-grouping"
+import { groupProductVariants, formatVariantProductName } from "@/lib/products/variant-grouping"
 import { URGENCY_OPTS } from "./request-form.constants"
 import { getWorkerEppStatusAction, type WorkerEppStatusResult } from "./actions"
 import { formatDate } from "@/lib/utils"
@@ -131,7 +131,7 @@ export function ItemEditor({
             <div className="flex items-center gap-2">
               <Package size={14} className="text-(--color-text-subtle) shrink-0" />
               <span className="flex-1 text-sm font-medium text-(--color-text)">
-                {item.productName}
+                {formatVariantProductName(item.productName, [], item.attributes.map((a) => ({ name: a.attributeName, value: a.value })))}
                 {selectedProduct?.isService && (
                   <MetaBadge meta={{ label: `${COST_PENDING_LABEL}`, variant: "outline" }} title="El precio de este servicio se conoce al ejecutarlo o facturarlo; se registra sobre la orden de compra." className="ml-1.5 font-normal align-middle" />
                 )}
@@ -192,7 +192,7 @@ export function ItemEditor({
         )}
       </div>
 
-      {selectedProduct && sizeVariantPicker && (
+      {selectedProduct && variants.length > 1 && (
         <div className="ml-8 max-w-sm">
           <VariantSelector
             variants={variants}

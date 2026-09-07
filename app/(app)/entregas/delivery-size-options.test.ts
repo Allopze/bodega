@@ -139,3 +139,14 @@ describe("buildDeliveryStockGroups", () => {
     expect(buildDeliveryStockGroups([])).toEqual([])
   })
 })
+
+
+it("exige elegir entre colores de una familia sin talla", () => {
+  const groups = buildDeliveryStockGroups([
+    stock({ productId: "azul", familyId: "casco", sizeLabel: null, sizeAttributeName: null, variantLabel: "Color: Azul" }),
+    stock({ productId: "rojo", familyId: "casco", sizeLabel: null, sizeAttributeName: null, variantLabel: "Color: Rojo" }),
+  ])
+  expect(groups).toHaveLength(1)
+  expect(requiresSizeChoice(groups[0])).toBe(true)
+  expect(groups[0]?.choices.map((c) => c.variantLabel)).toEqual(["Color: Azul", "Color: Rojo"])
+})

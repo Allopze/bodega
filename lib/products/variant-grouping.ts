@@ -1,6 +1,41 @@
+import { normalizeAttributeName } from "./attribute-names"
+import { parseSizeOptions } from "./product-size"
+
 export interface VariantAttribute {
   name: string
   options?: string | null
+  type?: string
+  sizeFamily?: string | null
+}
+
+export interface ResolvedVariantAttribute { name: string; value: string }
+
+/** Only singleton selects identify a catalog variant; templates are not values. */
+export function resolveVariantAttributes(attributes: readonly VariantAttribute[]): ResolvedVariantAttribute[] {
+  return attributes.flatMap((attribute) => {
+    if (attribute.type && attribute.type !== "select") return []
+    const options = parseSizeOptions(attribute.options)
+    return options.length === 1 ? [{ name: attribute.name, value: options[0]! }] : []
+  })
+}
+
+/** Recorded item values take precedence over the current catalog. */
+export function mergeVariantAttributes(
+  attributes: readonly VariantAttribute[],
+  recorded: readonly ResolvedVariantAttribute[] = [],
+): ResolvedVariantAttribute[] {
+  const values = new Map(resolveVariantAttributes(attributes).map((a) => [normalizeAttributeName(a.name), a]))
+  for (const attribute of recorded) values.set(normalizeAttributeName(attribute.name), attribute)
+  return [...values.values()].filter((a) => a.name.trim() && a.value.trim())
+}
+
+export function formatVariantProductName(
+  name: string,
+  attributes: readonly VariantAttribute[] | null = [],
+  recorded: readonly ResolvedVariantAttribute[] = [],
+): string {
+  const detail = mergeVariantAttributes(attributes ?? [], recorded).map((a) => `${a.name}: ${a.value}`).join(" · ")
+  return detail ? `${name} · ${detail}` : name
 }
 
 export interface ProductVariantLike {

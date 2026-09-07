@@ -367,3 +367,37 @@ describe("alta de familia EPP a prueba de carreras", () => {
     expect(family?.canonicalName).toBe(canonicalName)
   })
 })
+
+
+describe("protección de identidad y formularios incompletos", () => {
+  it("JSON corrupto no elimina atributos ni modifica el producto", async () => {
+    const { productId } = await seedProduct("Formulario intacto")
+    const fd = editForm(productId, "Cambio descartado", [])
+    fd.set("attributesJson", "[")
+    const result = await updateProduct({ ok: false }, fd)
+    expect(result.ok).toBe(false)
+    expect((await inMemoryDb.select().from(schema.productAttributes).where(eq(schema.productAttributes.productId, productId)))).toHaveLength(2)
+    expect((await inMemoryDb.query.products.findFirst({ where: eq(schema.products.id, productId) }))?.name).toBe("Formulario intacto")
+  })
+  it("no permite cambiar color de una variante con inventario y revierte el resto de la edición", async () => {
+    const productId = nanoid(), attrId = nanoid()
+    await inMemoryDb.insert(schema.products).values({ id: productId, sku: nanoid(), name: "Casco azul", categoryId })
+    await inMemoryDb.insert(schema.productAttributes).values({ id: attrId, productId, name: "Color", type: "select", options: '["Azul"]' })
+    await inMemoryDb.insert(schema.worksiteStock).values({ id: nanoid(), worksiteId, productId, quantity: 2 })
+    const result = await updateProduct({ ok: false }, editForm(productId, "Casco rojo", [
+      { id: attrId, name: "Color", type: "select", options: '["Rojo"]' },
+    ]))
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(/conservar el historial/)
+    expect((await inMemoryDb.query.products.findFirst({ where: eq(schema.products.id, productId) }))?.name).toBe("Casco azul")
+    expect((await inMemoryDb.query.productAttributes.findFirst({ where: eq(schema.productAttributes.id, attrId) }))?.options).toBe('["Azul"]')
+  })
+  it("guardar una variante no EPP conserva su familia", async () => {
+    const productId = nanoid(), familyId = nanoid()
+    await inMemoryDb.insert(schema.eppProductFamilies).values({ id: familyId, categoryId, canonicalName: "Cables", identityKey: nanoid(), brand: "Marca" })
+    await inMemoryDb.insert(schema.products).values({ id: productId, sku: nanoid(), name: "Cable 2 m", categoryId, familyId })
+    const result = await updateProduct({ ok: false }, editForm(productId, "Cable 2 m", []))
+    expect(result.ok).toBe(true)
+    expect((await inMemoryDb.query.products.findFirst({ where: eq(schema.products.id, productId) }))?.familyId).toBe(familyId)
+  })
+})

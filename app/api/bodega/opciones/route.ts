@@ -17,8 +17,8 @@ import { auth } from "@/lib/auth/auth"
 import { can, canAccessWorksite } from "@/lib/auth/can"
 import { getOpenPhysicalInventoryCount } from "@/lib/services/physical-inventory"
 import { logger } from "@/lib/logger"
-import { getProductSizesByIds } from "@/lib/services/product-sizes"
-import { formatSizedProductName } from "@/lib/products/product-size"
+import { getProductAttributesByIds } from "@/lib/services/product-sizes"
+import { formatVariantProductName } from "@/lib/products/variant-grouping"
 
 export async function GET(req: NextRequest) {
   const session = await auth()
@@ -116,7 +116,7 @@ export async function GET(req: NextRequest) {
 
     // Ajustar, desechar o devolver una talla equivocada corrige el saldo de la
     // variante que no era. El nombre a secas no distingue las variantes.
-    const sizeById = await getProductSizesByIds([
+    const attributesById = await getProductAttributesByIds([
       ...catalogRows.map((row) => row.productId),
       ...returnRows.map((row) => row.productId).filter((id): id is string => Boolean(id)),
     ])
@@ -127,15 +127,15 @@ export async function GET(req: NextRequest) {
       worksiteName: worksite.name,
       products: catalogRows.map((row) => ({
         ...row,
-        productName: formatSizedProductName(row.productName, sizeById.get(row.productId)),
+        productName: formatVariantProductName(row.productName, attributesById.get(row.productId)),
         quantity: Number(row.quantity),
         minStock: Number(row.minStock),
       })),
       returns: returnRows.map((row) => ({
         ...row,
-        productName: formatSizedProductName(
+        productName: formatVariantProductName(
           row.productName,
-          row.productId ? sizeById.get(row.productId) : null,
+          row.productId ? attributesById.get(row.productId) : undefined,
         ),
         remainingQuantity: Number(row.remainingQuantity),
       })),

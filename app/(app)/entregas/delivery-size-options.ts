@@ -18,6 +18,7 @@ import type { DeliveryStockProductOption } from "./delivery-form.types"
  */
 
 export interface DeliverySizeChoice {
+  variantLabel?: string
   productId: string
   /** `null` en una variante sin talla: no se inventa una etiqueta. */
   sizeLabel: string | null
@@ -66,6 +67,7 @@ export function buildDeliveryStockGroups(
     const key = variantGroupKey({ name: product.productName, familyId: product.familyId })
     const choice: DeliverySizeChoice = {
       productId: product.productId,
+      variantLabel: product.variantLabel,
       sizeLabel: product.sizeLabel,
       stockQuantity: product.stockQuantity,
       unitOfMeasure: product.unitOfMeasure,
@@ -122,5 +124,5 @@ export function buildDeliveryStockGroups(
 
 /** Un grupo pide talla sólo si alguna de sus variantes la declara. */
 export function requiresSizeChoice(group: DeliveryStockGroup | undefined): boolean {
-  return Boolean(group?.sizeAttributeName)
+  return Boolean(group && (group.sizeAttributeName || group.choices.length > 1))
 }

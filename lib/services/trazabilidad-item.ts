@@ -1,3 +1,5 @@
+import { getProductAttributesByIds } from "@/lib/services/product-sizes"
+import { formatVariantProductName } from "@/lib/products/variant-grouping"
 /**
  * Trazabilidad item detail service.
  *
@@ -213,6 +215,7 @@ export async function getItemDetail(
       : [],
   ])
 
+  const attrs = await getProductAttributesByIds(item.productId ? [item.productId] : [])
   return {
     item: {
       id:              item.id,
@@ -221,7 +224,7 @@ export async function getItemDetail(
       worksiteId:      item.worksiteId,
       worksiteName:    worksiteRow[0]?.name ?? item.worksiteId,
       productId:       item.productId,
-      productName:     item.productName ?? item.productNameFree ?? "—",
+      productName:     formatVariantProductName(item.productName ?? item.productNameFree ?? "—", item.productId ? attrs.get(item.productId) : [], attrRows),
       productSku:      item.productSku ?? null,
       productNameFree: item.productNameFree,
       quantity:        item.quantity,

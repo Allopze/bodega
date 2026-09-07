@@ -1,3 +1,5 @@
+import { resolveProductSize } from "@/lib/products/product-size"
+import { formatVariantProductName } from "@/lib/products/variant-grouping"
 /**
  * EPP delivery history Excel export.
  * Respects RBAC worksite visibility (same pattern as stock-export.ts).
@@ -14,7 +16,7 @@ import { isGlobalRole, visibleWorksiteIds } from "@/lib/auth/scope"
 import { buildXlsxBuffer } from "@/lib/reports/export"
 import type { Session } from "next-auth"
 import { formatDate, todayInChile} from "@/lib/utils"
-import { getProductSizesByIds } from "@/lib/services/product-sizes"
+import { getProductAttributesByIds } from "@/lib/services/product-sizes"
 
 export interface EppDeliveryExportFilters {
   worksiteId?: string
@@ -75,7 +77,7 @@ export async function getEppDeliveryExport(
   const limited = truncated ? rows.slice(0, maxRows) : rows
   // La talla entregada es parte del registro: sin ella el export no distingue
   // el zapato 42 del 40, que son filas de catálogo distintas con el mismo nombre.
-  const sizeById = await getProductSizesByIds(
+  const sizeById = await getProductAttributesByIds(
     limited.map((r) => r.productId).filter((id): id is string => Boolean(id)),
   )
 
@@ -97,8 +99,8 @@ export async function getEppDeliveryExport(
       `${r.workerFirst} ${r.workerLast}`.trim(),
       r.workerRut,
       r.workerPos ?? "",
-      r.productName ?? "",
-      (r.productId ? sizeById.get(r.productId)?.label : null) ?? "",
+      formatVariantProductName(r.productName ?? "", r.productId ? sizeById.get(r.productId) : []),
+      (r.productId ? resolveProductSize(sizeById.get(r.productId) ?? [])?.label : null) ?? "",
       r.productSku ?? "",
       r.quantity,
       r.unitOfMeasure,

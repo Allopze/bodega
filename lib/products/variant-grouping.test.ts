@@ -35,3 +35,23 @@ describe("product variant grouping", () => {
     ])
   })
 })
+
+
+describe("identidad completa de la variante", () => {
+  it("muestra talla, color y medida sin inventar valores de plantillas", async () => {
+    const { formatVariantProductName } = await import("./variant-grouping")
+    expect(formatVariantProductName("Chaqueta", [
+      { name: "Talla", type: "select", options: '["M"]' },
+      { name: "Color", type: "select", options: '["Azul"]' },
+      { name: "Medida", type: "select", options: '["1,5 m"]' },
+      { name: "Material", type: "select", options: '["Cuero","Tela"]' },
+      { name: "Observación", type: "text", options: "Molde antiguo" },
+    ])).toBe("Chaqueta · Talla: M · Color: Azul · Medida: 1,5 m")
+  })
+  it("da prioridad al registro histórico por nombre normalizado", async () => {
+    const { formatVariantProductName } = await import("./variant-grouping")
+    expect(formatVariantProductName("Casco", [{ name: "Color", options: '["Rojo"]' }], [
+      { name: " CÓLOR ", value: "Azul" }, { name: "Talla", value: "M" },
+    ])).toBe("Casco ·  CÓLOR : Azul · Talla: M")
+  })
+})

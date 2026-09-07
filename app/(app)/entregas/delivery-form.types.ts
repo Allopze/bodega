@@ -22,6 +22,8 @@ export interface DeliveryWorkerOption {
 }
 
 export interface DeliveryStockProductOption {
+  variantLabel?: string
+  displayName?: string
   sourceWorksiteId: string
   productId: string
   productName: string

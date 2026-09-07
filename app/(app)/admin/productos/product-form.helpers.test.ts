@@ -14,6 +14,7 @@ import {
   otherSuppliers,
   buildSuppliersForSubmit,
   mergeEditAttributes,
+  buildSingleVariantAttributes,
 } from "./product-form.helpers"
 import type { SupplierRow, AttributeRow, AttributeMultiValues, WizardGeneralState, WizardCloseAction } from "./product-form.types"
 
@@ -435,5 +436,26 @@ describe("plantillas de categoría en los dos editores", () => {
       const goesToAdvanced = (ADVANCED_ATTRIBUTE_TYPES as readonly string[]).includes(template.type)
       expect(goesToWizard || goesToAdvanced).toBe(true)
     }
+  })
+})
+
+
+describe("guardado de una variante", () => {
+  it("conserva sizeFamily y los valores que contienen comas", () => {
+    expect(buildSingleVariantAttributes([
+      { name: "Talla", type: "select", values: ["M"], sizeFamily: "ropa" },
+      { name: "Medida", type: "select", values: ["1,5 m", "2 m"] },
+    ], { sku: "", name: "Producto", attributes: [{ name: "Talla", value: "M" }, { name: "Medida", value: "1,5 m" }] }))
+      .toEqual([
+        { name: "Talla", type: "select", isRequired: true, options: '["M"]', sizeFamily: "ropa", sortOrder: 0 },
+        { name: "Medida", type: "select", isRequired: true, options: '["1,5 m"]', sizeFamily: undefined, sortOrder: 1 },
+      ])
+  })
+  it("elegir como preferido a un proveedor existente no lo duplica", () => {
+    const rows = buildSuppliersForSubmit({ supplierId: "p2", unitPrice: "12", notes: "", hasSupplier: true }, [
+      { supplierId: "p2", supplierName: "Segundo", unitPrice: "10", notes: "", isPreferred: false },
+    ])
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ supplierId: "p2", unitPrice: 12, isPreferred: true })
   })
 })

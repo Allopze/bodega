@@ -172,6 +172,7 @@ export async function resolveCatalogItemQuantitiesTx(
     productId:  productAttributes.productId,
     name:       productAttributes.name,
     type:       productAttributes.type,
+    options:    productAttributes.options,
     isRequired: productAttributes.isRequired,
     drivesQuantity: productAttributes.drivesQuantity,
   })
@@ -188,7 +189,7 @@ export async function resolveCatalogItemQuantitiesTx(
       attributes:     attributeRows
         .filter((attribute) => attribute.productId === product.id)
         .map((attribute) => ({
-          id: attribute.id, name: attribute.name, type: attribute.type,
+          id: attribute.id, name: attribute.name, type: attribute.type, options: attribute.options,
           isRequired: attribute.isRequired, drivesQuantity: attribute.drivesQuantity,
         })),
     }]),

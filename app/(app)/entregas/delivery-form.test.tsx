@@ -368,7 +368,7 @@ describe("DeliveryForm", () => {
     expect(options.map((option) => option.getAttribute("value")))
       .toEqual(["shoe-40", "shoe-41", "shoe-42", "shoe-43"])
     expect(options.map((option) => option.textContent)).toEqual([
-      "40 · 1 unidad", "41 · 2 unidades", "42 · 3 unidades", "43 · 4 unidades",
+      "40 · EPP-ZAP-40 · 1 unidad", "41 · EPP-ZAP-41 · 2 unidades", "42 · EPP-ZAP-42 · 3 unidades", "43 · EPP-ZAP-43 · 4 unidades",
     ])
   })
 
@@ -498,7 +498,7 @@ describe("DeliveryForm", () => {
 
     const options = [...screen.getAllByTestId("select")[3]!.querySelectorAll("option")]
     expect(options.map((option) => option.textContent)).toEqual([
-      "40 · 1 unidad", "41 · 2 unidades", "42 · 3 unidades · talla habitual", "43 · 4 unidades",
+      "40 · EPP-ZAP-40 · 1 unidad", "41 · EPP-ZAP-41 · 2 unidades", "42 · EPP-ZAP-42 · 3 unidades · talla habitual", "43 · EPP-ZAP-43 · 4 unidades",
     ])
     // Ninguna otra talla queda deshabilitada: la entrega excepcional es válida.
     expect(options.filter((option) => option.hasAttribute("disabled"))).toHaveLength(0)
@@ -524,7 +524,7 @@ describe("DeliveryForm", () => {
     const options = [...screen.getAllByTestId("select")[3]!.querySelectorAll("option")]
     const added = options.find((option) => option.getAttribute("value") === "shoe-42")!
     expect(added).toHaveAttribute("disabled")
-    expect(added.textContent).toBe("42 · 3 unidades · ya agregada")
+    expect(added.textContent).toBe("42 · EPP-ZAP-42 · 3 unidades · ya agregada")
     // Las demás tallas del mismo producto siguen disponibles.
     expect(options.filter((option) => option.hasAttribute("disabled"))).toHaveLength(1)
   })

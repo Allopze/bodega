@@ -5,6 +5,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
 import type { ProductOption } from "./request-form.types"
+import { formatProductVariant } from "@/lib/products/variant-grouping"
 import { getSizeVariantPicker } from "./variant-selector.helpers"
 
 interface Props {
@@ -16,7 +17,10 @@ interface Props {
 }
 
 export function VariantSelector({ variants, selectedVariantId, readOnly, onSelect, id }: Props) {
-  const picker = getSizeVariantPicker(variants)
+  const picker = getSizeVariantPicker(variants) ?? (variants.length > 1 ? {
+    attributeName: "Variante",
+    choices: variants.map((variant) => ({ id: variant.id, label: `${formatProductVariant(variant.attributes, variant.sku)} · ${variant.sku}` })),
+  } : null)
   if (!picker) return null
 
   return (

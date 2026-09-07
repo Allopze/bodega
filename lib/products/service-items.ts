@@ -1,3 +1,4 @@
+import { parseSizeOptions } from "./product-size"
 /**
  * Ítems de servicio del catálogo (mantención de monogás, calibración de
  * alcotest, vacunas) y las reglas que un ítem de solicitud debe cumplir según
@@ -50,6 +51,7 @@ export interface DeclaredAttribute {
   type:       string
   isRequired: boolean
   /** Su valor **es** la cantidad del ítem (nº de dosis, de sesiones). */
+  options?: string | null
   drivesQuantity?: boolean
 }
 
@@ -82,12 +84,15 @@ function normalizeName(name: string): string {
  * tipo del "Número de dosis" y de cualquier conteo que venga después.
  */
 export function attributeValueIssue(
-  attribute: Pick<DeclaredAttribute, "name" | "type" | "isRequired">,
+  attribute: Pick<DeclaredAttribute, "name" | "type" | "isRequired" | "options">,
   rawValue: string | null | undefined,
 ): string | null {
   const value = (rawValue ?? "").trim()
   if (value === "") {
     return attribute.isRequired ? `completa ${attribute.name}` : null
+  }
+  if (attribute.type === "select" && attribute.options != null && !parseSizeOptions(attribute.options).includes(value)) {
+    return `${attribute.name} no corresponde a los valores de la variante seleccionada`
   }
   if (attribute.type === "integer") {
     if (!/^\d+$/.test(value) || Number(value) < 1) {

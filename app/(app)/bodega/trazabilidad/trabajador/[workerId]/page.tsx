@@ -16,8 +16,8 @@ import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, Tabl
 import { formatDate, formatQty } from "@/lib/utils"
 import { ArrowSquareOut, User, HardHat, CheckCircle, Warning } from "@phosphor-icons/react/dist/ssr"
 import { listEppCoverageGaps } from "@/lib/services/prevention-epp"
-import { getProductSizesByIds } from "@/lib/services/product-sizes"
-import { formatSizedProductName } from "@/lib/products/product-size"
+import { getProductAttributesByIds } from "@/lib/services/product-sizes"
+import { formatVariantProductName } from "@/lib/products/variant-grouping"
 
 export const metadata: Metadata = { title: "Trazabilidad EPP del Trabajador" }
 
@@ -82,11 +82,11 @@ export default async function WorkerEppTraceabilityPage({
   // La talla es parte de lo que se le entregó: el catálogo guarda el mismo
   // `products.name` en todas las tallas de una familia, así que sin ella el
   // historial no dice qué talla recibió el trabajador.
-  const sizeById = await getProductSizesByIds(
+  const attributesById = await getProductAttributesByIds(
     deliveryRows.map((row) => row.productId).filter((id): id is string => Boolean(id)),
   )
   const deliveredName = (row: { productId: string | null; productName: string | null }) =>
-    formatSizedProductName(row.productName ?? "EPP", row.productId ? sizeById.get(row.productId) : null)
+    formatVariantProductName(row.productName ?? "EPP", row.productId ? attributesById.get(row.productId) : undefined)
 
   const validDeliveries = deliveryRows.filter((row) => row.voidedAt == null)
   const voidedCount = deliveryRows.length - validDeliveries.length

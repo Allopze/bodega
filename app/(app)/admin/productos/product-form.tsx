@@ -19,7 +19,7 @@ import { StepIndicator } from "./epp-wizard-steps"
 import { VariantGenerator } from "./epp-variant-generator"
 import { VariantPreview } from "./epp-variant-preview"
 import {
-  parseOptionsText, generateVariantCombos, canAdvanceWizard, shouldShowConfirmClose, getStepAnimationClass,
+  parseOptionsText, buildSingleVariantAttributes, generateVariantCombos, canAdvanceWizard, shouldShowConfirmClose, getStepAnimationClass,
   pickPrimarySupplier, otherSuppliers, buildSuppliersForSubmit, mergeEditAttributes,
   ADVANCED_ATTRIBUTE_TYPES, blankAdvancedAttribute, setQuantityDriver, duplicateAttributeNames,
   normalizeProductAttributeName, type AdvancedAttributeType,
@@ -152,6 +152,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
 
   // ── Category change auto-detects EPP flags (only for new products) ────────
   function handleCategoryChange(id: string) {
+    setVariants([])
     setGeneral((prev) => ({ ...prev, categoryId: id }))
     if (isEdit) return
     const category = categories.find((c) => c.id === id)
@@ -189,9 +190,10 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
   // `handleCategoryChange`, y agregar un atributo de talla a un producto que no
   // es EPP no debería convertirlo en uno.
   function toggleAttrPreset(preset: { name: string; options: string[]; sizeFamily?: string }) {
+    setVariants([])
     setWizAttrs((prev) => {
-      if (prev.some((a) => a.name === preset.name)) {
-        return prev.filter((a) => a.name !== preset.name)
+      if (prev.some((a) => normalizeProductAttributeName(a.name) === normalizeProductAttributeName(preset.name))) {
+        return prev.filter((a) => normalizeProductAttributeName(a.name) !== normalizeProductAttributeName(preset.name))
       }
       return [...prev, { name: preset.name, type: "select", values: [], sizeFamily: preset.sizeFamily }]
     })
@@ -199,10 +201,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
 
   function updateAttrValues(name: string, values: string[]) {
     setWizAttrs((prev) => prev.map((a) => (a.name === name ? { ...a, values } : a)))
-    // Clear generated variants if all values for this attribute were deselected
-    if (values.length === 0) {
-      setVariants([])
-    }
+    setVariants([])
   }
 
   // Quitar un atributo cualquiera, sea preset o venido de una plantilla de
@@ -258,6 +257,10 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
 
   function generateVariants(): boolean {
     setStepError(null)
+    if (wizAttrs.some((a) => a.values.length === 0)) {
+      setStepError("Selecciona al menos un valor en cada atributo o quita el atributo.")
+      return false
+    }
     const comboCount = wizAttrs.reduce((acc, a) => acc * Math.max(a.values.length, 1), 1)
     if (comboCount > VARIANT_LIMIT) {
       setStepError(`Demasiadas combinaciones (${comboCount}). El máximo permitido es ${VARIANT_LIMIT}.`)
@@ -284,7 +287,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
     }
     setStepDirection("forward")
     // Regenerate variants when advancing from step 2, but block if limit exceeded
-    if (step === 2 && wizAttrs.length > 0) {
+    if (step === 2 && wizAttrs.length > 0 && variants.length === 0) {
       if (!generateVariants()) return
     }
     setStep((s) => Math.min(3, s + 1) as WizardStep)
@@ -299,6 +302,13 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
   // ── Submit ────────────────────────────────────────────────────────────────
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     setStepError(null)
+    if (!isEdit && step !== 3) { event.preventDefault(); nextStep(); return }
+    if (duplicateNames.size > 0 || wizAttrs.some((a) => a.values.length === 0)) {
+      event.preventDefault()
+      setStepError("Revisa los atributos: sus nombres deben ser únicos y cada variante debe tener un valor.")
+      return
+    }
+    if (generatingVariants || batchPending) { event.preventDefault(); return }
 
     // ── Batch path: intercept and call createProductVariantBatch directly ──
     if (!isEdit && variants.length > 1) {
@@ -343,6 +353,8 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
         } else if (result.message) {
           toast.error(result.message)
         }
+      } catch {
+        toast.error("No se pudo crear el lote. Revisa la conexión e inténtalo nuevamente.")
       } finally {
         // Si la acción rechaza (red caída, excepción del servidor) el reset no
         // se ejecutaba y el formulario quedaba bloqueado hasta recargar.
@@ -384,7 +396,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
               <Input
                 id="p-name"
                 value={general.name}
-                onChange={(e) => { markDirty(); setGeneral((p) => ({ ...p, name: e.target.value })) }}
+                onChange={(e) => { markDirty(); setVariants([]); setGeneral((p) => ({ ...p, name: e.target.value })) }}
                 placeholder="Casco de seguridad blanco clase A"
                 error={!!state.fieldErrors?.name}
               />
@@ -594,6 +606,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
         return (
           <div className="space-y-4">
             <VariantGenerator
+              singleVariant={isEdit}
               sizeFamilies={sizeFamilies}
               wizAttrs={wizAttrs}
               isEpp={general.isEpp}
@@ -606,11 +619,11 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
               variantWarnAt={VARIANT_WARN_AT}
               onMarkDirty={markDirty}
             />
-            <VariantPreview
+            {!isEdit && <VariantPreview
               variants={variants}
               onRemove={removeVariant}
               onMarkDirty={markDirty}
-            />
+            />}
           </div>
         )
 
@@ -693,17 +706,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
   const formContent = (
     <form action={formAction} onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
       {/* Header: variant-dependent */}
-      {variant === "embedded" ? (
-        <div className="flex flex-col gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-5 py-4 md:flex-row md:items-start md:justify-between md:px-6">
-          <div>
-            <h2 className="text-h2 text-[var(--color-text)]">{title}</h2>
-            <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">{description}</p>
-          </div>
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Volver al catálogo
-          </Button>
-        </div>
-      ) : (
+      {variant !== "embedded" && (
         <SheetHeader>
           <div>
             <SheetTitle>{title}</SheetTitle>
@@ -739,13 +742,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
           isEdit
             ? mergeEditAttributes(editProduct!.attributes, wizAttrs, advAttrs)
             : [
-              ...(variants.length > 0
-                ? variants[0]!.attributes.map((a, i) => ({
-                  name: a.name, type: "select" as const, isRequired: true, options: a.value, sortOrder: i,
-                }))
-                : wizAttrs.map((a, i) => ({
-                  name: a.name, type: "select" as const, isRequired: true, options: a.values.join(", "), sortOrder: i,
-                }))),
+              ...buildSingleVariantAttributes(wizAttrs, variants[0]),
               ...submittableAdvAttrs.map((a, i) => ({ ...a, sortOrder: wizAttrs.length + i })),
             ]
         )} />
@@ -755,6 +752,20 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
 
         {/* Step indicator (hidden on edit, since it's not a step flow) */}
         {!isEdit && <StepIndicator currentStep={step} />}
+        {isEdit && (
+          <nav aria-label="Secciones del producto" className="mb-4 flex gap-2">
+            {(["General", "Talla y otros atributos", "Proveedor"] as const).map((label, index) => (
+              <Button key={label} type="button" variant={step === index + 1 ? "primary" : "secondary"}
+                aria-current={step === index + 1 ? "step" : undefined}
+                onClick={() => setStep((index + 1) as WizardStep)}>{label}</Button>
+            ))}
+          </nav>
+        )}
+        {!state.ok && state.fieldErrors && (
+          <p role="alert" className="mb-4 text-sm text-[var(--color-danger)]">
+            {Object.values(state.fieldErrors).flat().join(". ")}
+          </p>
+        )}
 
         {stepError && (
           <p className="mb-4 text-sm text-[var(--color-danger)]">{stepError}</p>

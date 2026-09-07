@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { normalizeAttributeName } from "@/lib/products/attribute-names"
 import { X } from "@phosphor-icons/react"
 import { Tooltip } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
@@ -34,6 +35,7 @@ function buildPresets(sizeFamilies: SizeFamilyOption[]): AttributePreset[] {
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 export interface VariantGeneratorProps {
+  singleVariant?: boolean
   wizAttrs: AttributeMultiValues[]
   isEpp: boolean
   sizeFamilies: SizeFamilyOption[]
@@ -62,7 +64,7 @@ export interface VariantGeneratorProps {
  * vive dentro de un `<form>`, así que el submit por defecto crearía el producto
  * a medio configurar).
  */
-function AddValueInput({ attributeName, onAdd }: { attributeName: string; onAdd: (value: string) => void }) {
+function AddValueInput({ attributeName, onAdd, buttonLabel = "Agregar" }: { attributeName: string; onAdd: (value: string) => void; buttonLabel?: string }) {
   const [draft, setDraft] = React.useState("")
 
   function commit() {
@@ -87,7 +89,7 @@ function AddValueInput({ attributeName, onAdd }: { attributeName: string; onAdd:
         className="h-7 max-w-40 text-xs"
       />
       <Button type="button" variant="ghost" size="sm" onClick={commit} disabled={!draft.trim()}>
-        Agregar
+        {buttonLabel}
       </Button>
     </div>
   )
@@ -97,6 +99,7 @@ function AddValueInput({ attributeName, onAdd }: { attributeName: string; onAdd:
 
 export function VariantGenerator({
   wizAttrs,
+  singleVariant = false,
   isEpp,
   sizeFamilies,
   onToggleAttr,
@@ -113,8 +116,7 @@ export function VariantGenerator({
   return (
     <div className="space-y-4">
       <p className="text-sm text-[var(--color-text-muted)]">
-        Define los atributos del producto como talla y color. Para productos EPP, selecciona múltiples valores
-        para generar automáticamente todas las combinaciones como variantes individuales.
+        {singleVariant ? "Edita los atributos de este ítem. Para registrar otra talla o color con stock independiente, crea otra variante." : "Define talla, color u otros atributos. Cada combinación se creará como un producto con stock independiente."}
       </p>
 
       {/* Atributos chip selector */}
@@ -122,7 +124,7 @@ export function VariantGenerator({
         <p className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--color-text-subtle)]">Atajos para EPP</p>
         <div className="flex flex-wrap gap-2">
           {presets.map((preset) => {
-            const isActive = wizAttrs.some((a) => a.name === preset.name)
+            const isActive = wizAttrs.some((a) => normalizeAttributeName(a.name) === normalizeAttributeName(preset.name))
             const tooltipContent = isActive
               ? `Quitar «${preset.name}» del producto`
               : preset.options.length <= 4
@@ -144,6 +146,15 @@ export function VariantGenerator({
         </div>
       </div>
 
+      <div>
+        <p className="text-sm font-medium">Otro atributo (medida, material, modelo…)</p>
+        <AddValueInput buttonLabel="Agregar atributo" attributeName="nuevo atributo" onAdd={(name) => {
+          if (wizAttrs.some((a) => normalizeAttributeName(a.name) === normalizeAttributeName(name))) return
+          onMarkDirty()
+          onToggleAttr({ name, options: [] })
+        }} />
+      </div>
+
       {/* Attribute multi-select editors */}
       {wizAttrs.length === 0 ? (
         <p className="text-sm text-[var(--color-text-subtle)] italic">
@@ -153,13 +164,13 @@ export function VariantGenerator({
       ) : (
         <div className="space-y-3">
           {wizAttrs.map((attr) => {
-            const preset = presets.find((p) => p.name === attr.name)
+            const preset = presets.find((p) => normalizeAttributeName(p.name) === normalizeAttributeName(attr.name))
             // Un atributo que no es preset (viene de una plantilla de categoría)
             // trae sus opciones en `values`: sin este fallback se dibujaba una
             // caja sin chips, `values` quedaba vacío y «Generar variantes» no se
             // habilitaba nunca — y como el toggle de arriba sólo lista presets,
             // tampoco se podía quitar. El paso 2 quedaba muerto.
-            const options = preset?.options ?? attr.values
+            const options = [...new Set([...(preset?.options ?? []), ...attr.values])]
             return (
               <div key={attr.name} className="rounded-(--radius) border border-[var(--color-border)] p-3">
                 <div className="mb-2 flex items-center justify-between gap-2">
@@ -179,12 +190,13 @@ export function VariantGenerator({
                     return (
                       <button
                         key={option}
+                        aria-pressed={isSelected}
                         type="button"
                         onClick={() => {
                           onMarkDirty()
                           onUpdateAttrValues(attr.name, isSelected
                             ? attr.values.filter((v) => v !== option)
-                            : [...attr.values, option])
+                            : singleVariant ? [option] : [...attr.values, option])
                         }}
                         className={`rounded-(--radius-sm) px-3 py-1.5 text-xs font-medium transition-colors ${
                           isSelected
@@ -202,7 +214,7 @@ export function VariantGenerator({
                   onAdd={(value) => {
                     if (attr.values.includes(value)) return
                     onMarkDirty()
-                    onUpdateAttrValues(attr.name, [...attr.values, value])
+                    onUpdateAttrValues(attr.name, singleVariant ? [value] : [...attr.values, value])
                   }}
                 />
               </div>
@@ -210,7 +222,7 @@ export function VariantGenerator({
           })}
 
           {/* Generate variants button */}
-          {(() => {
+          {!singleVariant && (() => {
             const count = wizAttrs.reduce((acc, a) => acc * Math.max(a.values.length, 1), 1)
             const isOverLimit = count > variantLimit
             const isNearLimit = count > variantWarnAt && count <= variantLimit

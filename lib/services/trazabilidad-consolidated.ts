@@ -1,3 +1,5 @@
+import { getProductAttributesByIds, getRequestItemAttributesByIds } from "@/lib/services/product-sizes"
+import { formatVariantProductName } from "@/lib/products/variant-grouping"
 /**
  * lib/services/trazabilidad-consolidated.ts
  *
@@ -212,7 +214,14 @@ export async function collectConsolidatedRows(
     stockByProduct,
   }
 
-  const consolidatedList = buildConsolidatedRows(rawItemRows, maps, worksite.id, worksite.name)
+  const [attrs, recorded] = await Promise.all([
+    getProductAttributesByIds(allProductIds), getRequestItemAttributesByIds(allItemIds),
+  ])
+  const describedRows = rawItemRows.map((row) => ({ ...row,
+    productNameCatalog: formatVariantProductName(row.productNameCatalog ?? row.productNameFree ?? "—",
+      row.productId ? attrs.get(row.productId) : [], recorded.get(row.itemId)),
+  }))
+  const consolidatedList = buildConsolidatedRows(describedRows, maps, worksite.id, worksite.name)
 
   // Compatibilidad transitoria del export por línea. El pipeline principal
   // filtra solicitudes completas abajo y Task 3 migrará el archivo al agregado.

@@ -1,9 +1,11 @@
 import { z } from "zod"
-import { duplicateNormalizedNames } from "@/lib/products/attribute-names"
+import { parseSizeOptions } from "@/lib/products/product-size"
+import { unitOfMeasureSchema } from "@/lib/validation/product-catalogs"
+import { duplicateNormalizedNames, normalizeAttributeName } from "@/lib/products/attribute-names"
 
 const productVariantItemSchema = z.object({
-  name: z.string().min(1, "Nombre requerido"),
-  attributes: z.array(z.object({ name: z.string(), value: z.string() })).default([]),
+  name: z.string().trim().min(1, "Nombre requerido").max(240),
+  attributes: z.array(z.object({ name: z.string().trim().min(1).max(60), value: z.string().trim().min(1).max(4000) })).default([]),
 })
 
 const productVariantSupplierSchema = z.object({
@@ -41,7 +43,7 @@ export const productVariantBatchSchema = z.object({
   categoryId: z.string().min(1, "Selecciona una categoría"),
   familyName: z.string().min(2, "Nombre de familia requerido").max(120),
   description: z.string().max(500).optional().or(z.literal("")),
-  unitOfMeasure: z.string().max(20).default("unidad"),
+  unitOfMeasure: unitOfMeasureSchema.default("unidad"),
   isEpp: z.boolean().default(true),
   requiresPrevencion: z.boolean().default(false),
   isService: z.boolean().default(false),
@@ -64,6 +66,28 @@ export const productVariantBatchSchema = z.object({
     .max(500, "Máximo 500 variantes por lote. Reduce la cantidad de valores por atributo."),
   supplier: productVariantSupplierSchema,
 }).superRefine((data, ctx) => {
+  const combinations = new Set<string>()
+  const declared = new Map(data.attributes.map((a) => [normalizeAttributeName(a.name), a]))
+  const advancedNames = new Set(data.advancedAttributes.map((a) => normalizeAttributeName(a.name)))
+  for (const [index, variant] of data.variants.entries()) {
+    const names = variant.attributes.map((a) => normalizeAttributeName(a.name))
+    const signature = JSON.stringify(variant.attributes.map((a) => [normalizeAttributeName(a.name), a.value]).sort())
+    if (new Set(names).size !== names.length || variant.attributes.some((a) =>
+      advancedNames.has(normalizeAttributeName(a.name)))) {
+      ctx.addIssue({ code: "custom", path: ["variants", index], message: "La variante tiene atributos repetidos" })
+    }
+    if (declared.size > 0 && (declared.size !== names.length || variant.attributes.some((a) => {
+      const definition = declared.get(normalizeAttributeName(a.name))
+      return !definition || !parseSizeOptions(definition.options).includes(a.value)
+    }))) {
+      ctx.addIssue({ code: "custom", path: ["variants", index], message: "La variante no coincide con los atributos y valores declarados" })
+    }
+    if (combinations.has(signature)) {
+      ctx.addIssue({ code: "custom", path: ["variants", index], message: "Hay combinaciones de atributos repetidas" })
+    }
+    combinations.add(signature)
+  }
+
   if (data.advancedAttributes.filter((a) => a.drivesQuantity).length > 1) {
     ctx.addIssue({
       code: "custom",
