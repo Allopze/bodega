@@ -32,6 +32,7 @@ import {
   OcPdfcnDocument,
   OcPdfcnIntro,
   OcPdfcnItemsTable,
+  OcPdfcnSummary,
   OC_LOGO_SRC,
 } from "./oc-pdfcn-document"
 import { buildOcPdfRows, type OcPdfRow } from "./oc-pdfcn-rows"
@@ -57,6 +58,18 @@ const PAGE_CONTENT_HEIGHT = A4_CSS_HEIGHT - PAGE_MARGIN.top - PAGE_MARGIN.bottom
  * exacto —la búsqueda lo corrige en ambas direcciones—, sólo que esté cerca.
  */
 const FIRST_PAGE_ROWS_HINT = 10
+
+/**
+ * Margen que se le descuenta al alto útil para dar por bueno un fragmento.
+ *
+ * Un fragmento que mide EXACTAMENTE la hoja deja el flujo parado en el borde, y
+ * entonces el `breakBefore: page` del fragmento siguiente suma un segundo salto:
+ * sale una hoja en blanco entre medio. Cuatro píxeles alcanzan para que el corte
+ * caiga siempre dentro de la hoja y no cuestan ninguna fila.
+ */
+const PAGE_FIT_SLACK = 4
+
+const fitsInPage = (height: number) => height <= PAGE_CONTENT_HEIGHT - PAGE_FIT_SLACK
 
 // El logo no viaja por red: se lee del disco una vez por proceso. Takumi resuelve
 // `src` contra las imágenes pre-cargadas, no contra un origen HTTP, así que esta
@@ -161,17 +174,26 @@ async function paginateOcRows(data: OcPrintData, logo: Buffer): Promise<OcPdfRow
   const rows = buildOcPdfRows(data)
   if (rows.length === 0) return [[]]
 
+  /**
+   * El fragmento que cierra la tabla arrastra observaciones, totales y firma:
+   * si no se miden con él, la última hoja se llena de filas y el cierre se va
+   * solo a una hoja nueva. Se añaden únicamente cuando el candidato agota las
+   * filas, y como sólo suman altura la condición sigue siendo monótona.
+   */
+  const pageOf = (children: ReactNode[], start: number, candidate: OcPdfRow[]) =>
+    start + candidate.length === rows.length
+      ? [...children, createElement(OcPdfcnSummary, { data })]
+      : children
+
   const firstCount = await largestFittingChunk(rows, 0, FIRST_PAGE_ROWS_HINT, async (candidate) => {
     const height = await measureWithinPage(
-      createElement(
-        View,
-        { style: { gap: 8 } },
+      createElement(View, { style: { gap: 8 } }, ...pageOf([
         createElement(OcPdfcnIntro, { data }),
         createElement(OcPdfcnItemsTable, { data, rows: candidate }),
-      ),
+      ], 0, candidate)),
       logo,
     )
-    return height <= PAGE_CONTENT_HEIGHT
+    return fitsInPage(height)
   })
 
   const chunks: OcPdfRow[][] = [rows.slice(0, firstCount)]
@@ -181,12 +203,15 @@ async function paginateOcRows(data: OcPrintData, logo: Buffer): Promise<OcPdfRow
   // siempre y la búsqueda termina en dos o tres mediciones.
   let hint = firstCount
   while (start < rows.length) {
+    const chunkStart = start
     const count = await largestFittingChunk(rows, start, hint, async (candidate) => {
       const height = await measureWithinPage(
-        createElement(OcPdfcnItemsTable, { data, rows: candidate }),
+        createElement(View, { style: { gap: 8 } }, ...pageOf([
+          createElement(OcPdfcnItemsTable, { data, rows: candidate }),
+        ], chunkStart, candidate)),
         logo,
       )
-      return height <= PAGE_CONTENT_HEIGHT
+      return fitsInPage(height)
     })
     chunks.push(rows.slice(start, start + count))
     start += count

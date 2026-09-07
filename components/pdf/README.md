@@ -32,6 +32,12 @@ descarga con script deja un diff auditable en vez de un paso interactivo.
    este repo compila con esa opción activa. El parche está comentado en el sitio.
 5. **ESLint del runtime.** La directiva del `<img>` en `pdf-primitives.tsx` usa
    el nombre de regla que reconoce la configuración actual del repo.
+6. **Padding de la celda compacta.** `data-table.styles.ts` usaba `spacing[2]`
+   (8 pt por lado) en `size="compact"`. En la tabla de ítems de la OC —ocho
+   columnas en un A4— eso reserva 128 pt de los 527 útiles sólo en aire, y
+   fuerza columnas fijas anchas que le quitan espacio a `Detalle`. Bajado a
+   3 pt: la columna de texto largo pasa de 156 a 221 pt y la orden de ejemplo
+   cae de tres hojas a dos.
 
 ## Cómo actualizar
 

@@ -1,3 +1,5 @@
+import { resolveProductSize } from "@/lib/products/product-size"
+import { formatVariantProductName } from "@/lib/products/variant-grouping"
 import type { Session } from "next-auth"
 import { and, asc, eq, gte, sql } from "drizzle-orm"
 import { db } from "@/db"
@@ -5,7 +7,7 @@ import { inventoryMovements, products, worksites, worksiteStock } from "@/db/sch
 import { buildWorksiteFilter } from "./utils"
 import { formatDate } from "@/lib/utils"
 import type { ReportData, ExportFilters } from "./types"
-import { getProductSizesByIds } from "@/lib/services/product-sizes"
+import { getProductAttributesByIds } from "@/lib/services/product-sizes"
 
 const DEFAULT_WINDOW_DAYS = 90
 const DEAD_STOCK_DAYS = 90
@@ -87,7 +89,7 @@ export async function bodegaRotacion(
 
   // La rotación se lee por variante: una talla puede ser stock muerto mientras
   // otra de la misma familia se agota. Sin la columna, las filas se confunden.
-  const sizeById = await getProductSizesByIds(limited.map((row) => row.productId))
+  const sizeById = await getProductAttributesByIds(limited.map((row) => row.productId))
 
   const rows = limited.map((row) => {
     const consumed = consumptionByKey.get(`${row.worksiteId}:${row.productId}`) ?? 0
@@ -100,8 +102,8 @@ export async function bodegaRotacion(
 
     return [
       row.worksiteName,
-      row.productName,
-      sizeById.get(row.productId)?.label ?? "",
+      formatVariantProductName(row.productName, sizeById.get(row.productId)),
+      resolveProductSize(sizeById.get(row.productId) ?? [])?.label ?? "",
       row.productSku ?? "",
       row.unitOfMeasure,
       row.quantity,

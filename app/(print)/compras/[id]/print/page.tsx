@@ -1,3 +1,4 @@
+import { mergeVariantAttributes } from "@/lib/products/variant-grouping"
 import { redirect } from "next/navigation"
 import Image from "next/image"
 import { requireAuth, canAny } from "@/lib/auth/can"
@@ -127,9 +128,8 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
                 const product = item.productId ? productMap[item.productId] : null
                 const name    = product?.name ?? item.productNameFree ?? "Producto sin nombre"
                 const sku     = product?.sku ?? ""
-                const attributes = item.requestItem?.attributes.filter((attribute) =>
-                  attribute.attributeName.trim() && attribute.value.trim(),
-                ) ?? []
+                const attributes = mergeVariantAttributes(product?.attributes ?? [],
+                  item.requestItem?.attributes.map((a) => ({ name: a.attributeName, value: a.value })) ?? [])
                 const equipment = item.requestItem?.equipment
                 const worker    = item.requestItem?.worker
 
@@ -149,8 +149,8 @@ export default async function PrintOcPage({ params }: { params: Promise<{ id: st
                         <div className="item-note">Colaborador: {worker.firstName} {worker.lastName}</div>
                       )}
                       {attributes.map((attribute) => (
-                        <div key={attribute.id} className="item-note">
-                          {attribute.attributeName}: {attribute.value}
+                        <div key={attribute.name} className="item-note">
+                          {attribute.name}: {attribute.value}
                         </div>
                       ))}
                       {item.notes && <div className="item-note">{item.notes}</div>}

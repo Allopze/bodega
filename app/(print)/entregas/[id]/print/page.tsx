@@ -3,8 +3,8 @@ import { notFound, redirect } from "next/navigation"
 import { db } from "@/db"
 import { deliveries, products } from "@/db/schema"
 import { eq, inArray } from "drizzle-orm"
-import { formatSizedProductName } from "@/lib/products/product-size"
-import { getProductSizesByIds } from "@/lib/services/product-sizes"
+import { formatVariantProductName } from "@/lib/products/variant-grouping"
+import { getProductAttributesByIds } from "@/lib/services/product-sizes"
 import { requirePermission } from "@/lib/auth/can"
 import { canAccessWorksite } from "@/lib/auth/scope"
 import { formatDate, formatQty } from "@/lib/utils"
@@ -49,13 +49,13 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
   // que sin ella el comprobante firmado no dice qué talla se entregó.
   const productMap = productIds.length > 0
     ? await (async () => {
-      const [rows, sizeById] = await Promise.all([
+      const [rows, attributesById] = await Promise.all([
         db.query.products.findMany({ where: inArray(products.id, productIds) }),
-        getProductSizesByIds(productIds),
+        getProductAttributesByIds(productIds),
       ])
       return new Map(rows.map((product) => [
         product.id,
-        formatSizedProductName(product.name, sizeById.get(product.id)),
+        formatVariantProductName(product.name, attributesById.get(product.id)),
       ]))
     })()
     : new Map<string, string>()

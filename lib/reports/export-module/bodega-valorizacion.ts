@@ -1,10 +1,12 @@
+import { resolveProductSize } from "@/lib/products/product-size"
+import { formatVariantProductName } from "@/lib/products/variant-grouping"
 import type { Session } from "next-auth"
 import { and, asc, eq, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { productCategories, products, worksites, worksiteStock } from "@/db/schema"
 import { buildWorksiteFilter } from "./utils"
 import type { ReportData, ExportFilters } from "./types"
-import { getProductSizesByIds } from "@/lib/services/product-sizes"
+import { getProductAttributesByIds } from "@/lib/services/product-sizes"
 
 /**
  * Valorización del inventario: existencias × precio de referencia.
@@ -50,8 +52,8 @@ export async function bodegaValorizacion(
   const totalValue = priced.reduce((sum, row) => sum + row.quantity * Number(row.referencePrice), 0)
   // Columna propia y no pegada al nombre: una valorización se dinamiza por talla
   // para saber qué variante concentra el capital inmovilizado.
-  const sizeById = await getProductSizesByIds(limited.map((row) => row.productId))
-  const sizeOf = (productId: string) => sizeById.get(productId)?.label ?? ""
+  const sizeById = await getProductAttributesByIds(limited.map((row) => row.productId))
+  const sizeOf = (productId: string) => resolveProductSize(sizeById.get(productId) ?? [])?.label ?? ""
 
   return {
     filenameBase: "bodega-valorizacion",
@@ -60,7 +62,7 @@ export async function bodegaValorizacion(
     rows: [
       ...priced.map((row) => [
         row.worksiteName,
-        row.productName,
+        formatVariantProductName(row.productName, sizeById.get(row.productId)),
         sizeOf(row.productId),
         row.productSku ?? "",
         row.categoryName ?? "",
@@ -79,7 +81,7 @@ export async function bodegaValorizacion(
           ? [["", "Todos los productos con stock tienen precio de referencia", "", "", "", ""]]
           : unpriced.map((row) => [
               row.worksiteName,
-              row.productName,
+              formatVariantProductName(row.productName, sizeById.get(row.productId)),
               sizeOf(row.productId),
               row.productSku ?? "",
               row.unitOfMeasure,

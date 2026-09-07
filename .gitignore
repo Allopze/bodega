@@ -108,6 +108,8 @@ backup-*.sql
 
 /plataforma-portalchome-vulnerabilidades
 
+/chome_conciliador_odoo_erpnext_pack
+
 /.github
 # QA automatizado
 .env.qa
@@ -122,3 +124,4 @@ INVENTARIO DE EXTINTORES FAENA BIODIVERSA 2026.xlsx
 /qa
 # Scratch de ejecución de planes (subagent-driven development)
 .superpowers/
+OC-ejemplo-pdfcn.pdf

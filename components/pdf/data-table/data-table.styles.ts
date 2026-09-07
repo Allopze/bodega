@@ -10,7 +10,12 @@ export const createCompactStyles = (t: PdfcnTheme) => {
   const { spacing, fontWeights, lineHeights } = t.primitives;
   return StyleSheet.create({
     cell: {
-      paddingHorizontal: spacing[2],
+      // Reparación local (ver components/pdf/README.md): upstream usa
+      // `spacing[2]` = 8 pt por lado, o sea 16 pt por columna. En una tabla de
+      // ocho columnas eso son 128 pt de los 527 útiles de un A4 —una cuarta
+      // parte de la hoja en aire— y obliga a declarar columnas fijas anchas,
+      // que se los quitan a la única columna con texto largo.
+      paddingHorizontal: 3,
       paddingVertical: spacing[0.5],
     },
     footerText: {

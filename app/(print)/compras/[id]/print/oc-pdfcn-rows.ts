@@ -1,3 +1,4 @@
+import { mergeVariantAttributes } from "@/lib/products/variant-grouping"
 /**
  * Aplana una OC en las filas que imprime la tabla de ítems.
  *
@@ -38,9 +39,8 @@ export function buildOcPdfRows(data: OcPrintData): OcPdfRow[] {
     const product = item.productId ? data.productMap[item.productId] : null
     const equipment = item.requestItem?.equipment
     const worker    = item.requestItem?.worker
-    const attributes = item.requestItem?.attributes.filter((attribute) =>
-      attribute.attributeName.trim() && attribute.value.trim(),
-    ) ?? []
+    const attributes = mergeVariantAttributes(product?.attributes ?? [],
+      item.requestItem?.attributes.map((a) => ({ name: a.attributeName, value: a.value })) ?? [])
 
     const notas: string[] = []
     if (equipment) {
@@ -51,7 +51,7 @@ export function buildOcPdfRows(data: OcPrintData): OcPdfRow[] {
     }
     if (worker) notas.push(`Colaborador: ${worker.firstName} ${worker.lastName}`)
     for (const attribute of attributes) {
-      notas.push(`${attribute.attributeName}: ${attribute.value}`)
+      notas.push(`${attribute.name}: ${attribute.value}`)
     }
     if (item.notes) notas.push(item.notes)
 

@@ -162,6 +162,30 @@ describe("renderOcPdf", () => {
     expect(pages.filter((page) => page.includes("P. Unitario")).length).toBeGreaterThan(1)
   }, 120_000)
 
+  // Un fragmento que mide EXACTAMENTE el alto útil deja el flujo parado en el
+  // borde de la hoja, y entonces el `breakBefore: page` del fragmento siguiente
+  // suma un segundo salto: sale una hoja en blanco entre medio.
+  it.each([14, 16, 18, 20, 22, 24, 28])("no deja hojas en blanco (%i líneas)", async (count) => {
+    const { pages } = await parse(await renderOcPdf(makeData(count, (i) => (i % 3 === 0 ? 4 : 0))))
+
+    const enBlanco = pages
+      .map((page, index) => ({ index, texto: page.replace(/Página\s*\d+\s*de\s*\d+/g, "").trim() }))
+      .filter((page) => page.texto.length < 40)
+    expect(enBlanco).toEqual([])
+  }, 120_000)
+
+  // La paginación mide sólo la tabla, así que llenaba la última hoja hasta el
+  // tope y el cierre —observaciones, totales y firma— se iba solo a una hoja
+  // nueva casi en blanco. Ahora ese bloque se mide junto al fragmento final.
+  it.each([18, 22, 26, 31])("cierra el documento en la última hoja de ítems (%i líneas)", async (count) => {
+    const { pages } = await parse(await renderOcPdf(makeData(count, (i) => (i % 3 === 0 ? 4 : 0))))
+
+    const cierre = pages.filter((page) => page.includes("Autorización de emisión"))
+    expect(cierre).toHaveLength(1)
+    // La hoja del cierre trae también la tabla: no es una hoja suelta de firma.
+    expect(cierre[0]).toContain("P. Unitario")
+  }, 120_000)
+
   it("pagina y numera cada hoja con el mismo texto que la rama Chromium", async () => {
     const { pageCount, text } = await parse(await renderOcPdf(makeData(45)))
 

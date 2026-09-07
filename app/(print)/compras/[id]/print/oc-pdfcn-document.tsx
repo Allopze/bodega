@@ -36,16 +36,26 @@ export const OC_LOGO_SRC = "/chome_logo.svg"
  * de la celda va por dentro del número.
  *
  * La caja útil de un A4 con 12 mm de margen lateral es 527,2 pt (703 px CSS).
- * Las columnas fijas suman 368 pt y dejan 159,2 pt (≈212 px CSS) para Detalle,
- * que es la única que crece. Verificado sobre un PDF generado, midiendo la
- * posición de cada cabecera: N° 22 pt, Cod. Articulo 70 pt, etc.
+ * Las columnas fijas suman 306 pt y dejan 221 pt para Detalle, que es la única
+ * que crece. Verificado sobre un PDF generado, midiendo la posición de cada
+ * cabecera.
+ *
+ * Estos números van atados al padding de la celda compacta (3 pt por lado, ver
+ * la reparación 6 del README de components/pdf): el ancho declarado incluye el
+ * padding, así que subirlo obliga a ensanchar cada columna y se lo cobra
+ * Detalle. Con los 8 pt de upstream las fijas necesitaban 368 pt y Detalle
+ * bajaba a 156, partiendo casi todos los nombres de producto en dos líneas.
+ *
+ * Copiar los anchos de `page.tsx` NO funciona —probado—: su hoja usa celdas más
+ * apretadas, y con sus 18/68/38/32/58/52/46 px la columna N° desaparece, las
+ * cabeceras «Descuento» y «Total» se solapan y los importes salen cortados.
  *
  * Si se toca cualquier ancho hay que rehacer esa resta: Detalle se queda con lo
  * que sobre y es donde se nota, porque es la columna con el texto largo.
  */
 const COLUMNS: DataTableColumn<OcPdfRow>[] = [
-  { key: "n",         header: "N°",            width: 22 },
-  { key: "sku",       header: "Cod. Articulo", width: 70 },
+  { key: "n",         header: "N°",            width: 18 },
+  { key: "sku",       header: "Cod. Articulo", width: 60 },
   {
     key: "nombre",
     header: "Detalle",
@@ -61,14 +71,14 @@ const COLUMNS: DataTableColumn<OcPdfRow>[] = [
       </View>
     ),
   },
-  { key: "cantidad",  header: "Cant.",       align: "right",  width: 40 },
-  { key: "unidad",    header: "U.M.",        align: "center", width: 32 },
-  // 76 pt y no 62: una línea sin precio imprime "Por definir", y por debajo de
-  // ese ancho Takumi la parte en dos ("Por" / "definir"). Vale para las dos
-  // columnas que pueden contener esa cadena.
-  { key: "unitario",  header: "P. Unitario", align: "right",  width: 76 },
-  { key: "descuento", header: "Descuento",   align: "right",  width: 52 },
-  { key: "total",     header: "Total",       align: "right",  width: 76 },
+  { key: "cantidad",  header: "Cant.",       align: "right",  width: 30 },
+  { key: "unidad",    header: "U.M.",        align: "center", width: 24 },
+  // 66 pt y no menos: una línea sin precio imprime "Por definir", y por debajo
+  // de ese ancho Takumi la parte en dos ("Por" / "definir"). Vale para las dos
+  // columnas que pueden contener esa cadena, y es el suelo de ambas.
+  { key: "unitario",  header: "P. Unitario", align: "right",  width: 66 },
+  { key: "descuento", header: "Descuento",   align: "right",  width: 42 },
+  { key: "total",     header: "Total",       align: "right",  width: 66 },
 ]
 
 /** Como el `FieldLine` de la vista: una fila vacía no se imprime. */
@@ -78,11 +88,44 @@ function entries(pairs: [string, string | null | undefined][]): KeyValueEntry[] 
     .map(([key, value]) => ({ key, value }))
 }
 
+/** Geometría de `.field-row` de la hoja de impresión: 25 mm y 23 mm en puntos. */
+const SUPPLIER_LABEL_WIDTH = 71
+const SUPPLIER_RIGHT_LABEL_WIDTH = 65
+/** `.supplier-panel` reparte `minmax(0, 1fr) 60mm`; 60 mm son 170 pt. */
+const SUPPLIER_RIGHT_WIDTH = 170
+
+/**
+ * Fila etiqueta/valor del panel del proveedor, con la geometría de `.field-row`
+ * de `oc-print-styles.ts`: etiqueta en columna fija y valor alineado a la
+ * IZQUIERDA en lo que queda.
+ *
+ * No se usa `KeyValue` acá porque alinea el valor a la derecha (`flex: 1,
+ * textAlign: "right"`), y un valor que envuelve dejaba la última palabra suelta
+ * contra el borde derecho —«Av. Pedro Aguirre Cerda» / «4820»—, que además no
+ * es lo que imprime la rama Chromium.
+ */
+function FieldRow({ label, value, labelWidth }: { label: string; value: string; labelWidth: number }) {
+  return (
+    <View style={{ flexDirection: "row", gap: 3 }}>
+      <View style={{ width: labelWidth }}>
+        <RawText style={{ color: "#252a26", fontSize: 8.2, lineHeight: 1.35 }}>{label}</RawText>
+      </View>
+      <View style={{ flex: 1 }}>
+        <RawText style={{ color: "#17221b", fontSize: 8.2, lineHeight: 1.35 }}>{value}</RawText>
+      </View>
+    </View>
+  )
+}
+
 export function OcPdfcnIntro({ data }: { data: OcPrintData }) {
   const { order, company, issuedDate } = data
 
+  // gap 16 pt ≈ los 6 mm que `.supplier-panel` pone de `margin-top`. Las dos
+  // tarjetas llevan `spacing="none"` porque el `spacing="md"` que trae Section
+  // por defecto son 28 pt de margen ARRIBA Y ABAJO: sumados al gap dejaban 60 pt
+  // de vacío entre la cabecera y los datos del proveedor, 3,5 veces la hoja.
   return (
-    <View style={{ flexDirection: "column", gap: 8 }}>
+    <View style={{ flexDirection: "column", gap: 16 }}>
       <Stack direction="horizontal" justify="between" align="start">
         <Stack direction="horizontal" gap="sm" align="start">
           <PdfImage src={OC_LOGO_SRC} width={54} height={54} fit="contain" />
@@ -106,36 +149,34 @@ export function OcPdfcnIntro({ data }: { data: OcPrintData }) {
           </View>
         </Stack>
 
-        <Section variant="card" padding="sm">
+        <Section variant="card" padding="sm" spacing="none">
           {company.rut && <Text noMargin variant="xs">R.U.T.: {company.rut}</Text>}
           <Heading level={4} noMargin>Orden de Compra</Heading>
           <Text noMargin weight="semibold">Nº {formatOrderNumber(order.code)}</Text>
         </Section>
       </Stack>
 
-      <Section variant="card" padding="sm">
+      <Section variant="card" padding="sm" spacing="none">
         <Stack direction="horizontal" gap="md" align="start">
-          <View style={{ flex: 1 }}>
-            <KeyValue
-              size="sm"
-              items={entries([
-                ["Señor(es):", order.supplier?.name],
-                ["Giro:", order.supplier?.businessActivity],
-                ["Direccion:", order.supplier?.address],
-                ["Comuna:", order.supplier?.commune],
-                ["Ciudad:", order.supplier?.city],
-              ])}
-            />
+          <View style={{ flex: 1, flexDirection: "column", gap: 2 }}>
+            {entries([
+              ["Señor(es):", order.supplier?.name],
+              ["Giro:", order.supplier?.businessActivity],
+              ["Direccion:", order.supplier?.address],
+              ["Comuna:", order.supplier?.commune],
+              ["Ciudad:", order.supplier?.city],
+            ]).map((entry) => (
+              <FieldRow key={entry.key} label={entry.key} value={entry.value} labelWidth={SUPPLIER_LABEL_WIDTH} />
+            ))}
           </View>
-          <View style={{ flex: 1 }}>
-            <KeyValue
-              size="sm"
-              items={entries([
-                ["R.U.T.:", order.supplier?.rut],
-                ["Fecha Emisión:", issuedDate],
-                ["Forma Pago:", order.paymentTerms || order.supplier?.paymentTerms],
-              ])}
-            />
+          <View style={{ width: SUPPLIER_RIGHT_WIDTH, flexDirection: "column", gap: 2 }}>
+            {entries([
+              ["R.U.T.:", order.supplier?.rut],
+              ["Fecha Emisión:", issuedDate],
+              ["Forma Pago:", order.paymentTerms || order.supplier?.paymentTerms],
+            ]).map((entry) => (
+              <FieldRow key={entry.key} label={entry.key} value={entry.value} labelWidth={SUPPLIER_RIGHT_LABEL_WIDTH} />
+            ))}
           </View>
         </Stack>
       </Section>
@@ -164,27 +205,19 @@ export function OcPdfcnItemsTable({
   )
 }
 
-export function OcPdfcnDocument({
-  data,
-  rowChunks = [buildOcPdfRows(data)],
-}: {
-  data: OcPrintData
-  rowChunks?: OcPdfRow[][]
-}) {
+/**
+ * Cierre del documento: observaciones, totales y firma. Vive aparte para que
+ * `oc-pdfcn-render.ts` pueda MEDIRLO y reservarle sitio en la última hoja de
+ * ítems. Sin eso, la paginación llenaba la última hoja hasta el tope y empujaba
+ * este bloque a una hoja nueva, que salía casi en blanco.
+ */
+export function OcPdfcnSummary({ data }: { data: OcPrintData }) {
   const { order, authorizedByName, authorizedDate, orderDetailLines, totalInWords } = data
   const pendingCostLines = countPendingCostLines(data)
   const aviso = pendingCostNotice(pendingCostLines)
 
   return (
     <View style={{ flexDirection: "column", gap: 8 }}>
-      <OcPdfcnIntro data={data} />
-
-      {rowChunks.map((rows, index) => (
-        <View key={`items-page-${index}`} break={index > 0} wrap={false}>
-          <OcPdfcnItemsTable data={data} rows={rows} />
-        </View>
-      ))}
-
       <Stack direction="horizontal" gap="md" align="start">
         <View style={{ flex: 1, flexDirection: "column", gap: 2 }}>
           {orderDetailLines.length > 0 && (
@@ -243,6 +276,28 @@ export function OcPdfcnDocument({
           </>
         )}
       </Section>
+    </View>
+  )
+}
+
+export function OcPdfcnDocument({
+  data,
+  rowChunks = [buildOcPdfRows(data)],
+}: {
+  data: OcPrintData
+  rowChunks?: OcPdfRow[][]
+}) {
+  return (
+    <View style={{ flexDirection: "column", gap: 8 }}>
+      <OcPdfcnIntro data={data} />
+
+      {rowChunks.map((rows, index) => (
+        <View key={`items-page-${index}`} break={index > 0} wrap={false}>
+          <OcPdfcnItemsTable data={data} rows={rows} />
+        </View>
+      ))}
+
+      <OcPdfcnSummary data={data} />
     </View>
   )
 }

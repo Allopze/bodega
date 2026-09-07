@@ -1,3 +1,5 @@
+import { getProductAttributesByIds } from "@/lib/services/product-sizes"
+import type { VariantAttribute } from "@/lib/products/variant-grouping"
 import { notFound } from "next/navigation"
 import type { Session } from "next-auth"
 import { db } from "@/db"
@@ -13,7 +15,7 @@ import { clpAmountToWords } from "./oc-number-to-words"
 export interface OcPrintData {
   order: NonNullable<Awaited<ReturnType<typeof loadOrderWithRelations>>>
   company: Awaited<ReturnType<typeof getCompanyProfile>>
-  productMap: Record<string, { id: string; sku: string; name: string }>
+  productMap: Record<string, { id: string; sku: string; name: string; attributes?: VariantAttribute[] }>
   issuedDate: string
   authorizedByName: string | null
   authorizedDate: string | null
@@ -74,7 +76,8 @@ export async function loadOcPrintDataOrNull(
         columns: { id: true, sku: true, name: true },
       })
     : []
-  const productMap = Object.fromEntries(products.map((p) => [p.id, p]))
+  const attributesById = await getProductAttributesByIds(productIds)
+  const productMap = Object.fromEntries(products.map((p) => [p.id, { ...p, attributes: attributesById.get(p.id) }]))
 
   const issuedDate = order.issuedAt ? formatDate(order.issuedAt) : formatDate(order.createdAt)
   const authorizedByName = order.issuedAt ? order.issuedByUser?.name ?? null : null
