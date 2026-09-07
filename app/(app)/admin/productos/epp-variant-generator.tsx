@@ -53,6 +53,13 @@ export interface VariantGeneratorProps {
   variantLimit: number
   variantWarnAt: number
   onMarkDirty: () => void
+  /**
+   * En el modo "añadir variante", los valores que ya existen en la familia se
+   * muestran como chips deshabilitados (con aviso) en lugar de preseleccionados:
+   * cada variante es un producto y no se puede recrear una combinación idéntica.
+   * Mapa por nombre de atributo normalizado → valores ya usados.
+   */
+  existingValuesByAttr?: Record<string, string[]>
 }
 
 // ── Add a value not covered by the preset ─────────────────────────────────────
@@ -110,6 +117,7 @@ export function VariantGenerator({
   variantLimit,
   variantWarnAt,
   onMarkDirty,
+  existingValuesByAttr,
 }: VariantGeneratorProps) {
   const presets = React.useMemo(() => buildPresets(sizeFamilies), [sizeFamilies])
 
@@ -170,7 +178,10 @@ export function VariantGenerator({
             // caja sin chips, `values` quedaba vacío y «Generar variantes» no se
             // habilitaba nunca — y como el toggle de arriba sólo lista presets,
             // tampoco se podía quitar. El paso 2 quedaba muerto.
-            const options = [...new Set([...(preset?.options ?? []), ...attr.values])]
+            // En añadir-variante los existentes de la familia se suman también a
+            // las opciones (deshabilitadas) aunque `values` empiece vacío.
+            const existingOptions = existingValuesByAttr?.[normalizeAttributeName(attr.name)] ?? []
+            const options = [...new Set([...(preset?.options ?? []), ...attr.values, ...existingOptions])]
             return (
               <div key={attr.name} className="rounded-(--radius) border border-[var(--color-border)] p-3">
                 <div className="mb-2 flex items-center justify-between gap-2">
@@ -187,25 +198,40 @@ export function VariantGenerator({
                 <div className="flex flex-wrap gap-2">
                   {options.map((option) => {
                     const isSelected = attr.values.includes(option)
+                    // En "añadir variante" un valor que ya existe en la familia
+                    // no puede volverse a crear: se muestra deshabilitado, no
+                    // preseleccionado, para que no parezca una combinación nueva.
+                    const exists = !!existingValuesByAttr
+                      ?.[normalizeAttributeName(attr.name)]
+                      ?.some((v) => v.trim().toLocaleLowerCase("es-CL") === option.trim().toLocaleLowerCase("es-CL"))
                     return (
-                      <button
+                      <Tooltip
                         key={option}
-                        aria-pressed={isSelected}
-                        type="button"
-                        onClick={() => {
-                          onMarkDirty()
-                          onUpdateAttrValues(attr.name, isSelected
-                            ? attr.values.filter((v) => v !== option)
-                            : singleVariant ? [option] : [...attr.values, option])
-                        }}
-                        className={`rounded-(--radius-sm) px-3 py-1.5 text-xs font-medium transition-colors ${
-                          isSelected
-                            ? "bg-[var(--color-primary)] text-white"
-                            : "bg-[var(--color-surface)] text-[var(--color-text-subtle)] border border-[var(--color-border)] hover:border-[var(--color-primary)]"
-                        }`}
+                        content={exists ? "Ya existe una variante con este valor en la familia" : undefined}
+                        side="top"
+                        delayDuration={300}
                       >
-                        {isSelected && "✓ "}{option}
-                      </button>
+                        <button
+                          aria-pressed={isSelected}
+                          type="button"
+                          disabled={exists}
+                          onClick={() => {
+                            onMarkDirty()
+                            onUpdateAttrValues(attr.name, isSelected
+                              ? attr.values.filter((v) => v !== option)
+                              : singleVariant ? [option] : [...attr.values, option])
+                          }}
+                          className={`rounded-(--radius-sm) px-3 py-1.5 text-xs font-medium transition-colors ${
+                            exists
+                              ? "cursor-not-allowed border border-dashed border-[var(--color-border)] text-[var(--color-text-faint)]"
+                              : isSelected
+                                ? "bg-[var(--color-primary)] text-white"
+                                : "bg-[var(--color-surface)] text-[var(--color-text-subtle)] border border-[var(--color-border)] hover:border-[var(--color-primary)]"
+                          }`}
+                        >
+                          {isSelected && "✓ "}{option}{exists && " · existe"}
+                        </button>
+                      </Tooltip>
                     )
                   })}
                 </div>
@@ -213,6 +239,12 @@ export function VariantGenerator({
                   attributeName={attr.name}
                   onAdd={(value) => {
                     if (attr.values.includes(value)) return
+                    // No permitir agregar a mano un valor que ya existe en la
+                    // familia: el chip ya está deshabilitado con ese aviso.
+                    const existsInFamily = existingOptions.some(
+                      (v) => v.trim().toLocaleLowerCase("es-CL") === value.trim().toLocaleLowerCase("es-CL"),
+                    )
+                    if (existsInFamily) return
                     onMarkDirty()
                     onUpdateAttrValues(attr.name, singleVariant ? [value] : [...attr.values, value])
                   }}

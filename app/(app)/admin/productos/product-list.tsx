@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TableRow, TableCell, TableCellNum } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { formatCLP, formatDateTime } from "@/lib/utils"
-import { toggleProductActive, getProductForEdit, bulkToggleProductActiveAction } from "./actions"
+import { toggleProductActive, getProductForEdit, getProductFamilyForAddVariant, bulkToggleProductActiveAction } from "./actions"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { getProductWarnings, getFamilyWarnings, type ProductAttributeSummary } from "./product-list.helpers"
 import type { AttributeTemplateOption, SizeFamilyOption, ProductUnitOption } from "./product-form.types"
@@ -77,7 +77,9 @@ export function ProductList({ products, categories, allSuppliers, units, templat
   // Product sheet state
   const [productSheetOpen, setProductSheetOpen] = React.useState(false)
   const [editProductFull,  setEditProductFull]  = React.useState<Awaited<ReturnType<typeof getProductForEdit>>>(null)
+  const [addVariantFamily, setAddVariantFamily] = React.useState<Awaited<ReturnType<typeof getProductFamilyForAddVariant>>>(null)
   const [loadingEditId,    setLoadingEditId]    = React.useState<string | null>(null)
+  const [loadingFamilyId,  setLoadingFamilyId]  = React.useState<string | null>(null)
   const [productFormKey,   setProductFormKey]   = React.useState(0)
   const [selectedVariantByFamily, setSelectedVariantByFamily] = React.useState<Record<string, string>>({})
   const [,                 startTransition]     = React.useTransition()
@@ -164,10 +166,30 @@ export function ProductList({ products, categories, allSuppliers, units, templat
       setLoadingEditId(null)
       if (product) {
         setEditProductFull(product)
+        setAddVariantFamily(null)
         setProductFormKey((key) => key + 1)
         setProductSheetOpen(true)
       } else {
         toast.error("No se pudo cargar el producto")
+      }
+    })
+  }
+
+  /** Abre el asistente en modo "añadir variante" para la familia de un
+   *  producto: pre-carga la identidad de la familia para que las variantes
+   *  nuevas nazcan dentro de ella (y no en una familia duplicada). */
+  function openAddVariant(familyId: string, fallbackLabel: string) {
+    setLoadingFamilyId(familyId)
+    startTransition(async () => {
+      const snapshot = await getProductFamilyForAddVariant(familyId)
+      setLoadingFamilyId(null)
+      if (snapshot) {
+        setEditProductFull(null)
+        setAddVariantFamily(snapshot)
+        setProductFormKey((key) => key + 1)
+        setProductSheetOpen(true)
+      } else {
+        toast.error(`No se pudo cargar la familia ${fallbackLabel}`)
       }
     })
   }
@@ -244,15 +266,27 @@ export function ProductList({ products, categories, allSuppliers, units, templat
               label={`producto ${p.name}`}
               onEdit={() => openEditProduct(p.id)}
               toggleAction={toggleAction}
-              editDisabled={loadingEditId === p.id}
+              editDisabled={loadingEditId === p.id || loadingFamilyId === p.familyId}
               editPending={loadingEditId === p.id}
             />
+            {p.familyId && (
+              <button
+                type="button"
+                onClick={() => openAddVariant(p.familyId!, family.name)}
+                disabled={loadingFamilyId === p.familyId}
+                className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-primary)] hover:bg-[var(--color-primary-tint)] transition-colors disabled:opacity-50"
+                title="Añadir variante (talla/color con stock propio)"
+                aria-label={`Añadir variante a ${family.name}`}
+              >
+                <Plus size={16} className={loadingFamilyId === p.familyId ? "animate-spin" : undefined} />
+              </button>
+            )}
           </div>
         </TableCell>
       </TableRow>
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedVariantByFamily, loadingEditId, selectedIds])
+  }, [selectedVariantByFamily, loadingEditId, loadingFamilyId, selectedIds])
 
   const renderMobileCard = React.useCallback((family: ProductFamilyRow) => {
     const p = selectedVariant(family)
@@ -323,14 +357,27 @@ export function ProductList({ products, categories, allSuppliers, units, templat
             label={`producto ${p.name}`}
             onEdit={() => openEditProduct(p.id)}
             toggleAction={toggleAction}
-            editDisabled={loadingEditId === p.id}
+            editDisabled={loadingEditId === p.id || loadingFamilyId === p.familyId}
             editPending={loadingEditId === p.id}
           />
+          {p.familyId && (
+            <button
+              type="button"
+              onClick={() => openAddVariant(p.familyId!, family.name)}
+              disabled={loadingFamilyId === p.familyId}
+              className="inline-flex h-8 items-center gap-1 rounded-[var(--radius-sm)] px-2 text-xs text-[var(--color-text-subtle)] hover:text-[var(--color-primary)] hover:bg-[var(--color-primary-tint)] transition-colors disabled:opacity-50"
+              title="Añadir variante (talla/color con stock propio)"
+              aria-label={`Añadir variante a ${family.name}`}
+            >
+              <Plus size={14} className={loadingFamilyId === p.familyId ? "animate-spin" : undefined} />
+              Variante
+            </button>
+          )}
         </div>
       </article>
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedVariantByFamily, loadingEditId, selectedIds])
+  }, [selectedVariantByFamily, loadingEditId, loadingFamilyId, selectedIds])
 
   return (
     <>
@@ -538,11 +585,12 @@ export function ProductList({ products, categories, allSuppliers, units, templat
       />
 
       <ProductForm
-        key={`${editProductFull?.id ?? "nuevo"}-${productFormKey}`}
+        key={`${editProductFull?.id ?? addVariantFamily?.id ?? "nuevo"}-${productFormKey}`}
         open={productSheetOpen}
         onClose={() => {
           setProductSheetOpen(false)
           setEditProductFull(null)
+          setAddVariantFamily(null)
         }}
         categories={categories.map((c) => ({ id: c.id, name: c.name, slug: c.slug, isEpp: c.isEpp, requiresPrevencion: c.requiresPrevencion }))}
         allSuppliers={allSuppliers}
@@ -550,6 +598,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
         templates={templates}
         sizeFamilies={sizeFamilies}
         editProduct={editProductFull}
+        addVariantToFamily={addVariantFamily}
       />
     </>
   )

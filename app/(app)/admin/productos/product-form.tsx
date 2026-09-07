@@ -20,11 +20,11 @@ import { VariantGenerator } from "./epp-variant-generator"
 import { VariantPreview } from "./epp-variant-preview"
 import {
   parseOptionsText, buildSingleVariantAttributes, generateVariantCombos, canAdvanceWizard, shouldShowConfirmClose, getStepAnimationClass,
-  pickPrimarySupplier, otherSuppliers, buildSuppliersForSubmit, mergeEditAttributes,
+  pickPrimarySupplier, otherSuppliers, buildSuppliersForSubmit, mergeEditAttributes, filterNewVariantCombos,
   ADVANCED_ATTRIBUTE_TYPES, blankAdvancedAttribute, setQuantityDriver, duplicateAttributeNames,
   normalizeProductAttributeName, type AdvancedAttributeType,
 } from "./product-form.helpers"
-import type { ProductFormProps, WizardStep, WizardGeneralState, WizardSupplierState, AttributeMultiValues, VariantCombo, SupplierRow, AttributeRow } from "./product-form.types"
+import type { ProductFormProps, ProductFormMode, WizardStep, WizardGeneralState, WizardSupplierState, AttributeMultiValues, VariantCombo, SupplierRow, AttributeRow } from "./product-form.types"
 
 const ADVANCED_TYPE_LABELS: Record<string, string> = {
   text: "Texto",
@@ -37,8 +37,15 @@ const VARIANT_LIMIT = 500
 /** Cantidad a partir de la cual se muestra una advertencia visual. */
 const VARIANT_WARN_AT = 400
 
-export function ProductForm({ open, onClose, categories, allSuppliers, units, templates, sizeFamilies, editProduct, variant = "sheet" }: ProductFormProps) {
-  const isEdit = !!editProduct
+export function ProductForm({ open, onClose, categories, allSuppliers, units, templates, sizeFamilies, editProduct, addVariantToFamily, variant = "sheet" }: ProductFormProps) {
+  // Un formulario hace una sola operación a la vez. El modo se deriva de las
+  // props: si viene una familia para "añadir variante" ese modo gana (un
+  // producto en edición nunca trae familia), si no, edición cuando hay
+  // producto y alta en el resto.
+  const mode: ProductFormMode = addVariantToFamily ? "addVariant" : editProduct ? "edit" : "create"
+  const isEdit = mode === "edit"
+  const isAddVariant = mode === "addVariant"
+  const family = addVariantToFamily ?? null
   const action = isEdit ? updateProduct : createProduct
 
   // ── Common form action state (for edit / single create) ────────────────────
@@ -72,6 +79,9 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
   }
 
   function handleClose() {
+    // En edición se cierra directo (los cambios no confirmados en un guardado
+    // de ítem existente son menos destructivos); en alta y en añadir-variante,
+    // si hay cambios sin guardar, se pregunta antes de descartar.
     const action = shouldShowConfirmClose(isDirty, isEdit, closingRef.current)
     if (action === "already-closing") {
       closingRef.current = false
@@ -93,37 +103,49 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
   const [stepDirection, setStepDirection] = React.useState<"forward" | "backward">("forward")
   const [step, setStep] = React.useState<WizardStep>(1)
   const [general, setGeneral] = React.useState<WizardGeneralState>({
-    categoryId: editProduct?.categoryId ?? "",
-    name: editProduct?.name ?? "",
+    categoryId: editProduct?.categoryId ?? family?.categoryId ?? "",
+    name: editProduct?.name ?? family?.canonicalName ?? "",
     description: editProduct?.description ?? "",
-    unitOfMeasure: editProduct?.unitOfMeasure ?? "unidad",
-    referencePrice: editProduct?.referencePrice != null ? String(editProduct.referencePrice) : "",
+    unitOfMeasure: editProduct?.unitOfMeasure ?? family?.unitOfMeasure ?? "unidad",
+    referencePrice: editProduct?.referencePrice != null ? String(editProduct.referencePrice) : family?.referencePrice != null ? String(family.referencePrice) : "",
     notes: editProduct?.notes ?? "",
-    isEpp: editProduct?.isEpp ?? false,
-    requiresPrevencion: editProduct?.requiresPrevencion ?? false,
+    isEpp: editProduct?.isEpp ?? family?.isEpp ?? false,
+    requiresPrevencion: editProduct?.requiresPrevencion ?? family?.requiresPrevencion ?? false,
     isService: editProduct?.isService ?? false,
     requiresWorker: editProduct?.requiresWorker ?? false,
     equipmentKind: editProduct?.equipmentKind ?? "",
-    isActive: editProduct?.isActive ?? true,
+    isActive: editProduct?.isActive ?? family?.isActive ?? true,
   })
   const [wizAttrs, setWizAttrs] = React.useState<AttributeMultiValues[]>(() => {
-    if (!editProduct) return []
-    return editProduct.attributes
-      .filter((a) => a.type === "select")
-      .map((a) => ({ name: a.name, type: "select" as const, values: parseOptionsText(a.options), sizeFamily: a.sizeFamily }))
+    if (editProduct) {
+      return editProduct.attributes
+        .filter((a) => a.type === "select")
+        .map((a) => ({ name: a.name, type: "select" as const, values: parseOptionsText(a.options), sizeFamily: a.sizeFamily }))
+    }
+    if (family) {
+      // En añadir-variante los ejes vienen de la familia pero con values vacíos:
+      // los valores ya existentes se ofrecen como opciones deshabilitadas (vía
+      // `existingValuesByAttr`), no preseleccionados — cada variante es única.
+      return family.attributes.map((a) => ({ name: a.name, type: "select" as const, values: [], sizeFamily: a.sizeFamily }))
+    }
+    return []
   })
   // Atributos que NO son ejes de variante: `text`/`number`/`integer`, incluido
   // el que gobierna la cantidad. El paso 2 es dueño de los `select`; este
   // estado es dueño del resto, así que los dos editores nunca tocan la misma
   // fila (ver `mergeEditAttributes`).
-  const [advAttrs, setAdvAttrs] = React.useState<AttributeRow[]>(() =>
-    editProduct?.attributes.filter((a) => a.type !== "select") ?? [],
-  )
+  const [advAttrs, setAdvAttrs] = React.useState<AttributeRow[]>(() => {
+    if (editProduct) return editProduct.attributes.filter((a) => a.type !== "select")
+    if (family) return family.advancedAttributes.map((a) => ({ ...a }))
+    return []
+  })
   const [variants, setVariants] = React.useState<VariantCombo[]>(() => {
-    if (!editProduct) return []
-    // On edit, reconstruct a single variant from the product's attributes
-    const attrs = editProduct.attributes.map((a) => ({ name: a.name, value: parseOptionsText(a.options).join(", ") }))
-    return [{ sku: editProduct.sku, name: editProduct.name, attributes: attrs }]
+    if (editProduct) {
+      // On edit, reconstruct a single variant from the product's attributes
+      const attrs = editProduct.attributes.map((a) => ({ name: a.name, value: parseOptionsText(a.options).join(", ") }))
+      return [{ sku: editProduct.sku, name: editProduct.name, attributes: attrs }]
+    }
+    return []
   })
   // The wizard's "Proveedor" step edits a single slot — the preferred
   // supplier if there is one, else the first. Every other supplier the
@@ -135,7 +157,7 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
     return otherSuppliers(initial, pickPrimarySupplier(initial))
   })
   const [supplier, setSupplier] = React.useState<WizardSupplierState>(() => {
-    const primary = pickPrimarySupplier(editProduct?.suppliers ?? [])
+    const primary = pickPrimarySupplier(editProduct?.suppliers ?? []) ?? family?.supplier ?? null
     return {
       supplierId: primary?.supplierId ?? "",
       unitPrice: primary?.unitPrice ?? "",
@@ -150,11 +172,24 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
     return [{ code: general.unitOfMeasure, label: `${general.unitOfMeasure} (heredada)`, isActive: false }, ...units]
   }, [units, general.unitOfMeasure])
 
+  /** Valores por eje que ya existen en la familia (modo añadir-variante): el
+   *  generador los pinta deshabilitados para que no se intente recrearlos. */
+  const existingValuesByAttr = React.useMemo(() => {
+    if (!family) return undefined
+    const map: Record<string, string[]> = {}
+    for (const attr of family.attributes) {
+      map[normalizeProductAttributeName(attr.name)] = attr.values
+    }
+    return map
+  }, [family])
+
   // ── Category change auto-detects EPP flags (only for new products) ────────
   function handleCategoryChange(id: string) {
     setVariants([])
     setGeneral((prev) => ({ ...prev, categoryId: id }))
-    if (isEdit) return
+    // En "añadir variante" la categoría viene fija de la familia y su plantilla
+    // ya se aplicó en el alta original: cambiarla no debe re-mezclar templates.
+    if (isEdit || isAddVariant) return
     const category = categories.find((c) => c.id === id)
     if (!category) return
     setGeneral((prev) => ({ ...prev, isEpp: category.isEpp ?? false, requiresPrevencion: category.requiresPrevencion ?? false }))
@@ -270,7 +305,19 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
     // Use setTimeout to yield to React so the loading state renders before computation
     setTimeout(() => {
       const combos = generateVariantCombos(general.name, wizAttrs)
-      setVariants(combos)
+      // En "añadir variante" las combinaciones que ya existen en la familia no
+      // deben ofrecerse: cada variante es un producto con historial.
+      if (family) {
+        const { kept, removed } = filterNewVariantCombos(combos, family.existingVariantKeys)
+        setVariants(kept)
+        if (combos.length > 0 && kept.length === 0) {
+          setStepError("Las combinaciones que seleccionaste ya existen en la familia. Elige otro valor.")
+        } else if (removed.length > 0) {
+          setStepError(`Se omitió ${removed.length} combinación${removed.length === 1 ? "" : "es"} que ya existía en la familia.`)
+        }
+      } else {
+        setVariants(combos)
+      }
       setGeneratingVariants(false)
     }, 0)
     return true
@@ -311,8 +358,14 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
     if (generatingVariants || batchPending) { event.preventDefault(); return }
 
     // ── Batch path: intercept and call createProductVariantBatch directly ──
-    if (!isEdit && variants.length > 1) {
+    // El modo "añadir variante" siempre pasa por el lote, aunque genere una
+    // sola variante nueva: el alta individual crearía otra familia por nombre.
+    if ((!isEdit && variants.length > 1) || isAddVariant) {
       event.preventDefault()
+      if (isAddVariant && variants.length === 0) {
+        setStepError("Selecciona un valor nuevo para la variante que quieres añadir.")
+        return
+      }
       setBatchPending(true)
       const input: ProductVariantBatchInput = {
         categoryId: general.categoryId,
@@ -344,6 +397,11 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
         supplier: supplier.hasSupplier && supplier.supplierId
           ? { supplierId: supplier.supplierId, unitPrice: supplier.unitPrice ? parseFloat(supplier.unitPrice) : null, notes: supplier.notes || undefined }
           : undefined,
+        // Modo añadir-variante: la familia destino y sus combinaciones ya
+        // existentes. `familyId` hace que la acción reutilice la familia en vez
+        // de resolver/crear otra por nombre; `existingVariantKeys` es la red de
+        // seguridad del lado servidor contra duplicados.
+        ...(isAddVariant && family ? { familyId: family.id, existingVariantKeys: family.existingVariantKeys } : {}),
       }
       try {
         const result = await createProductVariantBatch(input)
@@ -380,7 +438,9 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
             )}
 
             <Field label="Categoría" htmlFor="p-cat" required error={state.fieldErrors?.categoryId?.[0]}>
-              <Select value={general.categoryId} onValueChange={(id) => { markDirty(); handleCategoryChange(id) }}>
+              {/* En añadir-variante la categoría la define la familia: cambiarla
+                  aquí separaría las variantes nuevas de la familia. */}
+              <Select value={general.categoryId} disabled={isAddVariant} onValueChange={(id) => { markDirty(); handleCategoryChange(id) }}>
                 <SelectTrigger id="p-cat" error={!!state.fieldErrors?.categoryId}>
                   <SelectValue placeholder="Seleccionar..." />
                 </SelectTrigger>
@@ -396,10 +456,16 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
               <Input
                 id="p-name"
                 value={general.name}
+                disabled={isAddVariant}
                 onChange={(e) => { markDirty(); setVariants([]); setGeneral((p) => ({ ...p, name: e.target.value })) }}
                 placeholder="Casco de seguridad blanco clase A"
                 error={!!state.fieldErrors?.name}
               />
+              {isAddVariant && (
+                <span className="mt-1 block text-xs text-[var(--color-text-muted)]">
+                  Nombre de la familia: las variantes se crearán como «{general.name} &lt;talla/color&gt;».
+                </span>
+              )}
             </Field>
 
             <Field label="Descripción" htmlFor="p-desc">
@@ -599,6 +665,13 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
                 </Button>
               </div>
             </details>
+            {/* En "añadir variante" el editor avanzado no aplica: las variantes
+                nuevas nacen copiando los atributos no-`select` de la familia. */}
+            {isAddVariant && (
+              <p className="rounded-(--radius) border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
+                Las variantes nuevas heredan los atributos de la familia ({submittableAdvAttrs.length} avanzado{submittableAdvAttrs.length === 1 ? "" : "s"}). Si necesitas cambiarlos, edita la ficha de la familia.
+              </p>
+            )}
           </FieldGroup>
         )
 
@@ -618,7 +691,10 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
               variantLimit={VARIANT_LIMIT}
               variantWarnAt={VARIANT_WARN_AT}
               onMarkDirty={markDirty}
+              existingValuesByAttr={existingValuesByAttr}
             />
+            {/* En edición el preview no aplica (se guarda una sola variante); en
+                alta y en añadir-variante sí, para ver qué se va a crear. */}
             {!isEdit && <VariantPreview
               variants={variants}
               onRemove={removeVariant}
@@ -631,7 +707,11 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
         return (
           <FieldGroup className="gap-4">
             <p className="text-sm text-[var(--color-text-muted)]">
-              Asocia un proveedor preferido al producto{isEdit ? "" : `. ${variants.length > 1 ? `El proveedor se asignará a las ${variants.length} variantes.` : ""}`}
+              {isEdit
+                ? "Asocia un proveedor preferido al producto."
+                : isAddVariant
+                  ? `Asocia un proveedor a la${variants.length > 1 ? "s" : ""} variante${variants.length > 1 ? "s" : ""} nueva${variants.length > 1 ? "s" : ""}.${variants.length > 1 ? ` Se asignará a las ${variants.length} variantes.` : ""}`
+                  : `Asocia un proveedor preferido al producto.${variants.length > 1 ? ` El proveedor se asignará a las ${variants.length} variantes.` : ""}`}
             </p>
 
             <div className="flex items-center gap-3">
@@ -698,10 +778,16 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
-  const title = isEdit ? `Editar: ${editProduct!.name}` : "Nuevo producto"
+  const title = isEdit
+    ? `Editar: ${editProduct!.name}`
+    : isAddVariant
+      ? `Añadir variante a ${family?.canonicalName ?? "la familia"}`
+      : "Nuevo producto"
   const description = isEdit
     ? `Modificar SKU ${editProduct!.sku}`
-    : "Registra un nuevo producto en el catálogo"
+    : isAddVariant
+      ? "Crea una nueva talla, color u otra variante con stock independiente dentro de la misma familia."
+      : "Registra un nuevo producto en el catálogo"
 
   const formContent = (
     <form action={formAction} onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
@@ -818,9 +904,13 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
             <Button type="button" variant="ghost" onClick={prevStep}>
               <ArrowLeft size={14} className="mr-1" /> Anterior
             </Button>
-            {variants.length > 1 ? (
-              <Button key="wizard-submit-batch" type="submit" disabled={batchPending}>
-                {batchPending ? "Creando productos..." : `Crear ${variants.length} productos`}
+            {variants.length > 1 || isAddVariant ? (
+              <Button key="wizard-submit-batch" type="submit" disabled={batchPending || variants.length === 0}>
+                {batchPending
+                  ? "Creando..."
+                  : isAddVariant
+                    ? `Crear ${variants.length} variante${variants.length === 1 ? "" : "s"}`
+                    : `Crear ${variants.length} productos`}
               </Button>
             ) : (
               <SubmitButton key="wizard-submit-single" label="Crear producto" loadingLabel="Creando..." />
