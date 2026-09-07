@@ -18,10 +18,37 @@ const RETIRED_PERMISSION_NAMES = [
 /**
  * Idempotently seeds system roles/permissions. Accepts an optional transaction
  * executor so callers (e.g. the bootstrap registration) can run it atomically
- * within their own transaction — passing `tx` also avoids re-entering the
- * connection on single-connection setups (pglite tests).
+ * within their own transaction — passing `tx` también evita reentrar en la
+ * conexión en montajes de una sola conexión (tests con pglite).
+ *
+ * **`defaultGrants` son defaults, no estado impuesto.** Los grants de un
+ * manifiesto se aplican únicamente la primera vez que aparecen: cuando el
+ * permiso es nuevo en esta BD, o cuando el rol es nuevo. De ahí en adelante,
+ * quien manda es lo que haya en la BD, así que lo que un administrador ajuste
+ * en `/admin/roles` sobrevive a los deploys.
+ *
+ * Antes esta función borraba **todos** los grants de los 15 roles del sistema y
+ * los reinsertaba desde los manifiestos, así que cada `deploy:prod` revertía en
+ * silencio cualquier ajuste hecho por la UI —que no advertía nada—.
+ *
+ * Consecuencias que hay que tener presentes:
+ * - Cambiar el `defaultGrants` de un permiso que **ya existe** en producción no
+ *   se propaga solo: hay que replicarlo en `/admin/roles` (o retirar el permiso
+ *   vía `RETIRED_PERMISSION_NAMES` y volver a introducirlo).
+ * - Quitar un permiso del manifiesto sin listarlo en `RETIRED_PERMISSION_NAMES`
+ *   deja sus grants vivos en la BD. Esa lista es la vía explícita para retirar.
  */
 export async function ensureSystemRbac(executor: typeof db | Tx = db) {
+  // Qué existía ANTES de este upsert: es lo que distingue "primera vez que
+  // este permiso/rol aparece" (aplicar sus defaults) de "ya estaba, la BD
+  // manda" (no tocar sus grants).
+  const existingRoleIds = new Set(
+    (await executor.select({ id: roles.id }).from(roles)).map((row) => row.id),
+  )
+  const existingPermissionIds = new Set(
+    (await executor.select({ id: permissions.id }).from(permissions)).map((row) => row.id),
+  )
+
   for (const role of SYSTEM_ROLES) {
     await executor.insert(roles).values(role).onConflictDoUpdate({
       target: roles.id,
@@ -58,8 +85,18 @@ export async function ensureSystemRbac(executor: typeof db | Tx = db) {
     await executor.delete(permissions).where(inArray(permissions.id, retiredPermissionIds))
   }
 
-  await executor.delete(rolePermissions).where(inArray(rolePermissions.roleId, SYSTEM_ROLES.map((role) => role.id)))
-  await executor.insert(rolePermissions).values(SYSTEM_ROLE_PERMISSIONS)
+  // Solo los grants estrenados en esta corrida. Un permiso nuevo lleva sus
+  // defaults a todos los roles que lo declaran, y un rol nuevo estrena todos
+  // los suyos (si no, un rol recién agregado al manifiesto nacería sin
+  // permisos, porque los que le tocan ya existían en la BD).
+  const grantsToSeed = SYSTEM_ROLE_PERMISSIONS.filter((grant) =>
+    !existingPermissionIds.has(grant.permissionId) || !existingRoleIds.has(grant.roleId),
+  )
+  if (grantsToSeed.length > 0) {
+    // `onConflictDoNothing` porque el par pudo quedar a medio sembrar por una
+    // corrida anterior interrumpida: sembrar de nuevo no debe fallar.
+    await executor.insert(rolePermissions).values(grantsToSeed).onConflictDoNothing()
+  }
 }
 
 export async function getUserCount() {

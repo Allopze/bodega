@@ -8,7 +8,10 @@
  *   npm run db:sync-rbac                 # usa .env.local
  *   tsx --env-file=.env.prod scripts/sync-rbac.ts   # otra BD
  *
- * Es idempotente (upserts + reemplazo de grants de roles del sistema).
+ * Es idempotente: hace upsert de roles y permisos, y siembra los
+ * `defaultGrants` únicamente de lo que sea nuevo en esa BD. **No** reemplaza los
+ * grants existentes, así que lo que un administrador haya ajustado en
+ * `/admin/roles` sobrevive a este script y a cada deploy.
  */
 import { ensureSystemRbac } from "@/lib/auth/bootstrap"
 

@@ -686,7 +686,7 @@ services:
       - DTE_SETTINGS_MODE=${DTE_SETTINGS_MODE:-compat}
     volumes:
       - bodega-storage:/data/storage:ro
-    command: ["node", "scripts/migrate-sst-to-cloudreve.mjs"]
+    command: ["node", "scripts/migrate-sst-to-cloudreve.cjs"]
 
   # One-shot de sólo lectura: dimensiona el rescate del detalle de combustible
   # (odómetro por transacción) y la deriva del ledger. No escribe nada — la

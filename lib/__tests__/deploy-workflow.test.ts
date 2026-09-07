@@ -231,6 +231,19 @@ describe("deploy workflow", () => {
     expect(compose).toContain('command: ["node", "scripts/reconcile-pdtp-fulfillment-events.cjs"]')
   })
 
+  it("emits the Sentry-dependent SST migrator as CommonJS", () => {
+    const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
+    const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
+    const build = dockerfile.match(
+      /RUN \.\/node_modules\/\.bin\/esbuild scripts\/migrate-sst-to-cloudreve\.ts[\s\S]*?--outfile=\/tmp\/migrate-sst-to-cloudreve\.cjs/,
+    )?.[0]
+
+    expect(build).toBeDefined()
+    expect(build).toContain("--format=cjs")
+    expect(dockerfile).toContain("/tmp/migrate-sst-to-cloudreve.cjs ./scripts/migrate-sst-to-cloudreve.cjs")
+    expect(compose).toContain('command: ["node", "scripts/migrate-sst-to-cloudreve.cjs"]')
+  })
+
   it("emits the ExcelJS-dependent emergency seed as CommonJS", () => {
     const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
     const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")

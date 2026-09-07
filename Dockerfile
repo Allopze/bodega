@@ -247,11 +247,11 @@ RUN ./node_modules/.bin/esbuild scripts/reparse-dte-order-refs.ts \
 RUN ./node_modules/.bin/esbuild scripts/migrate-sst-to-cloudreve.ts \
     --bundle \
     --platform=node \
-    --format=esm \
+    --format=cjs \
     --external:drizzle-orm \
     --external:drizzle-orm/* \
     --external:postgres \
-    --outfile=/tmp/migrate-sst-to-cloudreve.mjs
+    --outfile=/tmp/migrate-sst-to-cloudreve.cjs
 
 # Descarga del espacio SST desde el backend activo para el backup. No toca la
 # BD: externaliza sólo postgres por consistencia con el resto (aunque no lo use)
@@ -385,7 +385,7 @@ COPY --from=build /tmp/invoice-reconciliation/backfill-purchase-invoice-reconcil
 COPY --from=build /tmp/invoice-reconciliation/rollback-purchase-invoice-reconciliation-statuses.mjs ./scripts/rollback-purchase-invoice-reconciliation-statuses.mjs
 COPY --from=build /tmp/backfill-dte-order-refs.mjs ./scripts/backfill-dte-order-refs.mjs
 COPY --from=build /tmp/reparse-dte-order-refs.mjs ./scripts/reparse-dte-order-refs.mjs
-COPY --from=build /tmp/migrate-sst-to-cloudreve.mjs ./scripts/migrate-sst-to-cloudreve.mjs
+COPY --from=build /tmp/migrate-sst-to-cloudreve.cjs ./scripts/migrate-sst-to-cloudreve.cjs
 COPY --from=build /tmp/download-sst-documents.mjs ./scripts/download-sst-documents.mjs
 COPY --from=build /tmp/fuel/backfill-fuel-meter-readings.mjs ./scripts/backfill-fuel-meter-readings.mjs
 COPY --from=build /tmp/fuel/seed-fuel-anomaly-rules.mjs ./scripts/seed-fuel-anomaly-rules.mjs

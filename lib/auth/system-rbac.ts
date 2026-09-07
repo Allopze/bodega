@@ -9,6 +9,15 @@
  *   1. Create the manifest with `permissions`, `permissionMeta`, and `defaultGrants`
  *   2. Register it in `modules/registry.ts`
  *   3. Done. The auth bootstrap and admin UI pick them up automatically.
+ *
+ * `defaultGrants` significa lo que dice: son los grants **iniciales** de un
+ * permiso, no su estado impuesto. `ensureSystemRbac` los aplica solo la primera
+ * vez que el permiso (o el rol) aparece en una BD; después manda lo que haya en
+ * la BD, para que los ajustes hechos en `/admin/roles` sobrevivan a los deploys.
+ *
+ * Por eso, cambiar el `defaultGrants` de un permiso **ya desplegado** no se
+ * propaga solo: hay que replicarlo en `/admin/roles`. Para retirar un permiso,
+ * la vía explícita es `RETIRED_PERMISSION_NAMES` en `lib/auth/bootstrap.ts`.
  */
 import { permissions, rolePermissions, roles } from "../../db/schema"
 import { registry } from "../../modules/registry"
