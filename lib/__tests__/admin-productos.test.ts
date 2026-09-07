@@ -45,7 +45,7 @@ const mockUpdateSet = vi.fn(() => ({ where: mockUpdateSetWhere }))
 const mockDb = {
   query: {
     productCategories: { findFirst: vi.fn() },
-    products: { findFirst: vi.fn() },
+    products: { findFirst: vi.fn(), findMany: vi.fn() },
     eppProductFamilies: { findFirst: vi.fn() },
   },
   // Estaba anidado dentro de `query` por error: nadie lo llamaba desde ahí, así
@@ -94,6 +94,8 @@ describe("admin/productos actions", () => {
     mockRecordAudit.mockResolvedValue(undefined)
     mockDb.query.productCategories.findFirst.mockResolvedValue(null)
     mockDb.query.products.findFirst.mockResolvedValue(null)
+    mockDb.query.products.findMany.mockResolvedValue([])
+    mockDb.query.eppProductFamilies.findFirst.mockResolvedValue(null)
   })
 
   // ── createCategory ─────────────────────────────────────────────────────
@@ -403,7 +405,7 @@ describe("admin/productos actions", () => {
       expect(mockDb.transaction).toHaveBeenCalled()
       expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
         action: "create", entityType: "product",
-        newState: { familyName: "Casco de seguridad", variantCount: 2 },
+        newState: { familyName: "Casco de seguridad", familyId: null, variantCount: 2 },
       }))
     })
 
@@ -471,6 +473,56 @@ describe("admin/productos actions", () => {
         reason: "Creación por asistente EPP",
       }))
       expect(insertedSkus[0]).toMatch(/^EPP-/)
+    })
+
+    it("reutiliza la familia existente cuando llega familyId (modo añadir-variante)", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("admin:products"))
+      mockDb.query.productCategories.findFirst.mockResolvedValue({ id: "cat-epp", name: "EPP", slug: "epp" })
+      // La familia existe y NO debe volver a crearse por nombre.
+      mockDb.query.eppProductFamilies.findFirst.mockResolvedValue({ id: "fam-existente", canonicalName: "Lente de seguridad", categoryId: "cat-epp" })
+      // Ninguna variante existente con ese color todavía.
+      mockDb.query.products.findMany.mockResolvedValue([
+        { id: "p-1", sku: "EPP-001", productAttributes: [{ id: "pa-1", name: "Color", type: "select", options: JSON.stringify(["Negro"]) }] },
+      ])
+
+      const { createProductVariantBatch } = await import("@/app/(app)/admin/productos/actions")
+      const r = await createProductVariantBatch({
+        ...VALID_INPUT,
+        familyName: "Lente de seguridad",
+        familyId: "fam-existente",
+        variants: [{ name: "Lente de seguridad Azul", attributes: [{ name: "Color", value: "Azul" }] }],
+        existingVariantKeys: [JSON.stringify([["color", "negro"]])],
+      })
+
+      expect(r.ok).toBe(true)
+      // `ensureEppFamilyTx` no debe haberse llamado: la familia se reutiliza.
+      expect(mockDb.query.eppProductFamilies.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.anything() }))
+      // El audit distingue la adición sobre familia existente.
+      expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
+        entityId: "family_fam-existente",
+        reason: "Adición de variantes a familia existente",
+      }))
+    })
+
+    it("rechaza crear una combinación que ya existe en la familia", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("admin:products"))
+      mockDb.query.productCategories.findFirst.mockResolvedValue({ id: "cat-epp", name: "EPP", slug: "epp" })
+      mockDb.query.eppProductFamilies.findFirst.mockResolvedValue({ id: "fam-existente", canonicalName: "Lente de seguridad", categoryId: "cat-epp" })
+      mockDb.query.products.findMany.mockResolvedValue([
+        { id: "p-1", sku: "EPP-001", productAttributes: [{ id: "pa-1", name: "Color", type: "select", options: JSON.stringify(["Azul"]) }] },
+      ])
+
+      const { createProductVariantBatch } = await import("@/app/(app)/admin/productos/actions")
+      const r = await createProductVariantBatch({
+        ...VALID_INPUT,
+        familyName: "Lente de seguridad",
+        familyId: "fam-existente",
+        variants: [{ name: "Lente de seguridad Azul", attributes: [{ name: "Color", value: "Azul" }] }],
+        existingVariantKeys: [],
+      })
+
+      expect(r.ok).toBe(false)
+      expect(r.message).toContain("ya existe en la familia")
     })
   })
 })

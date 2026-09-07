@@ -15,6 +15,8 @@ import {
   buildSuppliersForSubmit,
   mergeEditAttributes,
   buildSingleVariantAttributes,
+  variantComboKey,
+  filterNewVariantCombos,
 } from "./product-form.helpers"
 import type { SupplierRow, AttributeRow, AttributeMultiValues, WizardGeneralState, WizardCloseAction } from "./product-form.types"
 
@@ -22,6 +24,42 @@ describe("product form attribute helpers", () => {
   it("normalizes accents, case and whitespace for attribute identity", () => {
     expect(normalizeProductAttributeName("  TALLA   calzado ")).toBe("talla calzado")
     expect(normalizeProductAttributeName("Tállá calzado")).toBe("talla calzado")
+  })
+})
+
+// ── variantComboKey / filterNewVariantCombos (modo añadir-variante) ──────────
+
+describe("variantComboKey / filterNewVariantCombos", () => {
+  it("variantComboKey ordena por nombre normalizado para que el orden no importe", () => {
+    const a = variantComboKey([{ name: "Color", value: "Azul" }, { name: "Talla", value: "M" }])
+    const b = variantComboKey([{ name: "Talla", value: "M" }, { name: "Color", value: "Azul" }])
+    expect(a).toBe(b)
+    expect(a).toContain("color")
+    expect(a).toContain("Azul")
+  })
+
+  it("filtra las combinaciones que ya existen en la familia y devuelve las nuevas", () => {
+    const combos = [
+      { sku: "", name: "Lente Azul", attributes: [{ name: "Color", value: "Azul" }] },
+      { sku: "", name: "Lente Verde", attributes: [{ name: "Color", value: "Verde" }] },
+    ]
+    const existing = [variantComboKey([{ name: "Color", value: "Azul" }])]
+    const { kept, removed } = filterNewVariantCombos(combos, existing)
+
+    expect(kept).toHaveLength(1)
+    expect(kept[0]!.name).toBe("Lente Verde")
+    expect(removed).toHaveLength(1)
+    expect(removed[0]!.name).toBe("Lente Azul")
+  })
+
+  it("no descarta combinaciones cuando no hay existentes", () => {
+    const combos = [
+      { sku: "", name: "Lente Azul", attributes: [{ name: "Color", value: "Azul" }] },
+      { sku: "", name: "Lente Verde", attributes: [{ name: "Color", value: "Verde" }] },
+    ]
+    const { kept, removed } = filterNewVariantCombos(combos, [])
+    expect(kept).toHaveLength(2)
+    expect(removed).toHaveLength(0)
   })
 })
 

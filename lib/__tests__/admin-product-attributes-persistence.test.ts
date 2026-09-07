@@ -235,6 +235,67 @@ describe("createProductVariantBatch conserva lo que el formulario declara", () =
       expect(attrs[0]!.sizeFamily).toBe("guantes")    // el payload `attributes` era carga muerta
     }
   })
+
+  it("añade variantes a una familia existente sin duplicarla y sin recrear combinaciones", async () => {
+    // 1. Familia con un lente "Negro" ya creado.
+    const familyId = nanoid()
+    const identityKey = nanoid()
+    await inMemoryDb.insert(schema.eppProductFamilies).values({
+      id: familyId, categoryId, canonicalName: "Lente de seguridad", identityKey,
+    })
+    const negroId = nanoid()
+    await inMemoryDb.insert(schema.products).values({
+      id: negroId, sku: `EPP-${nanoid(6).toUpperCase()}`, name: "Lente de seguridad Negro",
+      categoryId, familyId, unitOfMeasure: "unidad", isEpp: true, isActive: true,
+    })
+    await inMemoryDb.insert(schema.productAttributes).values({
+      id: nanoid(), productId: negroId, name: "Color", type: "select", options: '["Negro"]', sortOrder: 0,
+    })
+
+    // 2. Modo añadir-variante: mismo canonicalName + familyId, color nuevo.
+    const result = await createProductVariantBatch({
+      categoryId,
+      familyName: "Lente de seguridad",
+      familyId,
+      unitOfMeasure: "unidad",
+      isEpp: true,
+      isActive: true,
+      attributes: [
+        { name: "Color", type: "select", options: JSON.stringify(["Negro", "Azul"]), sortOrder: 0 },
+      ],
+      variants: [
+        { name: "Lente de seguridad Azul", attributes: [{ name: "Color", value: "Azul" }] },
+      ],
+    })
+
+    expect(result.ok).toBe(true)
+
+    // La familia no se duplicó y los dos productos cuelgan de ella.
+    const families = await inMemoryDb.select().from(schema.eppProductFamilies)
+      .where(eq(schema.eppProductFamilies.identityKey, identityKey))
+    expect(families).toHaveLength(1)
+    const byFamily = await inMemoryDb.select().from(schema.products)
+      .where(eq(schema.products.familyId, familyId))
+    expect(byFamily).toHaveLength(2)
+
+    // 3. Reintentar la MISMA combinación debe fallar (no duplicar).
+    const dup = await createProductVariantBatch({
+      categoryId,
+      familyName: "Lente de seguridad",
+      familyId,
+      unitOfMeasure: "unidad",
+      isEpp: true,
+      isActive: true,
+      attributes: [
+        { name: "Color", type: "select", options: JSON.stringify(["Azul"]), sortOrder: 0 },
+      ],
+      variants: [
+        { name: "Lente de seguridad Azul", attributes: [{ name: "Color", value: "Azul" }] },
+      ],
+    })
+    expect(dup.ok).toBe(false)
+    expect(dup.message).toContain("ya existe")
+  })
 })
 
 describe("editor de atributos avanzados: el driver de cantidad llega a la BD", () => {
