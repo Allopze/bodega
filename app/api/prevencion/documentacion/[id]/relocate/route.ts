@@ -4,6 +4,8 @@ import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { relocateGeneralDocumentToSensitiveDomain } from "@/lib/services/prevention-sensitive-files"
+import { safeActionMessage } from "@/lib/action-error"
+import { logger } from "@/lib/logger"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -50,7 +52,8 @@ export async function POST(request: Request, context: RouteContext) {
     })
     return NextResponse.json({ relocation }, { status: 201, headers: { "Cache-Control": "private, no-store" } })
   } catch (error) {
-    const message = error instanceof Error ? error.message : "No se pudo reubicar el expediente."
+    logger.error("[documentacion/relocate]", error)
+    const message = safeActionMessage(error, "No se pudo reubicar el expediente.")
     return NextResponse.json({ error: message }, { status: 400, headers: { "Cache-Control": "private, no-store" } })
   }
 }

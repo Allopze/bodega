@@ -21,6 +21,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getOperationalSnapshotHealth } from "@/lib/services/operational-metric-snapshots"
 import { logger } from "@/lib/logger"
+import { safeActionMessage } from "@/lib/action-error"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
 
 export const runtime = "nodejs"
@@ -91,7 +92,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   } catch (err) {
     logger.error("[cron/operational-snapshot-health] Fatal error", err)
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Unknown error" },
+      { error: safeActionMessage(err, "Unknown error") },
       { status: 500 },
     )
   }

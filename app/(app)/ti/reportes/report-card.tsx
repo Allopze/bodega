@@ -15,6 +15,9 @@ interface ReportCardProps {
   enabled: boolean
 }
 
+/** Centinela del placeholder: `Select` de Radix no admite un item con valor "". */
+const NONE = "_none"
+
 export function ReportCard({ type, title, description, needsAsset, assets, enabled }: ReportCardProps) {
   const [assetId, setAssetId] = React.useState("")
 
@@ -30,12 +33,14 @@ export function ReportCard({ type, title, description, needsAsset, assets, enabl
 
       {needsAsset && (
         <div className="mt-3">
-          <Select value={assetId || "_none"} onValueChange={setAssetId}>
+          {/* El centinela vuelve a "" al seleccionarlo: guardarlo tal cual
+              habilitaba el botón y exportaba con un id inexistente. */}
+          <Select value={assetId || NONE} onValueChange={(v) => setAssetId(v === NONE ? "" : v)}>
             <SelectTrigger aria-label="Activo para historial" className="h-9 w-full text-xs">
               <SelectValue placeholder="Selecciona un activo" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="_none">Selecciona un activo</SelectItem>
+              <SelectItem value={NONE}>Selecciona un activo</SelectItem>
               {assets.map((a) => <SelectItem key={a.id} value={a.id}>{a.code}</SelectItem>)}
             </SelectContent>
           </Select>

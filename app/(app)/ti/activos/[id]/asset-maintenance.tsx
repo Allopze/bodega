@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { IT_MAINTENANCE_TYPE_META } from "@/lib/services/ti/constants"
 import { MaintenanceSheet } from "../../mantenciones/maintenance-sheet"
+import { VoidMaintenanceDialog } from "../../mantenciones/void-maintenance-dialog"
 
 interface MaintenanceRow {
   id: string
@@ -24,6 +25,9 @@ interface MaintenanceRow {
   technicianUserId: string | null
   technicianUserName: string | null
   observations: string | null
+  voidedAt: string | null
+  voidReason: string | null
+  voidedByUserName: string | null
 }
 
 interface AssetMaintenanceProps {
@@ -34,8 +38,12 @@ interface AssetMaintenanceProps {
 }
 
 export function AssetMaintenance({ assetId, rows, canManage, suppliers }: AssetMaintenanceProps) {
-  const totalCost = rows.reduce((sum, row) => sum + Number(row.cost ?? 0), 0)
-  const lastDate = rows.length > 0 ? rows[0]!.date : null
+  // Los agregados solo cuentan mantenciones vigentes: sumar las anuladas
+  // contradeciría el `maintenanceCost` que `getAssetById` ya calcula excluyéndolas
+  // en la misma pantalla (pestaña Resumen).
+  const vigentes = rows.filter((row) => !row.voidedAt)
+  const totalCost = vigentes.reduce((sum, row) => sum + Number(row.cost ?? 0), 0)
+  const lastDate = vigentes.length > 0 ? vigentes[0]!.date : null
 
   return (
     <div className="space-y-4">
@@ -43,7 +51,7 @@ export function AssetMaintenance({ assetId, rows, canManage, suppliers }: AssetM
         <div className="flex gap-8">
           <div>
             <p className="text-xs text-[var(--color-text-muted)]">Mantenciones</p>
-            <p className="font-mono text-xl font-bold text-[var(--color-text)]">{rows.length}</p>
+            <p className="font-mono text-xl font-bold text-[var(--color-text)]">{vigentes.length}</p>
           </div>
           <div>
             <p className="text-xs text-[var(--color-text-muted)]">Costo acumulado</p>
@@ -70,23 +78,34 @@ export function AssetMaintenance({ assetId, rows, canManage, suppliers }: AssetM
         />
       ) : (
         rows.map((row) => (
-          <article key={row.id} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
+          <article key={row.id} className={`rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs ${row.voidedAt ? "opacity-70" : ""}`}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <MetaBadge meta={{ label: IT_MAINTENANCE_TYPE_META[row.type] ?? row.type, variant: "warning" }} />
                 <span className="text-xs text-[var(--color-text-muted)]">{formatDate(row.date)}</span>
+                {row.voidedAt && (
+                  <MetaBadge meta={{ label: "Anulada", variant: "danger" }} />
+                )}
               </div>
               <div className="flex items-center gap-3">
-                <span className="font-mono text-sm font-semibold text-[var(--color-text)]">{formatCLP(Number(row.cost ?? 0))}</span>
-                {canManage && (
-                  <MaintenanceSheet
-                    trigger={<Button type="button" variant="link" size="sm">Editar</Button>}
-                    suppliers={suppliers}
-                    editMaintenance={row}
-                  />
+                <span className={`font-mono text-sm font-semibold text-[var(--color-text)] ${row.voidedAt ? "line-through" : ""}`}>{formatCLP(Number(row.cost ?? 0))}</span>
+                {!row.voidedAt && canManage && (
+                  <>
+                    <MaintenanceSheet
+                      trigger={<Button type="button" variant="link" size="sm">Editar</Button>}
+                      suppliers={suppliers}
+                      editMaintenance={row}
+                    />
+                    <VoidMaintenanceDialog maintenanceId={row.id} assetCode={row.assetCode} date={formatDate(row.date)} cost={Number(row.cost ?? 0)} />
+                  </>
                 )}
               </div>
             </div>
+            {row.voidedAt && (
+              <p className="mt-2 text-xs text-[var(--color-text-subtle)]">
+                Anulada por {row.voidedByUserName ?? "—"}{row.voidReason ? `: ${row.voidReason}` : ""}
+              </p>
+            )}
 
             <dl className="mt-3 space-y-2 text-sm">
               {row.reportedIssue && (

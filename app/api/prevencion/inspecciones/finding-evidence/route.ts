@@ -8,6 +8,7 @@ import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { MimeType, validateFileBuffer } from "@/lib/file-validation"
 import { logger } from "@/lib/logger"
+import { safeActionMessage } from "@/lib/action-error"
 import { addFindingEvidence, assertFindingEvidenceUploadAllowed, assertInspectionOperationEnabled } from "@/lib/services/prevention-inspections"
 import { generateStorageName } from "@/lib/services/prevention-documents/utils"
 import { createInspectionEvidencePath, resolveInspectionEvidenceDir } from "@/lib/storage/config"
@@ -56,6 +57,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ id: created.id, path: created.path, caption: created.caption }, { status: 201 })
   } catch (error) {
     logger.error("[inspecciones/finding-evidence]", error)
-    return NextResponse.json({ error: error instanceof Error ? error.message : "No se pudo subir la evidencia." }, { status: 400 })
+    return NextResponse.json({ error: safeActionMessage(error, "No se pudo subir la evidencia.") }, { status: 400 })
   }
 }

@@ -13,7 +13,14 @@ interface HistoryRow {
 interface AssetHistoryProps {
   assetId: string
   rows: HistoryRow[]
-  retirements: { id: string; date: string; reason: string; destination: string | null }[]
+  retirements: {
+    id: string
+    date: string
+    reason: string
+    destination: string | null
+    reversedAt?: string | null
+    reversedByName?: string | null
+  }[]
 }
 
 const ACTION_LABELS: Record<string, string> = {
@@ -23,11 +30,13 @@ const ACTION_LABELS: Record<string, string> = {
   status_changed: "Cambio de estado",
   edited: "Edición",
   maintenance: "Mantención",
+  maintenance_voided: "Mantención anulada",
   ticket: "Ticket",
   document: "Documento",
   photo: "Fotografía",
   warranty: "Garantía",
   retired: "Baja",
+  retirement_reversed: "Baja revertida",
 }
 
 const ACTION_DOT: Record<string, string> = {
@@ -37,11 +46,13 @@ const ACTION_DOT: Record<string, string> = {
   status_changed: "bg-[var(--color-signal-ink)]",
   edited: "bg-[var(--color-text-subtle)]",
   maintenance: "bg-[var(--color-primary)]",
+  maintenance_voided: "bg-[var(--color-danger)]",
   ticket: "bg-[var(--color-primary)]",
   document: "bg-[var(--color-text-subtle)]",
   photo: "bg-[var(--color-text-subtle)]",
   warranty: "bg-[var(--color-signal-ink)]",
   retired: "bg-[var(--color-danger)]",
+  retirement_reversed: "bg-[var(--color-success)]",
 }
 
 export function AssetHistory({ assetId: _assetId, rows, retirements }: AssetHistoryProps) {
@@ -80,16 +91,32 @@ export function AssetHistory({ assetId: _assetId, rows, retirements }: AssetHist
         </ol>
       )}
 
-      {retirements.length > 0 && (
-        <div className="mt-5 rounded-xl border-l-2 border-[var(--color-danger)] bg-[var(--color-danger-tint)] p-3">
-          <p className="text-xs font-semibold text-[var(--color-danger-ink)]">Bajas registradas</p>
-          <ul className="mt-1 space-y-1 text-xs text-[var(--color-text)]">
-            {retirements.map((r) => (
-              <li key={r.id}>{formatDate(r.date)} — {r.reason}{r.destination ? ` · destino: ${r.destination}` : ""}</li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {retirements.length > 0 && (() => {
+        // Si TODAS las bajas del activo están revertidas, la caja no debe
+        // gritar en rojo: el activo está vigente. La línea de tiempo de arriba
+        // ya dice "Baja revertida" y las dos lecturas no pueden contradecirse.
+        const vigentes = retirements.filter((r) => !r.reversedAt)
+        const soloRevertidas = vigentes.length === 0
+        return (
+          <div className={`mt-5 rounded-xl border-l-2 p-3 ${soloRevertidas
+            ? "border-[var(--color-border)] bg-[var(--color-surface-2)]"
+            : "border-[var(--color-danger)] bg-[var(--color-danger-tint)]"}`}>
+            <p className={`text-xs font-semibold ${soloRevertidas ? "text-[var(--color-text-muted)]" : "text-[var(--color-danger-ink)]"}`}>
+              Bajas registradas
+            </p>
+            <ul className="mt-1 space-y-1 text-xs text-[var(--color-text)]">
+              {retirements.map((r) => (
+                <li key={r.id} className={r.reversedAt ? "text-[var(--color-text-subtle)]" : undefined}>
+                  <span className={r.reversedAt ? "line-through" : undefined}>
+                    {formatDate(r.date)} — {r.reason}{r.destination ? ` · destino: ${r.destination}` : ""}
+                  </span>
+                  {r.reversedAt && ` · revertida por ${r.reversedByName ?? "—"}`}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
+      })()}
     </section>
   )
 }

@@ -10,7 +10,7 @@ import {
 } from "@/components/admin/sheet"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { createSupplierLinkAction } from "./actions"
@@ -140,7 +140,7 @@ export function SupplierLinksPanel({ links, canManage, suppliers }: SupplierLink
                   </Select>
                 </Field>
                 <Field label="Notas">
-                  <Input name="notes" maxLength={300} />
+                  <Textarea name="notes" maxLength={300} rows={3} />
                 </Field>
               </FieldGroup>
             </SheetBody>

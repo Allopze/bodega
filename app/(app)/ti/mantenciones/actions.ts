@@ -6,8 +6,8 @@ import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { safeActionMessage } from "@/lib/action-error"
 import { parseZ } from "@/lib/actions/parse-z"
 import { logger } from "@/lib/logger"
-import { createMaintenance, updateMaintenance } from "@/lib/services/ti/maintenance"
-import { itMaintenanceSchema } from "@/lib/validation/ti"
+import { createMaintenance, updateMaintenance, voidMaintenance } from "@/lib/services/ti/maintenance"
+import { itMaintenanceSchema, itMaintenanceVoidSchema } from "@/lib/validation/ti"
 import type { ActionState } from "@/lib/validation/masters"
 
 export async function createMaintenanceAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -81,5 +81,34 @@ export async function updateMaintenanceAction(_prev: ActionState, formData: Form
   } catch (error) {
     logger.error("[ti:updateMaintenance]", error)
     return { ok: false, message: safeActionMessage(error, "Error al actualizar la mantención") }
+  }
+}
+
+export async function voidMaintenanceAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("ti:manage_maintenance") }
+  catch { return { ok: false, message: "Sin permisos para anular mantenciones" } }
+
+  const parsed = parseZ(itMaintenanceVoidSchema, {
+    id: formData.get("id"),
+    reason: formData.get("reason"),
+  }, "Revisa el motivo de la anulación")
+  if (!parsed.ok) return parsed
+
+  try {
+    const { assetId } = await voidMaintenance(parsed.data.id, parsed.data.reason, {
+      userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
+    }, serviceWorksiteScope(session))
+    revalidatePath("/ti")
+    revalidatePath("/ti/mantenciones")
+    revalidatePath("/ti/reportes")
+    revalidatePath("/ti/activos")
+    revalidatePath("/ti/garantias")
+    revalidatePath(`/ti/activos/${assetId}`)
+    return { ok: true, message: "Mantención anulada" }
+  } catch (error) {
+    logger.error("[ti:voidMaintenance]", error)
+    return { ok: false, message: safeActionMessage(error, "Error al anular la mantención") }
   }
 }

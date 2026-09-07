@@ -6,6 +6,8 @@ import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { createPreventionHealthRecord } from "@/lib/services/prevention-health"
+import { safeActionMessage } from "@/lib/action-error"
+import { logger } from "@/lib/logger"
 
 export async function POST(request: Request) {
   const session = await auth()
@@ -31,8 +33,9 @@ export async function POST(request: Request) {
     })
     return NextResponse.json({ record }, { status: 201 })
   } catch (error) {
-    const message = error instanceof Error ? error.message : "No se pudo crear el registro de salud."
-    const status = /llave de cifrado|dominio sensible está deshabilitado/i.test(message) ? 503 : 400
-    return NextResponse.json({ error: message }, { status })
+    logger.error("[prevencion/salud]", error)
+    const rawMessage = error instanceof Error ? error.message : "No se pudo crear el registro de salud."
+    const status = /llave de cifrado|dominio sensible está deshabilitado/i.test(rawMessage) ? 503 : 400
+    return NextResponse.json({ error: safeActionMessage(error, "No se pudo crear el registro de salud.") }, { status })
   }
 }

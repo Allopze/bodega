@@ -11,6 +11,7 @@ import {
 import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -120,7 +121,7 @@ export function RetirementSheet({ trigger, assets, users }: RetirementSheetProps
                 <Input name="destination" maxLength={200} />
               </Field>
               <Field label="Observaciones">
-                <Input name="observations" maxLength={500} />
+                <Textarea name="observations" maxLength={500} rows={3} />
               </Field>
             </FieldGroup>
           </SheetBody>

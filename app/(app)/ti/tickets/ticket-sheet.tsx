@@ -11,6 +11,7 @@ import {
 import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { OptionSelect } from "@/components/ui/option-select"
@@ -66,7 +67,7 @@ export function TicketSheet({ trigger, workers, worksites, assets = [] }: Ticket
                 <Input name="subject" maxLength={120} placeholder="Ej. notebook no enciende" />
               </Field>
               <Field label="Descripción" required error={state.fieldErrors?.description?.[0]} helper="Describe el problema con detalle (mínimo 10 caracteres).">
-                <Input name="description" maxLength={2000} placeholder="Qué pasa, desde cuándo, qué se intentó…" />
+                <Textarea name="description" maxLength={2000} placeholder="Qué pasa, desde cuándo, qué se intentó…" rows={4} />
               </Field>
 
               <div className="grid gap-4 sm:grid-cols-2">

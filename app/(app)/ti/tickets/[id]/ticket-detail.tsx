@@ -8,7 +8,7 @@ import { formatDateTime, formatDate } from "@/lib/utils"
 import { MetaBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Field } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
@@ -16,7 +16,7 @@ import { transitionTicketAction, commentTicketAction } from "../actions"
 import {
   IT_TICKET_STATUS_META, IT_TICKET_PRIORITY_META, IT_TICKET_CATEGORY_META,
 } from "@/lib/services/ti/constants"
-import { IT_TICKET_STATUSES } from "@/lib/validation/ti"
+import { IT_TICKET_UNASSIGN, itTicketNextStatuses } from "@/lib/validation/ti"
 
 interface TicketDetailProps {
   ticket: {
@@ -49,13 +49,34 @@ interface TicketDetailProps {
     authorName: string
     createdAt: string
   }[]
+  technicians: { id: string; name: string }[]
   canManage: boolean
   canInternal: boolean
   canComment: boolean
 }
 
-export function TicketDetail({ ticket, comments, canManage, canInternal, canComment }: TicketDetailProps) {
-  const [status, setStatus] = React.useState(ticket.status)
+export function TicketDetail({ ticket, comments, technicians, canManage, canInternal, canComment }: TicketDetailProps) {
+  const nextStatuses = itTicketNextStatuses(ticket.status)
+  const [status, setStatus] = React.useState(nextStatuses[0] ?? ticket.status)
+  const [assignee, setAssignee] = React.useState(ticket.assigneeUserId ?? IT_TICKET_UNASSIGN)
+
+  // El servidor es la fuente de verdad: cuando la fila cambia (por esta misma
+  // transición o porque otro técnico la movió) hay que resincronizar los dos
+  // selectores. Se hace durante el render, no en un `useEffect`, que es el
+  // patrón que el repo ya documenta en `components/ui/filter-search-input.tsx`.
+  //
+  // Sin esto el grafo de transiciones no tiene auto-transiciones, así que el
+  // `status` elegido deja de existir en `nextStatuses` tras aplicar el cambio:
+  // el trigger queda en blanco y —porque el <select> oculto de Radix solo
+  // contiene las opciones renderizadas— el envío siguiente no manda `status`.
+  // Y un `assignee` obsoleto es peor: viaja en cada envío, así que una
+  // transición de solo-estado reasignaría el ticket al técnico anterior.
+  const [serverState, setServerState] = React.useState({ status: ticket.status, assignee: ticket.assigneeUserId })
+  if (serverState.status !== ticket.status || serverState.assignee !== ticket.assigneeUserId) {
+    setServerState({ status: ticket.status, assignee: ticket.assigneeUserId })
+    setStatus(nextStatuses[0] ?? ticket.status)
+    setAssignee(ticket.assigneeUserId ?? IT_TICKET_UNASSIGN)
+  }
   const [transitionState, transitionAction] = useActionState<ActionState, FormData>(async (prev, formData) => {
     const result = await transitionTicketAction(prev, formData)
     if (result.ok) toast.success(result.message ?? "Ticket actualizado")
@@ -121,7 +142,7 @@ export function TicketDetail({ ticket, comments, canManage, canInternal, canComm
             <form action={commentAction} className="mt-4 space-y-3">
               <input type="hidden" name="ticketId" value={ticket.id} />
               <Field label="Nuevo comentario" error={commentState.fieldErrors?.body?.[0]}>
-                <Input name="body" maxLength={2000} placeholder="Escribe una actualización…" />
+                <Textarea name="body" maxLength={2000} rows={3} placeholder="Escribe una actualización…" />
               </Field>
               {canInternal && (
                 <label className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
@@ -160,34 +181,60 @@ export function TicketDetail({ ticket, comments, canManage, canInternal, canComm
 
         {canManage && (
           <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Cambiar estado</h3>
-            <form action={transitionAction} className="mt-3 space-y-3">
-              <input type="hidden" name="ticketId" value={ticket.id} />
-              <Field label="Nuevo estado" error={transitionState.fieldErrors?.status?.[0]}>
-                <Select name="status" value={status} onValueChange={setStatus}>
-                  <SelectTrigger aria-label="Nuevo estado">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {IT_TICKET_STATUSES.map((s) => (
-                      <SelectItem key={s} value={s}>{IT_TICKET_STATUS_META[s]?.label ?? s}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Motivo" required error={transitionState.fieldErrors?.reason?.[0]}>
-                <Input name="reason" maxLength={300} />
-              </Field>
-              {status === "resuelto" && (
-                <Field label="Resolución" helper="Qué se hizo para resolver el problema.">
-                  <Input name="resolution" maxLength={1000} />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Gestionar ticket</h3>
+            {nextStatuses.length === 0 ? (
+              <p className="mt-3 text-sm text-[var(--color-text-muted)]">
+                Este ticket no admite más transiciones de estado.
+              </p>
+            ) : (
+              <form action={transitionAction} className="mt-3 space-y-3">
+                <input type="hidden" name="ticketId" value={ticket.id} />
+                {/* Solo los estados alcanzables desde el actual: el servidor
+                    aplica el mismo grafo y rechazaría cualquier otro. */}
+                <Field label="Nuevo estado" error={transitionState.fieldErrors?.status?.[0]}>
+                  <Select name="status" value={status} onValueChange={setStatus}>
+                    <SelectTrigger aria-label="Nuevo estado">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {nextStatuses.map((s) => (
+                        <SelectItem key={s} value={s}>{IT_TICKET_STATUS_META[s]?.label ?? s}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </Field>
-              )}
-              {transitionState.message && !transitionState.ok && !transitionState.fieldErrors && (
-                <p className="text-sm text-[var(--color-danger)]" role="alert">{transitionState.message}</p>
-              )}
-              <SubmitButton label="Aplicar cambio" loadingLabel="Aplicando..." size="sm" variant="secondary" />
-            </form>
+                <Field
+                  label="Técnico responsable"
+                  required={status === "asignado"}
+                  helper={status === "asignado" ? "Obligatorio para dejar el ticket asignado." : undefined}
+                  error={transitionState.fieldErrors?.assigneeUserId?.[0]}
+                >
+                  <Select name="assigneeUserId" value={assignee} onValueChange={setAssignee}>
+                    <SelectTrigger aria-label="Técnico responsable">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={IT_TICKET_UNASSIGN}>Sin asignar</SelectItem>
+                      {technicians.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Motivo" required error={transitionState.fieldErrors?.reason?.[0]}>
+                  <Textarea name="reason" maxLength={300} rows={2} />
+                </Field>
+                {status === "resuelto" && (
+                  <Field label="Resolución" required helper="Qué se hizo para resolver el problema." error={transitionState.fieldErrors?.resolution?.[0]}>
+                    <Textarea name="resolution" maxLength={1000} rows={4} />
+                  </Field>
+                )}
+                {transitionState.message && !transitionState.ok && !transitionState.fieldErrors && (
+                  <p className="text-sm text-[var(--color-danger)]" role="alert">{transitionState.message}</p>
+                )}
+                <SubmitButton label="Aplicar cambio" loadingLabel="Aplicando..." size="sm" variant="secondary" />
+              </form>
+            )}
           </section>
         )}
       </aside>

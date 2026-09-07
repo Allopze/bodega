@@ -8,7 +8,7 @@ import { changeAssetStatusAction } from "../actions"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Field } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { IT_ASSET_STATUS_META, itStatusLabel } from "@/lib/services/ti/constants"
 import { MANUAL_ASSET_STATUSES } from "@/lib/validation/ti"
@@ -53,7 +53,7 @@ export function AssetStatusControl({ assetId, currentStatus }: { assetId: string
           </Select>
         </Field>
         <Field label="Motivo" required error={state.fieldErrors?.reason?.[0]} helper="Queda visible en la línea de tiempo del activo.">
-          <Input name="reason" maxLength={300} placeholder="Ej. enviado a laboratorio externo para diagnóstico" />
+          <Textarea name="reason" maxLength={300} placeholder="Ej. enviado a laboratorio externo para diagnóstico" rows={2} />
         </Field>
         {state.message && !state.ok && !state.fieldErrors && (
           <p className="text-sm text-[var(--color-danger)]" role="alert">{state.message}</p>

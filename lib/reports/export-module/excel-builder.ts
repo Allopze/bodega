@@ -12,11 +12,72 @@ export async function buildXlsxBuffer(report: ReportData): Promise<ArrayBuffer> 
     rows: report.rows,
   }]
 
-  for (const sheet of sheets) addWorksheet(workbook, sheet)
+  // Los nombres de hoja se sanean en un solo lugar: los reportes que abren una
+  // hoja por faena / trabajador / cliente los derivan de datos y ExcelJS lanza
+  // ante caracteres reservados, nombre vacío, >31 caracteres o duplicados.
+  const usedNames = new Set<string>()
+  for (const sheet of sheets) {
+    addWorksheet(workbook, { ...sheet, worksheetName: safeWorksheetName(sheet.worksheetName, usedNames) })
+  }
 
   const data = await workbook.xlsx.writeBuffer()
   const bytes = new Uint8Array(data as ArrayBufferLike)
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+}
+
+/** Límite duro de Excel para el nombre de una hoja. */
+const WORKSHEET_NAME_MAX = 31
+
+/**
+ * Devuelve un nombre de hoja que Excel acepta, único dentro del libro.
+ *
+ * ExcelJS lanza —y aborta la exportación completa— si el nombre lleva alguno de
+ * `* ? : \ / [ ]`, empieza o termina en comilla simple, está vacío, es el
+ * reservado `History`, o ya existe en el libro. Los reportes que generan una
+ * hoja por entidad (faena, trabajador, cliente) toman el nombre de datos de
+ * usuario, así que cualquiera de esos casos es alcanzable en producción: una
+ * faena "Planta Norte / Sur" o dos personas cuyos nombres coinciden en los
+ * primeros 31 caracteres bastaban para romper el archivo entero.
+ *
+ * `usedNames` acumula los nombres ya emitidos, **en minúsculas**: ExcelJS
+ * compara duplicados con `toLowerCase()`, así que un registro sensible a
+ * mayúsculas dejaría pasar "Faena Norte" y "FAENA NORTE" como distintos y la
+ * segunda `addWorksheet` abortaría el archivo entero. Es un registro interno;
+ * el nombre que se usa es el que devuelve la función.
+ */
+export function safeWorksheetName(rawName: string | undefined, usedNames?: Set<string>): string {
+  // El orden importa: las comillas se quitan **después** de recortar y trimear.
+  // Al revés, un "/'Faena A" (el reservado se vuelve espacio y desplaza la
+  // comilla) o un nombre de 32 caracteres con comilla en la posición 31
+  // terminaban empezando o terminando en comilla simple —que Excel rechaza—
+  // pese a haber pasado por el saneado.
+  const cleaned = (rawName ?? "")
+    .replace(/[*?:\\/[\]]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, WORKSHEET_NAME_MAX)
+    .replace(/^'+|'+$/g, "")
+    .trim()
+
+  // `History` está reservado por Excel; el resto de los vacíos caen en "Hoja".
+  let base = cleaned.length > 0 ? cleaned : "Hoja"
+  if (base.toLowerCase() === "history") base = "Historial"
+
+  if (!usedNames) return base
+  if (!usedNames.has(base.toLowerCase())) {
+    usedNames.add(base.toLowerCase())
+    return base
+  }
+
+  // Desambiguación con sufijo, recortando la base para no pasarse del límite.
+  for (let n = 2; ; n += 1) {
+    const suffix = ` (${n})`
+    const candidate = `${base.slice(0, WORKSHEET_NAME_MAX - suffix.length).trim()}${suffix}`
+    if (!usedNames.has(candidate.toLowerCase())) {
+      usedNames.add(candidate.toLowerCase())
+      return candidate
+    }
+  }
 }
 
 /** Neutraliza inyección de fórmulas (CSV injection) sin tocar números. Idempotente. */

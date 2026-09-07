@@ -6,8 +6,9 @@ import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { safeActionMessage } from "@/lib/action-error"
 import { parseZ } from "@/lib/actions/parse-z"
 import { logger } from "@/lib/logger"
-import { retireAsset } from "@/lib/services/ti/retirements"
-import { itRetirementSchema } from "@/lib/validation/ti"
+import { retireAsset, reverseRetirement } from "@/lib/services/ti/retirements"
+import { itStatusLabel } from "@/lib/services/ti/constants"
+import { itRetirementSchema, itRetirementReverseSchema } from "@/lib/validation/ti"
 import type { ActionState } from "@/lib/validation/masters"
 
 export async function retireAssetAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -39,5 +40,34 @@ export async function retireAssetAction(_prev: ActionState, formData: FormData):
   } catch (error) {
     logger.error("[ti:retireAsset]", error)
     return { ok: false, message: safeActionMessage(error, "Error al dar de baja el activo") }
+  }
+}
+
+export async function reverseRetirementAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("ti:reverse_retirement") }
+  catch { return { ok: false, message: "Sin permisos para revertir bajas" } }
+
+  const parsed = parseZ(itRetirementReverseSchema, {
+    retirementId: formData.get("retirementId"),
+    reason: formData.get("reason"),
+  }, "Revisa el motivo de la reversión")
+  if (!parsed.ok) return parsed
+
+  try {
+    const { assetId, restoredStatus } = await reverseRetirement(parsed.data.retirementId, parsed.data.reason, {
+      userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
+    }, serviceWorksiteScope(session))
+    revalidatePath("/ti")
+    revalidatePath("/ti/activos")
+    revalidatePath("/ti/bajas")
+    revalidatePath("/ti/asignaciones")
+    revalidatePath("/ti/reportes")
+    revalidatePath(`/ti/activos/${assetId}`)
+    return { ok: true, message: `Baja revertida. El activo volvió a '${itStatusLabel(restoredStatus)}'.` }
+  } catch (error) {
+    logger.error("[ti:reverseRetirement]", error)
+    return { ok: false, message: safeActionMessage(error, "Error al revertir la baja") }
   }
 }

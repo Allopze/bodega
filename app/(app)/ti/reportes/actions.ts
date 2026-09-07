@@ -111,6 +111,8 @@ export async function exportTiReport(type: TiReportType, assetId?: string): Prom
         break
       }
       case "inventario_faena": {
+        // Una hoja por faena: son pocas y el corte por hoja es útil.
+        // `buildXlsxBuffer` sanea y desambigua los nombres de hoja.
         const rows = await baseAssetRows(scope)
         const byWorksite = new Map<string, typeof rows>()
         for (const row of rows) {
@@ -118,18 +120,20 @@ export async function exportTiReport(type: TiReportType, assetId?: string): Prom
           if (!byWorksite.has(key)) byWorksite.set(key, [])
           byWorksite.get(key)!.push(row)
         }
-        sheets = [...byWorksite.entries()].map(([name, wsRows]) => assetSheet(wsRows, name.slice(0, 30)))
+        sheets = [...byWorksite.entries()]
+          .sort(([a], [b]) => a.localeCompare(b, "es"))
+          .map(([name, wsRows]) => assetSheet(wsRows, name))
         break
       }
       case "equipos_trabajador": {
+        // Una sola hoja ordenada por trabajador. Una hoja por persona producía
+        // libros de cientos de pestañas, inservibles para revisar custodia.
+        // La columna "Trabajador" ya identifica a cada custodio.
         const rows = await baseAssetRows(scope, sql`${itAssets.workerId} IS NOT NULL`)
-        const byWorker = new Map<string, typeof rows>()
-        for (const row of rows) {
-          const key = row.workerName ?? "Sin trabajador"
-          if (!byWorker.has(key)) byWorker.set(key, [])
-          byWorker.get(key)!.push(row)
-        }
-        sheets = [...byWorker.entries()].map(([name, wsRows]) => assetSheet(wsRows, name.slice(0, 30)))
+        const sorted = [...rows].sort((a, b) =>
+          (a.workerName ?? "").localeCompare(b.workerName ?? "", "es")
+          || a.code.localeCompare(b.code, "es"))
+        sheets = [assetSheet(sorted, "Equipos por trabajador")]
         break
       }
       case "disponibles": {
@@ -156,7 +160,7 @@ export async function exportTiReport(type: TiReportType, assetId?: string): Prom
           .where(eq(itAssetHistory.assetId, assetId))
           .orderBy(asc(itAssetHistory.createdAt))
         sheets = [{
-          worksheetName: `Historial ${asset.code}`.slice(0, 30),
+          worksheetName: `Historial ${asset.code}`,
           headers: ["Fecha", "Acción", "Detalle"],
           rows: history.map((h) => [h.createdAt.slice(0, 19).replace("T", " "), h.action, h.detail]),
         }]
@@ -174,7 +178,7 @@ export async function exportTiReport(type: TiReportType, assetId?: string): Prom
           })
           .from(itMaintenances)
           .innerJoin(itAssets, eq(itMaintenances.assetId, itAssets.id))
-          .where(and(isNull(itAssets.deletedAt), scope ?? sql`true`))
+          .where(and(isNull(itAssets.deletedAt), isNull(itMaintenances.voidedAt), scope ?? sql`true`))
           .groupBy(itAssets.code, itAssets.brand, itAssets.model)
           .orderBy(sql`coalesce(sum(${itMaintenances.cost}), 0) DESC`)
         sheets = [{

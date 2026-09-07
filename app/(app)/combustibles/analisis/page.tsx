@@ -17,7 +17,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ChartErrorBoundary } from "@/components/chart-error-boundary"
 import { HistogramChart, PerformanceGroupChart } from "./analysis-charts-lazy"
 import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
-import { FilterSelect } from "../filter-select"
+import { FilterSelect } from "@/components/ui/filter-select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 export const metadata: Metadata = { title: "Análisis de rendimiento por equipo" }

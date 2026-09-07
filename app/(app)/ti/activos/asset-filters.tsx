@@ -31,6 +31,13 @@ const AGE_OPTIONS = [
   { value: "10", label: "Hasta 10 años" },
 ]
 
+/** "Qué conviene reemplazar": el filtro que faltaba para el parque antiguo. */
+const MIN_AGE_OPTIONS = [
+  { value: "3", label: "3 años o más" },
+  { value: "5", label: "5 años o más" },
+  { value: "8", label: "8 años o más" },
+]
+
 function workerLabel(w: { name: string; lastName: string }) {
   return `${w.name} ${w.lastName}`.trim()
 }
@@ -70,7 +77,7 @@ export function AssetFilters({ types, workers, worksites, suppliers, current }: 
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }
 
-  const overflowKeys = ["trabajador", "proveedor", "garantia", "antiguedad"] as const
+  const overflowKeys = ["trabajador", "proveedor", "garantia", "antiguedad", "antiguedad_min"] as const
   const activeCount = overflowKeys.filter((key) => typeof current[key] === "string" && current[key]).length
 
   const overflowFilters = (
@@ -100,8 +107,15 @@ export function AssetFilters({ types, workers, worksites, suppliers, current }: 
         value={String(current.antiguedad ?? "")}
         onValue={(v) => setParam("antiguedad", v)}
         allLabel="Toda antigüedad"
-        ariaLabel="Filtrar por antigüedad"
+        ariaLabel="Filtrar por antigüedad máxima"
         options={AGE_OPTIONS}
+      />
+      <SelectFilter
+        value={String(current.antiguedad_min ?? "")}
+        onValue={(v) => setParam("antiguedad_min", v)}
+        allLabel="Cualquier antigüedad mínima"
+        ariaLabel="Filtrar por antigüedad mínima"
+        options={MIN_AGE_OPTIONS}
       />
     </div>
   )

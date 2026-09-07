@@ -11,6 +11,7 @@ import {
 import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -121,7 +122,7 @@ export function LicenseSheet({ trigger, suppliers, users, editLicense }: License
               </Field>
 
               <Field label="Notas">
-                <Input name="notes" maxLength={500} defaultValue={editLicense?.notes ?? ""} />
+                <Textarea name="notes" maxLength={500} defaultValue={editLicense?.notes ?? ""} rows={3} />
               </Field>
             </FieldGroup>
           </SheetBody>

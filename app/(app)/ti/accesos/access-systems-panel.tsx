@@ -6,9 +6,12 @@ import { toast } from "@/lib/toast"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
+import { useOperation } from "@/lib/hooks/use-operation"
 import { Plus } from "@phosphor-icons/react"
 import { createAccessSystemAction, toggleAccessSystemAction } from "./actions"
 import {
@@ -36,6 +39,11 @@ export function AccessSystemsPanel({ systems, canManage }: { systems: SystemRow[
     return result
   }, INITIAL_STATE)
   const [toggleState, toggleAction] = useActionState(toggleAccessSystemAction, INITIAL_STATE)
+
+  // Desactivar un sistema lo saca de la matriz sin revocar los accesos
+  // vigentes: se confirma explícitamente diciendo cuántos quedan activos.
+  const [pendingDeactivation, setPendingDeactivation] = React.useState<SystemRow | null>(null)
+  const deactivate = useOperation({ feedback: "toast" })
 
   React.useEffect(() => {
     if (toggleState.message) {
@@ -66,13 +74,24 @@ export function AccessSystemsPanel({ systems, canManage }: { systems: SystemRow[
             <span className={`text-sm ${system.isActive ? "text-[var(--color-text)]" : "text-[var(--color-text-subtle)] line-through"}`}>{system.name}</span>
             <MetaBadge meta={{ label: `${system.accessCount} activos`, variant: "outline" }} />
             {canManage && (
-              <form action={toggleAction} className="flex items-center">
-                <input type="hidden" name="systemId" value={system.id} />
-                <input type="hidden" name="isActive" value={system.isActive ? "" : "on"} />
-                <button type="submit" className="text-xs font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)]" title={system.isActive ? "Desactivar sistema" : "Activar sistema"}>
-                  {system.isActive ? "Desactivar" : "Activar"}
+              system.isActive ? (
+                <button
+                  type="button"
+                  onClick={() => setPendingDeactivation(system)}
+                  className="text-xs font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                  title="Desactivar sistema"
+                >
+                  Desactivar
                 </button>
-              </form>
+              ) : (
+                <form action={toggleAction} className="flex items-center">
+                  <input type="hidden" name="systemId" value={system.id} />
+                  <input type="hidden" name="isActive" value="on" />
+                  <button type="submit" className="text-xs font-semibold text-[var(--color-text-muted)] hover:text-[var(--color-text)]" title="Activar sistema">
+                    Activar
+                  </button>
+                </form>
+              )
             )}
           </li>
         ))}
@@ -87,6 +106,32 @@ export function AccessSystemsPanel({ systems, canManage }: { systems: SystemRow[
           </li>
         )}
       </ul>
+
+      <ConfirmDialog
+        open={pendingDeactivation !== null}
+        onOpenChange={(v) => { if (!v) setPendingDeactivation(null) }}
+        title={`¿Desactivar ${pendingDeactivation?.name ?? "el sistema"}?`}
+        description={
+          pendingDeactivation && pendingDeactivation.accessCount > 0
+            ? `${pendingDeactivation.accessCount} trabajador(es) mantienen su acceso activo a este sistema. Desactivarlo lo saca del catálogo y de la matriz, pero NO revoca esos accesos: revócalos primero si el sistema se dio de baja de verdad.`
+            : "El sistema saldrá del catálogo y ya no podrá otorgarse a nuevos trabajadores. Podrás reactivarlo cuando quieras."
+        }
+        confirmLabel="Desactivar"
+        variant={pendingDeactivation && pendingDeactivation.accessCount > 0 ? "destructive" : "warning"}
+        loading={deactivate.pending}
+        onConfirm={() => {
+          const target = pendingDeactivation
+          if (!target) return
+          setPendingDeactivation(null)
+          void deactivate.run(async () => {
+            const formData = new FormData()
+            formData.set("systemId", target.id)
+            formData.set("isActive", "")
+            // `feedback: "toast"` deja el aviso en manos del hook.
+            return toggleAccessSystemAction(INITIAL_STATE, formData)
+          })
+        }}
+      />
 
       <Sheet open={open} onOpenChange={(v) => { if (!v) setOpen(false) }}>
         <SheetContent className="sm:max-w-md">
@@ -107,7 +152,7 @@ export function AccessSystemsPanel({ systems, canManage }: { systems: SystemRow[
                   <Input name="name" maxLength={80} placeholder="Microsoft 365, VPN, Chipax…" />
                 </Field>
                 <Field label="Descripción">
-                  <Input name="description" maxLength={300} />
+                  <Textarea name="description" maxLength={300} rows={3} />
                 </Field>
               </FieldGroup>
             </SheetBody>

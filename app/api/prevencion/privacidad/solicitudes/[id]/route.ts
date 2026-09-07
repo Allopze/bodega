@@ -5,6 +5,8 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { transitionPreventionPrivacyRequest } from "@/lib/services/prevention-privacy"
+import { safeActionMessage } from "@/lib/action-error"
+import { logger } from "@/lib/logger"
 
 interface RouteContext { params: Promise<{ id: string }> }
 
@@ -35,8 +37,9 @@ export async function PATCH(request: Request, context: RouteContext) {
       headers: { "Cache-Control": "private, max-age=0, no-store" },
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : "No se pudo actualizar la solicitud."
-    const status = /no encontrada o fuera de alcance/i.test(message) ? 404 : 409
-    return NextResponse.json({ error: message }, { status })
+    logger.error("[prevencion/privacidad/solicitudes/id]", error)
+    const rawMessage = error instanceof Error ? error.message : "No se pudo actualizar la solicitud."
+    const status = /no encontrada o fuera de alcance/i.test(rawMessage) ? 404 : 409
+    return NextResponse.json({ error: safeActionMessage(error, "No se pudo actualizar la solicitud.") }, { status })
   }
 }

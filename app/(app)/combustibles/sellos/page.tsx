@@ -16,7 +16,7 @@ import { DatePicker } from "@/components/ui/date-picker"
 import { MetaBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { formatDateTime } from "@/lib/utils"
-import { FilterSelect } from "../filter-select"
+import { FilterSelect } from "@/components/ui/filter-select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 export const metadata: Metadata = { title: "Historial de sellos" }

@@ -133,4 +133,5 @@ export const pgliteTestFiles = [
   "lib/__tests__/ti-licenses-access-pglite.test.ts",
   "lib/__tests__/ti-maintenance-retirement-pglite.test.ts",
   "lib/__tests__/ti-alerts-pglite.test.ts",
+  "lib/__tests__/ti-attachments-pglite.test.ts",
 ]

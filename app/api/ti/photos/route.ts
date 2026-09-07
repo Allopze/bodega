@@ -11,6 +11,7 @@ import { mkdirp, removeFile, writeBuffer } from "@/lib/storage/helpers"
 import { resolveTiDir, createTiFilePath } from "@/lib/storage/config"
 import { persistPendingPhoto } from "@/lib/services/ti/assignment-photos"
 import { logger } from "@/lib/logger"
+import { safeActionMessage } from "@/lib/action-error"
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024
 
@@ -84,6 +85,6 @@ export async function POST(request: Request) {
     // La DB o la validación del acta falló: no dejamos basura en disco.
     await removeFile(path.join(/*turbopackIgnore: true*/ dir, storageName)).catch(() => undefined)
     logger.error("[ti:photos:upload]", error)
-    return NextResponse.json({ error: error instanceof Error ? error.message : "No se pudo registrar la fotografía." }, { status: 400 })
+    return NextResponse.json({ error: safeActionMessage(error, "No se pudo registrar la fotografía.") }, { status: 400 })
   }
 }

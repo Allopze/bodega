@@ -11,7 +11,7 @@ import {
 } from "@/components/admin/sheet"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { DateTimePicker } from "@/components/ui/date-time-picker"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -259,7 +259,7 @@ export function ReturnSheet({ trigger, assignment }: ReturnSheetProps) {
               </Field>
 
               <Field label="Observaciones de la devolución">
-                <Input name="returnObservations" maxLength={500} placeholder="Ej. pantalla con rayas en la esquina inferior izquierda" />
+                <Textarea name="returnObservations" maxLength={500} placeholder="Ej. pantalla con rayas en la esquina inferior izquierda" rows={3} />
               </Field>
             </FieldGroup>
           </SheetBody>

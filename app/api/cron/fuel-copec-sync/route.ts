@@ -4,6 +4,7 @@ import { syncCopecReports } from "@/lib/combustibles/copec-sync"
 import { copecSyncAvailability } from "@/lib/combustibles/copec-reports"
 import { fuelCronContractFor } from "@/lib/combustibles/fuel-cron-contract"
 import { logger } from "@/lib/logger"
+import { safeActionMessage } from "@/lib/action-error"
 import { withCronLock } from "@/lib/services/cron-lock"
 import { isRouteOperational } from "@/lib/services/module-toggles"
 import { consumeFixedWindowLimit } from "@/lib/services/rate-limit"
@@ -53,7 +54,7 @@ export async function GET(request: NextRequest) {
     return respond(fuelCronContractFor({ failed: 0, total: 1 }), outcome)
   } catch (error) {
     logger.error("[cron/fuel-copec-sync] Fatal error", error)
-    return respond(fuelCronContractFor({ failed: 1, total: 1 }), { error: error instanceof Error ? error.message : "Copec sync failed" })
+    return respond(fuelCronContractFor({ failed: 1, total: 1 }), { error: safeActionMessage(error, "Copec sync failed") })
   }
 }
 

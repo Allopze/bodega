@@ -3,16 +3,17 @@ import { notFound, redirect } from "next/navigation"
 import { can, requirePermission } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { db } from "@/db"
-import { itAssets, itTickets, attachments, users, suppliers, workers, worksites } from "@/db/schema"
+import { itAssets, itTickets, users, suppliers, workers, worksites } from "@/db/schema"
 import { eq, and } from "drizzle-orm"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { getAssetById } from "@/lib/services/ti/assets"
 import { getAssetHistory } from "@/lib/services/ti/history"
-import { listAssignments, getAssignmentPhotos, getAssignmentAccessories } from "@/lib/services/ti/assignments"
+import { listAssignments, getAssignmentsPhotos, getAssignmentsAccessories } from "@/lib/services/ti/assignments"
 import { listMaintenances } from "@/lib/services/ti/maintenance"
 import { listRetirements } from "@/lib/services/ti/retirements"
 import { listAssetTypes } from "@/lib/services/ti/asset-types"
+import { listTiAttachments } from "@/lib/services/ti/attachments"
 import type { ItAssetFormData } from "@/lib/validation/ti"
 import { AssetDetailTabs } from "./asset-detail-tabs"
 import { AssetSummary } from "./asset-summary"
@@ -45,8 +46,12 @@ export default async function AssetDetailPage({
   if (!asset) notFound()
 
   const canManage = can(session, "ti:manage_assets")
+  // Registrar, editar y anular mantenciones tiene su propio permiso: sin esto,
+  // un rol con `ti:manage_assets` pero sin `ti:manage_maintenance` veía los
+  // botones y recibía "Sin permisos" recién al enviar el formulario.
+  const canManageMaintenance = can(session, "ti:manage_maintenance")
 
-  const [history, assignments, maintenances, tickets, retirements, assetTypes, suppliersList, worksitesList, workersList] = await Promise.all([
+  const [history, assignments, maintenances, tickets, retirements, assetTypes, suppliersList, worksitesList, workersList, documents] = await Promise.all([
     getAssetHistory(id),
     listAssignments({ assetId: id }),
     listMaintenances({ assetId: id }),
@@ -68,25 +73,21 @@ export default async function AssetDetailPage({
       .from(worksites).where(and(eq(worksites.isActive, true), worksiteListScope)),
     db.select({ id: workers.id, firstName: workers.firstName, lastName: workers.lastName })
       .from(workers).where(and(eq(workers.isActive, true), workerScope)),
+    listTiAttachments("it_asset", id),
   ])
 
-  // Fotos por asignación para la comparación entrega/devolución.
-  const assignmentsWithEvidence = await Promise.all(
-    assignments.map(async (assignment) => ({
-      ...assignment,
-      photos: await getAssignmentPhotos(assignment.id),
-      accessories: await getAssignmentAccessories(assignment.id),
-    })),
-  )
-
-  const documents = await db.select({
-    id: attachments.id, fileName: attachments.fileName, mimeType: attachments.mimeType,
-    fileSize: attachments.fileSize, uploadedAt: attachments.uploadedAt, uploadedByName: users.name,
-  })
-    .from(attachments)
-    .leftJoin(users, eq(attachments.uploadedBy, users.id))
-    .where(and(eq(attachments.entityType, "it_asset"), eq(attachments.entityId, id)))
-    .orderBy(attachments.uploadedAt)
+  // Fotos y accesorios por asignación para la comparación entrega/devolución,
+  // en lote (2 queries totales en vez de 2 por asignación).
+  const assignmentIds = assignments.map((a) => a.id)
+  const [photosByAssignment, accessoriesByAssignment] = await Promise.all([
+    getAssignmentsPhotos(assignmentIds),
+    getAssignmentsAccessories(assignmentIds),
+  ])
+  const assignmentsWithEvidence = assignments.map((assignment) => ({
+    ...assignment,
+    photos: photosByAssignment.get(assignment.id) ?? [],
+    accessories: accessoriesByAssignment.get(assignment.id) ?? [],
+  }))
 
   const activeAssignment = assignmentsWithEvidence.find((a) => !a.returnedAt) ?? null
 
@@ -136,7 +137,7 @@ export default async function AssetDetailPage({
         assetId={asset.id}
         summary={<AssetSummary asset={asset} activeAssignment={activeAssignment} canManage={canManage} />}
         assignments={<AssetAssignments assetId={asset.id} rows={assignmentsWithEvidence} activeAssignment={activeAssignment} canManage={canManage} workers={workersList.map((w) => ({ id: w.id, name: w.firstName, lastName: w.lastName }))} worksites={worksitesList} suppliers={suppliersList} />}
-        maintenance={<AssetMaintenance assetId={asset.id} rows={maintenances} canManage={canManage} suppliers={suppliersList} />}
+        maintenance={<AssetMaintenance assetId={asset.id} rows={maintenances} canManage={canManageMaintenance} suppliers={suppliersList} />}
         tickets={<AssetTickets rows={tickets} />}
         documents={<AssetDocuments assetId={asset.id} documents={documents} canManage={canManage} />}
         history={<AssetHistory assetId={asset.id} rows={history} retirements={retirements} />}

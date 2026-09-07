@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { redirect } from "next/navigation"
 import { can, requirePermission } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
@@ -66,7 +67,7 @@ export default async function MantencionesPage() {
             {costRanking.slice(0, 10).map((row) => (
               <li key={row.assetId} className="flex items-center justify-between gap-4 border-b border-[var(--color-border)] py-2 text-sm last:border-b-0">
                 <span className="text-[var(--color-text)]">
-                  <a href={`/ti/activos/${row.assetId}`} className="font-mono text-xs font-semibold text-[var(--color-primary)] hover:underline">{row.assetCode}</a>
+                  <Link href={`/ti/activos/${row.assetId}`} className="font-mono text-xs font-semibold text-[var(--color-primary)] hover:underline">{row.assetCode}</Link>
                   <span className="ml-2 text-xs text-[var(--color-text-muted)]">{[row.brand, row.model].filter(Boolean).join(" ")}</span>
                 </span>
                 <span className="font-mono text-xs font-semibold text-[var(--color-text)]">

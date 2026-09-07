@@ -13,6 +13,7 @@ import { resolveInspectionEvidenceDir, createInspectionEvidencePath } from "@/li
 import { addRunDocument, assertInspectionOperationEnabled } from "@/lib/services/prevention-inspections"
 import { detectMarksInPhoto } from "@/lib/services/inspection-forms/detect-marks"
 import { logger } from "@/lib/logger"
+import { safeActionMessage } from "@/lib/action-error"
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024
 
@@ -119,7 +120,7 @@ export async function POST(request: Request) {
     }, { status: 201 })
   } catch (err) {
     logger.error("[inspecciones/documento]", err)
-    const message = err instanceof Error ? err.message : "Error al subir el archivo."
+    const message = safeActionMessage(err, "Error al subir el archivo.")
     return NextResponse.json({ error: message }, { status: 400 })
   }
 }

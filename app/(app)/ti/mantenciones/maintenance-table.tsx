@@ -8,6 +8,7 @@ import { TableRow, TableCell } from "@/components/ui/table"
 import { formatDate, formatCLP } from "@/lib/utils"
 import { IT_MAINTENANCE_TYPE_META } from "@/lib/services/ti/constants"
 import { MaintenanceSheet } from "./maintenance-sheet"
+import { VoidMaintenanceDialog } from "./void-maintenance-dialog"
 
 interface Row {
   id: string
@@ -28,6 +29,9 @@ interface Row {
   technicianUserId: string | null
   technicianUserName: string | null
   observations: string | null
+  voidedAt: string | null
+  voidReason: string | null
+  voidedByUserName: string | null
 }
 
 const COLUMNS = [
@@ -38,7 +42,7 @@ const COLUMNS = [
   { key: "work", label: "Trabajo realizado" },
   { key: "technician", label: "Técnico / proveedor", width: "w-40" },
   { key: "cost", label: "Costo", numeric: true, width: "w-28" },
-  { key: "actions", label: "", width: "w-20" },
+  { key: "actions", label: "", width: "w-28" },
 ]
 
 export function MaintenanceTable({ rows, canManage = false, suppliers = [] }: {
@@ -51,46 +55,63 @@ export function MaintenanceTable({ rows, canManage = false, suppliers = [] }: {
       caption="Mantenciones y reparaciones TI"
       columns={COLUMNS}
       rows={rows as unknown as Record<string, unknown>[]}
-      searchKeys={["assetCode", "assetBrand", "assetModel", "reportedIssue", "workDone", "technicianName", "technicianUserName", "supplierName"]}
+      searchKeys={["assetCode", "assetBrand", "assetModel", "reportedIssue", "workDone", "technicianName", "technicianUserName", "supplierName", "voidReason"]}
       renderRow={(raw) => {
         const row = raw as unknown as Row
+        const voided = Boolean(row.voidedAt)
         return (
-          <TableRow key={row.id}>
+          <TableRow key={row.id} className={voided ? "opacity-70" : undefined}>
             <TableCell className="w-28">{formatDate(row.date)}</TableCell>
             <TableCell>
-              <Link href={`/ti/activos/${row.assetId}`} className="font-mono text-xs font-semibold text-[var(--color-primary)] hover:underline">
+              <Link href={`/ti/activos/${row.assetId}`} className={`font-mono text-xs font-semibold text-[var(--color-primary)] hover:underline ${voided ? "line-through" : ""}`}>
                 {row.assetCode}
               </Link>
               <span className="ml-2 text-xs text-[var(--color-text-subtle)]">{[row.assetBrand, row.assetModel].filter(Boolean).join(" ")}</span>
+              {voided && (
+                <span className="ml-2"><MetaBadge meta={{ label: "Anulada", variant: "danger" }} /></span>
+              )}
             </TableCell>
             <TableCell className="w-28"><MetaBadge meta={{ label: IT_MAINTENANCE_TYPE_META[row.type] ?? row.type, variant: "warning" }} /></TableCell>
-            <TableCell className="max-w-[240px] truncate">{row.reportedIssue ?? "—"}</TableCell>
-            <TableCell className="max-w-[280px] truncate">{row.workDone}</TableCell>
+            <TableCell className={`max-w-[240px] truncate ${voided ? "line-through" : ""}`}>{row.reportedIssue ?? "—"}</TableCell>
+            <TableCell className={`max-w-[280px] truncate ${voided ? "line-through" : ""}`}>{row.workDone}</TableCell>
             <TableCell className="w-40">
               <span className="text-xs text-[var(--color-text-muted)]">
                 {[row.technicianName, row.technicianUserName, row.supplierName].filter(Boolean).join(" · ") || "—"}
               </span>
             </TableCell>
-            <TableCell className="w-28 text-right font-mono text-xs font-semibold">{formatCLP(Number(row.cost ?? 0))}</TableCell>
-            <TableCell className="w-20 text-right">
-              {canManage && (
-                <MaintenanceSheet
-                  trigger={<Button type="button" variant="link" size="sm">Editar</Button>}
-                  suppliers={suppliers}
-                  editMaintenance={row}
-                />
-              )}
+            <TableCell className={`w-28 text-right font-mono text-xs font-semibold ${voided ? "line-through" : ""}`}>{formatCLP(Number(row.cost ?? 0))}</TableCell>
+            <TableCell className="w-28 text-right">
+              {voided ? (
+                <span className="text-xs text-[var(--color-text-subtle)]" title={row.voidReason ?? undefined}>
+                  por {row.voidedByUserName ?? "—"}
+                </span>
+              ) : canManage ? (
+                <div className="flex items-center justify-end gap-1">
+                  <MaintenanceSheet
+                    trigger={<Button type="button" variant="link" size="sm">Editar</Button>}
+                    suppliers={suppliers}
+                    editMaintenance={row}
+                  />
+                  <VoidMaintenanceDialog maintenanceId={row.id} assetCode={row.assetCode} date={formatDate(row.date)} cost={Number(row.cost ?? 0)} />
+                </div>
+              ) : null}
             </TableCell>
           </TableRow>
         )
       }}
       renderMobileCard={(raw) => {
         const row = raw as unknown as Row
+        const voided = Boolean(row.voidedAt)
         return (
           <Link key={row.id} href={`/ti/activos/${row.assetId}`} className="flex items-center justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
             <div>
-              <div className="text-sm font-medium text-[var(--color-text)]">{row.assetCode} · {IT_MAINTENANCE_TYPE_META[row.type] ?? row.type}</div>
-              <div className="text-xs text-[var(--color-text-muted)]">{formatDate(row.date)} · {formatCLP(Number(row.cost ?? 0))}</div>
+              <div className="flex items-center gap-1.5 text-sm font-medium text-[var(--color-text)]">
+                <span className={voided ? "line-through" : undefined}>{row.assetCode} · {IT_MAINTENANCE_TYPE_META[row.type] ?? row.type}</span>
+                {voided && <MetaBadge meta={{ label: "Anulada", variant: "danger" }} />}
+              </div>
+              {/* El costo va tachado también acá: en móvil esta tarjeta es la
+                  única lectura del monto, y sin la marca se re-reporta como real. */}
+              <div className={`text-xs text-[var(--color-text-muted)] ${voided ? "line-through" : ""}`}>{formatDate(row.date)} · {formatCLP(Number(row.cost ?? 0))}</div>
             </div>
           </Link>
         )

@@ -5,6 +5,7 @@ import { readAramcoConfig } from "@/lib/combustibles/aramco-settings"
 import { fuelCronContractFor } from "@/lib/combustibles/fuel-cron-contract"
 import { AramcoTwoFactorRequiredError } from "@/lib/combustibles/aramco-client"
 import { logger } from "@/lib/logger"
+import { safeActionMessage } from "@/lib/action-error"
 import { withCronLock } from "@/lib/services/cron-lock"
 import { isRouteOperational } from "@/lib/services/module-toggles"
 import { consumeFixedWindowLimit } from "@/lib/services/rate-limit"
@@ -60,7 +61,7 @@ export async function GET(request: NextRequest) {
       logger.error("[cron/fuel-aramco-sync] Fatal error", error)
     }
     return respond(fuelCronContractFor({ failed: 1, total: 1 }), {
-      error: error instanceof Error ? error.message : "Aramco sync failed",
+      error: safeActionMessage(error, "Aramco sync failed"),
     })
   }
 }

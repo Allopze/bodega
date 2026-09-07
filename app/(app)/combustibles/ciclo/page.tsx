@@ -16,7 +16,7 @@ import { DatePicker } from "@/components/ui/date-picker"
 import { addDaysToPlainDate, formatQty, todayInChile } from "@/lib/utils"
 import { CycleWorkbench } from "./cycle-workbench"
 import { CycleStageChart, type CycleStagePoint } from "./cycle-stage-chart"
-import { FilterSelect } from "../filter-select"
+import { FilterSelect } from "@/components/ui/filter-select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 const dateTime = new Intl.DateTimeFormat("es-CL", { dateStyle: "short", timeStyle: "short" })

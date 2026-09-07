@@ -47,7 +47,7 @@ export const MimeType = {
   SPREADSHEET: new Set(["application/zip"]),
   /** Formularios Office oficiales, siempre almacenados como descarga. */
   OFFICE: new Set([DOCX_MIME, XLSX_MIME, XLS_MIME]),
-  /** Biblioteca documental SST: formatos históricos más Office validado. */
+  /** Biblioteca documental: formatos históricos más Office validado. Usado por SST y por los adjuntos de activos TI. */
   DOCUMENT_LIBRARY: new Set([
     "application/pdf", "image/jpeg", "image/png", "application/xml",
     DOCX_MIME, XLSX_MIME, XLS_MIME,

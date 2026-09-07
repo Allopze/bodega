@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/field"
 import { MetaBadge, metaFor, type StateMetaInput } from "@/components/states/state-badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { TaeCopecExportButton } from "./export-button"
-import { FilterSelect } from "../../filter-select"
+import { FilterSelect } from "@/components/ui/filter-select"
 
 export const metadata: Metadata = { title: "Conciliación TAE–TCT" }
 

@@ -6,7 +6,7 @@ import { toast } from "@/lib/toast"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import { Plus, Check } from "@phosphor-icons/react"
@@ -117,11 +117,21 @@ export function ChecklistsPanel({ checklists, workers, canManage }: {
                           >
                             {task.done && <Check size={10} weight="bold" />}
                           </button>
-                          <span className={`text-sm ${task.done ? "text-[var(--color-text-subtle)] line-through" : "text-[var(--color-text)]"}`}>{task.name}</span>
+                          <span className="min-w-0">
+                            <span className={`text-sm ${task.done ? "text-[var(--color-text-subtle)] line-through" : "text-[var(--color-text)]"}`}>{task.name}</span>
+                            {task.notes && (
+                              <span className="block text-xs text-[var(--color-text-muted)]">{task.notes}</span>
+                            )}
+                          </span>
                         </form>
                       ) : (
-                        <span className={`text-sm ${task.done ? "text-[var(--color-text-subtle)] line-through" : "text-[var(--color-text)]"}`}>
-                          {task.done ? "✓ " : "○ "}{task.name}
+                        <span className="min-w-0">
+                          <span className={`text-sm ${task.done ? "text-[var(--color-text-subtle)] line-through" : "text-[var(--color-text)]"}`}>
+                            {task.done ? "✓ " : "○ "}{task.name}
+                          </span>
+                          {task.notes && (
+                            <span className="block text-xs text-[var(--color-text-muted)]">{task.notes}</span>
+                          )}
                         </span>
                       )}
                     </li>
@@ -170,7 +180,7 @@ export function ChecklistsPanel({ checklists, workers, canManage }: {
                   </Select>
                 </Field>
                 <Field label="Notas">
-                  <Input name="notes" maxLength={500} />
+                  <Textarea name="notes" maxLength={500} rows={3} />
                 </Field>
               </FieldGroup>
             </SheetBody>

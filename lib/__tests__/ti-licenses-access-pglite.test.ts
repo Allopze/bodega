@@ -1,5 +1,6 @@
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
+import { eq } from "drizzle-orm"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import path from "node:path"
 import * as schema from "@/db/schema"
@@ -195,7 +196,10 @@ describe("módulo TI — licencias, accesos y checklists", () => {
 
       const tasks = await getChecklistTasks(id)
       expect(tasks).toHaveLength(ONBOARDING_CHECKLIST_TEMPLATE.length)
-      expect(tasks.map((t) => t.name).sort()).toEqual([...ONBOARDING_CHECKLIST_TEMPLATE].sort())
+      // Orden de la plantilla, no alfabético: la secuencia es operativa
+      // (crear correo → crear accesos → entregar equipo…) y ordenar por
+      // nombre hacía que el alta empezara por "Asignar licencias".
+      expect(tasks.map((t) => t.name)).toEqual([...ONBOARDING_CHECKLIST_TEMPLATE])
 
       const rows = await listChecklists({ kind: "onboarding" })
       const row = rows.find((c) => c.id === id)
@@ -221,6 +225,37 @@ describe("módulo TI — licencias, accesos y checklists", () => {
       await toggleChecklistTask({ taskId: tasks[0]!.id, done: false }, actor)
       const reopened = (await listChecklists({})).find((c) => c.id === id)
       expect(reopened?.completedAt).toBeNull()
+    })
+
+    it("marcar una tarea no borra su nota", async () => {
+      const id = await createChecklist({ workerId: "wk-ti-juan", kind: "offboarding" }, actor)
+      const [task] = await getChecklistTasks(id)
+
+      await toggleChecklistTask({ taskId: task!.id, done: false, notes: "Pendiente: el trabajador vuelve el viernes" }, actor)
+      expect((await getChecklistTasks(id))[0]?.notes).toMatch(/vuelve el viernes/)
+
+      // El formulario de la tarea no envía el campo de nota: `undefined` debe
+      // significar "sin cambio", no "borrar".
+      await toggleChecklistTask({ taskId: task!.id, done: true }, actor)
+      const afterToggle = (await getChecklistTasks(id))[0]
+      expect(afterToggle?.done).toBe(true)
+      expect(afterToggle?.notes).toMatch(/vuelve el viernes/)
+
+      // Una cadena vacía sí borra explícitamente.
+      await toggleChecklistTask({ taskId: task!.id, done: true, notes: "" }, actor)
+      expect((await getChecklistTasks(id))[0]?.notes).toBeNull()
+    })
+
+    it("no permite dos checklists abiertos del mismo tipo para un trabajador", async () => {
+      // Arrange propio: antes dependía de que el checklist `offboarding` del
+      // test anterior siguiera abierto, así que aislado (o reordenado) el
+      // `createChecklist` habría tenido éxito y el test habría fallado.
+      await testDb.delete(schema.itWorkerChecklists)
+        .where(eq(schema.itWorkerChecklists.workerId, "wk-ti-maria"))
+      await createChecklist({ workerId: "wk-ti-maria", kind: "offboarding" }, actor)
+
+      await expect(createChecklist({ workerId: "wk-ti-maria", kind: "offboarding" }, actor))
+        .rejects.toThrow(/ya tiene un checklist de baja en curso/i)
     })
   })
 })

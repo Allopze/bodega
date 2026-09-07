@@ -9,6 +9,7 @@ import {
 } from "@/lib/services/prevention-documents-library"
 import { sstDocumentVersionCreateSchema } from "@/lib/validation/prevention"
 import { logger } from "@/lib/logger"
+import { safeActionMessage } from "@/lib/action-error"
 
 /**
  * POST /api/prevencion/documentacion/upload
@@ -74,7 +75,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ id: version.id, version: version.version }, { status: 201 })
   } catch (err) {
     logger.error("[documentacion/upload]", err)
-    const message = err instanceof Error ? err.message : "Error al subir el archivo."
+    const message = safeActionMessage(err, "Error al subir el archivo.")
     return NextResponse.json({ error: message }, { status: 400 })
   }
 }

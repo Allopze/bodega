@@ -553,6 +553,17 @@ export function escapeHtml(value: string): string {
 }
 
 /**
+ * Escapa los comodines de ILIKE/LIKE (`%`, `_`, y el propio backslash de
+ * escape) para que un término de búsqueda de usuario se trate como texto
+ * literal. Sin esto, un término con `%` o `_` devuelve resultados
+ * desconcertantes (no es una inyección: los valores siempre van como
+ * parámetro, nunca concatenados al SQL).
+ */
+export function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`)
+}
+
+/**
  * Build a Content-Disposition header value (RFC 6266 + RFC 5987) that is
  * safe across HTTP and renders Unicode filenames correctly in modern
  * browsers. Replaces any control chars and quotes in the ASCII fallback,

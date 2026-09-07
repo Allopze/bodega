@@ -6,7 +6,7 @@ import { toast } from "@/lib/toast"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import { Check } from "@phosphor-icons/react"
@@ -179,7 +179,7 @@ function AccessEditSheet({ workerId, systemId, systems, workerName, status = "ac
                 </div>
               </Field>
               <Field label="Notas" helper="Fecha de alta, ticket asociado, motivo…">
-                <Input name="notes" maxLength={300} defaultValue={notes ?? ""} />
+                <Textarea name="notes" maxLength={300} defaultValue={notes ?? ""} rows={3} />
               </Field>
             </FieldGroup>
           </SheetBody>

@@ -122,10 +122,13 @@ export async function toggleChecklistTaskAction(_prev: ActionState, formData: Fo
   try { session = await requireTiAccess() }
   catch { return { ok: false, message: "Sin permisos" } }
 
+  // Si el formulario no trae el campo de nota, se envía `undefined` para que el
+  // servicio conserve la nota existente en vez de borrarla.
+  const rawNotes = formData.get("notes")
   const parsed = parseZ(itChecklistTaskToggleSchema, {
     taskId: formData.get("taskId"),
     done: formData.get("done") === "on",
-    notes: formData.get("notes"),
+    notes: rawNotes === null ? undefined : rawNotes,
   }, "Revisa la tarea")
   if (!parsed.ok) return parsed
 

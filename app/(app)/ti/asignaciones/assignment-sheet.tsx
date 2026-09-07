@@ -12,6 +12,7 @@ import {
 import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { DateTimePicker } from "@/components/ui/date-time-picker"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -328,7 +329,7 @@ export function AssignmentSheet({ trigger, assetId, workers, worksites, assets =
               </Field>
 
               <Field label="Observaciones">
-                <Input name="observations" maxLength={500} placeholder="Rayas, detalles estéticos, funcionamiento…" />
+                <Textarea name="observations" maxLength={500} placeholder="Rayas, detalles estéticos, funcionamiento…" rows={3} />
               </Field>
             </FieldGroup>
           </SheetBody>

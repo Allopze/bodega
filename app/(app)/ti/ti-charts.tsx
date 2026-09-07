@@ -1,6 +1,7 @@
 "use client"
 
 import dynamic from "next/dynamic"
+import Link from "next/link"
 import {
   Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -116,11 +117,25 @@ function MaintenanceTrend({ data }: { data: { month: string; cost: number; count
   )
 }
 
+/** Inventario filtrado al tramo de renovación (mismo criterio que `getAssetsByAge`). */
+const REPLACEABLE_HREF = "/ti/activos?antiguedad_min=5"
+
 function AgeBar({ data }: { data: { tramo: string; total: number }[] }) {
   if (data.length === 0) return null
+  const replaceable = data.find((row) => row.tramo === "5+ años")
   return (
     <div className={CARD}>
       <ChartTitle title="Antigüedad del parque" description="Años desde la fecha de compra" />
+      {replaceable && replaceable.total > 0 && (
+        // El tramo antiguo es la pregunta de renovación: se hace navegable al
+        // inventario filtrado, que es donde se actúa.
+        <Link
+          href={REPLACEABLE_HREF}
+          className="mb-2 inline-flex text-xs font-semibold text-[var(--color-primary)] hover:underline"
+        >
+          Ver los {replaceable.total} equipos de 5 años o más →
+        </Link>
+      )}
       <div className="h-48">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} margin={{ left: -20 }}>

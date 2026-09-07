@@ -5,7 +5,7 @@ import { can, requirePermission } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
 import { db } from "@/db"
 import { itAssetAssignments, itAssets, workers, worksites } from "@/db/schema"
-import { eq, asc } from "drizzle-orm"
+import { and, eq, asc } from "drizzle-orm"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Button } from "@/components/ui/button"
@@ -31,13 +31,18 @@ export default async function AsignacionesPage({
   const onlyActive = sp.estado === "vigentes"
 
   const scope = worksiteScopeSql(session, itAssetAssignments.worksiteId)
+  // Trabajadores y faenas van acotados igual que en /ti/activos y /ti/tickets:
+  // sin esto un rol de faena veía la nómina completa en los desplegables y
+  // elegía trabajadores que el servicio después rechazaba.
+  const workerScope = worksiteScopeSql(session, workers.worksiteId)
+  const worksiteScope = worksiteScopeSql(session, worksites.id)
 
   const [assignments, workersList, worksitesList, assetOptions] = await Promise.all([
     listAssignments({ status: onlyActive ? "active" : undefined, scope }),
     db.select({ id: workers.id, name: workers.firstName, lastName: workers.lastName })
-      .from(workers).where(eq(workers.isActive, true)).orderBy(asc(workers.firstName), asc(workers.lastName)),
+      .from(workers).where(and(eq(workers.isActive, true), workerScope)).orderBy(asc(workers.firstName), asc(workers.lastName)),
     db.select({ id: worksites.id, name: worksites.name })
-      .from(worksites).where(eq(worksites.isActive, true)).orderBy(asc(worksites.name)),
+      .from(worksites).where(and(eq(worksites.isActive, true), worksiteScope)).orderBy(asc(worksites.name)),
     listAssetOptions(worksiteScopeSql(session, itAssets.worksiteId)),
   ])
 

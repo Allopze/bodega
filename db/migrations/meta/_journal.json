@@ -1807,6 +1807,20 @@
       "when": 1788751748696,
       "tag": "0257_low_venom",
       "breakpoints": true
+    },
+    {
+      "idx": 258,
+      "version": "7",
+      "when": 1788785964761,
+      "tag": "0258_curvy_tag",
+      "breakpoints": true
+    },
+    {
+      "idx": 259,
+      "version": "7",
+      "when": 1788792635082,
+      "tag": "0259_parched_harpoon",
+      "breakpoints": true
     }
   ]
 }

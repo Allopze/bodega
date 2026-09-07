@@ -18,7 +18,7 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 import { AnomalyCaseCard } from "./anomaly-case-card"
 import { AnomalyDistributionChart } from "./anomaly-charts-lazy"
-import { FilterSelect } from "../filter-select"
+import { FilterSelect } from "@/components/ui/filter-select"
 
 export const metadata: Metadata = { title: "Anomalías de combustible" }
 

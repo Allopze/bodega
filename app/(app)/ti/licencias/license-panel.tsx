@@ -15,6 +15,7 @@ import {
 import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { OptionSelect } from "@/components/ui/option-select"
 import { LicenseSheet } from "./license-sheet"
@@ -180,7 +181,7 @@ export function LicensePanel({ license, canManage, workers, worksites, assets, s
                   <OptionSelect name="worksiteId" emptyLabel="Sin faena" placeholder="Sin faena" aria-label="Faena" options={worksites.map((worksite) => ({ value: worksite.id, label: worksite.name }))} />
                 </Field>
                 <Field label="Notas">
-                  <Input name="notes" maxLength={300} />
+                  <Textarea name="notes" maxLength={300} rows={3} />
                 </Field>
               </FieldGroup>
             </SheetBody>

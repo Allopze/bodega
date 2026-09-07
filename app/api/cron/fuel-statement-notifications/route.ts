@@ -13,6 +13,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { checkFuelStatementNotifications } from '@/lib/combustibles/notifications'
 import { fuelCronContractFor } from '@/lib/combustibles/fuel-cron-contract'
 import { logger } from '@/lib/logger'
+import { safeActionMessage } from "@/lib/action-error"
 import { verifyCronSecret } from '@/lib/security/cron-auth'
 import { withCronLock } from '@/lib/services/cron-lock'
 import { isRouteOperational } from '@/lib/services/module-toggles'
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return respond(fuelCronContractFor({ failed: 0, total: 1 }))
   } catch (err) {
     logger.error('[cron/fuel-statement-notifications] Fatal error', err)
-    return respond(fuelCronContractFor({ failed: 1, total: 1 }), { error: err instanceof Error ? err.message : 'Unknown error' })
+    return respond(fuelCronContractFor({ failed: 1, total: 1 }), { error: safeActionMessage(err, 'Unknown error') })
   }
 }
 

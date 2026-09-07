@@ -185,7 +185,8 @@ describe("módulo TI — activos", () => {
       date: "2026-09-03",
       reason: "reciclaje",
       responsibleUserId: actor.userId,
-      authorizedByUserId: actor.userId,
+      // Doble control: el autorizante debe ser otro usuario.
+      authorizedByUserId: "user-ti-gestor",
     }, actor)
 
     const activos = await listAssets({})
@@ -243,5 +244,25 @@ describe("módulo TI — activos", () => {
     const options = await listAssetOptions()
     expect(options.map((o) => o.code)).toContain("TI-NB-0001")
     expect(options.map((o) => o.code)).not.toContain("TI-NB-0003")
+  })
+
+  it("explica la colisión de código o serie contra activos eliminados en vez de dejar caer el índice único", async () => {
+    const typeId = "type-ti-notebook"
+    const id = await createAsset({
+      code: "TI-NB-9001", assetTypeId: typeId, serialNumber: "SN-UNICO-9001",
+    }, actor)
+    await softDeleteAsset(id, actor)
+
+    // El índice único de `code`/`serial_number` es total, no parcial: el activo
+    // eliminado sigue ocupando ambos valores y el mensaje debe decirlo.
+    await expect(createAsset({ code: "TI-NB-9001", assetTypeId: typeId }, actor))
+      .rejects.toThrow(/activo eliminado/i)
+    await expect(createAsset({ code: "TI-NB-9002", assetTypeId: typeId, serialNumber: "SN-UNICO-9001" }, actor))
+      .rejects.toThrow(/activo eliminado/i)
+
+    // Serie duplicada entre dos activos vigentes: antes no se validaba.
+    await createAsset({ code: "TI-NB-9003", assetTypeId: typeId, serialNumber: "SN-VIVO-1" }, actor)
+    await expect(createAsset({ code: "TI-NB-9004", assetTypeId: typeId, serialNumber: "SN-VIVO-1" }, actor))
+      .rejects.toThrow(/número de serie .* ya está registrado/i)
   })
 })

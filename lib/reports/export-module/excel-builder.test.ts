@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs"
 import { describe, expect, it } from "vitest"
-import { buildXlsxBuffer } from "./excel-builder"
+import { buildXlsxBuffer, safeWorksheetName } from "./excel-builder"
 import type { ReportData } from "./types"
 
 /**
@@ -98,5 +98,66 @@ describe("buildXlsxBuffer", () => {
     const value = sheet.getRow(2).values as unknown[]
     expect(value[1]).toBe(10)
     expect(typeof value[1]).toBe("number")
+  })
+
+  it("sanea nombres de hoja derivados de datos en vez de abortar la exportación", async () => {
+    // Los reportes que abren una hoja por entidad toman el nombre de datos de
+    // usuario. ExcelJS lanza ante caracteres reservados, duplicados, nombre
+    // vacío o >31 caracteres, y con eso se perdía el archivo completo.
+    const report: ReportData = {
+      filenameBase: "inventario-por-faena",
+      worksheetName: "TI",
+      headers: [],
+      rows: [],
+      sheets: [
+        { worksheetName: "Planta Norte / Sur", headers: ["Código"], rows: [["A-1"]] },
+        { worksheetName: "Faena [Alfa] * ?", headers: ["Código"], rows: [["A-2"]] },
+        { worksheetName: "María Fernanda González Rodríguez", headers: ["Código"], rows: [["A-3"]] },
+        { worksheetName: "María Fernanda González Rodrígueza", headers: ["Código"], rows: [["A-4"]] },
+        { worksheetName: "", headers: ["Código"], rows: [["A-5"]] },
+      ],
+    }
+
+    const buffer = await buildXlsxBuffer(report)
+    const reopened = new ExcelJS.Workbook()
+    await reopened.xlsx.load(buffer)
+
+    expect(reopened.worksheets).toHaveLength(5)
+    const names = reopened.worksheets.map((w) => w.name)
+    expect(new Set(names).size).toBe(5)
+    for (const name of names) {
+      expect(name.length).toBeGreaterThan(0)
+      expect(name.length).toBeLessThanOrEqual(31)
+      expect(name).not.toMatch(/[*?:\\/[\]]/)
+    }
+  })
+
+  it("safeWorksheetName recorta, desambigua y respeta el nombre reservado", () => {
+    const used = new Set<string>()
+    expect(safeWorksheetName("Faena Norte", used)).toBe("Faena Norte")
+    expect(safeWorksheetName("Faena Norte", used)).toBe("Faena Norte (2)")
+    expect(safeWorksheetName("Faena Norte", used)).toBe("Faena Norte (3)")
+    expect(safeWorksheetName("", new Set())).toBe("Hoja")
+    expect(safeWorksheetName("History", new Set())).toBe("Historial")
+    expect(safeWorksheetName("a".repeat(50), new Set())).toHaveLength(31)
+  })
+
+  it("safeWorksheetName desambigua sin distinguir mayúsculas, como ExcelJS", () => {
+    // ExcelJS compara duplicados con toLowerCase(): si acá se dejaran pasar
+    // como distintos, addWorksheet lanzaría y se perdería el archivo entero.
+    const used = new Set<string>()
+    expect(safeWorksheetName("Faena Norte", used)).toBe("Faena Norte")
+    expect(safeWorksheetName("FAENA NORTE", used)).toBe("FAENA NORTE (2)")
+    expect(safeWorksheetName("faena norte", used)).toBe("faena norte (3)")
+  })
+
+  it("safeWorksheetName no deja comillas simples en los extremos", () => {
+    // Los dos casos que el saneado dejaba pasar por hacer el recorte de
+    // comillas antes de trimear y de cortar a 31 caracteres. Excel rechaza
+    // ambos y aborta la exportación completa.
+    expect(safeWorksheetName("/'Faena A", new Set())).toBe("Faena A")
+    const largo = safeWorksheetName("Faena Central Sector Norte Sur'B", new Set())
+    expect(largo.endsWith("'")).toBe(false)
+    expect(largo).toBe("Faena Central Sector Norte Sur")
   })
 })

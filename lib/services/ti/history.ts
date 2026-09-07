@@ -7,7 +7,8 @@ type Tx = Parameters<Parameters<DB["transaction"]>[0]>[0]
 
 export type ItHistoryAction =
   | "created" | "assigned" | "returned" | "status_changed" | "edited"
-  | "maintenance" | "ticket" | "document" | "photo" | "warranty" | "retired"
+  | "maintenance" | "maintenance_voided" | "ticket" | "document" | "photo"
+  | "warranty" | "retired" | "retirement_reversed"
 
 export interface AppendHistoryInput {
   assetId: string

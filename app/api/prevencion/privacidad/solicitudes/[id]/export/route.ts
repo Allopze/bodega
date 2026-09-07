@@ -5,6 +5,8 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { buildPreventionPrivacySubjectExport } from "@/lib/services/prevention-privacy-export"
+import { safeActionMessage } from "@/lib/action-error"
+import { logger } from "@/lib/logger"
 
 interface RouteContext { params: Promise<{ id: string }> }
 
@@ -44,12 +46,13 @@ export async function GET(request: Request, context: RouteContext) {
       },
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : "No se pudo preparar la exportación."
-    const status = /llave de cifrado|dominio sensible está deshabilitado/i.test(message)
+    logger.error("[prevencion/privacidad/solicitudes/id/export]", error)
+    const rawMessage = error instanceof Error ? error.message : "No se pudo preparar la exportación."
+    const status = /llave de cifrado|dominio sensible está deshabilitado/i.test(rawMessage)
       ? 503
-      : /no encontrada o fuera de alcance/i.test(message)
+      : /no encontrada o fuera de alcance/i.test(rawMessage)
         ? 404
         : 409
-    return NextResponse.json({ error: message }, { status })
+    return NextResponse.json({ error: safeActionMessage(error, "No se pudo preparar la exportación.") }, { status })
   }
 }

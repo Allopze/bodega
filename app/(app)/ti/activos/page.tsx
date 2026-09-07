@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Plus } from "@phosphor-icons/react/dist/ssr"
 import { listAssets, type AssetListFilters } from "@/lib/services/ti/assets"
+import { isRetiredStatus } from "@/lib/services/ti/constants"
 import { listAssetTypes } from "@/lib/services/ti/asset-types"
 import { AssetTable } from "./asset-table"
 import { AssetFilters } from "./asset-filters"
@@ -39,7 +40,7 @@ export default async function InventarioPage({
   const filters: AssetListFilters = {
     typeId: typeof sp.tipo === "string" ? sp.tipo : undefined,
     status,
-    includeRetired: ["dado_de_baja", "perdido", "robado"].includes(status ?? ""),
+    includeRetired: isRetiredStatus(status ?? ""),
     workerId: typeof sp.trabajador === "string" ? sp.trabajador : undefined,
     worksiteId: typeof sp.faena === "string" ? sp.faena : undefined,
     supplierId: typeof sp.proveedor === "string" ? sp.proveedor : undefined,
@@ -48,6 +49,11 @@ export default async function InventarioPage({
       : undefined,
     maxAgeYears: typeof sp.antiguedad === "string" && /^\d+$/.test(sp.antiguedad)
       ? Number(sp.antiguedad)
+      : undefined,
+    // `antiguedad_min` responde "qué conviene reemplazar": equipos con N años
+    // o más. Es el destino del gráfico de antigüedad del tablero.
+    minAgeYears: typeof sp.antiguedad_min === "string" && /^\d+$/.test(sp.antiguedad_min)
+      ? Number(sp.antiguedad_min)
       : undefined,
     scope,
   }

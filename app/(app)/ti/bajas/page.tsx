@@ -22,6 +22,9 @@ export default async function BajasPage() {
   catch { redirect("/forbidden") }
 
   const canManage = can(session, "ti:manage_assets")
+  // Permiso separado: revertir deshace el doble control de la baja, así que
+  // no lo tiene automáticamente quien puede registrarla.
+  const canReverse = can(session, "ti:reverse_retirement")
   const scope = worksiteScopeSql(session, itAssets.worksiteId)
 
   const [rows, assetOptions, techUsers] = await Promise.all([
@@ -46,7 +49,7 @@ export default async function BajasPage() {
         ) : undefined}
       />
 
-      <RetirementTable rows={rows} />
+      <RetirementTable rows={rows} canManage={canReverse} />
     </PageContainer>
   )
 }

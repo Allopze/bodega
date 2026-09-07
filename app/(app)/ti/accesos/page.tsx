@@ -1,6 +1,5 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
-import Link from "next/link"
 import { can, requirePermission } from "@/lib/auth/can"
 import { serviceWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { db } from "@/db"
@@ -8,11 +7,8 @@ import { workers, worksites } from "@/db/schema"
 import { and, eq, asc } from "drizzle-orm"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/field"
-import { FilterSelect } from "../../combustibles/filter-select"
-import { listAccessSystems, listWorkersWithAccess, listChecklists, getChecklistTasks } from "@/lib/services/ti/access"
+import { listAccessSystems, listWorkersWithAccess, listChecklists, getChecklistsTasks } from "@/lib/services/ti/access"
+import { AccessFilters } from "./access-filters"
 import { AccessSystemsPanel } from "./access-systems-panel"
 import { AccessMatrix } from "./access-matrix"
 import { ChecklistsPanel } from "./checklists-panel"
@@ -33,9 +29,6 @@ export default async function AccesosPage({
   const workerScope = worksiteScopeSql(session, workers.worksiteId)
   const worksiteScope = worksiteScopeSql(session, worksites.id)
   const serviceScope = serviceWorksiteScope(session)
-  const search = typeof sp.q === "string" ? sp.q : ""
-  const selectedSystem = typeof sp.sistema === "string" ? sp.sistema : ""
-  const selectedWorksite = typeof sp.faena === "string" ? sp.faena : ""
 
   const [systems, workersWithAccess, worksitesList, workersList, checklists] = await Promise.all([
     listAccessSystems({ includeInactive: true }, serviceScope),
@@ -52,12 +45,11 @@ export default async function AccesosPage({
     listChecklists({ scope: workerScope }),
   ])
 
-  const checklistsWithTasks = await Promise.all(
-    checklists.map(async (checklist) => ({
-      ...checklist,
-      tasks: await getChecklistTasks(checklist.id),
-    })),
-  )
+  const tasksByChecklist = await getChecklistsTasks(checklists.map((c) => c.id))
+  const checklistsWithTasks = checklists.map((checklist) => ({
+    ...checklist,
+    tasks: tasksByChecklist.get(checklist.id) ?? [],
+  }))
 
   return (
     <PageContainer>
@@ -67,26 +59,11 @@ export default async function AccesosPage({
         breadcrumb={<Breadcrumbs items={[{ label: "TI", href: "/ti" }, { label: "Accesos" }]} />}
       />
 
-      <form method="get" role="search" className="mb-6 grid gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 sm:grid-cols-[minmax(0,1fr)_220px_220px_auto] sm:items-end">
-        <div>
-          <Label htmlFor="ti-access-search">Buscar trabajador</Label>
-          <Input id="ti-access-search" name="q" defaultValue={search} placeholder="Nombre o apellido" />
-        </div>
-        <div>
-          <Label htmlFor="ti-access-worksite">Faena</Label>
-          <FilterSelect name="faena" defaultValue={selectedWorksite} ariaLabel="Filtrar accesos por faena" options={worksitesList.map((worksite) => ({ value: worksite.id, label: worksite.name }))} placeholder="Todas" />
-        </div>
-        <div>
-          <Label htmlFor="ti-access-system">Sistema</Label>
-          <FilterSelect name="sistema" defaultValue={selectedSystem} ariaLabel="Filtrar accesos por sistema" options={systems.map((system) => ({ value: system.id, label: system.name }))} placeholder="Todos" />
-        </div>
-        <div className="flex gap-2">
-          <Button type="submit" size="sm">Aplicar</Button>
-          {(search || selectedSystem || selectedWorksite) && (
-            <Button asChild type="button" variant="ghost" size="sm"><Link href="/ti/accesos">Limpiar</Link></Button>
-          )}
-        </div>
-      </form>
+      <AccessFilters
+        current={sp}
+        worksites={worksitesList}
+        systems={systems.map((system) => ({ id: system.id, name: system.name }))}
+      />
 
       <div className="space-y-6">
         <AccessSystemsPanel systems={systems} canManage={canManage && serviceScope === "all"} />

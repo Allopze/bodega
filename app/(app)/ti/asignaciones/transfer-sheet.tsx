@@ -10,7 +10,7 @@ import {
 } from "@/components/admin/sheet"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { DateTimePicker } from "@/components/ui/date-time-picker"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -122,10 +122,10 @@ export function TransferSheet({ trigger, assignment, workers, worksites }: Trans
               </div>
 
               <Field label="Observaciones de la devolución">
-                <Input name="returnObservations" maxLength={500} placeholder="Estado o accesorios recibidos" />
+                <Textarea name="returnObservations" maxLength={500} placeholder="Estado o accesorios recibidos" rows={3} />
               </Field>
               <Field label="Observaciones de la nueva entrega">
-                <Input name="newObservations" maxLength={500} placeholder="Condiciones de la transferencia" />
+                <Textarea name="newObservations" maxLength={500} placeholder="Condiciones de la transferencia" rows={3} />
               </Field>
             </FieldGroup>
           </SheetBody>

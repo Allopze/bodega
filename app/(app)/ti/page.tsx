@@ -3,7 +3,7 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 import { itAssets, itTickets } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
-import { worksiteScopeSql } from "@/lib/auth/scope"
+import { serviceWorksiteScope, worksiteScopeSql } from "@/lib/auth/scope"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { KpiCard } from "@/components/ui/kpi-card"
@@ -27,6 +27,7 @@ export default async function TiDashboardPage() {
 
   const assetScope = worksiteScopeSql(session, itAssets.worksiteId)
   const ticketScope = worksiteScopeSql(session, itTickets.worksiteId)
+  const serviceScope = serviceWorksiteScope(session)
 
   const [
     counts,
@@ -36,7 +37,7 @@ export default async function TiDashboardPage() {
     maintenanceByMonth,
     byAge,
   ] = await Promise.all([
-    getTiDashboardCounts(assetScope, ticketScope),
+    getTiDashboardCounts(assetScope, ticketScope, serviceScope),
     getAssetsByType(assetScope),
     getAssetsByWorksite(assetScope),
     getAssetsByStatus(assetScope),
@@ -44,12 +45,13 @@ export default async function TiDashboardPage() {
     getAssetsByAge(assetScope),
   ])
 
+  // Regla A5: cada cifra aparece UNA sola vez en la pantalla. Los cuatro tiles
+  // se quedan con activos, custodia, reparación y garantías; esta tira cubre
+  // solo lo que no está arriba.
   const summaryStats: SummaryStat[] = [
     { key: "retired", label: "Activos dados de baja", value: String(counts.retired), href: "/ti/activos?estado=dado_de_baja" },
-    { key: "assignments", label: "Asignaciones activas", value: String(counts.activeAssignments), href: "/ti/asignaciones" },
     { key: "open", label: "Tickets abiertos", value: String(counts.openTickets), href: "/ti/tickets" },
     { key: "critical", label: "Tickets críticos", value: String(counts.criticalTickets), href: "/ti/tickets?prioridad=critica", tone: counts.criticalTickets > 0 ? "signal" : undefined },
-    { key: "w90", label: "Garantías a 90 días", value: String(counts.warrantiesExpiring90), href: "/ti/garantias" },
     { key: "lic14", label: "Licencias por renovar (14 días)", value: String(counts.licensesRenewing14), href: "/ti/licencias" },
     { key: "cost", label: "Gasto reparación (12 meses)", value: formatCLP(counts.maintenanceCostYear), href: "/ti/mantenciones" },
   ]
@@ -87,7 +89,7 @@ export default async function TiDashboardPage() {
           label="En reparación"
           value={String(counts.inRepair)}
           tone={counts.inRepair > 0 ? "signal" : "neutral"}
-          detail={`${formatCLP(counts.maintenanceCostYear)} en 12 meses`}
+          detail="Equipos fuera de servicio hoy"
           href="/ti/activos?estado=en_reparacion"
         />
         <KpiCard
@@ -96,7 +98,7 @@ export default async function TiDashboardPage() {
           value={String(counts.warrantiesExpiring30)}
           tone={counts.warrantiesExpiring30 > 0 ? "danger" : "neutral"}
           detail={`${counts.warrantiesExpiring60} a 60 días · ${counts.warrantiesExpiring90} a 90 días`}
-          href="/ti/garantias"
+          href="/ti/garantias?ventana=expiring_30"
         />
       </div>
 
@@ -129,9 +131,7 @@ export default async function TiDashboardPage() {
             <h2 className="text-sm font-medium text-[var(--color-text)]">Mesa de ayuda</h2>
           </div>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-            {counts.openTickets > 0
-              ? `${counts.openTickets} tickets abiertos${counts.criticalTickets > 0 ? `, ${counts.criticalTickets} críticos` : ""}.`
-              : "No hay tickets abiertos."}
+            Hardware, software, correo, accesos e impresoras. Registra y sigue los casos de tus faenas.
           </p>
         </Link>
         <Link href="/ti/licencias" className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-xs transition-colors hover:bg-[var(--color-surface-2)]">
@@ -140,9 +140,7 @@ export default async function TiDashboardPage() {
             <h2 className="text-sm font-medium text-[var(--color-text)]">Licencias y servicios</h2>
           </div>
           <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-            {counts.licensesRenewing14 > 0
-              ? `${counts.licensesRenewing14} licencias renuevan en los próximos 14 días.`
-              : "Sin renovaciones en los próximos 14 días."}
+            Contratos, cupos asignados y fechas de renovación de las suscripciones de la empresa.
           </p>
         </Link>
       </div>

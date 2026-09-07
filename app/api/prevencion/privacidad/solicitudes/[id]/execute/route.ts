@@ -2,6 +2,8 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { executePreventionPrivacyRight } from "@/lib/services/prevention-privacy-rights"
+import { safeActionMessage } from "@/lib/action-error"
+import { logger } from "@/lib/logger"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -65,7 +67,8 @@ export async function POST(request: Request, context: RouteContext) {
       headers: { "Cache-Control": "private, max-age=0, no-store" },
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : "No se pudo ejecutar el derecho."
+    logger.error("[prevencion/privacidad/solicitudes/id/execute]", error)
+    const message = safeActionMessage(error, "No se pudo ejecutar el derecho.")
     return NextResponse.json({ error: message }, { status: 400, headers: { "Cache-Control": "private, max-age=0, no-store" } })
   }
 }

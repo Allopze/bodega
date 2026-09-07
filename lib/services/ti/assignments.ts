@@ -1,4 +1,4 @@
-import { eq, and, isNull, sql, desc, asc, type SQL } from "drizzle-orm"
+import { eq, and, isNull, inArray, sql, desc, asc, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import {
   itAssets, itAssetAssignments, itAssignmentAccessories, itAssignmentPhotos,
@@ -10,6 +10,7 @@ import { recordAudit } from "@/lib/audit"
 import { chileLocalDateTimeToUtc, codeYear } from "@/lib/utils"
 import { appendAssetHistory } from "./history"
 import { assertTiWorksiteAccess, type TiWorksiteScope } from "./scope"
+import { assignmentTargetStatus } from "./constants"
 
 export interface CreateAssignmentInput {
   assetId: string
@@ -99,7 +100,7 @@ export async function createAssignment(
     }
 
     await tx.update(itAssets).set({
-      status: "asignado",
+      status: assignmentTargetStatus(input.kind ?? "delivery"),
       workerId: input.workerId,
       worksiteId: input.worksiteId,
       updatedAt: now,
@@ -152,8 +153,8 @@ export async function returnAssignment(
     const [asset] = await tx.select().from(itAssets)
       .where(and(eq(itAssets.id, assignment.assetId), isNull(itAssets.deletedAt))).for("update")
     if (!asset) throw new Error("Activo no encontrado")
-    if (asset.status !== "asignado" && asset.status !== "en_prestamo") {
-      throw new Error(`El activo está en estado '${asset.status}'; solo se devuelve desde asignado o en préstamo`)
+    if (!["asignado", "en_prestamo", "en_reparacion"].includes(asset.status)) {
+      throw new Error(`El activo está en estado '${asset.status}'; solo se devuelve desde asignado, en préstamo o en reparación`)
     }
 
     const returnedAt = chileLocalDateTimeToUtc(input.returnedAt)
@@ -326,7 +327,7 @@ export async function transferAssignment(
     }
 
     await tx.update(itAssets).set({
-      status: "asignado",
+      status: assignmentTargetStatus(input.newKind ?? "transfer"),
       workerId: input.newWorkerId,
       worksiteId: input.newWorksiteId,
       updatedAt: now,
@@ -346,7 +347,9 @@ export async function transferAssignment(
       entityType: "it_asset_assignment",
       entityId: newAssignmentId,
       entityCode: code,
-      newState: { assetId: assignment.assetId, workerId: input.newWorkerId, kind: "transfer" },
+      // El mismo valor que se insertó arriba, no "transfer" fijo: si la UI
+      // llega a ofrecer transferir como préstamo, la auditoría no debe mentir.
+      newState: { assetId: assignment.assetId, workerId: input.newWorkerId, kind: input.newKind ?? "transfer" },
     }, tx)
   })
   return newAssignmentId
@@ -448,6 +451,25 @@ export async function getAssignmentAccessories(assignmentId: string) {
     .orderBy(asc(itAssignmentAccessories.name))
 }
 
+/** Variante en lote de `getAssignmentAccessories`: evita 1 query por asignación en la ficha del activo. */
+export async function getAssignmentsAccessories(
+  assignmentIds: string[],
+): Promise<Map<string, Awaited<ReturnType<typeof getAssignmentAccessories>>>> {
+  const map = new Map<string, Awaited<ReturnType<typeof getAssignmentAccessories>>>()
+  if (assignmentIds.length === 0) return map
+  const rows = await db
+    .select()
+    .from(itAssignmentAccessories)
+    .where(inArray(itAssignmentAccessories.assignmentId, assignmentIds))
+    .orderBy(asc(itAssignmentAccessories.name))
+  for (const row of rows) {
+    const list = map.get(row.assignmentId) ?? []
+    list.push(row)
+    map.set(row.assignmentId, list)
+  }
+  return map
+}
+
 export async function getAssignmentPhotos(assignmentId: string) {
   return db
     .select({
@@ -463,6 +485,37 @@ export async function getAssignmentPhotos(assignmentId: string) {
     .from(itAssignmentPhotos)
     .where(eq(itAssignmentPhotos.assignmentId, assignmentId))
     .orderBy(asc(itAssignmentPhotos.createdAt))
+}
+
+/** Variante en lote de `getAssignmentPhotos`: evita 1 query por asignación en la ficha del activo. */
+export async function getAssignmentsPhotos(
+  assignmentIds: string[],
+): Promise<Map<string, Awaited<ReturnType<typeof getAssignmentPhotos>>>> {
+  const map = new Map<string, Awaited<ReturnType<typeof getAssignmentPhotos>>>()
+  if (assignmentIds.length === 0) return map
+  const rows = await db
+    .select({
+      assignmentId: itAssignmentPhotos.assignmentId,
+      id: itAssignmentPhotos.id,
+      stage: itAssignmentPhotos.stage,
+      fileName: itAssignmentPhotos.fileName,
+      filePath: itAssignmentPhotos.filePath,
+      mimeType: itAssignmentPhotos.mimeType,
+      caption: itAssignmentPhotos.caption,
+      uploadedAt: itAssignmentPhotos.createdAt,
+      uploadedByName: sql<string>`(SELECT u.name FROM ${users} u WHERE u.id = ${itAssignmentPhotos.uploadedByUserId})`,
+    })
+    .from(itAssignmentPhotos)
+    .where(inArray(itAssignmentPhotos.assignmentId, assignmentIds))
+    .orderBy(asc(itAssignmentPhotos.createdAt))
+  for (const row of rows) {
+    const { assignmentId, ...rest } = row
+    if (!assignmentId) continue
+    const list = map.get(assignmentId) ?? []
+    list.push(rest)
+    map.set(assignmentId, list)
+  }
+  return map
 }
 
 export async function getActiveAssignmentForAsset(assetId: string) {

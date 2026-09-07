@@ -1,4 +1,5 @@
-import { eq, and, asc, isNull, sql, type SQL } from "drizzle-orm"
+import { eq, and, asc, isNull, sql, notInArray, type SQL } from "drizzle-orm"
+import { IT_RETIRED_STATUSES } from "./constants"
 import { db } from "@/db"
 import {
   itSupplierLinks, suppliers, itAssets, itMaintenances, itLicenses, workers,
@@ -74,8 +75,8 @@ export async function listSupplierLinks(filters?: { category?: string }) {
       supplierEmail: suppliers.email,
       supplierPhone: suppliers.phone,
       assetCount: sql<number>`(SELECT count(*)::int FROM ${itAssets} WHERE ${itAssets.supplierId} = ${itSupplierLinks.supplierId} AND ${itAssets.deletedAt} IS NULL)`,
-      maintenanceCount: sql<number>`(SELECT count(*)::int FROM ${itMaintenances} WHERE ${itMaintenances.supplierId} = ${itSupplierLinks.supplierId})`,
-      maintenanceCost: sql<number>`(SELECT coalesce(sum(${itMaintenances.cost}), 0)::float8 FROM ${itMaintenances} WHERE ${itMaintenances.supplierId} = ${itSupplierLinks.supplierId})`,
+      maintenanceCount: sql<number>`(SELECT count(*)::int FROM ${itMaintenances} WHERE ${itMaintenances.supplierId} = ${itSupplierLinks.supplierId} AND ${itMaintenances.voidedAt} IS NULL)`,
+      maintenanceCost: sql<number>`(SELECT coalesce(sum(${itMaintenances.cost}), 0)::float8 FROM ${itMaintenances} WHERE ${itMaintenances.supplierId} = ${itSupplierLinks.supplierId} AND ${itMaintenances.voidedAt} IS NULL)`,
       licenseCount: sql<number>`(SELECT count(*)::int FROM ${itLicenses} WHERE ${itLicenses.supplierId} = ${itSupplierLinks.supplierId})`,
     })
     .from(itSupplierLinks)
@@ -109,7 +110,15 @@ export async function listAssetsByWarranty(filters: {
   supplierId?: string
   scope?: SQL
 }) {
-  const conditions: SQL[] = [isNull(itAssets.deletedAt), sql`${itAssets.warrantyEndDate} IS NOT NULL`]
+  // Mismo parque vigente que cuenta el tile "Garantías por vencer" del
+  // tablero, que es quien enlaza acá: sin esta exclusión el tile mostraba 0 y
+  // el listado una fila, porque la garantía de un activo dado de baja no es
+  // accionable pero seguía apareciendo en la lista.
+  const conditions: SQL[] = [
+    isNull(itAssets.deletedAt),
+    notInArray(itAssets.status, [...IT_RETIRED_STATUSES]),
+    sql`${itAssets.warrantyEndDate} IS NOT NULL`,
+  ]
   if (filters.supplierId) conditions.push(eq(itAssets.supplierId, filters.supplierId))
   if (filters.scope) conditions.push(filters.scope)
 

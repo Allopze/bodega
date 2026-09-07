@@ -15,6 +15,7 @@ import { runAllBatchRules } from "@/lib/combustibles/anomaly-detector"
 import { syncAnomalyRuleCatalog } from "@/lib/combustibles/anomaly-cases"
 import { fuelCronContractFor } from "@/lib/combustibles/fuel-cron-contract"
 import { logger } from "@/lib/logger"
+import { safeActionMessage } from "@/lib/action-error"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
 import { withCronLock } from "@/lib/services/cron-lock"
 import { isRouteOperational } from "@/lib/services/module-toggles"
@@ -57,7 +58,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return respond(fuelCronContractFor({ failed, total: outcome.length }), { results: outcome })
   } catch (err) {
     logger.error("[cron/fuel-anomaly-detection] Fatal error", err)
-    return respond(fuelCronContractFor({ failed: 1, total: 1 }), { error: err instanceof Error ? err.message : "Unknown error" })
+    return respond(fuelCronContractFor({ failed: 1, total: 1 }), { error: safeActionMessage(err, "Unknown error") })
   }
 }
 

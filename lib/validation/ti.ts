@@ -42,7 +42,9 @@ export const IT_ASSET_STATUSES = ["disponible", "asignado", "en_prestamo", "en_r
 export type ItAssetStatus = typeof IT_ASSET_STATUSES[number]
 
 /** Estados que un usuario puede fijar manualmente (los otros los maneja el flujo). */
-export const MANUAL_ASSET_STATUSES: readonly ItAssetStatus[] = ["disponible", "en_prestamo", "en_reparacion", "en_bodega", "perdido", "robado"]
+// 'en_prestamo' no está acá: nace y muere con su acta de entrega (kind:
+// "loan"), igual que 'asignado' — no es un estado que se fije a mano.
+export const MANUAL_ASSET_STATUSES: readonly ItAssetStatus[] = ["disponible", "en_reparacion", "en_bodega", "perdido", "robado"]
 
 export const itAssetCreateSchema = z.object({
   code: z.string().trim().min(2, "Código interno requerido").max(40),
@@ -140,6 +142,12 @@ export const itMaintenanceSchema = z.object({
   observations: text(500),
 })
 
+/** Anulación de mantención: el motivo es el mismo mínimo que exige el CHECK de BD. */
+export const itMaintenanceVoidSchema = z.object({
+  id: z.string().min(1, "Mantención no indicada"),
+  reason: z.string().trim().min(10, "Explica por qué se anula (mínimo 10 caracteres)").max(500),
+})
+
 /* ── Bajas ─────────────────────────────────────────────────────────────────── */
 
 export const IT_RETIREMENT_REASONS = ["venta", "reciclaje", "destruccion", "repuesto", "donacion", "perdida", "robo"] as const
@@ -152,12 +160,21 @@ export const itRetirementSchema = z.object({
   authorizedByUserId: z.string().min(1, "Selecciona quién autoriza"),
   destination: text(200),
   observations: text(500),
-})
+}).refine(
+  (data) => data.responsibleUserId !== data.authorizedByUserId,
+  {
+    // Doble control: dar de baja un activo es irreversible y el modelo separa
+    // ambos roles a propósito. Nada impedía que fueran la misma persona.
+    message: "Quien autoriza la baja debe ser distinto del responsable",
+    path: ["authorizedByUserId"],
+  },
+)
 
-/** El estado final del activo según el motivo: pérdida/robo conservan su estado propio. */
-export function retirementTargetStatus(reason: string): string {
-  return reason === "perdida" ? "perdido" : reason === "robo" ? "robado" : "dado_de_baja"
-}
+/** Reversión de baja: mismo mínimo de motivo que exige el CHECK de BD. */
+export const itRetirementReverseSchema = z.object({
+  retirementId: z.string().min(1, "Baja no indicada"),
+  reason: z.string().trim().min(10, "Explica por qué se revierte (mínimo 10 caracteres)").max(500),
+})
 
 /* ── Tickets ───────────────────────────────────────────────────────────────── */
 
@@ -176,12 +193,45 @@ export const itTicketCreateSchema = z.object({
   assetId: z.string().nullable().optional().or(z.literal("")),
 })
 
+/**
+ * Grafo de transiciones válidas. Vive en validación (no en el servicio) para
+ * que la UI ofrezca únicamente los estados alcanzables: antes el desplegable
+ * listaba los 8 estados y el servidor rechazaba la mitad después de que el
+ * usuario ya había escrito el motivo obligatorio.
+ */
+export const IT_TICKET_TRANSITIONS: Record<string, readonly string[]> = {
+  nuevo: ["asignado", "en_diagnostico", "en_progreso", "esperando_usuario", "resuelto", "cerrado"],
+  asignado: ["en_diagnostico", "en_progreso", "esperando_usuario", "esperando_proveedor", "resuelto", "cerrado"],
+  en_diagnostico: ["en_progreso", "esperando_usuario", "esperando_proveedor", "resuelto", "cerrado"],
+  en_progreso: ["esperando_usuario", "esperando_proveedor", "resuelto", "cerrado"],
+  esperando_usuario: ["en_progreso", "resuelto", "cerrado"],
+  esperando_proveedor: ["en_progreso", "resuelto", "cerrado"],
+  resuelto: ["cerrado", "en_progreso"],
+  cerrado: ["en_progreso"],
+}
+
+export function itTicketNextStatuses(current: string): readonly string[] {
+  return IT_TICKET_TRANSITIONS[current] ?? []
+}
+
 export const itTicketTransitionSchema = z.object({
   ticketId: z.string().min(1),
   status: z.enum(IT_TICKET_STATUSES, { message: "Estado no reconocido" }),
   reason: z.string().trim().min(3, "Indica el motivo (mínimo 3 caracteres)").max(300),
   resolution: text(1000),
-})
+  /**
+   * Asignación explícita del ticket. `""`/ausente = no cambiar el asignado
+   * actual; `"__none__"` = desasignar. Sin este campo el estado `asignado` era
+   * inalcanzable en la práctica: nada podía escribir `assignee_user_id`.
+   */
+  assigneeUserId: z.string().nullable().optional().or(z.literal("")),
+}).refine(
+  (data) => data.status !== "resuelto" || Boolean(data.resolution && data.resolution.trim().length >= 3),
+  { message: "Describe la resolución para cerrar el caso (mínimo 3 caracteres)", path: ["resolution"] },
+)
+
+/** Centinela del selector de asignación para vaciar el técnico responsable. */
+export const IT_TICKET_UNASSIGN = "__none__"
 
 export const itTicketCommentSchema = z.object({
   ticketId: z.string().min(1),

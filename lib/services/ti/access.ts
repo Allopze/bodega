@@ -1,4 +1,4 @@
-import { eq, and, desc, asc, inArray, sql, type SQL } from "drizzle-orm"
+import { eq, and, desc, asc, inArray, isNull, sql, type SQL } from "drizzle-orm"
 import { db } from "@/db"
 import {
   itAccessSystems, itSystemAccess, itWorkerChecklists, itChecklistTasks,
@@ -98,14 +98,30 @@ export async function upsertSystemAccess(
       .from(workers).where(eq(workers.id, input.workerId))
     if (!worker) throw new Error("Trabajador no encontrado")
     assertTiWorksiteAccess(worksiteIds, worker.worksiteId)
+
+    // El sistema se valida acá: un id inexistente caía en un error de clave
+    // foránea crudo, y un sistema desactivado admitía nuevos accesos que la
+    // matriz después no mostraba.
+    const [system] = await tx.select({ id: itAccessSystems.id, isActive: itAccessSystems.isActive })
+      .from(itAccessSystems).where(eq(itAccessSystems.id, input.systemId))
+    if (!system) throw new Error("Sistema no encontrado")
+
     const [existing] = await tx.select().from(itSystemAccess)
       .where(and(eq(itSystemAccess.systemId, input.systemId), eq(itSystemAccess.workerId, input.workerId)))
       .for("update")
 
+    if (!system.isActive && input.status !== "baja" && existing?.status !== input.status) {
+      throw new Error("El sistema está desactivado: reactívalo antes de otorgar o cambiar accesos")
+    }
+
     const now = new Date().toISOString()
     if (existing) {
+      // Reactivar desde 'baja' abre un tramo nuevo de acceso: la fecha de
+      // otorgamiento vigente debe ser la de ahora, no la del alta original.
+      const reactivating = existing.status === "baja" && input.status !== "baja"
       await tx.update(itSystemAccess).set({
         status: input.status,
+        grantedAt: reactivating ? now : existing.grantedAt,
         revokedAt: input.status === "baja" ? now : null,
         responsibleUserId: input.responsibleUserId || existing.responsibleUserId,
         notes: input.notes == null ? existing.notes : input.notes.trim() || null,
@@ -222,9 +238,30 @@ export async function createChecklist(
 ): Promise<string> {
   const id = nanoid()
   await db.transaction(async (tx) => {
-    const [worker] = await tx.select({ id: workers.id, worksiteId: workers.worksiteId }).from(workers).where(eq(workers.id, input.workerId))
+    // `FOR UPDATE` sobre el trabajador: la unicidad de "un checklist abierto
+    // por trabajador y tipo" es check-then-insert y no está respaldada por un
+    // índice único en BD (el filtro parcial sería por `completed_at IS NULL`),
+    // así que sin este lock un doble clic en "Nuevo checklist" insertaba dos.
+    const [worker] = await tx.select({ id: workers.id, worksiteId: workers.worksiteId })
+      .from(workers).where(eq(workers.id, input.workerId)).for("update")
     if (!worker) throw new Error("Trabajador no encontrado")
     assertTiWorksiteAccess(worksiteIds, worker.worksiteId)
+
+    // Un solo checklist abierto por trabajador y tipo: si no, se acumulaban
+    // altas paralelas del mismo trabajador y ninguna era la fuente de verdad.
+    const [openChecklist] = await tx.select({ id: itWorkerChecklists.id })
+      .from(itWorkerChecklists)
+      .where(and(
+        eq(itWorkerChecklists.workerId, input.workerId),
+        eq(itWorkerChecklists.kind, input.kind),
+        isNull(itWorkerChecklists.completedAt),
+      ))
+      .limit(1)
+    if (openChecklist) {
+      throw new Error(input.kind === "onboarding"
+        ? "Este trabajador ya tiene un checklist de alta en curso"
+        : "Este trabajador ya tiene un checklist de baja en curso")
+    }
 
     await tx.insert(itWorkerChecklists).values({
       id,
@@ -235,11 +272,21 @@ export async function createChecklist(
     })
 
     // Los nombres se instancian desde la plantilla: si la plantilla evoluciona,
-    // los checklists ya creados conservan sus tareas históricas.
+    // los checklists ya creados conservan sus tareas históricas. `position`
+    // congela también la secuencia operativa de la plantilla.
     const template = input.kind === "onboarding" ? ONBOARDING_CHECKLIST_TEMPLATE : OFFBOARDING_CHECKLIST_TEMPLATE
     await tx.insert(itChecklistTasks).values(
-      template.map((name) => ({ id: nanoid(), checklistId: id, name })),
+      template.map((name, position) => ({ id: nanoid(), checklistId: id, name, position })),
     )
+
+    await recordAudit({
+      userId: actor.userId,
+      userEmail: actor.userEmail,
+      action: "create",
+      entityType: "it_worker_checklist",
+      entityId: id,
+      newState: { workerId: input.workerId, kind: input.kind, tasks: template.length },
+    }, tx)
   })
   return id
 }
@@ -253,6 +300,7 @@ export async function toggleChecklistTask(
     const [task] = await tx.select({
       id: itChecklistTasks.id,
       checklistId: itChecklistTasks.checklistId,
+      notes: itChecklistTasks.notes,
       workerWorksiteId: workers.worksiteId,
     }).from(itChecklistTasks)
       .innerJoin(itWorkerChecklists, eq(itChecklistTasks.checklistId, itWorkerChecklists.id))
@@ -260,12 +308,16 @@ export async function toggleChecklistTask(
       .where(eq(itChecklistTasks.id, input.taskId)).for("update")
     if (!task) throw new Error("Tarea no encontrada")
     assertTiWorksiteAccess(worksiteIds, task.workerWorksiteId)
+    const existingNotes = task.notes
 
     await tx.update(itChecklistTasks).set({
       done: input.done,
       doneAt: input.done ? new Date().toISOString() : null,
       doneByUserId: input.done ? actor.userId : null,
-      notes: input.notes?.trim() || null,
+      // `null`/ausente = "sin cambio", no "borrar": marcar una tarea desde una
+      // vista sin campo de nota borraba la nota anterior sin dejar rastro.
+      // Mismo criterio que `upsertSystemAccess`.
+      notes: input.notes == null ? existingNotes : input.notes.trim() || null,
     }).where(eq(itChecklistTasks.id, input.taskId))
 
     // Si todas las tareas quedaron hechas, se cierra el checklist.
@@ -337,5 +389,35 @@ export async function getChecklistTasks(checklistId: string) {
     })
     .from(itChecklistTasks)
     .where(eq(itChecklistTasks.checklistId, checklistId))
-    .orderBy(asc(itChecklistTasks.name))
+    // Secuencia de la plantilla; el nombre solo desempata filas históricas
+    // anteriores al backfill de `position`.
+    .orderBy(asc(itChecklistTasks.position), asc(itChecklistTasks.name))
+}
+
+/** Variante en lote de `getChecklistTasks`: evita 1 query por checklist en `/ti/accesos`. */
+export async function getChecklistsTasks(
+  checklistIds: string[],
+): Promise<Map<string, Awaited<ReturnType<typeof getChecklistTasks>>>> {
+  const map = new Map<string, Awaited<ReturnType<typeof getChecklistTasks>>>()
+  if (checklistIds.length === 0) return map
+  const rows = await db
+    .select({
+      checklistId: itChecklistTasks.checklistId,
+      id: itChecklistTasks.id,
+      name: itChecklistTasks.name,
+      done: itChecklistTasks.done,
+      doneAt: itChecklistTasks.doneAt,
+      doneByName: sql<string>`(SELECT u.name FROM ${users} u WHERE u.id = ${itChecklistTasks.doneByUserId})`,
+      notes: itChecklistTasks.notes,
+    })
+    .from(itChecklistTasks)
+    .where(inArray(itChecklistTasks.checklistId, checklistIds))
+    .orderBy(asc(itChecklistTasks.position), asc(itChecklistTasks.name))
+  for (const row of rows) {
+    const { checklistId, ...rest } = row
+    const list = map.get(checklistId) ?? []
+    list.push(rest)
+    map.set(checklistId, list)
+  }
+  return map
 }

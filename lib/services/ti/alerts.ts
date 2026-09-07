@@ -1,21 +1,28 @@
-import { eq, and, isNull, sql, lt } from "drizzle-orm"
+import { eq, and, isNull, sql, lt, notInArray } from "drizzle-orm"
+import { IT_RETIRED_STATUSES } from "./constants"
 import { db } from "@/db"
 import {
-  itAssets, itLicenses, itTickets, users,
+  itAssets, itLicenses, itTickets,
 } from "@/db/schema"
 import { createNotification } from "@/lib/services/notification-create"
+import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 import { logger } from "@/lib/logger"
 import { cleanupOrphanPhotos } from "./assignment-photos"
 import { civilDaysUntil } from "./civil-dates"
 import { todayInChile } from "@/lib/utils"
 
 /* ── Alertas TI diarias (cron) ──────────────────────────────────────────────
- * Notifican solo lo accionable, deduplicadas por día (dedupeKey), para no
- * inundar la campana. Tipos:
- *   - garantías que vencen en ≤30 días;
- *   - licencias que renuevan en ≤14 días;
- *   - activos que llevan >30 días en reparación;
- *   - tickets abiertos sin actualización en >5 días.
+ * Notifican solo lo accionable, deduplicadas por `dedupeKey`, para no inundar
+ * la campana. Tipos y cadencia de repetición:
+ *   - garantías que vencen en ≤30 días → una vez por fecha de vencimiento;
+ *   - licencias que renuevan en ≤14 días → una vez por fecha de renovación;
+ *   - activos que llevan >30 días en reparación → una vez al mes;
+ *   - tickets abiertos sin actualización en >5 días → una vez al día.
+ *
+ * La deduplicación de `createNotification` es PERMANENTE por `(userId,
+ * dedupeKey)` (índice `notifications_user_dedupe_unique`), no diaria: toda
+ * clave de una condición recurrente debe llevar su propio componente temporal
+ * o la alerta se emite una sola vez en la vida del registro.
  */
 
 export interface TiAlert {
@@ -44,7 +51,7 @@ export async function collectTiAlerts(): Promise<TiAlert[]> {
     .from(itAssets)
     .where(and(
       isNull(itAssets.deletedAt),
-      sql`${itAssets.status} NOT IN ('dado_de_baja', 'perdido', 'robado')`,
+      notInArray(itAssets.status, [...IT_RETIRED_STATUSES]),
       sql`${itAssets.warrantyEndDate} IS NOT NULL`,
       sql`${itAssets.warrantyEndDate} >= ${today}`,
       sql`${itAssets.warrantyEndDate} <= (${today}::date + 30)::text`,
@@ -113,7 +120,9 @@ export async function collectTiAlerts(): Promise<TiAlert[]> {
       entityType: "it_asset",
       entityId: asset.id,
       entityHref: `/ti/activos/${asset.id}`,
-      dedupeKey: `ti:repair:${asset.id}`,
+      // Condición recurrente: el mes evita que un activo que vuelve a quedar
+      // atascado meses después ya no alerte nunca más.
+      dedupeKey: `ti:repair:${asset.id}:${today.slice(0, 7)}`,
     })
   }
 
@@ -134,7 +143,8 @@ export async function collectTiAlerts(): Promise<TiAlert[]> {
       entityType: "it_ticket",
       entityId: ticket.id,
       entityHref: `/ti/tickets/${ticket.id}`,
-      dedupeKey: `ti:ticket:${ticket.id}`,
+      // Un ticket estancado se recuerda a diario mientras siga sin moverse.
+      dedupeKey: `ti:ticket:${ticket.id}:${today}`,
     })
   }
 
@@ -155,25 +165,20 @@ export async function runTiAlerts(): Promise<{ sent: number; skipped: number; di
   const alerts = await collectTiAlerts()
   if (alerts.length === 0) return { sent: 0, skipped: 0, discardedPendingPhotos }
 
-  // Destinatarios: usuarios activos con permiso de ver TI. Los que no tienen
-  // permiso no reciben nada; createNotification lanza si falla la BD.
-  const recipients = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(and(eq(users.isActive, true), sql`EXISTS (
-      SELECT 1
-        FROM user_permissions up
-        JOIN permissions p ON p.id = up.permission_id
-       WHERE up.user_id = ${users.id} AND p.name = 'ti:view'
-    )`))
+  // Destinatarios: usuarios activos con permiso de ver TI. `ti:view` se concede
+  // por rol (`modules/ti/manifest.ts` → `role_permissions`), no por grant
+  // directo, así que el helper canónico es obligatorio: resolverlo a mano
+  // contra `user_permissions` dejaba la lista vacía y descartaba cada alerta en
+  // silencio. `createNotification` lanza si falla la BD.
+  const recipients = await getUserIdsWithPermission("ti:view")
 
   let sent = 0
   let skipped = 0
   for (const alert of alerts) {
-    for (const recipient of recipients) {
+    for (const recipientId of recipients) {
       try {
         await createNotification({
-          userId: recipient.id,
+          userId: recipientId,
           type: alert.type,
           title: alert.title,
           body: alert.body,

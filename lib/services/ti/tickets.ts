@@ -7,7 +7,8 @@ import { nanoid } from "@/lib/id"
 import { nextCodeTx } from "@/lib/code-sequences"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { appendAssetHistory } from "./history"
-import { codeYear } from "@/lib/utils"
+import { codeYear, escapeLikePattern } from "@/lib/utils"
+import { IT_TICKET_UNASSIGN, itTicketNextStatuses } from "@/lib/validation/ti"
 
 
 const OPEN_STATUSES = ["nuevo", "asignado", "en_diagnostico", "en_progreso", "esperando_usuario", "esperando_proveedor"]
@@ -23,6 +24,21 @@ export interface CreateTicketInput {
 }
 
 /**
+ * Payload devuelto por `createTicket`: lo consume la action para notificar a
+ * `ti:manage_tickets` de la faena, sin una relectura extra (todos los campos
+ * ya están disponibles al momento de crear).
+ */
+export interface TicketCreated {
+  id: string
+  code: string
+  subject: string
+  priority: string
+  worksiteId: string
+  requesterUserId: string
+  assetId: string | null
+}
+
+/**
  * Crea un ticket TI. El `requesterUserId` es SIEMPRE el usuario que lo crea:
  * los trabajadores de faena sin cuenta son representados por un usuario con
  * cuenta (admin de contrato, jefe de terreno, TI).
@@ -31,9 +47,9 @@ export async function createTicket(
   input: CreateTicketInput,
   actor: { userId: string; userEmail?: string },
   worksiteIds: string[] | "all" = "all",
-): Promise<string> {
+): Promise<TicketCreated> {
   const id = nanoid()
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     if (worksiteIds !== "all" && !worksiteIds.includes(input.worksiteId)) {
       throw new Error("No tienes acceso a esta faena")
     }
@@ -94,8 +110,14 @@ export async function createTicket(
         workerId: input.workerId ?? null, assetId: input.assetId ?? null, worksiteId: input.worksiteId,
       },
     }, tx)
+
+    return {
+      id, code, subject: input.subject, priority: input.priority,
+      // `|| null`, igual que el INSERT de arriba: el OptionSelect vacío manda
+      // `""` y el payload debe reflejar lo que quedó en la fila, no el input.
+      worksiteId: input.worksiteId, requesterUserId: actor.userId, assetId: input.assetId || null,
+    }
   })
-  return id
 }
 
 export interface TransitionTicketInput {
@@ -103,26 +125,43 @@ export interface TransitionTicketInput {
   status: string
   reason: string
   resolution?: string | null
+  /**
+   * `undefined`/`null` = conservar el asignado actual.
+   * `IT_TICKET_UNASSIGN` = desasignar. Cualquier otro valor = id de usuario.
+   */
   assigneeUserId?: string | null
 }
 
-const ALLOWED_TRANSITIONS: Record<string, string[]> = {
-  nuevo: ["asignado", "en_diagnostico", "en_progreso", "esperando_usuario", "resuelto", "cerrado"],
-  asignado: ["en_diagnostico", "en_progreso", "esperando_usuario", "esperando_proveedor", "resuelto", "cerrado"],
-  en_diagnostico: ["en_progreso", "esperando_usuario", "esperando_proveedor", "resuelto", "cerrado"],
-  en_progreso: ["esperando_usuario", "esperando_proveedor", "resuelto", "cerrado"],
-  esperando_usuario: ["en_progreso", "resuelto", "cerrado"],
-  esperando_proveedor: ["en_progreso", "resuelto", "cerrado"],
-  resuelto: ["cerrado", "en_progreso"],
-  cerrado: ["en_progreso"],
+/**
+ * Payload devuelto por `transitionTicket`: la action lo usa para decidir a
+ * quién notificar (asignado nuevo, solicitante al resolver) sin una relectura
+ * fuera de la transacción — la fila ya está bloqueada acá y una relectura
+ * post-commit no podría ver el asignado *anterior*, además de poder observar
+ * un estado más nuevo si otro técnico transicionó en el intermedio.
+ */
+export interface TicketTransitionResult {
+  id: string
+  code: string
+  subject: string
+  priority: string
+  worksiteId: string
+  requesterUserId: string
+  assetId: string | null
+  fromStatus: string
+  toStatus: string
+  statusChanged: boolean
+  previousAssigneeUserId: string | null
+  assigneeUserId: string | null
+  assigneeChanged: boolean
+  resolution: string | null
 }
 
 export async function transitionTicket(
   input: TransitionTicketInput,
   actor: { userId: string; userEmail?: string },
   worksiteIds: string[] | "all" = "all",
-): Promise<void> {
-  await db.transaction(async (tx) => {
+): Promise<TicketTransitionResult> {
+  return db.transaction(async (tx) => {
     const [ticket] = await tx.select().from(itTickets)
       .where(eq(itTickets.id, input.ticketId)).for("update")
     if (!ticket) throw new Error("Ticket no encontrado")
@@ -130,18 +169,35 @@ export async function transitionTicket(
       throw new Error("No tienes acceso a esta faena")
     }
 
-    const allowed = ALLOWED_TRANSITIONS[ticket.status] ?? []
+    const allowed = itTicketNextStatuses(ticket.status)
     if (!allowed.includes(input.status)) {
       throw new Error(`No se puede pasar de '${ticket.status}' a '${input.status}'`)
     }
 
+    // Asignación explícita: el centinela desasigna, un id se valida contra
+    // usuarios activos y cualquier otra cosa conserva el asignado actual.
+    let assigneeUserId = ticket.assigneeUserId
+    if (input.assigneeUserId === IT_TICKET_UNASSIGN) {
+      assigneeUserId = null
+    } else if (input.assigneeUserId) {
+      const [assignee] = await tx.select({ id: users.id, isActive: users.isActive })
+        .from(users).where(eq(users.id, input.assigneeUserId))
+      if (!assignee) throw new Error("El técnico seleccionado no existe")
+      if (!assignee.isActive) throw new Error("El técnico seleccionado está inactivo")
+      assigneeUserId = assignee.id
+    }
+    if (input.status === "asignado" && !assigneeUserId) {
+      throw new Error("Selecciona el técnico responsable para dejar el ticket en 'asignado'")
+    }
+
     const now = new Date().toISOString()
     const reopening = input.status === "en_progreso" && ["resuelto", "cerrado"].includes(ticket.status)
+    const finalResolution = input.status === "resuelto" ? (input.resolution?.trim() || null) : reopening ? null : ticket.resolution
     await tx.update(itTickets).set({
       status: input.status,
-      assigneeUserId: input.assigneeUserId ?? ticket.assigneeUserId,
+      assigneeUserId,
       resolvedAt: input.status === "resuelto" ? now : reopening ? null : ticket.resolvedAt,
-      resolution: input.status === "resuelto" ? (input.resolution?.trim() || null) : reopening ? null : ticket.resolution,
+      resolution: finalResolution,
       updatedAt: now,
     }).where(eq(itTickets.id, input.ticketId))
 
@@ -174,6 +230,15 @@ export async function transitionTicket(
       newState: { status: input.status },
       reason: input.reason,
     }, tx)
+
+    return {
+      id: ticket.id, code: ticket.code, subject: ticket.subject, priority: ticket.priority,
+      worksiteId: ticket.worksiteId, requesterUserId: ticket.requesterUserId, assetId: ticket.assetId,
+      fromStatus: ticket.status, toStatus: input.status, statusChanged: ticket.status !== input.status,
+      previousAssigneeUserId: ticket.assigneeUserId, assigneeUserId,
+      assigneeChanged: ticket.assigneeUserId !== assigneeUserId,
+      resolution: finalResolution,
+    }
   })
 }
 
@@ -181,14 +246,28 @@ export async function addTicketComment(
   input: { ticketId: string; body: string; isInternal: boolean },
   actor: { userId: string; userEmail?: string },
   worksiteIds: string[] | "all" = "all",
+  /**
+   * Cuando viene, el ticket además debe ser de este solicitante. Es la misma
+   * "doble reja" que aplica la ficha del ticket a quien solo tiene
+   * `ti:create_ticket`: sin esto podía comentar por llamada directa un ticket
+   * ajeno de su faena, que es justo lo que ese alcance restringido evita.
+   */
+  onlyRequesterUserId?: string,
 ): Promise<string> {
   const id = nanoid()
   await db.transaction(async (tx) => {
-    const [ticket] = await tx.select({ id: itTickets.id, worksiteId: itTickets.worksiteId })
+    const [ticket] = await tx.select({
+      id: itTickets.id,
+      worksiteId: itTickets.worksiteId,
+      requesterUserId: itTickets.requesterUserId,
+    })
       .from(itTickets).where(eq(itTickets.id, input.ticketId)).for("update")
     if (!ticket) throw new Error("Ticket no encontrado")
     if (worksiteIds !== "all" && !worksiteIds.includes(ticket.worksiteId)) {
       throw new Error("No tienes acceso a esta faena")
+    }
+    if (onlyRequesterUserId && ticket.requesterUserId !== onlyRequesterUserId) {
+      throw new Error("Ticket no encontrado")
     }
 
     await tx.insert(itTicketComments).values({
@@ -229,7 +308,7 @@ export async function listTickets(filters: TicketListFilters) {
   if (filters.requesterUserId) conditions.push(eq(itTickets.requesterUserId, filters.requesterUserId))
   if (filters.scope) conditions.push(filters.scope)
   if (filters.search) {
-    const like = `%${filters.search}%`
+    const like = `%${escapeLikePattern(filters.search.trim())}%`
     conditions.push(sql`(${itTickets.code} ILIKE ${like} OR ${itTickets.subject} ILIKE ${like} OR ${itTickets.description} ILIKE ${like})`)
   }
 
@@ -260,6 +339,39 @@ export async function listTickets(filters: TicketListFilters) {
     .leftJoin(itAssets, eq(itTickets.assetId, itAssets.id))
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(itTickets.createdAt))
+}
+
+/**
+ * Conteo de tickets por estado, ignorando a propósito el filtro de estado.
+ * Las pastillas de la lista deben mostrar el total de cada estado; calcularlas
+ * sobre las filas ya filtradas dejaba en blanco todas las pastillas menos la
+ * activa. El resto de los filtros (faena, prioridad, categoría, alcance) sí se
+ * respeta para que los contadores describan el conjunto que el usuario ve.
+ */
+export async function countTicketsByStatus(
+  filters: Omit<TicketListFilters, "status">,
+): Promise<Record<string, number>> {
+  const conditions: SQL[] = []
+  if (filters.priority) conditions.push(eq(itTickets.priority, filters.priority))
+  if (filters.category) conditions.push(eq(itTickets.category, filters.category))
+  if (filters.worksiteId) conditions.push(eq(itTickets.worksiteId, filters.worksiteId))
+  if (filters.workerId) conditions.push(eq(itTickets.workerId, filters.workerId))
+  if (filters.assetId) conditions.push(eq(itTickets.assetId, filters.assetId))
+  if (filters.assigneeUserId) conditions.push(eq(itTickets.assigneeUserId, filters.assigneeUserId))
+  if (filters.requesterUserId) conditions.push(eq(itTickets.requesterUserId, filters.requesterUserId))
+  if (filters.scope) conditions.push(filters.scope)
+  if (filters.search) {
+    const like = `%${escapeLikePattern(filters.search.trim())}%`
+    conditions.push(sql`(${itTickets.code} ILIKE ${like} OR ${itTickets.subject} ILIKE ${like} OR ${itTickets.description} ILIKE ${like})`)
+  }
+
+  const rows = await db
+    .select({ status: itTickets.status, total: sql<number>`count(*)::int` })
+    .from(itTickets)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .groupBy(itTickets.status)
+
+  return Object.fromEntries(rows.map((row) => [row.status, row.total]))
 }
 
 export async function getTicketById(id: string, scope?: SQL) {

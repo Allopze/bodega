@@ -16,6 +16,11 @@ const mockCreateAsset = vi.hoisted(() => vi.fn())
 const mockUpdateAsset = vi.hoisted(() => vi.fn())
 const mockCreateTicket = vi.hoisted(() => vi.fn())
 const mockTransitionTicket = vi.hoisted(() => vi.fn())
+const mockGetUserIdsWithPermissionForWorksite = vi.hoisted(() => vi.fn())
+const mockNotifyManyUser = vi.hoisted(() => vi.fn())
+// Ejecuta el thunk de inmediato: sin esto las notificaciones (diferidas a
+// `queueMicrotask`) no se podrían assertear sin manipular timers.
+const mockNotifyAfterCommit = vi.hoisted(() => vi.fn((fn: () => void) => fn()))
 
 vi.mock("@/lib/services/module-toggles", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/services/module-toggles")>()),
@@ -36,9 +41,21 @@ vi.mock("@/lib/services/ti/tickets", () => ({
   transitionTicket: mockTransitionTicket,
   addTicketComment: vi.fn(async () => {}),
 }))
+const mockVoidMaintenance = vi.hoisted(() => vi.fn())
+vi.mock("@/lib/services/ti/maintenance", () => ({
+  createMaintenance: vi.fn(async () => "maintenance-1"),
+  updateMaintenance: vi.fn(async () => {}),
+  voidMaintenance: mockVoidMaintenance,
+}))
+vi.mock("@/lib/services/notifications", () => ({
+  getUserIdsWithPermissionForWorksite: mockGetUserIdsWithPermissionForWorksite,
+  notifyManyUser: mockNotifyManyUser,
+  notifyAfterCommit: mockNotifyAfterCommit,
+}))
 
 import { createAssetAction, updateAssetAction } from "@/app/(app)/ti/activos/actions"
 import { createTicketAction, transitionTicketAction } from "@/app/(app)/ti/tickets/actions"
+import { voidMaintenanceAction } from "@/app/(app)/ti/mantenciones/actions"
 
 function makeSession(
   permissions: string[],
@@ -141,11 +158,28 @@ describe("ti:updateAssetAction", () => {
   })
 })
 
+const baseTicketCreated = {
+  id: "ticket-1", code: "INC-2026-0001", subject: "Problema serio", priority: "normal",
+  worksiteId: "ws-ti-norte", requesterUserId: "user-ti-1", assetId: null,
+}
+
+const baseTransitionResult = {
+  id: "t1", code: "INC-2026-0001", subject: "Comienza diagnóstico", priority: "normal",
+  worksiteId: "ws-ti-norte", requesterUserId: "user-requester", assetId: null,
+  fromStatus: "nuevo", toStatus: "en_progreso", statusChanged: true,
+  previousAssigneeUserId: null, assigneeUserId: null, assigneeChanged: false,
+  resolution: null,
+}
+
 describe("ti:createTicketAction", () => {
   beforeEach(() => {
     mockAuthFn.mockReset()
     mockCreateTicket.mockReset()
-    mockCreateTicket.mockResolvedValue("ticket-1")
+    mockGetUserIdsWithPermissionForWorksite.mockReset()
+    mockNotifyManyUser.mockReset()
+    mockNotifyAfterCommit.mockClear()
+    mockCreateTicket.mockResolvedValue(baseTicketCreated)
+    mockGetUserIdsWithPermissionForWorksite.mockResolvedValue(["user-ti-1", "user-ti-2"])
   })
 
   it("niega sin ti:create_ticket ni ti:manage_tickets", async () => {
@@ -182,13 +216,34 @@ describe("ti:createTicketAction", () => {
     expect(result.fieldErrors).toBeTruthy()
     expect(mockCreateTicket).not.toHaveBeenCalled()
   })
+
+  it("notifica a ti:manage_tickets de la faena, sin autonotificar al creador", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:create_ticket"], ["ws-ti-norte"], ["admin_contrato"]))
+    // El creador (user-ti-1) figura entre los destinatarios porque también
+    // tiene ti:manage_tickets (caso típico: un técnico abre su propio ticket).
+    mockGetUserIdsWithPermissionForWorksite.mockResolvedValue(["user-ti-1", "user-ti-2"])
+
+    const result = await createTicketAction(
+      { ok: false, message: "" },
+      formOf({ subject: "Problema serio", description: "Descripción larga del problema detectado", worksiteId: "ws-ti-norte" }),
+    )
+
+    expect(result.ok).toBe(true)
+    expect(mockGetUserIdsWithPermissionForWorksite).toHaveBeenCalledWith("ti:manage_tickets", "ws-ti-norte")
+    expect(mockNotifyManyUser).toHaveBeenCalledWith(
+      ["user-ti-2"],
+      expect.objectContaining({ type: "ti_ticket_created", entityId: "ticket-1" }),
+    )
+  })
 })
 
 describe("ti:transitionTicketAction", () => {
   beforeEach(() => {
     mockAuthFn.mockReset()
     mockTransitionTicket.mockReset()
-    mockTransitionTicket.mockResolvedValue(undefined)
+    mockNotifyManyUser.mockReset()
+    mockNotifyAfterCommit.mockClear()
+    mockTransitionTicket.mockResolvedValue(baseTransitionResult)
   })
 
   it("niega la transición sin ti:manage_tickets", async () => {
@@ -220,9 +275,139 @@ describe("ti:transitionTicketAction", () => {
 
     expect(result.ok).toBe(true)
     expect(mockTransitionTicket).toHaveBeenCalledWith(
-      { ticketId: "t1", status: "en_progreso", reason: "Comienza diagnóstico", resolution: null },
+      // `assigneeUserId: null` = "sin cambio": la transición no reasigna sola,
+      // pero ya existe el campo para asignar explícitamente.
+      { ticketId: "t1", status: "en_progreso", reason: "Comienza diagnóstico", resolution: null, assigneeUserId: null },
       expect.objectContaining({ userId: "user-ti-1" }),
       ["ws-ti-norte"],
+    )
+  })
+
+  it("no notifica una asignación cuando el asignado no cambió (regresión del spam del <Select>)", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:manage_tickets"], ["ws-ti-norte"], ["admin_contrato"]))
+    // El asignado tiene que ser OTRO usuario, no el actor: si fuera el actor,
+    // la aserción negativa también pasaría con una implementación que mirara
+    // solo `assigneeUserId !== session.user.id` e ignorara `assigneeChanged`
+    // — justo la regresión que este test existe para atrapar.
+    mockTransitionTicket.mockResolvedValue({ ...baseTransitionResult, assigneeChanged: false, assigneeUserId: "user-ti-2", previousAssigneeUserId: "user-ti-2" })
+
+    await transitionTicketAction(
+      { ok: false, message: "" },
+      formOf({ ticketId: "t1", status: "en_progreso", reason: "Sigue trabajando en esto" }),
+    )
+
+    expect(mockNotifyManyUser).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ type: "ti_ticket_assigned" }),
+    )
+  })
+
+  it("notifica al nuevo asignado cuando la asignación cambia a otro técnico", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:manage_tickets"], ["ws-ti-norte"], ["admin_contrato"]))
+    mockTransitionTicket.mockResolvedValue({
+      ...baseTransitionResult, assigneeChanged: true, assigneeUserId: "user-ti-2", previousAssigneeUserId: null,
+    })
+
+    await transitionTicketAction(
+      { ok: false, message: "" },
+      formOf({ ticketId: "t1", status: "asignado", reason: "Lo toma otro técnico", assigneeUserId: "user-ti-2" }),
+    )
+
+    expect(mockNotifyManyUser).toHaveBeenCalledWith(
+      ["user-ti-2"],
+      expect.objectContaining({ type: "ti_ticket_assigned", entityId: "t1" }),
+    )
+  })
+
+  it("no notifica la autoasignación", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:manage_tickets"], ["ws-ti-norte"], ["admin_contrato"]))
+    // El actor (user-ti-1) se autoasigna: assigneeChanged es true pero el
+    // nuevo asignado es el mismo que ejecuta la transición.
+    mockTransitionTicket.mockResolvedValue({
+      ...baseTransitionResult, assigneeChanged: true, assigneeUserId: "user-ti-1", previousAssigneeUserId: null,
+    })
+
+    await transitionTicketAction(
+      { ok: false, message: "" },
+      formOf({ ticketId: "t1", status: "asignado", reason: "Lo tomo yo", assigneeUserId: "user-ti-1" }),
+    )
+
+    expect(mockNotifyManyUser).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ type: "ti_ticket_assigned" }),
+    )
+  })
+
+  it("notifica al solicitante cuando el ticket se resuelve, salvo que él mismo lo resuelva", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:manage_tickets"], ["ws-ti-norte"], ["admin_contrato"]))
+    mockTransitionTicket.mockResolvedValue({
+      ...baseTransitionResult, toStatus: "resuelto", requesterUserId: "user-requester", resolution: "Se reemplazó el cargador",
+    })
+
+    await transitionTicketAction(
+      { ok: false, message: "" },
+      formOf({ ticketId: "t1", status: "resuelto", reason: "Listo", resolution: "Se reemplazó el cargador" }),
+    )
+
+    expect(mockNotifyManyUser).toHaveBeenCalledWith(
+      ["user-requester"],
+      expect.objectContaining({ type: "ti_ticket_resolved", entityId: "t1" }),
+    )
+
+    mockNotifyManyUser.mockClear()
+    mockTransitionTicket.mockResolvedValue({
+      ...baseTransitionResult, toStatus: "resuelto", requesterUserId: "user-ti-1", resolution: "Listo",
+    })
+    await transitionTicketAction(
+      { ok: false, message: "" },
+      formOf({ ticketId: "t1", status: "resuelto", reason: "Listo", resolution: "Listo" }),
+    )
+    expect(mockNotifyManyUser).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ type: "ti_ticket_resolved" }),
+    )
+  })
+})
+
+describe("ti:voidMaintenanceAction", () => {
+  beforeEach(() => {
+    mockAuthFn.mockReset()
+    mockVoidMaintenance.mockReset()
+    mockVoidMaintenance.mockResolvedValue({ assetId: "asset-1" })
+  })
+
+  it("niega la anulación sin ti:manage_maintenance", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:view"]))
+    const result = await voidMaintenanceAction(
+      { ok: false, message: "" },
+      formOf({ id: "maint-1", reason: "Motivo suficientemente largo" }),
+    )
+    expect(result.ok).toBe(false)
+    expect(mockVoidMaintenance).not.toHaveBeenCalled()
+  })
+
+  it("exige un motivo de al menos 10 caracteres", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:manage_maintenance"]))
+    const result = await voidMaintenanceAction(
+      { ok: false, message: "" },
+      formOf({ id: "maint-1", reason: "corto" }),
+    )
+    expect(result.ok).toBe(false)
+    expect(result.fieldErrors).toBeTruthy()
+    expect(mockVoidMaintenance).not.toHaveBeenCalled()
+  })
+
+  it("anula con permiso y motivo válido", async () => {
+    mockAuthFn.mockResolvedValue(makeSession(["ti:manage_maintenance"], ["ws-ti-norte"], ["tecnico_ti"]))
+    const result = await voidMaintenanceAction(
+      { ok: false, message: "" },
+      formOf({ id: "maint-1", reason: "Se registró en el equipo equivocado" }),
+    )
+    expect(result.ok).toBe(true)
+    expect(mockVoidMaintenance).toHaveBeenCalledWith(
+      "maint-1", "Se registró en el equipo equivocado",
+      expect.objectContaining({ userId: "user-ti-1" }),
+      "all", // tecnico_ti es un rol global: serviceWorksiteScope no acota
     )
   })
 })

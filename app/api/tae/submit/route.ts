@@ -9,6 +9,8 @@ import { createTaeSubmission, type TaeEvidenceKind, type TaeEvidenceUpload } fro
 import { taeEvidenceKinds, taePublicSubmissionSchema } from "@/lib/validation/fuel-tae"
 import { extractMeterReading } from "@/lib/services/tae-ocr"
 import { isRouteOperational } from "@/lib/services/module-toggles"
+import { safeActionMessage } from "@/lib/action-error"
+import { logger } from "@/lib/logger"
 
 export const runtime = "nodejs"
 
@@ -93,7 +95,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, data: result })
   } catch (error) {
     await recordFailure(`tae:submit:${rateLimitIp}`, { maxAttempts: 12 })
-    const message = error instanceof Error ? error.message : "No se pudo registrar la carga TAE"
+    logger.error("[tae/submit]", error)
+    const message = safeActionMessage(error, "No se pudo registrar la carga TAE")
     return NextResponse.json({ ok: false, message }, { status: 400 })
   }
 }

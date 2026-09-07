@@ -131,13 +131,13 @@ export const itAssignmentPhotos = pgTable("it_assignment_photos", {
 export const itAssetHistory = pgTable("it_asset_history", {
   id:         text("id").primaryKey(),
   assetId:    text("asset_id").notNull().references(() => itAssets.id, { onDelete: "cascade" }),
-  action:     text("action").notNull(), // created | assigned | returned | status_changed | edited | maintenance | ticket | document | photo | warranty | retired
+  action:     text("action").notNull(), // created | assigned | returned | status_changed | edited | maintenance | maintenance_voided | ticket | document | photo | warranty | retired | retirement_reversed
   detail:     text("detail").notNull(),
   changes:    text("changes"), // JSON de cambios relevantes (nunca sobrescribe; append-only)
   actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
   createdAt:  timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
-  check("it_asset_history_action_valid", sql`${table.action} IN ('created', 'assigned', 'returned', 'status_changed', 'edited', 'maintenance', 'ticket', 'document', 'photo', 'warranty', 'retired')`),
+  check("it_asset_history_action_valid", sql`${table.action} IN ('created', 'assigned', 'returned', 'status_changed', 'edited', 'maintenance', 'maintenance_voided', 'ticket', 'document', 'photo', 'warranty', 'retired', 'retirement_reversed')`),
   index("it_asset_history_asset_created_idx").on(table.assetId, table.createdAt),
 ])
 
@@ -157,13 +157,30 @@ export const itMaintenances = pgTable("it_maintenances", {
   technicianUserId: text("technician_user_id").references(() => users.id, { onDelete: "set null" }),
   cost:       numeric("cost", { precision: 14, scale: 2, mode: "number" }).notNull().default(0),
   observations: text("observations"),
+  /**
+   * Anulación de una mantención mal ingresada. No se borra: es un registro de
+   * intervención técnica y su corrección debe quedar visible. `createMaintenance`
+   * nunca toca `it_assets`, así que anular no tiene efecto secundario que
+   * revertir — solo excluye la fila del costo acumulado, el gasto mensual y
+   * el reporte de costo de reparación. Sin `onDelete` a propósito: un
+   * `SET NULL` en `voidedByUserId` dejaría `voidedAt` no nulo con el actor en
+   * null, violando el CHECK todo-o-nada de abajo.
+   */
+  voidedAt:       timestamp("voided_at", { withTimezone: true, mode: "string" }),
+  voidedByUserId: text("voided_by_user_id").references(() => users.id),
+  voidReason:     text("void_reason"),
   createdAt:  timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:  timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   check("it_maintenances_type_valid", sql`${table.type} IN ('preventiva', 'correctiva', 'reparacion', 'actualizacion', 'revision')`),
   check("it_maintenances_cost_valid", sql`${table.cost} >= 0`),
+  check("it_maintenances_void_complete", sql`
+    (${table.voidedAt} IS NULL AND ${table.voidedByUserId} IS NULL AND ${table.voidReason} IS NULL)
+    OR (${table.voidedAt} IS NOT NULL AND ${table.voidedByUserId} IS NOT NULL AND char_length(trim(${table.voidReason})) >= 10)
+  `),
   index("it_maintenances_asset_date_idx").on(table.assetId, table.date),
   index("it_maintenances_supplier_idx").on(table.supplierId),
+  index("it_maintenances_voided_idx").on(table.voidedAt),
 ])
 
 /* ── Tickets / mesa de ayuda TI ───────────────────────────────────────────── */
@@ -303,12 +320,20 @@ export const itChecklistTasks = pgTable("it_checklist_tasks", {
   checklistId: text("checklist_id").notNull().references(() => itWorkerChecklists.id, { onDelete: "cascade" }),
   /** Nombre instanciado desde la plantilla al crear el checklist: queda histórico. */
   name:        text("name").notNull(),
+  /**
+   * Orden de la tarea dentro del checklist, tomado del índice de la plantilla.
+   * Las plantillas son una secuencia operativa (crear correo → crear accesos →
+   * entregar equipo…); ordenar por nombre la destruía y el alta se leía
+   * empezando por "Asignar licencias".
+   */
+  position:    integer("position").notNull().default(0),
   done:        boolean("done").notNull().default(false),
   doneAt:      timestamp("done_at", { withTimezone: true, mode: "string" }),
   doneByUserId: text("done_by_user_id").references(() => users.id, { onDelete: "set null" }),
   notes:       text("notes"),
 }, (table) => [
   index("it_checklist_tasks_checklist_idx").on(table.checklistId),
+  index("it_checklist_tasks_order_idx").on(table.checklistId, table.position),
 ])
 
 /* ── Bajas de activos ─────────────────────────────────────────────────────── */
@@ -322,9 +347,45 @@ export const itAssetRetirements = pgTable("it_asset_retirements", {
   destination: text("destination"),
   observations: text("observations"),
   createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  /**
+   * Estado y custodio del activo justo antes de esta baja, para poder
+   * revertirla. NULL = baja anterior a esta función: no es reversible (no
+   * hay forma honesta de reconstruir el estado previo sin ambigüedad para
+   * todas las bajas históricas).
+   */
+  previousStatus:   text("previous_status"),
+  previousWorkerId: text("previous_worker_id").references(() => workers.id, { onDelete: "set null" }),
+  /**
+   * La asignación que esta baja cerró por pérdida/robo. Una sola FK, no un
+   * array: `it_asset_assignments_active_asset_unique` prohíbe más de una
+   * asignación abierta por activo desde que la tabla existe, así que la
+   * cardinalidad nunca puede ser mayor a uno.
+   */
+  closedAssignmentId: text("closed_assignment_id").references(() => itAssetAssignments.id),
+  /**
+   * Reversión de una baja equivocada. La fila no se borra: queda marcada,
+   * con responsable y motivo, y el activo vuelve a `previousStatus`. Sin
+   * `onDelete` en `reversedByUserId` por la misma razón que `voidedByUserId`
+   * en `itMaintenances` — ver ese comentario.
+   */
+  reversedAt:       timestamp("reversed_at", { withTimezone: true, mode: "string" }),
+  reversedByUserId: text("reversed_by_user_id").references(() => users.id),
+  reverseReason:    text("reverse_reason"),
 }, (table) => [
   check("it_asset_retirements_reason_valid", sql`${table.reason} IN ('venta', 'reciclaje', 'destruccion', 'repuesto', 'donacion', 'perdida', 'robo')`),
+  check("it_asset_retirements_previous_status_valid", sql`
+    ${table.previousStatus} IS NULL
+    OR ${table.previousStatus} IN ('disponible', 'asignado', 'en_prestamo', 'en_reparacion', 'en_bodega')
+  `),
+  check("it_asset_retirements_reverse_complete", sql`
+    (${table.reversedAt} IS NULL AND ${table.reversedByUserId} IS NULL AND ${table.reverseReason} IS NULL)
+    OR (${table.reversedAt} IS NOT NULL AND ${table.reversedByUserId} IS NOT NULL AND char_length(trim(${table.reverseReason})) >= 10)
+  `),
   index("it_asset_retirements_asset_idx").on(table.assetId, table.date),
+  index("it_asset_retirements_reversed_idx").on(table.reversedAt),
+  // La comprobación de "¿hay una baja posterior?" usa created_at, no `date`
+  // (fecha civil, texto: dos bajas del mismo día empatarían).
+  index("it_asset_retirements_asset_created_idx").on(table.assetId, table.createdAt),
 ])
 
 /* ── Proveedores TI (marca proveedores existentes, sin catálogo paralelo) ─── */
@@ -384,7 +445,8 @@ export const itAssetHistoryRelations = relations(itAssetHistory, ({ one }) => ({
 export const itMaintenancesRelations = relations(itMaintenances, ({ one }) => ({
   asset:    one(itAssets, { fields: [itMaintenances.assetId], references: [itAssets.id] }),
   supplier: one(suppliers, { fields: [itMaintenances.supplierId], references: [suppliers.id] }),
-  technician: one(users, { fields: [itMaintenances.technicianUserId], references: [users.id] }),
+  technician: one(users, { fields: [itMaintenances.technicianUserId], references: [users.id], relationName: "maintenance_technician" }),
+  voidedBy: one(users, { fields: [itMaintenances.voidedByUserId], references: [users.id], relationName: "maintenance_voided_by" }),
 }))
 
 export const itTicketsRelations = relations(itTickets, ({ one, many }) => ({
@@ -439,6 +501,9 @@ export const itAssetRetirementsRelations = relations(itAssetRetirements, ({ one 
   asset:      one(itAssets, { fields: [itAssetRetirements.assetId], references: [itAssets.id] }),
   responsible: one(users, { fields: [itAssetRetirements.responsibleUserId], references: [users.id], relationName: "retirement_responsible" }),
   authorizedBy: one(users, { fields: [itAssetRetirements.authorizedByUserId], references: [users.id], relationName: "retirement_authorized_by" }),
+  previousWorker: one(workers, { fields: [itAssetRetirements.previousWorkerId], references: [workers.id] }),
+  closedAssignment: one(itAssetAssignments, { fields: [itAssetRetirements.closedAssignmentId], references: [itAssetAssignments.id] }),
+  reversedBy: one(users, { fields: [itAssetRetirements.reversedByUserId], references: [users.id], relationName: "retirement_reversed_by" }),
 }))
 
 export const itSupplierLinksRelations = relations(itSupplierLinks, ({ one }) => ({

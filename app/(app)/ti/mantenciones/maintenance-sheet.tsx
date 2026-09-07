@@ -11,6 +11,7 @@ import {
 import { SubmitButton } from "@/components/ui/submit-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -115,16 +116,16 @@ export function MaintenanceSheet({ trigger, assetId, suppliers, assets = [], edi
               </div>
 
               <Field label="Problema reportado">
-                <Input name="reportedIssue" defaultValue={editMaintenance?.reportedIssue ?? ""} maxLength={500} placeholder="Ej. pantalla no enciende" />
+                <Textarea name="reportedIssue" defaultValue={editMaintenance?.reportedIssue ?? ""} maxLength={500} placeholder="Ej. pantalla no enciende" rows={3} />
               </Field>
               <Field label="Diagnóstico">
-                <Input name="diagnosis" defaultValue={editMaintenance?.diagnosis ?? ""} maxLength={500} placeholder="Ej. flex dañado" />
+                <Textarea name="diagnosis" defaultValue={editMaintenance?.diagnosis ?? ""} maxLength={500} placeholder="Ej. flex dañado" rows={3} />
               </Field>
               <Field label="Trabajo realizado" required error={state.fieldErrors?.workDone?.[0]}>
-                <Input name="workDone" defaultValue={editMaintenance?.workDone ?? ""} maxLength={1000} placeholder="Ej. reemplazo de pantalla 15.6 FHD" />
+                <Textarea name="workDone" defaultValue={editMaintenance?.workDone ?? ""} maxLength={1000} placeholder="Ej. reemplazo de pantalla 15.6 FHD" rows={4} />
               </Field>
               <Field label="Repuestos utilizados">
-                <Input name="partsUsed" defaultValue={editMaintenance?.partsUsed ?? ""} maxLength={500} placeholder="Ej. panel LP156WFH-SPF2" />
+                <Textarea name="partsUsed" defaultValue={editMaintenance?.partsUsed ?? ""} maxLength={500} placeholder="Ej. panel LP156WFH-SPF2" rows={3} />
               </Field>
 
               <div className="grid gap-4 sm:grid-cols-2">
@@ -140,7 +141,7 @@ export function MaintenanceSheet({ trigger, assetId, suppliers, assets = [], edi
                 <Input name="cost" type="number" defaultValue={editMaintenance?.cost ?? 0} min={0} step={1} placeholder="0" />
               </Field>
               <Field label="Observaciones">
-                <Input name="observations" defaultValue={editMaintenance?.observations ?? ""} maxLength={500} />
+                <Textarea name="observations" defaultValue={editMaintenance?.observations ?? ""} maxLength={500} rows={3} />
               </Field>
             </FieldGroup>
           </SheetBody>

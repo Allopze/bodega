@@ -64,7 +64,7 @@ describe("módulo TI — alertas cron", () => {
     await backdate("assets", stuckRepair, 40)
 
     // Ticket abierto sin actualización (6 días) → alerta.
-    const staleTicket = await createTicket({
+    const { id: staleTicket } = await createTicket({
       subject: "Ticket viejo",
       description: "Sin novedades",
       category: "software",
@@ -74,7 +74,7 @@ describe("módulo TI — alertas cron", () => {
     await backdate("tickets", staleTicket, 6)
 
     // Ticket resuelto → nunca alerta.
-    const resolvedTicket = await createTicket({
+    const { id: resolvedTicket } = await createTicket({
       subject: "Ticket resuelto",
       description: "Cerrado",
       category: "software",
@@ -83,16 +83,30 @@ describe("módulo TI — alertas cron", () => {
     }, actor)
     await backdate("tickets", resolvedTicket, 6)
 
-    // Permiso ti:view para el usuario que recibe notificaciones.
+    // Permiso ti:view para el usuario que recibe notificaciones. Se concede
+    // POR ROL a propósito: así lo hace `modules/ti/manifest.ts` vía
+    // `defaultGrants` → `role_permissions`. Otorgarlo con un grant directo en
+    // `user_permissions` ejercitaba el único camino que no ocurre en
+    // producción y ocultaba que el cron no encontraba destinatarios.
     await testDb.insert(schema.permissions).values({
       id: "p-ti-view-alertas",
       name: "ti:view",
       description: "Ver módulo TI",
       module: "ti",
     })
-    await testDb.insert(schema.userPermissions).values({
-      userId: seeds.userId,
+    await testDb.insert(schema.roles).values({
+      id: "rol-ti-alertas",
+      name: "tecnico_ti",
+      label: "Técnico TI",
+      isGlobal: true,
+    })
+    await testDb.insert(schema.rolePermissions).values({
+      roleId: "rol-ti-alertas",
       permissionId: "p-ti-view-alertas",
+    })
+    await testDb.insert(schema.userRoles).values({
+      userId: seeds.userId,
+      roleId: "rol-ti-alertas",
     })
   })
 

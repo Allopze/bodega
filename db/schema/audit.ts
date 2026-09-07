@@ -77,6 +77,9 @@ export type NotificationType =
   | "ti_license_renewal"
   | "ti_repair_stuck"
   | "ti_ticket_stale"
+  | "ti_ticket_created"
+  | "ti_ticket_assigned"
+  | "ti_ticket_resolved"
 
 export const notifications = pgTable("notifications", {
   id:           text("id").primaryKey(),

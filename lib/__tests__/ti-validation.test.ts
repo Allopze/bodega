@@ -17,8 +17,11 @@ import {
   itChecklistSchema,
   itChecklistTaskToggleSchema,
   itSupplierLinkSchema,
-  retirementTargetStatus,
 } from "@/lib/validation/ti"
+// Fuente única: la copia duplicada en `lib/validation/ti.ts` no tenía
+// consumidores en producción y ambas se testeaban por separado, así que una
+// divergencia no habría fallado ninguna suite.
+import { retirementTargetStatus } from "@/lib/services/ti/constants"
 
 const ok = (schema: Parameters<typeof itAssetTypeSchema.safeParse>[0]) => schema
 
@@ -74,6 +77,8 @@ describe("validación zod del módulo TI", () => {
     }
     expect(itRetirementSchema.safeParse(base).success).toBe(true)
     expect(itRetirementSchema.safeParse({ ...base, reason: "regalo" }).success).toBe(false)
+    // Doble control: responsable y autorizante no pueden coincidir.
+    expect(itRetirementSchema.safeParse({ ...base, authorizedByUserId: "u1" }).success).toBe(false)
     expect(retirementTargetStatus("perdida")).toBe("perdido")
     expect(retirementTargetStatus("robo")).toBe("robado")
     expect(retirementTargetStatus("venta")).toBe("dado_de_baja")
@@ -84,7 +89,13 @@ describe("validación zod del módulo TI", () => {
     expect(itTicketCreateSchema.safeParse(base).success).toBe(true)
     expect(itTicketCreateSchema.safeParse({ ...base, subject: "abc" }).success).toBe(false)
     expect(itTicketCreateSchema.safeParse({ ...base, priority: "critica" }).success).toBe(true)
-    expect(itTicketTransitionSchema.safeParse({ ticketId: "t1", status: "resuelto", reason: "Listo" }).success).toBe(true)
+    // Resolver exige dejar constancia de qué se hizo: es el entregable del caso.
+    expect(itTicketTransitionSchema.safeParse({ ticketId: "t1", status: "resuelto", reason: "Listo" }).success).toBe(false)
+    expect(itTicketTransitionSchema.safeParse({
+      ticketId: "t1", status: "resuelto", reason: "Listo", resolution: "Se reemplazó el cargador",
+    }).success).toBe(true)
+    // Las demás transiciones no la requieren.
+    expect(itTicketTransitionSchema.safeParse({ ticketId: "t1", status: "en_progreso", reason: "Listo" }).success).toBe(true)
     expect(itTicketCommentSchema.safeParse({ ticketId: "t1", body: "Hola", isInternal: "true" }).success).toBe(true)
   })
 

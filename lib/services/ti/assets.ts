@@ -1,4 +1,5 @@
-import { eq, and, isNull, asc, sql, type SQL } from "drizzle-orm"
+import { eq, and, isNull, asc, sql, notInArray, type SQL } from "drizzle-orm"
+import { IT_RETIRED_STATUSES } from "./constants"
 import { db } from "@/db"
 import {
   itAssets, itAssetTypes, itMaintenances, itTickets,
@@ -9,7 +10,7 @@ import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { appendAssetHistory } from "./history"
 import { assertTiWorksiteAccess, type TiWorksiteScope } from "./scope"
 import { MANUAL_ASSET_STATUSES } from "@/lib/validation/ti"
-import { todayInChile } from "@/lib/utils"
+import { todayInChile, escapeLikePattern } from "@/lib/utils"
 
 export interface CreateAssetInput {
   code: string
@@ -55,6 +56,42 @@ const textOrNull = (v: string | null | undefined, max = 500) => {
   return t ? t.slice(0, max) : null
 }
 
+type AssetTx = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+/**
+ * Valida código y número de serie contra TODOS los activos, incluidos los
+ * eliminados lógicamente.
+ *
+ * `it_assets.code` y `serial_number` tienen índice único total, no parcial. Al
+ * filtrar por `deleted_at IS NULL` la comprobación no veía al activo borrado,
+ * Postgres rechazaba con 23505 y `safeActionMessage` —correctamente— tapaba el
+ * SQL con un genérico "Error al crear el activo": el usuario acababa de
+ * eliminar ese activo y no tenía forma de saber que el código seguía tomado.
+ */
+async function assertUniqueIdentifiers(
+  tx: AssetTx,
+  input: { code: string; serialNumber: string | null; excludeId?: string },
+): Promise<void> {
+  const notSelf = input.excludeId ? sql`${itAssets.id} <> ${input.excludeId}` : undefined
+
+  const [codeClash] = await tx.select({ deletedAt: itAssets.deletedAt }).from(itAssets)
+    .where(and(eq(itAssets.code, input.code), notSelf)).limit(1)
+  if (codeClash) {
+    throw new Error(codeClash.deletedAt
+      ? `El código ${input.code} pertenece a un activo eliminado del inventario. Usa otro código.`
+      : `Ya existe un activo con el código ${input.code}`)
+  }
+
+  if (!input.serialNumber) return
+  const [serialClash] = await tx.select({ code: itAssets.code, deletedAt: itAssets.deletedAt }).from(itAssets)
+    .where(and(eq(itAssets.serialNumber, input.serialNumber), notSelf)).limit(1)
+  if (serialClash) {
+    throw new Error(serialClash.deletedAt
+      ? `El número de serie ${input.serialNumber} pertenece a un activo eliminado del inventario (${serialClash.code}).`
+      : `El número de serie ${input.serialNumber} ya está registrado en el activo ${serialClash.code}`)
+  }
+}
+
 export async function createAsset(
   input: CreateAssetInput,
   actor: { userId: string; userEmail?: string },
@@ -70,9 +107,7 @@ export async function createAsset(
     if (!assetType) throw new Error("Tipo de activo no encontrado")
     if (!assetType.isActive) throw new Error("El tipo de activo está inactivo")
 
-    const [duplicated] = await tx.select({ id: itAssets.id }).from(itAssets)
-      .where(and(eq(itAssets.code, input.code), isNull(itAssets.deletedAt))).limit(1)
-    if (duplicated) throw new Error(`Ya existe un activo con el código ${input.code}`)
+    await assertUniqueIdentifiers(tx, { code: input.code, serialNumber: textOrNull(input.serialNumber, 80) })
 
     await tx.insert(itAssets).values({
       id,
@@ -136,12 +171,18 @@ export async function updateAsset(
 
     const [assetType] = await tx.select().from(itAssetTypes).where(eq(itAssetTypes.id, input.assetTypeId))
     if (!assetType) throw new Error("Tipo de activo no encontrado")
-
-    if (input.code !== existing.code) {
-      const [duplicated] = await tx.select({ id: itAssets.id }).from(itAssets)
-        .where(and(eq(itAssets.code, input.code), isNull(itAssets.deletedAt), sql`${itAssets.id} <> ${input.id}`)).limit(1)
-      if (duplicated) throw new Error(`Ya existe un activo con el código ${input.code}`)
+    // Igual que en el alta: no se puede mover un activo a un tipo desactivado.
+    // Solo se exige cuando el tipo cambia, para no bloquear la edición de un
+    // activo cuyo tipo se desactivó después de haberlo registrado.
+    if (input.assetTypeId !== existing.assetTypeId && !assetType.isActive) {
+      throw new Error("El tipo de activo está inactivo")
     }
+
+    await assertUniqueIdentifiers(tx, {
+      code: input.code,
+      serialNumber: textOrNull(input.serialNumber, 80),
+      excludeId: input.id,
+    })
 
     // El status lo cambia el flujo de asignaciones/bajas; editarlo acá solo
     // ajusta datos maestros. Se conserva el estado actual del activo.
@@ -239,17 +280,23 @@ export async function changeAssetStatus(
     if (!existing) throw new Error("Activo no encontrado")
     assertTiWorksiteAccess(worksiteIds, existing.worksiteId)
 
-    if (input.status === "asignado") {
-      const [openAssignment] = await tx.select({ id: itAssetAssignments.id })
+    // 'en_prestamo' nace y muere con su acta de entrega (kind: "loan"), igual
+    // que 'asignado': no es fijable a mano sin una asignación abierta que lo
+    // respalde.
+    if (input.status === "asignado" || input.status === "en_prestamo") {
+      const [openAssignment] = await tx.select({ id: itAssetAssignments.id, kind: itAssetAssignments.kind })
         .from(itAssetAssignments)
         .where(and(eq(itAssetAssignments.assetId, input.assetId), sql`${itAssetAssignments.returnedAt} IS NULL`))
         .limit(1)
-      if (!openAssignment) throw new Error("Solo una entrega registrada puede dejar el activo en 'asignado'")
+      if (!openAssignment) throw new Error(`Solo una entrega registrada puede dejar el activo en '${input.status}'`)
+      if (input.status === "en_prestamo" && openAssignment.kind !== "loan") {
+        throw new Error("El activo tiene una entrega abierta, pero no es un préstamo")
+      }
     } else if (!(MANUAL_ASSET_STATUSES as readonly string[]).includes(input.status)) {
       throw new Error("El estado debe cambiarse mediante su flujo formal de custodia o baja")
     }
 
-    if (input.status !== "asignado") {
+    if (input.status !== "asignado" && input.status !== "en_prestamo") {
       const [openAssignment] = await tx.select({ id: itAssetAssignments.id })
         .from(itAssetAssignments)
         .where(and(eq(itAssetAssignments.assetId, input.assetId), isNull(itAssetAssignments.returnedAt)))
@@ -260,7 +307,7 @@ export async function changeAssetStatus(
     await tx.update(itAssets).set({
       status: input.status,
       // Un cambio manual a disponible/bodega/reparación no arrastra custodio fantasma.
-      workerId: input.status === "asignado" ? existing.workerId : null,
+      workerId: (input.status === "asignado" || input.status === "en_prestamo") ? existing.workerId : null,
       updatedAt: new Date().toISOString(),
     }).where(eq(itAssets.id, input.assetId))
 
@@ -300,7 +347,14 @@ export interface AssetListFilters {
   worksiteId?: string
   supplierId?: string
   warrantyWindow?: "active" | "expiring_30" | "expiring_60" | "expiring_90" | "expired" | "none"
+  /** Antigüedad máxima: equipos comprados hace N años o menos. */
   maxAgeYears?: number
+  /**
+   * Antigüedad mínima: equipos comprados hace N años o más. Es la pregunta de
+   * renovación que plantean el gráfico de antigüedad y el ranking de costos, y
+   * no había forma de responderla desde el inventario.
+   */
+  minAgeYears?: number
   search?: string
   scope?: SQL | undefined
   includeRetired?: boolean
@@ -309,7 +363,7 @@ export interface AssetListFilters {
 export async function listAssets(filters: AssetListFilters) {
   const conditions: SQL[] = [isNull(itAssets.deletedAt)]
   if (!filters.includeRetired) {
-    conditions.push(sql`${itAssets.status} NOT IN ('dado_de_baja', 'perdido', 'robado')`)
+    conditions.push(notInArray(itAssets.status, [...IT_RETIRED_STATUSES]))
   }
   if (filters.typeId) conditions.push(eq(itAssets.assetTypeId, filters.typeId))
   if (filters.status) conditions.push(eq(itAssets.status, filters.status))
@@ -326,8 +380,9 @@ export async function listAssets(filters: AssetListFilters) {
   if (filters.warrantyWindow === "expired") conditions.push(sql`${itAssets.warrantyEndDate} IS NOT NULL AND ${itAssets.warrantyEndDate} < ${today}`)
   if (filters.warrantyWindow === "none") conditions.push(sql`${itAssets.warrantyEndDate} IS NULL`)
   if (filters.maxAgeYears) conditions.push(sql`${itAssets.purchaseDate} IS NOT NULL AND ${itAssets.purchaseDate} >= (${today}::date - ${filters.maxAgeYears} * interval '1 year')::text`)
+  if (filters.minAgeYears) conditions.push(sql`${itAssets.purchaseDate} IS NOT NULL AND ${itAssets.purchaseDate} <= (${today}::date - ${filters.minAgeYears} * interval '1 year')::text`)
   if (filters.search) {
-    const like = `%${filters.search}%`
+    const like = `%${escapeLikePattern(filters.search.trim())}%`
     conditions.push(sql`(${itAssets.code} ILIKE ${like} OR ${itAssets.serialNumber} ILIKE ${like} OR ${itAssets.brand} ILIKE ${like} OR ${itAssets.model} ILIKE ${like})`)
   }
 
@@ -351,8 +406,8 @@ export async function listAssets(filters: AssetListFilters) {
       typeName: itAssetTypes.name,
       workerName: sql<string>`trim(concat(${workers.firstName}, ' ', ${workers.lastName}))`,
       worksiteName: worksites.name,
-      maintenanceCount: sql<number>`(SELECT count(*)::int FROM ${itMaintenances} WHERE ${itMaintenances.assetId} = ${itAssets.id})`,
-      maintenanceCost: sql<number>`(SELECT coalesce(sum(${itMaintenances.cost}), 0)::float8 FROM ${itMaintenances} WHERE ${itMaintenances.assetId} = ${itAssets.id})`,
+      maintenanceCount: sql<number>`(SELECT count(*)::int FROM ${itMaintenances} WHERE ${itMaintenances.assetId} = ${itAssets.id} AND ${itMaintenances.voidedAt} IS NULL)`,
+      maintenanceCost: sql<number>`(SELECT coalesce(sum(${itMaintenances.cost}), 0)::float8 FROM ${itMaintenances} WHERE ${itMaintenances.assetId} = ${itAssets.id} AND ${itMaintenances.voidedAt} IS NULL)`,
       ticketCount: sql<number>`(SELECT count(*)::int FROM ${itTickets} WHERE ${itTickets.assetId} = ${itAssets.id})`,
     })
     .from(itAssets)
@@ -396,9 +451,9 @@ export async function getAssetById(id: string, scope?: SQL) {
       typeHasSpecs: itAssetTypes.hasSpecs,
       workerName: sql<string>`trim(concat(${workers.firstName}, ' ', ${workers.lastName}))`,
       worksiteName: worksites.name,
-      maintenanceCount: sql<number>`(SELECT count(*)::int FROM ${itMaintenances} WHERE ${itMaintenances.assetId} = ${itAssets.id})`,
-      maintenanceCost: sql<number>`(SELECT coalesce(sum(${itMaintenances.cost}), 0)::float8 FROM ${itMaintenances} WHERE ${itMaintenances.assetId} = ${itAssets.id})`,
-      lastMaintenanceDate: sql<string | null>`(SELECT max(${itMaintenances.date}) FROM ${itMaintenances} WHERE ${itMaintenances.assetId} = ${itAssets.id})`,
+      maintenanceCount: sql<number>`(SELECT count(*)::int FROM ${itMaintenances} WHERE ${itMaintenances.assetId} = ${itAssets.id} AND ${itMaintenances.voidedAt} IS NULL)`,
+      maintenanceCost: sql<number>`(SELECT coalesce(sum(${itMaintenances.cost}), 0)::float8 FROM ${itMaintenances} WHERE ${itMaintenances.assetId} = ${itAssets.id} AND ${itMaintenances.voidedAt} IS NULL)`,
+      lastMaintenanceDate: sql<string | null>`(SELECT max(${itMaintenances.date}) FROM ${itMaintenances} WHERE ${itMaintenances.assetId} = ${itAssets.id} AND ${itMaintenances.voidedAt} IS NULL)`,
       ticketCount: sql<number>`(SELECT count(*)::int FROM ${itTickets} WHERE ${itTickets.assetId} = ${itAssets.id})`,
     })
     .from(itAssets)
@@ -413,7 +468,7 @@ export async function getAssetById(id: string, scope?: SQL) {
 export async function listAssetOptions(scope?: SQL) {
   const conditions: SQL[] = [
     isNull(itAssets.deletedAt),
-    sql`${itAssets.status} NOT IN ('dado_de_baja', 'perdido', 'robado')`,
+    notInArray(itAssets.status, [...IT_RETIRED_STATUSES]),
   ]
   if (scope) conditions.push(scope)
   return db

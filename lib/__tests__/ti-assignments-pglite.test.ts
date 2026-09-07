@@ -487,4 +487,136 @@ describe("módulo TI — asignaciones (custodia)", () => {
     const returned = await listAssignments({ status: "returned" })
     expect(returned.length).toBeGreaterThan(0)
   })
+
+  it("un préstamo (kind: loan) deja el activo en 'en_prestamo', no en 'asignado'", async () => {
+    const assetId = await makeAsset("TI-A-LOAN-01")
+    const assignmentId = await createAssignment({
+      assetId,
+      workerId: "wk-ti-juan",
+      worksiteId: "ws-ti-norte",
+      kind: "loan",
+      deliveredAt: "2026-09-01T10:00",
+      physicalState: "bueno",
+      accessoryNames: [],
+      photoIds: [],
+    }, actor)
+
+    const [asset] = await testDb.select().from(schema.itAssets).where(eq(schema.itAssets.id, assetId))
+    expect(asset?.status).toBe("en_prestamo")
+    expect(asset?.workerId).toBe("wk-ti-juan")
+
+    // Antes de este cambio, `en_prestamo` nunca coexistía con una asignación
+    // abierta y esta rama de `returnAssignment` era código inalcanzable.
+    await returnAssignment({
+      assignmentId,
+      returnedAt: "2026-09-05T09:00",
+      returnPhysicalState: "bueno",
+      returnedAccessoryNames: [],
+      nextStatus: "disponible",
+      photoIds: [],
+    }, actor)
+
+    const [returnedAsset] = await testDb.select().from(schema.itAssets).where(eq(schema.itAssets.id, assetId))
+    expect(returnedAsset?.status).toBe("disponible")
+    expect(returnedAsset?.workerId).toBeNull()
+  })
+
+  it("una salida a reparación (kind: repair_exit) deja el activo en 'en_reparacion' y se puede devolver", async () => {
+    const assetId = await makeAsset("TI-A-REPAIR-01")
+    const assignmentId = await createAssignment({
+      assetId,
+      workerId: "wk-ti-juan",
+      worksiteId: "ws-ti-norte",
+      kind: "repair_exit",
+      deliveredAt: "2026-09-01T10:00",
+      physicalState: "malo",
+      accessoryNames: [],
+      photoIds: [],
+    }, actor)
+
+    const [asset] = await testDb.select().from(schema.itAssets).where(eq(schema.itAssets.id, assetId))
+    expect(asset?.status).toBe("en_reparacion")
+
+    await returnAssignment({
+      assignmentId,
+      returnedAt: "2026-09-08T09:00",
+      returnPhysicalState: "bueno",
+      returnedAccessoryNames: [],
+      nextStatus: "en_bodega",
+      photoIds: [],
+    }, actor)
+
+    const [returnedAsset] = await testDb.select().from(schema.itAssets).where(eq(schema.itAssets.id, assetId))
+    expect(returnedAsset?.status).toBe("en_bodega")
+  })
+
+  it("una transferencia (kind: transfer) sigue dejando el activo 'asignado'", async () => {
+    const assetId = await makeAsset("TI-A-TRANSFER-01")
+    const firstAssignmentId = await createAssignment({
+      assetId,
+      workerId: "wk-ti-juan",
+      worksiteId: "ws-ti-norte",
+      kind: "delivery",
+      deliveredAt: "2026-09-01T10:00",
+      physicalState: "bueno",
+      accessoryNames: [],
+      photoIds: [],
+    }, actor)
+
+    await transferAssignment({
+      assignmentId: firstAssignmentId,
+      returnedAt: "2026-09-03T10:00",
+      returnPhysicalState: "bueno",
+      newWorkerId: "wk-ti-maria",
+      newWorksiteId: "ws-ti-sur",
+      newDeliveredAt: "2026-09-03T10:00",
+      newPhysicalState: "bueno",
+      newAccessoryNames: [],
+      photoIds: [],
+    }, actor)
+
+    const [asset] = await testDb.select().from(schema.itAssets).where(eq(schema.itAssets.id, assetId))
+    expect(asset?.status).toBe("asignado")
+    expect(asset?.workerId).toBe("wk-ti-maria")
+  })
+
+  it("una transferencia con newKind: loan deriva el estado igual que una entrega en préstamo", async () => {
+    // El test de arriba no distingue el código nuevo del viejo (sin `newKind`,
+    // ambos dejan "asignado"). Este ejercita la derivación real: es la única
+    // cobertura de la rama `assignmentTargetStatus(input.newKind)` de
+    // `transferAssignment`, y también fija que la auditoría guarde el `kind`
+    // realmente insertado y no "transfer" fijo.
+    const assetId = await makeAsset("TI-A-TRANSFER-02")
+    const firstAssignmentId = await createAssignment({
+      assetId,
+      workerId: "wk-ti-juan",
+      worksiteId: "ws-ti-norte",
+      kind: "delivery",
+      deliveredAt: "2026-09-01T10:00",
+      physicalState: "bueno",
+      accessoryNames: [],
+      photoIds: [],
+    }, actor)
+
+    await transferAssignment({
+      assignmentId: firstAssignmentId,
+      returnedAt: "2026-09-03T10:00",
+      returnPhysicalState: "bueno",
+      newWorkerId: "wk-ti-maria",
+      newWorksiteId: "ws-ti-sur",
+      newKind: "loan",
+      newDeliveredAt: "2026-09-03T10:00",
+      newPhysicalState: "bueno",
+      newAccessoryNames: [],
+      photoIds: [],
+    }, actor)
+
+    const [asset] = await testDb.select().from(schema.itAssets).where(eq(schema.itAssets.id, assetId))
+    expect(asset?.status).toBe("en_prestamo")
+    expect(asset?.workerId).toBe("wk-ti-maria")
+
+    const [nueva] = await testDb.select().from(schema.itAssetAssignments)
+      .where(and(eq(schema.itAssetAssignments.assetId, assetId), isNull(schema.itAssetAssignments.returnedAt)))
+    expect(nueva?.kind).toBe("loan")
+  })
 })

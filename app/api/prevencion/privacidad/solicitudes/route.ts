@@ -8,6 +8,8 @@ import {
   createPreventionPrivacyRequest,
   listPreventionPrivacyRequests,
 } from "@/lib/services/prevention-privacy"
+import { safeActionMessage } from "@/lib/action-error"
+import { logger } from "@/lib/logger"
 
 function requestContext(request: Request, user: { id: string; email?: string | null }) {
   return {
@@ -52,7 +54,8 @@ export async function POST(request: Request) {
       headers: { "Cache-Control": "private, max-age=0, no-store" },
     })
   } catch (error) {
-    const message = error instanceof Error ? error.message : "No se pudo crear la solicitud."
+    logger.error("[prevencion/privacidad/solicitudes]", error)
+    const message = safeActionMessage(error, "No se pudo crear la solicitud.")
     return NextResponse.json({ error: message }, { status: 400 })
   }
 }

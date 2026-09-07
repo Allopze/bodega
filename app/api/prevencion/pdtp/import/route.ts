@@ -6,6 +6,7 @@ import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { applyPdtpImportBatch, cancelPdtpImportBatch, stagePdtpXlsxImport } from "@/lib/services/prevention-pdtp"
 import { logger } from "@/lib/logger"
+import { safeActionMessage } from "@/lib/action-error"
 import { XLSX_MAX_BYTES } from "@/lib/services/xlsx-security"
 
 function scopeToIds(scope: ReturnType<typeof resolveWorksiteScope>): string[] | "all" {
@@ -51,7 +52,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, message: "Lote aplicado correctamente.", result })
     } catch (err) {
       logger.error("[pdtp/import/apply]", err)
-      const message = err instanceof Error ? err.message : "Error al aplicar el lote de importación."
+      const message = safeActionMessage(err, "Error al aplicar el lote de importación.")
       return NextResponse.json({ error: message }, { status: 400 })
     }
   }
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, message: "Preview cancelado sin modificar el programa.", result })
     } catch (err) {
       logger.error("[pdtp/import/cancel]", err)
-      const message = err instanceof Error ? err.message : "Error al cancelar el lote de importación."
+      const message = safeActionMessage(err, "Error al cancelar el lote de importación.")
       return NextResponse.json({ error: message }, { status: 400 })
     }
   }
@@ -105,7 +106,7 @@ export async function POST(request: Request) {
     })
   } catch (err) {
     logger.error("[pdtp/import]", err)
-    const message = err instanceof Error ? err.message : "Error al importar el Excel."
+    const message = safeActionMessage(err, "Error al importar el Excel.")
     return NextResponse.json({ error: message }, { status: 400 })
   }
 }

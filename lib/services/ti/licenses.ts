@@ -1,11 +1,12 @@
 import { eq, and, isNull, desc, asc, inArray, or, sql, type SQL } from "drizzle-orm"
+import { isRetiredStatus } from "./constants"
 import { db } from "@/db"
 import {
   itLicenses, itLicenseAssignments, suppliers, workers, itAssets, worksites, users,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
-import { assertTiWorksiteAccess, type TiWorksiteScope } from "./scope"
+import { assertTiGlobalAccess, assertTiWorksiteAccess, type TiWorksiteScope } from "./scope"
 
 export interface CreateLicenseInput {
   name: string
@@ -61,9 +62,13 @@ export async function updateLicense(
   worksiteIds: TiWorksiteScope = "all",
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    // El catálogo de licencias es corporativo: `createLicense` ya exige alcance
+    // global y editar nombre, costo, cupos o vigencia tiene el mismo peso.
+    // Bastaba una asignación en la faena propia para que un rol acotado
+    // desactivara una licencia de toda la empresa.
+    assertTiGlobalAccess(worksiteIds)
     const [existing] = await tx.select().from(itLicenses).where(eq(itLicenses.id, input.id)).for("update")
     if (!existing) throw new Error("Licencia no encontrada")
-    await assertLicenseInScope(tx, input.id, worksiteIds)
 
     const [activeAssignments] = await tx.select({
       count: sql<number>`count(*)::int`,
@@ -132,7 +137,7 @@ export async function assignLicense(
         .from(itAssets).where(eq(itAssets.id, input.assetId))
       : [undefined]
     if (input.assetId && (!asset || asset.deletedAt)) throw new Error("Activo no encontrado")
-    if (asset && ["dado_de_baja", "perdido", "robado"].includes(asset.status)) {
+    if (asset && isRetiredStatus(asset.status)) {
       throw new Error("No puedes asignar una licencia a un activo retirado")
     }
 
@@ -146,6 +151,32 @@ export async function assignLicense(
     }
     const targetWorksiteId = targetWorksites[0] ?? null
     assertTiWorksiteAccess(worksiteIds, targetWorksiteId)
+
+    // Un trabajador no consume dos cupos de la misma licencia. Sin esto se
+    // podía asignar Microsoft 365 dos veces a la misma persona y agotar los
+    // cupos comprados con asignaciones redundantes.
+    if (input.workerId) {
+      const [alreadyAssigned] = await tx.select({ id: itLicenseAssignments.id })
+        .from(itLicenseAssignments)
+        .where(and(
+          eq(itLicenseAssignments.licenseId, input.licenseId),
+          eq(itLicenseAssignments.workerId, input.workerId),
+          isNull(itLicenseAssignments.revokedAt),
+        ))
+        .limit(1)
+      if (alreadyAssigned) throw new Error("El trabajador ya tiene esta licencia asignada")
+    }
+    if (input.assetId) {
+      const [alreadyAssigned] = await tx.select({ id: itLicenseAssignments.id })
+        .from(itLicenseAssignments)
+        .where(and(
+          eq(itLicenseAssignments.licenseId, input.licenseId),
+          eq(itLicenseAssignments.assetId, input.assetId),
+          isNull(itLicenseAssignments.revokedAt),
+        ))
+        .limit(1)
+      if (alreadyAssigned) throw new Error("El equipo ya tiene esta licencia asignada")
+    }
 
     // Capacidad: asignadas vigentes vs compradas. Solo aplica cuando la
     // cantidad comprada es mayor a 0 (catálogos abiertos no se limitan).
@@ -283,26 +314,13 @@ async function assertLicenseAssignmentInScope(tx: TiTransaction, assignmentId: s
   assertTiWorksiteAccess(worksiteIds, target)
 }
 
-async function assertLicenseInScope(tx: TiTransaction, licenseId: string, worksiteIds: TiWorksiteScope): Promise<void> {
-  if (worksiteIds === "all") return
-  if (worksiteIds.length === 0) throw new Error("No tienes acceso a esta faena")
-  const [assignment] = await tx.select({ id: itLicenseAssignments.id })
-    .from(itLicenseAssignments)
-    .leftJoin(workers, eq(itLicenseAssignments.workerId, workers.id))
-    .leftJoin(itAssets, eq(itLicenseAssignments.assetId, itAssets.id))
-    .where(and(
-      eq(itLicenseAssignments.licenseId, licenseId),
-      or(
-        inArray(itLicenseAssignments.worksiteId, worksiteIds),
-        inArray(workers.worksiteId, worksiteIds),
-        inArray(itAssets.worksiteId, worksiteIds),
-      ),
-    ))
-    .limit(1)
-  if (!assignment) throw new Error("No tienes acceso a esta licencia")
-}
 
-function licenseScopeCondition(worksiteIds: TiWorksiteScope): SQL | undefined {
+/**
+ * Predicado de faena para licencias. No tienen columna de faena propia: se
+ * acotan por las faenas de sus asignaciones (directas, del trabajador o del
+ * activo). Exportado para que el dashboard cuente lo mismo que el listado.
+ */
+export function licenseScopeCondition(worksiteIds: TiWorksiteScope): SQL | undefined {
   if (worksiteIds === "all") return undefined
   if (worksiteIds.length === 0) return sql`false`
   const ids = sql.join(worksiteIds.map((id) => sql`${id}`), sql`, `)

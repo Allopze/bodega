@@ -156,3 +156,94 @@ export function itStatusLabel(status: string | null | undefined): string {
 export function itTicketStatusLabel(status: string): string {
   return IT_TICKET_STATUS_META[status]?.label ?? status
 }
+
+/**
+ * Estado final del activo según el motivo de baja: pérdida y robo conservan su
+ * propio estado. Vive acá —vocabulario puro, sin dependencia de `@/db`— porque
+ * la usan el servicio de bajas, la validación y los tests.
+ */
+export function retirementTargetStatus(reason: string): string {
+  return reason === "perdida" ? "perdido" : reason === "robo" ? "robado" : "dado_de_baja"
+}
+
+/**
+ * Estados terminales: fuera del "parque vigente" que muestra el inventario.
+ *
+ * Una sola definición a propósito. El triple estaba repetido literal en siete
+ * lugares (inventario, dashboard, alertas, licencias, bajas, garantías y el
+ * filtro de la página de activos) y ya había divergido: el tile "Garantías por
+ * vencer" excluía las bajas y el listado al que enlaza, no.
+ */
+export const IT_RETIRED_STATUSES = ["dado_de_baja", "perdido", "robado"] as const
+
+/** `true` si el estado saca al activo del parque vigente. */
+export function isRetiredStatus(status: string): boolean {
+  return (IT_RETIRED_STATUSES as readonly string[]).includes(status)
+}
+
+/**
+ * Estado del activo al entregarlo, según el `kind` de la asignación. Antes de
+ * esto, `createAssignment` fijaba siempre 'asignado' sin mirar `kind`: un
+ * préstamo (`loan`) o una salida a reparación (`repair_exit`) quedaban
+ * "asignados" en vez de reflejar su naturaleza, y `en_prestamo` era un estado
+ * manual que nunca coexistía con una asignación abierta (por eso su rama en
+ * `returnAssignment` era código inalcanzable).
+ */
+export function assignmentTargetStatus(kind: string): string {
+  if (kind === "loan") return "en_prestamo"
+  if (kind === "repair_exit") return "en_reparacion"
+  return "asignado" // delivery, transfer
+}
+
+/**
+ * Ingredientes para decidir si una baja se puede revertir. Todos calculables
+ * con datos que `listRetirements`/`reverseRetirement` ya tienen en la fila (o
+ * en un `EXISTS` correlacionado); el helper solo aplica la regla de negocio,
+ * en un solo lugar, para que la comprobación de la UI (`canReverse`) y la
+ * guarda final del servicio nunca diverjan.
+ */
+export interface RetirementReversalState {
+  reason: string
+  reversedAt: string | null
+  previousStatus: string | null
+  closedAssignmentId: string | null
+  assetStatus: string
+  assetDeletedAt: string | null
+  /** Existe otra baja del mismo activo posterior a esta (por created_at). */
+  hasLaterRetirement: boolean
+  /**
+   * Existe un evento posterior en la línea de tiempo del activo
+   * (status_changed / assigned / returned) que pudo sobrescribir el efecto de
+   * esta baja. Se excluyen a propósito 'retired'/'retirement_reversed': en
+   * Postgres `now()` es el timestamp de TRANSACCIÓN, así que la entrada
+   * 'retired' de esta misma baja comparte el mismo instante que su
+   * `created_at` — no es "posterior", y `hasLaterRetirement` ya cubre las
+   * bajas realmente posteriores.
+   */
+  hasLaterMovement: boolean
+  /** El activo tiene una asignación abierta ahora mismo. */
+  hasOpenAssignment: boolean
+}
+
+/**
+ * `null` = la baja se puede revertir. Texto = el motivo exacto por el que no,
+ * listo para mostrar al usuario y para lanzar como Error en el servicio.
+ *
+ * Una baja "vieja" cuyo efecto ya fue sobrescrito no es reversible: restaurar
+ * su `previousStatus` pisaría el estado que fijó un evento posterior.
+ */
+export function retirementReverseBlocker(s: RetirementReversalState): string | null {
+  if (s.reversedAt !== null) return "Esta baja ya fue revertida"
+  if (s.assetDeletedAt !== null) return "El activo fue eliminado del inventario: restáuralo antes de revertir la baja"
+  if (s.previousStatus === null) {
+    return "Esta baja no registra el estado previo del activo (es anterior a esta función): usa el control manual de estado en la ficha"
+  }
+  const target = retirementTargetStatus(s.reason)
+  if (s.assetStatus !== target) {
+    return `El activo está en estado '${itStatusLabel(s.assetStatus)}' y no en el que dejó esta baja ('${itStatusLabel(target)}'): su efecto ya fue sobrescrito`
+  }
+  if (s.hasLaterRetirement) return "Existe una baja posterior para este activo: revierte primero la más reciente"
+  if (s.hasLaterMovement) return "El activo registra movimientos posteriores a la baja (cambio de estado, entrega o devolución): la reversión ya no es unívoca"
+  if (s.hasOpenAssignment) return "El activo tiene una asignación abierta: su custodia ya no la fija esta baja"
+  return null
+}

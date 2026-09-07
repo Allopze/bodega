@@ -5,6 +5,7 @@ import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { appendAssetHistory } from "./history"
 import { assertTiWorksiteAccess, type TiWorksiteScope } from "./scope"
+import { escapeLikePattern } from "@/lib/utils"
 
 
 export interface CreateMaintenanceInput {
@@ -83,6 +84,7 @@ export async function updateMaintenance(
   await db.transaction(async (tx) => {
     const [existing] = await tx.select().from(itMaintenances).where(eq(itMaintenances.id, input.id)).for("update")
     if (!existing) throw new Error("Mantención no encontrada")
+    if (existing.voidedAt) throw new Error("Esta mantención está anulada: no se puede editar")
     if (input.assetId !== existing.assetId) throw new Error("No se puede cambiar el activo de una mantención existente")
 
     const [asset] = await tx.select({ worksiteId: itAssets.worksiteId })
@@ -125,12 +127,70 @@ export async function updateMaintenance(
   })
 }
 
+/**
+ * Anula una mantención mal ingresada. No hay efecto secundario que revertir
+ * en `it_assets`: `createMaintenance`/`updateMaintenance` nunca lo tocan.
+ * Solo excluye la fila de los agregados de costo (ver `maintenanceCostByAsset`
+ * y los consumidores en `queries.ts`/`reportes/actions.ts`) — la fila sigue
+ * apareciendo en `listMaintenances`, tachada, para que la corrección quede
+ * visible en vez de desaparecer como un borrado.
+ */
+export async function voidMaintenance(
+  id: string,
+  reason: string,
+  actor: { userId: string; userEmail?: string },
+  worksiteIds: TiWorksiteScope = "all",
+): Promise<{ assetId: string }> {
+  const trimmed = reason?.trim() ?? ""
+  if (trimmed.length < 10) throw new Error("La anulación requiere un motivo de al menos 10 caracteres")
+
+  return db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(itMaintenances).where(eq(itMaintenances.id, id)).for("update")
+    if (!existing) throw new Error("Mantención no encontrada")
+    if (existing.voidedAt) throw new Error("Esta mantención ya fue anulada")
+
+    const [asset] = await tx.select({ worksiteId: itAssets.worksiteId })
+      .from(itAssets)
+      .where(and(eq(itAssets.id, existing.assetId), isNull(itAssets.deletedAt)))
+    if (!asset) throw new Error("Activo no encontrado")
+    assertTiWorksiteAccess(worksiteIds, asset.worksiteId)
+
+    const now = new Date().toISOString()
+    await tx.update(itMaintenances).set({
+      voidedAt: now,
+      voidedByUserId: actor.userId,
+      voidReason: trimmed,
+      updatedAt: now,
+    }).where(and(eq(itMaintenances.id, id), isNull(itMaintenances.voidedAt)))
+
+    await appendAssetHistory({
+      assetId: existing.assetId,
+      action: "maintenance_voided",
+      detail: `Mantención ${existing.type} del ${existing.date} anulada (costo revertido: ${existing.cost}).`,
+      changes: { maintenanceId: id, voidReason: trimmed, cost: existing.cost, type: existing.type, date: existing.date },
+      actorUserId: actor.userId,
+    }, tx)
+    await recordAudit({
+      userId: actor.userId,
+      userEmail: actor.userEmail,
+      action: "update",
+      entityType: "it_maintenance",
+      entityId: id,
+      oldState: { voidedAt: null, cost: existing.cost, date: existing.date, type: existing.type },
+      newState: { voidedAt: now, voidReason: trimmed },
+      reason: trimmed,
+    }, tx)
+
+    return { assetId: existing.assetId }
+  })
+}
+
 export async function listMaintenances(filters: { assetId?: string; scope?: SQL; search?: string }) {
   const conditions: SQL[] = [isNull(itAssets.deletedAt)]
   if (filters.assetId) conditions.push(eq(itMaintenances.assetId, filters.assetId))
   if (filters.scope) conditions.push(filters.scope)
   if (filters.search) {
-    const like = `%${filters.search}%`
+    const like = `%${escapeLikePattern(filters.search.trim())}%`
     conditions.push(sql`(${itMaintenances.workDone} ILIKE ${like} OR ${itMaintenances.reportedIssue} ILIKE ${like})`)
   }
   return db
@@ -153,6 +213,9 @@ export async function listMaintenances(filters: { assetId?: string; scope?: SQL;
       technicianUserId: itMaintenances.technicianUserId,
       technicianUserName: sql<string>`(SELECT u.name FROM ${users} u WHERE u.id = ${itMaintenances.technicianUserId})`,
       observations: itMaintenances.observations,
+      voidedAt: itMaintenances.voidedAt,
+      voidReason: itMaintenances.voidReason,
+      voidedByUserName: sql<string | null>`(SELECT u.name FROM ${users} u WHERE u.id = ${itMaintenances.voidedByUserId})`,
     })
     .from(itMaintenances)
     .innerJoin(itAssets, eq(itMaintenances.assetId, itAssets.id))
@@ -161,9 +224,9 @@ export async function listMaintenances(filters: { assetId?: string; scope?: SQL;
     .orderBy(desc(itMaintenances.date))
 }
 
-/** Resumen de costo por activo: identifica equipos que conviene reemplazar. */
+/** Resumen de costo por activo: identifica equipos que conviene reemplazar. Excluye anuladas. */
 export async function maintenanceCostByAsset(scope?: SQL) {
-  const conditions: SQL[] = [isNull(itAssets.deletedAt)]
+  const conditions: SQL[] = [isNull(itAssets.deletedAt), isNull(itMaintenances.voidedAt)]
   if (scope) conditions.push(scope)
   return db
     .select({

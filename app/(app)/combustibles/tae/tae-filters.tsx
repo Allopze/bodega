@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/field"
 import { DatePicker } from "@/components/ui/date-picker"
-import { FilterSelect } from "../filter-select"
+import { FilterSelect } from "@/components/ui/filter-select"
 
 interface Option { id: string; name: string; worksiteId?: string }
 

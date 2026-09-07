@@ -19,9 +19,10 @@ vi.mock("@/db", () => ({
 
 import {
   createTicket, transitionTicket, addTicketComment,
-  listTickets, getTicketById, getTicketComments, isTicketOpen,
+  listTickets, countTicketsByStatus, getTicketById, getTicketComments, isTicketOpen,
 } from "@/lib/services/ti/tickets"
 import { createAsset } from "@/lib/services/ti/assets"
+import { IT_TICKET_UNASSIGN } from "@/lib/validation/ti"
 
 describe("módulo TI — tickets (mesa de ayuda)", () => {
   let assetId: string
@@ -38,7 +39,7 @@ describe("módulo TI — tickets (mesa de ayuda)", () => {
   afterAll(async () => pg.close())
 
   it("crea un ticket con correlativo INC y estado 'nuevo'", async () => {
-    const id = await createTicket({
+    const { id } = await createTicket({
       subject: "No enciende el notebook",
       description: "Pantalla negra al iniciar",
       category: "hardware",
@@ -111,7 +112,7 @@ describe("módulo TI — tickets (mesa de ayuda)", () => {
   })
 
   it("transiciona estados válidos y deja resolución al resolver", async () => {
-    const id = await createTicket({
+    const { id } = await createTicket({
       subject: "Correo no llega",
       description: "Bandeja vacía",
       category: "correo",
@@ -131,7 +132,7 @@ describe("módulo TI — tickets (mesa de ayuda)", () => {
   })
 
   it("permite reabrir un ticket resuelto y bloquea transiciones inválidas", async () => {
-    const id = await createTicket({
+    const { id } = await createTicket({
       subject: "Impresora",
       description: "No imprime",
       category: "impresoras",
@@ -154,7 +155,7 @@ describe("módulo TI — tickets (mesa de ayuda)", () => {
   })
 
   it("separa comentarios internos de los visibles al autor", async () => {
-    const id = await createTicket({
+    const { id } = await createTicket({
       subject: "VPN",
       description: "No conecta",
       category: "accesos",
@@ -198,5 +199,77 @@ describe("módulo TI — tickets (mesa de ayuda)", () => {
     expect(isTicketOpen("en_progreso")).toBe(true)
     expect(isTicketOpen("resuelto")).toBe(false)
     expect(isTicketOpen("cerrado")).toBe(false)
+  })
+
+  it("asigna, reasigna y desasigna el técnico responsable", async () => {
+    const { id } = await createTicket({
+      subject: "Impresora atascada en recepción",
+      description: "No toma papel desde la mañana",
+      category: "impresoras",
+      priority: "normal",
+      worksiteId: "ws-ti-norte",
+    }, actor)
+
+    const firstAssign = await transitionTicket({ ticketId: id, status: "asignado", reason: "Lo toma soporte", assigneeUserId: actor.userId }, actor)
+    expect((await getTicketById(id))?.assigneeUserId).toBe(actor.userId)
+    // El payload de retorno es lo que consume la action para notificar: debe
+    // reflejar el cambio real de asignado, no solo el estado final en BD.
+    expect(firstAssign.previousAssigneeUserId).toBeNull()
+    expect(firstAssign.assigneeUserId).toBe(actor.userId)
+    expect(firstAssign.assigneeChanged).toBe(true)
+    expect(firstAssign.fromStatus).toBe("nuevo")
+    expect(firstAssign.toStatus).toBe("asignado")
+
+    // Reasignación explícita a otro técnico.
+    const reassign = await transitionTicket({ ticketId: id, status: "en_progreso", reason: "Cambio de responsable", assigneeUserId: "user-ti-gestor" }, actor)
+    expect((await getTicketById(id))?.assigneeUserId).toBe("user-ti-gestor")
+    expect(reassign.previousAssigneeUserId).toBe(actor.userId)
+    expect(reassign.assigneeUserId).toBe("user-ti-gestor")
+    expect(reassign.assigneeChanged).toBe(true)
+
+    // Sin el campo, el asignado se conserva: `assigneeChanged` debe ser
+    // false, es la condición que evita notificar en cada cambio de estado.
+    const noChange = await transitionTicket({ ticketId: id, status: "esperando_proveedor", reason: "Espera repuesto" }, actor)
+    expect((await getTicketById(id))?.assigneeUserId).toBe("user-ti-gestor")
+    expect(noChange.assigneeChanged).toBe(false)
+    expect(noChange.assigneeUserId).toBe("user-ti-gestor")
+
+    // El centinela desasigna.
+    const unassign = await transitionTicket({ ticketId: id, status: "en_progreso", reason: "Queda sin dueño", assigneeUserId: IT_TICKET_UNASSIGN }, actor)
+    expect((await getTicketById(id))?.assigneeUserId).toBeNull()
+    expect(unassign.previousAssigneeUserId).toBe("user-ti-gestor")
+    expect(unassign.assigneeUserId).toBeNull()
+    expect(unassign.assigneeChanged).toBe(true)
+  })
+
+  it("rechaza dejar un ticket en 'asignado' sin técnico y rechaza técnicos inexistentes", async () => {
+    const { id } = await createTicket({
+      subject: "Teclado con teclas pegadas",
+      description: "Varias teclas no responden al escribir",
+      category: "hardware",
+      priority: "baja",
+      worksiteId: "ws-ti-norte",
+    }, actor)
+
+    await expect(transitionTicket({ ticketId: id, status: "asignado", reason: "Sin dueño" }, actor))
+      .rejects.toThrow(/técnico responsable/i)
+    await expect(transitionTicket({ ticketId: id, status: "asignado", reason: "Fantasma", assigneeUserId: "user-inexistente" }, actor))
+      .rejects.toThrow(/no existe/i)
+    expect((await getTicketById(id))?.status).toBe("nuevo")
+  })
+
+  it("countTicketsByStatus ignora el filtro de estado y respeta el resto", async () => {
+    const counts = await countTicketsByStatus({})
+    // Hay tickets en más de un estado por las pruebas anteriores: el conteo
+    // total no puede depender de qué estado esté filtrado en la vista.
+    expect(Object.keys(counts).length).toBeGreaterThan(1)
+
+    const nuevos = await listTickets({ status: "nuevo" })
+    expect(counts.nuevo).toBe(nuevos.length)
+
+    // Con un filtro de prioridad, el conteo se acota a esa prioridad.
+    const criticas = await countTicketsByStatus({ priority: "critica" })
+    const totalCriticas = Object.values(criticas).reduce((sum, n) => sum + n, 0)
+    expect(totalCriticas).toBe((await listTickets({ priority: "critica" })).length)
   })
 })

@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { redirect } from "next/navigation"
 import { can, requirePermission } from "@/lib/auth/can"
 import { worksiteScopeSql } from "@/lib/auth/scope"
@@ -24,11 +25,12 @@ export default async function GarantiasPage({
 
   const canManage = can(session, "ti:manage_assets")
   const sp = await searchParams
-  const window = typeof sp.ventana === "string" ? (sp.ventana as WarrantyWindow) : undefined
+  // `window` sombrearía el global del navegador: nombre explícito.
+  const activeWindow = typeof sp.ventana === "string" ? (sp.ventana as WarrantyWindow) : undefined
   const scope = worksiteScopeSql(session, itAssets.worksiteId)
 
   const [warrantyRows, supplierLinks, suppliersList] = await Promise.all([
-    listAssetsByWarranty({ window, scope }),
+    listAssetsByWarranty({ window: activeWindow, scope }),
     listSupplierLinks(),
     db.select({ id: suppliers.id, name: suppliers.name })
       .from(suppliers).where(eq(suppliers.isActive, true)).orderBy(asc(suppliers.name)),
@@ -53,17 +55,19 @@ export default async function GarantiasPage({
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {windows.map((w) => (
-          <a
+          <Link
             key={w.value}
             href={w.value ? `/ti/garantias?ventana=${w.value}` : "/ti/garantias"}
+            scroll={false}
+            aria-current={(activeWindow ?? "") === w.value ? "page" : undefined}
             className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
-              (window ?? "") === w.value
+              (activeWindow ?? "") === w.value
                 ? "bg-[var(--color-primary)] text-white"
                 : "bg-[var(--color-surface-2)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
             }`}
           >
             {w.label}
-          </a>
+          </Link>
         ))}
       </div>
 
