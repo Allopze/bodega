@@ -112,7 +112,7 @@ export default async function TrazabilidadPage({ searchParams }: PageProps) {
   const hasSecondaryFilters = Boolean(
     consolidatedData &&
     (consolidatedData.filters.q ||
-      consolidatedData.filters.estado ||
+      (consolidatedData.filters.estado && consolidatedData.filters.estado !== "en_curso") ||
       consolidatedData.filters.categoria ||
       consolidatedData.filters.proveedor ||
       consolidatedData.filters.solicitante ||

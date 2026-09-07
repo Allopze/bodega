@@ -13,6 +13,7 @@ import {
   computeAggregateKPIs,
   paginateAggregateRequests,
   ocHasPendingBalance,
+  normalizeConsolidatedFilters,
   type LinkedMaps,
   type RawItemRow,
   type ApprovalRow,
@@ -329,6 +330,49 @@ describe("isComputedStatus", () => {
     expect(isComputedStatus("inventado")).toBe(false)
     expect(isComputedStatus("")).toBe(false)
     expect(isComputedStatus("toString")).toBe(false)
+  })
+})
+
+describe("filtro de vista de trazabilidad", () => {
+  it("usa En curso como vista por defecto", () => {
+    expect(normalizeConsolidatedFilters({})).toMatchObject({ estado: "en_curso" })
+  })
+
+  it("separa los estados terminales del trabajo en curso y conserva su historial", () => {
+    const rows = buildConsolidatedRows(
+      [
+        rawItem({ itemId: "item-active", requestId: "req-active", requestCode: "SOL-ACTIVE", status: "approved" }),
+        rawItem({ itemId: "item-rejected", requestId: "req-rejected", requestCode: "SOL-REJECTED", status: "rejected" }),
+        rawItem({ itemId: "item-cancelled", requestId: "req-cancelled", requestCode: "SOL-CANCELLED", status: "cancelled" }),
+      ],
+      linkedMaps(),
+      "ws-1",
+      "Faena Uno",
+    )
+    const maps = linkedMaps()
+    const requests = aggregateConsolidatedRows(rows, maps).requests
+    const baseFilters = {
+      filterEstado: "",
+      filterCategoria: "",
+      filterProveedor: "",
+      filterPendientes: false,
+      filterQ: "",
+      ocsByItem: maps.ocsByItem,
+    }
+
+    expect(applySecondaryFilters(rows, { ...baseFilters }).map((row) => row.itemId)).toEqual([
+      "item-active",
+      "item-rejected",
+      "item-cancelled",
+    ])
+    expect(applySecondaryFilters(rows, { ...baseFilters, filterEstado: "en_curso" }).map((row) => row.itemId)).toEqual([
+      "item-active",
+    ])
+    expect(applyAggregateFilters(requests, { ...baseFilters, filterEstado: "cerradas" }).map((request) => request.requestId)).toEqual([
+      "req-rejected",
+      "req-cancelled",
+    ])
+    expect(applyAggregateFilters(requests, { ...baseFilters, filterEstado: "todos" })).toHaveLength(3)
   })
 })
 

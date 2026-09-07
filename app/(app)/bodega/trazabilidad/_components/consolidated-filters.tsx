@@ -17,7 +17,11 @@ import {
 } from "@/components/ui/select"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
-import { COMPUTED_STATUS_METAS, type ComputedStatus } from "@/lib/services/trazabilidad-consolidated.types"
+import {
+  COMPUTED_STATUS_METAS,
+  TRACEABILITY_STATUS_GROUP_LABELS,
+  type ComputedStatus,
+} from "@/lib/services/trazabilidad-consolidated.types"
 import { ConsolidatedFiltersAdvanced } from "./consolidated-filters-advanced"
 
 interface CurrentFilters {
@@ -41,6 +45,16 @@ interface Props {
   current: CurrentFilters
 }
 
+function hasNonDefaultStatusFilter(value: string): boolean {
+  return value !== "" && value !== "en_curso"
+}
+
+function statusFilterLabel(value: string): string {
+  return TRACEABILITY_STATUS_GROUP_LABELS[value as keyof typeof TRACEABILITY_STATUS_GROUP_LABELS]
+    ?? COMPUTED_STATUS_METAS[value as ComputedStatus]?.label
+    ?? value
+}
+
 /**
  * El Excel tiene que traer lo que el usuario está mirando.
  *
@@ -50,7 +64,7 @@ interface Props {
 function buildExportUrl(current: CurrentFilters): string {
   const params = new URLSearchParams()
   if (current.faena) params.set("faena", current.faena)
-  if (current.estado) params.set("estado", current.estado)
+  if (hasNonDefaultStatusFilter(current.estado)) params.set("estado", current.estado)
   if (current.categoria) params.set("categoria", current.categoria)
   if (current.solicitante) params.set("solicitante", current.solicitante)
   if (current.proveedor) params.set("proveedor", current.proveedor)
@@ -93,9 +107,8 @@ export function ConsolidatedFilters({
    */
   const chips: ActiveFilterChip[] = []
 
-  if (current.estado) {
-    const label = COMPUTED_STATUS_METAS[current.estado as ComputedStatus]?.label ?? current.estado
-    chips.push({ key: "estado", label: "Estado", value: current.estado, displayValue: label })
+  if (hasNonDefaultStatusFilter(current.estado)) {
+    chips.push({ key: "estado", label: "Estado", value: current.estado, displayValue: statusFilterLabel(current.estado) })
   }
   if (current.categoria) {
     const catName = categories.find((c) => c.id === current.categoria)?.name ?? current.categoria
@@ -201,14 +214,16 @@ export function ConsolidatedFilters({
 
         {/* Selector de Estado */}
         <Select
-          value={current.estado || "_all"}
-          onValueChange={(val) => setFilter("estado", val === "_all" ? "" : val)}
+          value={current.estado || "en_curso"}
+          onValueChange={(val) => setFilter("estado", val)}
         >
           <SelectTrigger className="w-48 text-xs h-9" aria-label="Filtrar por estado">
-            <SelectValue placeholder="Todos los estados" />
+            <SelectValue placeholder="En curso" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="_all">Todos los estados</SelectItem>
+            <SelectItem value="en_curso">En curso</SelectItem>
+            <SelectItem value="cerradas">Cerradas</SelectItem>
+            <SelectItem value="todos">Todos los estados</SelectItem>
             {Object.entries(COMPUTED_STATUS_METAS).map(([key, meta]) => (
               <SelectItem key={key} value={key}>
                 {meta.label}

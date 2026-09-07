@@ -8,7 +8,8 @@ import { formatVariantProductName } from "@/lib/products/variant-grouping"
 
 import type { Session } from "next-auth"
 import {
-  isComputedStatus,
+  TRACEABILITY_DEFAULT_STATUS_FILTER,
+  isTraceabilityStatusFilter,
   type ConsolidatedFaenaKPIs,
   type ConsolidatedOrder,
   type ConsolidatedRequest,
@@ -89,7 +90,7 @@ export function normalizeConsolidatedFilters(
 ): ConsolidatedFilterSet {
   const rawEstado = readParam(sp.estado)
   return {
-    estado: isComputedStatus(rawEstado) ? rawEstado : "",
+    estado: isTraceabilityStatusFilter(rawEstado) ? rawEstado : TRACEABILITY_DEFAULT_STATUS_FILTER,
     categoria: readParam(sp.categoria),
     solicitante: readParam(sp.solicitante),
     proveedor: readParam(sp.proveedor),

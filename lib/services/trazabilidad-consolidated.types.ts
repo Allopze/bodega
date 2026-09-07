@@ -16,6 +16,16 @@ export type ComputedStatus =
   | "cancelado"
   | "borrador"
 
+export type TraceabilityStatusGroup = "en_curso" | "cerradas" | "todos"
+export type TraceabilityStatusFilter = ComputedStatus | TraceabilityStatusGroup
+
+export const TRACEABILITY_DEFAULT_STATUS_FILTER: TraceabilityStatusGroup = "en_curso"
+export const TRACEABILITY_STATUS_GROUP_LABELS: Record<TraceabilityStatusGroup, string> = {
+  en_curso: "En curso",
+  cerradas: "Cerradas",
+  todos: "Todos los estados",
+}
+
 export interface StatusMeta {
   label: string
   color: "success" | "warning" | "info" | "neutral" | "danger" | "signal"
@@ -28,6 +38,14 @@ export interface StatusMeta {
  */
 export function isComputedStatus(value: string): value is ComputedStatus {
   return Object.hasOwn(COMPUTED_STATUS_METAS, value)
+}
+
+export function isTraceabilityStatusGroup(value: string): value is TraceabilityStatusGroup {
+  return value === "en_curso" || value === "cerradas" || value === "todos"
+}
+
+export function isTraceabilityStatusFilter(value: string): value is TraceabilityStatusFilter {
+  return isComputedStatus(value) || isTraceabilityStatusGroup(value)
 }
 
 export const COMPUTED_STATUS_METAS: Record<ComputedStatus, StatusMeta> = {
@@ -45,6 +63,24 @@ export const COMPUTED_STATUS_METAS: Record<ComputedStatus, StatusMeta> = {
   rechazado: { label: "Rechazado", color: "danger" },
   cancelado: { label: "Cancelado", color: "neutral" },
   borrador: { label: "Borrador", color: "neutral" },
+}
+
+const TRACEABILITY_TERMINAL_STATUSES: ReadonlySet<ComputedStatus> = new Set([
+  "entregado",
+  "rechazado",
+  "cancelado",
+])
+
+/** Decide qué estados muestra cada vista agrupada de trazabilidad. */
+export function matchesTraceabilityStatusFilter(
+  status: ComputedStatus,
+  filter: string,
+): boolean {
+  if (!filter || filter === "todos") return true
+  if (filter === "en_curso") return !TRACEABILITY_TERMINAL_STATUSES.has(status)
+  if (filter === "cerradas") return TRACEABILITY_TERMINAL_STATUSES.has(status)
+  if (isComputedStatus(filter)) return status === filter
+  return true
 }
 
 export interface ComputeStatusParams {

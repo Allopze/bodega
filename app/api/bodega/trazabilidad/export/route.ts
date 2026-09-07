@@ -3,9 +3,9 @@
  *
  * Devuelve la trazabilidad consolidada como descarga Excel. Acepta los mismos
  * filtros que la pantalla (`faena`, `estado`, `categoria`, `solicitante`,
- * `proveedor`, `q`, `pendientes`, `desde`/`hasta` — con los alias históricos
- * `from`/`to`): el archivo tiene que traer lo que el usuario está mirando, no
- * la faena completa.
+ * `proveedor`, `q`, `pendientes`, `oc_pendiente`, `desde`/`hasta` — con los
+ * alias históricos `from`/`to`): el archivo tiene que traer lo que el usuario
+ * está mirando, no la faena completa.
  */
 import { type NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
@@ -36,6 +36,7 @@ export async function GET(req: NextRequest) {
     proveedor:  param("proveedor"),
     q:          param("q"),
     pendientes: sp.get("pendientes") === "true" || sp.get("pendientes") === "1",
+    ocPendiente: sp.get("oc_pendiente") === "true" || sp.get("oc_pendiente") === "1",
   }
 
   try {

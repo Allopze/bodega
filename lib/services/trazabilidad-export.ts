@@ -47,6 +47,7 @@ function toFilterSet(filters: TrazabilidadFilters): ConsolidatedFilterSet {
     desde: filters.desde ?? filters.fromDate,
     hasta: filters.hasta ?? filters.toDate,
     pendientes: filters.pendientes ? "true" : "",
+    oc_pendiente: filters.ocPendiente ? "true" : "",
   })
 }
 

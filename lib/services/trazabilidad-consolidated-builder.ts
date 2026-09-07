@@ -1,7 +1,7 @@
 import {
   COMPUTED_STATUS_METAS,
   TRACEABILITY_CONSOLIDATED_PAGE_SIZE,
-  isComputedStatus,
+  matchesTraceabilityStatusFilter,
   type ConsolidatedOrder,
   type ConsolidatedRequest,
   type ConsolidatedRow,
@@ -264,8 +264,8 @@ export function applySecondaryFilters(
     ocsByItem,
   } = filters
 
-  if (filterEstado && isComputedStatus(filterEstado)) {
-    filtered = filtered.filter((r) => r.computedStatus === filterEstado)
+  if (filterEstado) {
+    filtered = filtered.filter((r) => matchesTraceabilityStatusFilter(r.computedStatus, filterEstado))
   }
   if (filterCategoria) {
     // `categoryId` viaja en la fila: buscarlo con un `find` sobre los ítems
@@ -338,11 +338,7 @@ export function applyAggregateFilters(
   const qLower = filterQ.toLowerCase()
 
   return requests.flatMap((request) => {
-    if (
-      filterEstado &&
-      isComputedStatus(filterEstado) &&
-      request.status !== filterEstado
-    ) {
+    if (filterEstado && !matchesTraceabilityStatusFilter(request.status, filterEstado)) {
       return []
     }
 
