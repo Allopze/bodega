@@ -1,8 +1,8 @@
 /**
  * lib/services/pdtp-adapters/fulfillment-contract-2026.ts
  *
- * Dónde se cumple cada actividad de `enganche` del programa 2026, y con qué
- * permiso.
+ * Dónde se cumple cada actividad de `enganche` o `compuesta` del programa
+ * 2026, y con qué permiso.
  *
  * Es el archivo que `destinationPermissionFor` viene prometiendo desde que la
  * compuerta se escribió: sin él no se podía verificar el permiso de destino de
@@ -29,12 +29,12 @@ export interface EngancheDestination {
   /** Módulo donde se registra el cumplimiento. */
   module: string
   /**
-   * Permiso del acto que acredita. `null` cuando la actividad no tiene módulo
-   * de destino: se cumple en el propio PDTP o es un acto de gobernanza.
+   * Permiso del acto que acredita. `null` cuando el flujo tiene más de un
+   * permiso segregado y no puede representarse con uno solo.
    */
   permission: string | null
   /** Ruta a la que mandar a quien tiene la actividad pendiente. */
-  href: (worksiteId: string) => string
+  href: (worksiteId: string, programId?: string) => string | null
   /**
    * El responsable declarado no puede tener ese permiso por segregación de
    * deberes. Lleva el motivo escrito: sin él, la exención se lee como un parche.
@@ -83,18 +83,23 @@ const alcotest = (): EngancheDestination => ({
   href: (worksiteId) => `/prevencion/alcotest?faena=${worksiteId}`,
 })
 
-/** Sin módulo de destino: se cumple dentro del propio PDTP o es gobernanza. */
-const sinDestino = (reason: string): EngancheDestination => ({
-  module: "pdtp",
-  permission: null,
-  href: (worksiteId) => `/prevencion/pdtp/actividades?faena=${worksiteId}&vista=semana`,
-  segregated: reason,
-})
-
 export const PDTP_2026_ENGANCHE_DESTINATIONS: Readonly<Record<number, EngancheDestination>> = {
   // ── Gobernanza del propio programa ──────────────────────────────────────
-  1: sinDestino("Aprobar el programa es un acto del propio PDTP, con su flujo de firmas."),
-  11: sinDestino("Constituir el comité y designar al delegado son actos de gobernanza del CPHS."),
+  1: {
+    module: "pdtp",
+    permission: null,
+    href: (_worksiteId, programId) => programId
+      ? `/prevencion/pdtp/${encodeURIComponent(programId)}?faena=${encodeURIComponent(_worksiteId)}`
+      : null,
+    segregated: "La aprobación tiene pasos y permisos distintos para Jefatura de Prevención y Legal/RRHH.",
+  },
+  11: {
+    module: "faenas",
+    permission: "prevention:cphs:manage",
+    // La ficha resuelve por dotación si corresponde constituir CPHS, designar
+    // delegado o si no existe órgano exigible. CPHS solo cubre la primera rama.
+    href: (worksiteId) => `/prevencion/faenas/${encodeURIComponent(worksiteId)}`,
+  },
 
   /* La cierra `closeManagementReview` en CPHS, que exige
    * `prevention:governance:review`. Estuvo declarada `sinDestino` —"gobernanza,

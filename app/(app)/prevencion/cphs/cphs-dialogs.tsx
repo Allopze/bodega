@@ -15,9 +15,19 @@ import { nanoid } from "@/lib/id"
 
 /* ── Alta de comité ───────────────────────────────────────────────────────── */
 
-export function NewCommitteeDialog({ worksites }: { worksites: { id: string; name: string }[] }) {
+export function NewCommitteeDialog({
+  worksites,
+  initialWorksiteId,
+}: {
+  worksites: { id: string; name: string }[]
+  initialWorksiteId?: string
+}) {
   const [open, setOpen] = React.useState(false)
-  const [worksiteId, setWorksiteId] = React.useState(worksites[0]?.id ?? "")
+  const requestedWorksiteId = initialWorksiteId
+    && worksites.some((worksite) => worksite.id === initialWorksiteId)
+    ? initialWorksiteId
+    : undefined
+  const [worksiteId, setWorksiteId] = React.useState(requestedWorksiteId ?? worksites[0]?.id ?? "")
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {

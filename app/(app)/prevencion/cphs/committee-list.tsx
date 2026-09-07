@@ -62,11 +62,12 @@ interface Props {
   reviews: ReviewItem[]
   worksites: { id: string; name: string }[]
   assignees: { id: string; name: string }[]
+  initialWorksiteId?: string
   canManage: boolean
   canReview: boolean
 }
 
-export function CommitteeList({ committees, meetings, reviews, worksites, assignees, canManage, canReview }: Props) {
+export function CommitteeList({ committees, meetings, reviews, worksites, assignees, initialWorksiteId, canManage, canReview }: Props) {
   const { searchQuery } = useSafeShellHeader()
   const { getFilter, setFilter } = useUrlFilters()
   const tab = (getFilter("tab") || "committees") as "committees" | "meetings" | "reviews"
@@ -114,7 +115,9 @@ export function CommitteeList({ committees, meetings, reviews, worksites, assign
           </button>
         </div>
         <div className="flex flex-wrap gap-2">
-          {tab === "committees" && canManage && worksites.length > 0 && <NewCommitteeDialog worksites={worksites} />}
+          {tab === "committees" && canManage && worksites.length > 0 && (
+            <NewCommitteeDialog key={initialWorksiteId ?? "default"} worksites={worksites} initialWorksiteId={initialWorksiteId} />
+          )}
           {tab === "reviews" && canReview && <NewReviewDialog worksites={worksites} />}
         </div>
       </div>
@@ -126,7 +129,9 @@ export function CommitteeList({ committees, meetings, reviews, worksites, assign
           description={committees.length === 0
             ? "Un Comité Paritario se constituye por centro de trabajo, con igual número de representantes de la empresa y de las personas trabajadoras, más presidencia y secretaría."
             : "Ajusta el texto del buscador superior."}
-          action={canManage && worksites.length > 0 ? <NewCommitteeDialog worksites={worksites} /> : undefined}
+          action={canManage && worksites.length > 0
+            ? <NewCommitteeDialog key={initialWorksiteId ?? "default"} worksites={worksites} initialWorksiteId={initialWorksiteId} />
+            : undefined}
         />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">

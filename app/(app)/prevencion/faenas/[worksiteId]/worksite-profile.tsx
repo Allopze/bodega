@@ -147,7 +147,11 @@ export function WorksiteProfile({ profile, eligibleWorkers, canManage }: {
             icon={<Buildings size={24} />}
             title="La faena no tiene comité paritario"
             description="Constituye el comité desde el módulo CPHS cuando la dotación haga exigible este órgano preventivo."
-            action={<Button asChild size="sm" variant="secondary"><Link href="/prevencion/cphs">Ir a CPHS</Link></Button>}
+            action={(
+              <Button asChild size="sm" variant="secondary">
+                <Link href={`/prevencion/cphs?faena=${encodeURIComponent(profile.worksiteId)}`}>Ir a CPHS</Link>
+              </Button>
+            )}
             compact
           />
         )}

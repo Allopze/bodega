@@ -1323,6 +1323,7 @@ async function resolvePdtpActivityTargets(items: OperationalWorkItem[]): Promise
 
   const rows = await db.select({
     id: pdtpActivities.id,
+    programId: pdtpActivities.programId,
     n: pdtpActivities.n,
     mechanism: pdtpActivities.mechanism,
   }).from(pdtpActivities).where(inArray(pdtpActivities.id, [...activityIds]))
@@ -1332,7 +1333,11 @@ async function resolvePdtpActivityTargets(items: OperationalWorkItem[]): Promise
     if (item.sourceType !== "pdtp_activity") return item
     const activity = byId.get(item.sourceId.split(":")[0] ?? "")
     if (!activity) return item
-    const target = resolvePdtpFulfillmentTarget({ mechanism: activity.mechanism, n: activity.n }, item.worksiteId)
+    const target = resolvePdtpFulfillmentTarget({
+      mechanism: activity.mechanism,
+      n: activity.n,
+      programId: activity.programId,
+    }, item.worksiteId)
     return { ...item, href: target.href, ctaLabel: target.ctaLabel }
   })
 }

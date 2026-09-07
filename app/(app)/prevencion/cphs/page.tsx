@@ -17,7 +17,11 @@ import { todayInChile } from "@/lib/utils"
 
 export const metadata: Metadata = { title: "CPHS y gobernanza" }
 
-export default async function CphsPage() {
+export default async function CphsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ faena?: string | string[] }>
+}) {
   let session
   try { session = await requirePermission("prevention:cphs:view") }
   catch { redirect("/forbidden") }
@@ -37,6 +41,11 @@ export default async function CphsPage() {
     canReview ? listManagementReviews(access) : Promise.resolve([]),
     canManage || canReview ? listCommitteeAssignees(access) : Promise.resolve([]),
   ])
+  const query = await searchParams
+  const requestedWorksiteId = Array.isArray(query.faena) ? query.faena[0] : query.faena
+  const initialWorksiteId = worksites.some((worksite) => worksite.id === requestedWorksiteId)
+    ? requestedWorksiteId
+    : undefined
   const today = todayInChile()
   const now = new Date().toISOString()
 
@@ -89,6 +98,7 @@ export default async function CphsPage() {
         }))}
         worksites={worksites}
         assignees={assignees}
+        initialWorksiteId={initialWorksiteId}
         canManage={canManage}
         canReview={canReview}
       />

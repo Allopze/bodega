@@ -224,6 +224,41 @@ describe("cola operacional — actividades programadas del PDTP", () => {
     expect(enganche!.module).toBe("pdtp")
   })
 
+  it("una compuesta lleva al alta del trabajador y no a la planilla", async () => {
+    await inMemoryDb.insert(schema.pdtpActivities).values({
+      id: "act-pdtpq-composed", programId, n: 52, displayOrder: 4, status: "active",
+      activity: "Completar antecedentes del trabajador", program: "Guía",
+      responsibleSlugs: ["prf"], responsibleDisplay: "Prevencionista PDTPQ",
+      scheduleMode: "scheduled", mechanism: "compuesta", sourceSheetRow: 4, createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
+      id: "sch-composed", activityId: "act-pdtpq-composed", year, month, week: 1,
+      plannedQuantity: 1, sourceColumn: "test",
+    })
+    try {
+      const items = await pdtpItems(makeSession(["prevencionista_faena"], [worksiteA]))
+      const composed = items.find((item) => item.sourceId.startsWith("act-pdtpq-composed:"))
+      expect(composed?.href).toBe(`/prevencion/nueva?faena=${worksiteA}`)
+      expect(composed?.ctaLabel).toBe("Ir a cumplirla")
+    } finally {
+      await inMemoryDb.delete(schema.pdtpActivitySchedule).where(eq(schema.pdtpActivitySchedule.id, "sch-composed"))
+      await inMemoryDb.delete(schema.pdtpActivities).where(eq(schema.pdtpActivities.id, "act-pdtpq-composed"))
+    }
+  })
+
+  it("la N°1 lleva al flujo de aprobación del programa concreto", async () => {
+    await inMemoryDb.update(schema.pdtpActivities).set({ n: 1, mechanism: "enganche" })
+      .where(eq(schema.pdtpActivities.id, "act-pdtpq-jt"))
+    try {
+      const [item] = await pdtpItems(makeSession(["jefe_terreno"], [worksiteA]))
+      expect(item?.href).toBe(`/prevencion/pdtp/${programId}?faena=${worksiteA}`)
+      expect(item?.ctaLabel).toBe("Ir a cumplirla")
+    } finally {
+      await inMemoryDb.update(schema.pdtpActivities).set({ n: 1, mechanism: "constancia" })
+        .where(eq(schema.pdtpActivities.id, "act-pdtpq-jt"))
+    }
+  })
+
   /* Un enganche sin entrada en el contrato —una actividad nueva todavía sin
    * cablear— cae a la planilla en vez de a un href inventado. */
   it("un enganche sin destino declarado cae a la planilla", async () => {

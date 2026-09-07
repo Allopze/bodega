@@ -366,6 +366,7 @@ export async function reconcilePdtpFulfillmentEvents(input: { limit?: number } =
 // ── Destino externo (`resolvePdtpFulfillmentTarget`) ───────────────────────
 
 export type PdtpFulfillmentTarget = {
+  kind: "operational" | "fallback"
   module: string
   href: string
   ctaLabel: string
@@ -378,28 +379,35 @@ export type PdtpFulfillmentTarget = {
  * y produce el 404 de `/prevencion/constancias`. Único lugar que debe decidir
  * esto; `/pendientes`, el tablero y la planilla consumen esta respuesta.
  */
-export function resolvePdtpFulfillmentTarget(activity: { mechanism: string; n?: number }, worksiteId: string): PdtpFulfillmentTarget {
+export function resolvePdtpFulfillmentTarget(
+  activity: { mechanism: string; n?: number; programId?: string },
+  worksiteId: string,
+): PdtpFulfillmentTarget {
   if (activity.mechanism === "constancia") {
     return {
+      kind: "operational",
       module: "constancias",
       href: `/prevencion/constancias?faena=${worksiteId}`,
       ctaLabel: "Dejar constancia",
       event: "constancia enviada con evidencia",
     }
   }
-  if (activity.mechanism === "enganche") {
+  if (activity.mechanism === "enganche" || activity.mechanism === "compuesta") {
     // Con el contrato de cumplimiento se manda al módulo donde el trabajo se
     // hace de verdad, en vez de devolver a todo el mundo a la planilla.
     const destination = activity.n === undefined ? null : engancheDestinationFor(activity.n)
-    if (destination && destination.module !== "pdtp") {
+    const href = destination?.href(worksiteId, activity.programId) ?? null
+    if (destination && href) {
       return {
+        kind: "operational",
         module: destination.module,
-        href: destination.href(worksiteId),
+        href,
         ctaLabel: "Ir a cumplirla",
         event: "registro del módulo de origen",
       }
     }
     return {
+      kind: "fallback",
       module: "pdtp",
       href: `/prevencion/pdtp/actividades?faena=${worksiteId}&vista=semana`,
       ctaLabel: "Ver cómo se cumple",
@@ -407,6 +415,7 @@ export function resolvePdtpFulfillmentTarget(activity: { mechanism: string; n?: 
     }
   }
   return {
+    kind: "fallback",
     module: "pdtp",
     href: `/prevencion/pdtp/actividades?faena=${worksiteId}&vista=semana`,
     ctaLabel: "Registrar cumplimiento",
@@ -480,7 +489,7 @@ export type PdtpFulfillmentCoverageIssue = {
 const STRUCTURALLY_WIRED_ACTIVITY_NUMBERS = new Set([
   1, 9, 11,           // programa, revisión por la dirección, CPHS
   7,                  // indicadores de faena (Fase 4.1)
-  15, 18, 19, 23, 52, 63, // acta de trabajador nuevo (la N°19 es la carpeta, T47)
+  15, 18, 19, 23, 52, // acta de trabajador nuevo (la N°19 es la carpeta, T47)
   17,                 // RE-28 de personas sensibles (worker-sensitivity-connector)
   35,                 // MIPER
   45, 46, 47, 48, 49, 50, // higiene y vigilancia
@@ -845,6 +854,23 @@ export async function assertPdtpFulfillmentCoverage(programId: string, client: Q
           continue
         }
       }
+    }
+
+    // Tener un instrumento vigente no basta si la tarjeta termina en la
+    // planilla del PDTP: esa vista permite seguir el estado, pero no ejecutar
+    // el acto que acredita la actividad. Un número nuevo sin entrada en el
+    // contrato (o un `formulario` todavía manual) debe bloquear la activación
+    // hasta que exista un destino operativo concreto.
+    const target = resolvePdtpFulfillmentTarget(
+      { mechanism: activity.mechanism, n: activity.n, programId },
+      worksiteIds[0] ?? "",
+    )
+    if (target.kind === "fallback") {
+      issues.push({
+        n: activity.n, activity: activity.activity, status: "code_gap",
+        reason: "No tiene un destino operativo concreto: todavía cae a la planilla genérica del PDTP.",
+      })
+      continue
     }
 
     // Destino conocido: se **reporta**, no se bloquea. El mapa es nuevo y buena

@@ -38,6 +38,18 @@ function navHrefs(): string[] {
   return [...new Set(hrefs)]
 }
 
+function hasPageForHref(routes: Set<string>, href: string): boolean {
+  const pathname = href.split("?")[0]!
+  if (routes.has(pathname)) return true
+  const segments = pathname.split("/")
+  return [...routes].some((route) => {
+    const routeSegments = route.split("/")
+    return routeSegments.length === segments.length && routeSegments.every(
+      (segment, index) => /^\[.+\]$/.test(segment) || segment === segments[index],
+    )
+  })
+}
+
 describe("destinos de navegación", () => {
   /**
    * Criterio de aceptación de TASK-UI-005: "redirects declarados y sin rutas
@@ -70,13 +82,16 @@ describe("destinos de navegación", () => {
       // Los dos que no salen del contrato: los produce el propio resolutor.
       resolvePdtpFulfillmentTarget({ mechanism: "constancia" }, "ws-1").href,
       resolvePdtpFulfillmentTarget({ mechanism: "formulario" }, "ws-1").href,
-      ...Object.keys(PDTP_2026_ENGANCHE_DESTINATIONS).map(
-        (n) => resolvePdtpFulfillmentTarget({ mechanism: "enganche", n: Number(n) }, "ws-1").href,
-      ),
+      ...Object.keys(PDTP_2026_ENGANCHE_DESTINATIONS).flatMap((n) => ["enganche", "compuesta"].map(
+        (mechanism) => resolvePdtpFulfillmentTarget({
+          mechanism,
+          n: Number(n),
+          programId: "programa-ejemplo",
+        }, "ws-1").href,
+      )),
     ]
 
-    const faltantes = [...new Set(destinos.map((href) => href.split("?")[0]!))]
-      .filter((prefix) => !routes.has(prefix))
+    const faltantes = [...new Set(destinos)].filter((href) => !hasPageForHref(routes, href))
     expect(faltantes, `destinos del PDTP sin página: ${faltantes.join(", ")}`).toEqual([])
   })
 

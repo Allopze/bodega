@@ -81,6 +81,8 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.preventionInspectionTemplates)
   await inMemoryDb.delete(schema.preventionEmergencyPlans)
+  await inMemoryDb.delete(schema.preventionTrainingCourseVersions)
+  await inMemoryDb.delete(schema.preventionTrainingCourses)
   await inMemoryDb.delete(schema.sstDocumentTypes)
   await inMemoryDb.delete(schema.sstDocumentCategories)
   await inMemoryDb.delete(schema.pdtpResponsibleCatalog)
@@ -291,6 +293,33 @@ describe("resolvePdtpFulfillmentTarget", () => {
     expect(target.href).toBe(`${prefix}?faena=${WS_ID}`)
     expect(target.ctaLabel).toBe("Ir a cumplirla")
   })
+
+  it.each([15, 18, 23, 52])("la compuesta n=%i se cumple en el alta del trabajador", (n) => {
+    const target = resolvePdtpFulfillmentTarget({ mechanism: "compuesta", n }, WS_ID)
+    expect(target.module).toBe("sst")
+    expect(target.href).toBe(`/prevencion/nueva?faena=${WS_ID}`)
+    expect(target.ctaLabel).toBe("Ir a cumplirla")
+  })
+
+  it("la N°1 lleva al flujo de aprobación del programa concreto", () => {
+    const target = resolvePdtpFulfillmentTarget({ mechanism: "enganche", n: 1, programId: PROGRAM_ID }, WS_ID)
+    expect(target.module).toBe("pdtp")
+    expect(target.href).toBe(`/prevencion/pdtp/${PROGRAM_ID}?faena=${WS_ID}`)
+    expect(target.ctaLabel).toBe("Ir a cumplirla")
+  })
+
+  it("la N°1 sin programa concreto se declara fallback y no inventa un destino", () => {
+    const target = resolvePdtpFulfillmentTarget({ mechanism: "enganche", n: 1 }, WS_ID)
+    expect(target.kind).toBe("fallback")
+    expect(target.href).toBe(`/prevencion/pdtp/actividades?faena=${WS_ID}&vista=semana`)
+  })
+
+  it("la N°11 lleva a la organización preventiva de la faena", () => {
+    const target = resolvePdtpFulfillmentTarget({ mechanism: "enganche", n: 11 }, WS_ID)
+    expect(target.module).toBe("faenas")
+    expect(target.href).toBe(`/prevencion/faenas/${WS_ID}`)
+    expect(target.ctaLabel).toBe("Ir a cumplirla")
+  })
 })
 
 describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
@@ -325,6 +354,37 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
     await seedActivity({ mechanism: "enganche", n: 99 })
     const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
     expect(issues).toEqual([expect.objectContaining({ n: 99, status: "config_required" })])
+  })
+
+  it("un enganche ejecutable que aún cae a la planilla genérica es code_gap", async () => {
+    await seedProgram("draft")
+    await seedActivity({ mechanism: "enganche", n: 99 })
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.preventionInspectionTemplates).values({
+      id: "tpl-approved-99", code: "pdtp_sin_destino", versionLabel: "01", status: "approved",
+      name: "Instrumento sin destino operativo", kind: "inspection", executorOfRecord: "platform_user",
+      definitionSnapshot: {}, contentHash: "b".repeat(64), pdtpActivityNumbers: [99],
+      authorUserId: USER_ID, approvedByUserId: USER_ID, approvedAt: now, createdAt: now, updatedAt: now,
+    })
+
+    const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
+    expect(issues).toEqual([expect.objectContaining({ n: 99, status: "code_gap" })])
+    expect(issues[0]!.reason).toMatch(/destino operativo/i)
+  })
+
+  it("la N°63 exige un curso con versión publicada aunque tenga otro conector", async () => {
+    await seedProgram("draft")
+    await seedActivity({ mechanism: "enganche", n: 63 })
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.preventionTrainingCourses).values({
+      id: "course-pdtp-63", code: "PDTP-63", name: "Inducción del trabajador", kind: "induction_worksite",
+      minimumDurationMinutes: 60, isActive: true, createdByUserId: USER_ID,
+      pdtpActivityNumbers: [63], createdAt: now, updatedAt: now,
+    })
+
+    const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
+    expect(issues).toEqual([expect.objectContaining({ n: 63, status: "instrument_required" })])
+    expect(issues[0]!.reason).toMatch(/versión publicada/i)
   })
 
   it("un enganche declarado en STRUCTURALLY_WIRED_ACTIVITY_NUMBERS pasa (N°35, MIPER)", async () => {
