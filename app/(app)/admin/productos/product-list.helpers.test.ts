@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { formatProductAttributeNames, getProductWarnings, getFamilyWarnings, type ProductWarningInput, type FamilyWarningInput } from "./product-list.helpers"
+import { formatProductAttributeNames, getProductWarnings, getFamilyWarnings, isProductEditDisabled, type ProductWarningInput, type FamilyWarningInput } from "./product-list.helpers"
 
 describe("formatProductAttributeNames", () => {
   it("lists the product characteristics in their configured order", () => {
@@ -109,5 +109,30 @@ describe("getFamilyWarnings", () => {
   it("warns about category divergence at family level", () => {
     const warnings = getFamilyWarnings([variant({ isEpp: true })], { isEpp: false, requiresPrevencion: false })
     expect(warnings).toContain("Difiere de la configuración EPP/Prevención de su categoría")
+  })
+})
+
+describe("isProductEditDisabled", () => {
+  const idle = { loadingEditId: null, loadingFamilyId: null }
+
+  it("keeps Editar clickable for a product without family while nothing loads", () => {
+    expect(isProductEditDisabled({ id: "p1", familyId: null }, idle)).toBe(false)
+  })
+
+  it("keeps Editar clickable for a product with family while nothing loads", () => {
+    expect(isProductEditDisabled({ id: "p1", familyId: "f1" }, idle)).toBe(false)
+  })
+
+  it("disables Editar while that product's own edit sheet loads", () => {
+    expect(isProductEditDisabled({ id: "p1", familyId: null }, { ...idle, loadingEditId: "p1" })).toBe(true)
+  })
+
+  it("disables Editar while its family loads for add-variant", () => {
+    expect(isProductEditDisabled({ id: "p1", familyId: "f1" }, { ...idle, loadingFamilyId: "f1" })).toBe(true)
+  })
+
+  it("leaves other rows clickable while another family loads", () => {
+    expect(isProductEditDisabled({ id: "p2", familyId: null }, { ...idle, loadingFamilyId: "f1" })).toBe(false)
+    expect(isProductEditDisabled({ id: "p2", familyId: "f2" }, { ...idle, loadingFamilyId: "f1" })).toBe(false)
   })
 })

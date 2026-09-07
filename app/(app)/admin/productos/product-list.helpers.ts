@@ -68,3 +68,29 @@ export function getFamilyWarnings(variants: FamilyWarningInput[], category: Cate
 
   return familyWarnings
 }
+
+export interface ProductEditTarget {
+  id: string
+  familyId: string | null
+}
+
+export interface CatalogLoadingState {
+  loadingEditId: string | null
+  loadingFamilyId: string | null
+}
+
+/**
+ * Cuándo el botón Editar de una fila del catálogo debe quedar deshabilitado.
+ *
+ * La comparación de familia exige `familyId` no nulo: la mayoría del catálogo
+ * EPP es anterior a las familias y lleva `family_id NULL`, así que comparar
+ * directo contra `loadingFamilyId` (también nulo en reposo) daba `null === null`
+ * y dejaba el lápiz permanentemente deshabilitado justo en esos productos.
+ */
+export function isProductEditDisabled(
+  product: ProductEditTarget,
+  { loadingEditId, loadingFamilyId }: CatalogLoadingState,
+): boolean {
+  if (loadingEditId === product.id) return true
+  return product.familyId != null && loadingFamilyId === product.familyId
+}

@@ -18,7 +18,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { formatCLP, formatDateTime } from "@/lib/utils"
 import { toggleProductActive, getProductForEdit, getProductFamilyForAddVariant, bulkToggleProductActiveAction } from "./actions"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import { getProductWarnings, getFamilyWarnings, type ProductAttributeSummary } from "./product-list.helpers"
+import { getProductWarnings, getFamilyWarnings, isProductEditDisabled, type ProductAttributeSummary } from "./product-list.helpers"
 import type { AttributeTemplateOption, SizeFamilyOption, ProductUnitOption } from "./product-form.types"
 import { formatProductVariant, groupProductVariants } from "@/lib/products/variant-grouping"
 import { COLUMNS, CONTRACT } from "./catalog-contract"
@@ -266,7 +266,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
               label={`producto ${p.name}`}
               onEdit={() => openEditProduct(p.id)}
               toggleAction={toggleAction}
-              editDisabled={loadingEditId === p.id || loadingFamilyId === p.familyId}
+              editDisabled={isProductEditDisabled(p, { loadingEditId, loadingFamilyId })}
               editPending={loadingEditId === p.id}
             />
             {p.familyId && (
@@ -357,7 +357,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
             label={`producto ${p.name}`}
             onEdit={() => openEditProduct(p.id)}
             toggleAction={toggleAction}
-            editDisabled={loadingEditId === p.id || loadingFamilyId === p.familyId}
+            editDisabled={isProductEditDisabled(p, { loadingEditId, loadingFamilyId })}
             editPending={loadingEditId === p.id}
           />
           {p.familyId && (

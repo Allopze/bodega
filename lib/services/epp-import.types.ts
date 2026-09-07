@@ -36,7 +36,19 @@ export const UNIT_ALIASES: Record<string, string> = {
   dosis: "dosis",
 }
 export const COLOR_ALIASES: Record<string, string> = { blanco: "Blanco", negra: "Negro", negro: "Negro", azul: "Azul", "azul marino": "Azul marino", rojo: "Rojo", roja: "Rojo", amarillo: "Amarillo", amarilla: "Amarillo", verde: "Verde", gris: "Gris", claro: "Claro", transparente: "Transparente" }
-export const EPP_TYPES = ["casco", "guante", "lente", "antiparra", "botin", "zapato", "chaleco", "mascarilla", "respirador", "arnes", "protector auditivo", "buzo", "traje", "pantalon", "chaqueta", "otros"] as const
+export const EPP_TYPES = [
+  "casco", "guante", "lente", "antiparra", "botin", "zapato", "chaleco",
+  "mascarilla", "respirador", "arnes", "protector auditivo", "buzo", "traje",
+  "pantalon", "chaqueta",
+  // Vocabulario que el catálogo real usa y este listado no cubría. Sin estos,
+  // `normalizeEppRow` marcaba la fila con el issue bloqueante "No se pudo
+  // identificar un tipo de EPP en el nombre" y la familia quedaba sin
+  // clasificar, así que ninguna entrega suya acreditaba cobertura.
+  "fono", "bota", "camisa", "polera", "blusa", "overol", "jardinera",
+  "primera capa", "capa", "coleto", "gorro", "casquete", "barbiquejo",
+  "visor", "mascara", "filtro",
+  "otros",
+] as const
 
 /**
  * Maps this import's item-level vocabulary (EPP_TYPES, e.g. "casco") to the
@@ -62,6 +74,43 @@ export const EPP_TYPE_TO_BODY_PART_CODE: Partial<Record<(typeof EPP_TYPES)[numbe
   traje: "cuerpo",
   pantalon: "cuerpo",
   chaqueta: "cuerpo",
+  fono: "auditiva",
+  bota: "pies",
+  camisa: "cuerpo",
+  polera: "cuerpo",
+  blusa: "cuerpo",
+  overol: "cuerpo",
+  jardinera: "cuerpo",
+  "primera capa": "cuerpo",
+  capa: "cuerpo",
+  coleto: "cuerpo",
+  gorro: "cabeza",
+  casquete: "cabeza",
+  barbiquejo: "cabeza",
+  visor: "ojos_cara",
+  mascara: "ojos_cara",
+  filtro: "respiratoria",
+}
+
+/**
+ * Accesorios cuyo nombre menciona el EPP al que se montan: "Fono ... p/casco"
+ * es protección auditiva, no de cabeza. La mención se descarta antes de buscar
+ * el tipo para que gane el ítem propio del producto y no la pieza citada.
+ */
+const MOUNTED_ON_MENTION = /(?:\bp\/\s*|\bpara\s+|\bporta\s+)(?:casco|visor|respirador|mascarilla|arnes)\b/gi
+
+/**
+ * Tipo de ítem que el nombre del producto declara, o `null` si no declara
+ * ninguno — preferible a adivinar: `EPP_TYPE_TO_BODY_PART_CODE` traduce esto a
+ * la zona corporal con que Prevención acredita al trabajador.
+ */
+export function inferEppItemType(name: string): (typeof EPP_TYPES)[number] | null {
+  const searchable = cleanText(name).replace(MOUNTED_ON_MENTION, " ")
+  return EPP_TYPES.find((type) => {
+    const normalizedType = cleanText(type)
+    // `s?` porque el catálogo nombra varios ítems en plural ("Guantes de cabritilla").
+    return normalizedType && new RegExp(`\\b${escapeRegex(normalizedType)}s?\\b`, "i").test(searchable)
+  }) ?? null
 }
 /**
  * Unidades que el importador acepta. Debe reflejar los códigos sembrados por
@@ -183,10 +232,7 @@ export function normalizeEppRow(source: Record<string, string>): NormalizedEppRo
       }
     }
   }
-  const eppType = EPP_TYPES.find((type) => {
-    const normalizedType = cleanText(type)
-    return normalizedType && new RegExp(`\\b${escapeRegex(normalizedType)}\\b`, "i").test(workingName)
-  }) ?? null
+  const eppType = inferEppItemType(workingName)
   if (!eppType) issues.push({ severity: "blocking", message: "No se pudo identificar un tipo de EPP en el nombre." })
   const unitOfMeasure = normalizeUnit(source.unitOfMeasure)
   if (!unitOfMeasure) issues.push({ severity: "blocking", message: "La unidad de medida no es reconocida." })
