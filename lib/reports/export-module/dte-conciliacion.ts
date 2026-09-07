@@ -5,7 +5,8 @@ import { dteDocuments, purchaseOrderInvoices, purchaseOrders } from "@/db/schema
 import { requireDteCodEmp } from "@/lib/services/dte-portal/require-cod-emp"
 import { dteTipoLabel } from "@/lib/services/dte-portal/labels"
 import { buildDateFilter } from "./utils"
-import type { ReportData, ExportFilters } from "./types"
+import { linkMethodLabel, orderReferenceLabel } from "@/lib/services/purchasing-module/order-reference"
+import type { ReportCell, ReportData, ExportFilters } from "./types"
 
 /**
  * Cruce OC ↔ Factura ↔ DTE: para cada documento DTE ya vinculado a una
@@ -45,6 +46,8 @@ export async function dteConciliacion(_session: Session | null, filters: ExportF
           invoiceNumber:   purchaseOrderInvoices.invoiceNumber,
           amount:          purchaseOrderInvoices.amount,
           purchaseOrderId: purchaseOrderInvoices.purchaseOrderId,
+          linkMethod:         purchaseOrderInvoices.linkMethod,
+          linkOrderReference: purchaseOrderInvoices.linkOrderReference,
         })
         .from(purchaseOrderInvoices)
         .where(inArray(purchaseOrderInvoices.id, invoiceIds))
@@ -60,7 +63,7 @@ export async function dteConciliacion(_session: Session | null, filters: ExportF
   return {
     filenameBase: "dte-conciliacion",
     worksheetName: "Conciliación OC-Factura-DTE",
-    headers: ["Tipo DTE", "Folio DTE", "Fecha", "RUT Emisor", "Razón Social", "Total DTE", "OC", "N° Factura", "Monto Factura", "Discrepancia"],
+    headers: ["Tipo DTE", "Folio DTE", "Fecha", "RUT Emisor", "Razón Social", "Total DTE", "OC", "N° Factura", "Monto Factura", "Discrepancia", "Vinculación", "Referencia del proveedor"],
     rows: limited.map((d) => {
       const invoice = d.purchaseOrderInvoiceId ? invoiceById.get(d.purchaseOrderInvoiceId) : undefined
       const invoiceAmount = invoice?.amount ?? null
@@ -76,8 +79,34 @@ export async function dteConciliacion(_session: Session | null, filters: ExportF
         invoice?.invoiceNumber ?? "",
         invoiceAmount,
         discrepancy,
+        linkMethodLabel(invoice?.linkMethod),
+        orderReferenceLabel(invoice?.linkOrderReference),
       ]
     }),
+    sheets: [referenceQualitySheet(limited, invoiceById)],
     rowLimitApplied,
   }
+}
+
+/**
+ * La pregunta que justifica el resto del trabajo sobre referencias: de las
+ * facturas ya vinculadas, ¿en cuántas el proveedor escribió algo que sirviera
+ * para encontrar la OC? Va en hoja aparte porque es un conteo, no un detalle, y
+ * mezclarlo con las filas obligaría a filtrar a mano para leerlo.
+ */
+function referenceQualitySheet(
+  docs: Array<{ purchaseOrderInvoiceId: string | null }>,
+  invoiceById: Map<string, { linkOrderReference: string | null }>,
+) {
+  const counts = new Map<string, number>()
+  for (const doc of docs) {
+    const invoice = doc.purchaseOrderInvoiceId ? invoiceById.get(doc.purchaseOrderInvoiceId) : undefined
+    const label = orderReferenceLabel(invoice?.linkOrderReference as never)
+    counts.set(label, (counts.get(label) ?? 0) + 1)
+  }
+  const rows: ReportCell[][] = [...counts.entries()]
+    .sort(([left], [right]) => left.localeCompare(right, "es"))
+    .map(([label, count]) => [label, count])
+  rows.push(["Total", docs.length])
+  return { worksheetName: "Calidad de la referencia", headers: ["Referencia del proveedor", "Facturas"], rows }
 }

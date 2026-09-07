@@ -40,6 +40,7 @@ function candidate() {
     fechaEmision: "2026-07-09",
     amountMatches: true,
     referencesOrder: false,
+    orderReference: "none" as DteCandidate["orderReference"],
     confidence: "unassessed" as const,
     enrichmentStatus: "pending" as const,
     lineEnrichedAt: null,
@@ -409,5 +410,48 @@ describe("InvoicesSection", () => {
     fireEvent.click(screen.getByRole("button", { name: "Aplicar sugerencia" }))
     expect(screen.getByLabelText(/REC-1/)).not.toBeChecked()
     expect(screen.getByLabelText(/REC-2/)).toBeChecked()
+  })
+})
+
+describe("InvoicesSection · calidad de la referencia citada", () => {
+  const render1 = (candidato: ReturnType<typeof candidate>) =>
+    render(
+      <InvoicesSection
+        purchaseOrderId="oc-1"
+        invoices={[]}
+        reconciliation={emptyReconciliation(119000)}
+        canManage
+        canUpdateCatalog={false}
+        ocItems={[]}
+        dteCandidates={[candidato]}
+      />,
+    )
+
+  it("nombra lo que el proveedor escribió cuando citó sólo el año de la OC", () => {
+    render1({ ...candidate(), orderReference: "year" as const })
+
+    expect(screen.getByText(/sólo el año/i)).toBeInTheDocument()
+  })
+
+  it("nombra aparte la cita del correlativo, que sí identifica una orden", () => {
+    render1({ ...candidate(), orderReference: "correlative" as const })
+
+    expect(screen.getByText(/cita el n° de esta oc/i)).toBeInTheDocument()
+    expect(screen.queryByText(/sólo el año/i)).not.toBeInTheDocument()
+  })
+
+  it("no muestra el aviso cuando la cita fue exacta", () => {
+    render1({ ...candidate(), referencesOrder: true, orderReference: "exact" as const })
+
+    expect(screen.getByText(/^cita esta oc$/i)).toBeInTheDocument()
+    expect(screen.queryByText(/sólo el año/i)).not.toBeInTheDocument()
+  })
+
+  it("se queda callado cuando el proveedor citó su propia numeración", () => {
+    // Es el 86% de los documentos reales: un badge acá sería ruido en todos.
+    render1({ ...candidate(), orderReference: "foreign" as const })
+
+    expect(screen.queryByText(/sólo el año/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/cita/i)).not.toBeInTheDocument()
   })
 })

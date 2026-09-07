@@ -228,6 +228,18 @@ RUN ./node_modules/.bin/esbuild scripts/backfill-dte-order-refs.ts \
     --external:postgres \
     --outfile=/tmp/backfill-dte-order-refs.mjs
 
+# Relectura de `referenced_order_codes` para las filas que ya se examinaron con
+# el normalizador anterior (el que descartaba los correlativos de 2 dígitos).
+# Complementa al backfill de arriba, que sólo mira filas en NULL.
+RUN ./node_modules/.bin/esbuild scripts/reparse-dte-order-refs.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/reparse-dte-order-refs.mjs
+
 # Migración de documentos SST del filesystem local a Cloudreve (WebDAV).
 # Corre a demanda (nunca en el deploy): el operador la ejecuta explícitamente
 # después de verificar la instancia Cloudreve. Externaliza sólo lo que la
@@ -372,6 +384,7 @@ COPY --from=build /tmp/invoice-reconciliation/preflight-purchase-invoice-reconci
 COPY --from=build /tmp/invoice-reconciliation/backfill-purchase-invoice-reconciliation.mjs ./scripts/backfill-purchase-invoice-reconciliation.mjs
 COPY --from=build /tmp/invoice-reconciliation/rollback-purchase-invoice-reconciliation-statuses.mjs ./scripts/rollback-purchase-invoice-reconciliation-statuses.mjs
 COPY --from=build /tmp/backfill-dte-order-refs.mjs ./scripts/backfill-dte-order-refs.mjs
+COPY --from=build /tmp/reparse-dte-order-refs.mjs ./scripts/reparse-dte-order-refs.mjs
 COPY --from=build /tmp/migrate-sst-to-cloudreve.mjs ./scripts/migrate-sst-to-cloudreve.mjs
 COPY --from=build /tmp/download-sst-documents.mjs ./scripts/download-sst-documents.mjs
 COPY --from=build /tmp/fuel/backfill-fuel-meter-readings.mjs ./scripts/backfill-fuel-meter-readings.mjs

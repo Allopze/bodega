@@ -98,6 +98,21 @@ describe("servicios con costo pendiente — flujo completo", () => {
   // Los servicios sobre instrumentos referencian el equipo del registro; el
   // atributo de texto libre "Código interno / N° de serie" se retiró en 0149.
 
+  it("rechaza un color ajeno a la variante desde el servidor", async () => {
+    const productId = "prod-variant-color"
+    await inMemoryDb.insert(schema.products).values({ id: productId, sku: "QA-VARIANT-COLOR", name: "Casco azul", categoryId: "cat-epp-srv-test", unitOfMeasure: "unidad" })
+    await inMemoryDb.insert(schema.productAttributes).values({ id: "qa-color-attribute", productId, name: "Color", type: "select", options: '["Azul"]', isRequired: true })
+    await expect(createSubmittedRequest(userId, undefined, requestData([
+      { productId, attributes: [{ attributeId: "qa-color-attribute", attributeName: "Color", value: "Rojo" }] },
+    ]))).rejects.toThrow(/Color no corresponde/)
+    const { requestId } = await createSubmittedRequest(userId, undefined, requestData([
+      { productId, attributes: [{ attributeId: "qa-color-attribute", attributeName: "Color", value: "Azul" }] },
+    ]))
+    const items = await inMemoryDb.select().from(schema.purchaseRequestItems).where(eq(schema.purchaseRequestItems.requestId, requestId))
+    expect(items).toHaveLength(1)
+    expect(items[0]?.productId).toBe(productId)
+  })
+
   // ── 1-3. Creación sin precio ────────────────────────────────────────────────
 
   it("el catálogo semilla trae los tres servicios marcados como is_service", async () => {

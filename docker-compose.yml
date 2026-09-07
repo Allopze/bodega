@@ -627,6 +627,31 @@ services:
       - bodega-storage:/data/storage:ro
     command: ["node", "scripts/backfill-dte-order-refs.mjs"]
 
+  # One-shot idempotente: relee `referenced_order_codes` desde el XML en disco
+  # para las filas que YA se examinaron con el normalizador anterior, el que
+  # descartaba los correlativos de 2 dígitos ("26", "17"). El backfill de arriba
+  # no las alcanza porque sólo mira filas en NULL.
+  #
+  # Sólo escribe cuando el valor cambia; una segunda corrida no toca nada.
+  #
+  #   docker compose run --rm reparse-dte-order-refs
+  reparse-dte-order-refs:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - STORAGE_PATH=${STORAGE_PATH:-/data/storage}
+    volumes:
+      - bodega-storage:/data/storage:ro
+    command: ["node", "scripts/reparse-dte-order-refs.mjs"]
+
   # One-shot a demanda: migra los documentos SST del filesystem local a
   # Cloudreve (WebDAV). Idempotente, verifica SHA-256 contra
   # `sstDocumentVersions.checksum` y NO borra el origen local (rollback =

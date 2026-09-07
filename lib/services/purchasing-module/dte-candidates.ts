@@ -16,6 +16,8 @@
 
 import { cleanRut } from "@/lib/rut"
 import { normalizeOrderCodeRef } from "./dte-parser"
+import { CLP_ROUNDING_TOLERANCE } from "./money-tolerance"
+import type { DteCandidateOrderReference } from "./order-reference"
 import { areEquivalentUnits } from "./invoice-item-matching"
 
 export interface DteCandidateInput {
@@ -24,6 +26,11 @@ export interface DteCandidateInput {
   /** 'YYYY-MM-DD' — el portal la entrega así y la columna es texto. */
   fechaEmision: string
   montoTotal: number
+  /**
+   * Tipo SII del documento. Opcional para no romper a quien ya llamaba sin él;
+   * sin tipo se asume factura, que es la lectura conservadora.
+   */
+  tipoDte?: string
 }
 
 export interface DteCandidateFilter {
@@ -52,6 +59,22 @@ export interface DteCandidateFilter {
 
 /** Los únicos tipos que pueden ser la factura de una OC. */
 export const DTE_INVOICE_TIPOS = ["33", "34"] as const
+/**
+ * Nota de crédito. Se registra contra la OC igual que una factura, pero resta:
+ * el servicio la guarda con `document_kind = 'credit_note'` y monto negativo.
+ *
+ * Antes se rechazaba, y una devolución dejaba la OC sobrefacturada sin forma de
+ * corregirlo desde la plataforma. Son 20 en dos meses sobre datos reales.
+ */
+export const DTE_CREDIT_NOTE_TIPOS = ["61"] as const
+
+/** Los tipos que la plataforma sabe colgar de una OC, de cualquier signo. */
+export const DTE_ATTACHABLE_TIPOS = [...DTE_INVOICE_TIPOS, ...DTE_CREDIT_NOTE_TIPOS] as const
+
+/** Qué clase de documento crea este tipo de DTE al adjuntarse. */
+export function dteDocumentKind(tipoDte: string): "invoice" | "credit_note" {
+  return (DTE_CREDIT_NOTE_TIPOS as readonly string[]).includes(tipoDte) ? "credit_note" : "invoice"
+}
 
 export interface DteInvoiceEligibilityDoc {
   tipoDte: string
@@ -81,8 +104,8 @@ export function dteInvoiceRejection(
   orderCreatedOn: string,
 ): string | null {
   if (!dte || !supplierRut) return "El DTE o proveedor ya no está disponible"
-  if (!DTE_INVOICE_TIPOS.includes(dte.tipoDte as (typeof DTE_INVOICE_TIPOS)[number])) {
-    return "Este tipo de DTE no puede registrarse como factura de OC"
+  if (!(DTE_ATTACHABLE_TIPOS as readonly string[]).includes(dte.tipoDte)) {
+    return "Este tipo de DTE no puede registrarse contra una OC"
   }
   if (dte.purchaseOrderInvoiceId || dte.fuelLoadId) return "Este DTE ya fue usado por otra operación"
   if (cleanRut(dte.rutEmisor) !== cleanRut(supplierRut)) {
@@ -95,10 +118,12 @@ export function dteInvoiceRejection(
 const DEFAULT_LIMIT = 20
 
 /** Diferencia máxima, en pesos, para dar el monto por coincidente. */
-const AMOUNT_TOLERANCE_CLP = 1
+const AMOUNT_TOLERANCE_CLP = CLP_ROUNDING_TOLERANCE
 
 export type DteCandidateConfidence = "high" | "medium" | "low" | "unassessed"
 export type DteCandidateMatchType = "supplier_alias" | "sku" | "name" | "ambiguous" | "unit_mismatch" | "none"
+/** @see order-reference.ts — el vocabulario vive ahí para que el cliente pueda importarlo. */
+export type { DteCandidateOrderReference }
 
 export interface DteCandidateLineInput {
   id: string
@@ -156,6 +181,12 @@ export interface DteCandidateAssessment<T extends DteCandidateDocumentInput = Dt
    * las dos señales detrás de la otra deja al operador sin qué discutir.
    */
   referencesOrder: boolean
+  /**
+   * Clasificación de lo que el proveedor citó. `referencesOrder` es su caso
+   * fuerte (`exact`); los demás valores existen para poder mostrar la
+   * diferencia entre "no citó" y "citó algo que no sirve".
+   */
+  orderReference: DteCandidateOrderReference
   amountMatches: boolean
   amountDifference: number | null
   proposedLinks: DteCandidateProposedLink[]
@@ -175,6 +206,13 @@ export interface DteCandidateAssessmentFilter extends DteCandidateFilter {
   aliases: DteCandidateAlias[]
   /** `purchase_orders.code` ("OC-2026-0025"); se normaliza acá. */
   orderCode?: string | null
+  /**
+   * Diferencia máxima en pesos para marcar "calza con el saldo". Entra como
+   * dato para que el badge de la lista y el veredicto del conciliador respondan
+   * lo mismo; ambos salen de `ops.compras.clp_tolerance`. El default es el
+   * ruido de redondeo, para quien llame sin configuración a mano.
+   */
+  clpTolerance?: number
 }
 
 /**
@@ -184,7 +222,7 @@ export interface DteCandidateAssessmentFilter extends DteCandidateFilter {
  */
 export function assessDteCandidates<T extends DteCandidateDocumentInput>(
   unlinkedDocs: T[],
-  { supplierRut, createdOn, expectedAmount, limit = DEFAULT_LIMIT, orderItems, aliases, orderCode }: DteCandidateAssessmentFilter,
+  { supplierRut, createdOn, expectedAmount, limit = DEFAULT_LIMIT, orderItems, aliases, orderCode, clpTolerance = AMOUNT_TOLERANCE_CLP }: DteCandidateAssessmentFilter,
 ): DteCandidateAssessment<T>[] {
   if (!supplierRut || !cleanRut(supplierRut)) return []
   const supplier = cleanRut(supplierRut)
@@ -206,15 +244,20 @@ export function assessDteCandidates<T extends DteCandidateDocumentInput>(
     .filter((doc) => cleanRut(doc.rutEmisor) === supplier && doc.fechaEmision >= createdOn)
     .map((doc): DteCandidateAssessment<T> => {
       const amountDifference = target === null ? null : Math.abs(doc.montoTotal - target)
-      const amountMatches = amountDifference !== null && amountDifference <= AMOUNT_TOLERANCE_CLP
-      const referencesOrder = normalizedOrderCode !== null
-        && splitReferencedOrderCodes(doc.referencedOrderCodes).includes(normalizedOrderCode)
+      // Una nota de crédito nunca "calza con el saldo": el saldo es lo que falta
+      // por facturar y la NC resta. Decir que calza invitaría a adjuntarla
+      // creyendo que cierra la orden, y la deja al revés.
+      const amountMatches = dteDocumentKind(doc.tipoDte ?? "") === "invoice"
+        && amountDifference !== null && amountDifference <= clpTolerance
+      const orderReference = classifyOrderReference(normalizedOrderCode, doc.referencedOrderCodes)
+      const referencesOrder = orderReference === "exact"
       const lines = doc.lines ?? []
       if (doc.enrichmentStatus !== "ready" || lines.length === 0) {
         return {
           doc,
           confidence: "unassessed",
           referencesOrder,
+          orderReference,
           amountMatches,
           amountDifference,
           proposedLinks: [],
@@ -294,7 +337,7 @@ export function assessDteCandidates<T extends DteCandidateDocumentInput>(
           ? "medium"
           : "low"
 
-      return { doc, confidence, referencesOrder, amountMatches, amountDifference, proposedLinks, explanation }
+      return { doc, confidence, referencesOrder, orderReference, amountMatches, amountDifference, proposedLinks, explanation }
     })
 
   return assessed
@@ -332,6 +375,39 @@ function compareAssessments(left: DteCandidateAssessment, right: DteCandidateAss
 /** El separador es seguro porque la normalización deja sólo `[A-Z0-9]`. */
 function splitReferencedOrderCodes(value: string | null | undefined): string[] {
   return value ? value.split(",").filter(Boolean) : []
+}
+
+/**
+ * Parte un código ya normalizado (`20260020`) en año y correlativo. Devuelve
+ * null cuando no tiene esa forma: un `SINOC080426` no se despieza.
+ */
+function splitOrderCodeParts(normalizedOrderCode: string) {
+  const match = /^(20\d{2})(\d{1,6})$/.exec(normalizedOrderCode)
+  return match ? { year: match[1]!, correlative: match[2]! } : null
+}
+
+/** `0020` y `20` son el mismo correlativo; el proveedor escribe cualquiera de los dos. */
+function sameCorrelative(left: string, right: string) {
+  return /^\d+$/.test(left) && /^\d+$/.test(right) && Number(left) === Number(right)
+}
+
+/**
+ * Un documento puede citar varias referencias y sólo una manda: se devuelve la
+ * más fuerte. Todo se compara ya normalizado, así que un año o un correlativo
+ * sueltos sólo cuentan si son los de ESTA orden — los de otra son tan ajenos
+ * como el correlativo interno del proveedor.
+ */
+export function classifyOrderReference(
+  normalizedOrderCode: string | null,
+  referencedOrderCodes: string | null | undefined,
+): DteCandidateOrderReference {
+  const codes = splitReferencedOrderCodes(referencedOrderCodes)
+  if (normalizedOrderCode === null || codes.length === 0) return "none"
+  if (codes.includes(normalizedOrderCode)) return "exact"
+  const parts = splitOrderCodeParts(normalizedOrderCode)
+  if (parts === null) return "foreign"
+  if (codes.some((code) => sameCorrelative(code, parts.correlative))) return "correlative"
+  return codes.includes(parts.year) ? "year" : "foreign"
 }
 
 function emptyExplanation(totalLines: number) {

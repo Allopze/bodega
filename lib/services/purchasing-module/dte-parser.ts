@@ -254,9 +254,14 @@ function extractOrderCodeRefs(documento: Record<string, unknown>): string[] {
  * `FolioRef` del proveedor y el `purchase_orders.code` nuestro tienen que pasar
  * por acá antes de compararse.
  *
- * `OC-2026-0025`, `2026-0025` y `OC 2026 0025` colapsan todos a `20260025`. Se
- * descarta lo de menos de 3 caracteres (`N`, `-`): no identifica una orden y
- * abarataría una coincidencia que después se muestra como certeza.
+ * `OC-2026-0025`, `2026-0025` y `OC 2026 0025` colapsan todos a `20260025`.
+ *
+ * El piso es de 2 caracteres. Estuvo en 3 mientras una coincidencia se mostraba
+ * como certeza: un `26` suelto habría ascendido a "cita esta OC" sin serlo. Hoy
+ * la fuerza de la referencia la decide `classifyOrderReference`, que separa la
+ * cita completa de la parcial, así que guardar el correlativo suelto —46 de los
+ * 667 XML reales— aporta la pista sin comprarla como certeza. Un carácter solo
+ * (`N`, `-`) sigue fuera: no es un número de nada.
  */
 export function normalizeOrderCodeRef(value: string | null | undefined): string | null {
   if (!value) return null
@@ -264,7 +269,7 @@ export function normalizeOrderCodeRef(value: string | null | undefined): string 
   // El prefijo es nuestro, no del documento: los proveedores lo omiten tanto
   // como lo escriben, y sin quitarlo `OC-2026-0025` nunca calzaría con `2026-0025`.
   const withoutPrefix = compact.startsWith("OC") ? compact.slice(2) : compact
-  return withoutPrefix.length >= 3 ? withoutPrefix : null
+  return withoutPrefix.length >= 2 ? withoutPrefix : null
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

@@ -28,6 +28,7 @@ export const OPS_SETTING_KEYS = {
   feedbackAttachmentMaxMb:  "ops.feedback.attachment_max_mb",
   pdtpEvidenceMaxMb:         "ops.pdtp.evidence_max_mb",
   pdtpEvidenceRetentionDays: "ops.pdtp.evidence_retention_days",
+  purchasingClpTolerance:    "ops.compras.clp_tolerance",
 } as const
 
 export const DEFAULT_OPS_SETTINGS = {
@@ -36,6 +37,16 @@ export const DEFAULT_OPS_SETTINGS = {
   feedbackAttachmentMaxMb:    20,
   pdtpEvidenceMaxMb:           25,
   pdtpEvidenceRetentionDays:  365,
+  /**
+   * Diferencia máxima en pesos para dar por coincidente un monto al conciliar
+   * OC contra factura. El default es el ruido de redondeo: el CLP no tiene
+   * decimales, así que cualquier diferencia mayor la produjo alguien.
+   *
+   * Se puede ampliar para un proveedor que prorratea flete, pero **no gobierna
+   * el vínculo automático DTE↔factura**, que se queda en el peso de redondeo
+   * (ver `money-tolerance.ts`): aflojar lo que nadie revisa es otra decisión.
+   */
+  purchasingClpTolerance:       1,
 } as const
 
 export interface OperationalSettings {
@@ -44,6 +55,7 @@ export interface OperationalSettings {
   feedbackAttachmentMaxMb:    number
   pdtpEvidenceMaxMb:           number
   pdtpEvidenceRetentionDays:  number
+  purchasingClpTolerance:     number
 }
 
 const OPS_VALIDATION: Record<keyof OperationalSettings, { min: number; max: number }> = {
@@ -52,6 +64,7 @@ const OPS_VALIDATION: Record<keyof OperationalSettings, { min: number; max: numb
   feedbackAttachmentMaxMb:    { min: 1,      max: 20 },
   pdtpEvidenceMaxMb:           { min: 1,      max: 100 },
   pdtpEvidenceRetentionDays:  { min: 30,     max: 3650 },
+  purchasingClpTolerance:     { min: 0,      max: 100_000 },
 }
 
 /**
@@ -110,6 +123,7 @@ export async function getOperationalSettings(
     feedbackAttachmentMaxMb:    parseIntStrict(raw.feedbackAttachmentMaxMb,    DEFAULT_OPS_SETTINGS.feedbackAttachmentMaxMb),
     pdtpEvidenceMaxMb:           parseIntStrict(raw.pdtpEvidenceMaxMb,           DEFAULT_OPS_SETTINGS.pdtpEvidenceMaxMb),
     pdtpEvidenceRetentionDays:  parseIntStrict(raw.pdtpEvidenceRetentionDays,  DEFAULT_OPS_SETTINGS.pdtpEvidenceRetentionDays),
+    purchasingClpTolerance:     parseIntStrict(raw.purchasingClpTolerance,     DEFAULT_OPS_SETTINGS.purchasingClpTolerance),
   }
 
   for (const k of Object.keys(settings) as Array<keyof OperationalSettings>) {

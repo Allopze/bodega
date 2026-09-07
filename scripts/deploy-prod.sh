@@ -403,6 +403,12 @@ else
   echo "    referencias al día; backfill omitido"
 fi
 
+# Sin conteo previo: no hay forma barata de saber cuántas filas guardaron un
+# valor del normalizador viejo sin releer sus XML, que es justo lo que hace el
+# script. Es idempotente y sólo escribe cuando el valor cambia, así que sobre
+# una base al día no toca ninguna fila.
+run_timed "Relectura de referencias a OC con el normalizador actual" run_in_prod docker compose run --rm reparse-dte-order-refs
+
 # Sin conteo previo y siempre: el backfill relee el detalle que ya está en
 # `raw_row` y hace upsert por (fuente, guía), así que sobre una base al día no
 # escribe nada. Contar lo pendiente costaría el mismo escaneo que hacerlo.

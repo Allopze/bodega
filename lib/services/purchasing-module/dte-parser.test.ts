@@ -209,4 +209,12 @@ describe("normalizeOrderCodeRef", () => {
     expect(normalizeOrderCodeRef("")).toBeNull()
     expect(normalizeOrderCodeRef(null)).toBeNull()
   })
+
+  it("conserva el correlativo de dos dígitos que el proveedor cita sin el año", () => {
+    // 46 de los 667 XML reales citan sólo el correlativo ("26", "17", "14").
+    // Descartarlos entero perdía la única pista que traía el documento; quien
+    // decide qué tan fuerte es esa pista es la clasificación, no el largo.
+    expect(normalizeOrderCodeRef("26")).toBe("26")
+    expect(normalizeOrderCodeRef("OC 17")).toBe("17")
+  })
 })

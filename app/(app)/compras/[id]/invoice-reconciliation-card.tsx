@@ -115,7 +115,11 @@ export function InvoiceReconciliationCard({
         <div>
           <h3 className="text-sm font-semibold text-(--color-text)">Conciliación de facturación</h3>
           <p className="mt-0.5 text-xs text-(--color-text-subtle)">
-            Compara OC, entrega aceptada del proveedor y factura, además de unidades y precios efectivos netos. Tolerancia monetaria: $1.
+            {/* La tolerancia sale de la evidencia y no de un literal: desde que
+                se configura en Administración, un número fijo acá le mentiría
+                al operador sobre la regla con la que se evaluó su orden. */}
+            Compara OC, entrega aceptada del proveedor y factura, además de unidades y precios efectivos netos.
+            {" "}Tolerancia monetaria: ${reconciliation.money.tolerance.toLocaleString("es-CL")}.
           </p>
         </div>
         <MetaBadge meta={status} />

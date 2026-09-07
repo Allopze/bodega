@@ -1,3 +1,4 @@
+import { formatVariantProductName, type VariantAttribute } from "@/lib/products/variant-grouping"
 import { countOf, formatCLP, formatDateTime, formatQty } from "@/lib/utils"
 import { OcItemCostForm } from "./oc-item-cost-form"
 import type { OcDetailItem, OcDetailOrder } from "./oc-detail.types"
@@ -42,8 +43,8 @@ export function OcDetailItems({
   canRecordCost = false,
 }: {
   order: OcDetailOrder
-  reqItemMap: Record<string, { request: { code: string } }>
-  productMap: Record<string, { name: string; sku: string | null }>
+  reqItemMap: Record<string, { request: { code: string }; attributes?: Array<{ attributeName: string; value: string }> }>
+  productMap: Record<string, { name: string; sku: string | null; attributes?: VariantAttribute[] }>
   /** `purchasing:create_order` — quien pone precio al crear la OC lo pone después. */
   canRecordCost?: boolean
 }) {
@@ -56,7 +57,7 @@ export function OcDetailItems({
         {order.items.map((item) => {
           const reqItem = item.requestItemId ? reqItemMap[item.requestItemId] : null
           const product = item.productId ? productMap[item.productId] : null
-          const name    = product?.name ?? item.productNameFree ?? "(sin nombre)"
+          const name    = formatVariantProductName(product?.name ?? item.productNameFree ?? "(sin nombre)", product?.attributes, reqItem?.attributes?.map((a) => ({ name: a.attributeName, value: a.value })))
           const sku     = product?.sku ?? null
           const reqCode = reqItem?.request?.code
 
@@ -141,7 +142,7 @@ export function OcDetailItems({
             {order.items.map((item) => {
               const reqItem = item.requestItemId ? reqItemMap[item.requestItemId] : null
               const product = item.productId ? productMap[item.productId] : null
-              const name    = product?.name ?? item.productNameFree ?? "(sin nombre)"
+              const name    = formatVariantProductName(product?.name ?? item.productNameFree ?? "(sin nombre)", product?.attributes, reqItem?.attributes?.map((a) => ({ name: a.attributeName, value: a.value })))
               const sku     = product?.sku ?? null
               const reqCode = reqItem?.request?.code
 

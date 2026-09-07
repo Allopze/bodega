@@ -21,6 +21,7 @@ interface OpsSettingsFormProps {
     feedbackAttachmentMaxMb: number
     pdtpEvidenceMaxMb: number
     pdtpEvidenceRetentionDays: number
+    purchasingClpTolerance: number
   }
   defaults: typeof import("@/lib/services/system-settings").DEFAULT_OPS_SETTINGS
   office: {
@@ -98,6 +99,29 @@ export function OpsSettingsForm({ current, defaults, office, pdfEngines }: OpsSe
             step={100}
             defaultValue={String(current.exportMaxRows)}
             error={!!state.fieldErrors?.exportMaxRows}
+          />
+        </Field>
+      </Section>
+
+      <Section
+        title="Conciliación de compras"
+        description="Diferencia en pesos que se acepta entre el total de la OC y el de la factura antes de marcar discrepancia."
+      >
+        <Field
+          label="Tolerancia de conciliación (CLP)"
+          htmlFor="purchasingClpTolerance"
+          helper={`Predeterminado: ${defaults.purchasingClpTolerance} (el peso de redondeo). Rango permitido: 0 a 100.000. No afecta el vínculo automático entre DTE y factura, que siempre exige calce exacto.`}
+          error={state.fieldErrors?.purchasingClpTolerance?.[0]}
+        >
+          <Input
+            id="purchasingClpTolerance"
+            name="purchasingClpTolerance"
+            type="number"
+            min={0}
+            max={100_000}
+            step={1}
+            defaultValue={String(current.purchasingClpTolerance)}
+            error={!!state.fieldErrors?.purchasingClpTolerance}
           />
         </Field>
       </Section>

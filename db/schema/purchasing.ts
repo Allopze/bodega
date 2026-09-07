@@ -164,6 +164,14 @@ export const purchaseOrderInvoices = pgTable("purchase_order_invoices", {
   id:              text("id").primaryKey(),
   purchaseOrderId: text("purchase_order_id").notNull().references(() => purchaseOrders.id, { onDelete: "cascade" }),
   invoiceNumber:   text("invoice_number").notNull(),
+  /**
+   * Qué clase de documento tributario es. Una nota de crédito **resta**: se
+   * guarda con `amount` negativo, igual que `billing_invoices.total_amount`, y
+   * así toda suma existente de montos de factura queda correcta sin conocer
+   * esta columna. Medido sobre datos reales: 20 NC en dos meses, 4 de
+   * proveedores con OC — el caso ocurre y hoy era irrepresentable.
+   */
+  documentKind:    text("document_kind").notNull().default("invoice").$type<"invoice" | "credit_note">(),
   amount:          numeric("amount", { precision: 12, scale: 2, mode: "number" }).notNull().default(0),
   issueDate:       text("issue_date"),                   // "YYYY-MM-DD" — consistent with other date fields
   fileName:        text("file_name").notNull(),
@@ -176,17 +184,49 @@ export const purchaseOrderInvoices = pgTable("purchase_order_invoices", {
   supplierIdentitySource: text("supplier_identity_source").notNull().default("legacy"),
   uploadedBy:      text("uploaded_by").notNull().references(() => users.id),
   uploadedAt:      timestamp("uploaded_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+
+  /**
+   * Cómo llegó esta factura a colgar de esta OC. `legacy` es el default de las
+   * filas anteriores a la columna: su origen no se puede reconstruir y decir
+   * `manual_upload` sería inventarlo.
+   */
+  linkMethod:      text("link_method").notNull().default("legacy").$type<"legacy" | "manual_upload" | "dte_candidate">(),
+  /**
+   * Qué tan utilizable era la referencia de OC que el proveedor había escrito
+   * en el XML **en el momento de vincular**. NULL cuando no hubo XML que mirar
+   * (carga manual de un PDF) o cuando la fila es anterior a la columna.
+   *
+   * Se congela a propósito: es la evidencia de por qué se aceptó este vínculo,
+   * no una vista del XML de hoy. La produce `classifyOrderReference`.
+   */
+  linkOrderReference: text("link_order_reference").$type<"exact" | "correlative" | "year" | "foreign" | "none">(),
 }, (table) => [
-  check("purchase_order_invoices_amount_non_negative", sql`${table.amount} >= 0`),
+  check("purchase_order_invoices_document_kind_valid", sql`
+    ${table.documentKind} IN ('invoice', 'credit_note')
+  `),
+  // Relajar el signo para las NC no puede abrir la puerta a facturas negativas:
+  // cada clase queda encerrada en el suyo.
+  check("purchase_order_invoices_amount_sign_matches_kind", sql`
+    (${table.documentKind} = 'invoice' AND ${table.amount} >= 0)
+    OR (${table.documentKind} = 'credit_note' AND ${table.amount} <= 0)
+  `),
   check("purchase_order_invoices_supplier_identity_status_valid", sql`
     ${table.supplierIdentityStatus} IN ('unknown', 'verified', 'unverified')
   `),
   check("purchase_order_invoices_supplier_identity_source_valid", sql`
     ${table.supplierIdentitySource} IN ('legacy', 'dte_xml', 'pdf_text', 'pdf_text_ocr', 'ocr', 'manual')
   `),
+  check("purchase_order_invoices_link_method_valid", sql`
+    ${table.linkMethod} IN ('legacy', 'manual_upload', 'dte_candidate')
+  `),
+  check("purchase_order_invoices_link_order_reference_valid", sql`
+    ${table.linkOrderReference} IS NULL
+    OR ${table.linkOrderReference} IN ('exact', 'correlative', 'year', 'foreign', 'none')
+  `),
   // A folio is unique at least within its OC. The service also checks this
   // before insert for an operator-friendly error; this index closes races.
-  uniqueIndex("purchase_order_invoices_order_number_unique").on(table.purchaseOrderId, table.invoiceNumber),
+  uniqueIndex("purchase_order_invoices_order_number_unique")
+    .on(table.purchaseOrderId, table.documentKind, table.invoiceNumber),
 ])
 
 /* ── Purchase Order Invoice Items ─────────────────────────────────────────── */
@@ -206,8 +246,15 @@ export const purchaseOrderInvoiceItems = pgTable("purchase_order_invoice_items",
   unitPrice:           numeric("unit_price", { precision: 12, scale: 2, mode: "number" }).notNull(),
   subtotal:            numeric("subtotal", { precision: 12, scale: 2, mode: "number" }).notNull(),
 }, (table) => [
-  check("po_invoice_items_qty_positive", sql`${table.quantity} > 0`),
-  check("po_invoice_items_amounts_non_negative", sql`${table.unitPrice} >= 0 AND ${table.subtotal} >= 0`),
+  // El signo lo hereda del documento: una NC guarda cantidades y subtotales
+  // negativos para que las sumas del conciliador se netean solas. Lo que no
+  // puede pasar es que discrepen entre sí, ni que una línea no mueva nada.
+  check("po_invoice_items_qty_not_zero", sql`${table.quantity} <> 0`),
+  check("po_invoice_items_sign_consistent", sql`
+    (${table.quantity} > 0 AND ${table.subtotal} >= 0)
+    OR (${table.quantity} < 0 AND ${table.subtotal} <= 0)
+  `),
+  check("po_invoice_items_unit_price_non_negative", sql`${table.unitPrice} >= 0`),
   index("po_invoice_items_invoice_idx").on(table.invoiceId),
   index("po_invoice_items_oc_item_idx").on(table.purchaseOrderItemId),
   index("po_invoice_items_source_dte_item_idx").on(table.sourceDteDocumentItemId),

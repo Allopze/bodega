@@ -19,8 +19,8 @@ import {
   suppliers, users, worksites,
 } from "@/db/schema"
 import { pendingPurchaseWhere } from "@/lib/adquisiciones/pending-purchase"
-import { getProductSizesByIds } from "@/lib/services/product-sizes"
-import { formatSizedProductName } from "@/lib/products/product-size"
+import { getProductAttributesByIds, getRequestItemAttributesByIds } from "@/lib/services/product-sizes"
+import { formatVariantProductName } from "@/lib/products/variant-grouping"
 
 /** Cómo se clasifica cada ítem dentro de una solicitud que espera OC. */
 export type PendingPurchaseItemStage =
@@ -228,9 +228,10 @@ export async function listPendingPurchaseRequests(
   ])
 
   const pendingIds = new Set(pendingIdRows.map((row) => row.id))
-  const sizeById = await getProductSizesByIds(
-    itemRows.map((row) => row.productId).filter((id): id is string => Boolean(id)),
-  )
+  const [attributesById, recordedById] = await Promise.all([
+    getProductAttributesByIds(itemRows.flatMap((row) => row.productId ? [row.productId] : [])),
+    getRequestItemAttributesByIds(itemRows.map((row) => row.id)),
+  ])
   const itemsByRequest = new Map<string, PendingPurchaseItem[]>()
   const suppliersByRequest = new Map<string, Set<string>>()
   // El LEFT JOIN a la OC puede devolver más de una fila por ítem si un
@@ -257,7 +258,7 @@ export async function listPendingPurchaseRequests(
       id:            row.id,
       // Comprar sin la talla obliga a abrir la solicitud para saber cuál pedir.
       productName:   row.productName
-        ? formatSizedProductName(row.productName, row.productId ? sizeById.get(row.productId) : null)
+        ? formatVariantProductName(row.productName, row.productId ? attributesById.get(row.productId) : undefined, recordedById.get(row.id))
         : row.productNameFree ?? "(sin nombre)",
       productSku:    row.productSku,
       quantity:      row.quantity,

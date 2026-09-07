@@ -107,3 +107,26 @@ describe("InvoiceReconciliationCard", () => {
     expect(screen.queryByText(/actualizar catálogo/i)).not.toBeInTheDocument()
   })
 })
+
+describe("InvoiceReconciliationCard · la tolerancia que dice es la que se aplicó", () => {
+  const evidencia = (clpTolerance?: number) => reconcileInvoiceEvidence({
+    totalOC: 100_000,
+    orderItems: [{ id: "i1", productName: "Casco", quantity: 1, unitOfMeasure: "unidad", unitPrice: 100_000, subtotal: 100_000 }],
+    invoices: [],
+    ...(clpTolerance === undefined ? {} : { clpTolerance }),
+  })
+
+  it("muestra el peso de redondeo cuando nadie cambió el parámetro", () => {
+    render(<InvoiceReconciliationCard purchaseOrderId="oc-1" reconciliation={evidencia()} invoices={[]} canAccept={false} canUpdateCatalog={false} />)
+
+    expect(screen.getByText(/Tolerancia monetaria: \$1\./)).toBeInTheDocument()
+  })
+
+  it("muestra la tolerancia configurada, no una escrita a mano", () => {
+    // Con la tolerancia configurable desde Administración, un valor fijo en el
+    // texto le mentiría al operador sobre la regla con la que se evaluó su OC.
+    render(<InvoiceReconciliationCard purchaseOrderId="oc-1" reconciliation={evidencia(250)} invoices={[]} canAccept={false} canUpdateCatalog={false} />)
+
+    expect(screen.getByText(/Tolerancia monetaria: \$250\./)).toBeInTheDocument()
+  })
+})

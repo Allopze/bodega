@@ -1101,6 +1101,138 @@ describe("Purchasing service — edge cases", () => {
       ).rejects.toThrow("no encontrada")
     })
 
+    it("deja registrado cómo se vinculó la factura y qué había citado el proveedor", async () => {
+      // Sin esto no se puede responder después "¿cuántas facturas se
+      // adjuntaron sin que el proveedor citara la OC?", que es la única forma
+      // de saber si vale la pena reclamarle a un proveedor concreto.
+      const orderId = "oc-dte-link-evidence"
+      const dteId = "dte-link-evidence"
+      const issueDate = now.slice(0, 10)
+      await inMemoryDb.insert(schema.purchaseOrders).values({
+        id: orderId,
+        code: "OC-2026-0044",
+        worksiteId: "ws-purch",
+        supplierId: "sup-purch",
+        createdBy: userId,
+        status: "sent",
+        netAmount: 100000,
+        taxAmount: 19000,
+        totalAmount: 119000,
+        createdAt: now,
+        updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.dteDocuments).values({
+        id: dteId,
+        tipoDte: "33",
+        folio: 771001,
+        rutEmisor: "76.000.001-1",
+        razonSocialEmisor: "Proveedor Purch",
+        fechaEmision: issueDate,
+        montoTotal: 119000,
+        codEmp: "433",
+        periodo: issueDate.slice(0, 7),
+        portalRecordId: "9000044",
+        rawHash: "dte-link-evidence-hash",
+        // El proveedor citó sólo el año: no identifica ninguna orden.
+        referencedOrderCodes: "2026",
+      })
+
+      const invoiceId = await createPurchaseOrderInvoiceFromDte({
+        purchaseOrderId: orderId,
+        dteDocumentId: dteId,
+        invoiceNumber: "771001",
+        amount: 119000,
+        amountAuthority: "document_header",
+        issueDate,
+        fileName: "DTE-33-771001.pdf",
+        filePath: "storage/purchase-orders/dte-33-771001.pdf",
+        fileSize: 8,
+        mimeType: "application/pdf",
+        uploadedBy: userId,
+        dteIdentity: {
+          tipoDte: "33",
+          invoiceNumber: "771001",
+          issueDate,
+          supplierRut: "76.000.001-1",
+          totalAmount: 119000,
+        },
+        items: [],
+      })
+
+      const invoice = await inMemoryDb.query.purchaseOrderInvoices.findFirst({
+        where: eq(schema.purchaseOrderInvoices.id, invoiceId),
+      })
+      expect(invoice?.linkMethod).toBe("dte_candidate")
+      expect(invoice?.linkOrderReference).toBe("year")
+    })
+
+    it("marca la carga manual como tal, sin inventar una referencia", async () => {
+      const orders = await inMemoryDb.query.purchaseOrders.findMany({
+        where: eq(schema.purchaseOrders.status, "sent"),
+      })
+      const orderId = orders[0]!.id
+
+      const invoiceId = await createPurchaseOrderInvoice({
+        purchaseOrderId: orderId,
+        invoiceNumber: "FAC-LINK-MANUAL",
+        amount: 1000,
+        fileName: "f.pdf",
+        filePath: "/f.pdf",
+        uploadedBy: userId,
+      })
+
+      const invoice = await inMemoryDb.query.purchaseOrderInvoices.findFirst({
+        where: eq(schema.purchaseOrderInvoices.id, invoiceId),
+      })
+      expect(invoice?.linkMethod).toBe("manual_upload")
+      expect(invoice?.linkOrderReference).toBeNull()
+    })
+
+    it("registra un DTE tipo 61 como nota de crédito, en negativo", async () => {
+      // Medido: 20 NC en dos meses, 4 de proveedores con OC. Antes el tipo 61
+      // se rechazaba y la OC quedaba sobrefacturada para siempre.
+      const orderId = "oc-nota-credito"
+      const dteId = "dte-nota-credito"
+      const issueDate = now.slice(0, 10)
+      await inMemoryDb.insert(schema.purchaseOrders).values({
+        id: orderId, code: "OC-2026-0099", worksiteId: "ws-purch", supplierId: "sup-purch",
+        createdBy: userId, status: "sent", netAmount: 100000, taxAmount: 19000, totalAmount: 119000,
+        createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.dteDocuments).values({
+        id: dteId, tipoDte: "61", folio: 500123, rutEmisor: "76.000.001-1",
+        razonSocialEmisor: "Proveedor Purch", fechaEmision: issueDate, montoTotal: 23800,
+        codEmp: "433", periodo: issueDate.slice(0, 7), portalRecordId: "9000099",
+        rawHash: "dte-nota-credito-hash",
+      })
+
+      const invoiceId = await createPurchaseOrderInvoiceFromDte({
+        purchaseOrderId: orderId,
+        dteDocumentId: dteId,
+        invoiceNumber: "500123",
+        amount: 23800,
+        amountAuthority: "document_header",
+        issueDate,
+        fileName: "DTE-61-500123.pdf",
+        filePath: "storage/purchase-orders/dte-61-500123.pdf",
+        fileSize: 8,
+        mimeType: "application/pdf",
+        uploadedBy: userId,
+        dteIdentity: {
+          tipoDte: "61", invoiceNumber: "500123", issueDate,
+          supplierRut: "76.000.001-1", totalAmount: 23800,
+        },
+        items: [],
+      })
+
+      const invoice = await inMemoryDb.query.purchaseOrderInvoices.findFirst({
+        where: eq(schema.purchaseOrderInvoices.id, invoiceId),
+      })
+      expect(invoice?.documentKind).toBe("credit_note")
+      // El monto llega positivo del portal; se guarda negativo porque resta.
+      expect(invoice?.amount).toBe(-23800)
+    })
+
     it("creates a DTE-backed invoice atomically, preserves its header total and unlinks it on deletion", async () => {
       const orderId = "oc-dte-auto-invoice-1"
       const dteId = "dte-auto-invoice-1"

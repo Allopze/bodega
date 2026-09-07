@@ -378,3 +378,141 @@ describe("reconcileInvoiceEvidence", () => {
     expect(result.issues).toContainEqual(expect.objectContaining({ code: "supplier_unverified", invoiceId: "inv-1" }))
   })
 })
+
+describe("reconcileInvoiceEvidence · tolerancia configurable", () => {
+  const orderItems = [{ id: "i1", productName: "Casco", quantity: 1, unitPrice: 10_000, subtotal: 10_000 }]
+  const invoices = [{
+    id: "f1", invoiceNumber: "1", amount: 10_030,
+    items: [{ purchaseOrderItemId: "i1", quantity: 1, unitPrice: 10_030, subtotal: 10_030 }],
+  }]
+
+  it("con la tolerancia por defecto, 30 pesos de más son una discrepancia", () => {
+    const ev = reconcileInvoiceEvidence({ totalOC: 10_000, orderItems, invoices })
+
+    expect(ev.money.status).toBe("mismatch")
+    expect(ev.money.tolerance).toBe(1)
+  })
+
+  it("acepta la diferencia cuando la administración amplió la tolerancia", () => {
+    const ev = reconcileInvoiceEvidence({ totalOC: 10_000, orderItems, invoices, clpTolerance: 50 })
+
+    expect(ev.money.status).toBe("matched")
+    expect(ev.money.tolerance).toBe(50)
+  })
+
+  it("deja la tolerancia aplicada dentro de la evidencia, no sólo el veredicto", () => {
+    // Sin esto no se puede responder después con qué regla se aceptó la
+    // discrepancia: cambiar el parámetro reescribiría la historia.
+    const ev = reconcileInvoiceEvidence({ totalOC: 10_000, orderItems, invoices, clpTolerance: 50 })
+
+    expect(ev.money.tolerance).toBe(50)
+  })
+
+  it("no cambia el fingerprint al mover la tolerancia", () => {
+    // La aceptación humana está atada a un estado de los DATOS. Cambiar un
+    // parámetro de evaluación no debe invalidar una excepción ya revisada.
+    const a = reconcileInvoiceEvidence({ totalOC: 10_000, orderItems, invoices })
+    const b = reconcileInvoiceEvidence({ totalOC: 10_000, orderItems, invoices, clpTolerance: 50 })
+
+    expect(a.fingerprint).toBe(b.fingerprint)
+  })
+})
+
+describe("reconcileInvoiceEvidence · facturar contra lo ordenado o lo recibido", () => {
+  /** Una mantención de monogás: se factura al ejecutarse, nadie la "recibe" en bodega. */
+  const servicio = {
+    id: "s1", productName: "Mantención monogás", quantity: 1,
+    unitOfMeasure: "servicio", unitPrice: 80_000, subtotal: 80_000, supplierReceivedQuantity: 0,
+  }
+  const factura = [{
+    id: "f1", invoiceNumber: "1", amount: 80_000,
+    items: [{ purchaseOrderItemId: "s1", quantity: 1, unitOfMeasure: "servicio", unitPrice: 80_000, subtotal: 80_000 }],
+  }]
+
+  it("por defecto exige recepción y deja la OC esperándola", () => {
+    const ev = reconcileInvoiceEvidence({ totalOC: 80_000, orderItems: [servicio], invoices: factura })
+
+    expect(ev.status).toBe("awaiting_receipt")
+    expect(ev.issues.some((i) => i.code === "quantity_over_received")).toBe(true)
+  })
+
+  it("no reclama recepción en una línea que se factura contra lo ordenado", () => {
+    // Es el caso del servicio: exigir recepción lo dejaba en `awaiting_receipt`
+    // para siempre, porque esa recepción no va a existir nunca.
+    const ev = reconcileInvoiceEvidence({
+      totalOC: 80_000,
+      orderItems: [{ ...servicio, invoiceControl: "ordered" as const }],
+      invoices: factura,
+    })
+
+    expect(ev.status).toBe("matched")
+    expect(ev.issues.some((i) => i.code === "quantity_over_received")).toBe(false)
+    expect(ev.items[0]!.receiptStatus).toBe("not_evaluable")
+  })
+
+  it("mantiene la exigencia en las líneas de bienes de la misma OC", () => {
+    // La política es por línea, no por orden: una OC mixta no puede perder el
+    // control sobre los bienes porque traiga además un servicio.
+    const bien = { id: "b1", productName: "Casco", quantity: 2, unitOfMeasure: "unidad", unitPrice: 10_000, subtotal: 20_000, supplierReceivedQuantity: 0 }
+    const ev = reconcileInvoiceEvidence({
+      totalOC: 100_000,
+      orderItems: [{ ...servicio, invoiceControl: "ordered" as const }, bien],
+      invoices: [{
+        id: "f1", invoiceNumber: "1", amount: 100_000,
+        items: [
+          { purchaseOrderItemId: "s1", quantity: 1, unitOfMeasure: "servicio", unitPrice: 80_000, subtotal: 80_000 },
+          { purchaseOrderItemId: "b1", quantity: 2, unitOfMeasure: "unidad", unitPrice: 10_000, subtotal: 20_000 },
+        ],
+      }],
+    })
+
+    expect(ev.issues.filter((i) => i.code === "quantity_over_received").map((i) => i.orderItemId)).toEqual(["b1"])
+  })
+})
+
+describe("reconcileInvoiceEvidence · notas de crédito", () => {
+  const item = {
+    id: "i1", productName: "Casco", quantity: 10, unitOfMeasure: "unidad",
+    unitPrice: 10_000, subtotal: 100_000, supplierReceivedQuantity: 10,
+  }
+  const factura = {
+    id: "f1", invoiceNumber: "100", amount: 100_000,
+    items: [{ purchaseOrderItemId: "i1", quantity: 10, unitOfMeasure: "unidad", unitPrice: 10_000, subtotal: 100_000 }],
+  }
+  /** El proveedor devuelve 2 cascos: NC por 20.000, en negativo como en contabilidad. */
+  const notaCredito = {
+    id: "nc1", invoiceNumber: "5", amount: -20_000,
+    items: [{ purchaseOrderItemId: "i1", quantity: -2, unitOfMeasure: "unidad", unitPrice: 10_000, subtotal: -20_000 }],
+  }
+
+  it("resta del total facturado en vez de sumar", () => {
+    const ev = reconcileInvoiceEvidence({ totalOC: 100_000, orderItems: [item], invoices: [factura, notaCredito] })
+
+    expect(ev.totalInvoiced).toBe(80_000)
+    expect(ev.coverage.remainingAmount).toBe(20_000)
+  })
+
+  it("devuelve la cantidad a la línea de OC, que vuelve a quedar por facturar", () => {
+    const ev = reconcileInvoiceEvidence({ totalOC: 100_000, orderItems: [item], invoices: [factura, notaCredito] })
+
+    expect(ev.items[0]!.invoicedQty).toBe(8)
+    expect(ev.items[0]!.status).toBe("partial")
+  })
+
+  it("una NC que anula la factura completa deja la OC como si no se hubiera facturado", () => {
+    const anulacion = { ...notaCredito, amount: -100_000, items: [{ ...notaCredito.items[0]!, quantity: -10, subtotal: -100_000 }] }
+    const ev = reconcileInvoiceEvidence({ totalOC: 100_000, orderItems: [item], invoices: [factura, anulacion] })
+
+    expect(ev.totalInvoiced).toBe(0)
+    expect(ev.items[0]!.invoicedQty).toBe(0)
+    expect(ev.coverage.remainingAmount).toBe(100_000)
+  })
+
+  it("no acusa sobrefacturación contra la recepción por culpa de una devolución", () => {
+    // La NC baja lo facturado; jamás puede empujar la línea a "facturado de más".
+    const ev = reconcileInvoiceEvidence({ totalOC: 100_000, orderItems: [item], invoices: [factura, notaCredito] })
+
+    expect(ev.issues.some((i) => i.code === "quantity_over_received")).toBe(false)
+    expect(ev.receipt.status).toBe("covered")
+  })
+})

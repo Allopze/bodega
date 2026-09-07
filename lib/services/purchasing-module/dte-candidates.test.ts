@@ -291,3 +291,135 @@ describe("assessDteCandidates · la OC citada en el XML", () => {
     expect(assessDteCandidates(docs, base)[0]!.referencesOrder).toBe(false)
   })
 })
+
+describe("assessDteCandidates · calidad de la referencia citada", () => {
+  const base = { ...sinEvidencia, supplierRut: "96542490-3", createdOn: "2026-08-01", orderCode: "OC-2026-0020" }
+
+  it("distingue la cita exacta de no haber citado nada", () => {
+    const docs = [
+      { ...doc("exacta", "96542490-3", "2026-08-07"), referencedOrderCodes: "20260020" },
+      { ...doc("vacia", "96542490-3", "2026-08-07"), referencedOrderCodes: "" },
+    ]
+
+    const result = assessDteCandidates(docs, base)
+
+    expect(result.find((r) => r.doc.id === "exacta")!.orderReference).toBe("exact")
+    expect(result.find((r) => r.doc.id === "vacia")!.orderReference).toBe("none")
+  })
+
+  it("marca como año suelto la referencia que sólo trae el año de esta OC", () => {
+    // Caso reportado en producción: el proveedor escribe "2026" cuando la
+    // referencia real era "2026-0020". No identifica ninguna orden del año.
+    const docs = [{ ...doc("solo-anio", "96542490-3", "2026-08-07"), referencedOrderCodes: "2026" }]
+
+    const [assessment] = assessDteCandidates(docs, base)
+
+    expect(assessment!.orderReference).toBe("year")
+    expect(assessment!.referencesOrder).toBe(false)
+  })
+
+  it("reconoce el correlativo citado sin el año, con o sin ceros a la izquierda", () => {
+    // 46 de los 667 XML reales citan "26"/"17"/"14". Identifica una orden por
+    // año, así que es mucho más fuerte que el año suelto — pero sigue sin ser
+    // una cita completa: el mismo "26" puede ser el correlativo del proveedor.
+    const docs = [
+      { ...doc("corr", "96542490-3", "2026-08-07"), referencedOrderCodes: "20" },
+      { ...doc("corr-ceros", "96542490-3", "2026-08-07"), referencedOrderCodes: "0020" },
+    ]
+
+    const result = assessDteCandidates(docs, base)
+
+    expect(result.find((r) => r.doc.id === "corr")!.orderReference).toBe("correlative")
+    expect(result.find((r) => r.doc.id === "corr-ceros")!.orderReference).toBe("correlative")
+    expect(result.every((r) => r.referencesOrder === false)).toBe(true)
+  })
+
+  it("no confunde el correlativo de otra orden con el de ésta", () => {
+    const docs = [{ ...doc("otro-corr", "96542490-3", "2026-08-07"), referencedOrderCodes: "21" }]
+
+    expect(assessDteCandidates(docs, base)[0]!.orderReference).toBe("foreign")
+  })
+
+  it("prefiere la cita más fuerte cuando el documento trae varias", () => {
+    const docs = [{ ...doc("mixta", "96542490-3", "2026-08-07"), referencedOrderCodes: "2026,20" }]
+
+    expect(assessDteCandidates(docs, base)[0]!.orderReference).toBe("correlative")
+  })
+
+  it("no asciende la referencia parcial por sobre un cruce real", () => {
+    // El año suelto no identifica nada: no puede ganarle al que calza el monto.
+    const docs = [
+      { ...doc("calza", "96542490-3", "2026-08-10", 5000), referencedOrderCodes: null },
+      { ...doc("solo-anio", "96542490-3", "2026-08-07", 999_999), referencedOrderCodes: "2026" },
+    ]
+
+    const result = assessDteCandidates(docs, { ...base, expectedAmount: 5000 })
+
+    expect(result.map((r) => r.doc.id)).toEqual(["calza", "solo-anio"])
+  })
+
+  it("llama ajena a la referencia que cita otra cosa que no es esta OC", () => {
+    const docs = [
+      { ...doc("otra-oc", "96542490-3", "2026-08-07"), referencedOrderCodes: "20260021" },
+      { ...doc("correlativo-proveedor", "96542490-3", "2026-08-07"), referencedOrderCodes: "4477" },
+    ]
+
+    const result = assessDteCandidates(docs, base)
+
+    expect(result.find((r) => r.doc.id === "otra-oc")!.orderReference).toBe("foreign")
+    expect(result.find((r) => r.doc.id === "correlativo-proveedor")!.orderReference).toBe("foreign")
+  })
+
+  it("no confunde el año de otra OC con una referencia incompleta a ésta", () => {
+    const docs = [{ ...doc("anio-ajeno", "96542490-3", "2026-08-07"), referencedOrderCodes: "2025" }]
+
+    expect(assessDteCandidates(docs, base)[0]!.orderReference).toBe("foreign")
+  })
+
+  it("no clasifica nada cuando la orden no aporta un código legible", () => {
+    const docs = [{ ...doc("d", "96542490-3", "2026-08-07"), referencedOrderCodes: "2026" }]
+
+    expect(assessDteCandidates(docs, { ...base, orderCode: null })[0]!.orderReference).toBe("none")
+  })
+
+  it("se queda con la mejor referencia cuando el documento cita varias", () => {
+    const docs = [{ ...doc("ajena-y-anio", "96542490-3", "2026-08-07"), referencedOrderCodes: "4477,2026" }]
+
+    expect(assessDteCandidates(docs, base)[0]!.orderReference).toBe("year")
+  })
+})
+
+describe("assessDteCandidates · la tolerancia la fija la configuración", () => {
+  const base = { ...sinEvidencia, supplierRut: "96542490-3", createdOn: "2026-08-01", expectedAmount: 10_000 }
+
+  it("con el peso de redondeo, 30 pesos de diferencia no calzan", () => {
+    const docs = [doc("casi", "96542490-3", "2026-08-07", 10_030)]
+
+    expect(assessDteCandidates(docs, base)[0]!.amountMatches).toBe(false)
+  })
+
+  it("calza cuando administración amplió la tolerancia de conciliación", () => {
+    // El badge de la lista y el veredicto del conciliador tienen que responder
+    // lo mismo: decir "calza con el saldo" y luego marcar discrepancia sería
+    // pedirle al operador que elija a cuál de las dos pantallas creerle.
+    const docs = [doc("casi", "96542490-3", "2026-08-07", 10_030)]
+
+    expect(assessDteCandidates(docs, { ...base, clpTolerance: 50 })[0]!.amountMatches).toBe(true)
+  })
+})
+
+describe("assessDteCandidates · notas de crédito", () => {
+  const base = { ...sinEvidencia, supplierRut: "96542490-3", createdOn: "2026-08-01", expectedAmount: 10_000 }
+
+  it("no dice que una nota de crédito calza con el saldo por facturar", () => {
+    // El saldo es lo que falta cobrar; una NC resta. Marcarla como "calza"
+    // invitaría a adjuntarla creyendo que cierra la orden, y la deja al revés.
+    const nc = { ...doc("nc", "96542490-3", "2026-08-07", 10_000), tipoDte: "61" }
+    const factura = { ...doc("f", "96542490-3", "2026-08-07", 10_000), tipoDte: "33" }
+
+    const result = assessDteCandidates([nc, factura], base)
+
+    expect(result.find((r) => r.doc.id === "nc")!.amountMatches).toBe(false)
+    expect(result.find((r) => r.doc.id === "f")!.amountMatches).toBe(true)
+  })
+})

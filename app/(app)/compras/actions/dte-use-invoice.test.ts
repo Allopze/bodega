@@ -206,9 +206,11 @@ describe("attachDteAsInvoice", () => {
     expect(mockPersistInvoicePdf).not.toHaveBeenCalled()
   })
 
-  it("rechaza un tipo de DTE que no puede ser factura de OC sin descargar nada", async () => {
+  it("rechaza un tipo de DTE que no puede colgarse de una OC sin descargar nada", async () => {
+    // 52 es guía de despacho: acompaña la mercadería, no la cobra. La nota de
+    // crédito (61) sí se admite desde que puede registrarse restando.
     mockDteDocumentFindFirst.mockResolvedValue({
-      tipoDte: "61",
+      tipoDte: "52",
       rutEmisor: "76987654-3",
       fechaEmision: "2026-07-28",
       purchaseOrderInvoiceId: null,
@@ -217,7 +219,7 @@ describe("attachDteAsInvoice", () => {
 
     const result = await attachDteAsInvoice({ purchaseOrderId: "oc-1", dteDocumentId: "dte-1" })
 
-    expect(result).toEqual({ ok: false, message: "Este tipo de DTE no puede registrarse como factura de OC" })
+    expect(result).toEqual({ ok: false, message: "Este tipo de DTE no puede registrarse contra una OC" })
     expect(mockDownloadDteDocumentXml).not.toHaveBeenCalled()
   })
 

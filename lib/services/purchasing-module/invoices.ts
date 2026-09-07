@@ -16,7 +16,8 @@ import {
 } from "./invoice-reconciliation"
 import { matchInvoiceItemsToPurchaseOrderItems } from "./invoice-item-matching"
 import { getPurchaseOrderInvoiceReconciliation, persistPurchaseOrderInvoiceReconciliationTx, reconciliationWarnings } from "./invoice-reconciliation-service"
-import { dteInvoiceRejection, normalizeSupplierProductCode, normalizeSupplierProductName } from "./dte-candidates"
+import { classifyOrderReference, dteDocumentKind, dteInvoiceRejection, normalizeSupplierProductCode, normalizeSupplierProductName, type DteCandidateOrderReference } from "./dte-candidates"
+import { normalizeOrderCodeRef } from "./dte-parser"
 
 /* ── Purchase Order Invoices ─────────────────────────────────────────────────── */
 
@@ -165,6 +166,10 @@ async function insertPurchaseOrderInvoice(
     if (!Number.isFinite(input.amount) || input.amount < 0) {
       throw new Error("Monto de factura inválido")
     }
+    // NULL mientras no haya XML que mirar: una carga manual de PDF no tiene
+    // referencia que clasificar, y poner "none" diría que el proveedor no citó
+    // nada cuando en realidad nadie miró.
+    let linkOrderReference: DteCandidateOrderReference | null = null
     let invoiceItems = normalizeInvoiceItems(
       input.items,
       input.amountAuthority === "document_header",
@@ -211,7 +216,7 @@ async function insertPurchaseOrderInvoice(
     }
 
     if (dteAttachment) {
-      await validateDteForInvoiceTx(tx, order, input, dteAttachment)
+      linkOrderReference = await validateDteForInvoiceTx(tx, order, input, dteAttachment)
       invoiceItems = dteAttachment.lineResolutions
         ? await applyExplicitDteLineResolutionsTx(
             tx,
@@ -274,11 +279,29 @@ async function insertPurchaseOrderInvoice(
       ? invoiceItems.reduce((sum, item) => sum + item.subtotal, 0)
       : input.amount
 
+    // El portal informa la NC en positivo —es su monto—, pero acá resta. Se
+    // guarda con el signo invertido, igual que `billing_invoices.total_amount`,
+    // para que toda suma de montos de factura ya escrita siga siendo correcta
+    // sin conocer `document_kind`. El signo se aplica una sola vez, en el único
+    // lugar que escribe la tabla.
+    // Sin tipo declarado se asume factura: es la clase exigente —monto
+    // positivo, suma— y equivocarse hacia allá no borra plata de una OC.
+    const documentKind = dteAttachment ? dteDocumentKind(dteAttachment.dteIdentity.tipoDte ?? "") : "invoice"
+    const sign = documentKind === "credit_note" ? -1 : 1
+    if (documentKind === "credit_note") {
+      invoiceItems = invoiceItems.map((item) => ({
+        ...item,
+        quantity: -Math.abs(item.quantity),
+        subtotal: -Math.abs(item.subtotal),
+      }))
+    }
+
     await tx.insert(purchaseOrderInvoices).values({
       id:              invoiceId,
       purchaseOrderId: input.purchaseOrderId,
       invoiceNumber,
-      amount:          totalAmount,
+      amount:          sign * Math.abs(totalAmount),
+      documentKind,
       issueDate:       input.issueDate ?? null,
       fileName:        input.fileName,
       filePath:        input.filePath,
@@ -288,6 +311,8 @@ async function insertPurchaseOrderInvoice(
       documentSupplierRut: dteAttachment?.dteIdentity.supplierRut ?? input.supplierIdentity?.documentSupplierRut ?? null,
       supplierIdentityStatus: dteAttachment ? "verified" : input.supplierIdentity?.status ?? "unknown",
       supplierIdentitySource: dteAttachment ? "dte_xml" : input.supplierIdentity?.source ?? "legacy",
+      linkMethod: dteAttachment ? "dte_candidate" : "manual_upload",
+      linkOrderReference,
     })
 
     const receiptIds = await validateReceiptIdsForOrderTx(tx, order.id, input.receiptIds ?? [])
@@ -598,12 +623,13 @@ async function validateDteForInvoiceTx(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   order: {
     id: string
+    code: string
     supplierId: string
     createdAt: string
   },
   input: CreateInvoiceInput,
   attachment: { dteDocumentId: string; dteIdentity: DteInvoiceIdentity },
-): Promise<void> {
+): Promise<DteCandidateOrderReference> {
   const [[supplier], [dte]] = await Promise.all([
     tx
       .select({ rut: suppliers.rut })
@@ -619,6 +645,7 @@ async function validateDteForInvoiceTx(
         montoTotal: dteDocuments.montoTotal,
         purchaseOrderInvoiceId: dteDocuments.purchaseOrderInvoiceId,
         fuelLoadId: dteDocuments.fuelLoadId,
+        referencedOrderCodes: dteDocuments.referencedOrderCodes,
       })
       .from(dteDocuments)
       .where(eq(dteDocuments.id, attachment.dteDocumentId))
@@ -645,6 +672,12 @@ async function validateDteForInvoiceTx(
   if (!hasSameIdentity) {
     throw new Error("El XML descargado no corresponde al DTE seleccionado")
   }
+
+  // Se congela acá, con el DTE bloqueado, y no al renderizar: es la evidencia
+  // de por qué se aceptó ESTE vínculo. Una resincronización posterior puede
+  // cambiar `referenced_order_codes`; el motivo del vínculo no debe cambiar con
+  // ella. Misma función que usa la lista de candidatos: una sola definición.
+  return classifyOrderReference(normalizeOrderCodeRef(order.code), dte.referencedOrderCodes)
 }
 
 async function linkDteItemsToOrderTx(

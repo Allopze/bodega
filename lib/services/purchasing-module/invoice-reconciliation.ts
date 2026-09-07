@@ -1,4 +1,7 @@
-export const CLP_RECONCILIATION_TOLERANCE = 1
+import { CLP_ROUNDING_TOLERANCE } from "./money-tolerance"
+
+/** @see money-tolerance.ts — se reexporta porque forma parte del contrato de evidencia. */
+export const CLP_RECONCILIATION_TOLERANCE = CLP_ROUNDING_TOLERANCE
 export const INVOICE_RECONCILIATION_VERSION = 2
 
 export type InvoiceReconciliationStatus =
@@ -31,6 +34,19 @@ export interface InvoiceReconciliationOrderItem {
   subtotal?: number | null
   currentSupplierPrice?: number | null
   supplierReceivedQuantity?: number | null
+  /**
+   * Contra qué se controla la facturación de esta línea.
+   *
+   * `received` (default) es el 3-way matching: no se puede facturar más de lo
+   * que el proveedor entregó. `ordered` desactiva esa comparación para líneas
+   * que no pasan por bodega —una mantención de monogás se factura al
+   * ejecutarse—, donde exigir recepción dejaba la OC en `awaiting_receipt` para
+   * siempre porque esa recepción no iba a existir nunca.
+   *
+   * Es por línea y no por orden: una OC mixta no puede perder el control sobre
+   * sus bienes porque además traiga un servicio.
+   */
+  invoiceControl?: "ordered" | "received"
 }
 
 export interface InvoiceReconciliationInvoiceItem {
@@ -237,11 +253,23 @@ export function reconcileInvoiceEvidence({
   orderItems,
   invoices,
   reviews = [],
+  clpTolerance = CLP_ROUNDING_TOLERANCE,
 }: {
   totalOC: number
   orderItems: InvoiceReconciliationOrderItem[]
   invoices: InvoiceReconciliationInvoice[]
   reviews?: InvoiceReconciliationReview[]
+  /**
+   * Diferencia máxima en pesos para dar un monto por coincidente. Entra como
+   * parámetro y no se lee acá adentro a propósito: esta función es pura y
+   * también corre en el navegador. Quien la llama desde el servidor pasa el
+   * valor configurado en Administración; el default es el ruido de redondeo.
+   *
+   * NO participa del fingerprint: la aceptación humana de una excepción está
+   * atada al estado de los DATOS, y mover un parámetro de evaluación no debe
+   * invalidar una revisión que alguien ya hizo sobre esos mismos datos.
+   */
+  clpTolerance?: number
 }): InvoiceReconciliationEvidence {
   const sortedOrderItems = [...orderItems].sort((a, b) => a.id.localeCompare(b.id))
   const sortedInvoices = [...invoices]
@@ -297,7 +325,7 @@ export function reconcileInvoiceEvidence({
       const invoicePrice = effectiveUnitPrice(line.subtotal, line.quantity)
       if (ocPrice !== null && invoicePrice !== null) {
         const difference = invoicePrice - ocPrice
-        if (Math.abs(difference) > CLP_RECONCILIATION_TOLERANCE) {
+        if (Math.abs(difference) > clpTolerance) {
           issues.push({
             code: "price_variance", orderItemId: orderItem.id, invoiceId: invoice.id, invoiceItemId: line.id,
             expected: ocPrice, actual: invoicePrice, difference,
@@ -319,7 +347,10 @@ export function reconcileInvoiceEvidence({
   const items = sortedOrderItems.map((item): ReconciledOrderItem => {
     const linkedLines = linkedLinesByOrderItem.get(item.id) ?? []
     const invoicedQty = linkedLines.reduce((sum, line) => sum + finite(line.quantity), 0)
-    const receiptEvaluable = nullableFinite(item.supplierReceivedQuantity) !== null
+    // `ordered` apaga la comparación igual que un contador ausente: no es que
+    // la línea calce contra la recepción, es que no hay nada que comparar.
+    const receiptEvaluable = item.invoiceControl !== "ordered"
+      && nullableFinite(item.supplierReceivedQuantity) !== null
     const supplierReceivedQty = finite(item.supplierReceivedQuantity)
     const invoiceVsReceivedDifference = invoicedQty - supplierReceivedQty
     const invoiceSubtotal = linkedLines.reduce((sum, line) => sum + finite(line.subtotal), 0)
@@ -376,8 +407,8 @@ export function reconcileInvoiceEvidence({
   const hasQuantityOver = items.some((item) => item.status === "over_invoiced")
   const coveredItemCount = items.filter((item) => item.status === "covered").length
   const pendingItemCount = items.filter((item) => item.status === "not_covered" || item.status === "partial").length
-  const moneyOver = moneyDifference > CLP_RECONCILIATION_TOLERANCE
-  const moneyMatched = Math.abs(moneyDifference) <= CLP_RECONCILIATION_TOLERANCE
+  const moneyOver = moneyDifference > clpTolerance
+  const moneyMatched = Math.abs(moneyDifference) <= clpTolerance
   const coverageStatus: InvoiceCoverageStatus = !hasInvoices
     ? "no_invoices"
     : noLineEvidence || linkedLineCount === 0
@@ -433,7 +464,7 @@ export function reconcileInvoiceEvidence({
     hasInvoices,
     totalInvoiced,
     totalOC,
-    money: { status: !hasInvoices ? "no_invoices" : Math.abs(moneyDifference) <= CLP_RECONCILIATION_TOLERANCE ? "matched" : "mismatch", tolerance: CLP_RECONCILIATION_TOLERANCE, difference: moneyDifference },
+    money: { status: !hasInvoices ? "no_invoices" : moneyMatched ? "matched" : "mismatch", tolerance: clpTolerance, difference: moneyDifference },
     coverage: {
       status: coverageStatus,
       remainingAmount: Math.max(0, totalOC - totalInvoiced),

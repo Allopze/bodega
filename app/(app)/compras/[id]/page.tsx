@@ -1,3 +1,5 @@
+import { getProductAttributesByIds } from "@/lib/services/product-sizes"
+import { formatVariantProductName } from "@/lib/products/variant-grouping"
 import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
@@ -6,7 +8,8 @@ import { db }                  from "@/db"
 import { dteDocumentItems, dteDocuments, purchaseOrderInvoiceReceipts, purchaseOrderInvoices, purchaseOrders, statusHistory, supplierProductAliases, users } from "@/db/schema"
 import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm"
 import { localDateToISO } from "@/lib/sst/date"
-import { assessDteCandidates } from "@/lib/services/purchasing-module/dte-candidates"
+import { assessDteCandidates, DTE_ATTACHABLE_TIPOS } from "@/lib/services/purchasing-module/dte-candidates"
+import { getOperationalSettings } from "@/lib/services/system-settings"
 import { cleanRut } from "@/lib/rut"
 import { getPurchaseOrderInvoiceReconciliation, reconciliationWarnings } from "@/lib/services/purchasing-module/invoice-reconciliation-service"
 import { requireAuth, can, canAny } from "@/lib/auth/can"
@@ -227,7 +230,15 @@ export default async function OcDetailPage({
     }
   }
 
-  const productMap = Object.fromEntries(productRows.map((product) => [product.id, product]))
+  const attributesById = await getProductAttributesByIds(productIds)
+  const productMap = Object.fromEntries(productRows.map((product) => [product.id, { ...product, attributes: attributesById.get(product.id) }]))
+  const itemName = (item: { productId: string | null; productNameFree: string | null; requestItemId: string | null }) => {
+    const product = item.productId ? productMap[item.productId] : undefined
+    const recorded = requestItemRows.find((row) => row.id === item.requestItemId)?.attributes
+    return formatVariantProductName(product?.name ?? item.productNameFree ?? "Ítem", product?.attributes,
+      recorded?.map((a) => ({ name: a.attributeName, value: a.value })))
+  }
+
 
   // DTE del proveedor de esta OC que todavía no cuelgan de ninguna factura:
   // son los candidatos a registrar sin volver a subir un archivo que la
@@ -260,7 +271,8 @@ export default async function OcDetailPage({
         where: and(
           isNull(dteDocuments.purchaseOrderInvoiceId),
           isNull(dteDocuments.fuelLoadId),
-          inArray(dteDocuments.tipoDte, ["33", "34"]),
+          // Incluye la nota de crédito (61): también cuelga de la OC, restando.
+          inArray(dteDocuments.tipoDte, [...DTE_ATTACHABLE_TIPOS]),
           gte(dteDocuments.fechaEmision, candidateFloor),
         ),
         columns: {
@@ -274,6 +286,7 @@ export default async function OcDetailPage({
   // Monto que la orden espera facturar: su total menos lo ya facturado. La
   // operación factura una OC por DTE, así que el documento correcto trae esta
   // cifra — sirve para ordenar y marcar, no para filtrar.
+  const opsSettings = await getOperationalSettings()
   const alreadyInvoiced = orderInvoices.reduce((sum, inv) => sum + (inv.amount ?? 0), 0)
   const expectedAmount = Math.max(0, (order.totalAmount ?? 0) - alreadyInvoiced)
 
@@ -321,10 +334,14 @@ export default async function OcDetailPage({
     createdOn: candidateFloor,
     expectedAmount,
     orderCode: order.code,
+    // Misma tolerancia que usa el conciliador: si el badge dijera "calza" y la
+    // tarjeta de abajo marcara discrepancia, el operador tendría que elegir a
+    // cuál de las dos creerle.
+    clpTolerance: opsSettings.purchasingClpTolerance,
     orderItems: order.items.map((item) => ({
       id: item.id,
       productId: item.productId,
-      productName: item.productNameFree ?? (item.productId ? productMap[item.productId]?.name : null) ?? item.id,
+      productName: itemName(item),
       productCode: item.productId ? productMap[item.productId]?.sku ?? null : null,
       unitOfMeasure: item.unitOfMeasure,
       quantity: item.quantity,
@@ -443,7 +460,7 @@ export default async function OcDetailPage({
       const requestItem = i.requestItemId ? reqItemMap[i.requestItemId] : null
       return {
         id:               i.id,
-        productName:      i.productNameFree ?? (i.productId ? productMap[i.productId]?.name : null) ?? "Ítem",
+        productName:      itemName(i),
         quantity:         i.quantity,
         unitOfMeasure:    i.unitOfMeasure,
         quantityReceived: receivedByItem.get(i.id) ?? i.quantityReceived ?? 0,
@@ -465,7 +482,7 @@ export default async function OcDetailPage({
   // Filas de la tabla de avance (pedido / recibido / facturado por ítem)
   const progressRows = order.items.map((i) => ({
     id:            i.id,
-    productName:   i.productNameFree ?? (i.productId ? productMap[i.productId]?.name : null) ?? "Ítem",
+    productName:   itemName(i),
     unitOfMeasure: i.unitOfMeasure,
     ordered:       i.quantity,
     received:      receivedByItem.get(i.id) ?? i.quantityReceived ?? 0,
@@ -609,7 +626,7 @@ export default async function OcDetailPage({
                     supplier: order.supplier ? { name: order.supplier.name } : null,
                   }}
                   reqItemMap={reqItemMap as unknown as Record<string, { request: { code: string } }>}
-                  productMap={productMap as unknown as Record<string, { name: string; sku: string | null }>}
+                  productMap={productMap}
                   canRecordCost={canRecordCost}
                 />
                 {order.notes && (
@@ -635,7 +652,7 @@ export default async function OcDetailPage({
                   ocItems={order.items.map((i) => ({
                     id: i.id,
                     catalogProductId: i.productId,
-                    productName: i.productNameFree ?? (i.productId ? productMap[i.productId]?.name : null) ?? i.id,
+                    productName: itemName(i),
                     productCode: i.productId ? productMap[i.productId]?.sku ?? null : null,
                     attributes: i.requestItemId
                       ? reqItemMap[i.requestItemId]?.attributes.map((attribute) => ({
@@ -658,7 +675,7 @@ export default async function OcDetailPage({
                   canAttach={canInvoice && order.status !== "cancelled"}
                   receipts={receiptOptions}
                   defaultReceiptId={defaultReceiptId}
-                  dteCandidates={candidateDtes.map(({ doc, confidence, referencesOrder, amountMatches, proposedLinks, explanation }) => ({
+                  dteCandidates={candidateDtes.map(({ doc, confidence, referencesOrder, orderReference, amountMatches, proposedLinks, explanation }) => ({
                     id: doc.id,
                     tipoDte: doc.tipoDte,
                     folio: doc.folio,
@@ -667,6 +684,7 @@ export default async function OcDetailPage({
                     fechaEmision: doc.fechaEmision,
                     amountMatches,
                     referencesOrder,
+                    orderReference,
                     confidence,
                     enrichmentStatus: doc.enrichmentStatus,
                     lineEnrichedAt: doc.lineEnrichedAt,

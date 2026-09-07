@@ -24,6 +24,7 @@ import { useOperation } from "@/lib/hooks/use-operation"
 import type { InvoiceEvidenceStatus, InvoiceReconciliationEvidence } from "@/lib/services/purchasing-module/invoice-reconciliation"
 import { InvoiceReconciliationCard } from "./invoice-reconciliation-card"
 import { addInvoiceAction, deleteInvoiceAction } from "../invoice-actions"
+import { ORDER_REFERENCE_META, type DteCandidateOrderReference } from "@/lib/services/purchasing-module/order-reference"
 import { attachDteAsInvoice } from "../actions/dte-use-invoice"
 import { analyzeDteCandidateLines } from "../actions/dte-analyze-lines"
 import { dteTipoLabel } from "@/lib/services/dte-portal/labels"
@@ -57,6 +58,7 @@ export interface DteCandidate {
    * mirando nuestra orden, no la infirió la plataforma.
    */
   referencesOrder: boolean
+  orderReference: DteCandidateOrderReference
   confidence: DteCandidateConfidence
   enrichmentStatus: "pending" | "ready" | "failed"
   lineEnrichedAt: string | null
@@ -1270,6 +1272,17 @@ function DteCandidateRow({
           {doc.referencesOrder && (
             <MetaBadge meta={{ label: "Cita esta OC", variant: "success" }} className="ml-2" />
           )}
+          {/* Se nombra lo que el proveedor escribió, no un juicio sobre ello:
+              "Sólo el año" le dice al operador exactamente qué reclamar. Las
+              etiquetas y qué clase merece badge viven en `ORDER_REFERENCE_META`,
+              compartido con el reporte de conciliación para que ambas
+              superficies no bauticen distinto la misma cosa. */}
+          {(() => {
+            const meta = ORDER_REFERENCE_META[doc.orderReference]
+            return meta.badge && doc.orderReference !== "exact"
+              ? <MetaBadge meta={{ label: meta.label, variant: meta.badge }} className="ml-2" />
+              : null
+          })()}
           {/* La marca va sobre el monto, que es lo que la distingue.
               Se nombra lo que se comparó en vez de decir "sugerido":
               el operador tiene que poder discutirla. */}

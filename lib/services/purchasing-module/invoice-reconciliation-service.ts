@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
+import { getOperationalSettings } from "@/lib/services/system-settings"
 import {
   productSuppliers,
   products,
@@ -61,6 +62,7 @@ export async function reconcilePurchaseOrderInvoicesTx(
         unitPrice: purchaseOrderItems.unitPrice,
         subtotal: purchaseOrderItems.subtotal,
         currentSupplierPrice: productSuppliers.unitPrice,
+        isService: products.isService,
         quantityOfficeReceived: purchaseOrderItems.quantityOfficeReceived,
         quantityReceived: purchaseOrderItems.quantityReceived,
       })
@@ -104,6 +106,11 @@ export async function reconcilePurchaseOrderInvoicesTx(
       supplierReceivedQuantity: order.deliveryMode === "via_oficina"
         ? item.quantityOfficeReceived
         : item.quantityReceived,
+      // La política sale de un hecho del catálogo (`products.is_service`) y no
+      // de una columna nueva que nadie mantendría: un servicio se factura al
+      // ejecutarse y nunca entra a bodega. Una línea sin producto catalogado
+      // cae en `received`, que es la exigente — ante la duda, se controla.
+      invoiceControl: item.isService ? "ordered" as const : "received" as const,
     })),
     invoices: invoices.map((invoice) => ({
       ...invoice,
@@ -114,6 +121,10 @@ export async function reconcilePurchaseOrderInvoicesTx(
       evidence: review.evidence,
       reviewedByName: review.reviewedByName,
     })),
+    // El motor es puro y también corre en el navegador: la política entra como
+    // dato desde acá, que es el único lado con acceso a la configuración. Se lee
+    // dentro de la misma transacción para que toda la corrida use un solo valor.
+    clpTolerance: (await getOperationalSettings(tx)).purchasingClpTolerance,
   })
 }
 

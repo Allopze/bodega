@@ -12,6 +12,7 @@ export const pgliteTestFiles = [
   "db/schema-consistency.test.ts",
   "db/__tests__/pdtp-worksite-cascade.test.ts",
   "db/__tests__/pdtp-check-constraints.test.ts",
+  "db/__tests__/purchase-credit-note-constraints.test.ts",
   "db/__tests__/container-subject-constraints.test.ts",
   "lib/services/billing/__tests__/sync-integration.test.ts",
   "lib/services/billing/__tests__/queries-scope.test.ts",

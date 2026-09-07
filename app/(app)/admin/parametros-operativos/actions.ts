@@ -77,6 +77,7 @@ export async function saveOperationalSettingsAction(_prev: ActionState, formData
         feedbackAttachmentMaxMb:    readNumber(formData, "feedbackAttachmentMaxMb"),
         pdtpEvidenceMaxMb:           readNumber(formData, "pdtpEvidenceMaxMb"),
         pdtpEvidenceRetentionDays:  readNumber(formData, "pdtpEvidenceRetentionDays"),
+        purchasingClpTolerance:     readNumber(formData, "purchasingClpTolerance"),
       }, {
         userId:    session.user.id,
         userEmail: session.user.email ?? undefined,
