@@ -1,42 +1,44 @@
 /**
- * Backfill: asegura que toda familia de pantalones del catálogo EPP tenga
- * variantes para S, M, L, XL y 2XL.
+ * Backfill: asegura que toda familia EPP que use la escala de ropa ("Talla":
+ * XS, S, M, L, XL, 2XL) en alguna de sus variantes tenga las seis tallas
+ * completas.
  *
- * El catálogo real distingue pantalones por la escala de ropa en el atributo
- * "Talla" (ver `db/seed/epp-catalog.json`: "Pantalón Lightwind... T-XL" /
- * "...T-2XL"), pero nada obliga a que una familia nazca con las cinco tallas
- * completas — el importador XLSX sólo crea la fila que trae la planilla. Este
- * backfill completa las que falten, clonando el resto de los atributos
- * (marca/modelo/color, unidad, flags, proveedor preferente) de una variante ya
- * existente: no hay otra fuente de esos valores para una talla que nunca se
- * compró.
+ * No se filtra por `epp_product_families.epp_type` porque esa columna está
+ * deprecada y casi siempre nula (la creación manual y el asistente de
+ * variantes nunca la escriben — sólo el importador XLSX). El criterio real es
+ * el que ya usa el resto del catálogo para reconocer una talla de ropa: el
+ * atributo `select` cuyo nombre normaliza a "talla" (ver
+ * `lib/products/product-size.ts`). Eso alcanza a pantalones, buzos, chaquetas,
+ * chalecos y trajes por igual, y deja intactas las familias sizadas por
+ * "Talla calzado", "Talla guantes", "Talla casco" o "Talla inferior" (escala
+ * numérica de cintura del padrón de trabajadores): no tienen precedente de
+ * la escala XS..2XL.
  *
- * Sólo actúa sobre familias que YA usan "Talla" (la escala de ropa) en alguna
- * variante existente. Una familia de pantalón sin ese atributo, o que use
- * "Talla inferior" (la escala numérica de cintura del padrón de
- * trabajadores, ver `lib/products/size-catalog.ts`), no tiene precedente de
- * qué escala usar y se deja intacta.
+ * Cada talla nueva clona el resto de los atributos (marca/modelo/color,
+ * unidad, flags, proveedor preferente) de una variante ya existente de la
+ * misma familia: no hay otra fuente de esos valores para una talla que nunca
+ * se compró.
  */
-import { eq, sql } from "drizzle-orm"
+import { sql } from "drizzle-orm"
 import { db, type Tx } from "@/db"
-import { eppProductFamilies, products, productAttributes, productSuppliers } from "@/db/schema"
+import { products, productAttributes, productSuppliers } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { normalizeAttributeName } from "@/lib/products/attribute-names"
 import { resolveProductSize, normalizeSizeLabel } from "@/lib/products/product-size"
 
-export const PANTS_TARGET_SIZES = ["S", "M", "L", "XL", "2XL"] as const
+export const CLOTHING_TARGET_SIZES = ["XS", "S", "M", "L", "XL", "2XL"] as const
 
-export interface PantsFamilySyncResult {
+export interface ClothingFamilySyncResult {
   familyId: string
   familyName: string
-  status: "created" | "skipped_no_talla_attribute" | "already_complete"
+  status: "created" | "already_complete"
   createdSizes: string[]
 }
 
-export interface PantsSizeSyncSummary {
+export interface ClothingSizeSyncSummary {
   familiesScanned: number
   variantsCreated: number
-  results: PantsFamilySyncResult[]
+  results: ClothingFamilySyncResult[]
 }
 
 /** Siguiente SKU secuencial `EPP-NNN` visto desde dentro de la transacción. */
@@ -50,9 +52,9 @@ async function nextEppSku(tx: Tx): Promise<string> {
   return `EPP-${String(max + 1).padStart(3, "0")}`
 }
 
-async function syncFamily(tx: Tx, family: { id: string; canonicalName: string }): Promise<PantsFamilySyncResult> {
+async function syncFamily(tx: Tx, family: { id: string; canonicalName: string }): Promise<ClothingFamilySyncResult | null> {
   const variants = await tx.query.products.findMany({
-    where: eq(products.familyId, family.id),
+    where: (p, { eq }) => eq(p.familyId, family.id),
     with: {
       productAttributes: { orderBy: (a, { asc }) => [asc(a.sortOrder)] },
       productSuppliers: { orderBy: (ps, { desc }) => [desc(ps.isPreferred)] },
@@ -72,11 +74,9 @@ async function syncFamily(tx: Tx, family: { id: string; canonicalName: string })
     existingLabels.add(normalizeSizeLabel(size.label))
   }
 
-  if (!sizeAttrName || !templateVariant) {
-    return { familyId: family.id, familyName: family.canonicalName, status: "skipped_no_talla_attribute", createdSizes: [] }
-  }
+  if (!sizeAttrName || !templateVariant) return null
 
-  const missingSizes = PANTS_TARGET_SIZES.filter((size) => !existingLabels.has(normalizeSizeLabel(size)))
+  const missingSizes = CLOTHING_TARGET_SIZES.filter((size) => !existingLabels.has(normalizeSizeLabel(size)))
   if (missingSizes.length === 0) {
     return { familyId: family.id, familyName: family.canonicalName, status: "already_complete", createdSizes: [] }
   }
@@ -145,14 +145,13 @@ async function syncFamily(tx: Tx, family: { id: string; canonicalName: string })
  * Idempotente: familias ya completas o sin la escala "Talla" no se tocan, y
  * volver a correrlo no duplica variantes.
  */
-export async function addMissingPantsSizeVariants(): Promise<PantsSizeSyncSummary> {
-  const families = await db.query.eppProductFamilies.findMany({
-    where: eq(eppProductFamilies.eppType, "pantalon"),
-  })
+export async function addMissingClothingSizeVariants(): Promise<ClothingSizeSyncSummary> {
+  const families = await db.query.eppProductFamilies.findMany()
 
-  const results: PantsFamilySyncResult[] = []
+  const results: ClothingFamilySyncResult[] = []
   for (const family of families) {
-    results.push(await db.transaction((tx) => syncFamily(tx, family)))
+    const result = await db.transaction((tx) => syncFamily(tx, family))
+    if (result) results.push(result)
   }
 
   return {

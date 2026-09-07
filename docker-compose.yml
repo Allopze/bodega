@@ -351,14 +351,16 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
     command: ["node", "scripts/normalize-epp-skus.mjs", "--apply"]
 
-  # One-shot: completa S/M/L/XL/2XL en las familias de pantalón del catálogo
-  # EPP que ya usan "Talla" (la escala de ropa). El importador XLSX sólo crea
-  # la fila que trae la planilla, no las cinco tallas. Idempotente: familias
-  # completas o sin esa escala no se tocan. Corre después de normalizar SKUs.
+  # One-shot: completa XS/S/M/L/XL/2XL en toda familia EPP del catálogo que ya
+  # usa "Talla" (la escala de ropa: pantalones, buzos, chaquetas, chalecos,
+  # trajes...). El importador XLSX y la creación manual sólo dejan la fila que
+  # trae la planilla o la que alguien tipeó, no las seis tallas. Idempotente:
+  # familias completas o sin esa escala no se tocan. Corre después de
+  # normalizar SKUs.
   #
-  #   docker compose run --rm backfill-epp-pants-sizes
+  #   docker compose run --rm backfill-epp-clothing-sizes
   #
-  backfill-epp-pants-sizes:
+  backfill-epp-clothing-sizes:
     build:
       context: .
       target: prod
@@ -370,7 +372,7 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
-    command: ["node", "scripts/backfill-epp-pants-sizes.mjs"]
+    command: ["node", "scripts/backfill-epp-clothing-sizes.mjs"]
 
   # One-shot: instala el catálogo del motor de inspecciones cableado a las
   # actividades del PDTP que acredita cada instrumento. Idempotente: la

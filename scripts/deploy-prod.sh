@@ -18,7 +18,7 @@ set -euo pipefail
 # Steps: sync compose -> contrastar .env -> resolver nombre de imagen -> tag
 # current image as rollback -> pg_dump -> build -> ship image -> preflight
 # conciliación -> preflight combustible -> migrate -> migración documental SST
-# a Cloudreve -> normalize EPP -> completar tallas de pantalones EPP ->
+# a Cloudreve -> normalize EPP -> completar tallas XS..2XL de ropa EPP ->
 # backfill conciliación (si hace falta) ->
 # backfill referencias OC en DTE (si hace falta) -> backfill lecturas de medidor
 # -> catálogo de reglas de anomalía -> sync-rbac -> decisiones de catálogo PDTP
@@ -371,11 +371,12 @@ run_timed "Migrando documentos SST a Cloudreve" run_in_prod docker compose run -
 
 run_timed "Normalizando SKUs de EPP y servicios" run_in_prod docker compose run --rm normalize-epp-skus
 
-# Completa S/M/L/XL/2XL en las familias de pantalón que ya usan "Talla" (la
-# escala de ropa). Va después de normalizar SKUs para que las tallas nuevas
-# nazcan con la numeración secuencial vigente. Idempotente: familias
-# completas o sin esa escala no se tocan.
-run_timed "Completando tallas S..2XL de pantalones EPP" run_in_prod docker compose run --rm backfill-epp-pants-sizes
+# Completa XS/S/M/L/XL/2XL en toda familia EPP que ya usa "Talla" (la escala
+# de ropa: pantalones, buzos, chaquetas, chalecos, trajes...). Va después de
+# normalizar SKUs para que las tallas nuevas nazcan con la numeración
+# secuencial vigente. Idempotente: familias completas o sin esa escala no se
+# tocan.
+run_timed "Completando tallas XS..2XL de ropa EPP" run_in_prod docker compose run --rm backfill-epp-clothing-sizes
 
 # El backfill recalcula tanto OC nunca proyectadas como huellas de una versión
 # anterior. La versión 2 introduce estados parciales, así que conservar una

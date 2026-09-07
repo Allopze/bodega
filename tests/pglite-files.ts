@@ -29,7 +29,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/deliveries-size-stock-pglite.test.ts",
   "lib/__tests__/epp-delivery-scale-reconciliation.test.ts",
   "lib/__tests__/epp-import-family-type.test.ts",
-  "lib/__tests__/epp-pants-sizes.test.ts",
+  "lib/__tests__/epp-clothing-sizes.test.ts",
   "lib/__tests__/admin-product-attributes-persistence.test.ts",
   "lib/__tests__/epp-family-form.test.ts",
   "lib/__tests__/product-units-catalog.test.ts",

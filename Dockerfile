@@ -302,19 +302,20 @@ RUN ./node_modules/.bin/esbuild scripts/normalize-epp-skus.ts \
     --external:postgres \
     --outfile=/tmp/normalize-epp-skus.mjs
 
-# Completa S/M/L/XL/2XL en las familias de pantalón que ya usan "Talla" (la
-# escala de ropa): el importador XLSX sólo crea la fila que trae la planilla,
-# no las cinco tallas. Corre en deploy, después de normalizar SKUs, para que
-# los SKU nuevos nazcan ya en la numeración secuencial vigente. Idempotente:
-# familias completas o sin esa escala no se tocan.
-RUN ./node_modules/.bin/esbuild scripts/backfill-epp-pants-sizes.ts \
+# Completa XS/S/M/L/XL/2XL en toda familia EPP que ya use "Talla" (la escala
+# de ropa): pantalones, buzos, chaquetas, chalecos, trajes, etc. El importador
+# XLSX y la creación manual sólo dejan la fila que trae la planilla o la que
+# alguien tipeó, no las seis tallas. Corre en deploy, después de normalizar
+# SKUs, para que los SKU nuevos nazcan ya en la numeración secuencial vigente.
+# Idempotente: familias completas o sin esa escala no se tocan.
+RUN ./node_modules/.bin/esbuild scripts/backfill-epp-clothing-sizes.ts \
     --bundle \
     --platform=node \
     --format=esm \
     --external:drizzle-orm \
     --external:drizzle-orm/* \
     --external:postgres \
-    --outfile=/tmp/backfill-epp-pants-sizes.mjs
+    --outfile=/tmp/backfill-epp-clothing-sizes.mjs
 
 
 # ── Production stage: standalone build, minimal runtime ──
@@ -405,7 +406,7 @@ COPY --from=build /tmp/fuel/backfill-fuel-meter-readings.mjs ./scripts/backfill-
 COPY --from=build /tmp/fuel/seed-fuel-anomaly-rules.mjs ./scripts/seed-fuel-anomaly-rules.mjs
 COPY --from=build /tmp/preflight-fuel-integrations.mjs ./scripts/preflight-fuel-integrations.mjs
 COPY --from=build /tmp/normalize-epp-skus.mjs ./scripts/normalize-epp-skus.mjs
-COPY --from=build /tmp/backfill-epp-pants-sizes.mjs ./scripts/backfill-epp-pants-sizes.mjs
+COPY --from=build /tmp/backfill-epp-clothing-sizes.mjs ./scripts/backfill-epp-clothing-sizes.mjs
 # Cron service uses this bounded internal HTTP runner instead of an inline
 # wget command. It is copied explicitly because Next standalone does not trace
 # scripts invoked only by Compose.

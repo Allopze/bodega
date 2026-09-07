@@ -60,7 +60,7 @@
     "db:repair-dte-single-link": "tsx --env-file-if-exists=.env.local scripts/repair-dte-single-link.ts",
     "db:diagnose-orphan-stock": "tsx --env-file=.env.local scripts/diagnose-orphan-stock.ts",
     "db:normalize-epp-families": "tsx --env-file=.env.local scripts/normalize-epp-families.ts",
-    "db:backfill-epp-pants-sizes": "tsx --env-file-if-exists=.env.local scripts/backfill-epp-pants-sizes.ts",
+    "db:backfill-epp-clothing-sizes": "tsx --env-file-if-exists=.env.local scripts/backfill-epp-clothing-sizes.ts",
     "db:normalize-fuel-suppliers": "tsx --env-file=.env.local scripts/normalize-fuel-suppliers.ts",
     "db:sync-rbac": "tsx --env-file=.env.local scripts/sync-rbac.ts",
     "forms:overlay-grid": "tsx scripts/overlay-form-grid.ts",

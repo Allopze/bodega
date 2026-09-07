@@ -1,6 +1,7 @@
 /**
- * `addMissingPantsSizeVariants` completa S/M/L/XL/2XL en familias de pantalón
- * que ya usan "Talla" (escala de ropa), sin tocar familias sin precedente de
+ * `addMissingClothingSizeVariants` completa XS/S/M/L/XL/2XL en toda familia
+ * EPP que ya usa "Talla" (escala de ropa) — sin importar su `eppType`, que
+ * está deprecado y casi siempre nulo — sin tocar familias sin precedente de
  * esa escala ni duplicar tallas ya creadas.
  */
 import path from "node:path"
@@ -26,7 +27,7 @@ vi.mock("@/db", () => ({
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
-const { addMissingPantsSizeVariants, PANTS_TARGET_SIZES } = await import("@/lib/services/epp-pants-sizes")
+const { addMissingClothingSizeVariants, CLOTHING_TARGET_SIZES } = await import("@/lib/services/epp-clothing-sizes")
 
 const CATEGORY_ID = "cat-epp-ropa"
 const SUPPLIER_ID = "sup-treck"
@@ -42,6 +43,7 @@ async function createFamilyWithVariant(input: {
   familyId: string
   canonicalName: string
   productName: string
+  sizeAttrName: string | null
   size: string | null
   extraAttrs?: Array<{ name: string; value: string }>
   eppType?: string | null
@@ -51,7 +53,7 @@ async function createFamilyWithVariant(input: {
     categoryId: CATEGORY_ID,
     canonicalName: input.canonicalName,
     identityKey: `key-${input.familyId}`,
-    eppType: input.eppType === undefined ? "pantalon" : input.eppType,
+    eppType: input.eppType ?? null,
   })
 
   const productId = `${input.familyId}-p0`
@@ -67,9 +69,9 @@ async function createFamilyWithVariant(input: {
       isRequired: true, options: JSON.stringify([attr.value]), sortOrder: sortOrder++,
     })
   }
-  if (input.size) {
+  if (input.sizeAttrName && input.size) {
     await inMemoryDb.insert(schema.productAttributes).values({
-      id: nanoid(), productId, name: "Talla", type: "select",
+      id: nanoid(), productId, name: input.sizeAttrName, type: "select",
       isRequired: true, options: JSON.stringify([input.size]), sortOrder: sortOrder++,
     })
   }
@@ -80,14 +82,14 @@ async function createFamilyWithVariant(input: {
   return productId
 }
 
-async function sizesForFamily(familyId: string): Promise<string[]> {
+async function sizesForFamily(familyId: string, attrName = "Talla"): Promise<string[]> {
   const variants = await inMemoryDb.query.products.findMany({
     where: eq(schema.products.familyId, familyId),
     with: { productAttributes: true },
   })
   return variants
     .flatMap((v) => v.productAttributes)
-    .filter((a) => a.name === "Talla")
+    .filter((a) => a.name === attrName)
     .map((a) => JSON.parse(a.options!)[0] as string)
     .sort()
 }
@@ -102,25 +104,27 @@ beforeEach(async () => {
   await seedBaseCatalog()
 })
 
-describe("addMissingPantsSizeVariants", () => {
+describe("addMissingClothingSizeVariants", () => {
   it("creates the missing sizes for a pants family that already uses Talla", async () => {
     await createFamilyWithVariant({
       familyId: "fam-lightwind-hombre",
       canonicalName: "Pantalón Lightwind nylon spandex hombre UV",
       productName: "Pantalón Lightwind nylon spandex hombre UV",
+      sizeAttrName: "Talla",
       size: "2XL",
       extraAttrs: [{ name: "Modelo", value: "H3200" }, { name: "Color", value: "Beige" }],
+      eppType: "pantalon",
     })
 
-    const summary = await addMissingPantsSizeVariants()
+    const summary = await addMissingClothingSizeVariants()
 
     expect(summary.results).toEqual([
-      expect.objectContaining({ familyId: "fam-lightwind-hombre", status: "created", createdSizes: ["S", "M", "L", "XL"] }),
+      expect.objectContaining({ familyId: "fam-lightwind-hombre", status: "created", createdSizes: ["XS", "S", "M", "L", "XL"] }),
     ])
-    expect(summary.variantsCreated).toBe(4)
+    expect(summary.variantsCreated).toBe(5)
 
     const sizes = await sizesForFamily("fam-lightwind-hombre")
-    expect(sizes).toEqual([...PANTS_TARGET_SIZES].sort())
+    expect(sizes).toEqual([...CLOTHING_TARGET_SIZES].sort())
 
     // El resto de los atributos (marca/modelo/color) se clonaron a cada talla nueva.
     const variants = await inMemoryDb.query.products.findMany({
@@ -139,15 +143,35 @@ describe("addMissingPantsSizeVariants", () => {
     expect(skus.size).toBe(variants.length)
   })
 
+  it("also completes a non-pants EPP family (jacket) sized by the same 'Talla' scale", async () => {
+    await createFamilyWithVariant({
+      familyId: "fam-chaqueta",
+      canonicalName: "Chaqueta cortavientos",
+      productName: "Chaqueta cortavientos",
+      sizeAttrName: "Talla",
+      size: "M",
+      eppType: null, // eppType casi siempre queda nulo fuera del import XLSX
+    })
+
+    const summary = await addMissingClothingSizeVariants()
+
+    const jacket = summary.results.find((r) => r.familyId === "fam-chaqueta")
+    expect(jacket).toMatchObject({ status: "created", createdSizes: ["XS", "S", "L", "XL", "2XL"] })
+
+    const sizes = await sizesForFamily("fam-chaqueta")
+    expect(sizes).toEqual([...CLOTHING_TARGET_SIZES].sort())
+  })
+
   it("treats XXL as the same size as 2XL and does not duplicate it", async () => {
     await createFamilyWithVariant({
       familyId: "fam-xxl",
       canonicalName: "Pantalón cargo",
       productName: "Pantalón cargo",
+      sizeAttrName: "Talla",
       size: "XXL",
     })
 
-    await addMissingPantsSizeVariants()
+    await addMissingClothingSizeVariants()
 
     const sizes = await sizesForFamily("fam-xxl")
     expect(sizes.filter((s) => s === "2XL" || s === "XXL")).toHaveLength(1)
@@ -158,69 +182,65 @@ describe("addMissingPantsSizeVariants", () => {
       familyId: "fam-idem",
       canonicalName: "Pantalón slack",
       productName: "Pantalón slack",
+      sizeAttrName: "Talla",
       size: "M",
     })
 
-    const first = await addMissingPantsSizeVariants()
-    const second = await addMissingPantsSizeVariants()
+    const first = await addMissingClothingSizeVariants()
+    const second = await addMissingClothingSizeVariants()
 
-    expect(first.variantsCreated).toBe(4)
+    expect(first.variantsCreated).toBe(5)
     expect(second.variantsCreated).toBe(0)
-    expect(second.results[0]).toMatchObject({ status: "already_complete" })
+    expect(second.results.find((r) => r.familyId === "fam-idem")).toMatchObject({ status: "already_complete" })
 
     const sizes = await sizesForFamily("fam-idem")
-    expect(sizes).toEqual([...PANTS_TARGET_SIZES].sort())
+    expect(sizes).toEqual([...CLOTHING_TARGET_SIZES].sort())
   })
 
-  it("skips a pants family with no Talla attribute at all", async () => {
+  it("leaves a family with no Talla attribute at all out of the results", async () => {
     await createFamilyWithVariant({
       familyId: "fam-sin-talla",
       canonicalName: "Pantalón slack cargo gabardina con logo",
       productName: "Pantalón slack cargo gabardina con logo",
+      sizeAttrName: null,
       size: null,
       extraAttrs: [{ name: "Color", value: "Gris/Naranjo" }],
     })
 
-    const summary = await addMissingPantsSizeVariants()
+    const summary = await addMissingClothingSizeVariants()
 
-    expect(summary.results).toEqual([
-      expect.objectContaining({ familyId: "fam-sin-talla", status: "skipped_no_talla_attribute", createdSizes: [] }),
-    ])
+    expect(summary.results.find((r) => r.familyId === "fam-sin-talla")).toBeUndefined()
     const sizes = await sizesForFamily("fam-sin-talla")
     expect(sizes).toEqual([])
   })
 
-  it("skips a pants family sized only by 'Talla inferior' (waist scale)", async () => {
+  it("leaves a family sized only by 'Talla inferior' (waist scale) out of the results", async () => {
     await createFamilyWithVariant({
       familyId: "fam-cintura",
       canonicalName: "Pantalón industrial",
       productName: "Pantalón industrial",
-      size: null,
-    })
-    await inMemoryDb.insert(schema.productAttributes).values({
-      id: nanoid(), productId: "fam-cintura-p0", name: "Talla inferior", type: "select",
-      isRequired: true, options: JSON.stringify(["34"]), sortOrder: 0,
+      sizeAttrName: "Talla inferior",
+      size: "34",
     })
 
-    const summary = await addMissingPantsSizeVariants()
+    const summary = await addMissingClothingSizeVariants()
 
-    expect(summary.results).toEqual([
-      expect.objectContaining({ familyId: "fam-cintura", status: "skipped_no_talla_attribute" }),
-    ])
+    expect(summary.results.find((r) => r.familyId === "fam-cintura")).toBeUndefined()
+    const sizes = await sizesForFamily("fam-cintura", "Talla inferior")
+    expect(sizes).toEqual(["34"])
   })
 
-  it("ignores families whose eppType is not 'pantalon'", async () => {
+  it("leaves a family sized only by 'Talla calzado' (shoe scale) out of the results", async () => {
     await createFamilyWithVariant({
-      familyId: "fam-casco",
-      canonicalName: "Casco de seguridad",
-      productName: "Casco de seguridad",
-      size: "M",
-      eppType: "casco",
+      familyId: "fam-zapato",
+      canonicalName: "Zapato de seguridad",
+      productName: "Zapato de seguridad",
+      sizeAttrName: "Talla calzado",
+      size: "42",
     })
 
-    const summary = await addMissingPantsSizeVariants()
+    const summary = await addMissingClothingSizeVariants()
 
-    expect(summary.familiesScanned).toBe(0)
-    expect(summary.results).toEqual([])
+    expect(summary.results.find((r) => r.familyId === "fam-zapato")).toBeUndefined()
   })
 })
