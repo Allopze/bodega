@@ -6,6 +6,7 @@ export {
   createProduct,
   updateProduct,
   getProductForEdit,
+  getProductFamilyForAddVariant,
   toggleProductActive,
   bulkToggleProductActiveAction,
   createProductVariantBatch,

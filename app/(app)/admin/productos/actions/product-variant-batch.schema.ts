@@ -42,6 +42,19 @@ const advancedAttributeSchema = z.object({
 export const productVariantBatchSchema = z.object({
   categoryId: z.string().min(1, "Selecciona una categoría"),
   familyName: z.string().min(2, "Nombre de familia requerido").max(120),
+  /**
+   * Familia EPP a la que deben sumarse las variantes. Cuando viene presente la
+   * acción la reutiliza (sin crear ni resolver una familia por nombre); cuando
+   * no, `createProductVariantBatch` la resuelve/crea por su identidad como en
+   * el alta del asistente. Es el campo que permite "añadir variante a familia
+   * existente" sin duplicar `epp_product_families`.
+   */
+  familyId: z.string().min(1).optional(),
+  /** Claves de combinación ya existentes en la familia destino (sólo cuando se
+   *  usa el modo añadir-variante). El formulario las recibe como snapshot y las
+   *  envía de vuelta para que el servidor rechace duplicados aunque el cliente
+   *  esté desactualizado (dos pestañas abiertas, reintentos). */
+  existingVariantKeys: z.array(z.string()).default([]),
   description: z.string().max(500).optional().or(z.literal("")),
   unitOfMeasure: unitOfMeasureSchema.default("unidad"),
   isEpp: z.boolean().default(true),
@@ -86,6 +99,15 @@ export const productVariantBatchSchema = z.object({
       ctx.addIssue({ code: "custom", path: ["variants", index], message: "Hay combinaciones de atributos repetidas" })
     }
     combinations.add(signature)
+    // En el modo añadir-variante las combinaciones ya existentes en la familia
+    // no deben poder recrearse: cada variante ES un producto con su historial.
+    if (data.existingVariantKeys.includes(signature)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["variants", index],
+        message: "Esa variante ya existe en la familia. No se puede volver a crear la misma combinación.",
+      })
+    }
   }
 
   if (data.advancedAttributes.filter((a) => a.drivesQuantity).length > 1) {

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { products, productAttributes, productSuppliers, productCategories, requestItemAttributes, purchaseRequestItems, purchaseOrderItems, inventoryMovements, deliveryItems, worksiteStock } from "@/db/schema"
+import { products, productAttributes, productSuppliers, productCategories, eppProductFamilies, requestItemAttributes, purchaseRequestItems, purchaseOrderItems, inventoryMovements, deliveryItems, worksiteStock } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
@@ -20,8 +20,9 @@ import {
 } from "./helpers"
 import { resolveVariantAttributes } from "@/lib/products/variant-grouping"
 import { productVariantBatchSchema, type ProductVariantBatchInput } from "./product-variant-batch.schema"
+import type { AttributeRow } from "../product-form.types"
 // Sólo helpers de texto/tipos: no arrastra nada de cliente ni de `@/db`.
-import { normalizeProductAttributeName } from "../product-form.helpers"
+import { normalizeProductAttributeName, parseOptionsText } from "../product-form.helpers"
 
 // ── Product CRUD ──────────────────────────────────────────────────────────────
 
@@ -370,6 +371,108 @@ export async function getProductForEdit(id: string) {
   }
 }
 
+// ── Read family for "añadir variante" ─────────────────────────────────────────
+
+/** Snapshot de una familia para el modo "añadir variante(s)" del asistente.
+ *  Devuelve la identidad de la familia (canonicalName, categoría, flags) y los
+ *  ejes `select` existentes, más la firma de cada variante ya creada — el
+ *  cliente la usa para no ofrecer crear una combinación repetida. */
+export async function getProductFamilyForAddVariant(familyId: string) {
+  try { await requirePermission("admin:products") }
+  catch { return null }
+
+  const family = await db.query.eppProductFamilies.findFirst({
+    where: eq(eppProductFamilies.id, familyId),
+    with: {
+      category: true,
+      products: {
+        with: {
+          productAttributes: { orderBy: (a, { asc }) => [asc(a.sortOrder)] },
+          productSuppliers: {
+            with: { supplier: true },
+            orderBy: (ps, { desc }) => [desc(ps.isPreferred)],
+          },
+        },
+      },
+    },
+  })
+  if (!family) return null
+
+  // La familia sin variantes no tiene ejes propios; los lee de cualquiera de
+  // sus productos (todas las variantes de la familia comparten ejes). Los
+  // valores del eje se unen a través de TODAS las variantes: cada variante
+  // guarda en options sólo su propio valor (["Negro"]), así que el primer
+  // producto no basta para listar todos los colores/tallas ya usados.
+  const allAttrs = family.products.flatMap((p) => p.productAttributes)
+  const sample = family.products[0]?.productAttributes ?? []
+  const selectMap = new Map<string, { name: string; type: "select"; values: string[]; sizeFamily?: string }>()
+  for (const attr of allAttrs) {
+    if (attr.type !== "select") continue
+    const key = normalizeProductAttributeName(attr.name)
+    const existing = selectMap.get(key)
+    const parsed = parseOptionsText(attr.options ?? "")
+    if (existing) {
+      existing.values = [...new Set([...existing.values, ...parsed])]
+    } else {
+      selectMap.set(key, {
+        name: attr.name,
+        type: "select" as const,
+        values: parsed,
+        sizeFamily: attr.sizeFamily ?? undefined,
+      })
+    }
+  }
+  const selectAttrs = [...selectMap.values()]
+
+  const advancedAttrs: AttributeRow[] = sample
+    .filter((a) => a.type !== "select")
+    .map((a) => ({
+      id: a.id,
+      name: a.name,
+      type: a.type as "text" | "number" | "integer",
+      isRequired: a.isRequired,
+      options: a.options ?? "",
+      sortOrder: a.sortOrder,
+      sizeFamily: a.sizeFamily ?? undefined,
+      drivesQuantity: a.drivesQuantity,
+    }))
+
+  const keys = family.products.map((product) => JSON.stringify(
+    resolveVariantAttributes(product.productAttributes)
+      .map((a) => [normalizeProductAttributeName(a.name), a.value])
+      .sort(),
+  ))
+
+  const preferred = family.products
+    .flatMap((p) => p.productSuppliers)
+    .find((ps) => ps.isPreferred)
+    ?? family.products[0]?.productSuppliers[0]
+    ?? null
+
+  return {
+    id: family.id,
+    canonicalName: family.canonicalName,
+    categoryId: family.categoryId,
+    categoryName: family.category?.name ?? "",
+    unitOfMeasure: family.products[0]?.unitOfMeasure ?? "unidad",
+    isEpp: family.products[0]?.isEpp ?? true,
+    requiresPrevencion: family.products[0]?.requiresPrevencion ?? true,
+    isActive: family.products[0]?.isActive ?? true,
+    referencePrice: family.products[0]?.referencePrice ?? null,
+    attributes: selectAttrs,
+    advancedAttributes: advancedAttrs,
+    existingVariantKeys: keys,
+    supplier: preferred ? {
+      id: preferred.id,
+      supplierId: preferred.supplierId,
+      supplierName: preferred.supplier?.name ?? preferred.supplierId,
+      unitPrice: preferred.unitPrice != null ? String(preferred.unitPrice) : "",
+      isPreferred: preferred.isPreferred,
+      notes: preferred.notes ?? "",
+    } : null,
+  }
+}
+
 // ── Toggle active ─────────────────────────────────────────────────────────────
 
 export async function toggleProductActive(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -451,8 +554,31 @@ export async function createProductVariantBatch(input: ProductVariantBatchInput)
       // `groupProductVariants` cae al nombre normalizado, que ya trae el
       // sufijo de talla ("Cable 2m", "Cable 5m"), así que cada variante
       // aparecía como un producto suelto.
-      let familyId: string | null = null
-      if (d.variants.length > 1 || d.isEpp) {
+      let familyId: string | null = d.familyId ?? null
+      if (familyId) {
+        // Modo añadir-variante: la familia ya existe y se reutiliza tal cual.
+        // Validar dentro de la transacción (no fiarse del snapshot del cliente)
+        // que la familia siga existiendo y que la combinación no esté ya creada.
+        const family = await tx.query.eppProductFamilies.findFirst({ where: eq(eppProductFamilies.id, familyId) })
+        if (!family) throw new Error("La familia ya no existe. Recarga el catálogo.")
+        const existingProducts = await tx.query.products.findMany({
+          where: eq(products.familyId, familyId),
+          with: { productAttributes: true },
+        })
+        const existingSignatures = new Set(existingProducts.map((product) => JSON.stringify(
+          resolveVariantAttributes(product.productAttributes)
+            .map((a) => [normalizeProductAttributeName(a.name), a.value])
+            .sort(),
+        )))
+        for (const variant of d.variants) {
+          const signature = JSON.stringify(
+            variant.attributes.map((a) => [normalizeProductAttributeName(a.name), a.value]).sort(),
+          )
+          if (existingSignatures.has(signature)) {
+            throw new Error(`La variante «${variant.name}» ya existe en la familia. No se puede volver a crear la misma combinación.`)
+          }
+        }
+      } else if (d.variants.length > 1 || d.isEpp) {
         const family = await ensureEppFamilyTx(tx, {
           categoryId: d.categoryId, categoryName: category.name, canonicalName: d.familyName,
         })
@@ -545,14 +671,16 @@ export async function createProductVariantBatch(input: ProductVariantBatchInput)
 
     await recordAudit({
       userId: session.user.id, userEmail: session.user.email ?? undefined,
-      action: "create", entityType: "product", entityId: `batch_${d.familyName}`,
+      action: "create", entityType: "product", entityId: d.familyId ? `family_${d.familyId}` : `batch_${d.familyName}`,
       entityCode: batchFirstSku,
-      newState: { familyName: d.familyName, variantCount: d.variants.length },
-      reason: "Creación por asistente EPP",
+      newState: { familyName: d.familyName, familyId: d.familyId ?? null, variantCount: d.variants.length },
+      reason: d.familyId ? "Adición de variantes a familia existente" : "Creación por asistente EPP",
     })
 
     revalidatePath(REVALIDATE)
-    return { ok: true, message: `${d.variants.length} producto${d.variants.length === 1 ? "" : "s"} creado${d.variants.length === 1 ? "" : "s"}` }
+    return { ok: true, message: d.familyId
+      ? `${d.variants.length} variante${d.variants.length === 1 ? "" : "s"} creada${d.variants.length === 1 ? "" : "s"} en la familia`
+      : `${d.variants.length} producto${d.variants.length === 1 ? "" : "s"} creado${d.variants.length === 1 ? "" : "s"}` }
   } catch (error) {
     logger.error("[admin/productos] createProductVariantBatch", error)
     return { ok: false, message: safeActionMessage(error, "No se pudo crear el lote de variantes") }

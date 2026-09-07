@@ -5,6 +5,33 @@ import type { AttributeRow, SupplierRow, AttributeMultiValues, VariantCombo, Wiz
 
 export { normalizeAttributeName as normalizeProductAttributeName } from "@/lib/products/attribute-names"
 
+/** Firma canónica de una combinación de valores: pares nombre→valor ordenados.
+ *  Es la misma forma que usa `createProductVariantBatch` para comparar contra
+ *  las variantes ya existentes de una familia, así que el cliente y el servidor
+ *  siempre hablan del mismo identificador. */
+export function variantComboKey(attributes: Array<{ name: string; value: string }>): string {
+  return JSON.stringify(
+    attributes.map((a) => [normalizeAttributeName(a.name), a.value.trim()]).sort(),
+  )
+}
+
+/** Filtra las combinaciones del preview que ya existen en la familia. Cada
+ *  variante es un producto con su historial, así que no se puede volver a crear
+ *  una combinación idéntica: se quita del preview y se avisa. */
+export function filterNewVariantCombos(
+  combos: VariantCombo[],
+  existingVariantKeys: readonly string[],
+): { kept: VariantCombo[]; removed: VariantCombo[] } {
+  const existing = new Set(existingVariantKeys)
+  const kept: VariantCombo[] = []
+  const removed: VariantCombo[] = []
+  for (const combo of combos) {
+    if (existing.has(variantComboKey(combo.attributes))) removed.push(combo)
+    else kept.push(combo)
+  }
+  return { kept, removed }
+}
+
 /**
  * Parse attribute options stored as JSON array or comma/newline-separated text.
  */

@@ -74,6 +74,47 @@ export interface ProductFormProps {
   sizeFamilies:  SizeFamilyOption[]
   editProduct?:  ProductForEdit | null
   variant?:      "sheet" | "embedded"
+  /**
+   * Modo "añadir variante(s) a una familia ya existente": abre el asistente
+   * como un alta (con generador y lote habilitados) pero precargado con la
+   * identidad de la familia, para que las variantes nuevas nazcan dentro de
+   * ella y no en una familia duplicada.
+   */
+  addVariantToFamily?: ProductFamilyForAddVariant | null
+}
+
+/** Qué operación está realizando el formulario. Determina el flujo (wizard de
+ *  alta vs. secciones de edición), el texto, y el destino del guardado. */
+export type ProductFormMode =
+  /** Alta de uno o varios productos nuevos (asistente por pasos). */
+  | "create"
+  /** Edición de un producto/variante existente (una sola fila). */
+  | "edit"
+  /** Alta de variante(s) nuevas dentro de una familia ya existente. */
+  | "addVariant"
+
+/** Snapshot serializable que necesita el asistente para sumar variantes a una
+ *  familia sin duplicar la familia ni las combinaciones ya existentes. */
+export interface ProductFamilyForAddVariant {
+  id:             string
+  canonicalName:  string
+  categoryId:     string
+  categoryName:   string
+  unitOfMeasure:  string
+  isEpp:          boolean
+  requiresPrevencion: boolean
+  isActive:       boolean
+  referencePrice: number | null
+  /** Ejes `select` (talla/color/…) tal como existen en la familia. */
+  attributes:     AttributeMultiValues[]
+  /** Atributos no-`select` de la familia (texto/número/conteo y el driver de
+   *  cantidad). Las variantes nuevas deben nacer con los mismos, o la familia
+   *  quedaría con requisitos mixtos. */
+  advancedAttributes: AttributeRow[]
+  /** Identidad de cada variante ya existente: pares nombre→valor normalizados
+   *  y ordenados. Sirve para no ofrecer crear una combinación repetida. */
+  existingVariantKeys: string[]
+  supplier:       SupplierRow | null
 }
 
 // ── Wizard types for EPP creator ──────────────────────────────────────────────
