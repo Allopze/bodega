@@ -26,6 +26,14 @@ export const eppProductFamilies = pgTable("epp_product_families", {
   model:          text("model"),
   certification:  text("certification"),
   lifespanMonths: integer("lifespan_months"),
+  /**
+   * `lifespanMonths` nulo significaba dos cosas a la vez: "este EPP no vence
+   * por diseño" (casco, arnés sin fecha fija) y "nadie llenó el campo todavía".
+   * `computeEppCoverageGaps` trata ambos igual —vigente indefinidamente— y eso
+   * es correcto; lo que no se podía era avisar del segundo sin generar ruido
+   * perpetuo sobre el primero. Esta bandera registra la decisión explícita.
+   */
+  lifespanNotApplicable: boolean("lifespan_not_applicable").notNull().default(false),
   pictogramUrl:   text("pictogram_url"),
   createdAt:      timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:      timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),

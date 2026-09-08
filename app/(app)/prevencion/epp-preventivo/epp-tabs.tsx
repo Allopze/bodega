@@ -4,18 +4,7 @@ import * as React from "react"
 import type { EppCoverageGap } from "@/lib/prevention/epp"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { EppGapList } from "./epp-gap-list"
-import { EppRequirementList } from "./epp-requirement-list"
-
-interface RequirementItem {
-  id: string
-  eppTypeLabel: string
-  scopeType: string
-  scopeValue: string | null
-  worksiteName: string | null
-  enforcement: string
-  reason: string
-  isActive: boolean
-}
+import { EppRequirementList, type RequirementItem } from "./epp-requirement-list"
 
 interface Props {
   gaps: EppCoverageGap[]

@@ -37,8 +37,9 @@ vi.mock("@/lib/services/module-toggles", async (importOriginal) => ({
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
-const { updateEppFamilyAction } = await import("@/app/(app)/admin/epps/actions")
+const { updateEppFamilyAction, mergeEppFamiliesAction, setEppFamilyTypeAction } = await import("@/app/(app)/admin/epps/actions")
 const { buildEppFamilyIdentityKey } = await import("@/lib/services/epp-import")
+const { resolveManualEppFamily } = await import("@/app/(app)/admin/productos/actions/helpers")
 
 const userId = nanoid()
 const categoryId = nanoid()
@@ -82,7 +83,8 @@ describe("updateEppFamilyAction", () => {
     const familyId = await seedFamily("Casco de seguridad")
 
     const result = await updateEppFamilyAction({ ok: false }, form({
-      id: familyId, brand: "3M", model: "H-700", certification: "NCh 461", lifespanMonths: "24",
+      id: familyId, canonicalName: "Casco de seguridad", categoryId,
+      brand: "3M", model: "H-700", certification: "NCh 461", lifespanMonths: "24",
     }))
 
     expect(result.ok).toBe(true)
@@ -102,11 +104,11 @@ describe("updateEppFamilyAction", () => {
     const otherId = await seedFamily("Guante nitrilo", "Activex", "HD")
 
     const result = await updateEppFamilyAction({ ok: false }, form({
-      id: otherId, brand: "Ansell", model: "11-801",
+      id: otherId, canonicalName: "Guante nitrilo", categoryId, brand: "Ansell", model: "11-801",
     }))
 
     expect(result.ok).toBe(false)
-    expect(result.fieldErrors?.brand?.[0]).toContain("Ya existe")
+    expect(result.fieldErrors?.canonicalName?.[0]).toContain("Ya existe")
     // Y no dejó la familia a medio guardar.
     const [family] = await inMemoryDb.select().from(schema.eppProductFamilies)
       .where(eq(schema.eppProductFamilies.id, otherId))
@@ -117,7 +119,8 @@ describe("updateEppFamilyAction", () => {
     const familyId = await seedFamily("Lente de seguridad")
 
     const result = await updateEppFamilyAction({ ok: false }, form({
-      id: familyId, brand: "", model: "", certification: "", lifespanMonths: "",
+      id: familyId, canonicalName: "Lente de seguridad", categoryId,
+      brand: "", model: "", certification: "", lifespanMonths: "",
     }))
 
     expect(result.ok).toBe(true)
@@ -129,8 +132,202 @@ describe("updateEppFamilyAction", () => {
   it("rechaza una vida útil fuera de rango", async () => {
     const familyId = await seedFamily("Arnés de altura")
 
-    const result = await updateEppFamilyAction({ ok: false }, form({ id: familyId, lifespanMonths: "0" }))
+    const result = await updateEppFamilyAction({ ok: false }, form({
+      id: familyId, canonicalName: "Arnés de altura", categoryId, lifespanMonths: "0",
+    }))
     expect(result.ok).toBe(false)
     expect(result.fieldErrors?.lifespanMonths).toBeDefined()
+  })
+})
+
+describe("mergeEppFamiliesAction", () => {
+  async function seedProduct(familyId: string | null, name: string) {
+    const id = nanoid()
+    await inMemoryDb.insert(schema.products).values({
+      id, sku: `SKU-${nanoid(6)}`, name, categoryId, familyId, isEpp: true,
+    })
+    return id
+  }
+
+  it("moves the source's products to the target and deletes the source", async () => {
+    const target = await seedFamily("Casco Activex")
+    const source = await seedFamily("Casco Activex duplicado")
+    const moved = await seedProduct(source, "Casco Activex I")
+
+    const result = await mergeEppFamiliesAction(source, target)
+    expect(result.ok).toBe(true)
+
+    const product = await inMemoryDb.query.products.findFirst({ where: eq(schema.products.id, moved) })
+    expect(product?.familyId).toBe(target)
+    const gone = await inMemoryDb.query.eppProductFamilies.findFirst({ where: eq(schema.eppProductFamilies.id, source) })
+    expect(gone).toBeUndefined()
+  })
+
+  it("fills only the target's empty ficha fields, never overwriting what it has", async () => {
+    const target = await seedFamily("Botin V-Flex", "Norseg", null)
+    const source = await seedFamily("Botin V-Flex dup", "OtraMarca", "V73")
+    await inMemoryDb.update(schema.eppProductFamilies)
+      .set({ certification: "NCh 772", lifespanMonths: 12 })
+      .where(eq(schema.eppProductFamilies.id, source))
+
+    expect((await mergeEppFamiliesAction(source, target)).ok).toBe(true)
+
+    const merged = await inMemoryDb.query.eppProductFamilies.findFirst({ where: eq(schema.eppProductFamilies.id, target) })
+    expect(merged?.brand).toBe("Norseg")        // el target ya tenía marca: se respeta
+    expect(merged?.model).toBe("V73")           // estaba vacío: se hereda
+    expect(merged?.certification).toBe("NCh 772")
+    expect(merged?.lifespanMonths).toBe(12)
+  })
+
+  it("repoints a requirement's preferred family instead of letting the FK null it", async () => {
+    const target = await seedFamily("Arnes Activex")
+    const source = await seedFamily("Arnes Activex dup")
+    const eppTypeId = nanoid()
+    await inMemoryDb.insert(schema.eppTypes).values({ id: eppTypeId, code: `caidas-${nanoid(4)}`, label: "Caídas" })
+    const requirementId = nanoid()
+    await inMemoryDb.insert(schema.preventionEppRequirements).values({
+      id: requirementId, eppTypeId, scopeType: "global",
+      reason: "Trabajo en altura sobre 1,8 m", preferredFamilyId: source, createdByUserId: userId,
+    })
+
+    expect((await mergeEppFamiliesAction(source, target)).ok).toBe(true)
+
+    const requirement = await inMemoryDb.query.preventionEppRequirements.findFirst({
+      where: eq(schema.preventionEppRequirements.id, requirementId),
+    })
+    expect(requirement?.preferredFamilyId).toBe(target)
+  })
+
+  it("refuses to merge a family into itself", async () => {
+    const family = await seedFamily("Guante Activex")
+    const result = await mergeEppFamiliesAction(family, family)
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(/misma familia/i)
+  })
+
+  it("refuses when either family does not exist", async () => {
+    const family = await seedFamily("Lente Activex")
+    expect((await mergeEppFamiliesAction(family, nanoid())).ok).toBe(false)
+    expect((await mergeEppFamiliesAction(nanoid(), family)).ok).toBe(false)
+  })
+})
+
+describe("setEppFamilyTypeAction", () => {
+  it("rejects an epp type that does not exist instead of leaking the FK error", async () => {
+    const family = await seedFamily("Casco para validar tipo")
+    const result = await setEppFamilyTypeAction(family, nanoid())
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(/tipo de epp/i)
+  })
+
+  it("classifies the family when the type exists", async () => {
+    const family = await seedFamily("Casco para clasificar")
+    const eppTypeId = nanoid()
+    await inMemoryDb.insert(schema.eppTypes).values({ id: eppTypeId, code: `cabeza-${nanoid(4)}`, label: "Cabeza" })
+
+    expect((await setEppFamilyTypeAction(family, eppTypeId)).ok).toBe(true)
+    const updated = await inMemoryDb.query.eppProductFamilies.findFirst({ where: eq(schema.eppProductFamilies.id, family) })
+    expect(updated?.eppTypeId).toBe(eppTypeId)
+  })
+})
+
+describe("updateEppFamilyAction — nombre y categoría", () => {
+  it("renombra la familia y recalcula identityKey con el nombre nuevo", async () => {
+    const familyId = await seedFamily("Nombre heredado del backfill")
+
+    const result = await updateEppFamilyAction({ ok: false }, form({
+      id: familyId, canonicalName: "Traje PU Verde Activex", categoryId,
+    }))
+    expect(result.ok).toBe(true)
+
+    const family = await inMemoryDb.query.eppProductFamilies.findFirst({
+      where: eq(schema.eppProductFamilies.id, familyId),
+    })
+    expect(family?.canonicalName).toBe("Traje PU Verde Activex")
+    expect(family?.identityKey).toBe(buildEppFamilyIdentityKey({
+      categoryName: CATEGORY_NAME, canonicalName: "Traje PU Verde Activex", brand: null, model: null,
+    }))
+  })
+
+  it("rejects a category that does not exist rather than keying on a blank name", async () => {
+    const familyId = await seedFamily("Familia con categoría inválida")
+    const result = await updateEppFamilyAction({ ok: false }, form({
+      id: familyId, canonicalName: "Familia con categoría inválida", categoryId: nanoid(),
+    }))
+    expect(result.ok).toBe(false)
+    expect(result.fieldErrors?.categoryId?.[0]).toMatch(/no existe/i)
+  })
+
+  it("records the deliberate never-expires decision, distinct from an unset lifespan", async () => {
+    const familyId = await seedFamily("Casco sin fecha fija")
+
+    expect((await updateEppFamilyAction({ ok: false }, form({
+      id: familyId, canonicalName: "Casco sin fecha fija", categoryId,
+      lifespanNotApplicable: "true",
+    }))).ok).toBe(true)
+
+    const family = await inMemoryDb.query.eppProductFamilies.findFirst({
+      where: eq(schema.eppProductFamilies.id, familyId),
+    })
+    expect(family?.lifespanMonths).toBeNull()
+    expect(family?.lifespanNotApplicable).toBe(true)
+  })
+
+  it("refuses declaring never-expires together with a lifespan", async () => {
+    const familyId = await seedFamily("Familia contradictoria")
+    const result = await updateEppFamilyAction({ ok: false }, form({
+      id: familyId, canonicalName: "Familia contradictoria", categoryId,
+      lifespanMonths: "12", lifespanNotApplicable: "true",
+    }))
+    expect(result.ok).toBe(false)
+    expect(result.fieldErrors?.lifespanNotApplicable).toBeDefined()
+  })
+})
+
+/**
+ * H-2: sólo el import XLSX clasificaba la familia. `ensureEppFamilyTx` —la vía
+ * del formulario manual y del asistente de EPP— insertaba con `eppTypeId` nulo
+ * sin intentar inferirlo, así que todo lo creado a mano nacía invisible para
+ * `computeEppCoverageGaps`.
+ */
+describe("resolveManualEppFamily", () => {
+  it("classifies the family from the product name on manual creation", async () => {
+    // Los 9 tipos (zonas corporales) ya vienen sembrados por migración.
+    const seeded = await inMemoryDb.query.eppTypes.findFirst({ where: eq(schema.eppTypes.code, "cabeza") })
+    expect(seeded, "el catálogo de tipos debe estar sembrado").toBeDefined()
+
+    const family = await inMemoryDb.transaction((tx) =>
+      // @ts-expect-error — PGlite es estructuralmente compatible en runtime.
+      resolveManualEppFamily(tx, { categoryId, name: "Casco Activex I", isEpp: true }))
+
+    const stored = await inMemoryDb.query.eppProductFamilies.findFirst({
+      where: eq(schema.eppProductFamilies.id, family!.id),
+    })
+    expect(stored?.eppTypeId).toBe(seeded!.id)
+  })
+
+  it("leaves the type null when the name declares no mappable item", async () => {
+    const family = await inMemoryDb.transaction((tx) =>
+      // @ts-expect-error — PGlite es estructuralmente compatible en runtime.
+      resolveManualEppFamily(tx, { categoryId, name: "BORDADO ESPALDA", isEpp: true }))
+
+    const stored = await inMemoryDb.query.eppProductFamilies.findFirst({
+      where: eq(schema.eppProductFamilies.id, family!.id),
+    })
+    expect(stored?.eppTypeId).toBeNull()
+  })
+
+  it("backfills the type of a family that was left unclassified", async () => {
+    const unclassified = await seedFamily("Guante Activex Nitrilo")
+    const manos = await inMemoryDb.query.eppTypes.findFirst({ where: eq(schema.eppTypes.code, "manos") })
+
+    await inMemoryDb.transaction((tx) =>
+      // @ts-expect-error — PGlite es estructuralmente compatible en runtime.
+      resolveManualEppFamily(tx, { categoryId, name: "Guante Activex Nitrilo", isEpp: true }))
+
+    const stored = await inMemoryDb.query.eppProductFamilies.findFirst({
+      where: eq(schema.eppProductFamilies.id, unclassified),
+    })
+    expect(stored?.eppTypeId).toBe(manos!.id)
   })
 })

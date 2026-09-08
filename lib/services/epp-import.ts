@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto"
 import { and, eq } from "drizzle-orm"
 import { db, type Tx } from "@/db"
+import { classifyEppTypeIdByName } from "./epp-type-classification"
 import {
   eppImportBatches,
   eppImportCorrections,
   eppImportMatches,
   eppImportRows,
   eppProductFamilies,
-  eppTypes,
   productAttributes,
   productCategories,
   productExternalReferences,
@@ -23,7 +23,6 @@ import {
   buildCorrections,
   normalizeEppRow,
   parseEppWorkbook,
-  EPP_TYPE_TO_BODY_PART_CODE,
   type NormalizedEppRow,
   type EppAttribute,
   type ImportCorrection,
@@ -230,25 +229,20 @@ function buildManualCorrections(previous: NormalizedEppRow, next: NormalizedEppR
 }
 
 async function resolveCategory(tx: Tx, categoryName: string) { const slug = toCode(categoryName).toLowerCase(); const existing = await tx.query.productCategories.findFirst({ where: eq(productCategories.slug, slug) }); if (existing) return existing; const id = slug === "epp" ? DEFAULT_CATEGORY.id : `cat-${slug}`; await tx.insert(productCategories).values({ id, name: categoryName, slug, isEpp: true, requiresPrevencion: true, sortOrder: 10 }).onConflictDoNothing(); return { id, name: categoryName } }
-async function resolveEppTypeId(tx: Tx, itemType: string | null) {
-  const code = itemType ? EPP_TYPE_TO_BODY_PART_CODE[itemType as keyof typeof EPP_TYPE_TO_BODY_PART_CODE] : undefined
-  if (!code) return null
-  const type = await tx.query.eppTypes.findFirst({ where: eq(eppTypes.code, code) })
-  return type?.id ?? null
-}
+
 async function resolveFamily(tx: Tx, categoryId: string, normalized: NormalizedEppRow) {
   const existing = await tx.query.eppProductFamilies.findFirst({ where: eq(eppProductFamilies.identityKey, normalized.familyIdentityKey) })
   if (existing) {
     // Backfill only: a family already classified (by any path) keeps its
     // existing type rather than being silently reclassified by one row.
     if (!existing.eppTypeId) {
-      const eppTypeId = await resolveEppTypeId(tx, normalized.eppType)
+      const eppTypeId = await classifyEppTypeIdByName(tx, normalized.canonicalName)
       if (eppTypeId) await tx.update(eppProductFamilies).set({ eppTypeId }).where(eq(eppProductFamilies.id, existing.id))
     }
     return existing
   }
   const id = nanoid()
-  const eppTypeId = await resolveEppTypeId(tx, normalized.eppType)
+  const eppTypeId = await classifyEppTypeIdByName(tx, normalized.canonicalName)
   // `onConflictDoNothing` + relectura: entre el SELECT de arriba y este INSERT
   // otra transacción puede crear la misma identidad (`identity_key` es UNIQUE)
   // y el 23505 abortaría el lote entero. Mismo motivo que en

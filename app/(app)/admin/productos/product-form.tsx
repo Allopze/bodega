@@ -115,6 +115,9 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
     requiresWorker: editProduct?.requiresWorker ?? false,
     equipmentKind: editProduct?.equipmentKind ?? "",
     isActive: editProduct?.isActive ?? family?.isActive ?? true,
+    familyCertification: family?.certification ?? "",
+    familyLifespanMonths: family?.lifespanMonths != null ? String(family.lifespanMonths) : "",
+    familyLifespanNotApplicable: family?.lifespanNotApplicable ?? false,
   })
   const [wizAttrs, setWizAttrs] = React.useState<AttributeMultiValues[]>(() => {
     if (editProduct) {
@@ -509,6 +512,55 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
               />
             </Field>
 
+            {/* La ficha de la familia: sin vida útil ninguna entrega vence, y
+                sin certificación no hay trazabilidad de la norma que la exige.
+                El asistente no los pedía y sólo existían en /admin/epps. */}
+            {general.isEpp && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field
+                  label="Certificación"
+                  htmlFor="p-fam-cert"
+                  error={state.fieldErrors?.familyCertification?.[0]}
+                  helper="Norma que certifica el EPP. Se guarda en la familia."
+                >
+                  <Input
+                    id="p-fam-cert"
+                    value={general.familyCertification}
+                    onChange={(e) => { markDirty(); setGeneral((p) => ({ ...p, familyCertification: e.target.value })) }}
+                    error={!!state.fieldErrors?.familyCertification}
+                    placeholder="NCh 461"
+                  />
+                </Field>
+                <Field
+                  label="Vida útil (meses)"
+                  htmlFor="p-fam-life"
+                  error={state.fieldErrors?.familyLifespanMonths?.[0] ?? state.fieldErrors?.familyLifespanNotApplicable?.[0]}
+                  helper="Prevención marca como vencido el EPP entregado hace más de este tiempo."
+                >
+                  <div className="space-y-2">
+                    <Input
+                      id="p-fam-life"
+                      type="number"
+                      min={1}
+                      max={600}
+                      step={1}
+                      className="w-28"
+                      value={general.familyLifespanMonths}
+                      disabled={general.familyLifespanNotApplicable}
+                      onChange={(e) => { markDirty(); setGeneral((p) => ({ ...p, familyLifespanMonths: e.target.value })) }}
+                      error={!!state.fieldErrors?.familyLifespanMonths}
+                    />
+                    <Checkbox
+                      id="p-fam-life-na"
+                      checked={general.familyLifespanNotApplicable}
+                      onChange={(e) => { markDirty(); setGeneral((p) => ({ ...p, familyLifespanNotApplicable: e.target.checked })) }}
+                      label="Este EPP no vence por diseño"
+                    />
+                  </div>
+                </Field>
+              </div>
+            )}
+
             <div className="flex flex-col gap-2">
               <Checkbox
                 id="p-epp"
@@ -808,6 +860,13 @@ export function ProductForm({ open, onClose, categories, allSuppliers, units, te
         <input type="hidden" name="name" value={general.name} />
         <input type="hidden" name="description" value={general.description} />
         <input type="hidden" name="categoryId" value={general.categoryId} />
+        {general.isEpp && (
+          <>
+            <input type="hidden" name="familyCertification" value={general.familyCertification} />
+            <input type="hidden" name="familyLifespanMonths" value={general.familyLifespanNotApplicable ? "" : general.familyLifespanMonths} />
+            {general.familyLifespanNotApplicable && <input type="hidden" name="familyLifespanNotApplicable" value="on" />}
+          </>
+        )}
         <input type="hidden" name="unitOfMeasure" value={general.unitOfMeasure} />
         <input type="hidden" name="referencePrice" value={general.referencePrice} />
         <input type="hidden" name="notes" value={general.notes} />

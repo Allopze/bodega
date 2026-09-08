@@ -16,7 +16,7 @@ import {
 } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
-import { computeEppCoverageGaps, type EppCoverageGap } from "@/lib/prevention/epp"
+import { computeEppCoverageGaps, EPP_REQUIREMENT_INPUT_SCOPES, type EppCoverageGap } from "@/lib/prevention/epp"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { todayInChile } from "@/lib/utils"
 
@@ -74,7 +74,14 @@ async function history(client: Client, args: {
 // misma forma, sin duplicar el schema.
 export const requirementSchema = z.object({
   eppTypeId: z.string().min(1),
-  scopeType: z.enum(["global", "worksite", "position", "task"]),
+  /**
+   * `"task"` NO está: `requirementApplies` lo descarta en su `default`, así que
+   * un requisito por tarea se guardaba bien y no generaba brecha para nadie,
+   * jamás. La UI lo filtraba, pero el servidor lo aceptaba — un desalineamiento
+   * a un `.filter` de distancia de activarse. Se reintroduce cuando el cálculo
+   * sepa resolverlo contra la asignación de tareas, no antes.
+   */
+  scopeType: z.enum(EPP_REQUIREMENT_INPUT_SCOPES),
   scopeValue: z.string().trim().max(300).nullable().optional(),
   worksiteId: z.string().min(1).nullable().optional(),
   enforcement: z.enum(["blocking", "warning"]).default("warning"),
@@ -83,8 +90,8 @@ export const requirementSchema = z.object({
   riskEntryId: z.string().min(1).nullable().optional(),
   preferredFamilyId: z.string().min(1).nullable().optional(),
 }).superRefine((value, ctx) => {
-  if ((value.scopeType === "position" || value.scopeType === "task") && !value.scopeValue?.trim()) {
-    ctx.addIssue({ code: "custom", path: ["scopeValue"], message: "Un requisito por cargo o tarea exige indicar cuál." })
+  if (value.scopeType === "position" && !value.scopeValue?.trim()) {
+    ctx.addIssue({ code: "custom", path: ["scopeValue"], message: "Un requisito por cargo exige indicar cuál." })
   }
   if (value.scopeType === "worksite" && !value.worksiteId) {
     ctx.addIssue({ code: "custom", path: ["worksiteId"], message: "Un requisito por faena exige indicar la faena." })
@@ -334,16 +341,59 @@ export async function escalateBlockingEppGapsToCapa(access: EppAccess, args: { t
 
 export async function listEppRequirements(access: EppAccess) {
   requireAccess(access, "prevention:epp:view")
+  // `preferredFamilyId` se guardaba y no se leía en ninguna parte: el hint del
+  // formulario ofrece "ayuda a Bodega a saber qué entregar" y no llegaba nada.
   return db.select({
     requirement: preventionEppRequirements,
     eppTypeLabel: eppTypes.label,
     worksiteName: worksites.name,
+    preferredFamilyName: eppProductFamilies.canonicalName,
   })
     .from(preventionEppRequirements)
     .innerJoin(eppTypes, eq(preventionEppRequirements.eppTypeId, eppTypes.id))
     .leftJoin(worksites, eq(preventionEppRequirements.worksiteId, worksites.id))
+    .leftJoin(eppProductFamilies, eq(preventionEppRequirements.preferredFamilyId, eppProductFamilies.id))
     .orderBy(asc(eppTypes.label))
     .limit(500)
+}
+
+/**
+ * Completitud del dato sobre el que se calculó la cobertura.
+ *
+ * Los dos INNER JOIN de `listEppCoverageGaps` descartan sin dejar rastro las
+ * entregas de familias sin clasificar, y la pantalla presentaba el resultado
+ * como si fuera completo. El sesgo del error es benigno —una familia sin tipo
+ * produce brecha de más, no cobertura de menos— pero el usuario no tenía forma
+ * de saber sobre qué universo se calculó.
+ */
+export async function getEppCoverageDataHealth(access: EppAccess) {
+  requireAccess(access, "prevention:epp:view")
+
+  const [families, ignoredDeliveries] = await Promise.all([
+    db.select({
+      total: sql<number>`count(*)::int`,
+      unclassified: sql<number>`count(*) filter (where ${eppProductFamilies.eppTypeId} is null)::int`,
+    }).from(eppProductFamilies),
+    db.select({ count: sql<number>`count(*)::int` })
+      .from(deliveryItems)
+      .innerJoin(deliveries, eq(deliveryItems.deliveryId, deliveries.id))
+      .innerJoin(products, eq(deliveryItems.productId, products.id))
+      .leftJoin(eppProductFamilies, eq(products.familyId, eppProductFamilies.id))
+      .where(and(
+        eq(deliveries.destinationType, "worker"),
+        isNull(deliveries.voidedAt),
+        eq(products.isEpp, true),
+        // Sin familia, o con una familia sin clasificar: en ambos casos la
+        // entrega nunca llega a `computeEppCoverageGaps`.
+        isNull(eppProductFamilies.eppTypeId),
+      )),
+  ])
+
+  return {
+    totalFamilies:        families[0]?.total ?? 0,
+    unclassifiedFamilies: families[0]?.unclassified ?? 0,
+    ignoredDeliveries:    ignoredDeliveries[0]?.count ?? 0,
+  }
 }
 
 /** Catálogo canónico de tipos de EPP, para el selector del requisito. */

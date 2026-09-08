@@ -1,5 +1,6 @@
 import { nanoid } from "@/lib/id"
 import { buildEppFamilyIdentityKey } from "@/lib/services/epp-import"
+import { classifyEppTypeIdByName } from "@/lib/services/epp-type-classification"
 import { type DB, type Tx } from "@/db"
 import { eppProductFamilies, products, productCategories } from "@/db/schema"
 import { eq, sql } from "drizzle-orm"
@@ -102,12 +103,27 @@ export async function ensureEppFamilyTx(
   })
 
   const existing = await tx.query.eppProductFamilies.findFirst({ where: eq(eppProductFamilies.identityKey, identityKey) })
-  if (existing) return existing
+  if (existing) {
+    // Igual que el importador: una familia ya clasificada por cualquier vía
+    // conserva su tipo; sólo se rellena la que está sin clasificar.
+    if (!existing.eppTypeId) {
+      const eppTypeId = await classifyEppTypeIdByName(tx, input.canonicalName)
+      if (eppTypeId) {
+        await tx.update(eppProductFamilies).set({ eppTypeId }).where(eq(eppProductFamilies.id, existing.id))
+      }
+    }
+    return existing
+  }
+
+  // Antes se insertaba con `eppTypeId` nulo sin siquiera intentar inferirlo:
+  // sólo el import XLSX clasificaba, así que todo lo creado a mano nacía
+  // invisible para la cobertura de Prevención.
+  const eppTypeId = await classifyEppTypeIdByName(tx, input.canonicalName)
 
   const [inserted] = await tx.insert(eppProductFamilies)
     .values({
       id: nanoid(), categoryId: input.categoryId, canonicalName: input.canonicalName,
-      identityKey, eppType: null, brand: null, model: null,
+      identityKey, eppType: null, eppTypeId, brand: null, model: null,
     })
     .onConflictDoNothing({ target: eppProductFamilies.identityKey })
     .returning({ id: eppProductFamilies.id })
@@ -118,9 +134,51 @@ export async function ensureEppFamilyTx(
   return winner
 }
 
-export async function resolveManualEppFamily(tx: Tx, input: { categoryId: string; name: string; isEpp: boolean }) {
+/** Ficha que el asistente puede declarar al crear el producto EPP. */
+export interface EppFamilyFichaInput {
+  certification?: string | null
+  lifespanMonths?: number | null
+  lifespanNotApplicable?: boolean
+}
+
+export async function resolveManualEppFamily(
+  tx: Tx,
+  input: { categoryId: string; name: string; isEpp: boolean },
+  ficha?: EppFamilyFichaInput,
+) {
   if (!input.isEpp) return null
   const category = await tx.query.productCategories.findFirst({ where: eq(productCategories.id, input.categoryId) })
   if (!category) return null
-  return ensureEppFamilyTx(tx, { categoryId: input.categoryId, categoryName: category.name, canonicalName: input.name })
+  const family = await ensureEppFamilyTx(tx, { categoryId: input.categoryId, categoryName: category.name, canonicalName: input.name })
+  if (ficha) await applyEppFamilyFichaTx(tx, family.id, ficha)
+  return family
+}
+
+/**
+ * Completa la ficha de la familia **sólo en los campos que están vacíos**.
+ *
+ * Dar de alta la segunda variante de una familia no debe reescribir en silencio
+ * una certificación o una vida útil que alguien ya revisó en /admin/epps; pero
+ * dejar el dato en el aire cuando la familia no lo tiene tampoco sirve. Mismo
+ * criterio que la fusión de familias.
+ */
+export async function applyEppFamilyFichaTx(tx: Tx, familyId: string, ficha: EppFamilyFichaInput) {
+  const certification = ficha.certification?.trim() || null
+  const hasLifespan = ficha.lifespanMonths != null
+  if (!certification && !hasLifespan && !ficha.lifespanNotApplicable) return
+
+  const current = await tx.query.eppProductFamilies.findFirst({ where: eq(eppProductFamilies.id, familyId) })
+  if (!current) return
+
+  const patch: Partial<typeof eppProductFamilies.$inferInsert> = {}
+  if (certification && !current.certification?.trim()) patch.certification = certification
+  if (hasLifespan && current.lifespanMonths == null) patch.lifespanMonths = ficha.lifespanMonths!
+  if (ficha.lifespanNotApplicable && current.lifespanMonths == null && !current.lifespanNotApplicable) {
+    patch.lifespanNotApplicable = true
+  }
+  if (Object.keys(patch).length === 0) return
+
+  await tx.update(eppProductFamilies)
+    .set({ ...patch, updatedAt: new Date().toISOString() })
+    .where(eq(eppProductFamilies.id, familyId))
 }

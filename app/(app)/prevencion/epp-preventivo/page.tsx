@@ -10,8 +10,11 @@ import {
   listEppRequirements,
   listEppTypesForRequirement,
   listRequirementWorksites,
+  getEppCoverageDataHealth,
 } from "@/lib/services/prevention-epp"
+import { isEvaluableScope } from "@/lib/prevention/epp"
 import { EppTabs } from "./epp-tabs"
+import { CoverageDataHealth } from "./coverage-data-health"
 
 import { Button } from "@/components/ui/button"
 
@@ -29,12 +32,13 @@ export default async function EppPreventivoPage() {
   }
   const canManage = session.user.permissions.includes("prevention:epp:manage")
 
-  const [gaps, requirements, eppTypes, families, worksites] = await Promise.all([
+  const [gaps, requirements, eppTypes, families, worksites, dataHealth] = await Promise.all([
     listEppCoverageGaps(access),
     listEppRequirements(access),
     listEppTypesForRequirement(access),
     listEppProductFamiliesForRequirement(access),
     canManage ? listRequirementWorksites(access) : Promise.resolve([]),
+    getEppCoverageDataHealth(access),
   ])
 
   return (
@@ -55,6 +59,11 @@ export default async function EppPreventivoPage() {
           </Button>
         }
       />
+      <CoverageDataHealth
+        unclassifiedFamilies={dataHealth.unclassifiedFamilies}
+        ignoredDeliveries={dataHealth.ignoredDeliveries}
+        canFix={session.user.permissions.includes("admin:products")}
+      />
       <EppTabs
         gaps={gaps}
         requirements={requirements.map((row) => ({
@@ -66,6 +75,8 @@ export default async function EppPreventivoPage() {
           enforcement: row.requirement.enforcement,
           reason: row.requirement.reason,
           isActive: row.requirement.isActive,
+          preferredFamilyName: row.preferredFamilyName,
+          isEvaluable: isEvaluableScope(row.requirement.scopeType),
         }))}
         eppTypes={eppTypes}
         families={families}

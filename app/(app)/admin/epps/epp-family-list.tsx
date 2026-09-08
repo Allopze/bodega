@@ -7,10 +7,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { PencilSimple } from "@phosphor-icons/react"
+import Link from "next/link"
+import { PencilSimple, Warning, ArrowsMerge } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
 import { setEppFamilyTypeAction } from "./actions"
 import { EppFamilyForm, type EppFamilyEditRow } from "./epp-family-form"
+import { getEppFamilyWarnings, formatLifespan } from "./epp-family-list.helpers"
+import { MergeFamilyDialog } from "./merge-family-dialog"
 
 import type { ColumnDef } from "@/components/ui/data-table"
 
@@ -21,12 +24,15 @@ export interface EppFamilyRow {
   model: string | null
   certification: string | null
   lifespanMonths: number | null
+  lifespanNotApplicable: boolean
+  pictogramUrl: string | null
   eppTypeId: string | null
   eppTypeLabel: string | null
   categoryName: string
+  categoryId: string
   totalVariants: number
   activeVariants: number
-  variants: { id: string; sku: string; name: string; attributes: { name: string; options: string }[] }[]
+  variants: { id: string; sku: string; name: string }[]
 }
 
 const COLUMNS: ColumnDef[] = [
@@ -37,12 +43,13 @@ const COLUMNS: ColumnDef[] = [
   { key: "certification", label: "Certificación" },
   { key: "lifespanLabel", label: "Vida útil" },
   { key: "totalVariants", label: "Variantes", numeric: true },
-  { key: "", label: "", sortable: false, width: "w-12" },
+  { key: "", label: "", sortable: false, width: "w-20" },
 ]
 
 interface Props {
   families: EppFamilyRow[]
   eppTypes: { id: string; code: string; label: string }[]
+  categories: { id: string; name: string }[]
 }
 
 const toRow = (f: EppFamilyRow) => ({
@@ -55,13 +62,27 @@ const toRow = (f: EppFamilyRow) => ({
   certification: f.certification ?? "—",
   // `lifespanMonths` se cargaba desde la página pero no se mostraba en
   // ninguna parte, y es justo el campo que enciende el vencimiento de EPP.
-  lifespanLabel: f.lifespanMonths != null ? `${f.lifespanMonths} meses` : "No vence",
+  lifespanLabel: formatLifespan(f.lifespanMonths, f.lifespanNotApplicable),
   lifespanMonths: f.lifespanMonths,
+  lifespanNotApplicable: f.lifespanNotApplicable,
+  pictogramUrl: f.pictogramUrl,
+  // Los SKU son el elemento visual dominante de la primera columna y no se
+  // podían buscar: se ven y no se encuentran.
+  skuSearch: f.variants.map((v) => v.sku).join(" "),
+  warnings: getEppFamilyWarnings({
+    eppTypeId: f.eppTypeId,
+    lifespanMonths: f.lifespanMonths,
+    lifespanNotApplicable: f.lifespanNotApplicable,
+    certification: f.certification,
+    brand: f.brand,
+    model: f.model,
+  }),
   brandRaw: f.brand,
   modelRaw: f.model,
   certificationRaw: f.certification,
   totalVariants: String(f.totalVariants),
   categoryName: f.categoryName,
+  categoryId: f.categoryId,
   activeVariants: f.activeVariants,
   variants: f.variants,
 })
@@ -73,13 +94,16 @@ type Row = ReturnType<typeof toRow>
 const toEditRow = (row: Row): EppFamilyEditRow => ({
   id: row.id,
   canonicalName: row.canonicalName,
+  categoryId: row.categoryId,
   brand: row.brandRaw,
   model: row.modelRaw,
   certification: row.certificationRaw,
   lifespanMonths: row.lifespanMonths,
+  lifespanNotApplicable: row.lifespanNotApplicable,
+  pictogramUrl: row.pictogramUrl,
 })
 
-export function EppFamilyList({ families, eppTypes }: Props) {
+export function EppFamilyList({ families, eppTypes, categories }: Props) {
   const rows = families.map(toRow)
 
   // Una familia sin ninguna variante activa está dada de baja: se muestra
@@ -94,6 +118,11 @@ export function EppFamilyList({ families, eppTypes }: Props) {
   // cobertura EPP de Prevención hace INNER JOIN sobre este campo, así que sin
   // esto ninguna entrega de una familia sin tipo cuenta como cobertura.
   const [editFamily, setEditFamily] = React.useState<EppFamilyEditRow | null>(null)
+  const [mergeSource, setMergeSource] = React.useState<{ id: string; name: string } | null>(null)
+  const mergeCandidates = React.useMemo(
+    () => rows.map((row) => ({ id: row.id, name: row.canonicalName })),
+    [rows],
+  )
   const [savingId, setSavingId] = React.useState<string | null>(null)
   function handleTypeChange(familyId: string, eppTypeId: string) {
     setSavingId(familyId)
@@ -121,6 +150,17 @@ export function EppFamilyList({ families, eppTypes }: Props) {
       title={row.canonicalName}
       status={row.eppTypeId ? <MetaBadge meta={{ label: row.eppTypeLabel, variant: "info" }} /> : <MetaBadge meta={{ label: "Sin clasificar", variant: "warning" }} />}
     >
+      {row.warnings.length > 0 && (
+        <ResponsiveDataListField label="" className="col-span-2">
+          <ul className="space-y-0.5">
+            {row.warnings.map((warning) => (
+              <li key={warning} className="flex items-start gap-1.5 text-xs text-(--color-warning)">
+                <Warning size={13} className="mt-0.5 shrink-0" />{warning}
+              </li>
+            ))}
+          </ul>
+        </ResponsiveDataListField>
+      )}
       <ResponsiveDataListField label="Tipo de EPP" className="col-span-2">{typeSelect(row)}</ResponsiveDataListField>
       <ResponsiveDataListField label="Marca / modelo">{row.brand} · {row.model}</ResponsiveDataListField>
       <ResponsiveDataListField label="Categoría">{row.categoryName}</ResponsiveDataListField>
@@ -130,9 +170,14 @@ export function EppFamilyList({ families, eppTypes }: Props) {
         <span className="font-mono tabular-nums text-[var(--color-text)]">{row.activeVariants} activas de {row.totalVariants}</span>
       </ResponsiveDataListField>
       <ResponsiveDataListField label="" className="col-span-2">
-        <Button type="button" variant="ghost" size="sm" onClick={() => setEditFamily(toEditRow(row))}>
-          <PencilSimple size={15} />Editar ficha
-        </Button>
+        <div className="flex flex-wrap gap-1">
+          <Button type="button" variant="ghost" size="sm" onClick={() => setEditFamily(toEditRow(row))}>
+            <PencilSimple size={15} />Editar ficha
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setMergeSource({ id: row.id, name: row.canonicalName })}>
+            <ArrowsMerge size={15} />Fusionar
+          </Button>
+        </div>
       </ResponsiveDataListField>
     </ResponsiveDataListCard>
   )
@@ -141,13 +186,21 @@ export function EppFamilyList({ families, eppTypes }: Props) {
     <tr key={row.id} className="border-b border-(--color-border) hover:bg-(--color-surface-2) transition-colors">
       <td className="px-4 py-3">
         <span className="text-sm font-medium text-(--color-text)">{row.canonicalName}</span>
+        {row.warnings.length > 0 && (
+          <span
+            className="ml-1.5 inline-flex align-middle text-(--color-warning)"
+            title={row.warnings.join(" · ")}
+            aria-label={`${row.warnings.length} advertencia(s): ${row.warnings.join(". ")}`}
+          >
+            <Warning size={15} />
+          </span>
+        )}
         <span className="ml-2 inline-flex flex-wrap gap-1 align-middle">
-          {row.variants.slice(0, 4).map((v) => (
-            <MetaBadge key={v.id} meta={{ label: `${v.sku}`, variant: "default" }} />
+          {row.variants.map((v) => (
+            <Link key={v.id} href={`/admin/productos/${v.id}`} title={v.name} className="rounded-full">
+              <MetaBadge meta={{ label: v.sku, variant: "default" }} />
+            </Link>
           ))}
-          {row.variants.length > 4 && (
-            <MetaBadge meta={{ label: `+${row.variants.length - 4}`, variant: "default" }} />
-          )}
         </span>
       </td>
       <td className="px-4 py-3">{typeSelect(row)}</td>
@@ -157,14 +210,26 @@ export function EppFamilyList({ families, eppTypes }: Props) {
       <td className="px-4 py-3 text-sm text-(--color-text-muted)">{row.lifespanLabel}</td>
       <td className="px-4 py-3 text-sm tabular-nums text-(--color-text-muted)">{row.totalVariants}</td>
       <td className="px-4 py-3">
-        <button
-          type="button"
-          onClick={() => setEditFamily(toEditRow(row))}
-          className="rounded p-1.5 text-(--color-text-subtle) transition-colors hover:bg-(--color-surface-2) hover:text-(--color-text)"
-          aria-label={`Editar familia ${row.canonicalName}`}
-        >
-          <PencilSimple size={16} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setEditFamily(toEditRow(row))}
+            className="rounded p-1.5 text-(--color-text-subtle) transition-colors hover:bg-(--color-surface-2) hover:text-(--color-text)"
+            title="Editar ficha"
+            aria-label={`Editar familia ${row.canonicalName}`}
+          >
+            <PencilSimple size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setMergeSource({ id: row.id, name: row.canonicalName })}
+            className="rounded p-1.5 text-(--color-text-subtle) transition-colors hover:bg-(--color-surface-2) hover:text-(--color-text)"
+            title="Fusionar con otra familia"
+            aria-label={`Fusionar familia ${row.canonicalName}`}
+          >
+            <ArrowsMerge size={16} />
+          </button>
+        </div>
       </td>
     </tr>
   )
@@ -187,7 +252,7 @@ export function EppFamilyList({ families, eppTypes }: Props) {
           caption="Catálogo de EPP vigente"
           columns={COLUMNS}
           rows={activeRows}
-          searchKeys={["canonicalName", "brand", "model", "certification"]}
+          searchKeys={["canonicalName", "skuSearch", "brand", "model", "certification"]}
           emptyTitle="Sin familias vigentes"
           emptyDescription="Ninguna familia de EPP tiene variantes activas."
           renderMobileCard={renderMobileCard}
@@ -200,7 +265,7 @@ export function EppFamilyList({ families, eppTypes }: Props) {
           caption="Familias de EPP dadas de baja"
           columns={COLUMNS}
           rows={inactiveRows}
-          searchKeys={["canonicalName", "brand", "model", "certification"]}
+          searchKeys={["canonicalName", "skuSearch", "brand", "model", "certification"]}
           emptyTitle="Sin familias dadas de baja"
           emptyDescription="Aquí aparecen las familias cuyas variantes se desactivaron. Su historial de entregas se conserva."
           renderMobileCard={renderMobileCard}
@@ -213,6 +278,14 @@ export function EppFamilyList({ families, eppTypes }: Props) {
         open={!!editFamily}
         onClose={() => setEditFamily(null)}
         family={editFamily}
+        categories={categories}
+      />
+
+      <MergeFamilyDialog
+        key={mergeSource?.id ?? "no-merge"}
+        source={mergeSource}
+        candidates={mergeCandidates}
+        onClose={() => setMergeSource(null)}
       />
     </Tabs>
   )

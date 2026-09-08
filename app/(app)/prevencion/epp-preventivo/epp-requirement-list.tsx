@@ -7,7 +7,7 @@ import { HardHat } from "@phosphor-icons/react"
 import { EPP_REQUIREMENT_SCOPE_LABELS } from "@/lib/prevention/epp"
 import { NewRequirementDialog, EditRequirementDialog, DeactivateRequirementDialog } from "./epp-dialogs"
 
-interface RequirementItem {
+export interface RequirementItem {
   id: string
   eppTypeLabel: string
   scopeType: string
@@ -16,6 +16,10 @@ interface RequirementItem {
   enforcement: string
   reason: string
   isActive: boolean
+  /** Familia sugerida: el hint del formulario promete que llega a Bodega. */
+  preferredFamilyName: string | null
+  /** Alcance persistido que el cálculo todavía no sabe evaluar. */
+  isEvaluable: boolean
 }
 
 interface Props {
@@ -48,6 +52,7 @@ export function EppRequirementList({ requirements, eppTypes, families, worksites
               <TableRow>
                 <TableHead>Tipo de EPP</TableHead>
                 <TableHead>Alcance</TableHead>
+                <TableHead>Familia sugerida</TableHead>
                 <TableHead>Exigibilidad</TableHead>
                 <TableHead>Fundamento</TableHead>
                 {canManage && <TableHead className="w-28"><span className="sr-only">Acciones</span></TableHead>}
@@ -61,6 +66,14 @@ export function EppRequirementList({ requirements, eppTypes, families, worksites
                     {EPP_REQUIREMENT_SCOPE_LABELS[item.scopeType] ?? item.scopeType}
                     {item.scopeType === "worksite" && item.worksiteName && <span className="block text-xs text-[var(--color-text-subtle)]">{item.worksiteName}</span>}
                     {item.scopeType === "position" && item.scopeValue && <span className="block text-xs text-[var(--color-text-subtle)]">{item.scopeValue}</span>}
+                    {!item.isEvaluable && (
+                      <span className="mt-1 block">
+                        <MetaBadge meta={{ label: "No evaluado", variant: "warning" }} />
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm text-[var(--color-text-muted)]">
+                    {item.preferredFamilyName ?? "—"}
                   </TableCell>
                   <TableCell>
                     <MetaBadge meta={item.enforcement === "blocking" ? { label: "Bloqueante", variant: "danger" } : { label: "Advertencia", variant: "warning" }} />

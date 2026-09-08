@@ -47,18 +47,28 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
   // La talla es parte de lo que el trabajador acusa recibo de haber recibido:
   // el catálogo guarda el mismo nombre en todas las tallas de una familia, así
   // que sin ella el comprobante firmado no dice qué talla se entregó.
-  const productMap = productIds.length > 0
+  // El pictograma de la familia hace legible el comprobante para quien firma:
+  // `epp_product_families.pictogram_url` existía sin que nadie la leyera.
+  const catalog = productIds.length > 0
     ? await (async () => {
       const [rows, attributesById] = await Promise.all([
-        db.query.products.findMany({ where: inArray(products.id, productIds) }),
+        db.query.products.findMany({
+          where: inArray(products.id, productIds),
+          with: { family: { columns: { pictogramUrl: true } } },
+        }),
         getProductAttributesByIds(productIds),
       ])
       return new Map(rows.map((product) => [
         product.id,
-        formatVariantProductName(product.name, attributesById.get(product.id)),
+        {
+          name: formatVariantProductName(product.name, attributesById.get(product.id)),
+          pictogramUrl: product.family?.pictogramUrl ?? null,
+        },
       ]))
     })()
-    : new Map<string, string>()
+    : new Map<string, { name: string; pictogramUrl: string | null }>()
+
+  const productMap = new Map([...catalog].map(([id, entry]) => [id, entry.name]))
 
   const workerName = delivery.worker
     ? `${delivery.worker.firstName} ${delivery.worker.lastName}`.trim()
@@ -187,7 +197,20 @@ export default async function DeliveryPrintPage({ params }: PageProps) {
             <tbody>
               {delivery.items.map((item) => (
                 <tr key={item.id}>
-                  <td>{productMap.get(item.productId ?? "") ?? item.productNameFree ?? "Producto"}</td>
+                  <td>
+                    {(() => {
+                      const pictogram = catalog.get(item.productId ?? "")?.pictogramUrl
+                      return pictogram ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- documento de impresión: sin optimizador de imágenes
+                        <img
+                          src={pictogram}
+                          alt=""
+                          style={{ height: 22, width: 22, objectFit: "contain", verticalAlign: "middle", marginRight: 6 }}
+                        />
+                      ) : null
+                    })()}
+                    {productMap.get(item.productId ?? "") ?? item.productNameFree ?? "Producto"}
+                  </td>
                   <td style={{ textAlign: "right" }} className="total">{item.quantity}</td>
                   <td>{item.unitOfMeasure}</td>
                 </tr>

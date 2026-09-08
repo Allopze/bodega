@@ -178,6 +178,9 @@ describe("canAdvanceWizard", () => {
     requiresWorker: false,
     equipmentKind: "",
     isActive: true,
+    familyCertification: "",
+    familyLifespanMonths: "",
+    familyLifespanNotApplicable: false,
   }
 
   it("returns false for step 1 when category is missing", () => {

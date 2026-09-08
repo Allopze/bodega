@@ -105,6 +105,10 @@ export interface ProductFamilyForAddVariant {
   requiresPrevencion: boolean
   isActive:       boolean
   referencePrice: number | null
+  /** Ficha de la familia, para verla y completarla al añadir variantes. */
+  certification:  string | null
+  lifespanMonths: number | null
+  lifespanNotApplicable: boolean
   /** Ejes `select` (talla/color/…) tal como existen en la familia. */
   attributes:     AttributeMultiValues[]
   /** Atributos no-`select` de la familia (texto/número/conteo y el driver de
@@ -152,6 +156,10 @@ export interface WizardGeneralState {
   requiresWorker: boolean
   equipmentKind: string
   isActive: boolean
+  /** Ficha de la familia EPP (vive en `epp_product_families`, no en el producto). */
+  familyCertification: string
+  familyLifespanMonths: string
+  familyLifespanNotApplicable: boolean
 }
 
 export interface WizardSupplierState {

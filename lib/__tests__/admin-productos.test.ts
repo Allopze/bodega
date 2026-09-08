@@ -47,6 +47,10 @@ const mockDb = {
     productCategories: { findFirst: vi.fn() },
     products: { findFirst: vi.fn(), findMany: vi.fn() },
     eppProductFamilies: { findFirst: vi.fn() },
+    // `ensureEppFamilyTx` ahora clasifica la familia con
+    // `classifyEppTypeIdByName`, que resuelve el código de zona corporal contra
+    // este catálogo. Antes sólo lo consultaba el importador XLSX.
+    eppTypes: { findFirst: vi.fn() },
   },
   // Estaba anidado dentro de `query` por error: nadie lo llamaba desde ahí, así
   // que el mock nunca falló hasta que la generación de SKU pasó a usar select.
@@ -96,6 +100,7 @@ describe("admin/productos actions", () => {
     mockDb.query.products.findFirst.mockResolvedValue(null)
     mockDb.query.products.findMany.mockResolvedValue([])
     mockDb.query.eppProductFamilies.findFirst.mockResolvedValue(null)
+    mockDb.query.eppTypes.findFirst.mockResolvedValue(null)
   })
 
   // ── createCategory ─────────────────────────────────────────────────────

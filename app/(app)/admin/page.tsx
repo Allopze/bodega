@@ -53,6 +53,14 @@ const modules = [
     group:       "abastecimiento",
   },
   {
+    title:       "Catálogo de EPP",
+    description: "Familias de EPP: tipo, vida útil y certificación. Prevención acredita la cobertura del trabajador contra estos datos.",
+    href:        "/admin/epps",
+    icon:        ShieldCheck,
+    permission:  "admin:products",
+    group:       "abastecimiento",
+  },
+  {
     title:       "Catálogos de productos",
     description: "Unidades de medida, atributos reutilizables y reglas auxiliares del catálogo.",
     href:        "/admin/catalogos-productos",

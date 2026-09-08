@@ -1821,6 +1821,13 @@
       "when": 1788792635082,
       "tag": "0259_parched_harpoon",
       "breakpoints": true
+    },
+    {
+      "idx": 260,
+      "version": "7",
+      "when": 1788832326697,
+      "tag": "0260_stale_absorbing_man",
+      "breakpoints": true
     }
   ]
 }

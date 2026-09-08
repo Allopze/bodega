@@ -195,7 +195,22 @@ export const productSchema = z.object({
   isActive:           z.coerce.boolean().default(true),
   attributes:         z.array(productAttributeSchema).default([]),
   suppliers:          z.array(productSupplierSchema).default([]),
+  /**
+   * Ficha de la familia EPP, no del producto: `certification` y
+   * `lifespanMonths` viven en `epp_product_families`. El asistente no los pedía
+   * y sólo existían en /admin/epps, así que toda familia creada desde acá nacía
+   * sin certificación y sin vida útil — y sin vida útil ninguna entrega vence.
+   */
+  familyCertification:        z.string().trim().max(120).optional().or(z.literal("")),
+  familyLifespanMonths:       z.coerce.number().int().min(1, "Debe ser al menos 1 mes").max(600, "Máximo 600 meses (50 años)").optional().nullable(),
+  familyLifespanNotApplicable: z.coerce.boolean().default(false),
 }).superRefine((data, ctx) => {
+  if (data.familyLifespanNotApplicable && data.familyLifespanMonths != null) {
+    ctx.addIssue({
+      code: "custom", path: ["familyLifespanNotApplicable"],
+      message: "No puede declararse «no vence» y a la vez fijar una vida útil.",
+    })
+  }
   // Dos atributos con el mismo nombre se pisan cuando la solicitud los resuelve
   // por nombre (`quantityFromAttributes` y `catalogItemIssues` caen al nombre
   // si no hay id). El formulario ya lo marca, pero esta es la frontera de

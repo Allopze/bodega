@@ -7,7 +7,22 @@ export const EPP_REQUIREMENT_SCOPE_LABELS: Record<string, string> = {
   global: "Toda la organización",
   worksite: "Faena",
   position: "Cargo",
+  // Se conserva sólo para rotular filas históricas: ver EPP_REQUIREMENT_INPUT_SCOPES.
   task: "Tarea",
+}
+
+/**
+ * Alcances que se pueden crear. `"task"` queda fuera porque
+ * `requirementApplies` lo descarta y el requisito no aplicaría a nadie: el
+ * `requirementSchema` del servicio usa esta misma lista, así que el formulario
+ * y la validación no pueden divergir (antes la UI lo filtraba por su cuenta y
+ * el servidor lo aceptaba).
+ */
+export const EPP_REQUIREMENT_INPUT_SCOPES = ["global", "worksite", "position"] as const
+
+/** Un alcance persistido que el cálculo no sabe evaluar todavía. */
+export function isEvaluableScope(scopeType: string): boolean {
+  return (EPP_REQUIREMENT_INPUT_SCOPES as readonly string[]).includes(scopeType)
 }
 
 export const EPP_GAP_TYPE_LABELS: Record<"missing" | "expired", string> = {

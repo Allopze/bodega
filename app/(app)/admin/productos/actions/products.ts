@@ -16,7 +16,7 @@ import { safeActionMessage } from "@/lib/action-error"
 import {
   formString, normalizeSelectOptions,
   generateUniqueProductSku, generateUniqueSkus,
-  resolveManualEppFamily, ensureEppFamilyTx, REVALIDATE,
+  resolveManualEppFamily, ensureEppFamilyTx, applyEppFamilyFichaTx, REVALIDATE,
 } from "./helpers"
 import { resolveVariantAttributes } from "@/lib/products/variant-grouping"
 import { productVariantBatchSchema, type ProductVariantBatchInput } from "./product-variant-batch.schema"
@@ -56,6 +56,9 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
     equipmentKind:      formData.get("equipmentKind") || undefined,
     referencePrice:     formData.get("referencePrice") || null,
     notes:              formString(formData, "notes"),
+    familyCertification:         formString(formData, "familyCertification"),
+    familyLifespanMonths:        formData.get("familyLifespanMonths") || null,
+    familyLifespanNotApplicable: formData.get("familyLifespanNotApplicable") === "on",
     isActive:           formData.get("isActive") === "on",
     attributes:         attributesRaw,
     suppliers:          suppliersRaw,
@@ -70,7 +73,11 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
   // salía como error de server action sin mensaje.
   try {
   await db.transaction(async (tx) => {
-    const family = await resolveManualEppFamily(tx, { categoryId: d.categoryId, name: d.name, isEpp: d.isEpp })
+    const family = await resolveManualEppFamily(
+      tx,
+      { categoryId: d.categoryId, name: d.name, isEpp: d.isEpp },
+      { certification: d.familyCertification, lifespanMonths: d.familyLifespanMonths, lifespanNotApplicable: d.familyLifespanNotApplicable },
+    )
     await tx.insert(products).values({
       id, sku, name: d.name,
       description: d.description || null,
@@ -149,6 +156,9 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
     equipmentKind:      formData.get("equipmentKind") || undefined,
     referencePrice:     formData.get("referencePrice") || null,
     notes:              formString(formData, "notes"),
+    familyCertification:         formString(formData, "familyCertification"),
+    familyLifespanMonths:        formData.get("familyLifespanMonths") || null,
+    familyLifespanNotApplicable: formData.get("familyLifespanNotApplicable") === "on",
     isActive:           formData.get("isActive") === "on",
     attributes:         attributesRaw,
     suppliers:          suppliersRaw,
@@ -191,8 +201,19 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
     }
     // Editing a variant does not create a new family or discard its metadata.
     const family = lockedProduct.familyId && lockedProduct.categoryId === d.categoryId && lockedProduct.isEpp === d.isEpp
-      ? { id: lockedProduct.familyId }
-      : await resolveManualEppFamily(tx, { categoryId: d.categoryId, name: d.name, isEpp: d.isEpp })
+      ? await (async () => {
+          await applyEppFamilyFichaTx(tx, lockedProduct.familyId!, {
+            certification: d.familyCertification,
+            lifespanMonths: d.familyLifespanMonths,
+            lifespanNotApplicable: d.familyLifespanNotApplicable,
+          })
+          return { id: lockedProduct.familyId! }
+        })()
+      : await resolveManualEppFamily(
+          tx,
+          { categoryId: d.categoryId, name: d.name, isEpp: d.isEpp },
+          { certification: d.familyCertification, lifespanMonths: d.familyLifespanMonths, lifespanNotApplicable: d.familyLifespanNotApplicable },
+        )
     await tx.update(products).set({
       name: d.name,
       description: d.description || null,
@@ -459,6 +480,11 @@ export async function getProductFamilyForAddVariant(familyId: string) {
     requiresPrevencion: family.products[0]?.requiresPrevencion ?? true,
     isActive: family.products[0]?.isActive ?? true,
     referencePrice: family.products[0]?.referencePrice ?? null,
+    // Ficha de la familia: el asistente la muestra al añadir variantes para que
+    // se vea lo que ya está declarado y se pueda completar si falta.
+    certification: family.certification,
+    lifespanMonths: family.lifespanMonths,
+    lifespanNotApplicable: family.lifespanNotApplicable,
     attributes: selectAttrs,
     advancedAttributes: advancedAttrs,
     existingVariantKeys: keys,

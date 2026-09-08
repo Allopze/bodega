@@ -5,12 +5,13 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { EPP_REQUIREMENT_SCOPE_LABELS } from "@/lib/prevention/epp"
+import { EPP_REQUIREMENT_SCOPE_LABELS, EPP_REQUIREMENT_INPUT_SCOPES } from "@/lib/prevention/epp"
 import { createEppRequirementAction, updateEppRequirementAction, deactivateEppRequirementAction } from "./actions"
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
 
-const SCOPE_TYPES = Object.keys(EPP_REQUIREMENT_SCOPE_LABELS).filter((type) => type !== "task")
+// Misma lista que valida el servidor: el filtro local podía divergir del enum.
+const SCOPE_TYPES = EPP_REQUIREMENT_INPUT_SCOPES
 
 interface EppTypeOption { id: string; label: string }
 interface FamilyOption { id: string; name: string; eppTypeId: string | null }

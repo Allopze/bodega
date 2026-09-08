@@ -1,0 +1,1 @@
+ALTER TABLE "epp_product_families" ADD COLUMN "lifespan_not_applicable" boolean DEFAULT false NOT NULL;
