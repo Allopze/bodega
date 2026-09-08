@@ -215,6 +215,8 @@ const eslintConfig = defineConfig([
     "coverage/**",
     "test-results/**",
     "audit/**",
+    // Scratches de QA local (scripts desechables, ya ignorados por git).
+    ".tmp/**",
     "next-env.d.ts",
     "app_cumplimiento/**",
     // Proyectos externos de referencia; no forman parte de la aplicación.
