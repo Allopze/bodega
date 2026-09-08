@@ -22,6 +22,7 @@ const CRITICAL_PAGES = [
   { path: "/combustibles",     name: "Combustibles" },
   { path: "/combustibles/reportes", name: "Reportes de combustibles" },
   { path: "/combustibles/analisis", name: "Análisis de rendimiento" },
+  { path: "/admin",             name: "Admin principal" },
   { path: "/admin/faenas",     name: "Admin faenas" },
   { path: "/admin/usuarios",   name: "Admin usuarios" },
   { path: "/admin/productos",  name: "Admin productos" },

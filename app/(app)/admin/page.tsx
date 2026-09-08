@@ -50,7 +50,7 @@ const modules = [
     href:        "/admin/productos",
     icon:        Cube,
     permission:  "admin:products",
-    group:       "catalogos",
+    group:       "abastecimiento",
   },
   {
     title:       "Catálogos de productos",
@@ -58,7 +58,7 @@ const modules = [
     href:        "/admin/catalogos-productos",
     icon:        Cube,
     permission:  "admin:product_catalogs",
-    group:       "catalogos",
+    group:       "abastecimiento",
   },
   {
     title:       "Inventario de faena",
@@ -66,7 +66,7 @@ const modules = [
     href:        "/admin/inventario-faena",
     icon:        Package,
     permission:  "admin:worksite_inventory",
-    group:       "catalogos",
+    group:       "activos",
   },
   {
     title:       "Contenedores",
@@ -74,7 +74,7 @@ const modules = [
     href:        "/admin/contenedores",
     icon:        ShippingContainer,
     permission:  "admin:containers",
-    group:       "catalogos",
+    group:       "activos",
   },
   {
     title:       "Equipos de servicio",
@@ -82,7 +82,7 @@ const modules = [
     href:        "/admin/equipos",
     icon:        Cube,
     permission:  "admin:service_equipment",
-    group:       "catalogos",
+    group:       "activos",
   },
   {
     title:       "Proveedores",
@@ -90,7 +90,7 @@ const modules = [
     href:        "/admin/proveedores",
     icon:        Buildings,
     permission:  "admin:suppliers",
-    group:       "catalogos",
+    group:       "abastecimiento",
   },
   {
     title:       "Centros de costo",
@@ -98,7 +98,7 @@ const modules = [
     href:        "/admin/centros-costo",
     icon:        Buildings,
     permission:  "admin:cost_centers",
-    group:       "catalogos",
+    group:       "abastecimiento",
   },
   {
     title:       "Taxonomía documental SST",
@@ -122,7 +122,7 @@ const modules = [
     href:        "/admin/flota-catalogos",
     icon:        Gear,
     permission:  "admin:fleet_catalog",
-    group:       "control-operacional",
+    group:       "activos",
   },
   {
     title:       "Configuración",
@@ -130,7 +130,7 @@ const modules = [
     href:        "/admin/configuracion",
     icon:        Gear,
     permission:  "admin:config",
-    group:       "gobierno",
+    group:       "plataforma",
   },
   {
     title:       "Parámetros operativos",
@@ -138,7 +138,7 @@ const modules = [
     href:        "/admin/parametros-operativos",
     icon:        Gear,
     permission:  "admin:ops_settings",
-    group:       "gobierno",
+    group:       "plataforma",
   },
   {
     title:       "Folios",
@@ -146,7 +146,7 @@ const modules = [
     href:        "/admin/folios",
     icon:        FileText,
     permission:  "admin:folios",
-    group:       "gobierno",
+    group:       "seguridad",
   },
   {
     title:       "Seguridad y bloqueos",
@@ -154,7 +154,7 @@ const modules = [
     href:        "/admin/seguridad",
     icon:        ShieldCheck,
     permission:  "admin:security",
-    group:       "gobierno",
+    group:       "seguridad",
   },
   {
     title:       "Notificaciones",
@@ -162,7 +162,7 @@ const modules = [
     href:        "/admin/notificaciones",
     icon:        EnvelopeSimple,
     permission:  "admin:notifications",
-    group:       "gobierno",
+    group:       "comunicaciones",
   },
   {
     title:       "Log de Auditoría",
@@ -170,7 +170,7 @@ const modules = [
     href:        "/admin/auditoria",
     icon:        ShieldCheck,
     permission:  "admin:audit_log",
-    group:       "gobierno",
+    group:       "seguridad",
   },
   {
     title:       "Módulos del sistema",
@@ -178,7 +178,7 @@ const modules = [
     href:        "/admin/modulos",
     icon:        ToggleLeft,
     permission:  "admin:module_management",
-    group:       "gobierno",
+    group:       "plataforma",
   },
   {
     title:       "Respaldos",
@@ -186,7 +186,7 @@ const modules = [
     href:        "/admin/backups",
     icon:        HardDrives,
     permission:  "admin:backups",
-    group:       "gobierno",
+    group:       "plataforma",
   },
   {
     title:       "Sincronización DTE",
@@ -194,7 +194,7 @@ const modules = [
     href:        "/admin/dte",
     icon:        Receipt,
     permission:  "admin:dte_sync",
-    group:       "gobierno",
+    group:       "comunicaciones",
   },
   {
     title:       "Almacenamiento de documentos",
@@ -202,7 +202,7 @@ const modules = [
     href:        "/admin/almacenamiento",
     icon:        HardDrives,
     permission:  "admin:storage",
-    group:       "gobierno",
+    group:       "plataforma",
   },
   {
     title:       "Correo SMTP",
@@ -210,7 +210,7 @@ const modules = [
     href:        "/admin/correo-smtp",
     icon:        EnvelopeSimple,
     permission:  "admin:smtp",
-    group:       "correo",
+    group:       "comunicaciones",
   },
   {
     title:       "Plantillas de correo",
@@ -218,7 +218,7 @@ const modules = [
     href:        "/admin/plantillas",
     icon:        FileText,
     permission:  "admin:email_templates",
-    group:       "correo",
+    group:       "comunicaciones",
   },
 ]
 
@@ -229,9 +229,14 @@ const moduleGroups = [
     description: "Cuentas, permisos y dotación asociada a faenas.",
   },
   {
-    key:         "catalogos",
-    title:       "Catálogos operativos",
-    description: "Datos maestros que alimentan solicitudes y compras.",
+    key:         "abastecimiento",
+    title:       "Productos y abastecimiento",
+    description: "Productos, proveedores y reglas maestras para compras e imputaciones.",
+  },
+  {
+    key:         "activos",
+    title:       "Activos operativos",
+    description: "Recursos instalados en faena, equipos de servicio y flota.",
   },
   {
     key:         "prevencion",
@@ -239,19 +244,19 @@ const moduleGroups = [
     description: "Catálogos maestros para documentación, SST y programa preventivo.",
   },
   {
-    key:         "control-operacional",
-    title:       "Control operacional",
-    description: "Datos maestros de flota, combustible y mantenciones.",
+    key:         "seguridad",
+    title:       "Seguridad y trazabilidad",
+    description: "Controles de acceso, folios y registro de cambios.",
   },
   {
-    key:         "gobierno",
-    title:       "Control del sistema",
-    description: "Parámetros globales, trazabilidad y auditoría.",
+    key:         "plataforma",
+    title:       "Configuración de plataforma",
+    description: "Parámetros globales, módulos, archivos y respaldos del sistema.",
   },
   {
-    key:         "correo",
-    title:       "Correo SMTP",
-    description: "Servidor de envío, plantillas y configuración de notificaciones por correo.",
+    key:         "comunicaciones",
+    title:       "Comunicaciones e integraciones",
+    description: "Notificaciones, correo saliente y conexiones con servicios externos.",
   },
 ]
 
@@ -278,7 +283,7 @@ export default async function AdminPage() {
         }
       />
       <div className="w-full space-y-4">
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <div className="columns-1 [column-gap:1rem] xl:columns-3">
           {moduleGroups.map((group) => {
             const groupModules = visibleModules.filter((m) => m.group === group.key)
             if (groupModules.length === 0) return null
@@ -286,11 +291,11 @@ export default async function AdminPage() {
             return (
               <section
                 key={group.key}
-                className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]"
+                className="mb-4 break-inside-avoid rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]"
               >
                 <div className="border-b border-[var(--color-border)] px-4 py-3">
                   <h2 className="text-sm font-semibold text-[var(--color-text)]">{group.title}</h2>
-                  <p className="mt-0.5 text-xs leading-relaxed text-[var(--color-text-subtle)]">{group.description}</p>
+                  <p className="mt-0.5 text-xs leading-relaxed text-[var(--color-text-muted)]">{group.description}</p>
                 </div>
                 <div className="divide-y divide-[var(--color-border)]">
                   {groupModules.map((m) => {
@@ -299,7 +304,7 @@ export default async function AdminPage() {
                       <Link
                         key={m.href}
                         href={m.href}
-                        className="group flex items-start gap-3 px-4 py-3 transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-tint)] "
+                        className="group flex items-start gap-3 px-4 py-3 transition-[background-color,transform] duration-[var(--duration-fast)] ease-[var(--ease-out)] hover:bg-[var(--color-primary-tint)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-primary)]"
                       >
                         <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius)] bg-[var(--color-surface-2)] text-[var(--color-text-subtle)] transition-[background-color,color] duration-[var(--duration-fast)] group-hover:bg-[var(--color-primary-tint)] group-hover:text-[var(--color-primary)]">
                           <Icon size={18} />
