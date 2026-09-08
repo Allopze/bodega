@@ -1,7 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { eq } from "drizzle-orm"
+import { eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { eppProductFamilies, productCategories, products, preventionEppRequirements, eppTypes } from "@/db/schema"
 import { requirePermission } from "@/lib/auth/can"
@@ -72,6 +72,82 @@ export async function setEppFamilyTypeAction(familyId: string, eppTypeId: string
 
   revalidatePath("/admin/epps")
   return { ok: true, message: "Tipo de EPP actualizado" }
+}
+
+/**
+ * Aplica en bloque las sugerencias de tipo que una persona confirmó.
+ *
+ * La clasificación no se automatiza —un `epp_type_id` equivocado acredita al
+ * trabajador en la zona corporal errónea, que es un "cubierto" falso en un
+ * reporte de cumplimiento— pero eso no obligaba a 82 correcciones de a una.
+ * `suggestEppTypeId` propone, la persona revisa y confirma, y esto escribe.
+ *
+ * Sólo toca familias que sigan **sin clasificar**: la sugerencia se calculó al
+ * pintar la página y entre eso y el clic otra persona pudo decidir. Su decisión
+ * gana sobre la propuesta.
+ */
+export async function applyEppTypeSuggestionsAction(
+  assignments: { familyId: string; eppTypeId: string }[],
+): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("admin:products") }
+  catch { return { ok: false, message: "Sin permisos" } }
+
+  if (!Array.isArray(assignments) || assignments.length === 0) {
+    return { ok: false, message: "No hay sugerencias que aplicar" }
+  }
+  if (assignments.some((a) => !a?.familyId || !a?.eppTypeId)) {
+    return { ok: false, message: "Alguna sugerencia llegó incompleta" }
+  }
+
+  try {
+    const applied = await db.transaction(async (tx) => {
+      const requestedTypeIds = [...new Set(assignments.map((a) => a.eppTypeId))]
+      const types = await tx.query.eppTypes.findMany({ where: inArray(eppTypes.id, requestedTypeIds) })
+      const known = new Set(types.map((t) => t.id))
+      const unknown = requestedTypeIds.filter((id) => !known.has(id))
+      // Lote entero o nada: aplicar la mitad dejaría al usuario sin saber qué
+      // quedó escrito y qué no.
+      if (unknown.length > 0) throw new EppFamilyValidationError("eppTypeId", "Alguna sugerencia apunta a un tipo de EPP que no existe.")
+
+      const families = await tx.query.eppProductFamilies.findMany({
+        where: inArray(eppProductFamilies.id, [...new Set(assignments.map((a) => a.familyId))]),
+      })
+      const byId = new Map(families.map((f) => [f.id, f]))
+
+      let written = 0
+      let skipped = 0
+      for (const assignment of assignments) {
+        const family = byId.get(assignment.familyId)
+        if (!family) { skipped++; continue }
+        if (family.eppTypeId) { skipped++; continue }
+
+        await tx.update(eppProductFamilies)
+          .set({ eppTypeId: assignment.eppTypeId, updatedAt: new Date().toISOString() })
+          .where(eq(eppProductFamilies.id, assignment.familyId))
+
+        await recordAudit({
+          userId: session.user.id, userEmail: session.user.email ?? undefined,
+          action: "update", entityType: "epp_product_family", entityId: assignment.familyId,
+          entityCode: family.canonicalName,
+          oldState: { eppTypeId: null },
+          newState: { eppTypeId: assignment.eppTypeId },
+          reason: "Sugerencia de tipo confirmada por el administrador",
+        }, tx)
+        written++
+      }
+      return { written, skipped }
+    })
+
+    revalidatePath("/admin/epps")
+    revalidatePath("/prevencion/epp-preventivo")
+    const suffix = applied.skipped > 0 ? ` · ${applied.skipped} se omitió por estar ya clasificada` : ""
+    return { ok: true, message: `${applied.written} familia(s) clasificada(s)${suffix}` }
+  } catch (e) {
+    if (e instanceof EppFamilyValidationError) return { ok: false, message: e.message }
+    logger.error("[admin/epps] applyEppTypeSuggestionsAction", e)
+    return { ok: false, message: safeActionMessage(e, "No se pudieron aplicar las sugerencias") }
+  }
 }
 
 /**

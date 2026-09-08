@@ -1,3 +1,5 @@
+import { inferEppItemType, EPP_TYPE_TO_BODY_PART_CODE } from "@/lib/services/epp-import.types"
+
 export interface EppFamilyHealthInput {
   eppTypeId: string | null
   lifespanMonths: number | null
@@ -34,4 +36,23 @@ export function getEppFamilyWarnings(family: EppFamilyHealthInput): string[] {
 export function formatLifespan(lifespanMonths: number | null, lifespanNotApplicable: boolean): string {
   if (lifespanMonths != null) return `${lifespanMonths} ${lifespanMonths === 1 ? "mes" : "meses"}`
   return lifespanNotApplicable ? "No vence" : "Sin definir"
+}
+
+/**
+ * `epp_types.id` que el nombre de la familia sugiere, o `null` si no hay nada
+ * que sugerir sin adivinar.
+ *
+ * Es la misma inferencia que clasifica en el alta (`inferEppItemType`), pero
+ * aquí sólo propone: la escritura la confirma una persona. Un `epp_type_id`
+ * equivocado no deja la familia sin clasificar, la acredita en la zona corporal
+ * errónea — un "cubierto" falso en un reporte de cumplimiento.
+ */
+export function suggestEppTypeId(canonicalName: string, typeIdByCode: Map<string, string>): string | null {
+  const itemType = inferEppItemType(canonicalName)
+  if (!itemType) return null
+  const code = EPP_TYPE_TO_BODY_PART_CODE[itemType]
+  if (!code) return null
+  // Sin fila sembrada para esa zona no se sugiere nada: proponer un id que la
+  // base no puede guardar sería un botón que falla al pulsarlo.
+  return typeIdByCode.get(code) ?? null
 }

@@ -8,12 +8,13 @@ import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import { PencilSimple, Warning, ArrowsMerge } from "@phosphor-icons/react"
+import { PencilSimple, Warning, ArrowsMerge, Sparkle } from "@phosphor-icons/react"
 import { toast } from "@/lib/toast"
 import { setEppFamilyTypeAction } from "./actions"
 import { EppFamilyForm, type EppFamilyEditRow } from "./epp-family-form"
-import { getEppFamilyWarnings, formatLifespan } from "./epp-family-list.helpers"
+import { getEppFamilyWarnings, formatLifespan, suggestEppTypeId } from "./epp-family-list.helpers"
 import { MergeFamilyDialog } from "./merge-family-dialog"
+import { ApplySuggestionsDialog, type EppTypeSuggestion } from "./apply-suggestions-dialog"
 
 import type { ColumnDef } from "@/components/ui/data-table"
 
@@ -104,7 +105,37 @@ const toEditRow = (row: Row): EppFamilyEditRow => ({
 })
 
 export function EppFamilyList({ families, eppTypes, categories }: Props) {
+  const typeIdByCode = React.useMemo(
+    () => new Map(eppTypes.map((type) => [type.code, type.id])),
+    [eppTypes],
+  )
+  const typeLabelById = React.useMemo(
+    () => new Map(eppTypes.map((type) => [type.id, type.label])),
+    [eppTypes],
+  )
   const rows = families.map(toRow)
+
+  // Sólo se sugiere sobre lo que está sin clasificar: la decisión de una
+  // persona nunca se propone reemplazar.
+  const suggestions = React.useMemo<EppTypeSuggestion[]>(
+    () => families.flatMap((family) => {
+      if (family.eppTypeId) return []
+      const eppTypeId = suggestEppTypeId(family.canonicalName, typeIdByCode)
+      if (!eppTypeId) return []
+      return [{
+        familyId: family.id,
+        familyName: family.canonicalName,
+        eppTypeId,
+        eppTypeLabel: typeLabelById.get(eppTypeId) ?? eppTypeId,
+      }]
+    }),
+    [families, typeIdByCode, typeLabelById],
+  )
+  const suggestionByFamily = React.useMemo(
+    () => new Map(suggestions.map((s) => [s.familyId, s])),
+    [suggestions],
+  )
+  const [reviewOpen, setReviewOpen] = React.useState(false)
 
   // Una familia sin ninguna variante activa está dada de baja: se muestra
   // aparte para no mezclarla con el catálogo vigente.
@@ -134,16 +165,35 @@ export function EppFamilyList({ families, eppTypes, categories }: Props) {
       .finally(() => setSavingId(null))
   }
 
-  const typeSelect = (row: Row) => (
-    <Select value={row.eppTypeId ?? ""} onValueChange={(value) => handleTypeChange(row.id, value)} disabled={savingId === row.id}>
-      <SelectTrigger className="h-7 w-40 text-xs" aria-label={`Tipo de EPP para ${row.canonicalName}`}>
-        <SelectValue placeholder="Sin clasificar" />
-      </SelectTrigger>
-      <SelectContent>
-        {eppTypes.map((type) => <SelectItem key={type.id} value={type.id}>{type.label}</SelectItem>)}
-      </SelectContent>
-    </Select>
-  )
+  const typeSelect = (row: Row) => {
+    const suggestion = suggestionByFamily.get(row.id)
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Select value={row.eppTypeId ?? ""} onValueChange={(value) => handleTypeChange(row.id, value)} disabled={savingId === row.id}>
+          <SelectTrigger className="h-7 w-40 text-xs" aria-label={`Tipo de EPP para ${row.canonicalName}`}>
+            <SelectValue placeholder="Sin clasificar" />
+          </SelectTrigger>
+          <SelectContent>
+            {eppTypes.map((type) => <SelectItem key={type.id} value={type.id}>{type.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        {/* Propuesta, no valor guardado: pre-seleccionar el desplegable haría
+            parecer decidido algo que nadie decidió. */}
+        {suggestion && (
+          <button
+            type="button"
+            onClick={() => handleTypeChange(row.id, suggestion.eppTypeId)}
+            disabled={savingId === row.id}
+            className="inline-flex items-center gap-1 rounded-full border border-dashed border-(--color-primary) px-2 py-0.5 text-xs text-(--color-primary) transition-colors hover:bg-(--color-primary-tint) disabled:opacity-50"
+            title={`Clasificar «${row.canonicalName}» como ${suggestion.eppTypeLabel}`}
+            aria-label={`Aplicar tipo sugerido ${suggestion.eppTypeLabel} a ${row.canonicalName}`}
+          >
+            <Sparkle size={12} />{suggestion.eppTypeLabel}
+          </button>
+        )}
+      </div>
+    )
+  }
 
   const renderMobileCard = (row: Row) => (
     <ResponsiveDataListCard
@@ -236,6 +286,16 @@ export function EppFamilyList({ families, eppTypes, categories }: Props) {
 
   return (
     <Tabs value={tab} onValueChange={(v) => setTab(v as "active" | "inactive")}>
+      {suggestions.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-lg)] border border-(--color-border) bg-(--color-surface-2) px-3 py-2">
+          <span className="text-sm text-(--color-text-muted)">
+            {suggestions.length} familia(s) sin clasificar tienen un tipo deducible de su nombre.
+          </span>
+          <Button type="button" size="sm" onClick={() => setReviewOpen(true)}>
+            <Sparkle size={15} />Revisar sugerencias
+          </Button>
+        </div>
+      )}
       <TabsList className="mb-3">
         <TabsTrigger value="active">
           Vigentes
@@ -279,6 +339,12 @@ export function EppFamilyList({ families, eppTypes, categories }: Props) {
         onClose={() => setEditFamily(null)}
         family={editFamily}
         categories={categories}
+      />
+
+      <ApplySuggestionsDialog
+        suggestions={suggestions}
+        open={reviewOpen}
+        onClose={() => setReviewOpen(false)}
       />
 
       <MergeFamilyDialog

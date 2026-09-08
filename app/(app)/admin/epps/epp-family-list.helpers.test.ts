@@ -4,7 +4,7 @@
  * `eppTypeId` no acredita cobertura a nadie, y una sin vida útil nunca vence.
  */
 import { describe, expect, it } from "vitest"
-import { getEppFamilyWarnings, formatLifespan, type EppFamilyHealthInput } from "./epp-family-list.helpers"
+import { getEppFamilyWarnings, formatLifespan, suggestEppTypeId, type EppFamilyHealthInput } from "./epp-family-list.helpers"
 
 const healthy = (overrides: Partial<EppFamilyHealthInput> = {}): EppFamilyHealthInput => ({
   eppTypeId: "type-cabeza",
@@ -77,5 +77,37 @@ describe("formatLifespan", () => {
     expect(formatLifespan(24, false)).toBe("24 meses")
     expect(formatLifespan(1, false)).toBe("1 mes")
     expect(formatLifespan(24, true)).toBe("24 meses")
+  })
+})
+
+/**
+ * La clasificación se dejó a mano porque un `epp_type_id` equivocado acredita
+ * al trabajador en la zona corporal errónea. Pero eso no obliga a 82 búsquedas
+ * manuales: la inferencia puede *sugerir* y la persona confirmar.
+ */
+describe("suggestEppTypeId", () => {
+  const typeIdByCode = new Map([
+    ["cabeza", "t-cabeza"],
+    ["manos", "t-manos"],
+    ["auditiva", "t-auditiva"],
+  ])
+
+  it("suggests the type the product name declares", () => {
+    expect(suggestEppTypeId("Casco Activex I", typeIdByCode)).toBe("t-cabeza")
+    expect(suggestEppTypeId("Guantes de cabritilla", typeIdByCode)).toBe("t-manos")
+  })
+
+  it("does not suggest the helmet a hearing protector mounts on", () => {
+    expect(suggestEppTypeId("Fono HL Verishield p/casco", typeIdByCode)).toBe("t-auditiva")
+  })
+
+  it("suggests nothing when the name declares no mappable item", () => {
+    expect(suggestEppTypeId("BORDADO ESPALDA", typeIdByCode)).toBeNull()
+    expect(suggestEppTypeId("ALCOTEST DIGITAL MARS", typeIdByCode)).toBeNull()
+  })
+
+  it("suggests nothing when the inferred zone has no seeded type", () => {
+    // Prefiere no sugerir antes que sugerir algo que la base no puede guardar.
+    expect(suggestEppTypeId("Botin V-Flex Microfiber", typeIdByCode)).toBeNull()
   })
 })

@@ -4,7 +4,7 @@
  * más importante (familia sin clasificar), los SKU se veían truncados y sin
  * salida, y "No vence" afirmaba una decisión que nadie había tomado.
  */
-import { render, screen, within } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
 // La DataTable se conecta al buscador del TopBar vía router (regla de búsqueda
@@ -15,10 +15,13 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: vi.fn() }),
 }))
 
+const actionMocks = vi.hoisted(() => ({ setEppFamilyTypeAction: vi.fn() }))
+
 vi.mock("./actions", () => ({
-  setEppFamilyTypeAction: vi.fn(),
+  setEppFamilyTypeAction: actionMocks.setEppFamilyTypeAction,
   updateEppFamilyAction: vi.fn(),
   mergeEppFamiliesAction: vi.fn(),
+  applyEppTypeSuggestionsAction: vi.fn(),
 }))
 
 import { EppFamilyList, type EppFamilyRow } from "./epp-family-list"
@@ -99,5 +102,44 @@ describe("catálogo de familias EPP", () => {
     render(<EppFamilyList families={[family()]} {...props} />)
     const row = screen.getByRole("link", { name: "EPP-036" }).closest("tr")!
     expect(within(row).getByText("Casco Activex I")).toBeVisible()
+  })
+})
+
+describe("sugerencias de tipo", () => {
+  it("offers the type deduced from the name without pre-selecting the dropdown", () => {
+    render(<EppFamilyList families={[family()]} {...props} />)
+
+    // El desplegable sigue diciendo "sin clasificar": la sugerencia no se
+    // disfraza de valor guardado.
+    expect(screen.getAllByRole("combobox", { name: /Tipo de EPP para Casco Activex I/ })[0])
+      .toHaveTextContent(/sin clasificar/i)
+    expect(screen.getAllByLabelText(/Aplicar tipo sugerido Cabeza a Casco Activex I/)[0]).toBeVisible()
+  })
+
+  it("applies the suggestion with one click", () => {
+    actionMocks.setEppFamilyTypeAction.mockResolvedValue({ ok: true })
+    render(<EppFamilyList families={[family()]} {...props} />)
+
+    fireEvent.click(screen.getAllByLabelText(/Aplicar tipo sugerido Cabeza/)[0]!)
+    expect(actionMocks.setEppFamilyTypeAction).toHaveBeenCalledWith("fam-1", "t-cabeza")
+  })
+
+  it("never suggests over a family somebody already classified", () => {
+    render(<EppFamilyList families={[family({ eppTypeId: "t-cabeza", eppTypeLabel: "Cabeza" })]} {...props} />)
+    expect(screen.queryByLabelText(/Aplicar tipo sugerido/)).toBeNull()
+    expect(screen.queryByRole("button", { name: /Revisar sugerencias/ })).toBeNull()
+  })
+
+  it("does not offer a bulk review when no name is deducible", () => {
+    render(<EppFamilyList families={[family({ canonicalName: "BORDADO ESPALDA" })]} {...props} />)
+    expect(screen.queryByRole("button", { name: /Revisar sugerencias/ })).toBeNull()
+  })
+
+  it("opens the review dialog listing each family with its suggested type", () => {
+    render(<EppFamilyList families={[family()]} {...props} />)
+    fireEvent.click(screen.getByRole("button", { name: /Revisar sugerencias/ }))
+
+    expect(screen.getByRole("dialog")).toHaveTextContent(/Revisar sugerencias de tipo/)
+    expect(screen.getByRole("button", { name: /Clasificar 1/ })).toBeEnabled()
   })
 })

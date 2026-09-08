@@ -37,7 +37,7 @@ vi.mock("@/lib/services/module-toggles", async (importOriginal) => ({
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
-const { updateEppFamilyAction, mergeEppFamiliesAction, setEppFamilyTypeAction } = await import("@/app/(app)/admin/epps/actions")
+const { updateEppFamilyAction, mergeEppFamiliesAction, setEppFamilyTypeAction, applyEppTypeSuggestionsAction } = await import("@/app/(app)/admin/epps/actions")
 const { buildEppFamilyIdentityKey } = await import("@/lib/services/epp-import")
 const { resolveManualEppFamily } = await import("@/app/(app)/admin/productos/actions/helpers")
 
@@ -329,5 +329,63 @@ describe("resolveManualEppFamily", () => {
       where: eq(schema.eppProductFamilies.id, unclassified),
     })
     expect(stored?.eppTypeId).toBe(manos!.id)
+  })
+})
+
+describe("applyEppTypeSuggestionsAction", () => {
+  it("classifies several families in one confirmed action", async () => {
+    const casco = await seedFamily("Casco Activex para sugerencia")
+    const guante = await seedFamily("Guante Activex para sugerencia")
+    const cabeza = await inMemoryDb.query.eppTypes.findFirst({ where: eq(schema.eppTypes.code, "cabeza") })
+    const manos = await inMemoryDb.query.eppTypes.findFirst({ where: eq(schema.eppTypes.code, "manos") })
+
+    const result = await applyEppTypeSuggestionsAction([
+      { familyId: casco, eppTypeId: cabeza!.id },
+      { familyId: guante, eppTypeId: manos!.id },
+    ])
+    expect(result.ok).toBe(true)
+    expect(result.message).toContain("2")
+
+    for (const [id, expected] of [[casco, cabeza!.id], [guante, manos!.id]] as const) {
+      const stored = await inMemoryDb.query.eppProductFamilies.findFirst({
+        where: eq(schema.eppProductFamilies.id, id),
+      })
+      expect(stored?.eppTypeId).toBe(expected)
+    }
+  })
+
+  it("never overwrites a family someone already classified", async () => {
+    // La sugerencia se calculó al pintar la página: entre eso y el clic, otra
+    // persona pudo clasificarla. Su decisión gana sobre la propuesta.
+    const family = await seedFamily("Familia ya clasificada a mano")
+    const cabeza = await inMemoryDb.query.eppTypes.findFirst({ where: eq(schema.eppTypes.code, "cabeza") })
+    const manos = await inMemoryDb.query.eppTypes.findFirst({ where: eq(schema.eppTypes.code, "manos") })
+    await inMemoryDb.update(schema.eppProductFamilies)
+      .set({ eppTypeId: manos!.id })
+      .where(eq(schema.eppProductFamilies.id, family))
+
+    const result = await applyEppTypeSuggestionsAction([{ familyId: family, eppTypeId: cabeza!.id }])
+    expect(result.ok).toBe(true)
+
+    const stored = await inMemoryDb.query.eppProductFamilies.findFirst({
+      where: eq(schema.eppProductFamilies.id, family),
+    })
+    expect(stored?.eppTypeId).toBe(manos!.id)
+    expect(result.message).toMatch(/1 .*ya estaba|omiti/i)
+  })
+
+  it("rejects the whole batch when a type does not exist", async () => {
+    const family = await seedFamily("Familia con tipo inexistente")
+    const result = await applyEppTypeSuggestionsAction([{ familyId: family, eppTypeId: nanoid() }])
+    expect(result.ok).toBe(false)
+
+    const stored = await inMemoryDb.query.eppProductFamilies.findFirst({
+      where: eq(schema.eppProductFamilies.id, family),
+    })
+    expect(stored?.eppTypeId).toBeNull()
+  })
+
+  it("rejects an empty batch", async () => {
+    expect((await applyEppTypeSuggestionsAction([])).ok).toBe(false)
   })
 })
