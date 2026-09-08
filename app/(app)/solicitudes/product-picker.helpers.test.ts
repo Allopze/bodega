@@ -57,7 +57,9 @@ describe("filterProductsForPicker", () => {
     const groups = groupProductsForPicker(products, "casco")
 
     expect(groups).toHaveLength(1)
-    expect(groups[0]?.variants.map((product) => product.id)).toEqual(["prod-casco", "prod-casco-blanco"])
+    // `prod-casco` no declara ningún atributo, así que va al final de su familia:
+    // el orden lo fija `compareVariantsForDisplay` y ya no el de la consulta.
+    expect(groups[0]?.variants.map((product) => product.id)).toEqual(["prod-casco-blanco", "prod-casco"])
   })
 })
 

@@ -55,3 +55,69 @@ describe("identidad completa de la variante", () => {
     ])).toBe("Casco ·  CÓLOR : Azul · Talla: M")
   })
 })
+
+describe("orden de presentación de las variantes de una familia", () => {
+  const family = (id: string, sku: string, attributes: Array<{ name: string; options: string }>) =>
+    ({ id, name: "Prenda", sku, familyId: "family-1", attributes })
+
+  it("ordena la escala de ropa por talla y no alfabéticamente", () => {
+    const groups = groupProductVariants([
+      family("l", "P-3", [{ name: "Talla", options: '["L"]' }]),
+      family("xs", "P-1", [{ name: "Talla", options: '["XS"]' }]),
+      family("2xl", "P-4", [{ name: "Talla", options: '["2XL"]' }]),
+      family("m", "P-2", [{ name: "Talla", options: '["M"]' }]),
+    ])
+
+    expect(groups[0]?.variants.map((variant) => variant.id)).toEqual(["xs", "m", "l", "2xl"])
+  })
+
+  it("ordena las tallas numéricas por valor y no por texto", () => {
+    const groups = groupProductVariants([
+      family("diez", "C-1", [{ name: "Talla calzado", options: '["10"]' }]),
+      family("nueve", "C-2", [{ name: "Talla calzado", options: '["9"]' }]),
+      family("cuarenta", "C-3", [{ name: "Talla calzado", options: '["40"]' }]),
+    ])
+
+    expect(groups[0]?.variants.map((variant) => variant.id)).toEqual(["nueve", "diez", "cuarenta"])
+  })
+
+  it("trata XXXL y 3XL como la misma talla al ordenar", () => {
+    const groups = groupProductVariants([
+      family("cuatro", "P-1", [{ name: "Talla", options: '["4XL"]' }]),
+      family("tres-largo", "P-2", [{ name: "Talla", options: '["XXXL"]' }]),
+      family("s", "P-3", [{ name: "Talla", options: '["S"]' }]),
+    ])
+
+    expect(groups[0]?.variants.map((variant) => variant.id)).toEqual(["s", "tres-largo", "cuatro"])
+  })
+
+  it("pone las variantes con talla antes que las que no la declaran", () => {
+    const groups = groupProductVariants([
+      family("sin-talla", "P-9", [{ name: "Color", options: '["Azul"]' }]),
+      family("con-talla", "P-1", [{ name: "Talla", options: '["M"]' }]),
+    ])
+
+    expect(groups[0]?.variants.map((variant) => variant.id)).toEqual(["con-talla", "sin-talla"])
+  })
+
+  it("pone las variantes sin ningún atributo al final de su familia", () => {
+    const groups = groupProductVariants([
+      // El SKU de la anónima ordena *antes* que la etiqueta de la identificada:
+      // sin la regla explícita, el orden lo decidiría esa comparación de manzanas
+      // con peras (un SKU contra un `Color: …`).
+      { id: "anonima", name: "Casco", sku: "AAA-001", familyId: "family-1", attributes: [] },
+      { id: "identificada", name: "Casco", sku: "EPP-003", familyId: "family-1", attributes: [{ name: "Color", options: '["Blanco"]' }] },
+    ])
+
+    expect(groups[0]?.variants.map((variant) => variant.id)).toEqual(["identificada", "anonima"])
+  })
+
+  it("desempata por SKU para que el orden no dependa de la consulta", () => {
+    const groups = groupProductVariants([
+      family("b", "P-2", [{ name: "Talla", options: '["M"]' }]),
+      family("a", "P-1", [{ name: "Talla", options: '["M"]' }]),
+    ])
+
+    expect(groups[0]?.variants.map((variant) => variant.id)).toEqual(["a", "b"])
+  })
+})

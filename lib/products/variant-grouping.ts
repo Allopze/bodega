@@ -1,5 +1,5 @@
 import { normalizeAttributeName } from "./attribute-names"
-import { parseSizeOptions } from "./product-size"
+import { compareSizeLabels, parseSizeOptions, resolveProductSize } from "./product-size"
 
 export interface VariantAttribute {
   name: string
@@ -92,6 +92,49 @@ export function formatProductVariant(attributes: VariantAttribute[], fallbackSku
   return description || fallbackSku
 }
 
+/**
+ * Orden de presentación de las variantes dentro de su familia.
+ *
+ * Existe porque el orden de la consulta no alcanza: el importador quita la
+ * talla del nombre, así que todas las variantes de una familia comparten
+ * `products.name` exacto y un `ORDER BY name` empata en todas. Postgres las
+ * devolvía en el orden del plan, y el catálogo mostraba `2XL, XS, L, M`.
+ *
+ * La talla manda (`compareSizeLabels`, la misma regla que Solicitudes) y el SKU
+ * es el desempate final para que el orden sea estable entre consultas y no
+ * dependa del plan.
+ */
+export function compareVariantsForDisplay(
+  left: Pick<ProductVariantLike, "sku" | "attributes">,
+  right: Pick<ProductVariantLike, "sku" | "attributes">,
+): number {
+  const leftSize = resolveProductSize(left.attributes)
+  const rightSize = resolveProductSize(right.attributes)
+
+  if (leftSize && rightSize) {
+    const bySize = compareSizeLabels(leftSize.label, rightSize.label)
+    if (bySize !== 0) return bySize
+  } else if (Boolean(leftSize) !== Boolean(rightSize)) {
+    // Una familia puede mezclar ejes (talla, color, modelo). La que declara
+    // talla va primero: es el eje por el que el bodeguero busca.
+    return leftSize ? -1 : 1
+  }
+
+  // Sin atributos, `formatProductVariant` cae al SKU: comparar eso contra un
+  // `Color: Blanco` es comparar una etiqueta con un código. La variante sin
+  // identificar va al final y se ordena entre sus pares por SKU.
+  if (left.attributes.length === 0 || right.attributes.length === 0) {
+    if (left.attributes.length !== right.attributes.length) return left.attributes.length === 0 ? 1 : -1
+    return left.sku.localeCompare(right.sku, "es-CL")
+  }
+
+  const byLabel = formatProductVariant(left.attributes, left.sku)
+    .localeCompare(formatProductVariant(right.attributes, right.sku), "es-CL")
+  if (byLabel !== 0) return byLabel
+
+  return left.sku.localeCompare(right.sku, "es-CL")
+}
+
 export function groupProductVariants<T extends ProductVariantLike>(products: T[]): ProductVariantGroup<T>[] {
   const groups = new Map<string, ProductVariantGroup<T>>()
 
@@ -101,6 +144,8 @@ export function groupProductVariants<T extends ProductVariantLike>(products: T[]
     if (group) group.variants.push(product)
     else groups.set(id, { id, name: product.name, variants: [product] })
   }
+
+  for (const group of groups.values()) group.variants.sort(compareVariantsForDisplay)
 
   return [...groups.values()]
 }
