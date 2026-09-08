@@ -217,6 +217,9 @@ const eslintConfig = defineConfig([
     "audit/**",
     "next-env.d.ts",
     "app_cumplimiento/**",
+    // Proyectos externos de referencia; no forman parte de la aplicación.
+    "erpnext-develop/**",
+    "odoo-19.0/**",
     // Muestra estática de composición visual (no es código de la app).
     "referencia/**",
   ]),

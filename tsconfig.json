@@ -40,6 +40,8 @@
   ],
   "exclude": [
     "node_modules",
-    "referencia"
+    "referencia",
+    "erpnext-develop",
+    "odoo-19.0"
   ]
 }
