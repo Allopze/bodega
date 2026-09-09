@@ -49,12 +49,11 @@ async function addRequest(status: string, itemStatuses: string[]) {
   const id = `req-${seq}`
   await inMemoryDb.insert(schema.purchaseRequests).values({
     id, code: `SOL-${String(seq).padStart(4, "0")}`, requestType: "epp", urgency: "normal",
-    status, worksiteId: WORKSITE, requesterId: USER, createdBy: USER,
-    submissionKey: `key-${id}`,
+    status, worksiteId: WORKSITE, requesterId: USER, submissionKey: `key-${id}`,
   })
   for (const itemStatus of itemStatuses) {
     await inMemoryDb.insert(schema.purchaseRequestItems).values({
-      id: nanoid(), requestId: id, description: "Ítem", quantity: 1,
+      id: nanoid(), requestId: id, productNameFree: "Ítem", quantity: 1,
       unitOfMeasure: "unidad", status: itemStatus,
     })
   }
