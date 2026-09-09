@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { SIZE_FAMILIES, sizeCatalogRows, sizeFamilyByAttributeName } from "./size-catalog"
+import { SIZE_FAMILIES, sizeCatalogRows, sizeFamilyByAttributeName, sizeFamilyForWorkerField } from "./size-catalog"
 import { compareSizeLabels, normalizeSizeLabel, isSizeAttributeName, workerSizeFieldFor } from "./product-size"
 
 describe("SIZE_FAMILIES", () => {
@@ -28,6 +28,25 @@ describe("SIZE_FAMILIES", () => {
     const casco = SIZE_FAMILIES.find((family) => family.family === "casco")
     expect(casco).toBeDefined()
     expect(workerSizeFieldFor(casco!.attributeName)).toBe("sizeHelmet")
+  })
+})
+
+describe("sizeFamilyForWorkerField", () => {
+  it("cruza cada campo del padrón con su familia del catálogo", () => {
+    expect(sizeFamilyForWorkerField("sizeTop")).toBe("ropa")
+    expect(sizeFamilyForWorkerField("sizeBottom")).toBe("pantalon")
+    expect(sizeFamilyForWorkerField("sizeShoe")).toBe("calzado")
+    expect(sizeFamilyForWorkerField("sizeGloves")).toBe("guantes")
+    expect(sizeFamilyForWorkerField("sizeHelmet")).toBe("casco")
+  })
+
+  it("cubre los cinco campos del padrón sin repetir familia", () => {
+    // El formulario de trabajadores ofrece un selector por campo: si dos
+    // campos resolvieran a la misma familia, uno mostraría las tallas del otro.
+    const fields = ["sizeTop", "sizeBottom", "sizeShoe", "sizeGloves", "sizeHelmet"] as const
+    const families = fields.map(sizeFamilyForWorkerField)
+    expect(families.every(Boolean)).toBe(true)
+    expect(new Set(families).size).toBe(fields.length)
   })
 })
 

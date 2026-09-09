@@ -9,21 +9,16 @@ import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
 import { createWorker, updateWorker } from "./actions"
+import { sizeFamilyForWorkerField } from "@/lib/products/size-catalog"
 import type { SizeFamilyOption } from "@/app/(app)/admin/productos/product-form.types"
 
 /**
- * Qué campo del padrón alimenta cada familia del catálogo. La lista de tallas
- * ya no vive acá: era la cuarta copia y la que más se había separado del resto
- * —el casco ofrecía sólo «Única», que ningún producto puede tener, así que esa
- * talla del padrón nunca cruzaba con una variante.
+ * Qué campo del padrón alimenta cada familia del catálogo. Ni la lista de
+ * tallas ni el cruce viven acá: el cruce se deriva de `attributeName` con
+ * `sizeFamilyForWorkerField`, y las tallas salen de `size_catalog`. Era la
+ * cuarta copia del mismo mapa y la que más se había separado del resto.
  */
-const SIZE_FIELD_FAMILY = {
-  sizeTop:    "ropa",
-  sizeBottom: "pantalon",
-  sizeShoe:   "calzado",
-  sizeGloves: "guantes",
-  sizeHelmet: "casco",
-} as const
+const SIZE_FIELDS = ["sizeTop", "sizeBottom", "sizeShoe", "sizeGloves", "sizeHelmet"] as const
 
 interface WorksiteOption { id: string; name: string }
 
@@ -53,8 +48,10 @@ interface WorkerFormProps {
 
 export function WorkerForm({ open, onClose, editWorker, worksites, sizeFamilies }: WorkerFormProps) {
   const codesByFamily = new Map(sizeFamilies.map((family) => [family.family, family.codes]))
-  const presetsFor = (field: keyof typeof SIZE_FIELD_FAMILY) =>
-    codesByFamily.get(SIZE_FIELD_FAMILY[field]) ?? []
+  const presetsFor = (field: (typeof SIZE_FIELDS)[number]) => {
+    const family = sizeFamilyForWorkerField(field)
+    return (family ? codesByFamily.get(family) : undefined) ?? []
+  }
   const isEdit = !!editWorker
   const [selectedWorksiteId, setSelectedWorksiteId] = useState(editWorker?.worksiteId ?? "")
   const [sizes, setSizes] = useState({
