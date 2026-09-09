@@ -57,8 +57,20 @@ describe("normalizeSizeLabel", () => {
   })
 
   it("deja intacto lo que no reconoce, sin inventar una talla", () => {
-    expect(normalizeSizeLabel("única")).toBe("UNICA")
     expect(normalizeSizeLabel("")).toBe("")
+    expect(normalizeSizeLabel("NM")).toBe("NM")
+  })
+
+  it("unifica las formas de la talla única", () => {
+    // El catálogo real escribe las dos: `Capa PVC` compró 60 unidades en
+    // `UNICA` y el `Respirador Full Face` 2 en `UNIVERSAL`. Es la misma talla:
+    // la prenda no se sizea.
+    expect(normalizeSizeLabel("única")).toBe("UNICA")
+    expect(normalizeSizeLabel("Unica")).toBe("UNICA")
+    expect(normalizeSizeLabel("UNIVERSAL")).toBe("UNICA")
+    expect(normalizeSizeLabel("universal")).toBe("UNICA")
+    expect(normalizeSizeLabel("talla única")).toBe("UNICA")
+    expect(compareSizeLabels("UNICA", "UNIVERSAL")).toBe(0)
   })
 
   it("lee `T/` como la abreviatura de «Talla», no como un código", () => {

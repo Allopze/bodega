@@ -84,6 +84,10 @@ const WORD_FORMS: Record<string, string> = {
   medium: "M", mediana: "M", mediano: "M",
   large: "L", grande: "L",
   "extra large": "XL", "extra grande": "XL", extragrande: "XL",
+  // Talla única: la prenda no se sizea. El catálogo real escribe las dos
+  // formas —`Capa PVC` en `UNICA`, el `Respirador Full Face` en `UNIVERSAL`—
+  // y son la misma talla.
+  unica: "UNICA", universal: "UNICA",
 }
 
 /** `XXL` y `2XL` son la misma talla: el catálogo escribe la forma numérica. */
@@ -121,6 +125,11 @@ export function normalizeSizeLabel(value: string): string {
     .replace(/^n[/-]?(?=\d)/, "")
     .replace(/\s*(eur?|us|uk|cl|br|mx|arg?)$/, "")
     .trim()
+
+  // Otra vez las formas en palabra, ahora sin el prefijo: «talla universal» y
+  // «talla mediana» dicen lo mismo que `universal` y `mediana`.
+  const strippedWord = WORD_FORMS[stripped]
+  if (strippedWord) return strippedWord
 
   // `42.0` y `42` son la misma talla; `8.5` no es `8`.
   if (/^\d+([.,]\d+)?$/.test(stripped)) {
