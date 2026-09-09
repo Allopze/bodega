@@ -243,4 +243,25 @@ describe("addMissingClothingSizeVariants", () => {
 
     expect(summary.results.find((r) => r.familyId === "fam-zapato")).toBeUndefined()
   })
+
+  it("no le inyecta la escala de ropa a una familia de guantes", async () => {
+    // El importador dejaba los guantes con `Talla: T/L`, que normaliza a
+    // "talla", así que este backfill los tomaba por ropa y les creaba
+    // XS..2XL. Con `Talla guantes` la familia queda fuera.
+    await createFamilyWithVariant({
+      familyId: "fam-guante",
+      canonicalName: "Guante Nitrilo Showa",
+      productName: "Guante Nitrilo Showa",
+      sizeAttrName: "Talla guantes",
+      size: "L",
+    })
+
+    const summary = await addMissingClothingSizeVariants()
+
+    expect(summary.results.find((r) => r.familyId === "fam-guante")).toBeUndefined()
+    const variants = await inMemoryDb.query.products.findMany({
+      where: eq(schema.products.familyId, "fam-guante"),
+    })
+    expect(variants).toHaveLength(1)
+  })
 })
