@@ -96,8 +96,8 @@ function canonicalScaleCode(value: string): string {
 /**
  * Forma canónica de una etiqueta de talla, para **comparar** — no para
  * reescribir lo ya guardado. Resuelve las variantes que el catálogo real trae
- * mezcladas: `42.0`, `T42`, `42 EUR` → `42`; `medium`, `Mediana` → `M`;
- * `XXL` → `2XL`.
+ * mezcladas: `42.0`, `T42`, `N42`, `42 EUR` → `42`; `medium`, `Mediana` → `M`;
+ * `T/L` → `L`; `XXL` → `2XL`.
  */
 export function normalizeSizeLabel(value: string): string {
   const base = normalizeName(value).replace(/\.$/, "")
@@ -114,6 +114,11 @@ export function normalizeSizeLabel(value: string): string {
     .replace(/^talla\s+/, "")
     .replace(/^t(?=\d)/, "")
     .replace(/^t[/-](?=\d|x*[sml]\b)/, "")
+    // «N41», «N-9», «N/42»: `N` es «número» en las planillas de calzado y
+    // guantes. Exige un dígito detrás, así que no se come una letra (`NM`) ni
+    // la `N` sola. Sin esto `N41` y `41` eran dos tallas distintas, y los
+    // botines N41..N44 caían al grupo «desconocido» ordenados por texto.
+    .replace(/^n[/-]?(?=\d)/, "")
     .replace(/\s*(eur?|us|uk|cl|br|mx|arg?)$/, "")
     .trim()
 

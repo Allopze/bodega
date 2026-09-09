@@ -68,6 +68,22 @@ describe("normalizeSizeLabel", () => {
     expect(normalizeSizeLabel("T/42")).toBe("42")
   })
 
+  it("lee `N` como la abreviatura de «número» del calzado y los guantes", () => {
+    // El catálogo real trae `N41` (botines) y `N-9` (guantes Ansell): es la
+    // numeración, no una escala aparte. Sin esto `N41` y `41` son dos tallas.
+    expect(normalizeSizeLabel("N41")).toBe("41")
+    expect(normalizeSizeLabel("n40")).toBe("40")
+    expect(normalizeSizeLabel("N-9")).toBe("9")
+    expect(normalizeSizeLabel("N-10")).toBe("10")
+    expect(normalizeSizeLabel("N/42")).toBe("42")
+  })
+
+  it("no toma por «número» una letra que sólo empieza con N", () => {
+    // No hay talla `N` sola ni escala que empiece con N seguida de letra.
+    expect(normalizeSizeLabel("NM")).toBe("NM")
+    expect(normalizeSizeLabel("N")).toBe("N")
+  })
+
   it("no confunde una talla compuesta real con el prefijo", () => {
     // `S/M` es un rango de dos tallas, no «Talla M».
     expect(normalizeSizeLabel("S/M")).toBe("S/M")
@@ -98,6 +114,15 @@ describe("compareSizeLabels", () => {
 
   it("ordena las tallas compuestas por su primer tramo", () => {
     expect([...["M/L", "S/M", "L/XL"]].sort(compareSizeLabels)).toEqual(["S/M", "M/L", "L/XL"])
+  })
+
+  it("ordena el calzado numerado con `N` por su número", () => {
+    // EPP-021 `N41` y EPP-022 `T41` son la misma talla; los botines V73 van
+    // N41..N44 y antes caían todos al grupo «desconocido», ordenados por texto.
+    expect(["N44", "N41", "N43", "N42"].sort(compareSizeLabels))
+      .toEqual(["N41", "N42", "N43", "N44"])
+    expect(["N-10", "N-9"].sort(compareSizeLabels)).toEqual(["N-9", "N-10"])
+    expect(compareSizeLabels("N41", "T41")).toBe(0)
   })
 
   it("deja `T/L` en su lugar de la escala y no al final", () => {
