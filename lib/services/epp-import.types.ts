@@ -108,11 +108,11 @@ export const EPP_TYPE_TO_BODY_PART_CODE: Partial<Record<(typeof EPP_TYPES)[numbe
  * es con qué campo del padrón cruzan (`size_bottom` contra `size_top`), no la
  * escala. Un trabajador puede ser L arriba y XL abajo.
  *
- * Las prendas de una pieza —jardinera, overol, buzo, traje, capa— se quedan en
- * `ropa`: visten el torso completo, así que la talla de arriba es la
- * referencia. Nota: «Traje PU Verde Activex Pantalón» infiere `traje` y no
- * `pantalon`, así que la mitad inferior de un traje de dos piezas queda con la
- * talla de arriba. Es una limitación de `inferEppItemType`, no de este mapa.
+ * Jardinera, overol, buzo, traje y capa se quedan en `ropa`: la talla del
+ * conjunto es la de arriba. Un traje se sizea como conjunto aunque venga en
+ * dos piezas —«Traje PU Verde Activex Pantalón» es el pantalón de un traje PU,
+ * y su talla es la del traje, no una talla de pantalón—, así que `inferEppItemType`
+ * clasificándolo como `traje` es lo correcto y no un caso a corregir.
  */
 export const EPP_TYPE_TO_SIZE_FAMILY: Partial<Record<(typeof EPP_TYPES)[number], string>> = {
   guante: "guantes",

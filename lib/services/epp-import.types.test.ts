@@ -104,15 +104,15 @@ describe("sizeFamilyForEppType", () => {
     expect(familyOf("Pantalón de trabajo")).toBe("pantalon")
   })
 
-  it("deja las prendas de una pieza en `ropa`, con la talla de arriba", () => {
-    // Visten el torso completo, así que la talla de arriba es la referencia.
+  it("sizea el conjunto por la talla de arriba, no por la prenda suelta", () => {
     expect(familyOf("JARDINERA TERMICA")).toBe("ropa")
     expect(familyOf("Overol Activex Piloto")).toBe("ropa")
     expect(familyOf("Buzo Dupont Tyvek 500X")).toBe("ropa")
-    // «Traje PU Verde Activex Pantalón» infiere `traje`, no `pantalon`: la
-    // mitad inferior de un traje de dos piezas queda con la talla de arriba.
-    // Es una limitación de `inferEppItemType`, no de este mapa.
+    // Un traje se sizea como conjunto aunque venga en dos piezas: el pantalón
+    // de un traje PU lleva la talla del traje, no una talla de pantalón. Que
+    // `inferEppItemType` lo lea como `traje` es lo correcto.
     expect(familyOf("Traje PU Verde Activex Pantalón")).toBe("ropa")
+    expect(familyOf("Traje para lluvia Activex Azul")).toBe("ropa")
   })
 
   it("devuelve null para los ítems que no tienen escala de talla", () => {
