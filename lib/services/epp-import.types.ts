@@ -179,7 +179,13 @@ export function resolveSizeAttribute(
   eppType: string | null,
   familyOptions?: readonly SizeFamilyCodes[],
 ): ResolvedSizeAttribute {
-  const values = rawValues.map((value) => normalizeSizeLabel(value) || cleanText(value).toUpperCase())
+  // `normalizeSizeLabel` es el dueño único de la forma de una talla: un valor
+  // que reduce a vacío —una celda con sólo puntuación— no es una talla, y
+  // resucitarlo con otra regla reintroduciría la divergencia que el hallazgo
+  // F-5 cerró.
+  const values = rawValues
+    .map((value) => normalizeSizeLabel(value))
+    .filter(Boolean)
   const family = sizeFamilyForEppType(eppType)
   const definition = family
     ? (familyOptions ?? SIZE_FAMILIES).find((option) => option.family === family)

@@ -192,4 +192,18 @@ describe("resolveSizeAttribute", () => {
     const options = [{ family: "guantes", attributeName: "Talla de guante", codes: ["M"] }]
     expect(resolveSizeAttribute(["M"], "guante", options).name).toBe("Talla de guante")
   })
+
+  it("descarta un valor que no deja ninguna talla al normalizarse", () => {
+    // `normalizeSizeLabel(".")` es `""` a propósito. Resucitarlo con otra regla
+    // sería la segunda fuente de verdad que el hallazgo F-5 cerró.
+    const resolved = resolveSizeAttribute(["."], "guante")
+    expect(resolved.values).toEqual([])
+    expect(resolved.issues).toEqual([])
+  })
+
+  it("conserva las tallas válidas de una fila que trae una celda basura", () => {
+    const resolved = resolveSizeAttribute(["M", ".", "L"], "guante")
+    expect(resolved.values).toEqual(["M", "L"])
+    expect(resolved.issues).toEqual([])
+  })
 })
