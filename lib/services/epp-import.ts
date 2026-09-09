@@ -18,6 +18,7 @@ import { nanoid } from "@/lib/id"
 import { toCode } from "@/lib/utils"
 import { lockCatalogProductsForUpdateTx } from "@/lib/services/catalog-product-locks"
 import { setProductSupplierPriceTx } from "@/lib/services/product-supplier-prices"
+import { getSizeFamilyOptions } from "@/lib/services/sizes"
 import {
   findProductMatches,
   buildCorrections,
@@ -27,6 +28,7 @@ import {
   type EppAttribute,
   type ImportCorrection,
   type ImportDecision,
+  type SizeFamilyCodes,
 } from "./epp-import.types"
 
 export {
@@ -71,6 +73,10 @@ export async function stageEppImportXlsx(input: { buffer: Buffer; fileName: stri
   let pending = 0
   let ready = 0
 
+  // Dato de referencia, no tx-aware: los códigos de cada familia no cambian
+  // durante el lote y leerlos dentro de la transacción sólo la alargaría.
+  const sizeFamilyOptions = await getSizeFamilyOptions()
+
   await db.transaction(async (tx) => {
     await tx.insert(eppImportBatches).values({
       id: batchId, source: "xlsx", fileName: input.fileName, fileHash, status: "review",
@@ -79,7 +85,7 @@ export async function stageEppImportXlsx(input: { buffer: Buffer; fileName: stri
     })
 
     for (const source of parsed.rows) {
-      const normalized = normalizeEppRow(source.values)
+      const normalized = normalizeEppRow(source.values, sizeFamilyOptions)
       const duplicateInBatch = seenIdentityKeys.has(normalized.identityKey)
       seenIdentityKeys.add(normalized.identityKey)
       if (duplicateInBatch) normalized.issues.push({ severity: "blocking", message: "Duplicado dentro del mismo archivo." })
@@ -130,7 +136,10 @@ export async function reviewEppImportRow(input: { batchId: string; rowId: string
   }
 
   const previous = JSON.parse(row.normalizedJson) as NormalizedEppRow
-  const normalized = input.normalizedJson ? validateReviewedNormalized(input.normalizedJson, previous.sourceCode) : previous
+  const sizeFamilyOptions = input.normalizedJson ? await getSizeFamilyOptions() : []
+  const normalized = input.normalizedJson
+    ? validateReviewedNormalized(input.normalizedJson, previous.sourceCode, sizeFamilyOptions)
+    : previous
   if (input.decision === "update" && !input.targetProductId) throw new Error("Selecciona el producto que se actualizará")
   if (normalized.issues.some((issue) => issue.severity === "blocking")) throw new Error(normalized.issues.filter((issue) => issue.severity === "blocking").map((issue) => issue.message).join(" "))
   const corrections = buildManualCorrections(previous, normalized)
@@ -190,7 +199,11 @@ export async function confirmEppImportBatch(batchId: string, userId: string) {
 
 export async function cancelEppImportBatch(batchId: string) { await db.update(eppImportBatches).set({ status: "cancelled", updatedAt: new Date().toISOString() }).where(eq(eppImportBatches.id, batchId)) }
 
-function validateReviewedNormalized(value: string, sourceCode: string | null) {
+function validateReviewedNormalized(
+  value: string,
+  sourceCode: string | null,
+  familyOptions: readonly SizeFamilyCodes[],
+) {
   let raw: Partial<NormalizedEppRow>
   try { raw = JSON.parse(value) as Partial<NormalizedEppRow> } catch { throw new Error("Los datos corregidos no son válidos") }
   const rawAttrs = Array.isArray(raw.attributes) ? raw.attributes.filter((a): a is EppAttribute => typeof a?.name === "string" && typeof a?.value === "string") : []
@@ -211,7 +224,7 @@ function validateReviewedNormalized(value: string, sourceCode: string | null) {
     size,
     color,
     brand: raw.brand ?? "", model: raw.model ?? "", material: raw.material ?? "",
-  })
+  }, familyOptions)
   return normalized
 }
 
