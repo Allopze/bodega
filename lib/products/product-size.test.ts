@@ -60,6 +60,19 @@ describe("normalizeSizeLabel", () => {
     expect(normalizeSizeLabel("única")).toBe("UNICA")
     expect(normalizeSizeLabel("")).toBe("")
   })
+
+  it("lee `T/` como la abreviatura de «Talla», no como un código", () => {
+    expect(normalizeSizeLabel("T/L")).toBe("L")
+    expect(normalizeSizeLabel("t/xl")).toBe("XL")
+    expect(normalizeSizeLabel("T-M")).toBe("M")
+    expect(normalizeSizeLabel("T/42")).toBe("42")
+  })
+
+  it("no confunde una talla compuesta real con el prefijo", () => {
+    // `S/M` es un rango de dos tallas, no «Talla M».
+    expect(normalizeSizeLabel("S/M")).toBe("S/M")
+    expect(normalizeSizeLabel("Talla 9-10")).toBe("9/10")
+  })
 })
 
 describe("compareSizeLabels", () => {
@@ -85,6 +98,11 @@ describe("compareSizeLabels", () => {
 
   it("ordena las tallas compuestas por su primer tramo", () => {
     expect([...["M/L", "S/M", "L/XL"]].sort(compareSizeLabels)).toEqual(["S/M", "M/L", "L/XL"])
+  })
+
+  it("deja `T/L` en su lugar de la escala y no al final", () => {
+    const ordered = ["2XL", "T/L", "XS", "M"].sort(compareSizeLabels)
+    expect(ordered).toEqual(["XS", "M", "T/L", "2XL"])
   })
 })
 

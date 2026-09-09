@@ -106,10 +106,14 @@ export function normalizeSizeLabel(value: string): string {
   const word = WORD_FORMS[base]
   if (word) return word
 
-  // «talla 42», «t42», «42 eur», «42 us»: el sistema de medida no es la talla.
+  // «talla 42», «t42», «T/L», «T-M», «42 eur», «42 us»: ni el sistema de
+  // medida ni la abreviatura de «talla» son la talla. `T/` sólo se quita
+  // cuando le sigue un código de una escala conocida, para no partir un rango
+  // real como `S/M`.
   const stripped = base
     .replace(/^talla\s+/, "")
     .replace(/^t(?=\d)/, "")
+    .replace(/^t[/-](?=\d|x*[sml]\b)/, "")
     .replace(/\s*(eur?|us|uk|cl|br|mx|arg?)$/, "")
     .trim()
 
