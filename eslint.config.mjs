@@ -217,6 +217,13 @@ const eslintConfig = defineConfig([
     "audit/**",
     // Scratches de QA local (scripts desechables, ya ignorados por git).
     ".tmp/**",
+    // Worktrees de sesión: son copias completas del repo, así que lintearlas
+    // duplica cada archivo y además aplica las reglas a las rutas que esta
+    // misma lista excluye en la raíz (`referencia/**`, `odoo-19.0/**`), que
+    // bajo el prefijo del worktree ya no calzan. `.gitignore` las excluye
+    // desde 1ae474e4; sin esta entrada el pre-commit fallaba con ~160 errores
+    // ajenos al cambio y ningún commit podía aterrizar.
+    ".claude/worktrees/**",
     "next-env.d.ts",
     "app_cumplimiento/**",
     // Proyectos externos de referencia; no forman parte de la aplicación.
