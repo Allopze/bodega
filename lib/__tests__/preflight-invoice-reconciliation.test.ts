@@ -3,7 +3,7 @@ import { drizzle } from "drizzle-orm/pglite"
 import { inArray } from "drizzle-orm"
 import path from "node:path"
 import type postgres from "postgres"
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
@@ -24,7 +24,7 @@ const db = drizzle(pg, { schema }) as unknown as DB
 const sqlShim = {
   begin: (_mode: string, fn: (tx: unknown) => unknown) =>
     Promise.resolve(
-      fn((strings: TemplateStringsArray) => pg.query(strings.join("")).then((result) => result.rows)),
+      fn(Object.assign((strings: TemplateStringsArray, ...fragments: string[]) => pg.query(strings.reduce((text, part, index) => text + part + (fragments[index] ?? ""), "")).then((result) => result.rows), { unsafe: (fragment: string) => fragment })),
     ),
 } as unknown as postgres.Sql
 
@@ -50,6 +50,7 @@ async function insertClosedOrder(id: string, options: { withInvoice: boolean }) 
     id: `${id}-invoice-item`, invoiceId: `${id}-invoice`, purchaseOrderItemId: `${id}-item`,
     productName: "Producto", unitOfMeasure: "unidad", quantity: 2, unitPrice: 52, subtotal: 104,
   })
+  await db.insert(schema.purchaseOrderInvoiceItemAllocations).values({ id: `${id}-allocation`, invoiceItemId: `${id}-invoice-item`, purchaseOrderItemId: `${id}-item`, quantity: 2, subtotal: 104, source: "operator" })
 }
 
 describe("preflight de conciliación OC-factura", () => {
@@ -75,6 +76,42 @@ describe("preflight de conciliación OC-factura", () => {
   })
 
   afterAll(async () => { await pg.close() })
+
+  it("lee asignaciones aunque el espejo legado sea nulo", async () => {
+    await insertClosedOrder("allocation-reader", { withInvoice: true })
+    await db.update(schema.purchaseOrderInvoiceItems).set({ purchaseOrderItemId: null }).where(inArray(schema.purchaseOrderInvoiceItems.id, ["allocation-reader-invoice-item"]))
+    expect((await readPurchaseInvoiceReconciliationPreflight(sqlShim)).unlinkedLines).toBe(0)
+    await db.delete(schema.purchaseOrderInvoices).where(inArray(schema.purchaseOrderInvoices.id, ["allocation-reader-invoice"]))
+    await db.delete(schema.purchaseOrderItems).where(inArray(schema.purchaseOrderItems.id, ["allocation-reader-item"]))
+    await db.delete(schema.purchaseOrders).where(inArray(schema.purchaseOrders.id, ["allocation-reader"]))
+  })
+
+  it("usa compatibilidad anterior a migración sólo para SQLSTATE 42P01", async () => {
+    const begin = vi.fn().mockRejectedValueOnce(Object.assign(new Error("missing table"), { code: "42P01" })).mockResolvedValueOnce([])
+    expect((await readPurchaseInvoiceReconciliationPreflight({ begin } as unknown as postgres.Sql)).unlinkedLines).toBe(0)
+    expect(begin).toHaveBeenCalledTimes(2)
+    for (const code of ["42501", "42601", "42703"]) {
+      const error = Object.assign(new Error("query failed"), { code })
+      const failing = vi.fn().mockRejectedValue(error)
+      await expect(readPurchaseInvoiceReconciliationPreflight({ begin: failing } as unknown as postgres.Sql)).rejects.toBe(error)
+      expect(failing).toHaveBeenCalledOnce()
+    }
+  })
+
+  it("lee el vínculo legado cuando la tabla de asignaciones aún no existe", async () => {
+    await insertClosedOrder("legacy-reader", { withInvoice: true })
+    await pg.exec("ALTER TABLE purchase_order_invoice_item_allocations RENAME TO allocations_before_migration_test")
+    try {
+      const report = await readPurchaseInvoiceReconciliationPreflight(sqlShim)
+      expect(report.unlinkedLines).toBe(0)
+      expect(report.priceVarianceLines).toBe(1)
+    } finally {
+      await pg.exec("ALTER TABLE allocations_before_migration_test RENAME TO purchase_order_invoice_item_allocations")
+      await db.delete(schema.purchaseOrderInvoices).where(inArray(schema.purchaseOrderInvoices.id, ["legacy-reader-invoice"]))
+      await db.delete(schema.purchaseOrderItems).where(inArray(schema.purchaseOrderItems.id, ["legacy-reader-item"]))
+      await db.delete(schema.purchaseOrders).where(inArray(schema.purchaseOrders.id, ["legacy-reader"]))
+    }
+  })
 
   it("no acusa a una OC cerrada que todavía no factura nada", async () => {
     await insertClosedOrder("sin-factura", { withInvoice: false })
@@ -106,6 +143,7 @@ describe("preflight de conciliación OC-factura", () => {
     await db.update(schema.purchaseOrderInvoiceItems)
       .set({ quantity: 1, unitPrice: 50, subtotal: 50 })
       .where(inArray(schema.purchaseOrderInvoiceItems.id, ["parcial-legitima-invoice-item"]))
+    await db.update(schema.purchaseOrderInvoiceItemAllocations).set({ quantity: 1, subtotal: 50 }).where(inArray(schema.purchaseOrderInvoiceItemAllocations.invoiceItemId, ["parcial-legitima-invoice-item"]))
 
     const after = await readPurchaseInvoiceReconciliationPreflight(sqlShim)
     expect(after.affectedClosedOrders).toBe(before.affectedClosedOrders)

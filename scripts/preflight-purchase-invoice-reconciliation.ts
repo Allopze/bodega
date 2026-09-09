@@ -21,6 +21,18 @@ export interface PurchaseInvoiceReconciliationPreflight {
 export async function readPurchaseInvoiceReconciliationPreflight(
   sql: postgres.Sql,
 ): Promise<PurchaseInvoiceReconciliationPreflight> {
+  try {
+    return await readReport(sql, true)
+  } catch (error) {
+    // The deploy preflight can precede the allocation migration. Retry in a
+    // fresh transaction because PostgreSQL aborts the failed one. Never hide
+    // authorization, syntax, missing-column or other database errors.
+    if (!error || typeof error !== "object" || !("code" in error) || error.code !== "42P01") throw error
+    return readReport(sql, false)
+  }
+}
+
+async function readReport(sql: postgres.Sql, useAllocations: boolean): Promise<PurchaseInvoiceReconciliationPreflight> {
   const [report] = await sql.begin("read only", async (tx) => tx<{
     invoices_without_lines: number
     unlinked_lines: number
@@ -31,14 +43,20 @@ export async function readPurchaseInvoiceReconciliationPreflight(
     unique_receipt_suggestions: number
     ambiguous_receipt_suggestions: number
   }[]>`
-    WITH normalized_lines AS (
+    WITH allocations AS (
+      ${tx.unsafe(useAllocations
+        ? "SELECT invoice_item_id, purchase_order_item_id, quantity, subtotal FROM purchase_order_invoice_item_allocations"
+        : "SELECT id AS invoice_item_id, purchase_order_item_id, quantity, subtotal FROM purchase_order_invoice_items WHERE purchase_order_item_id IS NOT NULL")}
+    ), normalized_lines AS (
       SELECT
         inv.purchase_order_id,
         inv.id AS invoice_id,
         line.id AS invoice_item_id,
-        line.purchase_order_item_id,
-        line.quantity AS invoice_quantity,
-        line.subtotal AS invoice_subtotal,
+        allocation.purchase_order_item_id,
+        allocation.quantity AS invoice_quantity,
+        allocation.subtotal AS invoice_subtotal,
+        line.quantity AS document_quantity,
+        line.subtotal AS document_subtotal,
         CASE lower(trim(COALESCE(line.unit_of_measure, '')))
           WHEN 'un' THEN 'unidad' WHEN 'unidad' THEN 'unidad' WHEN 'unidades' THEN 'unidad'
           WHEN 'par' THEN 'par' WHEN 'pares' THEN 'par'
@@ -59,7 +77,16 @@ export async function readPurchaseInvoiceReconciliationPreflight(
         END AS order_unit
       FROM purchase_order_invoices inv
       JOIN purchase_order_invoice_items line ON line.invoice_id = inv.id
-      LEFT JOIN purchase_order_items item ON item.id = line.purchase_order_item_id
+      LEFT JOIN allocations allocation ON allocation.invoice_item_id = line.id
+      LEFT JOIN purchase_order_items item ON item.id = allocation.purchase_order_item_id
+    ),
+    incomplete_lines AS (
+      SELECT invoice_item_id, purchase_order_id FROM normalized_lines
+      GROUP BY invoice_item_id, purchase_order_id, document_quantity, document_subtotal
+      HAVING COUNT(purchase_order_item_id) = 0
+        OR BOOL_OR(item_order_id IS DISTINCT FROM purchase_order_id)
+        OR ABS(COALESCE(SUM(invoice_quantity), 0) - document_quantity) > 0.000001
+        OR ABS(COALESCE(SUM(invoice_subtotal), 0) - document_subtotal) > 1
     ),
     invoice_totals AS (
       SELECT purchase_order_id, SUM(amount) AS invoiced_total
@@ -85,12 +112,11 @@ export async function readPurchaseInvoiceReconciliationPreflight(
       GROUP BY item.id, item.purchase_order_id, item.quantity
     ),
     invoice_line_quantities AS (
-      SELECT inv.id AS invoice_id, inv.purchase_order_id, line.purchase_order_item_id,
-             SUM(line.quantity) AS invoice_quantity
-      FROM purchase_order_invoices inv
-      JOIN purchase_order_invoice_items line ON line.invoice_id = inv.id
-      WHERE line.purchase_order_item_id IS NOT NULL
-      GROUP BY inv.id, inv.purchase_order_id, line.purchase_order_item_id
+      SELECT invoice_id, purchase_order_id, purchase_order_item_id,
+             SUM(invoice_quantity) AS invoice_quantity
+      FROM normalized_lines
+      WHERE purchase_order_item_id IS NOT NULL AND item_order_id = purchase_order_id
+      GROUP BY invoice_id, purchase_order_id, purchase_order_item_id
     ),
     receipt_line_quantities AS (
       SELECT receipt.id AS receipt_id, receipt.purchase_order_id,
@@ -141,6 +167,8 @@ export async function readPurchaseInvoiceReconciliationPreflight(
       GROUP BY inv.id, inv.purchase_order_id
       HAVING COUNT(line.id) = 0
       UNION
+      SELECT purchase_order_id FROM incomplete_lines
+      UNION
       SELECT purchase_order_id FROM normalized_lines
       WHERE purchase_order_item_id IS NULL OR item_order_id IS DISTINCT FROM purchase_order_id
          OR invoice_unit IS NULL OR order_unit IS NULL OR invoice_unit <> order_unit
@@ -159,8 +187,7 @@ export async function readPurchaseInvoiceReconciliationPreflight(
     SELECT
       (SELECT COUNT(*)::int FROM purchase_order_invoices inv
        WHERE NOT EXISTS (SELECT 1 FROM purchase_order_invoice_items line WHERE line.invoice_id = inv.id)) AS invoices_without_lines,
-      (SELECT COUNT(*)::int FROM normalized_lines
-       WHERE purchase_order_item_id IS NULL OR item_order_id IS DISTINCT FROM purchase_order_id) AS unlinked_lines,
+      (SELECT COUNT(*)::int FROM incomplete_lines) AS unlinked_lines,
       (SELECT COUNT(*)::int FROM normalized_lines
        WHERE invoice_unit IS NOT NULL AND invoice_unit = order_unit AND order_subtotal IS NOT NULL
          AND ABS(invoice_subtotal / NULLIF(invoice_quantity, 0) - order_subtotal / NULLIF(order_quantity, 0)) > 1) AS price_variance_lines,

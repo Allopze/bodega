@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { InvoiceLineAllocationError } from "@/lib/services/purchasing-module/invoice-line-allocations"
 
 const mockRequirePermission = vi.fn()
 const mockAssertOrderAccess = vi.fn()
@@ -149,6 +150,7 @@ describe("attachDteAsInvoice", () => {
     expect(mockRevalidateOperationalViews).toHaveBeenCalledWith([
       "/compras",
       "/compras/oc-1",
+      "/bodega/trazabilidad",
       "/recepcion",
       "/recepcion/receipt-1",
     ])
@@ -282,5 +284,13 @@ describe("attachDteAsInvoice", () => {
 
     expect(result).toEqual({ ok: false, message: "No se pudo acceder a la orden" })
     expect(mockDownloadDteDocumentXml).not.toHaveBeenCalled()
+  })
+
+  it("explains allocation unit failures and removes the unattached PDF", async () => {
+    mockCreatePurchaseOrderInvoiceFromDte.mockRejectedValue(new InvoiceLineAllocationError("UNIT_MISMATCH"))
+    const result = await attachDteAsInvoice({ purchaseOrderId: "oc-1", dteDocumentId: "dte-1" })
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(/unidades.*equivalentes/i)
+    expect(mockRemoveInvoiceAttachment).toHaveBeenCalledOnce()
   })
 })

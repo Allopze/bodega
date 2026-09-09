@@ -2,7 +2,7 @@ import { CLP_ROUNDING_TOLERANCE } from "./money-tolerance"
 
 /** @see money-tolerance.ts — se reexporta porque forma parte del contrato de evidencia. */
 export const CLP_RECONCILIATION_TOLERANCE = CLP_ROUNDING_TOLERANCE
-export const INVOICE_RECONCILIATION_VERSION = 2
+export const INVOICE_RECONCILIATION_VERSION = 3
 
 export type InvoiceReconciliationStatus =
   | "no_invoices"
@@ -49,14 +49,22 @@ export interface InvoiceReconciliationOrderItem {
   invoiceControl?: "ordered" | "received"
 }
 
+export interface InvoiceReconciliationAllocation {
+  id: string
+  purchaseOrderItemId: string
+  quantity: number
+  subtotal: number
+}
+
 export interface InvoiceReconciliationInvoiceItem {
-  id?: string
-  purchaseOrderItemId: string | null
-  productName?: string
-  unitOfMeasure?: string | null
+  id: string
+  productName: string
+  productCode: string | null
+  unitOfMeasure: string | null
   quantity: number
   unitPrice?: number | null
-  subtotal?: number | null
+  subtotal: number
+  allocations: InvoiceReconciliationAllocation[]
 }
 
 export interface InvoiceReconciliationInvoice {
@@ -159,7 +167,7 @@ function nullableFinite(value: number | null | undefined) {
 
 function effectiveUnitPrice(subtotal: number | null | undefined, quantity: number) {
   const normalizedSubtotal = nullableFinite(subtotal)
-  return normalizedSubtotal === null || quantity <= 0 ? null : normalizedSubtotal / quantity
+  return normalizedSubtotal === null || quantity === 0 ? null : normalizedSubtotal / quantity
 }
 
 export function normalizeUnit(value: string | null | undefined) {
@@ -274,7 +282,12 @@ export function reconcileInvoiceEvidence({
   const sortedOrderItems = [...orderItems].sort((a, b) => a.id.localeCompare(b.id))
   const sortedInvoices = [...invoices]
     .sort((a, b) => a.id.localeCompare(b.id))
-    .map((invoice) => ({ ...invoice, items: [...(invoice.items ?? [])].sort((a, b) => (a.id ?? "").localeCompare(b.id ?? "")) }))
+    .map((invoice) => ({ ...invoice, items: [...(invoice.items ?? [])].sort((a, b) => a.id.localeCompare(b.id)).map((line) => ({
+      id: line.id, productName: line.productName, productCode: line.productCode,
+      unitOfMeasure: line.unitOfMeasure, quantity: line.quantity, subtotal: line.subtotal,
+      allocations: [...line.allocations].map(({ id, purchaseOrderItemId, quantity, subtotal }) => ({ id, purchaseOrderItemId, quantity, subtotal }))
+        .sort((a, b) => a.purchaseOrderItemId.localeCompare(b.purchaseOrderItemId) || a.id.localeCompare(b.id)),
+    })) }))
   const totalInvoiced = sortedInvoices.reduce((sum, invoice) => sum + finite(invoice.amount), 0)
   const moneyDifference = totalInvoiced - totalOC
   const hasInvoices = sortedInvoices.length > 0
@@ -298,17 +311,24 @@ export function reconcileInvoiceEvidence({
     let invoiceLinked = 0
     let invoiceUnlinked = 0
     for (const line of lines) {
-      const orderItem = line.purchaseOrderItemId ? orderItemById.get(line.purchaseOrderItemId) : null
-      if (!orderItem) {
+      const validAllocations = line.allocations.filter((allocation) => orderItemById.has(allocation.purchaseOrderItemId))
+      const complete = validAllocations.length > 0
+        && validAllocations.length === line.allocations.length
+        && Math.abs(validAllocations.reduce((sum, row) => sum + row.quantity, 0) - line.quantity) <= 0.000001
+        && Math.abs(validAllocations.reduce((sum, row) => sum + row.subtotal, 0) - line.subtotal) <= CLP_ROUNDING_TOLERANCE
+      if (!complete) {
         invoiceUnlinked += 1
         unlinkedLineCount += 1
         issues.push({ code: "unlinked_line", invoiceId: invoice.id, invoiceItemId: line.id })
-        continue
       }
-      invoiceLinked += 1
-      linkedLineCount += 1
+      if (validAllocations.length > 0) {
+        invoiceLinked += 1
+        linkedLineCount += 1
+      }
+      for (const allocation of validAllocations) {
+      const orderItem = orderItemById.get(allocation.purchaseOrderItemId)!
       const linked = linkedLinesByOrderItem.get(orderItem.id) ?? []
-      linked.push({ ...line, invoiceId: invoice.id })
+      linked.push({ ...line, quantity: allocation.quantity, subtotal: allocation.subtotal, invoiceId: invoice.id })
       linkedLinesByOrderItem.set(orderItem.id, linked)
 
       const ocUnit = normalizeUnit(orderItem.unitOfMeasure)
@@ -322,7 +342,7 @@ export function reconcileInvoiceEvidence({
         continue
       }
       const ocPrice = effectiveUnitPrice(orderItem.subtotal, orderItem.quantity)
-      const invoicePrice = effectiveUnitPrice(line.subtotal, line.quantity)
+      const invoicePrice = effectiveUnitPrice(allocation.subtotal, allocation.quantity)
       if (ocPrice !== null && invoicePrice !== null) {
         const difference = invoicePrice - ocPrice
         if (Math.abs(difference) > clpTolerance) {
@@ -332,6 +352,7 @@ export function reconcileInvoiceEvidence({
             percentage: ocPrice === 0 ? null : difference / ocPrice * 100,
           })
         }
+      }
       }
     }
     return {

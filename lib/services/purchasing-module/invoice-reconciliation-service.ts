@@ -4,6 +4,7 @@ import { getOperationalSettings } from "@/lib/services/system-settings"
 import {
   productSuppliers,
   products,
+  purchaseOrderInvoiceItemAllocations,
   purchaseOrderInvoiceItems,
   purchaseOrderInvoiceReconciliationReviews,
   purchaseOrderInvoices,
@@ -75,7 +76,7 @@ export async function reconcilePurchaseOrderInvoicesTx(
       .where(eq(purchaseOrderItems.purchaseOrderId, purchaseOrderId)),
     tx.query.purchaseOrderInvoices.findMany({
       where: eq(purchaseOrderInvoices.purchaseOrderId, purchaseOrderId),
-      with: { items: true },
+      with: { items: { with: { allocations: true } } },
     }),
     tx
       .select({
@@ -293,11 +294,12 @@ async function applyPendingCostsTx(
     tx
       .select({
         id: purchaseOrderInvoiceItems.id,
-        purchaseOrderItemId: purchaseOrderInvoiceItems.purchaseOrderItemId,
-        quantity: purchaseOrderInvoiceItems.quantity,
-        subtotal: purchaseOrderInvoiceItems.subtotal,
+        purchaseOrderItemId: purchaseOrderInvoiceItemAllocations.purchaseOrderItemId,
+        quantity: purchaseOrderInvoiceItemAllocations.quantity,
+        subtotal: purchaseOrderInvoiceItemAllocations.subtotal,
       })
       .from(purchaseOrderInvoiceItems)
+      .innerJoin(purchaseOrderInvoiceItemAllocations, eq(purchaseOrderInvoiceItemAllocations.invoiceItemId, purchaseOrderInvoiceItems.id))
       .innerJoin(purchaseOrderInvoices, eq(purchaseOrderInvoiceItems.invoiceId, purchaseOrderInvoices.id))
       .where(and(
         eq(purchaseOrderInvoices.purchaseOrderId, orderId),
@@ -305,12 +307,12 @@ async function applyPendingCostsTx(
       )),
   ])
   const itemById = new Map(orderItems.map((item) => [item.id, item]))
-  const lineById = new Map(invoiceLines.map((line) => [line.id, line]))
+  const lineById = new Map(invoiceLines.map((line) => [`${line.id}:${line.purchaseOrderItemId}`, line]))
   const now = new Date().toISOString()
 
   for (const selection of selections) {
     const item = itemById.get(selection.purchaseOrderItemId)
-    const line = lineById.get(selection.invoiceItemId)
+    const line = lineById.get(`${selection.invoiceItemId}:${selection.purchaseOrderItemId}`)
     if (!item || item.status === "cancelled") throw new Error("El costo pendiente seleccionado ya no está disponible")
     if (item.unitPrice !== null && item.costRecordedAt === null) throw new Error("Esta línea ya tiene un precio acordado en la orden")
     if (!line || line.purchaseOrderItemId !== item.id) throw new Error("La línea de factura no corresponde al costo pendiente seleccionado")
@@ -359,23 +361,35 @@ async function applyCatalogPricesTx(
   input: { orderId: string; supplierId: string; invoiceItemIds: string[]; userId: string },
 ) {
   if (input.invoiceItemIds.length === 0) return []
-  const lines = await tx
+  // New selections identify both the document and destination. Bare IDs remain
+  // supported only for a single allocation, preserving existing 1:1 callers.
+  const selections = input.invoiceItemIds.map(value => {
+    const [invoiceItemId, purchaseOrderItemId] = value.split(":")
+    return { invoiceItemId: invoiceItemId!, purchaseOrderItemId }
+  })
+  const availableLines = await tx
     .select({
       id: purchaseOrderInvoiceItems.id,
-      quantity: purchaseOrderInvoiceItems.quantity,
-      subtotal: purchaseOrderInvoiceItems.subtotal,
+      quantity: purchaseOrderInvoiceItemAllocations.quantity,
+      subtotal: purchaseOrderInvoiceItemAllocations.subtotal,
+      purchaseOrderItemId: purchaseOrderInvoiceItemAllocations.purchaseOrderItemId,
       productId: purchaseOrderItems.productId,
       issueDate: purchaseOrderInvoices.issueDate,
       uploadedAt: purchaseOrderInvoices.uploadedAt,
     })
     .from(purchaseOrderInvoiceItems)
+    .innerJoin(purchaseOrderInvoiceItemAllocations, eq(purchaseOrderInvoiceItemAllocations.invoiceItemId, purchaseOrderInvoiceItems.id))
     .innerJoin(purchaseOrderInvoices, eq(purchaseOrderInvoiceItems.invoiceId, purchaseOrderInvoices.id))
-    .innerJoin(purchaseOrderItems, eq(purchaseOrderInvoiceItems.purchaseOrderItemId, purchaseOrderItems.id))
+    .innerJoin(purchaseOrderItems, eq(purchaseOrderInvoiceItemAllocations.purchaseOrderItemId, purchaseOrderItems.id))
     .where(and(
       eq(purchaseOrderInvoices.purchaseOrderId, input.orderId),
-      inArray(purchaseOrderInvoiceItems.id, input.invoiceItemIds),
+      inArray(purchaseOrderInvoiceItems.id, selections.map(selection => selection.invoiceItemId)),
     ))
-  if (lines.length !== new Set(input.invoiceItemIds).size) throw new Error("Una línea elegida para catálogo ya no está disponible")
+  const lines = selections.map(selection => {
+    const matching = availableLines.filter(line => line.id === selection.invoiceItemId && (!selection.purchaseOrderItemId || line.purchaseOrderItemId === selection.purchaseOrderItemId))
+    if (matching.length !== 1) throw new Error("Selecciona una asignación concreta de la factura para actualizar el catálogo")
+    return matching[0]!
+  })
 
   const seenProducts = new Set<string>()
   const updates = []

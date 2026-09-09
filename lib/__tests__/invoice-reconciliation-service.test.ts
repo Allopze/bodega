@@ -21,7 +21,7 @@ const {
   getPurchaseOrderInvoiceReconciliation,
   backfillPurchaseOrderInvoiceReconciliations,
 } = await import("@/lib/services/purchasing-module/invoice-reconciliation-service")
-const { deletePurchaseOrderInvoice, setPurchaseOrderInvoiceReceipts } = await import("@/lib/services/purchasing-module/invoices")
+const { createPurchaseOrderInvoice, deletePurchaseOrderInvoice, setPurchaseOrderInvoiceReceipts } = await import("@/lib/services/purchasing-module/invoices")
 
 const now = "2026-08-20T12:00:00.000Z"
 const userId = "user-reconciliation"
@@ -82,6 +82,10 @@ async function insertOrderFixture(input: {
     unitPrice: pendingCost ? 100 : 52,
     subtotal: pendingCost ? 100 : 104,
   })
+  await inMemoryDb.insert(schema.purchaseOrderInvoiceItemAllocations).values({
+    id: `${invoiceItemId}-allocation`, invoiceItemId, purchaseOrderItemId: itemId,
+    quantity: pendingCost ? 1 : 2, subtotal: pendingCost ? 100 : 104, source: "operator", createdBy: userId,
+  })
   return { itemId, invoiceId, invoiceItemId }
 }
 
@@ -111,6 +115,41 @@ describe("servicio transaccional de conciliación OC-factura", () => {
   })
 
   afterAll(async () => { await pg.close() })
+
+  it("lee repartos incluso cuando el espejo legado queda nulo", async () => {
+    const { itemId, invoiceItemId } = await insertOrderFixture({ id: "split-reader" })
+    await inMemoryDb.insert(schema.purchaseOrderItems).values({ id: "split-reader-second", purchaseOrderId: "split-reader", productNameFree: "Segundo destino", quantity: 1, unitOfMeasure: "unidad", unitPrice: 52, subtotal: 52 })
+    await inMemoryDb.update(schema.purchaseOrderInvoiceItems).set({ purchaseOrderItemId: null }).where(eq(schema.purchaseOrderInvoiceItems.id, invoiceItemId))
+    await inMemoryDb.update(schema.purchaseOrderInvoiceItemAllocations).set({ quantity: 1, subtotal: 52 }).where(eq(schema.purchaseOrderInvoiceItemAllocations.invoiceItemId, invoiceItemId))
+    await inMemoryDb.insert(schema.purchaseOrderInvoiceItemAllocations).values({ id: "split-reader-second-allocation", invoiceItemId, purchaseOrderItemId: "split-reader-second", quantity: 1, subtotal: 52, source: "operator" })
+    const result = await getPurchaseOrderInvoiceReconciliation("split-reader")
+    expect(result.items.find(item => item.ocItemId === itemId)?.invoicedQty).toBe(1)
+    expect(result.items.find(item => item.ocItemId === "split-reader-second")?.invoicedQty).toBe(1)
+  })
+
+  it("crea asignaciones manuales y deriva el espejo en la misma transacción", async () => {
+    const { itemId } = await insertOrderFixture({ id: "manual-allocation" })
+    const invoiceId = await createPurchaseOrderInvoice({ purchaseOrderId: "manual-allocation", invoiceNumber: "MANUAL-2", amount: 52, fileName: "manual.pdf", filePath: "manual.pdf", uploadedBy: userId, items: [{ purchaseOrderItemId: itemId, productName: "Producto", unitOfMeasure: "unidad", quantity: 1, unitPrice: 52, subtotal: 52 }] }, ["ws-reconciliation"])
+    const line = await inMemoryDb.query.purchaseOrderInvoiceItems.findFirst({ where: eq(schema.purchaseOrderInvoiceItems.invoiceId, invoiceId), with: { allocations: true } })
+    expect(line?.allocations).toEqual([expect.objectContaining({ purchaseOrderItemId: itemId, quantity: 1, subtotal: 52, source: "operator" })])
+    expect(line?.purchaseOrderItemId).toBe(itemId)
+  })
+
+  it("registra el costo de cada destino usando su subtotal asignado", async () => {
+    const { itemId, invoiceItemId, invoiceId } = await insertOrderFixture({ id: "split-cost", pendingCost: true })
+    await inMemoryDb.update(schema.purchaseOrderItems).set({ quantity: 0.6, quantityOfficeReceived: 0.6 }).where(eq(schema.purchaseOrderItems.id, itemId))
+    await inMemoryDb.insert(schema.purchaseOrderItems).values({ id: "split-cost-second", purchaseOrderId: "split-cost", productNameFree: "Servicio adicional", unitOfMeasure: "servicio", quantity: 0.4, quantityOfficeReceived: 0.4, unitPrice: null, subtotal: null })
+    await inMemoryDb.update(schema.purchaseOrderInvoiceItems).set({ purchaseOrderItemId: null, subtotal: 140 }).where(eq(schema.purchaseOrderInvoiceItems.id, invoiceItemId))
+    await inMemoryDb.update(schema.purchaseOrderInvoices).set({ amount: 166.6 }).where(eq(schema.purchaseOrderInvoices.id, invoiceId))
+    await inMemoryDb.update(schema.purchaseOrderInvoiceItemAllocations).set({ quantity: 0.6, subtotal: 60 }).where(eq(schema.purchaseOrderInvoiceItemAllocations.invoiceItemId, invoiceItemId))
+    await inMemoryDb.insert(schema.purchaseOrderInvoiceItemAllocations).values({ id: "split-cost-second-allocation", invoiceItemId, purchaseOrderItemId: "split-cost-second", quantity: 0.4, subtotal: 80, source: "operator" })
+    const evidence = await getPurchaseOrderInvoiceReconciliation("split-cost")
+    await acceptPurchaseOrderInvoiceReconciliation({ purchaseOrderId: "split-cost", fingerprint: evidence.fingerprint, reason: "Costos separados según evidencia documental.", userId, worksiteScope: "all", pendingCosts: [{ purchaseOrderItemId: itemId, invoiceItemId }, { purchaseOrderItemId: "split-cost-second", invoiceItemId }] })
+    const first = await inMemoryDb.query.purchaseOrderItems.findFirst({ where: eq(schema.purchaseOrderItems.id, itemId) })
+    const second = await inMemoryDb.query.purchaseOrderItems.findFirst({ where: eq(schema.purchaseOrderItems.id, "split-cost-second") })
+    expect(first?.unitPrice).toBeCloseTo(100, 4)
+    expect(second?.unitPrice).toBeCloseTo(200, 4)
+  })
 
   it("acepta sólo la huella vigente y respeta el alcance de faena", async () => {
     await insertOrderFixture({ id: "scope" })
@@ -142,7 +181,7 @@ describe("servicio transaccional de conciliación OC-factura", () => {
       updatedAt: schema.purchaseOrders.invoiceReconciliationUpdatedAt,
     }).from(schema.purchaseOrders).where(eq(schema.purchaseOrders.id, "backfill"))
     expect(order?.status).toBe("needs_review")
-    expect(order?.fingerprint).toMatch(/^v2:[a-f0-9]{64}$/)
+    expect(order?.fingerprint).toMatch(/^v3:[a-f0-9]{64}$/)
     expect(order?.updatedAt).not.toBeNull()
   })
 
@@ -302,6 +341,59 @@ describe("servicio transaccional de conciliación OC-factura", () => {
     const history = await inMemoryDb.select().from(schema.productSupplierPriceHistory)
       .where(eq(schema.productSupplierPriceHistory.sourceId, invoiceItemId))
     expect(history).toEqual([expect.objectContaining({ previousPrice: 50, newPrice: 52, source: "invoice_reconciliation" })])
+  })
+
+  it("actualiza cada producto con el precio de su asignación documental", async () => {
+    await inMemoryDb.insert(schema.products).values([
+      {
+        id: "product-split-a", sku: "PROD-SPLIT-A", name: "Producto split A",
+        categoryId: "category-reconciliation", unitOfMeasure: "unidad", createdAt: now, updatedAt: now,
+      },
+      {
+        id: "product-split-b", sku: "PROD-SPLIT-B", name: "Producto split B",
+        categoryId: "category-reconciliation", unitOfMeasure: "unidad", createdAt: now, updatedAt: now,
+      },
+    ])
+    const { itemId, invoiceItemId, invoiceId } = await insertOrderFixture({ id: "split-catalog" })
+    await inMemoryDb.update(schema.purchaseOrderItems).set({
+      productId: "product-split-a", quantity: 1, quantityOfficeReceived: 1, unitPrice: 50, subtotal: 50,
+    }).where(eq(schema.purchaseOrderItems.id, itemId))
+    await inMemoryDb.insert(schema.purchaseOrderItems).values({
+      id: "split-catalog-second", purchaseOrderId: "split-catalog", productId: "product-split-b",
+      quantity: 1, quantityOfficeReceived: 1, unitOfMeasure: "unidad", unitPrice: 100, subtotal: 100,
+    })
+    await inMemoryDb.update(schema.purchaseOrders).set({ netAmount: 150, taxAmount: 28.5, totalAmount: 178.5 })
+      .where(eq(schema.purchaseOrders.id, "split-catalog"))
+    await inMemoryDb.update(schema.purchaseOrderInvoices).set({ amount: 178.5 })
+      .where(eq(schema.purchaseOrderInvoices.id, invoiceId))
+    await inMemoryDb.update(schema.purchaseOrderInvoiceItems).set({
+      purchaseOrderItemId: null, quantity: 2, unitPrice: 150, subtotal: 300,
+    }).where(eq(schema.purchaseOrderInvoiceItems.id, invoiceItemId))
+    await inMemoryDb.update(schema.purchaseOrderInvoiceItemAllocations).set({ quantity: 1, subtotal: 100 })
+      .where(eq(schema.purchaseOrderInvoiceItemAllocations.invoiceItemId, invoiceItemId))
+    await inMemoryDb.insert(schema.purchaseOrderInvoiceItemAllocations).values({
+      id: "split-catalog-second-allocation", invoiceItemId, purchaseOrderItemId: "split-catalog-second",
+      quantity: 1, subtotal: 200, source: "operator",
+    })
+
+    const evidence = await getPurchaseOrderInvoiceReconciliation("split-catalog")
+    expect(evidence.status).toBe("needs_review")
+    await acceptPurchaseOrderInvoiceReconciliation({
+      purchaseOrderId: "split-catalog", fingerprint: evidence.fingerprint,
+      reason: "Precios documentales separados y validados por producto.",
+      catalogInvoiceItemIds: [`${invoiceItemId}:${itemId}`, `${invoiceItemId}:split-catalog-second`],
+      canUpdateCatalog: true, userId, worksiteScope: "all",
+    })
+
+    const prices = await inMemoryDb.select({
+      productId: schema.productSuppliers.productId,
+      unitPrice: schema.productSuppliers.unitPrice,
+    }).from(schema.productSuppliers)
+      .where(eq(schema.productSuppliers.supplierId, "supplier-reconciliation"))
+    expect(Object.fromEntries(prices.map((price) => [price.productId, price.unitPrice]))).toMatchObject({
+      "product-split-a": 100,
+      "product-split-b": 200,
+    })
   })
 
 

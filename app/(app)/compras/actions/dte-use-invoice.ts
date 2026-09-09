@@ -16,6 +16,8 @@ import { dbErrMsg } from "./helpers"
 import { downloadDteDocumentXml } from "./dte-download-xml"
 import { persistInvoicePdf, removeInvoiceAttachment } from "../invoice-attachments"
 import { enrichDteDocumentLines } from "@/lib/services/dte-portal/purchase-document-xml"
+import { InvoiceLineAllocationError } from "@/lib/services/purchasing-module/invoice-line-allocations"
+import { INVOICE_ALLOCATION_ERRORS } from "@/lib/services/purchasing-module/invoice-allocation-feedback"
 
 export interface UseDteAsInvoiceInput {
   purchaseOrderId: string
@@ -201,12 +203,13 @@ export async function attachDteAsInvoice(
     // arreglan desde el mismo diálogo. Un mensaje único los volvía a todos un
     // callejón sin salida. `dbErrMsg` deja pasar el error de negocio y sigue
     // tapando los del driver, que publicarían el SQL y la fila.
-    return { ok: false, message: dbErrMsg(error, "No se pudo adjuntar este DTE") }
+    return { ok: false, message: error instanceof InvoiceLineAllocationError ? INVOICE_ALLOCATION_ERRORS[error.code] : dbErrMsg(error, "No se pudo adjuntar este DTE") }
   }
 
   revalidateOperationalViews([
     "/compras",
     `/compras/${input.purchaseOrderId}`,
+    "/bodega/trazabilidad",
     ...(input.receiptIds && input.receiptIds.length > 0
       ? ["/recepcion", ...input.receiptIds.map((receiptId) => `/recepcion/${receiptId}`)]
       : []),

@@ -14,6 +14,8 @@ import { cleanRut } from "@/lib/rut"
 import { getPurchaseOrderInvoiceReconciliation, reconciliationWarnings } from "@/lib/services/purchasing-module/invoice-reconciliation-service"
 import { requireAuth, can, canAny } from "@/lib/auth/can"
 import { canAccessWorksite }  from "@/lib/auth/can"
+import { serviceWorksiteScope } from "@/lib/auth/scope"
+import { loadInvoiceLineAllocationsTx } from "@/lib/services/purchasing-module/invoice-line-allocations"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { StateBadge } from "@/components/states/state-badge"
@@ -202,8 +204,21 @@ export default async function OcDetailPage({
     ? [[], [], []]
     : await Promise.all([
         // Load invoice items for reconciliation
-        db.query.purchaseOrderInvoiceItems.findMany({
-          where: (t, { inArray }) => inArray(t.invoiceId, invoiceIds),
+        db.transaction(async tx => {
+          // Keep displayed documentary values and editor fingerprints coherent
+          // with allocation writers, which also lock the owning order.
+          await tx.select({ id: purchaseOrders.id }).from(purchaseOrders).where(eq(purchaseOrders.id, order.id)).for("update")
+          const lines = await tx.query.purchaseOrderInvoiceItems.findMany({
+            where: (t, { inArray }) => inArray(t.invoiceId, invoiceIds),
+            columns: { id: true, invoiceId: true, productName: true, productCode: true, unitOfMeasure: true, quantity: true, unitPrice: true, subtotal: true },
+            with: { allocations: { columns: { id: true, purchaseOrderItemId: true, quantity: true, subtotal: true } } },
+          })
+          const result = []
+          for (const line of lines) {
+            const evidence = await loadInvoiceLineAllocationsTx(tx, { purchaseOrderId: order.id, invoiceItemId: line.id, worksiteScope: serviceWorksiteScope(session) })
+            result.push({ ...line, allocationFingerprint: evidence.fingerprint })
+          }
+          return result
         }),
         // DTE del portal tributario ya conciliados contra las facturas de esta
         // OC (ver lib/services/dte-portal/reconciliation.ts).
@@ -225,8 +240,8 @@ export default async function OcDetailPage({
   // contra el que se evalúan las líneas de cada DTE candidato.
   const invoicedByItem = new Map<string, number>()
   for (const item of invoiceItemRows) {
-    if (item.purchaseOrderItemId) {
-      invoicedByItem.set(item.purchaseOrderItemId, (invoicedByItem.get(item.purchaseOrderItemId) ?? 0) + item.quantity)
+    for (const allocation of item.allocations) {
+      invoicedByItem.set(allocation.purchaseOrderItemId, (invoicedByItem.get(allocation.purchaseOrderItemId) ?? 0) + allocation.quantity)
     }
   }
 
@@ -376,10 +391,7 @@ export default async function OcDetailPage({
         purchaseOrderId: order.id,
         invoiceNumber: inv.invoiceNumber,
         issueDate: inv.issueDate,
-        items: items.map((item) => ({
-          purchaseOrderItemId: item.purchaseOrderItemId,
-          quantity: item.quantity,
-        })),
+        items: items.flatMap(item => item.allocations.map(allocation => ({ purchaseOrderItemId: allocation.purchaseOrderItemId, quantity: allocation.quantity }))),
       }, orderReceipts),
     }
   })

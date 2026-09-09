@@ -18,6 +18,7 @@ import { matchInvoiceItemsToPurchaseOrderItems } from "./invoice-item-matching"
 import { getPurchaseOrderInvoiceReconciliation, persistPurchaseOrderInvoiceReconciliationTx, reconciliationWarnings } from "./invoice-reconciliation-service"
 import { classifyOrderReference, dteDocumentKind, dteInvoiceRejection, normalizeSupplierProductCode, normalizeSupplierProductName, type DteCandidateOrderReference } from "./dte-candidates"
 import { normalizeOrderCodeRef } from "./dte-parser"
+import { loadInvoiceLineAllocationsTx, replaceInvoiceLineAllocationsTx } from "./invoice-line-allocations"
 
 /* ── Purchase Order Invoices ─────────────────────────────────────────────────── */
 
@@ -259,15 +260,6 @@ async function insertPurchaseOrderInvoice(
       }
     }
 
-    if (dteAttachment?.lineResolutions?.some((resolution) => resolution.rememberAlias)) {
-      await persistConfirmedSupplierAliasesTx(
-        tx,
-        order.supplierId,
-        input.uploadedBy,
-        dteAttachment.lineResolutions,
-      )
-    }
-
     const invoiceId = nanoid()
 
     // Una carga manual recalcula desde líneas para no confiar en el navegador.
@@ -326,11 +318,12 @@ async function insertPurchaseOrderInvoice(
 
     // Insert invoice items if provided
     if (invoiceItems.length > 0) {
-      await tx.insert(purchaseOrderInvoiceItems).values(
-        invoiceItems.map((item) => ({
-          id:                  nanoid(),
+      for (const item of invoiceItems) {
+        const invoiceItemId = nanoid()
+        await tx.insert(purchaseOrderInvoiceItems).values({
+          id:                  invoiceItemId,
           invoiceId,
-          purchaseOrderItemId: item.purchaseOrderItemId ?? null,
+          purchaseOrderItemId: null,
           sourceDteDocumentItemId: item.sourceDteDocumentItemId ?? null,
           productName:         item.productName,
           productCode:         item.productCode ?? null,
@@ -338,8 +331,24 @@ async function insertPurchaseOrderInvoice(
           quantity:            item.quantity,
           unitPrice:           item.unitPrice,
           subtotal:            item.subtotal,
-        }))
-      )
+        })
+        if (item.purchaseOrderItemId) {
+          const context = { purchaseOrderId: order.id, invoiceItemId, worksiteScope: worksiteIds }
+          const current = await loadInvoiceLineAllocationsTx(tx, context)
+          await replaceInvoiceLineAllocationsTx(tx, {
+            ...context, expectedFingerprint: current.fingerprint, coverage: "complete",
+            source: dteAttachment ? "dte_suggestion" : "operator",
+            actor: { userId: input.uploadedBy, userEmail: input.userEmail },
+            allocations: [{ purchaseOrderItemId: item.purchaseOrderItemId, quantity: item.quantity, subtotal: item.subtotal }],
+          })
+        }
+      }
+    }
+
+    // Only learn after every requested 1:1 allocation has passed the same
+    // documentary validation and been persisted in this transaction.
+    if (dteAttachment?.lineResolutions?.some((resolution) => resolution.rememberAlias)) {
+      await persistConfirmedSupplierAliasesTx(tx, order.supplierId, input.uploadedBy, dteAttachment.lineResolutions)
     }
 
     if (dteAttachment) {

@@ -13,6 +13,43 @@ const orderItems = [
 ]
 
 describe("reconcileInvoiceEvidence", () => {
+  it("reconciles split allocations and signed credit notes per destination", () => {
+    const result = reconcileInvoiceEvidence({
+      totalOC: 80_000,
+      orderItems: [
+        { id: "a", productName: "Casco blanco", quantity: 4, unitOfMeasure: "unidad", subtotal: 40_000 },
+        { id: "b", productName: "Casco azul", quantity: 4, unitOfMeasure: "unidad", subtotal: 40_000 },
+      ],
+      invoices: [
+        { id: "invoice", invoiceNumber: "1", amount: 100_000, items: [{
+          id: "line", productName: "Cascos", productCode: null, unitOfMeasure: "unidad", quantity: 10, subtotal: 100_000,
+          allocations: [{ id: "al-a", purchaseOrderItemId: "a", quantity: 6, subtotal: 60_000 }, { id: "al-b", purchaseOrderItemId: "b", quantity: 4, subtotal: 40_000 }],
+        }] },
+        { id: "credit", invoiceNumber: "2", amount: -20_000, items: [{
+          id: "credit-line", productName: "Cascos", productCode: null, unitOfMeasure: "unidad", quantity: -2, subtotal: -20_000,
+          allocations: [{ id: "al-credit", purchaseOrderItemId: "a", quantity: -2, subtotal: -20_000 }],
+        }] },
+      ],
+    })
+    expect(result.items.map(item => item.invoicedQty)).toEqual([4, 4])
+    expect(result.items.map(item => item.invoiceEffectiveUnitPrice)).toEqual([10_000, 10_000])
+    expect(result.items[0]?.linkedInvoiceItemIds).toEqual(["credit-line", "line"])
+    expect(result.status).toBe("matched")
+  })
+
+  it("fingerprints allocation values but ignores their row order", () => {
+    const allocations = [{ id: "a", purchaseOrderItemId: "oc-1", quantity: 1, subtotal: 50 }, { id: "b", purchaseOrderItemId: "oc-2", quantity: 1, subtotal: 50 }]
+    const evidence = (rows: typeof allocations) => reconcileInvoiceEvidence({ totalOC: 100, orderItems, invoices: [{ id: "i", invoiceNumber: "1", amount: 100, items: [{ id: "l", productName: "Mixto", productCode: null, unitOfMeasure: "unidad", quantity: 2, subtotal: 100, allocations: rows }] }] })
+    expect(evidence(allocations).fingerprint).toBe(evidence([...allocations].reverse()).fingerprint)
+    expect(evidence(allocations).fingerprint).not.toBe(evidence([{ ...allocations[0]!, subtotal: 40 }, { ...allocations[1]!, subtotal: 60 }]).fingerprint)
+  })
+
+  it("keeps partially assigned documentary lines pending", () => {
+    const result = reconcileInvoiceEvidence({ totalOC: 100, orderItems: [orderItems[0]!], invoices: [{ id: "i", invoiceNumber: "1", amount: 100, items: [{ id: "l", productName: "Casco", productCode: null, unitOfMeasure: "unidad", quantity: 4, subtotal: 200, allocations: [{ id: "a", purchaseOrderItemId: "oc-1", quantity: 2, subtotal: 100 }] }] }] })
+    expect(result.items[0]?.invoicedQty).toBe(2)
+    expect(result.lines.unlinkedLineCount).toBe(1)
+    expect(result.coverage.status).toBe("partial")
+  })
   it("keeps money reconciliation separate when invoices have no line evidence", () => {
     const result = reconcileInvoiceEvidence({
       totalOC: 100,
@@ -36,8 +73,8 @@ describe("reconcileInvoiceEvidence", () => {
         invoiceNumber: "123",
         amount: 100,
         items: [
-          { id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: "unidad", quantity: 2, subtotal: 100 },
-          { id: "line-2", purchaseOrderItemId: null, unitOfMeasure: "par", quantity: 4, subtotal: 100 },
+          { id: "line-1", allocations: [{ id: "line-1" + "-allocation", purchaseOrderItemId: "oc-1", quantity: 2, subtotal: 100 }], productName: "Producto documental", productCode: null, unitOfMeasure: "unidad", quantity: 2, subtotal: 100 },
+          { id: "line-2", allocations: [], productName: "Producto documental", productCode: null, unitOfMeasure: "par", quantity: 4, subtotal: 100 },
         ],
       }],
     })
@@ -69,13 +106,13 @@ describe("reconcileInvoiceEvidence", () => {
         {
           id: "partial", invoiceNumber: "002", amount: 75,
           items: [
-            { id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: "unidad", quantity: 2, subtotal: 100 },
-            { id: "line-2", purchaseOrderItemId: null, quantity: 1, subtotal: 25 },
+            { id: "line-1", allocations: [{ id: "line-1" + "-allocation", purchaseOrderItemId: "oc-1", quantity: 2, subtotal: 100 }], productName: "Producto documental", productCode: null, unitOfMeasure: "unidad", quantity: 2, subtotal: 100 },
+            { id: "line-2", allocations: [], productName: "Producto documental", productCode: null, unitOfMeasure: null, quantity: 1, subtotal: 25 },
           ],
         },
         {
           id: "linked", invoiceNumber: "003", amount: 0,
-          items: [{ id: "line-3", purchaseOrderItemId: "oc-2", unitOfMeasure: "par", quantity: 4, subtotal: 100 }],
+          items: [{ id: "line-3", allocations: [{ id: "line-3" + "-allocation", purchaseOrderItemId: "oc-2", quantity: 4, subtotal: 100 }], productName: "Producto documental", productCode: null, unitOfMeasure: "par", quantity: 4, subtotal: 100 }],
         },
       ],
     })
@@ -94,8 +131,8 @@ describe("reconcileInvoiceEvidence", () => {
       invoices: [{
         id: "inv-1", invoiceNumber: "123", amount: 200,
         items: [
-          { id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: "un", quantity: 2, unitPrice: 80, subtotal: 102 },
-          { id: "line-2", purchaseOrderItemId: "oc-2", unitOfMeasure: "pares", quantity: 4, unitPrice: 25, subtotal: 100 },
+          { id: "line-1", allocations: [{ id: "line-1" + "-allocation", purchaseOrderItemId: "oc-1", quantity: 2, subtotal: 102 }], productName: "Producto documental", productCode: null, unitOfMeasure: "un", quantity: 2, unitPrice: 80, subtotal: 102 },
+          { id: "line-2", allocations: [{ id: "line-2" + "-allocation", purchaseOrderItemId: "oc-2", quantity: 4, subtotal: 100 }], productName: "Producto documental", productCode: null, unitOfMeasure: "pares", quantity: 4, unitPrice: 25, subtotal: 100 },
         ],
       }],
     })
@@ -118,8 +155,8 @@ describe("reconcileInvoiceEvidence", () => {
       invoices: [{
         id: "inv-1", invoiceNumber: "123", amount: 200,
         items: [
-          { id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: "unidad", quantity: 2, unitPrice: 100, subtotal: 104 },
-          { id: "line-2", purchaseOrderItemId: "oc-2", unitOfMeasure: "par", quantity: 4, unitPrice: 25, subtotal: 100 },
+          { id: "line-1", allocations: [{ id: "line-1" + "-allocation", purchaseOrderItemId: "oc-1", quantity: 2, subtotal: 104 }], productName: "Producto documental", productCode: null, unitOfMeasure: "unidad", quantity: 2, unitPrice: 100, subtotal: 104 },
+          { id: "line-2", allocations: [{ id: "line-2" + "-allocation", purchaseOrderItemId: "oc-2", quantity: 4, subtotal: 100 }], productName: "Producto documental", productCode: null, unitOfMeasure: "par", quantity: 4, unitPrice: 25, subtotal: 100 },
         ],
       }],
     })
@@ -136,7 +173,7 @@ describe("reconcileInvoiceEvidence", () => {
       orderItems: [{ id: "oc-1", productName: "Bonificación", quantity: 1, unitOfMeasure: "unidad", unitPrice: 0, subtotal: 0 }],
       invoices: [{
         id: "inv-1", invoiceNumber: "123", amount: 0,
-        items: [{ id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: "unidad", quantity: 1, unitPrice: 2, subtotal: 2 }],
+        items: [{ id: "line-1", allocations: [{ id: "line-1" + "-allocation", purchaseOrderItemId: "oc-1", quantity: 1, subtotal: 2 }], productName: "Producto documental", productCode: null, unitOfMeasure: "unidad", quantity: 1, unitPrice: 2, subtotal: 2 }],
       }],
     })
 
@@ -154,7 +191,7 @@ describe("reconcileInvoiceEvidence", () => {
       orderItems: [orderItems[0]!],
       invoices: [{
         id: "inv-1", invoiceNumber: "123", amount: 100,
-        items: [{ id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: unit, quantity: 2, unitPrice: 80, subtotal: 160 }],
+        items: [{ id: "line-1", allocations: [{ id: "line-1" + "-allocation", purchaseOrderItemId: "oc-1", quantity: 2, subtotal: 160 }], productName: "Producto documental", productCode: null, unitOfMeasure: unit, quantity: 2, unitPrice: 80, subtotal: 160 }],
       }],
     })
 
@@ -168,7 +205,7 @@ describe("reconcileInvoiceEvidence", () => {
       orderItems: [{ id: "service", productName: "Calibración", quantity: 1, unitOfMeasure: "servicio", unitPrice: null, subtotal: null }],
       invoices: [{
         id: "inv-1", invoiceNumber: "123", amount: 120,
-        items: [{ id: "source-line", purchaseOrderItemId: "service", unitOfMeasure: "servicio", quantity: 1, unitPrice: 120, subtotal: 120 }],
+        items: [{ id: "source-line", allocations: [{ id: "source-line" + "-allocation", purchaseOrderItemId: "service", quantity: 1, subtotal: 120 }], productName: "Producto documental", productCode: null, unitOfMeasure: "servicio", quantity: 1, unitPrice: 120, subtotal: 120 }],
       }],
     })
 
@@ -182,7 +219,7 @@ describe("reconcileInvoiceEvidence", () => {
       orderItems,
       invoices: [{
         id: "inv-1", invoiceNumber: "123", amount: 100,
-        items: [{ id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: "unidad", quantity: 1, subtotal: 50 }],
+        items: [{ id: "line-1", allocations: [{ id: "line-1" + "-allocation", purchaseOrderItemId: "oc-1", quantity: 1, subtotal: 50 }], productName: "Producto documental", productCode: null, unitOfMeasure: "unidad", quantity: 1, subtotal: 50 }],
       }],
     })
     expect(partial.status).toBe("partially_invoiced")
@@ -192,8 +229,8 @@ describe("reconcileInvoiceEvidence", () => {
       totalOC: 200,
       orderItems: [orderItems[0]!],
       invoices: [
-        { id: "inv-1", invoiceNumber: "123", amount: 50, items: [{ id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: "unidad", quantity: 1, subtotal: 50 }] },
-        { id: "inv-2", invoiceNumber: "124", amount: 100, items: [{ id: "line-2", purchaseOrderItemId: "oc-1", unitOfMeasure: "unidad", quantity: 2, subtotal: 100 }] },
+        { id: "inv-1", invoiceNumber: "123", amount: 50, items: [{ id: "line-1", allocations: [{ id: "line-1" + "-allocation", purchaseOrderItemId: "oc-1", quantity: 1, subtotal: 50 }], productName: "Producto documental", productCode: null, unitOfMeasure: "unidad", quantity: 1, subtotal: 50 }] },
+        { id: "inv-2", invoiceNumber: "124", amount: 100, items: [{ id: "line-2", allocations: [{ id: "line-2" + "-allocation", purchaseOrderItemId: "oc-1", quantity: 2, subtotal: 100 }], productName: "Producto documental", productCode: null, unitOfMeasure: "unidad", quantity: 2, subtotal: 100 }] },
       ],
     })
     expect(excess.issues).toContainEqual(expect.objectContaining({ code: "quantity_over", orderItemId: "oc-1" }))
@@ -209,7 +246,7 @@ describe("reconcileInvoiceEvidence", () => {
       invoices: [{
         id: "inv-1", invoiceNumber: "101", amount: 300,
         supplierIdentityStatus: "verified",
-        items: [{ id: "line-1", purchaseOrderItemId: "gloves", unitOfMeasure: "par", quantity: 6, subtotal: 300 }],
+        items: [{ id: "line-1", allocations: [{ id: "line-1" + "-allocation", purchaseOrderItemId: "gloves", quantity: 6, subtotal: 300 }], productName: "Producto documental", productCode: null, unitOfMeasure: "par", quantity: 6, subtotal: 300 }],
       }],
     })
 
@@ -234,7 +271,7 @@ describe("reconcileInvoiceEvidence", () => {
       }],
       invoices: [{
         id: "inv-1", invoiceNumber: "101", amount: 300, supplierIdentityStatus: "verified",
-        items: [{ id: "line-1", purchaseOrderItemId: "gloves", unitOfMeasure: "par", quantity: 6, unitPrice: 45, subtotal: 270 }],
+        items: [{ id: "line-1", allocations: [{ id: "line-1" + "-allocation", purchaseOrderItemId: "gloves", quantity: 6, subtotal: 270 }], productName: "Producto documental", productCode: null, unitOfMeasure: "par", quantity: 6, unitPrice: 45, subtotal: 270 }],
       }],
     })
 
@@ -253,11 +290,11 @@ describe("reconcileInvoiceEvidence", () => {
       invoices: [
         {
           id: "inv-1", invoiceNumber: "101", amount: 300, supplierIdentityStatus: "verified",
-          items: [{ id: "line-1", purchaseOrderItemId: "gloves", unitOfMeasure: "par", quantity: 6, subtotal: 300 }],
+          items: [{ id: "line-1", allocations: [{ id: "line-1" + "-allocation", purchaseOrderItemId: "gloves", quantity: 6, subtotal: 300 }], productName: "Producto documental", productCode: null, unitOfMeasure: "par", quantity: 6, subtotal: 300 }],
         },
         {
           id: "inv-2", invoiceNumber: "102", amount: 200, supplierIdentityStatus: "verified",
-          items: [{ id: "line-2", purchaseOrderItemId: "gloves", unitOfMeasure: "par", quantity: 4, subtotal: 200 }],
+          items: [{ id: "line-2", allocations: [{ id: "line-2" + "-allocation", purchaseOrderItemId: "gloves", quantity: 4, subtotal: 200 }], productName: "Producto documental", productCode: null, unitOfMeasure: "par", quantity: 4, subtotal: 200 }],
         },
       ],
     })
@@ -276,7 +313,7 @@ describe("reconcileInvoiceEvidence", () => {
       }],
       invoices: [{
         id: "inv-1", invoiceNumber: "101", amount: 500, supplierIdentityStatus: "verified" as const,
-        items: [{ id: "line-1", purchaseOrderItemId: "gloves", unitOfMeasure: "par", quantity: 10, subtotal: 500 }],
+        items: [{ id: "line-1", allocations: [{ id: "line-1" + "-allocation", purchaseOrderItemId: "gloves", quantity: 10, subtotal: 500 }], productName: "Producto documental", productCode: null, unitOfMeasure: "par", quantity: 10, subtotal: 500 }],
       }],
     }
     const pending = reconcileInvoiceEvidence(input)
@@ -299,7 +336,7 @@ describe("reconcileInvoiceEvidence", () => {
       orderItems: [orderItems[0]!],
       invoices: [{
         id: "inv-1", invoiceNumber: "123", amount: 100,
-        items: [{ id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: null, quantity: 2, subtotal: 100 }],
+        items: [{ id: "line-1", allocations: [{ id: "line-1" + "-allocation", purchaseOrderItemId: "oc-1", quantity: 2, subtotal: 100 }], productName: "Producto documental", productCode: null, unitOfMeasure: null, quantity: 2, subtotal: 100 }],
       }],
     }
     const first = reconcileInvoiceEvidence(input)
@@ -335,7 +372,7 @@ describe("reconcileInvoiceEvidence", () => {
       orderItems: [{ ...orderItems[0]!, supplierReceivedQuantity: 1 }],
       invoices: [{
         id: "inv-1", invoiceNumber: "123", amount: 100,
-        items: [{ id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: "unidad", quantity: 2, subtotal: 100 }],
+        items: [{ id: "line-1", allocations: [{ id: "line-1" + "-allocation", purchaseOrderItemId: "oc-1", quantity: 2, subtotal: 100 }], productName: "Producto documental", productCode: null, unitOfMeasure: "unidad", quantity: 2, subtotal: 100 }],
       }],
     }
     const initial = reconcileInvoiceEvidence(input)
@@ -353,7 +390,7 @@ describe("reconcileInvoiceEvidence", () => {
       totalOC: 100,
       invoices: [{
         id: "inv-1", invoiceNumber: "123", amount: 100,
-        items: [{ id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: "unidad", quantity: 2, subtotal: 100 }],
+        items: [{ id: "line-1", allocations: [{ id: "line-1" + "-allocation", purchaseOrderItemId: "oc-1", quantity: 2, subtotal: 100 }], productName: "Producto documental", productCode: null, unitOfMeasure: "unidad", quantity: 2, subtotal: 100 }],
       }],
     }
     const before = reconcileInvoiceEvidence({ ...base, orderItems: [{ ...orderItems[0]!, supplierReceivedQuantity: 0 }] })
@@ -370,7 +407,7 @@ describe("reconcileInvoiceEvidence", () => {
       orderItems: [{ ...orderItems[0]!, supplierReceivedQuantity: 2 }],
       invoices: [{
         id: "inv-1", invoiceNumber: "123", amount: 100, supplierIdentityStatus: "unverified",
-        items: [{ id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: "unidad", quantity: 2, subtotal: 100 }],
+        items: [{ id: "line-1", allocations: [{ id: "line-1" + "-allocation", purchaseOrderItemId: "oc-1", quantity: 2, subtotal: 100 }], productName: "Producto documental", productCode: null, unitOfMeasure: "unidad", quantity: 2, subtotal: 100 }],
       }],
     })
 
@@ -383,7 +420,7 @@ describe("reconcileInvoiceEvidence · tolerancia configurable", () => {
   const orderItems = [{ id: "i1", productName: "Casco", quantity: 1, unitPrice: 10_000, subtotal: 10_000 }]
   const invoices = [{
     id: "f1", invoiceNumber: "1", amount: 10_030,
-    items: [{ purchaseOrderItemId: "i1", quantity: 1, unitPrice: 10_030, subtotal: 10_030 }],
+    items: [{ allocations: [{ id: "fixture-line" + "-allocation", purchaseOrderItemId: "i1", quantity: 1, subtotal: 10_030 }], id: "fixture-line", productName: "Producto documental", productCode: null, unitOfMeasure: null, quantity: 1, unitPrice: 10_030, subtotal: 10_030 }],
   }]
 
   it("con la tolerancia por defecto, 30 pesos de más son una discrepancia", () => {
@@ -426,7 +463,7 @@ describe("reconcileInvoiceEvidence · facturar contra lo ordenado o lo recibido"
   }
   const factura = [{
     id: "f1", invoiceNumber: "1", amount: 80_000,
-    items: [{ purchaseOrderItemId: "s1", quantity: 1, unitOfMeasure: "servicio", unitPrice: 80_000, subtotal: 80_000 }],
+    items: [{ allocations: [{ id: "fixture-line" + "-allocation", purchaseOrderItemId: "s1", quantity: 1, subtotal: 80_000 }], id: "fixture-line", productName: "Producto documental", productCode: null, quantity: 1, unitOfMeasure: "servicio", unitPrice: 80_000, subtotal: 80_000 }],
   }]
 
   it("por defecto exige recepción y deja la OC esperándola", () => {
@@ -460,8 +497,8 @@ describe("reconcileInvoiceEvidence · facturar contra lo ordenado o lo recibido"
       invoices: [{
         id: "f1", invoiceNumber: "1", amount: 100_000,
         items: [
-          { purchaseOrderItemId: "s1", quantity: 1, unitOfMeasure: "servicio", unitPrice: 80_000, subtotal: 80_000 },
-          { purchaseOrderItemId: "b1", quantity: 2, unitOfMeasure: "unidad", unitPrice: 10_000, subtotal: 20_000 },
+          { allocations: [{ id: "fixture-line" + "-allocation", purchaseOrderItemId: "s1", quantity: 1, subtotal: 80_000 }], id: "fixture-line", productName: "Producto documental", productCode: null, quantity: 1, unitOfMeasure: "servicio", unitPrice: 80_000, subtotal: 80_000 },
+          { allocations: [{ id: "fixture-line" + "-allocation", purchaseOrderItemId: "b1", quantity: 2, subtotal: 20_000 }], id: "fixture-line", productName: "Producto documental", productCode: null, quantity: 2, unitOfMeasure: "unidad", unitPrice: 10_000, subtotal: 20_000 },
         ],
       }],
     })
@@ -477,12 +514,12 @@ describe("reconcileInvoiceEvidence · notas de crédito", () => {
   }
   const factura = {
     id: "f1", invoiceNumber: "100", amount: 100_000,
-    items: [{ purchaseOrderItemId: "i1", quantity: 10, unitOfMeasure: "unidad", unitPrice: 10_000, subtotal: 100_000 }],
+    items: [{ allocations: [{ id: "fixture-line" + "-allocation", purchaseOrderItemId: "i1", quantity: 10, subtotal: 100_000 }], id: "fixture-line", productName: "Producto documental", productCode: null, quantity: 10, unitOfMeasure: "unidad", unitPrice: 10_000, subtotal: 100_000 }],
   }
   /** El proveedor devuelve 2 cascos: NC por 20.000, en negativo como en contabilidad. */
   const notaCredito = {
     id: "nc1", invoiceNumber: "5", amount: -20_000,
-    items: [{ purchaseOrderItemId: "i1", quantity: -2, unitOfMeasure: "unidad", unitPrice: 10_000, subtotal: -20_000 }],
+    items: [{ allocations: [{ id: "fixture-line" + "-allocation", purchaseOrderItemId: "i1", quantity: -2, subtotal: -20_000 }], id: "fixture-line", productName: "Producto documental", productCode: null, quantity: -2, unitOfMeasure: "unidad", unitPrice: 10_000, subtotal: -20_000 }],
   }
 
   it("resta del total facturado en vez de sumar", () => {
@@ -500,7 +537,7 @@ describe("reconcileInvoiceEvidence · notas de crédito", () => {
   })
 
   it("una NC que anula la factura completa deja la OC como si no se hubiera facturado", () => {
-    const anulacion = { ...notaCredito, amount: -100_000, items: [{ ...notaCredito.items[0]!, quantity: -10, subtotal: -100_000 }] }
+    const anulacion = { ...notaCredito, amount: -100_000, items: [{ ...notaCredito.items[0]!, quantity: -10, subtotal: -100_000, allocations: [{ ...notaCredito.items[0]!.allocations[0]!, quantity: -10, subtotal: -100_000 }] }] }
     const ev = reconcileInvoiceEvidence({ totalOC: 100_000, orderItems: [item], invoices: [factura, anulacion] })
 
     expect(ev.totalInvoiced).toBe(0)

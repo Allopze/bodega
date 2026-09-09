@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 const mockAddInvoiceAction = vi.fn()
 const mockSetInvoiceReceiptsAction = vi.fn()
 const mockRefresh = vi.fn()
+vi.mock("../actions/invoice-allocations", () => ({ saveInvoiceLineAllocationsAction: vi.fn() }))
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mockRefresh }) }))
 vi.mock("../invoice-actions", () => ({
   addInvoiceAction: (...args: unknown[]) => mockAddInvoiceAction(...args),
@@ -98,6 +99,15 @@ const OC_ITEMS = [{
 }]
 
 describe("InvoicesSection", () => {
+  it("offers the allocation editor only to invoice managers", () => {
+    const invoices = [{ id: "i", invoiceNumber: "F1", amount: 100000, issueDate: null, fileName: "invoice.pdf", mimeType: "application/pdf", uploadedAt: "2026-09-09", items: [{ id: "l", productName: "Cascos", productCode: null, unitOfMeasure: "UN", quantity: 10, unitPrice: 10000, subtotal: 100000, allocations: [], allocationFingerprint: "alloc-v1:current" }] }]
+    const { rerender } = render(<InvoicesSection purchaseOrderId="order" invoices={invoices} ocItems={OC_ITEMS} reconciliation={emptyReconciliation()} canManage canAttach={false} canUpdateCatalog={false} />)
+    fireEvent.click(screen.getByRole("button", { name: "Dividir línea" }))
+    expect(screen.getByRole("dialog", { name: "Repartir línea de factura" })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }))
+    rerender(<InvoicesSection purchaseOrderId="order" invoices={invoices} ocItems={OC_ITEMS} reconciliation={emptyReconciliation()} canManage={false} canAttach={false} canUpdateCatalog={false} />)
+    expect(screen.queryByRole("button", { name: "Dividir línea" })).not.toBeInTheDocument()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     mockAnalyzeDteLines.mockResolvedValue({ ok: true, message: "1 DTE analizado(s)." })

@@ -99,7 +99,8 @@ export function InvoiceReconciliationCard({
     item.productId
       ? item.linkedInvoiceItemIds.flatMap((id) => {
           const line = invoiceLineById.get(id)
-          return line ? [{ ...line, productId: item.productId, productName: item.productName }] : []
+          const allocation = line?.allocations.find(row => row.purchaseOrderItemId === item.ocItemId)
+          return line && allocation ? [{ ...line, quantity: allocation.quantity, subtotal: allocation.subtotal, selection: `${line.id}:${item.ocItemId}`, productId: item.productId, productName: item.productName }] : []
         })
       : [],
   )
@@ -239,7 +240,8 @@ export function InvoiceReconciliationCard({
               {pendingItems.map((item) => {
                 const options = item.linkedInvoiceItemIds.flatMap((id) => {
                   const line = invoiceLineById.get(id)
-                  return line ? [{ value: `${item.ocItemId}:${id}`, label: `${line.invoiceNumber} · ${formatCLP(line.subtotal / line.quantity)}` }] : []
+                  const allocation = line?.allocations.find(row => row.purchaseOrderItemId === item.ocItemId)
+                  return line && allocation ? [{ value: `${item.ocItemId}:${id}`, label: `${line.invoiceNumber} · ${formatCLP(allocation.subtotal / allocation.quantity)}` }] : []
                 })
                 const selected = pendingSelections[item.ocItemId]
                 return (
@@ -263,10 +265,10 @@ export function InvoiceReconciliationCard({
                   <div className="space-y-1.5">
                     {catalogLines.map((line) => (
                       <Checkbox
-                        key={line.id}
-                        id={`catalog-${line.id}`}
+                        key={line.selection}
+                        id={`catalog-${line.selection}`}
                         name="catalogInvoiceItemId"
-                        value={line.id}
+                        value={line.selection}
                         label={`${line.productName} · factura ${line.invoiceNumber} · ${formatCLP(line.subtotal / line.quantity)}`}
                       />
                     ))}

@@ -16,17 +16,26 @@ const invoice = {
   id: "invoice-1", invoiceNumber: "123", amount: 100, issueDate: "2026-08-20", uploadedAt: "2026-08-20T12:00:00.000Z",
   fileName: "factura.pdf", mimeType: "application/pdf",
   items: [{
-    id: "invoice-item", purchaseOrderItemId: "oc-item", productName: "Casco", productCode: "CAS-1",
+    id: "invoice-item", allocations: [{ id: "invoice-item" + "-allocation", purchaseOrderItemId: "oc-item", quantity: 2, subtotal: 120 }], productName: "Casco", productCode: "CAS-1",
     unitOfMeasure: "unidad", quantity: 2, unitPrice: 60, subtotal: 120,
   }],
 }
 
 describe("InvoiceReconciliationCard", () => {
+  it("shows supplier prices from each destination allocation", () => {
+    const items = [{ ...orderItem, id: "a", productName: "Casco blanco", quantity: 6, subtotal: 30000 }, { ...orderItem, id: "b", productId: "product-2", productName: "Casco azul", quantity: 4, subtotal: 40000 }]
+    const splitInvoice = { ...invoice, amount: 100000, items: [{ ...invoice.items[0]!, quantity: 10, subtotal: 100000, allocations: [{ id: "aa", purchaseOrderItemId: "a", quantity: 6, subtotal: 30000 }, { id: "ab", purchaseOrderItemId: "b", quantity: 4, subtotal: 70000 }] }] }
+    const evidence = reconcileInvoiceEvidence({ totalOC: 100000, orderItems: items, invoices: [splitInvoice] })
+    render(<InvoiceReconciliationCard purchaseOrderId="oc-1" reconciliation={evidence} invoices={[splitInvoice]} canAccept canUpdateCatalog />)
+    fireEvent.click(screen.getByRole("button", { name: "Aceptar diferencias" }))
+    expect(screen.getByRole("checkbox", { name: /Casco azul.*17.500/ })).toHaveAttribute("value", "invoice-item:b")
+    expect(screen.getByRole("checkbox", { name: /Casco blanco.*5.000/ })).toHaveAttribute("value", "invoice-item:a")
+  })
   it("shows partial coverage and pending receipt as operational states that cannot be accepted", () => {
     const partial = reconcileInvoiceEvidence({
       totalOC: 100,
       orderItems: [{ ...orderItem, supplierReceivedQuantity: 1 }],
-      invoices: [{ ...invoice, amount: 50, items: [{ ...invoice.items[0]!, quantity: 1, unitPrice: 50, subtotal: 50 }] }],
+      invoices: [{ ...invoice, amount: 50, items: [{ ...invoice.items[0]!, quantity: 1, unitPrice: 50, subtotal: 50, allocations: [{ ...invoice.items[0]!.allocations[0]!, quantity: 1, subtotal: 50 }] }] }],
     })
     const { rerender } = render(
       <InvoiceReconciliationCard purchaseOrderId="oc-1" reconciliation={partial} invoices={[invoice]} canAccept canUpdateCatalog={false} />,
@@ -38,7 +47,7 @@ describe("InvoiceReconciliationCard", () => {
     const awaiting = reconcileInvoiceEvidence({
       totalOC: 100,
       orderItems: [{ ...orderItem, supplierReceivedQuantity: 0 }],
-      invoices: [{ ...invoice, items: [{ ...invoice.items[0]!, unitPrice: 50, subtotal: 100 }] }],
+      invoices: [{ ...invoice, items: [{ ...invoice.items[0]!, unitPrice: 50, subtotal: 100, allocations: [{ ...invoice.items[0]!.allocations[0]!, quantity: 2, subtotal: 100 }] }] }],
     })
     rerender(<InvoiceReconciliationCard purchaseOrderId="oc-1" reconciliation={awaiting} invoices={[invoice]} canAccept canUpdateCatalog={false} />)
     expect(screen.getByText("Recepción pendiente")).toBeInTheDocument()
@@ -52,7 +61,7 @@ describe("InvoiceReconciliationCard", () => {
       invoices: [{
         ...invoice,
         amount: 50,
-        items: [{ ...invoice.items[0]!, quantity: 1, unitPrice: 40, subtotal: 40 }],
+        items: [{ ...invoice.items[0]!, quantity: 1, unitPrice: 40, subtotal: 40, allocations: [{ ...invoice.items[0]!.allocations[0]!, quantity: 1, subtotal: 40 }] }],
       }],
     })
 
@@ -66,7 +75,7 @@ describe("InvoiceReconciliationCard", () => {
     const matched = reconcileInvoiceEvidence({
       totalOC: 100,
       orderItems: [orderItem],
-      invoices: [{ ...invoice, items: [{ ...invoice.items[0]!, unitPrice: 50, subtotal: 100 }] }],
+      invoices: [{ ...invoice, items: [{ ...invoice.items[0]!, unitPrice: 50, subtotal: 100, allocations: [{ ...invoice.items[0]!.allocations[0]!, quantity: 2, subtotal: 100 }] }] }],
     })
     const { rerender } = render(
       <InvoiceReconciliationCard purchaseOrderId="oc-1" reconciliation={matched} invoices={[invoice]} canAccept canUpdateCatalog />,

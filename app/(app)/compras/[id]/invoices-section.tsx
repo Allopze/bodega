@@ -21,7 +21,8 @@ import { formatCLP, formatDate, formatDateTime } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
 import { areEquivalentUnits, matchInvoiceItemsToPurchaseOrderItems } from "@/lib/services/purchasing-module/invoice-item-matching"
 import { useOperation } from "@/lib/hooks/use-operation"
-import type { InvoiceEvidenceStatus, InvoiceReconciliationEvidence } from "@/lib/services/purchasing-module/invoice-reconciliation"
+import type { InvoiceEvidenceStatus, InvoiceReconciliationEvidence, InvoiceReconciliationAllocation } from "@/lib/services/purchasing-module/invoice-reconciliation"
+import { InvoiceAllocationEditor } from "./invoice-allocation-editor"
 import { InvoiceReconciliationCard } from "./invoice-reconciliation-card"
 import { addInvoiceAction, deleteInvoiceAction } from "../invoice-actions"
 import { ORDER_REFERENCE_META, type DteCandidateOrderReference } from "@/lib/services/purchasing-module/order-reference"
@@ -127,7 +128,8 @@ export interface InvoiceRow {
   receiptSuggestion?: InvoiceReceiptSuggestionView
   items?: Array<{
     id: string
-    purchaseOrderItemId: string | null
+    allocations: InvoiceReconciliationAllocation[]
+    allocationFingerprint?: string
     productName: string
     productCode: string | null
     unitOfMeasure: string | null
@@ -210,6 +212,7 @@ export function InvoicesSection({
               canManage={canManage}
               lineEvidence={invoiceReconciliation.get(inv.id)}
               receipts={receipts}
+              ocItems={ocItems}
             />
           ))}
         </ul>
@@ -295,12 +298,14 @@ function InvoiceItem({
   canManage,
   lineEvidence,
   receipts,
+  ocItems,
 }: {
   invoice: InvoiceRow
   purchaseOrderId: string
   canManage: boolean
   lineEvidence?: InvoiceEvidenceStatus
   receipts: InvoiceReceiptOption[]
+  ocItems: OcItem[]
 }) {
   const [state, action] = useActionState<ActionState, FormData>(deleteInvoiceAction, INITIAL_STATE)
   const [pending, startTransition] = React.useTransition()
@@ -335,10 +340,10 @@ function InvoiceItem({
   const linkedReceipts = receipts.filter((receipt) => invoiceReceiptIdSet.has(receipt.id))
 
   return (
-    <li className="flex items-start justify-between gap-3 py-2.5">
-      <div className="flex items-start gap-2 min-w-0">
+    <li className="flex flex-wrap items-start justify-between gap-3 py-2.5">
+      <div className="flex flex-1 items-start gap-2 min-w-0">
         <FilePdf size={16} className="mt-0.5 shrink-0 text-text-subtle" />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <a
             href={`/api/purchase-orders/invoices/${invoice.id}`}
             target="_blank"
@@ -370,9 +375,10 @@ function InvoiceItem({
           {invoice.items && invoice.items.length > 0 && (
             <ul className="mt-1 space-y-0.5">
               {invoice.items.map((item) => (
-                <li key={item.id} className="text-[10px] text-text-subtle flex justify-between gap-2">
-                  <span title={item.productName} className="truncate">{item.productName}</span>
-                  <span className="font-mono tabular-nums shrink-0">{item.quantity} {item.unitOfMeasure ?? "sin unidad"} × {formatCLP(item.unitPrice)}</span>
+                <li key={item.id} className="text-xs text-text-subtle flex flex-wrap items-center justify-between gap-2">
+                  <span className="min-w-0 break-words">{item.productName}</span>
+                  <span className="font-mono tabular-nums">{item.quantity} {item.unitOfMeasure ?? "sin unidad"} × {formatCLP(item.unitPrice)}</span>
+                  {canManage && item.allocationFingerprint && <InvoiceAllocationEditor key={`${item.id}:${item.allocationFingerprint}`} purchaseOrderId={purchaseOrderId} line={{ ...item, allocationFingerprint: item.allocationFingerprint }} orderItems={ocItems} />}
                 </li>
               ))}
             </ul>
