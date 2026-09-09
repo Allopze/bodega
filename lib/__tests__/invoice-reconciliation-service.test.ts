@@ -135,6 +135,42 @@ describe("servicio transaccional de conciliación OC-factura", () => {
     expect(line?.purchaseOrderItemId).toBe(itemId)
   })
 
+  it("crea la asignación automática con la cantidad fraccional persistida por PostgreSQL", async () => {
+    const { itemId } = await insertOrderFixture({ id: "fractional-auto-allocation" })
+    const requestedQuantity = 12345.6789
+
+    const invoiceId = await createPurchaseOrderInvoice({
+      purchaseOrderId: "fractional-auto-allocation",
+      invoiceNumber: "MANUAL-FRACTIONAL",
+      amount: 100_000,
+      fileName: "manual-fractional.pdf",
+      filePath: "manual-fractional.pdf",
+      uploadedBy: userId,
+      items: [{
+        purchaseOrderItemId: itemId,
+        productName: "Producto fraccional",
+        unitOfMeasure: "unidad",
+        quantity: requestedQuantity,
+        unitPrice: 8.1,
+        subtotal: 100_000,
+      }],
+    }, ["ws-reconciliation"])
+
+    const line = await inMemoryDb.query.purchaseOrderInvoiceItems.findFirst({
+      where: eq(schema.purchaseOrderInvoiceItems.invoiceId, invoiceId),
+      with: { allocations: true },
+    })
+    expect(line?.quantity).not.toBe(requestedQuantity)
+    expect(line?.allocations).toEqual([
+      expect.objectContaining({
+        purchaseOrderItemId: itemId,
+        quantity: line?.quantity,
+        subtotal: line?.subtotal,
+        source: "operator",
+      }),
+    ])
+  })
+
   it("registra el costo de cada destino usando su subtotal asignado", async () => {
     const { itemId, invoiceItemId, invoiceId } = await insertOrderFixture({ id: "split-cost", pendingCost: true })
     await inMemoryDb.update(schema.purchaseOrderItems).set({ quantity: 0.6, quantityOfficeReceived: 0.6 }).where(eq(schema.purchaseOrderItems.id, itemId))

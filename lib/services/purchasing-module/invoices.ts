@@ -320,7 +320,7 @@ async function insertPurchaseOrderInvoice(
     if (invoiceItems.length > 0) {
       for (const item of invoiceItems) {
         const invoiceItemId = nanoid()
-        await tx.insert(purchaseOrderInvoiceItems).values({
+        const persistedItems = await tx.insert(purchaseOrderInvoiceItems).values({
           id:                  invoiceItemId,
           invoiceId,
           purchaseOrderItemId: null,
@@ -331,7 +331,12 @@ async function insertPurchaseOrderInvoice(
           quantity:            item.quantity,
           unitPrice:           item.unitPrice,
           subtotal:            item.subtotal,
+        }).returning({
+          quantity: purchaseOrderInvoiceItems.quantity,
+          subtotal: purchaseOrderInvoiceItems.subtotal,
         })
+        if (persistedItems.length !== 1) throw new Error("No se pudo guardar la línea de factura")
+        const persistedItem = persistedItems[0]!
         if (item.purchaseOrderItemId) {
           const context = { purchaseOrderId: order.id, invoiceItemId, worksiteScope: worksiteIds }
           const current = await loadInvoiceLineAllocationsTx(tx, context)
@@ -339,7 +344,7 @@ async function insertPurchaseOrderInvoice(
             ...context, expectedFingerprint: current.fingerprint, coverage: "complete",
             source: dteAttachment ? "dte_suggestion" : "operator",
             actor: { userId: input.uploadedBy, userEmail: input.userEmail },
-            allocations: [{ purchaseOrderItemId: item.purchaseOrderItemId, quantity: item.quantity, subtotal: item.subtotal }],
+            allocations: [{ purchaseOrderItemId: item.purchaseOrderItemId, quantity: persistedItem.quantity, subtotal: persistedItem.subtotal }],
           })
         }
       }
