@@ -63,11 +63,33 @@ describe("StockTable", () => {
   })
 
   it("explica las magnitudes proyectadas desde sus encabezados", () => {
+    const table = renderTable()
+
+    expect(table.getByRole("button", { name: "Qué significa Demanda pendiente" })).toBeTruthy()
+    expect(table.getByRole("button", { name: "Qué significa Entrada esperada" })).toBeTruthy()
+    expect(table.getByRole("button", { name: "Qué significa Saldo proyectado" })).toBeTruthy()
+  })
+
+  it("expone las mismas definiciones en cada tarjeta móvil", () => {
     renderTable()
 
-    expect(screen.getByRole("button", { name: "Qué significa Demanda pendiente" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Qué significa Entrada esperada" })).toBeTruthy()
-    expect(screen.getByRole("button", { name: "Qué significa Saldo proyectado" })).toBeTruthy()
+    for (const card of screen.getAllByRole("article")) {
+      const mobileCard = within(card)
+      expect(mobileCard.getByRole("button", { name: "Qué significa Demanda pendiente" })).toBeTruthy()
+      expect(mobileCard.getByRole("button", { name: "Qué significa Entrada esperada" })).toBeTruthy()
+      expect(mobileCard.getByRole("button", { name: "Qué significa Saldo proyectado" })).toBeTruthy()
+    }
+  })
+
+  it("reserva ancho para Producto y conserva el scroll horizontal en tablet", () => {
+    renderTable()
+    const table = screen.getByRole("table")
+    const columns = table.querySelectorAll("colgroup col")
+
+    expect(table).toHaveClass("min-w-[1280px]", "table-fixed")
+    expect(columns).toHaveLength(8)
+    expect(columns[0]).toHaveClass("w-60")
+    expect(table.closest('[role="region"]')).toHaveClass("overflow-x-auto")
   })
 
   it("usa una sola tabla para todas las faenas, para que las cantidades alineen entre grupos", () => {

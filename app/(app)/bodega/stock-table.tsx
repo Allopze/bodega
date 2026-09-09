@@ -124,6 +124,11 @@ function sortRows(rows: StockGroup["rows"], key: SortKey, dir: SortDir): StockGr
 const GROUP_BY_STORAGE_KEY = "bodega:stock-group-by"
 const COLLAPSED_STORAGE_KEY = "bodega:stock-collapsed"
 const GROUP_BY_LABEL: Record<GroupBy, string> = { faena: "Por faena", producto: "Por producto" }
+const AVAILABILITY_DEFINITIONS = {
+  pendingDemand: "Cantidad aprobada aún pendiente de entrega, descontando entregas vigentes.",
+  incoming: "Cantidad de una OC vigente aún no recibida en la faena. La recepción en oficina no la descuenta.",
+  projectedBalance: "Físico menos demanda pendiente más entrada esperada. Es informativo y no autoriza movimientos.",
+} as const
 
 /**
  * `sessionStorage` y no la URL: agrupar es preferencia de vista y se aplica en
@@ -307,21 +312,35 @@ function SortableHeader({
   )
 }
 
+function AvailabilityDefinition({
+  label,
+  definition,
+  className,
+}: {
+  label: string
+  definition: string
+  className?: string
+}) {
+  return (
+    <span className={["inline-flex items-center gap-1", className].filter(Boolean).join(" ")}>
+      {label}
+      <Tooltip content={definition} side="top">
+        <button
+          type="button"
+          aria-label={`Qué significa ${label}`}
+          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)] focus-visible:text-[var(--color-text)] md:min-h-6 md:min-w-6"
+        >
+          <Info size={13} aria-hidden />
+        </button>
+      </Tooltip>
+    </span>
+  )
+}
+
 function AvailabilityHeader({ label, definition }: { label: string; definition: string }) {
   return (
     <TableHead aria-label={label} className="text-right font-semibold">
-      <span className="inline-flex items-center justify-end gap-1">
-        {label}
-        <Tooltip content={definition} side="top">
-          <button
-            type="button"
-            aria-label={`Qué significa ${label}`}
-            className="inline-flex min-h-6 min-w-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)] focus-visible:text-[var(--color-text)]"
-          >
-            <Info size={13} aria-hidden />
-          </button>
-        </Tooltip>
-      </span>
+      <AvailabilityDefinition label={label} definition={definition} className="justify-end" />
     </TableHead>
   )
 }
@@ -449,19 +468,36 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                           </dd>
                         </div>
                         <div className="text-right">
-                          <dt className="text-[var(--color-text-subtle)]">Demanda pendiente</dt>
+                          <dt className="text-[var(--color-text-subtle)]">
+                            <AvailabilityDefinition
+                              label="Demanda pendiente"
+                              definition={AVAILABILITY_DEFINITIONS.pendingDemand}
+                              className="w-full justify-end"
+                            />
+                          </dt>
                           <dd className="mt-0.5 font-mono text-sm tabular-nums text-[var(--color-text)]">
                             {formatQty(s.pendingDemand, unit)}
                           </dd>
                         </div>
                         <div>
-                          <dt className="text-[var(--color-text-subtle)]">Entrada esperada</dt>
+                          <dt className="text-[var(--color-text-subtle)]">
+                            <AvailabilityDefinition
+                              label="Entrada esperada"
+                              definition={AVAILABILITY_DEFINITIONS.incoming}
+                            />
+                          </dt>
                           <dd className="mt-0.5 font-mono text-sm tabular-nums text-[var(--color-text)]">
                             {formatQty(s.incoming, unit)}
                           </dd>
                         </div>
                         <div className="text-right">
-                          <dt className="text-[var(--color-text-subtle)]">Saldo proyectado</dt>
+                          <dt className="text-[var(--color-text-subtle)]">
+                            <AvailabilityDefinition
+                              label="Saldo proyectado"
+                              definition={AVAILABILITY_DEFINITIONS.projectedBalance}
+                              className="w-full justify-end"
+                            />
+                          </dt>
                           <dd className={`mt-0.5 font-mono text-sm font-semibold tabular-nums ${s.projectedBalance < 0 ? "text-[var(--color-warning-ink)]" : "text-[var(--color-text)]"}`}>
                             {formatQty(s.projectedBalance, unit)}
                           </dd>
@@ -493,12 +529,12 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
               desalineadas entre grupos. Los anchos viven en el <colgroup>. */}
           <div className="hidden md:block">
             <TableRoot className="rounded-none border-0">
-            <Table className="table-fixed text-sm">
+            <Table className="min-w-[1280px] table-fixed text-sm">
               <caption className="sr-only">
                 Stock por producto, agrupado por {groupBy === "faena" ? "faena" : "producto"}
               </caption>
               <colgroup>
-                <col />
+                <col className="w-60" />
                 <col className="w-32" />
                 <col className="w-36" />
                 <col className="w-40" />
@@ -522,15 +558,15 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                   />
                   <AvailabilityHeader
                     label="Demanda pendiente"
-                    definition="Cantidad aprobada aún pendiente de entrega, descontando entregas vigentes."
+                    definition={AVAILABILITY_DEFINITIONS.pendingDemand}
                   />
                   <AvailabilityHeader
                     label="Entrada esperada"
-                    definition="Cantidad de una OC vigente aún no recibida en la faena. La recepción en oficina no la descuenta."
+                    definition={AVAILABILITY_DEFINITIONS.incoming}
                   />
                   <AvailabilityHeader
                     label="Saldo proyectado"
-                    definition="Físico menos demanda pendiente más entrada esperada. Es informativo y no autoriza movimientos."
+                    definition={AVAILABILITY_DEFINITIONS.projectedBalance}
                   />
                   <SortableHeader
                     label="Mínimo"

@@ -45,6 +45,7 @@ const ACTIVE_DEMAND_ITEM_STATUSES = [
   "partially_office_received",
   "office_received",
   "partially_received",
+  "received",
   "partially_delivered",
 ] as const
 

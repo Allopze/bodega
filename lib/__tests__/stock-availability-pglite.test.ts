@@ -93,8 +93,11 @@ beforeAll(async () => {
     { id: "request-item-s", requestId: "request-alpha", productId: PRODUCT_SMALL, quantity: 10, status: "partially_delivered", createdAt: NOW, updatedAt: NOW },
     { id: "request-item-l", requestId: "request-alpha", productId: PRODUCT_LARGE, quantity: 6, status: "partially_received", createdAt: NOW, updatedAt: NOW },
     { id: "request-item-service", requestId: "request-alpha", productId: SERVICE, quantity: 50, status: "partially_received", createdAt: NOW, updatedAt: NOW },
-    { id: "request-item-terminal", requestId: "request-alpha", productId: PRODUCT_SMALL, quantity: 40, status: "received", createdAt: NOW, updatedAt: NOW },
-    { id: "request-item-closed-parent", requestId: "request-terminal", productId: PRODUCT_SMALL, quantity: 100, status: "partially_delivered", createdAt: NOW, updatedAt: NOW },
+    // Un producto físico `received` espera su entrega posterior. El padre sigue
+    // activo por sus hermanos pendientes, así que esta cantidad aún es demanda.
+    { id: "request-item-received", requestId: "request-alpha", productId: PRODUCT_SMALL, quantity: 40, status: "received", createdAt: NOW, updatedAt: NOW },
+    // El mismo estado no revive una solicitud cuyo padre ya es terminal.
+    { id: "request-item-closed-parent", requestId: "request-terminal", productId: PRODUCT_SMALL, quantity: 100, status: "received", createdAt: NOW, updatedAt: NOW },
     { id: "request-item-beta", requestId: "request-beta", productId: PRODUCT_SMALL, quantity: 7, status: "partially_received", createdAt: NOW, updatedAt: NOW },
   ])
 
@@ -130,7 +133,7 @@ beforeAll(async () => {
 afterAll(async () => pg.close())
 
 describe("getStockAvailability", () => {
-  it("projects direct and via-office lifecycle quantities by final worksite and concrete product", async () => {
+  it("keeps received but undelivered physical items as demand while their request parent remains active", async () => {
     const rows = await getStockAvailability(scopedSession([WS_ALPHA]))
 
     expect(rows).toEqual([
@@ -146,9 +149,9 @@ describe("getStockAvailability", () => {
         worksiteId: WS_ALPHA,
         productId: PRODUCT_SMALL,
         onHand: 3,
-        pendingDemand: 8,
+        pendingDemand: 48,
         incoming: 6,
-        projectedBalance: 1,
+        projectedBalance: -39,
       },
     ])
   })
