@@ -1615,6 +1615,49 @@ async function main() {
   // The extra historical fixture occupies ENT-2026-0002 too.
   await db.execute(sql`SELECT next_document_code('ENT', 2026)`)
 
+  /**
+   * Operational-integrity fixture — owned by the integrity E2E alone.
+   *
+   * A dedicated product keeps the spec from acknowledging or resolving rows
+   * that other specs assert on: the kardex chain below is internally coherent
+   * (45 - 8 = 37) but the materialised stock says 40, so only
+   * STOCK_BALANCE_MISMATCH fires and the case is unambiguous.
+   */
+  await db.insert(schema.products).values({
+    id: "prod-qa-integridad-e2e",
+    sku: "QA-INT-001",
+    name: "Guante QA Integridad E2E",
+    categoryId: "cat-epp-e2e",
+    unitOfMeasure: "unidad",
+    referencePrice: 1500,
+    isEpp: true,
+    requiresPrevencion: false,
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.worksiteStock).values({
+    id: "stock-qa-integridad-e2e",
+    worksiteId: "ws-e2e",
+    productId: "prod-qa-integridad-e2e",
+    quantity: 40,
+    minStock: 0,
+    lastMovementAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.inventoryMovements).values({
+    id: "mov-qa-integridad-e2e",
+    worksiteId: "ws-e2e",
+    productId: "prod-qa-integridad-e2e",
+    type: "ajuste",
+    quantity: -8,
+    stockBefore: 45,
+    stockAfter: 37,
+    performedBy: "user-admin-e2e",
+    performedAt: now,
+    reason: "Fixture QA de integridad operacional",
+  })
+
   // Maintenance fixture — for mantenciones E2E spec
   await db.insert(schema.maintenanceRecords).values({
     id: "mant-e2e",

@@ -15,7 +15,11 @@ import {
   listTraceabilityIntegrityAdjustmentOptions,
   listTraceabilityIntegrityCases,
 } from "@/lib/services/traceability-integrity-cases"
+import { listOperationalIntegrityCases } from "@/lib/services/operational-integrity"
+import { listVisibleWorksites } from "@/lib/services/prevention-indicadores"
+import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getDocumentChainByCode } from "@/lib/services/document-chain"
+import { OperationalIntegrityWorkbench } from "./_components/operational-integrity-workbench"
 import { ConsolidatedKpis } from "./_components/consolidated-kpis"
 import { ConsolidatedFilters } from "./_components/consolidated-filters"
 import { ConsolidatedTable } from "./_components/consolidated-table"
@@ -34,6 +38,14 @@ interface PageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }
 
+/**
+ * Los valores de filtro del ledger se validan contra estas listas antes de
+ * llegar al servicio: la URL es entrada del usuario, no un enum de confianza.
+ */
+const DOMAIN_FILTERS = ["stock", "receiving", "purchasing"] as const
+const SEVERITY_FILTERS = ["warning", "high", "critical"] as const
+const INTEGRITY_STATE_FILTERS = ["active", "open", "acknowledged", "verified_resolved"] as const
+
 export default async function TrazabilidadPage({ searchParams }: PageProps) {
   let session
   try {
@@ -43,13 +55,34 @@ export default async function TrazabilidadPage({ searchParams }: PageProps) {
   }
 
   const sp = await searchParams
-  const activeTab = typeof sp.tab === "string" && sp.tab === "documento" ? "documento" : "seguimiento"
+  const activeTab = typeof sp.tab === "string" && (sp.tab === "documento" || sp.tab === "integridad")
+    ? sp.tab
+    : "seguimiento"
 
   // 1. Integridad
   const canReconcileIntegrity = can(session, "warehouse:reconcile_integrity")
-  const [integrityCases, adjustmentOptions] = await Promise.all([
+  const integrityFilters = {
+    faena: typeof sp.faena === "string" ? sp.faena : "",
+    dominio: typeof sp.dominio === "string" ? sp.dominio : "",
+    severidad: typeof sp.severidad === "string" ? sp.severidad : "",
+    estado: activeTab === "integridad" && typeof sp.estado === "string" ? sp.estado : "",
+  }
+  /**
+   * El ledger y sus faenas sólo se consultan en su pestaña: son cuatro queries
+   * que no aportan nada mientras se mira seguimiento o un documento.
+   */
+  const [integrityCases, adjustmentOptions, operationalIntegrityCases, integrityWorksites] = await Promise.all([
     listTraceabilityIntegrityCases(session),
     canReconcileIntegrity ? listTraceabilityIntegrityAdjustmentOptions(session) : Promise.resolve([]),
+    activeTab === "integridad"
+      ? listOperationalIntegrityCases(session, {
+          worksiteId: integrityFilters.faena || undefined,
+          domain: DOMAIN_FILTERS.find((domain) => domain === integrityFilters.dominio),
+          severity: SEVERITY_FILTERS.find((severity) => severity === integrityFilters.severidad),
+          state: INTEGRITY_STATE_FILTERS.find((state) => state === integrityFilters.estado),
+        })
+      : Promise.resolve([]),
+    activeTab === "integridad" ? listVisibleWorksites(resolveWorksiteScope(session)) : Promise.resolve([]),
   ])
 
   // 2. Tab Documento (búsqueda por código)
@@ -94,10 +127,21 @@ export default async function TrazabilidadPage({ searchParams }: PageProps) {
    * la faena y el código que se esté mirando.
    */
   const FILTER_KEYS = ["faena", "estado", "categoria", "solicitante", "proveedor", "desde", "hasta", "pendientes"] as const
+  /**
+   * `estado` existe en seguimiento y en integridad con vocabularios distintos
+   * (`en_curso` frente a `open`). Sólo la faena cruza hacia y desde la pestaña
+   * de integridad; arrastrar el resto llevaría un estado que la otra vista no
+   * sabe leer y que además dejaría su lista vacía sin explicación.
+   */
   const faenaParam = typeof sp.faena === "string" && sp.faena ? sp.faena : ""
-  const tabHref = (tab: "seguimiento" | "documento") => {
+  const tabHref = (tab: "seguimiento" | "documento" | "integridad") => {
     const params = new URLSearchParams()
-    if (tab === "documento") params.set("tab", "documento")
+    if (tab !== "seguimiento") params.set("tab", tab)
+    if (tab === "integridad" || activeTab === "integridad") {
+      if (faenaParam) params.set("faena", faenaParam)
+      const query = params.toString()
+      return query ? `/bodega/trazabilidad?${query}` : "/bodega/trazabilidad"
+    }
     for (const key of FILTER_KEYS) {
       const value = sp[key]
       if (typeof value === "string" && value) params.set(key, value)
@@ -137,13 +181,6 @@ export default async function TrazabilidadPage({ searchParams }: PageProps) {
         }
       />
 
-      {/* Excepciones de integridad históricas */}
-      <TraceabilityIntegrityCases
-        cases={integrityCases}
-        canReconcile={canReconcileIntegrity}
-        adjustmentOptions={adjustmentOptions}
-      />
-
       {/* Pestañas de la vista. `SegmentedControl` es el primitivo del sistema
           para selectores sincronizados con la URL: el subrayado azul artesanal
           que había aquí importaba un color de marca que la paleta no define. */}
@@ -164,10 +201,33 @@ export default async function TrazabilidadPage({ searchParams }: PageProps) {
             href: tabHref("documento"),
             active: activeTab === "documento",
           },
+          {
+            key: "integridad",
+            label: "Integridad",
+            href: tabHref("integridad"),
+            active: activeTab === "integridad",
+          },
         ]}
       />
 
-      {activeTab === "documento" ? (
+      {activeTab === "integridad" ? (
+        <div className="space-y-4">
+          <OperationalIntegrityWorkbench
+            cases={operationalIntegrityCases}
+            canReconcile={canReconcileIntegrity}
+            filters={integrityFilters}
+            worksites={integrityWorksites}
+          />
+          {/* Las excepciones históricas de entregas conservan su propio modelo
+              de resolución; conviven aquí en vez de alarmar sobre las tres
+              pestañas como hacían antes. */}
+          <TraceabilityIntegrityCases
+            cases={integrityCases}
+            canReconcile={canReconcileIntegrity}
+            adjustmentOptions={adjustmentOptions}
+          />
+        </div>
+      ) : activeTab === "documento" ? (
         <DocumentChainSearch query={codigoQuery} result={chainResult} faena={faenaParam} />
       ) : consolidatedData ? (
         <div className="space-y-4">
