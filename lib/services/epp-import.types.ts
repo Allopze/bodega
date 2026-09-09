@@ -8,7 +8,7 @@
 
 export type ImportSeverity = "info" | "warning" | "blocking"
 export type ImportDecision = "pending" | "create" | "update" | "skip" | "blocked"
-export interface EppAttribute { name: string; value: string; values?: string[] }
+export interface EppAttribute { name: string; value: string; values?: string[]; sizeFamily?: string | null }
 export interface ImportCorrection { field: string; from: string | null; to: string | null; ruleId: string; confidence: number }
 export interface NormalizedEppRow {
   sourceCode: string | null; name: string; canonicalName: string; description: string | null; supplierName: string | null; price: number | null
@@ -257,7 +257,7 @@ export const HEADER_ALIASES: Record<string, string> = {
 }
 
 import { toCode } from "@/lib/utils"
-import { normalizeSizeLabel } from "@/lib/products/product-size"
+import { isSizeAttributeName, normalizeSizeLabel } from "@/lib/products/product-size"
 import { SIZE_FAMILIES } from "@/lib/products/size-catalog"
 import ExcelJS from "exceljs"
 
@@ -293,7 +293,10 @@ export async function parseEppWorkbook(buffer: Buffer) {
   return { rows, headers, sheetName: sheet.name, errors: [] }
 }
 
-export function normalizeEppRow(source: Record<string, string>): NormalizedEppRow {
+export function normalizeEppRow(
+  source: Record<string, string>,
+  familyOptions?: readonly SizeFamilyCodes[],
+): NormalizedEppRow {
   const issues: NormalizedEppRow["issues"] = []
   const corrections: EppAttribute[] = parseNamedAttributes(source.attributes)
   const rawColor = cleanText(source.color)
@@ -323,31 +326,37 @@ export function normalizeEppRow(source: Record<string, string>): NormalizedEppRo
       if (!explicitColor) workingName = removeToken(workingName, colorsInName[0]!)
     }
   }
-  const explicitSize = cleanText(source.size)
-  // ── Multi-talla: comma-separated values in the size column ────────────
-  const multiTalla = explicitSize ? explicitSize.split(",").map((s) => s.trim()).filter(Boolean) : null
-  if (multiTalla && multiTalla.length > 1) {
-    const attrName = /^\d{2}$/.test(multiTalla[0]!) ? "Talla calzado" : "Talla"
-    const normalizedValues = multiTalla.map((v) => normalizeSize(v))
-    const existingAttr = findMatchingAttribute(corrections, attrName)
-    if (existingAttr) {
-      existingAttr.values = normalizedValues
-      existingAttr.value = normalizedValues.join(", ")
-    } else {
-      corrections.push({ name: attrName, value: normalizedValues.join(", "), values: normalizedValues })
-    }
-  } else {
-    const sizeMatch = explicitSize || (cleanText(source.model) ? null : extractSize(workingName))
-    if (sizeMatch) {
-      addAttribute(corrections, /^\d{2}$/.test(sizeMatch) ? "Talla calzado" : "Talla", normalizeSize(sizeMatch))
-      if (!explicitSize) {
-        workingName = cleanText(workingName.replace(new RegExp(`\\btalla\\s+${escapeRegex(sizeMatch)}\\b`, "i"), ""))
-        workingName = removeToken(workingName, sizeMatch)
-      }
-    }
-  }
+  // Antes del bloque de talla: `resolveSizeAttribute` necesita el tipo para
+  // elegir la familia. Es seguro calcularlo aquí porque el ítem que el nombre
+  // declara («guante») está presente tanto antes como después de quitarle la
+  // talla, que es un código de una o dos posiciones.
   const eppType = inferEppItemType(workingName)
   if (!eppType) issues.push({ severity: "blocking", message: "No se pudo identificar un tipo de EPP en el nombre." })
+
+  // La talla puede llegar por la columna `talla`, por la columna `atributos`
+  // («Talla: M») o dentro del nombre. Se unifican antes de resolver para que la
+  // fila termine con un solo atributo de talla.
+  const namedSize = corrections.find((attribute) => isSizeAttributeName(attribute.name))
+  const explicitSize = cleanText(source.size)
+    || (namedSize ? (namedSize.values ?? [namedSize.value]).join(", ") : "")
+  const rawSizes = explicitSize
+    ? explicitSize.split(",").map((value) => value.trim()).filter(Boolean)
+    : []
+
+  if (rawSizes.length === 0) {
+    const sizeInName = cleanText(source.model) ? null : extractSize(workingName)
+    if (sizeInName) {
+      rawSizes.push(sizeInName)
+      workingName = cleanText(workingName.replace(new RegExp(`\\btalla\\s+${escapeRegex(sizeInName)}\\b`, "i"), ""))
+      workingName = removeToken(workingName, sizeInName)
+    }
+  }
+
+  if (rawSizes.length > 0) {
+    const resolved = resolveSizeAttribute(rawSizes, eppType, familyOptions)
+    issues.push(...resolved.issues)
+    upsertSizeAttribute(corrections, resolved)
+  }
   const unitOfMeasure = normalizeUnit(source.unitOfMeasure)
   if (!unitOfMeasure) issues.push({ severity: "blocking", message: "La unidad de medida no es reconocida." })
   const price = parsePrice(source.price)
@@ -395,6 +404,32 @@ function findMatchingAttribute(attributes: EppAttribute[], name: string): EppAtt
   return attributes.find((attribute) => normalizeKey(attribute.name) === normalizeKey(name))
 }
 
+/**
+ * Deja exactamente un atributo de talla en la fila, con el nombre y la familia
+ * que resolvió el catálogo.
+ *
+ * Reemplaza en vez de agregar porque la talla puede llegar por dos vías a la
+ * vez: la columna `talla` y la columna `atributos` («Talla: M»). Sin esto, una
+ * fila terminaba con `Talla` y `Talla guantes` a la vez, y el catálogo mostraba
+ * la misma talla dos veces con nombres distintos.
+ *
+ * Una resolución sin valores —una celda que `normalizeSizeLabel` reduce a
+ * vacío— deja la fila sin atributo de talla: quita el que hubiera y no pone
+ * ninguno. Una talla que no se puede escribir no es una talla.
+ */
+function upsertSizeAttribute(attributes: EppAttribute[], resolved: ResolvedSizeAttribute) {
+  for (let index = attributes.length - 1; index >= 0; index--) {
+    if (isSizeAttributeName(attributes[index]!.name)) attributes.splice(index, 1)
+  }
+  if (resolved.values.length === 0) return
+  attributes.push({
+    name: resolved.name,
+    value: resolved.values.join(", "),
+    ...(resolved.values.length > 1 ? { values: resolved.values } : {}),
+    sizeFamily: resolved.sizeFamily,
+  })
+}
+
 function canonicalColor(value: string | undefined) {
   return COLOR_ALIASES[normalizeKey(value ?? "")] ?? null
 }
@@ -402,8 +437,6 @@ function canonicalColor(value: string | undefined) {
 function extractSize(value: string) {
   return value.match(/\b(?:XS|S|M|L|XL|2XL|3XL|4XL|[3-5]\d)\b/i)?.[0] ?? null
 }
-
-function normalizeSize(value: string) { return value.toUpperCase() }
 
 function extractMaterial(value: string) {
   const materials = ["nitrilo", "cabritilla", "cuero", "policarbonato", "algodon", "algodón"]

@@ -10,7 +10,7 @@ describe("normalizeEppRow", () => {
     expect(result.unitOfMeasure).toBe("unidad")
     expect(result.attributes).toEqual(expect.arrayContaining([
       { name: "Color", value: "Azul" },
-      { name: "Talla", value: "M" },
+      { name: "Talla guantes", value: "M", sizeFamily: "guantes" },
       { name: "Material", value: "Nitrilo" },
     ]))
     expect(result.issues).toEqual([])
@@ -45,13 +45,11 @@ describe("normalizeEppRow", () => {
 
     expect(result.attributes).toEqual(expect.arrayContaining([
       { name: "Color", value: "Azul" },
-      { name: "Talla", value: "S, M, L, XL", values: ["S", "M", "L", "XL"] },
+      { name: "Talla guantes", value: "S, M, L, XL", values: ["S", "M", "L", "XL"], sizeFamily: "guantes" },
       { name: "Material", value: "Nitrilo" },
     ]))
     expect(result.issues).toEqual([])
-    // canonical name should NOT include sizes
     expect(result.name).toBe("Guante Nitrilo")
-    // identity key should NOT include multi-talla
     expect(result.identityKey).not.toContain("talla")
   })
 
@@ -59,10 +57,9 @@ describe("normalizeEppRow", () => {
     const result = normalizeEppRow({ name: "BOTIN SEGURIDAD", unitOfMeasure: "par", size: "38, 39, 40, 41, 42" })
 
     expect(result.attributes).toEqual(expect.arrayContaining([
-      { name: "Talla calzado", value: "38, 39, 40, 41, 42", values: ["38", "39", "40", "41", "42"] },
+      { name: "Talla calzado", value: "38, 39, 40, 41, 42", values: ["38", "39", "40", "41", "42"], sizeFamily: "calzado" },
     ]))
     expect(result.issues).toEqual([])
-    // identity key should NOT include multi-talla calzado
     expect(result.identityKey).not.toContain("talla")
   })
 
@@ -71,10 +68,10 @@ describe("normalizeEppRow", () => {
 
     expect(result.attributes).toEqual(expect.arrayContaining([
       { name: "Color", value: "Azul" },
-      { name: "Talla", value: "M" },
+      { name: "Talla guantes", value: "M", sizeFamily: "guantes" },
     ]))
-    // single-talla still includes talla in identity key (backward compat)
-    expect(result.identityKey).toContain("talla=m")
+    // La talla singular sigue formando parte de la identidad de la variante.
+    expect(result.identityKey).toContain("talla guantes=m")
   })
 
   it("preserves multi-talla through review round-trip", () => {
@@ -83,8 +80,70 @@ describe("normalizeEppRow", () => {
 
     expect(original.identityKey).toBe(reParsed.identityKey)
     expect(original.attributes).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: "Talla", values: ["S", "M", "L", "XL"] }),
+      expect.objectContaining({ name: "Talla guantes", values: ["S", "M", "L", "XL"] }),
     ]))
+  })
+
+  it("canoniza la talla escrita como la trae la planilla real", () => {
+    const guante = normalizeEppRow({ name: "GUANTE CABRITILLA SIN FORRO", unitOfMeasure: "par", size: "T/L" })
+    expect(guante.attributes).toEqual(expect.arrayContaining([
+      { name: "Talla guantes", value: "L", sizeFamily: "guantes" },
+    ]))
+    expect(guante.issues).toEqual([])
+
+    const overol = normalizeEppRow({ name: "OVEROL ACTIVEX PILOTO POPLIN", unitOfMeasure: "unidad", size: "XXXL" })
+    expect(overol.attributes).toEqual(expect.arrayContaining([
+      { name: "Talla", value: "3XL", sizeFamily: "ropa" },
+    ]))
+  })
+
+  it("acepta con advertencia una talla que el catálogo de la familia no declara", () => {
+    const result = normalizeEppRow({ name: "GUANTES DE CABRITILLA", unitOfMeasure: "par", size: "Talla 9-10" })
+
+    expect(result.attributes).toEqual(expect.arrayContaining([
+      { name: "Talla guantes", value: "9/10", sizeFamily: "guantes" },
+    ]))
+    expect(result.issues).toEqual([
+      { severity: "warning", message: "La talla «9/10» no está en el catálogo de la familia guantes." },
+    ])
+  })
+
+  it("advierte cuando un pantalón trae numeración de cintura", () => {
+    // Consecuencia visible de mapear `pantalon` a la escala de letras: una
+    // cintura 32 no está en `ropa`, entra igual y queda advertida para que
+    // alguien decida si esa familia debe sizarse por `Talla inferior`.
+    const result = normalizeEppRow({ name: "PANTALON DE TRABAJO", unitOfMeasure: "unidad", size: "32" })
+
+    expect(result.attributes).toEqual(expect.arrayContaining([
+      { name: "Talla", value: "32", sizeFamily: "ropa" },
+    ]))
+    expect(result.issues).toEqual([
+      { severity: "warning", message: "La talla «32» no está en el catálogo de la familia ropa." },
+    ])
+  })
+
+  it("no le pone familia a la talla de un ítem que no se sizea", () => {
+    const result = normalizeEppRow({ name: "LENTE ACTIVEX FX III SELLADO", unitOfMeasure: "unidad", size: "M" })
+
+    expect(result.attributes).toEqual(expect.arrayContaining([
+      { name: "Talla", value: "M", sizeFamily: null },
+    ]))
+    expect(result.issues).toEqual([])
+  })
+
+  it("deja un solo atributo de talla cuando la columna de atributos ya trae una", () => {
+    const result = normalizeEppRow({ name: "GUANTE NITRILO", unitOfMeasure: "par", attributes: "Talla: M; Marca: Showa" })
+
+    const sizeAttributes = result.attributes.filter((attribute) => attribute.name.startsWith("Talla"))
+    expect(sizeAttributes).toEqual([{ name: "Talla guantes", value: "M", sizeFamily: "guantes" }])
+    expect(result.attributes).toEqual(expect.arrayContaining([{ name: "Marca", value: "Showa" }]))
+  })
+
+  it("no deja atributo de talla cuando la celda no contiene ninguna talla escribible", () => {
+    const result = normalizeEppRow({ name: "GUANTE NITRILO", unitOfMeasure: "par", size: "." })
+
+    expect(result.attributes.some((attribute) => attribute.name.startsWith("Talla"))).toBe(false)
+    expect(result.issues).toEqual([])
   })
 
   it("handles multi-color from comma-separated column", () => {
@@ -118,7 +177,7 @@ describe("normalizeEppRow", () => {
 
     expect(result.attributes).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: "Color", values: ["Azul", "Rojo", "Verde"] }),
-      expect.objectContaining({ name: "Talla", values: ["S", "M", "L"] }),
+      expect.objectContaining({ name: "Talla guantes", values: ["S", "M", "L"], sizeFamily: "guantes" }),
     ]))
     expect(result.issues).toEqual([])
     // Both multi-value attrs excluded from identity key
