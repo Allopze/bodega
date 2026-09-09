@@ -12,6 +12,7 @@ import {
   EPP_TYPE_TO_BODY_PART_CODE,
   EPP_TYPE_TO_SIZE_FAMILY,
   sizeFamilyForEppType,
+  resolveSizeAttribute,
 } from "./epp-import.types"
 import { SIZE_FAMILIES } from "@/lib/products/size-catalog"
 
@@ -122,5 +123,73 @@ describe("sizeFamilyForEppType", () => {
     for (const family of Object.values(EPP_TYPE_TO_SIZE_FAMILY)) {
       expect(known).toContain(family)
     }
+  })
+})
+
+describe("resolveSizeAttribute", () => {
+  it("nombra el atributo con la familia del ítem, no con una heurística de dos dígitos", () => {
+    expect(resolveSizeAttribute(["M"], "guante").name).toBe("Talla guantes")
+    expect(resolveSizeAttribute(["42"], "botin").name).toBe("Talla calzado")
+    expect(resolveSizeAttribute(["L"], "casco").name).toBe("Talla casco")
+    expect(resolveSizeAttribute(["XL"], "overol").name).toBe("Talla")
+  })
+
+  it("canoniza el valor con la regla compartida", () => {
+    expect(resolveSizeAttribute(["T/L"], "guante").values).toEqual(["L"])
+    expect(resolveSizeAttribute(["XXXL"], "overol").values).toEqual(["3XL"])
+    expect(resolveSizeAttribute(["42.0"], "botin").values).toEqual(["42"])
+    expect(resolveSizeAttribute(["Mediana"], "overol").values).toEqual(["M"])
+  })
+
+  it("declara la familia para que la variante pueda cruzarse con el padrón", () => {
+    expect(resolveSizeAttribute(["M"], "guante").sizeFamily).toBe("guantes")
+    expect(resolveSizeAttribute(["42"], "botin").sizeFamily).toBe("calzado")
+  })
+
+  it("no inventa familia para un ítem que no se sizea", () => {
+    const resolved = resolveSizeAttribute(["M"], "lente")
+    expect(resolved.name).toBe("Talla")
+    expect(resolved.sizeFamily).toBeNull()
+    expect(resolved.issues).toEqual([])
+  })
+
+  it("acepta con advertencia no bloqueante una talla fuera del catálogo de su familia", () => {
+    const resolved = resolveSizeAttribute(["Talla 9-10"], "guante")
+    expect(resolved.values).toEqual(["9/10"])
+    expect(resolved.sizeFamily).toBe("guantes")
+    expect(resolved.issues).toHaveLength(1)
+    expect(resolved.issues[0]!.severity).toBe("warning")
+    expect(resolved.issues[0]!.message).toContain("9/10")
+    expect(resolved.issues[0]!.message).toContain("guantes")
+  })
+
+  it("no advierte cuando el valor sí está en el catálogo de su familia", () => {
+    expect(resolveSizeAttribute(["2XL"], "guante").issues).toEqual([])
+  })
+
+  it("resuelve todas las tallas de una fila multi-talla", () => {
+    const resolved = resolveSizeAttribute(["S", "M", "L", "XL"], "guante")
+    expect(resolved.name).toBe("Talla guantes")
+    expect(resolved.values).toEqual(["S", "M", "L", "XL"])
+    expect(resolved.issues).toEqual([])
+  })
+
+  it("advierte por cada talla fuera de catálogo de una fila multi-talla", () => {
+    const resolved = resolveSizeAttribute(["S", "9-10"], "guante")
+    expect(resolved.values).toEqual(["S", "9/10"])
+    expect(resolved.issues).toHaveLength(1)
+  })
+
+  it("valida contra los códigos inyectados y no contra la semilla", () => {
+    // Ésta es la ruta real del servidor: los códigos vienen de `size_catalog`,
+    // donde una talla puede estar dada de baja o haberse agregado.
+    const options = [{ family: "guantes", attributeName: "Talla guantes", codes: ["S", "M"] }]
+    expect(resolveSizeAttribute(["M"], "guante", options).issues).toEqual([])
+    expect(resolveSizeAttribute(["XL"], "guante", options).issues).toHaveLength(1)
+  })
+
+  it("usa el nombre de atributo que declaran los códigos inyectados", () => {
+    const options = [{ family: "guantes", attributeName: "Talla de guante", codes: ["M"] }]
+    expect(resolveSizeAttribute(["M"], "guante", options).name).toBe("Talla de guante")
   })
 })

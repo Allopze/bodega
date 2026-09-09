@@ -138,6 +138,66 @@ export function sizeFamilyForEppType(eppType: string | null): string | null {
   return EPP_TYPE_TO_SIZE_FAMILY[eppType as (typeof EPP_TYPES)[number]] ?? null
 }
 
+/** Códigos válidos de una familia. Estructura de `SizeFamilyOptions`. */
+export interface SizeFamilyCodes {
+  family: string
+  attributeName: string
+  codes: readonly string[]
+}
+
+export interface ResolvedSizeAttribute {
+  /** Nombre del atributo a crear («Talla guantes»). */
+  name: string
+  /** Valores ya canonizados, en el orden de la planilla. */
+  values: string[]
+  /** Familia canónica a persistir en `product_attributes.size_family`. */
+  sizeFamily: string | null
+  issues: Array<{ severity: ImportSeverity; message: string }>
+}
+
+/**
+ * Cómo se llama el atributo de talla de una fila, cómo se escriben sus valores
+ * y a qué familia pertenece.
+ *
+ * Sustituye la heurística `/^\d{2}$/ ? "Talla calzado" : "Talla"` que estaba
+ * duplicada en las dos ramas de `normalizeEppRow` y por la que ningún guante
+ * recibía nunca `Talla guantes`, ningún casco `Talla casco`, y nada quedaba con
+ * `size_family`.
+ *
+ * Una talla fuera de los códigos de su familia se acepta con advertencia y no
+ * bloquea: las planillas de proveedor traen numeración que el catálogo no
+ * declara (`9-10` de guante), y bloquear las dejaría inutilizables. La
+ * advertencia es la señal de que alguien decida si esa talla se agrega a
+ * `size_catalog` o se corrige.
+ *
+ * `familyOptions` viene de `size_catalog` cuando llama el servidor. Sin él cae
+ * a la semilla, el mismo respaldo que `getSizeFamilyOptions` usa para una tabla
+ * vacía: quedarse sin poder importar es peor que usar los valores por defecto.
+ */
+export function resolveSizeAttribute(
+  rawValues: readonly string[],
+  eppType: string | null,
+  familyOptions?: readonly SizeFamilyCodes[],
+): ResolvedSizeAttribute {
+  const values = rawValues.map((value) => normalizeSizeLabel(value) || cleanText(value).toUpperCase())
+  const family = sizeFamilyForEppType(eppType)
+  const definition = family
+    ? (familyOptions ?? SIZE_FAMILIES).find((option) => option.family === family)
+    : undefined
+
+  if (!definition) return { name: "Talla", values, sizeFamily: null, issues: [] }
+
+  const known = new Set(definition.codes.map((code) => normalizeSizeLabel(code)))
+  const issues = values
+    .filter((value) => !known.has(normalizeSizeLabel(value)))
+    .map((value) => ({
+      severity: "warning" as const,
+      message: `La talla «${value}» no está en el catálogo de la familia ${definition.family}.`,
+    }))
+
+  return { name: definition.attributeName, values, sizeFamily: definition.family, issues }
+}
+
 /**
  * Accesorios cuyo nombre menciona el EPP al que se montan: "Fono ... p/casco"
  * es protección auditiva, no de cabeza. La mención se descarta antes de buscar
@@ -191,6 +251,8 @@ export const HEADER_ALIASES: Record<string, string> = {
 }
 
 import { toCode } from "@/lib/utils"
+import { normalizeSizeLabel } from "@/lib/products/product-size"
+import { SIZE_FAMILIES } from "@/lib/products/size-catalog"
 import ExcelJS from "exceljs"
 
 function cellText(value: unknown): string {
