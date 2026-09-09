@@ -14,6 +14,7 @@ import { MOVEMENT_TYPE_LABELS } from "@/lib/movement-labels"
 import type { Session } from "next-auth"
 import { todayInChile } from "@/lib/utils"
 import { getProductAttributesByIds } from "@/lib/services/product-sizes"
+import { getStockAvailability } from "@/lib/services/stock-availability"
 
 export interface StockExportFilters {
   worksiteId?: string
@@ -67,7 +68,13 @@ export async function getStockExport(
   // La talla va en columna propia y no pegada al nombre: así la planilla se
   // puede filtrar y dinamizar por talla, que es para lo que se exporta. Sin
   // ella todas las variantes de una familia salían con el mismo texto.
-  const sizeById = await getProductAttributesByIds(limited.map((r) => r.productId))
+  const [sizeById, availabilityRows] = await Promise.all([
+    getProductAttributesByIds(limited.map((r) => r.productId)),
+    getStockAvailability(session, { worksiteId: filters.worksiteId }),
+  ])
+  const availabilityByKey = new Map(
+    availabilityRows.map((row) => [`${row.worksiteId}\u0000${row.productId}`, row]),
+  )
 
   const report: ReportData = {
     filenameBase: "stock-por-faena",
@@ -78,20 +85,29 @@ export async function getStockExport(
       "Talla",
       "SKU",
       "U/M",
-      "Cantidad",
+      "Físico",
+      "Demanda pendiente",
+      "Entrada esperada",
+      "Saldo proyectado",
       "Stock mínimo",
       "Último movimiento",
     ],
-    rows: limited.map((r) => [
-      r.worksiteName,
-      formatVariantProductName(r.productName, sizeById.get(r.productId)),
-      resolveProductSize(sizeById.get(r.productId) ?? [])?.label ?? "",
-      r.productSku ?? "",
-      r.unitOfMeasure,
-      r.quantity,
-      r.minStock,
-      r.lastMovementAt ?? "",
-    ]),
+    rows: limited.map((r) => {
+      const availability = availabilityByKey.get(`${r.worksiteId}\u0000${r.productId}`)
+      return [
+        r.worksiteName,
+        formatVariantProductName(r.productName, sizeById.get(r.productId)),
+        resolveProductSize(sizeById.get(r.productId) ?? [])?.label ?? "",
+        r.productSku ?? "",
+        r.unitOfMeasure,
+        r.quantity,
+        availability?.pendingDemand ?? 0,
+        availability?.incoming ?? 0,
+        availability?.projectedBalance ?? r.quantity,
+        r.minStock,
+        r.lastMovementAt ?? "",
+      ]
+    }),
     rowLimitApplied: truncated,
   }
 

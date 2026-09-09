@@ -3,6 +3,9 @@ export interface WorksiteStockWithProduct {
   worksiteId: string
   productId: string
   quantity: number
+  pendingDemand: number
+  incoming: number
+  projectedBalance: number
   minStock: number
   lastMovementAt: string | null
   updatedAt: string

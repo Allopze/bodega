@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useActionState } from "react"
 import { toast } from "@/lib/toast"
-import { CaretDown, CaretRight, Check, PencilSimple, X } from "@phosphor-icons/react"
+import { CaretDown, CaretRight, Check, Info, PencilSimple, X } from "@phosphor-icons/react"
 import type { WorksiteStockWithProduct } from "./types"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
@@ -16,6 +16,7 @@ import { INITIAL_STATE } from "@/lib/form-state"
 import type { ActionState } from "@/lib/validation/operations"
 import { StockExportButton } from "./stock-export-button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
+import { Tooltip } from "@/components/ui/tooltip"
 
 export interface StockTableProps {
   worksites: Array<{
@@ -306,6 +307,25 @@ function SortableHeader({
   )
 }
 
+function AvailabilityHeader({ label, definition }: { label: string; definition: string }) {
+  return (
+    <TableHead aria-label={label} className="text-right font-semibold">
+      <span className="inline-flex items-center justify-end gap-1">
+        {label}
+        <Tooltip content={definition} side="top">
+          <button
+            type="button"
+            aria-label={`Qué significa ${label}`}
+            className="inline-flex min-h-6 min-w-6 items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] transition-colors hover:text-[var(--color-text)] focus-visible:text-[var(--color-text)]"
+          >
+            <Info size={13} aria-hidden />
+          </button>
+        </Tooltip>
+      </span>
+    </TableHead>
+  )
+}
+
 export function StockTable({ worksites, canExport, canSetMinStock = true }: StockTableProps) {
   const allItems = worksites.flatMap((ws) => ws.items)
   const lowStockCount = allItems.filter((item) => item.minStock > 0 && item.quantity <= item.minStock).length
@@ -423,9 +443,27 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                       </div>
                       <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
                         <div>
-                          <dt className="text-[var(--color-text-subtle)]">Stock actual</dt>
+                          <dt className="text-[var(--color-text-subtle)]">Físico</dt>
                           <dd className="mt-0.5 font-mono text-sm font-semibold tabular-nums text-[var(--color-text)]">
                             {formatQty(s.quantity, unit)}
+                          </dd>
+                        </div>
+                        <div className="text-right">
+                          <dt className="text-[var(--color-text-subtle)]">Demanda pendiente</dt>
+                          <dd className="mt-0.5 font-mono text-sm tabular-nums text-[var(--color-text)]">
+                            {formatQty(s.pendingDemand, unit)}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-[var(--color-text-subtle)]">Entrada esperada</dt>
+                          <dd className="mt-0.5 font-mono text-sm tabular-nums text-[var(--color-text)]">
+                            {formatQty(s.incoming, unit)}
+                          </dd>
+                        </div>
+                        <div className="text-right">
+                          <dt className="text-[var(--color-text-subtle)]">Saldo proyectado</dt>
+                          <dd className={`mt-0.5 font-mono text-sm font-semibold tabular-nums ${s.projectedBalance < 0 ? "text-[var(--color-warning-ink)]" : "text-[var(--color-text)]"}`}>
+                            {formatQty(s.projectedBalance, unit)}
                           </dd>
                         </div>
                         <div className="text-right">
@@ -463,6 +501,9 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                 <col />
                 <col className="w-32" />
                 <col className="w-36" />
+                <col className="w-40" />
+                <col className="w-36" />
+                <col className="w-40" />
                 <col className="w-32" />
                 <col className="w-44" />
               </colgroup>
@@ -475,9 +516,21 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                   />
                   <TableHead className="text-left font-semibold">Estado</TableHead>
                   <SortableHeader
-                    label="Stock actual"
+                    label="Físico"
                     sortKey="quantity" active={sort.key === "quantity"} dir={sort.dir} onSort={handleSort}
                     className="px-5 py-2.5 text-right font-semibold"
+                  />
+                  <AvailabilityHeader
+                    label="Demanda pendiente"
+                    definition="Cantidad aprobada aún pendiente de entrega, descontando entregas vigentes."
+                  />
+                  <AvailabilityHeader
+                    label="Entrada esperada"
+                    definition="Cantidad de una OC vigente aún no recibida en la faena. La recepción en oficina no la descuenta."
+                  />
+                  <AvailabilityHeader
+                    label="Saldo proyectado"
+                    definition="Físico menos demanda pendiente más entrada esperada. Es informativo y no autoriza movimientos."
                   />
                   <SortableHeader
                     label="Mínimo"
@@ -501,7 +554,7 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                     <TableRow>
                       <TableHead
                         scope="rowgroup"
-                        colSpan={5}
+                        colSpan={8}
                         className="bg-[var(--color-surface-2)] px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]"
                       >
                         {/* Un <button> y no <details>: `details` no es válido
@@ -558,6 +611,17 @@ export function StockTable({ worksites, canExport, canSetMinStock = true }: Stoc
                           <TableCell className="text-right">
                             <span className="font-mono text-sm font-semibold tabular-nums text-[var(--color-text)]">
                               {formatQty(s.quantity)}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-sm tabular-nums">
+                            {formatQty(s.pendingDemand)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-sm tabular-nums">
+                            {formatQty(s.incoming)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <span className={`font-mono text-sm font-semibold tabular-nums ${s.projectedBalance < 0 ? "text-[var(--color-warning-ink)]" : "text-[var(--color-text)]"}`}>
+                              {formatQty(s.projectedBalance)}
                             </span>
                           </TableCell>
                           <TableCell className="text-right">

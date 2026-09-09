@@ -94,6 +94,7 @@ const WS_2 = "ws-export-2"
 const PROD_1 = "prod-export-1"
 const PROD_2 = "prod-export-2"
 const CAT = "cat-export"
+const SUP = "sup-export"
 
 async function seedMasterData() {
   await inMemoryDb.insert(schema.users).values({
@@ -114,6 +115,10 @@ async function seedMasterData() {
 
   await inMemoryDb.insert(schema.productCategories).values({
     id: CAT, name: "EPP", slug: "epp", sortOrder: 1,
+  })
+
+  await inMemoryDb.insert(schema.suppliers).values({
+    id: SUP, name: "Proveedor Export", isActive: true, createdAt: now, updatedAt: now,
   })
 
   await inMemoryDb.insert(schema.products).values([
@@ -167,9 +172,49 @@ describe("getStockExport", () => {
     expect(ws).toBeDefined()
 
     expect((ws?.getRow(1).values as unknown[]).slice(1)).toEqual([
-      "Faena", "Producto", "Talla", "SKU", "U/M", "Cantidad", "Stock mínimo", "Último movimiento",
+      "Faena", "Producto", "Talla", "SKU", "U/M", "Físico", "Demanda pendiente",
+      "Entrada esperada", "Saldo proyectado", "Stock mínimo", "Último movimiento",
     ])
     expect(ws?.actualRowCount).toBe(3) // header + 2 data rows
+  })
+
+  it("exports the per-worksite availability projection without treating office receipt as final", async () => {
+    await inMemoryDb.insert(schema.worksiteStock).values({
+      id: "stk-projected", worksiteId: WS_1, productId: PROD_1,
+      quantity: 2, minStock: 0, lastMovementAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequests).values({
+      id: "req-projected", code: "SOL-EXPORT-PROJ", worksiteId: WS_1,
+      requesterId: userId, status: "in_purchasing", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseRequestItems).values({
+      id: "req-item-projected", requestId: "req-projected", productId: PROD_1,
+      quantity: 5, status: "partially_office_received", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseOrders).values({
+      id: "order-projected", code: "OC-EXPORT-PROJ", worksiteId: WS_1,
+      supplierId: SUP, createdBy: userId, status: "partially_office_received",
+      deliveryMode: "via_oficina", createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.purchaseOrderItems).values({
+      id: "order-item-projected", purchaseOrderId: "order-projected",
+      requestItemId: "req-item-projected", productId: PROD_1, quantity: 4,
+      quantityOfficeReceived: 3, quantityReceived: 1, status: "issued",
+    })
+
+    try {
+      const res = await getStockExport(globalSession(), { worksiteId: WS_1 })
+      const workbook = new ExcelJS.Workbook()
+      await workbook.xlsx.load(Buffer.from(res.buffer) as never)
+      const ws = workbook.getWorksheet("Stock")
+
+      expect((ws?.getRow(2).values as unknown[]).slice(6, 10)).toEqual([2, 5, 3, 0])
+    } finally {
+      await inMemoryDb.delete(schema.purchaseOrderItems)
+      await inMemoryDb.delete(schema.purchaseOrders)
+      await inMemoryDb.delete(schema.purchaseRequestItems)
+      await inMemoryDb.delete(schema.purchaseRequests)
+    }
   })
 
   it("exporta la talla de cada variante en su propia columna", async () => {

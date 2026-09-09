@@ -23,6 +23,7 @@ import type { WorksiteStockWithProduct, InventoryMovementWithRelations } from ".
 import { KARDEX_PAGE_SIZE } from "@/lib/constants"
 import { getProductAttributesByIds } from "@/lib/services/product-sizes"
 import { formatVariantProductName } from "@/lib/products/variant-grouping"
+import { getStockAvailability } from "@/lib/services/stock-availability"
 
 export const metadata: Metadata = { title: "Bodega" }
 
@@ -212,6 +213,10 @@ export default async function BodegaPage({
         .limit(STOCK_ROW_LIMIT)
     : []
 
+  const availabilityRows = view === "stock"
+    ? await getStockAvailability(session, { worksiteId: faena || undefined })
+    : []
+
   const movements = view === "kardex"
     ? await db
         .select({
@@ -274,12 +279,19 @@ export default async function BodegaPage({
     formatVariantProductName(name, attributesById.get(productId))
 
   const stockByWorksite: Record<string, WorksiteStockWithProduct[]> = {}
+  const availabilityByKey = new Map(
+    availabilityRows.map((row) => [`${row.worksiteId}\u0000${row.productId}`, row]),
+  )
   for (const row of stockRows) {
+    const availability = availabilityByKey.get(`${row.worksiteId}\u0000${row.productId}`)
     const item: WorksiteStockWithProduct = {
       id: row.id,
       worksiteId: row.worksiteId,
       productId: row.productId,
       quantity: row.quantity,
+      pendingDemand: availability?.pendingDemand ?? 0,
+      incoming: availability?.incoming ?? 0,
+      projectedBalance: availability?.projectedBalance ?? row.quantity,
       minStock: row.minStock,
       lastMovementAt: row.lastMovementAt,
       updatedAt: row.updatedAt,

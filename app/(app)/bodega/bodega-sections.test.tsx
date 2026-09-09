@@ -40,6 +40,9 @@ function line(overrides: Partial<WorksiteStockWithProduct> & { id: string }): Wo
     updatedAt: "2026-08-10T00:00:00.000Z",
     product: { name: "Buzo Dupont Tyvek", sku: "EPP-TRECK-008", unitOfMeasure: "unidad" },
     worksite: null,
+    pendingDemand: 0,
+    incoming: 0,
+    projectedBalance: 0,
     ...overrides,
   }
 }

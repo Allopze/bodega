@@ -23,6 +23,9 @@ function line(overrides: Partial<WorksiteStockWithProduct> & { id: string }): Wo
     updatedAt: "2026-08-10T00:00:00.000Z",
     product: { name: "Buzo Dupont Tyvek", sku: "EPP-TRECK-008", unitOfMeasure: "unidad" },
     worksite: null,
+    pendingDemand: 0,
+    incoming: 0,
+    projectedBalance: 0,
     ...overrides,
   }
 }
@@ -54,9 +57,17 @@ describe("StockTable", () => {
   it("etiqueta todas las columnas: sin <thead> nadie sabe qué es la fecha ni el mínimo", () => {
     const table = renderTable()
 
-    for (const label of ["Producto", "Estado", "Stock actual", "Mínimo", "Último movimiento"]) {
+    for (const label of ["Producto", "Estado", "Físico", "Demanda pendiente", "Entrada esperada", "Saldo proyectado", "Mínimo", "Último movimiento"]) {
       expect(table.getByRole("columnheader", { name: label })).toBeTruthy()
     }
+  })
+
+  it("explica las magnitudes proyectadas desde sus encabezados", () => {
+    renderTable()
+
+    expect(screen.getByRole("button", { name: "Qué significa Demanda pendiente" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Qué significa Entrada esperada" })).toBeTruthy()
+    expect(screen.getByRole("button", { name: "Qué significa Saldo proyectado" })).toBeTruthy()
   })
 
   it("usa una sola tabla para todas las faenas, para que las cantidades alineen entre grupos", () => {
@@ -121,7 +132,7 @@ describe("StockTable", () => {
   it("acompaña la fecha del último movimiento con su distancia en días", () => {
     const table = renderTable()
 
-    expect(cells(table, 4)).toEqual([`${formatDate(WORKSITES[0]!.items[0]!.lastMovementAt!)}hoy`, "—"])
+    expect(cells(table, 7)).toEqual([`${formatDate(WORKSITES[0]!.items[0]!.lastMovementAt!)}hoy`, "—"])
   })
 
   it("agrupa por producto con el total sumado, que es lo que no se podía leer por faena", () => {
@@ -133,6 +144,51 @@ describe("StockTable", () => {
     // Las faenas pasan a ser filas del producto, no encabezados de grupo.
     expect(cells(regrouped, 0)).toEqual(["Biodiversa", "Masisa"])
     expect(table.queryByRole("rowheader", { name: /Biodiversa/ })).toBeNull()
+  })
+
+  it("destaca sólo los saldos proyectados negativos con warning-ink", () => {
+    const table = renderTable([
+      {
+        id: "ws-1",
+        name: "Biodiversa",
+        items: [line({
+          id: "s-1",
+          quantity: 3,
+          pendingDemand: 9,
+          incoming: 2,
+          projectedBalance: -4,
+        })],
+      },
+      {
+        id: "ws-2",
+        name: "Masisa",
+        items: [line({
+          id: "s-2",
+          worksiteId: "ws-2",
+          quantity: 4,
+          pendingDemand: 1,
+          incoming: 0,
+          projectedBalance: 3,
+        })],
+      },
+    ])
+
+    const projectedCells = (table.getAllByRole("row") as HTMLElement[])
+      .filter((row) => within(row).queryAllByRole("cell").length > 0)
+      .map((row) => within(row).getAllByRole("cell")[5]!)
+    expect(projectedCells[0]?.firstElementChild).toHaveClass("text-[var(--color-warning-ink)]")
+    expect(projectedCells[1]?.firstElementChild).not.toHaveClass("text-[var(--color-warning-ink)]")
+  })
+
+  it("mantiene el total físico del grupo de producto sin sumar saldos proyectados entre faenas", () => {
+    renderTable([
+      { id: "ws-1", name: "Biodiversa", items: [line({ id: "s-1", quantity: 3, projectedBalance: -7 })] },
+      { id: "ws-2", name: "Masisa", items: [line({ id: "s-2", worksiteId: "ws-2", quantity: 4, projectedBalance: 20 })] },
+    ])
+    fireEvent.click(screen.getByRole("button", { name: "Por producto" }))
+
+    expect(screen.getByRole("rowheader", { name: /7 unidades en 2 faenas/ })).toBeTruthy()
+    expect(screen.queryByRole("rowheader", { name: /13 unidades/ })).toBeNull()
   })
 
   it("conserva la agrupación elegida entre montajes: un refresco desmonta el árbol", () => {
