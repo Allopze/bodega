@@ -1828,6 +1828,13 @@
       "when": 1788832326697,
       "tag": "0260_stale_absorbing_man",
       "breakpoints": true
+    },
+    {
+      "idx": 261,
+      "version": "7",
+      "when": 1788923052458,
+      "tag": "0261_mushy_punisher",
+      "breakpoints": true
     }
   ]
 }

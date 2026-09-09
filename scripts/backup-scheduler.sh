@@ -41,37 +41,43 @@ done
 
 # ── Función para obtener config desde la API ──────────────────────────────────
 fetch_config() {
-  local backup_hour=3
-  local retention_days=30
-  local max_age_hours=36
-
   if [ -n "${CRON_SECRET:-}" ]; then
-    local resp
-    resp=$(wget -qO- --timeout=10 \
+    wget -qO- --timeout=10 \
       --header="Authorization: Bearer ${CRON_SECRET}" \
-      "${APP_URL}/api/backups/config" 2>/dev/null || echo "")
-
-    if [ -n "$resp" ]; then
-      backup_hour=$(echo "$resp" | jq -r '.backupHour // 3' 2>/dev/null || echo 3)
-      retention_days=$(echo "$resp" | jq -r '.retentionDays // 30' 2>/dev/null || echo 30)
-      max_age_hours=$(echo "$resp" | jq -r '.maxAgeHours // 36' 2>/dev/null || echo 36)
-      log "Config desde API: backupHour=${backup_hour} retentionDays=${retention_days} maxAgeHours=${max_age_hours}"
-    else
-      log "API /api/backups/config no respondió, usando defaults"
-    fi
+      "${APP_URL}/api/backups/config" 2>/dev/null || echo ""
   else
     log "CRON_SECRET no configurado, usando defaults"
+    echo ""
   fi
+}
 
-  echo "${backup_hour} ${retention_days} ${max_age_hours}"
+# Lee un campo del JSON de config; cae al default si falta o si el JSON está vacío.
+cfg() {
+  local json="$1" field="$2" default="$3"
+  echo "$json" | jq -r --arg f "$field" --arg d "$default" 'if has($f) then (.[$f] // $d) else $d end' 2>/dev/null || echo "$default"
 }
 
 while true; do
   # Obtener configuración actualizada cada ciclo
-  read -r BACKUP_HOUR RETENTION_DAYS MAX_AGE_HOURS <<< "$(fetch_config)"
-  BACKUP_HOUR="${BACKUP_HOUR:-3}"
-  RETENTION_DAYS="${RETENTION_DAYS:-30}"
-  MAX_AGE_HOURS="${MAX_AGE_HOURS:-36}"
+  CONFIG_JSON="$(fetch_config)"
+
+  if [ -n "$CONFIG_JSON" ]; then
+    BACKUP_HOUR="$(cfg "$CONFIG_JSON" backupHour 3)"
+    RETENTION_DAYS="$(cfg "$CONFIG_JSON" retentionDays 30)"
+    MAX_AGE_HOURS="$(cfg "$CONFIG_JSON" maxAgeHours 36)"
+    DRIVE_BACKUP_ENABLED="$(cfg "$CONFIG_JSON" driveBackupsEnabled false)"
+    CLOUDREVE_BACKUP_ENABLED="$(cfg "$CONFIG_JSON" cloudreveBackupsEnabled false)"
+    CLOUDREVE_BACKUP_PATH="$(cfg "$CONFIG_JSON" cloudreveBackupsPath backups/plataforma)"
+    log "Config desde API: backupHour=${BACKUP_HOUR} retentionDays=${RETENTION_DAYS} maxAgeHours=${MAX_AGE_HOURS} cloudreve=${CLOUDREVE_BACKUP_ENABLED} drive=${DRIVE_BACKUP_ENABLED}"
+  else
+    BACKUP_HOUR=3
+    RETENTION_DAYS=30
+    MAX_AGE_HOURS=36
+    DRIVE_BACKUP_ENABLED=false
+    CLOUDREVE_BACKUP_ENABLED=false
+    CLOUDREVE_BACKUP_PATH="backups/plataforma"
+    log "API /api/backups/config no respondió, usando defaults"
+  fi
 
   # Calcular cuánto falta para la próxima BACKUP_HOUR UTC
   current_ts=$(date -u '+%s')
@@ -96,7 +102,11 @@ while true; do
   log "=== INICIANDO BACKUP DIARIO ==="
 
   if [ -x "$ORCHESTRATOR" ]; then
-    RETENTION_DAYS="${RETENTION_DAYS}" "$ORCHESTRATOR" || error "Orquestador falló con exit code $?"
+    RETENTION_DAYS="${RETENTION_DAYS}" \
+      DRIVE_BACKUP_ENABLED="${DRIVE_BACKUP_ENABLED}" \
+      CLOUDREVE_BACKUP_ENABLED="${CLOUDREVE_BACKUP_ENABLED}" \
+      CLOUDREVE_BACKUP_PATH="${CLOUDREVE_BACKUP_PATH}" \
+      "$ORCHESTRATOR" || error "Orquestador falló con exit code $?"
 
     # Notificar al endpoint de backup-health internamente
     if [ -n "${CRON_SECRET:-}" ]; then

@@ -92,9 +92,10 @@ if ! $DRIVE_ONLY; then
   fi
 fi
 
-# ── 2. Verificar backup en Google Drive ──────────────────────────────────────
+# ── 2. Verificar backup en Google Drive (solo si está activo) ────────────────
 
-if command -v rclone &>/dev/null && rclone listremotes 2>/dev/null | grep -q 'gdrive-backups:'; then
+if [ "${DRIVE_BACKUP_ENABLED:-false}" = "true" ] \
+  && command -v rclone &>/dev/null && rclone listremotes 2>/dev/null | grep -q 'gdrive-backups:'; then
   # Listar backups en Drive de los últimos días
   DRIVE_BACKUPS=$(rclone lsd "${GDRIVE_DEST}/" 2>/dev/null | grep -v latest | wc -l)
 
@@ -126,8 +127,10 @@ if command -v rclone &>/dev/null && rclone listremotes 2>/dev/null | grep -q 'gd
     fi
   fi
 else
-  ISSUES+=("rclone/gdrive-backups no configurado")
-  [ "$EXIT_CODE" -lt 1 ] && EXIT_CODE=1
+  if [ "${DRIVE_BACKUP_ENABLED:-false}" = "true" ]; then
+    ISSUES+=("rclone/gdrive-backups no configurado")
+    [ "$EXIT_CODE" -lt 1 ] && EXIT_CODE=1
+  fi
 fi
 
 # ── 2b. Ensayo de descifrado del snapshot remoto ─────────────────────────────
@@ -137,7 +140,8 @@ fi
 # se descifra hacia /dev/null: prueba real de que ESTA passphrase abre ESTE
 # snapshot, sin dejar los secretos en disco.
 
-if command -v rclone &>/dev/null && rclone listremotes 2>/dev/null | grep -q 'gdrive-backups:'; then
+if [ "${DRIVE_BACKUP_ENABLED:-false}" = "true" ] \
+  && command -v rclone &>/dev/null && rclone listremotes 2>/dev/null | grep -q 'gdrive-backups:'; then
   NEWEST_REMOTE=$(rclone lsd "${GDRIVE_DEST}/" 2>/dev/null | awk '{print $NF}' \
     | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' | sort | tail -1 || true)
 
@@ -163,6 +167,30 @@ if command -v rclone &>/dev/null && rclone listremotes 2>/dev/null | grep -q 'gd
       rm -rf "$PROBE_DIR"
       trap - EXIT
     fi
+  fi
+fi
+
+# ── 2c. Verificar backup en Cloudreve (solo si está activo) ──────────────────
+if [ "${CLOUDREVE_BACKUP_ENABLED:-false}" = "true" ]; then
+  CLOUDREVE_SCRIPT="${CLOUDREVE_DOWNLOAD_SCRIPT:-/app/scripts/download-backup-cloudreve.cjs}"
+  if [ -f "$CLOUDREVE_SCRIPT" ] && command -v node &>/dev/null; then
+    TODAY=$(date '+%Y-%m-%d')
+    DATES=$(node "$CLOUDREVE_SCRIPT" --list-dates "${CLOUDREVE_BACKUP_PATH:-backups/plataforma}" 2>/dev/null || true)
+    if echo "$DATES" | grep -q "$TODAY"; then
+      log "OK: Backup de hoy ($TODAY) en Cloudreve"
+    else
+      YESTERDAY=$(date -d '-1 day' '+%Y-%m-%d')
+      if echo "$DATES" | grep -q "$YESTERDAY"; then
+        log "WARN: Backup de ayer ($YESTERDAY) en Cloudreve (hoy aún no)"
+        [ "$EXIT_CODE" -lt 1 ] && EXIT_CODE=1
+      else
+        ISSUES+=("Backup más reciente en Cloudreve tiene >48h")
+        [ "$EXIT_CODE" -lt 2 ] && EXIT_CODE=2
+      fi
+    fi
+  else
+    ISSUES+=("Cloudreve activado pero script de verificación no disponible (${CLOUDREVE_SCRIPT})")
+    [ "$EXIT_CODE" -lt 1 ] && EXIT_CODE=1
   fi
 fi
 

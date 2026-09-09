@@ -263,6 +263,27 @@ RUN ./node_modules/.bin/esbuild scripts/download-sst-documents.ts \
     --external:postgres \
     --outfile=/tmp/download-sst-documents.mjs
 
+# Subida/descarga del snapshot de respaldo a Cloudreve (WebDAV). Leen las
+# credenciales con `readCloudreveConfig()` —que consulta `system_settings`
+# (drizzle) y descifra con el keyring DTE—, así que externalizan lo que la
+# imagen standalone ya resuelve (drizzle-orm + postgres) y empaquetan el resto.
+RUN ./node_modules/.bin/esbuild scripts/upload-backup-cloudreve.ts \
+    --bundle \
+    --platform=node \
+    --format=cjs \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/upload-backup-cloudreve.cjs
+RUN ./node_modules/.bin/esbuild scripts/download-backup-cloudreve.ts \
+    --bundle \
+    --platform=node \
+    --format=cjs \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/download-backup-cloudreve.cjs
+
 # Mismo motivo, para los one-shot de combustible. El backfill de lecturas de
 # medidor reconstruye la serie de odómetro desde el detalle que ya está guardado
 # en `raw_row`, y el sync del catálogo de reglas deja disponibles las reglas
@@ -402,6 +423,8 @@ COPY --from=build /tmp/backfill-dte-order-refs.mjs ./scripts/backfill-dte-order-
 COPY --from=build /tmp/reparse-dte-order-refs.mjs ./scripts/reparse-dte-order-refs.mjs
 COPY --from=build /tmp/migrate-sst-to-cloudreve.cjs ./scripts/migrate-sst-to-cloudreve.cjs
 COPY --from=build /tmp/download-sst-documents.mjs ./scripts/download-sst-documents.mjs
+COPY --from=build /tmp/upload-backup-cloudreve.cjs ./scripts/upload-backup-cloudreve.cjs
+COPY --from=build /tmp/download-backup-cloudreve.cjs ./scripts/download-backup-cloudreve.cjs
 COPY --from=build /tmp/fuel/backfill-fuel-meter-readings.mjs ./scripts/backfill-fuel-meter-readings.mjs
 COPY --from=build /tmp/fuel/seed-fuel-anomaly-rules.mjs ./scripts/seed-fuel-anomaly-rules.mjs
 COPY --from=build /tmp/preflight-fuel-integrations.mjs ./scripts/preflight-fuel-integrations.mjs

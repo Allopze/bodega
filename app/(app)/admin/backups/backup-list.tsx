@@ -1,6 +1,6 @@
 "use client"
 
-import { Clock, CheckCircle, XCircle, Cloud, HardDrives, WarningCircle } from "@phosphor-icons/react/dist/ssr"
+import { Clock, CheckCircle, XCircle, Cloud, CloudCheck, HardDrives, WarningCircle } from "@phosphor-icons/react/dist/ssr"
 import { formatBytes } from "@/lib/format-bytes"
 import { formatDateTime } from "@/lib/utils"
 import { Tooltip } from "@/components/ui/tooltip"
@@ -18,6 +18,7 @@ interface BackupRow {
   configSizeBytes: number | null
   totalSizeBytes: number | null
   driveUploaded: boolean | null
+  cloudreveUploaded: boolean | null
   manifestSha256: string | null
   errorMessage: string | null
   appVersion: string | null
@@ -61,7 +62,7 @@ export function BackupsList({ backups }: Props) {
           <TableHeader>
             <TableRow>
               <TableHead>Fecha</TableHead><TableHead>Estado</TableHead><TableHead>Origen</TableHead><TableHead>PostgreSQL</TableHead>
-              <TableHead>Storage</TableHead><TableHead>Total</TableHead><TableHead>Drive</TableHead><TableHead>Manifiesto</TableHead>
+              <TableHead>Storage</TableHead><TableHead>Total</TableHead><TableHead>Drive</TableHead><TableHead>Cloudreve</TableHead><TableHead>Manifiesto</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -118,6 +119,13 @@ export function BackupsList({ backups }: Props) {
                   <TableCell className="whitespace-nowrap">
                     {b.driveUploaded ? (
                       <Cloud size={14} className="text-[var(--color-success)]" />
+                    ) : (
+                      <span className="text-xs text-[var(--color-text-faint)]">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {b.cloudreveUploaded ? (
+                      <CloudCheck size={14} className="text-[var(--color-success)]" />
                     ) : (
                       <span className="text-xs text-[var(--color-text-faint)]">—</span>
                     )}

@@ -12,6 +12,7 @@ import { db } from "@/db"
 import { backupLog, backupSettings } from "@/db/schema"
 import { desc, eq, and, lt } from "drizzle-orm"
 import { nanoid } from "@/lib/id"
+import { normalizeBackupCloudrevePath, DEFAULT_BACKUP_CLOUDREVE_PATH } from "@/lib/services/cloudreve/backup"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,6 +31,8 @@ export interface BackupEntry {
   manifestSha256:    string | null
   drivePath:         string | null
   driveUploaded:     boolean | null
+  cloudrevePath:     string | null
+  cloudreveUploaded: boolean | null
   appVersion:        string | null
   hostname:          string | null
   totalSizeBytes:    number | null
@@ -51,6 +54,7 @@ export interface BackupStats {
   successfulBackupsLast7Days: number
   totalSizeBytes:    number | null
   driveUploaded:     boolean
+  cloudreveUploaded: boolean
 }
 
 // ── Create ───────────────────────────────────────────────────────────────────
@@ -93,6 +97,8 @@ export async function completeBackupLog(
     manifestSha256?: string
     drivePath?: string
     driveUploaded?: boolean
+    cloudrevePath?: string
+    cloudreveUploaded?: boolean
     appVersion?: string
     hostname?: string
     totalSizeBytes?: number
@@ -116,6 +122,8 @@ export async function completeBackupLog(
       manifestSha256: result.manifestSha256 ?? null,
       drivePath: result.drivePath ?? null,
       driveUploaded: result.driveUploaded ?? null,
+      cloudrevePath: result.cloudrevePath ?? null,
+      cloudreveUploaded: result.cloudreveUploaded ?? null,
       appVersion: result.appVersion ?? null,
       hostname: result.hostname ?? null,
       totalSizeBytes: result.totalSizeBytes ?? null,
@@ -178,6 +186,10 @@ export async function getBackupStats(): Promise<BackupStats> {
     .filter((b) => b.driveUploaded)
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0] ?? null
 
+  const lastBackupWithCloudreve = all
+    .filter((b) => b.cloudreveUploaded)
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0] ?? null
+
   return {
     lastBackup: lastBackup ? toEntry(lastBackup) : null,
     lastSuccess: lastSuccess ? toEntry(lastSuccess) : null,
@@ -190,6 +202,7 @@ export async function getBackupStats(): Promise<BackupStats> {
     successfulBackupsLast7Days: successfulLast7Days.length,
     totalSizeBytes: lastSuccess?.totalSizeBytes ?? null,
     driveUploaded: lastBackupWithDrive?.driveUploaded ?? false,
+    cloudreveUploaded: lastBackupWithCloudreve?.cloudreveUploaded ?? false,
   }
 }
 
@@ -450,6 +463,9 @@ export interface BackupConfig {
   retentionDays: number
   maxAgeHours: number
   manualTimeoutMinutes: number
+  driveBackupsEnabled: boolean
+  cloudreveBackupsEnabled: boolean
+  cloudreveBackupsPath: string
 }
 
 export async function getBackupConfig(): Promise<BackupConfig> {
@@ -463,6 +479,9 @@ export async function getBackupConfig(): Promise<BackupConfig> {
     retentionDays: row?.retentionDays ?? 30,
     maxAgeHours: row?.maxAgeHours ?? 36,
     manualTimeoutMinutes: row?.manualTimeoutMinutes ?? 30,
+    driveBackupsEnabled: row?.driveBackupsEnabled ?? false,
+    cloudreveBackupsEnabled: row?.cloudreveBackupsEnabled ?? false,
+    cloudreveBackupsPath: normalizeBackupCloudrevePath(row?.cloudreveBackupsPath),
   }
 }
 
@@ -493,6 +512,22 @@ export async function updateBackupConfig(input: Partial<BackupConfig>): Promise<
     }
     updates.manualTimeoutMinutes = input.manualTimeoutMinutes
   }
+  if (input.driveBackupsEnabled !== undefined) {
+    if (typeof input.driveBackupsEnabled !== "boolean") {
+      throw new Error("driveBackupsEnabled must be boolean")
+    }
+    updates.driveBackupsEnabled = input.driveBackupsEnabled
+  }
+  if (input.cloudreveBackupsEnabled !== undefined) {
+    if (typeof input.cloudreveBackupsEnabled !== "boolean") {
+      throw new Error("cloudreveBackupsEnabled must be boolean")
+    }
+    updates.cloudreveBackupsEnabled = input.cloudreveBackupsEnabled
+  }
+  if (input.cloudreveBackupsPath !== undefined) {
+    // Lanza ante traversal/backslash/control chars; guarda el path normalizado.
+    updates.cloudreveBackupsPath = normalizeBackupCloudrevePath(input.cloudreveBackupsPath)
+  }
 
   if (Object.keys(updates).length === 0) {
     return getBackupConfig()
@@ -508,6 +543,9 @@ export async function updateBackupConfig(input: Partial<BackupConfig>): Promise<
       retentionDays: updates.retentionDays ?? 30,
       maxAgeHours: updates.maxAgeHours ?? 36,
       manualTimeoutMinutes: updates.manualTimeoutMinutes ?? 30,
+      driveBackupsEnabled: updates.driveBackupsEnabled ?? false,
+      cloudreveBackupsEnabled: updates.cloudreveBackupsEnabled ?? false,
+      cloudreveBackupsPath: updates.cloudreveBackupsPath ?? DEFAULT_BACKUP_CLOUDREVE_PATH,
     } as typeof backupSettings.$inferInsert)
     .onConflictDoUpdate({
       target: backupSettings.id,
@@ -536,6 +574,8 @@ function toEntry(row: any): BackupEntry {
     manifestSha256:    row.manifestSha256,
     drivePath:         row.drivePath,
     driveUploaded:     row.driveUploaded,
+    cloudrevePath:     row.cloudrevePath,
+    cloudreveUploaded: row.cloudreveUploaded,
     appVersion:        row.appVersion,
     hostname:          row.hostname,
     totalSizeBytes:    row.totalSizeBytes,

@@ -1,4 +1,4 @@
-import { pgTable, text, integer, timestamp } from "drizzle-orm/pg-core"
+import { pgTable, text, integer, boolean, timestamp } from "drizzle-orm/pg-core"
 
 /**
  * Configuración de backups editable desde el panel admin.
@@ -18,6 +18,17 @@ export const backupSettings = pgTable("backup_settings", {
 
   /** Timeout en minutos para el backup manual desde el panel */
   manualTimeoutMinutes: integer("manual_timeout_minutes").notNull().default(30),
+
+  /** Subir el snapshot a Google Drive vía rclone. Off por defecto: el destino
+   *  remoto activo es Cloudreve (solo local + Cloudreve). */
+  driveBackupsEnabled: boolean("drive_backups_enabled").notNull().default(false),
+
+  /** Subir el snapshot a Cloudreve (WebDAV) usando las credenciales del
+   *  almacenamiento de documentos SST. */
+  cloudreveBackupsEnabled: boolean("cloudreve_backups_enabled").notNull().default(false),
+
+  /** Carpeta remota (dentro del WebDAV) donde se guardan los snapshots. */
+  cloudreveBackupsPath: text("cloudreve_backups_path").notNull().default("backups/plataforma"),
 
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })

@@ -38,6 +38,28 @@ function getDriveCard(driveHealth: DriveHealth | null): BackupStatusCard {
   return { label: "Destino remoto", value: "rclone no está instalado", status: "warning" }
 }
 
+export interface CloudreveDestinationStatus {
+  enabled: boolean
+  reachable: boolean | null
+}
+
+/** Cloudreve es el destino remoto activo; Drive queda como fallback legado. */
+function getRemoteDestinationCard(
+  driveHealth: DriveHealth | null,
+  cloudreve: CloudreveDestinationStatus | null | undefined,
+): BackupStatusCard {
+  if (cloudreve?.enabled) {
+    if (cloudreve.reachable === true) {
+      return { label: "Destino remoto", value: "Cloudreve accesible", status: "success" }
+    }
+    if (cloudreve.reachable === false) {
+      return { label: "Destino remoto", value: "Cloudreve configurado, pero no accesible", status: "failed" }
+    }
+    return { label: "Destino remoto", value: "Cloudreve activado; sin verificación reciente", status: "warning" }
+  }
+  return getDriveCard(driveHealth)
+}
+
 /**
  * Presenta únicamente condiciones que cambian una decisión operativa. No se
  * deduce salud desde la ausencia de fallos: una copia nunca ejecutada falla el
@@ -46,6 +68,7 @@ function getDriveCard(driveHealth: DriveHealth | null): BackupStatusCard {
 export function buildBackupStatusCards(
   stats: BackupStats,
   driveHealth: DriveHealth | null,
+  cloudreve?: CloudreveDestinationStatus | null,
 ): BackupStatusCard[] {
   const latest = stats.lastBackup
   const lastBackupCard: BackupStatusCard = !latest
@@ -84,5 +107,5 @@ export function buildBackupStatusCards(
         status: "failed",
       }
 
-  return [lastBackupCard, cadenceCard, getDriveCard(driveHealth)]
+  return [lastBackupCard, cadenceCard, getRemoteDestinationCard(driveHealth, cloudreve)]
 }

@@ -32,6 +32,12 @@ RESTORE_TARGET="${RESTORE_TARGET:-/srv/bodega/restore}"
 GDRIVE_DEST="${GDRIVE_DEST:-gdrive-backups:bodega-backups}"
 STORAGE_PATH="${STORAGE_PATH:-/srv/bodega/storage}"
 ENV_TARGET="${ENV_TARGET:-/srv/bodega/.env}"
+# Origen del snapshot: "drive" (default) o "cloudreve" (WebDAV).
+RESTORE_SOURCE="${RESTORE_SOURCE:-drive}"
+CLOUDREVE_BACKUP_PATH="${CLOUDREVE_BACKUP_PATH:-backups/plataforma}"
+# Ruta del script de descarga empaquetado. En la imagen vive en /app/scripts;
+# en un host desnudo apúntalo a una copia del .cjs o corre dentro del contenedor.
+DOWNLOAD_CLOUDREVE_SCRIPT="${DOWNLOAD_CLOUDREVE_SCRIPT:-/app/scripts/download-backup-cloudreve.cjs}"
 
 # Se guarda para poder sugerir el reintento exacto si falta la passphrase.
 ORIGINAL_ARGS="$*"
@@ -50,6 +56,8 @@ for arg in "$@"; do
     --skip-storage) SKIP_STORAGE=true ;;
     --skip-config) SKIP_CONFIG=true ;;
     --verify-only) VERIFY_ONLY=true ;;
+    --source=cloudreve) RESTORE_SOURCE="cloudreve" ;;
+    --source=drive)     RESTORE_SOURCE="drive" ;;
     *) log "WARN: Argumento desconocido: $arg" ;;
   esac
 done
@@ -69,36 +77,59 @@ sha256file() {
 log "=== Restore All ==="
 log ""
 
-if ! command -v rclone &>/dev/null; then
-  error "rclone no está instalado. Instálalo y configura el Service Account."
-  exit 1
+if [ "$RESTORE_SOURCE" = "drive" ]; then
+  if ! command -v rclone &>/dev/null; then
+    error "rclone no está instalado. Instálalo y configura el Service Account."
+    exit 1
+  fi
+
+  if ! rclone listremotes 2>/dev/null | grep -q 'gdrive-backups:'; then
+    error "rclone remote 'gdrive-backups:' no encontrado."
+    error "Ejecuta: rclone config create gdrive-backups drive ..."
+    error "Ver docs/deploy/SETUP_GOOGLE_DRIVE_BACKUP.md"
+    exit 1
+  fi
 fi
 
-if ! rclone listremotes 2>/dev/null | grep -q 'gdrive-backups:'; then
-  error "rclone remote 'gdrive-backups:' no encontrado."
-  error "Ejecuta: rclone config create gdrive-backups drive ..."
-  error "Ver docs/deploy/SETUP_GOOGLE_DRIVE_BACKUP.md"
-  exit 1
-fi
+# ── Descargar backup desde el destino configurado ─────────────────────────────
 
-# ── Descargar backup desde Google Drive ──────────────────────────────────────
-
-log "Descargando backup '${RESTORE_DATE}' desde Google Drive..."
+log "Descargando backup '${RESTORE_DATE}' desde ${RESTORE_SOURCE}..."
 mkdir -p "$RESTORE_TARGET"
 
-REMOTE_PATH="${GDRIVE_DEST}/${RESTORE_DATE}"
+if [ "$RESTORE_SOURCE" = "cloudreve" ]; then
+  if ! command -v node &>/dev/null; then
+    error "node no está instalado: se necesita para descargar desde Cloudreve."
+    exit 1
+  fi
+  if [ ! -f "$DOWNLOAD_CLOUDREVE_SCRIPT" ]; then
+    error "No se encontró el script de descarga: ${DOWNLOAD_CLOUDREVE_SCRIPT}"
+    error "Apúntalo con DOWNLOAD_CLOUDREVE_SCRIPT o corre dentro del contenedor."
+    exit 1
+  fi
 
-if $DRY_RUN; then
-  log "[DRY-RUN] rclone copy ${REMOTE_PATH} ${RESTORE_TARGET}"
-  rclone ls "${REMOTE_PATH}"
-  exit 0
+  if $DRY_RUN; then
+    log "[DRY-RUN] node ${DOWNLOAD_CLOUDREVE_SCRIPT} ${RESTORE_DATE} ${RESTORE_TARGET} ${CLOUDREVE_BACKUP_PATH}"
+    exit 0
+  fi
+
+  node "$DOWNLOAD_CLOUDREVE_SCRIPT" "$RESTORE_DATE" "$RESTORE_TARGET" "$CLOUDREVE_BACKUP_PATH" 2>&1 \
+    | while IFS= read -r line; do log "  cloudreve: ${line}"; done
+  log "  Descarga completada en ${RESTORE_TARGET}"
+else
+  REMOTE_PATH="${GDRIVE_DEST}/${RESTORE_DATE}"
+
+  if $DRY_RUN; then
+    log "[DRY-RUN] rclone copy ${REMOTE_PATH} ${RESTORE_TARGET}"
+    rclone ls "${REMOTE_PATH}"
+    exit 0
+  fi
+
+  rclone copy "${REMOTE_PATH}/" "${RESTORE_TARGET}/" \
+    --verbose \
+    --checksum 2>&1 | while IFS= read -r line; do log "  rclone: ${line}"; done
+
+  log "  Descarga completada en ${RESTORE_TARGET}"
 fi
-
-rclone copy "${REMOTE_PATH}/" "${RESTORE_TARGET}/" \
-  --verbose \
-  --checksum 2>&1 | while IFS= read -r line; do log "  rclone: ${line}"; done
-
-log "  Descarga completada en ${RESTORE_TARGET}"
 
 # ── Verificar manifiesto ─────────────────────────────────────────────────────
 

@@ -133,7 +133,11 @@ services:
       - NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA=${NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA:-}
     volumes:
       - bodega-storage:/data/storage
-      - bodega-backups:/data/backups
+      # Destino local de los respaldos: volumen nombrado por defecto, o bind
+      # mount del host cuando BACKUP_HOST_PATH define una ruta absoluta (p. ej.
+      # /srv/backups/plataforma). La ruta interna no cambia: los scripts siguen
+      # viendo BACKUP_DIR=/data/backups dentro del contenedor.
+      - ${BACKUP_HOST_PATH:-bodega-backups}:/data/backups
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
       interval: 30s
@@ -194,7 +198,10 @@ services:
       - RCLONE_CONFIG=${RCLONE_CONFIG:-/app/.config/rclone/rclone.conf}
     volumes:
       - bodega-storage:/data/storage:ro
-      - bodega-backups:/data/backups
+      # Mismo montaje que `app`: el scheduler escribe en /data/backups y debe
+      # ver exactamente los mismos archivos que la app (y que BACKUP_HOST_PATH
+      # apunte al mismo destino en ambos).
+      - ${BACKUP_HOST_PATH:-bodega-backups}:/data/backups
     command: ["bash", "/app/scripts/backup-scheduler.sh"]
 
   # Scheduler de los endpoints /api/cron/*.
@@ -853,5 +860,7 @@ services:
 
 volumes:
   bodega-storage:
+  # Fuente por defecto del montaje de /data/backups. Cuando BACKUP_HOST_PATH
+  # define una ruta absoluta del host, se usa esa en vez de este volumen.
   bodega-backups:
   bodega-db:

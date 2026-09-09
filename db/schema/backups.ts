@@ -28,6 +28,10 @@ export const backupLog = pgTable("backup_log", {
   drivePath:         text("drive_path"),          // gdrive-backups:bodega-backups/YYYY-MM-DD
   driveUploaded:     boolean("drive_uploaded").default(false),
 
+  // Cloudreve (WebDAV)
+  cloudrevePath:     text("cloudreve_path"),      // backups/plataforma/YYYY-MM-DD
+  cloudreveUploaded: boolean("cloudreve_uploaded").default(false),
+
   // Metadata
   appVersion:        text("app_version"),
   hostname:          text("hostname"),

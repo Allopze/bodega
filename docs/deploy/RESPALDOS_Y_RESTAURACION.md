@@ -7,8 +7,9 @@ respaldo no se puede abrir, y no hay forma de recuperarlo.
 ## Qué se respalda
 
 `scripts/backup-orchestrator.sh` (cron diario, 03:00) produce un *snapshot* por
-fecha en `${BACKUP_DIR}/snapshots/YYYY-MM-DD/` y lo sube a Google Drive vía
-rclone:
+fecha en `${BACKUP_DIR}/snapshots/YYYY-MM-DD/`. Los destinos se configuran desde
+**Administración › Respaldos › Destinos**: local (siempre, path fijado por
+infraestructura), Cloudreve (WebDAV) y, opcionalmente, Google Drive vía rclone.
 
 | Archivo             | Contenido                                                       |
 | ------------------- | --------------------------------------------------------------- |
@@ -23,6 +24,68 @@ No entran al respaldo, a propósito:
   destino; viajaban dentro de lo que protegen. Se sacan del gestor de secretos y
   se pasan al restore con `--service-account-json`.
 - `BACKUP_ENCRYPTION_PASSPHRASE` — ver abajo.
+
+### Dónde quedan los archivos en el host
+
+Dentro de los contenedores los respaldos se escriben en `/data/backups`
+(`BACKUP_DIR`). Qué hay detrás de ese path lo decide el `docker-compose.yml`:
+
+- Por defecto, el volumen nombrado `bodega-backups` (bajo
+  `/var/lib/docker/volumes/`, invisible en el filesystem del host).
+- Si `BACKUP_HOST_PATH` (`.env` del host) apunta a una ruta absoluta — p. ej.
+  `/srv/backups/plataforma` — esa ruta se monta como bind mount en `app` y en
+  `backup-scheduler`, y los snapshots quedan directamente en el servidor.
+
+Al usar una ruta del host, el directorio debe existir y ser escribible por el
+uid del contenedor: los servicios corren como `nextjs` (uid 1001).
+
+```bash
+sudo mkdir -p /srv/backups/plataforma
+sudo chown 1001:1001 /srv/backups/plataforma
+echo 'BACKUP_HOST_PATH=/srv/backups/plataforma' >> /srv/plataforma/.env
+# recrear los servicios para que tome el montaje nuevo
+docker compose up -d --no-deps --force-recreate app
+docker compose --profile backup up -d --force-recreate backup-scheduler
+```
+
+Migración opcional del histórico que ya vive en el volumen nombrado:
+
+```bash
+docker volume ls | grep bodega-backups   # nombre real (prefijo del proyecto)
+docker run --rm -v <nombre-volumen>:/from -v /srv/backups/plataforma:/to \
+  alpine sh -c 'cp -a /from/. /to/ && chown -R 1001:1001 /to'
+```
+
+Tras el primer respaldo, confirma los archivos en
+`/srv/backups/plataforma/snapshots/<fecha>/` y corre `backup-verify.sh`.
+
+## Destinos (configurables desde Admin)
+
+En **Administración › Respaldos › Destinos**:
+
+- **Local** — siempre activo. El snapshot se escribe en `${BACKUP_DIR}` (ver
+  arriba); el path del host lo fija el bind mount (`BACKUP_HOST_PATH`), no se
+  edita desde Admin.
+- **Cloudreve (WebDAV)** — toggle + carpeta remota (`cloudreve_backups_path`,
+  default `backups/plataforma`) + botón *Probar conexión*. Reutiliza las
+  credenciales de **Administración › Almacenamiento de documentos**. Si el
+  upload falla (o no hay credenciales), el respaldo se marca **fallido**: no se
+  deja una «copia remota» que en realidad no existe.
+- **Google Drive** — desactivado por defecto. Requiere rclone + Service Account;
+  su código se conserva para poder reactivarlo.
+
+La subida a Cloudreve la hace `scripts/upload-backup-cloudreve.cjs` (invocado por
+el orquestador). La restauración desde Cloudreve usa
+`scripts/download-backup-cloudreve.cjs`:
+
+```bash
+# dentro del contenedor (o en un host con la copia del .cjs):
+RESTORE_SOURCE=cloudreve CLOUDREVE_BACKUP_PATH=backups/plataforma \
+  ./scripts/restore-all.sh --source=cloudreve
+```
+
+Para un host nuevo, `catastrophic-restore.sh` sigue siendo el camino de
+bootstrap; apunta a la copia Cloudreve con las mismas variables.
 
 ## Cifrado del snapshot
 

@@ -12,8 +12,11 @@ const FIELD_ICONS = {
   manualTimeoutMinutes: Hourglass,
 } as const
 
+/** Sólo los campos numéricos de BackupConfig (los destinos son boolean/text). */
+type NumericConfigKey = "backupHour" | "retentionDays" | "maxAgeHours" | "manualTimeoutMinutes"
+
 interface FieldDef {
-  key: keyof BackupConfig
+  key: NumericConfigKey
   label: string
   unit: string
   min: number
@@ -58,7 +61,7 @@ const FIELDS: FieldDef[] = [
 
 export function BackupSettingsForm() {
   const [config, setConfig] = useState<BackupConfig | null>(null)
-  const [edited, setEdited] = useState<Partial<Record<keyof BackupConfig, number>>>({})
+  const [edited, setEdited] = useState<Partial<Record<NumericConfigKey, number>>>({})
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null)
 
@@ -67,7 +70,7 @@ export function BackupSettingsForm() {
   }, [])
 
   const getValue = useCallback(
-    (key: keyof BackupConfig): number => {
+    (key: NumericConfigKey): number => {
       if (key in edited) return edited[key]!
       if (config) return config[key]
       return 0
@@ -75,12 +78,12 @@ export function BackupSettingsForm() {
     [config, edited],
   )
 
-  const handleChange = useCallback((key: keyof BackupConfig, value: number) => {
+  const handleChange = useCallback((key: NumericConfigKey, value: number) => {
     setEdited((prev) => ({ ...prev, [key]: value }))
     setMessage(null)
   }, [])
 
-  const handleSave = useCallback(async (key: keyof BackupConfig) => {
+  const handleSave = useCallback(async (key: NumericConfigKey) => {
     const value = edited[key]
     if (value === undefined) return
 
