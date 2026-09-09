@@ -360,6 +360,9 @@ services:
   #
   #   docker compose run --rm backfill-epp-clothing-sizes
   #
+  # `--apply` es obligatorio: el script no escribe por omisión porque inventa
+  # variantes de catálogo con SKU y proveedor propios. Sin el flag este paso
+  # del deploy informaría y no haría nada.
   backfill-epp-clothing-sizes:
     build:
       context: .
@@ -372,7 +375,53 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
-    command: ["node", "scripts/backfill-epp-clothing-sizes.mjs"]
+    command: ["node", "scripts/backfill-epp-clothing-sizes.mjs", "--apply"]
+
+  # One-shot: deja `size_catalog` al día con la semilla del código. Prerrequisito
+  # de los dos pasos de tallas que siguen —el backfill de ropa exige
+  # `size_family = 'ropa'`, y esa familia sale de esta tabla—. Idempotente y no
+  # destructivo: agrega lo que falta, renumera el orden de cada familia y no
+  # reactiva una talla dada de baja a mano.
+  #
+  #   docker compose run --rm seed-size-catalog
+  #
+  seed-size-catalog:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+    command: ["node", "scripts/seed-size-catalog.mjs"]
+
+  # One-shot: da de baja las variantes que son la misma talla física escrita de
+  # dos formas (`N41` junto a `T41`, `L` junto a `T/L`) o duplicadas de plano.
+  # Desactiva con `is_active = false`, nunca borra, y sólo toca variantes sin
+  # stock ni historial — las que participaron de una operación se informan y se
+  # saltan, porque trasladar stock y repuntar guías u OC es una decisión
+  # contable. `--apply` es obligatorio: sin el flag sólo informa el plan.
+  #
+  #   docker compose run --rm reconcile-epp-duplicate-sizes            # informa
+  #   docker compose run --rm reconcile-epp-duplicate-sizes --apply    # escribe
+  #
+  reconcile-epp-duplicate-sizes:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+    command: ["node", "scripts/reconcile-epp-duplicate-sizes.mjs", "--apply"]
 
   # One-shot: instala el catálogo del motor de inspecciones cableado a las
   # actividades del PDTP que acredita cada instrumento. Idempotente: la
