@@ -323,6 +323,19 @@ RUN ./node_modules/.bin/esbuild scripts/normalize-epp-skus.ts \
     --external:postgres \
     --outfile=/tmp/normalize-epp-skus.mjs
 
+# Recalcula el estado derivado de las solicitudes cuya regla de cierre cambió
+# después de que sus ítems llegaran a estado terminal. El rollup solo corre en
+# cada transición de ítem, así que sin esto una solicitud recibida bajo la regla
+# vieja se queda con el estado viejo para siempre.
+RUN ./node_modules/.bin/esbuild scripts/reconcile-request-status.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/reconcile-request-status.mjs
+
 # Deja `size_catalog` al día con la semilla del código. Es prerrequisito de los
 # dos pasos que siguen: el backfill de ropa exige `size_family = 'ropa'`, y esa
 # familia sale de esta tabla. Estaba cableado sólo en `npm run db:migrate`, que
@@ -456,6 +469,7 @@ COPY --from=build /tmp/fuel/backfill-fuel-meter-readings.mjs ./scripts/backfill-
 COPY --from=build /tmp/fuel/seed-fuel-anomaly-rules.mjs ./scripts/seed-fuel-anomaly-rules.mjs
 COPY --from=build /tmp/preflight-fuel-integrations.mjs ./scripts/preflight-fuel-integrations.mjs
 COPY --from=build /tmp/normalize-epp-skus.mjs ./scripts/normalize-epp-skus.mjs
+COPY --from=build /tmp/reconcile-request-status.mjs ./scripts/reconcile-request-status.mjs
 COPY --from=build /tmp/seed-size-catalog.mjs ./scripts/seed-size-catalog.mjs
 COPY --from=build /tmp/reconcile-epp-duplicate-sizes.mjs ./scripts/reconcile-epp-duplicate-sizes.mjs
 COPY --from=build /tmp/backfill-epp-clothing-sizes.mjs ./scripts/backfill-epp-clothing-sizes.mjs

@@ -218,10 +218,10 @@ describe("deploy workflow", () => {
     }
   })
 
-  it("empaqueta y copia los tres one-shots de tallas", () => {
+  it("empaqueta y copia los one-shots de tallas y del estado de solicitudes", () => {
     const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
 
-    for (const script of ["seed-size-catalog", "reconcile-epp-duplicate-sizes", "backfill-epp-clothing-sizes"]) {
+    for (const script of ["seed-size-catalog", "reconcile-epp-duplicate-sizes", "backfill-epp-clothing-sizes", "reconcile-request-status"]) {
       const build = dockerfile.match(new RegExp(
         `RUN ./node_modules/.bin/esbuild scripts/${script}\\.ts[\\s\\S]*?--outfile=/tmp/${script}\\.mjs`,
       ))?.[0]
@@ -235,14 +235,14 @@ describe("deploy workflow", () => {
     }
   })
 
-  it("exige `--apply` en los one-shots de tallas que escriben", () => {
+  it("exige `--apply` en los one-shots de reconciliación que escriben", () => {
     const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
 
     // Los dos scripts no escriben por omisión: uno inventa variantes de
     // catálogo con SKU propio y el otro da de baja variantes. Sin el flag el
     // paso del deploy informa y no hace nada, anunciando un trabajo que no
     // ocurrió — que es exactamente cómo estaba el backfill de ropa.
-    for (const service of ["backfill-epp-clothing-sizes", "reconcile-epp-duplicate-sizes"]) {
+    for (const service of ["backfill-epp-clothing-sizes", "reconcile-epp-duplicate-sizes", "reconcile-request-status"]) {
       const command = compose.match(new RegExp(`command: \\["node", "scripts/${service}\\.mjs"[^\\]]*\\]`))?.[0]
       expect(command, service).toBeDefined()
       expect(command, service).toContain('"--apply"')
@@ -261,6 +261,7 @@ describe("deploy workflow", () => {
     // El orden no es cosmético: de `size_catalog` sale la familia `ropa` que el
     // backfill exige, y conciliar duplicados antes evita que el backfill cuente
     // una talla duplicada como presente y deje el duplicado vivo.
+    expect(at("reconcile-request-status")).toBeLessThan(at("seed-size-catalog"))
     expect(at("seed-size-catalog")).toBeLessThan(at("reconcile-epp-duplicate-sizes"))
     expect(at("reconcile-epp-duplicate-sizes")).toBeLessThan(at("backfill-epp-clothing-sizes"))
   })

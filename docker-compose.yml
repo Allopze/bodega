@@ -384,6 +384,30 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
     command: ["node", "scripts/backfill-epp-clothing-sizes.mjs", "--apply"]
 
+  # One-shot: recalcula el estado derivado de las solicitudes que quedaron con
+  # el que calculó una regla de cierre anterior. `purchase_requests.status` es
+  # un derivado de sus ítems y el rollup solo lo recalcula cuando un ítem
+  # transiciona; una solicitud cuyos ítems ya están todos en estado terminal no
+  # tiene ninguna transición pendiente que lo dispare. Idempotente: sin deriva
+  # no escribe. `--apply` es obligatorio; sin el flag sólo informa.
+  #
+  #   docker compose run --rm reconcile-request-status            # informa
+  #   docker compose run --rm reconcile-request-status --apply    # recalcula
+  #
+  reconcile-request-status:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+    command: ["node", "scripts/reconcile-request-status.mjs", "--apply"]
+
   # One-shot: deja `size_catalog` al día con la semilla del código. Prerrequisito
   # de los dos pasos de tallas que siguen —el backfill de ropa exige
   # `size_family = 'ropa'`, y esa familia sale de esta tabla—. Idempotente y no

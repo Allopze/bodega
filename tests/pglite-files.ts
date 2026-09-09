@@ -34,6 +34,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/size-catalog-sync.test.ts",
   "lib/__tests__/epp-sizes-constraints.test.ts",
   "lib/__tests__/epp-duplicate-size-reconciliation.test.ts",
+  "lib/__tests__/request-status-reconciliation.test.ts",
   "lib/__tests__/admin-product-attributes-persistence.test.ts",
   "lib/__tests__/epp-family-form.test.ts",
   "lib/__tests__/product-units-catalog.test.ts",

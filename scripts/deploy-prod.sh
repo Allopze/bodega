@@ -18,7 +18,8 @@ set -euo pipefail
 # Steps: sync compose -> contrastar .env -> resolver nombre de imagen -> tag
 # current image as rollback -> pg_dump -> build -> ship image -> preflight
 # conciliación -> preflight combustible -> migrate -> migración documental SST
-# a Cloudreve -> normalize EPP -> catálogo de tallas -> conciliar variantes
+# a Cloudreve -> normalize EPP -> estado de solicitudes -> catálogo de tallas
+# -> conciliar variantes
 # duplicadas por talla -> completar el rango de tallas de ropa EPP ->
 # backfill conciliación (si hace falta) ->
 # backfill referencias OC en DTE (si hace falta) -> backfill lecturas de medidor
@@ -371,6 +372,13 @@ run_timed "Applying migrations" run_in_prod docker compose run --rm migrate
 run_timed "Migrando documentos SST a Cloudreve" run_in_prod docker compose run --rm migrate-sst-to-cloudreve
 
 run_timed "Normalizando SKUs de EPP y servicios" run_in_prod docker compose run --rm normalize-epp-skus
+
+# Recalcula el estado derivado de las solicitudes cuya regla de cierre cambió
+# después de que sus ítems llegaran a estado terminal. Sin esto quedan con el
+# estado que calculó la regla vieja, porque el rollup solo se dispara en una
+# transición de ítem y a esas solicitudes ya no les queda ninguna. Idempotente:
+# sin deriva no escribe.
+run_timed "Reconciliando el estado de las solicitudes" run_in_prod docker compose run --rm reconcile-request-status
 
 # Los tres pasos de tallas van en este orden y no en otro:
 #

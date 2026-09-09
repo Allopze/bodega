@@ -41,6 +41,43 @@ export async function lockRequestsForRollupTx(
 }
 
 /**
+ * Estado derivado de una solicitud a partir del de sus ítems.
+ *
+ * Función pura y exportada para que el reconciliador de estados
+ * (`lib/services/request-status-reconciliation.ts`) pueda calcular el estado
+ * esperado sin escribir, y lo haga con **esta** regla en vez de una segunda
+ * opinión sobre cuándo cierra una solicitud. Su cobertura vive en
+ * `rollup.test.ts`; antes estaba embebida acá y no se podía comprobar sola.
+ */
+export function deriveRequestStatus(statuses: readonly string[]): string {
+  const pendingReview = ["requested"].some((s) => statuses.includes(s))
+  const anyApproved   = statuses.some((s) => ["approved", "pending_purchase", "in_purchase_order", "purchased", "partially_office_received", "office_received", "partially_received", "received", "partially_delivered", "delivered"].includes(s))
+  const allRejected   = statuses.every((s) => s === "rejected")
+  // La adquisición termina cuando el ítem llegó completo a faena (`received`).
+  // `delivered` queda soportado para solicitudes antiguas y para el vínculo
+  // explícito de una entrega a trabajador; esa distribución es posterior y no
+  // debe ser requisito para cerrar la compra.
+  const allClosed     = statuses.every((s) => ["rejected", "received", "delivered"].includes(s))
+  const anyPurchasing = statuses.some((s) => ["in_purchase_order", "purchased", "partially_office_received", "office_received", "partially_received", "received", "partially_delivered"].includes(s))
+  const allResolved   = !pendingReview
+
+  if (pendingReview) return "in_review"
+  if (allRejected) return "rejected"
+  if (allClosed) return "closed"
+  if (anyPurchasing) return "in_purchasing"
+  if (allResolved && anyApproved) {
+    const allApprovedOrBeyond = statuses.every((s) =>
+      ["approved", "pending_purchase", "in_purchase_order", "purchased",
+       "partially_office_received", "office_received", "partially_received", "received", "partially_delivered", "delivered",
+       "rejected"].includes(s)
+    )
+    return allApprovedOrBeyond ? "approved" : "partially_approved"
+  }
+  if (allResolved) return "partially_approved"
+  return "in_review"
+}
+
+/**
  * Roll up purchase request status based on current item statuses.
  * Called inside transactions after each item transition.
  *
@@ -70,7 +107,13 @@ export async function lockRequestsForRollupTx(
 export async function rollupRequestStatus(
   requestId: string,
   tx: Tx,
-  changedBy: string,
+  /**
+   * `null` cuando la transición no la dispara una persona: el reconciliador de
+   * estados corre en el deploy y no tiene usuario. `status_history.changed_by`
+   * es nullable con FK a `users`, así que inventar un id de sistema violaría la
+   * FK — es lo que hace `epp-delivery-scale-reconciliation` con su `userId`.
+   */
+  changedBy: string | null,
 ): Promise<void> {
   const [current] = await tx
     .select({ status: purchaseRequests.status })
@@ -85,40 +128,7 @@ export async function rollupRequestStatus(
 
   if (items.length === 0) return
 
-  const statuses = items.map((i) => i.status)
-
-  const pendingReview = ["requested"].some((s) => statuses.includes(s))
-  const anyApproved   = statuses.some((s) => ["approved", "pending_purchase", "in_purchase_order", "purchased", "partially_office_received", "office_received", "partially_received", "received", "partially_delivered", "delivered"].includes(s))
-  const allRejected   = statuses.every((s) => s === "rejected")
-  // La adquisición termina cuando el ítem llegó completo a faena (`received`).
-  // `delivered` queda soportado para solicitudes antiguas y para el vínculo
-  // explícito de una entrega a trabajador; esa distribución es posterior y no
-  // debe ser requisito para cerrar la compra.
-  const allClosed     = statuses.every((s) => ["rejected", "received", "delivered"].includes(s))
-  const anyPurchasing = statuses.some((s) => ["in_purchase_order", "purchased", "partially_office_received", "office_received", "partially_received", "received", "partially_delivered"].includes(s))
-  const allResolved   = !pendingReview
-
-  let newStatus: string
-  if (pendingReview) {
-    newStatus = "in_review"
-  } else if (allRejected) {
-    newStatus = "rejected"
-  } else if (allClosed) {
-    newStatus = "closed"
-  } else if (anyPurchasing) {
-    newStatus = "in_purchasing"
-  } else if (allResolved && anyApproved) {
-    const allApprovedOrBeyond = statuses.every((s) =>
-      ["approved", "pending_purchase", "in_purchase_order", "purchased",
-       "partially_office_received", "office_received", "partially_received", "received", "partially_delivered", "delivered",
-       "rejected"].includes(s)
-    )
-    newStatus = allApprovedOrBeyond ? "approved" : "partially_approved"
-  } else if (allResolved) {
-    newStatus = "partially_approved"
-  } else {
-    newStatus = "in_review"
-  }
+  const newStatus = deriveRequestStatus(items.map((i) => i.status))
 
   // `cancelled` es terminal para el padre (F1-1/F1-2: cancelar rechaza TODOS
   // los ítems abiertos, así que ninguna transición de ítem puede volver a
