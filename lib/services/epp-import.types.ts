@@ -259,7 +259,7 @@ export const HEADER_ALIASES: Record<string, string> = {
 }
 
 import { toCode } from "@/lib/utils"
-import { isSizeAttributeName, normalizeSizeLabel } from "@/lib/products/product-size"
+import { isSizeAttributeName, normalizeSizeLabel, parseSizeOptions } from "@/lib/products/product-size"
 import { SIZE_FAMILIES } from "@/lib/products/size-catalog"
 import ExcelJS from "exceljs"
 
@@ -498,15 +498,37 @@ function attrOptionIncludes(options: string | null, value: string): boolean {
   return normalizeKey(options).includes(normalizeKey(value))
 }
 
+/**
+ * Una opción de talla equivale a un valor si coinciden ya canonizadas. Es lo
+ * que permite que `XXXL` de la planilla cruce con `3XL` del catálogo, y lo que
+ * evita que renombrar el atributo a `Talla guantes` le quite a la fila los
+ * puntos de «atributos equivalentes» y la deje entrar como producto nuevo.
+ */
+function sizeOptionIncludes(options: string | null, value: string): boolean {
+  const target = normalizeSizeLabel(value)
+  return parseSizeOptions(options).some((option) => normalizeSizeLabel(option) === target)
+}
+
 export function findProductMatches(normalized: NormalizedEppRow, existing: Array<{ id: string; name: string; unitOfMeasure: string; productAttributes: Array<{ name: string; options: string | null }> }>) {
   return existing.map((product) => {
     let score = 0; const reasons: string[] = []
     if (normalizeKey(product.name) === normalizeKey(normalized.name)) { score += 70; reasons.push("Nombre canónico equivalente") }
     if (product.unitOfMeasure === normalized.unitOfMeasure) { score += 10; reasons.push("Unidad equivalente") }
     const sameAttributes = normalized.attributes.filter((attribute) => {
-      // Check multi-value: does any value in the normalized attribute match an option?
       const values = attribute.values ?? [attribute.value]
-      return values.some((v) => product.productAttributes.some((pa) => normalizeKey(pa.name) === normalizeKey(attribute.name) && attrOptionIncludes(pa.options, v)))
+      const attributeIsSize = isSizeAttributeName(attribute.name)
+      return values.some((value) => product.productAttributes.some((existing) => {
+        // Dos atributos de talla son el mismo eje aunque se llamen distinto:
+        // el catálogo tiene `Talla`, `Talla guantes` y `Talla calzado` para lo
+        // que conceptualmente es una sola cosa.
+        const sameAxis = attributeIsSize
+          ? isSizeAttributeName(existing.name)
+          : normalizeKey(existing.name) === normalizeKey(attribute.name)
+        if (!sameAxis) return false
+        return attributeIsSize
+          ? sizeOptionIncludes(existing.options, value)
+          : attrOptionIncludes(existing.options, value)
+      }))
     }).length
     if (sameAttributes) { score += Math.min(20, sameAttributes * 10); reasons.push("Atributos equivalentes") }
     return { productId: product.id, score, reasons }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import ExcelJS from "exceljs"
-import { normalizeEppRow, parseEppWorkbook, buildCorrections } from "./epp-import"
+import { normalizeEppRow, parseEppWorkbook, buildCorrections, findProductMatches } from "./epp-import"
 
 describe("normalizeEppRow", () => {
   it("extracts color and size from a messy EPP name", () => {
@@ -247,5 +247,75 @@ describe("parseEppWorkbook", () => {
 
     expect(parsed.errors).toEqual([])
     expect(parsed.rows[0]?.values).toMatchObject({ name: "Casco", color: "Blanco", size: "M", unitOfMeasure: "uni", sourceCode: "proveedor-1" })
+  })
+})
+
+describe("findProductMatches", () => {
+  const existing = [{
+    id: "p-guante",
+    name: "Guante Nitrilo",
+    unitOfMeasure: "par",
+    productAttributes: [{ name: "Talla", options: JSON.stringify(["M"]) }],
+  }]
+
+  it("cruza la talla aunque el atributo se llame distinto", () => {
+    const normalized = normalizeEppRow({ name: "GUANTE NITRILO", unitOfMeasure: "par", size: "M" })
+    const matches = findProductMatches(normalized, existing)
+
+    expect(matches).toHaveLength(1)
+    expect(matches[0]!.reasons).toContain("Atributos equivalentes")
+  })
+
+  it("cruza la forma antigua guardada en el catálogo con la canónica de la planilla", () => {
+    // El catálogo real tiene `XXXL` escrito de antes (EPP-095), y toda fila
+    // nueva entra ya canonizada como `3XL`. Sin normalizar el lado guardado,
+    // la fila no reconocería el producto que duplica.
+    const catalogoAntiguo = [{
+      id: "p-overol",
+      name: "Overol Activex",
+      unitOfMeasure: "unidad",
+      productAttributes: [{ name: "Talla", options: JSON.stringify(["XXXL"]) }],
+    }]
+    const normalized = normalizeEppRow({ name: "OVEROL ACTIVEX", unitOfMeasure: "unidad", size: "3XL" })
+
+    expect(normalized.attributes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ value: "3XL" }),
+    ]))
+    expect(findProductMatches(normalized, catalogoAntiguo)[0]!.reasons).toContain("Atributos equivalentes")
+  })
+
+  it("no cruza tallas distintas de la misma familia", () => {
+    const normalized = normalizeEppRow({ name: "GUANTE NITRILO", unitOfMeasure: "par", size: "XL" })
+
+    expect(findProductMatches(normalized, existing)[0]!.reasons).not.toContain("Atributos equivalentes")
+  })
+
+  it("sigue exigiendo nombre exacto para los atributos que no son talla", () => {
+    // El ensanche del eje vale sólo para tallas. Si valiera para todo, un
+    // `Color: Azul` matchearía la `Marca: Azul` de otro producto y el importador
+    // ofrecería actualizar un producto que no tiene nada que ver.
+    const normalized = normalizeEppRow({ name: "LENTE ACTIVEX", unitOfMeasure: "unidad", color: "Azul" })
+
+    // Control: la fila SÍ lleva el atributo, así que un resultado negativo
+    // abajo no puede venir de una lista de atributos vacía.
+    expect(normalized.attributes).toEqual(expect.arrayContaining([
+      { name: "Color", value: "Azul" },
+    ]))
+
+    const otroEje = [{
+      id: "p-lente-marca",
+      name: "Lente Activex",
+      unitOfMeasure: "unidad",
+      productAttributes: [{ name: "Marca", options: JSON.stringify(["Azul"]) }],
+    }]
+    expect(findProductMatches(normalized, otroEje)[0]!.reasons).not.toContain("Atributos equivalentes")
+
+    const mismoEje = [{
+      id: "p-lente-color",
+      name: "Lente Activex",
+      unitOfMeasure: "unidad",
+      productAttributes: [{ name: "Color", options: JSON.stringify(["Azul"]) }],
+    }]
+    expect(findProductMatches(normalized, mismoEje)[0]!.reasons).toContain("Atributos equivalentes")
   })
 })
