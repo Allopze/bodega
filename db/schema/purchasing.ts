@@ -235,6 +235,10 @@ export const purchaseOrderInvoices = pgTable("purchase_order_invoices", {
 export const purchaseOrderInvoiceItems = pgTable("purchase_order_invoice_items", {
   id:                  text("id").primaryKey(),
   invoiceId:           text("invoice_id").notNull().references(() => purchaseOrderInvoices.id, { onDelete: "cascade" }),
+  /**
+   * Espejo de compatibilidad para consumidores 1:1 heredados. Las asignaciones
+   * N:N son la autoridad desde purchase_order_invoice_item_allocations.
+   */
   purchaseOrderItemId: text("purchase_order_item_id").references(() => purchaseOrderItems.id),
   sourceDteDocumentItemId: text("source_dte_document_item_id").references(() => dteDocumentItems.id, { onDelete: "set null" }),
   productName:         text("product_name").notNull(),
@@ -259,6 +263,36 @@ export const purchaseOrderInvoiceItems = pgTable("purchase_order_invoice_items",
   index("po_invoice_items_oc_item_idx").on(table.purchaseOrderItemId),
   index("po_invoice_items_source_dte_item_idx").on(table.sourceDteDocumentItemId),
 ])
+
+/* ── Purchase Order Invoice Item Allocations ─────────────────────────────── */
+export const purchaseOrderInvoiceItemAllocations = pgTable(
+  "purchase_order_invoice_item_allocations",
+  {
+    id: text("id").primaryKey(),
+    invoiceItemId: text("invoice_item_id").notNull()
+      .references(() => purchaseOrderInvoiceItems.id, { onDelete: "cascade" }),
+    purchaseOrderItemId: text("purchase_order_item_id").notNull()
+      .references(() => purchaseOrderItems.id, { onDelete: "cascade" }),
+    quantity: real("quantity").notNull(),
+    subtotal: numeric("subtotal", { precision: 12, scale: 2, mode: "number" }).notNull(),
+    source: text("source").notNull().$type<"legacy_backfill" | "operator" | "dte_suggestion">(),
+    createdBy: text("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  },
+  (table) => [
+    check("po_invoice_item_allocations_quantity_nonzero", sql`${table.quantity} <> 0`),
+    check("po_invoice_item_allocations_sign_consistent", sql`
+      (${table.quantity} > 0 AND ${table.subtotal} >= 0)
+      OR (${table.quantity} < 0 AND ${table.subtotal} <= 0)
+    `),
+    check("po_invoice_item_allocations_source_valid", sql`
+      ${table.source} IN ('legacy_backfill', 'operator', 'dte_suggestion')
+    `),
+    uniqueIndex("po_invoice_item_allocations_pair_unique")
+      .on(table.invoiceItemId, table.purchaseOrderItemId),
+    index("po_invoice_item_allocations_oc_item_idx").on(table.purchaseOrderItemId),
+  ],
+)
 
 /* ── Purchase Order Invoice Reconciliation Reviews ───────────────────────── */
 export const purchaseOrderInvoiceReconciliationReviews = pgTable("purchase_order_invoice_reconciliation_reviews", {
@@ -288,11 +322,12 @@ export const purchaseOrdersRelations = relations(purchaseOrders, ({ one, many })
   invoiceReconciliationReviews: many(purchaseOrderInvoiceReconciliationReviews),
 }))
 
-export const purchaseOrderItemsRelations = relations(purchaseOrderItems, ({ one }) => ({
+export const purchaseOrderItemsRelations = relations(purchaseOrderItems, ({ one, many }) => ({
   purchaseOrder: one(purchaseOrders, { fields: [purchaseOrderItems.purchaseOrderId], references: [purchaseOrders.id] }),
   requestItem:   one(purchaseRequestItems, { fields: [purchaseOrderItems.requestItemId], references: [purchaseRequestItems.id] }),
   product:       one(products, { fields: [purchaseOrderItems.productId], references: [products.id] }),
   costRecordedByUser: one(users, { fields: [purchaseOrderItems.costRecordedBy], references: [users.id] }),
+  allocations: many(purchaseOrderInvoiceItemAllocations),
 }))
 
 export const purchaseOrderInvoicesRelations = relations(purchaseOrderInvoices, ({ one, many }) => ({
@@ -301,9 +336,25 @@ export const purchaseOrderInvoicesRelations = relations(purchaseOrderInvoices, (
   items:         many(purchaseOrderInvoiceItems),
 }))
 
-export const purchaseOrderInvoiceItemsRelations = relations(purchaseOrderInvoiceItems, ({ one }) => ({
+export const purchaseOrderInvoiceItemsRelations = relations(purchaseOrderInvoiceItems, ({ one, many }) => ({
   invoice:           one(purchaseOrderInvoices, { fields: [purchaseOrderInvoiceItems.invoiceId], references: [purchaseOrderInvoices.id] }),
   purchaseOrderItem: one(purchaseOrderItems, { fields: [purchaseOrderInvoiceItems.purchaseOrderItemId], references: [purchaseOrderItems.id] }),
+  allocations:       many(purchaseOrderInvoiceItemAllocations),
+}))
+
+export const purchaseOrderInvoiceItemAllocationsRelations = relations(purchaseOrderInvoiceItemAllocations, ({ one }) => ({
+  invoiceItem: one(purchaseOrderInvoiceItems, {
+    fields: [purchaseOrderInvoiceItemAllocations.invoiceItemId],
+    references: [purchaseOrderInvoiceItems.id],
+  }),
+  purchaseOrderItem: one(purchaseOrderItems, {
+    fields: [purchaseOrderInvoiceItemAllocations.purchaseOrderItemId],
+    references: [purchaseOrderItems.id],
+  }),
+  createdByUser: one(users, {
+    fields: [purchaseOrderInvoiceItemAllocations.createdBy],
+    references: [users.id],
+  }),
 }))
 
 export const purchaseOrderInvoiceReconciliationReviewsRelations = relations(purchaseOrderInvoiceReconciliationReviews, ({ one }) => ({

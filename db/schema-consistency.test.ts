@@ -14,6 +14,50 @@ afterAll(async () => {
 })
 
 describe("database schema consistency", () => {
+  it("has the operational-integrity ledger tables and lookup indexes", async () => {
+    const tables = await db.execute(sql`
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name IN (
+          'purchase_order_invoice_item_allocations',
+          'operational_integrity_cases',
+          'operational_integrity_observations',
+          'operational_integrity_case_events'
+        )
+    `)
+    expect(tables.rows.map((row) => (row as { table_name: string }).table_name).sort()).toEqual([
+      "operational_integrity_case_events",
+      "operational_integrity_cases",
+      "operational_integrity_observations",
+      "purchase_order_invoice_item_allocations",
+    ])
+
+    const indexes = await db.execute(sql`
+      SELECT indexname
+      FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND indexname IN (
+          'po_invoice_item_allocations_oc_item_idx',
+          'po_invoice_item_allocations_pair_unique',
+          'operational_integrity_cases_worksite_detected_idx',
+          'operational_integrity_cases_domain_code_idx',
+          'operational_integrity_observation_fingerprint_unique',
+          'operational_integrity_case_events_case_created_idx',
+          'operational_integrity_case_events_case_observation_kind_unique'
+        )
+    `)
+    expect(indexes.rows.map((row) => (row as { indexname: string }).indexname).sort()).toEqual([
+      "operational_integrity_case_events_case_created_idx",
+      "operational_integrity_case_events_case_observation_kind_unique",
+      "operational_integrity_cases_domain_code_idx",
+      "operational_integrity_cases_worksite_detected_idx",
+      "operational_integrity_observation_fingerprint_unique",
+      "po_invoice_item_allocations_oc_item_idx",
+      "po_invoice_item_allocations_pair_unique",
+    ])
+  })
+
   it("has office receiving columns required by the runtime schema", async () => {
 
     const result = await db.execute(sql`
