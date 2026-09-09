@@ -180,6 +180,14 @@ describe("resolveSizeAttribute", () => {
     expect(resolved.issues).toHaveLength(1)
   })
 
+  it("deduplica valores que canonizan al mismo código", () => {
+    // "XXL" y "2XL" son la misma talla escrita distinto: sin deduplicar,
+    // `toUpperCase` nunca las hubiera dejado iguales, pero `normalizeSizeLabel`
+    // sí, y el resultado repetía tanto el valor como su advertencia.
+    const resolved = resolveSizeAttribute(["XXL", "2XL"], "overol")
+    expect(resolved.values).toEqual(["2XL"])
+  })
+
   it("valida contra los códigos inyectados y no contra la semilla", () => {
     // Ésta es la ruta real del servidor: los códigos vienen de `size_catalog`,
     // donde una talla puede estar dada de baja o haberse agregado.

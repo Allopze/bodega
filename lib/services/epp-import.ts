@@ -19,6 +19,7 @@ import { toCode } from "@/lib/utils"
 import { lockCatalogProductsForUpdateTx } from "@/lib/services/catalog-product-locks"
 import { setProductSupplierPriceTx } from "@/lib/services/product-supplier-prices"
 import { getSizeFamilyOptions } from "@/lib/services/sizes"
+import { isSizeAttributeName } from "@/lib/products/product-size"
 import {
   findProductMatches,
   buildCorrections,
@@ -136,7 +137,7 @@ export async function reviewEppImportRow(input: { batchId: string; rowId: string
   }
 
   const previous = JSON.parse(row.normalizedJson) as NormalizedEppRow
-  const sizeFamilyOptions = input.normalizedJson ? await getSizeFamilyOptions() : []
+  const sizeFamilyOptions = input.normalizedJson ? await getSizeFamilyOptions() : undefined
   const normalized = input.normalizedJson
     ? validateReviewedNormalized(input.normalizedJson, previous.sourceCode, sizeFamilyOptions)
     : previous
@@ -202,20 +203,20 @@ export async function cancelEppImportBatch(batchId: string) { await db.update(ep
 function validateReviewedNormalized(
   value: string,
   sourceCode: string | null,
-  familyOptions: readonly SizeFamilyCodes[],
+  familyOptions: readonly SizeFamilyCodes[] | undefined,
 ) {
   let raw: Partial<NormalizedEppRow>
   try { raw = JSON.parse(value) as Partial<NormalizedEppRow> } catch { throw new Error("Los datos corregidos no son válidos") }
   const rawAttrs = Array.isArray(raw.attributes) ? raw.attributes.filter((a): a is EppAttribute => typeof a?.name === "string" && typeof a?.value === "string") : []
 
   // Preserve multi-value attributes: extract from raw and pass as explicit params
-  const tallaAttr = rawAttrs.find((a) => a.name.startsWith("Talla"))
+  const tallaAttr = rawAttrs.find((a) => isSizeAttributeName(a.name))
   const size = tallaAttr?.values ? tallaAttr.values.join(", ") : (tallaAttr?.value ?? "")
   const colorAttr = rawAttrs.find((a) => a.name === "Color")
   const color = colorAttr?.values ? colorAttr.values.join(", ") : (colorAttr?.value ?? "")
 
   // Build attributes string excluding talla and color (handled via explicit params)
-  const attrString = rawAttrs.filter((a) => !a.name.startsWith("Talla") && a.name !== "Color").map((a) => `${a.name}: ${a.value}`).join("; ")
+  const attrString = rawAttrs.filter((a) => !isSizeAttributeName(a.name) && a.name !== "Color").map((a) => `${a.name}: ${a.value}`).join("; ")
 
   const normalized = normalizeEppRow({
     sourceCode: sourceCode ?? "", name: raw.name ?? "", description: raw.description ?? "", supplierName: raw.supplierName ?? "",

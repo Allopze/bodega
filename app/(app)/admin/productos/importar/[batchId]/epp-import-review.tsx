@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cancelEppImportBatchAction, confirmEppImportBatchAction, reviewEppImportRowAction } from "../../actions"
 import { INITIAL_STATE } from "@/lib/form-state"
 import { toast } from "@/lib/toast"
-import { VALID_UNITS, VALID_COLORS, EPP_TYPES, RULE_LABELS, type NormalizedEppRow, type EppAttribute } from "@/lib/services/epp-import.types"
+import { VALID_UNITS, VALID_COLORS, EPP_TYPES, RULE_LABELS, sizeFamilyForEppType, type NormalizedEppRow, type EppAttribute } from "@/lib/services/epp-import.types"
+import { SIZE_FAMILIES } from "@/lib/products/size-catalog"
 import { Table, TableBody, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 
 type ReviewRow = {
@@ -61,13 +62,27 @@ function buildMultiValueAttr(name: string, rawValue: string): EppAttribute {
   return { name, value: rawValue }
 }
 
+/**
+ * Nombre del atributo de talla y su familia para el tipo de EPP editado, con
+ * las mismas reglas puras que usa `resolveSizeAttribute` en el servidor
+ * (`sizeFamilyForEppType` + `SIZE_FAMILIES`). Sustituye la heurística
+ * `/^\d{2}$/ ? "Talla calzado" : "Talla"` que este componente todavía usaba:
+ * el servidor vuelve a normalizar la fila al guardar, así que esa heurística
+ * sólo afectaba la vista previa, pero dejaba viva la misma adivinanza que el
+ * resto de la rama eliminó.
+ */
+function sizeAttrNameAndFamily(eppType: string | null): { name: string; sizeFamily: string | null } {
+  const family = sizeFamilyForEppType(eppType)
+  const definition = family ? SIZE_FAMILIES.find((option) => option.family === family) : undefined
+  return definition ? { name: definition.attributeName, sizeFamily: definition.family } : { name: "Talla", sizeFamily: null }
+}
+
 function toNormalizedJson(edit: EditableNormalized, original: NormalizedEppRow): string {
   // Build talla attribute: detect semicolons for multi-talla
   let tallaAttr: EppAttribute | null = null
   if (edit.talla) {
-    const firstVal = edit.talla.split(",")[0]?.trim() ?? ""
-    const tallaName = /^\d{2}$/.test(firstVal) ? "Talla calzado" : "Talla"
-    tallaAttr = buildMultiValueAttr(tallaName, edit.talla)
+    const { name: tallaName, sizeFamily } = sizeAttrNameAndFamily(edit.eppType)
+    tallaAttr = { ...buildMultiValueAttr(tallaName, edit.talla), sizeFamily }
   }
 
   const attributes: EppAttribute[] = [
@@ -111,7 +126,7 @@ function ruleLabel(ruleId: string): string {
 const FIELD_LABELS: Record<string, string> = {
   name: "Nombre", unitOfMeasure: "Unidad", eppType: "Tipo EPP", color: "Color", talla: "Talla",
   supplierName: "Proveedor", price: "Precio", material: "Material", brand: "Marca", model: "Modelo",
-  categoryName: "Categoria", attributes: "Atributos",
+  categoryName: "Categoria", attributes: "Atributos", size: "Talla", sizeFamily: "Familia de talla",
 }
 
 function effectiveDecision(row: ReviewRow, localDecisions: Record<string, string>): string {
