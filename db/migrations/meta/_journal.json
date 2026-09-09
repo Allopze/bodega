@@ -1835,6 +1835,13 @@
       "when": 1788922915078,
       "tag": "0261_mixed_mordo",
       "breakpoints": true
+    },
+    {
+      "idx": 262,
+      "version": "7",
+      "when": 1788923611831,
+      "tag": "0262_kind_mastermind",
+      "breakpoints": true
     }
   ]
 }

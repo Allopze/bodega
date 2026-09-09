@@ -227,6 +227,62 @@ describe("ledger de integridad operacional", () => {
     })
   })
 
+  it("rechaza un evento cuya observación pertenece a otro caso", async () => {
+    await db.insert(schema.worksites).values({
+      id: "integrity-worksite-crossed",
+      name: "Faena Integridad Cruzada",
+      code: "INT-CROSSED",
+      isActive: true,
+    })
+    await db.insert(schema.operationalIntegrityCases).values([
+      {
+        id: "integrity-case-cross-a",
+        caseKey: "stock:cross-a",
+        domain: "stock",
+        code: "STOCK_CROSS_A",
+        severity: "high",
+        worksiteId,
+        entityType: "purchase_order_item",
+        entityId: purchaseOrderItemId,
+      },
+      {
+        id: "integrity-case-cross-b",
+        caseKey: "receiving:cross-b",
+        domain: "receiving",
+        code: "RECEIVING_CROSS_B",
+        severity: "critical",
+        worksiteId: "integrity-worksite-crossed",
+        entityType: "purchase_order_item",
+        entityId: "integrity-order-item-2",
+      },
+    ])
+    await db.insert(schema.operationalIntegrityObservations).values([
+      {
+        id: "integrity-observation-cross-a",
+        caseId: "integrity-case-cross-a",
+        fingerprint: "cross-a",
+        snapshot: { worksiteId },
+      },
+      {
+        id: "integrity-observation-cross-b",
+        caseId: "integrity-case-cross-b",
+        fingerprint: "cross-b",
+        snapshot: { worksiteId: "integrity-worksite-crossed" },
+      },
+    ])
+
+    // Ambos IDs existen y satisfacen por separado las FK heredadas; el rechazo
+    // debe provenir de que la observación B no pertenece al caso A.
+    await expectConstraintViolation(db.insert(schema.operationalIntegrityCaseEvents).values({
+      id: "event-crossed-observation",
+      caseId: "integrity-case-cross-a",
+      observationId: "integrity-observation-cross-b",
+      kind: "acknowledged",
+      reason: "La evidencia no pertenece a este caso operacional",
+      actorUserId,
+    }))
+  })
+
   it("restringe el tipo de evento", async () => {
     await expectConstraintViolation(db.insert(schema.operationalIntegrityCaseEvents).values({
       id: "event-invalid",

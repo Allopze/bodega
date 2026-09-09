@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { check, index, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import { check, foreignKey, index, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { worksites } from "./worksites"
 
@@ -33,6 +33,8 @@ export const operationalIntegrityObservations = pgTable("operational_integrity_o
   snapshot: jsonb("snapshot").$type<Record<string, unknown>>().notNull(),
   observedAt: timestamp("observed_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
+  uniqueIndex("operational_integrity_observations_case_id_key")
+    .on(table.caseId, table.id),
   uniqueIndex("operational_integrity_observation_fingerprint_unique")
     .on(table.caseId, table.fingerprint),
 ])
@@ -41,14 +43,18 @@ export const operationalIntegrityCaseEvents = pgTable("operational_integrity_cas
   id: text("id").primaryKey(),
   caseId: text("case_id").notNull()
     .references(() => operationalIntegrityCases.id, { onDelete: "cascade" }),
-  observationId: text("observation_id").notNull()
-    .references(() => operationalIntegrityObservations.id, { onDelete: "cascade" }),
+  observationId: text("observation_id").notNull(),
   kind: text("kind").notNull().$type<"acknowledged" | "verified_resolved">(),
   reason: text("reason").notNull(),
   evidence: jsonb("evidence").$type<Record<string, unknown>>(),
   actorUserId: text("actor_user_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
+  foreignKey({
+    columns: [table.caseId, table.observationId],
+    foreignColumns: [operationalIntegrityObservations.caseId, operationalIntegrityObservations.id],
+    name: "operational_integrity_case_events_case_observation_fk",
+  }).onDelete("cascade"),
   check("operational_integrity_case_events_kind_valid", sql`
     ${table.kind} IN ('acknowledged', 'verified_resolved')
   `),
@@ -86,8 +92,8 @@ export const operationalIntegrityCaseEventsRelations = relations(operationalInte
     references: [operationalIntegrityCases.id],
   }),
   observation: one(operationalIntegrityObservations, {
-    fields: [operationalIntegrityCaseEvents.observationId],
-    references: [operationalIntegrityObservations.id],
+    fields: [operationalIntegrityCaseEvents.caseId, operationalIntegrityCaseEvents.observationId],
+    references: [operationalIntegrityObservations.caseId, operationalIntegrityObservations.id],
   }),
   actorUser: one(users, {
     fields: [operationalIntegrityCaseEvents.actorUserId],
