@@ -282,7 +282,8 @@ async function persistProductDetails(
 ) {
   if (normalized.attributes.length) await tx.insert(productAttributes).values(normalized.attributes.map((attribute, index) => ({
     id: nanoid(), productId, categoryId: null, name: attribute.name, type: "select",
-    isRequired: true, options: JSON.stringify(attribute.values ?? [attribute.value]), sortOrder: index,
+    isRequired: true, options: JSON.stringify(attribute.values ?? [attribute.value]),
+    sizeFamily: attribute.sizeFamily ?? null, sortOrder: index,
   })))
   if (supplierId) await setProductSupplierPriceTx(tx, {
     productId,
