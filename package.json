@@ -10,7 +10,7 @@
     "build": "bash scripts/run-resource-guard.sh next build",
     "start": "node .next/standalone/server.js",
     "lint": "bash scripts/run-resource-guard.sh eslint",
-    "typecheck": "bash scripts/run-resource-guard.sh tsc --noEmit",
+    "typecheck": "bash scripts/run-resource-guard.sh tsc --noEmit --incremental false",
     "check:secrets": "tsx scripts/check-env-files.ts",
     "check:security-audit": "tsx scripts/check-security-audit.ts",
     "verify:epp-lots": "tsx scripts/verify-epp-lot-reconciliation.ts",
