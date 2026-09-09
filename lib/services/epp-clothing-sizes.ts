@@ -76,6 +76,17 @@ async function syncFamily(tx: Tx, family: { id: string; canonicalName: string })
 
   if (!sizeAttrName || !templateVariant) return null
 
+  // Una familia sizada por números —un pantalón por cintura 42— también lleva el
+  // atributo genérico `Talla`, así que el nombre solo no alcanza: sin este
+  // guard el backfill le inventaría seis variantes XS..2XL, que es el mismo
+  // daño que causaba tomar un guante `Talla: T/L` por ropa.
+  //
+  // El criterio es «alguna etiqueta no es numérica» y no «alguna está en
+  // CLOTHING_TARGET_SIZES», para no excluir una familia de ropa que hoy sólo
+  // tenga tallas fuera de esa lista (3XL, 4XL).
+  const usesLetterScale = [...existingLabels].some((label) => !/^\d+(\.\d+)?$/.test(label))
+  if (!usesLetterScale) return null
+
   const missingSizes = CLOTHING_TARGET_SIZES.filter((size) => !existingLabels.has(normalizeSizeLabel(size)))
   if (missingSizes.length === 0) {
     return { familyId: family.id, familyName: family.canonicalName, status: "already_complete", createdSizes: [] }

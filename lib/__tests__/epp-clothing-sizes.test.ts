@@ -244,6 +244,51 @@ describe("addMissingClothingSizeVariants", () => {
     expect(summary.results.find((r) => r.familyId === "fam-zapato")).toBeUndefined()
   })
 
+  it("no le inyecta la escala de ropa a un pantalón sizado por número de cintura bajo el atributo genérico 'Talla'", async () => {
+    // El atributo se llama "Talla" igual que en la escala de ropa —el nombre
+    // solo no distingue un pantalón por cintura de un buzo por XS..2XL—, pero
+    // "42" no es una letra de esa escala: sin el guard numérico, el backfill
+    // le habría creado las seis tallas XS..2XL a un pantalón que se vende por
+    // número.
+    await createFamilyWithVariant({
+      familyId: "fam-pantalon-cintura-generico",
+      canonicalName: "Pantalón Gabardina",
+      productName: "Pantalón Gabardina",
+      sizeAttrName: "Talla",
+      size: "42",
+    })
+
+    const summary = await addMissingClothingSizeVariants()
+
+    expect(summary.results.find((r) => r.familyId === "fam-pantalon-cintura-generico")).toBeUndefined()
+    const variants = await inMemoryDb.query.products.findMany({
+      where: eq(schema.products.familyId, "fam-pantalon-cintura-generico"),
+    })
+    expect(variants).toHaveLength(1)
+  })
+
+  it("sí completa una familia de ropa cuya única talla existente es '3XL' (fuera de CLOTHING_TARGET_SIZES)", async () => {
+    // El criterio es "alguna etiqueta no es numérica", no "alguna está en
+    // CLOTHING_TARGET_SIZES": una familia de ropa que hoy sólo tenga una talla
+    // fuera de esa lista no debe quedar excluida por el guard numérico.
+    await createFamilyWithVariant({
+      familyId: "fam-3xl",
+      canonicalName: "Buzo Térmico",
+      productName: "Buzo Térmico",
+      sizeAttrName: "Talla",
+      size: "3XL",
+    })
+
+    const summary = await addMissingClothingSizeVariants()
+
+    const buzo = summary.results.find((r) => r.familyId === "fam-3xl")
+    expect(buzo).toMatchObject({ status: "created" })
+    expect(buzo?.createdSizes).toEqual(expect.arrayContaining(["XS", "S", "M", "L", "XL", "2XL"]))
+
+    const sizes = await sizesForFamily("fam-3xl")
+    expect(sizes).toEqual([...CLOTHING_TARGET_SIZES, "3XL"].sort())
+  })
+
   it("no le inyecta la escala de ropa a una familia de guantes", async () => {
     // El importador dejaba los guantes con `Talla: T/L`, que normaliza a
     // "talla", así que este backfill los tomaba por ropa y les creaba

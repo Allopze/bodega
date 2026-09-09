@@ -26,6 +26,23 @@ describe("normalizeEppRow", () => {
     expect(result.attributes.some((attribute) => attribute.name === "Talla")).toBe(false)
   })
 
+  it("limpia el nombre aunque la talla venga por la columna de atributos", () => {
+    const result = normalizeEppRow({ name: "GUANTE NITRILO TALLA M", unitOfMeasure: "par", attributes: "Talla: M" })
+
+    expect(result.name).toBe("Guante Nitrilo")
+    expect(result.identityKey).not.toContain("talla m|")
+    const sizeAttributes = result.attributes.filter((attribute) => attribute.name.startsWith("Talla"))
+    expect(sizeAttributes).toEqual([{ name: "Talla guantes", value: "M", sizeFamily: "guantes" }])
+  })
+
+  it("no toca el nombre cuando la talla viene por su propia columna", () => {
+    // `extractSize` podría leer la `M` de un modelo como talla; con columna
+    // `talla` presente no se busca en el nombre.
+    const result = normalizeEppRow({ name: "RESPIRADOR M-200", unitOfMeasure: "unidad", size: "M" })
+
+    expect(result.name).toBe("Respirador M-200")
+  })
+
   it("matches EPP type regardless of accents in the product name", () => {
     const result = normalizeEppRow({ name: "PANTALÓN DE TRABAJO", unitOfMeasure: "unidad" })
     expect(result.eppType).toBe("pantalon")

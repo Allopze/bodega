@@ -135,7 +135,7 @@ export const EPP_TYPE_TO_SIZE_FAMILY: Partial<Record<(typeof EPP_TYPES)[number],
 /** Familia de talla de un tipo de ítem, o `null` si ese ítem no se sizea. */
 export function sizeFamilyForEppType(eppType: string | null): string | null {
   if (!eppType) return null
-  return EPP_TYPE_TO_SIZE_FAMILY[eppType as (typeof EPP_TYPES)[number]] ?? null
+  return (EPP_TYPE_TO_SIZE_FAMILY as Record<string, string | undefined>)[eppType] ?? null
 }
 
 /** Códigos válidos de una familia. Estructura de `SizeFamilyOptions`. */
@@ -183,9 +183,11 @@ export function resolveSizeAttribute(
   // que reduce a vacío —una celda con sólo puntuación— no es una talla, y
   // resucitarlo con otra regla reintroduciría la divergencia que el hallazgo
   // F-5 cerró.
-  const values = rawValues
-    .map((value) => normalizeSizeLabel(value))
-    .filter(Boolean)
+  const values = [...new Set(
+    rawValues
+      .map((value) => normalizeSizeLabel(value))
+      .filter(Boolean),
+  )]
   const family = sizeFamilyForEppType(eppType)
   const definition = family
     ? (familyOptions ?? SIZE_FAMILIES).find((option) => option.family === family)
@@ -336,19 +338,24 @@ export function normalizeEppRow(
   if (!eppType) issues.push({ severity: "blocking", message: "No se pudo identificar un tipo de EPP en el nombre." })
 
   // La talla puede llegar por la columna `talla`, por la columna `atributos`
-  // («Talla: M») o dentro del nombre. Se unifican antes de resolver para que la
-  // fila termine con un solo atributo de talla.
+  // («Talla: M») o dentro del nombre. Se unifican para resolverlas juntas, pero
+  // la limpieza del nombre depende sólo de la columna `talla`: cuando la talla
+  // viene por ahí el nombre no la menciona, y `extractSize` podría confundir un
+  // modelo con una talla.
+  const columnSize = cleanText(source.size)
   const namedSize = corrections.find((attribute) => isSizeAttributeName(attribute.name))
-  const explicitSize = cleanText(source.size)
+  const declaredSize = columnSize
     || (namedSize ? (namedSize.values ?? [namedSize.value]).join(", ") : "")
-  const rawSizes = explicitSize
-    ? explicitSize.split(",").map((value) => value.trim()).filter(Boolean)
+  const rawSizes = declaredSize
+    ? declaredSize.split(",").map((value) => value.trim()).filter(Boolean)
     : []
 
-  if (rawSizes.length === 0) {
+  if (!columnSize) {
     const sizeInName = cleanText(source.model) ? null : extractSize(workingName)
     if (sizeInName) {
-      rawSizes.push(sizeInName)
+      // La columna `atributos` manda sobre lo que diga el nombre; el token se
+      // quita igual para que el nombre canónico no lleve la talla.
+      if (rawSizes.length === 0) rawSizes.push(sizeInName)
       workingName = cleanText(workingName.replace(new RegExp(`\\btalla\\s+${escapeRegex(sizeInName)}\\b`, "i"), ""))
       workingName = removeToken(workingName, sizeInName)
     }
@@ -517,17 +524,17 @@ export function findProductMatches(normalized: NormalizedEppRow, existing: Array
     const sameAttributes = normalized.attributes.filter((attribute) => {
       const values = attribute.values ?? [attribute.value]
       const attributeIsSize = isSizeAttributeName(attribute.name)
-      return values.some((value) => product.productAttributes.some((existing) => {
+      return values.some((value) => product.productAttributes.some((pa) => {
         // Dos atributos de talla son el mismo eje aunque se llamen distinto:
         // el catálogo tiene `Talla`, `Talla guantes` y `Talla calzado` para lo
         // que conceptualmente es una sola cosa.
         const sameAxis = attributeIsSize
-          ? isSizeAttributeName(existing.name)
-          : normalizeKey(existing.name) === normalizeKey(attribute.name)
+          ? isSizeAttributeName(pa.name)
+          : normalizeKey(pa.name) === normalizeKey(attribute.name)
         if (!sameAxis) return false
         return attributeIsSize
-          ? sizeOptionIncludes(existing.options, value)
-          : attrOptionIncludes(existing.options, value)
+          ? sizeOptionIncludes(pa.options, value)
+          : attrOptionIncludes(pa.options, value)
       }))
     }).length
     if (sameAttributes) { score += Math.min(20, sameAttributes * 10); reasons.push("Atributos equivalentes") }
