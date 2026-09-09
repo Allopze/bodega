@@ -127,3 +127,5 @@ INVENTARIO DE EXTINTORES FAENA BIODIVERSA 2026.xlsx
 OC-ejemplo-pdfcn.pdf
 /erpnext-develop
 /odoo-19.0
+# Worktrees de sesión (EnterWorktree) — scratch local, no código fuente
+.claude/worktrees/
