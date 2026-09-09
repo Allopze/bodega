@@ -97,12 +97,22 @@ describe("sizeFamilyForEppType", () => {
     expect(familyOf("Chaleco reflectante")).toBe("ropa")
   })
 
-  it("sizea pantalones y jardineras con la escala de letras que usa el catálogo", () => {
-    // EPP-083 «JARDINERA TERMICA 2XL» lleva `Talla: XS`, y el backfill de ropa
-    // (`epp-clothing-sizes.ts`) trata pantalones como escala XS..2XL. La familia
-    // `pantalon` son cinturas 28..48 y la usa el padrón, no el catálogo.
-    expect(familyOf("Pantalón de trabajo")).toBe("ropa")
+  it("manda el pantalón a su propia familia, para que cruce con la talla de abajo", () => {
+    // `pantalon` y `ropa` comparten la escala de letras; lo que las distingue es
+    // con qué campo del padrón cruzan. Un trabajador puede ser L arriba y XL
+    // abajo, y `size_top`/`size_bottom` existen para capturar esa diferencia.
+    expect(familyOf("Pantalón de trabajo")).toBe("pantalon")
+  })
+
+  it("deja las prendas de una pieza en `ropa`, con la talla de arriba", () => {
+    // Visten el torso completo, así que la talla de arriba es la referencia.
     expect(familyOf("JARDINERA TERMICA")).toBe("ropa")
+    expect(familyOf("Overol Activex Piloto")).toBe("ropa")
+    expect(familyOf("Buzo Dupont Tyvek 500X")).toBe("ropa")
+    // «Traje PU Verde Activex Pantalón» infiere `traje`, no `pantalon`: la
+    // mitad inferior de un traje de dos piezas queda con la talla de arriba.
+    // Es una limitación de `inferEppItemType`, no de este mapa.
+    expect(familyOf("Traje PU Verde Activex Pantalón")).toBe("ropa")
   })
 
   it("devuelve null para los ítems que no tienen escala de talla", () => {

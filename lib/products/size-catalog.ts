@@ -44,10 +44,16 @@ export const SIZE_FAMILIES: readonly SizeFamilyDefinition[] = [
   {
     family: "pantalon",
     attributeName: "Talla inferior",
-    // Numeración de cintura. La usa el padrón desde siempre (`size_bottom`) y no
-    // estaba en ninguna otra lista: el asistente de variantes no podía crear un
-    // pantalón por talla, así que esa talla del padrón nunca tenía con qué cruzar.
-    codes: ["28", "30", "32", "34", "36", "38", "40", "42", "44", "46", "48"],
+    // Letras, no numeración de cintura. Esta familia nació con cinturas 28..48
+    // porque `workers.size_bottom` guardaba una, pero la compilación de compras
+    // 2022-2026 no deja lugar a duda: 11 productos de pantalón, 4.491 unidades,
+    // **ni una sola cintura** — todo S, M, L, XL, 2XL, 3XL.
+    //
+    // Comparte escala con `ropa` a propósito: lo que distingue a las dos
+    // familias no es la escala sino con qué campo del padrón cruzan. Un
+    // trabajador puede ser L arriba y XL abajo, y `size_top`/`size_bottom`
+    // existen justamente para capturar esa diferencia.
+    codes: ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"],
   },
   {
     family: "casco",

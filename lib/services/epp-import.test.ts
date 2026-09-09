@@ -125,17 +125,26 @@ describe("normalizeEppRow", () => {
     ])
   })
 
+  it("sizea el pantalón por `Talla inferior`, que cruza con la talla de abajo", () => {
+    const result = normalizeEppRow({ name: "PANTALON DE TRABAJO", unitOfMeasure: "unidad", size: "L" })
+
+    expect(result.attributes).toEqual(expect.arrayContaining([
+      { name: "Talla inferior", value: "L", sizeFamily: "pantalon" },
+    ]))
+    expect(result.issues).toEqual([])
+  })
+
   it("advierte cuando un pantalón trae numeración de cintura", () => {
-    // Consecuencia visible de mapear `pantalon` a la escala de letras: una
-    // cintura 32 no está en `ropa`, entra igual y queda advertida para que
-    // alguien decida si esa familia debe sizarse por `Talla inferior`.
+    // La familia `pantalon` pasó a letras porque el catálogo real no tiene una
+    // sola cintura en 4 años de compras. Una cintura entra igual —bloquear
+    // dejaría una planilla de proveedor inutilizable— y queda advertida.
     const result = normalizeEppRow({ name: "PANTALON DE TRABAJO", unitOfMeasure: "unidad", size: "32" })
 
     expect(result.attributes).toEqual(expect.arrayContaining([
-      { name: "Talla", value: "32", sizeFamily: "ropa" },
+      { name: "Talla inferior", value: "32", sizeFamily: "pantalon" },
     ]))
     expect(result.issues).toEqual([
-      { severity: "warning", message: "La talla «32» no está en el catálogo de la familia ropa." },
+      { severity: "warning", message: "La talla «32» no está en el catálogo de la familia pantalon." },
     ])
   })
 

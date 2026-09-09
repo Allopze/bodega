@@ -31,7 +31,19 @@ import { nanoid } from "@/lib/id"
 import { normalizeAttributeName } from "@/lib/products/attribute-names"
 import { resolveProductSize, normalizeSizeLabel } from "@/lib/products/product-size"
 
-export const CLOTHING_TARGET_SIZES = ["XS", "S", "M", "L", "XL", "2XL"] as const
+/**
+ * Tallas que este backfill completa. Es el rango que el negocio realmente
+ * compra, según la compilación de facturas 2022-2026: **el XS nunca se compró**
+ * en ninguna categoría de ropa, y el 3XL sí (376 unidades entre pantalones,
+ * poleras, chaquetas, chalecos, buzos y overoles). Apuntar a `XS..2XL` creaba
+ * una talla que nadie usa y dejaba fuera una que sí.
+ *
+ * No es lo mismo que los códigos que ofrece `size_catalog`: ahí conviene ser
+ * generoso (un trabajador chico puede necesitar un XS que nunca se compró),
+ * pero *crear* variantes de catálogo que nadie va a pedir es basura de
+ * catálogo con SKU y proveedor propios.
+ */
+export const CLOTHING_TARGET_SIZES = ["S", "M", "L", "XL", "2XL", "3XL"] as const
 
 /** Única familia de `size_catalog` cuya escala este backfill sabe completar. */
 export const CLOTHING_SIZE_FAMILY = "ropa"

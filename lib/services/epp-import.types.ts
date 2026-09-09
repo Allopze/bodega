@@ -103,11 +103,16 @@ export const EPP_TYPE_TO_BODY_PART_CODE: Partial<Record<(typeof EPP_TYPES)[numbe
  * `Talla` sin familia. Devolver `null` antes que adivinar es el mismo criterio
  * de `classifyEppTypeIdByName`.
  *
- * Pantalones y jardineras van a `ropa` y no a `pantalon`: el catálogo los
- * sizea con la escala de letras (EPP-083 «Jardinera Térmica» lleva `Talla: XS`,
- * y `addMissingClothingSizeVariants` ya los trata como XS..2XL). La familia
- * `pantalon` es la numeración de cintura del padrón (`workers.size_bottom`),
- * que sólo el asistente de variantes usa a propósito.
+ * El pantalón va a `pantalon`, que desde la compilación de compras 2022-2026
+ * usa la escala de letras igual que `ropa`: lo que distingue a las dos familias
+ * es con qué campo del padrón cruzan (`size_bottom` contra `size_top`), no la
+ * escala. Un trabajador puede ser L arriba y XL abajo.
+ *
+ * Las prendas de una pieza —jardinera, overol, buzo, traje, capa— se quedan en
+ * `ropa`: visten el torso completo, así que la talla de arriba es la
+ * referencia. Nota: «Traje PU Verde Activex Pantalón» infiere `traje` y no
+ * `pantalon`, así que la mitad inferior de un traje de dos piezas queda con la
+ * talla de arriba. Es una limitación de `inferEppItemType`, no de este mapa.
  */
 export const EPP_TYPE_TO_SIZE_FAMILY: Partial<Record<(typeof EPP_TYPES)[number], string>> = {
   guante: "guantes",
@@ -120,7 +125,7 @@ export const EPP_TYPE_TO_SIZE_FAMILY: Partial<Record<(typeof EPP_TYPES)[number],
   chaleco: "ropa",
   buzo: "ropa",
   traje: "ropa",
-  pantalon: "ropa",
+  pantalon: "pantalon",
   chaqueta: "ropa",
   camisa: "ropa",
   polera: "ropa",

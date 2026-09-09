@@ -1,8 +1,12 @@
 /**
- * `addMissingClothingSizeVariants` completa XS/S/M/L/XL/2XL en toda familia
- * EPP que ya usa "Talla" (escala de ropa) — sin importar su `eppType`, que
- * está deprecado y casi siempre nulo — sin tocar familias sin precedente de
- * esa escala ni duplicar tallas ya creadas.
+ * `addMissingClothingSizeVariants` completa S/M/L/XL/2XL/3XL —el rango que el
+ * negocio realmente compra— en toda familia EPP que **declare**
+ * `size_family = 'ropa'`, sin importar su `eppType`, que está deprecado y casi
+ * siempre nulo.
+ *
+ * Los casos negativos son la mitad del valor de este archivo: el criterio era
+ * el nombre del atributo, y con `Talla` alcanzando a todo el catálogo importado
+ * el backfill inyectaba variantes de ropa a botines y guantes.
  */
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
@@ -123,7 +127,7 @@ describe("addMissingClothingSizeVariants", () => {
     const summary = await addMissingClothingSizeVariants()
 
     expect(summary.results).toEqual([
-      expect.objectContaining({ familyId: "fam-lightwind-hombre", status: "created", createdSizes: ["XS", "S", "M", "L", "XL"] }),
+      expect.objectContaining({ familyId: "fam-lightwind-hombre", status: "created", createdSizes: ["S", "M", "L", "XL", "3XL"] }),
     ])
     expect(summary.variantsCreated).toBe(5)
 
@@ -161,7 +165,7 @@ describe("addMissingClothingSizeVariants", () => {
     const summary = await addMissingClothingSizeVariants()
 
     const jacket = summary.results.find((r) => r.familyId === "fam-chaqueta")
-    expect(jacket).toMatchObject({ status: "created", createdSizes: ["XS", "S", "L", "XL", "2XL"] })
+    expect(jacket).toMatchObject({ status: "created", createdSizes: ["S", "L", "XL", "2XL", "3XL"] })
 
     const sizes = await sizesForFamily("fam-chaqueta")
     expect(sizes).toEqual([...CLOTHING_TARGET_SIZES].sort())
@@ -274,10 +278,10 @@ describe("addMissingClothingSizeVariants", () => {
     expect(variants).toHaveLength(1)
   })
 
-  it("sí completa una familia de ropa cuya única talla existente es '3XL' (fuera de CLOTHING_TARGET_SIZES)", async () => {
-    // El criterio es "alguna etiqueta no es numérica", no "alguna está en
-    // CLOTHING_TARGET_SIZES": una familia de ropa que hoy sólo tenga una talla
-    // fuera de esa lista no debe quedar excluida por el guard numérico.
+  it("sí completa una familia de ropa cuya única talla existente es la mayor del rango", async () => {
+    // El criterio de escala es "alguna etiqueta no es numérica", no "alguna
+    // está en CLOTHING_TARGET_SIZES": una familia de ropa cuya única talla sea
+    // la mayor del rango no debe quedar excluida por el guard numérico.
     await createFamilyWithVariant({
       familyId: "fam-3xl",
       canonicalName: "Buzo Térmico",
@@ -291,10 +295,10 @@ describe("addMissingClothingSizeVariants", () => {
 
     const buzo = summary.results.find((r) => r.familyId === "fam-3xl")
     expect(buzo).toMatchObject({ status: "created" })
-    expect(buzo?.createdSizes).toEqual(expect.arrayContaining(["XS", "S", "M", "L", "XL", "2XL"]))
+    expect(buzo?.createdSizes).toEqual(["S", "M", "L", "XL", "2XL"])
 
     const sizes = await sizesForFamily("fam-3xl")
-    expect(sizes).toEqual([...CLOTHING_TARGET_SIZES, "3XL"].sort())
+    expect(sizes).toEqual([...CLOTHING_TARGET_SIZES].sort())
   })
 
   it("no toca una familia cuyo atributo de talla no declara `size_family`", async () => {
@@ -351,7 +355,7 @@ describe("addMissingClothingSizeVariants", () => {
 
     expect(summary.dryRun).toBe(true)
     expect(summary.variantsCreated).toBe(5)
-    expect(summary.results[0]!.createdSizes).toEqual(["XS", "S", "L", "XL", "2XL"])
+    expect(summary.results[0]!.createdSizes).toEqual(["S", "L", "XL", "2XL", "3XL"])
     // Lo informado no se escribió: la familia sigue con su única variante.
     const variants = await inMemoryDb.query.products.findMany({
       where: eq(schema.products.familyId, "fam-dry"),
