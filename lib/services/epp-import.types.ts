@@ -246,6 +246,8 @@ export const RULE_LABELS: Record<string, string> = {
   default_epp_category: "Categoria EPP asignada por defecto",
   extract_color_from_name: "Color detectado en el nombre del producto",
   extract_size_from_name: "Talla detectada en el nombre del producto",
+  canonicalize_size: "Talla estandarizada",
+  assign_size_family: "Familia de talla asignada por el tipo de EPP",
   manual_review: "Corregido manualmente",
 }
 
@@ -518,6 +520,13 @@ export function buildCorrections(source: Record<string, string>, normalized: Nor
   add("unitOfMeasure", source.unitOfMeasure, normalized.unitOfMeasure, "normalize_unit")
   add("categoryName", source.categoryName, normalized.categoryName, "default_epp_category")
   if (!source.color && normalized.attributes.some((attribute) => attribute.name === "Color")) add("color", null, normalized.attributes.find((attribute) => attribute.name === "Color")?.value ?? null, "extract_color_from_name", 90)
-  if (!source.size && normalized.attributes.some((attribute) => attribute.name.startsWith("Talla"))) add("size", null, normalized.attributes.find((attribute) => attribute.name.startsWith("Talla"))?.value ?? null, "extract_size_from_name", 85)
+  const sizeAttribute = normalized.attributes.find((attribute) => isSizeAttributeName(attribute.name))
+  if (sizeAttribute) {
+    // Sin columna `talla`, la talla se dedujo del nombre; con columna, lo que
+    // se registra es la canonización de lo que el operador escribió.
+    if (!source.size) add("size", null, sizeAttribute.value, "extract_size_from_name", 85)
+    else add("size", source.size, sizeAttribute.value, "canonicalize_size", 95)
+    if (sizeAttribute.sizeFamily) add("sizeFamily", null, sizeAttribute.sizeFamily, "assign_size_family", 90)
+  }
   return corrections
 }

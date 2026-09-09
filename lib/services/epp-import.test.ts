@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import ExcelJS from "exceljs"
-import { normalizeEppRow, parseEppWorkbook } from "./epp-import"
+import { normalizeEppRow, parseEppWorkbook, buildCorrections } from "./epp-import"
 
 describe("normalizeEppRow", () => {
   it("extracts color and size from a messy EPP name", () => {
@@ -193,6 +193,46 @@ describe("normalizeEppRow", () => {
     ]))
     // Single color still included in identity key (backward compat)
     expect(result.identityKey).toContain("color=azul")
+  })
+})
+
+describe("buildCorrections", () => {
+  const corrections = (source: Record<string, string>) => buildCorrections(source, normalizeEppRow(source))
+
+  it("registra que la talla se canonizó", () => {
+    const result = corrections({ name: "OVEROL ACTIVEX", unitOfMeasure: "unidad", size: "XXXL" })
+
+    expect(result).toEqual(expect.arrayContaining([
+      { field: "size", from: "XXXL", to: "3XL", ruleId: "canonicalize_size", confidence: 95 },
+    ]))
+  })
+
+  it("registra la familia asignada por el tipo de EPP", () => {
+    const result = corrections({ name: "GUANTE NITRILO", unitOfMeasure: "par", size: "M" })
+
+    expect(result).toEqual(expect.arrayContaining([
+      { field: "sizeFamily", from: null, to: "guantes", ruleId: "assign_size_family", confidence: 90 },
+    ]))
+  })
+
+  it("no registra corrección de talla cuando ya venía canónica", () => {
+    const result = corrections({ name: "GUANTE NITRILO", unitOfMeasure: "par", size: "M" })
+
+    expect(result.filter((correction) => correction.field === "size")).toEqual([])
+  })
+
+  it("sigue registrando la talla extraída del nombre", () => {
+    const result = corrections({ name: "GUANTE NITRILO TALLA M", unitOfMeasure: "par" })
+
+    expect(result).toEqual(expect.arrayContaining([
+      { field: "size", from: null, to: "M", ruleId: "extract_size_from_name", confidence: 85 },
+    ]))
+  })
+
+  it("no registra familia para un ítem que no se sizea", () => {
+    const result = corrections({ name: "LENTE ACTIVEX FX III", unitOfMeasure: "unidad", size: "M" })
+
+    expect(result.filter((correction) => correction.field === "sizeFamily")).toEqual([])
   })
 })
 
