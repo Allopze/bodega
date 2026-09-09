@@ -252,8 +252,8 @@ function sha256(value: string) {
   return Array.from(hash, (word) => word.toString(16).padStart(8, "0")).join("")
 }
 
-function fingerprintFor(value: unknown) {
-  return `v${INVOICE_RECONCILIATION_VERSION}:${sha256(JSON.stringify(stableValue(value)))}`
+export function fingerprintFor(value: unknown, version = INVOICE_RECONCILIATION_VERSION) {
+  return `v${version}:${sha256(JSON.stringify(stableValue(value)))}`
 }
 
 export function reconcileInvoiceEvidence({
