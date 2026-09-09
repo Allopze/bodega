@@ -1,6 +1,6 @@
-import { eq, and, inArray } from "drizzle-orm"
+import { eq, and, inArray, sql } from "drizzle-orm"
 import { type Tx } from "@/db"
-import { purchaseRequests, purchaseRequestItems } from "@/db/schema"
+import { purchaseRequests, purchaseRequestItems, purchaseOrderItems } from "@/db/schema"
 import { recordStatusChange } from "@/lib/audit"
 
 /**
@@ -40,6 +40,21 @@ export async function lockRequestsForRollupTx(
     .for("update")
 }
 
+/** Ítem de la solicitud, con lo justo para derivar el estado del padre. */
+export interface RollupItem {
+  status: string
+  /**
+   * `true` cuando las cantidades muestran que el ítem llegó completo a faena
+   * (`sum(purchase_order_items.quantity_received) >= purchase_request_items.quantity`).
+   *
+   * Hace falta porque `partially_delivered` es ambiguo: se alcanza desde
+   * `received` (llegó todo, se repartió parte) y desde `partially_received`
+   * (llegó parte, se repartió parte), y al recibir el saldo **conserva** ese
+   * estado (`receiving.ts`). El estado solo no distingue los dos casos.
+   */
+  fullyReceived: boolean
+}
+
 /**
  * Estado derivado de una solicitud a partir del de sus ítems.
  *
@@ -49,7 +64,8 @@ export async function lockRequestsForRollupTx(
  * opinión sobre cuándo cierra una solicitud. Su cobertura vive en
  * `rollup.test.ts`; antes estaba embebida acá y no se podía comprobar sola.
  */
-export function deriveRequestStatus(statuses: readonly string[]): string {
+export function deriveRequestStatus(items: readonly RollupItem[]): string {
+  const statuses = items.map((item) => item.status)
   const pendingReview = ["requested"].some((s) => statuses.includes(s))
   const anyApproved   = statuses.some((s) => ["approved", "pending_purchase", "in_purchase_order", "purchased", "partially_office_received", "office_received", "partially_received", "received", "partially_delivered", "delivered"].includes(s))
   const allRejected   = statuses.every((s) => s === "rejected")
@@ -57,7 +73,13 @@ export function deriveRequestStatus(statuses: readonly string[]): string {
   // `delivered` queda soportado para solicitudes antiguas y para el vínculo
   // explícito de una entrega a trabajador; esa distribución es posterior y no
   // debe ser requisito para cerrar la compra.
-  const allClosed     = statuses.every((s) => ["rejected", "received", "delivered"].includes(s))
+  // `partially_delivered` cierra sólo cuando la cantidad confirma la llegada
+  // completa: la distribución al trabajador es posterior a la adquisición y no
+  // debe ser requisito, pero un saldo en tránsito sí lo es. SOL-0027 (3 pedidas,
+  // 2 en faena) es el caso que esto mantiene abierto.
+  const allClosed     = items.every((item) =>
+    ["rejected", "received", "delivered"].includes(item.status)
+    || (item.status === "partially_delivered" && item.fullyReceived))
   const anyPurchasing = statuses.some((s) => ["in_purchase_order", "purchased", "partially_office_received", "office_received", "partially_received", "received", "partially_delivered"].includes(s))
   const allResolved   = !pendingReview
 
@@ -121,14 +143,26 @@ export async function rollupRequestStatus(
     .where(eq(purchaseRequests.id, requestId))
   if (!current) return
 
+  // La cantidad recibida se agrega desde las líneas de OC: `partially_delivered`
+  // no dice si quedó saldo en tránsito, y sin eso el padre no se puede cerrar
+  // sin arriesgar cerrar una compra incompleta.
   const items = await tx
-    .select({ status: purchaseRequestItems.status })
+    .select({
+      status: purchaseRequestItems.status,
+      quantity: purchaseRequestItems.quantity,
+      received: sql<number>`coalesce(sum(${purchaseOrderItems.quantityReceived}), 0)`,
+    })
     .from(purchaseRequestItems)
+    .leftJoin(purchaseOrderItems, eq(purchaseOrderItems.requestItemId, purchaseRequestItems.id))
     .where(eq(purchaseRequestItems.requestId, requestId))
+    .groupBy(purchaseRequestItems.id, purchaseRequestItems.status, purchaseRequestItems.quantity)
 
   if (items.length === 0) return
 
-  const newStatus = deriveRequestStatus(items.map((i) => i.status))
+  const newStatus = deriveRequestStatus(items.map((item) => ({
+    status: item.status,
+    fullyReceived: Number(item.received) >= item.quantity,
+  })))
 
   // `cancelled` es terminal para el padre (F1-1/F1-2: cancelar rechaza TODOS
   // los ítems abiertos, así que ninguna transición de ítem puede volver a

@@ -35,9 +35,11 @@ const { reconcileRequestStatuses, findRequestStatusDrift } =
 
 const WORKSITE = "faena-1"
 const USER = "user-1"
+const SUPPLIER = "sup-1"
 
 async function seedBase() {
   await inMemoryDb.insert(schema.worksites).values({ id: WORKSITE, name: "Faena Uno", code: "FN-001" })
+  await inMemoryDb.insert(schema.suppliers).values({ id: SUPPLIER, name: "Proveedor" })
   await inMemoryDb.insert(schema.users).values({
     id: USER, email: "uno@chome.cl", name: "Uno", hashedPassword: "x",
   })
@@ -51,13 +53,32 @@ async function addRequest(status: string, itemStatuses: string[]) {
     id, code: `SOL-${String(seq).padStart(4, "0")}`, requestType: "epp", urgency: "normal",
     status, worksiteId: WORKSITE, requesterId: USER, submissionKey: `key-${id}`,
   })
+  const itemIds: string[] = []
   for (const itemStatus of itemStatuses) {
+    const itemId = nanoid()
+    itemIds.push(itemId)
     await inMemoryDb.insert(schema.purchaseRequestItems).values({
-      id: nanoid(), requestId: id, productNameFree: "Ítem", quantity: 1,
+      id: itemId, requestId: id, productNameFree: "Ítem", quantity: 1,
       unitOfMeasure: "unidad", status: itemStatus,
     })
   }
-  return id
+  return { id, itemIds }
+}
+
+/**
+ * Línea de OC que aporta la cantidad recibida en faena del ítem. Sin esto
+ * `fullyReceived` es falso y `partially_delivered` no cierra.
+ */
+async function receiveInto(requestItemId: string, quantity: number, received: number) {
+  const orderId = `oc-${requestItemId}`
+  await inMemoryDb.insert(schema.purchaseOrders).values({
+    id: orderId, code: `OC-${requestItemId}`, supplierId: SUPPLIER,
+    worksiteId: WORKSITE, createdBy: USER, status: "received",
+  })
+  await inMemoryDb.insert(schema.purchaseOrderItems).values({
+    id: nanoid(), purchaseOrderId: orderId, requestItemId,
+    quantity, quantityReceived: received, unitOfMeasure: "unidad",
+  })
 }
 
 async function statusOf(id: string) {
@@ -69,9 +90,12 @@ async function statusOf(id: string) {
 
 beforeEach(async () => {
   await inMemoryDb.delete(schema.statusHistory)
+  await inMemoryDb.delete(schema.purchaseOrderItems)
+  await inMemoryDb.delete(schema.purchaseOrders)
   await inMemoryDb.delete(schema.purchaseRequestItems)
   await inMemoryDb.delete(schema.purchaseRequests)
   await inMemoryDb.delete(schema.users)
+  await inMemoryDb.delete(schema.suppliers)
   await inMemoryDb.delete(schema.worksites)
   seq = 0
   await seedBase()
@@ -79,7 +103,7 @@ beforeEach(async () => {
 
 describe("findRequestStatusDrift", () => {
   it("detecta la solicitud recibida que quedó en in_purchasing", async () => {
-    const id = await addRequest("in_purchasing", ["received"])
+    const { id } = await addRequest("in_purchasing", ["received"])
 
     const { drifts } = await findRequestStatusDrift()
 
@@ -117,7 +141,7 @@ describe("findRequestStatusDrift", () => {
 
 describe("reconcileRequestStatuses", () => {
   it("por omisión informa y no escribe", async () => {
-    const id = await addRequest("in_purchasing", ["received"])
+    const { id } = await addRequest("in_purchasing", ["received"])
 
     const summary = await reconcileRequestStatuses()
 
@@ -128,7 +152,7 @@ describe("reconcileRequestStatuses", () => {
   })
 
   it("cierra la solicitud cuando se aplica", async () => {
-    const id = await addRequest("in_purchasing", ["received", "rejected"])
+    const { id } = await addRequest("in_purchasing", ["received", "rejected"])
 
     const summary = await reconcileRequestStatuses({ dryRun: false })
 
@@ -148,6 +172,28 @@ describe("reconcileRequestStatuses", () => {
     })
   })
 
+  it("cierra `partially_delivered` cuando la cantidad confirma la llegada completa", async () => {
+    // El caso de SOL-0001: 50 pedidas, 50 en faena, repartidas en parte.
+    const { id, itemIds } = await addRequest("in_purchasing", ["partially_delivered"])
+    await receiveInto(itemIds[0]!, 1, 1)
+
+    await reconcileRequestStatuses({ dryRun: false })
+
+    expect(await statusOf(id)).toBe("closed")
+  })
+
+  it("no cierra `partially_delivered` con saldo por llegar", async () => {
+    // El caso de SOL-0027: pidió 3 y llegaron 2. `partially_delivered` no
+    // distingue eso del anterior, así que la cantidad es la única señal.
+    const { id, itemIds } = await addRequest("in_purchasing", ["delivered", "partially_delivered"])
+    await receiveInto(itemIds[0]!, 1, 1)
+    await receiveInto(itemIds[1]!, 1, 0.5)
+
+    await reconcileRequestStatuses({ dryRun: false })
+
+    expect(await statusOf(id)).toBe("in_purchasing")
+  })
+
   it("es idempotente: la segunda corrida no encuentra deriva", async () => {
     await addRequest("in_purchasing", ["received"])
 
@@ -159,8 +205,8 @@ describe("reconcileRequestStatuses", () => {
   })
 
   it("no toca la solicitud que está en su estado correcto", async () => {
-    const ok = await addRequest("in_purchasing", ["received", "office_received"])
-    const drifted = await addRequest("in_purchasing", ["received"])
+    const { id: ok } = await addRequest("in_purchasing", ["received", "office_received"])
+    const { id: drifted } = await addRequest("in_purchasing", ["received"])
 
     await reconcileRequestStatuses({ dryRun: false })
 

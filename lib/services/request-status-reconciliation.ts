@@ -17,10 +17,10 @@
  * dueño que usa el rollup. Una segunda opinión sobre cuándo cierra una
  * solicitud es exactamente el problema que esto viene a arreglar.
  */
-import { inArray } from "drizzle-orm"
+import { eq, inArray, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { purchaseRequests, purchaseRequestItems } from "@/db/schema"
-import { deriveRequestStatus, lockRequestsForRollupTx, rollupRequestStatus } from "./item-state-module/rollup"
+import { purchaseRequests, purchaseRequestItems, purchaseOrderItems } from "@/db/schema"
+import { deriveRequestStatus, lockRequestsForRollupTx, rollupRequestStatus, type RollupItem } from "./item-state-module/rollup"
 
 /**
  * Estados del padre que el rollup puede reescribir. Es la misma lista que la
@@ -59,16 +59,34 @@ export async function findRequestStatusDrift(): Promise<{ scanned: number; drift
 
   if (requests.length === 0) return { scanned: 0, drifts: [] }
 
+  // Misma forma que la consulta del rollup: la cantidad recibida se agrega desde
+  // las líneas de OC porque `partially_delivered` no dice si quedó saldo.
   const items = await db
-    .select({ requestId: purchaseRequestItems.requestId, status: purchaseRequestItems.status })
+    .select({
+      requestId: purchaseRequestItems.requestId,
+      status: purchaseRequestItems.status,
+      quantity: purchaseRequestItems.quantity,
+      received: sql<number>`coalesce(sum(${purchaseOrderItems.quantityReceived}), 0)`,
+    })
     .from(purchaseRequestItems)
+    .leftJoin(purchaseOrderItems, eq(purchaseOrderItems.requestItemId, purchaseRequestItems.id))
     .where(inArray(purchaseRequestItems.requestId, requests.map((request) => request.id)))
+    .groupBy(
+      purchaseRequestItems.id,
+      purchaseRequestItems.requestId,
+      purchaseRequestItems.status,
+      purchaseRequestItems.quantity,
+    )
 
-  const byRequest = new Map<string, string[]>()
+  const byRequest = new Map<string, RollupItem[]>()
   for (const item of items) {
+    const entry: RollupItem = {
+      status: item.status,
+      fullyReceived: Number(item.received) >= item.quantity,
+    }
     const bucket = byRequest.get(item.requestId)
-    if (bucket) bucket.push(item.status)
-    else byRequest.set(item.requestId, [item.status])
+    if (bucket) bucket.push(entry)
+    else byRequest.set(item.requestId, [entry])
   }
 
   const drifts: RequestStatusDrift[] = []
@@ -83,7 +101,7 @@ export async function findRequestStatusDrift(): Promise<{ scanned: number; drift
       code: request.code,
       current: request.status,
       expected,
-      itemStatuses: [...new Set(statuses)].sort(),
+      itemStatuses: [...new Set(statuses.map((item) => item.status))].sort(),
     })
   }
 

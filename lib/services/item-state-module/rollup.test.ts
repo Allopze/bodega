@@ -10,43 +10,65 @@
 import { describe, expect, it } from "vitest"
 import { deriveRequestStatus } from "./rollup"
 
+/** Ítem cuyo estado alcanza para decidir, sin depender de cantidades. */
+const it_ = (status: string, fullyReceived = true) => ({ status, fullyReceived })
+
 describe("deriveRequestStatus", () => {
   it("cierra cuando todo llegó a faena", () => {
     // Es la regla que `0a5bb3f1` (2026-09-02) devolvió: la adquisición termina
     // cuando el ítem llegó completo a faena, sin esperar la distribución.
-    expect(deriveRequestStatus(["received"])).toBe("closed")
-    expect(deriveRequestStatus(["received", "received"])).toBe("closed")
-    expect(deriveRequestStatus(["received", "rejected"])).toBe("closed")
-    expect(deriveRequestStatus(["delivered"])).toBe("closed")
+    expect(deriveRequestStatus([it_("received")])).toBe("closed")
+    expect(deriveRequestStatus([it_("received"), it_("received")])).toBe("closed")
+    expect(deriveRequestStatus([it_("received"), it_("rejected")])).toBe("closed")
+    expect(deriveRequestStatus([it_("delivered")])).toBe("closed")
   })
 
   it("no cierra con un ítem recibido sólo en oficina", () => {
     // El flujo de dos etapas: `office_received` es recibido en oficina y
     // todavía tiene que llegar a faena.
-    expect(deriveRequestStatus(["received", "office_received"])).toBe("in_purchasing")
-    expect(deriveRequestStatus(["office_received"])).toBe("in_purchasing")
-    expect(deriveRequestStatus(["received", "partially_received"])).toBe("in_purchasing")
-    expect(deriveRequestStatus(["received", "partially_delivered"])).toBe("in_purchasing")
+    expect(deriveRequestStatus([it_("received"), it_("office_received")])).toBe("in_purchasing")
+    expect(deriveRequestStatus([it_("office_received")])).toBe("in_purchasing")
+    expect(deriveRequestStatus([it_("received"), it_("partially_received")])).toBe("in_purchasing")
+    expect(deriveRequestStatus([it_("received"), it_("partially_delivered", false)])).toBe("in_purchasing")
+  })
+
+  it("cierra con `partially_delivered` sólo si las cantidades muestran llegada completa", () => {
+    // `partially_delivered` es ambiguo: se alcanza desde `received` (llegó todo,
+    // se repartió parte) y desde `partially_received` (llegó parte, se repartió
+    // parte), y al recibir el saldo *conserva* ese estado. El estado solo no
+    // distingue los dos casos, así que la señal es la cantidad recibida.
+    //
+    // Caso real: SOL-0001 con 50 pedidas y 50 en faena cierra; SOL-0027 con 3
+    // pedidas y 2 en faena no.
+    expect(deriveRequestStatus([it_("partially_delivered", true)])).toBe("closed")
+    expect(deriveRequestStatus([it_("partially_delivered", false)])).toBe("in_purchasing")
+    expect(deriveRequestStatus([
+      it_("received"), it_("partially_delivered", true), it_("rejected"),
+    ])).toBe("closed")
+    // SOL-0027: un ítem entregado del todo y otro con saldo por llegar.
+    expect(deriveRequestStatus([
+      it_("delivered"), it_("partially_delivered", false),
+    ])).toBe("in_purchasing")
   })
 
   it("un ítem sin revisar manda a revisión, aunque el resto esté recibido", () => {
-    expect(deriveRequestStatus(["requested"])).toBe("in_review")
-    expect(deriveRequestStatus(["received", "requested"])).toBe("in_review")
+    expect(deriveRequestStatus([it_("requested")])).toBe("in_review")
+    expect(deriveRequestStatus([it_("received"), it_("requested")])).toBe("in_review")
   })
 
   it("rechaza sólo cuando se rechazó todo", () => {
-    expect(deriveRequestStatus(["rejected"])).toBe("rejected")
-    expect(deriveRequestStatus(["rejected", "rejected"])).toBe("rejected")
+    expect(deriveRequestStatus([it_("rejected")])).toBe("rejected")
+    expect(deriveRequestStatus([it_("rejected"), it_("rejected")])).toBe("rejected")
   })
 
   it("distingue aprobada de parcialmente aprobada", () => {
-    expect(deriveRequestStatus(["approved"])).toBe("approved")
-    expect(deriveRequestStatus(["approved", "rejected"])).toBe("approved")
-    expect(deriveRequestStatus(["approved", "pending_purchase"])).toBe("approved")
+    expect(deriveRequestStatus([it_("approved")])).toBe("approved")
+    expect(deriveRequestStatus([it_("approved"), it_("rejected")])).toBe("approved")
+    expect(deriveRequestStatus([it_("approved"), it_("pending_purchase")])).toBe("approved")
   })
 
   it("compra en curso cuando algo ya salió a comprar", () => {
-    expect(deriveRequestStatus(["purchased"])).toBe("in_purchasing")
-    expect(deriveRequestStatus(["in_purchase_order", "approved"])).toBe("in_purchasing")
+    expect(deriveRequestStatus([it_("purchased")])).toBe("in_purchasing")
+    expect(deriveRequestStatus([it_("in_purchase_order"), it_("approved")])).toBe("in_purchasing")
   })
 })
