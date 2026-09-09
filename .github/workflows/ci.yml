@@ -279,6 +279,7 @@ jobs:
           # el mismo ítem, anular/eliminar contra una creación concurrente) nunca
           # se ejecutó en CI y el job pasaba en verde sin correrla.
           PURCHASE_ORDERS_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
+          INVOICE_ALLOCATIONS_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e
           STOCK_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           RECEIVING_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"
           DELIVERIES_CONCURRENCY_ALLOW_DESTRUCTIVE_RESET: "true"

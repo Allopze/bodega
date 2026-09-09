@@ -162,7 +162,7 @@ function effectiveUnitPrice(subtotal: number | null | undefined, quantity: numbe
   return normalizedSubtotal === null || quantity <= 0 ? null : normalizedSubtotal / quantity
 }
 
-function normalizeUnit(value: string | null | undefined) {
+export function normalizeUnit(value: string | null | undefined) {
   const normalized = value?.trim().toLocaleLowerCase("es-CL").replace(/[._]/g, "")
   if (!normalized) return null
   const aliases: Record<string, string> = {
