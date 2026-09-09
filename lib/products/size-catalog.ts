@@ -1,4 +1,4 @@
-import { compareSizeLabels } from "./product-size"
+import { compareSizeLabels, workerSizeFieldFor, type WorkerSizeField } from "./product-size"
 
 /**
  * Catálogo canónico de tallas: qué familias existen, con qué códigos y en qué
@@ -44,19 +44,27 @@ export const SIZE_FAMILIES: readonly SizeFamilyDefinition[] = [
   {
     family: "pantalon",
     attributeName: "Talla inferior",
-    // Numeración de cintura. La usa el padrón desde siempre (`size_bottom`) y no
-    // estaba en ninguna otra lista: el asistente de variantes no podía crear un
-    // pantalón por talla, así que esa talla del padrón nunca tenía con qué cruzar.
-    codes: ["28", "30", "32", "34", "36", "38", "40", "42", "44", "46", "48"],
+    // Letras, no numeración de cintura. Esta familia nació con cinturas 28..48
+    // porque `workers.size_bottom` guardaba una, pero la compilación de compras
+    // 2022-2026 no deja lugar a duda: 11 productos de pantalón, 4.491 unidades,
+    // **ni una sola cintura** — todo S, M, L, XL, 2XL, 3XL.
+    //
+    // Comparte escala con `ropa` a propósito: lo que distingue a las dos
+    // familias no es la escala sino con qué campo del padrón cruzan. Un
+    // trabajador puede ser L arriba y XL abajo, y `size_top`/`size_bottom`
+    // existen justamente para capturar esa diferencia.
+    codes: ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"],
   },
   {
     family: "casco",
     attributeName: "Talla casco",
-    // `workers.size_helmet` existe y `workerSizeFieldFor` ya lo mapea, pero sin
-    // esta familia ninguna variante podía llevar el atributo y la talla de casco
-    // del padrón nunca llegaba a sugerirse. Los códigos son el punto de partida
-    // editable desde el asistente, no una lista cerrada.
-    codes: ["S", "M", "L", "XL"],
+    // `Única` y no S/M/L/XL: manda la base. La migración 0088 sembró esta
+    // familia con un solo código y es lo que el catálogo real usa —el casco de
+    // obra chileno se ajusta con arnés, no se sizea—, así que la semilla que
+    // pedía S/M/L/XL contradecía a la tabla sin que nada resolviera el empate.
+    // Como `syncSizeCatalog` es aditivo, dejarlas divergentes significaba que
+    // el primer sync iba a ofrecer las cinco juntas en el padrón.
+    codes: ["Única"],
   },
 ] as const
 
@@ -81,4 +89,18 @@ export function sizeCatalogRows(): Array<{
 export function sizeFamilyByAttributeName(attributeName: string): SizeFamilyDefinition | undefined {
   const normalized = attributeName.trim().toLowerCase()
   return SIZE_FAMILIES.find((definition) => definition.attributeName.toLowerCase() === normalized)
+}
+
+/**
+ * Familia de tallas que alimenta un campo del padrón (`sizeShoe` → `calzado`).
+ *
+ * Derivada y no escrita a mano: era la cuarta copia del cruce familia ↔ campo
+ * del padrón —junto a `SIZE_ATTRIBUTE_FIELDS`, el `attributeName` de acá y un
+ * mapa del formulario de trabajadores— y la que más se había separado. Se
+ * calcula desde `attributeName` con `workerSizeFieldFor`, que es el dueño de
+ * ese cruce, así que agregar una familia ya no exige acordarse de dos listas.
+ */
+export function sizeFamilyForWorkerField(field: WorkerSizeField): string | null {
+  return SIZE_FAMILIES.find((definition) => workerSizeFieldFor(definition.attributeName) === field)
+    ?.family ?? null
 }

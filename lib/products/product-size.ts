@@ -84,6 +84,10 @@ const WORD_FORMS: Record<string, string> = {
   medium: "M", mediana: "M", mediano: "M",
   large: "L", grande: "L",
   "extra large": "XL", "extra grande": "XL", extragrande: "XL",
+  // Talla única: la prenda no se sizea. El catálogo real escribe las dos
+  // formas —`Capa PVC` en `UNICA`, el `Respirador Full Face` en `UNIVERSAL`—
+  // y son la misma talla.
+  unica: "UNICA", universal: "UNICA",
 }
 
 /** `XXL` y `2XL` son la misma talla: el catálogo escribe la forma numérica. */
@@ -96,8 +100,8 @@ function canonicalScaleCode(value: string): string {
 /**
  * Forma canónica de una etiqueta de talla, para **comparar** — no para
  * reescribir lo ya guardado. Resuelve las variantes que el catálogo real trae
- * mezcladas: `42.0`, `T42`, `42 EUR` → `42`; `medium`, `Mediana` → `M`;
- * `XXL` → `2XL`.
+ * mezcladas: `42.0`, `T42`, `N42`, `42 EUR` → `42`; `medium`, `Mediana` → `M`;
+ * `T/L` → `L`; `XXL` → `2XL`.
  */
 export function normalizeSizeLabel(value: string): string {
   const base = normalizeName(value).replace(/\.$/, "")
@@ -106,12 +110,26 @@ export function normalizeSizeLabel(value: string): string {
   const word = WORD_FORMS[base]
   if (word) return word
 
-  // «talla 42», «t42», «42 eur», «42 us»: el sistema de medida no es la talla.
+  // «talla 42», «t42», «T/L», «T-M», «42 eur», «42 us»: ni el sistema de
+  // medida ni la abreviatura de «talla» son la talla. `T/` sólo se quita
+  // cuando le sigue un código de una escala conocida, para no partir un rango
+  // real como `S/M`.
   const stripped = base
     .replace(/^talla\s+/, "")
     .replace(/^t(?=\d)/, "")
+    .replace(/^t[/-](?=\d|x*[sml]\b)/, "")
+    // «N41», «N-9», «N/42»: `N` es «número» en las planillas de calzado y
+    // guantes. Exige un dígito detrás, así que no se come una letra (`NM`) ni
+    // la `N` sola. Sin esto `N41` y `41` eran dos tallas distintas, y los
+    // botines N41..N44 caían al grupo «desconocido» ordenados por texto.
+    .replace(/^n[/-]?(?=\d)/, "")
     .replace(/\s*(eur?|us|uk|cl|br|mx|arg?)$/, "")
     .trim()
+
+  // Otra vez las formas en palabra, ahora sin el prefijo: «talla universal» y
+  // «talla mediana» dicen lo mismo que `universal` y `mediana`.
+  const strippedWord = WORD_FORMS[stripped]
+  if (strippedWord) return strippedWord
 
   // `42.0` y `42` son la misma talla; `8.5` no es `8`.
   if (/^\d+([.,]\d+)?$/.test(stripped)) {

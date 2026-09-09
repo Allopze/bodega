@@ -1835,6 +1835,13 @@
       "when": 1788923052458,
       "tag": "0261_mushy_punisher",
       "breakpoints": true
+    },
+    {
+      "idx": 262,
+      "version": "7",
+      "when": 1788923052459,
+      "tag": "0263_pantalon_letter_scale",
+      "breakpoints": true
     }
   ]
 }

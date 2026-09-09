@@ -323,12 +323,39 @@ RUN ./node_modules/.bin/esbuild scripts/normalize-epp-skus.ts \
     --external:postgres \
     --outfile=/tmp/normalize-epp-skus.mjs
 
-# Completa XS/S/M/L/XL/2XL en toda familia EPP que ya use "Talla" (la escala
-# de ropa): pantalones, buzos, chaquetas, chalecos, trajes, etc. El importador
-# XLSX y la creación manual sólo dejan la fila que trae la planilla o la que
-# alguien tipeó, no las seis tallas. Corre en deploy, después de normalizar
-# SKUs, para que los SKU nuevos nazcan ya en la numeración secuencial vigente.
-# Idempotente: familias completas o sin esa escala no se tocan.
+# Deja `size_catalog` al día con la semilla del código. Es prerrequisito de los
+# dos pasos que siguen: el backfill de ropa exige `size_family = 'ropa'`, y esa
+# familia sale de esta tabla. Estaba cableado sólo en `npm run db:migrate`, que
+# es el camino local — producción migra por el servicio `migrate`, así que la
+# tabla nunca se sincronizaba en el servidor.
+RUN ./node_modules/.bin/esbuild scripts/seed-size-catalog.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/seed-size-catalog.mjs
+
+# Da de baja las variantes que son la misma talla física escrita de dos formas
+# (`N41` junto a `T41`, `L` junto a `T/L`) o duplicadas de plano. Desactiva con
+# `is_active = false`, nunca borra, y sólo toca variantes sin stock ni
+# historial: las que participaron de una operación se informan y se saltan.
+RUN ./node_modules/.bin/esbuild scripts/reconcile-epp-duplicate-sizes.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/reconcile-epp-duplicate-sizes.mjs
+
+# Completa S/M/L/XL/2XL/3XL —el rango que el negocio realmente compra— en toda
+# familia EPP que **declare** `size_family = 'ropa'`. El importador XLSX y la
+# creación manual sólo dejan la fila que trae la planilla o la que alguien
+# tipeó, no el rango completo. Corre en deploy, después de normalizar SKUs,
+# para que los SKU nuevos nazcan ya en la numeración secuencial vigente.
+# Idempotente: familias completas o de otra familia de tallas no se tocan.
 RUN ./node_modules/.bin/esbuild scripts/backfill-epp-clothing-sizes.ts \
     --bundle \
     --platform=node \
@@ -429,6 +456,8 @@ COPY --from=build /tmp/fuel/backfill-fuel-meter-readings.mjs ./scripts/backfill-
 COPY --from=build /tmp/fuel/seed-fuel-anomaly-rules.mjs ./scripts/seed-fuel-anomaly-rules.mjs
 COPY --from=build /tmp/preflight-fuel-integrations.mjs ./scripts/preflight-fuel-integrations.mjs
 COPY --from=build /tmp/normalize-epp-skus.mjs ./scripts/normalize-epp-skus.mjs
+COPY --from=build /tmp/seed-size-catalog.mjs ./scripts/seed-size-catalog.mjs
+COPY --from=build /tmp/reconcile-epp-duplicate-sizes.mjs ./scripts/reconcile-epp-duplicate-sizes.mjs
 COPY --from=build /tmp/backfill-epp-clothing-sizes.mjs ./scripts/backfill-epp-clothing-sizes.mjs
 # Cron service uses this bounded internal HTTP runner instead of an inline
 # wget command. It is copied explicitly because Next standalone does not trace

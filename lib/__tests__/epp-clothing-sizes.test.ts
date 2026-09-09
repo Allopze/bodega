@@ -1,8 +1,12 @@
 /**
- * `addMissingClothingSizeVariants` completa XS/S/M/L/XL/2XL en toda familia
- * EPP que ya usa "Talla" (escala de ropa) — sin importar su `eppType`, que
- * está deprecado y casi siempre nulo — sin tocar familias sin precedente de
- * esa escala ni duplicar tallas ya creadas.
+ * `addMissingClothingSizeVariants` completa S/M/L/XL/2XL/3XL —el rango que el
+ * negocio realmente compra— en toda familia EPP que **declare**
+ * `size_family = 'ropa'`, sin importar su `eppType`, que está deprecado y casi
+ * siempre nulo.
+ *
+ * Los casos negativos son la mitad del valor de este archivo: el criterio era
+ * el nombre del atributo, y con `Talla` alcanzando a todo el catálogo importado
+ * el backfill inyectaba variantes de ropa a botines y guantes.
  */
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
@@ -45,6 +49,8 @@ async function createFamilyWithVariant(input: {
   productName: string
   sizeAttrName: string | null
   size: string | null
+  /** `product_attributes.size_family` del atributo de talla. */
+  sizeFamily?: string | null
   extraAttrs?: Array<{ name: string; value: string }>
   eppType?: string | null
 }) {
@@ -72,7 +78,8 @@ async function createFamilyWithVariant(input: {
   if (input.sizeAttrName && input.size) {
     await inMemoryDb.insert(schema.productAttributes).values({
       id: nanoid(), productId, name: input.sizeAttrName, type: "select",
-      isRequired: true, options: JSON.stringify([input.size]), sortOrder: sortOrder++,
+      isRequired: true, options: JSON.stringify([input.size]),
+      sizeFamily: input.sizeFamily ?? null, sortOrder: sortOrder++,
     })
   }
   await inMemoryDb.insert(schema.productSuppliers).values({
@@ -112,6 +119,7 @@ describe("addMissingClothingSizeVariants", () => {
       productName: "Pantalón Lightwind nylon spandex hombre UV",
       sizeAttrName: "Talla",
       size: "2XL",
+      sizeFamily: "ropa",
       extraAttrs: [{ name: "Modelo", value: "H3200" }, { name: "Color", value: "Beige" }],
       eppType: "pantalon",
     })
@@ -119,7 +127,7 @@ describe("addMissingClothingSizeVariants", () => {
     const summary = await addMissingClothingSizeVariants()
 
     expect(summary.results).toEqual([
-      expect.objectContaining({ familyId: "fam-lightwind-hombre", status: "created", createdSizes: ["XS", "S", "M", "L", "XL"] }),
+      expect.objectContaining({ familyId: "fam-lightwind-hombre", status: "created", createdSizes: ["S", "M", "L", "XL", "3XL"] }),
     ])
     expect(summary.variantsCreated).toBe(5)
 
@@ -150,13 +158,14 @@ describe("addMissingClothingSizeVariants", () => {
       productName: "Chaqueta cortavientos",
       sizeAttrName: "Talla",
       size: "M",
+      sizeFamily: "ropa",
       eppType: null, // eppType casi siempre queda nulo fuera del import XLSX
     })
 
     const summary = await addMissingClothingSizeVariants()
 
     const jacket = summary.results.find((r) => r.familyId === "fam-chaqueta")
-    expect(jacket).toMatchObject({ status: "created", createdSizes: ["XS", "S", "L", "XL", "2XL"] })
+    expect(jacket).toMatchObject({ status: "created", createdSizes: ["S", "L", "XL", "2XL", "3XL"] })
 
     const sizes = await sizesForFamily("fam-chaqueta")
     expect(sizes).toEqual([...CLOTHING_TARGET_SIZES].sort())
@@ -169,6 +178,7 @@ describe("addMissingClothingSizeVariants", () => {
       productName: "Pantalón cargo",
       sizeAttrName: "Talla",
       size: "XXL",
+      sizeFamily: "ropa",
     })
 
     await addMissingClothingSizeVariants()
@@ -184,6 +194,7 @@ describe("addMissingClothingSizeVariants", () => {
       productName: "Pantalón slack",
       sizeAttrName: "Talla",
       size: "M",
+      sizeFamily: "ropa",
     })
 
     const first = await addMissingClothingSizeVariants()
@@ -242,5 +253,134 @@ describe("addMissingClothingSizeVariants", () => {
     const summary = await addMissingClothingSizeVariants()
 
     expect(summary.results.find((r) => r.familyId === "fam-zapato")).toBeUndefined()
+  })
+
+  it("no le inyecta la escala de ropa a un pantalón sizado por número de cintura bajo el atributo genérico 'Talla'", async () => {
+    // El atributo se llama "Talla" igual que en la escala de ropa —el nombre
+    // solo no distingue un pantalón por cintura de un buzo por XS..2XL—, pero
+    // "42" no es una letra de esa escala: sin el guard numérico, el backfill
+    // le habría creado las seis tallas XS..2XL a un pantalón que se vende por
+    // número.
+    await createFamilyWithVariant({
+      familyId: "fam-pantalon-cintura-generico",
+      canonicalName: "Pantalón Gabardina",
+      productName: "Pantalón Gabardina",
+      sizeAttrName: "Talla",
+      size: "42",
+    })
+
+    const summary = await addMissingClothingSizeVariants()
+
+    expect(summary.results.find((r) => r.familyId === "fam-pantalon-cintura-generico")).toBeUndefined()
+    const variants = await inMemoryDb.query.products.findMany({
+      where: eq(schema.products.familyId, "fam-pantalon-cintura-generico"),
+    })
+    expect(variants).toHaveLength(1)
+  })
+
+  it("sí completa una familia de ropa cuya única talla existente es la mayor del rango", async () => {
+    // El criterio de escala es "alguna etiqueta no es numérica", no "alguna
+    // está en CLOTHING_TARGET_SIZES": una familia de ropa cuya única talla sea
+    // la mayor del rango no debe quedar excluida por el guard numérico.
+    await createFamilyWithVariant({
+      familyId: "fam-3xl",
+      canonicalName: "Buzo Térmico",
+      productName: "Buzo Térmico",
+      sizeAttrName: "Talla",
+      size: "3XL",
+      sizeFamily: "ropa",
+    })
+
+    const summary = await addMissingClothingSizeVariants()
+
+    const buzo = summary.results.find((r) => r.familyId === "fam-3xl")
+    expect(buzo).toMatchObject({ status: "created" })
+    expect(buzo?.createdSizes).toEqual(["S", "M", "L", "XL", "2XL"])
+
+    const sizes = await sizesForFamily("fam-3xl")
+    expect(sizes).toEqual([...CLOTHING_TARGET_SIZES].sort())
+  })
+
+  it("no toca una familia cuyo atributo de talla no declara `size_family`", async () => {
+    // El criterio «el atributo se llama Talla» alcanzaba a todo el catálogo
+    // importado, donde `size_family` es NULL en las 230 filas: botines `N41`,
+    // guantes `N-9` y una capa `Única` entraban por igual y recibían seis
+    // variantes XS..2XL inventadas. Ahora la familia tiene que declararse.
+    await createFamilyWithVariant({
+      familyId: "fam-sin-familia",
+      canonicalName: "Botín V-Flex V73 Microfiber",
+      productName: "Botín V-Flex V73 Microfiber",
+      sizeAttrName: "Talla",
+      size: "N41",
+      sizeFamily: null,
+    })
+
+    const summary = await addMissingClothingSizeVariants()
+
+    expect(summary.results.some((result) => result.familyId === "fam-sin-familia")).toBe(false)
+    expect(summary.variantsCreated).toBe(0)
+    const variants = await inMemoryDb.query.products.findMany({
+      where: eq(schema.products.familyId, "fam-sin-familia"),
+    })
+    expect(variants).toHaveLength(1)
+  })
+
+  it("no toca una familia declarada de otra familia de tallas", async () => {
+    await createFamilyWithVariant({
+      familyId: "fam-calzado-declarado",
+      canonicalName: "Botín Proflex",
+      productName: "Botín Proflex",
+      sizeAttrName: "Talla",
+      size: "41",
+      sizeFamily: "calzado",
+    })
+
+    const summary = await addMissingClothingSizeVariants()
+
+    expect(summary.results.some((result) => result.familyId === "fam-calzado-declarado")).toBe(false)
+    expect(summary.variantsCreated).toBe(0)
+  })
+
+  it("en dry-run informa lo que crearía y no escribe nada", async () => {
+    await createFamilyWithVariant({
+      familyId: "fam-dry",
+      canonicalName: "Chaqueta Activex micropolar",
+      productName: "Chaqueta Activex micropolar",
+      sizeAttrName: "Talla",
+      size: "M",
+      sizeFamily: "ropa",
+    })
+
+    const summary = await addMissingClothingSizeVariants({ dryRun: true })
+
+    expect(summary.dryRun).toBe(true)
+    expect(summary.variantsCreated).toBe(5)
+    expect(summary.results[0]!.createdSizes).toEqual(["S", "L", "XL", "2XL", "3XL"])
+    // Lo informado no se escribió: la familia sigue con su única variante.
+    const variants = await inMemoryDb.query.products.findMany({
+      where: eq(schema.products.familyId, "fam-dry"),
+    })
+    expect(variants).toHaveLength(1)
+  })
+
+  it("no le inyecta la escala de ropa a una familia de guantes", async () => {
+    // El importador dejaba los guantes con `Talla: T/L`, que normaliza a
+    // "talla", así que este backfill los tomaba por ropa y les creaba
+    // XS..2XL. Con `Talla guantes` la familia queda fuera.
+    await createFamilyWithVariant({
+      familyId: "fam-guante",
+      canonicalName: "Guante Nitrilo Showa",
+      productName: "Guante Nitrilo Showa",
+      sizeAttrName: "Talla guantes",
+      size: "L",
+    })
+
+    const summary = await addMissingClothingSizeVariants()
+
+    expect(summary.results.find((r) => r.familyId === "fam-guante")).toBeUndefined()
+    const variants = await inMemoryDb.query.products.findMany({
+      where: eq(schema.products.familyId, "fam-guante"),
+    })
+    expect(variants).toHaveLength(1)
   })
 })
