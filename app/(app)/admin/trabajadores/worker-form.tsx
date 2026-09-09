@@ -10,15 +10,14 @@ import {
 } from "@/components/ui/select"
 import { createWorker, updateWorker } from "./actions"
 import { sizeFamilyForWorkerField } from "@/lib/products/size-catalog"
+import type { WorkerSizeField } from "@/lib/products/product-size"
 import type { SizeFamilyOption } from "@/app/(app)/admin/productos/product-form.types"
 
-/**
- * Qué campo del padrón alimenta cada familia del catálogo. Ni la lista de
- * tallas ni el cruce viven acá: el cruce se deriva de `attributeName` con
- * `sizeFamilyForWorkerField`, y las tallas salen de `size_catalog`. Era la
- * cuarta copia del mismo mapa y la que más se había separado del resto.
- */
-const SIZE_FIELDS = ["sizeTop", "sizeBottom", "sizeShoe", "sizeGloves", "sizeHelmet"] as const
+// Qué campo del padrón alimenta cada familia del catálogo ya no vive acá: el
+// cruce se deriva de `attributeName` con `sizeFamilyForWorkerField` y las
+// tallas salen de `size_catalog`. Era la cuarta copia del mismo mapa y la que
+// más se había separado del resto. El tipo del campo lo declara
+// `product-size.ts`, que es el dueño del cruce.
 
 interface WorksiteOption { id: string; name: string }
 
@@ -48,7 +47,7 @@ interface WorkerFormProps {
 
 export function WorkerForm({ open, onClose, editWorker, worksites, sizeFamilies }: WorkerFormProps) {
   const codesByFamily = new Map(sizeFamilies.map((family) => [family.family, family.codes]))
-  const presetsFor = (field: (typeof SIZE_FIELDS)[number]) => {
+  const presetsFor = (field: WorkerSizeField) => {
     const family = sizeFamilyForWorkerField(field)
     return (family ? codesByFamily.get(family) : undefined) ?? []
   }
