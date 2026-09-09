@@ -7,7 +7,13 @@
  * que estos casos vengan del catálogo real y no de nombres inventados.
  */
 import { describe, expect, it } from "vitest"
-import { inferEppItemType, EPP_TYPE_TO_BODY_PART_CODE } from "./epp-import.types"
+import {
+  inferEppItemType,
+  EPP_TYPE_TO_BODY_PART_CODE,
+  EPP_TYPE_TO_SIZE_FAMILY,
+  sizeFamilyForEppType,
+} from "./epp-import.types"
+import { SIZE_FAMILIES } from "@/lib/products/size-catalog"
 
 const bodyPart = (name: string) => {
   const item = inferEppItemType(name)
@@ -73,6 +79,48 @@ describe("inferEppItemType", () => {
       "ESTUCHE PORTA MINIESCAPE",
     ]) {
       expect(bodyPart(name), name).toBeNull()
+    }
+  })
+})
+
+describe("sizeFamilyForEppType", () => {
+  const familyOf = (name: string) => sizeFamilyForEppType(inferEppItemType(name))
+
+  it("asigna la familia por el ítem que declara el nombre", () => {
+    expect(familyOf("Guante Nitrilo Showa")).toBe("guantes")
+    expect(familyOf("Botin de seguridad SteelPro")).toBe("calzado")
+    expect(familyOf("Bota de agua")).toBe("calzado")
+    expect(familyOf("Casco Activex I")).toBe("casco")
+    expect(familyOf("Casquete ABS Porta Visor")).toBe("casco")
+    expect(familyOf("Overol Activex Piloto Poplin")).toBe("ropa")
+    expect(familyOf("Chaleco reflectante")).toBe("ropa")
+  })
+
+  it("sizea pantalones y jardineras con la escala de letras que usa el catálogo", () => {
+    // EPP-083 «JARDINERA TERMICA 2XL» lleva `Talla: XS`, y el backfill de ropa
+    // (`epp-clothing-sizes.ts`) trata pantalones como escala XS..2XL. La familia
+    // `pantalon` son cinturas 28..48 y la usa el padrón, no el catálogo.
+    expect(familyOf("Pantalón de trabajo")).toBe("ropa")
+    expect(familyOf("JARDINERA TERMICA")).toBe("ropa")
+  })
+
+  it("devuelve null para los ítems que no tienen escala de talla", () => {
+    expect(familyOf("Lente Activex FX III sellado")).toBeNull()
+    expect(familyOf("Mascarilla plegable KN95 sin válvula")).toBeNull()
+    expect(familyOf("Arnés de cuerpo completo")).toBeNull()
+    expect(familyOf("Fono HL Verishield cintillo")).toBeNull()
+    expect(familyOf("Respirador media cara")).toBeNull()
+  })
+
+  it("devuelve null cuando el nombre no declara ningún ítem", () => {
+    expect(sizeFamilyForEppType(null)).toBeNull()
+    expect(sizeFamilyForEppType("no-es-un-tipo")).toBeNull()
+  })
+
+  it("sólo usa familias que el catálogo canónico declara", () => {
+    const known = new Set(SIZE_FAMILIES.map((definition) => definition.family))
+    for (const family of Object.values(EPP_TYPE_TO_SIZE_FAMILY)) {
+      expect(known).toContain(family)
     }
   })
 })

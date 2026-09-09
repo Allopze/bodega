@@ -93,6 +93,52 @@ export const EPP_TYPE_TO_BODY_PART_CODE: Partial<Record<(typeof EPP_TYPES)[numbe
 }
 
 /**
+ * Familia de talla (`lib/products/size-catalog.ts`) que corresponde al
+ * vocabulario de ítem de este importador. Gemelo de
+ * `EPP_TYPE_TO_BODY_PART_CODE`: uno traduce a la zona corporal con que
+ * Prevención acredita, éste al eje por el que el ítem se sizea.
+ *
+ * Un tipo sin escala de talla —lentes, mascarillas, arnés, filtros— no entra
+ * al mapa: su talla, si la trae la planilla, queda como el atributo genérico
+ * `Talla` sin familia. Devolver `null` antes que adivinar es el mismo criterio
+ * de `classifyEppTypeIdByName`.
+ *
+ * Pantalones y jardineras van a `ropa` y no a `pantalon`: el catálogo los
+ * sizea con la escala de letras (EPP-083 «Jardinera Térmica» lleva `Talla: XS`,
+ * y `addMissingClothingSizeVariants` ya los trata como XS..2XL). La familia
+ * `pantalon` es la numeración de cintura del padrón (`workers.size_bottom`),
+ * que sólo el asistente de variantes usa a propósito.
+ */
+export const EPP_TYPE_TO_SIZE_FAMILY: Partial<Record<(typeof EPP_TYPES)[number], string>> = {
+  guante: "guantes",
+  botin: "calzado",
+  zapato: "calzado",
+  bota: "calzado",
+  casco: "casco",
+  casquete: "casco",
+  gorro: "casco",
+  chaleco: "ropa",
+  buzo: "ropa",
+  traje: "ropa",
+  pantalon: "ropa",
+  chaqueta: "ropa",
+  camisa: "ropa",
+  polera: "ropa",
+  blusa: "ropa",
+  overol: "ropa",
+  jardinera: "ropa",
+  "primera capa": "ropa",
+  capa: "ropa",
+  coleto: "ropa",
+}
+
+/** Familia de talla de un tipo de ítem, o `null` si ese ítem no se sizea. */
+export function sizeFamilyForEppType(eppType: string | null): string | null {
+  if (!eppType) return null
+  return EPP_TYPE_TO_SIZE_FAMILY[eppType as (typeof EPP_TYPES)[number]] ?? null
+}
+
+/**
  * Accesorios cuyo nombre menciona el EPP al que se montan: "Fono ... p/casco"
  * es protección auditiva, no de cabeza. La mención se descarta antes de buscar
  * el tipo para que gane el ítem propio del producto y no la pieza citada.
