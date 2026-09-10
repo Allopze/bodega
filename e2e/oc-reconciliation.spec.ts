@@ -70,6 +70,12 @@ test.describe("Conciliación OC-factura-recepción", () => {
 
     // El filtro se activa desde el chip del header, no desde la barra: sin un
     // control visible, la lista quedaba recortada sin explicación ni salida.
+    // La salida es el chip de filtro activo de `FilterToolbar`, hoy un
+    // <button aria-label="Eliminar filtro Factura">. Antes esto buscaba un
+    // <link> llamado "Quitar filtro de facturas pendientes": el control se
+    // generalizó a `Eliminar filtro {label}` y el nombre viejo no existe en
+    // ninguna parte, así que el poll no clickeaba nada y agotaba su timeout
+    // afirmando una regresión que no era tal.
     //
     // Dos problemas se sumaban acá, y el segundo escondía al primero:
     //
@@ -84,7 +90,7 @@ test.describe("Conciliación OC-factura-recepción", () => {
     //      agota sus 15 s con una sola medición. El timeout corto es lo que lo
     //      mantiene muestreando.
     await expect.poll(async () => {
-      const chip = page.getByRole("link", { name: /Quitar filtro de facturas pendientes/i })
+      const chip = page.getByRole("button", { name: /Eliminar filtro Factura/i })
       if (await chip.count()) await chip.click({ timeout: 2_000 }).catch(() => undefined)
       return page.url()
     }, { timeout: 15_000 }).not.toMatch(/factura=pendiente/)
@@ -144,6 +150,29 @@ test.describe("Conciliación OC-factura-recepción", () => {
     await expect(page.getByText("10 / 10 / 10")).toBeVisible()
     await expect(page.getByText("Recepciones: REC-2026-0195-1")).toBeVisible()
     await expect(page.getByText("Recepciones: REC-2026-0195-2")).toBeVisible()
+  })
+
+  // La unidad ausente no es una discrepancia sino evidencia incompleta: el
+  // `UnmdItem` del DTE es opcional. Antes bloqueaba la OC en revisión sin que
+  // nadie pudiera resolverla, y la tabla igual imprimía `$0 (0.0%)` para una
+  // comparación de precio que el motor no había corrido.
+  test("una factura sin unidad declarada concilia y deja el supuesto a la vista", async ({ page }) => {
+    await page.goto("/compras/oc-unidad-ausente-e2e?tab=facturacion")
+    await expect(page.getByText("Conciliada").first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(/asumiendo que la unidad es la misma que la de la OC/)).toBeVisible()
+    await expect(page.getByText("5 / 5 / 5")).toBeVisible()
+    // El precio sí se compara: apagarlo dejaba sin control a las líneas peor
+    // documentadas, que son justamente las que más lo necesitan.
+    await expect(page.getByText("$0 (0.0%)")).toBeVisible()
+    await expect(page.getByRole("button", { name: "Aceptar diferencias" })).toHaveCount(0)
+  })
+
+  test("una factura con otra unidad exige revisión y no afirma diferencia cero", async ({ page }) => {
+    await page.goto("/compras/oc-unidad-distinta-e2e?tab=facturacion")
+    await expect(page.getByText("Revisión requerida").first()).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText("Unidad documental distinta de la OC")).toBeVisible()
+    await expect(page.getByText("No comparable")).toBeVisible()
+    await expect(page.getByText("$0 (0.0%)")).toHaveCount(0)
   })
 
   test("la recepción lista su factura y permite adjuntar otra", async ({ page }) => {

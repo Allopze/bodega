@@ -16,6 +16,10 @@ const CRITICAL_PAGES = [
   { path: "/entregas",         name: "Entregas" },
   { path: "/entregas/del-e2e/print", name: "Comprobante de entrega" },
   { path: "/compras/oc-e2e/print", name: "Orden de compra" },
+  // La ficha de OC no estaba auditada, sólo su vista de impresión. Se entra
+  // por la pestaña de facturación, que es donde vive la conciliación.
+  { path: "/compras/oc-unidad-ausente-e2e?tab=facturacion",  name: "OC — conciliación sin unidad declarada" },
+  { path: "/compras/oc-unidad-distinta-e2e?tab=facturacion", name: "OC — conciliación con unidad distinta" },
   { path: "/sst/sst-eval-e2e/print", name: "Acta SST" },
   { path: "/trazabilidad",     name: "Trazabilidad" },
   { path: "/reportes",         name: "Reportes" },

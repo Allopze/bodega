@@ -1436,6 +1436,104 @@ async function main() {
     },
   ])
 
+  // Unidad documental: dos escenarios que el conciliador trata distinto y que
+  // antes se confundían en uno solo.
+  //
+  //   - Ausente (`UnmdItem` es opcional en el DTE): no es una discrepancia,
+  //     es un dato que falta. La OC concilia y la ficha declara el supuesto.
+  //   - Distinta y conocida: sí es evidencia contradictoria. El precio no se
+  //     compara y la celda dice "No comparable".
+  //
+  // Van en OC propias para que ninguno de los dos mute al otro ni al fixture
+  // de dos entregas, y así el orden de la suite no importa.
+  for (const caso of [
+    { sufijo: "ausente",  code: "OC-2026-0196", unidad: null,  estado: "matched" as const },
+    { sufijo: "distinta", code: "OC-2026-0197", unidad: "kg",  estado: "needs_review" as const },
+  ]) {
+    const ocId = `oc-unidad-${caso.sufijo}-e2e`
+    const itemId = `oc-item-unidad-${caso.sufijo}-e2e`
+    const recId = `rec-unidad-${caso.sufijo}-e2e`
+    const invId = `invoice-unidad-${caso.sufijo}-e2e`
+    await db.insert(schema.purchaseOrders).values({
+      id: ocId,
+      code: caso.code,
+      worksiteId: "ws-e2e",
+      supplierId: "sup-e2e",
+      createdBy: "user-admin-e2e",
+      status: "closed",
+      deliveryMode: "directo_faena",
+      invoiceReconciliationStatus: caso.estado,
+      issuedAt: now,
+      sentAt: now,
+      netAmount: 5000,
+      taxAmount: 950,
+      totalAmount: 5950,
+      notes: `Fixture E2E de unidad documental ${caso.sufijo}`,
+      createdAt: "2026-07-06T12:00:00.000Z",
+      updatedAt: now,
+    })
+    await db.insert(schema.purchaseOrderItems).values({
+      id: itemId,
+      purchaseOrderId: ocId,
+      productId: "prod-e2e",
+      productNameFree: `EPP con unidad ${caso.sufijo} E2E`,
+      quantity: 5,
+      unitOfMeasure: "unidad",
+      unitPrice: 1000,
+      subtotal: 5000,
+      status: "issued",
+      quantityReceived: 5,
+      sortOrder: 1,
+    })
+    await db.insert(schema.receipts).values({
+      id: recId,
+      code: `REC-2026-0196-${caso.sufijo}`,
+      purchaseOrderId: ocId,
+      receivedBy: "user-admin-e2e",
+      receivedAt: "2026-07-06T12:00:00.000Z",
+      locationType: "faena",
+      worksiteId: "ws-e2e",
+      dispatchGuideNo: `GD-0196-${caso.sufijo}`,
+      status: "closed",
+      createdAt: now,
+    })
+    await db.insert(schema.receiptItems).values({
+      id: `rec-item-unidad-${caso.sufijo}-e2e`,
+      receiptId: recId,
+      purchaseOrderItemId: itemId,
+      quantityReceived: 5,
+      status: "received",
+    })
+    await db.insert(schema.purchaseOrderInvoices).values({
+      id: invId,
+      purchaseOrderId: ocId,
+      invoiceNumber: `FAC-UNIDAD-${caso.sufijo.toUpperCase()}`,
+      amount: 5950,
+      issueDate: "2026-07-06",
+      fileName: `factura-unidad-${caso.sufijo}-e2e.pdf`,
+      filePath: `storage/purchase-orders/factura-unidad-${caso.sufijo}-e2e.pdf`,
+      uploadedBy: "user-admin-e2e",
+      supplierIdentityStatus: "verified",
+      supplierIdentitySource: "dte_xml",
+      uploadedAt: now,
+    })
+    await db.insert(schema.purchaseOrderInvoiceItems).values({
+      id: `invoice-item-unidad-${caso.sufijo}-e2e`,
+      invoiceId: invId,
+      purchaseOrderItemId: itemId,
+      productName: `EPP con unidad ${caso.sufijo} E2E`,
+      unitOfMeasure: caso.unidad,
+      quantity: 5,
+      unitPrice: 1000,
+      subtotal: 5000,
+    })
+    await db.insert(schema.purchaseOrderInvoiceReceipts).values({
+      invoiceId: invId,
+      receiptId: recId,
+      linkedBy: "user-admin-e2e",
+    })
+  }
+
   // Factura anticipada completa sin recepción: debe mostrarse como trabajo de
   // Recepción y nunca como una diferencia comercial aceptable.
   await db.insert(schema.purchaseOrders).values({
@@ -1801,8 +1899,13 @@ async function main() {
     id: "dte-line:dte-e2e-candidato-oc:1",
     dteDocumentId: "dte-e2e-candidato-oc",
     lineNumber: 1,
-    productCode: "PROD-E2E",
-    productName: "Insumo recibido sin factura E2E",
+    // Código y nombre del producto de catálogo enlazado (`prod-e2e`), no los
+    // del `productNameFree` de la línea de OC: `itemName()` resuelve
+    // `product?.name ?? productNameFree`, así que un DTE con el nombre libre
+    // no calzaba con nada y la sugerencia salía "Confianza baja · 0/1". La
+    // fixture describía un DTE que ningún proveedor real emitiría.
+    productCode: "E2E-001",
+    productName: "Guante E2E",
     description: "Línea tributaria simulada para la sugerencia de OC",
     unitOfMeasure: "unidad",
     quantity: 5,
@@ -2562,8 +2665,8 @@ async function cacheCandidateDteFiles() {
     + '<Encabezado><IdDoc><TipoDTE>33</TipoDTE><Folio>900004</Folio><FchEmis>2026-07-18</FchEmis></IdDoc>'
     + '<Emisor><RUTEmisor>76.000.000-0</RUTEmisor><RznSoc>Proveedor E2E</RznSoc></Emisor>'
     + '<Totales><MntNeto>5000</MntNeto><IVA>950</IVA><MntTotal>5950</MntTotal></Totales></Encabezado>'
-    + '<Detalle><NroLinDet>1</NroLinDet><CdgItem><TpoCodigo>INT1</TpoCodigo><VlrCodigo>PROD-E2E</VlrCodigo></CdgItem>'
-    + '<NmbItem>Insumo recibido sin factura E2E</NmbItem><QtyItem>5</QtyItem><UnmdItem>unidad</UnmdItem>'
+    + '<Detalle><NroLinDet>1</NroLinDet><CdgItem><TpoCodigo>INT1</TpoCodigo><VlrCodigo>E2E-001</VlrCodigo></CdgItem>'
+    + '<NmbItem>Guante E2E</NmbItem><QtyItem>5</QtyItem><UnmdItem>unidad</UnmdItem>'
     + '<PrcItem>1000</PrcItem><MontoItem>5000</MontoItem></Detalle>'
     + '</Documento></DTE></SetDTE></EnvDTE>'
 
