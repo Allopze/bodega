@@ -15,12 +15,11 @@ import {
   listPdtpReconciliationCandidates,
   listPdtpProgramSheets,
 } from "@/lib/services/prevention-pdtp"
-import { listScopedWorksites } from "@/lib/services/ppa"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
-import { getPendingPdtpApprovalsForView, getPdtpChangeLog } from "@/lib/services/pdtp"
+import { getPendingPdtpApprovalsForView, getPdtpChangeLog, listAccessiblePdtpProgramWorksites } from "@/lib/services/pdtp"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { MetaBadge } from "@/components/states/state-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import {
@@ -89,7 +88,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const scope = resolveWorksiteScope(session)
   const worksiteIds: string[] | "all" =
     scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : []
-  const worksites = await listScopedWorksites(worksiteIds)
+  const worksites = await listAccessiblePdtpProgramWorksites(programId, worksiteIds)
   const selectedWorksiteId = resolveSelectedWorksiteId(requestedWorksite, worksites)
   const [[view, indicators, integral], approvalProgress] = await Promise.all([
     selectedWorksiteId
@@ -155,10 +154,12 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
               </Button>
             )}
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="secondary" size="sm" aria-label="Más acciones">
-                  <DotsThree size={16} weight="bold" />
-                </Button>
+              <DropdownMenuTrigger
+                type="button"
+                className={buttonVariants({ variant: "secondary", size: "sm" })}
+                aria-label="Más acciones"
+              >
+                <DotsThree size={16} weight="bold" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem asChild>

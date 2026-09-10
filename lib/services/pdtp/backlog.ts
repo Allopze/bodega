@@ -1,6 +1,6 @@
-import { and, count, desc, eq, like } from "drizzle-orm"
+import { and, count, desc, eq, inArray, like } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpFulfillmentEvents, pdtpPrograms } from "@/db/schema"
+import { pdtpFulfillmentEvents, pdtpPrograms, pdtpProgramWorksites } from "@/db/schema"
 import { computePdtpProgramContentDigest } from "@/lib/services/pdtp/content-digest"
 import { NO_ACTIVE_PROGRAM_LAST_ERROR_TAG } from "@/lib/services/pdtp/fulfillment"
 
@@ -14,13 +14,13 @@ import { NO_ACTIVE_PROGRAM_LAST_ERROR_TAG } from "@/lib/services/pdtp/fulfillmen
  * activo y entran al digest: es el único lugar donde alguien notaría que lo
  * vigente ya no es lo firmado.
  *
- * Los dos `count()` NO filtran por `programId`: un evento en `error` no llegó
+ * Los conteos NO filtran sólo por `programId`: un evento en `error` no llegó
  * a resolver a qué programa acredita —`recordPdtpFulfillmentEvent` sólo
  * escribe `program_id` en la rama de éxito—, así que filtrar por programa
  * dejaría exactamente los eventos que este panel existe para mostrar fuera
- * del conteo. En la práctica sólo hay un programa vivo (`active`/`draft`/
- * `in_review`) a la vez, que es el que importa. `digestDrift` sí es por
- * programa: compara la huella de ESTE programa contra lo que tiene firmado.
+ * del conteo. Cuando el programa declara membresía, sí se restringen a esas
+ * faenas; de lo contrario se conserva el comportamiento histórico global.
+ * `digestDrift` compara la huella de ESTE programa contra lo firmado.
  */
 export async function countPdtpFulfillmentBacklog(programId: string): Promise<{
   pending: number
@@ -37,18 +37,25 @@ export async function countPdtpFulfillmentBacklog(programId: string): Promise<{
   lastError: string | null
   digestDrift: boolean
 }> {
+  const programMembers = await db.select({ worksiteId: pdtpProgramWorksites.worksiteId })
+    .from(pdtpProgramWorksites)
+    .where(and(eq(pdtpProgramWorksites.programId, programId), eq(pdtpProgramWorksites.isActive, true)))
+  const memberScope = programMembers.length > 0
+    ? inArray(pdtpFulfillmentEvents.worksiteId, programMembers.map((row) => row.worksiteId))
+    : undefined
   const [[pendingRow], [erroredRow], [erroredWaitingRow], [lastErrorEvent], [program]] = await Promise.all([
     db.select({ total: count() }).from(pdtpFulfillmentEvents)
-      .where(eq(pdtpFulfillmentEvents.status, "pending")),
+      .where(and(eq(pdtpFulfillmentEvents.status, "pending"), memberScope)),
     db.select({ total: count() }).from(pdtpFulfillmentEvents)
-      .where(eq(pdtpFulfillmentEvents.status, "error")),
+      .where(and(eq(pdtpFulfillmentEvents.status, "error"), memberScope)),
     db.select({ total: count() }).from(pdtpFulfillmentEvents)
       .where(and(
         eq(pdtpFulfillmentEvents.status, "error"),
         like(pdtpFulfillmentEvents.lastError, `${NO_ACTIVE_PROGRAM_LAST_ERROR_TAG}%`),
+        memberScope,
       )),
     db.select({ lastError: pdtpFulfillmentEvents.lastError }).from(pdtpFulfillmentEvents)
-      .where(eq(pdtpFulfillmentEvents.status, "error"))
+      .where(and(eq(pdtpFulfillmentEvents.status, "error"), memberScope))
       .orderBy(desc(pdtpFulfillmentEvents.updatedAt))
       .limit(1),
     db.select({ contentDigest: pdtpPrograms.contentDigest }).from(pdtpPrograms)

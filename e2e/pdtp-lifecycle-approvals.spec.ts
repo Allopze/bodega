@@ -48,6 +48,21 @@ test.describe("PDTP — Ciclo de vida y aprobaciones", () => {
     await expect(page.getByText("Versión congelada")).toBeVisible()
   })
 
+  test("el menú de acciones hidrata sin errores y se puede abrir", async ({ page }) => {
+    const hydrationErrors: string[] = []
+    page.on("console", (message) => {
+      if (/hydration|server rendered html|did not match/i.test(message.text())) hydrationErrors.push(message.text())
+    })
+    page.on("pageerror", (error) => {
+      if (/hydration|server rendered html|did not match/i.test(error.message)) hydrationErrors.push(error.message)
+    })
+
+    await page.goto("/prevencion/pdtp/pdtp-prog-e2e")
+    await page.getByRole("button", { name: "Más acciones" }).click()
+    await expect(page.getByRole("menuitem", { name: "Exportar programa" })).toBeVisible()
+    expect(hydrationErrors).toEqual([])
+  })
+
   // Usan pdtp-exec-approve-e2e (M7S2) / pdtp-exec-reject-e2e (M7S3), no
   // pdtp-exec-e2e (M7S1): ese lo consume el flujo de checklist de
   // e2e/pdtp-flow.spec.ts y aprobar/rechazarlo aquí lo dejaría en un estado

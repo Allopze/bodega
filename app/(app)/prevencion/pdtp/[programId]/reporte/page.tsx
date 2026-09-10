@@ -4,7 +4,7 @@ import { redirect, notFound } from "next/navigation"
 import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getPdtpManagementReport, getPdtpProgram } from "@/lib/services/prevention-pdtp"
-import { listScopedWorksites } from "@/lib/services/ppa"
+import { listAccessiblePdtpProgramWorksites } from "@/lib/services/pdtp"
 import { resolveSelectedWorksiteId } from "../../pdtp-context"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
@@ -34,7 +34,7 @@ export default async function PdtpManagementReportPage({ params, searchParams }:
 
   const scope = resolveWorksiteScope(session)
   const worksiteIds: string[] | "all" = scope.mode === "all" ? "all" : scope.mode === "some" ? scope.ids : []
-  const worksites = await listScopedWorksites(worksiteIds)
+  const worksites = await listAccessiblePdtpProgramWorksites(programId, worksiteIds)
   const selectedWorksiteId = resolveSelectedWorksiteId(query.faena, worksites)
 
   const monthFrom = Number.parseInt(query.desde ?? "", 10)

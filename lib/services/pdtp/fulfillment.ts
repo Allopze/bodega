@@ -33,6 +33,7 @@ import { db, type DB, type Tx } from "@/db"
 import {
   pdtpActivities,
   pdtpActivityWorksiteExclusions,
+  pdtpActivityWorksiteParams,
   pdtpFulfillmentEvents,
   pdtpResponsibleCatalog,
   permissions,
@@ -777,17 +778,41 @@ export async function assertPdtpFulfillmentCoverage(programId: string, client: Q
     .where(and(eq(pdtpActivities.programId, programId), eq(pdtpActivities.status, "active")))
   if (activities.length === 0) return []
 
-  const declaredGlobally = await activityNumbersDeclaredGlobally(client)
-  const { byNumber: declaredPerWorksite, planNumbers } = await activityNumbersDeclaredPerWorksite(client)
-  const { global: usableGlobally, perWorksite: usablePerWorksite } = await usablePdtpInstrumentNumbers(client)
-  const worksiteIds = await programWorksiteIds(client, programId)
-  const worksiteNameById = new Map(
-    (await client.select({ id: worksites.id, name: worksites.name }).from(worksites)).map((row) => [row.id, row.name]),
-  )
-  const responsibleRows = await client.select().from(pdtpResponsibleCatalog)
+  const activityIds = activities.map((activity) => activity.id)
+  const [
+    declaredGlobally,
+    { byNumber: declaredPerWorksite, planNumbers },
+    { global: usableGlobally, perWorksite: usablePerWorksite },
+    worksiteIds,
+    worksiteRows,
+    responsibleRows,
+    permissionsByRole,
+    excludedByActivity,
+    manualSubjectRows,
+  ] = await Promise.all([
+    activityNumbersDeclaredGlobally(client),
+    activityNumbersDeclaredPerWorksite(client),
+    usablePdtpInstrumentNumbers(client),
+    programWorksiteIds(client, programId),
+    client.select({ id: worksites.id, name: worksites.name }).from(worksites),
+    client.select().from(pdtpResponsibleCatalog),
+    permissionsByRoleName(client),
+    excludedWorksitesByActivity(client, activityIds),
+    client.select({
+      activityId: pdtpActivityWorksiteParams.activityId,
+      worksiteId: pdtpActivityWorksiteParams.worksiteId,
+      expectedSubjectCount: pdtpActivityWorksiteParams.expectedSubjectCount,
+    }).from(pdtpActivityWorksiteParams).where(inArray(pdtpActivityWorksiteParams.activityId, activityIds)),
+  ])
+  const worksiteNameById = new Map(worksiteRows.map((row) => [row.id, row.name]))
   const roleBySlug = new Map(responsibleRows.map((row) => [row.slug, row.roleName ?? row.operatedByRoleName]))
-  const permissionsByRole = await permissionsByRoleName(client)
-  const excludedByActivity = await excludedWorksitesByActivity(client, activities.map((a) => a.id))
+  const manualSubjectWorksitesByActivity = new Map<string, Set<string>>()
+  for (const row of manualSubjectRows) {
+    if ((row.expectedSubjectCount ?? 0) <= 0) continue
+    const ids = manualSubjectWorksitesByActivity.get(row.activityId) ?? new Set<string>()
+    ids.add(row.worksiteId)
+    manualSubjectWorksitesByActivity.set(row.activityId, ids)
+  }
 
   const issues: PdtpFulfillmentCoverageIssue[] = []
   for (const activity of activities) {
@@ -898,14 +923,21 @@ export async function assertPdtpFulfillmentCoverage(programId: string, client: Q
       }
     }
 
-    // El padrón derivado cae a la cantidad planificada cuando no hay fuente
-    // declarada (H11): no es un bloqueo, pero merece señalarse para que no
-    // quede leído como un olvido.
+    // Sin fuente automática, un padrón manual explícito y positivo por cada
+    // faena aplicable es una decisión válida. Sólo se advierte cuando falta al
+    // menos una faena; las excluidas no forman parte del denominador.
     if (activity.indicatorMode === "coverage" && !activity.subjectSource) {
-      issues.push({
-        n: activity.n, activity: activity.activity, status: "decision_required",
-        reason: "Se mide por cobertura sin fuente de padrón declarada: cae a la cantidad planificada.",
-      })
+      const excluded = excludedByActivity.get(activity.id) ?? new Set<string>()
+      const applicableWorksiteIds = worksiteIds.filter((id) => !excluded.has(id))
+      const configuredWorksiteIds = manualSubjectWorksitesByActivity.get(activity.id) ?? new Set<string>()
+      const missingWorksiteIds = applicableWorksiteIds.filter((id) => !configuredWorksiteIds.has(id))
+      if (missingWorksiteIds.length > 0) {
+        const names = missingWorksiteIds.map((id) => worksiteNameById.get(id) ?? id)
+        issues.push({
+          n: activity.n, activity: activity.activity, status: "decision_required",
+          reason: `Se mide por cobertura sin fuente automática y falta definir un padrón manual positivo en: ${names.join(", ")}.`,
+        })
+      }
     }
   }
 

@@ -41,8 +41,11 @@ export async function usablePdtpInstrumentNumbers(client: QueryClient = db): Pro
     client.select({ n: preventionInspectionTemplates.pdtpActivityNumbers })
       .from(preventionInspectionTemplates)
       .where(eq(preventionInspectionTemplates.status, "approved")),
-    client.select({ id: preventionTrainingCourses.id, n: preventionTrainingCourses.pdtpActivityNumbers })
-      .from(preventionTrainingCourses),
+    client.select({
+      id: preventionTrainingCourses.id,
+      n: preventionTrainingCourses.pdtpActivityNumbers,
+      minimumDurationMinutes: preventionTrainingCourses.minimumDurationMinutes,
+    }).from(preventionTrainingCourses),
     client.select({
       n: sstDocumentTypes.pdtpActivityNumbers,
       ack: sstDocumentTypes.pdtpAcknowledgmentActivityNumbers,
@@ -54,11 +57,18 @@ export async function usablePdtpInstrumentNumbers(client: QueryClient = db): Pro
   // hace el preflight para su propio reporte no-bloqueante.
   const publishedVersions = courses.length === 0 ? [] : await client.select({
     courseId: preventionTrainingCourseVersions.courseId,
+    durationMinutes: preventionTrainingCourseVersions.durationMinutes,
   }).from(preventionTrainingCourseVersions).where(and(
     inArray(preventionTrainingCourseVersions.courseId, courses.map((course) => course.id)),
     eq(preventionTrainingCourseVersions.status, "published"),
   ))
-  const publishedCourseIds = new Set(publishedVersions.map((row) => row.courseId))
+  const minimumDurationByCourseId = new Map(courses.map((course) => [course.id, course.minimumDurationMinutes]))
+  const publishedCourseIds = new Set<string>()
+  for (const row of publishedVersions) {
+    if (row.durationMinutes >= (minimumDurationByCourseId.get(row.courseId) ?? Number.POSITIVE_INFINITY)) {
+      publishedCourseIds.add(row.courseId)
+    }
+  }
 
   const global = new Set<number>()
   for (const row of approvedTemplates) for (const n of (row.n as number[] | null) ?? []) global.add(n)

@@ -74,6 +74,25 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
     expect(resolveProgramWorksiteIds(["ws-2"], ["ws-1"], ["ws-1", "ws-2", "ws-3"])).toEqual([])
   })
 
+  it("lista para la UI solo las faenas miembro que también están dentro del alcance", async () => {
+    const services = await import("@/lib/services/pdtp/worksites")
+    const listAccessiblePdtpProgramWorksites = Reflect.get(services, "listAccessiblePdtpProgramWorksites") as
+      | ((programId: string, scope: "all" | string[]) => Promise<Array<{ id: string; name: string; code: string }>>)
+      | undefined
+    expect(listAccessiblePdtpProgramWorksites).toBeTypeOf("function")
+
+    const { program } = await createDraftProgramWithActivity(2050)
+    await services.setPdtpProgramWorksites(program.id, ["ws-1", "ws-2"], "user-1")
+
+    await expect(listAccessiblePdtpProgramWorksites!(program.id, "all"))
+      .resolves.toEqual([
+        expect.objectContaining({ id: "ws-1", name: "Faena 1" }),
+        expect.objectContaining({ id: "ws-2", name: "Faena 2" }),
+      ])
+    await expect(listAccessiblePdtpProgramWorksites!(program.id, ["ws-2", "ws-3"]))
+      .resolves.toEqual([expect.objectContaining({ id: "ws-2", name: "Faena 2" })])
+  })
+
   it("setPdtpProgramWorksites declara membresía y assertPdtpWorksiteCanOperateProgram falla cerrado fuera de ella", async () => {
     const { setPdtpProgramWorksites, assertPdtpWorksiteCanOperateProgram } = await import("@/lib/services/pdtp/worksites")
     const { program } = await createDraftProgramWithActivity(2040)

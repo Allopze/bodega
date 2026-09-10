@@ -148,15 +148,20 @@ export async function findPdtpAccreditationWiringGaps(): Promise<PdtpWiringRepor
     code: preventionTrainingCourses.code,
     name: preventionTrainingCourses.name,
     numbers: preventionTrainingCourses.pdtpActivityNumbers,
+    minimumDurationMinutes: preventionTrainingCourses.minimumDurationMinutes,
   }).from(preventionTrainingCourses).where(eq(preventionTrainingCourses.isActive, true))
   const pdtpCourses = courses.filter((course) => ((course.numbers as number[] | null) ?? []).length > 0)
   const publishedVersions = pdtpCourses.length === 0 ? [] : await db.select({
     courseId: preventionTrainingCourseVersions.courseId,
+    durationMinutes: preventionTrainingCourseVersions.durationMinutes,
   }).from(preventionTrainingCourseVersions).where(and(
     inArray(preventionTrainingCourseVersions.courseId, pdtpCourses.map((course) => course.id)),
     eq(preventionTrainingCourseVersions.status, "published"),
   ))
-  const publishedCourseIds = new Set(publishedVersions.map((row) => row.courseId))
+  const minimumDurationByCourseId = new Map(pdtpCourses.map((course) => [course.id, course.minimumDurationMinutes]))
+  const publishedCourseIds = new Set(publishedVersions
+    .filter((row) => row.durationMinutes >= (minimumDurationByCourseId.get(row.courseId) ?? Number.POSITIVE_INFINITY))
+    .map((row) => row.courseId))
   const coursesWithoutPublishedVersion = pdtpCourses
     .filter((course) => !publishedCourseIds.has(course.id))
     .map((course) => ({ code: course.code, name: course.name }))

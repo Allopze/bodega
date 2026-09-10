@@ -53,8 +53,9 @@ const DRILL_ACTIVITY_NUMBER = 84
  * G2 — los doce cursos que el programa 2026 planifica, con la actividad que
  * cada uno acredita al cerrar una sesión.
  *
- * `code` es la clave natural: reejecutar no duplica y sí corrige el número. El
- * `B-01` ya existía con `[]`, que es justamente el caso que este script arregla.
+ * `code` es la clave natural: reejecutar no duplica y sí corrige el número.
+ * La N°56 usa `PDTP-56`: `B-01` es una inducción corporativa histórica y no se
+ * reutiliza como curso práctico sólo porque su código ya exista.
  */
 const COURSES: Array<{
   code: string
@@ -65,7 +66,7 @@ const COURSES: Array<{
   legalBasis?: string
   validityMonths?: number
 }> = [
-  { code: "B-01", name: "Manejo a la defensiva", n: 56, kind: "practical_training", minutes: 480, validityMonths: 24 },
+  { code: "PDTP-56", name: "Manejo a la defensiva", n: 56, kind: "practical_training", minutes: 480, validityMonths: 24 },
   // N°16. No hacía falta ningún conector nuevo: `closeTrainingSession` ya cuenta
   // como acreditados a los asistentes con evaluación aprobada, que es
   // literalmente "rindió y pasó la prueba de la inducción IRL". Lo único que
@@ -131,6 +132,28 @@ function sameNumbers(actual: unknown, expected: number[]): boolean {
   return actual.length === expected.length && expected.every((n, i) => actual[i] === n)
 }
 
+/**
+ * B-01 puede contener historial de inducción ya publicado. Se conserva el
+ * curso y sus versiones; sólo se retira el enlace accidental a la N°56.
+ */
+async function unlinkLegacyCourseActivity(): Promise<number> {
+  const [legacy] = await db.select({
+    id: preventionTrainingCourses.id,
+    numbers: preventionTrainingCourses.pdtpActivityNumbers,
+  }).from(preventionTrainingCourses).where(eq(preventionTrainingCourses.code, "B-01")).limit(1)
+  if (!legacy) return 0
+  const current = Array.isArray(legacy.numbers) ? legacy.numbers as number[] : []
+  if (!current.includes(56)) return 0
+  const next = current.filter((n) => n !== 56)
+  if (!DRY_RUN) {
+    await db.update(preventionTrainingCourses)
+      .set({ pdtpActivityNumbers: next, updatedAt: new Date().toISOString() })
+      .where(eq(preventionTrainingCourses.id, legacy.id))
+  }
+  console.log(`  ✓ B-01: se conserva el curso histórico y se retira únicamente la N°56 (${JSON.stringify(current)} → ${JSON.stringify(next)}).`)
+  return 1
+}
+
 async function applyCourses(actorUserId: string): Promise<number> {
   console.log("G2 — Cursos de capacitación")
   const existing = await db.select({
@@ -141,7 +164,7 @@ async function applyCourses(actorUserId: string): Promise<number> {
     .where(inArray(preventionTrainingCourses.code, COURSES.map((c) => c.code)))
   const byCode = new Map(existing.map((row) => [row.code, row]))
 
-  let changes = 0
+  let changes = await unlinkLegacyCourseActivity()
   for (const course of COURSES) {
     const numbers = [course.n]
     const found = byCode.get(course.code)

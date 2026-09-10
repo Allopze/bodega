@@ -106,6 +106,34 @@ export function resolveProgramWorksiteIds(
   return scoped.filter((id) => members.has(id))
 }
 
+/**
+ * Faenas que la UI puede ofrecer para un programa: activas, dentro del alcance
+ * del usuario y, cuando existe membresía explícita, miembros del programa.
+ */
+export async function listAccessiblePdtpProgramWorksites(
+  programId: string,
+  scope: WorksiteScope,
+): Promise<Array<{ id: string; name: string; code: string }>> {
+  if (scope !== "all" && scope.length === 0) return []
+
+  const [scopedWorksites, members] = await Promise.all([
+    db.select({ id: worksites.id, name: worksites.name, code: worksites.code })
+      .from(worksites)
+      .where(scope === "all"
+        ? eq(worksites.isActive, true)
+        : and(eq(worksites.isActive, true), inArray(worksites.id, scope)))
+      .orderBy(worksites.name),
+    listPdtpProgramWorksites(programId),
+  ])
+  const effectiveIds = new Set(resolveProgramWorksiteIds(
+    members.map((row) => row.worksiteId),
+    scope,
+    scopedWorksites.map((row) => row.id),
+  ))
+
+  return scopedWorksites.filter((worksite) => effectiveIds.has(worksite.id))
+}
+
 /** Exclusiones activas de las actividades de un programa. */
 export async function listPdtpActivityWorksiteExclusions(programId: string): Promise<PdtpActivityWorksiteExclusion[]> {
   const activityIds = (

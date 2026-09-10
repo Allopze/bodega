@@ -76,7 +76,9 @@ async function seedProgram(status: "draft" | "active") {
 beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
   await inMemoryDb.delete(schema.pdtpExecutions)
+  await inMemoryDb.delete(schema.pdtpActivityWorksiteParams)
   await inMemoryDb.delete(schema.pdtpActivityWorksiteExclusions)
+  await inMemoryDb.delete(schema.pdtpProgramWorksites)
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.preventionInspectionTemplates)
@@ -387,6 +389,28 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
     expect(issues[0]!.reason).toMatch(/versión publicada/i)
   })
 
+  it("un curso publicado más corto que el mínimo del catálogo no vuelve ejecutable la actividad", async () => {
+    await seedProgram("draft")
+    await seedActivity({ mechanism: "enganche", n: 56 })
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.preventionTrainingCourses).values({
+      id: "course-pdtp-56", code: "PDTP-56", name: "Manejo a la defensiva", kind: "practical_training",
+      minimumDurationMinutes: 480, validityMonths: 24, isActive: true, createdByUserId: USER_ID,
+      pdtpActivityNumbers: [56], createdAt: now, updatedAt: now,
+    })
+    await inMemoryDb.insert(schema.preventionTrainingCourseVersions).values({
+      id: "version-pdtp-56-short", courseId: "course-pdtp-56", versionLabel: "Corta",
+      status: "published", contentOutline: [{ title: "Conducción", minutes: 60 }], durationMinutes: 60,
+      modality: "presencial", assessmentType: "practical", passingScore: 70,
+      contentHash: "a".repeat(64), authorUserId: USER_ID, publishedByUserId: USER_ID,
+      publishedAt: now, version: 1, createdAt: now, updatedAt: now,
+    })
+
+    const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
+    expect(issues).toEqual([expect.objectContaining({ n: 56, status: "instrument_required" })])
+    expect(issues[0]!.reason).toMatch(/duración|versión publicada/i)
+  })
+
   it("un enganche declarado en STRUCTURALLY_WIRED_ACTIVITY_NUMBERS pasa (N°35, MIPER)", async () => {
     await seedProgram("draft")
     await seedActivity({ mechanism: "enganche", n: 35 })
@@ -602,6 +626,17 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
     expect(issues).toEqual([expect.objectContaining({ n: ACT_N, status: "decision_required" })])
   })
 
+  it("cobertura con padrón manual en todas las faenas aplicables no queda como decisión pendiente", async () => {
+    await seedProgram("draft")
+    await seedActivity({ indicatorMode: "coverage", subjectSource: null })
+    await inMemoryDb.insert(schema.pdtpActivityWorksiteParams).values({
+      id: "param-coverage-manual", activityId: ACT_ID, worksiteId: WS_ID,
+      expectedSubjectCount: 8, updatedByUserId: USER_ID,
+    })
+
+    expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([])
+  })
+
   it("una actividad retirada no se evalúa", async () => {
     await seedProgram("draft")
     await seedActivity({ status: "retired", mechanism: "sin_definir", retiredReason: "Motivo de retiro suficientemente largo.", retiredEffectiveFrom: "2026-01-01", retiredAt: new Date().toISOString() })
@@ -658,6 +693,24 @@ describe("countPdtpFulfillmentBacklog — el libro de cumplimiento hecho visible
     expect(backlog.pending).toBe(0)
     expect(backlog.lastError).toMatch(/programa PDTP activo/i)
     expect(backlog.digestDrift).toBe(false)
+  })
+
+  it("no atribuye al programa errores de una faena que no pertenece a él", async () => {
+    await seedProgram("draft")
+    await seedActivity()
+    await inMemoryDb.insert(schema.worksites).values({ id: "ws-outside", name: "Faena externa", code: "EXT", isActive: true })
+    await inMemoryDb.insert(schema.pdtpProgramWorksites).values({
+      id: "member-backlog", programId: PROGRAM_ID, worksiteId: WS_ID,
+      isActive: true, addedByUserId: USER_ID, addedAt: new Date().toISOString(),
+    })
+    await recordPdtpFulfillmentEvent({
+      sourceType: "emergencia", sourceId: "plan-outside", worksiteId: "ws-outside",
+      activityNumbers: [83], occurredAt: new Date().toISOString(),
+    })
+
+    const backlog = await countPdtpFulfillmentBacklog(PROGRAM_ID)
+    expect(backlog.errored).toBe(0)
+    expect(backlog.lastError).toBeNull()
   })
 
   it("un programa sin huella firmada (contentDigest null) nunca reporta deriva", async () => {

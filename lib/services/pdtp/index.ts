@@ -92,6 +92,7 @@ export { setPdtpActivityOverride, deletePdtpActivityOverride, loadPdtpOverrides,
 export type { PdtpOverrideInput } from "./overrides"
 export {
   listPdtpProgramWorksites,
+  listAccessiblePdtpProgramWorksites,
   setPdtpProgramWorksites,
   resolveProgramWorksiteIds,
   listPdtpActivityWorksiteExclusions,
