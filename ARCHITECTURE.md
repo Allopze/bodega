@@ -181,7 +181,8 @@ prevencion/documentacion/*      prevencion/pdtp/*             prevencion/ppa/exp
 prevencion/indicadores/export   repuestos/quotaciones/[id]    servicios/cotizaciones/[id]
 soporte/adjuntos/[id]           tae/{access,identity,submit,evidence/[id]}
 cron/{fuel-anomaly-detection,fuel-copec-sync,fuel-statement-notifications,
-      pdtp-evidence-gc,pdtp-weekly-reminders,sst-weekly-alerts}
+      operational-integrity-scan,pdtp-evidence-gc,pdtp-weekly-reminders,
+      sst-weekly-alerts}
 ```
 
 ---

@@ -13,7 +13,7 @@ const db = drizzle(pg, { schema }) as unknown as DB
 const testGlobal = globalThis as typeof globalThis & { __db?: DB }
 testGlobal.__db = db
 vi.mock("@/db", () => ({ get db() { return testGlobal.__db } }))
-const { scanOperationalIntegrity, listOperationalIntegrityCases, acknowledgeOperationalIntegrityCase, verifyOperationalIntegrityCase } = await import("@/lib/services/operational-integrity")
+const { scanOperationalIntegrity, scanOperationalIntegrityAsSystem, listOperationalIntegrityCases, acknowledgeOperationalIntegrityCase, verifyOperationalIntegrityCase } = await import("@/lib/services/operational-integrity")
 const { persistPurchaseOrderInvoiceReconciliationTx } = await import("@/lib/services/purchasing-module/invoice-reconciliation-service")
 
 const permissions = ["warehouse:view_traceability", "warehouse:reconcile_integrity", "purchasing:view"]
@@ -43,6 +43,44 @@ describe("operational integrity ledger", () => {
     await db.insert(schema.suppliers).values({ id: "oi-supplier", name: "QA supplier" })
   })
   afterAll(async () => { await pg.close() })
+
+  /**
+   * El escaneo automático corre sin sesión: no hay quién autorizar y tampoco
+   * una faena que lo acote. Ve todas, y su rastro queda como sistema.
+   */
+  it("el escaneo de sistema cubre faenas que ninguna sesión de usuario alcanza", async () => {
+    await fixture("cron-a")
+    await fixture("cron-b")
+
+    const outcome = await scanOperationalIntegrityAsSystem(["stock"])
+
+    expect(outcome.found).toBeGreaterThanOrEqual(2)
+    // Una sesión acotada a `cron-a` no habría visto el caso de `cron-b`.
+    const soloB = await listOperationalIntegrityCases(session("cron-b"), {})
+    expect(soloB.some((row) => row.worksiteId === "cron-b")).toBe(true)
+  })
+
+  it("el escaneo de sistema audita como sistema, sin usuario", async () => {
+    await fixture("cron-audit")
+
+    await scanOperationalIntegrityAsSystem(["stock"])
+
+    const audits = await db.select().from(schema.auditLog)
+      .where(eq(schema.auditLog.entityType, "operational_integrity_case"))
+    const systemAudits = audits.filter((row) => row.userEmail === "sistema@chome.cl")
+    expect(systemAudits.length).toBeGreaterThan(0)
+    expect(systemAudits.every((row) => row.userId === null)).toBe(true)
+  })
+
+  it("el escaneo de sistema deduplica contra lo que ya observó un usuario", async () => {
+    const actor = await fixture("cron-dedup")
+    await scanOperationalIntegrity(actor, ["stock"])
+
+    const before = (await list(actor)).length
+    await scanOperationalIntegrityAsSystem(["stock"])
+
+    expect((await list(actor)).length).toBe(before)
+  })
 
   it("deduplicates repeated scans and records changed evidence separately", async () => {
     const actor = await fixture("dedup")

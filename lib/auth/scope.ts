@@ -84,12 +84,23 @@ export function serviceWorksiteScope(session: Session | null): string[] | "all" 
  * faena elegida.
  */
 export function worksiteScopeSql(session: Session | null, column: AnyColumn, worksiteId?: string): SQL | undefined {
-  const scope = resolveWorksiteScope(session)
-  if (scope.mode === "none") return sql`false`
+  return worksiteScopeSqlFor(serviceWorksiteScope(session), column, worksiteId)
+}
+
+/**
+ * La misma intersección, para quien ya resolvió su alcance y no tiene sesión:
+ * un job de cron no es un usuario y no puede fabricarse una.
+ *
+ * `"all"` es una afirmación explícita de quien llama, no un default: una lista
+ * vacía sigue significando "ninguna faena" y devuelve cero filas. Escribirlo así
+ * evita el error clásico de tratar `[]` como "sin filtro".
+ */
+export function worksiteScopeSqlFor(scope: string[] | "all", column: AnyColumn, worksiteId?: string): SQL | undefined {
+  if (scope !== "all" && scope.length === 0) return sql`false`
   if (worksiteId) {
-    if (scope.mode === "some" && !scope.ids.includes(worksiteId)) return sql`false`
+    if (scope !== "all" && !scope.includes(worksiteId)) return sql`false`
     return eq(column, worksiteId)
   }
-  if (scope.mode === "all") return undefined
-  return inArray(column, scope.ids)
+  if (scope === "all") return undefined
+  return inArray(column, scope)
 }

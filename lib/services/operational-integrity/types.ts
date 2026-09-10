@@ -1,4 +1,3 @@
-import type { Session } from "next-auth"
 import type { Tx } from "@/db"
 import { fingerprintFor } from "../purchasing-module/invoice-reconciliation"
 
@@ -23,7 +22,11 @@ export interface OperationalIntegrityFinding {
   snapshot: Record<string, unknown>
 }
 
-export interface IntegrityScanContext { tx: Tx; session: Session }
+/**
+ * El escaneo recibe el alcance ya resuelto, no una sesión: así lo puede invocar
+ * tanto una acción de usuario como el cron, que no tiene sesión que ofrecer.
+ */
+export interface IntegrityScanContext { tx: Tx; scope: string[] | "all" }
 export type IntegrityCaseRef = Pick<OperationalIntegrityFinding, "caseKey" | "domain" | "worksiteId" | "entityId">
 export interface OperationalIntegrityDetector {
   domain: OperationalIntegrityFinding["domain"]

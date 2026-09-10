@@ -3,7 +3,7 @@ import { and, asc, desc, eq, inArray, ne } from "drizzle-orm"
 import { db, type Tx } from "@/db"
 import { inventoryMovements, operationalIntegrityCases as cases, operationalIntegrityObservations as observations, operationalIntegrityCaseEvents as events, products, purchaseOrderItems, purchaseOrders, purchaseOrderInvoiceItems, purchaseOrderInvoices, receiptItems, receipts } from "@/db/schema"
 import { worksiteStock } from "@/db/schema"
-import { worksiteScopeSql, serviceWorksiteScope } from "@/lib/auth/scope"
+import { worksiteScopeSql, serviceWorksiteScope, worksiteScopeSqlFor } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { getProductAttributesByIds } from "../product-sizes"
@@ -64,23 +64,23 @@ async function transaction<T>(run: (tx: Tx) => Promise<T>): Promise<T> {
 }
 
 async function scanStock(ctx: IntegrityScanContext) {
-  const stocks = await ctx.tx.select().from(worksiteStock).where(worksiteScopeSql(ctx.session, worksiteStock.worksiteId))
-  const movements = await ctx.tx.select().from(inventoryMovements).where(worksiteScopeSql(ctx.session, inventoryMovements.worksiteId))
+  const stocks = await ctx.tx.select().from(worksiteStock).where(worksiteScopeSqlFor(ctx.scope, worksiteStock.worksiteId))
+  const movements = await ctx.tx.select().from(inventoryMovements).where(worksiteScopeSqlFor(ctx.scope, inventoryMovements.worksiteId))
   return detectStockIntegrity({ stocks, movements })
 }
 async function scanReceiving(ctx: IntegrityScanContext) {
   const orderItems = await ctx.tx.select({ id: purchaseOrderItems.id, purchaseOrderId: purchaseOrders.id, worksiteId: purchaseOrders.worksiteId, quantity: purchaseOrderItems.quantity, deliveryMode: purchaseOrders.deliveryMode })
     .from(purchaseOrderItems).innerJoin(purchaseOrders, eq(purchaseOrders.id, purchaseOrderItems.purchaseOrderId))
-    .where(and(worksiteScopeSql(ctx.session, purchaseOrders.worksiteId), ne(purchaseOrders.status, "cancelled"), ne(purchaseOrderItems.status, "cancelled")))
+    .where(and(worksiteScopeSqlFor(ctx.scope, purchaseOrders.worksiteId), ne(purchaseOrders.status, "cancelled"), ne(purchaseOrderItems.status, "cancelled")))
   if (!orderItems.length) return []
   const dispositions = await ctx.tx.select({ id: receiptItems.id, receiptId: receipts.id, purchaseOrderItemId: receiptItems.purchaseOrderItemId, locationType: receipts.locationType, quantityReceived: receiptItems.quantityReceived, quantityRejected: receiptItems.quantityRejected, quantityDamaged: receiptItems.quantityDamaged })
     .from(receiptItems).innerJoin(receipts, eq(receipts.id, receiptItems.receiptId))
     .innerJoin(purchaseOrders, eq(purchaseOrders.id, receipts.purchaseOrderId))
-    .where(and(worksiteScopeSql(ctx.session, purchaseOrders.worksiteId), inArray(receiptItems.purchaseOrderItemId, orderItems.map(row => row.id))))
+    .where(and(worksiteScopeSqlFor(ctx.scope, purchaseOrders.worksiteId), inArray(receiptItems.purchaseOrderItemId, orderItems.map(row => row.id))))
   return detectReceivingIntegrity({ orderItems, receipts: dispositions })
 }
 async function scanPurchasing(ctx: IntegrityScanContext) {
-  const orders = await ctx.tx.select().from(purchaseOrders).where(and(worksiteScopeSql(ctx.session, purchaseOrders.worksiteId), ne(purchaseOrders.status, "cancelled"))).orderBy(asc(purchaseOrders.id))
+  const orders = await ctx.tx.select().from(purchaseOrders).where(and(worksiteScopeSqlFor(ctx.scope, purchaseOrders.worksiteId), ne(purchaseOrders.status, "cancelled"))).orderBy(asc(purchaseOrders.id))
   const findings: OperationalIntegrityFinding[] = []
   for (const order of orders) {
     const lines = await ctx.tx.select({ id: purchaseOrderInvoiceItems.id, documentKind: purchaseOrderInvoices.documentKind, quantity: purchaseOrderInvoiceItems.quantity, subtotal: purchaseOrderInvoiceItems.subtotal, unitOfMeasure: purchaseOrderInvoiceItems.unitOfMeasure })
@@ -88,7 +88,7 @@ async function scanPurchasing(ctx: IntegrityScanContext) {
       .where(eq(purchaseOrderInvoices.purchaseOrderId, order.id)).orderBy(asc(purchaseOrderInvoiceItems.id))
     const invoiceItems = []
     for (const line of lines) {
-      const { allocations } = await loadInvoiceLineAllocationsTx(ctx.tx, { purchaseOrderId: order.id, invoiceItemId: line.id, worksiteScope: serviceWorksiteScope(ctx.session) })
+      const { allocations } = await loadInvoiceLineAllocationsTx(ctx.tx, { purchaseOrderId: order.id, invoiceItemId: line.id, worksiteScope: ctx.scope })
       invoiceItems.push({ ...line, allocations })
     }
     const orderItems = await ctx.tx.select({ id: purchaseOrderItems.id, purchaseOrderId: purchaseOrderItems.purchaseOrderId, unitOfMeasure: purchaseOrderItems.unitOfMeasure }).from(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, order.id))
@@ -104,28 +104,61 @@ const detectors: readonly OperationalIntegrityDetector[] = [
   { domain: "purchasing", scan: scanPurchasing, async verify(ctx, ref) { return (await scanPurchasing(ctx)).find(row => row.caseKey === ref.caseKey) ?? null } },
 ]
 
-async function persistFinding(tx: Tx, session: Session, finding: OperationalIntegrityFinding) {
+/**
+ * Quién deja el rastro. Un escaneo automático no tiene usuario, y el audit log
+ * admite `userId` nulo justo para eso (el patrón ya vive en las
+ * reconciliaciones automáticas de EPP).
+ */
+interface IntegrityActor { userId: string | null; userEmail: string }
+const SYSTEM_ACTOR: IntegrityActor = { userId: null, userEmail: "sistema@chome.cl" }
+const actorFor = (session: Session): IntegrityActor => ({ userId: session.user.id, userEmail: session.user.email ?? "" })
+
+async function persistFinding(tx: Tx, actor: IntegrityActor, finding: OperationalIntegrityFinding) {
   await tx.insert(cases).values({ id: nanoid(), caseKey: finding.caseKey, domain: finding.domain, code: finding.code, severity: finding.severity, worksiteId: finding.worksiteId, entityType: finding.entityType, entityId: finding.entityId }).onConflictDoNothing({ target: cases.caseKey })
   const [stored] = await tx.select().from(cases).where(eq(cases.caseKey, finding.caseKey)).for("update")
   // Schema v1 deduplicates evidence for the case's entire lifetime. Reopening
   // an identical fingerprint after resolution needs a future occurrence event;
   // neither this scan nor listing rewrites the append-only history.
   const [observation] = await tx.insert(observations).values({ id: nanoid(), caseId: stored!.id, fingerprint: finding.fingerprint, snapshot: finding.snapshot }).onConflictDoNothing({ target: [observations.caseId, observations.fingerprint] }).returning()
-  if (observation) await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "create", entityType: "operational_integrity_case", entityId: stored!.id, newState: { kind: "observed", observationId: observation.id, fingerprint: observation.fingerprint, code: finding.code } }, tx)
+  if (observation) await recordAudit({ userId: actor.userId, userEmail: actor.userEmail || undefined, action: "create", entityType: "operational_integrity_case", entityId: stored!.id, newState: { kind: "observed", observationId: observation.id, fingerprint: observation.fingerprint, code: finding.code } }, tx)
   return observation ? 1 : 0
+}
+
+function assertKnownDomains(domains: Domain[]) {
+  if (domains.some(domain => !detectors.some(detector => detector.domain === domain))) throw new Error("Dominio inválido")
+}
+
+async function runScan(scope: string[] | "all", actor: IntegrityActor, domains: Domain[]) {
+  return transaction(async tx => {
+    const findings: OperationalIntegrityFinding[] = []
+    for (const detector of detectors) if (domains.includes(detector.domain)) findings.push(...await detector.scan({ tx, scope }))
+    let recorded = 0
+    for (const finding of findings.sort((a, b) => a.caseKey.localeCompare(b.caseKey))) recorded += await persistFinding(tx, actor, finding)
+    return { found: findings.length, recorded }
+  })
 }
 
 export async function scanOperationalIntegrity(session: Session, domains: Domain[]): Promise<{ found: number; recorded: number }> {
   assertMutation(session)
-  if (domains.some(domain => !detectors.some(detector => detector.domain === domain))) throw new Error("Dominio inválido")
+  assertKnownDomains(domains)
   if (domains.includes("purchasing") && !has(session, "purchasing:view")) throw new Error("Permiso insuficiente")
-  return transaction(async tx => {
-    const findings: OperationalIntegrityFinding[] = []
-    for (const detector of detectors) if (domains.includes(detector.domain)) findings.push(...await detector.scan({ tx, session }))
-    let recorded = 0
-    for (const finding of findings.sort((a, b) => a.caseKey.localeCompare(b.caseKey))) recorded += await persistFinding(tx, session, finding)
-    return { found: findings.length, recorded }
-  })
+  return runScan(serviceWorksiteScope(session), actorFor(session), domains)
+}
+
+/**
+ * Escaneo automático, para el cron.
+ *
+ * No hay sesión que autorizar —la ruta se protege con `CRON_SECRET`— así que
+ * tampoco se fabrica una: el alcance es `"all"` de forma explícita y el rastro
+ * queda como sistema. Detecta en todas las faenas, que es justo lo que una
+ * revisión programada debe hacer y ninguna sesión acotada puede.
+ *
+ * Sólo observa. Reconocer y verificar siguen exigiendo una persona con
+ * `warehouse:reconcile_integrity`.
+ */
+export async function scanOperationalIntegrityAsSystem(domains: Domain[]): Promise<{ found: number; recorded: number }> {
+  assertKnownDomains(domains)
+  return runScan("all", SYSTEM_ACTOR, domains)
 }
 
 function caseState(observationId: string, caseEvents: (typeof events.$inferSelect)[]): OperationalIntegrityState {
@@ -205,9 +238,9 @@ export async function verifyOperationalIntegrityCase(session: Session, caseId: s
     const detector = detectors.find(candidate => candidate.domain === row.domain)
     if (!detector) throw new Error("Detector no disponible")
     const ref: IntegrityCaseRef = { caseKey: row.caseKey, domain: row.domain, worksiteId: row.worksiteId, entityId: row.entityId }
-    const finding = await detector.verify({ tx, session }, ref)
+    const finding = await detector.verify({ tx, scope: serviceWorksiteScope(session) }, ref)
     if (finding) {
-      await persistFinding(tx, session, finding)
+      await persistFinding(tx, actorFor(session), finding)
       return { resolved: false }
     }
     await appendEvent(tx, session, caseId, observation.id, "verified_resolved", "Corrección verificada mediante el detector del dominio", { findingPresent: false, domain: row.domain, fingerprint: observation.fingerprint, verifiedAt: new Date().toISOString() })
