@@ -36,4 +36,15 @@ async function main() {
   }
 }
 
-if (process.argv[1]?.includes("preflight-dte-line-enrichment")) await main()
+// Sin `await` de nivel superior: el runner transpila a CJS y ahí el top-level
+// await es un error de transformación, así que el script fallaba antes de
+// abrir la conexión.
+if (process.argv[1]?.includes("preflight-dte-line-enrichment")) {
+  main().then(
+    () => process.exit(0),
+    (error) => {
+      console.error(error instanceof Error ? error.message : error)
+      process.exit(1)
+    },
+  )
+}
