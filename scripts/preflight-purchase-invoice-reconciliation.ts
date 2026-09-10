@@ -202,6 +202,16 @@ async function main() {
 
 // Sin extensión: en la imagen de producción este archivo corre como el bundle
 // `.mjs` que genera esbuild, no como el `.ts` de este checkout.
+//
+// Sin `await` de nivel superior: el runner transpila a CJS y ahí el top-level
+// await es un error de transformación, así que el script fallaba antes de abrir
+// la conexión. El guard sigue permitiendo importar el módulo desde el test.
 if (process.argv[1]?.includes("preflight-purchase-invoice-reconciliation")) {
-  await main()
+  main().then(
+    () => process.exit(0),
+    (error) => {
+      console.error(error instanceof Error ? error.message : error)
+      process.exit(1)
+    },
+  )
 }

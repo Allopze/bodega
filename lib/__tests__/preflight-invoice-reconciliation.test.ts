@@ -1,3 +1,5 @@
+import { execFile } from "node:child_process"
+import { promisify } from "node:util"
 import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import { inArray } from "drizzle-orm"
@@ -160,4 +162,26 @@ describe("preflight de conciliación OC-factura", () => {
     expect(statuses.every((row) => row.status === "needs_review")).toBe(true)
     expect(statuses.every((row) => row.fingerprint === null)).toBe(true)
   })
+})
+
+/**
+ * El preflight se rompió una vez por un `await` de nivel superior: el runner lo
+ * transpila a CJS y ahí es un error de transformación, así que el script moría
+ * antes de abrir la conexión. Ningún test lo detectó porque todos importaban el
+ * módulo en vez de ejecutarlo. Éste lo ejecuta de verdad.
+ */
+describe("preflight como proceso", () => {
+  const run = promisify(execFile)
+
+  it("carga y llega a su propia validación en vez de morir transpilando", async () => {
+    const result = await run("npx", ["tsx", "scripts/preflight-purchase-invoice-reconciliation.ts"], {
+      cwd: process.cwd(),
+      env: { ...process.env, DATABASE_URL: "" },
+    }).catch((error: { code?: number; stderr?: string; stdout?: string }) => error)
+
+    const stderr = "stderr" in result ? String(result.stderr) : ""
+    expect(stderr).not.toMatch(/Top-level await/)
+    expect(stderr).not.toMatch(/TransformError/)
+    expect(stderr).toMatch(/DATABASE_URL es requerido/)
+  }, 60_000)
 })
