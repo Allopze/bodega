@@ -70,25 +70,43 @@ primer reparto N:N real cambia esa respuesta.
 **Backfill:** 19 asignaciones con origen `legacy_backfill`. Las 11 líneas restantes no tenían
 espejo 1:1 que copiar, lo que concuerda con el conteo en cero del verificador.
 
-**Lo que el ledger encontrará en su primer escaneo: 4 casos críticos.**
+**Lo que el ledger encuentra en el kardex completo: nada.** 199 movimientos, 67 grupos
+producto-faena, cero saltos de cadena y cero saldos descuadrados.
 
-| Detector | Casos |
-|---|---|
-| `STOCK_BALANCE_MISMATCH` — saldo materializado ≠ último movimiento | 1 |
-| `STOCK_MOVEMENT_CHAIN_BREAK` — 28 movimientos con salto, en 3 grupos producto-faena | 3 |
-| `RECEIPT_DISPOSITION_EXCEEDS_LIMIT` | 0 |
+Esa conclusión llegó en tres pasos, y los dos primeros estaban equivocados. Vale registrarlos
+porque explican por qué el detector cambió:
 
-El ledger está vacío (0 casos, 0 observaciones): nadie ha escaneado nunca.
+1. La primera lectura reportó **1 saldo descuadrado y 28 movimientos con salto** en 3 grupos.
+2. Un análisis agregado pareció confirmar que era descuadre real de datos.
+3. Al replicar el kardex real contra el detector, los 4 casos resultaron **falsos positivos**,
+   por dos defectos acumulados:
 
-**Naturaleza de los saltos, que importa para arreglarlos.** Ninguno es un error de aritmética
-propia: en los 28, `stock_after = stock_before + cantidad`. Los 28 son **desfase con el
-movimiento anterior** — el `stock_before` no retoma donde quedó el `stock_after` previo. Y 21
-de los 28 ocurrieron el **2026-08-31**, un solo día, en su mayoría de tipo `ajuste`.
+   - **Orden inventado dentro de un instante.** Una regularización masiva —el reconciliador de
+     escala de entregas EPP— inserta todos sus ajustes con un único `performedAt`. El detector
+     ordenaba por `(performedAt, id)`, y el id es aleatorio: reconstruía una secuencia que no
+     existió y veía huecos donde el kardex encadena. Ahora los movimientos del mismo instante
+     se evalúan como bloque: cada `after` debe ser el `before` de otro del bloque salvo uno, y
+     el recorrido entre las puntas debe igualar la suma de efectos. El orden real deja de ser
+     necesario.
+   - **Tolerancia absoluta sobre columnas `real`.** `stock_before`/`stock_after` son float4 y
+     su epsilon crece con la magnitud: con saldos de 39,76 Postgres devuelve 39,719997 donde
+     la aritmética exacta da 39,72, una diferencia de 3e-6 que superaba el 1e-6 fijo. La
+     tolerancia pasó a ser relativa a la magnitud, con piso de 1e-6.
 
-Eso no describe movimientos mal calculados uno por uno, sino una secuencia escrita sin
-reencadenar: saldos leídos antes de que otra escritura los moviera. Es exactamente la clase de
-problema que el benchmark señalaba como fortaleza de ERPNext —bloqueo determinista
-item-bodega en orden estable— y la razón por la que el monitor era P0.
+   El `STOCK_BALANCE_MISMATCH` cayó por la misma razón que los saltos: comparaba el saldo
+   materializado contra el `stock_after` de una fila elegida por desempate arbitrario. Ahora
+   compara contra el cierre del último bloque. En el caso real, esa fila decía 2 y el cierre
+   del bloque decía 4 — que es exactamente lo materializado.
+
+Los tres detectores mantienen cobertura de que un descuadre **real** sí se reporta: un hueco
+dentro de un bloque, una falta de una unidad entera y la aritmética propia de cada movimiento
+siguen abriendo caso.
+
+**Lección para el resto del ledger.** Un detector que se estrena con 4 casos falsos habría
+quemado la confianza en su primer día, y nadie vuelve a mirar una mesa que cría lobos. Los
+otros dos detectores no comparten esta lógica —recepción suma dispositions y compras compara
+fingerprints— pero cualquier detector nuevo sobre columnas `real` debe usar la misma
+comparación relativa.
 
 **El escaneo automático todavía NO está en producción.** El crontab del contenedor `cron` no
 tiene la entrada `operational-integrity-scan`: vive en `docker-compose.yml` en la rama
