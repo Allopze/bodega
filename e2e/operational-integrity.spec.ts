@@ -39,6 +39,13 @@ test("escanea, filtra y navega la mesa de integridad conservando el alcance", as
   await expect(qaCase.getByText("El saldo físico no coincide con el último movimiento.")).toBeVisible()
   await expect(qaCase.getByText("Crítico")).toBeVisible()
 
+  /**
+   * El escaneo revalida las vistas operacionales y vuelve a montar la lista.
+   * Sin esperar a que termine, el desplegable de dominio se desprende del DOM
+   * a mitad del clic — y cuanto más casos haya, más ancha es esa ventana.
+   */
+  await page.waitForLoadState("networkidle")
+
   // Filtrar por un dominio ajeno lo esconde; volver a Bodega lo recupera.
   await page.getByLabel("Dominio").click()
   await page.getByRole("option", { name: "Compras" }).click()

@@ -22,13 +22,15 @@ Ejecutados secuencialmente en el worktree de la rama.
 | `npm run db:verify-invoice-allocations` | los cinco conteos en 0 — exit 0 |
 | `npm run typecheck` | exit 0 |
 | `npm run lint` | exit 0 |
-| `npm run test:fast` | 640 archivos OK, **1 fallo ambiental** (§5) — exit 1 |
-| `npm run test:pglite` | 126 archivos OK, **1 fallo ajeno** (§5) — exit 1 |
+| `npm run test:fast` | **exit 0** — 642 archivos, 6669 casos |
+| `npm run test:pglite` | **exit 0** — 127 archivos, 1538 casos |
 | Concurrencia real: asignaciones de factura | 1 test, exit 0 |
 | Concurrencia real: movimientos de stock | 2 tests, exit 0 |
 | `npm run perf:queries` | 12 consultas bajo el presupuesto de 1000 ms — exit 0 |
 | `npm run build` | exit 0 (requiere `DATABASE_URL` definido) |
-| `npm run test:e2e -- e2e/operational-integrity.spec.ts` | 2 tests, exit 0 |
+| E2E integridad + reparto | 7 tests, exit 0 |
+
+Las dos suites completas quedaron en verde el 2026-09-10, sin fallos ajenos pendientes (§5).
 
 Todos ejecutados sobre el árbol **ya mergeado con `main`**, contra PostgreSQL 16 en bases
 desechables.
@@ -82,18 +84,21 @@ una haría que el resultado dependiera del orden de ejecución.
 contempla (ofrece «Recargar evidencia»), y hay cobertura de servicio, pero reproducirlo en
 navegador exige dos sesiones concurrentes sobre la misma línea.
 
+**Nota sobre estabilidad.** Los dos specs esperan `networkidle` después de escanear: el
+escaneo revalida las vistas operacionales y vuelve a montar la lista, y sin esa espera el
+desplegable de filtros se desprende del DOM a mitad del clic. La ventana se ensancha con la
+cantidad de casos, así que el síntoma sólo apareció al correr ambos specs juntos.
+
 ## 5. Fallos ajenos a esta rama
 
-1. `lib/__tests__/emergency-resource-catalog.test.ts` — **fallo ambiental, no del código.**
-   Lee `INVENTARIO DE EXTINTORES FAENA BIODIVERSA 2026.xlsx`, que está en `.gitignore` y sólo
-   existe en el checkout principal, así que falla en cualquier worktree. Comprobado: copiando
-   el archivo al worktree, el test pasa 7/7.
-2. `lib/__tests__/pdtp-constancias.test.ts` — «no ofrece deuda de un período anterior a la
-   activación del programa» falla en `main`. El arreglo existe (`d7d7508a`) pero vive en
-   `fix/conciliacion-unidad-documental` y aún no ha llegado a `main`; entrará con esa rama.
+Los dos que este informe registraba quedaron **resueltos** el 2026-09-10:
 
-Ninguno toca compras, stock ni integridad, y la rama no modifica ningún archivo de
-prevención.
+1. `lib/__tests__/emergency-resource-catalog.test.ts` leía el manifiesto real de extintores
+   con `readFile` directo. El archivo está en `.gitignore`, así que no existe en CI: el job
+   `unit` estaba en rojo de forma permanente. Pasó a `it.skipIf`; corre cuando el documento
+   está a mano y se salta declarándolo cuando no.
+2. `lib/__tests__/pdtp-constancias.test.ts` dependía del día del mes. El arreglo
+   (`d7d7508a`) se trajo por cherry-pick desde `fix/conciliacion-unidad-documental`.
 
 ## 6. Numeración de migraciones (resuelto)
 
@@ -146,14 +151,14 @@ Los resultados E2E y de navegador de §4 son evidencia separada y no equivalente
 
 ## 9. Decisión de release
 
-Integrada en `main` con el gate completo en verde sobre el resultado mergeado. Antes de
+Integrada en `main` con el gate completo en verde. El escaneo dejó de ser manual: corre a
+las 05:30 (America/Santiago) vía `operational-integrity-scan`, sólo observando. Antes de
 **desplegar a producción** falta:
 
 1. Leer el conteo de asignaciones múltiples contra producción (§3, §7), del que depende la
    compatibilidad de rollback.
 2. Ejecutar el backfill sobre datos reales y volver a correr `db:verify-invoice-allocations`:
    los conteos en cero de §2 provienen de una base limpia, no de un volcado productivo.
-3. Cubrir en navegador los escenarios pendientes de §4.
-4. Aceptar explícitamente la brecha de `audit:full` (§8) o esperar la restauración del harness.
+3. Aceptar explícitamente la brecha de `audit:full` (§8) o esperar la restauración del harness.
 
 Una build local verde no equivale a despliegue ni a UAT de producción.
