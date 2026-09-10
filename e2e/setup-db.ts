@@ -1616,6 +1616,153 @@ async function main() {
   await db.execute(sql`SELECT next_document_code('ENT', 2026)`)
 
   /**
+   * Split fixture — owned by the allocation E2E alone.
+   *
+   * Una OC con dos líneas (6 y 4) y una única línea de factura por 10: es la
+   * forma mínima en que el reparto N:N tiene algo que repartir. Aislado del
+   * fixture de facturación parcial para que dividir aquí no altere lo que ese
+   * spec afirma.
+   */
+  await db.insert(schema.purchaseOrders).values({
+    id: "oc-qa-reparto-e2e",
+    code: "OC-2026-0451",
+    worksiteId: "ws-e2e",
+    supplierId: "sup-e2e",
+    createdBy: "user-admin-e2e",
+    status: "partially_received",
+    deliveryMode: "directo_faena",
+    issuedAt: now,
+    sentAt: now,
+    netAmount: 10000,
+    taxAmount: 1900,
+    totalAmount: 11900,
+    notes: "Fixture QA para repartir una línea de factura entre dos de OC",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrderItems).values([
+    {
+      id: "oc-item-qa-reparto-a",
+      purchaseOrderId: "oc-qa-reparto-e2e",
+      productId: "prod-e2e",
+      productNameFree: "Línea QA reparto A",
+      quantity: 6,
+      unitOfMeasure: "unidad",
+      unitPrice: 1000,
+      subtotal: 6000,
+      status: "issued",
+      sortOrder: 1,
+    },
+    {
+      id: "oc-item-qa-reparto-b",
+      purchaseOrderId: "oc-qa-reparto-e2e",
+      productId: "prod-e2e",
+      productNameFree: "Línea QA reparto B",
+      quantity: 4,
+      unitOfMeasure: "unidad",
+      unitPrice: 1000,
+      subtotal: 4000,
+      status: "issued",
+      sortOrder: 2,
+    },
+  ])
+  await db.insert(schema.purchaseOrderInvoices).values({
+    id: "invoice-qa-reparto-e2e",
+    purchaseOrderId: "oc-qa-reparto-e2e",
+    invoiceNumber: "FAC-QA-REPARTO",
+    amount: 11900,
+    issueDate: "2026-09-01",
+    fileName: "factura-qa-reparto.pdf",
+    filePath: "storage/purchase-orders/factura-qa-reparto.pdf",
+    uploadedBy: "user-admin-e2e",
+    supplierIdentityStatus: "verified",
+    supplierIdentitySource: "dte_xml",
+    uploadedAt: now,
+  })
+  // Sin espejo 1:1: la línea nace sin asignar, que es el punto de partida del
+  // reparto y lo que el editor debe permitir resolver.
+  await db.insert(schema.purchaseOrderInvoiceItems).values({
+    id: "invoice-item-qa-reparto-e2e",
+    invoiceId: "invoice-qa-reparto-e2e",
+    productName: "Ítem QA para repartir",
+    unitOfMeasure: "unidad",
+    quantity: 10,
+    unitPrice: 1000,
+    subtotal: 10000,
+  })
+
+  /**
+   * Gemelo del anterior para el caso de exceso. Separado a propósito: el spec
+   * que reparte 6 + 4 deja ambas líneas asignadas, y un segundo caso sobre el
+   * mismo fixture dependería del orden de ejecución.
+   */
+  await db.insert(schema.purchaseOrders).values({
+    id: "oc-qa-exceso-e2e",
+    code: "OC-2026-0452",
+    worksiteId: "ws-e2e",
+    supplierId: "sup-e2e",
+    createdBy: "user-admin-e2e",
+    status: "partially_received",
+    deliveryMode: "directo_faena",
+    issuedAt: now,
+    sentAt: now,
+    netAmount: 10000,
+    taxAmount: 1900,
+    totalAmount: 11900,
+    notes: "Fixture QA para el rechazo de un reparto que excede lo facturado",
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.purchaseOrderItems).values([
+    {
+      id: "oc-item-qa-exceso-a",
+      purchaseOrderId: "oc-qa-exceso-e2e",
+      productId: "prod-e2e",
+      productNameFree: "Línea QA exceso A",
+      quantity: 7,
+      unitOfMeasure: "unidad",
+      unitPrice: 1000,
+      subtotal: 7000,
+      status: "issued",
+      sortOrder: 1,
+    },
+    {
+      id: "oc-item-qa-exceso-b",
+      purchaseOrderId: "oc-qa-exceso-e2e",
+      productId: "prod-e2e",
+      productNameFree: "Línea QA exceso B",
+      quantity: 5,
+      unitOfMeasure: "unidad",
+      unitPrice: 1000,
+      subtotal: 5000,
+      status: "issued",
+      sortOrder: 2,
+    },
+  ])
+  await db.insert(schema.purchaseOrderInvoices).values({
+    id: "invoice-qa-exceso-e2e",
+    purchaseOrderId: "oc-qa-exceso-e2e",
+    invoiceNumber: "FAC-QA-EXCESO",
+    amount: 11900,
+    issueDate: "2026-09-01",
+    fileName: "factura-qa-exceso.pdf",
+    filePath: "storage/purchase-orders/factura-qa-exceso.pdf",
+    uploadedBy: "user-admin-e2e",
+    supplierIdentityStatus: "verified",
+    supplierIdentitySource: "dte_xml",
+    uploadedAt: now,
+  })
+  await db.insert(schema.purchaseOrderInvoiceItems).values({
+    id: "invoice-item-qa-exceso-e2e",
+    invoiceId: "invoice-qa-exceso-e2e",
+    productName: "Ítem QA para exceder",
+    unitOfMeasure: "unidad",
+    quantity: 10,
+    unitPrice: 1000,
+    subtotal: 10000,
+  })
+
+  /**
    * Operational-integrity fixture — owned by the integrity E2E alone.
    *
    * A dedicated product keeps the spec from acknowledging or resolving rows

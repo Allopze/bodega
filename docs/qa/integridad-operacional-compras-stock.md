@@ -63,17 +63,24 @@ dedicados sobre `prod-qa-integridad-e2e`):
 7. Verificación sobre un problema que persiste: **el caso no se cierra**, comprobado sobre el
    estado persistido tras recargar, no sobre el toast.
 
-**No cubiertos en navegador** (brecha explícita, no se declaran como PASS):
+Cubiertos por `e2e/invoice-allocation-split.spec.ts` (añadido el 2026-09-10, cierra la brecha
+que este informe declaraba):
 
-- Repartir una línea de factura QA `6 + 4` y observar ambas líneas de OC.
-- Intento de `6 + 5` y de envío con fingerprint obsoleto.
-- Inspección de la proyección para los casos directo y vía oficina.
-- Repetición del recorrido con un usuario de faena restringida.
-- Identidad de variante concreta y desbordes responsivos.
+8. Reparto `6 + 4` de una línea de factura entre dos líneas de su OC, guardado y persistido.
+9. Rechazo de `6 + 5` sobre una línea que factura 10: el editor no habilita guardar.
+10. Proyección de disponibilidad: las tres columnas (`Demanda pendiente`, `Entrada esperada`,
+    `Saldo proyectado`) y el cambio entre una faena directa y la de oficina.
+11. Usuario acotado a una faena sin `warehouse:view_traceability`: la ruta redirige en vez de
+    mostrar una mesa vacía, que sería indistinguible de «todo bien».
+12. Identidad de variante (el SKU viaja con el caso) y ausencia de desborde horizontal a
+    390 px.
 
-La cobertura automatizada de esos puntos existe a nivel de servicio y componente
-(`invoice-line-allocations*`, `stock-availability*`, `operational-integrity-ledger`), pero no
-equivale a verificación de UI autenticada.
+Cada caso de reparto usa su propia OC (`oc-qa-reparto-e2e`, `oc-qa-exceso-e2e`): compartir
+una haría que el resultado dependiera del orden de ejecución.
+
+**Pendiente de verificación manual:** el envío con fingerprint obsoleto. El editor lo
+contempla (ofrece «Recargar evidencia»), y hay cobertura de servicio, pero reproducirlo en
+navegador exige dos sesiones concurrentes sobre la misma línea.
 
 ## 5. Fallos ajenos a esta rama
 
