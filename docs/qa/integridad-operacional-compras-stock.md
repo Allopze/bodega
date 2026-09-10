@@ -16,19 +16,24 @@ Ejecutados secuencialmente en el worktree de la rama.
 
 | Comando | Resultado |
 |---|---|
+| `npm run db:verify-migrations` | `verified 264 entries through 0264_eminent_shiver_man` — exit 0 |
 | `npm run db:generate` | `No schema changes, nothing to migrate` — exit 0 |
-| `npm run db:verify-migrations` | `verified 263 entries through 0262_kind_mastermind` — exit 0 |
+| `npm run db:migrate` (base vacía) | exit 0; las 4 tablas y la FK compuesta creadas |
 | `npm run db:verify-invoice-allocations` | los cinco conteos en 0 — exit 0 |
 | `npm run typecheck` | exit 0 |
 | `npm run lint` | exit 0 |
-| `npm run test:fast` | 639 archivos OK, **1 fallo ajeno** (§5) — exit 1 |
-| `npm run test:pglite` | 120 archivos OK, **1 fallo ajeno** (§5) — exit 1 |
-| Concurrencia real (`invoice-line-allocations-concurrency-postgres`) | 1 test, exit 0, contra PostgreSQL 16 desechable |
+| `npm run test:fast` | 640 archivos OK, **1 fallo ambiental** (§5) — exit 1 |
+| `npm run test:pglite` | 126 archivos OK, **1 fallo ajeno** (§5) — exit 1 |
+| Concurrencia real: asignaciones de factura | 1 test, exit 0 |
+| Concurrencia real: movimientos de stock | 2 tests, exit 0 |
 | `npm run perf:queries` | 12 consultas bajo el presupuesto de 1000 ms — exit 0 |
 | `npm run build` | exit 0 (requiere `DATABASE_URL` definido) |
 | `npm run test:e2e -- e2e/operational-integrity.spec.ts` | 2 tests, exit 0 |
 
-La consulta nueva de disponibilidad proyectada rinde **19,8 ms** sobre el dataset mediano
+Todos ejecutados sobre el árbol **ya mergeado con `main`**, contra PostgreSQL 16 en bases
+desechables.
+
+La consulta nueva de disponibilidad proyectada rinde **17,8 ms** sobre el dataset mediano
 (1200 solicitudes, 3600 ítems, 500 OC, 600 filas de stock), dentro del mismo presupuesto de
 un segundo que el resto. No se creó un segundo harness de performance.
 
@@ -72,15 +77,16 @@ equivale a verificación de UI autenticada.
 
 ## 5. Fallos ajenos a esta rama
 
-Ambos reproducen en `main` sin los cambios de la rama:
-
-1. `lib/__tests__/emergency-resource-catalog.test.ts` — lee
-   `INVENTARIO DE EXTINTORES FAENA BIODIVERSA 2026.xlsx`, que **no está versionado**. Falla en
-   cualquier worktree porque el archivo sólo existe en el checkout principal.
+1. `lib/__tests__/emergency-resource-catalog.test.ts` — **fallo ambiental, no del código.**
+   Lee `INVENTARIO DE EXTINTORES FAENA BIODIVERSA 2026.xlsx`, que está en `.gitignore` y sólo
+   existe en el checkout principal, así que falla en cualquier worktree. Comprobado: copiando
+   el archivo al worktree, el test pasa 7/7.
 2. `lib/__tests__/pdtp-constancias.test.ts` — «no ofrece deuda de un período anterior a la
-   activación del programa» falla igualmente en `main`.
+   activación del programa» falla en `main`. El arreglo existe (`d7d7508a`) pero vive en
+   `fix/conciliacion-unidad-documental` y aún no ha llegado a `main`; entrará con esa rama.
 
-Ninguno toca compras, stock ni integridad.
+Ninguno toca compras, stock ni integridad, y la rama no modifica ningún archivo de
+prevención.
 
 ## 6. Numeración de migraciones (resuelto)
 
