@@ -50,6 +50,51 @@ un segundo que el resto. No se creó un segundo harness de performance.
   productivos). Este número hay que volver a leerlo contra producción antes del release,
   porque de él depende la compatibilidad de rollback descrita en §7.
 
+## 3.bis Lectura contra producción (2026-09-10)
+
+Ejecutada por SSH con `default_transaction_read_only=on`, así que cualquier escritura habría
+fallado en el propio PostgreSQL. Sólo conteos: ningún monto, folio ni proveedor.
+
+**Estado del despliegue.** Producción ya tiene las 264 migraciones (última aplicada 12:57 del
+2026-09-10) y las cuatro tablas nuevas. Volumen: 31 OC, 30 líneas de comprobante, 67 filas de
+stock, 199 movimientos de kardex.
+
+**Verificador de asignaciones — los cinco conteos en cero.** Ninguna fila 1:1 sin su
+asignación, ninguna asignación cruzada a otra orden, ningún signo contradictorio, ningún
+reparto por sobre lo facturado, ningún espejo contradictorio.
+
+**Rollback: compatible sin remediación.** Cero líneas con más de una asignación, así que el
+paso 2 de §7 no aplica hoy. Hay que releerlo antes de cualquier rollback futuro, porque el
+primer reparto N:N real cambia esa respuesta.
+
+**Backfill:** 19 asignaciones con origen `legacy_backfill`. Las 11 líneas restantes no tenían
+espejo 1:1 que copiar, lo que concuerda con el conteo en cero del verificador.
+
+**Lo que el ledger encontrará en su primer escaneo: 4 casos críticos.**
+
+| Detector | Casos |
+|---|---|
+| `STOCK_BALANCE_MISMATCH` — saldo materializado ≠ último movimiento | 1 |
+| `STOCK_MOVEMENT_CHAIN_BREAK` — 28 movimientos con salto, en 3 grupos producto-faena | 3 |
+| `RECEIPT_DISPOSITION_EXCEEDS_LIMIT` | 0 |
+
+El ledger está vacío (0 casos, 0 observaciones): nadie ha escaneado nunca.
+
+**Naturaleza de los saltos, que importa para arreglarlos.** Ninguno es un error de aritmética
+propia: en los 28, `stock_after = stock_before + cantidad`. Los 28 son **desfase con el
+movimiento anterior** — el `stock_before` no retoma donde quedó el `stock_after` previo. Y 21
+de los 28 ocurrieron el **2026-08-31**, un solo día, en su mayoría de tipo `ajuste`.
+
+Eso no describe movimientos mal calculados uno por uno, sino una secuencia escrita sin
+reencadenar: saldos leídos antes de que otra escritura los moviera. Es exactamente la clase de
+problema que el benchmark señalaba como fortaleza de ERPNext —bloqueo determinista
+item-bodega en orden estable— y la razón por la que el monitor era P0.
+
+**El escaneo automático todavía NO está en producción.** El crontab del contenedor `cron` no
+tiene la entrada `operational-integrity-scan`: vive en `docker-compose.yml` en la rama
+`fix/pendientes-integridad-y-preexistentes`, sin mergear. Hasta que se despliegue, la mesa
+sólo se llena si alguien aprieta «Revisar integridad».
+
 ## 4. Escenarios verificados en navegador autenticado
 
 Cubiertos por `e2e/operational-integrity.spec.ts` (Chromium, sesión autenticada, datos QA
