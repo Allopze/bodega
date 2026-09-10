@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs"
+import { existsSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
@@ -40,13 +41,21 @@ const baseContext: EmergencyImportContext = {
   existingPlacements: [],
 }
 
+/**
+ * El manifiesto real vive en la raíz del repositorio y está en `.gitignore`:
+ * es el inventario de una faena concreta, no un fixture. Por eso no existe en
+ * CI ni en un worktree de sesión, y el caso que lo lee no puede exigirlo — lo
+ * hacía, y dejaba el job `unit` de CI en rojo de forma permanente.
+ *
+ * El resto del archivo trabaja con hojas sintéticas y cubre el parser; este
+ * caso añade la comprobación contra el documento real cuando está a mano.
+ */
+const BIODIVERSA_MANIFEST = path.resolve(process.cwd(), "INVENTARIO DE EXTINTORES FAENA BIODIVERSA 2026.xlsx")
+const hasManifest = existsSync(BIODIVERSA_MANIFEST)
+
 describe("buildEmergencyInventoryPreview", () => {
-  it("reconoce el manifiesto real de Biodiversa sin cargar datos", async () => {
-    // El manifiesto vive en la raíz del repositorio. Apuntaba a
-    // `docs/SGI Chome_2026/Inventario extintores/`, que dejó de existir cuando
-    // la documentación se reorganizó bajo `docs/prevención/` sin que esa
-    // carpeta viajara con ella.
-    const file = await readFile(path.resolve(process.cwd(), "INVENTARIO DE EXTINTORES FAENA BIODIVERSA 2026.xlsx"))
+  it.skipIf(!hasManifest)("reconoce el manifiesto real de Biodiversa sin cargar datos", async () => {
+    const file = await readFile(BIODIVERSA_MANIFEST)
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(file as never)
     const sheet = workbook.worksheets[0]!
