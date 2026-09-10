@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useActionState } from "react"
-import { CheckCircle, ClockCounterClockwise, Warning } from "@phosphor-icons/react"
+import { CheckCircle, ClockCounterClockwise, Info, Warning } from "@phosphor-icons/react"
 import { INITIAL_STATE } from "@/lib/form-state"
 import { SubmitButton } from "@/components/ui/submit-button"
 import { MetaBadge } from "@/components/states/state-badge"
@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/lib/toast"
 import { formatCLP, formatDateTime } from "@/lib/utils"
 import type { ActionState } from "@/lib/validation/operations"
-import type { InvoiceReconciliationEvidence, InvoiceReconciliationIssueCode } from "@/lib/services/purchasing-module/invoice-reconciliation"
+import { isSoftInvoiceReconciliationIssue, type InvoiceReconciliationEvidence, type InvoiceReconciliationIssueCode } from "@/lib/services/purchasing-module/invoice-reconciliation"
 import { acceptInvoiceReconciliationAction } from "../actions/invoice-reconciliation"
 import type { InvoiceRow } from "./invoices-section"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
@@ -41,6 +41,15 @@ const ISSUE_LABELS: Record<InvoiceReconciliationIssueCode, string> = {
   quantity_over_received: "La recepción aceptada todavía no cubre la cantidad facturada",
   supplier_unverified: "RUT del proveedor no verificado en factura manual",
   total_mismatch: "Total facturado distinto del total OC",
+}
+
+/**
+ * Un issue blando no describe un problema sino el supuesto bajo el que se
+ * comparó, así que se redacta completo en vez de con la etiqueta corta que usa
+ * la lista de advertencias.
+ */
+const SOFT_ISSUE_NOTES: Partial<Record<InvoiceReconciliationIssueCode, string>> = {
+  missing_unit: "Hay líneas sin unidad de medida declarada en el documento. El precio se comparó asumiendo que la unidad es la misma que la de la OC.",
 }
 type CatalogUpdateSnapshot = {
   invoiceItemId: string
@@ -106,6 +115,17 @@ export function InvoiceReconciliationCard({
   const status = STATUS[reconciliation.status]
   const appliedCatalogUpdates = catalogUpdatesFromEvidence(reconciliation.currentReview?.evidence)
     .filter((update) => update.changed)
+  // Sólo `unit_mismatch` apaga la comparación de precio en el motor. Mostrar
+  // `$0` en esas líneas afirmaría una verificación que no ocurrió.
+  const uncomparableItemIds = new Set(reconciliation.issues.flatMap((issue) =>
+    issue.code === "unit_mismatch" && issue.orderItemId ? [issue.orderItemId] : [],
+  ))
+  const hardIssueLabels = [...new Set(reconciliation.issues
+    .filter((issue) => !isSoftInvoiceReconciliationIssue(issue.code))
+    .map((issue) => ISSUE_LABELS[issue.code]))]
+  const softIssueNotes = [...new Set(reconciliation.issues
+    .flatMap((issue) => isSoftInvoiceReconciliationIssue(issue.code) ? [SOFT_ISSUE_NOTES[issue.code]] : []))]
+    .filter((note): note is string => Boolean(note))
   const receiptBlocksAcceptance = reconciliation.issues.some((issue) => issue.code === "quantity_over_received")
   const coverageBlocksAcceptance = ["partial", "not_evaluable", "no_invoices"].includes(reconciliation.coverage.status)
 
@@ -171,8 +191,10 @@ export function InvoiceReconciliationCard({
                   </TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{item.ocEffectiveUnitPrice === null ? "Pendiente" : formatCLP(item.ocEffectiveUnitPrice)}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{item.invoiceEffectiveUnitPrice === null ? "No evaluable" : formatCLP(item.invoiceEffectiveUnitPrice)}</TableCell>
-                  <TableCell className={`text-right font-mono tabular-nums ${item.priceDifference && Math.abs(item.priceDifference) > 1 ? "text-(--color-warning-ink)" : "text-(--color-text-muted)"}`}>
-                    {item.priceDifference === null ? "—" : `${item.priceDifference > 0 ? "+" : ""}${formatCLP(item.priceDifference)}${item.pricePercentage === null ? "" : ` (${item.pricePercentage.toFixed(1)}%)`}`}
+                  <TableCell className={`text-right font-mono tabular-nums ${!uncomparableItemIds.has(item.ocItemId) && item.priceDifference && Math.abs(item.priceDifference) > 1 ? "text-(--color-warning-ink)" : "text-(--color-text-muted)"}`}>
+                    {uncomparableItemIds.has(item.ocItemId)
+                      ? "No comparable"
+                      : item.priceDifference === null ? "—" : `${item.priceDifference > 0 ? "+" : ""}${formatCLP(item.priceDifference)}${item.pricePercentage === null ? "" : ` (${item.pricePercentage.toFixed(1)}%)`}`}
                   </TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{item.currentSupplierPrice === null ? "—" : formatCLP(item.currentSupplierPrice)}</TableCell>
                 </TableRow>
@@ -183,10 +205,20 @@ export function InvoiceReconciliationCard({
         </div>
       )}
 
-      {reconciliation.issues.length > 0 && reconciliation.status !== "accepted_exception" && (
+      {hardIssueLabels.length > 0 && reconciliation.status !== "accepted_exception" && (
         <ul className="mt-3 space-y-1 text-xs text-(--color-warning-ink)">
-          {[...new Set(reconciliation.issues.map((issue) => ISSUE_LABELS[issue.code]))].map((label) => (
+          {hardIssueLabels.map((label) => (
             <li key={label} className="flex items-start gap-1.5"><Warning className="mt-0.5 shrink-0" size={13} weight="bold" aria-hidden />{label}</li>
+          ))}
+        </ul>
+      )}
+
+      {/* Se muestra incluso con la orden conciliada: es el supuesto con el que
+          se leyó la tabla de arriba, y ocultarlo la haría afirmar de más. */}
+      {softIssueNotes.length > 0 && (
+        <ul className="mt-3 space-y-1 text-xs text-(--color-text-muted)">
+          {softIssueNotes.map((note) => (
+            <li key={note} className="flex items-start gap-1.5"><Info className="mt-0.5 shrink-0" size={13} aria-hidden />{note}</li>
           ))}
         </ul>
       )}

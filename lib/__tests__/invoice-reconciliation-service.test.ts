@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import { INVOICE_RECONCILIATION_VERSION } from "@/lib/services/purchasing-module/invoice-reconciliation"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema }) as unknown as DB
@@ -142,7 +143,7 @@ describe("servicio transaccional de conciliación OC-factura", () => {
       updatedAt: schema.purchaseOrders.invoiceReconciliationUpdatedAt,
     }).from(schema.purchaseOrders).where(eq(schema.purchaseOrders.id, "backfill"))
     expect(order?.status).toBe("needs_review")
-    expect(order?.fingerprint).toMatch(/^v2:[a-f0-9]{64}$/)
+    expect(order?.fingerprint).toMatch(new RegExp(`^v${INVOICE_RECONCILIATION_VERSION}:[a-f0-9]{64}$`))
     expect(order?.updatedAt).not.toBeNull()
   })
 

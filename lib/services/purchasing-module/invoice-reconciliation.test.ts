@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { reconcileInvoiceEvidence } from "./invoice-reconciliation"
+import { formatInvoiceReconciliationIssues, isSoftInvoiceReconciliationIssue, reconcileInvoiceEvidence } from "./invoice-reconciliation"
 
 const orderItems = [
   {
@@ -145,21 +145,66 @@ describe("reconcileInvoiceEvidence", () => {
     }))
   })
 
-  it.each([
-    { unit: null, code: "missing_unit" },
-    { unit: "kg", code: "unit_mismatch" },
-  ])("does not evaluate price when invoice unit is $unit", ({ unit, code }) => {
+  it("does not evaluate price when the invoice declares a different unit", () => {
     const result = reconcileInvoiceEvidence({
       totalOC: 100,
       orderItems: [orderItems[0]!],
       invoices: [{
         id: "inv-1", invoiceNumber: "123", amount: 100,
-        items: [{ id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: unit, quantity: 2, unitPrice: 80, subtotal: 160 }],
+        items: [{ id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: "kg", quantity: 2, unitPrice: 80, subtotal: 160 }],
       }],
     })
 
-    expect(result.issues.map((issue) => issue.code)).toContain(code)
+    expect(result.issues.map((issue) => issue.code)).toContain("unit_mismatch")
     expect(result.issues.map((issue) => issue.code)).not.toContain("price_variance")
+    expect(result.status).toBe("needs_review")
+  })
+
+  // `UnmdItem` es opcional en el DTE: si la ausencia apagara la comparación,
+  // las líneas peor documentadas serían justamente las que nadie controla.
+  it("still evaluates price when the invoice declares no unit", () => {
+    const result = reconcileInvoiceEvidence({
+      totalOC: 100,
+      orderItems: [orderItems[0]!],
+      invoices: [{
+        id: "inv-1", invoiceNumber: "123", amount: 100,
+        items: [{ id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: null, quantity: 2, unitPrice: 80, subtotal: 160 }],
+      }],
+    })
+
+    expect(result.issues.map((issue) => issue.code)).toContain("missing_unit")
+    expect(result.issues).toContainEqual(expect.objectContaining({ code: "price_variance", orderItemId: "oc-1" }))
+    expect(result.status).toBe("needs_review")
+  })
+
+  it("keeps an order matched when the only finding is the missing documentary unit", () => {
+    const result = reconcileInvoiceEvidence({
+      totalOC: 100,
+      orderItems: [orderItems[0]!],
+      invoices: [{
+        id: "inv-1", invoiceNumber: "123", amount: 100,
+        items: [{ id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: null, quantity: 2, unitPrice: 50, subtotal: 100 }],
+      }],
+    })
+
+    expect(result.issues.map((issue) => issue.code)).toEqual(["missing_unit"])
+    expect(result.items[0]).toMatchObject({ priceDifference: 0, invoiceEffectiveUnitPrice: 50 })
+    expect(result.status).toBe("matched")
+  })
+
+  it("leaves the missing unit out of the blocking warnings", () => {
+    const result = reconcileInvoiceEvidence({
+      totalOC: 100,
+      orderItems: [orderItems[0]!],
+      invoices: [{
+        id: "inv-1", invoiceNumber: "123", amount: 100,
+        items: [{ id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: null, quantity: 2, unitPrice: 50, subtotal: 100 }],
+      }],
+    })
+
+    expect(isSoftInvoiceReconciliationIssue("missing_unit")).toBe(true)
+    expect(isSoftInvoiceReconciliationIssue("unit_mismatch")).toBe(false)
+    expect(formatInvoiceReconciliationIssues(result)).toEqual([])
   })
 
   it("marks a pending OC cost and exposes its concrete invoice source", () => {
@@ -299,7 +344,7 @@ describe("reconcileInvoiceEvidence", () => {
       orderItems: [orderItems[0]!],
       invoices: [{
         id: "inv-1", invoiceNumber: "123", amount: 100,
-        items: [{ id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: null, quantity: 2, subtotal: 100 }],
+        items: [{ id: "line-1", purchaseOrderItemId: "oc-1", unitOfMeasure: "kg", quantity: 2, subtotal: 100 }],
       }],
     }
     const first = reconcileInvoiceEvidence(input)
@@ -314,7 +359,7 @@ describe("reconcileInvoiceEvidence", () => {
 
     const accepted = reconcileInvoiceEvidence({
       ...input,
-      reviews: [{ id: "review-1", fingerprint: first.fingerprint, reason: "Unidad ausente aceptada por respaldo adjunto.", createdAt: "2026-08-20T10:00:00.000Z" }],
+      reviews: [{ id: "review-1", fingerprint: first.fingerprint, reason: "Unidad distinta aceptada por respaldo adjunto.", createdAt: "2026-08-20T10:00:00.000Z" }],
     })
     expect(accepted.status).toBe("accepted_exception")
 

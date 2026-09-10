@@ -2,7 +2,13 @@ import { CLP_ROUNDING_TOLERANCE } from "./money-tolerance"
 
 /** @see money-tolerance.ts — se reexporta porque forma parte del contrato de evidencia. */
 export const CLP_RECONCILIATION_TOLERANCE = CLP_ROUNDING_TOLERANCE
-export const INVOICE_RECONCILIATION_VERSION = 2
+/**
+ * Cambia cuando cambia la *regla* de conciliación, no sólo la evidencia: la
+ * versión prefija la huella, de modo que una aceptación firmada bajo la regla
+ * anterior deja de cubrir la nueva. v3 evalúa el precio de las líneas sin
+ * unidad declarada, que antes quedaban sin comparar.
+ */
+export const INVOICE_RECONCILIATION_VERSION = 3
 
 export type InvoiceReconciliationStatus =
   | "no_invoices"
@@ -23,6 +29,17 @@ export type InvoiceReconciliationIssueCode =
   | "quantity_over_received"
   | "supplier_unverified"
   | "total_mismatch"
+
+/**
+ * Issues que describen una limitación de la evidencia, no una inconsistencia
+ * entre OC y factura. Dejan constancia en la ficha pero no mandan la orden a
+ * revisión: no hay nada que un humano pueda resolver firmando una excepción.
+ */
+const SOFT_ISSUE_CODES = new Set<InvoiceReconciliationIssueCode>(["missing_unit"])
+
+export function isSoftInvoiceReconciliationIssue(code: InvoiceReconciliationIssueCode) {
+  return SOFT_ISSUE_CODES.has(code)
+}
 
 export interface InvoiceReconciliationOrderItem {
   id: string
@@ -313,13 +330,21 @@ export function reconcileInvoiceEvidence({
 
       const ocUnit = normalizeUnit(orderItem.unitOfMeasure)
       const invoiceUnit = normalizeUnit(line.unitOfMeasure)
-      if (!ocUnit || !invoiceUnit) {
-        issues.push({ code: "missing_unit", orderItemId: orderItem.id, invoiceId: invoice.id, invoiceItemId: line.id, expected: orderItem.unitOfMeasure ?? null, actual: line.unitOfMeasure ?? null })
-        continue
-      }
-      if (ocUnit !== invoiceUnit) {
+      // Dos unidades conocidas y distintas son evidencia contradictoria:
+      // comparar $/caja contra $/unidad no informa nada, así que el precio no
+      // se evalúa y la línea queda para revisión humana.
+      if (ocUnit && invoiceUnit && ocUnit !== invoiceUnit) {
         issues.push({ code: "unit_mismatch", orderItemId: orderItem.id, invoiceId: invoice.id, invoiceItemId: line.id, expected: orderItem.unitOfMeasure ?? null, actual: line.unitOfMeasure ?? null })
         continue
+      }
+      // Una unidad ausente no es una discrepancia, es un dato que falta:
+      // `UnmdItem` es opcional en el DTE y del lado OC la columna tiene default
+      // `'unidad'`, así que ninguno de los dos afirma gran cosa. Se deja
+      // constancia y la comparación de precio sigue corriendo: apagarla acá
+      // dejaba sin control justo a las líneas peor documentadas, y mandaba a
+      // revisión manual órdenes que cuadran peso a peso.
+      if (!ocUnit || !invoiceUnit) {
+        issues.push({ code: "missing_unit", orderItemId: orderItem.id, invoiceId: invoice.id, invoiceItemId: line.id, expected: orderItem.unitOfMeasure ?? null, actual: line.unitOfMeasure ?? null })
       }
       const ocPrice = effectiveUnitPrice(orderItem.subtotal, orderItem.quantity)
       const invoicePrice = effectiveUnitPrice(line.subtotal, line.quantity)
@@ -434,7 +459,7 @@ export function reconcileInvoiceEvidence({
   const currentReview = sortedReviews.find((review) => review.fingerprint === fingerprint) ?? null
   const previousReview = sortedReviews.find((review) => review.fingerprint !== fingerprint) ?? null
   const hasBlockingReceiptIssue = issues.some((issue) => issue.code === "quantity_over_received")
-  const hardIssues = issues.filter((issue) => issue.code !== "quantity_over_received")
+  const hardIssues = issues.filter((issue) => issue.code !== "quantity_over_received" && !isSoftInvoiceReconciliationIssue(issue.code))
   const overInvoicedLineCount = items.filter((item) => item.receiptStatus === "over_invoiced").length
   const receiptEvaluable = items.some((item) => item.receiptStatus !== "not_evaluable")
   const baseStatus: InvoiceReconciliationStatus = !hasInvoices
@@ -499,5 +524,7 @@ export function formatInvoiceReconciliationIssues(evidence: InvoiceReconciliatio
     supplier_unverified: "No se pudo verificar el RUT del proveedor en una factura manual.",
     total_mismatch: "El total facturado difiere del total de la OC.",
   }
-  return [...new Set(evidence.issues.map((issue) => labels[issue.code]))]
+  return [...new Set(evidence.issues
+    .filter((issue) => !isSoftInvoiceReconciliationIssue(issue.code))
+    .map((issue) => labels[issue.code]))]
 }

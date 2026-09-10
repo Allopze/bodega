@@ -130,3 +130,36 @@ describe("InvoiceReconciliationCard · la tolerancia que dice es la que se aplic
     expect(screen.getByText(/Tolerancia monetaria: \$250\./)).toBeInTheDocument()
   })
 })
+
+describe("InvoiceReconciliationCard · unidades documentales", () => {
+  const sinUnidad = () => reconcileInvoiceEvidence({
+    totalOC: 100,
+    orderItems: [orderItem],
+    invoices: [{ ...invoice, items: [{ ...invoice.items[0]!, unitOfMeasure: null, unitPrice: 50, subtotal: 100 }] }],
+  })
+
+  it("concilia la orden y deja el supuesto a la vista cuando la factura no declara unidad", () => {
+    const evidence = sinUnidad()
+    render(<InvoiceReconciliationCard purchaseOrderId="oc-1" reconciliation={evidence} invoices={[invoice]} canAccept canUpdateCatalog={false} />)
+
+    expect(evidence.status).toBe("matched")
+    expect(screen.getByText("Conciliada")).toBeInTheDocument()
+    expect(screen.getByText(/asumiendo que la unidad es la misma que la de la OC/)).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Aceptar diferencias" })).not.toBeInTheDocument()
+  })
+
+  it("no afirma diferencia cero en una línea que el motor no pudo comparar", () => {
+    const evidence = reconcileInvoiceEvidence({
+      totalOC: 100,
+      orderItems: [orderItem],
+      invoices: [{ ...invoice, items: [{ ...invoice.items[0]!, unitOfMeasure: "kg", unitPrice: 50, subtotal: 100 }] }],
+    })
+    render(<InvoiceReconciliationCard purchaseOrderId="oc-1" reconciliation={evidence} invoices={[invoice]} canAccept canUpdateCatalog={false} />)
+
+    expect(screen.getByText("Unidad documental distinta de la OC")).toBeInTheDocument()
+    expect(screen.getByText("No comparable")).toBeInTheDocument()
+    // El `$0 (0.0%)` de la celda es justo la afirmación que sobraba: la
+    // comparación de precio nunca corrió para esta línea.
+    expect(screen.queryByText("$0 (0.0%)")).not.toBeInTheDocument()
+  })
+})
