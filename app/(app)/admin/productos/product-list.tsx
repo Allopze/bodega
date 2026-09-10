@@ -274,7 +274,7 @@ export function ProductList({ products, categories, allSuppliers, units, templat
                 type="button"
                 onClick={() => openAddVariant(p.familyId!, family.name)}
                 disabled={loadingFamilyId === p.familyId}
-                className="h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-primary)] hover:bg-[var(--color-primary-tint)] transition-colors disabled:opacity-50"
+                className="h-8 w-8 shrink-0 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-primary)] hover:bg-[var(--color-primary-tint)] transition-colors disabled:opacity-50"
                 title="Añadir variante (talla/color con stock propio)"
                 aria-label={`Añadir variante a ${family.name}`}
               >
