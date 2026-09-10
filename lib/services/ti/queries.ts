@@ -185,26 +185,26 @@ export async function getMaintenanceCostByMonth(assetScope?: SQL) {
 /** Antigüedad del parque por tramo (en años desde la compra). */
 export async function getAssetsByAge(scope?: SQL) {
   const where = activeParkWhere(scope)
+  const today = todayInChile()
   return db
     .select({
       tramo: sql<string>`CASE
         WHEN ${itAssets.purchaseDate} IS NULL THEN 'sin fecha'
-        WHEN (${todayInChile()}::date - ${itAssets.purchaseDate}::date) <= 365 THEN '0-1 año'
-        WHEN (${todayInChile()}::date - ${itAssets.purchaseDate}::date) <= 1095 THEN '1-3 años'
-        WHEN (${todayInChile()}::date - ${itAssets.purchaseDate}::date) <= 1825 THEN '3-5 años'
+        WHEN (${today}::date - ${itAssets.purchaseDate}::date) <= 365 THEN '0-1 año'
+        WHEN (${today}::date - ${itAssets.purchaseDate}::date) <= 1095 THEN '1-3 años'
+        WHEN (${today}::date - ${itAssets.purchaseDate}::date) <= 1825 THEN '3-5 años'
         ELSE '5+ años'
       END`,
       total: sql<number>`count(*)::int`,
     })
     .from(itAssets)
     .where(where)
-    .groupBy(sql`CASE
-      WHEN ${itAssets.purchaseDate} IS NULL THEN 'sin fecha'
-      WHEN (${todayInChile()}::date - ${itAssets.purchaseDate}::date) <= 365 THEN '0-1 año'
-      WHEN (${todayInChile()}::date - ${itAssets.purchaseDate}::date) <= 1095 THEN '1-3 años'
-      WHEN (${todayInChile()}::date - ${itAssets.purchaseDate}::date) <= 1825 THEN '3-5 años'
-      ELSE '5+ años'
-    END`)
+    // `group by 1` = la primera columna del SELECT. No se puede repetir el CASE
+    // aquí: cada interpolación emite su propio placeholder ($1..$3 en el SELECT,
+    // $7..$9 en el GROUP BY), así que para Postgres serían expresiones distintas
+    // y rechazaba la consulta con 42803 («purchase_date must appear in the GROUP
+    // BY clause»), tumbando el dashboard de TI completo.
+    .groupBy(sql`1`)
 }
 
 /** Tickets por categoría. */

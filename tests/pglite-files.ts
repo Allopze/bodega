@@ -46,6 +46,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/operational-work-queue-capa-duplicada.test.ts",
   "lib/__tests__/operational-work-queue-row-identity.test.ts",
   "lib/__tests__/combustibles-scope.test.ts",
+  "lib/__tests__/ti-dashboard-assets-by-age.test.ts",
   "lib/__tests__/compras-export-invoice-filter.test.ts",
   // Faltaba desde que se escribió: instancia PGlite y migra, así que corriendo
   // en el proyecto paralelo competía por CPU con los demás.
