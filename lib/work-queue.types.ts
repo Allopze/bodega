@@ -39,6 +39,13 @@ export type OperationalModule =
   | "sst"
   | "cphs"
 
+/**
+ * Criterio de orden de la cola operacional. Vive aquí por la misma razón que
+ * `OperationalModule`: el workbench es un componente cliente y necesita el
+ * tipo y su valor por defecto sin arrastrar drizzle al bundle.
+ */
+export type OperationalSort = "priority" | "due" | "oldest" | "newest"
+
 export interface WorkTask {
   id:          string
   type:        WorkTaskType

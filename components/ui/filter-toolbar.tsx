@@ -46,7 +46,13 @@ export function FilterToolbar({
   return (
     <div className={cn("flex flex-col gap-2.5 mb-4", className)}>
       <div className="flex flex-wrap items-center justify-between gap-2.5">
-        <div className="flex flex-wrap items-center gap-2">
+        {/* `SelectTrigger` trae `w-full`. Como este contenedor se dimensiona
+            por su contenido, ese 100 % se resolvía contra el ancho del select
+            más ancho: cada filtro reclamaba la fila completa y la barra se
+            apilaba en vertical dejando media pantalla vacía. `w-auto` los
+            devuelve a su ancho natural; `max-w-full` evita que una opción
+            larga desborde la barra en pantallas angostas. */}
+        <div className="flex flex-wrap items-center gap-2 [&>button]:w-auto [&>button]:max-w-full">
           {children}
 
           {overflowFilters && (

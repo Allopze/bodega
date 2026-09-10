@@ -3,13 +3,13 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { ArrowRight, FunnelSimple, WarningCircle } from "@phosphor-icons/react"
+import { ArrowRight, MagnifyingGlass, WarningCircle } from "@phosphor-icons/react"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { FilterToolbar, type ActiveFilterChip } from "@/components/ui/filter-toolbar"
 import { Callout } from "@/components/ui/callout"
-import { OPERATIONAL_MODULE_LABELS } from "@/lib/work-queue"
+import { DEFAULT_QUEUE_SORT, OPERATIONAL_MODULE_LABELS } from "@/lib/work-queue"
 import { PriorityBadge } from "@/components/ui/priority-badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn, formatDate, formatDateTime } from "@/lib/utils"
@@ -18,11 +18,21 @@ import { Table, TableBody, TableHead, TableHeader, TableRoot, TableRow } from "@
 
 const QUICK_FILTERS = [
   ["all", "Todas"], ["critical", "Críticas"], ["overdue", "Vencidas"], ["today", "Hoy"],
-  ["blocked", "Bloqueadas"], ["unassigned", "Sin responsable"], ["mine", "Mis tareas"],
+  // "Mis tareas" dentro de una página titulada "Mis pendientes" se leía como
+  // una contradicción: todo lo de la cola ya es del usuario. Lo que este chip
+  // filtra es lo que tiene responsable asignado — y así lo dice.
+  ["blocked", "Bloqueadas"], ["unassigned", "Sin responsable"], ["mine", "Asignadas a mí"],
 ] as const
 
 const PRIMARY_QUICK_FILTERS = QUICK_FILTERS.filter(([value]) => ["all", "critical", "overdue", "mine"].includes(value))
 const SECONDARY_QUICK_FILTERS = QUICK_FILTERS.filter(([value]) => !["all", "critical", "overdue", "mine"].includes(value))
+
+const SORT_CAPTIONS: Record<string, string> = {
+  priority: "ordenados por prioridad y luego por vencimiento",
+  due: "ordenados por vencimiento, lo más atrasado primero",
+  oldest: "ordenados de más antiguos a más recientes",
+  newest: "ordenados de más recientes a más antiguos",
+}
 
 const PRIORITY_LABELS: Record<string, string> = {
   critical: "Crítica",
@@ -138,12 +148,16 @@ export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
 
   return (
     <section aria-labelledby="cola-operacional" className="space-y-4">
-      <div className="flex flex-col gap-2 border-b border-[var(--color-border)] pb-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 id="cola-operacional" className="text-h2 text-[var(--color-text)]">Cola de trabajo</h2>
-          <p className="mt-1 text-sm text-[var(--color-text-muted)]">{result.total} {result.total === 1 ? "acción" : "acciones"} dentro de tus permisos y faenas.</p>
-        </div>
-        <time dateTime={result.refreshedAt} className="shrink-0 text-xs text-[var(--color-text-subtle)]">Actualizada {formatDateTime(result.refreshedAt)}</time>
+      {/* El encabezado eran tres líneas apiladas bajo el `<h1>` de la página:
+          título, conteo y fecha de actualización. El conteo y la fecha son la
+          misma clase de dato —metadatos de esta lista—, así que van juntos en
+          una sola línea y el `<h2>` queda solo. */}
+      <div className="flex flex-col gap-1 border-b border-[var(--color-border)] pb-3 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
+        <h2 id="cola-operacional" className="text-h2 text-[var(--color-text)]">Cola de trabajo</h2>
+        <p className="text-xs text-[var(--color-text-subtle)]">
+          {result.total} {result.total === 1 ? "acción" : "acciones"} dentro de tus permisos y faenas
+          {" · "}Actualizada <time dateTime={result.refreshedAt}>{formatDateTime(result.refreshedAt)}</time>
+        </p>
       </div>
 
       <form onSubmit={submitSearch} className="flex flex-col gap-2 sm:flex-row sm:items-center" role="search">
@@ -156,22 +170,30 @@ export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
           placeholder="Buscar código, tarea o faena"
           className="h-11 min-w-0 flex-1 rounded-[var(--radius)] border border-[var(--color-border-control)] bg-[var(--color-surface)] px-3 text-xs text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-subtle)] focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-line)] sm:h-8"
         />
-        <Button type="submit" variant="secondary" size="sm"><FunnelSimple size={14} />Buscar</Button>
+        {/* Lupa, no embudo: el embudo significa filtrar y este botón busca. */}
+        <Button type="submit" variant="secondary" size="sm"><MagnifyingGlass size={14} />Buscar</Button>
       </form>
 
       <div className="flex flex-wrap gap-1 pb-1" aria-label="Vistas rápidas de pendientes">
         {PRIMARY_QUICK_FILTERS.map(([value, label]) => {
           const count = result.summary[value]
+          // Un chip en 0 lleva a una lista vacía. Se probó deshabilitarlo, pero
+          // sigue siendo un destino legítimo: pulsarlo es cómo el usuario
+          // confirma "no hay nada crítico ahora mismo", y con la vista rápida
+          // aplicada la lista vacía lo dice explícitamente. Lo que faltaba no
+          // era bloquear el click sino explicar el 0.
+          const empty = count === 0 && activeQuick !== value
           return (
             <button
               key={value}
               type="button"
               aria-pressed={activeQuick === value}
+              title={empty ? "Sin pendientes en esta vista con los filtros actuales" : undefined}
               onClick={() => update({ quick: value })}
               className={cn(
                 "flex h-9 shrink-0 items-center gap-1.5 rounded-[var(--radius)] border px-3 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)]",
                 activeQuick === value ? "border-[var(--color-primary)] bg-[var(--color-primary-tint)] text-[var(--color-primary-ink)]" : "border-[var(--color-border)] text-[var(--color-text-muted)] hover:bg-[var(--color-surface-2)]",
-                count === 0 && activeQuick !== value && "opacity-60",
+                empty && "opacity-60",
               )}
             >
               {label}
@@ -218,13 +240,18 @@ export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
           </>
         }
       >
+        {/* El ancho lo devuelve `FilterToolbar`; el mínimo es para que el
+            nombre de faena no baile de ancho al cambiar de selección. */}
         <Select value={searchParams.get("faena") ?? "all"} onValueChange={(value) => update({ faena: value })}>
-          <SelectTrigger aria-label="Filtrar por faena" className="h-11 sm:h-8 text-xs"><SelectValue placeholder="Faena" /></SelectTrigger>
+          <SelectTrigger aria-label="Filtrar por faena" className="h-11 min-w-44 sm:h-8 text-xs"><SelectValue placeholder="Faena" /></SelectTrigger>
           <SelectContent><SelectItem value="all">Todas las faenas</SelectItem>{worksites.map((worksite) => <SelectItem key={worksite.id} value={worksite.id}>{worksite.name}</SelectItem>)}</SelectContent>
         </Select>
-        <Select value={searchParams.get("sort") ?? "priority"} onValueChange={(value) => update({ sort: value })}>
-          <SelectTrigger aria-label="Ordenar por" className="h-11 sm:h-8 text-xs"><SelectValue placeholder="Ordenar por" /></SelectTrigger>
-          <SelectContent><SelectItem value="priority">Prioridad</SelectItem><SelectItem value="due">Fecha de vencimiento</SelectItem><SelectItem value="oldest">Más antiguas</SelectItem><SelectItem value="newest">Más recientes</SelectItem></SelectContent>
+        {/* Las etiquetas dicen "Ordenar por …" y no sólo "Prioridad": con el
+            filtro de prioridad viviendo en "Más filtros", un trigger que decía
+            "Prioridad" parecía un segundo filtro y no el criterio de orden. */}
+        <Select value={searchParams.get("sort") ?? DEFAULT_QUEUE_SORT} onValueChange={(value) => update({ sort: value })}>
+          <SelectTrigger aria-label="Ordenar por" className="h-11 min-w-52 sm:h-8 text-xs"><SelectValue placeholder="Ordenar por" /></SelectTrigger>
+          <SelectContent><SelectItem value="priority">Ordenar por prioridad</SelectItem><SelectItem value="due">Ordenar por vencimiento</SelectItem><SelectItem value="oldest">Más antiguas primero</SelectItem><SelectItem value="newest">Más recientes primero</SelectItem></SelectContent>
         </Select>
       </FilterToolbar>
 
@@ -246,9 +273,15 @@ export function WorkQueueWorkbench({ result }: WorkQueueWorkbenchProps) {
               por cursor y ordena en SQL, y `DataTable` hace ambas en cliente. */}
           <div className="hidden md:block">
             <TableRoot>
-            <Table className="min-w-[980px] text-left text-xs" aria-label="Pendientes operacionales">
-              <caption className="sr-only">Pendientes operacionales ordenados por prioridad y vencimiento</caption>
-              <TableHeader><TableRow><TableHead>Prioridad</TableHead><TableHead>Tarea</TableHead><TableHead>Módulo</TableHead><TableHead>Faena</TableHead><TableHead>Estado</TableHead><TableHead>Antigüedad</TableHead><TableHead>Vencimiento</TableHead><TableHead><span className="sr-only">Acciones</span></TableHead></TableRow></TableHeader>
+            {/* "Antigüedad" y "Vencimiento" eran dos columnas para un mismo
+                dato: en una fila vencida decían "33 días" y "Vencida hace 33
+                días". Quedó una sola columna, y la antigüedad sólo aparece
+                cuando aporta algo (la fila todavía no vence, o no tiene fecha). */}
+            <Table className="min-w-[900px] text-left text-xs" aria-label="Pendientes operacionales">
+              {/* El resumen describe el orden real: quedaba mintiendo cada vez
+                  que el usuario cambiaba el criterio en el selector. */}
+              <caption className="sr-only">Pendientes operacionales {SORT_CAPTIONS[searchParams.get("sort") ?? DEFAULT_QUEUE_SORT] ?? SORT_CAPTIONS[DEFAULT_QUEUE_SORT]}</caption>
+              <TableHeader><TableRow><TableHead>Prioridad</TableHead><TableHead>Tarea</TableHead><TableHead>Módulo</TableHead><TableHead>Faena</TableHead><TableHead>Estado</TableHead><TableHead>Vencimiento</TableHead><TableHead><span className="sr-only">Acciones</span></TableHead></TableRow></TableHeader>
               <TableBody>{result.items.map((item) => <QueueRow key={item.id} item={item} today={today} />)}</TableBody>
             </Table>
             </TableRoot>
@@ -285,6 +318,24 @@ function dueState(item: OperationalWorkItem, today: string) {
   return { overdue, daysLate }
 }
 
+/**
+ * El atraso se escalona en tres tramos. Con la mitad de la cola vencida —35 de
+ * 72 en una faena real—, pintar todas las filas del mismo naranjo hacía que
+ * ninguna destacara: la señal se anulaba a sí misma. Un mes de atraso ya no se
+ * ve igual que tres días.
+ */
+function overdueTone(daysLate: number) {
+  if (daysLate > 30) return "font-semibold text-[var(--color-danger-ink)]"
+  if (daysLate > 7) return "text-[var(--color-danger-ink)]"
+  return "text-[var(--color-warning-ink)]"
+}
+
+/** Texto de la línea secundaria de la columna de vencimiento. */
+function dueMeta(item: OperationalWorkItem, overdue: boolean, daysLate: number) {
+  if (overdue) return `Vencida hace ${daysLate} día${daysLate === 1 ? "" : "s"}`
+  return ageLabel(item.createdAt)
+}
+
 /** Tarjeta equivalente a `QueueRow` para móvil: misma información, sin scroll. */
 function QueueCard({ item, today }: { item: OperationalWorkItem; today: string }) {
   const { overdue, daysLate } = dueState(item, today)
@@ -301,13 +352,12 @@ function QueueCard({ item, today }: { item: OperationalWorkItem; today: string }
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <MetaBadge meta={{ label: `${item.blocked ? "Bloqueada · " : ""}${item.statusLabel}`, variant: item.blocked ? "danger" : "info" }} />
-        <span className="text-[11px] text-[var(--color-text-subtle)]">
+        <span className={cn("text-[11px]", overdue ? overdueTone(daysLate) : "text-[var(--color-text-subtle)]")}>
           {item.sourceDueAt
             ? overdue
               ? `Vencida hace ${daysLate} día${daysLate === 1 ? "" : "s"}`
-              : `Vence ${formatDate(item.sourceDueAt)}`
-            : "Sin fecha"}
-          {" · "}{relativeAge(item.createdAt)}
+              : `Vence ${formatDate(item.sourceDueAt)} · ${ageLabel(item.createdAt)}`
+            : `Sin fecha · ${ageLabel(item.createdAt)}`}
         </span>
       </div>
       <div className="mt-3 flex items-center justify-between gap-2">
@@ -322,7 +372,7 @@ function QueueCard({ item, today }: { item: OperationalWorkItem; today: string }
 function QueueRow({ item, today }: { item: OperationalWorkItem; today: string }) {
   const { overdue, daysLate } = dueState(item, today)
   return (
-    <tr className="border-t border-[var(--color-border)] align-middle hover:bg-[var(--color-surface-2)]">
+    <tr className="group border-t border-[var(--color-border)] align-middle hover:bg-[var(--color-surface-2)]">
       <td className="px-3 py-2.5"><PriorityBadge priority={item.priority} /></td>
       <td className="px-3 py-2.5">
         <Link href={item.href} className="font-medium text-[var(--color-text)] hover:text-[var(--color-primary-ink)] hover:underline">{item.title}</Link>
@@ -333,31 +383,34 @@ function QueueRow({ item, today }: { item: OperationalWorkItem; today: string })
       <td className="px-3 py-2.5">
         <MetaBadge meta={{ label: `${item.blocked ? "Bloqueada · " : ""}${item.statusLabel}`, variant: item.blocked ? "danger" : "info" }} />
       </td>
-      <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{relativeAge(item.createdAt)}</td>
       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">
-        {item.sourceDueAt ? (
-          <>
-            <time dateTime={item.sourceDueAt} className={overdue ? "font-medium text-[var(--color-warning-ink)]" : undefined}>
-              {formatDate(item.sourceDueAt)}
-            </time>
-            <span className="block text-[11px] text-[var(--color-text-subtle)]">
-              {overdue
-                ? `Vencida hace ${daysLate} día${daysLate === 1 ? "" : "s"}`
-                : "Fecha de origen"}
-            </span>
-          </>
-        ) : "Sin fecha"}
+        {item.sourceDueAt
+          ? <time dateTime={item.sourceDueAt} className={overdue ? overdueTone(daysLate) : undefined}>{formatDate(item.sourceDueAt)}</time>
+          : "Sin fecha"}
+        <span className={cn("block text-[11px]", overdue ? overdueTone(daysLate) : "text-[var(--color-text-subtle)]")}>
+          {dueMeta(item, overdue, daysLate)}
+        </span>
       </td>
       <td className="px-3 py-2.5">
+        {/* El mismo CTA repetido en cada fila era una columna de texto idéntico
+            leída de arriba abajo. La flecha queda siempre; el verbo aparece al
+            posar o al enfocar la fila. `aria-label` mantiene el nombre
+            accesible estable, así que el lector de pantalla no pierde nada. */}
         <div className="flex items-center justify-end gap-1">
-          <Button asChild size="sm" variant="ghost"><Link href={item.href}>{item.ctaLabel}<ArrowRight size={14} /></Link></Button>
+          <Button asChild size="sm" variant="ghost">
+            <Link href={item.href} aria-label={item.ctaLabel}>
+              <span aria-hidden className="opacity-0 transition-opacity duration-[var(--duration-fast)] group-hover:opacity-100 group-focus-within:opacity-100">{item.ctaLabel}</span>
+              <ArrowRight size={14} />
+            </Link>
+          </Button>
         </div>
       </td>
     </tr>
   )
 }
 
-function relativeAge(value: string) {
+/** Cuánto lleva la tarea esperando, para la línea secundaria del vencimiento. */
+function ageLabel(value: string) {
   const days = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 86_400_000))
-  return days === 0 ? "Hoy" : days === 1 ? "1 día" : `${days} días`
+  return days === 0 ? "Ingresó hoy" : days === 1 ? "En cola 1 día" : `En cola ${days} días`
 }
