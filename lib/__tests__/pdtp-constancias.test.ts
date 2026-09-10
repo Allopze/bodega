@@ -201,7 +201,14 @@ describe("listPdtpConstanciaActivities", () => {
     if (PREVIOUS_MONTH === null) return // enero: no hay mes anterior en el año
     // El programa se activó este mes: la celda del mes anterior ya no es
     // exigible — `markPdtpExecution` la rechazaría igual.
-    await seedProgram("active", new Date().toISOString())
+    //
+    // La activación se fija al día 1 y no a `now`: `seedSchedule` siembra
+    // siempre `week: 1`, y la regla conserva entera la semana de activación
+    // descartando las anteriores. Activar "hoy" hacía que del día 8 en
+    // adelante la propia celda del mes en curso quedara fuera, así que el
+    // caso sólo pasaba la primera semana de cada mes. Mediodía UTC para que
+    // la hora de Chile no corra la fecha al mes anterior.
+    await seedProgram("active", new Date(Date.UTC(PROGRAM_YEAR, CURRENT_MONTH - 1, 1, 12)).toISOString())
     await seedActivity()
     await seedSchedule(WS_A, PREVIOUS_MONTH)
     await seedSchedule(WS_A, CURRENT_MONTH)
