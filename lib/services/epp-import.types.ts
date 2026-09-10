@@ -8,7 +8,7 @@
 
 export type ImportSeverity = "info" | "warning" | "blocking"
 export type ImportDecision = "pending" | "create" | "update" | "skip" | "blocked"
-export interface EppAttribute { name: string; value: string; values?: string[] }
+export interface EppAttribute { name: string; value: string; values?: string[]; sizeFamily?: string | null }
 export interface ImportCorrection { field: string; from: string | null; to: string | null; ruleId: string; confidence: number }
 export interface NormalizedEppRow {
   sourceCode: string | null; name: string; canonicalName: string; description: string | null; supplierName: string | null; price: number | null
@@ -93,6 +93,125 @@ export const EPP_TYPE_TO_BODY_PART_CODE: Partial<Record<(typeof EPP_TYPES)[numbe
 }
 
 /**
+ * Familia de talla (`lib/products/size-catalog.ts`) que corresponde al
+ * vocabulario de ítem de este importador. Gemelo de
+ * `EPP_TYPE_TO_BODY_PART_CODE`: uno traduce a la zona corporal con que
+ * Prevención acredita, éste al eje por el que el ítem se sizea.
+ *
+ * Un tipo sin escala de talla —lentes, mascarillas, arnés, filtros— no entra
+ * al mapa: su talla, si la trae la planilla, queda como el atributo genérico
+ * `Talla` sin familia. Devolver `null` antes que adivinar es el mismo criterio
+ * de `classifyEppTypeIdByName`.
+ *
+ * El pantalón va a `pantalon`, que desde la compilación de compras 2022-2026
+ * usa la escala de letras igual que `ropa`: lo que distingue a las dos familias
+ * es con qué campo del padrón cruzan (`size_bottom` contra `size_top`), no la
+ * escala. Un trabajador puede ser L arriba y XL abajo.
+ *
+ * Jardinera, overol, buzo, traje y capa se quedan en `ropa`: la talla del
+ * conjunto es la de arriba. Un traje se sizea como conjunto aunque venga en
+ * dos piezas —«Traje PU Verde Activex Pantalón» es el pantalón de un traje PU,
+ * y su talla es la del traje, no una talla de pantalón—, así que `inferEppItemType`
+ * clasificándolo como `traje` es lo correcto y no un caso a corregir.
+ */
+export const EPP_TYPE_TO_SIZE_FAMILY: Partial<Record<(typeof EPP_TYPES)[number], string>> = {
+  guante: "guantes",
+  botin: "calzado",
+  zapato: "calzado",
+  bota: "calzado",
+  casco: "casco",
+  casquete: "casco",
+  gorro: "casco",
+  chaleco: "ropa",
+  buzo: "ropa",
+  traje: "ropa",
+  pantalon: "pantalon",
+  chaqueta: "ropa",
+  camisa: "ropa",
+  polera: "ropa",
+  blusa: "ropa",
+  overol: "ropa",
+  jardinera: "ropa",
+  "primera capa": "ropa",
+  capa: "ropa",
+  coleto: "ropa",
+}
+
+/** Familia de talla de un tipo de ítem, o `null` si ese ítem no se sizea. */
+export function sizeFamilyForEppType(eppType: string | null): string | null {
+  if (!eppType) return null
+  return (EPP_TYPE_TO_SIZE_FAMILY as Record<string, string | undefined>)[eppType] ?? null
+}
+
+/** Códigos válidos de una familia. Estructura de `SizeFamilyOptions`. */
+export interface SizeFamilyCodes {
+  family: string
+  attributeName: string
+  codes: readonly string[]
+}
+
+export interface ResolvedSizeAttribute {
+  /** Nombre del atributo a crear («Talla guantes»). */
+  name: string
+  /** Valores ya canonizados, en el orden de la planilla. */
+  values: string[]
+  /** Familia canónica a persistir en `product_attributes.size_family`. */
+  sizeFamily: string | null
+  issues: Array<{ severity: ImportSeverity; message: string }>
+}
+
+/**
+ * Cómo se llama el atributo de talla de una fila, cómo se escriben sus valores
+ * y a qué familia pertenece.
+ *
+ * Sustituye la heurística `/^\d{2}$/ ? "Talla calzado" : "Talla"` que estaba
+ * duplicada en las dos ramas de `normalizeEppRow` y por la que ningún guante
+ * recibía nunca `Talla guantes`, ningún casco `Talla casco`, y nada quedaba con
+ * `size_family`.
+ *
+ * Una talla fuera de los códigos de su familia se acepta con advertencia y no
+ * bloquea: las planillas de proveedor traen numeración que el catálogo no
+ * declara (`9-10` de guante), y bloquear las dejaría inutilizables. La
+ * advertencia es la señal de que alguien decida si esa talla se agrega a
+ * `size_catalog` o se corrige.
+ *
+ * `familyOptions` viene de `size_catalog` cuando llama el servidor. Sin él cae
+ * a la semilla, el mismo respaldo que `getSizeFamilyOptions` usa para una tabla
+ * vacía: quedarse sin poder importar es peor que usar los valores por defecto.
+ */
+export function resolveSizeAttribute(
+  rawValues: readonly string[],
+  eppType: string | null,
+  familyOptions?: readonly SizeFamilyCodes[],
+): ResolvedSizeAttribute {
+  // `normalizeSizeLabel` es el dueño único de la forma de una talla: un valor
+  // que reduce a vacío —una celda con sólo puntuación— no es una talla, y
+  // resucitarlo con otra regla reintroduciría la divergencia que el hallazgo
+  // F-5 cerró.
+  const values = [...new Set(
+    rawValues
+      .map((value) => normalizeSizeLabel(value))
+      .filter(Boolean),
+  )]
+  const family = sizeFamilyForEppType(eppType)
+  const definition = family
+    ? (familyOptions ?? SIZE_FAMILIES).find((option) => option.family === family)
+    : undefined
+
+  if (!definition) return { name: "Talla", values, sizeFamily: null, issues: [] }
+
+  const known = new Set(definition.codes.map((code) => normalizeSizeLabel(code)))
+  const issues = values
+    .filter((value) => !known.has(normalizeSizeLabel(value)))
+    .map((value) => ({
+      severity: "warning" as const,
+      message: `La talla «${value}» no está en el catálogo de la familia ${definition.family}.`,
+    }))
+
+  return { name: definition.attributeName, values, sizeFamily: definition.family, issues }
+}
+
+/**
  * Accesorios cuyo nombre menciona el EPP al que se montan: "Fono ... p/casco"
  * es protección auditiva, no de cabeza. La mención se descarta antes de buscar
  * el tipo para que gane el ítem propio del producto y no la pieza citada.
@@ -134,6 +253,8 @@ export const RULE_LABELS: Record<string, string> = {
   default_epp_category: "Categoria EPP asignada por defecto",
   extract_color_from_name: "Color detectado en el nombre del producto",
   extract_size_from_name: "Talla detectada en el nombre del producto",
+  canonicalize_size: "Talla estandarizada",
+  assign_size_family: "Familia de talla asignada por el tipo de EPP",
   manual_review: "Corregido manualmente",
 }
 
@@ -145,6 +266,8 @@ export const HEADER_ALIASES: Record<string, string> = {
 }
 
 import { toCode } from "@/lib/utils"
+import { isSizeAttributeName, normalizeSizeLabel, parseSizeOptions } from "@/lib/products/product-size"
+import { SIZE_FAMILIES } from "@/lib/products/size-catalog"
 import ExcelJS from "exceljs"
 
 function cellText(value: unknown): string {
@@ -179,7 +302,10 @@ export async function parseEppWorkbook(buffer: Buffer) {
   return { rows, headers, sheetName: sheet.name, errors: [] }
 }
 
-export function normalizeEppRow(source: Record<string, string>): NormalizedEppRow {
+export function normalizeEppRow(
+  source: Record<string, string>,
+  familyOptions?: readonly SizeFamilyCodes[],
+): NormalizedEppRow {
   const issues: NormalizedEppRow["issues"] = []
   const corrections: EppAttribute[] = parseNamedAttributes(source.attributes)
   const rawColor = cleanText(source.color)
@@ -209,31 +335,42 @@ export function normalizeEppRow(source: Record<string, string>): NormalizedEppRo
       if (!explicitColor) workingName = removeToken(workingName, colorsInName[0]!)
     }
   }
-  const explicitSize = cleanText(source.size)
-  // ── Multi-talla: comma-separated values in the size column ────────────
-  const multiTalla = explicitSize ? explicitSize.split(",").map((s) => s.trim()).filter(Boolean) : null
-  if (multiTalla && multiTalla.length > 1) {
-    const attrName = /^\d{2}$/.test(multiTalla[0]!) ? "Talla calzado" : "Talla"
-    const normalizedValues = multiTalla.map((v) => normalizeSize(v))
-    const existingAttr = findMatchingAttribute(corrections, attrName)
-    if (existingAttr) {
-      existingAttr.values = normalizedValues
-      existingAttr.value = normalizedValues.join(", ")
-    } else {
-      corrections.push({ name: attrName, value: normalizedValues.join(", "), values: normalizedValues })
-    }
-  } else {
-    const sizeMatch = explicitSize || (cleanText(source.model) ? null : extractSize(workingName))
-    if (sizeMatch) {
-      addAttribute(corrections, /^\d{2}$/.test(sizeMatch) ? "Talla calzado" : "Talla", normalizeSize(sizeMatch))
-      if (!explicitSize) {
-        workingName = cleanText(workingName.replace(new RegExp(`\\btalla\\s+${escapeRegex(sizeMatch)}\\b`, "i"), ""))
-        workingName = removeToken(workingName, sizeMatch)
-      }
-    }
-  }
+  // Antes del bloque de talla: `resolveSizeAttribute` necesita el tipo para
+  // elegir la familia. Es seguro calcularlo aquí porque el ítem que el nombre
+  // declara («guante») está presente tanto antes como después de quitarle la
+  // talla, que es un código de una o dos posiciones.
   const eppType = inferEppItemType(workingName)
   if (!eppType) issues.push({ severity: "blocking", message: "No se pudo identificar un tipo de EPP en el nombre." })
+
+  // La talla puede llegar por la columna `talla`, por la columna `atributos`
+  // («Talla: M») o dentro del nombre. Se unifican para resolverlas juntas, pero
+  // la limpieza del nombre depende sólo de la columna `talla`: cuando la talla
+  // viene por ahí el nombre no la menciona, y `extractSize` podría confundir un
+  // modelo con una talla.
+  const columnSize = cleanText(source.size)
+  const namedSize = corrections.find((attribute) => isSizeAttributeName(attribute.name))
+  const declaredSize = columnSize
+    || (namedSize ? (namedSize.values ?? [namedSize.value]).join(", ") : "")
+  const rawSizes = declaredSize
+    ? declaredSize.split(",").map((value) => value.trim()).filter(Boolean)
+    : []
+
+  if (!columnSize) {
+    const sizeInName = cleanText(source.model) ? null : extractSize(workingName)
+    if (sizeInName) {
+      // La columna `atributos` manda sobre lo que diga el nombre; el token se
+      // quita igual para que el nombre canónico no lleve la talla.
+      if (rawSizes.length === 0) rawSizes.push(sizeInName)
+      workingName = cleanText(workingName.replace(new RegExp(`\\btalla\\s+${escapeRegex(sizeInName)}\\b`, "i"), ""))
+      workingName = removeToken(workingName, sizeInName)
+    }
+  }
+
+  if (rawSizes.length > 0) {
+    const resolved = resolveSizeAttribute(rawSizes, eppType, familyOptions)
+    issues.push(...resolved.issues)
+    upsertSizeAttribute(corrections, resolved)
+  }
   const unitOfMeasure = normalizeUnit(source.unitOfMeasure)
   if (!unitOfMeasure) issues.push({ severity: "blocking", message: "La unidad de medida no es reconocida." })
   const price = parsePrice(source.price)
@@ -281,6 +418,32 @@ function findMatchingAttribute(attributes: EppAttribute[], name: string): EppAtt
   return attributes.find((attribute) => normalizeKey(attribute.name) === normalizeKey(name))
 }
 
+/**
+ * Deja exactamente un atributo de talla en la fila, con el nombre y la familia
+ * que resolvió el catálogo.
+ *
+ * Reemplaza en vez de agregar porque la talla puede llegar por dos vías a la
+ * vez: la columna `talla` y la columna `atributos` («Talla: M»). Sin esto, una
+ * fila terminaba con `Talla` y `Talla guantes` a la vez, y el catálogo mostraba
+ * la misma talla dos veces con nombres distintos.
+ *
+ * Una resolución sin valores —una celda que `normalizeSizeLabel` reduce a
+ * vacío— deja la fila sin atributo de talla: quita el que hubiera y no pone
+ * ninguno. Una talla que no se puede escribir no es una talla.
+ */
+function upsertSizeAttribute(attributes: EppAttribute[], resolved: ResolvedSizeAttribute) {
+  for (let index = attributes.length - 1; index >= 0; index--) {
+    if (isSizeAttributeName(attributes[index]!.name)) attributes.splice(index, 1)
+  }
+  if (resolved.values.length === 0) return
+  attributes.push({
+    name: resolved.name,
+    value: resolved.values.join(", "),
+    ...(resolved.values.length > 1 ? { values: resolved.values } : {}),
+    sizeFamily: resolved.sizeFamily,
+  })
+}
+
 function canonicalColor(value: string | undefined) {
   return COLOR_ALIASES[normalizeKey(value ?? "")] ?? null
 }
@@ -288,8 +451,6 @@ function canonicalColor(value: string | undefined) {
 function extractSize(value: string) {
   return value.match(/\b(?:XS|S|M|L|XL|2XL|3XL|4XL|[3-5]\d)\b/i)?.[0] ?? null
 }
-
-function normalizeSize(value: string) { return value.toUpperCase() }
 
 function extractMaterial(value: string) {
   const materials = ["nitrilo", "cabritilla", "cuero", "policarbonato", "algodon", "algodón"]
@@ -349,15 +510,37 @@ function attrOptionIncludes(options: string | null, value: string): boolean {
   return normalizeKey(options).includes(normalizeKey(value))
 }
 
+/**
+ * Una opción de talla equivale a un valor si coinciden ya canonizadas. Es lo
+ * que permite que `XXXL` de la planilla cruce con `3XL` del catálogo, y lo que
+ * evita que renombrar el atributo a `Talla guantes` le quite a la fila los
+ * puntos de «atributos equivalentes» y la deje entrar como producto nuevo.
+ */
+function sizeOptionIncludes(options: string | null, value: string): boolean {
+  const target = normalizeSizeLabel(value)
+  return parseSizeOptions(options).some((option) => normalizeSizeLabel(option) === target)
+}
+
 export function findProductMatches(normalized: NormalizedEppRow, existing: Array<{ id: string; name: string; unitOfMeasure: string; productAttributes: Array<{ name: string; options: string | null }> }>) {
   return existing.map((product) => {
     let score = 0; const reasons: string[] = []
     if (normalizeKey(product.name) === normalizeKey(normalized.name)) { score += 70; reasons.push("Nombre canónico equivalente") }
     if (product.unitOfMeasure === normalized.unitOfMeasure) { score += 10; reasons.push("Unidad equivalente") }
     const sameAttributes = normalized.attributes.filter((attribute) => {
-      // Check multi-value: does any value in the normalized attribute match an option?
       const values = attribute.values ?? [attribute.value]
-      return values.some((v) => product.productAttributes.some((pa) => normalizeKey(pa.name) === normalizeKey(attribute.name) && attrOptionIncludes(pa.options, v)))
+      const attributeIsSize = isSizeAttributeName(attribute.name)
+      return values.some((value) => product.productAttributes.some((pa) => {
+        // Dos atributos de talla son el mismo eje aunque se llamen distinto:
+        // el catálogo tiene `Talla`, `Talla guantes` y `Talla calzado` para lo
+        // que conceptualmente es una sola cosa.
+        const sameAxis = attributeIsSize
+          ? isSizeAttributeName(pa.name)
+          : normalizeKey(pa.name) === normalizeKey(attribute.name)
+        if (!sameAxis) return false
+        return attributeIsSize
+          ? sizeOptionIncludes(pa.options, value)
+          : attrOptionIncludes(pa.options, value)
+      }))
     }).length
     if (sameAttributes) { score += Math.min(20, sameAttributes * 10); reasons.push("Atributos equivalentes") }
     return { productId: product.id, score, reasons }
@@ -371,6 +554,13 @@ export function buildCorrections(source: Record<string, string>, normalized: Nor
   add("unitOfMeasure", source.unitOfMeasure, normalized.unitOfMeasure, "normalize_unit")
   add("categoryName", source.categoryName, normalized.categoryName, "default_epp_category")
   if (!source.color && normalized.attributes.some((attribute) => attribute.name === "Color")) add("color", null, normalized.attributes.find((attribute) => attribute.name === "Color")?.value ?? null, "extract_color_from_name", 90)
-  if (!source.size && normalized.attributes.some((attribute) => attribute.name.startsWith("Talla"))) add("size", null, normalized.attributes.find((attribute) => attribute.name.startsWith("Talla"))?.value ?? null, "extract_size_from_name", 85)
+  const sizeAttribute = normalized.attributes.find((attribute) => isSizeAttributeName(attribute.name))
+  if (sizeAttribute) {
+    // Sin columna `talla`, la talla se dedujo del nombre; con columna, lo que
+    // se registra es la canonización de lo que el operador escribió.
+    if (!source.size) add("size", null, sizeAttribute.value, "extract_size_from_name", 85)
+    else add("size", source.size, sizeAttribute.value, "canonicalize_size", 95)
+    if (sizeAttribute.sizeFamily) add("sizeFamily", null, sizeAttribute.sizeFamily, "assign_size_family", 90)
+  }
   return corrections
 }

@@ -18,7 +18,9 @@ set -euo pipefail
 # Steps: sync compose -> contrastar .env -> resolver nombre de imagen -> tag
 # current image as rollback -> pg_dump -> build -> ship image -> preflight
 # conciliación -> preflight combustible -> migrate -> migración documental SST
-# a Cloudreve -> normalize EPP -> completar tallas XS..2XL de ropa EPP ->
+# a Cloudreve -> normalize EPP -> estado de solicitudes -> catálogo de tallas
+# -> conciliar variantes
+# duplicadas por talla -> completar el rango de tallas de ropa EPP ->
 # backfill conciliación (si hace falta) ->
 # backfill referencias OC en DTE (si hace falta) -> backfill lecturas de medidor
 # -> catálogo de reglas de anomalía -> sync-rbac -> decisiones de catálogo PDTP
@@ -371,12 +373,35 @@ run_timed "Migrando documentos SST a Cloudreve" run_in_prod docker compose run -
 
 run_timed "Normalizando SKUs de EPP y servicios" run_in_prod docker compose run --rm normalize-epp-skus
 
-# Completa XS/S/M/L/XL/2XL en toda familia EPP que ya usa "Talla" (la escala
-# de ropa: pantalones, buzos, chaquetas, chalecos, trajes...). Va después de
-# normalizar SKUs para que las tallas nuevas nazcan con la numeración
-# secuencial vigente. Idempotente: familias completas o sin esa escala no se
-# tocan.
-run_timed "Completando tallas XS..2XL de ropa EPP" run_in_prod docker compose run --rm backfill-epp-clothing-sizes
+# Recalcula el estado derivado de las solicitudes cuya regla de cierre cambió
+# después de que sus ítems llegaran a estado terminal. Sin esto quedan con el
+# estado que calculó la regla vieja, porque el rollup solo se dispara en una
+# transición de ítem y a esas solicitudes ya no les queda ninguna. Idempotente:
+# sin deriva no escribe.
+run_timed "Reconciliando el estado de las solicitudes" run_in_prod docker compose run --rm reconcile-request-status
+
+# Los tres pasos de tallas van en este orden y no en otro:
+#
+#   1. `size_catalog` al día: de esta tabla sale la familia `ropa` que el paso 3
+#      exige, así que sin esto el backfill no encuentra ninguna familia.
+#   2. Conciliar duplicados: deja una sola variante por talla antes de que el
+#      paso 3 mire qué tallas existen. Al revés, el backfill contaría una talla
+#      duplicada como presente y el duplicado seguiría vivo.
+#   3. Completar el rango de ropa.
+run_timed "Sincronizando el catálogo de tallas" run_in_prod docker compose run --rm seed-size-catalog
+
+# Da de baja las variantes que son la misma talla física escrita de dos formas
+# (`N41` junto a `T41`, `L` junto a `T/L`) o duplicadas de plano. Sólo toca las
+# que no tienen stock ni historial; las que participaron de una operación las
+# informa y las salta. Se desactiva, no se borra: revertir es un UPDATE, y cada
+# baja queda en el audit log con la variante que la absorbió.
+run_timed "Conciliando variantes duplicadas por talla" run_in_prod docker compose run --rm reconcile-epp-duplicate-sizes
+
+# Completa S/M/L/XL/2XL/3XL —el rango que el negocio realmente compra— en toda
+# familia EPP que declare `size_family = 'ropa'`. Va después de normalizar SKUs
+# para que las tallas nuevas nazcan con la numeración secuencial vigente.
+# Idempotente: familias completas o de otra familia de tallas no se tocan.
+run_timed "Completando el rango de tallas de ropa EPP" run_in_prod docker compose run --rm backfill-epp-clothing-sizes
 
 # El backfill recalcula tanto OC nunca proyectadas como huellas de una versión
 # anterior. La versión 2 introduce estados parciales, así que conservar una

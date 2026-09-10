@@ -69,6 +69,15 @@ describe("contrato del lock del rollup (DAT-1)", () => {
       "lib/services/purchasing-module/purchase-orders-delete.ts",
       "lib/services/purchasing-module/purchase-orders-status.ts",
       "lib/services/purchasing-module/receiving.ts",
+      // Caller nuevo: el reconciliador de estados, que corre en el deploy.
+      // Lockea el padre y **no** los ítems, porque no los muta: sólo los lee
+      // para derivar. Eso no reabre DAT-1 ni puede deadlockear contra los
+      // otros. El ciclo necesitaría que este caller esperara algo que otro
+      // tiene, y no espera nada: toma `FOR UPDATE` del padre antes de
+      // cualquier lectura, y el `SELECT` de ítems del rollup no bloquea bajo
+      // MVCC. Un `approval.ts` concurrente que tenga los ítems y espere el
+      // padre simplemente espera a que este termine y suelte.
+      "lib/services/request-status-reconciliation.ts",
     ])
   })
 })

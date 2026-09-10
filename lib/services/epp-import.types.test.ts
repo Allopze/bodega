@@ -7,7 +7,14 @@
  * que estos casos vengan del catálogo real y no de nombres inventados.
  */
 import { describe, expect, it } from "vitest"
-import { inferEppItemType, EPP_TYPE_TO_BODY_PART_CODE } from "./epp-import.types"
+import {
+  inferEppItemType,
+  EPP_TYPE_TO_BODY_PART_CODE,
+  EPP_TYPE_TO_SIZE_FAMILY,
+  sizeFamilyForEppType,
+  resolveSizeAttribute,
+} from "./epp-import.types"
+import { SIZE_FAMILIES } from "@/lib/products/size-catalog"
 
 const bodyPart = (name: string) => {
   const item = inferEppItemType(name)
@@ -74,5 +81,147 @@ describe("inferEppItemType", () => {
     ]) {
       expect(bodyPart(name), name).toBeNull()
     }
+  })
+})
+
+describe("sizeFamilyForEppType", () => {
+  const familyOf = (name: string) => sizeFamilyForEppType(inferEppItemType(name))
+
+  it("asigna la familia por el ítem que declara el nombre", () => {
+    expect(familyOf("Guante Nitrilo Showa")).toBe("guantes")
+    expect(familyOf("Botin de seguridad SteelPro")).toBe("calzado")
+    expect(familyOf("Bota de agua")).toBe("calzado")
+    expect(familyOf("Casco Activex I")).toBe("casco")
+    expect(familyOf("Casquete ABS Porta Visor")).toBe("casco")
+    expect(familyOf("Overol Activex Piloto Poplin")).toBe("ropa")
+    expect(familyOf("Chaleco reflectante")).toBe("ropa")
+  })
+
+  it("manda el pantalón a su propia familia, para que cruce con la talla de abajo", () => {
+    // `pantalon` y `ropa` comparten la escala de letras; lo que las distingue es
+    // con qué campo del padrón cruzan. Un trabajador puede ser L arriba y XL
+    // abajo, y `size_top`/`size_bottom` existen para capturar esa diferencia.
+    expect(familyOf("Pantalón de trabajo")).toBe("pantalon")
+  })
+
+  it("sizea el conjunto por la talla de arriba, no por la prenda suelta", () => {
+    expect(familyOf("JARDINERA TERMICA")).toBe("ropa")
+    expect(familyOf("Overol Activex Piloto")).toBe("ropa")
+    expect(familyOf("Buzo Dupont Tyvek 500X")).toBe("ropa")
+    // Un traje se sizea como conjunto aunque venga en dos piezas: el pantalón
+    // de un traje PU lleva la talla del traje, no una talla de pantalón. Que
+    // `inferEppItemType` lo lea como `traje` es lo correcto.
+    expect(familyOf("Traje PU Verde Activex Pantalón")).toBe("ropa")
+    expect(familyOf("Traje para lluvia Activex Azul")).toBe("ropa")
+  })
+
+  it("devuelve null para los ítems que no tienen escala de talla", () => {
+    expect(familyOf("Lente Activex FX III sellado")).toBeNull()
+    expect(familyOf("Mascarilla plegable KN95 sin válvula")).toBeNull()
+    expect(familyOf("Arnés de cuerpo completo")).toBeNull()
+    expect(familyOf("Fono HL Verishield cintillo")).toBeNull()
+    expect(familyOf("Respirador media cara")).toBeNull()
+  })
+
+  it("devuelve null cuando el nombre no declara ningún ítem", () => {
+    expect(sizeFamilyForEppType(null)).toBeNull()
+    expect(sizeFamilyForEppType("no-es-un-tipo")).toBeNull()
+  })
+
+  it("sólo usa familias que el catálogo canónico declara", () => {
+    const known = new Set(SIZE_FAMILIES.map((definition) => definition.family))
+    for (const family of Object.values(EPP_TYPE_TO_SIZE_FAMILY)) {
+      expect(known).toContain(family)
+    }
+  })
+})
+
+describe("resolveSizeAttribute", () => {
+  it("nombra el atributo con la familia del ítem, no con una heurística de dos dígitos", () => {
+    expect(resolveSizeAttribute(["M"], "guante").name).toBe("Talla guantes")
+    expect(resolveSizeAttribute(["42"], "botin").name).toBe("Talla calzado")
+    expect(resolveSizeAttribute(["L"], "casco").name).toBe("Talla casco")
+    expect(resolveSizeAttribute(["XL"], "overol").name).toBe("Talla")
+  })
+
+  it("canoniza el valor con la regla compartida", () => {
+    expect(resolveSizeAttribute(["T/L"], "guante").values).toEqual(["L"])
+    expect(resolveSizeAttribute(["XXXL"], "overol").values).toEqual(["3XL"])
+    expect(resolveSizeAttribute(["42.0"], "botin").values).toEqual(["42"])
+    expect(resolveSizeAttribute(["Mediana"], "overol").values).toEqual(["M"])
+  })
+
+  it("declara la familia para que la variante pueda cruzarse con el padrón", () => {
+    expect(resolveSizeAttribute(["M"], "guante").sizeFamily).toBe("guantes")
+    expect(resolveSizeAttribute(["42"], "botin").sizeFamily).toBe("calzado")
+  })
+
+  it("no inventa familia para un ítem que no se sizea", () => {
+    const resolved = resolveSizeAttribute(["M"], "lente")
+    expect(resolved.name).toBe("Talla")
+    expect(resolved.sizeFamily).toBeNull()
+    expect(resolved.issues).toEqual([])
+  })
+
+  it("acepta con advertencia no bloqueante una talla fuera del catálogo de su familia", () => {
+    const resolved = resolveSizeAttribute(["Talla 9-10"], "guante")
+    expect(resolved.values).toEqual(["9/10"])
+    expect(resolved.sizeFamily).toBe("guantes")
+    expect(resolved.issues).toHaveLength(1)
+    expect(resolved.issues[0]!.severity).toBe("warning")
+    expect(resolved.issues[0]!.message).toContain("9/10")
+    expect(resolved.issues[0]!.message).toContain("guantes")
+  })
+
+  it("no advierte cuando el valor sí está en el catálogo de su familia", () => {
+    expect(resolveSizeAttribute(["2XL"], "guante").issues).toEqual([])
+  })
+
+  it("resuelve todas las tallas de una fila multi-talla", () => {
+    const resolved = resolveSizeAttribute(["S", "M", "L", "XL"], "guante")
+    expect(resolved.name).toBe("Talla guantes")
+    expect(resolved.values).toEqual(["S", "M", "L", "XL"])
+    expect(resolved.issues).toEqual([])
+  })
+
+  it("advierte por cada talla fuera de catálogo de una fila multi-talla", () => {
+    const resolved = resolveSizeAttribute(["S", "9-10"], "guante")
+    expect(resolved.values).toEqual(["S", "9/10"])
+    expect(resolved.issues).toHaveLength(1)
+  })
+
+  it("deduplica valores que canonizan al mismo código", () => {
+    // "XXL" y "2XL" son la misma talla escrita distinto: sin deduplicar,
+    // `toUpperCase` nunca las hubiera dejado iguales, pero `normalizeSizeLabel`
+    // sí, y el resultado repetía tanto el valor como su advertencia.
+    const resolved = resolveSizeAttribute(["XXL", "2XL"], "overol")
+    expect(resolved.values).toEqual(["2XL"])
+  })
+
+  it("valida contra los códigos inyectados y no contra la semilla", () => {
+    // Ésta es la ruta real del servidor: los códigos vienen de `size_catalog`,
+    // donde una talla puede estar dada de baja o haberse agregado.
+    const options = [{ family: "guantes", attributeName: "Talla guantes", codes: ["S", "M"] }]
+    expect(resolveSizeAttribute(["M"], "guante", options).issues).toEqual([])
+    expect(resolveSizeAttribute(["XL"], "guante", options).issues).toHaveLength(1)
+  })
+
+  it("usa el nombre de atributo que declaran los códigos inyectados", () => {
+    const options = [{ family: "guantes", attributeName: "Talla de guante", codes: ["M"] }]
+    expect(resolveSizeAttribute(["M"], "guante", options).name).toBe("Talla de guante")
+  })
+
+  it("descarta un valor que no deja ninguna talla al normalizarse", () => {
+    // `normalizeSizeLabel(".")` es `""` a propósito. Resucitarlo con otra regla
+    // sería la segunda fuente de verdad que el hallazgo F-5 cerró.
+    const resolved = resolveSizeAttribute(["."], "guante")
+    expect(resolved.values).toEqual([])
+    expect(resolved.issues).toEqual([])
+  })
+
+  it("conserva las tallas válidas de una fila que trae una celda basura", () => {
+    const resolved = resolveSizeAttribute(["M", ".", "L"], "guante")
+    expect(resolved.values).toEqual(["M", "L"])
+    expect(resolved.issues).toEqual([])
   })
 })

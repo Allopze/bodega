@@ -1,6 +1,6 @@
 {
-  "id": "9e81da3f-f180-4b23-af53-a25cf0f804a0",
-  "prevId": "72d0e466-96a2-494e-80c1-9261ead27bb3",
+  "id": "36ac1bc0-b6a5-4faa-b8ea-454706b1fdec",
+  "prevId": "f9831675-0e55-41dc-9da8-91e47c23b2b8",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -8212,6 +8212,19 @@
           "notNull": false,
           "default": false
         },
+        "cloudreve_path": {
+          "name": "cloudreve_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cloudreve_uploaded": {
+          "name": "cloudreve_uploaded",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
         "app_version": {
           "name": "app_version",
           "type": "text",
@@ -8348,6 +8361,27 @@
           "primaryKey": false,
           "notNull": true,
           "default": 30
+        },
+        "drive_backups_enabled": {
+          "name": "drive_backups_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "cloudreve_backups_enabled": {
+          "name": "cloudreve_backups_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "cloudreve_backups_path": {
+          "name": "cloudreve_backups_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'backups/plataforma'"
         },
         "updated_at": {
           "name": "updated_at",

@@ -403,11 +403,11 @@ MANIFEST_SHA256=$(sha256file "$MANIFEST")
 MANIFEST_SIZE=$(bytes "$MANIFEST")
 log "  Manifiesto: ${MANIFEST_SIZE} bytes | SHA256: ${MANIFEST_SHA256}"
 
-# ── 5. Upload a Google Drive ─────────────────────────────────────────────────
+# ── 5. Upload a destinos remotos (Cloudreve + Drive opcional) ────────────────
 
 log ""
-log "Subiendo a Google Drive..."
-_FAILED_STEP="upload_drive"
+log "Subiendo a destinos remotos..."
+_FAILED_STEP="upload_remote"
 
 UPLOAD_PATH="${GDRIVE_DEST}/${DATE_STR}"
 
@@ -454,23 +454,41 @@ else
   warn "  Incluye la llave DTE_SETTINGS_KEYRING junto al dump que esa llave abre."
 fi
 
-# Verificar que rclone está configurado
-if command -v rclone &>/dev/null && rclone listremotes 2>/dev/null | grep -q 'gdrive-backups:'; then
-  log "  Destino: ${UPLOAD_PATH}"
-
-  rclone copy "${UPLOAD_SRC}/" "${UPLOAD_PATH}/" \
-    --verbose \
-    --checksum \
-    --progress 2>&1 | while IFS= read -r line; do log "  rclone: ${line}"; done
-
-  # Actualizar symlink "latest" en Drive
-  rclone delete "${GDRIVE_DEST}/latest" --quiet 2>/dev/null || true
-  rclone copy "${SNAPSHOT_DIR}/manifest.json" "${GDRIVE_DEST}/latest/" --quiet
-
-  log "  Upload completado."
+# ── Cloudreve (WebDAV): destino remoto activo ────────────────────────────────
+if [ "${CLOUDREVE_BACKUP_ENABLED:-false}" = "true" ]; then
+  _FAILED_STEP="upload_cloudreve"
+  log "  Subiendo a Cloudreve (${CLOUDREVE_BACKUP_PATH:-backups/plataforma})..."
+  node /app/scripts/upload-backup-cloudreve.cjs \
+    "${UPLOAD_SRC}" "${DATE_STR}" "${CLOUDREVE_BACKUP_PATH:-backups/plataforma}" \
+    2>&1 | while IFS= read -r line; do log "  cloudreve: ${line}"; done
+  # El script sale != 0 si faltan credenciales o si algún artefacto no subió;
+  # con `set -euo pipefail` el backup entero aborta (no queda "copia remota"
+  # que en realidad no existe).
 else
-  warn "  rclone/gdrive-backups no configurado. Backup solo LOCAL."
-  warn "  Para configurar: sigue docs/deploy/SETUP_GOOGLE_DRIVE_BACKUP.md"
+  log "  Cloudreve desactivado (CLOUDREVE_BACKUP_ENABLED != true)."
+fi
+
+# ── Google Drive (opcional, off por defecto) ─────────────────────────────────
+if [ "${DRIVE_BACKUP_ENABLED:-false}" = "true" ]; then
+  if command -v rclone &>/dev/null && rclone listremotes 2>/dev/null | grep -q 'gdrive-backups:'; then
+    log "  Destino: ${UPLOAD_PATH}"
+
+    rclone copy "${UPLOAD_SRC}/" "${UPLOAD_PATH}/" \
+      --verbose \
+      --checksum \
+      --progress 2>&1 | while IFS= read -r line; do log "  rclone: ${line}"; done
+
+    # Actualizar symlink "latest" en Drive
+    rclone delete "${GDRIVE_DEST}/latest" --quiet 2>/dev/null || true
+    rclone copy "${SNAPSHOT_DIR}/manifest.json" "${GDRIVE_DEST}/latest/" --quiet
+
+    log "  Upload completado."
+  else
+    warn "  DRIVE_BACKUP_ENABLED=true pero rclone/gdrive-backups no configurado."
+    warn "  Para configurar: sigue docs/deploy/SETUP_GOOGLE_DRIVE_BACKUP.md"
+  fi
+else
+  log "  Google Drive desactivado (DRIVE_BACKUP_ENABLED != true)."
 fi
 
 # ── 6. Limpieza de backups locales antiguos ──────────────────────────────────
@@ -489,7 +507,8 @@ find "${BACKUP_DIR}/snapshots" -maxdepth 1 -type d -mtime "+${RETENTION_DAYS}" \
 
 # ── 7. Limpieza de backups remotos en Drive ──────────────────────────────────
 
-if command -v rclone &>/dev/null && rclone listremotes 2>/dev/null | grep -q 'gdrive-backups:'; then
+if [ "${DRIVE_BACKUP_ENABLED:-false}" = "true" ] \
+  && command -v rclone &>/dev/null && rclone listremotes 2>/dev/null | grep -q 'gdrive-backups:'; then
   log "Limpiando backups remotos antiguos..."
   _FAILED_STEP="cleanup_remote"
 

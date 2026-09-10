@@ -65,8 +65,11 @@ ALTER TABLE "purchase_order_invoice_item_allocations" ADD CONSTRAINT "purchase_o
 ALTER TABLE "purchase_order_invoice_item_allocations" ADD CONSTRAINT "purchase_order_invoice_item_allocations_purchase_order_item_id_purchase_order_items_id_fk" FOREIGN KEY ("purchase_order_item_id") REFERENCES "public"."purchase_order_items"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "purchase_order_invoice_item_allocations" ADD CONSTRAINT "purchase_order_invoice_item_allocations_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "operational_integrity_case_events" ADD CONSTRAINT "operational_integrity_case_events_case_id_operational_integrity_cases_id_fk" FOREIGN KEY ("case_id") REFERENCES "public"."operational_integrity_cases"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "operational_integrity_case_events" ADD CONSTRAINT "operational_integrity_case_events_observation_id_operational_integrity_observations_id_fk" FOREIGN KEY ("observation_id") REFERENCES "public"."operational_integrity_observations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "operational_integrity_case_events" ADD CONSTRAINT "operational_integrity_case_events_actor_user_id_users_id_fk" FOREIGN KEY ("actor_user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+-- El índice único va antes que la FK compuesta: PostgreSQL exige que las
+-- columnas referenciadas ya tengan un único que las respalde.
+CREATE UNIQUE INDEX "operational_integrity_observations_case_id_key" ON "operational_integrity_observations" USING btree ("case_id","id");--> statement-breakpoint
+ALTER TABLE "operational_integrity_case_events" ADD CONSTRAINT "operational_integrity_case_events_case_observation_fk" FOREIGN KEY ("case_id","observation_id") REFERENCES "public"."operational_integrity_observations"("case_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "operational_integrity_cases" ADD CONSTRAINT "operational_integrity_cases_worksite_id_worksites_id_fk" FOREIGN KEY ("worksite_id") REFERENCES "public"."worksites"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "operational_integrity_observations" ADD CONSTRAINT "operational_integrity_observations_case_id_operational_integrity_cases_id_fk" FOREIGN KEY ("case_id") REFERENCES "public"."operational_integrity_cases"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "po_invoice_item_allocations_pair_unique" ON "purchase_order_invoice_item_allocations" USING btree ("invoice_item_id","purchase_order_item_id");--> statement-breakpoint
@@ -76,6 +79,10 @@ CREATE INDEX "operational_integrity_case_events_case_created_idx" ON "operationa
 CREATE INDEX "operational_integrity_cases_worksite_detected_idx" ON "operational_integrity_cases" USING btree ("worksite_id","first_detected_at");--> statement-breakpoint
 CREATE INDEX "operational_integrity_cases_domain_code_idx" ON "operational_integrity_cases" USING btree ("domain","code");--> statement-breakpoint
 CREATE UNIQUE INDEX "operational_integrity_observation_fingerprint_unique" ON "operational_integrity_observations" USING btree ("case_id","fingerprint");--> statement-breakpoint
+-- Backfill 1:1 -> N:N. Cada línea de factura ya vinculada a una línea de OC
+-- recibe su asignación equivalente, de modo que los lectores nuevos vean la
+-- misma evidencia que el espejo de compatibilidad. Idempotente: repetirla no
+-- duplica filas.
 INSERT INTO purchase_order_invoice_item_allocations
   (id, invoice_item_id, purchase_order_item_id, quantity, subtotal, source)
 SELECT

@@ -16,7 +16,12 @@ export default defineConfig({
   test: {
     environment: "node",
     include:     ["**/*.test.ts", "**/*.test.tsx"],
-    exclude:     [...pgliteTestFiles, "**/node_modules/**", ".next", ".tmp"],
+    // Los worktrees de sesión (`.claude/worktrees/**`) son copias completas
+    // del repo, con su propio `node_modules`. Sin excluirlos, vitest corre
+    // cada test dos o tres veces y los de React fallan con
+    // «Cannot read properties of null (reading 'useState')», porque se carga
+    // una segunda copia de React desde el `node_modules` del worktree.
+    exclude:     [...pgliteTestFiles, "**/node_modules/**", ".next", ".tmp", ".claude/worktrees/**"],
     setupFiles:  ["./components/__tests__/setup.ts"],
     env: {
       DATABASE_URL: "postgres:///bodega_test",

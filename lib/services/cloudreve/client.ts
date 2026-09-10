@@ -18,6 +18,7 @@
 import { logger } from "@/lib/logger"
 import { readCloudreveConfig } from "./settings"
 import { remoteSstKey, sstLogicalSegments } from "./sst-path"
+import { backupRemoteKey } from "./backup"
 
 const DEFAULT_TIMEOUT_MS = 120_000
 /** Errores de red donde reintentar NO puede duplicar datos. */
@@ -74,11 +75,6 @@ function davUrlFromKey(baseUrl: string, remoteKey: string, isCollection = false)
 const INVALID_BASE_URL_MESSAGE =
   "La URL base de Cloudreve no es una dirección http(s) válida. Corríjala en Administración › Almacenamiento de documentos."
 
-function davUrl(baseUrl: string, sstPath: string, logicalPath: string): URL {
-  // Validación anti-traversal + mapeo a la carpeta remota configurada.
-  return davUrlFromKey(baseUrl, remoteSstKey(sstPath, logicalPath))
-}
-
 async function request(
   filePath: string,
   init: RequestInit,
@@ -91,16 +87,43 @@ async function request(
       "Cloudreve no está configurado. Configure las credenciales en Administración.",
     )
   }
+  return requestKey(remoteSstKey(config.sstPath, filePath), init, retriesLeft)
+}
 
-  const url = davUrl(config.baseUrl, config.sstPath, filePath)
-  const auth = Buffer.from(`${config.username}:${config.password}`, "utf8").toString("base64")
+/**
+ * Igual que `request` pero sobre una clave remota arbitraria (no mapeada al
+ * espacio SST). La usan los helpers de respaldo para operar en la carpeta de
+ * snapshots (`backups/plataforma/...`), ajena a `sstPath`.
+ */
+async function requestKey(
+  remoteKey: string,
+  init: RequestInit,
+  retriesLeft = MAX_RETRIES,
+): Promise<Response> {
+  const config = await readCloudreveConfig()
+  if (!config.hasCredentials) {
+    throw new CloudreveError(
+      "CLOUDREVE_NOT_CONFIGURED",
+      "Cloudreve no está configurado. Configure las credenciales en Administración.",
+    )
+  }
 
+  return send(davUrlFromKey(config.baseUrl, remoteKey), basicAuth(config), init, retriesLeft, remoteKey)
+}
+
+async function send(
+  url: URL,
+  auth: string,
+  init: RequestInit,
+  retriesLeft: number,
+  logKey: string,
+): Promise<Response> {
   let response: Response
   try {
     response = await fetch(url, {
       ...init,
       headers: {
-        Authorization: `Basic ${auth}`,
+        Authorization: auth,
         ...(init.headers as Record<string, string> | undefined),
       },
       signal: AbortSignal.timeout(readCloudreveRequestTimeout()),
@@ -135,8 +158,8 @@ async function request(
     && init.method !== "DELETE"
     && retriesLeft > 0
   if (retryable) {
-    logger.warn("[storage/cloudreve] respuesta transitoria, reintentando", { filePath, status })
-    return request(filePath, init, retriesLeft - 1)
+    logger.warn("[storage/cloudreve] respuesta transitoria, reintentando", { logKey, status })
+    return send(url, auth, init, retriesLeft - 1, logKey)
   }
   throw new CloudreveError("CLOUDREVE_UPSTREAM", `Cloudreve respondió ${status}`, status)
 }
@@ -499,4 +522,200 @@ export async function listSstFilesRecursive(): Promise<string[]> {
     throw new CloudreveError("CLOUDREVE_NOT_CONFIGURED", "Cloudreve no está configurado.")
   }
   return listRemoteFilesRecursive(config.sstPath)
+}
+
+// ── Respaldos (carpeta de snapshots, fuera del espacio SST) ───────────────────
+
+/** MKCOL sobre una clave remota arbitraria. Idempotente: 405/409/301 = ya existe. */
+async function mkcolRemoteKey(remoteKey: string): Promise<void> {
+  const config = await readCloudreveConfig()
+  if (!config.hasCredentials) {
+    throw new CloudreveError("CLOUDREVE_NOT_CONFIGURED", "Cloudreve no está configurado.")
+  }
+  const url = davUrlFromKey(config.baseUrl, remoteKey, true)
+  const auth = basicAuth(config)
+
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method: "MKCOL",
+      headers: { Authorization: auth },
+      signal: AbortSignal.timeout(readCloudreveRequestTimeout()),
+    })
+  } catch {
+    throw new CloudreveError("CLOUDREVE_IO", "No se pudo crear la carpeta en Cloudreve")
+  }
+  if (response.ok) return
+  const status = response.status
+  await response.text().catch(() => undefined)
+  if (status === 405 || status === 409 || status === 301) return // ya existe
+  if (status === 401 || status === 403) {
+    throw new CloudreveError("CLOUDREVE_AUTH", "Cloudreve rechazó las credenciales", status)
+  }
+  throw new CloudreveError("CLOUDREVE_UPSTREAM", `Cloudreve respondió ${status} al crear la carpeta`, status)
+}
+
+/** Crea las colecciones padre de un snapshot: `basePath` y `basePath/<fecha>`. */
+export async function ensureCloudreveBackupCollection(basePath: string, dateStr: string): Promise<void> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) throw new Error("Fecha de snapshot inválida")
+  const segments = basePath ? basePath.split("/") : []
+  let acc = ""
+  for (const segment of segments) {
+    acc = acc ? `${acc}/${segment}` : segment
+    await mkcolRemoteKey(acc)
+  }
+  await mkcolRemoteKey(basePath ? `${basePath}/${dateStr}` : dateStr)
+}
+
+/** Sube (o reemplaza) un artefacto de snapshot en la carpeta de respaldos. */
+export async function putCloudreveBackupFile(
+  basePath: string,
+  dateStr: string,
+  fileName: string,
+  buffer: Buffer,
+): Promise<void> {
+  const response = await requestKey(backupRemoteKey(basePath, dateStr, fileName), {
+    method: "PUT",
+    body: new Blob([new Uint8Array(buffer)], { type: "application/octet-stream" }),
+  })
+  await response.text().catch(() => undefined)
+}
+
+/** Descarga un artefacto de snapshot. Lanza CLOUDREVE_NOT_FOUND si no existe. */
+export async function getCloudreveBackupFile(
+  basePath: string,
+  dateStr: string,
+  fileName: string,
+): Promise<Buffer> {
+  const response = await requestKey(backupRemoteKey(basePath, dateStr, fileName), { method: "GET" })
+  return Buffer.from(await response.arrayBuffer())
+}
+
+/** Tamaño remoto de un artefacto vía PROPFIND; null si no existe. */
+export async function statCloudreveBackupFile(
+  basePath: string,
+  dateStr: string,
+  fileName: string,
+): Promise<{ size: number } | null> {
+  const remoteKey = backupRemoteKey(basePath, dateStr, fileName)
+  let response: Response
+  try {
+    response = await requestKey(remoteKey, {
+      method: "PROPFIND",
+      headers: { Depth: "0", "Content-Type": "application/xml" },
+    })
+  } catch (error) {
+    if (error instanceof CloudreveError && error.code === "CLOUDREVE_NOT_FOUND") return null
+    throw error
+  }
+  const body = await response.text()
+  const match = /<(?:d:)?getcontentlength>(\d+)<\/(?:d:)?getcontentlength>/i.exec(body)
+  const size = match ? Number(match[1]) : null
+  if (size === null || !Number.isFinite(size)) {
+    throw new CloudreveError("CLOUDREVE_IO", "PROPFIND no devolvió el tamaño del archivo")
+  }
+  return { size }
+}
+
+/** Fechas (YYYY-MM-DD) de los snapshots presentes bajo `basePath`. */
+export async function listCloudreveBackupDates(basePath: string): Promise<string[]> {
+  const config = await readCloudreveConfig()
+  if (!config.hasCredentials) {
+    throw new CloudreveError("CLOUDREVE_NOT_CONFIGURED", "Cloudreve no está configurado.")
+  }
+  const url = davUrlFromKey(config.baseUrl, basePath, true)
+  const auth = basicAuth(config)
+
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method: "PROPFIND",
+      headers: { Authorization: auth, Depth: "1", "Content-Type": "application/xml" },
+      signal: AbortSignal.timeout(readCloudreveRequestTimeout()),
+    })
+  } catch {
+    throw new CloudreveError("CLOUDREVE_IO", "No se pudo listar la carpeta de respaldos en Cloudreve")
+  }
+  if (!response.ok) {
+    const status = response.status
+    await response.text().catch(() => undefined)
+    if (status === 404) return []
+    throw new CloudreveError("CLOUDREVE_UPSTREAM", `Cloudreve respondió ${status} al listar respaldos`, status)
+  }
+
+  const body = await response.text()
+  const selfPath = url.pathname.replace(/\/+$/, "")
+  const dates: string[] = []
+  const blocks = body.split(/<[a-zA-Z0-9]+:response\b|(?:\/)?<response\b/)
+  for (const block of blocks) {
+    const isCollection = /<[a-zA-Z0-9]+:collection\s*\/?>/.test(block)
+    if (!isCollection) continue
+    const href = /<[a-zA-Z0-9]+:href>([^<]+)<\/[a-zA-Z0-9]+:href>|<href>([^<]+)<\/href>/.exec(block)
+    const raw = href?.[1] ?? href?.[2]
+    if (!raw) continue
+    const decodedPath = hrefPathname(raw)
+    if (decodedPath === selfPath) continue
+    const name = decodeURIComponent(decodedPath.split("/").pop() ?? "")
+    if (/^\d{4}-\d{2}-\d{2}$/.test(name)) dates.push(name)
+  }
+  return dates
+}
+
+/** Elimina una carpeta de snapshot. No lanza si ya no existe. */
+export async function deleteCloudreveBackupDate(basePath: string, dateStr: string): Promise<void> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) throw new Error("Fecha de snapshot inválida")
+  const remoteKey = basePath ? `${basePath}/${dateStr}` : dateStr
+  try {
+    const response = await requestKey(remoteKey, { method: "DELETE" })
+    await response.text().catch(() => undefined)
+  } catch (error) {
+    if (error instanceof CloudreveError && error.code === "CLOUDREVE_NOT_FOUND") return
+    throw error
+  }
+}
+
+/**
+ * Prueba la configuración GUARDADA contra la carpeta de respaldos. A diferencia
+ * del probe del espacio SST, un 404 acá es esperable (la carpeta se crea en el
+ * primer respaldo) y NO es un fallo: lo que se valida son credenciales y URL.
+ */
+export async function probeCloudreveBackupPath(basePath: string): Promise<{ ok: boolean; message: string }> {
+  const config = await readCloudreveConfig()
+  if (!config.hasCredentials) {
+    return { ok: false, message: "Faltan credenciales de Cloudreve: configúrelas en Administración › Almacenamiento de documentos." }
+  }
+
+  let url: URL
+  try {
+    url = davUrlFromKey(config.baseUrl, basePath, true)
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof CloudreveError ? error.message : "La configuración de Cloudreve no es válida.",
+    }
+  }
+
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method: "PROPFIND",
+      headers: { Authorization: basicAuth(config), Depth: "0", "Content-Type": "application/xml" },
+      signal: AbortSignal.timeout(readCloudreveRequestTimeout()),
+    })
+  } catch {
+    return { ok: false, message: "No se pudo conectar con Cloudreve: revise la URL y que el servidor sea alcanzable." }
+  }
+
+  await response.text().catch(() => undefined)
+  const folderLabel = basePath === "" ? "la raíz de la cuenta WebDAV" : `«${basePath}»`
+  if (response.ok) {
+    return { ok: true, message: `Conexión con Cloudreve verificada sobre ${folderLabel}.` }
+  }
+  if (response.status === 401 || response.status === 403) {
+    return { ok: false, message: "Cloudreve rechazó las credenciales (401/403): revise el usuario y la contraseña." }
+  }
+  if (response.status === 404) {
+    return { ok: true, message: `Credenciales y URL OK. La carpeta ${folderLabel} se creará en el primer respaldo.` }
+  }
+  return { ok: false, message: `Cloudreve respondió ${response.status} en el PROPFIND de verificación.` }
 }

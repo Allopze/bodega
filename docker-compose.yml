@@ -133,7 +133,11 @@ services:
       - NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA=${NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA:-}
     volumes:
       - bodega-storage:/data/storage
-      - bodega-backups:/data/backups
+      # Destino local de los respaldos: volumen nombrado por defecto, o bind
+      # mount del host cuando BACKUP_HOST_PATH define una ruta absoluta (p. ej.
+      # /srv/backups/plataforma). La ruta interna no cambia: los scripts siguen
+      # viendo BACKUP_DIR=/data/backups dentro del contenedor.
+      - ${BACKUP_HOST_PATH:-bodega-backups}:/data/backups
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
       interval: 30s
@@ -194,7 +198,10 @@ services:
       - RCLONE_CONFIG=${RCLONE_CONFIG:-/app/.config/rclone/rclone.conf}
     volumes:
       - bodega-storage:/data/storage:ro
-      - bodega-backups:/data/backups
+      # Mismo montaje que `app`: el scheduler escribe en /data/backups y debe
+      # ver exactamente los mismos archivos que la app (y que BACKUP_HOST_PATH
+      # apunte al mismo destino en ambos).
+      - ${BACKUP_HOST_PATH:-bodega-backups}:/data/backups
     command: ["bash", "/app/scripts/backup-scheduler.sh"]
 
   # Scheduler de los endpoints /api/cron/*.
@@ -360,6 +367,9 @@ services:
   #
   #   docker compose run --rm backfill-epp-clothing-sizes
   #
+  # `--apply` es obligatorio: el script no escribe por omisión porque inventa
+  # variantes de catálogo con SKU y proveedor propios. Sin el flag este paso
+  # del deploy informaría y no haría nada.
   backfill-epp-clothing-sizes:
     build:
       context: .
@@ -372,7 +382,77 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
-    command: ["node", "scripts/backfill-epp-clothing-sizes.mjs"]
+    command: ["node", "scripts/backfill-epp-clothing-sizes.mjs", "--apply"]
+
+  # One-shot: recalcula el estado derivado de las solicitudes que quedaron con
+  # el que calculó una regla de cierre anterior. `purchase_requests.status` es
+  # un derivado de sus ítems y el rollup solo lo recalcula cuando un ítem
+  # transiciona; una solicitud cuyos ítems ya están todos en estado terminal no
+  # tiene ninguna transición pendiente que lo dispare. Idempotente: sin deriva
+  # no escribe. `--apply` es obligatorio; sin el flag sólo informa.
+  #
+  #   docker compose run --rm reconcile-request-status            # informa
+  #   docker compose run --rm reconcile-request-status --apply    # recalcula
+  #
+  reconcile-request-status:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+    command: ["node", "scripts/reconcile-request-status.mjs", "--apply"]
+
+  # One-shot: deja `size_catalog` al día con la semilla del código. Prerrequisito
+  # de los dos pasos de tallas que siguen —el backfill de ropa exige
+  # `size_family = 'ropa'`, y esa familia sale de esta tabla—. Idempotente y no
+  # destructivo: agrega lo que falta, renumera el orden de cada familia y no
+  # reactiva una talla dada de baja a mano.
+  #
+  #   docker compose run --rm seed-size-catalog
+  #
+  seed-size-catalog:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+    command: ["node", "scripts/seed-size-catalog.mjs"]
+
+  # One-shot: da de baja las variantes que son la misma talla física escrita de
+  # dos formas (`N41` junto a `T41`, `L` junto a `T/L`) o duplicadas de plano.
+  # Desactiva con `is_active = false`, nunca borra, y sólo toca variantes sin
+  # stock ni historial — las que participaron de una operación se informan y se
+  # saltan, porque trasladar stock y repuntar guías u OC es una decisión
+  # contable. `--apply` es obligatorio: sin el flag sólo informa el plan.
+  #
+  #   docker compose run --rm reconcile-epp-duplicate-sizes            # informa
+  #   docker compose run --rm reconcile-epp-duplicate-sizes --apply    # escribe
+  #
+  reconcile-epp-duplicate-sizes:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+    command: ["node", "scripts/reconcile-epp-duplicate-sizes.mjs", "--apply"]
 
   # One-shot: instala el catálogo del motor de inspecciones cableado a las
   # actividades del PDTP que acredita cada instrumento. Idempotente: la
@@ -853,5 +933,7 @@ services:
 
 volumes:
   bodega-storage:
+  # Fuente por defecto del montaje de /data/backups. Cuando BACKUP_HOST_PATH
+  # define una ruta absoluta del host, se usa esa en vez de este volumen.
   bodega-backups:
   bodega-db:

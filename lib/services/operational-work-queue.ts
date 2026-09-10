@@ -34,6 +34,7 @@ import {
   purchaseOrders,
   purchaseRequestItems,
   purchaseRequests,
+  requestItemAttributes,
   suppliers,
   sstDocuments,
   sstEvaluations,
@@ -52,7 +53,9 @@ import {
   FAENA_RECEIVABLE_STATUSES,
   INVOICE_DUE_ORDER_STATUSES,
   OFFICE_RECEIVABLE_STATUSES,
+  DEFAULT_QUEUE_SORT,
   requestStatusLabel,
+  type OperationalSort,
   type WorkPriority,
 } from "@/lib/work-queue"
 import { resolvePdtpFulfillmentTarget } from "@/lib/services/pdtp/fulfillment"
@@ -116,7 +119,9 @@ export const orderNeedsInvoiceWork = or(
 export type { OperationalModule } from "@/lib/work-queue.types"
 
 export type OperationalQuickFilter = "all" | "critical" | "overdue" | "today" | "blocked" | "unassigned" | "mine"
-export type OperationalSort = "priority" | "due" | "oldest" | "newest"
+// `OperationalSort` y el orden por defecto viven en `lib/work-queue`: el
+// workbench es cliente y no puede importar un valor desde este módulo.
+export type { OperationalSort } from "@/lib/work-queue"
 
 /** Responsable propio de la entidad origen (CAPA, inspección, documento SST). */
 export interface OperationalAssignee {
@@ -456,7 +461,7 @@ export function paginateOperationalWorkItems(
   items: OperationalWorkItem[],
   input: Pick<OperationalQueueFilters, "cursor" | "limit" | "sort">,
 ) {
-  const sort = input.sort ?? "priority"
+  const sort = input.sort ?? DEFAULT_QUEUE_SORT
   const limit = Math.max(1, Math.min(input.limit ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE))
   const sorted = sortItems(items, sort)
   const cursor = decodeCursor(input.cursor)
@@ -552,14 +557,37 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
     const requesterCondition = hasPermission(session, "requests:view_all")
       ? sql`true`
       : sql`${purchaseRequests.requesterId} = ${session.user.id}`
-    // Un solo fragmento reutilizado: el subtítulo necesita el conteo para el
-    // número y otra vez para concordar el plural ("1 ítem" / "2 ítems").
-    const itemCount = sql`(SELECT COUNT(*) FROM ${purchaseRequestItems} WHERE ${purchaseRequestItems.requestId} = ${purchaseRequests.id})`
+    // El título era el propio código, y la fila terminaba mostrando "SOL-0030"
+    // arriba y "SOL-0030 · 6 ítems" abajo: el código dos veces y ni una palabra
+    // de lo que se pide. Ahora nombra el primer ítem y resume el resto — como
+    // ya hacían las filas por ítem ("Comprar Guante …") —, y el código queda
+    // sólo en el subtítulo de la fila.
+    //
+    // El LATERAL calcula conteo y primer nombre en una pasada: la versión con
+    // subconsultas correlacionadas repetía el mismo COUNT hasta cuatro veces
+    // por fila para concordar los plurales.
+    const requestItems = sql`
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS item_count,
+          (ARRAY_AGG(COALESCE(prod.name, pri.product_name_free, 'ítem sin nombre')
+            ORDER BY pri.sort_order, pri.created_at, pri.id))[1] AS first_name
+        FROM ${purchaseRequestItems} pri
+        LEFT JOIN ${products} prod ON prod.id = pri.product_id
+        WHERE pri.request_id = ${purchaseRequests.id}
+      ) items ON true
+    `
+    const requestVerb = sql`CASE WHEN ${purchaseRequests.status} = 'draft' THEN 'Completar' ELSE 'Revisar' END`
+    const requestTitle = sql`CASE
+      WHEN COALESCE(items.item_count, 0) = 0 THEN CONCAT(${requestVerb}, ' ', ${purchaseRequests.code}, ' (sin ítems)')
+      WHEN items.item_count = 1 THEN CONCAT(${requestVerb}, ' ', items.first_name)
+      ELSE CONCAT(${requestVerb}, ' ', items.first_name, ' y ', items.item_count - 1,
+        ' ítem', CASE WHEN items.item_count = 2 THEN '' ELSE 's' END, ' más')
+    END`
     add("solicitudes", sql`
       SELECT 'purchase_request'::text AS source_type, ${purchaseRequests.id} AS source_id,
         CASE WHEN ${purchaseRequests.status} = 'draft' THEN 'complete' ELSE 'follow_up' END AS action_key,
-        'solicitudes'::text AS module, ${purchaseRequests.code} AS code, ${purchaseRequests.code} AS title,
-        CONCAT(${itemCount}, ' ítem', CASE WHEN ${itemCount} = 1 THEN '' ELSE 's' END) AS subtitle,
+        'solicitudes'::text AS module, ${purchaseRequests.code} AS code, ${requestTitle} AS title,
+        ''::text AS subtitle,
         ${purchaseRequests.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name,
         ${purchaseRequests.status} AS status,
         CASE ${purchaseRequests.status}
@@ -575,6 +603,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
         CASE WHEN ${purchaseRequests.status} = 'draft' THEN 'Completar solicitud' ELSE 'Revisar solicitud' END AS cta_label
       FROM ${purchaseRequests}
       INNER JOIN ${worksites} ON ${worksites.id} = ${purchaseRequests.worksiteId}
+      ${requestItems}
       WHERE ${inScope(purchaseRequests.worksiteId)}
         AND ${requesterCondition}
         AND ${purchaseRequests.status} IN ('draft', 'submitted', 'in_review', 'partially_approved', 'approved', 'in_purchasing')
@@ -584,6 +613,24 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
   const itemTitle = sql`COALESCE(${products.name}, ${purchaseRequestItems.productNameFree}, 'Ítem solicitado')`
   const itemPriority = sql`CASE COALESCE(${purchaseRequestItems.urgency}, ${purchaseRequests.urgency}) WHEN 'critical' THEN 'critical' WHEN 'high' THEN 'high' ELSE 'normal' END`
   const itemDue = sql`COALESCE(${purchaseRequestItems.requiredDate}, ${purchaseRequests.requiredDate})`
+  // Dos ítems del mismo producto en una misma solicitud (dos tallas del mismo
+  // guante) producían dos filas de texto idéntico, y desde la cola no había
+  // forma de saber si era data duplicada o trabajo real. La cantidad y los
+  // atributos que los distinguen van al subtítulo — y de paso quedan
+  // buscables, porque el filtro de texto ya barre `subtitle`.
+  const itemQuantity = sql`CASE
+    WHEN ${purchaseRequestItems.quantity}::numeric = TRUNC(${purchaseRequestItems.quantity}::numeric)
+      THEN TRUNC(${purchaseRequestItems.quantity}::numeric)::text
+    ELSE ${purchaseRequestItems.quantity}::numeric::text END`
+  const itemAttributes = sql`(
+    SELECT STRING_AGG(CONCAT(attr.attribute_name, ' ', attr.value), ' · ' ORDER BY attr.attribute_name)
+    FROM ${requestItemAttributes} attr
+    WHERE attr.request_item_id = ${purchaseRequestItems.id}
+  )`
+  const itemSubtitle = sql`CONCAT_WS(' · ',
+    CONCAT(${itemQuantity}, ' ', ${purchaseRequestItems.unitOfMeasure}),
+    ${itemAttributes}
+  )`
   // Una solicitud terminal (rechazada, cerrada o anulada) no genera trabajo
   // pendiente, por más que a alguno de sus ítems le haya quedado un estado
   // intermedio. Sin esta guarda la cola pedía "Entregar …" sobre una solicitud
@@ -609,7 +656,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
   if (hasPermission(session, "approvals:approve")) add("aprobaciones", sql`
     SELECT 'purchase_request_item'::text AS source_type, ${purchaseRequestItems.id} AS source_id, 'approve'::text AS action_key,
       'aprobaciones'::text AS module, ${purchaseRequests.code} AS code, CONCAT('Aprobar ', ${itemTitle}) AS title,
-      ''::text AS subtitle, ${purchaseRequests.worksiteId} AS worksite_id,
+      ${itemSubtitle} AS subtitle, ${purchaseRequests.worksiteId} AS worksite_id,
       ${worksites.name} AS worksite_name, ${purchaseRequestItems.status} AS status, 'Necesita aprobación'::text AS status_label,
       ${itemPriority} AS priority, false AS blocked, ${purchaseRequestItems.createdAt}::text AS created_at, LEFT((${itemDue})::text, 10) AS source_due_at,
       ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
@@ -646,7 +693,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
   if (hasPermission(session, "purchasing:create_order")) add("compras", sql`
     SELECT 'purchase_request_item'::text AS source_type, ${purchaseRequestItems.id} AS source_id, 'create_order'::text AS action_key,
       'compras'::text AS module, ${purchaseRequests.code} AS code, CONCAT('Comprar ', ${itemTitle}) AS title,
-      ''::text AS subtitle, ${purchaseRequests.worksiteId} AS worksite_id,
+      ${itemSubtitle} AS subtitle, ${purchaseRequests.worksiteId} AS worksite_id,
       ${worksites.name} AS worksite_name, ${purchaseRequestItems.status} AS status, 'Listo para comprar'::text AS status_label,
       ${itemPriority} AS priority, false AS blocked, ${purchaseRequestItems.createdAt}::text AS created_at, LEFT((${itemDue})::text, 10) AS source_due_at,
       ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
@@ -662,7 +709,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
   if (hasPermission(session, "deliveries:create")) add("entregas", sql`
     SELECT 'purchase_request_item'::text AS source_type, ${purchaseRequestItems.id} AS source_id, 'deliver'::text AS action_key,
       'entregas'::text AS module, ${purchaseRequests.code} AS code, CONCAT('Entregar ', ${itemTitle}) AS title,
-      ''::text AS subtitle, ${purchaseRequests.worksiteId} AS worksite_id,
+      ${itemSubtitle} AS subtitle, ${purchaseRequests.worksiteId} AS worksite_id,
       ${worksites.name} AS worksite_name, ${purchaseRequestItems.status} AS status,
       CASE ${purchaseRequestItems.status}
         WHEN 'partially_received' THEN 'Recibido parcial'
@@ -1347,7 +1394,7 @@ export async function getOperationalWorkQueue(session: Session, rawFilters: Oper
   const filters: Required<Pick<OperationalQueueFilters, "quick" | "sort" | "limit">> & OperationalQueueFilters = {
     ...rawFilters,
     quick: rawFilters.quick ?? "all",
-    sort: rawFilters.sort ?? "priority",
+    sort: rawFilters.sort ?? DEFAULT_QUEUE_SORT,
     limit: Math.max(1, Math.min(rawFilters.limit ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE)),
   }
   if (scope.mode === "none") return { items: [], total: 0, summary: emptySummary(), filterOptions: emptyFilterOptions(), nextCursor: null, sourceErrors: [], refreshedAt: new Date().toISOString() }
@@ -1458,7 +1505,7 @@ export function parseOperationalQueueFilters(input: Record<string, string | stri
     status: take("estado") ?? "all",
     priority: priority && allowedPriorities.includes(priority as WorkPriority) ? priority as WorkPriority : "all",
     quick: quick && allowedQuick.includes(quick as OperationalQuickFilter) ? quick as OperationalQuickFilter : "all",
-    sort: sort && allowedSort.includes(sort as OperationalSort) ? sort as OperationalSort : "priority",
+    sort: sort && allowedSort.includes(sort as OperationalSort) ? sort as OperationalSort : DEFAULT_QUEUE_SORT,
     cursor: take("cursor"),
   }
 }

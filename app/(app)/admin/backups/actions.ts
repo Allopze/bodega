@@ -5,6 +5,8 @@ import { safeActionMessage } from "@/lib/action-error"
 import { requirePermission } from "@/lib/auth/can"
 import { createBackupLog, completeBackupLog, getBackupConfig, updateBackupConfig } from "@/lib/services/backups"
 import type { BackupConfig } from "@/lib/services/backups"
+import { probeCloudreveBackupPath } from "@/lib/services/cloudreve/client"
+import { normalizeBackupCloudrevePath } from "@/lib/services/cloudreve/backup"
 import { formatBytes } from "@/lib/format-bytes"
 import { revalidatePath } from "next/cache"
 import { execFile } from "node:child_process"
@@ -91,7 +93,15 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
 
     // ── 4. Ejecutar el orquestador ────────────────────────────────────────
     // Leer configuración persistida para timeout y retención
-    let backupCfg: BackupConfig = { backupHour: 3, retentionDays: 30, maxAgeHours: 36, manualTimeoutMinutes: 30 }
+    let backupCfg: BackupConfig = {
+      backupHour: 3,
+      retentionDays: 30,
+      maxAgeHours: 36,
+      manualTimeoutMinutes: 30,
+      driveBackupsEnabled: false,
+      cloudreveBackupsEnabled: false,
+      cloudreveBackupsPath: "backups/plataforma",
+    }
     try {
       backupCfg = await getBackupConfig()
     } catch { /* usar defaults */ }
@@ -107,6 +117,9 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
       GDRIVE_BACKUPS_DEST: process.env.GDRIVE_BACKUPS_DEST ?? "",
       STORAGE_PATH: process.env.STORAGE_PATH ?? "",
       RETENTION_DAYS: String(backupCfg.retentionDays),
+      DRIVE_BACKUP_ENABLED: String(backupCfg.driveBackupsEnabled),
+      CLOUDREVE_BACKUP_ENABLED: String(backupCfg.cloudreveBackupsEnabled),
+      CLOUDREVE_BACKUP_PATH: backupCfg.cloudreveBackupsPath,
       // Sin esto el respaldo manual sube en claro mientras el programado va
       // cifrado: la peor variante, porque la configuración dice «cifrado» y
       // media de las copias no lo está.
@@ -149,7 +162,13 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
     const config = c?.config
 
     const driveUploaded = !!(
-      process.env.GDRIVE_BACKUPS_DEST && stdout.includes("Upload completado")
+      backupCfg.driveBackupsEnabled
+      && process.env.GDRIVE_BACKUPS_DEST
+      && stdout.includes("Upload completado")
+    )
+
+    const cloudreveUploaded = !!(
+      backupCfg.cloudreveBackupsEnabled && stdout.includes("Cloudreve upload completado")
     )
 
     const result: Parameters<typeof completeBackupLog>[1] = {
@@ -163,8 +182,12 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
       manifestSha256: ((manifest?.integrity as Record<string, unknown>)?.manifest_sha256 as string) ?? null,
       totalSizeBytes: (manifest?.total_size_bytes as number) ?? null,
       driveUploaded,
-      drivePath: process.env.GDRIVE_BACKUPS_DEST
+      drivePath: backupCfg.driveBackupsEnabled && process.env.GDRIVE_BACKUPS_DEST
         ? `${process.env.GDRIVE_BACKUPS_DEST}/${today}`
+        : undefined,
+      cloudreveUploaded,
+      cloudrevePath: cloudreveUploaded
+        ? `${backupCfg.cloudreveBackupsPath}/${today}`
         : undefined,
       appVersion: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? "unknown",
       hostname: ((manifest?.backup as Record<string, unknown>)?.hostname as string) ?? "",
@@ -226,4 +249,20 @@ export async function updateBackupConfigAction(
   const result = await updateBackupConfig(input)
   revalidatePath("/admin/backups")
   return result
+}
+
+/** Prueba la conexión a la carpeta de respaldos de Cloudreve con la config vigente. */
+export async function probeCloudreveBackupAction(): Promise<{ ok: boolean; message: string }> {
+  try {
+    await requirePermission("admin:backups")
+  } catch {
+    return { ok: false, message: "No tiene permisos para probar la conexión." }
+  }
+
+  try {
+    const config = await getBackupConfig()
+    return await probeCloudreveBackupPath(normalizeBackupCloudrevePath(config.cloudreveBackupsPath))
+  } catch (error) {
+    return { ok: false, message: safeActionMessage(error, "No fue posible probar la conexión con Cloudreve.") }
+  }
 }

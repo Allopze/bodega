@@ -1,14 +1,14 @@
 # QA — Integridad operacional de compras y stock
 
 **Rama:** `feat/integridad-operacional-compras-stock`
-**Fecha de la corrida:** 2026-09-09
+**Fecha de la corrida:** 2026-09-09; integración con `main` el 2026-09-10
 **Alcance:** Tasks 1–7 del plan `docs/superpowers/plans/2026-09-08-integridad-operacional-compras-stock.md`
 
 ## 1. Estado de la entrega
 
-Las siete tareas del plan están implementadas. **La entrega no es candidata a release
-todavía**: hay un conflicto de numeración de migraciones con `main` descrito en §6, que
-debe resolverse antes de integrar.
+Las siete tareas del plan están implementadas y la rama está integrada con `main`
+(36 commits de divergencia incorporados el 2026-09-10). El conflicto de numeración de
+migraciones descrito en §6 **quedó resuelto**.
 
 ## 2. Resultados exactos de los comandos
 
@@ -34,7 +34,8 @@ un segundo que el resto. No se creó un segundo harness de performance.
 
 ## 3. Migraciones y datos
 
-- **Tags de la rama:** `0261_mixed_mordo`, `0262_kind_mastermind`.
+- **Tag de la migración:** `0264_eminent_shiver_man` (idx 263). Sustituye a los originales
+  `0261_mixed_mordo` y `0262_kind_mastermind`, consolidados en uno solo al integrar (§6).
 - **Backfill 1:1 → N:N:** el verificador reporta 0 filas heredadas sin su asignación sobre
   una base migrada desde cero. **No se ejecutó contra un volcado de producción**, así que el
   conteo real de backfill sigue sin medirse.
@@ -81,21 +82,34 @@ Ambos reproducen en `main` sin los cambios de la rama:
 
 Ninguno toca compras, stock ni integridad.
 
-## 6. Brecha bloqueante: numeración de migraciones
+## 6. Numeración de migraciones (resuelto)
 
-`main` avanzó **33 commits** desde que la rama se separó y ocupó los mismos índices:
+`main` había ocupado los mismos índices que la rama:
 
-| idx | Rama | `main` |
+| idx | Rama (original) | `main` |
 |---|---|---|
 | 261 | `0261_mixed_mordo` | `0261_mushy_punisher` |
 | 262 | `0262_kind_mastermind` | `0263_pantalon_letter_scale` |
 
-`db:verify-migrations` pasa dentro de la rama porque sólo ve su propia cadena; el choque
-aparece al integrar. Antes del merge hay que **renumerar las dos migraciones de la rama por
-encima de la última de `main`** y regenerar el journal, como se hizo en
-`fix(db): renumera migraciones de la matriz de riesgos a 0235`.
+**Cómo se resolvió.** Renombrar no bastaba: los snapshots de la rama se habían generado sin
+los cambios de `main`, así que la siguiente `db:generate` habría calculado un diff sobre un
+estado de esquema falso. En vez de renumerar a mano se adoptó la cadena de `main` y se
+regeneró la migración con Drizzle sobre ella, quedando una sola migración
+`0264_eminent_shiver_man` (idx 263).
 
-Mientras tanto, cualquier base migrada desde `main` **no tiene** las tablas de esta rama.
+Dos cosas hubo que reponer a mano sobre lo que generó Drizzle:
+
+1. **El backfill 1:1 → N:N**, que es un `INSERT` de datos y ningún generador de esquema
+   reproduce. Es idempotente (`ON CONFLICT DO NOTHING`).
+2. **El orden de dos sentencias.** El índice único `(case_id, id)` de las observaciones debe
+   crearse *antes* de la FK compuesta que lo referencia. Como migraciones separadas el orden
+   era implícito; consolidadas, PostgreSQL rechaza la FK con
+   `there is no unique constraint matching given keys` (42830). Verificado aplicando desde
+   una base vacía.
+
+Nota sobre `main`: su journal llega al idx 262 pero sus snapshots sólo al 0261, porque
+`0263_pantalon_letter_scale` es un `UPDATE` de datos sin DDL. No es un defecto —el estado de
+esquema sigue siendo el del 0261— pero conviene saberlo antes de generar migraciones.
 
 ## 7. Rollback
 
@@ -119,11 +133,14 @@ Los resultados E2E y de navegador de §4 son evidencia separada y no equivalente
 
 ## 9. Decisión de release
 
-**No liberar todavía.** Falta, en orden:
+Integrada en `main` con el gate completo en verde sobre el resultado mergeado. Antes de
+**desplegar a producción** falta:
 
-1. Renumerar las migraciones (§6).
-2. Rebasar o integrar con los 33 commits de `main` y volver a correr el gate completo.
-3. Leer el conteo de asignaciones múltiples contra producción (§3, §7).
+1. Leer el conteo de asignaciones múltiples contra producción (§3, §7), del que depende la
+   compatibilidad de rollback.
+2. Ejecutar el backfill sobre datos reales y volver a correr `db:verify-invoice-allocations`:
+   los conteos en cero de §2 provienen de una base limpia, no de un volcado productivo.
+3. Cubrir en navegador los escenarios pendientes de §4.
 4. Aceptar explícitamente la brecha de `audit:full` (§8) o esperar la restauración del harness.
 
 Una build local verde no equivale a despliegue ni a UAT de producción.

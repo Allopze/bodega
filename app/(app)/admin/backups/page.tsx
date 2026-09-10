@@ -1,7 +1,9 @@
 import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { requirePermission } from "@/lib/auth/can"
-import { getBackupStats, getRecentBackups, getDriveHealth, getSaStatusSummary } from "@/lib/services/backups"
+import { getBackupStats, getRecentBackups, getDriveHealth, getSaStatusSummary, getBackupConfig } from "@/lib/services/backups"
+import { probeCloudreveBackupPath } from "@/lib/services/cloudreve/client"
+import { normalizeBackupCloudrevePath } from "@/lib/services/cloudreve/backup"
 import SaHealthSection from "./sa-health-section"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
@@ -9,6 +11,7 @@ import { BackupsStatusCards } from "./backup-status-cards"
 import { BackupsList } from "./backup-list"
 import { BackupsActions } from "./backup-actions"
 import { BackupSettingsForm } from "./backup-settings-form"
+import { BackupDestinationsForm } from "./backup-destinations-form"
 import { buildBackupStatusCards } from "./backup-health"
 
 export const dynamic = "force-dynamic"
@@ -28,15 +31,25 @@ export default async function BackupsPage() {
   try { await requirePermission("admin:backups") }
   catch { redirect("/forbidden") }
 
-  const [stats, recent, driveHealth] = await Promise.all([
+  const [stats, recent, driveHealth, backupConfig] = await Promise.all([
     getBackupStats(),
     getRecentBackups(30),
     getDriveHealth().catch(() => null),
+    getBackupConfig(),
   ])
 
-  const statusCards = buildBackupStatusCards(stats, driveHealth)
+  const cloudreveProbe = backupConfig.cloudreveBackupsEnabled
+    ? await probeCloudreveBackupPath(normalizeBackupCloudrevePath(backupConfig.cloudreveBackupsPath)).catch(() => null)
+    : null
+
+  const statusCards = buildBackupStatusCards(stats, driveHealth, {
+    enabled: backupConfig.cloudreveBackupsEnabled,
+    reachable: cloudreveProbe?.ok ?? null,
+  })
 
   const saSummary = driveHealth ? getSaStatusSummary(driveHealth) : null
+
+  const localPath = process.env.BACKUP_DIR ?? "/srv/backups/plataforma"
 
   return (
     <PageContainer>
@@ -58,6 +71,9 @@ export default async function BackupsPage() {
       {/* ── Backup Settings ──────────────────────────────────────────── */}
       <BackupSettingsForm />
 
+      {/* ── Destinos ─────────────────────────────────────────────────── */}
+      <BackupDestinationsForm initialConfig={backupConfig} localPath={localPath} />
+
       {/* ── Service Account Health ───────────────────────────────────── */}
       {driveHealth && saSummary && (
         <SaHealthSection initialHealth={driveHealth} initialSummary={saSummary} />
@@ -75,6 +91,7 @@ export default async function BackupsPage() {
         configSizeBytes: b.configSizeBytes,
         totalSizeBytes: b.totalSizeBytes,
         driveUploaded: b.driveUploaded,
+        cloudreveUploaded: b.cloudreveUploaded,
         manifestSha256: b.manifestSha256?.slice(0, 16) ?? null,
         errorMessage: b.errorMessage,
         appVersion: b.appVersion,

@@ -17,6 +17,8 @@ import { NextResponse } from "next/server"
 import { auth } from "@/lib/auth/auth"
 import { can } from "@/lib/auth/can"
 import { getBackupStats, getLatestBackup, getDriveHealth, getBackupConfig } from "@/lib/services/backups"
+import { probeCloudreveBackupPath } from "@/lib/services/cloudreve/client"
+import { normalizeBackupCloudrevePath } from "@/lib/services/cloudreve/backup"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 
@@ -44,6 +46,7 @@ interface BackupApiStatus {
     age_hours: number | null
     total_size_bytes: number | null
     drive_uploaded: boolean | null
+    cloudreve_uploaded: boolean | null
   }
   stats: {
     total: number
@@ -59,6 +62,12 @@ interface BackupApiStatus {
     sa_json_present: boolean
     reachable: boolean
     last_checked: string | null
+  }
+  cloudreve: {
+    enabled: boolean
+    path: string
+    reachable: boolean | null
+    message: string
   }
   timestamp: string
 }
@@ -76,6 +85,7 @@ export async function GET() {
       age_hours: null,
       total_size_bytes: null,
       drive_uploaded: null,
+      cloudreve_uploaded: null,
     },
     stats: {
       total: 0,
@@ -91,6 +101,12 @@ export async function GET() {
       sa_json_present:   false,
       reachable:         false,
       last_checked:      null,
+    },
+    cloudreve: {
+      enabled:   false,
+      path:      "",
+      reachable: null,
+      message:   "",
     },
     timestamp: new Date().toISOString(),
   }
@@ -139,6 +155,7 @@ export async function GET() {
         age_hours: ageHours,
         total_size_bytes: latest.totalSizeBytes,
         drive_uploaded: latest.driveUploaded,
+        cloudreve_uploaded: latest.cloudreveUploaded,
       }
 
       // Warning if last backup is old (uses persisted maxAgeHours)
@@ -180,6 +197,27 @@ export async function GET() {
       reachable:         false,
       last_checked:      null,
     }
+  }
+
+  // 3b. Cloudreve healthcheck (solo si el destino está activo)
+  try {
+    const config = await getBackupConfig()
+    result.cloudreve = {
+      enabled: config.cloudreveBackupsEnabled,
+      path:    config.cloudreveBackupsPath,
+      reachable: null,
+      message: "",
+    }
+    if (config.cloudreveBackupsEnabled) {
+      const probe = await probeCloudreveBackupPath(normalizeBackupCloudrevePath(config.cloudreveBackupsPath))
+      result.cloudreve.reachable = probe.ok
+      result.cloudreve.message = probe.message
+      if (!probe.ok && result.status === "ok") {
+        result.status = "degraded"
+      }
+    }
+  } catch {
+    result.cloudreve = { enabled: false, path: "", reachable: null, message: "" }
   }
 
   // 4. Quick check: try running backup-verify with --json (non-blocking, best-effort)

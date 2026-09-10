@@ -1,5 +1,5 @@
 {
-  "id": "72d0e466-96a2-494e-80c1-9261ead27bb3",
+  "id": "f9831675-0e55-41dc-9da8-91e47c23b2b8",
   "prevId": "f2aec3d0-5c11-448a-86e5-780a56aa3f0d",
   "version": "7",
   "dialect": "postgresql",
@@ -4069,158 +4069,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.purchase_order_invoice_item_allocations": {
-      "name": "purchase_order_invoice_item_allocations",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "invoice_item_id": {
-          "name": "invoice_item_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "purchase_order_item_id": {
-          "name": "purchase_order_item_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "quantity": {
-          "name": "quantity",
-          "type": "real",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subtotal": {
-          "name": "subtotal",
-          "type": "numeric(12, 2)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source": {
-          "name": "source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "po_invoice_item_allocations_pair_unique": {
-          "name": "po_invoice_item_allocations_pair_unique",
-          "columns": [
-            {
-              "expression": "invoice_item_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "purchase_order_item_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "po_invoice_item_allocations_oc_item_idx": {
-          "name": "po_invoice_item_allocations_oc_item_idx",
-          "columns": [
-            {
-              "expression": "purchase_order_item_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "purchase_order_invoice_item_allocations_invoice_item_id_purchase_order_invoice_items_id_fk": {
-          "name": "purchase_order_invoice_item_allocations_invoice_item_id_purchase_order_invoice_items_id_fk",
-          "tableFrom": "purchase_order_invoice_item_allocations",
-          "tableTo": "purchase_order_invoice_items",
-          "columnsFrom": [
-            "invoice_item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "purchase_order_invoice_item_allocations_purchase_order_item_id_purchase_order_items_id_fk": {
-          "name": "purchase_order_invoice_item_allocations_purchase_order_item_id_purchase_order_items_id_fk",
-          "tableFrom": "purchase_order_invoice_item_allocations",
-          "tableTo": "purchase_order_items",
-          "columnsFrom": [
-            "purchase_order_item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "purchase_order_invoice_item_allocations_created_by_users_id_fk": {
-          "name": "purchase_order_invoice_item_allocations_created_by_users_id_fk",
-          "tableFrom": "purchase_order_invoice_item_allocations",
-          "tableTo": "users",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "po_invoice_item_allocations_quantity_nonzero": {
-          "name": "po_invoice_item_allocations_quantity_nonzero",
-          "value": "\"purchase_order_invoice_item_allocations\".\"quantity\" <> 0"
-        },
-        "po_invoice_item_allocations_sign_consistent": {
-          "name": "po_invoice_item_allocations_sign_consistent",
-          "value": "\n      (\"purchase_order_invoice_item_allocations\".\"quantity\" > 0 AND \"purchase_order_invoice_item_allocations\".\"subtotal\" >= 0)\n      OR (\"purchase_order_invoice_item_allocations\".\"quantity\" < 0 AND \"purchase_order_invoice_item_allocations\".\"subtotal\" <= 0)\n    "
-        },
-        "po_invoice_item_allocations_source_valid": {
-          "name": "po_invoice_item_allocations_source_valid",
-          "value": "\n      \"purchase_order_invoice_item_allocations\".\"source\" IN ('legacy_backfill', 'operator', 'dte_suggestion')\n    "
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.purchase_order_invoice_items": {
       "name": "purchase_order_invoice_items",
       "schema": "",
@@ -8212,6 +8060,19 @@
           "notNull": false,
           "default": false
         },
+        "cloudreve_path": {
+          "name": "cloudreve_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cloudreve_uploaded": {
+          "name": "cloudreve_uploaded",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
         "app_version": {
           "name": "app_version",
           "type": "text",
@@ -8348,6 +8209,27 @@
           "primaryKey": false,
           "notNull": true,
           "default": 30
+        },
+        "drive_backups_enabled": {
+          "name": "drive_backups_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "cloudreve_backups_enabled": {
+          "name": "cloudreve_backups_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "cloudreve_backups_path": {
+          "name": "cloudreve_backups_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'backups/plataforma'"
         },
         "updated_at": {
           "name": "updated_at",
@@ -21523,388 +21405,6 @@
           "value": "length(\"work_item_assignments\".\"source_type\") > 0 AND length(\"work_item_assignments\".\"source_id\") > 0 AND length(\"work_item_assignments\".\"action_key\") > 0"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.operational_integrity_case_events": {
-      "name": "operational_integrity_case_events",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "case_id": {
-          "name": "case_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "observation_id": {
-          "name": "observation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "evidence": {
-          "name": "evidence",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "actor_user_id": {
-          "name": "actor_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "operational_integrity_case_events_case_observation_kind_unique": {
-          "name": "operational_integrity_case_events_case_observation_kind_unique",
-          "columns": [
-            {
-              "expression": "case_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "observation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "kind",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "operational_integrity_case_events_case_created_idx": {
-          "name": "operational_integrity_case_events_case_created_idx",
-          "columns": [
-            {
-              "expression": "case_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "operational_integrity_case_events_case_id_operational_integrity_cases_id_fk": {
-          "name": "operational_integrity_case_events_case_id_operational_integrity_cases_id_fk",
-          "tableFrom": "operational_integrity_case_events",
-          "tableTo": "operational_integrity_cases",
-          "columnsFrom": [
-            "case_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "operational_integrity_case_events_observation_id_operational_integrity_observations_id_fk": {
-          "name": "operational_integrity_case_events_observation_id_operational_integrity_observations_id_fk",
-          "tableFrom": "operational_integrity_case_events",
-          "tableTo": "operational_integrity_observations",
-          "columnsFrom": [
-            "observation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "operational_integrity_case_events_actor_user_id_users_id_fk": {
-          "name": "operational_integrity_case_events_actor_user_id_users_id_fk",
-          "tableFrom": "operational_integrity_case_events",
-          "tableTo": "users",
-          "columnsFrom": [
-            "actor_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "operational_integrity_case_events_kind_valid": {
-          "name": "operational_integrity_case_events_kind_valid",
-          "value": "\n    \"operational_integrity_case_events\".\"kind\" IN ('acknowledged', 'verified_resolved')\n  "
-        },
-        "operational_integrity_case_events_reason_length": {
-          "name": "operational_integrity_case_events_reason_length",
-          "value": "\n    char_length(trim(\"operational_integrity_case_events\".\"reason\")) BETWEEN 10 AND 2000\n  "
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.operational_integrity_cases": {
-      "name": "operational_integrity_cases",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "case_key": {
-          "name": "case_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "domain": {
-          "name": "domain",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "code": {
-          "name": "code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "severity": {
-          "name": "severity",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "worksite_id": {
-          "name": "worksite_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "entity_type": {
-          "name": "entity_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "entity_id": {
-          "name": "entity_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "first_detected_at": {
-          "name": "first_detected_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "operational_integrity_cases_worksite_detected_idx": {
-          "name": "operational_integrity_cases_worksite_detected_idx",
-          "columns": [
-            {
-              "expression": "worksite_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "first_detected_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "operational_integrity_cases_domain_code_idx": {
-          "name": "operational_integrity_cases_domain_code_idx",
-          "columns": [
-            {
-              "expression": "domain",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "code",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "operational_integrity_cases_worksite_id_worksites_id_fk": {
-          "name": "operational_integrity_cases_worksite_id_worksites_id_fk",
-          "tableFrom": "operational_integrity_cases",
-          "tableTo": "worksites",
-          "columnsFrom": [
-            "worksite_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "operational_integrity_cases_case_key_unique": {
-          "name": "operational_integrity_cases_case_key_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "case_key"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "operational_integrity_cases_domain_valid": {
-          "name": "operational_integrity_cases_domain_valid",
-          "value": "\n    \"operational_integrity_cases\".\"domain\" IN ('stock', 'receiving', 'purchasing')\n  "
-        },
-        "operational_integrity_cases_severity_valid": {
-          "name": "operational_integrity_cases_severity_valid",
-          "value": "\n    \"operational_integrity_cases\".\"severity\" IN ('warning', 'high', 'critical')\n  "
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.operational_integrity_observations": {
-      "name": "operational_integrity_observations",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "case_id": {
-          "name": "case_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "fingerprint": {
-          "name": "fingerprint",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "snapshot": {
-          "name": "snapshot",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "observed_at": {
-          "name": "observed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "operational_integrity_observation_fingerprint_unique": {
-          "name": "operational_integrity_observation_fingerprint_unique",
-          "columns": [
-            {
-              "expression": "case_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "fingerprint",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "operational_integrity_observations_case_id_operational_integrity_cases_id_fk": {
-          "name": "operational_integrity_observations_case_id_operational_integrity_cases_id_fk",
-          "tableFrom": "operational_integrity_observations",
-          "tableTo": "operational_integrity_cases",
-          "columnsFrom": [
-            "case_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.pdtp_activities": {

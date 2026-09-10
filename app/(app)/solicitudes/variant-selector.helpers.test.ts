@@ -26,9 +26,27 @@ describe("getSizeVariantPicker", () => {
     })
   })
 
-  it("does not flatten families with incompatible or repeated size choices", () => {
-    expect(getSizeVariantPicker([variant("36", "36"), variant("37", "37", "Talla guantes")])).toBeNull()
+  it("does not flatten families with repeated size choices", () => {
     expect(getSizeVariantPicker([variant("a", "M"), variant("b", "M")])).toBeNull()
+  })
+
+  it("agrupa las tallas aunque el atributo venga con nombres distintos (migración parcial)", () => {
+    // Una familia de guantes re-importada fila por fila queda con
+    // `Talla guantes` en la variante nueva y `Talla` (legacy) en el resto:
+    // es el estado intermedio esperado de la migración de este proyecto, no
+    // un error que deba ocultar el selector completo.
+    expect(getSizeVariantPicker([variant("36", "36"), variant("37", "37", "Talla guantes")])).toEqual({
+      attributeName: "Talla calzado",
+      choices: [{ id: "36", label: "36" }, { id: "37", label: "37" }],
+    })
+  })
+
+  it("descarta la familia cuando el T/ de una talla la vuelve indistinguible de otra", () => {
+    // `T/L` canoniza a `L` (abreviatura de "Talla"): si la familia también
+    // tiene una variante ya escrita `L`, son la misma talla dos veces y no se
+    // puede ofrecer como dos opciones, aunque los nombres de atributo
+    // coincidan.
+    expect(getSizeVariantPicker([variant("a", "T/L", "Talla"), variant("b", "L", "Talla")])).toBeNull()
   })
 
   it("descarta la familia cuando dos variantes son la misma talla escrita distinto", () => {

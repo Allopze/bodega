@@ -1,7 +1,13 @@
 import { PencilSimple, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
 
+// `shrink-0`: los botones son ítems flex de la celda de acciones. Donde la
+// fila mete un tercero —/admin/productos agrega "Añadir variante"— la celda
+// los comprimía de 32 px a 16 px de ancho, por debajo del mínimo de 24 px de
+// WCAG 2.5.8, y con menos separación de la exigida entre objetivos vecinos.
+// Lo detectó `accessibility.spec.ts` como `target-size` en productos; las
+// demás listas de catálogo se salvaban sólo por tener dos botones.
 const BUTTON_CLASS =
-  "h-8 w-8 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]"
+  "h-8 w-8 shrink-0 flex items-center justify-center rounded-[var(--radius-sm)] text-[var(--color-text-subtle)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)] transition-colors duration-[var(--duration-fast)]"
 
 interface CatalogRowActionsProps {
   id: string
@@ -70,7 +76,10 @@ export function CatalogRowActions({
           <ToggleRight size={20} className="text-[var(--color-primary)]" />
         </button>
       ) : (
-        <form action={toggleAction}>
+        // El `form` es el ítem flex en esta rama, así que el `shrink-0` del
+        // botón no basta: sin esto se comprime el contenedor y el botón se
+        // recorta igual.
+        <form action={toggleAction} className="shrink-0">
           <input type="hidden" name="id" value={id} />
           <input type="hidden" name="activate" value={String(!isActive)} />
           <button

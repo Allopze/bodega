@@ -14,6 +14,7 @@ const emptyStats: BackupStats = {
   successfulBackupsLast7Days: 0,
   totalSizeBytes: null,
   driveUploaded: false,
+  cloudreveUploaded: false,
 }
 
 const healthyDrive: DriveHealth = {
@@ -61,6 +62,8 @@ describe("buildBackupStatusCards", () => {
         manifestSha256: "manifest",
         drivePath: "gdrive-backups:/2026-08-02",
         driveUploaded: true,
+        cloudrevePath: null,
+        cloudreveUploaded: null,
         appVersion: "test",
         hostname: "test",
         totalSizeBytes: 3,
