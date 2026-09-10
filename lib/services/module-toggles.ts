@@ -150,6 +150,7 @@ const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "flota", submoduleHref: "/flota/monitoreo", prefix: "/api/cron/fleet-onway-retention" },
   { moduleId: "flota", submoduleHref: "/flota/monitoreo", prefix: "/api/cron/fleet-onway-sync" },
   { moduleId: "mantenciones", submoduleHref: "/mantenciones", prefix: "/api/cron/maintenance-reminders" },
+  { moduleId: "warehouse", submoduleHref: "/bodega/trazabilidad", prefix: "/api/cron/operational-integrity-scan" },
   { moduleId: "analytics", submoduleHref: "/analitica", prefix: "/api/cron/operational-metric-snapshots" },
   { moduleId: "analytics", submoduleHref: "/analitica", prefix: "/api/cron/operational-snapshot-health" },
   { moduleId: "prevention", submoduleHref: "/prevencion/pdtp", prefix: "/api/cron/pdtp-evidence-gc" },
