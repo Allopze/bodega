@@ -264,6 +264,10 @@ jobs:
           npm run db:verify-migrations
           npm run db:migrate
 
+      # Después de migrar: sin la tabla de asignaciones no hay nada que verificar.
+      - name: Verify purchase invoice allocations
+        run: npm run db:verify-invoice-allocations
+
       - name: Concurrency tests (real Postgres)
         env:
           STOCK_CONCURRENCY_DATABASE_URL: postgres://postgres:postgres@localhost:5432/bodega_e2e

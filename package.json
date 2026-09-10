@@ -15,6 +15,7 @@
     "check:security-audit": "tsx scripts/check-security-audit.ts",
     "verify:epp-lots": "tsx scripts/verify-epp-lot-reconciliation.ts",
     "db:preflight-invoice-reconciliation": "tsx --env-file-if-exists=.env.local scripts/preflight-purchase-invoice-reconciliation.ts",
+    "db:verify-invoice-allocations": "tsx --env-file-if-exists=.env.local scripts/verify-purchase-invoice-allocations.ts",
     "db:backfill-invoice-reconciliation": "tsx --env-file-if-exists=.env.local scripts/backfill-purchase-invoice-reconciliation.ts",
     "db:backfill-fuel-meter-readings": "tsx --env-file-if-exists=.env.local scripts/backfill-fuel-meter-readings.ts",
     "db:prepare-rollback-invoice-reconciliation": "tsx --env-file-if-exists=.env.local scripts/rollback-purchase-invoice-reconciliation-statuses.ts",

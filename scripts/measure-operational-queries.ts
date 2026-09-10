@@ -126,6 +126,63 @@ async function main() {
       return rows.length
     })
 
+    /**
+     * Disponibilidad proyectada: cuatro agregados que se cruzan por
+     * producto-faena. Es la lectura más pesada que agregó la proyección, así que
+     * entra al mismo presupuesto de un segundo que el resto — no a un harness
+     * paralelo.
+     */
+    await measure("bodega: disponibilidad proyectada scoped", async () => {
+      const [stockRows, demandRows, deliveredRows, incomingRows] = await Promise.all([
+        db.select({
+          worksiteId: schema.worksiteStock.worksiteId,
+          productId: schema.worksiteStock.productId,
+          quantity: sql<number>`coalesce(sum(${schema.worksiteStock.quantity}), 0)`,
+        })
+          .from(schema.worksiteStock)
+          .innerJoin(schema.worksites, eq(schema.worksites.id, schema.worksiteStock.worksiteId))
+          .innerJoin(schema.products, eq(schema.products.id, schema.worksiteStock.productId))
+          .where(and(inArray(schema.worksiteStock.worksiteId, scopedWorksiteIds), eq(schema.worksites.isActive, true), eq(schema.products.isService, false)))
+          .groupBy(schema.worksiteStock.worksiteId, schema.worksiteStock.productId),
+        db.select({
+          worksiteId: schema.purchaseRequests.worksiteId,
+          productId: schema.purchaseRequestItems.productId,
+          quantity: sql<number>`coalesce(sum(${schema.purchaseRequestItems.quantity}), 0)`,
+        })
+          .from(schema.purchaseRequestItems)
+          .innerJoin(schema.purchaseRequests, eq(schema.purchaseRequests.id, schema.purchaseRequestItems.requestId))
+          .innerJoin(schema.worksites, eq(schema.worksites.id, schema.purchaseRequests.worksiteId))
+          .innerJoin(schema.products, eq(schema.products.id, schema.purchaseRequestItems.productId))
+          .where(and(inArray(schema.purchaseRequests.worksiteId, scopedWorksiteIds), eq(schema.worksites.isActive, true), eq(schema.products.isService, false)))
+          .groupBy(schema.purchaseRequests.worksiteId, schema.purchaseRequestItems.productId),
+        db.select({
+          worksiteId: schema.purchaseRequests.worksiteId,
+          productId: schema.purchaseRequestItems.productId,
+          quantity: sql<number>`coalesce(sum(${schema.deliveryItems.quantity}), 0)`,
+        })
+          .from(schema.deliveryItems)
+          .innerJoin(schema.deliveries, eq(schema.deliveries.id, schema.deliveryItems.deliveryId))
+          .innerJoin(schema.purchaseRequestItems, eq(schema.purchaseRequestItems.id, schema.deliveryItems.requestItemId))
+          .innerJoin(schema.purchaseRequests, eq(schema.purchaseRequests.id, schema.purchaseRequestItems.requestId))
+          .innerJoin(schema.worksites, eq(schema.worksites.id, schema.purchaseRequests.worksiteId))
+          .where(and(inArray(schema.purchaseRequests.worksiteId, scopedWorksiteIds), eq(schema.worksites.isActive, true)))
+          .groupBy(schema.purchaseRequests.worksiteId, schema.purchaseRequestItems.productId),
+        db.select({
+          worksiteId: schema.purchaseOrders.worksiteId,
+          productId: schema.purchaseOrderItems.productId,
+          ordered: sql<number>`coalesce(sum(${schema.purchaseOrderItems.quantity}), 0)`,
+          receivedAtFaena: sql<number>`coalesce(sum(${schema.purchaseOrderItems.quantityReceived}), 0)`,
+        })
+          .from(schema.purchaseOrderItems)
+          .innerJoin(schema.purchaseOrders, eq(schema.purchaseOrders.id, schema.purchaseOrderItems.purchaseOrderId))
+          .innerJoin(schema.worksites, eq(schema.worksites.id, schema.purchaseOrders.worksiteId))
+          .innerJoin(schema.products, eq(schema.products.id, schema.purchaseOrderItems.productId))
+          .where(and(inArray(schema.purchaseOrders.worksiteId, scopedWorksiteIds), eq(schema.worksites.isActive, true), eq(schema.products.isService, false)))
+          .groupBy(schema.purchaseOrders.worksiteId, schema.purchaseOrderItems.productId),
+      ])
+      return stockRows.length + demandRows.length + deliveredRows.length + incomingRows.length
+    })
+
     await measure("bodega: movimientos recientes scoped", async () => {
       const rows = await db.query.inventoryMovements.findMany({
         where: (movement, { inArray }) => inArray(movement.worksiteId, scopedWorksiteIds),
