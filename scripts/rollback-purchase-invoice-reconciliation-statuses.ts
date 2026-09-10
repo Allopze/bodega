@@ -29,6 +29,15 @@ async function main() {
   }
 }
 
+// Sin `await` de nivel superior: el runner transpila a CJS y ahí el top-level
+// await es un error de transformación, así que el script fallaba antes de
+// abrir la conexión.
 if (process.argv[1]?.includes("rollback-purchase-invoice-reconciliation-statuses")) {
-  await main()
+  main().then(
+    () => process.exit(0),
+    (error) => {
+      console.error(error instanceof Error ? error.message : error)
+      process.exit(1)
+    },
+  )
 }
