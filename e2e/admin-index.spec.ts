@@ -6,23 +6,15 @@ import { expectPageTitle, login } from "./helpers"
 // si allá cambia el orden, acá también.
 const MODULES_BY_GROUP = [
   {
-    title: "Personas y acceso",
+    title: "Catálogos",
     hrefs: [
-      "/admin/usuarios",
-      "/admin/faenas",
-      "/admin/trabajadores",
       "/admin/cargos",
-      "/admin/roles",
-    ],
-  },
-  {
-    title: "Productos y abastecimiento",
-    hrefs: [
       "/admin/productos",
       "/admin/epps",
       "/admin/catalogos-productos",
-      "/admin/proveedores",
-      "/admin/centros-costo",
+      "/admin/desviaciones",
+      "/admin/pdtp-catalogos",
+      "/admin/flota-catalogos",
     ],
   },
   {
@@ -36,12 +28,12 @@ const MODULES_BY_GROUP = [
     ],
   },
   {
-    title: "Activos operativos",
+    title: "Personas y acceso",
     hrefs: [
-      "/admin/inventario-faena",
-      "/admin/contenedores",
-      "/admin/equipos",
-      "/admin/flota-catalogos",
+      "/admin/usuarios",
+      "/admin/faenas",
+      "/admin/trabajadores",
+      "/admin/roles",
     ],
   },
   {
@@ -54,6 +46,14 @@ const MODULES_BY_GROUP = [
     ],
   },
   {
+    title: "Activos operativos",
+    hrefs: [
+      "/admin/inventario-faena",
+      "/admin/contenedores",
+      "/admin/equipos",
+    ],
+  },
+  {
     title: "Seguridad y trazabilidad",
     hrefs: [
       "/admin/folios",
@@ -62,11 +62,16 @@ const MODULES_BY_GROUP = [
     ],
   },
   {
+    title: "Productos y abastecimiento",
+    hrefs: [
+      "/admin/proveedores",
+      "/admin/centros-costo",
+    ],
+  },
+  {
     title: "Prevención",
     hrefs: [
       "/admin/taxonomia-sst",
-      "/admin/desviaciones",
-      "/admin/pdtp-catalogos",
     ],
   },
 ] as const

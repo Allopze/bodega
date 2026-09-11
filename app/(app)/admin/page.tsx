@@ -42,7 +42,7 @@ const modules = [
     href:        "/admin/cargos",
     icon:        Briefcase,
     permission:  "admin:worker_positions",
-    group:       "personas",
+    group:       "catalogos",
   },
   {
     title:       "Roles",
@@ -58,7 +58,7 @@ const modules = [
     href:        "/admin/productos",
     icon:        Cube,
     permission:  "admin:products",
-    group:       "abastecimiento",
+    group:       "catalogos",
   },
   {
     title:       "Catálogo de EPP",
@@ -66,7 +66,7 @@ const modules = [
     href:        "/admin/epps",
     icon:        ShieldCheck,
     permission:  "admin:products",
-    group:       "abastecimiento",
+    group:       "catalogos",
   },
   {
     title:       "Catálogos de productos",
@@ -74,7 +74,7 @@ const modules = [
     href:        "/admin/catalogos-productos",
     icon:        Cube,
     permission:  "admin:product_catalogs",
-    group:       "abastecimiento",
+    group:       "catalogos",
   },
   {
     title:       "Inventario de faena",
@@ -130,7 +130,7 @@ const modules = [
     href:        "/admin/desviaciones",
     icon:        WarningCircle,
     permission:  "admin:deviation_catalog",
-    group:       "prevencion",
+    group:       "catalogos",
   },
   {
     title:       "Catálogos PDTP",
@@ -138,7 +138,7 @@ const modules = [
     href:        "/admin/pdtp-catalogos",
     icon:        FileText,
     permission:  "admin:pdtp_catalog",
-    group:       "prevencion",
+    group:       "catalogos",
   },
   {
     title:       "Catálogos de flota",
@@ -146,7 +146,7 @@ const modules = [
     href:        "/admin/flota-catalogos",
     icon:        Gear,
     permission:  "admin:fleet_catalog",
-    group:       "activos",
+    group:       "catalogos",
   },
   {
     title:       "Configuración",
@@ -248,20 +248,15 @@ const modules = [
 
 /**
  * El orden NO es alfabético ni temático: agrupa tarjetas de tamaño parecido en
- * cada fila del grid (5·5·5 · 4·4·3 · 2). Con grupos que van de 2 a 5 módulos,
+ * cada fila del grid (7·5·4 · 4·3·3 · 2·1). Con grupos que van de 1 a 7 módulos,
  * alternarlos dejaba huecos grandes bajo las tarjetas cortas. Si agregas o
  * quitas un módulo, revisa que su grupo siga junto a otros de tamaño similar.
  */
 const moduleGroups = [
   {
-    key:         "personas",
-    title:       "Personas y acceso",
-    description: "Cuentas, permisos y dotación asociada a faenas.",
-  },
-  {
-    key:         "abastecimiento",
-    title:       "Productos y abastecimiento",
-    description: "Productos, proveedores y reglas maestras para compras e imputaciones.",
+    key:         "catalogos",
+    title:       "Catálogos",
+    description: "Listas maestras reutilizadas por otros módulos: productos, EPP, cargos, desviaciones, PDTP y flota.",
   },
   {
     key:         "plataforma",
@@ -269,9 +264,9 @@ const moduleGroups = [
     description: "Parámetros globales, módulos, archivos y respaldos del sistema.",
   },
   {
-    key:         "activos",
-    title:       "Activos operativos",
-    description: "Recursos instalados en faena, equipos de servicio y flota.",
+    key:         "personas",
+    title:       "Personas y acceso",
+    description: "Cuentas, permisos y dotación asociada a faenas.",
   },
   {
     key:         "comunicaciones",
@@ -279,14 +274,24 @@ const moduleGroups = [
     description: "Notificaciones, correo saliente y conexiones con servicios externos.",
   },
   {
+    key:         "activos",
+    title:       "Activos operativos",
+    description: "Recursos instalados en faena, equipos de servicio y flota.",
+  },
+  {
     key:         "seguridad",
     title:       "Seguridad y trazabilidad",
     description: "Controles de acceso, folios y registro de cambios.",
   },
   {
+    key:         "abastecimiento",
+    title:       "Productos y abastecimiento",
+    description: "Proveedores y centros de costo para compras e imputaciones.",
+  },
+  {
     key:         "prevencion",
     title:       "Prevención",
-    description: "Catálogos maestros para documentación, SST y programa preventivo.",
+    description: "Taxonomía documental para clasificar la biblioteca SST.",
   },
 ]
 
