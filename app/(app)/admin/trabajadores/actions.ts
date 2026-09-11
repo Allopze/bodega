@@ -13,9 +13,23 @@ import { parseCatalogWorkbook } from "@/lib/services/catalog-import"
 import { onWorkerEnteredDotacion } from "@/lib/services/pdtp-adapters/worker-lifecycle-connector"
 import { evaluateWorksitePreventiveOrganization } from "@/lib/services/pdtp-adapters/preventive-organization-connector"
 import { importLifecycleEvents, insertWorker, setWorkerActive, updateWorkerFields, type WorkerLifecycleEvent } from "@/lib/services/workers"
+import {
+  recordWorkerPositionChange,
+  resolveWorkerPosition,
+  WorkerPositionDomainError,
+} from "@/lib/services/worker-positions"
+import { normalizeWorkerPositionKey } from "@/lib/services/worker-positions/normalization"
 import { workerSchema, type ActionState } from "@/lib/validation/masters"
 
 const REVALIDATE = "/admin/trabajadores"
+
+/** Identifica un cargo del XLSX por lo que de verdad decide su identidad: el
+ *  código explícito y la clave normalizada del nombre — la misma sobre la que
+ *  el trigger de unicidad toma su lock. Ordenar por ella hace determinista el
+ *  orden de bloqueo de toda la importación. */
+function positionCacheKey(code: string | undefined, name: string | undefined): string {
+  return `${normalizeWorkerPositionKey(name ?? "")}|${(code ?? "").trim().toUpperCase()}`
+}
 
 export async function createWorker(_prev: ActionState, formData: FormData): Promise<ActionState> {
   let session
@@ -26,6 +40,7 @@ export async function createWorker(_prev: ActionState, formData: FormData): Prom
     firstName:  formData.get("firstName"),
     lastName:   formData.get("lastName"),
     rut:        formData.get("rut") || undefined,
+    positionId: formData.get("positionId") || undefined,
     position:   formData.get("position") || undefined,
     worksiteId: formData.get("worksiteId"),
     isActive:   formData.get("isActive") === "on",
@@ -48,20 +63,42 @@ export async function createWorker(_prev: ActionState, formData: FormData): Prom
   }
 
   const id = nanoid()
-  const { events } = await insertWorker({
-    id,
-    rut:        d.rut ?? null,
-    firstName:  d.firstName,
-    lastName:   d.lastName,
-    position:   d.position  ?? null,
-    worksiteId: d.worksiteId,
-    isActive:   d.isActive,
-    sizeTop:    d.sizeTop || null,
-    sizeBottom: d.sizeBottom || null,
-    sizeShoe:   d.sizeShoe || null,
-    sizeGloves: d.sizeGloves || null,
-    sizeHelmet: d.sizeHelmet || null,
-  })
+  let events: WorkerLifecycleEvent[] = []
+  let positionName = "Sin clasificar"
+  try {
+    await db.transaction(async (tx) => {
+      const resolved = await resolveWorkerPosition({ id: d.positionId, name: d.position }, {}, tx)
+      positionName = resolved.position.name
+      const inserted = await insertWorker({
+        id,
+        rut:        d.rut ?? null,
+        firstName:  d.firstName,
+        lastName:   d.lastName,
+        positionId: resolved.position.id,
+        position:   resolved.position.name,
+        worksiteId: d.worksiteId,
+        isActive:   d.isActive,
+        sizeTop:    d.sizeTop || null,
+        sizeBottom: d.sizeBottom || null,
+        sizeShoe:   d.sizeShoe || null,
+        sizeGloves: d.sizeGloves || null,
+        sizeHelmet: d.sizeHelmet || null,
+      }, tx)
+      events = inserted.events
+      await recordWorkerPositionChange({
+        workerId: id,
+        nextPosition: resolved.position,
+        source: "admin",
+        reason: "Cargo asignado al crear el trabajador",
+        actorUserId: session.user.id,
+      }, tx)
+    })
+  } catch (err) {
+    if (err instanceof WorkerPositionDomainError) {
+      return { ok: false, fieldErrors: { positionId: [err.message], position: [err.message] } }
+    }
+    throw err
+  }
 
   await recordAudit({
     userId:     session.user.id,
@@ -69,7 +106,7 @@ export async function createWorker(_prev: ActionState, formData: FormData): Prom
     action:     "create",
     entityType: "worker",
     entityId:   id,
-    newState:   { firstName: d.firstName, lastName: d.lastName, rut: d.rut },
+    newState:   { firstName: d.firstName, lastName: d.lastName, rut: d.rut, position: positionName },
   })
 
   await notifyDotacionChange(events, session.user.id)
@@ -88,6 +125,7 @@ export async function updateWorker(_prev: ActionState, formData: FormData): Prom
     firstName:  formData.get("firstName"),
     lastName:   formData.get("lastName"),
     rut:        formData.get("rut") || undefined,
+    positionId: formData.get("positionId") || undefined,
     position:   formData.get("position") || undefined,
     worksiteId: formData.get("worksiteId"),
     isActive:   formData.get("isActive") === "on",
@@ -112,19 +150,43 @@ export async function updateWorker(_prev: ActionState, formData: FormData): Prom
     return { ok: false, message: "No tienes acceso a la faena seleccionada" }
   }
 
-  const { events } = await updateWorkerFields(d.id, {
-    rut:        d.rut ?? null,
-    firstName:  d.firstName,
-    lastName:   d.lastName,
-    position:   d.position ?? null,
-    worksiteId: d.worksiteId,
-    isActive:   d.isActive,
-    sizeTop:    d.sizeTop || null,
-    sizeBottom: d.sizeBottom || null,
-    sizeShoe:   d.sizeShoe || null,
-    sizeGloves: d.sizeGloves || null,
-    sizeHelmet: d.sizeHelmet || null,
-  }, current)
+  let events: WorkerLifecycleEvent[] = []
+  let positionName = current.position ?? "Sin clasificar"
+  try {
+    await db.transaction(async (tx) => {
+      const resolved = await resolveWorkerPosition({ id: d.positionId, name: d.position }, {}, tx)
+      positionName = resolved.position.name
+      const updated = await updateWorkerFields(d.id!, {
+        rut:        d.rut ?? null,
+        firstName:  d.firstName,
+        lastName:   d.lastName,
+        positionId: resolved.position.id,
+        position:   resolved.position.name,
+        worksiteId: d.worksiteId,
+        isActive:   d.isActive,
+        sizeTop:    d.sizeTop || null,
+        sizeBottom: d.sizeBottom || null,
+        sizeShoe:   d.sizeShoe || null,
+        sizeGloves: d.sizeGloves || null,
+        sizeHelmet: d.sizeHelmet || null,
+      }, current, tx)
+      events = updated.events
+      await recordWorkerPositionChange({
+        workerId: d.id!,
+        previousPositionId: current.positionId,
+        previousPositionLabel: current.position,
+        nextPosition: resolved.position,
+        source: "admin",
+        reason: "Cargo actualizado desde la ficha del trabajador",
+        actorUserId: session.user.id,
+      }, tx)
+    })
+  } catch (err) {
+    if (err instanceof WorkerPositionDomainError) {
+      return { ok: false, fieldErrors: { positionId: [err.message], position: [err.message] } }
+    }
+    throw err
+  }
 
   await recordAudit({
     userId:     session.user.id,
@@ -132,8 +194,8 @@ export async function updateWorker(_prev: ActionState, formData: FormData): Prom
     action:     "update",
     entityType: "worker",
     entityId:   d.id,
-    oldState:   { firstName: current.firstName, lastName: current.lastName },
-    newState:   { firstName: d.firstName, lastName: d.lastName, rut: d.rut },
+    oldState:   { firstName: current.firstName, lastName: current.lastName, position: current.position },
+    newState:   { firstName: d.firstName, lastName: d.lastName, rut: d.rut, position: positionName },
   })
 
   await notifyDotacionChange(events, session.user.id)
@@ -189,6 +251,8 @@ export async function importWorkersFromXlsx(_prev: ActionState, formData: FormDa
   if (!result.ok) return { ok: false, message: result.errors.join("; ") }
 
   let created = 0; let updated = 0; let skipped = 0
+  const createdPositionIds = new Set<string>()
+  const pendingPositionNames = new Set<string>()
   // Estado antes/después de cada fila escrita, para derivar los eventos de
   // entrada a la dotación con la misma regla que el alta manual. Se acumula
   // dentro de la transacción y se consume después del commit.
@@ -210,12 +274,16 @@ export async function importWorkersFromXlsx(_prev: ActionState, formData: FormDa
             // `worksiteId` e `isActive` viajan además del id para derivar el
             // evento de entrada: una fila que pasa de inactiva a activa es una
             // reincorporación y vuelve a hacer exigible la inducción.
-            columns: { id: true, worksiteId: true, isActive: true },
+            columns: { id: true, worksiteId: true, isActive: true, positionId: true, position: true },
             where: and(inArray(workers.id, updateIds), worksiteScopeSql(session, workers.worksiteId)),
           })
         : []
       const visibleWorkerIds = new Set(visibleWorkers.map((worker) => worker.id))
       const stateBefore = new Map(visibleWorkers.map((worker) => [worker.id, { worksiteId: worker.worksiteId, isActive: worker.isActive }]))
+      const positionBefore = new Map(visibleWorkers.map((worker) => [worker.id, {
+        positionId: worker.positionId,
+        position: worker.position,
+      }]))
 
       for (const row of result.rows) {
         if (!row.existingId || row.decision !== "update") continue
@@ -235,18 +303,43 @@ export async function importWorkersFromXlsx(_prev: ActionState, formData: FormDa
         destinationByRow.set(row.rowNumber, worksiteId)
       }
 
+      // Los cargos se resuelven antes del bucle y en orden estable de clave
+      // normalizada. Crear un cargo toma un advisory lock sobre esa clave que
+      // dura hasta el commit, así que dos importaciones simultáneas que
+      // introdujeran cargos nuevos en orden distinto podían quedar en deadlock
+      // y perder la importación entera. Con un orden común no hay ciclo posible.
+      const positionInputs = new Map<string, { code?: string; name?: string }>()
+      for (const row of result.rows) {
+        const v = row.values
+        if (!(v["Nombre"] ?? "").trim() && !(v["Apellido"] ?? "").trim()) continue
+        const code = v["Código cargo"] ?? v["Codigo cargo"]
+        const name = v["Cargo"]
+        positionInputs.set(positionCacheKey(code, name), { code, name })
+      }
+      const resolvedPositions = new Map<string, Awaited<ReturnType<typeof resolveWorkerPosition>>>()
+      for (const key of [...positionInputs.keys()].sort()) {
+        const resolved = await resolveWorkerPosition(positionInputs.get(key)!, {}, tx)
+        resolvedPositions.set(key, resolved)
+        if (resolved.created) {
+          createdPositionIds.add(resolved.position.id)
+          pendingPositionNames.add(resolved.position.name)
+        }
+      }
+
       for (const row of result.rows) {
         const v = row.values
         const firstName = (v["Nombre"] ?? "").trim()
         const lastName = (v["Apellido"] ?? "").trim()
         if (!firstName && !lastName) { skipped++; continue }
         const isActive = v["Activo"]?.trim() !== "No"
+        const resolvedPosition = resolvedPositions.get(positionCacheKey(v["Código cargo"] ?? v["Codigo cargo"], v["Cargo"]))!
 
         if (row.decision === "update" && row.existingId) {
           const changed = await tx.update(workers).set({
             rut: (v["RUT"] ?? "").trim() || null,
             firstName, lastName,
-            position: (v["Cargo"] ?? "").trim() || null,
+            positionId: resolvedPosition.position.id,
+            position: resolvedPosition.position.name,
             supervisor: (v["Supervisor"] ?? "").trim() || null,
             prevencionista: (v["Prevencionista"] ?? "").trim() || null,
             isActive,
@@ -258,6 +351,16 @@ export async function importWorkersFromXlsx(_prev: ActionState, formData: FormDa
           // La rama de actualización no mueve `worksiteId`, así que la faena de
           // después es la de antes: el único evento posible acá es reincorporar.
           if (before) lifecyclePairs.push({ before, after: { id: row.existingId, worksiteId: before.worksiteId, isActive } })
+          const previousPosition = positionBefore.get(row.existingId)
+          await recordWorkerPositionChange({
+            workerId: row.existingId,
+            previousPositionId: previousPosition?.positionId,
+            previousPositionLabel: previousPosition?.position,
+            nextPosition: resolvedPosition.position,
+            source: "import",
+            reason: `Cargo importado desde fila ${row.rowNumber}`,
+            actorUserId: session.user.id,
+          }, tx)
           updated++
         } else {
           const worksiteId = destinationByRow.get(row.rowNumber)
@@ -268,20 +371,41 @@ export async function importWorkersFromXlsx(_prev: ActionState, formData: FormDa
           await tx.insert(workers).values({
             id: newId, rut: (v["RUT"] ?? "").trim() || null,
             firstName, lastName,
-            position: (v["Cargo"] ?? "").trim() || null,
+            positionId: resolvedPosition.position.id,
+            position: resolvedPosition.position.name,
             supervisor: (v["Supervisor"] ?? "").trim() || null,
             prevencionista: (v["Prevencionista"] ?? "").trim() || null,
             worksiteId,
             isActive,
             createdAt: new Date().toISOString(),
           })
+          await recordWorkerPositionChange({
+            workerId: newId,
+            nextPosition: resolvedPosition.position,
+            source: "import",
+            reason: `Cargo asignado desde fila ${row.rowNumber}`,
+            actorUserId: session.user.id,
+          }, tx)
         }
       }
     })
     await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "create", entityType: "worker", entityId: "import_xlsx", newState: { created, updated, skipped } })
     await notifyDotacionChange(importLifecycleEvents(lifecyclePairs), session.user.id)
     revalidatePath(REVALIDATE)
-    return { ok: true, message: `Importados: ${created} creados, ${updated} actualizados, ${skipped} omitidos`, data: { created, updated, skipped } }
+    const reviewSuffix = pendingPositionNames.size > 0
+      ? `. Cargos nuevos pendientes de revisión: ${[...pendingPositionNames].join(", ")}`
+      : ""
+    return {
+      ok: true,
+      message: `Importados: ${created} creados, ${updated} actualizados, ${skipped} omitidos${reviewSuffix}`,
+      data: {
+        created,
+        updated,
+        skipped,
+        positionsCreated: createdPositionIds.size,
+        pendingPositionNames: [...pendingPositionNames],
+      },
+    }
   } catch (err) {
     logger.error("[admin/trabajadores] importXlsx", err)
     return { ok: false, message: (err as Error).message }

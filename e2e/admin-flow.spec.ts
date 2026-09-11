@@ -45,6 +45,28 @@ async function selectRadixById(page: Page, id: string, option: string | RegExp) 
  * that depend on it don't cascade-fail. Creates it if missing;
  * tolerates the "código ya existe" error if a previous run left it.
  */
+/**
+ * Garantiza que exista el cargo que usa la prueba de trabajadores.
+ *
+ * El campo Cargo dejó de ser texto libre: ahora es un selector contra el
+ * catálogo de `/admin/cargos`, así que el cargo tiene que existir antes.
+ */
+async function ensurePositionE2E(page: Page) {
+  await page.goto("/admin/cargos")
+  const exists = page.getByRole("row", { name: /Montajista E2E/ })
+  if (await exists.first().isVisible().catch(() => false)) return
+
+  await page.getByRole("button", { name: /nuevo registro/i }).click()
+  await page.getByRole("menuitem", { name: /nuevo cargo/i }).click()
+  const dialog = page.getByRole("dialog", { name: "Nuevo cargo" })
+  await dialog.getByRole("textbox", { name: "Código" }).fill("MONTAJISTA-E2E")
+  await dialog.getByRole("textbox", { name: "Nombre" }).fill("Montajista E2E")
+
+  await dialog.locator("form").evaluate((el) => (el as HTMLFormElement).requestSubmit())
+  await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 15_000 }).catch(() => {})
+  await expect(page.getByRole("row", { name: /Montajista E2E/ }).first()).toBeVisible({ timeout: 15_000 })
+}
+
 async function ensureWorksiteE2E(page: Page) {
   const code = "FAE-E2E"
   await page.goto("/admin/faenas")
@@ -234,6 +256,7 @@ test("admin: crear trabajador y verificarlo en listado", async ({ page }) => {
   await login(page)
 
   await ensureWorksiteE2E(page)
+  await ensurePositionE2E(page)
 
   const rut = validChileanRut()
   const firstName = uniqueId("Op")
@@ -247,7 +270,7 @@ test("admin: crear trabajador y verificarlo en listado", async ({ page }) => {
   await dialog.getByLabel("Nombre").fill(firstName)
   await dialog.getByLabel("Apellido").fill("Playwright")
   await dialog.getByRole("textbox", { name: "RUT" }).fill(rut)
-  await dialog.getByRole("textbox", { name: "Cargo" }).fill("Montajista E2E")
+  await selectRadixById(page, "wrk-pos", /Montajista E2E/)
   await selectRadixById(page, "wrk-ws", "Faena E2E")
 
   await submitFormAndWaitForClose(page, dialog)

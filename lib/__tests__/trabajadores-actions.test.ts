@@ -9,12 +9,15 @@ const mockCanAccessWorksite = vi.hoisted(() => vi.fn(() => true))
 const mockFindFirstWorker = vi.hoisted(() => vi.fn())
 const mockInsert = vi.hoisted(() => vi.fn())
 const mockUpdate = vi.hoisted(() => vi.fn())
+const mockTransaction = vi.hoisted(() => vi.fn())
 const mockRecordAudit = vi.hoisted(() => vi.fn())
 const mockInsertWorker = vi.hoisted(() => vi.fn())
 const mockUpdateWorkerFields = vi.hoisted(() => vi.fn())
 const mockSetWorkerActive = vi.hoisted(() => vi.fn())
 const mockOnWorkerEnteredDotacion = vi.hoisted(() => vi.fn())
 const mockEvaluateWorksitePreventiveOrganization = vi.hoisted(() => vi.fn())
+const mockResolveWorkerPosition = vi.hoisted(() => vi.fn())
+const mockRecordWorkerPositionChange = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: mockRequirePermission,
@@ -27,6 +30,7 @@ vi.mock("@/db", () => ({
     },
     insert: mockInsert,
     update: mockUpdate,
+    transaction: mockTransaction,
   },
 }))
 // La persistencia se mockea en su servicio y no como un ORM de mentira sobre
@@ -39,6 +43,11 @@ vi.mock("@/lib/services/workers", async (importOriginal) => ({
   insertWorker: mockInsertWorker,
   updateWorkerFields: mockUpdateWorkerFields,
   setWorkerActive: mockSetWorkerActive,
+}))
+vi.mock("@/lib/services/worker-positions", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/services/worker-positions")>()),
+  resolveWorkerPosition: mockResolveWorkerPosition,
+  recordWorkerPositionChange: mockRecordWorkerPositionChange,
 }))
 vi.mock("@/lib/services/pdtp-adapters/worker-lifecycle-connector", () => ({
   onWorkerEnteredDotacion: mockOnWorkerEnteredDotacion,
@@ -91,6 +100,12 @@ function setupDbMocks() {
   mockInsertWorker.mockResolvedValue(written)
   mockUpdateWorkerFields.mockResolvedValue(written)
   mockSetWorkerActive.mockResolvedValue(written)
+  mockResolveWorkerPosition.mockResolvedValue({
+    position: { id: "worker-position-unclassified", name: "Sin clasificar" },
+    created: false,
+  })
+  mockRecordWorkerPositionChange.mockResolvedValue(true)
+  mockTransaction.mockImplementation(async (run) => run({}))
   mockOnWorkerEnteredDotacion.mockResolvedValue(undefined)
   mockEvaluateWorksitePreventiveOrganization.mockResolvedValue(undefined)
 }

@@ -11,6 +11,7 @@ import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals
 import { WorkerActions } from "./worker-actions"
 import { WorkerList } from "./worker-list"
 import { getSizeFamilyOptions } from "@/lib/services/sizes"
+import { listWorkerPositions } from "@/lib/services/worker-positions"
 
 export const metadata: Metadata = { title: "Trabajadores" }
 
@@ -19,9 +20,9 @@ export default async function TrabajadoresPage() {
   try { session = await requirePermission("admin:workers") }
   catch { redirect("/forbidden") }
 
-  const [allWorkers, allWorksites, sizeFamilies] = await Promise.all([
+  const [allWorkers, allWorksites, sizeFamilies, positionCatalog] = await Promise.all([
     db.query.workers.findMany({
-      with:    { worksite: true },
+      with:    { worksite: true, positionCatalog: true },
       where:   worksiteScopeSql(session, workers.worksiteId),
       orderBy: (w, { asc }) => [asc(w.lastName), asc(w.firstName)],
     }),
@@ -32,7 +33,18 @@ export default async function TrabajadoresPage() {
     // Las tallas del padrón salen de `size_catalog`, la misma fuente que usa el
     // asistente de variantes: sin eso el padrón y el catálogo se separaban.
     getSizeFamilyOptions(),
+    // El selector de cargo y el badge "por revisar" salen del catálogo
+    // canónico, no del texto libre que todavía guarda `workers.position`.
+    listWorkerPositions(),
   ])
+
+  const positions = positionCatalog.map((position) => ({
+    id:          position.id,
+    code:        position.code,
+    name:        position.name,
+    isActive:    position.isActive,
+    needsReview: position.needsReview,
+  }))
 
   const activeCount = allWorkers.filter((w) => w.isActive).length
   const inactiveCount = allWorkers.length - activeCount
@@ -59,7 +71,7 @@ export default async function TrabajadoresPage() {
           ]} />
         }
         headerActions={<HeaderSignals signals={headerSignals} />}
-        actions={<WorkerActions worksites={allWorksites.map((ws) => ({ id: ws.id, name: ws.name }))} sizeFamilies={sizeFamilies} />}
+        actions={<WorkerActions worksites={allWorksites.map((ws) => ({ id: ws.id, name: ws.name }))} sizeFamilies={sizeFamilies} positions={positions} />}
       />
       <WorkerList
         workers={allWorkers.map((w) => ({
@@ -67,7 +79,9 @@ export default async function TrabajadoresPage() {
           rut:          w.rut,
           firstName:    w.firstName,
           lastName:     w.lastName,
-          position:     w.position,
+          position:     w.positionCatalog?.name ?? w.position,
+          positionId:   w.positionId,
+          positionNeedsReview: w.positionCatalog?.needsReview ?? false,
           worksiteId:   w.worksiteId,
           worksiteName: w.worksite?.name ?? "—",
           isActive:     w.isActive,
@@ -80,6 +94,7 @@ export default async function TrabajadoresPage() {
         }))}
         worksites={allWorksites.map((ws) => ({ id: ws.id, name: ws.name }))}
         sizeFamilies={sizeFamilies}
+        positions={positions}
       />
     </PageContainer>
   )

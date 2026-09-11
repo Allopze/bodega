@@ -1,6 +1,9 @@
 import { expect, test } from "@playwright/test"
 import { expectPageTitle, login } from "./helpers"
 
+// El orden espeja el de `app/(app)/admin/page.tsx`, que agrupa tarjetas de
+// tamaño parecido por fila del grid. `toHaveText(GROUPS)` lo verifica, así que
+// si allá cambia el orden, acá también.
 const MODULES_BY_GROUP = [
   {
     title: "Personas y acceso",
@@ -8,6 +11,7 @@ const MODULES_BY_GROUP = [
       "/admin/usuarios",
       "/admin/faenas",
       "/admin/trabajadores",
+      "/admin/cargos",
       "/admin/roles",
     ],
   },
@@ -22,6 +26,16 @@ const MODULES_BY_GROUP = [
     ],
   },
   {
+    title: "Configuración de plataforma",
+    hrefs: [
+      "/admin/configuracion",
+      "/admin/parametros-operativos",
+      "/admin/modulos",
+      "/admin/backups",
+      "/admin/almacenamiento",
+    ],
+  },
+  {
     title: "Activos operativos",
     hrefs: [
       "/admin/inventario-faena",
@@ -31,10 +45,12 @@ const MODULES_BY_GROUP = [
     ],
   },
   {
-    title: "Prevención",
+    title: "Comunicaciones e integraciones",
     hrefs: [
-      "/admin/taxonomia-sst",
-      "/admin/pdtp-catalogos",
+      "/admin/notificaciones",
+      "/admin/dte",
+      "/admin/correo-smtp",
+      "/admin/plantillas",
     ],
   },
   {
@@ -46,22 +62,10 @@ const MODULES_BY_GROUP = [
     ],
   },
   {
-    title: "Configuración de plataforma",
+    title: "Prevención",
     hrefs: [
-      "/admin/configuracion",
-      "/admin/parametros-operativos",
-      "/admin/modulos",
-      "/admin/backups",
-      "/admin/almacenamiento",
-    ],
-  },
-  {
-    title: "Comunicaciones e integraciones",
-    hrefs: [
-      "/admin/notificaciones",
-      "/admin/dte",
-      "/admin/correo-smtp",
-      "/admin/plantillas",
+      "/admin/taxonomia-sst",
+      "/admin/pdtp-catalogos",
     ],
   },
 ] as const

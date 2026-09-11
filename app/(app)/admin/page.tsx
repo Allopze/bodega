@@ -6,7 +6,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import Link from "next/link"
 import {
-  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear, FileText, ArrowRight, EnvelopeSimple, ToggleLeft, HardDrives, Receipt, Package, ShippingContainer,
+  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear, FileText, ArrowRight, EnvelopeSimple, ToggleLeft, HardDrives, Receipt, Package, ShippingContainer, Briefcase,
 } from "@phosphor-icons/react/dist/ssr"
 
 export const metadata: Metadata = { title: "Panel de Administración" }
@@ -34,6 +34,14 @@ const modules = [
     href:        "/admin/trabajadores",
     icon:        UserCircle,
     permission:  "admin:workers",
+    group:       "personas",
+  },
+  {
+    title:       "Cargos y capacidades",
+    description: "Normalizar los cargos de la dotación y definir qué capacidades heredan sus trabajadores.",
+    href:        "/admin/cargos",
+    icon:        Briefcase,
+    permission:  "admin:worker_positions",
     group:       "personas",
   },
   {
@@ -230,6 +238,12 @@ const modules = [
   },
 ]
 
+/**
+ * El orden NO es alfabético ni temático: agrupa tarjetas de tamaño parecido en
+ * cada fila del grid (5·5·5 · 4·4·3 · 2). Con grupos que van de 2 a 5 módulos,
+ * alternarlos dejaba huecos grandes bajo las tarjetas cortas. Si agregas o
+ * quitas un módulo, revisa que su grupo siga junto a otros de tamaño similar.
+ */
 const moduleGroups = [
   {
     key:         "personas",
@@ -242,14 +256,19 @@ const moduleGroups = [
     description: "Productos, proveedores y reglas maestras para compras e imputaciones.",
   },
   {
+    key:         "plataforma",
+    title:       "Configuración de plataforma",
+    description: "Parámetros globales, módulos, archivos y respaldos del sistema.",
+  },
+  {
     key:         "activos",
     title:       "Activos operativos",
     description: "Recursos instalados en faena, equipos de servicio y flota.",
   },
   {
-    key:         "prevencion",
-    title:       "Prevención",
-    description: "Catálogos maestros para documentación, SST y programa preventivo.",
+    key:         "comunicaciones",
+    title:       "Comunicaciones e integraciones",
+    description: "Notificaciones, correo saliente y conexiones con servicios externos.",
   },
   {
     key:         "seguridad",
@@ -257,14 +276,9 @@ const moduleGroups = [
     description: "Controles de acceso, folios y registro de cambios.",
   },
   {
-    key:         "plataforma",
-    title:       "Configuración de plataforma",
-    description: "Parámetros globales, módulos, archivos y respaldos del sistema.",
-  },
-  {
-    key:         "comunicaciones",
-    title:       "Comunicaciones e integraciones",
-    description: "Notificaciones, correo saliente y conexiones con servicios externos.",
+    key:         "prevencion",
+    title:       "Prevención",
+    description: "Catálogos maestros para documentación, SST y programa preventivo.",
   },
 ]
 
@@ -291,7 +305,11 @@ export default async function AdminPage() {
         }
       />
       <div className="w-full space-y-4">
-        <div className="columns-1 [column-gap:1rem] xl:columns-3">
+        {/* Grid, no `columns`: las columnas CSS equilibran alturas, así que las
+            tarjetas arrancaban a distinta altura y el orden de lectura salía por
+            columna en vez de por fila. `items-start` deja que cada tarjeta
+            conserve su alto natural. */}
+        <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-3">
           {moduleGroups.map((group) => {
             const groupModules = visibleModules.filter((m) => m.group === group.key)
             if (groupModules.length === 0) return null
@@ -299,7 +317,7 @@ export default async function AdminPage() {
             return (
               <section
                 key={group.key}
-                className="mb-4 break-inside-avoid rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]"
+                className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]"
               >
                 <div className="border-b border-[var(--color-border)] px-4 py-3">
                   <h2 className="text-sm font-semibold text-[var(--color-text)]">{group.title}</h2>

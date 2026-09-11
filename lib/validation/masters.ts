@@ -265,7 +265,9 @@ export const workerSchema = z.object({
   rut:         rutSchema,
   firstName:   z.string().min(1, "Nombre requerido").max(60),
   lastName:    z.string().min(1, "Apellido requerido").max(60),
-  position:    z.string().max(80).optional().or(z.literal("")),
+  /** ID canónico; `position` se acepta sólo durante la transición del formulario. */
+  positionId:  z.string().trim().max(100).optional().or(z.literal("")),
+  position:    z.string().trim().max(120).optional().or(z.literal("")),
   worksiteId:  z.string().min(1, "Selecciona una faena"),
   isActive:    z.coerce.boolean().default(true),
   // Las tallas habituales se guardan en forma canónica. El padrón admitía texto

@@ -1,6 +1,7 @@
 // All schema exports — single entry point for Drizzle
 export * from "./users"
 export * from "./worksites"
+export * from "./worker-positions"
 export * from "./products"
 export * from "./epp-imports"
 export * from "./requests"

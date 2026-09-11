@@ -23,8 +23,10 @@
  */
 
 import { eq } from "drizzle-orm"
-import { db } from "@/db"
+import { db, type DB, type Tx } from "@/db"
 import { workers } from "@/db/schema"
+
+type Client = DB | Tx
 
 type WorkerRow = typeof workers.$inferSelect
 type WorkerInsert = typeof workers.$inferInsert
@@ -88,8 +90,8 @@ export function deriveWorkerLifecycleEvents(
   return []
 }
 
-export async function insertWorker(values: WorkerInsert): Promise<{ worker: WorkerRow; events: WorkerLifecycleEvent[] }> {
-  const [worker] = await db.insert(workers).values(values).returning()
+export async function insertWorker(values: WorkerInsert, client: Client = db): Promise<{ worker: WorkerRow; events: WorkerLifecycleEvent[] }> {
+  const [worker] = await client.insert(workers).values(values).returning()
   if (!worker) throw new Error("No se pudo crear el trabajador.")
   return { worker, events: deriveWorkerLifecycleEvents(null, worker, new Date().toISOString()) }
 }
@@ -103,10 +105,11 @@ export async function updateWorkerFields(
   id: string,
   values: Partial<WorkerInsert>,
   known?: LifecycleBefore,
+  client: Client = db,
 ): Promise<{ worker: WorkerRow; events: WorkerLifecycleEvent[] }> {
-  const before = known ?? await db.query.workers.findFirst({ where: eq(workers.id, id) }) ?? null
+  const before = known ?? await client.query.workers.findFirst({ where: eq(workers.id, id) }) ?? null
   if (!before) throw new Error("Trabajador no encontrado")
-  const [worker] = await db.update(workers).set(values).where(eq(workers.id, id)).returning()
+  const [worker] = await client.update(workers).set(values).where(eq(workers.id, id)).returning()
   if (!worker) throw new Error("No se pudo actualizar el trabajador.")
   return { worker, events: deriveWorkerLifecycleEvents(before, worker, new Date().toISOString()) }
 }
@@ -115,8 +118,9 @@ export async function setWorkerActive(
   id: string,
   isActive: boolean,
   known?: LifecycleBefore,
+  client: Client = db,
 ): Promise<{ worker: WorkerRow; events: WorkerLifecycleEvent[] }> {
-  return updateWorkerFields(id, { isActive }, known)
+  return updateWorkerFields(id, { isActive }, known, client)
 }
 
 /**

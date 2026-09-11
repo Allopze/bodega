@@ -15,6 +15,7 @@ import type { Session } from "next-auth"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import * as schema from "@/db/schema"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import { truncateImmutableTable } from "@/lib/testing/immutable-tables"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -56,7 +57,7 @@ function scopedSession(worksiteIds: string[]): Session {
 }
 
 async function buildXlsx(rows: Array<Record<string, string>>): Promise<Buffer> {
-  const headers = ["ID", "RUT", "Nombre", "Apellido", "Cargo", "Supervisor", "Prevencionista", "Faena", "Activo"]
+  const headers = ["ID", "RUT", "Nombre", "Apellido", "Cargo", "Código cargo", "Supervisor", "Prevencionista", "Faena", "Activo"]
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet("Trabajadores")
   sheet.addRow(headers)
@@ -74,6 +75,8 @@ describe("trabajadores export/import — alcance de faena", () => {
     vi.clearAllMocks()
     await inMemoryDb.delete(schema.auditLog)
     await inMemoryDb.delete(schema.users)
+    await inMemoryDb.delete(schema.workerCapabilityOverrides)
+    await truncateImmutableTable(inMemoryDb, "worker_position_history")
     await inMemoryDb.delete(schema.workers)
     await inMemoryDb.delete(schema.worksites)
     await inMemoryDb.insert(schema.worksites).values([
@@ -140,6 +143,50 @@ describe("trabajadores export/import — alcance de faena", () => {
     expect(names).toEqual(new Set(["Ana", "Beto"]))
   })
 
+  it("export: incluye código, capacidades y estado de revisión del cargo", async () => {
+    const capability = await inMemoryDb.query.workerCapabilities.findFirst({
+      where: (item, { eq }) => eq(item.code, "drives_vehicle"),
+    })
+    await inMemoryDb.insert(schema.workerPositions).values({
+      id: "position-export-test",
+      code: "CONDUCTOR-QA",
+      name: "Conductor QA",
+      normalizedKey: "conductor qa",
+      needsReview: true,
+    }).onConflictDoNothing()
+    await inMemoryDb.insert(schema.workerPositionCapabilities).values({
+      positionId: "position-export-test",
+      capabilityId: capability!.id,
+    }).onConflictDoNothing()
+    await inMemoryDb.update(schema.workers).set({
+      positionId: "position-export-test",
+      position: "Conductor QA",
+    }).where(eq(schema.workers.id, "worker-a"))
+
+    mockAuth.mockResolvedValue(scopedSession(["ws-a"]))
+    const req = { nextUrl: new URL("http://localhost/api/admin/catalogos/export?tipo=trabajadores") } as never
+    const res = await exportCatalog(req)
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(Buffer.from(await res.arrayBuffer()) as never)
+    const sheet = workbook.worksheets[0]!
+    const headers = sheet.getRow(1).values as unknown[]
+
+    expect(headers).toEqual(expect.arrayContaining([
+      "Cargo",
+      "Código cargo",
+      "Capacidades",
+      "Cargo pendiente de revisión",
+    ]))
+    const headerIndex = new Map(headers.flatMap((header, index) => (
+      header == null ? [] : [[String(header), index] as const]
+    )))
+    const ana = sheet.getRow(2)
+    expect(ana.getCell(headerIndex.get("Cargo")!).value).toBe("Conductor QA")
+    expect(ana.getCell(headerIndex.get("Código cargo")!).value).toBe("CONDUCTOR-QA")
+    expect(ana.getCell(headerIndex.get("Capacidades")!).value).toBe("Conduce vehículos")
+    expect(ana.getCell(headerIndex.get("Cargo pendiente de revisión")!).value).toBe("Sí")
+  })
+
   it("import: rejects an update row whose existingId belongs to a worker outside scope", async () => {
     mockAuth.mockResolvedValue(scopedSession(["ws-a"]))
     const buf = await buildXlsx([
@@ -172,6 +219,38 @@ describe("trabajadores export/import — alcance de faena", () => {
 
     const updated = await inMemoryDb.query.workers.findFirst({ where: eq(schema.workers.id, "worker-a") })
     expect(updated?.lastName).toBe("Alvarez Actualizada")
+  })
+
+  it("import: crea una sola vez un cargo desconocido normalizado, pendiente y sin capacidades", async () => {
+    mockAuth.mockResolvedValue(scopedSession(["ws-a"]))
+    const buf = await buildXlsx([
+      { Nombre: "Carmen", Apellido: "Norte", Cargo: " Operador ÁREA QA ", Faena: "Faena A", Activo: "Sí" },
+      { Nombre: "Diego", Apellido: "Sur", Cargo: "operador area qa", Faena: "Faena A", Activo: "Sí" },
+    ])
+    const formData = new FormData()
+    formData.set("file", fileFromBuffer(buf))
+
+    const state = await importWorkersFromXlsx({ ok: false }, formData)
+
+    expect(state).toMatchObject({
+      ok: true,
+      data: { created: 2, positionsCreated: 1 },
+    })
+    const imported = await inMemoryDb.query.workers.findMany({
+      where: (worker, { inArray }) => inArray(worker.firstName, ["Carmen", "Diego"]),
+    })
+    expect(new Set(imported.map((worker) => worker.positionId))).toEqual(new Set([imported[0]?.positionId]))
+    expect(imported[0]?.positionId).toBeTruthy()
+
+    const position = await inMemoryDb.query.workerPositions.findFirst({
+      where: (catalog, { eq }) => eq(catalog.id, imported[0]!.positionId!),
+      with: { capabilities: true },
+    })
+    expect(position).toMatchObject({
+      normalizedKey: "operador area qa",
+      needsReview: true,
+      capabilities: [],
+    })
   })
 
   it("import: rejects a create row targeting a worksite outside scope, even by exact name", async () => {

@@ -7,10 +7,11 @@ import { CatalogImportPanel } from "@/components/admin/catalog-import-panel"
 import { WorkerForm } from "./worker-form"
 import { importWorkersFromXlsx } from "./actions"
 import type { SizeFamilyOption } from "@/app/(app)/admin/productos/product-form.types"
+import type { WorkerPositionOption } from "@/app/(app)/admin/cargos/types"
 
 interface WorksiteOption { id: string; name: string }
 
-export function WorkerActions({ worksites, sizeFamilies }: { worksites: WorksiteOption[]; sizeFamilies: SizeFamilyOption[] }) {
+export function WorkerActions({ worksites, sizeFamilies, positions }: { worksites: WorksiteOption[]; sizeFamilies: SizeFamilyOption[]; positions: WorkerPositionOption[] }) {
   const [formOpen, setFormOpen] = React.useState(false)
   const [importOpen, setImportOpen] = React.useState(false)
 
@@ -37,6 +38,7 @@ export function WorkerActions({ worksites, sizeFamilies }: { worksites: Worksite
         editWorker={null}
         worksites={worksites}
         sizeFamilies={sizeFamilies}
+        positions={positions}
       />
 
       <CatalogImportPanel

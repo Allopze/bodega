@@ -15,9 +15,16 @@ import { buildXlsxBuffer, type ReportData } from "@/lib/reports/export"
 import { logger } from "@/lib/logger"
 import { encodeContentDisposition } from "@/lib/utils"
 import { db } from "@/db"
-import { suppliers, workers, worksites } from "@/db/schema"
+import {
+  suppliers,
+  workerCapabilities,
+  workerPositionCapabilities,
+  workerPositions,
+  workers,
+  worksites,
+} from "@/db/schema"
 import { products, productCategories, productSuppliers } from "@/db/schema"
-import { asc, eq } from "drizzle-orm"
+import { and, asc, eq, inArray } from "drizzle-orm"
 
 const TYPE_PERMISSIONS: Record<string, Permission[]> = {
   productos:    ["admin:products"],
@@ -171,24 +178,56 @@ async function buildTrabajadoresReport(session: Session): Promise<ReportData> {
       rut: workers.rut,
       firstName: workers.firstName,
       lastName: workers.lastName,
-      position: workers.position,
+      legacyPosition: workers.position,
+      positionId: workerPositions.id,
+      position: workerPositions.name,
+      positionCode: workerPositions.code,
+      positionNeedsReview: workerPositions.needsReview,
       supervisor: workers.supervisor,
       prevencionista: workers.prevencionista,
       worksiteName: worksites.name,
       isActive: workers.isActive,
     })
     .from(workers)
+    .leftJoin(workerPositions, eq(workers.positionId, workerPositions.id))
     .leftJoin(worksites, eq(workers.worksiteId, worksites.id))
     .where(worksiteScopeSql(session, workers.worksiteId))
     .orderBy(asc(workers.lastName), asc(workers.firstName))
 
-  const headers = ["ID", "RUT", "Nombre", "Apellido", "Cargo", "Supervisor", "Prevencionista", "Faena", "Activo"]
+  const positionIds = [...new Set(allWorkers.map((worker) => worker.positionId).filter((id): id is string => Boolean(id)))]
+  const capabilityRows = positionIds.length > 0
+    ? await db.select({
+        positionId: workerPositionCapabilities.positionId,
+        name: workerCapabilities.name,
+      })
+        .from(workerPositionCapabilities)
+        .innerJoin(workerCapabilities, eq(workerCapabilities.id, workerPositionCapabilities.capabilityId))
+        .where(and(
+          inArray(workerPositionCapabilities.positionId, positionIds),
+          eq(workerCapabilities.isActive, true),
+        ))
+        .orderBy(asc(workerCapabilities.name))
+    : []
+  const capabilitiesByPosition = new Map<string, string[]>()
+  for (const row of capabilityRows) {
+    const current = capabilitiesByPosition.get(row.positionId) ?? []
+    current.push(row.name)
+    capabilitiesByPosition.set(row.positionId, current)
+  }
+
+  const headers = [
+    "ID", "RUT", "Nombre", "Apellido", "Cargo", "Código cargo", "Capacidades",
+    "Cargo pendiente de revisión", "Supervisor", "Prevencionista", "Faena", "Activo",
+  ]
   const rows = allWorkers.map((w) => [
     w.id,
     w.rut ?? "",
     w.firstName,
     w.lastName,
-    w.position ?? "",
+    w.position ?? w.legacyPosition ?? "",
+    w.positionCode ?? "",
+    w.positionId ? (capabilitiesByPosition.get(w.positionId) ?? []).join("; ") : "",
+    w.positionId ? (w.positionNeedsReview ? "Sí" : "No") : "Sí",
     w.supervisor ?? "",
     w.prevencionista ?? "",
     w.worksiteName ?? "",

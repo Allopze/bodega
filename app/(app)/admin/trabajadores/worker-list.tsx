@@ -10,7 +10,9 @@ import { TableRow, TableCell } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { toggleWorkerActive } from "./actions"
 import { COLUMNS, CONTRACT } from "./catalog-contract"
+import { Badge } from "@/components/ui/badge"
 import type { SizeFamilyOption } from "@/app/(app)/admin/productos/product-form.types"
+import type { WorkerPositionOption } from "@/app/(app)/admin/cargos/types"
 
 interface WorksiteOption { id: string; name: string }
 
@@ -20,6 +22,8 @@ type WorkerRow = {
   firstName:   string
   lastName:    string
   position:    string | null
+  positionId:  string | null
+  positionNeedsReview: boolean
   worksiteId:  string
   worksiteName: string
   isActive:    boolean
@@ -32,11 +36,12 @@ type WorkerRow = {
 }
 
 export function WorkerList({
-  workers, worksites, sizeFamilies,
+  workers, worksites, sizeFamilies, positions,
 }: {
   workers:   WorkerRow[]
   worksites: WorksiteOption[]
   sizeFamilies: SizeFamilyOption[]
+  positions: WorkerPositionOption[]
 }) {
   const {
     sheetOpen, editRow: editWorker,
@@ -64,6 +69,7 @@ export function WorkerList({
           <div>
             <dt className="text-[var(--color-text-subtle)]">Cargo</dt>
             <dd className="text-[var(--color-text-muted)] truncate">{w.position ?? "—"}</dd>
+            {w.positionNeedsReview && <Badge variant="warning" size="sm" className="mt-1">Por revisar</Badge>}
           </div>
           <div className="text-right">
             <dt className="text-[var(--color-text-subtle)]">Faena</dt>
@@ -98,7 +104,10 @@ export function WorkerList({
           </span>
         </TableCell>
         <TableCell className="text-sm text-[var(--color-text-muted)]">
-          {w.position ?? "—"}
+          <span className="inline-flex items-center gap-1.5">
+            {w.position ?? "—"}
+            {w.positionNeedsReview && <Badge variant="warning" size="sm">Por revisar</Badge>}
+          </span>
         </TableCell>
         <TableCell className="text-sm text-[var(--color-text-muted)]">
           {w.worksiteName}
@@ -164,12 +173,17 @@ export function WorkerList({
         </TabsContent>
       </Tabs>
 
+      {/* `key` por trabajador: el formulario guarda cargo, faena y tallas en
+          estado local y nunca se desmonta, así que sin esto editar a alguien
+          después de otro arrastraba los valores del anterior. */}
       <WorkerForm
+        key={editWorker?.id ?? "nuevo"}
         open={sheetOpen}
         onClose={closeSheet}
         editWorker={editWorker}
         worksites={worksites}
         sizeFamilies={sizeFamilies}
+        positions={positions}
       />
     </>
   )

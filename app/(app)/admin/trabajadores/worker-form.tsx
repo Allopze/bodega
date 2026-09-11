@@ -5,6 +5,7 @@ import { CatalogFormSheet } from "@/components/admin/catalog-form-sheet"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Badge } from "@/components/ui/badge"
 import {
   Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
 } from "@/components/ui/select"
@@ -12,6 +13,7 @@ import { createWorker, updateWorker } from "./actions"
 import { sizeFamilyForWorkerField } from "@/lib/products/size-catalog"
 import type { WorkerSizeField } from "@/lib/products/product-size"
 import type { SizeFamilyOption } from "@/app/(app)/admin/productos/product-form.types"
+import type { WorkerPositionOption } from "@/app/(app)/admin/cargos/types"
 
 // Qué campo del padrón alimenta cada familia del catálogo ya no vive acá: el
 // cruce se deriva de `attributeName` con `sizeFamilyForWorkerField` y las
@@ -27,6 +29,8 @@ interface WorkerForEdit {
   firstName:  string
   lastName:   string
   position:   string | null
+  positionId: string | null
+  positionNeedsReview: boolean
   worksiteId: string
   isActive:   boolean
   sizeTop:    string | null
@@ -43,15 +47,20 @@ interface WorkerFormProps {
   worksites:   WorksiteOption[]
   /** Familias de `size_catalog`, resueltas en el servidor. */
   sizeFamilies: SizeFamilyOption[]
+  positions: WorkerPositionOption[]
 }
 
-export function WorkerForm({ open, onClose, editWorker, worksites, sizeFamilies }: WorkerFormProps) {
+export function WorkerForm({ open, onClose, editWorker, worksites, sizeFamilies, positions }: WorkerFormProps) {
   const codesByFamily = new Map(sizeFamilies.map((family) => [family.family, family.codes]))
   const presetsFor = (field: WorkerSizeField) => {
     const family = sizeFamilyForWorkerField(field)
     return (family ? codesByFamily.get(family) : undefined) ?? []
   }
   const isEdit = !!editWorker
+  const defaultPositionId = editWorker?.positionId
+    ?? positions.find((position) => position.code === "SIN-CLASIFICAR")?.id
+    ?? ""
+  const [selectedPositionId, setSelectedPositionId] = useState(defaultPositionId)
   const [selectedWorksiteId, setSelectedWorksiteId] = useState(editWorker?.worksiteId ?? "")
   const [sizes, setSizes] = useState({
     sizeTop: editWorker?.sizeTop ?? "",
@@ -64,6 +73,9 @@ export function WorkerForm({ open, onClose, editWorker, worksites, sizeFamilies 
   function setSize(key: keyof typeof sizes, value: string) {
     setSizes((prev) => ({ ...prev, [key]: value }))
   }
+
+  const selectedPosition = positions.find((position) => position.id === selectedPositionId)
+  const selectablePositions = positions.filter((position) => position.isActive || position.id === selectedPositionId)
 
   return (
     <CatalogFormSheet
@@ -104,9 +116,29 @@ export function WorkerForm({ open, onClose, editWorker, worksites, sizeFamilies 
             <Input id="wrk-rut" name="rut" defaultValue={editWorker?.rut ?? ""} placeholder="12345678-9" error={!!state.fieldErrors?.rut} className="font-mono" />
           </Field>
 
-          <Field label="Cargo" htmlFor="wrk-pos">
-            <Input id="wrk-pos" name="position" defaultValue={editWorker?.position ?? ""} placeholder="Operario, Supervisor, Técnico..." />
+          <Field label="Cargo" htmlFor="wrk-pos" required error={state.fieldErrors?.positionId?.[0]}>
+            <input type="hidden" name="positionId" value={selectedPositionId} />
+            <Select value={selectedPositionId} onValueChange={setSelectedPositionId} searchable>
+              <SelectTrigger id="wrk-pos" error={Boolean(state.fieldErrors?.positionId)}>
+                <SelectValue placeholder="Selecciona un cargo" />
+              </SelectTrigger>
+              <SelectContent>
+                {selectablePositions.map((position) => (
+                  <SelectItem key={position.id} value={position.id}>
+                    {position.name} ({position.code}){position.isActive ? "" : " · Inactivo"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
+          {selectedPosition?.needsReview && (
+            <div role="status" className="flex items-start gap-2 rounded-[var(--radius-lg)] bg-[var(--color-warning-tint)] p-3">
+              <Badge variant="warning" size="sm">Revisar cargo</Badge>
+              <p className="text-xs leading-relaxed text-[var(--color-warning-ink)]">
+                Este cargo está pendiente de revisión. Aún no aporta capacidades automáticas al padrón preventivo.
+              </p>
+            </div>
+          )}
 
           <Field label="Faena" htmlFor="wrk-ws" required error={state.fieldErrors?.worksiteId?.[0]}>
             <input type="hidden" name="worksiteId" value={selectedWorksiteId} />

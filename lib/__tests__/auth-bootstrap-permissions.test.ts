@@ -65,6 +65,7 @@ describe("system-rbac → manifest parity", () => {
     "admin:product_catalogs",
     "admin:document_taxonomy",
     "admin:pdtp_catalog",
+    "admin:worker_positions",
     "admin:fleet_catalog",
     "admin:security",
     "admin:folios",
@@ -99,12 +100,14 @@ describe("system-rbac → manifest parity", () => {
     expect(perms).toContain("admin:pdtp_catalog")
     expect(perms).toContain("admin:fleet_catalog")
     expect(perms).toContain("admin:notifications")
+    expect(perms).toContain("admin:worker_positions")
   })
 
   it("grants prevencionista the SST taxonomy and PDTP catalogs", () => {
     const perms = rolePermissions("rol-prev")
     expect(perms).toContain("admin:document_taxonomy")
     expect(perms).toContain("admin:pdtp_catalog")
+    expect(perms).toContain("admin:worker_positions")
   })
 
   it("grants jefe_mantencion the fleet catalog", () => {
