@@ -44,6 +44,24 @@ function redactError(error: Error): Error {
   return safeError
 }
 
+/**
+ * El `Error` de un log, esté suelto o anidado dentro del objeto de contexto
+ * (`logger.error({ err }, "mensaje")`). Buscarlo sólo entre los argumentos de
+ * primer nivel mandaba a Sentry un `captureMessage` con el texto aplastado en
+ * vez de un `captureException` con stack: el fallo llegaba sin traza.
+ */
+function findError(value: unknown, depth = 0, seen = new WeakSet<object>()): Error | undefined {
+  if (value instanceof Error) return value
+  if (depth > 3 || value === null || typeof value !== "object") return undefined
+  if (seen.has(value as object)) return undefined
+  seen.add(value as object)
+  for (const nested of Object.values(value as Record<string, unknown>)) {
+    const found = findError(nested, depth + 1, seen)
+    if (found) return found
+  }
+  return undefined
+}
+
 function redact(value: unknown, depth = 0, seen = new WeakSet<object>()): unknown {
   if (depth > 4) return "[depth-limit]"
   if (typeof value === "string") return redactString(value)
@@ -86,6 +104,14 @@ interface LogEntry {
 }
 
 
+/**
+ * Un objeto que sirve como CONTEXTO: ni `Error` (que se serializa aparte, con
+ * su stack) ni arreglo (que es una lista de argumentos, no un contexto).
+ */
+function isContextObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !(value instanceof Error) && !Array.isArray(value)
+}
+
 function writeLog(level: "debug" | "info" | "warn" | "error", args: unknown[]): void {
   if (!shouldLog(level)) return
 
@@ -95,16 +121,45 @@ function writeLog(level: "debug" | "info" | "warn" | "error", args: unknown[]): 
     message: "",
   }
 
-  // Extract correlationId from first arg if it's an object with correlationId
-  let startIdx = 0
-  if (args.length > 0 && typeof args[0] === "object" && args[0] !== null && "correlationId" in (args[0] as Record<string, unknown>)) {
-    const first = args[0] as Record<string, unknown>
-    entry.correlationId = String(first.correlationId)
-    startIdx = 1
+  let rest = args
+
+  // El `correlationId` sale del primer objeto, pero el RESTO de sus campos se
+  // devuelve a la lista: descartar el objeto entero después de leerle un campo
+  // se llevaba por delante el `err` que viajaba al lado.
+  const head = rest[0]
+  if (isContextObject(head) && "correlationId" in head) {
+    const { correlationId, ...others } = head
+    entry.correlationId = String(correlationId)
+    rest = rest.slice(1)
+    if (Object.keys(others).length > 0) rest = [others, ...rest]
+  }
+
+  // Firma estilo pino —`logger.error({ err, ...ctx }, "mensaje")`—, la que usan
+  // los crons, la sincronización del portal DTE y la acreditación del PDTP.
+  // Sin esta rama caían al fallback `args.map(String)` y salían como
+  // "[object Object] <mensaje>", perdiendo el error y todo el contexto: un
+  // fallo registrado pero indiagnosticable.
+  if (rest.length > 1 && isContextObject(rest[0]) && typeof rest[1] === "string") {
+    const [context, message, ...tail] = rest
+    entry.message = redactString(message)
+    entry.data = redact(tail.length > 0 ? [context, ...tail] : context)
+    emit(level, entry)
+    return
+  }
+
+  // Simétrico al anterior: `logger.error(error, { ...ctx })` conserva el stack
+  // como `error` y el contexto como `data`, en vez de aplastar ambos.
+  if (rest.length > 1 && rest[0] instanceof Error && isContextObject(rest[1])) {
+    const [err, context, ...tail] = rest as [Error, Record<string, unknown>, ...unknown[]]
+    entry.message = redactString(err.message)
+    entry.error = redactString(err.stack ?? err.message)
+    entry.data = redact(tail.length > 0 ? [context, ...tail] : context)
+    emit(level, entry)
+    return
   }
 
   // Build message from the remaining args
-  const remainingArgs = args.slice(startIdx)
+  const remainingArgs = rest
   if (remainingArgs.length === 1) {
     const arg = remainingArgs[0]
     if (arg instanceof Error) {
@@ -127,6 +182,10 @@ function writeLog(level: "debug" | "info" | "warn" | "error", args: unknown[]): 
     }
   }
 
+  emit(level, entry)
+}
+
+function emit(level: "debug" | "info" | "warn" | "error", entry: LogEntry): void {
   const output = JSON.stringify(entry)
   const logFn = level === "error" ? console.error
     : level === "warn" ? console.warn
@@ -152,7 +211,7 @@ export const logger = {
     writeLog("error", args)
     // Forward errors to Sentry for production observability. The sentry wrapper
     // is a no-op when SENTRY_DSN is not set or NODE_ENV !== "production".
-    const firstError = args.find((a) => a instanceof Error) as Error | undefined
+    const firstError = findError(args)
     if (firstError) {
       // Do not hand the original Error to Sentry: its message/stack can contain
       // a portal URL, credentials, or an encrypted envelope.

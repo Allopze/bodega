@@ -75,6 +75,20 @@ RUN ./node_modules/.bin/esbuild scripts/seed-pdtp-inspection-templates-2026.ts \
     --external:postgres \
     --outfile=/tmp/seed-pdtp-inspection-templates.mjs
 
+# El sembrador deja el catálogo en borrador a propósito: habilitar un
+# instrumento es un acto de una persona. Este cierra lo que queda —aprobar las
+# que faltan, retirar las vigentes que no declaran actividad— por la misma
+# puerta que la UI, firmado por quien lo corre. No va en el deploy: se invoca a
+# mano con un actor explícito.
+RUN ./node_modules/.bin/esbuild scripts/approve-pdtp-2026-inspection-templates.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/approve-pdtp-inspection-templates.mjs
+
 # El catálogo de Documentación SST (categorías y tipos). Estaba sólo detrás de
 # un botón del panel de administración, así que en producción llegó vacío — y
 # con él vacío la N°36 y la N°43 no tienen dónde declarar su número.
@@ -450,6 +464,7 @@ COPY --from=build /tmp/seed-pdtp-inspection-templates.mjs ./scripts/seed-pdtp-in
 COPY --from=build /tmp/apply-sst-document-taxonomy.mjs ./scripts/apply-sst-document-taxonomy.mjs
 COPY --from=build /tmp/seed-emergency-plans.cjs ./scripts/seed-emergency-plans.cjs
 COPY --from=build /tmp/preflight-pdtp-accreditation-wiring.mjs ./scripts/preflight-pdtp-accreditation-wiring.mjs
+COPY --from=build /tmp/approve-pdtp-inspection-templates.mjs ./scripts/approve-pdtp-inspection-templates.mjs
 COPY --from=build /tmp/apply-pdtp-catalog-decisions.mjs ./scripts/apply-pdtp-catalog-decisions.mjs
 COPY --from=build /tmp/apply-pdtp-worksite-scope.mjs ./scripts/apply-pdtp-worksite-scope.mjs
 COPY --from=build /tmp/apply-pdtp-program-data.mjs ./scripts/apply-pdtp-program-data.mjs

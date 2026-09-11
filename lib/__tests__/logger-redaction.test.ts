@@ -38,12 +38,15 @@ describe("logger PII redaction and formatting", () => {
     const envelope = "enc:v1:2026-08:MTIzNDU2Nzg5MDEy:YWJjZGVmZ2hpamtsbW5vcA:YWJjZA"
     logger.error(
       new Error(`portal rejected clave=super-secret ${envelope}`),
-      { clave: "super-secret", dteSettingsKeyring: "key-material", ciphertext: "cipher" },
+      { clave: "super-secret", dteSettingsKeyring: "key-material", ciphertext: "cipher-material" },
     )
     const out = lastConsoleOutput("error")
     expect(out).not.toContain("super-secret")
     expect(out).not.toContain("key-material")
-    expect(out).not.toContain("cipher")
+    // El VALOR, no la clave: `ciphertext` aparece como nombre de campo —igual
+    // que `hashedPassword` en el primer test— y buscar "cipher" pelado ya no
+    // distinguía uno de otro desde que el contexto dejó de aplastarse.
+    expect(out).not.toContain("cipher-material")
     expect(out).not.toContain(envelope)
     expect(out).toContain("[redacted]")
     expect(out).toContain("[encrypted]")
@@ -63,6 +66,52 @@ describe("logger PII redaction and formatting", () => {
     const out = lastConsoleOutput("error")
     expect(out).toContain('"correlationId":"tx-abc-123"')
     expect(out).toContain("another argument")
+  })
+
+  /* Firma estilo pino —contexto primero, mensaje después— que usan 36 call
+   * sites del repo (`dte-portal/sync.ts`, los crons, `pdtp/fulfillment.ts`).
+   * Sin soporte caían al fallback `args.map(String)` y salían como
+   * "[object Object] <mensaje>": el error y todo el contexto se perdían, que
+   * es exactamente cómo los 30 eventos de cumplimiento en error llegaron a
+   * producción sin diagnóstico. */
+  it("acepta la firma (contexto, mensaje) sin perder el contexto", () => {
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    logger.error(
+      { err: new Error("no hay programa activo"), sourceType: "epp", worksiteId: "w-1" },
+      "[pdtp-fulfillment] Error en auto-acreditación PDTP.",
+    )
+    const out = lastConsoleOutput("error")
+    expect(out).not.toContain("[object Object]")
+    expect(out).toContain('"message":"[pdtp-fulfillment] Error en auto-acreditación PDTP."')
+    expect(out).toContain("no hay programa activo")
+    expect(out).toContain("epp")
+    expect(out).toContain("w-1")
+  })
+
+  it("conserva el resto del contexto al extraer el correlationId", () => {
+    // `startIdx = 1` descartaba el objeto entero después de leerle el
+    // correlationId: el `err` que venía al lado desaparecía del log.
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    logger.error(
+      { correlationId: "tx-abc-123", err: new Error("timeout del portal"), intento: 3 },
+      "sincronización fallida",
+    )
+    const out = lastConsoleOutput("error")
+    expect(out).toContain('"correlationId":"tx-abc-123"')
+    expect(out).toContain('"message":"sincronización fallida"')
+    expect(out).toContain("timeout del portal")
+    expect(out).toContain("3")
+  })
+
+  it("redacta el contexto de la firma (contexto, mensaje)", () => {
+    // El contexto pasa por `redact` como cualquier otro dato: la firma nueva
+    // no puede ser un agujero por el que salga PII sin enmascarar.
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    logger.error({ email: "juan@chome.cl", clave: "super-secret" }, "login fallido")
+    const out = lastConsoleOutput("error")
+    expect(out).not.toContain("juan@chome.cl")
+    expect(out).not.toContain("super-secret")
+    expect(out).toContain("[redacted]")
   })
 
   it("handles debug and info log functions in test environment", () => {

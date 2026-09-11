@@ -531,6 +531,27 @@ services:
   # ejecutando sin declarar ninguna. Nunca sale con error — es un informe.
   #
   #   docker compose run --rm preflight-pdtp-wiring
+  # Cierra a mano lo que el sembrador deja en borrador a propósito: aprueba las
+  # plantillas que faltan y retira las vigentes que no declaran ninguna
+  # actividad. NO va en el deploy —aprobar es un acto firmado— y por eso exige
+  # APPROVE_ACTOR_USER_ID explícito:
+  #   APPROVE_DRY_RUN=true APPROVE_ACTOR_USER_ID=<id> docker compose run --rm approve-inspection-templates
+  approve-inspection-templates:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - APPROVE_ACTOR_USER_ID=${APPROVE_ACTOR_USER_ID:-}
+      - APPROVE_DRY_RUN=${APPROVE_DRY_RUN:-}
+    command: ["node", "scripts/approve-pdtp-inspection-templates.mjs"]
+
   preflight-pdtp-wiring:
     build:
       context: .
