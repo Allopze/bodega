@@ -65,6 +65,7 @@ const MODULES_BY_GROUP = [
     title: "Prevención",
     hrefs: [
       "/admin/taxonomia-sst",
+      "/admin/desviaciones",
       "/admin/pdtp-catalogos",
     ],
   },

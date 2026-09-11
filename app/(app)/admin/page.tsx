@@ -6,7 +6,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import Link from "next/link"
 import {
-  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear, FileText, ArrowRight, EnvelopeSimple, ToggleLeft, HardDrives, Receipt, Package, ShippingContainer, Briefcase,
+  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear, FileText, ArrowRight, EnvelopeSimple, ToggleLeft, HardDrives, Receipt, Package, ShippingContainer, Briefcase, WarningCircle,
 } from "@phosphor-icons/react/dist/ssr"
 
 export const metadata: Metadata = { title: "Panel de Administración" }
@@ -122,6 +122,14 @@ const modules = [
     href:        "/admin/taxonomia-sst",
     icon:        FileText,
     permission:  "admin:document_taxonomy",
+    group:       "prevencion",
+  },
+  {
+    title:       "Desviaciones",
+    description: "Lista maestra de desviaciones de inspección y la gravedad que fija el plazo de su acción correctiva.",
+    href:        "/admin/desviaciones",
+    icon:        WarningCircle,
+    permission:  "admin:deviation_catalog",
     group:       "prevencion",
   },
   {

@@ -37,6 +37,7 @@ export const adminModule = {
     // Prevención / SST
     "admin:document_taxonomy",
     "admin:pdtp_catalog",
+    "admin:deviation_catalog",
     // Flota
     "admin:fleet_catalog",
     "admin:fleet_vehicles",
@@ -78,6 +79,7 @@ export const adminModule = {
     "admin:product_catalogs":  { id: "p-adm-pcat",  description: "Gestionar catálogos auxiliares de productos" },
     "admin:document_taxonomy": { id: "p-adm-docx",  description: "Gestionar taxonomía documental SST" },
     "admin:pdtp_catalog":      { id: "p-adm-pdtp",  description: "Gestionar catálogos base del programa preventivo" },
+    "admin:deviation_catalog": { id: "p-adm-dev",   description: "Gestionar el catálogo maestro de desviaciones de inspección" },
     "admin:fleet_catalog":     { id: "p-adm-fleet", description: "Gestionar catálogos administrativos de flota" },
     "admin:fleet_vehicles":    { id: "p-adm-fleetveh", description: "Mantener el padrón de vehículos: alta, edición, baja e importación desde planilla" },
     "admin:config":            { id: "p-adm-cfg",   description: "Configuración del sistema" },
@@ -123,6 +125,7 @@ export const adminModule = {
     { roleSlug: "administrador", permission: "admin:worksite_inventory_service" },
     { roleSlug: "administrador", permission: "admin:document_taxonomy" },
     { roleSlug: "administrador", permission: "admin:pdtp_catalog" },
+    { roleSlug: "administrador", permission: "admin:deviation_catalog" },
     { roleSlug: "administrador", permission: "admin:fleet_catalog" },
     { roleSlug: "administrador", permission: "admin:fleet_vehicles" },
     { roleSlug: "administrador", permission: "admin:config" },
@@ -183,6 +186,7 @@ export const adminModule = {
     { roleSlug: "prevencionista", permission: "admin:suppliers" },
     { roleSlug: "prevencionista", permission: "admin:document_taxonomy" },
     { roleSlug: "prevencionista", permission: "admin:pdtp_catalog" },
+    { roleSlug: "prevencionista", permission: "admin:deviation_catalog" },
     // Jefe de mantención — flota
     { roleSlug: "jefe_mantencion", permission: "admin:fleet_catalog" },
     { roleSlug: "jefe_mantencion", permission: "admin:fleet_vehicles" },

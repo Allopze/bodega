@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import {
   PDTP_2026_TEMPLATE_REMEDIATION,
@@ -48,6 +49,23 @@ describe("plan de habilitación de plantillas PDTP 2026", () => {
     // silencio: el script reporta y se detiene.
     expect(decideOutcome(approval, { status: "superseded" })).toEqual({ kind: "unexpected_status", found: "superseded" })
     expect(decideOutcome(retirement, { status: "draft" })).toEqual({ kind: "unexpected_status", found: "draft" })
+  })
+
+  it("el stage del Dockerfile le da a este bundle los globals de CJS", () => {
+    /* Éste es el primer script que entra por `prevention-inspections.ts`, que
+     * importa el `logger` → `lib/sentry.ts` → `@sentry/nextjs`, y con eso entra
+     * Next entero: código CJS que usa `__dirname`, indefinido en un bundle ESM.
+     * Sin el banner el script revienta al cargar, en producción, antes de
+     * ejecutar una línea propia — que es exactamente lo que pasó la primera vez.
+     * `@sentry/nextjs` no puede ir external porque la imagen final no lo copia
+     * a node_modules. */
+    const dockerfile = readFileSync("Dockerfile", "utf8")
+    const stage = /RUN \.\/node_modules\/\.bin\/esbuild scripts\/approve-pdtp-2026-inspection-templates\.ts[\s\S]*?--outfile=\S+/.exec(dockerfile)
+    expect(stage, "falta el stage de esbuild para el script de habilitación").not.toBeNull()
+    expect(stage![0]).toContain("--banner:js=")
+    for (const global of ["__dirname", "__filename", "createRequire"]) {
+      expect(stage![0], `el banner no define ${global}`).toContain(global)
+    }
   })
 
   it("cada entrada trae un motivo que el servicio acepta", () => {

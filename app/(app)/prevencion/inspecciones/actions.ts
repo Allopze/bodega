@@ -7,11 +7,9 @@ import { z } from "zod"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import {
-  addDeviationCatalogEntry,
   approveInspectionTemplate,
   assertProgramInScope,
   closeInspectionFinding,
-  copyDeviationCatalog,
   completeInspectionRun,
   createFindingCapa,
   createInspectionProgram,
@@ -30,10 +28,13 @@ import {
   setInspectionTemplatePdtpActivities,
   stopVehicleForFinding,
   transitionInspectionRun,
-  updateDeviationCatalogEntry,
   updateInspectionProgram,
   type InspectionAccess,
 } from "@/lib/services/prevention-inspections"
+import {
+  promoteUnclassifiedDeviation,
+  setTemplateDeviation,
+} from "@/lib/services/prevention-deviations"
 import { materializeProgramRuns } from "@/lib/services/prevention-inspection-scheduler"
 import type { ActionState } from "@/lib/validation/prevention"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
@@ -289,27 +290,35 @@ export async function remindTemplateApprovalAction(input: unknown): Promise<Acti
   return run(accessFromSession(guard.session), (access) => remindTemplateApproval(input, access), notifiedOf)
 }
 
-/* ── Catálogo de desviaciones ─────────────────────────────────────────────
- * Lo mantiene Prevención con el mismo permiso que administra los instrumentos:
- * declarar qué desviaciones existen y con qué gravedad es calibrar el
- * instrumento, no ejecutarlo.
+/* ── Qué desviaciones ofrece cada instrumento ─────────────────────────────
+ * La lista maestra se mantiene en Administración; acá sólo se elige cuáles de
+ * ella ofrece este instrumento y con qué gravedad. Eso es calibrarlo, y va con
+ * el mismo permiso que administra los instrumentos.
  */
 
-export async function addDeviationCatalogEntryAction(input: unknown): Promise<ActionState> {
+/** Marca, desmarca o recalibra una desviación del maestro en un instrumento. */
+export async function setTemplateDeviationAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:inspections:manage")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => addDeviationCatalogEntry(input, access))
+  return run(accessFromSession(guard.session), (access) => setTemplateDeviation(input, access))
 }
 
-export async function updateDeviationCatalogEntryAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:inspections:manage")
+/**
+ * Saca una desviación de la cola de "Otra" y la incorpora al maestro.
+ *
+ * Pide `admin:deviation_catalog` porque crea una entrada del catálogo
+ * transversal, no sólo calibra este instrumento; el servicio revalida además
+ * el permiso de calibración.
+ */
+export async function promoteUnclassifiedDeviationAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("admin:deviation_catalog")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => updateDeviationCatalogEntry(input, access))
+  return run(accessFromSession(guard.session), (access) => promoteUnclassifiedDeviation(input, access))
 }
 
 /* ── Desviaciones en terreno ──────────────────────────────────────────────
- * Registrar es ejecutar (`:execute`); copiar el catálogo es calibrar el
- * instrumento (`:manage`). Son dos actos distintos y por eso dos permisos.
+ * Registrar es ejecutar (`:execute`); elegir qué ofrece el instrumento es
+ * calibrarlo (`:manage`). Son dos actos distintos y por eso dos permisos.
  */
 
 export async function registerDeviationAction(input: unknown): Promise<ActionState> {
@@ -328,10 +337,4 @@ export async function removeDeviationAction(input: unknown): Promise<ActionState
   const guard = await guardPermission("prevention:inspections:execute")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => removeDeviation(input, access))
-}
-
-export async function copyDeviationCatalogAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:inspections:manage")
-  if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => copyDeviationCatalog(input, access))
 }

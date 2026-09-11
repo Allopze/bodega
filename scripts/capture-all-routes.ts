@@ -845,6 +845,7 @@ const routeTargets: RouteTarget[] = [
     ],
   },
   { slug: "admin-modulos", path: "/admin/modulos", auth: true },
+  { slug: "admin-desviaciones", path: "/admin/desviaciones", auth: true },
   { slug: "admin-seguridad", path: "/admin/seguridad", auth: true },
   { slug: "admin-suplencias", path: "/admin/suplencias", auth: true },
   { slug: "admin-taxonomia-sst", path: "/admin/taxonomia-sst", auth: true },

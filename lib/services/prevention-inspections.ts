@@ -2,15 +2,13 @@ import { createHash } from "node:crypto"
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm"
 import { z } from "zod"
 import { alias, type AnyPgColumn } from "drizzle-orm/pg-core"
-import { db, type DB, type Tx } from "@/db"
+import { db, type Tx } from "@/db"
 import {
   preventionCapaActions,
   preventionInspectionAnswerEvidence,
   preventionInspectionAnswers,
-  preventionInspectionDeviationCatalog,
   preventionInspectionFindings,
   preventionInspectionFindingEvidence,
-  preventionInspectionHistory,
   preventionInspectionPrograms,
   preventionInspectionRunDocuments,
   preventionInspectionRunParticipants,
@@ -27,9 +25,18 @@ import {
   sstDocumentVersions,
   users,
   worksites,
-  type PreventionInspectionDeviationEntry,
 } from "@/db/schema"
-import type { WorksiteScope } from "@/lib/auth/scope"
+import {
+  history,
+  isUniqueViolation,
+  NOT_FOUND,
+  nowIso,
+  requireAccess,
+  scopeAllows,
+  scopeCondition,
+  type Client,
+  type InspectionAccess,
+} from "@/lib/services/prevention-inspections-access"
 import { nanoid } from "@/lib/id"
 import { containerLabel } from "@/lib/prevention/containers"
 import { listContainersByWorksite, listContainersForWorksite } from "@/lib/services/prevention-containers"
@@ -58,6 +65,10 @@ import {
   type InspectionAnswerInput,
   type InspectionItemSpec,
 } from "@/lib/prevention/inspections"
+import {
+  findOfferedDeviation,
+  listOfferedDeviations,
+} from "@/lib/services/prevention-deviations"
 import { listWorksiteVehicles, setVehicleOperationalStatus, vehicleLabel } from "@/lib/services/fleet"
 import { createMaintenanceRecordWithClient } from "@/lib/services/maintenance"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
@@ -69,29 +80,6 @@ import { defaultPdtpActivityNumbers, defaultPdtpReviewActivityNumbers, inspectio
 import { codeYear, formatDate, todayInChile } from "@/lib/utils"
 import { assertRouteModuleEnabled } from "@/lib/services/module-toggles"
 
-type Client = DB | Tx
-
-export interface InspectionAccess {
-  userId: string
-  scope: WorksiteScope
-  permissions: readonly string[]
-}
-
-const NOT_FOUND = "Inspección no encontrada o fuera de alcance."
-
-function nowIso() {
-  return new Date().toISOString()
-}
-
-function scopeAllows(scope: WorksiteScope, worksiteId: string) {
-  return scope.mode === "all" || (scope.mode === "some" && scope.ids.includes(worksiteId))
-}
-
-function requireAccess(access: InspectionAccess, permission: string, worksiteId?: string) {
-  if (!access.permissions.includes(permission) || (worksiteId && !scopeAllows(access.scope, worksiteId))) {
-    throw new Error(NOT_FOUND)
-  }
-}
 
 /**
  * Toggle del submódulo. Inspecciones, observaciones y auditorías del SGSST
@@ -104,38 +92,12 @@ function requireAccess(access: InspectionAccess, permission: string, worksiteId?
  * una auditoría desde la ruta hermana cuando el suyo estaba apagado. Con un
  * único owner esa distinción no existe: el toggle que valía era el de la ruta.
  */
+export type { InspectionAccess }
+
 export async function assertInspectionOperationEnabled(): Promise<void> {
   await assertRouteModuleEnabled("/prevencion/inspecciones")
 }
 
-function scopeCondition(scope: WorksiteScope, column: AnyPgColumn) {
-  if (scope.mode === "all") return undefined
-  if (scope.mode === "none" || scope.ids.length === 0) return sql`false`
-  return inArray(column, scope.ids)
-}
-
-async function history(client: Client, args: {
-  entityType: string
-  entityId: string
-  worksiteId?: string | null
-  changeType: string
-  reason: string
-  beforeState?: unknown
-  afterState?: unknown
-  actorUserId?: string | null
-}) {
-  await client.insert(preventionInspectionHistory).values({
-    id: `pinsh-${nanoid()}`,
-    entityType: args.entityType,
-    entityId: args.entityId,
-    worksiteId: args.worksiteId ?? null,
-    changeType: args.changeType,
-    reason: args.reason,
-    beforeState: args.beforeState ?? null,
-    afterState: args.afterState ?? null,
-    actorUserId: args.actorUserId ?? null,
-  })
-}
 
 /* ── Plantillas ───────────────────────────────────────────────────────────── */
 
@@ -207,24 +169,6 @@ export function contentHashOf(definition: ChecklistDefinition | Record<string, u
   return createHash("sha256").update(JSON.stringify(definition)).digest("hex")
 }
 
-/**
- * Violación de índice único en Postgres (23505) sobre la constraint indicada.
- *
- * Recorre la cadena de `cause`: drizzle envuelve el error del driver en un
- * `DrizzleQueryError`, así que `code` y `constraint_name` no están en el objeto
- * de primer nivel — mirar sólo ahí hacía que el mensaje legible nunca saltara.
- */
-function isUniqueViolation(error: unknown, constraint: string): boolean {
-  let current: unknown = error
-  for (let depth = 0; current && depth < 5; depth++) {
-    const candidate = current as { code?: string; constraint_name?: string; constraint?: string; cause?: unknown }
-    if (candidate.code === "23505" && (candidate.constraint_name === constraint || candidate.constraint === constraint)) {
-      return true
-    }
-    current = candidate.cause
-  }
-  return false
-}
 
 /**
  * Retira la versión vigente anterior del mismo código. La usan las dos puertas
@@ -2544,6 +2488,7 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
     pdtpActivityNumbers: preventionInspectionTemplates.pdtpActivityNumbers,
     pdtpReviewActivityNumbers: preventionInspectionTemplates.pdtpReviewActivityNumbers,
     templateId: preventionInspectionTemplates.id,
+    templateCode: preventionInspectionTemplates.code,
     worksiteName: worksites.name,
     assigneeName: assignee.name,
     executorName: executor.name,
@@ -2589,21 +2534,13 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
     list.push(item)
     evidenceByFinding.set(item.findingId, list)
   }
-  /* Catálogo activo del instrumento, sólo si registra desviaciones. Una
-   * plantilla de checklist no lo necesita: ahí la gravedad la declara el ítem. */
+  /* Lo que este instrumento ofrece, sólo si registra desviaciones. Una
+   * plantilla de checklist no lo necesita: ahí la gravedad la declara el ítem.
+   * Por CÓDIGO y no por id de fila: la selección pertenece al instrumento, no a
+   * la versión, y así sobrevive a un versionado. */
   const definition = run.definitionSnapshot as unknown as ChecklistDefinition
   const deviationCatalog = definition?.recordsDeviations
-    ? await db.select({
-        id: preventionInspectionDeviationCatalog.id,
-        label: preventionInspectionDeviationCatalog.label,
-        danoPotencial: preventionInspectionDeviationCatalog.danoPotencial,
-      })
-        .from(preventionInspectionDeviationCatalog)
-        .where(and(
-          eq(preventionInspectionDeviationCatalog.templateId, run.templateId),
-          eq(preventionInspectionDeviationCatalog.isActive, true),
-        ))
-        .orderBy(asc(preventionInspectionDeviationCatalog.label))
+    ? await listOfferedDeviations(run.templateCode)
     : []
 
   return {
@@ -2615,10 +2552,8 @@ export async function getInspectionRunDetail(runId: string, access: InspectionAc
     /** El instrumento registra desviaciones en vez de puntuar ítems. */
     recordsDeviations: Boolean(definition?.recordsDeviations),
     recordsPreventiveActions: Boolean(definition?.recordsPreventiveActions),
-    deviationCatalog: deviationCatalog.map((entry) => ({
-      ...entry,
-      criticality: criticalityFromDanoPotencial(entry.danoPotencial),
-    })),
+    /* Ya vienen con la gravedad efectiva y su criticidad resueltas. */
+    deviationCatalog,
   }
 }
 
@@ -2979,34 +2914,6 @@ export function listImportableDefinitions() {
  * corresponde—, y queda marcada para que Prevención la incorpore.
  */
 
-const deviationSchema = z.object({
-  templateId: z.string().min(1),
-  label: z.string().trim().min(3).max(300),
-  danoPotencial: z.enum(["leve", "moderado", "grave", "fatal"]),
-})
-
-/**
- * Catálogos de varias plantillas de una vez.
- *
- * La pantalla de plantillas pedía dos consultas POR plantilla —y una de ellas
- * un GROUP BY con join—, también para los 13 instrumentos de checklist que
- * nunca registran desviaciones: 32 consultas para pintar una tabla (INS-12).
- */
-export async function listDeviationCatalogs(templateIds: string[], access: InspectionAccess) {
-  requireAccess(access, "prevention:inspections:view")
-  const byTemplate = new Map<string, (PreventionInspectionDeviationEntry & { criticality: string })[]>()
-  if (templateIds.length === 0) return byTemplate
-  const rows = await db.select().from(preventionInspectionDeviationCatalog)
-    .where(inArray(preventionInspectionDeviationCatalog.templateId, templateIds))
-    .orderBy(asc(preventionInspectionDeviationCatalog.label))
-  for (const row of rows) {
-    const list = byTemplate.get(row.templateId) ?? []
-    list.push({ ...row, criticality: criticalityFromDanoPotencial(row.danoPotencial) })
-    byTemplate.set(row.templateId, list)
-  }
-  return byTemplate
-}
-
 /** Desviaciones sin catalogar de varias plantillas, agrupadas por plantilla. */
 export async function listUnclassifiedDeviationsFor(templateIds: string[], access: InspectionAccess) {
   requireAccess(access, "prevention:inspections:manage")
@@ -3043,117 +2950,6 @@ export async function listUnclassifiedDeviationsFor(templateIds: string[], acces
 }
 
 /** Desviaciones ofrecidas al registrar, con la criticidad que producirán. */
-export async function listDeviationCatalog(templateId: string, access: InspectionAccess) {
-  requireAccess(access, "prevention:inspections:view")
-  const rows = await db.select().from(preventionInspectionDeviationCatalog)
-    .where(eq(preventionInspectionDeviationCatalog.templateId, templateId))
-    .orderBy(asc(preventionInspectionDeviationCatalog.label))
-  return rows.map((row) => ({
-    ...row,
-    /** La criticidad que tendrá el hallazgo, para que el catálogo no la oculte. */
-    criticality: criticalityFromDanoPotencial(row.danoPotencial),
-  }))
-}
-
-export async function addDeviationCatalogEntry(input: unknown, access: InspectionAccess) {
-  requireAccess(access, "prevention:inspections:manage")
-  const data = deviationSchema.parse(input)
-
-  const [template] = await db.select({ id: preventionInspectionTemplates.id, status: preventionInspectionTemplates.status })
-    .from(preventionInspectionTemplates)
-    .where(eq(preventionInspectionTemplates.id, data.templateId)).limit(1)
-  if (!template) throw new Error(NOT_FOUND)
-  // Una plantilla reemplazada ya no se ejecuta, así que ampliar su catálogo no
-  // tendría a quién servir.
-  if (template.status === "superseded") throw new Error("Una plantilla reemplazada ya no admite desviaciones nuevas.")
-
-  try {
-    const [created] = await db.insert(preventionInspectionDeviationCatalog).values({
-      id: `insdev-${nanoid()}`,
-      templateId: data.templateId,
-      label: data.label,
-      danoPotencial: data.danoPotencial,
-      createdByUserId: access.userId,
-    }).returning()
-    if (!created) throw new Error("No se pudo agregar la desviación.")
-    await history(db, {
-      entityType: "template", entityId: data.templateId,
-      changeType: "deviation_added",
-      reason: `${data.label} (${data.danoPotencial})`,
-      afterState: created, actorUserId: access.userId,
-    })
-    return created
-  } catch (error) {
-    if (isUniqueViolation(error, "prevention_inspection_deviation_label_unique")) {
-      throw new Error("Esa desviación ya está en el catálogo de este instrumento.")
-    }
-    throw error
-  }
-}
-
-/**
- * Cambia la gravedad de una desviación, o la retira de circulación.
- *
- * NO reescribe los hallazgos ya levantados: su criticidad —y el plazo de la
- * CAPA que salió de ella— es evidencia de lo que la regla decía cuando se
- * registraron. Recalibrar el catálogo rige desde ahora.
- */
-export async function updateDeviationCatalogEntry(input: unknown, access: InspectionAccess) {
-  const data = z.object({
-    entryId: z.string().min(1),
-    danoPotencial: z.enum(["leve", "moderado", "grave", "fatal"]).optional(),
-    isActive: z.boolean().optional(),
-  }).parse(input)
-  requireAccess(access, "prevention:inspections:manage")
-
-  const [entry] = await db.select().from(preventionInspectionDeviationCatalog)
-    .where(eq(preventionInspectionDeviationCatalog.id, data.entryId)).limit(1)
-  if (!entry) throw new Error(NOT_FOUND)
-
-  const [updated] = await db.update(preventionInspectionDeviationCatalog).set({
-    danoPotencial: data.danoPotencial ?? entry.danoPotencial,
-    isActive: data.isActive ?? entry.isActive,
-    updatedAt: nowIso(),
-  }).where(eq(preventionInspectionDeviationCatalog.id, entry.id)).returning()
-  if (!updated) throw new Error("No se pudo actualizar la desviación.")
-
-  await history(db, {
-    entityType: "template", entityId: entry.templateId,
-    changeType: "deviation_updated",
-    reason: `${entry.label}: ${entry.danoPotencial} → ${updated.danoPotencial}${updated.isActive ? "" : " · retirada"}`,
-    beforeState: entry, afterState: updated, actorUserId: access.userId,
-  })
-  return updated
-}
-
-/**
- * Desviaciones que se registraron como "Otra" y que todavía no están en el
- * catálogo: la cola de trabajo de Prevención.
- *
- * Son las únicas cuya gravedad la eligió una persona, así que son también las
- * únicas que conviene revisar. Se agrupan por texto porque la misma desviación
- * repetida en cinco faenas es un solo candidato al catálogo, no cinco.
- */
-export async function listUnclassifiedDeviations(templateId: string, access: InspectionAccess) {
-  requireAccess(access, "prevention:inspections:manage")
-  return db.select({
-    description: preventionInspectionFindings.description,
-    criticality: preventionInspectionFindings.criticality,
-    occurrences: sql<number>`COUNT(*)::int`,
-  })
-    .from(preventionInspectionFindings)
-    .innerJoin(preventionInspectionRuns, eq(preventionInspectionRuns.id, preventionInspectionFindings.runId))
-    .where(and(
-      eq(preventionInspectionRuns.templateId, templateId),
-      scopeCondition(access.scope, preventionInspectionRuns.worksiteId),
-      // Ni de un ítem ni del catálogo: la gravedad la puso quien registró.
-      isNull(preventionInspectionFindings.answerId),
-      isNull(preventionInspectionFindings.catalogEntryId),
-    ))
-    .groupBy(preventionInspectionFindings.description, preventionInspectionFindings.criticality)
-    .orderBy(sql`COUNT(*) DESC`)
-    .limit(100)
-}
 
 /* ── Registrar desviaciones en una inspección ─────────────────────────────
  * La contraparte del catálogo: lo que se ejecuta en terreno.
@@ -3169,6 +2965,9 @@ async function requireEditableRunForDeviation(tx: Tx, runId: string, access: Ins
   const [row] = await tx.select({
     run: preventionInspectionRuns,
     templateId: preventionInspectionTemplates.id,
+    /* El código, porque la selección de desviaciones cuelga del instrumento y
+     * no de la fila de su versión. */
+    templateCode: preventionInspectionTemplates.code,
     sourceDefinitionCode: preventionInspectionTemplates.sourceDefinitionCode,
   })
     .from(preventionInspectionRuns)
@@ -3193,7 +2992,7 @@ async function requireEditableRunForDeviation(tx: Tx, runId: string, access: Ins
  * Es el único caso donde la gravedad depende de una persona, y existe porque la
  * alternativa —forzar la desviación más parecida del catálogo— ensucia el dato
  * con una gravedad que no corresponde. Queda en la cola de
- * `listUnclassifiedDeviations` para que Prevención la incorpore.
+ * `listUnclassifiedDeviationsFor` para que Prevención la incorpore.
  */
 export async function registerDeviation(input: unknown, access: InspectionAccess) {
   const narrativeFields = {
@@ -3212,7 +3011,7 @@ export async function registerDeviation(input: unknown, access: InspectionAccess
   ]).parse(input)
 
   return db.transaction(async (tx) => {
-    const { run, templateId, sourceDefinitionCode } = await requireEditableRunForDeviation(tx, data.runId, access)
+    const { run, templateCode, sourceDefinitionCode } = await requireEditableRunForDeviation(tx, data.runId, access)
 
     if (sourceDefinitionCode === "inspeccion_no_planeada") {
       if ("catalogEntryId" in data) throw new Error("El Anexo 08 exige describir cada hallazgo; no admite una desviación abreviada del catálogo.")
@@ -3226,13 +3025,17 @@ export async function registerDeviation(input: unknown, access: InspectionAccess
     let catalogEntryId: string | null = null
 
     if ("catalogEntryId" in data) {
-      const [entry] = await tx.select().from(preventionInspectionDeviationCatalog)
-        .where(eq(preventionInspectionDeviationCatalog.id, data.catalogEntryId)).limit(1)
+      const entry = await findOfferedDeviation(templateCode, data.catalogEntryId)
       if (!entry) throw new Error(NOT_FOUND)
-      // El catálogo es por instrumento: una entrada de otra plantilla no aplica.
-      if (entry.templateId !== templateId) throw new Error("Esa desviación no pertenece al instrumento de esta inspección.")
-      if (!entry.isActive) throw new Error("Esa desviación fue retirada del catálogo.")
+      /* Dos formas de no estar disponible, y conviene distinguirlas: el
+       * instrumento no la ofrece, o el maestro la retiró para todos. */
+      if (!entry.offered) {
+        throw new Error(entry.retired
+          ? "Esa desviación fue retirada del catálogo."
+          : "Este instrumento no ofrece esa desviación.")
+      }
       description = entry.label
+      // La gravedad efectiva: el ajuste del instrumento si lo tiene, si no la del maestro.
       danoPotencial = entry.danoPotencial
       catalogEntryId = entry.id
     } else {
@@ -3307,59 +3110,4 @@ export async function removeDeviation(input: unknown, access: InspectionAccess) 
     })
     return { removed: true as const }
   })
-}
-
-/**
- * Siembra el catálogo de un instrumento copiando el de otro.
- *
- * Existe porque los catálogos de la inspección de área y de la caminata de
- * seguridad son casi idénticos —ambos levantan condiciones del lugar de
- * trabajo—, y mantenerlos por instrumento obligaría a escribir treinta
- * desviaciones dos veces. Las copias son independientes: editar o retirar una en
- * el destino no toca el origen.
- */
-export async function copyDeviationCatalog(input: unknown, access: InspectionAccess) {
-  const data = z.object({
-    fromTemplateId: z.string().min(1),
-    toTemplateId: z.string().min(1),
-  }).parse(input)
-  requireAccess(access, "prevention:inspections:manage")
-  if (data.fromTemplateId === data.toTemplateId) throw new Error("Elige un instrumento distinto del que estás editando.")
-
-  const [target] = await db.select({ id: preventionInspectionTemplates.id, status: preventionInspectionTemplates.status })
-    .from(preventionInspectionTemplates)
-    .where(eq(preventionInspectionTemplates.id, data.toTemplateId)).limit(1)
-  if (!target) throw new Error(NOT_FOUND)
-  if (target.status === "superseded") throw new Error("Una plantilla reemplazada ya no admite desviaciones nuevas.")
-
-  const [source, existing] = await Promise.all([
-    db.select().from(preventionInspectionDeviationCatalog).where(and(
-      eq(preventionInspectionDeviationCatalog.templateId, data.fromTemplateId),
-      eq(preventionInspectionDeviationCatalog.isActive, true),
-    )),
-    db.select({ label: preventionInspectionDeviationCatalog.label })
-      .from(preventionInspectionDeviationCatalog)
-      .where(eq(preventionInspectionDeviationCatalog.templateId, data.toTemplateId)),
-  ])
-
-  // Copiar dos veces no duplica ni revienta contra el índice único: lo que ya
-  // está por etiqueta se salta, incluso si está retirado en el destino.
-  const already = new Set(existing.map((row) => row.label))
-  const pending = source.filter((row) => !already.has(row.label))
-  if (pending.length === 0) return { copied: 0, skipped: source.length }
-
-  await db.insert(preventionInspectionDeviationCatalog).values(pending.map((row) => ({
-    id: `insdev-${nanoid()}`,
-    templateId: data.toTemplateId,
-    label: row.label,
-    danoPotencial: row.danoPotencial,
-    createdByUserId: access.userId,
-  })))
-  await history(db, {
-    entityType: "template", entityId: data.toTemplateId,
-    changeType: "deviation_catalog_copied",
-    reason: `${pending.length} desviación(es) copiadas desde otro instrumento`,
-    actorUserId: access.userId,
-  })
-  return { copied: pending.length, skipped: source.length - pending.length }
 }

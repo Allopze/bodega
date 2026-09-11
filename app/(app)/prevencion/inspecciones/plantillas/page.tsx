@@ -5,13 +5,13 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import {
-  listDeviationCatalogs,
   listImportableDefinitions,
   listInspectionPdtpActivityOptions,
   listInspectionDocumentSources,
   listInspectionTemplates,
   listUnclassifiedDeviationsFor,
 } from "@/lib/services/prevention-inspections"
+import { listTemplateDeviationSelections } from "@/lib/services/prevention-deviations"
 import { ImportTemplateDialog, InspectionTemplatesPanel, type TemplateItem } from "../inspection-catalog"
 
 export const metadata: Metadata = { title: "Plantillas de inspección" }
@@ -38,22 +38,24 @@ export default async function PlantillasInspeccionPage() {
     canManage ? listInspectionDocumentSources(access) : Promise.resolve([]),
   ])
 
-  /* Catálogo de desviaciones por instrumento, más las que se registraron como
-   * "Otra" y esperan clasificación. Se piden en paralelo y sólo para quien
-   * administra: quien sólo mira no tiene qué hacer con ellas. */
+  /* Qué desviaciones del maestro ofrece cada instrumento, más las que se
+   * registraron como "Otra" y esperan clasificación. Se piden en paralelo y
+   * sólo para quien administra: quien sólo mira no tiene qué hacer con ellas. */
   /* INS-12: antes eran dos consultas secuenciales POR plantilla —una de ellas
-   * un GROUP BY con join— y para todas, aunque sólo tres instrumentos del
-   * catálogo registran desviaciones. Ahora son dos consultas en total, y sólo
+   * un GROUP BY con join— y para todas, aunque sólo cuatro instrumentos del
+   * catálogo registran desviaciones. Ahora son tres consultas en total, y sólo
    * sobre los que pueden tenerlas. */
-  const deviationTemplateIds = templates
+  const deviationTemplates = templates
     .filter((row) => Boolean((row.definitionSnapshot as { recordsDeviations?: boolean } | null)?.recordsDeviations))
-    .map((row) => row.id)
+  // La selección cuelga del CÓDIGO del instrumento, no de la fila de su versión.
+  const deviationTemplateCodes = [...new Set(deviationTemplates.map((row) => row.code))]
+  const deviationTemplateIds = deviationTemplates.map((row) => row.id)
   // Sólo para quien administra: quien únicamente mira no tiene qué hacer con ellas.
-  const [deviationsByTemplate, unclassifiedByTemplate] = await Promise.all([
-    canManage ? listDeviationCatalogs(deviationTemplateIds, access) : Promise.resolve(new Map()),
+  const [deviationsByCode, unclassifiedByTemplate] = await Promise.all([
+    canManage ? listTemplateDeviationSelections(deviationTemplateCodes, access) : Promise.resolve(new Map()),
     canManage ? listUnclassifiedDeviationsFor(deviationTemplateIds, access) : Promise.resolve(new Map()),
   ]) as [
-    Awaited<ReturnType<typeof listDeviationCatalogs>>,
+    Awaited<ReturnType<typeof listTemplateDeviationSelections>>,
     Awaited<ReturnType<typeof listUnclassifiedDeviationsFor>>,
   ]
   const templateItems: TemplateItem[] = templates.map((row) => ({
@@ -77,13 +79,23 @@ export default async function PlantillasInspeccionPage() {
     sourceSnapshot: row.sourceSnapshot,
     parityReport: row.parityReport,
     contentHash: row.contentHash,
-    deviations: (deviationsByTemplate.get(row.id) ?? []).map((entry) => ({
-      id: entry.id,
-      label: entry.label,
-      danoPotencial: entry.danoPotencial,
-      isActive: entry.isActive,
-      criticality: entry.criticality,
-    })),
+    /* El maestro entero marcado con lo que este instrumento ofrece: el diálogo
+     * es un selector, así que necesita también las no seleccionadas. Se ocultan
+     * las retiradas del maestro que este instrumento no ofrece — no hay nada
+     * que hacer con ellas y sólo alargan la lista. */
+    deviations: (deviationsByCode.get(row.code) ?? [])
+      .filter((entry) => entry.isActive || entry.selected)
+      .map((entry) => ({
+        id: entry.id,
+        label: entry.label,
+        danoPotencial: entry.danoPotencial,
+        isActive: entry.isActive,
+        criticality: entry.criticality,
+        selected: entry.selected,
+        danoPotencialOverride: entry.danoPotencialOverride,
+        effectiveDano: entry.effectiveDano,
+        effectiveCriticality: entry.effectiveCriticality,
+      })),
     unclassifiedDeviations: unclassifiedByTemplate.get(row.id) ?? [],
   }))
   const importable = canManage ? listImportableDefinitions() : []

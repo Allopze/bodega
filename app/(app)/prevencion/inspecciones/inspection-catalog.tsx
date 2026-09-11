@@ -23,14 +23,13 @@ import {
   approveInspectionTemplateAction,
   retireInspectionTemplateAction,
   createInspectionProgramAction,
-  addDeviationCatalogEntryAction,
-  copyDeviationCatalogAction,
   importInspectionTemplateAction,
   remindTemplateApprovalAction,
   rollbackInspectionTemplateAction,
   runProgramNowAction,
   setInspectionTemplatePdtpActivitiesAction,
-  updateDeviationCatalogEntryAction,
+  promoteUnclassifiedDeviationAction,
+  setTemplateDeviationAction,
   updateInspectionProgramAction,
 } from "./actions"
 import { classifyPdtp2026InspectionWiring } from "@/lib/prevention/inspection-wiring"
@@ -108,13 +107,28 @@ function parityStatusLabel(status: string | undefined) {
   return "Paridad pendiente"
 }
 
+/**
+ * Una entrada del catálogo maestro, vista desde un instrumento.
+ *
+ * Trae el maestro entero —no sólo lo que el instrumento ofrece— porque el
+ * diálogo es un selector: hay que poder marcar lo que todavía no está.
+ */
 export interface DeviationEntry {
   id: string
   label: string
+  /** La gravedad que propone el maestro. */
   danoPotencial: string
+  /** Si el maestro la tiene vigente. Retirarla ahí la apaga en todos lados. */
   isActive: boolean
-  /** La criticidad que producirá el hallazgo. Se muestra para que no quede implícita. */
+  /** La criticidad que produciría con la gravedad del maestro. */
   criticality: string
+  /** Si este instrumento la ofrece a quien registra en terreno. */
+  selected: boolean
+  /** Gravedad propia de este instrumento; null = hereda la del maestro. */
+  danoPotencialOverride: string | null
+  /** La que se aplica realmente al registrar acá. */
+  effectiveDano: string
+  effectiveCriticality: string
 }
 
 interface ProgramItem {
@@ -417,9 +431,9 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, canManage, ca
                       instrumentos que no puntúan ítems: ahí la gravedad no la
                       declara ningún ítem y tiene que declararla el catálogo. */}
                   <TableCell className="text-sm">
-                    {item.deviations.length > 0
-                      ? `${item.deviations.filter((entry) => entry.isActive).length} activa(s)`
-                      : <span className="text-xs text-[var(--color-text-subtle)]">Sin catálogo</span>}
+                    {item.deviations.some((entry) => entry.selected)
+                      ? `${item.deviations.filter((entry) => entry.selected).length} ofrecida(s)`
+                      : <span className="text-xs text-[var(--color-text-subtle)]">Ninguna ofrecida</span>}
                     {item.unclassifiedDeviations.length > 0 && (
                       <span className="mt-1 block text-xs text-[var(--color-warning-ink)]">
                         {item.unclassifiedDeviations.length} por clasificar
@@ -479,7 +493,7 @@ function TemplateActions({ item, templates, pdtpOptions, canManage, canApprove }
   const previous = templates.find((candidate) => candidate.code === item.code && candidate.status === "superseded")
   return (
     <div className="flex flex-wrap justify-end gap-2">
-      {item.status !== "superseded" && canManage && <DeviationCatalogDialog templateId={item.id} name={item.name} entries={item.deviations} unclassified={item.unclassifiedDeviations} copySources={templates.flatMap((other) => other.id !== item.id && other.deviations.length > 0 ? [{ id: other.id, name: other.name, count: other.deviations.filter((entry) => entry.isActive).length }] : [])} />}
+      {item.status !== "superseded" && canManage && <DeviationCatalogDialog templateCode={item.code} name={item.name} entries={item.deviations} unclassified={item.unclassifiedDeviations} />}
       {item.status !== "superseded" && canManage && <PdtpActivitiesDialog templateId={item.id} name={item.name} expectedVersion={item.version} current={item.pdtpActivityNumbers ?? []} currentReview={item.pdtpReviewActivityNumbers ?? []} options={pdtpOptions} />}
       {item.status === "draft" && canApprove && <ApproveDialog templateId={item.id} name={item.name} expectedVersion={item.version} />}
       {item.status === "draft" && canManage && !canApprove && <RequestApprovalButton templateId={item.id} />}
@@ -682,6 +696,14 @@ function ProgramActions({ program, assignees, subjectsByWorksite, riskEntriesByW
 
 /* ── Creador de desviaciones ──────────────────────────────────────────────── */
 
+/** La gravedad que corresponde a una criticidad ya registrada, para sugerirla. */
+const DANO_BY_CRITICALITY: Record<string, string> = {
+  low: "leve",
+  medium: "moderado",
+  high: "grave",
+  critical: "fatal",
+}
+
 const DANO_LABELS: Record<string, string> = {
   leve: "Leve → hallazgo bajo · 30 días",
   moderado: "Moderado → hallazgo medio · 15 días",
@@ -690,29 +712,38 @@ const DANO_LABELS: Record<string, string> = {
 }
 
 /**
- * Mantiene qué desviaciones ofrece un instrumento y con qué gravedad.
+ * Elige qué desviaciones del catálogo maestro ofrece este instrumento.
  *
  * Es lo que permite que quien registra en terreno NO decida la gravedad: elige
  * de esta lista y el plazo de la acción correctiva sale solo. La única excepción
  * es "Otra desviación", donde sí la elige — y esas aparecen acá abajo para que
  * Prevención las incorpore y dejen de depender de un criterio individual.
+ *
+ * La lista en sí se mantiene en Administración; acá sólo se marca cuáles
+ * aplican y, si hace falta, se ajusta la gravedad para este instrumento. La
+ * selección cuelga del CÓDIGO del instrumento, así que versionarlo no la pierde.
  */
-function DeviationCatalogDialog({ templateId, name, entries, unclassified, copySources }: {
-  templateId: string
+function DeviationCatalogDialog({ templateCode, name, entries, unclassified }: {
+  templateCode: string
   name: string
   entries: DeviationEntry[]
   unclassified: { description: string; criticality: string; occurrences: number }[]
-  /** Otros instrumentos con catálogo, para sembrar este copiando el suyo. */
-  copySources: { id: string; name: string; count: number }[]
 }) {
   const [open, setOpen] = React.useState(false)
-  const [dano, setDano] = React.useState("moderado")
-  const [copyFrom, setCopyFrom] = React.useState("")
-  const operation = useOperation()
-  const copyOperation = useOperation()
+  const [query, setQuery] = React.useState("")
 
-  const activas = entries.filter((entry) => entry.isActive)
-  const retiradas = entries.filter((entry) => !entry.isActive)
+  const visible = React.useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    if (!needle) return entries
+    return entries.filter((entry) => entry.label.toLowerCase().includes(needle))
+  }, [entries, query])
+  // Lo ofrecido primero: es lo que se viene a revisar, y con un maestro largo
+  // quedaba disperso entre decenas de casillas vacías.
+  const ordered = React.useMemo(
+    () => [...visible].sort((a, b) => Number(b.selected) - Number(a.selected) || a.label.localeCompare(b.label)),
+    [visible],
+  )
+  const offered = entries.filter((entry) => entry.selected).length
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -730,139 +761,149 @@ function DeviationCatalogDialog({ templateId, name, entries, unclassified, copyS
           </DialogDescription>
         </DialogHeader>
 
-        <form
-          className="space-y-3 rounded-lg border border-[var(--color-border)] p-3"
-          onSubmit={(event) => {
-            event.preventDefault()
-            const form = event.currentTarget
-            const label = String(new FormData(form).get("label") ?? "").trim()
-            operation.run(
-              () => addDeviationCatalogEntryAction({ templateId, label, danoPotencial: dano }),
-              () => form.reset(),
-            )
-          }}
-        >
-          <Field label="Desviación" required hint="Cómo la va a ver quien registra. Ej: «Extintor obstruido o sin acceso libre».">
-            <Input name="label" required minLength={3} maxLength={300} />
-          </Field>
-          <Field label="Gravedad" required>
-            <Select value={dano} onValueChange={setDano}>
-              <SelectTrigger aria-label="Gravedad de la desviación"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {Object.entries(DANO_LABELS).map(([value, label]) => (
-                  <SelectItem key={value} value={value}>{label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Button type="submit" size="sm" disabled={operation.pending}>Agregar al catálogo</Button>
-          {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-        </form>
+        <div className="flex items-center justify-between gap-2">
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar desviación…"
+            aria-label="Buscar en el catálogo maestro"
+            className="h-8 text-sm"
+          />
+          <span className="shrink-0 text-xs text-[var(--color-text-subtle)]">{offered} ofrecida(s)</span>
+        </div>
 
-        {/* Los catálogos de la inspección de área y de la caminata son casi
-            iguales —ambos levantan condiciones del lugar de trabajo—, así que
-            sembrarlos copiando evita escribir treinta desviaciones dos veces.
-            Las copias son independientes del origen. */}
-        {copySources.length > 0 && (
-          <div className="flex flex-wrap items-end gap-2 rounded-lg border border-[var(--color-border)] p-3">
-            <Field label="Copiar desde otro instrumento" hint="Se copian las activas que no estén ya acá." className="flex-1">
-              <Select value={copyFrom} onValueChange={setCopyFrom}>
-                <SelectTrigger aria-label="Instrumento de origen"><SelectValue placeholder="Elegir instrumento…" /></SelectTrigger>
-                <SelectContent>
-                  {copySources.map((source) => (
-                    <SelectItem key={source.id} value={source.id}>{source.name} ({source.count})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={copyOperation.pending || !copyFrom}
-              onClick={() => copyOperation.run(
-                () => copyDeviationCatalogAction({ fromTemplateId: copyFrom, toTemplateId: templateId }),
-                () => setCopyFrom(""),
-              )}
-            >
-              Copiar
-            </Button>
-            {copyOperation.message && <p role="status" className="w-full text-sm">{copyOperation.message}</p>}
-          </div>
-        )}
-
-        {activas.length > 0 && (
-          <div className="max-h-56 space-y-1 overflow-y-auto">
-            {activas.map((entry) => (
-              <DeviationRow key={entry.id} entry={entry} />
+        {ordered.length > 0 ? (
+          <div className="max-h-72 space-y-1 overflow-y-auto">
+            {ordered.map((entry) => (
+              <DeviationRow key={entry.id} templateCode={templateCode} entry={entry} />
             ))}
           </div>
-        )}
-
-        {/* Recalibrar no reescribe los hallazgos ya levantados: su criticidad es
-            evidencia del plazo que tuvieron. Retirar sólo deja de ofrecerla. */}
-        {retiradas.length > 0 && (
-          <details className="text-xs">
-            <summary className="cursor-pointer text-[var(--color-text-subtle)]">
-              {retiradas.length} retirada(s)
-            </summary>
-            <div className="mt-2 space-y-1">
-              {retiradas.map((entry) => <DeviationRow key={entry.id} entry={entry} />)}
-            </div>
-          </details>
+        ) : (
+          <p className="rounded-md border border-[var(--color-border)] p-3 text-sm text-[var(--color-text-subtle)]">
+            {entries.length === 0
+              ? "El catálogo maestro está vacío. Se arma en Administración → Desviaciones."
+              : "Ninguna desviación coincide con la búsqueda."}
+          </p>
         )}
 
         {unclassified.length > 0 && (
           <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-xs">
             <p className="font-medium">Registradas como «Otra», sin catalogar</p>
             <p className="mt-1 text-[var(--color-text-subtle)]">
-              Su gravedad la eligió quien registró. Agrégalas arriba con la gravedad oficial y dejarán de depender de
-              un criterio individual.
+              Su gravedad la eligió quien registró. Incorpóralas al maestro y dejarán de depender de un criterio
+              individual.
             </p>
-            <ul className="mt-2 space-y-0.5">
+            <ul className="mt-2 space-y-1">
               {unclassified.slice(0, 12).map((item) => (
-                <li key={item.description}>
-                  {item.description} · <span className="font-mono">{item.criticality}</span>
-                  {item.occurrences > 1 ? ` · ${item.occurrences} veces` : ""}
-                </li>
+                <UnclassifiedRow key={item.description} templateCode={templateCode} item={item} />
               ))}
             </ul>
             {unclassified.length > 12 && <p className="mt-1">…y {unclassified.length - 12} más.</p>}
           </div>
         )}
+
+        <p className="text-xs text-[var(--color-text-subtle)]">
+          La lista maestra —crear, redactar y retirar desviaciones— se mantiene en{" "}
+          <Link href="/admin/desviaciones" className="underline">Administración → Desviaciones</Link>.
+        </p>
       </DialogContent>
     </Dialog>
   )
 }
 
-function DeviationRow({ entry }: { entry: DeviationEntry }) {
+/** Una desviación del maestro con su casilla y su gravedad en este instrumento. */
+function DeviationRow({ templateCode, entry }: { templateCode: string; entry: DeviationEntry }) {
   const operation = useOperation()
+  const retirada = !entry.isActive
+
   return (
     <div className="flex items-center justify-between gap-2 rounded border border-[var(--color-border)] px-2 py-1.5 text-sm">
-      <span className={entry.isActive ? undefined : "text-[var(--color-text-subtle)] line-through"}>{entry.label}</span>
+      <Checkbox
+        className="min-w-0"
+        checked={entry.selected}
+        disabled={operation.pending || retirada}
+        onChange={(event) => operation.run(() => setTemplateDeviationAction({
+          templateCode,
+          entryId: entry.id,
+          selected: event.target.checked,
+          danoPotencialOverride: entry.danoPotencialOverride,
+        }))}
+        label={
+          <span className={retirada ? "text-[var(--color-text-subtle)] line-through" : undefined}>
+            {entry.label}
+          </span>
+        }
+      />
       <span className="flex shrink-0 items-center gap-2">
+        {/* Recalibrar acá no reescribe los hallazgos ya levantados: su
+            criticidad es evidencia del plazo que tuvieron. */}
         <Select
-          value={entry.danoPotencial}
-          onValueChange={(value) => operation.run(() => updateDeviationCatalogEntryAction({ entryId: entry.id, danoPotencial: value }))}
+          value={entry.effectiveDano}
+          disabled={!entry.selected}
+          onValueChange={(value) => operation.run(() => setTemplateDeviationAction({
+            templateCode,
+            entryId: entry.id,
+            selected: true,
+            // Volver al valor del maestro borra el ajuste en vez de fijarlo:
+            // así la entrada sigue heredando futuras recalibraciones.
+            danoPotencialOverride: value === entry.danoPotencial ? null : value,
+          }))}
         >
           <SelectTrigger className="h-7 w-52 text-xs" aria-label={`Gravedad de ${entry.label}`}><SelectValue /></SelectTrigger>
           <SelectContent>
-            {/* El alta ya explica la consecuencia ("Grave → hallazgo alto · 7
-                días"); acá salía "grave" pelado, para la misma decisión. */}
+            {/* La consecuencia va en la etiqueta: acá salía "grave" pelado,
+                para la misma decisión. */}
+            {Object.entries(DANO_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        {entry.danoPotencialOverride && (
+          <span className="text-xs text-[var(--color-warning-ink)]" title={`El maestro propone ${entry.danoPotencial}`}>
+            ajustada
+          </span>
+        )}
+        {retirada && <span className="text-xs text-[var(--color-text-subtle)]">retirada del maestro</span>}
+      </span>
+    </div>
+  )
+}
+
+/** Una desviación fuera de catálogo, con el botón que la incorpora al maestro. */
+function UnclassifiedRow({ templateCode, item }: {
+  templateCode: string
+  item: { description: string; criticality: string; occurrences: number }
+}) {
+  const operation = useOperation()
+  const [dano, setDano] = React.useState(DANO_BY_CRITICALITY[item.criticality] ?? "moderado")
+
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-2">
+      <span className="min-w-0 flex-1">
+        {item.description}
+        {item.occurrences > 1 ? ` · ${item.occurrences} veces` : ""}
+      </span>
+      <span className="flex shrink-0 items-center gap-1">
+        <Select value={dano} onValueChange={setDano}>
+          <SelectTrigger className="h-7 w-52 text-xs" aria-label={`Gravedad oficial de ${item.description}`}><SelectValue /></SelectTrigger>
+          <SelectContent>
             {Object.entries(DANO_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
           </SelectContent>
         </Select>
         <Button
           type="button"
           size="sm"
-          variant="ghost"
+          variant="secondary"
           disabled={operation.pending}
-          onClick={() => operation.run(() => updateDeviationCatalogEntryAction({ entryId: entry.id, isActive: !entry.isActive }))}
+          onClick={() => operation.run(() => promoteUnclassifiedDeviationAction({
+            templateCode,
+            label: item.description,
+            danoPotencial: dano,
+          }))}
         >
-          {entry.isActive ? "Retirar" : "Reactivar"}
+          Incorporar
         </Button>
       </span>
-    </div>
+      {operation.message && <p role="status" className="w-full">{operation.message}</p>}
+    </li>
   )
 }
 

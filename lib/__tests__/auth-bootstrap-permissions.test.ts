@@ -65,6 +65,7 @@ describe("system-rbac → manifest parity", () => {
     "admin:product_catalogs",
     "admin:document_taxonomy",
     "admin:pdtp_catalog",
+    "admin:deviation_catalog",
     "admin:worker_positions",
     "admin:fleet_catalog",
     "admin:security",
@@ -103,10 +104,13 @@ describe("system-rbac → manifest parity", () => {
     expect(perms).toContain("admin:worker_positions")
   })
 
-  it("grants prevencionista the SST taxonomy and PDTP catalogs", () => {
+  it("grants prevencionista the SST taxonomy, PDTP and deviation catalogs", () => {
     const perms = rolePermissions("rol-prev")
     expect(perms).toContain("admin:document_taxonomy")
     expect(perms).toContain("admin:pdtp_catalog")
+    // Quien calibra los instrumentos es quien mantiene la lista maestra de
+    // desviaciones: sin esto la pantalla existiría sin nadie que la use.
+    expect(perms).toContain("admin:deviation_catalog")
     expect(perms).toContain("admin:worker_positions")
   })
 

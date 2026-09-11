@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { boolean, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import { boolean, check, foreignKey, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import { fuelVehicles } from "../fuel-vehicles"
 import { users } from "../users"
 import { worksites } from "../worksites"
@@ -95,17 +95,19 @@ export const preventionInspectionTemplates = pgTable("prevention_inspection_temp
   check("prevention_inspection_template_version_positive", sql`${table.version} >= 1`),
 ])
 
-/* ── Catálogo de desviaciones por instrumento ─────────────────────────────
+/* ── Catálogo de desviaciones por instrumento · DEPRECADA ─────────────────
  * Los instrumentos de checklist derivan sus hallazgos de los ítems marcados "no
  * cumple", y la gravedad la declara el ítem. Pero hay actividades del programa
  * —observación de conductas, inspección de área, caminata de seguridad— que no
  * son un checklist puntuado: se registra que se hicieron y **qué desviaciones se
- * encontraron**, sin lista fija de preguntas.
+ * encontraron**, sin lista fija de preguntas. Para esas, la gravedad tiene que
+ * venir de algún lado que no sea el criterio de quien registra.
  *
- * Para esas, la gravedad tiene que venir de algún lado que no sea el criterio de
- * quien registra: de este catálogo. Y es **por plantilla** a propósito — una
- * desviación en un carro no es la misma que en un área de trabajo, y compartir
- * una lista global obligaría a que cada instrumento filtrara la ajena.
+ * **Reemplazada** por `preventionDeviationCatalog` (el maestro) más
+ * `preventionTemplateDeviations` (qué ofrece cada instrumento). Sus datos ya se
+ * migraron y nada la lee; queda en pie sólo para que el `DROP` vaya en una
+ * migración posterior, como se hizo con las tablas de planes de acción
+ * (`0066` copia, `0161`/`0165` dropean). No agregar consumidores.
  */
 export const preventionInspectionDeviationCatalog = pgTable("prevention_inspection_deviation_catalog", {
   id:            text("id").primaryKey(),
@@ -125,6 +127,72 @@ export const preventionInspectionDeviationCatalog = pgTable("prevention_inspecti
   index("prevention_inspection_deviation_template_idx").on(table.templateId, table.isActive),
   check("prevention_inspection_deviation_dano_valid", sql`${table.danoPotencial} IN ('leve', 'moderado', 'grave', 'fatal')`),
   check("prevention_inspection_deviation_label_length", sql`length(${table.label}) >= 3`),
+])
+
+/* ── Catálogo maestro de desviaciones ─────────────────────────────────────
+ * La lista de desviaciones que la organización reconoce, cada una con la
+ * gravedad que le corresponde. Reemplaza al catálogo por plantilla de arriba.
+ *
+ * Es global y no por instrumento porque el modelo anterior colgaba de la FILA
+ * de una plantilla, y versionar crea una fila nueva: el catálogo quedaba en la
+ * versión retirada y cada v2 nacía vacía. Qué desviaciones existen es además
+ * una definición transversal —la misma condición insegura es la misma en el
+ * área y en la caminata—, así que mantenerla en un solo lugar evita que los
+ * textos y las gravedades se separen con el tiempo.
+ */
+export const preventionDeviationCatalog = pgTable("prevention_deviation_catalog", {
+  id:              text("id").primaryKey(),
+  label:           text("label").notNull(),
+  /** Misma escala que los ítems del catálogo SST: de acá sale la criticidad del hallazgo. */
+  danoPotencial:   text("dano_potencial").notNull(),
+  /* Retirar una desviación no borra su fila: los hallazgos ya levantados la
+   * referencian y su gravedad es evidencia de por qué tuvieron el plazo que
+   * tuvieron. Desactivarla la saca de circulación en todos los instrumentos a
+   * la vez, que es justamente lo que el modelo por plantilla no permitía. */
+  isActive:        boolean("is_active").notNull().default(true),
+  createdByUserId: text("created_by_user_id").notNull(),
+  createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:       timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  /* FK nombrada a mano: el nombre que drizzle deriva de estas dos tablas pasa
+   * los 63 bytes que Postgres admite, y `verify-migration-chain.mjs` lo
+   * rechaza. Vale para todas las FK de este par de tablas. */
+  foreignKey({ columns: [table.createdByUserId], foreignColumns: [users.id], name: "pdc_author_fk" }).onDelete("restrict"),
+  uniqueIndex("prevention_deviation_label_unique").on(table.label),
+  index("prevention_deviation_active_idx").on(table.isActive),
+  check("prevention_deviation_dano_valid", sql`${table.danoPotencial} IN ('leve', 'moderado', 'grave', 'fatal')`),
+  check("prevention_deviation_label_length", sql`length(${table.label}) >= 3`),
+])
+
+/* ── Qué desviaciones ofrece cada instrumento ─────────────────────────────
+ * La selección: del maestro, cuáles se le muestran a quien registra en terreno
+ * con este instrumento, y con qué gravedad.
+ *
+ * Se ata al CÓDIGO del instrumento y no al id de la fila de una versión. Esa es
+ * la corrección de fondo: reimportar un código crea una plantilla nueva y
+ * retira la anterior, y con el id la selección se perdía en cada versión.
+ * No hay FK porque `code` no es clave primaria —la unicidad es
+ * `(code, version_label)`—; que el código exista lo valida el servicio.
+ */
+export const preventionTemplateDeviations = pgTable("prevention_template_deviations", {
+  id:              text("id").primaryKey(),
+  templateCode:    text("template_code").notNull(),
+  entryId:         text("entry_id").notNull(),
+  /* NULL = hereda la gravedad del maestro. Existe porque la misma desviación
+   * no siempre pesa igual según lo que se esté inspeccionando, y la
+   * alternativa —desdoblar la entrada maestra por instrumento— nos devolvía a
+   * la divergencia de textos que este modelo vino a cerrar. */
+  danoPotencialOverride: text("dano_potencial_override"),
+  isActive:        boolean("is_active").notNull().default(true),
+  createdByUserId: text("created_by_user_id").notNull(),
+  createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  updatedAt:       timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+}, (table) => [
+  foreignKey({ columns: [table.entryId], foreignColumns: [preventionDeviationCatalog.id], name: "ptd_entry_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [table.createdByUserId], foreignColumns: [users.id], name: "ptd_author_fk" }).onDelete("restrict"),
+  uniqueIndex("prevention_template_deviation_unique").on(table.templateCode, table.entryId),
+  index("prevention_template_deviation_code_idx").on(table.templateCode, table.isActive),
+  check("prevention_template_deviation_override_valid", sql`${table.danoPotencialOverride} IS NULL OR ${table.danoPotencialOverride} IN ('leve', 'moderado', 'grave', 'fatal')`),
 ])
 
 /* ── Programación por faena y frecuencia ──────────────────────────────────── */
@@ -409,7 +477,7 @@ export const preventionInspectionFindings = pgTable("prevention_inspection_findi
    *   esperando que Prevención la incorpore al catálogo.
    * El tercer caso es el único donde la gravedad depende de una persona, y por
    * eso tiene que poder consultarse: es la cola de trabajo del catálogo. */
-  catalogEntryId:    text("catalog_entry_id").references(() => preventionInspectionDeviationCatalog.id, { onDelete: "set null" }),
+  catalogEntryId:    text("catalog_entry_id"),
   description:       text("description").notNull(),
   danoPotencial:     text("dano_potencial"),
   criticality:       text("criticality").notNull(),
@@ -423,6 +491,9 @@ export const preventionInspectionFindings = pgTable("prevention_inspection_findi
   createdAt:         timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:         timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
+  /* Nombrada a mano: el nombre derivado de estas dos tablas pasa los 63 bytes
+   * que Postgres admite para un identificador. */
+  foreignKey({ columns: [table.catalogEntryId], foreignColumns: [preventionDeviationCatalog.id], name: "insfnd_catalog_entry_fk" }).onDelete("set null"),
   index("prevention_inspection_finding_run_idx").on(table.runId, table.status),
   check("prevention_inspection_finding_origin_valid", sql`${table.origin} IN ('derived', 'deviation')`),
   // Una desviación no sale de una respuesta: si trae `answer_id`, es derivada.
@@ -539,14 +610,24 @@ export const preventionInspectionAnswerEvidenceRelations = relations(preventionI
   answer: one(preventionInspectionAnswers, { fields: [preventionInspectionAnswerEvidence.answerId], references: [preventionInspectionAnswers.id] }),
 }))
 
-export const preventionInspectionDeviationCatalogRelations = relations(preventionInspectionDeviationCatalog, ({ one, many }) => ({
+/* Sin `findings`: los hallazgos ya apuntan al catálogo maestro. */
+export const preventionInspectionDeviationCatalogRelations = relations(preventionInspectionDeviationCatalog, ({ one }) => ({
   template: one(preventionInspectionTemplates, { fields: [preventionInspectionDeviationCatalog.templateId], references: [preventionInspectionTemplates.id] }),
+}))
+
+export const preventionDeviationCatalogRelations = relations(preventionDeviationCatalog, ({ many }) => ({
+  offeredBy: many(preventionTemplateDeviations),
   findings: many(preventionInspectionFindings),
+}))
+
+export const preventionTemplateDeviationsRelations = relations(preventionTemplateDeviations, ({ one }) => ({
+  entry: one(preventionDeviationCatalog, { fields: [preventionTemplateDeviations.entryId], references: [preventionDeviationCatalog.id] }),
 }))
 
 export const preventionInspectionFindingsRelations = relations(preventionInspectionFindings, ({ one }) => ({
   run: one(preventionInspectionRuns, { fields: [preventionInspectionFindings.runId], references: [preventionInspectionRuns.id] }),
   capaAction: one(preventionCapaActions, { fields: [preventionInspectionFindings.capaActionId], references: [preventionCapaActions.id] }),
+  catalogEntry: one(preventionDeviationCatalog, { fields: [preventionInspectionFindings.catalogEntryId], references: [preventionDeviationCatalog.id] }),
 }))
 
 export type PreventionInspectionTemplate = typeof preventionInspectionTemplates.$inferSelect
@@ -555,5 +636,6 @@ export type PreventionInspectionRun = typeof preventionInspectionRuns.$inferSele
 export type PreventionInspectionAnswer = typeof preventionInspectionAnswers.$inferSelect
 export type PreventionInspectionAnswerEvidence = typeof preventionInspectionAnswerEvidence.$inferSelect
 export type PreventionInspectionFinding = typeof preventionInspectionFindings.$inferSelect
-export type PreventionInspectionDeviationEntry = typeof preventionInspectionDeviationCatalog.$inferSelect
+export type PreventionDeviationEntry = typeof preventionDeviationCatalog.$inferSelect
+export type PreventionTemplateDeviation = typeof preventionTemplateDeviations.$inferSelect
 export type PreventionInspectionRunDocument = typeof preventionInspectionRunDocuments.$inferSelect
