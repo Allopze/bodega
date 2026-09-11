@@ -1,6 +1,6 @@
 {
-  "id": "11c2390e-6c30-4037-80d3-567f6f9b3264",
-  "prevId": "36ac1bc0-b6a5-4faa-b8ea-454706b1fdec",
+  "id": "58ac186d-be0c-4e8c-9480-4ab19318a3ef",
+  "prevId": "11c2390e-6c30-4037-80d3-567f6f9b3264",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1350,19 +1350,6 @@
         }
       },
       "foreignKeys": {
-        "workers_worksite_id_worksites_id_fk": {
-          "name": "workers_worksite_id_worksites_id_fk",
-          "tableFrom": "workers",
-          "tableTo": "worksites",
-          "columnsFrom": [
-            "worksite_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
         "workers_position_id_worker_positions_id_fk": {
           "name": "workers_position_id_worker_positions_id_fk",
           "tableFrom": "workers",
@@ -1374,6 +1361,19 @@
             "id"
           ],
           "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "workers_worksite_id_worksites_id_fk": {
+          "name": "workers_worksite_id_worksites_id_fk",
+          "tableFrom": "workers",
+          "tableTo": "worksites",
+          "columnsFrom": [
+            "worksite_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -22924,6 +22924,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "subject_capability_codes": {
+          "name": "subject_capability_codes",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": false
+        },
         "target_value": {
           "name": "target_value",
           "type": "numeric(10, 2)",
@@ -23083,11 +23089,15 @@
         },
         "pdtp_activities_subject_source_check": {
           "name": "pdtp_activities_subject_source_check",
-          "value": "\"pdtp_activities\".\"subject_source\" IS NULL OR \"pdtp_activities\".\"subject_source\" IN ('dotacion', 'extintores', 'expuestos_ges', 'equipos', 'trabajadores_nuevos')"
+          "value": "\"pdtp_activities\".\"subject_source\" IS NULL OR \"pdtp_activities\".\"subject_source\" IN ('dotacion', 'extintores', 'expuestos_ges', 'equipos', 'trabajadores_nuevos', 'trabajadores_capacidad')"
         },
         "pdtp_activities_subject_source_requires_coverage": {
           "name": "pdtp_activities_subject_source_requires_coverage",
           "value": "\"pdtp_activities\".\"subject_source\" IS NULL OR \"pdtp_activities\".\"indicator_mode\" = 'coverage'"
+        },
+        "pdtp_activities_subject_capabilities_check": {
+          "name": "pdtp_activities_subject_capabilities_check",
+          "value": "(\n    \"pdtp_activities\".\"subject_source\" = 'trabajadores_capacidad'\n    AND COALESCE(cardinality(\"pdtp_activities\".\"subject_capability_codes\"), 0) > 0\n  ) OR (\n    \"pdtp_activities\".\"subject_source\" IS DISTINCT FROM 'trabajadores_capacidad'\n    AND \"pdtp_activities\".\"subject_capability_codes\" IS NULL\n  )"
         },
         "pdtp_activities_target_value_check": {
           "name": "pdtp_activities_target_value_check",
