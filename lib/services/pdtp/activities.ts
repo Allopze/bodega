@@ -1,6 +1,6 @@
 import { and, eq, inArray, notInArray, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpActivityChecklists, pdtpActivitySchedule, pdtpPrograms, pdtpSheetActivities } from "@/db/schema"
+import { pdtpActivities, pdtpActivityChecklists, pdtpActivitySchedule, pdtpPrograms, pdtpSheetActivities, workerCapabilities } from "@/db/schema"
 import { addPdtpChangeLogEntry, assertPdtpProgramEditableState, pdtpActivityId, pdtpScheduleId, pdtpSheetActivityId, resolveSheetForProgram } from "./helpers"
 import {
   derivePdtpScheduleSource,
@@ -15,6 +15,32 @@ import {
   type PdtpScheduleSource,
 } from "./recurrence"
 import { pdtpActivityChecklistId } from "./checklist-domain"
+import type { PdtpSubjectSource } from "./subject-registry"
+import { WORKER_CAPABILITY_CODE_PATTERN } from "@/lib/services/worker-positions/normalization"
+
+function normalizedSubjectCapabilityCodes(codes: readonly string[] | null | undefined): string[] | null {
+  if (codes == null) return null
+  return [...new Set(codes.map((code) => code.trim().toLowerCase()).filter(Boolean))].sort()
+}
+
+async function validateCapabilitySubjectConfiguration(
+  source: string | null,
+  codes: readonly string[] | null,
+): Promise<void> {
+  if (source !== "trabajadores_capacidad") {
+    if (codes?.length) throw new Error("Las capacidades sólo corresponden a la fuente de trabajadores por capacidad.")
+    return
+  }
+  if (!codes?.length) throw new Error("Selecciona al menos una capacidad para construir el padrón.")
+  if (codes.some((code) => !WORKER_CAPABILITY_CODE_PATTERN.test(code))) {
+    throw new Error("La configuración contiene un código de capacidad inválido.")
+  }
+  const existing = await db.select({ code: workerCapabilities.code }).from(workerCapabilities)
+    .where(and(inArray(workerCapabilities.code, [...codes]), eq(workerCapabilities.isActive, true)))
+  if (existing.length !== codes.length) {
+    throw new Error("Una o más capacidades del padrón no existen o están inactivas.")
+  }
+}
 
 /** Todas las actividades de un programa, ordenadas por N°. Para el tab
  * "Actividades" del builder — no está scoped a una hoja como
@@ -120,7 +146,10 @@ export type PdtpActivityUpdateInput = {
   evidenceRequirement?: string | null
   indicatorMode?: "planned_vs_completed" | "closed_on_time" | "completed_count" | "not_applicable" | "coverage"
   /** De qué registro sale el padrón; sólo tiene sentido con `coverage`. */
-  subjectSource?: "dotacion" | "extintores" | "expuestos_ges" | "equipos" | "trabajadores_nuevos" | null
+  subjectSource?: PdtpSubjectSource | null
+  /** Capacidades combinadas como OR cuando la fuente es
+   * `trabajadores_capacidad`. */
+  subjectCapabilityCodes?: string[] | null
   targetValue?: number | null
   targetUnit?: string | null
   scheduleOverrides?: Array<{ month: number; week: number; plannedQuantity: number }>
@@ -151,7 +180,8 @@ export type PdtpActivityAddInput = {
   evidenceRequirement?: string | null
   indicatorMode?: "planned_vs_completed" | "closed_on_time" | "completed_count" | "not_applicable" | "coverage"
   /** De qué registro sale el padrón; sólo tiene sentido con `coverage`. */
-  subjectSource?: "dotacion" | "extintores" | "expuestos_ges" | "equipos" | "trabajadores_nuevos" | null
+  subjectSource?: PdtpSubjectSource | null
+  subjectCapabilityCodes?: string[] | null
   targetValue?: number | null
   targetUnit?: string | null
   notes?: string
@@ -217,6 +247,18 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
   if (!program) throw new Error("Programa PDTP no encontrado.")
   assertPdtpProgramEditableState(program)
 
+  const nextSubjectSource = input.subjectSource !== undefined ? input.subjectSource : activity.subjectSource
+  // Cambiar de fuente arrastraba los códigos anteriores, y la validación los
+  // rechazaba contra la fuente nueva: cambiar a `dotacion` era imposible sin
+  // limpiar las capacidades en la misma llamada. Si la fuente nueva no es por
+  // capacidad, los códigos dejan de significar algo y se limpian solos.
+  const nextSubjectCapabilityCodes = input.subjectCapabilityCodes !== undefined
+    ? normalizedSubjectCapabilityCodes(input.subjectCapabilityCodes)
+    : nextSubjectSource === "trabajadores_capacidad" ? activity.subjectCapabilityCodes : null
+  if (input.subjectSource !== undefined || input.subjectCapabilityCodes !== undefined) {
+    await validateCapabilitySubjectConfiguration(nextSubjectSource, nextSubjectCapabilityCodes)
+  }
+
   const now = new Date().toISOString()
   const before: Record<string, unknown> = {}
   const after: Record<string, unknown> = {}
@@ -244,7 +286,7 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
     "dueDays", "dueHours", "evidenceRequirement", "indicatorMode", "targetValue", "targetUnit",
     // Va junto a `indicatorMode` porque son la misma declaración partida en dos:
     // el modo dice "cuántos de cuántos" y la fuente dice de cuántos.
-    "subjectSource",
+    "subjectSource", "subjectCapabilityCodes",
   ] as const
   for (const field of configurableFields) {
     if (input[field] === undefined) continue
@@ -256,7 +298,19 @@ export async function updatePdtpActivity(input: PdtpActivityUpdateInput, userId:
     if (unchanged) continue
     before[field] = activity[field]
     after[field] = input[field]
-    updates[field] = input[field] as never
+    updates[field] = field === "subjectCapabilityCodes"
+      ? normalizedSubjectCapabilityCodes(input.subjectCapabilityCodes) as never
+      : input[field] as never
+  }
+
+  // El bucle anterior sólo escribe lo que el llamador mencionó. La limpieza
+  // implícita de capacidades al cambiar de fuente no viene en el input, así que
+  // se registra acá para que quede también en el changelog.
+  if (input.subjectCapabilityCodes === undefined
+    && JSON.stringify(nextSubjectCapabilityCodes) !== JSON.stringify(activity.subjectCapabilityCodes)) {
+    before.subjectCapabilityCodes = activity.subjectCapabilityCodes
+    after.subjectCapabilityCodes = nextSubjectCapabilityCodes
+    updates.subjectCapabilityCodes = nextSubjectCapabilityCodes as never
   }
 
   const horizon = deriveScheduleHorizon(program)
@@ -372,6 +426,8 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
   const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, input.programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
   assertPdtpProgramEditableState(program)
+  const subjectCapabilityCodes = normalizedSubjectCapabilityCodes(input.subjectCapabilityCodes)
+  await validateCapabilitySubjectConfiguration(input.subjectSource ?? null, subjectCapabilityCodes)
 
   const existingActivities = await db.select({ n: pdtpActivities.n, displayOrder: pdtpActivities.displayOrder })
     .from(pdtpActivities)
@@ -407,6 +463,7 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
       triggerDescription: input.triggerDescription ?? null, dueDays: input.dueDays ?? null,
       dueHours: input.dueHours ?? null,
       evidenceRequirement: input.evidenceRequirement ?? null, indicatorMode: input.indicatorMode ?? "planned_vs_completed",
+      subjectSource: input.subjectSource ?? null, subjectCapabilityCodes,
       targetValue: input.targetValue ?? null, targetUnit: input.targetUnit ?? null,
       sourceSheetRow: 0, notes: input.notes ?? null, createdAt: now, updatedAt: now,
     }).returning()
@@ -520,6 +577,8 @@ export async function duplicatePdtpActivity(activityId: string, userId: string) 
       dueHours: source.dueHours,
       evidenceRequirement: source.evidenceRequirement,
       indicatorMode: source.indicatorMode,
+      subjectSource: source.subjectSource,
+      subjectCapabilityCodes: source.subjectCapabilityCodes,
       targetValue: source.targetValue,
       targetUnit: source.targetUnit,
       sourceSheetRow: 0,

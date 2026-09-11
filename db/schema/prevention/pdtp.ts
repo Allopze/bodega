@@ -333,6 +333,8 @@ export const pdtpActivities = pgTable("pdtp_activities", {
    *   `expuestos_ges`       personas en un GES con vigilancia requerida
    *   `equipos`             vehículos y equipos activos de la faena
    *   `trabajadores_nuevos` actas de trabajador nuevo cerradas en el período
+   *   `trabajadores_capacidad` trabajadores activos cuyo cargo o excepción
+   *                            individual posee una capacidad configurada
    *   `null`                sin fuente: se usa el padrón cargado a mano y, si no
    *                         hay, la cantidad planificada del mes
    *
@@ -341,6 +343,10 @@ export const pdtpActivities = pgTable("pdtp_activities", {
    * importa en el cálculo, porque un flujo debe contar en meses sin calendario.
    */
   subjectSource:       text("subject_source"),
+  /** Códigos del catálogo `worker_capabilities` que se combinan como OR para
+   *  `trabajadores_capacidad`. Se guardan en la actividad porque el método de
+   *  selección forma parte del contenido que se revisa y firma. */
+  subjectCapabilityCodes: text("subject_capability_codes").array(),
   targetValue:         numeric("target_value", { precision: 10, scale: 2, mode: "number" }),
   targetUnit:          text("target_unit"),
   sourceSheetRow:     integer("source_sheet_row").notNull(),
@@ -368,10 +374,17 @@ export const pdtpActivities = pgTable("pdtp_activities", {
   check("pdtp_activities_due_days_hours_exclusive", sql`${table.dueDays} IS NULL OR ${table.dueHours} IS NULL`),
   check("pdtp_activities_mechanism_check", sql`${table.mechanism} IN ('enganche', 'constancia', 'formulario', 'compuesta', 'sin_definir')`),
   check("prevention_pdtp_activity_indicator_mode_valid", sql`${table.indicatorMode} IN ('planned_vs_completed', 'closed_on_time', 'completed_count', 'not_applicable', 'coverage')`),
-  check("pdtp_activities_subject_source_check", sql`${table.subjectSource} IS NULL OR ${table.subjectSource} IN ('dotacion', 'extintores', 'expuestos_ges', 'equipos', 'trabajadores_nuevos')`),
+  check("pdtp_activities_subject_source_check", sql`${table.subjectSource} IS NULL OR ${table.subjectSource} IN ('dotacion', 'extintores', 'expuestos_ges', 'equipos', 'trabajadores_nuevos', 'trabajadores_capacidad')`),
   // Declarar una fuente de padrón sin medir por cobertura no significa nada: el
   // resto de los modos no tiene denominador de sujetos.
   check("pdtp_activities_subject_source_requires_coverage", sql`${table.subjectSource} IS NULL OR ${table.indicatorMode} = 'coverage'`),
+  check("pdtp_activities_subject_capabilities_check", sql`(
+    ${table.subjectSource} = 'trabajadores_capacidad'
+    AND COALESCE(cardinality(${table.subjectCapabilityCodes}), 0) > 0
+  ) OR (
+    ${table.subjectSource} IS DISTINCT FROM 'trabajadores_capacidad'
+    AND ${table.subjectCapabilityCodes} IS NULL
+  )`),
   check("pdtp_activities_target_value_check", sql`${table.targetValue} IS NULL OR ${table.targetValue} >= 0`),
 ])
 

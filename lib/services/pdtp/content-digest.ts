@@ -107,6 +107,7 @@ export async function buildPdtpProgramContentSnapshot(
     // El método se firma —de qué población se mide— aunque el conteo no:
     // ver la nota de `activityWorksiteAdjustments` más abajo.
     subjectSource: pdtpActivities.subjectSource,
+    subjectCapabilityCodes: pdtpActivities.subjectCapabilityCodes,
     targetValue: pdtpActivities.targetValue,
     targetUnit: pdtpActivities.targetUnit,
     notes: pdtpActivities.notes,
@@ -296,6 +297,8 @@ export async function buildPdtpProgramContentSnapshot(
     .orderBy(asc(pdtpRoleLegendEntries.code))
 
   return stableJson({
+    // 12: las capacidades que definen `trabajadores_capacidad` entran al
+    // snapshot. Cambiarlas altera quién forma el padrón y requiere otra firma.
     // 11: `dueHours` entra al snapshot junto a `dueDays`: es el mismo
     // compromiso de plazo partido en dos unidades (Fase 1, 2026-09-02).
     // 10: `subject_source` entra al snapshot. Declarar contra qué población se
@@ -306,7 +309,7 @@ export async function buildPdtpProgramContentSnapshot(
     // definiciones distintas comparten número y la huella deja de ser
     // interpretable. Ninguna firma existente se invalida: no hay programas
     // firmados (confirmado el 2026-09-02).
-    schemaVersion: 11,
+    schemaVersion: 12,
     program,
     approvalSteps,
     activities: activities.map(({ id: _id, ...activity }) => activity),

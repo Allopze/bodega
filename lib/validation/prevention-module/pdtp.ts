@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { WORKER_CAPABILITY_CODE_PATTERN } from "@/lib/services/worker-positions/normalization"
 
 /**
  * Whitelist de rutas válidas para evidencia PDTP. Solo se aceptan paths
@@ -85,6 +86,41 @@ export const pdtpRecurrenceRuleSchema = z.object({
 const pdtpScheduleModeSchema = z.enum(["scheduled", "on_demand", "triggered"])
 const pdtpScheduleClassificationStatusSchema = z.enum(["confirmed", "needs_review"])
 const pdtpIndicatorModeSchema = z.enum(["planned_vs_completed", "closed_on_time", "completed_count", "not_applicable", "coverage"])
+const pdtpSubjectSourceSchema = z.enum([
+  "dotacion",
+  "extintores",
+  "expuestos_ges",
+  "equipos",
+  "trabajadores_nuevos",
+  "trabajadores_capacidad",
+])
+const pdtpSubjectCapabilityCodesSchema = z.array(
+  z.string().trim().toLowerCase()
+    .regex(WORKER_CAPABILITY_CODE_PATTERN, "Código de capacidad inválido"),
+).max(20, "Selecciona como máximo 20 capacidades")
+  .transform((codes) => [...new Set(codes)].sort())
+
+function validateSubjectSourceConfiguration(
+  value: { subjectSource?: string | null; subjectCapabilityCodes?: string[] | null },
+  ctx: z.RefinementCtx,
+) {
+  if (value.subjectSource === "trabajadores_capacidad" && !value.subjectCapabilityCodes?.length) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["subjectCapabilityCodes"],
+      message: "Selecciona al menos una capacidad para construir el padrón",
+    })
+  }
+  if (value.subjectSource !== undefined
+    && value.subjectSource !== "trabajadores_capacidad"
+    && value.subjectCapabilityCodes?.length) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["subjectCapabilityCodes"],
+      message: "Las capacidades sólo corresponden a la fuente de trabajadores por capacidad",
+    })
+  }
+}
 
 export const pdtpActivityUpdateSchema = z.object({
   activityId: z.string().min(1, "Actividad requerida"),
@@ -103,6 +139,8 @@ export const pdtpActivityUpdateSchema = z.object({
   dueHours: z.coerce.number().int().min(0).max(8760).nullable().optional(),
   evidenceRequirement: z.string().trim().max(3000).nullable().optional(),
   indicatorMode: pdtpIndicatorModeSchema.optional(),
+  subjectSource: pdtpSubjectSourceSchema.nullable().optional(),
+  subjectCapabilityCodes: pdtpSubjectCapabilityCodesSchema.nullable().optional(),
   targetValue: z.coerce.number().min(0).max(1000000).nullable().optional(),
   targetUnit: z.string().trim().max(80).nullable().optional(),
   scheduleOverrides: scheduleCellArraySchema.optional(),
@@ -117,6 +155,7 @@ export const pdtpActivityUpdateSchema = z.object({
   if (value.scheduleMode === "scheduled" && value.recurrenceRule === null) {
     ctx.addIssue({ code: "custom", path: ["recurrenceRule"], message: "Define una frecuencia para una actividad programada" })
   }
+  validateSubjectSourceConfiguration(value, ctx)
 })
 
 export const pdtpActivityAddSchema = z.object({
@@ -135,6 +174,8 @@ export const pdtpActivityAddSchema = z.object({
   dueHours: z.coerce.number().int().min(0).max(8760).nullable().optional(),
   evidenceRequirement: z.string().trim().max(3000).nullable().optional(),
   indicatorMode: pdtpIndicatorModeSchema.default("planned_vs_completed"),
+  subjectSource: pdtpSubjectSourceSchema.nullable().optional(),
+  subjectCapabilityCodes: pdtpSubjectCapabilityCodesSchema.nullable().optional(),
   targetValue: z.coerce.number().min(0).max(1000000).nullable().optional(),
   targetUnit: z.string().trim().max(80).nullable().optional(),
   notes: z.string().max(5000).optional().or(z.literal("")),
@@ -144,6 +185,7 @@ export const pdtpActivityAddSchema = z.object({
   if (value.scheduleMode === "triggered" && !value.triggerDescription?.trim()) {
     ctx.addIssue({ code: "custom", path: ["triggerDescription"], message: "Describe el evento que genera la obligación" })
   }
+  validateSubjectSourceConfiguration(value, ctx)
 })
 
 export const pdtpActivityOverrideSchema = z.object({

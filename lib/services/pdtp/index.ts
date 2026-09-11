@@ -84,6 +84,19 @@ export type { PdtpApprovalStepInput, PdtpApprovalSegregationRule } from "./appro
 export { getPdtpAggregatedSheetViewByProgram, getPdtpSheetView, getPdtpSheetViewByProgram, buildPdtpExport } from "./sheets"
 export { markPdtpExecution, approvePdtpExecution, rejectPdtpExecution, listPendingPdtpExecutions, getPendingPdtpApprovalsForView, getPdtpChangeLog } from "./executions"
 export { getPdtpComplianceIndicators, getPdtpComplianceIndicatorsForScope, getPdtpComplianceByCategoryForScope } from "./compliance"
+export {
+  PDTP_SUBJECT_SOURCES,
+  isFlowSubjectSource,
+  resolvePdtpSubjectCount,
+  resolvePdtpSubjectRoster,
+} from "./subject-registry"
+export type {
+  PdtpSubjectPeriod,
+  PdtpSubjectRosterMember,
+  PdtpSubjectRosterOptions,
+  PdtpSubjectRosterResolution,
+  PdtpSubjectSource,
+} from "./subject-registry"
 export { updatePdtpActivity, addPdtpActivity, batchUpdatePdtpActivities, duplicatePdtpActivity, retirePdtpActivity, reorderPdtpActivities, listPdtpProgramActivities, listPdtpProgramScheduleForYear } from "./activities"
 export type { PdtpActivityBatchUpdateInput } from "./activities"
 export { findPdtpWeeklyPending, runPdtpWeeklyReminders, runPdtpActionPlanVencidasReminders, runPdtpObligationReminders, runPdtpSignaturePendingReminders } from "./reminders"

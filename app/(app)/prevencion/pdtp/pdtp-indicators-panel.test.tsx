@@ -31,6 +31,7 @@ const DATA: PdtpComplianceIndicators = {
   ],
   annual: { planned: 20, executed: 9, percent: 0.45 },
   lastExecutionUpdatedAt: "2026-01-15T10:30:00.000Z",
+  subjectRosterIssues: [],
 }
 
 const INTEGRAL: PdtpIntegralCompliance = {

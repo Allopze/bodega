@@ -3398,3 +3398,38 @@ describe("prevention PDTP service", () => {
     ])
   })
 })
+
+describe("PDTP — cambio de fuente de padrón", () => {
+  it("limpia las capacidades al mover la actividad a una fuente que no las usa", async () => {
+    const { addPdtpActivity, createLegacyPdtpProgramForTests, updatePdtpActivity } =
+      await import("@/lib/services/prevention-pdtp")
+    const program = await createLegacyPdtpProgramForTests({
+      year: 2037, title: "Programa con padrón por capacidad", userId: "user-1",
+    })
+    const activity = await addPdtpActivity({
+      programId: program.id,
+      activity: "Manejo a la defensiva",
+      program: "Prevención",
+      responsibleSlugs: ["prf"],
+      responsibleDisplay: "PRF",
+      scheduleMode: "on_demand",
+      scheduleClassificationStatus: "confirmed",
+      indicatorMode: "coverage",
+      subjectSource: "trabajadores_capacidad",
+      subjectCapabilityCodes: ["drives_vehicle"],
+      sheetCodes: ["pdtp_general"],
+    }, "user-1")
+
+    // El llamador sólo cambia la fuente. Antes los códigos anteriores
+    // sobrevivían y la validación los rechazaba contra la fuente nueva, así que
+    // este cambio era imposible sin limpiarlos en la misma llamada.
+    await updatePdtpActivity({ activityId: activity.id, subjectSource: "dotacion" }, "user-1")
+
+    const [guardada] = await inMemoryDb.select()
+      .from(schema.pdtpActivities)
+      .where(eq(schema.pdtpActivities.id, activity.id))
+      .limit(1)
+    expect(guardada?.subjectSource).toBe("dotacion")
+    expect(guardada?.subjectCapabilityCodes).toBeNull()
+  })
+})

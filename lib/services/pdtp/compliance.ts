@@ -13,7 +13,7 @@ import {
 import { PDTP_ESTADOS_CERRADOS } from "./checklist-domain"
 import { capaEstado } from "./capa-view"
 import { loadApprovedExecutionsForWorksites, loadProgramScheduleAndExecutions } from "./helpers"
-import { isFlowSubjectSource, resolvePdtpSubjectCount } from "./subject-registry"
+import { isFlowSubjectSource, resolvePdtpSubjectRoster } from "./subject-registry"
 import { filterPdtpRowsFromActivation } from "./period"
 
 export type PdtpComplianceMonth = {
@@ -37,6 +37,16 @@ export type PdtpComplianceIndicators = {
    * indicador, o `null` si no hay ninguna todavía. No es la hora del
    * cálculo (eso es "corte", ver `asOf` en el caller) sino de los datos. */
   lastExecutionUpdatedAt: string | null
+  /** Fuentes automáticas declaradas pero todavía sin una nómina utilizable.
+   *  Se exponen para que la vista no confunda "sin clasificar" con "no aplica". */
+  subjectRosterIssues: Array<{
+    activityId: string
+    worksiteId: string
+    source: "trabajadores_capacidad"
+    status: "pending_classification" | "not_configured"
+    capabilityCodes: string[]
+    explanation: string
+  }>
 }
 
 type ApprovedExecution = Awaited<ReturnType<typeof loadProgramScheduleAndExecutions>>["executionRows"][number]
@@ -146,6 +156,7 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     id: pdtpActivities.id,
     indicatorMode: pdtpActivities.indicatorMode,
     subjectSource: pdtpActivities.subjectSource,
+    subjectCapabilityCodes: pdtpActivities.subjectCapabilityCodes,
   }).from(pdtpActivities)
     .where(eq(pdtpActivities.programId, program.id))
 
@@ -156,6 +167,7 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
       quarterly: Array.from({ length: 4 }, (_, i) => ({ quarter: i + 1, planned: 0, executed: 0, percent: null })),
       annual: { planned: 0, executed: 0, percent: null },
       lastExecutionUpdatedAt: null,
+      subjectRosterIssues: [],
     }
   }
 
@@ -186,10 +198,10 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
    * gana sobre lo derivado: si alguien lo cargó a mano, sabe algo que la consulta
    * no.
    *
-   * Un registro vacío **no** es un padrón de cero: se cae a lo planificado. Con
-   * cero, la actividad aportaría 0 al denominador y desaparecería del cómputo,
-   * que es exactamente el sesgo que premia el no configurar. Que una faena no
-   * tenga extintores se declara excluyendo la actividad (R4).
+   * Las fuentes históricas conservan la caída a planificación cuando su
+   * registro está vacío. `trabajadores_capacidad` es distinta: un cero indica
+   * clasificación pendiente, se expone como incidencia y jamás se reemplaza
+   * silenciosamente por la cantidad planificada.
    */
   const expectedByActivity = new Map<string, number>()
   const coverageTargetPctByActivity = new Map<string, number>()
@@ -197,6 +209,7 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
   const derivedStockByActivity = new Map<string, number>()
   const derivedFlowByActivityMonth = new Map<string, number>()
   const sourceByActivity = new Map<string, string | null>(activityRows.map((a) => [a.id, a.subjectSource]))
+  const subjectRosterIssues: PdtpComplianceIndicators["subjectRosterIssues"] = []
 
   if (worksiteId) {
     const paramRows = await db.select({
@@ -221,13 +234,35 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     for (const activity of needDerived) {
       if (isFlowSubjectSource(activity.subjectSource)) {
         for (let month = 1; month <= 12; month++) {
-          const count = await resolvePdtpSubjectCount(activity.subjectSource, worksiteId, { year, month })
-          if (count != null && count > 0) derivedFlowByActivityMonth.set(`${activity.id}:${month}`, count)
+          const roster = await resolvePdtpSubjectRoster(activity.subjectSource, worksiteId, { year, month })
+          if (roster && roster.count > 0) derivedFlowByActivityMonth.set(`${activity.id}:${month}`, roster.count)
         }
         continue
       }
-      const count = await resolvePdtpSubjectCount(activity.subjectSource, worksiteId, { year, month: 1 })
-      if (count != null && count > 0) derivedStockByActivity.set(activity.id, count)
+      const roster = await resolvePdtpSubjectRoster(
+        activity.subjectSource,
+        worksiteId,
+        { year, month: 1 },
+        { capabilityCodes: activity.subjectCapabilityCodes },
+      )
+      if (!roster) continue
+      if (activity.subjectSource === "trabajadores_capacidad") {
+        // Guardar también cero es deliberado: `Map.has` diferencia una nómina
+        // vacía resuelta de la ausencia de fuente que sí cae a planificación.
+        derivedStockByActivity.set(activity.id, roster.count)
+        if (roster.status !== "resolved") {
+          subjectRosterIssues.push({
+            activityId: activity.id,
+            worksiteId,
+            source: "trabajadores_capacidad",
+            status: roster.status,
+            capabilityCodes: roster.capabilityCodes,
+            explanation: roster.explanation,
+          })
+        }
+      } else if (roster.count > 0) {
+        derivedStockByActivity.set(activity.id, roster.count)
+      }
     }
   }
 
@@ -331,7 +366,16 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     return !latest || row.updatedAt > latest ? row.updatedAt : latest
   }, null)
 
-  return { programId: program.id, year, target: program.complianceTarget, monthly, quarterly, annual, lastExecutionUpdatedAt }
+  return {
+    programId: program.id,
+    year,
+    target: program.complianceTarget,
+    monthly,
+    quarterly,
+    annual,
+    lastExecutionUpdatedAt,
+    subjectRosterIssues,
+  }
 }
 
 /**
@@ -373,6 +417,7 @@ export async function getPdtpComplianceIndicatorsForScope(
   const lastExecutionUpdatedAt = resolved.reduce<string | null>((latest, entry) => {
     return entry.lastExecutionUpdatedAt && (!latest || entry.lastExecutionUpdatedAt > latest) ? entry.lastExecutionUpdatedAt : latest
   }, null)
+  const subjectRosterIssues = resolved.flatMap((entry) => entry.subjectRosterIssues)
 
   return {
     programId: resolved[0]!.programId,
@@ -382,6 +427,7 @@ export async function getPdtpComplianceIndicatorsForScope(
     quarterly,
     annual: { planned: annualPlanned, executed: annualExecuted, percent: annualPlanned > 0 ? Math.round((annualExecuted / annualPlanned) * 100) / 100 : null },
     lastExecutionUpdatedAt,
+    subjectRosterIssues,
     worksiteCount: worksiteIds.length,
     perWorksite,
   }

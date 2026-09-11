@@ -119,6 +119,23 @@ if ! prod_run test -d "$PROD_DIR"; then
   exit 1
 fi
 
+# Una etapa de datos que simula en vez de escribir es peor que una que falla:
+# imprime sus "✓ instalada", sale con 0, y el deploy sigue creyendo que sembró.
+# Así estuvo `SEED_DRY_RUN=true` en el `.env` de producción desde el 21-ago,
+# neutralizando `seed-inspection-templates` en 23 despliegues seguidos sin que
+# nada se quejara: las 15 plantillas del catálogo nunca existieron y la
+# compuerta del PDTP terminó culpando a las actividades. Cada script trae su
+# propia variable, así que se comprueban todas por patrón y no con una lista
+# que se quedaría corta en cuanto alguien agregue la novena.
+dry_run_vars="$(prod_sh "grep -oE '^[A-Z_]*DRY_RUN=(true|1)' $(printf '%q' "$PROD_DIR")/.env 2>/dev/null | cut -d= -f1" || true)"
+if [ -n "$dry_run_vars" ]; then
+  echo "ERROR: el .env de producción deja etapas de datos en modo simulación:"
+  echo "$dry_run_vars" | sed 's/^/       - /'
+  echo "       Esas etapas dirían que sembraron sin escribir nada. Quítalas de"
+  echo "       $PROD_SSH:$PROD_DIR/.env (el dry run se pasa por comando, no se fija)."
+  exit 1
+fi
+
 branch="$(git rev-parse --abbrev-ref HEAD)"
 if [ "$branch" != "main" ]; then
   echo "ERROR: on branch '$branch', not 'main'. Switch to main before deploying."

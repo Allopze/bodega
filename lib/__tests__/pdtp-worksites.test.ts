@@ -142,13 +142,13 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
     expect(ws1Activities.map((a) => a.id)).toContain(activity.id)
   })
 
-  it("agregar membresía o una exclusión cambia el digest firmable (schemaVersion 11)", async () => {
+  it("agregar membresía o una exclusión cambia el digest firmable (schemaVersion 12)", async () => {
     const { setPdtpProgramWorksites, excludeActivityForWorksite } = await import("@/lib/services/pdtp/worksites")
     const { computePdtpProgramContentDigest } = await import("@/lib/services/pdtp/content-digest")
     const { program, activity } = await createDraftProgramWithActivity(2042)
 
     const baseline = await computePdtpProgramContentDigest(program.id)
-    expect(baseline.snapshot).toMatchObject({ schemaVersion: 11 })
+    expect(baseline.snapshot).toMatchObject({ schemaVersion: 12 })
 
     await setPdtpProgramWorksites(program.id, ["ws-1"], "user-1")
     const afterMembership = await computePdtpProgramContentDigest(program.id)
@@ -157,6 +157,35 @@ describe("PDTP multifaena: membresía y exclusiones", () => {
     await excludeActivityForWorksite(activity.id, "ws-1", "Motivo de exclusión suficientemente largo", "user-1")
     const afterExclusion = await computePdtpProgramContentDigest(program.id)
     expect(afterExclusion.digest).not.toBe(afterMembership.digest)
+  })
+
+  it("cambiar las capacidades del padrón modifica el contenido firmable", async () => {
+    const { updatePdtpActivity } = await import("@/lib/services/pdtp/activities")
+    const { computePdtpProgramContentDigest } = await import("@/lib/services/pdtp/content-digest")
+    const { program, activity } = await createDraftProgramWithActivity(2051)
+
+    await updatePdtpActivity({
+      activityId: activity.id,
+      indicatorMode: "coverage",
+      subjectSource: "trabajadores_capacidad",
+      subjectCapabilityCodes: ["drives_vehicle"],
+    }, "user-1")
+    const driversOnly = await computePdtpProgramContentDigest(program.id)
+    expect(driversOnly.snapshot).toMatchObject({
+      schemaVersion: 12,
+      activities: [expect.objectContaining({
+        subjectSource: "trabajadores_capacidad",
+        subjectCapabilityCodes: ["drives_vehicle"],
+      })],
+    })
+
+    await updatePdtpActivity({
+      activityId: activity.id,
+      subjectSource: "trabajadores_capacidad",
+      subjectCapabilityCodes: ["drives_vehicle", "operates_equipment"],
+    }, "user-1")
+    const driversAndOperators = await computePdtpProgramContentDigest(program.id)
+    expect(driversAndOperators.digest).not.toBe(driversOnly.digest)
   })
 
   it("rechaza declarar membresía o exclusiones fuera de draft (guarda central)", async () => {
