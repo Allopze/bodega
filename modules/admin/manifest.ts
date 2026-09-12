@@ -41,6 +41,8 @@ export const adminModule = {
     // Flota
     "admin:fleet_catalog",
     "admin:fleet_vehicles",
+    // TI
+    "admin:it_asset_types",
     // Sistema
     "admin:config",
     "admin:smtp",
@@ -82,6 +84,7 @@ export const adminModule = {
     "admin:deviation_catalog": { id: "p-adm-dev",   description: "Gestionar el catálogo maestro de desviaciones de inspección" },
     "admin:fleet_catalog":     { id: "p-adm-fleet", description: "Gestionar catálogos administrativos de flota" },
     "admin:fleet_vehicles":    { id: "p-adm-fleetveh", description: "Mantener el padrón de vehículos: alta, edición, baja e importación desde planilla" },
+    "admin:it_asset_types":    { id: "p-adm-itat",   description: "Gestionar el catálogo de tipos de activo TI" },
     "admin:config":            { id: "p-adm-cfg",   description: "Configuración del sistema" },
     "admin:smtp":              { id: "p-adm-smtp",  description: "Configurar servidor SMTP" },
     "admin:email_templates":   { id: "p-adm-tpl",   description: "Gestionar plantillas de correo" },
@@ -128,6 +131,7 @@ export const adminModule = {
     { roleSlug: "administrador", permission: "admin:deviation_catalog" },
     { roleSlug: "administrador", permission: "admin:fleet_catalog" },
     { roleSlug: "administrador", permission: "admin:fleet_vehicles" },
+    { roleSlug: "administrador", permission: "admin:it_asset_types" },
     { roleSlug: "administrador", permission: "admin:config" },
     { roleSlug: "administrador", permission: "admin:smtp" },
     { roleSlug: "administrador", permission: "admin:email_templates" },
@@ -196,6 +200,8 @@ export const adminModule = {
     // Prevencionista faena — solo trabajadores (para EPP tracking)
     { roleSlug: "solicitante_faena", permission: "admin:workers" },
     { roleSlug: "prevencionista_faena", permission: "admin:workers" },
+    // Técnico TI — dueño operativo del inventario de TI
+    { roleSlug: "tecnico_ti", permission: "admin:it_asset_types" },
     // Admin de módulos
     { roleSlug: "administrador", permission: "admin:module_management" },
     { roleSlug: "administrador", permission: "admin:backups" },

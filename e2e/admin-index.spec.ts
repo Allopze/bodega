@@ -15,6 +15,7 @@ const MODULES_BY_GROUP = [
       "/admin/desviaciones",
       "/admin/pdtp-catalogos",
       "/admin/flota-catalogos",
+      "/admin/tipos-activo",
     ],
   },
   {

@@ -6,6 +6,7 @@ import { CONTRACT as costCentersContract } from "@/app/(app)/admin/centros-costo
 import { CONTRACT as productsContract } from "@/app/(app)/admin/productos/catalog-contract"
 import { CONTRACT as vehiclesContract } from "@/app/(app)/combustibles/vehiculos/catalog-contract"
 import { CONTRACT as fuelSuppliersContract } from "@/app/(app)/combustibles/proveedores-combustible/catalog-contract"
+import { CONTRACT as itAssetTypesContract } from "@/app/(app)/admin/tipos-activo/catalog-contract"
 
 /**
  * Fase 0 contract test — every registered catalog must declare the same
@@ -20,6 +21,7 @@ const CATALOGS = [
   productsContract,
   vehiclesContract,
   fuelSuppliersContract,
+  itAssetTypesContract,
 ]
 
 describe("catalog contract", () => {

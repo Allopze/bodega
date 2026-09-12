@@ -6,7 +6,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import Link from "next/link"
 import {
-  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear, FileText, ArrowRight, EnvelopeSimple, ToggleLeft, HardDrives, Receipt, Package, ShippingContainer, Briefcase, WarningCircle,
+  Users, MapPin, Cube, Buildings, ShieldCheck, UserCircle, Gear, FileText, ArrowRight, EnvelopeSimple, ToggleLeft, HardDrives, Receipt, Package, ShippingContainer, Briefcase, WarningCircle, Laptop,
 } from "@phosphor-icons/react/dist/ssr"
 
 export const metadata: Metadata = { title: "Panel de Administración" }
@@ -149,6 +149,14 @@ const modules = [
     group:       "catalogos",
   },
   {
+    title:       "Tipos de activo TI",
+    description: "Notebooks, periféricos y demás categorías de activos tecnológicos que se pueden registrar en el inventario TI.",
+    href:        "/admin/tipos-activo",
+    icon:        Laptop,
+    permission:  "admin:it_asset_types",
+    group:       "catalogos",
+  },
+  {
     title:       "Configuración",
     description: "Ajustar parámetros globales del sistema, como el límite de subida de archivos PDF.",
     href:        "/admin/configuracion",
@@ -256,7 +264,7 @@ const moduleGroups = [
   {
     key:         "catalogos",
     title:       "Catálogos",
-    description: "Listas maestras reutilizadas por otros módulos: productos, EPP, cargos, desviaciones, PDTP y flota.",
+    description: "Listas maestras reutilizadas por otros módulos: productos, EPP, cargos, desviaciones, PDTP, flota y TI.",
   },
   {
     key:         "plataforma",

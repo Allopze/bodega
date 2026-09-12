@@ -144,6 +144,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/traceability-integrity-cases.test.ts",
   // ── Módulo TI ─────────────────────────────────────────────────────────────
   "lib/__tests__/ti-assets-pglite.test.ts",
+  "lib/__tests__/ti-asset-types-pglite.test.ts",
   "lib/__tests__/ti-assignments-pglite.test.ts",
   "lib/__tests__/ti-tickets-pglite.test.ts",
   "lib/__tests__/ti-licenses-access-pglite.test.ts",
