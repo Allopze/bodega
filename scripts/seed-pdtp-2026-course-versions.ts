@@ -10,10 +10,12 @@
  * Los trece cursos del programa existen como ficha pero sin ninguna versión, y
  * sin versión publicada `createTrainingSession` no deja programar la sesión: la
  * actividad del PDTP queda planificada y sin forma de cumplirse. Esto cubre los
- * nueve que tienen temario documentado. Los cuatro restantes —N°55 primeros
- * auxilios, N°56 manejo a la defensiva, N°59 árbol causal y N°60 liderazgo— los
- * dicta un organismo externo y su temario es el programa de quien los imparta;
- * no se inventan acá.
+ * doce que tienen temario documentado.
+ *
+ * Queda fuera sólo la N°60 (liderazgo para la línea de mando): la ficha OTEC de
+ * referencia declara 16 horas y el programa comprometió 8. Duplicar la duración
+ * declarada de una actividad del programa es una decisión de Prevención, no un
+ * detalle de carga, así que se deja pendiente en vez de elegir por ella.
  *
  * **En borrador, y hasta ahí llega el script.** Publicar exige recorrer
  * `draft → in_review → approved → published`, y `transitionTrainingCourseVersion`
@@ -59,6 +61,10 @@ import { nanoid } from "@/lib/id"
 import { TRAINING_MODALITIES } from "@/lib/validation/prevention-module/training"
 
 const DRY_RUN = process.env.SEED_VERSIONS_DRY_RUN === "true"
+
+const OTEC_MINUTES_NOTE =
+  "La ficha del OTEC publica los módulos y la duración total del curso, no el reparto de minutos por "
+  + "módulo: esta distribución es una adaptación interna para programación."
 
 const MUTUAL_MINUTES_NOTE =
   "Mutual publica el contenido y la duración total del curso, no el reparto de minutos por módulo: "
@@ -208,6 +214,54 @@ export const PDTP_2026_COURSE_VERSIONS: readonly CourseVersionSeed[] = [
       { title: "Marco normativo y conceptual", minutes: 60, detail: `Marco de Sendai 2015-2030. Referencia normativa nacional y aspectos legales de la gestión del riesgo. Conceptos de centro de trabajo, amenaza, vulnerabilidad, riesgo, mitigación y preparación. ${MUTUAL_MINUTES_NOTE}` },
       { title: "Diagnóstico de riesgos y recursos", minutes: 100, detail: "Qué es el COGRID y sus requisitos. Organización por centro de trabajo. Rol del Coordinador GRD, responsabilidades y programa de trabajo. Uso de la Matriz GRD. Análisis histórico. Identificación del riesgo de desastres, medidas de tratamiento y plan de reducción." },
       { title: "Planificación de la respuesta", minutes: 80, detail: "Alerta y alarma. Comunicación e información. Coordinaciones. Evaluación primaria, decisiones, evaluación secundaria y readecuación. Simulaciones y simulacros." },
+    ],
+  },
+  {
+    code: "PDTP-55",
+    versionLabel: "01",
+    durationMinutes: 480,
+    modality: "presencial",
+    assessmentType: "both",
+    passingScore: 70,
+    source: "Ficha OTEC Capacítame \"Técnicas de Primeros Auxilios\" (8 horas): https://capacita-me.cl/tpa8/",
+    contentOutline: [
+      { title: "Introducción a los primeros auxilios", minutes: 60, detail: `Conceptos y principios generales. Rol del auxiliador. Seguridad antes de intervenir. Evaluación inicial de una emergencia. ${OTEC_MINUTES_NOTE}` },
+      { title: "Manejo en caso de emergencias", minutes: 180, detail: "Actuación frente a situaciones de emergencia. Evaluación del accidentado. Heridas y hemorragias. Quemaduras. Lesiones traumáticas. Fracturas, luxaciones y esguinces. Obstrucción de vía aérea." },
+      { title: "Uso y manejo del DEA", minutes: 120, detail: "Conceptos básicos de reanimación. Cadena de supervivencia. Reanimación cardiopulmonar. Reconocimiento de un paro cardiorrespiratorio. Funcionamiento y utilización segura del desfibrilador externo automático." },
+      { title: "Atención primaria del accidentado", minutes: 120, detail: "Evaluación primaria. Estado de conciencia. Respiración y circulación. Posición de seguridad. Activación de servicios de emergencia. Atención inicial mientras llega ayuda especializada." },
+    ],
+  },
+  {
+    code: "PDTP-56",
+    versionLabel: "01",
+    durationMinutes: 480,
+    modality: "presencial",
+    assessmentType: "both",
+    passingScore: 70,
+    source: "Ficha OTEC GoCursos \"Manejo a la Defensiva\" (8 horas): https://www.gocursos.cl/cursos/manejo_a_la_defensiva/",
+    contentOutline: [
+      { title: "Introducción al manejo defensivo", minutes: 60, detail: `Conceptos básicos. Importancia de la atención y concentración. Factores de riesgo durante la conducción. Evaluación del entorno vial. Observación y anticipación de peligros. ${OTEC_MINUTES_NOTE}` },
+      { title: "Técnicas de conducción segura", minutes: 90, detail: "Distancia segura de seguimiento. Uso de espejos retrovisores. Maniobras de emergencia y evasión. Control del vehículo en condiciones adversas. Conducción según el tipo de vía." },
+      { title: "Psicología del conductor", minutes: 70, detail: "Factores psicológicos asociados a la conducción. Emociones y estrés al volante. Fatiga. Alcohol y drogas. Toma de decisiones bajo presión." },
+      { title: "Normativa vial y señalización", minutes: 70, detail: "Señales de tránsito. Normas de circulación. Señales preventivas y de advertencia. Prioridades y derechos de paso. Cumplimiento de la normativa de tránsito." },
+      { title: "Factores ambientales", minutes: 70, detail: "Condiciones climáticas adversas. Cambios de iluminación. Adherencia y condiciones de la calzada. Conducción urbana y rural. Vías resbaladizas." },
+      { title: "Mantenimiento preventivo del vehículo", minutes: 70, detail: "Importancia del mantenimiento. Revisión de neumáticos y frenos. Líquidos y sistemas del vehículo. Identificación de fallas. Revisiones periódicas." },
+      { title: "Evaluación y mejora continua", minutes: 50, detail: "Autoevaluación de la conducción. Identificación de oportunidades de mejora. Incorporación de hábitos seguros. Actualización de conocimientos. Compromiso con una conducción preventiva." },
+    ],
+  },
+  {
+    code: "PDTP-59",
+    versionLabel: "01",
+    durationMinutes: 480,
+    modality: "presencial",
+    assessmentType: "both",
+    passingScore: 70,
+    source: "Ficha OTEC Capacítame \"Técnicas de Investigación de Accidentes / Árbol de Causa\" (8 horas): https://capacita-me.cl/arboldecausa/",
+    contentOutline: [
+      { title: "Fundamentos de la investigación de accidentes", minutes: 60, detail: `Conceptos de accidente e incidente. Objetivos de una investigación. Importancia de determinar las causas. Investigación orientada a la prevención y no a la búsqueda de culpables. ${OTEC_MINUTES_NOTE}` },
+      { title: "Marco normativo", minutes: 60, detail: "Normativa chilena aplicable a accidentes del trabajo. Responsabilidades en la investigación. Registros y antecedentes necesarios." },
+      { title: "Recolección de información mediante Árbol de Causas", minutes: 150, detail: "Levantamiento de antecedentes. Identificación de hechos. Entrevistas y recopilación de información. Diferenciación entre hechos comprobados y opiniones. Reconstrucción del accidente." },
+      { title: "Construcción y análisis del Árbol de Causas", minutes: 210, detail: "Organización de los hechos. Relaciones lógicas entre antecedentes. Representación gráfica del accidente. Identificación de causas. Análisis del árbol. Determinación de medidas correctivas y preventivas." },
     ],
   },
   {

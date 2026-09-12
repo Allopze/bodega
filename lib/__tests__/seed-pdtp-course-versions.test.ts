@@ -97,17 +97,15 @@ describe("carga de versiones de curso PDTP 2026", () => {
     }
   })
 
-  it("no repite un curso ni deja huecos sin explicar", () => {
+  it("no repite un curso y deja fuera sólo el que tiene un conflicto abierto", () => {
     const codes = PDTP_2026_COURSE_VERSIONS.map((item) => item.code)
     expect(new Set(codes).size).toBe(codes.length)
-    /* Los cuatro que faltan para los trece del programa los dicta un organismo
-     * externo y su temario es el programa de quien los imparta; se documenta
-     * acá para que la ausencia se lea como decisión y no como olvido. */
-    const externos = ["PDTP-55", "PDTP-56", "PDTP-59", "PDTP-60"]
-    for (const code of externos) {
-      expect(codes, `${code} no debería cargarse con temario propio`).not.toContain(code)
-    }
-    expect(codes.length + externos.length).toBe(13)
+    /* La N°60 es la única que falta de los trece: su ficha OTEC declara 16 horas
+     * y el programa comprometió 8. Duplicar la duración de una actividad
+     * comprometida es decisión de Prevención, así que queda pendiente en vez de
+     * elegirse acá. Se afirma para que la ausencia se lea como decisión. */
+    expect(codes, "N°60 tiene un conflicto de duración sin resolver").not.toContain("PDTP-60")
+    expect(codes.length).toBe(12)
   })
 
   it("PDTP-54 usa la modalidad del certificado y no la del catálogo streaming", () => {
