@@ -15,7 +15,15 @@ export const TRAINING_COURSE_KINDS = [
   "retraining",
 ] as const
 
-export const TRAINING_MODALITIES = ["presencial", "elearning", "mixta", "practica"] as const
+/**
+ * Modalidad de la capacitación. Mezcla canal de entrega (`presencial`,
+ * `elearning`, `mixta`) con forma pedagógica (`practica`, `teorica`) porque así
+ * la nombran las fichas de los organismos administradores: Mutual describe sus
+ * cursos como "teórica" o "teórico-práctica", no por el canal. Sin `teorica` la
+ * ficha de un curso expositivo había que forzarla a `presencial` o `elearning`,
+ * que dice dónde se dictó y no cómo.
+ */
+export const TRAINING_MODALITIES = ["presencial", "elearning", "mixta", "practica", "teorica"] as const
 
 /**
  * Piso regulatorio del DS 44 art. 16: capacitación de al menos 8 horas (480

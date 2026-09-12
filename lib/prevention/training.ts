@@ -57,6 +57,7 @@ export const TRAINING_MODALITY_LABELS: Record<string, string> = {
   elearning: "E-learning",
   mixta: "Mixta",
   practica: "Práctica",
+  teorica: "Teórica",
 }
 
 export const COMPETENCY_SCOPE_LABELS: Record<string, string> = {
