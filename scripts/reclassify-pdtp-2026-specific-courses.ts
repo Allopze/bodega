@@ -174,39 +174,6 @@ export const PDTP_2026_COURSE_RECLASSIFICATION: readonly ReclassifyEntry[] = [
       + "corrige además la base legal, que citaba el art. 45 del DS 594 —extintores— para un curso de "
       + "primeros auxilios.",
   },
-  {
-    // No cambia de clasificación: sólo se le declara vigencia, que estaba en
-    // blanco. Es regla interna de refresco, no plazo legal.
-    code: "PDTP-57",
-    expectKind: null,
-    toKind: null,
-    legalBasis: null,
-    minimumDurationMinutes: null,
-    validityMonths: 24,
-    evidence:
-      "Informe de cierre de datos faltantes, Servicios Chome, 12/09/2026: 24 meses como regla interna "
-      + "de refresco de competencias, con refuerzo anticipado si la detección de necesidades, un cambio "
-      + "de rol o problemas de coordinación lo justifican. No se presenta como exigencia legal.",
-    reason:
-      "Se declara vigencia de 24 meses como regla interna de trazabilidad y refresco. El plazo máximo "
-      + "de dos años del art. 16 del DS 44 aplica a la capacitación general de ese artículo, no a este "
-      + "curso; la cifra coincide por criterio interno y no por obligación.",
-  },
-  {
-    code: "PDTP-60",
-    expectKind: null,
-    toKind: null,
-    legalBasis: null,
-    minimumDurationMinutes: null,
-    validityMonths: 24,
-    evidence:
-      "Informe de cierre de datos faltantes, Servicios Chome, 12/09/2026: 24 meses como regla interna "
-      + "de refresco, con refuerzo al asumir jefatura, ante cambio de rol o proceso, o por brechas de "
-      + "desempeño preventivo. No se presenta como exigencia legal.",
-    reason:
-      "Se declara vigencia de 24 meses como regla interna de trazabilidad y refresco para la línea de "
-      + "mando. No es un plazo legal específico de este curso.",
-  },
 ]
 
 export type EntryOutcome =

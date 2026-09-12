@@ -96,16 +96,17 @@ const COURSES: Array<{
   // citaba el art. 45 del DS 594 —que obliga a DISPONER de extintores—, heredado
   // por error de la ficha de la N°54.
   { code: "PDTP-55", name: "Primeros auxilios", n: 55, kind: "practical_training", minutes: 480, legalBasis: "Código del Trabajo art. 184 (acceso oportuno a atención médica ante accidente o emergencia); DS 44/2023 arts. 4 y 19; Ley 16.744 como marco general", validityMonths: 24 },
-  // Vigencia de 24 meses por regla interna de refresco, no por plazo legal: el
-  // máximo de dos años del art. 16 rige su propia capacitación general, no ésta.
-  { code: "PDTP-57", name: "Comunicación efectiva", n: 57, kind: "practical_training", minutes: 240, validityMonths: 24 },
+  // Sin vigencia declarada, a propósito: su repetición se activa por detección
+  // de necesidades o cambio de rol, no por una caducidad de calendario.
+  { code: "PDTP-57", name: "Comunicación efectiva", n: 57, kind: "practical_training", minutes: 240 },
   { code: "PDTP-58", name: "Coordinador de Gestión de Riesgos de Desastres", n: 58, kind: "practical_training", minutes: 240, legalBasis: "Designación y formación del Coordinador GRD del centro de trabajo", validityMonths: 36 },
   { code: "PDTP-59", name: "Investigación de accidentes por árbol causal", n: 59, kind: "practical_training", minutes: 480, validityMonths: 24 },
   // Ocho horas con temario propio orientado a la función preventiva del
   // supervisor. Las fichas OTEC de liderazgo general declaran 16, pero recortar
-  // un curso ajeno deja un temario que no coincide con su fuente. Vigencia de 24
-  // meses por regla interna, igual que la N°57.
-  { code: "PDTP-60", name: "Liderazgo para la línea de mando", n: 60, kind: "practical_training", minutes: 480, validityMonths: 24 },
+  // un curso ajeno deja un temario que no coincide con su fuente. Sin vigencia
+  // declarada: el refuerzo se activa al asumir jefatura o ante brechas, no por
+  // calendario.
+  { code: "PDTP-60", name: "Liderazgo para la línea de mando", n: 60, kind: "practical_training", minutes: 480 },
   { code: "PDTP-63", name: "Uso correcto, reposición y eliminación de EPP", n: 63, kind: "practical_training", minutes: 120, legalBasis: "DS 594 art. 53 (capacitación teórica y práctica para el correcto empleo del EPP)", validityMonths: 12 },
 ]
 

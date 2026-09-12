@@ -60,9 +60,9 @@ describe("plan de corrección de fichas de curso PDTP 2026", () => {
     expect(decideOutcome(entry, { ...corregida, legalBasis: "otra cosa" })).toEqual({ kind: "apply" })
   })
 
-  it("una entrada que sólo declara vigencia no depende de la clasificación", () => {
-    // PDTP-57 y PDTP-60 no cambian de categoría: sólo se les declara la vigencia
-    // que estaba en blanco. Con `toKind` nulo, el `kind` actual es irrelevante.
+  it("una entrada que sólo corrige un campo no depende de la clasificación", () => {
+    // El plan admite entradas que no cambian de categoría. Con `toKind` nulo, el
+    // `kind` actual es irrelevante y sólo se mira el campo que sí se corrige.
     const sinVigencia: CourseRow = { kind: "practical_training", minimumDurationMinutes: 240, validityMonths: null, legalBasis: null }
     expect(decideOutcome(soloVigencia, sinVigencia)).toEqual({ kind: "apply" })
     expect(decideOutcome(soloVigencia, { ...sinVigencia, validityMonths: 24 })).toEqual({ kind: "already_done" })
@@ -142,18 +142,19 @@ describe("plan de corrección de fichas de curso PDTP 2026", () => {
     }
   })
 
-  it("distingue la vigencia documentada de la regla interna", () => {
-    /* Las de 36 meses salen de un certificado y además exceden el máximo de 24
-     * del art. 16 —otra razón por la que esos cursos no podían estar ahí—. Las
-     * de 24 son criterio interno de refresco y su respaldo tiene que decirlo,
-     * para que nadie las lea como plazo legal. */
+  it("toda vigencia declarada sale de un certificado, no de un criterio", () => {
+    /* Las dos que se corrigen son de 36 meses y salen del certificado de Mutual
+     * y del diploma de la Coordinadora. Exceden además el máximo de 24 del
+     * art. 16, que es otra razón por la que esos cursos no podían estar ahí.
+     *
+     * No se declaran vigencias por criterio interno: una caducidad inventada
+     * obliga a redictar cursos sin que ninguna norma lo pida. Los cursos cuya
+     * repetición depende de un gatillo —detección de necesidades, cambio de
+     * rol— se dejan sin vigencia, que es lo que el modelo ya permite. */
     for (const item of PDTP_2026_COURSE_RECLASSIFICATION) {
-      if (item.validityMonths === 36) {
+      if (item.validityMonths !== null) {
+        expect(item.validityMonths, `${item.code}`).toBe(36)
         expect(item.evidence, `${item.code}`).toMatch(/[Cc]ertificado|[Dd]iploma/)
-      }
-      if (item.validityMonths === 24) {
-        expect(item.evidence, `${item.code} debe declarar que no es exigencia legal`)
-          .toContain("No se presenta como exigencia legal")
       }
     }
   })
