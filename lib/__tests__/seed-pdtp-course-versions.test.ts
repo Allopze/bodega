@@ -97,15 +97,23 @@ describe("carga de versiones de curso PDTP 2026", () => {
     }
   })
 
-  it("no repite un curso y deja fuera sólo el que tiene un conflicto abierto", () => {
+  it("cubre los trece cursos del programa, sin repetir ninguno", () => {
     const codes = PDTP_2026_COURSE_VERSIONS.map((item) => item.code)
     expect(new Set(codes).size).toBe(codes.length)
-    /* La N°60 es la única que falta de los trece: su ficha OTEC declara 16 horas
-     * y el programa comprometió 8. Duplicar la duración de una actividad
-     * comprometida es decisión de Prevención, así que queda pendiente en vez de
-     * elegirse acá. Se afirma para que la ausencia se lea como decisión. */
-    expect(codes, "N°60 tiene un conflicto de duración sin resolver").not.toContain("PDTP-60")
-    expect(codes.length).toBe(12)
+    expect(codes.length).toBe(13)
+  })
+
+  it("PDTP-60 lleva temario propio de 8 horas, no un recorte de uno de 16", () => {
+    /* Las fichas OTEC de liderazgo general declaran 16 horas. Recortarlas dejaría
+     * un temario que no coincide con la fuente que cita; en cambio éste se
+     * orienta a la función preventiva del supervisor y dura lo que el programa
+     * trabaja. La comunicación queda como herramienta transversal: su desarrollo
+     * vive en la N°57 y no se duplica. */
+    const liderazgo = PDTP_2026_COURSE_VERSIONS.find((item) => item.code === "PDTP-60")!
+    expect(liderazgo.durationMinutes).toBe(480)
+    expect(liderazgo.source).toContain("temario propio")
+    const titulos = liderazgo.contentOutline.map((m) => m.title.toLowerCase())
+    expect(titulos.some((t) => t.includes("comunicaci")), "duplicaría el contenido de la N°57").toBe(false)
   })
 
   it("PDTP-54 usa la modalidad del certificado y no la del catálogo streaming", () => {

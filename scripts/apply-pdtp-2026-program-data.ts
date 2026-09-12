@@ -91,15 +91,21 @@ const COURSES: Array<{
    * estimación: N°54 del certificado del 24/04/2026 (2 horas, vigencia 3 años)
    * y N°58 del diploma del 26/12/2025 (4 horas, expira 26/12/2028). */
   { code: "PDTP-54", name: "Uso y manejo de extintores", n: 54, kind: "practical_training", minutes: 120, legalBasis: "DS 594 art. 48 (instrucción y entrenamiento en uso de extintores)", validityMonths: 36 },
-  // REVISAR: el art. 45 del DS 594 está en el párrafo de prevención de incendios
-  // (disponer de extintores), no en nada sobre primeros auxilios. La cita parece
-  // heredada de la N°54. No se corrige acá porque no hay evidencia de cuál es la
-  // correcta, y a diferencia de las otras tres esta ficha no bloquea nada.
-  { code: "PDTP-55", name: "Primeros auxilios", n: 55, kind: "legal_mandatory", minutes: 480, legalBasis: "DS 594 art. 45", validityMonths: 24 },
-  { code: "PDTP-57", name: "Comunicación efectiva", n: 57, kind: "practical_training", minutes: 240 },
+  // La N°55 tampoco es el curso del art. 16: ocho horas de primeros auxilios no
+  // cubren los siete bloques mínimos que ese artículo exige. Y su base legal
+  // citaba el art. 45 del DS 594 —que obliga a DISPONER de extintores—, heredado
+  // por error de la ficha de la N°54.
+  { code: "PDTP-55", name: "Primeros auxilios", n: 55, kind: "practical_training", minutes: 480, legalBasis: "Código del Trabajo art. 184 (acceso oportuno a atención médica ante accidente o emergencia); DS 44/2023 arts. 4 y 19; Ley 16.744 como marco general", validityMonths: 24 },
+  // Vigencia de 24 meses por regla interna de refresco, no por plazo legal: el
+  // máximo de dos años del art. 16 rige su propia capacitación general, no ésta.
+  { code: "PDTP-57", name: "Comunicación efectiva", n: 57, kind: "practical_training", minutes: 240, validityMonths: 24 },
   { code: "PDTP-58", name: "Coordinador de Gestión de Riesgos de Desastres", n: 58, kind: "practical_training", minutes: 240, legalBasis: "Designación y formación del Coordinador GRD del centro de trabajo", validityMonths: 36 },
   { code: "PDTP-59", name: "Investigación de accidentes por árbol causal", n: 59, kind: "practical_training", minutes: 480, validityMonths: 24 },
-  { code: "PDTP-60", name: "Liderazgo para la línea de mando", n: 60, kind: "practical_training", minutes: 480 },
+  // Ocho horas con temario propio orientado a la función preventiva del
+  // supervisor. Las fichas OTEC de liderazgo general declaran 16, pero recortar
+  // un curso ajeno deja un temario que no coincide con su fuente. Vigencia de 24
+  // meses por regla interna, igual que la N°57.
+  { code: "PDTP-60", name: "Liderazgo para la línea de mando", n: 60, kind: "practical_training", minutes: 480, validityMonths: 24 },
   { code: "PDTP-63", name: "Uso correcto, reposición y eliminación de EPP", n: 63, kind: "practical_training", minutes: 120, legalBasis: "DS 594 art. 53 (capacitación teórica y práctica para el correcto empleo del EPP)", validityMonths: 12 },
 ]
 

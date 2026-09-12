@@ -1,8 +1,12 @@
 /**
  * scripts/reclassify-pdtp-2026-specific-courses.ts
  *
- * Corrige la clasificación de tres cursos del programa 2026 que quedaron
- * declarados como `legal_mandatory` sin serlo.
+ * Corrige la ficha de los cursos del programa 2026 cuyos datos quedaron mal
+ * declarados: la clasificación, la duración mínima, la vigencia y la base legal.
+ *
+ * La mayoría de las entradas corrige una clasificación `legal_mandatory` que no
+ * correspondía, pero no todas: hay entradas que sólo declaran una vigencia que
+ * estaba en blanco, sin tocar la categoría.
  *
  *   RECLASSIFY_ACTOR_USER_ID=<id> npm run pdtp:reclassify-specific-courses
  *   RECLASSIFY_DRY_RUN=true RECLASSIFY_ACTOR_USER_ID=<id> npm run pdtp:reclassify-specific-courses
@@ -76,10 +80,10 @@ const TRACEABILITY_NOTE =
 export type ReclassifyEntry = {
   /** `code` del curso; tiene índice único. */
   code: string
-  /** Clasificación en la que la entrada espera encontrarlo. */
-  expectKind: string
-  /** Clasificación correcta. */
-  toKind: string
+  /** Clasificación en la que la entrada espera encontrarlo. `null` si no se toca. */
+  expectKind: string | null
+  /** Clasificación correcta. `null` deja la que ya tiene. */
+  toKind: string | null
   /** Base legal corregida. `null` deja la que ya tiene. */
   legalBasis: string | null
   /** Duración mínima corregida, en minutos. `null` deja la que ya tiene. */
@@ -145,25 +149,106 @@ export const PDTP_2026_COURSE_RECLASSIFICATION: readonly ReclassifyEntry[] = [
       + "El DS 594 art. 53 exige capacitación teórica y práctica sin piso de 8 horas, y SUSESO regula "
       + "por separado un programa de capacitación en uso y mantención de EPP con contenidos propios.",
   },
+  {
+    // Único que quedó como `legal_mandatory` sin serlo. Un curso de primeros
+    // auxilios de 8 horas no satisface el temario transversal del art. 16
+    // —riesgos del lugar, efectos en salud, medidas preventivas, prestaciones
+    // de la Ley 16.744, emergencias, señalética e incendios—, así que no es
+    // ese curso aunque coincida en duración.
+    code: "PDTP-55",
+    expectKind: "legal_mandatory",
+    toKind: "practical_training",
+    // Declaraba "DS 594 art. 45", que exige DISPONER de extintores en lugares
+    // con riesgo de incendio: no tiene relación con primeros auxilios y parece
+    // copiada de la ficha de la N°54.
+    legalBasis:
+      "Código del Trabajo art. 184 (deber de protección eficaz y acceso oportuno a atención médica "
+      + "ante accidente o emergencia); DS 44/2023 arts. 4 y 19 (gestión preventiva y planes de "
+      + `respuesta ante emergencias); Ley 16.744 como marco general de prevención. ${TRACEABILITY_NOTE}`,
+    minimumDurationMinutes: null,
+    validityMonths: null,
+    evidence: null,
+    reason:
+      "Capacitación específica de primeros auxilios, no el curso general del art. 16 del DS 44: ocho "
+      + "horas de primeros auxilios no cubren los siete bloques mínimos que ese artículo exige. Se "
+      + "corrige además la base legal, que citaba el art. 45 del DS 594 —extintores— para un curso de "
+      + "primeros auxilios.",
+  },
+  {
+    // No cambia de clasificación: sólo se le declara vigencia, que estaba en
+    // blanco. Es regla interna de refresco, no plazo legal.
+    code: "PDTP-57",
+    expectKind: null,
+    toKind: null,
+    legalBasis: null,
+    minimumDurationMinutes: null,
+    validityMonths: 24,
+    evidence:
+      "Informe de cierre de datos faltantes, Servicios Chome, 12/09/2026: 24 meses como regla interna "
+      + "de refresco de competencias, con refuerzo anticipado si la detección de necesidades, un cambio "
+      + "de rol o problemas de coordinación lo justifican. No se presenta como exigencia legal.",
+    reason:
+      "Se declara vigencia de 24 meses como regla interna de trazabilidad y refresco. El plazo máximo "
+      + "de dos años del art. 16 del DS 44 aplica a la capacitación general de ese artículo, no a este "
+      + "curso; la cifra coincide por criterio interno y no por obligación.",
+  },
+  {
+    code: "PDTP-60",
+    expectKind: null,
+    toKind: null,
+    legalBasis: null,
+    minimumDurationMinutes: null,
+    validityMonths: 24,
+    evidence:
+      "Informe de cierre de datos faltantes, Servicios Chome, 12/09/2026: 24 meses como regla interna "
+      + "de refresco, con refuerzo al asumir jefatura, ante cambio de rol o proceso, o por brechas de "
+      + "desempeño preventivo. No se presenta como exigencia legal.",
+    reason:
+      "Se declara vigencia de 24 meses como regla interna de trazabilidad y refresco para la línea de "
+      + "mando. No es un plazo legal específico de este curso.",
+  },
 ]
 
 export type EntryOutcome =
   | { kind: "apply" }
-  /** Ya está en la clasificación de destino. */
+  /** No queda ningún campo por corregir. */
   | { kind: "already_done" }
   | { kind: "missing" }
   | { kind: "unexpected_kind"; found: string }
+
+/** Los campos de la ficha que este script puede corregir. */
+export type CourseRow = {
+  kind: string
+  minimumDurationMinutes: number
+  validityMonths: number | null
+  legalBasis: string | null
+}
 
 /**
  * Qué hacer con una entrada, dada la fila que hay en la base (o su ausencia).
  * Pura y exportada: es la parte que decide, y decidir sin base de datos es lo
  * que la hace testeable.
+ *
+ * "Ya está" significa que no queda ningún campo por corregir, no que la
+ * clasificación coincida. Mirar sólo el `kind` daba por hecha una entrada que
+ * venía a corregir la vigencia de un curso que nunca cambió de categoría.
  */
-export function decideOutcome(entry: ReclassifyEntry, row: { kind: string } | undefined): EntryOutcome {
+export function decideOutcome(entry: ReclassifyEntry, row: CourseRow | undefined): EntryOutcome {
   if (!row) return { kind: "missing" }
-  if (row.kind === entry.toKind) return { kind: "already_done" }
-  if (row.kind === entry.expectKind) return { kind: "apply" }
-  return { kind: "unexpected_kind", found: row.kind }
+
+  // La clasificación sólo se comprueba cuando la entrada la corrige. Un estado
+  // que no es ni el esperado ni el de destino es alguien que la movió a mano:
+  // se reporta y no se pisa.
+  if (entry.toKind !== null && row.kind !== entry.toKind && row.kind !== entry.expectKind) {
+    return { kind: "unexpected_kind", found: row.kind }
+  }
+
+  const pending = (entry.toKind !== null && row.kind !== entry.toKind)
+    || (entry.legalBasis !== null && row.legalBasis !== entry.legalBasis)
+    || (entry.minimumDurationMinutes !== null && row.minimumDurationMinutes !== entry.minimumDurationMinutes)
+    || (entry.validityMonths !== null && row.validityMonths !== entry.validityMonths)
+
+  return pending ? { kind: "apply" } : { kind: "already_done" }
 }
 
 /**
@@ -259,8 +344,9 @@ async function main() {
     // Sólo se escribe lo que la entrada declara y además difiere de lo que hay.
     // Así el resumen dice la verdad: "sin cambios" no puede significar "lo
     // reescribí con el mismo valor".
-    const patch: Record<string, unknown> = { kind: entry.toKind }
-    if (entry.legalBasis !== null) patch.legalBasis = entry.legalBasis
+    const patch: Record<string, unknown> = {}
+    if (entry.toKind !== null && entry.toKind !== before.kind) patch.kind = entry.toKind
+    if (entry.legalBasis !== null && entry.legalBasis !== before.legalBasis) patch.legalBasis = entry.legalBasis
     if (entry.minimumDurationMinutes !== null && entry.minimumDurationMinutes !== before.minimumDurationMinutes) {
       patch.minimumDurationMinutes = entry.minimumDurationMinutes
     }
@@ -268,9 +354,11 @@ async function main() {
       patch.validityMonths = entry.validityMonths
     }
 
-    const changes = [`'${before.kind}' → '${entry.toKind}'`]
+    const changes: string[] = []
+    if (patch.kind !== undefined) changes.push(`'${before.kind}' → '${entry.toKind}'`)
     if (patch.minimumDurationMinutes !== undefined) changes.push(`${before.minimumDurationMinutes} → ${entry.minimumDurationMinutes} min`)
     if (patch.validityMonths !== undefined) changes.push(`vigencia ${before.validityMonths ?? "sin declarar"} → ${entry.validityMonths} meses`)
+    if (patch.legalBasis !== undefined) changes.push("base legal corregida")
     const summary = changes.join("; ")
 
     if (DRY_RUN) {
@@ -293,7 +381,7 @@ async function main() {
         id: `ptrh-${nanoid()}`,
         entityType: "course",
         entityId: before.id,
-        changeType: "reclassified",
+        changeType: entry.toKind !== null && entry.toKind !== before.kind ? "reclassified" : "ficha_corrected",
         // La evidencia va en la constancia, no en un comentario del código: es
         // lo que se exhibe cuando alguien pregunta de dónde salió la duración.
         reason: [entry.reason, TRACEABILITY_NOTE, entry.evidence ? `Respaldo: ${entry.evidence}` : null]
@@ -303,7 +391,7 @@ async function main() {
         actorUserId,
       })
     })
-    console.log(`  ✓ ${entry.code} (${before.name}): ${summary}; base legal y constancia registradas.`)
+    console.log(`  ✓ ${entry.code} (${before.name}): ${summary}; constancia registrada.`)
     applied++
   }
 

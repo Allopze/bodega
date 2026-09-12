@@ -10,12 +10,7 @@
  * Los trece cursos del programa existen como ficha pero sin ninguna versión, y
  * sin versión publicada `createTrainingSession` no deja programar la sesión: la
  * actividad del PDTP queda planificada y sin forma de cumplirse. Esto cubre los
- * doce que tienen temario documentado.
- *
- * Queda fuera sólo la N°60 (liderazgo para la línea de mando): la ficha OTEC de
- * referencia declara 16 horas y el programa comprometió 8. Duplicar la duración
- * declarada de una actividad del programa es una decisión de Prevención, no un
- * detalle de carga, así que se deja pendiente en vez de elegir por ella.
+ * trece.
  *
  * **En borrador, y hasta ahí llega el script.** Publicar exige recorrer
  * `draft → in_review → approved → published`, y `transitionTrainingCourseVersion`
@@ -262,6 +257,28 @@ export const PDTP_2026_COURSE_VERSIONS: readonly CourseVersionSeed[] = [
       { title: "Marco normativo", minutes: 60, detail: "Normativa chilena aplicable a accidentes del trabajo. Responsabilidades en la investigación. Registros y antecedentes necesarios." },
       { title: "Recolección de información mediante Árbol de Causas", minutes: 150, detail: "Levantamiento de antecedentes. Identificación de hechos. Entrevistas y recopilación de información. Diferenciación entre hechos comprobados y opiniones. Reconstrucción del accidente." },
       { title: "Construcción y análisis del Árbol de Causas", minutes: 210, detail: "Organización de los hechos. Relaciones lógicas entre antecedentes. Representación gráfica del accidente. Identificación de causas. Análisis del árbol. Determinación de medidas correctivas y preventivas." },
+    ],
+  },
+  {
+    code: "PDTP-60",
+    versionLabel: "01",
+    durationMinutes: 480,
+    modality: "presencial",
+    assessmentType: "both",
+    passingScore: 70,
+    // Temario propio, no una ficha de catálogo: la referencia OTEC que se
+    // revisó declara 16 horas y el programa trabaja con 8. En vez de recortar
+    // el curso ajeno, se orienta a la función preventiva del supervisor. La
+    // comunicación queda como herramienta transversal; su desarrollo vive en
+    // la N°57 y no se duplica acá.
+    source: "Informe de cierre de datos faltantes, Servicios Chome, 12/09/2026: temario propio de 8 horas orientado a la función preventiva de supervisores y jefaturas.",
+    contentOutline: [
+      { title: "Rol preventivo de la línea de mando", minutes: 60, detail: "Responsabilidad del supervisor en seguridad y salud. Integración de la prevención en la operación. Conocimiento y uso de la matriz de riesgos. Ejemplo conductual y cumplimiento de controles." },
+      { title: "Liderazgo situacional y cultura preventiva", minutes: 90, detail: "Estilos de liderazgo. Adaptación al nivel de autonomía del equipo. Liderazgo visible. Refuerzo de conductas seguras. Intervención frente a desviaciones." },
+      { title: "Planificación, organización, delegación y control", minutes: 90, detail: "Planificación segura de tareas. Asignación clara de responsabilidades. Verificación previa. Seguimiento de controles. Coordinación entre áreas y turnos." },
+      { title: "Motivación y trabajo en equipo", minutes: 90, detail: "Motivación aplicada al cumplimiento preventivo. Compromiso. Participación de las personas trabajadoras. Coordinación. Reconocimiento de buenas prácticas." },
+      { title: "Toma de decisiones y resolución de problemas", minutes: 90, detail: "Priorización según riesgo. Detención o ajuste de tareas ante condiciones inseguras. Análisis de situaciones. Resolución de problemas y conflictos operativos." },
+      { title: "Retroalimentación, seguimiento y mejora continua", minutes: 60, detail: "Retroalimentación breve y específica. Seguimiento de compromisos. Aprendizaje de incidentes y observaciones. Uso de indicadores. Plan personal de mejora del supervisor." },
     ],
   },
   {
