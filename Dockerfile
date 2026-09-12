@@ -99,6 +99,26 @@ RUN ./node_modules/.bin/esbuild scripts/approve-pdtp-2026-inspection-templates.t
     --banner:js='import{createRequire as __cr}from"module";import{fileURLToPath as __f}from"url";import{dirname as __d}from"path";const require=__cr(import.meta.url);const __filename=__f(import.meta.url);const __dirname=__d(__filename);' \
     --outfile=/tmp/approve-pdtp-inspection-templates.mjs
 
+# Corrige la clasificación de los cursos declarados como del art. 16 del DS 44
+# sin serlo. No hay `updateTrainingCourse` en la capa de servicio —sólo
+# `create`—, así que no existe pantalla que permita hacerlo; de ahí que sea un
+# script.
+#
+# Lleva el mismo banner que el de habilitación de plantillas por precaución, no
+# por necesidad: éste importa `db/schema` directo y no la capa de servicios, así
+# que hoy no arrastra el logger ni con él Next, y pesa 735 KB en vez de 4,3 MB.
+# El banner cuesta una línea y evita que el día que alguien necesite importar un
+# servicio acá el script reviente al cargar, en producción.
+RUN ./node_modules/.bin/esbuild scripts/reclassify-pdtp-2026-specific-courses.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --banner:js='import{createRequire as __cr}from"module";import{fileURLToPath as __f}from"url";import{dirname as __d}from"path";const require=__cr(import.meta.url);const __filename=__f(import.meta.url);const __dirname=__d(__filename);' \
+    --outfile=/tmp/reclassify-pdtp-specific-courses.mjs
+
 # El catálogo de Documentación SST (categorías y tipos). Estaba sólo detrás de
 # un botón del panel de administración, así que en producción llegó vacío — y
 # con él vacío la N°36 y la N°43 no tienen dónde declarar su número.
@@ -475,6 +495,7 @@ COPY --from=build /tmp/apply-sst-document-taxonomy.mjs ./scripts/apply-sst-docum
 COPY --from=build /tmp/seed-emergency-plans.cjs ./scripts/seed-emergency-plans.cjs
 COPY --from=build /tmp/preflight-pdtp-accreditation-wiring.mjs ./scripts/preflight-pdtp-accreditation-wiring.mjs
 COPY --from=build /tmp/approve-pdtp-inspection-templates.mjs ./scripts/approve-pdtp-inspection-templates.mjs
+COPY --from=build /tmp/reclassify-pdtp-specific-courses.mjs ./scripts/reclassify-pdtp-specific-courses.mjs
 COPY --from=build /tmp/apply-pdtp-catalog-decisions.mjs ./scripts/apply-pdtp-catalog-decisions.mjs
 COPY --from=build /tmp/apply-pdtp-worksite-scope.mjs ./scripts/apply-pdtp-worksite-scope.mjs
 COPY --from=build /tmp/apply-pdtp-program-data.mjs ./scripts/apply-pdtp-program-data.mjs
