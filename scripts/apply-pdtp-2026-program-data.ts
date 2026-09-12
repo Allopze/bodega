@@ -76,13 +76,31 @@ const COURSES: Array<{
   { code: "PDTP-38", name: "Charla de seguridad por turno (Supervisor / Jefe de terreno)", n: 38, kind: "operational_talk", minutes: 30 },
   { code: "PDTP-51", name: "Capacitación según detección de necesidades", n: 51, kind: "practical_training", minutes: 240 },
   { code: "PDTP-53", name: "Charla diaria de seguridad y salud en el trabajo", n: 53, kind: "operational_talk", minutes: 15 },
-  { code: "PDTP-54", name: "Uso y manejo de extintores", n: 54, kind: "legal_mandatory", minutes: 240, legalBasis: "DS 594 art. 44 y 45", validityMonths: 12 },
+  /* Los tres `practical_training` de abajo —N°54, N°58 y N°63— estuvieron
+   * declarados como `legal_mandatory`, que en este código significa "curso del
+   * art. 16 del DS 44": 8 horas mínimo y vigencia de a lo más 24 meses. Son
+   * capacitaciones específicas, con obligación y contenido propios, y con eso
+   * declarado el sistema no dejaba crear su versión (`assessLegalFloor`).
+   *
+   * Este script inserta con `db.insert` directo y por eso se salta
+   * `createTrainingCourse` y su validación: por ahí entraron mal. Como usa
+   * `onConflictDoNothing`, corregir esta lista no arregla las filas ya
+   * creadas — eso lo hace `reclassify-pdtp-2026-specific-courses.ts`.
+   *
+   * Duraciones y vigencias vienen de los certificados de Mutual, no de una
+   * estimación: N°54 del certificado del 24/04/2026 (2 horas, vigencia 3 años)
+   * y N°58 del diploma del 26/12/2025 (4 horas, expira 26/12/2028). */
+  { code: "PDTP-54", name: "Uso y manejo de extintores", n: 54, kind: "practical_training", minutes: 120, legalBasis: "DS 594 art. 48 (instrucción y entrenamiento en uso de extintores)", validityMonths: 36 },
+  // REVISAR: el art. 45 del DS 594 está en el párrafo de prevención de incendios
+  // (disponer de extintores), no en nada sobre primeros auxilios. La cita parece
+  // heredada de la N°54. No se corrige acá porque no hay evidencia de cuál es la
+  // correcta, y a diferencia de las otras tres esta ficha no bloquea nada.
   { code: "PDTP-55", name: "Primeros auxilios", n: 55, kind: "legal_mandatory", minutes: 480, legalBasis: "DS 594 art. 45", validityMonths: 24 },
   { code: "PDTP-57", name: "Comunicación efectiva", n: 57, kind: "practical_training", minutes: 240 },
-  { code: "PDTP-58", name: "Coordinador de Gestión de Riesgos de Desastres", n: 58, kind: "legal_mandatory", minutes: 480, legalBasis: "DS 44 art. 22", validityMonths: 24 },
+  { code: "PDTP-58", name: "Coordinador de Gestión de Riesgos de Desastres", n: 58, kind: "practical_training", minutes: 240, legalBasis: "Designación y formación del Coordinador GRD del centro de trabajo", validityMonths: 36 },
   { code: "PDTP-59", name: "Investigación de accidentes por árbol causal", n: 59, kind: "practical_training", minutes: 480, validityMonths: 24 },
   { code: "PDTP-60", name: "Liderazgo para la línea de mando", n: 60, kind: "practical_training", minutes: 480 },
-  { code: "PDTP-63", name: "Uso correcto, reposición y eliminación de EPP", n: 63, kind: "legal_mandatory", minutes: 120, legalBasis: "DS 594 art. 53", validityMonths: 12 },
+  { code: "PDTP-63", name: "Uso correcto, reposición y eliminación de EPP", n: 63, kind: "practical_training", minutes: 120, legalBasis: "DS 594 art. 53 (capacitación teórica y práctica para el correcto empleo del EPP)", validityMonths: 12 },
 ]
 
 /**

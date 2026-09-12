@@ -12,6 +12,9 @@ const entry: ReclassifyEntry = {
   expectKind: "legal_mandatory",
   toKind: "practical_training",
   legalBasis: "DS 594 art. 48",
+  minimumDurationMinutes: 120,
+  validityMonths: 36,
+  evidence: "Certificado Mutual 24/04/2026",
   reason: "motivo suficientemente largo para la constancia",
 }
 
@@ -77,6 +80,57 @@ describe("plan de reclasificación de cursos específicos PDTP 2026", () => {
       expect(item.legalBasis, `base legal de ${item.code}`).toBeTruthy()
       expect(item.legalBasis, `${item.code} debe aclarar que el art. 16 sigue vigente`)
         .toContain("no elimina el cumplimiento del curso general")
+    }
+  })
+
+  it("toda corrección de duración o vigencia trae su respaldo documental", () => {
+    /* Bajar la duración declarada de un curso de prevención sin decir de dónde
+     * sale el número es exactamente lo que no se puede sostener frente a una
+     * fiscalización. Si la entrada corrige, tiene que citar el certificado. */
+    for (const item of PDTP_2026_COURSE_RECLASSIFICATION) {
+      const corrige = item.minimumDurationMinutes !== null || item.validityMonths !== null
+      if (corrige) {
+        expect(item.evidence, `${item.code} corrige la ficha sin citar respaldo`).toBeTruthy()
+        expect(item.evidence!.length).toBeGreaterThan(40)
+      }
+    }
+  })
+
+  it("las vigencias corregidas exceden el máximo del art. 16, que es parte del punto", () => {
+    // 36 meses > 24: mientras fueran `legal_mandatory`, la vigencia real los
+    // bloqueaba igual que la duración. Reclasificar destraba ambas.
+    for (const item of PDTP_2026_COURSE_RECLASSIFICATION) {
+      if (item.validityMonths !== null) expect(item.validityMonths).toBeGreaterThan(24)
+    }
+  })
+
+  it("PDTP-63 no inventa duración ni vigencia", () => {
+    // No hay certificado que contradiga lo declarado, así que no se toca.
+    const epp = PDTP_2026_COURSE_RECLASSIFICATION.find((item) => item.code === "PDTP-63")!
+    expect(epp.minimumDurationMinutes).toBeNull()
+    expect(epp.validityMonths).toBeNull()
+  })
+
+  it("el catálogo fuente ya nace con la clasificación corregida", () => {
+    /* `apply-pdtp-2026-program-data.ts` es de donde salieron mal. Si el plan de
+     * reclasificación corrige algo que ese catálogo sigue declarando al revés,
+     * la próxima corrida del script de datos vuelve a crear el curso torcido en
+     * cualquier base nueva. Se lee como texto y no por import para no disparar
+     * el `main()` del script. */
+    const source = readFileSync("scripts/apply-pdtp-2026-program-data.ts", "utf8")
+    for (const item of PDTP_2026_COURSE_RECLASSIFICATION) {
+      const line = source.split("\n").find((l) => l.includes(`code: "${item.code}"`))
+      expect(line, `${item.code} no está en el catálogo fuente`).toBeTruthy()
+      expect(line, `${item.code} sigue declarado como '${item.expectKind}' en el catálogo fuente`)
+        .toContain(`kind: "${item.toKind}"`)
+      if (item.minimumDurationMinutes !== null) {
+        expect(line, `${item.code}: el catálogo fuente no declara ${item.minimumDurationMinutes} min`)
+          .toContain(`minutes: ${item.minimumDurationMinutes}`)
+      }
+      if (item.validityMonths !== null) {
+        expect(line, `${item.code}: el catálogo fuente no declara ${item.validityMonths} meses`)
+          .toContain(`validityMonths: ${item.validityMonths}`)
+      }
     }
   })
 

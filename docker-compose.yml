@@ -572,6 +572,26 @@ services:
       - RECLASSIFY_DRY_RUN=${RECLASSIFY_DRY_RUN:-}
     command: ["node", "scripts/reclassify-pdtp-specific-courses.mjs"]
 
+  # Carga en borrador el temario de los cursos con contenido documentado. El
+  # actor queda como AUTOR y por eso no podrá aprobarlo después: la segregación
+  # lo impide, así que conviene elegir a alguien distinto de quien vaya a firmar.
+  #   SEED_VERSIONS_DRY_RUN=true SEED_VERSIONS_ACTOR_USER_ID=<id> docker compose run --rm seed-course-versions
+  seed-course-versions:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - SEED_VERSIONS_ACTOR_USER_ID=${SEED_VERSIONS_ACTOR_USER_ID:-}
+      - SEED_VERSIONS_DRY_RUN=${SEED_VERSIONS_DRY_RUN:-}
+    command: ["node", "scripts/seed-pdtp-course-versions.mjs"]
+
   preflight-pdtp-wiring:
     build:
       context: .

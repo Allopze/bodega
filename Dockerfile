@@ -119,6 +119,19 @@ RUN ./node_modules/.bin/esbuild scripts/reclassify-pdtp-2026-specific-courses.ts
     --banner:js='import{createRequire as __cr}from"module";import{fileURLToPath as __f}from"url";import{dirname as __d}from"path";const require=__cr(import.meta.url);const __filename=__f(import.meta.url);const __dirname=__d(__filename);' \
     --outfile=/tmp/reclassify-pdtp-specific-courses.mjs
 
+# Carga en borrador el temario de los cursos del programa 2026 que lo tienen
+# documentado. Publicar exige dos personas distintas, así que el script llega
+# hasta el borrador y la firma la pone alguien.
+RUN ./node_modules/.bin/esbuild scripts/seed-pdtp-2026-course-versions.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --banner:js='import{createRequire as __cr}from"module";import{fileURLToPath as __f}from"url";import{dirname as __d}from"path";const require=__cr(import.meta.url);const __filename=__f(import.meta.url);const __dirname=__d(__filename);' \
+    --outfile=/tmp/seed-pdtp-course-versions.mjs
+
 # El catálogo de Documentación SST (categorías y tipos). Estaba sólo detrás de
 # un botón del panel de administración, así que en producción llegó vacío — y
 # con él vacío la N°36 y la N°43 no tienen dónde declarar su número.
@@ -496,6 +509,7 @@ COPY --from=build /tmp/seed-emergency-plans.cjs ./scripts/seed-emergency-plans.c
 COPY --from=build /tmp/preflight-pdtp-accreditation-wiring.mjs ./scripts/preflight-pdtp-accreditation-wiring.mjs
 COPY --from=build /tmp/approve-pdtp-inspection-templates.mjs ./scripts/approve-pdtp-inspection-templates.mjs
 COPY --from=build /tmp/reclassify-pdtp-specific-courses.mjs ./scripts/reclassify-pdtp-specific-courses.mjs
+COPY --from=build /tmp/seed-pdtp-course-versions.mjs ./scripts/seed-pdtp-course-versions.mjs
 COPY --from=build /tmp/apply-pdtp-catalog-decisions.mjs ./scripts/apply-pdtp-catalog-decisions.mjs
 COPY --from=build /tmp/apply-pdtp-worksite-scope.mjs ./scripts/apply-pdtp-worksite-scope.mjs
 COPY --from=build /tmp/apply-pdtp-program-data.mjs ./scripts/apply-pdtp-program-data.mjs

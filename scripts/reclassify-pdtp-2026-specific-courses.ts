@@ -27,9 +27,23 @@
  * validación. Corregir ese catálogo no basta: usa `onConflictDoNothing`, así
  * que no toca las filas ya existentes. Hacen falta las dos cosas.
  *
- * No toca la duración a propósito. Una vez reclasificados, `assessLegalFloor`
- * no aplica y la duración queda libre de corregir cuando lleguen las fichas
- * reales de los organismos administradores, sin bloquear nada mientras tanto.
+ * Corrige además duración y vigencia donde hay respaldo documental. Los valores
+ * que traía el catálogo eran estimaciones; los certificados de Mutual dicen otra
+ * cosa y son la constancia que se muestra en una fiscalización:
+ *
+ *   PDTP-54  Certificado Mutual 24/04/2026, 15 participantes: 16:00 a 18:00,
+ *            2 horas, presencial en el taller, con evaluación (nota 7,0) y
+ *            vigencia de 3 años. El catálogo declaraba 240 min y 12 meses.
+ *   PDTP-58  Diploma Mutual "Gestión del Riesgo de Desastres en Centros de
+ *            Trabajo" del 26/12/2025: 4 horas, expira 26/12/2028 —3 años—.
+ *            El catálogo declaraba 480 min y 24 meses.
+ *
+ * La vigencia de 36 meses es otra razón por la que estos cursos no podían ser
+ * `legal_mandatory`: `assessLegalFloor` también rechaza cualquier vigencia
+ * superior a 24 meses. Reclasificar destraba las tres cosas a la vez.
+ *
+ * PDTP-63 no lleva corrección de duración ni vigencia: no hay certificado que
+ * las contradiga, así que se dejan como están.
  */
 
 import { eq, or } from "drizzle-orm"
@@ -68,6 +82,12 @@ export type ReclassifyEntry = {
   toKind: string
   /** Base legal corregida. `null` deja la que ya tiene. */
   legalBasis: string | null
+  /** Duración mínima corregida, en minutos. `null` deja la que ya tiene. */
+  minimumDurationMinutes: number | null
+  /** Vigencia corregida, en meses. `null` deja la que ya tiene. */
+  validityMonths: number | null
+  /** De dónde sale la corrección de duración/vigencia. Queda en el historial. */
+  evidence: string | null
   /** Queda en el historial: tiene que explicar el porqué. */
   reason: string
 }
@@ -80,6 +100,14 @@ export const PDTP_2026_COURSE_RECLASSIFICATION: readonly ReclassifyEntry[] = [
     // La base legal declarada eran los art. 44 y 45, que obligan a DISPONER de
     // extintores. El que obliga a capacitar es el 48.
     legalBasis: `DS 594 art. 48 (instrucción y entrenamiento en uso de extintores). ${TRACEABILITY_NOTE}`,
+    // El catálogo declaraba 240 min y 12 meses; el certificado dice otra cosa y
+    // es el documento que se exhibe.
+    minimumDurationMinutes: 120,
+    validityMonths: 36,
+    evidence:
+      "Certificado Mutual de Seguridad CChC, adherente 252086, actividad \"MANEJO DE EXTINTORES\" "
+      + "del 24/04/2026, 16:00 a 18:00 (2 horas), presencial en el taller de Cabrero, relator Manuel "
+      + "Hernández Hernández, 15 participantes aprobados con evaluación. Vigencia declarada: 3 años.",
     reason:
       "Capacitación específica de prevención y protección contra incendios, no el curso general del "
       + "art. 16 del DS 44. El uso de extintores es una de las materias de ese curso y además una "
@@ -90,16 +118,28 @@ export const PDTP_2026_COURSE_RECLASSIFICATION: readonly ReclassifyEntry[] = [
     expectKind: "legal_mandatory",
     toKind: "practical_training",
     legalBasis: `Designación y formación del Coordinador GRD del centro de trabajo. ${TRACEABILITY_NOTE}`,
+    // El catálogo declaraba 480 min y 24 meses. El diploma dice 4 horas y tres
+    // años, y es el curso que Mutual exige aprobar para el rol.
+    minimumDurationMinutes: 240,
+    validityMonths: 36,
+    evidence:
+      "Diploma Mutual de Seguridad CChC \"Gestión del Riesgo de Desastres en Centros de Trabajo\" "
+      + "de María José Martínez Garrido, realizado el 26/12/2025, duración 4 horas, expiración "
+      + "26/12/2028 (3 años). Código 296E83EB2A5A4962A30E363B8A9DDBCF.",
     reason:
       "Capacitación específica del rol de Coordinador de Gestión del Riesgo de Desastres, no el curso "
-      + "general del art. 16 del DS 44. Hoy pasa el piso legal sólo porque declara 480 minutos; al "
-      + "corregir la duración a la de la ficha real del organismo administrador quedaría bloqueada.",
+      + "general del art. 16 del DS 44. Su vigencia real de 36 meses también excede el máximo de 24 "
+      + "que el piso del art. 16 impone, así que la clasificación la bloqueaba por partida doble.",
   },
   {
     code: "PDTP-63",
     expectKind: "legal_mandatory",
     toKind: "practical_training",
     legalBasis: `DS 594 art. 53 (capacitación teórica y práctica para el correcto empleo del EPP). ${TRACEABILITY_NOTE}`,
+    // Sin certificado que contradiga lo declarado: se dejan como están.
+    minimumDurationMinutes: null,
+    validityMonths: null,
+    evidence: null,
     reason:
       "Capacitación específica de uso y mantención de EPP, no el curso general del art. 16 del DS 44. "
       + "El DS 594 art. 53 exige capacitación teórica y práctica sin piso de 8 horas, y SUSESO regula "
@@ -216,8 +256,25 @@ async function main() {
     }
 
     const before = row!
+    // Sólo se escribe lo que la entrada declara y además difiere de lo que hay.
+    // Así el resumen dice la verdad: "sin cambios" no puede significar "lo
+    // reescribí con el mismo valor".
+    const patch: Record<string, unknown> = { kind: entry.toKind }
+    if (entry.legalBasis !== null) patch.legalBasis = entry.legalBasis
+    if (entry.minimumDurationMinutes !== null && entry.minimumDurationMinutes !== before.minimumDurationMinutes) {
+      patch.minimumDurationMinutes = entry.minimumDurationMinutes
+    }
+    if (entry.validityMonths !== null && entry.validityMonths !== before.validityMonths) {
+      patch.validityMonths = entry.validityMonths
+    }
+
+    const changes = [`'${before.kind}' → '${entry.toKind}'`]
+    if (patch.minimumDurationMinutes !== undefined) changes.push(`${before.minimumDurationMinutes} → ${entry.minimumDurationMinutes} min`)
+    if (patch.validityMonths !== undefined) changes.push(`vigencia ${before.validityMonths ?? "sin declarar"} → ${entry.validityMonths} meses`)
+    const summary = changes.join("; ")
+
     if (DRY_RUN) {
-      console.log(`  → ${entry.code} (${before.name}): '${before.kind}' → '${entry.toKind}'; ${before.minimumDurationMinutes} min sin cambios.`)
+      console.log(`  → ${entry.code} (${before.name}): ${summary}.`)
       applied++
       continue
     }
@@ -227,10 +284,7 @@ async function main() {
     // script viene a evitar.
     await db.transaction(async (tx) => {
       const [updated] = await tx.update(preventionTrainingCourses)
-        .set({
-          kind: entry.toKind,
-          ...(entry.legalBasis === null ? {} : { legalBasis: entry.legalBasis }),
-        })
+        .set(patch)
         .where(eq(preventionTrainingCourses.id, before.id))
         .returning()
       if (!updated) throw new Error(`No se pudo actualizar ${entry.code}.`)
@@ -240,13 +294,16 @@ async function main() {
         entityType: "course",
         entityId: before.id,
         changeType: "reclassified",
-        reason: `${entry.reason} ${TRACEABILITY_NOTE}`,
+        // La evidencia va en la constancia, no en un comentario del código: es
+        // lo que se exhibe cuando alguien pregunta de dónde salió la duración.
+        reason: [entry.reason, TRACEABILITY_NOTE, entry.evidence ? `Respaldo: ${entry.evidence}` : null]
+          .filter(Boolean).join(" "),
         beforeState: before as unknown as Record<string, unknown>,
         afterState: updated as unknown as Record<string, unknown>,
         actorUserId,
       })
     })
-    console.log(`  ✓ ${entry.code} (${before.name}): '${before.kind}' → '${entry.toKind}'; base legal y constancia registradas.`)
+    console.log(`  ✓ ${entry.code} (${before.name}): ${summary}; base legal y constancia registradas.`)
     applied++
   }
 
