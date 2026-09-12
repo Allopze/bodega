@@ -11,6 +11,7 @@ import { BrandMark } from "./brand-mark"
 import { NAV_ICONS } from "./nav-icons"
 import { AreaItems } from "./nav-rows"
 import { getVisibleAreas, findActiveArea, isHrefActive, DASHBOARD_ITEM, type AreaNode } from "./nav-items"
+import { getAdminAreas } from "./admin-nav"
 import { SidebarUserProfile } from "./sidebar-user-profile"
 
 interface MobileNavProps {
@@ -26,9 +27,10 @@ interface MobileNavProps {
 /** Navegación móvil: columna única en acordeón (área activa expandida). */
 const MobileNavInner = React.memo(function MobileNavInner({ session, worksiteName, badgeCounts, onNavigate, enabledModuleIds, disabledSubmoduleHrefs }: MobileNavProps) {
   const pathname = usePathname()
+  const isAdmin = pathname.startsWith("/admin")
   const areas = React.useMemo(
-    () => getVisibleAreas(session, enabledModuleIds, disabledSubmoduleHrefs),
-    [session, enabledModuleIds, disabledSubmoduleHrefs],
+    () => isAdmin ? getAdminAreas(session) : getVisibleAreas(session, enabledModuleIds, disabledSubmoduleHrefs),
+    [isAdmin, session, enabledModuleIds, disabledSubmoduleHrefs],
   )
   const routeArea = findActiveArea(areas, pathname)
   const dashActive = isHrefActive(DASHBOARD_ITEM.href, pathname)
@@ -134,6 +136,17 @@ function AreaAccordion({
   if (defaultOpen !== wasDefaultOpen) {
     setWasDefaultOpen(defaultOpen)
     if (defaultOpen) setOpen(true)
+  }
+
+  // Un área con un solo destino no necesita disclosure (paridad con
+  // `AreaSection` en desktop-nav-areas.tsx): el acordeón agrega un nivel de
+  // anidamiento por nada.
+  if (area.items.length === 1) {
+    return (
+      <div className={cn(!first && "mt-4")}>
+        <AreaItems area={area} pathname={pathname} badgeCounts={badgeCounts} onNavigate={onNavigate} />
+      </div>
+    )
   }
 
   return (

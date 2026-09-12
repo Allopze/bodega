@@ -78,7 +78,11 @@ function BranchRow({
   const Icon = NAV_ICONS[item.iconName]
   const selfActive  = isHrefActive(item.href, pathname)
   const childActive = (item.children ?? []).some((c) => isHrefActive(c.href, pathname))
-  const active = selfActive
+  // `selfActive` por sí solo no basta: `REGISTERED_NAV_HREFS` (nav-items.ts)
+  // solo conoce los hrefs del árbol de negocio, así que para ramas fuera de
+  // ese árbol (p.ej. admin) `isHrefActive(item.href, ...)` da true incluso
+  // viendo un hijo. `!childActive` evita marcar padre e hijo activos a la vez.
+  const active = selfActive && !childActive
   const shouldOpen = selfActive || childActive
   const [open, setOpen] = React.useState(shouldOpen)
   const [wasShouldOpen, setWasShouldOpen] = React.useState(shouldOpen)

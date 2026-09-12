@@ -11,6 +11,8 @@
  *  1. solicitudes/page.tsx   — gate: requests:view_own OR requests:view_all
  *  2. soporte/page.tsx       — gate: feedback:view_own OR feedback:view_all OR feedback:manage
  *  3. soporte/[id]/page.tsx  — gate: feedback:view_own OR feedback:view_all OR feedback:manage
+ *  4. admin/page.tsx         — gate: getAdminAreas(session).length > 0 (NOT "any admin:* permission" —
+ *     that would admit sessions whose only admin permission maps to no visible sidebar destination)
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest"
@@ -101,6 +103,7 @@ vi.mock("next/link", () => ({ default: ({ children }: { children: unknown }) => 
 import SolicitudesPage from "@/app/(app)/solicitudes/page"
 import SoportePage from "@/app/(app)/soporte/page"
 import ReporteDetailPage from "@/app/(app)/soporte/[id]/page"
+import AdminPage from "@/app/(app)/admin/page"
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -241,5 +244,41 @@ describe("soporte/[id]/page.tsx — permission gate", () => {
     await expect(ReporteDetailPage({ params: Promise.resolve({ id: "test-1" }) }))
       .rejects.toThrow("NEXT_NOT_FOUND")
     expect(mockRedirect).not.toHaveBeenCalledWith(expect.stringMatching(/^\/forbidden(\?|$)/))
+  })
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  4. Admin index page
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("admin/page.tsx — permission gate", () => {
+  beforeEach(() => { vi.clearAllMocks() })
+
+  it("redirects to /login for unauthenticated users", async () => {
+    mockAuthFn.mockResolvedValue(null)
+    await expect(AdminPage()).rejects.toThrow("NEXT_REDIRECT")
+    expect(mockRedirect).toHaveBeenCalledWith("/login")
+  })
+
+  it("redirects to /forbidden for a session with no admin:* permission at all", async () => {
+    mockAuthFn.mockResolvedValue(makeSession({ permissions: ["some:other"] }))
+    await expect(AdminPage()).rejects.toThrow("NEXT_REDIRECT")
+    expect(mockRedirect).toHaveBeenCalledWith("/forbidden")
+  })
+
+  // KEY TEST: the reconciliation fix. admin:manage_admins is a real permission
+  // (declared in modules/admin/manifest.ts) but maps to no item in ADMIN_AREAS —
+  // a session holding ONLY that permission has "some admin:* permission" yet no
+  // actual sidebar destination, and must not be let through to a dead-end page.
+  it("redirects to /forbidden for a session whose only admin permission maps to no visible section", async () => {
+    mockAuthFn.mockResolvedValue(makeSession({ permissions: ["admin:manage_admins"] }))
+    await expect(AdminPage()).rejects.toThrow("NEXT_REDIRECT")
+    expect(mockRedirect).toHaveBeenCalledWith("/forbidden")
+  })
+
+  it("allows a session with a real admin permission through the gate", async () => {
+    mockAuthFn.mockResolvedValue(makeSession({ permissions: ["admin:users"] }))
+    await expect(AdminPage()).resolves.toBeDefined()
+    expect(mockRedirect).not.toHaveBeenCalled()
   })
 })

@@ -14,9 +14,15 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import { useSignOut } from "./use-sign-out"
+import { getAdminAreas } from "./admin-nav"
 
 export function UserMenu({ session }: { session: AuthSession }) {
   const { isSigningOut, handleSignOut } = useSignOut()
+  // No basta con "tiene algún permiso admin:*": eso mostraría el link a
+  // usuarios cuyo único permiso admin no corresponde a ningún destino visible
+  // en el sidebar (ver components/layout/admin-nav.ts), llevándolos a un
+  // callejón sin salida.
+  const hasAdminAccess = getAdminAreas(session).length > 0
 
   return (
     <DropdownMenu>
@@ -46,7 +52,7 @@ export function UserMenu({ session }: { session: AuthSession }) {
             <span>Mi perfil</span>
           </Link>
         </DropdownMenuItem>
-        {session.user.permissions?.some((p) => p.startsWith("admin:")) && (
+        {hasAdminAccess && (
           <DropdownMenuItem asChild>
             <Link
               href="/admin"
@@ -57,7 +63,7 @@ export function UserMenu({ session }: { session: AuthSession }) {
             </Link>
           </DropdownMenuItem>
         )}
-        {session.user.permissions?.some((p) => p.startsWith("admin:")) && <DropdownMenuSeparator />}
+        {hasAdminAccess && <DropdownMenuSeparator />}
         <DropdownMenuItem asChild>
           <button
             type="button"

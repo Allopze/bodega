@@ -15,6 +15,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import { useSignOut } from "./use-sign-out"
+import { getAdminAreas } from "./admin-nav"
 
 interface SidebarUserProfileProps {
   session: Session
@@ -97,6 +98,12 @@ function UserDropdownContent({
   isSigningOut: boolean
   onSignOut: () => void
 }) {
+  // No basta con "tiene algún permiso admin:*": eso mostraría el link a
+  // usuarios cuyo único permiso admin no corresponde a ningún destino visible
+  // en el sidebar (ver components/layout/admin-nav.ts), llevándolos a un
+  // callejón sin salida.
+  const hasAdminAccess = getAdminAreas(session).length > 0
+
   return (
     <DropdownMenuContent side="top" align="start" sideOffset={8} className="min-w-[13rem]">
       <DropdownMenuLabel>
@@ -119,7 +126,7 @@ function UserDropdownContent({
           Mi perfil
         </Link>
       </DropdownMenuItem>
-      {session.user.permissions?.some((p) => p.startsWith("admin:")) && (
+      {hasAdminAccess && (
         <DropdownMenuItem asChild>
           <Link
             href="/admin"
@@ -129,7 +136,7 @@ function UserDropdownContent({
           </Link>
         </DropdownMenuItem>
       )}
-      {session.user.permissions?.some((p) => p.startsWith("admin:")) && <DropdownMenuSeparator />}
+      {hasAdminAccess && <DropdownMenuSeparator />}
       <DropdownMenuItem asChild>
         <button
           type="button"

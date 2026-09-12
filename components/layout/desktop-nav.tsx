@@ -10,6 +10,7 @@ import { Tooltip } from "@/components/ui/tooltip"
 import { BrandMark } from "./brand-mark"
 import { NAV_ICONS } from "./nav-icons"
 import { getVisibleAreas, findActiveArea, isHrefActive, DASHBOARD_ITEM } from "./nav-items"
+import { getAdminAreas } from "./admin-nav"
 import { AccordionAreas, RailFlyout } from "./desktop-nav-areas"
 import { SidebarUserProfile } from "./sidebar-user-profile"
 
@@ -25,9 +26,10 @@ interface DesktopNavProps {
 
 const DesktopNavInner = React.memo(function DesktopNavInner({ session, badgeCounts, collapsed, onCollapsedChange, enabledModuleIds, disabledSubmoduleHrefs }: DesktopNavProps) {
   const pathname = usePathname()
+  const isAdmin = pathname.startsWith("/admin")
   const areas = React.useMemo(
-    () => getVisibleAreas(session, enabledModuleIds, disabledSubmoduleHrefs),
-    [session, enabledModuleIds, disabledSubmoduleHrefs],
+    () => isAdmin ? getAdminAreas(session) : getVisibleAreas(session, enabledModuleIds, disabledSubmoduleHrefs),
+    [isAdmin, session, enabledModuleIds, disabledSubmoduleHrefs],
   )
   const routeArea = findActiveArea(areas, pathname)
   const dashActive = isHrefActive(DASHBOARD_ITEM.href, pathname)

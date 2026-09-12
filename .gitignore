@@ -120,7 +120,22 @@ qa/reports/inspection-history-reconciliation.xlsx
 INVENTARIO DE EXTINTORES FAENA BIODIVERSA 2026.xlsx
 .gitignore
 ‎Sin título.xlsx
-/docs/prevención
+# En docs/ sólo se versiona documentación en texto (.md) y los logos (.svg).
+#
+# Todo lo demás es el archivo documental de la operación preventiva: ~8 GB con
+# datos personales y de salud de la dotación —carpeta por trabajador, exámenes
+# ocupacionales, vacunas, control de alcohol y drogas, licencias de conducir,
+# IRL firmados con nombre completo—. Mismo criterio que los volcados de pg_dump
+# de más arriba: en el repositorio quedarían en el historial para siempre y
+# sacarlos exige reescribirlo.
+#
+# Se declara como lista blanca y no carpeta por carpeta a propósito: "Prevención
+# Grúas" (5,1 GB) se movió de docs/archive/ a docs/ y en ese solo movimiento se
+# escapó de la regla por nombre. Una lista blanca no se escapa al renombrar.
+/docs/**
+!/docs/**/
+!/docs/**/*.md
+!/docs/**/*.svg
 /qa
 # Scratch de ejecución de planes (subagent-driven development)
 .superpowers/

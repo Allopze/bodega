@@ -299,6 +299,42 @@ async function main() {
     worksiteId: "ws-e2e",
     isPrimary: true,
   })
+
+  /*
+   * Admin con permisos parciales: agrupa "admin:products" y
+   * "admin:product_catalogs" (categoría Catálogos, dos de sus ocho ítems) más
+   * "admin:notifications" y "admin:smtp" (dos de los cuatro ítems de
+   * Comunicaciones e integraciones — dos, no uno, para que esa categoría siga
+   * mostrándose como acordeón y no colapse al caso plano de un solo ítem, que
+   * ya cubre "Prevención"), dejando fuera el resto. Sin este rol, ningún e2e
+   * ejercita el sidebar de Administración con una sesión real y parcialmente
+   * autorizada — todo pasaba por rol-admin (todos los permisos) o por roles
+   * sin ningún admin:* (ninguno), que no distinguen un bug de filtrado por ítem.
+   */
+  const partialAdminPermissionIds = [
+    "admin:products", "admin:product_catalogs", "admin:notifications", "admin:smtp",
+  ].map((name) => SYSTEM_PERMISSIONS.find((p) => p.name === name)!.id)
+  await db.insert(schema.roles).values({
+    id: "rol-admin-parcial",
+    name: "admin_parcial",
+    label: "Admin parcial E2E",
+    description: "Ve solo Catálogos (parcial) y Comunicaciones en Administración — E2E",
+  })
+  await db.insert(schema.rolePermissions).values(
+    partialAdminPermissionIds.map((permissionId) => ({ roleId: "rol-admin-parcial", permissionId })),
+  )
+  await db.insert(schema.users).values({
+    id: "user-admin-parcial-e2e",
+    name: "Admin Parcial E2E",
+    email: "admin.parcial@e2e.chome.cl",
+    hashedPassword: await bcrypt.hash("chome2026", 10),
+    avatarColor: "310",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.userRoles).values({ userId: "user-admin-parcial-e2e", roleId: "rol-admin-parcial" })
+
   await db.insert(schema.suppliers).values({
     id: "sup-e2e",
     name: "Proveedor E2E",
