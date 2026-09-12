@@ -49,6 +49,7 @@
     "pdtp:apply-program-data": "tsx --env-file=.env.local scripts/apply-pdtp-2026-program-data.ts",
     "pdtp:apply-demand-slas": "tsx --env-file=.env.local scripts/apply-pdtp-2026-demand-slas.ts",
     "pdtp:seed-course-versions": "tsx --env-file=.env.local scripts/seed-pdtp-2026-course-versions.ts",
+    "pdtp:resign-inspection-templates": "tsx --env-file=.env.local scripts/resign-pdtp-2026-inspection-templates.ts",
     "pdtp:reclassify-specific-courses": "tsx --env-file=.env.local scripts/reclassify-pdtp-2026-specific-courses.ts",
     "pdtp:approve-inspection-templates": "tsx --env-file=.env.local scripts/approve-pdtp-2026-inspection-templates.ts",
     "pdtp:reconcile-fulfillment-events": "tsx --env-file=.env.local scripts/reconcile-pdtp-fulfillment-events.ts",

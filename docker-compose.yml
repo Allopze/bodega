@@ -592,6 +592,28 @@ services:
       - SEED_VERSIONS_DRY_RUN=${SEED_VERSIONS_DRY_RUN:-}
     command: ["node", "scripts/seed-pdtp-course-versions.mjs"]
 
+  # Retira las plantillas habilitadas por quien no correspondía. Entre este paso
+  # y la nueva aprobación NO hay ninguna plantilla vigente y nadie puede ejecutar
+  # una inspección: correlo con la persona que va a firmar disponible.
+  #   RESIGN_DRY_RUN=true RESIGN_ACTOR_USER_ID=<id> RESIGN_APPROVED_BY_USER_ID=<id> \
+  #     docker compose run --rm resign-inspection-templates
+  resign-inspection-templates:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - RESIGN_ACTOR_USER_ID=${RESIGN_ACTOR_USER_ID:-}
+      - RESIGN_APPROVED_BY_USER_ID=${RESIGN_APPROVED_BY_USER_ID:-}
+      - RESIGN_DRY_RUN=${RESIGN_DRY_RUN:-}
+    command: ["node", "scripts/resign-pdtp-inspection-templates.mjs"]
+
   preflight-pdtp-wiring:
     build:
       context: .
