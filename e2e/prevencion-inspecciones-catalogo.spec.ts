@@ -23,10 +23,20 @@ import { expectPageTitle, login } from "./helpers"
  * `retries: 1` en CI un reintento volvería a incorporar la misma.
  */
 const DEFINICION = "Inspección de Contenedores"
+/**
+ * El recorrido "borrador → aprobada → programable" necesita una definición
+ * **sin anexo oficial**: `approveInspectionTemplate` exige a las que sí lo
+ * tienen (`OFFICIAL_INSPECTION_SOURCES`) una versión documental vinculada cuyo
+ * checksum coincida con el del binario SGI, y la Biblioteca SST del entorno E2E
+ * no tiene ese archivo. `inspeccion_area` nace `platform_definition`, así que
+ * se aprueba por pantalla sin paridad documental. La contracara —que un anexo
+ * oficial se niegue a aprobarse sin fuente— la cubre su propio test más abajo.
+ */
+const DEFINICION_LIBRE = "Inspección de área de trabajo"
 const RUN = Date.now().toString(36).toUpperCase().slice(-5)
 
-function filaPlantilla(page: Page, version: string) {
-  return page.getByRole("row").filter({ hasText: DEFINICION }).filter({ hasText: version })
+function filaPlantilla(page: Page, version: string, definicion: string = DEFINICION) {
+  return page.getByRole("row").filter({ hasText: definicion }).filter({ hasText: version })
 }
 
 /** Abre el alta de programación, esté la pestaña vacía o con filas. */
@@ -49,12 +59,12 @@ async function crearYAbrirInspeccion(page: Page, fila: Locator) {
   await expect(page).toHaveURL(/\/prevencion\/inspecciones\/[^/]+$/)
 }
 
-/** Incorpora `inspeccion_contenedores` con una etiqueta propia; queda en borrador. */
-async function incorporar(page: Page, version: string) {
+/** Incorpora la definición indicada con una etiqueta propia; queda en borrador. */
+async function incorporar(page: Page, version: string, definicion: string = DEFINICION) {
   await page.getByRole("button", { name: "Incorporar borrador" }).click()
   const dialog = page.getByRole("dialog", { name: "Incorporar nueva versión como borrador" })
   await dialog.getByLabel("Definición del catálogo SST").click()
-  await page.getByRole("option", { name: DEFINICION, exact: true }).click()
+  await page.getByRole("option", { name: definicion, exact: true }).click()
   await dialog.getByLabel("Tipo de instrumento").click()
   await page.getByRole("option", { name: "Inspección", exact: true }).click()
   await dialog.locator('input[name="versionLabel"]').fill(version)
@@ -91,11 +101,11 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
 
   test("incorporar deja un borrador que no puede programarse hasta aprobarlo", async ({ page }) => {
     const version = `E2E-${RUN}-A`
-    await incorporar(page, version)
+    await incorporar(page, version, DEFINICION_LIBRE)
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
 
     await page.reload()
-    const fila = filaPlantilla(page, version)
+    const fila = filaPlantilla(page, version, DEFINICION_LIBRE)
     await expect(fila.getByText("Borrador")).toBeVisible({ timeout: 15_000 })
 
     // Programar exige una plantilla aprobada, y el picker sólo lista esas: el
@@ -109,7 +119,7 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
     // Se espera a que el listado exista antes de negar: sin un ancla positiva,
     // `toHaveCount(0)` pasaría igual con el popover todavía sin montar.
     await expect(page.getByRole("option", { name: /Inspección de Estado de Extintores · E2E$/ })).toBeVisible()
-    await expect(page.getByRole("option", { name: new RegExp(`${DEFINICION} · ${version}`) })).toHaveCount(0)
+    await expect(page.getByRole("option", { name: new RegExp(`${DEFINICION_LIBRE} · ${version}`) })).toHaveCount(0)
     await page.keyboard.press("Escape")
     await page.keyboard.press("Escape")
     await expect(page.locator('[role="dialog"]')).not.toBeVisible()
@@ -130,7 +140,37 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
     await nuevoPrograma(page)
     programa = page.getByRole("dialog", { name: "Nueva programación" })
     await programa.getByLabel("Plantilla").click()
-    await expect(page.getByRole("option", { name: new RegExp(`${DEFINICION} · ${version}`) })).toBeVisible()
+    await expect(page.getByRole("option", { name: new RegExp(`${DEFINICION_LIBRE} · ${version}`) })).toBeVisible()
+  })
+
+  /**
+   * La contracara del test anterior. Los anexos del SGI
+   * (`OFFICIAL_INSPECTION_SOURCES`) nacen `provenanceKind: "official_document"`
+   * y `approveInspectionTemplate` les exige una versión de la Biblioteca SST
+   * vinculada, con paridad declarada y el checksum del binario original. Sin
+   * eso el borrador no se habilita: la pantalla lo dice y el diálogo no cierra.
+   */
+  test("un anexo oficial no se aprueba sin su fuente documental vinculada", async ({ page }) => {
+    const version = `E2E-${RUN}-E`
+    await incorporar(page, version)
+    await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
+
+    await page.reload()
+    const fila = filaPlantilla(page, version)
+    await expect(fila.getByText("Borrador")).toBeVisible({ timeout: 15_000 })
+
+    await fila.getByRole("button", { name: "Aprobar" }).click()
+    const aprobar = page.getByRole("dialog", { name: `Aprobar ${DEFINICION}` })
+    await aprobar.locator('textarea[name="reason"]').fill("Intento de habilitar el anexo sin su respaldo documental.")
+    await aprobar.getByRole("button", { name: "Aprobar" }).click()
+
+    await expect(aprobar.getByRole("status"))
+      .toContainText("no puede aprobarse sin una versión oficial vinculada", { timeout: 30_000 })
+    await expect(aprobar).toBeVisible()
+
+    await page.keyboard.press("Escape")
+    await page.reload()
+    await expect(fila.getByText("Borrador")).toBeVisible({ timeout: 15_000 })
   })
 
   /**
