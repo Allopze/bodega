@@ -76,7 +76,7 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
    * calcular cumplimiento ni levantar un hallazgo. El servicio lo comprueba
    * además al recibir el código; acá se verifica que tampoco se ofrezcan.
    */
-  test("el picker no ofrece evaluaciones de personas ni el Anexo 7", async ({ page }) => {
+  test("el picker no ofrece evaluaciones de personas", async ({ page }) => {
     await page.getByRole("button", { name: "Incorporar borrador" }).click()
     const dialog = page.getByRole("dialog", { name: "Incorporar nueva versión como borrador" })
     await dialog.getByLabel("Definición del catálogo SST").click()
@@ -84,7 +84,9 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
     await expect(page.getByRole("option", { name: DEFINICION, exact: true })).toBeVisible()
     await expect(page.getByRole("option", { name: "Lista de Chequeo: Trabajador Nuevo" })).toHaveCount(0)
     await expect(page.getByRole("option", { name: "Lista de Chequeo: Control de Seguimiento" })).toHaveCount(0)
-    await expect(page.getByRole("option", { name: "Observación Planeada" })).toHaveCount(0)
+    // El Anexo 7 sí se ofrece: desde que se digitalizó con `recordsPreventiveActions`
+    // aporta al motor —registra acciones preventivas— aunque no puntúe.
+    await expect(page.getByRole("option", { name: "Observación Planeada" })).toHaveCount(1)
   })
 
   test("incorporar deja un borrador que no puede programarse hasta aprobarlo", async ({ page }) => {

@@ -42,17 +42,18 @@ export function isPersonEvaluationDefinition(code: string): code is typeof PERSO
  * Definiciones que se conservan en el catálogo pero **no son instrumentos del
  * motor de inspecciones**.
  *
- * Distinto de `PERSON_EVALUATION_DEFINITION_CODES`, que marca lo que pertenece
- * al módulo de Evaluaciones: esto marca lo que no encaja en un motor que
- * calcula cumplimiento y deriva hallazgos.
+ * Distinto de `PERSON_EVALUATION_DEFINITION_CODES`, que marca lo que pertenece al módulo
+ * de Evaluaciones: esto marca lo que no encaja en el motor.
  *
- * `observacion_planeada` (Anexo 7) es el caso: un relato libre firmado por
- * observador y trabajador, sin un solo ítem puntuable. En Inspecciones su
- * `compliancePercent` es siempre null y `deriveFindings` no puede levantar
- * ningún hallazgo, porque no hay respuesta que pueda ser 'no cumple'. Ocupaba
- * sitio en el catálogo sin aportar ninguna de las dos cosas que el módulo
- * hace. La definición se conserva: el Anexo 7 sigue siendo el formulario de la
- * actividad PDTP n=39, que pasa a acreditarse a mano.
+ * **Hoy está vacío a propósito.** Lo estuvo `observacion_planeada` (Anexo 7) mientras el
+ * único aporte que se le reconocía al motor era puntuar y derivar hallazgos, que un
+ * relato libre no hace. Desde que el Anexo 7 se digitalizó con
+ * `recordsPreventiveActions`, sí aporta: registra acciones preventivas dentro del motor
+ * aunque su `compliancePercent` siga siendo null. Ese flag llega hasta la pantalla de
+ * ejecución, así que excluirlo de nuevo apagaría esa sección.
+ *
+ * La lista se mantiene porque la distinción sigue siendo válida para lo que venga: un
+ * instrumento que no puntúe **ni** registre nada va acá.
  */
 export const NON_INSPECTION_DEFINITION_CODES = [] as const
 
