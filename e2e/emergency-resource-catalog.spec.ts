@@ -1,23 +1,16 @@
-import path from "node:path"
 import { expect, test } from "@playwright/test"
 import postgres from "postgres"
 import { expectPageTitle, login } from "./helpers"
+import {
+  EXPECTED_MANIFEST,
+  GAP_ASSET_CODE,
+  GAP_LOCATION,
+  MISSING_PLATE,
+  VEHICLE_PLATES,
+  writeEmergencyInventoryWorkbook,
+} from "./fixtures/emergency-inventory"
 
-const WORKBOOK = path.resolve(
-  process.cwd(),
-  "docs/SGI Chome_2026/Inventario extintores/INVENTARIO DE EXTINTORES FAENA BIODIVERSA 2026.xlsx",
-)
-
-const INITIAL_PLATES = [
-  "SGCP77-3",
-  "SGCP84-6",
-  "SJFC66-0",
-  "SJFC34",
-  "SRCJ-39-1",
-  "SRCJ-42-1",
-  "SRCJ-44-8",
-  "SRCJ-47-2",
-]
+const INITIAL_PLATES = [...VEHICLE_PLATES]
 
 function databaseClient() {
   const databaseUrl = process.env.E2E_DATABASE_URL
@@ -47,8 +40,9 @@ async function upsertFleetVehicle(
 }
 
 test.describe("catálogo operativo de extintores", () => {
-  test("reconcilia el Excel real, confirma cobertura y abre la recarga canónica", async ({ page }) => {
+  test("reconcilia la planilla de extintores, confirma cobertura y abre la recarga canónica", async ({ page }) => {
     test.setTimeout(180_000)
+    const WORKBOOK = await writeEmergencyInventoryWorkbook()
     const client = databaseClient()
     const consoleErrors: string[] = []
     page.on("console", (message) => {
@@ -85,11 +79,11 @@ test.describe("catálogo operativo de extintores", () => {
       await dialog.locator('input[type="file"]').setInputFiles(WORKBOOK)
       await dialog.getByRole("button", { name: "Generar preview" }).click()
 
-      await expect(dialog.getByText("La patente SBRP15 no existe en Flota para esta faena.", { exact: true })).toBeVisible()
+      await expect(dialog.getByText(`La patente ${MISSING_PLATE} no existe en Flota para esta faena.`, { exact: true })).toBeVisible()
       await expect(dialog.getByText("Conflictos", { exact: true }).locator("..")).toContainText("1")
       await expect(dialog.getByRole("button", { name: "Confirmar lote" })).toBeDisabled()
 
-      await upsertFleetVehicle(client, "SBRP15", 9)
+      await upsertFleetVehicle(client, MISSING_PLATE, 9)
       await dialog.getByRole("button", { name: "Cambiar archivo" }).click()
       await dialog.getByRole("button", { name: "Generar preview" }).click()
 
@@ -105,7 +99,7 @@ test.describe("catálogo operativo de extintores", () => {
           (SELECT COUNT(*)::int FROM prevention_emergency_resources WHERE worksite_id = 'ws-e2e' AND asset_code IS NOT NULL AND status = 'operational') AS operational,
           (SELECT COUNT(*)::int FROM prevention_emergency_resources WHERE worksite_id = 'ws-e2e' AND asset_code IS NOT NULL AND status = 'needs_maintenance') AS maintenance
       `
-      expect(manifest).toEqual({ assets: 14, points: 14, operational: 13, maintenance: 1 })
+      expect(manifest).toEqual({ ...EXPECTED_MANIFEST })
 
       await page.reload()
       // El fixture global de Inspecciones conserva además un extintor histórico
@@ -119,13 +113,13 @@ test.describe("catálogo operativo de extintores", () => {
       await page.getByRole("option", { name: "Brechas críticas" }).click()
       await expect(page).toHaveURL(/cobertura=gap/)
       await expect(page.getByRole("row")).toHaveCount(2)
-      const gapRow = page.getByRole("row").filter({ hasText: /Taller de soldadura - puesto 5/i })
+      const gapRow = page.getByRole("row").filter({ hasText: GAP_LOCATION })
       await expect(gapRow).toContainText("Brecha")
-      await expect(gapRow).toContainText("EXT-014")
+      await expect(gapRow).toContainText(GAP_ASSET_CODE)
       await expect(gapRow).toContainText("Extintor no operativo")
 
       await page.getByRole("tab", { name: "Activos (15)" }).click()
-      const ext014 = page.getByRole("row").filter({ hasText: "EXT-014" })
+      const ext014 = page.getByRole("row").filter({ hasText: GAP_ASSET_CODE })
       await expect(ext014).toContainText("Requiere mantención")
       await ext014.getByRole("link", { name: "Solicitar recarga" }).click()
       await expect(page).toHaveURL(/\/solicitudes\/nueva\?.*recursoEmergencia=/)

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { expectPageTitle, login, MINIMAL_PNG } from "./helpers"
+import { MINIMAL_PNG, campoInspeccion, crearInspeccion as crearInspeccionE2E, login, responderItemInspeccion } from "./helpers"
 
 /**
  * E2E Spec: Ejecución Avanzada de Inspecciones SST.
@@ -11,40 +11,10 @@ import { expectPageTitle, login, MINIMAL_PNG } from "./helpers"
  *   • Validación estricta del acta de cierre (múltiples firmas, resultados y restricciones operativas).
  */
 
-const PLANTILLA = "Inspección de Estado de Extintores"
-const RUN = Date.now().toString(36).toUpperCase().slice(-5)
-let contador = 0
+const crearInspeccion = async (page: Page, customSubject?: string) =>
+  (await crearInspeccionE2E(page, { prefijo: "E2E-AVZ", identificacion: customSubject })).identificacion
 
-async function crearInspeccion(page: Page, customSubject?: string) {
-  const identificacion = customSubject ?? `E2E-AVZ-${RUN}-${++contador}`
-  await page.goto("/prevencion/inspecciones")
-  await expectPageTitle(page, "Inspecciones")
-
-  await page.getByRole("button", { name: "Nueva inspección" }).click()
-  const dialog = page.getByRole("dialog", { name: "Nueva inspección" })
-  await dialog.getByLabel("Plantilla").click()
-  await page.getByRole("option", { name: new RegExp(`^${PLANTILLA} · E2E$`) }).click()
-  await dialog.getByLabel("Faena de la inspección").click()
-  await page.getByRole("option", { name: "Faena E2E", exact: true }).click()
-  await dialog.locator('input[name="subjectType"]').fill("extintor")
-  await dialog.locator('input[name="subjectLabel"]').fill(identificacion)
-  await dialog.getByRole("button", { name: "Crear" }).click()
-  await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
-
-  const fila = page.getByRole("row").filter({ hasText: identificacion }).first()
-  await expect(fila).toBeVisible({ timeout: 30_000 })
-  await fila.getByRole("link").first().click()
-  await expect(page).toHaveURL(/\/prevencion\/inspecciones\/[^/?]+$/, { timeout: 30_000 })
-  return identificacion
-}
-
-async function responderItem(page: Page, item: string, resultado: string, comentario?: string) {
-  await page.getByLabel(`Resultado de ${item}`).click()
-  await page.getByRole("option", { name: resultado, exact: true }).click()
-  if (comentario !== undefined) {
-    await page.getByLabel(`Comentario de ${item}`).fill(comentario)
-  }
-}
+const responderItem = responderItemInspeccion
 
 test.describe("Inspecciones — Ejecución avanzada y validaciones de campo", () => {
   test.beforeEach(async ({ page }) => {
@@ -55,16 +25,16 @@ test.describe("Inspecciones — Ejecución avanzada y validaciones de campo", ()
     await crearInspeccion(page)
 
     // Tipo de extintor (Select)
-    await page.getByLabel("Respuesta de Tipo de extintor").click()
+    await campoInspeccion(page, "Respuesta de Tipo de extintor").click()
     // El rótulo viene del catálogo SST (`inspeccion-extintores-sections.ts`) y usa
     // el subíndice tipográfico: "CO₂", no una glosa larga.
     await page.getByRole("option", { name: "CO₂" }).click()
 
     // Peso (Input numérico / texto)
-    await page.getByLabel("Respuesta de Peso (kg)").fill("10")
+    await campoInspeccion(page, "Respuesta de Peso (kg)").fill("10")
 
     // Ubicación / Observaciones (Texto libre)
-    await page.getByLabel("Respuesta de Observaciones adicionales").fill("Ubicado en pasillo principal sector talleres.")
+    await campoInspeccion(page, "Respuesta de Observaciones adicionales").fill("Ubicado en pasillo principal sector talleres.")
 
     // Verificamos que los campos se computen en ítems respondidos pero no otorguen % de cumplimiento firmado
     await expect(page.getByText("3 de 10 ítems respondidos")).toBeVisible()
@@ -76,8 +46,8 @@ test.describe("Inspecciones — Ejecución avanzada y validaciones de campo", ()
 
     // Recargar y verificar persistencia exacta
     await page.reload()
-    await expect(page.getByLabel("Respuesta de Peso (kg)")).toHaveValue("10", { timeout: 15_000 })
-    await expect(page.getByLabel("Respuesta de Observaciones adicionales")).toHaveValue("Ubicado en pasillo principal sector talleres.")
+    await expect(campoInspeccion(page, "Respuesta de Peso (kg)")).toHaveValue("10", { timeout: 15_000 })
+    await expect(campoInspeccion(page, "Respuesta de Observaciones adicionales")).toHaveValue("Ubicado en pasillo principal sector talleres.")
   })
 
   test("bloqueo de guardado cuando 'No aplica' carece de justificación técnica", async ({ page }) => {
@@ -89,7 +59,7 @@ test.describe("Inspecciones — Ejecución avanzada y validaciones de campo", ()
     await expect(page.getByRole("button", { name: "Guardar respuestas" })).toBeDisabled()
 
     // Llenar la justificación requerida
-    await page.getByLabel("Comentario de Manguera").fill("Extintor portátil de 1kg sin manguera de fábrica.")
+    await campoInspeccion(page, "Comentario de Manguera").fill("Extintor portátil de 1kg sin manguera de fábrica.")
     await expect(aviso).toBeHidden()
     await expect(page.getByRole("button", { name: "Guardar respuestas" })).toBeEnabled()
 
@@ -102,7 +72,7 @@ test.describe("Inspecciones — Ejecución avanzada y validaciones de campo", ()
 
     // Respondemos los 5 puntuables conformes
     for (const item of ["Manómetro", "Sello", "Rótulo", "Manguera", "Certificado CECMEC"]) {
-      await responderItem(page, item, "Cumple")
+      await responderItem(page, item, "Bueno")
     }
 
     // Intentar declarar ejecutada sin firmar acta

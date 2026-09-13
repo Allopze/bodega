@@ -16,9 +16,12 @@ test("exportes: genera Excel parseable con volumen operativo alto", async ({ pag
 
   const worksheet = workbook.getWorksheet("Items sin OC")
   expect(worksheet).toBeDefined()
+  // "Talla" entró en b08c4461 (2026-09-03) y corrió una columna a todo lo que va después:
+  // la solicitud pasó de la 4 a la 5.
   expect(worksheet?.getRow(1).values).toEqual([
     undefined,
     "Producto",
+    "Talla",
     "SKU",
     "Faena",
     "Solicitud",
@@ -28,7 +31,7 @@ test("exportes: genera Excel parseable con volumen operativo alto", async ({ pag
     "Fecha creación",
   ])
   expect(worksheet?.rowCount).toBeGreaterThanOrEqual(121)
-  expect(worksheet?.getColumn(4).values.join(" ")).toContain("SOL-BULK-E2E-001")
+  expect(worksheet?.getColumn(5).values.join(" ")).toContain("SOL-BULK-E2E-001")
 })
 
 async function login(page: Page) {

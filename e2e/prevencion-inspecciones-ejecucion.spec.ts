@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { expectPageTitle, login, MINIMAL_PNG } from "./helpers"
+import { MINIMAL_PNG, crearInspeccion as crearInspeccionE2E, login, responderItemInspeccion } from "./helpers"
 
 /**
  * E2E: ejecución de una inspección, de alta a acta firmada
@@ -21,13 +21,9 @@ import { expectPageTitle, login, MINIMAL_PNG } from "./helpers"
  * Cada test crea **su propia** inspección: declarar ejecutada es terminal, y
  * compartir una fila obligaría a fijar el orden entre tests.
  */
-const PLANTILLA = "Inspección de Estado de Extintores"
-const RUN = Date.now().toString(36).toUpperCase().slice(-5)
 
 /** Los cinco ítems que puntúan. El resto de la plantilla no cuenta para el %. */
 const PUNTUABLES = ["Manómetro", "Sello", "Rótulo", "Manguera", "Certificado CECMEC"] as const
-
-let contador = 0
 
 /**
  * Da de alta una inspección y abre su detalle.
@@ -36,55 +32,16 @@ let contador = 0
  * con lo que se puede localizar la fila recién creada: el código lo genera el
  * servidor (`INSP-<año>-<8 al azar>`).
  */
-async function nuevaInspeccion(page: Page, opciones: {
-  origen?: string
-  sujetoInventario?: string
-} = {}) {
-  const identificacion = `E2E-${RUN}-${++contador}`
-  await page.goto("/prevencion/inspecciones")
-  await expectPageTitle(page, "Inspecciones")
-
-  await page.getByRole("button", { name: "Nueva inspección" }).click()
-  const dialog = page.getByRole("dialog", { name: "Nueva inspección" })
-  await dialog.getByLabel("Plantilla").click()
-  await page.getByRole("option", { name: new RegExp(`^${PLANTILLA} · E2E$`) }).click()
-  await dialog.getByLabel("Faena de la inspección").click()
-  await page.getByRole("option", { name: "Faena E2E", exact: true }).click()
-  if (opciones.origen) {
-    await dialog.getByLabel("Origen").click()
-    await page.getByRole("option", { name: opciones.origen, exact: true }).click()
-  }
-  if (opciones.sujetoInventario) {
-    await dialog.getByLabel("Sujeto inspeccionado").click()
-    await page.getByRole("option", { name: opciones.sujetoInventario }).click()
-  } else {
-    await dialog.locator('input[name="subjectType"]').fill("extintor")
-    await dialog.locator('input[name="subjectLabel"]').fill(identificacion)
-  }
-  await dialog.getByRole("button", { name: "Crear" }).click()
-  await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
-
-  // Sin sujeto libre la fila se reconoce por el nombre congelado del recurso.
-  const marca = opciones.sujetoInventario ? opciones.sujetoInventario.replace(/^(Recurso|Equipo) · /, "") : identificacion
-  const fila = page.getByRole("row").filter({ hasText: marca }).first()
-  await expect(fila).toBeVisible({ timeout: 30_000 })
-  await fila.getByRole("link").first().click()
-  await expect(page).toHaveURL(/\/prevencion\/inspecciones\/[^/?]+$/, { timeout: 30_000 })
-  await expect(page.getByRole("heading", { level: 1, name: new RegExp(PLANTILLA) })).toBeVisible()
-  return { identificacion, marca }
-}
+const nuevaInspeccion = async (page: Page, opciones: { origen?: string; sujetoInventario?: string } = {}) =>
+  (await crearInspeccionE2E(page, opciones)).identificacion
 
 /** Responde un ítem puntuable. Los rótulos son largos: basta un prefijo único. */
-async function responder(page: Page, item: string, resultado: string, comentario?: string) {
-  await page.getByLabel(`Resultado de ${item}`).click()
-  await page.getByRole("option", { name: resultado, exact: true }).click()
-  if (comentario !== undefined) await page.getByLabel(`Comentario de ${item}`).fill(comentario)
-}
+const responder = responderItemInspeccion
 
 /** Deja los cinco puntuables conformes salvo el que se pida incumpliendo. */
 async function responderTodo(page: Page, incumple?: string) {
   for (const item of PUNTUABLES) {
-    await responder(page, item, item === incumple ? "No cumple" : "Cumple")
+    await responder(page, item, item === incumple ? "Malo" : "Bueno")
   }
 }
 
@@ -130,7 +87,7 @@ test.describe("Inspecciones — ejecución en terreno", () => {
   test("el gate nombra cada ítem sin responder y el acta que falta", async ({ page }) => {
     await nuevaInspeccion(page)
 
-    const aviso = page.locator("div").filter({ hasText: /^Aún no puede declararse ejecutada:/ }).first()
+    const aviso = page.locator("div").filter({ hasText: /^Corrige antes de guardar o declarar ejecutada:/ }).first()
     await expect(aviso).toBeVisible()
     for (const item of PUNTUABLES) {
       await expect(aviso.getByRole("listitem").filter({ hasText: item })).toHaveCount(1)
@@ -148,8 +105,8 @@ test.describe("Inspecciones — ejecución en terreno", () => {
   test("guardar respuestas deja la inspección en ejecución y proyecta el cumplimiento", async ({ page }) => {
     await nuevaInspeccion(page)
 
-    await responder(page, "Manómetro", "Cumple")
-    await responder(page, "Sello", "Cumple")
+    await responder(page, "Manómetro", "Bueno")
+    await responder(page, "Sello", "Bueno")
     await expect(page.getByText("2 de 10 ítems respondidos")).toBeVisible()
     // Previsto, entre paréntesis: la inspección todavía no se declaró
     // ejecutada, así que el porcentaje no es el firmado.
@@ -176,7 +133,7 @@ test.describe("Inspecciones — ejecución en terreno", () => {
     await nuevaInspeccion(page)
 
     await responder(page, "Certificado CECMEC", "No aplica")
-    const aviso = page.locator("div").filter({ hasText: /^Corrige antes de guardar:/ }).first()
+    const aviso = page.locator("div").filter({ hasText: /^Corrige antes de guardar o declarar ejecutada:/ }).first()
     await expect(aviso).toBeVisible()
     await expect(page.getByRole("button", { name: "Guardar respuestas" })).toBeDisabled()
 
@@ -240,7 +197,7 @@ test.describe("Inspecciones — ejecución en terreno", () => {
     await expect(page.getByText("No calculable")).toBeVisible()
     // Y el gate sigue exigiendo los cinco puntuables.
     await expect(page.getByRole("button", { name: "Declarar ejecutada" })).toBeVisible()
-    const aviso = page.locator("div").filter({ hasText: /^Aún no puede declararse ejecutada:/ }).first()
+    const aviso = page.locator("div").filter({ hasText: /^Corrige antes de guardar o declarar ejecutada:/ }).first()
     await expect(aviso.getByRole("listitem").filter({ hasText: "Manómetro" })).toHaveCount(1)
 
     await responderTodo(page, "Manómetro")
@@ -263,7 +220,7 @@ test.describe("Inspecciones — ejecución en terreno", () => {
     await responderTodo(page, "Sello")
     await firmarActa(page, "Operativo")
 
-    await page.getByRole("button", { name: "Guardar sin conexión" }).click()
+    await page.getByRole("button", { name: "Encolar cierre en este dispositivo" }).click()
     await expect(page.getByText("Guardada en el dispositivo. Se enviará al recuperar conexión.")).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText("1 cierre pendiente de sincronizar.")).toBeVisible()
 

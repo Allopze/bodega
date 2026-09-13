@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { expectPageTitle, login } from "./helpers"
+import { campoInspeccion, crearInspeccion as crearInspeccionE2E, login } from "./helpers"
 
 /**
  * E2E Spec: Control de Concurrencia Optimista (CAS) en Inspecciones.
@@ -10,32 +10,7 @@ import { expectPageTitle, login } from "./helpers"
  *   • Protección contra sobreescritura accidental de respuestas.
  */
 
-const PLANTILLA = "Inspección de Estado de Extintores"
-const RUN = Date.now().toString(36).toUpperCase().slice(-5)
-let contador = 0
-
-async function crearInspeccion(page: Page) {
-  const identificacion = `E2E-CAS-${RUN}-${++contador}`
-  await page.goto("/prevencion/inspecciones")
-  await expectPageTitle(page, "Inspecciones")
-
-  await page.getByRole("button", { name: "Nueva inspección" }).click()
-  const dialog = page.getByRole("dialog", { name: "Nueva inspección" })
-  await dialog.getByLabel("Plantilla").click()
-  await page.getByRole("option", { name: new RegExp(`^${PLANTILLA} · E2E$`) }).click()
-  await dialog.getByLabel("Faena de la inspección").click()
-  await page.getByRole("option", { name: "Faena E2E", exact: true }).click()
-  await dialog.locator('input[name="subjectType"]').fill("extintor")
-  await dialog.locator('input[name="subjectLabel"]').fill(identificacion)
-  await dialog.getByRole("button", { name: "Crear" }).click()
-  await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
-
-  const fila = page.getByRole("row").filter({ hasText: identificacion }).first()
-  await expect(fila).toBeVisible({ timeout: 30_000 })
-  await fila.getByRole("link").first().click()
-  await expect(page).toHaveURL(/\/prevencion\/inspecciones\/[^/?]+$/, { timeout: 30_000 })
-  return { identificacion, url: page.url() }
-}
+const crearInspeccion = (page: Page) => crearInspeccionE2E(page, { prefijo: "E2E-CAS" })
 
 test.describe("Inspecciones — Concurrencia y bloqueo optimista", () => {
   test.beforeEach(async ({ page }) => {
@@ -46,14 +21,14 @@ test.describe("Inspecciones — Concurrencia y bloqueo optimista", () => {
     await crearInspeccion(page)
 
     // Guardado 1: Ítem Manómetro
-    await page.getByLabel("Resultado de Manómetro").click()
-    await page.getByRole("option", { name: "Cumple", exact: true }).click()
+    await campoInspeccion(page, "Resultado de Manómetro").click()
+    await page.getByRole("option", { name: "Bueno", exact: true }).click()
     await page.getByRole("button", { name: "Guardar respuestas" }).click()
     await expect(page.getByText("En ejecución").first()).toBeVisible({ timeout: 30_000 })
 
     // Guardado 2: Ítem Sello inmediatamente después (usando la nueva versión interna sin recargar toda la página)
-    await page.getByLabel("Resultado de Sello").click()
-    await page.getByRole("option", { name: "Cumple", exact: true }).click()
+    await campoInspeccion(page, "Resultado de Sello").click()
+    await page.getByRole("option", { name: "Bueno", exact: true }).click()
     /* Esperar a que la server action responda ANTES de recargar. Sin esto la
      * recarga abortaba el guardado en vuelo y sólo persistía el primer ítem: el
      * test fallaba mostrando "1 de 10" y parecía un conflicto de CAS que en
@@ -84,14 +59,14 @@ test.describe("Inspecciones — Concurrencia y bloqueo optimista", () => {
     await expect(page2.getByText("Planificada").first()).toBeVisible({ timeout: 15_000 })
 
     // En la página 1 guardamos cambios (avanzando la versión del registro en BD)
-    await page.getByLabel("Resultado de Manómetro").click()
-    await page.getByRole("option", { name: "Cumple", exact: true }).click()
+    await campoInspeccion(page, "Resultado de Manómetro").click()
+    await page.getByRole("option", { name: "Bueno", exact: true }).click()
     await page.getByRole("button", { name: "Guardar respuestas" }).click()
     await expect(page.getByText("En ejecución").first()).toBeVisible({ timeout: 30_000 })
 
     // En la página 2 (que tiene la versión vieja cargada), intentamos guardar otra respuesta
-    await page2.getByLabel("Resultado de Sello").click()
-    await page2.getByRole("option", { name: "Cumple", exact: true }).click()
+    await campoInspeccion(page2, "Resultado de Sello").click()
+    await page2.getByRole("option", { name: "Bueno", exact: true }).click()
     await page2.getByRole("button", { name: "Guardar respuestas" }).click()
 
     // El servidor o la UI debe rechazar la versión obsoleta o informar la inconsistencia

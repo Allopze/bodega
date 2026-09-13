@@ -66,6 +66,17 @@ export default defineConfig({
   reporter: process.env.CI ? "github" : "list",
   use: {
     baseURL: `http://localhost:${port}`,
+    // Sin esto Playwright usa su default —esperar indefinidamente— y una acción sobre
+    // un locator que ya no resuelve cuelga hasta agotar los 150 s del test. Así se veían
+    // los 20 timeouts de la familia inspecciones: el `<SelectItem>` de plantillas ganó un
+    // prefijo de tipo y los specs lo buscaban con una regex anclada, pero en vez de un
+    // fallo legible de "el locator no resolvió" daba un timeout mudo. Son 20 × 150 s ≈ 50
+    // minutos de reloj muerto en la corrida completa.
+    //
+    // 15 s es holgado para cualquier interacción real de esta app y convierte un selector
+    // vencido en un fallo rápido que nombra el locator. El presupuesto de los flujos
+    // lentos sigue viviendo en `timeout` y en los `test.setTimeout` de cada spec.
+    actionTimeout: 15_000,
     trace: "retain-on-failure",
     video: "retain-on-failure",
   },

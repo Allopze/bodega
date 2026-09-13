@@ -370,3 +370,111 @@ export const MINIMAL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
   "base64",
 )
+
+/** La plantilla aprobada del fixture: Anexo 2 de extintores, cinco ítems puntuables. */
+export const PLANTILLA_INSPECCION = "Inspección de Estado de Extintores"
+
+/** Un token por proceso para que dos corridas no colisionen en la misma base sembrada. */
+const RUN_INSPECCION = Date.now().toString(36).toUpperCase().slice(-5)
+let contadorInspeccion = 0
+
+/**
+ * Da de alta una inspección desde el diálogo "Nueva inspección" y la deja abierta.
+ *
+ * Estaba copiado literalmente en cinco specs, y por eso un cambio de una línea en la UI
+ * rompió los cinco: `inspection-run-list.tsx` empezó a anteponer el tipo a cada opción de
+ * plantilla —"Inspección · Inspección de Estado de Extintores · E2E"— y las cinco copias
+ * la buscaban con una regex anclada que ya no calzaba. Vive acá para que el próximo
+ * cambio de ese estilo sea una línea y no cinco.
+ *
+ * El match es por **sufijo** (`nombre · versión`) a propósito: identifica la plantilla sin
+ * depender de cómo la UI decore el prefijo.
+ */
+export async function crearInspeccion(page: Page, opciones: {
+  /** Prefijo del identificador, para distinguir el origen en la bandeja. */
+  prefijo?: string
+  /** Identificación completa, cuando el test necesita fijarla. */
+  identificacion?: string
+  origen?: string
+  sujetoInventario?: string
+} = {}): Promise<{ identificacion: string; url: string }> {
+  const identificacion = opciones.identificacion
+    ?? `${opciones.prefijo ?? "E2E"}-${RUN_INSPECCION}-${++contadorInspeccion}`
+
+  await page.goto("/prevencion/inspecciones")
+  await expectPageTitle(page, "Inspecciones")
+
+  await page.getByRole("button", { name: "Nueva inspección" }).click()
+  const dialog = page.getByRole("dialog", { name: "Nueva inspección" })
+  await dialog.getByLabel("Plantilla").click()
+  await page.getByRole("option", { name: `${PLANTILLA_INSPECCION} · E2E` }).click()
+  await dialog.getByLabel("Faena de la inspección").click()
+  await page.getByRole("option", { name: "Faena E2E", exact: true }).click()
+
+  if (opciones.origen) {
+    await dialog.getByLabel("Origen").click()
+    await page.getByRole("option", { name: opciones.origen, exact: true }).click()
+  }
+  if (opciones.sujetoInventario) {
+    await dialog.getByLabel("Sujeto inspeccionado").click()
+    await page.getByRole("option", { name: opciones.sujetoInventario }).click()
+  } else {
+    await dialog.locator('input[name="subjectType"]').fill("extintor")
+    await dialog.locator('input[name="subjectLabel"]').fill(identificacion)
+  }
+
+  await dialog.getByRole("button", { name: "Crear" }).click()
+  await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
+
+  // Crear ahora abre la inspección: `inspection-run-list.tsx:506` hace `router.push` al
+  // detalle. Las copias de este helper seguían buscando la fila en la bandeja y esperaban
+  // 30 s por algo que ya no se renderiza, porque la navegación ya había ocurrido. Se
+  // tolera cualquiera de los dos flujos en vez de fijar el actual: la bandeja sigue siendo
+  // el camino cuando la creación no redirige.
+  const detalle = /\/prevencion\/inspecciones\/[^/?]+$/
+  if (!detalle.test(new URL(page.url()).pathname)) {
+    const fila = page.getByRole("row").filter({ hasText: identificacion }).first()
+    await expect(fila).toBeVisible({ timeout: 30_000 })
+    await fila.getByRole("link").first().click()
+  }
+  await expect(page).toHaveURL(detalle, { timeout: 30_000 })
+
+  return { identificacion, url: page.url() }
+}
+
+/**
+ * Responde un ítem de la inspección abierta.
+ *
+ * Estaba copiado en cuatro specs con la misma omisión: `inspection-run-detail.tsx` pinta
+ * **dos** veces cada ítem —tarjetas para móvil (`item-mobile-*`, línea 1292) y tabla para
+ * escritorio (1381)— con idéntico `aria-label`, y esconde una de las dos por CSS según el
+ * breakpoint. Ambas siguen en el DOM, así que `getByLabel` resolvía a dos elementos y
+ * Playwright abortaba por strict mode. Se filtra por visibilidad en vez de tomar `.first()`:
+ * el primero del DOM es la tarjeta móvil, que en escritorio está oculta y no se puede
+ * clickear.
+ */
+export async function responderItemInspeccion(
+  page: Page,
+  item: string,
+  resultado: string,
+  comentario?: string,
+) {
+  await campoInspeccion(page, `Resultado de ${item}`).click()
+  await page.getByRole("option", { name: resultado, exact: true }).click()
+  if (comentario !== undefined) {
+    await campoInspeccion(page, `Comentario de ${item}`).fill(comentario)
+  }
+}
+
+/**
+ * El control de un ítem, sólo el que está realmente pintado.
+ *
+ * `inspection-run-detail.tsx` documenta en I-06 que el árbol móvil y el de escritorio
+ * coexisten en el DOM —uno oculto por `md:hidden`/`hidden md:*`— y trae su propio
+ * `visibleItemElement` para distinguirlos. Los specs no lo hacían: `getByLabel` resolvía a
+ * los dos y Playwright abortaba por strict mode. Se filtra por visibilidad en vez de tomar
+ * `.first()` porque el primero del DOM es la tarjeta móvil, que en escritorio está oculta.
+ */
+export function campoInspeccion(page: Page, label: string) {
+  return page.getByLabel(label, { exact: false }).filter({ visible: true })
+}
