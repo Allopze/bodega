@@ -23,6 +23,11 @@ const PANTALLAS = [
   { path: "/flota", name: "Flota" },
   { path: "/pendientes", name: "Mis pendientes" },
   { path: "/admin/backups", name: "Respaldos" },
+  // El panel de administración ganó tiles de estado y con ellos el tope de A1.
+  // Sus candidatas son cinco (respaldos, correo, DTE, bloqueos e
+  // infraestructura) y la fila se arma con las peores cuatro: esta guarda es lo
+  // que impide que el recorte se caiga y aparezcan las cinco.
+  { path: "/admin", name: "Panel de Administración" },
   { path: "/prevencion/capa", name: "CAPA" },
   { path: "/prevencion/incidentes", name: "Incidentes" },
   { path: "/prevencion/capacitacion", name: "Capacitación" },

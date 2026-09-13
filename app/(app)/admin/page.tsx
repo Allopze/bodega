@@ -2,8 +2,16 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth/auth"
 import { getAdminAreas } from "@/components/layout/admin-nav"
+import { getAdminHealthSignals } from "@/lib/services/admin-health"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
+import { AdminAreaIndex } from "./admin-area-index"
+import { AdminHealthCards } from "./admin-health-cards"
+
+// Las señales leen el último respaldo, la última corrida DTE y los bloqueos
+// vigentes: cacheadas dirían que todo está bien horas después de dejar de
+// estarlo, que es exactamente el caso que esta pantalla debe delatar.
+export const dynamic = "force-dynamic"
 
 export const metadata: Metadata = { title: "Panel de Administración" }
 
@@ -15,7 +23,13 @@ export default async function AdminPage() {
   // único permiso admin no corresponde a ningún destino visible en el sidebar
   // (ver components/layout/admin-nav.ts), dejándolas frente a un panel vacío
   // en vez de un /forbidden consistente con el resto de la app.
-  if (getAdminAreas(session).length === 0) redirect("/forbidden")
+  const areas = getAdminAreas(session)
+  if (areas.length === 0) redirect("/forbidden")
+
+  // Las señales se filtran con el mismo árbol que pinta el índice, no con una
+  // lista de permisos paralela: así un destino que la sesión no ve nunca puede
+  // aparecer como tile, y las dos mitades de la pantalla no pueden divergir.
+  const signals = await getAdminHealthSignals(areas)
 
   return (
     <PageContainer>
@@ -29,12 +43,10 @@ export default async function AdminPage() {
           ]} />
         }
       />
-      <section className="rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-8 text-center shadow-[var(--shadow-card)]">
-        <h2 className="text-h3 text-[var(--color-text)]">Elige una categoría</h2>
-        <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-          Usa el panel lateral para navegar entre las categorías y módulos de administración disponibles.
-        </p>
-      </section>
+      <div className="flex flex-col gap-4">
+        <AdminHealthCards signals={signals} />
+        <AdminAreaIndex areas={areas} />
+      </div>
     </PageContainer>
   )
 }

@@ -131,8 +131,17 @@ export function getAdminAreas(session: Session): AreaNode[] {
     const items: NavItem[] = []
     for (const item of area.items) {
       const children = item.children?.filter((child) => canSeeNav(child, session))
-      if (!canSeeNav(item, session) && !children?.length) continue
-      items.push({ ...item, children })
+      const selfVisible = canSeeNav(item, session)
+      if (!selfVisible && !children?.length) continue
+      // El padre se conserva por sus hijos, pero su `href` no: el árbol se
+      // pinta con el padre como enlace (`nav-rows.tsx`), así que dejarlo
+      // apuntando a su propia pantalla mandaba a /forbidden a quien sólo tiene
+      // permiso sobre un hijo — el caso real de "Catálogos de flota", que pide
+      // `admin:fleet_catalog`, frente a una sesión que sólo trae
+      // `combustibles:manage_suppliers`. Se apunta al primer hijo visible, que
+      // es adonde esa sesión quería llegar de todos modos.
+      const href = selfVisible ? item.href : (children?.[0]?.href ?? item.href)
+      items.push({ ...item, href, children })
     }
     if (items.length === 0) continue
     areas.push({ ...area, items })
