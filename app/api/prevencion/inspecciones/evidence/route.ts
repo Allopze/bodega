@@ -2,13 +2,12 @@ export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
 import { NextResponse } from "next/server"
-import path from "node:path"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { generateStorageName } from "@/lib/services/prevention-documents/utils"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
-import { resolveInspectionEvidenceDir, createInspectionEvidencePath } from "@/lib/storage/config"
+import { createInspectionEvidencePath, resolveInspectionEvidenceDir, resolveStorageFile } from "@/lib/storage/config"
 import { addAnswerEvidence, assertInspectionOperationEnabled } from "@/lib/services/prevention-inspections"
 import { logger } from "@/lib/logger"
 import { safeActionMessage } from "@/lib/action-error"
@@ -78,7 +77,7 @@ export async function POST(request: Request) {
     const storageName = generateStorageName(file.name)
     const dir = resolveInspectionEvidenceDir()
     await mkdirp(dir)
-    await writeBuffer(path.join(/*turbopackIgnore: true*/ dir, storageName), Buffer.from(buffer))
+    await writeBuffer(resolveStorageFile(dir, storageName), Buffer.from(buffer))
     const relativePath = createInspectionEvidencePath(storageName)
     const created = await addAnswerEvidence({ answerId, path: relativePath, caption }, access)
     return NextResponse.json({ id: created.id, path: created.path }, { status: 201 })

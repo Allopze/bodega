@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto"
-import path from "node:path"
 import ExcelJS from "exceljs"
 import { and, asc, eq, inArray, sql } from "drizzle-orm"
 import { z, ZodError } from "zod"
@@ -18,7 +17,7 @@ import {
   addRiskEntryWithClient,
 } from "@/lib/services/prevention-risk-legal"
 import { mkdirp, removeFile, writeBuffer } from "@/lib/storage/helpers"
-import { resolveStorageDir } from "@/lib/storage/config"
+import { resolveRiskImportsDir, resolveStorageFile } from "@/lib/storage/config"
 import { riskEntrySchema } from "@/lib/validation/prevention-module/risk-legal"
 import { validateLoadedWorkbook, validateXlsxEnvelope } from "@/lib/services/xlsx-security"
 
@@ -328,8 +327,8 @@ export async function stageRiskImport(args: {
   const batchId = `riskimport-${nanoid()}`
   const storageName = `${batchId}.xlsx`
   const relativePath = `${STORAGE_PREFIX}${storageName}`
-  const directory = path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "risk-imports")
-  const absolutePath = path.join(/*turbopackIgnore: true*/ directory, storageName)
+  const directory = resolveRiskImportsDir()
+  const absolutePath = resolveStorageFile(directory, storageName)
   await mkdirp(directory)
   await writeBuffer(absolutePath, args.buffer)
   try {
@@ -580,7 +579,7 @@ export function resolveRiskImportSourcePath(filePath: string) {
   if (!filePath.startsWith(STORAGE_PREFIX)) return null
   const fileName = filePath.slice(STORAGE_PREFIX.length)
   if (!/^[a-zA-Z0-9_-]+\.xlsx$/.test(fileName)) return null
-  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "risk-imports", fileName)
+  return resolveStorageFile(resolveRiskImportsDir(), fileName)
 }
 
 export async function getRiskImportSourceFile(batchId: string, access: RiskLegalAccess) {

@@ -2,14 +2,13 @@ export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
 import { NextResponse } from "next/server"
-import path from "node:path"
 import { createHash } from "node:crypto"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { generateStorageName } from "@/lib/services/prevention-documents/utils"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
-import { resolveInspectionEvidenceDir, createInspectionEvidencePath } from "@/lib/storage/config"
+import { createInspectionEvidencePath, resolveInspectionEvidenceDir, resolveStorageFile } from "@/lib/storage/config"
 import { addRunDocument, assertInspectionOperationEnabled } from "@/lib/services/prevention-inspections"
 import { detectMarksInPhoto } from "@/lib/services/inspection-forms/detect-marks"
 import { logger } from "@/lib/logger"
@@ -82,7 +81,7 @@ export async function POST(request: Request) {
     const storageName = generateStorageName(file.name)
     const dir = resolveInspectionEvidenceDir()
     await mkdirp(dir)
-    await writeBuffer(path.join(/*turbopackIgnore: true*/ dir, storageName), Buffer.from(buffer))
+    await writeBuffer(resolveStorageFile(dir, storageName), Buffer.from(buffer))
     const relativePath = createInspectionEvidencePath(storageName)
 
     // Modo sombra: se lee la planilla y se guarda lo leído, pero NO se

@@ -1,7 +1,6 @@
 "use server"
 
 import { promises as fs } from "node:fs"
-import path from "node:path"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
@@ -12,7 +11,7 @@ import { registerWorkerStockDelivery, type DeliveryAttachmentInput } from "@/lib
 import { voidWorkerStockDelivery } from "@/lib/services/deliveries-void"
 import { workerStockDeliverySchema, type ActionState } from "@/lib/validation/operations"
 
-import { createDeliveryAttachmentPath, resolveDeliveriesDir } from "@/lib/storage/config"
+import { createDeliveryAttachmentPath, resolveDeliveriesDir, resolveStorageFile } from "@/lib/storage/config"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { safeActionMessage } from "@/lib/action-error"
 
@@ -117,7 +116,7 @@ async function persistProofFile(value: FormDataEntryValue | null): Promise<{
   const storageName = `${Date.now()}-${nanoid()}-${safeName}`
   const storageDir = resolveDeliveriesDir()
   const relativePath = createDeliveryAttachmentPath(storageName)
-  const absolutePath = path.join(storageDir, storageName)
+  const absolutePath = resolveStorageFile(storageDir, storageName)
 
   await fs.mkdir(storageDir, { recursive: true })
   await fs.writeFile(absolutePath, Buffer.from(fileBuf))

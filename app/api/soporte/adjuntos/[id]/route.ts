@@ -1,13 +1,12 @@
 export const dynamic = "force-dynamic"
 
 import { promises as fs } from "node:fs"
-import path from "node:path"
 import { NextResponse } from "next/server"
 import { eq } from "drizzle-orm"
 import { db } from "@/db"
 import { attachments, feedbackReports } from "@/db/schema"
 import { auth } from "@/lib/auth/auth"
-import { resolveStorageDir } from "@/lib/storage/config"
+import { resolveFeedbackDir, resolveStorageFile } from "@/lib/storage/config"
 import { encodeContentDisposition } from "@/lib/utils"
 import { canAccessFeedbackIndex, canAccessFeedbackReport } from "@/lib/services/feedback-access"
 
@@ -55,7 +54,7 @@ export async function GET(
     return NextResponse.json({ error: "Ruta inválida" }, { status: 400 })
   }
 
-  const absolutePath = path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "feedback", storageName)
+  const absolutePath = resolveStorageFile(resolveFeedbackDir(), storageName)
 
   try {
     const file = await fs.readFile(absolutePath)

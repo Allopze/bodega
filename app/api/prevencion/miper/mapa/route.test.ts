@@ -29,6 +29,9 @@ vi.mock("@/lib/storage/helpers", () => ({
 vi.mock("@/lib/storage/config", () => ({
   resolveRiskMapDir: mockResolveRiskMapDir,
   createRiskMapPath: mockCreateRiskMapPath,
+  // Refleja el helper real: la ruta absoluta ya no se arma con `path.join` en la ruta,
+  // sino en lib/storage, que es donde vive el `turbopackIgnore`.
+  resolveStorageFile: (dir: string, name: string) => `${dir}/${name}`,
 }))
 vi.mock("@/lib/services/prevention-risk-map", () => ({ uploadRiskMapLayout: mockUploadRiskMapLayout }))
 vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath }))

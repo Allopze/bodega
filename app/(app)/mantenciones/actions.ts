@@ -5,7 +5,6 @@ import { safeActionMessage } from "@/lib/action-error"
 import { revalidatePath } from "next/cache"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import { promises as fs } from "node:fs"
-import path from "node:path"
 import { can, requirePermission } from "@/lib/auth/can"
 import { MAINTENANCE_EXPORT_LIMIT, addMaintenanceLabor, addMaintenancePart, addMaintenanceTask, createMaintenanceRecord, decideMaintenanceCostApproval, getMaintenanceExportData, materializeDueMaintenancePlans, saveMaintenanceDocumentPolicy, saveMaintenancePlan, setMaintenanceDocumentPolicyActive, setMaintenancePlanActive, setMaintenanceTaskStatus, transitionMaintenanceRecord, updateMaintenanceRecord, uploadMaintenanceDocument } from "@/lib/services/maintenance"
 import { createMaintenanceRecordSchema, maintenanceCostApprovalSchema, maintenanceDocumentMetadataSchema, maintenanceDocumentPolicySchema, maintenanceLaborSchema, maintenancePartSchema, maintenancePlanSchema, maintenanceTaskSchema, transitionMaintenanceRecordSchema, updateMaintenanceRecordSchema } from "@/lib/validation/maintenance"
@@ -16,7 +15,7 @@ import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { todayInChile } from "@/lib/utils"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
-import { createMaintenanceDocumentPath, resolveMaintenanceDir } from "@/lib/storage/config"
+import { createMaintenanceDocumentPath, resolveMaintenanceDir, resolveStorageFile } from "@/lib/storage/config"
 
 export async function createMaintenanceRecordAction(
   _prev: ActionState,
@@ -262,7 +261,7 @@ export async function uploadMaintenanceDocumentAction(_prev: ActionState, formDa
   const safeName = (file.name || "documento").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 120) || "documento"
   const storageName = `${Date.now()}-${nanoid()}-${safeName}`
   const storageDir = resolveMaintenanceDir()
-  const absolutePath = path.join(storageDir, storageName)
+  const absolutePath = resolveStorageFile(storageDir, storageName)
   await fs.mkdir(storageDir, { recursive: true })
   await fs.writeFile(absolutePath, Buffer.from(fileBuffer))
   try {

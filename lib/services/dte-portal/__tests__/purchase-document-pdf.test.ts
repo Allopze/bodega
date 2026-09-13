@@ -45,6 +45,7 @@ vi.mock("@/lib/storage/config", () => ({
   resolveDteFile: (value: string) => value.startsWith("storage/dte/") ? `/var/dte/${value.slice("storage/dte/".length)}` : null,
   resolveDteDir: () => "/var/dte",
   createDtePath: (fileName: string) => `storage/dte/${fileName}`,
+  resolveStorageFile: (dir: string, name: string) => `${dir}/${name}`,
 }))
 vi.mock("@/lib/services/dte-portal/config", () => ({
   buildDtePortalClientConfig: vi.fn().mockResolvedValue({

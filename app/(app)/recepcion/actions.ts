@@ -12,14 +12,10 @@ import { logger } from "@/lib/logger"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import { safeActionMessage } from "@/lib/action-error"
 import { promises as fs } from "node:fs"
-import path from "node:path"
 import { nanoid } from "@/lib/id"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
-import {
-  createEmergencyResourceCertificatePath,
-  resolveEmergencyResourceCertificatesDir,
-} from "@/lib/storage/config"
+import { createEmergencyResourceCertificatePath, resolveEmergencyResourceCertificatesDir, resolveStorageFile } from "@/lib/storage/config"
 import type { EmergencyServiceCertificate } from "@/lib/services/emergency-resource-service"
 
 const REVALIDATE = "/recepcion"
@@ -143,7 +139,7 @@ async function persistEmergencyCertificate(value: FormDataEntryValue | null): Pr
     .slice(0, 120) || "certificado"
   const storageName = `${Date.now()}-${nanoid()}-${safeName}`
   const directory = resolveEmergencyResourceCertificatesDir()
-  const absolutePath = path.join(directory, storageName)
+  const absolutePath = resolveStorageFile(directory, storageName)
   await fs.mkdir(directory, { recursive: true })
   await fs.writeFile(absolutePath, buffer, { flag: "wx" })
   return {

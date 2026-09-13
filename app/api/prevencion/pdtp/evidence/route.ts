@@ -8,9 +8,8 @@ import { assertWorksiteAccess, type WorksiteScope } from "@/lib/services/prevent
 import { generateStorageName } from "@/lib/services/prevention-documents/utils"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
-import { resolvePdtpEvidenceDir, createPdtpEvidencePath } from "@/lib/storage/config"
+import { createPdtpEvidencePath, resolvePdtpEvidenceDir, resolveStorageFile } from "@/lib/storage/config"
 import { logger } from "@/lib/logger"
-import path from "node:path"
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024
 
@@ -74,7 +73,7 @@ export async function POST(request: Request) {
     const storageName = generateStorageName(file.name)
     const dir = resolvePdtpEvidenceDir()
     await mkdirp(dir)
-    await writeBuffer(path.join(/*turbopackIgnore: true*/ dir, storageName), Buffer.from(buffer))
+    await writeBuffer(resolveStorageFile(dir, storageName), Buffer.from(buffer))
     const relativePath = createPdtpEvidencePath(storageName)
     return NextResponse.json({ path: relativePath }, { status: 201 })
   } catch (err) {
