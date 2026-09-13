@@ -5,6 +5,7 @@ export const WORKSITE_SCOPED_ROLE_NAMES = [
   "conductor_lider",
   "admin_contrato",
   "jefe_terreno",
+  "supervisor_terreno",
   "cphs",
 ] as const
 
