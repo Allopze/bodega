@@ -53,7 +53,7 @@ function Field({ label, htmlFor, required, helper, hint, error, className, child
   // devuelve el nombre accesible a ~400 usos de Field sin ids explícitos.
   if (!htmlFor && !(error || helperText)) {
     const childArray = React.Children.toArray(children)
-    if (childArray.length === 1) {
+    if (childArray.length === 1 && wrapsASingleControl(childArray[0])) {
       return (
         <label className={cn("flex flex-col gap-0", className)}>
           <Label required={required}>{label}</Label>
@@ -80,6 +80,28 @@ function Field({ label, htmlFor, required, helper, hint, error, className, child
       ) : null}
     </div>
   )
+}
+
+/** Intrínsecos que un `<label>` puede rotular por envolverlos. */
+const LABELABLE_TAGS = new Set(["input", "select", "textarea", "button", "meter", "output", "progress"])
+
+/**
+ * Un `<label>` que envuelve contenido rotula al **primer** control labelable que
+ * encuentre, y su nombre pasa a ser todo el texto del label. Cuando el hijo
+ * único es un contenedor con varios controles eso produce un nombre falso: en
+ * `/recepcion/nueva` la tarjeta "Recepción en oficina" se llamaba "Tipo de
+ * recepción Recepción en faena Pendiente Disponible una vez registrada la
+ * llegada a oficina" —la etiqueta del grupo más el texto de la OTRA tarjeta—,
+ * y ningún locator por rol podía alcanzarla.
+ *
+ * Un componente (Input, Select, Textarea…) sí rinde un control único y se
+ * envuelve como antes. Un intrínseco que no es labelable —`div`, `span`,
+ * `fieldset`…— es un contenedor: se cae al layout con `<div>`, donde el label
+ * no se asocia a nada y cada control conserva su propio nombre.
+ */
+function wrapsASingleControl(child: React.ReactNode): boolean {
+  if (!React.isValidElement(child)) return false
+  return typeof child.type === "string" ? LABELABLE_TAGS.has(child.type) : true
 }
 
 function addLabelAndDescriptionToSingleControl(
