@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { campoInspeccion, crearInspeccion as crearInspeccionE2E, login } from "./helpers"
+import { campoInspeccion, crearInspeccion as crearInspeccionE2E, login, textoVisible } from "./helpers"
 
 /**
  * E2E Spec: Control de Concurrencia Optimista (CAS) en Inspecciones.
@@ -24,7 +24,7 @@ test.describe("Inspecciones — Concurrencia y bloqueo optimista", () => {
     await campoInspeccion(page, "Resultado de Manómetro").click()
     await page.getByRole("option", { name: "Bueno", exact: true }).click()
     await page.getByRole("button", { name: "Guardar respuestas" }).click()
-    await expect(page.getByText("En ejecución").first()).toBeVisible({ timeout: 30_000 })
+    await expect(textoVisible(page, "En ejecución").first()).toBeVisible({ timeout: 30_000 })
 
     // Guardado 2: Ítem Sello inmediatamente después (usando la nueva versión interna sin recargar toda la página)
     await campoInspeccion(page, "Resultado de Sello").click()
@@ -47,7 +47,7 @@ test.describe("Inspecciones — Concurrencia y bloqueo optimista", () => {
 
     // Recargar y comprobar que ambos ítems persistieron correctamente
     await page.reload()
-    await expect(page.getByText("2 de 10 ítems respondidos")).toBeVisible({ timeout: 15_000 })
+    await expect(textoVisible(page, "2 de 5 obligatorios · 2 de 10 totales")).toBeVisible({ timeout: 15_000 })
   })
 
   test("edición concurrente en dos sesiones detecta la versión obsoleta", async ({ page, context }) => {
@@ -56,13 +56,13 @@ test.describe("Inspecciones — Concurrencia y bloqueo optimista", () => {
     // Abrir la misma inspección en una segunda pestaña/página
     const page2 = await context.newPage()
     await page2.goto(url)
-    await expect(page2.getByText("Planificada").first()).toBeVisible({ timeout: 15_000 })
+    await expect(textoVisible(page2, "Pendiente de ejecución").first()).toBeVisible({ timeout: 15_000 })
 
     // En la página 1 guardamos cambios (avanzando la versión del registro en BD)
     await campoInspeccion(page, "Resultado de Manómetro").click()
     await page.getByRole("option", { name: "Bueno", exact: true }).click()
     await page.getByRole("button", { name: "Guardar respuestas" }).click()
-    await expect(page.getByText("En ejecución").first()).toBeVisible({ timeout: 30_000 })
+    await expect(textoVisible(page, "En ejecución").first()).toBeVisible({ timeout: 30_000 })
 
     // En la página 2 (que tiene la versión vieja cargada), intentamos guardar otra respuesta
     await campoInspeccion(page2, "Resultado de Sello").click()
@@ -71,7 +71,7 @@ test.describe("Inspecciones — Concurrencia y bloqueo optimista", () => {
 
     // El servidor o la UI debe rechazar la versión obsoleta o informar la inconsistencia
     await page2.reload()
-    await expect(page2.getByText("En ejecución").first()).toBeVisible()
+    await expect(textoVisible(page2, "En ejecución").first()).toBeVisible()
     await page2.close()
   })
 })

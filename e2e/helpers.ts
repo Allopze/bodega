@@ -478,3 +478,20 @@ export async function responderItemInspeccion(
 export function campoInspeccion(page: Page, label: string) {
   return page.getByLabel(label, { exact: false }).filter({ visible: true })
 }
+
+/**
+ * Texto del árbol que está realmente pintado.
+ *
+ * Al menos quince pantallas de este repo renderizan el mismo contenido dos veces —tarjetas
+ * `md:hidden` y tabla `hidden md:block`— y ambas quedan en el DOM. El matiz que decide cada
+ * caso: `getByRole()` ignora los nodos ocultos por defecto y sobrevive; `getByText()`,
+ * `getByLabel()` y `locator()` **no** filtran, así que o revientan por strict mode o se
+ * cuelgan esperando a que aparezca un nodo que nunca será visible.
+ *
+ * Ese segundo caso es el más engañoso: `getByText("En ejecución").first()` devolvía el badge
+ * móvil oculto y esperaba treinta segundos por él, lo que se leía como si el guardado no
+ * hubiera ocurrido cuando en realidad sí había ocurrido.
+ */
+export function textoVisible(page: Page, text: string | RegExp) {
+  return page.getByText(text).filter({ visible: true })
+}

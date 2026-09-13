@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { crearInspeccion as crearInspeccionE2E, login, responderItemInspeccion } from "./helpers"
+import { crearInspeccion as crearInspeccionE2E, login, responderItemInspeccion, textoVisible } from "./helpers"
 
 /**
  * E2E Spec: Sincronización y Resiliencia Offline de Inspecciones.
@@ -27,7 +27,7 @@ test.describe("Inspecciones — Operación offline y sincronización", () => {
     for (const item of ["Manómetro", "Rótulo", "Manguera", "Certificado CECMEC"]) {
       await responderItem(page, item, "Bueno")
     }
-    await responderItem(page, "Sello", "Malo")
+    await responderItem(page, "Sello", "Malo", "Sello cortado; el extintor fue manipulado.")
 
     // Llenar acta
     await page.getByLabel("Resultado del acta").click()
@@ -38,16 +38,16 @@ test.describe("Inspecciones — Operación offline y sincronización", () => {
     // Encola el cierre en el dispositivo (antes "Guardar sin conexión").
     await page.getByRole("button", { name: "Encolar cierre en este dispositivo" }).click()
     await expect(page.getByText("Guardada en el dispositivo. Se enviará al recuperar conexión.")).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByText("1 cierre pendiente de sincronizar.")).toBeVisible()
+    await expect(textoVisible(page, "1 cierre pendiente de sincronizar.")).toBeVisible()
 
     // Sincronizar
     await page.getByRole("button", { name: "Sincronizar" }).click()
-    await expect(page.getByText("1 cierre pendiente de sincronizar.")).toBeHidden({ timeout: 30_000 })
+    await expect(textoVisible(page, "1 cierre pendiente de sincronizar.")).toBeHidden({ timeout: 30_000 })
 
     // Validar estado persistido en el servidor
     await page.reload()
-    await expect(page.getByText("Ejecutada").first()).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByText("80%", { exact: true })).toBeVisible()
+    await expect(textoVisible(page, "Pendiente de revisión").first()).toBeVisible({ timeout: 15_000 })
+    await expect(textoVisible(page, "80%").first()).toBeVisible()
     await expect(page.getByRole("heading", { name: "Hallazgos (1)" })).toBeVisible()
   })
 
@@ -63,15 +63,15 @@ test.describe("Inspecciones — Operación offline y sincronización", () => {
     await page.getByLabel("Firma de supervisor").fill("Comprador E2E")
 
     await page.getByRole("button", { name: "Encolar cierre en este dispositivo" }).click()
-    await expect(page.getByText("1 cierre pendiente de sincronizar.")).toBeVisible({ timeout: 30_000 })
+    await expect(textoVisible(page, "1 cierre pendiente de sincronizar.")).toBeVisible({ timeout: 30_000 })
 
     // Disparar sincronización
     await page.getByRole("button", { name: "Sincronizar" }).click()
-    await expect(page.getByText("1 cierre pendiente de sincronizar.")).toBeHidden({ timeout: 30_000 })
+    await expect(textoVisible(page, "1 cierre pendiente de sincronizar.")).toBeHidden({ timeout: 30_000 })
 
     // Recargar y verificar integridad
     await page.reload()
-    await expect(page.getByText("Ejecutada").first()).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByText("100%", { exact: true })).toBeVisible()
+    await expect(textoVisible(page, "Pendiente de revisión").first()).toBeVisible({ timeout: 15_000 })
+    await expect(textoVisible(page, "100%").first()).toBeVisible()
   })
 })

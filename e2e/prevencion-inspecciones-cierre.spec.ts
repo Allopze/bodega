@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { login } from "./helpers"
+import { login, textoVisible } from "./helpers"
 
 /**
  * E2E: hallazgos, CAPA y cierre de una inspección.
@@ -142,7 +142,7 @@ test.describe("Inspecciones — revisión independiente y cierre", () => {
    */
   test("reabrir para rectificar borra el cumplimiento firmado", async ({ page }) => {
     await abrir(page, "insp-e2e-reabrir", "INSP-E2E-0006")
-    await expect(page.getByText("80%", { exact: true }).filter({ visible: true }).first()).toBeVisible()
+    await expect(textoVisible(page, "80%").first()).toBeVisible()
     await expect(page.getByRole("heading", { name: "Hallazgos (1)" })).toBeVisible()
 
     await confirmarConMotivo(

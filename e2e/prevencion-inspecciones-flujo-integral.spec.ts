@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { crearInspeccion as crearInspeccionE2E, expectPageTitle, login, responderItemInspeccion } from "./helpers"
+import { crearInspeccion as crearInspeccionE2E, expectPageTitle, login, responderItemInspeccion, textoVisible } from "./helpers"
 
 /**
  * E2E Spec: Flujo Integral Multimódulo de Inspecciones SST.
@@ -28,7 +28,7 @@ test.describe("Inspecciones — Flujo Integral y Trazabilidad CAPA / PDTP", () =
     for (const item of ["Sello", "Rótulo", "Manguera", "Certificado CECMEC"]) {
       await responderItem(page, item, "Bueno")
     }
-    await responderItem(page, "Manómetro", "Malo")
+    await responderItem(page, "Manómetro", "Malo", "Aguja en zona roja: presión bajo el mínimo.")
 
     await page.getByLabel("Resultado del acta").click()
     await page.getByRole("option", { name: "Con observaciones", exact: true }).click()
@@ -43,8 +43,8 @@ test.describe("Inspecciones — Flujo Integral y Trazabilidad CAPA / PDTP", () =
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
 
     await page.reload()
-    await expect(page.getByText("Ejecutada").first()).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByText("80%", { exact: true })).toBeVisible()
+    await expect(textoVisible(page, "Pendiente de revisión").first()).toBeVisible({ timeout: 15_000 })
+    await expect(textoVisible(page, "80%").first()).toBeVisible()
 
     // 2. Localizar el hallazgo generado y derivarlo a CAPA
     const filaHallazgo = page.getByRole("row").filter({ hasText: "Manómetro: aguja en zona verde." })
