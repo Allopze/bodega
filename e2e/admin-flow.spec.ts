@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
-import { clearRateLimits } from "./helpers"
+import { clearRateLimits, enviarAsistenteDeProducto } from "./helpers"
 
 
 let counter = 0
@@ -145,7 +145,7 @@ test("admin: crear producto con categoría, verificarlo en catálogo", async ({ 
   await dialog.getByRole("textbox", { name: "Nombre" }).fill(name)
   await selectRadixById(page, "p-cat", /Categoría E2E/)
 
-  await submitFormAndWaitForClose(page, dialog)
+  await enviarAsistenteDeProducto(page, dialog)
 
   // The product creation dialog may close via redirect/refresh.
   // Wait for the table to show the new product instead of asserting dialog closed.
@@ -160,7 +160,11 @@ test("admin: crear producto con categoría, verificarlo en catálogo", async ({ 
  */
 test("admin: asistente de variantes crea un producto por cada talla", async ({ page }) => {
   await login(page)
-  const familyName = `Casco ${uniqueId("E2E")}`
+  // No "Casco E2E…": el fixture tiene una familia llamada exactamente así, y
+  // `epp-variant-request-flow.spec.ts` la busca por prefijo en el picker. Como
+  // la base E2E es compartida, el producto que crea este test se colaba primero
+  // en esa búsqueda y la otra prueba terminaba pidiendo el producto equivocado.
+  const familyName = `Casco asistente ${uniqueId("WIZ")}`
 
   await page.goto("/admin/productos")
   await expect(page.getByRole("heading", { name: "Catálogo" })).toBeVisible()

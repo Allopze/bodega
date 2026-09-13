@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test"
+import { expect, type Locator, type Page } from "@playwright/test"
 import postgres from "postgres"
 
 export async function clearRateLimits() {
@@ -494,4 +494,29 @@ export function campoInspeccion(page: Page, label: string) {
  */
 export function textoVisible(page: Page, text: string | RegExp) {
   return page.getByText(text).filter({ visible: true })
+}
+
+/**
+ * Completa el asistente de "Nuevo producto" desde el paso 1 y lo envía.
+ *
+ * Los specs que sólo necesitan **un** producto en el catálogo lo creaban con
+ * `form.requestSubmit()` desde el paso 1, para no recorrer pasos que no estaban
+ * probando. Ese atajo dejó de guardar: desde que el pie del asistente cambia el
+ * `type` del botón según el paso, el envío del paso 1 avanza al 2 en vez de
+ * crear, y el panel se quedaba abierto en "Atributos" hasta agotar el timeout.
+ *
+ * Recibe el panel ya abierto y con el paso 1 lleno (nombre y categoría): el
+ * camino de variantes tiene su propia cobertura en `admin-flow.spec.ts`.
+ */
+export async function enviarAsistenteDeProducto(page: Page, panel: Locator) {
+  await panel.getByRole("button", { name: /Siguiente/ }).click()
+  // Paso 2 (atributos): sin ninguno, se crea un solo producto sin variantes.
+  await panel.getByRole("button", { name: /Siguiente/ }).click()
+  // `nextStep` regenera las variantes en un `setTimeout(0)`, así que el pie se
+  // vuelve a montar justo después de cambiar de paso: se espera al botón final
+  // antes de clickearlo o el clic cae sobre un nodo que se está desmontando.
+  const crear = panel.getByRole("button", { name: "Crear producto" })
+  await expect(crear).toBeVisible({ timeout: 15_000 })
+  await crear.click()
+  await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
 }

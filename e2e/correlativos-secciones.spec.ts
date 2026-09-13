@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
-import { login, selectRadixById, pickCurrentMonthDate, idFromUrl, receiptSubmitName, receiptStageCard, dispatchAndReceiveGuide } from "./helpers"
+import { login, selectRadixById, pickCurrentMonthDate, idFromUrl, receiptSubmitName, receiptStageCard, dispatchAndReceiveGuide, enviarAsistenteDeProducto } from "./helpers"
 
 /**
  * El correlativo como identidad: SOL y OC a través de las secciones, y frente a
@@ -76,10 +76,14 @@ function sequenceOf(code: string): number {
   return Number(digits)
 }
 
+/**
+ * Envía un panel del catálogo de una sola página (editar producto, categorías).
+ *
+ * El alta de producto NO usa esto: es un asistente de tres pasos cuyo pie
+ * cambia el `type` del botón según el paso, así que `requestSubmit()` desde el
+ * primero avanza en vez de crear. Ese camino va por `enviarAsistenteDeProducto`.
+ */
 async function submitSheet(page: Page, sheet: Locator) {
-  // Mismo camino que `admin-flow.spec.ts`: el formulario del catálogo es un
-  // asistente de 3 pasos, pero lleva todos sus campos en inputs ocultos, así que
-  // enviarlo directo evita recorrer pasos que esta prueba no está probando.
   await sheet.locator("form").evaluate((el) => (el as HTMLFormElement).requestSubmit())
   await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
 }
@@ -123,7 +127,7 @@ async function createEppProduct(page: Page, name: string) {
   const sheet = await openCatalogSheet(page, "Nuevo producto", "Nuevo producto")
   await sheet.getByRole("textbox", { name: "Nombre" }).fill(name)
   await selectRadixById(page, "p-cat", "EPP E2E")
-  await submitSheet(page, sheet)
+  await enviarAsistenteDeProducto(page, sheet)
   await expectProductInCatalog(page, name)
 }
 
@@ -352,14 +356,23 @@ test.describe.serial("Correlativos entre secciones", () => {
     await expect(page.getByText(/Completada|Recibido en faena/).first()).toBeVisible()
 
     // ── Sección: trazabilidad ───────────────────────────────────────────────
-    // Acotado por estado: la matriz pagina de a bloques y ordena por fecha, así
-    // que sin filtro el ítem depende de cuántas filas dejaron otros specs.
-    await page.goto("/trazabilidad?estado=received")
-    await expect(page.getByRole("link", { name: new RegExp(escapeRegExp(requestCode)) }).first())
-      .toBeVisible({ timeout: 15_000 })
+    // Acotado por `q` y no por `estado`: la matriz pagina de a bloques y ordena
+    // por fecha, así que sin filtro el ítem depende de cuántas filas dejaron
+    // otros specs. `estado=received` no era ninguno de los `ComputedStatus`, de
+    // modo que el filtro se ignoraba y no acotaba nada; `q` busca por
+    // correlativo de la solicitud, que es justamente lo que identifica a esta.
+    await page.goto(`/bodega/trazabilidad?q=${encodeURIComponent(requestCode)}`)
+    const filaSolicitud = page.getByRole("row").filter({ hasText: requestCode })
+    await expect(filaSolicitud).toHaveCount(1, { timeout: 15_000 })
 
-    await page.getByRole("link", { name: new RegExp(escapeRegExp(EPP_NAME)) }).first().click()
+    // Cada fila es una SOLICITUD; sus líneas —y el enlace al expediente de cada
+    // ítem— viven dentro del detalle que se despliega.
+    // El detalle desplegado trae cantidades y cronología, no el nombre del
+    // producto: ese titula el expediente del ítem, que es adonde lleva.
+    await filaSolicitud.getByRole("button", { name: "Expandir detalle" }).click()
+    await page.getByRole("link", { name: "Ver expediente completo" }).first().click()
     await expect(page).toHaveURL(/\/trazabilidad\/[^/?]+$/, { timeout: 15_000 })
+    await expect(page.getByRole("heading", { level: 1, name: EPP_NAME })).toBeVisible({ timeout: 15_000 })
     traceItemId = idFromUrl(page)
     expect(traceItemId).toBeTruthy()
     // El detalle del ítem sólo publica el correlativo de la OC: el de la

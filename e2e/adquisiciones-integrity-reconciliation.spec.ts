@@ -22,11 +22,17 @@ test("conciliación separa el total monetario de la evidencia por línea", async
 
 test("escanea y regulariza una excepción con un ajuste existente de la misma faena", async ({ page }) => {
   await login(page)
-  await page.goto("/trazabilidad")
+  // Las excepciones de integridad viven en su propia pestaña desde que
+  // Trazabilidad se dividió en tres (`Seguimiento por faena`, `Buscar por
+  // código`, `Integridad`): en la pestaña por omisión el bloque no se monta.
+  await page.goto("/bodega/trazabilidad?tab=integridad")
 
   await page.getByRole("button", { name: "Revisar historial" }).click()
+  // El id del ítem ya no se imprime en la tarjeta: quedó sólo en el `href` del
+  // enlace al expediente, así que filtrar por texto no encontraba nada aunque el
+  // caso estuviera ahí.
   const caseRow = page.getByRole("listitem").filter({
-    hasText: "req-item-integrity-e2e",
+    has: page.locator('a[href="/bodega/trazabilidad/req-item-integrity-e2e"]'),
   })
   await expect(caseRow).toHaveCount(1)
 

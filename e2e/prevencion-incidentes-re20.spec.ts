@@ -20,6 +20,9 @@ test.describe("Prevención — Incidentes y denuncias RE-20", () => {
 
   test("flujo completo: reporte de incidente, visualización de detalle y exportación", async ({ page }) => {
     const descripcion = `Falla de freno en equipo durante maniobra E2E-${RUN}`
+    // El listado no muestra el relato: busca por código, empresa, faena, lugar y
+    // tipo de evento. El lugar es lo que identifica a ESTE incidente en la bandeja.
+    const lugar = `Rampa Acceso Norte E2E-${RUN}`
 
     // 1. Bandeja principal
     await page.goto("/prevencion/incidentes")
@@ -32,20 +35,28 @@ test.describe("Prevención — Incidentes y denuncias RE-20", () => {
     // 2. Navegar al formulario de reporte
     await main.getByRole("link", { name: "Reportar", exact: true }).click()
     await expect(page).toHaveURL(/\/prevencion\/incidentes\/reportar/)
-    await expectPageTitle(page, "Reportar incidente o accidente")
+    await expectPageTitle(page, "Reportar incidente")
 
     // 3. Llenar campos del reporte
-    await page.locator('textarea[name="shortDescription"]').fill(descripcion)
-    await page.locator('textarea[name="detailedDescription"]').fill("Durante el traslado de materiales en rampa, el conductor detecta pérdida de presión en frenos y activa parada de emergencia sin lesionados.")
-    await page.locator('input[name="exactLocation"]').fill("Rampa Acceso Norte - Faena E2E")
+    //
+    // El formulario dejó de ser "descripción corta + descripción larga": desde
+    // el RE-20 pide empresa, faena, lugar y un relato factual (`initialNarrative`),
+    // y la fecha/hora de ocurrencia y de conocimiento vienen pre-llenadas. Los
+    // tres campos que este spec llenaba —`shortDescription`, `detailedDescription`
+    // y `exactLocation`— no existen en ninguna parte del código.
+    await page.getByLabel("Faena").click()
+    await page.getByRole("option", { name: /Faena E2E/ }).click()
+    await page.locator('input[name="companyName"]').fill("Constructora E2E Ltda.")
+    await page.locator('input[name="location"]').fill(lugar)
+    await page.locator('textarea[name="initialNarrative"]').fill(descripcion)
 
     // Enviar reporte
-    await page.getByRole("button", { name: "Enviar reporte" }).click()
+    await page.getByRole("button", { name: "Reportar incidente" }).click()
     await expect(page).toHaveURL(/\/prevencion\/incidentes(\/[^/]+)?$/, { timeout: 30_000 })
 
     // 4. Verificar presencia en el listado
     await page.goto("/prevencion/incidentes")
-    const fila = page.getByRole("row").filter({ hasText: descripcion }).first()
+    const fila = page.getByRole("row").filter({ hasText: lugar }).first()
     await expect(fila).toBeVisible({ timeout: 30_000 })
 
     // 5. Abrir detalle del incidente
@@ -58,6 +69,6 @@ test.describe("Prevención — Incidentes y denuncias RE-20", () => {
     const descarga = page.waitForEvent("download")
     await page.locator("#main-content").getByRole("link", { name: /Exportar Excel/i }).click()
     const archivoDescargado = await descarga
-    expect(archivoDescargado.suggestedFilename()).toMatch(/^incidentes_\d{4}-\d{2}-\d{2}\.xlsx$/)
+    expect(archivoDescargado.suggestedFilename()).toMatch(/^registro-incidentes-\d{4}-\d{2}-\d{2}\.xlsx$/)
   })
 })

@@ -93,25 +93,31 @@ test.describe("Navegación — rol restringido", () => {
     // reintenta un clic ya entregado. Es la falla recurrente de este repo bajo
     // carga —reproducible con la suite completa, verde en aislado—, y se trata
     // como en `correlativos-secciones`: reintentando el clic.
-    const opener = page.getByRole("button", { name: "Abrir menú" })
+    // `exact`: sin él "Abrir menú" es subcadena de "Abrir menú de usuario", que
+    // también está en pantalla. El clic abría el menú de la cuenta, cuyo overlay
+    // tapaba al disparador real, y el reintento moría contra un botón cubierto.
+    const opener = page.getByRole("button", { name: "Abrir menú", exact: true })
     await expect(opener).toBeVisible()
-    // El panel agrupa por área: cada área es un disclosure (`button`) y sus
-    // destinos viven dentro; sólo "Inicio" es enlace directo. Antes esto pedía
-    // un `link` "Mis pendientes", que el panel NO renderiza mientras el área
-    // está colapsada —y en `/dashboard` ninguna lo está—. Lo que hacía pasar la
-    // prueba era un enlace homónimo del tablero de fondo: verificaba la
-    // pantalla equivocada, y se caía en cuanto la cola de ese usuario quedaba
-    // vacía y el tablero dejaba de pintarlo.
-    const panel = page.getByRole("navigation")
+    // Hay varios `<nav>` en la página (el rail, el breadcrumb `sr-only` del
+    // encabezado, las pestañas): el panel móvil es el que se rotula "Navegación".
+    //
+    // "Mis pendientes" está FIJADO arriba del panel como enlace directo, igual
+    // que "Inicio": no es un área plegable. Las áreas —las que este usuario
+    // alcanza por su rol— sí son disclosures, y acá son "Adquisiciones" y
+    // "Bodega". La aserción anterior pedía un `button` "Mis pendientes" y no
+    // podía cumplirse nunca; el reintento volvía a clickear al disparador, que
+    // con la hoja ya abierta se llama "Cerrar menú", y moría contra un locator
+    // inexistente en vez de contra la aserción real.
+    const panel = page.getByRole("navigation", { name: "Navegación" })
     await expect(async () => {
       await opener.click()
-      await expect(panel.getByRole("button", { name: "Mis pendientes" })).toBeVisible({ timeout: 5_000 })
+      await expect(panel.getByRole("link", { name: /Mis pendientes/ })).toBeVisible({ timeout: 5_000 })
     }).toPass({ timeout: 60_000 })
 
-    // Alcanzar los destinos es lo que pide el criterio de 320/390 px: el enlace
-    // fijo, y el área que se despliega hasta el suyo.
+    // Alcanzar los destinos es lo que pide el criterio de 320/390 px: los
+    // enlaces fijos, y un área que se despliega hasta el suyo.
     await expect(panel.getByRole("link", { name: "Inicio" })).toBeVisible()
-    await panel.getByRole("button", { name: "Mis pendientes" }).click()
-    await expect(panel.getByRole("link", { name: "Mis pendientes" })).toBeVisible()
+    await panel.getByRole("button", { name: "Adquisiciones" }).click()
+    await expect(panel.getByRole("link", { name: /Solicitudes/ })).toBeVisible()
   })
 })
