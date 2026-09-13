@@ -1902,6 +1902,64 @@ async function main() {
     unitPrice: 1000,
     subtotal: 10000,
   })
+
+  /**
+   * El vínculo línea-de-factura ↔ línea-de-OC vive en
+   * `purchase_order_invoice_item_allocations` desde que una línea puede repartirse
+   * entre varias de la OC. `purchaseOrderItemId` en la línea quedó como dato
+   * histórico: `reconcilePurchaseOrderInvoices` lee las asignaciones y nada más.
+   *
+   * La migración que introdujo la tabla trajo las filas existentes con
+   * `source: "legacy_backfill"`, pero este sembrado corre DESPUÉS de migrar, así
+   * que sus facturas nacían sin asignación: toda línea salía "sin vínculo con la
+   * OC", ninguna OC llegaba a "Conciliada" y los escenarios parcial/completo
+   * dejaron de existir aunque los datos siguieran ahí.
+   *
+   * Las dos líneas de reparto QA (`invoice-item-qa-*`) NO van acá a propósito: su
+   * spec existe justamente para asignarlas a mano desde la pantalla.
+   */
+  await db.insert(schema.purchaseOrderInvoiceItemAllocations).values([
+    {
+      id: "alloc-facturacion-parcial-e2e",
+      invoiceItemId: "invoice-item-facturacion-parcial-e2e",
+      purchaseOrderItemId: "oc-item-facturacion-parcial-e2e",
+      quantity: 6,
+      subtotal: 6000,
+      source: "legacy_backfill",
+    },
+    {
+      id: "alloc-facturacion-completa-6-e2e",
+      invoiceItemId: "invoice-item-facturacion-completa-6-e2e",
+      purchaseOrderItemId: "oc-item-facturacion-completa-e2e",
+      quantity: 6,
+      subtotal: 6000,
+      source: "legacy_backfill",
+    },
+    {
+      id: "alloc-facturacion-completa-4-e2e",
+      invoiceItemId: "invoice-item-facturacion-completa-4-e2e",
+      purchaseOrderItemId: "oc-item-facturacion-completa-e2e",
+      quantity: 4,
+      subtotal: 4000,
+      source: "legacy_backfill",
+    },
+    {
+      id: "alloc-factura-anticipada-e2e",
+      invoiceItemId: "invoice-item-factura-anticipada-e2e",
+      purchaseOrderItemId: "oc-item-factura-anticipada-e2e",
+      quantity: 10,
+      subtotal: 10000,
+      source: "legacy_backfill",
+    },
+    {
+      id: "alloc-oc-invoice-item-e2e",
+      invoiceItemId: "oc-invoice-item-e2e",
+      purchaseOrderItemId: "oc-item-e2e-01",
+      quantity: 10,
+      subtotal: 10000,
+      source: "legacy_backfill",
+    },
+  ])
   // The invoice total exactly completes the OC total but deliberately carries
   // no line items. This proves that monetary reconciliation never invents
   // documentary evidence by line.
