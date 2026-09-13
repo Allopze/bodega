@@ -320,6 +320,26 @@ Use the smallest useful verification first:
 
 AI exploratory testing complements deterministic tests. It does not replace them.
 
+### Locators in this repository
+
+At least fifteen screens render the same content twice — cards `md:hidden` **and**
+a table `hidden md:block` — and both trees stay in the DOM. The distinction that
+decides every case:
+
+- `getByRole()` ignores hidden nodes by default, so role-based locators survive.
+- `getByText()`, `getByLabel()` and `locator()` do **not** filter, so they either
+  break on strict mode or hang waiting for a node that will never be visible.
+
+Use the `textoVisible()` / `campoInspeccion()` helpers in `e2e/helpers.ts` rather
+than `.first()`: `.first()` returns the mobile node, which is the hidden one on a
+desktop viewport. That failure mode is the most misleading one in this suite —
+it reads exactly like the action under test never happened.
+
+Also: `getByRole(role, { name })` matches the accessible name by **substring**.
+`{ name: "Abrir menú" }` also matches "Abrir menú de usuario", and
+`{ name: "Limpiar" }` also matches "Limpiar filtros". Pass `exact: true` whenever
+one label is a prefix of another.
+
 ## When an audit finds something
 
 Do not blindly fix every generated finding.

@@ -143,7 +143,24 @@ no resolvía.
 | S3-03 | Métrica React Doctor contaminada | **Resuelto** — proyectos de referencia excluidos |
 | S2-04 | E2E como puerta determinista | **En curso** |
 | S3-04 | Imports dinámicos amplios | **Resuelto y reclasificado** — ver N-02: no era rendimiento |
-| S3-05 | `nextDueOn` que no avanza | Backlog — no reproducido, no confirmado como defecto |
+| S3-05 | `nextDueOn` que no avanza | **Descartado** — no es defecto; ver abajo |
+
+## S3-05: por qué no es un defecto
+
+El informe afirmaba que materializar una programación no avanza su próxima fecha. Tres
+piezas lo contradicen, y la primera lo recorre por pantalla:
+
+- `e2e/prevencion-inspecciones-catalogo.spec.ts` — "crear, materializar, editar y
+  desactivar una programación" materializa **dos veces** desde la propia tabla y afirma
+  que la celda "Próxima" avanza un intervalo completo cada vez (`hoy + paso`, luego
+  `hoy + 2·paso`). Pasa.
+- `lib/__tests__/prevention-inspections-postgres.test.ts:541` cubre lo mismo contra el
+  servicio.
+- `prevention-inspection-scheduler.ts:131-136` es el único sitio que escribe `nextDueOn`,
+  y la acción revalida `${BASE}/programacion`, así que la tabla no puede quedar mostrando
+  la fecha vieja.
+
+No se escribió una reproducción nueva: la que el informe pedía ya existía y estaba verde.
 
 ## Evidencia de verificación
 
