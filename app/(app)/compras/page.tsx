@@ -241,7 +241,11 @@ export default async function ComprasPage({
       label: "Facturación pendiente",
       value: invoicePendingCount,
       tone: "signal",
-      href: "/compras?factura=pendiente",
+      // Con el filtro puesto el chip es la salida, no la entrada: apuntaba a la
+      // vista que ya se estaba mirando y `factura=pendiente` quedaba sin forma
+      // de quitarse desde la pantalla.
+      href: invoicePendingOnly ? "/compras" : "/compras?factura=pendiente",
+      active: invoicePendingOnly,
     })
   }
 
