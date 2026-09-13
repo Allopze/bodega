@@ -84,7 +84,7 @@ Hace falta implementar:
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Stack técnico, BD, ciclo de vida, RBAC, patrones |
 | [DESIGN.md](DESIGN.md) | Sistema de tokens, diseño visual, accesibilidad |
 | [STYLING.md](STYLING.md) | Guía de estilos y reglas de layout |
-| [docs/deploy/DEPLOY.md](docs/deploy/DEPLOY.md) | Docker, migraciones, CI/CD y healthcheck |
-| [docs/deploy/SERVIDOR_CASERO.md](docs/deploy/SERVIDOR_CASERO.md) | Deploy paso a paso en servidor propio |
-| [docs/deploy/RUNBOOK.md](docs/deploy/RUNBOOK.md) | Backups, restore, monitoreo, SLO/RPO/RTO e incidentes |
-| [docs/pruebas/TESTING.md](docs/pruebas/TESTING.md) | Unitarias, E2E, manuales y cobertura |
+| [docs/deploy/RUNBOOK.md](docs/deploy/RUNBOOK.md) | Señales, triage de incidentes, deploy roto y servicios auxiliares |
+| [docs/deploy/RESPALDOS_Y_RESTAURACION.md](docs/deploy/RESPALDOS_Y_RESTAURACION.md) | Qué se respalda, cifrado, verificación diaria y restauración |
+| [docs/deploy/MIGRATION_BASELINE_CUTOVER.md](docs/deploy/MIGRATION_BASELINE_CUTOVER.md) | Corte de baseline de migraciones |
+| [AGENTS.md](AGENTS.md) | Contrato de QA y comandos de pruebas |
