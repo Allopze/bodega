@@ -153,10 +153,12 @@ test.describe("Inspecciones — revisión independiente y cierre", () => {
 
     await page.reload()
     await expect(page.getByText("En ejecución", { exact: true }).filter({ visible: true }).first()).toBeVisible({ timeout: 15_000 })
-    // Las respuestas siguen ahí, así que la pantalla vuelve a proyectar un 80%
-    // sobre los ítems evaluados, no como el porcentaje firmado que había antes.
-    await expect(page.getByText("80%", { exact: true })).toHaveCount(0)
-    await expect(page.getByText("80% de 5 evaluados", { exact: true }).filter({ visible: true }).first()).toBeVisible()
+    // Las respuestas siguen ahí, así que la pantalla vuelve a proyectar un 80% sobre los
+    // ítems evaluados. Lo que se borró es el porcentaje FIRMADO. La distinción ya no está
+    // en el texto ("80% de 5 evaluados" no existe) sino en dos filas del encabezado:
+    // "Resultado oficial" es el del documento y "Resultado normalizado" la proyección.
+    await expect(textoVisible(page, "Sin fórmula en el documento").first()).toBeVisible()
+    await expect(textoVisible(page, "80%").first()).toBeVisible()
     // La sección de hallazgos sólo existe en ejecutada o cerrada.
     await expect(page.getByRole("heading", { name: /^Hallazgos \(/ })).toHaveCount(0)
     // Y vuelve a ser editable.
