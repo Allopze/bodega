@@ -38,14 +38,16 @@ describe("buildXlsxBuffer", () => {
     expect(sheet!.getCell("C4").value).toBe("")
   })
 
-  it("round-trips multiple sheets with their own headers", async () => {
+  // `sheets` agrega hojas, no reemplaza la primaria. La regresión que esto fija: los
+  // cuatro reportes que declaraban una hoja suplementaria (conciliación DTE, valorización
+  // de bodega, cobranza y analítica) se descargaban sin su propia hoja de detalle.
+  it("emits the primary sheet first and the declared sheets after it", async () => {
     const report: ReportData = {
       filenameBase: "reporte-multi",
       worksheetName: "Resumen",
-      headers: ["A"],
-      rows: [["ignorado, se usan sheets"]],
+      headers: ["Objetivo", "Avance"],
+      rows: [["Objetivo 1", 0.8]],
       sheets: [
-        { worksheetName: "Resumen", headers: ["Objetivo", "Avance"], rows: [["Objetivo 1", 0.8]] },
         { worksheetName: "Detalle", headers: ["Actividad"], rows: [["Actividad 1"], ["Actividad 2"]] },
       ],
     }
@@ -55,7 +57,46 @@ describe("buildXlsxBuffer", () => {
     await reopened.xlsx.load(buffer)
 
     expect(reopened.worksheets.map((ws) => ws.name)).toEqual(["Resumen", "Detalle"])
+    expect(reopened.getWorksheet("Resumen")!.getRow(1).values).toEqual([undefined, "Objetivo", "Avance"])
+    expect(reopened.getWorksheet("Resumen")!.getRow(2).values).toEqual([undefined, "Objetivo 1", 0.8])
     expect(reopened.getWorksheet("Detalle")!.rowCount).toBe(3) // header + 2 filas
+  })
+
+  it("omits the primary sheet when the report declares no top-level headers", async () => {
+    const report: ReportData = {
+      filenameBase: "reporte-solo-hojas",
+      worksheetName: "Resumen",
+      headers: [],
+      rows: [],
+      sheets: [
+        { worksheetName: "Objetivos", headers: ["Objetivo", "Avance"], rows: [["Objetivo 1", 0.8]] },
+        { worksheetName: "Detalle", headers: ["Actividad"], rows: [["Actividad 1"]] },
+      ],
+    }
+
+    const buffer = await buildXlsxBuffer(report)
+    const reopened = new ExcelJS.Workbook()
+    await reopened.xlsx.load(buffer)
+
+    expect(reopened.worksheets.map((ws) => ws.name)).toEqual(["Objetivos", "Detalle"])
+  })
+
+  // Un reporte que reusa el nombre de la hoja primaria en `sheets` no puede abortar la
+  // exportación: ExcelJS lanza ante nombres duplicados, así que el segundo se desambigua.
+  it("disambiguates a declared sheet that repeats the primary sheet name", async () => {
+    const report: ReportData = {
+      filenameBase: "reporte-colision",
+      worksheetName: "Resumen",
+      headers: ["A"],
+      rows: [["fila primaria"]],
+      sheets: [{ worksheetName: "Resumen", headers: ["B"], rows: [["fila declarada"]] }],
+    }
+
+    const buffer = await buildXlsxBuffer(report)
+    const reopened = new ExcelJS.Workbook()
+    await reopened.xlsx.load(buffer)
+
+    expect(reopened.worksheets.map((ws) => ws.name)).toEqual(["Resumen", "Resumen (2)"])
   })
 
   it("stores user text that looks like a formula as a literal string, never as an evaluable formula cell", async () => {
