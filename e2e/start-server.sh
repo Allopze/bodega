@@ -125,6 +125,15 @@ fi
 # resuelven el CodEmp de la cuenta con DTE_PORTAL_CODEMP — sin ella
 # readDtePortalEnv().credentials.codEmp da "" y ninguna fila de
 # dte_documents (codEmp='433', ver e2e/setup-db.ts) calza.
+# `.next/standalone/server.js` hace `process.chdir(__dirname)`, así que sin
+# `STORAGE_PATH` el servidor resuelve `resolveStorageDir()` a
+# `.next/standalone/storage` y no ve los archivos que el sembrado deja en
+# `<repo>/storage` —el XML y el PDF del DTE candidato, entre otros—. Antes
+# coincidían por accidente: el trazado NFT copiaba el repositorio entero dentro
+# del artefacto. Al sacar de ahí los archivos de usuarios, la coincidencia
+# desapareció, el caché del DTE dejó de encontrarse y adjuntarlo terminaba
+# intentando descargar el XML del portal real.
+STORAGE_PATH="$ROOT/storage" \
 DATABASE_URL="$DB_URL" \
 AUTH_SECRET="$AUTH_SECRET_VALUE" \
 NEXTAUTH_SECRET="$AUTH_SECRET_VALUE" \
