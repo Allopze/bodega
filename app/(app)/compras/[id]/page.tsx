@@ -37,6 +37,7 @@ import { getDocumentChain } from "@/lib/services/document-chain"
 import { DocumentChainStrip } from "@/components/documents/document-chain-strip"
 import { DteReceivedCard } from "./dte-received-card"
 import { suggestReceiptLinks } from "@/lib/services/purchasing-module/invoice-receipt-suggestions"
+import { resolveOrderItemMatchName } from "@/lib/services/purchasing-module/order-item-identity"
 
 
 export const metadata: Metadata = { title: "Orden de compra" }
@@ -356,7 +357,14 @@ export default async function OcDetailPage({
     orderItems: order.items.map((item) => ({
       id: item.id,
       productId: item.productId,
-      productName: itemName(item),
+      // El nombre que se COMPARA contra la glosa del DTE, no el que se muestra: misma
+      // regla que usa el conciliador. `itemName` decora con atributos de variante y sirve
+      // para la UI, pero alargaba el string y rompía el calce por contención.
+      productName: resolveOrderItemMatchName({
+        id: item.id,
+        productNameFree: item.productNameFree,
+        productName: item.productId ? productMap[item.productId]?.name ?? null : null,
+      }),
       productCode: item.productId ? productMap[item.productId]?.sku ?? null : null,
       unitOfMeasure: item.unitOfMeasure,
       quantity: item.quantity,
