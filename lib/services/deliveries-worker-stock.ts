@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm"
+import { and, eq, inArray, isNull, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   attachments,
@@ -10,6 +10,7 @@ import {
   purchaseRequests,
   workers,
   worksites,
+  worksiteStock,
 } from "@/db/schema"
 import { recordAudit } from "@/lib/audit"
 import { nextCodeTx } from "@/lib/code-sequences"
@@ -18,6 +19,7 @@ import { getTraceableDeliveryBalance } from "@/lib/services/delivery-eligibility
 import { deliverItemTx } from "@/lib/services/item-state"
 import { onEppDeliveryCompleted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { applyMovementTx } from "@/lib/services/stock"
+import { inTransitDeliveryWarning, readInTransitToWorksite, type InTransitDeliveryLine } from "@/lib/services/dispatch-in-transit"
 import { codeYear, todayInChile } from "@/lib/utils"
 import { backdatedDeliveryMessage, earliestDeliveryDate } from "@/lib/validation/operations"
 import type {
@@ -156,6 +158,20 @@ async function getTraceableItemState(
 }
 
 /**
+ * `GDI-002` (auditoría 2026-09-14): el aviso de tránsito viaja por un callback
+ * en vez de por el valor de retorno a propósito. Este servicio lo llaman
+ * también la importación y los scripts, que no tienen a quién avisarle, y el
+ * aviso NO es una condición de la escritura: la entrega se registra igual.
+ * Devolverlo cambiaría el contrato de todos los llamadores para un dato que
+ * sólo la pantalla usa, mientras que la traza —que sí debe existir siempre—
+ * queda escrita en la auditoría de la entrega pase lo que pase.
+ */
+export interface RegisterWorkerStockDeliveryOptions {
+  /** Recibe el aviso cuando parte de lo entregado todavía viaja hacia la faena. */
+  onInTransitWarning?: (warning: string) => void
+}
+
+/**
  * Registers a physical stock delivery to one worker.
  *
  * The header, all delivery lines and all stock movements share one database
@@ -165,6 +181,7 @@ async function getTraceableItemState(
 export async function registerWorkerStockDelivery(
   input: RegisterWorkerStockDeliveryInput,
   worksiteIds: string[] | "all" = "all",
+  options: RegisterWorkerStockDeliveryOptions = {},
 ): Promise<string> {
   if (!input.sourceWorksiteId) throw new Error("Selecciona la bodega de origen")
   if (!input.workerId) throw new Error("Selecciona un trabajador")
@@ -205,6 +222,7 @@ export async function registerWorkerStockDelivery(
 
   let deliveredEpp = false
   let proofStoragePath: string | undefined
+  let inTransitWarning: string | null = null
 
   await db.transaction(async (tx) => {
     const [sourceWorksite, worker] = await Promise.all([
@@ -248,6 +266,9 @@ export async function registerWorkerStockDelivery(
     })
 
     const auditItems: Array<Record<string, unknown>> = []
+    // GDI-002: se acumulan acá y se resuelven en UNA consulta después del
+    // bucle, ya con las líneas escritas y el stock descontado.
+    const inTransitCandidates: Array<{ productId: string; productName: string; quantity: number }> = []
     for (const item of items) {
       const product = await tx.query.products.findFirst({ where: eq(products.id, item.productId) })
       if (!product || !product.isActive) throw new Error("Producto no disponible")
@@ -343,6 +364,8 @@ export async function registerWorkerStockDelivery(
         })
       }
 
+      inTransitCandidates.push({ productId: product.id, productName: product.name, quantity: item.quantity })
+
       auditItems.push({
         productId: product.id,
         quantity: item.quantity,
@@ -358,6 +381,41 @@ export async function registerWorkerStockDelivery(
           }
           : {}),
       })
+    }
+
+    /*
+     * GDI-002: la faena "tiene" lo despachado desde el despacho, no desde el
+     * cotejo, así que `worksite_stock` —y con él `applyMovementTx`, que es
+     * quien autoriza este egreso— cuenta como disponible mercadería que
+     * todavía viaja en un camión. Acá se calcula cuánto de lo entregado se
+     * apoya en ese saldo que aún no llega.
+     *
+     * Se lee DENTRO de la misma transacción: el saldo con el que se compara es
+     * el que este egreso acaba de dejar, no una foto anterior.
+     */
+    const inTransitByProduct = await readInTransitToWorksite(
+      tx,
+      sourceWorksite.id,
+      inTransitCandidates.map((candidate) => candidate.productId),
+    )
+    if (inTransitByProduct.size > 0) {
+      const stockRows = await tx
+        .select({ productId: worksiteStock.productId, quantity: worksiteStock.quantity })
+        .from(worksiteStock)
+        .where(and(
+          eq(worksiteStock.worksiteId, sourceWorksite.id),
+          inArray(worksiteStock.productId, [...inTransitByProduct.keys()]),
+        ))
+      const onHandByProduct = new Map(stockRows.map((row) => [row.productId, Number(row.quantity ?? 0)]))
+      const lines: InTransitDeliveryLine[] = inTransitCandidates.flatMap((candidate) => {
+        const inTransit = inTransitByProduct.get(candidate.productId) ?? 0
+        if (inTransit <= 0) return []
+        // El saldo ya viene descontado por este mismo egreso; se le vuelve a
+        // sumar para razonar sobre el saldo del que salió la entrega.
+        const onHand = (onHandByProduct.get(candidate.productId) ?? 0) + candidate.quantity
+        return [{ productName: candidate.productName, quantity: candidate.quantity, onHand, inTransit }]
+      })
+      inTransitWarning = inTransitDeliveryWarning(lines)
     }
 
     if (input.proofAttachment) {
@@ -391,6 +449,10 @@ export async function registerWorkerStockDelivery(
         items: auditItems,
         proofFileName: input.proofAttachment?.fileName ?? null,
         deliveredAt,
+        // GDI-002: si la entrega se apoyó en mercadería que todavía viaja, eso
+        // queda escrito. El detector `DELIVERY_BEFORE_FAENA_RECEIPT` lo veía
+        // después; acá queda dicho en el momento y con la cifra.
+        ...(inTransitWarning ? { entregadoConStockEnTransito: inTransitWarning } : {}),
         ...(backdatedDays > 0
           ? { registradaEl: now, diasDeRetroactividad: backdatedDays }
           : {}),
@@ -419,6 +481,8 @@ export async function registerWorkerStockDelivery(
       evidenceRef: proofStoragePath ?? undefined,
     })
   }
+
+  if (inTransitWarning) options.onInTransitWarning?.(inTransitWarning)
 
   return deliveryId
 }
