@@ -993,8 +993,36 @@ export async function setMaintenanceTaskStatus(session: Session, taskId: string,
  * exige una regla de negocio que la plataforma no declara (¿por tipo de
  * mantención? ¿por proveedor interno vs. externo?) y no se inventa aquí.
  */
+/**
+ * `MNT-003` (auditoría 2026-09-14): imputar un costo sin el permiso para verlos
+ * NO era un rechazo, era un descarte silencioso. `unitCost: can(...) ? x : 0`
+ * guardaba la línea con cero, sin avisar a nadie y sin dejar rastro de que el
+ * formulario había traído un monto. Peor: la invalidación de la aprobación de
+ * costos exige `unitCost > 0`, así que el cero también se llevaba por delante
+ * el control — una OT ya aprobada seguía aprobada después de sumarle repuestos
+ * reales, y su total quedaba por debajo del costo efectivo (y posiblemente por
+ * debajo del umbral que obliga a aprobar).
+ *
+ * Guardar un cero que miente es peor que rechazar: el rechazo es recuperable
+ * —la línea se vuelve a imputar con quien sí tiene el permiso— y el cero no,
+ * porque nadie sabe que faltó. Se rechaza sólo cuando el monto es distinto de
+ * cero: imputar un repuesto SIN valorizar sigue siendo legítimo para quien no
+ * ve costos (es el caso normal del mecánico que registra el consumo), y esa
+ * línea se sigue guardando en cero porque el cero es entonces verdadero.
+ */
+function assertCostAllowed(session: Session, amount: number, field: "costo unitario" | "tarifa por hora"): void {
+  if (can(session, "combustibles:view_costs")) return
+  if (!Number.isFinite(amount) || amount === 0) return
+  throw new Error(
+    `No tienes permiso para valorizar (${field}): la línea se habría guardado en cero y el monto se habría perdido. `
+    + "Registra la línea sin costo y pide a quien administre costos de mantención que la valorice.",
+  )
+}
+
 export async function addMaintenancePart(session: Session, input: MaintenancePartInput) {
   if (!can(session, "mantenciones:edit")) throw new Error("Sin permisos para editar la orden")
+  // MNT-003: antes de abrir la transacción — rechazar el envío no necesita base.
+  assertCostAllowed(session, input.unitCost, "costo unitario")
   return db.transaction(async (tx) => {
     const record = await requireMaintenanceAccess(tx, session, input.maintenanceId)
     if (!["scheduled", "in_progress"].includes(record.status)) throw new Error("La orden cerrada no admite repuestos")
@@ -1007,7 +1035,9 @@ export async function addMaintenancePart(session: Session, input: MaintenancePar
       partNumber: input.partNumber || null,
       quantity: input.quantity,
       unit: input.unit,
-      unitCost: can(session, "combustibles:view_costs") ? input.unitCost : 0,
+      // MNT-003: sin permiso, `assertCostAllowed` ya garantizó que el monto es
+      // cero; se escribe `input.unitCost` tal cual y no un cero impuesto.
+      unitCost: input.unitCost,
     })
     if (input.productId) {
       const worksiteId = await effectiveWorksiteId(tx, record)
@@ -1033,10 +1063,10 @@ export async function addMaintenancePart(session: Session, input: MaintenancePar
         )
       }
     }
-    if (can(session, "combustibles:view_costs") && input.unitCost > 0) {
+    if (input.unitCost > 0) {
       await invalidateMaintenanceCostApproval(tx, input.maintenanceId)
     }
-    await recordAudit({ userId: session.user.id, action: "create", entityType: "maintenance_part", entityId: id, newState: { ...input, unitCost: can(session, "combustibles:view_costs") ? input.unitCost : 0 } }, tx)
+    await recordAudit({ userId: session.user.id, action: "create", entityType: "maintenance_part", entityId: id, newState: { ...input } }, tx)
     return id
   })
 }
@@ -1110,11 +1140,14 @@ export async function setMaintenanceDocumentPolicyActive(session: Session, id: s
 
 export async function addMaintenanceLabor(session: Session, input: MaintenanceLaborInput) {
   if (!can(session, "mantenciones:edit")) throw new Error("Sin permisos para editar la orden")
+  assertCostAllowed(session, input.hourlyRate, "tarifa por hora")
   return db.transaction(async (tx) => {
     const record = await requireMaintenanceAccess(tx, session, input.maintenanceId)
     if (!["scheduled", "in_progress"].includes(record.status)) throw new Error("La orden cerrada no admite mano de obra")
     const id = nanoid()
-    const hourlyRate = can(session, "combustibles:view_costs") ? input.hourlyRate : 0
+    // MNT-003: mismo criterio que el repuesto — sin permiso, la tarifa distinta
+    // de cero se rechaza en vez de aplastarse a cero.
+    const hourlyRate = input.hourlyRate
     await tx.insert(maintenanceLabor).values({ id, maintenanceId: input.maintenanceId, description: input.description, hours: input.hours, hourlyRate })
     if (hourlyRate > 0) await invalidateMaintenanceCostApproval(tx, input.maintenanceId)
     await recordAudit({ userId: session.user.id, action: "create", entityType: "maintenance_labor", entityId: id, entityCode: record.code ?? undefined, newState: { ...input, hourlyRate } }, tx)

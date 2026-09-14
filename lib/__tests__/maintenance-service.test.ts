@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { Session } from "next-auth"
 import {
+  addMaintenanceLabor,
   addMaintenancePart,
   createMaintenanceRecord,
   decideMaintenanceCostApproval,
@@ -581,6 +582,61 @@ describe("Maintenance Service (tareas y costos mutables)", () => {
       costApprovedByUserId: null,
       costApprovedAt: null,
     }))
+  })
+})
+
+/*
+ * MNT-003 (auditoría 2026-09-14): sin `combustibles:view_costs`, la línea se
+ * insertaba igual pero con el monto aplastado a cero —`unitCost: can(...) ? x : 0`—
+ * sin avisar y sin dejar rastro de que el formulario había traído un valor.
+ * Además, como la invalidación de la aprobación exige `> 0`, ese cero dejaba
+ * viva una aprobación de costos que ya no correspondía.
+ *
+ * Estas pruebas fallan sin el arreglo: antes ambas llamadas resolvían y
+ * escribían la fila en cero.
+ */
+describe("Maintenance Service (MNT-003: costo imputado sin permiso para verlos)", () => {
+  const sinCostos = { user: { id: "mecanico", isGlobal: true, worksiteIds: [], permissions: ["mantenciones:edit"] } } as unknown as Session
+
+  it("rechaza el repuesto valorizado en vez de guardarlo en cero", async () => {
+    await expect(addMaintenancePart(sinCostos, {
+      maintenanceId: "man-1",
+      productId: null,
+      description: "Filtro de aceite",
+      quantity: 1,
+      unit: "un",
+      unitCost: 25_000,
+      partNumber: null,
+    })).rejects.toThrow("No tienes permiso para valorizar")
+    // Nada se escribió: ni la línea en cero ni el movimiento de stock.
+    expect(mockInsert).not.toHaveBeenCalled()
+    expect(mockUpdateSet).not.toHaveBeenCalled()
+  })
+
+  it("rechaza la mano de obra con tarifa en vez de guardarla en cero", async () => {
+    await expect(addMaintenanceLabor(sinCostos, {
+      maintenanceId: "man-1",
+      description: "Cambio de filtro",
+      hours: 2,
+      hourlyRate: 8_000,
+    })).rejects.toThrow("No tienes permiso para valorizar")
+    expect(mockInsert).not.toHaveBeenCalled()
+  })
+
+  it("sigue admitiendo la línea sin valorizar: ahí el cero es verdadero", async () => {
+    selectResults.push([{ id: "man-1", code: "OT-2026-0001", vehicleId: "veh-1", worksiteId: "ws-1", status: "in_progress", version: 2 }])
+
+    await expect(addMaintenancePart(sinCostos, {
+      maintenanceId: "man-1",
+      productId: null,
+      description: "Filtro de aceite",
+      quantity: 1,
+      unit: "un",
+      unitCost: 0,
+      partNumber: null,
+    })).resolves.toEqual(expect.any(String))
+    // Un cero real no invalida la aprobación de costos: no cambió ningún monto.
+    expect(mockUpdateSet).not.toHaveBeenCalledWith(expect.objectContaining({ costApprovalStatus: "not_required" }))
   })
 })
 
