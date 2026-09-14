@@ -1,9 +1,10 @@
 import type { Tx } from "@/db"
-import { asc, eq, inArray, or } from "drizzle-orm"
+import { and, asc, eq, inArray, or } from "drizzle-orm"
 import { purchaseOrderInvoiceItemAllocations, purchaseOrderInvoiceItems, purchaseOrderInvoices, purchaseOrderItems, purchaseOrders } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { validateInvoiceLineAllocationSet, type InvoiceLineAllocationInput, type InvoiceLineAllocationErrorCode } from "./invoice-line-allocation-validation"
+import { invoiceNotVoided } from "@/lib/services/purchasing-module/invoice-scope"
 
 // Client previews import the pure file directly, avoiding this database module.
 export { validateInvoiceLineAllocationSet, type InvoiceLineAllocationInput, type InvoiceLineAllocationErrorCode } from "./invoice-line-allocation-validation"
@@ -58,7 +59,8 @@ async function lockEvidence(tx: Tx, input: LoadInvoiceLineAllocationsInput, targ
   }).from(purchaseOrderInvoiceItems)
     .innerJoin(purchaseOrderInvoices, eq(purchaseOrderInvoices.id, purchaseOrderInvoiceItems.invoiceId))
     .innerJoin(purchaseOrders, eq(purchaseOrders.id, purchaseOrderInvoices.purchaseOrderId))
-    .where(eq(purchaseOrderInvoiceItems.id, input.invoiceItemId))
+    // FAC-002: no se asigna una línea de una factura anulada.
+    .where(and(eq(purchaseOrderInvoiceItems.id, input.invoiceItemId), invoiceNotVoided))
     .for("update")
   if (!evidence) throw new InvoiceLineAllocationError("INVOICE_ITEM_NOT_FOUND")
   if (evidence.purchaseOrderId !== input.purchaseOrderId) throw new InvoiceLineAllocationError("CROSS_ORDER_TARGET")

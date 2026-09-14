@@ -7,6 +7,7 @@ import { dteTipoLabel } from "@/lib/services/dte-portal/labels"
 import { buildDateFilter } from "./utils"
 import { linkMethodLabel, orderReferenceLabel } from "@/lib/services/purchasing-module/order-reference"
 import type { ReportCell, ReportData, ExportFilters } from "./types"
+import { invoiceNotVoided } from "@/lib/services/purchasing-module/invoice-scope"
 
 /**
  * Cruce OC ↔ Factura ↔ DTE: para cada documento DTE ya vinculado a una
@@ -50,7 +51,8 @@ export async function dteConciliacion(_session: Session | null, filters: ExportF
           linkOrderReference: purchaseOrderInvoices.linkOrderReference,
         })
         .from(purchaseOrderInvoices)
-        .where(inArray(purchaseOrderInvoices.id, invoiceIds))
+        // FAC-002: una factura anulada ya no concilia con nada.
+        .where(and(inArray(purchaseOrderInvoices.id, invoiceIds), invoiceNotVoided))
     : []
   const invoiceById = new Map(invoices.map((i) => [i.id, i]))
 

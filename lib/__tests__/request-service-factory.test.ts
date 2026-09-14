@@ -502,6 +502,41 @@ describe("selectQuotation", () => {
     expect(recordStatusChange).toHaveBeenCalled()
   })
 
+  /**
+   * COT-001 (auditoría 2026-09-14): al adjudicar sólo viajaba el proveedor. El
+   * importe adjudicado y el vínculo con la cotización se perdían, así que la OC
+   * que nacía de la solicitud no tenía contra qué contrastar su precio.
+   */
+  it("guarda con qué oferta y por cuánto se adjudicó cada ítem", async () => {
+    const setSpy = vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "item-1" }]) }),
+    })
+    mockDbTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
+      const mockUpdate = vi.fn()
+        // 1) la cotización ganadora, 2) el rechazo del resto, 3) el ítem, 4) la solicitud.
+        .mockReturnValueOnce({ set: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "q-1" }]) }) }) })
+        .mockReturnValueOnce({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) })
+        .mockReturnValueOnce({ set: setSpy })
+        .mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "req-1" }]) }) }) })
+      const tx = {
+        select: vi.fn()
+          .mockReturnValueOnce(requestSelectChain([{ id: "req-1", status: "submitted", code: "REP-001", worksiteId: "ws-1" }]))
+          .mockReturnValueOnce(quotationSelectChain([{ id: "q-1", requestId: "req-1", status: "pending", supplierId: "sup-1", supplierNameFree: null, totalAmount: "150000" }]))
+          .mockReturnValueOnce(plainSelectChain([{ id: "item-1", requestId: "req-1" }])),
+        update: mockUpdate,
+        insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
+      }
+      return fn(tx as never)
+    })
+
+    await svc.selectQuotation({ requestId: "req-1", quotationId: "q-1", userId: "user-1" })
+
+    expect(setSpy).toHaveBeenCalledWith(expect.objectContaining({
+      awardedQuotationId: "q-1",
+      awardedQuotationTotal: 150000,
+    }))
+  })
+
   it("aborts if the parent request changed status mid-transaction (cancelada en carrera)", async () => {
     mockDbTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
       // La guarda del UPDATE final no matchea porque otro proceso ya movió la

@@ -221,7 +221,7 @@ describe("servicio transaccional de conciliación OC-factura", () => {
     expect(order?.updatedAt).not.toBeNull()
   })
 
-  it("persiste una aceptación y la eliminación posterior de la factura la vuelve histórica", async () => {
+  it("persiste una aceptación y la anulación posterior de la factura la vuelve histórica", async () => {
     const { invoiceId } = await insertOrderFixture({ id: "accepted" })
     const evidence = await getPurchaseOrderInvoiceReconciliation("accepted")
     const accepted = await acceptPurchaseOrderInvoiceReconciliation({
@@ -231,7 +231,7 @@ describe("servicio transaccional de conciliación OC-factura", () => {
     })
     expect(accepted.status).toBe("accepted_exception")
 
-    await deletePurchaseOrderInvoice(invoiceId, userId, "all")
+    await deletePurchaseOrderInvoice(invoiceId, userId, "all", { reason: "Se adjuntó a la orden equivocada" })
     const afterDelete = await getPurchaseOrderInvoiceReconciliation("accepted")
     expect(afterDelete.status).toBe("no_invoices")
     expect(afterDelete.currentReview).toBeNull()

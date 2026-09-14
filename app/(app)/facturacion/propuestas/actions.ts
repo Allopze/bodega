@@ -11,6 +11,7 @@ import {
   billingInvoices,
   billingProposalItems,
   billingProposals,
+  clients,
   contracts,
 } from "@/db/schema"
 import { guardPermission } from "@/lib/auth/can"
@@ -22,6 +23,7 @@ import { recordInvoiceEvent } from "@/lib/services/billing/invoices"
 import { canReachInvoice } from "@/lib/services/billing/queries"
 import {
   assertProposalTransition,
+  checkProposalInvoiceMatch,
   computeProposalTotals,
   nextProposalCode,
   ProposalTransitionError,
@@ -30,6 +32,7 @@ import {
 } from "@/lib/services/billing/proposals"
 import { multiplyAmount } from "@/lib/services/billing/money"
 import { assertCostCenterAllowed } from "@/lib/services/cost-centers"
+import { getOperationalSettings } from "@/lib/services/system-settings"
 import type { ActionResult } from "../actions"
 
 const itemSchema = z.object({
@@ -356,7 +359,7 @@ export async function relateProposalToInvoiceAction(input: unknown): Promise<Act
       }),
       db.query.billingInvoices.findFirst({
         where: eq(billingInvoices.id, invoiceId),
-        columns: { id: true, direction: true, currency: true, totalAmount: true, folio: true },
+        columns: { id: true, direction: true, currency: true, totalAmount: true, folio: true, receiverTaxId: true },
       }),
     ])
 
@@ -381,6 +384,33 @@ export async function relateProposalToInvoiceAction(input: unknown): Promise<Act
     // guarda como obligatoria para toda escritura que reciba un invoiceId).
     if (!(await canReachInvoice(session, invoiceId))) {
       return { ok: false, message: "No tienes acceso a esta factura" }
+    }
+
+    /**
+     * FVE-001 y FVE-002 (auditoría 2026-09-13): el vínculo copiaba cliente,
+     * contrato, faena y centro de costo DESDE LA PROPUESTA sin mirar a quién se
+     * emitió la factura ni por cuánto. Una propuesta del cliente A podía quedar
+     * atada a una factura del cliente B —y la cartera, la cobranza y los
+     * ingresos por cliente se construyen sobre estos vínculos—, y una propuesta
+     * aprobada por un monto podía facturarse por otro.
+     */
+    const proposalClient = await db.query.clients.findFirst({
+      where: eq(clients.id, proposal.clientId),
+      columns: { id: true, rut: true, name: true },
+    })
+    if (!proposalClient) return { ok: false, message: "El cliente de la propuesta no existe" }
+
+    const mismatches = checkProposalInvoiceMatch({
+      proposalClientRut: proposalClient.rut,
+      proposalClientName: proposalClient.name,
+      invoiceReceiverTaxId: invoice.receiverTaxId,
+      invoiceFolio: invoice.folio,
+      approvedTotal: proposal.estimatedTotal ?? 0,
+      invoicedTotal: invoice.totalAmount ?? 0,
+      tolerance: (await getOperationalSettings()).purchasingClpTolerance,
+    })
+    if (mismatches.length > 0) {
+      return { ok: false, message: mismatches.map((mismatch) => mismatch.message).join(" ") }
     }
 
     const now = new Date().toISOString()

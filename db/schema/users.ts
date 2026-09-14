@@ -1,5 +1,5 @@
 import { pgTable, text, boolean, timestamp, uniqueIndex, integer } from "drizzle-orm/pg-core"
-import { relations } from "drizzle-orm"
+import { relations, sql } from "drizzle-orm"
 import { workers, worksites } from "./worksites"
 
 /* ── Users ──────────────────────────────────────────────────────────────── */
@@ -28,7 +28,18 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
   expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
   usedAt:    timestamp("used_at", { withTimezone: true, mode: "string" }),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-})
+}, (table) => [
+  /*
+   * AUTH-002 (auditoría 2026-09-14): "una sola credencial de recuperación
+   * vigente por persona" era una intención del código —invalidar y luego
+   * insertar— y no una regla de la base. Dos solicitudes simultáneas se
+   * intercalaban y dejaban dos enlaces vivos. Aquí la regla es del motor: dos
+   * transacciones concurrentes no pueden dejar ambas su token sin usar.
+   */
+  uniqueIndex("password_reset_tokens_one_active_per_user")
+    .on(table.userId)
+    .where(sql`${table.usedAt} IS NULL`),
+])
 
 /* ── User invitations ─────────────────────────────────────────────────────── */
 export const userInvitations = pgTable("user_invitations", {

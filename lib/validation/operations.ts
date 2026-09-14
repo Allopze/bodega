@@ -2,6 +2,7 @@ import { z } from "zod"
 import { todayInChile } from "@/lib/utils"
 import { normalizeEquipmentCode } from "@/lib/products/service-items"
 import { unitOfMeasureSchema } from "./product-catalogs"
+import { reasonSchema } from "./reason-thresholds"
 
 // ── Re-export shared ActionState ──────────────────────────────────────────────
 export type { ActionState } from "./masters"
@@ -281,7 +282,12 @@ export const adjustStockSchema = z.object({
   productId:  z.string().min(1, "Selecciona un producto"),
   quantity:   positiveQuantitySchema,
   direction:  z.enum(["ingreso", "egreso"]),
-  reason:     z.string().trim().min(1, "Indica el motivo del ajuste").max(300),
+  /*
+   * STK-002 (auditoría 2026-09-14), patrón P6: pedía un carácter. El ajuste de
+   * inventario es la única operación que fija cualquier saldo sin documento de
+   * origen, y era la que menos explicación exigía de toda la plataforma.
+   */
+  reason:     reasonSchema("el ajuste de inventario"),
   notes:      z.string().trim().max(500).nullable().optional().or(z.literal("")),
 })
 
@@ -292,7 +298,7 @@ export const discardStockSchema = z.object({
   worksiteId: z.string().min(1, "Selecciona una faena"),
   productId:  z.string().min(1, "Selecciona un producto"),
   quantity:   positiveQuantitySchema,
-  reason:     z.string().trim().min(1, "Indica el motivo de la baja").max(300),
+  reason:     reasonSchema("la baja de inventario"),
   notes:      z.string().trim().max(500).nullable().optional().or(z.literal("")),
 })
 
@@ -300,7 +306,7 @@ export const discardStockSchema = z.object({
 export const returnStockSchema = z.object({
   deliveryItemId: z.string().min(1, "Selecciona una entrega para devolver"),
   quantity:     positiveQuantitySchema,
-  reason:       z.string().trim().min(1, "Indica el motivo de la devolución").max(300),
+  reason:       reasonSchema("la devolución"),
   notes:        z.string().trim().max(500).nullable().optional().or(z.literal("")),
 })
 

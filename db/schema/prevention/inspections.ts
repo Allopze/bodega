@@ -293,7 +293,27 @@ export const preventionInspectionRuns = pgTable("prevention_inspection_runs", {
   closingResult:       text("closing_result"),
   closingRestrictions: text("closing_restrictions"),
   /** `[{ role, name, userId|null, signedAt }]`. Firma registrada, sin trazo. */
-  closingSignatures:   jsonb("closing_signatures").$type<{ role: string; name: string; userId: string | null; signedAt: string }[]>(),
+  /*
+   * INS-002 (auditoría 2026-09-14): el acta declaraba hasta veinte firmas con
+   * `role`, `name` y un `userId` **opcional**, y nada comprobaba que quien
+   * firma exista en la plataforma. Un nombre tecleado bastaba, y el acta es el
+   * documento que respalda la inspección ante un tercero.
+   *
+   * No se exige `userId`: una firma legítima puede ser la del representante del
+   * mandante, que no es usuario del sistema. Lo que se exige es **decir cuál
+   * es cuál**. `verified` distingue la firma cuya identidad la plataforma
+   * confirmó contra su registro de usuarios de la que sólo está declarada, y
+   * `capturedByUserId` deja constancia de quién tecleó cada una —antes sólo
+   * quedaba el autor del cierre completo—.
+   */
+  closingSignatures:   jsonb("closing_signatures").$type<{
+    role: string
+    name: string
+    userId: string | null
+    verified: boolean
+    capturedByUserId: string
+    signedAt: string
+  }[]>(),
   clientSubmissionId: text("client_submission_id"),
   version:           integer("version").notNull().default(1),
   createdByUserId:   text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),

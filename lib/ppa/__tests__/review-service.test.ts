@@ -80,6 +80,7 @@ describe("reviewPpa", () => {
 
     await reviewPpa({
       ppaId: "ppa-1", fuiAlLugar: false, decision: "rechazado",
+      reviewNota: "El trabajo se anuló por decisión del cliente",
     }, "user-1", ["faena-1"])
 
     expect(mockInsert).not.toHaveBeenCalledWith(preventionCapaActions)

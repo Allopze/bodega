@@ -210,7 +210,15 @@ describe("módulo TI — licencias, accesos y checklists", () => {
     })
 
     it("completa el checklist cuando se marcan todas las tareas", async () => {
-      const id = await createChecklist({ workerId: "wk-ti-maria", kind: "offboarding" }, actor)
+      // Una persona sin nada abierto en TI: el cierre de una desvinculación
+      // exige que la realidad esté limpia (ver el test siguiente), así que el
+      // sujeto de este —que mide sólo la mecánica de completar— no puede ser
+      // alguien con licencias o accesos vigentes.
+      await testDb.insert(schema.workers).values({
+        id: "wk-ti-limpio", rut: "33333333-3", firstName: "Ana", lastName: "Soto",
+        worksiteId: "ws-ti-norte", isActive: true,
+      })
+      const id = await createChecklist({ workerId: "wk-ti-limpio", kind: "offboarding" }, actor)
       const tasks = await getChecklistTasks(id)
 
       for (const task of tasks) {
@@ -225,6 +233,46 @@ describe("módulo TI — licencias, accesos y checklists", () => {
       await toggleChecklistTask({ taskId: tasks[0]!.id, done: false }, actor)
       const reopened = (await listChecklists({})).find((c) => c.id === id)
       expect(reopened?.completedAt).toBeNull()
+    })
+
+    /**
+     * TIL-001 (auditoría 2026-09-14): el checklist de baja declaraba "Revocar
+     * accesos" y "Cerrar licencias asignadas" como casillas que se marcaban de
+     * memoria, sin consultar las tablas que tienen la verdad. Una
+     * desvinculación podía quedar "completa" con la cuenta viva y el notebook
+     * sin devolver.
+     */
+    it("no cierra la desvinculación mientras queden accesos o licencias vigentes", async () => {
+      await testDb.delete(schema.itWorkerChecklists)
+        .where(eq(schema.itWorkerChecklists.workerId, "wk-ti-maria"))
+      const id = await createChecklist({ workerId: "wk-ti-maria", kind: "offboarding" }, actor)
+      const tasks = await getChecklistTasks(id)
+
+      // Todas menos la última: hasta ahí TI puede registrar su avance.
+      for (const task of tasks.slice(0, -1)) {
+        await toggleChecklistTask({ taskId: task.id, done: true }, actor)
+      }
+      const last = tasks.at(-1)!
+
+      // María conserva accesos y licencias de los tests anteriores.
+      await expect(toggleChecklistTask({ taskId: last.id, done: true }, actor))
+        .rejects.toThrow(/No se puede cerrar la desvinculación/i)
+
+      // Y el checklist sigue abierto: la transacción no dejó la casilla marcada.
+      const blocked = (await listChecklists({})).find((c) => c.id === id)
+      expect(blocked?.completedAt).toBeNull()
+      expect(blocked?.doneTasks).toBe(tasks.length - 1)
+
+      // Cerrada la realidad, el checklist sí cierra.
+      for (const access of await listWorkerAccess("wk-ti-maria")) {
+        await upsertSystemAccess({ systemId: access.systemId, workerId: "wk-ti-maria", status: "baja" }, actor)
+      }
+      await testDb.update(schema.itLicenseAssignments)
+        .set({ revokedAt: new Date().toISOString() })
+        .where(eq(schema.itLicenseAssignments.workerId, "wk-ti-maria"))
+
+      await toggleChecklistTask({ taskId: last.id, done: true }, actor)
+      expect((await listChecklists({})).find((c) => c.id === id)?.completedAt).toBeTruthy()
     })
 
     it("marcar una tarea no borra su nota", async () => {

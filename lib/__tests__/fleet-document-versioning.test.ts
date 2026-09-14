@@ -29,7 +29,7 @@ vi.mock("@/db", () => ({
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
-const { uploadFleetDocument, deleteFleetDocument, getFleetOverview, getFleetOverviewPage } = await import("@/lib/services/fleet")
+const { uploadFleetDocument, deleteFleetDocument, getFleetOverview, getFleetOverviewPage, getFleetVehicleDetail } = await import("@/lib/services/fleet")
 
 const worksiteId = nanoid()
 const equipmentTypeId = nanoid()
@@ -135,15 +135,58 @@ describe("versionado de documentos de flota", () => {
     expect(page.rows).toHaveLength(1)
   })
 
-  it("borrar el vigente devuelve la vigencia a la versión anterior", async () => {
+  it("anular el vigente devuelve la vigencia a la versión anterior", async () => {
     await upload("Seguro", "2025-06-30", "poliza-2024.pdf")
     const newId = await upload("Seguro", "2027-06-30", "poliza-2026.pdf")
 
-    await deleteFleetDocument(newId, session(), "all")
+    await deleteFleetDocument(newId, session(), "all", "Se cargó la póliza del vehículo equivocado")
 
     const current = await currentDocs()
     expect(current).toHaveLength(1)
     expect(current[0]?.expiresAt).toBe("2025-06-30")
     expect(current[0]?.supersededBy).toBeNull()
+  })
+
+  /**
+   * FLO-003 (auditoría 2026-09-14), patrón P5: esto borraba la fila y el
+   * archivo. La póliza o la revisión técnica desaparecían —justo lo que puede
+   * pedirse en una fiscalización— en un módulo que por lo demás versiona con
+   * cuidado. Se anula, con el mismo contrato que la anulación de una entrega.
+   */
+  describe("FLO-003 — anular en vez de borrar", () => {
+    it("la fila sobrevive con motivo, responsable y fecha", async () => {
+      const id = await upload("Revisión técnica", "2027-01-31", "rt-2026.pdf")
+      await deleteFleetDocument(id, session(), "all", "Documento ilegible, se vuelve a escanear")
+
+      const [row] = await inMemoryDb.select().from(schema.fleetVehicleDocuments)
+        .where(eq(schema.fleetVehicleDocuments.id, id))
+      expect(row?.status).toBe("voided")
+      expect(row?.voidReason).toBe("Documento ilegible, se vuelve a escanear")
+      expect(row?.voidedBy).toBeTruthy()
+      expect(row?.voidedAt).toBeTruthy()
+      // Y el archivo sigue apuntado: es el respaldo, no un adjunto.
+      expect(row?.filePath).toBeTruthy()
+    })
+
+    it("exige un motivo de verdad, como cualquier acto irreversible", async () => {
+      const id = await upload("Permiso de circulación", "2027-03-31", "pc-2026.pdf")
+      await expect(deleteFleetDocument(id, session(), "all")).rejects.toThrow(/al menos 10/i)
+      await expect(deleteFleetDocument(id, session(), "all", "error")).rejects.toThrow(/al menos 10/i)
+    })
+
+    it("no se anula dos veces", async () => {
+      const id = await upload("Seguro", "2027-06-30", "poliza-dup.pdf")
+      await deleteFleetDocument(id, session(), "all", "Se cargó en el vehículo equivocado")
+      await expect(deleteFleetDocument(id, session(), "all", "Otra vez por error"))
+        .rejects.toThrow(/ya está anulado/i)
+    })
+
+    it("una anulada no vuelve a aparecer como historial del vehículo", async () => {
+      const id = await upload("Seguro", "2028-06-30", "poliza-oculta.pdf")
+      await deleteFleetDocument(id, session(), "all", "Se cargó en el vehículo equivocado")
+
+      const detail = await getFleetVehicleDetail(session(), vehicleId)
+      expect(detail?.documents.some((doc) => doc.id === id)).toBe(false)
+    })
   })
 })

@@ -14,6 +14,7 @@ import { detectStockIntegrity } from "./stock-detector"
 import { detectReceivingIntegrity } from "./receiving-detector"
 import { detectPurchasingIntegrity } from "./purchasing-detector"
 import { integrityDescriptions, type IntegrityScanContext, type IntegrityCaseRef, type OperationalIntegrityDetector, type OperationalIntegrityFinding, type OperationalIntegrityCode } from "./types"
+import { invoiceNotVoided } from "@/lib/services/purchasing-module/invoice-scope"
 
 type Domain = OperationalIntegrityFinding["domain"]
 type CaseRow = typeof cases.$inferSelect
@@ -85,7 +86,9 @@ async function scanPurchasing(ctx: IntegrityScanContext) {
   for (const order of orders) {
     const lines = await ctx.tx.select({ id: purchaseOrderInvoiceItems.id, documentKind: purchaseOrderInvoices.documentKind, quantity: purchaseOrderInvoiceItems.quantity, subtotal: purchaseOrderInvoiceItems.subtotal, unitOfMeasure: purchaseOrderInvoiceItems.unitOfMeasure })
       .from(purchaseOrderInvoiceItems).innerJoin(purchaseOrderInvoices, eq(purchaseOrderInvoices.id, purchaseOrderInvoiceItems.invoiceId))
-      .where(eq(purchaseOrderInvoices.purchaseOrderId, order.id)).orderBy(asc(purchaseOrderInvoiceItems.id))
+      // FAC-002: las líneas de una factura anulada no descuadran nada.
+      .where(and(eq(purchaseOrderInvoices.purchaseOrderId, order.id), invoiceNotVoided))
+      .orderBy(asc(purchaseOrderInvoiceItems.id))
     const invoiceItems = []
     for (const line of lines) {
       const { allocations } = await loadInvoiceLineAllocationsTx(ctx.tx, { purchaseOrderId: order.id, invoiceItemId: line.id, worksiteScope: ctx.scope })

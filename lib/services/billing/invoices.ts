@@ -30,6 +30,7 @@ import { nanoid } from "@/lib/id"
 import { addAmounts, compareAmounts, subtractAmounts, sumAmounts, absAmount } from "./money"
 import { applyCreditSign } from "./dte-xml"
 import type { ProviderInvoice } from "./providers/types"
+import { describeCrossBookMatch, findInPurchasingBook } from "@/lib/services/purchasing-module/supplier-document-crosscheck"
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 type DbOrTx = typeof db | Tx
@@ -295,6 +296,30 @@ export async function upsertProviderInvoice(
       actorKind: "provider",
       detail: { provider, externalId: invoice.externalId, documentStatus: invoice.documentStatus },
     })
+
+    // E2E-003: el mismo documento de proveedor puede estar ya adjunto a una OC
+    // en `purchase_order_invoices`, un libro que este no conoce. Cuál de los dos
+    // manda es una decisión de producto; mientras no se tome, al menos queda
+    // constancia de que el documento entró dos veces por puertas distintas.
+    if (invoice.direction === "purchase") {
+      const twin = await findInPurchasingBook(
+        { issuerTaxId: invoice.issuerTaxId, folio: invoice.folio, docType: invoice.docType },
+        tx,
+      )
+      if (twin) {
+        await recordInvoiceEvent(tx, {
+          invoiceId,
+          eventType: "invoice.crossbook_duplicate",
+          actorKind: "system",
+          detail: {
+            book: "purchasing",
+            purchaseOrderInvoiceId: twin.id,
+            purchaseOrderCode: twin.purchaseOrderCode ?? null,
+            message: describeCrossBookMatch(twin),
+          },
+        })
+      }
+    }
 
     return { outcome: "inserted", invoiceId, changedFields: [] }
   }

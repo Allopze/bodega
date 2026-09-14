@@ -84,6 +84,18 @@ export function DocumentsTable({ documents, detail, highlightId }: DocumentsTabl
                     </TableCell>
                     <TableCell>
                       <MetaBadge meta={meta} />
+                      {/*
+                        STK-003 (auditoría 2026-09-14), patrón P7: un conteo en
+                        borrador no movió nada y se listaba idéntico a los
+                        documentos que sí. Quien usara esta bitácora como
+                        evidencia de qué se movió contaba de más.
+                      */}
+                      {!doc.applied && (
+                        <MetaBadge
+                          meta={{ label: "Borrador · no aplicado", variant: "neutral" }}
+                          className="ml-1"
+                        />
+                      )}
                     </TableCell>
                     <TableCell className="text-xs tabular-nums text-[var(--color-text-muted)]">{formatDate(doc.at)}</TableCell>
                     <TableCell className="text-xs text-[var(--color-text-muted)]">{doc.worksiteName}</TableCell>

@@ -23,6 +23,29 @@ export function estadoPpaLabel(estado: string): string {
   return ESTADO_PPA_LABELS[estado as EstadoPpa] ?? estado
 }
 
+/**
+ * PPAI-001 (auditoría 2026-09-14), patrón P7: aceptar la verificación **no
+ * cambia el estado** —`pendiente_verificacion` sigue igual— y el hito lo marca
+ * `verifiedAt`. El siguiente paso, autorizar el reinicio, exige justamente
+ * `estado === "pendiente_verificacion" && verifiedAt`.
+ *
+ * Con una sola etiqueta, dos colas de trabajo distintas y con permisos distintos
+ * —`ppa:verify` y `ppa:authorize_restart`— se veían idénticas: quien debe
+ * verificar y quien debe autorizar miraban lo mismo. El estado no cambia (eso
+ * sería rediseñar la máquina); lo que cambia es que la etiqueta diga en qué
+ * tramo está.
+ */
+export function ppaStageLabel(estado: string, verifiedAt: string | null | undefined): string {
+  if (estado === "pendiente_verificacion" && verifiedAt) return "Verificado · pendiente de autorización"
+  return estadoPpaLabel(estado)
+}
+
+/** Qué acción toca ahora, para que el atajo de la cola lleve al trabajo real. */
+export function ppaStageCta(estado: string, verifiedAt: string | null | undefined): string {
+  if (estado === "pendiente_verificacion") return verifiedAt ? "Autorizar reinicio" : "Verificar corrección"
+  return "Revisar caso PPA"
+}
+
 export function estadoPpaBadgeVariant(estado: string): BadgeVariant {
   switch (estado as EstadoPpa) {
     case "aprobado_auto":

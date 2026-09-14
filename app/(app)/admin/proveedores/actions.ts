@@ -10,6 +10,8 @@ import { requirePermission } from "@/lib/auth/can"
 import { logger } from "@/lib/logger"
 import { parseCatalogWorkbook } from "@/lib/services/catalog-import"
 import { supplierSchema, type ActionState } from "@/lib/validation/masters"
+import { assertIdentityStable, MasterIdentityError } from "@/lib/services/master-identity"
+import { describeSupplierDependencies, getSupplierDependencies, supplierHasDocuments } from "@/lib/services/supplier-deactivation"
 
 const REVALIDATE = "/admin/proveedores"
 
@@ -93,6 +95,28 @@ export async function updateSupplier(_prev: ActionState, formData: FormData): Pr
   const current = await db.query.suppliers.findFirst({ where: eq(suppliers.id, d.id) })
   if (!current) return { ok: false, message: "Proveedor no encontrado" }
 
+  /*
+   * PRV-002 (auditoría 2026-09-14): el RUT se escribía como un campo más. Es la
+   * identidad tributaria con la que la conciliación de facturas de compra
+   * contrasta el emisor de cada documento (`insertPurchaseOrderInvoice`), de
+   * modo que cambiarlo altera hacia atrás el criterio con el que se validaron
+   * —y se seguirán validando— los documentos ya cargados. Mismo patrón que
+   * `CLI-001` en clientes y `CAT-002` en productos.
+   */
+  try {
+    await assertIdentityStable({
+      fields: [{ key: "rut", label: "el RUT", before: current.rut, after: d.rut ?? null }],
+      hasHistory: () => supplierHasDocuments(d.id!),
+      reason: "el proveedor ya tiene órdenes de compra o documentos tributarios emitidos a ese RUT",
+      remedy: "Crea otro proveedor y da de baja este cuando no queden órdenes abiertas.",
+    })
+  } catch (e) {
+    if (e instanceof MasterIdentityError) {
+      return { ok: false, fieldErrors: Object.fromEntries(e.fieldKeys.map((k) => [k, [e.message]])) }
+    }
+    throw e
+  }
+
   await db.update(suppliers).set({
     name: d.name, rut: d.rut ?? null,
     businessActivity: d.businessActivity ?? null,
@@ -123,12 +147,38 @@ export async function toggleSupplierActive(_prev: ActionState, formData: FormDat
   const activate = formData.get("activate") === "true"
   if (!id) return { ok: false, message: "ID requerido" }
 
+  /*
+   * PRV-001 (auditoría 2026-09-14): desactivar no miraba nada, y es la mitad
+   * ascendente de `OC-001` — la emisión de una OC no revalida al proveedor, así
+   * que una orden en borrador cuyo proveedor se acaba de desactivar igual se
+   * emite, apuntando a alguien que los selectores ya no ofrecen.
+   *
+   * No bloquea: dejar de trabajar con un proveedor puede ocurrir con órdenes
+   * abiertas, y exigir cerrarlas todas obligaría a mantenerlo activo. Lo que sí
+   * hace es mirar y dejarlo escrito, como la baja de una persona.
+   */
+  const dependencies = activate ? null : await getSupplierDependencies(id)
+
   await db.update(suppliers).set({ isActive: activate, updatedAt: new Date().toISOString() }).where(eq(suppliers.id, id))
 
-  await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "update", entityType: "supplier", entityId: id, oldState: { isActive: !activate }, newState: { isActive: activate } })
+  await recordAudit({
+    userId: session.user.id, userEmail: session.user.email ?? undefined,
+    action: "update", entityType: "supplier", entityId: id,
+    oldState: { isActive: !activate },
+    newState: {
+      isActive: activate,
+      ...(dependencies ? { pendientesAlDesactivar: dependencies.items } : {}),
+    },
+  })
 
   revalidatePath(REVALIDATE)
-  return { ok: true, message: activate ? "Proveedor activado" : "Proveedor desactivado" }
+  if (activate) return { ok: true, message: "Proveedor activado" }
+  return {
+    ok: true,
+    message: dependencies && !dependencies.clear
+      ? `Proveedor desactivado. Queda pendiente con él: ${describeSupplierDependencies(dependencies)}.`
+      : "Proveedor desactivado",
+  }
 }
 
 export async function importSuppliersFromXlsx(_prev: ActionState, formData: FormData): Promise<ActionState> {

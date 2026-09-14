@@ -19,6 +19,10 @@ import {
   WorkerPositionDomainError,
 } from "@/lib/services/worker-positions"
 import { normalizeWorkerPositionKey } from "@/lib/services/worker-positions/normalization"
+import {
+  describeWorkerOffboarding,
+  getWorkerOffboardingSummary,
+} from "@/lib/services/worker-offboarding"
 import { workerSchema, type ActionState } from "@/lib/validation/masters"
 
 const REVALIDATE = "/admin/trabajadores"
@@ -219,6 +223,20 @@ export async function toggleWorkerActive(_prev: ActionState, formData: FormData)
     return { ok: false, message: "No tienes acceso a la faena de este trabajador" }
   }
 
+  /*
+   * TRB-001 (auditoría 2026-09-14): desactivar era un `UPDATE isActive` que no
+   * consultaba nada de lo que la plataforma ya sabe —activos TI sin devolver,
+   * accesos vigentes, licencias ocupando asiento, EPP entregado, cuadrillas de
+   * permisos abiertos— ni dejaba constancia de ello.
+   *
+   * No bloquea: a diferencia del cierre de faena, la baja de una persona
+   * responde a un hecho ya ocurrido y debe poder registrarse el mismo día. Lo
+   * que sí hace es mirar y dejarlo escrito: el resumen entra en la auditoría
+   * junto al cambio de bandera y vuelve en el mensaje, para que quien
+   * desactiva sepa qué queda por cerrar en vez de descubrirlo meses después.
+   */
+  const pendings = activate ? null : await getWorkerOffboardingSummary(id)
+
   const { events } = await setWorkerActive(id, activate, current)
 
   await recordAudit({
@@ -228,13 +246,22 @@ export async function toggleWorkerActive(_prev: ActionState, formData: FormData)
     entityType: "worker",
     entityId:   id,
     oldState:   { isActive: !activate },
-    newState:   { isActive: activate },
+    newState:   {
+      isActive: activate,
+      ...(pendings ? { pendientesAlDesactivar: pendings.items } : {}),
+    },
   })
 
   await notifyDotacionChange(events, session.user.id)
 
   revalidatePath(REVALIDATE)
-  return { ok: true, message: activate ? "Trabajador activado" : "Trabajador desactivado" }
+  if (activate) return { ok: true, message: "Trabajador activado" }
+  return {
+    ok: true,
+    message: pendings && !pendings.clear
+      ? `Trabajador desactivado. Queda pendiente de cerrar: ${describeWorkerOffboarding(pendings)}.`
+      : "Trabajador desactivado",
+  }
 }
 
 export async function importWorkersFromXlsx(_prev: ActionState, formData: FormData): Promise<ActionState> {

@@ -23,6 +23,7 @@ import {
   type InvoiceReconciliationReview,
 } from "./invoice-reconciliation"
 import { resolveOrderItemMatchName } from "./order-item-identity"
+import { invoiceNotVoided } from "@/lib/services/purchasing-module/invoice-scope"
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
@@ -76,7 +77,8 @@ export async function reconcilePurchaseOrderInvoicesTx(
       ))
       .where(eq(purchaseOrderItems.purchaseOrderId, purchaseOrderId)),
     tx.query.purchaseOrderInvoices.findMany({
-      where: eq(purchaseOrderInvoices.purchaseOrderId, purchaseOrderId),
+      // FAC-002: la conciliación mira sólo las facturas vigentes.
+      where: and(eq(purchaseOrderInvoices.purchaseOrderId, purchaseOrderId), invoiceNotVoided),
       with: { items: { with: { allocations: true } } },
     }),
     tx
@@ -158,6 +160,7 @@ export async function backfillPurchaseOrderInvoiceReconciliations() {
       .where(sql`EXISTS (
         SELECT 1 FROM ${purchaseOrderInvoices}
         WHERE ${purchaseOrderInvoices.purchaseOrderId} = ${purchaseOrders.id}
+          AND ${purchaseOrderInvoices.voidedAt} IS NULL
       )`)
       .orderBy(asc(purchaseOrders.id))
       .for("update")
@@ -304,6 +307,7 @@ async function applyPendingCostsTx(
       .innerJoin(purchaseOrderInvoices, eq(purchaseOrderInvoiceItems.invoiceId, purchaseOrderInvoices.id))
       .where(and(
         eq(purchaseOrderInvoices.purchaseOrderId, orderId),
+        invoiceNotVoided,
         inArray(purchaseOrderInvoiceItems.id, selections.map((selection) => selection.invoiceItemId)),
       )),
   ])
@@ -384,6 +388,7 @@ async function applyCatalogPricesTx(
     .innerJoin(purchaseOrderItems, eq(purchaseOrderInvoiceItemAllocations.purchaseOrderItemId, purchaseOrderItems.id))
     .where(and(
       eq(purchaseOrderInvoices.purchaseOrderId, input.orderId),
+      invoiceNotVoided,
       inArray(purchaseOrderInvoiceItems.id, selections.map(selection => selection.invoiceItemId)),
     ))
   const lines = selections.map(selection => {

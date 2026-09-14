@@ -241,6 +241,20 @@ export const preventionEmergencyDrills = pgTable("prevention_emergency_drills", 
   observations:      text("observations"),
   outcome:           text("outcome"),
   capaActionId:      text("capa_action_id").references(() => preventionCapaActions.id, { onDelete: "set null" }),
+  /*
+   * EMG-001 (auditoría 2026-09-14), patrón P4: el cierre de un simulacro
+   * registraba participantes, duración, tiempo de evacuación, observaciones y
+   * resultado, y abría una CAPA si el resultado exigía mejora. Lo que **no
+   * tenía era un lugar donde adjuntar el respaldo del propio simulacro**, y el
+   * conector PDTP acreditaba la actividad con el rótulo sintético «Simulacro
+   * completado: <id>».
+   *
+   * El acta o el registro fotográfico es la prueba que se exhibe en una
+   * fiscalización. Aquí está su sitio, bajo el mismo contrato que el resto:
+   * ruta de un directorio de evidencia de la plataforma y checksum del archivo.
+   */
+  evidencePath:      text("evidence_path"),
+  evidenceChecksumSha256: text("evidence_checksum_sha256"),
   createdByUserId:   text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
   version:           integer("version").notNull().default(1),
   createdAt:         timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
@@ -248,6 +262,12 @@ export const preventionEmergencyDrills = pgTable("prevention_emergency_drills", 
 }, (table) => [
   index("prevention_emergency_drill_plan_idx").on(table.planId, table.scheduledFor),
   check("prevention_emergency_drill_scenario_type_valid", sql`${table.scenarioType} IN ('sismo', 'tsunami', 'aluvion', 'incendio_estructural', 'incendio_forestal', 'asalto_robo', 'erupcion_volcanica', 'inundacion_lluvia', 'inundacion_cauce', 'nevada', 'marejada', 'corte_energia', 'corte_agua', 'desorden_publico', 'otra_amenaza', 'derrame', 'fuga', 'volcamiento', 'exposicion', 'rescate')`),
+  // EMG-001: la ruta y su checksum van juntos o ninguno. Un archivo sin huella
+  // no es evidencia verificable, y una huella sin archivo no es nada.
+  check("prevention_emergency_drill_evidence_complete", sql`
+    (${table.evidencePath} IS NULL AND ${table.evidenceChecksumSha256} IS NULL)
+    OR (${table.evidencePath} IS NOT NULL AND length(${table.evidenceChecksumSha256}) = 64)
+  `),
   check("prevention_emergency_drill_status_valid", sql`${table.status} IN ('scheduled', 'completed', 'cancelled')`),
   check("prevention_emergency_drill_outcome_valid", sql`${table.outcome} IS NULL OR ${table.outcome} IN ('satisfactory', 'needs_improvement')`),
   check("prevention_emergency_drill_completed_consistent", sql`${table.status} <> 'completed' OR (${table.executedAt} IS NOT NULL AND ${table.outcome} IS NOT NULL)`),

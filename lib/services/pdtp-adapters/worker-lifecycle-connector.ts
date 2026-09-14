@@ -68,11 +68,20 @@ export type WorkerEntryResult = ObligationSweepCounters & { events: number }
  * masiva puede traer cientos de eventos repartidos en un puñado de faenas, y
  * consultar exclusiones por evento sería un N+1 con N grande.
  */
+/** Los tres hechos que incorporan a alguien a la dotación de una faena. */
+const ENTRY_KINDS = new Set<WorkerLifecycleEvent["kind"]>(["alta", "traslado", "reactivacion"])
+
 export async function onWorkerEnteredDotacion(
-  events: readonly WorkerLifecycleEvent[],
+  allEvents: readonly WorkerLifecycleEvent[],
   userId: string | null,
 ): Promise<WorkerEntryResult> {
   const counters = emptySweepCounters()
+  /**
+   * E2E-007: desde que la baja también es un evento del ciclo, este conector
+   * tiene que decir explícitamente cuáles le competen. Abrir las obligaciones
+   * de incorporación para quien se va sería exactamente al revés.
+   */
+  const events = allEvents.filter((event) => ENTRY_KINDS.has(event.kind))
   if (events.length === 0) return { ...counters, events: 0 }
 
   const effectiveByWorksite = new Map<string, Set<string>>()

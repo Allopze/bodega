@@ -202,3 +202,71 @@ describe("buildXlsxBuffer", () => {
     expect(largo).toBe("Faena Central Sector Norte Sur")
   })
 })
+
+/**
+ * REP-001 y REP-002 (auditoría 2026-09-14): el truncado a 10.000 filas sólo
+ * viajaba en la cabecera `X-Row-Limit-Applied`, que el enlace de descarga no
+ * lee, y el centro de reportes era el único exportador sin hoja de metadatos.
+ */
+describe("buildXlsxBuffer — trazabilidad del archivo", () => {
+  const session = {
+    user: {
+      id: "u-1", name: "Auditor", email: "auditor@chome.cl",
+      isGlobal: false, worksiteIds: ["ws-1", "ws-2"], permissions: [],
+    },
+    expires: "2099-01-01",
+  } as unknown as Parameters<typeof buildXlsxBuffer>[1] extends infer C
+    ? C extends { session: infer S } ? S : never
+    : never
+
+  const baseReport: ReportData = {
+    filenameBase: "reporte-truncado",
+    worksheetName: "Datos",
+    headers: ["Código"],
+    rows: [["OC-1"], ["OC-2"]],
+  }
+
+  async function sheetNames(buffer: ArrayBuffer): Promise<string[]> {
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(buffer)
+    return workbook.worksheets.map((sheet) => sheet.name)
+  }
+
+  it("agrega una hoja de advertencia cuando el reporte vino truncado", async () => {
+    const buffer = await buildXlsxBuffer(
+      { ...baseReport, rowLimitApplied: true },
+      { session, rowLimit: 10_000 },
+    )
+    const names = await sheetNames(buffer)
+    expect(names).toContain("Advertencias")
+
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(buffer)
+    const warning = workbook.getWorksheet("Advertencias")!
+    expect(String(warning.getRow(2).getCell(2).value)).toContain("10000")
+  })
+
+  it("no agrega advertencia cuando el reporte está completo", async () => {
+    const buffer = await buildXlsxBuffer(baseReport, { session })
+    expect(await sheetNames(buffer)).not.toContain("Advertencias")
+  })
+
+  it("adjunta la hoja de metadatos cuando hay sesión", async () => {
+    const buffer = await buildXlsxBuffer(baseReport, {
+      session, filters: { faena: "ws-1" }, from: "2026-01-01", to: "2026-01-31",
+    })
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(buffer)
+    const metadata = workbook.getWorksheet("Metadatos")
+    expect(metadata).toBeTruthy()
+    const values = metadata!.getColumn(2).values.map((value) => String(value ?? ""))
+    expect(values.some((value) => value.includes("auditor@chome.cl"))).toBe(true)
+    expect(values.some((value) => value.includes("2026-01-01"))).toBe(true)
+    expect(values.some((value) => value.includes("ws-1"))).toBe(true)
+  })
+
+  it("sin contexto se comporta como antes (sin metadatos)", async () => {
+    const buffer = await buildXlsxBuffer(baseReport)
+    expect(await sheetNames(buffer)).toEqual(["Datos"])
+  })
+})

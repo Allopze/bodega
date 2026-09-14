@@ -56,6 +56,9 @@ export default async function NuevaOcPage({
       status:          purchaseRequestItems.status,
       suggestedSupplierId: purchaseRequestItems.suggestedSupplierId,
       supplierHint:        purchaseRequestItems.supplierHint,
+      // COT-001: la referencia de la adjudicación viaja desde la línea.
+      awardedQuotationId:    purchaseRequestItems.awardedQuotationId,
+      awardedQuotationTotal: purchaseRequestItems.awardedQuotationTotal,
     })
     .from(purchaseRequestItems)
     .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
@@ -160,6 +163,18 @@ export default async function NuevaOcPage({
     getPurchasableCoverage(rawItems, coverageLines).map((coverage) => [coverage.requestItemId, coverage]),
   )
 
+  /*
+   * COT-001: cuántas líneas comparten cada adjudicación. Con una sola, el total
+   * de la oferta es el de esa línea y se puede prefijar; con varias sólo se
+   * muestra como contraste. Repartirlo sería inventar un dato con apariencia de
+   * hecho, y la propia ficha del hallazgo lo excluye.
+   */
+  const awardedLineCounts = new Map<string, number>()
+  for (const item of rawItems) {
+    if (!item.awardedQuotationId) continue
+    awardedLineCounts.set(item.awardedQuotationId, (awardedLineCounts.get(item.awardedQuotationId) ?? 0) + 1)
+  }
+
   const pendingItems: PendingItemOption[] = rawItems
     .flatMap((item): PendingItemOption[] => {
       const req     = reqMap[item.requestId]
@@ -189,6 +204,10 @@ export default async function NuevaOcPage({
         supplierPrices:  item.productId ? (supplierPriceMap[item.productId] ?? {}) : {},
         suggestedSupplierId: item.suggestedSupplierId,
         supplierHint:        item.supplierHint,
+        // COT-001: la adjudicación viaja hasta el formulario.
+        awardedQuotationId:    item.awardedQuotationId,
+        awardedQuotationTotal: item.awardedQuotationTotal,
+        awardedLineCount:      item.awardedQuotationId ? (awardedLineCounts.get(item.awardedQuotationId) ?? 1) : 0,
         deliveryMode:    req.deliveryMode as "via_oficina" | "directo_faena",
       }]
     })

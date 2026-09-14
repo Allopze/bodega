@@ -49,6 +49,22 @@ export interface RegisterReceiptInput {
   items:            ReceiptItemInput[]
 }
 
+/**
+ * Id de la bodega-oficina, o `null` si el despliegue no la tiene configurada.
+ *
+ * `resolveOfficeWorksite` lanza a propósito donde se va a mover stock —
+ * equivocarse de bodega corrompe el kardex—, pero acá sólo se usa para
+ * *comparar* contra la faena de la OC (ver `REC-001`). Una instalación sin
+ * oficina configurada no debe impedir una recepción en faena.
+ */
+async function officeWorksiteIdOrNull(client: Parameters<typeof resolveOfficeWorksite>[0]): Promise<string | null> {
+  try {
+    return (await resolveOfficeWorksite(client)).id
+  } catch {
+    return null
+  }
+}
+
 function isRealIsoDate(value: string | null | undefined): value is string {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
   const date = new Date(`${value}T00:00:00.000Z`)
@@ -116,6 +132,28 @@ export async function registerReceipt(
     }
     const office = input.stage === "office" ? await resolveOfficeWorksite(tx) : null
     const receiptWorksiteId = office?.id ?? worksiteId
+
+    /**
+     * REC-001 (auditoría 2026-09-14): una OC `via_oficina` cuya faena de destino
+     * ES la bodega-oficina ingresaba el mismo stock dos veces en la misma
+     * bodega —una al registrar la llegada a oficina y otra al "recibir en
+     * faena"—, porque el destino de ambos movimientos era el mismo id. No hay
+     * traslado que documentar: `prepareDispatchGuideForOfficeReceiptTx` ya
+     * devuelve `null` en ese caso, así que tampoco existe una GDI que compense.
+     * La etapa de faena sigue siendo obligatoria (cierra la OC y avanza el ítem
+     * de solicitud), pero no vuelve a mover el saldo.
+     *
+     * Misma guarda que `returnStockToOfficeTx`: "la bodega de Oficina no puede
+     * devolverse el saldo a sí misma".
+     *
+     * En `directo_faena` la mercadería nunca pasó por oficina, así que la etapa
+     * de faena es el único ingreso y debe emitirse aunque el destino sea la
+     * propia oficina.
+     */
+    const faenaStockWorksiteId = input.stage === "faena" && !directFaena
+      ? (await officeWorksiteIdOrNull(tx)) === worksiteId ? null : worksiteId
+      : worksiteId
+
     const txCode = await nextCodeTx(tx, "REC", year)
 
     await tx.insert(receipts).values({
@@ -306,7 +344,7 @@ export async function registerReceipt(
 
         }
 
-        const stockWorksiteId = input.stage === "office" ? office?.id : worksiteId
+        const stockWorksiteId = input.stage === "office" ? office?.id : faenaStockWorksiteId
         if (stockWorksiteId && lockedOcItem.productId) {
           const product = await tx.query.products.findFirst({
             where: eq(products.id, lockedOcItem.productId),
@@ -384,7 +422,12 @@ export async function registerReceipt(
 
 /* ── Roll up OC status based on received quantities ────────────────────────────  */
 
-async function rollupOrderReceiptStatus(
+/**
+ * REC-003: se exporta porque la anulación de una recepción necesita recalcular
+ * exactamente lo mismo que el registro. Duplicar la regla habría sido la vía
+ * para que el reverso y el avance dejaran de coincidir.
+ */
+export async function rollupOrderReceiptStatus(
   orderId: string,
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   deliveryMode: string,

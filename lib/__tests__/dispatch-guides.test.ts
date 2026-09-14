@@ -425,11 +425,26 @@ describe("Guías de Despacho Internas", () => {
     expect(history.some((row) => row.toStatus === "cancelled" && row.reason === "La carga no salió de oficina")).toBe(true)
   })
 
-  it("exige motivo para anular", async () => {
+  /**
+   * GDI-003 (auditoría 2026-09-14), patrón P6: el umbral eran cinco caracteres
+   * mientras anular una entrega —el mismo acto sobre otro documento— exigía
+   * diez. Ahora hay un solo número declarado en `reason-thresholds.ts`.
+   */
+  it("exige una explicación real para anular, no cinco letras", async () => {
     const { id } = await createDispatchGuide(guideInput(), ISSUER)
-    await expect(cancelDispatchGuide(id, { reason: "no" }, ISSUER)).rejects.toThrow(/motivo/i)
+
+    await expect(cancelDispatchGuide(id, { reason: "no" }, ISSUER)).rejects.toThrow(/al menos 10/i)
+    // Cinco caracteres pasaban antes y ya no.
+    await expect(cancelDispatchGuide(id, { reason: "error" }, ISSUER)).rejects.toThrow(/al menos 10/i)
+    // Nueve tampoco: el límite es exacto, no aproximado.
+    await expect(cancelDispatchGuide(id, { reason: "123456789" }, ISSUER)).rejects.toThrow(/al menos 10/i)
+
     const detail = await getDispatchGuideDetail(id)
     expect(detail!.guide.status).toBe("draft")
+
+    // Y con diez sí anula.
+    await cancelDispatchGuide(id, { reason: "1234567890" }, ISSUER)
+    expect((await getDispatchGuideDetail(id))!.guide.status).toBe("cancelled")
   })
 
   it("no anula si la faena ya consumió lo despachado (evita stock negativo)", async () => {
@@ -456,7 +471,7 @@ describe("Guías de Despacho Internas", () => {
   it("no anula dos veces la misma guía", async () => {
     const { id } = await createDispatchGuide(guideInput(), ISSUER)
     await cancelDispatchGuide(id, { reason: "Duplicada por error" }, ISSUER)
-    await expect(cancelDispatchGuide(id, { reason: "Otra vez" }, ISSUER)).rejects.toThrow(/ya está anulada/i)
+    await expect(cancelDispatchGuide(id, { reason: "Otra vez por error" }, ISSUER)).rejects.toThrow(/ya está anulada/i)
   })
 
   it("no despacha una guía anulada", async () => {

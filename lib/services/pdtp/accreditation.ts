@@ -346,9 +346,29 @@ export async function accreditPdtpFromEvent(
 
   // Un `evidenceRef` que sea un artefacto real (ruta de storage o URL) cuenta
   // como evidencia entregada; un rótulo descriptivo ("Inspección completada: …")
-  // no debe inflar la métrica de evidencia → queda "not_required".
+  // no lo es.
   const isStorageRef = input.evidenceRef?.startsWith("storage/") ?? false
   const isRealEvidence = isStorageRef || /^https?:\/\//.test(input.evidenceRef ?? "")
+
+  /*
+   * PDTP-001 (auditoría 2026-09-14), patrón P4: sin artefacto real, la ejecución
+   * quedaba siempre en `not_required` —«esta actividad no pedía evidencia»—, que
+   * es una afirmación distinta y más fuerte que la verdadera: «el conector no
+   * trajo documento». El enum ya tenía `pending` y ningún camino automático lo
+   * escribía nunca.
+   *
+   * La diferencia importa donde se mide: una actividad cuyo enunciado exige
+   * documentar —la N°62, «registrar la entrega de los EPP y **dejar documentada**
+   * su entrega» (`ENT-001`)— quedaba fuera del indicador de evidencia faltante,
+   * así que quien aprueba no veía nada que le llamara la atención.
+   *
+   * Quien sabe si hay que documentar es la actividad, no el conector: su
+   * `evidenceRequirement` es justamente esa declaración.
+   */
+  const evidenceStatusFor = (evidenceRequirement: string | null) => {
+    if (isRealEvidence) return "provided" as const
+    return (evidenceRequirement ?? "").trim().length > 0 ? "pending" as const : "not_required" as const
+  }
 
   const resolved = await resolvePdtpActiveProgramForEvent(
     { worksiteId: input.worksiteId, occurredAt: input.occurredAt, programId: input.programId, sourceType: input.sourceType, sourceId: input.sourceId },
@@ -366,7 +386,9 @@ export async function accreditPdtpFromEvent(
 
   // 2. Resolver las actividades del programa por número
   const activityRows = await client
-    .select({ id: pdtpActivities.id, n: pdtpActivities.n })
+    // PDTP-001: se trae `evidenceRequirement` porque es la actividad, y no el
+    // conector, la que declara si hay que documentar.
+    .select({ id: pdtpActivities.id, n: pdtpActivities.n, evidenceRequirement: pdtpActivities.evidenceRequirement })
     .from(pdtpActivities)
     .where(
       and(
@@ -457,7 +479,7 @@ export async function accreditPdtpFromEvent(
           approvedAt: input.autoApproveByUserId ? now : null,
           evidenceText: isStorageRef ? null : (input.evidenceRef ?? null),
           evidenceUrl: isStorageRef ? input.evidenceRef : null,
-          evidenceStatus: isRealEvidence ? "provided" : "not_required",
+          evidenceStatus: evidenceStatusFor(activity.evidenceRequirement),
           sourceMetadataJson: sourceMetadata,
           updatedAt: now,
         })
@@ -495,7 +517,7 @@ export async function accreditPdtpFromEvent(
           sourceId: input.sourceId,
           idempotencyKey,
           sourceMetadataJson: sourceMetadata,
-          evidenceStatus: isRealEvidence ? "provided" : "not_required",
+          evidenceStatus: evidenceStatusFor(activity.evidenceRequirement),
           createdAt: now,
           updatedAt: now,
         })

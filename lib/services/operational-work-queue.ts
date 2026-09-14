@@ -1022,11 +1022,26 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
     SELECT 'ppa'::text AS source_type, ${ppaSubmissions.id} AS source_id, 'review'::text AS action_key,
       'ppa'::text AS module, NULL::text AS code, 'Caso PPA requiere revisión'::text AS title, ''::text AS subtitle,
       ${ppaSubmissions.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name, ${ppaSubmissions.estado} AS status,
-      CASE WHEN ${ppaSubmissions.estado} = 'detenido' THEN 'Trabajo detenido' ELSE REPLACE(${ppaSubmissions.estado}, '_', ' ') END AS status_label,
+      -- PPAI-001 (auditoría 2026-09-14), patrón P7: el estado
+      -- pendiente_verificacion cubre dos tramos con permisos distintos
+      -- --verificar y autorizar el reinicio-- y la cola los mostraba idénticos.
+      -- La columna verified_at es lo que los separa, igual que en la ficha.
+      CASE
+        WHEN ${ppaSubmissions.estado} = 'detenido' THEN 'Trabajo detenido'
+        WHEN ${ppaSubmissions.estado} = 'pendiente_verificacion' AND ${ppaSubmissions.verifiedAt} IS NOT NULL
+          THEN 'Verificado · pendiente de autorización'
+        ELSE REPLACE(${ppaSubmissions.estado}, '_', ' ')
+      END AS status_label,
       CASE WHEN ${ppaSubmissions.esCritica} THEN 'critical' ELSE 'high' END AS priority,
       (${ppaSubmissions.estado} = 'detenido') AS blocked, ${ppaSubmissions.createdAt}::text AS created_at, NULL::text AS source_due_at,
       ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
-      CONCAT('/prevencion/ppa/', ${ppaSubmissions.id}) AS href, 'Revisar caso PPA'::text AS cta_label
+      CONCAT('/prevencion/ppa/', ${ppaSubmissions.id}) AS href,
+      CASE
+        WHEN ${ppaSubmissions.estado} = 'pendiente_verificacion' AND ${ppaSubmissions.verifiedAt} IS NOT NULL
+          THEN 'Autorizar reinicio'
+        WHEN ${ppaSubmissions.estado} = 'pendiente_verificacion' THEN 'Verificar corrección'
+        ELSE 'Revisar caso PPA'
+      END::text AS cta_label
     FROM ${ppaSubmissions}
     INNER JOIN ${worksites} ON ${worksites.id} = ${ppaSubmissions.worksiteId}
     WHERE ${inScope(ppaSubmissions.worksiteId)} AND ${ppaSubmissions.estado} IN ('detenido', 'en_correccion', 'pendiente_verificacion')

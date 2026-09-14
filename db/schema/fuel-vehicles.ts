@@ -68,10 +68,32 @@ export const fleetVehicleDocuments = pgTable("fleet_vehicle_documents", {
   status:       text("status").notNull().default("current"),
   supersededAt: timestamp("superseded_at", { withTimezone: true, mode: "string" }),
   supersededBy: text("superseded_by").references((): AnyPgColumn => fleetVehicleDocuments.id, { onDelete: "set null" }),
+  /*
+   * FLO-003 (auditoría 2026-09-14), patrón P5: eliminar un documento era un
+   * `DELETE` de la fila más un `unlink` del archivo. La póliza o la revisión
+   * técnica desaparecían —justo lo que puede pedirse en una fiscalización— en un
+   * módulo que por lo demás versiona con cuidado.
+   *
+   * Se anula, no se borra, con el mismo contrato que `deliveries`: motivo de
+   * diez caracteres, responsable y fecha, los tres juntos o ninguno. El archivo
+   * se conserva.
+   */
+  voidedAt:     timestamp("voided_at", { withTimezone: true, mode: "string" }),
+  voidedBy:     text("voided_by").references(() => users.id, { onDelete: "set null" }),
+  voidReason:   text("void_reason"),
   uploadedBy:   text("uploaded_by").notNull().references(() => users.id),
   createdAt:    timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
-  check("fleet_vehicle_documents_status_valid", sql`${table.status} IN ('current', 'replaced')`),
+  check("fleet_vehicle_documents_status_valid", sql`${table.status} IN ('current', 'replaced', 'voided')`),
+  // FLO-003: anular es un acto con responsable y motivo. Mismo `check` que
+  // `deliveries_void_complete`, y `status` coherente con las tres columnas.
+  check("fleet_vehicle_documents_void_complete", sql`
+    (${table.voidedAt} IS NULL AND ${table.voidedBy} IS NULL AND ${table.voidReason} IS NULL
+      AND ${table.status} <> 'voided')
+    OR (${table.voidedAt} IS NOT NULL AND ${table.voidedBy} IS NOT NULL
+      AND char_length(trim(${table.voidReason})) >= 10
+      AND ${table.status} = 'voided')
+  `),
   index("fleet_vehicle_documents_vehicle_idx").on(table.vehicleId),
   index("fleet_vehicle_documents_expires_idx").on(table.expiresAt),
   // Un solo documento vigente por equipo y tipo: es lo que sostiene que la

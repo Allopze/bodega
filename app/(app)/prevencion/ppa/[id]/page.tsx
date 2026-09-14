@@ -8,7 +8,7 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { MetaBadge } from "@/components/states/state-badge"
 import { cn, formatDateTime } from "@/lib/utils"
-import { estadoPpaLabel, estadoPpaBadgeVariant, decisionPpaLabel, isPendienteRevision } from "@/lib/ppa/badges"
+import { estadoPpaLabel, estadoPpaBadgeVariant, decisionPpaLabel, isPendienteRevision, ppaStageLabel } from "@/lib/ppa/badges"
 import {
   PPA_STOP_REASON_LABELS, PPA_COMPLEMENTARIAS, controlLabel, tipoTrabajoLabel,
   type EstadoPpa, type PpaStopReason, type PpaAnswers,
@@ -138,7 +138,9 @@ export default async function PpaDetailPage({
           ]} />
         }
         headerActions={
-          <MetaBadge meta={{ label: estadoPpaLabel(ppa.estado), variant: estadoPpaBadgeVariant(ppa.estado) }} />
+          // PPAI-001: la insignia distingue «por verificar» de «verificado,
+          // por autorizar», que son dos colas con permisos distintos.
+          <MetaBadge meta={{ label: ppaStageLabel(ppa.estado, ppa.verifiedAt), variant: estadoPpaBadgeVariant(ppa.estado) }} />
         }
       />
 

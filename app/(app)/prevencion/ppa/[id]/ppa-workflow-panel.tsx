@@ -17,6 +17,7 @@ import {
   declarePpaCorrectionAction,
   verifyPpaCorrectionAction,
 } from "../actions"
+import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 
 type WorkflowStatus =
   | "detenido"
@@ -63,6 +64,7 @@ export function PpaWorkflowPanel({
   const [evidenceKind, setEvidenceKind] = React.useState<"document" | "photo" | "url">("photo")
   const [evidenceReference, setEvidenceReference] = React.useState("")
   const [evidenceDescription, setEvidenceDescription] = React.useState("")
+  const [declaration, setDeclaration] = React.useState("")
   const [verificationComment, setVerificationComment] = React.useState("")
   const [effectivenessAssessment, setEffectivenessAssessment] = React.useState("")
   const [restartComment, setRestartComment] = React.useState("")
@@ -96,10 +98,17 @@ export function PpaWorkflowPanel({
 
   function declareImplemented() {
     if (!capa) return
+    // PPAI-003: quien verifica recibía una declaración vacía y tenía que salir
+    // a buscar si había evidencia. Ahora la declaración dice qué se hizo.
+    if (!isValidReason(declaration)) {
+      toast.error(reasonRequiredMessage("qué controles se implementaron"))
+      return
+    }
     run(() => declarePpaCorrectionAction({
       ppaId,
       expectedPpaVersion: ppaVersion,
       expectedCapaVersion: capa.version,
+      declaration,
     }))
   }
 
@@ -203,6 +212,16 @@ export function PpaWorkflowPanel({
           <p className="text-sm">
             Evidencias verificables: <strong>{capa.evidenceCount}</strong>
           </p>
+          <Field label="Qué controles se implementaron" htmlFor="ppa-declaration">
+            <Textarea
+              id="ppa-declaration"
+              rows={3}
+              value={declaration}
+              onChange={(event) => setDeclaration(event.target.value)}
+              maxLength={1000}
+              placeholder="Describe el control instalado y dónde queda su evidencia."
+            />
+          </Field>
           <Button
             className="mt-3 w-full"
             onClick={declareImplemented}

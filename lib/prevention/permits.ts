@@ -127,6 +127,12 @@ export function assessPermitActivation(args: {
   jsaStepCount: number
   crew: PermitCrewRow[]
   crewWithoutCompetency: PermitCrewRow[]
+  /**
+   * `CAP-001`: los que sólo incumplen un requisito declarado «advertencia».
+   * Opcional para no romper a los llamadores que aún no lo pasan; su ausencia
+   * significa «ninguno», no «no se sabe».
+   */
+  crewWithCompetencyWarning?: PermitCrewRow[]
   plannedEndAt: string
   now: string
 }): { allowed: boolean; blockers: PermitBlocker[] } {
@@ -207,8 +213,14 @@ export function assessPermitActivation(args: {
   if (args.crew.length === 0) {
     blockers.push({ kind: "crew_empty", detail: "El permiso no tiene cuadrilla asignada." })
   }
+  /*
+   * CAP-001 (auditoría 2026-09-14): sólo bloquea la falta de una competencia
+   * declarada **bloqueante**. Antes bloqueaba cualquiera, incluidas las que el
+   * catálogo marcaba como advertencia, así que la marca decidía al revés de lo
+   * que decía.
+   */
   for (const member of args.crewWithoutCompetency) {
-    blockers.push({ kind: "crew_competency", detail: `${member.label} no tiene vigente una competencia exigida por este permiso.` })
+    blockers.push({ kind: "crew_competency", detail: `${member.label} no tiene vigente una competencia BLOQUEANTE exigida por este permiso.` })
   }
 
   if (Date.parse(args.plannedEndAt) <= Date.parse(args.now)) {

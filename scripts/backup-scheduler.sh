@@ -16,6 +16,7 @@ set -euo pipefail
 # ──────────────────────────────────────────────────────────────────────────────
 
 ORCHESTRATOR="${ORCHESTRATOR:-/app/scripts/backup-orchestrator.sh}"
+DRILL_SCRIPT="${RESTORE_DRILL_SCRIPT:-/app/scripts/backup-restore-drill.sh}"
 APP_URL="${APP_URL:-http://app:3000}"
 LOG_PREFIX="[backup-scheduler]"
 
@@ -115,6 +116,19 @@ while true; do
     fi
   else
     error "Orquestador no encontrado o no ejecutable: ${ORCHESTRATOR}"
+  fi
+
+  # ── Ensayo de restauración (RES-001) ────────────────────────────────────
+  # Semanal, justo después del respaldo del día: se ensaya el artefacto recién
+  # publicado, que es el que alguien restauraría si hoy hubiera un desastre.
+  # Su resultado lo recoge `backup-verify.sh`, así que no necesita canal propio.
+  if [ "$(date -u '+%u')" = "${RESTORE_DRILL_WEEKDAY:-7}" ]; then
+    if [ -x "$DRILL_SCRIPT" ]; then
+      log "=== ENSAYO DE RESTAURACIÓN ==="
+      "$DRILL_SCRIPT" || error "El ensayo de restauración terminó con exit code $? (queda registrado para backup-verify)"
+    else
+      error "Ensayo de restauración no encontrado o no ejecutable: ${DRILL_SCRIPT}"
+    fi
   fi
 
   log "=== BACKUP DIARIO COMPLETADO ==="

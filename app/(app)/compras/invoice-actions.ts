@@ -257,6 +257,7 @@ export async function deleteInvoiceAction(
 
   const invoiceId = formData.get("invoiceId") as string | null
   const purchaseOrderId = formData.get("purchaseOrderId") as string | null
+  const reason = String(formData.get("reason") ?? "")
 
   if (!invoiceId) return { ok: false, message: "Factura no especificada" }
   if (!purchaseOrderId) return { ok: false, message: "Orden no especificada" }
@@ -282,14 +283,17 @@ export async function deleteInvoiceAction(
     // Scope de la sesión, no "all": `assertOrderAccess` ya validó el acceso,
     // pero era el único camino de compras que soltaba el cinturón dentro de la
     // transacción — el resto (cancelar, cerrar, borrar, recibir) lo pasa.
-    const { filePath } = await deletePurchaseOrderInvoice(invoiceId, session.user.id, serviceWorksiteScope(session), {
+    await deletePurchaseOrderInvoice(invoiceId, session.user.id, serviceWorksiteScope(session), {
       userEmail: session.user.email ?? undefined,
+      reason,
     })
 
-    // Remove the file from disk (best-effort — don't fail if already gone)
-    const { resolveInvoiceAttachmentFile } = await import("@/lib/storage/config")
-    const absolutePath = resolveInvoiceAttachmentFile(filePath)
-    await removeInvoiceAttachment(absolutePath ?? undefined)
+    /*
+     * FAC-002 (auditoría 2026-09-14), patrón P5: aquí se borraba el archivo del
+     * disco después del commit. Ya no: el PDF es el respaldo tributario, y la
+     * fila anulada lo sigue apuntando para que pueda descargarse en una
+     * revisión o una fiscalización.
+     */
 
     // La cola operacional tiene el pendiente "Adjuntar factura": sin esto el
     // usuario lo resolvía y seguía viéndolo (con su badge) hasta que otra
@@ -301,9 +305,9 @@ export async function deleteInvoiceAction(
         ? ["/recepcion", ...previousReceiptIds.map(({ receiptId }) => `/recepcion/${receiptId}`)]
         : []),
     ])
-    return { ok: true, message: "Factura eliminada correctamente" }
+    return { ok: true, message: "Factura anulada. El documento se conserva como respaldo." }
   } catch (e) {
     logger.error("[deleteInvoiceAction]", e)
-    return { ok: false, message: dbErrMsg(e, "Error al eliminar factura") }
+    return { ok: false, message: dbErrMsg(e, "Error al anular la factura") }
   }
 }

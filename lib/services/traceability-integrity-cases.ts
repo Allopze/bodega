@@ -15,7 +15,7 @@ import {
   traceabilityIntegrityCases,
   traceabilityIntegrityResolutions,
 } from "@/db/schema"
-import { resolveWorksiteScope } from "@/lib/auth/scope"
+import { resolveWorksiteScope, type WorksiteScope } from "@/lib/auth/scope"
 import { recordAudit } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import {
@@ -38,7 +38,10 @@ const ACTIVE_ORDER_STATUSES = new Set([
 const QUANTITY_NUDGE = 0.000_001
 
 function worksiteConditions(session: Session) {
-  const scope = resolveWorksiteScope(session)
+  return conditionsForScope(resolveWorksiteScope(session))
+}
+
+function conditionsForScope(scope: WorksiteScope) {
   if (scope.mode === "none") return { scope, condition: undefined }
   return {
     scope,
@@ -55,7 +58,34 @@ export async function scanTraceabilityIntegrity(session: Session): Promise<{
   findings: TraceabilityIntegrityFinding[]
   recordedCount: number
 }> {
-  const { scope, condition } = worksiteConditions(session)
+  return scanForScope(resolveWorksiteScope(session))
+}
+
+/**
+ * `TRZ-001` (auditoría 2026-09-14): el escaneo tenía un único llamador, la
+ * Server Action del banco de trabajo, y además recortaba por el alcance de
+ * quien pulsaba el botón. La cobertura global dependía de que una persona con
+ * alcance global entrara a la pantalla y hiciera clic — y este libro cubre
+ * justamente lo que el libro nuevo (con cron desde el principio) no mira:
+ * entregas por encima de lo recibido en faena y entregas anteriores a la
+ * recepción.
+ *
+ * `"all"` es una afirmación explícita de quien llama, igual que en
+ * `worksiteScopeSqlFor`: un cron no es un usuario y no puede fabricarse una
+ * sesión. Sólo observa; reconocer y verificar siguen exigiendo una persona.
+ */
+export async function scanTraceabilityIntegrityAsSystem(): Promise<{
+  findings: TraceabilityIntegrityFinding[]
+  recordedCount: number
+}> {
+  return scanForScope({ mode: "all", ids: [] })
+}
+
+async function scanForScope(resolved: WorksiteScope): Promise<{
+  findings: TraceabilityIntegrityFinding[]
+  recordedCount: number
+}> {
+  const { scope, condition } = conditionsForScope(resolved)
   if (scope.mode === "none") return { findings: [], recordedCount: 0 }
 
   const itemRows = await db

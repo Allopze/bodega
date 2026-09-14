@@ -19,6 +19,7 @@ vi.mock("@/db", () => ({
 import {
   resolveTraceabilityIntegrityCase,
   scanTraceabilityIntegrity,
+  scanTraceabilityIntegrityAsSystem,
 } from "@/lib/services/traceability-integrity-cases"
 
 const now = "2026-08-09T12:00:00.000Z"
@@ -245,4 +246,59 @@ describe("traceability integrity case resolution", () => {
     const resolutions = await inMemoryDb.select().from(schema.traceabilityIntegrityResolutions)
     expect(resolutions.some((r) => r.compensatingMovementId === "integrity-adjustment-sufficient")).toBe(true)
   })
+
+  /**
+   * TRZ-001 (auditoría 2026-09-14): el escaneo recortaba por el alcance de
+   * quien pulsaba el botón, de modo que una persona de faena sólo revisaba las
+   * suyas y la cobertura global dependía de que un usuario global entrara a la
+   * pantalla. La variante de sistema existe justamente para eso.
+   */
+  describe("TRZ-001 — cobertura del escaneo programado", () => {
+    async function seedFindingInOtherWorksite() {
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: "trz-request-other", code: "SOL-TRZ-OTHER", worksiteId: "integrity-ws-other",
+        requesterId: "integrity-user", requestType: "epp", urgency: "normal",
+        status: "approved", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: "trz-item-other", requestId: "trz-request-other", productId: "integrity-product",
+        quantity: 5, unitOfMeasure: "unidad", status: "received", createdAt: now, updatedAt: now,
+      })
+      // Entrega sin recepción en faena: es el hallazgo que este libro detecta y
+      // que el libro nuevo (el que sí tenía cron) no mira.
+      await inMemoryDb.insert(schema.deliveries).values({
+        id: "trz-delivery-other", code: "ENT-TRZ-OTHER", deliveredBy: "integrity-user",
+        deliveredAt: now, destinationType: "faena", worksiteId: "integrity-ws-other", createdAt: now,
+      })
+      await inMemoryDb.insert(schema.deliveryItems).values({
+        id: "trz-delivery-item-other", deliveryId: "trz-delivery-other",
+        requestItemId: "trz-item-other", productId: "integrity-product",
+        quantity: 5, unitOfMeasure: "unidad",
+      })
+    }
+
+    it("una sesión acotada a su faena no ve el problema de la faena vecina", async () => {
+      await seedFindingInOtherWorksite()
+      const deFaena = {
+        ...session,
+        user: { ...session.user, isGlobal: false, worksiteIds: ["integrity-ws"] },
+      } as Session
+
+      const result = await scanTraceabilityIntegrity(deFaena)
+      expect(result.findings.some((f) => f.worksiteId === "integrity-ws-other")).toBe(false)
+    })
+
+    it("el escaneo de sistema sí lo ve: no depende de quién lo dispare", async () => {
+      const result = await scanTraceabilityIntegrityAsSystem()
+      expect(result.findings.some((f) => f.worksiteId === "integrity-ws-other")).toBe(true)
+    })
+
+    it("registra el caso una vez: correr el cron a diario no acumula duplicados", async () => {
+      const primera = await scanTraceabilityIntegrityAsSystem()
+      const segunda = await scanTraceabilityIntegrityAsSystem()
+      expect(primera.findings.length).toBe(segunda.findings.length)
+      expect(segunda.recordedCount).toBe(0)
+    })
+  })
+
 })

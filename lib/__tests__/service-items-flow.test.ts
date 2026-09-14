@@ -280,13 +280,21 @@ describe("servicios con costo pendiente — flujo completo", () => {
     expect(equipment!.isActive).toBe(true)
   })
 
-  it("reasigna a la faena del solicitante un equipo registrado en otra", async () => {
-    await createSubmittedRequest(userId, undefined, requestData([
+  /**
+   * REQ-002 (auditoría 2026-09-14). Antes reasignaba: pedir un servicio en la
+   * faena propia con el código de un instrumento ajeno se lo traía, con su
+   * historial de mantenciones y calibraciones, sin permiso ni rastro de
+   * traslado. El código es único global y lo escribe el cliente, así que
+   * bastaba con conocerlo. Una solicitud no es una transferencia.
+   */
+  it("no se lleva a su faena un equipo registrado en otra", async () => {
+    await expect(createSubmittedRequest(userId, undefined, requestData([
       { productId: MONOGAS, equipmentCode: "MG-777" },
-    ]))
+    ]))).rejects.toThrow(/registrado en otra faena/i)
+
     const [equipment] = await inMemoryDb.select().from(schema.serviceEquipment)
       .where(eq(schema.serviceEquipment.id, "eq-otra-faena"))
-    expect(equipment!.worksiteId).toBe(worksiteId)
+    expect(equipment!.worksiteId).toBe("ws-srv-otra")
   })
 
   it("guarda la referencia al equipo, no una copia de sus datos", async () => {

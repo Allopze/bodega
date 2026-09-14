@@ -147,6 +147,7 @@ export function InvoicesSection({
   canManage,
   canUpdateCatalog,
   canAttach = canManage,
+  canAcceptDifference = canManage,
   receipts = [],
   defaultReceiptId,
   dteCandidates = EMPTY_DTE_CANDIDATES,
@@ -165,6 +166,12 @@ export function InvoicesSection({
    * carga que falla siempre. Por defecto sigue a `canManage`.
    */
   canAttach?: boolean
+  /**
+   * FAC-004 (auditoría 2026-09-14): aceptar la diferencia de conciliación es un
+   * acto distinto de adjuntar la factura y exige su propio permiso. Por defecto
+   * sigue a `canManage` para no romper a los llamadores que aún no lo pasan.
+   */
+  canAcceptDifference?: boolean
   /** Recepciones del proveedor disponibles para el vínculo documental opcional. */
   receipts?: InvoiceReceiptOption[]
   /** Recepción desde la que se abrió la OC; queda preseleccionada, nunca usada como folio. */
@@ -192,7 +199,7 @@ export function InvoicesSection({
         purchaseOrderId={purchaseOrderId}
         reconciliation={reconciliation}
         invoices={invoices}
-        canAccept={canManage}
+        canAccept={canAcceptDifference}
         canUpdateCatalog={canUpdateCatalog}
       />
 
@@ -319,10 +326,11 @@ function InvoiceItem({
     }
   }, [state])
 
-  function handleConfirmDelete() {
+  function handleConfirmDelete(reason: string) {
     const formData = new FormData()
     formData.set("invoiceId", invoice.id)
     formData.set("purchaseOrderId", purchaseOrderId)
+    formData.set("reason", reason)
     startTransition(() => {
       action(formData)
     })
@@ -412,11 +420,15 @@ function InvoiceItem({
           <ConfirmDialog
             open={confirmOpen}
             onOpenChange={setConfirmOpen}
-            title="Eliminar factura"
-            description={`La factura ${invoice.invoiceNumber} será eliminada permanentemente. Esta acción no se puede deshacer.`}
-            confirmLabel="Eliminar"
+            title="Anular factura"
+            // FAC-002: el documento tributario no se borra. Se anula, deja de
+            // contar para la conciliación, y el archivo se conserva.
+            description={`La factura ${invoice.invoiceNumber} dejará de contar para esta orden. El documento se conserva como respaldo y la anulación queda registrada con tu nombre.`}
+            confirmLabel="Anular"
             variant="destructive"
             loading={pending}
+            reasonLabel="Motivo de la anulación"
+            reasonPlaceholder="Por ejemplo: se adjuntó a la orden equivocada."
             onConfirm={handleConfirmDelete}
           />
         </div>

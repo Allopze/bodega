@@ -1,5 +1,5 @@
 import type { Session } from "next-auth"
-import { and, eq, gte, inArray, lte, ne, sql } from "drizzle-orm"
+import { and, eq, gte, inArray, lte, ne, sql, type SQL } from "drizzle-orm"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { z } from "zod"
 import { db } from "@/db"
@@ -98,6 +98,18 @@ const chileDayRange = (column: AnyPgColumn, from: string, to: string) => and(
   sql`(${column} at time zone 'America/Santiago')::date <= ${to.slice(0, 10)}::date`,
 )
 
+/**
+ * Todo lo anterior al primer día del rango, en día civil chileno.
+ *
+ * `COM-001` (auditoría 2026-09-14): el «saldo por estanque» sumaba y restaba
+ * sólo lo ocurrido **dentro** del filtro, sin arrastrar nada. Eso no es un
+ * nivel, es el flujo neto del período —con un rango que sólo contenga entregas
+ * salía negativo—, y la pantalla lo comparaba contra la capacidad física del
+ * estanque, que es mezclar dos magnitudes distintas.
+ */
+const chileBefore = (column: AnyPgColumn, from: string) =>
+  sql`(${column} at time zone 'America/Santiago')::date < ${from.slice(0, 10)}::date`
+
 export async function getFuelCycleComparison(session: Session, filters: { worksiteId?: string; productId?: string; from: string; to: string }) {
   const movementWhere = and(chileDayRange(fuelCycleMovements.occurredAt, filters.from, filters.to), filters.worksiteId ? eq(fuelCycleMovements.worksiteId, filters.worksiteId) : undefined, filters.productId ? eq(fuelCycleMovements.productId, filters.productId) : undefined, worksiteScopeSql(session, fuelCycleMovements.worksiteId))
   const registeredWhere = and(accountableFuelLoadsWhere(), gte(fuelLoads.loadDate, filters.from.slice(0, 10)), lte(fuelLoads.loadDate, filters.to.slice(0, 10)), filters.worksiteId ? eq(fuelLoads.worksiteId, filters.worksiteId) : undefined, filters.productId ? eq(fuelLoads.productId, filters.productId) : undefined, worksiteScopeSql(session, fuelLoads.worksiteId))
@@ -128,11 +140,20 @@ export interface FuelStorageBalance {
   transferInLiters: number
   transferOutLiters: number
   deliveredLiters: number
+  /**
+   * `COM-001` (auditoría 2026-09-14): el nivel que tenía el estanque al empezar
+   * el rango. No existía, y por eso `balanceLiters` no era un nivel sino el
+   * flujo neto del período.
+   */
+  openingLiters: number
+  /** El movimiento del período: lo que antes se llamaba, mal, «saldo». */
+  periodNetLiters: number
+  /** El nivel real: apertura + movimiento. Esto es lo que se compara con la capacidad. */
   balanceLiters: number
 }
 
 /**
- * Saldo por estanque: recibido + transferido-hacia − transferido-desde − entregado,
+ * Nivel por estanque: apertura + (recibido + transferido-hacia − transferido-desde − entregado),
  * en el período dado. "Entregado" combina las salidas manuales `tank_delivery`
  * del ledger con lo que la PWA repartió desde el punto de carga enlazado a esta
  * estanque (`fuel_tae_loading_points.storage_location_id`) — sin ese enlace, una
@@ -151,56 +172,94 @@ export async function getFuelStorageBalances(session: Session, filters: { worksi
   })
   if (!locations.length) return []
   const ids = locations.map((location) => location.id)
-  const dateWhere = chileDayRange(fuelCycleMovements.occurredAt, filters.from, filters.to)
 
-  const [inbound, outboundMovements, outboundSubmissions] = await Promise.all([
-    db.select({ locationId: fuelCycleMovements.targetLocationId, eventType: fuelCycleMovements.eventType, liters: sql<number>`coalesce(sum(${fuelCycleMovements.quantity}), 0)` })
-      .from(fuelCycleMovements)
-      .where(and(dateWhere, inArray(fuelCycleMovements.targetLocationId, ids), inArray(fuelCycleMovements.eventType, ["received", "transfer"])))
-      .groupBy(fuelCycleMovements.targetLocationId, fuelCycleMovements.eventType),
-    db.select({ locationId: fuelCycleMovements.sourceLocationId, eventType: fuelCycleMovements.eventType, liters: sql<number>`coalesce(sum(${fuelCycleMovements.quantity}), 0)` })
-      .from(fuelCycleMovements)
-      .where(and(dateWhere, inArray(fuelCycleMovements.sourceLocationId, ids), inArray(fuelCycleMovements.eventType, ["transfer", "tank_delivery"])))
-      .groupBy(fuelCycleMovements.sourceLocationId, fuelCycleMovements.eventType),
-    db.select({ locationId: fuelTaeLoadingPoints.storageLocationId, liters: sql<number>`coalesce(sum(${fuelTaeSubmissions.liters}), 0)` })
-      .from(fuelTaeSubmissions)
-      .innerJoin(fuelTaeLoadingPoints, eq(fuelTaeSubmissions.loadingPointId, fuelTaeLoadingPoints.id))
-      .where(and(chileDayRange(fuelTaeSubmissions.loadedAt, filters.from, filters.to), ne(fuelTaeSubmissions.status, "voided"), inArray(fuelTaeLoadingPoints.storageLocationId, ids)))
-      .groupBy(fuelTaeLoadingPoints.storageLocationId),
+  /**
+   * Los cuatro flujos de un estanque en una ventana. Se extrae para poder
+   * pedirla dos veces —lo anterior al rango y lo del rango— sin duplicar las
+   * consultas (`COM-001`).
+   */
+  const flowsFor = async (movementWindow: SQL | undefined, taeWindow: SQL | undefined) => {
+    const [inbound, outboundMovements, outboundSubmissions] = await Promise.all([
+      db.select({ locationId: fuelCycleMovements.targetLocationId, eventType: fuelCycleMovements.eventType, liters: sql<number>`coalesce(sum(${fuelCycleMovements.quantity}), 0)` })
+        .from(fuelCycleMovements)
+        .where(and(movementWindow, inArray(fuelCycleMovements.targetLocationId, ids), inArray(fuelCycleMovements.eventType, ["received", "transfer"])))
+        .groupBy(fuelCycleMovements.targetLocationId, fuelCycleMovements.eventType),
+      db.select({ locationId: fuelCycleMovements.sourceLocationId, eventType: fuelCycleMovements.eventType, liters: sql<number>`coalesce(sum(${fuelCycleMovements.quantity}), 0)` })
+        .from(fuelCycleMovements)
+        .where(and(movementWindow, inArray(fuelCycleMovements.sourceLocationId, ids), inArray(fuelCycleMovements.eventType, ["transfer", "tank_delivery"])))
+        .groupBy(fuelCycleMovements.sourceLocationId, fuelCycleMovements.eventType),
+      db.select({ locationId: fuelTaeLoadingPoints.storageLocationId, liters: sql<number>`coalesce(sum(${fuelTaeSubmissions.liters}), 0)` })
+        .from(fuelTaeSubmissions)
+        .innerJoin(fuelTaeLoadingPoints, eq(fuelTaeSubmissions.loadingPointId, fuelTaeLoadingPoints.id))
+        .where(and(taeWindow, ne(fuelTaeSubmissions.status, "voided"), inArray(fuelTaeLoadingPoints.storageLocationId, ids)))
+        .groupBy(fuelTaeLoadingPoints.storageLocationId),
+    ])
+
+    const received = new Map<string, number>()
+    const transferIn = new Map<string, number>()
+    for (const row of inbound) {
+      if (!row.locationId) continue
+      const target = row.eventType === "received" ? received : transferIn
+      target.set(row.locationId, Number(row.liters))
+    }
+    const transferOut = new Map<string, number>()
+    const tankDelivery = new Map<string, number>()
+    for (const row of outboundMovements) {
+      if (!row.locationId) continue
+      const target = row.eventType === "transfer" ? transferOut : tankDelivery
+      target.set(row.locationId, Number(row.liters))
+    }
+    const pwaDelivery = new Map(outboundSubmissions.filter((row) => row.locationId).map((row) => [row.locationId as string, Number(row.liters)]))
+
+    return (locationId: string) => {
+      const receivedLiters = received.get(locationId) ?? 0
+      const transferInLiters = transferIn.get(locationId) ?? 0
+      const transferOutLiters = transferOut.get(locationId) ?? 0
+      const deliveredLiters = (tankDelivery.get(locationId) ?? 0) + (pwaDelivery.get(locationId) ?? 0)
+      return {
+        receivedLiters, transferInLiters, transferOutLiters, deliveredLiters,
+        netLiters: receivedLiters + transferInLiters - transferOutLiters - deliveredLiters,
+      }
+    }
+  }
+
+  const [openingOf, periodOf] = await Promise.all([
+    flowsFor(
+      chileBefore(fuelCycleMovements.occurredAt, filters.from),
+      chileBefore(fuelTaeSubmissions.loadedAt, filters.from),
+    ),
+    flowsFor(
+      chileDayRange(fuelCycleMovements.occurredAt, filters.from, filters.to),
+      chileDayRange(fuelTaeSubmissions.loadedAt, filters.from, filters.to),
+    ),
   ])
 
-  const received = new Map<string, number>()
-  const transferIn = new Map<string, number>()
-  for (const row of inbound) {
-    if (!row.locationId) continue
-    const target = row.eventType === "received" ? received : transferIn
-    target.set(row.locationId, Number(row.liters))
-  }
-  const transferOut = new Map<string, number>()
-  const tankDelivery = new Map<string, number>()
-  for (const row of outboundMovements) {
-    if (!row.locationId) continue
-    const target = row.eventType === "transfer" ? transferOut : tankDelivery
-    target.set(row.locationId, Number(row.liters))
-  }
-  const pwaDelivery = new Map(outboundSubmissions.filter((row) => row.locationId).map((row) => [row.locationId as string, Number(row.liters)]))
-
   return locations.map((location) => {
-    const receivedLiters = received.get(location.id) ?? 0
-    const transferInLiters = transferIn.get(location.id) ?? 0
-    const transferOutLiters = transferOut.get(location.id) ?? 0
-    const deliveredLiters = (tankDelivery.get(location.id) ?? 0) + (pwaDelivery.get(location.id) ?? 0)
+    const opening = openingOf(location.id)
+    const period = periodOf(location.id)
     return {
       storageLocationId: location.id,
       worksiteId: location.worksiteId,
       name: location.name,
       productId: location.productId,
       capacityLiters: location.capacityLiters,
-      receivedLiters,
-      transferInLiters,
-      transferOutLiters,
-      deliveredLiters,
-      balanceLiters: receivedLiters + transferInLiters - transferOutLiters - deliveredLiters,
+      // Los cuatro flujos siguen siendo los del período: es lo que la pantalla
+      // desglosa y lo que el filtro promete.
+      receivedLiters: period.receivedLiters,
+      transferInLiters: period.transferInLiters,
+      transferOutLiters: period.transferOutLiters,
+      deliveredLiters: period.deliveredLiters,
+      /*
+       * COM-001: lo que había antes del primer día del rango. Sin esto,
+       * `balanceLiters` era el flujo neto del período —negativo si el rango
+       * sólo contenía entregas— y la pantalla lo comparaba contra la capacidad
+       * física del estanque.
+       */
+      openingLiters: opening.netLiters,
+      /** El movimiento del período, que es lo que antes se llamaba «saldo». */
+      periodNetLiters: period.netLiters,
+      /** El nivel: lo que había más lo que se movió. Esto sí se compara con la capacidad. */
+      balanceLiters: opening.netLiters + period.netLiters,
     }
   })
 }

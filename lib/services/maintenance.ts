@@ -806,6 +806,63 @@ export async function setMaintenancePlanActive(session: Session, id: string, act
   })
 }
 
+type DuePlan = Awaited<ReturnType<typeof listMaintenancePlans>>[number]
+
+/** ¿Le toca a este plan? Calendario o uso, con su holgura declarada. */
+async function planIsDue(plan: DuePlan, today: string): Promise<boolean> {
+  if (!plan.isActive) return false
+  const calendarDue = Boolean(plan.nextDueDate && plan.nextDueDate <= addDaysToPlainDate(today, plan.advanceDays))
+  if (calendarDue) return true
+  if (plan.nextDueReading == null) return false
+
+  const readingUnit = plan.strategy === "hour_meter"
+    || (plan.strategy === "combined" && plan.vehicle.meterType === "hour_meter")
+    ? "hora"
+    : "km"
+  const [reading] = await db.select({ value: fuelOperationRecords.horometro })
+    .from(fuelOperationRecords)
+    .where(and(
+      eq(fuelOperationRecords.vehicleId, plan.vehicleId),
+      eq(fuelOperationRecords.medidoPor, readingUnit),
+      isNotNull(fuelOperationRecords.horometro),
+    ))
+    .orderBy(desc(fuelOperationOccurredAtSql()), desc(fuelOperationRecords.createdAt)).limit(1)
+  return reading?.value != null && reading.value >= plan.nextDueReading - plan.advanceUnits
+}
+
+/** La OT que corresponde a un plan vencido, sin el actor: lo pone el llamador. */
+function recordInputForPlan(plan: DuePlan, maintenanceDate: string): CreateMaintenanceInput {
+  return {
+    vehicleId: plan.vehicleId,
+    planId: plan.id,
+    supplierId: plan.supplierId,
+    costCenterId: plan.costCenterId,
+    maintenanceDate,
+    maintenanceType: plan.maintenanceType,
+    status: "scheduled",
+    priority: "normal",
+    assignedToUserId: plan.assignedToUserId,
+    operationalImpact: "maintenance",
+    netAmount: 0,
+    taxAmount: 0,
+    totalAmount: 0,
+    notes: plan.instructions,
+  }
+}
+
+/**
+ * ¿Ya existe la OT de este plan para esta fecha? Es la guarda de idempotencia:
+ * la materialización puede correr muchas veces al día sin duplicar nada.
+ */
+async function alreadyMaterialized(planId: string, maintenanceDate: string): Promise<boolean> {
+  const existing = await db.select({ id: maintenanceRecords.id }).from(maintenanceRecords).where(and(
+    eq(maintenanceRecords.planId, planId),
+    eq(maintenanceRecords.maintenanceDate, maintenanceDate),
+    sql`${maintenanceRecords.status} <> 'cancelled'`,
+  )).limit(1)
+  return Boolean(existing[0])
+}
+
 /** Materializa las obligaciones vencidas/por vencer sin duplicar una OT. */
 export async function materializeDueMaintenancePlans(session: Session) {
   if (!can(session, "mantenciones:create")) throw new Error("Sin permisos para programar mantenciones")
@@ -813,47 +870,44 @@ export async function materializeDueMaintenancePlans(session: Session) {
   const today = todayInChile()
   let created = 0
   for (const plan of plans) {
-    if (!plan.isActive) continue
-    const calendarDue = plan.nextDueDate && plan.nextDueDate <= addDaysToPlainDate(today, plan.advanceDays)
-    let usageDue = false
-    if (plan.nextDueReading != null) {
-      const readingUnit = plan.strategy === "hour_meter"
-        || (plan.strategy === "combined" && plan.vehicle.meterType === "hour_meter")
-        ? "hora"
-        : "km"
-      const [reading] = await db.select({ value: fuelOperationRecords.horometro })
-        .from(fuelOperationRecords)
-        .where(and(
-          eq(fuelOperationRecords.vehicleId, plan.vehicleId),
-          eq(fuelOperationRecords.medidoPor, readingUnit),
-          isNotNull(fuelOperationRecords.horometro),
-        ))
-        .orderBy(desc(fuelOperationOccurredAtSql()), desc(fuelOperationRecords.createdAt)).limit(1)
-      usageDue = reading?.value != null && reading.value >= plan.nextDueReading - plan.advanceUnits
-    }
-    if (!calendarDue && !usageDue) continue
+    if (!await planIsDue(plan, today)) continue
     const maintenanceDate = plan.nextDueDate ?? today
-    const existing = await db.select({ id: maintenanceRecords.id }).from(maintenanceRecords).where(and(
-      eq(maintenanceRecords.planId, plan.id),
-      eq(maintenanceRecords.maintenanceDate, maintenanceDate),
-      sql`${maintenanceRecords.status} <> 'cancelled'`,
-    )).limit(1)
-    if (existing[0]) continue
-    await createMaintenanceRecord(session, {
-      vehicleId: plan.vehicleId,
-      planId: plan.id,
-      supplierId: plan.supplierId,
-      costCenterId: plan.costCenterId,
-      maintenanceDate,
-      maintenanceType: plan.maintenanceType,
-      status: "scheduled",
-      priority: "normal",
-      assignedToUserId: plan.assignedToUserId,
-      operationalImpact: "maintenance",
-      netAmount: 0,
-      taxAmount: 0,
-      totalAmount: 0,
-      notes: plan.instructions,
+    if (await alreadyMaterialized(plan.id, maintenanceDate)) continue
+    await createMaintenanceRecord(session, recordInputForPlan(plan, maintenanceDate))
+    created += 1
+  }
+  return { created }
+}
+
+/**
+ * `MNT-001` (auditoría 2026-09-14): la materialización tenía un solo llamador,
+ * una Server Action de la pantalla de mantenciones. El programa preventivo
+ * dependía de que una persona entrara a mirar, y como el recordatorio se
+ * calcula sobre órdenes **ya creadas**, tampoco había aviso: el silencio se veía
+ * igual que estar al día.
+ *
+ * La OT se atribuye a quien creó el plan, no a un usuario «sistema» inventado:
+ * `maintenance_records.created_by` es una clave foránea real y quien programó
+ * el plan es justamente quien pidió que esa orden existiera. La atribución así
+ * es verdadera y además deja a alguien a quien preguntar.
+ */
+export async function materializeDueMaintenancePlansAsSystem(): Promise<{ created: number }> {
+  const plans = await db.query.maintenancePlans.findMany({
+    where: eq(maintenancePlans.isActive, true),
+    with: { vehicle: true },
+  }) as unknown as DuePlan[]
+
+  const today = todayInChile()
+  let created = 0
+  for (const plan of plans) {
+    if (!await planIsDue(plan, today)) continue
+    const maintenanceDate = plan.nextDueDate ?? today
+    if (await alreadyMaterialized(plan.id, maintenanceDate)) continue
+    await db.transaction(async (tx) => {
+      await createMaintenanceRecordWithClient(tx, recordInputForPlan(plan, maintenanceDate), {
+        actorUserId: plan.createdBy,
+        vehicle: { worksiteId: plan.worksiteId },
+      })
     })
     created += 1
   }

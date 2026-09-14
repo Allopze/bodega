@@ -63,6 +63,7 @@ import { applyMovementTx } from "@/lib/services/stock"
 import { closeOrderTx } from "@/lib/services/purchasing-module/receiving"
 import { receiveItemTx } from "@/lib/services/item-state"
 import type { DispatchGuideInput } from "@/lib/validation/dispatch-guides"
+import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 
 /* ── Constantes de dominio ──────────────────────────────────────────────── */
 
@@ -1201,7 +1202,9 @@ export async function cancelDispatchGuide(
   scope: WorksiteScope = "all",
 ): Promise<{ code: string; reversedMovements: number }> {
   const reason = input.reason.trim()
-  if (reason.length < 5) throw new Error("Indica el motivo de la anulación (mínimo 5 caracteres)")
+  // GDI-003 (auditoría 2026-09-14), patrón P6: eran cinco caracteres mientras
+  // anular una entrega —un acto de la misma naturaleza— exigía diez.
+  if (!isValidReason(reason)) throw new Error(reasonRequiredMessage("por qué se anula la guía"))
 
   return db.transaction(async (tx) => {
     const guide = await lockGuide(tx, guideId)

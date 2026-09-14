@@ -88,6 +88,18 @@ export async function ResumenView({
   const canViewCapa = can(session, "prevention:capa:view")
   const canViewIncidents = can(session, "prevention:incidents:view")
   const canManagePdtp = can(session, "prevention:pdtp:program:manage")
+  /*
+   * DASH-001 (auditoría 2026-09-14): la tendencia operativa —solicitudes, OC y
+   * recepciones de toda la faena— se cargaba y dibujaba para cualquier sesión
+   * autenticada. `requests:view_own` significa "sólo las mías": una curva con
+   * el volumen de todos es exactamente lo que esa capacidad no concede, y las
+   * otras dos series pertenecen a Compras y a Recepción.
+   *
+   * Cada serie sale sólo con su permiso; el gráfico se oculta solo cuando las
+   * tres quedan en cero, que es su comportamiento de siempre.
+   */
+  const canSeeRequestVolume = can(session, "requests:view_all")
+  const canSeeAnyTrend = canSeeRequestVolume || canViewPurchasing || canReceive
 
   const scopedWorksite = scopedWorksiteId(scope)
 
@@ -124,7 +136,9 @@ export async function ResumenView({
       : Promise.resolve({ totalOpen: 0, overdueNotifications: 0, fatalOrSerious: 0, pendingInvestigation: 0 }),
     // Transversal, no de un dominio: solicitudes, OC y recepciones en la misma
     // tendencia son el pulso de la operación completa.
-    getOperationalTrendHistory(session, 6, new Date(), scopedWorksite),
+    canSeeAnyTrend
+      ? getOperationalTrendHistory(session, 6, new Date(), scopedWorksite)
+      : Promise.resolve([]),
   ])
 
   const hasNextYearProgram = allPrograms.some((p) => p.year === currentYear + 1)
@@ -226,7 +240,10 @@ export async function ResumenView({
             ) : null}
             <OperationalTrendChart
               data={trend.map((point) => ({
-                month: point.month, requests: point.requests, orders: point.orders, receipts: point.receipts,
+                month: point.month,
+                requests: canSeeRequestVolume ? point.requests : 0,
+                orders: canViewPurchasing ? point.orders : 0,
+                receipts: canReceive ? point.receipts : 0,
               }))}
             />
           </div>

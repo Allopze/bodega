@@ -79,6 +79,12 @@ describe("stock documents", () => {
       id: "con-cancel", code: "CON-2026-0002", worksiteId: "ws-doc", status: "cancelled",
       countedBy: "user-doc", createdAt: "2026-03-06T09:00:00.000Z", updatedAt: "2026-03-06T09:00:00.000Z",
     })
+    // STK-003: un borrador sí se lista —está en curso y hay que poder verlo—,
+    // pero no puede confundirse con lo que ya se aplicó.
+    await inMemoryDb.insert(schema.physicalInventoryCounts).values({
+      id: "con-draft", code: "CON-2026-0003", worksiteId: "ws-doc", status: "draft",
+      countedBy: "user-doc", createdAt: "2026-03-05T09:00:00.000Z", updatedAt: "2026-03-05T09:00:00.000Z",
+    })
   })
 
   afterAll(async () => { await pg.close() })
@@ -87,9 +93,28 @@ describe("stock documents", () => {
     const rows = await listStockDocuments({ worksiteIds: ["ws-doc"] })
 
     expect(rows.map((row) => row.folio)).toEqual([
-      "CON-2026-0001", "DEV-2026-0001", "DES-2026-0001", "AJU-2026-0001",
+      "CON-2026-0003", "CON-2026-0001", "DEV-2026-0001", "DES-2026-0001", "AJU-2026-0001",
     ])
-    expect(rows.map((row) => row.kind)).toEqual(["conteo", "devolucion", "desecho", "ajuste"])
+    expect(rows.map((row) => row.kind)).toEqual(["conteo", "conteo", "devolucion", "desecho", "ajuste"])
+  })
+
+  /**
+   * STK-003 (auditoría 2026-09-14), patrón P7: la bitácora mezclaba lo
+   * ejecutado con lo planificado. Un conteo en borrador —que explícitamente no
+   * movió stock— se listaba idéntico a los ajustes y bajas que sí, y quien la
+   * usara como evidencia de qué se movió contaba de más.
+   */
+  it("distingue lo que movió stock de lo que sólo está planificado", async () => {
+    const rows = await listStockDocuments({ worksiteIds: ["ws-doc"] })
+    const porFolio = new Map(rows.map((row) => [row.folio, row]))
+
+    expect(porFolio.get("CON-2026-0003")?.applied).toBe(false)   // borrador
+    expect(porFolio.get("CON-2026-0001")?.applied).toBe(true)    // conteo cerrado
+    // Los demás documentos existen porque ya se ejecutaron: no hay borrador de
+    // un ajuste ni de una baja.
+    expect(porFolio.get("AJU-2026-0001")?.applied).toBe(true)
+    expect(porFolio.get("DES-2026-0001")?.applied).toBe(true)
+    expect(porFolio.get("DEV-2026-0001")?.applied).toBe(true)
   })
 
   it("ordena por fecha cruzando las tres tablas de origen", async () => {
@@ -148,7 +173,7 @@ describe("stock documents", () => {
     const firstPage = await listStockDocuments({ worksiteIds: ["ws-doc"], limit: 2, offset: 0 })
     const secondPage = await listStockDocuments({ worksiteIds: ["ws-doc"], limit: 2, offset: 2 })
 
-    expect(total).toBe(4)
+    expect(total).toBe(5)   // cuatro aplicados + el borrador de STK-003
     expect(firstPage).toHaveLength(2)
     expect(secondPage).toHaveLength(2)
     expect(firstPage.map((r) => r.folio)).not.toEqual(secondPage.map((r) => r.folio))

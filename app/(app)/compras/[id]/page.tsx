@@ -433,6 +433,7 @@ export default async function OcDetailPage({
   )
   const canDeleteOrder = can(session, "purchasing:delete_order")
   const canInvoice     = canSend   // purchasing:send_order gate for invoice management
+  const canAcceptInvoiceException = session.user.permissions.includes("purchasing:accept_invoice_exception")
   const canUpdateCatalog = can(session, "admin:products")
   const canRegisterFaenaReception  = session.user.permissions.includes("receiving:register_faena")
   const canRegisterOfficeReception = session.user.permissions.includes("receiving:register_office")
@@ -693,6 +694,11 @@ export default async function OcDetailPage({
                   // recibir nuevas. El servicio ya las rechaza; esto evita
                   // ofrecer en pantalla algo que va a fallar.
                   canAttach={canInvoice && order.status !== "cancelled"}
+                  // FAC-004: quien adjunta la factura no es quien aprueba su
+                  // descuadre. El servicio además comprueba que no sea la misma
+                  // persona que cargó la evidencia; esto evita ofrecer en
+                  // pantalla un botón que iba a fallar.
+                  canAcceptDifference={canAcceptInvoiceException}
                   receipts={receiptOptions}
                   defaultReceiptId={defaultReceiptId}
                   dteCandidates={candidateDtes.map(({ doc, confidence, referencesOrder, orderReference, amountMatches, proposedLinks, explanation }) => ({

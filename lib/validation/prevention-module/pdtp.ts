@@ -499,4 +499,15 @@ export const pdtpFollowupAddSchema = z.object({
   estadoNuevo: z.enum(["pendiente", "en_proceso", "completado", "verificado", "reabierto"]).optional(),
   evidenciaUrl: pdtpEvidenceUrl.optional(),
   evidenciaPhotos: z.array(pdtpEvidencePhotoItem).default([]),
+  /*
+   * P4 (auditoría 2026-09-14): el checksum del archivo, indexado por su ruta.
+   * Lo calcula la ruta de subida sobre el mismo buffer que escribe —es el único
+   * punto donde el contenido está en memoria— y llega aquí para que la
+   * evidencia de la CAPA cumpla el mismo contrato que la de una inspección.
+   *
+   * Es un mapa y no un campo dentro de cada foto para no romper la forma de
+   * `evidenciaPhotos`, que ya viaja como arreglo de rutas en la UI y en la
+   * vista de CAPA.
+   */
+  evidenciaChecksums: z.record(z.string(), z.string().regex(/^[a-f0-9]{64}$/)).optional(),
 })

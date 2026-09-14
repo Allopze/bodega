@@ -1,6 +1,8 @@
 "use server"
 
 import { safeActionMessage } from "@/lib/action-error"
+import { assertIdentityStable, MasterIdentityError } from "@/lib/services/master-identity"
+import { clientHasBillingHistory, contractHasBillingHistory } from "@/lib/services/billing/client-identity"
 
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
@@ -514,8 +516,46 @@ export async function saveClientAction(input: unknown): Promise<ActionResult> {
       updatedAt: now,
     }
 
+    /*
+     * CLI-001, CLI-002 y CLI-003 (auditoría 2026-09-14) viven en este mismo
+     * punto y se resuelven juntos:
+     *
+     *  - la fila se lee **antes** y bajo la misma transacción, en vez de
+     *    disparar un `UPDATE … WHERE id` a ciegas: un id inexistente afectaba
+     *    cero filas y la acción respondía «Cliente actualizado» igual, dejando
+     *    en la bitácora una actualización que nunca ocurrió (CLI-002);
+     *  - con esa fila en la mano se comprueba la identidad tributaria antes de
+     *    escribirla (CLI-001);
+     *  - y el estado anterior entra en la auditoría, que es justamente el dato
+     *    con el que se detecta y se revierte un cambio de RUT (CLI-003).
+     */
+    let before: { rut: string; name: string; isActive: boolean } | null = null
+
     if (data.id) {
-      await db.update(clients).set(values).where(eq(clients.id, data.id))
+      const clientId = data.id
+      const identityError = await db.transaction(async (tx) => {
+        const [current] = await tx.select({
+          rut: clients.rut, name: clients.name, isActive: clients.isActive,
+        }).from(clients).where(eq(clients.id, clientId)).for("update")
+        if (!current) throw new Error("El cliente ya no existe: recarga la lista.")
+        before = current
+
+        try {
+          await assertIdentityStable({
+            fields: [{ key: "rut", label: "el RUT", before: current.rut, after: rut }],
+            hasHistory: () => clientHasBillingHistory(clientId, tx),
+            reason: "el cliente ya tiene facturas, propuestas o contratos a su nombre, y el cambio reasignaría el titular de todo lo emitido",
+            remedy: "Crea otro cliente con el RUT correcto.",
+          })
+        } catch (e) {
+          if (e instanceof MasterIdentityError) return e.message
+          throw e
+        }
+
+        await tx.update(clients).set(values).where(eq(clients.id, clientId))
+        return null
+      })
+      if (identityError) return { ok: false, message: identityError }
     } else {
       const existing = await db.query.clients.findFirst({
         where: eq(clients.rut, rut),
@@ -533,6 +573,7 @@ export async function saveClientAction(input: unknown): Promise<ActionResult> {
       action: data.id ? "update" : "create",
       entityType: "client",
       entityId: data.id ?? rut,
+      oldState: before ?? undefined,
       newState: { rut, name: values.name, isActive: values.isActive },
     })
 
@@ -602,8 +643,35 @@ export async function saveContractAction(input: unknown): Promise<ActionResult> 
       updatedAt: now,
     }
 
+    // Mismo tratamiento que el cliente: leer bajo bloqueo, comprobar identidad
+    // y guardar el estado anterior (CLI-001, CLI-002, CLI-003).
+    let before: { code: string; clientId: string; status: string } | null = null
+
     if (data.id) {
-      await db.update(contracts).set(values).where(eq(contracts.id, data.id))
+      const contractId = data.id
+      const identityError = await db.transaction(async (tx) => {
+        const [current] = await tx.select({
+          code: contracts.code, clientId: contracts.clientId, status: contracts.status,
+        }).from(contracts).where(eq(contracts.id, contractId)).for("update")
+        if (!current) throw new Error("El contrato ya no existe: recarga la lista.")
+        before = current
+
+        try {
+          await assertIdentityStable({
+            fields: [{ key: "clientId", label: "el cliente del contrato", before: current.clientId, after: values.clientId }],
+            hasHistory: () => contractHasBillingHistory(contractId, tx),
+            reason: "el contrato ya tiene facturas o propuestas, y reapuntarlo movería esa facturación a otro cliente",
+            remedy: "Crea otro contrato para el cliente correcto.",
+          })
+        } catch (e) {
+          if (e instanceof MasterIdentityError) return e.message
+          throw e
+        }
+
+        await tx.update(contracts).set(values).where(eq(contracts.id, contractId))
+        return null
+      })
+      if (identityError) return { ok: false, message: identityError }
     } else {
       const existing = await db.query.contracts.findFirst({
         where: eq(contracts.code, values.code),
@@ -619,6 +687,7 @@ export async function saveContractAction(input: unknown): Promise<ActionResult> 
       action: data.id ? "update" : "create",
       entityType: "contract",
       entityId: data.id ?? values.code,
+      oldState: before ?? undefined,
       newState: { code: values.code, clientId: values.clientId, status: values.status },
     })
 

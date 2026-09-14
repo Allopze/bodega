@@ -404,11 +404,29 @@ async function resolveCrewEligibility(client: Client, permitId: string, competen
     label: `${row.workerLastName}, ${row.workerFirstName}`,
   }))
 
-  let crewWithoutCompetency: PermitCrewRow[] = []
+  /** Falta una competencia declarada **bloqueante**: impide activar. */
+  const crewWithoutCompetency: PermitCrewRow[] = []
+  /** Falta una declarada **advertencia**: se avisa y deja seguir. */
+  const crewWithCompetencyWarning: PermitCrewRow[] = []
   if (competencyTaskKey) {
     // Los cursos exigidos se leen de los requisitos de competencia con alcance
     // `task`, en vez de duplicar el catálogo en el tipo de permiso.
-    const requirements = await client.select({ courseId: preventionCompetencyRequirements.courseId })
+    /*
+     * CAP-001 (auditoría 2026-09-14), patrón P7: esta consulta **no miraba
+     * `enforcement`**, así que trataba igual a un requisito declarado
+     * «advertencia» y a uno «bloqueante». La marca era decorativa en las dos
+     * direcciones: uno bloqueante no impedía nada fuera de aquí, y uno de
+     * advertencia sí impedía abrir un permiso. Quien configuraba el catálogo no
+     * podía predecir el efecto de lo que elegía.
+     *
+     * Ahora gobierna: el bloqueante impide activar, el de advertencia se avisa
+     * y deja seguir. No es una política nueva —es la que el propio catálogo
+     * declara— y por eso el bloqueo sigue existiendo donde ya existía.
+     */
+    const requirements = await client.select({
+      courseId: preventionCompetencyRequirements.courseId,
+      enforcement: preventionCompetencyRequirements.enforcement,
+    })
       .from(preventionCompetencyRequirements)
       .where(and(
         eq(preventionCompetencyRequirements.scopeType, "task"),
@@ -416,6 +434,9 @@ async function resolveCrewEligibility(client: Client, permitId: string, competen
         eq(preventionCompetencyRequirements.isActive, true),
       ))
     const requiredCourseIds = [...new Set(requirements.map((item) => item.courseId))]
+    const blockingCourseIds = new Set(
+      requirements.filter((item) => item.enforcement === "blocking").map((item) => item.courseId),
+    )
 
     if (requiredCourseIds.length > 0) {
       const crewWorkerIds = crew.map((member) => member.workerId)
@@ -437,14 +458,20 @@ async function resolveCrewEligibility(client: Client, permitId: string, competen
         set.add(row.courseId)
         heldByWorker.set(row.workerId, set)
       }
-      crewWithoutCompetency = crew.filter((member) => {
+      for (const member of crew) {
         const owned = heldByWorker.get(member.workerId) ?? new Set<string>()
-        return requiredCourseIds.some((courseId) => !owned.has(courseId))
-      })
+        const missing = requiredCourseIds.filter((courseId) => !owned.has(courseId))
+        if (missing.length === 0) continue
+        if (missing.some((courseId) => blockingCourseIds.has(courseId))) {
+          crewWithoutCompetency.push(member)
+        } else {
+          crewWithCompetencyWarning.push(member)
+        }
+      }
     }
   }
 
-  return { crew, crewWithoutCompetency }
+  return { crew, crewWithoutCompetency, crewWithCompetencyWarning }
 }
 
 export async function evaluatePermitReadiness(permitId: string, access: PermitAccess): Promise<{ allowed: boolean; blockers: PermitBlocker[] }> {
@@ -496,6 +523,7 @@ export async function evaluatePermitReadiness(permitId: string, access: PermitAc
     jsaStepCount: jsaCount[0]?.count ?? 0,
     crew: eligibility.crew,
     crewWithoutCompetency: eligibility.crewWithoutCompetency,
+    crewWithCompetencyWarning: eligibility.crewWithCompetencyWarning,
     plannedEndAt: permit.extendedUntilAt ?? permit.plannedEndAt,
     now: nowIso(),
   })
@@ -754,7 +782,13 @@ export async function getWorkPermitDetail(permitId: string, access: PermitAccess
   ])
 
   const withoutCompetencyIds = new Set(eligibility.crewWithoutCompetency.map((item) => item.id))
-  const crew = crewRows.map((row) => ({ ...row, hasCompetencyGap: withoutCompetencyIds.has(row.id) }))
+  const warningCompetencyIds = new Set(eligibility.crewWithCompetencyWarning.map((item) => item.id))
+  const crew = crewRows.map((row) => ({
+    ...row,
+    hasCompetencyGap: withoutCompetencyIds.has(row.id),
+    // CAP-001: la brecha de un requisito «advertencia» se ve, pero no bloquea.
+    hasCompetencyWarning: warningCompetencyIds.has(row.id),
+  }))
 
   return { ...permit, controls, isolations, measurements, jsaSteps, crew }
 }

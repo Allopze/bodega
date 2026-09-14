@@ -81,6 +81,20 @@ export async function selectQuotation(
         status:              "approved",
         suggestedSupplierId: winningSupplierId,
         supplierHint:        !winningSupplierId ? (quotation.supplierNameFree ?? null) : null,
+        /*
+         * COT-001 (auditoría 2026-09-14): antes sólo viajaba el proveedor. El
+         * importe adjudicado y el vínculo con el documento se perdían, y como el
+         * precio inicial de la OC sale de `product_suppliers`, un ítem libre
+         * llegaba en $0 — una oferta de $150.000 podía originar una OC de $0 sin
+         * ninguna alerta.
+         *
+         * Se guarda el **total de la oferta** como referencia, no un precio por
+         * línea: una oferta multiítem no dice cuánto vale cada renglón, y
+         * repartir su total sería inventar el dato. Quien crea la OC ve contra
+         * qué se adjudicó y decide.
+         */
+        awardedQuotationId:    quotation.id,
+        awardedQuotationTotal: Number(quotation.totalAmount ?? 0),
         updatedAt:           now,
       }).where(and(
         eq(purchaseRequestItems.id, item.id),

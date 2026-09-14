@@ -9,6 +9,7 @@ import {
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
+import { checkEvidence, evidencePathSchema } from "@/lib/validation/evidence-contract"
 
 export interface CampaignAccess {
   userId: string
@@ -71,10 +72,31 @@ export async function createCampaign(input: unknown, access: CampaignAccess) {
   return created
 }
 
+/**
+ * La evidencia de una campaña, bajo el contrato único (`P4`). Opcional, pero no
+ * "cualquier cosa": una ruta del storage de campañas —con su checksum implícito
+ * en la subida— o una URL http/https alcanzable.
+ */
+const campaignEvidenceSchema = z.string().trim().optional().refine(
+  (value) => {
+    if (!value) return true
+    if (evidencePathSchema().safeParse(value).success) return true
+    return checkEvidence({ kind: "url", reference: value }).length === 0
+  },
+  "La evidencia debe ser un archivo subido a la campaña o una URL http/https",
+)
+
 const attendanceRecordSchema = z.object({
   campaignId: z.string().min(1),
   workerIds: z.array(z.string().min(1)),
-  evidenceRef: z.string().optional(),
+  /*
+   * EMG-002 (auditoría 2026-09-14), patrón P4: era `z.string().optional()` —sin
+   * longitud, sin formato, sin comprobar nada—, y ese texto viajaba como
+   * evidencia a la acreditación PDTP. Sigue siendo opcional (el registro de
+   * asistencia vale por sí mismo), pero si se declara algo tiene que ser una
+   * evidencia de verdad: una ruta del storage de campañas o una URL navegable.
+   */
+  evidenceRef: campaignEvidenceSchema,
 })
 
 /**
@@ -156,7 +178,9 @@ export async function recordCampaignAttendance(input: unknown, access: CampaignA
 
 const campaignCloseSchema = z.object({
   campaignId: z.string().min(1),
-  evidenceUrl: z.string().optional(),
+  // EMG-002: mismo contrato que la asistencia. Este valor es el que llega a la
+  // acreditación PDTP como respaldo de la campaña.
+  evidenceUrl: campaignEvidenceSchema,
 })
 
 /**

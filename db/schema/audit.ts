@@ -73,6 +73,14 @@ export type NotificationType =
   | "sst_document_expired"
   | "maintenance_due_soon"
   | "maintenance_overdue"
+  // Patrón P3 (auditoría 2026-09-14): tres vencimientos con consecuencia legal
+  // que hasta entonces sólo se veían abriendo su pantalla.
+  | "fleet_document_due_soon"
+  | "fleet_document_overdue"
+  | "risk_review_due_soon"
+  | "risk_review_overdue"
+  | "privacy_request_due_soon"
+  | "privacy_request_overdue"
   | "ti_warranty_expiring"
   | "ti_license_renewal"
   | "ti_repair_stuck"

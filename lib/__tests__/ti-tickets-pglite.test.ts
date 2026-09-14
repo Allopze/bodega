@@ -131,6 +131,55 @@ describe("módulo TI — tickets (mesa de ayuda)", () => {
     expect(ticket?.assigneeName).toBe("Técnico TI")
   })
 
+  /**
+   * TIT-002 (auditoría 2026-09-14), patrón P6: un ticket podía resolverse y
+   * cerrarse sin una palabra sobre qué se hizo, y ahí es donde el historial de
+   * soporte pierde el dato más útil para el siguiente incidente idéntico.
+   */
+  describe("TIT-002 — la solución es obligatoria al cerrar", () => {
+    async function ticketEnProgreso(subject: string) {
+      const { id } = await createTicket({
+        subject, description: "Detalle", category: "impresoras",
+        priority: "normal", worksiteId: "ws-ti-norte",
+      }, actor)
+      await transitionTicket({ ticketId: id, status: "en_diagnostico", reason: "Revisión" }, actor)
+      return id
+    }
+
+    it("no se resuelve sin decir cómo", async () => {
+      const id = await ticketEnProgreso("Sin solución")
+      await expect(transitionTicket({ ticketId: id, status: "resuelto", reason: "Listo" }, actor))
+        .rejects.toThrow(/cómo se resolvió/i)
+      // Y una palabra suelta tampoco basta: es el mismo umbral que el resto.
+      await expect(transitionTicket({ ticketId: id, status: "resuelto", reason: "x", resolution: "ok" }, actor))
+        .rejects.toThrow(/cómo se resolvió/i)
+    })
+
+    it("se resuelve con una solución de verdad, y queda guardada", async () => {
+      const id = await ticketEnProgreso("Con solución")
+      await transitionTicket({
+        ticketId: id, status: "resuelto", reason: "Reparado",
+        resolution: "Se cambió el cable de red del puesto 12",
+      }, actor)
+      expect((await getTicketById(id))?.resolution).toBe("Se cambió el cable de red del puesto 12")
+    })
+
+    it("cerrar después de resolver no obliga a repetir la solución", async () => {
+      const id = await ticketEnProgreso("Cierre normal")
+      await transitionTicket({
+        ticketId: id, status: "resuelto", reason: "Reparado",
+        resolution: "Se reinstaló el controlador de impresión",
+      }, actor)
+      await transitionTicket({ ticketId: id, status: "cerrado", reason: "Confirmado por el usuario" }, actor)
+
+      const cerrado = await getTicketById(id)
+      expect(cerrado?.status).toBe("cerrado")
+      // La solución sobrevive al cierre: antes el cierre la dejaba intacta sólo
+      // por casualidad, porque no tocaba la columna.
+      expect(cerrado?.resolution).toBe("Se reinstaló el controlador de impresión")
+    })
+  })
+
   it("permite reabrir un ticket resuelto y bloquea transiciones inválidas", async () => {
     const { id } = await createTicket({
       subject: "Impresora",
@@ -146,7 +195,7 @@ describe("módulo TI — tickets (mesa de ayuda)", () => {
       .rejects.toThrow(/No se puede pasar de 'nuevo' a 'esperando_proveedor'/)
 
     await transitionTicket({ ticketId: id, status: "en_diagnostico", reason: "Revisión" }, actor)
-    await transitionTicket({ ticketId: id, status: "resuelto", reason: "Cambio de tóner", resolution: "Listo" }, actor)
+    await transitionTicket({ ticketId: id, status: "resuelto", reason: "Cambio de tóner", resolution: "Se reemplazó el tóner y se limpió el rodillo" }, actor)
     await transitionTicket({ ticketId: id, status: "en_progreso", reason: "Volvió a fallar" }, actor)
     const reopened = await getTicketById(id)
     expect(reopened?.status).toBe("en_progreso")

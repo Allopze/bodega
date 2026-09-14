@@ -375,7 +375,9 @@ export async function discardStockAction(
     })
 
     revalidateOperationalViews([REVALIDATE])
-    return { ok: true, message: `Baja ${discard.code} registrada: ${quantity} unidades` }
+    // STK-001: el folio y el kardex ya no pueden divergir — el servicio rechaza
+    // una baja mayor al saldo—, así que el mensaje puede afirmar la cantidad.
+    return { ok: true, message: `Baja ${discard.code} registrada: ${discard.appliedQuantity} unidades` }
   } catch (e) {
     logger.error("[discardStockAction]", e)
     return { ok: false, message: safeActionMessage(e, "Error al registrar la baja") }

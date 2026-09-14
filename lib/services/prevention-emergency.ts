@@ -24,6 +24,7 @@ import { onEmergencyDrillCompleted, onEmergencyPlanApproved } from "@/lib/servic
 import { recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 import { codeYear, todayInChile } from "@/lib/utils"
+import { checkEvidence } from "@/lib/validation/evidence-contract"
 
 type Client = DB | Tx
 
@@ -553,6 +554,28 @@ export async function scheduleEmergencyDrill(input: unknown, access: EmergencyAc
   })
 }
 
+/**
+ * `EMG-001`: el acta de un simulacro, bajo el contrato único de evidencia. Se
+ * valida aquí y no con el esquema genérico porque el par ruta+checksum es
+ * opcional en conjunto: o van los dos o no va ninguno.
+ */
+function checkDrillEvidence(
+  path: string | undefined,
+  checksum: string | undefined,
+): { field: "evidencePath" | "evidenceChecksumSha256"; message: string } | null {
+  if (!path) {
+    if (checksum) return { field: "evidencePath", message: "Adjunta el archivo del acta o quita su checksum" }
+    return null
+  }
+  const problems = checkEvidence({ kind: "document", reference: path, checksumSha256: checksum ?? null })
+  const first = problems[0]
+  if (!first) return null
+  return {
+    field: first.field === "checksumSha256" ? "evidenceChecksumSha256" : "evidencePath",
+    message: first.message,
+  }
+}
+
 const completeDrillSchema = z.object({
   drillId: z.string().min(1),
   expectedVersion: z.number().int().positive(),
@@ -568,7 +591,20 @@ const completeDrillSchema = z.object({
   })).default([]),
   responsibleUserId: z.string().min(1).nullable().optional(),
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  /*
+   * EMG-001 (auditoría 2026-09-14), patrón P4: el simulacro no tenía dónde
+   * guardar su acta y el conector PDTP acreditaba con un rótulo sintético.
+   *
+   * Opcional: hay simulacros —un corte de energía, una evacuación de dos
+   * minutos— cuyo respaldo es el propio registro de participantes, y exigir un
+   * archivo obligaría a inventar uno. Pero si se adjunta, va bajo el contrato
+   * del repositorio: ruta de un directorio de evidencia y checksum del archivo.
+   */
+  evidencePath: z.string().trim().optional(),
+  evidenceChecksumSha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
 }).superRefine((value, ctx) => {
+  const evidencia = checkDrillEvidence(value.evidencePath, value.evidenceChecksumSha256)
+  if (evidencia) ctx.addIssue({ code: "custom", path: [evidencia.field], message: evidencia.message })
   if (value.outcome === "needs_improvement" && !value.targetDate) {
     ctx.addIssue({ code: "custom", path: ["targetDate"], message: "Un simulacro que requiere mejora necesita un plazo para la acción correctiva." })
   }
@@ -683,6 +719,8 @@ export async function completeEmergencyDrill(input: unknown, access: EmergencyAc
       evacuationSeconds: data.evacuationSeconds ?? null,
       observations: data.observations ?? null,
       outcome: data.outcome,
+      evidencePath: data.evidencePath ?? null,
+      evidenceChecksumSha256: data.evidencePath ? (data.evidenceChecksumSha256 ?? null) : null,
       capaActionId,
       version: drill.version + 1,
       updatedAt: now,
@@ -706,6 +744,9 @@ export async function completeEmergencyDrill(input: unknown, access: EmergencyAc
         executedAt: data.executedAt,
         participantCount: data.participants.length,
         activityNumbers,
+        // EMG-001: si hay acta, la acreditación referencia el archivo real en
+        // vez del rótulo sintético «Simulacro completado: <id>».
+        evidencePath: data.evidencePath ?? null,
       }
     }
 

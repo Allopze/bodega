@@ -21,6 +21,7 @@ import type { ReportData } from "@/lib/reports/export"
 import { sanitizeCell as excelSafe } from "@/lib/reports/export-module/excel-builder"
 import type { CapaQuickFilter } from "@/lib/prevention/capa-list-filters"
 import { chileDateParts, codeYear, todayInChile} from "@/lib/utils"
+import { checkEvidence, describeEvidenceProblems } from "@/lib/validation/evidence-contract"
 
 export const CAPA_STATUSES = [
   "pending",
@@ -611,6 +612,24 @@ export async function addCapaEvidenceWithClient(
 ) {
     requirePermission(access.permissions, "prevention:capa:complete")
     const input = capaEvidenceSchema.parse(rawInput)
+
+    /*
+     * CAPA-001 (auditoría 2026-09-14), patrón P4: una evidencia era una cadena
+     * de 3 a 4000 caracteres con el tipo declarado por el cliente y el checksum
+     * opcional. Escribir `kind: "photo"`, `reference: "foto tomada en terreno"`
+     * satisfacía el gate y habilitaba verificar y cerrar la acción — y esta
+     * acción es lo que otros módulos usan como prueba: una mantención la
+     * acredita, un PPA no se autoriza sin ella, un requisito legal no se
+     * declara cumplido con la suya abierta.
+     *
+     * El estándar riguroso ya existía a tres archivos de distancia, en la
+     * evidencia de un hallazgo de inspección. Ahora es uno solo.
+     */
+    const problems = checkEvidence({
+      kind: input.kind, reference: input.reference, checksumSha256: input.checksumSha256,
+    })
+    if (problems.length > 0) throw new Error(describeEvidenceProblems(problems)!)
+
     const [current] = await client.select().from(preventionCapaActions)
       .where(eq(preventionCapaActions.id, input.actionId)).limit(1)
     if (!current || !scopeAllows(access.scope, current.worksiteId)) throw new Error("Acción CAPA no encontrada o fuera de alcance.")

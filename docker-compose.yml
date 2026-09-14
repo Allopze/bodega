@@ -172,6 +172,12 @@ services:
       - BACKUP_DIR=${BACKUP_DIR:-/data/backups}
       - GDRIVE_BACKUPS_DEST=${GDRIVE_BACKUPS_DEST:-}
       - RETENTION_DAYS=${RETENTION_DAYS:-30}
+      # RES-001: base DESECHABLE donde el ensayo semanal restaura el dump del
+      # día. Su esquema `public` se destruye en cada ensayo — nunca apuntar a la
+      # base de la aplicación. Vacía, el ensayo no corre y `backup-verify.sh`
+      # avisa de que nadie ha comprobado que el respaldo se restaure.
+      - DRILL_DATABASE_URL=${DRILL_DATABASE_URL:-}
+      - RESTORE_DRILL_WEEKDAY=${RESTORE_DRILL_WEEKDAY:-7}
       # Para recoger los documentos SST desde Cloudreve cuando
       # SST_STORAGE_BACKEND=cloudreve: las credenciales del WebDAV (respaldo del
       # .env; las cifradas viven en system_settings y requieren el keyring DTE).

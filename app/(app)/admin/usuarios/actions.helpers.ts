@@ -9,6 +9,7 @@ import type { Session } from "next-auth"
 import { db } from "@/db"
 import { userRoles, roles, permissions } from "@/db/schema"
 import { canAccessWorksite, can } from "@/lib/auth/can"
+import { isSensitiveGrant } from "@/lib/auth/sensitive-permissions"
 import { requiresWorksiteAssignment } from "@/lib/auth/role-scope"
 import type { ActionState } from "@/lib/validation/masters"
 
@@ -92,12 +93,18 @@ export async function validatePermissionRules(
     }
   }
 
-  const includesAdminPermission = selected.some((p) => p.module === "admin")
-  if (includesAdminPermission && !canManageAdminPermissions) {
+  // USR-001: el filtro miraba sólo el módulo `admin`, y `admin:users` no es
+  // exclusivo del administrador. Las llaves que desactivan la segregación de
+  // Prevención viven en el módulo `prevention` y pasaban sin control.
+  const sensitive = selected.filter(isSensitiveGrant)
+  if (sensitive.length > 0 && !canManageAdminPermissions) {
+    const isOnlyAdminModule = sensitive.every((p) => p.module === "admin")
     return {
       ok: false,
       fieldErrors: {
-        permissionIds: ["Solo un administrador puede asignar permisos de administración"],
+        permissionIds: [isOnlyAdminModule
+          ? "Solo un administrador puede asignar permisos de administración"
+          : `Solo un administrador puede asignar permisos de gobierno: ${sensitive.map((p) => p.name).join(", ")}`],
       },
     }
   }

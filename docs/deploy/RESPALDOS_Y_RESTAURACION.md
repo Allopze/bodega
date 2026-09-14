@@ -191,6 +191,42 @@ entorno del proceso que ejecuta `backup-verify.sh` (el mismo del cron de
 respaldo). Si falta, el resultado es WARNING: los respaldos siguen subiendo
 cifrados, pero nadie está comprobando que sean recuperables.
 
+## Ensayo semanal de restauración
+
+La verificación diaria comprueba que el respaldo exista, pese lo suyo y que la
+passphrase lo abra. Ninguna de esas tres cosas dice que el dump **se pueda
+restaurar**: un `pg_dump` truncado por un disco lleno a mitad de escritura las
+pasa todas y falla el día del desastre. Eso es lo que ensaya
+`backup-restore-drill.sh`.
+
+```bash
+sudo DRILL_DATABASE_URL='postgres:///bodega_drill' \
+  /srv/bodega/scripts/backup-restore-drill.sh          # legible
+sudo ... /srv/bodega/scripts/backup-restore-drill.sh --json
+```
+
+Restaura `backups/pg/bodega-latest.dump` —el artefacto que restauraría una
+persona de verdad, no uno hecho para la ocasión— en una base desechable, y exige
+que lo restaurado tenga al menos `DRILL_MIN_TABLES` tablas **y datos**: un dump
+truncado suele traer el esquema y ningún registro.
+
+`DRILL_DATABASE_URL` **se destruye en cada ensayo** (`DROP SCHEMA public
+CASCADE`). Nunca apuntarla a la base de la aplicación. Si está vacía el ensayo
+no corre y el resultado es WARNING, no OK: un ensayo que no se hizo no prueba
+nada.
+
+Periodicidad: `backup-scheduler.sh` lo dispara una vez por semana
+(`RESTORE_DRILL_WEEKDAY`, por defecto domingo) justo después del respaldo del
+día. El resultado queda en `${BACKUP_DIR}/restore-drill.json` y lo recoge
+`backup-verify.sh`, que lo convierte en alerta del mismo canal:
+
+| Situación | Resultado de la verificación diaria |
+| --- | --- |
+| Nunca se ensayó | WARNING |
+| El último ensayo tiene más de `DRILL_MAX_AGE_DAYS` (8) | WARNING |
+| El ensayo no pudo ejecutarse | WARNING |
+| El ensayo falló | **CRITICAL** — ese respaldo no es restaurable |
+
 ## Restauración catastrófica (servidor nuevo)
 
 ```bash

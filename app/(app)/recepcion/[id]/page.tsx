@@ -302,15 +302,22 @@ export default async function RecepcionDetallePage({
           <section className="rounded-[var(--radius-2xl)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] p-4">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-sm font-semibold text-[var(--color-text)]">Recepción</h2>
-              <MetaBadge meta={{ label: `${receipt.status === "closed" ? "Cerrada" : "Abierta"}`, variant: receipt.status === "closed" ? "success" : "info" }} dot />
+              <MetaBadge meta={{ label: "Registrada", variant: "success" }} dot />
             </div>
-            {/* A-33: el glosario de estados sólo existía en la bandeja, y aquí
-                "Abierta"/"Cerrada" quedaba sin explicación — que es donde más
-                falta, mirando una recepción concreta. */}
+            {/*
+              REC-003 (auditoría 2026-09-14), patrón P7: aquí se pintaba
+              «Abierta — quedan líneas por conciliar; aún admite ajustes» para
+              cualquier estado distinto de `closed`. Esa recepción no existe:
+              `registerReceipt` inserta siempre `closed` y el `default('open')`
+              del esquema está muerto. La ficha prometía una edición que no hay
+              en ninguna pantalla, y el remedio real es otro —ver abajo—.
+            */}
             <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-              {receipt.status === "closed"
-                ? "Todas las líneas de esta recepción quedaron conciliadas: no admite más cambios."
-                : "Quedan líneas por conciliar en esta recepción; aún admite ajustes."}
+              Una recepción se registra completa y en un solo acto: mueve stock, avanza la
+              orden de compra y cambia el estado de los ítems, todo en la misma transacción.
+              No se edita después. Si lo recibido no coincide con lo registrado, la
+              corrección es un ajuste de inventario en Bodega, que deja su propio folio y su
+              motivo.
             </p>
             <dl className="mt-3 divide-y divide-[var(--color-border)]">
               <DetailItemShared label="Destino" value={destinationLabel} />

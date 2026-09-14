@@ -12,6 +12,7 @@ import {
   billingInvoices,
 } from "@/db/schema"
 import { guardPermission } from "@/lib/auth/can"
+import { requireDifferentActor } from "@/lib/auth/segregation"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
@@ -383,7 +384,14 @@ export async function resolvePaymentSuggestionAction(input: unknown): Promise<Ac
  * quién revirtió y por qué; el pago no se borra, se marca descartado.
  */
 export async function revertPaymentAction(input: unknown): Promise<ActionResult> {
-  const { session, error } = await guardPermission("billing:confirm_payments")
+  /*
+   * COB-002 (auditoría 2026-09-14), patrón P9: revertir compartía permiso con
+   * registrar y confirmar, de modo que una persona podía imputar un pago
+   * inexistente y deshacerlo ella misma si alguien lo notaba. Ahora son dos
+   * controles distintos —el permiso y la persona—, como en las propuestas de
+   * venta y en la verificación de una CAPA.
+   */
+  const { session, error } = await guardPermission("billing:revert_payments")
   if (error) return error
 
   const parsed = z.object({
@@ -400,12 +408,20 @@ export async function revertPaymentAction(input: unknown): Promise<ActionResult>
         eq(billingInvoicePayments.id, parsed.data.paymentId),
         eq(billingInvoicePayments.verificationStatus, "confirmed"),
       ),
-      columns: { id: true, invoiceId: true, bankTransactionId: true, amount: true },
+      columns: { id: true, invoiceId: true, bankTransactionId: true, amount: true, confirmedBy: true },
     })
     if (!payment) return { ok: false, message: "El pago no existe o no está confirmado" }
     if (!(await canReachInvoice(session, payment.invoiceId))) {
       return { ok: false, message: "No tienes acceso a esta factura" }
     }
+    // El segundo control: tener el permiso no basta si fue esta misma persona
+    // quien confirmó el pago. Una confirmación automática no tiene actor y no
+    // bloquea a nadie.
+    const segregation = requireDifferentActor(
+      { actedByUserId: payment.confirmedBy, actorUserId: session.user.id },
+      "Revertir un pago",
+    )
+    if (!segregation.ok) return { ok: false, message: segregation.message ?? "Sin autorización" }
 
     const now = new Date().toISOString()
     // Mismo lock de fila que confirmPaymentSuggestion: revertir también

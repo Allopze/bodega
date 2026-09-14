@@ -44,6 +44,29 @@ const privacyRequestTransitionSchema = z.object({
   releaseLegalHold: z.boolean().optional().default(false),
 })
 
+/**
+ * Plazo legal de respuesta por tipo de derecho, en días corridos desde la
+ * recepción. La Ley 21.719 da treinta días para responder una solicitud del
+ * titular; la portabilidad admite el mismo plazo pero se trata aparte porque su
+ * ejecución material suele requerir coordinación con un tercero.
+ *
+ * Se declara aquí, en un solo sitio y nombrado, para que cambiarlo sea una
+ * decisión visible y no una fecha distinta escrita en cada formulario.
+ */
+export const PRIVACY_LEGAL_DEADLINE_DAYS: Record<string, number> = {
+  access: 30,
+  rectification: 30,
+  deletion: 30,
+  opposition: 30,
+  restriction: 30,
+  portability: 30,
+}
+
+export function legalDueAtFor(rightType: string, receivedAt: string): string {
+  const days = PRIVACY_LEGAL_DEADLINE_DAYS[rightType] ?? 30
+  return new Date(new Date(receivedAt).getTime() + days * 86_400_000).toISOString()
+}
+
 const TRANSITIONS: Record<PrivacyRequestStatus, readonly PrivacyRequestStatus[]> = {
   recibida: ["validando_identidad", "rechazada"],
   validando_identidad: ["en_proceso", "rechazada"],
@@ -139,6 +162,17 @@ export async function createPreventionPrivacyRequest(args: {
   }
   const receivedAt = input.receivedAt ?? new Date().toISOString()
   if (input.dueAt && input.dueAt < receivedAt) throw new Error("El vencimiento no puede ser anterior a la recepción.")
+  /*
+   * PRI-001 (auditoría 2026-09-14): `dueAt` era opcional y lo escribía a mano
+   * quien registraba la solicitud, de modo que podía quedar nulo. Las listas
+   * ordenan por vencimiento ascendente, así que una solicitud **sin plazo**
+   * quedaba al final —justo la que nadie estaba vigilando—.
+   *
+   * El plazo lo fija la ley, no el criterio de quien digita: se calcula desde
+   * la recepción. Un valor explícito se respeta (puede haber un compromiso más
+   * corto, o una fecha corregida), pero la ausencia ya no significa "sin plazo".
+   */
+  const dueAt = input.dueAt ?? legalDueAtFor(input.rightType, receivedAt)
   const id = `ppr-${nanoid()}`
   const now = new Date().toISOString()
 
@@ -150,7 +184,7 @@ export async function createPreventionPrivacyRequest(args: {
       status: "recibida",
       requestScope: input.requestScope,
       receivedAt,
-      dueAt: input.dueAt ?? null,
+      dueAt,
       createdByUserId: args.ctx.userId,
       createdAt: now,
       updatedAt: now,

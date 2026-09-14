@@ -11,18 +11,48 @@ import {
   listPdtpApprovalProgress,
 } from "./approval-flow"
 
-const COVERAGE_ISSUE_LABELS: Record<PdtpFulfillmentCoverageIssue["status"], string> = {
-  ready: "listas", // no se agrupan mensajes para éste: nunca es un problema.
+/**
+ * Qué clasificaciones de la compuerta 81/81 frenan el ciclo de vida, con el
+ * texto con que se le nombran al operador. Ser clave de este mapa ES ser
+ * bloqueante: así la etiqueta y la regla no pueden separarse.
+ *
+ * Sólo están las dos que se arreglan DENTRO del programa: una actividad sin
+ * mecanismo de acreditación clasificado (o cuyo destino todavía cae a la
+ * planilla genérica) no tiene dónde cumplirse, y una cuyo responsable no mapea
+ * a un rol real —o mapea a uno sin permiso en el módulo donde el trabajo se
+ * registra— no tiene quién la cumpla. Ninguna se resuelve fuera del PDTP, así
+ * que dejarlas pasar sería prometer trabajo imposible.
+ *
+ * El resto se informa y no frena nada. `config_required` e `instrument_required`
+ * apuntan a instrumentos EXTERNOS —un curso, una plantilla, una campaña, un
+ * plan de emergencia, un mapa de riesgos— que se crean y se aprueban después
+ * de firmar, sin invalidar el contenido firmado. Exigirlos para activar dejaba
+ * el programa inutilizable hasta tener el catálogo completo, cuando lo que
+ * corresponde es lo contrario: se activa y se usa, y esas actividades
+ * simplemente no acreditan cumplimiento mientras su instrumento no exista o no
+ * esté vigente. `decision_required` y `destination_review` nunca frenaron nada.
+ */
+const BLOCKING_COVERAGE_LABELS = {
   code_gap: "sin mecanismo de acreditación clasificado",
-  config_required: "sin la configuración que su enganche o constancia necesita",
   // Cubre los dos casos que la compuerta clasifica igual: el responsable no
   // mapea a ningún rol, o mapea a uno que no tiene permiso en el módulo
   // donde el trabajo se registra. Decir sólo "no mapea a un rol real" mentía
   // en el segundo caso, que es el más común.
   permission_gap: "sin un responsable que pueda registrar el cumplimiento",
-  decision_required: "midiéndose por cobertura sin padrón declarado",
-  destination_review: "con un destino de enganche cuyo permiso ningún responsable tiene",
-  instrument_required: "con el número declarado pero el instrumento que lo acredita sin vigencia (plantilla/curso/plan sin aprobar o publicar)",
+} satisfies Partial<Record<PdtpFulfillmentCoverageIssue["status"], string>>
+
+type BlockingCoverageStatus = keyof typeof BLOCKING_COVERAGE_LABELS
+
+/**
+ * Si esta clasificación frena el envío a revisión y la activación. Se exporta
+ * porque el preflight de cableado (`scripts/preflight-pdtp-accreditation-wiring.ts`)
+ * tenía la misma regla escrita a mano y las dos copias se separaron en cuanto
+ * ésta cambió.
+ */
+export function pdtpCoverageIssueBlocksLifecycle(
+  status: PdtpFulfillmentCoverageIssue["status"],
+): status is BlockingCoverageStatus {
+  return Object.hasOwn(BLOCKING_COVERAGE_LABELS, status)
 }
 
 function groupCoverageIssuesByStatus(issues: PdtpFulfillmentCoverageIssue[]): [PdtpFulfillmentCoverageIssue["status"], number[]][] {
@@ -35,42 +65,17 @@ function groupCoverageIssuesByStatus(issues: PdtpFulfillmentCoverageIssue[]): [P
   return [...byStatus.entries()]
 }
 
-/** Agrupa los problemas de la compuerta 81/81 en mensajes legibles, uno por
- *  clasificación, en el mismo estilo que los otros bloqueadores de envío.
- *
- *  Usado por `getPdtpSubmitReviewBlockers`: enviar a revisión es sobre el
- *  contenido firmado, no sobre si el programa ya se puede ejecutar, así que
- *  `instrument_required` sólo se muestra —igual que `decision_required` y
- *  `destination_review`— y no bloquea acá. */
+/** Agrupa los problemas bloqueantes de la compuerta 81/81 en mensajes
+ *  legibles, uno por clasificación, en el mismo estilo que los otros
+ *  bloqueadores de envío. La misma lista frena el envío a revisión y la
+ *  activación: antes eran dos funciones que sólo se diferenciaban en si
+ *  `instrument_required` contaba, y ya no cuenta en ninguna de las dos. */
 function fulfillmentCoverageBlockers(issues: PdtpFulfillmentCoverageIssue[]): string[] {
   if (issues.length === 0) return []
   const messages: string[] = []
   for (const [status, numbers] of groupCoverageIssuesByStatus(issues)) {
-    // Los tres informativos en este punto del ciclo de vida. `destination_review`
-    // no bloquea a propósito: el mapa de destinos es nuevo y buena parte de lo
-    // que encuentra es segregación de deberes —quien redacta el plan de
-    // emergencia no es quien lo firma—, no grants faltantes. Se promueve a
-    // bloqueante cuando alguien revise la lista y la deje vacía, no antes.
-    // `instrument_required` bloquea la ACTIVACIÓN (`fulfillmentActivationBlockers`,
-    // más abajo) y no el envío: aprobar plantillas, publicar cursos y aprobar
-    // planes puede pasar después de firmar, sin invalidar el contenido firmado.
-    if (status === "decision_required" || status === "destination_review" || status === "instrument_required") continue
-    messages.push(`${numbers.length} actividad(es) ${COVERAGE_ISSUE_LABELS[status]}: N°${numbers.join(", N°")}.`)
-  }
-  return messages
-}
-
-/** Los motivos por los que hoy no se puede ACTIVAR el programa: a diferencia
- *  de `fulfillmentCoverageBlockers`, exige que el instrumento de cada
- *  actividad esté vigente —no sólo declarado—, porque activar es sobre que el
- *  programa sea ejecutable. Sólo omite lo que nunca bloquea: `decision_required`
- *  y `destination_review`. */
-function fulfillmentActivationBlockers(issues: PdtpFulfillmentCoverageIssue[]): string[] {
-  if (issues.length === 0) return []
-  const messages: string[] = []
-  for (const [status, numbers] of groupCoverageIssuesByStatus(issues)) {
-    if (status === "decision_required" || status === "destination_review") continue
-    messages.push(`${numbers.length} actividad(es) ${COVERAGE_ISSUE_LABELS[status]}: N°${numbers.join(", N°")}.`)
+    if (!pdtpCoverageIssueBlocksLifecycle(status)) continue
+    messages.push(`${numbers.length} actividad(es) ${BLOCKING_COVERAGE_LABELS[status]}: N°${numbers.join(", N°")}.`)
   }
   return messages
 }
@@ -154,18 +159,12 @@ export type PdtpCoverageReport = {
     status: PdtpFulfillmentCoverageIssue["status"]
     label: string
     /**
-     * `false` sólo para `decision_required` y `destination_review`: son los
-     * dos que nunca frenan nada, ni el envío ni la activación.
+     * `true` sólo para lo que se arregla dentro del programa —`code_gap` y
+     * `permission_gap`— y frena por igual el envío a revisión y la activación.
+     * Ver `pdtpCoverageIssueBlocksLifecycle`. Lo demás se muestra para que el operador
+     * sepa qué actividades no van a acreditar cumplimiento todavía.
      */
     blocks: boolean
-    /**
-     * `false` además para `instrument_required`: declarado no es vigente, pero
-     * enviar a revisión es sobre el contenido firmado, no sobre si el programa
-     * ya se puede ejecutar. `blocks` (activación) sigue en `true` para este
-     * grupo — sin este campo el panel no podía distinguir "esto frena el envío
-     * hoy" de "esto va a frenar la activación si no se resuelve antes".
-     */
-    blocksSubmission: boolean
     issues: PdtpFulfillmentCoverageIssue[]
   }>
 }
@@ -208,11 +207,10 @@ export async function getPdtpCoverageReport(programId: string): Promise<PdtpCove
       .map(([status, list]) => ({
         status,
         label: COVERAGE_STATUS_LABELS[status],
-        blocks: status !== "decision_required" && status !== "destination_review",
-        blocksSubmission: status !== "decision_required" && status !== "destination_review" && status !== "instrument_required",
+        blocks: pdtpCoverageIssueBlocksLifecycle(status),
         issues: [...list].sort((a, b) => a.n - b.n),
       }))
-      // Lo que frena la activación primero.
+      // Lo que frena el ciclo de vida primero.
       .sort((a, b) => Number(b.blocks) - Number(a.blocks) || a.label.localeCompare(b.label, "es-CL")),
   }
 }
@@ -343,10 +341,11 @@ export async function activatePdtpProgram(programId: string, userId: string) {
     // Compuerta 81/81: se comprueba después de los guards de estado (activar
     // un borrador es un error de flujo, no un problema de cobertura), pero
     // antes de tocar nada — no debe volver a ser posible activar un programa
-    // que promete trabajo sin ofrecer dónde realizarlo. Usa el blocker de
-    // ACTIVACIÓN, no el de envío: acá `instrument_required` sí frena, porque
-    // activar es sobre que el programa sea ejecutable.
-    const [firstCoverageBlocker] = fulfillmentActivationBlockers(await assertPdtpFulfillmentCoverage(programId, tx))
+    // que promete trabajo sin ofrecer dónde realizarlo. Es la misma lista que
+    // frena el envío: lo que falta afuera (cursos, plantillas, planes, mapas)
+    // se informa pero no impide activar, porque el programa tiene que poder
+    // usarse mientras ese catálogo se completa.
+    const [firstCoverageBlocker] = fulfillmentCoverageBlockers(await assertPdtpFulfillmentCoverage(programId, tx))
     if (firstCoverageBlocker) throw new Error(firstCoverageBlocker)
 
     await assertAllRequiredPdtpApprovalStepsApproved(programId, program.contentVersion, program.contentDigest, tx)

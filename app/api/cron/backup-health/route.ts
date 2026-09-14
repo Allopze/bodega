@@ -10,11 +10,49 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getBackupStats, getBackupConfig } from "@/lib/services/backups"
 import { logger } from "@/lib/logger"
+import { todayInChile } from "@/lib/utils"
 import { safeActionMessage } from "@/lib/action-error"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
+import { backupCronContractFor, type BackupCronHealth } from "@/lib/services/backup-cron-contract"
+import { createNotifications } from "@/lib/services/notification-create"
+import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+
+/**
+ * BCK-002 (auditoría 2026-09-14): el diagnóstico vivía en la pantalla de
+ * administración de respaldos y en el log del servidor. No había notificación
+ * ni correo, de modo que —sumado a `BCK-001`, que devolvía 200 con el último
+ * respaldo fallido— la ausencia de respaldos era invisible salvo que alguien
+ * entrara a mirar. El resto de la plataforma sí notifica: mantenciones por SLA,
+ * CAPA por vencimiento, capacitación por competencias que caducan.
+ *
+ * La llave de deduplicación lleva el día: se avisa una vez al día mientras el
+ * problema dure, no en cada corrida. Un fallo al notificar no cambia el
+ * contrato de la ruta —el estado crítico ya viaja en el 503 y en el código de
+ * salida del runner—, así que se registra y se sigue.
+ */
+async function notifyBackupCritical(alerts: string[], lastBackupAt: string | null): Promise<void> {
+  try {
+    const recipients = await getUserIdsWithPermission("admin:backups")
+    if (recipients.length === 0) {
+      logger.error("[cron/backup-health] estado crítico sin nadie a quien avisar: ningún usuario tiene admin:backups")
+      return
+    }
+    await createNotifications(recipients, {
+      type: "system_alert",
+      title: "Respaldos en estado crítico",
+      body: alerts.join(" · "),
+      entityType: "backup_health",
+      entityId: "backup-health",
+      entityHref: "/admin/backups",
+      dedupeKey: `backup-health:critical:${todayInChile()}:${lastBackupAt ?? "sin-respaldo"}`,
+    })
+  } catch (err) {
+    logger.error("[cron/backup-health] no se pudo notificar el estado crítico", err)
+  }
+}
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const secret = process.env.CRON_SECRET
@@ -22,11 +60,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   if (!secret) {
     logger.error("[cron/backup-health] CRON_SECRET not configured")
-    return NextResponse.json({ error: "Cron secret not configured" }, { status: 500 })
+    const contract = backupCronContractFor({ misconfigured: true })
+    return NextResponse.json({ ...contract, error: "Cron secret not configured" }, { status: contract.httpStatus })
   }
 
   if (!verifyCronSecret(authHeader, secret)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    const contract = backupCronContractFor({ unauthorized: true })
+    return NextResponse.json({ ...contract, error: "Unauthorized" }, { status: contract.httpStatus })
   }
 
   try {
@@ -37,7 +77,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     const maxAgeHours = config.maxAgeHours
 
-    let status = "healthy"
+    let status: BackupCronHealth = "healthy"
     const alerts: string[] = []
 
     if (stats.lastBackup) {
@@ -69,22 +109,29 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     if (status === "critical") {
       logger.warn("[cron/backup-health] Critical alerts", { alerts, stats: { last: stats.lastBackup?.status, age: stats.lastBackup ? `${Math.round((Date.now() - new Date(stats.lastBackup.startedAt).getTime()) / 3600000)}h` : "none" } })
+      await notifyBackupCritical(alerts, stats.lastBackup?.startedAt ?? null)
     }
 
+    // BCK-001: el desenlace decide el estado HTTP y el código de salida del
+    // runner. Antes esto respondía 200/`ok: true` incluso con el último respaldo
+    // fallido o inexistente, así que el planificador externo daba por buena una
+    // corrida que estaba avisando lo contrario.
+    const contract = backupCronContractFor({ health: status })
     return NextResponse.json({
-      ok: true,
+      ...contract,
       status,
       alerts,
       lastBackupDate: stats.lastBackup?.startedAt ?? null,
       totalBackups: stats.totalBackups,
       successCount: stats.successCount,
       failedCount: stats.failedCount,
-    })
+    }, { status: contract.httpStatus })
   } catch (err) {
     logger.error("[cron/backup-health] Fatal error", err)
+    const contract = backupCronContractFor({ misconfigured: true })
     return NextResponse.json(
-      { error: safeActionMessage(err, "Unknown error") },
-      { status: 500 },
+      { ...contract, error: safeActionMessage(err, "Unknown error") },
+      { status: contract.httpStatus },
     )
   }
 }

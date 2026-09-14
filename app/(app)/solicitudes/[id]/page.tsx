@@ -11,8 +11,8 @@ import {
   productUnits,
 } from "@/db/schema"
 import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm"
-import { can, requireAuth } from "@/lib/auth/can"
-import { canAccessWorksite } from "@/lib/auth/can"
+import { can, canAccessWorksite, requireAuth } from "@/lib/auth/can"
+import { canViewRequestDetail } from "./access"
 import { QUOTATION_TYPES } from "@/lib/request-types"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
@@ -69,14 +69,10 @@ export default async function SolicitudPage({ params }: { params: Promise<{ id: 
   // View permission is per request type: repuestos/servicios carry their own
   // namespaces, epp/otro use requests:*. All quotation-type viewers also hold
   // requests:view_own, so the unified list/detail remain reachable for them.
-  const typeViewAll =
-    request.requestType === "repuestos" ? can(session, "repuestos:view_all")
-    : request.requestType === "servicios" ? can(session, "servicios:view_all")
-    : false
-  const isOwner    = request.requesterId === session.user.id
-  const hasViewAll = can(session, "requests:view_all") || typeViewAll
-  const hasAccess  = hasViewAll || (isOwner && canAccessWorksite(session, request.worksiteId))
-  if (!hasAccess) notFound()
+  // El predicado vive en `./access` porque es una regla de autorización y
+  // merece prueba propia (REQ-001).
+  const isOwner = request.requesterId === session.user.id
+  if (!canViewRequestDetail(session, request)) notFound()
 
   // ── Quotation panel data (repuestos/servicios) ─────────────────────────────
   const isEditable = request.status === "draft"

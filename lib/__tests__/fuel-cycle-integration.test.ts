@@ -154,15 +154,57 @@ describe("fuel cycle read model (PostgreSQL integration)", () => {
     expect(scopedOwnWorksite.received).toEqual({ liters: 100, records: 1 })
   })
 
-  it("calcula el saldo por vasija como recibido menos entregado", async () => {
+  it("desglosa el movimiento del período por estanque", async () => {
     const [balance] = await getFuelStorageBalances(globalSession(), { worksiteId: worksiteA, from, to })
 
     expect(balance).toMatchObject({
       storageLocationId: storageId,
       receivedLiters: 100,
       deliveredLiters: 40,
-      balanceLiters: 60,
+      periodNetLiters: 60,
       capacityLiters: 1000,
+    })
+  })
+
+  /**
+   * COM-001 (auditoría 2026-09-14), patrón P7: el «saldo por estanque» sumaba
+   * y restaba sólo lo ocurrido **dentro** del filtro, sin arrastrar nada. Eso
+   * no es un nivel sino el flujo neto del período —con un rango que sólo
+   * contenga entregas sale negativo— y la pantalla lo comparaba contra la
+   * capacidad física del estanque, que es mezclar dos magnitudes distintas.
+   */
+  describe("COM-001 — el nivel arrastra lo anterior al período", () => {
+    it("sin nada anterior, la apertura es cero y el nivel es el movimiento", async () => {
+      const [balance] = await getFuelStorageBalances(globalSession(), { worksiteId: worksiteA, from, to })
+      expect(balance?.openingLiters).toBe(0)
+      expect(balance?.balanceLiters).toBe(60)
+    })
+
+    it("una recepción anterior al rango entra en la apertura, no en el movimiento", async () => {
+      await inMemoryDb.insert(schema.fuelCycleMovements).values({
+        id: "mov-com001-previo", worksiteId: worksiteA, productId,
+        eventType: "received", quantity: 500,
+        targetLocationId: storageId, supplierId,
+        occurredAt: "2026-05-20T12:00:00.000Z",
+        createdBy: userId,
+      })
+
+      const [balance] = await getFuelStorageBalances(globalSession(), { worksiteId: worksiteA, from, to })
+      // El desglose del período no cambia: es lo que el filtro promete.
+      expect(balance?.receivedLiters).toBe(100)
+      expect(balance?.periodNetLiters).toBe(60)
+      // Lo que cambia es el nivel, que ahora sí es un nivel.
+      expect(balance?.openingLiters).toBe(500)
+      expect(balance?.balanceLiters).toBe(560)
+    })
+
+    it("un rango que sólo contiene entregas ya no da un «saldo» negativo", async () => {
+      // Antes: 0 recibido − 40 entregado = −40 L en un estanque que tenía 500.
+      const soloEntregas = await getFuelStorageBalances(globalSession(), {
+        worksiteId: worksiteA, from: "2026-06-15T00:00:00.000Z", to: "2026-06-30T23:59:59.999Z",
+      })
+      const balance = soloEntregas.find((row) => row.storageLocationId === storageId)
+      expect(balance!.balanceLiters).toBeGreaterThanOrEqual(0)
     })
   })
 

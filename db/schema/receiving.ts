@@ -18,13 +18,44 @@ export const receipts = pgTable("receipts", {
   locationType:       text("location_type").notNull().default("office"),
   worksiteId:         text("worksite_id").references(() => worksites.id),
   dispatchGuideNo:    text("dispatch_guide_no"),
-  status:             text("status").notNull().default("open"),  // open | closed
+  /*
+   * REC-003 (auditoría 2026-09-14), patrón P7: `open` es un estado que la
+   * plataforma **no produce**. `registerReceipt` inserta siempre `closed` —una
+   * recepción se registra completa y en un solo acto— y el `default('open')`
+   * llevaba a la ficha a ofrecer «aún admite ajustes», una edición que no
+   * existe en ninguna pantalla. El valor por omisión pasa a ser el real; `open`
+   * se conserva en el dominio porque una recepción en dos tiempos lo usaría, y
+   * quitarlo obligaría a reintroducirlo.
+   */
+  status:             text("status").notNull().default("closed"),  // open (sin escritor hoy) | closed | voided
+  /*
+   * `REC-003` (auditoría 2026-09-14), patrón P5: una recepción equivocada no
+   * tenía salida. No había columnas de anulación ni un solo `update` sobre esta
+   * tabla en toda la aplicación: el único remedio era un ajuste de inventario
+   * de Bodega, que corrige el saldo pero no revierte el avance de la OC, ni el
+   * estado del ítem de solicitud, ni la proyección de conciliación tributaria.
+   *
+   * Mismo contrato que `deliveries_void_complete`: motivo, responsable y fecha,
+   * los tres juntos o ninguno.
+   */
+  voidedAt:           timestamp("voided_at", { withTimezone: true, mode: "string" }),
+  voidedBy:           text("voided_by").references(() => users.id),
+  voidReason:         text("void_reason"),
   notes:              text("notes"),
   createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   check("receipts_location_status_valid", sql`
     ${table.locationType} IN ('office', 'faena')
-    AND ${table.status} IN ('open', 'closed')
+    AND ${table.status} IN ('open', 'closed', 'voided')
+  `),
+  // REC-003: anular es un acto con responsable y motivo, y el estado tiene que
+  // ser coherente con las tres columnas. Mismo contrato que `deliveries`.
+  check("receipts_void_complete", sql`
+    (${table.voidedAt} IS NULL AND ${table.voidedBy} IS NULL AND ${table.voidReason} IS NULL
+      AND ${table.status} <> 'voided')
+    OR (${table.voidedAt} IS NOT NULL AND ${table.voidedBy} IS NOT NULL
+      AND char_length(trim(${table.voidReason})) >= 10
+      AND ${table.status} = 'voided')
   `),
   index("idx_receipts_po").on(table.purchaseOrderId),
 ])

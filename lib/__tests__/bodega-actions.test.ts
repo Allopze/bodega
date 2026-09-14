@@ -159,7 +159,7 @@ describe("bodega actions", () => {
       fd.set("productId", "prod-1")
       fd.set("quantity", "5")
       fd.set("direction", "ingreso")
-      fd.set("reason", "Corrección")
+      fd.set("reason", "Corrección de conteo")
       const result = await adjustStockAction({ ok: false }, fd)
       expect(result.ok).toBe(false)
       expect(result.message).toContain("Sin permisos")
@@ -173,10 +173,35 @@ describe("bodega actions", () => {
       fd.set("productId", "prod-1")
       fd.set("quantity", "5")
       fd.set("direction", "ingreso")
-      fd.set("reason", "Corrección")
+      fd.set("reason", "Corrección de conteo")
       const result = await adjustStockAction({ ok: false }, fd)
       expect(result.ok).toBe(false)
       expect(result.message).toContain("No tienes acceso")
+    })
+
+    /**
+     * STK-002 (auditoría 2026-09-14), patrón P6: el ajuste pedía **un**
+     * carácter. Es la única operación que fija cualquier saldo sin documento de
+     * origen y era la que menos explicación exigía de toda la plataforma —menos
+     * que anular una entrega, que pide diez—.
+     */
+    it("no acepta un motivo de una palabra para escribir inventario a mano", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("warehouse:adjust_stock", ["ws-1"]))
+      const { adjustStockAction } = await import("@/app/(app)/bodega/actions")
+
+      for (const reason of [".", "ok", "Sobrante"]) {
+        const fd = new FormData()
+        fd.set("worksiteId", "ws-1")
+        fd.set("productId", "prod-1")
+        fd.set("quantity", "3")
+        fd.set("direction", "ingreso")
+        fd.set("reason", reason)
+        const result = await adjustStockAction({ ok: false }, fd)
+        expect(result.ok, `motivo «${reason}»`).toBe(false)
+      }
+
+      // Y no llegó a tocar el inventario en ninguno de los tres intentos.
+      expect(mockRegisterStockAdjustment).not.toHaveBeenCalled()
     })
 
     it("registers positive adjustment (ingreso)", async () => {
@@ -187,7 +212,7 @@ describe("bodega actions", () => {
       fd.set("productId", "prod-1")
       fd.set("quantity", "3")
       fd.set("direction", "ingreso")
-      fd.set("reason", "Sobrante")
+      fd.set("reason", "Sobrante detectado en conteo")
       const result = await adjustStockAction({ ok: false }, fd)
       expect(result.ok).toBe(true)
       expect(result.message).toContain("+3")
@@ -205,7 +230,7 @@ describe("bodega actions", () => {
       fd.set("productId", "prod-1")
       fd.set("quantity", "2")
       fd.set("direction", "egreso")
-      fd.set("reason", "Faltante")
+      fd.set("reason", "Faltante detectado en conteo")
       const result = await adjustStockAction({ ok: false }, fd)
       expect(result.ok).toBe(true)
       expect(result.message).toContain("-2")
@@ -224,7 +249,7 @@ describe("bodega actions", () => {
       fd.set("productId", "prod-1")
       fd.set("quantity", "999")
       fd.set("direction", "egreso")
-      fd.set("reason", "Test")
+      fd.set("reason", "Motivo de prueba")
       const result = await adjustStockAction({ ok: false }, fd)
       expect(result.ok).toBe(false)
       expect(result.message).toContain("Stock insuficiente")
@@ -242,7 +267,7 @@ describe("bodega actions", () => {
       fd.set("worksiteId", "ws-forged")
       fd.set("productId", "prod-forged")
       fd.set("quantity", "2")
-      fd.set("reason", "Sobrante")
+      fd.set("reason", "Sobrante detectado en conteo")
 
       const result = await returnStockAction({ ok: false }, fd)
 
@@ -252,7 +277,7 @@ describe("bodega actions", () => {
         quantity: 2,
         performedBy: "user-1",
         userEmail: "bodega@chome.cl",
-        reason: "Sobrante",
+        reason: "Sobrante detectado en conteo",
         notes: undefined,
       }, ["ws-1"])
     })
@@ -262,7 +287,7 @@ describe("bodega actions", () => {
       const { returnStockAction } = await import("@/app/(app)/bodega/actions")
       const fd = new FormData()
       fd.set("quantity", "2")
-      fd.set("reason", "Sobrante")
+      fd.set("reason", "Sobrante detectado en conteo")
 
       const result = await returnStockAction({ ok: false }, fd)
 

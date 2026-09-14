@@ -144,3 +144,5 @@ OC-ejemplo-pdfcn.pdf
 /odoo-19.0
 # Worktrees de sesión (EnterWorktree) — scratch local, no código fuente
 .claude/worktrees/
+
+auditoria/

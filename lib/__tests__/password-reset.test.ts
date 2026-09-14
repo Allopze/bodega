@@ -1,181 +1,216 @@
 /**
- * Unit tests for password-reset service.
+ * Recuperación de contraseña, contra PostgreSQL real (PGlite).
+ *
+ * AUTH-002 (auditoría 2026-09-14). La versión anterior de este archivo simulaba
+ * `db` con mocks encadenados: comprobaba que se llamara a `update` y a `insert`,
+ * no lo que quedaba escrito. Una carrera vive precisamente en lo que queda
+ * escrito, así que aquí se ejercita el SQL de verdad.
+ *
+ * PGlite es de una sola conexión y no permite dos transacciones simultáneas, de
+ * modo que no se simula el entrelazado. Lo que sí se verifica son los dos
+ * mecanismos que lo hacen imposible: el índice parcial de un único token activo
+ * por persona, y el reclamo condicional `WHERE used_at IS NULL ... RETURNING`.
  */
+import { PGlite } from "@electric-sql/pglite"
+import { drizzle } from "drizzle-orm/pglite"
+import { and, eq, isNull } from "drizzle-orm"
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
+import path from "node:path"
+import crypto from "node:crypto"
+import * as schema from "@/db/schema"
+import type { DB } from "@/db"
+import { migratePGlite } from "@/lib/testing/pglite-migrate"
 
-import { describe, it, expect, vi, beforeEach } from "vitest"
-
-const mockFindFirst = vi.hoisted(() => vi.fn())
-const mockInsert = vi.hoisted(() => vi.fn())
-const mockUpdate = vi.hoisted(() => vi.fn())
-const mockDelete = vi.hoisted(() => vi.fn())
-const mockTransaction = vi.hoisted(() => vi.fn())
-const mockSendEmail = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
-const mockGetAppBaseUrl = vi.hoisted(() => vi.fn(() => "http://localhost:3001"))
+const pg = new PGlite()
+const testDb = drizzle(pg, { schema }) as unknown as DB
+const testGlobal = globalThis as typeof globalThis & { __db?: DB }
+testGlobal.__db = testDb
 
 vi.mock("@/db", () => ({
-  db: {
-    query: {
-      users: { findFirst: mockFindFirst },
-      passwordResetTokens: { findFirst: vi.fn() },
-    },
-    insert: mockInsert,
-    update: mockUpdate,
-    delete: mockDelete,
-    transaction: mockTransaction,
-  },
+  get db() { return testGlobal.__db },
+  get Tx() { return undefined },
 }))
+
+const sentEmails: { to: string; subject: string; text: string }[] = []
 vi.mock("@/lib/email/smtp", () => ({
-  sendEmail: mockSendEmail,
-  getAppBaseUrl: mockGetAppBaseUrl,
+  sendEmail: async (mail: { to: string; subject: string; text: string }) => { sentEmails.push(mail) },
+  getAppBaseUrl: () => "http://localhost:3001",
 }))
-vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }))
-vi.mock("@/lib/id", () => ({ nanoid: vi.fn(() => "reset-nanoid-123") }))
+const fakeHash = async (pw: string) => `hashed_${pw}`
+vi.mock("bcryptjs", () => ({ hash: fakeHash, default: { hash: fakeHash } }))
 
-// Mock bcryptjs
-vi.mock("bcryptjs", () => ({
-  hash: vi.fn(async (pw: string) => `hashed_${pw}`),
-}))
+const {
+  requestPasswordReset, validateResetToken, applyPasswordReset,
+} = await import("@/lib/services/password-reset")
+const { pruneResetTokens } = await import("@/lib/services/password-reset-cleanup")
 
-import {
-  requestPasswordReset,
-  validateResetToken,
-  applyPasswordReset,
-} from "@/lib/services/password-reset"
-import { pruneResetTokens } from "@/lib/services/password-reset-cleanup"
+const USER = "user-pwr-1"
+const hashOf = (raw: string) => crypto.createHash("sha256").update(raw).digest("hex")
 
-describe("requestPasswordReset", () => {
-  beforeEach(() => vi.clearAllMocks())
+/** El enlace se emite por correo: leerlo de ahí es lo que hace la persona. */
+function tokenFromLastEmail(): string {
+  const last = sentEmails.at(-1)
+  const match = last?.text.match(/\/recuperar\/([0-9a-f]{64})/)
+  if (!match) throw new Error("El correo no traía un enlace de recuperación")
+  return match[1]!
+}
 
-  it("does nothing (returns silently) if user not found", async () => {
-    mockFindFirst.mockResolvedValue(null)
-    await requestPasswordReset("nonexistent@test.cl")
-    expect(mockInsert).not.toHaveBeenCalled()
-    expect(mockSendEmail).not.toHaveBeenCalled()
+async function activeTokens(userId = USER) {
+  return testDb.select().from(schema.passwordResetTokens).where(and(
+    eq(schema.passwordResetTokens.userId, userId),
+    isNull(schema.passwordResetTokens.usedAt),
+  ))
+}
+
+const passwordOf = async (userId = USER) =>
+  (await testDb.select({ p: schema.users.hashedPassword })
+    .from(schema.users).where(eq(schema.users.id, userId)))[0]?.p
+
+describe("recuperación de contraseña", () => {
+  beforeAll(async () => {
+    await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
+    await testDb.insert(schema.users).values([
+      { id: USER, name: "Juan", email: "juan@test.cl", hashedPassword: "original", isActive: true },
+      { id: "user-pwr-off", name: "Ana", email: "ana@test.cl", hashedPassword: "original", isActive: false },
+    ])
+  })
+  afterAll(async () => pg.close())
+  beforeEach(async () => {
+    sentEmails.length = 0
+    await testDb.delete(schema.passwordResetTokens)
+    await testDb.update(schema.users).set({ hashedPassword: "original" })
   })
 
-  it("sends email and stores token when user found", async () => {
-    mockFindFirst.mockResolvedValue({ id: "user-1", name: "Juan", email: "juan@test.cl" })
-    const setChain = vi.fn().mockResolvedValue(undefined)
-    mockUpdate.mockReturnValue({ set: vi.fn().mockReturnValue({ where: setChain }) })
-    const valuesChain = vi.fn().mockResolvedValue(undefined)
-    mockInsert.mockReturnValue({ values: valuesChain })
-
-    await requestPasswordReset("Juan@Test.CL")
-
-    expect(mockInsert).toHaveBeenCalled()
-    expect(mockSendEmail).toHaveBeenCalled()
-    const emailCall = mockSendEmail.mock.calls[0]?.[0] as { to: string; subject: string } | undefined
-    expect(emailCall?.to).toBe("juan@test.cl")
-    expect(emailCall?.subject).toContain("Restablecer")
-  })
-})
-
-describe("validateResetToken", () => {
-  beforeEach(() => vi.clearAllMocks())
-
-  it("returns invalid if token not found", async () => {
-    const dbModule = await import("@/db")
-    const findFirst = (dbModule.db.query.passwordResetTokens.findFirst as ReturnType<typeof vi.fn>)
-    findFirst.mockResolvedValue(null)
-    const result = await validateResetToken("some-token")
-    expect(result.valid).toBe(false)
-  })
-
-  it("returns invalid if token expired", async () => {
-    const dbModule = await import("@/db")
-    const findFirst = (dbModule.db.query.passwordResetTokens.findFirst as ReturnType<typeof vi.fn>)
-    findFirst.mockResolvedValue({
-      id: "t-1",
-      userId: "user-1",
-      expiresAt: "2020-01-01T00:00:00Z",
-      usedAt: null,
+  describe("emisión", () => {
+    it("no emite ni avisa nada para una cuenta que no existe o está inactiva", async () => {
+      await requestPasswordReset("nadie@test.cl")
+      await requestPasswordReset("ana@test.cl")
+      expect(sentEmails).toEqual([])
+      expect(await testDb.select().from(schema.passwordResetTokens)).toEqual([])
     })
-    const result = await validateResetToken("expired-token")
-    expect(result.valid).toBe(false)
-  })
 
-  it("returns valid with userId if token is valid and unexpired", async () => {
-    const dbModule = await import("@/db")
-    const findFirst = (dbModule.db.query.passwordResetTokens.findFirst as ReturnType<typeof vi.fn>)
-    findFirst.mockResolvedValue({
-      id: "t-1",
-      userId: "user-1",
-      expiresAt: "2099-01-01T00:00:00Z",
-      usedAt: null,
+    it("emite un enlace y guarda sólo su hash, nunca el token", async () => {
+      await requestPasswordReset("Juan@Test.CL")   // el correo se normaliza
+
+      expect(sentEmails).toHaveLength(1)
+      expect(sentEmails[0]!.to).toBe("juan@test.cl")
+      const raw = tokenFromLastEmail()
+
+      const rows = await activeTokens()
+      expect(rows).toHaveLength(1)
+      expect(rows[0]!.tokenHash).toBe(hashOf(raw))
+      expect(rows[0]!.tokenHash).not.toContain(raw)
     })
-    const result = await validateResetToken("valid-token")
-    expect(result.valid).toBe(true)
-    expect(result.userId).toBe("user-1")
-  })
-})
 
-describe("applyPasswordReset", () => {
-  beforeEach(() => vi.clearAllMocks())
+    it("pedirlo dos veces deja un solo enlace vivo: el anterior muere", async () => {
+      await requestPasswordReset("juan@test.cl")
+      const primero = tokenFromLastEmail()
+      await requestPasswordReset("juan@test.cl")
+      const segundo = tokenFromLastEmail()
 
-  it("returns error if token invalid in transaction", async () => {
-    mockTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
-      const tx = {
-        query: { passwordResetTokens: { findFirst: vi.fn().mockResolvedValue(null) } },
-        update: vi.fn().mockReturnThis(),
-        set: vi.fn().mockReturnThis(),
-        where: vi.fn().mockReturnThis(),
-      }
-      return fn(tx as unknown as Record<string, unknown>)
+      expect(segundo).not.toBe(primero)
+      expect(await activeTokens()).toHaveLength(1)
+      expect((await validateResetToken(primero)).valid).toBe(false)
+      expect((await validateResetToken(segundo)).valid).toBe(true)
     })
-    const result = await applyPasswordReset("bad-token", "newpass123")
-    expect(result.ok).toBe(false)
-    expect(result.error).toContain("Token inválido")
-  })
 
-  it("returns error if token expired in transaction", async () => {
-    mockTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
-      const tx = {
-        query: {
-          passwordResetTokens: {
-            findFirst: vi.fn().mockResolvedValue({
-              id: "t-1", userId: "user-1", expiresAt: "2020-01-01T00:00:00Z", usedAt: null,
-            }),
-          },
-        },
-        update: vi.fn().mockReturnThis(),
-        set: vi.fn().mockReturnThis(),
-        where: vi.fn().mockReturnThis(),
-      }
-      return fn(tx as unknown as Record<string, unknown>)
+    /**
+     * AUTH-002: el corazón del arreglo. Antes "un solo token activo" era el
+     * orden de dos escrituras sueltas, y dos solicitudes entrelazadas dejaban
+     * dos enlaces vivos. Ahora lo impone la base.
+     */
+    it("la base rechaza un segundo token activo para la misma persona", async () => {
+      await requestPasswordReset("juan@test.cl")
+
+      await expect(testDb.insert(schema.passwordResetTokens).values({
+        id: "t-colado", userId: USER, tokenHash: hashOf("colado"),
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      })).rejects.toThrow()
+
+      expect(await activeTokens()).toHaveLength(1)
     })
-    const result = await applyPasswordReset("expired-token", "newpass123")
-    expect(result.ok).toBe(false)
-    expect(result.error).toContain("expirado")
-  })
 
-  it("succeeds with valid token", async () => {
-    mockTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
-      const tx = {
-        query: {
-          passwordResetTokens: {
-            findFirst: vi.fn().mockResolvedValue({
-              id: "t-1", userId: "user-1", expiresAt: "2099-01-01T00:00:00Z", usedAt: null,
-            }),
-          },
-        },
-        update: vi.fn().mockReturnThis(),
-        set: vi.fn().mockReturnThis(),
-        where: vi.fn().mockReturnThis(),
-      }
-      return fn(tx as unknown as Record<string, unknown>)
+    it("un token ya usado no ocupa el cupo del siguiente", async () => {
+      await requestPasswordReset("juan@test.cl")
+      await applyPasswordReset(tokenFromLastEmail(), "clave-nueva-1")
+      await requestPasswordReset("juan@test.cl")
+      expect(await activeTokens()).toHaveLength(1)
     })
-    const result = await applyPasswordReset("valid-token", "newpass123")
-    expect(result.ok).toBe(true)
   })
-})
 
-describe("pruneResetTokens", () => {
-  beforeEach(() => vi.clearAllMocks())
+  describe("aplicación", () => {
+    it("cambia la contraseña con un enlace válido", async () => {
+      await requestPasswordReset("juan@test.cl")
+      const result = await applyPasswordReset(tokenFromLastEmail(), "clave-nueva-1")
 
-  it("calls delete with timestamp condition", async () => {
-    const whereChain = vi.fn().mockResolvedValue(undefined)
-    mockDelete.mockReturnValue({ where: whereChain })
-    await pruneResetTokens()
-    expect(mockDelete).toHaveBeenCalled()
+      expect(result.ok).toBe(true)
+      expect(await passwordOf()).toBe("hashed_clave-nueva-1")
+      expect(await activeTokens()).toHaveLength(0)
+    })
+
+    /**
+     * AUTH-002: antes se leía el token, se escribía la contraseña y recién al
+     * final se marcaba usado sin condición. Dos aplicaciones del mismo enlace
+     * informaban éxito las dos y ganaba la última en confirmar.
+     */
+    it("el mismo enlace no sirve dos veces, y el segundo intento no toca la contraseña", async () => {
+      await requestPasswordReset("juan@test.cl")
+      const raw = tokenFromLastEmail()
+
+      expect((await applyPasswordReset(raw, "clave-nueva-1")).ok).toBe(true)
+
+      const segundo = await applyPasswordReset(raw, "clave-del-atacante")
+      expect(segundo.ok).toBe(false)
+      expect(segundo.error).toMatch(/ya fue utilizado/i)
+      expect(await passwordOf()).toBe("hashed_clave-nueva-1")
+    })
+
+    it("un enlace vencido no cambia nada", async () => {
+      await requestPasswordReset("juan@test.cl")
+      const raw = tokenFromLastEmail()
+      await testDb.update(schema.passwordResetTokens)
+        .set({ expiresAt: "2020-01-01T00:00:00.000Z" })
+
+      const result = await applyPasswordReset(raw, "clave-tardia")
+      expect(result.ok).toBe(false)
+      expect(await passwordOf()).toBe("original")
+      // Y sigue sin consumirse: el reclamo no se lleva lo que no puede usar.
+      expect(await activeTokens()).toHaveLength(1)
+    })
+
+    it("un token inventado no cambia nada", async () => {
+      const result = await applyPasswordReset("f".repeat(64), "clave-inventada")
+      expect(result.ok).toBe(false)
+      expect(await passwordOf()).toBe("original")
+    })
+  })
+
+  describe("pruneResetTokens", () => {
+    it("borra lo viejo y respeta lo reciente, usado o no", async () => {
+      const hace = (dias: number) => new Date(Date.now() - dias * 86_400_000).toISOString()
+      await testDb.insert(schema.passwordResetTokens).values([
+        { id: "t-viejo", userId: USER, tokenHash: hashOf("viejo"), expiresAt: hace(9), usedAt: hace(9), createdAt: hace(10) },
+        { id: "t-reciente", userId: USER, tokenHash: hashOf("reciente"), expiresAt: hace(-1), createdAt: hace(1) },
+      ])
+
+      await pruneResetTokens()
+
+      const quedan = await testDb.select({ id: schema.passwordResetTokens.id })
+        .from(schema.passwordResetTokens)
+      expect(quedan.map((r) => r.id)).toEqual(["t-reciente"])
+    })
+  })
+
+  describe("validateResetToken", () => {
+    it("distingue vigente, vencido y desconocido", async () => {
+      expect((await validateResetToken("desconocido")).valid).toBe(false)
+
+      await requestPasswordReset("juan@test.cl")
+      const raw = tokenFromLastEmail()
+      expect(await validateResetToken(raw)).toEqual({ valid: true, userId: USER })
+
+      await testDb.update(schema.passwordResetTokens).set({ expiresAt: "2020-01-01T00:00:00.000Z" })
+      expect((await validateResetToken(raw)).valid).toBe(false)
+    })
   })
 })

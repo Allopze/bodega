@@ -104,13 +104,15 @@ export async function deleteFleetDocumentAction(
 
   const documentId = formData.get("documentId") as string
   const vehicleId = formData.get("vehicleId") as string
+  const reason = String(formData.get("reason") ?? "")
   if (!documentId) return { ok: false, message: "Documento requerido" }
 
   try {
-    await deleteFleetDocument(documentId, session, serviceWorksiteScope(session))
+    // FLO-003: se anula con motivo, no se borra. El archivo se conserva.
+    await deleteFleetDocument(documentId, session, serviceWorksiteScope(session), reason)
     revalidatePath("/flota")
     if (vehicleId) revalidatePath(`/flota/${vehicleId}`)
-    return { ok: true, message: "Documento eliminado" }
+    return { ok: true, message: "Documento anulado" }
   } catch (e) {
     logger.error("[deleteFleetDocumentAction]", e)
     return { ok: false, message: safeActionMessage(e, "Error al eliminar documento") }

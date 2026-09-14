@@ -2,14 +2,16 @@ import type { Metadata } from "next"
 import { redirect } from "next/navigation"
 import { db } from "@/db"
 import { purchaseRequests, purchaseRequestItems, worksites, users } from "@/db/schema"
-import { desc, count, inArray, eq, and, or, ilike, sql } from "drizzle-orm"
-import { requireAuth, can, canAccessWorksite, isGlobalRole } from "@/lib/auth/can"
+import { desc, count, inArray, eq, and, sql } from "drizzle-orm"
+import { requireAuth, can, canAccessWorksite } from "@/lib/auth/can"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { HeaderSignals, type HeaderSignal } from "@/components/ui/header-signals"
 import { ServerPagination } from "@/components/ui/server-pagination"
 import { buildPaginationHref, resolvePagination } from "@/lib/pagination"
-import { parseListParams, periodSql, statusSql, worksiteEqSql } from "@/lib/adquisiciones/list-query"
+import { parseListParams, periodSql, statusSql } from "@/lib/adquisiciones/list-query"
+import { worksiteScopeSql } from "@/lib/auth/scope"
+import { solicitudesSearchSql } from "@/lib/adquisiciones/solicitudes-filter"
 import type { StageTab } from "@/components/ui/stage-tabs"
 import { RequestList } from "./request-list"
 import { SolicitudesActions } from "./solicitudes-actions"
@@ -30,8 +32,6 @@ const STAGE_GROUPS = [
   { value: "closed,rejected,cancelled",                      label: "Cerradas" },
 ] as const
 
-function escapeLikeLocal(v: string) { return v.replace(/[\\%_]/g, (c) => `\\${c}`) }
-
 export default async function SolicitudesPage({
   searchParams,
 }: {
@@ -47,51 +47,37 @@ export default async function SolicitudesPage({
   const sp = await searchParams
   const viewAll = can(session, "requests:view_all")
 
-  // Build worksite filter — solicitantes see only their worksites.
-  // Global roles without view_all (p. ej. jefe_mantencion) no tienen faenas
-  // asignadas: se filtran solo por requesterId, nunca por worksite (si no, la
-  // lista sale vacía). Los roles scoped sí se acotan a sus faenas asignadas.
-  const userWorksiteIds = session.user.worksiteIds ?? []
-
+  /*
+   * REQ-001 (auditoría 2026-09-14): `view_all` quitaba también la faena. Son
+   * dos ejes distintos y el contrato de `lib/auth/scope.ts` los separa:
+   * `view_all` amplía dentro del módulo —de "mis solicitudes" a "todas"— y
+   * `isGlobal` es lo único que autoriza a cruzar faenas. Un rol no global con
+   * `requests:view_all` leía las solicitudes de cualquier faena.
+   *
+   * Aquí queda sólo el eje de propiedad; el de faena lo aplica
+   * `worksiteScopeSql` más abajo, que intersecta el alcance del rol con la
+   * faena elegida en la URL en vez de dejar que la reemplace. Es el mismo
+   * predicado que ya usaba el exportador de solicitudes.
+   */
   const filterConditions = viewAll
     ? undefined
-    : isGlobalRole(session)
-      ? eq(purchaseRequests.requesterId, session.user.id)
-      : and(
-          eq(purchaseRequests.requesterId, session.user.id),
-          userWorksiteIds.length > 0
-            ? inArray(purchaseRequests.worksiteId, userWorksiteIds)
-            : sql`false`
-        )
+    : eq(purchaseRequests.requesterId, session.user.id)
 
   // URL-synced search & filters (server-side, so search finds records on any page)
   const listParams = parseListParams(sp)
 
   // Extended text search: match the request code OR any item's product name
   // (free-text or catalogue). Uses EXISTS to avoid row duplication without JOIN.
-  const q = listParams.q.trim()
-  const likePattern = q ? `%${escapeLikeLocal(q)}%` : null
-  const textCondition = likePattern
-    ? or(
-        ilike(purchaseRequests.code, likePattern),
-        sql`EXISTS (
-          SELECT 1 FROM purchase_request_items pri
-          LEFT JOIN products p ON p.id = pri.product_id
-          WHERE pri.request_id = ${purchaseRequests.id}
-            AND (
-              pri.product_name_free ILIKE ${likePattern}
-              OR p.name ILIKE ${likePattern}
-            )
-        )`,
-      )
-    : undefined
+  // REQ-003: el mismo predicado que usa el exportador, no una copia. Cuando
+  // vivían separados, la búsqueda por nombre de producto existía sólo aquí.
+  const textCondition = solicitudesSearchSql(listParams.q)
 
   // El estado se aplica aparte para poder contar las tabs sobre el mismo
   // recorte sin él: cada tab anuncia lo que entregaría al pulsarla.
   const scopeWhere = and(
     filterConditions,
     textCondition,
-    worksiteEqSql(purchaseRequests.worksiteId, listParams.faena),
+    worksiteScopeSql(session, purchaseRequests.worksiteId, listParams.faena),
     periodSql(purchaseRequests.createdAt, listParams.desde, listParams.hasta),
   )
   const where = and(scopeWhere, statusSql(purchaseRequests.status, listParams.estados))
@@ -142,6 +128,10 @@ export default async function SolicitudesPage({
   // vacío incluso sin filtro de estado.
   if (listParams.estados.length > 0) exportParams.set("status", listParams.estados.join(","))
   if (listParams.faena) exportParams.set("faena", listParams.faena)
+  // REQ-003: el período se perdía en el camino a Excel, así que el archivo
+  // traía todo el histórico aunque la pantalla mostrara un mes.
+  if (listParams.desde) exportParams.set("from", listParams.desde)
+  if (listParams.hasta) exportParams.set("to", listParams.hasta)
   const exportHref = `/api/reportes/export?${exportParams.toString()}`
 
   const pagination = resolvePagination({

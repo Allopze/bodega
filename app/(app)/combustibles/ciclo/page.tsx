@@ -189,8 +189,8 @@ export default async function FuelCyclePage({ searchParams }: { searchParams: Pr
 
       <section className="mt-7">
         <div className="mb-3">
-          <p className="text-eyebrow">Saldo</p>
-          <h2 className="text-lg font-semibold tracking-tight">Saldo por estanque</h2>
+          <p className="text-eyebrow">Nivel</p>
+          <h2 className="text-lg font-semibold tracking-tight">Nivel por estanque</h2>
         </div>
         {balances.length === 0 ? (
           <div className="flex gap-3 border border-dashed border-[var(--color-border-strong)] p-6 text-sm text-[var(--color-text-muted)]"><Database size={20} />No hay estanques activas en este filtro.</div>
@@ -198,14 +198,22 @@ export default async function FuelCyclePage({ searchParams }: { searchParams: Pr
           <div className="overflow-x-auto border border-[var(--color-border)]">
             <TableRoot>
             <Table className="min-w-[700px]">
-              <caption className="sr-only">Saldos de estanques de combustible</caption>
-              <TableHeader><TableRow><TableHead>Estanque</TableHead><TableHead>Recibido</TableHead><TableHead>Entregado</TableHead><TableHead>Saldo</TableHead><TableHead>Capacidad</TableHead></TableRow></TableHeader>
+              <caption className="sr-only">Nivel de los estanques de combustible</caption>
+              {/*
+                COM-001 (auditoría 2026-09-14): la columna se llamaba «Saldo» y
+                mostraba el flujo neto del período —negativo si el rango sólo
+                contenía entregas—, y aun así se comparaba con la capacidad
+                física del estanque. Ahora la apertura es una columna propia y
+                el nivel es la suma, que es lo único comparable con la capacidad.
+              */}
+              <TableHeader><TableRow><TableHead>Estanque</TableHead><TableHead>Al inicio</TableHead><TableHead>Recibido</TableHead><TableHead>Entregado</TableHead><TableHead>Nivel</TableHead><TableHead>Capacidad</TableHead></TableRow></TableHeader>
               <TableBody>
                 {balances.map((balance) => {
                   const overCapacity = balance.capacityLiters != null && balance.balanceLiters > balance.capacityLiters
                   return (
                     <TableRow key={balance.storageLocationId}>
                       <TableCell className="font-medium">{balance.name}</TableCell>
+                      <TableCell className="font-mono text-[var(--color-text-muted)]">{formatQty(balance.openingLiters, undefined, { maximumFractionDigits: 2 })} L</TableCell>
                       <TableCell className="font-mono">{formatQty(balance.receivedLiters + balance.transferInLiters, undefined, { maximumFractionDigits: 2 })} L</TableCell>
                       <TableCell className="font-mono">{formatQty(balance.deliveredLiters + balance.transferOutLiters, undefined, { maximumFractionDigits: 2 })} L</TableCell>
                       <TableCell className={`font-mono ${overCapacity ? "text-[var(--color-danger)]" : ""}`}>{formatQty(balance.balanceLiters, undefined, { maximumFractionDigits: 2 })} L{overCapacity && " ⚠"}</TableCell>
@@ -218,7 +226,7 @@ export default async function FuelCyclePage({ searchParams }: { searchParams: Pr
             </TableRoot>
           </div>
         )}
-        <p className="mt-2 text-xs text-[var(--color-text-muted)]">El saldo no distingue merma real de una carga no registrada: para eso falta el aforo físico periódico del estanque.</p>
+        <p className="mt-2 text-xs text-[var(--color-text-muted)]">El nivel arrastra todo lo registrado antes del período («Al inicio») y le suma el movimiento del rango. No distingue merma real de una carga no registrada: para eso falta el aforo físico periódico del estanque.</p>
       </section>
 
       <section id="movimientos-ciclo" className="mt-7 scroll-mt-24">
