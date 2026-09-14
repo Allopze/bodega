@@ -147,7 +147,8 @@ describe("GDI-002 — la disponibilidad para entregar descuenta lo que viaja", (
     const [audit] = await inMemoryDb.select().from(schema.auditLog)
       .where(and(eq(schema.auditLog.entityType, "delivery"), eq(schema.auditLog.entityId, deliveryId)))
       .orderBy(desc(schema.auditLog.createdAt))
-    expect((audit?.newState as Record<string, unknown>)?.entregadoConStockEnTransito).toMatch(/todavía viaja/i)
+    const newState = JSON.parse(audit?.newState ?? "{}") as Record<string, unknown>
+    expect(newState.entregadoConStockEnTransito).toMatch(/todavía viaja/i)
   })
 
   it("no avisa cuando la guía ya fue cotejada: eso sí llegó", async () => {

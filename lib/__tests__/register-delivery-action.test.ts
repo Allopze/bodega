@@ -137,6 +137,8 @@ describe("registerWorkerDeliveryAction", () => {
     expect(mockRegisterWorkerStock).toHaveBeenCalledWith(
       expect.objectContaining({ deliveredAt: backdate }),
       expect.anything(),
+      // GDI-002: tercer argumento — el colector del aviso de stock en tránsito.
+      expect.objectContaining({ onInTransitWarning: expect.any(Function) }),
     )
   })
 
