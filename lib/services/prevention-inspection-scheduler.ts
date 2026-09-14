@@ -126,14 +126,30 @@ export async function materializeProgramRuns(options: { programId?: string } = {
           .onConflictDoNothing()
           .returning()
 
-        if (!inserted) return null
-
-        // El `nextDueOn` lo mueve SÓLO este materializador (D-3): avanzarlo
-        // también al completar contaba dos veces el mismo ciclo.
+        /* El `nextDueOn` lo mueve SÓLO este materializador (D-3): avanzarlo
+         * también al completar contaba dos veces el mismo ciclo.
+         *
+         * Avanza AUNQUE el insert haya chocado con el slot
+         * `(program_id, scheduled_for)`. Antes se salía por `if (!inserted)
+         * return null` antes de tocar la fecha, y el ciclo quedaba sin consumir:
+         * bastaba que la ejecución de ese slot existiera por otro camino —una
+         * creada a mano contra el mismo programa, o un disparo anterior que no
+         * llegó a confirmar— para que el programa quedara vencido para siempre.
+         * Cada "Crear y abrir inspección" volvía a chocar con el mismo conflicto
+         * y la columna "Próxima" no se movía nunca. Es el S3-05 de la auditoría
+         * 2026-09-12, que aquí sí se reproduce.
+         *
+         * La condición sobre `nextDueOn` hace la escritura idempotente: dos
+         * disparos concurrentes del mismo slot avanzan un ciclo, no dos. */
         await tx.update(preventionInspectionPrograms).set({
           nextDueOn: nextDueAfter(scheduledFor, program.intervalDays, today),
           updatedAt: new Date().toISOString(),
-        }).where(eq(preventionInspectionPrograms.id, program.id))
+        }).where(and(
+          eq(preventionInspectionPrograms.id, program.id),
+          eq(preventionInspectionPrograms.nextDueOn, scheduledFor),
+        ))
+
+        if (!inserted) return null
 
         await recordOperationalActivity({
           eventType: "inspection.scheduled",

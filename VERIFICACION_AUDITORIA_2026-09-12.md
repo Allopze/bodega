@@ -143,24 +143,37 @@ no resolvía.
 | S3-03 | Métrica React Doctor contaminada | **Resuelto** — proyectos de referencia excluidos |
 | S2-04 | E2E como puerta determinista | **En curso** |
 | S3-04 | Imports dinámicos amplios | **Resuelto y reclasificado** — ver N-02: no era rendimiento |
-| S3-05 | `nextDueOn` que no avanza | **Descartado** — no es defecto; ver abajo |
+| S3-05 | `nextDueOn` que no avanza | **Resuelto** — sí era defecto; ver abajo |
 
-## S3-05: por qué no es un defecto
+## S3-05: sí era un defecto, y esta verificación lo dio por descartado antes de tiempo
 
-El informe afirmaba que materializar una programación no avanza su próxima fecha. Tres
-piezas lo contradicen, y la primera lo recorre por pantalla:
+**Corrección.** Una versión anterior de este documento lo cerró como "no es defecto"
+apoyándose en que `e2e/prevencion-inspecciones-catalogo.spec.ts` materializa dos veces y
+afirma que "Próxima" avanza. Esa prueba sólo recorre el camino feliz —el insert de la
+ejecución tiene éxito—, y el defecto vive justo en el otro.
 
-- `e2e/prevencion-inspecciones-catalogo.spec.ts` — "crear, materializar, editar y
-  desactivar una programación" materializa **dos veces** desde la propia tabla y afirma
-  que la celda "Próxima" avanza un intervalo completo cada vez (`hoy + paso`, luego
-  `hoy + 2·paso`). Pasa.
-- `lib/__tests__/prevention-inspections-postgres.test.ts:541` cubre lo mismo contra el
-  servicio.
-- `prevention-inspection-scheduler.ts:131-136` es el único sitio que escribe `nextDueOn`,
-  y la acción revalida `${BASE}/programacion`, así que la tabla no puede quedar mostrando
-  la fecha vieja.
+`prevention-inspection-scheduler.ts` inserta la ejecución con `onConflictDoNothing()`
+sobre el slot `(program_id, scheduled_for)` y salía con `if (!inserted) return null`
+**antes** de mover `nextDueOn`. Basta con que la ejecución de ese slot exista por otro
+camino —una creada a mano contra el mismo programa, o un disparo anterior— para que el
+ciclo no se consuma nunca: cada materialización posterior vuelve a chocar con el mismo
+conflicto y la columna "Próxima" se queda clavada en la fecha vencida. Exactamente lo que
+describía el informe.
 
-No se escribió una reproducción nueva: la que el informe pedía ya existía y estaba verde.
+Reproducido y corregido:
+
+- Sin el arreglo, contra la base E2E real: `nextDueOn` se queda en `2026-09-13` tras
+  materializar un programa cuyo slot vigente ya estaba ocupado. Con el arreglo avanza a
+  `2026-09-28` y no duplica la ejecución.
+- `lib/__tests__/prevention-inspection-container-subject-pglite.test.ts` —
+  "avanza la próxima fecha aunque el slot vigente ya estuviera ocupado"— falla sin el
+  arreglo y pasa con él.
+- La escritura queda condicionada a `nextDueOn = scheduledFor`, así que dos disparos
+  concurrentes del mismo slot avanzan un ciclo, no dos.
+
+Lo que hizo falta para verlo fue una corrida completa de E2E: `catalogo.spec.ts:261` falló
+con "Próxima" en la fecha de hoy después de haber materializado, que es la firma del
+defecto.
 
 ## Evidencia de verificación
 
