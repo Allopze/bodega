@@ -41,6 +41,7 @@ beforeEach(async () => {
   await inMemoryDb.delete(schema.ppaSubmissions)
   await inMemoryDb.delete(schema.preventionCapaEvidence)
   await inMemoryDb.delete(schema.preventionCapaActions)
+  await inMemoryDb.delete(schema.workers)
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
 
@@ -395,6 +396,8 @@ describe("revokePpaToken — traza del actor (PGlite)", () => {
  * idempotencia ese reenvío duplicaba la evaluación (o la perdía si el cliente
  * la daba por fallida). Mismo patrón que incidentes y TAE.
  */
+import { derivePpaWorksiteAccessToken } from "@/lib/services/ppa-module/worksite-access-token"
+
 describe("createPpaSubmission — idempotencia del reenvío offline (PGlite)", () => {
   // derivePpaPublicToken firma el enlace público con el secreto del servidor,
   // que en producción exige validateEnv() y aquí no está.
@@ -406,6 +409,11 @@ describe("createPpaSubmission — idempotencia del reenvío offline (PGlite)", (
   const payload = (clientSubmissionId?: string) => ({
     clientSubmissionId,
     worksiteId: "ws-1",
+    // PPA-001 (auditoría 2026-09-14): la faena ya no se acredita sola. Estos
+    // envíos son "identificación manual" (nombre y RUT tipeados, sin workerId),
+    // así que necesitan el token del enlace firmado — el mismo que el panel
+    // interno reparte en el QR de la faena.
+    accessToken: derivePpaWorksiteAccessToken("ws-1"),
     workerName: "Juan Pérez",
     workerRut: "11.111.111-1",
     tipoTrabajo: "conductor_batea",
@@ -456,6 +464,92 @@ describe("createPpaSubmission — idempotencia del reenvío offline (PGlite)", (
     expect(first.submission.clientSubmissionId).toMatch(/^srv-/)
     expect(second.submission.id).not.toBe(first.submission.id)
     expect(await inMemoryDb.select().from(schema.ppaSubmissions)).toHaveLength(2)
+  })
+})
+
+/**
+ * PPA-001 (auditoría 2026-09-14): el enlace público repartía la faena como un
+ * simple `?faena=<worksiteId>` y `createPpaSubmission` aceptaba cualquier faena
+ * existente. El id de una faena no es un secreto —viaja en cualquier URL de la
+ * aplicación—, así que cualquiera con la URL base podía alimentar el registro
+ * preventivo de una faena en la que nunca estuvo. La superficie hermana (TAE)
+ * ya exigía un token que resuelve la faena en el servidor.
+ *
+ * Estas pruebas fallan sin el arreglo: antes los tres casos escribían la fila.
+ */
+describe("PPA-001 — la faena del envío público tiene que estar acreditada (PGlite)", () => {
+  const previousSecret = process.env.AUTH_SECRET
+  beforeEach(async () => {
+    process.env.AUTH_SECRET = "test-auth-secret"
+    await inMemoryDb.insert(schema.workers).values({
+      id: "wk-1", firstName: "Juan", lastName: "Pérez", rut: "11111111-1",
+      worksiteId: "ws-1", isActive: true,
+    })
+  })
+  afterAll(() => { process.env.AUTH_SECRET = previousSecret })
+
+  const base = {
+    worksiteId: "ws-1",
+    workerName: "Juan Pérez",
+    workerRut: "11.111.111-1",
+    tipoTrabajo: "conductor_batea",
+    cambioPlanificado: "no" as const,
+    peligroNoControlado: "no" as const,
+    controles: ["epp", "herramientas"],
+    seguroComenzar: "si" as const,
+    complementarias: {},
+  }
+
+  it("rechaza el envío que sólo trae el id de la faena", async () => {
+    const { createPpaSubmission } = await import("@/lib/services/ppa-module/evaluaciones")
+    await expect(createPpaSubmission({ ...base, clientSubmissionId: "ppa-sin-acreditar-000001" }))
+      .rejects.toThrow(/no acredita la faena/i)
+    expect(await inMemoryDb.select().from(schema.ppaSubmissions)).toHaveLength(0)
+  })
+
+  it("rechaza un token firmado para OTRA faena", async () => {
+    const { createPpaSubmission } = await import("@/lib/services/ppa-module/evaluaciones")
+    await expect(createPpaSubmission({
+      ...base,
+      clientSubmissionId: "ppa-token-cruzado-000001",
+      // El token de la faena B no puede abrir la faena A: el HMAC va sobre el id.
+      accessToken: derivePpaWorksiteAccessToken("ws-2"),
+    })).rejects.toThrow(/no acredita la faena/i)
+    expect(await inMemoryDb.select().from(schema.ppaSubmissions)).toHaveLength(0)
+  })
+
+  it("acepta el envío del enlace firmado de esa faena", async () => {
+    const { createPpaSubmission } = await import("@/lib/services/ppa-module/evaluaciones")
+    const { submission } = await createPpaSubmission({
+      ...base,
+      clientSubmissionId: "ppa-con-enlace-000001",
+      accessToken: derivePpaWorksiteAccessToken("ws-1"),
+    })
+    expect(submission.worksiteId).toBe("ws-1")
+    expect(submission.manualIdentificacion).toBe(true)
+  })
+
+  it("acepta sin enlace cuando el trabajador identificado pertenece a la faena", async () => {
+    const { createPpaSubmission } = await import("@/lib/services/ppa-module/evaluaciones")
+    // La segunda acreditación: la faena sale de `workers.worksiteId`, no del
+    // formulario. Es la vía que mantiene vivos los QR antiguos sin token.
+    const { submission } = await createPpaSubmission({
+      ...base,
+      clientSubmissionId: "ppa-por-rut-000001",
+      workerId: "wk-1",
+    })
+    expect(submission.worksiteId).toBe("ws-1")
+    expect(submission.manualIdentificacion).toBe(false)
+  })
+
+  it("rechaza al trabajador que existe pero es de otra faena", async () => {
+    const { createPpaSubmission } = await import("@/lib/services/ppa-module/evaluaciones")
+    await expect(createPpaSubmission({
+      ...base,
+      worksiteId: "ws-2",
+      clientSubmissionId: "ppa-rut-otra-faena-000001",
+      workerId: "wk-1",
+    })).rejects.toThrow(/no acredita la faena/i)
   })
 })
 
