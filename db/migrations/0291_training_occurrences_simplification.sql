@@ -114,11 +114,11 @@ INSERT INTO "prevention_training_occurrences" (
   "scheduled_month", "scheduled_week", "status", "version"
 )
 SELECT
-  format('training-occurrence-%s-%s-%s-%s', 2026, w."id", lower(c."code"), slot."slot_key"),
-  c."id", w."id", 2026, slot."slot_key", slot."month", slot."week", 'pending', 1
+  format('training-occurrence-%s-%s-%s-%s', 2026, w."id", lower(c."code"), slot."slotKey"),
+  c."id", w."id", 2026, slot."slotKey", slot."month", slot."week", 'pending', 1
 FROM "prevention_training_catalog_items" c
 JOIN "worksites" w ON w."is_active" = true
-CROSS JOIN LATERAL jsonb_to_recordset(c."schedule_json") AS slot("slot_key" text, "month" integer, "week" integer)
+CROSS JOIN LATERAL jsonb_to_recordset(c."schedule_json") AS slot("slotKey" text, "month" integer, "week" integer)
 WHERE c."catalog_version" = 'programa-capacitacion-2026-v1'
   AND c."is_active" = true
 ON CONFLICT ("catalog_item_id", "worksite_id", "year", "slot_key") DO NOTHING;
