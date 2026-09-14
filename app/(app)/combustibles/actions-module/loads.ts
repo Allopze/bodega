@@ -28,7 +28,7 @@ import type { ActionState } from "@/lib/validation/masters"
 import { optionalNumber } from "./export"
 import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
 import { reevaluateFuelLoadAnomalies, resolveCorrectedMeterCases } from "@/lib/combustibles/fuel-load-anomaly-reevaluation"
-import { meterReadingFieldErrors } from "@/lib/combustibles/meter-readings"
+import { meterReadingFieldErrors, meterReplacementDeclarationError, readMeterReplacementDeclaration } from "@/lib/combustibles/meter-readings"
 import { notifyAfterCommit } from "@/lib/services/notifications"
 
 const REVALIDATE = "/combustibles"
@@ -40,6 +40,9 @@ const AUDITED_LOAD_FIELDS = [
   "loadDate", "month", "serviceType", "vehicleId", "fuelSupplierId", "worksiteId",
   "product", "receiptNumber", "odometerReading", "hourMeterReading", "liters",
   "iecFixed", "iecVariable", "baseAmount", "iecTotal", "ivaAmount", "totalAmount", "notes",
+  // COM-002: desactivar el control de regresión del medidor es un cambio de
+  // dato como cualquier otro, y el historial tiene que mostrarlo a ambos lados.
+  "meterReplaced", "meterReplacementReason",
 ] as const
 
 function pickAuditedLoadFields(source: Record<string, unknown>): Record<string, unknown> {
@@ -143,7 +146,15 @@ export async function createFuelLoadAction(
   // caza acá y no sólo en la detección nocturna: un caso de anomalía obliga a
   // alguien a revisarlo después, y este error simplemente no deja que exista.
   // El operador puede declarar un medidor nuevo, que es el único caso legítimo.
-  if (!formData.get("meterReplaced")) {
+  //
+  // COM-002: esa declaración era una casilla suelta —apagaba el control y no se
+  // guardaba en ninguna parte—. Ahora exige motivo y se persiste con la carga.
+  const meterReplacement = readMeterReplacementDeclaration(formData)
+  const replacementError = meterReplacementDeclarationError(meterReplacement)
+  if (replacementError) {
+    return { ok: false, message: "Explica el reemplazo del medidor", fieldErrors: replacementError }
+  }
+  if (!meterReplacement.replaced) {
     const meterErrors = await meterReadingFieldErrors(db, parsed.data)
     if (meterErrors) return { ok: false, message: "Revisa la lectura del medidor", fieldErrors: meterErrors }
   }
@@ -178,6 +189,9 @@ export async function createFuelLoadAction(
         id,
         ...parsed.data,
         productId: fuelProductIdForLegacy(parsed.data.product),
+        // COM-002: la declaración viaja con la carga, no sólo con el request.
+        meterReplaced: meterReplacement.replaced,
+        meterReplacementReason: meterReplacement.reason,
         createdBy: session.user.id,
       })
 
@@ -187,7 +201,7 @@ export async function createFuelLoadAction(
         action: "create",
         entityType: "fuel_load",
         entityId: id,
-        newState: { ...parsed.data, worksiteId: parsed.data.worksiteId },
+        newState: { ...parsed.data, worksiteId: parsed.data.worksiteId, meterReplaced: meterReplacement.replaced, meterReplacementReason: meterReplacement.reason },
       }, tx)
     })
   } catch (e) {
@@ -317,7 +331,15 @@ export async function updateFuelLoadAction(
   // caza acá y no sólo en la detección nocturna: un caso de anomalía obliga a
   // alguien a revisarlo después, y este error simplemente no deja que exista.
   // El operador puede declarar un medidor nuevo, que es el único caso legítimo.
-  if (!formData.get("meterReplaced")) {
+  // COM-002: ver createFuelLoadAction. La declaración también se persiste al
+  // editar, porque editar es justamente donde una lectura baja se "arregla"
+  // marcando la casilla.
+  const meterReplacement = readMeterReplacementDeclaration(formData)
+  const replacementError = meterReplacementDeclarationError(meterReplacement)
+  if (replacementError) {
+    return { ok: false, message: "Explica el reemplazo del medidor", fieldErrors: replacementError }
+  }
+  if (!meterReplacement.replaced) {
     const meterErrors = await meterReadingFieldErrors(db, {
       vehicleId: parsed.data.vehicleId ?? existing.vehicleId,
       loadDate: parsed.data.loadDate ?? existing.loadDate,
@@ -360,7 +382,13 @@ export async function updateFuelLoadAction(
     // llamaba después de que la conexión ya había hecho commit del UPDATE.
     const updated = await db.transaction(async (tx) => {
       const [row] = await tx.update(fuelLoads)
-        .set({ ...parsed.data, productId: fuelProductIdForLegacy(parsed.data.product), updatedAt: new Date().toISOString() })
+        .set({
+          ...parsed.data,
+          productId: fuelProductIdForLegacy(parsed.data.product),
+          meterReplaced: meterReplacement.replaced,
+          meterReplacementReason: meterReplacement.reason,
+          updatedAt: new Date().toISOString(),
+        })
         .where(and(
           eq(fuelLoads.id, id),
           isNull(fuelLoads.statementId),
@@ -381,7 +409,7 @@ export async function updateFuelLoadAction(
         // o fecha no dejaba rastro en el historial. Se guarda el estado editable
         // completo a ambos lados.
         oldState: pickAuditedLoadFields(existing),
-        newState: pickAuditedLoadFields(parsed.data),
+        newState: pickAuditedLoadFields({ ...parsed.data, meterReplaced: meterReplacement.replaced, meterReplacementReason: meterReplacement.reason }),
       }, tx)
       return row
     })
@@ -544,7 +572,13 @@ export async function correctFuelLoadMeterAction(
     }
   }
 
-  if (!formData.get("meterReplaced")) {
+  // COM-002: ver createFuelLoadAction.
+  const meterReplacement = readMeterReplacementDeclaration(formData)
+  const replacementError = meterReplacementDeclarationError(meterReplacement)
+  if (replacementError) {
+    return { ok: false, message: "Explica el reemplazo del medidor", fieldErrors: replacementError }
+  }
+  if (!meterReplacement.replaced) {
     const meterErrors = await meterReadingFieldErrors(db, {
       vehicleId: existing.vehicleId,
       loadDate: existing.loadDate,
@@ -559,7 +593,13 @@ export async function correctFuelLoadMeterAction(
       // El `WHERE` repite el estado leído: entre la lectura y la escritura otra
       // sesión puede haber anulado la carga.
       const [updated] = await tx.update(fuelLoads)
-        .set({ odometerReading, hourMeterReading, updatedAt: new Date().toISOString() })
+        .set({
+          odometerReading,
+          hourMeterReading,
+          meterReplaced: meterReplacement.replaced,
+          meterReplacementReason: meterReplacement.reason,
+          updatedAt: new Date().toISOString(),
+        })
         .where(and(
           eq(fuelLoads.id, id),
           inArray(fuelLoads.status, [...METER_CORRECTABLE_FUEL_LOAD_STATUSES]),
@@ -572,8 +612,8 @@ export async function correctFuelLoadMeterAction(
         action: "update",
         entityType: "fuel_load",
         entityId: id,
-        oldState: { odometerReading: existing.odometerReading, hourMeterReading: existing.hourMeterReading },
-        newState: { odometerReading, hourMeterReading },
+        oldState: { odometerReading: existing.odometerReading, hourMeterReading: existing.hourMeterReading, meterReplaced: existing.meterReplaced, meterReplacementReason: existing.meterReplacementReason },
+        newState: { odometerReading, hourMeterReading, meterReplaced: meterReplacement.replaced, meterReplacementReason: meterReplacement.reason },
         reason: "Corrección de lectura de medidor",
       }, tx)
     })

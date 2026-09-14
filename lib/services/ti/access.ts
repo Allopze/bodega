@@ -8,6 +8,11 @@ import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { ONBOARDING_CHECKLIST_TEMPLATE, OFFBOARDING_CHECKLIST_TEMPLATE } from "./constants"
 import { assertTiGlobalAccess, assertTiWorksiteAccess, type TiWorksiteScope } from "./scope"
+import {
+  describeWorkerOffboarding,
+  getWorkerOffboardingSummary,
+  onlyItPendings,
+} from "@/lib/services/worker-offboarding"
 
 /* ── Sistemas (catálogo configurable) ────────────────────────────────────── */
 
@@ -161,7 +166,13 @@ export async function upsertSystemAccess(
   })
 }
 
-export async function listWorkerAccess(workerId: string, worksiteIds: TiWorksiteScope = "all") {
+/**
+ * HALLAZGO SEC-002 (S3/P2): `worksiteIds` tenía `= "all"` por omisión. Olvidar
+ * el alcance no restringía la consulta: la abría a todas las faenas, en
+ * silencio y sin fallar. Ahora es obligatorio, y quien de verdad necesite ver
+ * todo debe escribir `"all"` — una afirmación, no un descuido.
+ */
+export async function listWorkerAccess(workerId: string, worksiteIds: TiWorksiteScope) {
   const conditions: SQL[] = [eq(itSystemAccess.workerId, workerId)]
   if (worksiteIds !== "all") conditions.push(worksiteIds.length ? inArray(workers.worksiteId, worksiteIds) : sql`false`)
   return db
@@ -182,7 +193,16 @@ export async function listWorkerAccess(workerId: string, worksiteIds: TiWorksite
     .orderBy(asc(itAccessSystems.name))
 }
 
-export async function listWorkersWithAccess(filters?: { systemId?: string; worksiteId?: string; search?: string; scope?: SQL }) {
+/**
+ * HALLAZGO SEC-002 (S3/P2): `scope` era una propiedad opcional de un objeto
+ * `filters` que a su vez era opcional, de modo que `listWorkersWithAccess()`
+ * compilaba y listaba a los trabajadores de todas las faenas. Ahora `filters`
+ * y su `scope` son obligatorios. El tipo sigue admitiendo `undefined` porque
+ * ése es el valor que `worksiteScopeSql` devuelve para un rol global —"sin
+ * cláusula"—, pero el llamador tiene que escribirlo: es una decisión, no un
+ * olvido.
+ */
+export async function listWorkersWithAccess(filters: { systemId?: string; worksiteId?: string; search?: string; scope: SQL | undefined }) {
   const workersList = await db
     .select({
       id: workers.id,
@@ -194,8 +214,8 @@ export async function listWorkersWithAccess(filters?: { systemId?: string; works
     .innerJoin(worksites, eq(workers.worksiteId, worksites.id))
     .where(and(
       eq(workers.isActive, true),
-      filters?.worksiteId ? eq(workers.worksiteId, filters.worksiteId) : undefined,
-      filters?.scope,
+      filters.worksiteId ? eq(workers.worksiteId, filters.worksiteId) : undefined,
+      filters.scope,
     ))
     .orderBy(asc(workers.firstName), asc(workers.lastName))
 
@@ -301,6 +321,8 @@ export async function toggleChecklistTask(
       id: itChecklistTasks.id,
       checklistId: itChecklistTasks.checklistId,
       notes: itChecklistTasks.notes,
+      checklistKind: itWorkerChecklists.kind,
+      workerId: itWorkerChecklists.workerId,
       workerWorksiteId: workers.worksiteId,
     }).from(itChecklistTasks)
       .innerJoin(itWorkerChecklists, eq(itChecklistTasks.checklistId, itWorkerChecklists.id))
@@ -324,13 +346,40 @@ export async function toggleChecklistTask(
     const [remaining] = await tx.select({
       pending: sql<number>`count(*) filter (where ${itChecklistTasks.done} = false)::int`,
     }).from(itChecklistTasks).where(eq(itChecklistTasks.checklistId, task.checklistId))
+
+    /*
+     * TIL-001 (auditoría 2026-09-14): el checklist de baja declaraba "Revocar
+     * accesos", "Recuperar notebook" y "Cerrar licencias asignadas" como
+     * casillas que se marcaban de memoria. La plataforma tiene la verdad en
+     * `it_system_access`, `it_asset_assignments` e `it_license_assignments`, y
+     * no la consultaba: una desvinculación podía quedar "completa" con la
+     * cuenta activa y el equipo sin devolver.
+     *
+     * El control se aplica al cerrar, no al marcar cada casilla: TI necesita
+     * poder ir marcando su avance, pero no declarar terminado lo que no lo
+     * está. Sólo se exigen las tres dimensiones que TI puede cerrar por sí
+     * misma —el EPP y las cuadrillas son de bodega y prevención—.
+     */
+    if (remaining?.pending === 0 && task.checklistKind === "offboarding") {
+      const pendings = onlyItPendings(await getWorkerOffboardingSummary(task.workerId, tx))
+      if (!pendings.clear) {
+        throw new Error(
+          `No se puede cerrar la desvinculación: ${describeWorkerOffboarding(pendings)}. ` +
+          "Registra la devolución del activo, revoca el acceso o libera la licencia y vuelve a marcar la tarea.",
+        )
+      }
+    }
+
     await tx.update(itWorkerChecklists).set({
       completedAt: remaining?.pending === 0 ? new Date().toISOString() : null,
     }).where(eq(itWorkerChecklists.id, task.checklistId))
   })
 }
 
-export async function listChecklists(filters?: { workerId?: string; kind?: string; scope?: SQL }) {
+/** HALLAZGO SEC-002 (S3/P2): mismo caso que `listWorkersWithAccess`; el
+ *  alcance era opcional dentro de un objeto opcional y su ausencia listaba
+ *  las checklists de todas las faenas. */
+export async function listChecklists(filters: { workerId?: string; kind?: string; scope: SQL | undefined }) {
   return db
     .select({
       id: itWorkerChecklists.id,
@@ -349,9 +398,9 @@ export async function listChecklists(filters?: { workerId?: string; kind?: strin
     .innerJoin(workers, eq(itWorkerChecklists.workerId, workers.id))
     .innerJoin(worksites, eq(workers.worksiteId, worksites.id))
     .where(and(
-      filters?.workerId ? eq(itWorkerChecklists.workerId, filters.workerId) : undefined,
-      filters?.kind ? eq(itWorkerChecklists.kind, filters.kind) : undefined,
-      filters?.scope,
+      filters.workerId ? eq(itWorkerChecklists.workerId, filters.workerId) : undefined,
+      filters.kind ? eq(itWorkerChecklists.kind, filters.kind) : undefined,
+      filters.scope,
     ))
     .orderBy(desc(itWorkerChecklists.startedAt))
 }

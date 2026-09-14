@@ -16,6 +16,19 @@ import { formatMoney } from "@/lib/services/billing/money"
 import { recordCollectionActionAction, registerManualPaymentAction } from "./actions"
 
 /**
+ * Clave de idempotencia del pago manual (COB-003). `crypto.randomUUID` existe
+ * en todo navegador que sirva esta pantalla (contexto seguro); el respaldo usa
+ * `getRandomValues`, nunca `Math.random`: una clave adivinable no serviría para
+ * distinguir un reintento de un pago nuevo.
+ */
+function newPaymentRequestId(): string {
+  const source: Crypto = globalThis.crypto
+  if (typeof source.randomUUID === "function") return source.randomUUID()
+  const bytes = source.getRandomValues(new Uint8Array(16))
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")
+}
+
+/**
  * Registrar una gestión de cobranza o un pago sobre una factura.
  *
  * Son dos formularios distintos a propósito: registrar que se llamó al cliente
@@ -44,10 +57,30 @@ export function CollectionActionDialog({
   const [mode, setMode] = useState<"action" | "payment" | null>(null)
   const [isPending, startTransition] = useTransition()
   const [actionType, setActionType] = useState("call")
+  /**
+   * COB-003. Dos piezas de estado para el pago manual:
+   *
+   * - `paymentRequestId` es la clave de idempotencia, UNA por apertura del
+   *   diálogo. Se reenvía en cada reintento, así que el doble clic, la doble
+   *   pestaña y el reintento por red colapsan sobre la misma fila en la base.
+   * - `duplicateWarning` guarda la advertencia de "ya existe un pago idéntico"
+   *   para que el segundo envío la reconozca. Antes esto era una ventana de
+   *   dos minutos en el servidor: pasada, el mismo pago entraba sin aviso.
+   */
+  const [paymentRequestId, setPaymentRequestId] = useState<string | null>(null)
+  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null)
+
+  function openPayment() {
+    setPaymentRequestId(newPaymentRequestId())
+    setDuplicateWarning(null)
+    setMode("payment")
+  }
 
   function close() {
     setMode(null)
     setActionType("call")
+    setPaymentRequestId(null)
+    setDuplicateWarning(null)
   }
 
   return (
@@ -64,7 +97,7 @@ export function CollectionActionDialog({
         <DropdownMenuContent align="end">
           <DropdownMenuItem onSelect={() => setMode("action")}>Registrar gestión</DropdownMenuItem>
           {canConfirmPayments && (
-            <DropdownMenuItem onSelect={() => setMode("payment")}>Registrar pago</DropdownMenuItem>
+            <DropdownMenuItem onSelect={openPayment}>Registrar pago</DropdownMenuItem>
           )}
         </DropdownMenuContent>
       </DropdownMenu>
@@ -184,11 +217,18 @@ export function CollectionActionDialog({
                   currency,
                   method: String(formData.get("method") ?? "") || null,
                   notes: String(formData.get("notes") ?? "") || null,
+                  clientRequestId: paymentRequestId,
+                  // El reconocimiento vale para ESTE envío: sólo va marcado
+                  // cuando el operador ya vio la advertencia y volvió a
+                  // confirmar.
+                  acknowledgeDuplicate: duplicateWarning !== null,
                 })
                 if (result.ok) {
                   toast.success(result.message)
                   close()
                   router.refresh()
+                } else if (result.needsDuplicateAck) {
+                  setDuplicateWarning(result.message)
                 } else {
                   toast.error(result.message)
                 }
@@ -224,8 +264,17 @@ export function CollectionActionDialog({
               <Textarea name="notes" rows={2} maxLength={1000} className="min-h-0" />
             </Field>
 
+            {duplicateWarning ? (
+              <p
+                role="alert"
+                className="rounded-[var(--radius-md)] border border-[var(--color-warning)] bg-[var(--color-warning-soft,var(--color-surface-2))] px-3 py-2 text-xs text-[var(--color-text)]"
+              >
+                {duplicateWarning}
+              </p>
+            ) : null}
+
             <button type="submit" disabled={isPending} className={cn(buttonVariants(), "w-full")}>
-              {isPending ? "Guardando…" : "Confirmar pago"}
+              {isPending ? "Guardando…" : duplicateWarning ? "Sí, son dos pagos distintos: registrar" : "Confirmar pago"}
             </button>
           </form>
         </DialogContent>

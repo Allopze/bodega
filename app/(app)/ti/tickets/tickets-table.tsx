@@ -6,6 +6,7 @@ import { MetaBadge } from "@/components/states/state-badge"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { formatDateTime } from "@/lib/utils"
 import { IT_TICKET_STATUS_META, IT_TICKET_PRIORITY_META, IT_TICKET_CATEGORY_META } from "@/lib/services/ti/constants"
+import { ticketSlaStage } from "@/lib/services/ti/ticket-sla"
 
 interface Row {
   id: string
@@ -26,6 +27,20 @@ interface Row {
   createdAt: string
   updatedAt: string
   resolvedAt: string | null
+  /** TIT-001: vencimiento comprometido según la prioridad. */
+  dueAt: string | null
+}
+
+/**
+ * TIT-001: la prioridad no gobernaba ningún plazo, así que la lista tampoco
+ * podía mostrar ninguno. Ahora el compromiso se ve donde se decide qué atender.
+ */
+function slaMeta(row: Row): { label: string; variant: "danger" | "warning" | "default" } | null {
+  if (row.status === "resuelto" || row.status === "cerrado") return null
+  const stage = ticketSlaStage(row.dueAt)
+  if (stage === "overdue") return { label: "Vencido", variant: "danger" }
+  if (stage === "due_soon") return { label: "Por vencer", variant: "warning" }
+  return null
 }
 
 const COLUMNS = [
@@ -37,6 +52,7 @@ const COLUMNS = [
   { key: "worker", label: "Trabajador", sortable: true },
   { key: "worksite", label: "Faena", sortable: true },
   { key: "assignee", label: "Técnico", width: "w-36" },
+  { key: "sla", label: "SLA", width: "w-28" },
   { key: "updated", label: "Actualizado", sortable: true, width: "w-32" },
 ]
 
@@ -70,6 +86,11 @@ export function TicketsTable({ rows }: { rows: Row[]; canManage: boolean }) {
             <TableCell>{row.workerName ?? "—"}</TableCell>
             <TableCell>{row.worksiteName}</TableCell>
             <TableCell className="w-36">{row.assigneeName ?? "—"}</TableCell>
+            <TableCell className="w-28">
+              {slaMeta(row)
+                ? <MetaBadge meta={slaMeta(row)!} />
+                : <span className="text-xs text-[var(--color-text-muted)]">{row.dueAt ? formatDateTime(row.dueAt) : "—"}</span>}
+            </TableCell>
             <TableCell className="w-32">{formatDateTime(row.updatedAt)}</TableCell>
           </TableRow>
         )

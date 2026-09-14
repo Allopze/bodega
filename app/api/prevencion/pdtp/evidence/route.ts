@@ -10,6 +10,7 @@ import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
 import { createPdtpEvidencePath, resolvePdtpEvidenceDir, resolveStorageFile } from "@/lib/storage/config"
 import { logger } from "@/lib/logger"
+import { createHash } from "node:crypto"
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024
 
@@ -23,7 +24,14 @@ const MAX_FILE_SIZE = 25 * 1024 * 1024
  *
  * No implementa deduplicación, versionado ni un endpoint de visualización —
  * su único trabajo es validar un archivo, guardarlo y devolver su ruta.
- * Devuelve 201 con { path } o 4xx con detalle.
+ * Devuelve 201 con { path, checksumSha256 } o 4xx con detalle.
+ *
+ * P4 (auditoría 2026-09-14): el checksum se calcula aquí, sobre el mismo buffer
+ * que se escribe, y viaja de vuelta al formulario. Antes no se calculaba en
+ * ninguna parte del camino de PDTP, así que la evidencia de una CAPA alimentada
+ * desde aquí no podía cumplir el contrato que la evidencia de inspección sí
+ * cumplía desde el principio. Es el único punto donde el contenido del archivo
+ * está en memoria: calcularlo después obligaría a volver a leerlo del disco.
  */
 export async function POST(request: Request) {
   const guard = await guardPermission("prevention:pdtp:execute")
@@ -75,7 +83,8 @@ export async function POST(request: Request) {
     await mkdirp(dir)
     await writeBuffer(resolveStorageFile(dir, storageName), Buffer.from(buffer))
     const relativePath = createPdtpEvidencePath(storageName)
-    return NextResponse.json({ path: relativePath }, { status: 201 })
+    const checksumSha256 = createHash("sha256").update(buffer).digest("hex")
+    return NextResponse.json({ path: relativePath, checksumSha256 }, { status: 201 })
   } catch (err) {
     logger.error("[pdtp/evidence]", err)
     const message = err instanceof Error ? err.message : "Error al subir el archivo."

@@ -12,6 +12,7 @@ import {
   billingInvoices,
 } from "@/db/schema"
 import { guardPermission } from "@/lib/auth/can"
+import { requireDifferentActor } from "@/lib/auth/segregation"
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { logger } from "@/lib/logger"
@@ -148,14 +149,44 @@ const manualPaymentSchema = z.object({
   currency: z.string().regex(/^[A-Z]{3}$/),
   method: z.string().max(60).nullable().optional(),
   notes: z.string().max(1000).nullable().optional(),
+  /**
+   * Clave de idempotencia generada por el formulario, una por apertura del
+   * diálogo (COB-003). Se reenvía en cada reintento: el índice único parcial
+   * `billing_invoice_payments_client_request_unique` hace que el doble clic, la
+   * doble pestaña y el reenvío por red colapsen sobre la MISMA fila en vez de
+   * cobrar dos veces. Opcional para no romper a un cliente cacheado antiguo.
+   */
+  clientRequestId: z.string().min(8).max(64).nullable().optional(),
+  /**
+   * El operador vio la advertencia de "ya existe un pago idéntico en esta
+   * factura" y afirma que son dos pagos distintos.
+   */
+  acknowledgeDuplicate: z.boolean().optional(),
 })
+
+/** Error del duplicado advertido: lo distingue de un fallo real de escritura. */
+class DuplicatePaymentWarning extends Error {
+  constructor(readonly existingPaymentId: string, message: string) {
+    super(message)
+    this.name = "DuplicatePaymentWarning"
+  }
+}
 
 /**
  * Registra un pago a mano y lo deja **confirmado**: lo está afirmando una
  * persona con `billing:confirm_payments`, que es exactamente el acto que el
  * motor automático no puede hacer por sí solo.
  */
-export async function registerManualPaymentAction(input: unknown): Promise<ActionResult> {
+export interface ManualPaymentResult extends ActionResult {
+  /**
+   * COB-003: hay un pago idéntico en la factura y el operador todavía no lo
+   * reconoció. No es un fallo: el formulario muestra la advertencia y reenvía
+   * con `acknowledgeDuplicate` si de verdad son dos pagos distintos.
+   */
+  needsDuplicateAck?: boolean
+}
+
+export async function registerManualPaymentAction(input: unknown): Promise<ManualPaymentResult> {
   const { session, error } = await guardPermission("billing:confirm_payments")
   if (error) return error
 
@@ -186,13 +217,34 @@ export async function registerManualPaymentAction(input: unknown): Promise<Actio
     const paymentId = nanoid()
     const now = new Date().toISOString()
 
+    // COB-003: el reintento del MISMO envío se resuelve antes de tocar nada.
+    // La ventana de dos minutos que había aquí no es una defensa —pasada la
+    // ventana el mismo pago entraba otra vez sin aviso—; la duradera es esta
+    // clave persistida con índice único parcial.
+    if (data.clientRequestId) {
+      const [already] = await db
+        .select({ id: billingInvoicePayments.id })
+        .from(billingInvoicePayments)
+        .where(eq(billingInvoicePayments.clientRequestId, data.clientRequestId))
+        .limit(1)
+      if (already) {
+        return { ok: true, message: "El pago ya estaba registrado: este envío es un reintento del mismo." }
+      }
+    }
+
     const snapshot = await db.transaction(async (tx) => {
       // El índice único (invoiceId, bankTransactionId) no cubre pagos manuales
-      // (bank_tx NULL): un doble clic o doble pestaña duplicaba el cobro. El
-      // lock serializa y la ventana corta atrapa el reintento accidental sin
-      // impedir dos pagos reales iguales en días distintos.
+      // (bank_tx NULL). El lock serializa los envíos concurrentes sobre la
+      // misma factura para que la búsqueda de gemelo de más abajo no corra
+      // contra una foto vieja.
       await tx.execute(sql`SELECT id FROM ${billingInvoices} WHERE id = ${data.invoiceId} FOR UPDATE`)
-      const [recentTwin] = await tx
+      // COB-003: el gemelo ya NO caduca a los dos minutos. Un pago idéntico
+      // —misma factura, mismo importe, misma fecha, manual y confirmado— es
+      // casi siempre la misma persona reintentando media hora después porque
+      // no vio el primero. Dos pagos reales idénticos el mismo día siguen
+      // siendo válidos, así que la defensa advierte y deja pasar con un
+      // reconocimiento explícito en vez de bloquear.
+      const [twin] = await tx
         .select({ id: billingInvoicePayments.id })
         .from(billingInvoicePayments)
         .where(and(
@@ -201,11 +253,14 @@ export async function registerManualPaymentAction(input: unknown): Promise<Actio
           eq(billingInvoicePayments.amount, data.amount),
           eq(billingInvoicePayments.paymentDate, data.paymentDate),
           eq(billingInvoicePayments.verificationStatus, "confirmed"),
-          sql`${billingInvoicePayments.createdAt} > now() - interval '2 minutes'`,
         ))
         .limit(1)
-      if (recentTwin) {
-        throw new Error("Ya se registró un pago idéntico hace un momento. Si realmente son dos pagos distintos, espera dos minutos o diferéncialos en la nota.")
+      if (twin && !data.acknowledgeDuplicate) {
+        throw new DuplicatePaymentWarning(
+          twin.id,
+          "Ya existe un pago idéntico en esta factura (mismo monto y misma fecha). "
+          + "Revísalo antes de continuar: si de verdad son dos pagos distintos, vuelve a confirmar.",
+        )
       }
 
       await tx.insert(billingInvoicePayments).values({
@@ -221,6 +276,7 @@ export async function registerManualPaymentAction(input: unknown): Promise<Actio
         confirmedBy: session.user.id,
         confirmedAt: now,
         notes: data.notes ?? null,
+        clientRequestId: data.clientRequestId ?? null,
         createdBy: session.user.id,
       })
 
@@ -249,6 +305,11 @@ export async function registerManualPaymentAction(input: unknown): Promise<Actio
     revalidatePath("/facturacion")
     return { ok: true, message: `Pago registrado. La factura queda ${PAYMENT_STATUS_TEXT[snapshot.paymentStatus]}.` }
   } catch (err) {
+    // La advertencia de duplicado no es un error de escritura: no se registra
+    // como fallo y el formulario la convierte en una segunda confirmación.
+    if (err instanceof DuplicatePaymentWarning) {
+      return { ok: false, message: err.message, needsDuplicateAck: true }
+    }
     const message = safeActionMessage(err, "No se pudo registrar el pago")
     logger.error("[billing/registerManualPayment]", { message })
     return { ok: false, message }
@@ -383,7 +444,14 @@ export async function resolvePaymentSuggestionAction(input: unknown): Promise<Ac
  * quién revirtió y por qué; el pago no se borra, se marca descartado.
  */
 export async function revertPaymentAction(input: unknown): Promise<ActionResult> {
-  const { session, error } = await guardPermission("billing:confirm_payments")
+  /*
+   * COB-002 (auditoría 2026-09-14), patrón P9: revertir compartía permiso con
+   * registrar y confirmar, de modo que una persona podía imputar un pago
+   * inexistente y deshacerlo ella misma si alguien lo notaba. Ahora son dos
+   * controles distintos —el permiso y la persona—, como en las propuestas de
+   * venta y en la verificación de una CAPA.
+   */
+  const { session, error } = await guardPermission("billing:revert_payments")
   if (error) return error
 
   const parsed = z.object({
@@ -400,12 +468,20 @@ export async function revertPaymentAction(input: unknown): Promise<ActionResult>
         eq(billingInvoicePayments.id, parsed.data.paymentId),
         eq(billingInvoicePayments.verificationStatus, "confirmed"),
       ),
-      columns: { id: true, invoiceId: true, bankTransactionId: true, amount: true },
+      columns: { id: true, invoiceId: true, bankTransactionId: true, amount: true, confirmedBy: true },
     })
     if (!payment) return { ok: false, message: "El pago no existe o no está confirmado" }
     if (!(await canReachInvoice(session, payment.invoiceId))) {
       return { ok: false, message: "No tienes acceso a esta factura" }
     }
+    // El segundo control: tener el permiso no basta si fue esta misma persona
+    // quien confirmó el pago. Una confirmación automática no tiene actor y no
+    // bloquea a nadie.
+    const segregation = requireDifferentActor(
+      { actedByUserId: payment.confirmedBy, actorUserId: session.user.id },
+      "Revertir un pago",
+    )
+    if (!segregation.ok) return { ok: false, message: segregation.message ?? "Sin autorización" }
 
     const now = new Date().toISOString()
     // Mismo lock de fila que confirmPaymentSuggestion: revertir también

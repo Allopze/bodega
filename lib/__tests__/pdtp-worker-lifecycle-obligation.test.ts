@@ -142,10 +142,30 @@ describe("deriveWorkerLifecycleEvents", () => {
     expect(events[0]!.kind).toBe("traslado")
   })
 
-  it("una baja, un renombre o mover a alguien inactivo no son entradas", () => {
-    expect(deriveWorkerLifecycleEvents({ worksiteId: WS_A, isActive: true }, { id: "w1", worksiteId: WS_A, isActive: false }, at)).toEqual([])
+  it("un renombre o mover a alguien inactivo no son eventos", () => {
     expect(deriveWorkerLifecycleEvents({ worksiteId: WS_A, isActive: true }, { id: "w1", worksiteId: WS_A, isActive: true }, at)).toEqual([])
     expect(deriveWorkerLifecycleEvents({ worksiteId: WS_A, isActive: false }, { id: "w1", worksiteId: WS_B, isActive: false }, at)).toEqual([])
+  })
+
+  /**
+   * E2E-007 (auditoría 2026-09-14): la derivación empezaba con
+   * `if (!after.isActive) return []`, de modo que salir de la dotación no
+   * producía ningún hecho. La salida es un hecho tanto como la entrada; lo que
+   * no puede es alimentar al conector de entrada.
+   */
+  it("salir de la dotación es un evento, y apunta a la faena de la que se sale", () => {
+    const events = deriveWorkerLifecycleEvents(
+      { worksiteId: WS_A, isActive: true },
+      { id: "w1", worksiteId: WS_B, isActive: false },
+      at,
+    )
+    expect(events).toEqual([{ workerId: "w1", worksiteId: WS_A, kind: "baja", occurredAt: at }])
+  })
+
+  it("desactivar a quien ya estaba inactivo no repite la baja", () => {
+    expect(deriveWorkerLifecycleEvents({ worksiteId: WS_A, isActive: false }, { id: "w1", worksiteId: WS_A, isActive: false }, at)).toEqual([])
+    // Crear a alguien ya inactivo tampoco es una baja: nunca estuvo dentro.
+    expect(deriveWorkerLifecycleEvents(null, { id: "w1", worksiteId: WS_A, isActive: false }, at)).toEqual([])
   })
 })
 
@@ -171,6 +191,21 @@ describe("onWorkerEnteredDotacion", () => {
     // La N°16 existe en el programa y a propósito no se le abre nada: todavía
     // no hay curso que pueda cerrarla.
     expect(rows.some((r) => r.activityId === activityId(NOT_YET_OPENED))).toBe(false)
+  })
+
+  /**
+   * E2E-007: ahora que la baja produce evento, el conector de *entrada* tiene
+   * que descartarla explícitamente. Sin el filtro abriría las obligaciones de
+   * onboarding de una persona que acaba de irse.
+   */
+  it("una baja no abre obligaciones de entrada", async () => {
+    const result = await onWorkerEnteredDotacion([{
+      workerId: "w-1", worksiteId: WS_A, kind: "baja",
+      occurredAt: `${PROGRAM_YEAR}-05-06T12:00:00.000Z`,
+    }], USER_ID)
+
+    expect(result.opened).toBe(0)
+    expect(await obligations()).toHaveLength(0)
   })
 
   it("guardar dos veces la misma alta no duplica", async () => {

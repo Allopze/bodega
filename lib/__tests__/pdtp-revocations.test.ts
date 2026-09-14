@@ -235,6 +235,83 @@ describe("cancelGrdMeeting revoca la N°81", () => {
   })
 })
 
+/**
+ * EMG-001 (auditoría 2026-09-14), patrón P4: el cierre de un simulacro
+ * registraba participantes, duración, evacuación, observaciones y resultado, y
+ * abría una CAPA si hacía falta — pero **no tenía dónde adjuntar el respaldo
+ * del propio simulacro**, y el conector PDTP acreditaba con el rótulo sintético
+ * «Simulacro completado: <id>». El acta es la prueba que se exhibe en una
+ * fiscalización.
+ */
+describe("EMG-001 — el acta del simulacro", () => {
+  async function planConSimulacro(titulo: string) {
+    const plan = await createEmergencyPlan({ worksiteId: WS_ID, title: titulo }, EMERGENCY_MANAGER)
+    await addEmergencyScenario({
+      planId: plan.id, type: "incendio_estructural", title: "Incendio de prueba",
+      responseProcedure: "Activar alarma y evacuar por la ruta señalizada del sector.",
+    }, EMERGENCY_MANAGER)
+    await addEmergencyRole({
+      planId: plan.id, roleName: "Jefe de emergencia", assigneeWorkerId: WORKER_ID,
+    }, EMERGENCY_MANAGER)
+    const approved = await approveEmergencyPlan({ planId: plan.id, expectedVersion: plan.version }, EMERGENCY_APPROVER)
+    await setEmergencyPlanPdtpActivities({
+      planId: plan.id, expectedVersion: approved.version, pdtpActivityNumbers: [84],
+    }, EMERGENCY_MANAGER)
+    return scheduleEmergencyDrill({
+      planId: plan.id, scenarioType: "incendio_estructural",
+      scheduledFor: new Date(Date.now() - 60_000).toISOString(),
+    }, EMERGENCY_MANAGER)
+  }
+
+  const cerrar = (drill: { id: string; version: number }, extra: Record<string, unknown> = {}) =>
+    completeEmergencyDrill({
+      drillId: drill.id, expectedVersion: drill.version, executedAt: new Date().toISOString(),
+      outcome: "satisfactory", participants: [{ workerId: WORKER_ID, present: true }], ...extra,
+    }, EMERGENCY_MANAGER)
+
+  it("se puede cerrar sin acta: hay simulacros cuyo respaldo es el registro de participantes", async () => {
+    const drill = await planConSimulacro("Plan sin acta")
+    const cerrado = await cerrar(drill)
+    expect(cerrado.status).toBe("completed")
+    expect(cerrado.evidencePath).toBeNull()
+  })
+
+  it("pero ahora existe el lugar, y el acta queda con su checksum", async () => {
+    const drill = await planConSimulacro("Plan con acta")
+    const cerrado = await cerrar(drill, {
+      evidencePath: "storage/pdtp-evidence/acta-simulacro.pdf",
+      evidenceChecksumSha256: "d".repeat(64),
+    })
+    expect(cerrado.evidencePath).toBe("storage/pdtp-evidence/acta-simulacro.pdf")
+    expect(cerrado.evidenceChecksumSha256).toBe("d".repeat(64))
+  })
+
+  it("un acta sin checksum no se acepta: un archivo sin huella no es evidencia verificable", async () => {
+    const drill = await planConSimulacro("Plan acta sin huella")
+    await expect(cerrar(drill, { evidencePath: "storage/pdtp-evidence/acta.pdf" })).rejects.toThrow()
+  })
+
+  it("ni una ruta inventada, aunque traiga checksum", async () => {
+    const drill = await planConSimulacro("Plan ruta inventada")
+    await expect(cerrar(drill, {
+      evidencePath: "el acta está en la carpeta compartida",
+      evidenceChecksumSha256: "e".repeat(64),
+    })).rejects.toThrow()
+  })
+
+  it("con acta, la acreditación PDTP referencia el archivo y no el rótulo sintético", async () => {
+    const drill = await planConSimulacro("Plan acreditación")
+    await cerrar(drill, {
+      evidencePath: "storage/pdtp-evidence/acta-acreditada.pdf",
+      evidenceChecksumSha256: "f".repeat(64),
+    })
+    // `evidenceRef` vive en el evento de cumplimiento, que es lo que el
+    // conector escribe; la ejecución es su consecuencia.
+    const eventos = await inMemoryDb.select().from(schema.pdtpFulfillmentEvents)
+    expect(eventos.at(-1)?.evidenceRef).toBe("storage/pdtp-evidence/acta-acreditada.pdf")
+  })
+})
+
 describe("cancelEmergencyDrill revoca la N°84", () => {
   it("defensa en profundidad: hoy sólo un simulacro 'scheduled' se cancela, el mismo estado que completeEmergencyDrill excluye", async () => {
     const plan = await createEmergencyPlan({ worksiteId: WS_ID, title: "Plan de emergencia de prueba" }, EMERGENCY_MANAGER)

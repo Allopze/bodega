@@ -249,8 +249,23 @@ export function OcActions({
             imprimir, y al confirmarlo la OC queda enviada al proveedor y pasa a
             recepción. */}
         {status === "draft" && canSend && (
-          <form action={issueAction} className="w-full">
+          <form action={issueAction} className="w-full space-y-2">
             <input type="hidden" name="orderId" value={orderId} />
+            {/* OC-002 (auditoría 2026-09-14): la plataforma no despacha la OC —no
+                hay correo ni portal integrado—, así que al emitir sólo constaba
+                la fecha. Este campo es la única forma de que quede escrito cómo
+                salió realmente. Opcional: exigirlo es política de compras. */}
+            <label htmlFor="constancia-envio" className="block text-xs text-(--color-text-muted)">
+              Constancia de envío al proveedor (opcional)
+            </label>
+            <input
+              id="constancia-envio"
+              name="constanciaEnvio"
+              type="text"
+              maxLength={200}
+              placeholder="Correo enviado, acuse recibido, entrega en mano…"
+              className="w-full rounded-(--radius) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm"
+            />
             <SubmitButton label="Emitir y enviar" loadingLabel="Enviando..." variant="primary" className="w-full" />
           </form>
         )}

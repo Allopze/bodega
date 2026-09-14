@@ -52,6 +52,7 @@ export async function GET(
     const [row] = await db.select({
       id: preventionRiskMapLayouts.id,
       imageMimeType: preventionRiskMapLayouts.imageMimeType,
+      status: preventionRiskMapLayouts.status,
     })
       .from(preventionRiskMapLayouts)
       .where(where)
@@ -60,13 +61,28 @@ export async function GET(
       return NextResponse.json({ error: "Plano no encontrado" }, { status: 404 })
     }
 
+    // MIP-002: la consulta no miraba el estado, así que un plano ARCHIVADO se
+    // servía exactamente igual que el vigente. Seguir sirviéndolo es
+    // deliberado —el histórico de planos es evidencia—, pero indistinguible no:
+    // quien lo pide tiene que poder saber que está mirando una versión
+    // superada. Se declara en la respuesta y no se cachea, porque un plano
+    // archivado no debe quedar cinco minutos en el caché del navegador
+    // ocupando el lugar del vigente.
+    //
+    // PENDIENTE DE DECISIÓN: cuánto tiempo se conserva un plano archivado. La
+    // plataforma no declara política de retención para el mapa de riesgos, así
+    // que aquí no se borra nada por estado; el recolector
+    // (`cleanupRiskMapOrphans`) sólo elimina archivos que NINGUNA fila
+    // referencia.
+    const archived = row.status !== "active"
     const buffer = await fs.readFile(absolutePath)
     const contentType = safeImageContentType(row.imageMimeType)
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
         "Content-Type": contentType,
-        "Cache-Control": "private, max-age=300",
+        "Cache-Control": archived ? "private, no-store" : "private, max-age=300",
+        "X-Plano-Estado": archived ? "archivado" : "vigente",
       },
     })
   } catch (err) {

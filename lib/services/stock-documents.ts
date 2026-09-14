@@ -35,6 +35,17 @@ export interface StockDocumentRow {
   authorName:   string | null
   /** Sólo los conteos tienen detalle rico; el resto es una línea. */
   itemCount:    number | null
+  /**
+   * STK-003 (auditoría 2026-09-14), patrón P7: la bitácora mezclaba lo
+   * ejecutado con lo planificado. Un conteo en borrador —que explícitamente
+   * **no** movió stock— se listaba con su folio CON-… junto a los ajustes y las
+   * bajas que sí lo movieron, y quien usara la lista como evidencia de qué se
+   * movió contaba de más.
+   *
+   * `false` sólo en un conteo en borrador. Los demás documentos existen porque
+   * ya se ejecutaron; no hay borradores de un ajuste ni de una baja.
+   */
+  applied:      boolean
 }
 
 export interface StockDocumentFilters {
@@ -101,7 +112,8 @@ function documentsCte(): SQL {
       sa.quantity::real          AS quantity,
       sa.reason::text            AS reason,
       u.name::text               AS author_name,
-      NULL::int                  AS item_count
+      NULL::int                  AS item_count,
+      TRUE                       AS applied
     FROM stock_adjustments sa
     JOIN worksites w ON w.id = sa.worksite_id
     JOIN products  p ON p.id = sa.product_id
@@ -112,7 +124,7 @@ function documentsCte(): SQL {
     SELECT
       sr.id::text, sr.code::text, 'devolucion'::text, sr.created_at,
       sr.worksite_id::text, w.name::text, p.name::text,
-      sr.quantity::real, sr.reason::text, u.name::text, NULL::int
+      sr.quantity::real, sr.reason::text, u.name::text, NULL::int, TRUE
     FROM stock_returns sr
     JOIN worksites w ON w.id = sr.worksite_id
     JOIN products  p ON p.id = sr.product_id
@@ -124,7 +136,8 @@ function documentsCte(): SQL {
       pic.id::text, pic.code::text, 'conteo'::text, coalesce(pic.closed_at, pic.created_at),
       pic.worksite_id::text, w.name::text, NULL::text,
       NULL::real, pic.notes::text, u.name::text,
-      (SELECT count(*)::int FROM physical_inventory_count_items i WHERE i.count_id = pic.id)
+      (SELECT count(*)::int FROM physical_inventory_count_items i WHERE i.count_id = pic.id),
+      (pic.status = 'closed')
     FROM physical_inventory_counts pic
     JOIN worksites w ON w.id = pic.worksite_id
     LEFT JOIN users u ON u.id = coalesce(pic.closed_by, pic.counted_by)
@@ -164,6 +177,7 @@ export async function listStockDocuments(filters: StockDocumentFilters): Promise
     reason:       row.reason === null || row.reason === undefined ? null : String(row.reason),
     authorName:   row.author_name === null || row.author_name === undefined ? null : String(row.author_name),
     itemCount:    row.item_count === null || row.item_count === undefined ? null : Number(row.item_count),
+    applied:      row.applied !== false,
   }))
 }
 

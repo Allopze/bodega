@@ -24,6 +24,10 @@ import {
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { encryptPreventionPayload } from "@/lib/security/prevention-field-encryption"
+import {
+  findContextualSubjectMarkers,
+  findDirectSubjectMarkers,
+} from "@/lib/services/prevention-privacy-redaction"
 import type { RequestContext } from "@/lib/services/prevention-documents/utils"
 
 const executionSchema = z.object({
@@ -211,13 +215,34 @@ export async function executePreventionPrivacyRight(args: {
         const replacement = z.record(z.string(), z.unknown()).parse(input.changes[payloadKey])
         const serialized = JSON.stringify(replacement)
         if (Buffer.byteLength(serialized, "utf8") > 150_000) throw new Error("El contenido reservado supera el máximo permitido.")
+        /*
+         * PRI-002 (auditoría 2026-09-14): la comprobación comparaba el RUT, el
+         * nombre y el apellido tal como estaban guardados, en minúsculas y de
+         * forma literal. Bastaba escribir el RUT con puntos, el apellido sin
+         * tilde, o dejar sólo una mitad de un apellido compuesto, para que la
+         * supresión se diera por buena; y el id técnico del trabajador ni
+         * siquiera se miraba. Ahora ambos lados se normalizan al mismo alfabeto
+         * y el conjunto de identificadores directos cubre todo lo que la
+         * plataforma guarda de la persona (ver prevention-privacy-redaction.ts).
+         */
+        let contextualMarkers: string[] = []
         if (input.operation === "deletion") {
-          const subjectMarkers = [subject.rut, subject.firstName, subject.lastName]
-            .filter(Boolean).map((value) => String(value).toLocaleLowerCase("es"))
-          const normalized = serialized.toLocaleLowerCase("es")
-          if (subjectMarkers.some((marker) => marker.length >= 3 && normalized.includes(marker))) {
+          const directMarkers = findDirectSubjectMarkers(serialized, subject)
+          if (directMarkers.length > 0) {
             throw new Error("El payload redactado aún contiene identificadores directos del titular.")
           }
+          /*
+           * Cuasi-identificadores (cargo, faena): NO bloquean —la plataforma no
+           * declara hasta dónde llega la anonimización exigible y rechazar toda
+           * mención de la faena haría irredactable un caso que trata de esa
+           * faena—, pero quedan anotados en la ejecución para que la
+           * reidentificación por contexto sea revisable. Decisión pendiente.
+           */
+          const [worksite] = await tx.select({ name: worksites.name }).from(worksites)
+            .where(eq(worksites.id, reservedCase.worksiteId)).limit(1)
+          contextualMarkers = findContextualSubjectMarkers(serialized, subject, {
+            worksiteName: worksite?.name ?? null,
+          })
         }
         const encrypted = encryptPreventionPayload(replacement, `reserved:${reservedCase.id}`)
         await tx.update(preventionReservedCases).set({ ...encrypted, updatedAt: now })
@@ -230,7 +255,15 @@ export async function executePreventionPrivacyRight(args: {
           }).where(eq(preventionReservedCaseSubjects.id, subjectLink.id))
         }
         after = { caseCiphertext: encrypted.encryptedPayload, subjectLinkRemoved: input.operation === "deletion" }
-        details = { payloadReencrypted: true, subjectLinkRemoved: input.operation === "deletion", contentStoredInAudit: false }
+        details = {
+          payloadReencrypted: true,
+          subjectLinkRemoved: input.operation === "deletion",
+          contentStoredInAudit: false,
+          // PRI-002: lista de cuasi-identificadores que sobrevivieron (nunca su
+          // contenido, sólo la etiqueta) para que la revisión posterior sepa
+          // dónde puede quedar reidentificación por contexto.
+          quasiIdentifiersRetained: contextualMarkers,
+        }
       } else {
         const restriction = await insertProcessingRestriction(tx, {
           requestId: requestRow.id, subjectWorkerId: subject.id, domain: input.domain,

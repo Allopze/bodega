@@ -67,6 +67,8 @@ export interface PermitBlocker {
     | "jsa_missing"
     | "crew_empty"
     | "crew_competency"
+    /** PER-001: integrante de la cuadrilla que no ha acusado el AST. */
+    | "crew_ack_missing"
     | "window_expired"
   detail: string
 }
@@ -75,6 +77,11 @@ export interface PermitTypeSpec {
   requiresIsolation: boolean
   requiresMeasurement: boolean
   requiresJsa: boolean
+  /**
+   * PER-001: ¿este tipo exige que cada integrante de la cuadrilla haya acusado
+   * el AST antes de activar? Configurable por tipo; ver `permits.ts` del schema.
+   */
+  requiresCrewAcknowledgement: boolean
   measurementValidityMinutes: number | null
   /** `null` = este tipo no exige calibración vigente del instrumento (opt-in). */
   measurementCalibrationValidityDays: number | null
@@ -108,6 +115,12 @@ export interface PermitCrewRow {
   id: string
   workerId: string
   label: string
+  /**
+   * PER-001: momento del acuse del AST (`null` = no ha acusado). Se pide
+   * explícito y no opcional para que ningún llamador pueda omitirlo y obtener
+   * por silencio un permiso habilitado sin acuses, que es justo el defecto.
+   */
+  acknowledgedAt: string | null
 }
 
 /**
@@ -127,6 +140,12 @@ export function assessPermitActivation(args: {
   jsaStepCount: number
   crew: PermitCrewRow[]
   crewWithoutCompetency: PermitCrewRow[]
+  /**
+   * `CAP-001`: los que sólo incumplen un requisito declarado «advertencia».
+   * Opcional para no romper a los llamadores que aún no lo pasan; su ausencia
+   * significa «ninguno», no «no se sabe».
+   */
+  crewWithCompetencyWarning?: PermitCrewRow[]
   plannedEndAt: string
   now: string
 }): { allowed: boolean; blockers: PermitBlocker[] } {
@@ -207,8 +226,35 @@ export function assessPermitActivation(args: {
   if (args.crew.length === 0) {
     blockers.push({ kind: "crew_empty", detail: "El permiso no tiene cuadrilla asignada." })
   }
+  /*
+   * CAP-001 (auditoría 2026-09-14): sólo bloquea la falta de una competencia
+   * declarada **bloqueante**. Antes bloqueaba cualquiera, incluidas las que el
+   * catálogo marcaba como advertencia, así que la marca decidía al revés de lo
+   * que decía.
+   */
   for (const member of args.crewWithoutCompetency) {
-    blockers.push({ kind: "crew_competency", detail: `${member.label} no tiene vigente una competencia exigida por este permiso.` })
+    blockers.push({ kind: "crew_competency", detail: `${member.label} no tiene vigente una competencia BLOQUEANTE exigida por este permiso.` })
+  }
+
+  /*
+   * PER-001 (auditoría 2026-09-14): la lista de bloqueadores no incluía el
+   * acuse del AST. El acuse existía —sólo el propio integrante, de un solo uso,
+   * sellado con SHA-256— pero era opcional: el permiso pasaba a `active` con
+   * cero acuses, de modo que el registro de que la cuadrilla fue informada de
+   * los riesgos no condicionaba la autorización, a diferencia de los otros doce
+   * controles. Ahora bloquea, y el tipo de permiso decide si lo exige.
+   *
+   * DECISIÓN DE PRODUCTO PENDIENTE: el valor por defecto para los tipos nuevos
+   * es «exigir» (columna `requires_crew_acknowledgement DEFAULT true`) y los
+   * tipos ya existentes heredaron su `requiresJsa`. Que ese default sea el
+   * correcto para toda faena, y si debe existir además una vía de excepción
+   * motivada del supervisor, no lo declara la plataforma en ninguna parte.
+   */
+  if (args.type.requiresCrewAcknowledgement) {
+    for (const member of args.crew) {
+      if (member.acknowledgedAt) continue
+      blockers.push({ kind: "crew_ack_missing", detail: `${member.label} no ha acusado el AST del permiso.` })
+    }
   }
 
   if (Date.parse(args.plannedEndAt) <= Date.parse(args.now)) {

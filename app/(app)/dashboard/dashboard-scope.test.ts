@@ -4,6 +4,7 @@ import {
   dashboardScopeHref,
   intersectWorksiteScope,
   parseDashboardScope,
+  periodWindowHref,
   scopedWorksiteId,
 } from "./dashboard-scope"
 import { availableDashboardViews } from "./dashboard-views"
@@ -149,5 +150,52 @@ describe("la vista viaja en la URL", () => {
 
   it("toma el primer valor si `vista` viene repetida", () => {
     expect(parseDashboardScope({ vista: ["trabajo", "flota"] }, WORKSITES, ALL_VIEWS).view).toBe("trabajo")
+  })
+})
+
+/**
+ * DASH-002 (auditoría 2026-09-14): los KPI de período (Solicitudes creadas, OC
+ * emitidas, Inversión) contaban la faena elegida pero abrían la lista con sólo
+ * `desde` y `hasta`. El destino perdía la faena y podía mostrar una población
+ * más amplia que la cifra pulsada.
+ *
+ * `pendientesHref` ya conservaba el alcance; estas pruebas fijan que el helper
+ * de ventana temporal haga lo mismo. Antes del arreglo el href era
+ * `/compras?desde=…&hasta=…` sin `faena`.
+ */
+describe("periodWindowHref (DASH-002)", () => {
+  // 2026-05-20 en Chile: mes = mayo, trimestre = abr-jun, año = 2026.
+  const NOW = new Date("2026-05-20T15:00:00Z")
+
+  it("propaga la faena elegida al destino, junto con la ventana del período", () => {
+    const scope = parseDashboardScope({ faena: "ws-sur" }, WORKSITES, ALL_VIEWS)
+    const href = periodWindowHref(scope, "/compras", NOW)
+    const params = new URLSearchParams(href.split("?")[1])
+
+    expect(href.startsWith("/compras?")).toBe(true)
+    expect(params.get("faena")).toBe("ws-sur")
+    expect(params.get("desde")).toBe("2026-05-01")
+    expect(params.get("hasta")).toBe("2026-06-01")
+  })
+
+  it("con alcance «todas» no inventa un filtro de faena", () => {
+    const scope = parseDashboardScope({}, WORKSITES, ALL_VIEWS)
+    expect(periodWindowHref(scope, "/solicitudes", NOW))
+      .toBe("/solicitudes?desde=2026-05-01&hasta=2026-06-01")
+  })
+
+  it("la ventana sigue al período elegido y la faena se conserva igual", () => {
+    const trimestre = parseDashboardScope({ faena: "ws-norte", periodo: "trimestre" }, WORKSITES, ALL_VIEWS)
+    expect(periodWindowHref(trimestre, "/compras", NOW))
+      .toBe("/compras?desde=2026-04-01&hasta=2026-07-01&faena=ws-norte")
+
+    const anio = parseDashboardScope({ faena: "ws-norte", periodo: "anio" }, WORKSITES, ALL_VIEWS)
+    expect(periodWindowHref(anio, "/compras", NOW))
+      .toBe("/compras?desde=2026-01-01&hasta=2027-01-01&faena=ws-norte")
+  })
+
+  it("una faena no autorizada cae a «todas» y tampoco viaja en el href", () => {
+    const scope = parseDashboardScope({ faena: "ws-ajena" }, WORKSITES, ALL_VIEWS)
+    expect(periodWindowHref(scope, "/compras", NOW)).not.toContain("faena=")
   })
 })

@@ -65,6 +65,7 @@ vi.mock("@/app/(app)/compras/actions.helpers", () => ({
 }))
 
 import { issueAndSendOrderAction, cancelOrderAction, closeOrderAction, deleteOrderAction, createOrderAction } from "@/app/(app)/compras/actions"
+import { db } from "@/db"
 import * as purchasing from "@/lib/services/purchasing"
 import type { ActionState } from "@/lib/validation/operations"
 
@@ -103,6 +104,70 @@ describe("issueAndSendOrderAction", () => {
     const res = await issueAndSendOrderAction(prevState, fd)
     expect(res.ok).toBe(false)
     expect(res.message).toContain("Orden no especificada")
+  })
+
+  /**
+   * `vi.resetAllMocks()` vacía también el `db.select` de la factory, y las
+   * pruebas de arriba nunca llegan a la consulta. Estas sí: la acción lee el
+   * resumen de la OC y el conteo de ítems antes de emitir.
+   */
+  function stubOrderSummaryQueries() {
+    const chain = (rows: unknown[]) => {
+      const link: Record<string, unknown> = {}
+      link.from = () => link
+      link.innerJoin = () => link
+      link.where = () => link
+      link.then = (onOk: (v: unknown) => unknown) => Promise.resolve(rows).then(onOk)
+      return link
+    }
+    let call = 0
+    vi.mocked(db.select).mockImplementation((() => (call++ === 0
+      ? chain([{ code: "OC-001", worksiteName: "Faena", supplierName: "Prov" }])
+      : chain([{ n: 3 }]))) as never)
+  }
+
+  /*
+   * OC-002 (auditoría 2026-09-14): el aviso a Recepción decía siempre "ítems
+   * enviados al proveedor X" aunque la plataforma no despacha nada por sí
+   * misma. Recepción abría la cola de una OC que el proveedor podía no
+   * conocer, y nadie podía distinguirlo de un despacho real.
+   */
+  it("no afirma a Recepción que la OC salió cuando no hay constancia ni contacto", async () => {
+    vi.mocked(purchasing.issueAndSendOrder).mockResolvedValue({
+      sentTo: null, evidence: null, hasDispatchEvidence: false,
+      summary: "Emitida sin constancia de envío: Prov no tiene contacto registrado",
+    })
+    stubOrderSummaryQueries()
+    const fd = new FormData()
+    fd.set("orderId", "oc-1")
+
+    await expect(issueAndSendOrderAction(prevState, fd)).rejects.toThrow("NEXT_REDIRECT")
+
+    const { notifyManyUser } = await import("@/lib/services/notifications")
+    expect(notifyManyUser).toHaveBeenCalledWith([], expect.objectContaining({
+      body: expect.stringContaining("sin constancia de envío"),
+    }))
+    expect(vi.mocked(notifyManyUser).mock.calls[0]![1].body).not.toMatch(/enviados al proveedor/)
+  })
+
+  it("traslada la constancia declarada al aviso de Recepción", async () => {
+    vi.mocked(purchasing.issueAndSendOrder).mockResolvedValue({
+      sentTo: "ventas@prov.cl", evidence: "Correo 4821 con acuse",
+      hasDispatchEvidence: true, summary: "Enviada a Prov (ventas@prov.cl). Constancia: Correo 4821 con acuse",
+    })
+    stubOrderSummaryQueries()
+    const fd = new FormData()
+    fd.set("orderId", "oc-1")
+    fd.set("constanciaEnvio", "  Correo 4821 con acuse  ")
+
+    await expect(issueAndSendOrderAction(prevState, fd)).rejects.toThrow("NEXT_REDIRECT")
+
+    expect(purchasing.issueAndSendOrder).toHaveBeenCalledWith(
+      "oc-1", "user-1", "all",
+      expect.objectContaining({ dispatchEvidence: "Correo 4821 con acuse" }),
+    )
+    const { notifyManyUser } = await import("@/lib/services/notifications")
+    expect(vi.mocked(notifyManyUser).mock.calls[0]![1].body).toContain("Correo 4821 con acuse")
   })
 })
 

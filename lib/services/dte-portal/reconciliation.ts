@@ -18,6 +18,7 @@ import { logger } from "@/lib/logger"
 import { localDateToISO } from "@/lib/sst/date"
 import { normalizeFolio, folioRutKey } from "./folio-match"
 import { AUTO_LINK_CLP_TOLERANCE } from "@/lib/services/purchasing-module/money-tolerance"
+import { invoiceNotVoided } from "@/lib/services/purchasing-module/invoice-scope"
 
 // ── Tipos de resultado ──────────────────────────────────────────────────────
 
@@ -264,7 +265,12 @@ export async function matchToPurchaseOrderInvoices(
   if (folios.length === 0) return matches
 
   const invoices = await db.query.purchaseOrderInvoices.findMany({
-    where: sql`ltrim(regexp_replace(coalesce(${purchaseOrderInvoices.invoiceNumber}, ''), '[^0-9]', '', 'g'), '0') IN ${folios}`,
+    // FAC-002: una factura anulada no reclama su folio; el DTE puede
+    // vincularse a la que la reemplace.
+    where: and(
+      sql`ltrim(regexp_replace(coalesce(${purchaseOrderInvoices.invoiceNumber}, ''), '[^0-9]', '', 'g'), '0') IN ${folios}`,
+      invoiceNotVoided,
+    ),
     columns: {
       id: true,
       invoiceNumber: true,
@@ -397,7 +403,7 @@ export async function matchInvoiceToDteDocument(
   invoiceId: string,
 ): Promise<DteReconciliationMatch | null> {
   const invoice = await db.query.purchaseOrderInvoices.findFirst({
-    where: eq(purchaseOrderInvoices.id, invoiceId),
+    where: and(eq(purchaseOrderInvoices.id, invoiceId), invoiceNotVoided),
     columns: { id: true, invoiceNumber: true, amount: true },
     with: {
       purchaseOrder: {
@@ -492,7 +498,7 @@ async function linkDteToPurchaseOrderInvoice(dteId: string, invoiceId: string): 
     return await db.transaction(async (tx) => {
       const [invoice] = await tx.select({ id: purchaseOrderInvoices.id })
         .from(purchaseOrderInvoices)
-        .where(eq(purchaseOrderInvoices.id, invoiceId))
+        .where(and(eq(purchaseOrderInvoices.id, invoiceId), invoiceNotVoided))
         .for("update")
         .limit(1)
       if (!invoice) return false
@@ -736,7 +742,7 @@ async function countDiscrepancies(
 
   const [invoices, loads] = await Promise.all([
     ocIds.length > 0
-      ? db.query.purchaseOrderInvoices.findMany({ where: inArray(purchaseOrderInvoices.id, ocIds), columns: { id: true, amount: true } })
+      ? db.query.purchaseOrderInvoices.findMany({ where: and(inArray(purchaseOrderInvoices.id, ocIds), invoiceNotVoided), columns: { id: true, amount: true } })
       : Promise.resolve([]),
     fuelIds.length > 0
       ? db.query.fuelLoads.findMany({ where: inArray(fuelLoads.id, fuelIds), columns: { id: true, totalAmount: true } })

@@ -21,6 +21,13 @@ export const repuestoQuotations = pgTable("repuesto_quotations", {
   fileName:         text("file_name").notNull(),
   filePath:         text("file_path").notNull(),
   fileSize:         text("file_size"),
+  /**
+   * COT-004: el MIME que la validación por bytes mágicos declaró al cargar.
+   * Antes se descartaba y la descarga adivinaba por la extensión del nombre
+   * que mandó el cliente, así que toda imagen válida salía como binario
+   * genérico. NULL sólo en las filas anteriores a la migración 0306.
+   */
+  mimeType:         text("mime_type"),
   uploadedBy:       text("uploaded_by").references(() => users.id),
   // Quoted total (shown to the jefa during selection)
   totalAmount:      numeric("total_amount", { precision: 12, scale: 2, mode: "number" }).notNull(),
@@ -35,6 +42,12 @@ export const repuestoQuotations = pgTable("repuesto_quotations", {
   // Invariant: status from canonical set
   check("repuesto_quotations_status_valid", sql`
     ${table.status} IN ('pending', 'selected', 'rejected')
+  `),
+  // COT-004: nunca se sirve desde el origen de la aplicación un tipo que la
+  // carga no acepta. Una validación que sólo viviera en zod no protege a un
+  // camino de escritura futuro.
+  check("repuesto_quotations_mime_type_valid", sql`
+    ${table.mimeType} IS NULL OR ${table.mimeType} IN ('application/pdf', 'image/jpeg', 'image/png')
   `),
   // Invariant (LOG-4/DAT-4): a lo sumo una cotización ganadora por solicitud.
   // El código ya guarda el UPDATE con `status='pending'`; este índice cierra

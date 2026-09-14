@@ -132,12 +132,47 @@ export function classifyPair(a: InvoiceRow, b: InvoiceRow): DuplicatePair | null
 }
 
 /**
+ * Huella estable de la evidencia de un par, para saber si CAMBIÓ desde que
+ * alguien lo descartó (COB-001).
+ *
+ * `notes` queda fuera a propósito: son texto derivado de los mismos campos, y
+ * un cambio de redacción no es un cambio de evidencia.
+ */
+export function duplicateEvidenceFingerprint(
+  classification: DuplicateClassification,
+  evidence: DuplicateEvidence,
+): string {
+  return [
+    classification,
+    evidence.sameCounterparty,
+    evidence.sameTotal,
+    evidence.sameIssueDate,
+    evidence.daysApart,
+    evidence.sameDocType,
+    evidence.sameFolio,
+  ].join("|")
+}
+
+/**
  * Busca pares sospechosos y los registra. Idempotente: un par ya registrado
- * —abierto, fusionado o descartado— no se vuelve a crear.
+ * —abierto, fusionado o descartado con la MISMA evidencia— no se vuelve a
+ * crear.
+ *
+ * COB-001: antes la búsqueda del par existente no miraba el estado, así que un
+ * caso resuelto como `dismissed` ("no son el mismo documento") bloqueaba toda
+ * detección futura sobre esa pareja aunque la evidencia cambiara —la
+ * sincronización puede corregir después montos, fechas o tipo de documento y
+ * volverlos idénticos—. Un descarte equivocado era permanente y silencioso
+ * sobre el mecanismo que evita cobrar dos veces el mismo documento.
+ *
+ * La reapertura es objetiva y no reabre lo ya decidido: sólo cuando la huella
+ * de la evidencia difiere de la que estaba sobre la mesa al descartar. Un
+ * `merged` nunca se reabre (la descartada quedó anulada y ni siquiera entra al
+ * barrido).
  */
 export async function detectDuplicateCandidates(
   options: { direction?: "sale" | "purchase"; limit?: number } = {},
-): Promise<{ scanned: number; created: number; alreadyKnown: number }> {
+): Promise<{ scanned: number; created: number; alreadyKnown: number; reopened: number }> {
   const direction = options.direction ?? "sale"
 
   const invoices = await db
@@ -175,6 +210,7 @@ export async function detectDuplicateCandidates(
 
   let created = 0
   let alreadyKnown = 0
+  let reopened = 0
 
   for (const group of byCounterparty.values()) {
     if (group.length < 2) continue
@@ -186,8 +222,13 @@ export async function detectDuplicateCandidates(
         // Orden estable del par: evita registrar (A,B) y (B,A) como distintos.
         const [first, second] = [pair.invoiceId, pair.otherInvoiceId].sort() as [string, string]
 
-        const existing = await db
-          .select({ id: billingDuplicateCandidates.id })
+        const [existing] = await db
+          .select({
+            id: billingDuplicateCandidates.id,
+            status: billingDuplicateCandidates.status,
+            classification: billingDuplicateCandidates.classification,
+            evidence: billingDuplicateCandidates.evidence,
+          })
           .from(billingDuplicateCandidates)
           .where(or(
             and(eq(billingDuplicateCandidates.invoiceId, first), eq(billingDuplicateCandidates.otherInvoiceId, second)),
@@ -195,7 +236,41 @@ export async function detectDuplicateCandidates(
           ))
           .limit(1)
 
-        if (existing.length > 0) {
+        if (existing) {
+          const fingerprint = duplicateEvidenceFingerprint(pair.classification, pair.evidence)
+          const previous = duplicateEvidenceFingerprint(
+            existing.classification,
+            existing.evidence as DuplicateEvidence,
+          )
+          // COB-001: sólo un DESCARTE cuya evidencia ya no es la que se miró al
+          // descartar vuelve a la bandeja. El índice único del par impide
+          // insertar una segunda fila, así que se reabre la misma y se deja
+          // rastro en ambas facturas de por qué reaparece.
+          if (existing.status === "dismissed" && fingerprint !== previous) {
+            await db.update(billingDuplicateCandidates).set({
+              status: "open",
+              classification: pair.classification,
+              evidence: pair.evidence,
+              resolvedBy: null,
+              resolvedAt: null,
+            }).where(eq(billingDuplicateCandidates.id, existing.id))
+
+            for (const invoiceId of [first, second]) {
+              await recordInvoiceEvent(db, {
+                invoiceId,
+                eventType: "duplicate.reopened",
+                actorKind: "system",
+                detail: {
+                  candidateId: existing.id,
+                  otherInvoiceId: invoiceId === first ? second : first,
+                  previousEvidence: existing.evidence,
+                  evidence: pair.evidence,
+                },
+              })
+            }
+            reopened++
+            continue
+          }
           alreadyKnown++
           continue
         }
@@ -213,7 +288,7 @@ export async function detectDuplicateCandidates(
     }
   }
 
-  return { scanned: invoices.length, created, alreadyKnown }
+  return { scanned: invoices.length, created, alreadyKnown, reopened }
 }
 
 /**
@@ -443,7 +518,15 @@ export async function mergeDuplicate(input: {
   })
 }
 
-/** Descarta un candidato: no son el mismo documento. No vuelve a proponerse. */
+/**
+ * Descarta un candidato: no son el mismo documento.
+ *
+ * No vuelve a proponerse **mientras la evidencia siga siendo la misma**: si una
+ * sincronización posterior corrige montos, fechas o tipo de documento y el par
+ * pasa a parecerse de otro modo, `detectDuplicateCandidates` lo reabre
+ * (COB-001). Se conserva la evidencia tal como estaba al descartar, que es
+ * contra lo que se compara.
+ */
 export async function dismissDuplicate(candidateId: string, actorUserId: string): Promise<void> {
   await db.update(billingDuplicateCandidates).set({
     status: "dismissed",

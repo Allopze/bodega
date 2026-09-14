@@ -1,7 +1,26 @@
 import ExcelJS from "exceljs"
+import type { Session } from "next-auth"
+import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
 import type { ReportData, ReportSheet } from "./types"
 
-export async function buildXlsxBuffer(report: ReportData): Promise<ArrayBuffer> {
+/**
+ * Contexto opcional de trazabilidad del archivo.
+ *
+ * REP-001 / REP-002 (auditoría 2026-09-14): sin esto, el libro no decía quién lo
+ * generó ni con qué filtros, y un truncado por límite de filas sólo viajaba en
+ * una cabecera HTTP que el enlace de descarga no lee. Es opcional para no
+ * obligar a los exportadores que ya arman su propia hoja de metadatos.
+ */
+export interface XlsxBuildContext {
+  session: Session
+  filters?: object | null
+  from?: string | null
+  to?: string | null
+  /** Tope de filas aplicado por el llamador, para explicarlo en la advertencia. */
+  rowLimit?: number
+}
+
+export async function buildXlsxBuffer(report: ReportData, context?: XlsxBuildContext): Promise<ArrayBuffer> {
   const workbook = new ExcelJS.Workbook()
   workbook.creator = "Plataforma Chome"
   workbook.created = new Date()
@@ -23,6 +42,33 @@ export async function buildXlsxBuffer(report: ReportData): Promise<ArrayBuffer> 
   const usedNames = new Set<string>()
   for (const sheet of sheets) {
     addWorksheet(workbook, { ...sheet, worksheetName: safeWorksheetName(sheet.worksheetName, usedNames) })
+  }
+
+  // REP-001: el truncado tiene que ser evidente DENTRO del archivo. Mismo
+  // criterio que la exportación de trazabilidad, que ya lo resolvió así.
+  if (report.rowLimitApplied) {
+    addWorksheet(workbook, {
+      worksheetName: safeWorksheetName("Advertencias", usedNames),
+      headers: ["Advertencia", "Detalle"],
+      rows: [[
+        "Archivo truncado",
+        context?.rowLimit
+          ? `Se alcanzó el límite de ${context.rowLimit} filas: esta copia NO contiene el total del período. Acota con un rango de fechas, una faena o un estado para incluir el resto.`
+          : "Se alcanzó el límite de filas de exportación: esta copia NO contiene el total del período. Acota los filtros para incluir el resto.",
+      ]],
+    })
+  }
+
+  // REP-002: quién generó el archivo, cuándo, con qué alcance y con qué
+  // filtros. Ocho rutas ya lo adjuntaban por su cuenta; el centro de reportes
+  // era el único que no.
+  if (context?.session) {
+    addExportMetadataSheet(workbook, context.session, {
+      filters: context.filters ?? null,
+      rowCount: sheets.reduce((total, sheet) => total + sheet.rows.length, 0),
+      from: context.from ?? null,
+      to: context.to ?? null,
+    })
   }
 
   const data = await workbook.xlsx.writeBuffer()

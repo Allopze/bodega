@@ -99,6 +99,8 @@ interface CrewItem {
   role: string
   acknowledgedAt: string | null
   crewUserId: string | null
+  /** PER-002: enlace de acuse sin cuenta; null si la persona sí tiene cuenta. */
+  ackLink?: string | null
   hasCompetencyGap: boolean
 }
 
@@ -443,7 +445,21 @@ export function PermitDetail({
                         ? formatDateTime(member.acknowledgedAt)
                         : member.crewUserId === currentUserId
                           ? <AckButton crewId={member.id} />
-                          : "Pendiente"}
+                          /* PER-002: la persona sin cuenta acusa por enlace
+                             personal. Antes aquí sólo decía "Pendiente" y no
+                             había forma de dejar de estarlo. */
+                          : member.ackLink
+                            ? (
+                              <a
+                                href={member.ackLink}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-(--color-primary) underline underline-offset-2"
+                              >
+                                Enlace de acuse (sin cuenta)
+                              </a>
+                            )
+                            : "Pendiente"}
                     </TableCell>
                   </TableRow>
                 ))}

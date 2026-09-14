@@ -78,7 +78,7 @@ export const dispatchGuides = pgTable("dispatch_guides", {
     (${table.status} = 'cancelled'
       AND ${table.cancelledAt} IS NOT NULL
       AND ${table.cancelledBy} IS NOT NULL
-      AND char_length(trim(${table.cancellationReason})) >= 5)
+      AND char_length(trim(${table.cancellationReason})) >= 10)
     OR (${table.status} <> 'cancelled'
       AND ${table.cancelledAt} IS NULL
       AND ${table.cancelledBy} IS NULL

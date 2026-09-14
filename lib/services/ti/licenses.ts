@@ -178,16 +178,29 @@ export async function assignLicense(
       if (alreadyAssigned) throw new Error("El equipo ya tiene esta licencia asignada")
     }
 
-    // Capacidad: asignadas vigentes vs compradas. Solo aplica cuando la
-    // cantidad comprada es mayor a 0 (catálogos abiertos no se limitan).
-    if (license.purchasedQuantity > 0) {
-      const [assigned] = await tx.select({
-        count: sql<number>`count(*)::int`,
-      }).from(itLicenseAssignments)
-        .where(and(eq(itLicenseAssignments.licenseId, input.licenseId), isNull(itLicenseAssignments.revokedAt)))
-      if (assigned && assigned.count >= license.purchasedQuantity) {
-        throw new Error(`La licencia tiene las ${license.purchasedQuantity} asignaciones usadas`)
-      }
+    /*
+     * Capacidad: asignadas vigentes vs compradas.
+     *
+     * TIL-002 (auditoría 2026-09-14): el tope se aplicaba sólo cuando
+     * `purchasedQuantity > 0`, con el argumento de que "los catálogos abiertos
+     * no se limitan". El efecto era el contrario al que se lee: una licencia
+     * registrada con cantidad 0 —el valor por omisión, admitido por el check
+     * `it_licenses_quantity_valid (>= 0)`— aceptaba asignaciones sin fin, o
+     * sea, cero comprados se comportaba como ilimitado.
+     *
+     * El tope se aplica ahora siempre. Cero asientos comprados significa cero
+     * asignables, y se dice con un mensaje propio para que no parezca un
+     * error del sistema: lo que falta es registrar la compra.
+     */
+    const [assigned] = await tx.select({
+      count: sql<number>`count(*)::int`,
+    }).from(itLicenseAssignments)
+      .where(and(eq(itLicenseAssignments.licenseId, input.licenseId), isNull(itLicenseAssignments.revokedAt)))
+    if (license.purchasedQuantity <= 0) {
+      throw new Error("La licencia no tiene asientos comprados: registra la cantidad comprada antes de asignarla")
+    }
+    if (assigned && assigned.count >= license.purchasedQuantity) {
+      throw new Error(`La licencia tiene las ${license.purchasedQuantity} asignaciones usadas`)
     }
 
     await tx.insert(itLicenseAssignments).values({

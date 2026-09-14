@@ -43,6 +43,17 @@ export interface PendingItemOption {
   deliveryMode:        "via_oficina" | "directo_faena"
   /** Servicio del catálogo: puede comprarse con el costo aún por definir. */
   isService:           boolean
+  /**
+   * `COT-001` (auditoría 2026-09-14): la oferta que ganó y por cuánto. El total
+   * es de la **oferta completa**, no de esta línea: una oferta multiítem no dice
+   * cuánto vale cada renglón. Se muestra como referencia y sólo se prefija el
+   * precio cuando la adjudicación es de un único ítem, que es el caso en que el
+   * total sí es determinable.
+   */
+  awardedQuotationId?:    string | null
+  awardedQuotationTotal?: number | null
+  /** Cuántas líneas comparten esa adjudicación. 1 = el total es de esta línea. */
+  awardedLineCount?:      number
 }
 
 export interface OcItemRow extends PendingItemOption {

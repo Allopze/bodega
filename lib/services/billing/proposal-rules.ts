@@ -157,3 +157,61 @@ export function computeProposalTotals(items: readonly ProposalItemInput[]): Prop
   }
 }
 
+
+/* ── Relación propuesta ↔ factura ────────────────────────────────────────── */
+
+export interface ProposalInvoiceMatchInput {
+  /** RUT del cliente de la propuesta, tal como está en el maestro. */
+  proposalClientRut: string | null
+  /** Nombre del cliente, sólo para el mensaje. */
+  proposalClientName: string
+  /** RUT receptor del documento tributario. */
+  invoiceReceiverTaxId: string | null
+  /** Folio del documento, sólo para el mensaje. */
+  invoiceFolio: string | number
+  /** Total aprobado en la propuesta. */
+  approvedTotal: number
+  /** Total del documento que se quiere vincular. */
+  invoicedTotal: number
+  /** Tolerancia de redondeo en pesos. */
+  tolerance: number
+}
+
+export type ProposalInvoiceMismatch =
+  | { kind: "receiver"; message: string }
+  | { kind: "amount"; message: string; difference: number }
+
+/**
+ * Reglas de la unión entre una propuesta aprobada y su factura.
+ *
+ * FVE-001 y FVE-002 (auditoría 2026-09-13): el vínculo verificaba dirección,
+ * estado, moneda y alcance, pero no **a quién** se le emitió el documento ni
+ * **por cuánto**. La propuesta existe para que un cobro se prepare y se autorice
+ * por personas distintas; sin estas dos comprobaciones, esa autorización no
+ * gobernaba ni el destinatario ni la cifra.
+ *
+ * Es una función pura para poder ejercitarla sin base de datos, igual que
+ * `assertProposalTransition`.
+ */
+export function checkProposalInvoiceMatch(input: ProposalInvoiceMatchInput): ProposalInvoiceMismatch[] {
+  const mismatches: ProposalInvoiceMismatch[] = []
+
+  const normalize = (rut: string | null) => (rut ?? "").replace(/[^0-9kK]/g, "").toUpperCase()
+  if (normalize(input.proposalClientRut) !== normalize(input.invoiceReceiverTaxId)) {
+    mismatches.push({
+      kind: "receiver",
+      message: `La factura ${input.invoiceFolio} está emitida a un RUT distinto del cliente de la propuesta (${input.proposalClientName}). Verifica que sea la factura correcta.`,
+    })
+  }
+
+  const difference = input.invoicedTotal - input.approvedTotal
+  if (Math.abs(difference) > Math.abs(input.tolerance)) {
+    mismatches.push({
+      kind: "amount",
+      difference,
+      message: `El total facturado (${input.invoicedTotal}) difiere del aprobado en la propuesta (${input.approvedTotal}). Ajusta la propuesta o justifica la diferencia antes de relacionarlas.`,
+    })
+  }
+
+  return mismatches
+}

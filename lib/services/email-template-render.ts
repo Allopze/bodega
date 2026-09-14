@@ -103,3 +103,23 @@ export function replaceVariables(template: string, variables: Record<string, str
 
   return result
 }
+
+/**
+ * HALLAZGO SEC-003 (S4/P2) — La vista previa de plantillas de `/admin/plantillas`
+ * tenía dos caminos: un documento HTML completo iba a un `iframe` con
+ * `sandbox`, pero un cuerpo suelto (el caso habitual: la plantilla es un
+ * fragmento) se inyectaba con `dangerouslySetInnerHTML` **dentro de la propia
+ * página de administración**, sin sanear. La CSP con nonce impedía ejecutar
+ * scripts, pero no impedía inyectar marcado engañoso en el panel de administración.
+ *
+ * En vez de añadir un saneador —que exige decidir qué etiquetas de correo se
+ * permiten, decisión de producto que la plataforma no ha tomado— el fragmento
+ * se envuelve en un documento y se muestra por el mismo `iframe` que ya se
+ * consideraba correcto: el marcado se renderiza aislado del DOM de la
+ * aplicación, que es lo que la vista previa necesita.
+ */
+export function buildTemplatePreviewDocument(bodyHtml: string): string {
+  const isFullDocument = /<!DOCTYPE|<html/i.test(bodyHtml)
+  if (isFullDocument) return bodyHtml
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:16px;font-family:system-ui,sans-serif">${bodyHtml}</body></html>`
+}

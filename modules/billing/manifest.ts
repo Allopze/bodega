@@ -36,6 +36,13 @@ export const billingModule = {
     "billing:manage_invoices",
     "billing:manage_collections",
     "billing:confirm_payments",
+    /*
+     * COB-002 (auditoría 2026-09-14), patrón P9. `billing:confirm_payments`
+     * cubría registrar un pago, confirmarlo, generar sugerencias **y
+     * revertirlo**: una sola persona podía imputar un pago inexistente y, si
+     * alguien lo notaba, deshacerlo ella misma. Revertir se separa.
+     */
+    "billing:revert_payments",
     "billing:manage_sync",
     "billing:export",
     "billing:view_audit",
@@ -51,6 +58,7 @@ export const billingModule = {
     "billing:manage_invoices":    { id: "p-bil-inv",       description: "Editar datos internos y vínculos de facturas" },
     "billing:manage_collections": { id: "p-bil-cob",       description: "Registrar gestiones y compromisos de cobranza" },
     "billing:confirm_payments":   { id: "p-bil-pay",       description: "Confirmar o rechazar pagos y conciliaciones" },
+    "billing:revert_payments":    { id: "p-bil-pay-rev",   description: "Revertir un pago ya confirmado" },
     "billing:manage_sync":        { id: "p-bil-sync",      description: "Administrar la sincronización con proveedores de facturación" },
     "billing:export":             { id: "p-bil-export",    description: "Exportar información de facturación y cobranza" },
     "billing:view_audit":         { id: "p-bil-audit",     description: "Ver el historial de auditoría de facturación" },
@@ -129,6 +137,7 @@ export const billingModule = {
     { roleSlug: "jefa_chome", permission: "billing:manage_invoices" },
     { roleSlug: "jefa_chome", permission: "billing:manage_collections" },
     { roleSlug: "jefa_chome", permission: "billing:confirm_payments" },
+    { roleSlug: "jefa_chome", permission: "billing:revert_payments" },
     { roleSlug: "jefa_chome", permission: "billing:manage_sync" },
     { roleSlug: "jefa_chome", permission: "billing:export" },
     { roleSlug: "jefa_chome", permission: "billing:view_audit" },

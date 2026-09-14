@@ -3,7 +3,7 @@ import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, notInArra
 import { z } from "zod"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db, type DB, type Tx } from "@/db"
-import { canSignOwnWork } from "@/lib/services/prevention-signing"
+import { resolveOwnWorkSigning } from "@/lib/services/prevention-signing"
 import {
   eppTypes,
   pdtpActivities,
@@ -45,6 +45,7 @@ import { onRiskMatrixPublished } from "@/lib/services/pdtp-adapters/pdtp-accredi
 import { nanoid } from "@/lib/id"
 import { LEGAL_COMPLIANCE_STATUS_LABELS } from "@/lib/prevention/badges"
 import { CAPA_STATUS_LABELS } from "@/lib/prevention/capa"
+import { capaPriorityForCriticality } from "@/lib/prevention/inspections"
 import { MINSAL_PROTOCOL_LABELS } from "@/lib/prevention/minsal-protocols"
 import { createCapaActionWithClient, type CapaStatus } from "@/lib/services/prevention-capa"
 import { addDaysToPlainDate, formatDate, todayInChile } from "@/lib/utils"
@@ -508,7 +509,15 @@ export async function transitionRiskMatrix(input: unknown, access: RiskLegalAcce
      * `risk:edit` y `risk:publish` a la vez. La jefatura técnica del área queda
      * exenta —responde por el contenido de la matriz— y la excepción es un
      * permiso otorgado a la vista, no un nombre de rol escondido acá. */
-    if (data.toStatus === "published" && matrix.approvedByUserId === access.userId && !canSignOwnWork(access.permissions)) {
+    /* INC-002: además de decidir, deja constancia. La excepción por cargo se
+     * ejercía sin distinguirse de una firma con dos personas. */
+    const signing = resolveOwnWorkSigning({
+      signedByUserId: data.toStatus === "published" ? matrix.approvedByUserId : null,
+      actorUserId: access.userId,
+      permissions: access.permissions,
+      what: "Publicar la versión de la MIPER",
+    })
+    if (!signing.ok) {
       throw new Error("Quien aprobó la versión de la MIPER no puede publicarla: debe firmarla otra persona.")
     }
     const now = new Date().toISOString()
@@ -552,7 +561,7 @@ export async function transitionRiskMatrix(input: unknown, access: RiskLegalAcce
     }
     const [updated] = await tx.update(preventionRiskMatrices).set(updates).where(and(eq(preventionRiskMatrices.id, matrix.id), eq(preventionRiskMatrices.version, data.expectedVersion), eq(preventionRiskMatrices.status, matrix.status))).returning()
     if (!updated) throw new Error("La MIPER cambió mientras la revisabas. Recarga antes de continuar.")
-    await history(tx, { domain: "risk", entityType: "matrix", entityId: matrix.id, worksiteId: matrix.worksiteId, changeType: data.toStatus, reason: data.reason, beforeState: { status: matrix.status, version: matrix.version }, afterState: { status: updated.status, version: updated.version, sourceHash }, actorUserId: access.userId })
+    await history(tx, { domain: "risk", entityType: "matrix", entityId: matrix.id, worksiteId: matrix.worksiteId, changeType: data.toStatus, reason: signing.usedException ? `${data.reason ?? ""} [Firma propia: publicada por quien la aprobó, con la excepción prevention:sign_own_work.]`.trim() : data.reason, beforeState: { status: matrix.status, version: matrix.version }, afterState: { status: updated.status, version: updated.version, sourceHash, ownWorkExceptionUsed: signing.usedException }, actorUserId: access.userId })
     if (data.toStatus === "published") {
       const effectiveFrom = updated.effectiveFrom!
       await createRiskReviewTriggerWithClient(tx, {
@@ -657,6 +666,64 @@ export async function verifyRiskControl(input: unknown, access: RiskLegalAccess)
       .where(eq(preventionRiskEntries.id, row.entry.id))
 
     if (data.effectivenessStatus === "ineffective") {
+      /*
+       * E2E-005 (auditoría 2026-09-14): un control **crítico** declarado
+       * ineficaz no abría acción correctiva. Sólo se creaba el disparador de
+       * revisión de la MIPER a 30 días que sigue más abajo, y ese recordatorio
+       * vive únicamente en el tablero de MIPER (MIP-001: no llega a ninguna
+       * cola transversal). Es decir: un hallazgo de inspección de criticidad
+       * alta abría CAPA y la falla del control con que la organización declara
+       * "este riesgo está controlado", no. El valor `risk` del enum de orígenes
+       * de CAPA existía sin un solo escritor.
+       *
+       * La CAPA se abre acá, en la misma transacción de la verificación: si la
+       * verificación revierte, no queda una acción huérfana. La prioridad y el
+       * plazo salen de `capaPriorityForCriticality` aplicada al nivel de riesgo
+       * RESIDUAL del peligro —las dos escalas son el mismo vocabulario de
+       * cuatro niveles (`lib/prevention/risk-levels`)—, así que no se inventa
+       * una tabla de plazos nueva.
+       *
+       * DECISIONES DE PRODUCTO PENDIENTES, deliberadamente NO tomadas acá:
+       *  1. Sólo se abre CAPA para un control marcado como crítico, que es lo
+       *     que sanciona el hallazgo ("un control crítico verificado como
+       *     ineficaz"). Si un control NO crítico ineficaz también debe abrirla,
+       *     es una decisión de la organización y no está declarada en ninguna
+       *     parte de la plataforma.
+       *  2. La acción nace SIN responsable (`reconciliationStatus:
+       *     needs_assignment`, el mecanismo que el propio módulo usa para "falta
+       *     asignar"). No se hereda el responsable del control ni el del
+       *     peligro: quién debe responder por la falla de un control es una
+       *     decisión de la organización, y además `createCapaActionWithClient`
+       *     rechaza un responsable inactivo, con lo que heredarlo podría
+       *     impedir registrar la verificación misma.
+       *  3. No se marca `requiresImmediateStop`. La detención de la tarea en
+       *     terreno es una decisión operativa con consecuencias inmediatas que
+       *     ningún documento de la plataforma delega en este automatismo.
+       */
+      if (row.control.isCritical) {
+        const { priority, dueInDays } = capaPriorityForCriticality(row.entry.residualLevel)
+        await createCapaActionWithClient(tx, {
+          sourceType: "risk",
+          sourceId: row.control.id,
+          // Idempotencia por evento de verificación, con la misma forma que la
+          // clave del disparador de revisión: una re-verificación posterior que
+          // vuelva a salir ineficaz es una falla nueva y abre su propia acción,
+          // pero el mismo evento no puede duplicarse
+          // (índice único `prevention_capa_source_item_unique`).
+          sourceItemId: `risk_control:${row.control.id}:v${updated.version}`,
+          worksiteId: row.matrix.worksiteId,
+          finding: `Control crítico "${row.control.description}" verificado como ineficaz (peligro: ${row.entry.hazard}).`.slice(0, 3000),
+          actionDescription: `Determinar la causa de la ineficacia y reponer un control eficaz para el peligro "${row.entry.hazard}".`.slice(0, 3000),
+          responsibleUserId: null,
+          responsibleSnapshot: row.control.responsibleSnapshot,
+          priority,
+          targetDate: addDays(todayInChile(), dueInDays),
+          evidenceRequired: true,
+          rootCause: data.verificationNote,
+          sourceRef: { riskEntryId: row.entry.id, matrixId: row.matrix.id, controlVersion: updated.version },
+        }, access.userId)
+      }
+
       await createRiskReviewTriggerWithClient(tx, {
         worksiteId: row.matrix.worksiteId,
         matrixId: row.matrix.id,

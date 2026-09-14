@@ -9,6 +9,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { getIncidentDashboardCounts, listIncidentWorksites, listPreventionIncidents } from "@/lib/services/prevention-incidents"
 import { IncidentList } from "./incident-list"
+import { PublicIncidentReportsPanel } from "./public-reports-panel"
 
 export const metadata: Metadata = { title: "Incidentes y accidentes" }
 
@@ -62,6 +63,8 @@ export default async function IncidentsPage({ searchParams }: { searchParams: Pr
           {canExport && <Button asChild variant="secondary"><a href="/api/prevencion/incidentes/export" download><DownloadSimple className="size-4" />Exportar Excel</a></Button>}
         </div>}
       />
+      {/* INC-001: lo que llega por el canal público del trabajador, donde se tría. */}
+      {canReport && <PublicIncidentReportsPanel scope={access.scope} />}
       <IncidentList incidents={incidents} worksites={worksites} counts={counts} canReport={canReport} indicatorContext={indicatorLabel ? `Fuente del indicador de ${indicatorLabel} · ${effectiveMonthFrom ?? "—"}-${effectiveMonthTo ?? "—"}/${query.year ?? ""}` : undefined} />
     </PageContainer>
   )

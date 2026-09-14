@@ -172,4 +172,73 @@ describe("módulo TI — alertas cron", () => {
       .where(and(eq(schema.notifications.userId, "user-ti-tecnico"), eq(schema.notifications.dedupeKey, "ti:ticket:ticket-cualquiera")))
     expect(rows).toHaveLength(1)
   })
+
+  /* ── TIT-001 · SLA por prioridad ────────────────────────────────────────── */
+
+  describe("SLA del ticket según su prioridad (TIT-001)", () => {
+    /*
+     * Antes de este arreglo la prioridad de un ticket no gobernaba ningún
+     * plazo: la única señal temporal era la alerta plana de "sin actualización
+     * en más de 5 días", igual para un `critica` que para un `baja`, y esa
+     * consulta además incluía los estados de espera, de modo que un ticket
+     * detenido esperando respuesta ajena se reportaba como abandonado.
+     */
+    async function ticketConVencimiento(
+      subject: string, priority: string, dueInHours: number, status?: string,
+    ) {
+      const { id } = await createTicket({
+        subject, description: "SLA", category: "software", priority,
+        worksiteId: "ws-ti-norte",
+      }, actor)
+      const dueAt = new Date(Date.now() + dueInHours * 3_600_000).toISOString()
+      await testDb.update(schema.itTickets)
+        .set(status ? { dueAt, status } : { dueAt })
+        .where(eq(schema.itTickets.id, id))
+      return id
+    }
+
+    it("le pone plazo al ticket al crearlo, y el plazo depende de la prioridad", async () => {
+      const { id: critico } = await createTicket({
+        subject: "Correo caído", description: "Nadie recibe correo", category: "correo",
+        priority: "critica", worksiteId: "ws-ti-norte",
+      }, actor)
+      const { id: bajo } = await createTicket({
+        subject: "Cambiar fondo de pantalla", description: "Cosmético", category: "otro",
+        priority: "baja", worksiteId: "ws-ti-norte",
+      }, actor)
+
+      const [filaCritica] = await testDb.select().from(schema.itTickets).where(eq(schema.itTickets.id, critico))
+      const [filaBaja] = await testDb.select().from(schema.itTickets).where(eq(schema.itTickets.id, bajo))
+      expect(filaCritica?.dueAt).toBeTruthy()
+      expect(filaBaja?.dueAt).toBeTruthy()
+
+      const horas = (fila: typeof filaCritica) =>
+        (new Date(fila!.dueAt!).getTime() - new Date(fila!.createdAt).getTime()) / 3_600_000
+      expect(Math.round(horas(filaCritica))).toBe(24)
+      expect(Math.round(horas(filaBaja))).toBe(240)
+    })
+
+    it("avisa por tramo: vencido y por vencer, y no antes", async () => {
+      const vencido = await ticketConVencimiento("SLA vencido", "critica", -3)
+      const porVencer = await ticketConVencimiento("SLA por vencer", "alta", 6)
+      const holgado = await ticketConVencimiento("SLA holgado", "baja", 200)
+
+      const alerts = await collectTiAlerts()
+      const porId = (id: string) => alerts.filter((a) => a.entityId === id).map((a) => a.type)
+
+      expect(porId(vencido)).toContain("ti_ticket_sla_overdue")
+      expect(porId(porVencer)).toContain("ti_ticket_sla_due_soon")
+      expect(porId(holgado)).not.toContain("ti_ticket_sla_due_soon")
+      expect(porId(holgado)).not.toContain("ti_ticket_sla_overdue")
+    })
+
+    it("no reporta como abandonado un ticket detenido esperando respuesta ajena", async () => {
+      const esperando = await ticketConVencimiento("Esperando al proveedor", "normal", 200, "esperando_proveedor")
+      await backdate("tickets", esperando, 9)
+
+      const alerts = await collectTiAlerts()
+      expect(alerts.filter((a) => a.entityId === esperando).map((a) => a.type))
+        .not.toContain("ti_ticket_stale")
+    })
+  })
 })

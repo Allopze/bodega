@@ -140,6 +140,13 @@ export const preventionTrainingAttendance = pgTable("prevention_training_attenda
   acknowledgementMethod:  text("acknowledgement_method"),
   acknowledgementIp:      text("acknowledgement_ip"),
   acknowledgementUserAgent: text("acknowledgement_user_agent"),
+  /**
+   * CAP-002 (auditoría 2026-09-14): por dónde entró el acuse. Antes sólo había
+   * un canal posible —una sesión de la plataforma—, porque acusar exigía
+   * cuenta; ahora existe la vía de enlace con token para el trabajador sin
+   * cuenta y hay que poder distinguirlos en la evidencia.
+   */
+  acknowledgementChannel: text("acknowledgement_channel"),
   recordedByUserId:       text("recorded_by_user_id").references(() => users.id, { onDelete: "restrict" }),
   createdAt:              timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:              timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
@@ -152,6 +159,7 @@ export const preventionTrainingAttendance = pgTable("prevention_training_attenda
   check("prevention_training_attendance_attempts_valid", sql`${table.assessmentAttempts} >= 0`),
   check("prevention_training_attendance_minutes_valid", sql`${table.attendanceMinutes} IS NULL OR ${table.attendanceMinutes} >= 0`),
   check("prevention_training_attendance_excuse_consistent", sql`${table.status} <> 'excused' OR length(${table.excuseReason}) >= 5`),
+  check("prevention_training_attendance_ack_channel_valid", sql`(${table.acknowledgedAt} IS NULL AND ${table.acknowledgementChannel} IS NULL) OR (${table.acknowledgedAt} IS NOT NULL AND ${table.acknowledgementChannel} IN ('account', 'public_token'))`),
   check("prevention_training_attendance_ack_consistent", sql`(${table.acknowledgedAt} IS NULL AND ${table.acknowledgementSha256} IS NULL) OR (${table.acknowledgedAt} IS NOT NULL AND length(${table.acknowledgementSha256}) = 64 AND ${table.acknowledgementMethod} IS NOT NULL)`),
 ])
 

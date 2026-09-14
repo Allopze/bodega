@@ -13,7 +13,7 @@ import { MetaBadge, StateBadge } from "@/components/states/state-badge"
 import { StateLegend } from "@/components/states/state-legend"
 import { Button } from "@/components/ui/button"
 import { formatDate } from "@/lib/utils"
-import { canRegisterReceiptForOrder } from "./recepcion-table.helpers"
+import { canRegisterReceiptForOrder, receiptGuideSignal } from "./recepcion-table.helpers"
 
 type OrderRow = {
   id:          string
@@ -120,6 +120,7 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, guideMap, canOff
         const canRegisterOrder = canRegisterReceiptForOrder(o.deliveryMode, o.status, canOffice, canFaena)
         const guides = guideMap[o.id] ?? []
         const activeGuide = guides.find((guide) => ["draft", "dispatched", "partially_received"].includes(guide.status))
+        const guideSignal = receiptGuideSignal(activeGuide?.status)
         return (
           <TableRow
             key={o.id}
@@ -148,15 +149,13 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, guideMap, canOff
               <StateBadge state={o.status} entity="oc" size="sm" />
             </TableCell>
             <TableCell>
-              {activeGuide?.status === "draft"
-                ? <MetaBadge meta={{ label: "Pendiente de despacho", variant: "warning" }} />
-                : activeGuide?.status === "dispatched"
-                  ? <MetaBadge meta={{ label: "En traslado", variant: "info" }} />
-                  : activeGuide?.status === "partially_received"
-                    ? <MetaBadge meta={{ label: "Diferencia en faena", variant: "danger" }} />
-                    : (gapMap[o.id] ?? 0) > 0
-                      ? <MetaBadge meta={{ label: `${gapMap[o.id]}${gapMap[o.id] === 1 ? "ítem" : "ítems"}`, variant: "warning" }} />
-                      : <span className="text-xs text-[var(--color-text-subtle)]">—</span>}
+              {/* REC-005: el mapa estado→señal salió a `receiptGuideSignal` para
+                  que la tarjeta móvil pinte exactamente lo mismo. */}
+              {guideSignal
+                ? <MetaBadge meta={guideSignal} />
+                : (gapMap[o.id] ?? 0) > 0
+                  ? <MetaBadge meta={{ label: `${gapMap[o.id]}${gapMap[o.id] === 1 ? "ítem" : "ítems"}`, variant: "warning" }} />
+                  : <span className="text-xs text-[var(--color-text-subtle)]">—</span>}
             </TableCell>
             <TableCell className="text-xs text-[var(--color-text-subtle)]">
               {o.sentAt ? formatDate(o.sentAt) : "—"}
@@ -185,6 +184,7 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, guideMap, canOff
         const canRegisterOrder = canRegisterReceiptForOrder(o.deliveryMode, o.status, canOffice, canFaena)
         const guides = guideMap[o.id] ?? []
         const activeGuide = guides.find((guide) => ["draft", "dispatched", "partially_received"].includes(guide.status))
+        const guideSignal = receiptGuideSignal(activeGuide?.status)
         return (
           <article className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
             <div className="flex items-start justify-between gap-3">
@@ -202,11 +202,20 @@ export function RecepcionTable({ orders, wsMap, supMap, gapMap, guideMap, canOff
               <dt className="text-[var(--color-text-subtle)]">Enviada</dt>
               <dd className="text-right font-mono tabular-nums text-[var(--color-text)]">{o.sentAt ? formatDate(o.sentAt) : "—"}</dd>
             </dl>
-            {gap > 0 && (
+            {/* REC-005: la tarjeta mostraba SÓLO este recuento de `gapMap`, así
+                que los tres estados de la guía —incluida la diferencia ya
+                detectada, en `danger`— no llegaban al teléfono. Ahora la señal
+                de guía manda, igual que en la fila de escritorio, y el recuento
+                queda como respaldo cuando no hay guía viva. */}
+            {guideSignal ? (
+              <div className="mt-2">
+                <MetaBadge meta={guideSignal} />
+              </div>
+            ) : gap > 0 ? (
               <div className="mt-2">
                 <MetaBadge meta={{ label: `${gap}${gap === 1 ? "ítem pendiente de recepción en faena" : "ítems pendientes de recepción en faena"}`, variant: "warning" }} />
               </div>
-            )}
+            ) : null}
             {activeGuide ? (
               <Button variant="primary" size="sm" asChild className="mt-3 w-full">
                 <Link href={`/bodega/guias/${activeGuide.id}`}>

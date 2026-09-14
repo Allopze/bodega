@@ -78,6 +78,18 @@ const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
 
   // Superficies públicas (PWA sin sesión) y APIs autenticadas/públicas.
   { moduleId: "ppa", submoduleHref: "/prevencion/ppa", prefix: "/ppa" },
+  // INC-001: canal público de reporte de incidentes (sin sesión), gobernado
+  // por el mismo toggle que el módulo de Incidentes que lo tría.
+  { moduleId: "prevention", submoduleHref: "/prevencion/incidentes", prefix: "/reportar-incidente" },
+  // CAP-002/PER-002: vía de acuse sin cuenta. Cada rama pertenece al submódulo
+  // que emite el acuse, para que apagar Capacitación o Permisos también cierre
+  // su enlace público y no queden puertas fuera del inventario.
+  { moduleId: "prevention", submoduleHref: "/prevencion/capacitacion", prefix: "/acuse/capacitacion" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/permisos", prefix: "/acuse/permiso" },
+  // Fallback del segmento dinámico `/acuse/[kind]/...`: cualquier rama que no
+  // sea una de las dos anteriores pertenece igualmente a Prevención y nunca
+  // debe quedar fuera del inventario.
+  { moduleId: "prevention", prefix: "/acuse" },
   { moduleId: "combustibles", submoduleHref: "/combustibles/tae", prefix: "/tae" },
   { moduleId: "combustibles", submoduleHref: "/combustibles/tae", prefix: "/api/tae" },
   { moduleId: "combustibles", submoduleHref: "/combustibles/importar", prefix: "/api/combustibles/import" },
@@ -150,7 +162,22 @@ const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "flota", submoduleHref: "/flota/monitoreo", prefix: "/api/cron/fleet-onway-retention" },
   { moduleId: "flota", submoduleHref: "/flota/monitoreo", prefix: "/api/cron/fleet-onway-sync" },
   { moduleId: "mantenciones", submoduleHref: "/mantenciones", prefix: "/api/cron/maintenance-reminders" },
+  // MNT-001: materializar el plan preventivo es del mismo módulo que su
+  // recordatorio, y el prefijo más largo gana, así que no se pisan.
+  { moduleId: "mantenciones", submoduleHref: "/mantenciones", prefix: "/api/cron/maintenance-plan-materialization" },
   { moduleId: "warehouse", submoduleHref: "/bodega/trazabilidad", prefix: "/api/cron/operational-integrity-scan" },
+  // TRZ-001: el segundo libro de integridad, el que cubre entregas contra
+  // recepción en faena.
+  { moduleId: "warehouse", submoduleHref: "/bodega/trazabilidad", prefix: "/api/cron/traceability-integrity-scan" },
+  /*
+   * FLO-002, MIP-001 y PRI-001 comparten una corrida porque son el mismo
+   * trabajo sobre tres tablas. Eso deja una ruta que no pertenece a un solo
+   * módulo: se ancla en Prevención, que aporta dos de los tres barridos, y cada
+   * barrido consulta sus propios permisos. Apagar Prevención silencia también
+   * el aviso de documentos de flota — es la contrapartida de agruparlos, y se
+   * anota aquí para que sea una decisión visible y no una sorpresa.
+   */
+  { moduleId: "prevention", submoduleHref: "/prevencion", prefix: "/api/cron/deadline-reminders" },
   { moduleId: "analytics", submoduleHref: "/analitica", prefix: "/api/cron/operational-metric-snapshots" },
   { moduleId: "analytics", submoduleHref: "/analitica", prefix: "/api/cron/operational-snapshot-health" },
   { moduleId: "prevention", submoduleHref: "/prevencion/pdtp", prefix: "/api/cron/pdtp-evidence-gc" },

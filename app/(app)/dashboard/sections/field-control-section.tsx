@@ -34,35 +34,45 @@ export async function FieldControlSection({ session, scope }: DomainSectionsProp
     to: bounds.currentEnd,
   })
 
-  const permitTotal = field.permitsActive + field.permitsSuspended
-  const drillTotal = field.drillsCompleted
+  const permitTotal = field.visible.permits ? field.permitsActive + field.permitsSuspended : 0
+  const drillTotal = field.visible.drills ? field.drillsCompleted : 0
 
   return (
     <DomainSection
       domain={DASHBOARD_DOMAINS.terreno}
+      // Los atajos siguen la misma regla: no se ofrece la puerta de un módulo
+      // que la sesión no puede abrir (DASH-001).
       links={[
-        { label: "Inspecciones", href: "/prevencion/inspecciones" },
-        { label: "Permisos", href: "/prevencion/permisos" },
-        { label: "CPHS", href: "/prevencion/cphs" },
-      ]}
+        field.visible.inspections ? { label: "Inspecciones", href: "/prevencion/inspecciones" } : null,
+        field.visible.permits ? { label: "Permisos", href: "/prevencion/permisos" } : null,
+        field.visible.committee ? { label: "CPHS", href: "/prevencion/cphs" } : null,
+      ].filter((link): link is { label: string; href: string } => link !== null)}
       kpis={
         <>
+          {field.visible.inspections && (
           <KpiCard icon={<ClipboardText size={16} />} label="Cumplimiento de inspecciones"
             value={field.inspectionCompliance === null ? "—" : `${field.inspectionCompliance}%`}
             detail={field.inspectionsReviewed > 0 ? `${field.inspectionsReviewed} revisadas · ahora` : "Sin inspecciones con resultado"}
             href="/prevencion/inspecciones" />
+          )}
+          {field.visible.inspections && (
           <KpiCard icon={<WarningOctagon size={16} />} label="Hallazgos críticos abiertos"
             value={String(field.criticalFindingsOpen)}
             detail={field.criticalFindingsOpen > 0 ? "Criticidad alta o crítica · ahora" : "Ninguno abierto, ahora"}
             tone={field.criticalFindingsOpen > 0 ? "danger" : "neutral"} href="/prevencion/inspecciones?vista=critical" />
+          )}
+          {field.visible.drills && (
           <KpiCard icon={<Siren size={16} />} label="Simulacros por mejorar"
             value={String(field.drillsNeedingImprovement)}
             detail={drillTotal > 0 ? `De ${drillTotal} ejecutado(s) · ahora` : "Sin simulacros ejecutados"}
             tone={field.drillsNeedingImprovement > 0 ? "signal" : "neutral"} href="/prevencion/emergencias?tab=drills&vista=needs_improvement" />
+          )}
+          {field.visible.hygiene && (
           <KpiCard icon={<ShieldWarning size={16} />} label="Mediciones sobre el límite"
             value={String(field.measurementsAboveLimit)}
             detail={field.measurementsAboveLimit > 0 ? "Exposición sobre el límite permisible · ahora" : "Ninguna sobre el límite"}
             tone={field.measurementsAboveLimit > 0 ? "danger" : "neutral"} href="/prevencion/higiene?tab=groups&vista=above_limit" />
+          )}
         </>
       }
       summary={<SummaryBar stats={fieldControlSummaryStats(field)} />}
@@ -94,9 +104,15 @@ export async function FieldControlSection({ session, scope }: DomainSectionsProp
   )
 }
 
+/**
+ * DASH-001: cada cifra sale sólo si la sesión tiene el permiso de su módulo.
+ * Un cero de "no tengo permiso" y un cero de "no hay nada" se leen igual en
+ * pantalla y significan lo contrario, así que la cifra se omite en vez de
+ * mostrarse vacía.
+ */
 function fieldControlSummaryStats(field: Awaited<ReturnType<typeof getFieldControlSummary>>): SummaryStat[] {
-  return [
-    {
+  const stats: (SummaryStat | null)[] = [
+    !field.visible.permits ? null : {
       key: "permits-active",
       // "Permisos" a secas es ambiguo en una sección que también habla de
       // inspecciones, simulacros y mediciones: el dominio es permiso de trabajo.
@@ -105,7 +121,7 @@ function fieldControlSummaryStats(field: Awaited<ReturnType<typeof getFieldContr
       secondary: field.permitsSuspended > 0 ? `${field.permitsSuspended} suspendido(s) · ahora` : "Ninguno suspendido, ahora",
       href: "/prevencion/permisos",
     },
-    {
+    !field.visible.committee ? null : {
       key: "committee-agreements",
       label: "Acuerdos del comité abiertos",
       value: field.committeeAgreementsOpen,
@@ -113,7 +129,7 @@ function fieldControlSummaryStats(field: Awaited<ReturnType<typeof getFieldContr
       href: "/prevencion/cphs",
       tone: "signal",
     },
-    {
+    !field.visible.change ? null : {
       key: "change-open",
       label: "Gestión del cambio abierta",
       value: field.changeRequestsOpen,
@@ -122,4 +138,5 @@ function fieldControlSummaryStats(field: Awaited<ReturnType<typeof getFieldContr
       tone: "signal",
     },
   ]
+  return stats.filter((stat): stat is SummaryStat => stat !== null)
 }

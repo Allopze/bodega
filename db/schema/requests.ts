@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { pgTable, text, integer, real, timestamp, index, uniqueIndex, check, type AnyPgColumn } from "drizzle-orm/pg-core"
+import { pgTable, text, integer, real, numeric, timestamp, index, uniqueIndex, check, type AnyPgColumn } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { worksites, workers, suppliers } from "./worksites"
 import { products, productAttributes } from "./products"
@@ -86,6 +86,22 @@ export const purchaseRequestItems = pgTable("purchase_request_items", {
   // Supplier hint (mirrors productId / productNameFree pattern)
   suggestedSupplierId: text("suggested_supplier_id").references(() => suppliers.id),
   supplierHint:    text("supplier_hint"),                           // free-text fallback
+  /*
+   * `COT-001` (auditoría 2026-09-14): seleccionar una oferta aprobaba los ítems
+   * y sólo transfería el proveedor. El importe adjudicado, el archivo y el id de
+   * la ganadora no eran parte del modelo de Nueva OC, y como el precio inicial
+   * salía únicamente de `product_suppliers`, un ítem libre llegaba en $0: una
+   * cotización de $150.000 podía originar una OC de $0 sin vínculo ni alerta.
+   *
+   * Se guarda la **referencia** de la adjudicación —qué oferta ganó y por cuánto
+   * en total—, no un precio por línea. La distinción es deliberada: una oferta
+   * multiítem no dice cuánto vale cada renglón, y repartir su total entre las
+   * líneas sería inventar un dato con apariencia de hecho. Lo que sí es
+   * determinable —una oferta de un solo ítem— lo prefija el formulario de OC;
+   * lo demás se muestra como contraste para que la diferencia se vea.
+   */
+  awardedQuotationId:     text("awarded_quotation_id"),
+  awardedQuotationTotal:  numeric("awarded_quotation_total", { precision: 12, scale: 2, mode: "number" }),
   sortOrder:       integer("sort_order").notNull().default(0),
   notes:           text("notes"),
   splitFromItemId: text("split_from_item_id").references((): AnyPgColumn => purchaseRequestItems.id, { onDelete: "set null" }),

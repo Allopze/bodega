@@ -131,7 +131,22 @@ export async function getExpiringFleetDocuments(
     })
     .from(fleetVehicleDocuments)
     .innerJoin(fuelVehicles, eq(fleetVehicleDocuments.vehicleId, fuelVehicles.id))
-    .where(and(scope, isNotNull(fleetVehicleDocuments.expiresAt), lte(fleetVehicleDocuments.expiresAt, horizon)))
+    // Sólo la versión vigente de cada tipo. Sin este filtro el KPI contaba
+    // también las reemplazadas —subir la póliza nueva no sacaba al equipo del
+    // atraso, seguía midiéndose contra la del año pasado, que es el mismo
+    // defecto que el resto del módulo ya había corregido— y desde FLO-003
+    // habría contado además las anuladas.
+    .where(and(
+      scope,
+      eq(fleetVehicleDocuments.status, "current"),
+      // FLO-001: y sólo los vehículos que siguen en la flota. La revisión
+      // técnica vencida de una camioneta dada de baja no es un bloqueo
+      // operacional: es un documento de un vehículo que ya no circula, y
+      // engordaba para siempre el indicador que la dirección mira.
+      eq(fuelVehicles.isActive, true),
+      isNotNull(fleetVehicleDocuments.expiresAt),
+      lte(fleetVehicleDocuments.expiresAt, horizon),
+    ))
 
   return { within30: Number(row?.within30 ?? 0), expired: Number(row?.expired ?? 0) }
 }
@@ -149,6 +164,41 @@ export interface FieldControlSummary {
   committeeAgreementsOpen: number
   measurementsAboveLimit: number
   changeRequestsOpen: number
+  /**
+   * Qué submódulos puede ver esta sesión. La sección omite los que no, en vez
+   * de mostrar un cero que se lee como "no hay nada" (ver `visibleFieldControl`).
+   */
+  visible: FieldControlVisibility
+}
+
+export type FieldControlModule =
+  | "inspections" | "permits" | "drills" | "committee" | "hygiene" | "change"
+
+export type FieldControlVisibility = Record<FieldControlModule, boolean>
+
+/**
+ * DASH-001 (auditoría 2026-09-14): la sección de terreno agrupa seis módulos
+ * que en su propia ruta exigen seis permisos distintos, y el tablero los
+ * cargaba y dibujaba todos con que la sesión tuviera **uno cualquiera** de
+ * ellos. El agrupamiento visual se había vuelto la condición de lectura.
+ *
+ * Cada agregado depende ahora de su propio permiso, y el que no se tiene ni
+ * siquiera se consulta: el dato no sale de la base.
+ */
+const FIELD_CONTROL_PERMISSION: Record<FieldControlModule, string> = {
+  inspections: "prevention:inspections:view",
+  permits:     "prevention:permits:view",
+  drills:      "prevention:emergency:view",
+  committee:   "prevention:cphs:view",
+  hygiene:     "prevention:hygiene:view",
+  change:      "prevention:change:view",
+}
+
+export function visibleFieldControl(permissions: readonly string[]): FieldControlVisibility {
+  const held = new Set(permissions)
+  return Object.fromEntries(
+    Object.entries(FIELD_CONTROL_PERMISSION).map(([module, permission]) => [module, held.has(permission)]),
+  ) as FieldControlVisibility
 }
 
 /**
@@ -185,8 +235,13 @@ export async function getFieldControlSummary(
   const changeScope = worksiteScopeSql(session, preventionChangeRequests.worksiteId, worksiteId)
   const exposureGroupScope = worksiteScopeSql(session, preventionExposureGroups.worksiteId, worksiteId)
 
+  const visible = visibleFieldControl(session.user.permissions ?? [])
+  // Lo que no se puede ver no se consulta: la consulta ahorrada es también la
+  // garantía de que el dato no llega al render por descuido.
+  const skip = <T,>(value: T) => Promise.resolve([value])
+
   const [[inspections], [findings], [permits], [drills], [agreements], [measurements], [changes]] = await Promise.all([
-    db.select({
+    !visible.inspections ? skip({ compliance: null, reviewed: 0 }) : db.select({
       compliance: sql<number | null>`AVG(${preventionInspectionRuns.compliancePercent})`,
       reviewed: sql<number>`COUNT(*) FILTER (WHERE ${preventionInspectionRuns.status} = 'reviewed')::int`,
     }).from(preventionInspectionRuns).where(and(
@@ -196,7 +251,7 @@ export async function getFieldControlSummary(
       bounds ? lt(preventionInspectionRuns.executedAt, bounds.to) : undefined,
     )),
 
-    db.select({ value: count() })
+    !visible.inspections ? skip({ value: 0 }) : db.select({ value: count() })
       .from(preventionInspectionFindings)
       .innerJoin(preventionInspectionRuns, eq(preventionInspectionFindings.runId, preventionInspectionRuns.id))
       // C-07: filtraba `status = 'open'`, así que derivar el hallazgo a una CAPA
@@ -206,12 +261,12 @@ export async function getFieldControlSummary(
       // el bug.
       .where(and(runScope, ne(preventionInspectionFindings.status, "closed"), inArray(preventionInspectionFindings.criticality, ["high", "critical"]))),
 
-    db.select({
+    !visible.permits ? skip({ active: 0, suspended: 0 }) : db.select({
       active: sql<number>`COUNT(*) FILTER (WHERE ${preventionWorkPermits.status} = 'active')::int`,
       suspended: sql<number>`COUNT(*) FILTER (WHERE ${preventionWorkPermits.status} = 'suspended')::int`,
     }).from(preventionWorkPermits).where(permitScope),
 
-    db.select({
+    !visible.drills ? skip({ needsImprovement: 0, completed: 0 }) : db.select({
       needsImprovement: sql<number>`COUNT(*) FILTER (WHERE ${preventionEmergencyDrills.outcome} = 'needs_improvement')::int`,
       completed: sql<number>`COUNT(*) FILTER (WHERE ${preventionEmergencyDrills.status} = 'completed')::int`,
     }).from(preventionEmergencyDrills).where(drillScope),
@@ -219,19 +274,19 @@ export async function getFieldControlSummary(
     // Un acuerdo está abierto cuando su CAPA lo está: el acuerdo ya no guarda
     // estado propio (era un espejo que nadie actualizaba, y esta cifra daba
     // cero siempre). Mismo predicado de "abierta" que el filtro `open` de CAPA.
-    db.select({ value: count() })
+    !visible.committee ? skip({ value: 0 }) : db.select({ value: count() })
       .from(preventionCommitteeAgreements)
       .innerJoin(preventionCommitteeMeetings, eq(preventionCommitteeAgreements.meetingId, preventionCommitteeMeetings.id))
       .innerJoin(preventionCommittees, eq(preventionCommitteeMeetings.committeeId, preventionCommittees.id))
       .innerJoin(preventionCapaActions, eq(preventionCommitteeAgreements.capaActionId, preventionCapaActions.id))
       .where(and(committeeScope, sql`${preventionCapaActions.status} NOT IN ('closed', 'cancelled')`)),
 
-    db.select({ value: count() })
+    !visible.hygiene ? skip({ value: 0 }) : db.select({ value: count() })
       .from(preventionExposureMeasurements)
       .innerJoin(preventionExposureGroups, eq(preventionExposureMeasurements.groupId, preventionExposureGroups.id))
       .where(and(exposureGroupScope, eq(preventionExposureMeasurements.outcome, "above_limit"))),
 
-    db.select({ value: count() })
+    !visible.change ? skip({ value: 0 }) : db.select({ value: count() })
       .from(preventionChangeRequests)
       .where(and(changeScope, sql`${preventionChangeRequests.status} NOT IN ('closed', 'cancelled', 'rejected')`)),
   ])
@@ -249,5 +304,6 @@ export async function getFieldControlSummary(
     committeeAgreementsOpen: Number(agreements?.value ?? 0),
     measurementsAboveLimit: Number(measurements?.value ?? 0),
     changeRequestsOpen: Number(changes?.value ?? 0),
+    visible,
   }
 }

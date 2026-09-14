@@ -1,6 +1,6 @@
 import { Gauge, Package, Truck, WarningOctagon } from "@phosphor-icons/react/dist/ssr"
 import { KpiCard } from "@/components/ui/kpi-card"
-import { getAnalyticsDashboard } from "@/lib/services/analytics-module/dashboard"
+import { getCachedAnalyticsDashboard } from "@/lib/services/read-model-cache"
 import { getStockAlerts } from "@/lib/services/stock-alerts"
 import { DASHBOARD_DOMAINS } from "../dashboard-domains"
 import { DomainSection } from "../dashboard-domain-shell"
@@ -16,7 +16,7 @@ export async function WarehouseSection({ session, scope, worksiteIds }: DomainSe
   const selectedWorksiteId = scopedWorksiteId(scope)
   const alertScope = selectedWorksiteId ? [selectedWorksiteId] : worksiteIds
   const [analytics, alerts] = await Promise.all([
-    getAnalyticsDashboard(session, analyticsFilters(scope)),
+    getCachedAnalyticsDashboard(session, analyticsFilters(scope)),
     getStockAlerts(alertScope),
   ])
 

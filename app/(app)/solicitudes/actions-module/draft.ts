@@ -1,6 +1,7 @@
 "use server"
 
 import type { Session } from "next-auth"
+import { quotationCompletenessProblems } from "@/lib/validation/quotation-completeness"
 import { requireAuth } from "@/lib/auth/can"
 import { type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
@@ -100,9 +101,16 @@ export async function persistDraft(
       let meta: { totalAmount?: string; supplierId?: string; supplierNameFree?: string } = {}
       try { meta = metaRaw ? JSON.parse(String(metaRaw)) : {} } catch { /* deja meta vacía, se rechaza abajo */ }
 
+      // COT-003: la misma regla que el Server Action del panel. Eran dos
+      // puertas con exigencias distintas y la de atrás era la permisiva.
       const totalAmount = Number(meta.totalAmount)
-      if (!Number.isFinite(totalAmount) || totalAmount <= 0 || (!meta.supplierId && !meta.supplierNameFree?.trim())) {
-        logger.warn(`[persistDraft] cotización ${value.name} sin proveedor o monto válido`)
+      const problems = quotationCompletenessProblems({
+        totalAmount,
+        supplierId: meta.supplierId ?? null,
+        supplierNameFree: meta.supplierNameFree ?? null,
+      })
+      if (problems.length > 0) {
+        logger.warn(`[persistDraft] cotización ${value.name}: ${problems.join("; ")}`)
         failedFiles.push(value.name)
         continue
       }

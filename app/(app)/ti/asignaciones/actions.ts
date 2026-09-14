@@ -6,9 +6,11 @@ import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { safeActionMessage } from "@/lib/action-error"
 import { parseZ } from "@/lib/actions/parse-z"
 import { logger } from "@/lib/logger"
-import { createAssignment, returnAssignment, transferAssignment } from "@/lib/services/ti/assignments"
 import {
-  itAssignmentCreateSchema, itAssignmentReturnSchema,
+  createAssignment, recordAssignmentAcceptance, returnAssignment, transferAssignment,
+} from "@/lib/services/ti/assignments"
+import {
+  itAssignmentAcceptanceSchema, itAssignmentCreateSchema, itAssignmentReturnSchema,
 } from "@/lib/validation/ti"
 import type { ActionState } from "@/lib/validation/masters"
 
@@ -35,7 +37,6 @@ export async function createAssignmentAction(_prev: ActionState, formData: FormD
     deliveredAt: formData.get("deliveredAt"),
     physicalState: formData.get("physicalState"),
     observations: formData.get("observations"),
-    accepted: formData.get("accepted") === null ? true : formData.get("accepted"),
     accessoryNames: parseList(formData.get("accessoriesJson")),
     photoIds: parseList(formData.get("photoIdsJson")),
   }, "Revisa los datos de la entrega")
@@ -113,7 +114,6 @@ export async function transferAssignmentAction(_prev: ActionState, formData: For
     deliveredAt: formData.get("newDeliveredAt"),
     physicalState: formData.get("newPhysicalState"),
     observations: formData.get("newObservations"),
-    accepted: true,
     accessoryNames: parseList(formData.get("newAccessoriesJson")),
     photoIds: parseList(formData.get("photoIdsJson")),
   }, "Revisa los datos de la nueva entrega")
@@ -144,5 +144,38 @@ export async function transferAssignmentAction(_prev: ActionState, formData: For
   } catch (error) {
     logger.error("[ti:transferAssignment]", error)
     return { ok: false, message: safeActionMessage(error, "Error al transferir el activo") }
+  }
+}
+
+/**
+ * TIA-001 / TIA-002: el acuse del acta, que antes se marcaba solo al crearla.
+ * Mismo permiso que el resto de la custodia; la segregación —que no sea quien
+ * entregó— la aplica el servicio, no esta capa.
+ */
+export async function recordAssignmentAcceptanceAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("ti:manage_assets") }
+  catch { return { ok: false, message: "Sin permisos para registrar el acuse del acta" } }
+
+  const parsed = parseZ(itAssignmentAcceptanceSchema, {
+    assignmentId: formData.get("assignmentId"),
+    outcome: formData.get("outcome"),
+    note: formData.get("note"),
+  }, "Revisa los datos del acuse")
+  if (!parsed.ok) return parsed
+
+  try {
+    await recordAssignmentAcceptance(parsed.data, {
+      userId: session.user.id,
+      userEmail: session.user.email ?? undefined,
+    }, serviceWorksiteScope(session))
+    revalidatePath("/ti/asignaciones")
+    revalidatePath(`/ti/actas/${parsed.data.assignmentId}/print`)
+    return { ok: true, message: parsed.data.outcome === "aceptada"
+      ? "Acuse registrado"
+      : "Acta cerrada sin acuse, con su motivo" }
+  } catch (error) {
+    logger.error("[ti:recordAssignmentAcceptance]", error)
+    return { ok: false, message: safeActionMessage(error, "Error al registrar el acuse") }
   }
 }

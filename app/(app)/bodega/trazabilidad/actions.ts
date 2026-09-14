@@ -13,7 +13,7 @@ import {
   scanOperationalIntegrity,
   verifyOperationalIntegrityCase,
 } from "@/lib/services/operational-integrity"
-import { revalidateOperationalViews } from "@/lib/services/operational-cache"
+import { revalidateOperationalIntegrityBoard, revalidateOperationalViews } from "@/lib/services/operational-cache"
 
 export interface TraceabilityIntegrityActionState {
   ok: boolean
@@ -43,15 +43,20 @@ export async function scanTraceabilityIntegrityAction(
   catch { return { ok: false, message: "No tienes permisos para revisar excepciones de trazabilidad" } }
 
   try {
-    const { findings, recordedCount } = await scanTraceabilityIntegrity(session)
+    const { findings, recordedCount, reopenedCount } = await scanTraceabilityIntegrity(session)
     revalidatePath("/bodega/trazabilidad")
+    // TRZ-002: una reapertura es noticia distinta de un caso nuevo — significa
+    // que algo que se dio por regularizado sigue descuadrado.
+    const reopenedNote = reopenedCount > 0
+      ? ` · ${reopenedCount} caso(s) reabierto(s): el descuadre persiste`
+      : ""
     return {
       ok: true,
-      message: recordedCount > 0
+      message: (recordedCount > 0
         ? `Se registraron ${recordedCount} excepciones de ${findings.length} detectadas`
         : findings.length > 0
           ? "Las excepciones detectadas ya estaban registradas"
-          : "No se detectaron excepciones de trazabilidad",
+          : "No se detectaron excepciones de trazabilidad") + reopenedNote,
     }
   } catch (error) {
     return { ok: false, message: safeActionMessage(error, "No fue posible revisar la integridad de trazabilidad") }
@@ -126,6 +131,9 @@ export async function scanOperationalIntegrityAction(
   try {
     const { found, recorded } = await scanOperationalIntegrity(session, [...parsed.data.domains])
     revalidateOperationalViews(["/bodega/trazabilidad"])
+    // PER-T02: la cola de integridad tiene caché propia; la invalida su propia
+    // acción para que el usuario vea el efecto sin esperar el TTL.
+    revalidateOperationalIntegrityBoard()
     return {
       ok: true,
       message: recorded > 0
@@ -156,6 +164,9 @@ export async function acknowledgeOperationalIntegrityCaseAction(
   try {
     await acknowledgeOperationalIntegrityCase(session, parsed.data.caseId, parsed.data.reason)
     revalidateOperationalViews(["/bodega/trazabilidad"])
+    // PER-T02: la cola de integridad tiene caché propia; la invalida su propia
+    // acción para que el usuario vea el efecto sin esperar el TTL.
+    revalidateOperationalIntegrityBoard()
     return { ok: true, message: "El caso quedó reconocido con su motivo en la evidencia" }
   } catch (error) {
     return { ok: false, message: safeActionMessage(error, "No fue posible reconocer el caso") }
@@ -178,6 +189,9 @@ export async function verifyOperationalIntegrityCaseAction(
     // evidencia sigue ahí, la acción informa que el caso continúa abierto.
     const { resolved } = await verifyOperationalIntegrityCase(session, parsed.data)
     revalidateOperationalViews(["/bodega/trazabilidad"])
+    // PER-T02: la cola de integridad tiene caché propia; la invalida su propia
+    // acción para que el usuario vea el efecto sin esperar el TTL.
+    revalidateOperationalIntegrityBoard()
     return resolved
       ? { ok: true, message: "El detector ya no encuentra el problema: el caso quedó resuelto" }
       : { ok: true, message: "El problema sigue presente: el caso continúa abierto con la evidencia actualizada" }

@@ -79,7 +79,7 @@ interface MockNextAuthConfig {
     }
   }>
   callbacks: {
-    jwt: (params: { token: Record<string, unknown>; user?: Record<string, unknown> }) => Promise<Record<string, unknown>>
+    jwt: (params: { token: Record<string, unknown>; user?: Record<string, unknown> }) => Promise<Record<string, unknown> | null>
     session: (params: { session: Session; token: Record<string, unknown> }) => Promise<Session>
   }
 }
@@ -257,6 +257,72 @@ describe("NextAuth configuration", () => {
       expect(mockGetUserRbacById).toHaveBeenCalledWith("user-123", true)
       expect(mockApplyRbacToToken).toHaveBeenCalledWith(token, mockRbac)
       expect(result).toBe(token)
+    })
+
+    /*
+     * AUTH-003 (auditoría 2026-09-14). El callback refrescaba RBAC pero no
+     * comparaba nada temporal: restablecer la contraseña no dejaba ninguna
+     * condición observable que hiciera fallar a una sesión emitida antes, de
+     * modo que una cookie robada seguía entrando hasta expirar sola.
+     */
+    it("AUTH-003: el callback jwt descarta una sesión emitida antes del cambio de contraseña", async () => {
+      const g = globalThis as unknown as { capturedConfig: unknown }
+      const config = g.capturedConfig as MockNextAuthConfig
+      const jwt = config.callbacks.jwt
+      const cambioDeClave = new Date("2026-09-14T12:00:00.000Z")
+      const token = { id: "user-123", sessionIssuedAt: cambioDeClave.getTime() - 60_000 }
+      mockGetUserRbacById.mockResolvedValue({
+        id: "user-123", email: "test@example.com", isActive: true,
+        sessionsValidFrom: cambioDeClave.toISOString(),
+      })
+
+      const result = await jwt({ token })
+
+      expect(result).toBeNull()
+      expect(mockApplyRbacToToken).not.toHaveBeenCalled()
+    })
+
+    it("AUTH-003: la sesión iniciada después del cambio de contraseña sobrevive", async () => {
+      const g = globalThis as unknown as { capturedConfig: unknown }
+      const config = g.capturedConfig as MockNextAuthConfig
+      const jwt = config.callbacks.jwt
+      const cambioDeClave = new Date("2026-09-14T12:00:00.000Z")
+      const token = { id: "user-123", sessionIssuedAt: cambioDeClave.getTime() + 1_000 }
+      const mockRbac = {
+        id: "user-123", email: "test@example.com", isActive: true,
+        sessionsValidFrom: cambioDeClave.toISOString(),
+      }
+      mockGetUserRbacById.mockResolvedValue(mockRbac)
+
+      const result = await jwt({ token })
+
+      expect(result).toBe(token)
+      expect(mockApplyRbacToToken).toHaveBeenCalledWith(token, mockRbac)
+    })
+
+    it("AUTH-003: sin revocación registrada no se cierra ninguna sesión (el despliegue no expulsa a nadie)", async () => {
+      const g = globalThis as unknown as { capturedConfig: unknown }
+      const config = g.capturedConfig as MockNextAuthConfig
+      const jwt = config.callbacks.jwt
+      const token = { id: "user-123" } // cookie antigua, sin la marca nueva
+      mockGetUserRbacById.mockResolvedValue({
+        id: "user-123", email: "test@example.com", isActive: true, sessionsValidFrom: null,
+      })
+
+      expect(await jwt({ token })).toBe(token)
+    })
+
+    it("AUTH-003: el inicio de sesión graba su propia marca temporal (iat lo reescribe Auth.js en cada reemisión)", async () => {
+      const g = globalThis as unknown as { capturedConfig: unknown }
+      const config = g.capturedConfig as MockNextAuthConfig
+      const jwt = config.callbacks.jwt
+      const token: Record<string, unknown> = { name: "test" }
+
+      const antes = Date.now()
+      await jwt({ token, user: { id: "user-123", email: "test@example.com", isActive: true } })
+
+      expect(typeof token.sessionIssuedAt).toBe("number")
+      expect(token.sessionIssuedAt as number).toBeGreaterThanOrEqual(antes)
     })
 
     it("session callback maps token to session user object", async () => {

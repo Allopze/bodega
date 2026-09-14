@@ -102,7 +102,24 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    const xlsx = await buildXlsxBuffer(report)
+    /**
+     * REP-001 y REP-002 (auditoría 2026-09-14): el truncado a `MAX_EXPORT_ROWS`
+     * sólo viajaba en la cabecera `X-Row-Limit-Applied`, que el enlace de
+     * descarga no lee —el archivo salía incompleto sin decirlo—, y el centro de
+     * reportes era el único exportador que no adjuntaba la hoja de metadatos
+     * que otras ocho rutas sí incluyen.
+     *
+     * La corrección ya existía en el repositorio: la exportación de
+     * trazabilidad agregó su hoja de advertencia por este mismo motivo
+     * (OP-02). Acá se aplica a los dieciséis tipos de una sola vez.
+     */
+    const xlsx = await buildXlsxBuffer(report, {
+      session,
+      filters,
+      from: from ?? null,
+      to: to ?? null,
+      rowLimit: MAX_EXPORT_ROWS,
+    })
     const headers: Record<string, string> = {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": encodeContentDisposition(`${report.filenameBase}.xlsx`, "attachment"),

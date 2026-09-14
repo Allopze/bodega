@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { INITIAL_STATE } from "@/lib/form-state"
 import type { ActionState } from "@/lib/validation/masters"
-import { replaceVariables } from "@/lib/services/email-template-render"
+import { buildTemplatePreviewDocument, replaceVariables } from "@/lib/services/email-template-render"
 import { updateTemplateAction, resetTemplateAction } from "./actions"
 
 interface TemplateItem {
@@ -219,8 +219,12 @@ const PREVIEW_VARS: Record<string, string> = {
 
 function PreviewBlock({ template }: { template: TemplateItem }) {
   const subjectPreview = replaceVariables(template.subject, PREVIEW_VARS)
-  const bodyPreview = replaceVariables(template.bodyHtml, PREVIEW_VARS)
-  const isFullHtml = /<!DOCTYPE|<html/i.test(template.bodyHtml)
+  // HALLAZGO SEC-003 (S4/P2): antes había dos caminos y sólo uno era seguro.
+  // El documento HTML completo iba al `iframe`; el fragmento —el caso habitual—
+  // se inyectaba con `dangerouslySetInnerHTML` en el DOM de la página de
+  // administración, sin sanear. Ahora ambos casos pasan por el mismo documento
+  // aislado: el marcado de la plantilla nunca vuelve a tocar el DOM de la app.
+  const bodyPreview = buildTemplatePreviewDocument(replaceVariables(template.bodyHtml, PREVIEW_VARS))
 
   return (
     <div className="space-y-3">
@@ -228,25 +232,20 @@ function PreviewBlock({ template }: { template: TemplateItem }) {
         <p className="mb-1 text-xs font-semibold text-[var(--color-text-subtle)]">Vista previa del asunto:</p>
         <p className="text-sm text-[var(--color-text)]">{subjectPreview}</p>
       </div>
-      {isFullHtml && (
-        <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
-          <p className="mb-2 text-xs font-semibold text-[var(--color-text-subtle)]">Vista previa del correo:</p>
-          <div className="overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-white">
-            <iframe
-              title="Vista previa del correo"
-              sandbox="allow-same-origin"
-              srcDoc={bodyPreview}
-              className="h-[400px] w-full border-0"
-            />
-          </div>
+      <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+        <p className="mb-2 text-xs font-semibold text-[var(--color-text-subtle)]">Vista previa del correo:</p>
+        <div className="overflow-hidden rounded-[var(--radius)] border border-[var(--color-border)] bg-white">
+          {/* `sandbox=""` sin `allow-same-origin`: la vista previa no necesita
+              el origen de la aplicación, y negarlo deja el marco sin acceso a
+              cookies ni almacenamiento aunque alguien agregue permisos luego. */}
+          <iframe
+            title="Vista previa del correo"
+            sandbox=""
+            srcDoc={bodyPreview}
+            className="h-[400px] w-full border-0"
+          />
         </div>
-      )}
-      {!isFullHtml && (
-        <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
-          <p className="mb-2 text-xs font-semibold text-[var(--color-text-subtle)]">Vista previa del contenido:</p>
-          <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-white p-4" dangerouslySetInnerHTML={{ __html: bodyPreview }} />
-        </div>
-      )}
+      </div>
     </div>
   )
 }

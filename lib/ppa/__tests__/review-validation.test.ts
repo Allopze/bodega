@@ -36,10 +36,33 @@ describe("ppaReviewSchema", () => {
     }
   })
 
-  it("permite rechazar sin acción correctiva", () => {
+  it("permite rechazar sin acción correctiva: no hay corrección que planificar", () => {
     const res = ppaReviewSchema.safeParse({
       ppaId: "abc", fuiAlLugar: false, decision: "rechazado",
+      reviewNota: "El trabajo se anuló por decisión del cliente",
     })
     expect(res.success).toBe(true)
+  })
+
+  /**
+   * PPAI-002 (auditoría 2026-09-14), patrón P6: la rama de rechazo devolvía sin
+   * validar nada. Es la decisión más terminal del flujo —el trabajo no se hace
+   * y el caso muere sin acción correctiva— y era la única sin justificación
+   * obligatoria, en una plataforma que pide motivo para anular una guía, una
+   * entrega o un pago.
+   */
+  it("pero no permite rechazar sin decir por qué", () => {
+    const sinNota = ppaReviewSchema.safeParse({
+      ppaId: "abc", fuiAlLugar: false, decision: "rechazado",
+    })
+    expect(sinNota.success).toBe(false)
+
+    const casiNada = ppaReviewSchema.safeParse({
+      ppaId: "abc", fuiAlLugar: false, decision: "rechazado", reviewNota: "no va",
+    })
+    expect(casiNada.success).toBe(false)
+    if (!casiNada.success) {
+      expect(casiNada.error.issues[0]?.path).toEqual(["reviewNota"])
+    }
   })
 })

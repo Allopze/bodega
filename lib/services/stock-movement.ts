@@ -21,6 +21,15 @@ export type MovementType =
   | "egreso_traslado"      // - : salida por guía de despacho interna (oficina → faena)
   | "ingreso_traslado"     // + : entrada por guía de despacho interna en la faena destino
   | "ingreso_anulacion"    // + : reverso de una entrega anulada (el egreso nunca debió existir)
+  | "egreso_anulacion"     // - : reverso de una recepción anulada (el ingreso nunca debió existir)
+  /**
+   * `MNT-002` (auditoría 2026-09-14): faltaba el egreso que cierra el circuito
+   * del repuesto. Se compraba por Solicitudes → OC → Recepción, lo que **suma**
+   * stock en la faena, y su consumo en una orden de trabajo no lo restaba
+   * nunca: la bodega sobreestimaba las existencias de forma permanente y el
+   * único modo de cuadrar era un ajuste manual.
+   */
+  | "egreso_mantencion"    // - : repuesto de catálogo consumido en una orden de trabajo
 
 /* ── Apply movement ─────────────────────────────────────────────────────────── */
 
@@ -75,6 +84,15 @@ const STOCK_DOCUMENT_SHAPE: Record<StockDocumentKind, { movementType: MovementTy
   desecho: { movementType: "egreso_desecho", prefix: "DES" },
 }
 
+export interface StockDocumentResult {
+  id: string
+  code: string
+  /** Magnitud pedida por quien registró el documento. */
+  requestedQuantity: number
+  /** Magnitud que el kardex realmente descontó (ver STK-001). */
+  appliedQuantity: number
+}
+
 /**
  * Registra un documento manual de stock y su movimiento, en una transaccion.
  *
@@ -82,10 +100,13 @@ const STOCK_DOCUMENT_SHAPE: Record<StockDocumentKind, { movementType: MovementTy
  * entra, negativo sale). Para un desecho la rama del motor espera la magnitud en
  * positivo y ella misma descuenta, asi que la cabecera guarda el signo negativo
  * y el movimiento recibe el valor absoluto.
+ *
+ * Devuelve lo pedido y lo efectivamente aplicado: no siempre coinciden en una
+ * baja, y quien llama debe poder decirlo en pantalla (STK-001).
  */
 export async function registerStockDocument(
   input: ApplyMovementInput & { kind: StockDocumentKind },
-): Promise<{ id: string; code: string }> {
+): Promise<StockDocumentResult> {
   const shape = STOCK_DOCUMENT_SHAPE[input.kind]
   if (!shape) throw new Error("Tipo de documento de stock desconocido")
 
@@ -114,11 +135,44 @@ export async function registerStockDocument(
       referenceType: "stock_adjustment",
       referenceId: id,
     })
-    return { id, code }
+
+    /**
+     * STK-001 (auditoría 2026-09-13): la cabecera se escribe antes de mover el
+     * saldo, con la cantidad PEDIDA, y la rama de desecho de `applyMovementTx`
+     * recorta a lo disponible. Con 3 unidades en bodega, una baja de 10
+     * terminaba con éxito, el kardex anotaba −3 y el folio DES declaraba −10:
+     * un descuadre que ningún conteo posterior puede explicar.
+     *
+     * Un documento con folio siempre tiene efecto real —el propio esquema lo
+     * exige con `stock_adjustments_quantity_nonzero`—, así que la divergencia no
+     * se puede "reconciliar" escribiendo 0 en la cabecera: se rechaza y la
+     * transacción completa se deshace, sin folio a medias.
+     *
+     * El registro sin folio sigue disponible para el caso legítimo de dar de
+     * baja algo que ya salió de bodega (EPP entregado y descartado por el
+     * trabajador): ese camino usa `applyMovement` directamente, sin documento.
+     */
+    const [applied] = await tx
+      .select({ quantity: inventoryMovements.quantity })
+      .from(inventoryMovements)
+      .where(and(
+        eq(inventoryMovements.referenceType, "stock_adjustment"),
+        eq(inventoryMovements.referenceId, id),
+      ))
+      .limit(1)
+    const appliedQuantity = Math.abs(applied?.quantity ?? 0)
+    if (input.kind === "desecho" && appliedQuantity !== magnitude) {
+      throw new Error(
+        `Stock insuficiente para la baja: disponible ${appliedQuantity}, solicitado ${magnitude}. ` +
+        "Ajusta la cantidad o registra primero el ingreso que falta.",
+      )
+    }
+
+    return { id, code, requestedQuantity: magnitude, appliedQuantity }
   })
 }
 
-export async function registerStockAdjustment(input: ApplyMovementInput): Promise<{ id: string; code: string }> {
+export async function registerStockAdjustment(input: ApplyMovementInput): Promise<StockDocumentResult> {
   if (input.type !== "ajuste") throw new Error("El documento no corresponde a un ajuste de stock")
   return registerStockDocument({ ...input, kind: "ajuste" })
 }
@@ -126,7 +180,7 @@ export async function registerStockAdjustment(input: ApplyMovementInput): Promis
 /** Baja por desecho. `quantity` es la magnitud a retirar, siempre positiva. */
 export async function registerStockDiscard(
   input: Omit<ApplyMovementInput, "type"> & { reason: string },
-): Promise<{ id: string; code: string }> {
+): Promise<StockDocumentResult> {
   return registerStockDocument({ ...input, type: "egreso_desecho", kind: "desecho" })
 }
 
@@ -298,6 +352,14 @@ export async function applyMovementTx(tx: Tx, input: ApplyMovementInput): Promis
       ))
       .for("update")
     const currentQty = existing?.quantity ?? 0
+    /**
+     * El recorte es deliberado: una baja puede documentar EPP que ya se entregó
+     * y por tanto ya no está en bodega ("EPP ya entregado, descartado por
+     * trabajador"), y ahí el movimiento es sólo registro. Lo que NO puede pasar
+     * es que la cabecera del documento declare una magnitud distinta de la que
+     * se aplicó — ver `registerStockDocument`, que reconcilia el folio con lo
+     * efectivamente descontado (STK-001).
+     */
     const deductQty = currentQty > 0 ? Math.min(input.quantity, currentQty) : 0
     const newQty = currentQty - deductQty
 

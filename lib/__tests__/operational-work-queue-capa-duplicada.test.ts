@@ -98,7 +98,15 @@ describe("cola operacional — la acción del PDTP no se cuenta dos veces", () =
 
   afterAll(async () => { await pg.close() })
 
-  const ambos = ["prevention:pdtp:view", "prevention:capa:view"]
+  /*
+   * PEND-001 (auditoría 2026-09-14): la cola dejó de seleccionar con el permiso
+   * de lectura. Estos perfiles son los reales de quienes gestionan la acción
+   * —`prevention:pdtp:action:manage` para el PDTP, los de transición para
+   * CAPA—; el permiso de vista solo ya no produce una fila con CTA.
+   */
+  const PDTP_ACTOR = ["prevention:pdtp:view", "prevention:pdtp:action:manage"]
+  const CAPA_ACTOR = ["prevention:capa:view", "prevention:capa:manage"]
+  const ambos = [...PDTP_ACTOR, ...CAPA_ACTOR]
 
   const acciones = async (session: Session) =>
     (await getOperationalWorkQueue(session)).items.filter((item) => item.sourceType === "capa")
@@ -126,21 +134,21 @@ describe("cola operacional — la acción del PDTP no se cuenta dos veces", () =
    * unificación los dejara fuera, les borraría el trabajo de la cola.
    */
   it("quien sólo ve PDTP la sigue viendo, y no la manda a un módulo sin permiso", async () => {
-    const items = await acciones(makeSession(["prevention:pdtp:view"]))
+    const items = await acciones(makeSession(PDTP_ACTOR))
     expect(items).toHaveLength(1)
     expect(items[0]!.href).toBe("/prevencion/pdtp/acciones")
   })
 
   it("quien sólo ve CAPA la sigue viendo, desde su propia pantalla", async () => {
-    const items = await acciones(makeSession(["prevention:capa:view"]))
+    const items = await acciones(makeSession(CAPA_ACTOR))
     expect(items).toHaveLength(1)
     expect(items[0]!.href).toBe(`/prevencion/capa/${capaId}`)
   })
 
   it("el contador del shell tampoco la cuenta dos veces", async () => {
     expect(await getOperationalWorkCount(makeSession(ambos))).toBe(1)
-    expect(await getOperationalWorkCount(makeSession(["prevention:pdtp:view"]))).toBe(1)
-    expect(await getOperationalWorkCount(makeSession(["prevention:capa:view"]))).toBe(1)
+    expect(await getOperationalWorkCount(makeSession(PDTP_ACTOR))).toBe(1)
+    expect(await getOperationalWorkCount(makeSession(CAPA_ACTOR))).toBe(1)
   })
 
   /**

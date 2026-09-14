@@ -19,6 +19,8 @@ import { getPurchaseOrderInvoiceReconciliation, persistPurchaseOrderInvoiceRecon
 import { classifyOrderReference, dteDocumentKind, dteInvoiceRejection, normalizeSupplierProductCode, normalizeSupplierProductName, type DteCandidateOrderReference } from "./dte-candidates"
 import { normalizeOrderCodeRef } from "./dte-parser"
 import { loadInvoiceLineAllocationsTx, replaceInvoiceLineAllocationsTx } from "./invoice-line-allocations"
+import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
+import { describeCrossBookMatch, describeDuplicateAcrossOrders, findInBillingBook, findSameSupplierDocumentInAnotherOrder } from "./supplier-document-crosscheck"
 
 /* ── Purchase Order Invoices ─────────────────────────────────────────────────── */
 
@@ -97,6 +99,8 @@ export interface DteInvoiceLineResolution {
 
 export interface DeleteInvoiceResult {
   filePath: string
+  /** FAC-002: la factura se anuló; el archivo sigue en su sitio. */
+  voided: true
 }
 
 export interface SetPurchaseOrderInvoiceReceiptsInput {
@@ -241,6 +245,7 @@ async function insertPurchaseOrderInvoice(
       throw new Error("Ya existe una factura con ese folio para esta OC")
     }
 
+
     const linkedItemIds = invoiceItems
       .map((item) => item.purchaseOrderItemId)
       .filter((id): id is string => Boolean(id))
@@ -280,6 +285,45 @@ async function insertPurchaseOrderInvoice(
     // positivo, suma— y equivocarse hacia allá no borra plata de una OC.
     const documentKind = dteAttachment ? dteDocumentKind(dteAttachment.dteIdentity.tipoDte ?? "") : "invoice"
     const sign = documentKind === "credit_note" ? -1 : 1
+    // FAC-001: la unicidad declarada es por OC, así que el mismo folio del mismo
+    // proveedor podía adjuntarse a dos órdenes y contarse dos veces. El folio de
+    // un proveedor identifica una obligación de pago, no una por orden.
+    const duplicateElsewhere = await findSameSupplierDocumentInAnotherOrder({
+      supplierRut: input.supplierIdentity?.documentSupplierRut ?? null,
+      invoiceNumber,
+      documentKind,
+      exceptPurchaseOrderId: input.purchaseOrderId,
+    }, tx)
+    if (duplicateElsewhere) {
+      throw new Error(describeDuplicateAcrossOrders(duplicateElsewhere))
+    }
+    /*
+     * E2E-003 (auditoría 2026-09-14): el mismo documento de proveedor puede
+     * vivir en dos libros que no se conocen —éste, que cuelga de la OC y
+     * alimenta la conciliación de tres vías, y `billing_invoices` con
+     * `direction = 'purchase'`, que trae vencimiento, cobranza y pagos—. La
+     * detección de duplicados de facturación sólo mira su propio libro.
+     *
+     * Cuál de los dos debe ser el libro único es una decisión de producto:
+     * unificarlos cambia quién manda sobre el pago y sobre la conciliación. La
+     * comprobación cruzada no la necesita y es la medida que el plan pide
+     * mientras tanto: **detecta y deja constancia; no fusiona ni bloquea**.
+     * Bloquear sería peor —hay casos legítimos en que el documento entra por los
+     * dos caminos— y quien revisa necesita el dato, no una puerta cerrada.
+     */
+    const crossBook = await findInBillingBook({
+      issuerTaxId: input.supplierIdentity?.documentSupplierRut ?? null,
+      invoiceNumber,
+      documentKind,
+    }, tx)
+    if (crossBook) {
+      logger.warn("[purchasing/invoice] el documento ya existe en el libro de facturación", {
+        purchaseOrderId: input.purchaseOrderId,
+        invoiceNumber,
+        billingInvoiceId: crossBook.id,
+      })
+    }
+
     if (documentKind === "credit_note") {
       invoiceItems = invoiceItems.map((item) => ({
         ...item,
@@ -376,6 +420,10 @@ async function insertPurchaseOrderInvoice(
       action:     "create",
       entityType: "purchase_order_invoice",
       entityId:   invoiceId,
+      // E2E-003: si el documento ya estaba al otro lado, queda dicho aquí. Es
+      // el rastro que sobrevive a la sesión y el que permite auditar el cruce
+      // mientras los dos libros sigan separados.
+      reason:     crossBook ? describeCrossBookMatch(crossBook) : undefined,
       entityCode: input.invoiceNumber,
       newState:   {
         purchaseOrderId: input.purchaseOrderId,
@@ -737,12 +785,19 @@ function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100
 }
 
+/**
+ * `FAC-002`: conserva el nombre porque «eliminar» es lo que la pantalla ofrece,
+ * pero **anula**. Ver el bloque de abajo.
+ */
 export async function deletePurchaseOrderInvoice(
   invoiceId: string,
   userId: string,
   worksiteIds: string[] | 'all' = 'all',
-  opts?: { userEmail?: string },
+  opts?: { userEmail?: string; reason?: string },
 ): Promise<DeleteInvoiceResult> {
+  const reason = (opts?.reason ?? "").trim()
+  if (!isValidReason(reason)) throw new Error(reasonRequiredMessage("por qué se anula la factura"))
+
   return await db.transaction(async (tx) => {
     const invoice = await tx.query.purchaseOrderInvoices.findFirst({
       where: eq(purchaseOrderInvoices.id, invoiceId),
@@ -769,19 +824,37 @@ export async function deletePurchaseOrderInvoice(
       throw new Error(`No se puede eliminar la factura de una OC en estado '${order.status}'`)
     }
 
+    if (invoice.voidedAt) throw new Error("La factura ya está anulada")
+
     // La FK DTE → factura es NO ACTION por trazabilidad. Se desvincula dentro
-    // de la misma transacción antes de borrar, para que una factura creada
-    // desde DTE pueda corregirse sin dejar evidencia colgada.
+    // de la misma transacción, para que una factura creada desde DTE pueda
+    // corregirse sin dejar evidencia colgada y el DTE vuelva a estar
+    // disponible para vincularse donde corresponde.
     await tx.update(dteDocuments)
       .set({ purchaseOrderInvoiceId: null })
       .where(eq(dteDocuments.purchaseOrderInvoiceId, invoiceId))
 
-    await tx.delete(purchaseOrderInvoices).where(eq(purchaseOrderInvoices.id, invoiceId))
+    /*
+     * FAC-002 (auditoría 2026-09-14), patrón P5: aquí había un `DELETE`. Se
+     * llevaba por cascada las líneas y las asignaciones, y la acción borraba
+     * después el archivo del disco: se perdía un respaldo tributario y la
+     * evidencia de conciliación que lo acompañaba, y una revisión ya aceptada
+     * quedaba apuntando a una factura inexistente.
+     *
+     * Ahora se anula. La fila, sus líneas, sus asignaciones y el archivo se
+     * conservan; deja de contar para la conciliación porque todas sus lecturas
+     * filtran `voided_at IS NULL`.
+     */
+    await tx.update(purchaseOrderInvoices).set({
+      voidedAt: new Date().toISOString(),
+      voidedBy: userId,
+      voidReason: reason,
+    }).where(eq(purchaseOrderInvoices.id, invoiceId))
 
     await recordAudit({
       userId,
       userEmail:  opts?.userEmail,
-      action:     "delete",
+      action:     "update",
       entityType: "purchase_order_invoice",
       entityId:   invoiceId,
       entityCode: invoice.invoiceNumber,
@@ -790,11 +863,15 @@ export async function deletePurchaseOrderInvoice(
         purchaseOrderCode: order?.code,
         amount:            invoice.amount,
       },
+      newState:   { voided: true },
+      reason,
     }, tx)
 
     await persistPurchaseOrderInvoiceReconciliationTx(tx, order.id)
 
-    return { filePath: invoice.filePath }
+    // El archivo **no** se borra: es el respaldo tributario, y la fila anulada
+    // lo sigue apuntando. Se devuelve por compatibilidad con el llamador.
+    return { filePath: invoice.filePath, voided: true }
   })
 }
 

@@ -90,6 +90,9 @@ const REVIEW_INPUT = (ppaId: string) => ({
   dueDate: "2026-08-01", priority: "media" as const,
 })
 
+/** PPAI-003: la declaración de controles implementados ya no puede ir vacía. */
+const DECLARATION = "Se instaló línea de vida y se verificó el arnés del ejecutor"
+
 async function reviewToCorreccion(ppaId: string) {
   const { reviewPpa } = await import("@/lib/services/ppa-module/reportes")
   return reviewPpa(REVIEW_INPUT(ppaId), REVIEWER.userId, REVIEWER.worksiteIds)
@@ -114,7 +117,12 @@ describe("PPA workflow — persistencia real (PGlite)", () => {
   it("reviewPpa con decisión rechazado no crea CAPA y deja el PPA rechazado", async () => {
     const ppaId = await insertPpaFixture()
     const { reviewPpa } = await import("@/lib/services/ppa-module/reportes")
-    const updated = await reviewPpa({ ppaId, fuiAlLugar: true, decision: "rechazado" }, REVIEWER.userId, REVIEWER.worksiteIds)
+    // PPAI-002: rechazar es la decisión más terminal del flujo y ahora exige
+    // decir por qué; no exige acción correctiva, que sería absurdo.
+    const updated = await reviewPpa({
+      ppaId, fuiAlLugar: true, decision: "rechazado",
+      reviewNota: "El trabajo se anuló por decisión del cliente",
+    }, REVIEWER.userId, REVIEWER.worksiteIds)
     expect(updated.estado).toBe("rechazado")
     expect(updated.version).toBe(2)
 
@@ -168,7 +176,7 @@ describe("PPA workflow — persistencia real (PGlite)", () => {
     await attachCapaEvidence(capaId)
 
     const { declarePpaCorrection } = await import("@/lib/services/ppa-module/reportes")
-    await expect(declarePpaCorrection({ ppaId, expectedPpaVersion: 1, expectedCapaVersion: 1 }, REVIEWER))
+    await expect(declarePpaCorrection({ ppaId, expectedPpaVersion: 1, expectedCapaVersion: 1, declaration: DECLARATION }, REVIEWER))
       .rejects.toThrow(/cambió o no está en corrección/i)
 
     const [row] = await inMemoryDb.select().from(schema.ppaSubmissions).where(eq(schema.ppaSubmissions.id, ppaId))
@@ -184,7 +192,7 @@ describe("PPA workflow — persistencia real (PGlite)", () => {
 
     const { declarePpaCorrection, verifyPpaCorrection, authorizePpaRestart, closePpa } = await import("@/lib/services/ppa-module/reportes")
 
-    const declared = await declarePpaCorrection({ ppaId, expectedPpaVersion: 2, expectedCapaVersion: 1 }, REVIEWER)
+    const declared = await declarePpaCorrection({ ppaId, expectedPpaVersion: 2, expectedCapaVersion: 1, declaration: DECLARATION }, REVIEWER)
     expect(declared.estado).toBe("pendiente_verificacion")
     expect(declared.version).toBe(3)
     const [capaAfterDeclare] = await inMemoryDb.select().from(schema.preventionCapaActions).where(eq(schema.preventionCapaActions.id, capaId))
@@ -219,7 +227,7 @@ describe("PPA workflow — persistencia real (PGlite)", () => {
     await attachCapaEvidence(capaId)
 
     const { declarePpaCorrection, verifyPpaCorrection } = await import("@/lib/services/ppa-module/reportes")
-    await declarePpaCorrection({ ppaId, expectedPpaVersion: 2, expectedCapaVersion: 1 }, REVIEWER)
+    await declarePpaCorrection({ ppaId, expectedPpaVersion: 2, expectedCapaVersion: 1, declaration: DECLARATION }, REVIEWER)
 
     const [capaBeforeVerify] = await inMemoryDb.select().from(schema.preventionCapaActions).where(eq(schema.preventionCapaActions.id, capaId))
     const rejected = await verifyPpaCorrection({
@@ -239,7 +247,7 @@ describe("PPA workflow — persistencia real (PGlite)", () => {
     const capaId = await linkedCapaId(ppaId)
     await attachCapaEvidence(capaId)
     const { declarePpaCorrection, closePpa } = await import("@/lib/services/ppa-module/reportes")
-    await declarePpaCorrection({ ppaId, expectedPpaVersion: 2, expectedCapaVersion: 1 }, REVIEWER)
+    await declarePpaCorrection({ ppaId, expectedPpaVersion: 2, expectedCapaVersion: 1, declaration: DECLARATION }, REVIEWER)
 
     // El PPA no llegó a "autorizado" (faltó verificar + autorizar reinicio), así
     // que closePpa debe rechazar por precondición de estado antes de tocar el CAPA.
@@ -309,6 +317,9 @@ describe("PPA-03 — el motor CAPA genérico no conduce acciones de origen ppa (
         sourceType: "manual", sourceId: "libre-1", worksiteId: "ws-1",
         finding: "Hallazgo de ronda", actionDescription: "Reponer señalética faltante.",
         priority: "medium", targetDate: "2026-09-01", evidenceRequired: false,
+        // CAPA-002: eximir de evidencia dejó de ser una casilla sin explicación;
+        // este caso la apagaba sin motivo porque nada se lo exigía.
+        evidenceExemptionReason: "La reposición de señalética se verifica en la misma ronda siguiente.",
       },
     })
     const moved = await transitionCapaAction({
@@ -331,7 +342,7 @@ describe("PPA-03 — el motor CAPA genérico no conduce acciones de origen ppa (
       .where(eq(schema.preventionCapaActions.id, capaId))
 
     const { declarePpaCorrection } = await import("@/lib/services/ppa-module/reportes")
-    const declared = await declarePpaCorrection({ ppaId, expectedPpaVersion: 2, expectedCapaVersion: 1 }, REVIEWER)
+    const declared = await declarePpaCorrection({ ppaId, expectedPpaVersion: 2, expectedCapaVersion: 1, declaration: DECLARATION }, REVIEWER)
     expect(declared.estado).toBe("pendiente_verificacion")
 
     // Idempotente: no vuelve a transicionar el CAPA que ya estaba en destino.

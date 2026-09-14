@@ -110,16 +110,21 @@ export function FleetDocumentsPanel({
       {canManageDocuments && <ConfirmDialog
         open={pendingDelete !== null}
         onOpenChange={(next) => { if (!next) setPendingDelete(null) }}
-        title="Eliminar documento"
-        description={pendingDelete ? `Se eliminará «${pendingDelete.fileName}» del vehículo. Esta acción no se puede deshacer.` : ""}
-        confirmLabel="Eliminar"
+        title="Anular documento"
+        // FLO-003: se anula, no se borra. El archivo se conserva porque es el
+        // respaldo que puede pedirse en una fiscalización.
+        description={pendingDelete ? `«${pendingDelete.fileName}» dejará de regir para este vehículo. El archivo se conserva y la anulación queda registrada con tu nombre.` : ""}
+        confirmLabel="Anular"
         variant="destructive"
         loading={deletePending}
-        onConfirm={() => {
+        reasonLabel="Motivo de la anulación"
+        reasonPlaceholder="Por ejemplo: se cargó la póliza del vehículo equivocado."
+        onConfirm={(reason) => {
           if (!pendingDelete) return
           const data = new FormData()
           data.set("documentId", pendingDelete.id)
           data.set("vehicleId", vehicleId)
+          data.set("reason", reason)
           startTransition(() => deleteAction(data))
           setPendingDelete(null)
         }}

@@ -25,7 +25,7 @@ export interface RequestActionsConfig {
   /** Zod schemas for each action */
   schemas: {
     quotationUpload:  z.ZodType<Omit<AddQuotationInput, "fileBuffer" | "fileName" | "mimeType" | "fileSize" | "uploadedBy" | "userEmail">>
-    selectQuotation:  z.ZodType<Pick<SelectQuotationInput, "requestId" | "quotationId">>
+    selectQuotation:  z.ZodType<Pick<SelectQuotationInput, "requestId" | "quotationId" | "justification">>
   }
   /** Service functions (already bound to the correct module config) */
   services: RequestServiceFunctions

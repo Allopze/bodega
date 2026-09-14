@@ -9,6 +9,11 @@ import { resolveReplenishmentLinksTx } from "@/lib/services/epp-replenishment"
 import { cancelEmergencyResourceServiceCaseTx } from "@/lib/services/emergency-resource-service"
 import { canTransition, type ItemStatus } from "./types"
 import { lockRequestsForRollupTx, rollupRequestStatus } from "./rollup"
+import {
+  collectBulkApprovalNoticesTx,
+  flushRequesterApprovalNotifications,
+  type PendingRequesterNotification,
+} from "@/lib/services/requester-approval-notify"
 
 /**
  * Bulk-approve multiple items in a single transaction.
@@ -18,7 +23,7 @@ import { lockRequestsForRollupTx, rollupRequestStatus } from "./rollup"
 export async function bulkApproveItems(
   itemIds: string[],
   userId: string,
-  opts?: { userEmail?: string; roleContext?: string },
+  opts?: { userEmail?: string; roleContext?: string; approverName?: string },
 ): Promise<{ approved: number; errors: string[] }> {
   if (itemIds.length === 0) return { approved: 0, errors: [] }
 
@@ -26,6 +31,15 @@ export async function bulkApproveItems(
   if (stableItemIds.length !== itemIds.length) {
     throw new Error("La aprobación masiva contiene ítems duplicados")
   }
+
+  /*
+   * APR-002 (auditoría 2026-09-14): la aprobación individual avisaba al
+   * solicitante y ésta no, así que el mismo hecho de negocio notificaba o no
+   * según el gesto del aprobador. Los avisos se resuelven dentro de la
+   * transacción (es donde se lee el solicitante) y se emiten después del
+   * commit: un rollback no debe dejar avisado a nadie.
+   */
+  let pendingNotices: PendingRequesterNotification[] = []
 
   await db.transaction(async (tx) => {
     const now = new Date().toISOString()
@@ -96,7 +110,13 @@ export async function bulkApproveItems(
     for (const requestId of new Set(lockedItems.map((item) => item.requestId))) {
       await rollupRequestStatus(requestId, tx, userId)
     }
+
+    pendingNotices = await collectBulkApprovalNoticesTx(tx, stableItemIds, {
+      approverName: opts?.approverName,
+    })
   })
+
+  flushRequesterApprovalNotifications(pendingNotices)
 
   return { approved: stableItemIds.length, errors: [] }
 }

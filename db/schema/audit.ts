@@ -56,6 +56,11 @@ export type NotificationType =
   | "oc_created"
   | "oc_sent"
   | "receipt_done"
+  // `E2E-001` (auditoría 2026-09-14): la cadena tiene tres puntos donde el saldo
+  // se recorta (cierre parcial de OC, rechazo/daño en recepción, diferencia al
+  // cotejar una GDI) y ninguno se lo decía al solicitante, que sólo recibía
+  // `receipt_done` cuando su ítem llegaba —completo— a oficina o a faena.
+  | "request_item_shortfall"
   | "dispatch_done"
   | "ppa_stopped"
   | "ppa_pending_review"
@@ -73,10 +78,22 @@ export type NotificationType =
   | "sst_document_expired"
   | "maintenance_due_soon"
   | "maintenance_overdue"
+  // Patrón P3 (auditoría 2026-09-14): tres vencimientos con consecuencia legal
+  // que hasta entonces sólo se veían abriendo su pantalla.
+  | "fleet_document_due_soon"
+  | "fleet_document_overdue"
+  | "risk_review_due_soon"
+  | "risk_review_overdue"
+  | "privacy_request_due_soon"
+  | "privacy_request_overdue"
   | "ti_warranty_expiring"
   | "ti_license_renewal"
   | "ti_repair_stuck"
   | "ti_ticket_stale"
+  // TIT-001 (auditoría 2026-09-14): la prioridad del ticket TI ahora gobierna
+  // un plazo, y el plazo avisa por tramo como ya hacía Soporte.
+  | "ti_ticket_sla_due_soon"
+  | "ti_ticket_sla_overdue"
   | "ti_ticket_created"
   | "ti_ticket_assigned"
   | "ti_ticket_resolved"

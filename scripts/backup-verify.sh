@@ -194,6 +194,38 @@ if [ "${CLOUDREVE_BACKUP_ENABLED:-false}" = "true" ]; then
   fi
 fi
 
+# ── 2d. Ensayo de restauración ───────────────────────────────────────────────
+# RES-001: todo lo anterior comprueba que el respaldo existe, pesa y se abre.
+# Que se pueda RESTAURAR lo comprueba `backup-restore-drill.sh`, que corre con
+# su propia periodicidad y deja acá su resultado. Se lee ese resultado en vez de
+# restaurar en línea: el ensayo tarda minutos y la verificación es diaria.
+
+if ! $DRIVE_ONLY; then
+  DRILL_FILE="${RESTORE_DRILL_RESULT_FILE:-${BACKUP_DIR}/restore-drill.json}"
+  DRILL_MAX_AGE_DAYS="${DRILL_MAX_AGE_DAYS:-8}"   # semanal + 1 día de margen
+
+  if [ ! -f "$DRILL_FILE" ]; then
+    ISSUES+=("Nunca se ha ensayado la restauración del respaldo (falta ${DRILL_FILE})")
+    [ "$EXIT_CODE" -lt 1 ] && EXIT_CODE=1
+  else
+    DRILL_AGE_DAYS=$(( ($(date +%s) - $(stat -c%Y "$DRILL_FILE" 2>/dev/null || stat -f%m "$DRILL_FILE" 2>/dev/null)) / 86400 ))
+    DRILL_STATUS=$(grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' "$DRILL_FILE" | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
+
+    if [ "$DRILL_AGE_DAYS" -gt "$DRILL_MAX_AGE_DAYS" ]; then
+      ISSUES+=("El último ensayo de restauración tiene ${DRILL_AGE_DAYS} días (máx: ${DRILL_MAX_AGE_DAYS}): nadie ha comprobado que el respaldo se restaure")
+      [ "$EXIT_CODE" -lt 1 ] && EXIT_CODE=1
+    elif [ "$DRILL_STATUS" = "CRITICAL" ]; then
+      ISSUES+=("El ensayo de restauración FALLÓ hace ${DRILL_AGE_DAYS}d: el respaldo no es restaurable")
+      EXIT_CODE=2
+    elif [ "$DRILL_STATUS" = "WARNING" ]; then
+      ISSUES+=("El ensayo de restauración no pudo ejecutarse (hace ${DRILL_AGE_DAYS}d)")
+      [ "$EXIT_CODE" -lt 1 ] && EXIT_CODE=1
+    else
+      log "OK: Ensayo de restauración ${DRILL_STATUS} hace ${DRILL_AGE_DAYS}d"
+    fi
+  fi
+fi
+
 # ── 3. Verificar espacio en disco ────────────────────────────────────────────
 
 if ! $DRIVE_ONLY; then

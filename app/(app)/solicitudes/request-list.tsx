@@ -16,6 +16,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { formatDate } from "@/lib/utils"
 import { toast } from "@/lib/toast"
 import { PriorityBadge } from "@/components/ui/priority-badge"
+import { URGENCY_OPTIONS } from "@/lib/urgency-labels"
 import { useActionState, useTransition } from "react"
 import { deleteRequestAction } from "./actions"
 import { DELETABLE_REQUEST_STATUSES, isOwnerDeletable } from "@/lib/services/requests-delete.constants"
@@ -129,8 +130,13 @@ export function RequestList({
       />
       {/* A5: el estado vive en las tabs, así que la barra no repite su select. */}
       {stageTabs.length > 0 && <StageTabs tabs={stageTabs} ariaLabel="Etapa de la solicitud" />}
+      {/* REQ-004: la barra pasaba sólo búsqueda y faena, así que `urgencia` —el
+          parámetro al que apunta la señal del encabezado— no tenía ningún
+          control en pantalla: ni para ponerlo ni para quitarlo. `URGENCY_OPTIONS`
+          es la misma fuente única que ya usa Aprobaciones. */}
       <ServerListFilters
         searchPlaceholder="Buscar por código o producto..."
+        urgencyOptions={[...URGENCY_OPTIONS]}
         worksiteOptions={worksiteOptions}
       />
       <DataTable

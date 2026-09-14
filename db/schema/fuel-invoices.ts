@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { pgTable, text, numeric, timestamp, check, index } from "drizzle-orm/pg-core"
+import { pgTable, text, numeric, timestamp, boolean, check, index } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { worksites } from "./worksites"
 import { fuelVehicles } from "./fuel-vehicles"
@@ -34,6 +34,16 @@ export const fuelLoads = pgTable("fuel_loads", {
   iecTotal:       numeric("iec_total", { precision: 14, scale: 2, mode: "number" }).notNull().default(0),
   ivaAmount:      numeric("iva_amount", { precision: 14, scale: 2, mode: "number" }).notNull().default(0),
   totalAmount:    numeric("total_amount", { precision: 14, scale: 2, mode: "number" }).notNull(),
+  /**
+   * `COM-002` (auditoría 2026-09-14): la casilla «el medidor fue reemplazado»
+   * apagaba la validación de regresión de lectura y no se guardaba en ninguna
+   * parte —no existía esta columna, y ni el insert ni el update la incluían—.
+   * La carga aparecía después como una lectura normal, así que el rendimiento
+   * por equipo, el consumo por kilómetro y las reglas de anomalía se calculaban
+   * sobre una serie partida sin saberlo.
+   */
+  meterReplaced:  boolean("meter_replaced").notNull().default(false),
+  meterReplacementReason: text("meter_replacement_reason"),
   status:         text("status").notNull().default("draft"),
   notes:          text("notes"),
   createdBy:      text("created_by").notNull().references(() => users.id),
@@ -47,6 +57,15 @@ export const fuelLoads = pgTable("fuel_loads", {
     ${table.serviceType} IN ('TCT', 'TAE')
   `),
   check("fuel_loads_liters_positive", sql`${table.liters} >= 0`),
+  // Desactivar el control de regresión parte la serie del equipo y no se puede
+  // reconstruir: exige el mismo motivo que el resto de los actos irreversibles
+  // (`REASON_MIN_LENGTH` = 10). Y un motivo sin casilla no declara nada, así
+  // que tampoco se admite (COM-002).
+  check("fuel_loads_meter_replacement_justified", sql`
+    (${table.meterReplaced} = false AND ${table.meterReplacementReason} IS NULL)
+    OR (${table.meterReplaced} = true AND ${table.meterReplacementReason} IS NOT NULL
+        AND length(btrim(${table.meterReplacementReason})) >= 10)
+  `),
   index("fuel_loads_month_idx").on(table.month),
   index("fuel_loads_vehicle_idx").on(table.vehicleId),
   index("fuel_loads_worksite_idx").on(table.worksiteId),

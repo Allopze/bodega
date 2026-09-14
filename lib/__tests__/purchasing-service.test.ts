@@ -326,6 +326,147 @@ describe("Purchasing service — edge cases", () => {
       ])
     })
 
+    /**
+     * OC-001 (auditoría 2026-09-14): el proveedor activo se exigía sólo al crear
+     * el borrador. Desactivarlo entremedio no impedía comprometer la compra, y
+     * la recepción quedaba esperando a una contraparte ya retirada.
+     */
+    it("issueAndSendOrder rechaza el proveedor desactivado entre el borrador y la emisión", async () => {
+      const requestId = "req-issue-sup-off"
+      const requestItemId = "item-issue-sup-off"
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: requestId, code: "SOL-ISSUE-SUP-OFF", worksiteId: "ws-purch",
+        requesterId: userId, requestType: "epp", urgency: "normal",
+        status: "approved", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: requestItemId, requestId, productId: "prod-purch",
+        quantity: 1, unitOfMeasure: "unidad", status: "pending_purchase",
+        createdAt: now, updatedAt: now,
+      })
+      const orderId = await createOrder({
+        worksiteId: "ws-purch", supplierId: "sup-purch", createdBy: userId,
+        items: [{
+          requestItemId, productId: "prod-purch", productNameFree: null,
+          quantity: 1, unitOfMeasure: "unidad", unitPrice: 1000,
+        }],
+      })
+
+      await inMemoryDb.update(schema.suppliers)
+        .set({ isActive: false })
+        .where(eq(schema.suppliers.id, "sup-purch"))
+
+      await expect(issueAndSendOrder(orderId, userId)).rejects.toThrow(/desactivado como proveedor/)
+
+      const order = await inMemoryDb.query.purchaseOrders.findFirst({
+        where: eq(schema.purchaseOrders.id, orderId),
+      })
+      expect(order?.status).toBe("draft")
+
+      await inMemoryDb.update(schema.suppliers)
+        .set({ isActive: true })
+        .where(eq(schema.suppliers.id, "sup-purch"))
+    })
+
+    /*
+     * OC-002 (auditoría 2026-09-14): «Emitir y enviar» afirmaba que la OC salía
+     * al proveedor y abría Recepción, pero la transacción sólo escribía estados
+     * y fechas: sin destinatario, canal ni acuse, auditoría no podía distinguir
+     * una emisión administrativa de un despacho efectivo. Las pruebas de esta
+     * transición validaban justamente eso —mutación, timestamps y evento— sin
+     * mirar la constancia; estas dos la fijan.
+     */
+    async function crearBorradorParaEmision(suffix: string) {
+      const requestId = `req-oc002-${suffix}`
+      const requestItemId = `item-oc002-${suffix}`
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: requestId, code: `SOL-OC002-${suffix}`, worksiteId: "ws-purch",
+        requesterId: userId, requestType: "epp", urgency: "normal",
+        status: "approved", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: requestItemId, requestId, productId: "prod-purch",
+        quantity: 1, unitOfMeasure: "unidad", status: "pending_purchase",
+        createdAt: now, updatedAt: now,
+      })
+      return createOrder({
+        worksiteId: "ws-purch", supplierId: "sup-purch", createdBy: userId,
+        items: [{
+          requestItemId, productId: "prod-purch", productNameFree: null,
+          quantity: 1, unitOfMeasure: "unidad", unitPrice: 1000,
+        }],
+      })
+    }
+
+    it("issueAndSendOrder deja constancia de que se emitió sin evidencia cuando el proveedor no tiene contacto", async () => {
+      const orderId = await crearBorradorParaEmision("sin-constancia")
+
+      const dispatch = await issueAndSendOrder(orderId, userId)
+
+      expect(dispatch).toMatchObject({ sentTo: null, evidence: null, hasDispatchEvidence: false })
+      expect(dispatch.summary).toMatch(/sin constancia de envío/i)
+
+      const [transition] = await inMemoryDb.select().from(schema.statusHistory)
+        .where(and(
+          eq(schema.statusHistory.entityId, orderId),
+          eq(schema.statusHistory.toStatus, "sent"),
+        ))
+      expect(transition?.reason).toMatch(/sin constancia de envío/i)
+
+      const [audit] = await inMemoryDb.select().from(schema.auditLog)
+        .where(and(
+          eq(schema.auditLog.entityId, orderId),
+          eq(schema.auditLog.action, "status_change"),
+        ))
+      expect(JSON.parse(audit!.newState as string)).toMatchObject({
+        status: "sent", sentTo: null, dispatchEvidence: null,
+      })
+    })
+
+    it("issueAndSendOrder congela destinatario y constancia declarada al emitir", async () => {
+      await inMemoryDb.update(schema.suppliers)
+        .set({ email: "ventas@proveedor.cl" })
+        .where(eq(schema.suppliers.id, "sup-purch"))
+      const orderId = await crearBorradorParaEmision("con-constancia")
+
+      const dispatch = await issueAndSendOrder(orderId, userId, "all", {
+        dispatchEvidence: "Correo 4821 con acuse del vendedor",
+      })
+
+      expect(dispatch).toMatchObject({
+        sentTo: "ventas@proveedor.cl",
+        evidence: "Correo 4821 con acuse del vendedor",
+        hasDispatchEvidence: true,
+      })
+
+      const [transition] = await inMemoryDb.select().from(schema.statusHistory)
+        .where(and(
+          eq(schema.statusHistory.entityId, orderId),
+          eq(schema.statusHistory.toStatus, "sent"),
+        ))
+      expect(transition?.reason).toContain("ventas@proveedor.cl")
+      expect(transition?.reason).toContain("Correo 4821 con acuse del vendedor")
+
+      const [audit] = await inMemoryDb.select().from(schema.auditLog)
+        .where(and(
+          eq(schema.auditLog.entityId, orderId),
+          eq(schema.auditLog.action, "status_change"),
+        ))
+      // El destinatario queda congelado: cambiar la ficha del proveedor después
+      // no debe reescribir a dónde se dijo que salió esta orden.
+      await inMemoryDb.update(schema.suppliers)
+        .set({ email: "otro@proveedor.cl" })
+        .where(eq(schema.suppliers.id, "sup-purch"))
+      expect(JSON.parse(audit!.newState as string)).toMatchObject({
+        sentTo: "ventas@proveedor.cl",
+        dispatchEvidence: "Correo 4821 con acuse del vendedor",
+      })
+
+      await inMemoryDb.update(schema.suppliers)
+        .set({ email: null })
+        .where(eq(schema.suppliers.id, "sup-purch"))
+    })
+
     it("issueAndSendOrder throws if order is not in draft", async () => {
       const orders = await inMemoryDb.query.purchaseOrders.findMany({
         where: eq(schema.purchaseOrders.status, "sent"),
@@ -577,6 +718,46 @@ describe("Purchasing service — edge cases", () => {
         where: eq(schema.purchaseRequestItems.id, requestItemId),
       })
       expect(itemAfter?.status).toBe("in_purchase_order")
+    })
+
+    /**
+     * OC-003 (auditoría 2026-09-13): la eliminación suave escondía la orden y,
+     * con ella, la única pantalla que permite desadjuntar su factura o su DTE.
+     * El documento tributario quedaba colgando de una compra invisible.
+     */
+    it("no elimina una orden con documento tributario vinculado", async () => {
+      const requestId = "req-delete-invoiced"
+      const requestItemId = "item-delete-invoiced"
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: requestId, code: "SOL-DELETE-INVOICED", worksiteId: "ws-purch",
+        requesterId: userId, requestType: "epp", urgency: "normal",
+        status: "in_purchasing", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: requestItemId, requestId, productId: "prod-purch", quantity: 1,
+        unitOfMeasure: "unidad", status: "pending_purchase", createdAt: now, updatedAt: now,
+      })
+      const orderId = await createOrder({
+        worksiteId: "ws-purch", supplierId: "sup-purch", createdBy: userId,
+        items: [{ requestItemId, productId: "prod-purch", productNameFree: null, quantity: 1, unitOfMeasure: "unidad", unitPrice: 1000 }],
+      })
+      await inMemoryDb.insert(schema.purchaseOrderInvoices).values({
+        id: "poinv-delete-guard", purchaseOrderId: orderId, invoiceNumber: "F-9001",
+        amount: 1000, fileName: "f-9001.pdf", filePath: "storage/purchase-orders/f-9001.pdf",
+        uploadedBy: userId,
+      })
+
+      await expect(deleteOrder(orderId, userId)).rejects.toThrow(/documento\(s\) tributario/i)
+
+      const stillThere = await inMemoryDb.query.purchaseOrders.findFirst({
+        where: eq(schema.purchaseOrders.id, orderId),
+      })
+      expect(stillThere?.deletedAt ?? null).toBeNull()
+
+      // Quitada la factura, la orden vuelve a ser eliminable.
+      await inMemoryDb.delete(schema.purchaseOrderInvoices)
+        .where(eq(schema.purchaseOrderInvoices.id, "poinv-delete-guard"))
+      await expect(deleteOrder(orderId, userId)).resolves.toBeUndefined()
     })
   })
 
@@ -1371,7 +1552,7 @@ describe("Purchasing service — edge cases", () => {
         }],
       })).rejects.toThrow("ya fue usado")
 
-      await deletePurchaseOrderInvoice(invoiceId, userId)
+      await deletePurchaseOrderInvoice(invoiceId, userId, "all", { reason: "Se adjuntó a la orden equivocada" })
       const unlinked = await inMemoryDb.query.dteDocuments.findFirst({
         where: eq(schema.dteDocuments.id, dteId),
       })
@@ -1648,31 +1829,59 @@ describe("Purchasing service — edge cases", () => {
   // ── deletePurchaseOrderInvoice ─────────────────────────────────────────
 
   describe("deletePurchaseOrderInvoice", () => {
-    it("deletes an invoice and returns filePath", async () => {
+    /**
+     * FAC-002 (auditoría 2026-09-14), patrón P5: esto era un `DELETE` físico que
+     * se llevaba las líneas, las asignaciones y el archivo del documento
+     * tributario. Ahora anula: la fila se queda con su motivo y su responsable,
+     * y el archivo no se toca.
+     */
+    it("anula la factura en vez de borrarla, y conserva el archivo", async () => {
       const invoices = await inMemoryDb.query.purchaseOrderInvoices.findMany()
       if (invoices.length === 0) return // skip if no invoices
 
       const invoice = invoices[0]!
-      const result = await deletePurchaseOrderInvoice(invoice.id, userId)
+      const result = await deletePurchaseOrderInvoice(invoice.id, userId, "all", { reason: "Se adjuntó a la orden equivocada" })
 
       expect(result.filePath).toBe(invoice.filePath)
 
-      const deleted = await inMemoryDb.query.purchaseOrderInvoices.findFirst({
+      const anulada = await inMemoryDb.query.purchaseOrderInvoices.findFirst({
         where: eq(schema.purchaseOrderInvoices.id, invoice.id),
       })
-      expect(deleted).toBeUndefined()
+      // La fila sobrevive: es el respaldo tributario.
+      expect(anulada).toBeDefined()
+      expect(anulada?.voidedAt).toBeTruthy()
+      expect(anulada?.voidedBy).toBe(userId)
+      expect(anulada?.voidReason).toBe("Se adjuntó a la orden equivocada")
+      expect(anulada?.filePath).toBe(invoice.filePath)
+    })
+
+    it("exige un motivo, como cualquier acto irreversible", async () => {
+      const invoices = await inMemoryDb.query.purchaseOrderInvoices.findMany()
+      const viva = invoices.find((row) => !row.voidedAt)
+      if (!viva) return
+      await expect(deletePurchaseOrderInvoice(viva.id, userId)).rejects.toThrow(/al menos 10/i)
+      await expect(deletePurchaseOrderInvoice(viva.id, userId, "all", { reason: "error" }))
+        .rejects.toThrow(/al menos 10/i)
+    })
+
+    it("no se anula dos veces", async () => {
+      const invoices = await inMemoryDb.query.purchaseOrderInvoices.findMany()
+      const anulada = invoices.find((row) => row.voidedAt)
+      if (!anulada) return
+      await expect(deletePurchaseOrderInvoice(anulada.id, userId, "all", { reason: "Se adjuntó a la orden equivocada" }))
+        .rejects.toThrow(/ya está anulada/i)
     })
 
     it("throws if invoice does not exist", async () => {
       await expect(
-        deletePurchaseOrderInvoice("nonexistent", userId)
+        deletePurchaseOrderInvoice("nonexistent", userId, "all", { reason: "Se adjuntó a la orden equivocada" })
       ).rejects.toThrow("no encontrada")
     })
 
     // Una OC en `sent` admite factura Y admite anulación. Si además se bloquea
     // borrar la factura de una OC anulada, el DTE queda atrapado: es la única
     // ruta de desvinculación del repo y el índice único impide reusarlo.
-    it("permite quitar la factura de una OC anulada y devuelve el DTE al pozo", async () => {
+    it("permite anular la factura de una OC anulada y devuelve el DTE al pozo", async () => {
       const orderId = "oc-dte-cancelada-1"
       const dteId = "dte-oc-cancelada-1"
       const issueDate = now.slice(0, 10)
@@ -1743,9 +1952,8 @@ describe("Purchasing service — edge cases", () => {
 
       await cancelOrder(orderId, userId, "El proveedor no era ése")
 
-      await expect(deletePurchaseOrderInvoice(invoiceId, userId)).resolves.toMatchObject({
-        filePath: "storage/purchase-orders/dte-33-456999.pdf",
-      })
+      await expect(deletePurchaseOrderInvoice(invoiceId, userId, "all", { reason: "Se adjuntó a la orden equivocada" }))
+        .resolves.toMatchObject({ filePath: "storage/purchase-orders/dte-33-456999.pdf" })
       const dte = await inMemoryDb.query.dteDocuments.findFirst({
         where: eq(schema.dteDocuments.id, dteId),
       })

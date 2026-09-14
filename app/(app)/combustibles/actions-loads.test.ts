@@ -75,6 +75,7 @@ vi.mock("@/lib/services/notifications", () => ({
 }))
 
 import {
+  correctFuelLoadMeterAction,
   createFuelLoadAction,
   deleteFuelLoadAction,
   registerFuelLoadAction,
@@ -394,5 +395,152 @@ describe("createFuelLoadAction — audit logging", () => {
       expect.anything(),
     )
     expect(mockRedirect).toHaveBeenCalledWith("/combustibles")
+  })
+})
+
+/**
+ * `COM-002` (auditoría 2026-09-14): «La casilla "el medidor fue reemplazado"
+ * desactiva la validación de lectura y no queda registrada» (S2/P1).
+ *
+ * Las tres rutas que graban una lectura validaban la coherencia con la anterior
+ * sólo si la casilla no venía marcada —`if (!formData.get("meterReplaced"))`— y
+ * el valor no se persistía en ninguna parte: no había columna y el insert/update
+ * no lo incluían. Cualquiera podía apagar el control de regresión del
+ * odómetro/horómetro con un clic, y la declaración que lo justificaba no
+ * quedaba en ningún lado: la carga aparecía después como una lectura normal,
+ * aunque el rendimiento por equipo, el consumo por kilómetro y las reglas de
+ * anomalía se calculan sobre esa serie.
+ */
+describe("COM-002 — declaración de medidor reemplazado", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockRequirePermission.mockResolvedValue(globalSession)
+    mockCanAccessWorksite.mockReturnValue(true)
+    mockInsertValues.mockResolvedValue(undefined)
+    mockRecordAudit.mockResolvedValue(undefined)
+  })
+
+  function loadFormData() {
+    const fd = new FormData()
+    fd.set("loadDate", "2026-01-15")
+    fd.set("serviceType", "TCT")
+    fd.set("vehicleId", "v-1")
+    fd.set("fuelSupplierId", "s-1")
+    fd.set("worksiteId", "ws-1")
+    fd.set("product", "PETROLEO DIESEL")
+    fd.set("odometerReading", "12000")
+    fd.set("liters", "100")
+    fd.set("baseAmount", "1000")
+    fd.set("iecFixed", "10")
+    fd.set("iecVariable", "8")
+    fd.set("iecTotal", "18")
+    fd.set("ivaAmount", "190")
+    fd.set("totalAmount", "1208")
+    return fd
+  }
+
+  it("no deja apagar el control de regresión sin explicar el reemplazo", async () => {
+    const fd = loadFormData()
+    fd.set("meterReplaced", "1")
+
+    const result = await createFuelLoadAction({ ok: false, message: "" }, fd)
+
+    expect(result.ok).toBe(false)
+    expect(result.fieldErrors?.meterReplacementReason?.[0]).toContain("al menos 10 caracteres")
+    // Antes bastaba la casilla: la carga se creaba igual y sin rastro alguno.
+    expect(mockInsertValues).not.toHaveBeenCalled()
+    expect(mockRedirect).not.toHaveBeenCalled()
+  })
+
+  it("un motivo de relleno no alcanza: rige el umbral único de la plataforma", async () => {
+    const fd = loadFormData()
+    fd.set("meterReplaced", "1")
+    fd.set("meterReplacementReason", "  se  ")
+
+    const result = await createFuelLoadAction({ ok: false, message: "" }, fd)
+
+    expect(result.ok).toBe(false)
+    expect(mockInsertValues).not.toHaveBeenCalled()
+  })
+
+  it("guarda la declaración y su motivo junto con la carga", async () => {
+    const fd = loadFormData()
+    fd.set("meterReplaced", "1")
+    fd.set("meterReplacementReason", "Odómetro nuevo instalado por el taller, acta 4471")
+
+    await createFuelLoadAction({ ok: false, message: "" }, fd)
+
+    // Antes esto no existía en ninguna parte: la fila no decía que la serie del
+    // equipo estaba partida en esta carga.
+    expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({
+      meterReplaced: true,
+      meterReplacementReason: "Odómetro nuevo instalado por el taller, acta 4471",
+    }))
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ newState: expect.objectContaining({ meterReplaced: true }) }),
+      expect.anything(),
+    )
+  })
+
+  it("una carga normal se graba con la declaración en falso, no en nulo", async () => {
+    await createFuelLoadAction({ ok: false, message: "" }, loadFormData())
+
+    expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({
+      meterReplaced: false,
+      meterReplacementReason: null,
+    }))
+  })
+
+  it("un motivo escrito con la casilla desmarcada no declara un reemplazo", async () => {
+    const fd = loadFormData()
+    fd.set("meterReplacementReason", "Cambiamos el odómetro la semana pasada")
+
+    await createFuelLoadAction({ ok: false, message: "" }, fd)
+
+    // La fila no puede afirmar un reemplazo que nadie declaró.
+    expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({
+      meterReplaced: false,
+      meterReplacementReason: null,
+    }))
+  })
+
+  it("corregir la lectura tampoco deja saltarse el control sin motivo", async () => {
+    mockFindLoad.mockResolvedValue({
+      id: "load-1", worksiteId: "ws-1", vehicleId: "v-1", loadDate: "2026-01-15",
+      status: "registered", statementId: null, odometerReading: 12_000, hourMeterReading: null,
+      meterReplaced: false, meterReplacementReason: null,
+    })
+    const fd = new FormData()
+    fd.set("id", "load-1")
+    fd.set("odometerReading", "5000")
+    fd.set("meterReplaced", "1")
+
+    const result = await correctFuelLoadMeterAction({ ok: false, message: "" }, fd)
+
+    expect(result.ok).toBe(false)
+    expect(result.fieldErrors?.meterReplacementReason?.[0]).toContain("al menos 10 caracteres")
+    expect(mockUpdateSet).not.toHaveBeenCalled()
+  })
+
+  it("la corrección con motivo marca la fila y no sólo la lectura", async () => {
+    mockFindLoad.mockResolvedValue({
+      id: "load-1", worksiteId: "ws-1", vehicleId: "v-1", loadDate: "2026-01-15",
+      status: "registered", statementId: null, odometerReading: 12_000, hourMeterReading: null,
+      meterReplaced: false, meterReplacementReason: null,
+    })
+    mockUpdateReturning.mockResolvedValue([{ id: "load-1" }])
+    const fd = new FormData()
+    fd.set("id", "load-1")
+    fd.set("odometerReading", "5000")
+    fd.set("meterReplaced", "1")
+    fd.set("meterReplacementReason", "Horómetro reiniciado tras cambio de tablero")
+
+    const result = await correctFuelLoadMeterAction({ ok: false, message: "" }, fd)
+
+    expect(result.ok).toBe(true)
+    expect(mockUpdateSet).toHaveBeenCalledWith(expect.objectContaining({
+      meterReplaced: true,
+      meterReplacementReason: "Horómetro reiniciado tras cambio de tablero",
+    }))
   })
 })

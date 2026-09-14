@@ -9,6 +9,12 @@ import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { nanoid } from "@/lib/id"
 import { lockRequestsForRollupTx, rollupRequestStatus } from "@/lib/services/item-state-module/rollup"
 import { lockPurchaseRequestItemsTx } from "./purchasable-coverage"
+import {
+  collectRequesterShortfallNoticesTx,
+  flushRequesterShortfallNotifications,
+  type PendingRequesterNotification,
+  type RequesterShortfall,
+} from "@/lib/services/requester-shortfall-notify"
 
 /* ── Close order (recepción iniciada/recibida → closed) ──────────────────────── */
 
@@ -23,7 +29,7 @@ export async function closeOrder(
 ): Promise<void> {
   if (!reason?.trim()) throw new Error("Se requiere un motivo para finalizar la orden")
 
-  await db.transaction(async (tx) => {
+  const notices = await db.transaction(async (tx) => {
     const [order] = await tx.select().from(purchaseOrders)
       .where(eq(purchaseOrders.id, orderId)).for("update")
     if (!order) throw new Error(`Order ${orderId} not found`)
@@ -63,8 +69,12 @@ export async function closeOrder(
       throw new Error("No se puede cerrar: hay mercadería recibida en oficina que aún no llega a faena. Registra la llegada a faena antes de cerrar la orden.")
     }
 
-    await closeOrderTx(tx, order, userId, reason, opts)
+    return closeOrderTx(tx, order, userId, reason, opts)
   })
+
+  // `E2E-001`: los avisos se sueltan DESPUÉS del commit. Dentro de la
+  // transacción el aviso sobreviviría a un ROLLBACK (ver `notifyAfterCommit`).
+  flushRequesterShortfallNotifications(notices)
 }
 
 // Cascade shared by the manual close action and the auto-close that fires when a
@@ -76,7 +86,7 @@ export async function closeOrderTx(
   userId: string,
   reason: string,
   opts?: { userEmail?: string },
-): Promise<void> {
+): Promise<PendingRequesterNotification[]> {
   const orderId = order.id
   const now = new Date().toISOString()
   await tx
@@ -269,6 +279,28 @@ export async function closeOrderTx(
     }, tx)
   }
 
+  /**
+   * `E2E-001` (punto 1 de 3): el cierre con recepción parcial conserva lo
+   * recibido y manda el saldo a un ítem hermano en `pending_purchase`. Era
+   * correcto y trazable, pero mudo: el ítem original quedaba en
+   * `partially_received` y quien pidió el material nunca se enteraba de que su
+   * pedido se había partido. Sólo se avisa el recorte real (`receivedPartially`):
+   * una línea que no recibió NADA vuelve entera a la cola de compra, no hay
+   * cantidad perdida que informar.
+   */
+  const shortfalls: RequesterShortfall[] = receivedPartially.flatMap((item) => {
+    const remaining = item.ordered - item.received
+    return remaining > 0 && item.requestItemId
+      ? [{
+        requestItemId: item.requestItemId,
+        missingQuantity: remaining,
+        cause: "oc_cerrada_parcial" as const,
+        documentCode: order.code,
+      }]
+      : []
+  })
+  const shortfallNotices = await collectRequesterShortfallNoticesTx(tx, shortfalls)
+
   const affectedRequestIds = [...new Set(linkedItems.map((item) => item.requestId))]
   for (const requestId of affectedRequestIds) {
     await rollupRequestStatus(requestId, tx, userId)
@@ -293,4 +325,6 @@ export async function closeOrderTx(
     newState:   { status: "closed" },
     reason,
   }, tx)
+
+  return shortfallNotices
 }

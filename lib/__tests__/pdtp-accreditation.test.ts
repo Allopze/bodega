@@ -147,6 +147,88 @@ beforeEach(async () => {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
+/**
+ * PDTP-001 y ENT-001 (auditoría 2026-09-14), patrón P4: sin artefacto real la
+ * ejecución quedaba siempre en `not_required` —«esta actividad no pedía
+ * evidencia»—, que es una afirmación distinta y más fuerte que la verdadera:
+ * «el conector no trajo documento». El enum ya tenía `pending` y ningún camino
+ * automático lo escribía nunca.
+ *
+ * El caso comprobado es la N°62: «registrar la entrega de los EPP y **dejar
+ * documentada** su entrega», disparada desde una entrega cuyo comprobante es
+ * opcional. El conector sustituía el documento ausente por el texto sintético
+ * «Entrega EPP: <id>» y la ejecución nacía declarando que no se requería nada.
+ */
+describe("PDTP-001 — «no requiere evidencia» y «faltó la evidencia»", () => {
+  const DOC_ACT_ID = `${PROGRAM_ID}-a-062`
+  const DOC_ACT_N = 62
+
+  beforeEach(async () => {
+    await inMemoryDb.insert(schema.pdtpActivities).values({
+      id: DOC_ACT_ID,
+      programId: PROGRAM_ID,
+      n: DOC_ACT_N,
+      activity: "Registrar la entrega de los EPP y dejar documentada su entrega",
+      program: "Prevención PDTP 2026",
+      responsibleSlugs: ["prevencionista"],
+      responsibleDisplay: "Prevencionista",
+      scheduleMode: "triggered",
+      scheduleClassificationStatus: "confirmed",
+      // La actividad declara que hay que documentar: es ella, y no el conector,
+      // quien lo sabe.
+      evidenceRequirement: "Comprobante firmado por el trabajador",
+      sourceSheetRow: 3,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }).onConflictDoNothing()
+  })
+
+  const acreditar = async (evidenceRef: string | undefined, activityN = DOC_ACT_N) => {
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    await accreditPdtpFromEvent({
+      sourceType: "epp",
+      sourceId: `ent-${activityN}-${evidenceRef ?? "sin"}`,
+      worksiteId: WS_ID,
+      activityNumbers: [activityN],
+      occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
+      executedQuantity: 1,
+      evidenceRef,
+    })
+    const rows = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, activityN === DOC_ACT_N ? DOC_ACT_ID : ACT_ID))
+    return rows.at(-1)
+  }
+
+  it("un rótulo sintético sobre una actividad que exige documentar queda PENDIENTE", async () => {
+    const ejecucion = await acreditar("Entrega EPP: ent-001")
+    expect(ejecucion?.evidenceStatus).toBe("pending")
+  })
+
+  it("tampoco basta con no mandar nada", async () => {
+    const ejecucion = await acreditar(undefined)
+    expect(ejecucion?.evidenceStatus).toBe("pending")
+  })
+
+  it("un archivo real la deja entregada", async () => {
+    const ejecucion = await acreditar("storage/pdtp-evidence/comprobante-firmado.pdf")
+    expect(ejecucion?.evidenceStatus).toBe("provided")
+    expect(ejecucion?.evidenceUrl).toBe("storage/pdtp-evidence/comprobante-firmado.pdf")
+  })
+
+  it("una URL también", async () => {
+    const ejecucion = await acreditar("https://drive.chome.cl/comprobante")
+    expect(ejecucion?.evidenceStatus).toBe("provided")
+  })
+
+  it("una actividad que NO declara requisito sigue en «no requiere»", async () => {
+    // Sin esta distinción el arreglo habría marcado como faltante la evidencia
+    // de actividades que legítimamente no piden ninguna, y el indicador habría
+    // pasado de mentir por defecto a mentir al revés.
+    const ejecucion = await acreditar("Inspección completada: run-x", ACT_N)
+    expect(ejecucion?.evidenceStatus).toBe("not_required")
+  })
+})
+
 describe("accreditPdtpFromEvent", () => {
   it("acredita correctamente una actividad con un evento real", async () => {
     const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")

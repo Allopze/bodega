@@ -12,6 +12,9 @@ const activeSnapshot: UserRbacSnapshot = {
   permissions: ["reports:view"],
   worksiteIds: ["ws-1"],
   primaryWorksiteId: "ws-1",
+  // AUTH-003: la marca de revocación de sesiones viaja en el snapshot; nula =
+  // esta persona nunca restableció su contraseña.
+  sessionsValidFrom: null,
 }
 
 describe("applyRbacToToken", () => {

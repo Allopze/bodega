@@ -24,6 +24,17 @@ export const pdtpPrograms = pgTable("pdtp_programs", {
   indicatorPeriodicity:  text("indicator_periodicity"),
   measurementOwner:      text("measurement_owner"),
   sourceMetadataJson:    jsonb("source_metadata_json").notNull().default({}),
+  /**
+   * PDTP-003: el programa declara que cubre TODAS las faenas, sin listarlas.
+   *
+   * Antes esto no se declaraba: no tener faenas asociadas significaba
+   * implícitamente "todas", así que un programa a medio configurar y un
+   * programa corporativo eran la misma fila. Ahora el alcance total se dice, y
+   * un programa sin faenas ni declaración simplemente no acredita —el evento
+   * queda visible en el libro de cumplimiento en vez de imputarse a un
+   * programa que no lo contempla—.
+   */
+  appliesToAllWorksites: boolean("applies_to_all_worksites").notNull().default(false),
   creationMode:          text("creation_mode").notNull().default("blank"),
   sourceProgramId:       text("source_program_id"),
   sourceContentVersion:  integer("source_content_version"),

@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm"
 import { db, type DB } from "@/db"
 import { auditLog, statusHistory } from "@/db/schema"
 import { nanoid } from "./id"
+import { UNRESOLVED_RATE_LIMIT_IP, resolveTrustedClientIp } from "./security/login-rate-limit-ip"
 
 type AuditDb = Pick<DB, "insert">
 
@@ -19,10 +20,48 @@ interface AuditParams {
 }
 
 /**
+ * HALLAZGO AUD-001 (S3/P1) — «La auditoría registra quién y qué, pero casi
+ * nunca desde dónde».
+ *
+ * La columna `ip_address` y el parámetro existían desde el principio, pero de
+ * 309 llamadas a `recordAudit` sólo dos lo pasaban (la exportación de
+ * incidentes). Conceder un permiso, corregir un folio, borrar una factura o
+ * abrir datos de salud quedaba registrado sin origen, que es justo el dato que
+ * distingue una acción legítima de una sesión comprometida.
+ *
+ * Se resuelve aquí y no en cada llamador porque 307 sitios de llamada no se
+ * corrigen por convención: el que se olvide vuelve a dejar el hueco. La IP se
+ * toma de la petición en curso cuando la hay; cron y scripts no tienen
+ * contexto de petición y `headers()` lanza, así que el campo sigue siendo
+ * opcional y la auditoría no se rompe en esos caminos.
+ *
+ * Se usa `resolveTrustedClientIp` —y NO `x-forwarded-for`, que el enunciado de
+ * la tarea sugería— porque la plataforma ya declaró por escrito su política en
+ * `lib/security/login-rate-limit-ip.ts`: la aplicación sólo escucha en loopback
+ * detrás del túnel de Cloudflare, así que `x-forwarded-for` es entrada del
+ * atacante y anotarla en la bitácora sería peor que no anotar nada. Cuando el
+ * origen no se puede establecer se guarda `null`, no un valor inventado.
+ */
+async function resolverIpDeAuditoria(): Promise<string | undefined> {
+  try {
+    const { headers } = await import("next/headers")
+    const ip = resolveTrustedClientIp(await headers())
+    return ip === UNRESOLVED_RATE_LIMIT_IP ? undefined : ip
+  } catch {
+    // Sin contexto de petición (cron, scripts de mantención, seeds).
+    return undefined
+  }
+}
+
+/**
  * Record an audit log entry.
  * Must be called from service layer, never from UI components.
+ *
+ * `ipAddress` explícito gana: quien ya resolvió el origen —la exportación de
+ * incidentes, el envío TAE— lo pasa desde su propio contexto.
  */
 export async function recordAudit(params: AuditParams, client: AuditDb = db): Promise<void> {
+  const ipAddress = params.ipAddress ?? await resolverIpDeAuditoria()
   await client.insert(auditLog).values({
     id:         nanoid(),
     userId:     params.userId,
@@ -34,7 +73,7 @@ export async function recordAudit(params: AuditParams, client: AuditDb = db): Pr
     oldState:   params.oldState ? JSON.stringify(params.oldState) : null,
     newState:   params.newState ? JSON.stringify(params.newState) : null,
     reason:     params.reason,
-    ipAddress:  params.ipAddress,
+    ipAddress:  ipAddress,
   })
 }
 

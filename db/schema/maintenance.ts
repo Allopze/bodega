@@ -4,6 +4,7 @@ import { costCenters } from "./cost-centers"
 import { fuelVehicles } from "./fuel-vehicles"
 import { fuelEquipmentTypes } from "./fuel-equipment-types"
 import { preventionInspectionFindings } from "./prevention/inspections"
+import { products } from "./products"
 import { users } from "./users"
 import { suppliers, worksites } from "./worksites"
 
@@ -154,6 +155,22 @@ export const maintenanceTasks = pgTable("maintenance_tasks", {
 export const maintenanceParts = pgTable("maintenance_parts", {
   id:              text("id").primaryKey(),
   maintenanceId:   text("maintenance_id").notNull().references(() => maintenanceRecords.id, { onDelete: "cascade" }),
+  /**
+   * `MNT-002` (auditoría 2026-09-14): la línea de repuesto era sólo texto
+   * libre, así que el consumo en la OT no tocaba el kardex. Un repuesto
+   * comprado por Solicitudes → OC → Recepción **sumaba** stock en la faena y no
+   * se restaba nunca: la bodega sobreestimaba las existencias de forma
+   * permanente y el único remedio era un ajuste manual.
+   *
+   * Cuando la línea apunta al catálogo, `addMaintenancePart` emite el egreso
+   * (`egreso_mantencion`) contra la faena de la OT dentro de la misma
+   * transacción. Sigue siendo nullable porque un taller externo factura piezas
+   * que nunca pasaron por bodega, y esas líneas son costo, no inventario.
+   *
+   * Sin `onDelete`: un producto con consumo histórico no se borra, igual que en
+   * el resto del kardex.
+   */
+  productId:       text("product_id").references(() => products.id),
   description:     text("description").notNull(),
   partNumber:      text("part_number"),
   quantity:        numeric("quantity", { precision: 12, scale: 3, mode: "number" }).notNull(),
@@ -163,6 +180,7 @@ export const maintenanceParts = pgTable("maintenance_parts", {
 }, (table) => [
   check("maintenance_parts_values_positive", sql`${table.quantity} > 0 AND ${table.unitCost} >= 0`),
   index("maintenance_parts_maintenance_idx").on(table.maintenanceId),
+  index("maintenance_parts_product_idx").on(table.productId),
 ])
 
 export const maintenanceLabor = pgTable("maintenance_labor", {
@@ -243,6 +261,7 @@ export const maintenanceTasksRelations = relations(maintenanceTasks, ({ one }) =
 
 export const maintenancePartsRelations = relations(maintenanceParts, ({ one }) => ({
   maintenance: one(maintenanceRecords, { fields: [maintenanceParts.maintenanceId], references: [maintenanceRecords.id] }),
+  product: one(products, { fields: [maintenanceParts.productId], references: [products.id] }),
 }))
 
 export const maintenanceLaborRelations = relations(maintenanceLabor, ({ one }) => ({

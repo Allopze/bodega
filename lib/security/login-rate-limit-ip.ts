@@ -1,6 +1,12 @@
 import { isIP } from "node:net"
 
-const UNRESOLVED_RATE_LIMIT_IP = "unresolved"
+/**
+ * Valor centinela cuando el origen no se puede establecer con confianza. Se
+ * exporta porque la auditoría (HALLAZGO AUD-001) necesita distinguirlo de una
+ * IP real: en la bitácora "unresolved" sería una mentira con forma de dato, y
+ * se guarda `null`.
+ */
+export const UNRESOLVED_RATE_LIMIT_IP = "unresolved"
 const CLOUDFLARE_CROSS_ZONE_WORKER_IP = "2a06:98c0:3600::103"
 
 function isCloudflarePseudoIpv4(ipAddress: string): boolean {

@@ -148,6 +148,34 @@ describe("feedback service", () => {
     expect(nonexistent).toBeNull()
   })
 
+  it("no devuelve la nota interna salvo que el llamador declare el permiso (SOP-002)", async () => {
+    /*
+     * Antes, `getReport` incluía `notaInterna` en su proyección sin mirar
+     * permisos. No había fuga porque la ficha la pintaba dentro de
+     * `canManage && …`, pero el filtro vivía en la vista y no en el servicio:
+     * cualquier consumidor futuro —una exportación, una API, un componente de
+     * cliente— la habría recibido por omisión. El módulo de tickets TI ya lo
+     * resolvía en el servicio (`getTicketComments(id, includeInternal)`).
+     */
+    const created = await createReport({
+      tipo: "bug",
+      titulo: "Con nota interna",
+      descripcion: "El detalle público del problema",
+    }, "user-1")
+    await updateReportStatus(created.id, {
+      estado: "en_progreso",
+      notaInterna: "Lo provocó una credencial vencida del proveedor",
+    }, "user-2")
+
+    const paraCualquiera = await getReport(created.id)
+    expect(paraCualquiera!.notaInterna).toBeNull()
+    // El resto del reporte sí viaja: lo que se filtra es la nota, no la ficha.
+    expect(paraCualquiera!.titulo).toBe("Con nota interna")
+
+    const paraGestor = await getReport(created.id, true)
+    expect(paraGestor!.notaInterna).toMatch(/credencial vencida/)
+  })
+
   it("lists the attachments associated with a report", async () => {
     const created = await createReport({
       tipo: "bug",

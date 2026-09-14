@@ -590,9 +590,24 @@ async function computeVerificacionYCierre(approvedExecutionIds: string[]): Promi
       )),
   ])
 
-  // El cierre real del hallazgo vive en su CAPA, no en su propia columna: hoy
-  // `preventionInspectionFindings.status` nunca llega a 'closed' (sólo hay
-  // escritor para 'capa_linked'), así que leerla sola daría 0 % siempre.
+  /*
+   * Se leen las dos columnas, la del hallazgo y la de su CAPA.
+   *
+   * El comentario que había aquí afirmaba que `status` «nunca llega a 'closed'
+   * porque sólo hay escritor para 'capa_linked'». Eso **dejó de ser cierto** el
+   * 2026-08-18, cuando B-06 agregó los escritores: hoy cierran el hallazgo la
+   * transición de su CAPA a `verified`/`closed` (`prevention-capa.ts`), el
+   * cierre directo de un hallazgo sin CAPA (`prevention-inspections.ts`) y el
+   * cierre por orden de mantención (`maintenance.ts`).
+   *
+   * La consulta se conserva igual porque sigue siendo la correcta, pero por otra
+   * razón: las filas anteriores a aquel arreglo quedaron con la CAPA cerrada y
+   * el hallazgo en `capa_linked`, y mirar sólo la columna del hallazgo las
+   * contaría como abiertas para siempre. Es un superconjunto deliberado.
+   *
+   * `INS-001` de la auditoría 2026-09-14 se apoyaba en este comentario y quedó
+   * refutado al comprobarlo contra el código; ver `auditoria/07-reauditoria/`.
+   */
   const inspectionRunIds = inspectionRows.map((row) => row.runId)
   const findings = inspectionRunIds.length > 0
     ? await db.select({

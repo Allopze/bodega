@@ -82,6 +82,9 @@ async function completeActionForVerification(actionPlanItemId: string) {
     estadoNuevo: "completado",
     observacion: "Control implementado con evidencia",
     evidenciaPhotos: ["storage/pdtp-evidence/capa_test_photo.jpg"],
+    // P4: la subida calcula el checksum sobre el mismo buffer que escribe y lo
+    // devuelve; sin él la evidencia no cumple el contrato del repositorio.
+    evidenciaChecksums: { "storage/pdtp-evidence/capa_test_photo.jpg": "c".repeat(64) },
   }, "u1")
 }
 
@@ -489,7 +492,7 @@ describe("pdtp checklist and action-plan scope", () => {
     await expect(assertPdtpExecutionAccess("exec-1", ["w2"])).rejects.toThrow(/sin acceso/i)
     await expect(assertPdtpChecklistInstanceAccess(instance.id, ["w2"])).rejects.toThrow(/sin acceso/i)
     await expect(assertPdtpActionPlanItemAccess(action.id, ["w2"])).rejects.toThrow(/sin acceso/i)
-    await expect(listActionsByProgram("prog-1", { scope: ["w2"] })).resolves.toEqual([])
+    await expect(listActionsByProgram("prog-1", ["w2"])).resolves.toEqual([])
   })
 })
 

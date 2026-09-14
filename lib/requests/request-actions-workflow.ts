@@ -148,8 +148,9 @@ export async function selectQuotationActionImpl(
   catch { return { ok: false, message: "Sin permisos para aprobar cotizaciones" } }
 
   const parsed = schemas.selectQuotation.safeParse({
-    requestId:   formData.get("requestId"),
-    quotationId: formData.get("quotationId"),
+    requestId:     formData.get("requestId"),
+    quotationId:   formData.get("quotationId"),
+    justification: formData.get("justification"),
   })
   if (!parsed.success) {
     return { ok: false, message: "Datos incompletos" }
@@ -171,6 +172,7 @@ export async function selectQuotationActionImpl(
     await services.selectQuotation({
       requestId:   d.requestId,
       quotationId: d.quotationId,
+      justification: d.justification ?? null,
       userId:      session.user.id,
       userEmail:   session.user.email ?? undefined,
       roleContext,

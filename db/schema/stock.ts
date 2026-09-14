@@ -40,7 +40,7 @@ export const inventoryMovements = pgTable("inventory_movements", {
 }, (table) => [
   // Invariant: movement type from canonical set; stock before/after must be non-negative
   check("inventory_movements_type_valid", sql`
-    ${table.type} IN ('ingreso_oc', 'egreso_entrega', 'ingreso_devolucion', 'egreso_desecho', 'retiro_epp_trabajador', 'ajuste', 'egreso_traslado', 'ingreso_traslado', 'ingreso_anulacion')
+    ${table.type} IN ('ingreso_oc', 'egreso_entrega', 'ingreso_devolucion', 'egreso_desecho', 'retiro_epp_trabajador', 'ajuste', 'egreso_traslado', 'ingreso_traslado', 'ingreso_anulacion', 'egreso_anulacion', 'egreso_mantencion')
   `),
   check("inventory_movements_stock_non_negative", sql`
     ${table.stockBefore} >= 0

@@ -21,6 +21,12 @@ import { applyMovementTx } from "./stock"
 import { OFFICE_ORIGIN_LABEL, prepareDispatchGuideForOfficeReceiptTx, resolveOfficeWorksite } from "./dispatch-guides"
 import { notifyManyUser, notifyAfterCommit } from "./notifications"
 import { closeOrderTx } from "./purchasing-module/receiving"
+import {
+  collectRequesterShortfallNoticesTx,
+  flushRequesterShortfallNotifications,
+  type PendingRequesterNotification,
+  type RequesterShortfall,
+} from "./requester-shortfall-notify"
 import { RECEIVABLE_ORDER_STATUSES } from "@/lib/work-queue-labels"
 import { persistPurchaseOrderInvoiceReconciliationTx } from "./purchasing-module/invoice-reconciliation-service"
 import { completeEmergencyResourceServiceCaseTx, type EmergencyServiceCertificate } from "./emergency-resource-service"
@@ -47,6 +53,22 @@ export interface RegisterReceiptInput {
   dispatchGuideNo?: string | null
   notes?:           string | null
   items:            ReceiptItemInput[]
+}
+
+/**
+ * Id de la bodega-oficina, o `null` si el despliegue no la tiene configurada.
+ *
+ * `resolveOfficeWorksite` lanza a propósito donde se va a mover stock —
+ * equivocarse de bodega corrompe el kardex—, pero acá sólo se usa para
+ * *comparar* contra la faena de la OC (ver `REC-001`). Una instalación sin
+ * oficina configurada no debe impedir una recepción en faena.
+ */
+async function officeWorksiteIdOrNull(client: Parameters<typeof resolveOfficeWorksite>[0]): Promise<string | null> {
+  try {
+    return (await resolveOfficeWorksite(client)).id
+  } catch {
+    return null
+  }
 }
 
 function isRealIsoDate(value: string | null | undefined): value is string {
@@ -76,9 +98,15 @@ export async function registerReceipt(
   // notifyAfterCommit sólo difiere al microtask: dentro del tx se drenaría en el
   // siguiente await, antes del COMMIT. Se acumulan y se disparan al salir.
   const pendingNotifications: Array<() => unknown> = []
+  // `E2E-001`: avisos de saldo recortado. Van por separado porque se resuelven
+  // al final de la transacción (necesitan el código de la recepción y hay que
+  // deduplicarlos contra los que devuelve el cierre automático de la OC).
+  let shortfallNotices: PendingRequesterNotification[] = []
 
   const code = await db.transaction(async (tx) => {
     pendingNotifications.length = 0
+    shortfallNotices = []
+    const shortfalls: RequesterShortfall[] = []
     // Read order INSIDE the transaction to avoid stale status checks.
     const [order] = await tx.select().from(purchaseOrders)
       .where(eq(purchaseOrders.id, input.purchaseOrderId)).for("update")
@@ -116,6 +144,28 @@ export async function registerReceipt(
     }
     const office = input.stage === "office" ? await resolveOfficeWorksite(tx) : null
     const receiptWorksiteId = office?.id ?? worksiteId
+
+    /**
+     * REC-001 (auditoría 2026-09-14): una OC `via_oficina` cuya faena de destino
+     * ES la bodega-oficina ingresaba el mismo stock dos veces en la misma
+     * bodega —una al registrar la llegada a oficina y otra al "recibir en
+     * faena"—, porque el destino de ambos movimientos era el mismo id. No hay
+     * traslado que documentar: `prepareDispatchGuideForOfficeReceiptTx` ya
+     * devuelve `null` en ese caso, así que tampoco existe una GDI que compense.
+     * La etapa de faena sigue siendo obligatoria (cierra la OC y avanza el ítem
+     * de solicitud), pero no vuelve a mover el saldo.
+     *
+     * Misma guarda que `returnStockToOfficeTx`: "la bodega de Oficina no puede
+     * devolverse el saldo a sí misma".
+     *
+     * En `directo_faena` la mercadería nunca pasó por oficina, así que la etapa
+     * de faena es el único ingreso y debe emitirse aunque el destino sea la
+     * propia oficina.
+     */
+    const faenaStockWorksiteId = input.stage === "faena" && !directFaena
+      ? (await officeWorksiteIdOrNull(tx)) === worksiteId ? null : worksiteId
+      : worksiteId
+
     const txCode = await nextCodeTx(tx, "REC", year)
 
     await tx.insert(receipts).values({
@@ -230,6 +280,23 @@ export async function registerReceipt(
         notes:               ri.notes ?? null,
       })
 
+      /**
+       * `E2E-001` (punto 2 de 3): lo rechazado o dañado consume el cupo de la
+       * etapa sin sumar stock ni avanzar el ítem de solicitud. El saldo queda
+       * muerto —la única salida es cerrar o anular la OC— y hasta acá el
+       * solicitante no se enteraba: sólo recibía aviso cuando su ítem llegaba a
+       * oficina (`receipt_done`) o completo a faena. Se avisa en las dos etapas:
+       * un rechazo en oficina también significa "no llega entero".
+       */
+      if (lockedOcItem.requestItemId && qtyRej + qtyDmg > 0) {
+        shortfalls.push({
+          requestItemId: lockedOcItem.requestItemId,
+          missingQuantity: qtyRej + qtyDmg,
+          cause: "recepcion_rechazo",
+          documentCode: txCode,
+        })
+      }
+
       // Sin cantidad buena recibida no hay avance de OC, stock ni ítem: solo queda
       // el registro del rechazo/daño en receiptItems.
       if (qtyRec > 0) {
@@ -306,7 +373,7 @@ export async function registerReceipt(
 
         }
 
-        const stockWorksiteId = input.stage === "office" ? office?.id : worksiteId
+        const stockWorksiteId = input.stage === "office" ? office?.id : faenaStockWorksiteId
         if (stockWorksiteId && lockedOcItem.productId) {
           const product = await tx.query.products.findFirst({
             where: eq(products.id, lockedOcItem.productId),
@@ -343,8 +410,14 @@ export async function registerReceipt(
 
     // Fully received closes the order in the same transaction: there's no separate
     // "receiving in progress" state to sit in once every item has arrived.
+    // `E2E-001`: el aviso del rechazo/daño se resuelve antes del cierre
+    // automático para que, si ambos hablan del mismo faltante, el que sobreviva
+    // a la deduplicación sea el que nombra la causa concreta (el rechazo).
+    const receiptNotices = await collectRequesterShortfallNoticesTx(tx, shortfalls)
+
+    let closeNotices: PendingRequesterNotification[] = []
     if (rolledUpStatus === "received") {
-      await closeOrderTx(
+      closeNotices = await closeOrderTx(
         tx,
         { ...order, status: "received" },
         input.receivedBy,
@@ -352,6 +425,7 @@ export async function registerReceipt(
         { userEmail: input.userEmail },
       )
     }
+    shortfallNotices = [...receiptNotices, ...closeNotices]
 
     // La cantidad aceptada del proveedor es un eje de conciliación. Se
     // recalcula dentro del mismo commit para que ficha, cola y exportación no
@@ -378,13 +452,19 @@ export async function registerReceipt(
   void code // used only for audit above; receiptId is returned
 
   for (const notify of pendingNotifications) notifyAfterCommit(notify)
+  flushRequesterShortfallNotifications(shortfallNotices)
 
   return receiptId
 }
 
 /* ── Roll up OC status based on received quantities ────────────────────────────  */
 
-async function rollupOrderReceiptStatus(
+/**
+ * REC-003: se exporta porque la anulación de una recepción necesita recalcular
+ * exactamente lo mismo que el registro. Duplicar la regla habría sido la vía
+ * para que el reverso y el avance dejaran de coincidir.
+ */
+export async function rollupOrderReceiptStatus(
   orderId: string,
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   deliveryMode: string,

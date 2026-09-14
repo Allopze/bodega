@@ -14,6 +14,12 @@ export interface UserRbacSnapshot {
   permissions: string[]
   worksiteIds: string[]
   primaryWorksiteId: string | null
+  /**
+   * AUTH-003: instante desde el cual las sesiones de esta persona son válidas.
+   * Viaja en el snapshot porque el callback JWT ya lo relee en cada request con
+   * `bypassCache`, así que revocar no cuesta una consulta extra.
+   */
+  sessionsValidFrom: string | null
 }
 
 // Security audit S-03: keep cache TTL short (5s). Admin role/permission
@@ -123,6 +129,7 @@ export async function getUserRbacById(
     permissions: permissionNames,
     worksiteIds: wsRows.map((w) => w.worksiteId),
     primaryWorksiteId: wsRows.find((w) => w.isPrimary)?.worksiteId ?? wsRows[0]?.worksiteId ?? null,
+    sessionsValidFrom: user.sessionsValidFrom,
   }
 
   setRbacCache(userId, { snapshot, expiresAt: Date.now() + RBAC_CACHE_TTL_MS })

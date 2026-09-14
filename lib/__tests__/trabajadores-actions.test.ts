@@ -7,6 +7,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 const mockRequirePermission = vi.hoisted(() => vi.fn())
 const mockCanAccessWorksite = vi.hoisted(() => vi.fn(() => true))
 const mockFindFirstWorker = vi.hoisted(() => vi.fn())
+const mockFindFirstWorksite = vi.hoisted(() => vi.fn())
+const mockGetWorkerOffboardingSummary = vi.hoisted(() => vi.fn())
 const mockInsert = vi.hoisted(() => vi.fn())
 const mockUpdate = vi.hoisted(() => vi.fn())
 const mockTransaction = vi.hoisted(() => vi.fn())
@@ -27,6 +29,7 @@ vi.mock("@/db", () => ({
   db: {
     query: {
       workers: { findFirst: mockFindFirstWorker },
+      worksites: { findFirst: mockFindFirstWorksite },
     },
     insert: mockInsert,
     update: mockUpdate,
@@ -43,6 +46,13 @@ vi.mock("@/lib/services/workers", async (importOriginal) => ({
   insertWorker: mockInsertWorker,
   updateWorkerFields: mockUpdateWorkerFields,
   setWorkerActive: mockSetWorkerActive,
+}))
+// TRB-002 / E2E-008: sólo se dobla la consulta —que es de base de datos— y se
+// conservan las funciones de redacción reales, para que la prueba compruebe el
+// mensaje que de verdad ve quien traslada.
+vi.mock("@/lib/services/worker-offboarding", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/services/worker-offboarding")>()),
+  getWorkerOffboardingSummary: mockGetWorkerOffboardingSummary,
 }))
 vi.mock("@/lib/services/worker-positions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/services/worker-positions")>()),
@@ -106,6 +116,8 @@ function setupDbMocks() {
   })
   mockRecordWorkerPositionChange.mockResolvedValue(true)
   mockTransaction.mockImplementation(async (run) => run({}))
+  mockFindFirstWorksite.mockResolvedValue({ id: "ws-1", name: "Faena Norte" })
+  mockGetWorkerOffboardingSummary.mockResolvedValue({ workerId: "w-1", items: [], clear: true })
   mockOnWorkerEnteredDotacion.mockResolvedValue(undefined)
   mockEvaluateWorksitePreventiveOrganization.mockResolvedValue(undefined)
 }
@@ -188,6 +200,85 @@ describe("updateWorker", () => {
     const res = await updateWorker(prevState, makeFormData({ id: "w-1" }))
     expect(res.ok).toBe(true)
     expect(res.message).toContain("actualizado")
+  })
+
+  /*
+   * TRB-002 / E2E-008 (auditoría 2026-09-14): antes cambiar `worksiteId` era un
+   * campo más y la action devolvía "actualizado" sin mirar nada. Quedaban atrás
+   * actas TI abiertas, EPP entregado, accesos y cuadrillas de permisos, y nadie
+   * se enteraba. Ahora se consulta el mismo módulo que ya responde eso para la
+   * baja y el resultado vuelve en el mensaje y en la auditoría.
+   */
+  it("al trasladar de faena advierte de lo que queda abierto en el origen", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockFindFirstWorker.mockResolvedValueOnce({ id: "w-1", firstName: "Juan", lastName: "Pérez", worksiteId: "ws-1", isActive: true })
+    mockGetWorkerOffboardingSummary.mockResolvedValueOnce({
+      workerId: "w-1",
+      clear: false,
+      items: [
+        { kind: "it_assets", count: 1, label: "1 activo TI sin devolver", samples: ["ACT-1"] },
+        { kind: "epp", count: 2, label: "2 entregas de EPP sin devolución", samples: ["ENT-1", "ENT-2"] },
+      ],
+    })
+
+    const res = await updateWorker(prevState, makeFormData({ id: "w-1", worksiteId: "ws-2" }))
+
+    expect(mockGetWorkerOffboardingSummary).toHaveBeenCalledWith("w-1")
+    expect(res.ok).toBe(true)
+    expect(res.message).toContain("trasladado")
+    expect(res.message).toContain("Faena Norte")
+    expect(res.message).toContain("1 activo TI sin devolver")
+    expect(res.message).toContain("2 entregas de EPP sin devolución")
+    // Lo pendiente queda escrito, no sólo dicho: el mensaje se lee una vez.
+    expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
+      newState: expect.objectContaining({
+        worksiteId: "ws-2",
+        pendientesEnFaenaDeOrigen: expect.arrayContaining([
+          expect.objectContaining({ kind: "it_assets" }),
+        ]),
+      }),
+    }))
+  })
+
+  /*
+   * Advierte, no bloquea: mismo criterio que `toggleWorkerActive`. El traslado
+   * refleja un hecho ya ocurrido y tiene que poder registrarse igual.
+   */
+  it("registra el traslado aunque queden pendientes en el origen", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockFindFirstWorker.mockResolvedValueOnce({ id: "w-1", firstName: "Juan", lastName: "Pérez", worksiteId: "ws-1", isActive: true })
+    mockGetWorkerOffboardingSummary.mockResolvedValueOnce({
+      workerId: "w-1",
+      clear: false,
+      items: [{ kind: "permit_crew", count: 1, label: "1 permiso de trabajo abierto", samples: ["PT-1"] }],
+    })
+
+    const res = await updateWorker(prevState, makeFormData({ id: "w-1", worksiteId: "ws-2" }))
+
+    expect(res.ok).toBe(true)
+    expect(mockUpdateWorkerFields).toHaveBeenCalled()
+  })
+
+  /** Guardar la ficha sin mover de faena no debe pagar una consulta de más. */
+  it("no consulta pendientes cuando el guardado no cambia de faena", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockFindFirstWorker.mockResolvedValueOnce({ id: "w-1", firstName: "Juan", lastName: "Pérez", worksiteId: "ws-1", isActive: true })
+    const res = await updateWorker(prevState, makeFormData({ id: "w-1" }))
+    expect(res.ok).toBe(true)
+    expect(mockGetWorkerOffboardingSummary).not.toHaveBeenCalled()
+  })
+
+  /**
+   * Mover de faena a alguien inactivo no lo incorpora a ninguna dotación
+   * —mismo criterio que `deriveWorkerLifecycleEvents`—, así que no hay traslado
+   * del que advertir.
+   */
+  it("no advierte al mover de faena a un trabajador inactivo", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockFindFirstWorker.mockResolvedValueOnce({ id: "w-1", firstName: "Juan", lastName: "Pérez", worksiteId: "ws-1", isActive: false })
+    const res = await updateWorker(prevState, makeFormData({ id: "w-1", worksiteId: "ws-2", isActive: "" }))
+    expect(res.ok).toBe(true)
+    expect(mockGetWorkerOffboardingSummary).not.toHaveBeenCalled()
   })
 })
 

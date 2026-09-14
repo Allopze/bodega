@@ -3,6 +3,7 @@
 import { eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseRequestItems, purchaseRequests } from "@/db/schema"
+import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { approveItem, bulkApproveItems, rejectItem } from "@/lib/services/item-state"
 import { notifySafe, notifyAfterCommit } from "@/lib/services/notifications"
@@ -207,6 +208,10 @@ export async function bulkApproveRequestAction(
     ({ approved } = await bulkApproveItems(uniqueItemIds, session.user.id, {
       userEmail: session.user.email ?? undefined,
       roleContext,
+      // APR-002: el nombre del aprobador viaja al servicio porque el aviso al
+      // solicitante ahora se arma allí dentro de la transacción, igual que en
+      // la aprobación individual.
+      approverName: session.user.name ?? session.user.email ?? undefined,
     }))
   } catch (error) {
     logger.error("[bulkApproveRequestAction]", error)
@@ -233,6 +238,10 @@ export async function updateDeliveryModeAction(
 
   const requestId = formData.get("requestId") as string | null
   const mode      = formData.get("mode") as string | null
+  // APR-001: el motivo se acepta pero no se exige. Que cambiar el destino
+  // logístico requiera justificación escrita es una política comercial que la
+  // plataforma no declara en ninguna parte, así que no la inventamos aquí.
+  const reason    = (formData.get("reason") as string | null)?.trim() || undefined
   if (!requestId) return { ok: false, message: "Solicitud no especificada" }
   if (mode !== "via_oficina" && mode !== "directo_faena") {
     return { ok: false, message: "Modo de despacho inválido" }
@@ -241,7 +250,15 @@ export async function updateDeliveryModeAction(
   try {
     await db.transaction(async (tx) => {
       const [request] = await tx
-        .select({ id: purchaseRequests.id, worksiteId: purchaseRequests.worksiteId })
+        .select({
+          id:           purchaseRequests.id,
+          code:         purchaseRequests.code,
+          worksiteId:   purchaseRequests.worksiteId,
+          // APR-001: el valor anterior se lee bajo el mismo lock que la
+          // escritura; leerlo fuera dejaría abierta la carrera que haría
+          // mentir a la traza.
+          deliveryMode: purchaseRequests.deliveryMode,
+        })
         .from(purchaseRequests)
         .where(eq(purchaseRequests.id, requestId))
         .for("update")
@@ -263,10 +280,49 @@ export async function updateDeliveryModeAction(
         throw new Error("No se puede cambiar el modo de despacho porque esta solicitud ya posee ítems en Orden de Compra")
       }
 
+      /*
+       * APR-001 (auditoría 2026-09-14): el cambio de modo de despacho sólo
+       * hacía `set({ deliveryMode })`. No dejaba fila en `status_history`, ni
+       * en `audit_log`, ni movía `updatedAt`: ante una discrepancia de
+       * recepción o una OC dirigida al flujo equivocado no había forma de
+       * decir quién cambió el destino, cuándo ni desde qué modo. Y el modo se
+       * propaga: Compras lo copia a la OC al crearla.
+       *
+       * Un cambio que no cambia nada no se audita: registrar un evento por
+       * cada re-selección del mismo valor sólo ensucia el historial.
+       */
+      const previousMode = request.deliveryMode
+      if (previousMode === mode) return
+
+      const now = new Date().toISOString()
       await tx
         .update(purchaseRequests)
-        .set({ deliveryMode: mode })
+        .set({ deliveryMode: mode, updatedAt: now })
         .where(eq(purchaseRequests.id, requestId))
+
+      // Se escribe como `purchase_request` porque es el único `entityType` que
+      // la ficha de la solicitud consulta; los valores from/to son los modos,
+      // que la línea de tiempo rotula aparte de los estados de la solicitud.
+      await recordStatusChange({
+        entityType: "purchase_request",
+        entityId:   requestId,
+        fromStatus: previousMode,
+        toStatus:   mode,
+        changedBy:  session.user.id,
+        reason,
+      }, tx)
+
+      await recordAudit({
+        userId:     session.user.id,
+        userEmail:  session.user.email ?? undefined,
+        action:     "update",
+        entityType: "purchase_request",
+        entityId:   requestId,
+        entityCode: request.code ?? undefined,
+        oldState:   { deliveryMode: previousMode },
+        newState:   { deliveryMode: mode },
+        reason,
+      }, tx)
     })
   } catch (e) {
     return { ok: false, message: safeActionMessage(e, "Error al cambiar el modo de despacho") }

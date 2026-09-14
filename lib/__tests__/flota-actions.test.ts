@@ -150,26 +150,35 @@ describe("Flota Server Actions", () => {
       expect(result.message).toContain("Documento requerido")
     })
 
-    it("debería eliminar documento válido", async () => {
+    // FLO-003 (auditoría 2026-09-14): la acción anula en vez de borrar, y el
+    // motivo viaja hasta el servicio.
+    it("debería anular el documento y pasar el motivo al servicio", async () => {
       const formData = new FormData()
       formData.append("documentId", "doc-123")
       formData.append("vehicleId", "veh-1")
+      formData.append("reason", "Se cargó la póliza del vehículo equivocado")
 
       const result = await deleteFleetDocumentAction(prevState, formData)
 
       expect(result.ok).toBe(true)
-      expect(result.message).toContain("Documento eliminado")
+      expect(result.message).toContain("Documento anulado")
       expect(mockRequirePermission).toHaveBeenCalledWith("flota:manage_documents")
+      expect(mockDeleteFleetDocument).toHaveBeenCalledWith(
+        "doc-123", expect.anything(), expect.anything(),
+        "Se cargó la póliza del vehículo equivocado",
+      )
     })
 
     it("debería funcionar sin vehicleId (opcional)", async () => {
       const formData = new FormData()
       formData.append("documentId", "doc-123")
 
+      formData.append("reason", "Se cargó la póliza del vehículo equivocado")
+
       const result = await deleteFleetDocumentAction(prevState, formData)
 
       expect(result.ok).toBe(true)
-      expect(result.message).toContain("Documento eliminado")
+      expect(result.message).toContain("Documento anulado")
     })
 
     it("rechaza eliminación sin permiso documental", async () => {

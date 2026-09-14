@@ -289,10 +289,31 @@ describe("prevencion PPA admin actions", () => {
   })
 
   describe("PPA segregated workflow actions", () => {
+    it("no deja declarar la implementación sin decir qué se implementó (PPAI-003)", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("ppa:correct", ["ws-1"]))
+      const { declarePpaCorrectionAction } = await import("@/app/(app)/prevencion/ppa/actions")
+
+      const sinTexto = await declarePpaCorrectionAction({
+        ppaId: "ppa-1", expectedPpaVersion: 2, expectedCapaVersion: 3, declaration: "",
+      })
+      expect(sinTexto.ok).toBe(false)
+
+      // Y una palabra suelta tampoco: es el mismo umbral que anular una entrega.
+      const casiNada = await declarePpaCorrectionAction({
+        ppaId: "ppa-1", expectedPpaVersion: 2, expectedCapaVersion: 3, declaration: "listo",
+      })
+      expect(casiNada.ok).toBe(false)
+    })
+
     it("uses a dedicated permission to declare implementation", async () => {
       mockAuthFn.mockResolvedValue(makeSession("ppa:correct", ["ws-1"]))
       const { declarePpaCorrectionAction } = await import("@/app/(app)/prevencion/ppa/actions")
-      const input = { ppaId: "ppa-1", expectedPpaVersion: 2, expectedCapaVersion: 3 }
+      // PPAI-003 (auditoría 2026-09-14): declarar «controles implementados»
+      // exige ahora decir cuáles; era el único eslabón del flujo sin rastro.
+      const input = {
+        ppaId: "ppa-1", expectedPpaVersion: 2, expectedCapaVersion: 3,
+        declaration: "Se instaló barandilla y se señalizó el borde del andamio",
+      }
       const result = await declarePpaCorrectionAction(input)
       expect(result.ok).toBe(true)
       expect(mockDeclarePpaCorrection).toHaveBeenCalledWith(input, expect.objectContaining({

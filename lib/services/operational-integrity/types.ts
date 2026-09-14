@@ -7,6 +7,7 @@ export type OperationalIntegrityCode =
   | "RECEIPT_DISPOSITION_EXCEEDS_LIMIT"
   | "INVOICE_ALLOCATION_INVALID"
   | "INVOICE_RECONCILIATION_STALE"
+  | "DISPATCH_GUIDE_SHRINKAGE_UNRESOLVED"
 
 export interface OperationalIntegrityFinding {
   caseKey: string
@@ -15,7 +16,7 @@ export interface OperationalIntegrityFinding {
   code: OperationalIntegrityCode
   severity: "warning" | "high" | "critical"
   worksiteId: string
-  entityType: "stock_item" | "receipt" | "purchase_order"
+  entityType: "stock_item" | "receipt" | "purchase_order" | "dispatch_guide"
   entityId: string
   summary: string
   href: string
@@ -25,8 +26,13 @@ export interface OperationalIntegrityFinding {
 /**
  * El escaneo recibe el alcance ya resuelto, no una sesión: así lo puede invocar
  * tanto una acción de usuario como el cron, que no tiene sesión que ofrecer.
+ *
+ * TRZ-003: `since` es el inicio de la ventana incremental. `null` o ausente
+ * significa **escaneo completo**, y es lo que reciben la verificación de un caso
+ * y cualquier escaneo manual: cerrar un caso porque su entidad no se movió
+ * últimamente sería resolverlo sin evidencia.
  */
-export interface IntegrityScanContext { tx: Tx; scope: string[] | "all" }
+export interface IntegrityScanContext { tx: Tx; scope: string[] | "all"; since?: Date | null }
 export type IntegrityCaseRef = Pick<OperationalIntegrityFinding, "caseKey" | "domain" | "worksiteId" | "entityId">
 export interface OperationalIntegrityDetector {
   domain: OperationalIntegrityFinding["domain"]
@@ -40,6 +46,9 @@ export const integrityDescriptions: Record<OperationalIntegrityCode, { severity:
   RECEIPT_DISPOSITION_EXCEEDS_LIMIT: { severity: "high", summary: "La recepción supera la cantidad disponible para esta etapa." },
   INVOICE_ALLOCATION_INVALID: { severity: "critical", summary: "El reparto de una línea de factura requiere corrección." },
   INVOICE_RECONCILIATION_STALE: { severity: "warning", summary: "La conciliación guardada no corresponde a la evidencia actual." },
+  // GDI-001: el traslado descontó de la oficina y sumó en la faena; el cotejo
+  // dice que llegó menos y ese saldo sigue contado en el destino.
+  DISPATCH_GUIDE_SHRINKAGE_UNRESOLVED: { severity: "high", summary: "Una guía de despacho tiene una diferencia cotejada sin regularizar." },
 }
 
 /** Only canonical evidence enters the digest; presentation can evolve independently. */

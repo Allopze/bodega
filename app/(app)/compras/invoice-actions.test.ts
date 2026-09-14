@@ -88,7 +88,16 @@ describe("addInvoiceAction supplier identity", () => {
     }))
   })
 
-  it("preserves the extracted gross document total when invoice lines are net", async () => {
+  /*
+   * FAC-003 (auditoría 2026-09-14): esta prueba afirmaba lo CONTRARIO —que el
+   * total extraído por el servidor pisaba en silencio el monto enviado en el
+   * formulario— y por eso consagraba el defecto: el número que quedaba en la
+   * base no era el que la persona había revisado, sin diferencia visible ni
+   * advertencia, y con OCR de por medio las dos extracciones ni siquiera están
+   * garantizadas a coincidir. Ahora la segunda extracción es comprobación
+   * cruzada: si discrepa, no se guarda nada y se devuelven las dos cifras.
+   */
+  it("rechaza el envío cuando el total del documento no coincide con el monto revisado", async () => {
     mocks.extractInvoiceData.mockResolvedValue({
       data: { supplierRut: "76.000.001-1", totalAmount: 119000 },
       method: "pdf_text",
@@ -97,10 +106,43 @@ describe("addInvoiceAction supplier identity", () => {
 
     const result = await addInvoiceAction({ ok: false, message: "" }, form(false, "100000", true))
 
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain("no coincide")
+    expect(mocks.createPurchaseOrderInvoice).not.toHaveBeenCalled()
+    // El archivo persistido se retira: no queda un adjunto huérfano de un
+    // envío que no creó factura.
+    expect(mocks.removeInvoiceAttachment).toHaveBeenCalledWith("/tmp/factura.pdf")
+  })
+
+  it("guarda el monto revisado, que es el que el documento confirma", async () => {
+    mocks.extractInvoiceData.mockResolvedValue({
+      data: { supplierRut: "76.000.001-1", totalAmount: 119000 },
+      method: "pdf_text",
+      quality: { coverage: 1, engineConfidence: null, totalsConsistent: true },
+    })
+
+    const result = await addInvoiceAction({ ok: false, message: "" }, form(false, "119000", true))
+
     expect(result.ok).toBe(true)
     expect(mocks.createPurchaseOrderInvoice).toHaveBeenCalledWith(expect.objectContaining({
       amount: 119000,
       amountAuthority: "document_header",
+    }))
+  })
+
+  it("sin total extraíble el monto del formulario sigue siendo el único disponible", async () => {
+    mocks.extractInvoiceData.mockResolvedValue({
+      data: { supplierRut: "76.000.001-1" },
+      method: "pdf_text",
+      quality: { coverage: 1, engineConfidence: null, totalsConsistent: null },
+    })
+
+    const result = await addInvoiceAction({ ok: false, message: "" }, form(false, "100000", true))
+
+    expect(result.ok).toBe(true)
+    expect(mocks.createPurchaseOrderInvoice).toHaveBeenCalledWith(expect.objectContaining({
+      amount: 100000,
+      amountAuthority: "line_items",
     }))
   })
 

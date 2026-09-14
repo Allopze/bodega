@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
   assertProposalTransition,
+  checkProposalInvoiceMatch,
   computeProposalTotals,
   ProposalTransitionError,
   type TransitionContext,
@@ -201,5 +202,59 @@ describe("detección de períodos pendientes", () => {
     expect(daysSincePeriodEnd("2026-06", "2026-08-05")).toBe(36)
     // Un período que aún no cierra da negativo.
     expect(daysSincePeriodEnd("2026-08", "2026-08-05")).toBeLessThan(0)
+  })
+})
+
+/**
+ * FVE-001 y FVE-002 (auditoría 2026-09-13): relacionar una propuesta aprobada
+ * con una factura no comprobaba a quién se emitió el documento ni por cuánto.
+ */
+describe("checkProposalInvoiceMatch", () => {
+  const base = {
+    proposalClientRut: "76.123.456-7",
+    proposalClientName: "Cliente Uno S.A.",
+    invoiceReceiverTaxId: "761234567",
+    invoiceFolio: 4321,
+    approvedTotal: 1_000_000,
+    invoicedTotal: 1_000_000,
+    tolerance: 1,
+  }
+
+  it("acepta la factura del mismo cliente por el monto aprobado", () => {
+    expect(checkProposalInvoiceMatch(base)).toEqual([])
+  })
+
+  it("tolera diferencias de formato en el RUT", () => {
+    expect(checkProposalInvoiceMatch({ ...base, invoiceReceiverTaxId: "76123456-7" })).toEqual([])
+  })
+
+  it("rechaza una factura emitida a otro RUT", () => {
+    const result = checkProposalInvoiceMatch({ ...base, invoiceReceiverTaxId: "99.888.777-6" })
+    expect(result).toHaveLength(1)
+    expect(result[0]!.kind).toBe("receiver")
+    expect(result[0]!.message).toContain("Cliente Uno S.A.")
+  })
+
+  it("rechaza un total distinto del aprobado más allá de la tolerancia", () => {
+    const result = checkProposalInvoiceMatch({ ...base, invoicedTotal: 3_000_000 })
+    expect(result).toHaveLength(1)
+    expect(result[0]!.kind).toBe("amount")
+    expect(result[0]).toMatchObject({ difference: 2_000_000 })
+  })
+
+  it("acepta una diferencia dentro de la tolerancia de redondeo", () => {
+    expect(checkProposalInvoiceMatch({ ...base, invoicedTotal: 1_000_001 })).toEqual([])
+  })
+
+  it("informa ambos desajustes cuando ocurren juntos", () => {
+    const result = checkProposalInvoiceMatch({
+      ...base, invoiceReceiverTaxId: "99.888.777-6", invoicedTotal: 500_000,
+    })
+    expect(result.map((mismatch) => mismatch.kind)).toEqual(["receiver", "amount"])
+  })
+
+  it("un cliente sin RUT no calza con ningún receptor real", () => {
+    const result = checkProposalInvoiceMatch({ ...base, proposalClientRut: null })
+    expect(result[0]!.kind).toBe("receiver")
   })
 })

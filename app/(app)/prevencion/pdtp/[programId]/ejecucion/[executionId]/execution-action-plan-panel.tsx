@@ -267,6 +267,9 @@ function ActionFollowupTimeline({ itemId, estado, worksiteId, followups, canMana
       // (pdtp-execution-form.tsx): POST a /api/prevencion/pdtp/evidence por
       // archivo, se acumulan los `path` devueltos en evidenciaPhotos.
       const evidenciaPhotos: string[] = []
+      // P4: la subida devuelve además el checksum del archivo; sin él la
+      // evidencia de la CAPA no cumple el contrato del repositorio.
+      const evidenciaChecksums: Record<string, string> = {}
       for (const file of filesRef.current) {
         const uploadData = new FormData()
         uploadData.set("file", file)
@@ -279,6 +282,7 @@ function ActionFollowupTimeline({ itemId, estado, worksiteId, followups, canMana
         }
         const json = await res.json()
         evidenciaPhotos.push(json.path)
+        if (json.checksumSha256) evidenciaChecksums[json.path] = json.checksumSha256
       }
 
       const result = await addPdtpFollowupAction({
@@ -286,6 +290,7 @@ function ActionFollowupTimeline({ itemId, estado, worksiteId, followups, canMana
         observacion: observacion || undefined,
         estadoNuevo: estadoNuevo !== estado ? estadoNuevo : undefined,
         evidenciaPhotos: evidenciaPhotos.length > 0 ? evidenciaPhotos : undefined,
+        evidenciaChecksums: Object.keys(evidenciaChecksums).length > 0 ? evidenciaChecksums : undefined,
       })
       if (!result.ok) setError(result.message ?? "Error al registrar seguimiento.")
       else {

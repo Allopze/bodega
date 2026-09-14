@@ -19,6 +19,11 @@ import {
   WorkerPositionDomainError,
 } from "@/lib/services/worker-positions"
 import { normalizeWorkerPositionKey } from "@/lib/services/worker-positions/normalization"
+import {
+  describeWorkerOffboarding,
+  describeWorkerTransfer,
+  getWorkerOffboardingSummary,
+} from "@/lib/services/worker-offboarding"
 import { workerSchema, type ActionState } from "@/lib/validation/masters"
 
 const REVALIDATE = "/admin/trabajadores"
@@ -150,6 +155,38 @@ export async function updateWorker(_prev: ActionState, formData: FormData): Prom
     return { ok: false, message: "No tienes acceso a la faena seleccionada" }
   }
 
+  /*
+   * TRB-002 / E2E-008 (auditoría 2026-09-14): el traslado de faena era un campo
+   * más del formulario. Cada módulo valida bien *en el momento de operar* que la
+   * persona pertenezca a la faena, pero nadie miraba el estado anterior: las
+   * actas TI abiertas seguían apuntando a la faena antigua, el EPP entregado
+   * seguía contabilizado allá, los accesos y las cuadrillas de permisos abiertos
+   * tampoco se revisaban. El evento de ciclo de vida existía, pero sólo miraba
+   * hacia adelante.
+   *
+   * Se reutiliza el módulo que ya sabe responder esto para la baja
+   * (`worker-offboarding`, escrito para E2E-007) en vez de una segunda consulta
+   * que se desincronizaría de la primera.
+   *
+   * **Advierte, no bloquea**, siguiendo el criterio ya establecido por
+   * `toggleWorkerActive`: un traslado responde a un hecho ya ocurrido —la
+   * persona ya está en la otra faena— y tiene que poder registrarse el mismo
+   * día. Bloquear obligaría a cerrar los pendientes antes de poder reflejar la
+   * realidad, y el sistema quedaría más desfasado, no menos. Lo que sí hace es
+   * mirar y dejarlo escrito: el resumen entra en la auditoría junto al cambio y
+   * vuelve en el mensaje.
+   *
+   * Sólo cuando de verdad hay traslado: mismo criterio que
+   * `deriveWorkerLifecycleEvents`. Mover de faena a alguien inactivo no lo
+   * incorpora a ninguna dotación, y desactivarlo en el mismo guardado ya lo
+   * cubre la advertencia de baja.
+   */
+  const isTransfer = current.isActive && d.isActive && current.worksiteId !== d.worksiteId
+  const transferPendings = isTransfer ? await getWorkerOffboardingSummary(d.id) : null
+  const originWorksite = isTransfer
+    ? await db.query.worksites.findFirst({ where: eq(worksites.id, current.worksiteId) })
+    : null
+
   let events: WorkerLifecycleEvent[] = []
   let positionName = current.position ?? "Sin clasificar"
   try {
@@ -194,14 +231,33 @@ export async function updateWorker(_prev: ActionState, formData: FormData): Prom
     action:     "update",
     entityType: "worker",
     entityId:   d.id,
-    oldState:   { firstName: current.firstName, lastName: current.lastName, position: current.position },
-    newState:   { firstName: d.firstName, lastName: d.lastName, rut: d.rut, position: positionName },
+    oldState:   {
+      firstName: current.firstName,
+      lastName: current.lastName,
+      position: current.position,
+      ...(isTransfer ? { worksiteId: current.worksiteId } : {}),
+    },
+    newState:   {
+      firstName: d.firstName,
+      lastName: d.lastName,
+      rut: d.rut,
+      position: positionName,
+      ...(isTransfer ? { worksiteId: d.worksiteId } : {}),
+      ...(transferPendings ? { pendientesEnFaenaDeOrigen: transferPendings.items } : {}),
+    },
   })
 
   await notifyDotacionChange(events, session.user.id)
 
   revalidatePath(REVALIDATE)
-  return { ok: true, message: `Trabajador ${d.firstName} ${d.lastName} actualizado` }
+  return {
+    ok: true,
+    message: transferPendings && !transferPendings.clear
+      ? `Trabajador ${d.firstName} ${d.lastName} trasladado. `
+        + `${describeWorkerTransfer(transferPendings, originWorksite?.name)}. `
+        + "Decide en cada caso si se arrastra al destino o se cierra en el origen."
+      : `Trabajador ${d.firstName} ${d.lastName} actualizado`,
+  }
 }
 
 export async function toggleWorkerActive(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -219,6 +275,20 @@ export async function toggleWorkerActive(_prev: ActionState, formData: FormData)
     return { ok: false, message: "No tienes acceso a la faena de este trabajador" }
   }
 
+  /*
+   * TRB-001 (auditoría 2026-09-14): desactivar era un `UPDATE isActive` que no
+   * consultaba nada de lo que la plataforma ya sabe —activos TI sin devolver,
+   * accesos vigentes, licencias ocupando asiento, EPP entregado, cuadrillas de
+   * permisos abiertos— ni dejaba constancia de ello.
+   *
+   * No bloquea: a diferencia del cierre de faena, la baja de una persona
+   * responde a un hecho ya ocurrido y debe poder registrarse el mismo día. Lo
+   * que sí hace es mirar y dejarlo escrito: el resumen entra en la auditoría
+   * junto al cambio de bandera y vuelve en el mensaje, para que quien
+   * desactiva sepa qué queda por cerrar en vez de descubrirlo meses después.
+   */
+  const pendings = activate ? null : await getWorkerOffboardingSummary(id)
+
   const { events } = await setWorkerActive(id, activate, current)
 
   await recordAudit({
@@ -228,13 +298,22 @@ export async function toggleWorkerActive(_prev: ActionState, formData: FormData)
     entityType: "worker",
     entityId:   id,
     oldState:   { isActive: !activate },
-    newState:   { isActive: activate },
+    newState:   {
+      isActive: activate,
+      ...(pendings ? { pendientesAlDesactivar: pendings.items } : {}),
+    },
   })
 
   await notifyDotacionChange(events, session.user.id)
 
   revalidatePath(REVALIDATE)
-  return { ok: true, message: activate ? "Trabajador activado" : "Trabajador desactivado" }
+  if (activate) return { ok: true, message: "Trabajador activado" }
+  return {
+    ok: true,
+    message: pendings && !pendings.clear
+      ? `Trabajador desactivado. Queda pendiente de cerrar: ${describeWorkerOffboarding(pendings)}.`
+      : "Trabajador desactivado",
+  }
 }
 
 export async function importWorkersFromXlsx(_prev: ActionState, formData: FormData): Promise<ActionState> {

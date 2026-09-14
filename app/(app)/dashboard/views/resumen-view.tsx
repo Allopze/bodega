@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { optionalBlock } from "../optional-block"
 import type { Session } from "next-auth"
 import { Plus } from "@phosphor-icons/react/dist/ssr"
 import { Button } from "@/components/ui/button"
@@ -10,7 +11,6 @@ import { getCriticalStockAlertCount } from "@/lib/services/stock-alerts"
 import { getDashboardData } from "@/lib/services/dashboard"
 import { listOperationalActivity } from "@/lib/services/operational-activity"
 import {
-  getOperationalCalendarBounds,
   getOperationalPeriodMetrics,
   type OperationalPeriodMetric,
   type OperationalPeriodMetrics,
@@ -40,6 +40,9 @@ import {
 } from "../dashboard-control-center"
 import {
   periodComparisonLabel,
+  // DASH-002: `periodWindowHref` vivía acá y perdía la faena del alcance; se
+  // mudó junto a `dashboardScopeHref`, que es donde se conserva el alcance.
+  periodWindowHref,
   periodScopeLabel,
   scopedWorksiteId,
   type DashboardScope,
@@ -88,6 +91,18 @@ export async function ResumenView({
   const canViewCapa = can(session, "prevention:capa:view")
   const canViewIncidents = can(session, "prevention:incidents:view")
   const canManagePdtp = can(session, "prevention:pdtp:program:manage")
+  /*
+   * DASH-001 (auditoría 2026-09-14): la tendencia operativa —solicitudes, OC y
+   * recepciones de toda la faena— se cargaba y dibujaba para cualquier sesión
+   * autenticada. `requests:view_own` significa "sólo las mías": una curva con
+   * el volumen de todos es exactamente lo que esa capacidad no concede, y las
+   * otras dos series pertenecen a Compras y a Recepción.
+   *
+   * Cada serie sale sólo con su permiso; el gráfico se oculta solo cuando las
+   * tres quedan en cero, que es su comportamiento de siempre.
+   */
+  const canSeeRequestVolume = can(session, "requests:view_all")
+  const canSeeAnyTrend = canSeeRequestVolume || canViewPurchasing || canReceive
 
   const scopedWorksite = scopedWorksiteId(scope)
 
@@ -100,31 +115,38 @@ export async function ResumenView({
     getDashboardData(session, scopedWorksite),
     listOperationalActivity(session, 6),
     canViewStock
-      ? getCriticalStockAlertCount(pdtpScope)
+      ? optionalBlock("alertas de stock crítico", getCriticalStockAlertCount(pdtpScope), 0)
       : Promise.resolve(0),
     canViewEpp
-      ? listEppCoverageGaps({ userId: session.user.id, scope: worksiteScope, permissions: session.user.permissions })
-          .then((gaps) => gaps.filter((gap) => gap.enforcement === "blocking").length)
+      ? optionalBlock("brechas de EPP", listEppCoverageGaps({ userId: session.user.id, scope: worksiteScope, permissions: session.user.permissions })
+          .then((gaps) => gaps.filter((gap) => gap.enforcement === "blocking").length), 0)
       : Promise.resolve(0),
     getOperationalPeriodMetrics(session, { period: scope.period, worksiteId: scopedWorksite }),
-    getOperationalBacklogComparisons(session, new Date(), scopedWorksite),
-    getOperationalSnapshotHistory(session, 30, new Date(), scopedWorksite),
+    optionalBlock("comparativas de backlog", getOperationalBacklogComparisons(session, new Date(), scopedWorksite), []),
+    optionalBlock("histórico de indicadores", getOperationalSnapshotHistory(session, 30, new Date(), scopedWorksite), { backlog_requests: [], backlog_orders: [], backlog_capa: [], backlog_pdtp: [], stock_alerts: [] }),
+    /*
+     * DASH-003: cada bloque opcional se degrada por su cuenta. Antes, un fallo
+     * de PDTP —una columna que faltaba en una base desincronizada— rechazaba
+     * este `Promise.all` y reemplazaba el tablero entero por el límite de error.
+     */
     canViewPdtp
-      ? loadPdtpComplianceSummary(worksiteIds)
+      ? optionalBlock("cumplimiento PDTP", loadPdtpComplianceSummary(worksiteIds), null)
       : Promise.resolve(null),
-    canViewPdtp ? getActivePdtpProgram(currentYear) : Promise.resolve(null),
-    canViewPdtp ? listPdtpPrograms() : Promise.resolve([]),
+    canViewPdtp ? optionalBlock("programa PDTP vigente", getActivePdtpProgram(currentYear), null) : Promise.resolve(null),
+    canViewPdtp ? optionalBlock("programas PDTP", listPdtpPrograms(), []) : Promise.resolve([]),
     // Las dos alimentan la ranura de Riesgo. Ambas hacen `requirePermission`
     // adentro, así que el gate va afuera y no en un `catch`.
     canViewCapa
-      ? getCapaDashboardCounts({ scope: worksiteScope, permissions: session.user.permissions })
+      ? optionalBlock("acciones correctivas", getCapaDashboardCounts({ scope: worksiteScope, permissions: session.user.permissions }), { open: 0, overdue: 0, pendingVerification: 0, unreconciled: 0, immediateStop: 0 })
       : Promise.resolve({ open: 0, overdue: 0, pendingVerification: 0, unreconciled: 0 }),
     canViewIncidents
-      ? getIncidentDashboardCounts({ ctx: { userId: session.user.id }, scope: worksiteScope, permissions: session.user.permissions })
+      ? optionalBlock("incidentes", getIncidentDashboardCounts({ ctx: { userId: session.user.id }, scope: worksiteScope, permissions: session.user.permissions }), { totalOpen: 0, overdueNotifications: 0, fatalOrSerious: 0, pendingInvestigation: 0 })
       : Promise.resolve({ totalOpen: 0, overdueNotifications: 0, fatalOrSerious: 0, pendingInvestigation: 0 }),
     // Transversal, no de un dominio: solicitudes, OC y recepciones en la misma
     // tendencia son el pulso de la operación completa.
-    getOperationalTrendHistory(session, 6, new Date(), scopedWorksite),
+    canSeeAnyTrend
+      ? optionalBlock("tendencia operativa", getOperationalTrendHistory(session, 6, new Date(), scopedWorksite), [])
+      : Promise.resolve([]),
   ])
 
   const hasNextYearProgram = allPrograms.some((p) => p.year === currentYear + 1)
@@ -226,7 +248,10 @@ export async function ResumenView({
             ) : null}
             <OperationalTrendChart
               data={trend.map((point) => ({
-                month: point.month, requests: point.requests, orders: point.orders, receipts: point.receipts,
+                month: point.month,
+                requests: canSeeRequestVolume ? point.requests : 0,
+                orders: canViewPurchasing ? point.orders : 0,
+                receipts: canReceive ? point.receipts : 0,
               }))}
             />
           </div>
@@ -251,19 +276,6 @@ function pendientesHref(scope: DashboardScope, params: Record<string, string> = 
   if (worksiteId) search.set("worksiteId", worksiteId)
   const query = search.toString()
   return query ? `/pendientes?${query}` : "/pendientes"
-}
-
-/**
- * Ventana calendario [desde, hasta) del período del alcance, en claves de
- * fecha (YYYY-MM-DD). Alimenta los destinos de lista que pueden reproducir lo
- * que la cifra cuenta (p.ej. "Inversión · mes" → `/compras?desde=…&hasta=…`).
- */
-function periodWindowHref(scope: DashboardScope, path: string) {
-  const bounds = getOperationalCalendarBounds(new Date(), scope.period)
-  const search = new URLSearchParams()
-  search.set("desde", bounds.currentStart.slice(0, 10))
-  search.set("hasta", bounds.currentEnd.slice(0, 10))
-  return `${path}?${search.toString()}`
 }
 
 /**

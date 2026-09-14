@@ -318,6 +318,8 @@ export async function onEmergencyDrillCompleted(input: {
   executedAt: string
   participantCount: number
   activityNumbers: number[]
+  /** EMG-001: la ruta del acta, si el cierre la adjuntó. */
+  evidencePath?: string | null
 }): Promise<void> {
   if (input.activityNumbers.length === 0) return
 
@@ -328,7 +330,14 @@ export async function onEmergencyDrillCompleted(input: {
     activityNumbers: input.activityNumbers,
     occurredAt: input.executedAt,
     executedQuantity: Math.max(1, input.participantCount),
-    evidenceRef: `Simulacro completado: ${input.drillId}`,
+    /*
+     * EMG-001 (auditoría 2026-09-14): esto era siempre el rótulo sintético
+     * «Simulacro completado: <id>» —una cadena que se ve como evidencia y no lo
+     * es—. Ahora, si el cierre adjuntó el acta, se referencia el archivo real;
+     * el rótulo queda sólo para los simulacros que no llevan acta, y ahí dice
+     * lo que hay: el registro de participantes.
+     */
+    evidenceRef: input.evidencePath ?? `Simulacro completado: ${input.drillId}`,
   })
 }
 

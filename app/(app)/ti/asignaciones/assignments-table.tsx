@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { formatDateTime } from "@/lib/utils"
 import { IT_ASSIGNMENT_KIND_META, IT_PHYSICAL_STATE_META } from "@/lib/services/ti/constants"
+import { AcceptanceSheet } from "./acceptance-sheet"
 import { ReturnSheet } from "./return-sheet"
 import { TransferSheet } from "./transfer-sheet"
 
@@ -26,7 +27,16 @@ interface Row {
   physicalState: string
   returnedAt: string | null
   returnPhysicalState: string | null
+  /** TIA-002: 'pendiente' | 'aceptada' | 'sin_acuse'. */
+  acceptanceStatus: string
   deliveredByName: string | null
+}
+
+/** TIA-002: el acuse del acta se pinta como estado propio, no como un vacío. */
+const ACCEPTANCE_META: Record<string, { label: string; variant: "success" | "warning" | "danger" }> = {
+  aceptada:  { label: "Con acuse",       variant: "success" },
+  pendiente: { label: "Sin acuse aún",   variant: "warning" },
+  sin_acuse: { label: "Sin acuse",       variant: "danger" },
 }
 
 const COLUMNS = [
@@ -38,6 +48,7 @@ const COLUMNS = [
   { key: "deliveredAt", label: "Entrega", sortable: true, width: "w-32" },
   { key: "state", label: "Estado físico", width: "w-32" },
   { key: "status", label: "Situación", width: "w-28" },
+  { key: "acceptance", label: "Acuse", width: "w-32" },
   { key: "actions", label: "", width: "w-56" },
 ]
 
@@ -76,8 +87,17 @@ export function AssignmentsTable({ rows, canManage, workers, worksites }: {
                 ? <MetaBadge meta={{ label: "Devuelto", variant: "default" }} />
                 : <MetaBadge meta={{ label: "Vigente", variant: "info" }} dot />}
             </TableCell>
+            <TableCell className="w-32">
+              <MetaBadge meta={ACCEPTANCE_META[row.acceptanceStatus] ?? { label: row.acceptanceStatus, variant: "warning" }} />
+            </TableCell>
             <TableCell className="w-56">
               <div className="flex items-center justify-end gap-2">
+                {canManage && row.acceptanceStatus === "pendiente" && (
+                  <AcceptanceSheet
+                    trigger={<Button type="button" variant="link" size="sm">Acuse</Button>}
+                    assignment={row}
+                  />
+                )}
                 {canManage && !row.returnedAt && (
                   <>
                     <ReturnSheet
@@ -115,6 +135,12 @@ export function AssignmentsTable({ rows, canManage, workers, worksites }: {
               </div>
             </Link>
             <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--color-border)] pt-3">
+              {canManage && row.acceptanceStatus === "pendiente" && (
+                <AcceptanceSheet
+                  trigger={<Button type="button" variant="link" size="sm">Acuse</Button>}
+                  assignment={row}
+                />
+              )}
               {canManage && !row.returnedAt && (
                 <>
                   <ReturnSheet

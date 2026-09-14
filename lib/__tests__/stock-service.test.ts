@@ -311,6 +311,54 @@ describe("Stock service — applyMovement", () => {
       const last = movements[movements.length - 1]!
       expect(last.quantity).toBe(0) // 0 deducted (record-only)
     })
+
+    /**
+     * STK-001 (auditoría 2026-09-13): el recorte a lo disponible es deliberado
+     * —una baja puede documentar EPP que ya salió de bodega—, pero la cabecera
+     * del folio se escribía con la cantidad PEDIDA y el kardex con la APLICADA.
+     * Los dos números tienen que contar la misma historia.
+     */
+    it("no emite folio DES por más de lo disponible", async () => {
+      const stock = await inMemoryDb.query.worksiteStock.findFirst({
+        where: and(
+          eq(schema.worksiteStock.worksiteId, "ws-stock"),
+          eq(schema.worksiteStock.productId, "prod-stock-3"),
+        ),
+      })
+      expect(stock?.quantity ?? 0).toBe(0)
+      const foliosBefore = await inMemoryDb.query.stockAdjustments.findMany({
+        where: eq(schema.stockAdjustments.kind, "desecho"),
+      })
+
+      await expect(registerStockDiscard({
+        worksiteId: "ws-stock",
+        productId: "prod-stock-3",
+        quantity: 7,
+        performedBy: userId,
+        reason: "Baja mayor al saldo disponible",
+      })).rejects.toThrow(/Stock insuficiente para la baja/i)
+
+      // La transacción se deshace completa: ni folio a medias ni movimiento.
+      const foliosAfter = await inMemoryDb.query.stockAdjustments.findMany({
+        where: eq(schema.stockAdjustments.kind, "desecho"),
+      })
+      expect(foliosAfter.length).toBe(foliosBefore.length)
+    })
+
+    it("con saldo suficiente, folio y kardex coinciden en la cantidad pedida", async () => {
+      const discard = await registerStockDiscard({
+        worksiteId: "ws-stock",
+        productId: "prod-stock",
+        quantity: 1,
+        performedBy: userId,
+        reason: "Daño irreparable",
+      })
+      expect(discard.appliedQuantity).toBe(1)
+      const header = await inMemoryDb.query.stockAdjustments.findFirst({
+        where: eq(schema.stockAdjustments.id, discard.id),
+      })
+      expect(header?.quantity).toBe(-1)
+    })
   })
 
   // ── Validation ─────────────────────────────────────────────────────────

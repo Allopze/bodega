@@ -183,6 +183,62 @@ describe("Prevention Campaigns Service (R9)", () => {
     expect(executions[0]!.executedQuantity).toBe(2) // 2 trabajadores alcanzados
   })
 
+  /**
+   * EMG-002 (auditoría 2026-09-14), patrón P4: `evidenceUrl` y `evidenceRef`
+   * eran `z.string().optional()` —sin longitud, sin formato, sin comprobar
+   * nada— y ese texto viajaba como evidencia a la acreditación PDTP.
+   */
+  describe("EMG-002 — la evidencia de una campaña", () => {
+    async function campañaAbierta(titulo: string) {
+      const { createCampaign } = await import("@/lib/services/prevention-campaigns")
+      const campaign = await createCampaign({
+        worksiteId: WS_ID, title: titulo, pdtpActivityNumbers: [85],
+      }, access)
+      return campaign!.id
+    }
+
+    it("sigue siendo opcional: el registro de asistencia vale por sí mismo", async () => {
+      const { recordCampaignAttendance, closeCampaign } = await import("@/lib/services/prevention-campaigns")
+      const id = await campañaAbierta("Campaña sin evidencia")
+      await recordCampaignAttendance({ campaignId: id, workerIds: [WORKER_1] }, access)
+      const result = await closeCampaign({ campaignId: id }, access)
+      expect(result.campaign!.status).toBe("completed")
+    })
+
+    it("pero si se declara algo, tiene que ser evidencia de verdad", async () => {
+      const { closeCampaign } = await import("@/lib/services/prevention-campaigns")
+      const id = await campañaAbierta("Campaña con texto suelto")
+      await expect(closeCampaign({
+        campaignId: id, evidenceUrl: "las fotos están en la carpeta compartida",
+      }, access)).rejects.toThrow()
+    })
+
+    it("acepta una URL navegable y un archivo del storage de campañas", async () => {
+      const { closeCampaign } = await import("@/lib/services/prevention-campaigns")
+
+      const conUrl = await campañaAbierta("Campaña con URL")
+      await expect(closeCampaign({
+        campaignId: conUrl, evidenceUrl: "https://drive.chome.cl/acta-campana",
+      }, access)).resolves.toBeTruthy()
+
+      const conArchivo = await campañaAbierta("Campaña con archivo")
+      await expect(closeCampaign({
+        campaignId: conArchivo, evidenceUrl: "storage/pdtp-evidence/acta-2026.pdf",
+      }, access)).resolves.toBeTruthy()
+    })
+
+    it("la asistencia sigue la misma regla", async () => {
+      const { recordCampaignAttendance } = await import("@/lib/services/prevention-campaigns")
+      const id = await campañaAbierta("Campaña asistencia")
+      await expect(recordCampaignAttendance({
+        campaignId: id, workerIds: [WORKER_1], evidenceRef: "lista firmada en papel",
+      }, access)).rejects.toThrow()
+      await expect(recordCampaignAttendance({
+        campaignId: id, workerIds: [WORKER_1], evidenceRef: "storage/pdtp-evidence/lista.pdf",
+      }, access)).resolves.toBeTruthy()
+    })
+  })
+
   it("cierra la campaña sin acreditar PDTP cuando no declara actividades (F-14)", async () => {
     const { createCampaign, closeCampaign } = await import("@/lib/services/prevention-campaigns")
 

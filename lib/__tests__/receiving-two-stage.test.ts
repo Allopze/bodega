@@ -40,6 +40,7 @@ vi.mock("@/lib/services/notifications", async (importOriginal) => ({
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
 
 import { registerReceipt } from "@/lib/services/receiving"
+import { voidReceipt } from "@/lib/services/receiving-void"
 import { closeOrder, createPurchaseOrderInvoice } from "@/lib/services/purchasing"
 import { getOcReconciliation } from "@/lib/services/oc-reconciliation"
 import { getPurchaseOrderInvoiceReconciliation } from "@/lib/services/purchasing-module/invoice-reconciliation-service"
@@ -620,5 +621,200 @@ describe("avance de la OC (getOcReconciliation)", () => {
     const conFaena = await getOcReconciliation(orderId, itemIds)
     expect(conFaena.receivedByItem.get(itemIds[0]!)).toBe(10)
     expect(conFaena.totalReceived).toBe(10)
+  })
+})
+
+/**
+ * REC-001 (auditoría 2026-09-14): una OC `via_oficina` cuya faena de destino es
+ * la propia bodega-oficina ingresaba el mismo stock dos veces —una al registrar
+ * la llegada a oficina y otra al "recibir en faena"— porque ambos movimientos
+ * apuntaban al mismo id de bodega, y no hay GDI que compense (la preparación de
+ * guía se omite cuando origen y destino coinciden).
+ */
+describe("REC-001: OC cuya faena es la propia oficina", () => {
+  const PRODUCT_ID = "prod-rec001"
+
+  async function stockAt(worksiteId: string): Promise<number> {
+    const row = await inMemoryDb.query.worksiteStock.findFirst({
+      where: (stock, { and, eq: equals }) => and(
+        equals(stock.worksiteId, worksiteId),
+        equals(stock.productId, PRODUCT_ID),
+      ),
+    })
+    return row?.quantity ?? 0
+  }
+
+  async function makeOfficeOrder(quantity: number, deliveryMode: "via_oficina" | "directo_faena") {
+    const orderId = `oc-office-${++ocCounter}`
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.purchaseOrders).values({
+      id: orderId, code: `OC-OFF-${ocCounter}`, worksiteId: OFFICE_ID, supplierId: SUP_ID,
+      createdBy: USER_ID, status: "sent", deliveryMode, createdAt: now, updatedAt: now,
+    })
+    const itemId = nanoid()
+    await inMemoryDb.insert(schema.purchaseOrderItems).values({
+      id: itemId, purchaseOrderId: orderId, productId: PRODUCT_ID,
+      quantity, unitOfMeasure: "unidad", sortOrder: 0,
+    })
+    return { orderId, itemId }
+  }
+
+  beforeAll(async () => {
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.productCategories).values({
+      id: "cat-rec001", name: "Categoría REC-001", slug: "cat-rec001",
+    }).onConflictDoNothing()
+    await inMemoryDb.insert(schema.products).values({
+      id: PRODUCT_ID, sku: "SKU-REC001", name: "Producto REC-001",
+      categoryId: "cat-rec001", unitOfMeasure: "unidad", isActive: true,
+      createdAt: now, updatedAt: now,
+    }).onConflictDoNothing()
+  })
+
+  it("no vuelve a ingresar el stock en la etapa de faena", async () => {
+    const { orderId, itemId } = await makeOfficeOrder(10, "via_oficina")
+    const before = await stockAt(OFFICE_ID)
+
+    await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
+      items: [{ purchaseOrderItemId: itemId, quantityReceived: 10 }],
+    })
+    expect(await stockAt(OFFICE_ID)).toBe(before + 10)
+
+    // La etapa de faena sigue siendo obligatoria (cierra la OC y avanza el ítem),
+    // pero la mercadería no se mueve: ya está en esta misma bodega.
+    await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: OFFICE_ID,
+      items: [{ purchaseOrderItemId: itemId, quantityReceived: 10 }],
+    })
+    expect(await stockAt(OFFICE_ID)).toBe(before + 10)
+    expect(await status(orderId)).toBe("closed")
+  })
+
+  it("un despacho directo a la oficina sí ingresa una vez", async () => {
+    const { orderId, itemId } = await makeOfficeOrder(4, "directo_faena")
+    const before = await stockAt(OFFICE_ID)
+
+    await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: OFFICE_ID,
+      items: [{ purchaseOrderItemId: itemId, quantityReceived: 4 }],
+    })
+    expect(await stockAt(OFFICE_ID)).toBe(before + 4)
+  })
+
+  it("una faena distinta de la oficina sigue su camino normal: ingreso en oficina y GDI para el traslado", async () => {
+    const { orderId, itemIds } = await makeOrder([6])
+    await inMemoryDb.update(schema.purchaseOrderItems)
+      .set({ productId: PRODUCT_ID })
+      .where(eq(schema.purchaseOrderItems.id, itemIds[0]!))
+    const officeBefore = await stockAt(OFFICE_ID)
+    const faenaBefore = await stockAt(WS_ID)
+
+    await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "office",
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 6 }],
+    })
+
+    // El ingreso queda en la oficina y el traslado a la faena se documenta con
+    // una GDI: por eso el destino distinto NO puede resolverse con una segunda
+    // recepción manual, y por eso la guarda de REC-001 sólo aplica cuando ambas
+    // etapas apuntan a la misma bodega.
+    expect(await stockAt(OFFICE_ID)).toBe(officeBefore + 6)
+    expect(await stockAt(WS_ID)).toBe(faenaBefore)
+    const guide = await inMemoryDb.query.dispatchGuides.findFirst({
+      where: eq(schema.dispatchGuides.purchaseOrderId, orderId),
+    })
+    expect(guide).toBeTruthy()
+    expect(guide!.originWorksiteId).toBe(OFFICE_ID)
+    expect(guide!.destinationWorksiteId).toBe(WS_ID)
+  })
+})
+
+/**
+ * REC-003 (auditoría 2026-09-14), patrón P5: una recepción equivocada no tenía
+ * salida. `receipts` no tenía columnas de anulación y no existía **ni un solo
+ * `update` sobre la tabla** en toda la aplicación: el único remedio era un
+ * ajuste de inventario, que corrige el saldo pero no revierte el avance de la
+ * OC, ni el estado del ítem, ni la proyección de conciliación tributaria.
+ */
+describe("REC-003 — anular una recepción", () => {
+  const MOTIVO = "Se registró contra la orden equivocada"
+
+  const receiptStatus = async (id: string) =>
+    (await inMemoryDb.select({ s: schema.receipts.status })
+      .from(schema.receipts).where(eq(schema.receipts.id, id)))[0]?.s
+
+  const received = async (itemId: string) =>
+    (await inMemoryDb.select({ q: schema.purchaseOrderItems.quantityReceived })
+      .from(schema.purchaseOrderItems).where(eq(schema.purchaseOrderItems.id, itemId)))[0]?.q
+
+  it("devuelve las cantidades de la OC y deja la recepción anulada, no borrada", async () => {
+    const { orderId, itemIds } = await makeOrder([10], "directo_faena")
+    const itemId = itemIds[0]!
+    const receiptId = await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
+      items: [{ purchaseOrderItemId: itemId, quantityReceived: 10 }],
+    })
+    expect(await received(itemId)).toBe(10)
+    // La recepción completa autocierra la orden en el mismo commit.
+    expect(await status(orderId)).toBe("closed")
+
+    const result = await voidReceipt({ receiptId, reason: MOTIVO, voidedBy: USER_ID })
+    expect(result.code).toBeTruthy()
+
+    // La fila sigue ahí: una recepción es un documento, no se borra.
+    expect(await receiptStatus(receiptId)).toBe("voided")
+    expect(await received(itemId)).toBe(0)
+    // Y la orden deja de estar cerrada: se había cerrado por recepción completa.
+    expect(await status(orderId)).not.toBe("closed")
+  })
+
+  it("exige un motivo de verdad, como cualquier acto irreversible", async () => {
+    const { orderId, itemIds } = await makeOrder([5], "directo_faena")
+    const receiptId = await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 5 }],
+    })
+    await expect(voidReceipt({ receiptId, reason: "error", voidedBy: USER_ID }))
+      .rejects.toThrow(/al menos 10/i)
+  })
+
+  it("no se anula dos veces", async () => {
+    const { orderId, itemIds } = await makeOrder([5], "directo_faena")
+    const receiptId = await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 5 }],
+    })
+    await voidReceipt({ receiptId, reason: MOTIVO, voidedBy: USER_ID })
+    await expect(voidReceipt({ receiptId, reason: MOTIVO, voidedBy: USER_ID }))
+      .rejects.toThrow(/ya está anulada/i)
+  })
+
+  it("sólo revierte la recepción anulada: la otra parcial se conserva", async () => {
+    const { orderId, itemIds } = await makeOrder([10], "directo_faena")
+    const itemId = itemIds[0]!
+    const primera = await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
+      items: [{ purchaseOrderItemId: itemId, quantityReceived: 6 }],
+    })
+    await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
+      items: [{ purchaseOrderItemId: itemId, quantityReceived: 4 }],
+    })
+    expect(await received(itemId)).toBe(10)
+
+    await voidReceipt({ receiptId: primera, reason: MOTIVO, voidedBy: USER_ID })
+    // Quedan los 4 de la segunda: el reverso es de una recepción, no de todas.
+    expect(await received(itemId)).toBe(4)
+  })
+
+  it("respeta el alcance de faena", async () => {
+    const { orderId, itemIds } = await makeOrder([3], "directo_faena")
+    const receiptId = await registerReceipt({
+      purchaseOrderId: orderId, receivedBy: USER_ID, stage: "faena", worksiteId: WS_ID,
+      items: [{ purchaseOrderItemId: itemIds[0]!, quantityReceived: 3 }],
+    })
+    await expect(voidReceipt({ receiptId, reason: MOTIVO, voidedBy: USER_ID }, ["ws-other"]))
+      .rejects.toThrow(/No tienes acceso/i)
   })
 })

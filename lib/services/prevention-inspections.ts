@@ -1403,6 +1403,23 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
       needsConfirmation: row.needsConfirmation,
     }))
 
+    /*
+     * INS-002: se resuelven los firmantes declarados en una sola consulta. Un
+     * `userId` que no existe o está inactivo **no hace fallar el cierre** —el
+     * acta puede venir de una cola offline con un id rancio, y perder el acta
+     * entera por eso sería peor—: esa firma pasa a declarada, que es lo que de
+     * verdad es.
+     */
+    const declaredSignerIds = [...new Set(
+      (data.closingAct?.signatures ?? []).flatMap((item) => (item.userId ? [item.userId] : [])),
+    )]
+    const signerById = new Map(
+      (declaredSignerIds.length === 0 ? [] : await tx.select({ id: users.id, name: users.name })
+        .from(users)
+        .where(and(inArray(users.id, declaredSignerIds), eq(users.isActive, true)))
+      ).map((row) => [row.id, row] as const),
+    )
+
     const closingSpec = closingActFromDefinition(template.definitionSnapshot as unknown as ChecklistDefinition)
     const completion = assessRunCompletion(items, answers, { spec: closingSpec, act: data.closingAct })
     if (!completion.allowed) {
@@ -1490,13 +1507,25 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
       closingRestrictions: data.closingAct?.restrictions ?? null,
       // `signedAt` lo estampa el servidor: la hora de firma no la declara el
       // cliente. Firma registrada (rol + nombre + momento), sin trazo.
+      /*
+       * INS-002 (auditoría 2026-09-14): un `userId` tecleado no se creía; ahora
+       * se comprueba contra el registro de usuarios activos y, cuando existe, el
+       * nombre lo pone la plataforma en vez del formulario. Una firma sin
+       * `userId` —el representante del mandante, por ejemplo— sigue admitida,
+       * pero queda marcada como declarada y no como verificada.
+       */
       closingSignatures: data.closingAct
-        ? data.closingAct.signatures.map((item) => ({
-            role: item.role,
-            name: item.name,
-            userId: item.userId ?? null,
-            signedAt: now,
-          }))
+        ? data.closingAct.signatures.map((item) => {
+            const verifiedUser = item.userId ? signerById.get(item.userId) : undefined
+            return {
+              role: item.role,
+              name: verifiedUser?.name ?? item.name,
+              userId: verifiedUser?.id ?? null,
+              verified: Boolean(verifiedUser),
+              capturedByUserId: access.userId,
+              signedAt: now,
+            }
+          })
         : null,
       version: run.version + 1,
       updatedAt: now,

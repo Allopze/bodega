@@ -36,10 +36,13 @@ export default async function ReporteDetailPage({ params }: Props) {
   }
 
   const { id } = await params
-  const report = await getReport(id)
+  // SOP-002: el permiso se resuelve ANTES de leer, porque ahora es lo que
+  // decide si el servicio entrega la nota interna. Antes la nota venía siempre
+  // y la vista la escondía.
+  const canManage   = can(session, "feedback:manage")
+  const report = await getReport(id, canManage)
   if (!report) notFound()
 
-  const canManage   = can(session, "feedback:manage")
   if (!canAccessFeedbackReport(session, report)) {
     redirect(`/forbidden?desde=${encodeURIComponent("/soporte")}`)
   }

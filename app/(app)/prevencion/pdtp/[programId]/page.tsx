@@ -100,13 +100,22 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
       : Promise.resolve([null, null, null] as const),
     getPdtpApprovalProgress(programId),
   ])
-  // El envío a revisión exige requisitos de contenido; se consultan aquí para
-  // mostrarlos en la tarjeta de estado en vez de dejar que el envío falle.
-  const submitBlockers = program.status === "draft" ? await getPdtpSubmitReviewBlockers(programId) : []
-  // El informe por actividad se muestra mientras el programa no está activo:
-  // es lo que hay que resolver antes de firmarlo, y una vez activo deja de
-  // ser una decisión pendiente.
-  const coverageReport = program.status === "active" ? null : await getPdtpCoverageReport(programId)
+  // Dos lecturas de la compuerta que antes iban en serie. `submitBlockers` son
+  // los requisitos de contenido del envío, que se consultan acá para mostrarlos
+  // en la tarjeta de estado en vez de dejar que el envío falle.
+  //
+  // El informe por actividad se muestra SIEMPRE, también con el programa
+  // activo. Antes se ocultaba al activar porque la compuerta no dejaba activar
+  // nada con cobertura incompleta, así que a esa altura no quedaba nada que
+  // mirar. Desde que faltar un curso, una plantilla, un plan o un mapa ya no
+  // frena la activación, el caso normal es activar con cobertura incompleta:
+  // ocultar la lista justo ahí dejaba al operador sin la única vista que le
+  // dice qué actividades no están acreditando y por qué, que es precisamente
+  // el trabajo que le queda por delante.
+  const [submitBlockers, coverageReport] = await Promise.all([
+    program.status === "draft" ? getPdtpSubmitReviewBlockers(programId) : Promise.resolve([] as string[]),
+    getPdtpCoverageReport(programId),
+  ])
 
   const canApprove = can(session, "prevention:pdtp:approve")
 
@@ -210,7 +219,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
 
       <div className="space-y-4">
         {/* Program lifecycle status block, con la metadata del documento importado plegada dentro */}
-        {coverageReport && <CoverageReportPanel report={coverageReport} />}
+        <CoverageReportPanel report={coverageReport} />
         <FulfillmentBacklogPanel programId={programId} />
 
         <ProgramLifecycleControls

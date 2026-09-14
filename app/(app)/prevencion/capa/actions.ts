@@ -8,6 +8,8 @@ import { parseZ } from "@/lib/actions/parse-z"
 import type { ActionState } from "@/lib/validation/masters"
 import {
   addCapaEvidence,
+  capaManualCreateSchema,
+  createManualCapaAction,
   addCapaFollowup,
   capaEvidenceSchema,
   capaTransitionSchema,
@@ -61,6 +63,34 @@ export async function transitionCapaActionAction(input: {
     return { ok: true, message: "Estado CAPA actualizado" }
   } catch (error) {
     return fail(error, "No se pudo actualizar el estado CAPA")
+  }
+}
+
+/**
+ * E2E-006 (auditoría 2026-09-14) — La pantalla de CAPA no tenía creación.
+ *
+ * Sus cinco acciones eran transitar, agregar evidencia, agregar seguimiento,
+ * actualizar y conciliar: toda acción correctiva nacía en otro módulo. Una
+ * observación de un recorrido o un compromiso de una reunión obligaban a
+ * inventar antes un registro de origen. El enum de la base ya tenía `manual` y
+ * nadie lo escribía; ésta es la puerta que faltaba.
+ */
+export async function createManualCapaActionAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:capa:manage")
+  if (guard.error) return guard.error
+  const parsed = parseZ(capaManualCreateSchema, input)
+  if (!parsed.ok) return parsed
+  try {
+    const created = await createManualCapaAction({
+      input: parsed.data,
+      ctx: { userId: guard.session.user.id },
+      scope: resolveWorksiteScope(guard.session),
+      permissions: guard.session.user.permissions,
+    })
+    revalidateOperationalViews([REVALIDATE])
+    return { ok: true, message: `Acción ${created.code} creada`, data: { id: created.id, code: created.code } }
+  } catch (error) {
+    return fail(error, "No se pudo crear la acción correctiva")
   }
 }
 

@@ -314,8 +314,13 @@ export async function getPdtpSheetViewByProgram(programId: string, sheetCode: st
   return { program, sheet, activities, monthlyTotals }
 }
 
-export async function buildPdtpExport({ programId, year, sheetCode, worksiteId, scope = "all" }: {
-  programId?: string; year: number; sheetCode: string; worksiteId: string; scope?: WorksiteScope
+/**
+ * HALLAZGO SEC-002 (S3/P2): `scope` tenía `= "all"` como valor por omisión, o
+ * sea que olvidarlo no restringía sino que **abría** el export a todas las
+ * faenas. Ahora es obligatorio: omitirlo no compila.
+ */
+export async function buildPdtpExport({ programId, year, sheetCode, worksiteId, scope }: {
+  programId?: string; year: number; sheetCode: string; worksiteId: string; scope: WorksiteScope
 }): Promise<ReportData> {
   assertWorksiteAccess(worksiteId, scope)
   const view = programId
@@ -337,7 +342,7 @@ export async function buildPdtpExport({ programId, year, sheetCode, worksiteId, 
     return [activity.n, content.activityDescription, content.executionGuidance, activity.responsibleDisplay, ...monthly, activity.totalPlanned, activity.totalExecuted, percent]
   })
 
-  const actionItems = await listActionsByProgram(view.program.id, { worksiteId, scope })
+  const actionItems = await listActionsByProgram(view.program.id, scope, { worksiteId })
   const actionPlanSheet = buildActionPlanSheet(actionItems)
   const seguimientoSheet = await buildSeguimientoSheet(actionItems)
 

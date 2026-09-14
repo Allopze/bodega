@@ -11,7 +11,9 @@
  * Query params:
  *   - olderThanMs=N: umbral de antigüedad en ms (default 1h).
  *
- * Devuelve: `{ ok, scanned, deleted, kept, failed, deletedNames, dryRun }`.
+ * Devuelve: `{ ok, scanned, deleted, kept, failed, deletedNames, riskMap }`.
+ * Los campos sueltos son los de `storage/pdtp-evidence/`; `riskMap` trae los
+ * del barrido de `storage/risk-map/` (MIP-002).
  */
 export const dynamic = "force-dynamic"
 // Techo explícito: estos jobs recorren tablas que crecen y sin cota un
@@ -20,7 +22,7 @@ export const maxDuration = 300
 export const runtime = "nodejs"
 
 import { type NextRequest, NextResponse } from "next/server"
-import { cleanupPdtpEvidenceOrphans } from "@/lib/services/pdtp/evidence-gc"
+import { cleanupPdtpEvidenceOrphans, cleanupRiskMapOrphans } from "@/lib/services/pdtp/evidence-gc"
 import { logger } from "@/lib/logger"
 import { verifyCronSecret } from "@/lib/security/cron-auth"
 import { withCronLock } from "@/lib/services/cron-lock"
@@ -47,8 +49,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const result = await withCronLock("pdtp-evidence-gc", () => cleanupPdtpEvidenceOrphans({ dryRun, olderThanMs }))
-    return NextResponse.json({ ok: true, ...result })
+    // MIP-002: el directorio de planos de riesgo (`storage/risk-map/`) no
+    // tenía recolección de ninguna clase y crecía sin política. Se barre desde
+    // este mismo job —mismo dueño (prevención), misma cadencia, mismo secreto—
+    // en vez de multiplicar endpoints de cron que nadie agenda. El resultado
+    // se informa por directorio para que un borrado no se confunda con el otro.
+    const result = await withCronLock("pdtp-evidence-gc", async () => ({
+      pdtpEvidence: await cleanupPdtpEvidenceOrphans({ dryRun, olderThanMs }),
+      riskMap: await cleanupRiskMapOrphans({ dryRun, olderThanMs }),
+    }))
+    if ("skipped" in result) return NextResponse.json({ ok: true, ...result })
+    return NextResponse.json({ ok: true, ...result.pdtpEvidence, riskMap: result.riskMap })
   } catch (err) {
     logger.error("[cron/pdtp-evidence-gc] Fatal error", err)
     const isProd = process.env.NODE_ENV === "production"

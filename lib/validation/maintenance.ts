@@ -128,6 +128,13 @@ export const maintenanceTaskSchema = z.object({
 
 export const maintenancePartSchema = z.object({
   maintenanceId: z.string().min(1),
+  /**
+   * `MNT-002` (auditoría 2026-09-14): la línea era texto libre y su consumo no
+   * descontaba stock. Apuntar al catálogo es lo que permite emitir el egreso.
+   * Opcional a propósito: un taller externo factura piezas que nunca pasaron
+   * por bodega, y ésas son costo, no inventario.
+   */
+  productId: optionalText,
   description: z.string().trim().min(2).max(300),
   partNumber: optionalText,
   quantity: z.coerce.number().positive(),

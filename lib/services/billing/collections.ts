@@ -28,8 +28,8 @@ import {
   worksites,
 } from "@/db/schema"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { addAmounts, sumByCurrency, type MoneyAmount } from "./money"
-import { daysOverdue } from "./invoices"
+import { sumByCurrency, type MoneyAmount } from "./money"
+import { daysOverdue, outstandingAmountFor } from "./invoices"
 import { agingBucketFor, type AgingBucketId } from "./config"
 import { todayIso } from "./queries"
 
@@ -244,7 +244,7 @@ export async function getCollectionsView(session: Session | null): Promise<Colle
       currency: row.currency,
       totalAmount: row.totalAmount,
       paidAmount: row.paidAmount,
-      outstandingAmount: addAmounts(row.totalAmount, -row.paidAmount),
+      outstandingAmount: outstandingAmountFor(row.totalAmount, row.paidAmount),
       paymentStatus: row.paymentStatus,
       collectionStatus: row.collectionStatus,
       daysOverdue: overdue,
@@ -281,8 +281,10 @@ export async function getCollectionsView(session: Session | null): Promise<Colle
     buckets,
     totalOutstanding: sumByCurrency(
       rows
-        // Una sobrepagada tiene saldo NEGATIVO: incluirla neteaba lo que sí hay
-        // por cobrar. Lo que corresponde devolver no es un cobro pendiente.
+        // Una sobrepagada tenía saldo NEGATIVO e incluirla neteaba lo que sí
+        // hay por cobrar (FVE-003, ya recortado en `outstandingAmountFor`). El
+        // filtro se conserva porque la razón es propia: lo que corresponde
+        // devolver no es un cobro pendiente y no pertenece a esta cartera.
         .filter((row) => row.paymentStatus !== "paid" && row.paymentStatus !== "overpaid")
         .map((row) => ({ currency: row.currency, amount: row.outstandingAmount })),
     ),

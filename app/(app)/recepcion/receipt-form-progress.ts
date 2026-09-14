@@ -1,4 +1,5 @@
 import type { ReceiptOcItem } from "./receipt-form.types"
+import { remainingForStage } from "./receipt-remaining"
 
 export interface StageProgress {
   office:         string
@@ -39,7 +40,14 @@ export function describeStageProgress(
   const done = (received: number, lines: number) =>
     unit ? `${received} ${unit} · completo` : `${lines} línea${lines === 1 ? "" : "s"} · completo`
 
-  const officeComplete   = totalOfficeReceived >= totalOrdered && totalOrdered > 0
+  /*
+   * REC-002: «completo» es no tener nada pendiente de disponer, no haber
+   * recibido todo. Una línea de 10 con 6 recibidas y 4 rechazadas en oficina
+   * está cerrada en esa etapa; medirla por lo recibido la dejaba para siempre
+   * al 60 %, contradiciendo al formulario, que ya no ofrece saldo.
+   */
+  const officeComplete   = totalOrdered > 0
+    && !items.some((item) => remainingForStage(item, "office", deliveryMode) > 0)
   const officeInProgress = totalOfficeReceived > 0 && !officeComplete
   const pendingDispatch  = Math.max(0, totalOfficeReceived - totalFaenaReceived)
 
@@ -49,9 +57,10 @@ export function describeStageProgress(
   // contradiciendo a la tarjeta "Recepción en faena" que seguía deshabilitada
   // justo debajo (A-08). En despacho directo la mercadería nunca pasa por
   // oficina, así que ahí la referencia es lo pedido.
+  const faenaPending = items.some((item) => remainingForStage(item, "faena", deliveryMode) > 0)
   const faenaComplete = deliveryMode === "directo_faena"
-    ? totalFaenaReceived >= totalOrdered && totalOrdered > 0
-    : officeComplete && pendingDispatch === 0
+    ? totalOrdered > 0 && !faenaPending
+    : officeComplete && !faenaPending
 
   const office = officeComplete
     ? done(totalOfficeReceived, linesInOffice)

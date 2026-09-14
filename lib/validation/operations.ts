@@ -1,7 +1,8 @@
 import { z } from "zod"
-import { todayInChile } from "@/lib/utils"
+import { addDaysToPlainDate, todayInChile } from "@/lib/utils"
 import { normalizeEquipmentCode } from "@/lib/products/service-items"
 import { unitOfMeasureSchema } from "./product-catalogs"
+import { reasonSchema } from "./reason-thresholds"
 
 // ── Re-export shared ActionState ──────────────────────────────────────────────
 export type { ActionState } from "./masters"
@@ -180,6 +181,51 @@ export const receiptSchema = z.object({
   items:            z.array(receiptItemSchema).min(1, "Ingresa las cantidades recibidas"),
 })
 
+/**
+ * Devolución del EPP usado que se canjea por el nuevo.
+ *
+ * ENT-002 (auditoría 2026-09-14): estas cinco columnas existen en
+ * `delivery_items`, la impresión de la entrega y la trazabilidad las leen y las
+ * muestran, y este esquema las validaba… pero ninguna acción lo usaba: el único
+ * `insert` de `delivery_items` no las seteaba y el tipo de movimiento
+ * `retiro_epp_trabajador` no tenía emisor. El canje "entrego nuevo, retiro
+ * usado" no era operable.
+ *
+ * La forma se extrae aquí para que el esquema por línea de la entrega física
+ * —el que sí se usa— la comparta en vez de duplicarla y desincronizarse.
+ */
+export const eppReturnFields = {
+  returnProductId:       z.string().nullable().optional().or(z.literal("")),
+  returnProductNameFree: z.string().trim().max(120).nullable().optional().or(z.literal("")),
+  returnQuantity:        positiveQuantitySchema.nullable().optional(),
+  returnReason:          z.string().trim().max(30).nullable().optional().or(z.literal("")),
+  returnNotes:           z.string().trim().max(300).nullable().optional().or(z.literal("")),
+}
+
+export interface EppReturnDeclaration {
+  returnProductId?: string | null
+  returnProductNameFree?: string | null
+  returnQuantity?: number | null
+  returnReason?: string | null
+}
+
+/**
+ * Los cinco campos son opcionales de forma independiente, así que una cantidad
+ * sin producto quedaba registrada como "devolución de nada" (y sin mover nada).
+ * Si se declara una devolución, tiene que decir qué y por qué.
+ */
+export function eppReturnIssues(value: EppReturnDeclaration): Array<{ path: string; message: string }> {
+  if (!value.returnQuantity) return []
+  const issues: Array<{ path: string; message: string }> = []
+  if (!value.returnProductId && !value.returnProductNameFree?.trim()) {
+    issues.push({ path: "returnProductId", message: "Indica qué producto se devuelve" })
+  }
+  if (!value.returnReason?.trim()) {
+    issues.push({ path: "returnReason", message: "Indica el motivo de la devolución" })
+  }
+  return issues
+}
+
 export const workerDeliverySchema = z.object({
   worksiteId:    z.string().min(1, "Selecciona una faena"),
   workerId:      z.string().min(1, "Selecciona un trabajador"),
@@ -187,22 +233,12 @@ export const workerDeliverySchema = z.object({
   quantity:      positiveQuantitySchema,
   receiverName:  z.string().trim().max(120).nullable().optional().or(z.literal("")),
   notes:         z.string().trim().max(500).nullable().optional().or(z.literal("")),
-  // Return of old/discarded EPP (opcional)
-  returnProductId:       z.string().nullable().optional().or(z.literal("")),
-  returnProductNameFree: z.string().trim().max(120).nullable().optional().or(z.literal("")),
-  returnQuantity:        positiveQuantitySchema.nullable().optional(),
-  returnReason:          z.string().trim().max(30).nullable().optional().or(z.literal("")),
-  returnNotes:           z.string().trim().max(300).nullable().optional().or(z.literal("")),
-}).refine(
-  // Los cuatro campos eran opcionales de forma independiente, así que una
-  // cantidad sin producto quedaba registrada como "devolución de nada" (y sin
-  // mover stock). Si se declara una devolución, tiene que decir qué y por qué.
-  (d) => !d.returnQuantity || Boolean(d.returnProductId || d.returnProductNameFree?.trim()),
-  { message: "Indica qué producto se devuelve", path: ["returnProductId"] },
-).refine(
-  (d) => !d.returnQuantity || Boolean(d.returnReason?.trim()),
-  { message: "Indica el motivo de la devolución", path: ["returnReason"] },
-)
+  ...eppReturnFields,
+}).superRefine((value, ctx) => {
+  for (const issue of eppReturnIssues(value)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: [issue.path], message: issue.message })
+  }
+})
 
 // ── Stock min threshold ─────────────────────────────────────────────────────
 export const setMinStockSchema = z.object({
@@ -223,6 +259,43 @@ export const setMinStockBulkSchema = z.object({
   })).min(1, "Escribe al menos un mínimo"),
 })
 
+/**
+ * ENT-003 (auditoría 2026-09-14): `deliveredAt` sólo se validaba como fecha real
+ * y no futura. Sin cota inferior, una entrega registrada hoy podía quedar
+ * fechada en un período ya informado —y acreditar allí la actividad N°62 del
+ * PDTP, porque el servicio usa esa misma fecha como `occurredAt`—.
+ *
+ * ⚠️ **Valor por defecto pendiente de confirmación.** La auditoría constata el
+ * vacío pero no declara cuál es el plazo aceptable, y no corresponde inventarlo
+ * en silencio: 90 días es un tope operacional prudente —cubre holgadamente el
+ * rezago normal de un comprobante en papel— que Prevención y Administración
+ * deben confirmar o cambiar. Está aquí, con nombre y en un solo sitio, para que
+ * cambiarlo sea una línea y no una búsqueda.
+ *
+ * Lo que este tope **no** decide: si una entrega retroactiva debe acreditar en
+ * el período del hecho o en el de su registro. Eso sigue igual (acredita en el
+ * período del hecho, que es lo que ocurrió) y es política del PDTP, no de este
+ * formulario; lo que cambia es que ya no puede alcanzar un período
+ * arbitrariamente antiguo.
+ */
+export const MAX_DELIVERY_BACKDATING_DAYS = 90
+
+/** La fecha civil chilena más antigua que admite una entrega registrada hoy. */
+export function earliestDeliveryDate(today: string = todayInChile()): string {
+  return addDaysToPlainDate(today, -MAX_DELIVERY_BACKDATING_DAYS)
+}
+
+/**
+ * Accionable a propósito: decir "fecha inválida" deja al bodeguero sin saber
+ * qué hacer con un comprobante de hace un año que sí existe.
+ */
+export function backdatedDeliveryMessage(today: string = todayInChile()): string {
+  return `La entrega no puede fecharse antes del ${earliestDeliveryDate(today)} `
+    + `(${MAX_DELIVERY_BACKDATING_DAYS} días de retroactividad). `
+    + "Si el comprobante es más antiguo, regístralo con una fecha dentro del plazo "
+    + "y explica el desfase en las notas, o pide a Administración que confirme el plazo."
+}
+
 // ── Physical stock delivery to worker ───────────────────────────────────────
 // The browser sends `items` as JSON because one delivery can contain several
 // products. Validate the complete nested shape again at the action boundary;
@@ -232,16 +305,27 @@ export const workerStockDeliveryItemSchema = z.object({
   quantity: positiveQuantitySchema,
   requestItemId: z.string().nullable().optional().or(z.literal("")),
   notes: z.string().trim().max(300).nullable().optional().or(z.literal("")),
+  // ENT-002: el canje se declara en la línea del EPP nuevo, que es donde
+  // `delivery_items` ya tiene las columnas y donde la impresión lo lee.
+  ...eppReturnFields,
 })
 
 export const workerStockDeliverySchema = z.object({
   sourceWorksiteId: z.string().min(1, "Selecciona la bodega de origen"),
   workerId: z.string().min(1, "Selecciona un trabajador"),
-  // Fecha operacional del comprobante. Opcional: ausente ⇒ hoy. Las entregas
-  // pueden registrarse con cualquier fecha histórica, pero nunca en el futuro.
+  // Fecha operacional del comprobante. Opcional: ausente ⇒ hoy. Nunca futura, y
+  // con la retroactividad acotada por `MAX_DELIVERY_BACKDATING_DAYS`.
   deliveredAt: z.string()
     .refine(isRealIsoDate, "Fecha de entrega inválida")
     .refine((value) => value <= todayInChile(), "La entrega no puede tener fecha futura")
+    // `superRefine` y no `refine`: el mensaje nombra la fecha del borde, que se
+    // calcula al validar y no al cargar el módulo (un servidor vive más de un
+    // día).
+    .superRefine((value, ctx) => {
+      const today = todayInChile()
+      if (value >= earliestDeliveryDate(today)) return
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: backdatedDeliveryMessage(today) })
+    })
     .optional(),
   receiverName: z.string().trim().max(120).nullable().optional().or(z.literal("")),
   notes: z.string().trim().max(500).nullable().optional().or(z.literal("")),
@@ -253,6 +337,16 @@ export const workerStockDeliverySchema = z.object({
   const requestItemIds = new Set<string>()
 
   data.items.forEach((item, index) => {
+    // ENT-002: la coherencia del canje se comprueba por línea y con la ruta de
+    // la línea, para que el error aterrice en el campo que lo causó.
+    for (const issue of eppReturnIssues(item)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["items", index, issue.path],
+        message: issue.message,
+      })
+    }
+
     if (productIds.has(item.productId)) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -281,7 +375,12 @@ export const adjustStockSchema = z.object({
   productId:  z.string().min(1, "Selecciona un producto"),
   quantity:   positiveQuantitySchema,
   direction:  z.enum(["ingreso", "egreso"]),
-  reason:     z.string().trim().min(1, "Indica el motivo del ajuste").max(300),
+  /*
+   * STK-002 (auditoría 2026-09-14), patrón P6: pedía un carácter. El ajuste de
+   * inventario es la única operación que fija cualquier saldo sin documento de
+   * origen, y era la que menos explicación exigía de toda la plataforma.
+   */
+  reason:     reasonSchema("el ajuste de inventario"),
   notes:      z.string().trim().max(500).nullable().optional().or(z.literal("")),
 })
 
@@ -292,7 +391,7 @@ export const discardStockSchema = z.object({
   worksiteId: z.string().min(1, "Selecciona una faena"),
   productId:  z.string().min(1, "Selecciona un producto"),
   quantity:   positiveQuantitySchema,
-  reason:     z.string().trim().min(1, "Indica el motivo de la baja").max(300),
+  reason:     reasonSchema("la baja de inventario"),
   notes:      z.string().trim().max(500).nullable().optional().or(z.literal("")),
 })
 
@@ -300,7 +399,7 @@ export const discardStockSchema = z.object({
 export const returnStockSchema = z.object({
   deliveryItemId: z.string().min(1, "Selecciona una entrega para devolver"),
   quantity:     positiveQuantitySchema,
-  reason:       z.string().trim().min(1, "Indica el motivo de la devolución").max(300),
+  reason:       reasonSchema("la devolución"),
   notes:        z.string().trim().max(500).nullable().optional().or(z.literal("")),
 })
 

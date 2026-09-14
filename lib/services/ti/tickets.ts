@@ -9,6 +9,8 @@ import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { appendAssetHistory } from "./history"
 import { codeYear, escapeLikePattern } from "@/lib/utils"
 import { IT_TICKET_UNASSIGN, itTicketNextStatuses } from "@/lib/validation/ti"
+import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
+import { computeTicketDueAt } from "./ticket-sla"
 
 
 const OPEN_STATUSES = ["nuevo", "asignado", "en_diagnostico", "en_progreso", "esperando_usuario", "esperando_proveedor"]
@@ -82,6 +84,10 @@ export async function createTicket(
       category: input.category,
       priority: input.priority,
       status: "nuevo",
+      // TIT-001: la prioridad no gobernaba ningún plazo. El compromiso se fija
+      // al crear —igual que en Soporte— para que el contador exista desde el
+      // primer minuto y no dependa de que alguien mire la lista.
+      dueAt: computeTicketDueAt(input.priority),
       requesterUserId: actor.userId,
       workerId: input.workerId || null,
       worksiteId: input.worksiteId,
@@ -190,9 +196,28 @@ export async function transitionTicket(
       throw new Error("Selecciona el técnico responsable para dejar el ticket en 'asignado'")
     }
 
+    /*
+     * TIT-002 (auditoría 2026-09-14), patrón P6: se podía resolver o cerrar un
+     * ticket sin una palabra sobre qué se hizo. El historial de soporte pierde
+     * ahí el dato más útil para el siguiente incidente idéntico, y el resto de
+     * la plataforma exige motivo para cerrar o anular casi cualquier cosa.
+     *
+     * Al resolver, la solución es el rastro. Al cerrar, se acepta la que ya
+     * traía el ticket —cerrar después de resolver no obliga a repetirla—; lo
+     * que no se admite es llegar a cerrado sin solución por ninguna vía.
+     */
+    if (input.status === "resuelto" && !isValidReason(input.resolution)) {
+      throw new Error(reasonRequiredMessage("cómo se resolvió el ticket"))
+    }
+    if (input.status === "cerrado" && !isValidReason(input.resolution ?? ticket.resolution)) {
+      throw new Error(reasonRequiredMessage("cómo se resolvió el ticket"))
+    }
+
     const now = new Date().toISOString()
     const reopening = input.status === "en_progreso" && ["resuelto", "cerrado"].includes(ticket.status)
-    const finalResolution = input.status === "resuelto" ? (input.resolution?.trim() || null) : reopening ? null : ticket.resolution
+    const finalResolution = input.status === "resuelto" || input.status === "cerrado"
+      ? (input.resolution?.trim() || ticket.resolution)
+      : reopening ? null : ticket.resolution
     await tx.update(itTickets).set({
       status: input.status,
       assigneeUserId,
@@ -329,6 +354,7 @@ export async function listTickets(filters: TicketListFilters) {
       assigneeUserId: itTickets.assigneeUserId,
       assigneeName: sql<string>`(SELECT u.name FROM ${users} u WHERE u.id = ${itTickets.assigneeUserId})`,
       requesterName: sql<string>`(SELECT u.name FROM ${users} u WHERE u.id = ${itTickets.requesterUserId})`,
+      dueAt: itTickets.dueAt,
       createdAt: itTickets.createdAt,
       updatedAt: itTickets.updatedAt,
       resolvedAt: itTickets.resolvedAt,
@@ -397,6 +423,7 @@ export async function getTicketById(id: string, scope?: SQL) {
       requesterUserId: itTickets.requesterUserId,
       requesterName: sql<string>`(SELECT u.name FROM ${users} u WHERE u.id = ${itTickets.requesterUserId})`,
       resolution: itTickets.resolution,
+      dueAt: itTickets.dueAt,
       createdAt: itTickets.createdAt,
       updatedAt: itTickets.updatedAt,
       resolvedAt: itTickets.resolvedAt,

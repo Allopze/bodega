@@ -437,18 +437,22 @@ export async function deleteActionPlanItem(itemId: string, userId: string) {
 /**
  * Lista acciones transversales (para la vista global de plan de acción).
  * Filtra por programa/faena/estado/prioridad según los parámetros.
+ *
+ * HALLAZGO SEC-002 (S3/P2): `scope` vivía dentro de `opts?`, así que omitirlo
+ * compilaba y devolvía las acciones de todas las faenas. Es posicional y
+ * obligatorio para que no se pueda olvidar; ver `listPdtpActionsByProgram`.
  */
 export async function listActionsByProgram(
   programId: string,
+  scope: WorksiteScope,
   opts?: {
     worksiteId?: string
     estado?: string
     prioridad?: string
     soloVencidas?: boolean
-    scope?: WorksiteScope
   },
 ) {
-  return listPdtpActionsByProgram(programId, opts)
+  return listPdtpActionsByProgram(programId, scope, opts)
 }
 
 /**

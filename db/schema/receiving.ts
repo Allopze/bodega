@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { pgTable, text, real, timestamp, check, index, uniqueIndex, jsonb, primaryKey } from "drizzle-orm/pg-core"
+import { pgTable, text, real, integer, timestamp, check, index, uniqueIndex, jsonb, primaryKey } from "drizzle-orm/pg-core"
 import { users } from "./users"
 import { worksites, workers } from "./worksites"
 import { products } from "./products"
@@ -18,13 +18,44 @@ export const receipts = pgTable("receipts", {
   locationType:       text("location_type").notNull().default("office"),
   worksiteId:         text("worksite_id").references(() => worksites.id),
   dispatchGuideNo:    text("dispatch_guide_no"),
-  status:             text("status").notNull().default("open"),  // open | closed
+  /*
+   * REC-003 (auditoría 2026-09-14), patrón P7: `open` es un estado que la
+   * plataforma **no produce**. `registerReceipt` inserta siempre `closed` —una
+   * recepción se registra completa y en un solo acto— y el `default('open')`
+   * llevaba a la ficha a ofrecer «aún admite ajustes», una edición que no
+   * existe en ninguna pantalla. El valor por omisión pasa a ser el real; `open`
+   * se conserva en el dominio porque una recepción en dos tiempos lo usaría, y
+   * quitarlo obligaría a reintroducirlo.
+   */
+  status:             text("status").notNull().default("closed"),  // open (sin escritor hoy) | closed | voided
+  /*
+   * `REC-003` (auditoría 2026-09-14), patrón P5: una recepción equivocada no
+   * tenía salida. No había columnas de anulación ni un solo `update` sobre esta
+   * tabla en toda la aplicación: el único remedio era un ajuste de inventario
+   * de Bodega, que corrige el saldo pero no revierte el avance de la OC, ni el
+   * estado del ítem de solicitud, ni la proyección de conciliación tributaria.
+   *
+   * Mismo contrato que `deliveries_void_complete`: motivo, responsable y fecha,
+   * los tres juntos o ninguno.
+   */
+  voidedAt:           timestamp("voided_at", { withTimezone: true, mode: "string" }),
+  voidedBy:           text("voided_by").references(() => users.id),
+  voidReason:         text("void_reason"),
   notes:              text("notes"),
   createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   check("receipts_location_status_valid", sql`
     ${table.locationType} IN ('office', 'faena')
-    AND ${table.status} IN ('open', 'closed')
+    AND ${table.status} IN ('open', 'closed', 'voided')
+  `),
+  // REC-003: anular es un acto con responsable y motivo, y el estado tiene que
+  // ser coherente con las tres columnas. Mismo contrato que `deliveries`.
+  check("receipts_void_complete", sql`
+    (${table.voidedAt} IS NULL AND ${table.voidedBy} IS NULL AND ${table.voidReason} IS NULL
+      AND ${table.status} <> 'voided')
+    OR (${table.voidedAt} IS NOT NULL AND ${table.voidedBy} IS NOT NULL
+      AND char_length(trim(${table.voidReason})) >= 10
+      AND ${table.status} = 'voided')
   `),
   index("idx_receipts_po").on(table.purchaseOrderId),
 ])
@@ -166,7 +197,17 @@ export const traceabilityIntegrityCases = pgTable("traceability_integrity_cases"
   findingCode:   text("finding_code").notNull(),
   snapshot:      jsonb("snapshot").$type<Record<string, unknown>>().notNull(),
   detectedAt:    timestamp("detected_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  /**
+   * TRZ-002 (auditoría 2026-09-14): el ciclo abierto del caso. Antes el caso
+   * tenía una sola vida: se regularizaba una vez y, como `finding_key` es
+   * único, el escaneo ya no lo recreaba aunque el descuadre siguiera ahí.
+   * Ahora, cuando el detector vuelve a encontrar un caso ya regularizado, la
+   * ocurrencia avanza y el caso vuelve a estar pendiente.
+   */
+  occurrence:    integer("occurrence").notNull().default(1),
+  lastDetectedAt: timestamp("last_detected_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
+  check("traceability_integrity_case_occurrence_positive", sql`${table.occurrence} >= 1`),
   check("traceability_integrity_case_code_valid", sql`
     ${table.findingCode} IN ('DELIVERY_EXCEEDS_FAENA_RECEIPT', 'DELIVERY_BEFORE_FAENA_RECEIPT')
   `),
@@ -183,7 +224,10 @@ export const traceabilityIntegrityResolutions = pgTable("traceability_integrity_
   compensatingMovementId:  text("compensating_movement_id"),
   resolvedBy:              text("resolved_by").notNull().references(() => users.id),
   createdAt:               timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  /** TRZ-002: la ocurrencia del caso que esta resolución cierra. */
+  occurrence:              integer("occurrence").notNull().default(1),
 }, (table) => [
+  check("traceability_integrity_resolution_occurrence_positive", sql`${table.occurrence} >= 1`),
   check("traceability_integrity_resolution_action_valid", sql`
     ${table.action} IN ('acknowledge', 'compensating_movement')
   `),
@@ -194,9 +238,11 @@ export const traceabilityIntegrityResolutions = pgTable("traceability_integrity_
     (${table.action} = 'acknowledge' AND ${table.compensatingMovementId} IS NULL)
     OR (${table.action} = 'compensating_movement' AND ${table.compensatingMovementId} IS NOT NULL)
   `),
-  // Un solo cierre por caso evita dobles regularizaciones concurrentes sin
-  // sobrescribir el evento original.
-  uniqueIndex("traceability_integrity_resolutions_case_unique").on(table.caseId),
+  // TRZ-002: un solo cierre **por ocurrencia**. Sigue evitando dobles
+  // regularizaciones concurrentes sin sobrescribir el evento original, pero ya
+  // no condena el caso a estar cerrado para siempre: si el detector lo reabre,
+  // la ocurrencia nueva admite su propia resolución.
+  uniqueIndex("traceability_integrity_resolutions_case_occurrence_unique").on(table.caseId, table.occurrence),
   index("traceability_integrity_resolutions_created_at_idx").on(table.createdAt),
 ])
 

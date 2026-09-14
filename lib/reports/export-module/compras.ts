@@ -8,6 +8,7 @@ import { formatDate } from "@/lib/utils"
 import { ocStatusLabel } from "./labels"
 import { buildWorksiteFilter, buildDateFilter } from "./utils"
 import type { ReportData, ExportFilters } from "./types"
+import { invoiceNotVoided } from "@/lib/services/purchasing-module/invoice-scope"
 
 export async function comprasList(session: Session | null, filters: ExportFilters, limit: number): Promise<ReportData> {
   const where = and(
@@ -50,7 +51,7 @@ export async function comprasList(session: Session | null, filters: ExportFilter
     wsIds.length  ? db.select({ id: worksites.id, name: worksites.name }).from(worksites).where(inArray(worksites.id, wsIds)) : [],
     supIds.length ? db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers).where(inArray(suppliers.id, supIds)) : [],
     ids.length ? db.select({ purchaseOrderId: purchaseOrderItems.purchaseOrderId, total: count() }).from(purchaseOrderItems).where(inArray(purchaseOrderItems.purchaseOrderId, ids)).groupBy(purchaseOrderItems.purchaseOrderId) : [],
-    ids.length ? db.select({ purchaseOrderId: purchaseOrderInvoices.purchaseOrderId, total: count() }).from(purchaseOrderInvoices).where(inArray(purchaseOrderInvoices.purchaseOrderId, ids)).groupBy(purchaseOrderInvoices.purchaseOrderId) : [],
+    ids.length ? db.select({ purchaseOrderId: purchaseOrderInvoices.purchaseOrderId, total: count() }).from(purchaseOrderInvoices).where(and(inArray(purchaseOrderInvoices.purchaseOrderId, ids), invoiceNotVoided)).groupBy(purchaseOrderInvoices.purchaseOrderId) : [],
   ])
   const wsMap  = Object.fromEntries(wsRows.map((w) => [w.id, w.name]))
   const supMap = Object.fromEntries(supRows.map((s) => [s.id, s.name]))

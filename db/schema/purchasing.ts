@@ -152,6 +152,7 @@ export const quotations = pgTable("quotations", {
   notes:           text("notes"),
   uploadedBy:      text("uploaded_by").notNull().references(() => users.id),
   uploadedAt:      timestamp("uploaded_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+
 }, (table) => [
   // DAT-11: FK sin índice.
   index("quotations_purchase_order_id_idx").on(table.purchaseOrderId),
@@ -184,6 +185,23 @@ export const purchaseOrderInvoices = pgTable("purchase_order_invoices", {
   supplierIdentitySource: text("supplier_identity_source").notNull().default("legacy"),
   uploadedBy:      text("uploaded_by").notNull().references(() => users.id),
   uploadedAt:      timestamp("uploaded_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+
+  /*
+   * FAC-002 (auditoría 2026-09-14), patrón P5: quitar una factura de una OC era
+   * un `DELETE` físico —las líneas y las asignaciones caían por cascada, el
+   * vínculo del DTE quedaba en NULL y el archivo se borraba del disco—. Se
+   * perdía un respaldo tributario y la evidencia de conciliación que lo
+   * acompañaba, y una revisión ya aceptada sobrevivía apuntando a una factura
+   * inexistente.
+   *
+   * Se anula, con el mismo contrato que `deliveries_void_complete`: motivo de
+   * diez caracteres, responsable y fecha, los tres juntos o ninguno. La fila,
+   * sus líneas, sus asignaciones y el archivo se conservan; lo que cambia es
+   * que deja de contar para la conciliación.
+   */
+  voidedAt:        timestamp("voided_at", { withTimezone: true, mode: "string" }),
+  voidedBy:        text("voided_by").references(() => users.id, { onDelete: "set null" }),
+  voidReason:      text("void_reason"),
 
   /**
    * Cómo llegó esta factura a colgar de esta OC. `legacy` es el default de las
@@ -223,10 +241,34 @@ export const purchaseOrderInvoices = pgTable("purchase_order_invoices", {
     ${table.linkOrderReference} IS NULL
     OR ${table.linkOrderReference} IN ('exact', 'correlative', 'year', 'foreign', 'none')
   `),
-  // A folio is unique at least within its OC. The service also checks this
-  // before insert for an operator-friendly error; this index closes races.
+  // FAC-002: anular es un acto con responsable y motivo, los tres campos van
+  // juntos o ninguno. Mismo `check` que `deliveries_void_complete`.
+  check("purchase_order_invoices_void_complete", sql`
+    (${table.voidedAt} IS NULL AND ${table.voidedBy} IS NULL AND ${table.voidReason} IS NULL)
+    OR (${table.voidedAt} IS NOT NULL AND ${table.voidedBy} IS NOT NULL
+        AND char_length(trim(${table.voidReason})) >= 10)
+  `),
+  /*
+   * El folio es único dentro de su OC, pero **sólo entre las vigentes**: tras
+   * FAC-002 la fila anulada se queda, y sin este filtro parcial volver a cargar
+   * el folio correcto después de anular el equivocado chocaría contra el propio
+   * error que se está corrigiendo. El servicio comprueba lo mismo antes de
+   * insertar para dar un mensaje legible; este índice cierra la carrera.
+   */
   uniqueIndex("purchase_order_invoices_order_number_unique")
-    .on(table.purchaseOrderId, table.documentKind, table.invoiceNumber),
+    .on(table.purchaseOrderId, table.documentKind, table.invoiceNumber)
+    .where(sql`${table.voidedAt} IS NULL`),
+  // FAC-001: y una sola vez en toda la plataforma, no una por OC. El folio de un
+  // proveedor identifica una obligación de pago. Sólo alcanza a las filas que
+  // declaran el RUT: sin identidad de proveedor, dos folios iguales no son el
+  // mismo documento.
+  uniqueIndex("purchase_order_invoices_supplier_folio_unique")
+    .on(
+      sql`upper(regexp_replace(${table.documentSupplierRut}, '[^0-9kK]', '', 'g'))`,
+      table.documentKind,
+      sql`(nullif(regexp_replace(${table.invoiceNumber}, '[^0-9]', '', 'g'), '')::bigint)`,
+    )
+    .where(sql`${table.voidedAt} IS NULL AND ${table.documentSupplierRut} IS NOT NULL`),
 ])
 
 /* ── Purchase Order Invoice Items ─────────────────────────────────────────── */

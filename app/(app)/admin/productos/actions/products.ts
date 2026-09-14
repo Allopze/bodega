@@ -12,6 +12,12 @@ import { setProductSupplierPriceTx } from "@/lib/services/product-supplier-price
 import { lockCatalogProductsForUpdateTx } from "@/lib/services/catalog-product-locks"
 import { productSchema, type ActionState } from "@/lib/validation/masters"
 import { safeActionMessage } from "@/lib/action-error"
+import { resolveActiveUnitCode } from "@/lib/services/product-unit-catalog"
+import { assertIdentityStable, MasterIdentityError } from "@/lib/services/master-identity"
+import { describeProductStockBlockers, productsWithStock } from "@/lib/services/product-deactivation"
+
+/** Un booleano de formulario, dicho como lo lee una persona en el mensaje de error. */
+const siNo = (value: boolean) => (value ? "sí" : "no")
 
 import {
   formString, normalizeSelectOptions,
@@ -66,6 +72,16 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
   if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
   const d = parsed.data
 
+  /*
+   * CAT-003: la unidad tiene que existir en el catálogo administrable y estar
+   * activa. Antes era texto libre: el catálogo era una sugerencia y una unidad
+   * desactivada seguía siendo elegible. La FK de base cubre "existe"; que esté
+   * ACTIVA sólo se puede comprobar acá.
+   */
+  let unitOfMeasure: string
+  try { unitOfMeasure = await resolveActiveUnitCode(d.unitOfMeasure) }
+  catch (e) { return { ok: false, fieldErrors: { unitOfMeasure: [safeActionMessage(e, "Unidad inválida")] } } }
+
   const id = nanoid()
   const sku = await generateUniqueProductSku(db, d.isEpp)
 
@@ -83,7 +99,7 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
       description: d.description || null,
       categoryId: d.categoryId,
       familyId: family?.id ?? null,
-      unitOfMeasure: d.unitOfMeasure,
+      unitOfMeasure,
       isEpp: d.isEpp,
       requiresPrevencion: d.requiresPrevencion,
       isService: d.isService,
@@ -172,6 +188,12 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
   if (!current) return { ok: false, message: "Producto no encontrado" }
   const sku = current.sku
 
+  // CAT-003: misma regla que al crear. Editar un producto no puede ser la
+  // puerta trasera por la que entra una unidad fuera del catálogo.
+  let unitOfMeasure: string
+  try { unitOfMeasure = await resolveActiveUnitCode(d.unitOfMeasure) }
+  catch (e) { return { ok: false, fieldErrors: { unitOfMeasure: [safeActionMessage(e, "Unidad inválida")] } } }
+
   // Sin este try/catch cualquier error del driver (p.ej. el 23503 de un
   // atributo aún referenciado por una solicitud, si se cuela por la carrera)
   // escapaba como error de server action sin mensaje. `safeActionMessage` deja
@@ -189,16 +211,48 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
     const identity = (attrs: typeof d.attributes | typeof oldAttributes) => JSON.stringify(
       resolveVariantAttributes(attrs).map((a) => [normalizeProductAttributeName(a.name), a.value]).sort(),
     )
+    /*
+     * La sonda de historia se resuelve una sola vez y perezosamente: la usan
+     * tanto la guarda de atributos como la de unidad/servicio (CAT-002), y una
+     * edición de nombre o de precio no debe pagarla.
+     */
+    let historyProbe: Promise<boolean> | null = null
+    const hasHistory = () => (historyProbe ??= tx.select({ used: sql<boolean>`
+      exists(select 1 from ${purchaseRequestItems} where ${purchaseRequestItems.productId} = ${productId})
+      or exists(select 1 from ${purchaseOrderItems} where ${purchaseOrderItems.productId} = ${productId})
+      or exists(select 1 from ${inventoryMovements} where ${inventoryMovements.productId} = ${productId})
+      or exists(select 1 from ${deliveryItems} where ${deliveryItems.productId} = ${productId} or ${deliveryItems.returnProductId} = ${productId})
+      or exists(select 1 from ${worksiteStock} where ${worksiteStock.productId} = ${productId})
+    ` }).from(products).where(eq(products.id, productId)).then(([row]) => Boolean(row?.used)))
+
     if (identity(oldAttributes) !== identity(d.attributes)) {
-      const [usage] = await tx.select({ used: sql<boolean>`
-        exists(select 1 from ${purchaseRequestItems} where ${purchaseRequestItems.productId} = ${productId})
-        or exists(select 1 from ${purchaseOrderItems} where ${purchaseOrderItems.productId} = ${productId})
-        or exists(select 1 from ${inventoryMovements} where ${inventoryMovements.productId} = ${productId})
-        or exists(select 1 from ${deliveryItems} where ${deliveryItems.productId} = ${productId} or ${deliveryItems.returnProductId} = ${productId})
-        or exists(select 1 from ${worksiteStock} where ${worksiteStock.productId} = ${productId})
-      ` }).from(products).where(eq(products.id, productId))
-      if (usage?.used) throw new Error("No se puede cambiar la talla, color u otros valores de una variante con solicitudes, compras o inventario. Crea otra variante para conservar el historial.")
+      if (await hasHistory()) throw new Error("No se puede cambiar la talla, color u otros valores de una variante con solicitudes, compras o inventario. Crea otra variante para conservar el historial.")
     }
+
+    /*
+     * CAT-002 (auditoría 2026-09-14): la guarda de arriba cubría los atributos
+     * de identidad y dejaba pasar, en el mismo `UPDATE`, tres campos que
+     * reinterpretan el inventario ya registrado.
+     *
+     * `worksite_stock` no guarda unidad propia, así que cambiar la unidad de
+     * medida convierte 40 «unidades» en 40 «cajas» en el saldo, la valorización
+     * y el kardex, hacia atrás. Marcar un producto con saldo como servicio lo
+     * saca del flujo físico: la recepción deja de mover stock y la entrega lo
+     * rechaza. Y `isEpp` decide si la entrega exige trabajador y acredita PDTP.
+     *
+     * Es el mismo criterio de tres líneas más arriba, aplicado a los campos que
+     * se habían quedado fuera.
+     */
+    await assertIdentityStable({
+      fields: [
+        { key: "unitOfMeasure", label: "la unidad de medida", before: lockedProduct.unitOfMeasure, after: d.unitOfMeasure },
+        { key: "isService", label: "la condición de servicio", before: siNo(lockedProduct.isService), after: siNo(d.isService) },
+        { key: "isEpp", label: "la condición de EPP", before: siNo(lockedProduct.isEpp), after: siNo(d.isEpp) },
+      ],
+      hasHistory,
+      reason: "el producto ya tiene solicitudes, compras, movimientos, entregas o inventario, y el cambio reinterpretaría hacia atrás lo ya registrado",
+      remedy: "Crea otro producto y da de baja este cuando quede sin saldo.",
+    })
     // Editing a variant does not create a new family or discard its metadata.
     const family = lockedProduct.familyId && lockedProduct.categoryId === d.categoryId && lockedProduct.isEpp === d.isEpp
       ? await (async () => {
@@ -219,7 +273,7 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
       description: d.description || null,
       categoryId: d.categoryId,
       familyId: family?.id ?? null,
-      unitOfMeasure: d.unitOfMeasure,
+      unitOfMeasure,
       isEpp: d.isEpp,
       requiresPrevencion: d.requiresPrevencion,
       isService: d.isService,
@@ -327,6 +381,15 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
     }
   })
   } catch (e) {
+    // CAT-002: el bloqueo de identidad se devuelve sobre el campo que se
+    // intentó cambiar, no como un error general del formulario: quien edita
+    // tiene que ver dónde está el problema sin releer todo.
+    if (e instanceof MasterIdentityError) {
+      return {
+        ok: false,
+        fieldErrors: Object.fromEntries(e.fieldKeys.map((key) => [key, [e.message]])),
+      }
+    }
     logger.error("[admin/productos] updateProduct", e)
     return { ok: false, message: safeActionMessage(e, "No se pudo actualizar el producto") }
   }
@@ -510,7 +573,24 @@ export async function toggleProductActive(_prev: ActionState, formData: FormData
   const activate = formData.get("activate") === "true"
   if (!id) return { ok: false, message: "ID requerido" }
 
-  await db.update(products).set({ isActive: activate, updatedAt: new Date().toISOString() }).where(eq(products.id, id))
+  /*
+   * CAT-001 (auditoría 2026-09-14): desactivar no comprobaba nada, y un
+   * producto con saldo queda inmovilizado —la entrega lo rechaza, la guía no
+   * lo ofrece, la solicitud lo filtra— mientras su inventario sigue contando
+   * en el kardex y en la valorización. Mismo criterio que el cierre de faena.
+   */
+  try {
+    await db.transaction(async (tx) => {
+      if (!activate) {
+        await lockCatalogProductsForUpdateTx(tx, [id])
+        const blockers = await productsWithStock(tx, [id])
+        if (blockers.length > 0) throw new Error(describeProductStockBlockers(blockers))
+      }
+      await tx.update(products).set({ isActive: activate, updatedAt: new Date().toISOString() }).where(eq(products.id, id))
+    })
+  } catch (e) {
+    return { ok: false, message: safeActionMessage(e, "No se pudo cambiar el estado del producto") }
+  }
 
   await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "update", entityType: "product", entityId: id, oldState: { isActive: !activate }, newState: { isActive: activate } })
 
@@ -532,15 +612,27 @@ export async function bulkToggleProductActiveAction(_prev: ActionState, formData
   if (ids.length > 100) return { ok: false, message: "Máximo 100 productos por operación" }
 
   const now = new Date().toISOString()
-  await db.transaction(async (tx) => {
-    // A set-based UPDATE has no contractual row-lock order. Establish the
-    // catalog order first so it cannot deadlock with a multi-item EPP
-    // preflight holding shared product locks.
-    await lockCatalogProductsForUpdateTx(tx, ids)
-    await tx.update(products)
-      .set({ isActive: activate, updatedAt: now })
-      .where(inArray(products.id, ids))
-  })
+  try {
+    await db.transaction(async (tx) => {
+      // A set-based UPDATE has no contractual row-lock order. Establish the
+      // catalog order first so it cannot deadlock with a multi-item EPP
+      // preflight holding shared product locks.
+      await lockCatalogProductsForUpdateTx(tx, ids)
+      // CAT-001: el lote es donde más importa. Cien productos desactivados de
+      // una vez pueden esconder cien saldos, y nadie los revisaría uno a uno.
+      // O pasa el lote entero o no pasa ninguno: desactivar "los que se puedan"
+      // dejaría a quien lo pidió sin saber cuáles quedaron fuera.
+      if (!activate) {
+        const blockers = await productsWithStock(tx, ids)
+        if (blockers.length > 0) throw new Error(describeProductStockBlockers(blockers))
+      }
+      await tx.update(products)
+        .set({ isActive: activate, updatedAt: now })
+        .where(inArray(products.id, ids))
+    })
+  } catch (e) {
+    return { ok: false, message: safeActionMessage(e, "No se pudo cambiar el estado de los productos") }
+  }
 
   await recordAudit({
     userId: session.user.id, userEmail: session.user.email ?? undefined,
@@ -568,6 +660,12 @@ export async function createProductVariantBatch(input: ProductVariantBatchInput)
   // nombres de variante llevan el sufijo de talla/color, así que el audit
   // registraba "desconocido" (o el SKU de un producto ajeno que coincidiera).
   let batchFirstSku = "desconocido"
+
+  // CAT-003: el lote de variantes escribe productos igual que el formulario
+  // simple, así que pasa por la misma comprobación de catálogo.
+  let unitOfMeasure: string
+  try { unitOfMeasure = await resolveActiveUnitCode(d.unitOfMeasure) }
+  catch (e) { return { ok: false, fieldErrors: { unitOfMeasure: [safeActionMessage(e, "Unidad inválida")] } } }
 
   try {
     await db.transaction(async (tx) => {
@@ -631,7 +729,7 @@ export async function createProductVariantBatch(input: ProductVariantBatchInput)
           description: d.description || null,
           categoryId: d.categoryId,
           familyId,
-          unitOfMeasure: d.unitOfMeasure,
+          unitOfMeasure,
           isEpp: d.isEpp,
           requiresPrevencion: d.requiresPrevencion,
           isService: d.isService,

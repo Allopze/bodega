@@ -28,6 +28,17 @@ export const preventionCapaActions = pgTable("prevention_capa_actions", {
   targetDate:            text("target_date").notNull(),
   status:                text("status").notNull().default("pending"),
   evidenceRequired:      boolean("evidence_required").notNull().default(true),
+  /**
+   * Por qué esta acción NO exige evidencia (CAPA-002).
+   *
+   * Apagar el gate era una casilla del formulario de creación: quien abría la
+   * acción decidía, con el mismo permiso con que la creaba, que podría
+   * cerrarse sin una sola prueba, y la fila no conservaba ninguna razón. La
+   * distinción que importa aguas abajo —«no requiere evidencia» frente a
+   * «faltó la evidencia», la misma que resolvieron PDTP-001/ENT-001— ahora
+   * queda escrita. El CHECK la exige y la prohíbe cuando sí se pide evidencia.
+   */
+  evidenceExemptionReason: text("evidence_exemption_reason"),
   // Separa la respuesta de terreno del plazo administrativo. Un hallazgo de
   // consecuencia potencialmente fatal exige detener la tarea de inmediato,
   // pero cerrar la acción con evidencia toma otro tiempo. Antes ambas cosas
@@ -104,6 +115,11 @@ export const preventionCapaActions = pgTable("prevention_capa_actions", {
   check("prevention_capa_status_valid", sql`${table.status} IN ('pending', 'in_progress', 'pending_verification', 'verified', 'closed', 'reopened', 'cancelled')`),
   check("prevention_capa_effectiveness_valid", sql`${table.effectivenessStatus} IN ('pending', 'effective', 'ineffective', 'not_required', 'legacy_not_assessed')`),
   check("prevention_capa_reconciliation_valid", sql`${table.reconciliationStatus} IN ('reconciled', 'needs_assignment', 'needs_evidence', 'needs_review')`),
+  check("prevention_capa_evidence_exemption_justified", sql`
+    (${table.evidenceRequired} = true AND ${table.evidenceExemptionReason} IS NULL)
+    OR (${table.evidenceRequired} = false AND ${table.evidenceExemptionReason} IS NOT NULL
+        AND length(btrim(${table.evidenceExemptionReason})) >= 10)
+  `),
   check("prevention_capa_version_positive", sql`${table.version} >= 1`),
   check("prevention_capa_dano_potencial_valid", sql`${table.danoPotencial} IS NULL OR ${table.danoPotencial} IN ('leve', 'moderado', 'grave', 'fatal')`),
   check("prevention_capa_reopen_consistent", sql`(${table.reopenedAt} IS NULL AND ${table.reopenedByUserId} IS NULL AND ${table.reopenedReason} IS NULL) OR (${table.reopenedAt} IS NOT NULL AND ${table.reopenedByUserId} IS NOT NULL AND length(${table.reopenedReason}) >= 5)`),

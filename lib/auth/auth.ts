@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm"
 import { z } from "zod"
 import { applyRbacToToken, getUserRbacById } from "@/lib/auth/rbac"
 import { isPasswordSetupPending } from "@/lib/auth/password-setup"
+import { SESSION_ISSUED_AT_CLAIM, isSessionRevokedByCredentialChange } from "@/lib/auth/session-revocation"
 import { isTemporaryAccountExpired } from "@/lib/auth/temporary-account"
 import { resolveTrustedClientIp } from "@/lib/security/login-rate-limit-ip"
 
@@ -136,6 +137,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // First sign-in: embed RBAC into JWT
         const u = user as Omit<NonNullable<Awaited<ReturnType<typeof getUserWithAuth>>>, "_hashedPassword" | "_passwordSetupPending">
         applyRbacToToken(token, u)
+        /*
+         * AUTH-003 (auditoría 2026-09-14): marca propia con el instante del
+         * inicio de sesión. No se usa `iat` porque Auth.js lo reescribe cada vez
+         * que reemite la cookie, con lo que "cuándo empezó esta sesión" se
+         * perdía y no había contra qué comparar la revocación.
+         */
+        token[SESSION_ISSUED_AT_CLAIM] = Date.now()
         return token
       }
       if (token.id) {
@@ -145,6 +153,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // 5s TTL. Admins also call clearUserRbacCache() on mutations, so
         // even other paths get fresh data right away.
         const snapshot = await getUserRbacById(token.id as string, /* bypassCache */ true)
+        /*
+         * AUTH-003: restablecer la contraseña sólo cambiaba el hash; una sesión
+         * JWT emitida antes seguía entrando a todas las rutas protegidas hasta
+         * expirar sola. Devolver null aquí descarta el token: la sesión anterior
+         * al cambio de credencial deja de existir en la siguiente verificación.
+         */
+        if (isSessionRevokedByCredentialChange(token[SESSION_ISSUED_AT_CLAIM], snapshot?.sessionsValidFrom)) {
+          return null
+        }
         applyRbacToToken(token, snapshot)
       }
       return token

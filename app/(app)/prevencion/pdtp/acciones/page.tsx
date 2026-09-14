@@ -64,7 +64,7 @@ export default async function PdtpAccionesPage({ searchParams }: Props) {
 
   const [items, activities] = program
     ? await Promise.all([
-        listActionsByProgram(program.id, { estado, prioridad, worksiteId: effectiveWorksiteId, soloVencidas, scope: effectiveWorksiteIds }),
+        listActionsByProgram(program.id, effectiveWorksiteIds, { estado, prioridad, worksiteId: effectiveWorksiteId, soloVencidas }),
         listPdtpProgramActivities(program.id),
       ])
     : [[], []]

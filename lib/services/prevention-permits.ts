@@ -20,6 +20,7 @@ import {
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
+import { verifyPreventionAckToken } from "@/lib/services/prevention-ack-token"
 import {
   assessPermitActivation,
   isPermitExpired,
@@ -128,6 +129,7 @@ export async function createPermitType(input: unknown, access: PermitAccess) {
     requiresIsolation: data.requiresIsolation,
     requiresMeasurement: data.requiresMeasurement,
     requiresJsa: data.requiresJsa,
+    requiresCrewAcknowledgement: data.requiresCrewAcknowledgement,
     measurementValidityMinutes: data.measurementValidityMinutes ?? null,
     measurementCalibrationValidityDays: data.measurementCalibrationValidityDays ?? null,
     maxDurationHours: data.maxDurationHours,
@@ -391,6 +393,8 @@ async function resolveCrewEligibility(client: Client, permitId: string, competen
   const crewRows = await client.select({
     id: preventionPermitCrew.id,
     workerId: preventionPermitCrew.workerId,
+    // PER-001: el acuse del AST entra en la evaluación de habilitación.
+    acknowledgedAt: preventionPermitCrew.acknowledgedAt,
     workerFirstName: workers.firstName,
     workerLastName: workers.lastName,
   })
@@ -402,13 +406,32 @@ async function resolveCrewEligibility(client: Client, permitId: string, competen
     id: row.id,
     workerId: row.workerId,
     label: `${row.workerLastName}, ${row.workerFirstName}`,
+    acknowledgedAt: row.acknowledgedAt,
   }))
 
-  let crewWithoutCompetency: PermitCrewRow[] = []
+  /** Falta una competencia declarada **bloqueante**: impide activar. */
+  const crewWithoutCompetency: PermitCrewRow[] = []
+  /** Falta una declarada **advertencia**: se avisa y deja seguir. */
+  const crewWithCompetencyWarning: PermitCrewRow[] = []
   if (competencyTaskKey) {
     // Los cursos exigidos se leen de los requisitos de competencia con alcance
     // `task`, en vez de duplicar el catálogo en el tipo de permiso.
-    const requirements = await client.select({ courseId: preventionCompetencyRequirements.courseId })
+    /*
+     * CAP-001 (auditoría 2026-09-14), patrón P7: esta consulta **no miraba
+     * `enforcement`**, así que trataba igual a un requisito declarado
+     * «advertencia» y a uno «bloqueante». La marca era decorativa en las dos
+     * direcciones: uno bloqueante no impedía nada fuera de aquí, y uno de
+     * advertencia sí impedía abrir un permiso. Quien configuraba el catálogo no
+     * podía predecir el efecto de lo que elegía.
+     *
+     * Ahora gobierna: el bloqueante impide activar, el de advertencia se avisa
+     * y deja seguir. No es una política nueva —es la que el propio catálogo
+     * declara— y por eso el bloqueo sigue existiendo donde ya existía.
+     */
+    const requirements = await client.select({
+      courseId: preventionCompetencyRequirements.courseId,
+      enforcement: preventionCompetencyRequirements.enforcement,
+    })
       .from(preventionCompetencyRequirements)
       .where(and(
         eq(preventionCompetencyRequirements.scopeType, "task"),
@@ -416,6 +439,9 @@ async function resolveCrewEligibility(client: Client, permitId: string, competen
         eq(preventionCompetencyRequirements.isActive, true),
       ))
     const requiredCourseIds = [...new Set(requirements.map((item) => item.courseId))]
+    const blockingCourseIds = new Set(
+      requirements.filter((item) => item.enforcement === "blocking").map((item) => item.courseId),
+    )
 
     if (requiredCourseIds.length > 0) {
       const crewWorkerIds = crew.map((member) => member.workerId)
@@ -437,14 +463,20 @@ async function resolveCrewEligibility(client: Client, permitId: string, competen
         set.add(row.courseId)
         heldByWorker.set(row.workerId, set)
       }
-      crewWithoutCompetency = crew.filter((member) => {
+      for (const member of crew) {
         const owned = heldByWorker.get(member.workerId) ?? new Set<string>()
-        return requiredCourseIds.some((courseId) => !owned.has(courseId))
-      })
+        const missing = requiredCourseIds.filter((courseId) => !owned.has(courseId))
+        if (missing.length === 0) continue
+        if (missing.some((courseId) => blockingCourseIds.has(courseId))) {
+          crewWithoutCompetency.push(member)
+        } else {
+          crewWithCompetencyWarning.push(member)
+        }
+      }
     }
   }
 
-  return { crew, crewWithoutCompetency }
+  return { crew, crewWithoutCompetency, crewWithCompetencyWarning }
 }
 
 export async function evaluatePermitReadiness(permitId: string, access: PermitAccess): Promise<{ allowed: boolean; blockers: PermitBlocker[] }> {
@@ -469,6 +501,7 @@ export async function evaluatePermitReadiness(permitId: string, access: PermitAc
       requiresIsolation: type.requiresIsolation,
       requiresMeasurement: type.requiresMeasurement,
       requiresJsa: type.requiresJsa,
+      requiresCrewAcknowledgement: type.requiresCrewAcknowledgement,
       measurementValidityMinutes: type.measurementValidityMinutes,
       measurementCalibrationValidityDays: type.measurementCalibrationValidityDays,
       maxDurationHours: type.maxDurationHours,
@@ -496,6 +529,7 @@ export async function evaluatePermitReadiness(permitId: string, access: PermitAc
     jsaStepCount: jsaCount[0]?.count ?? 0,
     crew: eligibility.crew,
     crewWithoutCompetency: eligibility.crewWithoutCompetency,
+    crewWithCompetencyWarning: eligibility.crewWithCompetencyWarning,
     plannedEndAt: permit.extendedUntilAt ?? permit.plannedEndAt,
     now: nowIso(),
   })
@@ -639,6 +673,60 @@ export async function acknowledgePermitCrew(input: unknown, access: PermitAccess
     const [updated] = await tx.update(preventionPermitCrew).set({
       acknowledgedAt: now,
       acknowledgementSha256: signature,
+      acknowledgementChannel: "account",
+    }).where(and(eq(preventionPermitCrew.id, row.crew.id), sql`${preventionPermitCrew.acknowledgedAt} IS NULL`)).returning()
+    if (!updated) throw new Error("Este integrante ya acusó el permiso.")
+    return updated
+  })
+}
+
+/**
+ * `PER-002` (auditoría 2026-09-14): acuse del AST **sin cuenta de usuario**.
+ *
+ * `acknowledgePermitCrew` exigía `row.crewUserId === access.userId`. Como el
+ * acuse de la cuadrilla es además un bloqueador configurable de la activación
+ * (`PER-001`), un tipo de permiso que lo exigiera era inactivable para
+ * cualquier cuadrilla sin cuentas: el respaldo del briefing quedaba en papel o
+ * el permiso no arrancaba.
+ *
+ * La vía alternativa es la misma que ya usan PPA y TAE: un enlace-capacidad
+ * con token HMAC derivado del id del integrante. Abre exactamente una fila de
+ * cuadrilla, así que sigue siendo cierto que nadie acusa por otra persona.
+ *
+ * QUEDA POR DECIDIR (producto): si el acuse por enlace debe valer lo mismo que
+ * el acuse con cuenta para levantar el bloqueador `crew_ack_missing`. Aquí vale
+ * —el bloqueador pregunta por `acknowledgedAt`, y negárselo dejaría el permiso
+ * igual de inactivable que antes—, y el canal queda registrado para que la
+ * política pueda endurecerse sin migrar datos.
+ */
+export async function acknowledgePermitCrewByPublicToken(
+  input: { crewId: string; token: string },
+  context: { ip?: string | null; userAgent?: string | null } = {},
+) {
+  const crewId = String(input.crewId ?? "")
+  if (!crewId || !verifyPreventionAckToken("permiso", crewId, input.token)) throw new Error(NOT_FOUND)
+
+  return db.transaction(async (tx) => {
+    const [row] = await tx.select({
+      crew: preventionPermitCrew,
+      permit: preventionWorkPermits,
+    })
+      .from(preventionPermitCrew)
+      .innerJoin(preventionWorkPermits, eq(preventionPermitCrew.permitId, preventionWorkPermits.id))
+      .where(eq(preventionPermitCrew.id, crewId)).limit(1)
+    if (!row) throw new Error(NOT_FOUND)
+    if (row.crew.acknowledgedAt) throw new Error("Este integrante ya acusó el permiso.")
+
+    const now = nowIso()
+    const signature = createHash("sha256").update(JSON.stringify({
+      crewId: row.crew.id, permitId: row.permit.id, userId: null, channel: "public_token", acknowledgedAt: now,
+    })).digest("hex")
+    const [updated] = await tx.update(preventionPermitCrew).set({
+      acknowledgedAt: now,
+      acknowledgementSha256: signature,
+      acknowledgementChannel: "public_token",
+      acknowledgementIp: context.ip ?? null,
+      acknowledgementUserAgent: context.userAgent ?? null,
     }).where(and(eq(preventionPermitCrew.id, row.crew.id), sql`${preventionPermitCrew.acknowledgedAt} IS NULL`)).returning()
     if (!updated) throw new Error("Este integrante ya acusó el permiso.")
     return updated
@@ -709,6 +797,7 @@ export async function getWorkPermitDetail(permitId: string, access: PermitAccess
     requiresIsolation: preventionPermitTypes.requiresIsolation,
     requiresMeasurement: preventionPermitTypes.requiresMeasurement,
     requiresJsa: preventionPermitTypes.requiresJsa,
+    requiresCrewAcknowledgement: preventionPermitTypes.requiresCrewAcknowledgement,
     measurementValidityMinutes: preventionPermitTypes.measurementValidityMinutes,
     maxDurationHours: preventionPermitTypes.maxDurationHours,
     competencyTaskKey: preventionPermitTypes.competencyTaskKey,
@@ -754,7 +843,13 @@ export async function getWorkPermitDetail(permitId: string, access: PermitAccess
   ])
 
   const withoutCompetencyIds = new Set(eligibility.crewWithoutCompetency.map((item) => item.id))
-  const crew = crewRows.map((row) => ({ ...row, hasCompetencyGap: withoutCompetencyIds.has(row.id) }))
+  const warningCompetencyIds = new Set(eligibility.crewWithCompetencyWarning.map((item) => item.id))
+  const crew = crewRows.map((row) => ({
+    ...row,
+    hasCompetencyGap: withoutCompetencyIds.has(row.id),
+    // CAP-001: la brecha de un requisito «advertencia» se ve, pero no bloquea.
+    hasCompetencyWarning: warningCompetencyIds.has(row.id),
+  }))
 
   return { ...permit, controls, isolations, measurements, jsaSteps, crew }
 }

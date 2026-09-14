@@ -19,6 +19,7 @@ import { deliverItemTx } from "@/lib/services/item-state"
 import { onEppDeliveryCompleted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { applyMovementTx } from "@/lib/services/stock"
 import { codeYear, todayInChile } from "@/lib/utils"
+import { backdatedDeliveryMessage, earliestDeliveryDate } from "@/lib/validation/operations"
 import type {
   RegisterWorkerStockDeliveryInput,
   WorkerStockDeliveryItemInput,
@@ -54,6 +55,24 @@ function normalizeItems(items: WorkerStockDeliveryItemInput[]): WorkerStockDeliv
         throw new Error("No repitas un ítem de solicitud en la misma entrega")
       }
       requestItemIds.add(item.requestItemId)
+    }
+
+    /*
+     * ENT-002 (auditoría 2026-09-14): las mismas dos reglas que el zod, aquí
+     * también. El esquema que las tenía —`workerDeliverySchema`— no lo usaba
+     * ninguna acción, y este servicio ya repite las demás invariantes porque lo
+     * llaman también la importación y los scripts.
+     */
+    if (item.returnQuantity != null) {
+      if (!Number.isFinite(item.returnQuantity) || item.returnQuantity <= 0) {
+        throw new Error("La cantidad devuelta debe ser mayor a 0")
+      }
+      if (!item.returnProductId && !item.returnProductNameFree?.trim()) {
+        throw new Error("Indica qué producto se devuelve")
+      }
+      if (!item.returnReason?.trim()) {
+        throw new Error("Indica el motivo de la devolución del EPP usado")
+      }
     }
   }
 
@@ -153,14 +172,35 @@ export async function registerWorkerStockDelivery(
   const items = normalizeItems(input.items)
   const deliveryId = nanoid()
   const now = new Date().toISOString()
+  const today = todayInChile()
+
+  /*
+   * ENT-003 (auditoría 2026-09-14): la cota de retroactividad no puede vivir
+   * sólo en el zod de la action. Este servicio lo llaman también la importación
+   * y los scripts, y ya repite aquí las demás invariantes de negocio (producto
+   * activo, cantidad entera de EPP, pertenencia a la faena). La fecha futura ya
+   * la cubría el esquema; la fecha demasiado antigua no la cubría nadie.
+   */
+  if (input.deliveredAt && input.deliveredAt < earliestDeliveryDate(today)) {
+    throw new Error(backdatedDeliveryMessage(today))
+  }
   // La fecha civil retroactiva se ancla al mediodía UTC (08:00–09:00 en Chile):
   // con T00:00:00Z el timestamp cae en las 20:00 del día anterior chileno y
   // `formatDate` —que renderiza en America/Santiago— mostraría un día menos.
   // Si la fecha elegida es hoy se conserva `now`, para no perder la hora real ni
   // el orden intradía de las entregas del día.
-  const deliveredAt = input.deliveredAt && input.deliveredAt !== todayInChile()
+  const deliveredAt = input.deliveredAt && input.deliveredAt !== today
     ? `${input.deliveredAt}T12:00:00.000Z`
     : now
+  /*
+   * ENT-003: el desfase entre el hecho y su registro tiene que quedar escrito.
+   * Antes la fila sólo guardaba `deliveredAt` y nada explicaba por qué una
+   * entrega de hace dos meses aparecía hoy —ni en la auditoría ni en la
+   * acreditación PDTP que cuelga de esa misma fecha—.
+   */
+  const backdatedDays = input.deliveredAt && input.deliveredAt !== today
+    ? Math.round((Date.parse(`${today}T12:00:00.000Z`) - Date.parse(`${input.deliveredAt}T12:00:00.000Z`)) / 86_400_000)
+    : 0
   const year = codeYear()
 
   let deliveredEpp = false
@@ -207,7 +247,7 @@ export async function registerWorkerStockDelivery(
       createdAt: now,
     })
 
-    const auditItems: Array<{ productId: string; quantity: number; requestItemId: string | null }> = []
+    const auditItems: Array<Record<string, unknown>> = []
     for (const item of items) {
       const product = await tx.query.products.findFirst({ where: eq(products.id, item.productId) })
       if (!product || !product.isActive) throw new Error("Producto no disponible")
@@ -225,6 +265,21 @@ export async function registerWorkerStockDelivery(
         sourceWorksite.id,
       )
 
+      /*
+       * ENT-002: la devolución del EPP usado se escribe en la misma línea del
+       * EPP nuevo, que es donde `delivery_items` ya tiene las columnas y donde
+       * la impresión del comprobante y la trazabilidad ya las leían. Hasta
+       * ahora este `insert` —el único de la tabla— las dejaba siempre en NULL.
+       */
+      const returnQuantity = item.returnQuantity ?? null
+      const returnProductId = returnQuantity ? item.returnProductId?.trim() || null : null
+      const returnProductNameFree = returnQuantity ? item.returnProductNameFree?.trim() || null : null
+
+      if (returnProductId) {
+        const returnedProduct = await tx.query.products.findFirst({ where: eq(products.id, returnProductId) })
+        if (!returnedProduct) throw new Error("El producto devuelto no existe en el catálogo")
+      }
+
       await tx.insert(deliveryItems).values({
         id: nanoid(),
         deliveryId,
@@ -234,6 +289,11 @@ export async function registerWorkerStockDelivery(
         quantity: item.quantity,
         unitOfMeasure: product.unitOfMeasure,
         notes: item.notes?.trim() || null,
+        returnQuantity,
+        returnProductId,
+        returnProductNameFree,
+        returnReason: returnQuantity ? item.returnReason?.trim() || null : null,
+        returnNotes: returnQuantity ? item.returnNotes?.trim() || null : null,
       })
 
       await applyMovementTx(tx, {
@@ -249,6 +309,32 @@ export async function registerWorkerStockDelivery(
         notes: notes ?? undefined,
       })
 
+      /*
+       * ENT-002: `retiro_epp_trabajador` estaba implementado en `applyMovementTx`
+       * y contemplado en el detector de integridad, pero **ningún llamador lo
+       * emitía**. Es el emisor que faltaba.
+       *
+       * No mueve saldo —la unidad original ya se descontó al entregarla— y por
+       * eso el motor lo trata como movimiento de sólo auditoría: es la
+       * evidencia de que el EPP usado volvió, no un ingreso a bodega. Sólo se
+       * emite con producto catalogado: el kardex se lleva por `productId`, y un
+       * nombre libre no tiene fila donde anotarse.
+       */
+      if (returnQuantity && returnProductId) {
+        await applyMovementTx(tx, {
+          worksiteId: sourceWorksite.id,
+          productId: returnProductId,
+          type: "retiro_epp_trabajador",
+          quantity: returnQuantity,
+          referenceType: "delivery",
+          referenceId: deliveryId,
+          performedBy: input.deliveredBy,
+          userEmail: input.userEmail,
+          reason: `Retiro de EPP usado en entrega ${code} a ${workerName}`,
+          notes: item.returnReason?.trim() || undefined,
+        })
+      }
+
       if (traceableState) {
         await deliverItemTx(tx, traceableState.requestItemId, input.deliveredBy, {
           userEmail: input.userEmail,
@@ -261,6 +347,16 @@ export async function registerWorkerStockDelivery(
         productId: product.id,
         quantity: item.quantity,
         requestItemId: traceableState?.requestItemId ?? null,
+        ...(returnQuantity
+          ? {
+            devolucion: {
+              productId: returnProductId,
+              productNameFree: returnProductNameFree,
+              quantity: returnQuantity,
+              reason: item.returnReason?.trim() || null,
+            },
+          }
+          : {}),
       })
     }
 
@@ -294,6 +390,10 @@ export async function registerWorkerStockDelivery(
         receiverName,
         items: auditItems,
         proofFileName: input.proofAttachment?.fileName ?? null,
+        deliveredAt,
+        ...(backdatedDays > 0
+          ? { registradaEl: now, diasDeRetroactividad: backdatedDays }
+          : {}),
       },
     }, tx)
   })

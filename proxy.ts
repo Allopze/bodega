@@ -52,6 +52,10 @@ export default auth(async (req) => {
     "/api/backups/config",
     "/ppa",
     "/tae", "/api/tae/access", "/api/tae/submit", "/api/tae/identity",
+    // CAP-002/PER-002: "/acuse" es la vía de acuse sin cuenta (capacitación y
+    // AST de permiso). La credencial es el token HMAC de la propia URL, que el
+    // servicio verifica; el panel autenticado sigue viviendo bajo /prevencion.
+    "/acuse",
   ]
   if (publicPaths.some((prefix) => matchesRoutePrefix(pathname, prefix))) {
     // Redirect authenticated users away from login

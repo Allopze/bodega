@@ -61,8 +61,15 @@ import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import { applyMovementTx } from "@/lib/services/stock"
 import { closeOrderTx } from "@/lib/services/purchasing-module/receiving"
+import {
+  collectRequesterShortfallNoticesTx,
+  flushRequesterShortfallNotifications,
+  type PendingRequesterNotification,
+  type RequesterShortfall,
+} from "@/lib/services/requester-shortfall-notify"
 import { receiveItemTx } from "@/lib/services/item-state"
 import type { DispatchGuideInput } from "@/lib/validation/dispatch-guides"
+import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 
 /* ── Constantes de dominio ──────────────────────────────────────────────── */
 
@@ -987,7 +994,12 @@ export async function confirmDispatchGuideReceipt(
   actor: DispatchGuideActor,
   scope: WorksiteScope = "all",
 ): Promise<{ code: string }> {
-  return db.transaction(async (tx) => {
+  // `E2E-001`: los avisos al solicitante se acumulan dentro de la transacción y
+  // se sueltan recién después del COMMIT (ver `notifyAfterCommit`).
+  const shortfallNotices: PendingRequesterNotification[] = []
+
+  const result = await db.transaction(async (tx) => {
+    shortfallNotices.length = 0
     const guide = await lockGuide(tx, guideId)
     if (guide.status === "received") throw new Error("La recepción de esta guía ya fue confirmada")
     if (guide.status !== "dispatched" && guide.status !== "partially_received") {
@@ -1102,6 +1114,7 @@ export async function confirmDispatchGuideReceipt(
             differenceReason: line.differenceReason ?? line.guideItem.differenceReason,
           })
           .where(eq(dispatchGuideItems.id, line.guideItem.id))
+
       }
 
       const complete = normalized.every((line) => line.difference <= 1e-9)
@@ -1117,9 +1130,30 @@ export async function confirmDispatchGuideReceipt(
         inArray(dispatchGuides.status, ["dispatched", "partially_received"]),
       ))
 
+      /**
+       * `E2E-001` (punto 3 de 3): la diferencia al cotejar se documenta con
+       * motivo y queda en `receiptItems.quantityDifference`, pero el ítem de
+       * solicitud llega igual a `received` —el stock del destino ya se cargó
+       * completo al despachar (`GDI-001`)— y el solicitante recibía el aviso de
+       * "tu pedido llegó a faena" sin saber que faltaba mercadería. Acá sólo se
+       * cierra la brecha de aviso: corregir el stock del destino por la merma
+       * sigue siendo una decisión de producto pendiente (`GDI-001`).
+       */
+      const guideShortfalls: RequesterShortfall[] = normalized.flatMap((line) => (
+        line.difference > 1e-9 && line.poItem.requestItemId
+          ? [{
+            requestItemId: line.poItem.requestItemId,
+            missingQuantity: line.difference,
+            cause: "cotejo_guia" as const,
+            documentCode: guide.code,
+          }]
+          : []
+      ))
+      shortfallNotices.push(...await collectRequesterShortfallNoticesTx(tx, guideShortfalls))
+
       const orderStatus = await rollupOrderAfterGuideReceiptTx(tx, linked.order.id)
       if (orderStatus === "received") {
-        await closeOrderTx(tx, { ...linked.order, status: "received" }, actor.userId, "Cierre automático: cotejo completo de GDI", { userEmail: actor.userEmail })
+        shortfallNotices.push(...await closeOrderTx(tx, { ...linked.order, status: "received" }, actor.userId, "Cierre automático: cotejo completo de GDI", { userEmail: actor.userEmail }))
       }
 
       if (guide.status !== nextGuideStatus) {
@@ -1145,6 +1179,7 @@ export async function confirmDispatchGuideReceipt(
           receiptCode,
           complete,
           differences: normalized.filter((line) => line.difference > 1e-9).length,
+          shrinkage: normalized.reduce((total, line) => total + (line.difference > 1e-9 ? line.difference : 0), 0),
         },
       }, tx)
       return { code: guide.code }
@@ -1183,6 +1218,9 @@ export async function confirmDispatchGuideReceipt(
 
     return { code: guide.code }
   })
+
+  flushRequesterShortfallNotifications(shortfallNotices)
+  return result
 }
 
 /**
@@ -1201,7 +1239,9 @@ export async function cancelDispatchGuide(
   scope: WorksiteScope = "all",
 ): Promise<{ code: string; reversedMovements: number }> {
   const reason = input.reason.trim()
-  if (reason.length < 5) throw new Error("Indica el motivo de la anulación (mínimo 5 caracteres)")
+  // GDI-003 (auditoría 2026-09-14), patrón P6: eran cinco caracteres mientras
+  // anular una entrega —un acto de la misma naturaleza— exigía diez.
+  if (!isValidReason(reason)) throw new Error(reasonRequiredMessage("por qué se anula la guía"))
 
   return db.transaction(async (tx) => {
     const guide = await lockGuide(tx, guideId)

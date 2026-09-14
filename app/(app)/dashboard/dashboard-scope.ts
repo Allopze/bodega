@@ -1,5 +1,5 @@
 import type { WorksiteScope } from "@/lib/auth/scope"
-import type { OperationalPeriodSpan } from "@/lib/services/operational-period-metrics"
+import { getOperationalCalendarBounds, type OperationalPeriodSpan } from "@/lib/services/operational-period-metrics"
 import {
   DEFAULT_DASHBOARD_VIEW,
   parseDashboardView,
@@ -156,4 +156,31 @@ export function dashboardScopeHref(
   if (period !== DEFAULT_DASHBOARD_PERIOD) params.set("periodo", period)
   const query = params.toString()
   return query ? `/dashboard?${query}` : "/dashboard"
+}
+
+/**
+ * Destino de lista que reproduce lo que la cifra del período cuenta: la ventana
+ * calendario [desde, hasta) del período **y la faena elegida**.
+ *
+ * DASH-002 (auditoría 2026-09-14): este helper vivía dentro de `resumen-view`
+ * y agregaba sólo `desde` y `hasta`. Con una faena seleccionada, las métricas
+ * de Solicitudes, OC e Inversión contaban una faena y abrían una lista de
+ * todas las faenas autorizadas: quien pulsaba la cifra no aterrizaba en el
+ * conjunto que la explica. El caso de la cola ya estaba resuelto en
+ * `pendientesHref`; esta es la misma propagación de alcance, ahora al lado de
+ * `dashboardScopeHref` para que ningún destino del tablero vuelva a olvidarla.
+ *
+ * El nombre del parámetro es `faena`, que es el que leen y aplican los
+ * destinos (`parseListParams` en `/compras` y `/solicitudes`); `/pendientes`
+ * usa `worksiteId` y por eso conserva su propio helper. Con alcance "todas" no
+ * se emite el parámetro: sería un filtro que la pantalla no pidió.
+ */
+export function periodWindowHref(scope: DashboardScope, path: string, now = new Date()) {
+  const bounds = getOperationalCalendarBounds(now, scope.period)
+  const search = new URLSearchParams()
+  search.set("desde", bounds.currentStart.slice(0, 10))
+  search.set("hasta", bounds.currentEnd.slice(0, 10))
+  const worksiteId = scopedWorksiteId(scope)
+  if (worksiteId) search.set("faena", worksiteId)
+  return `${path}?${search.toString()}`
 }

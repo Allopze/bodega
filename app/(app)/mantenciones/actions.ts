@@ -232,6 +232,7 @@ export async function addMaintenancePartAction(_prev: ActionState, formData: For
   catch { return { ok: false, message: "Sin permisos para editar la orden" } }
   const parsed = maintenancePartSchema.safeParse({
     maintenanceId: formData.get("maintenanceId"),
+    productId: formData.get("productId") || undefined,
     description: formData.get("description"),
     partNumber: formData.get("partNumber") || undefined,
     quantity: formData.get("quantity"),

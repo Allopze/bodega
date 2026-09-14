@@ -57,6 +57,7 @@ export {
   pdtpSubmitReviewBlockers,
   getPdtpSubmitReviewBlockers,
   getPdtpCoverageReport,
+  pdtpCoverageIssueBlocksLifecycle,
   submitPdtpProgramForReview,
   approvePdtpProgramJdpr,
   signPdtpProgramLegal,

@@ -327,11 +327,29 @@ async function resolveEquipmentIds(
       )
     }
 
-    const movedWorksite = equipment.worksiteId !== opts.worksiteId
-    const reactivated   = !equipment.isActive
-    if (movedWorksite || reactivated) {
+    /*
+     * REQ-002 (auditoría 2026-09-14): esto reasignaba la faena del equipo. El
+     * código es único global y llega del cliente, así que enviar una solicitud
+     * en la faena propia con el código de un instrumento de otra bastaba para
+     * traérselo —con su historial de mantenciones y calibraciones— sin permiso
+     * ni rastro de traslado, y dejando a la faena de origen sin visibilidad.
+     *
+     * Una solicitud no es una transferencia. Mismo criterio que el trabajador
+     * y el activo de emergencia unas líneas más abajo, que ya se rechazaban
+     * cuando no pertenecían a la faena de la solicitud.
+     */
+    if (equipment.worksiteId !== opts.worksiteId) {
+      throw new Error(
+        `Ítem ${index + 1}: el equipo ${code} está registrado en otra faena. `
+        + "Solicita su traslado antes de pedir un servicio para él.",
+      )
+    }
+
+    // Reactivar sí: un equipo dado de baja en esta misma faena que vuelve a
+    // requerir servicio es el mismo aparato, y su historial debe continuar.
+    if (!equipment.isActive) {
       await tx.update(serviceEquipment)
-        .set({ worksiteId: opts.worksiteId, isActive: true, updatedAt: new Date().toISOString() })
+        .set({ isActive: true, updatedAt: new Date().toISOString() })
         .where(eq(serviceEquipment.id, equipment.id))
 
       await recordAudit({
@@ -341,8 +359,8 @@ async function resolveEquipmentIds(
         entityType: "service_equipment",
         entityId:   equipment.id,
         entityCode: code,
-        oldState:   { worksiteId: equipment.worksiteId, isActive: equipment.isActive },
-        newState:   { worksiteId: opts.worksiteId, isActive: true, fromRequest: opts.requestCode },
+        oldState:   { isActive: equipment.isActive },
+        newState:   { isActive: true, fromRequest: opts.requestCode },
       }, tx)
     }
 

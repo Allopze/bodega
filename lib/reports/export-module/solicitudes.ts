@@ -3,7 +3,8 @@ import { and, count, desc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import { purchaseRequests, purchaseRequestItems, worksites } from "@/db/schema"
 import { can } from "@/lib/auth/can"
-import { textSearchSql } from "@/lib/adquisiciones/list-query"
+import { statusSql } from "@/lib/adquisiciones/list-query"
+import { parseEstadosParam, solicitudesSearchSql } from "@/lib/adquisiciones/solicitudes-filter"
 import { formatDate } from "@/lib/utils"
 import { REQUEST_TYPE_LABELS, URGENCY_LABELS, requestStatusLabel } from "./labels"
 import { buildWorksiteFilter, buildDateFilter } from "./utils"
@@ -17,9 +18,18 @@ export async function solicitudesList(session: Session | null, filters: ExportFi
     buildWorksiteFilter(session, purchaseRequests.worksiteId),
     ownOnly && session?.user?.id ? eq(purchaseRequests.requesterId, session.user.id) : undefined,
     buildDateFilter(filters, purchaseRequests.createdAt),
-    filters.status ? eq(purchaseRequests.status, filters.status) : undefined,
+    /*
+     * REQ-003 (auditoría 2026-09-14): esto era
+     * `eq(purchaseRequests.status, filters.status)`. La barra de pestañas
+     * agrupa estados y los serializa separados por coma, así que exportar «En
+     * aprobación» comparaba el estado con la cadena `"submitted,in_review"`:
+     * una igualdad imposible, y el archivo salía vacío con la lista llena.
+     */
+    statusSql(purchaseRequests.status, parseEstadosParam(filters.status)),
     filters.worksiteId ? eq(purchaseRequests.worksiteId, filters.worksiteId) : undefined,
-    textSearchSql(filters.q ?? "", [purchaseRequests.code]),
+    // Y la búsqueda mira el nombre del producto además del código, como la
+    // pantalla: es el mismo predicado, no una copia parecida.
+    solicitudesSearchSql(filters.q ?? ""),
   )
 
   const rows = await db

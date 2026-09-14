@@ -20,6 +20,7 @@ import {
   assertPdtpFulfillmentCoverage,
   type PdtpFulfillmentCoverageIssue,
 } from "@/lib/services/pdtp/fulfillment"
+import { pdtpCoverageIssueBlocksLifecycle } from "@/lib/services/pdtp/lifecycle"
 import {
   classifyPdtp2026InspectionWiring,
   type InspectionWiringGap,
@@ -58,12 +59,16 @@ export interface PdtpWiringReport {
   lostRuns: { templateId: string; code: string; versionLabel: string; closedRuns: number; declares: number[] }[]
   /** Cursos del programa sin una versión publicada: no se les puede programar sesión. */
   coursesWithoutPublishedVersion: { code: string; name: string }[]
-  /**
-   * Lo que la compuerta de cumplimiento reporta hoy. `config_required` y
-   * `code_gap` bloquean el envío del programa a revisión; `decision_required` y
-   * `destination_review` sólo se muestran.
-   */
+  /** Todo lo que la compuerta de cumplimiento reporta hoy, sin filtrar. */
   coverageIssues: PdtpFulfillmentCoverageIssue[]
+  /**
+   * El subconjunto que de verdad frena el envío a revisión y la activación.
+   * Aplica `pdtpCoverageIssueBlocksLifecycle`, la regla del servicio, en vez de
+   * una copia escrita a mano acá: es `ok` lo que mide catálogo completo, y son
+   * cosas distintas desde que faltar un curso, una plantilla, un plan o un mapa
+   * dejó de impedir que el programa se firme y se active.
+   */
+  coverageIssuesBlockingLifecycle: PdtpFulfillmentCoverageIssue[]
   /**
    * Actividades de enganche cuyo responsable declarado no tiene el permiso del
    * acto que las acredita. **Es una lista para revisar, no una lista de
@@ -189,27 +194,41 @@ export async function findPdtpAccreditationWiringGaps(): Promise<PdtpWiringRepor
     .filter((issue) => issue.status === "destination_review")
     .map((issue) => ({ n: issue.n, activity: issue.activity, reason: issue.reason }))
 
+  const coverageIssuesBlockingLifecycle = coverageIssues.filter((issue) => pdtpCoverageIssueBlocksLifecycle(issue.status))
+
+  // Qué significa el `ok` de este preflight: **catálogo completo**, no "se
+  // puede activar". Son dos preguntas distintas desde que `config_required` e
+  // `instrument_required` dejaron de frenar el ciclo de vida — un curso, una
+  // plantilla, un plan o un mapa que todavía no existe ya no impide firmar ni
+  // activar, pero sigue siendo cableado que falta, y nombrarlo es exactamente
+  // para lo que existe este script. Por eso `ok` se mantiene MÁS estricto que
+  // la compuerta a propósito, y no usa `pdtpCoverageIssueBlocksLifecycle`.
+  //
+  // Lo que ya no se puede hacer es leer `ok: false` como "no se puede activar":
+  // para esa pregunta está `coverageIssuesBlockingLifecycle`, más arriba, que
+  // aplica la regla real del servicio.
+  //
   // Cada condición es una fuente de gaps distinta; se listan una por línea a
-  // propósito para que sumar una nueva (la Tarea 8 agrega la suya) no
-  // implique tocar ni reordenar las anteriores.
-  // `instrument_required` (Tarea 8) fluye por este mismo filtro: la compuerta
-  // ya lo excluye de sus dos únicos estados que no cuentan como problema
-  // (`decision_required` y `destination_review`), así que no hace falta un
-  // clause nuevo acá — sólo dejar constancia de que el `ok` de este preflight
-  // se pone en rojo por instrumentos declarados-pero-no-vigentes igual que por
-  // cualquier otro `config_required`/`permission_gap`/`code_gap`.
+  // propósito para que sumar una nueva no implique tocar ni reordenar las
+  // anteriores.
+  //
   // La N°1 (y cualquier otra que acredite al firmar el paso legal) queda en
   // `error` mientras el programa sigue `in_review` — es el hueco esperado
-  // entre firmar y activar, no una brecha de cableado, y el runbook (paso 9)
-  // pide activar viendo `ok: true` antes de que `activatePdtpProgram` dispare
-  // la reconciliación que lo cierra. Se sigue contando en `errored` para que
-  // el número completo no desaparezca del reporte; sólo se excluye de `ok`.
+  // entre firmar y activar, no una brecha de cableado. Se sigue contando en
+  // `errored` para que el número completo no desaparezca del reporte; sólo se
+  // excluye de `ok`.
   const blockingErrored = fulfillmentBacklog === null
     ? 0
     : fulfillmentBacklog.errored - fulfillmentBacklog.erroredWaitingOnActivation
+  // `decision_required` y `destination_review` no cuentan como cableado
+  // faltante: el padrón manual es una decisión válida y el mapa de destinos es
+  // en buena parte segregación de deberes. Todo lo demás sí.
+  const wiringGapIssues = coverageIssues.filter(
+    (issue) => issue.status !== "decision_required" && issue.status !== "destination_review",
+  )
   const ok = gaps.length === 0
     && activitiesWithoutApprovedInstrument.length === 0
-    && coverageIssues.filter((issue) => issue.status !== "decision_required" && issue.status !== "destination_review").length === 0
+    && wiringGapIssues.length === 0
     && worksitesWithoutEmergencyPlan.length === 0
     && (fulfillmentBacklog === null || (fulfillmentBacklog.pending === 0 && blockingErrored === 0))
 
@@ -220,6 +239,7 @@ export async function findPdtpAccreditationWiringGaps(): Promise<PdtpWiringRepor
     lostRuns,
     coursesWithoutPublishedVersion,
     coverageIssues,
+    coverageIssuesBlockingLifecycle,
     destinationsToReview,
     worksitesWithoutEmergencyPlan,
     responsibleExecution,

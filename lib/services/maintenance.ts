@@ -19,10 +19,12 @@ import {
   preventionCapaEvidence,
   preventionCapaTransitions,
   preventionInspectionFindings,
+  products,
   roles,
   suppliers,
   userRoles,
   users,
+  worksiteStock,
   worksiteUsers,
   worksites,
 } from "@/db/schema"
@@ -36,6 +38,7 @@ import { can } from "@/lib/auth/can"
 import type { MaintenanceLaborInput, MaintenancePartInput, MaintenancePlanInput, MaintenanceTaskInput } from "@/lib/validation/maintenance"
 import { setVehicleOperationalStatus } from "@/lib/services/fleet-operational-status"
 import { nextCodeTx } from "@/lib/code-sequences"
+import { applyMovementTx } from "@/lib/services/stock-movement"
 import { getUserIdsWithPermission, getUserIdsWithPermissionForWorksite } from "@/lib/services/notification-targeting"
 
 export const MAINTENANCE_PAGE_SIZE = 50
@@ -715,8 +718,28 @@ export async function getMaintenanceRecordDetail(session: Session, id: string) {
   })
   if (!record) throw new Error("Orden de trabajo no encontrada")
   const canViewCosts = can(session, "combustibles:view_costs")
+  /**
+   * `MNT-002` (auditoría 2026-09-14): sin catálogo a la vista, la única forma
+   * de imputar un repuesto era escribirlo a mano, y esa línea nunca descontaba
+   * stock. Se ofrecen los productos que la faena de la OT realmente tiene, con
+   * su saldo, para que el consumo se impute contra existencias reales.
+   */
+  const worksiteId = await effectiveWorksiteId(db, record)
+  const availableStock = await db
+    .select({
+      productId: products.id,
+      sku: products.sku,
+      name: products.name,
+      unit: products.unitOfMeasure,
+      quantity: worksiteStock.quantity,
+    })
+    .from(worksiteStock)
+    .innerJoin(products, eq(products.id, worksiteStock.productId))
+    .where(and(eq(worksiteStock.worksiteId, worksiteId), sql`${worksiteStock.quantity} > 0`))
+    .orderBy(products.name)
   return {
     ...record,
+    availableStock,
     netAmount: canViewCosts ? record.netAmount : null,
     taxAmount: canViewCosts ? record.taxAmount : null,
     totalAmount: canViewCosts ? record.totalAmount : null,
@@ -806,6 +829,63 @@ export async function setMaintenancePlanActive(session: Session, id: string, act
   })
 }
 
+type DuePlan = Awaited<ReturnType<typeof listMaintenancePlans>>[number]
+
+/** ¿Le toca a este plan? Calendario o uso, con su holgura declarada. */
+async function planIsDue(plan: DuePlan, today: string): Promise<boolean> {
+  if (!plan.isActive) return false
+  const calendarDue = Boolean(plan.nextDueDate && plan.nextDueDate <= addDaysToPlainDate(today, plan.advanceDays))
+  if (calendarDue) return true
+  if (plan.nextDueReading == null) return false
+
+  const readingUnit = plan.strategy === "hour_meter"
+    || (plan.strategy === "combined" && plan.vehicle.meterType === "hour_meter")
+    ? "hora"
+    : "km"
+  const [reading] = await db.select({ value: fuelOperationRecords.horometro })
+    .from(fuelOperationRecords)
+    .where(and(
+      eq(fuelOperationRecords.vehicleId, plan.vehicleId),
+      eq(fuelOperationRecords.medidoPor, readingUnit),
+      isNotNull(fuelOperationRecords.horometro),
+    ))
+    .orderBy(desc(fuelOperationOccurredAtSql()), desc(fuelOperationRecords.createdAt)).limit(1)
+  return reading?.value != null && reading.value >= plan.nextDueReading - plan.advanceUnits
+}
+
+/** La OT que corresponde a un plan vencido, sin el actor: lo pone el llamador. */
+function recordInputForPlan(plan: DuePlan, maintenanceDate: string): CreateMaintenanceInput {
+  return {
+    vehicleId: plan.vehicleId,
+    planId: plan.id,
+    supplierId: plan.supplierId,
+    costCenterId: plan.costCenterId,
+    maintenanceDate,
+    maintenanceType: plan.maintenanceType,
+    status: "scheduled",
+    priority: "normal",
+    assignedToUserId: plan.assignedToUserId,
+    operationalImpact: "maintenance",
+    netAmount: 0,
+    taxAmount: 0,
+    totalAmount: 0,
+    notes: plan.instructions,
+  }
+}
+
+/**
+ * ¿Ya existe la OT de este plan para esta fecha? Es la guarda de idempotencia:
+ * la materialización puede correr muchas veces al día sin duplicar nada.
+ */
+async function alreadyMaterialized(planId: string, maintenanceDate: string): Promise<boolean> {
+  const existing = await db.select({ id: maintenanceRecords.id }).from(maintenanceRecords).where(and(
+    eq(maintenanceRecords.planId, planId),
+    eq(maintenanceRecords.maintenanceDate, maintenanceDate),
+    sql`${maintenanceRecords.status} <> 'cancelled'`,
+  )).limit(1)
+  return Boolean(existing[0])
+}
+
 /** Materializa las obligaciones vencidas/por vencer sin duplicar una OT. */
 export async function materializeDueMaintenancePlans(session: Session) {
   if (!can(session, "mantenciones:create")) throw new Error("Sin permisos para programar mantenciones")
@@ -813,47 +893,44 @@ export async function materializeDueMaintenancePlans(session: Session) {
   const today = todayInChile()
   let created = 0
   for (const plan of plans) {
-    if (!plan.isActive) continue
-    const calendarDue = plan.nextDueDate && plan.nextDueDate <= addDaysToPlainDate(today, plan.advanceDays)
-    let usageDue = false
-    if (plan.nextDueReading != null) {
-      const readingUnit = plan.strategy === "hour_meter"
-        || (plan.strategy === "combined" && plan.vehicle.meterType === "hour_meter")
-        ? "hora"
-        : "km"
-      const [reading] = await db.select({ value: fuelOperationRecords.horometro })
-        .from(fuelOperationRecords)
-        .where(and(
-          eq(fuelOperationRecords.vehicleId, plan.vehicleId),
-          eq(fuelOperationRecords.medidoPor, readingUnit),
-          isNotNull(fuelOperationRecords.horometro),
-        ))
-        .orderBy(desc(fuelOperationOccurredAtSql()), desc(fuelOperationRecords.createdAt)).limit(1)
-      usageDue = reading?.value != null && reading.value >= plan.nextDueReading - plan.advanceUnits
-    }
-    if (!calendarDue && !usageDue) continue
+    if (!await planIsDue(plan, today)) continue
     const maintenanceDate = plan.nextDueDate ?? today
-    const existing = await db.select({ id: maintenanceRecords.id }).from(maintenanceRecords).where(and(
-      eq(maintenanceRecords.planId, plan.id),
-      eq(maintenanceRecords.maintenanceDate, maintenanceDate),
-      sql`${maintenanceRecords.status} <> 'cancelled'`,
-    )).limit(1)
-    if (existing[0]) continue
-    await createMaintenanceRecord(session, {
-      vehicleId: plan.vehicleId,
-      planId: plan.id,
-      supplierId: plan.supplierId,
-      costCenterId: plan.costCenterId,
-      maintenanceDate,
-      maintenanceType: plan.maintenanceType,
-      status: "scheduled",
-      priority: "normal",
-      assignedToUserId: plan.assignedToUserId,
-      operationalImpact: "maintenance",
-      netAmount: 0,
-      taxAmount: 0,
-      totalAmount: 0,
-      notes: plan.instructions,
+    if (await alreadyMaterialized(plan.id, maintenanceDate)) continue
+    await createMaintenanceRecord(session, recordInputForPlan(plan, maintenanceDate))
+    created += 1
+  }
+  return { created }
+}
+
+/**
+ * `MNT-001` (auditoría 2026-09-14): la materialización tenía un solo llamador,
+ * una Server Action de la pantalla de mantenciones. El programa preventivo
+ * dependía de que una persona entrara a mirar, y como el recordatorio se
+ * calcula sobre órdenes **ya creadas**, tampoco había aviso: el silencio se veía
+ * igual que estar al día.
+ *
+ * La OT se atribuye a quien creó el plan, no a un usuario «sistema» inventado:
+ * `maintenance_records.created_by` es una clave foránea real y quien programó
+ * el plan es justamente quien pidió que esa orden existiera. La atribución así
+ * es verdadera y además deja a alguien a quien preguntar.
+ */
+export async function materializeDueMaintenancePlansAsSystem(): Promise<{ created: number }> {
+  const plans = await db.query.maintenancePlans.findMany({
+    where: eq(maintenancePlans.isActive, true),
+    with: { vehicle: true },
+  }) as unknown as DuePlan[]
+
+  const today = todayInChile()
+  let created = 0
+  for (const plan of plans) {
+    if (!await planIsDue(plan, today)) continue
+    const maintenanceDate = plan.nextDueDate ?? today
+    if (await alreadyMaterialized(plan.id, maintenanceDate)) continue
+    await db.transaction(async (tx) => {
+      await createMaintenanceRecordWithClient(tx, recordInputForPlan(plan, maintenanceDate), {
+        actorUserId: plan.createdBy,
+        vehicle: { worksiteId: plan.worksiteId },
+      })
     })
     created += 1
   }
@@ -889,6 +966,33 @@ export async function setMaintenanceTaskStatus(session: Session, taskId: string,
   })
 }
 
+/**
+ * `MNT-002` (auditoría 2026-09-14): imputar un repuesto a una OT no tocaba el
+ * kardex. La línea era texto libre —descripción, código, cantidad, unidad,
+ * costo— sin referencia al catálogo, y no existía ningún tipo de movimiento
+ * para una mantención. El circuito quedaba abierto por un lado: el repuesto
+ * comprado por Solicitudes → OC → Recepción **sumaba** stock en la faena y su
+ * consumo no lo restaba nunca, así que la bodega sobreestimaba las existencias
+ * de forma permanente y la única forma de cuadrar era un ajuste manual.
+ *
+ * Ahora, cuando la línea apunta a un producto del catálogo, el egreso se emite
+ * en la MISMA transacción que la línea: o quedan las dos cosas o no queda
+ * ninguna. La faena que se descuenta es la de la propia OT —`worksiteId` de
+ * `maintenance_records`, que una clave foránea compuesta mantiene pegada a la
+ * faena del equipo—, no una bodega elegida a mano.
+ *
+ * Si no hay saldo, la operación se rechaza entera con el remedio en el mensaje,
+ * como el resto de la plataforma: no se deja stock negativo ni una línea de
+ * repuesto sin su movimiento.
+ *
+ * QUEDA POR DECIDIR (producto, no código): si imputar un repuesto de bodega
+ * DEBE hacerse siempre contra el catálogo. Hoy `productId` es opcional y una
+ * línea sin él sigue siendo sólo costo —es el caso legítimo del taller externo
+ * que factura piezas que nunca entraron a bodega—, pero también es la puerta
+ * por la que un consumo real puede seguir sin descontar. Volverlo obligatorio
+ * exige una regla de negocio que la plataforma no declara (¿por tipo de
+ * mantención? ¿por proveedor interno vs. externo?) y no se inventa aquí.
+ */
 export async function addMaintenancePart(session: Session, input: MaintenancePartInput) {
   if (!can(session, "mantenciones:edit")) throw new Error("Sin permisos para editar la orden")
   return db.transaction(async (tx) => {
@@ -898,12 +1002,37 @@ export async function addMaintenancePart(session: Session, input: MaintenancePar
     await tx.insert(maintenanceParts).values({
       id,
       maintenanceId: input.maintenanceId,
+      productId: input.productId || null,
       description: input.description,
       partNumber: input.partNumber || null,
       quantity: input.quantity,
       unit: input.unit,
       unitCost: can(session, "combustibles:view_costs") ? input.unitCost : 0,
     })
+    if (input.productId) {
+      const worksiteId = await effectiveWorksiteId(tx, record)
+      try {
+        await applyMovementTx(tx, {
+          worksiteId,
+          productId: input.productId,
+          type: "egreso_mantencion",
+          quantity: -Math.abs(input.quantity),
+          referenceType: "maintenance_part",
+          referenceId: id,
+          performedBy: session.user.id,
+          userEmail: session.user.email ?? undefined,
+          notes: `Consumo en ${record.code ?? "orden de trabajo"}: ${input.description}`,
+        })
+      } catch (error) {
+        // El mensaje del motor dice cuánto hay y cuánto se pidió; acá se le
+        // agrega el remedio, porque quien imputa el repuesto está en la OT y no
+        // en la pantalla de stock.
+        const detail = error instanceof Error ? error.message : String(error)
+        throw new Error(
+          `${detail}. Registra primero la recepción o el ajuste que falta en la faena de la orden, o corrige la cantidad.`,
+        )
+      }
+    }
     if (can(session, "combustibles:view_costs") && input.unitCost > 0) {
       await invalidateMaintenanceCostApproval(tx, input.maintenanceId)
     }

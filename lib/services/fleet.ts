@@ -1,6 +1,5 @@
 import type { Session } from "next-auth"
-import { promises as fs } from "node:fs"
-import { and, asc, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNotNull, ne, or, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   fleetVehicleDocuments,
@@ -14,13 +13,13 @@ import {
 import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { isGlobalRole, visibleWorksiteIds, worksiteScopeSql } from "@/lib/auth/scope"
-import { resolveFleetDocumentFile } from "@/lib/storage/config"
 import { can } from "@/lib/auth/can"
 import { accountableFuelLoadsWhere } from "@/lib/combustibles/load-status"
 import { fuelOperationOccurredAtSql } from "@/lib/combustibles/fuel-log"
 import { fleetDocumentMetadataSchema, resolveExpiryCandidates } from "@/lib/validation/fleet-documents"
 import { isCivilDate } from "@/lib/validation/dates"
 import { filterFleetOverviewRows, type FleetOverviewFilters } from "@/lib/fleet-overview-filters"
+import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 
 /**
  * Equipos de una faena, para poblar selectores.
@@ -394,7 +393,12 @@ export async function getFleetVehicleDetail(session: Session, id: string) {
 
   const [documents, recentMaintenance, recentOperations, operatorCounts, operationalIntervals] = await Promise.all([
     db.query.fleetVehicleDocuments.findMany({
-      where: eq(fleetVehicleDocuments.vehicleId, id),
+      // FLO-003: la ficha muestra el historial de versiones, no las anuladas.
+      // Una anulación es un error corregido, no una versión del documento.
+      where: and(
+        eq(fleetVehicleDocuments.vehicleId, id),
+        ne(fleetVehicleDocuments.status, "voided"),
+      ),
       // Vigentes primero y, dentro de cada grupo, por vencimiento: el historial
       // se conserva visible pero no se confunde con lo que rige hoy.
       orderBy: [desc(fleetVehicleDocuments.status), fleetVehicleDocuments.expiresAt],
@@ -587,10 +591,18 @@ export async function uploadFleetDocument(
   return docId
 }
 
+/**
+ * `FLO-003` (auditoría 2026-09-14), patrón P5: esto borraba la fila y el
+ * archivo. Ahora **anula**: la fila queda con motivo, responsable y fecha, y el
+ * documento sigue en disco. Conserva el nombre `deleteFleetDocument` porque es
+ * lo que la pantalla llama «eliminar» y renombrar la acción no cambiaría nada
+ * de lo que importa; lo que cambió es lo que hace.
+ */
 export async function deleteFleetDocument(
   documentId: string,
   session: Session,
   worksiteIds: string[] | "all",
+  reason?: string,
 ): Promise<void> {
   if (!can(session, "flota:manage_documents")) throw new Error("Sin permisos para administrar documentos de flota")
   const document = await db.query.fleetVehicleDocuments.findFirst({
@@ -607,11 +619,21 @@ export async function deleteFleetDocument(
     throw new Error("Sin acceso a la faena de este vehículo")
   }
 
-  let promotedId: string | null = null
-  await db.transaction(async (tx) => {
-    await tx.delete(fleetVehicleDocuments).where(eq(fleetVehicleDocuments.id, documentId))
+  const trimmedReason = (reason ?? "").trim()
+  if (!isValidReason(trimmedReason)) throw new Error(reasonRequiredMessage("por qué se anula el documento"))
+  if (document.status === "voided") throw new Error("El documento ya está anulado")
 
-    // Si el borrado era el vigente, la versión inmediatamente anterior vuelve a
+  let promotedId: string | null = null
+  const now = new Date().toISOString()
+  await db.transaction(async (tx) => {
+    await tx.update(fleetVehicleDocuments).set({
+      status: "voided",
+      voidedAt: now,
+      voidedBy: session.user.id,
+      voidReason: trimmedReason,
+    }).where(eq(fleetVehicleDocuments.id, documentId))
+
+    // Si el anulado era el vigente, la versión inmediatamente anterior vuelve a
     // serlo: dejar el tipo sin vigente apaga su alerta de vencimiento en vez de
     // devolverla al último dato conocido.
     if (document.status === "current") {
@@ -635,17 +657,15 @@ export async function deleteFleetDocument(
     await recordAudit({
       userId: session.user.id,
       userEmail: session.user.email ?? undefined,
-      action: "delete",
+      action: "update",
       entityType: "fleet_document",
       entityId: documentId,
       oldState: { vehicleId: document.vehicleId, documentType: document.documentType, fileName: document.fileName, status: document.status },
-      newState: { promotedToCurrent: promotedId },
+      newState: { status: "voided", promotedToCurrent: promotedId },
+      reason: trimmedReason,
     }, tx)
   })
 
-  // El archivo quedaba en disco para siempre: sólo se borraba la fila. Se
-  // elimina después de confirmar y sin propagar el error — la fila ya no
-  // existe, un archivo huérfano no debe hacer fallar la acción.
-  const absolutePath = resolveFleetDocumentFile(document.filePath)
-  if (absolutePath) await fs.unlink(absolutePath).catch(() => undefined)
+  // El archivo **no** se borra: es el respaldo que puede pedirse en una
+  // fiscalización, y la fila anulada lo sigue apuntando.
 }

@@ -1,7 +1,7 @@
 "use server"
 
 import crypto from "node:crypto"
-import { eq, and, isNull } from "drizzle-orm"
+import { eq, and, gt, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import { users, passwordResetTokens } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -32,25 +32,44 @@ export async function requestPasswordReset(email: string): Promise<void> {
     return
   }
 
-  // Invalidate any existing unused tokens for this user
-  await db
-    .update(passwordResetTokens)
-    .set({ usedAt: new Date().toISOString() })
-    .where(and(
-      eq(passwordResetTokens.userId, user.id),
-      isNull(passwordResetTokens.usedAt),
-    ))
-
   const rawToken = crypto.randomBytes(32).toString("hex")
   const tokenHash = hashToken(rawToken)
   const expiresAt = new Date(Date.now() + TOKEN_TTL_MS).toISOString()
 
-  await db.insert(passwordResetTokens).values({
-    id:        nanoid(),
-    userId:    user.id,
-    tokenHash,
-    expiresAt,
-  })
+  /*
+   * AUTH-002 (auditoría 2026-09-14): invalidar y emitir eran dos escrituras
+   * sueltas. Dos solicitudes simultáneas se intercalaban —A invalida, B
+   * invalida, A inserta, B inserta— y la cuenta quedaba con dos enlaces
+   * válidos, cada uno capaz de restablecer la contraseña.
+   *
+   * Ahora es una sola transacción, y el índice parcial
+   * `password_reset_tokens_one_active_per_user` la respalda: si dos corren a la
+   * vez, la segunda choca contra el índice y no emite nada. Su titular ya
+   * recibió el correo de la primera, así que se traga el error en silencio —el
+   * contrato público de esta función es no revelar si la cuenta existe, y un
+   * fallo visible aquí sería precisamente un oráculo de enumeración.
+   */
+  try {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(passwordResetTokens)
+        .set({ usedAt: new Date().toISOString() })
+        .where(and(
+          eq(passwordResetTokens.userId, user.id),
+          isNull(passwordResetTokens.usedAt),
+        ))
+
+      await tx.insert(passwordResetTokens).values({
+        id:        nanoid(),
+        userId:    user.id,
+        tokenHash,
+        expiresAt,
+      })
+    })
+  } catch (err) {
+    logger.warn("[password-reset] emisión concurrente descartada", err)
+    return
+  }
 
   const resetUrl = `${getAppBaseUrl()}/recuperar/${rawToken}`
   const safeName = user.name ?? "Usuario"
@@ -92,32 +111,53 @@ export async function validateResetToken(rawToken: string): Promise<ValidateToke
   return { valid: true, userId: row.userId }
 }
 
-/** Applies the new password and marks the token as used. Both in a transaction. */
+/** Reclama el token y, sólo si lo consiguió, escribe la contraseña. */
 export async function applyPasswordReset(rawToken: string, newPassword: string): Promise<{ ok: boolean; error?: string }> {
   const tokenHash = hashToken(rawToken)
 
   try {
     await db.transaction(async (tx) => {
-      const row = await tx.query.passwordResetTokens.findFirst({
-        where: and(
+      /*
+       * AUTH-002: antes se leía el token, se cambiaba la contraseña y recién
+       * al final se marcaba usado por `id`, sin exigir que siguiera sin usar.
+       * Dos aplicaciones simultáneas del mismo enlace leían la misma fila,
+       * ambas escribían una contraseña distinta y ambas informaban éxito: cuál
+       * quedaba dependía del orden de commit.
+       *
+       * Reclamar primero invierte el orden: el `UPDATE ... WHERE used_at IS
+       * NULL ... RETURNING` es la sección crítica, y sólo una transacción se
+       * lleva la fila. La otra no recibe nada y no toca la contraseña. La
+       * expiración entra en la misma condición para que no haya ventana entre
+       * comprobarla y consumir.
+       */
+      const [claimed] = await tx.update(passwordResetTokens)
+        .set({ usedAt: new Date().toISOString() })
+        .where(and(
           eq(passwordResetTokens.tokenHash, tokenHash),
           isNull(passwordResetTokens.usedAt),
-        ),
-      })
+          gt(passwordResetTokens.expiresAt, new Date().toISOString()),
+        ))
+        .returning({ userId: passwordResetTokens.userId })
 
-      if (!row) throw new Error("Token inválido o ya utilizado.")
-      if (new Date(row.expiresAt) < new Date()) throw new Error("El enlace de recuperación ha expirado.")
+      if (!claimed) {
+        // No se distingue "no existe" de "ya usado" o "expiró": las tres son
+        // "este enlace ya no sirve" y detallarlo sólo ayuda a quien prueba.
+        throw new Error("El enlace de recuperación no es válido o ya fue utilizado.")
+      }
 
       const bcrypt = await import("bcryptjs")
       const hashedPassword = await bcrypt.hash(newPassword, 12)
 
+      /*
+       * AUTH-003: la contraseña y la revocación de sesiones se escriben juntas.
+       * Antes sólo se escribía el hash, así que una sesión JWT robada antes del
+       * restablecimiento sobrevivía al cambio de clave hasta expirar sola.
+       * `sessionsValidFrom` es la marca que el callback JWT compara.
+       */
+      const changedAt = new Date().toISOString()
       await tx.update(users)
-        .set({ hashedPassword, updatedAt: new Date().toISOString() })
-        .where(eq(users.id, row.userId))
-
-      await tx.update(passwordResetTokens)
-        .set({ usedAt: new Date().toISOString() })
-        .where(eq(passwordResetTokens.id, row.id))
+        .set({ hashedPassword, sessionsValidFrom: changedAt, updatedAt: changedAt })
+        .where(eq(users.id, claimed.userId))
     })
 
     return { ok: true }

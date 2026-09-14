@@ -120,9 +120,8 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
         focusProgram.id,
         selectedWorksiteId ? [selectedWorksiteId] : effectiveWorksites.map((w) => w.id),
       ),
-      listActionsByProgram(focusProgram.id, {
+      listActionsByProgram(focusProgram.id, effectiveWorksites.map((worksite) => worksite.id), {
         worksiteId: selectedWorksiteId,
-        scope: effectiveWorksites.map((worksite) => worksite.id),
       }),
     ])
 

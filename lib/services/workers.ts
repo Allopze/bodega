@@ -31,7 +31,7 @@ type Client = DB | Tx
 type WorkerRow = typeof workers.$inferSelect
 type WorkerInsert = typeof workers.$inferInsert
 
-export type WorkerLifecycleEventKind = "alta" | "traslado" | "reactivacion"
+export type WorkerLifecycleEventKind = "alta" | "traslado" | "reactivacion" | "baja"
 
 export type WorkerLifecycleEvent = {
   workerId: string
@@ -65,7 +65,20 @@ export function deriveWorkerLifecycleEvents(
   after: LifecycleAfter,
   occurredAt: string,
 ): WorkerLifecycleEvent[] {
-  if (!after.isActive) return []
+  if (!after.isActive) {
+    /**
+     * E2E-007 (auditoría 2026-09-14): el ciclo de vida sólo modelaba la entrada
+     * —alta, traslado, reactivación— y la salida era una bandera silenciosa. En
+     * ese momento quedan vivos los activos TI en poder de la persona, sus
+     * accesos a sistemas, sus licencias, el EPP entregado y su pertenencia a
+     * cuadrillas de permisos, y nada los reunía. La baja ahora es un hecho del
+     * ciclo, con la faena de la que sale.
+     */
+    const leavesDotacion = before !== null && before.isActive
+    return leavesDotacion
+      ? [{ workerId: after.id, worksiteId: before.worksiteId, kind: "baja", occurredAt }]
+      : []
+  }
 
   if (before === null) {
     return [{ workerId: after.id, worksiteId: after.worksiteId, kind: "alta", occurredAt }]

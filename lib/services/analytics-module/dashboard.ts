@@ -12,7 +12,7 @@ import {
   ACTIVE_ORDER_STATUSES, normalizeAnalyticsFilters,
   previousPeriod, dateFilter, worksiteFilter, mergeSpendByMonth,
   mergeWorksiteSpend, variationPct, moduleLabel, getAnalyticsAlertThresholds,
-  buildDataGaps, dateOnly,
+  buildDataGaps, dateOnly, chileDayRange, chileMonthExpr,
 } from "./helpers"
 import { buildAlerts } from "./alerts"
 import { can } from "@/lib/auth/can"
@@ -54,8 +54,9 @@ export async function getPurchasingFinancialSummary(
   const previousOrderWhere = and(
     orderScope,
     inArray(purchaseOrders.status, ACTIVE_ORDER_STATUSES),
-    gte(purchaseOrders.createdAt, previous.fromDate),
-    lte(purchaseOrders.createdAt, `${previous.toDate}T23:59:59`),
+    // ANA-001: el período de comparación se corta con el mismo día civil
+    // chileno que el período consultado; antes usaba UTC y desplazaba el borde.
+    chileDayRange(purchaseOrders.createdAt, previous.fromDate, previous.toDate),
     filters.worksiteId ? eq(purchaseOrders.worksiteId, filters.worksiteId) : undefined,
     filters.supplierId ? eq(purchaseOrders.supplierId, filters.supplierId) : undefined,
   )
@@ -136,7 +137,7 @@ export async function getAnalyticsDashboard(session: Session, rawFilters: Analyt
   const maintenanceScope = worksiteFilter(session, maintenanceRecords.worksiteId)
 
   const orderWhere = and(orderScope, inArray(purchaseOrders.status, ACTIVE_ORDER_STATUSES), dateFilter(filters, purchaseOrders.createdAt), filters.worksiteId ? eq(purchaseOrders.worksiteId, filters.worksiteId) : undefined, filters.supplierId ? eq(purchaseOrders.supplierId, filters.supplierId) : undefined)
-  const previousOrderWhere = and(orderScope, inArray(purchaseOrders.status, ACTIVE_ORDER_STATUSES), gte(purchaseOrders.createdAt, previous.fromDate), lte(purchaseOrders.createdAt, `${previous.toDate}T23:59:59`), filters.worksiteId ? eq(purchaseOrders.worksiteId, filters.worksiteId) : undefined, filters.supplierId ? eq(purchaseOrders.supplierId, filters.supplierId) : undefined)
+  const previousOrderWhere = and(orderScope, inArray(purchaseOrders.status, ACTIVE_ORDER_STATUSES), chileDayRange(purchaseOrders.createdAt, previous.fromDate, previous.toDate), filters.worksiteId ? eq(purchaseOrders.worksiteId, filters.worksiteId) : undefined, filters.supplierId ? eq(purchaseOrders.supplierId, filters.supplierId) : undefined)
   // Analítica es un tablero de gasto: mismo predicado contable que reportes,
   // ciclo, Flota y estados de cuenta (lib/combustibles/load-status.ts).
   const fuelWhere = and(accountableFuelLoadsWhere(), fuelScope, gte(fuelLoads.loadDate, filters.fromDate), lte(fuelLoads.loadDate, filters.toDate), filters.worksiteId ? eq(fuelLoads.worksiteId, filters.worksiteId) : undefined, filters.vehicleId ? eq(fuelLoads.vehicleId, filters.vehicleId) : undefined)
@@ -154,7 +155,7 @@ export async function getAnalyticsDashboard(session: Session, rawFilters: Analyt
       : Promise.resolve([]),
     db.select({ pendingApprovals: sql<number>`COUNT(*) FILTER (WHERE ${purchaseRequestItems.status} = 'requested')` }).from(purchaseRequestItems).innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id)).where(and(requestScope, filters.worksiteId ? eq(purchaseRequests.worksiteId, filters.worksiteId) : undefined, dateFilter(filters, purchaseRequests.createdAt))),
     db.select({ criticalStockCount: sql<number>`COUNT(*) FILTER (WHERE ${worksiteStock.minStock} > 0 AND ${worksiteStock.quantity} < ${worksiteStock.minStock})` }).from(worksiteStock).where(and(stockScope, filters.worksiteId ? eq(worksiteStock.worksiteId, filters.worksiteId) : undefined)),
-    db.select({ month: sql<string>`to_char(${purchaseOrders.createdAt}, 'YYYY-MM')`, module: sql<string>`'Compras'`, totalAmount: sql<number>`COALESCE(SUM(${purchaseOrders.totalAmount}), 0)` }).from(purchaseOrders).where(orderWhere).groupBy(sql`to_char(${purchaseOrders.createdAt}, 'YYYY-MM')`).orderBy(sql`to_char(${purchaseOrders.createdAt}, 'YYYY-MM')`),
+    db.select({ month: chileMonthExpr(purchaseOrders.createdAt), module: sql<string>`'Compras'`, totalAmount: sql<number>`COALESCE(SUM(${purchaseOrders.totalAmount}), 0)` }).from(purchaseOrders).where(orderWhere).groupBy(chileMonthExpr(purchaseOrders.createdAt)).orderBy(chileMonthExpr(purchaseOrders.createdAt)),
     canViewFuelCosts
       ? db.select({ month: fuelLoads.month, module: sql<string>`'Combustible'`, totalAmount: sql<number>`COALESCE(SUM(${fuelLoads.totalAmount}), 0)` }).from(fuelLoads).where(fuelWhere).groupBy(fuelLoads.month).orderBy(fuelLoads.month)
       : Promise.resolve([]),
@@ -188,8 +189,8 @@ export async function getAnalyticsDashboard(session: Session, rawFilters: Analyt
         .orderBy(fuelLoads.vehicleId, desc(fuelLoads.loadDate), desc(fuelLoads.createdAt))
       : Promise.resolve([]),
     db.select({ productId: products.id, productName: products.name, sku: products.sku, worksiteName: worksites.name, currentQty: worksiteStock.quantity, minStock: worksiteStock.minStock }).from(worksiteStock).innerJoin(products, eq(worksiteStock.productId, products.id)).innerJoin(worksites, eq(worksiteStock.worksiteId, worksites.id)).where(and(stockScope, filters.worksiteId ? eq(worksiteStock.worksiteId, filters.worksiteId) : undefined, sql`${worksiteStock.minStock} > 0 AND ${worksiteStock.quantity} < ${worksiteStock.minStock}`)).orderBy(sql`${worksiteStock.quantity} - ${worksiteStock.minStock}`).limit(10),
-    db.select({ productId: products.id, productName: products.name, sku: products.sku, totalOut: sql<number>`COALESCE(SUM(ABS(${inventoryMovements.quantity})), 0)`, movementCount: sql<number>`COUNT(*)` }).from(inventoryMovements).innerJoin(products, eq(inventoryMovements.productId, products.id)).where(and(movementScope, filters.worksiteId ? eq(inventoryMovements.worksiteId, filters.worksiteId) : undefined, gte(inventoryMovements.performedAt, filters.fromDate), lte(inventoryMovements.performedAt, `${filters.toDate}T23:59:59`), eq(inventoryMovements.type, "egreso_entrega"))).groupBy(products.id, products.name, products.sku).orderBy(desc(sql`COALESCE(SUM(ABS(${inventoryMovements.quantity})), 0)`)).limit(10),
-    db.select({ productId: products.id, productName: products.name, workerName: sql<string>`COALESCE(${workers.firstName} || ' ' || ${workers.lastName}, ${deliveries.receiverName}, 'Sin trabajador')`, worksiteName: worksites.name, totalQty: sql<number>`COALESCE(SUM(${deliveryItems.quantity}), 0)`, deliveryCount: sql<number>`COUNT(*)` }).from(deliveryItems).innerJoin(deliveries, eq(deliveryItems.deliveryId, deliveries.id)).leftJoin(workers, eq(deliveries.workerId, workers.id)).leftJoin(worksites, eq(deliveries.worksiteId, worksites.id)).leftJoin(products, eq(deliveryItems.productId, products.id)).leftJoin(productCategories, eq(products.categoryId, productCategories.id)).where(and(deliveryScope, filters.worksiteId ? eq(deliveries.worksiteId, filters.worksiteId) : undefined, gte(deliveries.deliveredAt, filters.fromDate), lte(deliveries.deliveredAt, `${filters.toDate}T23:59:59`), sql`(${products.isEpp} = true OR ${productCategories.isEpp} = true)`)).groupBy(products.id, products.name, workers.firstName, workers.lastName, deliveries.receiverName, worksites.name).orderBy(desc(sql`COALESCE(SUM(${deliveryItems.quantity}), 0)`)).limit(10),
+    db.select({ productId: products.id, productName: products.name, sku: products.sku, totalOut: sql<number>`COALESCE(SUM(ABS(${inventoryMovements.quantity})), 0)`, movementCount: sql<number>`COUNT(*)` }).from(inventoryMovements).innerJoin(products, eq(inventoryMovements.productId, products.id)).where(and(movementScope, filters.worksiteId ? eq(inventoryMovements.worksiteId, filters.worksiteId) : undefined, chileDayRange(inventoryMovements.performedAt, filters.fromDate, filters.toDate), eq(inventoryMovements.type, "egreso_entrega"))).groupBy(products.id, products.name, products.sku).orderBy(desc(sql`COALESCE(SUM(ABS(${inventoryMovements.quantity})), 0)`)).limit(10),
+    db.select({ productId: products.id, productName: products.name, workerName: sql<string>`COALESCE(${workers.firstName} || ' ' || ${workers.lastName}, ${deliveries.receiverName}, 'Sin trabajador')`, worksiteName: worksites.name, totalQty: sql<number>`COALESCE(SUM(${deliveryItems.quantity}), 0)`, deliveryCount: sql<number>`COUNT(*)` }).from(deliveryItems).innerJoin(deliveries, eq(deliveryItems.deliveryId, deliveries.id)).leftJoin(workers, eq(deliveries.workerId, workers.id)).leftJoin(worksites, eq(deliveries.worksiteId, worksites.id)).leftJoin(products, eq(deliveryItems.productId, products.id)).leftJoin(productCategories, eq(products.categoryId, productCategories.id)).where(and(deliveryScope, filters.worksiteId ? eq(deliveries.worksiteId, filters.worksiteId) : undefined, chileDayRange(deliveries.deliveredAt, filters.fromDate, filters.toDate), sql`(${products.isEpp} = true OR ${productCategories.isEpp} = true)`)).groupBy(products.id, products.name, workers.firstName, workers.lastName, deliveries.receiverName, worksites.name).orderBy(desc(sql`COALESCE(SUM(${deliveryItems.quantity}), 0)`)).limit(10),
     db.select({ id: purchaseOrders.id, code: purchaseOrders.code, worksiteName: worksites.name, supplierName: suppliers.name, totalAmount: purchaseOrders.totalAmount, createdAt: purchaseOrders.createdAt }).from(purchaseOrders).innerJoin(worksites, eq(purchaseOrders.worksiteId, worksites.id)).innerJoin(suppliers, eq(purchaseOrders.supplierId, suppliers.id)).where(orderWhere).orderBy(desc(purchaseOrders.createdAt)).limit(8),
     canViewMaintenanceCosts
       ? db.select({ vehicleId: maintenanceRecords.vehicleId, totalMaintenanceAmount: sql<number>`COALESCE(SUM(${maintenanceRecords.totalAmount}), 0)`, maintenanceCount: sql<number>`COUNT(*)` }).from(maintenanceRecords).where(maintenanceWhere).groupBy(maintenanceRecords.vehicleId)

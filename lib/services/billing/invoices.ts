@@ -30,6 +30,7 @@ import { nanoid } from "@/lib/id"
 import { addAmounts, compareAmounts, subtractAmounts, sumAmounts, absAmount } from "./money"
 import { applyCreditSign } from "./dte-xml"
 import type { ProviderInvoice } from "./providers/types"
+import { describeCrossBookMatch, findInPurchasingBook } from "@/lib/services/purchasing-module/supplier-document-crosscheck"
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 type DbOrTx = typeof db | Tx
@@ -296,6 +297,30 @@ export async function upsertProviderInvoice(
       detail: { provider, externalId: invoice.externalId, documentStatus: invoice.documentStatus },
     })
 
+    // E2E-003: el mismo documento de proveedor puede estar ya adjunto a una OC
+    // en `purchase_order_invoices`, un libro que este no conoce. Cuál de los dos
+    // manda es una decisión de producto; mientras no se tome, al menos queda
+    // constancia de que el documento entró dos veces por puertas distintas.
+    if (invoice.direction === "purchase") {
+      const twin = await findInPurchasingBook(
+        { issuerTaxId: invoice.issuerTaxId, folio: invoice.folio, docType: invoice.docType },
+        tx,
+      )
+      if (twin) {
+        await recordInvoiceEvent(tx, {
+          invoiceId,
+          eventType: "invoice.crossbook_duplicate",
+          actorKind: "system",
+          detail: {
+            book: "purchasing",
+            purchaseOrderInvoiceId: twin.id,
+            purchaseOrderCode: twin.purchaseOrderCode ?? null,
+            message: describeCrossBookMatch(twin),
+          },
+        })
+      }
+    }
+
     return { outcome: "inserted", invoiceId, changedFields: [] }
   }
 
@@ -551,6 +576,26 @@ export interface PaymentStatusSnapshot {
  * la MISMA dirección que el documento — un pago negativo no cubre una factura
  * positiva.
  */
+/**
+ * Saldo pendiente de un documento, medido EN SU DIRECCIÓN y **nunca negativo**.
+ *
+ * FVE-003: antes cada consumidor calculaba `total − pagado` por su cuenta y una
+ * factura sobrepagada devolvía un pendiente NEGATIVO, que al sumarse en
+ * cualquier cartera restaba de más y compensaba deuda real de otras facturas.
+ * Un documento cubierto de sobra no tiene nada pendiente: el exceso se lee
+ * comparando `paidAmount` con el total, no como deuda con signo cambiado.
+ *
+ * Lo que sí se conserva es el caso contrario: una cobertura de signo opuesto
+ * (un ajuste negativo sobre una factura positiva) hace CRECER lo pendiente por
+ * encima del total, y eso no se recorta.
+ */
+export function outstandingAmountFor(totalAmount: number, paidAmount: number): number {
+  const total = absAmount(totalAmount)
+  const covered = compareAmounts(totalAmount, 0) < 0 ? subtractAmounts(0, paidAmount) : paidAmount
+  if (compareAmounts(covered, total) >= 0) return 0
+  return addAmounts(total, -covered)
+}
+
 export function derivePaymentStatus(
   totalAmount: number,
   confirmedPayments: readonly number[],
@@ -562,7 +607,7 @@ export function derivePaymentStatus(
   // la suma hacía que un ajuste negativo sobre una factura positiva se leyera
   // como cobertura completa y la sacara de la cobranza.
   const paid = compareAmounts(totalAmount, 0) < 0 ? subtractAmounts(0, paidAmount) : paidAmount
-  const outstandingAmount = addAmounts(total, -paid)
+  const outstandingAmount = outstandingAmountFor(totalAmount, paidAmount)
 
   // Sin cobertura, o cobertura de signo contrario: no está pagada, y lo
   // pendiente crece en vez de bajar.
@@ -576,6 +621,9 @@ export function derivePaymentStatus(
   if (comparison === 0) {
     return { paidAmount, paymentStatus: "paid", outstandingAmount: 0 }
   }
+  // FVE-003: el sobrepago devolvía aquí `total − pagado`, es decir un número
+  // NEGATIVO, mientras que el caso `paid` devolvía 0. Ahora `outstandingAmount`
+  // ya viene recortado por `outstandingAmountFor`.
   return { paidAmount, paymentStatus: "overpaid", outstandingAmount }
 }
 

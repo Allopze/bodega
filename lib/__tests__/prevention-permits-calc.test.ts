@@ -18,6 +18,7 @@ const type = (over: Partial<PermitTypeSpec> = {}): PermitTypeSpec => ({
   requiresIsolation: false,
   requiresMeasurement: false,
   requiresJsa: true,
+  requiresCrewAcknowledgement: true,
   measurementValidityMinutes: null,
   measurementCalibrationValidityDays: null,
   maxDurationHours: 12,
@@ -37,6 +38,9 @@ const crew = (over: Partial<PermitCrewRow> = {}): PermitCrewRow => ({
   id: "cr-1",
   workerId: "w-1",
   label: "Pérez, Ana",
+  // PER-001: por defecto el integrante YA acusó el AST, para que el resto de
+  // los escenarios sigan probando lo suyo y no el acuse.
+  acknowledgedAt: "2026-07-19T11:00:00.000Z",
   ...over,
 })
 
@@ -71,6 +75,83 @@ function assess(over: Partial<Parameters<typeof assessPermitActivation>[0]> = {}
     ...over,
   })
 }
+
+/**
+ * CAP-001 (auditoría 2026-09-14), patrón P7: un requisito de competencia se
+ * declara `blocking` o `warning`, y esa marca **no se consultaba** en el único
+ * punto donde una competencia impide operar. Era decorativa en las dos
+ * direcciones: un requisito «bloqueante» no impedía nada fuera del permiso, y
+ * uno de «advertencia» sí impedía abrirlo. Quien configuraba el catálogo no
+ * podía predecir el efecto de lo que elegía.
+ */
+describe("CAP-001 — la marca de un requisito de competencia gobierna", () => {
+  it("una brecha de un requisito BLOQUEANTE impide activar", () => {
+    const result = assess({ crewWithoutCompetency: [crew()] })
+    expect(result.allowed).toBe(false)
+    expect(result.blockers.map((b) => b.kind)).toContain("crew_competency")
+    expect(result.blockers.find((b) => b.kind === "crew_competency")?.detail).toContain("BLOQUEANTE")
+  })
+
+  it("una de un requisito de ADVERTENCIA no impide activar", () => {
+    // Éste es el cambio: antes cualquier brecha bloqueaba, incluida la que el
+    // catálogo marcaba explícitamente como advertencia.
+    const result = assess({ crewWithoutCompetency: [], crewWithCompetencyWarning: [crew()] })
+    expect(result).toEqual({ allowed: true, blockers: [] })
+  })
+
+  it("con las dos, manda la bloqueante", () => {
+    const result = assess({ crewWithoutCompetency: [crew()], crewWithCompetencyWarning: [crew()] })
+    expect(result.allowed).toBe(false)
+    expect(result.blockers.filter((b) => b.kind === "crew_competency")).toHaveLength(1)
+  })
+
+  it("no pasar la lista de advertencias significa «ninguna», no «se desconoce»", () => {
+    // Los llamadores que aún no la pasan no deben empezar a bloquear de más ni
+    // de menos por omisión.
+    expect(assess({ crewWithoutCompetency: [] })).toEqual({ allowed: true, blockers: [] })
+  })
+})
+
+/**
+ * PER-001 (auditoría 2026-09-14): el acuse del AST por la cuadrilla existía
+ * —sólo el propio integrante, de un solo uso, sellado con SHA-256— pero no
+ * figuraba entre los doce bloqueadores de activación: el permiso pasaba a
+ * `active` con cero acuses. El registro de que la cuadrilla fue informada de
+ * los riesgos antes de entrar a un espacio confinado o hacer trabajo en
+ * caliente no condicionaba la autorización, mientras todos los demás controles
+ * de alto riesgo sí lo hacían.
+ */
+describe("PER-001 — el acuse del AST condiciona la activación", () => {
+  it("bloquea mientras un integrante no ha acusado el AST", () => {
+    const result = assess({ crew: [crew({ acknowledgedAt: null })] })
+    expect(result.allowed).toBe(false)
+    expect(result.blockers.map((b) => b.kind)).toContain("crew_ack_missing")
+    expect(result.blockers.find((b) => b.kind === "crew_ack_missing")?.detail).toContain("Pérez, Ana")
+  })
+
+  it("nombra a cada integrante que falta, no sólo al primero", () => {
+    const result = assess({
+      crew: [
+        crew({ acknowledgedAt: null }),
+        crew({ id: "cr-2", workerId: "w-2", label: "Soto, Bruno", acknowledgedAt: null }),
+        crew({ id: "cr-3", workerId: "w-3", label: "Díaz, Carla" }),
+      ],
+    })
+    expect(result.blockers.filter((b) => b.kind === "crew_ack_missing")).toHaveLength(2)
+  })
+
+  it("habilita cuando toda la cuadrilla acusó", () => {
+    expect(assess({ crew: [crew(), crew({ id: "cr-2", workerId: "w-2", label: "Soto, Bruno" })] }))
+      .toEqual({ allowed: true, blockers: [] })
+  })
+
+  it("un tipo que no exige el acuse no bloquea por él", () => {
+    // El bloqueo es configurable por tipo: ésa es la salida que sanciona el
+    // plan de remediación, no un bloqueo universal impuesto por el código.
+    const result = assess({ type: type({ requiresCrewAcknowledgement: false }), crew: [crew({ acknowledgedAt: null })] })
+    expect(result).toEqual({ allowed: true, blockers: [] })
+  })
+})
 
 describe("habilitación de un permiso de trabajo", () => {
   it("habilita cuando todo está cumplido", () => {

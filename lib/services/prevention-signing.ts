@@ -25,7 +25,34 @@
  * - No es un `override` con motivo escrito. `prevention:capa:override_segregation`
  *   y sus pares son otra cosa —una excepción puntual y justificada por caso—;
  *   ésta es permanente y por cargo, así que su control es a quién se otorga.
+ *
+ * INC-002 (auditoría 2026-09-14) — Lo que se corrigió y lo que no.
+ *
+ * El hallazgo: `prevention:sign_own_work` está concedida al rol
+ * `prevencionista`, que en una faena es también quien ejecuta las
+ * inspecciones, redacta la MIPER, propone la CAPA y participa en las
+ * investigaciones. Los tres dominios que construyeron segregación comparten
+ * esa misma llave, y a diferencia de los `*:override_segregation` —puntuales,
+ * con motivo escrito y sólo para `administrador`— ésta se ejercía sin dejar
+ * nada: `canSignOwnWork` devolvía un booleano y el registro quedaba idéntico
+ * al de una firma con dos personas distintas.
+ *
+ * Lo corregible sin inventar política: que el uso de la excepción sea un
+ * **hecho registrado**. `resolveOwnWorkSigning` distingue las tres
+ * situaciones —no hay a quién separar, hay que separar y se separó, hay que
+ * separar y la excepción lo permitió— y devuelve `usedException` para que el
+ * llamador lo escriba en su bitácora. Una firma propia deja de ser
+ * indistinguible de una firma ajena.
+ *
+ * Lo que queda por decidir, y no se decide acá: **a qué rol pertenece la
+ * excepción**. Quitársela a `prevencionista` —o exigir un motivo por caso,
+ * como los `override_segregation`— cambia quién puede cerrar el trabajo de
+ * cada día en faenas que tienen una sola persona de prevención. Es una
+ * decisión de la organización sobre su propio sistema de gestión; la
+ * plataforma no la declara en ninguna parte y este archivo no se la inventa.
  */
+
+import { requireDifferentActor } from "@/lib/auth/segregation"
 
 /** El permiso que exime de la segregación del último eslabón. */
 export const SIGN_OWN_WORK_PERMISSION = "prevention:sign_own_work"
@@ -40,4 +67,43 @@ export const SIGN_OWN_WORK_PERMISSION = "prevention:sign_own_work"
  */
 export function canSignOwnWork(permissions: readonly string[]): boolean {
   return permissions.includes(SIGN_OWN_WORK_PERMISSION)
+}
+
+export interface OwnWorkSigningDecision {
+  /** Si la firma puede seguir adelante. */
+  ok: boolean
+  /**
+   * Si para seguir adelante hizo falta la excepción, es decir: el actor
+   * participó en la etapa previa y sólo `prevention:sign_own_work` lo
+   * habilita. El llamador debe registrarlo en su bitácora (INC-002).
+   */
+  usedException: boolean
+  /** Por qué no, en lenguaje que pueda leer quien lo intentó. */
+  message?: string
+}
+
+/**
+ * La decisión completa de la firma del último eslabón, en un solo lugar.
+ *
+ * Se apoya en `requireDifferentActor` (`lib/auth/segregation.ts`) para la
+ * mitad que no depende de permisos: si la etapa previa la firmó otra persona
+ * —o no la firmó nadie, que es un acto del sistema— no hay excepción que
+ * consumir y `usedException` queda en `false`. La excepción sólo entra en
+ * juego cuando de verdad haría falta separar.
+ */
+export function resolveOwnWorkSigning(args: {
+  /** Quién firmó la etapa previa (investigó, aprobó, elaboró). */
+  signedByUserId: string | null | undefined
+  actorUserId: string
+  permissions: readonly string[]
+  /** Qué acto es, para el mensaje: "cerrar el incidente", "publicar la matriz". */
+  what: string
+}): OwnWorkSigningDecision {
+  const separation = requireDifferentActor(
+    { actedByUserId: args.signedByUserId, actorUserId: args.actorUserId },
+    args.what,
+  )
+  if (separation.ok) return { ok: true, usedException: false }
+  if (canSignOwnWork(args.permissions)) return { ok: true, usedException: true }
+  return { ok: false, usedException: false, message: separation.message }
 }

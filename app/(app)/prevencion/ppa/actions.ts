@@ -22,6 +22,7 @@ import {
   type PpaStats,
 } from "@/lib/services/ppa"
 import {
+  ppaCorrectionDeclareSchema,
   ppaReviewSchema,
   type ActionState,
   type PpaAuthorizeRestartInput,
@@ -127,8 +128,25 @@ export async function reviewPpaAction(
 export async function declarePpaCorrectionAction(input: PpaCorrectionDeclareInput): Promise<ActionState> {
   const { session, error } = await guardPermission("ppa:correct")
   if (error) return error
+
+  /*
+   * PPAI-003 (auditoría 2026-09-14): esta acción recibía la entrada del cliente
+   * y la pasaba al servicio sin validarla —la revisión, unas líneas más arriba,
+   * sí lo hacía—. El esquema es donde vive la exigencia de decir qué controles
+   * se implementaron, así que sin este `safeParse` la regla no existía en el
+   * servidor por más que el formulario la mostrara.
+   */
+  const parsed = ppaCorrectionDeclareSchema.safeParse(input)
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: "Revisa los campos del formulario.",
+      fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    }
+  }
+
   try {
-    const updated = await declarePpaCorrection(input, operationAccess(session))
+    const updated = await declarePpaCorrection(parsed.data, operationAccess(session))
     refreshPpa(updated.id)
     return { ok: true, message: "Controles enviados a verificación" }
   } catch (e) {

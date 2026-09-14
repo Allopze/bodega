@@ -26,7 +26,7 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm"
 import { createHash } from "node:crypto"
 import { db, type DB, type Tx } from "@/db"
-import { canSignOwnWork } from "@/lib/services/prevention-signing"
+import { resolveOwnWorkSigning } from "@/lib/services/prevention-signing"
 import {
   preventionCapaActions,
   preventionGrdAgreements,
@@ -503,7 +503,15 @@ export async function transitionGrdMatrix(input: unknown, access: CgrdAccess) {
     /* Y publicar, de la aprobación. El contrato de cumplimiento describe la
      * matriz GRD como firmas segregadas; hasta acá la cuarta no comprobaba
      * nada. La jefatura técnica del área queda exenta. */
-    if (data.toStatus === "published" && matrix.approvedByUserId === access.userId && !canSignOwnWork(access.permissions)) {
+    /* INC-002: la excepción por cargo deja constancia; antes se ejercía sin
+     * distinguirse de una firma con dos personas distintas. */
+    const signing = resolveOwnWorkSigning({
+      signedByUserId: data.toStatus === "published" ? matrix.approvedByUserId : null,
+      actorUserId: access.userId,
+      permissions: access.permissions,
+      what: "Publicar la matriz GRD",
+    })
+    if (!signing.ok) {
       throw new Error("Quien aprobó la matriz GRD no puede publicarla: debe firmarla otra persona.")
     }
 
@@ -547,8 +555,12 @@ export async function transitionGrdMatrix(input: unknown, access: CgrdAccess) {
 
     await recordGrdHistory(tx, {
       entityType: "grd_matrix", entityId: matrix.id, worksiteId: matrix.worksiteId,
-      changeType: data.toStatus, reason: data.reason,
-      beforeState: { status: matrix.status, version: matrix.version }, afterState: { status: updated.status, version: updated.version, sourceHash },
+      changeType: data.toStatus,
+      reason: signing.usedException
+        ? `${data.reason ?? ""} [Firma propia: publicada por quien la aprobó, con la excepción prevention:sign_own_work.]`.trim()
+        : data.reason,
+      beforeState: { status: matrix.status, version: matrix.version },
+      afterState: { status: updated.status, version: updated.version, sourceHash, ownWorkExceptionUsed: signing.usedException },
       actorUserId: access.userId,
     })
 

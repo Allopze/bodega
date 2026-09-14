@@ -14,6 +14,7 @@ import {
   addCapaFollowupWithClient,
   transitionCapaActionWithClient,
 } from "@/lib/services/prevention-capa"
+import { classifyEvidence } from "@/lib/validation/evidence-contract"
 
 function capaAccess(userId: string) {
   return {
@@ -29,6 +30,8 @@ export type PdtpFollowupInput = {
   estadoNuevo?: string
   evidenciaUrl?: string
   evidenciaPhotos?: string[]
+  /** Checksum por ruta, calculado en la subida (P4). */
+  evidenciaChecksums?: Record<string, string>
 }
 
 /** Registra un followup y opcionalmente transiciona el estado de la acción. */
@@ -46,12 +49,23 @@ export async function addFollowup(input: PdtpFollowupInput, userId: string) {
     let capa = initialCapa
     const access = capaAccess(userId)
 
+    /*
+     * P4 (auditoría 2026-09-14): esto etiquetaba `evidenciaUrl` como
+     * `kind: "document"` y cada `evidenciaPhotos` como `kind: "photo"`, fuera
+     * cual fuera su contenido. Un enlace guardado como documento es el mismo
+     * mal etiquetado que el patrón describe, sólo que del lado del escritor.
+     *
+     * `classifyEvidence` mira el contenido: una ruta del storage es un archivo,
+     * una URL es un enlace, y lo demás es una anotación —que se guarda igual,
+     * pero diciendo lo que es y sin sostener una verificación—.
+     */
     if (input.evidenciaUrl) {
       const result = await addCapaEvidenceWithClient(tx, {
         actionId: capa.id,
         expectedVersion: capa.version,
-        kind: "document",
+        kind: classifyEvidence(input.evidenciaUrl, "document"),
         reference: input.evidenciaUrl,
+        checksumSha256: input.evidenciaChecksums?.[input.evidenciaUrl] ?? null,
         description: input.observacion || "Evidencia documental PDTP",
       }, access)
       capa = result.action!
@@ -60,8 +74,9 @@ export async function addFollowup(input: PdtpFollowupInput, userId: string) {
       const result = await addCapaEvidenceWithClient(tx, {
         actionId: capa.id,
         expectedVersion: capa.version,
-        kind: "photo",
+        kind: classifyEvidence(photo, "photo"),
         reference: photo,
+        checksumSha256: input.evidenciaChecksums?.[photo] ?? null,
         description: input.observacion || "Evidencia fotográfica PDTP",
       }, access)
       capa = result.action!

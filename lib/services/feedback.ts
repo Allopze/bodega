@@ -134,7 +134,25 @@ export async function createReport(
 
 // ── getReport ─────────────────────────────────────────────────────────────────
 
-export async function getReport(id: string): Promise<FeedbackRow | null> {
+/**
+ * SOP-002 (auditoría 2026-09-14) — la nota interna la devolvía el servicio a
+ * cualquier lector autorizado.
+ *
+ * `getReport` incluía `notaInterna` en su proyección sin mirar permisos. No
+ * había fuga: la ficha es un componente de servidor que la pintaba dentro de
+ * `canManage && …`. Pero el filtro vivía en la vista y no en el servicio, de
+ * modo que cualquier consumidor futuro —una exportación, una API, un
+ * componente de cliente— la habría recibido por omisión.
+ *
+ * Se resuelve como ya lo resolvía el módulo de tickets TI
+ * (`getTicketComments(id, includeInternal)`): el permiso entra como argumento
+ * explícito y el valor por defecto es no entregarla. Quien la necesite tiene
+ * que pedirla y, al pedirla, decir con qué permiso.
+ */
+export async function getReport(
+  id: string,
+  includeInternalNote = false,
+): Promise<FeedbackRow | null> {
   const rows = await db
     .select({
       id:          feedbackReports.id,
@@ -160,7 +178,8 @@ export async function getReport(id: string): Promise<FeedbackRow | null> {
     .limit(1)
 
   if (!rows[0]) return null
-  return rows[0] as FeedbackRow
+  const row = rows[0] as FeedbackRow
+  return includeInternalNote ? row : { ...row, notaInterna: null }
 }
 
 export async function getReportAttachments(reportId: string): Promise<FeedbackAttachmentRow[]> {

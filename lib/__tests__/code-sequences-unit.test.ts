@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const mockSelect = vi.hoisted(() => vi.fn())
 const mockExecute = vi.hoisted(() => vi.fn())
@@ -33,5 +33,56 @@ describe("nextCodeTx", () => {
       { prefix: "AJU", year: 2026, nextValue: 4, updatedAt: "" },
     ])
     expect(mockExecute).toHaveBeenCalledOnce()
+  })
+})
+
+/**
+ * FOL-001 (auditoría 2026-09-14): la corrección administrativa de folios sólo
+ * validaba `nextValue >= 1`. Fijar la serie de OC 2026 en 5 con la OC-2026-0017
+ * ya emitida era aceptado, y el índice único de `code` convertía eso en fallos
+ * de emisión diferidos, lejos de su causa. La guardia lee el piso real de la
+ * serie en los documentos emitidos, no en la secuencia —que es justamente lo
+ * que se está corrigiendo—.
+ */
+describe("setCodeSequenceNextValue — FOL-001", () => {
+  beforeEach(() => vi.resetAllMocks())
+
+  it("rechaza retroceder la serie por debajo del último folio ya emitido", async () => {
+    // Único execute esperado: el que calcula el piso. El setval no debe correr.
+    mockExecute.mockResolvedValueOnce([{ max_seq: "17" }])
+    const { setCodeSequenceNextValue } = await import("@/lib/code-sequences")
+
+    await expect(setCodeSequenceNextValue({ prefix: "OC", year: 2026, nextValue: 5 }))
+      .rejects.toThrow("La serie OC-2026 ya emitió el folio 17: el siguiente folio debe ser 18 o mayor")
+    expect(mockExecute).toHaveBeenCalledOnce()
+  })
+
+  it("rechaza también reemitir exactamente el último folio emitido", async () => {
+    mockExecute.mockResolvedValueOnce([{ max_seq: 17 }])
+    const { setCodeSequenceNextValue } = await import("@/lib/code-sequences")
+
+    await expect(setCodeSequenceNextValue({ prefix: "OC", year: 2026, nextValue: 17 }))
+      .rejects.toThrow("debe ser 18 o mayor")
+  })
+
+  it("permite adelantar la serie por encima de lo emitido, que es el caso legítimo de desincronización", async () => {
+    mockExecute
+      .mockResolvedValueOnce([{ max_seq: 17 }])            // piso emitido
+      .mockResolvedValueOnce([{ next_value: 3 }])          // valor previo de la secuencia
+      .mockResolvedValueOnce([{ next_document_code: 3 }])  // crea la secuencia si falta
+      .mockResolvedValueOnce([{ setval: 24 }])             // setval
+    const { setCodeSequenceNextValue } = await import("@/lib/code-sequences")
+
+    await expect(setCodeSequenceNextValue({ prefix: "OC", year: 2026, nextValue: 25 }))
+      .resolves.toEqual({ before: 3, after: 25 })
+    expect(mockExecute).toHaveBeenCalledTimes(4)
+  })
+
+  it("no toca una serie cuyo prefijo no está registrado, porque no puede verificar el piso", async () => {
+    const { setCodeSequenceNextValue } = await import("@/lib/code-sequences")
+
+    await expect(setCodeSequenceNextValue({ prefix: "XYZ", year: 2026, nextValue: 5 }))
+      .rejects.toThrow("No hay una serie de documentos registrada para el prefijo XYZ")
+    expect(mockExecute).not.toHaveBeenCalled()
   })
 })

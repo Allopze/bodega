@@ -46,6 +46,8 @@ function makeItem(overrides: Partial<ReceiptOcItem> = {}): ReceiptOcItem {
     quantity: 10,
     quantityOfficeReceived: 0,
     quantityReceived: 0,
+    quantityOfficeDisposed: 0,
+    quantityFaenaDisposed: 0,
     unitOfMeasure: "unidad",
     notes: null,
     ...overrides,
@@ -198,6 +200,7 @@ describe("ReceiptForm", () => {
           officeName="Administración"
           items={[{ id: "i1", requestItemId: "ri1", productName: "P", productSku: null,
                     quantity: 10, quantityOfficeReceived: 0, quantityReceived: 0,
+                    quantityOfficeDisposed: 0, quantityFaenaDisposed: 0,
                     unitOfMeasure: "unidad", notes: null }]}
           canOffice={false}
           canFaena={true}

@@ -52,7 +52,7 @@ const {
   resolvePdtpFulfillmentTarget,
   assertPdtpFulfillmentCoverage,
 } = await import("@/lib/services/pdtp/fulfillment")
-const { countPdtpFulfillmentBacklog } = await import("@/lib/services/pdtp/backlog")
+const { countPdtpFulfillmentBacklog, describePdtpRejection } = await import("@/lib/services/pdtp/backlog")
 const { computePdtpProgramContentDigest } = await import("@/lib/services/pdtp/content-digest")
 
 /* El motor sólo acredita cuando el año del programa coincide con el del
@@ -711,6 +711,45 @@ describe("countPdtpFulfillmentBacklog — el libro de cumplimiento hecho visible
     const backlog = await countPdtpFulfillmentBacklog(PROGRAM_ID)
     expect(backlog.errored).toBe(0)
     expect(backlog.lastError).toBeNull()
+  })
+
+  /**
+   * PDTP-002 (auditoría 2026-09-14) — Un evento de cumplimiento rechazado no
+   * aparecía en ninguna pantalla. El panel sólo contaba `pending` y `error`;
+   * un hecho con fecha retroactiva fuera del año del programa quedaba
+   * `rejected` y desaparecía: el trabajo se hizo, la plataforma decidió no
+   * acreditarlo y esa decisión no se veía en ninguna parte.
+   */
+  it("cuenta los hechos que el motor decidió no acreditar y dice por qué", async () => {
+    await seedProgram("active")
+    await seedActivity()
+    await recordPdtpFulfillmentEvent({
+      sourceType: "campana", sourceId: "campana-retroactiva", worksiteId: WS_ID,
+      activityNumbers: [ACT_N], occurredAt: `${PROGRAM_YEAR - 1}-05-10T12:00:00.000Z`,
+    })
+
+    const [event] = await inMemoryDb.select().from(schema.pdtpFulfillmentEvents)
+      .where(eq(schema.pdtpFulfillmentEvents.sourceId, "campana-retroactiva"))
+    expect(event?.status).toBe("rejected")
+
+    const backlog = await countPdtpFulfillmentBacklog(PROGRAM_ID)
+    expect(backlog.rejected).toBe(1)
+    // No se confunde con un fallo de cableado: el cron no lo va a reintentar.
+    expect(backlog.errored).toBe(0)
+    expect(backlog.recentRejected).toHaveLength(1)
+    expect(backlog.recentRejected[0]?.sourceId).toBe("campana-retroactiva")
+    expect(backlog.recentRejected[0]?.reason).toContain(String(PROGRAM_YEAR - 1))
+  })
+
+  it("traduce las tres razones normales de rechazo", () => {
+    expect(describePdtpRejection({ skippedOutOfPeriod: { occurredYear: 2025, programYear: 2026 } }))
+      .toMatch(/ocurrió en 2025.*cubre 2026/)
+    expect(describePdtpRejection({ skippedExcluded: [12], skippedNotFound: [] }))
+      .toMatch(/N°12 excluidas de esta faena/)
+    expect(describePdtpRejection({ skippedExcluded: [], skippedNotFound: [77] }))
+      .toMatch(/N°77 no existen/)
+    expect(describePdtpRejection({ accredited: [], skippedExcluded: [], skippedNotFound: [] }))
+      .toMatch(/no encontró ninguna actividad/)
   })
 
   it("un programa sin huella firmada (contentDigest null) nunca reporta deriva", async () => {

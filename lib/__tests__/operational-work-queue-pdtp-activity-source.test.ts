@@ -53,7 +53,9 @@ describe("cola operacional — actividades programadas del PDTP", () => {
       expires: "2099-01-01T00:00:00.000Z",
       user: {
         id: "user-pdtpq", name: "Test", email: "pdtpq@chome.cl",
-        roles, permissions: ["prevention:pdtp:view"], worksiteIds,
+        // PEND-001: la cola selecciona por el permiso de la acción que promete
+        // la CTA («Ejecutar actividad»), no por el de lectura del módulo.
+        roles, permissions: ["prevention:pdtp:view", "prevention:pdtp:execute"], worksiteIds,
         primaryWorksiteId: worksiteIds[0] ?? null,
         avatarColor: null, isActive: true,
       },

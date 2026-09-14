@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { PPA_TIPO_TRABAJO_KEYS } from "@/lib/ppa/types"
 import { validateRut } from "@/lib/rut"
+import { isValidReason, reasonRequiredMessage, reasonSchema } from "./reason-thresholds"
 
 // ── Re-export shared ActionState ──────────────────────────────────────────────
 export type { ActionState } from "./masters"
@@ -80,7 +81,25 @@ export const ppaReviewSchema = z.object({
   reviewNota:       z.string().trim().max(1000).optional().or(z.literal("")),
   })
   .superRefine((value, ctx) => {
-    if (value.decision === "rechazado") return
+    if (value.decision === "rechazado") {
+      /*
+       * PPAI-002 (auditoría 2026-09-14), patrón P6: esta rama devolvía sin
+       * validar nada. Rechazar es la decisión más terminal del flujo —el
+       * trabajo no se hace y el caso muere sin acción correctiva— y era la
+       * única sin justificación obligatoria, en una plataforma que pedía
+       * motivo para anular una guía, una entrega o un pago.
+       *
+       * No se le exige acción correctiva ni responsable, que es correcto: no
+       * hay corrección que planificar. Sí el motivo.
+       */
+      if (!isValidReason(value.reviewNota)) {
+        ctx.addIssue({
+          code: "custom", path: ["reviewNota"],
+          message: reasonRequiredMessage("por qué se rechaza el trabajo"),
+        })
+      }
+      return
+    }
     if ((value.accionCorrectiva ?? "").trim().length < 4) {
       ctx.addIssue({ code: "custom", path: ["accionCorrectiva"], message: "Describe la acción correctiva requerida antes del reinicio." })
     }
@@ -104,6 +123,14 @@ export const ppaCorrectionDeclareSchema = z.object({
   ppaId: z.string().min(1),
   expectedPpaVersion: z.number().int().positive(),
   expectedCapaVersion: z.number().int().positive(),
+  /*
+   * PPAI-003 (auditoría 2026-09-14), patrón P6: la declaración de «controles
+   * implementados» era el único eslabón del flujo sin rastro propio —ni
+   * comentario, ni referencia—, y quien verifica recibía una declaración vacía
+   * y tenía que salir a buscar si había evidencia. El paso siguiente, verificar,
+   * ya exigía comentario.
+   */
+  declaration: reasonSchema("qué controles se implementaron"),
 })
 export type PpaCorrectionDeclareInput = z.infer<typeof ppaCorrectionDeclareSchema>
 

@@ -799,6 +799,10 @@ const routeTargets: RouteTarget[] = [
   { slug: "sst-print", path: "/sst/sst-audit-1/print", auth: true },
   { slug: "ppa-form", path: "/ppa", auth: false },
   { slug: "ppa-result", path: "/ppa/result/capture-ppa-token", auth: false },
+  // INC-001 / CAP-002 / PER-002: el acuse y el reporte sin cuenta son públicos y
+  // dinámicos; sin un destino declarado el inventario no puede capturarlos y
+  // `capture-all-routes` los reclama como patrón sin fixture.
+  { slug: "acuse-publico", path: "/acuse/capacitacion/capture-ack-target/capture-ack-token", auth: false },
   { slug: "tae-form", path: "/tae", auth: false },
   { slug: "tae-access", path: "/tae/access/capture-tae-token", auth: false },
   { slug: "tae-resultado", path: "/tae/resultado/capture-tae-result-token", auth: false },

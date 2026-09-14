@@ -86,6 +86,7 @@ export default async function PermisosPage() {
           requiresIsolation: item.requiresIsolation,
           requiresMeasurement: item.requiresMeasurement,
           requiresJsa: item.requiresJsa,
+          requiresCrewAcknowledgement: item.requiresCrewAcknowledgement,
           maxDurationHours: item.maxDurationHours,
         }] : [])}
         worksites={worksites}

@@ -34,8 +34,8 @@ import {
 } from "@/db/schema"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { agingBucketFor, AGING_BUCKETS, type AgingBucketId } from "./config"
-import { addAmounts, sumByCurrency, type MoneyAmount } from "./money"
-import { daysOverdue } from "./invoices"
+import { sumByCurrency, type MoneyAmount } from "./money"
+import { daysOverdue, outstandingAmountFor } from "./invoices"
 
 export interface InvoiceFilters {
   /** Período de emisión "YYYY-MM". */
@@ -243,6 +243,18 @@ export async function listInvoices(
         count: sql<number>`count(*)::int`,
         total: sql<number>`coalesce(sum(${billingInvoices.totalAmount}), 0)::float8`,
         paid: sql<number>`coalesce(sum(${billingInvoices.paidAmount}), 0)::float8`,
+        // FVE-003: `sum(total) - sum(paid)` dejaba que una factura SOBREPAGADA
+        // aportara un pendiente negativo y neteara la deuda real de las demás.
+        // El recorte tiene que ser POR DOCUMENTO —de ahí el `greatest` dentro
+        // del `sum`— y usa la misma regla de dirección que
+        // `outstandingAmountFor`: una NC (total negativo) se cubre con pagos
+        // negativos, y una cobertura de signo contrario hace crecer lo
+        // pendiente en vez de recortarlo.
+        outstanding: sql<number>`coalesce(sum(greatest(
+          abs(${billingInvoices.totalAmount})
+            - (case when ${billingInvoices.totalAmount} < 0 then -${billingInvoices.paidAmount} else ${billingInvoices.paidAmount} end),
+          0
+        )), 0)::float8`,
       })
       .from(billingInvoices)
       .where(where)
@@ -272,7 +284,7 @@ export async function listInvoices(
         taxAmount: row.taxAmount,
         totalAmount: row.totalAmount,
         paidAmount: row.paidAmount,
-        outstandingAmount: addAmounts(row.totalAmount, -row.paidAmount),
+        outstandingAmount: outstandingAmountFor(row.totalAmount, row.paidAmount),
         documentStatus: row.documentStatus,
         paymentStatus: row.paymentStatus,
         collectionStatus: row.collectionStatus,
@@ -292,7 +304,7 @@ export async function listInvoices(
     pageSize,
     totalsByCurrency: sumByCurrency(aggregates.map((row) => ({ currency: row.currency, amount: row.total }))),
     outstandingByCurrency: sumByCurrency(
-      aggregates.map((row) => ({ currency: row.currency, amount: addAmounts(row.total, -row.paid) })),
+      aggregates.map((row) => ({ currency: row.currency, amount: row.outstanding })),
     ),
   }
 }
@@ -477,7 +489,7 @@ export async function getInvoiceDetail(session: Session | null, invoiceId: strin
     payments,
     collectionActions,
     events,
-    outstandingAmount: addAmounts(invoice.totalAmount, -invoice.paidAmount),
+    outstandingAmount: outstandingAmountFor(invoice.totalAmount, invoice.paidAmount),
     daysOverdue: invoice.dueDate ? daysOverdue(invoice.dueDate, today) : null,
     /** Diferencias entre lo que reportó cada fuente externa. */
     sourceDifferences: computeSourceDifferences(externalRefs),

@@ -1,5 +1,6 @@
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
+import { eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import type { Session } from "next-auth"
@@ -17,8 +18,10 @@ vi.mock("@/db", () => ({
 }))
 
 import {
+  listTraceabilityIntegrityCases,
   resolveTraceabilityIntegrityCase,
   scanTraceabilityIntegrity,
+  scanTraceabilityIntegrityAsSystem,
 } from "@/lib/services/traceability-integrity-cases"
 
 const now = "2026-08-09T12:00:00.000Z"
@@ -129,6 +132,9 @@ describe("traceability integrity case resolution", () => {
     expect(resolutions).toHaveLength(0)
   })
 
+  // TRZ-002: la unicidad pasó a ser por ocurrencia. Esta prueba sigue siendo
+  // válida —cerrar dos veces la MISMA ocurrencia sigue prohibido— y lo que ya
+  // no consagra es que el caso quede cerrado para siempre.
   it("appends one resolution and prevents a second resolution for the same case", async () => {
     const input = {
       caseId: "integrity-case-resolve-once",
@@ -245,4 +251,147 @@ describe("traceability integrity case resolution", () => {
     const resolutions = await inMemoryDb.select().from(schema.traceabilityIntegrityResolutions)
     expect(resolutions.some((r) => r.compensatingMovementId === "integrity-adjustment-sufficient")).toBe(true)
   })
+
+  /**
+   * TRZ-001 (auditoría 2026-09-14): el escaneo recortaba por el alcance de
+   * quien pulsaba el botón, de modo que una persona de faena sólo revisaba las
+   * suyas y la cobertura global dependía de que un usuario global entrara a la
+   * pantalla. La variante de sistema existe justamente para eso.
+   */
+  describe("TRZ-001 — cobertura del escaneo programado", () => {
+    async function seedFindingInOtherWorksite() {
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: "trz-request-other", code: "SOL-TRZ-OTHER", worksiteId: "integrity-ws-other",
+        requesterId: "integrity-user", requestType: "epp", urgency: "normal",
+        status: "approved", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: "trz-item-other", requestId: "trz-request-other", productId: "integrity-product",
+        quantity: 5, unitOfMeasure: "unidad", status: "received", createdAt: now, updatedAt: now,
+      })
+      // Entrega sin recepción en faena: es el hallazgo que este libro detecta y
+      // que el libro nuevo (el que sí tenía cron) no mira.
+      await inMemoryDb.insert(schema.deliveries).values({
+        id: "trz-delivery-other", code: "ENT-TRZ-OTHER", deliveredBy: "integrity-user",
+        deliveredAt: now, destinationType: "faena", worksiteId: "integrity-ws-other", createdAt: now,
+      })
+      await inMemoryDb.insert(schema.deliveryItems).values({
+        id: "trz-delivery-item-other", deliveryId: "trz-delivery-other",
+        requestItemId: "trz-item-other", productId: "integrity-product",
+        quantity: 5, unitOfMeasure: "unidad",
+      })
+    }
+
+    it("una sesión acotada a su faena no ve el problema de la faena vecina", async () => {
+      await seedFindingInOtherWorksite()
+      const deFaena = {
+        ...session,
+        user: { ...session.user, isGlobal: false, worksiteIds: ["integrity-ws"] },
+      } as Session
+
+      const result = await scanTraceabilityIntegrity(deFaena)
+      expect(result.findings.some((f) => f.worksiteId === "integrity-ws-other")).toBe(false)
+    })
+
+    it("el escaneo de sistema sí lo ve: no depende de quién lo dispare", async () => {
+      const result = await scanTraceabilityIntegrityAsSystem()
+      expect(result.findings.some((f) => f.worksiteId === "integrity-ws-other")).toBe(true)
+    })
+
+    it("registra el caso una vez: correr el cron a diario no acumula duplicados", async () => {
+      const primera = await scanTraceabilityIntegrityAsSystem()
+      const segunda = await scanTraceabilityIntegrityAsSystem()
+      expect(primera.findings.length).toBe(segunda.findings.length)
+      expect(segunda.recordedCount).toBe(0)
+    })
+  })
+
+  /**
+   * TRZ-002 (auditoría 2026-09-14): un caso se cerraba por declaración
+   * (`acknowledge`, sólo un motivo) y quedaba cerrado **para siempre**: el
+   * índice único por caso impedía una segunda resolución y `finding_key`
+   * único impedía que el escaneo lo recreara. Si el descuadre persistía, el
+   * libro decía "regularizado" sobre algo que seguía roto.
+   *
+   * Antes de la corrección, la última aserción de la primera prueba fallaba
+   * (`reopenedCount` era estructuralmente 0) y la resolución posterior
+   * lanzaba "Este caso ya fue regularizado".
+   */
+  describe("TRZ-002 — reapertura de un caso que sigue descuadrado", () => {
+    beforeAll(async () => {
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: "trz002-request", code: "SOL-TRZ002", worksiteId: "integrity-ws",
+        requesterId: "integrity-user", requestType: "epp", urgency: "normal",
+        status: "approved", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: "trz002-item", requestId: "trz002-request", productId: "integrity-product",
+        quantity: 3, unitOfMeasure: "unidad", status: "received", createdAt: now, updatedAt: now,
+      })
+      // Entrega trazable sin recepción en faena: el descuadre no se repara
+      // solo, así que cada escaneo lo vuelve a encontrar.
+      await inMemoryDb.insert(schema.deliveries).values({
+        id: "trz002-delivery", code: "ENT-TRZ002", deliveredBy: "integrity-user",
+        deliveredAt: now, destinationType: "faena", worksiteId: "integrity-ws", createdAt: now,
+      })
+      await inMemoryDb.insert(schema.deliveryItems).values({
+        id: "trz002-delivery-item", deliveryId: "trz002-delivery",
+        requestItemId: "trz002-item", productId: "integrity-product",
+        quantity: 3, unitOfMeasure: "unidad",
+      })
+    })
+
+    async function caseRow() {
+      const [row] = await inMemoryDb.select().from(schema.traceabilityIntegrityCases)
+        .where(eq(schema.traceabilityIntegrityCases.requestItemId, "trz002-item"))
+      return row
+    }
+
+    it("el escaneo reabre un caso ya regularizado cuando el detector lo vuelve a encontrar", async () => {
+      await scanTraceabilityIntegrityAsSystem()
+      const abierto = await caseRow()
+      expect(abierto).toBeDefined()
+      expect(abierto!.occurrence).toBe(1)
+
+      await resolveTraceabilityIntegrityCase({
+        caseId: abierto!.id,
+        action: "acknowledge",
+        reason: "Se cierra por declaración sin reparar el descuadre material.",
+        userId: "integrity-user",
+        userEmail: "integrity@test.local",
+        session,
+      })
+
+      // El descuadre sigue ahí: el detector lo encuentra otra vez.
+      const segunda = await scanTraceabilityIntegrityAsSystem()
+      expect(segunda.reopenedCount).toBeGreaterThanOrEqual(1)
+      const reabierto = await caseRow()
+      expect(reabierto!.occurrence).toBe(2)
+    })
+
+    it("un caso reabierto vuelve a figurar como pendiente y admite una resolución nueva", async () => {
+      const reabierto = await caseRow()
+      expect(reabierto!.occurrence).toBe(2)
+
+      const listado = await listTraceabilityIntegrityCases(session)
+      const fila = listado.find((row) => row.id === reabierto!.id)
+      // Antes de TRZ-002 la pantalla lo seguía mostrando "Regularizado".
+      expect(fila?.resolutionId).toBeNull()
+
+      await resolveTraceabilityIntegrityCase({
+        caseId: reabierto!.id,
+        action: "acknowledge",
+        reason: "Segunda regularización tras la reapertura del caso persistente.",
+        userId: "integrity-user",
+        userEmail: "integrity@test.local",
+        session,
+      })
+
+      const resoluciones = await inMemoryDb.select().from(schema.traceabilityIntegrityResolutions)
+        .where(eq(schema.traceabilityIntegrityResolutions.caseId, reabierto!.id))
+      // La resolución anterior no se reescribe: queda atada a su ocurrencia.
+      expect(resoluciones.map((row) => row.occurrence).sort()).toEqual([1, 2])
+    })
+  })
+
 })

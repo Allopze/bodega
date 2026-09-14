@@ -144,6 +144,13 @@ export function NewFuelLoadForm({ data, rates }: { data: NewFuelLoadData; rates:
               {state.fieldErrors?.hourMeterReading && <p className="text-sm text-[var(--color-danger-ink)]">{state.fieldErrors.hourMeterReading[0]}</p>}
             </div>
 
+            {/*
+              COM-002 (auditoría 2026-09-14): la casilla apagaba la validación de
+              regresión y no quedaba registrada en ninguna parte, así que la
+              carga aparecía después como una lectura normal y nadie podía saber
+              que la serie del equipo estaba partida. Ahora la declaración exige
+              motivo y se guarda con la carga.
+            */}
             <div className="space-y-2 sm:col-span-2">
               <Checkbox
                 name="meterReplaced"
@@ -151,8 +158,16 @@ export function NewFuelLoadForm({ data, rates }: { data: NewFuelLoadData; rates:
                 label="El medidor fue reemplazado o reiniciado"
               />
               <p className="text-xs text-[var(--color-text-muted)]">
-                Márcalo sólo si el equipo estrenó medidor. Sin esto, una lectura menor que la anterior se rechaza como error de tipeo.
+                Márcalo sólo si el equipo estrenó medidor. Sin esto, una lectura menor que la anterior se rechaza como error de tipeo. Queda registrado en la carga con tu explicación.
               </p>
+              <Label htmlFor="meterReplacementReason">Motivo del reemplazo</Label>
+              <Textarea
+                id="meterReplacementReason"
+                name="meterReplacementReason"
+                rows={2}
+                placeholder="Qué pasó con el medidor y quién lo constató (mínimo 10 caracteres)"
+              />
+              {state.fieldErrors?.meterReplacementReason && <p className="text-sm text-[var(--color-danger-ink)]">{state.fieldErrors.meterReplacementReason[0]}</p>}
             </div>
           </CardContent>
         </Card>

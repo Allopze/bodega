@@ -2380,9 +2380,11 @@ async function main() {
     nonConformingCount: 1,
     compliancePercent: 80,
     closingResult: "con_observaciones",
+    // INS-002: la firma dice si su identidad está verificada contra el registro
+    // de usuarios y quién la capturó.
     closingSignatures: [
-      { role: "prevencionista", name: "Admin E2E", userId: "user-admin-e2e", signedAt: now },
-      { role: "supervisor", name: "Comprador E2E", userId: "user-ops-e2e", signedAt: now },
+      { role: "prevencionista", name: "Admin E2E", userId: "user-admin-e2e", verified: true, capturedByUserId: "user-admin-e2e", signedAt: now },
+      { role: "supervisor", name: "Comprador E2E", userId: "user-ops-e2e", verified: true, capturedByUserId: "user-admin-e2e", signedAt: now },
     ],
     createdByUserId: "user-admin-e2e",
     createdAt: now,

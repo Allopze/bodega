@@ -28,6 +28,7 @@ interface PermitTypeItem {
   requiresIsolation: boolean
   requiresMeasurement: boolean
   requiresJsa: boolean
+  requiresCrewAcknowledgement: boolean
   maxDurationHours: number
 }
 

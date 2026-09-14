@@ -14,6 +14,7 @@ import { fuelLoads, fuelMeterReadings } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { normKey, normalizePlate, parseChileanNumber, santiagoInstant } from "./xlsx-utils"
 import { ACCOUNTABLE_FUEL_LOAD_STATUSES } from "./load-status"
+import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 
 export const METER_READING_SOURCES = ["copec_tct", "aramco", "gps_onway"] as const
 export type MeterReadingSource = (typeof METER_READING_SOURCES)[number]
@@ -365,4 +366,51 @@ export async function meterReadingFieldErrors(
     if (message) errors[check.field] = [message]
   }
   return Object.keys(errors).length > 0 ? errors : null
+}
+
+/**
+ * `COM-002` (auditoría 2026-09-14): «La casilla "el medidor fue reemplazado"
+ * desactiva la validación de lectura y no queda registrada» (S2/P1).
+ *
+ * Las tres rutas que graban una lectura hacían literalmente
+ * `if (!formData.get("meterReplaced")) { …validar… }`: marcar una casilla
+ * apagaba el control de regresión del odómetro/horómetro. El valor no se
+ * persistía en ninguna parte —no había columna, ni el insert ni el update lo
+ * incluían—, así que la carga quedaba después como una lectura normal y el
+ * rendimiento por equipo, el consumo por kilómetro y las reglas de anomalía se
+ * calculaban sobre esa serie sin saber que alguien había declarado un medidor
+ * nuevo.
+ *
+ * Desactivar un control es un acto irreversible sobre el dato: la serie del
+ * equipo se parte y no hay forma de reconstruir el tramo perdido. Por eso pide
+ * motivo con el umbral único de la plataforma (`REASON_MIN_LENGTH`) y por eso
+ * la declaración se guarda en la fila: la carga queda marcada, y quien mire la
+ * serie después ve dónde y por qué se cortó.
+ */
+export interface MeterReplacementDeclaration {
+  replaced: boolean
+  reason: string | null
+}
+
+/** Lee la declaración desde el formulario, sin decidir si es válida. */
+export function readMeterReplacementDeclaration(formData: Pick<FormData, "get">): MeterReplacementDeclaration {
+  const replaced = Boolean(formData.get("meterReplaced"))
+  const reason = String(formData.get("meterReplacementReason") ?? "").trim()
+  // Un motivo escrito y luego desmarcada la casilla no declara nada: no se
+  // guarda, para que la fila no afirme un reemplazo que no ocurrió.
+  return { replaced, reason: replaced ? (reason || null) : null }
+}
+
+/**
+ * Error de campo cuando se declara un reemplazo sin explicarlo. Devuelve `null`
+ * cuando no hay nada que objetar (incluida la casilla sin marcar).
+ */
+export function meterReplacementDeclarationError(
+  declaration: MeterReplacementDeclaration,
+): Record<string, string[]> | null {
+  if (!declaration.replaced) return null
+  if (isValidReason(declaration.reason)) return null
+  return {
+    meterReplacementReason: [reasonRequiredMessage("por qué el medidor fue reemplazado o reiniciado")],
+  }
 }

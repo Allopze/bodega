@@ -5,6 +5,7 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { evaluatePermitReadiness, getWorkPermitDetail } from "@/lib/services/prevention-permits"
+import { preventionAckPath } from "@/lib/services/prevention-ack-token"
 import { PermitDetail } from "./permit-detail"
 
 export const metadata: Metadata = { title: "Permiso de trabajo" }
@@ -108,6 +109,16 @@ export default async function PermisoPage({ params }: { params: Promise<{ permit
           role: item.role,
           acknowledgedAt: item.acknowledgedAt,
           crewUserId: item.crewUserId,
+          /**
+           * PER-002 (auditoría 2026-09-14): enlace de acuse para el integrante
+           * SIN cuenta de usuario. Antes no había nada que entregarle: el acuse
+           * exigía sesión, así que su fila decía "Pendiente" para siempre y —con
+           * el bloqueador de PER-001— el permiso no podía activarse nunca.
+           * Sólo se emite para quien no tiene cuenta y aún no acusó.
+           */
+          ackLink: !item.crewUserId && !item.acknowledgedAt
+            ? preventionAckPath("permiso", item.id)
+            : null,
           hasCompetencyGap: item.hasCompetencyGap,
         }))}
         readiness={readiness}
