@@ -141,9 +141,38 @@ no resolvía.
 | S3-01 | `supervisor_terreno` sin faena | **Resuelto** — con test derivado de `SYSTEM_ROLES` |
 | S3-02 | Documentación RBAC desactualizada | **Resuelto** — 15 roles / 270 permisos / 21 módulos, con test que ata la doc al código |
 | S3-03 | Métrica React Doctor contaminada | **Resuelto** — proyectos de referencia excluidos |
-| S2-04 | E2E como puerta determinista | **En curso** |
+| S2-04 | E2E como puerta determinista | **Resuelto salvo PDTP** — 521/529, 19,7 min |
 | S3-04 | Imports dinámicos amplios | **Resuelto y reclasificado** — ver N-02: no era rendimiento |
 | S3-05 | `nextDueOn` que no avanza | **Resuelto** — sí era defecto; ver abajo |
+
+## S2-04: la suite E2E como puerta
+
+Punto de partida: 49 fallos y ~50 minutos de reloj muerto en timeouts mudos, sin
+`actionTimeout`. Hoy, corrida completa en local:
+
+```
+521 passed · 2 failed · 3 skipped · 19,7 min (1 worker)
+```
+
+Los dos fallos que quedan son de PDTP —`pdtp-annual-adjustments:21` y
+`pdtp-lifecycle-approvals:30`— y caen sobre pantallas y servicios que otra sesión tiene
+modificados sin commitear (`app/(app)/prevencion/pdtp/**`, `lib/services/pdtp/**`). No se
+tocaron.
+
+**No hace falta optimizar la duración.** El plan proponía `globalSetup` + `storageState`
+para ahorrar ~528 logins, con la instrucción de medir antes. Medido: 19,7 minutos con un
+solo worker, y CI shardea en cuatro. El presupuesto de 50 minutos que motivaba la
+optimización era el reloj muerto de los timeouts, que ya no está.
+
+Cinco corridas completas durante la verificación, con la misma lista de fallos salvo dos
+inestabilidades que se corrigieron en el camino: el pie del diálogo de cierre, que se
+vuelve a montar cuando dispara el autoguardado, y la tabla de programación, que en dos
+corridas salió con la fecha vencida mientras la base ya tenía la nueva.
+
+Una advertencia de la propia verificación: **no correr trabajo pesado en paralelo con la
+suite**. Con una corrida de Vitest compitiendo por CPU y memoria, `export-volume:87`
+recibió un cuerpo truncado del exporte —200, no vacío, pero sin ser un zip— dos veces
+seguidas; sola y con la máquina libre, pasa.
 
 ## S3-05: sí era un defecto, y esta verificación lo dio por descartado antes de tiempo
 
