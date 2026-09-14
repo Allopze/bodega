@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0 -p 3001",
-    "build": "bash scripts/run-resource-guard.sh next build",
+    "build": "bash scripts/run-resource-guard.sh next build --webpack",
     "start": "node .next/standalone/server.js",
     "lint": "bash scripts/run-resource-guard.sh eslint",
     "typecheck": "bash scripts/run-resource-guard.sh tsc --noEmit --incremental false",

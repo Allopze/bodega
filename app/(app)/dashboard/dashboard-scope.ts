@@ -1,5 +1,5 @@
 import type { WorksiteScope } from "@/lib/auth/scope"
-import { getOperationalCalendarBounds, type OperationalPeriodSpan } from "@/lib/services/operational-period-metrics"
+import { getOperationalCalendarBounds, type OperationalPeriodSpan } from "@/lib/services/operational-period-bounds"
 import {
   DEFAULT_DASHBOARD_VIEW,
   parseDashboardView,

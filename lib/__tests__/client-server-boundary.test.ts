@@ -22,6 +22,10 @@ const BANNED_SPECIFIERS = [
   "@/lib/services/prevention-documents-library",
   "@/lib/services/sst",
   "@/lib/services/trazabilidad-consolidated",
+  // El servicio de métricas importa `@/db`; los helpers puros del alcance del
+  // dashboard viven en `operational-period-bounds` para que los Client
+  // Components no arrastren el driver de PostgreSQL.
+  "@/lib/services/operational-period-metrics",
   // El instalador de plantillas del PDTP arrastra `@/db` y `node:crypto`. Su
   // parte pura —el catálogo de instrumentos y el detector de cableado— vive en
   // `@/lib/prevention/inspection-wiring`, que es la que el catálogo de
