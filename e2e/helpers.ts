@@ -520,3 +520,22 @@ export async function enviarAsistenteDeProducto(page: Page, panel: Locator) {
   await crear.click()
   await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
 }
+
+/**
+ * Confirma el cierre de una inspección esperando a que el pie del diálogo se
+ * asiente.
+ *
+ * El botón de confirmar lleva `disabled={… || saving}`, y `saving` sigue al
+ * autoguardado: llenar el acta sube la revisión, el debounce dispara ~1200 ms
+ * después y el pie se vuelve a montar justo cuando el test hace clic. Playwright
+ * reintenta —"intercepts pointer events", "element was detached from the DOM"—
+ * hasta agotar el `actionTimeout`. Esperar a que el botón esté habilitado deja
+ * pasar ese guardado antes de tocarlo.
+ */
+export async function confirmarDeclararEjecutada(page: Page) {
+  const dialogo = page.getByRole("dialog").filter({ visible: true })
+  const confirmar = dialogo.getByRole("button", { name: "Declarar ejecutada" })
+  await expect(confirmar).toBeEnabled({ timeout: 30_000 })
+  await confirmar.click()
+  await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
+}

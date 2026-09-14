@@ -200,7 +200,7 @@ describe("contenedor como sujeto de inspección", () => {
 
     const [after] = await testDb.select().from(schema.preventionInspectionPrograms)
       .where(eq(schema.preventionInspectionPrograms.id, program.id))
-    expect(after?.nextDueOn > program.nextDueOn).toBe(true)
+    expect(after!.nextDueOn > program.nextDueOn).toBe(true)
 
     // Y el slot sigue sin duplicarse: consumir el ciclo no es crear otra fila.
     const runs = await testDb.select().from(schema.preventionInspectionRuns)

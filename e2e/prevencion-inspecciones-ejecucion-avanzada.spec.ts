@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { MINIMAL_PNG, campoInspeccion, crearInspeccion as crearInspeccionE2E, login, responderItemInspeccion, textoVisible } from "./helpers"
+import { MINIMAL_PNG, campoInspeccion, confirmarDeclararEjecutada, crearInspeccion as crearInspeccionE2E, login, responderItemInspeccion, textoVisible } from "./helpers"
 
 /**
  * E2E Spec: Ejecución Avanzada de Inspecciones SST.
@@ -104,9 +104,7 @@ test.describe("Inspecciones — Ejecución avanzada y validaciones de campo", ()
 
     // Ahora sí se habilita el cierre
     await page.getByRole("button", { name: "Declarar ejecutada" }).click()
-    const dialogConfirm = page.getByRole("dialog")
-    await dialogConfirm.getByRole("button", { name: "Declarar ejecutada" }).click()
-    await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
+    await confirmarDeclararEjecutada(page)
 
     await page.reload()
     await expect(textoVisible(page, "Pendiente de revisión").first()).toBeVisible({ timeout: 15_000 })

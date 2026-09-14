@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { crearInspeccion as crearInspeccionE2E, expectPageTitle, login, responderItemInspeccion, textoVisible } from "./helpers"
+import { confirmarDeclararEjecutada, crearInspeccion as crearInspeccionE2E, expectPageTitle, login, responderItemInspeccion, textoVisible } from "./helpers"
 
 /**
  * E2E Spec: Flujo Integral Multimódulo de Inspecciones SST.
@@ -38,9 +38,7 @@ test.describe("Inspecciones — Flujo Integral y Trazabilidad CAPA / PDTP", () =
     await page.getByLabel("Firma de supervisor").fill("Comprador E2E")
 
     await page.getByRole("button", { name: "Declarar ejecutada" }).click()
-    const dialogConfirm = page.getByRole("dialog")
-    await dialogConfirm.getByRole("button", { name: "Declarar ejecutada" }).click()
-    await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
+    await confirmarDeclararEjecutada(page)
 
     await page.reload()
     await expect(textoVisible(page, "Pendiente de revisión").first()).toBeVisible({ timeout: 15_000 })

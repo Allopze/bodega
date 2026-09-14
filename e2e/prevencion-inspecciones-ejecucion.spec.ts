@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { MINIMAL_PNG, campoInspeccion, crearInspeccion as crearInspeccionE2E, login, responderItemInspeccion, textoVisible } from "./helpers"
+import { MINIMAL_PNG, campoInspeccion, confirmarDeclararEjecutada, crearInspeccion as crearInspeccionE2E, login, responderItemInspeccion, textoVisible } from "./helpers"
 
 /**
  * E2E: ejecución de una inspección, de alta a acta firmada
@@ -63,9 +63,7 @@ async function firmarActa(page: Page, resultado = "Con observaciones") {
 
 async function declararEjecutada(page: Page) {
   await page.getByRole("button", { name: "Declarar ejecutada" }).click()
-  const dialog = page.getByRole("dialog")
-  await dialog.getByRole("button", { name: "Declarar ejecutada" }).click()
-  await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
+  await confirmarDeclararEjecutada(page)
 }
 
 test.describe("Inspecciones — ejecución en terreno", () => {
