@@ -53,10 +53,13 @@ describe("repuestoRequestSchema", () => {
 })
 
 describe("quotationUploadSchema", () => {
-  it("accepts a non-negative amount", () => {
+  it("accepts a complete quotation", () => {
+    // COT-003: la oferta identifica a su proveedor. Este caso pasaba sin
+    // proveedor y con monto cero, que es justo lo que el hallazgo describe.
     const result = quotationUploadSchema.parse({
       requestId: "req-1",
       totalAmount: 125000,
+      supplierId: "sup-1",
     })
 
     expect(result.totalAmount).toBe(125000)

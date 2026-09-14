@@ -84,9 +84,13 @@ export default async function ActaPrintPage({ params }: PageProps) {
             <div className="field"><dt>Responsable TI</dt><dd>{assignment.deliveredByName ?? "—"}</dd></div>
             <div className="field"><dt>Estado físico al entregar</dt><dd>{physicalStateLabel(assignment.physicalState)}</dd></div>
             <div className="field"><dt>Aceptación</dt><dd>
-              {assignment.acceptedAt
-                ? `Aceptado por el trabajador el ${formatDateTime(assignment.acceptedAt)} — confirmado por ${assignment.acceptedByName ?? "TI"}`
-                : "Pendiente de aceptación"}
+              {/* TIA-002: el acta ya no dice "aceptada" cuando nadie acusó
+                  recibo. Los tres estados se imprimen distintos. */}
+              {assignment.acceptanceStatus === "aceptada" && assignment.acceptedAt
+                ? `Acuse registrado el ${formatDateTime(assignment.acceptedAt)} por ${assignment.acceptedByName ?? "—"}`
+                : assignment.acceptanceStatus === "sin_acuse"
+                  ? `Sin acuse del trabajador${assignment.acceptanceNote ? ` — ${assignment.acceptanceNote}` : ""}`
+                  : "Pendiente de acuse"}
             </dd></div>
           </div>
           {assignment.observations && (

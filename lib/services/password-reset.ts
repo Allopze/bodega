@@ -148,8 +148,15 @@ export async function applyPasswordReset(rawToken: string, newPassword: string):
       const bcrypt = await import("bcryptjs")
       const hashedPassword = await bcrypt.hash(newPassword, 12)
 
+      /*
+       * AUTH-003: la contraseña y la revocación de sesiones se escriben juntas.
+       * Antes sólo se escribía el hash, así que una sesión JWT robada antes del
+       * restablecimiento sobrevivía al cambio de clave hasta expirar sola.
+       * `sessionsValidFrom` es la marca que el callback JWT compara.
+       */
+      const changedAt = new Date().toISOString()
       await tx.update(users)
-        .set({ hashedPassword, updatedAt: new Date().toISOString() })
+        .set({ hashedPassword, sessionsValidFrom: changedAt, updatedAt: changedAt })
         .where(eq(users.id, claimed.userId))
     })
 

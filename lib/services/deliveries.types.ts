@@ -18,6 +18,21 @@ export interface WorkerStockDeliveryItemInput {
    */
   requestItemId?: string | null
   notes?: string | null
+  /**
+   * ENT-002 (auditoría 2026-09-14): el canje "entrego nuevo, retiro usado".
+   * Las columnas existían en `delivery_items` y la impresión y la trazabilidad
+   * las mostraban, pero ningún llamador las escribía. Opcional: una entrega sin
+   * canje sigue siendo lo normal.
+   *
+   * `returnProductId` es el producto del catálogo cuando el EPP retirado está
+   * catalogado; `returnProductNameFree` cubre lo que no lo está (una prenda
+   * antigua, un modelo descontinuado) sin obligar a inventar una ficha.
+   */
+  returnProductId?: string | null
+  returnProductNameFree?: string | null
+  returnQuantity?: number | null
+  returnReason?: string | null
+  returnNotes?: string | null
 }
 
 export interface RegisterWorkerStockDeliveryInput {

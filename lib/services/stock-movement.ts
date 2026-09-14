@@ -22,6 +22,14 @@ export type MovementType =
   | "ingreso_traslado"     // + : entrada por guía de despacho interna en la faena destino
   | "ingreso_anulacion"    // + : reverso de una entrega anulada (el egreso nunca debió existir)
   | "egreso_anulacion"     // - : reverso de una recepción anulada (el ingreso nunca debió existir)
+  /**
+   * `MNT-002` (auditoría 2026-09-14): faltaba el egreso que cierra el circuito
+   * del repuesto. Se compraba por Solicitudes → OC → Recepción, lo que **suma**
+   * stock en la faena, y su consumo en una orden de trabajo no lo restaba
+   * nunca: la bodega sobreestimaba las existencias de forma permanente y el
+   * único modo de cuadrar era un ajuste manual.
+   */
+  | "egreso_mantencion"    // - : repuesto de catálogo consumido en una orden de trabajo
 
 /* ── Apply movement ─────────────────────────────────────────────────────────── */
 

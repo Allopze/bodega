@@ -55,13 +55,23 @@ describe("serviceRequestSchema", () => {
 })
 
 describe("serviceQuotationUploadSchema", () => {
-  it("accepts a non-negative amount", () => {
+  it("accepts a complete quotation", () => {
     const result = serviceQuotationUploadSchema.parse({
       requestId: "req-1",
-      totalAmount: "0",
+      totalAmount: "125000",
+      supplierId: "sup-1",
     })
 
-    expect(result.totalAmount).toBe(0)
+    expect(result.totalAmount).toBe(125000)
+  })
+
+  it("ya no acepta el monto cero", () => {
+    // Esta prueba afirmaba lo contrario: que `totalAmount: "0"` era válido. Es
+    // exactamente el defecto de COT-003 —una oferta de $0 adjudicable—, así que
+    // hubo que invertirla, no ampliarla.
+    expect(serviceQuotationUploadSchema.safeParse({
+      requestId: "req-1", totalAmount: "0", supplierId: "sup-1",
+    }).success).toBe(false)
   })
 
   it("rejects a negative amount", () => {

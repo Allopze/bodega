@@ -1,6 +1,6 @@
 import { Broom, ClipboardText, Package, Truck } from "@phosphor-icons/react/dist/ssr"
 import { KpiCard } from "@/components/ui/kpi-card"
-import { getAnalyticsDashboard } from "@/lib/services/analytics-module/dashboard"
+import { getCachedAnalyticsDashboard } from "@/lib/services/read-model-cache"
 import { getDashboardData } from "@/lib/services/dashboard"
 import { getOperationalCalendarBounds } from "@/lib/services/operational-period-metrics"
 import { getReceptionQuality } from "@/lib/services/dashboard-domains-data"
@@ -39,7 +39,7 @@ export async function AcquisitionsSection({ session, scope, moduleWorkload, queu
    * conmutadas, dejarla en la página la cobraba a los ocho renders.
    */
   const [analytics, quality, trend, dashboardData] = await Promise.all([
-    getAnalyticsDashboard(session, analyticsFilters(scope)),
+    getCachedAnalyticsDashboard(session, analyticsFilters(scope)),
     getReceptionQuality(session, { from: bounds.currentStart, to: bounds.currentEnd }, scopedWorksiteId(scope)),
     getOperationalTrendHistory(session, 6, new Date(), scopedWorksiteId(scope)),
     getDashboardData(session, scopedWorksiteId(scope)),

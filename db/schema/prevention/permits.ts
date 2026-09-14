@@ -19,6 +19,16 @@ export const preventionPermitTypes = pgTable("prevention_permit_types", {
   requiresIsolation:      boolean("requires_isolation").notNull().default(false),
   requiresMeasurement:    boolean("requires_measurement").notNull().default(false),
   requiresJsa:            boolean("requires_jsa").notNull().default(true),
+  /*
+   * PER-001 (auditoría 2026-09-14): el acuse del AST por la cuadrilla existía
+   * —firmado, de un solo uso— pero era decorativo: el permiso pasaba a `active`
+   * con cero acuses, mientras los otros doce bloqueadores sí impedían activar.
+   * Acá el acuse se vuelve un bloqueador **configurable por tipo**, la salida
+   * que sanciona el plan de remediación (tanda 5, fila 27). La migración
+   * 0282 respalda el valor de `requires_jsa` en las filas existentes: un tipo
+   * que no exige AST no empieza a exigir el acuse de un AST que no tiene.
+   */
+  requiresCrewAcknowledgement: boolean("requires_crew_acknowledgement").notNull().default(true),
   measurementValidityMinutes: integer("measurement_validity_minutes"),
   measurementCalibrationValidityDays: integer("measurement_calibration_validity_days"),
   maxDurationHours:       integer("max_duration_hours").notNull().default(12),
@@ -108,9 +118,19 @@ export const preventionPermitCrew = pgTable("prevention_permit_crew", {
   role:                text("role").notNull(),
   acknowledgedAt:      timestamp("acknowledged_at", { withTimezone: true, mode: "string" }),
   acknowledgementSha256: text("acknowledgement_sha256"),
+  /**
+   * PER-002 (auditoría 2026-09-14): por dónde entró el acuse del AST. Antes
+   * sólo cabía uno —sesión de la plataforma—, porque `acknowledgePermitCrew`
+   * exigía que el integrante fuera usuario. La vía de enlace con token deja
+   * acusar sin cuenta y esta columna la deja distinguible en la evidencia.
+   */
+  acknowledgementChannel: text("acknowledgement_channel"),
+  acknowledgementIp:   text("acknowledgement_ip"),
+  acknowledgementUserAgent: text("acknowledgement_user_agent"),
   createdAt:           timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("prevention_permit_crew_worker_unique").on(table.permitId, table.workerId),
+  check("prevention_permit_crew_ack_channel_valid", sql`(${table.acknowledgedAt} IS NULL AND ${table.acknowledgementChannel} IS NULL) OR (${table.acknowledgedAt} IS NOT NULL AND ${table.acknowledgementChannel} IN ('account', 'public_token'))`),
   index("prevention_permit_crew_permit_idx").on(table.permitId),
   check("prevention_permit_crew_role_valid", sql`${table.role} IN ('executor', 'supervisor', 'standby', 'observer')`),
   check("prevention_permit_crew_ack_consistent", sql`(${table.acknowledgedAt} IS NULL AND ${table.acknowledgementSha256} IS NULL) OR (${table.acknowledgedAt} IS NOT NULL AND length(${table.acknowledgementSha256}) = 64)`),

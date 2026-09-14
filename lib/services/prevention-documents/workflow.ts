@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm"
 import { db, type Tx } from "@/db"
-import { canSignOwnWork } from "@/lib/services/prevention-signing"
+import { resolveOwnWorkSigning } from "@/lib/services/prevention-signing"
 import {
   sstDocumentAudit,
   sstDocuments,
@@ -258,7 +258,16 @@ export async function publishDocumentVersion(args: WorkflowInput) {
      * un rol tiene `docs:manage` y `docs:publish` a la vez. Mismo vocabulario
      * que `preventUploader`/`preventReviewer` de arriba, un eslabón más abajo.
      * La jefatura técnica del área queda exenta. */
-    if (version.approvedBy === args.ctx.userId && !canSignOwnWork(args.permissions)) {
+    // INC-002: la excepción por cargo deja constancia en la auditoría del
+    // documento; antes se ejercía sin distinguirse de una firma con dos
+    // personas distintas.
+    const signing = resolveOwnWorkSigning({
+      signedByUserId: version.approvedBy,
+      actorUserId: args.ctx.userId,
+      permissions: args.permissions,
+      what: "Publicar la versión",
+    })
+    if (!signing.ok) {
       throw new Error("Quien aprobó la versión no puede publicarla: debe firmarla otra persona.")
     }
     if (version.effectiveFrom && version.effectiveFrom > todayIso()) {
@@ -330,7 +339,7 @@ export async function publishDocumentVersion(args: WorkflowInput) {
       fromStatus: "aprobado",
       toStatus: "vigente",
       comment: args.comment,
-      metadata: { previousVersionId },
+      metadata: { previousVersionId, ownWorkExceptionUsed: signing.usedException },
       now,
     }))
     if (doc.worksiteId && doc.confidentiality === "publico_interno" && doc.dataClass === "operational") {

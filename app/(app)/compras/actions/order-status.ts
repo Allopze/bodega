@@ -57,9 +57,15 @@ export async function issueAndSendOrderAction(
       .where(eq(purchaseOrderItems.purchaseOrderId, orderId)),
   ])
 
+  // OC-002: constancia declarada por quien emite (nº de correo, acuse, entrega
+  // en mano). Opcional a propósito: hacerla obligatoria es política de compras.
+  const dispatchEvidence = (formData.get("constanciaEnvio") as string | null)?.trim() || undefined
+
+  let dispatch
   try {
-    await issueAndSendOrder(orderId, session.user.id, serviceWorksiteScope(session), {
+    dispatch = await issueAndSendOrder(orderId, session.user.id, serviceWorksiteScope(session), {
       userEmail: session.user.email ?? undefined,
+      dispatchEvidence,
     })
   } catch (e) {
     logger.error("[issueAndSendOrderAction]", e)
@@ -72,11 +78,24 @@ export async function issueAndSendOrderAction(
     const worksiteName = orderSummary?.worksiteName ?? "Faena"
     const itemCount = itemCountRow?.n ?? 0
     const supplierTag = orderSummary?.supplierName ? ` ${orderSummary.supplierName}` : ""
+    /*
+     * OC-002 (auditoría 2026-09-14): el aviso afirmaba a Recepción que los
+     * ítems iban "enviados al proveedor" aunque la plataforma no despacha nada
+     * y nadie hubiera dejado constancia. Recepción planificaba contra una OC
+     * que el proveedor podía no conocer. Ahora el cuerpo dice exactamente lo
+     * que consta. Se sigue notificando: no avisar hasta el acuse es una
+     * decisión de producto (ver `issueAndSendOrder`), no una corrección.
+     */
+    const dispatchTag = dispatch.hasDispatchEvidence
+      ? `${pluralize(itemCount, "enviado", "enviados")} al proveedor${supplierTag} · ${dispatch.evidence}`
+      : dispatch.sentTo
+        ? `${pluralize(itemCount, "emitido", "emitidos")} para${supplierTag} (${dispatch.sentTo}); envío manual sin constancia registrada`
+        : `${pluralize(itemCount, "emitido", "emitidos")} sin constancia de envío${supplierTag ? ` a${supplierTag}` : ""}`
     return getUserIdsWithPermission("receiving:register_office").then((receiverIds) =>
       notifyManyUser(receiverIds, {
         type: "oc_sent",
         title: `OC lista para recepción: ${code}`,
-        body: `${worksiteName} · ${pluralize(itemCount, "ítem")} ${pluralize(itemCount, "enviado", "enviados")} al proveedor${supplierTag}.`,
+        body: `${worksiteName} · ${pluralize(itemCount, "ítem")} ${dispatchTag}.`,
         entityType: "purchase_order",
         entityId: orderId,
         entityHref: `/recepcion/nueva?oc=${orderId}`,

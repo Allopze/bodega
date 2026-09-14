@@ -20,7 +20,7 @@ import { classifyOrderReference, dteDocumentKind, dteInvoiceRejection, normalize
 import { normalizeOrderCodeRef } from "./dte-parser"
 import { loadInvoiceLineAllocationsTx, replaceInvoiceLineAllocationsTx } from "./invoice-line-allocations"
 import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
-import { describeCrossBookMatch, findInBillingBook } from "./supplier-document-crosscheck"
+import { describeCrossBookMatch, describeDuplicateAcrossOrders, findInBillingBook, findSameSupplierDocumentInAnotherOrder } from "./supplier-document-crosscheck"
 
 /* ── Purchase Order Invoices ─────────────────────────────────────────────────── */
 
@@ -245,6 +245,7 @@ async function insertPurchaseOrderInvoice(
       throw new Error("Ya existe una factura con ese folio para esta OC")
     }
 
+
     const linkedItemIds = invoiceItems
       .map((item) => item.purchaseOrderItemId)
       .filter((id): id is string => Boolean(id))
@@ -284,6 +285,18 @@ async function insertPurchaseOrderInvoice(
     // positivo, suma— y equivocarse hacia allá no borra plata de una OC.
     const documentKind = dteAttachment ? dteDocumentKind(dteAttachment.dteIdentity.tipoDte ?? "") : "invoice"
     const sign = documentKind === "credit_note" ? -1 : 1
+    // FAC-001: la unicidad declarada es por OC, así que el mismo folio del mismo
+    // proveedor podía adjuntarse a dos órdenes y contarse dos veces. El folio de
+    // un proveedor identifica una obligación de pago, no una por orden.
+    const duplicateElsewhere = await findSameSupplierDocumentInAnotherOrder({
+      supplierRut: input.supplierIdentity?.documentSupplierRut ?? null,
+      invoiceNumber,
+      documentKind,
+      exceptPurchaseOrderId: input.purchaseOrderId,
+    }, tx)
+    if (duplicateElsewhere) {
+      throw new Error(describeDuplicateAcrossOrders(duplicateElsewhere))
+    }
     /*
      * E2E-003 (auditoría 2026-09-14): el mismo documento de proveedor puede
      * vivir en dos libros que no se conocen —éste, que cuelga de la OC y

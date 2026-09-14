@@ -19,10 +19,12 @@ import {
   preventionCapaEvidence,
   preventionCapaTransitions,
   preventionInspectionFindings,
+  products,
   roles,
   suppliers,
   userRoles,
   users,
+  worksiteStock,
   worksiteUsers,
   worksites,
 } from "@/db/schema"
@@ -36,6 +38,7 @@ import { can } from "@/lib/auth/can"
 import type { MaintenanceLaborInput, MaintenancePartInput, MaintenancePlanInput, MaintenanceTaskInput } from "@/lib/validation/maintenance"
 import { setVehicleOperationalStatus } from "@/lib/services/fleet-operational-status"
 import { nextCodeTx } from "@/lib/code-sequences"
+import { applyMovementTx } from "@/lib/services/stock-movement"
 import { getUserIdsWithPermission, getUserIdsWithPermissionForWorksite } from "@/lib/services/notification-targeting"
 
 export const MAINTENANCE_PAGE_SIZE = 50
@@ -715,8 +718,28 @@ export async function getMaintenanceRecordDetail(session: Session, id: string) {
   })
   if (!record) throw new Error("Orden de trabajo no encontrada")
   const canViewCosts = can(session, "combustibles:view_costs")
+  /**
+   * `MNT-002` (auditoría 2026-09-14): sin catálogo a la vista, la única forma
+   * de imputar un repuesto era escribirlo a mano, y esa línea nunca descontaba
+   * stock. Se ofrecen los productos que la faena de la OT realmente tiene, con
+   * su saldo, para que el consumo se impute contra existencias reales.
+   */
+  const worksiteId = await effectiveWorksiteId(db, record)
+  const availableStock = await db
+    .select({
+      productId: products.id,
+      sku: products.sku,
+      name: products.name,
+      unit: products.unitOfMeasure,
+      quantity: worksiteStock.quantity,
+    })
+    .from(worksiteStock)
+    .innerJoin(products, eq(products.id, worksiteStock.productId))
+    .where(and(eq(worksiteStock.worksiteId, worksiteId), sql`${worksiteStock.quantity} > 0`))
+    .orderBy(products.name)
   return {
     ...record,
+    availableStock,
     netAmount: canViewCosts ? record.netAmount : null,
     taxAmount: canViewCosts ? record.taxAmount : null,
     totalAmount: canViewCosts ? record.totalAmount : null,
@@ -943,6 +966,33 @@ export async function setMaintenanceTaskStatus(session: Session, taskId: string,
   })
 }
 
+/**
+ * `MNT-002` (auditoría 2026-09-14): imputar un repuesto a una OT no tocaba el
+ * kardex. La línea era texto libre —descripción, código, cantidad, unidad,
+ * costo— sin referencia al catálogo, y no existía ningún tipo de movimiento
+ * para una mantención. El circuito quedaba abierto por un lado: el repuesto
+ * comprado por Solicitudes → OC → Recepción **sumaba** stock en la faena y su
+ * consumo no lo restaba nunca, así que la bodega sobreestimaba las existencias
+ * de forma permanente y la única forma de cuadrar era un ajuste manual.
+ *
+ * Ahora, cuando la línea apunta a un producto del catálogo, el egreso se emite
+ * en la MISMA transacción que la línea: o quedan las dos cosas o no queda
+ * ninguna. La faena que se descuenta es la de la propia OT —`worksiteId` de
+ * `maintenance_records`, que una clave foránea compuesta mantiene pegada a la
+ * faena del equipo—, no una bodega elegida a mano.
+ *
+ * Si no hay saldo, la operación se rechaza entera con el remedio en el mensaje,
+ * como el resto de la plataforma: no se deja stock negativo ni una línea de
+ * repuesto sin su movimiento.
+ *
+ * QUEDA POR DECIDIR (producto, no código): si imputar un repuesto de bodega
+ * DEBE hacerse siempre contra el catálogo. Hoy `productId` es opcional y una
+ * línea sin él sigue siendo sólo costo —es el caso legítimo del taller externo
+ * que factura piezas que nunca entraron a bodega—, pero también es la puerta
+ * por la que un consumo real puede seguir sin descontar. Volverlo obligatorio
+ * exige una regla de negocio que la plataforma no declara (¿por tipo de
+ * mantención? ¿por proveedor interno vs. externo?) y no se inventa aquí.
+ */
 export async function addMaintenancePart(session: Session, input: MaintenancePartInput) {
   if (!can(session, "mantenciones:edit")) throw new Error("Sin permisos para editar la orden")
   return db.transaction(async (tx) => {
@@ -952,12 +1002,37 @@ export async function addMaintenancePart(session: Session, input: MaintenancePar
     await tx.insert(maintenanceParts).values({
       id,
       maintenanceId: input.maintenanceId,
+      productId: input.productId || null,
       description: input.description,
       partNumber: input.partNumber || null,
       quantity: input.quantity,
       unit: input.unit,
       unitCost: can(session, "combustibles:view_costs") ? input.unitCost : 0,
     })
+    if (input.productId) {
+      const worksiteId = await effectiveWorksiteId(tx, record)
+      try {
+        await applyMovementTx(tx, {
+          worksiteId,
+          productId: input.productId,
+          type: "egreso_mantencion",
+          quantity: -Math.abs(input.quantity),
+          referenceType: "maintenance_part",
+          referenceId: id,
+          performedBy: session.user.id,
+          userEmail: session.user.email ?? undefined,
+          notes: `Consumo en ${record.code ?? "orden de trabajo"}: ${input.description}`,
+        })
+      } catch (error) {
+        // El mensaje del motor dice cuánto hay y cuánto se pidió; acá se le
+        // agrega el remedio, porque quien imputa el repuesto está en la OT y no
+        // en la pantalla de stock.
+        const detail = error instanceof Error ? error.message : String(error)
+        throw new Error(
+          `${detail}. Registra primero la recepción o el ajuste que falta en la faena de la orden, o corrige la cantidad.`,
+        )
+      }
+    }
     if (can(session, "combustibles:view_costs") && input.unitCost > 0) {
       await invalidateMaintenanceCostApproval(tx, input.maintenanceId)
     }

@@ -46,10 +46,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // `findings` es lo detectado y `recordedCount` lo que era evidencia nueva:
     // que difieran es lo normal, un problema que persiste se detecta en cada
     // corrida y se registra una sola vez.
-    logger.info(`[cron/${JOB}] completado`, { found: outcome.findings.length, recorded: outcome.recordedCount })
+    // TRZ-002: `reopened` son los casos que ya estaban regularizados y el
+    // detector volvió a encontrar. Antes ese número era estructuralmente cero
+    // porque un caso cerrado no podía reabrirse.
+    logger.info(`[cron/${JOB}] completado`, { found: outcome.findings.length, recorded: outcome.recordedCount, reopened: outcome.reopenedCount })
     return NextResponse.json({
       ok: true, outcome: "success", code: "TRACEABILITY_SCAN_SUCCESS",
-      found: outcome.findings.length, recorded: outcome.recordedCount,
+      found: outcome.findings.length, recorded: outcome.recordedCount, reopened: outcome.reopenedCount,
     })
   } catch (error) {
     logger.error(`[cron/${JOB}] error fatal`, error)

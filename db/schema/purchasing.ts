@@ -258,6 +258,17 @@ export const purchaseOrderInvoices = pgTable("purchase_order_invoices", {
   uniqueIndex("purchase_order_invoices_order_number_unique")
     .on(table.purchaseOrderId, table.documentKind, table.invoiceNumber)
     .where(sql`${table.voidedAt} IS NULL`),
+  // FAC-001: y una sola vez en toda la plataforma, no una por OC. El folio de un
+  // proveedor identifica una obligación de pago. Sólo alcanza a las filas que
+  // declaran el RUT: sin identidad de proveedor, dos folios iguales no son el
+  // mismo documento.
+  uniqueIndex("purchase_order_invoices_supplier_folio_unique")
+    .on(
+      sql`upper(regexp_replace(${table.documentSupplierRut}, '[^0-9kK]', '', 'g'))`,
+      table.documentKind,
+      sql`(nullif(regexp_replace(${table.invoiceNumber}, '[^0-9]', '', 'g'), '')::bigint)`,
+    )
+    .where(sql`${table.voidedAt} IS NULL AND ${table.documentSupplierRut} IS NOT NULL`),
 ])
 
 /* ── Purchase Order Invoice Items ─────────────────────────────────────────── */

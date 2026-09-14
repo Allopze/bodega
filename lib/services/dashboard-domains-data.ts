@@ -139,6 +139,11 @@ export async function getExpiringFleetDocuments(
     .where(and(
       scope,
       eq(fleetVehicleDocuments.status, "current"),
+      // FLO-001: y sólo los vehículos que siguen en la flota. La revisión
+      // técnica vencida de una camioneta dada de baja no es un bloqueo
+      // operacional: es un documento de un vehículo que ya no circula, y
+      // engordaba para siempre el indicador que la dirección mira.
+      eq(fuelVehicles.isActive, true),
       isNotNull(fleetVehicleDocuments.expiresAt),
       lte(fleetVehicleDocuments.expiresAt, horizon),
     ))

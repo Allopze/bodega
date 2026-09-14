@@ -91,6 +91,25 @@ describe("módulo TI — licencias, accesos y checklists", () => {
         .rejects.toThrow(/licencia está inactiva/)
     })
 
+    it("una licencia con cantidad comprada cero no admite asignaciones (TIL-002)", async () => {
+      /*
+       * Antes, el tope de asientos se aplicaba sólo cuando
+       * `purchasedQuantity > 0`, con el argumento de que "los catálogos
+       * abiertos no se limitan". El resultado era el contrario a lo que se
+       * lee: una licencia con 0 comprados —el valor por omisión, admitido por
+       * el check de BD— aceptaba asignaciones sin fin, o sea, cero se
+       * comportaba como ilimitado.
+       */
+      const id = await createLicense({ name: "Licencia sin comprar", purchasedQuantity: 0, periodicity: "anual" }, actor)
+
+      await expect(assignLicense({ licenseId: id, workerId: "wk-ti-juan" }, actor))
+        .rejects.toThrow(/no tiene asientos comprados/i)
+
+      const [asignadas] = await testDb.select().from(schema.itLicenseAssignments)
+        .where(eq(schema.itLicenseAssignments.licenseId, id))
+      expect(asignadas).toBeUndefined()
+    })
+
     it("rechaza asignar una licencia a un trabajador fuera del scope", async () => {
       const id = await createLicense({ name: "Licencia acotada", purchasedQuantity: 2, periodicity: "anual" }, actor)
 
@@ -164,7 +183,7 @@ describe("módulo TI — licencias, accesos y checklists", () => {
       expect(accessId).toBe(accessId2)
 
       await upsertSystemAccess({ systemId, workerId: "wk-ti-juan", status: "baja" }, actor)
-      const workerAccess = await listWorkerAccess("wk-ti-juan")
+      const workerAccess = await listWorkerAccess("wk-ti-juan", "all")
       const row = workerAccess.find((a) => a.systemId === systemId)
       expect(row?.status).toBe("baja")
       expect(row?.revokedAt).toBeTruthy()
@@ -175,7 +194,7 @@ describe("módulo TI — licencias, accesos y checklists", () => {
       await upsertSystemAccess({ systemId, workerId: "wk-ti-juan", status: "baja", notes: "Ticket de salida" }, actor)
       await upsertSystemAccess({ systemId, workerId: "wk-ti-juan", status: "activo" }, actor)
 
-      const row = (await listWorkerAccess("wk-ti-juan")).find((a) => a.systemId === systemId)
+      const row = (await listWorkerAccess("wk-ti-juan", "all")).find((a) => a.systemId === systemId)
       expect(row?.status).toBe("activo")
       expect(row?.revokedAt).toBeNull()
       expect(row?.notes).toBe("Ticket de salida")
@@ -201,7 +220,7 @@ describe("módulo TI — licencias, accesos y checklists", () => {
       // nombre hacía que el alta empezara por "Asignar licencias".
       expect(tasks.map((t) => t.name)).toEqual([...ONBOARDING_CHECKLIST_TEMPLATE])
 
-      const rows = await listChecklists({ kind: "onboarding" })
+      const rows = await listChecklists({ kind: "onboarding", scope: undefined })
       const row = rows.find((c) => c.id === id)
       expect(row?.workerName).toBe("Juan Pérez")
       expect(row?.totalTasks).toBe(ONBOARDING_CHECKLIST_TEMPLATE.length)
@@ -225,13 +244,13 @@ describe("módulo TI — licencias, accesos y checklists", () => {
         await toggleChecklistTask({ taskId: task.id, done: true }, actor)
       }
 
-      const rows = await listChecklists({})
+      const rows = await listChecklists({ scope: undefined })
       const row = rows.find((c) => c.id === id)
       expect(row?.doneTasks).toBe(row?.totalTasks)
       expect(row?.completedAt).toBeTruthy()
 
       await toggleChecklistTask({ taskId: tasks[0]!.id, done: false }, actor)
-      const reopened = (await listChecklists({})).find((c) => c.id === id)
+      const reopened = (await listChecklists({ scope: undefined })).find((c) => c.id === id)
       expect(reopened?.completedAt).toBeNull()
     })
 
@@ -259,12 +278,12 @@ describe("módulo TI — licencias, accesos y checklists", () => {
         .rejects.toThrow(/No se puede cerrar la desvinculación/i)
 
       // Y el checklist sigue abierto: la transacción no dejó la casilla marcada.
-      const blocked = (await listChecklists({})).find((c) => c.id === id)
+      const blocked = (await listChecklists({ scope: undefined })).find((c) => c.id === id)
       expect(blocked?.completedAt).toBeNull()
       expect(blocked?.doneTasks).toBe(tasks.length - 1)
 
       // Cerrada la realidad, el checklist sí cierra.
-      for (const access of await listWorkerAccess("wk-ti-maria")) {
+      for (const access of await listWorkerAccess("wk-ti-maria", "all")) {
         await upsertSystemAccess({ systemId: access.systemId, workerId: "wk-ti-maria", status: "baja" }, actor)
       }
       await testDb.update(schema.itLicenseAssignments)
@@ -272,7 +291,7 @@ describe("módulo TI — licencias, accesos y checklists", () => {
         .where(eq(schema.itLicenseAssignments.workerId, "wk-ti-maria"))
 
       await toggleChecklistTask({ taskId: last.id, done: true }, actor)
-      expect((await listChecklists({})).find((c) => c.id === id)?.completedAt).toBeTruthy()
+      expect((await listChecklists({ scope: undefined })).find((c) => c.id === id)?.completedAt).toBeTruthy()
     })
 
     it("marcar una tarea no borra su nota", async () => {

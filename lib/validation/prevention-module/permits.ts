@@ -23,6 +23,12 @@ export const permitTypeSchema = z.object({
   requiresIsolation: z.boolean().default(false),
   requiresMeasurement: z.boolean().default(false),
   requiresJsa: z.boolean().default(true),
+  /*
+   * PER-001: exigir el acuse del AST por cada integrante para activar. El
+   * default es «exigir» porque el acuse ya existía y estaba bien hecho: lo que
+   * faltaba era que condicionara la autorización.
+   */
+  requiresCrewAcknowledgement: z.boolean().default(true),
   measurementValidityMinutes: z.number().int().positive().max(1440).nullable().optional(),
   // Opt-in por tipo: ausente = no se exige calibración vigente del instrumento.
   measurementCalibrationValidityDays: z.number().int().positive().max(3650).nullable().optional(),

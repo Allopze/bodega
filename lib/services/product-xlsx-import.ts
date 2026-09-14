@@ -4,6 +4,7 @@ import { db, type Tx } from "@/db"
 import { productAttributes, productCategories, products, productSuppliers, suppliers } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { toCode } from "@/lib/utils"
+import { loadActiveUnitCodes, normalizeUnitCode, unitNotInCatalogMessage } from "@/lib/services/product-unit-catalog"
 
 const DEFAULT_EPP_CATEGORY = {
   id: "cat-epp",
@@ -137,6 +138,34 @@ export async function importProductsFromXlsx(buffer: Buffer): Promise<ProductImp
     }
   }
 
+  /*
+   * CAT-003 (auditoría 2026-09-14): la unidad de cada fila tiene que existir en
+   * el catálogo `product_units` y estar activa. Este importador escribía el
+   * texto crudo de la planilla —sin normalizar siquiera espacios ni caja—, así
+   * que era el camino por el que entraban las unidades fuera de catálogo
+   * ("Cajas ", "UN.") que la migración 0229 tuvo que sanear a mano.
+   *
+   * Se comprueba ANTES de abrir la transacción y para todas las filas juntas:
+   * el importador tiene contrato de "todo o nada con errores por fila", y
+   * dejar que la FK de base reventara a mitad del lote devolvería un error del
+   * driver sin decir qué fila lo causó.
+   */
+  const activeUnits = await loadActiveUnitCodes()
+  const normalizedItems = parsed.items.map((item) => ({ ...item, unitOfMeasure: normalizeUnitCode(item.unitOfMeasure) }))
+  const unitErrors = normalizedItems
+    .filter((item) => !activeUnits.has(item.unitOfMeasure))
+    .map((item) => `Fila ${item.rowNumber}: ${unitNotInCatalogMessage(item.unitOfMeasure)}`)
+  if (unitErrors.length > 0) {
+    return {
+      totalRows: parsed.items.length,
+      created: 0,
+      updated: 0,
+      suppliersCreated: 0,
+      categoriesCreated: 0,
+      errors: unitErrors,
+    }
+  }
+
   const result: ProductImportResult = {
     totalRows: parsed.items.length,
     created: 0,
@@ -149,7 +178,7 @@ export async function importProductsFromXlsx(buffer: Buffer): Promise<ProductImp
   await db.transaction(async (tx) => {
     const categoryCache = new Map<string, { id: string; created: boolean }>()
     const supplierCache = new Map<string, { id: string; created: boolean }>()
-    const importSkus = [...new Set(parsed.items.map((item) => item.sku))]
+    const importSkus = [...new Set(normalizedItems.map((item) => item.sku))]
     // This import mutates a batch one row at a time, but it first locks all
     // existing targets in the same database order as EPP request preflight.
     // That removes a multi-product lock cycle regardless of Excel row order.
@@ -163,7 +192,7 @@ export async function importProductsFromXlsx(buffer: Buffer): Promise<ProductImp
         .map((product) => [product.sku, product] as const),
     )
 
-    for (const item of parsed.items) {
+    for (const item of normalizedItems) {
       const category = await resolveCategory(tx, item.categoryName, categoryCache)
       if (category.created) result.categoriesCreated += 1
 

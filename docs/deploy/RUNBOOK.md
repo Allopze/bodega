@@ -8,7 +8,7 @@ repiten acá: este documento cubre detección, diagnóstico y recuperación de u
 
 | Señal | Dónde | Qué significa |
 |---|---|---|
-| `GET /api/health` | `app/api/health/route.ts` | 503 si Postgres no responde, el volumen no es escribible o el disco está bajo el umbral. Es la misma medición que muestra `/admin/modulos` (`lib/services/platform-health.ts`) |
+| `GET /api/health` | `app/api/health/route.ts` | 503 si Postgres no responde, el volumen no es escribible o el disco está bajo el umbral. Es la misma medición que muestra `/admin/modulos` (`lib/services/platform-health.ts`). **Desde la remediación de `SEC-001` el cuerpo público es sólo `{"status":"ok"|"error"}`**: el detalle (base, volumen, disco) exige sesión con `admin:module_management`, o se mira en `/admin/modulos` |
 | `HEALTHCHECK` de Docker | `docker-compose.yml` | Pega a `/api/health` cada 30 s, 3 reintentos, 15 s de gracia al arranque. Un contenedor `unhealthy` ya falló tres veces seguidas |
 | Sentry | `sentry.server.config.ts`, `sentry.edge.config.ts`, `instrumentation-client.ts` | Excepciones de servidor, edge y cliente. Sin `NEXT_PUBLIC_SENTRY_DSN` definido no se reporta nada |
 | Cobertura de snapshots operacionales | workflow `operational-snapshot-health` (diario, 04:35 UTC) | Los snapshots dejaron de generarse o quedaron incompletos |

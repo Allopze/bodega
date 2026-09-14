@@ -135,3 +135,63 @@ export function describeCrossBookMatch(match: CrossBookMatch): string {
     : `Este documento (tipo ${match.docType}, folio ${match.folio}) ya está adjunto a la orden `
       + `${match.purchaseOrderCode ?? "de compra"}. Revísalo antes de registrarlo otra vez.`
 }
+
+/**
+ * `FAC-001` (auditoría 2026-09-14). La unicidad declarada del folio es por OC
+ * —`(purchase_order_id, document_kind, invoice_number)`—, así que el mismo folio
+ * del mismo proveedor puede adjuntarse a **dos órdenes distintas** y contarse
+ * dos veces en la cobertura documental, en el gasto y en cualquier proceso de
+ * pago que lea la tabla. Un documento tributario existe una sola vez: el folio
+ * de un proveedor identifica una obligación de pago, no una por orden.
+ *
+ * Esto busca esa colisión antes de insertar, en la misma transacción. A
+ * diferencia de la comprobación cruzada de `E2E-003`, que sólo avisa, aquí el
+ * duplicado se rechaza: los dos registros están en el mismo libro y no hay
+ * ninguna lectura en la que ambos sean legítimos.
+ */
+export async function findSameSupplierDocumentInAnotherOrder(
+  input: {
+    supplierRut: string | null | undefined
+    invoiceNumber: string
+    documentKind: "invoice" | "credit_note"
+    exceptPurchaseOrderId?: string | null
+  },
+  client: typeof db | Tx = db,
+): Promise<CrossBookMatch | null> {
+  const rut = normalizeTaxId(input.supplierRut)
+  const folio = normalizeFolio(input.invoiceNumber)
+  // Sin RUT no hay identidad de proveedor que comparar: dos OC pueden tener el
+  // folio 100 de proveedores distintos y eso no es un duplicado.
+  if (!rut || folio === null) return null
+
+  const conditions = [
+    eq(purchaseOrderInvoices.documentKind, input.documentKind),
+    sql`${purchaseOrderInvoices.voidedAt} IS NULL`,
+    sql`nullif(regexp_replace(${purchaseOrderInvoices.invoiceNumber}, '[^0-9]', '', 'g'), '')::bigint = ${folio}`,
+    sql`upper(regexp_replace(coalesce(${purchaseOrderInvoices.documentSupplierRut}, ''), '[^0-9kK]', '', 'g')) = ${rut}`,
+  ]
+  if (input.exceptPurchaseOrderId) {
+    conditions.push(sql`${purchaseOrderInvoices.purchaseOrderId} <> ${input.exceptPurchaseOrderId}`)
+  }
+
+  const [row] = await client
+    .select({
+      id: purchaseOrderInvoices.id,
+      purchaseOrderCode: purchaseOrders.code,
+    })
+    .from(purchaseOrderInvoices)
+    .innerJoin(purchaseOrders, eq(purchaseOrderInvoices.purchaseOrderId, purchaseOrders.id))
+    .where(and(...conditions))
+    .limit(1)
+
+  return row
+    ? { book: "purchasing", id: row.id, folio, docType: input.documentKind, purchaseOrderCode: row.purchaseOrderCode }
+    : null
+}
+
+/** El rechazo, nombrando la orden que ya tiene el documento. */
+export function describeDuplicateAcrossOrders(match: CrossBookMatch): string {
+  return `El folio ${match.folio} de este proveedor ya está adjunto a la orden `
+    + `${match.purchaseOrderCode ?? "de compra"}. Un documento tributario se registra una sola vez: `
+    + "si esta orden es la correcta, anula primero el adjunto de la otra."
+}

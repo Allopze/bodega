@@ -85,6 +85,11 @@ export interface SelectQuotationInput {
   requestId:   string
   quotationId: string
   userId:      string
+  /**
+   * COT-002: por qué se eligió esta oferta. Obligatorio cuando no es la más
+   * económica; opcional en el resto, y guardado igual si viene.
+   */
+  justification?: string | null
   userEmail?:  string
   roleContext?: string
   /** Scope-defensive: if set, only allows access to matching worksites. */

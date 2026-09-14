@@ -70,6 +70,9 @@ async function seedProgram() {
     id: PROGRAM_ID, version: 1, year: PROGRAM_YEAR, title: `PDTP ${PROGRAM_YEAR} compuerta`,
     status: "draft", elaboratedByName: "Prevencionista", elaboratedByTitle: "Experto en Prevención",
     creationMode: "blank", complianceTarget: 0.9, pesoEjecucion: 0.5, pesoVerificacion: 0.3, pesoCierre: 0.2,
+    // PDTP-003: el fixture no lista faenas; declara el alcance corporativo,
+    // que es lo que su comportamiento significaba antes de tener que decirlo.
+    appliesToAllWorksites: true,
     createdAt: now, updatedAt: now,
   })
 }

@@ -144,7 +144,7 @@ describe("detección", () => {
     expect((await detectDuplicateCandidates({ direction: "sale" })).created).toBe(0)
   })
 
-  it("un caso descartado no vuelve a abrirse", async () => {
+  it("un caso descartado no vuelve a abrirse mientras la evidencia no cambie", async () => {
     await seedSuspiciousPair()
     await detectDuplicateCandidates({ direction: "sale" })
     const [candidate] = await listOpenDuplicates(GLOBAL_SESSION)
@@ -154,6 +154,59 @@ describe("detección", () => {
 
     const rerun = await detectDuplicateCandidates({ direction: "sale" })
     expect(rerun.created).toBe(0)
+    expect(rerun.reopened).toBe(0)
+    expect(await listOpenDuplicates(GLOBAL_SESSION)).toHaveLength(0)
+  })
+
+  /**
+   * COB-001. Antes la búsqueda del par existente no miraba el estado: un
+   * `dismissed` bloqueaba la detección para siempre sobre esa pareja. Un
+   * descarte equivocado era permanente y silencioso justo sobre el mecanismo
+   * que evita cobrar dos veces el mismo documento.
+   */
+  it("reabre un descarte cuando la sincronización cambia la evidencia del par", async () => {
+    await seedSuspiciousPair()
+    await detectDuplicateCandidates({ direction: "sale" })
+    const [candidate] = await listOpenDuplicates(GLOBAL_SESSION)
+    await dismissDuplicate(candidate!.id, ACTOR)
+    expect(await listOpenDuplicates(GLOBAL_SESSION)).toHaveLength(0)
+
+    // La fuente externa corrige la fecha de emisión de la reemitida: el par
+    // pasa de "misma fecha" a "emitidas con días de diferencia". La evidencia
+    // sobre la que se descartó ya no es la que hay.
+    await inMemoryDb.update(schema.billingInvoices)
+      .set({ issueDate: "2026-07-29" })
+      .where(eq(schema.billingInvoices.id, "inv-reemitida"))
+
+    const rerun = await detectDuplicateCandidates({ direction: "sale" })
+    expect(rerun.created).toBe(0)
+    expect(rerun.reopened).toBe(1)
+
+    const [reopened] = await listOpenDuplicates(GLOBAL_SESSION)
+    expect(reopened).toBeDefined()
+    expect(reopened!.id).toBe(candidate!.id)
+
+    // La reapertura deja rastro en LAS DOS facturas: si no, el caso reaparece
+    // en la bandeja sin que nadie pueda explicar por qué.
+    const events = await inMemoryDb.select().from(schema.billingInvoiceEvents)
+      .where(eq(schema.billingInvoiceEvents.eventType, "duplicate.reopened"))
+    expect(events).toHaveLength(2)
+  })
+
+  it("no reabre un par fusionado ni uno descartado que sigue igual", async () => {
+    await seedSuspiciousPair()
+    await detectDuplicateCandidates({ direction: "sale" })
+    const [candidate] = await listOpenDuplicates(GLOBAL_SESSION)
+    await dismissDuplicate(candidate!.id, ACTOR)
+
+    // Un cambio que NO altera la huella de la evidencia (el nombre del
+    // receptor no forma parte de la comparación) no reabre nada.
+    await inMemoryDb.update(schema.billingInvoices)
+      .set({ receiverName: "MINERA EJEMPLO SPA (EX ALFA)" })
+      .where(eq(schema.billingInvoices.id, "inv-reemitida"))
+
+    const rerun = await detectDuplicateCandidates({ direction: "sale" })
+    expect(rerun.reopened).toBe(0)
     expect(await listOpenDuplicates(GLOBAL_SESSION)).toHaveLength(0)
   })
 })

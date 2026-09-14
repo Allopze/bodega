@@ -10,6 +10,7 @@ import { appendAssetHistory } from "./history"
 import { codeYear, escapeLikePattern } from "@/lib/utils"
 import { IT_TICKET_UNASSIGN, itTicketNextStatuses } from "@/lib/validation/ti"
 import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
+import { computeTicketDueAt } from "./ticket-sla"
 
 
 const OPEN_STATUSES = ["nuevo", "asignado", "en_diagnostico", "en_progreso", "esperando_usuario", "esperando_proveedor"]
@@ -83,6 +84,10 @@ export async function createTicket(
       category: input.category,
       priority: input.priority,
       status: "nuevo",
+      // TIT-001: la prioridad no gobernaba ningún plazo. El compromiso se fija
+      // al crear —igual que en Soporte— para que el contador exista desde el
+      // primer minuto y no dependa de que alguien mire la lista.
+      dueAt: computeTicketDueAt(input.priority),
       requesterUserId: actor.userId,
       workerId: input.workerId || null,
       worksiteId: input.worksiteId,
@@ -349,6 +354,7 @@ export async function listTickets(filters: TicketListFilters) {
       assigneeUserId: itTickets.assigneeUserId,
       assigneeName: sql<string>`(SELECT u.name FROM ${users} u WHERE u.id = ${itTickets.assigneeUserId})`,
       requesterName: sql<string>`(SELECT u.name FROM ${users} u WHERE u.id = ${itTickets.requesterUserId})`,
+      dueAt: itTickets.dueAt,
       createdAt: itTickets.createdAt,
       updatedAt: itTickets.updatedAt,
       resolvedAt: itTickets.resolvedAt,
@@ -417,6 +423,7 @@ export async function getTicketById(id: string, scope?: SQL) {
       requesterUserId: itTickets.requesterUserId,
       requesterName: sql<string>`(SELECT u.name FROM ${users} u WHERE u.id = ${itTickets.requesterUserId})`,
       resolution: itTickets.resolution,
+      dueAt: itTickets.dueAt,
       createdAt: itTickets.createdAt,
       updatedAt: itTickets.updatedAt,
       resolvedAt: itTickets.resolvedAt,

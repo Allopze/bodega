@@ -39,15 +39,28 @@ export async function listPdtpProgramWorksites(programId: string): Promise<PdtpP
 
 /**
  * Reemplaza la membresía completa del programa por el set de faenas dado.
- * Vaciar la membresía (`worksiteIds: []`) vuelve al comportamiento histórico
- * (todas las faenas del scope), no elimina el programa. Solo editable en
- * `draft` — la misma guarda central que el resto del contenido firmable.
+ * Vaciar la membresía (`worksiteIds: []`) no elimina el programa. Solo editable
+ * en `draft` — la misma guarda central que el resto del contenido firmable.
+ *
+ * PDTP-003: vaciarla ya no significa por sí sola "todas las faenas". El
+ * alcance corporativo se declara (`appliesToAllWorksites`) y sin esa
+ * declaración el programa no se puede activar sin faenas.
  */
 export async function setPdtpProgramWorksites(
   programId: string,
   worksiteIds: string[],
   userId: string,
   scope?: WorksiteScope,
+  /**
+   * PDTP-003: declarar que el programa cubre TODAS las faenas sin listarlas.
+   *
+   * Vaciar la membresía dejó de bastar para eso: es la diferencia entre un
+   * programa corporativo y uno a medio configurar, y sin declararla
+   * `activatePdtpProgram` no deja activar. Si se omite, el alcance declarado
+   * no se toca; listar faenas lo apaga, porque las dos cosas juntas se
+   * contradicen.
+   */
+  appliesToAllWorksites?: boolean,
 ): Promise<PdtpProgramWorksite[]> {
   const uniqueIds = [...new Set(worksiteIds)]
   if (scope !== undefined && scope !== "all") {
@@ -77,12 +90,20 @@ export async function setPdtpProgramWorksites(
       : await tx.insert(pdtpProgramWorksites).values(uniqueIds.map((worksiteId) => ({
         id: nanoid(), programId, worksiteId, isActive: true, addedByUserId: userId, addedAt: now,
       }))).returning()
+    const declaredScope = uniqueIds.length > 0 ? false : appliesToAllWorksites
+    if (declaredScope !== undefined && declaredScope !== program.appliesToAllWorksites) {
+      await tx.update(pdtpPrograms)
+        .set({ appliesToAllWorksites: declaredScope, updatedAt: now })
+        .where(eq(pdtpPrograms.id, programId))
+    }
     await addPdtpChangeLogEntry(
       programId, program.version, userId, "worksites",
-      { worksiteIds: before.map((w) => w.worksiteId) },
-      { worksiteIds: uniqueIds },
+      { worksiteIds: before.map((w) => w.worksiteId), appliesToAllWorksites: program.appliesToAllWorksites },
+      { worksiteIds: uniqueIds, appliesToAllWorksites: declaredScope ?? program.appliesToAllWorksites },
       uniqueIds.length === 0
-        ? "Membresía de faenas eliminada: el programa vuelve a aplicar a todas las faenas del alcance."
+        ? (declaredScope === true
+          ? "Membresía de faenas eliminada: el programa declara alcance corporativo (todas las faenas)."
+          : "Membresía de faenas eliminada: el programa queda sin alcance declarado y no podrá activarse así.")
         : `Membresía de faenas actualizada (${uniqueIds.length} faena(s)).`,
       tx,
     )

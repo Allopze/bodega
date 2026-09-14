@@ -7,6 +7,8 @@ import {
   purchaseOrders,
   purchaseRequestItems,
   preventionEmergencyResources,
+  receipts,
+  receiptItems,
 } from "@/db/schema"
 import { eq, inArray } from "drizzle-orm"
 import { requireAuth, can, canAny, canAccessWorksite } from "@/lib/auth/can"
@@ -88,6 +90,32 @@ export default async function NuevaRecepcionPage({
   const recordedById = await getRequestItemAttributesByIds(requestItemIds)
   const officeName = await officeWorksiteLabel()
 
+  /*
+   * REC-002: cuánto se dispuso ya en cada etapa —recibido + rechazado + dañado—,
+   * que es contra lo que `registerReceipt` descuenta el saldo de la línea.
+   */
+  const disposedRows = order.items.length > 0
+    ? await db
+        .select({
+          purchaseOrderItemId: receiptItems.purchaseOrderItemId,
+          locationType: receipts.locationType,
+          received: receiptItems.quantityReceived,
+          rejected: receiptItems.quantityRejected,
+          damaged:  receiptItems.quantityDamaged,
+        })
+        .from(receiptItems)
+        .innerJoin(receipts, eq(receiptItems.receiptId, receipts.id))
+        .where(inArray(receiptItems.purchaseOrderItemId, order.items.map((item) => item.id)))
+    : []
+  const disposedByItem = new Map<string, { office: number; faena: number }>()
+  for (const row of disposedRows) {
+    const entry = disposedByItem.get(row.purchaseOrderItemId) ?? { office: 0, faena: 0 }
+    const total = row.received + row.rejected + row.damaged
+    if (row.locationType === "office") entry.office += total
+    else entry.faena += total
+    disposedByItem.set(row.purchaseOrderItemId, entry)
+  }
+
   const items: ReceiptOcItem[] = order.items.map((item) => {
     const product = item.productId ? productMap[item.productId] : null
     return {
@@ -98,6 +126,10 @@ export default async function NuevaRecepcionPage({
       quantity:         item.quantity,
       quantityOfficeReceived: item.quantityOfficeReceived ?? 0,
       quantityReceived: item.quantityReceived ?? 0,
+      // REC-002: lo dispuesto, no sólo lo recibido. Sin esto la pantalla ofrece
+      // un saldo que el servidor rechaza en cuanto hubo un rechazo parcial.
+      quantityOfficeDisposed: disposedByItem.get(item.id)?.office ?? 0,
+      quantityFaenaDisposed:  disposedByItem.get(item.id)?.faena  ?? 0,
       unitOfMeasure:    item.unitOfMeasure,
       notes:            item.notes,
       isEmergencyService: product?.serviceSubjectKind === "emergency_resource",

@@ -130,18 +130,26 @@ export async function listPdtpActionsByExecution(executionId: string): Promise<P
  * programa cruza `sourceId` con la ejecución y su actividad; el alcance por
  * faena se resuelve contra `prevention_capa_actions.worksiteId`, que es columna
  * directa y no necesita el join.
+ *
+ * HALLAZGO SEC-002 (S3/P2) — `scope` era `opts?.scope`, opcional. Omitirlo no
+ * fallaba ni avisaba: la condición simplemente no se agregaba y la consulta
+ * devolvía TODAS las faenas. Hoy todos los llamadores lo pasaban, así que no
+ * hubo fuga, pero una pantalla nueva que lo olvidara la abría en silencio.
+ * Ahora es un parámetro posicional obligatorio —el compilador es el guardián,
+ * no la disciplina— y una lista vacía significa "ninguna faena", no "todas",
+ * igual que en `worksiteScopeSqlFor` y en `assertTiWorksiteAccess`.
  */
 export async function listPdtpActionsByProgram(
   programId: string,
+  scope: WorksiteScope,
   opts?: {
     worksiteId?: string
     estado?: string
     prioridad?: string
     soloVencidas?: boolean
-    scope?: WorksiteScope
   },
 ): Promise<Array<PdtpActionView & { activityId: string }>> {
-  if (opts?.scope !== undefined && opts.scope !== "all" && opts.scope.length === 0) return []
+  if (scope !== "all" && scope.length === 0) return []
 
   const rows = await db.select({
     capa: preventionCapaActions,
@@ -152,7 +160,7 @@ export async function listPdtpActionsByProgram(
     .where(and(
       capaEsDelPdtp,
       opts?.worksiteId ? eq(preventionCapaActions.worksiteId, opts.worksiteId) : undefined,
-      opts?.scope && opts.scope !== "all" ? inArray(preventionCapaActions.worksiteId, opts.scope) : undefined,
+      scope !== "all" ? inArray(preventionCapaActions.worksiteId, scope) : undefined,
       sql`EXISTS (
         SELECT 1 FROM pdtp_activities a
         WHERE a.id = ${pdtpExecutions.activityId}

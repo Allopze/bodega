@@ -317,6 +317,32 @@ describe("toggleUserActive", () => {
     expect(res.ok).toBe(false)
     expect(res.message).toContain("Solo un administrador")
   })
+
+  /*
+   * USR-002 (auditoría 2026-09-14): antes esto devolvía `ok: true` y el
+   * administrador se quedaba sin acceso en el acto. `deleteUser` sí tenía la
+   * guarda simétrica; `toggleUserActive` no comprobaba la identidad del actor.
+   */
+  it("no deja que un administrador desactive su propia cuenta", async () => {
+    const fd = new FormData()
+    fd.set("id", "user-1") // el mismo id que `makeSession()`
+    fd.set("activate", "false")
+    const res = await toggleUserActive(prevState, fd)
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("No puedes desactivar tu propia cuenta")
+  })
+
+  /*
+   * La guarda es sólo para la baja: reactivarse no deja a nadie fuera, y
+   * bloquearlo convertiría la regla en un estorbo sin ganar control alguno.
+   */
+  it("sí permite que el actor reactive su propia cuenta", async () => {
+    const fd = new FormData()
+    fd.set("id", "user-1")
+    fd.set("activate", "true")
+    const res = await toggleUserActive(prevState, fd)
+    expect(res.ok).toBe(true)
+  })
 })
 
 // ═══════════════════════════════════════════════════════════════════════════════

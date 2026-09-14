@@ -16,6 +16,14 @@ export const users = pgTable("users", {
   isTemporary:        boolean("is_temporary").notNull().default(false),
   validUntil:         timestamp("valid_until", { withTimezone: true, mode: "string" }),
   substituteForUserId: text("substitute_for_user_id"),
+  /*
+   * AUTH-003 (auditoría 2026-09-14): con sesiones JWT no hay nada del lado del
+   * servidor que se pueda borrar para cerrar una sesión ya emitida. Esta marca
+   * es esa pieza: restablecer la contraseña la adelanta a "ahora", y el
+   * callback JWT descarta todo token emitido antes. Nula significa "nunca se
+   * revocó nada" y no invalida a nadie.
+   */
+  sessionsValidFrom:  timestamp("sessions_valid_from", { withTimezone: true, mode: "string" }),
   createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:          timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 })

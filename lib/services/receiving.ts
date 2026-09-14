@@ -21,6 +21,12 @@ import { applyMovementTx } from "./stock"
 import { OFFICE_ORIGIN_LABEL, prepareDispatchGuideForOfficeReceiptTx, resolveOfficeWorksite } from "./dispatch-guides"
 import { notifyManyUser, notifyAfterCommit } from "./notifications"
 import { closeOrderTx } from "./purchasing-module/receiving"
+import {
+  collectRequesterShortfallNoticesTx,
+  flushRequesterShortfallNotifications,
+  type PendingRequesterNotification,
+  type RequesterShortfall,
+} from "./requester-shortfall-notify"
 import { RECEIVABLE_ORDER_STATUSES } from "@/lib/work-queue-labels"
 import { persistPurchaseOrderInvoiceReconciliationTx } from "./purchasing-module/invoice-reconciliation-service"
 import { completeEmergencyResourceServiceCaseTx, type EmergencyServiceCertificate } from "./emergency-resource-service"
@@ -92,9 +98,15 @@ export async function registerReceipt(
   // notifyAfterCommit sólo difiere al microtask: dentro del tx se drenaría en el
   // siguiente await, antes del COMMIT. Se acumulan y se disparan al salir.
   const pendingNotifications: Array<() => unknown> = []
+  // `E2E-001`: avisos de saldo recortado. Van por separado porque se resuelven
+  // al final de la transacción (necesitan el código de la recepción y hay que
+  // deduplicarlos contra los que devuelve el cierre automático de la OC).
+  let shortfallNotices: PendingRequesterNotification[] = []
 
   const code = await db.transaction(async (tx) => {
     pendingNotifications.length = 0
+    shortfallNotices = []
+    const shortfalls: RequesterShortfall[] = []
     // Read order INSIDE the transaction to avoid stale status checks.
     const [order] = await tx.select().from(purchaseOrders)
       .where(eq(purchaseOrders.id, input.purchaseOrderId)).for("update")
@@ -268,6 +280,23 @@ export async function registerReceipt(
         notes:               ri.notes ?? null,
       })
 
+      /**
+       * `E2E-001` (punto 2 de 3): lo rechazado o dañado consume el cupo de la
+       * etapa sin sumar stock ni avanzar el ítem de solicitud. El saldo queda
+       * muerto —la única salida es cerrar o anular la OC— y hasta acá el
+       * solicitante no se enteraba: sólo recibía aviso cuando su ítem llegaba a
+       * oficina (`receipt_done`) o completo a faena. Se avisa en las dos etapas:
+       * un rechazo en oficina también significa "no llega entero".
+       */
+      if (lockedOcItem.requestItemId && qtyRej + qtyDmg > 0) {
+        shortfalls.push({
+          requestItemId: lockedOcItem.requestItemId,
+          missingQuantity: qtyRej + qtyDmg,
+          cause: "recepcion_rechazo",
+          documentCode: txCode,
+        })
+      }
+
       // Sin cantidad buena recibida no hay avance de OC, stock ni ítem: solo queda
       // el registro del rechazo/daño en receiptItems.
       if (qtyRec > 0) {
@@ -381,8 +410,14 @@ export async function registerReceipt(
 
     // Fully received closes the order in the same transaction: there's no separate
     // "receiving in progress" state to sit in once every item has arrived.
+    // `E2E-001`: el aviso del rechazo/daño se resuelve antes del cierre
+    // automático para que, si ambos hablan del mismo faltante, el que sobreviva
+    // a la deduplicación sea el que nombra la causa concreta (el rechazo).
+    const receiptNotices = await collectRequesterShortfallNoticesTx(tx, shortfalls)
+
+    let closeNotices: PendingRequesterNotification[] = []
     if (rolledUpStatus === "received") {
-      await closeOrderTx(
+      closeNotices = await closeOrderTx(
         tx,
         { ...order, status: "received" },
         input.receivedBy,
@@ -390,6 +425,7 @@ export async function registerReceipt(
         { userEmail: input.userEmail },
       )
     }
+    shortfallNotices = [...receiptNotices, ...closeNotices]
 
     // La cantidad aceptada del proveedor es un eje de conciliación. Se
     // recalcula dentro del mismo commit para que ficha, cola y exportación no
@@ -416,6 +452,7 @@ export async function registerReceipt(
   void code // used only for audit above; receiptId is returned
 
   for (const notify of pendingNotifications) notifyAfterCommit(notify)
+  flushRequesterShortfallNotifications(shortfallNotices)
 
   return receiptId
 }

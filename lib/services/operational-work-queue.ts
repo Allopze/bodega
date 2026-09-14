@@ -6,10 +6,12 @@
  * serializar una fila; no hay una lista completa enviada al navegador.
  */
 import type { Session } from "next-auth"
+import { canActOnQueueSource } from "./work-queue-eligibility"
 import { and, eq, inArray, notInArray, or, sql, type SQL } from "drizzle-orm"
 import type { AnyPgColumn } from "drizzle-orm/pg-core"
 import { db } from "@/db"
 import {
+  billingInvoices,
   pdtpActivities,
   pdtpActivitySchedule,
   pdtpActivityWorksiteExclusions,
@@ -781,7 +783,73 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       AND ${orderHasReceivedUninvoicedQuantity}
   `)
 
-  if (hasPermission(session, "prevention:pdtp:view")) {
+  /*
+   * E2E-004 (auditoría 2026-09-14): la cola vigilaba la factura pero no el pago.
+   *
+   * El trabajo tributario que reconocía terminaba en el documento —recepción
+   * sin factura, conciliación `needs_review`, facturación parcial—: una factura
+   * conciliada y aprobada no generaba ningún pendiente, porque el pago vive en
+   * el otro libro (`billing_invoices` con `direction = 'purchase'`, ver
+   * `E2E-003`) y la cola no lo miraba. El circuito de compra quedaba
+   * operacionalmente cerrado cuando el documento cuadraba, no cuando se pagaba.
+   *
+   * La fila nace del cruce que `E2E-003` ya definió —RUT del emisor + folio +
+   * clase de documento— entre la factura de la OC y su gemela del libro de
+   * facturación. Es el único puente que existe hoy, y trae dos cosas que el
+   * libro de compras no tiene: vencimiento y estado de pago. La faena sale de
+   * la OC, que es lo que permite que esta fila respete el scope como todas las
+   * demás (`billing_invoices` no tiene faena).
+   *
+   * SÓLO VENCIDAS. Una factura dentro de plazo no es trabajo pendiente: es el
+   * curso normal. Se emite cuando pasó el vencimiento y sigue sin saldarse.
+   *
+   * LO QUE NO SE INVENTA: si el documento no tiene gemelo en el libro de
+   * facturación, su estado de pago sencillamente no se conoce, y esta fuente
+   * calla en vez de afirmar que está impago. Cerrar ese hueco exige unificar
+   * los dos libros, que es la decisión de producto que `E2E-003` dejó abierta.
+   */
+  if (canActOnQueueSource(session.user.permissions, "pago_compra")) add("compras", sql`
+    SELECT 'purchase_order_invoice'::text AS source_type, ${purchaseOrderInvoices.id} AS source_id, 'pay'::text AS action_key,
+      'compras'::text AS module, ${purchaseOrders.code} AS code,
+      CONCAT('Pago vencido de la factura ', ${purchaseOrderInvoices.invoiceNumber}, ' de ', ${purchaseOrders.code}) AS title,
+      ${suppliers.name} AS subtitle, ${purchaseOrders.worksiteId} AS worksite_id,
+      ${worksites.name} AS worksite_name, ${billingInvoices.paymentStatus} AS status,
+      CASE ${billingInvoices.paymentStatus}
+        WHEN 'partial' THEN 'Pago parcial vencido'
+        ELSE 'Factura vencida sin pago' END AS status_label,
+      'high'::text AS priority, false AS blocked,
+      ${purchaseOrderInvoices.uploadedAt}::text AS created_at,
+      ${billingInvoices.dueDate} AS source_due_at,
+      ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
+      CONCAT('/facturacion/facturas/', ${billingInvoices.id}) AS href,
+      'Revisar pago'::text AS cta_label
+    FROM ${purchaseOrderInvoices}
+    INNER JOIN ${purchaseOrders} ON ${purchaseOrders.id} = ${purchaseOrderInvoices.purchaseOrderId}
+    INNER JOIN ${worksites} ON ${worksites.id} = ${purchaseOrders.worksiteId}
+    INNER JOIN ${suppliers} ON ${suppliers.id} = ${purchaseOrders.supplierId}
+    INNER JOIN ${billingInvoices} ON ${billingInvoices.direction} = 'purchase'
+      -- Misma identidad tributaria normalizada que la comprobación cruzada de
+      -- E2E-003: folio sin ceros ni serie, RUT sin puntos ni guion.
+      AND nullif(regexp_replace(${purchaseOrderInvoices.invoiceNumber}, '[^0-9]', '', 'g'), '')::bigint = ${billingInvoices.folio}
+      AND upper(regexp_replace(coalesce(${purchaseOrderInvoices.documentSupplierRut}, ''), '[^0-9kK]', '', 'g'))
+        = upper(regexp_replace(${billingInvoices.issuerTaxId}, '[^0-9kK]', '', 'g'))
+      AND (
+        (${purchaseOrderInvoices.documentKind} = 'invoice' AND ${billingInvoices.docType} IN ('33', '34', '46', '56'))
+        OR (${purchaseOrderInvoices.documentKind} = 'credit_note' AND ${billingInvoices.docType} = '61')
+      )
+    WHERE ${inScope(purchaseOrders.worksiteId)}
+      -- Una factura anulada a cualquiera de los dos lados no debe nada.
+      AND ${purchaseOrderInvoices.voidedAt} IS NULL
+      AND ${billingInvoices.documentStatus} <> 'void'
+      AND ${billingInvoices.paymentStatus} IN ('unpaid', 'partial')
+      AND ${billingInvoices.dueDate} IS NOT NULL
+      AND ${billingInvoices.dueDate} < ${startOfChileDay()}
+  `)
+
+  // PEND-001: la rama se abre para quien pueda hacer algo en ella, y cada fuente
+  // de adentro vuelve a comprobar la suya: ejecutar el programa y gestionar sus
+  // acciones correctivas son permisos distintos, en manos distintas.
+  if (canActOnQueueSource(session.user.permissions, "pdtp") || canActOnQueueSource(session.user.permissions, "pdtp_capa")) {
     // Actividades programadas que le tocan a ESTE usuario (D1 + D3 del diseño
     // 2026-08-12). Hasta ahora la cola sólo traía obligaciones y acciones
     // correctivas: las 65 actividades `scheduled` del programa no producían
@@ -804,7 +872,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
     // la actividad de la cola de todos sus responsables. El cierre por
     // responsable que pide D3 necesita resolver antes C5 (el motor de
     // acreditación crea ejecuciones sin dueño).
-    if (session.user.roles.length > 0) {
+    if (session.user.roles.length > 0 && canActOnQueueSource(session.user.permissions, "pdtp")) {
       const chileNow = sql`(now() AT TIME ZONE 'America/Santiago')`
       const currentYear = sql`EXTRACT(YEAR FROM ${chileNow})::int`
       const currentMonth = sql`EXTRACT(MONTH FROM ${chileNow})::int`
@@ -916,7 +984,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
           )
       `)
     }
-    add("pdtp", sql`
+    if (canActOnQueueSource(session.user.permissions, "pdtp")) add("pdtp", sql`
       SELECT 'pdtp_obligation'::text AS source_type, ${pdtpObligations.id} AS source_id, 'execute'::text AS action_key,
         'pdtp'::text AS module, NULL::text AS code, 'Cumplir obligación PDTP'::text AS title, ''::text AS subtitle,
         ${pdtpObligations.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name, ${pdtpObligations.status} AS status,
@@ -943,7 +1011,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
     // `prevention:pdtp:action:manage` pero NO `prevention:capa:view`, así que
     // apagarla les borraría el trabajo. Las dos ramas se reparten el universo
     // por `source_type` para que ninguna acción aparezca dos veces.
-    add("pdtp", capaQueueSource(inScope, {
+    if (canActOnQueueSource(session.user.permissions, "pdtp_capa")) add("pdtp", capaQueueSource(inScope, {
       module: "pdtp",
       origin: sql`${preventionCapaActions.sourceType} = 'pdtp'`,
       title: sql`'Acción correctiva PDTP'::text`,
@@ -955,9 +1023,13 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
   // Complemento exacto de la rama `pdtp`: si el usuario ve el PDTP, esa rama ya
   // trajo las de origen `pdtp` y aquí se excluyen. Si no lo ve, aquí entran
   // todas para que no se le pierda ninguna.
-  if (hasPermission(session, "prevention:capa:view")) add("capa", capaQueueSource(inScope, {
+  if (canActOnQueueSource(session.user.permissions, "capa")) add("capa", capaQueueSource(inScope, {
     module: "capa",
-    origin: hasPermission(session, "prevention:pdtp:view")
+    // PEND-001: el complemento tiene que mirar la MISMA condición con la que la
+    // rama PDTP emitió sus filas. Mientras miró el permiso de lectura, quien
+    // gestiona CAPA y ve el PDTP sin gestionar sus acciones perdía las de origen
+    // `pdtp`: la rama de arriba no las traía y ésta las excluía igual.
+    origin: canActOnQueueSource(session.user.permissions, "pdtp_capa")
       ? sql`${preventionCapaActions.sourceType} <> 'pdtp'`
       : sql`true`,
     title: sql`CONCAT('Gestionar ', ${preventionCapaActions.code})`,
@@ -999,7 +1071,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
     WHERE ${inScope(preventionInspectionRuns.worksiteId)} AND ${preventionInspectionRuns.status} IN ${inspectionStatuses}
   `)
 
-  if (hasPermission(session, "prevention:docs:view")) add("documentacion", sql`
+  if (canActOnQueueSource(session.user.permissions, "documentacion")) add("documentacion", sql`
     SELECT 'sst_document'::text AS source_type, ${sstDocuments.id} AS source_id,
       CASE WHEN ${sstDocuments.status} = 'en_revision' THEN 'review' ELSE 'renew' END AS action_key,
       'documentacion'::text AS module, ${sstDocuments.internalCode} AS code, ${sstDocuments.title} AS title,
@@ -1018,7 +1090,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
       AND (${sstDocuments.status} IN ('en_revision', 'observado', 'vencido') OR (${sstDocuments.expiresAt} IS NOT NULL AND ${sstDocuments.expiresAt} <= ${startOfChileDay()}))
   `)
 
-  if (hasPermission(session, "ppa:view")) add("ppa", sql`
+  if (canActOnQueueSource(session.user.permissions, "ppa")) add("ppa", sql`
     SELECT 'ppa'::text AS source_type, ${ppaSubmissions.id} AS source_id, 'review'::text AS action_key,
       'ppa'::text AS module, NULL::text AS code, 'Caso PPA requiere revisión'::text AS title, ''::text AS subtitle,
       ${ppaSubmissions.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name, ${ppaSubmissions.estado} AS status,
@@ -1047,14 +1119,23 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
     WHERE ${inScope(ppaSubmissions.worksiteId)} AND ${ppaSubmissions.estado} IN ('detenido', 'en_correccion', 'pendiente_verificacion')
   `)
 
-  if (hasPermission(session, "sst:view")) add("sst", sql`
+  if (canActOnQueueSource(session.user.permissions, "sst")) add("sst", sql`
     SELECT 'sst_followup'::text AS source_type, ${sstScheduledFollowups.id} AS source_id, 'complete'::text AS action_key,
       'sst'::text AS module, NULL::text AS code, 'Seguimiento SST pendiente'::text AS title, ''::text AS subtitle,
       ${sstEvaluations.worksiteId} AS worksite_id, ${worksites.name} AS worksite_name, 'pending'::text AS status,
       CONCAT('Pendiente · ', REPLACE(${sstScheduledFollowups.instancia}, '_', ' ')) AS status_label,
       'normal'::text AS priority, false AS blocked, ${sstEvaluations.createdAt}::text AS created_at, LEFT(${sstScheduledFollowups.fechaProgramada}::text, 10) AS source_due_at,
       ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
-      '/prevencion/evaluaciones'::text AS href, 'Registrar seguimiento'::text AS cta_label
+      -- PEND-003 (auditoría 2026-09-14): la fuente conoce el seguimiento y su
+      -- evaluación, y descartaba esa identidad para emitir siempre la lista
+      -- general agrupada por trabajador (hasta 50 grupos, sin parámetros): la
+      -- persona tenía que buscar a mano el caso que la fila ya identificaba.
+      -- /prevencion/<evaluationId> es la ficha de la evaluación, que renderiza
+      -- el panel de seguimientos con el formulario de registro; el parámetro
+      -- 'seguimiento' lleva cuál de ellos originó la tarea. El destino revalida
+      -- faena y permiso por su cuenta, así que el enlace no amplía nada.
+      CONCAT('/prevencion/', ${sstEvaluations.id}, '?seguimiento=', ${sstScheduledFollowups.id}) AS href,
+      'Registrar seguimiento'::text AS cta_label
     FROM ${sstScheduledFollowups}
     INNER JOIN ${sstEvaluations} ON ${sstEvaluations.id} = ${sstScheduledFollowups.evaluationId}
     INNER JOIN ${worksites} ON ${worksites.id} = ${sstEvaluations.worksiteId}
@@ -1066,7 +1147,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
    * cada mes, renovar el mandato antes de que venza y ejecutar su programa de
    * trabajo. Las brechas de acuerdos NO van acá: nacen como CAPA y ya las trae
    * la fuente `capa`. */
-  if (hasPermission(session, "prevention:cphs:view")) {
+  if (canActOnQueueSource(session.user.permissions, "cphs")) {
     add("cphs", sql`
       SELECT 'cphs_cadence'::text AS source_type, ${preventionCommittees.id} AS source_id, 'schedule'::text AS action_key,
         'cphs'::text AS module, NULL::text AS code, 'El comité lleva dos meses o más sin sesionar'::text AS title,

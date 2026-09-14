@@ -153,7 +153,7 @@ export async function getPdtpAuditDossier(input: {
 
   const [obligations, actions, approvalSteps, changeRows, importBatchRows] = await Promise.all([
     listPdtpObligations({ scope: input.scope, programId: program.id, worksiteId: input.worksiteId }),
-    listActionsByProgram(program.id, { worksiteId: input.worksiteId, scope: input.scope }),
+    listActionsByProgram(program.id, input.scope, { worksiteId: input.worksiteId }),
     getPdtpApprovalProgress(program.id),
     db.select().from(pdtpChangeLog).where(eq(pdtpChangeLog.programId, program.id)).orderBy(desc(pdtpChangeLog.changedAt)),
     db.select().from(pdtpImportBatches).where(eq(pdtpImportBatches.programId, program.id)).orderBy(desc(pdtpImportBatches.createdAt)),

@@ -1,4 +1,4 @@
-import { and, gte, inArray, lte, sql, type SQLWrapper } from "drizzle-orm"
+import { and, inArray, sql, type SQLWrapper } from "drizzle-orm"
 import { eq } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { systemSettings } from "@/db/schema"
@@ -34,8 +34,38 @@ export function previousPeriod(fromDate: string, toDate: string) {
   return { fromDate: dateOnly(previousFrom), toDate: dateOnly(previousTo) }
 }
 
+/**
+ * ANA-001 (auditoría 2026-09-14): el corte de período de Analítica es el **día
+ * civil chileno**, no el instante UTC.
+ *
+ * Antes esto comparaba la columna cruda contra `fromDate` y
+ * `` `${toDate}T23:59:59` ``, sin zona: sobre columnas `timestamptz` la
+ * comparación ocurre en la zona de la sesión de base de datos (UTC en el
+ * despliegue), de modo que el "día" analítico iba de las 21:00 del día anterior
+ * a las 20:59 del día chileno. Una OC creada a las 22:00 del último día del mes
+ * contaba en el mes siguiente y las cifras no cuadraban con los módulos que sí
+ * usan día civil. Misma forma y misma razón que `chileDayRange` en
+ * `lib/combustibles/fuel-cycle.ts`.
+ */
+export function chileDayExpr(column: SQLWrapper) {
+  return sql`(${column} at time zone 'America/Santiago')::date`
+}
+
+/** Mes civil chileno de una columna `timestamptz`, para las series mensuales. */
+export function chileMonthExpr(column: SQLWrapper) {
+  return sql<string>`to_char(${column} at time zone 'America/Santiago', 'YYYY-MM')`
+}
+
+/** Rango cerrado `[from, to]` en días civiles chilenos. */
+export function chileDayRange(column: SQLWrapper, from: string, to: string) {
+  return and(
+    sql`${chileDayExpr(column)} >= ${from}::date`,
+    sql`${chileDayExpr(column)} <= ${to}::date`,
+  )
+}
+
 export function dateFilter(filters: Required<Pick<AnalyticsFilters, "fromDate" | "toDate">>, column: SQLWrapper) {
-  return and(gte(column, filters.fromDate), lte(column, `${filters.toDate}T23:59:59`))
+  return chileDayRange(column, filters.fromDate, filters.toDate)
 }
 
 export function worksiteFilter(session: Session | null, column: SQLWrapper) {

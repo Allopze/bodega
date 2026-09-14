@@ -83,10 +83,13 @@ vi.mock("@/lib/pagination", () => ({
   }),
 }))
 vi.mock("@/lib/adquisiciones/list-query", () => ({
-  parseListParams: () => ({ q: "", estados: [], faena: null }),
+  parseListParams: () => ({ q: "", estados: [], faena: null, urgencia: "" }),
   statusSql: () => undefined,
   worksiteEqSql: () => undefined,
   periodSql: () => undefined,
+  // REQ-004: Solicitudes pasó a filtrar también por urgencia; sin este stub la
+  // página revienta antes de llegar al gate de permisos que se prueba acá.
+  eqFilter: () => undefined,
 }))
 vi.mock("@/lib/constants", () => ({ SOLICITUDES_PAGE_SIZE: 20, DEFAULT_PAGE_SIZE: 25 }))
 vi.mock("@/lib/services/feedback", () => ({

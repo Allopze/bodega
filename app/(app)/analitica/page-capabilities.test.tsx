@@ -6,8 +6,11 @@ const getAnalyticsDashboard = vi.hoisted(() => vi.fn())
 const getFilterOptions = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({ requirePermission, can }))
+// ANA-002/PER-T02: la página ya no llama al servicio directo sino a su entrada
+// cacheada (`read-model-cache`); el doble se mueve ahí. Lo que esta prueba
+// verifica —qué secciones se pintan según permisos— no cambia.
+vi.mock("@/lib/services/read-model-cache", () => ({ getCachedAnalyticsDashboard: getAnalyticsDashboard }))
 vi.mock("@/lib/services/analytics", () => ({
-  getAnalyticsDashboard,
   normalizeAnalyticsFilters: (filters: Record<string, unknown>) => ({
     fromDate: "2026-08-01",
     toDate: "2026-08-31",

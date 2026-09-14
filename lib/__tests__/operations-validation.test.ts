@@ -5,6 +5,7 @@ import {
   requestSchema,
   workerDeliverySchema,
   workerStockDeliverySchema,
+  MAX_DELIVERY_BACKDATING_DAYS,
 } from "@/lib/validation/operations"
 import {
   addDaysToPlainDate,
@@ -265,15 +266,68 @@ describe("workerStockDeliverySchema", () => {
   })
 
   // La fecha del comprobante puede ser histórica: la entrega física puede
-  // haberse realizado mucho antes de que el operador la registre.
-  it("acepta hoy, la ausencia del campo y cualquier fecha pasada", () => {
+  // haberse realizado antes de que el operador la registre.
+  //
+  // ENT-003 (auditoría 2026-09-14): esta prueba afirmaba lo contrario —aceptaba
+  // −365 días y su nombre decía "cualquier fecha pasada"—. La retroactividad
+  // sigue, acotada por `MAX_DELIVERY_BACKDATING_DAYS`.
+  it("acepta hoy, la ausencia del campo y una fecha pasada dentro del plazo", () => {
     const today = todayInChile()
     expect(workerStockDeliverySchema.safeParse(validDelivery).data?.deliveredAt).toBeUndefined()
     expect(workerStockDeliverySchema.safeParse({ ...validDelivery, deliveredAt: today }).success).toBe(true)
     expect(workerStockDeliverySchema.safeParse({
       ...validDelivery,
-      deliveredAt: addDaysToPlainDate(today, -365),
+      deliveredAt: addDaysToPlainDate(today, -MAX_DELIVERY_BACKDATING_DAYS),
     }).success).toBe(true)
+  })
+
+  it("rechaza una fecha anterior al plazo de retroactividad", () => {
+    const result = workerStockDeliverySchema.safeParse({
+      ...validDelivery,
+      deliveredAt: addDaysToPlainDate(todayInChile(), -(MAX_DELIVERY_BACKDATING_DAYS + 1)),
+    })
+    expect(result.success).toBe(false)
+    expect(result.error?.flatten().fieldErrors.deliveredAt?.[0]).toContain("retroactividad")
+  })
+
+  /*
+   * ENT-002 (auditoría 2026-09-14): las dos reglas del canje vivían en
+   * `workerDeliverySchema`, que no usaba ninguna acción. Ahora están en el
+   * esquema por línea que sí se usa, y el error aterriza en la línea concreta.
+   */
+  it("acepta una línea con devolución de EPP usado completa", () => {
+    const result = workerStockDeliverySchema.safeParse({
+      ...validDelivery,
+      items: [{
+        productId: "product-1",
+        quantity: 1,
+        returnProductId: "product-1",
+        returnQuantity: 1,
+        returnReason: "desgastado",
+      }],
+    })
+    expect(result.success).toBe(true)
+    expect(result.data?.items[0]?.returnQuantity).toBe(1)
+  })
+
+  it("rechaza una devolución sin producto o sin motivo, en la línea que la declara", () => {
+    const sinProducto = workerStockDeliverySchema.safeParse({
+      ...validDelivery,
+      items: [{ productId: "product-1", quantity: 1, returnQuantity: 1, returnReason: "dañado" }],
+    })
+    expect(sinProducto.success).toBe(false)
+    expect(sinProducto.error?.issues.some((issue) => (
+      issue.path.join(".") === "items.0.returnProductId"
+    ))).toBe(true)
+
+    const sinMotivo = workerStockDeliverySchema.safeParse({
+      ...validDelivery,
+      items: [{ productId: "product-1", quantity: 1, returnProductId: "product-9", returnQuantity: 1 }],
+    })
+    expect(sinMotivo.success).toBe(false)
+    expect(sinMotivo.error?.issues.some((issue) => (
+      issue.path.join(".") === "items.0.returnReason"
+    ))).toBe(true)
   })
 
   it("rechaza el futuro y una fecha inexistente", () => {

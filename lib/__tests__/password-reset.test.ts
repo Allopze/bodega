@@ -78,7 +78,8 @@ describe("recuperación de contraseña", () => {
   beforeEach(async () => {
     sentEmails.length = 0
     await testDb.delete(schema.passwordResetTokens)
-    await testDb.update(schema.users).set({ hashedPassword: "original" })
+    // AUTH-003: la marca de revocación también se limpia entre pruebas.
+    await testDb.update(schema.users).set({ hashedPassword: "original", sessionsValidFrom: null })
   })
 
   describe("emisión", () => {
@@ -146,6 +147,38 @@ describe("recuperación de contraseña", () => {
       expect(result.ok).toBe(true)
       expect(await passwordOf()).toBe("hashed_clave-nueva-1")
       expect(await activeTokens()).toHaveLength(0)
+    })
+
+    /*
+     * AUTH-003 (auditoría 2026-09-14): el restablecimiento sólo escribía el
+     * hash. Con sesiones JWT eso deja intactas las cookies ya emitidas: una
+     * sesión robada antes del cambio seguía sirviendo hasta expirar sola,
+     * porque no quedaba ningún dato del lado del servidor contra el cual
+     * pudiera fallar. Ahora la misma transacción adelanta `sessionsValidFrom`,
+     * que es lo que el callback JWT compara.
+     */
+    it("AUTH-003: restablecer marca desde cuándo valen las sesiones, en la misma transacción", async () => {
+      const antes = await testDb.select({ v: schema.users.sessionsValidFrom })
+        .from(schema.users).where(eq(schema.users.id, USER))
+      expect(antes[0]?.v).toBeNull()
+
+      const inicio = Date.now()
+      await requestPasswordReset("juan@test.cl")
+      expect((await applyPasswordReset(tokenFromLastEmail(), "clave-nueva-1")).ok).toBe(true)
+
+      const [fila] = await testDb.select({ v: schema.users.sessionsValidFrom })
+        .from(schema.users).where(eq(schema.users.id, USER))
+      expect(fila?.v).not.toBeNull()
+      expect(new Date(fila!.v!).getTime()).toBeGreaterThanOrEqual(inicio - 1000)
+    })
+
+    it("AUTH-003: un enlace que no se pudo consumir no revoca ninguna sesión", async () => {
+      const fallido = await applyPasswordReset("token-inventado", "clave-del-atacante")
+      expect(fallido.ok).toBe(false)
+
+      const [fila] = await testDb.select({ v: schema.users.sessionsValidFrom })
+        .from(schema.users).where(eq(schema.users.id, USER))
+      expect(fila?.v).toBeNull()
     })
 
     /**

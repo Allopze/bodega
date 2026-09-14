@@ -11,7 +11,8 @@ import {
   Warning,
 } from "@phosphor-icons/react/dist/ssr"
 import { can, requirePermission } from "@/lib/auth/can"
-import { getAnalyticsDashboard, normalizeAnalyticsFilters } from "@/lib/services/analytics"
+import { normalizeAnalyticsFilters } from "@/lib/services/analytics"
+import { getCachedAnalyticsDashboard } from "@/lib/services/read-model-cache"
 import { formatCLP, formatDate, formatQty } from "@/lib/utils"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
@@ -50,7 +51,9 @@ export default async function AnaliticaPage({
   })
 
   const [data, options] = await Promise.all([
-    getAnalyticsDashboard(session, filters),
+    // ANA-002/PER-T02: la pantalla lee por la entrada cacheada (30 s); el
+    // servicio directo queda para la exportación, que necesita evidencia fresca.
+    getCachedAnalyticsDashboard(session, filters),
     getFilterOptions(session),
   ])
 

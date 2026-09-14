@@ -34,7 +34,7 @@ export function MaintenanceOrderWorkbench({ record, canEdit, canViewCosts, canAp
           {record.rootCause && <div className="sm:col-span-2 lg:col-span-3"><DetailItem layout="stacked" label="Causa raíz" value={record.rootCause} /></div>}
         </dl></CardContent></Card>
         <TasksCard maintenanceId={record.id} tasks={record.tasks} editable={editable} />
-        <PartsCard maintenanceId={record.id} parts={record.parts} editable={editable} canViewCosts={canViewCosts} />
+        <PartsCard maintenanceId={record.id} parts={record.parts} availableStock={record.availableStock} editable={editable} canViewCosts={canViewCosts} />
         <LaborCard maintenanceId={record.id} labor={record.labor} editable={editable} canViewCosts={canViewCosts} />
         <DocumentsCard maintenanceId={record.id} documents={record.documents} editable={editable} />
       </div>
@@ -85,11 +85,23 @@ function TasksCard({ maintenanceId, tasks, editable }: { maintenanceId: string; 
   </CardContent></Card>
 }
 
-function PartsCard({ maintenanceId, parts, editable, canViewCosts }: { maintenanceId: string; parts: RecordDetail["parts"]; editable: boolean; canViewCosts: boolean }) {
+/**
+ * `MNT-002` (auditoría 2026-09-14): el formulario sólo aceptaba texto libre, y
+ * por eso ninguna imputación descontaba stock. El selector ofrece lo que la
+ * faena de la orden tiene realmente en bodega: elegir de ahí emite el egreso en
+ * la misma transacción. "No sale de bodega" sigue disponible para la pieza que
+ * el taller externo factura y que nunca entró al inventario.
+ */
+function PartsCard({ maintenanceId, parts, availableStock, editable, canViewCosts }: { maintenanceId: string; parts: RecordDetail["parts"]; availableStock: RecordDetail["availableStock"]; editable: boolean; canViewCosts: boolean }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(addMaintenancePartAction, { ok: false, message: "" })
+  const [productId, setProductId] = useState("")
+  const stockOptions = [
+    { value: "", label: "No sale de bodega (compra directa o taller externo)" },
+    ...availableStock.map((item) => ({ value: item.productId, label: `${item.sku} · ${item.name} — ${item.quantity.toLocaleString("es-CL")} ${item.unit} disponibles` })),
+  ]
   return <Card><CardHeader><CardTitle>Repuestos e insumos</CardTitle></CardHeader><CardContent className="space-y-4">
-    {parts.length === 0 ? <p className="text-sm text-[var(--color-text-muted)]">No hay repuestos imputados a esta orden.</p> : <ul className="divide-y divide-[var(--color-border)]">{parts.map((part) => <li key={part.id} className="flex justify-between gap-3 py-2 text-sm"><span>{part.description}{part.partNumber ? ` · ${part.partNumber}` : ""}</span><span className="font-mono">{part.quantity.toLocaleString("es-CL")} {part.unit}{canViewCosts ? ` · ${formatCLP((part.unitCost ?? 0) * part.quantity)}` : ""}</span></li>)}</ul>}
-    {editable && <form action={action} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><input type="hidden" name="maintenanceId" value={maintenanceId} /><Field label="Descripción" htmlFor="part-description" className="sm:col-span-2" error={state.fieldErrors?.description?.[0]}><Input id="part-description" name="description" required /></Field><Field label="Código" htmlFor="part-number"><Input id="part-number" name="partNumber" /></Field><Field label="Cantidad" htmlFor="part-quantity" required><Input id="part-quantity" name="quantity" type="number" min="0.001" step="0.001" required /></Field><Field label="Unidad" htmlFor="part-unit"><Input id="part-unit" name="unit" defaultValue="un" /></Field>{canViewCosts && <Field label="Costo unitario" htmlFor="part-cost"><Input id="part-cost" name="unitCost" type="number" min="0" step="1" defaultValue="0" /></Field>}<div className="flex items-end"><Button type="submit" disabled={pending}>Agregar repuesto</Button></div></form>}
+    {parts.length === 0 ? <p className="text-sm text-[var(--color-text-muted)]">No hay repuestos imputados a esta orden.</p> : <ul className="divide-y divide-[var(--color-border)]">{parts.map((part) => <li key={part.id} className="flex justify-between gap-3 py-2 text-sm"><span>{part.description}{part.partNumber ? ` · ${part.partNumber}` : ""}{part.productId ? " · descontado de bodega" : ""}</span><span className="font-mono">{part.quantity.toLocaleString("es-CL")} {part.unit}{canViewCosts ? ` · ${formatCLP((part.unitCost ?? 0) * part.quantity)}` : ""}</span></li>)}</ul>}
+    {editable && <form action={action} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><input type="hidden" name="maintenanceId" value={maintenanceId} /><Field label="Producto de bodega" htmlFor="part-product" className="sm:col-span-2 lg:col-span-4" hint="Al elegir un producto, la cantidad se descuenta del stock de la faena de esta orden."><OptionSelect id="part-product" name="productId" value={productId} onValueChange={setProductId} options={stockOptions} /></Field><Field label="Descripción" htmlFor="part-description" className="sm:col-span-2" error={state.fieldErrors?.description?.[0]}><Input id="part-description" name="description" required /></Field><Field label="Código" htmlFor="part-number"><Input id="part-number" name="partNumber" /></Field><Field label="Cantidad" htmlFor="part-quantity" required><Input id="part-quantity" name="quantity" type="number" min="0.001" step="0.001" required /></Field><Field label="Unidad" htmlFor="part-unit"><Input id="part-unit" name="unit" defaultValue="un" /></Field>{canViewCosts && <Field label="Costo unitario" htmlFor="part-cost"><Input id="part-cost" name="unitCost" type="number" min="0" step="1" defaultValue="0" /></Field>}<div className="flex items-end"><Button type="submit" disabled={pending}>Agregar repuesto</Button></div></form>}
     {state.message && !state.ok && <p role="alert" className="text-sm text-[var(--color-danger)]">{state.message}</p>}
   </CardContent></Card>
 }

@@ -22,6 +22,7 @@ import { sanitizeCell as excelSafe } from "@/lib/reports/export-module/excel-bui
 import type { CapaQuickFilter } from "@/lib/prevention/capa-list-filters"
 import { chileDateParts, codeYear, todayInChile} from "@/lib/utils"
 import { checkEvidence, describeEvidenceProblems } from "@/lib/validation/evidence-contract"
+import { REASON_MAX_LENGTH, isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 
 export const CAPA_STATUSES = [
   "pending",
@@ -56,7 +57,7 @@ function capaQuickFilterWhere(filter: CapaQuickFilter | undefined) {
   )
 }
 
-const capaCreateSchema = z.object({
+const capaCreateBaseSchema = z.object({
   sourceType: z.enum(["pdtp", "sst_evaluation", "ppa", "incident", "risk", "legal_requirement", "training", "work_permit", "inspection", "cphs", "emergency", "change", "epp", "external_engagement", "cgrd", "gps_onway", "manual"]),
   sourceId: z.string().min(1).max(200),
   sourceItemId: z.string().min(1).max(300).nullable().optional(),
@@ -72,6 +73,11 @@ const capaCreateSchema = z.object({
   priority: z.enum(["low", "medium", "high", "critical"]).default("medium"),
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha objetivo inválida"),
   evidenceRequired: z.boolean().optional(),
+  /**
+   * CAPA-002: por qué esta acción no exigirá evidencia. Obligatorio cuando
+   * `evidenceRequired` viene en `false` (ver el refine del schema).
+   */
+  evidenceExemptionReason: z.string().trim().max(REASON_MAX_LENGTH).nullable().optional(),
   requiresImmediateStop: z.boolean().optional(),
   /** Módulo 04: deriva prioridad y plazo; `fatal` exige detención inmediata. */
   danoPotencial: z.enum(["leve", "moderado", "grave", "fatal"]).nullable().optional(),
@@ -80,6 +86,77 @@ const capaCreateSchema = z.object({
   reconciliationStatus: z.enum(["reconciled", "needs_assignment", "needs_evidence", "needs_review"]).optional(),
   sourceRef: z.record(z.string(), z.unknown()).nullable().optional(),
 })
+
+/**
+ * CAPA-002: la exención de evidencia, validada en un solo lugar porque la
+ * comparten la creación desde un módulo y la creación manual (E2E-006).
+ */
+function refineEvidenceExemption(
+  data: { evidenceRequired?: boolean; evidenceExemptionReason?: string | null },
+  ctx: z.RefinementCtx,
+) {
+  /**
+   * CAPA-002 (auditoría 2026-09-14). El gate de evidencia es el control más
+   * importante del módulo y se apagaba con una casilla del mismo formulario de
+   * creación, con el mismo permiso (`prevention:capa:manage`) y sin dejar
+   * constancia: la acción podía recorrer implementación, verificación y cierre
+   * sin una sola prueba y nadie sabía por qué se había decidido así.
+   *
+   * No se cambia quién puede eximir —eso es una decisión de la organización,
+   * ver el comentario de `createCapaActionWithClient`—; se exige que la
+   * exención esté escrita, con el umbral único de la plataforma
+   * (`REASON_MIN_LENGTH`), igual que reabrir o cancelar una acción.
+   *
+   * El caso contrario también se cierra: pedir evidencia y a la vez escribir un
+   * motivo de exención dejaría la fila diciendo dos cosas.
+   */
+  if (data.evidenceRequired === false) {
+    if (!isValidReason(data.evidenceExemptionReason)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["evidenceExemptionReason"],
+        message: reasonRequiredMessage("por qué esta acción no exigirá evidencia"),
+      })
+    }
+    return
+  }
+  if (data.evidenceExemptionReason && data.evidenceExemptionReason.trim().length > 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["evidenceExemptionReason"],
+      message: "Sólo se justifica la exención cuando la acción no exige evidencia.",
+    })
+  }
+}
+
+const capaCreateSchema = capaCreateBaseSchema.superRefine(refineEvidenceExemption)
+
+/**
+ * E2E-006 (auditoría 2026-09-14) — Abrir una acción correctiva sin origen del
+ * sistema.
+ *
+ * Las quince fuentes que crean CAPA nacen de una fila de otro módulo, y la
+ * pantalla de CAPA no tenía creación: una observación de un recorrido, un
+ * compromiso de una reunión o un hallazgo de una auditoría externa obligaban a
+ * inventar antes un registro en otro módulo. El enum de la base ya contemplaba
+ * `manual` y ningún código lo escribía.
+ *
+ * El origen sigue siendo obligatorio: lo que cambia es que puede ser una
+ * persona describiendo de dónde salió el hallazgo (`manualOrigin`), y eso queda
+ * en `sourceRef`. `sourceId` se genera aquí —nunca lo declara el cliente— para
+ * que no pueda colgarse de la fila de otro módulo, y `sourceItemId` queda en
+ * `NULL`: el índice único `prevention_capa_source_item_unique` es
+ * `(source_type, source_item_id)` y en Postgres los nulos no colisionan entre
+ * sí, así que dos acciones manuales conviven; lo que el índice sigue impidiendo
+ * —dos acciones para el MISMO ítem de origen— no aplica cuando no hay ítem.
+ */
+export const capaManualCreateSchema = capaCreateBaseSchema
+  .omit({ sourceType: true, sourceId: true, sourceItemId: true, sourceRef: true, reconciliationStatus: true })
+  .extend({
+    /** De dónde salió el hallazgo: "recorrido de terreno", "acta del comité", "auditoría externa ...". */
+    manualOrigin: z.string().trim().min(3).max(300),
+  })
+  .superRefine(refineEvidenceExemption)
 
 // Exportado para que transitionCapaActionAction (Server Action) pueda
 // validar en el boundary con `parseZ` antes de invocar el servicio —
@@ -246,6 +323,18 @@ function createCode() {
   return `CAPA-${codeYear()}-${nanoid(10).toUpperCase()}`
 }
 
+/**
+ * CAPA-002 — lo que sigue pendiente de decidir.
+ *
+ * El hallazgo tiene dos mitades. La verificable, resuelta aquí: eximir de
+ * evidencia exige escribir por qué, y el motivo queda en la fila y en la
+ * bitácora de transiciones. La otra —si eximir debería exigir un permiso
+ * distinto del de crear, como ya ocurre con
+ * `prevention:capa:override_segregation`, o si debería aprobarlo un segundo
+ * actor— es una decisión de la organización sobre su propio sistema de
+ * gestión, y la plataforma no la declara en ninguna parte. No se inventa acá:
+ * hoy sigue bastando `prevention:capa:manage`.
+ */
 export async function createCapaActionWithClient(
   client: CapaClient,
   input: unknown,
@@ -276,6 +365,10 @@ export async function createCapaActionWithClient(
     targetDate: data.targetDate,
     status: "pending",
     evidenceRequired: data.evidenceRequired ?? true,
+    // CAPA-002: la exención sólo existe acompañada de su motivo; el CHECK
+    // `prevention_capa_evidence_exemption_justified` repite la regla en base
+    // para los inserts que no pasen por aquí.
+    evidenceExemptionReason: data.evidenceRequired === false ? (data.evidenceExemptionReason?.trim() ?? null) : null,
     requiresImmediateStop: data.requiresImmediateStop ?? false,
     danoPotencial: data.danoPotencial ?? null,
     normativaLegal: data.normativaLegal?.trim() || null,
@@ -294,7 +387,15 @@ export async function createCapaActionWithClient(
     fromStatus: null,
     toStatus: "pending",
     reason: "Creación de acción CAPA",
-    changeSet: { sourceType: data.sourceType, sourceId: data.sourceId },
+    changeSet: {
+      sourceType: data.sourceType,
+      sourceId: data.sourceId,
+      // CAPA-002: la exención de evidencia queda también en la bitácora, no
+      // sólo en la fila, para que se vea en el historial de la acción.
+      ...(data.evidenceRequired === false
+        ? { evidenceRequired: false, evidenceExemptionReason: data.evidenceExemptionReason?.trim() ?? null }
+        : {}),
+    },
     actorUserId,
     createdAt: now,
   })
@@ -321,6 +422,38 @@ export async function createCapaAction(args: {
   const data = capaCreateSchema.parse(args.input)
   if (!scopeAllows(args.scope, data.worksiteId)) throw new Error("Acción CAPA no encontrada o fuera de alcance.")
   return db.transaction((tx) => createCapaActionWithClient(tx, data, args.ctx.userId))
+}
+
+/**
+ * E2E-006 — La CAPA que nace de una persona, no de un registro del sistema.
+ *
+ * Misma máquina de estados, mismo gate de evidencia y misma segregación de
+ * verificación que las quince fuentes automáticas: lo único propio es que el
+ * origen se escribe con palabras. Exige `prevention:capa:manage`, el mismo
+ * permiso con el que ya se editan y concilian las acciones — no se inventa uno
+ * nuevo, que además obligaría a mover el conteo de ARCHITECTURE.md sin que la
+ * organización lo haya decidido.
+ */
+export async function createManualCapaAction(args: {
+  input: unknown
+  ctx: RequestContext
+  scope: WorksiteScope
+  permissions: readonly string[]
+}) {
+  requirePermission(args.permissions, "prevention:capa:manage")
+  const data = capaManualCreateSchema.parse(args.input)
+  if (!scopeAllows(args.scope, data.worksiteId)) throw new Error("Acción CAPA no encontrada o fuera de alcance.")
+  const { manualOrigin, ...rest } = data
+  return db.transaction((tx) => createCapaActionWithClient(tx, {
+    ...rest,
+    sourceType: "manual",
+    // El id lo pone el servidor: si lo declarara el cliente, una acción
+    // "manual" podría apuntar a la fila de otro módulo y confundir a los
+    // consumidores que resuelven el href por origen (`lib/prevention/capa.ts`).
+    sourceId: `manual-${nanoid()}`,
+    sourceItemId: null,
+    sourceRef: { origin: manualOrigin, declaredByUserId: args.ctx.userId },
+  }, args.ctx.userId))
 }
 
 /**

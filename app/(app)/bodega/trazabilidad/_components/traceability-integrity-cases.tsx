@@ -24,6 +24,10 @@ export interface TraceabilityIntegrityCaseRow {
   findingCode: string
   snapshot: Record<string, unknown>
   detectedAt: string
+  /** TRZ-002: última vez que el detector volvió a ver el hallazgo. */
+  lastDetectedAt: string
+  /** TRZ-002: ciclo abierto del caso; >1 significa que se reabrió. */
+  occurrence: number
   resolutionId: string | null
   resolutionAction: string | null
   resolvedAt: string | null
@@ -126,7 +130,14 @@ export function TraceabilityIntegrityCases({
                     Regularizado
                   </span>
                 ) : (
-                  <span className="text-xs font-medium text-[var(--color-signal-ink)]">Pendiente de regularización</span>
+                  /* TRZ-002: un caso ya regularizado que el detector vuelve a
+                     encontrar se reabre. Antes quedaba cerrado para siempre y
+                     la pantalla mentía diciendo "Regularizado". */
+                  <span className="text-xs font-medium text-[var(--color-signal-ink)]">
+                    {caseRow.occurrence > 1
+                      ? `Reabierto (ocurrencia ${caseRow.occurrence}): el descuadre persiste`
+                      : "Pendiente de regularización"}
+                  </span>
                 )}
               </div>
               <p className="mt-2 text-[11px] text-(--color-text-subtle)">

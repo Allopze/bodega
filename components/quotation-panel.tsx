@@ -10,12 +10,15 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { FileInput } from "@/components/ui/file-input"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
   DialogFooter, DialogClose,
 } from "@/components/ui/dialog"
 import { MetaBadge } from "@/components/states/state-badge"
 import { toast } from "@/lib/toast"
+import { requiresAwardJustification } from "@/lib/requests/award-justification"
+import { REASON_MIN_LENGTH } from "@/lib/validation/reason-thresholds"
 
 const CLP_FORMAT = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP" })
 
@@ -114,6 +117,7 @@ export function QuotationPanel({
 
   // Select (approve) quotation
   const [selectId, setSelectId] = React.useState<string | null>(null)
+  const justificationRequired = selectId ? requiresAwardJustification(selectId, quotations) : false
   const [, selectAction, selectPending] = useActionState(
     async (prev: ActionState, formData: FormData): Promise<ActionState> => {
       const res = await selectQuotationAction(prev, formData)
@@ -327,6 +331,30 @@ export function QuotationPanel({
           <form action={selectAction}>
             <input type="hidden" name="requestId" value={requestId} />
             <input type="hidden" name="quotationId" value={selectId ?? ""} />
+            {/*
+              COT-002: la decisión guardaba cuál oferta se marcó, no por qué. El
+              fundamento es obligatorio en la excepción que el sistema reconoce
+              solo —adjudicar una oferta que no es la más económica— y opcional
+              en el resto. La misma función decide aquí y en el servidor; esto
+              es la comodidad, no el control.
+            */}
+            <Field
+              label="Fundamento de la elección"
+              hint={
+                justificationRequired
+                  ? "Esta no es la oferta más económica: explica por qué se elige (plazo, calidad, condiciones)."
+                  : "Opcional. Si lo escribes, queda en la decisión y en la auditoría."
+              }
+            >
+              <Textarea
+                name="justification"
+                rows={3}
+                required={justificationRequired}
+                minLength={justificationRequired ? REASON_MIN_LENGTH : undefined}
+                maxLength={1000}
+                placeholder={justificationRequired ? "Por qué esta oferta y no la más económica" : "Por qué esta oferta"}
+              />
+            </Field>
             <DialogFooter>
               <DialogClose asChild>
                 <Button type="button" variant="secondary" size="sm">Cancelar</Button>

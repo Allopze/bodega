@@ -7,6 +7,7 @@ import {
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
+import { describeAwardDecision, validateAwardJustification } from "../award-justification"
 import type { RequestModuleConfig, SelectQuotationInput } from "../request-config"
 
 export async function selectQuotation(
@@ -52,6 +53,24 @@ export async function selectQuotation(
     if (quotation.status !== "pending") {
       throw new Error("La cotización ya fue procesada")
     }
+
+    /*
+     * COT-002: la decisión guardaba cuál oferta se marcó y no por qué. El
+     * fundamento es obligatorio en la excepción que el sistema reconoce solo
+     * —adjudicar una oferta que no es la más económica— y opcional en el resto.
+     * Se comprueba dentro de la transacción y con las ofertas bajo lectura, no
+     * en el formulario: un Server Action se invoca sin navegador.
+     */
+    const competingOffers = await tx
+      .select({ id: qt.id, totalAmount: qt.totalAmount })
+      .from(qt)
+      .where(eq(qt.requestId, input.requestId))
+
+    const justification = validateAwardJustification(
+      input.quotationId,
+      competingOffers,
+      input.justification,
+    )
 
     const [selected] = await tx.update(qt)
       .set({ status: "selected", decidedBy: input.userId, selectedAt: now, updatedAt: now })
@@ -110,7 +129,10 @@ export async function selectQuotation(
         type:          "approve",
         decidedBy:     input.userId,
         decidedAt:     now,
-        reason:        `Cotización seleccionada: ${quotation.supplierNameFree ?? quotation.supplierId ?? quotation.id}`,
+        reason:        describeAwardDecision(
+          String(quotation.supplierNameFree ?? quotation.supplierId ?? quotation.id),
+          justification,
+        ),
         roleContext:   input.roleContext ?? null,
       })
 
@@ -129,7 +151,7 @@ export async function selectQuotation(
         entityType: "request_item",
         entityId:   item.id,
         oldState:   { status: "requested" },
-        newState:   { status: "approved", quotationId: input.quotationId },
+        newState:   { status: "approved", quotationId: input.quotationId, justification },
       }, tx)
     }
 

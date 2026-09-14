@@ -10,6 +10,7 @@ import { logger } from "@/lib/logger"
 import { cleanupOrphanPhotos } from "./assignment-photos"
 import { civilDaysUntil } from "./civil-dates"
 import { todayInChile } from "@/lib/utils"
+import { TICKET_SLA_WARNING_HOURS, ticketSlaStage } from "./ticket-sla"
 
 /* ── Alertas TI diarias (cron) ──────────────────────────────────────────────
  * Notifican solo lo accionable, deduplicadas por `dedupeKey`, para no inundar
@@ -17,7 +18,9 @@ import { todayInChile } from "@/lib/utils"
  *   - garantías que vencen en ≤30 días → una vez por fecha de vencimiento;
  *   - licencias que renuevan en ≤14 días → una vez por fecha de renovación;
  *   - activos que llevan >30 días en reparación → una vez al mes;
- *   - tickets abiertos sin actualización en >5 días → una vez al día.
+ *   - tickets abiertos sin actualización en >5 días → una vez al día;
+ *   - tickets abiertos con su SLA por vencer o vencido → una vez al día por
+ *     tramo (TIT-001).
  *
  * La deduplicación de `createNotification` es PERMANENTE por `(userId,
  * dedupeKey)` (índice `notifications_user_dedupe_unique`), no diaria: toda
@@ -27,6 +30,7 @@ import { todayInChile } from "@/lib/utils"
 
 export interface TiAlert {
   type: "ti_warranty_expiring" | "ti_license_renewal" | "ti_repair_stuck" | "ti_ticket_stale"
+    | "ti_ticket_sla_due_soon" | "ti_ticket_sla_overdue"
   title: string
   body: string
   entityType: string
@@ -126,12 +130,62 @@ export async function collectTiAlerts(): Promise<TiAlert[]> {
     })
   }
 
-  // Tickets abiertos sin actualización >5 días.
+  /*
+   * TIT-001 (auditoría 2026-09-14): SLA por prioridad.
+   *
+   * Hasta aquí la prioridad de un ticket no cambiaba nada. Ahora cada ticket
+   * abierto lleva su vencimiento comprometido (`due_at`, calculado al crear
+   * según la prioridad) y se avisa por tramo: 24 h antes y una vez vencido. La
+   * clave de deduplicación lleva el tramo y el día para que el aviso se repita
+   * a diario mientras el compromiso siga sin cumplirse, y para que pasar de
+   * "por vencer" a "vencido" produzca un aviso nuevo y no un silencio.
+   */
+  const slaHorizon = new Date(Date.now() + TICKET_SLA_WARNING_HOURS * 60 * 60 * 1000).toISOString()
+  const slaTickets = await db
+    .select({
+      id: itTickets.id, code: itTickets.code, subject: itTickets.subject,
+      priority: itTickets.priority, dueAt: itTickets.dueAt,
+    })
+    .from(itTickets)
+    .where(and(
+      sql`${itTickets.status} IN ('nuevo', 'asignado', 'en_diagnostico', 'en_progreso', 'esperando_usuario', 'esperando_proveedor')`,
+      sql`${itTickets.dueAt} IS NOT NULL`,
+      lt(itTickets.dueAt, slaHorizon),
+    ))
+  for (const ticket of slaTickets) {
+    const stage = ticketSlaStage(ticket.dueAt)
+    if (stage !== "due_soon" && stage !== "overdue") continue
+    const vencido = stage === "overdue"
+    alerts.push({
+      type: vencido ? "ti_ticket_sla_overdue" : "ti_ticket_sla_due_soon",
+      title: vencido
+        ? `Ticket fuera de SLA (${ticket.priority}): ${ticket.code}`
+        : `Ticket por vencer (${ticket.priority}): ${ticket.code}`,
+      body: vencido
+        ? `${ticket.code} pasó su compromiso de atención. ${ticket.subject}`
+        : `${ticket.code} vence dentro de las próximas ${TICKET_SLA_WARNING_HOURS} horas. ${ticket.subject}`,
+      entityType: "it_ticket",
+      entityId: ticket.id,
+      entityHref: `/ti/tickets/${ticket.id}`,
+      dedupeKey: `ti:ticket-sla:${ticket.id}:${stage}:${today}`,
+    })
+  }
+
+  /*
+   * Tickets abiertos sin actualización >5 días.
+   *
+   * TIT-001, segunda mitad: la consulta incluía `esperando_usuario` y
+   * `esperando_proveedor`. Un ticket detenido a la espera de una respuesta
+   * ajena se reportaba como "sin actualización" igual que uno abandonado, de
+   * modo que el aviso más ruidoso era también el menos accionable. El
+   * abandono real lo cubre ahora el SLA de arriba, que sí corre para esos dos
+   * estados porque el compromiso con el usuario no se suspende.
+   */
   const staleTickets = await db
     .select({ id: itTickets.id, code: itTickets.code, subject: itTickets.subject, updatedAt: itTickets.updatedAt })
     .from(itTickets)
     .where(and(
-      sql`${itTickets.status} IN ('nuevo', 'asignado', 'en_diagnostico', 'en_progreso', 'esperando_usuario', 'esperando_proveedor')`,
+      sql`${itTickets.status} IN ('nuevo', 'asignado', 'en_diagnostico', 'en_progreso')`,
       lt(itTickets.updatedAt, sql`now() - interval '5 days'`),
     ))
   for (const ticket of staleTickets) {

@@ -252,6 +252,35 @@ describeIf("Permisos de trabajo on real PostgreSQL", () => {
       { id: "comp-a2", workerId: "wk-a2", courseId: "course-conf", sourceType: "external_certificate", grantedAt: "2026-07-01", expiresAt: "2028-07-01", status: "valid", evidenceReference: "cert-2", externalIssuer: "OTEC", createdByUserId: "pm-approver" },
     ])
 
+    /*
+     * PER-001 (auditoría 2026-09-14): esta prueba afirmaba lo contrario —que
+     * con controles, aislamiento, medición y competencias resueltos el permiso
+     * ya estaba habilitado— porque el acuse del AST por la cuadrilla no
+     * bloqueaba. Ahora falta ese acuse y el permiso sigue detenido.
+     */
+    const readiness = await service.evaluatePermitReadiness(permitId, REQUESTER)
+    expect(readiness.allowed).toBe(false)
+    expect(readiness.blockers.map((item) => item.kind)).toEqual(["crew_ack_missing", "crew_ack_missing"])
+  })
+
+  it("only lifts the last blocker when each crew member acknowledges the JSA in person", async () => {
+    const service = await import("@/lib/services/prevention-permits")
+    const crew = await getDb().select().from(schema.preventionPermitCrew)
+      .where(eq(schema.preventionPermitCrew.permitId, permitId))
+    const crewAccess = (userId: string) => ({ userId, scope: scopeA, permissions: ["prevention:permits:view"] })
+    const byWorker = new Map(crew.map((item) => [item.workerId, item.id]))
+
+    // Sólo el propio integrante acusa lo suyo: el supervisor no puede firmar
+    // por la cuadrilla (control preexistente que sigue vigente).
+    await expect(service.acknowledgePermitCrew({ crewId: byWorker.get("wk-a1")! }, APPROVER))
+      .rejects.toThrow(/Sólo el propio integrante/)
+
+    await service.acknowledgePermitCrew({ crewId: byWorker.get("wk-a1")! }, crewAccess("pm-crew-a1"))
+    // Con un solo acuse el permiso sigue bloqueado por el otro integrante.
+    const partial = await service.evaluatePermitReadiness(permitId, REQUESTER)
+    expect(partial.blockers.map((item) => item.kind)).toEqual(["crew_ack_missing"])
+
+    await service.acknowledgePermitCrew({ crewId: byWorker.get("wk-a2")! }, crewAccess("pm-crew-a2"))
     const readiness = await service.evaluatePermitReadiness(permitId, REQUESTER)
     expect(readiness).toEqual({ allowed: true, blockers: [] })
   })
@@ -385,6 +414,10 @@ async function seedFixture(database: ReturnType<typeof drizzle<typeof schema>>) 
     { id: "pm-requester", name: "Solicitante", email: "pm-requester@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "pm-approver", name: "Aprobador", email: "pm-approver@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "pm-outsider", name: "Ajeno", email: "pm-outsider@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
+    // PER-001: los integrantes de la cuadrilla necesitan cuenta para acusar el
+    // AST, que desde la auditoría 2026-09-14 es un bloqueador de activación.
+    { id: "pm-crew-a1", name: "Ana Pérez", email: "pm-crew-a1@local.invalid", hashedPassword: "hash", workerId: "wk-a1", createdAt: now, updatedAt: now },
+    { id: "pm-crew-a2", name: "Bruno Soto", email: "pm-crew-a2@local.invalid", hashedPassword: "hash", workerId: "wk-a2", createdAt: now, updatedAt: now },
   ])
   // Curso y requisito de competencia con alcance `task`, que es el enlace que
   // usa el tipo de permiso para exigir habilitación.

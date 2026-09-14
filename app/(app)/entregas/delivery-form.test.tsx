@@ -55,6 +55,7 @@ vi.mock("@/components/ui/select", () => ({
 afterEach(cleanup)
 
 import { DeliveryForm } from "./delivery-form"
+import { earliestDeliveryDate } from "@/lib/validation/operations"
 
 describe("DeliveryForm", () => {
   it("usa cantidades enteras para EPP y rechaza una fracción antes de agregarla", () => {
@@ -104,6 +105,72 @@ describe("DeliveryForm", () => {
     expect(screen.getByText("Agrega uno o más productos con stock para continuar.")).toBeDefined()
   })
 
+  /*
+   * ENT-002 (auditoría 2026-09-14): las columnas de devolución existían, la
+   * impresión y la trazabilidad las mostraban, y **ninguna pantalla las
+   * escribía**. Esta prueba fija que ahora sí hay dónde registrarlas y que lo
+   * declarado viaja en `itemsJson`.
+   */
+  it("registra el canje de EPP usado en la línea de la entrega", () => {
+    const { container } = render(
+      <DeliveryForm
+        today="2026-08-31"
+        worksites={[{ id: "faena-1", name: "Faena Santa Fe" }]}
+        workers={[{
+          id: "worker-1",
+          name: "Andrea Rojas",
+          worksiteId: "faena-1",
+          worksiteName: "Faena Santa Fe",
+          position: "Operaria",
+          rut: "12.345.678-9",
+          sizeTop: null,
+          sizeBottom: null,
+          sizeShoe: null,
+          sizeGloves: null,
+          sizeHelmet: null,
+        }]}
+        stockProducts={[{
+          sourceWorksiteId: "faena-1",
+          productId: "helmet",
+          productName: "Casco dieléctrico",
+          productSku: "EPP-001",
+          isEpp: true,
+          unitOfMeasure: "unidad",
+          stockQuantity: 4,
+          familyId: "fam-helmet",
+          familyName: null,
+          sizeLabel: null,
+          sizeAttributeName: null,
+        }]}
+        initialSourceWorksiteId="faena-1"
+      />,
+    )
+
+    fireEvent.change(screen.getAllByTestId("select")[1]!, { target: { value: "worker-1" } })
+    fireEvent.change(screen.getAllByTestId("select")[2]!, { target: { value: "fam-helmet" } })
+    fireEvent.change(screen.getByLabelText("Cantidad (máx. 4 unidades)"), { target: { value: "1" } })
+    fireEvent.click(screen.getByRole("button", { name: "Agregar" }))
+
+    const toggle = screen.getByLabelText("Retirar EPP usado al entregar Casco dieléctrico")
+    fireEvent.click(toggle)
+
+    const itemsJson = container.querySelector("input[name='itemsJson']") as HTMLInputElement
+    const [line] = JSON.parse(itemsJson.value) as Array<Record<string, unknown>>
+    // Precarga el caso normal —uno a uno, mismo producto— sin inventarlo: el
+    // motivo se puede cambiar y el producto también.
+    expect(line).toMatchObject({
+      productId: "helmet",
+      returnProductId: "helmet",
+      returnQuantity: 1,
+      returnReason: "desgastado",
+    })
+
+    // Cerrar el canje no debe dejar una devolución a medias escrita.
+    fireEvent.click(toggle)
+    const [cleared] = JSON.parse((container.querySelector("input[name='itemsJson']") as HTMLInputElement).value) as Array<Record<string, unknown>>
+    expect(cleared).toMatchObject({ returnQuantity: null, returnProductId: null, returnReason: null })
+  })
+
   it("no muestra selector de solicitud y permite entregar stock general", () => {
     render(
       <DeliveryForm
@@ -149,7 +216,13 @@ describe("DeliveryForm", () => {
     expect(screen.queryByText(/Sin vínculo de solicitud/)).toBeNull()
   })
 
-  it("permite seleccionar cualquier fecha pasada y limita sólo el futuro", () => {
+  /*
+   * ENT-003 (auditoría 2026-09-14): esta prueba afirmaba lo contrario —exigía
+   * que el selector **no** tuviera `min`, consagrando la retroactividad
+   * ilimitada, y fijaba el texto "Puedes registrar cualquier fecha pasada"—.
+   * Se invierte: la retroactividad sigue existiendo, acotada y anunciada.
+   */
+  it("acota la retroactividad del selector de fecha y sigue limitando el futuro", () => {
     render(
       <DeliveryForm
         today="2026-08-21"
@@ -184,9 +257,9 @@ describe("DeliveryForm", () => {
     )
 
     const datePicker = screen.getByTestId("delivery-date-picker")
-    expect(datePicker).not.toHaveAttribute("min")
+    expect(datePicker).toHaveAttribute("min", earliestDeliveryDate("2026-08-21"))
     expect(datePicker).toHaveAttribute("max", "2026-08-21")
-    expect(screen.getByText("Por defecto hoy. Puedes registrar cualquier fecha pasada.")).toBeDefined()
+    expect(screen.getByText(/días de retroactividad/)).toBeDefined()
   })
 
   it("muestra sólo trabajadores de la faena seleccionada aunque no haya EPP pendiente", () => {
@@ -402,7 +475,9 @@ describe("DeliveryForm", () => {
     // Lo que viaja al servidor es el `productId` de la variante: la talla no es
     // un campo aparte que pudiera contradecir al producto.
     const payload = document.querySelector<HTMLInputElement>('input[name="itemsJson"]')!
-    expect(JSON.parse(payload.value)).toEqual([{ productId: "shoe-42", quantity: 2, notes: null }])
+    // `toMatchObject` y no `toEqual`: ENT-002 sumó a la línea los cinco campos
+    // del canje de EPP usado, que aquí van en null porque no se declaró ninguno.
+    expect(JSON.parse(payload.value)).toMatchObject([{ productId: "shoe-42", quantity: 2, notes: null }])
     expect(screen.getByText("Talla calzado 42")).toBeDefined()
   })
 

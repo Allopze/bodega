@@ -10,6 +10,8 @@ import { recordAudit } from "@/lib/audit"
 import { chileLocalDateTimeToUtc, codeYear } from "@/lib/utils"
 import { appendAssetHistory } from "./history"
 import { assertTiWorksiteAccess, type TiWorksiteScope } from "./scope"
+import { requireDifferentActor } from "@/lib/auth/segregation"
+import { isValidReason, reasonRequiredMessage } from "@/lib/validation/reason-thresholds"
 import { assignmentTargetStatus } from "./constants"
 
 export interface CreateAssignmentInput {
@@ -20,7 +22,6 @@ export interface CreateAssignmentInput {
   deliveredAt: string // ISO local datetime
   physicalState: string
   observations?: string | null
-  accepted?: boolean
   accessoryNames: string[]
   photoIds: string[]
 }
@@ -74,8 +75,25 @@ export async function createAssignment(
       deliveredByUserId: actor.userId,
       physicalState: input.physicalState,
       observations: input.observations ?? null,
-      acceptedAt: input.accepted !== false ? deliveredAt : null,
-      acceptedByUserId: input.accepted !== false ? actor.userId : null,
+      /*
+       * TIA-001 y TIA-002 (auditoría 2026-09-14).
+       *
+       * Antes esto era `input.accepted !== false ? deliveredAt : null` con
+       * `acceptedByUserId: actor.userId`: el acta nacía **aceptada y firmada
+       * por el mismo técnico que la emitía**, porque `actor` es quien opera la
+       * pantalla, no el trabajador que recibe el equipo. El documento que
+       * respalda la responsabilidad sobre un notebook registraba como
+       * aceptante a quien lo entrega.
+       *
+       * El acuse es ahora un acto aparte (`recordAssignmentAcceptance`), que
+       * exige una persona distinta del entregador. Toda entrega nace
+       * 'pendiente': un acta sin acuse deja de ser indistinguible de una
+       * aceptada.
+       */
+      acceptanceStatus: "pendiente",
+      acceptanceNote: null,
+      acceptedAt: null,
+      acceptedByUserId: null,
     })
 
     if (input.accessoryNames.length > 0) {
@@ -134,6 +152,99 @@ export interface ReturnAssignmentInput {
   returnedAccessoryNames: string[]
   nextStatus: "disponible" | "en_bodega"
   photoIds: string[]
+}
+
+/**
+ * TIA-001 / TIA-002 (auditoría 2026-09-14) — el acuse del acta de entrega.
+ *
+ * Registrar el acuse es un acto distinto de emitir el acta, y por eso está en
+ * su propia función. Dos reglas:
+ *
+ *  1. **Segregación** (`requireDifferentActor`, el mismo helper que usa el
+ *     resto de la auditoría): el acuse no puede registrarlo quien entregó el
+ *     equipo. Antes, la aceptación la firmaba exactamente esa persona.
+ *  2. **El silencio no es aceptación** (patrón P7): si no hubo acuse, se
+ *     declara `sin_acuse` con motivo escrito, en vez de dejar dos columnas
+ *     nulas que también significan "recién entregado" o "dato migrado".
+ *
+ * El trabajador que recibe el equipo puede no tener cuenta en la plataforma
+ * —la mitad de la faena no la tiene—, así que lo que se guarda es quién
+ * **registró** el acuse. Que sea alguien distinto del entregador es la parte
+ * verificable, y es la que faltaba.
+ */
+export interface RecordAcceptanceInput {
+  assignmentId: string
+  outcome: "aceptada" | "sin_acuse"
+  /** Obligatorio para `sin_acuse`; opcional como constancia en `aceptada`. */
+  note?: string | null
+}
+
+export async function recordAssignmentAcceptance(
+  input: RecordAcceptanceInput,
+  actor: { userId: string; userEmail?: string },
+  worksiteIds: TiWorksiteScope = "all",
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [assignment] = await tx.select().from(itAssetAssignments)
+      .where(eq(itAssetAssignments.id, input.assignmentId)).for("update")
+    if (!assignment) throw new Error("Asignación no encontrada")
+    assertTiWorksiteAccess(worksiteIds, assignment.worksiteId)
+    if (assignment.acceptanceStatus !== "pendiente") {
+      throw new Error("El acuse de esta acta ya fue registrado")
+    }
+
+    const note = input.note?.trim() || null
+    const now = new Date().toISOString()
+
+    if (input.outcome === "aceptada") {
+      const decision = requireDifferentActor(
+        { actedByUserId: assignment.deliveredByUserId, actorUserId: actor.userId },
+        "El acuse del acta de entrega",
+      )
+      if (!decision.ok) throw new Error(decision.message)
+      await tx.update(itAssetAssignments).set({
+        acceptanceStatus: "aceptada",
+        acceptanceNote: note,
+        acceptedAt: now,
+        acceptedByUserId: actor.userId,
+        updatedAt: now,
+      }).where(eq(itAssetAssignments.id, input.assignmentId))
+    } else {
+      if (!isValidReason(note)) {
+        throw new Error(reasonRequiredMessage("por qué el acta queda sin acuse"))
+      }
+      await tx.update(itAssetAssignments).set({
+        acceptanceStatus: "sin_acuse",
+        acceptanceNote: note,
+        // Se dejan nulas a propósito: no hubo aceptante, y el `check` de la
+        // tabla no admite un acuse sin persona.
+        acceptedAt: null,
+        acceptedByUserId: null,
+        updatedAt: now,
+      }).where(eq(itAssetAssignments.id, input.assignmentId))
+    }
+
+    await appendAssetHistory({
+      assetId: assignment.assetId,
+      action: "assigned",
+      detail: input.outcome === "aceptada"
+        ? `Acuse del acta ${assignment.code} registrado.`
+        : `Acta ${assignment.code} cerrada sin acuse del trabajador.`,
+      changes: { assignmentId: assignment.id, acceptanceStatus: input.outcome, note },
+      actorUserId: actor.userId,
+    }, tx)
+    await recordAudit({
+      userId: actor.userId,
+      userEmail: actor.userEmail,
+      action: "update",
+      entityType: "it_asset_assignment",
+      entityId: assignment.id,
+      entityCode: assignment.code,
+      oldState: { acceptanceStatus: assignment.acceptanceStatus },
+      newState: { acceptanceStatus: input.outcome },
+      reason: note ?? undefined,
+    }, tx)
+  })
 }
 
 export async function returnAssignment(
@@ -300,8 +411,14 @@ export async function transferAssignment(
       deliveredByUserId: actor.userId,
       physicalState: input.newPhysicalState,
       observations: input.newObservations ?? null,
-      acceptedAt: newDeliveredAt,
-      acceptedByUserId: actor.userId,
+      // TIA-001: la transferencia era todavía peor que la entrega —marcaba el
+      // acta nueva como aceptada por el técnico sin ofrecer siquiera la opción
+      // de dejarla sin aceptar—. El acuse del nuevo custodio se registra
+      // aparte, igual que en una entrega.
+      acceptanceStatus: "pendiente",
+      acceptanceNote: null,
+      acceptedAt: null,
+      acceptedByUserId: null,
     })
 
     const newAccessoryNames = [...carriedAccessories.map((accessory) => accessory.name), ...input.newAccessoryNames]
@@ -389,6 +506,7 @@ export async function listAssignments(filters: AssignmentListFilters) {
       physicalState: itAssetAssignments.physicalState,
       returnedAt: itAssetAssignments.returnedAt,
       returnPhysicalState: itAssetAssignments.returnPhysicalState,
+      acceptanceStatus: itAssetAssignments.acceptanceStatus,
       deliveredByName: users.name,
     })
     .from(itAssetAssignments)
@@ -424,6 +542,8 @@ export async function getAssignmentById(id: string, scope?: SQL) {
       deliveredByName: users.name,
       physicalState: itAssetAssignments.physicalState,
       observations: itAssetAssignments.observations,
+      acceptanceStatus: itAssetAssignments.acceptanceStatus,
+      acceptanceNote: itAssetAssignments.acceptanceNote,
       acceptedAt: itAssetAssignments.acceptedAt,
       acceptedByUserId: itAssetAssignments.acceptedByUserId,
       acceptedByName: sql<string>`(SELECT u.name FROM ${users} u WHERE u.id = ${itAssetAssignments.acceptedByUserId})`,

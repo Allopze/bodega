@@ -149,14 +149,44 @@ const manualPaymentSchema = z.object({
   currency: z.string().regex(/^[A-Z]{3}$/),
   method: z.string().max(60).nullable().optional(),
   notes: z.string().max(1000).nullable().optional(),
+  /**
+   * Clave de idempotencia generada por el formulario, una por apertura del
+   * diálogo (COB-003). Se reenvía en cada reintento: el índice único parcial
+   * `billing_invoice_payments_client_request_unique` hace que el doble clic, la
+   * doble pestaña y el reenvío por red colapsen sobre la MISMA fila en vez de
+   * cobrar dos veces. Opcional para no romper a un cliente cacheado antiguo.
+   */
+  clientRequestId: z.string().min(8).max(64).nullable().optional(),
+  /**
+   * El operador vio la advertencia de "ya existe un pago idéntico en esta
+   * factura" y afirma que son dos pagos distintos.
+   */
+  acknowledgeDuplicate: z.boolean().optional(),
 })
+
+/** Error del duplicado advertido: lo distingue de un fallo real de escritura. */
+class DuplicatePaymentWarning extends Error {
+  constructor(readonly existingPaymentId: string, message: string) {
+    super(message)
+    this.name = "DuplicatePaymentWarning"
+  }
+}
 
 /**
  * Registra un pago a mano y lo deja **confirmado**: lo está afirmando una
  * persona con `billing:confirm_payments`, que es exactamente el acto que el
  * motor automático no puede hacer por sí solo.
  */
-export async function registerManualPaymentAction(input: unknown): Promise<ActionResult> {
+export interface ManualPaymentResult extends ActionResult {
+  /**
+   * COB-003: hay un pago idéntico en la factura y el operador todavía no lo
+   * reconoció. No es un fallo: el formulario muestra la advertencia y reenvía
+   * con `acknowledgeDuplicate` si de verdad son dos pagos distintos.
+   */
+  needsDuplicateAck?: boolean
+}
+
+export async function registerManualPaymentAction(input: unknown): Promise<ManualPaymentResult> {
   const { session, error } = await guardPermission("billing:confirm_payments")
   if (error) return error
 
@@ -187,13 +217,34 @@ export async function registerManualPaymentAction(input: unknown): Promise<Actio
     const paymentId = nanoid()
     const now = new Date().toISOString()
 
+    // COB-003: el reintento del MISMO envío se resuelve antes de tocar nada.
+    // La ventana de dos minutos que había aquí no es una defensa —pasada la
+    // ventana el mismo pago entraba otra vez sin aviso—; la duradera es esta
+    // clave persistida con índice único parcial.
+    if (data.clientRequestId) {
+      const [already] = await db
+        .select({ id: billingInvoicePayments.id })
+        .from(billingInvoicePayments)
+        .where(eq(billingInvoicePayments.clientRequestId, data.clientRequestId))
+        .limit(1)
+      if (already) {
+        return { ok: true, message: "El pago ya estaba registrado: este envío es un reintento del mismo." }
+      }
+    }
+
     const snapshot = await db.transaction(async (tx) => {
       // El índice único (invoiceId, bankTransactionId) no cubre pagos manuales
-      // (bank_tx NULL): un doble clic o doble pestaña duplicaba el cobro. El
-      // lock serializa y la ventana corta atrapa el reintento accidental sin
-      // impedir dos pagos reales iguales en días distintos.
+      // (bank_tx NULL). El lock serializa los envíos concurrentes sobre la
+      // misma factura para que la búsqueda de gemelo de más abajo no corra
+      // contra una foto vieja.
       await tx.execute(sql`SELECT id FROM ${billingInvoices} WHERE id = ${data.invoiceId} FOR UPDATE`)
-      const [recentTwin] = await tx
+      // COB-003: el gemelo ya NO caduca a los dos minutos. Un pago idéntico
+      // —misma factura, mismo importe, misma fecha, manual y confirmado— es
+      // casi siempre la misma persona reintentando media hora después porque
+      // no vio el primero. Dos pagos reales idénticos el mismo día siguen
+      // siendo válidos, así que la defensa advierte y deja pasar con un
+      // reconocimiento explícito en vez de bloquear.
+      const [twin] = await tx
         .select({ id: billingInvoicePayments.id })
         .from(billingInvoicePayments)
         .where(and(
@@ -202,11 +253,14 @@ export async function registerManualPaymentAction(input: unknown): Promise<Actio
           eq(billingInvoicePayments.amount, data.amount),
           eq(billingInvoicePayments.paymentDate, data.paymentDate),
           eq(billingInvoicePayments.verificationStatus, "confirmed"),
-          sql`${billingInvoicePayments.createdAt} > now() - interval '2 minutes'`,
         ))
         .limit(1)
-      if (recentTwin) {
-        throw new Error("Ya se registró un pago idéntico hace un momento. Si realmente son dos pagos distintos, espera dos minutos o diferéncialos en la nota.")
+      if (twin && !data.acknowledgeDuplicate) {
+        throw new DuplicatePaymentWarning(
+          twin.id,
+          "Ya existe un pago idéntico en esta factura (mismo monto y misma fecha). "
+          + "Revísalo antes de continuar: si de verdad son dos pagos distintos, vuelve a confirmar.",
+        )
       }
 
       await tx.insert(billingInvoicePayments).values({
@@ -222,6 +276,7 @@ export async function registerManualPaymentAction(input: unknown): Promise<Actio
         confirmedBy: session.user.id,
         confirmedAt: now,
         notes: data.notes ?? null,
+        clientRequestId: data.clientRequestId ?? null,
         createdBy: session.user.id,
       })
 
@@ -250,6 +305,11 @@ export async function registerManualPaymentAction(input: unknown): Promise<Actio
     revalidatePath("/facturacion")
     return { ok: true, message: `Pago registrado. La factura queda ${PAYMENT_STATUS_TEXT[snapshot.paymentStatus]}.` }
   } catch (err) {
+    // La advertencia de duplicado no es un error de escritura: no se registra
+    // como fallo y el formulario la convierte en una segunda confirmación.
+    if (err instanceof DuplicatePaymentWarning) {
+      return { ok: false, message: err.message, needsDuplicateAck: true }
+    }
     const message = safeActionMessage(err, "No se pudo registrar el pago")
     logger.error("[billing/registerManualPayment]", { message })
     return { ok: false, message }

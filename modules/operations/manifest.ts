@@ -29,5 +29,22 @@ export const operationsModule = {
     { roleSlug: "solicitante_faena", permission: "operations:view_work" },
     { roleSlug: "prevencionista_faena", permission: "operations:view_work" },
     { roleSlug: "jefe_mantencion", permission: "operations:view_work" },
+    /*
+     * PEND-002 (auditoría 2026-09-14): estos cinco roles ejecutan actividades
+     * del PDTP —el manifiesto de Prevención les da `prevention:pdtp:execute`— y
+     * la cola les produce trabajo, pero no podían abrirla ni verla en el menú:
+     * `/pendientes` los mandaba a prohibido. Una bandeja unificada que no
+     * alcanza a quien ejecuta el trabajo obliga a recorrer módulo por módulo,
+     * que es justo lo que la bandeja existe para evitar.
+     */
+    { roleSlug: "admin_contrato", permission: "operations:view_work" },
+    { roleSlug: "jefe_terreno", permission: "operations:view_work" },
+    { roleSlug: "supervisor_terreno", permission: "operations:view_work" },
+    { roleSlug: "gerente_legal_rrhh", permission: "operations:view_work" },
+    { roleSlug: "subgerente_operaciones", permission: "operations:view_work" },
+    // Y el comité: `prevention:cphs:manage` le da convocatorias y actividades
+    // que cerrar, y la cola se las produce. Lo encontró la prueba de paridad al
+    // reconciliar los grants con las fuentes, no la ficha del hallazgo.
+    { roleSlug: "cphs", permission: "operations:view_work" },
   ],
 } as const satisfies ModuleManifest

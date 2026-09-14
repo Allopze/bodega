@@ -9,6 +9,7 @@ import { auth } from "@/lib/auth/auth"
 import { can, canAccessWorksite } from "@/lib/auth/can"
 import { resolveServiceQuotationFile } from "@/lib/storage/config"
 import { encodeContentDisposition } from "@/lib/utils"
+import { resolveQuotationContentType } from "@/lib/storage/quotation-content-type"
 
 
 export async function GET(
@@ -49,15 +50,20 @@ export async function GET(
 
   try {
     const file = await fs.readFile(absolutePath)
-    const mimeType = quotation.filePath.endsWith(".pdf")
-      ? "application/pdf"
-      : "application/octet-stream"
+    // COT-004: el tipo servido es el MIME que la validación por bytes mágicos
+    // declaró al cargar. Antes se decidía por la extensión de la ruta interna
+    // —derivada del nombre que mandó el cliente—, así que un JPG o un PNG
+    // legítimos salían como `application/octet-stream` y el visor no los abría.
+    const served = resolveQuotationContentType(quotation.mimeType, quotation.filePath)
 
     return new Response(file, {
       headers: {
-        "Content-Type":        mimeType,
-        "Content-Disposition": encodeContentDisposition(quotation.fileName, "inline"),
+        "Content-Type":        served.contentType,
+        "Content-Disposition": encodeContentDisposition(quotation.fileName, served.disposition),
         "Cache-Control":       "private, max-age=60",
+        // El tipo declarado manda: sin esto el navegador podría olfatear el
+        // contenido de un archivo de usuario y ejecutarlo en nuestro origen.
+        "X-Content-Type-Options": "nosniff",
       },
     })
   } catch {

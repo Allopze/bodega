@@ -1,6 +1,7 @@
 import {
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -366,3 +367,87 @@ export type PreventionIncident = typeof preventionIncidents.$inferSelect
 export type PreventionIncidentPerson = typeof preventionIncidentPeople.$inferSelect
 export type PreventionIncidentNotification = typeof preventionIncidentNotifications.$inferSelect
 export type PreventionIncidentInvestigation = typeof preventionIncidentInvestigations.$inferSelect
+
+/**
+ * INC-001 (auditoría 2026-09-14) — El canal de reporte del trabajador.
+ *
+ * Reportar un incidente exigía `prevention:incidents:report`, concedido sólo a
+ * roles internos: un trabajador que presenciaba un cuasi accidente dependía de
+ * que un mando lo registrara. No había ruta pública ni vía anónima, y el
+ * sistema de gestión exige que las personas puedan comunicar peligros e
+ * incidentes.
+ *
+ * Esta tabla es el **buzón**, no el expediente: un reporte no es todavía un
+ * incidente. Quien tiene el permiso lo tría y, si corresponde, abre el
+ * incidente formal —que sigue teniendo todos sus controles intactos—.
+ *
+ * **La vía anónima es anónima de verdad.** La fila no guarda usuario, sesión,
+ * IP, user agent ni ninguna huella que permita volver al denunciante, y la
+ * acción pública tampoco los audita: la cuota por IP se consume en memoria
+ * para frenar el abuso, pero no se escribe en ninguna parte junto al reporte.
+ * Un canal de denuncia rastreable no es un canal de denuncia. Cuando el
+ * reporte NO es anónimo, el contacto lo escribe la persona a mano y es el
+ * único vínculo, porque decidió darlo.
+ */
+export const preventionIncidentPublicReports = pgTable("prevention_incident_public_reports", {
+  id: text("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  worksiteId: text("worksite_id").notNull().references(() => worksites.id, { onDelete: "restrict" }),
+  /** Qué se está reportando; el triage decide después si es un incidente. */
+  category: text("category").notNull(),
+  occurredAt: text("occurred_at").notNull(),
+  location: text("location").notNull(),
+  narrative: text("narrative").notNull(),
+  isAnonymous: boolean("is_anonymous").notNull().default(true),
+  /** Sólo cuando la persona decide identificarse. Texto libre: no se cruza con `workers`. */
+  reporterName: text("reporter_name"),
+  reporterContact: text("reporter_contact"),
+  status: text("status").notNull().default("pending"),
+  /*
+   * Estas dos claves foráneas se declaran abajo con nombre propio: el que
+   * drizzle deriva del nombre de la tabla pasa de 63 caracteres y Postgres lo
+   * trunca en silencio, así que un `DROP CONSTRAINT "<nombre largo>"` generado
+   * más adelante falla en el despliegue. `verify-migration-chain.mjs` lo vigila.
+   */
+  triagedByUserId: text("triaged_by_user_id"),
+  triagedAt: timestamp("triaged_at", { withTimezone: true, mode: "string" }),
+  triageNotes: text("triage_notes"),
+  /** El incidente formal que salió de este reporte, si el triage abrió uno. */
+  incidentId: text("incident_id"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  foreignKey({
+    columns: [table.triagedByUserId], foreignColumns: [users.id],
+    name: "prevention_incident_public_reports_triaged_by_fk",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.incidentId], foreignColumns: [preventionIncidents.id],
+    name: "prevention_incident_public_reports_incident_fk",
+  }).onDelete("set null"),
+  index("prevention_incident_public_reports_status_idx").on(table.status, table.createdAt),
+  index("prevention_incident_public_reports_worksite_idx").on(table.worksiteId, table.createdAt),
+  check("prevention_incident_public_report_category_valid", sql`${table.category} IN ('cuasi_accidente', 'condicion_insegura', 'acto_inseguro', 'accidente', 'otro')`),
+  check("prevention_incident_public_report_status_valid", sql`${table.status} IN ('pending', 'triaged', 'discarded')`),
+  /**
+   * La garantía del anonimato, escrita en la base: un reporte anónimo no puede
+   * llevar nombre ni contacto. Si alguna pantalla futura intenta rellenarlos
+   * "por comodidad", el insert falla en vez de romper la promesa en silencio.
+   */
+  check("prevention_incident_public_report_anonymous_has_no_identity", sql`
+    ${table.isAnonymous} = false
+    OR (${table.reporterName} IS NULL AND ${table.reporterContact} IS NULL)
+  `),
+  check("prevention_incident_public_report_triage_consistent", sql`
+    (${table.status} = 'pending' AND ${table.triagedAt} IS NULL AND ${table.triagedByUserId} IS NULL)
+    OR (${table.status} <> 'pending' AND ${table.triagedAt} IS NOT NULL AND ${table.triagedByUserId} IS NOT NULL)
+  `),
+])
+
+export const preventionIncidentPublicReportsRelations = relations(preventionIncidentPublicReports, ({ one }) => ({
+  worksite: one(worksites, { fields: [preventionIncidentPublicReports.worksiteId], references: [worksites.id] }),
+  incident: one(preventionIncidents, { fields: [preventionIncidentPublicReports.incidentId], references: [preventionIncidents.id] }),
+  triagedBy: one(users, { fields: [preventionIncidentPublicReports.triagedByUserId], references: [users.id] }),
+}))
+
+export type PreventionIncidentPublicReport = typeof preventionIncidentPublicReports.$inferSelect

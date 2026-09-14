@@ -317,6 +317,9 @@ describe("PPA-03 — el motor CAPA genérico no conduce acciones de origen ppa (
         sourceType: "manual", sourceId: "libre-1", worksiteId: "ws-1",
         finding: "Hallazgo de ronda", actionDescription: "Reponer señalética faltante.",
         priority: "medium", targetDate: "2026-09-01", evidenceRequired: false,
+        // CAPA-002: eximir de evidencia dejó de ser una casilla sin explicación;
+        // este caso la apagaba sin motivo porque nada se lo exigía.
+        evidenceExemptionReason: "La reposición de señalética se verifica en la misma ronda siguiente.",
       },
     })
     const moved = await transitionCapaAction({

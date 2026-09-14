@@ -55,7 +55,10 @@ beforeAll(async () => {
     { id: GLOVE_ID, sku: "G-1", name: "Guante Activex", categoryId: CATEGORY_ID,
       unitOfMeasure: "unidad", isActive: true, isService: false, createdAt: now, updatedAt: now },
     { id: FUEL_ID, sku: "L-1", name: "Desengrasante", categoryId: CATEGORY_ID,
-      unitOfMeasure: "litros", isActive: true, isService: false, createdAt: now, updatedAt: now },
+      // CAT-003: la unidad del producto es ahora una FK contra `product_units`;
+      // el catálogo sembrado usa el código "litro" (singular). El ítem de
+      // entrega de más abajo conserva su texto libre, que no está restringido.
+      unitOfMeasure: "litro", isActive: true, isService: false, createdAt: now, updatedAt: now },
   ])
 
   // La solicitud recibida que nadie terminó de entregar.

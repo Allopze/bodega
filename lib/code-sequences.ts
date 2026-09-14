@@ -82,6 +82,73 @@ export async function listCodeSequences() {
 }
 
 /**
+ * FOL-001 (auditoría 2026-09-14): tabla donde aterriza el folio de cada prefijo.
+ *
+ * La corrección administrativa de folios ejecutaba un `setval` sin más control
+ * que `nextValue >= 1`: fijar la serie de OC 2026 en 5 cuando ya existía la
+ * OC-2026-0017 era una operación aceptada. Como `code` tiene índice único en
+ * todas estas tablas, el daño no era un duplicado sino un **fallo de emisión**
+ * diferido —cada intento de crear una OC reventaba al pasar por un número ya
+ * usado, lejos de su causa y en la cara del operador—.
+ *
+ * El registro existe porque el piso de la serie no se puede leer de la
+ * secuencia (que es justo lo que se está corrigiendo) sino de los documentos ya
+ * emitidos. Cada prefijo que pase por `nextCodeTx` debe aparecer aquí.
+ */
+const CODE_SERIES_TABLES: Record<string, string> = {
+  OC:  "purchase_orders",
+  // SOL, REP y SER comparten tabla: los tres son solicitudes de compra.
+  SOL: "purchase_requests",
+  REP: "purchase_requests",
+  SER: "purchase_requests",
+  REC: "receipts",
+  ENT: "deliveries",
+  GDI: "dispatch_guides",
+  // AJU y DES comparten cabecera (ver `stock_adjustments.kind`); el LIKE por
+  // prefijo separa las dos series dentro de la misma tabla.
+  AJU: "stock_adjustments",
+  DES: "stock_adjustments",
+  DEV: "stock_returns",
+  CON: "physical_inventory_counts",
+  OT:  "maintenance_records",
+  PF:  "billing_proposals",
+  ACT: "it_asset_assignments",
+  INC: "it_tickets",
+}
+
+/**
+ * FOL-001: mayor correlativo ya emitido para la serie (prefijo + año), leído de
+ * los documentos y no de la secuencia.
+ *
+ * Devuelve 0 si la serie no ha emitido nada. Las series continuas (SOL, GDI) no
+ * llevan año en el código, así que su patrón es sólo el prefijo.
+ */
+export async function highestEmittedCodeSeq(prefix: string, year: number): Promise<number> {
+  const table = CODE_SERIES_TABLES[prefix]
+  if (!table) {
+    // Fail-closed deliberado: sin saber dónde aterriza la serie no se puede
+    // garantizar que el nuevo folio no repita uno ya emitido, y el modo de
+    // fallo que evitamos (emisión rota en producción) es peor que negar una
+    // corrección. QUEDA POR DECIDIR (producto): si un administrador debe poder
+    // forzar la corrección de una serie no registrada asumiendo el riesgo.
+    throw new Error(
+      `No hay una serie de documentos registrada para el prefijo ${prefix}: `
+      + "no se puede verificar que el folio no retroceda por debajo de lo ya emitido",
+    )
+  }
+
+  const pattern = isContinuousCodePrefix(prefix) ? `${prefix}-%` : `${prefix}-${year}-%`
+  // `sql.raw` sobre `table` es seguro: el valor sale del registro de arriba,
+  // nunca de la entrada del formulario.
+  const result = await db.execute(sql`
+    SELECT COALESCE(MAX(substring(code from '[0-9]+$')::bigint), 0) AS max_seq
+      FROM ${sql.raw(table)}
+     WHERE code LIKE ${pattern}
+  `)
+  return Number(driverRows<{ max_seq: number | string }>(result)[0]?.max_seq ?? 0)
+}
+
+/**
  * Admin: fija el próximo folio de la secuencia nativa, devolviendo antes/después
  * para la auditoría.
  */
@@ -91,6 +158,20 @@ export async function setCodeSequenceNextValue(input: {
   nextValue: number
 }): Promise<{ before: number; after: number }> {
   if (input.nextValue < 1) throw new Error("El siguiente folio debe ser mayor o igual a 1")
+
+  /*
+   * FOL-001: la serie no puede retroceder por debajo de lo ya emitido. El piso
+   * se calcula sobre los documentos existentes, no sobre la secuencia, porque
+   * la secuencia es precisamente lo que está desincronizado.
+   */
+  const highest = await highestEmittedCodeSeq(input.prefix, input.year)
+  if (input.nextValue <= highest) {
+    throw new Error(
+      `La serie ${input.prefix}-${input.year} ya emitió el folio ${highest}: `
+      + `el siguiente folio debe ser ${highest + 1} o mayor`,
+    )
+  }
+
   const { sequenceYear, sequenceName } = sequenceNameFor(input.prefix, input.year)
 
   // El "antes" se lee primero: `next_document_code` consume un valor.

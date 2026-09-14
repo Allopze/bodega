@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "aeo-geo-writing": {
+      "source": "sahilkargutkar/web-ai-slop",
+      "sourceType": "github",
+      "skillPath": "skills/aeo-geo-writing/SKILL.md",
+      "computedHash": "b881158e15ac59b51b5c124bd00359c71738f4e72547a631461200d703e4e2d0"
+    },
+    "web-ai-slop": {
+      "source": "sahilkargutkar/web-ai-slop",
+      "sourceType": "github",
+      "skillPath": "skills/web-ai-slop/SKILL.md",
+      "computedHash": "6c8511b3520b4f1ad428b401e2a9aba1febf912db22a81ebedd49f436e9efceb"
+    }
+  }
+}

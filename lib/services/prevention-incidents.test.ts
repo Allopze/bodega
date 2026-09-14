@@ -115,6 +115,45 @@ describe("prevention incident legal workflow", () => {
     })).not.toThrow()
   })
 
+  /**
+   * INC-002 (auditoría 2026-09-14) — La excepción de firma propia recae en el
+   * mismo rol que ejecuta la prevención (`prevencionista` tiene
+   * `prevention:sign_own_work` y a la vez investiga, redacta la MIPER y
+   * propone la CAPA). Lo que se corrigió: ejercerla dejó de ser invisible. El
+   * cierre devuelve si hizo falta la excepción, y el expediente lo dice; antes
+   * un cierre firmado por quien investigó quedaba idéntico a uno firmado por
+   * dos personas distintas.
+   */
+  it("dice cuándo el cierre necesitó la excepción de firma propia", () => {
+    const conExcepcion = assertIncidentTransition({
+      incident,
+      toStatus: "closed",
+      permissions: ["prevention:incidents:close", "prevention:sign_own_work"],
+      investigationCompleted: true,
+      investigationCompletedByUserId: INVESTIGADOR,
+      actorUserId: INVESTIGADOR,
+      capaStatuses: ["closed"],
+      notificationLanes: [{ notificationType: "diat", status: "sent", evidenceReference: "folio-1" }],
+    })
+    expect(conExcepcion.ownWorkExceptionUsed).toBe(true)
+  })
+
+  it("no consume la excepción cuando la investigación la firmó otra persona", () => {
+    const sinExcepcion = assertIncidentTransition({
+      incident,
+      toStatus: "closed",
+      permissions: ["prevention:incidents:close", "prevention:sign_own_work"],
+      investigationCompleted: true,
+      investigationCompletedByUserId: INVESTIGADOR,
+      actorUserId: "otra-persona",
+      capaStatuses: ["closed"],
+      notificationLanes: [{ notificationType: "diat", status: "sent", evidenceReference: "folio-1" }],
+    })
+    // Tener el permiso no significa haberlo usado: si no había a quién
+    // separar, la excepción no se consumió y no hay nada que registrar.
+    expect(sinExcepcion.ownWorkExceptionUsed).toBe(false)
+  })
+
   /* La exención levanta el eslabón del actor, no las compuertas de estado: con
    * `sign_own_work` igual no se cierra un caso con CAPA abiertas. */
   it("does not let the exemption skip the state gates", () => {

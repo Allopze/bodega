@@ -9,6 +9,8 @@
  * Service Worker and main-thread contexts.
  */
 
+import { nanoid } from "@/lib/id"
+
 const DB_NAME = "ppa-offline"
 const DB_VERSION = 1
 const STORE_NAME = "submissions"
@@ -102,9 +104,23 @@ function withTx<T>(
  * desde la cola recupera esa fila en vez de crear un PPA duplicado.
  */
 export function createPpaSubmissionId(): string {
-  return typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? `ppa-${crypto.randomUUID()}`
-    : `ppa-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  // PPA-003: la ruta de respaldo armaba `ppa-<Date.now()>-<8 caracteres de
+  // Math.random>`. Esta clave gobierna la idempotencia del envío y, por
+  // derivación HMAC, el enlace al resultado —reenviar con una clave existente
+  // devuelve la fila y el enlace originales—, así que es una credencial de
+  // capacidad y no puede salir de un PRNG no criptográfico: `Math.random` no
+  // ofrece ninguna garantía de imprevisibilidad y el reloj aporta cero azar.
+  //
+  // `crypto.getRandomValues` (el que usa `nanoid`) está disponible en todo
+  // contexto donde falta `randomUUID` —que sólo existe en contexto seguro y en
+  // navegadores recientes—, así que el respaldo conserva la misma fuente de
+  // entropía criptográfica. Si tampoco existe, se falla en vez de degradar:
+  // encolar un PPA con una clave adivinable es peor que no encolarlo.
+  if (typeof crypto === "undefined") {
+    throw new Error("Este navegador no ofrece Web Crypto: no se puede generar una clave de envío segura.")
+  }
+  if ("randomUUID" in crypto) return `ppa-${crypto.randomUUID()}`
+  return `ppa-${nanoid(24)}`
 }
 
 /** Add a PPA submission to the offline queue. */

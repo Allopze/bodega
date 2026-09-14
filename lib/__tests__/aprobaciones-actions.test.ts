@@ -23,6 +23,8 @@ const mockFindFirstRequest = vi.hoisted(() => vi.fn())
 const mockDbUpdate = vi.hoisted(() => vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn() })) })))
 const mockNotifyAfterCommit = vi.hoisted(() => vi.fn((fn: () => Promise<unknown>) => fn()))
 const mockNotifySafe = vi.hoisted(() => vi.fn())
+const mockRecordAudit = vi.hoisted(() => vi.fn())
+const mockRecordStatusChange = vi.hoisted(() => vi.fn())
 
 /**
  * `updateDeliveryModeAction` corre dentro de `db.transaction` con
@@ -55,6 +57,10 @@ vi.mock("@/lib/services/item-state", () => ({
 vi.mock("@/lib/services/notifications", () => ({
   notifySafe: mockNotifySafe,
   notifyAfterCommit: mockNotifyAfterCommit,
+}))
+vi.mock("@/lib/audit", () => ({
+  recordAudit: mockRecordAudit,
+  recordStatusChange: mockRecordStatusChange,
 }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
@@ -506,7 +512,12 @@ describe("updateDeliveryModeAction", () => {
     // La solicitud primero, sus ítems después: el orden en que la acción llama a
     // `tx.select()`. Ningún ítem está en OC, así que el cambio de modo procede.
     mockTxSelectQueue.length = 0
-    mockTxSelectQueue.push([{ id: "req-1", worksiteId: "ws-1" }], [{ status: "pending" }])
+    mockTxSelectQueue.push(
+      [{ id: "req-1", code: "SOL-0001", worksiteId: "ws-1", deliveryMode: "via_oficina" }],
+      [{ status: "pending" }],
+    )
+    mockRecordAudit.mockClear()
+    mockRecordStatusChange.mockClear()
   })
 
   it("persists directo_faena for an approver role", async () => {
@@ -583,5 +594,92 @@ describe("updateDeliveryModeAction", () => {
     const res = await updateDeliveryModeAction(prevState, fd)
     expect(res.ok).toBe(false)
     expect(mockDbUpdate).not.toHaveBeenCalled()
+  })
+
+  /*
+   * APR-001 (auditoría 2026-09-14): la acción sólo hacía `set({ deliveryMode })`.
+   * El modo decide si la solicitud pasa por oficina y Compras lo copia a la OC,
+   * pero ni la ficha ni la auditoría podían decir quién lo cambió ni desde qué
+   * valor. Estas pruebas fijan la decisión como auditable.
+   */
+  it("deja la decisión en el historial de la solicitud con actor y modo anterior", async () => {
+    const fd = new FormData()
+    fd.set("requestId", "req-1")
+    fd.set("mode", "directo_faena")
+    fd.set("reason", "El proveedor entrega en faena")
+
+    const res = await updateDeliveryModeAction(prevState, fd)
+
+    expect(res.ok).toBe(true)
+    expect(mockRecordStatusChange).toHaveBeenCalledWith(
+      {
+        entityType: "purchase_request",
+        entityId:   "req-1",
+        fromStatus: "via_oficina",
+        toStatus:   "directo_faena",
+        changedBy:  "user-1",
+        reason:     "El proveedor entrega en faena",
+      },
+      expect.anything(),
+    )
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId:     "user-1",
+        action:     "update",
+        entityType: "purchase_request",
+        entityId:   "req-1",
+        entityCode: "SOL-0001",
+        oldState:   { deliveryMode: "via_oficina" },
+        newState:   { deliveryMode: "directo_faena" },
+      }),
+      expect.anything(),
+    )
+  })
+
+  it("mueve updatedAt junto al modo, para que la ficha no aparente estar sin tocar", async () => {
+    const fd = new FormData()
+    fd.set("requestId", "req-1")
+    fd.set("mode", "directo_faena")
+
+    const setSpy = vi.fn(() => ({ where: vi.fn() }))
+    mockDbUpdate.mockImplementationOnce(() => ({ set: setSpy }))
+
+    await updateDeliveryModeAction(prevState, fd)
+
+    expect(setSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ deliveryMode: "directo_faena", updatedAt: expect.any(String) }),
+    )
+  })
+
+  it("no escribe ni audita cuando el modo elegido es el que ya tenía", async () => {
+    const fd = new FormData()
+    fd.set("requestId", "req-1")
+    fd.set("mode", "via_oficina")
+
+    const res = await updateDeliveryModeAction(prevState, fd)
+
+    expect(res.ok).toBe(true)
+    expect(mockDbUpdate).not.toHaveBeenCalled()
+    expect(mockRecordStatusChange).not.toHaveBeenCalled()
+    expect(mockRecordAudit).not.toHaveBeenCalled()
+  })
+
+  it("no deja traza si la transacción revienta después de la escritura", async () => {
+    mockTransaction.mockImplementationOnce(async (run: (tx: unknown) => Promise<unknown>) => {
+      await run({
+        select: () => txSelectChain(mockTxSelectQueue.shift() ?? []),
+        update: mockDbUpdate,
+      })
+      throw new Error("fallo de commit simulado")
+    })
+    const fd = new FormData()
+    fd.set("requestId", "req-1")
+    fd.set("mode", "directo_faena")
+
+    const res = await updateDeliveryModeAction(prevState, fd)
+
+    // La traza vive en la misma transacción que el cambio: si el commit falla,
+    // la acción responde error y no queda un historial que contradiga la BD.
+    expect(res.ok).toBe(false)
   })
 })

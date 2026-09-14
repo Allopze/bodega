@@ -20,6 +20,7 @@ import {
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
+import { verifyPreventionAckToken } from "@/lib/services/prevention-ack-token"
 import {
   assessPermitActivation,
   isPermitExpired,
@@ -128,6 +129,7 @@ export async function createPermitType(input: unknown, access: PermitAccess) {
     requiresIsolation: data.requiresIsolation,
     requiresMeasurement: data.requiresMeasurement,
     requiresJsa: data.requiresJsa,
+    requiresCrewAcknowledgement: data.requiresCrewAcknowledgement,
     measurementValidityMinutes: data.measurementValidityMinutes ?? null,
     measurementCalibrationValidityDays: data.measurementCalibrationValidityDays ?? null,
     maxDurationHours: data.maxDurationHours,
@@ -391,6 +393,8 @@ async function resolveCrewEligibility(client: Client, permitId: string, competen
   const crewRows = await client.select({
     id: preventionPermitCrew.id,
     workerId: preventionPermitCrew.workerId,
+    // PER-001: el acuse del AST entra en la evaluación de habilitación.
+    acknowledgedAt: preventionPermitCrew.acknowledgedAt,
     workerFirstName: workers.firstName,
     workerLastName: workers.lastName,
   })
@@ -402,6 +406,7 @@ async function resolveCrewEligibility(client: Client, permitId: string, competen
     id: row.id,
     workerId: row.workerId,
     label: `${row.workerLastName}, ${row.workerFirstName}`,
+    acknowledgedAt: row.acknowledgedAt,
   }))
 
   /** Falta una competencia declarada **bloqueante**: impide activar. */
@@ -496,6 +501,7 @@ export async function evaluatePermitReadiness(permitId: string, access: PermitAc
       requiresIsolation: type.requiresIsolation,
       requiresMeasurement: type.requiresMeasurement,
       requiresJsa: type.requiresJsa,
+      requiresCrewAcknowledgement: type.requiresCrewAcknowledgement,
       measurementValidityMinutes: type.measurementValidityMinutes,
       measurementCalibrationValidityDays: type.measurementCalibrationValidityDays,
       maxDurationHours: type.maxDurationHours,
@@ -667,6 +673,60 @@ export async function acknowledgePermitCrew(input: unknown, access: PermitAccess
     const [updated] = await tx.update(preventionPermitCrew).set({
       acknowledgedAt: now,
       acknowledgementSha256: signature,
+      acknowledgementChannel: "account",
+    }).where(and(eq(preventionPermitCrew.id, row.crew.id), sql`${preventionPermitCrew.acknowledgedAt} IS NULL`)).returning()
+    if (!updated) throw new Error("Este integrante ya acusó el permiso.")
+    return updated
+  })
+}
+
+/**
+ * `PER-002` (auditoría 2026-09-14): acuse del AST **sin cuenta de usuario**.
+ *
+ * `acknowledgePermitCrew` exigía `row.crewUserId === access.userId`. Como el
+ * acuse de la cuadrilla es además un bloqueador configurable de la activación
+ * (`PER-001`), un tipo de permiso que lo exigiera era inactivable para
+ * cualquier cuadrilla sin cuentas: el respaldo del briefing quedaba en papel o
+ * el permiso no arrancaba.
+ *
+ * La vía alternativa es la misma que ya usan PPA y TAE: un enlace-capacidad
+ * con token HMAC derivado del id del integrante. Abre exactamente una fila de
+ * cuadrilla, así que sigue siendo cierto que nadie acusa por otra persona.
+ *
+ * QUEDA POR DECIDIR (producto): si el acuse por enlace debe valer lo mismo que
+ * el acuse con cuenta para levantar el bloqueador `crew_ack_missing`. Aquí vale
+ * —el bloqueador pregunta por `acknowledgedAt`, y negárselo dejaría el permiso
+ * igual de inactivable que antes—, y el canal queda registrado para que la
+ * política pueda endurecerse sin migrar datos.
+ */
+export async function acknowledgePermitCrewByPublicToken(
+  input: { crewId: string; token: string },
+  context: { ip?: string | null; userAgent?: string | null } = {},
+) {
+  const crewId = String(input.crewId ?? "")
+  if (!crewId || !verifyPreventionAckToken("permiso", crewId, input.token)) throw new Error(NOT_FOUND)
+
+  return db.transaction(async (tx) => {
+    const [row] = await tx.select({
+      crew: preventionPermitCrew,
+      permit: preventionWorkPermits,
+    })
+      .from(preventionPermitCrew)
+      .innerJoin(preventionWorkPermits, eq(preventionPermitCrew.permitId, preventionWorkPermits.id))
+      .where(eq(preventionPermitCrew.id, crewId)).limit(1)
+    if (!row) throw new Error(NOT_FOUND)
+    if (row.crew.acknowledgedAt) throw new Error("Este integrante ya acusó el permiso.")
+
+    const now = nowIso()
+    const signature = createHash("sha256").update(JSON.stringify({
+      crewId: row.crew.id, permitId: row.permit.id, userId: null, channel: "public_token", acknowledgedAt: now,
+    })).digest("hex")
+    const [updated] = await tx.update(preventionPermitCrew).set({
+      acknowledgedAt: now,
+      acknowledgementSha256: signature,
+      acknowledgementChannel: "public_token",
+      acknowledgementIp: context.ip ?? null,
+      acknowledgementUserAgent: context.userAgent ?? null,
     }).where(and(eq(preventionPermitCrew.id, row.crew.id), sql`${preventionPermitCrew.acknowledgedAt} IS NULL`)).returning()
     if (!updated) throw new Error("Este integrante ya acusó el permiso.")
     return updated
@@ -737,6 +797,7 @@ export async function getWorkPermitDetail(permitId: string, access: PermitAccess
     requiresIsolation: preventionPermitTypes.requiresIsolation,
     requiresMeasurement: preventionPermitTypes.requiresMeasurement,
     requiresJsa: preventionPermitTypes.requiresJsa,
+    requiresCrewAcknowledgement: preventionPermitTypes.requiresCrewAcknowledgement,
     measurementValidityMinutes: preventionPermitTypes.measurementValidityMinutes,
     maxDurationHours: preventionPermitTypes.maxDurationHours,
     competencyTaskKey: preventionPermitTypes.competencyTaskKey,

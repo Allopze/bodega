@@ -10,6 +10,7 @@ const mockScan = vi.hoisted(() => vi.fn())
 const mockAcknowledge = vi.hoisted(() => vi.fn())
 const mockVerify = vi.hoisted(() => vi.fn())
 const mockRevalidateOperationalViews = vi.hoisted(() => vi.fn())
+const mockRevalidateIntegrityBoard = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({ requirePermission: mockRequirePermission }))
 vi.mock("@/lib/services/operational-integrity", () => ({
@@ -19,6 +20,9 @@ vi.mock("@/lib/services/operational-integrity", () => ({
 }))
 vi.mock("@/lib/services/operational-cache", () => ({
   revalidateOperationalViews: mockRevalidateOperationalViews,
+  // PER-T02: la cola de integridad tiene caché propia y estas acciones la
+  // invalidan al terminar; sin el doble la acción fallaba al importarla.
+  revalidateOperationalIntegrityBoard: mockRevalidateIntegrityBoard,
 }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 vi.mock("@/lib/services/traceability-integrity-cases", () => ({

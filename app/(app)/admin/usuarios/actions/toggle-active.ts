@@ -28,6 +28,28 @@ export async function toggleUserActive(
   const activate = formData.get("activate") === "true"
 
   if (!id) return { ok: false, message: "ID requerido" }
+
+  /*
+   * USR-002 (auditoría 2026-09-14): `deleteUser` bloqueaba explícitamente el
+   * borrado propio y esta acción hermana no comprobaba la identidad del actor,
+   * así que un administrador podía desactivarse a sí mismo —perdiendo el acceso
+   * en el acto— con tal de que quedara otro administrador activo. La guarda del
+   * último administrador no lo cubría: contaba a *otros* administradores, no al
+   * que se estaba apagando la luz a sí mismo.
+   *
+   * Es la misma forma que `requireDifferentActor` (`lib/auth/segregation.ts`):
+   * el sujeto del acto y quien lo ejecuta tienen que ser personas distintas. No
+   * se reutiliza esa función porque su mensaje habla de "quien lo registró",
+   * que aquí no describe nada; sí se conserva su criterio y el texto del
+   * hermano `deleteUser`.
+   *
+   * Sólo aplica a la desactivación: reactivarse a uno mismo es imposible
+   * (una cuenta inactiva no inicia sesión) e inofensivo si llegara a ocurrir.
+   */
+  if (!activate && id === session.user.id) {
+    return { ok: false, message: "No puedes desactivar tu propia cuenta. Pídeselo a otro administrador." }
+  }
+
   if (!await canManageUserInAdminScope(db, session, id)) {
     return { ok: false, message: "No tienes acceso para modificar este usuario" }
   }

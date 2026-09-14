@@ -172,6 +172,31 @@ export function describeWorkerOffboarding(summary: WorkerOffboardingSummary): st
 }
 
 /**
+ * La misma frase, para el traslado de faena.
+ *
+ * TRB-002 y E2E-008 (auditoría 2026-09-14) son la misma costura vista desde dos
+ * sitios: cambiar a alguien de faena era un campo más del formulario, y el
+ * evento de ciclo de vida que produce sólo mira hacia adelante —incorpora a la
+ * persona a la dotación de destino y evalúa allí la organización preventiva—.
+ * Lo que no ocurría es lo simétrico: nada revisaba qué deja atrás. Es
+ * exactamente lo que este módulo ya sabe responder para la baja, así que se
+ * reutiliza en vez de escribir una segunda consulta que se desincronice.
+ *
+ * Distinto de la baja en una cosa, y por eso la frase es propia: en un traslado
+ * los pendientes no hay que *cerrarlos* necesariamente, hay que **decidir si se
+ * arrastran o se cierran en la faena de origen**, que es lo que la persona que
+ * traslada tiene que saber.
+ */
+export function describeWorkerTransfer(
+  summary: WorkerOffboardingSummary,
+  originWorksiteName?: string | null,
+): string {
+  const origin = originWorksiteName?.trim() ? ` en ${originWorksiteName.trim()}` : " en la faena de origen"
+  if (summary.clear) return `No queda nada abierto${origin}.`
+  return `Queda abierto${origin}: ${summary.items.map((entry) => entry.label).join("; ")}`
+}
+
+/**
  * Las tres dimensiones que le competen a TI. El checklist de baja es de TI: el
  * EPP y las cuadrillas de permisos los cierran bodega y prevención, y exigirlos
  * ahí sería trasladar a un rol una responsabilidad que no puede resolver.

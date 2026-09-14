@@ -20,12 +20,19 @@ import { getNavigationToggleState, routeIsEnabled, type NavigationToggleState } 
 import { registry } from "@/modules/registry"
 import { getCriticalStockAlertCount } from "@/lib/services/stock-alerts"
 import { getOperationalWorkCount } from "@/lib/services/operational-work-queue"
+import { badgeCountsTags } from "@/lib/services/operational-cache"
 import type { Session } from "next-auth"
 
 // P-01: Cache badge counts per user for 30s. Prevents repeated badge queries
 // on every navigation event. Invalidated via revalidateTag('badge-counts-{userId}')
 // from server actions that mutate relevant state (submit request, issue OC, …).
-const getCachedBadgeCounts = unstable_cache(
+// PER-T01 (auditoría 2026-09-14): las etiquetas ya no son una sola global. Cada
+// entrada se guarda además con la etiqueta de cada faena que esa sesión ve (o la
+// global si las ve todas), de modo que una mutación que declara su faena no
+// vacía los badges de la plataforma entera. El envoltorio se construye por
+// request porque `unstable_cache` fija sus `tags` al crearse; la clave sigue
+// saliendo de `keyParts` + argumentos, así que la entrada es la misma.
+const badgeCountsLoader = (tags: string[]) => unstable_cache(
   async (userId: string, isGlobal: boolean, wsIds: string[], canViewAllRequests: boolean) => {
     // Predicado compartido con /aprobaciones (lib/approvals-queue.ts). Antes
     // estaba duplicado aquí y derivó: excluía sólo 'repuestos', mientras la
@@ -79,11 +86,11 @@ const getCachedBadgeCounts = unstable_cache(
   ["badge-counts"],
   {
     revalidate: 30,
-    tags: ["badge-counts"],
+    tags,
   }
 )
 
-const getCachedOperationalWorkCount = unstable_cache(
+const operationalWorkCountLoader = (tags: string[]) => unstable_cache(
   async (userId: string, roles: string[], permissions: string[], worksiteIds: string[], isGlobal: boolean) => {
     const session = {
       user: { id: userId, roles, permissions, worksiteIds, isGlobal },
@@ -91,7 +98,7 @@ const getCachedOperationalWorkCount = unstable_cache(
     return getOperationalWorkCount(session)
   },
   ["operational-work-count"],
-  { revalidate: 30, tags: ["badge-counts"] },
+  { revalidate: 30, tags },
 )
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -123,14 +130,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const canViewReceiving = can(session, "receiving:view")
   const canViewStock = can(session, "warehouse:view_stock")
   const canViewOperations = can(session, "operations:view_work")
+  const badgeTags = badgeCountsTags({ isGlobal, worksiteIds: session.user.worksiteIds ?? [] })
 
   const [ws, rawBadgeCounts, operationalWorkCount] = await Promise.all([
     session.user.primaryWorksiteId
       ? db.query.worksites.findFirst({ where: eq(worksites.id, session.user.primaryWorksiteId) })
       : Promise.resolve(undefined),
-    getCachedBadgeCounts(session.user.id, isGlobal, wsIds, canViewAllRequests),
+    badgeCountsLoader(badgeTags)(session.user.id, isGlobal, wsIds, canViewAllRequests),
     canViewOperations
-      ? getCachedOperationalWorkCount(session.user.id, session.user.roles, session.user.permissions, wsIds, isGlobal)
+      ? operationalWorkCountLoader(badgeTags)(session.user.id, session.user.roles, session.user.permissions, wsIds, isGlobal)
       : Promise.resolve(0),
   ])
   // No serializar conteos de módulos que esta sesión no puede abrir. Los

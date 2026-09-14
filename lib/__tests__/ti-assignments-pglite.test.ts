@@ -19,7 +19,7 @@ vi.mock("@/db", () => ({
 }))
 
 import {
-  createAssignment, returnAssignment, transferAssignment,
+  createAssignment, recordAssignmentAcceptance, returnAssignment, transferAssignment,
   listAssignments, getAssignmentById, getAssignmentAccessories, getAssignmentPhotos,
 } from "@/lib/services/ti/assignments"
 import { createAsset } from "@/lib/services/ti/assets"
@@ -67,7 +67,6 @@ describe("módulo TI — asignaciones (custodia)", () => {
       deliveredAt: "2026-09-01T10:00",
       physicalState: "bueno",
       observations: "Entrega inicial",
-      accepted: true,
       accessoryNames: ["Cargador", "Bolso"],
       photoIds: ["ph-entrega-1"],
     }, actor)
@@ -77,7 +76,16 @@ describe("módulo TI — asignaciones (custodia)", () => {
     const assignment = await getAssignmentById(assignmentId)
     expect(assignment?.code).toMatch(/^ACT-\d{4}-\d{4}$/)
     expect(assignment?.workerName).toBe("Juan Pérez")
-    expect(assignment?.acceptedByName).toBe("Técnico TI")
+    /*
+     * TIA-001 (auditoría 2026-09-14): esta prueba afirmaba lo CONTRARIO
+     * —`expect(assignment?.acceptedByName).toBe("Técnico TI")`—, es decir,
+     * consagraba que el acta naciera aceptada y firmada por el mismo técnico
+     * que la emitía. El acta de entrega de un notebook registraba como
+     * aceptante a quien lo entrega. Ahora nace pendiente de acuse.
+     */
+    expect(assignment?.acceptanceStatus).toBe("pendiente")
+    expect(assignment?.acceptedByUserId).toBeNull()
+    expect(assignment?.acceptedAt).toBeNull()
 
     const asset = await testDb.select().from(schema.itAssets).where(eq(schema.itAssets.id, assetId))
     expect(asset[0]?.status).toBe("asignado")
@@ -618,5 +626,95 @@ describe("módulo TI — asignaciones (custodia)", () => {
     const [nueva] = await testDb.select().from(schema.itAssetAssignments)
       .where(and(eq(schema.itAssetAssignments.assetId, assetId), isNull(schema.itAssetAssignments.returnedAt)))
     expect(nueva?.kind).toBe("loan")
+  })
+
+  /* ── TIA-001 y TIA-002 · el acuse del acta de entrega ───────────────────── */
+
+  describe("acuse del acta (TIA-001 / TIA-002)", () => {
+    const gestor = { userId: "user-ti-gestor", userEmail: "gestor@ti.cl" }
+
+    async function entrega(code: string) {
+      const assetId = await makeAsset(code)
+      return createAssignment({
+        assetId,
+        workerId: "wk-ti-juan",
+        worksiteId: "ws-ti-norte",
+        kind: "delivery",
+        deliveredAt: "2026-09-01T10:00",
+        physicalState: "bueno",
+        accessoryNames: [],
+        photoIds: [],
+      }, actor)
+    }
+
+    it("no deja que el acuse lo registre el mismo técnico que entregó el equipo", async () => {
+      // TIA-001: era exactamente lo que hacía el código anterior, y sin
+      // pedirlo: el acta nacía aceptada con `acceptedByUserId = actor.userId`.
+      const assignmentId = await entrega("TI-A-ACUSE-01")
+      await expect(
+        recordAssignmentAcceptance({ assignmentId, outcome: "aceptada" }, actor),
+      ).rejects.toThrow(/persona distinta/i)
+
+      const acta = await getAssignmentById(assignmentId)
+      expect(acta?.acceptanceStatus).toBe("pendiente")
+    })
+
+    it("acepta el acuse cuando lo registra alguien distinto del entregador", async () => {
+      const assignmentId = await entrega("TI-A-ACUSE-02")
+      await recordAssignmentAcceptance(
+        { assignmentId, outcome: "aceptada", note: "Firma en papel archivada en la faena" },
+        gestor,
+      )
+
+      const acta = await getAssignmentById(assignmentId)
+      expect(acta?.acceptanceStatus).toBe("aceptada")
+      expect(acta?.acceptedByUserId).toBe("user-ti-gestor")
+      expect(acta?.acceptedAt).toBeTruthy()
+    })
+
+    it("distingue «no hubo acuse» de «aceptada» y exige el motivo (TIA-002)", async () => {
+      // Antes, la única forma de no marcar el acta como aceptada dejaba dos
+      // columnas nulas: un acta sin acuse era indistinguible de una entrega
+      // migrada o de un registro incompleto.
+      const assignmentId = await entrega("TI-A-ACUSE-03")
+      await expect(
+        recordAssignmentAcceptance({ assignmentId, outcome: "sin_acuse", note: "no" }, gestor),
+      ).rejects.toThrow(/Explica/i)
+
+      await recordAssignmentAcceptance(
+        { assignmentId, outcome: "sin_acuse", note: "El trabajador salió de turno antes de firmar" },
+        gestor,
+      )
+      const acta = await getAssignmentById(assignmentId)
+      expect(acta?.acceptanceStatus).toBe("sin_acuse")
+      expect(acta?.acceptedAt).toBeNull()
+      expect(acta?.acceptanceNote).toMatch(/salió de turno/)
+    })
+
+    it("una transferencia también nace pendiente de acuse", async () => {
+      // TIA-001: la transferencia era peor que la entrega —marcaba el acta
+      // nueva como aceptada por el técnico sin ofrecer siquiera la opción de
+      // dejarla sin aceptar—.
+      const assetId = await makeAsset("TI-A-ACUSE-04")
+      const first = await createAssignment({
+        assetId, workerId: "wk-ti-juan", worksiteId: "ws-ti-norte", kind: "delivery",
+        deliveredAt: "2026-09-01T10:00", physicalState: "bueno", accessoryNames: [], photoIds: [],
+      }, actor)
+      const nuevo = await transferAssignment({
+        assignmentId: first,
+        returnedAt: "2026-09-03T10:00",
+        returnPhysicalState: "bueno",
+        newWorkerId: "wk-ti-maria",
+        newWorksiteId: "ws-ti-sur",
+        newDeliveredAt: "2026-09-03T10:00",
+        newPhysicalState: "bueno",
+        newAccessoryNames: [],
+        photoIds: [],
+      }, actor)
+
+      const acta = await getAssignmentById(nuevo)
+      expect(acta?.acceptanceStatus).toBe("pendiente")
+      expect(acta?.acceptedByUserId).toBeNull()
+    })
   })
 })

@@ -16,6 +16,7 @@ import type { ActionState } from "@/lib/validation/operations"
 import Link from "next/link"
 import { describeStageProgress } from "./receipt-form-progress"
 import type { ReceiptOcItem, ReceiptStage } from "./receipt-form.types"
+import { remainingForStage } from "./receipt-remaining"
 
 export type { ReceiptOcItem } from "./receipt-form.types"
 
@@ -41,13 +42,13 @@ export function ReceiptForm({
   canFaena:        boolean
   deliveryMode?:   "via_oficina" | "directo_faena"
 }) {
-  const getRemaining = React.useCallback((item: ReceiptOcItem, stage: ReceiptStage) => {
-    if (stage === "office") return Math.max(0, item.quantity - item.quantityOfficeReceived)
-    // Direct-to-faena: cap at the ordered quantity (goods never pass through office).
-    if (deliveryMode === "directo_faena") return Math.max(0, item.quantity - item.quantityReceived)
-    // Via-oficina: faena caps STRICTLY at what already arrived at office.
-    return Math.max(0, item.quantityOfficeReceived - item.quantityReceived)
-  }, [deliveryMode])
+  // REC-002: la misma fórmula que aplica el servidor —capacidad de la etapa
+  // menos lo ya dispuesto (recibido + rechazado + dañado)—. Restar sólo lo
+  // recibido ofrecía un saldo que el servidor rechazaba.
+  const getRemaining = React.useCallback(
+    (item: ReceiptOcItem, stage: ReceiptStage) => remainingForStage(item, stage, deliveryMode ?? "via_oficina"),
+    [deliveryMode],
+  )
 
   // A stage is offered only when the user can perform it AND there is something left to receive.
   // Las OC de despacho directo nunca pasan por oficina. El permiso de oficina

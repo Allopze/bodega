@@ -24,7 +24,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { MetaBadge } from "@/components/states/state-badge"
 import { formatQty, quantityStep } from "@/lib/utils"
 import { buildDeliveryStockGroups, requiresSizeChoice } from "./delivery-size-options"
-import type { ActionState } from "@/lib/validation/operations"
+import { earliestDeliveryDate, MAX_DELIVERY_BACKDATING_DAYS, type ActionState } from "@/lib/validation/operations"
 import { registerWorkerDeliveryAction } from "./actions"
 import type {
   DeliveryStockProductOption,
@@ -38,11 +38,29 @@ export type {
   DeliveryWorksiteOption,
 } from "./delivery-form.types"
 
+/**
+ * ENT-002 (auditoría 2026-09-14): el canje "entrego nuevo, retiro usado" existía
+ * en el esquema (`delivery_items.return_*`), en la impresión del comprobante y
+ * en la trazabilidad, pero **ninguna pantalla lo registraba**. Estos cinco
+ * campos son la pantalla que faltaba; van en la línea del EPP nuevo porque es
+ * donde la tabla ya tiene las columnas.
+ */
 type DeliveryLine = {
   productId: string
   quantity: number
   notes: string | null
+  returnProductId: string | null
+  returnProductNameFree: string | null
+  returnQuantity: number | null
+  returnReason: string | null
+  returnNotes: string | null
 }
+
+/** Los cuatro motivos que documenta la columna `return_reason`. */
+const RETURN_REASONS = ["desgastado", "dañado", "vencido", "otro"] as const
+
+/** Valor centinela del selector: el EPP retirado no está en el catálogo. */
+const FREE_RETURN_PRODUCT = "__free"
 
 export function DeliveryForm({
   worksites,
@@ -114,6 +132,16 @@ export function DeliveryForm({
     [availableStock, selectedWorker],
   )
   const addedProductIds = React.useMemo(() => new Set(lines.map((line) => line.productId)), [lines])
+  /*
+   * ENT-002: el EPP retirado se elige del catálogo de EPP de la bodega, no del
+   * stock disponible. Lo que vuelve usado normalmente ya no tiene existencias
+   * (por eso se está reponiendo), así que filtrar por `stockQuantity > 0` lo
+   * dejaría fuera justo en el caso normal.
+   */
+  const returnProductOptions = React.useMemo(
+    () => stockProducts.filter((product) => product.sourceWorksiteId === sourceWorksiteId && product.isEpp),
+    [sourceWorksiteId, stockProducts],
+  )
   const selectedGroup = stockGroups.find((group) => group.key === pendingGroupKey)
   const needsSize = requiresSizeChoice(selectedGroup)
   const selectedPendingProduct = availableStock.find((product) => product.productId === pendingProductId)
@@ -181,11 +209,46 @@ export function DeliveryForm({
         productId: selectedPendingProduct.productId,
         quantity,
         notes: null,
+        returnProductId: null,
+        returnProductNameFree: null,
+        returnQuantity: null,
+        returnReason: null,
+        returnNotes: null,
       },
     ])
     setPendingGroupKey("")
     setPendingProductId("")
     setPendingQuantity("")
+  }
+
+  function updateLine(productId: string, patch: Partial<DeliveryLine>) {
+    setLines((current) => current.map((line) => (
+      line.productId === productId ? { ...line, ...patch } : line
+    )))
+  }
+
+  /**
+   * Abrir el canje precarga lo habitual —misma cantidad, mismo producto— porque
+   * el caso normal es uno a uno: se entrega un par de guantes nuevos y se retira
+   * el par usado. Cerrarlo borra los cinco campos: una devolución a medias no
+   * debe quedar escrita.
+   */
+  function toggleReturn(line: DeliveryLine, enabled: boolean) {
+    updateLine(line.productId, enabled
+      ? {
+        returnQuantity: line.quantity || 1,
+        returnProductId: line.productId,
+        returnProductNameFree: null,
+        returnReason: line.returnReason ?? "desgastado",
+        returnNotes: null,
+      }
+      : {
+        returnQuantity: null,
+        returnProductId: null,
+        returnProductNameFree: null,
+        returnReason: null,
+        returnNotes: null,
+      })
   }
 
   function updateLineQuantity(productId: string, value: string) {
@@ -250,7 +313,9 @@ export function DeliveryForm({
           label="Fecha de entrega"
           htmlFor="deliveryDate"
           required
-          helper="Por defecto hoy. Puedes registrar cualquier fecha pasada."
+          // ENT-003 (auditoría 2026-09-14): decía "cualquier fecha pasada", y
+          // era literal: una entrega podía fecharse en un período ya informado.
+          helper={`Por defecto hoy. Se admite hasta ${MAX_DELIVERY_BACKDATING_DAYS} días de retroactividad (desde el ${earliestDeliveryDate(today)}).`}
           error={state.fieldErrors?.deliveredAt?.[0]}
         >
           <DatePicker
@@ -261,6 +326,7 @@ export function DeliveryForm({
             ariaLabel="Fecha de entrega"
             value={deliveredAt}
             onChange={setDeliveredAt}
+            min={earliestDeliveryDate(today)}
             max={today}
             error={Boolean(state.fieldErrors?.deliveredAt?.[0])}
           />
@@ -375,7 +441,8 @@ export function DeliveryForm({
             {lines.map((line) => {
               const product = availableStock.find((candidate) => candidate.productId === line.productId)
               return (
-                <li key={line.productId} className="flex items-center gap-3 px-3 py-3">
+                <li key={line.productId} className="px-3 py-3">
+                  <div className="flex items-center gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="flex items-center gap-1.5 text-sm font-medium text-[var(--color-text)]">
                       <span className="truncate">{product?.displayName ?? product?.productName ?? line.productId}</span>
@@ -409,6 +476,90 @@ export function DeliveryForm({
                   >
                     <Trash size={16} weight="bold" />
                   </Button>
+                  </div>
+
+                  {/* ENT-002: el canje del EPP usado. Cerrado por omisión: la
+                      mayoría de las entregas no lo tienen, y abrirlo siempre
+                      convertiría el formulario en un cuestionario. */}
+                  <div className="mt-2 border-t border-dashed border-[var(--color-border)] pt-2">
+                    <label className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+                      <input
+                        type="checkbox"
+                        checked={line.returnQuantity !== null}
+                        onChange={(event) => toggleReturn(line, event.target.checked)}
+                        aria-label={`Retirar EPP usado al entregar ${product?.displayName ?? product?.productName ?? line.productId}`}
+                      />
+                      Retiro EPP usado a cambio
+                    </label>
+
+                    {line.returnQuantity !== null && (
+                      <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_7rem_10rem]">
+                        <Field label="EPP retirado" htmlFor={`return-product-${line.productId}`}>
+                          <Select
+                            value={line.returnProductId ?? (line.returnProductNameFree !== null ? FREE_RETURN_PRODUCT : "")}
+                            onValueChange={(value) => updateLine(line.productId, value === FREE_RETURN_PRODUCT
+                              ? { returnProductId: null, returnProductNameFree: "" }
+                              : { returnProductId: value, returnProductNameFree: null })}
+                          >
+                            <SelectTrigger id={`return-product-${line.productId}`}>
+                              <SelectValue placeholder="Selecciona el EPP retirado" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {returnProductOptions.map((option) => (
+                                <SelectItem key={option.productId} value={option.productId}>
+                                  {option.displayName ?? option.productName}
+                                </SelectItem>
+                              ))}
+                              {/* Un modelo descontinuado no tiene ficha, y
+                                  obligar a inventarla ensuciaría el catálogo. */}
+                              <SelectItem value={FREE_RETURN_PRODUCT}>Otro (escribir)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </Field>
+
+                        <Field label="Cantidad" htmlFor={`return-quantity-${line.productId}`}>
+                          <Input
+                            id={`return-quantity-${line.productId}`}
+                            type="number"
+                            min={1}
+                            step={1}
+                            value={line.returnQuantity || ""}
+                            onChange={(event) => updateLine(line.productId, { returnQuantity: Number(event.target.value) || null })}
+                            className="tabular-nums"
+                          />
+                        </Field>
+
+                        <Field label="Motivo" htmlFor={`return-reason-${line.productId}`}>
+                          <Select
+                            value={line.returnReason ?? ""}
+                            onValueChange={(value) => updateLine(line.productId, { returnReason: value })}
+                          >
+                            <SelectTrigger id={`return-reason-${line.productId}`}>
+                              <SelectValue placeholder="Motivo" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {RETURN_REASONS.map((reason) => (
+                                <SelectItem key={reason} value={reason}>{reason}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+
+                        {line.returnProductNameFree !== null && (
+                          <div className="sm:col-span-3">
+                            <Field label="Nombre del EPP retirado" htmlFor={`return-free-${line.productId}`}>
+                              <Input
+                                id={`return-free-${line.productId}`}
+                                value={line.returnProductNameFree}
+                                onChange={(event) => updateLine(line.productId, { returnProductNameFree: event.target.value })}
+                                placeholder="Ej: buzo antiguo sin código"
+                              />
+                            </Field>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </li>
               )
             })}
@@ -440,7 +591,15 @@ export function DeliveryForm({
           variant="primary"
           disabled={!sourceWorksiteId || !workerId || lines.length === 0 || lines.some((line) => {
             const product = availableStock.find((candidate) => candidate.productId === line.productId)
-            return line.quantity <= 0 || Boolean(product?.isEpp && !Number.isInteger(line.quantity))
+            // ENT-002: una devolución declarada a medias —cantidad sin
+            // producto o sin motivo— la rechaza el servidor; no dejar enviarla
+            // evita el viaje de ida y vuelta.
+            const returnIncomplete = line.returnQuantity !== null && (
+              line.returnQuantity <= 0
+              || !(line.returnProductId || line.returnProductNameFree?.trim())
+              || !line.returnReason
+            )
+            return line.quantity <= 0 || returnIncomplete || Boolean(product?.isEpp && !Number.isInteger(line.quantity))
           })}
         />
       </div>

@@ -3,7 +3,7 @@ import { automaticChargeDaysForSeverity } from "@/lib/prevention/charge-days"
 import { totalAbsenceDays } from "@/lib/prevention/absence-allocation"
 import { z } from "zod"
 import { db, type DB, type Tx } from "@/db"
-import { canSignOwnWork } from "@/lib/services/prevention-signing"
+import { resolveOwnWorkSigning } from "@/lib/services/prevention-signing"
 import {
   preventionCapaActions,
   preventionIncidentEvidence,
@@ -316,6 +316,8 @@ const capaSchema = z.object({
   priority: z.enum(["low", "medium", "high", "critical"]),
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   evidenceRequired: z.boolean().default(true),
+  /** CAPA-002: si la CAPA del incidente no exigirá evidencia, hay que decir por qué. */
+  evidenceExemptionReason: z.string().trim().max(1000).nullable().optional(),
 })
 
 const transitionSchema = z.object({
@@ -1099,14 +1101,21 @@ export function assertIncidentTransition(args: {
      * caso; ésta mira quién firma, que es lo que un expediente cerrado tiene
      * que poder demostrar. La jefatura técnica del área queda exenta: responde
      * por la investigación y no puede quedar esperando una firma ajena. */
-    if (
-      args.investigationCompletedByUserId
-      && args.investigationCompletedByUserId === args.actorUserId
-      && !canSignOwnWork(args.permissions)
-    ) {
+    /* INC-002: la excepción deja rastro. Antes era un booleano y un cierre
+     * firmado por quien investigó quedaba en el expediente idéntico a uno
+     * firmado por dos personas distintas. */
+    const signing = resolveOwnWorkSigning({
+      signedByUserId: args.investigationCompletedByUserId,
+      actorUserId: args.actorUserId,
+      permissions: args.permissions,
+      what: "Cerrar el incidente",
+    })
+    if (!signing.ok) {
       throw new Error("Quien completó la investigación no puede cerrar el incidente: debe firmarlo otra persona.")
     }
+    return { ownWorkExceptionUsed: signing.usedException }
   }
+  return { ownWorkExceptionUsed: false }
 }
 
 export async function transitionPreventionIncident(args: {
@@ -1118,7 +1127,7 @@ export async function transitionPreventionIncident(args: {
     const incident = await findIncidentForMutation(tx, input.incidentId)
     requireAccess(args.access, TRANSITION_PERMISSION[input.toStatus], incident.worksiteId)
     const facts = await getClosureFacts(tx, incident.id)
-    assertIncidentTransition({
+    const { ownWorkExceptionUsed } = assertIncidentTransition({
       incident,
       toStatus: input.toStatus,
       permissions: args.access.permissions,
@@ -1146,7 +1155,12 @@ export async function transitionPreventionIncident(args: {
       actorUserId: args.access.ctx.userId,
       fromStatus: incident.status,
       toStatus: input.toStatus,
-      reason: input.reason,
+      // INC-002: si el cierre lo firmó quien completó la investigación, el
+      // expediente dice que se usó la excepción `prevention:sign_own_work` y
+      // no sólo que alguien cerró.
+      reason: ownWorkExceptionUsed
+        ? `${input.reason} [Firma propia: cerrado por quien completó la investigación, con la excepción prevention:sign_own_work.]`
+        : input.reason,
       createdAt: now,
     })
     return updated
@@ -1496,6 +1510,7 @@ export async function createPreventionIncidentCapa(args: {
         priority: input.priority,
         targetDate: input.targetDate,
         evidenceRequired: input.evidenceRequired,
+        evidenceExemptionReason: input.evidenceExemptionReason ?? null,
       }, args.access.ctx.userId),
       tx.update(preventionIncidents).set({
         version: sql`${preventionIncidents.version} + 1`, updatedAt: now,

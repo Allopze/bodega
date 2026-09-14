@@ -25,8 +25,8 @@ testGlobal.__db = testDb
 vi.mock("@/db", () => ({ get db() { return testGlobal.__db } }))
 
 const {
-  describeCrossBookMatch, findInBillingBook, findInPurchasingBook,
-  normalizeFolio, normalizeTaxId,
+  describeCrossBookMatch, describeDuplicateAcrossOrders, findInBillingBook, findInPurchasingBook,
+  findSameSupplierDocumentInAnotherOrder, normalizeFolio, normalizeTaxId,
 } = await import("@/lib/services/purchasing-module/supplier-document-crosscheck")
 const { upsertProviderInvoice } = await import("@/lib/services/billing/invoices")
 
@@ -205,5 +205,58 @@ describe("la sincronización deja constancia de que el documento ya estaba en co
     const events = await testDb.select().from(schema.billingInvoiceEvents)
       .where(eq(schema.billingInvoiceEvents.invoiceId, result.invoiceId))
     expect(events.some((e) => e.eventType === "invoice.crossbook_duplicate")).toBe(false)
+  })
+})
+
+/**
+ * `FAC-001` (auditoría 2026-09-14): la unicidad del folio estaba declarada por
+ * OC, así que el mismo folio del mismo proveedor podía adjuntarse a dos órdenes
+ * y contarse dos veces en la cobertura documental, en el gasto y en el pago.
+ */
+describe("el mismo folio del mismo proveedor en otra orden", () => {
+  it("lo encuentra y nombra la orden que ya lo tiene", async () => {
+    const { code } = await seedPurchasingInvoice("0004321")
+    const match = await findSameSupplierDocumentInAnotherOrder({
+      supplierRut: "76.123.456-7", invoiceNumber: "4321", documentKind: "invoice",
+    })
+    expect(match?.purchaseOrderCode).toBe(code)
+    expect(describeDuplicateAcrossOrders(match!)).toContain("una sola vez")
+  })
+
+  it("no se acusa a sí mismo: excluye la orden que se está cargando", async () => {
+    const { code } = await seedPurchasingInvoice("4321")
+    const [order] = await testDb.select().from(schema.purchaseOrders).where(eq(schema.purchaseOrders.code, code))
+    expect(await findSameSupplierDocumentInAnotherOrder({
+      supplierRut: RUT, invoiceNumber: "4321", documentKind: "invoice",
+      exceptPurchaseOrderId: order!.id,
+    })).toBeNull()
+  })
+
+  it("dos folios iguales de proveedores distintos no son un duplicado", async () => {
+    await seedPurchasingInvoice("4321")
+    expect(await findSameSupplierDocumentInAnotherOrder({
+      supplierRut: "99888777-6", invoiceNumber: "4321", documentKind: "invoice",
+    })).toBeNull()
+  })
+
+  it("una factura y una nota de crédito con el mismo folio conviven", async () => {
+    await seedPurchasingInvoice("4321", { kind: "credit_note" })
+    expect(await findSameSupplierDocumentInAnotherOrder({
+      supplierRut: RUT, invoiceNumber: "4321", documentKind: "invoice",
+    })).toBeNull()
+  })
+
+  it("el adjunto anulado libera el folio", async () => {
+    await seedPurchasingInvoice("4321", { voided: true })
+    expect(await findSameSupplierDocumentInAnotherOrder({
+      supplierRut: RUT, invoiceNumber: "4321", documentKind: "invoice",
+    })).toBeNull()
+  })
+
+  it("la base lo impide aunque nadie pase por el servicio", async () => {
+    // El servicio comprueba dentro de la transacción; el índice parcial es lo
+    // que sostiene la regla frente a una carrera o a una escritura directa.
+    await seedPurchasingInvoice("4321")
+    await expect(seedPurchasingInvoice("0004321")).rejects.toThrow()
   })
 })

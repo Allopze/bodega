@@ -23,7 +23,8 @@ import {
   type CompetencyGap,
 } from "@/lib/prevention/training"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
-import { canSignOwnWork } from "@/lib/services/prevention-signing"
+import { resolveOwnWorkSigning } from "@/lib/services/prevention-signing"
+import { verifyPreventionAckToken } from "@/lib/services/prevention-ack-token"
 import { competencyConvalidationSchema,
   competencyRequirementSchema,
   competencyRevocationSchema,
@@ -209,9 +210,14 @@ export async function transitionTrainingCourseVersion(input: unknown, access: Tr
     if (data.toStatus === "approved" && current.authorUserId === access.userId) {
       throw new Error("El autor del contenido no puede aprobar su propia versión.")
     }
-    if (data.toStatus === "published"
-      && current.authorUserId === access.userId
-      && !canSignOwnWork(access.permissions)) {
+    // INC-002: la excepción por cargo deja constancia en la bitácora.
+    const signing = resolveOwnWorkSigning({
+      signedByUserId: data.toStatus === "published" ? current.authorUserId : null,
+      actorUserId: access.userId,
+      permissions: access.permissions,
+      what: "Publicar la versión del contenido",
+    })
+    if (!signing.ok) {
       throw new Error("El autor del contenido no puede publicar su propia versión.")
     }
     if (data.toStatus === "published" && current.effectiveFrom && current.effectiveFrom > todayInChile()) {
@@ -247,7 +253,7 @@ export async function transitionTrainingCourseVersion(input: unknown, access: Tr
       .where(and(eq(preventionTrainingCourseVersions.id, current.id), eq(preventionTrainingCourseVersions.version, data.expectedVersion)))
       .returning()
     if (!updated) throw new Error("La versión cambió mientras editabas. Recarga y reintenta.")
-    await history(tx, { entityType: "course_version", entityId: current.id, changeType: data.toStatus, reason: data.reason, beforeState: current, afterState: updated, actorUserId: access.userId })
+    await history(tx, { entityType: "course_version", entityId: current.id, changeType: data.toStatus, reason: signing.usedException ? `${data.reason ?? ""} [Firma propia: publicada por su autor, con la excepción prevention:sign_own_work.]`.trim() : data.reason, beforeState: current, afterState: updated, actorUserId: access.userId })
     return updated
   })
 }
@@ -574,6 +580,7 @@ export async function acknowledgeTraining(input: unknown, access: TrainingAccess
     const [updated] = await tx.update(preventionTrainingAttendance).set({
       acknowledgementSha256: signature,
       acknowledgedAt: now,
+      acknowledgementChannel: "account",
       acknowledgementMethod: data.method,
       acknowledgementIp: context.ip ?? null,
       acknowledgementUserAgent: context.userAgent ?? null,
@@ -582,6 +589,81 @@ export async function acknowledgeTraining(input: unknown, access: TrainingAccess
     }).where(and(eq(preventionTrainingAttendance.id, row.attendance.id), sql`${preventionTrainingAttendance.acknowledgedAt} IS NULL`)).returning()
     if (!updated) throw new Error("Esta capacitación ya fue acusada.")
     await history(tx, { entityType: "attendance", entityId: row.attendance.id, worksiteId: row.session.worksiteId, changeType: "acknowledged", reason: `Acuse por ${data.method}`, actorUserId: access.userId })
+    return updated
+  })
+}
+
+/**
+ * `CAP-002` (auditoría 2026-09-14): acuse del trabajador **sin cuenta**.
+ *
+ * El acuse anterior exigía `row.workerUserId === access.userId`, es decir, que
+ * la asistencia estuviera atada a un `users.id` y que esa persona tuviera
+ * sesión abierta. La mayoría del personal de faena no es usuario de la
+ * plataforma —el propio módulo PPA lo declara—, así que la constancia de haber
+ * recibido la información sólo existía para una minoría.
+ *
+ * Aquí la autorización es la posesión del enlace: un token HMAC derivado del id
+ * de la asistencia, el mismo patrón de enlace-capacidad de PPA y TAE. No hay
+ * sesión, no hay permiso que comprobar y no se acusa por otra persona, porque
+ * el token abre **una sola** asistencia. Lo demás no cambia: una sola vez,
+ * sólo sobre una asistencia registrada, con IP, agente de usuario y firma.
+ *
+ * QUEDA POR DECIDIR (producto, no plataforma): por qué canal se hace llegar el
+ * enlace al trabajador (impreso con QR, SMS, WhatsApp) y si un acuse por token
+ * tiene el mismo valor probatorio que uno con cuenta. La plataforma no lo
+ * declara en ninguna parte, así que aquí se registra el canal
+ * (`acknowledgementChannel`) y no se pondera: quien audite decide.
+ */
+export async function acknowledgeTrainingByPublicToken(
+  input: { attendanceId: string; token: string; method?: "platform_click" | "signed_document"; evidenceReference?: string | null },
+  context: { ip?: string | null; userAgent?: string | null },
+) {
+  const attendanceId = String(input.attendanceId ?? "")
+  if (!attendanceId || !verifyPreventionAckToken("capacitacion", attendanceId, input.token)) {
+    throw new Error(NOT_FOUND)
+  }
+  const method = input.method ?? "platform_click"
+
+  return db.transaction(async (tx) => {
+    const [row] = await tx.select({
+      attendance: preventionTrainingAttendance,
+      session: preventionTrainingSessions,
+      version: preventionTrainingCourseVersions,
+    })
+      .from(preventionTrainingAttendance)
+      .innerJoin(preventionTrainingSessions, eq(preventionTrainingAttendance.sessionId, preventionTrainingSessions.id))
+      .innerJoin(preventionTrainingCourseVersions, eq(preventionTrainingSessions.courseVersionId, preventionTrainingCourseVersions.id))
+      .where(eq(preventionTrainingAttendance.id, attendanceId))
+      .limit(1)
+    if (!row) throw new Error(NOT_FOUND)
+    if (row.attendance.acknowledgedAt) throw new Error("Esta capacitación ya fue acusada.")
+    if (row.attendance.status !== "attended") throw new Error("Sólo puede acusarse una asistencia registrada.")
+
+    const now = nowIso()
+    // Misma firma que el acuse con cuenta, salvo que no hay `userId` que
+    // firmar: quien acusa es el portador del enlace de esa asistencia.
+    const signature = sha256({
+      attendanceId: row.attendance.id,
+      sessionId: row.session.id,
+      contentHash: row.version.contentHash,
+      workerId: row.attendance.workerId,
+      userId: null,
+      channel: "public_token",
+      acknowledgedAt: now,
+      method,
+    })
+    const [updated] = await tx.update(preventionTrainingAttendance).set({
+      acknowledgementSha256: signature,
+      acknowledgedAt: now,
+      acknowledgementChannel: "public_token",
+      acknowledgementMethod: method,
+      acknowledgementIp: context.ip ?? null,
+      acknowledgementUserAgent: context.userAgent ?? null,
+      evidenceReference: input.evidenceReference ?? row.attendance.evidenceReference,
+      updatedAt: now,
+    }).where(and(eq(preventionTrainingAttendance.id, row.attendance.id), sql`${preventionTrainingAttendance.acknowledgedAt} IS NULL`)).returning()
+    if (!updated) throw new Error("Esta capacitación ya fue acusada.")
+    await history(tx, { entityType: "attendance", entityId: row.attendance.id, worksiteId: row.session.worksiteId, changeType: "acknowledged", reason: `Acuse sin cuenta (enlace) por ${method}`, actorUserId: null })
     return updated
   })
 }

@@ -127,12 +127,27 @@ npm run check:security-audit     # npm audit con allowlist documentado y con fec
 npm run test:fast                # unitarias sin PGlite
 npm run test:pglite              # suites contra PGlite
 npm run test:e2e                 # Playwright
-npm run db:verify-migrations     # cadena de migraciones
+npm run db:verify-migrations     # cadena de migraciones + inspección del SQL
 npm run doctor                   # React Doctor
 ```
 
 `.github/workflows/ci.yml` corre exactamente estas puertas; si una falla ahí, falla la
 liberación. Para el alcance de cada una ver la tabla de más abajo.
+
+**Al agregar una migración** hay que registrar su checksum en
+`db/migrations/meta/_sql-checksums.json`:
+
+```bash
+node scripts/verify-migration-chain.mjs --update-checksums
+```
+
+Ese manifiesto es lo que impide reescribir una migración ya publicada (DAT-002):
+reescribir un archivo que producción ya aplicó no vuelve a ejecutarlo, así que la
+base queda en un estado que el repo ya no describe. El verificador comprueba
+además que ningún `DROP` de objeto nuevo venga sin `IF EXISTS` y que ningún
+`.sql` quede sin una sola sentencia ejecutable; el criterio con el que se
+eligieron esas tres comprobaciones —objetivas y sin falsos positivos— está en
+`scripts/migration-sql-checks.mjs`.
 
 ### Auditoría de navegador asistida
 

@@ -45,6 +45,38 @@ describe("operational integrity ledger", () => {
   afterAll(async () => { await pg.close() })
 
   /**
+   * GDI-001 (auditoría 2026-09-14): ningún detector miraba las guías de despacho
+   * interno. La diferencia cotejada dejaba inventario fantasma en la faena y
+   * nada la recordaba: ni tarea, ni pendiente en la cola, ni detector.
+   */
+  it("la diferencia cotejada de una guía entra en la cola de integridad", async () => {
+    const actor = await fixture("gdi-scan")
+    // El origen es la oficina y el destino la faena: la guía no puede ir de una
+    // faena a sí misma.
+    await db.insert(schema.worksites).values({ id: "gdi-origen", code: "QA-GDI-O", name: "QA oficina GDI" })
+    await db.insert(schema.dispatchGuides).values({
+      id: "gdi-case-1", code: "GDI-CASE-1", status: "partially_received",
+      originWorksiteId: "gdi-origen", destinationWorksiteId: "gdi-scan",
+      issuedBy: "oi-user",
+      dispatchedAt: "2026-09-09T12:00:00.000Z", dispatchedBy: "oi-user",
+      receivedAt: "2026-09-10T12:00:00.000Z", receivedBy: "oi-user",
+    })
+    await db.insert(schema.dispatchGuideItems).values({
+      id: "gdi-case-item-1", guideId: "gdi-case-1", productId: "oi-product",
+      quantity: 5, quantityReceived: 3, differenceReason: "Faltaron dos unidades",
+    })
+
+    await scanOperationalIntegrity(actor, ["receiving"])
+
+    const cases = await listOperationalIntegrityCases(actor, {})
+    const shrinkage = cases.find((row) => row.code === "DISPATCH_GUIDE_SHRINKAGE_UNRESOLVED")
+    expect(shrinkage, "el detector de guías no llegó a la cola").toBeDefined()
+    expect(shrinkage!.entityId).toBe("gdi-case-1")
+    expect(shrinkage!.href).toBe("/bodega/guias/gdi-case-1")
+    expect(shrinkage!.severity).toBe("high")
+  })
+
+  /**
    * El escaneo automático corre sin sesión: no hay quién autorizar y tampoco
    * una faena que lo acote. Ve todas, y su rastro queda como sistema.
    */

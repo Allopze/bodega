@@ -241,6 +241,20 @@ async function resolvePdtpActiveProgramForEvent(
       current.push(member.worksiteId)
       membersByProgram.set(member.programId, current)
     }
+    /**
+     * PDTP-003 (auditoría 2026-09-14): un programa activo SIN faenas
+     * declaradas es aplicable a cualquier faena. Eso ya no puede nacer de un
+     * descuido: `activatePdtpProgram` exige declarar el alcance
+     * (`appliesToAllWorksites`) antes de activar un programa sin faenas, y la
+     * migración 0297 marcó como corporativos los que ya estaban vivos así. Es
+     * decir, `members.length === 0` en un programa **activo** hoy significa
+     * "alcance total declarado", no "sin configurar".
+     *
+     * El filtro no consulta la columna a propósito: hacerlo dejaría fuera a
+     * todo programa insertado sin pasar por el ciclo de vida —fixtures,
+     * cargas históricas— y el motor de acreditación no es el lugar donde
+     * descubrir eso. La compuerta vive donde se toma la decisión: al activar.
+     */
     const applicable = programs.filter((candidate) => {
       const members = membersByProgram.get(candidate.id) ?? []
       return members.length === 0 || members.includes(input.worksiteId)

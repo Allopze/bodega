@@ -29,6 +29,7 @@ vi.mock("@/db", () => ({
 }))
 
 import { registerWorkerStockDelivery } from "@/lib/services/deliveries"
+import { MAX_DELIVERY_BACKDATING_DAYS } from "@/lib/validation/operations"
 
 const USER_ID = "user-worker-stock"
 let scenarioNumber = 0
@@ -420,10 +421,14 @@ describe("registerWorkerStockDelivery", () => {
   // La entrega física ocurre en faena y se digita después. La fecha operacional
   // del comprobante la fija el operador; el rastro de auditoría —created_at y el
   // movimiento de kardex— sigue marcando cuándo se digitó.
+  //
+  // ENT-003 (auditoría 2026-09-14): esta prueba usaba −365 días y consagraba la
+  // retroactividad ilimitada. La retrofecha sigue siendo válida —es el caso de
+  // uso real—, pero dentro del plazo; el rechazo del año entero está abajo.
   it("retrofecha sólo el comprobante y deja el kardex en la hora real", async () => {
     const scenario = await makeScenario()
     const today = todayInChile()
-    const backdate = addDaysToPlainDate(today, -365)
+    const backdate = addDaysToPlainDate(today, -30)
 
     const deliveryId = await registerWorkerStockDelivery({
       sourceWorksiteId: scenario.sourceWorksiteId,
@@ -460,5 +465,142 @@ describe("registerWorkerStockDelivery", () => {
       where: eq(schema.deliveries.id, deliveryId),
     })
     expect(todayInChile(delivery!.deliveredAt)).toBe(todayInChile())
+  })
+
+  /*
+   * ENT-002 (auditoría 2026-09-14): las cinco columnas `return_*` de
+   * `delivery_items` existían, la impresión y la trazabilidad las mostraban, y
+   * el único `insert` de la tabla las dejaba siempre en NULL. El tipo de
+   * movimiento `retiro_epp_trabajador` estaba implementado y no lo emitía
+   * nadie. El canje "entrego nuevo, retiro usado" no era operable.
+   */
+  it("registra la devolución del EPP usado en la misma línea de la entrega", async () => {
+    const scenario = await makeScenario()
+
+    const deliveryId = await registerWorkerStockDelivery({
+      sourceWorksiteId: scenario.sourceWorksiteId,
+      workerId: scenario.workerId,
+      deliveredBy: USER_ID,
+      items: [{
+        productId: scenario.firstProductId,
+        quantity: 1,
+        returnProductId: scenario.firstProductId,
+        returnQuantity: 1,
+        returnReason: "desgastado",
+        returnNotes: "Costura abierta",
+      }],
+    })
+
+    const [line] = await inMemoryDb.select().from(schema.deliveryItems)
+      .where(eq(schema.deliveryItems.deliveryId, deliveryId))
+    expect(line!.returnQuantity).toBe(1)
+    expect(line!.returnProductId).toBe(scenario.firstProductId)
+    expect(line!.returnReason).toBe("desgastado")
+    expect(line!.returnNotes).toBe("Costura abierta")
+
+    // El retiro es evidencia, no ingreso: la unidad usada no vuelve al saldo.
+    const movements = await inMemoryDb.select().from(schema.inventoryMovements)
+      .where(eq(schema.inventoryMovements.referenceId, deliveryId))
+    const retiro = movements.find((movement) => movement.type === "retiro_epp_trabajador")
+    expect(retiro).toBeDefined()
+    // El motor lo escribe con `quantity: 0` a propósito: es evidencia, no
+    // saldo. Cuántas unidades volvieron vive en `delivery_items.return_quantity`.
+    expect(retiro!.quantity).toBe(0)
+    expect(retiro!.stockBefore).toBe(retiro!.stockAfter)
+    expect(retiro!.reason).toContain("Retiro de EPP usado")
+
+    const [stock] = await inMemoryDb.select().from(schema.worksiteStock)
+      .where(and(
+        eq(schema.worksiteStock.worksiteId, scenario.sourceWorksiteId),
+        eq(schema.worksiteStock.productId, scenario.firstProductId),
+      ))
+    // 10 iniciales − 1 entregada. La devolución no suma.
+    expect(stock!.quantity).toBe(9)
+  })
+
+  /**
+   * ENT-002: un EPP descontinuado no tiene ficha en el catálogo. Se registra
+   * por nombre libre y sin movimiento, porque el kardex se lleva por
+   * `productId` y no hay fila donde anotarlo.
+   */
+  it("acepta la devolución de un EPP fuera de catálogo, sin movimiento de kardex", async () => {
+    const scenario = await makeScenario()
+
+    const deliveryId = await registerWorkerStockDelivery({
+      sourceWorksiteId: scenario.sourceWorksiteId,
+      workerId: scenario.workerId,
+      deliveredBy: USER_ID,
+      items: [{
+        productId: scenario.firstProductId,
+        quantity: 1,
+        returnProductNameFree: "Buzo antiguo sin código",
+        returnQuantity: 1,
+        returnReason: "vencido",
+      }],
+    })
+
+    const [line] = await inMemoryDb.select().from(schema.deliveryItems)
+      .where(eq(schema.deliveryItems.deliveryId, deliveryId))
+    expect(line!.returnProductNameFree).toBe("Buzo antiguo sin código")
+    expect(line!.returnProductId).toBeNull()
+
+    const movements = await inMemoryDb.select().from(schema.inventoryMovements)
+      .where(eq(schema.inventoryMovements.referenceId, deliveryId))
+    expect(movements.some((movement) => movement.type === "retiro_epp_trabajador")).toBe(false)
+  })
+
+  /**
+   * ENT-002: las dos reglas del esquema huérfano, ahora también en el servicio
+   * —que es lo que llaman la importación y los scripts—. Una cantidad sin
+   * producto quedaba escrita como "devolución de nada".
+   */
+  it("rechaza una devolución declarada sin producto y sin motivo", async () => {
+    const scenario = await makeScenario()
+
+    await expect(registerWorkerStockDelivery({
+      sourceWorksiteId: scenario.sourceWorksiteId,
+      workerId: scenario.workerId,
+      deliveredBy: USER_ID,
+      items: [{ productId: scenario.firstProductId, quantity: 1, returnQuantity: 1, returnReason: "desgastado" }],
+    })).rejects.toThrow(/qué producto se devuelve/)
+
+    await expect(registerWorkerStockDelivery({
+      sourceWorksiteId: scenario.sourceWorksiteId,
+      workerId: scenario.workerId,
+      deliveredBy: USER_ID,
+      items: [{
+        productId: scenario.firstProductId,
+        quantity: 1,
+        returnProductId: scenario.firstProductId,
+        returnQuantity: 1,
+      }],
+    })).rejects.toThrow(/motivo de la devolución/)
+  })
+
+  /*
+   * ENT-003: la cota no puede vivir sólo en el zod de la action. Este servicio
+   * lo llaman también la importación y los scripts, y antes aceptaba cualquier
+   * fecha pasada: la entrega quedaba en un período ya informado y acreditaba
+   * allí la N°62 del PDTP, que cuelga de esta misma fecha.
+   */
+  it("rechaza en el servicio una fecha anterior al plazo de retroactividad", async () => {
+    const scenario = await makeScenario()
+    const tooOld = addDaysToPlainDate(todayInChile(), -(MAX_DELIVERY_BACKDATING_DAYS + 1))
+
+    await expect(registerWorkerStockDelivery({
+      sourceWorksiteId: scenario.sourceWorksiteId,
+      workerId: scenario.workerId,
+      deliveredAt: tooOld,
+      deliveredBy: USER_ID,
+      items: [{ productId: scenario.firstProductId, quantity: 1 }],
+    })).rejects.toThrow(/retroactividad/)
+
+    // Y no deja media entrega escrita ni stock movido.
+    const [stock] = await inMemoryDb.select().from(schema.worksiteStock)
+      .where(and(
+        eq(schema.worksiteStock.worksiteId, scenario.sourceWorksiteId),
+        eq(schema.worksiteStock.productId, scenario.firstProductId),
+      ))
+    expect(stock!.quantity).toBe(10)
   })
 })

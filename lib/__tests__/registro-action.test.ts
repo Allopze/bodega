@@ -6,6 +6,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { eq } from "drizzle-orm"
 import * as schema from "@/db/schema"
 import { hashInvitationToken } from "@/lib/auth/bootstrap"
+import { createPendingPasswordMarker } from "@/lib/auth/password-setup"
 
 const pg = new PGlite()
 const inMemoryDb = drizzle(pg, { schema })
@@ -209,6 +210,91 @@ describe("registerUser — hardening (M1)", () => {
     expect(res.fieldErrors?.token).toEqual(["Invitación inválida o ya utilizada"])
     const rows = await inMemoryDb.select().from(schema.users).where(eq(schema.users.email, "reemplazado@chome.cl"))
     expect(rows).toHaveLength(0)
+  })
+
+  /*
+   * AUTH-001 (auditoría 2026-09-14). Antes del arreglo la acción consultaba
+   * `users` por correo ANTES de mirar la invitación y devolvía
+   * `email: ["Este correo ya está registrado"]`, distinguible de
+   * `token: ["Necesitas una invitación para registrarte"]`. Con eso, cualquiera
+   * sin token enumeraba las cuentas de la organización correo por correo.
+   */
+  it("AUTH-001: sin invitación, un correo ya registrado responde exactamente igual que uno desconocido", async () => {
+    await seedExistingUser()
+
+    const conCuenta = await registerUser(INITIAL, form({
+      name: "Enumerador",
+      email: "existente@chome.cl",
+      password: "segura123",
+      confirmPassword: "segura123",
+    }))
+    const sinCuenta = await registerUser(INITIAL, form({
+      name: "Enumerador",
+      email: "desconocido@chome.cl",
+      password: "segura123",
+      confirmPassword: "segura123",
+    }))
+
+    expect(conCuenta).toEqual(sinCuenta)
+    expect(conCuenta.fieldErrors?.email).toBeUndefined()
+  })
+
+  /*
+   * AUTH-001, segunda mitad: aquel retorno anticipado tampoco llamaba a
+   * `recordFailure`, así que la enumeración era además gratuita — el contador
+   * de la propia acción nunca veía esos intentos.
+   */
+  it("AUTH-001: el intento sobre un correo ya registrado sí gasta el límite de intentos", async () => {
+    await seedExistingUser()
+
+    await registerUser(INITIAL, form({
+      name: "Enumerador",
+      email: "existente@chome.cl",
+      password: "segura123",
+      confirmPassword: "segura123",
+    }))
+
+    const [row] = await inMemoryDb.select().from(schema.rateLimits)
+      .where(eq(schema.rateLimits.key, "registro:email:existente@chome.cl"))
+    expect(row?.count).toBe(1)
+  })
+
+  /*
+   * AUTH-001 no puede romper el caso legítimo: una cuenta pre-creada por un
+   * admin (sin contraseña definida) todavía puede completarse, pero ahora sólo
+   * exhibiendo la invitación vigente emitida para ese mismo correo.
+   */
+  it("AUTH-001: una cuenta pendiente de configurar aún se completa con su invitación", async () => {
+    await seedExistingUser()
+    await inMemoryDb.insert(schema.users).values({
+      id: "u-pendiente",
+      name: "Pendiente",
+      email: "pendiente@chome.cl",
+      hashedPassword: createPendingPasswordMarker(),
+      isActive: false,
+    })
+    const token = "token-pendiente"
+    await inMemoryDb.insert(schema.userInvitations).values({
+      id: "inv-pendiente",
+      email: "pendiente@chome.cl",
+      tokenHash: hashInvitationToken(token),
+      roleIdsJson: "[]",
+      worksiteAssignmentsJson: "[]",
+      expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+    })
+
+    const res = await registerUser(INITIAL, form({
+      name: "Pendiente",
+      email: "pendiente@chome.cl",
+      password: "segura123",
+      confirmPassword: "segura123",
+      token,
+    }))
+
+    expect(res.ok).toBe(true)
+    const [user] = await inMemoryDb.select().from(schema.users).where(eq(schema.users.email, "pendiente@chome.cl"))
+    expect(user?.id).toBe("u-pendiente")
+    expect(user?.isActive).toBe(true)
   })
 
   it("locks the account after repeated invalid-token attempts (rate-limit engages)", async () => {

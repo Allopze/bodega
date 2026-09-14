@@ -1,4 +1,6 @@
 import { z } from "zod"
+import { withQuotationCompleteness } from "./quotation-completeness"
+import { REASON_MAX_LENGTH } from "./reason-thresholds"
 import { unitOfMeasureSchema } from "./product-catalogs"
 
 // ── Re-export shared ActionState ──────────────────────────────────────────────
@@ -45,7 +47,7 @@ export const repuestoRequestSchema = z.object({
 })
 
 // ── Quotation upload ──────────────────────────────────────────────────────────
-export const quotationUploadSchema = z.object({
+export const quotationUploadSchema = withQuotationCompleteness(z.object({
   requestId:        z.string().min(1, "Solicitud no especificada"),
   totalAmount:      z.coerce
     .number()
@@ -54,12 +56,18 @@ export const quotationUploadSchema = z.object({
   supplierId:       z.string().nullable().optional(),
   supplierNameFree: z.string().trim().max(150).nullable().optional().or(z.literal("")),
   notes:            z.string().max(300).nullable().optional().or(z.literal("")),
-})
+}))
 
 // ── Quotation selection (jefa approves one) ───────────────────────────────────
 export const selectQuotationSchema = z.object({
   requestId:   z.string().min(1, "Solicitud no especificada"),
   quotationId: z.string().min(1, "Selecciona una cotización"),
+  /**
+   * COT-002: por qué esta oferta. El servicio decide si es obligatorio —lo es
+   * cuando la elegida no es la más económica—, porque sólo él ve las demás
+   * ofertas bajo bloqueo. Acá sólo se transporta.
+   */
+  justification: z.string().trim().max(REASON_MAX_LENGTH).nullable().optional().or(z.literal("")),
 })
 
 // ── Cancel request ────────────────────────────────────────────────────────────

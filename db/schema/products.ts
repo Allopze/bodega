@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, timestamp, numeric, index, uniqueIndex, check } from "drizzle-orm/pg-core"
+import { pgTable, text, integer, boolean, timestamp, numeric, index, uniqueIndex, check, type AnyPgColumn } from "drizzle-orm/pg-core"
 import { relations, sql } from "drizzle-orm"
 import { suppliers } from "./worksites"
 import { eppTypes } from "./epp-types"
@@ -47,7 +47,16 @@ export const products = pgTable("products", {
   description:         text("description"),
   categoryId:          text("category_id").notNull().references(() => productCategories.id),
   familyId:            text("family_id").references(() => eppProductFamilies.id, { onDelete: "set null" }),
-  unitOfMeasure:       text("unit_of_measure").notNull().default("unidad"),
+  /**
+   * CAT-003: unidad del catálogo `product_units`. Era texto libre y el catálogo
+   * administrable no restringía nada: convivían unidades fuera de él y
+   * desactivar una del catálogo no afectaba a los productos que ya la usaban.
+   * La FK (migración 0307) cierra el primer problema en todo camino de
+   * escritura, incluidos los importadores masivos. El segundo —que la unidad
+   * siga ACTIVA— no lo puede expresar una FK y se valida al escribir.
+   */
+  unitOfMeasure:       text("unit_of_measure").notNull().default("unidad")
+    .references((): AnyPgColumn => productUnits.code, { onUpdate: "cascade" }),
   isEpp:               boolean("is_epp").notNull().default(false),
   requiresPrevencion:  boolean("requires_prevencion").notNull().default(false),
   /**

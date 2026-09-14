@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm"
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm"
 import type { Session } from "next-auth"
 import { db } from "@/db"
 import {
@@ -57,8 +57,12 @@ function conditionsForScope(scope: WorksiteScope) {
 export async function scanTraceabilityIntegrity(session: Session): Promise<{
   findings: TraceabilityIntegrityFinding[]
   recordedCount: number
+  reopenedCount: number
 }> {
-  return scanForScope(resolveWorksiteScope(session))
+  return scanForScope(resolveWorksiteScope(session), {
+    userId: session.user.id,
+    userEmail: session.user.email ?? undefined,
+  })
 }
 
 /**
@@ -77,16 +81,21 @@ export async function scanTraceabilityIntegrity(session: Session): Promise<{
 export async function scanTraceabilityIntegrityAsSystem(): Promise<{
   findings: TraceabilityIntegrityFinding[]
   recordedCount: number
+  reopenedCount: number
 }> {
-  return scanForScope({ mode: "all", ids: [] })
+  return scanForScope({ mode: "all", ids: [] }, { userId: null, userEmail: "sistema@chome.cl" })
 }
 
-async function scanForScope(resolved: WorksiteScope): Promise<{
+/** Quién deja el rastro del escaneo; el cron no tiene usuario y no se fabrica uno. */
+interface ScanActor { userId: string | null; userEmail?: string }
+
+async function scanForScope(resolved: WorksiteScope, actor: ScanActor): Promise<{
   findings: TraceabilityIntegrityFinding[]
   recordedCount: number
+  reopenedCount: number
 }> {
   const { scope, condition } = conditionsForScope(resolved)
-  if (scope.mode === "none") return { findings: [], recordedCount: 0 }
+  if (scope.mode === "none") return { findings: [], recordedCount: 0, reopenedCount: 0 }
 
   const itemRows = await db
     .select({
@@ -99,7 +108,7 @@ async function scanForScope(resolved: WorksiteScope): Promise<{
     .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
     .where(condition)
 
-  if (itemRows.length === 0) return { findings: [], recordedCount: 0 }
+  if (itemRows.length === 0) return { findings: [], recordedCount: 0, reopenedCount: 0 }
   const itemIds = itemRows.map((item) => item.requestItemId)
 
   const [orderRows, receiptRows, deliveryRows] = await Promise.all([
@@ -180,7 +189,7 @@ async function scanForScope(resolved: WorksiteScope): Promise<{
   }
 
   const findings = detectTraceabilityIntegrity({ items: [...itemById.values()] })
-  if (findings.length === 0) return { findings, recordedCount: 0 }
+  if (findings.length === 0) return { findings, recordedCount: 0, reopenedCount: 0 }
 
   const inserted = await db.insert(traceabilityIntegrityCases).values(findings.map((finding) => ({
     id: nanoid(),
@@ -191,7 +200,51 @@ async function scanForScope(resolved: WorksiteScope): Promise<{
     snapshot: finding.snapshot,
   }))).onConflictDoNothing({ target: traceabilityIntegrityCases.findingKey }).returning({ id: traceabilityIntegrityCases.id })
 
-  return { findings, recordedCount: inserted.length }
+  const reopenedCount = await reopenPersistentCases(findings.map((finding) => finding.findingKey), actor)
+  return { findings, recordedCount: inserted.length, reopenedCount }
+}
+
+/**
+ * `TRZ-002` (auditoría 2026-09-14): antes de esto, un caso se cerraba por
+ * declaración y quedaba cerrado para siempre. `finding_key` es único, así que
+ * el escaneo no recreaba el caso, y el índice único por caso impedía una
+ * segunda resolución: si el descuadre persistía o reaparecía, el libro decía
+ * "regularizado" sobre algo que seguía roto y nadie podía desdecirlo.
+ *
+ * La regla que se aplica aquí no la inventa este módulo: es la que ya declara
+ * el libro nuevo —verificar significa que el detector ya no encuentra el
+ * hallazgo—. Si el detector vuelve a encontrar un caso cuya ocurrencia actual
+ * ya estaba regularizada, la ocurrencia avanza y el caso vuelve a quedar
+ * pendiente. Nada se reescribe: la resolución anterior sigue en el historial,
+ * atada a la ocurrencia que cerró.
+ */
+async function reopenPersistentCases(findingKeys: string[], actor: ScanActor): Promise<number> {
+  if (findingKeys.length === 0) return 0
+  const keyList = sql.join(findingKeys.map((key) => sql`${key}`), sql`, `)
+  const result = await db.execute(sql`
+    UPDATE ${traceabilityIntegrityCases} AS c
+       SET occurrence = c.occurrence + 1,
+           last_detected_at = now()
+     WHERE c.finding_key IN (${keyList})
+       AND EXISTS (
+         SELECT 1 FROM ${traceabilityIntegrityResolutions} r
+          WHERE r.case_id = c.id AND r.occurrence = c.occurrence
+       )
+    RETURNING c.id AS id, c.occurrence AS occurrence
+  `)
+  const rows = (((result as { rows?: unknown[] }).rows ?? result) as Array<{ id: string; occurrence: number }>)
+  for (const row of rows) {
+    await recordAudit({
+      userId: actor.userId,
+      userEmail: actor.userEmail,
+      action: "update",
+      entityType: "traceability_integrity_case",
+      entityId: row.id,
+      newState: { kind: "reopened", occurrence: Number(row.occurrence) },
+      reason: "El detector volvió a encontrar el hallazgo tras su regularización",
+    })
+  }
+  return rows.length
 }
 
 export interface ResolveTraceabilityIntegrityCaseInput {
@@ -231,9 +284,15 @@ export async function resolveTraceabilityIntegrityCase(input: ResolveTraceabilit
       throw new Error("No tienes acceso a la faena de este caso")
     }
 
+    // TRZ-002: la unicidad es por **ocurrencia**, no por caso. Un caso que el
+    // detector reabrió (porque el descuadre seguía ahí) admite una resolución
+    // nueva; lo que sigue prohibido es cerrar dos veces la misma ocurrencia.
     const [existingResolution] = await tx.select({ id: traceabilityIntegrityResolutions.id })
       .from(traceabilityIntegrityResolutions)
-      .where(eq(traceabilityIntegrityResolutions.caseId, caseRow.id))
+      .where(and(
+        eq(traceabilityIntegrityResolutions.caseId, caseRow.id),
+        eq(traceabilityIntegrityResolutions.occurrence, caseRow.occurrence),
+      ))
       .limit(1)
     if (existingResolution) throw new Error("Este caso ya fue regularizado")
 
@@ -272,6 +331,7 @@ export async function resolveTraceabilityIntegrityCase(input: ResolveTraceabilit
     await tx.insert(traceabilityIntegrityResolutions).values({
       id: resolutionId,
       caseId: caseRow.id,
+      occurrence: caseRow.occurrence,
       action: input.action,
       reason,
       compensatingMovementId,
@@ -283,7 +343,7 @@ export async function resolveTraceabilityIntegrityCase(input: ResolveTraceabilit
       action: "update",
       entityType: "traceability_integrity_case",
       entityId: caseRow.id,
-      newState: { action: input.action, compensatingMovementId, resolutionId },
+      newState: { action: input.action, compensatingMovementId, resolutionId, occurrence: caseRow.occurrence },
       reason,
     }, tx)
   })
@@ -300,12 +360,20 @@ export async function listTraceabilityIntegrityCases(session: Session) {
       findingCode: traceabilityIntegrityCases.findingCode,
       snapshot: traceabilityIntegrityCases.snapshot,
       detectedAt: traceabilityIntegrityCases.detectedAt,
+      lastDetectedAt: traceabilityIntegrityCases.lastDetectedAt,
+      occurrence: traceabilityIntegrityCases.occurrence,
       resolutionId: traceabilityIntegrityResolutions.id,
       resolutionAction: traceabilityIntegrityResolutions.action,
       resolvedAt: traceabilityIntegrityResolutions.createdAt,
     })
     .from(traceabilityIntegrityCases)
-    .leftJoin(traceabilityIntegrityResolutions, eq(traceabilityIntegrityResolutions.caseId, traceabilityIntegrityCases.id))
+    // TRZ-002: el caso se muestra regularizado sólo si la resolución cierra la
+    // ocurrencia **vigente**. Una reapertura deja el caso pendiente otra vez
+    // sin borrar la resolución anterior, que queda atada a su ocurrencia.
+    .leftJoin(traceabilityIntegrityResolutions, and(
+      eq(traceabilityIntegrityResolutions.caseId, traceabilityIntegrityCases.id),
+      eq(traceabilityIntegrityResolutions.occurrence, traceabilityIntegrityCases.occurrence),
+    ))
     .innerJoin(purchaseRequestItems, eq(purchaseRequestItems.id, traceabilityIntegrityCases.requestItemId))
     .innerJoin(purchaseRequests, eq(purchaseRequestItems.requestId, purchaseRequests.id))
     .where(condition)

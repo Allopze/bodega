@@ -5,6 +5,37 @@ import { computePdtpProgramContentDigest } from "@/lib/services/pdtp/content-dig
 import { NO_ACTIVE_PROGRAM_LAST_ERROR_TAG } from "@/lib/services/pdtp/fulfillment"
 
 /**
+ * PDTP-002 (auditoría 2026-09-14) — Por qué la plataforma decidió no acreditar.
+ *
+ * Un evento `rejected` no es un fallo técnico: el motor resolvió y decidió que
+ * no hay destino. Las tres razones son normales —el hecho ocurrió fuera del
+ * año del programa (lo más probable, porque las entregas de EPP admiten fecha
+ * retroactiva), la actividad está excluida de esa faena, o el número de
+ * actividad no existe en el programa— y ninguna dejaba rastro visible: el
+ * trabajo se hizo, no se acreditó y nadie se enteraba.
+ *
+ * El `resultJson` ya guardaba el detalle; sólo faltaba traducirlo.
+ */
+export function describePdtpRejection(resultJson: unknown): string {
+  const result = (resultJson ?? {}) as {
+    skippedOutOfPeriod?: { occurredYear?: number; programYear?: number }
+    skippedExcluded?: number[]
+    skippedNotFound?: number[]
+  }
+  if (result.skippedOutOfPeriod) {
+    const { occurredYear, programYear } = result.skippedOutOfPeriod
+    return `El hecho ocurrió en ${occurredYear ?? "otro año"} y el programa vigente cubre ${programYear ?? "otro año"}.`
+  }
+  if (result.skippedExcluded && result.skippedExcluded.length > 0) {
+    return `Actividad(es) N°${result.skippedExcluded.join(", ")} excluidas de esta faena.`
+  }
+  if (result.skippedNotFound && result.skippedNotFound.length > 0) {
+    return `Actividad(es) N°${result.skippedNotFound.join(", ")} no existen en el programa vigente.`
+  }
+  return "El motor no encontró ninguna actividad del programa a la que acreditar el hecho."
+}
+
+/**
  * Lo que el libro de cumplimiento tiene sin resolver, y si el programa vivo
  * todavía coincide con lo que se firmó.
  *
@@ -26,6 +57,14 @@ export async function countPdtpFulfillmentBacklog(programId: string): Promise<{
   pending: number
   errored: number
   /**
+   * PDTP-002: eventos que el motor resolvió y decidió NO acreditar. Se cuentan
+   * aparte de `errored` porque no son un fallo del cableado y el cron no los
+   * va a reintentar: exigen que alguien mire el hecho y decida.
+   */
+  rejected: number
+  /** Los últimos rechazos, con su razón ya traducida, para que el panel diga algo. */
+  recentRejected: Array<{ sourceType: string; sourceId: string; occurredAt: string; reason: string }>
+  /**
    * Subconjunto de `errored` cuya causa es `PdtpNoActiveProgramError` (el
    * programa todavía no está activo, o sigue en revisión): es el estado
    * normal entre firmar y activar, no una brecha de cableado. Se cuenta
@@ -43,7 +82,7 @@ export async function countPdtpFulfillmentBacklog(programId: string): Promise<{
   const memberScope = programMembers.length > 0
     ? inArray(pdtpFulfillmentEvents.worksiteId, programMembers.map((row) => row.worksiteId))
     : undefined
-  const [[pendingRow], [erroredRow], [erroredWaitingRow], [lastErrorEvent], [program]] = await Promise.all([
+  const [[pendingRow], [erroredRow], [erroredWaitingRow], [rejectedRow], rejectedRows, [lastErrorEvent], [program]] = await Promise.all([
     db.select({ total: count() }).from(pdtpFulfillmentEvents)
       .where(and(eq(pdtpFulfillmentEvents.status, "pending"), memberScope)),
     db.select({ total: count() }).from(pdtpFulfillmentEvents)
@@ -54,6 +93,17 @@ export async function countPdtpFulfillmentBacklog(programId: string): Promise<{
         like(pdtpFulfillmentEvents.lastError, `${NO_ACTIVE_PROGRAM_LAST_ERROR_TAG}%`),
         memberScope,
       )),
+    db.select({ total: count() }).from(pdtpFulfillmentEvents)
+      .where(and(eq(pdtpFulfillmentEvents.status, "rejected"), memberScope)),
+    db.select({
+      sourceType: pdtpFulfillmentEvents.sourceType,
+      sourceId: pdtpFulfillmentEvents.sourceId,
+      occurredAt: pdtpFulfillmentEvents.occurredAt,
+      resultJson: pdtpFulfillmentEvents.resultJson,
+    }).from(pdtpFulfillmentEvents)
+      .where(and(eq(pdtpFulfillmentEvents.status, "rejected"), memberScope))
+      .orderBy(desc(pdtpFulfillmentEvents.updatedAt))
+      .limit(5),
     db.select({ lastError: pdtpFulfillmentEvents.lastError }).from(pdtpFulfillmentEvents)
       .where(and(eq(pdtpFulfillmentEvents.status, "error"), memberScope))
       .orderBy(desc(pdtpFulfillmentEvents.updatedAt))
@@ -74,6 +124,13 @@ export async function countPdtpFulfillmentBacklog(programId: string): Promise<{
   return {
     pending: Number(pendingRow?.total ?? 0),
     errored: Number(erroredRow?.total ?? 0),
+    rejected: Number(rejectedRow?.total ?? 0),
+    recentRejected: rejectedRows.map((row) => ({
+      sourceType: row.sourceType,
+      sourceId: row.sourceId,
+      occurredAt: row.occurredAt,
+      reason: describePdtpRejection(row.resultJson),
+    })),
     erroredWaitingOnActivation: Number(erroredWaitingRow?.total ?? 0),
     lastError: lastErrorEvent?.lastError ?? null,
     digestDrift,

@@ -576,6 +576,26 @@ export interface PaymentStatusSnapshot {
  * la MISMA dirección que el documento — un pago negativo no cubre una factura
  * positiva.
  */
+/**
+ * Saldo pendiente de un documento, medido EN SU DIRECCIÓN y **nunca negativo**.
+ *
+ * FVE-003: antes cada consumidor calculaba `total − pagado` por su cuenta y una
+ * factura sobrepagada devolvía un pendiente NEGATIVO, que al sumarse en
+ * cualquier cartera restaba de más y compensaba deuda real de otras facturas.
+ * Un documento cubierto de sobra no tiene nada pendiente: el exceso se lee
+ * comparando `paidAmount` con el total, no como deuda con signo cambiado.
+ *
+ * Lo que sí se conserva es el caso contrario: una cobertura de signo opuesto
+ * (un ajuste negativo sobre una factura positiva) hace CRECER lo pendiente por
+ * encima del total, y eso no se recorta.
+ */
+export function outstandingAmountFor(totalAmount: number, paidAmount: number): number {
+  const total = absAmount(totalAmount)
+  const covered = compareAmounts(totalAmount, 0) < 0 ? subtractAmounts(0, paidAmount) : paidAmount
+  if (compareAmounts(covered, total) >= 0) return 0
+  return addAmounts(total, -covered)
+}
+
 export function derivePaymentStatus(
   totalAmount: number,
   confirmedPayments: readonly number[],
@@ -587,7 +607,7 @@ export function derivePaymentStatus(
   // la suma hacía que un ajuste negativo sobre una factura positiva se leyera
   // como cobertura completa y la sacara de la cobranza.
   const paid = compareAmounts(totalAmount, 0) < 0 ? subtractAmounts(0, paidAmount) : paidAmount
-  const outstandingAmount = addAmounts(total, -paid)
+  const outstandingAmount = outstandingAmountFor(totalAmount, paidAmount)
 
   // Sin cobertura, o cobertura de signo contrario: no está pagada, y lo
   // pendiente crece en vez de bajar.
@@ -601,6 +621,9 @@ export function derivePaymentStatus(
   if (comparison === 0) {
     return { paidAmount, paymentStatus: "paid", outstandingAmount: 0 }
   }
+  // FVE-003: el sobrepago devolvía aquí `total − pagado`, es decir un número
+  // NEGATIVO, mientras que el caso `paid` devolvía 0. Ahora `outstandingAmount`
+  // ya viene recortado por `outstandingAmountFor`.
   return { paidAmount, paymentStatus: "overpaid", outstandingAmount }
 }
 

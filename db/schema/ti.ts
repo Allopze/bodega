@@ -72,6 +72,16 @@ export const itAssetAssignments = pgTable("it_asset_assignments", {
   deliveredByUserId: text("delivered_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
   physicalState: text("physical_state").notNull().default("bueno"),
   observations: text("observations"),
+  /**
+   * TIA-002 (auditoría 2026-09-14, patrón P7): dos columnas nulables no
+   * distinguían «el trabajador aceptó» de «nadie acusó recibo». El acuse tiene
+   * ahora estado propio: 'pendiente' (recién entregada, se espera el acuse),
+   * 'aceptada' (alguien distinto del técnico que entregó lo registró) y
+   * 'sin_acuse' (se declara expresamente que no lo hubo, con motivo).
+   */
+  acceptanceStatus: text("acceptance_status").notNull().default("pendiente"),
+  /** Motivo obligatorio cuando el acuse se cierra como 'sin_acuse'. */
+  acceptanceNote: text("acceptance_note"),
   acceptedAt:   timestamp("accepted_at", { withTimezone: true, mode: "string" }),
   acceptedByUserId: text("accepted_by_user_id").references(() => users.id, { onDelete: "set null" }),
   returnedAt:   timestamp("returned_at", { withTimezone: true, mode: "string" }),
@@ -83,6 +93,11 @@ export const itAssetAssignments = pgTable("it_asset_assignments", {
 }, (table) => [
   check("it_asset_assignments_kind_valid", sql`${table.kind} IN ('delivery', 'loan', 'transfer', 'repair_exit')`),
   check("it_asset_assignments_physical_state_valid", sql`${table.physicalState} IN ('bueno', 'regular', 'malo', 'nuevo')`),
+  check("it_asset_assignments_acceptance_status_valid", sql`${table.acceptanceStatus} IN ('pendiente', 'aceptada', 'sin_acuse')`),
+  // TIA-001: sólo un acta 'aceptada' puede tener aceptante, y ninguna otra
+  // puede tenerlo. Es lo que impide que vuelva a existir un acta "aceptada"
+  // sin acuse real o un acuse sin estado.
+  check("it_asset_assignments_acceptance_coherent", sql`(${table.acceptanceStatus} = 'aceptada' AND ${table.acceptedAt} IS NOT NULL AND ${table.acceptedByUserId} IS NOT NULL) OR (${table.acceptanceStatus} <> 'aceptada' AND ${table.acceptedAt} IS NULL AND ${table.acceptedByUserId} IS NULL)`),
   check("it_asset_assignments_return_state_valid", sql`${table.returnPhysicalState} IS NULL OR ${table.returnPhysicalState} IN ('bueno', 'regular', 'malo')`),
   index("it_asset_assignments_asset_idx").on(table.assetId, table.createdAt),
   index("it_asset_assignments_worker_idx").on(table.workerId),
@@ -201,6 +216,14 @@ export const itTickets = pgTable("it_tickets", {
   assigneeUserId: text("assignee_user_id").references(() => users.id, { onDelete: "set null" }),
   resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: "string" }),
   resolution: text("resolution"),
+  /**
+   * TIT-001 (auditoría 2026-09-14): la prioridad no gobernaba ningún plazo.
+   * Vencimiento comprometido, calculado al crear el ticket a partir de la
+   * prioridad (`lib/services/ti/ticket-sla.ts`), con la misma forma que
+   * `feedback_reports.due_at` para poder reutilizar sus recordatorios.
+   * Nulo en los tickets ya cerrados antes de la migración.
+   */
+  dueAt:      timestamp("due_at", { withTimezone: true, mode: "string" }),
   createdAt:  timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:  timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
@@ -213,6 +236,7 @@ export const itTickets = pgTable("it_tickets", {
   index("it_tickets_requester_idx").on(table.requesterUserId),
   index("it_tickets_asset_idx").on(table.assetId),
   index("it_tickets_created_idx").on(table.createdAt),
+  index("it_tickets_due_at_idx").on(table.dueAt),
 ])
 
 export const itTicketComments = pgTable("it_ticket_comments", {

@@ -37,7 +37,11 @@ export async function detectDuplicatesAction(): Promise<ActionResult> {
     revalidatePath("/facturacion/duplicados")
     return {
       ok: true,
-      message: `${result.created} pares nuevos sobre ${result.scanned} facturas revisadas. Ninguno se fusiona solo.`,
+      // El reabierto se informa aparte: no es un par nuevo, es uno que alguien
+      // ya descartó y que volvió a la bandeja porque la evidencia cambió
+      // (COB-001). Callarlo lo hacía indistinguible de un caso nuevo.
+      message: `${result.created} pares nuevos${result.reopened > 0 ? ` y ${result.reopened} reabiertos por evidencia nueva` : ""}`
+        + ` sobre ${result.scanned} facturas revisadas. Ninguno se fusiona solo.`,
     }
   } catch (err) {
     const message = safeActionMessage(err, "No se pudo revisar duplicados")

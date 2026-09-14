@@ -1,5 +1,6 @@
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
+import { eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
 import type { Session } from "next-auth"
@@ -17,6 +18,7 @@ vi.mock("@/db", () => ({
 }))
 
 import {
+  listTraceabilityIntegrityCases,
   resolveTraceabilityIntegrityCase,
   scanTraceabilityIntegrity,
   scanTraceabilityIntegrityAsSystem,
@@ -130,6 +132,9 @@ describe("traceability integrity case resolution", () => {
     expect(resolutions).toHaveLength(0)
   })
 
+  // TRZ-002: la unicidad pasó a ser por ocurrencia. Esta prueba sigue siendo
+  // válida —cerrar dos veces la MISMA ocurrencia sigue prohibido— y lo que ya
+  // no consagra es que el caso quede cerrado para siempre.
   it("appends one resolution and prevents a second resolution for the same case", async () => {
     const input = {
       caseId: "integrity-case-resolve-once",
@@ -298,6 +303,94 @@ describe("traceability integrity case resolution", () => {
       const segunda = await scanTraceabilityIntegrityAsSystem()
       expect(primera.findings.length).toBe(segunda.findings.length)
       expect(segunda.recordedCount).toBe(0)
+    })
+  })
+
+  /**
+   * TRZ-002 (auditoría 2026-09-14): un caso se cerraba por declaración
+   * (`acknowledge`, sólo un motivo) y quedaba cerrado **para siempre**: el
+   * índice único por caso impedía una segunda resolución y `finding_key`
+   * único impedía que el escaneo lo recreara. Si el descuadre persistía, el
+   * libro decía "regularizado" sobre algo que seguía roto.
+   *
+   * Antes de la corrección, la última aserción de la primera prueba fallaba
+   * (`reopenedCount` era estructuralmente 0) y la resolución posterior
+   * lanzaba "Este caso ya fue regularizado".
+   */
+  describe("TRZ-002 — reapertura de un caso que sigue descuadrado", () => {
+    beforeAll(async () => {
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: "trz002-request", code: "SOL-TRZ002", worksiteId: "integrity-ws",
+        requesterId: "integrity-user", requestType: "epp", urgency: "normal",
+        status: "approved", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: "trz002-item", requestId: "trz002-request", productId: "integrity-product",
+        quantity: 3, unitOfMeasure: "unidad", status: "received", createdAt: now, updatedAt: now,
+      })
+      // Entrega trazable sin recepción en faena: el descuadre no se repara
+      // solo, así que cada escaneo lo vuelve a encontrar.
+      await inMemoryDb.insert(schema.deliveries).values({
+        id: "trz002-delivery", code: "ENT-TRZ002", deliveredBy: "integrity-user",
+        deliveredAt: now, destinationType: "faena", worksiteId: "integrity-ws", createdAt: now,
+      })
+      await inMemoryDb.insert(schema.deliveryItems).values({
+        id: "trz002-delivery-item", deliveryId: "trz002-delivery",
+        requestItemId: "trz002-item", productId: "integrity-product",
+        quantity: 3, unitOfMeasure: "unidad",
+      })
+    })
+
+    async function caseRow() {
+      const [row] = await inMemoryDb.select().from(schema.traceabilityIntegrityCases)
+        .where(eq(schema.traceabilityIntegrityCases.requestItemId, "trz002-item"))
+      return row
+    }
+
+    it("el escaneo reabre un caso ya regularizado cuando el detector lo vuelve a encontrar", async () => {
+      await scanTraceabilityIntegrityAsSystem()
+      const abierto = await caseRow()
+      expect(abierto).toBeDefined()
+      expect(abierto!.occurrence).toBe(1)
+
+      await resolveTraceabilityIntegrityCase({
+        caseId: abierto!.id,
+        action: "acknowledge",
+        reason: "Se cierra por declaración sin reparar el descuadre material.",
+        userId: "integrity-user",
+        userEmail: "integrity@test.local",
+        session,
+      })
+
+      // El descuadre sigue ahí: el detector lo encuentra otra vez.
+      const segunda = await scanTraceabilityIntegrityAsSystem()
+      expect(segunda.reopenedCount).toBeGreaterThanOrEqual(1)
+      const reabierto = await caseRow()
+      expect(reabierto!.occurrence).toBe(2)
+    })
+
+    it("un caso reabierto vuelve a figurar como pendiente y admite una resolución nueva", async () => {
+      const reabierto = await caseRow()
+      expect(reabierto!.occurrence).toBe(2)
+
+      const listado = await listTraceabilityIntegrityCases(session)
+      const fila = listado.find((row) => row.id === reabierto!.id)
+      // Antes de TRZ-002 la pantalla lo seguía mostrando "Regularizado".
+      expect(fila?.resolutionId).toBeNull()
+
+      await resolveTraceabilityIntegrityCase({
+        caseId: reabierto!.id,
+        action: "acknowledge",
+        reason: "Segunda regularización tras la reapertura del caso persistente.",
+        userId: "integrity-user",
+        userEmail: "integrity@test.local",
+        session,
+      })
+
+      const resoluciones = await inMemoryDb.select().from(schema.traceabilityIntegrityResolutions)
+        .where(eq(schema.traceabilityIntegrityResolutions.caseId, reabierto!.id))
+      // La resolución anterior no se reescribe: queda atada a su ocurrencia.
+      expect(resoluciones.map((row) => row.occurrence).sort()).toEqual([1, 2])
     })
   })
 

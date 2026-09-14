@@ -70,15 +70,26 @@ export async function registerUser(
     }
   }
 
-  const existing = await db.query.users.findFirst({ where: eq(users.email, data.email) })
-  const existingCanCompleteSetup = existing ? isPasswordSetupPending(existing.hashedPassword) : false
-  if (existing && !existingCanCompleteSetup) {
-    return { ok: false, fieldErrors: { email: ["Este correo ya está registrado"] } }
-  }
-
-  const id = existing?.id ?? nanoid()
+  /*
+   * AUTH-001 (auditoría 2026-09-14): aquí se consultaba `users` por correo y se
+   * devolvía "Este correo ya está registrado" ANTES de mirar la invitación.
+   * Cualquiera sin token distinguía esa respuesta de "Necesitas una invitación
+   * para registrarte" y confirmaba, correo por correo, qué cuentas existen en
+   * la organización. Peor: ese retorno anticipado no pasaba por
+   * `recordFailure`, así que la enumeración no gastaba ni un intento del límite
+   * que la propia acción declara.
+   *
+   * La consulta se movió DENTRO de la transacción y detrás de la validación de
+   * la invitación (ver más abajo): para llegar a saber si el correo existe hay
+   * que exhibir un token vigente emitido para ese mismo correo, y quien lo
+   * tiene ya conocía la cuenta. Todo rechazo cae ahora por
+   * `RegistrationRollback`, que sí contabiliza el intento.
+   *
+   * El bcrypt se calcula antes de cualquier consulta a propósito: es el coste
+   * dominante de la acción y es idéntico exista o no la cuenta, de modo que el
+   * tiempo de respuesta tampoco distingue una rama de la otra.
+   */
   const hashedPassword = await bcrypt.hash(data.password, 12)
-  const avatarColor = existing?.avatarColor ?? String(Math.abs(hashStr(data.name)) % 360)
 
   // Fallo de validación de invitación detectado bajo el lock, para mapearlo a
   // ActionState fuera de la transacción.
@@ -98,6 +109,10 @@ export async function registerUser(
       let worksiteAssignments: WorksiteAssignment[] = []
       let invitationId: string | null = null
       let workerId: string | null = null
+      // AUTH-001: se resuelve dentro del bloque, nunca antes de validar la
+      // invitación. `id` depende de si la cuenta ya existía.
+      let existing: Awaited<ReturnType<typeof tx.query.users.findFirst>> = undefined
+      let id = nanoid()
 
       if (userCount === 0) {
         isBootstrap = true
@@ -130,6 +145,19 @@ export async function registerUser(
           throw new RegistrationRollback()
         }
 
+        // AUTH-001: recién acá —con una invitación vigente para ESTE correo— se
+        // puede mirar si la cuenta existe sin que la respuesta sirva para
+        // enumerar. Una cuenta completa se rechaza; una pre-creada por un admin
+        // (sin contraseña definida) puede terminar de configurarse.
+        existing = await tx.query.users.findFirst({ where: eq(users.email, data.email) })
+        if (existing) {
+          if (!isPasswordSetupPending(existing.hashedPassword)) {
+            validationFailure = { ok: false, fieldErrors: { email: ["Este correo ya está registrado"] } }
+            throw new RegistrationRollback()
+          }
+          id = existing.id
+        }
+
         roleIds = safeParseJson<string[]>(invitation.roleIdsJson, [])
         worksiteAssignments = safeParseJson<WorksiteAssignment[]>(invitation.worksiteAssignmentsJson, [])
         invitationId = invitation.id
@@ -144,6 +172,8 @@ export async function registerUser(
           }
         }
       }
+
+      const avatarColor = existing?.avatarColor ?? String(Math.abs(hashStr(data.name)) % 360)
 
       if (existing) {
         // Usuario pre-creado por admin: solo actualizar credenciales.

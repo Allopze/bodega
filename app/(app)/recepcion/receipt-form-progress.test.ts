@@ -11,6 +11,8 @@ function item(overrides: Partial<ReceiptOcItem> = {}): ReceiptOcItem {
     quantity: 10,
     quantityOfficeReceived: 0,
     quantityReceived: 0,
+    quantityOfficeDisposed: 0,
+    quantityFaenaDisposed: 0,
     unitOfMeasure: "unidad",
     notes: null,
     ...overrides,

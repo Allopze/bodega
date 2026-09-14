@@ -490,6 +490,7 @@ describe("selectQuotation", () => {
         .mockReturnValueOnce(requestSelectChain([{ id: "req-1", status: "submitted", code: "REP-001", worksiteId: "ws-1" }]))
         .mockReturnValueOnce(quotationSelectChain([{ id: "q-1", requestId: "req-1", status: "pending", supplierId: "sup-1", supplierNameFree: null }]))
         .mockReturnValueOnce(plainSelectChain([]))
+        .mockReturnValueOnce(plainSelectChain([]))
       const tx = {
         select: mockSelect,
         update: mockUpdate,
@@ -500,6 +501,58 @@ describe("selectQuotation", () => {
 
     await svc.selectQuotation({ requestId: "req-1", quotationId: "q-1", userId: "user-1" })
     expect(recordStatusChange).toHaveBeenCalled()
+  })
+
+  /**
+   * COT-002 (auditoría 2026-09-14): la decisión guardaba cuál oferta se marcó y
+   * no por qué. El fundamento es obligatorio en la excepción que el sistema
+   * reconoce solo: adjudicar una oferta que no es la más económica.
+   */
+  it("no adjudica la oferta más cara sin explicar por qué", async () => {
+    mockDbTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
+      const tx = {
+        select: vi.fn()
+          .mockReturnValueOnce(requestSelectChain([{ id: "req-1", status: "submitted", code: "REP-001", worksiteId: "ws-1" }]))
+          .mockReturnValueOnce(quotationSelectChain([{ id: "q-1", requestId: "req-1", status: "pending", supplierId: "sup-1", supplierNameFree: null, totalAmount: "200000" }]))
+          .mockReturnValueOnce(plainSelectChain([{ id: "q-1", totalAmount: "200000" }, { id: "q-2", totalAmount: "100000" }])),
+        update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "q-1" }]) }) }) }),
+        insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
+      }
+      return fn(tx as never)
+    })
+
+    await expect(svc.selectQuotation({ requestId: "req-1", quotationId: "q-1", userId: "user-1" }))
+      .rejects.toThrow(/no es la más económica/)
+  })
+
+  it("adjudica la más cara cuando se explica, y el fundamento queda en la decisión", async () => {
+    const decisions: Array<Record<string, unknown>> = []
+    mockDbTransaction.mockImplementation(async (fn: (tx: Record<string, unknown>) => Promise<unknown>) => {
+      const tx = {
+        select: vi.fn()
+          .mockReturnValueOnce(requestSelectChain([{ id: "req-1", status: "submitted", code: "REP-001", worksiteId: "ws-1" }]))
+          .mockReturnValueOnce(quotationSelectChain([{ id: "q-1", requestId: "req-1", status: "pending", supplierId: null, supplierNameFree: "Taller Pérez", totalAmount: "200000" }]))
+          .mockReturnValueOnce(plainSelectChain([{ id: "q-1", totalAmount: "200000" }, { id: "q-2", totalAmount: "100000" }]))
+          .mockReturnValueOnce(plainSelectChain([{ id: "item-1", requestId: "req-1" }])),
+        update: vi.fn()
+          .mockReturnValueOnce({ set: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "q-1" }]) }) }) })
+          .mockReturnValueOnce({ set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }) })
+          .mockReturnValueOnce({ set: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "item-1" }]) }) }) })
+          .mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "req-1" }]) }) }) }),
+        insert: vi.fn().mockReturnValue({ values: vi.fn().mockImplementation((values: Record<string, unknown>) => { decisions.push(values); return Promise.resolve(undefined) }) }),
+      }
+      return fn(tx as never)
+    })
+
+    await svc.selectQuotation({
+      requestId: "req-1", quotationId: "q-1", userId: "user-1",
+      justification: "Entrega en 48 horas contra tres semanas de la más barata",
+    })
+
+    const decision = decisions.find((d) => d.type === "approve")
+    expect(decision?.reason).toBe(
+      "Cotización seleccionada: Taller Pérez. Fundamento: Entrega en 48 horas contra tres semanas de la más barata",
+    )
   })
 
   /**
@@ -522,6 +575,7 @@ describe("selectQuotation", () => {
         select: vi.fn()
           .mockReturnValueOnce(requestSelectChain([{ id: "req-1", status: "submitted", code: "REP-001", worksiteId: "ws-1" }]))
           .mockReturnValueOnce(quotationSelectChain([{ id: "q-1", requestId: "req-1", status: "pending", supplierId: "sup-1", supplierNameFree: null, totalAmount: "150000" }]))
+          .mockReturnValueOnce(plainSelectChain([{ id: "q-1", totalAmount: "150000" }]))
           .mockReturnValueOnce(plainSelectChain([{ id: "item-1", requestId: "req-1" }])),
         update: mockUpdate,
         insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
@@ -550,6 +604,7 @@ describe("selectQuotation", () => {
         select: vi.fn()
           .mockReturnValueOnce(requestSelectChain([{ id: "req-1", status: "submitted", code: "REP-001", worksiteId: "ws-1" }]))
           .mockReturnValueOnce(quotationSelectChain([{ id: "q-1", requestId: "req-1", status: "pending", supplierId: "sup-1", supplierNameFree: null }]))
+          .mockReturnValueOnce(plainSelectChain([]))
           .mockReturnValueOnce(plainSelectChain([])),
         update: mockUpdate,
         insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),

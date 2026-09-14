@@ -29,9 +29,22 @@ interface EntityTimelineProps {
   className?: string
 }
 
+/**
+ * APR-001 (auditoría 2026-09-14): el cambio de modo de despacho no dejaba
+ * ninguna traza. Ahora escribe en `status_history` con los modos como from/to,
+ * y comparte línea de tiempo con los estados de la solicitud: sin estos
+ * rótulos el operador vería "via_oficina" crudo y podría leerlo como un estado.
+ */
+const REQUEST_DELIVERY_MODE_LABELS: Record<string, string> = {
+  via_oficina:   "Despacho: vía oficina",
+  directo_faena: "Despacho: directo a faena",
+}
+
 function getStatusLabel(status: string, entityType: TimelineEntityType) {
   switch (entityType) {
-    case "request":  return REQUEST_STATE_META[status as RequestStatus]?.label ?? status
+    case "request":  return REQUEST_STATE_META[status as RequestStatus]?.label
+                       ?? REQUEST_DELIVERY_MODE_LABELS[status]
+                       ?? status
     case "oc":       return OC_STATE_META[status as OcStatus]?.label ?? status
     case "ppa":      return PPA_STATE_META[status]?.label ?? status
     case "fuel_log": return FUEL_STATE_META[status]?.label ?? status

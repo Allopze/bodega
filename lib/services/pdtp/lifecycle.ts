@@ -1,6 +1,6 @@
 import { and, eq, isNull, ne } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpPrograms } from "@/db/schema"
+import { pdtpActivities, pdtpProgramWorksites, pdtpPrograms } from "@/db/schema"
 import { addPdtpChangeLogEntry } from "./helpers"
 import { computePdtpProgramContentDigest } from "./content-digest"
 import { assertPdtpFulfillmentCoverage, type PdtpFulfillmentCoverageIssue } from "./fulfillment"
@@ -347,6 +347,29 @@ export async function activatePdtpProgram(programId: string, userId: string) {
     // usarse mientras ese catálogo se completa.
     const [firstCoverageBlocker] = fulfillmentCoverageBlockers(await assertPdtpFulfillmentCoverage(programId, tx))
     if (firstCoverageBlocker) throw new Error(firstCoverageBlocker)
+
+    /**
+     * PDTP-003 (auditoría 2026-09-14): un programa activo sin ninguna faena
+     * declarada se aplicaba a TODAS —el motor de acreditación trata
+     * `members.length === 0` como "cualquier faena"—, así que un programa
+     * creado y activado antes de asignarle faenas absorbía las acreditaciones
+     * de toda la organización y sus indicadores mezclaban faenas que nunca se
+     * le asignaron. Podía ser deliberado, pero era indistinguible de un
+     * programa a medio configurar.
+     *
+     * Aquí es donde la diferencia importa: activar es el acto que pone el
+     * programa a recibir hechos. O lista faenas, o declara que las cubre
+     * todas; lo que no puede es no decirlo.
+     */
+    const activeMembers = await tx.select({ worksiteId: pdtpProgramWorksites.worksiteId })
+      .from(pdtpProgramWorksites)
+      .where(and(eq(pdtpProgramWorksites.programId, programId), eq(pdtpProgramWorksites.isActive, true)))
+    if (activeMembers.length === 0 && !program.appliesToAllWorksites) {
+      throw new Error(
+        "El programa no declara faenas y tampoco declara que aplica a todas: "
+        + "asigna sus faenas o declara el alcance corporativo antes de activarlo.",
+      )
+    }
 
     await assertAllRequiredPdtpApprovalStepsApproved(programId, program.contentVersion, program.contentDigest, tx)
     const { digest } = await computePdtpProgramContentDigest(programId, tx)

@@ -31,6 +31,7 @@ vi.mock("@/lib/services/deliveries", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
 import { registerWorkerDeliveryAction } from "@/app/(app)/entregas/actions"
+import { earliestDeliveryDate, MAX_DELIVERY_BACKDATING_DAYS } from "@/lib/validation/operations"
 
 function makeSession(overrides: Partial<Session["user"]> = {}): Session {
   return {
@@ -117,8 +118,15 @@ describe("registerWorkerDeliveryAction", () => {
     expect(mockRegisterWorkerStock).not.toHaveBeenCalled()
   })
 
-  it("passes a backdated delivery date through to the service", async () => {
-    const backdate = addDaysToPlainDate(todayInChile(), -365)
+  /*
+   * ENT-003 (auditoría 2026-09-14): esta prueba afirmaba lo contrario —usaba
+   * −365 días y consagraba que *cualquier* fecha pasada llegaba al servicio—.
+   * La retroactividad sigue existiendo, porque un comprobante en papel llega
+   * tarde, pero ahora está acotada; la fecha de este caso queda dentro del
+   * plazo, y el rechazo del año entero está en la prueba siguiente.
+   */
+  it("deja pasar al servicio una fecha retroactiva dentro del plazo", async () => {
+    const backdate = addDaysToPlainDate(todayInChile(), -30)
     mockAuthFn.mockResolvedValueOnce(makeSession())
     mockRegisterWorkerStock.mockResolvedValueOnce("del-1")
     const res = await registerWorkerDeliveryAction(
@@ -130,6 +138,33 @@ describe("registerWorkerDeliveryAction", () => {
       expect.objectContaining({ deliveredAt: backdate }),
       expect.anything(),
     )
+  })
+
+  /*
+   * ENT-003: antes esto entraba sin más y quedaba fechado en un período ya
+   * informado, acreditando allí la actividad N°62 del PDTP —que cuelga de esta
+   * misma fecha—.
+   */
+  it("rechaza una fecha de entrega más antigua que el plazo de retroactividad", async () => {
+    const tooOld = addDaysToPlainDate(todayInChile(), -(MAX_DELIVERY_BACKDATING_DAYS + 1))
+    mockAuthFn.mockResolvedValueOnce(makeSession())
+    const res = await registerWorkerDeliveryAction({ ok: false, message: "" }, makeFormData({ deliveredAt: tooOld }))
+    expect(res.ok).toBe(false)
+    // Accionable: dice desde qué fecha se admite y qué hacer si es más vieja.
+    expect(res.fieldErrors?.deliveredAt?.[0]).toContain(earliestDeliveryDate())
+    expect(res.fieldErrors?.deliveredAt?.[0]).toContain("explica el desfase en las notas")
+    expect(mockRegisterWorkerStock).not.toHaveBeenCalled()
+  })
+
+  /** El límite es inclusivo: el día exacto del borde sigue siendo válido. */
+  it("acepta la fecha exacta del borde de retroactividad", async () => {
+    mockAuthFn.mockResolvedValueOnce(makeSession())
+    mockRegisterWorkerStock.mockResolvedValueOnce("del-borde")
+    const res = await registerWorkerDeliveryAction(
+      { ok: false, message: "" },
+      makeFormData({ deliveredAt: earliestDeliveryDate() }),
+    )
+    expect(res.ok).toBe(true)
   })
 
   // El `max` del selector es sólo UX: el rechazo real vive acá.

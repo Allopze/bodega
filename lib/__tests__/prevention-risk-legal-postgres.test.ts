@@ -531,6 +531,14 @@ describeIf("P0-05 MIPER/legal on real PostgreSQL", () => {
     // Un control crítico ineficaz abre revisión de la matriz, no queda en nada.
     const [trigger] = await getDb().select().from(schema.preventionRiskReviewTriggers).where(eq(schema.preventionRiskReviewTriggers.sourceId, target.id))
     expect(trigger).toMatchObject({ triggerType: "critical_control_failure", status: "pending" })
+    /*
+     * E2E-005 (auditoría 2026-09-14): el disparador de revisión era TODO lo que
+     * ocurría, y vive sólo en el tablero de MIPER. La falla de un control
+     * crítico ahora abre además acción correctiva con origen `risk`, que hasta
+     * entonces era un valor del enum sin ningún escritor.
+     */
+    const [capa] = await getDb().select().from(schema.preventionCapaActions).where(eq(schema.preventionCapaActions.sourceId, target.id))
+    expect(capa).toMatchObject({ sourceType: "risk", status: "pending", reconciliationStatus: "needs_assignment" })
   })
 
   // MIPER-04: `ready` lo decidía una lista de mínimos más débil que el contrato

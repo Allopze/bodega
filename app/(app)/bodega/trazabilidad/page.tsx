@@ -15,7 +15,7 @@ import {
   listTraceabilityIntegrityAdjustmentOptions,
   listTraceabilityIntegrityCases,
 } from "@/lib/services/traceability-integrity-cases"
-import { listOperationalIntegrityCases } from "@/lib/services/operational-integrity"
+import { getCachedOperationalIntegrityCases } from "@/lib/services/read-model-cache"
 import { listVisibleWorksites } from "@/lib/services/prevention-indicadores"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { getDocumentChainByCode } from "@/lib/services/document-chain"
@@ -75,7 +75,9 @@ export default async function TrazabilidadPage({ searchParams }: PageProps) {
     listTraceabilityIntegrityCases(session),
     canReconcileIntegrity ? listTraceabilityIntegrityAdjustmentOptions(session) : Promise.resolve([]),
     activeTab === "integridad"
-      ? listOperationalIntegrityCases(session, {
+      // PER-T02: la cola de integridad pasa por su caché de 30 s, que sus
+      // propias acciones invalidan al instante (revalidateOperationalIntegrityBoard).
+      ? getCachedOperationalIntegrityCases(session, {
           worksiteId: integrityFilters.faena || undefined,
           domain: DOMAIN_FILTERS.find((domain) => domain === integrityFilters.dominio),
           severity: SEVERITY_FILTERS.find((severity) => severity === integrityFilters.severidad),

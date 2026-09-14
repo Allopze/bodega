@@ -22,6 +22,7 @@ interface PermitTypeItem {
   requiresIsolation: boolean
   requiresMeasurement: boolean
   requiresJsa: boolean
+  requiresCrewAcknowledgement: boolean
   maxDurationHours: number
 }
 
@@ -44,6 +45,8 @@ export function PermitTypeDialog() {
   const [requiresMeasurement, setRequiresMeasurement] = React.useState(false)
   const [requiresIsolation, setRequiresIsolation] = React.useState(false)
   const [requiresJsa, setRequiresJsa] = React.useState(true)
+  // PER-001: el acuse del AST por la cuadrilla como bloqueador de activación.
+  const [requiresCrewAck, setRequiresCrewAck] = React.useState(true)
   const operation = useOperation()
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -60,6 +63,7 @@ export function PermitTypeDialog() {
       requiresIsolation,
       requiresMeasurement,
       requiresJsa,
+      requiresCrewAcknowledgement: requiresCrewAck,
       measurementValidityMinutes: requiresMeasurement && validity ? Number(validity) : null,
       measurementCalibrationValidityDays: requiresMeasurement && calibration ? Number(calibration) : null,
       maxDurationHours: Number(form.get("maxDurationHours")),
@@ -90,6 +94,13 @@ export function PermitTypeDialog() {
           >
             <Input name="competencyTaskKey" maxLength={120} placeholder="espacio-confinado" />
           </Field>
+          <div className="grid gap-3 md:grid-cols-2">
+            <Checkbox
+              label="Exige acuse del AST por la cuadrilla"
+              checked={requiresCrewAck}
+              onChange={(event) => setRequiresCrewAck(event.target.checked)}
+            />
+          </div>
           <div className="grid gap-3 md:grid-cols-3">
             <Checkbox label="Exige AST/JSA" checked={requiresJsa} onChange={(event) => setRequiresJsa(event.target.checked)} />
             <Checkbox label="Exige aislamiento LOTO" checked={requiresIsolation} onChange={(event) => setRequiresIsolation(event.target.checked)} />
@@ -213,6 +224,7 @@ export function NewPermitDialog({ types, worksites, workers, supervisors }: {
             <p className="text-xs text-[var(--color-text-subtle)]">
               Máximo {type.maxDurationHours} h.
               {type.requiresJsa && " Exige AST/JSA."}
+              {type.requiresCrewAcknowledgement && " Exige acuse del AST por toda la cuadrilla."}
               {type.requiresIsolation && " Exige aislamiento LOTO."}
               {type.requiresMeasurement && " Exige mediciones."}
               {type.competencyTaskKey && ` Exige competencia de tarea "${type.competencyTaskKey}".`}

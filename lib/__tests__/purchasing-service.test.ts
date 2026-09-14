@@ -326,6 +326,147 @@ describe("Purchasing service — edge cases", () => {
       ])
     })
 
+    /**
+     * OC-001 (auditoría 2026-09-14): el proveedor activo se exigía sólo al crear
+     * el borrador. Desactivarlo entremedio no impedía comprometer la compra, y
+     * la recepción quedaba esperando a una contraparte ya retirada.
+     */
+    it("issueAndSendOrder rechaza el proveedor desactivado entre el borrador y la emisión", async () => {
+      const requestId = "req-issue-sup-off"
+      const requestItemId = "item-issue-sup-off"
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: requestId, code: "SOL-ISSUE-SUP-OFF", worksiteId: "ws-purch",
+        requesterId: userId, requestType: "epp", urgency: "normal",
+        status: "approved", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: requestItemId, requestId, productId: "prod-purch",
+        quantity: 1, unitOfMeasure: "unidad", status: "pending_purchase",
+        createdAt: now, updatedAt: now,
+      })
+      const orderId = await createOrder({
+        worksiteId: "ws-purch", supplierId: "sup-purch", createdBy: userId,
+        items: [{
+          requestItemId, productId: "prod-purch", productNameFree: null,
+          quantity: 1, unitOfMeasure: "unidad", unitPrice: 1000,
+        }],
+      })
+
+      await inMemoryDb.update(schema.suppliers)
+        .set({ isActive: false })
+        .where(eq(schema.suppliers.id, "sup-purch"))
+
+      await expect(issueAndSendOrder(orderId, userId)).rejects.toThrow(/desactivado como proveedor/)
+
+      const order = await inMemoryDb.query.purchaseOrders.findFirst({
+        where: eq(schema.purchaseOrders.id, orderId),
+      })
+      expect(order?.status).toBe("draft")
+
+      await inMemoryDb.update(schema.suppliers)
+        .set({ isActive: true })
+        .where(eq(schema.suppliers.id, "sup-purch"))
+    })
+
+    /*
+     * OC-002 (auditoría 2026-09-14): «Emitir y enviar» afirmaba que la OC salía
+     * al proveedor y abría Recepción, pero la transacción sólo escribía estados
+     * y fechas: sin destinatario, canal ni acuse, auditoría no podía distinguir
+     * una emisión administrativa de un despacho efectivo. Las pruebas de esta
+     * transición validaban justamente eso —mutación, timestamps y evento— sin
+     * mirar la constancia; estas dos la fijan.
+     */
+    async function crearBorradorParaEmision(suffix: string) {
+      const requestId = `req-oc002-${suffix}`
+      const requestItemId = `item-oc002-${suffix}`
+      await inMemoryDb.insert(schema.purchaseRequests).values({
+        id: requestId, code: `SOL-OC002-${suffix}`, worksiteId: "ws-purch",
+        requesterId: userId, requestType: "epp", urgency: "normal",
+        status: "approved", createdAt: now, updatedAt: now,
+      })
+      await inMemoryDb.insert(schema.purchaseRequestItems).values({
+        id: requestItemId, requestId, productId: "prod-purch",
+        quantity: 1, unitOfMeasure: "unidad", status: "pending_purchase",
+        createdAt: now, updatedAt: now,
+      })
+      return createOrder({
+        worksiteId: "ws-purch", supplierId: "sup-purch", createdBy: userId,
+        items: [{
+          requestItemId, productId: "prod-purch", productNameFree: null,
+          quantity: 1, unitOfMeasure: "unidad", unitPrice: 1000,
+        }],
+      })
+    }
+
+    it("issueAndSendOrder deja constancia de que se emitió sin evidencia cuando el proveedor no tiene contacto", async () => {
+      const orderId = await crearBorradorParaEmision("sin-constancia")
+
+      const dispatch = await issueAndSendOrder(orderId, userId)
+
+      expect(dispatch).toMatchObject({ sentTo: null, evidence: null, hasDispatchEvidence: false })
+      expect(dispatch.summary).toMatch(/sin constancia de envío/i)
+
+      const [transition] = await inMemoryDb.select().from(schema.statusHistory)
+        .where(and(
+          eq(schema.statusHistory.entityId, orderId),
+          eq(schema.statusHistory.toStatus, "sent"),
+        ))
+      expect(transition?.reason).toMatch(/sin constancia de envío/i)
+
+      const [audit] = await inMemoryDb.select().from(schema.auditLog)
+        .where(and(
+          eq(schema.auditLog.entityId, orderId),
+          eq(schema.auditLog.action, "status_change"),
+        ))
+      expect(JSON.parse(audit!.newState as string)).toMatchObject({
+        status: "sent", sentTo: null, dispatchEvidence: null,
+      })
+    })
+
+    it("issueAndSendOrder congela destinatario y constancia declarada al emitir", async () => {
+      await inMemoryDb.update(schema.suppliers)
+        .set({ email: "ventas@proveedor.cl" })
+        .where(eq(schema.suppliers.id, "sup-purch"))
+      const orderId = await crearBorradorParaEmision("con-constancia")
+
+      const dispatch = await issueAndSendOrder(orderId, userId, "all", {
+        dispatchEvidence: "Correo 4821 con acuse del vendedor",
+      })
+
+      expect(dispatch).toMatchObject({
+        sentTo: "ventas@proveedor.cl",
+        evidence: "Correo 4821 con acuse del vendedor",
+        hasDispatchEvidence: true,
+      })
+
+      const [transition] = await inMemoryDb.select().from(schema.statusHistory)
+        .where(and(
+          eq(schema.statusHistory.entityId, orderId),
+          eq(schema.statusHistory.toStatus, "sent"),
+        ))
+      expect(transition?.reason).toContain("ventas@proveedor.cl")
+      expect(transition?.reason).toContain("Correo 4821 con acuse del vendedor")
+
+      const [audit] = await inMemoryDb.select().from(schema.auditLog)
+        .where(and(
+          eq(schema.auditLog.entityId, orderId),
+          eq(schema.auditLog.action, "status_change"),
+        ))
+      // El destinatario queda congelado: cambiar la ficha del proveedor después
+      // no debe reescribir a dónde se dijo que salió esta orden.
+      await inMemoryDb.update(schema.suppliers)
+        .set({ email: "otro@proveedor.cl" })
+        .where(eq(schema.suppliers.id, "sup-purch"))
+      expect(JSON.parse(audit!.newState as string)).toMatchObject({
+        sentTo: "ventas@proveedor.cl",
+        dispatchEvidence: "Correo 4821 con acuse del vendedor",
+      })
+
+      await inMemoryDb.update(schema.suppliers)
+        .set({ email: null })
+        .where(eq(schema.suppliers.id, "sup-purch"))
+    })
+
     it("issueAndSendOrder throws if order is not in draft", async () => {
       const orders = await inMemoryDb.query.purchaseOrders.findMany({
         where: eq(schema.purchaseOrders.status, "sent"),

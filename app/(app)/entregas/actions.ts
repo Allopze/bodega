@@ -65,15 +65,26 @@ export async function registerWorkerDeliveryAction(
       receiverName: receiverName?.trim() || null,
       notes: notes || null,
       proofAttachment: proofResult.attachment,
+      // ENT-002 (auditoría 2026-09-14): el canje del EPP usado viajaba validado
+      // en el esquema y se perdía aquí, porque la action no lo reenviaba y el
+      // servicio no lo escribía. Ninguna pantalla lo registraba.
       items: deliveryItems.map((item) => ({
         productId: item.productId,
         quantity: item.quantity,
         requestItemId: item.requestItemId || null,
         notes: item.notes || null,
+        returnProductId: item.returnProductId || null,
+        returnProductNameFree: item.returnProductNameFree || null,
+        returnQuantity: item.returnQuantity ?? null,
+        returnReason: item.returnReason || null,
+        returnNotes: item.returnNotes || null,
       })),
     }, serviceWorksiteScope(session))
 
-    revalidateOperationalViews(["/entregas", "/bodega", "/trazabilidad", "/solicitudes"])
+    // PER-T01: la entrega sólo mueve stock y solicitudes de esta faena. Declarar
+    // el alcance evita vaciar los badges de las demás faenas (los usuarios con
+    // visión global se invalidan igual, por su propia etiqueta).
+    revalidateOperationalViews(["/entregas", "/bodega", "/trazabilidad", "/solicitudes"], { worksiteId: sourceWorksiteId })
     return {
       ok: true,
       message: `Entrega registrada: ${deliveryItems.length} ${deliveryItems.length === 1 ? "producto" : "productos"}`,
@@ -171,6 +182,8 @@ export async function voidDeliveryAction(
       userEmail: session.user.email ?? undefined,
     }, serviceWorksiteScope(session))
 
+    // La anulación no tiene la faena a mano (llega sólo el id de la entrega):
+    // sin alcance declarado se invalida a todos, que es el default seguro.
     revalidateOperationalViews(["/entregas", "/bodega", "/trazabilidad", "/solicitudes"])
     return { ok: true, message: "Entrega anulada y stock repuesto" }
   } catch (e) {

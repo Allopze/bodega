@@ -38,7 +38,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   process.env.CRON_SECRET = "secreto"
   mocks.verifyCronSecret.mockReturnValue(true)
-  mocks.work.mockResolvedValue({ findings: [], recordedCount: 0 })
+  mocks.work.mockResolvedValue({ findings: [], recordedCount: 0, reopenedCount: 0 })
   mocks.withCronLock.mockImplementation(async (_n: string, run: () => Promise<unknown>) => run())
 })
 

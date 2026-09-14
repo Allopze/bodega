@@ -492,7 +492,7 @@ describe("pdtp checklist and action-plan scope", () => {
     await expect(assertPdtpExecutionAccess("exec-1", ["w2"])).rejects.toThrow(/sin acceso/i)
     await expect(assertPdtpChecklistInstanceAccess(instance.id, ["w2"])).rejects.toThrow(/sin acceso/i)
     await expect(assertPdtpActionPlanItemAccess(action.id, ["w2"])).rejects.toThrow(/sin acceso/i)
-    await expect(listActionsByProgram("prog-1", { scope: ["w2"] })).resolves.toEqual([])
+    await expect(listActionsByProgram("prog-1", ["w2"])).resolves.toEqual([])
   })
 })
 

@@ -1,75 +1,37 @@
 import { test, expect } from "@playwright/test"
 import AxeBuilder from "@axe-core/playwright"
 import { login } from "./helpers"
+import { accessibilityTargets, AXE_DISABLED_RULES, AXE_TAGS } from "./accessibility-targets"
 
-const CRITICAL_PAGES = [
-  { path: "/dashboard",        name: "Dashboard" },
-  { path: "/pendientes",       name: "Mis pendientes" },
-  { path: "/solicitudes",      name: "Solicitudes" },
-  { path: "/solicitudes/nueva", name: "Nueva solicitud" },
-  { path: "/aprobaciones",     name: "Aprobaciones" },
-  { path: "/compras",          name: "Compras" },
-  { path: "/compras/nueva",    name: "Nueva compra" },
-  { path: "/recepcion",        name: "Recepción" },
-  { path: "/bodega",           name: "Bodega" },
-  { path: "/bodega/guias",     name: "Historial de guías internas" },
-  { path: "/entregas",         name: "Entregas" },
-  { path: "/entregas/del-e2e/print", name: "Comprobante de entrega" },
-  { path: "/compras/oc-e2e/print", name: "Orden de compra" },
-  { path: "/sst/sst-eval-e2e/print", name: "Acta SST" },
-  { path: "/trazabilidad",     name: "Trazabilidad" },
-  { path: "/reportes",         name: "Reportes" },
-  { path: "/combustibles",     name: "Combustibles" },
-  { path: "/combustibles/reportes", name: "Reportes de combustibles" },
-  { path: "/combustibles/analisis", name: "Análisis de rendimiento" },
-  { path: "/admin",             name: "Admin principal" },
-  { path: "/admin/faenas",     name: "Admin faenas" },
-  { path: "/admin/usuarios",   name: "Admin usuarios" },
-  { path: "/admin/productos",  name: "Admin productos" },
-  { path: "/admin/proveedores", name: "Admin proveedores" },
-  { path: "/admin/trabajadores", name: "Admin trabajadores" },
-  { path: "/admin/auditoria",  name: "Admin auditoría" },
-  { path: "/login",            name: "Login" },
-  { path: "/prevencion/pdtp",             name: "PDTP — Programas" },
-  { path: "/prevencion/pdtp/nuevo",       name: "PDTP — Nuevo programa" },
-  { path: "/prevencion/pdtp/obligaciones", name: "PDTP — Trabajo por eventos" },
-  { path: "/prevencion/pdtp/plantillas",  name: "PDTP — Plantillas" },
-  { path: "/prevencion/pdtp/aprobaciones", name: "PDTP — Aprobaciones" },
-  { path: "/prevencion/pdtp/acciones",    name: "PDTP — Acciones correctivas" },
-  { path: "/prevencion/pdtp/cobertura",   name: "PDTP — Cobertura MIPER y legal" },
-  { path: "/prevencion/ppa",              name: "PPA — Gestión interna" },
-  { path: "/prevencion/capa",             name: "CAPA" },
-  { path: "/prevencion/emergencias",      name: "Emergencias" },
-]
+/*
+ * UX-001 y UX-002 (auditoría 2026-09-14).
+ *
+ * Antes: una lista `CRITICAL_PAGES` escrita a mano con ~20 rutas sobre 207, y
+ * `.disableRules(["color-contrast"])` en las dos suites. Es decir, la
+ * auditoría automática dejaba fuera módulos completos —combustibles, flota,
+ * mantenciones, facturación, TI, recepción, trazabilidad— y renunciaba al
+ * único criterio que más se rompe al cambiar estilos.
+ *
+ * Ahora el alcance sale del inventario de rutas (el mismo que alimenta las
+ * capturas) y las reglas activas están declaradas en un módulo que se verifica
+ * sin navegador, en `accessibility-targets.test.ts`.
+ */
+const targets = accessibilityTargets()
 
 test.describe("Accessibility audit", () => {
-  for (const { path, name } of CRITICAL_PAGES) {
+  for (const { path, name, auth } of targets) {
     test(`${name} (${path})`, async ({ page }) => {
-      await login(page)
+      if (auth) await login(page)
       await page.goto(path)
 
       await page.waitForLoadState("networkidle")
 
       const results = await new AxeBuilder({ page })
-        .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
-        .disableRules(["color-contrast"]) // audited separately in AUDITORIA.md
+        .withTags([...AXE_TAGS])
+        .disableRules([...AXE_DISABLED_RULES])
         .analyze()
 
       expect(results.violations).toEqual([])
     })
   }
-})
-
-test.describe("Accessibility audit — public PPA", () => {
-  test("PPA público (/ppa)", async ({ page }) => {
-    await page.goto("/ppa")
-    await page.waitForLoadState("networkidle")
-
-    const results = await new AxeBuilder({ page })
-      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
-      .disableRules(["color-contrast"])
-      .analyze()
-
-    expect(results.violations).toEqual([])
-  })
 })

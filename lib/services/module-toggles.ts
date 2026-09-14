@@ -78,6 +78,18 @@ const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
 
   // Superficies públicas (PWA sin sesión) y APIs autenticadas/públicas.
   { moduleId: "ppa", submoduleHref: "/prevencion/ppa", prefix: "/ppa" },
+  // INC-001: canal público de reporte de incidentes (sin sesión), gobernado
+  // por el mismo toggle que el módulo de Incidentes que lo tría.
+  { moduleId: "prevention", submoduleHref: "/prevencion/incidentes", prefix: "/reportar-incidente" },
+  // CAP-002/PER-002: vía de acuse sin cuenta. Cada rama pertenece al submódulo
+  // que emite el acuse, para que apagar Capacitación o Permisos también cierre
+  // su enlace público y no queden puertas fuera del inventario.
+  { moduleId: "prevention", submoduleHref: "/prevencion/capacitacion", prefix: "/acuse/capacitacion" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/permisos", prefix: "/acuse/permiso" },
+  // Fallback del segmento dinámico `/acuse/[kind]/...`: cualquier rama que no
+  // sea una de las dos anteriores pertenece igualmente a Prevención y nunca
+  // debe quedar fuera del inventario.
+  { moduleId: "prevention", prefix: "/acuse" },
   { moduleId: "combustibles", submoduleHref: "/combustibles/tae", prefix: "/tae" },
   { moduleId: "combustibles", submoduleHref: "/combustibles/tae", prefix: "/api/tae" },
   { moduleId: "combustibles", submoduleHref: "/combustibles/importar", prefix: "/api/combustibles/import" },

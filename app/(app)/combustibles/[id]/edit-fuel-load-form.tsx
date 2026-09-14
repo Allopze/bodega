@@ -40,6 +40,9 @@ interface LoadData {
   totalAmount: number
   status: string
   notes: string | null
+  // COM-002: la declaración de medidor reemplazado ahora vive en la fila.
+  meterReplaced: boolean
+  meterReplacementReason: string | null
 }
 
 interface EditFuelLoadFormProps {
@@ -135,8 +138,20 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
                 <Input id="correctHourMeter" name="hourMeterReading" type="number" step="0.01" min="0" inputMode="decimal" defaultValue={load.hourMeterReading ?? ""} />
                 {meterState.fieldErrors?.hourMeterReading && <p className="text-sm text-[var(--color-danger-ink)]">{meterState.fieldErrors.hourMeterReading[0]}</p>}
               </div>
-              <div className="md:col-span-2">
-                <Checkbox name="meterReplaced" value="1" label="El medidor fue reemplazado o reiniciado" />
+              {/* COM-002: la casilla apagaba el control y no dejaba rastro. */}
+              <div className="md:col-span-2 space-y-2">
+                {/* Prellenado: corregir un número no debe borrar en silencio una
+                    declaración ya hecha; desmarcar es la forma de retractarse. */}
+                <Checkbox name="meterReplaced" value="1" label="El medidor fue reemplazado o reiniciado" defaultChecked={load.meterReplaced} />
+                <Label htmlFor="correctMeterReplacementReason">Motivo del reemplazo</Label>
+                <Textarea
+                  id="correctMeterReplacementReason"
+                  name="meterReplacementReason"
+                  rows={2}
+                  defaultValue={load.meterReplacementReason ?? ""}
+                  placeholder="Qué pasó con el medidor y quién lo constató (mínimo 10 caracteres)"
+                />
+                {meterState.fieldErrors?.meterReplacementReason && <p className="text-sm text-[var(--color-danger-ink)]">{meterState.fieldErrors.meterReplacementReason[0]}</p>}
               </div>
               <div className="md:col-span-2 flex justify-end">
                 <Button type="submit" size="sm" variant="secondary" disabled={meterPending}>
@@ -226,10 +241,19 @@ export function EditFuelLoadForm({ load, vehicles, suppliers, worksites }: EditF
             </div>
             {isEditable && (
               <div className="space-y-2 sm:col-span-2">
-                <Checkbox name="meterReplaced" value="1" label="El medidor fue reemplazado o reiniciado" />
+                <Checkbox name="meterReplaced" value="1" label="El medidor fue reemplazado o reiniciado" defaultChecked={load.meterReplaced} />
                 <p className="text-xs text-[var(--color-text-muted)]">
-                  Márcalo sólo si el equipo estrenó medidor. Sin esto, una lectura menor que la anterior se rechaza como error de tipeo.
+                  Márcalo sólo si el equipo estrenó medidor. Sin esto, una lectura menor que la anterior se rechaza como error de tipeo. Queda registrado en la carga con tu explicación.
                 </p>
+                <Label htmlFor="meterReplacementReason">Motivo del reemplazo</Label>
+                <Textarea
+                  id="meterReplacementReason"
+                  name="meterReplacementReason"
+                  rows={2}
+                  defaultValue={load.meterReplacementReason ?? ""}
+                  placeholder="Qué pasó con el medidor y quién lo constató (mínimo 10 caracteres)"
+                />
+                {state.fieldErrors?.meterReplacementReason && <p className="text-sm text-[var(--color-danger-ink)]">{state.fieldErrors.meterReplacementReason[0]}</p>}
               </div>
             )}
           </CardContent>

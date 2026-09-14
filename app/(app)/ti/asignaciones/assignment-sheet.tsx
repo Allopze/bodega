@@ -44,7 +44,6 @@ export function AssignmentSheet({ trigger, assetId, workers, worksites, assets =
   const [kind, setKind] = React.useState("delivery")
   const [deliveredAt, setDeliveredAt] = React.useState(toLocalInputValue(new Date()))
   const [physicalState, setPhysicalState] = React.useState("bueno")
-  const [accepted, setAccepted] = React.useState(true)
   const [accessories, setAccessories] = React.useState<string[]>([])
   const [accessoryDraft, setAccessoryDraft] = React.useState("")
   const [photos, setPhotos] = React.useState<UploadedPhoto[]>([])
@@ -152,7 +151,6 @@ export function AssignmentSheet({ trigger, assetId, workers, worksites, assets =
         <form action={formAction} className="flex flex-col flex-1 min-h-0">
           <input type="hidden" name="accessoriesJson" value={JSON.stringify(accessories)} />
           <input type="hidden" name="photoIdsJson" value={JSON.stringify(photos.map((p) => p.id))} />
-          <input type="hidden" name="accepted" value={accepted ? "on" : ""} />
           <input type="hidden" name="assetId" value={selectedAsset} />
 
           <SheetHeader>
@@ -242,11 +240,17 @@ export function AssignmentSheet({ trigger, assetId, workers, worksites, assets =
                 </Field>
               </div>
 
-              <Field label="Aceptación del trabajador" helper="Confirmada por el técnico TI en representación del trabajador.">
-                <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
-                  <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} className="h-4 w-4 rounded border-[var(--color-border-control)]" />
-                  El trabajador acepta el equipo en las condiciones descritas
-                </label>
+              {/*
+                TIA-001 (auditoría 2026-09-14): aquí había una casilla
+                —"confirmada por el técnico TI en representación del
+                trabajador"— con la que quien entrega el equipo declaraba
+                aceptada su propia acta. El acuse se registra ahora desde la
+                lista de actas y lo hace una persona distinta del entregador.
+              */}
+              <Field label="Aceptación del trabajador" helper="El acta nace pendiente de acuse: lo registra después alguien distinto de quien entrega.">
+                <p className="text-sm text-[var(--color-text-subtle)]">
+                  Pendiente de acuse hasta que se registre desde el acta.
+                </p>
               </Field>
 
               <Field label="Accesorios incluidos" helper="Cargador, mouse, bolso, dock…">

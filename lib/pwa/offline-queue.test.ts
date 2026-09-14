@@ -187,3 +187,67 @@ describe("offline-queue", () => {
     })
   })
 })
+
+/**
+ * PPA-003. `createPpaSubmissionId` es la clave de idempotencia del envío y, por
+ * derivación HMAC, la del enlace público al resultado: reenviar con una clave
+ * existente devuelve la fila y el enlace originales. La ruta de respaldo
+ * —navegador sin `crypto.randomUUID`, es decir contexto no seguro o navegador
+ * antiguo— la armaba con `ppa-<Date.now()>-<8 caracteres de Math.random>`, un
+ * PRNG no criptográfico sobre un prefijo de reloj sin azar alguno.
+ */
+describe("createPpaSubmissionId (PPA-003)", () => {
+  const originalCrypto = globalThis.crypto
+  const originalRandom = Math.random
+
+  /** Deja un `crypto` sin `randomUUID`: fuerza la ruta de respaldo. */
+  function useLegacyCrypto(): { calls: number } {
+    const counter = { calls: 0 }
+    const source = originalCrypto
+    Object.defineProperty(globalThis, "crypto", {
+      configurable: true,
+      value: {
+        getRandomValues: (array: Uint8Array) => {
+          counter.calls++
+          return source.getRandomValues(array)
+        },
+      },
+    })
+    return counter
+  }
+
+  afterEach(() => {
+    Object.defineProperty(globalThis, "crypto", { configurable: true, value: originalCrypto })
+    Math.random = originalRandom
+  })
+
+  it("la ruta preferente sigue usando crypto.randomUUID", async () => {
+    const { createPpaSubmissionId } = await import("./offline-queue")
+    expect(createPpaSubmissionId()).toMatch(
+      /^ppa-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    )
+  })
+
+  it("sin randomUUID el respaldo toma la entropía de crypto.getRandomValues, no de Math.random", async () => {
+    const { createPpaSubmissionId } = await import("./offline-queue")
+    const counter = useLegacyCrypto()
+    // Con Math.random congelado, la versión anterior producía siempre el mismo
+    // sufijo y, dentro del mismo milisegundo, la MISMA clave para dos envíos.
+    Math.random = () => 0.5
+
+    const first = createPpaSubmissionId()
+    const second = createPpaSubmissionId()
+
+    expect(counter.calls).toBeGreaterThan(0)
+    expect(first).not.toBe(second)
+    expect(first).toMatch(/^ppa-[A-Za-z0-9_-]{24}$/)
+    // El reloj no aporta azar: la clave no puede llevarlo incrustado.
+    expect(first).not.toContain(String(Date.now()).slice(0, 8))
+  })
+
+  it("sin Web Crypto falla en vez de degradar a una clave adivinable", async () => {
+    const { createPpaSubmissionId } = await import("./offline-queue")
+    Object.defineProperty(globalThis, "crypto", { configurable: true, value: undefined })
+    expect(() => createPpaSubmissionId()).toThrow(/Web Crypto/)
+  })
+})

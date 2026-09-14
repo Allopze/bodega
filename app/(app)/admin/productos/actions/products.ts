@@ -12,6 +12,7 @@ import { setProductSupplierPriceTx } from "@/lib/services/product-supplier-price
 import { lockCatalogProductsForUpdateTx } from "@/lib/services/catalog-product-locks"
 import { productSchema, type ActionState } from "@/lib/validation/masters"
 import { safeActionMessage } from "@/lib/action-error"
+import { resolveActiveUnitCode } from "@/lib/services/product-unit-catalog"
 import { assertIdentityStable, MasterIdentityError } from "@/lib/services/master-identity"
 import { describeProductStockBlockers, productsWithStock } from "@/lib/services/product-deactivation"
 
@@ -71,6 +72,16 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
   if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
   const d = parsed.data
 
+  /*
+   * CAT-003: la unidad tiene que existir en el catálogo administrable y estar
+   * activa. Antes era texto libre: el catálogo era una sugerencia y una unidad
+   * desactivada seguía siendo elegible. La FK de base cubre "existe"; que esté
+   * ACTIVA sólo se puede comprobar acá.
+   */
+  let unitOfMeasure: string
+  try { unitOfMeasure = await resolveActiveUnitCode(d.unitOfMeasure) }
+  catch (e) { return { ok: false, fieldErrors: { unitOfMeasure: [safeActionMessage(e, "Unidad inválida")] } } }
+
   const id = nanoid()
   const sku = await generateUniqueProductSku(db, d.isEpp)
 
@@ -88,7 +99,7 @@ export async function createProduct(_prev: ActionState, formData: FormData): Pro
       description: d.description || null,
       categoryId: d.categoryId,
       familyId: family?.id ?? null,
-      unitOfMeasure: d.unitOfMeasure,
+      unitOfMeasure,
       isEpp: d.isEpp,
       requiresPrevencion: d.requiresPrevencion,
       isService: d.isService,
@@ -177,6 +188,12 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
   if (!current) return { ok: false, message: "Producto no encontrado" }
   const sku = current.sku
 
+  // CAT-003: misma regla que al crear. Editar un producto no puede ser la
+  // puerta trasera por la que entra una unidad fuera del catálogo.
+  let unitOfMeasure: string
+  try { unitOfMeasure = await resolveActiveUnitCode(d.unitOfMeasure) }
+  catch (e) { return { ok: false, fieldErrors: { unitOfMeasure: [safeActionMessage(e, "Unidad inválida")] } } }
+
   // Sin este try/catch cualquier error del driver (p.ej. el 23503 de un
   // atributo aún referenciado por una solicitud, si se cuela por la carrera)
   // escapaba como error de server action sin mensaje. `safeActionMessage` deja
@@ -256,7 +273,7 @@ export async function updateProduct(_prev: ActionState, formData: FormData): Pro
       description: d.description || null,
       categoryId: d.categoryId,
       familyId: family?.id ?? null,
-      unitOfMeasure: d.unitOfMeasure,
+      unitOfMeasure,
       isEpp: d.isEpp,
       requiresPrevencion: d.requiresPrevencion,
       isService: d.isService,
@@ -644,6 +661,12 @@ export async function createProductVariantBatch(input: ProductVariantBatchInput)
   // registraba "desconocido" (o el SKU de un producto ajeno que coincidiera).
   let batchFirstSku = "desconocido"
 
+  // CAT-003: el lote de variantes escribe productos igual que el formulario
+  // simple, así que pasa por la misma comprobación de catálogo.
+  let unitOfMeasure: string
+  try { unitOfMeasure = await resolveActiveUnitCode(d.unitOfMeasure) }
+  catch (e) { return { ok: false, fieldErrors: { unitOfMeasure: [safeActionMessage(e, "Unidad inválida")] } } }
+
   try {
     await db.transaction(async (tx) => {
       // 1. Create or resolve EPP family
@@ -706,7 +729,7 @@ export async function createProductVariantBatch(input: ProductVariantBatchInput)
           description: d.description || null,
           categoryId: d.categoryId,
           familyId,
-          unitOfMeasure: d.unitOfMeasure,
+          unitOfMeasure,
           isEpp: d.isEpp,
           requiresPrevencion: d.requiresPrevencion,
           isService: d.isService,

@@ -23,10 +23,27 @@ const mockSelectWhere = vi.fn(() => ({
 // encadena `.select().from().where()` y espera el resultado, mientras que
 // otras rutas usan `.select().from()` directo. `then` vive al final de la
 // cadena para que ambas rutas resuelvan correctamente.
-const mockSelectFrom = vi.fn(() => ({
-  where: mockSelectWhere,
-  then: (resolve: (rows: unknown[]) => unknown) => resolve([]),
-}))
+/*
+ * CAT-003: la unidad del producto ya no es texto libre, sale del catálogo
+ * (`loadActiveUnitCodes`). Este doble tiene que devolverlo, o cualquier alta
+ * fallaría aquí por falta de fixture y no por la regla que la prueba mide.
+ * `unidadesActivas` es mutable a propósito: hay un caso que la vacía para
+ * comprobar que la guarda está de verdad cableada en las acciones.
+ */
+let unidadesActivas: Array<{ code: string }> = [{ code: "unidad" }, { code: "par" }, { code: "caja" }]
+const mockSelectFrom = vi.fn((table?: unknown) => {
+  const esCatalogoDeUnidades = Boolean(
+    table && typeof table === "object"
+    && String((table as { _?: { name?: string } })._?.name ?? "") === "product_units",
+  )
+  const filas = esCatalogoDeUnidades ? unidadesActivas : []
+  return {
+    where: esCatalogoDeUnidades
+      ? vi.fn(() => ({ then: (resolve: (rows: unknown[]) => unknown) => resolve(filas) }))
+      : mockSelectWhere,
+    then: (resolve: (rows: unknown[]) => unknown) => resolve(filas),
+  }
+})
 const mockCancelEppImportBatch = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 // `.values(...)` tiene que ser esperable Y encadenable: el alta de familia usa
 // `.onConflictDoNothing(...).returning(...)` para no reventar cuando dos altas

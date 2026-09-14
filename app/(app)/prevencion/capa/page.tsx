@@ -8,6 +8,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { getCapaDashboardCounts, listCapaActionsPage, listCapaWorksites, type CapaStatus } from "@/lib/services/prevention-capa"
 import { CapaList } from "./capa-list"
+import { ManualCapaDialog } from "./manual-capa-dialog"
 import { isCapaQuickFilter } from "@/lib/prevention/capa-list-filters"
 
 export const metadata: Metadata = { title: "Acciones CAPA" }
@@ -48,9 +49,13 @@ export default async function CapaPage({ searchParams }: { searchParams: Promise
           { label: "Acciones CAPA" },
         ]} />}
         actions={
-          <Button asChild variant="secondary">
-            <a href="/api/prevencion/capa/export" download>Exportar Excel</a>
-          </Button>
+          <div className="flex gap-2">
+            <Button asChild variant="secondary">
+              <a href="/api/prevencion/capa/export" download>Exportar Excel</a>
+            </Button>
+            {/* E2E-006: la pantalla no tenía creación; toda CAPA nacía en otro módulo. */}
+            {session.user.permissions.includes("prevention:capa:manage") && <ManualCapaDialog worksites={worksites} />}
+          </div>
         }
       />
       <CapaList actions={actions} worksites={worksites} counts={counts} pagination={resolvedPagination} />

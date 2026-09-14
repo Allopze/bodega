@@ -103,10 +103,26 @@ export const itAssignmentCreateSchema = z.object({
     .refine((v) => v <= `${todayInChile()}T23:59`, "La entrega no puede tener fecha futura"),
   physicalState: z.enum(IT_PHYSICAL_STATES, { message: "Estado físico no reconocido" }).default("bueno"),
   observations: text(500),
-  accepted: z.coerce.boolean().default(true),
+  // TIA-001: aquí vivía `accepted: z.coerce.boolean().default(true)`, la
+  // casilla con la que el técnico declaraba aceptada su propia entrega. El
+  // acuse se registra ahora aparte (`itAssignmentAcceptanceSchema`) y lo hace
+  // una persona distinta de quien entregó.
   accessoryNames: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
   /** IDs de fotos ya persistidas por el upload previo (stage delivery). */
   photoIds: z.array(z.string().min(1)).max(40).default([]),
+})
+
+/**
+ * TIA-001 / TIA-002: el acuse del acta como acto propio. `sin_acuse` exige
+ * motivo porque «no hubo acuse» es una afirmación, no un vacío.
+ */
+export const itAssignmentAcceptanceSchema = z.object({
+  assignmentId: z.string().min(1),
+  outcome: z.enum(["aceptada", "sin_acuse"], { message: "Resultado del acuse no reconocido" }),
+  note: text(500),
+}).refine((v) => v.outcome !== "sin_acuse" || (v.note ?? "").trim().length >= 5, {
+  message: "Explica por qué el acta queda sin acuse",
+  path: ["note"],
 })
 
 export const itAssignmentReturnSchema = z.object({

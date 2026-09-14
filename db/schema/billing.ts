@@ -315,6 +315,16 @@ export const billingInvoicePayments = pgTable("billing_invoice_payments", {
   source:             text("source").notNull().$type<BillingProviderId>().default("manual"),
   /** Id de la transacción en la fuente externa, si aplica. */
   externalTransactionId: text("external_transaction_id"),
+  /**
+   * Clave de idempotencia del pago MANUAL (COB-003). El índice único
+   * `(invoice_id, bank_transaction_id)` no cubre estos pagos porque su
+   * `bank_transaction_id` es NULL, y la defensa era una ventana de dos minutos
+   * en la acción: pasada esa ventana el mismo pago volvía a entrar sin aviso.
+   * El formulario genera una clave por apertura y la reenvía en cada reintento
+   * —mismo patrón que `ppa_submissions.client_submission_id`—, así el doble
+   * clic y el reenvío por red colapsan sobre la misma fila.
+   */
+  clientRequestId:    text("client_request_id"),
 
   verificationStatus: text("verification_status").notNull().$type<"suggested" | "confirmed" | "rejected" | "reverted">().default("suggested"),
   confidence:         text("confidence").$type<"high" | "medium" | "low">(),
@@ -339,6 +349,10 @@ export const billingInvoicePayments = pgTable("billing_invoice_payments", {
   // Un movimiento bancario no puede imputarse dos veces a la misma factura.
   uniqueIndex("billing_invoice_payments_invoice_bank_tx_unique")
     .on(table.invoiceId, table.bankTransactionId),
+  // Parcial: los pagos históricos y los que nacen de la cartola no traen clave.
+  uniqueIndex("billing_invoice_payments_client_request_unique")
+    .on(table.clientRequestId)
+    .where(sql`${table.clientRequestId} IS NOT NULL`),
   check("billing_invoice_payments_status_valid", sql`${table.verificationStatus} IN ('suggested', 'confirmed', 'rejected', 'reverted')`),
   check("billing_invoice_payments_matched_by_valid", sql`${table.matchedBy} IN ('auto', 'user')`),
   check("billing_invoice_payments_source_valid", sql`${table.source} IN ${sql.raw(PROVIDER_SQL)}`),

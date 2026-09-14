@@ -2,9 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 
 const mockFindWorkerByRut = vi.hoisted(() => vi.fn())
 const mockCreatePpaSubmission = vi.hoisted(() => vi.fn())
-const mockCheckRateLimit = vi.hoisted(() => vi.fn())
-const mockRecordFailure = vi.hoisted(() => vi.fn())
-const mockRecordSuccessForTelemetry = vi.hoisted(() => vi.fn())
 const mockConsumeFixedWindowLimit = vi.hoisted(() => vi.fn())
 const mockHeaders = vi.hoisted(() => vi.fn())
 
@@ -14,9 +11,6 @@ vi.mock("@/lib/services/ppa", () => ({
 }))
 
 vi.mock("@/lib/services/rate-limit", () => ({
-  checkRateLimit: mockCheckRateLimit,
-  recordFailure: mockRecordFailure,
-  recordSuccessForTelemetry: mockRecordSuccessForTelemetry,
   consumeFixedWindowLimit: mockConsumeFixedWindowLimit,
 }))
 
@@ -43,6 +37,7 @@ vi.mock("@/lib/logger", () => ({
 }))
 
 import { findWorkerByRutAction, submitPpaAction } from "@/app/(public)/ppa/actions"
+import { PUBLIC_IDENTITY_LOOKUP_UNIFORM_MESSAGE } from "@/lib/security/public-identity-lookup"
 
 describe("findWorkerByRutAction", () => {
   beforeEach(() => {
@@ -50,9 +45,7 @@ describe("findWorkerByRutAction", () => {
     mockHeaders.mockResolvedValue({
       get: (key: string) => (key === "cf-connecting-ip" ? "203.0.113.1" : null),
     })
-    mockCheckRateLimit.mockResolvedValue({ allowed: true, waitTimeRemainingMs: 0 })
-    mockRecordFailure.mockResolvedValue(undefined)
-    mockRecordSuccessForTelemetry.mockResolvedValue(undefined)
+    mockConsumeFixedWindowLimit.mockResolvedValue({ allowed: true, remaining: 29 })
   })
 
   it("retorna error si el RUT no está presente", async () => {
@@ -67,19 +60,40 @@ describe("findWorkerByRutAction", () => {
     expect(res.message).toContain("RUT inválido")
   })
 
-  it("retorna error si el trabajador no existe", async () => {
+  /*
+   * PPA-002 (auditoría 2026-09-14). Esta prueba afirmaba lo contrario: exigía
+   * el texto "No se encontró ningún trabajador" y que `recordFailure` se
+   * llamara sólo en esa rama. Consagraba justo el defecto —una respuesta
+   * distinguible que confirma la pertenencia a la faena, y un contador que
+   * únicamente castigaba los fallos—, así que se invirtió.
+   */
+  it("PPA-002: el RUT ausente devuelve el mensaje uniforme, sin decir que no hay trabajador", async () => {
     mockFindWorkerByRut.mockResolvedValueOnce(null)
     const res = await findWorkerByRutAction("12345678-5") // RUT válido
     expect(res.ok).toBe(false)
-    expect(res.message).toContain("No se encontró ningún trabajador")
-    expect(mockRecordFailure).toHaveBeenCalledWith(
-      expect.stringContaining("ppa-lookup:"),
-      expect.objectContaining({ maxAttempts: 10 }),
-    )
+    expect(res.message).toBe(PUBLIC_IDENTITY_LOOKUP_UNIFORM_MESSAGE)
+    expect(res.message).not.toContain("No se encontró")
+    expect(res.message).not.toContain("trabajador")
   })
 
-  it("bloquea si se supera el rate limit de lookup", async () => {
-    mockCheckRateLimit.mockResolvedValueOnce({ allowed: false, waitTimeRemainingMs: 300000 })
+  it("PPA-002: acertar el RUT consume la misma cuota que fallarlo (antes los aciertos eran gratis)", async () => {
+    mockFindWorkerByRut.mockResolvedValueOnce({
+      id: "work-1", firstName: "Juan", lastName: "Pérez", worksiteId: "ws-1",
+    })
+    await findWorkerByRutAction("12345678-5")
+    expect(mockConsumeFixedWindowLimit).toHaveBeenCalledTimes(1)
+
+    mockFindWorkerByRut.mockResolvedValueOnce(null)
+    await findWorkerByRutAction("12345678-5")
+    expect(mockConsumeFixedWindowLimit).toHaveBeenCalledTimes(2)
+
+    for (const [key] of mockConsumeFixedWindowLimit.mock.calls) {
+      expect(key).toBe("ppa-lookup:203.0.113.1")
+    }
+  })
+
+  it("bloquea si se agota la cuota de lookup", async () => {
+    mockConsumeFixedWindowLimit.mockResolvedValueOnce({ allowed: false, remaining: 0 })
     const res = await findWorkerByRutAction("12345678-5")
     expect(res.ok).toBe(false)
     expect(res.message).toContain("Demasiadas consultas")

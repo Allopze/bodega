@@ -9,7 +9,13 @@ import { z } from "zod"
 import { logger } from "@/lib/logger"
 import { resolveTrustedClientIp } from "@/lib/security/login-rate-limit-ip"
 import { headers } from "next/headers"
-import { checkRateLimit, consumeFixedWindowLimit, recordFailure, recordSuccessForTelemetry } from "@/lib/services/rate-limit"
+import { consumeFixedWindowLimit } from "@/lib/services/rate-limit"
+import {
+  PUBLIC_IDENTITY_LOOKUP_QUOTA_MESSAGE,
+  PUBLIC_IDENTITY_LOOKUP_UNIFORM_MESSAGE,
+  consumePublicIdentityLookupQuota,
+  settleUniformIdentityLookupLatency,
+} from "@/lib/security/public-identity-lookup"
 import { isRouteOperational } from "@/lib/services/module-toggles"
 import { cleanRut, validateRut } from "@/lib/rut"
 
@@ -109,27 +115,34 @@ export async function findWorkerByRutAction(
     return { ok: false, message: "RUT inválido. Debe tener formato 12345678-9 o similar." }
   }
 
-  // Rate limit por IP para evitar enumeración masiva de trabajadores (S-01)
+  /*
+   * PPA-002 (auditoría 2026-09-14): esta acción respondía distinto según el RUT
+   * existiera o no en la faena —"No se encontró ningún trabajador activo con
+   * este RUT" contra un nombre enmascarado— y, peor, sólo el fallo consumía
+   * cuota (`recordFailure`, 10 por IP): los aciertos eran gratis e ilimitados.
+   * Quien probaba una lista de RUT plausibles confirmaba sin techo quién
+   * trabaja en la faena.
+   *
+   * Ahora la cuota se consume ANTES de buscar, así que acertar cuesta lo mismo
+   * que fallar; el rechazo usa el cuerpo uniforme compartido con
+   * `/api/tae/identity` (COM-003), y ambas ramas comparten piso de latencia.
+   * Se retiró `recordSuccessForTelemetry` sobre esta clave: escribía en la
+   * misma fila que la ventana fija y refrescaba su `updatedAt`, con lo que la
+   * ventana no habría vencido nunca.
+   */
   const h = await headers()
   const clientIp = resolveTrustedClientIp(h)
   const lookupLimitKey = `ppa-lookup:${clientIp}`
-  const limitRes = await checkRateLimit(lookupLimitKey)
-  if (!limitRes.allowed) {
-    const minutes = Math.ceil(limitRes.waitTimeRemainingMs / 60000)
-    return {
-      ok: false,
-      message: `Demasiadas consultas. Intenta de nuevo en ${minutes} minutos.`,
-    }
+  if (!await consumePublicIdentityLookupQuota(lookupLimitKey)) {
+    return { ok: false, message: PUBLIC_IDENTITY_LOOKUP_QUOTA_MESSAGE }
   }
 
+  const startedAt = Date.now()
   try {
     const worker = await findWorkerByRut(rut)
     if (!worker) {
-      // Contamos solo el intento fallido (RUT no encontrado): las identificaciones
-      // legítimas no penalizan al NAT compartido. Umbral generoso (10/15min) para
-      // tolerar algunos errores de tipeo de una faena sin permitir enumeración masiva.
-      await recordFailure(lookupLimitKey, { maxAttempts: 10 })
-      return { ok: false, message: "No se encontró ningún trabajador activo con este RUT." }
+      await settleUniformIdentityLookupLatency(startedAt)
+      return { ok: false, message: PUBLIC_IDENTITY_LOOKUP_UNIFORM_MESSAGE }
     }
     // ponytail: minimizar PII expuesto en acción pública - solo primer nombre + inicial
     // apellido para identificación básica. No devolver RUT (ya lo tiene quien busca),
@@ -138,10 +151,7 @@ export async function findWorkerByRutAction(
     // el worksiteId de abajo — ver resolvedWorksiteName en ppa-form.hooks.ts).
     const maskedName = `${worker.firstName} ${worker.lastName?.[0]}.`
 
-    // Registrar éxito para telemetría: permite detectar enumeración masiva
-    // incluso cuando todas las búsquedas son exitosas
-    await recordSuccessForTelemetry(lookupLimitKey)
-
+    await settleUniformIdentityLookupLatency(startedAt)
     return {
       ok: true,
       worker: {
@@ -154,6 +164,9 @@ export async function findWorkerByRutAction(
     }
   } catch (e) {
     logger.error("[ppa] findWorkerByRut failed", e)
-    return { ok: false, message: "Error al buscar el trabajador." }
+    // PPA-002: un error interno tampoco puede ser una tercera respuesta
+    // distinguible; se devuelve el mismo cuerpo que "no identificado".
+    await settleUniformIdentityLookupLatency(startedAt)
+    return { ok: false, message: PUBLIC_IDENTITY_LOOKUP_UNIFORM_MESSAGE }
   }
 }

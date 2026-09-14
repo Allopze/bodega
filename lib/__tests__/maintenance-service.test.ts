@@ -565,6 +565,10 @@ describe("Maintenance Service (tareas y costos mutables)", () => {
 
     await addMaintenancePart(session, {
       maintenanceId: "man-1",
+      // Línea sin producto de catálogo: el caso legítimo del taller externo que
+      // factura una pieza que nunca pasó por bodega, y que por eso no emite
+      // egreso de stock (MNT-002).
+      productId: null,
       description: "Filtro de aceite",
       quantity: 1,
       unit: "un",

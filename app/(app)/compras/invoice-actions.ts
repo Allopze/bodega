@@ -9,6 +9,7 @@ import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { createPurchaseOrderInvoice, deletePurchaseOrderInvoice, setPurchaseOrderInvoiceReceipts } from "@/lib/services/purchasing"
 import { invoiceSchema, type ActionState } from "@/lib/validation/operations"
 import { logger } from "@/lib/logger"
+import { formatCLP } from "@/lib/utils"
 
 import { safeActionMessage as dbErrMsg } from "@/lib/action-error"
 import { assertOrderAccess } from "./actions.helpers"
@@ -144,15 +145,50 @@ export async function addInvoiceAction(
     && Number.isFinite(extractedDocumentTotal)
     && extractedDocumentTotal >= 0
 
+  /*
+   * FAC-003 (auditoría 2026-09-14): el número que se guarda es el que la
+   * persona revisó.
+   *
+   * El formulario extrae en el cliente (`POST /api/purchase-orders/invoices/
+   * extract`) y precarga el total. Al enviar, el servidor volvía a extraer
+   * sobre el mismo archivo y, si obtenía un total, lo usaba como `amount`
+   * DESCARTANDO lo que venía del formulario. Con líneas el campo es `readOnly`,
+   * pero sin líneas es editable: la corrección manual del operador se perdía
+   * sin aviso. Y como la extracción puede caer en OCR (`pdf_text_ocr`/`ocr`),
+   * las dos corridas no están garantizadas a coincidir: lo mostrado y lo
+   * persistido podían diferir en el monto de un documento tributario, que es el
+   * eje del `total_mismatch` de la conciliación.
+   *
+   * La segunda extracción NO se elimina —sigue siendo la que verifica la
+   * identidad del proveedor y la que detecta un archivo cambiado entre la
+   * previsualización y el envío—; deja de ser autoridad silenciosa y pasa a ser
+   * comprobación cruzada: si discrepa de lo revisado, no se guarda nada y se
+   * devuelven las DOS cifras, para que la persona decida con ambas a la vista.
+   *
+   * Tolerancia de medio peso: los montos son CLP enteros y el formulario los
+   * manda como texto; la holgura sólo absorbe el redondeo de la serialización,
+   * no una diferencia real.
+   */
+  const AMOUNT_TOLERANCE = 0.5
+  if (hasExtractedDocumentTotal && Math.abs(extractedDocumentTotal - amount) > AMOUNT_TOLERANCE) {
+    await removeInvoiceAttachment(fileResult.attachment.absolutePath)
+    return {
+      ok: false,
+      message: `El total leído del documento (${formatCLP(extractedDocumentTotal)}) no coincide con el monto que estás guardando (${formatCLP(amount)}). Verifica el archivo y corrige el monto antes de adjuntar la factura.`,
+      fieldErrors: { amount: [`El documento declara ${formatCLP(extractedDocumentTotal)}`] },
+    }
+  }
+
   try {
     await createPurchaseOrderInvoice({
       purchaseOrderId,
       invoiceNumber,
-      // PDF/OCR/DTE extraction reads the document header total, which may be
-      // gross while its detail lines are net. The service still ignores the
-      // browser preview for line subtotals, but the extracted header is the
-      // document authority when it is available.
-      amount: hasExtractedDocumentTotal ? extractedDocumentTotal : amount,
+      // FAC-003: se guarda el monto revisado. Coincide con el encabezado
+      // extraído porque, si no coincidiera, la guarda de más arriba ya habría
+      // rechazado el envío; la autoridad declarada sigue siendo el encabezado
+      // del documento cuando la extracción lo entregó (puede ser bruto mientras
+      // las líneas son netas, que es lo que ese valor distingue).
+      amount,
       amountAuthority: hasExtractedDocumentTotal ? "document_header" : "line_items",
       issueDate: issueDate || null,
       fileName:  fileResult.attachment.attachment.fileName,

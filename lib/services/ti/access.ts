@@ -166,7 +166,13 @@ export async function upsertSystemAccess(
   })
 }
 
-export async function listWorkerAccess(workerId: string, worksiteIds: TiWorksiteScope = "all") {
+/**
+ * HALLAZGO SEC-002 (S3/P2): `worksiteIds` tenía `= "all"` por omisión. Olvidar
+ * el alcance no restringía la consulta: la abría a todas las faenas, en
+ * silencio y sin fallar. Ahora es obligatorio, y quien de verdad necesite ver
+ * todo debe escribir `"all"` — una afirmación, no un descuido.
+ */
+export async function listWorkerAccess(workerId: string, worksiteIds: TiWorksiteScope) {
   const conditions: SQL[] = [eq(itSystemAccess.workerId, workerId)]
   if (worksiteIds !== "all") conditions.push(worksiteIds.length ? inArray(workers.worksiteId, worksiteIds) : sql`false`)
   return db
@@ -187,7 +193,16 @@ export async function listWorkerAccess(workerId: string, worksiteIds: TiWorksite
     .orderBy(asc(itAccessSystems.name))
 }
 
-export async function listWorkersWithAccess(filters?: { systemId?: string; worksiteId?: string; search?: string; scope?: SQL }) {
+/**
+ * HALLAZGO SEC-002 (S3/P2): `scope` era una propiedad opcional de un objeto
+ * `filters` que a su vez era opcional, de modo que `listWorkersWithAccess()`
+ * compilaba y listaba a los trabajadores de todas las faenas. Ahora `filters`
+ * y su `scope` son obligatorios. El tipo sigue admitiendo `undefined` porque
+ * ése es el valor que `worksiteScopeSql` devuelve para un rol global —"sin
+ * cláusula"—, pero el llamador tiene que escribirlo: es una decisión, no un
+ * olvido.
+ */
+export async function listWorkersWithAccess(filters: { systemId?: string; worksiteId?: string; search?: string; scope: SQL | undefined }) {
   const workersList = await db
     .select({
       id: workers.id,
@@ -199,8 +214,8 @@ export async function listWorkersWithAccess(filters?: { systemId?: string; works
     .innerJoin(worksites, eq(workers.worksiteId, worksites.id))
     .where(and(
       eq(workers.isActive, true),
-      filters?.worksiteId ? eq(workers.worksiteId, filters.worksiteId) : undefined,
-      filters?.scope,
+      filters.worksiteId ? eq(workers.worksiteId, filters.worksiteId) : undefined,
+      filters.scope,
     ))
     .orderBy(asc(workers.firstName), asc(workers.lastName))
 
@@ -361,7 +376,10 @@ export async function toggleChecklistTask(
   })
 }
 
-export async function listChecklists(filters?: { workerId?: string; kind?: string; scope?: SQL }) {
+/** HALLAZGO SEC-002 (S3/P2): mismo caso que `listWorkersWithAccess`; el
+ *  alcance era opcional dentro de un objeto opcional y su ausencia listaba
+ *  las checklists de todas las faenas. */
+export async function listChecklists(filters: { workerId?: string; kind?: string; scope: SQL | undefined }) {
   return db
     .select({
       id: itWorkerChecklists.id,
@@ -380,9 +398,9 @@ export async function listChecklists(filters?: { workerId?: string; kind?: strin
     .innerJoin(workers, eq(itWorkerChecklists.workerId, workers.id))
     .innerJoin(worksites, eq(workers.worksiteId, worksites.id))
     .where(and(
-      filters?.workerId ? eq(itWorkerChecklists.workerId, filters.workerId) : undefined,
-      filters?.kind ? eq(itWorkerChecklists.kind, filters.kind) : undefined,
-      filters?.scope,
+      filters.workerId ? eq(itWorkerChecklists.workerId, filters.workerId) : undefined,
+      filters.kind ? eq(itWorkerChecklists.kind, filters.kind) : undefined,
+      filters.scope,
     ))
     .orderBy(desc(itWorkerChecklists.startedAt))
 }

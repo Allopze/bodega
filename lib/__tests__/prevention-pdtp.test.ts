@@ -146,6 +146,13 @@ beforeEach(async () => {
 
 describe("prevention PDTP service", () => {
   const prepareProgramForReview = async (programId: string) => {
+    // PDTP-003: el fixture no asocia faenas al programa, y activar así dejó de
+    // ser posible sin decirlo — antes ese programa se aplicaba a todas las
+    // faenas sin que nada lo declarara. Se declara aquí lo que el fixture ya
+    // significaba: alcance corporativo.
+    await inMemoryDb.update(schema.pdtpPrograms)
+      .set({ appliesToAllWorksites: true })
+      .where(eq(schema.pdtpPrograms.id, programId))
     await inMemoryDb.update(schema.pdtpActivities)
       .set({ scheduleClassificationStatus: "confirmed" })
       .where(eq(schema.pdtpActivities.programId, programId))
@@ -195,6 +202,10 @@ describe("prevention PDTP service", () => {
       await import("@/lib/services/prevention-pdtp")
     const { program } = await loadCatalog()
     await prepareProgramForReview(program.id)
+    // PDTP-003: el fixture no asocia faenas; se declara el alcance corporativo,
+    // que es lo que este programa ya significaba antes de tener que decirlo.
+    await inMemoryDb.update(schema.pdtpPrograms).set({ appliesToAllWorksites: true })
+      .where(eq(schema.pdtpPrograms.id, program.id))
     await submitPdtpProgramForReview(program.id, "user-1")
     await approvePdtpProgramJdpr(program.id, "user-jdpr")
     await signPdtpProgramLegal(program.id, "user-legal")
@@ -889,6 +900,10 @@ describe("prevention PDTP service", () => {
       sheetCodes: ["pdtp_general"],
     }, "user-1")
     await prepareProgramForReview(program.id)
+    // PDTP-003: el fixture no asocia faenas; se declara el alcance corporativo,
+    // que es lo que este programa ya significaba antes de tener que decirlo.
+    await inMemoryDb.update(schema.pdtpPrograms).set({ appliesToAllWorksites: true })
+      .where(eq(schema.pdtpPrograms.id, program.id))
     await submitPdtpProgramForReview(program.id, "user-1")
     await approvePdtpProgramJdpr(program.id, "user-jdpr")
     await signPdtpProgramLegal(program.id, "user-legal")
@@ -1048,6 +1063,10 @@ describe("prevention PDTP service", () => {
     }, "user-1")
 
     await prepareProgramForReview(program.id)
+    // PDTP-003: el fixture no asocia faenas; se declara el alcance corporativo,
+    // que es lo que este programa ya significaba antes de tener que decirlo.
+    await inMemoryDb.update(schema.pdtpPrograms).set({ appliesToAllWorksites: true })
+      .where(eq(schema.pdtpPrograms.id, program.id))
     await submitPdtpProgramForReview(program.id, "user-1")
     await approvePdtpProgramJdpr(program.id, "user-jdpr")
     await signPdtpProgramLegal(program.id, "user-legal")
@@ -1111,6 +1130,10 @@ describe("prevention PDTP service", () => {
     // dos actividades son de cobertura, se restablece antes de firmar el programa.
     await inMemoryDb.update(schema.pdtpActivities).set({ indicatorMode: "coverage" })
       .where(inArray(schema.pdtpActivities.id, [actUnder.id, actFull.id]))
+    // PDTP-003: el fixture no asocia faenas; se declara el alcance corporativo,
+    // que es lo que este programa ya significaba antes de tener que decirlo.
+    await inMemoryDb.update(schema.pdtpPrograms).set({ appliesToAllWorksites: true })
+      .where(eq(schema.pdtpPrograms.id, program.id))
     await submitPdtpProgramForReview(program.id, "user-1")
     await approvePdtpProgramJdpr(program.id, "user-jdpr")
     await signPdtpProgramLegal(program.id, "user-legal")
@@ -1213,6 +1236,49 @@ describe("prevention PDTP service", () => {
     const excluded = await getPdtpComplianceIndicators(program.id, "ws-1")
     const full = await getPdtpComplianceIndicators(program.id, "ws-2")
     expect(excluded!.annual.planned).toBe(full!.annual.planned)
+  })
+
+  /**
+   * PDTP-003 (auditoría 2026-09-14) — Un programa sin faenas declaradas se
+   * aplicaba a todas. `resolvePdtpActiveProgramForEvent` trataba
+   * `members.length === 0` como "cualquier faena", así que un programa creado
+   * y activado antes de asignarle faenas absorbía las acreditaciones de toda
+   * la organización. Podía ser deliberado —un programa corporativo— pero era
+   * indistinguible de uno mal configurado, y nada obligaba a decirlo.
+   */
+  it("no activa un programa que no declara faenas ni declara que aplica a todas", async () => {
+    const { approvePdtpProgramJdpr, signPdtpProgramLegal, activatePdtpProgram } = await import("@/lib/services/prevention-pdtp")
+    const { program } = await loadCatalog()
+    const programId = program.id
+    // `prepareProgramForReview` declara el alcance corporativo del fixture; acá
+    // se deshace justamente eso: el programa vuelve a no declarar nada.
+    await submitForReview(programId)
+    await inMemoryDb.update(schema.pdtpPrograms).set({ appliesToAllWorksites: false })
+      .where(eq(schema.pdtpPrograms.id, programId))
+    await approvePdtpProgramJdpr(programId, "user-jdpr")
+    await signPdtpProgramLegal(programId, "user-legal")
+
+    await expect(activatePdtpProgram(programId, "user-jdpr")).rejects.toThrow(/alcance corporativo/i)
+
+    // Declarado el alcance, el mismo programa activa: lo que se exige es la
+    // declaración, no una lista de faenas. Se escribe directo porque
+    // `setPdtpProgramWorksites` sólo opera en borrador —la membresía es
+    // contenido firmable— y este programa ya está en revisión.
+    await inMemoryDb.update(schema.pdtpPrograms).set({ appliesToAllWorksites: true })
+      .where(eq(schema.pdtpPrograms.id, programId))
+    const activated = await activatePdtpProgram(programId, "user-jdpr")
+    expect(activated.status).toBe("active")
+    expect(activated.appliesToAllWorksites).toBe(true)
+  })
+
+  it("declarar faenas apaga el alcance corporativo: las dos cosas juntas se contradicen", async () => {
+    const { setPdtpProgramWorksites } = await import("@/lib/services/pdtp/worksites")
+    const { program } = await loadCatalog()
+    await setPdtpProgramWorksites(program.id, [], "user-1", "all", true)
+    await setPdtpProgramWorksites(program.id, ["ws-1"], "user-1", "all")
+    const [after] = await inMemoryDb.select().from(schema.pdtpPrograms)
+      .where(eq(schema.pdtpPrograms.id, program.id))
+    expect(after?.appliesToAllWorksites).toBe(false)
   })
 
   it("program lifecycle freezes a digest and segregates draft → review → active", async () => {
@@ -3189,6 +3255,10 @@ describe("prevention PDTP service", () => {
     }, "user-1")
     await inMemoryDb.update(schema.pdtpActivities).set({ mechanism: "constancia" })
       .where(eq(schema.pdtpActivities.id, activity.id))
+    // PDTP-003: el fixture no asocia faenas; se declara el alcance corporativo,
+    // que es lo que este programa ya significaba antes de tener que decirlo.
+    await inMemoryDb.update(schema.pdtpPrograms).set({ appliesToAllWorksites: true })
+      .where(eq(schema.pdtpPrograms.id, program.id))
     await submitPdtpProgramForReview(program.id, "user-1")
     await approvePdtpProgramJdpr(program.id, "user-jdpr")
     await signPdtpProgramLegal(program.id, "user-legal")
@@ -3340,6 +3410,10 @@ describe("prevention PDTP service", () => {
     }, "user-1")
     await inMemoryDb.update(schema.pdtpActivities).set({ mechanism: "constancia" })
       .where(eq(schema.pdtpActivities.id, activity.id))
+    // PDTP-003: el fixture no asocia faenas; se declara el alcance corporativo,
+    // que es lo que este programa ya significaba antes de tener que decirlo.
+    await inMemoryDb.update(schema.pdtpPrograms).set({ appliesToAllWorksites: true })
+      .where(eq(schema.pdtpPrograms.id, program.id))
     await submitPdtpProgramForReview(program.id, "user-1")
     await approvePdtpProgramJdpr(program.id, "user-jdpr")
     await signPdtpProgramLegal(program.id, "user-legal")

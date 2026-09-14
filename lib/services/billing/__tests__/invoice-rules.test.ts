@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest"
 import {
   computePayloadHash,
   derivePaymentStatus,
+  outstandingAmountFor,
   resolveDueDate,
   addDays,
   daysOverdue,
@@ -173,7 +174,26 @@ describe("derivePaymentStatus", () => {
   it("detecta sobrepago en vez de esconderlo como pagado", () => {
     const result = derivePaymentStatus(1190000, [1200000])
     expect(result.paymentStatus).toBe("overpaid")
-    expect(result.outstandingAmount).toBe(-10000)
+  })
+
+  // FVE-003. Esta prueba AFIRMABA LO CONTRARIO —`toBe(-10000)`—, consagrando el
+  // defecto: el sobrepago devolvía un pendiente negativo mientras el caso
+  // `paid` devolvía 0, y cualquier cartera que sumara ese saldo restaba de más
+  // y compensaba deuda real de otras facturas. Lo pendiente de un documento
+  // cubierto de sobra es cero; el exceso se lee en `paidAmount`.
+  it("una factura sobrepagada no informa pendiente negativo", () => {
+    const result = derivePaymentStatus(1190000, [1200000])
+    expect(result.paidAmount).toBe(1200000)
+    expect(result.outstandingAmount).toBe(0)
+  })
+
+  // El recorte del sobrepago no puede tapar el caso inverso: una cobertura de
+  // signo contrario HACE CRECER lo pendiente y eso se conserva.
+  it("recorta el sobrepago sin recortar el pendiente que crece", () => {
+    expect(outstandingAmountFor(1190000, 1200000)).toBe(0)
+    expect(outstandingAmountFor(-1190000, -1200000)).toBe(0)
+    expect(outstandingAmountFor(1190000, -1190000)).toBe(2380000)
+    expect(outstandingAmountFor(1190000, 500000)).toBe(690000)
   })
 
   it("trata una nota de crédito (total negativo) por su magnitud", () => {

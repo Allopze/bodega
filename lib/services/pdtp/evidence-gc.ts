@@ -28,8 +28,8 @@
  */
 import { promises as fs } from "node:fs"
 import { db } from "@/db"
-import { pdtpExecutions, preventionCapaEvidence, preventionInspectionAnswerEvidence } from "@/db/schema"
-import { resolveInspectionEvidenceDir, resolvePdtpEvidenceDir } from "@/lib/storage/config"
+import { pdtpExecutions, preventionCapaEvidence, preventionInspectionAnswerEvidence, preventionRiskMapLayouts } from "@/db/schema"
+import { resolveInspectionEvidenceDir, resolvePdtpEvidenceDir, resolveRiskMapDir } from "@/lib/storage/config"
 import { logger } from "@/lib/logger"
 
 const DEFAULT_OLDER_THAN_MS = 60 * 60 * 1000 // 1 hora
@@ -183,5 +183,54 @@ export async function cleanupInspectionEvidenceOrphans(
   }, result)
 
   logger.info("[inspections/evidence-gc] done", { ...result, dryRun })
+  return result
+}
+
+/**
+ * Recolector del directorio `storage/risk-map/` (MIP-002).
+ *
+ * Los planos de riesgo no tenían recolección de ninguna clase: subir uno nuevo
+ * archiva el anterior —el histórico de planos es evidencia y se conserva a
+ * propósito— pero un plano que nunca llegó a registrarse en base, o cuya fila
+ * desapareció con su faena por cascada, quedaba en disco para siempre. Nada
+ * distinguía "histórico conservado a propósito" de "archivo olvidado".
+ *
+ * **Sólo se borra lo que NINGUNA fila referencia**, esté activa o archivada:
+ * eso no necesita una política de retención, que es justamente lo que la
+ * plataforma todavía no declara. Un plano archivado y referenciado se conserva
+ * intacto; cuánto tiempo debe conservarse es una decisión pendiente.
+ *
+ * Productor único del directorio: `POST /api/prevencion/miper/mapa`, que
+ * vincula el archivo a `prevention_risk_map_layouts.image_path`. La ventana de
+ * gracia (`olderThanMs`) existe por lo mismo que en PDTP: el archivo se sube
+ * antes de que exista la fila que lo referencia.
+ */
+export async function cleanupRiskMapOrphans(
+  options: CleanupPdtpEvidenceOrphansOptions = {},
+): Promise<CleanupPdtpEvidenceOrphansResult> {
+  const olderThanMs = options.olderThanMs ?? DEFAULT_OLDER_THAN_MS
+  const dryRun = options.dryRun ?? false
+  const result: CleanupPdtpEvidenceOrphansResult = {
+    scanned: 0, deleted: 0, kept: 0, failed: 0, deletedNames: [],
+  }
+
+  const referenced = new Set<string>()
+  // Sin filtro por `status`: un plano ARCHIVADO sigue siendo evidencia y su
+  // archivo no es huérfano. Recolectar por estado sería tomar la decisión de
+  // retención que nadie declaró.
+  const rows = await db.select({ imagePath: preventionRiskMapLayouts.imagePath })
+    .from(preventionRiskMapLayouts)
+  for (const row of rows) {
+    const name = row.imagePath.split("/").pop()
+    if (name) referenced.add(name)
+  }
+
+  await sweepOrphans({
+    dir: resolveRiskMapDir(),
+    referenced, olderThanMs, dryRun,
+    label: "risk-map/evidence-gc",
+  }, result)
+
+  logger.info("[risk-map/evidence-gc] done", { ...result, dryRun })
   return result
 }
