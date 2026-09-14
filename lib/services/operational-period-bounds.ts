@@ -17,6 +17,12 @@ export interface OperationalPeriodBounds {
   previousEnd: string
 }
 
+const CHILE_MONTH_FORMATTER = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Santiago",
+  year: "numeric",
+  month: "2-digit",
+})
+
 function isoStartOfMonth(year: number, month: number) {
   return new Date(Date.UTC(year, month, 1)).toISOString()
 }
@@ -34,9 +40,7 @@ export function getOperationalCalendarBounds(
   now = new Date(),
   period: OperationalPeriodSpan = "mes",
 ): OperationalPeriodBounds {
-  const dateParts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Santiago", year: "numeric", month: "2-digit",
-  }).formatToParts(now)
+  const dateParts = CHILE_MONTH_FORMATTER.formatToParts(now)
   const year = Number(dateParts.find((part) => part.type === "year")?.value)
   const month = Number(dateParts.find((part) => part.type === "month")?.value) - 1
 

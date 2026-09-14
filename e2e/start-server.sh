@@ -83,7 +83,12 @@ else
   # build autoconsistente.
   rm -rf .next
 
-  DATABASE_URL="$DB_URL" \
+  # La build de Next no debe consultar ni depender de los datos E2E poblados.
+  # Docker ya usa una URL inerte para esta fase; mantener la misma separación
+  # evita que el resultado de compilación dependa del fixture y deja la base
+  # E2E exclusivamente para el servidor que se inicia después.
+  BUILD_DATABASE_URL="${E2E_BUILD_DATABASE_URL:-postgres://build:build@127.0.0.1:65432/build}"
+  DATABASE_URL="$BUILD_DATABASE_URL" \
   AUTH_SECRET="$AUTH_SECRET_VALUE" \
   NEXTAUTH_SECRET="$AUTH_SECRET_VALUE" \
   APP_URL="$APP_URL_VALUE" \
