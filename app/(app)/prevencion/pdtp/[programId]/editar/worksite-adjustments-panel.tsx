@@ -296,7 +296,12 @@ function AdjustmentDialog({
                           return (
                             <TableCell key={week}>
                               <Input
-                                aria-label={`${month} semana ${week}`}
+                                /* El nombre accesible repite lo que se ve: la fila
+                                   se rotula "Ene" y la columna "S1", así que un
+                                   `${month}` crudo anunciaba "1 semana 1" —un
+                                   número sin mes— y no coincidía con la etiqueta
+                                   visible. */
+                                aria-label={`${MONTH_LABELS[month - 1]} semana ${week}`}
                                 className="h-8 min-w-20"
                                 type="number"
                                 min={0}

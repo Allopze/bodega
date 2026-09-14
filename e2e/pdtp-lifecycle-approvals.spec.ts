@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { login } from "./helpers"
+import { expectPageTitle, login } from "./helpers"
 
 /**
  * E2E: PDTP — Ciclo de vida del programa y flujo de aprobaciones.
@@ -29,12 +29,21 @@ test.describe("PDTP — Ciclo de vida y aprobaciones", () => {
 
   test("la página de aprobaciones muestra la tabla o el estado sin pendientes", async ({ page }) => {
     await page.goto("/prevencion/pdtp/aprobaciones")
+    // Que la página cargó se afirma aparte: sin esto, un /forbidden o un 500 se
+    // leían igual que "no hay ni tabla ni vacío".
+    await expectPageTitle(page, "Aprobaciones PDTP")
 
-    // Verifica que exista o la tabla de aprobaciones o el mensaje sin pendientes
-    const hasTable = await page.getByRole("table").isVisible().catch(() => false)
-    const hasEmptyState = await page.getByText("Sin pendientes").isVisible().catch(() => false)
-
-    expect(hasTable || hasEmptyState).toBeTruthy()
+    /* `isVisible().catch(() => false)` sobre `getByRole("table")` se tragaba el
+     * modo estricto: en la suite completa otros specs dejan aprobaciones
+     * pendientes, la tabla se pinta con su cabecera fija —dos `<table>`— y la
+     * violación de strict mode volvía como `false`, de modo que el caso fallaba
+     * con "Received: false" sin decir que la tabla SÍ estaba.
+     *
+     * `.or()` afirma lo que el caso quiere —uno de los dos estados— y falla
+     * mostrando cuál faltó. */
+    const tabla = page.getByRole("table").first()
+    const sinPendientes = page.getByText("Sin pendientes")
+    await expect(tabla.or(sinPendientes).first()).toBeVisible({ timeout: 15_000 })
   })
 
   test("el detalle del programa muestra la tarjeta de estado del ciclo de vida", async ({ page }) => {
