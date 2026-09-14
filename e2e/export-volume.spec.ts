@@ -89,8 +89,14 @@ test("exportes: la columna de estado usa lenguaje de negocio, no el enum", async
 
   for (const tipo of ["gasto_faena", "oc_por_estado", "dte_libro_compras"]) {
     const response = await page.request.get(`/api/reportes/export?tipo=${tipo}`)
+    // Se comprueba la respuesta ANTES de abrirla: un 500 llegaba a ExcelJS como
+    // "Can't find end of central directory : is this a zip file?", que no dice
+    // ni qué informe falló ni que la ruta haya respondido un error.
+    expect(response.status(), `${tipo} no respondió 200: ${(await response.text()).slice(0, 300)}`).toBe(200)
+    const cuerpo = Buffer.from(await response.body())
+    expect(cuerpo.length, `${tipo} devolvió un archivo vacío`).toBeGreaterThan(0)
     const workbook = new ExcelJS.Workbook()
-    await workbook.xlsx.load(Buffer.from(await response.body()) as never)
+    await workbook.xlsx.load(cuerpo as never)
     const worksheet = workbook.worksheets[0]!
     const encabezados = (worksheet.getRow(1).values as unknown[]).slice(1)
     const columna = encabezados.findIndex((cell) => cell === "Estado" || cell === "Estado plataforma") + 1
