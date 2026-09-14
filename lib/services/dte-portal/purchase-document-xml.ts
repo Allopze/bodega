@@ -1,11 +1,10 @@
-import path from "node:path"
 import { promises as fs } from "node:fs"
 import { and, eq, isNull, notInArray, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { dteDocumentItems, dteDocuments } from "@/db/schema"
 import { cleanRut } from "@/lib/rut"
 import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
-import { createDtePath, resolveDteDir } from "@/lib/storage/config"
+import { createDtePath, resolveDteDir, resolveStorageFile } from "@/lib/storage/config"
 import { DtePortalClient } from "./client"
 import { buildDtePortalClientConfig, readDtePortalConfig } from "./config"
 import { downloadDteXml } from "./download"
@@ -203,7 +202,7 @@ function toDetail(parsed: DteData): DteXmlDetail {
 async function cacheVerifiedXml(doc: DteDocumentIdentity, buffer: Buffer, parsed: DteData) {
   const storageName = `${Date.now()}-${doc.id}-${doc.tipoDte}-${doc.folio}.xml`
   const storageDir = resolveDteDir()
-  const absolutePath = path.join(storageDir, storageName)
+  const absolutePath = resolveStorageFile(storageDir, storageName)
   try {
     await mkdirp(storageDir)
     await writeBuffer(absolutePath, buffer)

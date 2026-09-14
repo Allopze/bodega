@@ -6,7 +6,7 @@ import { login, expectPageTitle } from "./helpers"
  *
  * Cubre:
  *   • Renderizado de la bandeja de sesiones de capacitación y competencias.
- *   • Navegación al catálogo de cursos y versiones publicadas.
+ *   • Navegación al catálogo de capacitación y versiones publicadas.
  *   • Visualización de brechas de capacitación y reconocimientos pendientes.
  *   • Exportación de registros de capacitación a Excel.
  */
@@ -21,10 +21,10 @@ test.describe("Prevención — Capacitaciones y ODI", () => {
     await expect(page).toHaveURL(/\/prevencion\/capacitacion/)
     await expectPageTitle(page, "Capacitación y competencias")
 
-    // Navegación al catálogo de cursos
+    // Navegación al catálogo de capacitación
     await page.goto("/prevencion/capacitacion/catalogo")
     await expect(page).toHaveURL(/\/prevencion\/capacitacion\/catalogo/)
-    await expectPageTitle(page, /Catálogo de cursos|Cursos de capacitación/i)
+    await expectPageTitle(page, "Catálogo de capacitación")
   })
 
   test("exportar entrega el consolidado de capacitaciones en Excel", async ({ page }) => {

@@ -202,8 +202,13 @@ export async function buildInspectionExport(
     // llamarse igual.
     filenameBase: `inspecciones${filter.kinds?.length ? `_${filter.kinds.join("-")}` : ""}${filter.status || filter.worksiteId || filter.search || filter.view ? "_filtradas" : ""}_${todayInChile()}`,
     worksheetName: sheets[0]!.worksheetName,
-    headers: sheets[0]!.headers,
-    rows: sheets[0]!.rows,
+    /* Vacías a propósito: `sheets` son hojas ADICIONALES a la primaria, no un
+     * reemplazo. Copiar acá la primera de `sheets` venía de cuando el builder
+     * descartaba la primaria si el reporte traía `sheets`; corregido aquel
+     * contrato, la duplicación se volvió visible y el libro salía con la
+     * primera hoja dos veces ("Expediente" y "Expediente (2)"). */
+    headers: [],
+    rows: [],
     sheets,
   }
 }

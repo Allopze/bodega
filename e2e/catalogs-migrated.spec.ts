@@ -28,8 +28,13 @@ test.describe("Catálogos administrativos migrados", () => {
   test("el hub de flota enlaza las superficies canónicas", async ({ page }) => {
     await page.goto("/admin/flota-catalogos")
     await expect(page.getByRole("heading", { name: "Catálogos de flota" })).toBeVisible()
-    await expect(page.getByRole("link", { name: /Vehículos/ })).toHaveAttribute("href", "/admin/flota-catalogos/vehiculos")
-    await expect(page.getByRole("link", { name: /Proveedores de combustible/ })).toHaveAttribute("href", "/admin/flota-catalogos/proveedores-combustible")
+    // Acotado a `<main>`: desde que el panel lateral de administración lista los
+    // hijos de "Catálogos de flota", cada destino existe dos veces y ambas
+    // visibles, así que filtrar por visibilidad no desempata. Lo que esta prueba
+    // afirma es lo que ofrece el hub, no lo que ofrece el panel.
+    const hub = page.getByRole("main")
+    await expect(hub.getByRole("link", { name: /Vehículos/ })).toHaveAttribute("href", "/admin/flota-catalogos/vehiculos")
+    await expect(hub.getByRole("link", { name: /Proveedores de combustible/ })).toHaveAttribute("href", "/admin/flota-catalogos/proveedores-combustible")
   })
 
   test("vehículos mantienen edición, desactivación y reactivación", async ({ page }) => {

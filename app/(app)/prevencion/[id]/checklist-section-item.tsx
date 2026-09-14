@@ -160,10 +160,11 @@ export function ItemField({
                     <p className="mt-1 text-sm font-medium leading-5 text-(--color-text)">{item.label}</p>
                   </div>
                   <div className="grid gap-1.5">
-                    <label className="text-[11px] font-semibold uppercase tracking-wide text-text-subtle">
+                    <label htmlFor={`${item.id}-observacion`} className="text-[11px] font-semibold uppercase tracking-wide text-text-subtle">
                       Observación
                     </label>
                     <Textarea
+                      id={`${item.id}-observacion`}
                       autoFocus
                       placeholder="Agrega una nota breve..."
                       value={noteDraft}
@@ -208,10 +209,11 @@ export function ItemField({
         )}
         {needsCorrectiveAction && (
           <div className="grid gap-1.5 rounded-(--radius-lg) border border-(--color-danger-line) bg-(--color-danger-tint) p-3">
-            <label className="text-[11px] font-semibold uppercase tracking-wide text-(--color-danger)">
+            <label htmlFor={`${item.id}-accion-correctiva`} className="text-[11px] font-semibold uppercase tracking-wide text-(--color-danger)">
               Acción correctiva requerida
             </label>
             <Textarea
+              id={`${item.id}-accion-correctiva`}
               placeholder="Define responsable, acción y plazo..."
               value={resp.accionCorrectiva}
               onChange={(e) => onChange({ accionCorrectiva: e.target.value })}

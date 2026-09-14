@@ -42,8 +42,8 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
     const cwd = process.cwd()
 
     const candidatePaths = [
-      ...(scriptsPath ? [path.join(scriptsPath, "backup-orchestrator.sh")] : []),
-      path.resolve(cwd, "scripts", "backup-orchestrator.sh"),
+      ...(scriptsPath ? [path.join(/*turbopackIgnore: true*/ scriptsPath, "backup-orchestrator.sh")] : []),
+      path.resolve(/*turbopackIgnore: true*/ cwd, "scripts", "backup-orchestrator.sh"),
       "/srv/bodega/scripts/backup-orchestrator.sh",
     ]
 
@@ -87,9 +87,14 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
     }
 
     // ── 3. Asegurar directorios ───────────────────────────────────────────
+    // `BACKUP_DIR` es una ruta del host, no del almacenamiento de la app, así que estos
+    // joins no pasan por `lib/storage`. Llevan el `turbopackIgnore` en línea —igual que
+    // `lib/services/backups.ts`— porque sin él Turbopack los evalúa como patrón de archivo
+    // y trazaba el proyecto entero: esta sola ruta metía los 10.230 archivos de `storage/`
+    // en el artefacto de despliegue.
     const backupDir = process.env.BACKUP_DIR || "/srv/bodega/backups"
-    await fs.mkdir(path.join(backupDir, "snapshots"), { recursive: true })
-    await fs.mkdir(path.join(backupDir, "pg"), { recursive: true })
+    await fs.mkdir(path.join(/*turbopackIgnore: true*/ backupDir, "snapshots"), { recursive: true })
+    await fs.mkdir(path.join(/*turbopackIgnore: true*/ backupDir, "pg"), { recursive: true })
 
     // ── 4. Ejecutar el orquestador ────────────────────────────────────────
     // Leer configuración persistida para timeout y retención
@@ -135,8 +140,8 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
     })
 
     // ── 5. Leer manifest.json con las métricas reales ─────────────────────
-    const snapshotDir = path.join(backupDir, "snapshots", today)
-    const manifestPath = path.join(snapshotDir, "manifest.json")
+    const snapshotDir = path.join(/*turbopackIgnore: true*/ backupDir, "snapshots", today)
+    const manifestPath = path.join(/*turbopackIgnore: true*/ snapshotDir, "manifest.json")
 
     let manifest: Record<string, unknown> | null = null
     try {
@@ -146,10 +151,10 @@ export async function triggerManualBackupAction(): Promise<BackupActionResult> {
       // El snapshots puede crearse con la fecha-hora (YYYY-MM-DD-HHMMSS),
       // no solo con la fecha. Buscar el más reciente.
       try {
-        const entries = await fs.readdir(path.join(backupDir, "snapshots"))
+        const entries = await fs.readdir(path.join(/*turbopackIgnore: true*/ backupDir, "snapshots"))
         const latest = entries.filter((e) => e.startsWith(today)).sort().reverse()[0]
         if (latest) {
-          const altManifest = path.join(backupDir, "snapshots", latest, "manifest.json")
+          const altManifest = path.join(/*turbopackIgnore: true*/ backupDir, "snapshots", latest, "manifest.json")
           const raw = await fs.readFile(altManifest, "utf-8")
           manifest = JSON.parse(raw)
         }

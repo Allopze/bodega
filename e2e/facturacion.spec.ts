@@ -136,13 +136,16 @@ test.describe("Facturación — centro de sincronización", () => {
     await login(page)
     await page.goto("/facturacion/sincronizacion")
 
-    const fel = page.locator("article").filter({ hasText: "FacturaEnLínea" }).first()
-    // El entorno e2e no tiene credenciales del portal: eso es una tarea
-    // pendiente, no una caída.
-    await expect(fel.getByText("Sin configurar")).toBeVisible()
-    await expect(fel.getByText(/no es una falla/i)).toBeVisible()
+    // Se mira Chipax y no FacturaEnLínea: `e2e/start-server.sh` pasa
+    // `DTE_PORTAL_CODEMP` al servidor, así que el portal DTE sí queda
+    // configurado en este entorno y su ficha dice "Sin comprobar", que es otro
+    // estado. Chipax no tiene credenciales acá, y es el caso que esta prueba
+    // describe: falta configurar, no está caído.
+    const sinCredenciales = page.locator("article").filter({ hasText: "Chipax" }).first()
+    await expect(sinCredenciales.getByText("Sin configurar")).toBeVisible()
+    await expect(sinCredenciales.getByText(/no es una falla/i)).toBeVisible()
     // Y sin credenciales no tiene sentido ofrecer la comprobación.
-    await expect(fel.getByRole("button", { name: "Probar conexión" })).toBeDisabled()
+    await expect(sinCredenciales.getByRole("button", { name: "Probar conexión" })).toBeDisabled()
   })
 
   test("la comprobación de conexión es por proveedor y a pedido", async ({ page }) => {

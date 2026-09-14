@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test"
-import { expectPageTitle, login } from "./helpers"
+import { confirmarDeclararEjecutada, crearInspeccion as crearInspeccionE2E, expectPageTitle, login, responderItemInspeccion, textoVisible } from "./helpers"
 
 /**
  * E2E Spec: Flujo Integral Multimódulo de Inspecciones SST.
@@ -12,37 +12,9 @@ import { expectPageTitle, login } from "./helpers"
  *   5. Impacto en cumplimiento PDTP e indicadores generales de Prevención.
  */
 
-const PLANTILLA = "Inspección de Estado de Extintores"
-const RUN = Date.now().toString(36).toUpperCase().slice(-5)
-let contador = 0
+const crearInspeccion = async (page: Page) => (await crearInspeccionE2E(page, { prefijo: "E2E-INT" })).identificacion
 
-async function crearInspeccion(page: Page) {
-  const identificacion = `E2E-INT-${RUN}-${++contador}`
-  await page.goto("/prevencion/inspecciones")
-  await expectPageTitle(page, "Inspecciones")
-
-  await page.getByRole("button", { name: "Nueva inspección" }).click()
-  const dialog = page.getByRole("dialog", { name: "Nueva inspección" })
-  await dialog.getByLabel("Plantilla").click()
-  await page.getByRole("option", { name: new RegExp(`^${PLANTILLA} · E2E$`) }).click()
-  await dialog.getByLabel("Faena de la inspección").click()
-  await page.getByRole("option", { name: "Faena E2E", exact: true }).click()
-  await dialog.locator('input[name="subjectType"]').fill("extintor")
-  await dialog.locator('input[name="subjectLabel"]').fill(identificacion)
-  await dialog.getByRole("button", { name: "Crear" }).click()
-  await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
-
-  const fila = page.getByRole("row").filter({ hasText: identificacion }).first()
-  await expect(fila).toBeVisible({ timeout: 30_000 })
-  await fila.getByRole("link").first().click()
-  await expect(page).toHaveURL(/\/prevencion\/inspecciones\/[^/?]+$/, { timeout: 30_000 })
-  return identificacion
-}
-
-async function responderItem(page: Page, item: string, resultado: string) {
-  await page.getByLabel(`Resultado de ${item}`).click()
-  await page.getByRole("option", { name: resultado, exact: true }).click()
-}
+const responderItem = responderItemInspeccion
 
 test.describe("Inspecciones — Flujo Integral y Trazabilidad CAPA / PDTP", () => {
   test.beforeEach(async ({ page }) => {
@@ -54,9 +26,9 @@ test.describe("Inspecciones — Flujo Integral y Trazabilidad CAPA / PDTP", () =
     await crearInspeccion(page)
 
     for (const item of ["Sello", "Rótulo", "Manguera", "Certificado CECMEC"]) {
-      await responderItem(page, item, "Cumple")
+      await responderItem(page, item, "Bueno")
     }
-    await responderItem(page, "Manómetro", "No cumple")
+    await responderItem(page, "Manómetro", "Malo", "Aguja en zona roja: presión bajo el mínimo.")
 
     await page.getByLabel("Resultado del acta").click()
     await page.getByRole("option", { name: "Con observaciones", exact: true }).click()
@@ -66,13 +38,11 @@ test.describe("Inspecciones — Flujo Integral y Trazabilidad CAPA / PDTP", () =
     await page.getByLabel("Firma de supervisor").fill("Comprador E2E")
 
     await page.getByRole("button", { name: "Declarar ejecutada" }).click()
-    const dialogConfirm = page.getByRole("dialog")
-    await dialogConfirm.getByRole("button", { name: "Declarar ejecutada" }).click()
-    await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
+    await confirmarDeclararEjecutada(page)
 
     await page.reload()
-    await expect(page.getByText("Ejecutada").first()).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByText("80%", { exact: true })).toBeVisible()
+    await expect(textoVisible(page, "Pendiente de revisión").first()).toBeVisible({ timeout: 15_000 })
+    await expect(textoVisible(page, "80%").first()).toBeVisible()
 
     // 2. Localizar el hallazgo generado y derivarlo a CAPA
     const filaHallazgo = page.getByRole("row").filter({ hasText: "Manómetro: aguja en zona verde." })

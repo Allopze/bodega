@@ -22,9 +22,16 @@ let client: postgres.Sql | undefined
 let testDb: ReturnType<typeof drizzle<typeof schema>> | undefined
 
 const scopeA = { mode: "some", ids: ["ws-hy-a"] } as WorksiteScope
-const HYGIENIST = { userId: "hy-manager", scope: scopeA, permissions: ["prevention:hygiene:view", "prevention:hygiene:manage", "prevention:hygiene:measure"] }
+/* `manage` quedó para el catálogo normativo de agentes —global, sin faena— y
+ * `assess` para los grupos de exposición y los programas de vigilancia, que sí
+ * son de una faena. El fixture se quedó sin el segundo cuando se separaron, así
+ * que la primera llamada de la suite moría en `requireAccess` y arrastraba a
+ * todo lo demás. */
+const HYGIENIST = { userId: "hy-manager", scope: scopeA, permissions: ["prevention:hygiene:view", "prevention:hygiene:manage", "prevention:hygiene:assess", "prevention:hygiene:measure"] }
 const VIEWER = { userId: "hy-viewer", scope: scopeA, permissions: ["prevention:hygiene:view"] }
-const OUTSIDER = { userId: "hy-outsider", scope: { mode: "some", ids: ["ws-hy-b"] } as WorksiteScope, permissions: ["prevention:hygiene:view", "prevention:hygiene:manage", "prevention:hygiene:measure"] }
+/* Con los mismos permisos que el higienista: lo que le falta es alcance sobre la
+ * faena, y es por ahí por donde tiene que ser rechazado, no por permiso. */
+const OUTSIDER = { userId: "hy-outsider", scope: { mode: "some", ids: ["ws-hy-b"] } as WorksiteScope, permissions: ["prevention:hygiene:view", "prevention:hygiene:manage", "prevention:hygiene:assess", "prevention:hygiene:measure"] }
 
 function getDb() {
   if (!testDb) throw new Error("Test database not initialised")

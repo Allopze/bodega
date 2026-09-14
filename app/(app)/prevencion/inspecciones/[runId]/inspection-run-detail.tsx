@@ -591,6 +591,17 @@ export function InspectionRunDetail({
    * contador que sube en cada edición cumple sin serializar el mapa completo en
    * cada render. Mismo patrón que `use-checklist-responses.ts` en el motor SST. */
   const [revision, setRevision] = React.useState(0)
+  /* Hasta qué revisión llegó lo ya persistido. Sin esto `isDirty` era
+   * `revision > 0`, que después de la primera edición nunca vuelve a ser falso:
+   * el rótulo decía "Cambios sin guardar" justo después de guardar y el
+   * `beforeunload` del hook retenía cada salida del navegador con todo ya
+   * persistido. */
+  const [savedRevision, setSavedRevision] = React.useState(0)
+  /* La revisión que viajó en el envío en vuelo. `answersPayload()` se congela al
+   * llamar a la acción, así que lo persistido es esa revisión y no la que haya
+   * cuando llegue la respuesta: editar durante el envío debe dejar el formulario
+   * sucio, no darlo por guardado. */
+  const revisionInFlight = React.useRef(0)
   const [restoredDraft, setRestoredDraft] = React.useState(false)
 
   /* Espejo local recuperado. Sólo se aplica si es MÁS nuevo que lo que trae el
@@ -897,7 +908,17 @@ export function InspectionRunDetail({
   }
 
   function saveAnswers() {
-    operation.run(() => saveInspectionAnswersAction(answersPayload()), applySavedAnswerRefs)
+    const sending = revision
+    operation.run(() => saveInspectionAnswersAction(answersPayload()), (result) => {
+      applySavedAnswerRefs(result)
+      setSavedRevision(sending)
+      // El botón persiste exactamente lo mismo que el autoguardado, así que el
+      // espejo del dispositivo tampoco tiene ya nada que rescatar. Sin esto,
+      // `readInspectionDraft` lo restauraba al remontar y la pantalla avisaba
+      // "Se recuperaron respuestas sin enviar" sobre respuestas ya guardadas.
+      clearInspectionDraft(run.id)
+      setRestoredDraft(false)
+    })
   }
 
   /* INS-02: espejo del borrador en el propio dispositivo. Se escribe en cada
@@ -905,9 +926,14 @@ export function InspectionRunDetail({
    * al servidor es justo lo que falla, y el espejo es lo único que sobrevive a
    * cerrar la pestaña sin señal. */
   React.useEffect(() => {
-    if (!editable || revision === 0) return
+    // `revision <= savedRevision` es "no hay nada sin enviar". Comparar contra 0
+    // no bastaba: un guardado exitoso sube `version`, que es dependencia de este
+    // efecto, así que volvía a escribir el espejo que `onSaved` acababa de
+    // borrar y al remontar la pantalla avisaba de respuestas sin enviar que sí
+    // estaban guardadas.
+    if (!editable || revision <= savedRevision) return
     writeInspectionDraft(run.id, { version, savedAt: new Date().toISOString(), drafts })
-  }, [editable, revision, drafts, run.id, version])
+  }, [editable, revision, savedRevision, drafts, run.id, version])
 
   /* Autoguardado contra el servidor, con el mismo camino de escritura que el
    * botón. Reusa el hook que ya usa el motor SST para sus checklists — hasta
@@ -918,10 +944,14 @@ export function InspectionRunDetail({
    * igual y el hook reintentaría en bucle contra una guarda. */
   const autosave = useDebouncedAutosave({
     watchKey: revision,
-    isDirty: revision > 0,
-    onSave: () => saveInspectionAnswersAction(answersPayload()),
+    isDirty: revision > savedRevision,
+    onSave: () => {
+      revisionInFlight.current = revision
+      return saveInspectionAnswersAction(answersPayload())
+    },
     onSaved: (result) => {
       applySavedAnswerRefs(result)
+      setSavedRevision(revisionInFlight.current)
       // Persistido: el espejo dejó de tener nada que rescatar.
       clearInspectionDraft(run.id)
       setRestoredDraft(false)

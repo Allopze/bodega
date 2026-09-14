@@ -1,7 +1,6 @@
 "use server"
 
 import { promises as fs } from "node:fs"
-import path from "node:path"
 import { revalidatePath } from "next/cache"
 import { guardPermission } from "@/lib/auth/can"
 import { createReport, updateReportStatus, type FeedbackAttachmentInput } from "@/lib/services/feedback"
@@ -9,7 +8,7 @@ import { feedbackCreateSchema, feedbackUpdateStatusSchema } from "@/lib/validati
 import { FEEDBACK_ESTADO_LABELS } from "@/lib/validation/feedback"
 import type { ActionState } from "@/lib/validation/feedback"
 import { notifyAfterCommit, getUserIdsWithPermission, notifyManyUser } from "@/lib/services/notifications"
-import { resolveStorageDir } from "@/lib/storage/config"
+import { resolveFeedbackDir, resolveStorageFile } from "@/lib/storage/config"
 import { getOperationalSettings } from "@/lib/services/system-settings"
 import { nanoid } from "@/lib/id"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
@@ -71,9 +70,9 @@ export async function createReportAction(
 
       const safeName = sanitizeFileName(file.name || "adjunto")
       const storageName = `${Date.now()}-${nanoid()}-${safeName}`
-      const feedbackDir = path.join(resolveStorageDir(), "feedback")
+      const feedbackDir = resolveFeedbackDir()
       const relativePath = `${FEEDBACK_PREFIX}${storageName}`
-      const absolutePath = path.join(feedbackDir, storageName)
+      const absolutePath = resolveStorageFile(feedbackDir, storageName)
       const temporaryPath = `${absolutePath}.tmp`
 
       await fs.mkdir(feedbackDir, { recursive: true })

@@ -6,6 +6,7 @@ import { recordAudit } from "@/lib/audit"
 import { mkdirp, writeBuffer, removeFile } from "@/lib/storage/helpers"
 import path from "node:path"
 import type { RequestModuleConfig, AddQuotationInput } from "../request-config"
+import { resolveStorageFile } from "@/lib/storage/config"
 
 export async function addQuotation(
   config: Pick<RequestModuleConfig, "requestType" | "quotationsTable" | "quotationEntityType" | "storage">,
@@ -31,7 +32,7 @@ export async function addQuotation(
 
   const ext = path.extname(input.fileName) || ".pdf"
   const storageName = `${nanoid()}${ext}`
-  const absolutePath = path.join(/*turbopackIgnore: true*/ dir, storageName)
+  const absolutePath = resolveStorageFile(dir, storageName)
   await writeBuffer(absolutePath, input.fileBuffer)
 
   const filePath = config.storage.createPath(storageName)

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test"
-import { login, expectPageTitle } from "./helpers"
+import { expectPageTitle, login, textoVisible } from "./helpers"
 
 /**
  * E2E Spec: Inspecciones y Auditorías de Seguridad.
@@ -35,14 +35,14 @@ test.describe("Prevención — Inspecciones y auditorías", () => {
     await page.goto("/prevencion/auditorias")
     await expect(page).toHaveURL(/\/prevencion\/inspecciones\?tipo=audit/)
     await expectPageTitle(page, "Inspecciones")
-    await expect(page.getByText("AUD-E2E")).toBeVisible()
+    await expect(textoVisible(page, "AUD-E2E").first()).toBeVisible()
   })
 
   test("las plantillas de auditoría viven en el mismo catálogo que las demás", async ({ page }) => {
     await page.goto("/prevencion/inspecciones/plantillas")
     await expect(page).toHaveURL(/\/prevencion\/inspecciones\/plantillas/)
     await expectPageTitle(page, "Plantillas de inspección")
-    await expect(page.getByText("AUD-E2E")).toBeVisible()
+    await expect(textoVisible(page, "AUD-E2E").first()).toBeVisible()
   })
 })
 
@@ -64,7 +64,7 @@ test.describe("Inspecciones — bandeja de ejecuciones", () => {
   test("cada ejecución muestra su cumplimiento y sus hallazgos abiertos", async ({ page }) => {
     const fila = page.getByRole("row").filter({ hasText: "INSP-E2E-0003" })
     await expect(fila).toBeVisible({ timeout: 30_000 })
-    await expect(fila.getByText("Ejecutada")).toBeVisible()
+    await expect(fila.getByText("Pendiente de revisión")).toBeVisible()
     await expect(fila.getByText("Faena E2E")).toBeVisible()
     // Hallazgos abiertos y, entre paréntesis, los graves.
     await expect(fila.getByText("1 (1)")).toBeVisible()
@@ -90,11 +90,11 @@ test.describe("Inspecciones — bandeja de ejecuciones", () => {
 
   test("el filtro por estado deja su chip y se puede limpiar", async ({ page }) => {
     await page.getByLabel("Estado de la inspección").click()
-    await page.getByRole("option", { name: "Planificada", exact: true }).click()
+    await page.getByRole("option", { name: "Pendiente de ejecución", exact: true }).click()
 
     await expect(page).toHaveURL(/estado=planned/, { timeout: 15_000 })
     await expect(page.getByRole("row").filter({ hasText: "INSP-E2E-0003" })).toHaveCount(0)
-    // El chip, y no el rótulo del selector: ése muestra "Planificada" aunque no
+    // El chip, y no el rótulo del selector: ése muestra el estado aunque no
     // quede ninguna fila, así que la aserción sería vacía.
     await expect(page.getByText("Filtros activos:")).toBeVisible()
     await expect(page.getByRole("button", { name: "Eliminar filtro Estado" })).toBeVisible()

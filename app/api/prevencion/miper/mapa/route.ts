@@ -1,7 +1,6 @@
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
-import path from "node:path"
 import { revalidatePath } from "next/cache"
 import { NextResponse } from "next/server"
 import { guardPermission } from "@/lib/auth/can"
@@ -9,7 +8,7 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { generateStorageName } from "@/lib/services/prevention-documents/utils"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { mkdirp, removeFile, writeBuffer } from "@/lib/storage/helpers"
-import { resolveRiskMapDir, createRiskMapPath } from "@/lib/storage/config"
+import { createRiskMapPath, resolveRiskMapDir, resolveStorageFile } from "@/lib/storage/config"
 import { logger } from "@/lib/logger"
 import { uploadRiskMapLayout } from "@/lib/services/prevention-risk-map"
 
@@ -75,7 +74,7 @@ export async function POST(request: Request) {
     const storageName = generateStorageName(`risk-map${extension}`)
     const dir = resolveRiskMapDir()
     await mkdirp(dir)
-    absolutePath = path.join(/*turbopackIgnore: true*/ dir, storageName)
+    absolutePath = resolveStorageFile(dir, storageName)
     await writeBuffer(absolutePath, Buffer.from(buffer))
     const relativePath = createRiskMapPath(storageName)
     const layout = await uploadRiskMapLayout({

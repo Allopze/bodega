@@ -5,7 +5,10 @@
       ".venv/**",
       ".next/**",
       "referencia/**",
-      "db/migrations/**"
+      "db/migrations/**",
+      "odoo-19.0/**",
+      "erpnext-develop/**",
+      "chome_conciliador_odoo_erpnext_pack/**"
     ]
   },
   "rules": {

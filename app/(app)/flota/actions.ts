@@ -5,14 +5,13 @@ import { safeActionMessage } from "@/lib/action-error"
 import { revalidatePath } from "next/cache"
 import { xlsxToBase64 } from "@/lib/reports/export-module/excel-builder"
 import { promises as fs } from "node:fs"
-import path from "node:path"
 import { can, requirePermission } from "@/lib/auth/can"
 import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
 import { uploadFleetDocument, deleteFleetDocument, getFleetOverview } from "@/lib/services/fleet"
 import { getFleetAdminSettings } from "@/lib/services/system-settings"
-import { createFleetDocumentPath, resolveFleetDir } from "@/lib/storage/config"
+import { createFleetDocumentPath, resolveFleetDir, resolveStorageFile } from "@/lib/storage/config"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import type { ActionState } from "@/lib/validation/operations"
 import { fleetDocumentMetadataSchema } from "@/lib/validation/fleet-documents"
@@ -69,7 +68,7 @@ export async function uploadFleetDocumentAction(
   const storageName = `${Date.now()}-${nanoid()}-${safeName}`
   const storageDir = resolveFleetDir()
   const relativePath = createFleetDocumentPath(storageName)
-  const absolutePath = path.join(storageDir, storageName)
+  const absolutePath = resolveStorageFile(storageDir, storageName)
 
   await fs.mkdir(storageDir, { recursive: true })
   await fs.writeFile(absolutePath, Buffer.from(fileBuf))

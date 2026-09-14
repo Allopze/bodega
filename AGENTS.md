@@ -108,54 +108,38 @@ This repository uses an AI-assisted browser QA pipeline built around Playwright 
 
 ## Canonical commands
 
-Use repository scripts instead of manually invoking the underlying long MonkeyTest command during normal development.
+> **Estado del contrato (2026-09-12).** Los scripts `npm run audit`, `npm run audit:full`
+> y `npm run audit:report` **no existen** en `package.json` y no hay motor de crawling en
+> el repositorio: lo único versionado del pipeline asistido es `scripts/qa-login.mjs`, que
+> guarda la sesión en `playwright/.auth/monkeytest.json` para una herramienta externa. Este
+> contrato los declaraba canónicos, de modo que el procedimiento documentado para auditar y
+> recuperar una liberación no era ejecutable tal como estaba escrito. Lo de abajo describe
+> lo que el repositorio sí expone. **No inventes los comandos ausentes ni reportes una
+> auditoría como ejecutada porque el contrato la nombre.**
 
-### Standard audit
-
-```bash
-npm run audit
-```
-
-Use after meaningful user-visible changes such as:
-
-- UI changes;
-- forms and validation;
-- filters/search;
-- navigation changes;
-- bug fixes affecting workflows;
-- changes to one module or a small set of routes.
-
-The standard audit is intentionally bounded so it can be used during normal development.
-
-### Full audit
+Las puertas deterministas que sí existen, y que son las que gobiernan una liberación:
 
 ```bash
-npm run audit:full
+npm run typecheck
+npm run lint
+npm run check:secrets            # archivos .env fuera de lugar
+npm run check:security-audit     # npm audit con allowlist documentado y con fecha de caducidad
+npm run test:fast                # unitarias sin PGlite
+npm run test:pglite              # suites contra PGlite
+npm run test:e2e                 # Playwright
+npm run db:verify-migrations     # cadena de migraciones
+npm run doctor                   # React Doctor
 ```
 
-Use for:
+`.github/workflows/ci.yml` corre exactamente estas puertas; si una falla ahí, falla la
+liberación. Para el alcance de cada una ver la tabla de más abajo.
 
-- release/pre-production validation;
-- large refactors;
-- authentication or authorization changes;
-- sidebar/navigation changes;
-- `AppShell`, `TopBar`, shared layout or shared navigation changes;
-- permission/registry changes;
-- shared forms/tables/filter infrastructure;
-- cross-module changes;
-- changes likely to affect many routes.
+### Auditoría de navegador asistida
 
-`audit:full` is slower and more expensive. Do not run it after trivial changes merely to create a green signal.
-
-### Report-only analysis
-
-If the repository exposes it, use:
-
-```bash
-npm run audit:report
-```
-
-This re-analyses the latest recorded audit without crawling the application again. If this script is not present in `package.json`, do not invent or assume it exists.
+Sigue siendo válida como **evidencia** de calidad de producto —no reemplaza a las pruebas
+deterministas— pero hoy es un recorrido asistido, no un script. Quien la ejecute debe
+dejar su salida versionada bajo `qa/reports/` con fecha en el nombre, y decir explícitamente
+qué alcance cubrió y qué quedó sin recorrer.
 
 ## Mandatory human-readable report
 
@@ -318,7 +302,7 @@ Do **not** during ordinary application work:
 - upgrade it blindly;
 - assume upstream MonkeyTest behavior exactly matches the local fork.
 
-Normal application work should interact with QA through repository scripts such as `npm run audit` and `npm run audit:full`, not by modifying the QA engine.
+Normal application work should interact with QA through the repository gates listed under "Canonical commands", not by modifying the QA engine.
 
 ## Test strategy
 
@@ -331,10 +315,30 @@ Use the smallest useful verification first:
 | Server actions/forms | Validation/action tests + UI verification when user-visible |
 | UI interaction | Playwright/browser verification |
 | Critical user journey | Deterministic Playwright regression test |
-| Exploratory product QA | `npm run audit` |
-| Cross-application/release QA | `npm run audit:full` |
+| Exploratory product QA | recorrido de navegador asistido (ver "Canonical commands") |
+| Cross-application/release QA | `npm run test:e2e` + recorrido asistido de alcance completo |
 
 AI exploratory testing complements deterministic tests. It does not replace them.
+
+### Locators in this repository
+
+At least fifteen screens render the same content twice — cards `md:hidden` **and**
+a table `hidden md:block` — and both trees stay in the DOM. The distinction that
+decides every case:
+
+- `getByRole()` ignores hidden nodes by default, so role-based locators survive.
+- `getByText()`, `getByLabel()` and `locator()` do **not** filter, so they either
+  break on strict mode or hang waiting for a node that will never be visible.
+
+Use the `textoVisible()` / `campoInspeccion()` helpers in `e2e/helpers.ts` rather
+than `.first()`: `.first()` returns the mobile node, which is the hidden one on a
+desktop viewport. That failure mode is the most misleading one in this suite —
+it reads exactly like the action under test never happened.
+
+Also: `getByRole(role, { name })` matches the accessible name by **substring**.
+`{ name: "Abrir menú" }` also matches "Abrir menú de usuario", and
+`{ name: "Limpiar" }` also matches "Limpiar filtros". Pass `exact: true` whenever
+one label is a prefix of another.
 
 ## When an audit finds something
 
@@ -407,7 +411,7 @@ Any change that adds, removes, renames or materially changes a protected feature
 
 Hiding an item from the sidebar is **not authorization**. Never rely on UI visibility as a security boundary.
 
-When permission/navigation behavior changes across the application, prefer `npm run audit:full` after targeted tests pass.
+When permission/navigation behavior changes across the application, prefer a full-scope assisted browser pass after targeted tests pass.
 <!-- END:authorization-navigation -->
 
 <!-- BEGIN:db-migrations -->

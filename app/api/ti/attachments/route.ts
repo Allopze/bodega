@@ -2,13 +2,12 @@ export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
 import { NextResponse } from "next/server"
-import path from "node:path"
 import { guardPermission } from "@/lib/auth/can"
 import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { generateStorageName } from "@/lib/services/prevention-documents/utils"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { mkdirp, removeFile, writeBuffer } from "@/lib/storage/helpers"
-import { resolveTiDir, createTiFilePath } from "@/lib/storage/config"
+import { createTiFilePath, resolveStorageFile, resolveTiDir } from "@/lib/storage/config"
 import { createTiAttachment, isTiUploadableEntityType } from "@/lib/services/ti/attachments"
 import { safeActionMessage } from "@/lib/action-error"
 import { logger } from "@/lib/logger"
@@ -66,7 +65,7 @@ export async function POST(request: Request) {
 
   const storageName = generateStorageName(file.name)
   const dir = resolveTiDir()
-  const absolutePath = path.join(/*turbopackIgnore: true*/ dir, storageName)
+  const absolutePath = resolveStorageFile(dir, storageName)
   const relativePath = createTiFilePath(storageName)
 
   // La escritura va dentro del `try`: un disco lleno o un volumen no montado

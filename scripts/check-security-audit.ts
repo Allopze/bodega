@@ -29,7 +29,9 @@ export const AUDIT_ALLOWLIST = [
       "/_next/image. La app nunca pasa contenido de usuario por next/image sin " +
       "`unoptimized` (evidence-thumbnail.tsx, tae-form.tsx) y next.config.ts no define " +
       "remotePatterns/domains externos. El sharp que procesa fotos reales de usuario " +
-      "(OCR de TAE y facturas) usa la copia raíz 0.35.3, que no es vulnerable.",
+      "(OCR de TAE y facturas) es la copia raíz, hoy 0.35.4: está fuera del rango de " +
+      "este advisory y también del de GHSA-rgj7-g3m4-5g8c (<0.35.4), que sí alcanzaba " +
+      "esa copia raíz y por eso se corrigió con un bump en vez de allowlistarse.",
     reviewBy: "2026-10-28",
   },
   {

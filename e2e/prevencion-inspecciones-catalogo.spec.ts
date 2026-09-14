@@ -23,10 +23,20 @@ import { expectPageTitle, login } from "./helpers"
  * `retries: 1` en CI un reintento volvería a incorporar la misma.
  */
 const DEFINICION = "Inspección de Contenedores"
+/**
+ * El recorrido "borrador → aprobada → programable" necesita una definición
+ * **sin anexo oficial**: `approveInspectionTemplate` exige a las que sí lo
+ * tienen (`OFFICIAL_INSPECTION_SOURCES`) una versión documental vinculada cuyo
+ * checksum coincida con el del binario SGI, y la Biblioteca SST del entorno E2E
+ * no tiene ese archivo. `inspeccion_area` nace `platform_definition`, así que
+ * se aprueba por pantalla sin paridad documental. La contracara —que un anexo
+ * oficial se niegue a aprobarse sin fuente— la cubre su propio test más abajo.
+ */
+const DEFINICION_LIBRE = "Inspección de área de trabajo"
 const RUN = Date.now().toString(36).toUpperCase().slice(-5)
 
-function filaPlantilla(page: Page, version: string) {
-  return page.getByRole("row").filter({ hasText: DEFINICION }).filter({ hasText: version })
+function filaPlantilla(page: Page, version: string, definicion: string = DEFINICION) {
+  return page.getByRole("row").filter({ hasText: definicion }).filter({ hasText: version })
 }
 
 /** Abre el alta de programación, esté la pestaña vacía o con filas. */
@@ -49,12 +59,12 @@ async function crearYAbrirInspeccion(page: Page, fila: Locator) {
   await expect(page).toHaveURL(/\/prevencion\/inspecciones\/[^/]+$/)
 }
 
-/** Incorpora `inspeccion_contenedores` con una etiqueta propia; queda en borrador. */
-async function incorporar(page: Page, version: string) {
+/** Incorpora la definición indicada con una etiqueta propia; queda en borrador. */
+async function incorporar(page: Page, version: string, definicion: string = DEFINICION) {
   await page.getByRole("button", { name: "Incorporar borrador" }).click()
   const dialog = page.getByRole("dialog", { name: "Incorporar nueva versión como borrador" })
   await dialog.getByLabel("Definición del catálogo SST").click()
-  await page.getByRole("option", { name: DEFINICION, exact: true }).click()
+  await page.getByRole("option", { name: definicion, exact: true }).click()
   await dialog.getByLabel("Tipo de instrumento").click()
   await page.getByRole("option", { name: "Inspección", exact: true }).click()
   await dialog.locator('input[name="versionLabel"]').fill(version)
@@ -76,7 +86,7 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
    * calcular cumplimiento ni levantar un hallazgo. El servicio lo comprueba
    * además al recibir el código; acá se verifica que tampoco se ofrezcan.
    */
-  test("el picker no ofrece evaluaciones de personas ni el Anexo 7", async ({ page }) => {
+  test("el picker no ofrece evaluaciones de personas", async ({ page }) => {
     await page.getByRole("button", { name: "Incorporar borrador" }).click()
     const dialog = page.getByRole("dialog", { name: "Incorporar nueva versión como borrador" })
     await dialog.getByLabel("Definición del catálogo SST").click()
@@ -84,16 +94,18 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
     await expect(page.getByRole("option", { name: DEFINICION, exact: true })).toBeVisible()
     await expect(page.getByRole("option", { name: "Lista de Chequeo: Trabajador Nuevo" })).toHaveCount(0)
     await expect(page.getByRole("option", { name: "Lista de Chequeo: Control de Seguimiento" })).toHaveCount(0)
-    await expect(page.getByRole("option", { name: "Observación Planeada" })).toHaveCount(0)
+    // El Anexo 7 sí se ofrece: desde que se digitalizó con `recordsPreventiveActions`
+    // aporta al motor —registra acciones preventivas— aunque no puntúe.
+    await expect(page.getByRole("option", { name: "Observación Planeada" })).toHaveCount(1)
   })
 
   test("incorporar deja un borrador que no puede programarse hasta aprobarlo", async ({ page }) => {
     const version = `E2E-${RUN}-A`
-    await incorporar(page, version)
+    await incorporar(page, version, DEFINICION_LIBRE)
     await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
 
     await page.reload()
-    const fila = filaPlantilla(page, version)
+    const fila = filaPlantilla(page, version, DEFINICION_LIBRE)
     await expect(fila.getByText("Borrador")).toBeVisible({ timeout: 15_000 })
 
     // Programar exige una plantilla aprobada, y el picker sólo lista esas: el
@@ -107,7 +119,7 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
     // Se espera a que el listado exista antes de negar: sin un ancla positiva,
     // `toHaveCount(0)` pasaría igual con el popover todavía sin montar.
     await expect(page.getByRole("option", { name: /Inspección de Estado de Extintores · E2E$/ })).toBeVisible()
-    await expect(page.getByRole("option", { name: new RegExp(`${DEFINICION} · ${version}`) })).toHaveCount(0)
+    await expect(page.getByRole("option", { name: new RegExp(`${DEFINICION_LIBRE} · ${version}`) })).toHaveCount(0)
     await page.keyboard.press("Escape")
     await page.keyboard.press("Escape")
     await expect(page.locator('[role="dialog"]')).not.toBeVisible()
@@ -128,7 +140,37 @@ test.describe("Inspecciones — catálogo de instrumentos", () => {
     await nuevoPrograma(page)
     programa = page.getByRole("dialog", { name: "Nueva programación" })
     await programa.getByLabel("Plantilla").click()
-    await expect(page.getByRole("option", { name: new RegExp(`${DEFINICION} · ${version}`) })).toBeVisible()
+    await expect(page.getByRole("option", { name: new RegExp(`${DEFINICION_LIBRE} · ${version}`) })).toBeVisible()
+  })
+
+  /**
+   * La contracara del test anterior. Los anexos del SGI
+   * (`OFFICIAL_INSPECTION_SOURCES`) nacen `provenanceKind: "official_document"`
+   * y `approveInspectionTemplate` les exige una versión de la Biblioteca SST
+   * vinculada, con paridad declarada y el checksum del binario original. Sin
+   * eso el borrador no se habilita: la pantalla lo dice y el diálogo no cierra.
+   */
+  test("un anexo oficial no se aprueba sin su fuente documental vinculada", async ({ page }) => {
+    const version = `E2E-${RUN}-E`
+    await incorporar(page, version)
+    await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
+
+    await page.reload()
+    const fila = filaPlantilla(page, version)
+    await expect(fila.getByText("Borrador")).toBeVisible({ timeout: 15_000 })
+
+    await fila.getByRole("button", { name: "Aprobar" }).click()
+    const aprobar = page.getByRole("dialog", { name: `Aprobar ${DEFINICION}` })
+    await aprobar.locator('textarea[name="reason"]').fill("Intento de habilitar el anexo sin su respaldo documental.")
+    await aprobar.getByRole("button", { name: "Aprobar" }).click()
+
+    await expect(aprobar.getByRole("status"))
+      .toContainText("no puede aprobarse sin una versión oficial vinculada", { timeout: 30_000 })
+    await expect(aprobar).toBeVisible()
+
+    await page.keyboard.press("Escape")
+    await page.reload()
+    await expect(fila.getByText("Borrador")).toBeVisible({ timeout: 15_000 })
   })
 
   /**
@@ -273,15 +315,34 @@ test.describe("Inspecciones — programación por faena y frecuencia", () => {
     // Este primer clic regulariza el ciclo vigente (nextDueOn == hoy, no pide
     // confirmación); de acá en adelante cada clic cae fuera de ciclo y el
     // helper confirma el diálogo de I-01 antes de navegar.
-    await crearYAbrirInspeccion(page, fila)
-    await page.goto("/prevencion/inspecciones/programacion")
-    fila = page.getByRole("row").filter({ hasText: "Inspección de Estado de Extintores" }).filter({ hasText: `cada ${intervalo} días` })
-    await expect(fila.getByRole("cell", { name: comoCelda(enDias(paso)) })).toBeVisible({ timeout: 15_000 })
+    /**
+     * Se recarga dentro del poll, no se espera sobre el DOM ya pintado.
+     *
+     * En dos de cuatro corridas completas la tabla salió con la fecha vencida
+     * mientras `prevention_inspection_programs.next_due_on` ya tenía la nueva
+     * —comprobado por consulta directa—, así que lo que llegó tarde fue el
+     * render, no la escritura. Un `toBeVisible` sobre la página ya cargada
+     * consume sus quince segundos sin volver a pedirla nunca.
+     */
+    async function esperarProxima(iso: string) {
+      await expect.poll(async () => {
+        await page.goto("/prevencion/inspecciones/programacion")
+        return page.getByRole("row")
+          .filter({ hasText: "Inspección de Estado de Extintores" })
+          .filter({ hasText: `cada ${intervalo} días` })
+          .getByRole("cell", { name: comoCelda(iso) })
+          .count()
+      }, { timeout: 30_000 }).toBeGreaterThan(0)
+      return page.getByRole("row")
+        .filter({ hasText: "Inspección de Estado de Extintores" })
+        .filter({ hasText: `cada ${intervalo} días` })
+    }
 
     await crearYAbrirInspeccion(page, fila)
-    await page.goto("/prevencion/inspecciones/programacion")
-    fila = page.getByRole("row").filter({ hasText: "Inspección de Estado de Extintores" }).filter({ hasText: `cada ${intervalo} días` })
-    await expect(fila.getByRole("cell", { name: comoCelda(enDias(paso * 2)) })).toBeVisible({ timeout: 15_000 })
+    fila = await esperarProxima(enDias(paso))
+
+    await crearYAbrirInspeccion(page, fila)
+    fila = await esperarProxima(enDias(paso * 2))
 
     await fila.getByRole("button", { name: "Editar" }).click()
     const editar = page.getByRole("dialog", { name: "Editar programación" })

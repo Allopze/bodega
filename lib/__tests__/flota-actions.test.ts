@@ -25,6 +25,7 @@ vi.mock("@/lib/auth/can", () => ({
 vi.mock("@/lib/storage/config", () => ({
   resolveFleetDir: vi.fn(() => "/tmp/test-fleet"),
   createFleetDocumentPath: vi.fn((name: string) => `fleet/${name}`),
+  resolveStorageFile: (dir: string, name: string) => `${dir}/${name}`,
 }))
 
 vi.mock("node:fs", () => ({

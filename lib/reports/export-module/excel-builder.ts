@@ -6,11 +6,16 @@ export async function buildXlsxBuffer(report: ReportData): Promise<ArrayBuffer> 
   workbook.creator = "Plataforma Chome"
   workbook.created = new Date()
 
-  const sheets = report.sheets?.length ? report.sheets : [{
-    worksheetName: report.worksheetName,
-    headers: report.headers,
-    rows: report.rows,
-  }]
+  // `sheets` son hojas **adicionales**, no un reemplazo. Antes era un o-lo-uno-o-lo-otro
+  // y cualquier reporte que agregara una hoja suplementaria perdía en silencio su propio
+  // detalle: el libro de conciliación DTE se descargaba sólo con "Calidad de la
+  // referencia", sin la conciliación OC–Factura–DTE ni la columna de discrepancia, y lo
+  // mismo les pasaba a valorización de bodega, cobranza y analítica. `report.rows` se
+  // calculaba, se contaba para la bitácora de exportación y se tiraba.
+  const primarySheet = report.headers.length > 0
+    ? [{ worksheetName: report.worksheetName, headers: report.headers, rows: report.rows }]
+    : []
+  const sheets = [...primarySheet, ...(report.sheets ?? [])]
 
   // Los nombres de hoja se sanean en un solo lugar: los reportes que abren una
   // hoja por faena / trabajador / cliente los derivan de datos y ExcelJS lanza

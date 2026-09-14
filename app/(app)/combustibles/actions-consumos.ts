@@ -1,7 +1,6 @@
 "use server"
 
 import { createHash } from "node:crypto"
-import path from "node:path"
 import { revalidatePath } from "next/cache"
 import { and, desc, eq, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
@@ -12,7 +11,7 @@ import { nanoid } from "@/lib/id"
 import { recordAudit } from "@/lib/audit"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { mkdirp, removeFile, writeBuffer } from "@/lib/storage/helpers"
-import { resolveFuelImportsDir, createFuelImportPath } from "@/lib/storage/config"
+import { createFuelImportPath, resolveFuelImportsDir, resolveStorageFile } from "@/lib/storage/config"
 import { parseConsumptionExcel, type ImportError } from "@/lib/combustibles/consumption-import"
 import { computeBatchTotals, type BatchTotals } from "@/lib/combustibles/consumption-calculations"
 import type { ActionState } from "@/lib/validation/masters"
@@ -252,7 +251,7 @@ export async function confirmConsumptionImportAction(
   const storageName = `${Date.now()}-${nanoid()}-${safeName}`
   const storageDir = resolveFuelImportsDir()
   await mkdirp(storageDir)
-  const absolutePath = path.join(storageDir, storageName)
+  const absolutePath = resolveStorageFile(storageDir, storageName)
   await writeBuffer(absolutePath, buffer)
   const archivoPath = createFuelImportPath(storageName)
 

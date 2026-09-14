@@ -21,10 +21,7 @@ import { nanoid } from "@/lib/id"
 import { cleanRut } from "@/lib/rut"
 import { recordAudit, recordStatusChange } from "@/lib/audit"
 import { mkdirp, removeFile, writeBuffer } from "@/lib/storage/helpers"
-import {
-  createFuelTaeEvidencePath,
-  resolveFuelTaeEvidenceDir,
-} from "@/lib/storage/config"
+import { createFuelTaeEvidencePath, resolveFuelTaeEvidenceDir, resolveStorageFile } from "@/lib/storage/config"
 import { isTaeReviewTransitionAllowed, type TaePublicSubmissionInput } from "@/lib/validation/fuel-tae"
 import { MIN_ACCEPTED_OCR_CONFIDENCE, type OcrMeterResult } from "@/lib/services/tae-ocr"
 import { getUserIdsWithPermissionForWorksite, notifyAfterCommit, notifyManyUser } from "@/lib/services/notifications"
@@ -220,7 +217,7 @@ export async function createTaeSubmission({
     await mkdirp(evidenceDir)
     for (const upload of evidence) {
       const storageName = `${id}-${upload.kind}-${nanoid(10)}.${extensionForMime(upload.mimeType)}`
-      const absolutePath = path.join(evidenceDir, storageName)
+      const absolutePath = resolveStorageFile(evidenceDir, storageName)
       await writeBuffer(absolutePath, upload.buffer)
       storedFiles.push({
         filePath: createFuelTaeEvidencePath(storageName),

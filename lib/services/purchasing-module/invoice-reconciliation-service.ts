@@ -22,6 +22,7 @@ import {
   type InvoiceReconciliationEvidence,
   type InvoiceReconciliationReview,
 } from "./invoice-reconciliation"
+import { resolveOrderItemMatchName } from "./order-item-identity"
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
@@ -98,7 +99,7 @@ export async function reconcilePurchaseOrderInvoicesTx(
     orderItems: orderItems.map((item) => ({
       id: item.id,
       productId: item.productId,
-      productName: item.productNameFree ?? item.productName ?? item.id,
+      productName: resolveOrderItemMatchName(item),
       quantity: item.quantity,
       unitOfMeasure: item.unitOfMeasure,
       unitPrice: item.unitPrice,

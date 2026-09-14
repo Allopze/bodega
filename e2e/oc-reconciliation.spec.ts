@@ -84,7 +84,7 @@ test.describe("Conciliación OC-factura-recepción", () => {
     //      agota sus 15 s con una sola medición. El timeout corto es lo que lo
     //      mantiene muestreando.
     await expect.poll(async () => {
-      const chip = page.getByRole("link", { name: /Quitar filtro de facturas pendientes/i })
+      const chip = page.getByRole("link", { name: /Quitar filtro: Facturación pendiente/i })
       if (await chip.count()) await chip.click({ timeout: 2_000 }).catch(() => undefined)
       return page.url()
     }, { timeout: 15_000 }).not.toMatch(/factura=pendiente/)
@@ -99,16 +99,11 @@ test.describe("Conciliación OC-factura-recepción", () => {
     // de qué worker corriera antes.
     await expect(page.getByRole("link", { name: /Ver OC OC-INTEGRITY-E2E/ })).toBeVisible()
 
-    // Y "Limpiar" —que sólo aparece con filtros activos— también lo apaga.
-    // Este sí es un <button> con onClick: sin hidratar no hace absolutamente
-    // nada, y es el que fallaba de forma reproducible en local.
+    // Y el chip marcado dice que el filtro está puesto, no sólo adónde lleva:
+    // sin eso la lista salía recortada sin ninguna señal de por qué.
     await page.goto("/compras?factura=pendiente")
-    await expect.poll(async () => {
-      const limpiar = page.getByRole("button", { name: "Limpiar" })
-      // Mismo timeout corto y por la misma razón que el chip de arriba.
-      if (await limpiar.count()) await limpiar.click({ timeout: 2_000 }).catch(() => undefined)
-      return page.url()
-    }, { timeout: 15_000 }).not.toMatch(/factura=pendiente/)
+    await expect(page.getByRole("link", { name: /Quitar filtro: Facturación pendiente/i }))
+      .toHaveAttribute("aria-current", "page")
   })
 
   test("desde la recepción la preselecciona sin copiar la guía como folio", async ({ page }) => {

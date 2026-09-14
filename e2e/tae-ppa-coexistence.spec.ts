@@ -97,9 +97,18 @@ test.describe("PPA + TAE — coexistencia de PWAs", () => {
     //    offline-saved.tsx solo se muestra tras un envío fresco (estado local, no
     //    persistido), así que se llega a él repitiendo el envío offline — el punto
     //    de esta aserción es que "Enviar ahora" complete sin error, no la UI en sí.
+    // Se recupera la conexión ANTES de volver a /ppa y se vuelve a cortar, igual
+    // que en el paso 1. `setOffline(true)` sobre un contexto que ya estaba
+    // offline no emite el evento `offline`, y `useOnlineStatus` sólo cambia de
+    // estado por ese evento o por `navigator.onLine` al montar: el formulario se
+    // quedaba mostrando "Enviar PPA" y el clic esperaba un botón inexistente.
+    await context.setOffline(false)
     await page.goto("/ppa")
     await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })
     await context.setOffline(true)
+    // El corte tiene que haber llegado al documento antes de llenar el paso 3:
+    // el rótulo del botón de envío se decide con ese estado.
+    await page.waitForFunction(() => navigator.onLine === false, undefined, { timeout: 15_000 })
     await fillManualPpaForm(page)
     await page.getByRole("button", { name: /Guardar offline/ }).click()
     await expect(page.getByText(/2 PPAs pendientes/)).toBeVisible({ timeout: 10_000 })

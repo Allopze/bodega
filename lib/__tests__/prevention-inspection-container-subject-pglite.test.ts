@@ -165,6 +165,49 @@ describe("contenedor como sujeto de inspección", () => {
     expect(run?.subjectLabel).toBe("CS-020 · Patio norte")
   })
 
+  /**
+   * S3-05 (auditoría 2026-09-12): "la programación queda vencida para siempre".
+   *
+   * El avance de `nextDueOn` colgaba del insert: `if (!inserted) return null`
+   * corría ANTES de tocar la fecha, así que bastaba con que la ejecución del
+   * slot vigente ya existiera por otro camino —una creada a mano contra el mismo
+   * programa, o un disparo anterior— para que el ciclo no se consumiera nunca.
+   * Cada materialización posterior volvía a chocar con el mismo
+   * `(program_id, scheduled_for)` y la columna "Próxima" se quedaba clavada.
+   */
+  it("avanza la próxima fecha aunque el slot vigente ya estuviera ocupado", async () => {
+    const container = await createContainer({ worksiteId, code: "CS-040", location: "Patio este" }, adminAccess)
+    const program = await createInspectionProgram({
+      templateId: CONTAINER_TEMPLATE,
+      worksiteId,
+      frequency: "monthly",
+      startsOn: "2026-01-05",
+      subjectContainerId: container.id,
+    }, access)
+
+    await testDb.insert(schema.preventionInspectionRuns).values({
+      id: "insrun-slot-ocupado",
+      code: "INSP-2026-SLOTOCUP",
+      templateId: CONTAINER_TEMPLATE,
+      programId: program.id,
+      worksiteId,
+      scheduledFor: program.nextDueOn,
+      status: "planned",
+      createdByUserId: userId,
+    })
+
+    await materializeProgramRuns({ programId: program.id })
+
+    const [after] = await testDb.select().from(schema.preventionInspectionPrograms)
+      .where(eq(schema.preventionInspectionPrograms.id, program.id))
+    expect(after!.nextDueOn > program.nextDueOn).toBe(true)
+
+    // Y el slot sigue sin duplicarse: consumir el ciclo no es crear otra fila.
+    const runs = await testDb.select().from(schema.preventionInspectionRuns)
+      .where(eq(schema.preventionInspectionRuns.programId, program.id))
+    expect(runs).toHaveLength(1)
+  })
+
   it("deja detener una programación heredada que nunca tuvo contenedor", async () => {
     const now = new Date().toISOString()
     /* Anterior al catálogo: `subject_container_id` nulo. Exigir sujeto en toda

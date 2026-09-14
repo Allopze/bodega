@@ -43,13 +43,39 @@ describe("getAdminAreas", () => {
     }
   })
 
+  // Se busca por `label` y no por `href` a propósito: cuando el padre no es visible por sí
+  // mismo su `href` deja de ser el propio, así que buscarlo por ahí devolvía `undefined` y
+  // el test fallaba sin decir por qué.
   it("keeps a branch item visible when the session only holds a child's permission, not the parent's", () => {
     const areas = getAdminAreas(sessionWithPermissions(["combustibles:manage_suppliers"]))
     const fleet = areas
       .find((area) => area.id === "catalogos")
-      ?.items.find((item) => item.href === "/admin/flota-catalogos")
+      ?.items.find((item) => item.label === "Catálogos de flota")
 
     expect(fleet?.children?.map((child) => child.href)).toEqual(["/admin/flota-catalogos/proveedores-combustible"])
+  })
+
+  // El árbol se pinta con el padre como enlace, así que un padre conservado sólo por sus
+  // hijos no puede seguir apuntando a su propia pantalla: `/admin/flota-catalogos` exige
+  // `admin:fleet_catalog` y esta sesión no lo tiene, de modo que el enlace llevaba a
+  // /forbidden. Apunta al primer hijo visible, que es adonde esa sesión iba de todos modos.
+  it("points a branch kept only by its children at the first visible child", () => {
+    const areas = getAdminAreas(sessionWithPermissions(["combustibles:manage_suppliers"]))
+    const fleet = areas
+      .find((area) => area.id === "catalogos")
+      ?.items.find((item) => item.label === "Catálogos de flota")
+
+    expect(fleet?.href).toBe("/admin/flota-catalogos/proveedores-combustible")
+  })
+
+  // La contracara: con permiso sobre el padre, el enlace es el suyo y no el del hijo.
+  it("keeps a self-visible branch pointing at its own screen", () => {
+    const areas = getAdminAreas(sessionWithPermissions(["admin:fleet_catalog"]))
+    const fleet = areas
+      .find((area) => area.id === "catalogos")
+      ?.items.find((item) => item.label === "Catálogos de flota")
+
+    expect(fleet?.href).toBe("/admin/flota-catalogos")
   })
 
   it("returns all 8 categories, in order, with a full admin permission set", () => {

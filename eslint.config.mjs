@@ -320,6 +320,50 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // ── La ruta de un archivo almacenado se arma en un solo lugar ─────────────
+  // Turbopack evalúa `path.join` como patrón de archivo y traza todo lo que calce;
+  // con un primer argumento de runtime, el patrón globea el proyecto entero. Así
+  // `.next/standalone` llegó a 2,5 GB con 10.316 archivos subidos por usuarios dentro
+  // del artefacto de despliegue. `resolveStorageFile` (lib/storage/config.ts) encapsula
+  // ese join con el `turbopackIgnore` —que es léxico y por eso no se puede delegar— y
+  // además valida el nombre.
+  //
+  // Las excepciones son rutas que NO son del almacenamiento de la app (BACKUP_DIR,
+  // process.cwd(), tessdata, assets de public/) o usos de string puro (extname/basename).
+  {
+    files: ["app/**/*.{ts,tsx}", "lib/**/*.{ts,tsx}", "components/**/*.{ts,tsx}"],
+    ignores: [
+      "lib/storage/**",
+      "lib/testing/**",
+      "**/*.test.{ts,tsx}",
+      "**/__tests__/**",
+      // Rutas del host o de assets, no del almacenamiento de la app.
+      "app/(app)/admin/backups/actions.ts",
+      "**/oc-pdfcn-render.ts",
+      "lib/services/platform-health.ts",
+      "lib/services/purchasing-module/invoice-ocr.ts",
+      // Sólo manipulan el nombre (extname/basename), nunca arman una ruta de escritura.
+      "app/api/prevencion/documentacion/bulk-download/route.ts",
+      "lib/requests/request-service-module/add-quotation.ts",
+      "lib/services/fuel-tae.ts",
+      "lib/services/prevention-documents/utils.ts",
+      "lib/services/prevention-sensitive-files.ts",
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "node:path",
+              message:
+                "[storage] No armes rutas de archivos almacenados con path.join: usa resolveStorageFile() de @/lib/storage/config. Sin su `turbopackIgnore` el build mete el repositorio entero —incluidos los archivos subidos por usuarios— en .next/standalone.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   {
     // Código vendorizado de pdfcn (ver components/pdf/README.md). Sus `<img>` y
     // demás etiquetas no son DOM: son primitivas que el renderer de Takumi

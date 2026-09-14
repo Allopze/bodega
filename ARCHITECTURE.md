@@ -72,29 +72,29 @@ Permisos, sidebar y seed RBAC se derivan automáticamente del registry.
 
 | ID | Permisos | Descripción |
 |---|---|---|
-| `admin` | 24 | Usuarios, faenas, productos, proveedores, trabajadores, catálogos, configuración, auditoría |
-| `requests` | 5 | Solicitudes de compra |
+| `admin` | 35 | Usuarios, faenas, productos, proveedores, trabajadores, catálogos, configuración, auditoría |
+| `requests` | 4 | Solicitudes de compra |
 | `approvals` | 1 | Aprobaciones de ítems |
 | `purchasing` | 5 | Órdenes de compra |
 | `receiving` | 3 | Recepción de mercadería |
-| `warehouse` | 8 | Stock, movimientos y guías de despacho internas (Oficina → Faena) |
-| `deliveries` | 2 | Entregas |
-| `traceability` | 1 | Vista de trazabilidad |
+| `warehouse` | 10 | Stock, movimientos y guías de despacho internas (Oficina → Faena) |
+| `deliveries` | 3 | Entregas |
 | `reports` | 1 | Reportes y exportaciones |
 | `analytics` | 2 | Analítica |
 | `repuestos` | 5 | Solicitudes de repuestos |
 | `servicios` | 5 | Solicitudes de servicios |
-| `operations` | 2 | Cola operacional transversal |
+| `operations` | 1 | Cola operacional transversal |
 | `billing` | 12 | Facturación y cobranza (cuentas por cobrar) — ver [docs/facturacion/](docs/facturacion/README.md) |
 | `sst` | 5 | Evaluaciones SST |
-| `ppa` | 3 | Prevención de Peligros en el Área |
+| `ppa` | 8 | Prevención de Peligros en el Área |
 | `feedback` | 4 | Soporte / feedback interno |
-| `combustibles` | 19 | Cargas, cuentas corrientes, TAE, anomalías, import de combustible |
-| `flota` | 1 | Vehículos |
-| `mantenciones` | 3 | Mantención de flota/equipos |
-| `prevention` | 17 | Documentación SST, capacitaciones, incidentes, inspecciones, PDTP, indicadores |
+| `combustibles` | 22 | Cargas, cuentas corrientes, TAE, anomalías, import de combustible |
+| `flota` | 5 | Vehículos |
+| `mantenciones` | 4 | Mantención de flota/equipos |
+| `prevention` | 125 | Documentación SST, capacitaciones, incidentes, inspecciones, PDTP, indicadores |
+| `ti` | 10 | Módulo de TI |
 
-**Total: 223 permisos**, derivados automáticamente. Recalcular con:
+**Total: 270 permisos**, derivados automáticamente. Recalcular con:
 
 ```bash
 npx tsx -e "import { registry } from './modules/registry'; \
@@ -278,7 +278,7 @@ consumió los bienes, para no dejar stock negativo.
   tras N intentos fallidos consecutivos.
 - **Registro**: el primer usuario obtiene rol `administrador`; el resto requiere invitación.
 
-### RBAC — 11 roles
+### RBAC — 15 roles
 
 Fuente de verdad: `SYSTEM_ROLES` en `lib/auth/system-rbac.ts`.
 
@@ -294,9 +294,13 @@ Fuente de verdad: `SYSTEM_ROLES` en `lib/auth/system-rbac.ts`.
 | `conductor_lider` | Faenas asignadas | Evaluaciones SST de conductores |
 | `admin_contrato` | Faenas asignadas | Administrador de contrato / supervisor de faena |
 | `jefe_terreno` | Faenas asignadas | Jefe de terreno |
+| `supervisor_terreno` | Faenas asignadas | Supervisor de terreno |
 | `cphs` | Faenas asignadas | Comité Paritario de Higiene y Seguridad |
+| `gerente_legal_rrhh` | Todas | Gerencia Legal y Recursos Humanos |
+| `subgerente_operaciones` | Todas | Subgerente de operaciones |
+| `tecnico_ti` | Todas | Técnico TI |
 
-**109 permisos granulares** derivados del registry (`modules/registry.ts` vía
+**270 permisos granulares** derivados del registry (`modules/registry.ts` vía
 `modules/permissions.ts`). La lista completa vive en el registry, no se mantiene a mano.
 
 ### Guards

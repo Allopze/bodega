@@ -48,7 +48,11 @@ vi.mock("@/lib/services/notifications", () => ({
   notifyAfterCommit: mockNotifyAfterCommit,
 }))
 vi.mock("node:fs", () => ({ promises: mockFs }))
-vi.mock("@/lib/storage/config", () => ({ resolveStorageDir: vi.fn(() => "/tmp/chome-test-storage") }))
+vi.mock("@/lib/storage/config", () => ({
+  resolveStorageDir: vi.fn(() => "/tmp/chome-test-storage"),
+  resolveFeedbackDir: vi.fn(() => "/tmp/chome-test-storage/feedback"),
+  resolveStorageFile: (dir: string, name: string) => `${dir}/${name}`,
+}))
 vi.mock("@/lib/services/system-settings", () => ({
   getOperationalSettings: vi.fn(async () => ({ feedbackAttachmentMaxMb: 20 })),
 }))

@@ -283,10 +283,14 @@ describe("report export helpers", () => {
       "Brechas",
     ])
 
+    // El libro abre con la hoja primaria "Analítica" y después las derivadas. Antes
+    // faltaba: `sheets` reemplazaba la primaria en vez de sumarse, y con ella se perdía
+    // `data.spendByModule` —el gasto por módulo—, que no aparece en ninguna sub-hoja.
     const buffer = await buildXlsxBuffer(data)
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(Buffer.from(buffer) as never)
     expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
+      "Analítica",
       "KPIs",
       "Gasto mensual",
       "Proveedores",
@@ -297,6 +301,7 @@ describe("report export helpers", () => {
       "Alertas",
       "Brechas",
     ])
+    expect(workbook.getWorksheet("Analítica")!.rowCount).toBe(data.rows.length + 1)
   })
 
   // ── buildXlsxBuffer edge cases ───────────────────────────────────────

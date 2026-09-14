@@ -2,7 +2,6 @@ export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
 import { createHash } from "node:crypto"
-import path from "node:path"
 import { NextResponse } from "next/server"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
@@ -11,7 +10,7 @@ import { logger } from "@/lib/logger"
 import { safeActionMessage } from "@/lib/action-error"
 import { addFindingEvidence, assertFindingEvidenceUploadAllowed, assertInspectionOperationEnabled } from "@/lib/services/prevention-inspections"
 import { generateStorageName } from "@/lib/services/prevention-documents/utils"
-import { createInspectionEvidencePath, resolveInspectionEvidenceDir } from "@/lib/storage/config"
+import { createInspectionEvidencePath, resolveInspectionEvidenceDir, resolveStorageFile } from "@/lib/storage/config"
 import { mkdirp, writeBuffer } from "@/lib/storage/helpers"
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024
@@ -43,7 +42,7 @@ export async function POST(request: Request) {
     const storageName = generateStorageName(file.name)
     const dir = resolveInspectionEvidenceDir()
     await mkdirp(dir)
-    await writeBuffer(path.join(/*turbopackIgnore: true*/ dir, storageName), Buffer.from(bytes))
+    await writeBuffer(resolveStorageFile(dir, storageName), Buffer.from(bytes))
     const relativePath = createInspectionEvidencePath(storageName)
     const created = await addFindingEvidence({
       findingId,

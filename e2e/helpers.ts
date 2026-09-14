@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test"
+import { expect, type Locator, type Page } from "@playwright/test"
 import postgres from "postgres"
 
 export async function clearRateLimits() {
@@ -370,3 +370,172 @@ export const MINIMAL_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
   "base64",
 )
+
+/** La plantilla aprobada del fixture: Anexo 2 de extintores, cinco ítems puntuables. */
+export const PLANTILLA_INSPECCION = "Inspección de Estado de Extintores"
+
+/** Un token por proceso para que dos corridas no colisionen en la misma base sembrada. */
+const RUN_INSPECCION = Date.now().toString(36).toUpperCase().slice(-5)
+let contadorInspeccion = 0
+
+/**
+ * Da de alta una inspección desde el diálogo "Nueva inspección" y la deja abierta.
+ *
+ * Estaba copiado literalmente en cinco specs, y por eso un cambio de una línea en la UI
+ * rompió los cinco: `inspection-run-list.tsx` empezó a anteponer el tipo a cada opción de
+ * plantilla —"Inspección · Inspección de Estado de Extintores · E2E"— y las cinco copias
+ * la buscaban con una regex anclada que ya no calzaba. Vive acá para que el próximo
+ * cambio de ese estilo sea una línea y no cinco.
+ *
+ * El match es por **sufijo** (`nombre · versión`) a propósito: identifica la plantilla sin
+ * depender de cómo la UI decore el prefijo.
+ */
+export async function crearInspeccion(page: Page, opciones: {
+  /** Prefijo del identificador, para distinguir el origen en la bandeja. */
+  prefijo?: string
+  /** Identificación completa, cuando el test necesita fijarla. */
+  identificacion?: string
+  origen?: string
+  sujetoInventario?: string
+} = {}): Promise<{ identificacion: string; url: string }> {
+  const identificacion = opciones.identificacion
+    ?? `${opciones.prefijo ?? "E2E"}-${RUN_INSPECCION}-${++contadorInspeccion}`
+
+  await page.goto("/prevencion/inspecciones")
+  await expectPageTitle(page, "Inspecciones")
+
+  await page.getByRole("button", { name: "Nueva inspección" }).click()
+  const dialog = page.getByRole("dialog", { name: "Nueva inspección" })
+  await dialog.getByLabel("Plantilla").click()
+  await page.getByRole("option", { name: `${PLANTILLA_INSPECCION} · E2E` }).click()
+  await dialog.getByLabel("Faena de la inspección").click()
+  await page.getByRole("option", { name: "Faena E2E", exact: true }).click()
+
+  if (opciones.origen) {
+    await dialog.getByLabel("Origen").click()
+    await page.getByRole("option", { name: opciones.origen, exact: true }).click()
+  }
+  if (opciones.sujetoInventario) {
+    await dialog.getByLabel("Sujeto inspeccionado").click()
+    await page.getByRole("option", { name: opciones.sujetoInventario }).click()
+  } else {
+    await dialog.locator('input[name="subjectType"]').fill("extintor")
+    await dialog.locator('input[name="subjectLabel"]').fill(identificacion)
+  }
+
+  await dialog.getByRole("button", { name: "Crear" }).click()
+  await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
+
+  // Crear ahora abre la inspección: `inspection-run-list.tsx:506` hace `router.push` al
+  // detalle. Las copias de este helper seguían buscando la fila en la bandeja y esperaban
+  // 30 s por algo que ya no se renderiza, porque la navegación ya había ocurrido. Se
+  // tolera cualquiera de los dos flujos en vez de fijar el actual: la bandeja sigue siendo
+  // el camino cuando la creación no redirige.
+  const detalle = /\/prevencion\/inspecciones\/[^/?]+$/
+  if (!detalle.test(new URL(page.url()).pathname)) {
+    const fila = page.getByRole("row").filter({ hasText: identificacion }).first()
+    await expect(fila).toBeVisible({ timeout: 30_000 })
+    await fila.getByRole("link").first().click()
+  }
+  await expect(page).toHaveURL(detalle, { timeout: 30_000 })
+
+  return { identificacion, url: page.url() }
+}
+
+/**
+ * Responde un ítem de la inspección abierta.
+ *
+ * Estaba copiado en cuatro specs con la misma omisión: `inspection-run-detail.tsx` pinta
+ * **dos** veces cada ítem —tarjetas para móvil (`item-mobile-*`, línea 1292) y tabla para
+ * escritorio (1381)— con idéntico `aria-label`, y esconde una de las dos por CSS según el
+ * breakpoint. Ambas siguen en el DOM, así que `getByLabel` resolvía a dos elementos y
+ * Playwright abortaba por strict mode. Se filtra por visibilidad en vez de tomar `.first()`:
+ * el primero del DOM es la tarjeta móvil, que en escritorio está oculta y no se puede
+ * clickear.
+ */
+export async function responderItemInspeccion(
+  page: Page,
+  item: string,
+  resultado: string,
+  comentario?: string,
+) {
+  await campoInspeccion(page, `Resultado de ${item}`).click()
+  await page.getByRole("option", { name: resultado, exact: true }).click()
+  if (comentario !== undefined) {
+    await campoInspeccion(page, `Comentario de ${item}`).fill(comentario)
+  }
+}
+
+/**
+ * El control de un ítem, sólo el que está realmente pintado.
+ *
+ * `inspection-run-detail.tsx` documenta en I-06 que el árbol móvil y el de escritorio
+ * coexisten en el DOM —uno oculto por `md:hidden`/`hidden md:*`— y trae su propio
+ * `visibleItemElement` para distinguirlos. Los specs no lo hacían: `getByLabel` resolvía a
+ * los dos y Playwright abortaba por strict mode. Se filtra por visibilidad en vez de tomar
+ * `.first()` porque el primero del DOM es la tarjeta móvil, que en escritorio está oculta.
+ */
+export function campoInspeccion(page: Page, label: string) {
+  return page.getByLabel(label, { exact: false }).filter({ visible: true })
+}
+
+/**
+ * Texto del árbol que está realmente pintado.
+ *
+ * Al menos quince pantallas de este repo renderizan el mismo contenido dos veces —tarjetas
+ * `md:hidden` y tabla `hidden md:block`— y ambas quedan en el DOM. El matiz que decide cada
+ * caso: `getByRole()` ignora los nodos ocultos por defecto y sobrevive; `getByText()`,
+ * `getByLabel()` y `locator()` **no** filtran, así que o revientan por strict mode o se
+ * cuelgan esperando a que aparezca un nodo que nunca será visible.
+ *
+ * Ese segundo caso es el más engañoso: `getByText("En ejecución").first()` devolvía el badge
+ * móvil oculto y esperaba treinta segundos por él, lo que se leía como si el guardado no
+ * hubiera ocurrido cuando en realidad sí había ocurrido.
+ */
+export function textoVisible(page: Page, text: string | RegExp) {
+  return page.getByText(text).filter({ visible: true })
+}
+
+/**
+ * Completa el asistente de "Nuevo producto" desde el paso 1 y lo envía.
+ *
+ * Los specs que sólo necesitan **un** producto en el catálogo lo creaban con
+ * `form.requestSubmit()` desde el paso 1, para no recorrer pasos que no estaban
+ * probando. Ese atajo dejó de guardar: desde que el pie del asistente cambia el
+ * `type` del botón según el paso, el envío del paso 1 avanza al 2 en vez de
+ * crear, y el panel se quedaba abierto en "Atributos" hasta agotar el timeout.
+ *
+ * Recibe el panel ya abierto y con el paso 1 lleno (nombre y categoría): el
+ * camino de variantes tiene su propia cobertura en `admin-flow.spec.ts`.
+ */
+export async function enviarAsistenteDeProducto(page: Page, panel: Locator) {
+  await panel.getByRole("button", { name: /Siguiente/ }).click()
+  // Paso 2 (atributos): sin ninguno, se crea un solo producto sin variantes.
+  await panel.getByRole("button", { name: /Siguiente/ }).click()
+  // `nextStep` regenera las variantes en un `setTimeout(0)`, así que el pie se
+  // vuelve a montar justo después de cambiar de paso: se espera al botón final
+  // antes de clickearlo o el clic cae sobre un nodo que se está desmontando.
+  const crear = panel.getByRole("button", { name: "Crear producto" })
+  await expect(crear).toBeVisible({ timeout: 15_000 })
+  await crear.click()
+  await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
+}
+
+/**
+ * Confirma el cierre de una inspección esperando a que el pie del diálogo se
+ * asiente.
+ *
+ * El botón de confirmar lleva `disabled={… || saving}`, y `saving` sigue al
+ * autoguardado: llenar el acta sube la revisión, el debounce dispara ~1200 ms
+ * después y el pie se vuelve a montar justo cuando el test hace clic. Playwright
+ * reintenta —"intercepts pointer events", "element was detached from the DOM"—
+ * hasta agotar el `actionTimeout`. Esperar a que el botón esté habilitado deja
+ * pasar ese guardado antes de tocarlo.
+ */
+export async function confirmarDeclararEjecutada(page: Page) {
+  const dialogo = page.getByRole("dialog").filter({ visible: true })
+  const confirmar = dialogo.getByRole("button", { name: "Declarar ejecutada" })
+  await expect(confirmar).toBeEnabled({ timeout: 30_000 })
+  await confirmar.click()
+  await expect(page.locator('[role="dialog"]')).not.toBeVisible({ timeout: 30_000 })
+}

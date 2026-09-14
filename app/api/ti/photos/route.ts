@@ -2,13 +2,12 @@ export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
 import { NextResponse } from "next/server"
-import path from "node:path"
 import { guardPermission } from "@/lib/auth/can"
 import { serviceWorksiteScope } from "@/lib/auth/scope"
 import { generateStorageName } from "@/lib/services/prevention-documents/utils"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { mkdirp, removeFile, writeBuffer } from "@/lib/storage/helpers"
-import { resolveTiDir, createTiFilePath } from "@/lib/storage/config"
+import { createTiFilePath, resolveStorageFile, resolveTiDir } from "@/lib/storage/config"
 import { persistPendingPhoto } from "@/lib/services/ti/assignment-photos"
 import { logger } from "@/lib/logger"
 import { safeActionMessage } from "@/lib/action-error"
@@ -66,7 +65,7 @@ export async function POST(request: Request) {
   const storageName = generateStorageName(file.name)
   const dir = resolveTiDir()
   await mkdirp(dir)
-  await writeBuffer(path.join(/*turbopackIgnore: true*/ dir, storageName), Buffer.from(buffer))
+  await writeBuffer(resolveStorageFile(dir, storageName), Buffer.from(buffer))
   const relativePath = createTiFilePath(storageName)
 
   try {
@@ -83,7 +82,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ id }, { status: 201 })
   } catch (error) {
     // La DB o la validación del acta falló: no dejamos basura en disco.
-    await removeFile(path.join(/*turbopackIgnore: true*/ dir, storageName)).catch(() => undefined)
+    await removeFile(resolveStorageFile(dir, storageName)).catch(() => undefined)
     logger.error("[ti:photos:upload]", error)
     return NextResponse.json({ error: safeActionMessage(error, "No se pudo registrar la fotografía.") }, { status: 400 })
   }

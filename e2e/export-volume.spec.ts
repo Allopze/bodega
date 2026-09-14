@@ -16,9 +16,12 @@ test("exportes: genera Excel parseable con volumen operativo alto", async ({ pag
 
   const worksheet = workbook.getWorksheet("Items sin OC")
   expect(worksheet).toBeDefined()
+  // "Talla" entró en b08c4461 (2026-09-03) y corrió una columna a todo lo que va después:
+  // la solicitud pasó de la 4 a la 5.
   expect(worksheet?.getRow(1).values).toEqual([
     undefined,
     "Producto",
+    "Talla",
     "SKU",
     "Faena",
     "Solicitud",
@@ -28,7 +31,7 @@ test("exportes: genera Excel parseable con volumen operativo alto", async ({ pag
     "Fecha creación",
   ])
   expect(worksheet?.rowCount).toBeGreaterThanOrEqual(121)
-  expect(worksheet?.getColumn(4).values.join(" ")).toContain("SOL-BULK-E2E-001")
+  expect(worksheet?.getColumn(5).values.join(" ")).toContain("SOL-BULK-E2E-001")
 })
 
 async function login(page: Page) {
@@ -86,8 +89,20 @@ test("exportes: la columna de estado usa lenguaje de negocio, no el enum", async
 
   for (const tipo of ["gasto_faena", "oc_por_estado", "dte_libro_compras"]) {
     const response = await page.request.get(`/api/reportes/export?tipo=${tipo}`)
+    // Se comprueba la respuesta ANTES de abrirla: un 500 llegaba a ExcelJS como
+    // "Can't find end of central directory : is this a zip file?", que no dice
+    // ni qué informe falló ni que la ruta haya respondido un error.
+    expect(response.status(), `${tipo} no respondió 200: ${(await response.text()).slice(0, 300)}`).toBe(200)
+    const cuerpo = Buffer.from(await response.body())
+    expect(cuerpo.length, `${tipo} devolvió un archivo vacío`).toBeGreaterThan(0)
+    // Un xlsx es un zip: empieza en "PK". Comprobarlo acá nombra el informe y
+    // muestra qué llegó en su lugar, en vez del "is this a zip file?" de jszip.
+    expect(
+      cuerpo.subarray(0, 2).toString("latin1"),
+      `${tipo} no devolvió un xlsx (content-type ${response.headers()["content-type"]}): ${cuerpo.subarray(0, 300).toString("utf8")}`,
+    ).toBe("PK")
     const workbook = new ExcelJS.Workbook()
-    await workbook.xlsx.load(Buffer.from(await response.body()) as never)
+    await workbook.xlsx.load(cuerpo as never)
     const worksheet = workbook.worksheets[0]!
     const encabezados = (worksheet.getRow(1).values as unknown[]).slice(1)
     const columna = encabezados.findIndex((cell) => cell === "Estado" || cell === "Estado plataforma") + 1

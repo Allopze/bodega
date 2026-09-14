@@ -83,16 +83,35 @@ test("salir de /admin restaura el sidebar de negocio", async ({ page }) => {
   await expect(sidebar.getByRole("link", { name: "Soporte" })).toBeVisible()
 })
 
-test("/admin muestra un resumen corto en vez de la grilla de módulos", async ({ page }) => {
+/**
+ * Esta prueba afirmaba lo contrario —un resumen corto, cero enlaces `/admin/`
+ * dentro de `<main>`— y describía un diseño que se revirtió: la pantalla de
+ * entrada sabía exactamente qué podía hacer la sesión y no mostraba nada,
+ * remitía al panel lateral, que en móvil está colapsado. Hoy `AdminAreaIndex`
+ * pinta el mismo árbol filtrado por permiso como índice de destinos.
+ */
+test("/admin ofrece un índice de destinos agrupado por categoría", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1080 })
   await login(page)
   await page.goto("/admin")
   await expectPageTitle(page, "Panel de Administración")
 
-  await expect(page.getByRole("heading", { name: "Elige una categoría" })).toBeVisible()
-  // La grilla vieja tenía decenas de enlaces a módulos dentro de <main>; el
-  // resumen no debe repetir esa navegación (ahora vive en el sidebar).
-  await expect(page.locator("main a[href^='/admin/']")).toHaveCount(0)
+  // Un solo landmark de navegación para las ocho áreas, no uno por área.
+  const indice = page.getByRole("navigation", { name: "Índice de administración" })
+  await expect(indice).toBeVisible()
+
+  for (const category of ADMIN_CATEGORIES) {
+    await expect(indice.getByRole("heading", { name: category, level: 2 })).toBeVisible()
+  }
+
+  // Cada destino es un enlace real a su pantalla, no un rótulo muerto.
+  await expect(indice.getByRole("link", { name: "Cargos y capacidades" }))
+    .toHaveAttribute("href", "/admin/cargos")
+
+  // Los hijos de una rama también son destinos alcanzables desde acá: es lo
+  // que el panel lateral no ofrece en móvil, donde nace colapsado.
+  await expect(indice.getByRole("link", { name: "Proveedores de combustible" }))
+    .toHaveAttribute("href", "/admin/flota-catalogos/proveedores-combustible")
 })
 
 test("el rail colapsado también agrupa Administración por categoría, con flyout por ítems", async ({ page }) => {

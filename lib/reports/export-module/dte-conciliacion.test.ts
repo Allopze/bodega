@@ -1,3 +1,4 @@
+import ExcelJS from "exceljs"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const mocks = vi.hoisted(() => ({
@@ -32,6 +33,7 @@ vi.mock("@/db/schema", () => ({ dteDocuments: {}, purchaseOrderInvoices: {}, pur
 vi.mock("./utils", () => ({ buildDateFilter: () => undefined }))
 
 const { dteConciliacion } = await import("./dte-conciliacion")
+const { buildXlsxBuffer } = await import("./excel-builder")
 
 const doc = (folio: number, invoiceId: string) => ({
   tipoDte: "33", folio, fechaEmision: "2026-08-20", rutEmisor: "86887200-4",
@@ -82,5 +84,31 @@ describe("dteConciliacion · evidencia del vínculo", () => {
     expect(fila("Sólo el año")?.[1]).toBe(1)
     expect(fila("Sin XML")?.[1]).toBe(1)
     expect(fila("Total")?.[1]).toBe(3)
+  })
+
+  // El defecto que esto fija vivía justo en esta costura: los tests de arriba miran el
+  // objeto `ReportData` y nunca el workbook, así que nadie notó que `buildXlsxBuffer`
+  // descartaba la hoja primaria cuando el reporte declaraba una suplementaria. El archivo
+  // que se descargaba traía sólo "Calidad de la referencia" —dos columnas de conteo— sin
+  // la conciliación ni la discrepancia, que es el contenido del reporte.
+  it("exporta el libro con la conciliación y la hoja de calidad, no sólo la segunda", async () => {
+    const report = await dteConciliacion(null, {}, 100)
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(await buildXlsxBuffer(report))
+
+    expect(workbook.worksheets.map((ws) => ws.name)).toEqual([
+      "Conciliación OC-Factura-DTE",
+      "Calidad de la referencia",
+    ])
+
+    const conciliacion = workbook.getWorksheet("Conciliación OC-Factura-DTE")!
+    const encabezados = (conciliacion.getRow(1).values as unknown[]).slice(1)
+    expect(encabezados).toEqual(report.headers)
+    expect(conciliacion.rowCount).toBe(report.rows.length + 1)
+
+    // La discrepancia es la razón de ser del reporte: 110.670 de DTE contra 110.670 de
+    // factura da 0, y esa celda tiene que llegar al archivo.
+    const discrepancia = report.headers.indexOf("Discrepancia") + 1
+    expect(conciliacion.getRow(2).getCell(discrepancia).value).toBe(0)
   })
 })

@@ -1,10 +1,9 @@
 /** Server-only storage helpers for purchase-order invoice attachments. */
 
 import { promises as fs } from "node:fs"
-import path from "node:path"
 import { nanoid } from "@/lib/id"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
-import { createInvoiceAttachmentPath, resolvePurchaseOrdersDir } from "@/lib/storage/config"
+import { createInvoiceAttachmentPath, resolvePurchaseOrdersDir, resolveStorageFile } from "@/lib/storage/config"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 
 export interface InvoiceAttachment {
@@ -80,7 +79,7 @@ async function persistInvoiceBuffer(
   const safeName = sanitizeFileName(originalName)
   const storageName = `${Date.now()}-${nanoid()}-${safeName}`
   const storageDir = resolvePurchaseOrdersDir()
-  const absolutePath = path.join(storageDir, storageName)
+  const absolutePath = resolveStorageFile(storageDir, storageName)
 
   await fs.mkdir(storageDir, { recursive: true })
   await fs.writeFile(absolutePath, buffer, { flag: "wx" })

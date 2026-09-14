@@ -6,7 +6,6 @@
  */
 
 import { promises as fs } from "node:fs"
-import path from "node:path"
 import { and, eq, isNull } from "drizzle-orm"
 import { db } from "@/db"
 import { dteDocuments } from "@/db/schema"
@@ -14,7 +13,7 @@ import { cleanRut } from "@/lib/rut"
 import { nanoid } from "@/lib/id"
 import { validateFileBuffer, MimeType } from "@/lib/file-validation"
 import { getPdfMaxSizeMb } from "@/lib/services/system-settings"
-import { createDtePath, resolveDteDir, resolveDteFile } from "@/lib/storage/config"
+import { createDtePath, resolveDteDir, resolveDteFile, resolveStorageFile } from "@/lib/storage/config"
 import { buildDtePortalClientConfig } from "./config"
 import { DtePortalClient } from "./client"
 import { downloadDtePdf } from "./download"
@@ -303,7 +302,7 @@ async function cachePdf(
   const storageDir = resolveDteDir()
   const storageName = `${Date.now()}-${nanoid()}-${doc.tipoDte}-${doc.folio}.pdf`
   const relativePath = createDtePath(storageName)
-  const finalPath = path.join(storageDir, storageName)
+  const finalPath = resolveStorageFile(storageDir, storageName)
   const temporaryPath = `${finalPath}.${nanoid(8)}.tmp`
 
   try {

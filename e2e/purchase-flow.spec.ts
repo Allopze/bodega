@@ -100,8 +100,16 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
   // seguimiento de la misma página, así que un `getByText` suelto era ambiguo.
   await expect(page.getByRole("table").getByText("Guante E2E").first()).toBeVisible()
 
-  await page.goto("/trazabilidad?estado=received")
-  await expect(page.getByRole("row", { name: /Guante E2E.*5 unidad.*Recibido/ }).first()).toBeVisible()
+  // Cada fila de la matriz es una SOLICITUD, no una línea: el ítem, sus
+  // cantidades y su expediente viven en el detalle que se despliega. Y se acota
+  // con `q` —que busca por correlativo— porque `estado=received` no es ninguno
+  // de los `ComputedStatus` y el filtro se ignoraba por completo.
+  await page.goto(`/bodega/trazabilidad?q=${encodeURIComponent(requestCode)}`)
+  const filaTrazabilidad = page.getByRole("row").filter({ hasText: requestCode })
+  await expect(filaTrazabilidad).toHaveCount(1, { timeout: 15_000 })
+  await filaTrazabilidad.getByRole("button", { name: "Expandir detalle" }).click()
+  await page.getByRole("link", { name: "Ver expediente completo" }).first().click()
+  await expect(page.getByRole("heading", { level: 1, name: "Guante E2E" })).toBeVisible({ timeout: 15_000 })
 
   await page.goto("/reportes")
   // La pasada 32 unificó los cuatro exportes bajo una sola entrada: el informe
@@ -116,7 +124,7 @@ test("flujo solicitud, aprobación, OC, recepción y trazabilidad", async ({ pag
 
 test("ítem rechazado no aparece como pendiente de compra", async ({ page }) => {
   await login(page)
-  await createCatalogRequest(page, "Rechazo E2E", "2", { freeText: true })
+  const code = await createCatalogRequest(page, "Rechazo E2E", "2", { freeText: true })
 
   await page.goto("/aprobaciones")
   // Scoped to this test's own item: other tests in the full suite leave
@@ -134,8 +142,20 @@ test("ítem rechazado no aparece como pendiente de compra", async ({ page }) => 
   await page.getByRole("button", { name: "Confirmar rechazo" }).click()
   await expect(ownItem).not.toBeVisible({ timeout: 30_000 })
 
-  await page.goto("/trazabilidad?estado=rejected")
-  await expect(page.getByRole("row", { name: /Rechazo E2E.*Rechazado/ }).first()).toBeVisible()
+  // `rechazado`, el valor que declara `COMPUTED_STATUS_METAS`: un `?estado=`
+  // inventado se ignora en vez de filtrar, así que "rejected" traía la tabla
+  // entera. Y la fila es la SOLICITUD, no la línea —el detalle por ítem vive
+  // dentro, al expandirla—, de modo que se ancla por su correlativo.
+  await page.goto("/bodega/trazabilidad?estado=rechazado")
+  const fila = page.getByRole("row").filter({ hasText: code })
+  await expect(fila).toHaveCount(1, { timeout: 15_000 })
+  await expect(fila.getByRole("cell", { name: "Rechazado" })).toBeVisible()
+
+  // El detalle desplegado trae cantidades y cronología, no el nombre del
+  // producto: ese vive en el expediente del ítem, que es adonde lleva.
+  await fila.getByRole("button", { name: "Expandir detalle" }).click()
+  await page.getByRole("link", { name: "Ver expediente completo" }).first().click()
+  await expect(page.getByRole("heading", { level: 1, name: "Rechazo E2E" })).toBeVisible({ timeout: 15_000 })
 
   await page.goto("/compras/nueva")
   await expect(page.getByText("Rechazo E2E")).toHaveCount(0)

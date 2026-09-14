@@ -9,6 +9,7 @@ import * as schema from "@/db/schema"
 import type { Session } from "next-auth"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { fieldKindIsScorable, type InspectionItemSpec } from "@/lib/prevention/inspections"
+import { officialInspectionSourceFor } from "@/lib/sst/official-inspection-sources"
 import {
   assertSafeDestructiveDatabase,
   getDatabaseNameFromUrl,
@@ -86,6 +87,89 @@ function answersForAll(
 }
 
 /**
+ * Versión de la Biblioteca SST que respalda a un anexo oficial del SGI.
+ *
+ * `approveInspectionTemplate` no habilita una plantilla `official_document` sin
+ * una versión documental vinculada, con paridad declarada y **el checksum del
+ * binario original**. Los anexos se cotejan contra
+ * `OFFICIAL_INSPECTION_SOURCES`, así que la fila que siembra esta función lleva
+ * ese mismo `sha256`: sin él el servicio la rechaza por integridad, que es
+ * exactamente lo que debe hacer.
+ *
+ * Memoizada por definición: varias pruebas incorporan versiones sucesivas del
+ * mismo instrumento y todas cuelgan del mismo documento.
+ */
+const officialSourceVersions = new Map<string, string>()
+
+async function officialSourceVersionFor(definitionCode: string): Promise<string | undefined> {
+  const source = officialInspectionSourceFor(definitionCode)
+  // `reporte_equipos` exige respaldo documental sin estar en el catálogo de
+  // anexos: no hay checksum contra el que cotejar, pero sí hace falta la fila.
+  if (!source && definitionCode !== "reporte_equipos") return undefined
+
+  const cached = officialSourceVersions.get(definitionCode)
+  if (cached) return cached
+
+  const now = new Date().toISOString()
+  const documentId = `sstdoc-${definitionCode}`
+  const versionId = `sstdocv-${definitionCode}`
+  await getDb().insert(schema.sstDocuments).values({
+    id: documentId,
+    categorySlug: SST_CATEGORY,
+    title: source?.fileName ?? `Respaldo documental de ${definitionCode}`,
+    status: "vigente",
+    uploadedBy: AUTHOR.userId,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await getDb().insert(schema.sstDocumentVersions).values({
+    id: versionId,
+    documentId,
+    version: 1,
+    status: "vigente",
+    fileName: source?.fileName ?? `${definitionCode}.xlsx`,
+    storageName: `${definitionCode}.xlsx`,
+    filePath: `storage/sst-documents/${definitionCode}.xlsx`,
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    fileSize: 1024,
+    checksum: source?.sha256 ?? "f".repeat(64),
+    effectiveFrom: source?.effectiveDate ?? null,
+    uploadedBy: AUTHOR.userId,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await getDb().update(schema.sstDocuments)
+    .set({ currentVersionId: versionId })
+    .where(eq(schema.sstDocuments.id, documentId))
+
+  officialSourceVersions.set(definitionCode, versionId)
+  return versionId
+}
+
+/**
+ * Incorpora una definición adjuntando su respaldo documental cuando el
+ * instrumento lo exige. Los anexos del SGI no pueden habilitarse sin él, así
+ * que las pruebas que necesitan una plantilla usable pasan por acá en vez de
+ * llamar al servicio en crudo.
+ */
+async function importTemplate(
+  input: { definitionCode: string; kind?: "inspection" | "observation" | "audit"; versionLabel?: string; pdtpActivityNumbers?: number[] },
+  access: typeof AUTHOR = AUTHOR,
+) {
+  const service = await import("@/lib/services/prevention-inspections")
+  const sourceDocumentVersionId = await officialSourceVersionFor(input.definitionCode)
+  return service.importInspectionTemplate({
+    ...input,
+    ...(sourceDocumentVersionId
+      ? {
+          sourceDocumentVersionId,
+          parityReport: { status: "passed" as const, expectedItems: null, actualItems: null, differences: [] },
+        }
+      : {}),
+  }, access)
+}
+
+/**
  * Instala un instrumento listo para usar: incorporar deja borrador y habilitar
  * es un acto aparte, así que los casos que sólo necesitan una plantilla
  * ejecutable hacen los dos pasos por acá en vez de repetirlos.
@@ -94,7 +178,7 @@ async function installTemplate(
   input: { definitionCode: string; kind?: "inspection" | "observation" | "audit"; versionLabel?: string; pdtpActivityNumbers?: number[] },
 ) {
   const service = await import("@/lib/services/prevention-inspections")
-  const draft = await service.importInspectionTemplate(input, AUTHOR)
+  const draft = await importTemplate(input)
   return service.approveInspectionTemplate({
     templateId: draft.id, expectedVersion: draft.version,
     reason: "Instrumento habilitado para la faena en la prueba.",
@@ -172,22 +256,34 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     expect(available.every((item) => item.items > 0)).toBe(true)
   })
 
-  it("refuses the Observación Planeada: no puntúa ni puede derivar hallazgos", async () => {
+  /**
+   * El Anexo 7 SÍ se incorpora desde que se digitalizó con
+   * `recordsPreventiveActions`: aporta al motor —registra acciones preventivas
+   * y las lleva al PDTP— aunque no puntúe ningún ítem.
+   *
+   * Esta prueba afirmaba lo contrario y llevaba tiempo en rojo:
+   * `NON_INSPECTION_DEFINITION_CODES` está vacío, así que
+   * `isNonInspectionDefinition` no excluye a nadie y el servicio nunca lanzó
+   * "no es un instrumento". Lo que sí sigue fuera son las evaluaciones de
+   * personas, que pertenecen al módulo de Evaluaciones.
+   */
+  it("admite la Observación Planeada: no puntúa, pero registra acciones preventivas", async () => {
     const service = await import("@/lib/services/prevention-inspections")
-    // Fuera del catálogo de importables…
-    expect(service.listImportableDefinitions().map((item) => item.code)).not.toContain("observacion_planeada")
-    // …y también de la puerta, porque el código llega por la acción.
-    await expect(service.importInspectionTemplate({ definitionCode: "observacion_planeada" }, AUTHOR))
-      .rejects.toThrow(/no es un instrumento/i)
-    // Las otras dos observaciones se quedan.
-    expect(service.listImportableDefinitions().map((item) => item.code)).toContain("observacion_ampliroll")
+    const importables = service.listImportableDefinitions().map((item) => item.code)
+    expect(importables).toContain("observacion_planeada")
+    // Las otras dos observaciones siguen estando.
+    expect(importables).toContain("observacion_ampliroll")
+    expect(importables).toContain("observacion_maquinaria")
+
+    const template = await importTemplate({ definitionCode: "observacion_planeada" })
+    expect(template).toMatchObject({ status: "draft", sourceDefinitionCode: "observacion_planeada" })
   })
 
   // Incorporar y habilitar son dos actos distintos: el instrumento nace en
   // borrador y alguien deja constancia de que lo pone en uso.
   it("imports an existing SST definition as a draft and freezes its content hash", async () => {
     const service = await import("@/lib/services/prevention-inspections")
-    const template = await service.importInspectionTemplate({ definitionCode: "inspeccion_extintores" }, AUTHOR)
+    const template = await importTemplate({ definitionCode: "inspeccion_extintores" })
     templateId = template.id
     expect(template).toMatchObject({
       status: "draft", sourceDefinitionCode: "inspeccion_extintores",
@@ -253,9 +349,7 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
 
   it("retira una plantilla sin uso borrándola, y conserva la que tiene ejecuciones", async () => {
     const service = await import("@/lib/services/prevention-inspections")
-    const spare = await service.importInspectionTemplate(
-      { definitionCode: "inspeccion_contenedores" }, AUTHOR,
-    )
+    const spare = await importTemplate({ definitionCode: "inspeccion_contenedores" })
     // Nunca se usó: se elimina de verdad.
     const gone = await service.retireInspectionTemplate({
       templateId: spare.id, reason: "Instrumento que esta faena no ocupa.",
@@ -345,7 +439,15 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       .rejects.toThrow(/No se puede declarar ejecutada/)
   })
 
-  it("requires a reason to mark an item as not applicable", async () => {
+  /**
+   * La regla es "una respuesta que no es conforme exige motivo", y se prueba
+   * con el resultado que la escala del instrumento SÍ ofrece. El Anexo 2 se
+   * responde Bueno/Malo —`bueno_malo_obs`—, así que pedir "No aplica" acá lo
+   * rechaza antes por escala y nunca llega a la guarda del motivo, que es lo
+   * que este caso vigila. La rama de "No aplica" vive en los instrumentos cuya
+   * escala la ofrece.
+   */
+  it("requires a reason for an answer that is not conforming", async () => {
     const service = await import("@/lib/services/prevention-inspections")
     const target = scorableItem()
     // B-03: el mensaje lo produce el servicio (`validateAnswerRow`) y nombra el
@@ -353,16 +455,16 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     // texto crudo de la violación y tumbaba el lote entero.
     await expect(service.saveInspectionAnswers({
       runId, expectedVersion: await currentRunVersion(runId),
-      answers: [{ sectionId: target.sectionId, itemId: target.itemId, result: "not_applicable", comment: "" }],
+      answers: [{ sectionId: target.sectionId, itemId: target.itemId, result: "non_conforming", comment: "" }],
     }, AUTHOR)).rejects.toThrow(/exige indicar el motivo/)
 
     await service.saveInspectionAnswers({
       runId, expectedVersion: await currentRunVersion(runId),
-      answers: [{ sectionId: target.sectionId, itemId: target.itemId, result: "not_applicable", comment: "Extintor retirado de servicio." }],
+      answers: [{ sectionId: target.sectionId, itemId: target.itemId, result: "non_conforming", comment: "Extintor retirado de servicio." }],
     }, AUTHOR)
     const [stored] = await getDb().select().from(schema.preventionInspectionAnswers)
       .where(eq(schema.preventionInspectionAnswers.runId, runId))
-    expect(stored).toMatchObject({ result: "not_applicable" })
+    expect(stored).toMatchObject({ result: "non_conforming" })
   })
 
   it("completes the run, computes compliance and materializes findings by criticality", async () => {
@@ -581,8 +683,8 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     // Run propio, no el `runId` compartido: para este punto de la suite ya
     // quedó "reviewed" (cerrado) por los tests de revisión de más abajo.
     const created = await service.createInspectionRun({ templateId, worksiteId: "ws-in-a" }, AUTHOR)
-    // El template de extintores es cumple/no-cumple puro (§80-92): ningún
-    // ítem admite 'partial'.
+    // El Anexo 2 se responde Bueno/Malo (`bueno_malo_obs`): ningún ítem admite
+    // 'partial'.
     // Puntuable pero sin escala B/R/M: un `select` o un `text` fallaría por no
     // admitir vocabulario de conformidad, no por la escala, que es lo que se prueba.
     const target = itemsCache.find((item) => fieldKindIsScorable(item.kind) && !fieldKindAcceptsPartial(item.kind))!
@@ -591,7 +693,7 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       runId: created.run.id, expectedVersion: created.run.version,
       answers: [{ sectionId: target.sectionId, itemId: target.itemId, result: "partial", comment: "Desgaste menor." }],
       // El mensaje nombra lo que el ítem SÍ admite, en el vocabulario del anexo.
-    }, AUTHOR)).rejects.toThrow(/se responde Cumple, No cumple, No aplica/)
+    }, AUTHOR)).rejects.toThrow(/se responde Bueno, Malo/)
   })
 
   it("persists 'partial' end-to-end on a B/R/M template and scores it at 0.5", async () => {
@@ -667,9 +769,9 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
     // Incorporar la v2 la deja en borrador y NO jubila a la v1: sacar de
     // circulación al instrumento en uso por un borrador que quizás nadie
     // apruebe dejaría a la faena sin nada que ejecutar.
-    const draft = await service.importInspectionTemplate({
+    const draft = await importTemplate({
       definitionCode: "inspeccion_contenedores", versionLabel: "02",
-    }, AUTHOR)
+    })
     expect(draft.status).toBe("draft")
     const [stillLive] = await getDb().select().from(schema.preventionInspectionTemplates)
       .where(eq(schema.preventionInspectionTemplates.id, v1.id))
@@ -760,7 +862,9 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       runId: created.run.id, expectedVersion: created.run.version,
       answers: [
         answerFor(good!),
-        { sectionId: bad!.sectionId, itemId: bad!.itemId, result: "not_applicable" as const, comment: "" },
+        // Sin motivo: la escala del Anexo 2 no ofrece "No aplica", así que la
+        // fila inválida es un "Malo" mudo.
+        { sectionId: bad!.sectionId, itemId: bad!.itemId, result: "non_conforming" as const, comment: "" },
       ],
     }, AUTHOR)).rejects.toThrow(/exige indicar el motivo/)
 
@@ -1236,10 +1340,13 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
       const entry = await offer(deviations, template.code, `Barandas sueltas ${Date.now()}`, "grave")
       expect((await deviations.listOfferedDeviations(template.code)).map((r) => r.id)).toContain(entry.id)
 
-      const v2 = await service.importInspectionTemplate(
-        { definitionCode: "inspeccion_carros", versionLabel: `v2-${Date.now()}` }, AUTHOR,
+      const v2 = await importTemplate(
+        { definitionCode: "inspeccion_carros", versionLabel: `v2-${Date.now()}` },
       )
-      await service.approveInspectionTemplate({ templateId: v2.id }, APPROVER)
+      await service.approveInspectionTemplate({
+        templateId: v2.id, expectedVersion: v2.version,
+        reason: "Versión nueva del instrumento habilitada en la prueba.",
+      }, APPROVER)
 
       expect(v2.id).not.toBe(template.id)
       expect(v2.code).toBe(template.code)
@@ -1801,8 +1908,14 @@ describeIf("Motor de inspecciones on real PostgreSQL", () => {
   })
 })
 
+/** Las migraciones crean la tabla de categorías pero no la pueblan. */
+const SST_CATEGORY = "fixture-inspecciones"
+
 async function seedFixture(database: ReturnType<typeof drizzle<typeof schema>>) {
   const now = new Date().toISOString()
+  await database.insert(schema.sstDocumentCategories).values({
+    slug: SST_CATEGORY, name: "Respaldo documental de las pruebas", createdAt: now, updatedAt: now,
+  })
   await database.insert(schema.worksites).values([
     { id: "ws-in-a", name: "Faena Norte", code: "IN-A", createdAt: now, updatedAt: now },
     { id: "ws-in-b", name: "Faena Sur", code: "IN-B", createdAt: now, updatedAt: now },

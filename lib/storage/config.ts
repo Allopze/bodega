@@ -141,6 +141,42 @@ function isSafeStorageName(storageName: string): boolean {
     && !/[\u0000-\u001f]/.test(storageName)
 }
 
+/**
+ * Ruta absoluta de un archivo almacenado, a partir de su directorio y su nombre.
+ *
+ * **Este es el único lugar donde se arma esa ruta.** Turbopack evalúa `path.join` como un
+ * patrón de archivo y traza todo lo que calce; cuando el primer argumento es un valor de
+ * runtime el patrón globea el proyecto entero. Sin el `turbopackIgnore` de abajo, cada
+ * sitio de subida metía el repositorio completo en el trazado: `.next/standalone` llegó a
+ * pesar 2,5 GB e incluía `storage/` con 10.316 archivos reales subidos por usuarios
+ * —certificados, facturas, documentos SST— dentro de la imagen de producción.
+ *
+ * El comentario es **léxico**, así que no se puede delegar: tiene que estar en el
+ * `path.join` mismo. Por eso vive acá y los llamadores ya no importan `node:path`; un
+ * sitio nuevo no puede reintroducir la fuga sin salirse de este módulo a propósito.
+ *
+ * Valida el nombre igual que `createXPath`: el punto de escritura no tenía esa defensa
+ * —sólo la tenía la construcción de la ruta relativa— y es donde más importa.
+ */
+export function resolveStorageFile(dir: string, storageName: string): string {
+  if (!isSafeStorageName(storageName)) {
+    throw new Error(`Invalid storage file name: ${JSON.stringify(storageName)}`)
+  }
+  return path.join(/*turbopackIgnore: true*/ dir, storageName)
+}
+
+/* ── Subdirectorios que se armaban con un join suelto en el sitio de uso ──── */
+
+/** Adjuntos de feedback interno. Antes: `path.join(resolveStorageDir(), "feedback")`. */
+export function resolveFeedbackDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "feedback")
+}
+
+/** Excel original de cada lote de importación de riesgos (MIPER). */
+export function resolveRiskImportsDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "risk-imports")
+}
+
 export function resolveFleetDir(): string {
   return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "flota")
 }
