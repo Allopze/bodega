@@ -270,9 +270,17 @@ describeIf("Gestión del cambio on real PostgreSQL", () => {
     }, MANAGER)
 
     let release = () => {}
+    let lockTaken = () => {}
     const holdReleased = new Promise<void>((resolve) => { release = resolve })
+    /* La aprobación tiene que estar YA sobre la fila antes de disparar la
+     * evaluación. Sin esta señal el orden lo decidía el pool de conexiones: si
+     * la evaluación tomaba el `FOR UPDATE` primero, la aprobación quedaba
+     * esperando, la evaluación veía el cambio abierto y pasaba — que es lo que
+     * ocurría bajo carga. */
+    const lockAcquired = new Promise<void>((resolve) => { lockTaken = resolve })
     const approval = client!.begin(async (tx) => {
       await tx`SELECT id FROM prevention_change_requests WHERE id = ${request.id} FOR UPDATE`
+      lockTaken()
       await holdReleased
       await tx`UPDATE prevention_change_requests
                SET status = 'approved', approved_by_user_id = 'chg-approver', approved_at = now(),
@@ -280,12 +288,16 @@ describeIf("Gestión del cambio on real PostgreSQL", () => {
                WHERE id = ${request.id}`
     })
 
+    await lockAcquired
+
     // El rechazo se materializa de inmediato para no dejar una promesa sin
     // manejar mientras esperamos a que la aprobación suelte el lock.
     const evaluation = service.evaluateChangeDimension({
       changeRequestId: request.id, dimension: "risk", impacted: false, actionRequired: false,
     }, MANAGER).then(() => null, (error: Error) => error)
 
+    // Margen para que la evaluación llegue a su propio `FOR UPDATE` y quede
+    // encolada detrás de la aprobación, que es el orden que este caso prueba.
     await new Promise((resolve) => setTimeout(resolve, 250))
     release()
     await approval
