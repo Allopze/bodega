@@ -2,12 +2,12 @@ import { test, expect } from "@playwright/test"
 import { login, expectPageTitle } from "./helpers"
 
 /**
- * E2E Spec: Capacitaciones, Competencias y Matriz ODI (DS 40 / DS 44).
+ * E2E Spec: control anual de capacitaciones y evidencia (DS 44).
  *
  * Cubre:
- *   • Renderizado de la bandeja de sesiones de capacitación y competencias.
- *   • Navegación al catálogo de capacitación y versiones publicadas.
- *   • Visualización de brechas de capacitación y reconocimientos pendientes.
+ *   • Renderizado de la bandeja anual por faena.
+ *   • Compatibilidad del marcador de catálogo anterior y conservación de las rutas históricas.
+ *   • Visualización de estados y evidencia de capacitación.
  *   • Exportación de registros de capacitación a Excel.
  */
 
@@ -16,15 +16,16 @@ test.describe("Prevención — Capacitaciones y ODI", () => {
     await login(page)
   })
 
-  test("la bandeja de capacitación carga correctamente y permite navegar al catálogo", async ({ page }) => {
+  test("la bandeja anual de capacitación carga correctamente", async ({ page }) => {
     await page.goto("/prevencion/capacitacion")
     await expect(page).toHaveURL(/\/prevencion\/capacitacion/)
-    await expectPageTitle(page, "Capacitación y competencias")
+    await expectPageTitle(page, "Capacitación")
 
-    // Navegación al catálogo de capacitación
+    // Los marcadores del catálogo anterior aterrizan en la bandeja unificada;
+    // las rutas de expediente histórico siguen siendo consultables aparte.
     await page.goto("/prevencion/capacitacion/catalogo")
-    await expect(page).toHaveURL(/\/prevencion\/capacitacion\/catalogo/)
-    await expectPageTitle(page, "Catálogo de capacitación")
+    await expect(page).toHaveURL(/\/prevencion\/capacitacion(?:\?.*)?$/)
+    await expectPageTitle(page, "Capacitación")
   })
 
   test("exportar entrega el consolidado de capacitaciones en Excel", async ({ page }) => {

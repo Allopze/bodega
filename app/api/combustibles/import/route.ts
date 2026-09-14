@@ -10,6 +10,7 @@ import { logger } from "@/lib/logger"
 import { fuelProductIdForLegacy } from "@/lib/combustibles/fuel-products"
 import { fuelEquipmentTypeIdForLegacy, fuelMetricDefaultsForLegacy } from "@/lib/combustibles/validation"
 import { isRouteOperational } from "@/lib/services/module-toggles"
+import { ensurePreventionTrainingOccurrencesForWorksiteTx } from "@/lib/services/prevention-training-occurrences"
 
 const CREATE_FAENA = "__create__"
 const SKIP_FAENA = "__skip__"
@@ -120,6 +121,7 @@ export async function POST(req: NextRequest) {
           const id = nanoid()
           const name = toTitleCase(fileFaena)
           await tx.insert(worksites).values({ id, name, code: makeWorksiteCode(fileFaena, takenCodes), isActive: true })
+          await ensurePreventionTrainingOccurrencesForWorksiteTx(tx, id)
           resolvedFaena.set(fileFaena, id)
           createdWorksiteIds.add(id)
           worksiteMap.set(fileFaena.toUpperCase(), id)

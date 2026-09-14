@@ -6,7 +6,7 @@ export default function Loading() {
   return (
     <PageContainer>
       <PageHeader
-        title="Capacitación SST"
+        title="Capacitación"
         breadcrumb={
           <Breadcrumbs items={[
             { label: "Prevención", href: "/prevencion" },

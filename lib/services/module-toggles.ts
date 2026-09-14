@@ -213,7 +213,9 @@ const PERMISSION_TARGET_OVERRIDES: Array<{ test: (permission: string) => boolean
   { test: (permission) => permission.startsWith("prevention:emergency:"), href: "/prevencion/emergencias" },
   { test: (permission) => permission.startsWith("prevention:change:"), href: "/prevencion/gestion-cambio" },
   { test: (permission) => permission.startsWith("prevention:epp:"), href: "/prevencion/epp-preventivo" },
-  { test: (permission) => permission.startsWith("prevention:campaign:"), href: "/prevencion/campanas" },
+  // Las campañas del programa anual se registran en el catálogo controlado;
+  // el permiso legado conserva compatibilidad, pero ya no deriva al alta libre.
+  { test: (permission) => permission.startsWith("prevention:campaign:"), href: "/prevencion/capacitacion" },
   { test: (permission) => permission.startsWith("prevention:engagement:"), href: "/prevencion/coordinacion" },
   { test: (permission) => permission.startsWith("prevention:docs:"), href: "/prevencion/documentacion" },
   { test: (permission) => permission.startsWith("prevention:indicadores:"), href: "/prevencion/indicadores" },

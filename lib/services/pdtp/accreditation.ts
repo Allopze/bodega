@@ -37,6 +37,7 @@ type AccreditationClient = DB | Tx
 export type PdtpAccreditationSourceType =
   | "inspeccion"
   | "capacitacion"
+  | "capacitacion_ocurrencia"
   | "epp"
   | "cphs"
   | "emergencia"
@@ -100,6 +101,10 @@ export type AccreditationInput = {
   programId?: string
   /** ISO timestamp del evento real — determina el mes/semana PDTP. */
   occurredAt: string
+  /** Posición del cronograma fuente cuando el hecho se registra más tarde. */
+  plannedPeriod?: { year: number; month: number; week: number }
+  /** Año del cronograma fuente para actividades anuales sin mes/semana. */
+  plannedYear?: number
   /** Cantidad ejecutada (default 1). */
   executedQuantity?: number
   /** URL o texto breve de evidencia para la ejecución. */
@@ -205,11 +210,38 @@ type ResolvedProgramEvent =
  * `onInspectionCompleted`.
  */
 async function resolvePdtpActiveProgramForEvent(
-  input: { worksiteId: string; occurredAt: string; programId?: string; sourceType: string; sourceId: string },
+  input: { worksiteId: string; occurredAt: string; programId?: string; sourceType: string; sourceId: string; plannedYear?: number; plannedPeriod?: { year: number; month: number; week: number } },
   client: AccreditationClient,
 ): Promise<ResolvedProgramEvent> {
-  const occurredYear = yearOfOccurrence(input.occurredAt)
-  const slot = periodSlot(input.occurredAt)
+  const actualOccurredYear = yearOfOccurrence(input.occurredAt)
+  const occurredYear = input.plannedPeriod?.year ?? input.plannedYear ?? actualOccurredYear
+  const slot = input.plannedPeriod
+    ? { month: input.plannedPeriod.month, week: input.plannedPeriod.week }
+    : periodSlot(input.occurredAt)
+  if (
+    (input.plannedPeriod && (
+      !Number.isInteger(input.plannedPeriod.year)
+      || !Number.isInteger(input.plannedPeriod.month)
+      || !Number.isInteger(input.plannedPeriod.week)
+      || input.plannedPeriod.year < 2024
+      || input.plannedPeriod.year > 2100
+      || input.plannedPeriod.month < 1
+      || input.plannedPeriod.month > 12
+      || input.plannedPeriod.week < 1
+      || input.plannedPeriod.week > 4
+    ))
+  ) {
+    throw new Error("El período planificado de la capacitación no es válido.")
+  }
+  if (
+    input.plannedYear !== undefined
+    && (!Number.isInteger(input.plannedYear) || input.plannedYear < 2024 || input.plannedYear > 2100)
+  ) {
+    throw new Error("El año planificado de la capacitación no es válido.")
+  }
+  if (input.plannedPeriod && input.plannedYear !== undefined && input.plannedPeriod.year !== input.plannedYear) {
+    throw new Error("El año planificado no coincide con el período de la capacitación.")
+  }
 
   // 1. Resolver el programa activo de la faena
   let program: typeof pdtpPrograms.$inferSelect | null = null
@@ -348,8 +380,8 @@ export async function accreditPdtpFromEvent(
   input: AccreditationInput,
   client: AccreditationClient = db,
 ): Promise<AccreditationResult> {
-  if (input.autoApproveByUserId && input.sourceType !== "inspeccion") {
-    throw new Error("Sólo las inspecciones pueden aprobar automáticamente su cumplimiento al ejecutarse.")
+  if (input.autoApproveByUserId && input.sourceType !== "inspeccion" && input.sourceType !== "capacitacion_ocurrencia") {
+    throw new Error("Sólo las inspecciones y las ocurrencias de capacitación pueden aprobar automáticamente su cumplimiento.")
   }
   if (input.activityNumbers.length === 0) {
     return { accredited: [], skippedExcluded: [], skippedNotFound: [] }
@@ -385,7 +417,15 @@ export async function accreditPdtpFromEvent(
   }
 
   const resolved = await resolvePdtpActiveProgramForEvent(
-    { worksiteId: input.worksiteId, occurredAt: input.occurredAt, programId: input.programId, sourceType: input.sourceType, sourceId: input.sourceId },
+    {
+      worksiteId: input.worksiteId,
+      occurredAt: input.occurredAt,
+      programId: input.programId,
+      sourceType: input.sourceType,
+      sourceId: input.sourceId,
+      plannedYear: input.plannedYear,
+      plannedPeriod: input.plannedPeriod,
+    },
     client,
   )
   if (!resolved.ok) {
@@ -474,6 +514,8 @@ export async function accreditPdtpFromEvent(
       sourceType: input.sourceType,
       sourceId: input.sourceId,
       occurredAt: input.occurredAt,
+      ...(input.plannedYear !== undefined ? { plannedYear: input.plannedYear } : {}),
+      ...(input.plannedPeriod ? { plannedPeriod: input.plannedPeriod } : {}),
       ...(input.autoApproveByUserId ? {
         approvalMode: "automatic_source_event",
         automaticApprovedByUserId: input.autoApproveByUserId,

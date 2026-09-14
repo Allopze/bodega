@@ -136,6 +136,13 @@ INVENTARIO DE EXTINTORES FAENA BIODIVERSA 2026.xlsx
 !/docs/**/
 !/docs/**/*.md
 !/docs/**/*.svg
+# Excepciones de /docs:init y /docs:plan: solo configuración y planificación,
+# texto pequeño y editable a mano. docs/.knowledge/ (derivado, regenerable) y
+# las capturas (.png) siguen ignorados a propósito, para no repetir el
+# crecimiento de peso que motivó la lista blanca de arriba.
+!/docs/aidocs-config.yml
+!/docs/.ignore
+!/docs/plan.yml
 /qa
 # Scratch de ejecución de planes (subagent-driven development)
 .superpowers/
@@ -146,3 +153,12 @@ OC-ejemplo-pdfcn.pdf
 .claude/worktrees/
 
 auditoria/
+# Documentation credentials (do not commit)
+docs/.auth
+
+# Volcado temporal del registry para la base de conocimiento de docs
+scripts/.tmp-docs-registry.json
+
+# Runner temporal de /docs:execute (Playwright vía node, no vía MCP) — nunca
+# debe versionarse: puede contener estado de sesión.
+scripts/.docs-runner/

@@ -66,6 +66,7 @@ describe("prevention module RBAC", () => {
       "prevention:training:manage",
       "prevention:training:approve",
       "prevention:training:deliver",
+      "prevention:training:record",
       "prevention:training:ack",
       "prevention:training:convalidate",
       "prevention:training:revoke",

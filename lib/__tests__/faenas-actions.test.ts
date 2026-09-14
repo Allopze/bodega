@@ -10,10 +10,12 @@ const mockCan = vi.hoisted(() => vi.fn(() => true))
 const mockResolveWorksiteScope = vi.hoisted(() => vi.fn(() => ({ mode: "all" as "all" | "some" | "none", ids: [] as string[] })))
 const mockFindFirstWorksite = vi.hoisted(() => vi.fn())
 const mockInsert = vi.hoisted(() => vi.fn())
+const mockTransaction = vi.hoisted(() => vi.fn())
 const mockUpdate = vi.hoisted(() => vi.fn())
 const mockSet = vi.hoisted(() => vi.fn())
 const mockRecordAudit = vi.hoisted(() => vi.fn())
 const mockSetWorksiteActive = vi.hoisted(() => vi.fn())
+const mockEnsurePreventionTrainingOccurrencesForWorksiteTx = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: mockRequirePermission,
@@ -29,6 +31,7 @@ vi.mock("@/db", () => ({
       worksites: { findFirst: mockFindFirstWorksite },
     },
     insert: mockInsert,
+    transaction: mockTransaction,
     update: mockUpdate,
   },
 }))
@@ -37,6 +40,9 @@ vi.mock("@/lib/audit", () => ({
 }))
 vi.mock("@/lib/services/worksite-lifecycle", () => ({
   setWorksiteActive: mockSetWorksiteActive,
+}))
+vi.mock("@/lib/services/prevention-training-occurrences", () => ({
+  ensurePreventionTrainingOccurrencesForWorksiteTx: mockEnsurePreventionTrainingOccurrencesForWorksiteTx,
 }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
 
@@ -74,6 +80,7 @@ function setupDbMocks() {
   const setChain = { where: whereFn }
   mockSet.mockReturnValue(setChain)
   mockInsert.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) })
+  mockTransaction.mockImplementation(async (callback: (tx: { insert: typeof mockInsert }) => Promise<unknown>) => callback({ insert: mockInsert }))
   mockUpdate.mockReturnValue({ set: mockSet })
   mockSetWorksiteActive.mockResolvedValue({ programsDropped: 0, capaCancelled: 0, obligationsCancelled: 0 })
 }
@@ -110,6 +117,15 @@ describe("createWorksite", () => {
     const res = await createWorksite(prevState, makeFormData())
     expect(res.ok).toBe(true)
     expect(res.message).toContain("creada")
+    expect(mockEnsurePreventionTrainingOccurrencesForWorksiteTx).toHaveBeenCalledOnce()
+  })
+
+  it("does not create operational occurrences for an inactive worksite", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockFindFirstWorksite.mockResolvedValueOnce(null)
+    const res = await createWorksite(prevState, makeFormData({ isActive: "" }))
+    expect(res.ok).toBe(true)
+    expect(mockEnsurePreventionTrainingOccurrencesForWorksiteTx).not.toHaveBeenCalled()
   })
 })
 

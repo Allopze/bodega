@@ -230,6 +230,53 @@ describe("reconcilePdtpFulfillmentEvents", () => {
     expect(executions).toHaveLength(1)
   })
 
+  it("conserva el año planificado y la aprobación automática al reconciliar", async () => {
+    await seedProgram("draft")
+    await seedActivity()
+    const plannedYear = PROGRAM_YEAR
+    await recordPdtpFulfillmentEvent({
+      sourceType: "capacitacion_ocurrencia", sourceId: "training-annual-1", worksiteId: WS_ID,
+      activityNumbers: [ACT_N], occurredAt: `${PROGRAM_YEAR + 1}-11-20T12:00:00.000Z`,
+      plannedYear, autoApproveByUserId: USER_ID,
+    })
+
+    await inMemoryDb.update(schema.pdtpPrograms).set({ status: "active" }).where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
+    const summary = await reconcilePdtpFulfillmentEvents()
+    expect(summary).toMatchObject({ processed: 1, accredited: 1, errored: 0 })
+
+    const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, ACT_ID))
+    expect(execution).toMatchObject({ status: "approved", approvedByUserId: USER_ID, year: plannedYear })
+    const [event] = await inMemoryDb.select().from(schema.pdtpFulfillmentEvents)
+      .where(eq(schema.pdtpFulfillmentEvents.sourceId, "training-annual-1"))
+    expect(event).toMatchObject({ plannedYear, autoApproveByUserId: USER_ID, status: "accredited" })
+  })
+
+  it("permite una nueva finalización posterior a una revocación ya registrada", async () => {
+    await seedProgram("draft")
+    await seedActivity()
+    const input = {
+      sourceType: "capacitacion_ocurrencia" as const, sourceId: "training-corrected-1", worksiteId: WS_ID,
+      activityNumbers: [ACT_N], occurredAt: new Date().toISOString(),
+    }
+    await recordPdtpFulfillmentEvent(input)
+    await recordPdtpFulfillmentRevocation({ sourceType: "capacitacion_ocurrencia", sourceId: input.sourceId, worksiteId: WS_ID })
+    await recordPdtpFulfillmentEvent(input)
+
+    await inMemoryDb.update(schema.pdtpPrograms).set({ status: "active" }).where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
+    const summary = await reconcilePdtpFulfillmentEvents()
+    // La revocación se resuelve al registrarse: si todavía no había ejecución,
+    // el resultado vacío es igualmente terminal (`revoked`). Sólo la nueva
+    // finalización queda para reconciliar cuando el programa se activa.
+    expect(summary).toMatchObject({ processed: 1, accredited: 1, rejected: 0, errored: 0 })
+
+    expect(await inMemoryDb.select().from(schema.pdtpExecutions)).toHaveLength(1)
+    const events = await inMemoryDb.select().from(schema.pdtpFulfillmentEvents)
+      .where(eq(schema.pdtpFulfillmentEvents.sourceId, input.sourceId))
+    expect(events.find((event) => event.eventType === "completed")?.status).toBe("accredited")
+    expect(events.find((event) => event.eventType === "revoked")?.status).toBe("revoked")
+  })
+
   it("no reprocesa lo que ya está accredited", async () => {
     await seedProgram("active")
     await seedActivity()
@@ -301,6 +348,13 @@ describe("resolvePdtpFulfillmentTarget", () => {
     expect(target.module).toBe("sst")
     expect(target.href).toBe(`/prevencion/nueva?faena=${WS_ID}`)
     expect(target.ctaLabel).toBe("Ir a cumplirla")
+  })
+
+  it("conserva el destino histórico de una campaña que aún no migró al catálogo", () => {
+    const target = resolvePdtpFulfillmentTarget({ mechanism: "enganche", n: 88 }, WS_ID)
+    expect(target.kind).toBe("operational")
+    expect(target.module).toBe("campanas")
+    expect(target.href).toBe(`/prevencion/campanas?faena=${WS_ID}`)
   })
 
   it("la N°1 lleva al flujo de aprobación del programa concreto", () => {

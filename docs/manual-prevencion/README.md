@@ -13,7 +13,7 @@ Estimado/a Prevencionista y Línea de Mando:
 
 Este manual está diseñado para ser tu herramienta de consulta permanente en la faena. Su objetivo es explicarte, con un lenguaje directo, práctico y sin tecnicismos informáticos innecesarios, **cómo realizar tus labores preventivas diarias en la plataforma**, garantizando el cumplimiento legal ante fiscalizaciones (Dirección del Trabajo, SEREMI de Salud, Organismos Administradores Mutual/ACHS) y auditorías de empresas mandantes.
 
-En esta plataforma, **el trabajo preventivo real en terreno se conecta automáticamente con los compromisos anuales**. Cuando ejecutas una inspección, registras una charla diaria o gestionas una tarjeta PPA, el sistema acredita esa actividad en el Programa de Trabajo Preventivo (PDTP) de tu faena en tiempo real.
+En esta plataforma, **el trabajo preventivo real en terreno se conecta automáticamente con los compromisos anuales**. Cuando ejecutas una inspección, completas una ocurrencia del catálogo anual de capacitación o gestionas una tarjeta PPA, el sistema acredita esa actividad en el Programa de Trabajo Preventivo (PDTP) de tu faena cuando existe un mapeo explícito.
 
 ---
 
@@ -47,11 +47,11 @@ PREVENCIÓN
 │
 ├── 2. CUMPLIMIENTO DEL PROGRAMA
 │   ├── Inspecciones (/prevencion/inspecciones) -> Pautas móviles y digitalización por foto OCR
-│   ├── Capacitación (/prevencion/capacitacion) -> Charlas, inducciones ODI y matriz de brechas
+│   ├── Capacitación (/prevencion/capacitacion) -> Control anual predefinido, evidencias y expediente histórico
 │   ├── Acciones correctivas (/prevencion/capa) -> Planes de acción y verificación de eficacia
 │   ├── Incidentes y accidentes (/prevencion/incidentes) -> Flujo legal RE-20 y DIAT
 │   ├── Requisitos de EPP (/prevencion/epp-preventivo) -> Cruce de dotación vs. entregas de bodega
-│   ├── Campañas preventivas (/prevencion/campanas) -> Difusión y asistencia a campañas temáticas
+│   ├── Campañas preventivas -> Incluidas en el catálogo anual de Capacitación; la ruta antigua queda para compatibilidad histórica
 │   ├── Emergencias (/prevencion/emergencias) -> Planes, brigadas, extintores y simulacros
 │   ├── Comités paritarios (/prevencion/cphs) -> Actas, reuniones y certificación Mutual
 │   └── Gestión de riesgos de desastres (/prevencion/cgrd) -> Comité y matriz de amenazas DS 44

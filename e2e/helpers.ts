@@ -1,5 +1,28 @@
 import { expect, type Locator, type Page } from "@playwright/test"
+import { createHmac } from "node:crypto"
 import postgres from "postgres"
+
+/**
+ * PPA-001 (auditoría 2026-09-14): el formulario público ya no acepta una faena
+ * elegida a mano sin nada que la acredite —era el hallazgo: `?faena=<id>` es un
+ * parámetro, no una credencial—. Estas pruebas usan identificación manual, así
+ * que necesitan el enlace firmado que el panel interno reparte.
+ *
+ * El secreto es el literal con el que `e2e/start-server.sh` levanta el
+ * servidor, y la derivación repite —a propósito y en una sola línea— la de
+ * `lib/services/ppa-module/worksite-access-token.ts`: importarla acá obligaría
+ * a resolver el alias `@/` dentro del runner de Playwright, que este archivo
+ * no usa en ningún otro sitio.
+ */
+const E2E_AUTH_SECRET = "e2e-auth-secret-for-playwright"
+
+/** Enlace público con la faena acreditada, como el QR que reparte Prevención. */
+export function ppaAccreditedPath(worksiteId = "ws-e2e"): string {
+  const token = createHmac("sha256", E2E_AUTH_SECRET)
+    .update(`ppa:worksite-access:v1:${worksiteId}`)
+    .digest("hex")
+  return `/ppa?faena=${worksiteId}&t=${token}`
+}
 
 export async function clearRateLimits() {
   const databaseUrl = process.env.E2E_DATABASE_URL ?? process.env.DATABASE_URL
@@ -147,8 +170,13 @@ export async function setPdtpResponsable(page: Page, name = "Prevencionista E2E"
 export async function fillManualPpaForm(page: Page, faena = "Faena E2E") {
   await page.getByRole("button", { name: "No estoy en la lista" }).click()
 
-  await page.locator("#worksite").click()
-  await page.getByRole("option", { name: faena }).first().click()
+  // PPA-001: cuando se entró por el enlace acreditado la faena ya viene fijada
+  // y su selector queda deshabilitado — no hay nada que elegir.
+  const worksiteSelect = page.locator("#worksite")
+  if (await worksiteSelect.isEnabled()) {
+    await worksiteSelect.click()
+    await page.getByRole("option", { name: faena }).first().click()
+  }
 
   await page.locator("#wname").fill("Trabajador Offline E2E")
 

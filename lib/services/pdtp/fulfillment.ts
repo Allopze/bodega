@@ -84,6 +84,18 @@ function fulfillmentIdempotencyKey(sourceType: string, sourceId: string, eventTy
   return `pdtp-fulfillment:${eventType}:${sourceType}:${sourceId}`
 }
 
+/**
+ * La clave idempotente se reutiliza cuando una fuente se corrige. El reloj del
+ * sistema puede devolver el mismo milisegundo para la corrección y la
+ * revocación, así que el timestamp lógico debe avanzar siempre para que el
+ * reconciliador pueda ordenar la última intención del origen.
+ */
+function nextEventTimestamp(previous?: string | null): string {
+  const now = Date.now()
+  const previousMs = previous ? Date.parse(previous) : Number.NaN
+  return new Date(Math.max(now, Number.isFinite(previousMs) ? previousMs + 1 : now)).toISOString()
+}
+
 async function upsertPendingEvent(input: {
   sourceType: string
   sourceId: string
@@ -95,19 +107,46 @@ async function upsertPendingEvent(input: {
   activityNumbers: number[]
   sourceVersion: string | null
   returnHref: string | null
+  periodOverride: { year: number; month: number; week: number } | null
+  plannedYear?: number | null
+  autoApproveByUserId?: string | null
 }, client: QueryClient = db) {
   const idempotencyKey = fulfillmentIdempotencyKey(input.sourceType, input.sourceId, input.eventType)
-  const now = new Date().toISOString()
 
   const [existing] = await client.select().from(pdtpFulfillmentEvents)
     .where(eq(pdtpFulfillmentEvents.idempotencyKey, idempotencyKey)).limit(1)
   if (existing) {
+    const now = nextEventTimestamp(existing.updatedAt)
     await client.update(pdtpFulfillmentEvents)
-      .set({ attempts: existing.attempts + 1, updatedAt: now })
+      .set({
+        // A source may be completed again after a reversible correction. The
+        // durable event must become retryable again; retaining an old
+        // `accredited`/`error` status here could make the new completion
+        // invisible to reconciliation if the post-transaction attempt fails.
+        status: "pending",
+        programId: null,
+        resultJson: {},
+        lastError: null,
+        reconciledAt: null,
+        attempts: existing.attempts + 1,
+        worksiteId: input.worksiteId,
+        occurredAt: input.occurredAt,
+        quantity: input.quantity,
+        evidenceRef: input.evidenceRef,
+        sourceVersion: input.sourceVersion,
+        returnHref: input.returnHref,
+        activityNumbers: input.activityNumbers,
+        periodOverrideJson: input.periodOverride,
+        plannedYear: input.plannedYear === undefined ? existing.plannedYear : input.plannedYear,
+        autoApproveByUserId: input.autoApproveByUserId === undefined
+          ? existing.autoApproveByUserId
+          : input.autoApproveByUserId,
+        updatedAt: now,
+      })
       .where(eq(pdtpFulfillmentEvents.id, existing.id))
     return existing.id
   }
-
+  const now = nextEventTimestamp()
   const id = `pdtp-fulfillment-${nanoid()}`
   const [inserted] = await client.insert(pdtpFulfillmentEvents).values({
     id,
@@ -115,6 +154,7 @@ async function upsertPendingEvent(input: {
     sourceId: input.sourceId,
     eventType: input.eventType,
     sourceVersion: input.sourceVersion,
+    periodOverrideJson: input.periodOverride,
     worksiteId: input.worksiteId,
     occurredAt: input.occurredAt,
     quantity: input.quantity,
@@ -123,6 +163,8 @@ async function upsertPendingEvent(input: {
     idempotencyKey,
     status: "pending",
     activityNumbers: input.activityNumbers,
+    plannedYear: input.plannedYear ?? null,
+    autoApproveByUserId: input.autoApproveByUserId ?? null,
     resultJson: {},
     attempts: 1,
     createdAt: now,
@@ -171,6 +213,9 @@ export async function recordPendingPdtpFulfillmentEvent(
     activityNumbers: input.activityNumbers,
     sourceVersion: input.sourceVersion ?? null,
     returnHref: input.returnHref ?? null,
+    periodOverride: input.plannedPeriod ?? null,
+    plannedYear: input.plannedYear,
+    autoApproveByUserId: input.autoApproveByUserId,
   }, client)
 }
 
@@ -204,6 +249,9 @@ export async function recordPdtpFulfillmentEvent(input: AccreditationInput & {
       activityNumbers: input.activityNumbers,
       sourceVersion: input.sourceVersion ?? null,
       returnHref: input.returnHref ?? null,
+      periodOverride: input.plannedPeriod ?? null,
+      plannedYear: input.plannedYear,
+      autoApproveByUserId: input.autoApproveByUserId,
     })
   } catch (err) {
     // No se pudo ni dejar constancia del intento. Mismo criterio que antes:
@@ -257,6 +305,9 @@ export async function recordPdtpFulfillmentRevocation(input: RevocationInput): P
       activityNumbers: [],
       sourceVersion: null,
       returnHref: null,
+      periodOverride: null,
+      plannedYear: null,
+      autoApproveByUserId: null,
     })
   } catch (err) {
     logger.error({ err, sourceType: input.sourceType, sourceId: input.sourceId }, "[pdtp-fulfillment] No se pudo registrar la revocación durable.")
@@ -278,6 +329,29 @@ export async function recordPdtpFulfillmentRevocation(input: RevocationInput): P
   }
 }
 
+/** Variante transaccional: conserva la revocación junto con el cambio de
+ * estado de la ocurrencia que la origina. */
+export async function recordPendingPdtpFulfillmentRevocation(
+  input: RevocationInput,
+  client: QueryClient,
+): Promise<void> {
+  await upsertPendingEvent({
+    sourceType: input.sourceType,
+    sourceId: input.sourceId,
+    eventType: "revoked",
+    worksiteId: input.worksiteId,
+    occurredAt: new Date().toISOString(),
+    quantity: 0,
+    evidenceRef: input.reason ?? null,
+    activityNumbers: [],
+    sourceVersion: null,
+    returnHref: null,
+    periodOverride: null,
+    plannedYear: null,
+    autoApproveByUserId: null,
+  }, client)
+}
+
 /**
  * Reprocesa los eventos que quedaron `pending` o `error` — al activar un
  * programa, al corregir un mapeo, o por reintento manual. Idempotente por
@@ -293,6 +367,7 @@ export async function recordPdtpFulfillmentRevocation(input: RevocationInput): P
 export async function reconcilePdtpFulfillmentEvents(input: { limit?: number } = {}): Promise<{
   processed: number
   accredited: number
+  rejected: number
   stillPending: number
   errored: number
 }> {
@@ -303,30 +378,49 @@ export async function reconcilePdtpFulfillmentEvents(input: { limit?: number } =
     .limit(limit)
 
   let accredited = 0
+  let rejected = 0
   let stillPending = 0
   let errored = 0
 
   // Un `completed` en pending/error puede tener un `revoked` posterior: las dos
   // filas coexisten porque la clave idempotente separa por `eventType`.
-  // Reintentar el completed sin mirar eso re-acredita un hecho anulado — el
-  // caso concreto es una entrega de EPP anulada cuyo completed quedó en error
-  // mientras el programa estaba en borrador. Acotado a los `sourceId` del lote
-  // en curso: no escanea toda la tabla de eventos.
+  // Coalescemos la última intención por fuente antes de procesar el lote. Esto
+  // evita que una corrección posterior a la revocación sea revocada de nuevo
+  // sólo porque la fila `completed` conserva su `createdAt` original.
   const pendingSourceIds = pending.map((event) => event.sourceId)
-  const revokedSources = new Set(
-    pendingSourceIds.length === 0 ? [] : (
-      await db.select({ sourceType: pdtpFulfillmentEvents.sourceType, sourceId: pdtpFulfillmentEvents.sourceId })
-        .from(pdtpFulfillmentEvents)
-        .where(and(
-          eq(pdtpFulfillmentEvents.eventType, "revoked"),
-          inArray(pdtpFulfillmentEvents.sourceId, pendingSourceIds),
-        ))
-    ).map((row) => `${row.sourceType}:${row.sourceId}`),
-  )
+  const relatedRows = pendingSourceIds.length === 0 ? [] : await db.select({
+    id: pdtpFulfillmentEvents.id,
+    sourceType: pdtpFulfillmentEvents.sourceType,
+    sourceId: pdtpFulfillmentEvents.sourceId,
+    eventType: pdtpFulfillmentEvents.eventType,
+    status: pdtpFulfillmentEvents.status,
+    createdAt: pdtpFulfillmentEvents.createdAt,
+    updatedAt: pdtpFulfillmentEvents.updatedAt,
+  })
+    .from(pdtpFulfillmentEvents)
+    .where(inArray(pdtpFulfillmentEvents.sourceId, pendingSourceIds))
+  type RelatedEvent = (typeof relatedRows)[number]
+  const latestBySourceAndType = new Map<string, RelatedEvent>()
+  for (const row of relatedRows) {
+    const key = `${row.sourceType}:${row.sourceId}:${row.eventType}`
+    const previous = latestBySourceAndType.get(key)
+    if (!previous || `${row.updatedAt}:${row.createdAt}:${row.id}` > `${previous.updatedAt}:${previous.createdAt}:${previous.id}`) {
+      latestBySourceAndType.set(key, row)
+    }
+  }
+
+  const latestFor = (event: RelatedEvent, eventType: "completed" | "revoked") =>
+    latestBySourceAndType.get(`${event.sourceType}:${event.sourceId}:${eventType}`)
 
   for (const event of pending) {
     if (event.eventType === "completed") {
-      if (revokedSources.has(`${event.sourceType}:${event.sourceId}`)) {
+      // The simplified training flow can correct an occurrence back to
+      // `not_completed` and then complete it again with new evidence. Its
+      // idempotency key is intentionally stable, so an old revocation row may
+      // coexist with a newer completion attempt. Only suppress a completion
+      // that is older than (or from the same write as) the latest revocation.
+      const revoked = latestFor(event, "revoked")
+      if (revoked && `${event.updatedAt}:${event.createdAt}:${event.id}` <= `${revoked.updatedAt}:${revoked.createdAt}:${revoked.id}`) {
         // Terminal, no pendiente: dejarlo en `pending` lo haría reintentar para
         // siempre contra una fuente que ya no existe.
         await db.update(pdtpFulfillmentEvents).set({
@@ -334,6 +428,7 @@ export async function reconcilePdtpFulfillmentEvents(input: { limit?: number } =
           lastError: "El hecho fue revocado en su módulo de origen: no se reintenta.",
           updatedAt: new Date().toISOString(),
         }).where(eq(pdtpFulfillmentEvents.id, event.id))
+        rejected++
         continue
       }
       const result = await recordPdtpFulfillmentEvent({
@@ -344,24 +439,50 @@ export async function reconcilePdtpFulfillmentEvents(input: { limit?: number } =
         occurredAt: event.occurredAt,
         executedQuantity: Number(event.quantity),
         evidenceRef: event.evidenceRef ?? undefined,
+        sourceVersion: event.sourceVersion ?? undefined,
+        returnHref: event.returnHref ?? undefined,
+        plannedPeriod: event.periodOverrideJson ?? undefined,
+        plannedYear: event.plannedYear ?? undefined,
+        autoApproveByUserId: event.autoApproveByUserId ?? undefined,
       })
-      if (result && result.accredited.length > 0) accredited++
-      else if (result) stillPending++
-      else errored++
+      if (!result) {
+        errored++
+      } else {
+        const [refreshed] = await db.select({ status: pdtpFulfillmentEvents.status })
+          .from(pdtpFulfillmentEvents)
+          .where(eq(pdtpFulfillmentEvents.id, event.id))
+          .limit(1)
+        if (refreshed?.status === "accredited") accredited++
+        else if (refreshed?.status === "rejected") rejected++
+        else if (refreshed?.status === "error") errored++
+        else stillPending++
+      }
     } else {
+      const completed = latestFor(event, "completed")
+      if (completed && `${completed.updatedAt}:${completed.createdAt}:${completed.id}` > `${event.updatedAt}:${event.createdAt}:${event.id}`) {
+        await db.update(pdtpFulfillmentEvents).set({
+          status: "rejected",
+          lastError: "El origen volvió a marcarse como hecho: no se reintenta la revocación anterior.",
+          updatedAt: nextEventTimestamp(event.updatedAt),
+        }).where(eq(pdtpFulfillmentEvents.id, event.id))
+        rejected++
+        continue
+      }
       await recordPdtpFulfillmentRevocation({
         sourceType: event.sourceType as RevocationInput["sourceType"],
         sourceId: event.sourceId,
         worksiteId: event.worksiteId,
+        reason: event.evidenceRef ?? undefined,
       })
       const [refreshed] = await db.select({ status: pdtpFulfillmentEvents.status }).from(pdtpFulfillmentEvents).where(eq(pdtpFulfillmentEvents.id, event.id)).limit(1)
       if (refreshed?.status === "revoked") accredited++
+      else if (refreshed?.status === "rejected") rejected++
       else if (refreshed?.status === "error") errored++
       else stillPending++
     }
   }
 
-  return { processed: pending.length, accredited, stillPending, errored }
+  return { processed: pending.length, accredited, rejected, stillPending, errored }
 }
 
 // ── Destino externo (`resolvePdtpFulfillmentTarget`) ───────────────────────

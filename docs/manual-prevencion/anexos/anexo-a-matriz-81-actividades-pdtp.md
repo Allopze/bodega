@@ -44,8 +44,8 @@
 | **34** | Inspección de carros y ramplas | Mensual | Supervisor / PRF | `/prevencion/inspecciones` | Ejecución de pauta de carros de arrastre |
 | **35** | Publicación de versión Matriz IPER | Anual | PRF / JDPR | `/prevencion/miper` | Publicación formal de la matriz segregada |
 | **36** | Acuse de recibo difusión MIPER-DIF | Semestral | PRF | `/prevencion/documentacion` | Registro de firmas de difusión MIPER-DIF |
-| **37** | Curso de inducción a conductores | A demanda | PRF | `/prevencion/capacitacion` | Sesión del curso PDTP-37 con asistencia |
-| **38** | Charla de refuerzo operacional mensual | Mensual | Jefe de Terreno / Sup | `/prevencion/capacitacion` | Sesión del curso PDTP-38 cerrada |
+| **37** | Curso de inducción a conductores | A demanda | PRF | Módulo de ingreso correspondiente | Actividad PDTP; no forma parte del catálogo anual controlado 2026 |
+| **38** | Charla de refuerzo operacional mensual | Mensual | Jefe de Terreno / Sup | Flujo histórico de sesiones | Registro histórico; no se crea como ocurrencia del catálogo anual 2026 |
 | **39** | Observación planeada del trabajo (OPT) | Mensual | Supervisor / PRF | `/prevencion/inspecciones` | Ejecución de pauta de observación de conducta |
 | **40** | Inspección de áreas y condiciones físicas | Mensual | Supervisor / PRF | `/prevencion/inspecciones` | Ejecución de pauta de orden, aseo e instalaciones |
 | **41** | Inspección de pañoles y bodegas de faena | Mensual | PRF | `/prevencion/inspecciones` | Ejecución de pauta de bodegas |
@@ -58,19 +58,19 @@
 | **48** | Pronunciamiento técnico TMERT (Ergonomía)| Anual | PRF | `/prevencion/higiene` | Declaración técnica sobre protocolo TMERT |
 | **49** | Pronunciamiento Radiación UV y Psicosocial| Anual | PRF | `/prevencion/higiene` | Declaración técnica UV / CEAL-SM |
 | **50** | Vigilancia médica ocupacional de salud | Anual | PRF | `/prevencion/higiene` | Registro de exámenes ocupacionales de Mutual |
-| **51** | Capacitación de ergonomía y MMC | Anual | PRF | `/prevencion/capacitacion` | Sesión del curso PDTP-51 cerrada |
+| **51** | Capacitación de ergonomía y MMC | Anual | PRF | Módulo de capacitación correspondiente | Actividad PDTP; no está mapeada al catálogo anual controlado 2026 |
 | **52** | Evaluación de desempeño por Supervisor | A demanda | Supervisor de Terreno | `/prevencion/trabajador/[id]` | Firma de evaluación de supervisor en acta |
-| **53** | Charla diaria de 5 minutos de inicio turno| Diario | Supervisor / JT | `/prevencion/capacitacion` | Sesión del curso PDTP-53 cerrada |
-| **54** | Capacitación en uso y cuidado de EPP | Semestral | PRF | `/prevencion/capacitacion` | Sesión del curso PDTP-54 cerrada |
-| **55** | Curso de primeros auxilios en faena | Anual | PRF / Mutual | `/prevencion/capacitacion` | Sesión del curso PDTP-55 cerrada |
-| **56** | Curso Manejo a la defensiva (480 min) | Anual | PRF / Mutual | `/prevencion/capacitacion` | Sesión del curso PDTP-56 (mínimo 480 min) |
-| **57** | Capacitación en bloqueo LOTO | Anual | PRF | `/prevencion/capacitacion` | Sesión del curso PDTP-57 cerrada |
-| **58** | Capacitación en Sustancias Peligrosas | Anual | PRF | `/prevencion/capacitacion` | Sesión del curso PDTP-58 cerrada |
-| **59** | Capacitación en Trabajo en Altura | Anual | PRF | `/prevencion/capacitacion` | Sesión del curso PDTP-59 cerrada |
-| **60** | Capacitación en Control de Derrames | Anual | PRF | `/prevencion/capacitacion` | Sesión del curso PDTP-60 cerrada |
+| **53** | Charla diaria de 5 minutos de inicio turno| Diario | Supervisor / JT | Flujo histórico de sesiones | Actividad PDTP; no está mapeada al catálogo anual controlado 2026 |
+| **54** | Capacitación Extintores | Semestral | PRF | `/prevencion/capacitacion` | Ocurrencias CAP-02 del catálogo anual, con evidencia |
+| **55** | Curso de primeros auxilios en faena | Anual | PRF / Mutual | `/prevencion/capacitacion` | Ocurrencia CAP-07 del catálogo anual, con evidencia |
+| **56** | Curso Manejo a la defensiva (480 min) | Anual | PRF / Mutual | `/prevencion/capacitacion` | Ocurrencia CAP-04 del catálogo anual, con evidencia |
+| **57** | Capacitación en bloqueo LOTO | Anual | PRF | Flujo histórico de sesiones | Actividad PDTP; no está mapeada al catálogo anual controlado 2026 |
+| **58** | Capacitación en Sustancias Peligrosas | Anual | PRF | `/prevencion/capacitacion` | Ocurrencia CAP-11 del catálogo anual, con evidencia |
+| **59** | Capacitación en Trabajo en Altura | Anual | PRF | Módulo de capacitación correspondiente | Actividad PDTP; no está mapeada al catálogo anual controlado 2026 |
+| **60** | Capacitación en Control de Derrames | Anual | PRF | Módulo de capacitación correspondiente | Actividad PDTP; no está mapeada al catálogo anual controlado 2026 |
 | **61** | Entrega de boletín o circular preventiva | Mensual | PRF / Supervisor | `/prevencion/constancias` | Constancia con registro de entrega |
 | **62** | Verificación de entrega de EPP obligatorio | Mensual | PRF / Bodega | `/prevencion/epp-preventivo` | Registro de entrega de EPP a dotación |
-| **63** | Evaluación teórica de inducción final | A demanda | PRF | `/prevencion/capacitacion` | Sesión de prueba PDTP-63 con nota aprobada |
+| **63** | Capacitación sobre uso correcto de EPP, reposición y eliminación | A demanda | PRF | `/prevencion/capacitacion` | Ocurrencias CAP-03 del catálogo anual, con evidencia |
 | **64** | Inspección de señalética y protecciones | Mensual | PRF | `/prevencion/inspecciones` | Ejecución de pauta de señalética |
 | **65** | Inspección general de inicio de temporada | Anual | PRF | `/prevencion/inspecciones` | Ejecución de pauta de arranque de faena |
 | **66** | Reporte inmediato de incidente | Por evento | JT / PRF / Sup | `/prevencion/incidentes` | Creación del reporte inicial (< 5 min) |
@@ -92,11 +92,11 @@
 | **82** | Verificación de señalética y evacuación | Semestral | PRF | `/prevencion/constancias` | Constancia con informe fotográfico |
 | **83** | Aprobación del Plan de Emergencia | Anual | PRF / JDPR | `/prevencion/emergencias` | Aprobación formal del Plan por faena |
 | **84** | Ejecución y evaluación de simulacro | Anual | PRF / JT | `/prevencion/emergencias` | Registro de simulacro con tiempos y fotos |
-| **85** | Campaña preventiva: Conducción segura | Bimestral | PRF | `/prevencion/campanas` | Cierre de campaña temática con asistencia |
-| **86** | Campaña preventiva: Cuidado de manos | Bimestral | PRF | `/prevencion/campanas` | Cierre de campaña temática con asistencia |
-| **87** | Campaña preventiva: Fatiga y somnolencia| Bimestral | PRF | `/prevencion/campanas` | Cierre de campaña temática con asistencia |
-| **88** | Campaña preventiva: Riesgos de atropello | Bimestral | PRF | `/prevencion/campanas` | Cierre de campaña temática con asistencia |
-| **89** | Campaña preventiva: Protección contra UV| Bimestral | PRF | `/prevencion/campanas` | Cierre de campaña temática con asistencia |
+| **85** | Campañas de promoción de la salud | Bimestral | PRF | `/prevencion/capacitacion` | Ocurrencias CAM-01, CAM-02 y CAM-06 del catálogo anual, con evidencia |
+| **86** | Campaña de manejo del estrés | Bimestral | PRF | `/prevencion/capacitacion` | Ocurrencia CAM-03 del catálogo anual, con evidencia |
+| **87** | Prevención de riesgos asociados al consumo de alcohol y drogas | Anual | PRF | `/prevencion/capacitacion` | Ocurrencia anual CAM-05 del catálogo, con evidencia |
+| **88** | Campaña preventiva declarada en el PDTP | Bimestral | PRF | Flujo histórico de campañas | Sin mapeo al catálogo controlado 2026; conservar el registro histórico |
+| **89** | Puntos ciegos de camiones y equipos | Bimestral | PRF | `/prevencion/capacitacion` | Ocurrencia CAM-04 del catálogo anual, con evidencia |
 
 ---
 
@@ -119,4 +119,3 @@ A continuación se detalla el motivo técnico y legal de la baja de cada una de 
 
 > [!NOTE]
 > Con esta depuración formal, el universo total auditable del Programa de Trabajo Preventivo CHOME 2026 queda fijado exactamente en **81 actividades operativas**.
-

@@ -1,0 +1,121 @@
+# AI Docs Configuration
+# Generado por /docs:init el 2026-09-14
+# Edita este archivo para ajustar la generacion de documentacion.
+
+# Directorio raiz de la documentacion generada (relativo a la raiz del proyecto).
+# Se usa una subcarpeta para no mezclarse con la documentacion manual existente en docs/.
+docs_root: docs/generado
+
+project:
+  name: "Plataforma Chome"
+  type: "saas"
+  description: >-
+    Plataforma interna para gestionar la operacion por faena: solicitudes,
+    aprobaciones, compras, recepcion, stock, entregas, prevencion y SG-SST,
+    flota, combustibles, facturacion, reportes y trazabilidad.
+
+audience:
+  primary: "mixed"   # usuarios finales de faena/oficina + equipo tecnico interno
+
+style:
+  tone: "minimal"    # simple y directo: "Pulsa Guardar."
+  language: "es-CL"
+
+stack:
+  frontend:
+    framework: "next"      # Next.js 15 App Router, React 19, Tailwind, Radix
+    path: "app"
+  backend:
+    framework: "next"      # Server Actions + Route Handlers, NextAuth
+    path: "lib"
+  database: "postgresql"   # Drizzle ORM
+
+urls:
+  base: "https://plataforma.portalchome.cl"
+  login: "https://plataforma.portalchome.cl/login"
+  dev: "http://localhost:3001"
+
+auth:
+  required: true
+  method: "env"
+  env_user: "DOCS_AUTH_USER"
+  env_pass: "DOCS_AUTH_PASS"
+
+output:
+  filename_style: kebab-case
+
+content:
+  sections:
+    - overview
+    - features
+    - key-actions
+    - data-display
+    - related-pages
+
+  screenshots:
+    enabled: true
+    position: top
+    format: png
+    directory: images
+
+  exclude:
+    - runtime_data     # nada de "8 items": los conteos cambian por faena
+    - internal_ids     # no exponer UUIDs ni IDs de base de datos
+    - dev_tools
+
+# Paginas a omitir en generacion masiva
+skip_pages:
+  - "/login"
+  - "/registro"
+  - "/recuperar"
+  - "/recuperar/*"
+  - "/api/*"
+  - "/forbidden"
+  - "/modulo-inactivo"
+  - "/acuse/*"          # enlaces firmados de acuse, no navegables
+  - "/ppa/result/*"
+  - "/tae/access/*"
+  - "/tae/resultado/*"
+
+context: |
+  Terminologia del dominio (ver CONTEXT.md y PRODUCT.md en la raiz del repo).
+  Usa estos terminos exactos y evita los sinonimos indicados:
+
+  - Faena: unidad operativa donde trabaja la gente. Casi todo el alcance de datos
+    y permisos se define por faena. Nunca omitir el contexto de faena.
+  - Solicitud de adquisicion: demanda de productos o servicios a comprar.
+    Evitar: "entrega", "despacho".
+  - Recepcion en faena: confirmacion de llegada de lo comprado. Completa la
+    adquisicion, NO significa que se entrego a un trabajador.
+  - Entrega al trabajador: distribucion fisica a una persona, posterior a la
+    recepcion. Evitar: "cierre de la solicitud".
+  - Stock de bodega: existencias disponibles en una faena, independientes de la
+    solicitud que las origino. Evitar: "stock reservado".
+  - Responsable operativo: quien ejecuta o da seguimiento a un pendiente cuando
+    el proceso de origen lo define. No es el solicitante ni el receptor fisico.
+  - No existe asignacion generica de trabajo: no se asigna una entrega, recepcion,
+    aprobacion o compra a una persona de forma generica.
+
+  Siglas frecuentes: EPP (elementos de proteccion personal), SG-SST, PDTP
+  (programa de trabajo preventivo), ODI (obligacion de informar), PPA, TAE,
+  CPHS, DTE (documento tributario electronico).
+
+  Tono segun PRODUCT.md: sereno, riguroso y operativo. Lenguaje directo,
+  cotidiano y preciso. Urgencia solo cuando hay una accion pendiente real.
+  La audiencia incluye usuarios sin conocimientos tecnicos.
+
+  Importante: la visibilidad depende del rol y del alcance de faenas del usuario,
+  y hay modulos que pueden estar desactivados (ver modules/registry.ts y
+  /admin/modulos). Al documentar una pantalla, indica si requiere un permiso o
+  un modulo activo en vez de asumir que todos la ven.
+
+patterns:
+  routes_dir: "app/(app)"          # 207 paginas bajo el grupo (app)
+  public_routes_dir: "app/(public)"
+  auth_routes_dir: "app/(auth)"
+  api_dir: "app/api"
+  components_dir: "components"
+  domain_logic_dir: "lib"
+  modules_registry: "modules/registry.ts"
+  schema_dir: "db/schema"
+  migrations_dir: "db/migrations"

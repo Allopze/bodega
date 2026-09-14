@@ -29,6 +29,7 @@ async function main() {
   const summary = await reconcilePdtpFulfillmentEvents({ limit })
   console.log(`  Procesados: ${summary.processed}`)
   console.log(`  Acreditados/revocados ahora: ${summary.accredited}`)
+  console.log(`  Rechazados/descartados: ${summary.rejected}`)
   console.log(`  Siguen pendientes: ${summary.stillPending}`)
   console.log(`  Con error: ${summary.errored}`)
   process.exit(0)

@@ -15,13 +15,11 @@ import {
 const SHA = "a".repeat(64)
 const RUTA_PDTP = `${EVIDENCE_STORAGE_PREFIXES.pdtp}/acta-2026-09.pdf`
 const RUTA_INSPECCION = `${EVIDENCE_STORAGE_PREFIXES.inspection}/foto-01.jpg`
+const RUTA_TRAINING = `${EVIDENCE_STORAGE_PREFIXES.training}/acta-cap-02.pdf`
 
 describe("los prefijos son los que la plataforma tiene de verdad", () => {
-  it("sólo inspecciones y PDTP: no se inventan directorios por dominio", () => {
-    // La tabla de evidencia de CAPA agrega lo que llega de varios orígenes
-    // —una inspección, una mantención, un seguimiento PDTP—, así que exigirle
-    // un prefijo propio habría rechazado archivos legítimos que ya existen.
-    expect(Object.keys(EVIDENCE_STORAGE_PREFIXES).sort()).toEqual(["inspection", "pdtp"])
+  it("sólo usa directorios de evidencia registrados por dominio", () => {
+    expect(Object.keys(EVIDENCE_STORAGE_PREFIXES).sort()).toEqual(["inspection", "pdtp", "training"])
   })
 })
 
@@ -29,6 +27,7 @@ describe("document y photo: lo que dice ser un archivo tiene que serlo", () => {
   it("acepta una ruta de cualquier directorio de evidencia, con checksum", () => {
     expect(checkEvidence({ kind: "document", reference: RUTA_PDTP, checksumSha256: SHA })).toEqual([])
     expect(checkEvidence({ kind: "photo", reference: RUTA_INSPECCION, checksumSha256: SHA })).toEqual([])
+    expect(checkEvidence({ kind: "document", reference: RUTA_TRAINING, checksumSha256: SHA })).toEqual([])
   })
 
   it("rechaza el texto libre que antes bastaba", () => {

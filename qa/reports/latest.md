@@ -10,6 +10,7 @@ Este archivo es ahora un índice. Cada informe se lee bajo su propio alcance.
 
 | Fecha | Informe | Alcance |
 |---|---|---|
+| 2026-09-14 | [auditoria-fixes-capacitacion-2026-09-14.md](auditoria-fixes-capacitacion-2026-09-14.md) | Fixes de simplificación de capacitación: catálogo, ocurrencias por faena, evidencias, historial, exportación, PDTP y permisos. E2E no inició; no es certificación de release |
 | 2026-09-12 | [AUDITORIA_INTEGRAL_CHOME_2026-09-12.md](../../AUDITORIA_INTEGRAL_CHOME_2026-09-12.md) | Integral: repositorio y entorno local/efímero. E2E detenida a los 45 min con 126 pruebas sin ejecutar — no es certificación de release |
 | 2026-09-04 | [trazabilidad-2026-09-04.md](trazabilidad-2026-09-04.md) | Módulo de trazabilidad de bodega, commit `da582cfc` |
 | 2026-09-03 | [auditoria-ti-2026-09-03.md](auditoria-ti-2026-09-03.md) | Módulo de TI |

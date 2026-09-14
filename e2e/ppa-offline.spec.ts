@@ -12,7 +12,13 @@
  * No requiere login — el formulario PPA es público.
  */
 import { expect, test } from "@playwright/test"
-import { fillManualPpaForm } from "./helpers"
+// PPA-001 (auditoría 2026-09-14): las pruebas que llegan a sincronizar contra
+// el servidor entran por el enlace acreditado. La faena ya no se acredita sola
+// con `?faena=<id>`, y estos PPA usan identificación manual (sin RUT del
+// catálogo), así que el enlace firmado es lo único que la respalda. Las demás
+// pruebas siguen entrando por "/ppa" a secas: verifican el Service Worker y el
+// encolado offline, que nunca tocan el servidor.
+import { fillManualPpaForm, ppaAccreditedPath } from "./helpers"
 
 /* ── Tests ──────────────────────────────────────────────────────────────── */
 
@@ -122,7 +128,7 @@ test.describe("PPA Digital — modo offline", () => {
 test.describe("PPA Digital — sincronización tras reconexión", () => {
   test("PPA offline se sincroniza al restaurar la conexión", async ({ page, context }) => {
     // Step 1: Load page, go offline, submit a PPA
-    await page.goto("/ppa")
+    await page.goto(ppaAccreditedPath())
     await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })
 
     await context.setOffline(true)
@@ -153,7 +159,7 @@ test.describe("PPA Digital — sincronización tras reconexión", () => {
   })
 
   test("múltiples PPAs offline se sincronizan", async ({ page, context }) => {
-    await page.goto("/ppa")
+    await page.goto(ppaAccreditedPath())
     await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })
     await context.setOffline(true)
 
@@ -384,7 +390,7 @@ test.describe("PPA Digital — notificaciones offline", () => {
 test.describe("PPA Digital — auto-sync backoff", () => {
   test("auto-sync no repite infinitamente cuando el servidor rechaza", async ({ page, context }) => {
     // Step 1: Load page, submit a PPA offline
-    await page.goto("/ppa")
+    await page.goto(ppaAccreditedPath())
     await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })
 
     await context.setOffline(true)
@@ -426,7 +432,7 @@ test.describe("PPA Digital — auto-sync backoff", () => {
 
   test("backoff reset cuando el sync exitoso después de un fallo", async ({ page, context }) => {
     // Step 1: Submit PPA offline
-    await page.goto("/ppa")
+    await page.goto(ppaAccreditedPath())
     await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })
 
     await context.setOffline(true)
@@ -473,7 +479,7 @@ test.describe("PPA Digital — auto-sync backoff", () => {
 
   test("syncOne falla no bloquea sincronización de otros items", async ({ page, context }) => {
     // Step 1: Submit first PPA offline
-    await page.goto("/ppa")
+    await page.goto(ppaAccreditedPath())
     await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })
     await context.setOffline(true)
 

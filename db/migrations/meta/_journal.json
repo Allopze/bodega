@@ -2038,6 +2038,13 @@
       "when": 1789600014000,
       "breakpoints": true,
       "tag": "0290_cat003_product_unit_fk"
+    },
+    {
+      "idx": 291,
+      "version": "7",
+      "when": 1789600015001,
+      "tag": "0291_training_occurrences_simplification",
+      "breakpoints": true
     }
   ]
 }

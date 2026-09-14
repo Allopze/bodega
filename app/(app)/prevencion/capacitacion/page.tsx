@@ -5,20 +5,17 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { Button } from "@/components/ui/button"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import {
-  listAllCourseVersions,
-  listCompetencyGaps,
-  listMyPendingAcknowledgements,
-  listTrainingCourses,
-  listTrainingSessions,
-  listTrainingWorkers,
-  listTrainingWorksites,
-} from "@/lib/services/prevention-training"
-import { TrainingSessionList } from "./training-session-list"
+import { listTrainingOccurrences, listTrainingOccurrenceWorksites } from "@/lib/services/prevention-training-occurrences"
+import { resolvePredefinedTrainingCatalogYear } from "@/lib/prevention/training-occurrences-catalog"
+import { TrainingOccurrenceList } from "./training-occurrence-list"
 
-export const metadata: Metadata = { title: "Capacitación y competencias" }
+export const metadata: Metadata = { title: "Capacitación" }
 
-export default async function CapacitacionPage() {
+export default async function CapacitacionPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
+}) {
   let session
   try { session = await requirePermission("prevention:training:view") }
   catch { redirect("/forbidden") }
@@ -28,24 +25,31 @@ export default async function CapacitacionPage() {
     scope: resolveWorksiteScope(session),
     permissions: session.user.permissions,
   }
-  const canManage = session.user.permissions.includes("prevention:training:manage")
-  const [sessions, courses, gaps, pendingAcks, versions, worksites, workers] = await Promise.all([
-    listTrainingSessions(access),
-    listTrainingCourses(access),
-    listCompetencyGaps(access),
-    listMyPendingAcknowledgements(access),
-    // La convocatoria sólo la necesita quien puede programar: para el resto son
-    // dos consultas sobre toda la dotación que nadie va a mirar.
-    canManage ? listAllCourseVersions(access) : Promise.resolve([]),
-    canManage ? listTrainingWorksites(access) : Promise.resolve([]),
-    canManage ? listTrainingWorkers(access) : Promise.resolve([]),
+  const params = await searchParams
+  const year = resolvePredefinedTrainingCatalogYear(params?.year)
+  const rawWorksiteId = params?.faena
+  const worksiteId =
+    typeof rawWorksiteId === "string"
+      ? rawWorksiteId.trim()
+      : Array.isArray(rawWorksiteId)
+        ? (rawWorksiteId[0]?.trim() ?? "")
+        : ""
+  const exportParams = new URLSearchParams({ year: String(year) })
+  if (worksiteId) exportParams.set("faena", worksiteId)
+  const [occurrences, worksites] = await Promise.all([
+    listTrainingOccurrences(access, {
+      year,
+      worksiteId: worksiteId || undefined,
+      includeInactiveWorksites: Boolean(worksiteId),
+    }),
+    listTrainingOccurrenceWorksites(access),
   ])
 
   return (
     <PageContainer>
       <PageHeader
-        title="Capacitación y competencias"
-        description="Sesiones, asistencia, evaluación y habilitación vigente por trabajador (DS 44 arts. 15 y 16)."
+        title="Capacitación"
+        description="Control anual de cursos y campañas por faena. Marca cada actividad como hecha o no hecha y conserva su evidencia."
         breadcrumb={<Breadcrumbs items={[
           { label: "Inicio", href: "/dashboard" },
           { label: "Prevención" },
@@ -54,54 +58,17 @@ export default async function CapacitacionPage() {
         actions={
           session.user.permissions.includes("prevention:training:export") ? (
             <Button asChild variant="secondary">
-              <a href="/api/prevencion/capacitacion/export" download>Exportar Excel</a>
+              <a href={`/api/prevencion/capacitacion/export?${exportParams.toString()}`} download>Exportar Excel</a>
             </Button>
           ) : undefined
         }
       />
-      <TrainingSessionList
-        sessions={sessions.map((row) => ({
-          id: row.session.id,
-          code: row.session.code,
-          status: row.session.status,
-          modality: row.session.modality,
-          scheduledAt: row.session.scheduledAt,
-          endedAt: row.session.endedAt,
-          durationMinutes: row.session.durationMinutes,
-          worksiteId: row.session.worksiteId,
-          worksiteName: row.worksiteName,
-          courseName: row.courseName,
-          courseKind: row.courseKind,
-          versionLabel: row.versionLabel,
-          convenedCount: row.convenedCount,
-          attendedCount: row.attendedCount,
-          acknowledgedCount: row.acknowledgedCount,
-        }))}
-        courseCount={courses.length}
-        blockingGapCount={gaps.filter((gap) => gap.enforcement === "blocking").length}
-        pendingAcks={pendingAcks.map((item) => ({
-          attendanceId: item.attendanceId,
-          sessionCode: item.sessionCode,
-          courseName: item.courseName,
-          endedAt: item.endedAt,
-        }))}
-        canAck={session.user.permissions.includes("prevention:training:ack")}
-        canManage={canManage}
-        publishedVersions={versions
-          .filter((row) => row.version.status === "published")
-          .map((row) => ({
-            id: row.version.id,
-            courseName: row.courseName,
-            versionLabel: row.version.versionLabel,
-            modality: row.version.modality,
-          }))}
+      <TrainingOccurrenceList
+        rows={occurrences}
         worksites={worksites}
-        workers={workers.map((worker) => ({
-          id: worker.id,
-          name: `${worker.lastName}, ${worker.firstName}`,
-          position: worker.position,
-          worksiteId: worker.worksiteId,
-        }))}
+        selectedYear={year}
+        selectedWorksiteId={worksiteId}
+        canRecord={session.user.permissions.includes("prevention:training:record")}
       />
     </PageContainer>
   )

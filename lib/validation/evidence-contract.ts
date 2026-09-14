@@ -30,9 +30,8 @@
 import { z } from "zod"
 
 /**
- * Los directorios de evidencia que la plataforma **tiene de verdad**. Sólo dos:
- * el de inspecciones y el de PDTP, que es donde la subida deposita los archivos
- * de seguimiento y de plan de acción.
+ * Los directorios de evidencia que la plataforma **tiene de verdad**. Cada
+ * dominio que conserva archivos tiene un prefijo propio y comprobable.
  *
  * No se inventan directorios por dominio: la tabla de evidencia de CAPA agrega
  * lo que llega de varios orígenes —una inspección, una mantención, un
@@ -44,6 +43,7 @@ import { z } from "zod"
 export const EVIDENCE_STORAGE_PREFIXES = {
   inspection: "storage/inspection-evidence",
   pdtp: "storage/pdtp-evidence",
+  training: "storage/prevention-training-evidence",
 } as const
 
 export type EvidenceDomain = keyof typeof EVIDENCE_STORAGE_PREFIXES

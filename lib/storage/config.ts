@@ -9,6 +9,7 @@ const MAINTENANCE_DOCUMENT_PREFIX = "storage/mantenciones/"
 const SST_DOCUMENT_PREFIX = "storage/sst-documents/"
 const PDTP_EVIDENCE_PREFIX = "storage/pdtp-evidence/"
 const INSPECTION_EVIDENCE_PREFIX = "storage/inspection-evidence/"
+const PREVENTION_TRAINING_EVIDENCE_PREFIX = "storage/prevention-training-evidence/"
 const RISK_MAP_PREFIX = "storage/risk-map/"
 const FUEL_IMPORT_PREFIX = "storage/imports/"
 const FUEL_TAE_EVIDENCE_PREFIX = "storage/fuel-tae/"
@@ -326,6 +327,29 @@ export function resolveInspectionEvidenceFile(filePath: string): string | null {
     return null
   }
   return path.join(/*turbopackIgnore: true*/ resolveInspectionEvidenceDir(), storageName)
+}
+
+/* ── Evidencia de ocurrencias de capacitación ────────────────────────────
+ * Espacio dedicado para conservar PDF, Office y fotografías del control anual.
+ * Las ocurrencias sólo cambian de estado; los archivos no se borran al
+ * corregir una marca, por lo que la ruta sigue siendo auditable.
+ */
+export function resolvePreventionTrainingEvidenceDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "prevention-training-evidence")
+}
+
+export function createPreventionTrainingEvidencePath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) {
+    throw new Error("Invalid prevention training evidence storage name")
+  }
+  return `${PREVENTION_TRAINING_EVIDENCE_PREFIX}${storageName}`
+}
+
+export function resolvePreventionTrainingEvidenceFile(filePath: string): string | null {
+  if (!filePath.startsWith(PREVENTION_TRAINING_EVIDENCE_PREFIX)) return null
+  const storageName = filePath.slice(PREVENTION_TRAINING_EVIDENCE_PREFIX.length)
+  if (!isSafeStorageName(storageName)) return null
+  return path.join(/*turbopackIgnore: true*/ resolvePreventionTrainingEvidenceDir(), storageName)
 }
 
 /* ── Mapa de riesgos (MIPER) ──────────────────────────────────────────────

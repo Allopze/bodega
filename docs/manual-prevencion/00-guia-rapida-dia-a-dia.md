@@ -36,14 +36,11 @@ En la parte superior verás la sección **"Atención requerida"**. Este panel co
 
 ### 1.2. Inicio de Jornada en Terreno (08:15 - 09:00 hrs)
 
-#### A. Charla Diaria de 5 Minutos (Actividad PDTP N° 53)
-*   **Quién la realiza:** Habitualmente la dicta el Supervisor de Terreno o Jefe de Terreno al iniciar el turno. El Prevencionista apoya técnicamente y verifica su registro.
-*   **Dónde se registra:** `/prevencion/capacitacion` > botón **"Registrar sesión"**.
-*   **Qué seleccionar:**
-    *   Curso: *Charla diaria de inicio de jornada (PDTP-53)*.
-    *   Relator: El supervisor o prevencionista que la impartió.
-    *   Asistentes: Marca a los trabajadores presentes en el turno.
-*   **Impacto:** Al guardar la sesión con asistencia, el cumplimiento de la charla se acredita automáticamente en el PDTP.
+#### A. Revisión del control anual de capacitación
+*   **Dónde se registra:** `/prevencion/capacitacion`.
+*   El catálogo controlado 2026 muestra cursos y campañas por faena y por período. No se crea una sesión desde esta pantalla: abre la ocurrencia correspondiente y márcala como **Hecha** o **No hecha**.
+*   Para marcarla como hecha, adjunta al menos un PDF, documento Office o foto. La evidencia queda asociada al registro y disponible para auditoría.
+*   **Impacto:** Las ocurrencias con mapeo PDTP dejan un evento durable de cumplimiento. Si el programa aún no está activo, queda pendiente de reconciliación y no se pierde.
 
 #### B. Control de Alcotest Aleatorio (Actividades PDTP N° 30 y 31)
 *   **Dónde se registra:** `/prevencion/alcotest` > botón **"Nuevo control"**.

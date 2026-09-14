@@ -12,6 +12,7 @@ import { can, canAccessWorksite, requirePermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { worksiteSchema, type ActionState } from "@/lib/validation/masters"
 import { setWorksiteActive } from "@/lib/services/worksite-lifecycle"
+import { ensurePreventionTrainingOccurrencesForWorksiteTx } from "@/lib/services/prevention-training-occurrences"
 
 const REVALIDATE = "/admin/faenas"
 
@@ -31,6 +32,7 @@ export async function createWorksite(_prev: ActionState, formData: FormData): Pr
     address:  formData.get("address") || undefined,
     region:   formData.get("region")  || undefined,
     adminContratoLabel: formData.get("adminContratoLabel") || undefined,
+    isActive: formData.get("isActive") === "on",
   })
   if (!parsed.success) return { ok: false, fieldErrors: parsed.error.flatten().fieldErrors as Record<string, string[]> }
   const d = parsed.data
@@ -40,9 +42,15 @@ export async function createWorksite(_prev: ActionState, formData: FormData): Pr
   if (exists) return { ok: false, fieldErrors: { code: ["Este código ya existe"] } }
 
   const id = nanoid()
-  await db.insert(worksites).values({ id, name: d.name, code: d.code, address: d.address ?? null, region: d.region ?? null, adminContratoLabel: d.adminContratoLabel || null, isActive: d.isActive })
-
-  await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "create", entityType: "worksite", entityId: id, entityCode: d.code, newState: { name: d.name, code: d.code } })
+  try {
+    await db.transaction(async (tx) => {
+      await tx.insert(worksites).values({ id, name: d.name, code: d.code, address: d.address ?? null, region: d.region ?? null, adminContratoLabel: d.adminContratoLabel || null, isActive: d.isActive })
+      if (d.isActive) await ensurePreventionTrainingOccurrencesForWorksiteTx(tx, id)
+      await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "create", entityType: "worksite", entityId: id, entityCode: d.code, newState: { name: d.name, code: d.code, isActive: d.isActive } }, tx)
+    })
+  } catch (error) {
+    return { ok: false, message: safeActionMessage(error, "No se pudo crear la faena") }
+  }
 
   revalidatePath(REVALIDATE)
   return { ok: true, message: `Faena ${d.name} creada` }

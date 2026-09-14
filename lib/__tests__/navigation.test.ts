@@ -131,7 +131,7 @@ describe("sidebar navigation", () => {
     ]))
   })
 
-  it("gives privacy and campaigns canonical destinations without hijacking Evaluaciones", () => {
+  it("keeps the legacy campaign route out of navigation without hijacking Evaluaciones", () => {
     const session = {
       ...adminSession,
       user: {
@@ -143,10 +143,8 @@ describe("sidebar navigation", () => {
     const prevention = getVisibleAreas(session).find((area) => area.id === "prevencion")
     const privacy = prevention?.items.find((item) => item.href === "/prevencion/privacidad")
 
-    expect(prevention?.items.map((item) => item.href)).toEqual(expect.arrayContaining([
-      "/prevencion/campanas",
-      "/prevencion/privacidad",
-    ]))
+    expect(prevention?.items.map((item) => item.href)).toContain("/prevencion/privacidad")
+    expect(prevention?.items.map((item) => item.href)).not.toContain("/prevencion/campanas")
     expect(privacy?.children?.map((item) => item.href)).toEqual(["/prevencion/privacidad/solicitudes"])
     expect(isHrefActive("/prevencion/evaluaciones", "/prevencion/privacidad/solicitudes")).toBe(false)
     expect(isHrefActive("/prevencion/privacidad", "/prevencion/privacidad/solicitudes")).toBe(false)

@@ -539,6 +539,9 @@ export const pdtpFulfillmentEvents = pgTable("pdtp_fulfillment_events", {
   idempotencyKey:  text("idempotency_key").notNull(),
   status:          text("status").notNull().default("pending"),
   programId:       text("program_id").references(() => pdtpPrograms.id, { onDelete: "set null" }),
+  /** Usuario que originó una aprobación automática cuando el evento se
+   * reconcilia después de que el programa queda activo. */
+  autoApproveByUserId: text("auto_approve_by_user_id").references(() => users.id, { onDelete: "set null" }),
   /**
    * Números de actividad (`pdtp_activities.n`, no el id) que este evento
    * intenta acreditar — el mismo vocabulario que `AccreditationInput`. Un solo
@@ -548,6 +551,14 @@ export const pdtpFulfillmentEvents = pgTable("pdtp_fulfillment_events", {
    * arbitrario para elegir cuál de las dos.
    */
   activityNumbers: jsonb("activity_numbers").notNull().default([]),
+  /** Año del cronograma fuente cuando el ítem no tiene mes/semana (por ejemplo,
+   * una campaña anual). La fecha real del registro sigue conservándose en
+   * `occurredAt`. */
+  plannedYear:     integer("planned_year"),
+  /** Posición del cronograma fuente cuando el hecho se marca después del mes
+   * planificado. Así una corrección tardía sigue acreditando el período anual
+   * que correspondía, sin falsear la fecha real de registro. */
+  periodOverrideJson: jsonb("period_override_json").$type<{ year: number; month: number; week: number } | null>().default(null),
   /** Snapshot del `AccreditationResult`: qué se acreditó, qué se omitió y por
    *  qué. Diagnóstico para el reconciliador y para la compuerta 81/81. */
   resultJson:      jsonb("result_json").notNull().default({}),
@@ -565,6 +576,7 @@ export const pdtpFulfillmentEvents = pgTable("pdtp_fulfillment_events", {
   check("pdtp_fulfillment_events_status_check", sql`${table.status} IN ('pending', 'accredited', 'rejected', 'revoked', 'error')`),
   check("pdtp_fulfillment_events_quantity_check", sql`${table.quantity} >= 0`),
   check("pdtp_fulfillment_events_attempts_check", sql`${table.attempts} >= 0`),
+  check("pdtp_fulfillment_events_planned_year_check", sql`${table.plannedYear} IS NULL OR ${table.plannedYear} BETWEEN 2024 AND 2100`),
 ])
 
 export const pdtpObligationReminders = pgTable("pdtp_obligation_reminders", {

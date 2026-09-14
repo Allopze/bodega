@@ -13,6 +13,13 @@ import { loadSeedWorkerData } from "./seed/workers"
 import { readFileSync } from "node:fs"
 import { resolve, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
+import {
+  PREDEFINED_TRAINING_CATALOG,
+  PREDEFINED_TRAINING_CATALOG_VERSION,
+  PREDEFINED_TRAINING_CATALOG_YEAR,
+  occurrenceSeedRows,
+  trainingCatalogItemId,
+} from "../lib/prevention/training-occurrences-catalog"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const eppCatalog = JSON.parse(
@@ -213,11 +220,50 @@ async function main() {
     })
   }
 
+  /* ── Catálogo anual controlado y ocurrencias por faena ───────────────── */
+  await db.insert(schema.preventionTrainingCatalogItems).values(
+    PREDEFINED_TRAINING_CATALOG.map((item) => ({
+      id: trainingCatalogItemId(PREDEFINED_TRAINING_CATALOG_YEAR, item.code),
+      code: item.code,
+      title: item.title,
+      itemType: item.itemType,
+      audience: item.audience,
+      catalogVersion: PREDEFINED_TRAINING_CATALOG_VERSION,
+      sourceRow: item.sourceRow,
+      scheduleJson: [...item.schedule],
+      pdtpActivityNumbers: [...item.pdtpActivityNumbers],
+      isActive: true,
+      sortOrder: item.sortOrder,
+    })),
+  ).onConflictDoNothing({ target: [
+    schema.preventionTrainingCatalogItems.catalogVersion,
+    schema.preventionTrainingCatalogItems.code,
+  ] })
+
+  const occurrenceRows = seedWorkerData.worksites.flatMap((worksite) =>
+    PREDEFINED_TRAINING_CATALOG.flatMap((item) => occurrenceSeedRows(item, worksite.id, PREDEFINED_TRAINING_CATALOG_YEAR)
+      .map((row) => ({
+        id: row.id,
+        catalogItemId: trainingCatalogItemId(PREDEFINED_TRAINING_CATALOG_YEAR, row.catalogCode),
+        worksiteId: row.worksiteId,
+        year: row.year,
+        slotKey: row.slotKey,
+        scheduledMonth: row.scheduledMonth,
+        scheduledWeek: row.scheduledWeek,
+        status: row.status,
+        version: row.version,
+      }))),
+  )
+  if (occurrenceRows.length > 0) {
+    await db.insert(schema.preventionTrainingOccurrences).values(occurrenceRows).onConflictDoNothing()
+  }
+
   console.log("")
   console.log("Seed base completado.")
   console.log(`  Faenas cargadas: ${seedWorkerData.worksites.length}.`)
   console.log(`  Trabajadores cargados: ${seedWorkerData.workers.length} (${seedWorkerData.skippedDuplicateRuts} RUT duplicado omitido).`)
   console.log(`  Catálogo EPP cargado: ${EPP_CATALOG_ITEMS.length} productos, ${EPP_SUPPLIERS.length} proveedores.`)
+  console.log(`  Catálogo de capacitación cargado: ${PREDEFINED_TRAINING_CATALOG.length} ítems, ${occurrenceRows.length} ocurrencias.`)
   console.log("  No se cargaron usuarios, roles, permisos, stock, solicitudes ni programas demo.")
 }
 

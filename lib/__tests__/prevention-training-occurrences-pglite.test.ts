@@ -1,0 +1,182 @@
+import path from "node:path"
+import { PGlite } from "@electric-sql/pglite"
+import { and, eq } from "drizzle-orm"
+import { drizzle } from "drizzle-orm/pglite"
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
+import { migratePGlite } from "@/lib/testing/pglite-migrate"
+import * as schema from "@/db/schema"
+import type { DB } from "@/db"
+import type { WorksiteScope } from "@/lib/auth/scope"
+
+const pg = new PGlite()
+const pgLiteDb = drizzle(pg, { schema })
+const inMemoryDb = pgLiteDb as unknown as DB
+const testGlobal = globalThis as typeof globalThis & { __db?: DB }
+testGlobal.__db = inMemoryDb
+
+vi.mock("@/db", () => ({ get db() { return testGlobal.__db } }))
+vi.mock("@/lib/logger", () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}))
+
+await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
+
+const USER_ID = "training-occ-user"
+const WORKSITE_ID = "training-occ-worksite"
+const ACCESS = {
+  userId: USER_ID,
+  scope: { mode: "all", ids: [] } as WorksiteScope,
+  permissions: ["prevention:training:view", "prevention:training:record"],
+}
+
+afterAll(async () => {
+  delete testGlobal.__db
+  await pg.close()
+})
+
+beforeEach(async () => {
+  await inMemoryDb.delete(schema.preventionTrainingOccurrenceEvidence)
+  await inMemoryDb.delete(schema.preventionTrainingOccurrences)
+  await inMemoryDb.delete(schema.preventionTrainingCatalogItems)
+  await inMemoryDb.delete(schema.preventionTrainingHistory)
+  await inMemoryDb.delete(schema.auditLog)
+  await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
+  await inMemoryDb.delete(schema.pdtpExecutions)
+  await inMemoryDb.delete(schema.pdtpActivities)
+  await inMemoryDb.delete(schema.pdtpPrograms)
+  await inMemoryDb.delete(schema.worksites)
+  await inMemoryDb.delete(schema.users)
+
+  await inMemoryDb.insert(schema.users).values({
+    id: USER_ID,
+    name: "Prevencionista Test",
+    email: "training-occ@example.test",
+    hashedPassword: "x",
+  })
+  await inMemoryDb.insert(schema.worksites).values({
+    id: WORKSITE_ID,
+    name: "Faena Capacitación",
+    code: "TRAINING-OCC",
+    isActive: true,
+  })
+})
+
+describe("ocurrencias de capacitación", () => {
+  it("crea el cronograma idempotente, exige evidencia y conserva las correcciones", async () => {
+    const {
+      ensurePreventionTrainingOccurrencesForWorksiteTx,
+      listTrainingOccurrences,
+      recordTrainingOccurrenceStatus,
+    } = await import("@/lib/services/prevention-training-occurrences")
+
+    await expect(ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID)).resolves.toBe(24)
+    await expect(ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID)).resolves.toBe(0)
+
+    const rows = await listTrainingOccurrences(ACCESS)
+    expect(rows).toHaveLength(24)
+    const target = rows.find((row) => row.code === "CAP-02" && row.slotKey === "m03-w2")
+    expect(target).toMatchObject({ status: "pending", scheduledMonth: 3, scheduledWeek: 2, version: 1 })
+    if (!target) throw new Error("No se encontró la ocurrencia de prueba.")
+
+    await expect(recordTrainingOccurrenceStatus({
+      occurrenceId: target.id,
+      expectedVersion: target.version,
+      status: "completed",
+    }, ACCESS)).rejects.toThrow(/evidencia/i)
+
+    await inMemoryDb.insert(schema.preventionTrainingOccurrenceEvidence).values({
+      id: "training-occ-evidence-1",
+      occurrenceId: target.id,
+      fileName: "acta-extintores.pdf",
+      storagePath: "storage/prevention-training-evidence/test-acta-extintores.pdf",
+      mimeType: "application/pdf",
+      fileSizeBytes: 128,
+      sha256: "a".repeat(64),
+      state: "active",
+      uploadedByUserId: USER_ID,
+    })
+
+    await expect(recordTrainingOccurrenceStatus({
+      occurrenceId: target.id,
+      expectedVersion: target.version,
+      status: "completed",
+      observation: "Actividad ejecutada en reunión mensual.",
+    }, ACCESS)).resolves.toMatchObject({ status: "completed", version: 2 })
+
+    const [completed] = await inMemoryDb.select().from(schema.preventionTrainingOccurrences)
+      .where(eq(schema.preventionTrainingOccurrences.id, target.id))
+    expect(completed).toMatchObject({ status: "completed", version: 2, completedByUserId: USER_ID })
+
+    const [fulfillment] = await inMemoryDb.select().from(schema.pdtpFulfillmentEvents)
+      .where(and(
+        eq(schema.pdtpFulfillmentEvents.sourceType, "capacitacion_ocurrencia"),
+        eq(schema.pdtpFulfillmentEvents.sourceId, target.id),
+        eq(schema.pdtpFulfillmentEvents.eventType, "completed"),
+      ))
+    expect(fulfillment).toMatchObject({
+      activityNumbers: [54],
+      periodOverrideJson: { year: 2026, month: 3, week: 2 },
+    })
+
+    await expect(recordTrainingOccurrenceStatus({
+      occurrenceId: target.id,
+      expectedVersion: 2,
+      status: "not_completed",
+      observation: "Se reprogramará por cambio de turno.",
+    }, ACCESS)).resolves.toMatchObject({ status: "not_completed", version: 3 })
+
+    const [evidence] = await inMemoryDb.select().from(schema.preventionTrainingOccurrenceEvidence)
+      .where(eq(schema.preventionTrainingOccurrenceEvidence.id, "training-occ-evidence-1"))
+    expect(evidence).toMatchObject({ state: "annulled", fileName: "acta-extintores.pdf" })
+
+    const history = await inMemoryDb.select().from(schema.preventionTrainingHistory)
+      .where(eq(schema.preventionTrainingHistory.entityId, target.id))
+    expect(history).toHaveLength(2)
+    expect((await inMemoryDb.select().from(schema.auditLog)).filter((row) => row.entityId === target.id)).toHaveLength(2)
+    expect((await inMemoryDb.select().from(schema.pdtpFulfillmentEvents)).filter((row) => row.sourceId === target.id)).toHaveLength(2)
+
+    await expect(recordTrainingOccurrenceStatus({
+      occurrenceId: target.id,
+      expectedVersion: 3,
+      status: "pending",
+    }, ACCESS)).rejects.toThrow()
+
+    await inMemoryDb.update(schema.worksites).set({ isActive: false }).where(eq(schema.worksites.id, WORKSITE_ID))
+    expect(await listTrainingOccurrences(ACCESS)).toEqual([])
+    expect((await listTrainingOccurrences(ACCESS, { includeInactiveWorksites: true })).length).toBe(24)
+  })
+
+  it("protege los actores requeridos por los checks de consistencia", async () => {
+    const {
+      ensurePreventionTrainingOccurrencesForWorksiteTx,
+      listTrainingOccurrences,
+      recordTrainingOccurrenceStatus,
+    } = await import("@/lib/services/prevention-training-occurrences")
+
+    await ensurePreventionTrainingOccurrencesForWorksiteTx(inMemoryDb, WORKSITE_ID)
+    const target = (await listTrainingOccurrences(ACCESS)).find((row) => row.code === "CAP-01")
+    if (!target) throw new Error("No se encontró la ocurrencia de prueba.")
+
+    await inMemoryDb.insert(schema.preventionTrainingOccurrenceEvidence).values({
+      id: "training-occ-evidence-required-actor",
+      occurrenceId: target.id,
+      fileName: "acta-charla.pdf",
+      storagePath: "storage/prevention-training-evidence/test-acta-charla.pdf",
+      mimeType: "application/pdf",
+      fileSizeBytes: 128,
+      sha256: "b".repeat(64),
+      state: "active",
+      uploadedByUserId: USER_ID,
+    })
+
+    await recordTrainingOccurrenceStatus({
+      occurrenceId: target.id,
+      expectedVersion: target.version,
+      status: "completed",
+    }, ACCESS)
+
+    await expect(
+      inMemoryDb.delete(schema.users).where(eq(schema.users.id, USER_ID)),
+    ).rejects.toThrow()
+  })
+})

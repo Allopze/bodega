@@ -1,0 +1,1567 @@
+# Plan de documentación
+# Generado por /docs:plan a partir de docs/.knowledge/ (ver /docs:discover)
+#
+# El orden y los tiers son una propuesta basada en datos reales del código:
+# dependencia por foreign key (ver docs/.knowledge/relationships/) y la
+# secuencia de negocio descrita en CONTEXT.md. Edítalo a mano si el orden no
+# refleja lo que realmente importa documentar primero — /docs:execute lee
+# este archivo tal cual y respeta el status de cada módulo, así que no lo
+# regeneres una vez que haya progreso (se perdería).
+
+created_at: "2026-09-14T18:00:20.153Z"
+status: pending
+source:
+  knowledge_base: docs/.knowledge/
+  config: docs/aidocs-config.yml
+total_modules: 19
+total_embedded_modules: 2
+estimated_docs: 218
+ordering_method: Prioridad por dependencia real (foreign keys, ver docs/.knowledge/relationships/) combinada con la secuencia de negocio de CONTEXT.md. admin va primero por ser la entidad más referenciada (479 FKs entrantes); el resto sigue el ciclo solicitud→aprobación→compra→recepción→bodega→entrega y luego los clusters de dominio (prevención, control operacional).
+modules:
+-
+  name: admin
+  priority: 1
+  tier: 1
+  tier_label: Fundamentos
+  reason: Catálogos y entidades base (faenas, usuarios, roles, productos, EPP, centros de costo) de las que depende casi todo lo demás — 479 referencias por foreign key desde otros módulos.
+  knowledge_path: docs/.knowledge/modules/admin/
+  pages_count: 43
+  document:
+    pages: true
+    include_permissions: true
+    include_errors: false
+    flows: []
+  output:
+    directory: docs/generado/admin/
+    images_directory: docs/generado/admin/images/
+    files:
+      - admin.md
+      - admin-almacenamiento.md
+      - admin-auditoria.md
+      - admin-backups.md
+      - admin-cargos.md
+      - admin-catalogos-productos.md
+      - admin-centros-costo.md
+      - admin-configuracion.md
+      - admin-contenedores.md
+      - admin-contenedores-detalle.md
+      - admin-correo-smtp.md
+      - admin-desviaciones.md
+      - admin-dte.md
+      - admin-epps.md
+      - admin-equipos.md
+      - admin-equipos-detalle.md
+      - admin-faenas.md
+      - admin-flota-catalogos.md
+      - admin-flota-catalogos-estanques-combustible.md
+      - admin-flota-catalogos-productos-combustible.md
+      - admin-flota-catalogos-proveedores-combustible.md
+      - admin-flota-catalogos-tipos-equipo.md
+      - admin-flota-catalogos-vehiculos.md
+      - admin-folios.md
+      - admin-inventario-faena.md
+      - admin-inventario-faena-detalle.md
+      - admin-modulos.md
+      - admin-notificaciones.md
+      - admin-parametros-operativos.md
+      - admin-pdtp-catalogos.md
+      - admin-plantillas.md
+      - admin-productos.md
+      - admin-productos-detalle.md
+      - admin-productos-importar-batch-id.md
+      - admin-productos-nuevo.md
+      - admin-proveedores.md
+      - admin-roles.md
+      - admin-seguridad.md
+      - admin-suplencias.md
+      - admin-taxonomia-sst.md
+      - admin-tipos-activo.md
+      - admin-trabajadores.md
+      - admin-usuarios.md
+  pages:
+    -
+      route: /admin
+      dynamic: false
+      file: admin.md
+    -
+      route: /admin/almacenamiento
+      dynamic: false
+      file: admin-almacenamiento.md
+    -
+      route: /admin/auditoria
+      dynamic: false
+      file: admin-auditoria.md
+    -
+      route: /admin/backups
+      dynamic: false
+      file: admin-backups.md
+    -
+      route: /admin/cargos
+      dynamic: false
+      file: admin-cargos.md
+    -
+      route: /admin/catalogos-productos
+      dynamic: false
+      file: admin-catalogos-productos.md
+    -
+      route: /admin/centros-costo
+      dynamic: false
+      file: admin-centros-costo.md
+    -
+      route: /admin/configuracion
+      dynamic: false
+      file: admin-configuracion.md
+    -
+      route: /admin/contenedores
+      dynamic: false
+      file: admin-contenedores.md
+    -
+      route: /admin/contenedores/[id]
+      dynamic: true
+      file: admin-contenedores-detalle.md
+    -
+      route: /admin/correo-smtp
+      dynamic: false
+      file: admin-correo-smtp.md
+    -
+      route: /admin/desviaciones
+      dynamic: false
+      file: admin-desviaciones.md
+    -
+      route: /admin/dte
+      dynamic: false
+      file: admin-dte.md
+    -
+      route: /admin/epps
+      dynamic: false
+      file: admin-epps.md
+    -
+      route: /admin/equipos
+      dynamic: false
+      file: admin-equipos.md
+    -
+      route: /admin/equipos/[id]
+      dynamic: true
+      file: admin-equipos-detalle.md
+    -
+      route: /admin/faenas
+      dynamic: false
+      file: admin-faenas.md
+    -
+      route: /admin/flota-catalogos
+      dynamic: false
+      file: admin-flota-catalogos.md
+    -
+      route: /admin/flota-catalogos/estanques-combustible
+      dynamic: false
+      file: admin-flota-catalogos-estanques-combustible.md
+    -
+      route: /admin/flota-catalogos/productos-combustible
+      dynamic: false
+      file: admin-flota-catalogos-productos-combustible.md
+    -
+      route: /admin/flota-catalogos/proveedores-combustible
+      dynamic: false
+      file: admin-flota-catalogos-proveedores-combustible.md
+    -
+      route: /admin/flota-catalogos/tipos-equipo
+      dynamic: false
+      file: admin-flota-catalogos-tipos-equipo.md
+    -
+      route: /admin/flota-catalogos/vehiculos
+      dynamic: false
+      file: admin-flota-catalogos-vehiculos.md
+    -
+      route: /admin/folios
+      dynamic: false
+      file: admin-folios.md
+    -
+      route: /admin/inventario-faena
+      dynamic: false
+      file: admin-inventario-faena.md
+    -
+      route: /admin/inventario-faena/[id]
+      dynamic: true
+      file: admin-inventario-faena-detalle.md
+    -
+      route: /admin/modulos
+      dynamic: false
+      file: admin-modulos.md
+    -
+      route: /admin/notificaciones
+      dynamic: false
+      file: admin-notificaciones.md
+    -
+      route: /admin/parametros-operativos
+      dynamic: false
+      file: admin-parametros-operativos.md
+    -
+      route: /admin/pdtp-catalogos
+      dynamic: false
+      file: admin-pdtp-catalogos.md
+    -
+      route: /admin/plantillas
+      dynamic: false
+      file: admin-plantillas.md
+    -
+      route: /admin/productos
+      dynamic: false
+      file: admin-productos.md
+    -
+      route: /admin/productos/[id]
+      dynamic: true
+      file: admin-productos-detalle.md
+    -
+      route: /admin/productos/importar/[batchId]
+      dynamic: true
+      file: admin-productos-importar-batch-id.md
+    -
+      route: /admin/productos/nuevo
+      dynamic: false
+      file: admin-productos-nuevo.md
+    -
+      route: /admin/proveedores
+      dynamic: false
+      file: admin-proveedores.md
+    -
+      route: /admin/roles
+      dynamic: false
+      file: admin-roles.md
+    -
+      route: /admin/seguridad
+      dynamic: false
+      file: admin-seguridad.md
+    -
+      route: /admin/suplencias
+      dynamic: false
+      file: admin-suplencias.md
+    -
+      route: /admin/taxonomia-sst
+      dynamic: false
+      file: admin-taxonomia-sst.md
+    -
+      route: /admin/tipos-activo
+      dynamic: false
+      file: admin-tipos-activo.md
+    -
+      route: /admin/trabajadores
+      dynamic: false
+      file: admin-trabajadores.md
+    -
+      route: /admin/usuarios
+      dynamic: false
+      file: admin-usuarios.md
+  status: pending
+-
+  name: requests
+  priority: 2
+  tier: 2
+  tier_label: Ciclo de adquisición y entrega
+  reason: "La secuencia operativa central descrita en CONTEXT.md: solicitud → aprobación → compra → recepción → stock de bodega → entrega al trabajador."
+  knowledge_path: docs/.knowledge/modules/requests/
+  pages_count: 3
+  document:
+    pages: true
+    include_permissions: true
+    include_errors: true
+    flows: []
+  output:
+    directory: docs/generado/requests/
+    images_directory: docs/generado/requests/images/
+    files:
+      - solicitudes.md
+      - solicitudes-detalle.md
+      - solicitudes-nueva.md
+  pages:
+    -
+      route: /solicitudes
+      dynamic: false
+      file: solicitudes.md
+    -
+      route: /solicitudes/[id]
+      dynamic: true
+      file: solicitudes-detalle.md
+    -
+      route: /solicitudes/nueva
+      dynamic: false
+      file: solicitudes-nueva.md
+  status: pending
+-
+  name: approvals
+  priority: 3
+  tier: 2
+  tier_label: Ciclo de adquisición y entrega
+  reason: "La secuencia operativa central descrita en CONTEXT.md: solicitud → aprobación → compra → recepción → stock de bodega → entrega al trabajador."
+  knowledge_path: docs/.knowledge/modules/approvals/
+  pages_count: 1
+  document:
+    pages: true
+    include_permissions: true
+    include_errors: true
+    flows: []
+  output:
+    directory: docs/generado/approvals/
+    images_directory: docs/generado/approvals/images/
+    files:
+      - aprobaciones.md
+  pages:
+    -
+      route: /aprobaciones
+      dynamic: false
+      file: aprobaciones.md
+  status: pending
+-
+  name: purchasing
+  priority: 4
+  tier: 2
+  tier_label: Ciclo de adquisición y entrega
+  reason: "La secuencia operativa central descrita en CONTEXT.md: solicitud → aprobación → compra → recepción → stock de bodega → entrega al trabajador."
+  knowledge_path: docs/.knowledge/modules/purchasing/
+  pages_count: 5
+  document:
+    pages: true
+    include_permissions: true
+    include_errors: true
+    flows: []
+  output:
+    directory: docs/generado/purchasing/
+    images_directory: docs/generado/purchasing/images/
+    files:
+      - compras.md
+      - compras-detalle.md
+      - compras-detalle-print.md
+      - compras-dte.md
+      - compras-nueva.md
+  pages:
+    -
+      route: /compras
+      dynamic: false
+      file: compras.md
+    -
+      route: /compras/[id]
+      dynamic: true
+      file: compras-detalle.md
+    -
+      route: /compras/[id]/print
+      dynamic: true
+      file: compras-detalle-print.md
+    -
+      route: /compras/dte
+      dynamic: false
+      file: compras-dte.md
+    -
+      route: /compras/nueva
+      dynamic: false
+      file: compras-nueva.md
+  status: pending
+-
+  name: receiving
+  priority: 5
+  tier: 2
+  tier_label: Ciclo de adquisición y entrega
+  reason: "La secuencia operativa central descrita en CONTEXT.md: solicitud → aprobación → compra → recepción → stock de bodega → entrega al trabajador."
+  knowledge_path: docs/.knowledge/modules/receiving/
+  pages_count: 3
+  document:
+    pages: true
+    include_permissions: true
+    include_errors: true
+    flows: []
+  output:
+    directory: docs/generado/receiving/
+    images_directory: docs/generado/receiving/images/
+    files:
+      - recepcion.md
+      - recepcion-detalle.md
+      - recepcion-nueva.md
+  pages:
+    -
+      route: /recepcion
+      dynamic: false
+      file: recepcion.md
+    -
+      route: /recepcion/[id]
+      dynamic: true
+      file: recepcion-detalle.md
+    -
+      route: /recepcion/nueva
+      dynamic: false
+      file: recepcion-nueva.md
+  status: pending
+-
+  name: warehouse
+  priority: 6
+  tier: 2
+  tier_label: Ciclo de adquisición y entrega
+  reason: "La secuencia operativa central descrita en CONTEXT.md: solicitud → aprobación → compra → recepción → stock de bodega → entrega al trabajador."
+  knowledge_path: docs/.knowledge/modules/warehouse/
+  pages_count: 15
+  document:
+    pages: true
+    include_permissions: true
+    include_errors: true
+    flows: []
+  output:
+    directory: docs/generado/warehouse/
+    images_directory: docs/generado/warehouse/images/
+    files:
+      - bodega.md
+      - bodega-documentos.md
+      - bodega-guias.md
+      - bodega-guias-detalle.md
+      - bodega-guias-detalle-editar.md
+      - bodega-guias-detalle-print.md
+      - bodega-guias-nueva.md
+      - bodega-trazabilidad.md
+      - bodega-trazabilidad-item-id.md
+      - bodega-trazabilidad-documento.md
+      - bodega-trazabilidad-trabajador-worker-id.md
+      - trazabilidad.md
+      - trazabilidad-item-id.md
+      - trazabilidad-documento.md
+      - trazabilidad-trabajador-worker-id.md
+  pages:
+    -
+      route: /bodega
+      dynamic: false
+      file: bodega.md
+    -
+      route: /bodega/documentos
+      dynamic: false
+      file: bodega-documentos.md
+    -
+      route: /bodega/guias
+      dynamic: false
+      file: bodega-guias.md
+    -
+      route: /bodega/guias/[id]
+      dynamic: true
+      file: bodega-guias-detalle.md
+    -
+      route: /bodega/guias/[id]/editar
+      dynamic: true
+      file: bodega-guias-detalle-editar.md
+    -
+      route: /bodega/guias/[id]/print
+      dynamic: true
+      file: bodega-guias-detalle-print.md
+    -
+      route: /bodega/guias/nueva
+      dynamic: false
+      file: bodega-guias-nueva.md
+    -
+      route: /bodega/trazabilidad
+      dynamic: false
+      file: bodega-trazabilidad.md
+    -
+      route: /bodega/trazabilidad/[itemId]
+      dynamic: true
+      file: bodega-trazabilidad-item-id.md
+    -
+      route: /bodega/trazabilidad/documento
+      dynamic: false
+      file: bodega-trazabilidad-documento.md
+    -
+      route: /bodega/trazabilidad/trabajador/[workerId]
+      dynamic: true
+      file: bodega-trazabilidad-trabajador-worker-id.md
+    -
+      route: /trazabilidad
+      dynamic: false
+      file: trazabilidad.md
+    -
+      route: /trazabilidad/[itemId]
+      dynamic: true
+      file: trazabilidad-item-id.md
+    -
+      route: /trazabilidad/documento
+      dynamic: false
+      file: trazabilidad-documento.md
+    -
+      route: /trazabilidad/trabajador/[workerId]
+      dynamic: true
+      file: trazabilidad-trabajador-worker-id.md
+  status: pending
+-
+  name: deliveries
+  priority: 7
+  tier: 2
+  tier_label: Ciclo de adquisición y entrega
+  reason: "La secuencia operativa central descrita en CONTEXT.md: solicitud → aprobación → compra → recepción → stock de bodega → entrega al trabajador."
+  knowledge_path: docs/.knowledge/modules/deliveries/
+  pages_count: 2
+  document:
+    pages: true
+    include_permissions: true
+    include_errors: true
+    flows: []
+  output:
+    directory: docs/generado/deliveries/
+    images_directory: docs/generado/deliveries/images/
+    files:
+      - entregas.md
+      - entregas-detalle-print.md
+  pages:
+    -
+      route: /entregas
+      dynamic: false
+      file: entregas.md
+    -
+      route: /entregas/[id]/print
+      dynamic: true
+      file: entregas-detalle-print.md
+  status: pending
+-
+  name: operations
+  priority: 8
+  tier: 3
+  tier_label: Seguimiento y cierre
+  reason: Consumen el ciclo de adquisición para reportar, cobrar y dar seguimiento a pendientes.
+  knowledge_path: docs/.knowledge/modules/operations/
+  pages_count: 1
+  document:
+    pages: true
+    include_permissions: true
+    include_errors: true
+    flows: []
+  output:
+    directory: docs/generado/operations/
+    images_directory: docs/generado/operations/images/
+    files:
+      - pendientes.md
+  pages:
+    -
+      route: /pendientes
+      dynamic: false
+      file: pendientes.md
+  status: pending
+-
+  name: reports
+  priority: 9
+  tier: 3
+  tier_label: Seguimiento y cierre
+  reason: Consumen el ciclo de adquisición para reportar, cobrar y dar seguimiento a pendientes.
+  knowledge_path: docs/.knowledge/modules/reports/
+  pages_count: 1
+  document:
+    pages: true
+    include_permissions: true
+    include_errors: true
+    flows: []
+  output:
+    directory: docs/generado/reports/
+    images_directory: docs/generado/reports/images/
+    files:
+      - reportes.md
+  pages:
+    -
+      route: /reportes
+      dynamic: false
+      file: reportes.md
+  status: pending
+-
+  name: analytics
+  priority: 10
+  tier: 3
+  tier_label: Seguimiento y cierre
+  reason: Consumen el ciclo de adquisición para reportar, cobrar y dar seguimiento a pendientes.
+  knowledge_path: docs/.knowledge/modules/analytics/
+  pages_count: 1
+  document:
+    pages: true
+    include_permissions: true
+    include_errors: true
+    flows: []
+  output:
+    directory: docs/generado/analytics/
+    images_directory: docs/generado/analytics/images/
+    files:
+      - analitica.md
+  pages:
+    -
+      route: /analitica
+      dynamic: false
+      file: analitica.md
+  status: pending
+-
+  name: billing
+  priority: 11
+  tier: 3
+  tier_label: Seguimiento y cierre
+  reason: Consumen el ciclo de adquisición para reportar, cobrar y dar seguimiento a pendientes.
+  knowledge_path: docs/.knowledge/modules/billing/
+  pages_count: 9
+  document:
+    pages: true
+    include_permissions: true
+    include_errors: true
+    flows: []
+  output:
+    directory: docs/generado/billing/
+    images_directory: docs/generado/billing/images/
+    files:
+      - facturacion.md
+      - facturacion-clientes.md
+      - facturacion-cobranza.md
+      - facturacion-duplicados.md
+      - facturacion-facturas.md
+      - facturacion-facturas-detalle.md
+      - facturacion-pendientes.md
+      - facturacion-propuestas.md
+      - facturacion-sincronizacion.md
+  pages:
+    -
+      route: /facturacion
+      dynamic: false
+      file: facturacion.md
+    -
+      route: /facturacion/clientes
+      dynamic: false
+      file: facturacion-clientes.md
+    -
+      route: /facturacion/cobranza
+      dynamic: false
+      file: facturacion-cobranza.md
+    -
+      route: /facturacion/duplicados
+      dynamic: false
+      file: facturacion-duplicados.md
+    -
+      route: /facturacion/facturas
+      dynamic: false
+      file: facturacion-facturas.md
+    -
+      route: /facturacion/facturas/[id]
+      dynamic: true
+      file: facturacion-facturas-detalle.md
+    -
+      route: /facturacion/pendientes
+      dynamic: false
+      file: facturacion-pendientes.md
+    -
+      route: /facturacion/propuestas
+      dynamic: false
+      file: facturacion-propuestas.md
+    -
+      route: /facturacion/sincronizacion
+      dynamic: false
+      file: facturacion-sincronizacion.md
+  status: pending
+-
+  name: feedback
+  priority: 12
+  tier: 3
+  tier_label: Seguimiento y cierre
+  reason: Consumen el ciclo de adquisición para reportar, cobrar y dar seguimiento a pendientes.
+  knowledge_path: docs/.knowledge/modules/feedback/
+  pages_count: 3
+  document:
+    pages: true
+    include_permissions: true
+    include_errors: true
+    flows: []
+  output:
+    directory: docs/generado/feedback/
+    images_directory: docs/generado/feedback/images/
+    files:
+      - soporte.md
+      - soporte-detalle.md
+      - soporte-nuevo.md
+  pages:
+    -
+      route: /soporte
+      dynamic: false
+      file: soporte.md
+    -
+      route: /soporte/[id]
+      dynamic: true
+      file: soporte-detalle.md
+    -
+      route: /soporte/nuevo
+      dynamic: false
+      file: soporte-nuevo.md
+  status: pending
+-
+  name: prevention
+  priority: 13
+  tier: 4
+  tier_label: Prevención y SG-SST
+  reason: El módulo más grande (71 páginas, 126 permisos) y sus dos satélites, agrupados en la misma área de navegación /prevencion.
+  knowledge_path: docs/.knowledge/modules/prevention/
+  pages_count: 71
+  document:
+    pages: true
+    include_permissions: true
+    include_errors: false
+    flows: []
+  output:
+    directory: docs/generado/prevention/
+    images_directory: docs/generado/prevention/images/
+    files:
+      - prevencion.md
+      - prevencion-detalle.md
+      - prevencion-alcotest.md
+      - prevencion-campanas.md
+      - prevencion-capa.md
+      - prevencion-capa-detalle.md
+      - prevencion-capacitacion.md
+      - prevencion-capacitacion-session-id.md
+      - prevencion-capacitacion-brechas.md
+      - prevencion-capacitacion-catalogo.md
+      - prevencion-capacitacion-competencias.md
+      - prevencion-cgrd.md
+      - prevencion-constancias.md
+      - prevencion-coordinacion.md
+      - prevencion-coordinacion-detalle.md
+      - prevencion-cphs.md
+      - prevencion-cphs-committee-id.md
+      - prevencion-cphs-committee-id-certificacion.md
+      - prevencion-cphs-committee-id-programa.md
+      - prevencion-documentacion.md
+      - prevencion-documentacion-detalle.md
+      - prevencion-documentacion-papelera.md
+      - prevencion-documentacion-regularizacion.md
+      - prevencion-emergencias.md
+      - prevencion-emergencias-plan-id.md
+      - prevencion-epp-preventivo.md
+      - prevencion-faenas.md
+      - prevencion-faenas-worksite-id.md
+      - prevencion-gestion-cambio.md
+      - prevencion-gestion-cambio-change-id.md
+      - prevencion-higiene.md
+      - prevencion-higiene-grupos-group-id.md
+      - prevencion-higiene-programas-program-id.md
+      - prevencion-incidentes.md
+      - prevencion-incidentes-detalle.md
+      - prevencion-incidentes-reportar.md
+      - prevencion-indicadores.md
+      - prevencion-indicadores-material-ambiental.md
+      - prevencion-inspecciones.md
+      - prevencion-inspecciones-run-id.md
+      - prevencion-inspecciones-run-id-print.md
+      - prevencion-inspecciones-plantillas.md
+      - prevencion-inspecciones-programacion.md
+      - prevencion-inspecciones-seguimiento.md
+      - prevencion-miper.md
+      - prevencion-miper-controles-detalle.md
+      - prevencion-miper-mapa.md
+      - prevencion-nueva.md
+      - prevencion-pdtp.md
+      - prevencion-pdtp-program-id.md
+      - prevencion-pdtp-program-id-editar.md
+      - prevencion-pdtp-program-id-ejecucion-execution-id.md
+      - prevencion-pdtp-program-id-reporte.md
+      - prevencion-pdtp-acciones.md
+      - prevencion-pdtp-actividades.md
+      - prevencion-pdtp-aplicabilidad.md
+      - prevencion-pdtp-aprobaciones.md
+      - prevencion-pdtp-cobertura.md
+      - prevencion-pdtp-nuevo.md
+      - prevencion-pdtp-obligaciones.md
+      - prevencion-pdtp-plantillas.md
+      - prevencion-pdtp-programas.md
+      - prevencion-permisos.md
+      - prevencion-permisos-permit-id.md
+      - prevencion-privacidad.md
+      - prevencion-privacidad-auditoria.md
+      - prevencion-privacidad-solicitudes.md
+      - prevencion-privacidad-solicitudes-detalle.md
+      - prevencion-requisitos-legales.md
+      - prevencion-requisitos-legales-detalle.md
+      - prevencion-trabajador-worker-id.md
+  pages:
+    -
+      route: /prevencion
+      dynamic: false
+      file: prevencion.md
+    -
+      route: /prevencion/[id]
+      dynamic: true
+      file: prevencion-detalle.md
+    -
+      route: /prevencion/alcotest
+      dynamic: false
+      file: prevencion-alcotest.md
+    -
+      route: /prevencion/campanas
+      dynamic: false
+      file: prevencion-campanas.md
+    -
+      route: /prevencion/capa
+      dynamic: false
+      file: prevencion-capa.md
+    -
+      route: /prevencion/capa/[id]
+      dynamic: true
+      file: prevencion-capa-detalle.md
+    -
+      route: /prevencion/capacitacion
+      dynamic: false
+      file: prevencion-capacitacion.md
+    -
+      route: /prevencion/capacitacion/[sessionId]
+      dynamic: true
+      file: prevencion-capacitacion-session-id.md
+    -
+      route: /prevencion/capacitacion/brechas
+      dynamic: false
+      file: prevencion-capacitacion-brechas.md
+    -
+      route: /prevencion/capacitacion/catalogo
+      dynamic: false
+      file: prevencion-capacitacion-catalogo.md
+    -
+      route: /prevencion/capacitacion/competencias
+      dynamic: false
+      file: prevencion-capacitacion-competencias.md
+    -
+      route: /prevencion/cgrd
+      dynamic: false
+      file: prevencion-cgrd.md
+    -
+      route: /prevencion/constancias
+      dynamic: false
+      file: prevencion-constancias.md
+    -
+      route: /prevencion/coordinacion
+      dynamic: false
+      file: prevencion-coordinacion.md
+    -
+      route: /prevencion/coordinacion/[id]
+      dynamic: true
+      file: prevencion-coordinacion-detalle.md
+    -
+      route: /prevencion/cphs
+      dynamic: false
+      file: prevencion-cphs.md
+    -
+      route: /prevencion/cphs/[committeeId]
+      dynamic: true
+      file: prevencion-cphs-committee-id.md
+    -
+      route: /prevencion/cphs/[committeeId]/certificacion
+      dynamic: true
+      file: prevencion-cphs-committee-id-certificacion.md
+    -
+      route: /prevencion/cphs/[committeeId]/programa
+      dynamic: true
+      file: prevencion-cphs-committee-id-programa.md
+    -
+      route: /prevencion/documentacion
+      dynamic: false
+      file: prevencion-documentacion.md
+    -
+      route: /prevencion/documentacion/[id]
+      dynamic: true
+      file: prevencion-documentacion-detalle.md
+    -
+      route: /prevencion/documentacion/papelera
+      dynamic: false
+      file: prevencion-documentacion-papelera.md
+    -
+      route: /prevencion/documentacion/regularizacion
+      dynamic: false
+      file: prevencion-documentacion-regularizacion.md
+    -
+      route: /prevencion/emergencias
+      dynamic: false
+      file: prevencion-emergencias.md
+    -
+      route: /prevencion/emergencias/[planId]
+      dynamic: true
+      file: prevencion-emergencias-plan-id.md
+    -
+      route: /prevencion/epp-preventivo
+      dynamic: false
+      file: prevencion-epp-preventivo.md
+    -
+      route: /prevencion/faenas
+      dynamic: false
+      file: prevencion-faenas.md
+    -
+      route: /prevencion/faenas/[worksiteId]
+      dynamic: true
+      file: prevencion-faenas-worksite-id.md
+    -
+      route: /prevencion/gestion-cambio
+      dynamic: false
+      file: prevencion-gestion-cambio.md
+    -
+      route: /prevencion/gestion-cambio/[changeId]
+      dynamic: true
+      file: prevencion-gestion-cambio-change-id.md
+    -
+      route: /prevencion/higiene
+      dynamic: false
+      file: prevencion-higiene.md
+    -
+      route: /prevencion/higiene/grupos/[groupId]
+      dynamic: true
+      file: prevencion-higiene-grupos-group-id.md
+    -
+      route: /prevencion/higiene/programas/[programId]
+      dynamic: true
+      file: prevencion-higiene-programas-program-id.md
+    -
+      route: /prevencion/incidentes
+      dynamic: false
+      file: prevencion-incidentes.md
+    -
+      route: /prevencion/incidentes/[id]
+      dynamic: true
+      file: prevencion-incidentes-detalle.md
+    -
+      route: /prevencion/incidentes/reportar
+      dynamic: false
+      file: prevencion-incidentes-reportar.md
+    -
+      route: /prevencion/indicadores
+      dynamic: false
+      file: prevencion-indicadores.md
+    -
+      route: /prevencion/indicadores-material-ambiental
+      dynamic: false
+      file: prevencion-indicadores-material-ambiental.md
+    -
+      route: /prevencion/inspecciones
+      dynamic: false
+      file: prevencion-inspecciones.md
+    -
+      route: /prevencion/inspecciones/[runId]
+      dynamic: true
+      file: prevencion-inspecciones-run-id.md
+    -
+      route: /prevencion/inspecciones/[runId]/print
+      dynamic: true
+      file: prevencion-inspecciones-run-id-print.md
+    -
+      route: /prevencion/inspecciones/plantillas
+      dynamic: false
+      file: prevencion-inspecciones-plantillas.md
+    -
+      route: /prevencion/inspecciones/programacion
+      dynamic: false
+      file: prevencion-inspecciones-programacion.md
+    -
+      route: /prevencion/inspecciones/seguimiento
+      dynamic: false
+      file: prevencion-inspecciones-seguimiento.md
+    -
+      route: /prevencion/miper
+      dynamic: false
+      file: prevencion-miper.md
+    -
+      route: /prevencion/miper/controles/[id]
+      dynamic: true
+      file: prevencion-miper-controles-detalle.md
+    -
+      route: /prevencion/miper/mapa
+      dynamic: false
+      file: prevencion-miper-mapa.md
+    -
+      route: /prevencion/nueva
+      dynamic: false
+      file: prevencion-nueva.md
+    -
+      route: /prevencion/pdtp
+      dynamic: false
+      file: prevencion-pdtp.md
+    -
+      route: /prevencion/pdtp/[programId]
+      dynamic: true
+      file: prevencion-pdtp-program-id.md
+    -
+      route: /prevencion/pdtp/[programId]/editar
+      dynamic: true
+      file: prevencion-pdtp-program-id-editar.md
+    -
+      route: /prevencion/pdtp/[programId]/ejecucion/[executionId]
+      dynamic: true
+      file: prevencion-pdtp-program-id-ejecucion-execution-id.md
+    -
+      route: /prevencion/pdtp/[programId]/reporte
+      dynamic: true
+      file: prevencion-pdtp-program-id-reporte.md
+    -
+      route: /prevencion/pdtp/acciones
+      dynamic: false
+      file: prevencion-pdtp-acciones.md
+    -
+      route: /prevencion/pdtp/actividades
+      dynamic: false
+      file: prevencion-pdtp-actividades.md
+    -
+      route: /prevencion/pdtp/aplicabilidad
+      dynamic: false
+      file: prevencion-pdtp-aplicabilidad.md
+    -
+      route: /prevencion/pdtp/aprobaciones
+      dynamic: false
+      file: prevencion-pdtp-aprobaciones.md
+    -
+      route: /prevencion/pdtp/cobertura
+      dynamic: false
+      file: prevencion-pdtp-cobertura.md
+    -
+      route: /prevencion/pdtp/nuevo
+      dynamic: false
+      file: prevencion-pdtp-nuevo.md
+    -
+      route: /prevencion/pdtp/obligaciones
+      dynamic: false
+      file: prevencion-pdtp-obligaciones.md
+    -
+      route: /prevencion/pdtp/plantillas
+      dynamic: false
+      file: prevencion-pdtp-plantillas.md
+    -
+      route: /prevencion/pdtp/programas
+      dynamic: false
+      file: prevencion-pdtp-programas.md
+    -
+      route: /prevencion/permisos
+      dynamic: false
+      file: prevencion-permisos.md
+    -
+      route: /prevencion/permisos/[permitId]
+      dynamic: true
+      file: prevencion-permisos-permit-id.md
+    -
+      route: /prevencion/privacidad
+      dynamic: false
+      file: prevencion-privacidad.md
+    -
+      route: /prevencion/privacidad/auditoria
+      dynamic: false
+      file: prevencion-privacidad-auditoria.md
+    -
+      route: /prevencion/privacidad/solicitudes
+      dynamic: false
+      file: prevencion-privacidad-solicitudes.md
+    -
+      route: /prevencion/privacidad/solicitudes/[id]
+      dynamic: true
+      file: prevencion-privacidad-solicitudes-detalle.md
+    -
+      route: /prevencion/requisitos-legales
+      dynamic: false
+      file: prevencion-requisitos-legales.md
+    -
+      route: /prevencion/requisitos-legales/[id]
+      dynamic: true
+      file: prevencion-requisitos-legales-detalle.md
+    -
+      route: /prevencion/trabajador/[workerId]
+      dynamic: true
+      file: prevencion-trabajador-worker-id.md
+  status: pending
+-
+  name: sst
+  priority: 14
+  tier: 4
+  tier_label: Prevención y SG-SST
+  reason: El módulo más grande (71 páginas, 126 permisos) y sus dos satélites, agrupados en la misma área de navegación /prevencion.
+  knowledge_path: docs/.knowledge/modules/sst/
+  pages_count: 1
+  document:
+    pages: true
+    include_permissions: true
+    include_errors: true
+    flows: []
+  output:
+    directory: docs/generado/sst/
+    images_directory: docs/generado/sst/images/
+    files:
+      - prevencion-evaluaciones.md
+  pages:
+    -
+      route: /prevencion/evaluaciones
+      dynamic: false
+      file: prevencion-evaluaciones.md
+  status: pending
+-
+  name: ppa
+  priority: 15
+  tier: 4
+  tier_label: Prevención y SG-SST
+  reason: El módulo más grande (71 páginas, 126 permisos) y sus dos satélites, agrupados en la misma área de navegación /prevencion.
+  knowledge_path: docs/.knowledge/modules/ppa/
+  pages_count: 4
+  document:
+    pages: true
+    include_permissions: true
+    include_errors: true
+    flows: []
+  output:
+    directory: docs/generado/ppa/
+    images_directory: docs/generado/ppa/images/
+    files:
+      - ppa.md
+      - ppa-result-token.md
+      - prevencion-ppa.md
+      - prevencion-ppa-detalle.md
+  pages:
+    -
+      route: /ppa
+      dynamic: false
+      file: ppa.md
+    -
+      route: /ppa/result/[token]
+      dynamic: true
+      file: ppa-result-token.md
+    -
+      route: /prevencion/ppa
+      dynamic: false
+      file: prevencion-ppa.md
+    -
+      route: /prevencion/ppa/[id]
+      dynamic: true
+      file: prevencion-ppa-detalle.md
+  status: pending
+-
+  name: combustibles
+  priority: 16
+  tier: 5
+  tier_label: Control operacional
+  reason: Flota, combustibles y mantenciones comparten el área /control-operacional y se acoplan entre sí (vehículos, equipos, consumo).
+  knowledge_path: docs/.knowledge/modules/combustibles/
+  pages_count: 28
+  document:
+    pages: true
+    include_permissions: true
+    include_errors: false
+    flows: []
+  output:
+    directory: docs/generado/combustibles/
+    images_directory: docs/generado/combustibles/images/
+    files:
+      - combustibles.md
+      - combustibles-detalle.md
+      - combustibles-analisis.md
+      - combustibles-anomalias.md
+      - combustibles-anomalias-reglas.md
+      - combustibles-bitacora.md
+      - combustibles-bitacora-historial-entity-type-entity-id.md
+      - combustibles-ciclo.md
+      - combustibles-cuenta-corriente.md
+      - combustibles-cuenta-corriente-detalle.md
+      - combustibles-facturas.md
+      - combustibles-importar.md
+      - combustibles-importar-detalle.md
+      - combustibles-importar-operaciones-detalle.md
+      - combustibles-nueva.md
+      - combustibles-proveedores-combustible.md
+      - combustibles-reportes.md
+      - combustibles-sellos.md
+      - combustibles-tae.md
+      - combustibles-tae-detalle.md
+      - combustibles-tae-conciliacion.md
+      - combustibles-tae-importar.md
+      - combustibles-tae-importar-detalle.md
+      - combustibles-tae-importar-historial.md
+      - combustibles-vehiculos.md
+      - tae.md
+      - tae-access-access-token.md
+      - tae-resultado-token.md
+  pages:
+    -
+      route: /combustibles
+      dynamic: false
+      file: combustibles.md
+    -
+      route: /combustibles/[id]
+      dynamic: true
+      file: combustibles-detalle.md
+    -
+      route: /combustibles/analisis
+      dynamic: false
+      file: combustibles-analisis.md
+    -
+      route: /combustibles/anomalias
+      dynamic: false
+      file: combustibles-anomalias.md
+    -
+      route: /combustibles/anomalias/reglas
+      dynamic: false
+      file: combustibles-anomalias-reglas.md
+    -
+      route: /combustibles/bitacora
+      dynamic: false
+      file: combustibles-bitacora.md
+    -
+      route: /combustibles/bitacora/historial/[entityType]/[entityId]
+      dynamic: true
+      file: combustibles-bitacora-historial-entity-type-entity-id.md
+    -
+      route: /combustibles/ciclo
+      dynamic: false
+      file: combustibles-ciclo.md
+    -
+      route: /combustibles/cuenta-corriente
+      dynamic: false
+      file: combustibles-cuenta-corriente.md
+    -
+      route: /combustibles/cuenta-corriente/[id]
+      dynamic: true
+      file: combustibles-cuenta-corriente-detalle.md
+    -
+      route: /combustibles/facturas
+      dynamic: false
+      file: combustibles-facturas.md
+    -
+      route: /combustibles/importar
+      dynamic: false
+      file: combustibles-importar.md
+    -
+      route: /combustibles/importar/[id]
+      dynamic: true
+      file: combustibles-importar-detalle.md
+    -
+      route: /combustibles/importar/operaciones/[id]
+      dynamic: true
+      file: combustibles-importar-operaciones-detalle.md
+    -
+      route: /combustibles/nueva
+      dynamic: false
+      file: combustibles-nueva.md
+    -
+      route: /combustibles/proveedores-combustible
+      dynamic: false
+      file: combustibles-proveedores-combustible.md
+    -
+      route: /combustibles/reportes
+      dynamic: false
+      file: combustibles-reportes.md
+    -
+      route: /combustibles/sellos
+      dynamic: false
+      file: combustibles-sellos.md
+    -
+      route: /combustibles/tae
+      dynamic: false
+      file: combustibles-tae.md
+    -
+      route: /combustibles/tae/[id]
+      dynamic: true
+      file: combustibles-tae-detalle.md
+    -
+      route: /combustibles/tae/conciliacion
+      dynamic: false
+      file: combustibles-tae-conciliacion.md
+    -
+      route: /combustibles/tae/importar
+      dynamic: false
+      file: combustibles-tae-importar.md
+    -
+      route: /combustibles/tae/importar/[id]
+      dynamic: true
+      file: combustibles-tae-importar-detalle.md
+    -
+      route: /combustibles/tae/importar/historial
+      dynamic: false
+      file: combustibles-tae-importar-historial.md
+    -
+      route: /combustibles/vehiculos
+      dynamic: false
+      file: combustibles-vehiculos.md
+    -
+      route: /tae
+      dynamic: false
+      file: tae.md
+    -
+      route: /tae/access/[accessToken]
+      dynamic: true
+      file: tae-access-access-token.md
+    -
+      route: /tae/resultado/[token]
+      dynamic: true
+      file: tae-resultado-token.md
+  status: pending
+-
+  name: flota
+  priority: 17
+  tier: 5
+  tier_label: Control operacional
+  reason: Flota, combustibles y mantenciones comparten el área /control-operacional y se acoplan entre sí (vehículos, equipos, consumo).
+  knowledge_path: docs/.knowledge/modules/flota/
+  pages_count: 4
+  document:
+    pages: true
+    include_permissions: true
+    include_errors: true
+    flows: []
+  output:
+    directory: docs/generado/flota/
+    images_directory: docs/generado/flota/images/
+    files:
+      - control-operacional.md
+      - flota.md
+      - flota-detalle.md
+      - flota-monitoreo.md
+  pages:
+    -
+      route: /control-operacional
+      dynamic: false
+      file: control-operacional.md
+    -
+      route: /flota
+      dynamic: false
+      file: flota.md
+    -
+      route: /flota/[id]
+      dynamic: true
+      file: flota-detalle.md
+    -
+      route: /flota/monitoreo
+      dynamic: false
+      file: flota-monitoreo.md
+  status: pending
+-
+  name: mantenciones
+  priority: 18
+  tier: 5
+  tier_label: Control operacional
+  reason: Flota, combustibles y mantenciones comparten el área /control-operacional y se acoplan entre sí (vehículos, equipos, consumo).
+  knowledge_path: docs/.knowledge/modules/mantenciones/
+  pages_count: 4
+  document:
+    pages: true
+    include_permissions: true
+    include_errors: true
+    flows: []
+  output:
+    directory: docs/generado/mantenciones/
+    images_directory: docs/generado/mantenciones/images/
+    files:
+      - mantenciones.md
+      - mantenciones-detalle.md
+      - mantenciones-planes.md
+      - mantenciones-politicas-documentales.md
+  pages:
+    -
+      route: /mantenciones
+      dynamic: false
+      file: mantenciones.md
+    -
+      route: /mantenciones/[id]
+      dynamic: true
+      file: mantenciones-detalle.md
+    -
+      route: /mantenciones/planes
+      dynamic: false
+      file: mantenciones-planes.md
+    -
+      route: /mantenciones/politicas-documentales
+      dynamic: false
+      file: mantenciones-politicas-documentales.md
+  status: pending
+-
+  name: ti
+  priority: 19
+  tier: 6
+  tier_label: Soporte interno
+  reason: Módulos de infraestructura interna, sin relación de dependencia con el resto.
+  knowledge_path: docs/.knowledge/modules/ti/
+  pages_count: 13
+  document:
+    pages: true
+    include_permissions: true
+    include_errors: true
+    flows: []
+  output:
+    directory: docs/generado/ti/
+    images_directory: docs/generado/ti/images/
+    files:
+      - ti.md
+      - ti-accesos.md
+      - ti-actas-assignment-id-print.md
+      - ti-activos.md
+      - ti-activos-detalle.md
+      - ti-asignaciones.md
+      - ti-bajas.md
+      - ti-garantias.md
+      - ti-licencias.md
+      - ti-mantenciones.md
+      - ti-reportes.md
+      - ti-tickets.md
+      - ti-tickets-detalle.md
+  pages:
+    -
+      route: /ti
+      dynamic: false
+      file: ti.md
+    -
+      route: /ti/accesos
+      dynamic: false
+      file: ti-accesos.md
+    -
+      route: /ti/actas/[assignmentId]/print
+      dynamic: true
+      file: ti-actas-assignment-id-print.md
+    -
+      route: /ti/activos
+      dynamic: false
+      file: ti-activos.md
+    -
+      route: /ti/activos/[id]
+      dynamic: true
+      file: ti-activos-detalle.md
+    -
+      route: /ti/asignaciones
+      dynamic: false
+      file: ti-asignaciones.md
+    -
+      route: /ti/bajas
+      dynamic: false
+      file: ti-bajas.md
+    -
+      route: /ti/garantias
+      dynamic: false
+      file: ti-garantias.md
+    -
+      route: /ti/licencias
+      dynamic: false
+      file: ti-licencias.md
+    -
+      route: /ti/mantenciones
+      dynamic: false
+      file: ti-mantenciones.md
+    -
+      route: /ti/reportes
+      dynamic: false
+      file: ti-reportes.md
+    -
+      route: /ti/tickets
+      dynamic: false
+      file: ti-tickets.md
+    -
+      route: /ti/tickets/[id]
+      dynamic: true
+      file: ti-tickets-detalle.md
+  status: pending
+embedded_modules:
+-
+  name: repuestos
+  reason: "Sin páginas propias: panel de cotización embebido en las páginas de solicitudes y compras (ver components.json). No genera documento propio; se cubre dentro del flujo de esos módulos."
+  embedded_in:
+    - requests
+    - purchasing
+  knowledge_path: docs/.knowledge/modules/repuestos/
+  api_endpoints_count: 1
+  status: covered_by_parent
+-
+  name: servicios
+  reason: "Sin páginas propias: panel de cotización embebido en las páginas de solicitudes y compras (ver components.json). No genera documento propio; se cubre dentro del flujo de esos módulos."
+  embedded_in:
+    - requests
+    - purchasing
+  knowledge_path: docs/.knowledge/modules/servicios/
+  api_endpoints_count: 1
+  status: covered_by_parent
+shell:
+  priority: 0
+  reason: "Superficie común a toda la plataforma: no pertenece a un módulo del registry, se documenta una sola vez como referencia general. Se excluyen login/registro/recuperar (páginas públicas de acceso, ver docs/.ignore)."
+  knowledge_path: docs/.knowledge/modules/_plataforma/
+  output:
+    directory: docs/generado/_plataforma/
+    files:
+      - inicio.md
+      - dashboard.md
+      - forbidden.md
+      - modulo-inactivo.md
+      - perfil.md
+      - reportar-incidente.md
+  pages:
+    -
+      route: /
+      dynamic: false
+    -
+      route: /dashboard
+      dynamic: false
+    -
+      route: /forbidden
+      dynamic: false
+    -
+      route: /modulo-inactivo
+      dynamic: false
+    -
+      route: /perfil
+      dynamic: false
+    -
+      route: /reportar-incidente
+      dynamic: false
+  status: pending
+cross_module_flows:
+-
+  name: solicitud-a-entrega
+  title: De la solicitud a la entrega al trabajador
+  modules:
+    - requests
+    - approvals
+    - purchasing
+    - receiving
+    - warehouse
+    - deliveries
+  reason: "El flujo de negocio central de la plataforma, documentado en CONTEXT.md. No es una sola foreign key: cruza los 6 módulos del Tier 2."
+  output: docs/generado/requests/solicitud-a-entrega.md
+  status: pending
+-
+  name: cobertura-pdtp-prevencion
+  title: Cobertura y cumplimiento del PDTP
+  modules:
+    - prevention
+    - ppa
+    - sst
+  reason: Los tres módulos de prevención comparten navegación y probablemente indicadores de cumplimiento cruzados.
+  output: docs/generado/prevention/cobertura-pdtp-prevencion.md
+  status: pending
+-
+  name: admin-prevention
+  title: null
+  modules:
+    - admin
+    - prevention
+  reason: "Acoplamiento por foreign key: 257 columnas de admin referencian tablas de prevention (o viceversa). Título y alcance pendientes de revisar con /docs:flow."
+  output: null
+  status: needs_review
+-
+  name: admin-warehouse
+  title: null
+  modules:
+    - admin
+    - warehouse
+  reason: "Acoplamiento por foreign key: 45 columnas de admin referencian tablas de warehouse (o viceversa). Título y alcance pendientes de revisar con /docs:flow."
+  output: null
+  status: needs_review
+-
+  name: admin-combustibles
+  title: null
+  modules:
+    - admin
+    - combustibles
+  reason: "Acoplamiento por foreign key: 44 columnas de admin referencian tablas de combustibles (o viceversa). Título y alcance pendientes de revisar con /docs:flow."
+  output: null
+  status: needs_review
+-
+  name: admin-purchasing
+  title: null
+  modules:
+    - admin
+    - purchasing
+  reason: "Acoplamiento por foreign key: 34 columnas de admin referencian tablas de purchasing (o viceversa). Título y alcance pendientes de revisar con /docs:flow."
+  output: null
+  status: needs_review
+-
+  name: admin-ti
+  title: null
+  modules:
+    - admin
+    - ti
+  reason: "Acoplamiento por foreign key: 31 columnas de admin referencian tablas de ti (o viceversa). Título y alcance pendientes de revisar con /docs:flow."
+  output: null
+  status: needs_review
+output_structure:
+  root: docs/generado
+  index: docs/generado/index.md
+  module_pattern: docs/generado/{module}/
+  images_pattern: docs/generado/{module}/images/

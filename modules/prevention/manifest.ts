@@ -90,6 +90,7 @@ export const preventionModule = {
     "prevention:training:manage",
     "prevention:training:approve",
     "prevention:training:deliver",
+    "prevention:training:record",
     "prevention:training:ack",
     "prevention:training:convalidate",
     "prevention:training:revoke",
@@ -225,14 +226,15 @@ export const preventionModule = {
     "prevention:legal:assess": { id: "p-prev-legal-assess", description: "Preparar requisitos, proponer aplicabilidad y evaluar cumplimiento" },
     "prevention:legal:approve_applicability": { id: "p-prev-legal-approve", description: "Aprobar requisitos y aplicabilidad legal de forma segregada" },
     "prevention:legal:export": { id: "p-prev-legal-export", description: "Exportar registro legal, aplicabilidad, evidencia y brechas en Excel" },
-    "prevention:training:view": { id: "p-prev-train-view", description: "Ver cursos, sesiones, competencias y brechas dentro de la faena autorizada" },
+    "prevention:training:view": { id: "p-prev-train-view", description: "Ver el catálogo anual, su estado y el expediente formativo dentro de la faena autorizada" },
     "prevention:training:manage": { id: "p-prev-train-manage", description: "Administrar catálogo, contenidos, sesiones y requisitos de competencia" },
     "prevention:training:approve": { id: "p-prev-train-approve", description: "Aprobar y publicar contenidos formativos de forma segregada del autor" },
     "prevention:training:deliver": { id: "p-prev-train-deliver", description: "Registrar asistencia, evaluación y cierre de una sesión de capacitación" },
+    "prevention:training:record": { id: "p-prev-train-record", description: "Marcar una ocurrencia anual como hecha o no hecha y adjuntar evidencia" },
     "prevention:training:ack": { id: "p-prev-train-ack", description: "Acusar recibo de la propia capacitación u ODI" },
     "prevention:training:convalidate": { id: "p-prev-train-conval", description: "Convalidar competencias externas con justificación y evidencia" },
     "prevention:training:revoke": { id: "p-prev-train-revoke", description: "Revocar una competencia vigente con motivo auditado" },
-    "prevention:training:export": { id: "p-prev-train-export", description: "Exportar matriz de competencias, brechas y expediente formativo en Excel" },
+    "prevention:training:export": { id: "p-prev-train-export", description: "Exportar el control anual, evidencias y expediente formativo en Excel" },
     "prevention:permits:view": { id: "p-prev-permit-view", description: "Ver permisos de trabajo, AST y aislamientos de la faena autorizada" },
     "prevention:permits:manage": { id: "p-prev-permit-manage", description: "Administrar el catálogo de tipos de permiso de trabajo" },
     "prevention:permits:request": { id: "p-prev-permit-request", description: "Solicitar permisos de trabajo y elaborar su AST/JSA" },
@@ -413,30 +415,13 @@ export const preventionModule = {
           ],
         },
         {
-          // La página se llama "Capacitación y competencias"; en el sidebar no
-          // cabe, y truncarla es peor que acortarla a su prefijo.
+          // La página concentra el catálogo anual y sus ocurrencias por faena;
+          // las pantallas antiguas se conservan para compatibilidad histórica.
           label: "Capacitación",
           href: "/prevencion/capacitacion",
           iconName: "Certificate",
           group: "Cumplimiento del programa",
           permissions: ["prevention:training:view"],
-          children: [
-            {
-              label: "Catálogo de cursos",
-              href: "/prevencion/capacitacion/catalogo",
-              permissions: ["prevention:training:view"],
-            },
-            {
-              label: "Matriz de competencias",
-              href: "/prevencion/capacitacion/competencias",
-              permissions: ["prevention:training:view"],
-            },
-            {
-              label: "Brechas de competencia",
-              href: "/prevencion/capacitacion/brechas",
-              permissions: ["prevention:training:view"],
-            },
-          ],
         },
         {
           label: "Acciones correctivas",
@@ -472,13 +457,10 @@ export const preventionModule = {
           group: "Cumplimiento del programa",
           permissions: ["prevention:epp:view"],
         },
-        {
-          label: "Campañas preventivas",
-          href: "/prevencion/campanas",
-          iconName: "MegaphoneSimple",
-          group: "Cumplimiento del programa",
-          permissions: ["prevention:campaign:view"],
-        },
+        // Las campañas del programa anual se controlan dentro de
+        // /prevencion/capacitacion. La ruta histórica /prevencion/campanas
+        // conserva acceso directo para registros anteriores, pero no se
+        // ofrece como segunda bandeja de alta.
         {
           label: "Emergencias",
           href: "/prevencion/emergencias",
@@ -958,7 +940,7 @@ export const preventionModule = {
     // habilitación de una persona sin que exista sesión ni evaluación: se
     // conceden sólo a jefatura/administración, nunca a roles de terreno.
     // `approve` sí llega a prevencionista (JDPR) desde 2026-09-06: es la
-    // responsable declarada de los 13 cursos del programa y sin el permiso
+    // responsable declarada de los contenidos formativos del programa y sin el permiso
     // dependía de jefatura para publicar cualquiera de ellos. La segregación
     // se sostiene por actor en el servicio, no por rol aquí: aprobar sigue
     // exigiéndole no haber redactado la versión; sólo publicar una versión ya
@@ -968,11 +950,13 @@ export const preventionModule = {
     { roleSlug: "prevencionista",       permission: "prevention:training:manage" },
     { roleSlug: "prevencionista",       permission: "prevention:training:approve" },
     { roleSlug: "prevencionista",       permission: "prevention:training:deliver" },
+    { roleSlug: "prevencionista",       permission: "prevention:training:record" },
     { roleSlug: "prevencionista",       permission: "prevention:training:ack" },
     { roleSlug: "prevencionista",       permission: "prevention:training:export" },
     { roleSlug: "prevencionista_faena", permission: "prevention:training:view" },
     { roleSlug: "prevencionista_faena", permission: "prevention:training:manage" },
     { roleSlug: "prevencionista_faena", permission: "prevention:training:deliver" },
+    { roleSlug: "prevencionista_faena", permission: "prevention:training:record" },
     { roleSlug: "prevencionista_faena", permission: "prevention:training:ack" },
     { roleSlug: "admin_contrato",       permission: "prevention:training:view" },
     { roleSlug: "admin_contrato",       permission: "prevention:training:ack" },
@@ -992,12 +976,14 @@ export const preventionModule = {
     { roleSlug: "jefa_chome",           permission: "prevention:training:approve" },
     { roleSlug: "jefa_chome",           permission: "prevention:training:convalidate" },
     { roleSlug: "jefa_chome",           permission: "prevention:training:revoke" },
+    { roleSlug: "jefa_chome",           permission: "prevention:training:record" },
     { roleSlug: "jefa_chome",           permission: "prevention:training:ack" },
     { roleSlug: "jefa_chome",           permission: "prevention:training:export" },
     { roleSlug: "administrador",        permission: "prevention:training:view" },
     { roleSlug: "administrador",        permission: "prevention:training:manage" },
     { roleSlug: "administrador",        permission: "prevention:training:approve" },
     { roleSlug: "administrador",        permission: "prevention:training:deliver" },
+    { roleSlug: "administrador",        permission: "prevention:training:record" },
     { roleSlug: "administrador",        permission: "prevention:training:ack" },
     { roleSlug: "administrador",        permission: "prevention:training:convalidate" },
     { roleSlug: "administrador",        permission: "prevention:training:revoke" },

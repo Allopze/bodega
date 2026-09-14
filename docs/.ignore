@@ -1,0 +1,21 @@
+# Paginas a omitir al generar documentacion (sintaxis tipo .gitignore)
+
+# Autenticacion
+/login
+/registro
+/recuperar
+/recuperar/*
+
+# Endpoints y rutas tecnicas
+/api/*
+/forbidden
+/modulo-inactivo
+
+# Enlaces firmados de un solo uso (no navegables sin token)
+/acuse/*
+/ppa/result/*
+/tae/access/*
+/tae/resultado/*
+
+# Vistas de impresion (mismo contenido que la pantalla de origen)
+/print/*

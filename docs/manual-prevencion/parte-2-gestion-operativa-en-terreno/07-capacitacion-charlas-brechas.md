@@ -1,90 +1,50 @@
-# Capítulo 07: Capacitaciones, Charlas y Matriz de Brechas
+# Capítulo 07: Control anual de capacitaciones y brechas
 
-> **Marco Normativo:** Decreto Supremo 40 (DS 40, Art. 21 - Obligación de Informar los Riesgos Laborales ODI) y Decreto Supremo 44 (DS 44, Programa de Capacitación).  
-> **Rutas en Plataforma:**  
-> *   Sesiones de Capacitación: `/prevencion/capacitacion`  
-> *   Catálogo de Cursos: `/prevencion/capacitacion/catalogo`  
-> *   Matriz de Brechas: `/prevencion/capacitacion/brechas`  
-> **Actividades PDTP Asociadas:** N° 16, 37, 38, 51, 53, 54, 55, 56, 57, 58, 59, 60 y 63.
+> **Marco:** Decreto Supremo 40 (ODI) y Decreto Supremo 44 (programa de capacitación).
+> **Ruta operativa:** `/prevencion/capacitacion`
+> **Rutas históricas:** `/prevencion/capacitacion/competencias`, `/prevencion/capacitacion/brechas` y `/prevencion/capacitacion/[sessionId]` conservan el acceso compatible al expediente de sesiones anterior. `/prevencion/capacitacion/catalogo` conserva compatibilidad, pero redirige al control anual.
 
----
+## 1. Qué controla la pantalla
 
-## 1. El Sistema de Capacitación y Competencias en CHOME
+La pantalla operativa usa un catálogo predefinido para el programa 2026: 14 cursos y 6 campañas. Cada combinación de actividad, faena y posición del cronograma es una **ocurrencia**. El prevencionista de faena no crea cursos ni sesiones desde esta bandeja: revisa la ocurrencia y la marca como **Hecha** o **No hecha**.
 
-La capacitación preventiva en la plataforma no es un simple repositorio de listas de asistencia en papel: es un **motor de competencias laborales** que garantiza que nadie opere una máquina o conduzca un camión sin la preparación técnica requerida por la ley.
+El catálogo sólo tiene mapeos PDTP explícitos. Actualmente conectan con el programa las ocurrencias CAP-02 (N°54), CAP-03 (N°63), CAP-04 (N°56), CAP-07 (N°55), CAP-11 (N°58), CAM-01/CAM-02/CAM-06 (N°85), CAM-03 (N°86), CAM-05 (N°87) y CAM-04 (N°89). Las demás actividades del PDTP conservan sus propios módulos o su registro histórico.
 
-El sistema administra 13 cursos normados vinculados directamente al Programa de Trabajo Preventivo (PDTP), destacando:
-*   **PDTP-53:** Charla diaria de 5 minutos de inicio de turno.
-*   **PDTP-38:** Charla mensual de refuerzo operacional.
-*   **PDTP-56:** Curso integral de Manejo a la Defensiva (mínimo 480 minutos).
-*   **PDTP-57:** Aislamiento y bloqueo de energías peligrosas (LOTO).
-*   **PDTP-51 / 54 / 58 / 59:** Ergonomía, Uso de EPP, Sustancias Peligrosas y Trabajo en Altura.
-
----
-
-## 2. Paso a Paso: Cómo Registrar una Sesión de Capacitación o Charla
+## 2. Registrar una ocurrencia
 
 ```
-[Ir a /prevencion/capacitacion]
+[Abrir /prevencion/capacitacion]
                │
                ▼
-[Presionar "Registrar Sesión"]
+[Elegir faena y revisar el programa anual]
                │
                ▼
-1. Seleccionar Faena y Curso del Catálogo Oficial
-2. Definir Relator, Fecha, Hora y Duración en minutos
-3. Seleccionar Trabajadores Asistentes (por RUT o Nombre)
-4. Ingresar Calificación / Prueba si el curso lo exige
-5. Adjuntar Lista Firmada en PDF o Foto de Terreno
-               │
+[Abrir la ocurrencia pendiente]
+       ┌───────┴────────┐
+       ▼                ▼
+[Adjuntar evidencia] [Escribir observación]
+       │                │
+       └───────┬────────┘
                ▼
-[Presionar "Cerrar y Acreditar Sesión"]
+     [Marcar Hecha o No hecha]
 ```
 
-### Paso 1: Iniciar el Registro
-En `/prevencion/capacitacion`, presiona el botón **"Registrar sesión"**.
+1. Selecciona la faena. Una faena inactiva aparece como historial de solo lectura; sus documentos se pueden descargar, pero no se puede cambiar su estado.
+2. Revisa el código, actividad, audiencia y período programado. El programa anual visible es el catálogo controlado 2026.
+3. Para **Hecha**, adjunta al menos un archivo. Se aceptan PDF, DOCX, XLS/XLSX, JPG o PNG, con un máximo de 25 MB por archivo. Se pueden adjuntar varios archivos, uno por solicitud.
+4. Para **No hecha**, la observación es opcional, pero sirve para dejar el motivo o la reprogramación.
+5. Confirma el estado. El sistema registra quién lo cambió, cuándo, la versión de la ocurrencia y los identificadores de las evidencias.
 
-### Paso 2: Datos de la Sesión
-*   **Faena:** Selecciona el centro de trabajo donde se dictó la actividad.
-*   **Curso:** Elige el curso en el desplegable. 
-    > [!IMPORTANT]
-    > Solo puedes registrar sesiones sobre **versiones publicadas** de los cursos. Si un curso aparece deshabilitado, solicita a la Jefa de Prevención que apruebe su temario.
-*   **Relator:** Selecciona si fue dictado por el Prevencionista de Faena, el Jefe de Terreno, el Supervisor o un organismo externo (Mutual de Seguridad, proveedor técnico).
-*   **Fecha y Duración:** Indica la duración real en minutos (para la charla diaria son habitualmente 5 a 15 minutos; para cursos especializados debe cumplir el mínimo legal).
+Una corrección de **Hecha** a **No hecha** anula las evidencias activas para el uso operativo, pero no las elimina: quedan visibles como historial. Si luego se vuelve a marcar como hecha, se debe adjuntar evidencia nueva.
 
-### Paso 3: Carga de Asistentes y Calificaciones
-*   En la sección de participantes, escribe el RUT o nombre de cada trabajador presente y presiona *"Agregar"*.
-*   **Prueba de Evaluación (Actividades PDTP N° 16 y 63):** Si el curso exige evaluación teórica con nota de corte (ej. mínimo 75% o nota 4.0):
-    *   Ingresa la nota o puntaje de cada trabajador.
-    *   El sistema marcará automáticamente si el trabajador aprobó o reprobó. Solo los trabajadores que aprueben contarán para el cumplimiento de la actividad en el PDTP.
+## 3. Relación con PDTP y exportación
 
-### Paso 4: Carga de Respaldo Documental y Cierre
-*   Sube el archivo PDF escaneado con las firmas de los trabajadores o una fotografía nítida de la planilla de asistencia.
-*   Presiona **"Cerrar sesión"**.
-*   **Resultado:**
-    1. Se actualiza la hoja de vida de capacitación de cada trabajador.
-    2. La celda correspondiente en el Programa de Trabajo Preventivo (`/prevencion/pdtp`) se pinta automáticamente de **verde**.
+Cuando una ocurrencia tiene actividades PDTP mapeadas, el sistema deja un evento durable de cumplimiento. Si el programa aún no está activo, el evento queda para reconciliación; al activarse se conserva el año planificado y, cuando corresponde, la aprobación automática del hecho de origen. Una falla de acreditación no borra el registro de la capacitación.
 
----
+**Exportar Excel** descarga el control anual y sus evidencias. Sin filtro de faena agrega las hojas históricas del expediente de sesiones; con una faena seleccionada respeta ese filtro y también permite consultar el historial de una faena inactiva.
 
-## 3. El Tablero de Brechas de Competencia (`/prevencion/capacitacion/brechas`)
+## 4. Expediente y brechas históricas
 
-El tablero de brechas es una de las herramientas más valiosas para el Prevencionista antes de autorizar la jornada de trabajo:
+La matriz de competencias (`/prevencion/capacitacion/competencias`) y las brechas (`/prevencion/capacitacion/brechas`) siguen disponibles para consultar las habilitaciones por persona, vencimientos y requisitos. El detalle de una sesión anterior se abre en `/prevencion/capacitacion/[sessionId]`, con las acciones históricas compatibles según permisos. Estas rutas no son una segunda bandeja para crear ocurrencias del catálogo anual.
 
-```
-FILTRO DE BRECHAS: [ Faena: Santa Fe - Grúas ]  [ Cargo: Operador de Grúa ]
-─────────────────────────────────────────────────────────────────────────────
-Trabajador             Manejo Defensivo     Bloqueo LOTO       Trabajo Altura
-─────────────────────────────────────────────────────────────────────────────
-Juan Pérez             🟢 Vigente           🟢 Vigente         🟢 Vigente
-Pedro Gómez            🔴 Vencido           🟢 Vigente         ⚪ No aplica
-Rodrigo Soto           ⚠️ Sin registro      🔴 Vencido         🟢 Vigente
-```
-
-### Cómo Utilizar el Tablero para Prevenir Accidentes:
-1. Entra a `/prevencion/capacitacion/brechas`.
-2. Filtra por tu faena.
-3. El sistema te mostrará a toda la dotación en una matriz tipo semáforo:
-   * 🟢 **Vigente:** El trabajador cuenta con su capacitación aprobada dentro del plazo de vigencia (ej. anual).
-   * 🔴 **Vencido / Sin registro:** El trabajador no tiene el curso o su certificación expiró.
-4. **Acción Operativa:** Si detectas a un operador con cursos críticos en rojo (ej. LOTO o Manejo a la defensiva), coordina de inmediato con el Jefe de Terreno para programar su capacitación de refuerzo antes de asignarlo a tareas de alto riesgo.
+Si una brecha bloqueante aparece en el expediente, coordina la capacitación correspondiente y revisa el cumplimiento en el catálogo anual cuando exista una ocurrencia controlada para esa actividad.

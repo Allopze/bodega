@@ -8,11 +8,13 @@
  * ni interfiere con los pendientes offline de la otra.
  */
 import { expect, test } from "@playwright/test"
-import { fillManualPpaForm } from "./helpers"
+// PPA-001 (auditoría 2026-09-14): esta prueba termina sincronizando contra el
+// servidor y usa identificación manual, así que entra por el enlace acreditado.
+import { fillManualPpaForm, ppaAccreditedPath } from "./helpers"
 
 test.describe("PPA + TAE — coexistencia de PWAs", () => {
   test("ambos service workers se registran con scope propio y no se pisan", async ({ page }) => {
-    await page.goto("/ppa")
+    await page.goto(ppaAccreditedPath())
     await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })
     await page.evaluate(async () => { await navigator.serviceWorker.ready })
 
@@ -40,7 +42,7 @@ test.describe("PPA + TAE — coexistencia de PWAs", () => {
     //    shell — igual que un usuario real instalando la app antes de perder señal.
     //    Sin este paso, un goto() offline a una ruta nunca visitada falla directo con
     //    ERR_INTERNET_DISCONNECTED porque no hay nada cacheado que servir.
-    await page.goto("/ppa")
+    await page.goto(ppaAccreditedPath())
     await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })
     await page.evaluate(async () => { await navigator.serviceWorker.ready })
 
@@ -53,7 +55,7 @@ test.describe("PPA + TAE — coexistencia de PWAs", () => {
     )
 
     // 1. Volver a PPA y usarlo offline para dejar un pendiente en IndexedDB "ppa-offline".
-    await page.goto("/ppa")
+    await page.goto(ppaAccreditedPath())
     await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })
     await context.setOffline(true)
     await fillManualPpaForm(page)
@@ -103,7 +105,7 @@ test.describe("PPA + TAE — coexistencia de PWAs", () => {
     // estado por ese evento o por `navigator.onLine` al montar: el formulario se
     // quedaba mostrando "Enviar PPA" y el clic esperaba un botón inexistente.
     await context.setOffline(false)
-    await page.goto("/ppa")
+    await page.goto(ppaAccreditedPath())
     await expect(page.locator("#rutSearch")).toBeVisible({ timeout: 15_000 })
     await context.setOffline(true)
     // El corte tiene que haber llegado al documento antes de llenar el paso 3:
