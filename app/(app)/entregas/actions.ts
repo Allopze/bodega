@@ -55,6 +55,15 @@ export async function registerWorkerDeliveryAction(
   const proofResult = await persistProofFile(formData.get("proofFile"))
   if (!proofResult.ok) return { ok: false, message: proofResult.message }
 
+  // GDI-002 (auditoría 2026-09-14): el traslado interno suma el stock en la
+  // faena AL DESPACHAR, así que lo que viene en camino ya figura como
+  // disponible y es entregable antes de llegar. El servicio calcula cuánto de
+  // esta entrega se apoya en ese saldo en tránsito y lo avisa acá con la cifra
+  // — advertir, no bloquear: lo más común es que la mercadería ya llegó y lo
+  // que falta es cerrar el cotejo, y bloquear ahí empujaría a entregar el EPP
+  // sin registrarlo.
+  let inTransitWarning: string | null = null
+
   try {
     await registerWorkerStockDelivery({
       sourceWorksiteId,
@@ -79,15 +88,18 @@ export async function registerWorkerDeliveryAction(
         returnReason: item.returnReason || null,
         returnNotes: item.returnNotes || null,
       })),
-    }, serviceWorksiteScope(session))
+    }, serviceWorksiteScope(session), {
+      onInTransitWarning: (warning) => { inTransitWarning = warning },
+    })
 
     // PER-T01: la entrega sólo mueve stock y solicitudes de esta faena. Declarar
     // el alcance evita vaciar los badges de las demás faenas (los usuarios con
     // visión global se invalidan igual, por su propia etiqueta).
     revalidateOperationalViews(["/entregas", "/bodega", "/trazabilidad", "/solicitudes"], { worksiteId: sourceWorksiteId })
+    const registered = `Entrega registrada: ${deliveryItems.length} ${deliveryItems.length === 1 ? "producto" : "productos"}`
     return {
       ok: true,
-      message: `Entrega registrada: ${deliveryItems.length} ${deliveryItems.length === 1 ? "producto" : "productos"}`,
+      message: inTransitWarning ? `${registered}. ${inTransitWarning}` : registered,
     }
   } catch (e) {
     if (proofResult.absolutePath) {

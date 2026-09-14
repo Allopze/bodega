@@ -69,6 +69,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/worksite-deactivation-pdtp.test.ts",
   "lib/__tests__/code-sequences.test.ts",
   "lib/__tests__/dispatch-guides.test.ts",
+  "lib/__tests__/gdi-002-entrega-stock-en-transito.test.ts",
   "lib/__tests__/e2e-001-recorte-saldo-avisa-solicitante.test.ts",
   // APR-002: la aprobación masiva avisa al solicitante igual que la individual.
   "lib/__tests__/apr-002-aprobacion-masiva-avisa-solicitante.test.ts",
