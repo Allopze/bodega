@@ -95,6 +95,12 @@ test("exportes: la columna de estado usa lenguaje de negocio, no el enum", async
     expect(response.status(), `${tipo} no respondió 200: ${(await response.text()).slice(0, 300)}`).toBe(200)
     const cuerpo = Buffer.from(await response.body())
     expect(cuerpo.length, `${tipo} devolvió un archivo vacío`).toBeGreaterThan(0)
+    // Un xlsx es un zip: empieza en "PK". Comprobarlo acá nombra el informe y
+    // muestra qué llegó en su lugar, en vez del "is this a zip file?" de jszip.
+    expect(
+      cuerpo.subarray(0, 2).toString("latin1"),
+      `${tipo} no devolvió un xlsx (content-type ${response.headers()["content-type"]}): ${cuerpo.subarray(0, 300).toString("utf8")}`,
+    ).toBe("PK")
     const workbook = new ExcelJS.Workbook()
     await workbook.xlsx.load(cuerpo as never)
     const worksheet = workbook.worksheets[0]!
