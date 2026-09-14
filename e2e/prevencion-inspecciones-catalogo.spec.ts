@@ -315,15 +315,34 @@ test.describe("Inspecciones — programación por faena y frecuencia", () => {
     // Este primer clic regulariza el ciclo vigente (nextDueOn == hoy, no pide
     // confirmación); de acá en adelante cada clic cae fuera de ciclo y el
     // helper confirma el diálogo de I-01 antes de navegar.
-    await crearYAbrirInspeccion(page, fila)
-    await page.goto("/prevencion/inspecciones/programacion")
-    fila = page.getByRole("row").filter({ hasText: "Inspección de Estado de Extintores" }).filter({ hasText: `cada ${intervalo} días` })
-    await expect(fila.getByRole("cell", { name: comoCelda(enDias(paso)) })).toBeVisible({ timeout: 15_000 })
+    /**
+     * Se recarga dentro del poll, no se espera sobre el DOM ya pintado.
+     *
+     * En dos de cuatro corridas completas la tabla salió con la fecha vencida
+     * mientras `prevention_inspection_programs.next_due_on` ya tenía la nueva
+     * —comprobado por consulta directa—, así que lo que llegó tarde fue el
+     * render, no la escritura. Un `toBeVisible` sobre la página ya cargada
+     * consume sus quince segundos sin volver a pedirla nunca.
+     */
+    async function esperarProxima(iso: string) {
+      await expect.poll(async () => {
+        await page.goto("/prevencion/inspecciones/programacion")
+        return page.getByRole("row")
+          .filter({ hasText: "Inspección de Estado de Extintores" })
+          .filter({ hasText: `cada ${intervalo} días` })
+          .getByRole("cell", { name: comoCelda(iso) })
+          .count()
+      }, { timeout: 30_000 }).toBeGreaterThan(0)
+      return page.getByRole("row")
+        .filter({ hasText: "Inspección de Estado de Extintores" })
+        .filter({ hasText: `cada ${intervalo} días` })
+    }
 
     await crearYAbrirInspeccion(page, fila)
-    await page.goto("/prevencion/inspecciones/programacion")
-    fila = page.getByRole("row").filter({ hasText: "Inspección de Estado de Extintores" }).filter({ hasText: `cada ${intervalo} días` })
-    await expect(fila.getByRole("cell", { name: comoCelda(enDias(paso * 2)) })).toBeVisible({ timeout: 15_000 })
+    fila = await esperarProxima(enDias(paso))
+
+    await crearYAbrirInspeccion(page, fila)
+    fila = await esperarProxima(enDias(paso * 2))
 
     await fila.getByRole("button", { name: "Editar" }).click()
     const editar = page.getByRole("dialog", { name: "Editar programación" })
