@@ -154,7 +154,12 @@ describeIf("canonical incident workflow on real PostgreSQL", () => {
     expect(caseReport?.sheets?.at(-1)?.worksheetName).toBe("Datos reservados")
     const exported = new ExcelJS.Workbook()
     await exported.xlsx.load(Buffer.from(await buildXlsxBuffer(caseReport!)) as never)
-    expect(exported.worksheets.map((item) => item.name)).toHaveLength(8)
+    const nombres = exported.worksheets.map((item) => item.name)
+    expect(nombres).toHaveLength(8)
+    /* Ninguna hoja repetida: `sheets` son ADICIONALES a la primaria, así que un
+     * reporte que copie su primera hoja como primaria emite el libro con ella
+     * dos veces —ExcelJS desambigua el nombre y pasa inadvertido—. */
+    expect(new Set(nombres).size).toBe(nombres.length)
     expect(exported.getWorksheet("Expediente")?.getCell("B9").value).toBe("'=HYPERLINK(\"https://invalid.local\",\"Patio\")")
     expect(exported.getWorksheet("Datos reservados")?.getCell("C2").value).toBe("sensible_salud")
     const exportAudits = await getDb().select().from(schema.auditLog)
