@@ -61,7 +61,7 @@ interface UsePpaFormReturn {
 }
 
 export function usePpaForm({
-  worksites, initialWorksiteId, hasFaenaParam,
+  worksites, initialWorksiteId, hasFaenaParam, accessToken,
 }: PpaFormProps): UsePpaFormReturn {
   const router = useRouter()
   const [pending, startTransition] = React.useTransition()
@@ -131,6 +131,12 @@ export function usePpaForm({
       // commit del servidor reenvía el MISMO PPA en vez de duplicarlo.
       clientSubmissionId: createPpaSubmissionId(),
       worksiteId,
+      // PPA-001: el token viaja con el envío (también cuando queda en la cola
+      // offline) porque es lo único que acredita la faena del enlace. Sólo se
+      // manda si la faena sigue siendo la que el enlace acreditó: si el
+      // trabajador se identificó por RUT y su faena es otra, el token ya no
+      // corresponde y la acredita el catálogo.
+      accessToken: accessToken && worksiteId === initialWorksiteId ? accessToken : undefined,
       workPermitId: workPermitId || undefined,
       workerId: identity.manual ? undefined : identity.workerId || undefined,
       workerName: name,

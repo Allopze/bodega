@@ -12,6 +12,17 @@ const siNo = z.enum(["si", "no"], { error: "Respuesta requerida" })
 export const ppaSubmitSchema = z.object({
   worksiteId: z.string().min(1, "Faena requerida"),
 
+  /*
+   * PPA-001 (auditoría 2026-09-14): `worksiteId` lo declara el cliente y por sí
+   * solo no acredita nada — es el id que viajaba en `?faena=`. El token del
+   * enlace repartido por el panel interno sí lo acredita, y se verifica en el
+   * servidor (`verifyPpaWorksiteAccessToken`). Es opcional en el esquema
+   * porque la otra vía de acreditación —identificarse por RUT, que deriva la
+   * faena del propio catálogo de trabajadores— no lo lleva; que falten LAS DOS
+   * es lo que `createPpaSubmission` rechaza.
+   */
+  accessToken: z.string().trim().regex(/^[0-9a-f]{64}$/, "Enlace de acceso inválido").optional(),
+
   // Clave de idempotencia generada en el cliente (createPpaSubmissionId en
   // lib/pwa/offline-queue.ts). Opcional: un cliente antiguo cacheado por el
   // Service Worker puede seguir enviando sin ella y el servidor genera la

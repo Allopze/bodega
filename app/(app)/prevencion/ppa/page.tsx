@@ -3,7 +3,7 @@ import type { ReactNode } from "react"
 import { redirect } from "next/navigation"
 import { requirePermission, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { listPpa, countPpa, getPpaStats, listScopedWorksites } from "@/lib/services/ppa"
+import { listPpa, countPpa, getPpaStats, listScopedWorksites, ppaWorksiteAccessQuery } from "@/lib/services/ppa"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { PPA_STOP_REASON_LABELS, tipoTrabajoLabel, type PpaStopReason } from "@/lib/ppa/types"
@@ -82,7 +82,14 @@ export default async function PpaPanelPage({ searchParams }: { searchParams: Pro
         }
         actions={
           <>
-            <PpaAccessPanel worksites={worksiteOptions} />
+            {/*
+              PPA-001: el enlace de cada faena se firma acá, en el servidor. El
+              panel es un componente de cliente y no puede derivar el HMAC.
+            */}
+            <PpaAccessPanel worksites={worksiteOptions.map((worksite) => ({
+              ...worksite,
+              accessQuery: ppaWorksiteAccessQuery(worksite.id),
+            }))} />
             <PpaExportButton worksites={worksiteOptions} canExport={canExport} />
           </>
         }

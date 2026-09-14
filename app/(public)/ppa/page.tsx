@@ -1,11 +1,18 @@
-import { listActiveWorkPermitsForPublicForm, listWorksitesForPublicForm } from "@/lib/services/ppa"
+import { listActiveWorkPermitsForPublicForm, listWorksitesForPublicForm, verifyPpaWorksiteAccessToken } from "@/lib/services/ppa"
 import { PPA_TIPO_TRABAJO_OPTIONS, PPA_CONTROL_OPTIONS, PPA_COMPLEMENTARIAS } from "@/lib/ppa/types"
 import { PpaForm } from "./ppa-form"
 import { OfflineSavedMessage } from "./offline-saved"
 
 /**
  * Formulario PPA público (sin login). Acceso por enlace directo o QR.
- * Se puede precargar la faena con `?faena=<worksiteId>`.
+ *
+ * PPA-001 (auditoría 2026-09-14): la faena se precargaba con `?faena=<id>` a
+ * secas. Ese parámetro no acredita nada —el id de una faena no es un secreto—,
+ * así que ahora la precarga exige además el token `?t=` que el panel interno
+ * emite con el enlace (`ppaWorksiteAccessQuery`) y que el servidor verifica.
+ * Un enlace antiguo sin token sigue abriendo el formulario: lo que ya no hace
+ * es acreditar la faena. Quien lo use se identifica con su RUT y el servidor
+ * deriva la faena del catálogo de trabajadores.
  *
  * Cuando `?saved=offline` está presente, muestra la confirmación de guardado
  * offline en vez del formulario (el trabajador fue redirigido aquí tras un
@@ -14,9 +21,9 @@ import { OfflineSavedMessage } from "./offline-saved"
 export default async function PpaPublicPage({
   searchParams,
 }: {
-  searchParams: Promise<{ faena?: string; saved?: string }>
+  searchParams: Promise<{ faena?: string; t?: string; saved?: string }>
 }) {
-  const { faena, saved } = await searchParams
+  const { faena, t, saved } = await searchParams
 
   // ── Offline saved confirmation ──────────────────────────────────────
   if (saved === "offline") {
@@ -28,8 +35,12 @@ export default async function PpaPublicPage({
     listActiveWorkPermitsForPublicForm(),
   ])
 
-  const initialWorksiteId = faena && worksites.some((w) => w.id === faena) ? faena : ""
-  const hasFaenaParam = !!faena
+  // PPA-001: acredita el enlace, no el parámetro. Sin token válido la faena no
+  // se precarga y el formulario queda en el modo de identificación por RUT.
+  const accredited = !!faena && verifyPpaWorksiteAccessToken(faena, t)
+  const initialWorksiteId = accredited && worksites.some((w) => w.id === faena) ? faena! : ""
+  const hasFaenaParam = !!initialWorksiteId
+  const accessToken = initialWorksiteId ? t! : ""
 
   return (
     <main className="mx-auto w-full max-w-lg px-4 py-6">
@@ -48,6 +59,7 @@ export default async function PpaPublicPage({
         workPermits={workPermits}
         initialWorksiteId={initialWorksiteId}
         hasFaenaParam={hasFaenaParam}
+        accessToken={accessToken}
         tipoTrabajoOptions={PPA_TIPO_TRABAJO_OPTIONS}
         controlOptions={PPA_CONTROL_OPTIONS.map((c) => ({ value: c.value, label: c.label }))}
         complementarias={PPA_COMPLEMENTARIAS.map((c) => ({ key: c.key, label: c.label }))}

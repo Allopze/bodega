@@ -20,6 +20,7 @@ import {
 import { logger } from "@/lib/logger"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import { derivePpaPublicToken, hashPpaPublicToken, resolvePpaPublicToken } from "./public-token"
+import { verifyPpaWorksiteAccessToken } from "./worksite-access-token"
 
 export type PpaRow = Omit<PpaSubmission, "publicToken"> & {
   worksiteName: string | null
@@ -60,6 +61,22 @@ export async function createPpaSubmission(
     workPermitId = permit.id
   }
 
+  /*
+   * PPA-001 (auditoría 2026-09-14): la faena del envío tiene que estar
+   * ACREDITADA por algo que verifique el servidor, no declarada por el cliente.
+   * Antes bastaba con que el id existiera —el parámetro `?faena=` del enlace
+   * repartido— y cualquiera con la URL base podía escribir en el registro de
+   * cualquier faena. Hay exactamente dos acreditaciones, y se resuelven abajo:
+   *
+   *  1. el token del enlace/QR que reparte el panel interno, y
+   *  2. el propio trabajador identificado por RUT, cuya faena sale del catálogo
+   *     (`workers.worksiteId`) y no del formulario.
+   *
+   * La comprobación va después de resolver al trabajador porque la (2) depende
+   * de esa resolución.
+   */
+  const acreditadaPorEnlace = verifyPpaWorksiteAccessToken(data.worksiteId, data.accessToken)
+
   let manualIdentificacion = true
   let workerId: string | null = null
   // `data.workerName` es el nombre enmascarado devuelto por la búsqueda pública
@@ -79,6 +96,27 @@ export async function createPpaSubmission(
       manualIdentificacion = false
       workerName = `${worker.firstName} ${worker.lastName}`.trim()
     }
+  }
+
+  /*
+   * PPA-001: sin enlace acreditado y sin trabajador del catálogo en esa faena,
+   * nadie respalda que este PPA pertenezca a esta faena. Se rechaza con el
+   * remedio en el mensaje, que es lo que la persona en terreno puede hacer:
+   * escanear el QR de su faena o identificarse con su RUT.
+   *
+   * QUEDA POR DECIDIR (producto, no código): si la identificación manual
+   * —trabajador que no está en el catálogo, típicamente contratista— debe
+   * poder enviar SIN enlace acreditado. Hoy no puede, porque no queda nada que
+   * ate el envío a la faena; permitirlo exige declarar qué la acreditaría.
+   * El enlace "General (sin faena)" que el panel repartía queda, por lo mismo,
+   * como acceso de sólo lectura del formulario: sirve para identificarse por
+   * RUT, no para elegir faena a mano.
+   */
+  if (!acreditadaPorEnlace && !workerId) {
+    throw new Error(
+      "Este enlace no acredita la faena. Escanea el QR o abre el enlace de tu faena, "
+      + "o identifícate con tu RUT para que el sistema la reconozca.",
+    )
   }
 
   const answers: PpaAnswers = {
