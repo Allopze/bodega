@@ -20,7 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import { toast } from "@/lib/toast"
-import { SST_DOCUMENT_CATEGORY_SLUGS, SST_DOCUMENT_CONFIDENTIALITIES } from "@/lib/validation/prevention"
+import { SST_DOCUMENT_CATEGORY_SLUGS, SST_DOCUMENT_CONFIDENTIALITIES } from "@/lib/validation/prevention-module/sst-documents"
 import { saveDocumentTypeAction } from "./actions"
 import type { TypeRow } from "./taxonomy-list"
 

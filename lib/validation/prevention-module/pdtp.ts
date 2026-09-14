@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { WORKER_CAPABILITY_CODE_PATTERN } from "@/lib/services/worker-positions/normalization"
+import { WORKER_CAPABILITY_CODE_PATTERN } from "@/lib/worker-positions/capability-code"
 
 /**
  * Whitelist de rutas válidas para evidencia PDTP. Solo se aceptan paths

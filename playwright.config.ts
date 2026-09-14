@@ -86,9 +86,10 @@ export default defineConfig({
         url: `http://localhost:${port}/login`,
         reuseExistingServer: true,
         // start-server.sh runs db setup THEN a full `npm run build` THEN starts
-        // the server; the plain CI "Build" step alone (no cache) already takes
-        // ~170s, leaving no margin at 180s and causing intermittent CI timeouts.
-        timeout: 300_000,
+        // the server. On the shared local host, setup plus the production
+        // build can exceed five minutes even though both steps eventually
+        // complete; leave enough margin without changing the per-test budget.
+        timeout: 600_000,
       }
     : undefined,
   projects: [

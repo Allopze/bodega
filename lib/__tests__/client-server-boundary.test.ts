@@ -26,6 +26,9 @@ const BANNED_SPECIFIERS = [
   // dashboard viven en `operational-period-bounds` para que los Client
   // Components no arrastren el driver de PostgreSQL.
   "@/lib/services/operational-period-metrics",
+  // Este módulo además genera códigos con `node:crypto`; la regla pura vive en
+  // `lib/worker-positions/capability-code`.
+  "@/lib/services/worker-positions/normalization",
   // El instalador de plantillas del PDTP arrastra `@/db` y `node:crypto`. Su
   // parte pura —el catálogo de instrumentos y el detector de cableado— vive en
   // `@/lib/prevention/inspection-wiring`, que es la que el catálogo de

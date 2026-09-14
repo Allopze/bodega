@@ -17,7 +17,7 @@ import {
 import type { pdtpActivities } from "@/db/schema"
 import type { PdtpChecklistTemplate } from "@/lib/services/prevention-pdtp"
 import type { ChecklistDefinition } from "@/lib/sst/types"
-import { pdtpChecklistDefinitionSchema } from "@/lib/validation/prevention"
+import { pdtpChecklistDefinitionSchema } from "@/lib/validation/prevention-module/pdtp"
 import { ChecklistSectionPanel } from "@/app/(app)/prevencion/[id]/checklist-section"
 import { getApplicableSections } from "@/app/(app)/prevencion/[id]/evaluation-detail/helpers"
 import { ChecklistBuilder, buildSkeletonDefinition, cloneDefinitionForActivity } from "./checklist-builder"

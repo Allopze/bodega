@@ -37,23 +37,10 @@ import { db } from "@/db"
 import { preventionIncidentPublicReports, worksites } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
+import { INCIDENT_REPORT_CATEGORIES } from "@/lib/prevention/incident-report-categories"
 import { codeYear } from "@/lib/utils"
 
-export const INCIDENT_REPORT_CATEGORIES = [
-  "cuasi_accidente",
-  "condicion_insegura",
-  "acto_inseguro",
-  "accidente",
-  "otro",
-] as const
-
-export const INCIDENT_REPORT_CATEGORY_LABELS: Record<string, string> = {
-  cuasi_accidente: "Cuasi accidente",
-  condicion_insegura: "Condición insegura",
-  acto_inseguro: "Acto inseguro",
-  accidente: "Accidente",
-  otro: "Otro",
-}
+export { INCIDENT_REPORT_CATEGORIES, INCIDENT_REPORT_CATEGORY_LABELS } from "@/lib/prevention/incident-report-categories"
 
 export const publicIncidentReportSchema = z.object({
   worksiteId: z.string().min(1, "Selecciona la faena"),

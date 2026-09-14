@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+export { WORKER_CAPABILITY_CODE_PATTERN } from "@/lib/worker-positions/capability-code"
 
 /**
  * Forma canónica de un código de `worker_capabilities`.
@@ -7,8 +8,6 @@ import { createHash } from "node:crypto"
  * hoja —sin dependencias— para que validación, servicios de cargos y PDTP
  * compartan la misma definición en vez de cuatro copias del literal.
  */
-export const WORKER_CAPABILITY_CODE_PATTERN = /^[a-z][a-z0-9_]{1,79}$/
-
 export function normalizeWorkerPositionKey(value: string): string {
   return value
     .normalize("NFKD")

@@ -12,7 +12,7 @@ import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { INCIDENT_REPORT_CATEGORY_LABELS } from "@/lib/services/prevention-incident-reports"
+import { INCIDENT_REPORT_CATEGORY_LABELS } from "@/lib/prevention/incident-report-categories"
 import { submitPublicIncidentReportAction } from "./actions"
 
 const CATEGORIES = Object.entries(INCIDENT_REPORT_CATEGORY_LABELS)
