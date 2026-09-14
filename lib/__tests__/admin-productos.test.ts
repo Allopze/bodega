@@ -10,6 +10,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import type { Session } from "next-auth"
+import { getTableName } from "drizzle-orm"
 
 const mockSetProductSupplierPriceTx = vi.hoisted(() => vi.fn().mockResolvedValue({ changed: true, stale: false }))
 const mockAuthFn = vi.hoisted(() => vi.fn())
@@ -33,8 +34,7 @@ const mockSelectWhere = vi.fn(() => ({
 let unidadesActivas: Array<{ code: string }> = [{ code: "unidad" }, { code: "par" }, { code: "caja" }]
 const mockSelectFrom = vi.fn((table?: unknown) => {
   const esCatalogoDeUnidades = Boolean(
-    table && typeof table === "object"
-    && String((table as { _?: { name?: string } })._?.name ?? "") === "product_units",
+    table && typeof table === "object" && getTableName(table as never) === "product_units",
   )
   const filas = esCatalogoDeUnidades ? unidadesActivas : []
   return {
@@ -224,6 +224,29 @@ describe("admin/productos actions", () => {
       const r = await createProduct({ ok: false }, fd)
       expect(r.ok).toBe(true)
       expect(mockInsertValues).toHaveBeenCalledWith(expect.objectContaining({ sku: expect.stringMatching(/^PRD-\d{3}$/) }))
+    })
+
+    /**
+     * CAT-003 (auditoría 2026-09-14): el catálogo de unidades no restringía la
+     * unidad del producto, así que un alta podía inventarse "litros" o "kg." y
+     * dejar cantidades que no se pueden comparar con las del resto. La FK lo
+     * impide en la base; esto comprueba que el alta lo diga antes, con un
+     * mensaje que se puede leer, en vez de reventar con un error del driver.
+     */
+    it("rechaza una unidad que no está en el catálogo activo", async () => {
+      mockAuthFn.mockResolvedValue(makeSession("admin:products"))
+      const previas = unidadesActivas
+      unidadesActivas = [{ code: "unidad" }]
+      try {
+        const { createProduct } = await import("@/app/(app)/admin/productos/actions")
+        const fd = new FormData()
+        fd.set("name", "Aceite"); fd.set("categoryId", "cat-1"); fd.set("unitOfMeasure", "litros")
+        const r = await createProduct({ ok: false }, fd)
+        expect(r.ok).toBe(false)
+        expect(JSON.stringify(r)).toContain("catálogo de unidades")
+      } finally {
+        unidadesActivas = previas
+      }
     })
 
     it("normalizes EPP talla/color options as JSON for request dropdowns", async () => {
