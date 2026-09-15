@@ -127,6 +127,12 @@ const ROUTE_OWNER_ALIASES: RouteOwnerRule[] = [
   { moduleId: "prevention", submoduleHref: "/prevencion/pdtp", prefix: "/api/prevencion/pdtp" },
   { moduleId: "prevention", submoduleHref: "/prevencion/capacitacion", prefix: "/api/prevencion/capacitacion" },
   { moduleId: "prevention", submoduleHref: "/prevencion/capa", prefix: "/api/prevencion/capa" },
+  // Subida y descarga de la evidencia de campañas. Campañas no tiene item de
+  // navegación propio —se controlan dentro de Capacitación—, así que el owner
+  // es el mismo href al que ya resuelve el permiso `prevention:campaign:*`:
+  // apagar ese submódulo tiene que cerrar el endpoint y el permiso a la vez.
+  { moduleId: "prevention", submoduleHref: "/prevencion/capacitacion", prefix: "/api/prevencion/campanas" },
+  { moduleId: "prevention", submoduleHref: "/prevencion/cgrd", prefix: "/api/prevencion/cgrd" },
   { moduleId: "prevention", submoduleHref: "/prevencion/documentacion", prefix: "/api/prevencion/documentacion" },
   { moduleId: "prevention", submoduleHref: "/prevencion/documentacion", prefix: "/api/prevencion/archivos-sensibles" },
   { moduleId: "prevention", submoduleHref: "/prevencion/epp-preventivo", prefix: "/api/prevencion/epp" },
