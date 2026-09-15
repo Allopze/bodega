@@ -13,6 +13,11 @@ import { preventionEmergencyScenarios } from "./emergency"
  * Corresponde **desde 26 personas** en el centro de trabajo; hasta 25 la
  * figura es el coordinador (`prevention_grd_coordinators`). El umbral y la
  * regla viven en `lib/prevention/cgrd.ts`.
+ *
+ * Simplificación 2026-09-14: se le agregó `evidenceUrl`. Antes la N°79 se
+ * acreditaba con un rótulo sintético ("Comité constituido: <id>") — la
+ * constitución nunca tuvo dónde adjuntar el acta que la acredita ante un
+ * fiscalizador.
  */
 export const preventionGrdCommittees = pgTable("prevention_grd_committees", {
   id:              text("id").primaryKey(),
@@ -21,6 +26,7 @@ export const preventionGrdCommittees = pgTable("prevention_grd_committees", {
   constitutedOn:   text("constituted_on").notNull(),
   mandateEndsOn:   text("mandate_ends_on").notNull(),
   status:          text("status").notNull().default("active"),
+  evidenceUrl:     text("evidence_url").notNull(),
   version:         integer("version").notNull().default(1),
   createdByUserId: text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
   createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
@@ -47,6 +53,7 @@ export const preventionGrdCoordinators = pgTable("prevention_grd_coordinators", 
   workerId:        text("worker_id").notNull().references(() => workers.id, { onDelete: "restrict" }),
   designatedOn:    text("designated_on").notNull(),
   status:          text("status").notNull().default("active"),
+  evidenceUrl:     text("evidence_url").notNull(),
   endedReason:     text("ended_reason"),
   endedAt:         timestamp("ended_at", { withTimezone: true, mode: "string" }),
   version:         integer("version").notNull().default(1),
@@ -78,12 +85,15 @@ export const preventionGrdMembers = pgTable("prevention_grd_members", {
 ])
 
 /*
- * Matriz GRD (N°80). Máquina completa de la MIPER —no la, más simple, de
- * Emergencias— porque es evidencia oponible ante fiscalizador: tres firmas
- * segregadas (revisión, aprobación, publicación), hash de lo publicado, y una
- * sola versión publicada por faena a la vez. `matrixVersion` es el número de
- * versión visible (1, 2, 3…); `version` es el lock optimista de escritura,
- * igual que en `prevention_risk_matrices`.
+ * Matriz GRD (N°80).
+ *
+ * Simplificación 2026-09-14: de 6 estados con 3 firmas segregadas (revisión,
+ * aprobación, publicación) + hash del contenido, a 2 estados (`draft` →
+ * `published`) con una sola persona que publica adjuntando la evidencia real
+ * —el documento de la matriz— en vez de una huella SHA-256 sobre filas de la
+ * base que nadie podía abrir ni mostrarle a un fiscalizador. `revisionReason`
+ * se conserva: sigue siendo útil saber por qué se abrió una versión nueva,
+ * aunque ya no la revise una segunda persona antes de publicarla.
  */
 export const preventionGrdMatrices = pgTable("prevention_grd_matrices", {
   id:                  text("id").primaryKey(),
@@ -92,24 +102,20 @@ export const preventionGrdMatrices = pgTable("prevention_grd_matrices", {
   title:               text("title").notNull(),
   status:              text("status").notNull().default("draft"),
   revisionReason:      text("revision_reason").notNull(),
-  publishedHashSha256: text("published_hash_sha256"),
-  createdByUserId:     text("created_by_user_id").notNull().references(() => users.id),
-  reviewedByUserId:    text("reviewed_by_user_id").references(() => users.id),
-  reviewedAt:          timestamp("reviewed_at", { withTimezone: true, mode: "string" }),
-  approvedByUserId:    text("approved_by_user_id").references(() => users.id),
-  approvedAt:          timestamp("approved_at", { withTimezone: true, mode: "string" }),
+  evidenceUrl:         text("evidence_url"),
   publishedByUserId:   text("published_by_user_id").references(() => users.id),
   publishedAt:         timestamp("published_at", { withTimezone: true, mode: "string" }),
   version:             integer("version").notNull().default(1),
+  createdByUserId:     text("created_by_user_id").notNull().references(() => users.id),
   createdAt:           timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
   updatedAt:           timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("prevention_grd_matrices_scope_version_unique").on(table.worksiteId, table.matrixVersion),
   index("prevention_grd_matrices_scope_status_idx").on(table.worksiteId, table.status),
   uniqueIndex("prevention_grd_matrices_one_published_scope_unique").on(table.worksiteId).where(sql`${table.status} = 'published'`),
-  check("prevention_grd_matrices_status_valid", sql`${table.status} IN ('draft', 'in_review', 'reviewed', 'approved', 'published', 'superseded')`),
+  check("prevention_grd_matrices_status_valid", sql`${table.status} IN ('draft', 'published', 'superseded')`),
   check("prevention_grd_matrices_version_positive", sql`${table.matrixVersion} > 0 AND ${table.version} > 0`),
-  check("prevention_grd_matrices_publish_evidence", sql`${table.status} NOT IN ('approved', 'published', 'superseded') OR (${table.reviewedByUserId} IS NOT NULL AND ${table.approvedByUserId} IS NOT NULL)`),
+  check("prevention_grd_matrices_publish_evidence", sql`${table.status} = 'draft' OR (${table.publishedByUserId} IS NOT NULL AND ${table.publishedAt} IS NOT NULL AND ${table.evidenceUrl} IS NOT NULL)`),
 ])
 
 /*
@@ -143,32 +149,29 @@ export const preventionGrdThreats = pgTable("prevention_grd_threats", {
 ])
 
 /* ── Actas de reunión CGRD (N°81) ───────────────────────────────────────────
+ * Simplificación 2026-09-14: de convocar→cerrar/cancelar (3 estados, dos
+ * actos separados) a un solo registro — el acta se carga después de la
+ * sesión, como el resto de las constancias del módulo, con su evidencia. Sin
+ * programación previa: la N°81 acredita el acta cerrada, no la convocatoria.
+ *
  * A diferencia del CPHS, que no acredita su reunión mensual porque esa
  * actividad salió del PDTP (D5), la N°81 sí acredita por acta cerrada: el
  * catálogo la declara como actividad propia del programa.
  */
 export const preventionGrdMeetings = pgTable("prevention_grd_meetings", {
-  id:                 text("id").primaryKey(),
-  code:               text("code").notNull().unique(),
-  committeeId:        text("committee_id").notNull().references(() => preventionGrdCommittees.id, { onDelete: "cascade" }),
-  scheduledFor:       timestamp("scheduled_for", { withTimezone: true, mode: "string" }).notNull(),
-  agenda:             text("agenda").notNull(),
-  minutes:            text("minutes"),
-  status:             text("status").notNull().default("scheduled"),
-  quorumReached:      boolean("quorum_reached").notNull().default(false),
-  closedByUserId:     text("closed_by_user_id").references(() => users.id, { onDelete: "restrict" }),
-  closedAt:           timestamp("closed_at", { withTimezone: true, mode: "string" }),
-  cancellationReason: text("cancellation_reason"),
-  version:            integer("version").notNull().default(1),
-  createdByUserId:    text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
-  createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
-  updatedAt:          timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  id:              text("id").primaryKey(),
+  code:            text("code").notNull().unique(),
+  committeeId:     text("committee_id").notNull().references(() => preventionGrdCommittees.id, { onDelete: "cascade" }),
+  heldOn:          timestamp("held_on", { withTimezone: true, mode: "string" }).notNull(),
+  agenda:          text("agenda").notNull(),
+  minutes:         text("minutes").notNull(),
+  quorumReached:   boolean("quorum_reached").notNull().default(false),
+  evidenceUrl:     text("evidence_url").notNull(),
+  createdByUserId: text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
-  index("prevention_grd_meeting_committee_idx").on(table.committeeId, table.scheduledFor),
-  check("prevention_grd_meeting_status_valid", sql`${table.status} IN ('scheduled', 'closed', 'cancelled')`),
-  check("prevention_grd_meeting_closed_has_minutes", sql`${table.status} <> 'closed' OR length(${table.minutes}) >= 20`),
-  check("prevention_grd_meeting_cancel_consistent", sql`${table.status} <> 'cancelled' OR length(${table.cancellationReason}) >= 10`),
-  check("prevention_grd_meeting_version_positive", sql`${table.version} >= 1`),
+  index("prevention_grd_meeting_committee_idx").on(table.committeeId, table.heldOn),
+  check("prevention_grd_meeting_minutes_valid", sql`length(${table.minutes}) >= 20`),
 ])
 
 /* ── Acuerdos del acta ─────────────────────────────────────────────────────

@@ -21,9 +21,9 @@ Es fundamental no confundir ambos comités:
 
 ## 2. Constitución del Comité CGRD (Actividad PDTP N° 79)
 
-En `/prevencion/cgrd`, el equipo de faena registra la conformación del comité de desastres:
+En `/prevencion/cgrd`, el equipo de faena registra la conformación del comité de desastres (o, en faenas de hasta 25 personas, la designación de un Coordinador GRD):
 1. **Integrantes:** Se designa al Jefe de Faena, Prevencionista, Encargado de Mantención y líderes de sector.
-2. **Acta de Constitución:** Se firma y carga el acta de conformación del comité.
+2. **Evidencia:** Se adjunta el acta de constitución (o la designación del coordinador) — un archivo o una URL. Es obligatoria: sin ella no se puede constituir el comité.
 3. **Impacto:** Cumple la actividad **N° 79** del PDTP.
 
 ---
@@ -37,20 +37,17 @@ La **Matriz GRD** identifica las amenazas externas e internas de gran envergadur
 *   ⚡ **Corte Prolongado de Energía Eléctrica:** Disponibilidad y autonomía de generadores de emergencia para faenas continuas.
 *   🏚️ **Sismos Mayores:** Resistencia estructural de galpones, racks de almacenamiento y silos.
 
-### Flujo de 4 Firmas Segregadas de la Matriz GRD:
-Al igual que la Matriz IPER, la Matriz de Amenazas GRD es auditable ante la autoridad y cuenta con 4 etapas:
-1. **Elaboración:** PRF y equipo de faena.
-2. **Revisión:** Contraparte técnica.
-3. **Aprobación:** Administrador de Contrato o Jefatura CHOME.
-4. **Publicación:** Cierre oficial que acredita la actividad **N° 80** del PDTP.
+### Elaboración y publicación de la Matriz GRD:
+1. **Borrador:** el PRF crea la versión y agrega cada amenaza (análisis histórico, requisito legal y plan de trabajo).
+2. **Publicación:** Jefatura de Prevención o Administrador de Contrato publica la versión adjuntando la evidencia de la matriz (el documento) — un solo acto, sin pasos intermedios de revisión ni aprobación. Publicar acredita la actividad **N° 80** del PDTP y reemplaza cualquier versión publicada anteriormente en la faena.
 
 ---
 
 ## 4. Reuniones y Actas del CGRD (Actividad PDTP N° 81)
 
-El comité debe reunirse para revisar la preparación de la faena antes de las temporadas de mayor exposición (por ejemplo, antes del inicio del verano para el riesgo de incendios forestales, o antes del invierno para el riesgo de lluvias y nevadas):
+El comité debe reunirse para revisar la preparación de la faena antes de las temporadas de mayor exposición (por ejemplo, antes del inicio del verano para el riesgo de incendios forestales, o antes del invierno para el riesgo de lluvias y nevadas). El acta se registra **después** de realizada la sesión, con su evidencia — no hay convocatoria previa que gestionar en la plataforma:
 
-1. En `/prevencion/cgrd`, ingresa a la pestaña **"Reuniones"**.
-2. Presiona **"Nueva reunión CGRD"**.
-3. Registra los acuerdos de preparación (ej. *Se ejecutaron 500 metros de cortafuegos perimetrales con motoniveladora* o *Se revisó el stock de petróleo para generadores de respaldo*).
-4. Carga el acta firmada y cierra la sesión para acreditar la actividad **N° 81** en el PDTP.
+1. En `/prevencion/cgrd`, presiona **"Registrar acta"**.
+2. Indica fecha y hora de la sesión, la tabla tratada y si hubo quórum.
+3. Escribe el acta y registra los acuerdos de preparación (ej. *Se ejecutaron 500 metros de cortafuegos perimetrales con motoniveladora* o *Se revisó el stock de petróleo para generadores de respaldo*) — cada acuerdo abre su propia acción correctiva en CAPA.
+4. Adjunta la evidencia del acta (archivo o URL) y confirma para acreditar la actividad **N° 81** en el PDTP.

@@ -26,8 +26,6 @@ export const preventionModule = {
     "prevention:cgrd:view",
     "prevention:cgrd:committee:manage",
     "prevention:cgrd:matrix:edit",
-    "prevention:cgrd:matrix:review",
-    "prevention:cgrd:matrix:approve",
     "prevention:cgrd:matrix:publish",
     "prevention:cgrd:meeting:manage",
     "prevention:campaign:view",
@@ -162,10 +160,8 @@ export const preventionModule = {
     "prevention:cgrd:view":             { id: "p-prev-cgrd-view",             description: "Ver el Comité de Gestión de Riesgos de Desastres, su matriz y sus actas" },
     "prevention:cgrd:committee:manage": { id: "p-prev-cgrd-committee-manage", description: "Constituir o disolver el CGRD y gestionar sus integrantes" },
     "prevention:cgrd:matrix:edit":      { id: "p-prev-cgrd-matrix-edit",      description: "Crear versiones de la matriz GRD y gestionar sus amenazas" },
-    "prevention:cgrd:matrix:review":    { id: "p-prev-cgrd-matrix-review",    description: "Revisar técnicamente versiones de la matriz GRD de forma segregada" },
-    "prevention:cgrd:matrix:approve":   { id: "p-prev-cgrd-matrix-approve",   description: "Aprobar versiones de la matriz GRD de forma segregada" },
-    "prevention:cgrd:matrix:publish":   { id: "p-prev-cgrd-matrix-publish",   description: "Publicar una versión de la matriz GRD inmutable" },
-    "prevention:cgrd:meeting:manage":   { id: "p-prev-cgrd-meeting-manage",   description: "Convocar, cerrar o cancelar actas de reunión del CGRD" },
+    "prevention:cgrd:matrix:publish":   { id: "p-prev-cgrd-matrix-publish",   description: "Publicar una versión de la matriz GRD" },
+    "prevention:cgrd:meeting:manage":   { id: "p-prev-cgrd-meeting-manage",   description: "Registrar el acta de una sesión del CGRD" },
     "prevention:campaign:view":         { id: "p-prev-camp-v",    description: "Ver campañas preventivas" },
     "prevention:campaign:manage":       { id: "p-prev-camp-m",    description: "Crear, registrar asistencia y cerrar campañas preventivas" },
     "prevention:engagement:view":       { id: "p-prev-engage-v", description: "Ver coordinaciones con el mandante, fiscalizaciones y visitas del organismo administrador" },
@@ -679,8 +675,10 @@ export const preventionModule = {
     { roleSlug: "administrador",       permission: "prevention:alcotest:register" },
     { roleSlug: "administrador",       permission: "prevention:alcotest:dispatch" },
     // CGRD del DS 44 (G15). Comité y actas: mismo reparto que CPHS
-    // (`prevention:cphs:manage`). Matriz GRD: mismo reparto segregado que
-    // MIPER (edit en terreno, review/approve/publish en jefatura).
+    // (`prevention:cphs:manage`). Matriz GRD (simplificada 2026-09-14): quien
+    // edita en terreno no publica — la segregación queda en el reparto de
+    // permisos (PRF sólo tiene `matrix:edit`), sin un flujo de revisión
+    // intermedio.
     { roleSlug: "cphs",                 permission: "prevention:cgrd:view" },
     { roleSlug: "prevencionista_faena", permission: "prevention:cgrd:view" },
     { roleSlug: "prevencionista_faena", permission: "prevention:cgrd:committee:manage" },
@@ -690,26 +688,20 @@ export const preventionModule = {
     { roleSlug: "prevencionista",       permission: "prevention:cgrd:committee:manage" },
     { roleSlug: "prevencionista",       permission: "prevention:cgrd:meeting:manage" },
     { roleSlug: "prevencionista",       permission: "prevention:cgrd:matrix:edit" },
-    { roleSlug: "prevencionista",       permission: "prevention:cgrd:matrix:review" },
-    { roleSlug: "prevencionista",       permission: "prevention:cgrd:matrix:approve" },
     { roleSlug: "prevencionista",       permission: "prevention:cgrd:matrix:publish" },
     { roleSlug: "jefe_terreno",         permission: "prevention:cgrd:view" },
     { roleSlug: "admin_contrato",       permission: "prevention:cgrd:view" },
     /* Corresponsable de la n=80: crea la versión de la matriz GRD y sus
-     * amenazas. Las tres firmas siguen siendo de otros. */
+     * amenazas. La publicación sigue siendo de otros. */
     { roleSlug: "admin_contrato",       permission: "prevention:cgrd:matrix:edit" },
     { roleSlug: "jefa_chome",           permission: "prevention:cgrd:view" },
     { roleSlug: "jefa_chome",           permission: "prevention:cgrd:committee:manage" },
     { roleSlug: "jefa_chome",           permission: "prevention:cgrd:meeting:manage" },
-    { roleSlug: "jefa_chome",           permission: "prevention:cgrd:matrix:review" },
-    { roleSlug: "jefa_chome",           permission: "prevention:cgrd:matrix:approve" },
     { roleSlug: "jefa_chome",           permission: "prevention:cgrd:matrix:publish" },
     { roleSlug: "administrador",        permission: "prevention:cgrd:view" },
     { roleSlug: "administrador",        permission: "prevention:cgrd:committee:manage" },
     { roleSlug: "administrador",        permission: "prevention:cgrd:meeting:manage" },
     { roleSlug: "administrador",        permission: "prevention:cgrd:matrix:edit" },
-    { roleSlug: "administrador",        permission: "prevention:cgrd:matrix:review" },
-    { roleSlug: "administrador",        permission: "prevention:cgrd:matrix:approve" },
     { roleSlug: "administrador",        permission: "prevention:cgrd:matrix:publish" },
     // Campañas preventivas — antes reusaban `prevention:pdtp:program:manage`,
     // que es el permiso para editar el programa anual, no para correr campañas.

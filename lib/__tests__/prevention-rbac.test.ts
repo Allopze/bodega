@@ -243,35 +243,26 @@ describe("prevention module RBAC", () => {
       "administrador", "jefe_terreno", "prevencionista", "prevencionista_faena", "supervisor_terreno",
     ].sort())
 
-    // CGRD del DS 44 (G15): comité propio, distinto del CPHS. Matriz GRD con
-    // las mismas cuatro firmas segregadas que la MIPER.
+    // CGRD del DS 44 (G15): comité propio, distinto del CPHS. Matriz GRD
+    // simplificada (2026-09-14): borrador → publicada, sin revisión ni
+    // aprobación intermedias.
     for (const permission of [
       "prevention:cgrd:view", "prevention:cgrd:committee:manage", "prevention:cgrd:matrix:edit",
-      "prevention:cgrd:matrix:review", "prevention:cgrd:matrix:approve", "prevention:cgrd:matrix:publish",
-      "prevention:cgrd:meeting:manage",
+      "prevention:cgrd:matrix:publish", "prevention:cgrd:meeting:manage",
     ]) {
       expect(preventionModule.permissions).toContain(permission)
       expect(Object.keys(preventionModule.permissionMeta)).toContain(permission)
       expect(ALL_MODULE_PERMISSIONS).toContain(permission)
     }
-    /* Segregación de la matriz GRD. Esto comparaba el reparto de roles de
-     * `edit` contra el de `approve` y daba por segregado que los arreglos
-     * fueran distintos — una comprobación que pasaba aunque un mismo rol
-     * tuviera los dos, mientras hubiera un tercero de diferencia. Nunca protegió
-     * lo que decía proteger, y con la jefatura de Prevención firmando (tiene
-     * `edit`, `review`, `approve` y `publish`) protegería aún menos.
-     *
-     * La garantía real vive en `transitionGrdMatrix`, que compara USUARIOS:
-     * quien creó no revisa, quien creó o revisó no aprueba, y quien aprobó no
-     * publica. Dos personas del mismo rol se firman entre ellas; una sola no se
-     * firma a sí misma. Lo que corresponde fijar acá es quién puede firmar. */
-    expect(rolesFor("prevention:cgrd:matrix:approve").sort()).toEqual([
+    /* Segregación de la matriz GRD: la garantía queda en el reparto de
+     * permisos, no en una comparación de usuarios dentro del servicio —
+     * `publishGrdMatrix` es un solo acto, sin pasos intermedios que comparar.
+     * El prevencionista de faena redacta la matriz (`matrix:edit`) y no la
+     * publica: `matrix:publish` es de jefatura o administrador. */
+    expect(rolesFor("prevention:cgrd:matrix:publish")).not.toContain("prevencionista_faena")
+    expect(rolesFor("prevention:cgrd:matrix:publish").sort()).toEqual([
       "administrador", "jefa_chome", "prevencionista",
     ].sort())
-    expect(rolesFor("prevention:cgrd:matrix:publish").sort()).toEqual(rolesFor("prevention:cgrd:matrix:approve").sort())
-    // El prevencionista de faena redacta la matriz y no la firma en ningún paso.
-    expect(rolesFor("prevention:cgrd:matrix:approve")).not.toContain("prevencionista_faena")
-    expect(rolesFor("prevention:cgrd:matrix:publish")).not.toContain("prevencionista_faena")
   })
 
   it("separates document preparation from approval/publication and restricts sensitive files", () => {

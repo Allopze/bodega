@@ -1,7 +1,7 @@
 /**
  * Real PostgreSQL proof for CGRD: un solo comité activo y una sola matriz
- * publicada por faena (índices únicos parciales), y el ciclo completo de
- * publicación con reemplazo (supersede). PGlite ya lo cubre funcionalmente en
+ * publicada por faena (índices únicos parciales), y el ciclo de publicación
+ * con reemplazo (supersede). PGlite ya lo cubre funcionalmente en
  * `prevention-cgrd.test.ts`; esta suite corre contra Postgres real por el
  * mismo motivo que `prevention-cphs-postgres.test.ts` y
  * `prevention-risk-postgres.test.ts` — sin esto el `describeIf` salta en
@@ -32,12 +32,13 @@ let testDb: ReturnType<typeof drizzle<typeof schema>> | undefined
 
 const scopeA = { mode: "some", ids: ["ws-grdpg-a"] } as WorksiteScope
 const scopeAll = { mode: "all", ids: [] } as WorksiteScope
+/** PRF: edita en terreno, no publica — el reparto real del manifiesto no le
+ *  da `matrix:publish`. */
 const MANAGER = { userId: "grdpg-manager", scope: scopeA, permissions: ["prevention:cgrd:view", "prevention:cgrd:committee:manage", "prevention:cgrd:matrix:edit", "prevention:cgrd:meeting:manage"] }
-const REVIEWER = { userId: "grdpg-reviewer", scope: scopeAll, permissions: ["prevention:cgrd:view", "prevention:cgrd:matrix:review"] }
-const APPROVER = { userId: "grdpg-approver", scope: scopeAll, permissions: ["prevention:cgrd:view", "prevention:cgrd:matrix:approve"] }
-/* Publicar dejó de poder hacerlo quien aprobó: la cuarta firma se segrega por
- * actor, igual que las tres anteriores. */
+/** Jefatura/administrador: publica, sin editar. */
 const PUBLISHER = { userId: "grdpg-publisher", scope: scopeAll, permissions: ["prevention:cgrd:view", "prevention:cgrd:matrix:publish"] }
+
+const EVIDENCE = "https://drive.chome.cl/cgrd-evidencia"
 
 function getDb() {
   if (!testDb) throw new Error("Test database not initialised")
@@ -70,12 +71,12 @@ describeIf("CGRD sobre PostgreSQL real", () => {
   it("constituye un comité y rechaza un segundo comité activo en la misma faena", async () => {
     const service = await import("@/lib/services/prevention-cgrd")
     const committee = await service.constituteGrdCommittee({
-      worksiteId: "ws-grdpg-a", name: "CGRD Faena Norte", constitutedOn: "2026-03-01", mandateEndsOn: "2028-03-01",
+      worksiteId: "ws-grdpg-a", name: "CGRD Faena Norte", constitutedOn: "2026-03-01", mandateEndsOn: "2028-03-01", evidenceUrl: EVIDENCE,
     }, MANAGER)
     expect(committee.status).toBe("active")
 
     await expect(service.constituteGrdCommittee({
-      worksiteId: "ws-grdpg-a", name: "Segundo CGRD", constitutedOn: "2026-03-02", mandateEndsOn: "2028-03-02",
+      worksiteId: "ws-grdpg-a", name: "Segundo CGRD", constitutedOn: "2026-03-02", mandateEndsOn: "2028-03-02", evidenceUrl: EVIDENCE,
     }, MANAGER)).rejects.toThrow()
 
     const executions = await getDb().select().from(schema.pdtpExecutions).where(eq(schema.pdtpExecutions.activityId, "pdtp-grdpg-v1-a-79"))
@@ -87,19 +88,13 @@ describeIf("CGRD sobre PostgreSQL real", () => {
 
     const first = await service.createGrdMatrixDraft({ worksiteId: "ws-grdpg-a", title: "Matriz GRD v1", revisionReason: "Primera versión de prueba" }, MANAGER)
     await service.addGrdThreat({ matrixId: first.id, name: "Incendio forestal", origin: "obligatoria", historicalAnalysis: "Antecedentes suficientes", legalRequirement: "Requisito legal aplicable", workPlan: "Plan de trabajo definido" }, MANAGER)
-    let matrix = await service.transitionGrdMatrix({ matrixId: first.id, expectedVersion: first.version, toStatus: "in_review", reason: "Envío a revisión de prueba" }, MANAGER)
-    matrix = await service.transitionGrdMatrix({ matrixId: first.id, expectedVersion: matrix.version, toStatus: "reviewed", reason: "Revisión técnica de prueba" }, REVIEWER)
-    matrix = await service.transitionGrdMatrix({ matrixId: first.id, expectedVersion: matrix.version, toStatus: "approved", reason: "Aprobación de prueba" }, APPROVER)
-    const publishedFirst = await service.transitionGrdMatrix({ matrixId: first.id, expectedVersion: matrix.version, toStatus: "published", reason: "Publicación de prueba" }, PUBLISHER)
+    const publishedFirst = await service.publishGrdMatrix({ matrixId: first.id, expectedVersion: first.version, evidenceUrl: EVIDENCE }, PUBLISHER)
     expect(publishedFirst.status).toBe("published")
-    expect(publishedFirst.publishedHashSha256).toBeTruthy()
+    expect(publishedFirst.evidenceUrl).toBe(EVIDENCE)
 
     const second = await service.createGrdMatrixDraft({ worksiteId: "ws-grdpg-a", title: "Matriz GRD v2", revisionReason: "Segunda versión de prueba" }, MANAGER)
     await service.addGrdThreat({ matrixId: second.id, name: "Aluvión", origin: "detectada", historicalAnalysis: "Antecedentes suficientes", legalRequirement: "Requisito legal aplicable", workPlan: "Plan de trabajo definido" }, MANAGER)
-    let secondMatrix = await service.transitionGrdMatrix({ matrixId: second.id, expectedVersion: second.version, toStatus: "in_review", reason: "Envío a revisión de prueba" }, MANAGER)
-    secondMatrix = await service.transitionGrdMatrix({ matrixId: second.id, expectedVersion: secondMatrix.version, toStatus: "reviewed", reason: "Revisión técnica de prueba" }, REVIEWER)
-    secondMatrix = await service.transitionGrdMatrix({ matrixId: second.id, expectedVersion: secondMatrix.version, toStatus: "approved", reason: "Aprobación de prueba" }, APPROVER)
-    await service.transitionGrdMatrix({ matrixId: second.id, expectedVersion: secondMatrix.version, toStatus: "published", reason: "Publicación de prueba" }, PUBLISHER)
+    await service.publishGrdMatrix({ matrixId: second.id, expectedVersion: second.version, evidenceUrl: EVIDENCE }, PUBLISHER)
 
     const [firstAfter] = await getDb().select().from(schema.preventionGrdMatrices).where(eq(schema.preventionGrdMatrices.id, first.id))
     expect(firstAfter?.status).toBe("superseded")
@@ -119,8 +114,6 @@ async function seedFixture(database: ReturnType<typeof drizzle<typeof schema>>) 
   ])
   await database.insert(schema.users).values([
     { id: "grdpg-manager", name: "Gestor CGRD", email: "grdpg-manager@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
-    { id: "grdpg-reviewer", name: "Revisor CGRD", email: "grdpg-reviewer@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
-    { id: "grdpg-approver", name: "Aprobador CGRD", email: "grdpg-approver@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
     { id: "grdpg-publisher", name: "Publicador CGRD", email: "grdpg-publisher@local.invalid", hashedPassword: "hash", createdAt: now, updatedAt: now },
   ])
   await database.insert(schema.pdtpPrograms).values({

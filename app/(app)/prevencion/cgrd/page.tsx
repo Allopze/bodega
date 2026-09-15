@@ -79,8 +79,6 @@ export default async function CgrdPage({
       workerCandidates={workerCandidates.filter((worker) => worker.worksiteId === worksiteId)}
       canManageCommittee={can(session, "prevention:cgrd:committee:manage")}
       canEditMatrix={can(session, "prevention:cgrd:matrix:edit")}
-      canReviewMatrix={can(session, "prevention:cgrd:matrix:review")}
-      canApproveMatrix={can(session, "prevention:cgrd:matrix:approve")}
       canPublishMatrix={can(session, "prevention:cgrd:matrix:publish")}
       canManageMeetings={can(session, "prevention:cgrd:meeting:manage")}
     />

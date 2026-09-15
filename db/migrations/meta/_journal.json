@@ -2059,6 +2059,20 @@
       "when": 1789600017000,
       "tag": "0293_prevention_campaigns_completed_by_user",
       "breakpoints": true
+    },
+    {
+      "idx": 294,
+      "version": "7",
+      "when": 1789600018000,
+      "tag": "0294_prevention_cgrd_simplification",
+      "breakpoints": true
+    },
+    {
+      "idx": 295,
+      "version": "7",
+      "when": 1789600019000,
+      "tag": "0295_prevention_cgrd_evidence",
+      "breakpoints": true
     }
   ]
 }

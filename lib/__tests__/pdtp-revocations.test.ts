@@ -1,23 +1,28 @@
 /**
  * lib/__tests__/pdtp-revocations.test.ts
  *
- * Cinco dominios acreditan una actividad PDTP y su operación inversa no la
+ * Cuatro dominios acreditan una actividad PDTP y su operación inversa no la
  * revocaba: disolver un comité paritario (N°11), disolver el comité GRD
- * (N°79), cancelar un acta CGRD (N°81), cancelar un simulacro (N°84) y
- * borrar un acta SST (N°15, 17, 18, 19, 23, 52, 63). El hecho de origen se
- * deshacía y el programa anual seguía contando algo que ya no existía.
+ * (N°79), cancelar un simulacro (N°84) y borrar un acta SST (N°15, 17, 18,
+ * 19, 23, 52, 63). El hecho de origen se deshacía y el programa anual seguía
+ * contando algo que ya no existía.
  *
- * Tres de los cinco (CGRD meeting, simulacro, acta SST) tienen una máquina de
- * estados que en la práctica de hoy nunca deja llegar a la revocación con una
- * acreditación viva: `cancelGrdMeeting` y `cancelEmergencyDrill` sólo aceptan
- * un registro todavía "scheduled" — el mismo estado que excluye el cierre que
- * acredita — y `deleteEvaluation` rechaza borrar un acta "cerrado", que es
- * justamente la que acredita. Se revoca de todas formas, en defensa de
- * profundidad: si ese guard cambia mañana, o una vía administrativa revierte
- * el estado por otro camino, la acreditación huérfana no debe sobrevivir. Esos
- * tres casos manipulan el estado directo en la base para poder ejercitar esa
- * rama — algo que ningún flujo de la aplicación puede producir hoy — y lo
- * anotan en el propio test.
+ * Dos de los cuatro (simulacro, acta SST) tienen una máquina de estados que
+ * en la práctica de hoy nunca deja llegar a la revocación con una
+ * acreditación viva: `cancelEmergencyDrill` sólo acepta un registro todavía
+ * "scheduled" — el mismo estado que excluye el cierre que acredita — y
+ * `deleteEvaluation` rechaza borrar un acta "cerrado", que es justamente la
+ * que acredita. Se revoca de todas formas, en defensa de profundidad: si ese
+ * guard cambia mañana, o una vía administrativa revierte el estado por otro
+ * camino, la acreditación huérfana no debe sobrevivir. Esos dos casos
+ * manipulan el estado directo en la base para poder ejercitar esa rama —
+ * algo que ningún flujo de la aplicación puede producir hoy — y lo anotan en
+ * el propio test.
+ *
+ * El acta CGRD (N°81) dejó de tener revocación al simplificarse
+ * (2026-09-14): `recordGrdMeeting` registra la sesión ya realizada en un solo
+ * acto, sin programación previa ni cancelación posterior — mismo criterio que
+ * el resto de las constancias del módulo, que tampoco se deshacen.
  */
 
 import path from "node:path"
@@ -53,7 +58,7 @@ afterAll(async () => {
 })
 
 const { constituteCommittee, dissolveCommittee, expireLapsedCommittees } = await import("@/lib/services/prevention-cphs")
-const { constituteGrdCommittee, dissolveGrdCommittee, scheduleGrdMeeting, closeGrdMeeting, cancelGrdMeeting } = await import("@/lib/services/prevention-cgrd")
+const { constituteGrdCommittee, dissolveGrdCommittee } = await import("@/lib/services/prevention-cgrd")
 const {
   createEmergencyPlan, addEmergencyScenario, addEmergencyRole, approveEmergencyPlan,
   setEmergencyPlanPdtpActivities, scheduleEmergencyDrill, completeEmergencyDrill, cancelEmergencyDrill,
@@ -135,7 +140,7 @@ beforeEach(async () => {
     creationMode: "blank", complianceTarget: 0.9, pesoEjecucion: 0.5, pesoVerificacion: 0.3, pesoCierre: 0.2,
     createdAt: now, updatedAt: now,
   })
-  await inMemoryDb.insert(schema.pdtpActivities).values([11, 79, 81, 84, 18].map((n) => ({
+  await inMemoryDb.insert(schema.pdtpActivities).values([11, 79, 84, 18].map((n) => ({
     id: activityId(n), programId: PROGRAM_ID, n,
     activity: `Actividad N°${n}`, program: "Prevención PDTP",
     responsibleSlugs: ["prevencionista_faena"], responsibleDisplay: "PRF",
@@ -189,6 +194,7 @@ describe("dissolveGrdCommittee revoca la N°79", () => {
   it("el sourceId lleva el mismo prefijo que onGrdStructureEstablished usó al constituirlo", async () => {
     const committee = await constituteGrdCommittee({
       worksiteId: WS_ID, name: "CGRD Faena Revocaciones", constitutedOn: "2026-03-01", mandateEndsOn: "2028-03-01",
+      evidenceUrl: "https://drive.chome.cl/cgrd-evidencia",
     }, CGRD_ACCESS)
     expect(await executionsFor(79)).toHaveLength(1)
 
@@ -199,38 +205,6 @@ describe("dissolveGrdCommittee revoca la N°79", () => {
     const revocacion = await revocationEventFor(`cgrd-committee:${committee.id}`)
     expect(revocacion?.status).toBe("revoked")
     const [ejecucion] = await executionsFor(79)
-    expect(ejecucion!.status).toBe("draft")
-  })
-})
-
-describe("cancelGrdMeeting revoca la N°81", () => {
-  it("defensa en profundidad: hoy sólo una sesión 'scheduled' se cancela, el mismo estado que closeGrdMeeting excluye", async () => {
-    const committee = await constituteGrdCommittee({
-      worksiteId: WS_ID, name: "CGRD Faena Revocaciones", constitutedOn: "2026-03-01", mandateEndsOn: "2028-03-01",
-    }, CGRD_ACCESS)
-    const meeting = await scheduleGrdMeeting({
-      committeeId: committee.id, scheduledFor: "2026-04-01T15:00:00.000Z", agenda: "Agenda de prueba con largo suficiente",
-    }, CGRD_ACCESS)
-    const closed = await closeGrdMeeting({
-      meetingId: meeting.id, expectedVersion: meeting.version, minutes: "Acta de la sesión de prueba, con contenido suficiente.",
-      quorumReached: true, agreements: [],
-    }, CGRD_ACCESS)
-    expect(await executionsFor(81)).toHaveLength(1)
-
-    // `cancelGrdMeeting` exige status "scheduled", que `closeGrdMeeting` ya dejó
-    // atrás. Se fuerza el estado de vuelta a mano para probar que, si esa vía se
-    // habilitara alguna vez, la revocación queda bien cableada.
-    await inMemoryDb.update(schema.preventionGrdMeetings)
-      .set({ status: "scheduled" })
-      .where(eq(schema.preventionGrdMeetings.id, meeting.id))
-
-    await cancelGrdMeeting({
-      meetingId: meeting.id, expectedVersion: closed.version, reason: "Se anula el acta, motivo de prueba",
-    }, CGRD_ACCESS)
-
-    const revocacion = await revocationEventFor(`cgrd-meeting:${meeting.id}`)
-    expect(revocacion?.status).toBe("revoked")
-    const [ejecucion] = await executionsFor(81)
     expect(ejecucion!.status).toBe("draft")
   })
 })

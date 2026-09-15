@@ -2,10 +2,7 @@
  * Comité de Gestión de Riesgos de Desastres (G15, DS 44).
  *
  * Molde estructural del CPHS (comité por faena, integrantes, vigencia,
- * actas, bitácora) y máquina de estados de la MIPER para la matriz GRD
- * (N°80): es evidencia oponible ante fiscalizador, no un borrador operativo
- * como la de Emergencias — tres firmas segregadas, hash de lo publicado, una
- * sola versión publicada por faena.
+ * actas, bitácora).
  *
  * Dos órganos según dotación, no uno: hasta 25 personas corresponde
  * **designar un Coordinador de Gestión del Riesgo de Desastres**; desde 26,
@@ -13,20 +10,27 @@
  * N°79 se acredita con el órgano que corresponda — en una faena chica el acto
  * exigible es la designación, no un comité que la norma no pide.
  *
+ * Simplificación 2026-09-14 (auditoría de sobreingeniería): la matriz GRD
+ * (N°80) tenía la máquina completa de la MIPER —6 estados, 3 firmas
+ * segregadas, hash del contenido— para una obligación que el propio Anexo A
+ * del PDTP describe como "publicación formal de la matriz". Se colapsó a
+ * borrador → publicada, con una evidencia real adjunta en vez de un hash
+ * sobre filas de la base. Las actas (N°81) pasaron de convocar→cerrar/
+ * cancelar a un solo registro cargado después de la sesión, como el resto de
+ * las constancias del módulo. El comité y el coordinador mantienen su
+ * estructura — son datos reales (quién integra el órgano, desde cuándo), no
+ * flujo de aprobación — pero ahora exigen evidencia del acto que los
+ * constituye, que antes no tenían dónde adjuntarse.
+ *
  * Diferencias deliberadas con los dos moldes:
  * - **El acta no calcula quórum.** El DS 44 no fija quórum para las reuniones
  *   del CGRD, así que no hay regla que computar: `assessQuorum` del CPHS mide
  *   mayoría de titulares y presencia de ambas representaciones, y eso existe
- *   porque el CPHS es bipartito por DS 54. Quien cierra el acta declara si
+ *   porque el CPHS es bipartito por DS 54. Quien registra el acta declara si
  *   hubo quórum y queda registrado con autor y fecha en la bitácora.
- * - Sin disparadores de revisión anual como los de la MIPER: la cadencia de la
- *   N°80 ya está expresada en el calendario del propio PDTP, y una tabla de
- *   disparadores paralela declararía dos veces la misma obligación.
  */
 import { and, asc, eq, inArray, sql } from "drizzle-orm"
-import { createHash } from "node:crypto"
 import { db, type DB, type Tx } from "@/db"
-import { resolveOwnWorkSigning } from "@/lib/services/prevention-signing"
 import {
   preventionCapaActions,
   preventionGrdAgreements,
@@ -42,12 +46,9 @@ import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { nanoid } from "@/lib/id"
 import { codeYear } from "@/lib/utils"
 import {
-  canTransitionGrdMatrix,
   GRD_COMMITTEE_MIN_HEADCOUNT,
-  grdMatrixTransitionPermission,
   grdStructureSatisfies,
   resolveGrdStructure,
-  type GrdMatrixStatus,
   type GrdStructure,
 } from "@/lib/prevention/cgrd"
 import {
@@ -62,10 +63,8 @@ import {
   grdCoordinatorDesignateSchema,
   grdCoordinatorEndSchema,
   grdMatrixDraftSchema,
-  grdMatrixTransitionSchema,
-  grdMeetingCancelSchema,
-  grdMeetingCloseSchema,
-  grdMeetingScheduleSchema,
+  grdMatrixPublishSchema,
+  grdMeetingRecordSchema,
   grdMemberAddSchema,
   grdMemberRemoveSchema,
   grdThreatRemoveSchema,
@@ -79,10 +78,6 @@ import {
   recordGrdHistory,
   requireGrdAccess,
 } from "@/lib/services/prevention-cgrd-access"
-
-function sha256(value: unknown) {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex")
-}
 
 // ── Comité ────────────────────────────────────────────────────────────────────
 
@@ -153,6 +148,7 @@ export async function designateGrdCoordinator(input: unknown, access: CgrdAccess
       worksiteId: data.worksiteId,
       workerId: data.workerId,
       designatedOn: data.designatedOn,
+      evidenceUrl: data.evidenceUrl,
       createdByUserId: access.userId,
     }).returning()
     if (!created) throw new Error("No se pudo designar al coordinador.")
@@ -167,7 +163,10 @@ export async function designateGrdCoordinator(input: unknown, access: CgrdAccess
     // La N°79 se cumple con el órgano que corresponda: en una faena de hasta
     // 25 personas el acto exigible es designar al coordinador, no constituir
     // un comité que la norma no pide.
-    await onGrdStructureEstablished({ kind: "coordinator", id: created.id, worksiteId: created.worksiteId, establishedOn: created.designatedOn })
+    await onGrdStructureEstablished({
+      kind: "coordinator", id: created.id, worksiteId: created.worksiteId,
+      establishedOn: created.designatedOn, evidenceUrl: created.evidenceUrl,
+    })
     return created
   })
 }
@@ -226,6 +225,7 @@ export async function constituteGrdCommittee(input: unknown, access: CgrdAccess)
       name: data.name,
       constitutedOn: data.constitutedOn,
       mandateEndsOn: data.mandateEndsOn,
+      evidenceUrl: data.evidenceUrl,
       createdByUserId: access.userId,
     }).returning()
     if (!created) throw new Error("No se pudo constituir el comité.")
@@ -257,7 +257,10 @@ export async function constituteGrdCommittee(input: unknown, access: CgrdAccess)
   }).then(async (created) => {
     // N°79. Fuera de la transacción y sin propagar el error: el comité ya
     // existe y la acreditación puede reintentarse (mismo patrón que CPHS).
-    await onGrdStructureEstablished({ kind: "committee", id: created.id, worksiteId: created.worksiteId, establishedOn: created.constitutedOn })
+    await onGrdStructureEstablished({
+      kind: "committee", id: created.id, worksiteId: created.worksiteId,
+      establishedOn: created.constitutedOn, evidenceUrl: created.evidenceUrl,
+    })
     return created
   })
 }
@@ -469,107 +472,75 @@ export async function listGrdThreats(matrixId: string, access: CgrdAccess) {
   return db.select().from(preventionGrdThreats).where(eq(preventionGrdThreats.matrixId, matrixId))
 }
 
-async function matrixSourceHash(tx: DB | Tx, matrixId: string) {
-  const [[matrix], threats] = await Promise.all([
-    tx.select().from(preventionGrdMatrices).where(eq(preventionGrdMatrices.id, matrixId)).limit(1),
-    tx.select().from(preventionGrdThreats).where(eq(preventionGrdThreats.matrixId, matrixId)),
-  ])
-  return sha256({ matrix: matrix && { id: matrix.id, worksiteId: matrix.worksiteId, matrixVersion: matrix.matrixVersion }, threats })
-}
-
-export async function transitionGrdMatrix(input: unknown, access: CgrdAccess) {
-  const data = grdMatrixTransitionSchema.parse(input)
+/**
+ * Publica la matriz en borrador (N°80): único acto de la máquina simplificada
+ * — sin revisión ni aprobación intermedias, una sola persona publica con su
+ * evidencia. Reemplaza cualquier versión previamente publicada de la faena.
+ */
+export async function publishGrdMatrix(input: unknown, access: CgrdAccess) {
+  const data = grdMatrixPublishSchema.parse(input)
   let accreditation: Parameters<typeof onGrdMatrixPublished>[0] | null = null
 
   const result = await db.transaction(async (tx) => {
     const [matrix] = await tx.select().from(preventionGrdMatrices).where(eq(preventionGrdMatrices.id, data.matrixId)).limit(1)
     if (!matrix) throw new Error(GRD_NOT_FOUND)
-    requireGrdAccess(access, grdMatrixTransitionPermission(data.toStatus), matrix.worksiteId)
-    if (!canTransitionGrdMatrix(matrix.status as GrdMatrixStatus, data.toStatus)) {
-      throw new Error(`Transición de matriz GRD inválida: ${matrix.status} → ${data.toStatus}.`)
-    }
+    requireGrdAccess(access, "prevention:cgrd:matrix:publish", matrix.worksiteId)
+    if (matrix.status !== "draft") throw new Error(`Sólo una matriz en borrador puede publicarse (estado actual: ${matrix.status}).`)
     if (matrix.version !== data.expectedVersion) throw new Error("La matriz GRD cambió mientras la revisabas. Recarga antes de continuar.")
 
-    if (data.toStatus === "in_review") {
-      const [countRow] = await tx.select({ count: sql<number>`count(*)::int` }).from(preventionGrdThreats).where(eq(preventionGrdThreats.matrixId, matrix.id))
-      if (!countRow?.count) throw new Error("Una matriz GRD sin amenazas no puede enviarse a revisión.")
-    }
-    if (data.toStatus === "reviewed" && matrix.createdByUserId === access.userId) {
-      throw new Error("Quien creó la versión no puede revisarla.")
-    }
-    if (data.toStatus === "approved" && (matrix.createdByUserId === access.userId || matrix.reviewedByUserId === access.userId)) {
-      throw new Error("La aprobación debe estar segregada de creación y revisión.")
-    }
-    /* Y publicar, de la aprobación. El contrato de cumplimiento describe la
-     * matriz GRD como firmas segregadas; hasta acá la cuarta no comprobaba
-     * nada. La jefatura técnica del área queda exenta. */
-    /* INC-002: la excepción por cargo deja constancia; antes se ejercía sin
-     * distinguirse de una firma con dos personas distintas. */
-    const signing = resolveOwnWorkSigning({
-      signedByUserId: data.toStatus === "published" ? matrix.approvedByUserId : null,
-      actorUserId: access.userId,
-      permissions: access.permissions,
-      what: "Publicar la matriz GRD",
-    })
-    if (!signing.ok) {
-      throw new Error("Quien aprobó la matriz GRD no puede publicarla: debe firmarla otra persona.")
-    }
+    const [countRow] = await tx.select({ count: sql<number>`count(*)::int` }).from(preventionGrdThreats).where(eq(preventionGrdThreats.matrixId, matrix.id))
+    if (!countRow?.count) throw new Error("Una matriz GRD sin amenazas no puede publicarse.")
 
     const now = nowIso()
-    const updates: Partial<typeof preventionGrdMatrices.$inferInsert> = { status: data.toStatus, version: matrix.version + 1, updatedAt: now }
-    if (data.toStatus === "reviewed") Object.assign(updates, { reviewedByUserId: access.userId, reviewedAt: now })
-    if (data.toStatus === "approved") Object.assign(updates, { approvedByUserId: access.userId, approvedAt: now })
 
-    let sourceHash: string | null = null
-    if (data.toStatus === "published") {
-      sourceHash = await matrixSourceHash(tx, matrix.id)
-      const previousPublished = await tx.select().from(preventionGrdMatrices).where(and(
-        eq(preventionGrdMatrices.worksiteId, matrix.worksiteId),
-        eq(preventionGrdMatrices.status, "published"),
-      ))
-      for (const previous of previousPublished) {
-        const [superseded] = await tx.update(preventionGrdMatrices)
-          .set({ status: "superseded", version: previous.version + 1, updatedAt: now })
-          .where(and(
-            eq(preventionGrdMatrices.id, previous.id),
-            eq(preventionGrdMatrices.status, "published"),
-            eq(preventionGrdMatrices.version, previous.version),
-          ))
-          .returning()
-        if (superseded) {
-          await recordGrdHistory(tx, {
-            entityType: "grd_matrix", entityId: previous.id, worksiteId: previous.worksiteId,
-            changeType: "superseded", reason: `Reemplazada por matriz GRD v${matrix.matrixVersion} (${matrix.id}).`,
-            beforeState: { status: previous.status, version: previous.version }, afterState: { status: superseded.status, supersededByMatrixId: matrix.id },
-            actorUserId: access.userId,
-          })
-        }
+    const previousPublished = await tx.select().from(preventionGrdMatrices).where(and(
+      eq(preventionGrdMatrices.worksiteId, matrix.worksiteId),
+      eq(preventionGrdMatrices.status, "published"),
+    ))
+    for (const previous of previousPublished) {
+      const [superseded] = await tx.update(preventionGrdMatrices)
+        .set({ status: "superseded", version: previous.version + 1, updatedAt: now })
+        .where(and(
+          eq(preventionGrdMatrices.id, previous.id),
+          eq(preventionGrdMatrices.status, "published"),
+          eq(preventionGrdMatrices.version, previous.version),
+        ))
+        .returning()
+      if (superseded) {
+        await recordGrdHistory(tx, {
+          entityType: "grd_matrix", entityId: previous.id, worksiteId: previous.worksiteId,
+          changeType: "superseded", reason: `Reemplazada por matriz GRD v${matrix.matrixVersion} (${matrix.id}).`,
+          beforeState: { status: previous.status, version: previous.version }, afterState: { status: superseded.status, supersededByMatrixId: matrix.id },
+          actorUserId: access.userId,
+        })
       }
-      Object.assign(updates, { publishedHashSha256: sourceHash, publishedByUserId: access.userId, publishedAt: now })
     }
 
-    const [updated] = await tx.update(preventionGrdMatrices).set(updates)
-      .where(and(eq(preventionGrdMatrices.id, matrix.id), eq(preventionGrdMatrices.version, data.expectedVersion), eq(preventionGrdMatrices.status, matrix.status)))
+    const [updated] = await tx.update(preventionGrdMatrices).set({
+      status: "published",
+      version: matrix.version + 1,
+      evidenceUrl: data.evidenceUrl,
+      publishedByUserId: access.userId,
+      publishedAt: now,
+      updatedAt: now,
+    })
+      .where(and(eq(preventionGrdMatrices.id, matrix.id), eq(preventionGrdMatrices.version, data.expectedVersion), eq(preventionGrdMatrices.status, "draft")))
       .returning()
     if (!updated) throw new Error("La matriz GRD cambió mientras la revisabas. Recarga antes de continuar.")
 
     await recordGrdHistory(tx, {
       entityType: "grd_matrix", entityId: matrix.id, worksiteId: matrix.worksiteId,
-      changeType: data.toStatus,
-      reason: signing.usedException
-        ? `${data.reason ?? ""} [Firma propia: publicada por quien la aprobó, con la excepción prevention:sign_own_work.]`.trim()
-        : data.reason,
+      changeType: "published",
+      reason: `Matriz GRD v${matrix.matrixVersion} publicada`,
       beforeState: { status: matrix.status, version: matrix.version },
-      afterState: { status: updated.status, version: updated.version, sourceHash, ownWorkExceptionUsed: signing.usedException },
+      afterState: { status: updated.status, version: updated.version, evidenceUrl: updated.evidenceUrl },
       actorUserId: access.userId,
     })
 
-    if (data.toStatus === "published") {
-      const threats = await tx.select({ id: preventionGrdThreats.id }).from(preventionGrdThreats).where(eq(preventionGrdThreats.matrixId, matrix.id))
-      accreditation = {
-        matrixId: matrix.id, worksiteId: matrix.worksiteId, matrixVersion: matrix.matrixVersion,
-        publishedAt: updated.publishedAt ?? now, threatCount: threats.length,
-      }
+    const threats = await tx.select({ id: preventionGrdThreats.id }).from(preventionGrdThreats).where(eq(preventionGrdThreats.matrixId, matrix.id))
+    accreditation = {
+      matrixId: matrix.id, worksiteId: matrix.worksiteId, matrixVersion: matrix.matrixVersion,
+      publishedAt: updated.publishedAt ?? now, threatCount: threats.length, evidenceUrl: updated.evidenceUrl ?? data.evidenceUrl,
     }
     return updated
   })
@@ -589,55 +560,41 @@ export async function listGrdMatrices(access: CgrdAccess, worksiteId?: string) {
 
 // ── Actas de reunión (N°81) ───────────────────────────────────────────────────
 
-export async function scheduleGrdMeeting(input: unknown, access: CgrdAccess) {
-  const data = grdMeetingScheduleSchema.parse(input)
-  return db.transaction(async (tx) => {
+/**
+ * Registra el acta de una sesión ya realizada (N°81): un solo acto, sin
+ * convocatoria previa ni cancelación — se carga después del hecho, con su
+ * evidencia, como el resto de las constancias del módulo.
+ */
+export async function recordGrdMeeting(input: unknown, access: CgrdAccess) {
+  const data = grdMeetingRecordSchema.parse(input)
+
+  const result = await db.transaction(async (tx) => {
     const [committee] = await tx.select().from(preventionGrdCommittees).where(eq(preventionGrdCommittees.id, data.committeeId)).limit(1)
     if (!committee) throw new Error(GRD_NOT_FOUND)
     requireGrdAccess(access, "prevention:cgrd:meeting:manage", committee.worksiteId)
-    if (committee.status !== "active") throw new Error("Un comité disuelto o vencido no puede convocar sesiones.")
+    if (committee.status !== "active") throw new Error("Un comité disuelto o vencido no puede registrar sesiones.")
 
     const [created] = await tx.insert(preventionGrdMeetings).values({
       id: `grdmt-${nanoid()}`,
       code: `CGRD-${codeYear()}-${nanoid(8).toUpperCase()}`,
       committeeId: data.committeeId,
-      scheduledFor: data.scheduledFor,
+      heldOn: data.heldOn,
       agenda: data.agenda,
+      minutes: data.minutes,
+      quorumReached: data.quorumReached,
+      evidenceUrl: data.evidenceUrl,
       createdByUserId: access.userId,
     }).returning()
-    if (!created) throw new Error("No se pudo convocar la sesión.")
+    if (!created) throw new Error("No se pudo registrar el acta.")
 
-    await recordGrdHistory(tx, {
-      entityType: "grd_meeting", entityId: created.id, worksiteId: committee.worksiteId,
-      changeType: "scheduled", reason: data.agenda.slice(0, 200), afterState: created, actorUserId: access.userId,
-    })
-    return created
-  })
-}
-
-export async function closeGrdMeeting(input: unknown, access: CgrdAccess) {
-  const data = grdMeetingCloseSchema.parse(input)
-  const result = await db.transaction(async (tx) => {
-    const [row] = await tx.select({ meeting: preventionGrdMeetings, committee: preventionGrdCommittees })
-      .from(preventionGrdMeetings)
-      .innerJoin(preventionGrdCommittees, eq(preventionGrdMeetings.committeeId, preventionGrdCommittees.id))
-      .where(eq(preventionGrdMeetings.id, data.meetingId)).limit(1)
-    if (!row) throw new Error(GRD_NOT_FOUND)
-    requireGrdAccess(access, "prevention:cgrd:meeting:manage", row.committee.worksiteId)
-    if (row.meeting.version !== data.expectedVersion) throw new Error("La sesión cambió mientras la editabas. Recarga y reintenta.")
-    if (row.meeting.status === "closed") throw new Error("El acta de esta sesión ya fue cerrada.")
-    if (row.meeting.status === "cancelled") throw new Error("Una sesión cancelada no puede cerrarse.")
-
-    const now = nowIso()
-
-    // Los acuerdos van antes del UPDATE del acta: si `createCapaActionWithClient`
-    // rechaza un responsable inactivo, el acta no queda cerrada a medias con
-    // acuerdos perdidos — toda la transacción revierte.
+    // Los acuerdos van antes de cerrar la transacción: si `createCapaActionWithClient`
+    // rechaza un responsable inactivo, el acta no queda registrada a medias
+    // con acuerdos perdidos — toda la transacción revierte.
     for (const agreement of data.agreements) {
       const capa = await createCapaActionWithClient(tx, {
         sourceType: "cgrd",
-        sourceId: row.meeting.id,
-        worksiteId: row.committee.worksiteId,
+        sourceId: created.id,
+        worksiteId: committee.worksiteId,
         finding: agreement.description,
         actionDescription: agreement.actionDescription,
         responsibleUserId: agreement.responsibleUserId ?? null,
@@ -647,72 +604,25 @@ export async function closeGrdMeeting(input: unknown, access: CgrdAccess) {
       }, access.userId)
       await tx.insert(preventionGrdAgreements).values({
         id: `grdag-${nanoid()}`,
-        meetingId: row.meeting.id,
+        meetingId: created.id,
         description: agreement.description,
         capaActionId: capa.id,
       })
     }
 
-    const [updated] = await tx.update(preventionGrdMeetings).set({
-      status: "closed", minutes: data.minutes, quorumReached: data.quorumReached,
-      closedByUserId: access.userId, closedAt: now, version: row.meeting.version + 1, updatedAt: now,
-    }).where(and(eq(preventionGrdMeetings.id, data.meetingId), eq(preventionGrdMeetings.version, data.expectedVersion))).returning()
-    if (!updated) throw new Error("La sesión cambió mientras la editabas. Recarga y reintenta.")
-
     await recordGrdHistory(tx, {
-      entityType: "grd_meeting", entityId: updated.id, worksiteId: row.committee.worksiteId,
-      changeType: "closed", reason: `Acta cerrada con ${data.agreements.length} acuerdo(s)`,
-      beforeState: row.meeting, afterState: updated, actorUserId: access.userId,
+      entityType: "grd_meeting", entityId: created.id, worksiteId: committee.worksiteId,
+      changeType: "recorded", reason: `Acta registrada con ${data.agreements.length} acuerdo(s)`,
+      afterState: created, actorUserId: access.userId,
     })
-    return { updated, worksiteId: row.committee.worksiteId }
+    return { meeting: created, worksiteId: committee.worksiteId }
   })
 
-  await onGrdMeetingClosed({ meetingId: result.updated.id, worksiteId: result.worksiteId, closedAt: result.updated.closedAt ?? nowIso() })
-  return result.updated
-}
-
-export async function cancelGrdMeeting(input: unknown, access: CgrdAccess) {
-  const data = grdMeetingCancelSchema.parse(input)
-  let revocation: Parameters<typeof recordPdtpFulfillmentRevocation>[0] | null = null
-
-  const updated = await db.transaction(async (tx) => {
-    const [row] = await tx.select({ meeting: preventionGrdMeetings, committee: preventionGrdCommittees })
-      .from(preventionGrdMeetings)
-      .innerJoin(preventionGrdCommittees, eq(preventionGrdMeetings.committeeId, preventionGrdCommittees.id))
-      .where(eq(preventionGrdMeetings.id, data.meetingId)).limit(1)
-    if (!row) throw new Error(GRD_NOT_FOUND)
-    requireGrdAccess(access, "prevention:cgrd:meeting:manage", row.committee.worksiteId)
-    if (row.meeting.version !== data.expectedVersion) throw new Error("La sesión cambió mientras la editabas. Recarga y reintenta.")
-    if (row.meeting.status !== "scheduled") throw new Error("Sólo una sesión convocada puede cancelarse.")
-
-    const [updated] = await tx.update(preventionGrdMeetings).set({
-      status: "cancelled", cancellationReason: data.reason, version: row.meeting.version + 1, updatedAt: nowIso(),
-    }).where(and(eq(preventionGrdMeetings.id, data.meetingId), eq(preventionGrdMeetings.version, data.expectedVersion))).returning()
-    if (!updated) throw new Error("La sesión cambió mientras la editabas. Recarga y reintenta.")
-
-    await recordGrdHistory(tx, {
-      entityType: "grd_meeting", entityId: updated.id, worksiteId: row.committee.worksiteId,
-      changeType: "cancelled", reason: data.reason, beforeState: row.meeting, afterState: updated, actorUserId: access.userId,
-    })
-
-    // Revertir la N°81 con el mismo `sourceId` con prefijo que usó
-    // `onGrdMeetingClosed`. Defensa en profundidad: el guard de arriba sólo deja
-    // cancelar una sesión "scheduled", el mismo estado que `closeGrdMeeting`
-    // excluye, así que hoy esta rama nunca encuentra una acreditación viva que
-    // revocar — se deja cableada para si esa vía cambia.
-    revocation = {
-      sourceType: "cgrd",
-      sourceId: `cgrd-meeting:${updated.id}`,
-      worksiteId: row.committee.worksiteId,
-      revokedBy: access.userId,
-      reason: data.reason,
-    }
-    return updated
+  await onGrdMeetingClosed({
+    meetingId: result.meeting.id, worksiteId: result.worksiteId,
+    closedAt: result.meeting.createdAt, evidenceUrl: result.meeting.evidenceUrl,
   })
-
-  if (revocation) await recordPdtpFulfillmentRevocation(revocation)
-
-  return updated
+  return result.meeting
 }
 
 /**

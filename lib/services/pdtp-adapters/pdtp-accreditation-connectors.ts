@@ -597,6 +597,7 @@ export async function onGrdStructureEstablished(input: {
   id: string
   worksiteId: string
   establishedOn: string
+  evidenceUrl: string
 }): Promise<void> {
   await safeAccredit({
     sourceType: "cgrd",
@@ -605,20 +606,19 @@ export async function onGrdStructureEstablished(input: {
     activityNumbers: [PDTP_GRD_COMMITTEE_ACTIVITY_NUMBER],
     occurredAt: input.establishedOn,
     executedQuantity: 1,
-    evidenceRef: input.kind === "committee"
-      ? `Comité de Gestión del Riesgo de Desastres constituido: ${input.id}`
-      : `Coordinador de Gestión del Riesgo de Desastres designado: ${input.id}`,
+    evidenceRef: input.evidenceUrl,
     metadata: { kind: input.kind },
   })
 }
 
-/** Llama desde `transitionGrdMatrix` cuando la matriz GRD queda `published`. */
+/** Llama desde `publishGrdMatrix` cuando la matriz GRD queda `published`. */
 export async function onGrdMatrixPublished(input: {
   matrixId: string
   worksiteId: string
   matrixVersion: number
   publishedAt: string
   threatCount: number
+  evidenceUrl: string
 }): Promise<void> {
   await safeAccredit({
     sourceType: "cgrd",
@@ -627,13 +627,13 @@ export async function onGrdMatrixPublished(input: {
     activityNumbers: [PDTP_GRD_MATRIX_ACTIVITY_NUMBER],
     occurredAt: input.publishedAt,
     executedQuantity: 1,
-    evidenceRef: `Matriz GRD v${input.matrixVersion} publicada: ${input.matrixId}`,
+    evidenceRef: input.evidenceUrl,
     metadata: { matrixVersion: input.matrixVersion, threatCount: input.threatCount },
   })
 }
 
 /**
- * Llama desde `closeGrdMeeting` cuando el acta queda cerrada. A diferencia
+ * Llama desde `recordGrdMeeting` cuando el acta queda registrada. A diferencia
  * del CPHS —que no acredita su reunión mensual porque esa actividad salió
  * del PDTP (D5)— la N°81 sí es una actividad propia del programa.
  */
@@ -641,6 +641,7 @@ export async function onGrdMeetingClosed(input: {
   meetingId: string
   worksiteId: string
   closedAt: string
+  evidenceUrl: string
 }): Promise<void> {
   await safeAccredit({
     sourceType: "cgrd",
@@ -649,6 +650,6 @@ export async function onGrdMeetingClosed(input: {
     activityNumbers: [PDTP_GRD_MEETING_ACTIVITY_NUMBER],
     occurredAt: input.closedAt,
     executedQuantity: 1,
-    evidenceRef: `Acta CGRD cerrada: ${input.meetingId}`,
+    evidenceRef: input.evidenceUrl,
   })
 }

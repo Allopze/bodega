@@ -12,10 +12,9 @@ import { and, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import {
   pdtpActivities, pdtpExecutions, pdtpObligationReminders, pdtpPrograms, pdtpProgramWorksites,
-  preventionEmergencyPlans, preventionGrdMatrices, preventionRiskMatrices,
+  preventionEmergencyPlans, preventionRiskMatrices,
   sstDocuments, sstDocumentVersions, worksites,
 } from "@/db/schema"
-import { GRD_MATRIX_TRANSITIONS, grdMatrixTransitionPermission, type GrdMatrixStatus } from "@/lib/prevention/cgrd"
 import { MATRIX_PERMISSION, MATRIX_TRANSITIONS } from "@/lib/services/prevention-risk-legal"
 import { currentPdtpPeriod, isPdtpPeriodOnOrAfterActivation, type PdtpPeriod } from "./period"
 import { logger } from "@/lib/logger"
@@ -383,7 +382,7 @@ function signatureBucketFor(updatedAt: string, asOf: Date): typeof SIGNATURE_BUC
  * `prevention_emergency_history`) si algún día hace falta ser preciso.
  */
 async function findPendingSignatures(): Promise<PendingSignature[]> {
-  const [plans, riskMatrices, grdMatrices, documentVersions] = await Promise.all([
+  const [plans, riskMatrices, documentVersions] = await Promise.all([
     db.select({
       id: preventionEmergencyPlans.id,
       worksiteId: preventionEmergencyPlans.worksiteId,
@@ -398,13 +397,6 @@ async function findPendingSignatures(): Promise<PendingSignature[]> {
       status: preventionRiskMatrices.status,
       updatedAt: preventionRiskMatrices.updatedAt,
     }).from(preventionRiskMatrices).where(inArray(preventionRiskMatrices.status, ["in_review", "reviewed", "approved"])),
-    db.select({
-      id: preventionGrdMatrices.id,
-      worksiteId: preventionGrdMatrices.worksiteId,
-      title: preventionGrdMatrices.title,
-      status: preventionGrdMatrices.status,
-      updatedAt: preventionGrdMatrices.updatedAt,
-    }).from(preventionGrdMatrices).where(inArray(preventionGrdMatrices.status, ["in_review", "reviewed", "approved"])),
     db.select({
       id: sstDocumentVersions.id,
       status: sstDocumentVersions.status,
@@ -444,16 +436,6 @@ async function findPendingSignatures(): Promise<PendingSignature[]> {
     })
   }
 
-  for (const matrix of grdMatrices) {
-    const next = GRD_MATRIX_TRANSITIONS[matrix.status as GrdMatrixStatus]?.find((to) => to !== "draft")
-    if (!next) continue
-    pending.push({
-      entityType: "grd_matrix", entityId: matrix.id, worksiteId: matrix.worksiteId,
-      title: matrix.title, status: matrix.status, updatedAt: matrix.updatedAt,
-      permission: grdMatrixTransitionPermission(next), href: `/prevencion/cgrd`,
-    })
-  }
-
   for (const version of documentVersions) {
     // Sin faena no hay a quién avisarle: los destinatarios se resuelven por
     // permiso Y faena, y un documento corporativo no tiene una.
@@ -472,7 +454,6 @@ async function findPendingSignatures(): Promise<PendingSignature[]> {
 const SIGNATURE_ENTITY_LABEL: Record<string, string> = {
   emergency_plan: "El plan de emergencia",
   risk_matrix: "La matriz MIPER",
-  grd_matrix: "La matriz GRD",
   sst_document_version: "El documento",
 }
 

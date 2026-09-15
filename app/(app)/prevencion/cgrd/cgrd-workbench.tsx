@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { formatDateTime } from "@/lib/utils"
 import {
-  GRD_COMMITTEE_MIN_HEADCOUNT, GRD_MATRIX_STATUS_LABELS, GRD_MEETING_STATUS_LABELS, GRD_STRUCTURE_LABELS,
+  GRD_COMMITTEE_MIN_HEADCOUNT, GRD_MATRIX_STATUS_LABELS, GRD_STRUCTURE_LABELS,
 } from "@/lib/prevention/cgrd"
 import { CAPA_STATUS_LABELS } from "@/lib/prevention/capa"
 import type {
@@ -22,10 +22,10 @@ import type {
   listGrdMembers, listGrdThreats, listGrdWorkers,
 } from "@/lib/services/prevention-cgrd"
 import {
-  addGrdMemberAction, addGrdThreatAction, cancelGrdMeetingAction, closeGrdMeetingAction,
+  addGrdMemberAction, addGrdThreatAction,
   constituteGrdCommitteeAction, createGrdMatrixDraftAction, designateGrdCoordinatorAction,
-  dissolveGrdCommitteeAction, endGrdCoordinatorAction, removeGrdMemberAction, removeGrdThreatAction,
-  scheduleGrdMeetingAction, transitionGrdMatrixAction,
+  dissolveGrdCommitteeAction, endGrdCoordinatorAction, publishGrdMatrixAction, recordGrdMeetingAction,
+  removeGrdMemberAction, removeGrdThreatAction,
 } from "./actions"
 
 type Worksite = { id: string; name: string; code: string }
@@ -37,11 +37,11 @@ type Meeting = Awaited<ReturnType<typeof listGrdMeetings>>[number]
 type Worker = Awaited<ReturnType<typeof listGrdWorkers>>[number]
 type Agreement = Awaited<ReturnType<typeof listGrdAgreements>>[number]
 type Structure = Awaited<ReturnType<typeof getGrdStructureStatus>>
-/** Acuerdo en edición dentro del diálogo de cierre, antes de existir en base. */
+/** Acuerdo en edición dentro del diálogo de acta, antes de existir en base. */
 type DraftAgreement = { description: string; actionDescription: string; priority: "low" | "medium" | "high" | "critical"; targetDate: string }
 
 const MATRIX_STATUS_VARIANT: Record<string, "outline" | "warning" | "info" | "success" | "danger"> = {
-  draft: "outline", in_review: "warning", reviewed: "info", approved: "info", published: "success", superseded: "outline",
+  draft: "outline", published: "success", superseded: "outline",
 }
 
 async function handle(promise: Promise<{ ok: boolean; message?: string }>, onDone: (message?: string) => void) {
@@ -51,7 +51,7 @@ async function handle(promise: Promise<{ ok: boolean; message?: string }>, onDon
 
 export function CgrdWorkbench({
   worksites, selectedWorksiteId, committee, structure, members, matrices, latestMatrixThreats, meetings, agreements, workerCandidates,
-  canManageCommittee, canEditMatrix, canReviewMatrix, canApproveMatrix, canPublishMatrix, canManageMeetings,
+  canManageCommittee, canEditMatrix, canPublishMatrix, canManageMeetings,
 }: {
   worksites: Worksite[]
   selectedWorksiteId: string | null
@@ -65,8 +65,6 @@ export function CgrdWorkbench({
   workerCandidates: Worker[]
   canManageCommittee: boolean
   canEditMatrix: boolean
-  canReviewMatrix: boolean
-  canApproveMatrix: boolean
   canPublishMatrix: boolean
   canManageMeetings: boolean
 }) {
@@ -76,8 +74,8 @@ export function CgrdWorkbench({
   const [addMemberOpen, setAddMemberOpen] = React.useState(false)
   const [newMatrixOpen, setNewMatrixOpen] = React.useState(false)
   const [addThreatOpen, setAddThreatOpen] = React.useState(false)
-  const [scheduleMeetingOpen, setScheduleMeetingOpen] = React.useState(false)
-  const [closingMeeting, setClosingMeeting] = React.useState<Meeting | null>(null)
+  const [publishingMatrix, setPublishingMatrix] = React.useState<Matrix | null>(null)
+  const [recordMeetingOpen, setRecordMeetingOpen] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
   function onDone(message?: string) {
@@ -135,41 +133,16 @@ export function CgrdWorkbench({
                 <span className="text-sm font-medium">{latestMatrix.title} · v{latestMatrix.matrixVersion}</span>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                {latestMatrix.status === "draft" && canEditMatrix && (
-                  <>
+              {latestMatrix.status === "draft" && (
+                <div className="flex flex-wrap gap-2">
+                  {canEditMatrix && (
                     <Button type="button" size="sm" onClick={() => setAddThreatOpen(true)}>Agregar amenaza</Button>
-                    <Button type="button" size="sm" variant="secondary" onClick={() => {
-                      const reason = window.prompt("Motivo de envío a revisión (mínimo 10 caracteres):")
-                      if (reason && reason.trim().length >= 10) void handle(transitionGrdMatrixAction({ matrixId: latestMatrix.id, expectedVersion: latestMatrix.version, toStatus: "in_review", reason }), onDone)
-                    }}>Enviar a revisión</Button>
-                  </>
-                )}
-                {latestMatrix.status === "in_review" && canReviewMatrix && (
-                  <>
-                    <Button type="button" size="sm" onClick={() => {
-                      const reason = window.prompt("Motivo de la revisión (mínimo 10 caracteres):")
-                      if (reason && reason.trim().length >= 10) void handle(transitionGrdMatrixAction({ matrixId: latestMatrix.id, expectedVersion: latestMatrix.version, toStatus: "reviewed", reason }), onDone)
-                    }}>Marcar revisada</Button>
-                    <Button type="button" size="sm" variant="ghost" onClick={() => {
-                      const reason = window.prompt("Motivo de la devolución (mínimo 10 caracteres):")
-                      if (reason && reason.trim().length >= 10) void handle(transitionGrdMatrixAction({ matrixId: latestMatrix.id, expectedVersion: latestMatrix.version, toStatus: "draft", reason }), onDone)
-                    }}>Devolver a borrador</Button>
-                  </>
-                )}
-                {latestMatrix.status === "reviewed" && canApproveMatrix && (
-                  <Button type="button" size="sm" onClick={() => {
-                    const reason = window.prompt("Motivo de la aprobación (mínimo 10 caracteres):")
-                    if (reason && reason.trim().length >= 10) void handle(transitionGrdMatrixAction({ matrixId: latestMatrix.id, expectedVersion: latestMatrix.version, toStatus: "approved", reason }), onDone)
-                  }}>Aprobar</Button>
-                )}
-                {latestMatrix.status === "approved" && canPublishMatrix && (
-                  <Button type="button" size="sm" onClick={() => {
-                    const reason = window.prompt("Motivo de la publicación (mínimo 10 caracteres):")
-                    if (reason && reason.trim().length >= 10) void handle(transitionGrdMatrixAction({ matrixId: latestMatrix.id, expectedVersion: latestMatrix.version, toStatus: "published", reason }), onDone)
-                  }}>Publicar</Button>
-                )}
-              </div>
+                  )}
+                  {canPublishMatrix && (
+                    <Button type="button" size="sm" variant="secondary" onClick={() => setPublishingMatrix(latestMatrix)}>Publicar</Button>
+                  )}
+                </div>
+              )}
 
               {latestMatrixThreats.length === 0 ? (
                 <p className="text-sm text-[var(--color-text-subtle)]">Sin amenazas registradas en esta versión.</p>
@@ -287,7 +260,7 @@ export function CgrdWorkbench({
           <section className="mt-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-[var(--color-text)]">Actas de reunión</h2>
-              {canManageMeetings && <Button type="button" size="sm" variant="secondary" onClick={() => setScheduleMeetingOpen(true)}>Convocar sesión</Button>}
+              {canManageMeetings && <Button type="button" size="sm" variant="secondary" onClick={() => setRecordMeetingOpen(true)}>Registrar acta</Button>}
             </div>
             {meetings.length === 0 ? (
               <p className="mt-2 text-sm text-[var(--color-text-subtle)]">Sin sesiones registradas.</p>
@@ -296,18 +269,9 @@ export function CgrdWorkbench({
                 {meetings.map((meeting) => (
                   <li key={meeting.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                     <div>
-                      <MetaBadge meta={{ label: GRD_MEETING_STATUS_LABELS[meeting.status as keyof typeof GRD_MEETING_STATUS_LABELS] ?? meeting.status, variant: meeting.status === "closed" ? "success" : meeting.status === "cancelled" ? "outline" : "warning" }} dot />
-                      <span className="ml-2">{meeting.code} · {formatDateTime(meeting.scheduledFor)}</span>
+                      <MetaBadge meta={{ label: "Registrada", variant: "success" }} dot />
+                      <span className="ml-2">{meeting.code} · {formatDateTime(meeting.heldOn)}</span>
                     </div>
-                    {meeting.status === "scheduled" && canManageMeetings && (
-                      <div className="flex gap-2">
-                        <Button type="button" size="sm" onClick={() => setClosingMeeting(meeting)}>Cerrar acta</Button>
-                        <Button type="button" size="sm" variant="ghost" onClick={() => {
-                          const reason = window.prompt("Motivo de cancelación (mínimo 10 caracteres):")
-                          if (reason && reason.trim().length >= 10) void handle(cancelGrdMeetingAction({ meetingId: meeting.id, expectedVersion: meeting.version, reason }), onDone)
-                        }}>Cancelar</Button>
-                      </div>
-                    )}
                   </li>
                 ))}
               </ul>
@@ -350,13 +314,13 @@ export function CgrdWorkbench({
           {/* De faena, no de comité: acompañan a la sección de la matriz. */}
           <NewMatrixDialog open={newMatrixOpen} onOpenChange={setNewMatrixOpen} worksiteId={selectedWorksiteId} onDone={onDone} />
           {latestMatrix && <AddThreatDialog open={addThreatOpen} onOpenChange={setAddThreatOpen} matrixId={latestMatrix.id} onDone={onDone} />}
+          <PublishMatrixDialog matrix={publishingMatrix} onClose={() => setPublishingMatrix(null)} onDone={onDone} />
         </>
       )}
       {committee && (
         <>
           <AddMemberDialog open={addMemberOpen} onOpenChange={setAddMemberOpen} committeeId={committee.id} workers={workerCandidates} onDone={onDone} />
-          <ScheduleMeetingDialog open={scheduleMeetingOpen} onOpenChange={setScheduleMeetingOpen} committeeId={committee.id} onDone={onDone} />
-          <CloseMeetingDialog meeting={closingMeeting} onClose={() => setClosingMeeting(null)} onDone={onDone} />
+          <RecordMeetingDialog open={recordMeetingOpen} onOpenChange={setRecordMeetingOpen} committeeId={committee.id} onDone={onDone} />
         </>
       )}
     </PageContainer>
@@ -367,13 +331,14 @@ function ConstituteDialog({ open, onOpenChange, worksiteId, onDone }: { open: bo
   const [name, setName] = React.useState("")
   const [constitutedOn, setConstitutedOn] = React.useState("")
   const [mandateEndsOn, setMandateEndsOn] = React.useState("")
+  const [evidenceUrl, setEvidenceUrl] = React.useState("")
   const [pending, setPending] = React.useState(false)
 
   async function save() {
     setPending(true)
     try {
-      const result = await constituteGrdCommitteeAction({ worksiteId, name, constitutedOn, mandateEndsOn })
-      if (result.ok) { onOpenChange(false); setName(""); setConstitutedOn(""); setMandateEndsOn("") }
+      const result = await constituteGrdCommitteeAction({ worksiteId, name, constitutedOn, mandateEndsOn, evidenceUrl })
+      if (result.ok) { onOpenChange(false); setName(""); setConstitutedOn(""); setMandateEndsOn(""); setEvidenceUrl("") }
       onDone(result.ok ? undefined : result.message)
     } finally { setPending(false) }
   }
@@ -386,8 +351,9 @@ function ConstituteDialog({ open, onOpenChange, worksiteId, onDone }: { open: bo
         <Field label="Constituido el" required><Input type="date" value={constitutedOn} onChange={(event) => setConstitutedOn(event.target.value)} /></Field>
         <Field label="Mandato hasta" required><Input type="date" value={mandateEndsOn} onChange={(event) => setMandateEndsOn(event.target.value)} /></Field>
       </div>
+      <Field label="Evidencia del acta de constitución" required helper="URL o archivo subido."><Input value={evidenceUrl} onChange={(event) => setEvidenceUrl(event.target.value)} placeholder="https://... o referencia de documento" /></Field>
     </div>
-    <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || name.trim().length < 3 || !constitutedOn || !mandateEndsOn}>{pending ? "Constituyendo..." : "Constituir"}</Button></DialogFooter>
+    <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || name.trim().length < 3 || !constitutedOn || !mandateEndsOn || !evidenceUrl.trim()}>{pending ? "Constituyendo..." : "Constituir"}</Button></DialogFooter>
   </DialogContent></Dialog>
 }
 
@@ -471,39 +437,45 @@ function AddThreatDialog({ open, onOpenChange, matrixId, onDone }: { open: boole
   </DialogContent></Dialog>
 }
 
-function ScheduleMeetingDialog({ open, onOpenChange, committeeId, onDone }: { open: boolean; onOpenChange: (open: boolean) => void; committeeId: string; onDone: (message?: string) => void }) {
-  const [scheduledFor, setScheduledFor] = React.useState("")
-  const [agenda, setAgenda] = React.useState("")
+function PublishMatrixDialog({ matrix, onClose, onDone }: { matrix: Matrix | null; onClose: () => void; onDone: (message?: string) => void }) {
+  const [evidenceUrl, setEvidenceUrl] = React.useState("")
   const [pending, setPending] = React.useState(false)
+  const [prevMatrix, setPrevMatrix] = React.useState(matrix)
+  if (matrix !== prevMatrix) { setPrevMatrix(matrix); setEvidenceUrl("") }
 
   async function save() {
+    if (!matrix) return
     setPending(true)
     try {
-      const result = await scheduleGrdMeetingAction({ committeeId, scheduledFor: new Date(scheduledFor).toISOString(), agenda })
-      if (result.ok) { onOpenChange(false); setAgenda("") }
+      const result = await publishGrdMatrixAction({ matrixId: matrix.id, expectedVersion: matrix.version, evidenceUrl })
+      if (result.ok) onClose()
       onDone(result.ok ? undefined : result.message)
     } finally { setPending(false) }
   }
 
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent>
-    <DialogHeader><DialogTitle>Convocar sesión</DialogTitle></DialogHeader>
+  return <Dialog open={matrix !== null} onOpenChange={(value) => { if (!value) onClose() }}><DialogContent>
+    <DialogHeader><DialogTitle>Publicar matriz GRD</DialogTitle><DialogDescription>Cierra la N°80 del PDTP. Reemplaza cualquier versión publicada anteriormente en esta faena.</DialogDescription></DialogHeader>
     <div className="space-y-4">
-      <Field label="Fecha y hora" required><Input type="datetime-local" value={scheduledFor} onChange={(event) => setScheduledFor(event.target.value)} /></Field>
-      <Field label="Tabla / agenda" required><Textarea value={agenda} onChange={(event) => setAgenda(event.target.value)} rows={3} maxLength={5000} /></Field>
+      <Field label="Evidencia de la matriz publicada" required helper="URL o archivo subido."><Input value={evidenceUrl} onChange={(event) => setEvidenceUrl(event.target.value)} placeholder="https://... o referencia de documento" /></Field>
     </div>
-    <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || !scheduledFor || agenda.trim().length < 10}>{pending ? "Convocando..." : "Convocar"}</Button></DialogFooter>
+    <DialogFooter><Button type="button" variant="ghost" onClick={onClose} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || !evidenceUrl.trim()}>{pending ? "Publicando..." : "Publicar"}</Button></DialogFooter>
   </DialogContent></Dialog>
 }
 
 const EMPTY_AGREEMENT: DraftAgreement = { description: "", actionDescription: "", priority: "medium", targetDate: "" }
 
-function CloseMeetingDialog({ meeting, onClose, onDone }: { meeting: Meeting | null; onClose: () => void; onDone: (message?: string) => void }) {
+function RecordMeetingDialog({ open, onOpenChange, committeeId, onDone }: { open: boolean; onOpenChange: (open: boolean) => void; committeeId: string; onDone: (message?: string) => void }) {
+  const [heldOn, setHeldOn] = React.useState("")
+  const [agenda, setAgenda] = React.useState("")
   const [minutes, setMinutes] = React.useState("")
   const [quorumReached, setQuorumReached] = React.useState(true)
+  const [evidenceUrl, setEvidenceUrl] = React.useState("")
   const [drafts, setDrafts] = React.useState<DraftAgreement[]>([])
   const [pending, setPending] = React.useState(false)
-  const [prevMeeting, setPrevMeeting] = React.useState(meeting)
-  if (meeting !== prevMeeting) { setPrevMeeting(meeting); setMinutes(""); setQuorumReached(true); setDrafts([]) }
+
+  function reset() {
+    setHeldOn(""); setAgenda(""); setMinutes(""); setQuorumReached(true); setEvidenceUrl(""); setDrafts([])
+  }
 
   function updateDraft(index: number, patch: Partial<DraftAgreement>) {
     setDrafts((current) => current.map((draft, position) => position === index ? { ...draft, ...patch } : draft))
@@ -515,11 +487,10 @@ function CloseMeetingDialog({ meeting, onClose, onDone }: { meeting: Meeting | n
     draft.description.trim().length >= 5 && draft.actionDescription.trim().length >= 3 && /^\d{4}-\d{2}-\d{2}$/.test(draft.targetDate))
 
   async function save() {
-    if (!meeting) return
     setPending(true)
     try {
-      const result = await closeGrdMeetingAction({
-        meetingId: meeting.id, expectedVersion: meeting.version, minutes, quorumReached,
+      const result = await recordGrdMeetingAction({
+        committeeId, heldOn: new Date(heldOn).toISOString(), agenda, minutes, quorumReached, evidenceUrl,
         agreements: drafts.map((draft) => ({
           description: draft.description.trim(),
           actionDescription: draft.actionDescription.trim(),
@@ -527,16 +498,21 @@ function CloseMeetingDialog({ meeting, onClose, onDone }: { meeting: Meeting | n
           targetDate: draft.targetDate,
         })),
       })
-      if (result.ok) onClose()
+      if (result.ok) { onOpenChange(false); reset() }
       onDone(result.ok ? undefined : result.message)
     } finally { setPending(false) }
   }
 
-  return <Dialog open={meeting !== null} onOpenChange={(value) => { if (!value) onClose() }}><DialogContent>
-    <DialogHeader><DialogTitle>Cerrar acta</DialogTitle><DialogDescription>Cierra la N°81 del PDTP. Cada acuerdo se abre como acción correctiva en CAPA.</DialogDescription></DialogHeader>
+  return <Dialog open={open} onOpenChange={(value) => { if (!value) onOpenChange(false) }}><DialogContent>
+    <DialogHeader><DialogTitle>Registrar acta</DialogTitle><DialogDescription>Cierra la N°81 del PDTP. Se carga después de la sesión, con su evidencia. Cada acuerdo se abre como acción correctiva en CAPA.</DialogDescription></DialogHeader>
     <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Fecha y hora de la sesión" required><Input type="datetime-local" value={heldOn} onChange={(event) => setHeldOn(event.target.value)} /></Field>
+        <label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={quorumReached} onChange={(event) => setQuorumReached(event.target.checked)} /> Hubo quórum</label>
+      </div>
+      <Field label="Tabla / agenda" required><Textarea value={agenda} onChange={(event) => setAgenda(event.target.value)} rows={2} maxLength={5000} /></Field>
       <Field label="Acta" required helper="Mínimo 20 caracteres."><Textarea value={minutes} onChange={(event) => setMinutes(event.target.value)} rows={5} maxLength={20000} /></Field>
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={quorumReached} onChange={(event) => setQuorumReached(event.target.checked)} /> Hubo quórum</label>
+      <Field label="Evidencia del acta" required helper="URL o archivo subido."><Input value={evidenceUrl} onChange={(event) => setEvidenceUrl(event.target.value)} placeholder="https://... o referencia de documento" /></Field>
 
       <div className="rounded-lg border border-[var(--color-border)] p-3">
         <div className="flex items-center justify-between">
@@ -544,7 +520,7 @@ function CloseMeetingDialog({ meeting, onClose, onDone }: { meeting: Meeting | n
           <Button type="button" size="sm" variant="secondary" onClick={() => setDrafts((current) => [...current, { ...EMPTY_AGREEMENT }])}>Agregar acuerdo</Button>
         </div>
         {drafts.length === 0 ? (
-          <p className="mt-2 text-xs text-[var(--color-text-subtle)]">Sin acuerdos. Un acta puede cerrarse sin ellos.</p>
+          <p className="mt-2 text-xs text-[var(--color-text-subtle)]">Sin acuerdos. Un acta puede registrarse sin ellos.</p>
         ) : (
           <div className="mt-3 space-y-3">
             {drafts.map((draft, index) => (
@@ -575,7 +551,7 @@ function CloseMeetingDialog({ meeting, onClose, onDone }: { meeting: Meeting | n
         )}
       </div>
     </div>
-    <DialogFooter><Button type="button" variant="ghost" onClick={onClose} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || minutes.trim().length < 20 || !draftsComplete}>{pending ? "Cerrando..." : "Cerrar acta"}</Button></DialogFooter>
+    <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || !heldOn || agenda.trim().length < 10 || minutes.trim().length < 20 || !evidenceUrl.trim() || !draftsComplete}>{pending ? "Registrando..." : "Registrar acta"}</Button></DialogFooter>
   </DialogContent></Dialog>
 }
 
@@ -584,15 +560,16 @@ function DesignateCoordinatorDialog({ open, onOpenChange, worksiteId, workers, o
 }) {
   const [workerId, setWorkerId] = React.useState("")
   const [designatedOn, setDesignatedOn] = React.useState("")
+  const [evidenceUrl, setEvidenceUrl] = React.useState("")
   const [pending, setPending] = React.useState(false)
 
   const [prevOpen, setPrevOpen] = React.useState(open)
-  if (open !== prevOpen) { setPrevOpen(open); if (open) { setWorkerId(""); setDesignatedOn("") } }
+  if (open !== prevOpen) { setPrevOpen(open); if (open) { setWorkerId(""); setDesignatedOn(""); setEvidenceUrl("") } }
 
   async function save() {
     setPending(true)
     try {
-      const result = await designateGrdCoordinatorAction({ worksiteId, workerId, designatedOn })
+      const result = await designateGrdCoordinatorAction({ worksiteId, workerId, designatedOn, evidenceUrl })
       if (result.ok) onOpenChange(false)
       onDone(result.ok ? undefined : result.message)
     } finally { setPending(false) }
@@ -614,7 +591,8 @@ function DesignateCoordinatorDialog({ open, onOpenChange, worksiteId, workers, o
         </Select>
       </Field>
       <Field label="Designado el" required><Input type="date" value={designatedOn} onChange={(event) => setDesignatedOn(event.target.value)} /></Field>
+      <Field label="Evidencia de la designación" required helper="URL o archivo subido."><Input value={evidenceUrl} onChange={(event) => setEvidenceUrl(event.target.value)} placeholder="https://... o referencia de documento" /></Field>
     </div>
-    <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || !workerId || !designatedOn}>{pending ? "Designando..." : "Designar"}</Button></DialogFooter>
+    <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || !workerId || !designatedOn || !evidenceUrl.trim()}>{pending ? "Designando..." : "Designar"}</Button></DialogFooter>
   </DialogContent></Dialog>
 }
