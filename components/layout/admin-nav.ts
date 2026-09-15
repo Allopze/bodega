@@ -34,6 +34,7 @@ export const ADMIN_AREAS: AreaNode[] = [
         ],
       },
       { label: "Tipos de activo TI",    href: "/admin/tipos-activo",        iconName: "Laptop",            permissions: ["admin:it_asset_types"] },
+      { label: "Tipos de documento SST", href: "/admin/taxonomia-sst",      iconName: "FileText",          permissions: ["admin:document_taxonomy"] },
     ],
   },
   {
@@ -103,15 +104,6 @@ export const ADMIN_AREAS: AreaNode[] = [
     items: [
       { label: "Proveedores",     href: "/admin/proveedores",   iconName: "Buildings", permissions: ["admin:suppliers"] },
       { label: "Centros de costo", href: "/admin/centros-costo", iconName: "Buildings", permissions: ["admin:cost_centers"] },
-    ],
-  },
-  {
-    id:       "prevencion",
-    label:    "Prevención",
-    iconName: "HardHat",
-    order:    80,
-    items: [
-      { label: "Taxonomía documental SST", href: "/admin/taxonomia-sst", iconName: "FileText", permissions: ["admin:document_taxonomy"] },
     ],
   },
 ]

@@ -5,11 +5,11 @@ export default function Loading() {
   return (
     <>
       <PageHeader
-        title="Taxonomía documental SST"
+        title="Tipos de documento SST"
         breadcrumb={[
           { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
-          { label: "Taxonomía documental SST" },
+          { label: "Tipos de documento SST" },
         ]}
       />
       <SkeletonPage rows={6} />

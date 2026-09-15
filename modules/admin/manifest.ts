@@ -79,7 +79,7 @@ export const adminModule = {
     "admin:suppliers":         { id: "p-adm-sup",   description: "Gestionar proveedores" },
     "admin:cost_centers":      { id: "p-adm-cost",  description: "Gestionar centros de costo" },
     "admin:product_catalogs":  { id: "p-adm-pcat",  description: "Gestionar catálogos auxiliares de productos" },
-    "admin:document_taxonomy": { id: "p-adm-docx",  description: "Gestionar taxonomía documental SST" },
+    "admin:document_taxonomy": { id: "p-adm-docx",  description: "Gestionar tipos de documento SST" },
     "admin:pdtp_catalog":      { id: "p-adm-pdtp",  description: "Gestionar catálogos base del programa preventivo" },
     "admin:deviation_catalog": { id: "p-adm-dev",   description: "Gestionar el catálogo maestro de desviaciones de inspección" },
     "admin:fleet_catalog":     { id: "p-adm-fleet", description: "Gestionar catálogos administrativos de flota" },

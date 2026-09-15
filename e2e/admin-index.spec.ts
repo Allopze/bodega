@@ -3,9 +3,9 @@ import { expectPageTitle, login } from "./helpers"
 
 // El sidebar de admin reemplaza el árbol de negocio mientras `pathname`
 // empieza con `/admin` (ver components/layout/admin-nav.ts). Cada categoría
-// con más de un módulo se pinta como un acordeón (`button`); "Prevención"
-// quedó con un solo módulo y por eso no tiene encabezado propio — solo se ve
-// su ítem, igual que ya hace `AreaSection` para el árbol de negocio.
+// se pinta como un acordeón (`button`). "Prevención" existía sólo para alojar
+// el catálogo de tipos documentales; ése se mudó a "Catálogos", junto a sus
+// hermanas "Tipos de equipo" y "Tipos de activo TI", y el área desapareció.
 const ADMIN_CATEGORIES = [
   "Catálogos",
   "Configuración de plataforma",
@@ -29,7 +29,7 @@ test("el sidebar agrupa Administración por categorías y oculta las áreas de n
     await expect(sidebar.getByRole("button", { name: category, exact: true })).toBeVisible()
   }
   await expect(sidebar.getByRole("button", { name: "Prevención", exact: true })).toHaveCount(0)
-  await expect(sidebar.getByRole("link", { name: "Taxonomía documental SST" })).toBeVisible()
+  await expect(sidebar.getByRole("link", { name: "Tipos de documento SST" })).toBeVisible()
 
   for (const label of BUSINESS_AREA_LABELS) {
     await expect(sidebar.getByText(label, { exact: true })).toHaveCount(0)
@@ -155,9 +155,9 @@ test("una sesión con permisos de admin parciales solo ve sus categorías e íte
   ]) {
     await expect(sidebar.getByRole("button", { name: category, exact: true })).toHaveCount(0)
   }
-  // "Prevención" (Taxonomía documental SST, admin:document_taxonomy) tampoco
-  // está autorizada para esta sesión.
-  await expect(sidebar.getByRole("link", { name: "Taxonomía documental SST" })).toHaveCount(0)
+  // "Tipos de documento SST" (admin:document_taxonomy) vive en "Catálogos",
+  // que sí está visible, pero el ítem tampoco está autorizado para esta sesión.
+  await expect(sidebar.getByRole("link", { name: "Tipos de documento SST" })).toHaveCount(0)
 
   // /admin/productos pertenece a "Catálogos", así que esa categoría llega
   // auto-expandida (AccordionAreas solo abre una a la vez). Sus dos ítems
@@ -177,7 +177,7 @@ test("una sesión con permisos de admin parciales solo ve sus categorías e íte
   await expect(sidebar.getByRole("link", { name: "Plantillas de correo" })).toHaveCount(0)
 })
 
-test("en mobile, el drawer también agrupa por categoría y Prevención se pinta sin disclosure", async ({ page }) => {
+test("en mobile, el drawer también agrupa por categoría y no deja áreas huérfanas", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await login(page)
   await page.goto("/admin/cargos")
@@ -193,6 +193,6 @@ test("en mobile, el drawer también agrupa por categoría y Prevención se pinta
     await expect(panel.getByRole("button", { name: "Catálogos", exact: true })).toBeVisible({ timeout: 5_000 })
   }).toPass({ timeout: 60_000 })
 
-  await expect(panel.getByRole("link", { name: "Taxonomía documental SST" })).toBeVisible()
+  await expect(panel.getByRole("link", { name: "Tipos de documento SST" })).toBeVisible()
   await expect(panel.getByRole("button", { name: "Prevención", exact: true })).toHaveCount(0)
 })

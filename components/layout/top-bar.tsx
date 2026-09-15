@@ -23,7 +23,14 @@ interface TopBarProps {
 // `/combustibles` no construye ningún input propio en ninguna de sus
 // subrutas — estaba en esta lista sin que nada lo alimentara, así que sus
 // tablas basadas en DataTable (vehículos, proveedores) quedaban sin buscador.
-const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/bodega", "/flota", "/mantenciones", "/soporte", "/prevencion/ppa", "/prevencion/inspecciones", "/facturacion/facturas", "/trazabilidad/documento", "/ti/accesos"]
+//
+// `/admin/taxonomia-sst` está aquí por el otro motivo que documenta
+// `search-architecture`: la pantalla muestra **dos** tablas (categorías y
+// tipos). El input de la shell sólo puede alimentar a una, así que convivía
+// con un "Buscar categorías..." local y el usuario no tenía cómo saber a cuál
+// de las dos apuntaba cada caja. Cada tabla trae ahora su propio buscador
+// rotulado.
+const ROUTES_WITH_OWN_SEARCH = ["/solicitudes", "/aprobaciones", "/compras", "/recepcion", "/pendientes", "/bodega", "/flota", "/mantenciones", "/soporte", "/prevencion/ppa", "/prevencion/inspecciones", "/facturacion/facturas", "/trazabilidad/documento", "/ti/accesos", "/admin/taxonomia-sst"]
 
 /** Formularios de alta/edición: no hay lista que filtrar, así que el input de
  *  la shell prometería un filtrado inexistente. Ninguna ruta bajo estos

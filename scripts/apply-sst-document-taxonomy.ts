@@ -57,7 +57,7 @@ async function resolveActorUserId(): Promise<string> {
 }
 
 async function main() {
-  console.log(`Taxonomía documental SST — ${DRY_RUN ? "[DRY RUN]" : "escribiendo"}`)
+  console.log(`Tipos de documento SST — ${DRY_RUN ? "[DRY RUN]" : "escribiendo"}`)
 
   const [categoriesBefore, typesBefore] = await Promise.all([
     db.select({ slug: sstDocumentCategories.slug }).from(sstDocumentCategories),

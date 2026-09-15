@@ -5,9 +5,9 @@ import { useActionState, useEffect } from "react"
 import Link from "next/link"
 import {
   PencilSimple,
+  Plus,
   ToggleLeft,
   ToggleRight,
-  Plant,
 } from "@phosphor-icons/react"
 import { DataTable } from "@/components/ui/data-table"
 import { MetaBadge } from "@/components/states/state-badge"
@@ -52,10 +52,13 @@ export interface TypeRow {
   isActive: boolean
 }
 
+// El estado no es una columna: en una taxonomía sana *todas* las filas están
+// activas, así que la columna gastaba un badge verde por fila para no decir
+// nada. La excepción —una categoría desactivada— se marca en la propia celda
+// del nombre, que es donde el ojo ya está.
 const CATEGORY_COLUMNS = [
   { key: "name", label: "Categoría", sortable: true },
   { key: "description", label: "Descripción", sortable: true },
-  { key: "isActive", label: "Estado", sortable: true, width: "w-28" },
   { key: "", label: "", sortable: false, width: "w-24" },
 ]
 
@@ -78,7 +81,6 @@ const TYPE_COLUMNS = [
     width: "w-36",
     defaultVisible: false,
   },
-  { key: "isActive", label: "Estado", sortable: true, width: "w-28" },
   { key: "", label: "", sortable: false, width: "w-24" },
 ]
 
@@ -90,7 +92,7 @@ interface TaxonomyViewProps {
   /** Categorías reales de BD para el selector del formulario de tipos. */
   categoryOptions: CategoryOption[]
   types: TypeRow[]
-  catalogActivities: PdtpActivityPickerOption[]
+  catalogActivities?: PdtpActivityPickerOption[]
 }
 
 function formatPdtpNumbers(numbers: number[] | null): string {
@@ -98,7 +100,7 @@ function formatPdtpNumbers(numbers: number[] | null): string {
   return numbers.map((n) => `N°${n}`).join(", ")
 }
 
-export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DEFAULT_CONFIDENTIALITY_LABEL, categoryOptions, types, catalogActivities }: TaxonomyViewProps) {
+export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DEFAULT_CONFIDENTIALITY_LABEL, categoryOptions, types, catalogActivities = [] }: TaxonomyViewProps) {
   const [catSheetOpen, setCatSheetOpen] = React.useState(false)
   const [editCategory, setEditCategory] = React.useState<CategoryRow | null>(null)
   const [typeSheetOpen, setTypeSheetOpen] = React.useState(false)
@@ -106,9 +108,11 @@ export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DE
 
   const [catToggleState, catToggleAction] = useActionState(setDocumentCategoryStatusAction, INITIAL_STATE)
   const [typeToggleState, typeToggleAction] = useActionState(setDocumentTypeStatusAction, INITIAL_STATE)
-  // Buscador propio de categorías: el del TopBar lo usa la tabla de tipos para
-  // que una búsqueda no filtre ambas a la vez (ver search-architecture).
+  // Un buscador rotulado por tabla. La ruta está en `ROUTES_WITH_OWN_SEARCH`,
+  // así que el input de la shell no aparece y no hay una tercera caja de
+  // búsqueda compitiendo con estas dos (ver search-architecture).
   const [catSearch, setCatSearch] = React.useState("")
+  const [typeSearch, setTypeSearch] = React.useState("")
 
   useEffect(() => {
     if (catToggleState.message) {
@@ -136,17 +140,9 @@ export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DE
             {categories.length === 1 ? "1 categoría" : `${categories.length} categorías`}
           </span>
         </div>
-        {activeCategory && (
-          <p className="mb-2 text-xs text-[var(--color-text-muted)]">
-            Categoría activa: <span className="font-medium">{activeCategory.name}</span> (
-            <Link href="/admin/taxonomia-sst" scroll={false} className="underline">cambiar</Link>)
-          </p>
-        )}
         <DataTable
-        caption="Categorías Documentales SST"
-        enableColumnToggle
-        viewKey="tax"
-        stickyFirstColumn
+          caption="Categorías Documentales SST"
+          viewKey="tax"
           columns={CATEGORY_COLUMNS}
           rows={catRows}
           search={catSearch}
@@ -172,7 +168,7 @@ export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DE
                   </Link>
                 }
                 description={c.description || undefined}
-                status={c.isActive ? <MetaBadge meta={{ label: "Activa", variant: "success" }} /> : <MetaBadge meta={{ label: "Inactiva", variant: "default" }} />}
+                status={c.isActive ? undefined : <MetaBadge meta={{ label: "Inactiva", variant: "default" }} />}
                 actions={
                   <>
                     <Button type="button" variant="ghost" size="sm" onClick={() => { setEditCategory(c); setCatSheetOpen(true) }}>
@@ -203,25 +199,22 @@ export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DE
             const isActive = c.slug === activeSlug
             return (
               <React.Fragment key={c.slug}>
-                <TableRow>
+                <TableRow className={c.isActive ? undefined : "opacity-60"}>
                   <TableCell>
-                    <Link
-                      href={{ pathname: "/admin/taxonomia-sst", query: { category: c.slug } }}
-                      scroll={false}
-                      aria-current={isActive ? "true" : undefined}
-                      aria-label={`Ver tipos de ${c.name}`}
-                      className={`flex items-center gap-1 font-medium ${isActive ? "text-[var(--color-primary)]" : ""}`}
-                    >
-                      <Plant size={14} />
-                      {c.name}
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <Link
+                        href={{ pathname: "/admin/taxonomia-sst", query: { category: c.slug } }}
+                        scroll={false}
+                        aria-current={isActive ? "true" : undefined}
+                        aria-label={`Ver tipos de ${c.name}`}
+                        className={`font-medium ${isActive ? "text-[var(--color-primary)]" : ""}`}
+                      >
+                        {c.name}
+                      </Link>
+                      {!c.isActive && <MetaBadge meta={{ label: "Inactiva", variant: "default" }} />}
+                    </div>
                   </TableCell>
                   <TableCell className="text-[var(--color-text-muted)]">{c.description || "—"}</TableCell>
-                  <TableCell>
-                    {c.isActive
-                      ? <MetaBadge meta={{ label: "Activa", variant: "success" }} />
-                      : <MetaBadge meta={{ label: "Inactiva", variant: "default" }} />}
-                  </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <button
@@ -229,6 +222,7 @@ export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DE
                         onClick={() => { setEditCategory(c); setCatSheetOpen(true) }}
                         className="rounded p-1.5 text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
                         aria-label={`Editar ${c.name}`}
+                        title="Editar"
                       >
                         <PencilSimple size={15} />
                       </button>
@@ -238,7 +232,8 @@ export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DE
                         <button
                           type="submit"
                           className="rounded p-1.5 text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
-                          aria-label={c.isActive ? "Desactivar" : "Reactivar"}
+                          aria-label={c.isActive ? `Desactivar ${c.name}` : `Reactivar ${c.name}`}
+                          title={c.isActive ? "Activa — clic para desactivar" : "Inactiva — clic para reactivar"}
                         >
                           {c.isActive ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
                         </button>
@@ -251,7 +246,7 @@ export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DE
           }}
         />
         <CategoryForm
-          key={editCategory?.slug ?? "editar"}
+          key={editCategory?.slug ?? "nueva"}
           open={catSheetOpen}
           onClose={() => setCatSheetOpen(false)}
           editCategory={editCategory}
@@ -278,12 +273,29 @@ export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DE
             caption={`Tipos de Documento · ${activeCategory?.name ?? ""}`}
             enableColumnToggle
             viewKey="tax-types"
+            // La densidad es una preferencia global: un solo control en la
+            // pantalla (el de categorías) la fija para ambas tablas. Repetirlo
+            // aquí era la misma decisión ofrecida dos veces.
+            hideDensityToggle
             columns={TYPE_COLUMNS}
             rows={typeRows}
-            // Esta tabla conserva el buscador del TopBar; la de categorías usa
-            // su propio input (ver search-architecture).
+            search={typeSearch}
+            onSearchChange={setTypeSearch}
+            searchPlaceholder="Buscar tipos..."
             searchKeys={["code", "name", "description"]}
             pageSize={20}
+            // "Nuevo tipo" es contextual —tipo *de esta categoría*— así que
+            // vive junto a la tabla que lo recibe, no en el header de la página.
+            actions={
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => { setEditType(null); setTypeSheetOpen(true) }}
+              >
+                <Plus size={14} />Nuevo tipo
+              </Button>
+            }
             emptyTitle="Sin tipos"
             emptyDescription={`Crea el primer tipo para la categoría ${activeCategory?.name ?? ""}.`}
             renderMobileCard={(row) => {
@@ -292,7 +304,7 @@ export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DE
                 <ResponsiveDataListCard
                   title={t.name}
                   description={t.description || undefined}
-                  status={t.isActive ? <MetaBadge meta={{ label: "Activo", variant: "success" }} /> : <MetaBadge meta={{ label: "Inactivo", variant: "default" }} />}
+                  status={t.isActive ? undefined : <MetaBadge meta={{ label: "Inactivo", variant: "default" }} />}
                   actions={
                     <>
                       <Button type="button" variant="ghost" size="sm" onClick={() => { setEditType(t); setTypeSheetOpen(true) }}>
@@ -341,9 +353,14 @@ export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DE
               const t = row as TypeRow
               return (
                 <React.Fragment key={t.id}>
-                  <TableRow>
+                  <TableRow className={t.isActive ? undefined : "opacity-60"}>
                     <TableCell className="font-mono text-xs">{t.code}</TableCell>
-                    <TableCell>{t.name}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {t.name}
+                        {!t.isActive && <MetaBadge meta={{ label: "Inactivo", variant: "default" }} />}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-[var(--color-text-muted)]">
                       {confidentialityLabel[t.defaultConfidentiality] ?? t.defaultConfidentiality}
                     </TableCell>
@@ -363,17 +380,13 @@ export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DE
                       {formatPdtpNumbers(t.pdtpAcknowledgmentActivityNumbers)}
                     </TableCell>
                     <TableCell>
-                      {t.isActive
-                        ? <MetaBadge meta={{ label: "Activo", variant: "success" }} />
-                        : <MetaBadge meta={{ label: "Inactivo", variant: "default" }} />}
-                    </TableCell>
-                    <TableCell>
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
                           onClick={() => { setEditType(t); setTypeSheetOpen(true) }}
                           className="rounded p-1.5 text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
                           aria-label={`Editar ${t.name}`}
+                          title="Editar"
                         >
                           <PencilSimple size={15} />
                         </button>
@@ -383,7 +396,8 @@ export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DE
                           <button
                             type="submit"
                             className="rounded p-1.5 text-[var(--color-text-subtle)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
-                            aria-label={t.isActive ? "Desactivar" : "Reactivar"}
+                            aria-label={t.isActive ? `Desactivar ${t.name}` : `Reactivar ${t.name}`}
+                            title={t.isActive ? "Activo — clic para desactivar" : "Inactivo — clic para reactivar"}
                           >
                             {t.isActive ? <ToggleRight size={18} /> : <ToggleLeft size={18} />}
                           </button>
@@ -398,7 +412,7 @@ export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DE
         )}
         {activeSlug && (
           <TypeForm
-            key={editType?.id ?? "editar"}
+            key={editType?.id ?? "nuevo"}
             open={typeSheetOpen}
             onClose={() => setTypeSheetOpen(false)}
             editType={editType}

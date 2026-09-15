@@ -13,7 +13,7 @@ import { CATEGORY_LABEL, CONFIDENTIALITY_LABEL } from "./labels"
 import { listCatalogActivities } from "@/lib/services/pdtp/catalog-activities"
 import { listPdtpAccreditationBindings } from "@/lib/services/pdtp/accreditation-bindings"
 
-export const metadata: Metadata = { title: "Taxonomía documental SST" }
+export const metadata: Metadata = { title: "Tipos de documento SST" }
 
 interface PageProps {
   searchParams: Promise<{ category?: string }>
@@ -47,14 +47,14 @@ export default async function TaxonomySstPage({ searchParams }: PageProps) {
   return (
     <PageContainer>
       <PageHeader
-        title="Taxonomía documental SST"
-        description="Mantén las categorías y tipos de documentos preventivos que usa toda la organización."
+        title="Tipos de documento SST"
+        description="Define cómo se clasifican los documentos del registro documental: las categorías y los tipos que se eligen al publicar."
         breadcrumb={[
           { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
-          { label: "Taxonomía documental SST" },
+          { label: "Tipos de documento SST" },
         ]}
-        actions={<TaxonomyActions categorySlug={activeSlug} categoryOptions={categoryOptions} catalogActivities={pickerOptions} />}
+        actions={<TaxonomyActions />}
       />
       <TaxonomyView
         categories={categories.map((c) => ({

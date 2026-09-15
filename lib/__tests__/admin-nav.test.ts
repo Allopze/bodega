@@ -78,7 +78,7 @@ describe("getAdminAreas", () => {
     expect(fleet?.href).toBe("/admin/flota-catalogos")
   })
 
-  it("returns all 8 categories, in order, with a full admin permission set", () => {
+  it("returns all 7 categories, in order, with a full admin permission set", () => {
     const areas = getAdminAreas(sessionWithPermissions(ALL_ADMIN_PERMISSIONS))
 
     expect(areas.map((area) => area.id)).toEqual([
@@ -89,7 +89,6 @@ describe("getAdminAreas", () => {
       "activos",
       "seguridad",
       "abastecimiento",
-      "prevencion",
     ])
     expect(areas.map((area) => area.label)).toEqual([
       "Catálogos",
@@ -99,20 +98,17 @@ describe("getAdminAreas", () => {
       "Activos operativos",
       "Seguridad y trazabilidad",
       "Productos y abastecimiento",
-      "Prevención",
     ])
 
     const catalogos = areas.find((area) => area.id === "catalogos")
-    expect(catalogos?.items).toHaveLength(8)
-    const prevencion = areas.find((area) => area.id === "prevencion")
-    expect(prevencion?.items).toHaveLength(1)
+    expect(catalogos?.items).toHaveLength(9)
   })
 
   it("hides items the session lacks permission for, and drops empty categories", () => {
     const areas = getAdminAreas(sessionWithPermissions(["admin:document_taxonomy"]))
 
     expect(areas).toHaveLength(1)
-    expect(areas[0]?.id).toBe("prevencion")
+    expect(areas[0]?.id).toBe("catalogos")
     expect(areas[0]?.items.map((item) => item.href)).toEqual(["/admin/taxonomia-sst"])
   })
 
