@@ -3700,6 +3700,7 @@ async function prepareDatabase(captureDbUrl: string) {
     workerId: "worker-audit-2",
     designatedOn: shiftCaptureDateMonths(-4, 1),
     status: "active",
+    evidenceUrl: "captures/cgrd/coordinador-audit-1-designacion.pdf",
     createdByUserId: userId,
     createdAt: now,
     updatedAt: now,
@@ -3711,6 +3712,7 @@ async function prepareDatabase(captureDbUrl: string) {
     constitutedOn: shiftCaptureDateMonths(-8, 1),
     mandateEndsOn: shiftCaptureDateMonths(16, 1),
     status: "active",
+    evidenceUrl: "captures/cgrd/comite-audit-1-constitucion.pdf",
     createdByUserId: userId,
     createdAt: now,
     updatedAt: now,
@@ -3726,12 +3728,8 @@ async function prepareDatabase(captureDbUrl: string) {
     title: "Matriz GRD Faena Sur v1",
     status: "published",
     revisionReason: "Constitución del comité y análisis histórico de amenazas del sector.",
-    publishedHashSha256: crypto.createHash("sha256").update("grd-matrix-audit-1").digest("hex"),
+    evidenceUrl: "captures/cgrd/matriz-audit-1-publicada.pdf",
     createdByUserId: "user-audit-prevencion",
-    reviewedByUserId: "user-audit-prevencion",
-    reviewedAt: now,
-    approvedByUserId: userId,
-    approvedAt: now,
     publishedByUserId: userId,
     publishedAt: now,
     createdAt: now,
@@ -3765,20 +3763,17 @@ async function prepareDatabase(captureDbUrl: string) {
     id: "grd-meeting-audit-1",
     code: "CGRD-2026-001",
     committeeId: "grd-committee-audit-1",
-    scheduledFor: now,
+    heldOn: now,
     agenda: "Revisión de matriz GRD v1, plan de trabajo por amenaza y state de simulacros.",
     minutes: "Se revisó la matriz publicada, se asignó responsable al simulacro anual y se acordó verificar el cortafuegos antes del verano.",
-    status: "closed",
     quorumReached: true,
-    closedByUserId: userId,
-    closedAt: now,
+    evidenceUrl: "captures/cgrd/acta-audit-1.pdf",
     createdByUserId: userId,
     createdAt: now,
-    updatedAt: now,
   })
-  // La CAPA nace antes del acuerdo: en producción `closeGrdMeeting` la crea
-  // dentro de la misma transacción que cierra el acta, y el acuerdo cuelga de
-  // ella (FK). El seed respeta el mismo orden de dependencia.
+  // La CAPA nace antes del acuerdo: en producción `recordGrdMeeting` la crea
+  // dentro de la misma transacción que registra el acta, y el acuerdo cuelga
+  // de ella (FK). El seed respeta el mismo orden de dependencia.
   const capaCgrdId = `capa-cgrd-audit-${Date.now()}`
   await db.insert(schema.preventionCapaActions).values({
     id: capaCgrdId,

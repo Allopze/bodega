@@ -1,19 +1,33 @@
 import { z } from "zod"
+import { checkEvidence, evidencePathSchema } from "@/lib/validation/evidence-contract"
 
 const reason = z.string().trim().min(10).max(2000)
 const plainDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+
+/**
+ * Evidencia del CGRD, bajo el contrato único (P4): una ruta del storage de
+ * CGRD, o una URL http/https alcanzable. Obligatoria en cada acto que
+ * acredita una actividad del PDTP — constituir, publicar, cerrar acta —, no
+ * "cualquier cosa": un acto sin evidencia no es oponible ante un fiscalizador.
+ */
+const evidenceUrl = z.string().trim().min(1, "Adjunta la evidencia.").refine(
+  (value) => evidencePathSchema().safeParse(value).success || checkEvidence({ kind: "url", reference: value }).length === 0,
+  "La evidencia debe ser un archivo subido o una URL http/https",
+)
 
 export const grdCommitteeConstituteSchema = z.object({
   worksiteId: z.string().min(1),
   name: z.string().trim().min(3).max(300),
   constitutedOn: plainDate,
   mandateEndsOn: plainDate,
+  evidenceUrl,
 })
 
 export const grdCoordinatorDesignateSchema = z.object({
   worksiteId: z.string().min(1),
   workerId: z.string().min(1),
   designatedOn: plainDate,
+  evidenceUrl,
 })
 
 export const grdCoordinatorEndSchema = z.object({
@@ -59,27 +73,25 @@ export const grdThreatRemoveSchema = z.object({
   threatId: z.string().min(1),
 })
 
-export const grdMatrixTransitionSchema = z.object({
+/** Publica la matriz en borrador: único acto de la N°80, sin revisión ni
+ *  aprobación intermedias — una sola persona la publica con su evidencia. */
+export const grdMatrixPublishSchema = z.object({
   matrixId: z.string().min(1),
   expectedVersion: z.coerce.number().int().positive(),
-  // 'draft' es el retorno del revisor, mismo criterio que MIPER-10: una
-  // versión enviada a revisión con una amenaza mal evaluada no debe quedar
-  // trabada sin poder corregirse.
-  toStatus: z.enum(["draft", "in_review", "reviewed", "approved", "published"]),
-  reason,
+  evidenceUrl,
 })
 
-export const grdMeetingScheduleSchema = z.object({
+/**
+ * Registra el acta de una sesión ya realizada — no convoca, no programa: se
+ * carga después del hecho, como el resto de las constancias del módulo.
+ */
+export const grdMeetingRecordSchema = z.object({
   committeeId: z.string().min(1),
-  scheduledFor: z.iso.datetime({ offset: true }),
+  heldOn: z.iso.datetime({ offset: true }),
   agenda: z.string().trim().min(10).max(5000),
-})
-
-export const grdMeetingCloseSchema = z.object({
-  meetingId: z.string().min(1),
-  expectedVersion: z.coerce.number().int().positive(),
   minutes: z.string().trim().min(20).max(20_000),
   quorumReached: z.boolean(),
+  evidenceUrl,
   /**
    * Cada acuerdo se deriva a CAPA común, igual que en el CPHS: un acuerdo con
    * responsable y plazo que no se persigue hasta el cierre no es seguimiento.
@@ -92,10 +104,4 @@ export const grdMeetingCloseSchema = z.object({
     priority: z.enum(["low", "medium", "high", "critical"]).default("medium"),
     targetDate: plainDate,
   })).default([]),
-})
-
-export const grdMeetingCancelSchema = z.object({
-  meetingId: z.string().min(1),
-  expectedVersion: z.coerce.number().int().positive(),
-  reason,
 })

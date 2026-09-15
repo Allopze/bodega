@@ -4,22 +4,19 @@ import { ZodError } from "zod"
 import { safeActionMessage } from "@/lib/action-error"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { grdMatrixTransitionPermission } from "@/lib/prevention/cgrd"
 import type { CgrdAccess } from "@/lib/services/prevention-cgrd-access"
 import {
   addGrdMember,
-  cancelGrdMeeting,
-  closeGrdMeeting,
   constituteGrdCommittee,
   createGrdMatrixDraft,
   designateGrdCoordinator,
   dissolveGrdCommittee,
   endGrdCoordinator,
   addGrdThreat,
+  publishGrdMatrix,
+  recordGrdMeeting,
   removeGrdMember,
   removeGrdThreat,
-  scheduleGrdMeeting,
-  transitionGrdMatrix,
 } from "@/lib/services/prevention-cgrd"
 import { revalidateOperationalViews } from "@/lib/services/operational-cache"
 import type { ActionState } from "@/lib/validation/prevention"
@@ -98,32 +95,14 @@ export async function removeGrdThreatAction(input: unknown): Promise<ActionState
   return run(accessFromSession(guard.session), (access) => removeGrdThreat(input, access))
 }
 
-/**
- * El permiso depende de `toStatus` (mismo criterio que
- * `transitionRiskMatrixAction` de MIPER): 'draft' es la devolución del
- * revisor, no una corrección del editor.
- */
-export async function transitionGrdMatrixAction(input: unknown): Promise<ActionState> {
-  const toStatus = typeof input === "object" && input && "toStatus" in input ? String(input.toStatus) : ""
-  const guard = await guardPermission(grdMatrixTransitionPermission(toStatus))
+export async function publishGrdMatrixAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:cgrd:matrix:publish")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => transitionGrdMatrix(input, access))
+  return run(accessFromSession(guard.session), (access) => publishGrdMatrix(input, access))
 }
 
-export async function scheduleGrdMeetingAction(input: unknown): Promise<ActionState> {
+export async function recordGrdMeetingAction(input: unknown): Promise<ActionState> {
   const guard = await guardPermission("prevention:cgrd:meeting:manage")
   if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => scheduleGrdMeeting(input, access))
-}
-
-export async function closeGrdMeetingAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:cgrd:meeting:manage")
-  if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => closeGrdMeeting(input, access))
-}
-
-export async function cancelGrdMeetingAction(input: unknown): Promise<ActionState> {
-  const guard = await guardPermission("prevention:cgrd:meeting:manage")
-  if (guard.error) return guard.error
-  return run(accessFromSession(guard.session), (access) => cancelGrdMeeting(input, access))
+  return run(accessFromSession(guard.session), (access) => recordGrdMeeting(input, access))
 }

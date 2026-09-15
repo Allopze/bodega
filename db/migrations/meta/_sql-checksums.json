@@ -290,5 +290,7 @@
   "0288_cap002_per002_ack_sin_cuenta": "9cf2377b080898687354f1ee5c5593ae5a0ca2865a6984c200f38164dc176664",
   "0289_cot004_quotation_mime_type": "430167592018c5c9340a90f5dc2149201d94e41339970f33df2ad220335d15d8",
   "0290_cat003_product_unit_fk": "f2f55ffd214c0d95788380b4c9ca98b5691139f7bec88d3e73acff6761b0f4c2",
-  "0291_training_occurrences_simplification": "88d179b0718ed20a2899a449ccd857995b2de6fed4b86fb50b156a574f210f64"
+  "0291_training_occurrences_simplification": "88d179b0718ed20a2899a449ccd857995b2de6fed4b86fb50b156a574f210f64",
+  "0292_prevention_cgrd_simplification": "90c04aeed7b9fa272fc4cd49ab1c84ff784877d507b7409a4789b80cc8f31cc5",
+  "0293_prevention_cgrd_evidence": "3c15195beb497705dd1f09fe1de0d847f700d039cd71b00e05b315a137cefce1"
 }

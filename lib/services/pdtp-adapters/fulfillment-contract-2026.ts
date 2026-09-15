@@ -231,15 +231,12 @@ export const PDTP_2026_ENGANCHE_DESTINATIONS: Readonly<Record<number, EngancheDe
     module: "cgrd",
     permission: "prevention:cgrd:matrix:publish",
     href: (w) => `/prevencion/cgrd?faena=${w}`,
-    /* Cuatro permisos y cuatro firmas, ahora sí: `transitionGrdMatrix` compara
-     * usuarios en los cuatro pasos —crear ≠ revisar ≠ aprobar ≠ publicar—. La
-     * cuarta comparación se agregó junto con la firma de la jefatura de
-     * Prevención: sin ella, darle `approve` y `publish` al mismo rol que ya
-     * tenía `edit` habría dejado la cadena entera en una sola persona.
-     *
-     * La única excepción es `prevention:sign_own_work`, y va por cargo y a la
-     * vista en el manifiesto, no escondida en el servicio. */
-    segregated: "La matriz GRD tiene cuatro firmas segregadas por actor: crear, revisar, aprobar y publicar son cuatro personas distintas.",
+    /* Simplificación 2026-09-14: `publishGrdMatrix` es un solo acto —sin
+     * revisión ni aprobación intermedias—, pero sigue sin ser de quien edita.
+     * El reparto del manifiesto le da `matrix:edit` al PRF y `matrix:publish`
+     * a jefatura/administrador: la segregación queda en el permiso, no en una
+     * comparación de usuarios dentro del servicio. */
+    segregated: "Quien crea la versión de la matriz GRD y agrega sus amenazas (PRF) no tiene el permiso para publicarla: la publicación es de jefatura o administrador.",
   },
   81: { module: "cgrd", permission: "prevention:cgrd:meeting:manage", href: (w) => `/prevencion/cgrd?faena=${w}` },
 
