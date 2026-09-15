@@ -184,6 +184,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/trazabilidad-export-scope.test.ts",
   "lib/__tests__/trazabilidad-item.test.ts",
   "lib/__tests__/traceability-integrity-cases.test.ts",
+  "lib/__tests__/sst-document-taxonomy-pglite.test.ts",
   // ── Módulo TI ─────────────────────────────────────────────────────────────
   "lib/__tests__/ti-assets-pglite.test.ts",
   "lib/__tests__/ti-asset-types-pglite.test.ts",

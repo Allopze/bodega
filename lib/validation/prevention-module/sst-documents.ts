@@ -131,7 +131,11 @@ export const sstDocumentCategoryUpsertSchema = z.object({
 
 export const sstDocumentTypeUpsertSchema = z.object({
   id:            z.string().optional().or(z.literal("")),
-  categorySlug:  z.enum(SST_DOCUMENT_CATEGORY_SLUGS),
+  // La fuente de verdad de las categorías es la tabla `sst_document_categories`,
+  // que el admin puede extender (p. ej. `procedimientos_operacionales_audit`):
+  // un enum cerrado rechazaría esas categorías reales. Acá se valida el formato
+  // y `upsertDocumentType` verifica la existencia contra la tabla.
+  categorySlug:  z.string().trim().min(1).max(60).regex(/^[a-z][a-z0-9_]*$/, "Categoría inválida"),
   code:          z.string().trim().min(1).max(40),
   name:          z.string().trim().min(1).max(160),
   description:   z.string().max(500).optional().or(z.literal("")),
