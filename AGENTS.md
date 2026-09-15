@@ -657,12 +657,19 @@ The key distinction:
 - **Text search** → TopBar handles it (via `searchQuery` / `DataTable`)
 - **Structured filters** → Page handles them locally (dropdowns, dates, toggles)
 
-## Server-side search (rare)
+## Routes that own their search
 
-A few routes need server-side search because the dataset is too large for
-client-side filtering or requires DB-level queries. These routes are listed
-in `ROUTES_WITH_OWN_SEARCH` in `top-bar.tsx`, which hides the TopBar search
-input so users don't see two search bars with different behavior.
+`ROUTES_WITH_OWN_SEARCH` in `top-bar.tsx` hides the TopBar input so users
+don't see two search bars with different behavior. A route belongs there for
+one of two reasons:
+
+1. **Server-side search** — the dataset is too large for client-side
+   filtering or needs DB-level queries.
+2. **More than one `DataTable` on the page** — the TopBar input can only feed
+   one of them, so the others would need local inputs and the user would have
+   no way to tell which box filters which table. Give every table on the page
+   its own labelled input instead (e.g. `/admin/taxonomia-sst`, with
+   "Buscar categorías..." and "Buscar tipos...").
 
 If your page needs server-side search:
 1. Add the route prefix to `ROUTES_WITH_OWN_SEARCH`
