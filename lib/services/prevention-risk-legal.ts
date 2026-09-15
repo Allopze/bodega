@@ -1247,8 +1247,8 @@ export async function linkPdtpActivitySource(input: unknown, access: RiskLegalAc
       sourceVersionSnapshot = `${source.code} · ${source.occurredOn}`
     } else if (data.sourceType === "campana") {
       // Único tipo con catálogo que quedaba sin verificar pertenencia a faena.
-      const [source] = await tx.select().from(preventionCampaigns).where(and(eq(preventionCampaigns.id, data.sourceId), eq(preventionCampaigns.worksiteId, data.worksiteId), ne(preventionCampaigns.status, "cancelled"))).limit(1)
-      if (!source) throw new Error("Campaña no encontrada, cancelada o fuera de alcance.")
+      const [source] = await tx.select().from(preventionCampaigns).where(and(eq(preventionCampaigns.id, data.sourceId), eq(preventionCampaigns.worksiteId, data.worksiteId))).limit(1)
+      if (!source) throw new Error("Campaña no encontrada o fuera de alcance.")
       sourceVersionSnapshot = source.code
     }
     const [created] = await tx.insert(preventionPdtpSourceLinks).values({

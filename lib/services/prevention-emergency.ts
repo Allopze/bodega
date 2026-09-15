@@ -652,7 +652,7 @@ export async function completeEmergencyDrill(input: unknown, access: EmergencyAc
 
     // Los participantes no se validaban: entraba gente de otra faena, inactiva,
     // inexistente o repetida. Misma regla de pertenencia que `addEmergencyRole`,
-    // pero en UNA consulta en lote (patrón de `recordCampaignAttendance`), no N+1.
+    // pero en UNA consulta en lote, no N+1.
     // Va antes de assessDrillCompletion porque un duplicado inflaría el conteo
     // de presentes que decide si el simulacro puede cerrarse.
     const participantIds = data.participants.map((item) => item.workerId)

@@ -4,7 +4,6 @@ import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -26,31 +25,15 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/admin/sheet"
-import {
   closeCampaignAction,
   createCampaignAction,
-  recordCampaignAttendanceAction,
   setCampaignPdtpActivitiesAction,
 } from "./actions"
 import { PDTP_CAMPAIGN_ACTIVITIES } from "@/lib/services/prevention-campaigns.catalog"
 import type { preventionCampaigns } from "@/db/schema"
 
-export type CampaignWithStats = typeof preventionCampaigns.$inferSelect & {
+export type CampaignRow = typeof preventionCampaigns.$inferSelect & {
   worksiteName: string
-  attendanceCount: number
-}
-
-interface WorkerItem {
-  id: string
-  name: string
-  rut: string
-  worksiteId: string
 }
 
 interface WorksitesItem {
@@ -60,16 +43,14 @@ interface WorksitesItem {
 }
 
 interface CampanasClientProps {
-  initialCampaigns: CampaignWithStats[]
+  initialCampaigns: CampaignRow[]
   worksites: WorksitesItem[]
-  workers: WorkerItem[]
   canManage: boolean
 }
 
 export function CampanasClient({
   initialCampaigns,
   worksites,
-  workers,
   canManage,
 }: CampanasClientProps) {
   const router = useRouter()
@@ -78,15 +59,13 @@ export function CampanasClient({
 
   // Modals state
   const [isCreateOpen, setIsCreateOpen] = useState(false)
-  const [attendanceCampaign, setAttendanceCampaign] = useState<CampaignWithStats | null>(null)
-  const [closeCampaignItem, setCloseCampaignItem] = useState<CampaignWithStats | null>(null)
+  const [doneCampaignItem, setDoneCampaignItem] = useState<CampaignRow | null>(null)
 
   // Form states
   const [newTitle, setNewTitle] = useState("")
   const [newDescription, setNewDescription] = useState("")
   const [newWorksiteId, setNewWorksiteId] = useState("")
   const [newActivity, setNewActivity] = useState("")
-  const [selectedWorkerIds, setSelectedWorkerIds] = useState<string[]>([])
   const [evidenceUrl, setEvidenceUrl] = useState("")
 
   const handleCreate = () => {
@@ -116,7 +95,7 @@ export function CampanasClient({
   }
 
   /** El número declarado, o el primero si la campaña declara más de uno. */
-  const activityOf = (campaign: CampaignWithStats): number => {
+  const activityOf = (campaign: CampaignRow): number => {
     const numbers = campaign.pdtpActivityNumbers
     return Array.isArray(numbers) && numbers.length > 0 ? Number(numbers[0]) : 85
   }
@@ -133,34 +112,16 @@ export function CampanasClient({
     })
   }
 
-  const handleRecordAttendance = () => {
-    if (!attendanceCampaign || selectedWorkerIds.length === 0) return
-    setError(null)
-    startTransition(async () => {
-      const res = await recordCampaignAttendanceAction({
-        campaignId: attendanceCampaign.id,
-        workerIds: selectedWorkerIds,
-      })
-      if (res.ok) {
-        setAttendanceCampaign(null)
-        setSelectedWorkerIds([])
-        router.refresh()
-      } else {
-        setError(res.message ?? "Ocurrió un error")
-      }
-    })
-  }
-
-  const handleCloseCampaign = () => {
-    if (!closeCampaignItem) return
+  const handleMarkDone = () => {
+    if (!doneCampaignItem || !evidenceUrl.trim()) return
     setError(null)
     startTransition(async () => {
       const res = await closeCampaignAction({
-        campaignId: closeCampaignItem.id,
-        evidenceUrl: evidenceUrl.trim() || undefined,
+        campaignId: doneCampaignItem.id,
+        evidenceUrl: evidenceUrl.trim(),
       })
       if (res.ok) {
-        setCloseCampaignItem(null)
+        setDoneCampaignItem(null)
         setEvidenceUrl("")
         if (res.data?.pdtpPending === true) setError(res.message ?? null)
         router.refresh()
@@ -170,15 +131,11 @@ export function CampanasClient({
     })
   }
 
-  const workersInWorksite = attendanceCampaign
-    ? workers.filter((w) => w.worksiteId === attendanceCampaign.worksiteId)
-    : []
-
   return (
     <div className="space-y-6">
       <PageHeader
         title="Campañas Preventivas (R9)"
-        description="Registro de difusiones masivas y auto-acreditación PDTP por trabajadores alcanzados"
+        description="Se hizo / no se hizo, con evidencia de difusión — auto-acredita el PDTP"
         actions={
           canManage ? (
             <Button onClick={() => setIsCreateOpen(true)} className="bg-[var(--color-primary)] text-white">
@@ -216,7 +173,7 @@ export function CampanasClient({
                 <TableRow>
                   <TableHead>Código</TableHead><TableHead>Título / Descripción</TableHead><TableHead>Faena</TableHead>
                   <TableHead>Acredita</TableHead>
-                  <TableHead>Asistentes</TableHead><TableHead>Estado</TableHead><TableHead className="text-right">Acciones</TableHead>
+                  <TableHead>Estado</TableHead><TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -233,10 +190,10 @@ export function CampanasClient({
                     </TableCell>
                     <TableCell className="text-[var(--color-text-muted)]">{cmp.worksiteName}</TableCell>
                     <TableCell>
-                      {/* Corregible mientras no esté cerrada: una campaña completada ya
+                      {/* Corregible mientras no esté hecha: una campaña hecha ya
                           acreditó, y cambiarle el número dejaría la ejecución apuntando a
                           otra actividad. */}
-                      {canManage && cmp.status !== "completed" && cmp.status !== "cancelled" ? (
+                      {canManage && cmp.status !== "done" ? (
                         <Select
                           value={String(activityOf(cmp))}
                           onValueChange={(value) => handleSetActivity(cmp.id, value)}
@@ -258,35 +215,19 @@ export function CampanasClient({
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="font-semibold text-[var(--color-primary-ink)]">
-                      {cmp.attendanceCount} trabajadores
-                    </TableCell>
                     <TableCell>
-                      {cmp.status === "active" && <MetaBadge meta={{ label: "Activa", variant: "primary" }} />}
-                      {cmp.status === "completed" && <MetaBadge meta={{ label: "Completada", variant: "success" }} />}
-                      {cmp.status === "cancelled" && <MetaBadge meta={{ label: "Cancelada", variant: "danger" }} />}
+                      {cmp.status === "pending" && <MetaBadge meta={{ label: "Pendiente", variant: "warning" }} />}
+                      {cmp.status === "done" && <MetaBadge meta={{ label: "Hecha", variant: "success" }} />}
                     </TableCell>
                     <TableCell className="text-right space-x-2">
-                      {canManage && cmp.status === "active" && (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => {
-                              setAttendanceCampaign(cmp)
-                              setSelectedWorkerIds([])
-                            }}
-                          >
-                            + Asistencia
-                          </Button>
-                          <Button
-                            size="sm"
-                            className="bg-[var(--color-success-ink)] text-white hover:bg-[var(--color-success-ink)]/90"
-                            onClick={() => setCloseCampaignItem(cmp)}
-                          >
-                            Cerrar Campaña
-                          </Button>
-                        </>
+                      {canManage && cmp.status === "pending" && (
+                        <Button
+                          size="sm"
+                          className="bg-[var(--color-success-ink)] text-white hover:bg-[var(--color-success-ink)]/90"
+                          onClick={() => setDoneCampaignItem(cmp)}
+                        >
+                          Marcar como hecha
+                        </Button>
                       )}
                     </TableCell>
                   </TableRow>
@@ -345,10 +286,6 @@ export function CampanasClient({
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-[var(--color-text-muted)]">
-                Antes quedaba fijo en la N°85, así que las otras cuatro campañas del programa no se podían
-                declarar desde acá. Se puede corregir mientras la campaña no esté cerrada.
-              </p>
             </div>
             <div className="space-y-1.5">
               <Label>Descripción / Alcance (Opcional)</Label>
@@ -370,74 +307,18 @@ export function CampanasClient({
         </DialogContent>
       </Dialog>
 
-      {/* Sheet Asistencia */}
-      <Sheet open={!!attendanceCampaign} onOpenChange={(open: boolean) => !open && setAttendanceCampaign(null)}>
-        <SheetContent className="sm:max-w-[500px] overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>Registrar Asistencia: {attendanceCampaign?.code}</SheetTitle>
-            <SheetDescription>
-              Selecciona los trabajadores que participaron en la actividad de difusión en {attendanceCampaign?.worksiteName}.
-            </SheetDescription>
-          </SheetHeader>
-          <div className="py-4 space-y-3">
-            <div className="text-xs text-[var(--color-text-muted)] font-medium">
-              Trabajadores activos en la faena ({workersInWorksite.length}):
-            </div>
-            <div className="max-h-[350px] overflow-y-auto divide-y divide-[var(--color-border)] rounded-md border border-[var(--color-border)] p-2">
-              {workersInWorksite.length === 0 ? (
-                <div className="p-4 text-center text-xs text-[var(--color-text-muted)]">
-                  No hay trabajadores registrados en esta faena.
-                </div>
-              ) : (
-                workersInWorksite.map((w) => {
-                  const isChecked = selectedWorkerIds.includes(w.id)
-                  return (
-                    <div key={w.id} className="rounded-md p-2 hover:bg-[var(--color-surface-hover)]">
-                      <Checkbox
-                        checked={isChecked}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedWorkerIds([...selectedWorkerIds, w.id])
-                          } else {
-                            setSelectedWorkerIds(selectedWorkerIds.filter((id) => id !== w.id))
-                          }
-                        }}
-                        label={<>
-                          <span className="block text-sm font-medium text-[var(--color-text)]">{w.name}</span>
-                          <span className="block text-xs text-[var(--color-text-muted)]">RUT: {w.rut}</span>
-                        </>}
-                      />
-                    </div>
-                  )
-                })
-              )}
-            </div>
-            <div className="pt-2 flex justify-between items-center text-xs text-[var(--color-text-muted)]">
-              <span>{selectedWorkerIds.length} seleccionados</span>
-              <Button
-                size="sm"
-                onClick={handleRecordAttendance}
-                disabled={isPending || selectedWorkerIds.length === 0}
-              >
-                {isPending ? "Guardando..." : "Guardar Asistencia"}
-              </Button>
-            </div>
-          </div>
-        </SheetContent>
-      </Sheet>
-
-      {/* Dialog Cerrar Campaña */}
-      <Dialog open={!!closeCampaignItem} onOpenChange={(open) => !open && setCloseCampaignItem(null)}>
+      {/* Dialog Marcar como hecha */}
+      <Dialog open={!!doneCampaignItem} onOpenChange={(open) => !open && setDoneCampaignItem(null)}>
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
-            <DialogTitle>Cerrar Campaña Preventiva</DialogTitle>
+            <DialogTitle>Marcar Campaña como Hecha</DialogTitle>
             <DialogDescription>
-              Al completar la campaña se gatillará automáticamente la auto-acreditación en PDTP acreditando {closeCampaignItem?.attendanceCount} trabajadores, si la campaña declara actividades PDTP.
+              Se gatillará automáticamente la auto-acreditación en PDTP, si la campaña declara actividades PDTP.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label>Link de Evidencia / Acta Firmada (Opcional)</Label>
+              <Label>Evidencia de difusión (foto, lista de asistencia, acta)</Label>
               <Input
                 placeholder="https://... o referencia de documento"
                 value={evidenceUrl}
@@ -446,15 +327,15 @@ export function CampanasClient({
             </div>
           </div>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setCloseCampaignItem(null)}>
+            <Button variant="secondary" onClick={() => setDoneCampaignItem(null)}>
               Cancelar
             </Button>
             <Button
               className="bg-[var(--color-success-ink)] text-white hover:bg-[var(--color-success-ink)]/90"
-              onClick={handleCloseCampaign}
-              disabled={isPending}
+              onClick={handleMarkDone}
+              disabled={isPending || !evidenceUrl.trim()}
             >
-              {isPending ? "Cerrando..." : "Confirmar Cierre y Acreditar PDTP"}
+              {isPending ? "Guardando..." : "Confirmar y Acreditar PDTP"}
             </Button>
           </DialogFooter>
         </DialogContent>

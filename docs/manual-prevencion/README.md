@@ -51,7 +51,7 @@ PREVENCIÓN
 │   ├── Acciones correctivas (/prevencion/capa) -> Planes de acción y verificación de eficacia
 │   ├── Incidentes y accidentes (/prevencion/incidentes) -> Flujo legal RE-20 y DIAT
 │   ├── Requisitos de EPP (/prevencion/epp-preventivo) -> Cruce de dotación vs. entregas de bodega
-│   ├── Campañas preventivas -> Incluidas en el catálogo anual de Capacitación; la ruta antigua queda para compatibilidad histórica
+│   ├── Campañas preventivas (/prevencion/campanas) -> Se hizo / no se hizo, con evidencia de difusión (N°85-89)
 │   ├── Emergencias (/prevencion/emergencias) -> Planes, brigadas, extintores y simulacros
 │   ├── Comités paritarios (/prevencion/cphs) -> Actas, reuniones y certificación Mutual
 │   └── Gestión de riesgos de desastres (/prevencion/cgrd) -> Comité y matriz de amenazas DS 44

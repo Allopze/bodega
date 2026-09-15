@@ -1,11 +1,7 @@
-import { and, eq, inArray } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import { z } from "zod"
 import { db } from "@/db"
-import {
-  preventionCampaignAttendance,
-  preventionCampaigns,
-  workers,
-} from "@/db/schema"
+import { preventionCampaigns } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
@@ -62,8 +58,7 @@ export async function createCampaign(input: unknown, access: CampaignAccess) {
     title: data.title,
     description: data.description ?? null,
     pdtpActivityNumbers: data.pdtpActivityNumbers,
-    status: "active",
-    startedAt: now,
+    status: "pending",
     createdByUserId: access.userId,
     createdAt: now,
     updatedAt: now,
@@ -73,31 +68,15 @@ export async function createCampaign(input: unknown, access: CampaignAccess) {
 }
 
 /**
- * La evidencia de una campaña, bajo el contrato único (`P4`). Opcional, pero no
- * "cualquier cosa": una ruta del storage de campañas —con su checksum implícito
- * en la subida— o una URL http/https alcanzable.
+ * La evidencia de una campaña, bajo el contrato único (`P4`). Una ruta del
+ * storage de campañas —con su checksum implícito en la subida— o una URL
+ * http/https alcanzable. Obligatoria al marcar la campaña como hecha: una
+ * campaña sin evidencia no es oponible ante un fiscalizador.
  */
-const campaignEvidenceSchema = z.string().trim().optional().refine(
-  (value) => {
-    if (!value) return true
-    if (evidencePathSchema().safeParse(value).success) return true
-    return checkEvidence({ kind: "url", reference: value }).length === 0
-  },
+const campaignEvidenceSchema = z.string().trim().min(1, "Adjunta la evidencia de difusión de la campaña.").refine(
+  (value) => evidencePathSchema().safeParse(value).success || checkEvidence({ kind: "url", reference: value }).length === 0,
   "La evidencia debe ser un archivo subido a la campaña o una URL http/https",
 )
-
-const attendanceRecordSchema = z.object({
-  campaignId: z.string().min(1),
-  workerIds: z.array(z.string().min(1)),
-  /*
-   * EMG-002 (auditoría 2026-09-14), patrón P4: era `z.string().optional()` —sin
-   * longitud, sin formato, sin comprobar nada—, y ese texto viajaba como
-   * evidencia a la acreditación PDTP. Sigue siendo opcional (el registro de
-   * asistencia vale por sí mismo), pero si se declara algo tiene que ser una
-   * evidencia de verdad: una ruta del storage de campañas o una URL navegable.
-   */
-  evidenceRef: campaignEvidenceSchema,
-})
 
 /**
  * Las cinco campañas que el programa 2026 planifica, con la actividad que cada
@@ -117,9 +96,9 @@ const setCampaignActivitySchema = z.object({
  * Corrige qué actividad del PDTP acredita una campaña.
  *
  * Existe porque el número se declaraba sólo al crear y sin editor posterior: una
- * campaña mal declarada obligaba a borrarla y rehacerla, perdiendo su registro de
- * asistencia. Sólo antes de cerrarla: una campaña completada ya acreditó, y
- * cambiarle el número después dejaría la ejecución apuntando a otra actividad.
+ * campaña mal declarada obligaba a borrarla y rehacerla. Sólo antes de marcarla
+ * hecha: una campaña ya hecha acreditó, y cambiarle el número después dejaría
+ * la ejecución apuntando a otra actividad.
  */
 export async function setCampaignPdtpActivities(input: unknown, access: CampaignAccess) {
   const data = setCampaignActivitySchema.parse(input)
@@ -127,8 +106,8 @@ export async function setCampaignPdtpActivities(input: unknown, access: Campaign
     .where(eq(preventionCampaigns.id, data.campaignId)).limit(1)
   if (!campaign) throw new CampaignDomainError("Campaña no encontrada.")
   requireAccess(access, "prevention:campaign:manage", campaign.worksiteId)
-  if (campaign.status === "completed") {
-    throw new CampaignDomainError("La campaña ya está cerrada y acreditó su actividad: no se puede cambiar cuál acredita.")
+  if (campaign.status === "done") {
+    throw new CampaignDomainError("La campaña ya está hecha y acreditó su actividad: no se puede cambiar cuál acredita.")
   }
 
   const [updated] = await db.update(preventionCampaigns)
@@ -138,79 +117,36 @@ export async function setCampaignPdtpActivities(input: unknown, access: Campaign
   return updated
 }
 
-export async function recordCampaignAttendance(input: unknown, access: CampaignAccess) {
-  const data = attendanceRecordSchema.parse(input)
-  const [campaign] = await db.select().from(preventionCampaigns).where(eq(preventionCampaigns.id, data.campaignId)).limit(1)
-  if (!campaign) throw new CampaignDomainError(NOT_FOUND)
-  requireAccess(access, "prevention:campaign:manage", campaign.worksiteId)
-
-  if (data.workerIds.length > 0) {
-    const valid = await db.select({ id: workers.id }).from(workers).where(and(
-      inArray(workers.id, data.workerIds),
-      eq(workers.worksiteId, campaign.worksiteId),
-      eq(workers.isActive, true),
-    ))
-    const ok = new Set(valid.map((w) => w.id))
-    const rejected = data.workerIds.filter((id) => !ok.has(id))
-    if (rejected.length > 0) {
-      throw new CampaignDomainError(`${rejected.length} persona(s) no pertenecen a la faena de la campaña o están inactivas.`)
-    }
-  }
-
-  const now = new Date().toISOString()
-  const rows = data.workerIds.map((workerId) => ({
-    id: `cmpatt-${nanoid()}`,
-    campaignId: campaign.id,
-    workerId,
-    evidenceRef: data.evidenceRef ?? null,
-    attendedAt: now,
-    createdAt: now,
-  }))
-
-  if (rows.length > 0) {
-    await db.insert(preventionCampaignAttendance)
-      .values(rows)
-      .onConflictDoNothing()
-  }
-
-  return { campaignId: campaign.id, recordedCount: rows.length }
-}
-
-const campaignCloseSchema = z.object({
+const campaignCompleteSchema = z.object({
   campaignId: z.string().min(1),
-  // EMG-002: mismo contrato que la asistencia. Este valor es el que llega a la
-  // acreditación PDTP como respaldo de la campaña.
   evidenceUrl: campaignEvidenceSchema,
 })
 
 /**
- * Cierra una campaña preventiva (R9) y dispara la auto-acreditación PDTP
- * para sus actividades (ej. 85-89) con el total de trabajadores alcanzados.
+ * Marca una campaña preventiva como hecha (R9) y dispara la auto-acreditación
+ * PDTP para las actividades que declara (ej. 85-89).
  */
 export async function closeCampaign(input: unknown, access: CampaignAccess) {
-  const data = campaignCloseSchema.parse(input)
+  const data = campaignCompleteSchema.parse(input)
   const [campaign] = await db.select().from(preventionCampaigns).where(eq(preventionCampaigns.id, data.campaignId)).limit(1)
   if (!campaign) throw new CampaignDomainError(NOT_FOUND)
   requireAccess(access, "prevention:campaign:manage", campaign.worksiteId)
 
-  if (campaign.status === "completed") throw new CampaignDomainError("La campaña ya fue completada.")
-  if (campaign.status === "cancelled") throw new CampaignDomainError("Una campaña cancelada no puede cerrarse.")
-
-  const attendance = await db.select().from(preventionCampaignAttendance)
-    .where(eq(preventionCampaignAttendance.campaignId, campaign.id))
+  if (campaign.status === "done") throw new CampaignDomainError("La campaña ya está marcada como hecha.")
 
   const now = new Date().toISOString()
   const [updated] = await db.update(preventionCampaigns)
     .set({
-      status: "completed",
+      status: "done",
       completedAt: now,
-      evidenceUrl: data.evidenceUrl ?? campaign.evidenceUrl,
+      completedByUserId: access.userId,
+      evidenceUrl: data.evidenceUrl,
       updatedAt: now,
     })
     .where(eq(preventionCampaigns.id, campaign.id))
     .returning()
 
-  if (!updated) throw new Error("No se pudo completar la campaña.")
+  if (!updated) throw new Error("No se pudo marcar la campaña como hecha.")
 
   // Auto-acreditación PDTP por la capa durable. Sin actividades declaradas en
   // la campaña es no-op: no inventamos un número por defecto para no acreditar
@@ -218,15 +154,13 @@ export async function closeCampaign(input: unknown, access: CampaignAccess) {
   //
   // Pasa por `recordPdtpFulfillmentEvent` y no por `accreditPdtpFromEvent` a
   // secas: el motor lanza cuando el programa está en borrador o la faena queda
-  // fuera de él, y con el `try/catch` que había antes esos cierres se perdían
-  // en un `logger.error`, sin fila que `reconcilePdtpFulfillmentEvents` pudiera
-  // recuperar al activar el programa. Era el último llamador con ese patrón.
+  // fuera de él, y con un `try/catch` esos cierres se perderían en un
+  // `logger.error`, sin fila que `reconcilePdtpFulfillmentEvents` pudiera
+  // recuperar al activar el programa.
   //
   // `pdtpPending` separa "no había nada que acreditar" de "había y todavía no
   // pudo": el primero no es un problema y el segundo tampoco obliga a marcar a
-  // mano, porque el evento quedó registrado. Decirle "acredita manualmente" a
-  // quien ya tiene su cumplimiento en la fila de reconciliación produce una
-  // ejecución duplicada.
+  // mano, porque el evento quedó registrado.
   let pdtpAccredited = false
   let pdtpPending = false
   const activityNumbers = Array.isArray(campaign.pdtpActivityNumbers) ? campaign.pdtpActivityNumbers : []
@@ -237,12 +171,12 @@ export async function closeCampaign(input: unknown, access: CampaignAccess) {
       worksiteId: campaign.worksiteId,
       activityNumbers,
       occurredAt: now,
-      executedQuantity: Math.max(1, attendance.length),
-      evidenceRef: data.evidenceUrl ?? `Campaña preventiva: ${campaign.code}`,
+      executedQuantity: 1,
+      evidenceRef: data.evidenceUrl,
     })
     pdtpAccredited = (result?.accredited.length ?? 0) > 0
     pdtpPending = !pdtpAccredited
   }
 
-  return { campaign: updated, reachedWorkers: attendance.length, pdtpAccredited, pdtpPending }
+  return { campaign: updated, pdtpAccredited, pdtpPending }
 }
