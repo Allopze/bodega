@@ -44,18 +44,14 @@ afterAll(async () => {
 
 const USER_ID = "u-cmp-1"
 const WS_ID = "ws-cmp-1"
-const WORKER_1 = "wrk-cmp-1"
-const WORKER_2 = "wrk-cmp-2"
 const PROGRAM_ID = "pdtp-cmp-prog"
 
 beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
   await inMemoryDb.delete(schema.pdtpExecutions)
-  await inMemoryDb.delete(schema.preventionCampaignAttendance)
   await inMemoryDb.delete(schema.preventionCampaigns)
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpPrograms)
-  await inMemoryDb.delete(schema.workers)
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
 
@@ -70,24 +66,6 @@ beforeEach(async () => {
     id: WS_ID,
     name: "Faena Campañas",
     code: "FCMP",
-    isActive: true,
-  })
-
-  await inMemoryDb.insert(schema.workers).values({
-    id: WORKER_1,
-    worksiteId: WS_ID,
-    rut: "11.111.111-1",
-    firstName: "Juan",
-    lastName: "Pérez",
-    isActive: true,
-  })
-
-  await inMemoryDb.insert(schema.workers).values({
-    id: WORKER_2,
-    worksiteId: WS_ID,
-    rut: "22.222.222-2",
-    firstName: "Maria",
-    lastName: "Gomez",
     isActive: true,
   })
 
@@ -125,14 +103,14 @@ beforeEach(async () => {
   })
 })
 
-describe("Prevention Campaigns Service (R9)", () => {
+describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
   const access: CampaignAccess = {
     userId: USER_ID,
     scope: { mode: "all", ids: [] },
     permissions: ["prevention:campaign:view", "prevention:campaign:manage"],
   }
 
-  it("crea una campaña preventiva activa", async () => {
+  it("crea una campaña preventiva pendiente", async () => {
     const { createCampaign } = await import("@/lib/services/prevention-campaigns")
 
     const created = await createCampaign({
@@ -143,7 +121,7 @@ describe("Prevention Campaigns Service (R9)", () => {
     }, access)
 
     expect(created!.id).toBeDefined()
-    expect(created!.status).toBe("active")
+    expect(created!.status).toBe("pending")
 
     const rows = await inMemoryDb.select().from(schema.preventionCampaigns)
       .where(eq(schema.preventionCampaigns.worksiteId, WS_ID))
@@ -151,8 +129,8 @@ describe("Prevention Campaigns Service (R9)", () => {
     expect(rows[0]!.title).toBe("Campaña Uso Correcto de EPP")
   })
 
-  it("registra asistencia y al cerrar la campaña auto-acredita en PDTP (R9)", async () => {
-    const { createCampaign, recordCampaignAttendance, closeCampaign } = await import("@/lib/services/prevention-campaigns")
+  it("marca la campaña como hecha con evidencia y auto-acredita en PDTP (R9)", async () => {
+    const { createCampaign, closeCampaign } = await import("@/lib/services/prevention-campaigns")
 
     const campaign = await createCampaign({
       worksiteId: WS_ID,
@@ -160,17 +138,13 @@ describe("Prevention Campaigns Service (R9)", () => {
       pdtpActivityNumbers: [85],
     }, access)
 
-    await recordCampaignAttendance({
-      campaignId: campaign!.id,
-      workerIds: [WORKER_1, WORKER_2],
-    }, access)
-
     const result = await closeCampaign({
       campaignId: campaign!.id,
+      evidenceUrl: "https://drive.chome.cl/acta-campana",
     }, access)
 
-    expect(result.campaign!.status).toBe("completed")
-    expect(result.reachedWorkers).toBe(2)
+    expect(result.campaign!.status).toBe("done")
+    expect(result.campaign!.completedByUserId).toBe(USER_ID)
     expect(result.pdtpAccredited).toBe(true)
 
     // Verificar auto-acreditación PDTP
@@ -180,13 +154,15 @@ describe("Prevention Campaigns Service (R9)", () => {
     expect(executions).toHaveLength(1)
     expect(executions[0]!.origin).toBe("integration")
     expect(executions[0]!.sourceType).toBe("campana")
-    expect(executions[0]!.executedQuantity).toBe(2) // 2 trabajadores alcanzados
+    expect(executions[0]!.executedQuantity).toBe(1)
   })
 
   /**
-   * EMG-002 (auditoría 2026-09-14), patrón P4: `evidenceUrl` y `evidenceRef`
-   * eran `z.string().optional()` —sin longitud, sin formato, sin comprobar
-   * nada— y ese texto viajaba como evidencia a la acreditación PDTP.
+   * EMG-002 (auditoría 2026-09-14), patrón P4: `evidenceUrl` era
+   * `z.string().optional()` —sin longitud, sin formato, sin comprobar nada— y
+   * ese texto viajaba como evidencia a la acreditación PDTP. Tras la
+   * simplificación (2026-09-14) la evidencia además es obligatoria: una
+   * campaña no puede quedar `done` sin ella.
    */
   describe("EMG-002 — la evidencia de una campaña", () => {
     async function campañaAbierta(titulo: string) {
@@ -197,15 +173,13 @@ describe("Prevention Campaigns Service (R9)", () => {
       return campaign!.id
     }
 
-    it("sigue siendo opcional: el registro de asistencia vale por sí mismo", async () => {
-      const { recordCampaignAttendance, closeCampaign } = await import("@/lib/services/prevention-campaigns")
+    it("es obligatoria: no se puede marcar hecha sin evidencia", async () => {
+      const { closeCampaign } = await import("@/lib/services/prevention-campaigns")
       const id = await campañaAbierta("Campaña sin evidencia")
-      await recordCampaignAttendance({ campaignId: id, workerIds: [WORKER_1] }, access)
-      const result = await closeCampaign({ campaignId: id }, access)
-      expect(result.campaign!.status).toBe("completed")
+      await expect(closeCampaign({ campaignId: id, evidenceUrl: "" }, access)).rejects.toThrow()
     })
 
-    it("pero si se declara algo, tiene que ser evidencia de verdad", async () => {
+    it("si se declara, tiene que ser evidencia de verdad", async () => {
       const { closeCampaign } = await import("@/lib/services/prevention-campaigns")
       const id = await campañaAbierta("Campaña con texto suelto")
       await expect(closeCampaign({
@@ -226,20 +200,9 @@ describe("Prevention Campaigns Service (R9)", () => {
         campaignId: conArchivo, evidenceUrl: "storage/pdtp-evidence/acta-2026.pdf",
       }, access)).resolves.toBeTruthy()
     })
-
-    it("la asistencia sigue la misma regla", async () => {
-      const { recordCampaignAttendance } = await import("@/lib/services/prevention-campaigns")
-      const id = await campañaAbierta("Campaña asistencia")
-      await expect(recordCampaignAttendance({
-        campaignId: id, workerIds: [WORKER_1], evidenceRef: "lista firmada en papel",
-      }, access)).rejects.toThrow()
-      await expect(recordCampaignAttendance({
-        campaignId: id, workerIds: [WORKER_1], evidenceRef: "storage/pdtp-evidence/lista.pdf",
-      }, access)).resolves.toBeTruthy()
-    })
   })
 
-  it("cierra la campaña sin acreditar PDTP cuando no declara actividades (F-14)", async () => {
+  it("marca hecha sin acreditar PDTP cuando no declara actividades (F-14)", async () => {
     const { createCampaign, closeCampaign } = await import("@/lib/services/prevention-campaigns")
 
     const campaign = await createCampaign({
@@ -250,9 +213,10 @@ describe("Prevention Campaigns Service (R9)", () => {
 
     const result = await closeCampaign({
       campaignId: campaign!.id,
+      evidenceUrl: "https://drive.chome.cl/acta-campana",
     }, access)
 
-    expect(result.campaign!.status).toBe("completed")
+    expect(result.campaign!.status).toBe("done")
     expect(result.pdtpAccredited).toBe(false)
     // Sin actividades declaradas no hay nada pendiente: no debe avisarle nada
     // al operador.
@@ -265,11 +229,10 @@ describe("Prevention Campaigns Service (R9)", () => {
 
   /* Con el programa en borrador el motor lanza ("El programa … no está
    * activo"). Antes eso se perdía en un `logger.error` y no quedaba nada que
-   * reprocesar: las 35 campañas del 2026 se habrían cerrado en el vacío. El
-   * hecho tiene que sobrevivir como evento durable para que
+   * reprocesar. El hecho tiene que sobrevivir como evento durable para que
    * `reconcilePdtpFulfillmentEvents` lo recupere al activar el programa. */
   it("deja un evento durable reprocesable cuando el programa no está activo", async () => {
-    const { createCampaign, recordCampaignAttendance, closeCampaign } = await import("@/lib/services/prevention-campaigns")
+    const { createCampaign, closeCampaign } = await import("@/lib/services/prevention-campaigns")
 
     await inMemoryDb.update(schema.pdtpPrograms)
       .set({ status: "draft" })
@@ -281,12 +244,13 @@ describe("Prevention Campaigns Service (R9)", () => {
       pdtpActivityNumbers: [85],
     }, access)
 
-    await recordCampaignAttendance({ campaignId: campaign!.id, workerIds: [WORKER_1] }, access)
+    const result = await closeCampaign({
+      campaignId: campaign!.id,
+      evidenceUrl: "https://drive.chome.cl/acta-campana",
+    }, access)
 
-    const result = await closeCampaign({ campaignId: campaign!.id }, access)
-
-    // La campaña se cierra igual: el PDTP no manda sobre el módulo fuente.
-    expect(result.campaign!.status).toBe("completed")
+    // La campaña se marca hecha igual: el PDTP no manda sobre el módulo fuente.
+    expect(result.campaign!.status).toBe("done")
     expect(result.pdtpAccredited).toBe(false)
     // Declaró actividades y no acreditó: es el caso "queda pendiente", distinto
     // de "no había nada que acreditar".
@@ -303,39 +267,35 @@ describe("Prevention Campaigns Service (R9)", () => {
     expect(["pending", "error"]).toContain(events[0]!.status)
   })
 
-  it("rechaza asistencia de un trabajador de otra faena o inactivo (F-06)", async () => {
-    const { createCampaign, recordCampaignAttendance } = await import("@/lib/services/prevention-campaigns")
-
-    const OTHER_WS_ID = "ws-cmp-other"
-    const OTHER_WORKER_ID = "wrk-cmp-other"
-    await inMemoryDb.insert(schema.worksites).values({
-      id: OTHER_WS_ID,
-      name: "Otra Faena",
-      code: "FOTRA",
-      isActive: true,
-    })
-    await inMemoryDb.insert(schema.workers).values({
-      id: OTHER_WORKER_ID,
-      worksiteId: OTHER_WS_ID,
-      rut: "33.333.333-3",
-      firstName: "Pedro",
-      lastName: "Soto",
-      isActive: true,
-    })
+  it("no permite marcar hecha dos veces la misma campaña", async () => {
+    const { createCampaign, closeCampaign } = await import("@/lib/services/prevention-campaigns")
 
     const campaign = await createCampaign({
       worksiteId: WS_ID,
-      title: "Campaña con trabajador ajeno",
+      title: "Campaña doble cierre",
       pdtpActivityNumbers: [85],
     }, access)
 
-    await expect(recordCampaignAttendance({
-      campaignId: campaign!.id,
-      workerIds: [WORKER_1, OTHER_WORKER_ID],
-    }, access)).rejects.toThrow(/no pertenecen a la faena/i)
+    await closeCampaign({ campaignId: campaign!.id, evidenceUrl: "https://drive.chome.cl/acta-1" }, access)
 
-    const attendance = await inMemoryDb.select().from(schema.preventionCampaignAttendance)
-      .where(eq(schema.preventionCampaignAttendance.campaignId, campaign!.id))
-    expect(attendance).toHaveLength(0)
+    await expect(closeCampaign({
+      campaignId: campaign!.id, evidenceUrl: "https://drive.chome.cl/acta-2",
+    }, access)).rejects.toThrow(/ya está marcada como hecha/i)
+  })
+
+  it("no permite cambiar la actividad de una campaña ya hecha", async () => {
+    const { createCampaign, closeCampaign, setCampaignPdtpActivities } = await import("@/lib/services/prevention-campaigns")
+
+    const campaign = await createCampaign({
+      worksiteId: WS_ID,
+      title: "Campaña actividad fija",
+      pdtpActivityNumbers: [85],
+    }, access)
+
+    await closeCampaign({ campaignId: campaign!.id, evidenceUrl: "https://drive.chome.cl/acta" }, access)
+
+    await expect(setCampaignPdtpActivities({
+      campaignId: campaign!.id, pdtpActivityNumbers: [86],
+    }, access)).rejects.toThrow(/ya está hecha/i)
   })
 })

@@ -10,7 +10,6 @@ import {
   CampaignDomainError,
   closeCampaign,
   createCampaign,
-  recordCampaignAttendance,
   setCampaignPdtpActivities,
   type CampaignAccess,
 } from "@/lib/services/prevention-campaigns"
@@ -24,14 +23,9 @@ const createCampaignSchema = z.object({
   pdtpActivityNumbers: z.array(z.number().int().positive()).min(1, "Selecciona la actividad que acredita"),
 })
 
-const attendanceSchema = z.object({
-  campaignId: z.string().min(1),
-  workerIds: z.array(z.string().min(1)).min(1, "Selecciona al menos un trabajador"),
-})
-
 const closeCampaignSchema = z.object({
   campaignId: z.string().min(1),
-  evidenceUrl: z.string().trim().optional(),
+  evidenceUrl: z.string().trim().min(1, "Adjunta la evidencia de difusión de la campaña."),
 })
 
 async function getAccess(): Promise<CampaignAccess> {
@@ -86,18 +80,6 @@ export async function setCampaignPdtpActivitiesAction(formData: unknown): Promis
   }
 }
 
-export async function recordCampaignAttendanceAction(formData: unknown): Promise<ActionState> {
-  try {
-    const access = await getAccess()
-    const parsed = attendanceSchema.parse(formData)
-    const result = await recordCampaignAttendance(parsed, access)
-    revalidatePath("/prevencion/campanas")
-    return { ok: true, message: `${result.recordedCount} asistencia(s) registrada(s).` }
-  } catch (err: unknown) {
-    return campaignFailure(err, "recordCampaignAttendance")
-  }
-}
-
 export async function closeCampaignAction(formData: unknown): Promise<ActionState> {
   try {
     const access = await getAccess()
@@ -107,8 +89,8 @@ export async function closeCampaignAction(formData: unknown): Promise<ActionStat
     return {
       ok: true,
       message: result.pdtpPending
-        ? `Campaña cerrada con ${result.reachedWorkers} trabajador(es). El cumplimiento del PDTP quedó registrado y se acreditará solo cuando el programa lo admita; no la marques a mano.`
-        : `Campaña cerrada con ${result.reachedWorkers} trabajador(es) alcanzado(s).`,
+        ? "Campaña marcada como hecha. El cumplimiento del PDTP quedó registrado y se acreditará solo cuando el programa lo admita; no la marques a mano."
+        : "Campaña marcada como hecha.",
       data: { pdtpAccredited: result.pdtpAccredited, pdtpPending: result.pdtpPending },
     }
   } catch (err: unknown) {

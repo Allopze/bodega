@@ -25,9 +25,9 @@
  * - No crea planes de emergencia. Un plan lleva amenazas, escenarios y
  *   responsables: es contenido que Prevención redacta, no un catálogo. El script
  *   sólo declara la N°84 en los planes que ya existan.
- * - No registra asistencia ni completa campañas. Las crea en `draft`, que es
- *   materializar lo que el programa planificó, no declarar hecho lo que no se
- *   hizo. La evidencia y el padrón los pone quien la ejecuta.
+ * - No marca campañas como hechas. Las crea en `pending`, que es materializar
+ *   lo que el programa planificó, no declarar hecho lo que no se hizo. La
+ *   evidencia la pone quien la ejecuta.
  */
 
 import { eq, inArray } from "drizzle-orm"
@@ -322,7 +322,7 @@ async function applyCampaigns(actorUserId: string): Promise<number> {
           code,
           title: campaign.title,
           description: campaign.description,
-          status: "draft",
+          status: "pending",
           pdtpActivityNumbers: numbers,
           createdByUserId: actorUserId,
         }).onConflictDoNothing({ target: preventionCampaigns.code })
@@ -330,7 +330,7 @@ async function applyCampaigns(actorUserId: string): Promise<number> {
       changes++
     }
   }
-  console.log(`  ${changes === 0 ? "·" : "✓"} ${changes} campaña(s) creada(s) o corregida(s) en ${sites.length} faena(s), en estado borrador.`)
+  console.log(`  ${changes === 0 ? "·" : "✓"} ${changes} campaña(s) creada(s) o corregida(s) en ${sites.length} faena(s), pendiente(s).`)
   return changes
 }
 
