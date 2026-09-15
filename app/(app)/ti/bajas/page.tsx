@@ -10,9 +10,7 @@ import { PageContainer } from "@/components/ui/page-container"
 import { listRetirements } from "@/lib/services/ti/retirements"
 import { listAssetOptions } from "@/lib/services/ti/assets"
 import { RetirementTable } from "./retirement-table"
-import { RetirementSheet } from "./retirement-sheet"
-import { Button } from "@/components/ui/button"
-import { Archive } from "@phosphor-icons/react/dist/ssr"
+import { RetirementCta } from "./retirement-sheet"
 
 export const metadata: Metadata = { title: "Bajas TI" }
 
@@ -41,11 +39,7 @@ export default async function BajasPage() {
         description="Proceso formal de baja: el activo conserva su historial completo para siempre."
         breadcrumb={<Breadcrumbs items={[{ label: "TI", href: "/ti" }, { label: "Bajas" }]} />}
         actions={canManage ? (
-          <RetirementSheet
-            trigger={<Button variant="destructive"><Archive size={14} className="mr-1.5" /> Dar de baja</Button>}
-            assets={assetOptions}
-            users={techUsers}
-          />
+          <RetirementCta assets={assetOptions} users={techUsers} />
         ) : undefined}
       />
 

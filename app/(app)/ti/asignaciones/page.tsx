@@ -8,12 +8,10 @@ import { itAssetAssignments, itAssets, workers, worksites } from "@/db/schema"
 import { and, eq, asc } from "drizzle-orm"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
-import { Button } from "@/components/ui/button"
-import { Plus } from "@phosphor-icons/react/dist/ssr"
 import { listAssignments } from "@/lib/services/ti/assignments"
 import { listAssetOptions } from "@/lib/services/ti/assets"
 import { AssignmentsTable } from "./assignments-table"
-import { AssignmentSheet } from "./assignment-sheet"
+import { AssignmentCta } from "./assignment-sheet"
 
 export const metadata: Metadata = { title: "Asignaciones TI" }
 
@@ -53,16 +51,7 @@ export default async function AsignacionesPage({
         description="Custodia de equipos: entregas, devoluciones y transferencias con evidencia fotográfica y actas."
         breadcrumb={<Breadcrumbs items={[{ label: "TI", href: "/ti" }, { label: "Asignaciones" }]} />}
         actions={canManage ? (
-          <AssignmentSheet
-            trigger={
-              <Button>
-                <Plus size={14} className="mr-1.5" /> Nueva entrega
-              </Button>
-            }
-            workers={workersList}
-            worksites={worksitesList}
-            assets={assetOptions}
-          />
+          <AssignmentCta workers={workersList} worksites={worksitesList} assets={assetOptions} />
         ) : undefined}
       />
 

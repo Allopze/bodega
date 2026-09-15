@@ -16,6 +16,7 @@ import { Field, FieldGroup } from "@/components/ui/field"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { OptionSelect } from "@/components/ui/option-select"
+import { PencilSimple, Plus } from "@phosphor-icons/react"
 import { createAssetAction, updateAssetAction } from "./actions"
 import { IT_ASSET_STATUS_META } from "@/lib/services/ti/constants"
 import type { ItAssetFormData } from "@/lib/validation/ti"
@@ -190,5 +191,42 @@ export function AssetFormSheet({ trigger, assetTypes, suppliers, worksites, edit
         </form>
       </SheetContent>
     </Sheet>
+  )
+}
+
+/**
+ * CTA de alta del encabezado. El botón se construye acá, en el cliente, y no lo
+ * recibe la página: ver la nota de `SheetTrigger` en `@/components/ui/sheet`.
+ */
+export function NewAssetCta({
+  assetTypes,
+  suppliers,
+  worksites,
+}: Omit<AssetFormSheetProps, "trigger" | "editAsset">) {
+  return (
+    <AssetFormSheet
+      trigger={<Button><Plus size={14} className="mr-1.5" /> Nuevo activo</Button>}
+      assetTypes={assetTypes}
+      suppliers={suppliers}
+      worksites={worksites}
+    />
+  )
+}
+
+/** CTA de edición del encabezado del detalle. Misma razón que `NewAssetCta`. */
+export function EditAssetCta({
+  assetTypes,
+  suppliers,
+  worksites,
+  editAsset,
+}: Omit<AssetFormSheetProps, "trigger"> & { editAsset: ItAssetFormData & { id: string } }) {
+  return (
+    <AssetFormSheet
+      trigger={<Button variant="secondary"><PencilSimple size={14} className="mr-1.5" /> Editar</Button>}
+      assetTypes={assetTypes}
+      suppliers={suppliers}
+      worksites={worksites}
+      editAsset={editAsset}
+    />
   )
 }

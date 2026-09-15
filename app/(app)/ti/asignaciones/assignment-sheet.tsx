@@ -38,6 +38,25 @@ interface UploadedPhoto {
 
 const ALL = "_all"
 
+/**
+ * CTA del encabezado. El botón se construye acá, en el cliente, y no lo recibe
+ * la página: ver la nota de `SheetTrigger` en `@/components/ui/sheet`.
+ */
+export function AssignmentCta({
+  workers,
+  worksites,
+  assets = [],
+}: Omit<AssignmentSheetProps, "trigger" | "assetId">) {
+  return (
+    <AssignmentSheet
+      trigger={<Button><Plus size={14} className="mr-1.5" /> Nueva entrega</Button>}
+      workers={workers}
+      worksites={worksites}
+      assets={assets}
+    />
+  )
+}
+
 export function AssignmentSheet({ trigger, assetId, workers, worksites, assets = [] }: AssignmentSheetProps) {
   const [open, setOpen] = React.useState(false)
   const [selectedAsset, setSelectedAsset] = React.useState(assetId ?? "")

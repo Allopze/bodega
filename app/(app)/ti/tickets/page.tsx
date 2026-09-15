@@ -9,11 +9,10 @@ import { and, eq, asc } from "drizzle-orm"
 import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Button } from "@/components/ui/button"
-import { Plus } from "@phosphor-icons/react/dist/ssr"
 import { listTickets, countTicketsByStatus } from "@/lib/services/ti/tickets"
 import { listAssetOptions } from "@/lib/services/ti/assets"
 import { TicketsTable } from "./tickets-table"
-import { TicketSheet } from "./ticket-sheet"
+import { TicketCta } from "./ticket-sheet"
 import { TicketFilters } from "./ticket-filters"
 import { TicketStatusPills } from "./status-pills"
 import { EmptyState } from "@/components/ui/empty-state"
@@ -68,12 +67,7 @@ export default async function TicketsPage({
         description="Mesa de ayuda: hardware, software, correo, internet, impresoras, accesos y más."
         breadcrumb={<Breadcrumbs items={[{ label: "TI", href: "/ti" }, { label: "Tickets" }]} />}
         actions={canCreate ? (
-          <TicketSheet
-            trigger={<Button><Plus size={14} className="mr-1.5" /> Nuevo ticket</Button>}
-            workers={workersList}
-            worksites={worksitesList}
-            assets={assetOptions}
-          />
+          <TicketCta workers={workersList} worksites={worksitesList} assets={assetOptions} />
         ) : undefined}
       />
 

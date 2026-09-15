@@ -16,6 +16,7 @@ import { Field, FieldGroup } from "@/components/ui/field"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { todayInChile } from "@/lib/utils"
+import { Archive } from "@phosphor-icons/react"
 import { retireAssetAction } from "./actions"
 import { IT_RETIREMENT_REASONS } from "@/lib/validation/ti"
 import { IT_RETIREMENT_REASON_META } from "@/lib/services/ti/constants"
@@ -24,6 +25,20 @@ interface RetirementSheetProps {
   trigger: React.ReactNode
   assets: { id: string; code: string; typeName: string }[]
   users: { id: string; name: string }[]
+}
+
+/**
+ * CTA del encabezado. El botón se construye acá, en el cliente, y no lo recibe
+ * la página: ver la nota de `SheetTrigger` en `@/components/ui/sheet`.
+ */
+export function RetirementCta({ assets, users }: Omit<RetirementSheetProps, "trigger">) {
+  return (
+    <RetirementSheet
+      trigger={<Button variant="destructive"><Archive size={14} className="mr-1.5" /> Dar de baja</Button>}
+      assets={assets}
+      users={users}
+    />
+  )
 }
 
 export function RetirementSheet({ trigger, assets, users }: RetirementSheetProps) {

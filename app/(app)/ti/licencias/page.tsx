@@ -9,11 +9,10 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Button } from "@/components/ui/button"
-import { Plus } from "@phosphor-icons/react/dist/ssr"
 import { listLicenses, getLicenseAssignments } from "@/lib/services/ti/licenses"
 import { listAssetOptions } from "@/lib/services/ti/assets"
 import { LicensePanel } from "./license-panel"
-import { LicenseSheet } from "./license-sheet"
+import { LicenseCta, LicenseSheet } from "./license-sheet"
 
 export const metadata: Metadata = { title: "Licencias TI" }
 
@@ -55,11 +54,7 @@ export default async function LicenciasPage() {
         description="Software, SaaS y servicios contratados: compradas, asignadas y disponibles."
         breadcrumb={<Breadcrumbs items={[{ label: "TI", href: "/ti" }, { label: "Licencias" }]} />}
         actions={canManage ? (
-          <LicenseSheet
-            trigger={<Button><Plus size={14} className="mr-1.5" /> Nueva licencia</Button>}
-            suppliers={suppliersList}
-            users={usersList}
-          />
+          <LicenseCta suppliers={suppliersList} users={usersList} />
         ) : undefined}
       />
 

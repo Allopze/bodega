@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { OptionSelect } from "@/components/ui/option-select"
 import { todayInChile } from "@/lib/utils"
 import { createMaintenanceAction, updateMaintenanceAction } from "./actions"
+import { Plus } from "@phosphor-icons/react"
 import { IT_MAINTENANCE_TYPES } from "@/lib/validation/ti"
 import { IT_MAINTENANCE_TYPE_META } from "@/lib/services/ti/constants"
 
@@ -153,5 +154,34 @@ export function MaintenanceSheet({ trigger, assetId, suppliers, assets = [], edi
         </form>
       </SheetContent>
     </Sheet>
+  )
+}
+
+/**
+ * CTA del encabezado de la página: el botón lo construye este componente, en el
+ * cliente, en vez de recibirlo como elemento desde la página (que es un Server
+ * Component).
+ *
+ * `SheetTrigger asChild` clona a su hijo con el `Slot` de Radix, y ese clon de
+ * un elemento creado por el servidor y pasado como prop de un componente de
+ * cliente no llega al HTML del servidor: el CTA no existe en el SSR y React
+ * regenera el árbol en el cliente con un error de hidratación (lo detectó la
+ * captura de rutas el 2026-09-15 en las siete pantallas de TI que pasan un
+ * sheet por `PageHeader.actions`). Con el botón creado acá adentro, el hijo del
+ * `Slot` es un elemento del cliente y el SSR vuelve a emitirlo.
+ */
+export function MaintenanceCta({
+  suppliers,
+  assets,
+}: {
+  suppliers: { id: string; name: string }[]
+  assets: { id: string; code: string; typeName: string }[]
+}) {
+  return (
+    <MaintenanceSheet
+      trigger={<Button><Plus size={14} className="mr-1.5" /> Registrar mantención</Button>}
+      suppliers={suppliers}
+      assets={assets}
+    />
   )
 }

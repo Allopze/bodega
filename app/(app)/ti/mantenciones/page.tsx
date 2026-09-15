@@ -13,9 +13,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { listMaintenances, maintenanceCostByAsset } from "@/lib/services/ti/maintenance"
 import { listAssetOptions } from "@/lib/services/ti/assets"
 import { MaintenanceTable } from "./maintenance-table"
-import { MaintenanceSheet } from "./maintenance-sheet"
-import { Button } from "@/components/ui/button"
-import { Plus } from "@phosphor-icons/react/dist/ssr"
+import { MaintenanceCta } from "./maintenance-sheet"
 
 export const metadata: Metadata = { title: "Mantenciones TI" }
 
@@ -42,11 +40,7 @@ export default async function MantencionesPage() {
         description="Intervenciones técnicas por equipo, con costo acumulado para identificar activos que conviene reemplazar."
         breadcrumb={<Breadcrumbs items={[{ label: "TI", href: "/ti" }, { label: "Mantenciones" }]} />}
         actions={canManage ? (
-          <MaintenanceSheet
-            trigger={<Button><Plus size={14} className="mr-1.5" /> Registrar mantención</Button>}
-            suppliers={suppliersList}
-            assets={assetOptions}
-          />
+          <MaintenanceCta suppliers={suppliersList} assets={assetOptions} />
         ) : undefined}
       />
 

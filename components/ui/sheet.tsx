@@ -8,6 +8,18 @@ import { cn } from "@/lib/utils"
 // ── Re-export Dialog root primitives unchanged ────────────────────────────────
 const Sheet      = DialogPrimitive.Root
 const SheetClose = DialogPrimitive.Close
+/**
+ * Trigger del sheet.
+ *
+ * ⚠️ Con `asChild`, su hijo lo clona el `Slot` de Radix, y ese clon de un
+ * elemento **creado por un Server Component** y entregado como prop no llega al
+ * HTML del servidor (Next 16 dev): el botón no existe en el SSR y React
+ * regenera el árbol en el cliente con un error de hidratación
+ * —`radix-ui/primitives#3780`, medido el 2026-09-15 en las siete pantallas de
+ * TI que pasaban un sheet por `PageHeader.actions`—. Si un Server Component
+ * necesita un sheet en su encabezado, que el botón lo construya un componente
+ * de cliente: patrón `*Cta` de los sheets de TI y `BodegaMovementSheet`.
+ */
 const SheetTrigger = DialogPrimitive.Trigger
 
 // ── Overlay ───────────────────────────────────────────────────────────────────

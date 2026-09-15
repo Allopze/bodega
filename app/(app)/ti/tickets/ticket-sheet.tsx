@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Field, FieldGroup } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { OptionSelect } from "@/components/ui/option-select"
+import { Plus } from "@phosphor-icons/react"
 import { createTicketAction } from "./actions"
 import { IT_TICKET_CATEGORIES, IT_TICKET_PRIORITIES } from "@/lib/validation/ti"
 import { IT_TICKET_CATEGORY_META, IT_TICKET_PRIORITY_META } from "@/lib/services/ti/constants"
@@ -24,6 +25,21 @@ interface TicketSheetProps {
   workers: { id: string; name: string; lastName: string }[]
   worksites: { id: string; name: string }[]
   assets?: { id: string; code: string; typeName: string }[]
+}
+
+/**
+ * CTA del encabezado. El botón se construye acá, en el cliente, y no lo recibe
+ * la página: ver la nota de `SheetTrigger` en `@/components/ui/sheet`.
+ */
+export function TicketCta({ workers, worksites, assets = [] }: Omit<TicketSheetProps, "trigger">) {
+  return (
+    <TicketSheet
+      trigger={<Button><Plus size={14} className="mr-1.5" /> Nuevo ticket</Button>}
+      workers={workers}
+      worksites={worksites}
+      assets={assets}
+    />
+  )
 }
 
 export function TicketSheet({ trigger, workers, worksites, assets = [] }: TicketSheetProps) {

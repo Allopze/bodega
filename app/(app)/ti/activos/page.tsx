@@ -10,13 +10,12 @@ import { PageHeader, Breadcrumbs } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Plus } from "@phosphor-icons/react/dist/ssr"
 import { listAssets, type AssetListFilters } from "@/lib/services/ti/assets"
 import { isRetiredStatus } from "@/lib/services/ti/constants"
 import { listAssetTypes } from "@/lib/services/ti/asset-types"
 import { AssetTable } from "./asset-table"
 import { AssetFilters } from "./asset-filters"
-import { AssetFormSheet } from "./asset-form-sheet"
+import { NewAssetCta } from "./asset-form-sheet"
 
 export const metadata: Metadata = { title: "Inventario TI" }
 
@@ -76,16 +75,7 @@ export default async function InventarioPage({
         description="Activos tecnológicos de CHOME: qué hay, dónde está y quién lo tiene."
         breadcrumb={<Breadcrumbs items={[{ label: "TI", href: "/ti" }, { label: "Inventario" }]} />}
         actions={canManage ? (
-          <AssetFormSheet
-            trigger={
-              <Button>
-                <Plus size={14} className="mr-1.5" /> Nuevo activo
-              </Button>
-            }
-            assetTypes={types}
-            suppliers={activeSuppliers}
-            worksites={activeWorksites}
-          />
+          <NewAssetCta assetTypes={types} suppliers={activeSuppliers} worksites={activeWorksites} />
         ) : undefined}
       />
 

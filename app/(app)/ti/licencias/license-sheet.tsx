@@ -16,6 +16,7 @@ import { Field, FieldGroup } from "@/components/ui/field"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { OptionSelect } from "@/components/ui/option-select"
+import { Plus } from "@phosphor-icons/react"
 import { createLicenseAction, updateLicenseAction } from "./actions"
 import { IT_LICENSE_PERIODICITIES } from "@/lib/validation/ti"
 import { IT_LICENSE_PERIODICITY_META } from "@/lib/services/ti/constants"
@@ -38,6 +39,20 @@ interface LicenseSheetProps {
     notes: string | null
     isActive: boolean
   }
+}
+
+/**
+ * CTA del encabezado. El botón se construye acá, en el cliente, y no lo recibe
+ * la página: ver la nota de `SheetTrigger` en `@/components/ui/sheet`.
+ */
+export function LicenseCta({ suppliers, users }: Omit<LicenseSheetProps, "trigger" | "editLicense">) {
+  return (
+    <LicenseSheet
+      trigger={<Button><Plus size={14} className="mr-1.5" /> Nueva licencia</Button>}
+      suppliers={suppliers}
+      users={users}
+    />
+  )
 }
 
 export function LicenseSheet({ trigger, suppliers, users, editLicense }: LicenseSheetProps) {

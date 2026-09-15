@@ -22,9 +22,7 @@ import { AssetAssignments } from "./asset-assignments"
 import { AssetMaintenance } from "./asset-maintenance"
 import { AssetTickets } from "./asset-tickets"
 import { AssetDocuments } from "./asset-documents"
-import { AssetFormSheet } from "../asset-form-sheet"
-import { Button } from "@/components/ui/button"
-import { PencilSimple } from "@phosphor-icons/react/dist/ssr"
+import { EditAssetCta } from "../asset-form-sheet"
 
 export const metadata: Metadata = { title: "Ficha de activo TI" }
 
@@ -102,8 +100,7 @@ export default async function AssetDetailPage({
           { label: asset.code },
         ]} />}
         actions={canManage ? (
-          <AssetFormSheet
-            trigger={<Button variant="secondary"><PencilSimple size={14} className="mr-1.5" /> Editar</Button>}
+          <EditAssetCta
             assetTypes={assetTypes}
             suppliers={suppliersList}
             worksites={worksitesList}
