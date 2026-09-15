@@ -43,6 +43,13 @@ export async function upsertDocumentCategory(input: unknown) {
 
 export async function upsertDocumentType(input: unknown) {
   const data = sstDocumentTypeUpsertSchema.parse(input)
+  // El schema valida el formato del slug; la existencia se verifica acá contra
+  // la tabla, que es la fuente de verdad que el admin puede extender.
+  const [category] = await db
+    .select({ slug: sstDocumentCategories.slug })
+    .from(sstDocumentCategories)
+    .where(eq(sstDocumentCategories.slug, data.categorySlug))
+  if (!category) throw new Error("La categoría indicada no existe")
   const now = new Date().toISOString()
   const id = data.id || `sdtype-${nanoid()}`
   await db.insert(sstDocumentTypes).values({

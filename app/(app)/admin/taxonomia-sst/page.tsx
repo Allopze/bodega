@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { TaxonomyActions } from "./taxonomy-actions"
 import { TaxonomyView } from "./taxonomy-list"
+import { CATEGORY_LABEL, CONFIDENTIALITY_LABEL } from "./labels"
 
 export const metadata: Metadata = { title: "Taxonomía documental SST" }
 
@@ -34,6 +35,8 @@ export default async function TaxonomySstPage({ searchParams }: PageProps) {
     typeRows = await db.select().from(sstDocumentTypes).where(eq(sstDocumentTypes.categorySlug, activeSlug)).orderBy(asc(sstDocumentTypes.code))
   }
 
+  const categoryOptions = categories.map((c) => ({ slug: c.slug, name: CATEGORY_LABEL[c.slug] ?? c.name }))
+
   return (
     <PageContainer>
       <PageHeader
@@ -44,7 +47,7 @@ export default async function TaxonomySstPage({ searchParams }: PageProps) {
           { label: "Administración", href: "/admin" },
           { label: "Taxonomía documental SST" },
         ]}
-        actions={<TaxonomyActions categorySlug={activeSlug} />}
+        actions={<TaxonomyActions categorySlug={activeSlug} categoryOptions={categoryOptions} />}
       />
       <TaxonomyView
         categories={categories.map((c) => ({
@@ -52,6 +55,8 @@ export default async function TaxonomySstPage({ searchParams }: PageProps) {
           sortOrder: c.sortOrder, isActive: c.isActive,
         }))}
         activeSlug={activeSlug}
+        confidentialityLabel={CONFIDENTIALITY_LABEL}
+        categoryOptions={categoryOptions}
         types={typeRows.map((t) => ({
           id: t.id,
           categorySlug: t.categorySlug,

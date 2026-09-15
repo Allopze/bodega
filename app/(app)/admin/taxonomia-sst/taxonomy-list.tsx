@@ -8,7 +8,6 @@ import {
   ToggleLeft,
   ToggleRight,
   Plant,
-  ArrowsClockwise,
 } from "@phosphor-icons/react"
 import { DataTable } from "@/components/ui/data-table"
 import { MetaBadge } from "@/components/states/state-badge"
@@ -18,12 +17,12 @@ import { TableRow, TableCell } from "@/components/ui/table"
 import { toast } from "@/lib/toast"
 import { INITIAL_STATE } from "@/lib/form-state"
 import {
-  seedDefaultDocumentCategoriesAction,
   setDocumentCategoryStatusAction,
   setDocumentTypeStatusAction,
 } from "./actions"
 import { CategoryForm } from "./category-form"
 import { TypeForm } from "./type-form"
+import { CONFIDENTIALITY_LABEL as DEFAULT_CONFIDENTIALITY_LABEL, type CategoryOption } from "./labels"
 
 export interface CategoryRow {
   slug: string
@@ -58,9 +57,24 @@ const CATEGORY_COLUMNS = [
 ]
 
 const TYPE_COLUMNS = [
-  { key: "code", label: "Código", sortable: true, width: "w-36" },
+  { key: "code", label: "Código", sortable: true, width: "w-32" },
   { key: "name", label: "Tipo", sortable: true },
-  { key: "defaultConfidentiality", label: "Confidencialidad", sortable: true, width: "w-40" },
+  { key: "defaultConfidentiality", label: "Confidencialidad", sortable: true, width: "w-36" },
+  // Las reglas que explican el comportamiento del tipo (vigencia, aprobación,
+  // acuse, actividades PDTP) van como columnas secundarias ocultables: el admin
+  // las audita sin abrir el sheet de edición, y por defecto la tabla sigue
+  // mostrando código, tipo, confidencialidad y estado.
+  { key: "defaultValidityMonths", label: "Vigencia", sortable: true, width: "w-28", defaultVisible: false },
+  { key: "requiresApproval", label: "Aprobación", sortable: true, width: "w-28", defaultVisible: false },
+  { key: "requiresAcknowledgment", label: "Acuse", sortable: true, width: "w-24", defaultVisible: false },
+  { key: "pdtpActivityNumbers", label: "PDTP al publicar", sortable: false, width: "w-36", defaultVisible: false },
+  {
+    key: "pdtpAcknowledgmentActivityNumbers",
+    label: "PDTP por acuse",
+    sortable: false,
+    width: "w-36",
+    defaultVisible: false,
+  },
   { key: "isActive", label: "Estado", sortable: true, width: "w-28" },
   { key: "", label: "", sortable: false, width: "w-24" },
 ]
@@ -68,10 +82,19 @@ const TYPE_COLUMNS = [
 interface TaxonomyViewProps {
   categories: CategoryRow[]
   activeSlug: string
+  /** Etiquetas de confidencialidad; el page las pasa para no duplicar el mapa. */
+  confidentialityLabel?: Record<string, string>
+  /** Categorías reales de BD para el selector del formulario de tipos. */
+  categoryOptions: CategoryOption[]
   types: TypeRow[]
 }
 
-export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProps) {
+function formatPdtpNumbers(numbers: number[] | null): string {
+  if (!numbers || numbers.length === 0) return "—"
+  return numbers.map((n) => `N°${n}`).join(", ")
+}
+
+export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DEFAULT_CONFIDENTIALITY_LABEL, categoryOptions, types }: TaxonomyViewProps) {
   const [catSheetOpen, setCatSheetOpen] = React.useState(false)
   const [editCategory, setEditCategory] = React.useState<CategoryRow | null>(null)
   const [typeSheetOpen, setTypeSheetOpen] = React.useState(false)
@@ -79,7 +102,9 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
 
   const [catToggleState, catToggleAction] = useActionState(setDocumentCategoryStatusAction, INITIAL_STATE)
   const [typeToggleState, typeToggleAction] = useActionState(setDocumentTypeStatusAction, INITIAL_STATE)
-  const [seedState, seedAction] = useActionState(seedDefaultDocumentCategoriesAction, INITIAL_STATE)
+  // Buscador propio de categorías: el del TopBar lo usa la tabla de tipos para
+  // que una búsqueda no filtre ambas a la vez (ver search-architecture).
+  const [catSearch, setCatSearch] = React.useState("")
 
   useEffect(() => {
     if (catToggleState.message) {
@@ -91,11 +116,6 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
       (typeToggleState.ok ? toast.success : toast.error).call(null, typeToggleState.message)
     }
   }, [typeToggleState])
-  useEffect(() => {
-    if (seedState.message) {
-      (seedState.ok ? toast.success : toast.error).call(null, seedState.message)
-    }
-  }, [seedState])
 
   const catRows = categories as (CategoryRow & Record<string, unknown>)[]
   const typeRows = types as (TypeRow & Record<string, unknown>)[]
@@ -103,21 +123,19 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-      <section>
+      <section aria-labelledby="tax-categories-heading">
         <div className="mb-3 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
+          <h2 id="tax-categories-heading" className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
             Categorías
           </h2>
-          <form action={seedAction}>
-            <Button type="submit" variant="secondary" size="sm">
-              <ArrowsClockwise size={14} />Sembrar predeterminadas
-            </Button>
-          </form>
+          <span className="text-xs text-[var(--color-text-muted)]" aria-live="polite">
+            {categories.length === 1 ? "1 categoría" : `${categories.length} categorías`}
+          </span>
         </div>
         {activeCategory && (
           <p className="mb-2 text-xs text-[var(--color-text-muted)]">
             Categoría activa: <span className="font-medium">{activeCategory.name}</span> (
-            <Link href="/admin/taxonomia-sst" className="underline">cambiar</Link>)
+            <Link href="/admin/taxonomia-sst" scroll={false} className="underline">cambiar</Link>)
           </p>
         )}
         <DataTable
@@ -127,6 +145,9 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
         stickyFirstColumn
           columns={CATEGORY_COLUMNS}
           rows={catRows}
+          search={catSearch}
+          onSearchChange={setCatSearch}
+          searchPlaceholder="Buscar categorías..."
           searchKeys={["name", "description"]}
           pageSize={20}
           emptyTitle="Sin categorías"
@@ -139,6 +160,8 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
                 title={
                   <Link
                     href={{ pathname: "/admin/taxonomia-sst", query: { category: c.slug } }}
+                    scroll={false}
+                    aria-current={isActive ? "true" : undefined}
                     className={isActive ? "text-[var(--color-primary)]" : undefined}
                   >
                     {c.name}
@@ -180,6 +203,9 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
                   <TableCell>
                     <Link
                       href={{ pathname: "/admin/taxonomia-sst", query: { category: c.slug } }}
+                      scroll={false}
+                      aria-current={isActive ? "true" : undefined}
+                      aria-label={`Ver tipos de ${c.name}`}
                       className={`flex items-center gap-1 font-medium ${isActive ? "text-[var(--color-primary)]" : ""}`}
                     >
                       <Plant size={14} />
@@ -228,11 +254,16 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
         />
       </section>
 
-      <section>
-        <div className="mb-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
+      <section aria-labelledby="tax-types-heading">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 id="tax-types-heading" className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">
             Tipos {activeCategory ? `· ${activeCategory.name}` : ""}
           </h2>
+          {activeSlug && (
+            <span className="text-xs text-[var(--color-text-muted)]" aria-live="polite">
+              {types.length === 1 ? "1 tipo" : `${types.length} tipos`}
+            </span>
+          )}
         </div>
         {!activeSlug ? (
           <p className="rounded-[var(--radius)] border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)] p-6 text-center text-sm text-[var(--color-text-muted)]">
@@ -241,8 +272,12 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
         ) : (
           <DataTable
             caption={`Tipos de Documento · ${activeCategory?.name ?? ""}`}
+            enableColumnToggle
+            viewKey="tax-types"
             columns={TYPE_COLUMNS}
             rows={typeRows}
+            // Esta tabla conserva el buscador del TopBar; la de categorías usa
+            // su propio input (ver search-architecture).
             searchKeys={["code", "name", "description"]}
             pageSize={20}
             emptyTitle="Sin tipos"
@@ -274,11 +309,27 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
                     <span className="font-mono">{t.code}</span>
                   </ResponsiveDataListField>
                   <ResponsiveDataListField label="Confidencialidad">
-                    {t.defaultConfidentiality}
+                    {confidentialityLabel[t.defaultConfidentiality] ?? t.defaultConfidentiality}
                   </ResponsiveDataListField>
                   <ResponsiveDataListField label="Vigencia" className="col-span-2">
                     {t.defaultValidityMonths ? `${t.defaultValidityMonths} meses` : "Sin vencimiento predeterminado"}
                   </ResponsiveDataListField>
+                  <ResponsiveDataListField label="Aprobación">
+                    {t.requiresApproval ? "Requiere" : "No requiere"}
+                  </ResponsiveDataListField>
+                  <ResponsiveDataListField label="Acuse">
+                    {t.requiresAcknowledgment ? "Requiere" : "No requiere"}
+                  </ResponsiveDataListField>
+                  {(t.pdtpActivityNumbers?.length || t.pdtpAcknowledgmentActivityNumbers?.length) ? (
+                    <ResponsiveDataListField label="PDTP" className="col-span-2">
+                      {[
+                        t.pdtpActivityNumbers?.length ? `Al publicar: ${formatPdtpNumbers(t.pdtpActivityNumbers)}` : null,
+                        t.pdtpAcknowledgmentActivityNumbers?.length
+                          ? `Por acuse: ${formatPdtpNumbers(t.pdtpAcknowledgmentActivityNumbers)}`
+                          : null,
+                      ].filter(Boolean).join(" · ")}
+                    </ResponsiveDataListField>
+                  ) : null}
                 </ResponsiveDataListCard>
               )
             }}
@@ -290,7 +341,22 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
                     <TableCell className="font-mono text-xs">{t.code}</TableCell>
                     <TableCell>{t.name}</TableCell>
                     <TableCell className="text-[var(--color-text-muted)]">
-                      {t.defaultConfidentiality}
+                      {confidentialityLabel[t.defaultConfidentiality] ?? t.defaultConfidentiality}
+                    </TableCell>
+                    <TableCell className="font-mono tabular-nums text-xs text-[var(--color-text-muted)]">
+                      {t.defaultValidityMonths ? `${t.defaultValidityMonths} m` : "—"}
+                    </TableCell>
+                    <TableCell className="text-[var(--color-text-muted)]">
+                      {t.requiresApproval ? "Sí" : "No"}
+                    </TableCell>
+                    <TableCell className="text-[var(--color-text-muted)]">
+                      {t.requiresAcknowledgment ? "Sí" : "No"}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-[var(--color-text-muted)]">
+                      {formatPdtpNumbers(t.pdtpActivityNumbers)}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-[var(--color-text-muted)]">
+                      {formatPdtpNumbers(t.pdtpAcknowledgmentActivityNumbers)}
                     </TableCell>
                     <TableCell>
                       {t.isActive
@@ -333,6 +399,7 @@ export function TaxonomyView({ categories, activeSlug, types }: TaxonomyViewProp
             onClose={() => setTypeSheetOpen(false)}
             editType={editType}
             categorySlug={activeSlug}
+            categoryOptions={categoryOptions}
           />
         )}
       </section>

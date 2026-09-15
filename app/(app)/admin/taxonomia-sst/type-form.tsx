@@ -20,8 +20,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { INITIAL_STATE, type ActionState } from "@/lib/form-state"
 import { toast } from "@/lib/toast"
-import { SST_DOCUMENT_CATEGORY_SLUGS, SST_DOCUMENT_CONFIDENTIALITIES } from "@/lib/validation/prevention-module/sst-documents"
+import { SST_DOCUMENT_CONFIDENTIALITIES } from "@/lib/validation/prevention-module/sst-documents"
 import { saveDocumentTypeAction } from "./actions"
+import { CONFIDENTIALITY_LABEL, withCurrentCategory, type CategoryOption } from "./labels"
 import type { TypeRow } from "./taxonomy-list"
 
 interface TypeFormProps {
@@ -29,31 +30,19 @@ interface TypeFormProps {
   onClose: () => void
   editType?: TypeRow | null
   categorySlug: string
+  categoryOptions: CategoryOption[]
 }
 
-const CATEGORY_LABEL: Record<string, string> = {
-  gestion_preventiva: "Gestión preventiva",
-  legal_normativa: "Legal y normativa",
-  capacitacion: "Capacitación e inducciones",
-  epp: "EPP",
-  incidentes: "Incidentes y accidentes",
-  comite: "Comité Paritario",
-  emergencias: "Emergencias",
-  equipos_vehiculos: "Equipos, vehículos y maquinaria",
-  fiscalizacion: "Fiscalización y auditorías",
-  salud_ocupacional: "Salud ocupacional",
-}
-
-const CONFIDENTIALITY_LABEL: Record<string, string> = {
-  publico_interno: "Público interno",
-  restringido: "Restringido",
-  sensible: "Sensible",
-}
-
-export function TypeForm({ open, onClose, editType, categorySlug }: TypeFormProps) {
+export function TypeForm({ open, onClose, editType, categorySlug, categoryOptions }: TypeFormProps) {
   const isEdit = !!editType
   const initialCategory = editType?.categorySlug ?? categorySlug
-  const [catSlug, setCatSlug] = React.useState(initialCategory)
+  // La categoría de un tipo creado en una custom ya no listada debe seguir
+  // existiendo en el selector al editar: se agrega desde el propio registro en
+  // vez de resetear el valor.
+  const options = withCurrentCategory(categoryOptions, initialCategory)
+  const [catSlug, setCatSlug] = React.useState(
+    initialCategory && options.some((o) => o.slug === initialCategory) ? initialCategory : (options[0]?.slug ?? ""),
+  )
   const [defaultConf, setDefaultConf] = React.useState(editType?.defaultConfidentiality ?? "publico_interno")
 
   const [state, formAction] = useActionState<ActionState, FormData>(
@@ -96,8 +85,8 @@ export function TypeForm({ open, onClose, editType, categorySlug }: TypeFormProp
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {SST_DOCUMENT_CATEGORY_SLUGS.map((slug) => (
-                      <SelectItem key={slug} value={slug}>{CATEGORY_LABEL[slug] ?? slug}</SelectItem>
+                    {options.map((opt) => (
+                      <SelectItem key={opt.slug} value={opt.slug}>{opt.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

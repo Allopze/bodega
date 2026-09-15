@@ -125,6 +125,18 @@ describe("saveDocumentTypeAction", () => {
       entityType: "sst_document_type",
     }))
   })
+
+  it("surfaces a missing category as an error message", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockUpsertType.mockRejectedValueOnce(new Error("La categoría indicada no existe"))
+    const fd = new FormData()
+    fd.set("categorySlug", "categoria_que_no_existe")
+    fd.set("code", "C")
+    fd.set("name", "N")
+    const res = await saveDocumentTypeAction(prevState, fd)
+    expect(res.ok).toBe(false)
+    expect(res.message).toContain("La categoría indicada no existe")
+  })
 })
 
 describe("setDocumentCategoryStatusAction", () => {
