@@ -320,10 +320,13 @@ export function CampanasClient({
             <div className="space-y-1.5">
               <Label>Evidencia de difusión (foto, lista de asistencia, acta)</Label>
               <Input
-                placeholder="https://... o referencia de documento"
+                placeholder="https://..."
                 value={evidenceUrl}
                 onChange={(e) => setEvidenceUrl(e.target.value)}
               />
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Pega el enlace al documento (Drive, SharePoint, etc.).
+              </p>
             </div>
           </div>
           <DialogFooter>

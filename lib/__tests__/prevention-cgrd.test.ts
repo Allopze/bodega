@@ -237,6 +237,27 @@ describe("actas de reunión — N°81", () => {
     expect(executions).toHaveLength(1)
   })
 
+  /* El acta se carga DESPUÉS de la sesión, así que la fecha que acredita es la
+   * de la sesión (`heldOn`), no la de digitación: el motor resuelve el período
+   * del programa con `occurredAt`. Con `createdAt` una sesión de marzo cargada
+   * hoy quedaría anotada en el mes de la carga. */
+  it("acredita en el período de la sesión, no en el de la digitación", async () => {
+    const committee = await constituteGrdCommittee({ worksiteId: WS_A, name: "CGRD", constitutedOn: `${PROGRAM_YEAR}-01-10`, mandateEndsOn: `${PROGRAM_YEAR + 2}-01-10`, evidenceUrl: EVIDENCE }, MANAGER)
+
+    // 12 de marzo del año del programa: mes 3, semana 2 (ceil(12/7)).
+    await recordGrdMeeting({
+      committeeId: committee.id, heldOn: `${PROGRAM_YEAR}-03-12T15:00:00.000Z`, agenda: "Revisión de amenazas del período",
+      minutes: "Acta de la sesión con el detalle suficiente de lo tratado", quorumReached: true, evidenceUrl: EVIDENCE,
+    }, MANAGER)
+
+    const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, `${PROGRAM_ID}-a-81`))
+    expect(execution).toBeTruthy()
+    expect(execution!.year).toBe(PROGRAM_YEAR)
+    expect(execution!.month).toBe(3)
+    expect(execution!.week).toBe(2)
+  })
+
   it("exige evidencia del acta", async () => {
     const committee = await constituteGrdCommittee({ worksiteId: WS_A, name: "CGRD", constitutedOn: "2026-03-01", mandateEndsOn: "2028-03-01", evidenceUrl: EVIDENCE }, MANAGER)
     await expect(recordGrdMeeting({

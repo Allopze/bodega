@@ -217,6 +217,11 @@ const eslintConfig = defineConfig([
     "audit/**",
     // Scratches de QA local (scripts desechables, ya ignorados por git).
     ".tmp/**",
+    // Runner temporal de `/docs:execute`. `.gitignore` ya lo declara "nunca
+    // debe versionarse", pero ESLint no lee `.gitignore`: sin esta entrada, un
+    // error de lint dentro del runner bloquea CUALQUIER commit del repo —
+    // mismo síntoma que motivó la entrada de `.claude/worktrees/**`.
+    "scripts/.docs-runner/**",
     // Worktrees de sesión: son copias completas del repo, así que lintearlas
     // duplica cada archivo y además aplica las reglas a las rutas que esta
     // misma lista excluye en la raíz (`referencia/**`, `odoo-19.0/**`), que

@@ -640,7 +640,9 @@ export async function onGrdMatrixPublished(input: {
 export async function onGrdMeetingClosed(input: {
   meetingId: string
   worksiteId: string
-  closedAt: string
+  /** Cuándo se realizó la sesión — no cuándo se digitó el acta: es la fecha
+   *  con la que el motor resuelve el período y el año del programa. */
+  heldOn: string
   evidenceUrl: string
 }): Promise<void> {
   await safeAccredit({
@@ -648,7 +650,7 @@ export async function onGrdMeetingClosed(input: {
     sourceId: `cgrd-meeting:${input.meetingId}`,
     worksiteId: input.worksiteId,
     activityNumbers: [PDTP_GRD_MEETING_ACTIVITY_NUMBER],
-    occurredAt: input.closedAt,
+    occurredAt: input.heldOn,
     executedQuantity: 1,
     evidenceRef: input.evidenceUrl,
   })

@@ -13,6 +13,7 @@ function cleanReport(): MigrationPreflightReport {
     pdtp: { legacyObjectiveLinks: 0, duplicateYears: 0 },
     legal: { duplicateApplicabilities: 0 },
     inspections: { duplicateProgramSlots: 0 },
+    campaigns: { completedWithoutEvidence: 0 },
     migrations: { appliedCount: 0, journalCount: 0, skipped: [] },
     skippedRelations: [],
   }
@@ -64,6 +65,18 @@ describe("migration preflight", () => {
     report.legal = { duplicateApplicabilities: 3 }
 
     expect(() => assertMigrationPreflightReport(report)).toThrow(/LEGAL.*3/)
+  })
+
+  /* La simplificación de Campañas (2026-09-14) estrena un CHECK que exige
+   * evidencia en toda campaña hecha. Las cerradas cuando la evidencia era
+   * opcional harían fallar la migración con una violación de constraint a
+   * mitad del deploy: se bloquea antes, con el detalle de cómo reconciliarlas. */
+  it("bloquea campañas cerradas sin la evidencia que el modelo nuevo exige", () => {
+    const report = cleanReport()
+    report.campaigns = { completedWithoutEvidence: 4 }
+
+    expect(() => assertMigrationPreflightReport(report)).toThrow(/CAMPAIGNS.*4/)
+    expect(() => assertMigrationPreflightReport(report)).toThrow(/antes de migrar/)
   })
 
   it("acepta una base nueva o una base sin conflictos", () => {

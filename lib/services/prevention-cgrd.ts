@@ -618,9 +618,15 @@ export async function recordGrdMeeting(input: unknown, access: CgrdAccess) {
     return { meeting: created, worksiteId: committee.worksiteId }
   })
 
+  /* `heldOn` y no `createdAt`: el acta se carga después de la sesión, y el
+   * motor de acreditación usa `occurredAt` para resolver el período del
+   * programa (`periodSlot`) y para verificar que el hecho caiga dentro del año
+   * del programa activo (`yearOfOccurrence`). Acreditar con la fecha de
+   * digitación le anotaría a septiembre una sesión de junio, y dejaría fuera
+   * del programa una sesión de diciembre cargada en enero. */
   await onGrdMeetingClosed({
     meetingId: result.meeting.id, worksiteId: result.worksiteId,
-    closedAt: result.meeting.createdAt, evidenceUrl: result.meeting.evidenceUrl,
+    heldOn: result.meeting.heldOn, evidenceUrl: result.meeting.evidenceUrl,
   })
   return result.meeting
 }

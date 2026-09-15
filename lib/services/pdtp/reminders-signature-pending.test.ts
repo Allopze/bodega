@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-/* Las cuatro consultas corren en un `Promise.all` y sus expresiones se evalúan
+/* Las tres consultas corren en un `Promise.all` y sus expresiones se evalúan
  * en orden, así que una cola basta para darle a cada una su resultado: planes,
- * matrices MIPER, matrices GRD, versiones documentales. */
+ * matrices MIPER, versiones documentales.
+ *
+ * La matriz GRD salió de acá con la simplificación del CGRD (2026-09-14): su
+ * máquina de estados pasó a borrador → publicada en un solo acto, así que no
+ * hay firma intermedia de un tercero que recordar. */
 const mocks = vi.hoisted(() => ({
   queues: [] as unknown[][],
   recipients: vi.fn(),
@@ -37,10 +41,9 @@ const hace = (days: number) => new Date(AHORA.getTime() - days * 86_400_000).toI
 function queue(options: {
   plans?: unknown[]
   risk?: unknown[]
-  grd?: unknown[]
   docs?: unknown[]
 } = {}) {
-  mocks.queues = [options.plans ?? [], options.risk ?? [], options.grd ?? [], options.docs ?? []]
+  mocks.queues = [options.plans ?? [], options.risk ?? [], options.docs ?? []]
 }
 
 describe("runPdtpSignaturePendingReminders", () => {

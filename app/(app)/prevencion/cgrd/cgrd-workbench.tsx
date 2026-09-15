@@ -351,7 +351,7 @@ function ConstituteDialog({ open, onOpenChange, worksiteId, onDone }: { open: bo
         <Field label="Constituido el" required><Input type="date" value={constitutedOn} onChange={(event) => setConstitutedOn(event.target.value)} /></Field>
         <Field label="Mandato hasta" required><Input type="date" value={mandateEndsOn} onChange={(event) => setMandateEndsOn(event.target.value)} /></Field>
       </div>
-      <Field label="Evidencia del acta de constitución" required helper="URL o archivo subido."><Input value={evidenceUrl} onChange={(event) => setEvidenceUrl(event.target.value)} placeholder="https://... o referencia de documento" /></Field>
+      <Field label="Evidencia del acta de constitución" required helper="Pega el enlace al documento (Drive, SharePoint, etc.)."><Input value={evidenceUrl} onChange={(event) => setEvidenceUrl(event.target.value)} placeholder="https://..." /></Field>
     </div>
     <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || name.trim().length < 3 || !constitutedOn || !mandateEndsOn || !evidenceUrl.trim()}>{pending ? "Constituyendo..." : "Constituir"}</Button></DialogFooter>
   </DialogContent></Dialog>
@@ -456,7 +456,7 @@ function PublishMatrixDialog({ matrix, onClose, onDone }: { matrix: Matrix | nul
   return <Dialog open={matrix !== null} onOpenChange={(value) => { if (!value) onClose() }}><DialogContent>
     <DialogHeader><DialogTitle>Publicar matriz GRD</DialogTitle><DialogDescription>Cierra la N°80 del PDTP. Reemplaza cualquier versión publicada anteriormente en esta faena.</DialogDescription></DialogHeader>
     <div className="space-y-4">
-      <Field label="Evidencia de la matriz publicada" required helper="URL o archivo subido."><Input value={evidenceUrl} onChange={(event) => setEvidenceUrl(event.target.value)} placeholder="https://... o referencia de documento" /></Field>
+      <Field label="Evidencia de la matriz publicada" required helper="Pega el enlace al documento (Drive, SharePoint, etc.)."><Input value={evidenceUrl} onChange={(event) => setEvidenceUrl(event.target.value)} placeholder="https://..." /></Field>
     </div>
     <DialogFooter><Button type="button" variant="ghost" onClick={onClose} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || !evidenceUrl.trim()}>{pending ? "Publicando..." : "Publicar"}</Button></DialogFooter>
   </DialogContent></Dialog>
@@ -512,7 +512,7 @@ function RecordMeetingDialog({ open, onOpenChange, committeeId, onDone }: { open
       </div>
       <Field label="Tabla / agenda" required><Textarea value={agenda} onChange={(event) => setAgenda(event.target.value)} rows={2} maxLength={5000} /></Field>
       <Field label="Acta" required helper="Mínimo 20 caracteres."><Textarea value={minutes} onChange={(event) => setMinutes(event.target.value)} rows={5} maxLength={20000} /></Field>
-      <Field label="Evidencia del acta" required helper="URL o archivo subido."><Input value={evidenceUrl} onChange={(event) => setEvidenceUrl(event.target.value)} placeholder="https://... o referencia de documento" /></Field>
+      <Field label="Evidencia del acta" required helper="Pega el enlace al documento (Drive, SharePoint, etc.)."><Input value={evidenceUrl} onChange={(event) => setEvidenceUrl(event.target.value)} placeholder="https://..." /></Field>
 
       <div className="rounded-lg border border-[var(--color-border)] p-3">
         <div className="flex items-center justify-between">
@@ -591,7 +591,7 @@ function DesignateCoordinatorDialog({ open, onOpenChange, worksiteId, workers, o
         </Select>
       </Field>
       <Field label="Designado el" required><Input type="date" value={designatedOn} onChange={(event) => setDesignatedOn(event.target.value)} /></Field>
-      <Field label="Evidencia de la designación" required helper="URL o archivo subido."><Input value={evidenceUrl} onChange={(event) => setEvidenceUrl(event.target.value)} placeholder="https://... o referencia de documento" /></Field>
+      <Field label="Evidencia de la designación" required helper="Pega el enlace al documento (Drive, SharePoint, etc.)."><Input value={evidenceUrl} onChange={(event) => setEvidenceUrl(event.target.value)} placeholder="https://..." /></Field>
     </div>
     <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || !workerId || !designatedOn || !evidenceUrl.trim()}>{pending ? "Designando..." : "Designar"}</Button></DialogFooter>
   </DialogContent></Dialog>

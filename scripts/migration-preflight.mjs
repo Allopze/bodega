@@ -18,6 +18,7 @@ export const LEGACY_ACTION_TABLES = Object.freeze([
  * @property {{ legacyObjectiveLinks: number, duplicateYears: number }} pdtp
  * @property {{ duplicateApplicabilities: number }} legal
  * @property {{ duplicateProgramSlots: number }} inspections
+ * @property {{ completedWithoutEvidence: number }} campaigns
  * @property {{ appliedCount: number, journalCount: number, skipped: string[] }} migrations
  * @property {string[]} skippedRelations
  */
@@ -60,6 +61,14 @@ export function assertMigrationPreflightReport(report) {
   // pero comprobarlo cuesta una consulta y evita una migración a medias.
   if (report.inspections.duplicateProgramSlots > 0) {
     blockers.push(`INSPECTIONS duplicateProgramSlots=${report.inspections.duplicateProgramSlots}`)
+  }
+  if (report.campaigns.completedWithoutEvidence > 0) {
+    blockers.push(
+      `CAMPAIGNS completedWithoutEvidence=${report.campaigns.completedWithoutEvidence} ` +
+      "— campañas cerradas cuando la evidencia era opcional. La simplificación exige evidencia en toda " +
+      "campaña hecha: adjunta la real (UPDATE prevention_campaigns SET evidence_url = ... WHERE id = ...) " +
+      "o devuélvelas a pendiente (SET status = 'draft', completed_at = NULL) antes de migrar.",
+    )
   }
   /* Migraciones saltadas. El migrador de Drizzle decide qué aplicar con **una
    * sola marca de agua** —`MAX(created_at)` de `drizzle.__drizzle_migrations`—
@@ -119,6 +128,7 @@ export async function inspectMigrationPreconditions(sql) {
     pdtp: { legacyObjectiveLinks: 0, duplicateYears: 0 },
     legal: { duplicateApplicabilities: 0 },
     inspections: { duplicateProgramSlots: 0 },
+    campaigns: { completedWithoutEvidence: 0 },
     migrations: { appliedCount: 0, journalCount: 0, skipped: [] },
     skippedRelations: [],
   }
@@ -157,6 +167,33 @@ export async function inspectMigrationPreconditions(sql) {
     `)
   } else {
     report.skippedRelations.push("dte_documents")
+  }
+
+  /* Campañas cerradas bajo las reglas viejas, donde la evidencia era opcional
+   * (`campaignEvidenceSchema` era `.optional()`). La simplificación de 2026-09-14
+   * las migra a `status='done'` y estrena el CHECK `prevention_campaign_done_
+   * consistent`, que exige `evidence_url` en toda campaña hecha: una fila
+   * `completed` sin evidencia hace fallar la migración con una violación de
+   * constraint opaca, a mitad del deploy.
+   *
+   * Se bloquea antes en vez de resolverlo solo, por el mismo criterio que el
+   * resto de este preflight: ni descompletar una campaña que sí se hizo, ni
+   * inventarle una evidencia que nadie adjuntó. La reconciliación es una
+   * decisión de Prevención — adjuntar la evidencia real, o devolver la campaña
+   * a pendiente — y se aplica por SQL antes de migrar. */
+  if (await relationExists(sql, "prevention_campaigns")) {
+    const hasLegacyStatus = await countUnsafe(sql, `
+      select count(*)::int as total
+      from information_schema.columns
+      where table_name = 'prevention_campaigns' and column_name = 'started_at'
+    `)
+    report.campaigns.completedWithoutEvidence = hasLegacyStatus === 0 ? 0 : await countUnsafe(sql, `
+      select count(*)::int as total
+      from prevention_campaigns
+      where status = 'completed' and (evidence_url is null or length(trim(evidence_url)) = 0)
+    `)
+  } else {
+    report.skippedRelations.push("prevention_campaigns")
   }
 
   if (await relationExists(sql, "prevention_pdtp_source_links")) {
