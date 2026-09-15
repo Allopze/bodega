@@ -28,7 +28,7 @@
 
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
-import { and, eq } from "drizzle-orm"
+import { and, desc, eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
@@ -458,5 +458,78 @@ describe("deleteEvaluation revoca la N°18 del acta de trabajador nuevo", () => 
     expect(revocacion?.status).toBe("revoked")
     const [ejecucion] = await executionsFor(18)
     expect(ejecucion!.status).toBe("draft")
+  })
+})
+
+/**
+ * El diálogo de acreditación de un plan pasó a mandar identidades de catálogo
+ * y los números en []. El plan guarda ambos: la identidad en los bindings y el
+ * número como snapshot histórico, que es la red si el código se revierte antes
+ * del segundo despliegue.
+ */
+describe("el cableado PDTP de un plan de emergencia", () => {
+  async function planAprobado(titulo: string) {
+    const plan = await createEmergencyPlan({ worksiteId: WS_ID, title: titulo }, EMERGENCY_MANAGER)
+    await addEmergencyScenario({
+      planId: plan.id, type: "incendio_estructural", title: "Incendio de prueba",
+      responseProcedure: "Activar alarma y evacuar por la ruta señalizada del sector.",
+    }, EMERGENCY_MANAGER)
+    await addEmergencyRole({
+      planId: plan.id, roleName: "Jefe de emergencia", assigneeWorkerId: WORKER_ID,
+    }, EMERGENCY_MANAGER)
+    return approveEmergencyPlan({ planId: plan.id, expectedVersion: plan.version }, EMERGENCY_APPROVER)
+  }
+
+  async function identidadPublicada(suffix: string) {
+    const id = `pdtp-catalog-plan-${suffix}`
+    const stamp = new Date().toISOString()
+    await inMemoryDb.insert(schema.pdtpCatalogActivities).values({
+      id, code: `PDT-PLAN-${suffix.toUpperCase()}`, status: "active", currentRevision: 1,
+      createdAt: stamp, updatedAt: stamp,
+    }).onConflictDoNothing()
+    await inMemoryDb.insert(schema.pdtpCatalogActivityRevisions).values({
+      id: `${id}-r1`, catalogActivityId: id, revision: 1,
+      title: `Simulacro corporativo ${suffix}`, description: "Descripción corporativa",
+      executionGuidance: "Guía corporativa", createdAt: stamp,
+    }).onConflictDoNothing()
+    return id
+  }
+
+  it("cablear una identidad conserva el número legado como snapshot", async () => {
+    const aprobado = await planAprobado("Plan con snapshot")
+    const conNumeros = await setEmergencyPlanPdtpActivities({
+      planId: aprobado.id, expectedVersion: aprobado.version, pdtpActivityNumbers: [84],
+    }, EMERGENCY_MANAGER)
+
+    const conCatalogo = await setEmergencyPlanPdtpActivities({
+      planId: conNumeros.id, expectedVersion: conNumeros.version,
+      pdtpActivityNumbers: [], catalogActivityIds: [await identidadPublicada("snapshot")],
+    }, EMERGENCY_MANAGER)
+
+    expect(conCatalogo.pdtpActivityNumbers).toEqual([84])
+
+    // El historial tiene que decir qué se cableó, no repetir el snapshot que
+    // se conservó: es la evidencia de quién cambió la acreditación y a qué.
+    const [entrada] = await inMemoryDb.select().from(schema.preventionEmergencyHistory)
+      .where(and(
+        eq(schema.preventionEmergencyHistory.entityId, conCatalogo.id),
+        eq(schema.preventionEmergencyHistory.changeType, "pdtp_activities_set"),
+      ))
+      .orderBy(desc(schema.preventionEmergencyHistory.createdAt))
+    expect(entrada!.reason).toContain("pdtp-catalog-plan-snapshot")
+  })
+
+  it("vaciar la selección apaga la acreditación en las dos representaciones", async () => {
+    const aprobado = await planAprobado("Plan sin acreditación")
+    const conNumeros = await setEmergencyPlanPdtpActivities({
+      planId: aprobado.id, expectedVersion: aprobado.version, pdtpActivityNumbers: [84],
+    }, EMERGENCY_MANAGER)
+
+    const vaciado = await setEmergencyPlanPdtpActivities({
+      planId: conNumeros.id, expectedVersion: conNumeros.version,
+      pdtpActivityNumbers: [], catalogActivityIds: [],
+    }, EMERGENCY_MANAGER)
+
+    expect(vaciado.pdtpActivityNumbers).toBeNull()
   })
 })

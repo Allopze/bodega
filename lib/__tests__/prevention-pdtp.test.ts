@@ -601,6 +601,75 @@ describe("prevention PDTP service", () => {
     expect(await inMemoryDb.select().from(schema.pdtpActivitySchedule).where(eq(schema.pdtpActivitySchedule.activityId, copiedActivity!.id))).toHaveLength(0)
   })
 
+  /*
+   * `addPdtpActivity` es la única vía por la que el producto incorpora una
+   * identidad corporativa a un programa: el formulario "Agregar desde
+   * catálogo" la llama con `catalogActivityId`. Sus guardas no tenían
+   * cobertura — la tenía una segunda implementación que la aplicación nunca
+   * llamaba.
+   */
+  it("incorporar desde el catálogo exige identidad publicada, sella la revisión y no la repite", async () => {
+    const { addPdtpActivity, createLegacyPdtpProgramForTests } = await import("@/lib/services/prevention-pdtp")
+    const { createCatalogActivity, createCatalogActivityRevision, publishCatalogActivity, retireCatalogActivity } =
+      await import("@/lib/services/pdtp/catalog-activities")
+    const program = await createLegacyPdtpProgramForTests({ year: 2031, title: "Programa que incorpora del catálogo", userId: "user-1" })
+    const identidad = await createCatalogActivity({
+      code: "PDT-LIVE-INCORPORAR",
+      title: "Inspeccionar controles del catálogo",
+      description: "Descripción corporativa vigente",
+      executionGuidance: "Guía corporativa vigente",
+    })
+    const base = {
+      programId: program.id,
+      activity: "Texto libre que el catálogo debe reemplazar",
+      program: "Guía libre que el catálogo debe reemplazar",
+      responsibleSlugs: ["prf"],
+      responsibleDisplay: "Prevencionista",
+      scheduleMode: "scheduled" as const,
+      recurrenceRule: { frequency: "annual" as const, interval: 1, plannedQuantity: 1, weekOfMonth: 1 },
+      sheetCodes: ["pdtp_general"],
+    }
+
+    await expect(addPdtpActivity({ ...base, catalogActivityId: identidad.id }, "user-1")).rejects.toThrow(/publicada/i)
+
+    await publishCatalogActivity(identidad.id)
+    // El texto del programa sale de la revisión vigente, no del formulario.
+    await createCatalogActivityRevision({
+      catalogActivityId: identidad.id,
+      title: "Inspeccionar controles del catálogo",
+      description: "Descripción corporativa de la revisión 2",
+      executionGuidance: "Guía corporativa de la revisión 2",
+      changeNote: "Se precisa el alcance del control",
+    })
+    const incorporada = await addPdtpActivity({ ...base, catalogActivityId: identidad.id }, "user-1")
+    expect(incorporada).toEqual(expect.objectContaining({
+      catalogActivityId: identidad.id,
+      catalogRevision: 2,
+      activity: "Descripción corporativa de la revisión 2",
+      program: "Guía corporativa de la revisión 2",
+    }))
+
+    await expect(addPdtpActivity({ ...base, catalogActivityId: identidad.id }, "user-1"))
+      .rejects.toThrow(/ya está incorporada/i)
+
+    // Una identidad retirada no es lo mismo que una en borrador: el mensaje
+    // tiene que decir por qué no se puede, o el usuario la busca en la lista
+    // de pendientes de publicación.
+    const retirada = await createCatalogActivity({
+      code: "PDT-LIVE-RETIRADA",
+      title: "Actividad corporativa retirada",
+      description: "Descripción que se conserva",
+      executionGuidance: "Guía que se conserva",
+    })
+    await publishCatalogActivity(retirada.id)
+    await retireCatalogActivity(retirada.id, "Ya no corresponde al estándar corporativo")
+    await expect(addPdtpActivity({ ...base, catalogActivityId: retirada.id }, "user-1"))
+      .rejects.toThrow(/retirada/i)
+
+    await expect(addPdtpActivity({ ...base, catalogActivityId: "pdtp-catalog-inexistente" }, "user-1"))
+      .rejects.toThrow(/no encontrada/i)
+  })
+
   it("publishes immutable template versions and creates programs from the selected snapshot", async () => {
     const {
       addPdtpActivity,
@@ -737,6 +806,15 @@ describe("prevention PDTP service", () => {
     const [candidate] = await inMemoryDb.select().from(schema.pdtpCatalogActivities)
       .where(like(schema.pdtpCatalogActivities.id, "pdtp-import-candidate-%"))
     expect(candidate).toMatchObject({ status: "draft", currentRevision: 1 })
+    /*
+     * La candidata viaja como dato y no como marcador incrustado en un mensaje
+     * de usuario: el bloqueo del lote no puede depender de que nadie cambie la
+     * redacción, y la UI no tiene que re-parsear el texto con una regex.
+     */
+    expect(staged.preview.catalogCandidates).toEqual([
+      { catalogActivityId: candidate!.id, activityNumber: first.n },
+    ])
+    expect(staged.preview.blockingErrors).toEqual([])
     await expect(applyPdtpImportBatch({ batchId: staged.batch.id, userId: "user-1", scope: ["ws-1"] }))
       .rejects.toThrow(/siguen sin publicar/i)
 
@@ -747,11 +825,96 @@ describe("prevention PDTP service", () => {
       userId: "user-1",
     })
     expect(linkedPreview.blockingErrors).toEqual([])
+    expect(linkedPreview.catalogCandidates).toEqual([])
     expect((await inMemoryDb.select().from(schema.pdtpCatalogActivities).where(eq(schema.pdtpCatalogActivities.id, candidate!.id)))[0])
       .toMatchObject({ status: "retired", retiredByUserId: "user-1" })
     await expect(applyPdtpImportBatch({ batchId: staged.batch.id, userId: "user-1", scope: ["ws-1"] }))
       .resolves.toMatchObject({ activityCount: 87 })
     await rollbackPdtpImportBatch({ batchId: staged.batch.id, userId: "user-1", reason: "Limpieza de candidata publicada", scope: ["ws-1"] })
+  })
+
+  /*
+   * Previsualizar un Excel siembra candidatas en el catálogo corporativo. Si
+   * el lote se cancela, ese borrador ya no tiene dueño: el código es inmutable
+   * por trigger y la revisión no se puede borrar, así que la única salida es
+   * retirarlo. Sin esto, cada archivo que alguien probó y descartó queda para
+   * siempre en el catálogo que ven los selectores.
+   */
+  it("cancelar el preview retira las candidatas que sembró", async () => {
+    const { readFile } = await import("node:fs/promises")
+    const { cancelPdtpImportBatch, createLegacyPdtpProgramForTests, stagePdtpXlsxImport } = await import("@/lib/services/prevention-pdtp")
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(await readFile(path.resolve(process.cwd(), PDTP_2026_SOURCE.repoPath)) as never)
+    const first = PDTP_2026_WORKBOOK_CATALOG.activities[0]!
+    const row = workbook.getWorksheet("PDTP GENERAL")!.getRow(first.sourceSheetRow)
+    const activityColumn = Number.isFinite(Number(row.getCell(1).value)) ? 2 : 3
+    row.getCell(activityColumn).value = "Actividad preventiva descartada en el preview"
+    const bytes = new Uint8Array(await workbook.xlsx.writeBuffer())
+    const program = await createLegacyPdtpProgramForTests({ year: 2032, title: "Importación cancelada", userId: "user-1" })
+
+    const staged = await stagePdtpXlsxImport({
+      programId: program.id,
+      bytes,
+      fileName: "programa-descartado.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      userId: "user-1",
+    })
+    const candidateId = staged.preview.catalogCandidates![0]!.catalogActivityId
+
+    await cancelPdtpImportBatch({ batchId: staged.batch.id, userId: "user-1", reason: "El archivo venía con una fila equivocada" })
+
+    const [candidate] = await inMemoryDb.select().from(schema.pdtpCatalogActivities)
+      .where(eq(schema.pdtpCatalogActivities.id, candidateId))
+    expect(candidate).toMatchObject({ status: "retired", retiredByUserId: "user-1" })
+    // La revisión se conserva: es lo que explica de dónde salió la candidata.
+    expect(await inMemoryDb.select().from(schema.pdtpCatalogActivityRevisions)
+      .where(eq(schema.pdtpCatalogActivityRevisions.catalogActivityId, candidateId))).toHaveLength(1)
+  })
+
+  /*
+   * Un lote quedó en preview con el formato anterior, que anunciaba la
+   * candidata como un `blockingError` marcado. Si al leerlo no se traduce, el
+   * marcador queda como error bloqueante permanente: vincular la candidata ya
+   * no toca `blockingErrors`, así que el lote no se podría aplicar nunca.
+   */
+  it("traduce el marcador de candidata de un lote en preview anterior al cambio", async () => {
+    const { createLegacyPdtpProgramForTests, getPdtpImportBatch } = await import("@/lib/services/prevention-pdtp")
+    const program = await createLegacyPdtpProgramForTests({ year: 2033, title: "Lote heredado", userId: "user-1" })
+    const stamp = new Date().toISOString()
+    await inMemoryDb.insert(schema.pdtpImportBatches).values({
+      id: "batch-legacy-marker",
+      programId: program.id,
+      status: "staged",
+      sourceFileName: "heredado.xlsx",
+      sourceMimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      sourceSizeBytes: 1024,
+      sourceChecksumSha256: "a".repeat(64),
+      previewJson: {
+        catalog: { activities: [{ n: 7 }] },
+        summary: {
+          blockingErrors: [
+            "[catalog-candidate:pdtp-import-candidate-heredada-7] La actividad N°7 creó una candidata en borrador; revísala y publícala antes de aplicar.",
+            "General es autoritativa: el programa contiene actividades ajenas al archivo (99).",
+          ],
+        },
+        catalogActivityIdByNumber: { "7": "pdtp-import-candidate-heredada-7" },
+      },
+      metadataJson: {},
+      warningsJson: [],
+      requestedByUserId: "user-1",
+      createdAt: stamp,
+      updatedAt: stamp,
+    })
+
+    const loaded = await getPdtpImportBatch("batch-legacy-marker")
+
+    expect(loaded!.preview.catalogCandidates).toEqual([
+      { catalogActivityId: "pdtp-import-candidate-heredada-7", activityNumber: 7 },
+    ])
+    // El otro error bloqueante sigue siendo un error bloqueante.
+    expect(loaded!.preview.blockingErrors).toEqual([
+      "General es autoritativa: el programa contiene actividades ajenas al archivo (99).",
+    ])
   })
 
   it("returns a read-only sheet view with monthly planned totals", async () => {

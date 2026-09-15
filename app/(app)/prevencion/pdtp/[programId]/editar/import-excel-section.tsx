@@ -44,6 +44,8 @@ export type ImportPreview = {
   metadata?: { documentCode?: string | null; indicatorTarget?: number | null; indicatorPeriodicity?: string | null } | null
   warnings: string[]
   blockingErrors: string[]
+  /** Filas sin identidad publicada: bloquean el lote hasta resolverlas. */
+  catalogCandidates?: Array<{ catalogActivityId: string; activityNumber: number }>
 }
 
 export type ImportExcelSectionProps = {
@@ -72,10 +74,7 @@ export function ImportExcelSection({ programId, visibleWorksites, catalogActivit
   const [cancelReason, setCancelReason] = React.useState("")
   const [candidateTargets, setCandidateTargets] = React.useState<Record<string, string>>({})
 
-  const candidateErrors = (preview?.blockingErrors ?? []).flatMap((error) => {
-    const match = error.match(/^\[catalog-candidate:([^\]]+)\]/)
-    return match ? [{ id: match[1]!, message: error.replace(match[0], "").trim() }] : []
-  })
+  const pendingCandidates = preview?.catalogCandidates ?? []
 
   async function handleStage(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -249,24 +248,26 @@ export function ImportExcelSection({ programId, visibleWorksites, catalogActivit
           </div>
           {/* Son la razón por la que "Aplicar lote" está deshabilitado: sin
               pintarlos el usuario no sabía qué corregir del archivo. */}
-          {candidateErrors.length > 0 && <div className="space-y-3 rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-3">
+          {pendingCandidates.length > 0 && <div className="space-y-3 rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-3">
             <p className="text-sm font-semibold text-[var(--color-warning-ink)]">Actividades desconocidas pendientes</p>
-            {candidateErrors.map((candidate) => <div key={candidate.id} className="grid gap-2 rounded-lg bg-[var(--color-surface)] p-3 md:grid-cols-[1fr_auto] md:items-end">
+            {pendingCandidates.map((candidate) => <div key={candidate.catalogActivityId} className="grid gap-2 rounded-lg bg-[var(--color-surface)] p-3 md:grid-cols-[1fr_auto] md:items-end">
               <div>
-                <p className="mb-2 text-xs text-[var(--color-text-muted)]">{candidate.message}</p>
+                <p className="mb-2 text-xs text-[var(--color-text-muted)]">
+                  La actividad N°{candidate.activityNumber} creó una candidata en borrador; revísala y publícala antes de aplicar.
+                </p>
                 <PdtpActivityPicker
                   label="Vincular a una actividad publicada"
-                  options={catalogActivities.filter((activity) => activity.id !== candidate.id)}
-                  value={candidateTargets[candidate.id] ?? ""}
-                  onChange={(value) => setCandidateTargets((current) => ({ ...current, [candidate.id]: value }))}
+                  options={catalogActivities.filter((activity) => activity.id !== candidate.catalogActivityId)}
+                  value={candidateTargets[candidate.catalogActivityId] ?? ""}
+                  onChange={(value) => setCandidateTargets((current) => ({ ...current, [candidate.catalogActivityId]: value }))}
                   disabled={pending}
                 />
               </div>
-              <Button type="button" size="sm" variant="secondary" disabled={pending || !candidateTargets[candidate.id]} onClick={() => handleLinkCandidate(candidate.id)}>Vincular</Button>
+              <Button type="button" size="sm" variant="secondary" disabled={pending || !candidateTargets[candidate.catalogActivityId]} onClick={() => handleLinkCandidate(candidate.catalogActivityId)}>Vincular</Button>
             </div>)}
             <p className="text-xs text-[var(--color-warning-ink)]">También puedes revisar y publicar cada candidata desde Admin → Catálogos PDTP → Actividades.</p>
           </div>}
-          {preview.blockingErrors.filter((error) => !error.startsWith("[catalog-candidate:")).length > 0 && <ul className="space-y-1 rounded-lg border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-xs text-[var(--color-danger-ink)]">{preview.blockingErrors.filter((error) => !error.startsWith("[catalog-candidate:")).map((error) => <li key={error}>• {error}</li>)}</ul>}
+          {preview.blockingErrors.length > 0 && <ul className="space-y-1 rounded-lg border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-xs text-[var(--color-danger-ink)]">{preview.blockingErrors.map((error) => <li key={error}>• {error}</li>)}</ul>}
           {preview.warnings.length > 0 && <ul className="space-y-1 rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-xs text-[var(--color-warning-ink)]">{preview.warnings.map((warning) => <li key={warning}>• {warning}</li>)}</ul>}
 
           {preview.counts.executedCells > 0 && (
@@ -310,7 +311,7 @@ export function ImportExcelSection({ programId, visibleWorksites, catalogActivit
             ) : (
               <Button type="button" variant="ghost" size="sm" disabled={pending} onClick={() => { setConfirmCancel(true); setState(null) }}>Cancelar preview</Button>
             )}
-            <Button type="button" size="sm" disabled={pending || preview.blockingErrors.length > 0 || (preview.counts.executedCells > 0 && (!worksiteId || !acceptMissingEvidence || acceptanceReason.trim().length < 10))} onClick={handleApply}>
+            <Button type="button" size="sm" disabled={pending || preview.blockingErrors.length > 0 || pendingCandidates.length > 0 || (preview.counts.executedCells > 0 && (!worksiteId || !acceptMissingEvidence || acceptanceReason.trim().length < 10))} onClick={handleApply}>
               {pending ? "Aplicando..." : "Aplicar lote"}
             </Button>
           </div>

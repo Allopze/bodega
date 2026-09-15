@@ -41,6 +41,8 @@ export async function upsertDocumentCategory(input: unknown) {
   return rows[0]
 }
 
+const numbersOrNull = (values: number[] | undefined) => values && values.length > 0 ? values : null
+
 export async function upsertDocumentType(input: unknown, client: DB | Tx = db) {
   const data = sstDocumentTypeUpsertSchema.parse(input)
   // El schema valida el formato del slug; la existencia se verifica acá contra
@@ -62,8 +64,8 @@ export async function upsertDocumentType(input: unknown, client: DB | Tx = db) {
     defaultValidityMonths: data.defaultValidityMonths ?? null,
     requiresApproval: data.requiresApproval,
     requiresAcknowledgment: data.requiresAcknowledgment,
-    pdtpActivityNumbers: data.pdtpActivityNumbers.length > 0 ? data.pdtpActivityNumbers : null,
-    pdtpAcknowledgmentActivityNumbers: data.pdtpAcknowledgmentActivityNumbers.length > 0 ? data.pdtpAcknowledgmentActivityNumbers : null,
+    pdtpActivityNumbers: numbersOrNull(data.pdtpActivityNumbers),
+    pdtpAcknowledgmentActivityNumbers: numbersOrNull(data.pdtpAcknowledgmentActivityNumbers),
     isActive: data.isActive,
     createdAt: now,
     updatedAt: now,
@@ -74,8 +76,12 @@ export async function upsertDocumentType(input: unknown, client: DB | Tx = db) {
       description: data.description || null, defaultConfidentiality: data.defaultConfidentiality,
       defaultValidityMonths: data.defaultValidityMonths ?? null,
       requiresApproval: data.requiresApproval, requiresAcknowledgment: data.requiresAcknowledgment,
-      pdtpActivityNumbers: data.pdtpActivityNumbers.length > 0 ? data.pdtpActivityNumbers : null,
-      pdtpAcknowledgmentActivityNumbers: data.pdtpAcknowledgmentActivityNumbers.length > 0 ? data.pdtpAcknowledgmentActivityNumbers : null,
+      // Omitidos = se conservan. Ver el schema: con identidades cableadas los
+      // números son snapshot histórico, no configuración vigente.
+      ...(data.pdtpActivityNumbers === undefined ? {} : { pdtpActivityNumbers: numbersOrNull(data.pdtpActivityNumbers) }),
+      ...(data.pdtpAcknowledgmentActivityNumbers === undefined
+        ? {}
+        : { pdtpAcknowledgmentActivityNumbers: numbersOrNull(data.pdtpAcknowledgmentActivityNumbers) }),
       isActive: data.isActive, updatedAt: now,
     },
   })

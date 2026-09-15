@@ -40,8 +40,6 @@ export default async function PlantillasInspeccionPage() {
     canManage ? listInspectionDocumentSources(access) : Promise.resolve([]),
     listCatalogActivities(),
   ])
-  const bindings = await listPdtpAccreditationBindings({ sourceType: "inspeccion", sourceIds: templates.map((template) => template.id) })
-
   /* Qué desviaciones del maestro ofrece cada instrumento, más las que se
    * registraron como "Otra" y esperan clasificación. Se piden en paralelo y
    * sólo para quien administra: quien sólo mira no tiene qué hacer con ellas. */
@@ -55,10 +53,14 @@ export default async function PlantillasInspeccionPage() {
   const deviationTemplateCodes = [...new Set(deviationTemplates.map((row) => row.code))]
   const deviationTemplateIds = deviationTemplates.map((row) => row.id)
   // Sólo para quien administra: quien únicamente mira no tiene qué hacer con ellas.
-  const [deviationsByCode, unclassifiedByTemplate] = await Promise.all([
+  // Los bindings también cuelgan sólo de los ids de plantilla: van en esta
+  // misma tanda en vez de sumar un viaje propio antes de ella.
+  const [bindings, deviationsByCode, unclassifiedByTemplate] = await Promise.all([
+    listPdtpAccreditationBindings({ sourceType: "inspeccion", sourceIds: templates.map((template) => template.id) }),
     canManage ? listTemplateDeviationSelections(deviationTemplateCodes, access) : Promise.resolve(new Map()),
     canManage ? listUnclassifiedDeviationsFor(deviationTemplateIds, access) : Promise.resolve(new Map()),
   ]) as [
+    Awaited<ReturnType<typeof listPdtpAccreditationBindings>>,
     Awaited<ReturnType<typeof listTemplateDeviationSelections>>,
     Awaited<ReturnType<typeof listUnclassifiedDeviationsFor>>,
   ]

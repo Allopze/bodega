@@ -1526,6 +1526,71 @@ describe("declarar qué actividades PDTP acredita una plantilla", () => {
     expect(updated.version).toBe(template.version + 1)
   })
 
+  /** Una identidad publicada del catálogo, que es lo que el diálogo nuevo manda. */
+  async function catalogIdentity(suffix: string) {
+    const id = `pdtp-catalog-tpl-${suffix}`
+    const stamp = new Date().toISOString()
+    await inMemoryDb.insert(schema.pdtpCatalogActivities).values({
+      id, code: `PDT-TPL-${suffix.toUpperCase()}`, status: "active", currentRevision: 1,
+      createdAt: stamp, updatedAt: stamp,
+    }).onConflictDoNothing()
+    await inMemoryDb.insert(schema.pdtpCatalogActivityRevisions).values({
+      id: `${id}-r1`, catalogActivityId: id, revision: 1,
+      title: `Actividad de plantilla ${suffix}`, description: "Descripción corporativa",
+      executionGuidance: "Guía corporativa", createdAt: stamp,
+    }).onConflictDoNothing()
+    return id
+  }
+
+  it("cablear identidades de catálogo conserva los números legados como snapshot", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const template = await service.importInspectionTemplate({ definitionCode: "inspeccion_carros" }, ACCESS)
+    const conNumeros = await service.setInspectionTemplatePdtpActivities(
+      { templateId: template.id, expectedVersion: template.version, pdtpActivityNumbers: [33], pdtpReviewActivityNumbers: [34] },
+      ACCESS,
+    )
+
+    // El diálogo nuevo manda los números en [] y la identidad por binding. Si
+    // eso pisa el snapshot, revertir el código antes del segundo despliegue
+    // deja la plantilla sin acreditar nada: `resolvePdtpAccreditationTarget`
+    // cae a los números justamente cuando no hay binding.
+    const conCatalogo = await service.setInspectionTemplatePdtpActivities(
+      {
+        templateId: conNumeros.id,
+        expectedVersion: conNumeros.version,
+        pdtpActivityNumbers: [],
+        pdtpReviewActivityNumbers: [],
+        catalogActivityIds: [await catalogIdentity("exec")],
+        reviewCatalogActivityIds: [await catalogIdentity("review")],
+      },
+      ACCESS,
+    )
+
+    expect(conCatalogo.pdtpActivityNumbers).toEqual([33])
+    expect(conCatalogo.pdtpReviewActivityNumbers).toEqual([34])
+  })
+
+  it("vaciar la selección apaga la acreditación en las dos representaciones", async () => {
+    const service = await import("@/lib/services/prevention-inspections")
+    const template = await service.importInspectionTemplate({ definitionCode: "inspeccion_contenedores" }, ACCESS)
+    const conNumeros = await service.setInspectionTemplatePdtpActivities(
+      { templateId: template.id, expectedVersion: template.version, pdtpActivityNumbers: [29] },
+      ACCESS,
+    )
+
+    // Sin esto, conservar el snapshot revive la acreditación por el fallback:
+    // el usuario destildó todo y la plantilla seguiría cerrando la N°29.
+    const vaciado = await service.setInspectionTemplatePdtpActivities(
+      {
+        templateId: conNumeros.id, expectedVersion: conNumeros.version,
+        pdtpActivityNumbers: [], catalogActivityIds: [],
+      },
+      ACCESS,
+    )
+
+    expect(vaciado.pdtpActivityNumbers).toBeNull()
+  })
+
   it("no se pueden cambiar una vez reemplazada la plantilla", async () => {
     const service = await import("@/lib/services/prevention-inspections")
     const template = await service.importInspectionTemplate({ definitionCode: "inspeccion_contenedores" }, ACCESS)

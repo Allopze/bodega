@@ -100,6 +100,30 @@ function formatPdtpNumbers(numbers: number[] | null): string {
   return numbers.map((n) => `N°${n}`).join(", ")
 }
 
+/*
+ * Desde que el tipo se cablea por identidad corporativa, el número es un
+ * snapshot histórico: al guardar desde el formulario nuevo deja de reflejar la
+ * configuración vigente. Se muestra el código de la identidad cuando existe, y
+ * el número sólo mientras el tipo no esté migrado.
+ */
+function formatPdtpAccreditation(
+  catalogActivityIds: string[] | undefined,
+  numbers: number[] | null,
+  codeById: Map<string, string>,
+): string {
+  if (catalogActivityIds && catalogActivityIds.length > 0) {
+    return catalogActivityIds.map((id) => codeById.get(id) ?? id).join(", ")
+  }
+  return formatPdtpNumbers(numbers)
+}
+
+function hasPdtpAccreditation(type: TypeRow): boolean {
+  return Boolean(
+    type.pdtpCatalogActivityIds?.length || type.pdtpAcknowledgmentCatalogActivityIds?.length ||
+    type.pdtpActivityNumbers?.length || type.pdtpAcknowledgmentActivityNumbers?.length,
+  )
+}
+
 export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DEFAULT_CONFIDENTIALITY_LABEL, categoryOptions, types, catalogActivities = [] }: TaxonomyViewProps) {
   const [catSheetOpen, setCatSheetOpen] = React.useState(false)
   const [editCategory, setEditCategory] = React.useState<CategoryRow | null>(null)
@@ -108,6 +132,10 @@ export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DE
 
   const [catToggleState, catToggleAction] = useActionState(setDocumentCategoryStatusAction, INITIAL_STATE)
   const [typeToggleState, typeToggleAction] = useActionState(setDocumentTypeStatusAction, INITIAL_STATE)
+  const catalogCodeById = React.useMemo(
+    () => new Map(catalogActivities.map((activity) => [activity.id, activity.code])),
+    [catalogActivities],
+  )
   // Un buscador rotulado por tabla. La ruta está en `ROUTES_WITH_OWN_SEARCH`,
   // así que el input de la shell no aparece y no hay una tercera caja de
   // búsqueda compitiendo con estas dos (ver search-architecture).
@@ -336,12 +364,14 @@ export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DE
                   <ResponsiveDataListField label="Acuse">
                     {t.requiresAcknowledgment ? "Requiere" : "No requiere"}
                   </ResponsiveDataListField>
-                  {(t.pdtpActivityNumbers?.length || t.pdtpAcknowledgmentActivityNumbers?.length) ? (
+                  {hasPdtpAccreditation(t) ? (
                     <ResponsiveDataListField label="PDTP" className="col-span-2">
                       {[
-                        t.pdtpActivityNumbers?.length ? `Al publicar: ${formatPdtpNumbers(t.pdtpActivityNumbers)}` : null,
-                        t.pdtpAcknowledgmentActivityNumbers?.length
-                          ? `Por acuse: ${formatPdtpNumbers(t.pdtpAcknowledgmentActivityNumbers)}`
+                        t.pdtpCatalogActivityIds?.length || t.pdtpActivityNumbers?.length
+                          ? `Al publicar: ${formatPdtpAccreditation(t.pdtpCatalogActivityIds, t.pdtpActivityNumbers, catalogCodeById)}`
+                          : null,
+                        t.pdtpAcknowledgmentCatalogActivityIds?.length || t.pdtpAcknowledgmentActivityNumbers?.length
+                          ? `Por acuse: ${formatPdtpAccreditation(t.pdtpAcknowledgmentCatalogActivityIds, t.pdtpAcknowledgmentActivityNumbers, catalogCodeById)}`
                           : null,
                       ].filter(Boolean).join(" · ")}
                     </ResponsiveDataListField>
@@ -374,10 +404,10 @@ export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DE
                       {t.requiresAcknowledgment ? "Sí" : "No"}
                     </TableCell>
                     <TableCell className="font-mono text-xs text-[var(--color-text-muted)]">
-                      {formatPdtpNumbers(t.pdtpActivityNumbers)}
+                      {formatPdtpAccreditation(t.pdtpCatalogActivityIds, t.pdtpActivityNumbers, catalogCodeById)}
                     </TableCell>
                     <TableCell className="font-mono text-xs text-[var(--color-text-muted)]">
-                      {formatPdtpNumbers(t.pdtpAcknowledgmentActivityNumbers)}
+                      {formatPdtpAccreditation(t.pdtpAcknowledgmentCatalogActivityIds, t.pdtpAcknowledgmentActivityNumbers, catalogCodeById)}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">

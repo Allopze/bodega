@@ -150,9 +150,13 @@ export const sstDocumentTypeUpsertSchema = z.object({
    *
    * Sin exponerlos acá, la única forma de enganchar un tipo al PDTP era editar
    * `DEFAULT_DOCUMENT_TYPES` y desplegar.
+   *
+   * Omitirlos conserva lo que el tipo ya declaraba: desde que el formulario
+   * cablea identidades de catálogo, los números son un snapshot histórico y no
+   * la configuración vigente. Un `[]` explícito sí los apaga.
    */
-  pdtpActivityNumbers:               z.array(z.number().int().positive()).default([]),
-  pdtpAcknowledgmentActivityNumbers: z.array(z.number().int().positive()).default([]),
+  pdtpActivityNumbers:               z.array(z.number().int().positive()).optional(),
+  pdtpAcknowledgmentActivityNumbers: z.array(z.number().int().positive()).optional(),
   isActive:    z.boolean().default(true),
 })
 

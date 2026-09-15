@@ -332,6 +332,12 @@ export async function importInspectionTemplate(input: unknown, access: Inspectio
  * actividad acredita no altera la evidencia de lo que se preguntó, así que se
  * admite también sobre una plantilla ya vigente.
  */
+/** Qué quedó cableado en un eje: identidades si se declararon, o los números. */
+function describeWiring(label: string, catalogIds: string[] | undefined, numbers: number[] | null): string | null {
+  if (catalogIds) return catalogIds.length > 0 ? `${label}: ${catalogIds.join(", ")}` : null
+  return numbers ? `${label}: ${numbers.join(", ")}` : null
+}
+
 export async function setInspectionTemplatePdtpActivities(input: unknown, access: InspectionAccess) {
   const data = z.object({
     templateId: z.string().min(1),
@@ -354,10 +360,21 @@ export async function setInspectionTemplatePdtpActivities(input: unknown, access
     const now = nowIso()
     const normalize = (values: number[] | undefined) =>
       values && values.length > 0 ? [...new Set(values)].sort((a, b) => a - b) : null
-    const numbers = normalize(data.pdtpActivityNumbers)
+    const keep = (current: unknown) => Array.isArray(current) ? current as number[] : null
+    /*
+     * Cuando el llamador cablea identidades de catálogo, los números dejan de
+     * ser configuración y quedan como snapshot histórico: es la única red si
+     * el código se revierte antes del segundo despliegue, porque
+     * `resolvePdtpAccreditationTarget` cae a los números justamente cuando la
+     * fuente no tiene binding. Una selección vacía sí los apaga — conservarlos
+     * ahí reviviría por el fallback una acreditación que el usuario destildó.
+     */
+    const declared = (catalogIds: string[] | undefined, current: unknown, values: number[] | undefined) =>
+      catalogIds && catalogIds.length > 0 ? keep(current) : normalize(values)
+    const numbers = declared(data.catalogActivityIds, template.pdtpActivityNumbers, data.pdtpActivityNumbers)
     const reviewNumbers = data.pdtpReviewActivityNumbers === undefined
-      ? (Array.isArray(template.pdtpReviewActivityNumbers) ? template.pdtpReviewActivityNumbers : null)
-      : normalize(data.pdtpReviewActivityNumbers)
+      ? keep(template.pdtpReviewActivityNumbers)
+      : declared(data.reviewCatalogActivityIds, template.pdtpReviewActivityNumbers, data.pdtpReviewActivityNumbers)
     const [updated] = await tx.update(preventionInspectionTemplates).set({
       pdtpActivityNumbers: numbers,
       pdtpReviewActivityNumbers: reviewNumbers,
@@ -372,9 +389,11 @@ export async function setInspectionTemplatePdtpActivities(input: unknown, access
     if (data.reviewCatalogActivityIds) await replacePdtpAccreditationBindings({ sourceType: "inspeccion", sourceId: template.id, eventType: "review", catalogActivityIds: data.reviewCatalogActivityIds, updatedByUserId: access.userId }, tx)
     await history(tx, {
       entityType: "template", entityId: template.id, changeType: "pdtp_activities_set",
+      // El historial nombra lo que se cableó en este cambio. Repetir el
+      // snapshot numérico conservado haría creer que el número fue la decisión.
       reason: [
-        numbers ? `Acredita al ejecutar: ${numbers.join(", ")}` : "Sin acreditación al ejecutar",
-        reviewNumbers ? `al revisar: ${reviewNumbers.join(", ")}` : null,
+        describeWiring("Acredita al ejecutar", data.catalogActivityIds, numbers) ?? "Sin acreditación al ejecutar",
+        describeWiring("al revisar", data.reviewCatalogActivityIds, reviewNumbers),
       ].filter(Boolean).join(" · "),
       beforeState: template, afterState: updated, actorUserId: access.userId,
     })

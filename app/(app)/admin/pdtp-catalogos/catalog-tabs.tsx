@@ -182,7 +182,15 @@ export function CatalogTabs({ activities, roleOptions, responsibles, sheets, pro
               <form action={retireAction} className="space-y-4">
                 <DialogHeader>
                   <DialogTitle>Retirar {retireActivity?.title}</DialogTitle>
-                  <DialogDescription>Seguirá visible en programas e historiales, pero no podrá seleccionarse para trabajo nuevo.</DialogDescription>
+                  {/* Retirar no desconecta lo ya cableado: las fuentes que la
+                      declaran siguen acreditándola contra los programas que la
+                      incorporaron. Decirlo acá evita creer que el retiro apaga
+                      la acreditación. */}
+                  <DialogDescription>
+                    No podrá seleccionarse para trabajo nuevo. Los programas que ya la incorporaron
+                    y las fuentes que hoy la declaran siguen acreditándola: para cortar eso, quítala
+                    en cada fuente.
+                  </DialogDescription>
                 </DialogHeader>
                 <input type="hidden" name="id" value={retireActivity?.id ?? ""} />
                 <label className="block text-sm font-medium" htmlFor="retire-reason">Motivo del retiro</label>

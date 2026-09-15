@@ -460,9 +460,18 @@ export async function setEmergencyPlanPdtpActivities(input: unknown, access: Eme
     if (plan.version !== data.expectedVersion) throw new Error("El plan cambió mientras lo editabas. Recarga y reintenta.")
     if (plan.status === "archived") throw new EmergencyDomainError("Un plan archivado no admite cambios.")
 
-    const numbers = data.pdtpActivityNumbers.length > 0
-      ? [...new Set(data.pdtpActivityNumbers)].sort((a, b) => a - b)
-      : null
+    /*
+     * Con identidades cableadas los números dejan de ser configuración y
+     * quedan como snapshot histórico: `resolvePdtpAccreditationTarget` sólo
+     * cae a ellos si la fuente no tiene binding, así que son la red de un
+     * rollback anterior al segundo despliegue. Una selección vacía sí los
+     * apaga, o el fallback reviviría lo que el usuario destildó.
+     */
+    const numbers = data.catalogActivityIds && data.catalogActivityIds.length > 0
+      ? (Array.isArray(plan.pdtpActivityNumbers) ? plan.pdtpActivityNumbers : null)
+      : data.pdtpActivityNumbers.length > 0
+        ? [...new Set(data.pdtpActivityNumbers)].sort((a, b) => a - b)
+        : null
     if (data.catalogActivityIds) await replacePdtpAccreditationBindings({ sourceType: "emergencia", sourceId: plan.id, eventType: "complete_drill", catalogActivityIds: data.catalogActivityIds, updatedByUserId: access.userId }, tx)
     const now = nowIso()
     const [updated] = await tx.update(preventionEmergencyPlans).set({
@@ -476,7 +485,13 @@ export async function setEmergencyPlanPdtpActivities(input: unknown, access: Eme
     if (!updated) throw new Error("El plan cambió mientras lo editabas. Recarga y reintenta.")
     await history(tx, {
       entityType: "plan", entityId: plan.id, worksiteId: plan.worksiteId, changeType: "pdtp_activities_set",
-      reason: numbers ? `Los simulacros acreditan las actividades PDTP ${numbers.join(", ")}` : "Los simulacros no acreditan ninguna actividad PDTP",
+      // El historial nombra lo que se cableó. Repetir el snapshot conservado
+      // haría creer que el número fue la decisión de este cambio.
+      reason: data.catalogActivityIds
+        ? (data.catalogActivityIds.length > 0
+          ? `Los simulacros acreditan las identidades de catálogo ${data.catalogActivityIds.join(", ")}`
+          : "Los simulacros no acreditan ninguna actividad PDTP")
+        : numbers ? `Los simulacros acreditan las actividades PDTP ${numbers.join(", ")}` : "Los simulacros no acreditan ninguna actividad PDTP",
       beforeState: plan, afterState: updated, actorUserId: access.userId,
     })
     return updated

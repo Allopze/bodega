@@ -147,53 +147,6 @@ export async function retireCatalogActivity(id: string, reason: string, client: 
   return updated
 }
 
-export async function addCatalogActivityToProgram(input: {
-  programId: string
-  catalogActivityId: string
-  n: number
-  responsibleSlugs: string[]
-  responsibleDisplay: string
-}, client: Client = db) {
-  const [program] = await client.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, input.programId)).limit(1)
-  if (!program) throw new Error("Programa PDTP no encontrado.")
-  if (program.status !== "draft") throw new Error("El programa no está editable.")
-  const [catalog] = await client.select().from(pdtpCatalogActivities).where(eq(pdtpCatalogActivities.id, input.catalogActivityId)).limit(1)
-  if (!catalog) throw new Error("Actividad de catálogo no encontrada.")
-  if (catalog.status === "draft") throw new Error("La actividad debe estar publicada antes de incorporarla.")
-  if (catalog.status === "retired") throw new Error("La actividad está retirada y no puede seleccionarse nuevamente.")
-  const [existing] = await client.select({ id: pdtpActivities.id }).from(pdtpActivities).where(and(
-    eq(pdtpActivities.programId, input.programId),
-    eq(pdtpActivities.catalogActivityId, input.catalogActivityId),
-  )).limit(1)
-  if (existing) throw new Error("La actividad ya está incorporada en este programa.")
-  const [revision] = await client.select().from(pdtpCatalogActivityRevisions).where(and(
-    eq(pdtpCatalogActivityRevisions.catalogActivityId, catalog.id),
-    eq(pdtpCatalogActivityRevisions.revision, catalog.currentRevision),
-  )).limit(1)
-  if (!revision) throw new Error("La revisión vigente del catálogo no existe.")
-  const now = new Date().toISOString()
-  const [created] = await client.insert(pdtpActivities).values({
-    id: `${input.programId}-catalog-${nanoid()}`,
-    programId: input.programId,
-    n: input.n,
-    displayOrder: input.n,
-    catalogActivityId: catalog.id,
-    catalogRevision: revision.revision,
-    activity: revision.description,
-    program: revision.executionGuidance,
-    responsibleSlugs: input.responsibleSlugs,
-    responsibleDisplay: input.responsibleDisplay,
-    scheduleMode: "scheduled",
-    scheduleClassificationStatus: "needs_review",
-    indicatorMode: "planned_vs_completed",
-    sourceSheetRow: 0,
-    createdAt: now,
-    updatedAt: now,
-  }).returning()
-  if (!created) throw new Error("No se pudo incorporar la actividad al programa.")
-  return created
-}
-
 export async function adoptLatestCatalogRevision(annualActivityId: string, client: Client = db) {
   const [annual] = await client.select().from(pdtpActivities).where(eq(pdtpActivities.id, annualActivityId)).limit(1)
   if (!annual?.catalogActivityId) throw new Error("La actividad anual no tiene identidad de catálogo.")

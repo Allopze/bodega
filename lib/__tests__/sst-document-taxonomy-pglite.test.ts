@@ -65,6 +65,51 @@ describe("taxonomía documental SST", () => {
     expect(row?.categorySlug).toBe("procedimientos_operacionales_audit")
   })
 
+  /*
+   * El formulario de tipos pasó a cablear identidades de catálogo y dejó de
+   * emitir los campos numéricos. Omitirlos tiene que conservar el snapshot:
+   * `resolvePdtpAccreditationTarget` cae a los números sólo si el tipo no
+   * tiene binding, así que son la red de un rollback anterior al segundo
+   * despliegue. Un `[]` explícito sigue significando "no acredita".
+   */
+  it("omitir los números PDTP conserva los que el tipo ya declaraba", async () => {
+    await upsertDocumentCategory({
+      slug: "difusion_audit", name: "Difusión",
+      description: "Categoría de prueba para el snapshot numérico.", sortOrder: 2, isActive: true,
+    })
+    const creado = await upsertDocumentType({
+      categorySlug: "difusion_audit", code: "DIF-001", name: "Comunicado de difusión",
+      pdtpActivityNumbers: [36], pdtpAcknowledgmentActivityNumbers: [78],
+    })
+    expect(creado?.pdtpActivityNumbers).toEqual([36])
+
+    const renombrado = await upsertDocumentType({
+      id: creado!.id, categorySlug: "difusion_audit", code: "DIF-001",
+      name: "Comunicado de difusión interna",
+    })
+
+    expect(renombrado?.pdtpActivityNumbers).toEqual([36])
+    expect(renombrado?.pdtpAcknowledgmentActivityNumbers).toEqual([78])
+  })
+
+  it("un [] explícito apaga los números PDTP del tipo", async () => {
+    await upsertDocumentCategory({
+      slug: "difusion_audit_off", name: "Difusión sin acreditación",
+      description: "Categoría de prueba para apagar el snapshot.", sortOrder: 3, isActive: true,
+    })
+    const creado = await upsertDocumentType({
+      categorySlug: "difusion_audit_off", code: "DIF-002", name: "Comunicado sin acreditación",
+      pdtpActivityNumbers: [36],
+    })
+
+    const apagado = await upsertDocumentType({
+      id: creado!.id, categorySlug: "difusion_audit_off", code: "DIF-002",
+      name: "Comunicado sin acreditación", pdtpActivityNumbers: [],
+    })
+
+    expect(apagado?.pdtpActivityNumbers).toBeNull()
+  })
+
   it("rechaza un tipo con categoría inexistente", async () => {
     await expect(upsertDocumentType({
       categorySlug: "categoria_que_no_existe",

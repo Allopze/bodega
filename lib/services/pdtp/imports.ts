@@ -88,6 +88,13 @@ export type PdtpImportPreview = {
   metadata: PdtpCatalog["metadata"]
   warnings: string[]
   blockingErrors: string[]
+  /**
+   * Filas del archivo que no calzaron con ninguna identidad publicada y
+   * quedaron como candidatas en borrador. Bloquean el lote hasta publicarlas o
+   * vincularlas, y viajan como dato: el marcador de texto que se usaba antes
+   * ataba el bloqueo a la redacción del mensaje.
+   */
+  catalogCandidates: Array<{ catalogActivityId: string; activityNumber: number }>
 }
 
 type StoredPreview = {
@@ -95,8 +102,6 @@ type StoredPreview = {
   summary: PdtpImportPreview
   catalogActivityIdByNumber?: Record<string, string>
 }
-
-const CATALOG_CANDIDATE_BLOCKER = "[catalog-candidate:"
 
 function buildImportedDocumentHistory(
   metadata: NonNullable<PdtpCatalog["metadata"]>,
@@ -255,6 +260,7 @@ export async function stagePdtpXlsxImport(input: {
   const blockingErrors: string[] = []
   const catalogActivityIdByNumber: Record<string, string> = {}
   const candidateActivities: Array<{ id: string; code: string; n: number; description: string; executionGuidance: string }> = []
+  const catalogCandidates: PdtpImportPreview["catalogCandidates"] = []
   for (const activity of catalog.activities) {
     const existingIdentity = existingByNumber.get(activity.n)?.catalogActivityId
     if (existingIdentity) {
@@ -270,7 +276,7 @@ export async function stagePdtpXlsxImport(input: {
       const id = `pdtp-import-candidate-${checksumSha256.slice(0, 12)}-${activity.n}`
       catalogActivityIdByNumber[String(activity.n)] = id
       candidateActivities.push({ id, code: `PDT-IMPORT-${checksumSha256.slice(0, 8).toUpperCase()}-${activity.n}`, n: activity.n, description: activity.activity, executionGuidance: activity.program })
-      blockingErrors.push(`${CATALOG_CANDIDATE_BLOCKER}${id}] La actividad N°${activity.n} creó una candidata en borrador; revísala y publícala antes de aplicar.`)
+      catalogCandidates.push({ catalogActivityId: id, activityNumber: activity.n })
     }
   }
   const repeatedCatalogIds = Object.entries(catalogActivityIdByNumber).filter(([, id], index, entries) => entries.findIndex(([, candidate]) => candidate === id) !== index)
@@ -331,6 +337,7 @@ export async function stagePdtpXlsxImport(input: {
     metadata: catalog.metadata,
     warnings,
     blockingErrors,
+    catalogCandidates,
   }
   const now = new Date().toISOString()
   const [batch] = await db.transaction(async (tx) => {
@@ -406,10 +413,31 @@ export async function stagePdtpXlsxImport(input: {
   return { batch: batch!, preview: summary }
 }
 
+/**
+ * Compatibilidad de lectura para los lotes que quedaron en preview cuando la
+ * candidata viajaba como marcador dentro de un `blockingError`. Se traduce al
+ * campo estructurado; sin esto el marcador quedaría como error bloqueante
+ * permanente, porque vincular la candidata ya no reescribe los mensajes.
+ * Se puede borrar cuando no queden lotes `staged` de ese formato.
+ */
+const LEGACY_CANDIDATE_MARKER = /^\[catalog-candidate:([^\]]+)\]\s*La actividad N°(\d+)/
+
+function migrateLegacyCandidates(summary: PdtpImportPreview): PdtpImportPreview {
+  if (summary.catalogCandidates) return summary
+  const catalogCandidates: PdtpImportPreview["catalogCandidates"] = []
+  const blockingErrors: string[] = []
+  for (const error of summary.blockingErrors ?? []) {
+    const match = LEGACY_CANDIDATE_MARKER.exec(error)
+    if (match) catalogCandidates.push({ catalogActivityId: match[1]!, activityNumber: Number(match[2]) })
+    else blockingErrors.push(error)
+  }
+  return { ...summary, blockingErrors, catalogCandidates }
+}
+
 function storedPreview(batch: typeof pdtpImportBatches.$inferSelect): StoredPreview {
   const stored = batch.previewJson as StoredPreview
   if (!stored?.catalog?.activities || !stored.summary) throw new Error("El lote no contiene un preview aplicable.")
-  return stored
+  return { ...stored, summary: migrateLegacyCandidates(stored.summary) }
 }
 
 /** Resuelve explícitamente una candidata de Excel contra una identidad ya
@@ -447,10 +475,10 @@ export async function linkPdtpImportCandidate(input: {
       throw new Error("La identidad seleccionada ya está vinculada a otra fila del mismo programa.")
     }
     map[numberEntry[0]] = target.id
-    const marker = `${CATALOG_CANDIDATE_BLOCKER}${candidate.id}]`
     const summary = {
       ...stored.summary,
-      blockingErrors: stored.summary.blockingErrors.filter((error) => !error.startsWith(marker)),
+      catalogCandidates: (stored.summary.catalogCandidates ?? [])
+        .filter((pending) => pending.catalogActivityId !== candidate.id),
     }
     const now = new Date().toISOString()
     await tx.update(pdtpImportBatches).set({
@@ -527,9 +555,8 @@ export async function applyPdtpImportBatch(input: {
       throw new Error("Acepta explícitamente la migración sin evidencia adjunta e indica un motivo de al menos 10 caracteres.")
     }
   }
-  const staticBlockingErrors = stored.summary.blockingErrors.filter((error) => !error.startsWith(CATALOG_CANDIDATE_BLOCKER))
-  if (staticBlockingErrors.length > 0 || unresolvedCatalog.length > 0) {
-    throw new Error(`El lote tiene errores bloqueantes: ${[...staticBlockingErrors, ...(unresolvedCatalog.length ? [`${unresolvedCatalog.length} actividad(es) candidata(s) siguen sin publicar.`] : [])].join(" ")}`)
+  if (stored.summary.blockingErrors.length > 0 || unresolvedCatalog.length > 0) {
+    throw new Error(`El lote tiene errores bloqueantes: ${[...stored.summary.blockingErrors, ...(unresolvedCatalog.length ? [`${unresolvedCatalog.length} actividad(es) candidata(s) siguen sin publicar.`] : [])].join(" ")}`)
   }
 
   const now = new Date().toISOString()
@@ -548,8 +575,7 @@ export async function applyPdtpImportBatch(input: {
       .from(pdtpCatalogActivities).where(inArray(pdtpCatalogActivities.id, catalogIds)) : []
     const catalogById = new Map(currentCatalog.map((activity) => [activity.id, activity]))
     const unresolved = catalogIds.filter((id) => catalogById.get(id)?.status !== "active")
-    const staticErrors = stored.summary.blockingErrors.filter((error) => !error.startsWith(CATALOG_CANDIDATE_BLOCKER))
-    if (staticErrors.length > 0 || unresolved.length > 0 || catalogIds.length !== stored.catalog.activities.length) {
+    if (stored.summary.blockingErrors.length > 0 || unresolved.length > 0 || catalogIds.length !== stored.catalog.activities.length) {
       throw new Error(`El lote tiene actividades sin identidad publicada o vínculos ambiguos; corrige el catálogo antes de aplicar.`)
     }
 
@@ -895,10 +921,27 @@ export async function cancelPdtpImportBatch(input: { batchId: string; userId: st
       updatedAt: now,
     }).where(and(eq(pdtpImportBatches.id, batch.id), eq(pdtpImportBatches.status, "staged"))).returning({ id: pdtpImportBatches.id })
     if (!updated) throw new Error("El lote cambió de estado antes de poder cancelarlo.")
+    /*
+     * Previsualizar sembró candidatas en el catálogo corporativo. Al descartar
+     * el lote quedan sin dueño, y no se pueden borrar: el código es inmutable
+     * por trigger y la revisión tampoco admite DELETE. Se retiran, que además
+     * conserva la revisión explicando de dónde salieron.
+     */
+    const abandoned = (storedPreview(batch).summary.catalogCandidates ?? []).map((candidate) => candidate.catalogActivityId)
+    if (abandoned.length > 0) {
+      await tx.update(pdtpCatalogActivities).set({
+        status: "retired",
+        retiredReason: "Candidata descartada al cancelar el preview de importación.",
+        retiredByUserId: input.userId,
+        retiredAt: now,
+        updatedAt: now,
+      }).where(and(inArray(pdtpCatalogActivities.id, abandoned), eq(pdtpCatalogActivities.status, "draft")))
+    }
     await addPdtpChangeLogEntry(batch.programId, program.version, input.userId, "import:cancel", null, {
       batchId: batch.id,
       reason,
       checksumSha256: batch.sourceChecksumSha256,
+      retiredCandidates: abandoned.length,
     }, "Preview Excel cancelado sin modificar el programa.", tx)
   })
   return { cancelled: true, batchId: batch.id }

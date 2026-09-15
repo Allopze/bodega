@@ -44,6 +44,18 @@ function readActivityNumbers(formData: FormData, field: string): number[] {
     .sort((a, b) => a - b)
 }
 
+/**
+ * Qué hacer con el snapshot numérico del tipo. `undefined` lo conserva: desde
+ * que el formulario cablea identidades de catálogo, los números dejaron de ser
+ * la configuración vigente y quedan como red de un rollback anterior al
+ * segundo despliegue. Una selección vacía sí los apaga, porque el fallback de
+ * `resolvePdtpAccreditationTarget` reviviría lo que el admin destildó.
+ */
+function legacyActivityNumbers(formData: FormData, numbersField: string, catalogField: string): number[] | undefined {
+  if (!formData.has(catalogField)) return readActivityNumbers(formData, numbersField)
+  return readCatalogActivityIds(formData, catalogField).length > 0 ? undefined : []
+}
+
 function readCatalogActivityIds(formData: FormData, field: string): string[] {
   try {
     const value = JSON.parse(String(formData.get(field) ?? "[]"))
@@ -125,8 +137,8 @@ export async function saveDocumentTypeAction(_prev: ActionState, formData: FormD
         defaultValidityMonths,
         requiresApproval: readFormBool(formData, "requiresApproval", true),
         requiresAcknowledgment: readFormBool(formData, "requiresAcknowledgment", false),
-        pdtpActivityNumbers: readActivityNumbers(formData, "pdtpActivityNumbers"),
-        pdtpAcknowledgmentActivityNumbers: readActivityNumbers(formData, "pdtpAcknowledgmentActivityNumbers"),
+        pdtpActivityNumbers: legacyActivityNumbers(formData, "pdtpActivityNumbers", "pdtpCatalogActivityIds"),
+        pdtpAcknowledgmentActivityNumbers: legacyActivityNumbers(formData, "pdtpAcknowledgmentActivityNumbers", "pdtpAcknowledgmentCatalogActivityIds"),
         isActive: readFormBool(formData, "isActive", true),
       }, tx)
       if (!saved) throw new Error("El tipo no se pudo guardar")

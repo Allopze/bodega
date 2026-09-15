@@ -439,7 +439,11 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
   )).where(eq(pdtpCatalogActivities.id, input.catalogActivityId)).limit(1) : []
   const catalog = catalogDefinition[0]
   if (input.catalogActivityId && !catalog) throw new Error("Actividad de catálogo no encontrada.")
-  if (catalog?.status !== undefined && catalog.status !== "active") throw new Error("Sólo se pueden incorporar actividades publicadas.")
+  // Retirada y borrador se rechazan por motivos distintos: la primera no
+  // vuelve, la segunda sólo espera publicación. Un mensaje único mandaba a
+  // buscar en la lista equivocada.
+  if (catalog?.status === "retired") throw new Error("La actividad está retirada y no puede seleccionarse nuevamente.")
+  if (catalog && catalog.status !== "active") throw new Error("La actividad debe estar publicada antes de incorporarla.")
   const subjectCapabilityCodes = normalizedSubjectCapabilityCodes(input.subjectCapabilityCodes)
   await validateCapabilitySubjectConfiguration(input.subjectSource ?? null, subjectCapabilityCodes)
 

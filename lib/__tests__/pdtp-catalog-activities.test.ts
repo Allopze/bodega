@@ -7,7 +7,6 @@ import * as schema from "@/db/schema"
 import type { DB } from "@/db"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
 import {
-  addCatalogActivityToProgram,
   adoptLatestCatalogRevision,
   createCatalogActivity,
   createCatalogActivityRevision,
@@ -19,6 +18,33 @@ const pg = new PGlite()
 const database = drizzle(pg, { schema })
 const client = database as unknown as DB
 const now = new Date().toISOString()
+
+/**
+ * Incorpora una identidad al programa como lo deja `addPdtpActivity`, que es
+ * la única vía del producto. Sus guardas (publicada, no repetida, no retirada)
+ * se prueban contra el servicio real en `prevention-pdtp.test.ts`; acá sólo se
+ * necesita la actividad anual ya creada para ejercitar las revisiones.
+ */
+async function incorporateForTest(input: { programId: string; catalogActivityId: string; n: number }) {
+  const [revision] = await database.select().from(schema.pdtpCatalogActivityRevisions)
+    .where(eq(schema.pdtpCatalogActivityRevisions.catalogActivityId, input.catalogActivityId))
+    .orderBy(schema.pdtpCatalogActivityRevisions.revision)
+  const [created] = await database.insert(schema.pdtpActivities).values({
+    id: `${input.programId}-catalog-${input.n}`,
+    programId: input.programId,
+    n: input.n,
+    catalogActivityId: input.catalogActivityId,
+    catalogRevision: revision!.revision,
+    activity: revision!.description,
+    program: revision!.executionGuidance,
+    responsibleSlugs: [],
+    responsibleDisplay: "Prevención",
+    sourceSheetRow: 0,
+    createdAt: now,
+    updatedAt: now,
+  }).returning()
+  return created!
+}
 
 beforeAll(async () => migratePGlite(pg, path.resolve(process.cwd(), "db/migrations")))
 afterAll(async () => pg.close())
@@ -37,15 +63,9 @@ describe("ciclo de vida de actividades corporativas PDTP", () => {
       elaboratedByName: "Test", elaboratedByTitle: "Test", creationMode: "blank", createdAt: now, updatedAt: now,
     })
 
-    await expect(addCatalogActivityToProgram({ programId: "catalog-program-draft", catalogActivityId: created.id, n: 30, responsibleSlugs: [], responsibleDisplay: "Prevención" }, client))
-      .rejects.toThrow(/publicada/i)
-
     await publishCatalogActivity(created.id, client)
-    const annual = await addCatalogActivityToProgram({ programId: "catalog-program-draft", catalogActivityId: created.id, n: 30, responsibleSlugs: [], responsibleDisplay: "Prevención" }, client)
+    const annual = await incorporateForTest({ programId: "catalog-program-draft", catalogActivityId: created.id, n: 30 })
     expect(annual.catalogRevision).toBe(1)
-
-    await expect(addCatalogActivityToProgram({ programId: "catalog-program-draft", catalogActivityId: created.id, n: 31, responsibleSlugs: [], responsibleDisplay: "Prevención" }, client))
-      .rejects.toThrow(/ya está incorporada/i)
 
     const revision = await createCatalogActivityRevision({
       catalogActivityId: created.id,
@@ -86,15 +106,14 @@ describe("ciclo de vida de actividades corporativas PDTP", () => {
       id: "catalog-program-retire", year: 2096, version: 1, status: "draft", title: "Programa retiro",
       elaboratedByName: "Test", elaboratedByTitle: "Test", creationMode: "blank", createdAt: now, updatedAt: now,
     })
-    const annual = await addCatalogActivityToProgram({ programId: "catalog-program-retire", catalogActivityId: created.id, n: 1, responsibleSlugs: [], responsibleDisplay: "Prevención" }, client)
+    const annual = await incorporateForTest({ programId: "catalog-program-retire", catalogActivityId: created.id, n: 1 })
     await retireCatalogActivity(created.id, "Ya no corresponde al estándar corporativo", client)
 
+    // La actividad anual ya incorporada sobrevive al retiro: el programa del
+    // año está congelado y su historial tiene que seguir explicándose.
     expect((await database.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.id, annual.id)))[0]).toBeDefined()
-    await database.insert(schema.pdtpPrograms).values({
-      id: "catalog-program-after-retire", year: 2097, version: 1, status: "draft", title: "Programa posterior",
-      elaboratedByName: "Test", elaboratedByTitle: "Test", creationMode: "blank", createdAt: now, updatedAt: now,
-    })
-    await expect(addCatalogActivityToProgram({ programId: "catalog-program-after-retire", catalogActivityId: created.id, n: 1, responsibleSlugs: [], responsibleDisplay: "Prevención" }, client))
-      .rejects.toThrow(/retirada/i)
+    const [revision] = await database.select().from(schema.pdtpCatalogActivityRevisions)
+      .where(eq(schema.pdtpCatalogActivityRevisions.catalogActivityId, created.id))
+    expect(revision).toMatchObject({ description: "Descripción que debe conservarse" })
   })
 })

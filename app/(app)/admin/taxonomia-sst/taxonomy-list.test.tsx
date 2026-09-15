@@ -47,6 +47,17 @@ const TYPES = [
     defaultConfidentiality: "internal_public", defaultValidityMonths: 12, requiresApproval: true,
     requiresAcknowledgment: true, pdtpActivityNumbers: [4], pdtpAcknowledgmentActivityNumbers: null, isActive: false,
   },
+  {
+    id: "t3", categorySlug: "gestion-preventiva", code: "DIF", name: "Comunicado", description: "",
+    defaultConfidentiality: "internal_public", defaultValidityMonths: null, requiresApproval: true,
+    requiresAcknowledgment: true, pdtpActivityNumbers: [43], pdtpAcknowledgmentActivityNumbers: [36],
+    pdtpCatalogActivityIds: ["cat-43"], pdtpAcknowledgmentCatalogActivityIds: ["cat-36"], isActive: true,
+  },
+]
+
+const CATALOG_ACTIVITIES = [
+  { id: "cat-43", code: "PDT-043-REVISAR-PROCEDIMIENTOS", title: "Revisar procedimientos de trabajo seguro", description: "Revisión anual", status: "active" as const },
+  { id: "cat-36", code: "PDT-036-DIFUNDIR-MATRIZ", title: "Difundir la matriz de riesgos MIPER", description: "Difusión por acuse", status: "active" as const },
 ]
 
 function renderView() {
@@ -57,6 +68,7 @@ function renderView() {
         activeSlug="gestion-preventiva"
         categoryOptions={CATEGORIES.map((c) => ({ slug: c.slug, name: c.name }))}
         types={TYPES}
+        catalogActivities={CATALOG_ACTIVITIES}
       />
     </ShellHeaderProvider>,
   )
@@ -91,6 +103,26 @@ describe("TaxonomyView", () => {
     renderView()
     const typesPanel = screen.getByRole("region", { name: /Tipos/ })
     expect(within(typesPanel).getByRole("button", { name: "Nuevo tipo" })).toBeVisible()
+  })
+
+  /*
+   * Desde que el tipo se cablea por identidad, el número es un snapshot que el
+   * admin no debe leer como configuración vigente: al primer guardado desde el
+   * formulario nuevo queda vacío mientras la acreditación sigue andando por el
+   * binding. La columna tiene que mostrar la identidad cableada.
+   */
+  it("muestra la identidad cableada en las columnas PDTP, no el número histórico", () => {
+    renderView()
+    const typesPanel = screen.getByRole("region", { name: /Tipos/ })
+    expect(within(typesPanel).getAllByText(/PDT-043-REVISAR-PROCEDIMIENTOS/).length).toBeGreaterThan(0)
+    expect(within(typesPanel).getAllByText(/PDT-036-DIFUNDIR-MATRIZ/).length).toBeGreaterThan(0)
+    expect(within(typesPanel).queryByText("N°43")).toBeNull()
+  })
+
+  it("sigue mostrando el número cuando el tipo todavía no tiene identidad cableada", () => {
+    renderView()
+    const typesPanel = screen.getByRole("region", { name: /Tipos/ })
+    expect(within(typesPanel).getAllByText("N°4").length).toBeGreaterThan(0)
   })
 
   it("emite una celda por columna declarada en ambas tablas", () => {

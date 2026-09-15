@@ -136,6 +136,56 @@ describe("saveDocumentTypeAction", () => {
     }))
   })
 
+  /*
+   * El formulario cablea identidades y ya no emite los campos numéricos. Si la
+   * acción manda [] igual, el guardado borra el snapshot con el que el tipo
+   * acreditaba antes del backfill. Con identidad seleccionada los números no
+   * se tocan; con la selección vacía se apagan, o el fallback de
+   * `resolvePdtpAccreditationTarget` reviviría lo que el admin destildó.
+   */
+  it("con identidades cableadas no toca los números PDTP del tipo", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockUpsertType.mockResolvedValueOnce({ id: "t-1", categorySlug: "epp", code: "C", name: "N", isActive: true })
+    const fd = new FormData()
+    fd.set("categorySlug", "epp"); fd.set("code", "C"); fd.set("name", "N")
+    fd.set("pdtpCatalogActivityIds", JSON.stringify(["pdtp-catalog-036"]))
+    fd.set("pdtpAcknowledgmentCatalogActivityIds", JSON.stringify(["pdtp-catalog-078"]))
+
+    await saveDocumentTypeAction(prevState, fd)
+
+    const [payload] = mockUpsertType.mock.calls[0]!
+    expect(payload.pdtpActivityNumbers).toBeUndefined()
+    expect(payload.pdtpAcknowledgmentActivityNumbers).toBeUndefined()
+  })
+
+  it("una selección vacía de catálogo apaga los números PDTP del tipo", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockUpsertType.mockResolvedValueOnce({ id: "t-1", categorySlug: "epp", code: "C", name: "N", isActive: true })
+    const fd = new FormData()
+    fd.set("categorySlug", "epp"); fd.set("code", "C"); fd.set("name", "N")
+    fd.set("pdtpCatalogActivityIds", JSON.stringify([]))
+    fd.set("pdtpAcknowledgmentCatalogActivityIds", JSON.stringify([]))
+
+    await saveDocumentTypeAction(prevState, fd)
+
+    const [payload] = mockUpsertType.mock.calls[0]!
+    expect(payload.pdtpActivityNumbers).toEqual([])
+    expect(payload.pdtpAcknowledgmentActivityNumbers).toEqual([])
+  })
+
+  it("un formulario que sí declara números los sigue escribiendo", async () => {
+    mockRequirePermission.mockResolvedValueOnce(makeSession())
+    mockUpsertType.mockResolvedValueOnce({ id: "t-1", categorySlug: "epp", code: "C", name: "N", isActive: true })
+    const fd = new FormData()
+    fd.set("categorySlug", "epp"); fd.set("code", "C"); fd.set("name", "N")
+    fd.set("pdtpActivityNumbers", "43, 36")
+
+    await saveDocumentTypeAction(prevState, fd)
+
+    const [payload] = mockUpsertType.mock.calls[0]!
+    expect(payload.pdtpActivityNumbers).toEqual([36, 43])
+  })
+
   it("surfaces a missing category as an error message", async () => {
     mockRequirePermission.mockResolvedValueOnce(makeSession())
     mockUpsertType.mockRejectedValueOnce(new Error("La categoría indicada no existe"))
