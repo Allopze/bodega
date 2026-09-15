@@ -44,6 +44,13 @@ export const EVIDENCE_STORAGE_PREFIXES = {
   inspection: "storage/inspection-evidence",
   pdtp: "storage/pdtp-evidence",
   training: "storage/prevention-training-evidence",
+  /* Campañas y CGRD estrenan espacio propio con la simplificación de
+   * 2026-09-14: su evidencia pasó a ser obligatoria, y hasta entonces la única
+   * forma de cumplirla era pegar una URL externa —no había dónde subir el
+   * archivo—. Espacios separados por el mismo criterio que inspecciones y
+   * PDTP: la retención y la auditabilidad de cada dominio son las suyas. */
+  campaign: "storage/campaign-evidence",
+  cgrd: "storage/cgrd-evidence",
 } as const
 
 export type EvidenceDomain = keyof typeof EVIDENCE_STORAGE_PREFIXES

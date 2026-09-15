@@ -7,6 +7,7 @@ import { resolveWorksiteScope } from "@/lib/auth/scope"
 import type { CgrdAccess } from "@/lib/services/prevention-cgrd-access"
 import {
   addGrdMember,
+  annulGrdMeeting,
   constituteGrdCommittee,
   createGrdMatrixDraft,
   designateGrdCoordinator,
@@ -105,4 +106,10 @@ export async function recordGrdMeetingAction(input: unknown): Promise<ActionStat
   const guard = await guardPermission("prevention:cgrd:meeting:manage")
   if (guard.error) return guard.error
   return run(accessFromSession(guard.session), (access) => recordGrdMeeting(input, access))
+}
+
+export async function annulGrdMeetingAction(input: unknown): Promise<ActionState> {
+  const guard = await guardPermission("prevention:cgrd:meeting:manage")
+  if (guard.error) return guard.error
+  return run(accessFromSession(guard.session), (access) => annulGrdMeeting(input, access))
 }

@@ -159,19 +159,37 @@ export const preventionGrdThreats = pgTable("prevention_grd_threats", {
  * catálogo la declara como actividad propia del programa.
  */
 export const preventionGrdMeetings = pgTable("prevention_grd_meetings", {
-  id:              text("id").primaryKey(),
-  code:            text("code").notNull().unique(),
-  committeeId:     text("committee_id").notNull().references(() => preventionGrdCommittees.id, { onDelete: "cascade" }),
-  heldOn:          timestamp("held_on", { withTimezone: true, mode: "string" }).notNull(),
-  agenda:          text("agenda").notNull(),
-  minutes:         text("minutes").notNull(),
-  quorumReached:   boolean("quorum_reached").notNull().default(false),
-  evidenceUrl:     text("evidence_url").notNull(),
-  createdByUserId: text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
-  createdAt:       timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
+  id:                text("id").primaryKey(),
+  code:              text("code").notNull().unique(),
+  committeeId:       text("committee_id").notNull().references(() => preventionGrdCommittees.id, { onDelete: "cascade" }),
+  heldOn:            timestamp("held_on", { withTimezone: true, mode: "string" }).notNull(),
+  agenda:            text("agenda").notNull(),
+  minutes:           text("minutes").notNull(),
+  quorumReached:     boolean("quorum_reached").notNull().default(false),
+  evidenceUrl:       text("evidence_url").notNull(),
+  /**
+   * Anulación de un acta mal cargada. El registro NO se borra: el acta
+   * acreditó la N°81 y su rastro es lo que explica por qué el programa contó
+   * —y después descontó— esa sesión. Mismo criterio que la evidencia de
+   * capacitación (`prevention_training_occurrence_evidence.state = 'annulled'`),
+   * y la razón por la que no se resolvió con un DELETE.
+   *
+   * Reemplaza a la cancelación del modelo anterior, que sólo servía antes de
+   * cerrar el acta: ahí no había nada acreditado que revocar, y quedaba un
+   * estado que ningún flujo alcanzaba.
+   */
+  annulledAt:        timestamp("annulled_at", { withTimezone: true, mode: "string" }),
+  annulledByUserId:  text("annulled_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+  annulledReason:    text("annulled_reason"),
+  createdByUserId:   text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt:         timestamp("created_at", { withTimezone: true, mode: "string" }).notNull().defaultNow(),
 }, (table) => [
   index("prevention_grd_meeting_committee_idx").on(table.committeeId, table.heldOn),
   check("prevention_grd_meeting_minutes_valid", sql`length(${table.minutes}) >= 20`),
+  check("prevention_grd_meeting_annulled_consistent", sql`
+    (${table.annulledAt} IS NULL AND ${table.annulledByUserId} IS NULL AND ${table.annulledReason} IS NULL)
+    OR (${table.annulledAt} IS NOT NULL AND ${table.annulledByUserId} IS NOT NULL AND length(${table.annulledReason}) >= 10)
+  `),
 ])
 
 /* ── Acuerdos del acta ─────────────────────────────────────────────────────

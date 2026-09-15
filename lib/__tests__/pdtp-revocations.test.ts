@@ -1,11 +1,11 @@
 /**
  * lib/__tests__/pdtp-revocations.test.ts
  *
- * Cuatro dominios acreditan una actividad PDTP y su operación inversa no la
- * revocaba: disolver un comité paritario (N°11), disolver el comité GRD
- * (N°79), cancelar un simulacro (N°84) y borrar un acta SST (N°15, 17, 18,
- * 19, 23, 52, 63). El hecho de origen se deshacía y el programa anual seguía
- * contando algo que ya no existía.
+ * Seis operaciones deshacen un hecho que acreditó una actividad PDTP, y el
+ * programa anual no puede seguir contándolo: disolver un comité paritario
+ * (N°11), disolver el comité GRD y terminar la designación del coordinador
+ * (N°79), anular un acta CGRD (N°81), cancelar un simulacro (N°84) y borrar un
+ * acta SST (N°15, 17, 18, 19, 23, 52, 63).
  *
  * Dos de los cuatro (simulacro, acta SST) tienen una máquina de estados que
  * en la práctica de hoy nunca deja llegar a la revocación con una
@@ -19,10 +19,11 @@
  * algo que ningún flujo de la aplicación puede producir hoy — y lo anotan en
  * el propio test.
  *
- * El acta CGRD (N°81) dejó de tener revocación al simplificarse
- * (2026-09-14): `recordGrdMeeting` registra la sesión ya realizada en un solo
- * acto, sin programación previa ni cancelación posterior — mismo criterio que
- * el resto de las constancias del módulo, que tampoco se deshacen.
+ * El acta CGRD (N°81) cambió de vía con la simplificación (2026-09-14): antes
+ * se cancelaba una sesión convocada —cuando todavía no había nada acreditado
+ * que revocar— y ahora se anula el acta ya registrada, que sí acreditó. El
+ * registro no se borra: es lo que explica por qué el programa contó y después
+ * descontó esa sesión.
  */
 
 import path from "node:path"
@@ -58,7 +59,11 @@ afterAll(async () => {
 })
 
 const { constituteCommittee, dissolveCommittee, expireLapsedCommittees } = await import("@/lib/services/prevention-cphs")
-const { constituteGrdCommittee, dissolveGrdCommittee } = await import("@/lib/services/prevention-cgrd")
+const {
+  constituteGrdCommittee, dissolveGrdCommittee,
+  designateGrdCoordinator, endGrdCoordinator,
+  recordGrdMeeting, annulGrdMeeting,
+} = await import("@/lib/services/prevention-cgrd")
 const {
   createEmergencyPlan, addEmergencyScenario, addEmergencyRole, approveEmergencyPlan,
   setEmergencyPlanPdtpActivities, scheduleEmergencyDrill, completeEmergencyDrill, cancelEmergencyDrill,
@@ -109,6 +114,7 @@ beforeEach(async () => {
 
   await inMemoryDb.delete(schema.preventionGrdAgreements)
   await inMemoryDb.delete(schema.preventionGrdMeetings)
+  await inMemoryDb.delete(schema.preventionGrdCoordinators)
   await inMemoryDb.delete(schema.preventionGrdCommittees)
 
   await inMemoryDb.delete(schema.preventionEmergencyDrillParticipants)
@@ -140,7 +146,7 @@ beforeEach(async () => {
     creationMode: "blank", complianceTarget: 0.9, pesoEjecucion: 0.5, pesoVerificacion: 0.3, pesoCierre: 0.2,
     createdAt: now, updatedAt: now,
   })
-  await inMemoryDb.insert(schema.pdtpActivities).values([11, 79, 84, 18].map((n) => ({
+  await inMemoryDb.insert(schema.pdtpActivities).values([11, 79, 81, 84, 18].map((n) => ({
     id: activityId(n), programId: PROGRAM_ID, n,
     activity: `Actividad N°${n}`, program: "Prevención PDTP",
     responsibleSlugs: ["prevencionista_faena"], responsibleDisplay: "PRF",
@@ -206,6 +212,83 @@ describe("dissolveGrdCommittee revoca la N°79", () => {
     expect(revocacion?.status).toBe("revoked")
     const [ejecucion] = await executionsFor(79)
     expect(ejecucion!.status).toBe("draft")
+  })
+})
+
+/* Faltaba: la rama del comité revocaba y la del coordinador no, así que una
+ * faena chica quedaba con la N°79 acreditada sobre una designación terminada.
+ * El órgano que acreditó ya no existe; el programa no puede seguir contándolo. */
+describe("endGrdCoordinator revoca la N°79", () => {
+  it("terminar la designación revierte lo que acreditó designarla", async () => {
+    const coordinator = await designateGrdCoordinator({
+      worksiteId: WS_ID, workerId: WORKER_ID, designatedOn: `${PROGRAM_YEAR}-03-10`,
+      evidenceUrl: "https://drive.chome.cl/cgrd-designacion",
+    }, CGRD_ACCESS)
+    expect(await executionsFor(79)).toHaveLength(1)
+
+    await endGrdCoordinator({
+      coordinatorId: coordinator.id, expectedVersion: coordinator.version,
+      reason: "La persona dejó la faena, motivo de prueba",
+    }, CGRD_ACCESS)
+
+    const revocacion = await revocationEventFor(`cgrd-coordinator:${coordinator.id}`)
+    expect(revocacion?.status).toBe("revoked")
+    const [ejecucion] = await executionsFor(79)
+    expect(ejecucion!.status).toBe("draft")
+  })
+})
+
+/* El acta se registra en un solo acto y acredita al instante, así que la única
+ * forma de deshacer una mal cargada es anularla. Antes no había ninguna: la
+ * cancelación del modelo anterior sólo servía antes de cerrar, cuando todavía
+ * no había nada acreditado que revocar. */
+describe("annulGrdMeeting revoca la N°81", () => {
+  it("anular el acta revierte la acreditación y conserva la fila", async () => {
+    const committee = await constituteGrdCommittee({
+      worksiteId: WS_ID, name: "CGRD Faena Revocaciones", constitutedOn: `${PROGRAM_YEAR}-03-01`, mandateEndsOn: `${PROGRAM_YEAR + 2}-03-01`,
+      evidenceUrl: "https://drive.chome.cl/cgrd-evidencia",
+    }, CGRD_ACCESS)
+    const meeting = await recordGrdMeeting({
+      committeeId: committee.id, heldOn: `${PROGRAM_YEAR}-04-01T15:00:00.000Z`,
+      agenda: "Agenda de prueba con largo suficiente",
+      minutes: "Acta de la sesión de prueba, con contenido suficiente.",
+      quorumReached: true, evidenceUrl: "https://drive.chome.cl/cgrd-acta",
+    }, CGRD_ACCESS)
+    expect(await executionsFor(81)).toHaveLength(1)
+
+    const annulled = await annulGrdMeeting({
+      meetingId: meeting.id, reason: "Se transcribió la sesión equivocada",
+    }, CGRD_ACCESS)
+
+    expect(annulled.annulledAt).toBeTruthy()
+    expect(annulled.annulledReason).toMatch(/sesión equivocada/)
+
+    const revocacion = await revocationEventFor(`cgrd-meeting:${meeting.id}`)
+    expect(revocacion?.status).toBe("revoked")
+    const [ejecucion] = await executionsFor(81)
+    expect(ejecucion!.status).toBe("draft")
+
+    // La fila sobrevive: es lo que explica por qué el programa contó y descontó.
+    const rows = await inMemoryDb.select().from(schema.preventionGrdMeetings)
+      .where(eq(schema.preventionGrdMeetings.id, meeting.id))
+    expect(rows).toHaveLength(1)
+  })
+
+  it("no se anula dos veces", async () => {
+    const committee = await constituteGrdCommittee({
+      worksiteId: WS_ID, name: "CGRD doble anulación", constitutedOn: `${PROGRAM_YEAR}-03-01`, mandateEndsOn: `${PROGRAM_YEAR + 2}-03-01`,
+      evidenceUrl: "https://drive.chome.cl/cgrd-evidencia",
+    }, CGRD_ACCESS)
+    const meeting = await recordGrdMeeting({
+      committeeId: committee.id, heldOn: `${PROGRAM_YEAR}-04-02T15:00:00.000Z`,
+      agenda: "Agenda de prueba con largo suficiente",
+      minutes: "Acta de la sesión de prueba, con contenido suficiente.",
+      quorumReached: true, evidenceUrl: "https://drive.chome.cl/cgrd-acta",
+    }, CGRD_ACCESS)
+
+    await annulGrdMeeting({ meetingId: meeting.id, reason: "Motivo de prueba suficiente" }, CGRD_ACCESS)
+    await expect(annulGrdMeeting({ meetingId: meeting.id, reason: "Otro motivo suficiente" }, CGRD_ACCESS))
+      .rejects.toThrow(/ya está anulada/)
   })
 })
 

@@ -119,8 +119,22 @@ export async function setCampaignPdtpActivities(input: unknown, access: Campaign
 
 const campaignCompleteSchema = z.object({
   campaignId: z.string().min(1),
+  /** Fecha civil en que se hizo la campaña, no la de digitación. */
+  heldOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Indica la fecha en que se hizo la campaña (YYYY-MM-DD)."),
   evidenceUrl: campaignEvidenceSchema,
 })
+
+/**
+ * Ancla una fecha civil al mediodía UTC (08:00–09:00 en Chile).
+ *
+ * El motor ubica el período contando el día en `America/Santiago`, así que
+ * `new Date("2026-03-01")` —medianoche UTC, o sea las 21:00 del 28 de febrero
+ * en Chile— archivaría la campaña en febrero semana 4. Mismo criterio que
+ * `occurredAtFromChileDate` en el conector de higiene.
+ */
+function occurredAtFromChileDate(plainDate: string): string {
+  return `${plainDate}T12:00:00.000Z`
+}
 
 /**
  * Marca una campaña preventiva como hecha (R9) y dispara la auto-acreditación
@@ -138,6 +152,7 @@ export async function closeCampaign(input: unknown, access: CampaignAccess) {
   const [updated] = await db.update(preventionCampaigns)
     .set({
       status: "done",
+      heldOn: data.heldOn,
       completedAt: now,
       completedByUserId: access.userId,
       evidenceUrl: data.evidenceUrl,
@@ -170,7 +185,9 @@ export async function closeCampaign(input: unknown, access: CampaignAccess) {
       sourceId: campaign.id,
       worksiteId: campaign.worksiteId,
       activityNumbers,
-      occurredAt: now,
+      // La fecha del hecho, no la de digitación: el motor resuelve el período
+      // (mes y semana) y el año del programa con `occurredAt`.
+      occurredAt: occurredAtFromChileDate(data.heldOn),
       executedQuantity: 1,
       evidenceRef: data.evidenceUrl,
     })

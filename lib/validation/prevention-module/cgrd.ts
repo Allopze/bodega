@@ -82,6 +82,16 @@ export const grdMatrixPublishSchema = z.object({
 })
 
 /**
+ * Anula un acta mal cargada y revierte la N°81 que acreditó. No borra la fila:
+ * el acta acreditó, y su rastro explica por qué el programa contó y después
+ * descontó esa sesión.
+ */
+export const grdMeetingAnnulSchema = z.object({
+  meetingId: z.string().min(1),
+  reason,
+})
+
+/**
  * Registra el acta de una sesión ya realizada — no convoca, no programa: se
  * carga después del hecho, como el resto de las constancias del módulo.
  */

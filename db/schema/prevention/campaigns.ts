@@ -28,6 +28,17 @@ export const preventionCampaigns = pgTable("prevention_campaigns", {
   status:              text("status").notNull().default("pending"),
   pdtpActivityNumbers: jsonb("pdtp_activity_numbers").$type<number[]>().notNull().default([85]),
   evidenceUrl:         text("evidence_url"),
+  /**
+   * Fecha civil en que se hizo la campaña — no cuándo se registró.
+   *
+   * `completedAt` es el timestamp de la digitación; con él como `occurredAt`,
+   * una campaña de marzo marcada en mayo acreditaba mayo, y el PDTP mide por
+   * mes y semana. Es `text` (`YYYY-MM-DD`) como el resto de las fechas civiles
+   * del módulo (`constitutedOn`, `measuredOn`): un timestamp obligaría a
+   * decidir una hora que el hecho no tiene, y a medianoche UTC el día cae en
+   * el anterior en Chile.
+   */
+  heldOn:              text("held_on"),
   completedAt:         timestamp("completed_at", { withTimezone: true, mode: "string" }),
   completedByUserId:   text("completed_by_user_id").references(() => users.id, { onDelete: "restrict" }),
   createdByUserId:     text("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
@@ -41,8 +52,8 @@ export const preventionCampaigns = pgTable("prevention_campaigns", {
   // módulo (`prevention_external_engagement_closed_consistent`,
   // `prevention_emergency_drill_completed_consistent`).
   check("prevention_campaign_done_consistent", sql`
-    (${table.status} = 'pending' AND ${table.completedAt} IS NULL AND ${table.completedByUserId} IS NULL AND ${table.evidenceUrl} IS NULL)
-    OR (${table.status} = 'done' AND ${table.completedAt} IS NOT NULL AND ${table.completedByUserId} IS NOT NULL AND ${table.evidenceUrl} IS NOT NULL)
+    (${table.status} = 'pending' AND ${table.completedAt} IS NULL AND ${table.completedByUserId} IS NULL AND ${table.evidenceUrl} IS NULL AND ${table.heldOn} IS NULL)
+    OR (${table.status} = 'done' AND ${table.completedAt} IS NOT NULL AND ${table.completedByUserId} IS NOT NULL AND ${table.evidenceUrl} IS NOT NULL AND ${table.heldOn} IS NOT NULL)
   `),
 ])
 

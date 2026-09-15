@@ -50,4 +50,15 @@ El comité debe reunirse para revisar la preparación de la faena antes de las t
 1. En `/prevencion/cgrd`, presiona **"Registrar acta"**.
 2. Indica fecha y hora de la sesión, la tabla tratada y si hubo quórum.
 3. Escribe el acta y registra los acuerdos de preparación (ej. *Se ejecutaron 500 metros de cortafuegos perimetrales con motoniveladora* o *Se revisó el stock de petróleo para generadores de respaldo*) — cada acuerdo abre su propia acción correctiva en CAPA.
-4. Adjunta la evidencia del acta (archivo o URL) y confirma para acreditar la actividad **N° 81** en el PDTP.
+4. Adjunta la evidencia del acta —sube el archivo firmado o pega su enlace— y confirma para acreditar la actividad **N° 81** en el PDTP.
+
+> [!IMPORTANT]
+> El PDTP cuenta la sesión en el **mes y la semana en que se realizó**, que es
+> la fecha que declaras en el paso 2, no la del día en que cargas el acta. Una
+> sesión de junio cargada en septiembre se acredita en junio.
+
+### ¿Y si cargué mal un acta?
+Se **anula** con su motivo, desde la misma lista de actas. La anulación revierte
+la acreditación de la N° 81 y deja el registro a la vista, tachado: no se borra,
+porque el rastro es lo que explica por qué el programa contó —y después
+descontó— esa sesión. Los acuerdos ya derivados a CAPA siguen su propio curso.

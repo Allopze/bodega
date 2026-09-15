@@ -19,7 +19,15 @@ const RUTA_TRAINING = `${EVIDENCE_STORAGE_PREFIXES.training}/acta-cap-02.pdf`
 
 describe("los prefijos son los que la plataforma tiene de verdad", () => {
   it("sólo usa directorios de evidencia registrados por dominio", () => {
-    expect(Object.keys(EVIDENCE_STORAGE_PREFIXES).sort()).toEqual(["inspection", "pdtp", "training"])
+    // `campaign` y `cgrd` entran con la simplificación de 2026-09-14: su
+    // evidencia pasó a ser obligatoria y estrenaron dónde subir el archivo.
+    expect(Object.keys(EVIDENCE_STORAGE_PREFIXES).sort())
+      .toEqual(["campaign", "cgrd", "inspection", "pdtp", "training"])
+  })
+
+  it("cada dominio apunta a su propio directorio, sin solaparse", () => {
+    const prefijos = Object.values(EVIDENCE_STORAGE_PREFIXES)
+    expect(new Set(prefijos).size).toBe(prefijos.length)
   })
 })
 

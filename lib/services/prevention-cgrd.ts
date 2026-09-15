@@ -64,6 +64,7 @@ import {
   grdCoordinatorEndSchema,
   grdMatrixDraftSchema,
   grdMatrixPublishSchema,
+  grdMeetingAnnulSchema,
   grdMeetingRecordSchema,
   grdMemberAddSchema,
   grdMemberRemoveSchema,
@@ -173,7 +174,9 @@ export async function designateGrdCoordinator(input: unknown, access: CgrdAccess
 
 export async function endGrdCoordinator(input: unknown, access: CgrdAccess) {
   const data = grdCoordinatorEndSchema.parse(input)
-  return db.transaction(async (tx) => {
+  let revocation: Parameters<typeof recordPdtpFulfillmentRevocation>[0] | null = null
+
+  const updated = await db.transaction(async (tx) => {
     const [coordinator] = await tx.select().from(preventionGrdCoordinators)
       .where(eq(preventionGrdCoordinators.id, data.coordinatorId)).limit(1)
     if (!coordinator) throw new Error(GRD_NOT_FOUND)
@@ -194,8 +197,26 @@ export async function endGrdCoordinator(input: unknown, access: CgrdAccess) {
       entityType: "grd_coordinator", entityId: updated.id, worksiteId: coordinator.worksiteId,
       changeType: "ended", reason: data.reason, beforeState: coordinator, afterState: updated, actorUserId: access.userId,
     })
+
+    /* Revertir la N°79, igual que `dissolveGrdCommittee`: terminar la
+     * designación deja a la faena sin el órgano que la actividad acredita, así
+     * que el programa no puede seguir contándola. Mismo `sourceId` con prefijo
+     * que usó `onGrdStructureEstablished` con kind "coordinator". Faltaba: la
+     * rama del comité revocaba y la del coordinador no, así que una faena
+     * chica quedaba con la N°79 acreditada sobre una designación terminada. */
+    revocation = {
+      sourceType: "cgrd",
+      sourceId: `cgrd-coordinator:${updated.id}`,
+      worksiteId: coordinator.worksiteId,
+      revokedBy: access.userId,
+      reason: data.reason,
+    }
     return updated
   })
+
+  if (revocation) await recordPdtpFulfillmentRevocation(revocation)
+
+  return updated
 }
 
 export async function constituteGrdCommittee(input: unknown, access: CgrdAccess) {
@@ -629,6 +650,58 @@ export async function recordGrdMeeting(input: unknown, access: CgrdAccess) {
     heldOn: result.meeting.heldOn, evidenceUrl: result.meeting.evidenceUrl,
   })
   return result.meeting
+}
+
+/**
+ * Anula un acta mal cargada y revierte la N°81 que acreditó (N°81).
+ *
+ * No borra la fila: el acta acreditó, y conservarla es lo que explica por qué
+ * el programa contó —y después descontó— esa sesión. Sus acuerdos siguen
+ * colgando de ella con sus CAPA, que se cierran o cancelan por su propio
+ * flujo: una CAPA en curso no se borra porque el acta que la originó estuviera
+ * mal transcrita.
+ */
+export async function annulGrdMeeting(input: unknown, access: CgrdAccess) {
+  const data = grdMeetingAnnulSchema.parse(input)
+  let revocation: Parameters<typeof recordPdtpFulfillmentRevocation>[0] | null = null
+
+  const updated = await db.transaction(async (tx) => {
+    const [row] = await tx.select({ meeting: preventionGrdMeetings, committee: preventionGrdCommittees })
+      .from(preventionGrdMeetings)
+      .innerJoin(preventionGrdCommittees, eq(preventionGrdMeetings.committeeId, preventionGrdCommittees.id))
+      .where(eq(preventionGrdMeetings.id, data.meetingId)).limit(1)
+    if (!row) throw new Error(GRD_NOT_FOUND)
+    requireGrdAccess(access, "prevention:cgrd:meeting:manage", row.committee.worksiteId)
+    if (row.meeting.annulledAt) throw new Error("Esta acta ya está anulada.")
+
+    const now = nowIso()
+    const [updated] = await tx.update(preventionGrdMeetings).set({
+      annulledAt: now, annulledByUserId: access.userId, annulledReason: data.reason,
+    }).where(and(
+      eq(preventionGrdMeetings.id, data.meetingId),
+      sql`${preventionGrdMeetings.annulledAt} IS NULL`,
+    )).returning()
+    if (!updated) throw new Error("Esta acta ya está anulada.")
+
+    await recordGrdHistory(tx, {
+      entityType: "grd_meeting", entityId: updated.id, worksiteId: row.committee.worksiteId,
+      changeType: "annulled", reason: data.reason, beforeState: row.meeting, afterState: updated, actorUserId: access.userId,
+    })
+
+    // Mismo `sourceId` con prefijo que usó `onGrdMeetingClosed` al registrarla.
+    revocation = {
+      sourceType: "cgrd",
+      sourceId: `cgrd-meeting:${updated.id}`,
+      worksiteId: row.committee.worksiteId,
+      revokedBy: access.userId,
+      reason: data.reason,
+    }
+    return updated
+  })
+
+  if (revocation) await recordPdtpFulfillmentRevocation(revocation)
+
+  return updated
 }
 
 /**

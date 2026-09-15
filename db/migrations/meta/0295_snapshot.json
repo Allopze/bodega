@@ -54453,121 +54453,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.prevention_campaign_attendance": {
-      "name": "prevention_campaign_attendance",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "campaign_id": {
-          "name": "campaign_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "worker_id": {
-          "name": "worker_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "attended_at": {
-          "name": "attended_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "evidence_ref": {
-          "name": "evidence_ref",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "prevention_campaign_attendance_unique": {
-          "name": "prevention_campaign_attendance_unique",
-          "columns": [
-            {
-              "expression": "campaign_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "worker_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "prevention_campaign_attendance_campaign_idx": {
-          "name": "prevention_campaign_attendance_campaign_idx",
-          "columns": [
-            {
-              "expression": "campaign_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "prevention_campaign_attendance_campaign_id_prevention_campaigns_id_fk": {
-          "name": "prevention_campaign_attendance_campaign_id_prevention_campaigns_id_fk",
-          "tableFrom": "prevention_campaign_attendance",
-          "tableTo": "prevention_campaigns",
-          "columnsFrom": [
-            "campaign_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "prevention_campaign_attendance_worker_id_workers_id_fk": {
-          "name": "prevention_campaign_attendance_worker_id_workers_id_fk",
-          "tableFrom": "prevention_campaign_attendance",
-          "tableTo": "workers",
-          "columnsFrom": [
-            "worker_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.prevention_campaigns": {
       "name": "prevention_campaigns",
       "schema": "",
@@ -54607,7 +54492,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'draft'"
+          "default": "'pending'"
         },
         "pdtp_activity_numbers": {
           "name": "pdtp_activity_numbers",
@@ -54616,9 +54501,9 @@
           "notNull": true,
           "default": "'[85]'::jsonb"
         },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp with time zone",
+        "evidence_url": {
+          "name": "evidence_url",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -54628,8 +54513,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "evidence_url": {
-          "name": "evidence_url",
+        "completed_by_user_id": {
+          "name": "completed_by_user_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -54692,6 +54577,19 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
+        "prevention_campaigns_completed_by_user_id_users_id_fk": {
+          "name": "prevention_campaigns_completed_by_user_id_users_id_fk",
+          "tableFrom": "prevention_campaigns",
+          "tableTo": "users",
+          "columnsFrom": [
+            "completed_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
         "prevention_campaigns_created_by_user_id_users_id_fk": {
           "name": "prevention_campaigns_created_by_user_id_users_id_fk",
           "tableFrom": "prevention_campaigns",
@@ -54720,7 +54618,11 @@
       "checkConstraints": {
         "prevention_campaign_status_check": {
           "name": "prevention_campaign_status_check",
-          "value": "\"prevention_campaigns\".\"status\" IN ('draft', 'active', 'completed', 'cancelled')"
+          "value": "\"prevention_campaigns\".\"status\" IN ('pending', 'done')"
+        },
+        "prevention_campaign_done_consistent": {
+          "name": "prevention_campaign_done_consistent",
+          "value": "\n    (\"prevention_campaigns\".\"status\" = 'pending' AND \"prevention_campaigns\".\"completed_at\" IS NULL AND \"prevention_campaigns\".\"completed_by_user_id\" IS NULL AND \"prevention_campaigns\".\"evidence_url\" IS NULL)\n    OR (\"prevention_campaigns\".\"status\" = 'done' AND \"prevention_campaigns\".\"completed_at\" IS NOT NULL AND \"prevention_campaigns\".\"completed_by_user_id\" IS NOT NULL AND \"prevention_campaigns\".\"evidence_url\" IS NOT NULL)\n  "
         }
       },
       "isRLSEnabled": false

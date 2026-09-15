@@ -6,6 +6,7 @@ import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
+import { EvidenceField } from "@/components/prevention/evidence-field"
 import { Field } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { PageContainer } from "@/components/ui/page-container"
@@ -22,7 +23,7 @@ import type {
   listGrdMembers, listGrdThreats, listGrdWorkers,
 } from "@/lib/services/prevention-cgrd"
 import {
-  addGrdMemberAction, addGrdThreatAction,
+  addGrdMemberAction, addGrdThreatAction, annulGrdMeetingAction,
   constituteGrdCommitteeAction, createGrdMatrixDraftAction, designateGrdCoordinatorAction,
   dissolveGrdCommitteeAction, endGrdCoordinatorAction, publishGrdMatrixAction, recordGrdMeetingAction,
   removeGrdMemberAction, removeGrdThreatAction,
@@ -268,10 +269,23 @@ export function CgrdWorkbench({
               <ul className="mt-2 divide-y divide-[var(--color-border)]">
                 {meetings.map((meeting) => (
                   <li key={meeting.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-                    <div>
-                      <MetaBadge meta={{ label: "Registrada", variant: "success" }} dot />
-                      <span className="ml-2">{meeting.code} · {formatDateTime(meeting.heldOn)}</span>
+                    <div className="min-w-0">
+                      <MetaBadge meta={meeting.annulledAt
+                        ? { label: "Anulada", variant: "danger" }
+                        : { label: "Registrada", variant: "success" }} dot />
+                      <span className={meeting.annulledAt ? "ml-2 line-through text-[var(--color-text-subtle)]" : "ml-2"}>
+                        {meeting.code} · {formatDateTime(meeting.heldOn)}
+                      </span>
+                      {meeting.annulledReason && (
+                        <p className="mt-1 text-xs text-[var(--color-text-subtle)]">Anulada: {meeting.annulledReason}</p>
+                      )}
                     </div>
+                    {canManageMeetings && !meeting.annulledAt && (
+                      <Button type="button" size="sm" variant="ghost" onClick={() => {
+                        const reason = window.prompt("Motivo de la anulación (mínimo 10 caracteres). Revierte la N°81 que acreditó:")
+                        if (reason && reason.trim().length >= 10) void handle(annulGrdMeetingAction({ meetingId: meeting.id, reason }), onDone)
+                      }}>Anular</Button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -351,7 +365,7 @@ function ConstituteDialog({ open, onOpenChange, worksiteId, onDone }: { open: bo
         <Field label="Constituido el" required><Input type="date" value={constitutedOn} onChange={(event) => setConstitutedOn(event.target.value)} /></Field>
         <Field label="Mandato hasta" required><Input type="date" value={mandateEndsOn} onChange={(event) => setMandateEndsOn(event.target.value)} /></Field>
       </div>
-      <Field label="Evidencia del acta de constitución" required helper="Pega el enlace al documento (Drive, SharePoint, etc.)."><Input value={evidenceUrl} onChange={(event) => setEvidenceUrl(event.target.value)} placeholder="https://..." /></Field>
+      <EvidenceField label="Evidencia del acta de constitución" helper="Sube el acta de constitución, o pega su enlace." uploadUrl="/api/prevencion/cgrd/evidence" value={evidenceUrl} onChange={setEvidenceUrl} disabled={pending} />
     </div>
     <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || name.trim().length < 3 || !constitutedOn || !mandateEndsOn || !evidenceUrl.trim()}>{pending ? "Constituyendo..." : "Constituir"}</Button></DialogFooter>
   </DialogContent></Dialog>
@@ -456,7 +470,7 @@ function PublishMatrixDialog({ matrix, onClose, onDone }: { matrix: Matrix | nul
   return <Dialog open={matrix !== null} onOpenChange={(value) => { if (!value) onClose() }}><DialogContent>
     <DialogHeader><DialogTitle>Publicar matriz GRD</DialogTitle><DialogDescription>Cierra la N°80 del PDTP. Reemplaza cualquier versión publicada anteriormente en esta faena.</DialogDescription></DialogHeader>
     <div className="space-y-4">
-      <Field label="Evidencia de la matriz publicada" required helper="Pega el enlace al documento (Drive, SharePoint, etc.)."><Input value={evidenceUrl} onChange={(event) => setEvidenceUrl(event.target.value)} placeholder="https://..." /></Field>
+      <EvidenceField label="Evidencia de la matriz publicada" helper="Sube el documento de la matriz, o pega su enlace." uploadUrl="/api/prevencion/cgrd/evidence" value={evidenceUrl} onChange={setEvidenceUrl} disabled={pending} />
     </div>
     <DialogFooter><Button type="button" variant="ghost" onClick={onClose} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || !evidenceUrl.trim()}>{pending ? "Publicando..." : "Publicar"}</Button></DialogFooter>
   </DialogContent></Dialog>
@@ -512,7 +526,7 @@ function RecordMeetingDialog({ open, onOpenChange, committeeId, onDone }: { open
       </div>
       <Field label="Tabla / agenda" required><Textarea value={agenda} onChange={(event) => setAgenda(event.target.value)} rows={2} maxLength={5000} /></Field>
       <Field label="Acta" required helper="Mínimo 20 caracteres."><Textarea value={minutes} onChange={(event) => setMinutes(event.target.value)} rows={5} maxLength={20000} /></Field>
-      <Field label="Evidencia del acta" required helper="Pega el enlace al documento (Drive, SharePoint, etc.)."><Input value={evidenceUrl} onChange={(event) => setEvidenceUrl(event.target.value)} placeholder="https://..." /></Field>
+      <EvidenceField label="Evidencia del acta" helper="Sube el acta firmada, o pega su enlace." uploadUrl="/api/prevencion/cgrd/evidence" value={evidenceUrl} onChange={setEvidenceUrl} disabled={pending} />
 
       <div className="rounded-lg border border-[var(--color-border)] p-3">
         <div className="flex items-center justify-between">
@@ -591,7 +605,7 @@ function DesignateCoordinatorDialog({ open, onOpenChange, worksiteId, workers, o
         </Select>
       </Field>
       <Field label="Designado el" required><Input type="date" value={designatedOn} onChange={(event) => setDesignatedOn(event.target.value)} /></Field>
-      <Field label="Evidencia de la designación" required helper="Pega el enlace al documento (Drive, SharePoint, etc.)."><Input value={evidenceUrl} onChange={(event) => setEvidenceUrl(event.target.value)} placeholder="https://..." /></Field>
+      <EvidenceField label="Evidencia de la designación" helper="Sube el acta de designación, o pega su enlace." uploadUrl="/api/prevencion/cgrd/evidence" value={evidenceUrl} onChange={setEvidenceUrl} disabled={pending} />
     </div>
     <DialogFooter><Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>Cancelar</Button><Button type="button" onClick={save} disabled={pending || !workerId || !designatedOn || !evidenceUrl.trim()}>{pending ? "Designando..." : "Designar"}</Button></DialogFooter>
   </DialogContent></Dialog>

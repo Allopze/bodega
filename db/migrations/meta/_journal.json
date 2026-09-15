@@ -2073,6 +2073,13 @@
       "when": 1789600019000,
       "tag": "0295_prevention_cgrd_evidence",
       "breakpoints": true
+    },
+    {
+      "idx": 296,
+      "version": "7",
+      "when": 1789600020000,
+      "tag": "0296_prevention_held_on_y_anulacion_acta",
+      "breakpoints": true
     }
   ]
 }

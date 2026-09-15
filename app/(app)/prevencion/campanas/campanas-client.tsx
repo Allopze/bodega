@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
+import { EvidenceField } from "@/components/prevention/evidence-field"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/field"
 import { PageHeader } from "@/components/ui/page-header"
@@ -67,6 +68,7 @@ export function CampanasClient({
   const [newWorksiteId, setNewWorksiteId] = useState("")
   const [newActivity, setNewActivity] = useState("")
   const [evidenceUrl, setEvidenceUrl] = useState("")
+  const [heldOn, setHeldOn] = useState("")
 
   const handleCreate = () => {
     if (!newWorksiteId || !newTitle.trim() || !newActivity) {
@@ -113,16 +115,18 @@ export function CampanasClient({
   }
 
   const handleMarkDone = () => {
-    if (!doneCampaignItem || !evidenceUrl.trim()) return
+    if (!doneCampaignItem || !evidenceUrl.trim() || !heldOn) return
     setError(null)
     startTransition(async () => {
       const res = await closeCampaignAction({
         campaignId: doneCampaignItem.id,
+        heldOn,
         evidenceUrl: evidenceUrl.trim(),
       })
       if (res.ok) {
         setDoneCampaignItem(null)
         setEvidenceUrl("")
+        setHeldOn("")
         if (res.data?.pdtpPending === true) setError(res.message ?? null)
         router.refresh()
       } else {
@@ -318,16 +322,20 @@ export function CampanasClient({
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label>Evidencia de difusión (foto, lista de asistencia, acta)</Label>
-              <Input
-                placeholder="https://..."
-                value={evidenceUrl}
-                onChange={(e) => setEvidenceUrl(e.target.value)}
-              />
+              <Label>Fecha en que se hizo la campaña</Label>
+              <Input type="date" value={heldOn} onChange={(e) => setHeldOn(e.target.value)} />
               <p className="text-xs text-[var(--color-text-muted)]">
-                Pega el enlace al documento (Drive, SharePoint, etc.).
+                Es la fecha con la que el PDTP cuenta el cumplimiento, no la de hoy.
               </p>
             </div>
+            <EvidenceField
+              label="Evidencia de difusión (foto, lista de asistencia, acta)"
+              helper="Sube el archivo, o pega el enlace si ya vive en Drive/SharePoint."
+              uploadUrl="/api/prevencion/campanas/evidence"
+              value={evidenceUrl}
+              onChange={setEvidenceUrl}
+              disabled={isPending}
+            />
           </div>
           <DialogFooter>
             <Button variant="secondary" onClick={() => setDoneCampaignItem(null)}>
@@ -336,7 +344,7 @@ export function CampanasClient({
             <Button
               className="bg-[var(--color-success-ink)] text-white hover:bg-[var(--color-success-ink)]/90"
               onClick={handleMarkDone}
-              disabled={isPending || !evidenceUrl.trim()}
+              disabled={isPending || !evidenceUrl.trim() || !heldOn}
             >
               {isPending ? "Guardando..." : "Confirmar y Acreditar PDTP"}
             </Button>

@@ -140,7 +140,7 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
 
     const result = await closeCampaign({
       campaignId: campaign!.id,
-      evidenceUrl: "https://drive.chome.cl/acta-campana",
+      heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: "https://drive.chome.cl/acta-campana",
     }, access)
 
     expect(result.campaign!.status).toBe("done")
@@ -176,14 +176,14 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
     it("es obligatoria: no se puede marcar hecha sin evidencia", async () => {
       const { closeCampaign } = await import("@/lib/services/prevention-campaigns")
       const id = await campañaAbierta("Campaña sin evidencia")
-      await expect(closeCampaign({ campaignId: id, evidenceUrl: "" }, access)).rejects.toThrow()
+      await expect(closeCampaign({ campaignId: id, heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: "" }, access)).rejects.toThrow()
     })
 
     it("si se declara, tiene que ser evidencia de verdad", async () => {
       const { closeCampaign } = await import("@/lib/services/prevention-campaigns")
       const id = await campañaAbierta("Campaña con texto suelto")
       await expect(closeCampaign({
-        campaignId: id, evidenceUrl: "las fotos están en la carpeta compartida",
+        campaignId: id, heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: "las fotos están en la carpeta compartida",
       }, access)).rejects.toThrow()
     })
 
@@ -192,12 +192,12 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
 
       const conUrl = await campañaAbierta("Campaña con URL")
       await expect(closeCampaign({
-        campaignId: conUrl, evidenceUrl: "https://drive.chome.cl/acta-campana",
+        campaignId: conUrl, heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: "https://drive.chome.cl/acta-campana",
       }, access)).resolves.toBeTruthy()
 
       const conArchivo = await campañaAbierta("Campaña con archivo")
       await expect(closeCampaign({
-        campaignId: conArchivo, evidenceUrl: "storage/pdtp-evidence/acta-2026.pdf",
+        campaignId: conArchivo, heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: "storage/campaign-evidence/acta-2026.pdf",
       }, access)).resolves.toBeTruthy()
     })
   })
@@ -213,7 +213,7 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
 
     const result = await closeCampaign({
       campaignId: campaign!.id,
-      evidenceUrl: "https://drive.chome.cl/acta-campana",
+      heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: "https://drive.chome.cl/acta-campana",
     }, access)
 
     expect(result.campaign!.status).toBe("done")
@@ -246,7 +246,7 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
 
     const result = await closeCampaign({
       campaignId: campaign!.id,
-      evidenceUrl: "https://drive.chome.cl/acta-campana",
+      heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: "https://drive.chome.cl/acta-campana",
     }, access)
 
     // La campaña se marca hecha igual: el PDTP no manda sobre el módulo fuente.
@@ -267,6 +267,61 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
     expect(["pending", "error"]).toContain(events[0]!.status)
   })
 
+  /* La campaña se marca después de hecha, así que la fecha que acredita es la
+   * del hecho y no la de digitación: el motor resuelve mes y semana con
+   * `occurredAt`. Con `now()` una campaña de marzo marcada hoy se anotaba en
+   * el mes de la carga. */
+  it("acredita en el período de la campaña, no en el de la digitación", async () => {
+    const { createCampaign, closeCampaign } = await import("@/lib/services/prevention-campaigns")
+
+    const campaign = await createCampaign({
+      worksiteId: WS_ID, title: "Campaña de marzo", pdtpActivityNumbers: [85],
+    }, access)
+
+    // 12 de marzo: mes 3, semana 2 (ceil(12/7)).
+    await closeCampaign({
+      campaignId: campaign!.id, heldOn: `${PROGRAM_YEAR}-03-12`,
+      evidenceUrl: "https://drive.chome.cl/acta-campana",
+    }, access)
+
+    const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, "act-85"))
+    expect(execution).toBeTruthy()
+    expect(execution!.year).toBe(PROGRAM_YEAR)
+    expect(execution!.month).toBe(3)
+    expect(execution!.week).toBe(2)
+  })
+
+  /* La fecha civil se ancla al mediodía UTC: a medianoche, el día 1 cae en el
+   * mes anterior en Chile y la campaña se archivaría en el mes equivocado. */
+  it("el primer día del mes se acredita en ese mes, no en el anterior", async () => {
+    const { createCampaign, closeCampaign } = await import("@/lib/services/prevention-campaigns")
+
+    const campaign = await createCampaign({
+      worksiteId: WS_ID, title: "Campaña del día 1", pdtpActivityNumbers: [85],
+    }, access)
+    await closeCampaign({
+      campaignId: campaign!.id, heldOn: `${PROGRAM_YEAR}-04-01`,
+      evidenceUrl: "https://drive.chome.cl/acta-campana",
+    }, access)
+
+    const [execution] = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(eq(schema.pdtpExecutions.activityId, "act-85"))
+    expect(execution!.month).toBe(4)
+    expect(execution!.week).toBe(1)
+  })
+
+  it("exige la fecha en que se hizo la campaña", async () => {
+    const { createCampaign, closeCampaign } = await import("@/lib/services/prevention-campaigns")
+    const campaign = await createCampaign({
+      worksiteId: WS_ID, title: "Campaña sin fecha", pdtpActivityNumbers: [85],
+    }, access)
+
+    await expect(closeCampaign({
+      campaignId: campaign!.id, heldOn: "", evidenceUrl: "https://drive.chome.cl/acta-campana",
+    }, access)).rejects.toThrow()
+  })
+
   it("no permite marcar hecha dos veces la misma campaña", async () => {
     const { createCampaign, closeCampaign } = await import("@/lib/services/prevention-campaigns")
 
@@ -276,10 +331,10 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
       pdtpActivityNumbers: [85],
     }, access)
 
-    await closeCampaign({ campaignId: campaign!.id, evidenceUrl: "https://drive.chome.cl/acta-1" }, access)
+    await closeCampaign({ campaignId: campaign!.id, heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: "https://drive.chome.cl/acta-1" }, access)
 
     await expect(closeCampaign({
-      campaignId: campaign!.id, evidenceUrl: "https://drive.chome.cl/acta-2",
+      campaignId: campaign!.id, heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: "https://drive.chome.cl/acta-2",
     }, access)).rejects.toThrow(/ya está marcada como hecha/i)
   })
 
@@ -292,7 +347,7 @@ describe("Prevention Campaigns Service (R9) — checklist + evidencia", () => {
       pdtpActivityNumbers: [85],
     }, access)
 
-    await closeCampaign({ campaignId: campaign!.id, evidenceUrl: "https://drive.chome.cl/acta" }, access)
+    await closeCampaign({ campaignId: campaign!.id, heldOn: `${PROGRAM_YEAR}-03-12`, evidenceUrl: "https://drive.chome.cl/acta" }, access)
 
     await expect(setCampaignPdtpActivities({
       campaignId: campaign!.id, pdtpActivityNumbers: [86],

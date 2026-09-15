@@ -10,6 +10,8 @@ const SST_DOCUMENT_PREFIX = "storage/sst-documents/"
 const PDTP_EVIDENCE_PREFIX = "storage/pdtp-evidence/"
 const INSPECTION_EVIDENCE_PREFIX = "storage/inspection-evidence/"
 const PREVENTION_TRAINING_EVIDENCE_PREFIX = "storage/prevention-training-evidence/"
+const CAMPAIGN_EVIDENCE_PREFIX = "storage/campaign-evidence/"
+const CGRD_EVIDENCE_PREFIX = "storage/cgrd-evidence/"
 const RISK_MAP_PREFIX = "storage/risk-map/"
 const FUEL_IMPORT_PREFIX = "storage/imports/"
 const FUEL_TAE_EVIDENCE_PREFIX = "storage/fuel-tae/"
@@ -299,6 +301,44 @@ export function resolvePdtpEvidenceFile(filePath: string): string | null {
     return null
   }
   return path.join(/*turbopackIgnore: true*/ resolvePdtpEvidenceDir(), storageName)
+}
+
+/* ── Evidencia de campañas preventivas y CGRD ──────────────────────────────
+ *
+ * Espacios propios, con el mismo criterio anti-traversal que el resto: el
+ * `storageName` es siempre un nanoid con extensión segura, nunca el nombre
+ * original del archivo.
+ */
+export function resolveCampaignEvidenceDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "campaign-evidence")
+}
+
+export function createCampaignEvidencePath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) throw new Error("Invalid campaign evidence storage name")
+  return `${CAMPAIGN_EVIDENCE_PREFIX}${storageName}`
+}
+
+export function resolveCampaignEvidenceFile(filePath: string): string | null {
+  if (!filePath.startsWith(CAMPAIGN_EVIDENCE_PREFIX)) return null
+  const storageName = filePath.slice(CAMPAIGN_EVIDENCE_PREFIX.length)
+  if (!isSafeStorageName(storageName)) return null
+  return path.join(/*turbopackIgnore: true*/ resolveCampaignEvidenceDir(), storageName)
+}
+
+export function resolveCgrdEvidenceDir(): string {
+  return path.join(/*turbopackIgnore: true*/ resolveStorageDir(), "cgrd-evidence")
+}
+
+export function createCgrdEvidencePath(storageName: string): string {
+  if (!isSafeStorageName(storageName)) throw new Error("Invalid cgrd evidence storage name")
+  return `${CGRD_EVIDENCE_PREFIX}${storageName}`
+}
+
+export function resolveCgrdEvidenceFile(filePath: string): string | null {
+  if (!filePath.startsWith(CGRD_EVIDENCE_PREFIX)) return null
+  const storageName = filePath.slice(CGRD_EVIDENCE_PREFIX.length)
+  if (!isSafeStorageName(storageName)) return null
+  return path.join(/*turbopackIgnore: true*/ resolveCgrdEvidenceDir(), storageName)
 }
 
 /* ── Evidencia de inspecciones ─────────────────────────────────────────────
