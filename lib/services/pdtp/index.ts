@@ -124,7 +124,7 @@ export type { CleanupPdtpEvidenceOrphansOptions, CleanupPdtpEvidenceOrphansResul
 export { createAnnualPdtpProgram, updatePdtpProgram, listPdtpPrograms, getPdtpProgram, deletePdtpProgram } from "./programs"
 /** @internal Fixture helper; product code must use createAnnualPdtpProgram. */
 export { createLegacyPdtpProgramForTests } from "./programs"
-export { stagePdtpXlsxImport, applyPdtpImportBatch, cancelPdtpImportBatch, finalizePdtpImportBootstrap, rollbackPdtpImportBatch, getPdtpImportBatch } from "./imports"
+export { stagePdtpXlsxImport, applyPdtpImportBatch, cancelPdtpImportBatch, finalizePdtpImportBootstrap, rollbackPdtpImportBatch, getPdtpImportBatch, linkPdtpImportCandidate } from "./imports"
 export type { PdtpImportPreview } from "./imports"
 export { getPdtpDocumentMetadata, listPdtpReconciliationCandidates, reconcilePdtpDeclaredActor } from "./document-metadata"
 export { ensurePdtp2026ChecklistTemplates } from "@/lib/services/pdtp-adapters/checklist-templates-2026"

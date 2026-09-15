@@ -84,6 +84,8 @@ export async function buildPdtpProgramContentSnapshot(
   const activities = await client.select({
     id: pdtpActivities.id,
     n: pdtpActivities.n,
+    catalogActivityId: pdtpActivities.catalogActivityId,
+    catalogRevision: pdtpActivities.catalogRevision,
     displayOrder: pdtpActivities.displayOrder,
     status: pdtpActivities.status,
     retiredReason: pdtpActivities.retiredReason,

@@ -29,6 +29,7 @@ import {
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { nanoid } from "@/lib/id"
+import { PdtpActivityPicker, type PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
 
 interface CourseItem {
   id: string
@@ -72,13 +73,14 @@ function versionStatusVariant(status: string): "default" | "info" | "warning" | 
   return "default"
 }
 
-export function TrainingCatalog({ courses, versions, requirements, worksites, canManage, canApprove }: {
+export function TrainingCatalog({ courses, versions, requirements, worksites, canManage, canApprove, catalogActivities = [] }: {
   courses: CourseItem[]
   versions: VersionItem[]
   requirements: RequirementItem[]
   worksites: { id: string; name: string }[]
   canManage: boolean
   canApprove: boolean
+  catalogActivities?: PdtpActivityPickerOption[]
 }) {
   const [tab, setTab] = React.useState<"courses" | "versions" | "requirements">("courses")
 
@@ -95,7 +97,7 @@ export function TrainingCatalog({ courses, versions, requirements, worksites, ca
         </div>
         {canManage && (
           <div className="flex flex-wrap gap-2">
-            <CourseDialog />
+            <CourseDialog catalogActivities={catalogActivities} />
             {courses.length > 0 && <VersionDialog courses={courses} />}
             {courses.length > 0 && <RequirementDialog courses={courses} worksites={worksites} />}
           </div>
@@ -107,7 +109,7 @@ export function TrainingCatalog({ courses, versions, requirements, worksites, ca
           icon={<Certificate size={20} />}
           title="Aún no hay cursos en el catálogo"
           description="Un curso declara su duración mínima y su vigencia. Si es legal obligatorio, debe cumplir el piso del DS 44 art. 16: 8 horas y vigencia de a lo más 2 años."
-          action={canManage ? <CourseDialog /> : undefined}
+          action={canManage ? <CourseDialog catalogActivities={catalogActivities} /> : undefined}
         />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
@@ -236,20 +238,19 @@ export function TrainingCatalog({ courses, versions, requirements, worksites, ca
 
 /* ── Alta de curso ────────────────────────────────────────────────────────── */
 
-function CourseDialog() {
+function CourseDialog({ catalogActivities }: { catalogActivities: PdtpActivityPickerOption[] }) {
   const [open, setOpen] = React.useState(false)
   const [kind, setKind] = React.useState("legal_mandatory")
   const [requiresAssessment, setRequiresAssessment] = React.useState(true)
   const operation = useOperation()
   const isLegal = kind === "legal_mandatory"
   const isOdi = kind === "odi"
+  const [catalogActivityIds, setCatalogActivityIds] = React.useState<string[]>([])
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
     const validity = String(form.get("validityMonths") ?? "").trim()
-    const pdtpActivityNumbers = String(form.get("pdtpActivityNumbers") ?? "")
-      .split(",").map((item) => item.trim()).filter(Boolean).map(Number).filter((n) => Number.isInteger(n) && n > 0)
     operation.run(() => createTrainingCourseAction({
       code: form.get("code"),
       name: form.get("name"),
@@ -261,7 +262,8 @@ function CourseDialog() {
       passingScore: Number(form.get("passingScore")),
       legalBasis: String(form.get("legalBasis") ?? "") || null,
       riskEntryId: String(form.get("riskEntryId") ?? "") || null,
-      pdtpActivityNumbers,
+      pdtpActivityNumbers: [],
+      catalogActivityIds,
     }), () => setOpen(false))
   }
 
@@ -319,9 +321,7 @@ function CourseDialog() {
             </Field>
           )}
           <Field label="Descripción"><Textarea name="description" maxLength={3000} /></Field>
-          <Field label="Actividades PDTP que acredita" hint="Números separados por coma. Opcional — el motor de acreditación las cierra al cerrar una sesión de este curso.">
-            <Input name="pdtpActivityNumbers" placeholder="54, 56" />
-          </Field>
+          <PdtpActivityPicker multiple label="Actividades PDTP que acredita" options={catalogActivities} value={catalogActivityIds} onChange={setCatalogActivityIds} />
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Crear curso</Button></DialogFooter>
         </form>

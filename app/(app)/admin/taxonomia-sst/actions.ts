@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { db } from "@/db"
 import { recordAudit } from "@/lib/audit"
 import { requirePermission } from "@/lib/auth/can"
 import {
@@ -11,6 +12,7 @@ import {
   upsertDocumentType,
 } from "@/lib/services/prevention-documents/taxonomy"
 import type { ActionState } from "@/lib/validation/masters"
+import { replacePdtpAccreditationBindings } from "@/lib/services/pdtp/accreditation-bindings"
 
 const REVALIDATE = "/admin/taxonomia-sst"
 
@@ -40,6 +42,13 @@ function readActivityNumbers(formData: FormData, field: string): number[] {
   if (!raw) return []
   return [...new Set(raw.split(/[\s,]+/).map((part) => Number.parseInt(part, 10)).filter((n) => Number.isInteger(n) && n > 0))]
     .sort((a, b) => a - b)
+}
+
+function readCatalogActivityIds(formData: FormData, field: string): string[] {
+  try {
+    const value = JSON.parse(String(formData.get(field) ?? "[]"))
+    return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string" && id.length > 0) : []
+  } catch { return [] }
 }
 
 export async function saveDocumentCategoryAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -105,21 +114,26 @@ export async function saveDocumentTypeAction(_prev: ActionState, formData: FormD
   if (!name) return { ok: false, fieldErrors: { name: ["Ingresa el nombre"] } }
 
   try {
-    const row = await upsertDocumentType({
-      id,
-      categorySlug,
-      code,
-      name,
-      description,
-      defaultConfidentiality,
-      defaultValidityMonths,
-      requiresApproval: readFormBool(formData, "requiresApproval", true),
-      requiresAcknowledgment: readFormBool(formData, "requiresAcknowledgment", false),
-      pdtpActivityNumbers: readActivityNumbers(formData, "pdtpActivityNumbers"),
-      pdtpAcknowledgmentActivityNumbers: readActivityNumbers(formData, "pdtpAcknowledgmentActivityNumbers"),
-      isActive: readFormBool(formData, "isActive", true),
+    const row = await db.transaction(async (tx) => {
+      const saved = await upsertDocumentType({
+        id,
+        categorySlug,
+        code,
+        name,
+        description,
+        defaultConfidentiality,
+        defaultValidityMonths,
+        requiresApproval: readFormBool(formData, "requiresApproval", true),
+        requiresAcknowledgment: readFormBool(formData, "requiresAcknowledgment", false),
+        pdtpActivityNumbers: readActivityNumbers(formData, "pdtpActivityNumbers"),
+        pdtpAcknowledgmentActivityNumbers: readActivityNumbers(formData, "pdtpAcknowledgmentActivityNumbers"),
+        isActive: readFormBool(formData, "isActive", true),
+      }, tx)
+      if (!saved) throw new Error("El tipo no se pudo guardar")
+      await replacePdtpAccreditationBindings({ sourceType: "documento", sourceId: saved.id, eventType: "publish", catalogActivityIds: readCatalogActivityIds(formData, "pdtpCatalogActivityIds"), updatedByUserId: session.user.id }, tx)
+      await replacePdtpAccreditationBindings({ sourceType: "documento", sourceId: saved.id, eventType: "acknowledge", catalogActivityIds: readCatalogActivityIds(formData, "pdtpAcknowledgmentCatalogActivityIds"), updatedByUserId: session.user.id }, tx)
+      return saved
     })
-    if (!row) return errorState("El tipo no se pudo guardar")
 
     await recordAudit({
       userId:     session.user.id,

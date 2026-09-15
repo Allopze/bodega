@@ -11,8 +11,9 @@ import { CategoryForm } from "./category-form"
 import { TypeForm } from "./type-form"
 import { seedDefaultDocumentCategoriesAction } from "./actions"
 import type { CategoryOption } from "./labels"
+import type { PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
 
-export function TaxonomyActions({ categorySlug, categoryOptions }: { categorySlug: string, categoryOptions: CategoryOption[] }) {
+export function TaxonomyActions({ categorySlug, categoryOptions, catalogActivities }: { categorySlug: string, categoryOptions: CategoryOption[], catalogActivities: PdtpActivityPickerOption[] }) {
   const [catSheetOpen, setCatSheetOpen] = React.useState(false)
   const [typeSheetOpen, setTypeSheetOpen] = React.useState(false)
   const [seedConfirmOpen, setSeedConfirmOpen] = React.useState(false)
@@ -71,6 +72,7 @@ export function TaxonomyActions({ categorySlug, categoryOptions }: { categorySlu
           editType={null}
           categorySlug={categorySlug}
           categoryOptions={categoryOptions}
+          catalogActivities={catalogActivities}
         />
       )}
     </>

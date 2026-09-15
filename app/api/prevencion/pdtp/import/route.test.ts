@@ -4,12 +4,14 @@ const mockGuardPermission = vi.hoisted(() => vi.fn())
 const mockStage = vi.hoisted(() => vi.fn())
 const mockApply = vi.hoisted(() => vi.fn())
 const mockCancel = vi.hoisted(() => vi.fn())
+const mockLinkCandidate = vi.hoisted(() => vi.fn())
 
 vi.mock("@/lib/auth/can", () => ({ guardPermission: mockGuardPermission }))
 vi.mock("@/lib/services/prevention-pdtp", () => ({
   stagePdtpXlsxImport: mockStage,
   applyPdtpImportBatch: mockApply,
   cancelPdtpImportBatch: mockCancel,
+  linkPdtpImportCandidate: mockLinkCandidate,
 }))
 vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }))
 
@@ -35,6 +37,7 @@ beforeEach(() => {
   })
   mockApply.mockResolvedValue({ batchId: "batch-1", importedExecutionCount: 6 })
   mockCancel.mockResolvedValue({ batchId: "batch-1", cancelled: true })
+  mockLinkCandidate.mockResolvedValue({ batchId: "batch-1", blockingErrors: [] })
 })
 
 describe("POST PDTP Excel import staging", () => {
@@ -103,5 +106,22 @@ describe("POST PDTP Excel import staging", () => {
       reason: "El archivo no corresponde a la versión vigente",
     })
     expect(await response.json()).toMatchObject({ ok: true, result: { cancelled: true } })
+  })
+
+  it("links an imported candidate to a stable catalog identity", async () => {
+    const response = await POST(formRequest({
+      mode: "link_candidate",
+      batchId: "batch-1",
+      candidateCatalogActivityId: "pdtp-import-candidate-abc-1",
+      targetCatalogActivityId: "pdtp-catalog-001",
+    }))
+    expect(response.status).toBe(200)
+    expect(mockLinkCandidate).toHaveBeenCalledWith({
+      batchId: "batch-1",
+      candidateCatalogActivityId: "pdtp-import-candidate-abc-1",
+      targetCatalogActivityId: "pdtp-catalog-001",
+      userId: "user-1",
+    })
+    expect(await response.json()).toMatchObject({ ok: true, preview: { blockingErrors: [] } })
   })
 })

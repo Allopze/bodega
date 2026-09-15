@@ -4,7 +4,7 @@ export const runtime = "nodejs"
 import { NextResponse } from "next/server"
 import { guardPermission } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
-import { applyPdtpImportBatch, cancelPdtpImportBatch, stagePdtpXlsxImport } from "@/lib/services/prevention-pdtp"
+import { applyPdtpImportBatch, cancelPdtpImportBatch, linkPdtpImportCandidate, stagePdtpXlsxImport } from "@/lib/services/prevention-pdtp"
 import { logger } from "@/lib/logger"
 import { safeActionMessage } from "@/lib/action-error"
 import { XLSX_MAX_BYTES } from "@/lib/services/xlsx-security"
@@ -37,6 +37,20 @@ export async function POST(request: Request) {
   }
 
   const mode = String(form.get("mode") ?? "stage")
+  if (mode === "link_candidate") {
+    try {
+      const preview = await linkPdtpImportCandidate({
+        batchId: String(form.get("batchId") ?? ""),
+        candidateCatalogActivityId: String(form.get("candidateCatalogActivityId") ?? ""),
+        targetCatalogActivityId: String(form.get("targetCatalogActivityId") ?? ""),
+        userId: guard.session.user.id,
+      })
+      return NextResponse.json({ ok: true, message: "Candidata vinculada al catálogo.", preview })
+    } catch (err) {
+      logger.error("[pdtp/import/link-candidate]", err)
+      return NextResponse.json({ error: safeActionMessage(err, "No se pudo vincular la candidata.") }, { status: 400 })
+    }
+  }
   if (mode === "apply") {
     const batchId = String(form.get("batchId") ?? "")
     if (!batchId) return NextResponse.json({ error: "Falta el lote de importación." }, { status: 400 })

@@ -36,6 +36,7 @@ import {
 } from "@/lib/services/pdtp/accreditation"
 import { recordPdtpFulfillmentEvent, recordPendingPdtpFulfillmentEvent, recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
 import { PDTP_CPHS_ACTIVITY_NUMBERS } from "@/lib/services/pdtp/worksites"
+import { pdtpCatalogActivityIdForLegacyNumber, pdtpCatalogActivityIdsForLegacyNumbers } from "./catalog-activities-2026"
 
 /** N°9: "Reunión revisión gestión preventiva SG-SST". */
 const PDTP_MANAGEMENT_REVIEW_ACTIVITY_NUMBER = 9
@@ -80,9 +81,10 @@ export async function onInspectionCompleted(input: {
   worksiteId: string
   completedAt: string
   completedByUserId: string
-  activityNumbers: number[]
+  activityNumbers?: number[]
+  catalogActivityIds?: string[]
 }, client?: Tx): Promise<void> {
-  if (input.activityNumbers.length === 0) return
+  if (!input.activityNumbers?.length && !input.catalogActivityIds?.length) return
 
   // Cantidad 1 porque el modelo es una inspección por sujeto: el run declara su
   // `subjectResourceId`/`subjectVehicleId`, y la cobertura del PDTP sale de
@@ -97,7 +99,7 @@ export async function onInspectionCompleted(input: {
     sourceType: "inspeccion",
     sourceId: input.runId,
     worksiteId: input.worksiteId,
-    activityNumbers: input.activityNumbers,
+    ...(input.catalogActivityIds?.length ? { catalogActivityIds: input.catalogActivityIds } : { activityNumbers: input.activityNumbers }),
     occurredAt: input.completedAt,
     executedQuantity,
     evidenceRef: `Inspección completada: ${input.runId}`,
@@ -190,15 +192,16 @@ export async function onTrainingSessionClosed(input: {
   worksiteId: string
   closedAt: string
   attendedCount: number
-  activityNumbers: number[]
+  activityNumbers?: number[]
+  catalogActivityIds?: string[]
 }): Promise<void> {
-  if (input.activityNumbers.length === 0) return
+  if (!input.activityNumbers?.length && !input.catalogActivityIds?.length) return
 
   await safeAccredit({
     sourceType: "capacitacion",
     sourceId: input.sessionId,
     worksiteId: input.worksiteId,
-    activityNumbers: input.activityNumbers,
+    ...(input.catalogActivityIds?.length ? { catalogActivityIds: input.catalogActivityIds } : { activityNumbers: input.activityNumbers }),
     occurredAt: input.closedAt,
     // La cantidad ejecutada es el número de personas que completaron la sesión
     executedQuantity: Math.max(1, input.attendedCount),
@@ -236,16 +239,20 @@ export async function onEppDeliveryCompleted(input: {
   worksiteId: string
   deliveredAt: string
   workerCount: number
-  activityNumbers: number[]
+  activityNumbers?: number[]
+  catalogActivityIds?: string[]
   evidenceRef?: string
 }): Promise<void> {
-  if (input.activityNumbers.length === 0) return
+  const catalogActivityIds = input.catalogActivityIds?.length
+    ? input.catalogActivityIds
+    : pdtpCatalogActivityIdsForLegacyNumbers(input.activityNumbers ?? [])
+  if (catalogActivityIds.length === 0) return
 
   await safeAccredit({
     sourceType: "epp",
     sourceId: input.deliveryId,
     worksiteId: input.worksiteId,
-    activityNumbers: input.activityNumbers,
+    catalogActivityIds,
     occurredAt: input.deliveredAt,
     executedQuantity: Math.max(1, input.workerCount),
     evidenceRef: input.evidenceRef ?? `Entrega EPP: ${input.deliveryId}`,
@@ -272,7 +279,7 @@ export async function onCphsCommitteeConstituted(input: {
     sourceType: "cphs",
     sourceId: input.committeeId,
     worksiteId: input.worksiteId,
-    activityNumbers: [...PDTP_CPHS_ACTIVITY_NUMBERS],
+    catalogActivityIds: pdtpCatalogActivityIdsForLegacyNumbers(PDTP_CPHS_ACTIVITY_NUMBERS),
     occurredAt: input.constitutedOn,
     executedQuantity: 1,
     evidenceRef: `Comité paritario constituido: ${input.committeeId}`,
@@ -297,7 +304,7 @@ export async function onManagementReviewClosed(input: {
     sourceType: "cphs",
     sourceId: input.reviewId,
     worksiteId: input.worksiteId,
-    activityNumbers: [PDTP_MANAGEMENT_REVIEW_ACTIVITY_NUMBER],
+    catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(PDTP_MANAGEMENT_REVIEW_ACTIVITY_NUMBER)],
     occurredAt: input.heldAt,
     executedQuantity: 1,
     evidenceRef: `Revisión por la dirección cerrada: ${input.reviewId}`,
@@ -317,17 +324,18 @@ export async function onEmergencyDrillCompleted(input: {
   worksiteId: string
   executedAt: string
   participantCount: number
-  activityNumbers: number[]
+  activityNumbers?: number[]
+  catalogActivityIds?: string[]
   /** EMG-001: la ruta del acta, si el cierre la adjuntó. */
   evidencePath?: string | null
 }): Promise<void> {
-  if (input.activityNumbers.length === 0) return
+  if (!input.activityNumbers?.length && !input.catalogActivityIds?.length) return
 
   await safeAccredit({
     sourceType: "emergencia",
     sourceId: input.drillId,
     worksiteId: input.worksiteId,
-    activityNumbers: input.activityNumbers,
+    ...(input.catalogActivityIds?.length ? { catalogActivityIds: input.catalogActivityIds } : { activityNumbers: input.activityNumbers }),
     occurredAt: input.executedAt,
     executedQuantity: Math.max(1, input.participantCount),
     /*
@@ -378,7 +386,7 @@ export async function onPdtpProgramLegallyApproved(input: {
       sourceId: input.programId,
       worksiteId,
       programId: input.programId,
-      activityNumbers: [PDTP_PROGRAM_APPROVAL_ACTIVITY_NUMBER],
+      catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(PDTP_PROGRAM_APPROVAL_ACTIVITY_NUMBER)],
       occurredAt: input.approvedAt,
       executedQuantity: 1,
       evidenceRef: `Programa aprobado por Legal y RRHH: ${input.programId}`,
@@ -411,7 +419,7 @@ export async function onRiskMatrixPublished(input: {
     sourceType: "miper",
     sourceId: `miper:${input.matrixId}`,
     worksiteId: input.worksiteId,
-    activityNumbers: [PDTP_MIPER_ACTIVITY_NUMBER],
+    catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(PDTP_MIPER_ACTIVITY_NUMBER)],
     occurredAt: input.publishedAt,
     executedQuantity: 1,
     evidenceRef: `MIPER v${input.matrixVersion} publicada: ${input.matrixId}`,
@@ -433,15 +441,16 @@ export async function onDocumentVersionPublished(input: {
   versionId: string
   worksiteId: string
   publishedAt: string
-  activityNumbers: number[]
+  activityNumbers?: number[]
+  catalogActivityIds?: string[]
 }): Promise<void> {
-  if (input.activityNumbers.length === 0) return
+  if (!input.activityNumbers?.length && !input.catalogActivityIds?.length) return
 
   await safeAccredit({
     sourceType: "documento",
     sourceId: `documento:${input.versionId}`,
     worksiteId: input.worksiteId,
-    activityNumbers: input.activityNumbers,
+    ...(input.catalogActivityIds?.length ? { catalogActivityIds: input.catalogActivityIds } : { activityNumbers: input.activityNumbers }),
     occurredAt: input.publishedAt,
     executedQuantity: 1,
     evidenceRef: `Versión de documento publicada: ${input.versionId}`,
@@ -462,15 +471,16 @@ export async function onDocumentAcknowledged(input: {
   targetId: string
   worksiteId: string
   acknowledgedAt: string
-  activityNumbers: number[]
+  activityNumbers?: number[]
+  catalogActivityIds?: string[]
 }): Promise<void> {
-  if (input.activityNumbers.length === 0) return
+  if (!input.activityNumbers?.length && !input.catalogActivityIds?.length) return
 
   await safeAccredit({
     sourceType: "documento",
     sourceId: `acuse:${input.versionId}:${input.targetId}`,
     worksiteId: input.worksiteId,
-    activityNumbers: input.activityNumbers,
+    ...(input.catalogActivityIds?.length ? { catalogActivityIds: input.catalogActivityIds } : { activityNumbers: input.activityNumbers }),
     occurredAt: input.acknowledgedAt,
     executedQuantity: 1,
     evidenceRef: `Acuse de recibo registrado: ${input.targetId}`,
@@ -504,7 +514,7 @@ export async function onEmergencyPlanApproved(input: {
     sourceType: "emergencia",
     sourceId: `plan:${input.planId}`,
     worksiteId: input.worksiteId,
-    activityNumbers: [PDTP_EMERGENCY_PLAN_ACTIVITY_NUMBER],
+    catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(PDTP_EMERGENCY_PLAN_ACTIVITY_NUMBER)],
     occurredAt: input.approvedAt,
     executedQuantity: Math.max(1, input.scenarioCount),
     evidenceRef: `Plan de emergencia aprobado: ${input.planCode}`,
@@ -540,7 +550,7 @@ export async function onSafetyIndicatorPeriodClosed(input: {
     sourceType: "indicadores",
     sourceId: `indicadores:${input.snapshotId}`,
     worksiteId: input.worksiteId,
-    activityNumbers: [PDTP_INDICATORS_ACTIVITY_NUMBER],
+    catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(PDTP_INDICATORS_ACTIVITY_NUMBER)],
     occurredAt: input.closedAt,
     executedQuantity: 1,
     evidenceRef: `Período de indicadores ${input.year}-${String(input.month).padStart(2, "0")} cerrado.`,
@@ -603,7 +613,7 @@ export async function onGrdStructureEstablished(input: {
     sourceType: "cgrd",
     sourceId: `cgrd-${input.kind}:${input.id}`,
     worksiteId: input.worksiteId,
-    activityNumbers: [PDTP_GRD_COMMITTEE_ACTIVITY_NUMBER],
+    catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(PDTP_GRD_COMMITTEE_ACTIVITY_NUMBER)],
     occurredAt: input.establishedOn,
     executedQuantity: 1,
     evidenceRef: input.evidenceUrl,
@@ -624,7 +634,7 @@ export async function onGrdMatrixPublished(input: {
     sourceType: "cgrd",
     sourceId: `cgrd-matrix:${input.matrixId}`,
     worksiteId: input.worksiteId,
-    activityNumbers: [PDTP_GRD_MATRIX_ACTIVITY_NUMBER],
+    catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(PDTP_GRD_MATRIX_ACTIVITY_NUMBER)],
     occurredAt: input.publishedAt,
     executedQuantity: 1,
     evidenceRef: input.evidenceUrl,
@@ -649,7 +659,7 @@ export async function onGrdMeetingClosed(input: {
     sourceType: "cgrd",
     sourceId: `cgrd-meeting:${input.meetingId}`,
     worksiteId: input.worksiteId,
-    activityNumbers: [PDTP_GRD_MEETING_ACTIVITY_NUMBER],
+    catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(PDTP_GRD_MEETING_ACTIVITY_NUMBER)],
     occurredAt: input.heldOn,
     executedQuantity: 1,
     evidenceRef: input.evidenceUrl,

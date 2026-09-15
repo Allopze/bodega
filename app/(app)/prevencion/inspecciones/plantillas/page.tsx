@@ -13,6 +13,8 @@ import {
 } from "@/lib/services/prevention-inspections"
 import { listTemplateDeviationSelections } from "@/lib/services/prevention-deviations"
 import { ImportTemplateDialog, InspectionTemplatesPanel, type TemplateItem } from "../inspection-catalog"
+import { listCatalogActivities } from "@/lib/services/pdtp/catalog-activities"
+import { listPdtpAccreditationBindings } from "@/lib/services/pdtp/accreditation-bindings"
 
 export const metadata: Metadata = { title: "Plantillas de inspección" }
 
@@ -32,11 +34,13 @@ export default async function PlantillasInspeccionPage() {
     permissions: session.user.permissions,
   }
   const canManage = session.user.permissions.includes("prevention:inspections:manage")
-  const [templates, pdtpOptions, documentSources] = await Promise.all([
+  const [templates, pdtpOptions, documentSources, catalogActivities] = await Promise.all([
     listInspectionTemplates(access),
     listInspectionPdtpActivityOptions(access),
     canManage ? listInspectionDocumentSources(access) : Promise.resolve([]),
+    listCatalogActivities(),
   ])
+  const bindings = await listPdtpAccreditationBindings({ sourceType: "inspeccion", sourceIds: templates.map((template) => template.id) })
 
   /* Qué desviaciones del maestro ofrece cada instrumento, más las que se
    * registraron como "Otra" y esperan clasificación. Se piden en paralelo y
@@ -70,6 +74,8 @@ export default async function PlantillasInspeccionPage() {
     coverage: row.coverage,
     pdtpActivityNumbers: row.pdtpActivityNumbers,
     pdtpReviewActivityNumbers: row.pdtpReviewActivityNumbers,
+    pdtpCatalogActivityIds: bindings.filter((binding) => binding.sourceId === row.id && binding.eventType === "execute" && binding.isActive).map((binding) => binding.catalogActivityId),
+    pdtpReviewCatalogActivityIds: bindings.filter((binding) => binding.sourceId === row.id && binding.eventType === "review" && binding.isActive).map((binding) => binding.catalogActivityId),
     sourceDefinitionCode: row.sourceDefinitionCode,
     executorOfRecord: row.executorOfRecord,
     definitionDrifted: row.definitionDrifted,
@@ -116,6 +122,7 @@ export default async function PlantillasInspeccionPage() {
       <InspectionTemplatesPanel
         templates={templateItems}
         pdtpOptions={pdtpOptions}
+        catalogActivities={catalogActivities.map((activity) => ({ id: activity.id, code: activity.code, title: activity.title, description: activity.description, status: activity.status as "draft" | "active" | "retired" }))}
         canManage={canManage}
         canApprove={session.user.permissions.includes("prevention:inspections:approve")}
       />

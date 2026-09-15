@@ -24,6 +24,7 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 import { PdtpBuilderTabs } from "./builder-tabs"
 import { resolvePdtpActivitiesReturnHref } from "../../pdtp-context"
+import { listCatalogActivities } from "@/lib/services/pdtp/catalog-activities"
 
 export const metadata: Metadata = { title: "Editar programa PDTP" }
 
@@ -46,11 +47,12 @@ export default async function PdtpEditProgramPage({ params, searchParams }: Prop
   if (program.status !== "draft") redirect(`/prevencion/pdtp/${programId}`)
 
   const worksiteScope = resolveWorksiteScope(session)
-  const [sheets, activities, checklists, responsibleCatalog, visibleWorksites, programWorksites, baseComparison] = await Promise.all([
+  const [sheets, activities, checklists, responsibleCatalog, catalogActivities, visibleWorksites, programWorksites, baseComparison] = await Promise.all([
     listPdtpProgramSheets(programId),
     listPdtpProgramActivities(programId),
     listProgramActiveChecklists(programId),
     listPdtpResponsibleCatalog(),
+    listCatalogActivities(),
     worksiteScope.mode === "none"
       ? Promise.resolve([])
       : db.select({ id: worksites.id, name: worksites.name, code: worksites.code }).from(worksites)
@@ -91,6 +93,15 @@ export default async function PdtpEditProgramPage({ params, searchParams }: Prop
         schedule={schedule}
         checklists={checklists}
         responsibleCatalog={responsibleCatalog.filter((responsible) => responsible.isActive)}
+        catalogActivities={catalogActivities.map((activity) => ({
+          id: activity.id,
+          code: activity.code,
+          title: activity.title,
+          description: activity.description,
+          executionGuidance: activity.executionGuidance,
+          status: activity.status as "draft" | "active" | "retired",
+          currentRevision: activity.currentRevision,
+        }))}
         visibleWorksites={visibleWorksites}
         canManageWorksiteMembership={worksiteScope.mode === "all"}
         memberWorksiteIds={programWorksites.map((w) => w.worksiteId)}

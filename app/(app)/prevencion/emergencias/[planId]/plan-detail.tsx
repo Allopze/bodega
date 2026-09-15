@@ -37,6 +37,7 @@ import {
 import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { toLocalInputValue } from "@/lib/utils"
+import { PdtpActivityPicker, type PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
 
 const SCENARIO_TYPES = Object.keys(EMERGENCY_SCENARIO_TYPE_LABELS)
 
@@ -76,11 +77,14 @@ interface Props {
   canManage: boolean
   canApprove: boolean
   canExecuteDrill: boolean
+  catalogActivities: PdtpActivityPickerOption[]
+  catalogActivityIds: string[]
 }
 
 export function PlanDetail({
   plan, worksiteName, readiness, scenarios, roles, resources, linkableResources, contacts, drills,
   eligibleWorkers, assignees, currentUserId, canManage, canApprove, canExecuteDrill,
+  catalogActivities, catalogActivityIds,
 }: Props) {
   const isDraft = plan.status === "draft"
   const isApproved = plan.status === "approved"
@@ -95,7 +99,7 @@ export function PlanDetail({
     // programa anual: el conector es un no-op (EMERGENCIAS-05).
     {
       label: "Acreditación PDTP",
-      value: plan.pdtpActivityNumbers.length > 0 ? `N° ${plan.pdtpActivityNumbers.join(", ")}` : "No acredita",
+      value: catalogActivityIds.length > 0 ? `${catalogActivityIds.length} actividad(es) de catálogo` : plan.pdtpActivityNumbers.length > 0 ? `N° ${plan.pdtpActivityNumbers.join(", ")} (histórico)` : "No acredita",
     },
   ]
 
@@ -141,7 +145,7 @@ export function PlanDetail({
           {/* Disponible con el plan aprobado, no sólo en borrador: los simulacros
               sólo existen sobre un plan aprobado, y el cableado al programa
               anual no es contenido del documento congelado. */}
-          {canManage && <PdtpActivitiesDialog planId={plan.id} code={plan.code} version={plan.version} current={plan.pdtpActivityNumbers} />}
+          {canManage && <PdtpActivitiesDialog planId={plan.id} code={plan.code} version={plan.version} current={catalogActivityIds} options={catalogActivities} />}
           {canApprove && <ArchivePlanDialog planId={plan.id} code={plan.code} version={plan.version} />}
           {approveOperation.message && <p role="status" className="text-sm">{approveOperation.message}</p>}
         </div>
@@ -581,43 +585,37 @@ function EditResourceDialog({ resource }: { resource: ResourceInfo }) {
  * catálogo de inspecciones (EMERGENCIAS-05).
  */
 
-function PdtpActivitiesDialog({ planId, code, version, current }: {
+function PdtpActivitiesDialog({ planId, code, version, current, options }: {
   planId: string
   code: string
   version: number
-  current: number[]
+  current: string[]
+  options: PdtpActivityPickerOption[]
 }) {
   const [open, setOpen] = React.useState(false)
   const operation = useOperation()
+  const [selected, setSelected] = React.useState(current)
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const raw = String(new FormData(event.currentTarget).get("numbers") ?? "")
-    const pdtpActivityNumbers = raw
-      .split(/[\s,]+/)
-      .map((token) => Number(token.trim()))
-      .filter((value) => Number.isInteger(value) && value > 0)
     operation.run(
-      () => setEmergencyPlanPdtpActivitiesAction({ planId, expectedVersion: version, pdtpActivityNumbers }),
+      () => setEmergencyPlanPdtpActivitiesAction({ planId, expectedVersion: version, pdtpActivityNumbers: [], catalogActivityIds: selected }),
       () => setOpen(false),
     )
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (next) setSelected(current) }}>
       <DialogTrigger asChild><Button size="sm" variant="ghost">Acreditación PDTP</Button></DialogTrigger>
       <DialogContent>
         <form onSubmit={submit} className="space-y-4">
           <DialogHeader>
             <DialogTitle>Acreditación PDTP · {code}</DialogTitle>
             <DialogDescription>
-              Números de actividad del programa anual que acredita cada simulacro completado de este plan.
-              Vacío = no acredita nada.
+              Actividades corporativas que acredita cada simulacro completado de este plan.
             </DialogDescription>
           </DialogHeader>
-          <Field label="Números de actividad" hint="Separados por coma o espacio. En el catálogo 2026, los simulacros son la N° 84.">
-            <Input name="numbers" defaultValue={current.join(", ")} maxLength={120} />
-          </Field>
+          <PdtpActivityPicker multiple label="Actividades que acredita" options={options} value={selected} onChange={setSelected} />
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
           <DialogFooter><Button type="submit" disabled={operation.pending}>Guardar</Button></DialogFooter>
         </form>

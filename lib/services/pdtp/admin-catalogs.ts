@@ -7,17 +7,32 @@
 
 import { asc, desc, eq, inArray } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpPrograms, pdtpResponsibleCatalog, pdtpSheets } from "@/db/schema"
+import { pdtpCatalogActivityRevisions, pdtpPrograms, pdtpResponsibleCatalog, pdtpSheets } from "@/db/schema"
 import { nanoid } from "@/lib/id"
+import { listCatalogActivities } from "./catalog-activities"
 
 export async function listPdtpAdminCatalogs() {
-  const [responsibles, programs, sheets] = await Promise.all([
+  const [responsibles, programs, sheets, activityRows] = await Promise.all([
     db.select().from(pdtpResponsibleCatalog).orderBy(asc(pdtpResponsibleCatalog.displayName)),
     db.select({ id: pdtpPrograms.id, year: pdtpPrograms.year, version: pdtpPrograms.version, status: pdtpPrograms.status, title: pdtpPrograms.title })
       .from(pdtpPrograms).orderBy(desc(pdtpPrograms.year), desc(pdtpPrograms.version)),
     db.select().from(pdtpSheets).orderBy(asc(pdtpSheets.code)),
+    listCatalogActivities(),
   ])
-  return { responsibles, programs, sheets }
+  const revisionRows = activityRows.length === 0 ? [] : await db.select().from(pdtpCatalogActivityRevisions)
+    .where(inArray(pdtpCatalogActivityRevisions.catalogActivityId, activityRows.map((activity) => activity.id)))
+    .orderBy(asc(pdtpCatalogActivityRevisions.catalogActivityId), desc(pdtpCatalogActivityRevisions.revision))
+  const revisionsByActivity = new Map<string, typeof revisionRows>()
+  for (const revision of revisionRows) {
+    const rows = revisionsByActivity.get(revision.catalogActivityId) ?? []
+    rows.push(revision)
+    revisionsByActivity.set(revision.catalogActivityId, rows)
+  }
+  const activities = activityRows.map((activity) => ({
+    ...activity,
+    revisions: revisionsByActivity.get(activity.id) ?? [],
+  }))
+  return { responsibles, programs, sheets, activities }
 }
 
 export interface PdtpResponsibleInput {

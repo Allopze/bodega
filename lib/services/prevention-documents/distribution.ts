@@ -15,6 +15,7 @@ import {
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { onDocumentAcknowledged } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
+import { resolvePdtpAccreditationTarget } from "@/lib/services/pdtp/accreditation-bindings"
 import {
   assertConfidentialityAllowed,
   assertScopeAccess,
@@ -293,13 +294,14 @@ export async function acknowledgeDocumentVersion(args: DistributionContext & {
       const [type] = await tx.select({ numbers: sstDocumentTypes.pdtpAcknowledgmentActivityNumbers })
         .from(sstDocumentTypes).where(eq(sstDocumentTypes.id, doc.typeId)).limit(1)
       const activityNumbers = Array.isArray(type?.numbers) ? type.numbers as number[] : []
-      if (activityNumbers.length > 0) {
+      const accreditationTarget = await resolvePdtpAccreditationTarget({ sourceType: "documento", sourceId: doc.typeId, eventType: "acknowledge", legacyActivityNumbers: activityNumbers }, tx)
+      if (accreditationTarget.catalogActivityIds?.length || accreditationTarget.activityNumbers?.length) {
         accreditation = {
           versionId: version.id,
           targetId: target.id,
           worksiteId: doc.worksiteId,
           acknowledgedAt,
-          activityNumbers,
+          ...accreditationTarget,
         }
       }
     }

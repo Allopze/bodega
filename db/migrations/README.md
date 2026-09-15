@@ -121,3 +121,34 @@ perpetúa el problema. Coordiná un saneamiento (baseline) como el de
 
 > Nota de entorno: en esta máquina, los comandos de DB necesitan
 > `PGHOST=/var/run/postgresql` para usar el socket (si no, falla la auth TCP).
+
+## Saneamiento acotado previo a 0297
+
+Las entradas `0276` a `0296` llegaron a quedar registradas con 21 marcas de
+tiempo artificiales del futuro. La migración `0297_panoramic_meltdown` vuelve al
+reloj real y no debe ejecutarse contra una base cuyo máximo todavía conserve
+esas marcas: Drizzle la omitiría aunque informara éxito.
+
+Antes del primer despliegue que incluya `0297`, cada ambiente debe ejecutar el
+preflight de sólo lectura y revisar que identifique únicamente el allowlist
+conocido:
+
+```bash
+npm run db:reconcile-watermarks
+```
+
+Si informa diferencias de tag, checksum, id o timestamp, el corte se detiene;
+no se infiere ni se reescribe nada. Si las 21 correspondencias son exactas:
+
+```bash
+npm run db:reconcile-watermarks -- --apply
+npm run db:reconcile-watermarks   # debe informar cero cambios
+npm run db:migrate
+npm run pdtp:backfill-activity-catalog # dry-run, debe informar issues: []
+npm run pdtp:backfill-activity-catalog -- --apply
+```
+
+El reconciliador sólo corrige `created_at` en el ledger de Drizzle; no cambia
+SQL ni objetos de negocio. Este procedimiento fue probado en la base local. No
+constituye verificación de producción: cada ambiente debe pasar su propio
+preflight antes del backfill.

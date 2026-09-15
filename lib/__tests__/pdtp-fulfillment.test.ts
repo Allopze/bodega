@@ -163,6 +163,24 @@ describe("recordPdtpFulfillmentEvent — el hecho no se pierde", () => {
     expect(executions).toHaveLength(1)
   })
 
+  it("persiste el objetivo normalizado y resuelve la instancia anual sin usar el número como fuente", async () => {
+    await seedProgram("active")
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.pdtpCatalogActivities).values({ id: "catalog-fulfillment-42", code: "PDT-TEST-FULFILLMENT", status: "active", currentRevision: 1, createdAt: now, updatedAt: now }).onConflictDoNothing()
+    await inMemoryDb.insert(schema.pdtpCatalogActivityRevisions).values({ id: "catalog-fulfillment-42-r1", catalogActivityId: "catalog-fulfillment-42", revision: 1, title: "Inspeccionar extintores de prueba", description: "Inspección de extintores", executionGuidance: "Prevención PDTP", createdAt: now }).onConflictDoNothing()
+    await seedActivity({ catalogActivityId: "catalog-fulfillment-42", catalogRevision: 1 })
+
+    const result = await recordPdtpFulfillmentEvent({
+      sourceType: "campana", sourceId: "campana-catalog", worksiteId: WS_ID,
+      catalogActivityIds: ["catalog-fulfillment-42"], occurredAt: now,
+    })
+    expect(result?.accredited[0]).toMatchObject({ activityId: ACT_ID, activityN: ACT_N })
+    const [event] = await inMemoryDb.select().from(schema.pdtpFulfillmentEvents).where(eq(schema.pdtpFulfillmentEvents.sourceId, "campana-catalog"))
+    expect(event?.activityNumbers).toEqual([])
+    const [target] = await inMemoryDb.select().from(schema.pdtpFulfillmentEventTargets).where(eq(schema.pdtpFulfillmentEventTargets.eventId, event!.id))
+    expect(target).toMatchObject({ catalogActivityId: "catalog-fulfillment-42", resolvedActivityId: ACT_ID, activityNumberSnapshot: ACT_N })
+  })
+
   it("es idempotente: reintentar el mismo sourceId no duplica la ejecución", async () => {
     await seedProgram("active")
     await seedActivity()

@@ -24,6 +24,7 @@ export {
   batchUpdatePdtpActivitiesAction,
   deletePdtpActivityAction,
   reorderPdtpActivitiesAction,
+  adoptLatestCatalogRevisionAction,
   addPdtpActivityFormAction,
   setPdtpActivityOverrideFormAction,
   reconcilePdtpDeclaredActorAction,

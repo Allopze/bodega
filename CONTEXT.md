@@ -31,3 +31,17 @@ _Avoid_: Trabajador receptor
 **Asignación genérica de trabajo**:
 No forma parte del flujo activo. La cola muestra acciones según su proceso de origen; sólo presenta responsables nativos cuando ese proceso los define. No se asigna genéricamente una entrega, recepción, aprobación o compra a una persona.
 _Avoid_: Responsable de la entrega
+
+## Programa preventivo
+
+**Actividad de catálogo**:
+Identidad corporativa estable de un trabajo preventivo reutilizable, independiente del año, la faena y el número con que aparezca en un programa.
+_Avoid_: Número de actividad, actividad anual
+
+**Revisión de actividad**:
+Versión inmutable del título, la descripción y la guía de ejecución de una actividad de catálogo.
+_Avoid_: Edición de actividad
+
+**Actividad anual**:
+Incorporación de una revisión de actividad a un programa preventivo concreto, con número, responsables, calendario, evidencia, indicadores, metas y alcance propios de ese programa.
+_Avoid_: Actividad de catálogo

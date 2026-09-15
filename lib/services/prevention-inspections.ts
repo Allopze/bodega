@@ -76,6 +76,7 @@ import { CHECKLIST_DEFINITIONS, isNonInspectionDefinition, isPersonEvaluationDef
 import { officialInspectionSourceFor } from "@/lib/sst/official-inspection-sources"
 import type { ChecklistDefinition } from "@/lib/sst/types"
 import { onInspectionCompleted, onInspectionReverted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
+import { replacePdtpAccreditationBindings, resolvePdtpAccreditationTarget } from "@/lib/services/pdtp/accreditation-bindings"
 import { defaultPdtpActivityNumbers, defaultPdtpReviewActivityNumbers, inspectionTemplateCodeFor, pdtpActivityCandidatesFor } from "@/lib/services/pdtp-adapters/inspection-templates-2026"
 import { codeYear, formatDate, todayInChile } from "@/lib/utils"
 import { assertRouteModuleEnabled } from "@/lib/services/module-toggles"
@@ -338,6 +339,8 @@ export async function setInspectionTemplatePdtpActivities(input: unknown, access
     pdtpActivityNumbers: z.array(z.number().int().positive()).max(20),
     /** Omitirlo conserva las que ya declaraba: el diálogo puede mandar sólo un conjunto. */
     pdtpReviewActivityNumbers: z.array(z.number().int().positive()).max(20).optional(),
+    catalogActivityIds: z.array(z.string().min(1)).max(20).optional(),
+    reviewCatalogActivityIds: z.array(z.string().min(1)).max(20).optional(),
   }).parse(input)
   requireAccess(access, "prevention:inspections:manage")
 
@@ -365,6 +368,8 @@ export async function setInspectionTemplatePdtpActivities(input: unknown, access
       eq(preventionInspectionTemplates.version, data.expectedVersion),
     )).returning()
     if (!updated) throw new Error("La plantilla cambió mientras la editabas. Recarga y reintenta.")
+    if (data.catalogActivityIds) await replacePdtpAccreditationBindings({ sourceType: "inspeccion", sourceId: template.id, eventType: "execute", catalogActivityIds: data.catalogActivityIds, updatedByUserId: access.userId }, tx)
+    if (data.reviewCatalogActivityIds) await replacePdtpAccreditationBindings({ sourceType: "inspeccion", sourceId: template.id, eventType: "review", catalogActivityIds: data.reviewCatalogActivityIds, updatedByUserId: access.userId }, tx)
     await history(tx, {
       entityType: "template", entityId: template.id, changeType: "pdtp_activities_set",
       reason: [
@@ -1333,13 +1338,14 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
         .from(preventionInspectionTemplates)
         .where(eq(preventionInspectionTemplates.id, existing.templateId)).limit(1)
       const activityNumbers = Array.isArray(template?.numbers) ? template.numbers : []
-      if (activityNumbers.length > 0 && existing.executedAt) {
+      const target = await resolvePdtpAccreditationTarget({ sourceType: "inspeccion", sourceId: existing.templateId, eventType: "execute", legacyActivityNumbers: activityNumbers }, tx)
+      if ((target.catalogActivityIds?.length || target.activityNumbers?.length) && existing.executedAt) {
         await onInspectionCompleted({
           runId: existing.id,
           worksiteId: existing.worksiteId,
           completedAt: existing.executedAt,
           completedByUserId: existing.executedByUserId,
-          activityNumbers,
+          ...target,
         }, tx)
       }
       return {
@@ -1577,13 +1583,14 @@ export async function completeInspectionRun(input: unknown, access: InspectionAc
     const pdtpActivityNumbers = Array.isArray((template as { pdtpActivityNumbers?: number[] }).pdtpActivityNumbers)
       ? (template as { pdtpActivityNumbers?: number[] }).pdtpActivityNumbers!
       : []
-    if (pdtpActivityNumbers.length > 0) {
+    const target = await resolvePdtpAccreditationTarget({ sourceType: "inspeccion", sourceId: run.templateId, eventType: "execute", legacyActivityNumbers: pdtpActivityNumbers }, tx)
+    if (target.catalogActivityIds?.length || target.activityNumbers?.length) {
       await onInspectionCompleted({
         runId: run.id,
         worksiteId: run.worksiteId,
         completedAt: updated.executedAt ?? now,
         completedByUserId: access.userId,
-        activityNumbers: pdtpActivityNumbers,
+        ...target,
       }, tx)
     }
 
@@ -1969,13 +1976,14 @@ export async function transitionInspectionRun(input: unknown, access: Inspection
         .from(preventionInspectionTemplates)
         .where(eq(preventionInspectionTemplates.id, run.templateId)).limit(1)
       const activityNumbers = Array.isArray(template?.numbers) ? template.numbers : []
-      if (activityNumbers.length > 0) {
+      const target = await resolvePdtpAccreditationTarget({ sourceType: "inspeccion", sourceId: run.templateId, eventType: "review", legacyActivityNumbers: activityNumbers }, tx)
+      if (target.catalogActivityIds?.length || target.activityNumbers?.length) {
         await onInspectionCompleted({
           runId: run.id,
           worksiteId: run.worksiteId,
           completedAt: updated.reviewedAt ?? now,
           completedByUserId: access.userId,
-          activityNumbers,
+          ...target,
         }, tx)
       }
     }

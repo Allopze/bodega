@@ -34,6 +34,7 @@ import { logger } from "@/lib/logger"
 import { resolvePdtpActivityIdsForNumbers } from "@/lib/services/pdtp/accreditation"
 import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
 import { createPdtpObligation, findPdtpObligationByIdempotencyKey, pdtpObligationIdempotencyKey, reportPdtpObligation } from "@/lib/services/pdtp/obligations"
+import { pdtpCatalogActivityIdForLegacyNumber } from "./catalog-activities-2026"
 
 /** Las doce actividades del RE-20 que pasan por obligación. La N°76 no está. */
 const RE20_OBLIGATION_ACTIVITY_NUMBERS = [66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 77, 78]
@@ -217,7 +218,7 @@ export async function onIncidentFollowupRecorded(input: { incidentId: string; wo
     sourceType: "incident",
     sourceId: `${input.incidentId}:seguimiento:${input.followupId}`,
     worksiteId: input.worksiteId,
-    activityNumbers: [76],
+    catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(76)],
     occurredAt: input.recordedAt,
     evidenceRef: `Seguimiento de medidas RE-20-08: ${input.followupId}`,
   })

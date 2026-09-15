@@ -24,6 +24,7 @@ import { SST_DOCUMENT_CONFIDENTIALITIES } from "@/lib/validation/prevention-modu
 import { saveDocumentTypeAction } from "./actions"
 import { CONFIDENTIALITY_LABEL, withCurrentCategory, type CategoryOption } from "./labels"
 import type { TypeRow } from "./taxonomy-list"
+import { PdtpActivityPicker, type PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
 
 interface TypeFormProps {
   open: boolean
@@ -31,9 +32,10 @@ interface TypeFormProps {
   editType?: TypeRow | null
   categorySlug: string
   categoryOptions: CategoryOption[]
+  catalogActivities: PdtpActivityPickerOption[]
 }
 
-export function TypeForm({ open, onClose, editType, categorySlug, categoryOptions }: TypeFormProps) {
+export function TypeForm({ open, onClose, editType, categorySlug, categoryOptions, catalogActivities }: TypeFormProps) {
   const isEdit = !!editType
   const initialCategory = editType?.categorySlug ?? categorySlug
   // La categoría de un tipo creado en una custom ya no listada debe seguir
@@ -44,6 +46,8 @@ export function TypeForm({ open, onClose, editType, categorySlug, categoryOption
     initialCategory && options.some((o) => o.slug === initialCategory) ? initialCategory : (options[0]?.slug ?? ""),
   )
   const [defaultConf, setDefaultConf] = React.useState(editType?.defaultConfidentiality ?? "publico_interno")
+  const [publishActivities, setPublishActivities] = React.useState(editType?.pdtpCatalogActivityIds ?? [])
+  const [ackActivities, setAckActivities] = React.useState(editType?.pdtpAcknowledgmentCatalogActivityIds ?? [])
 
   const [state, formAction] = useActionState<ActionState, FormData>(
     async (prev, formData) => {
@@ -158,22 +162,10 @@ export function TypeForm({ open, onClose, editType, categorySlug, categoryOption
                   hechos distintos del programa. Un tipo de difusión que
                   declarara su número en el campo de publicación acreditaría al
                   publicar, sin que nadie hubiera acusado nada. */}
-              <Field label="Actividades PDTP al publicar" htmlFor="type-pdtp-publish" hint="Números separados por coma. Se acreditan al publicar una versión vigente.">
-                <Input
-                  id="type-pdtp-publish"
-                  name="pdtpActivityNumbers"
-                  defaultValue={(editType?.pdtpActivityNumbers ?? []).join(", ")}
-                  placeholder="43"
-                />
-              </Field>
-              <Field label="Actividades PDTP por acuse de recibo" htmlFor="type-pdtp-ack" hint="Se acreditan una vez por cada acuse, no al publicar. Es la forma de medir difusión por cobertura.">
-                <Input
-                  id="type-pdtp-ack"
-                  name="pdtpAcknowledgmentActivityNumbers"
-                  defaultValue={(editType?.pdtpAcknowledgmentActivityNumbers ?? []).join(", ")}
-                  placeholder="36"
-                />
-              </Field>
+              <input type="hidden" name="pdtpCatalogActivityIds" value={JSON.stringify(publishActivities)} />
+              <input type="hidden" name="pdtpAcknowledgmentCatalogActivityIds" value={JSON.stringify(ackActivities)} />
+              <PdtpActivityPicker multiple label="Actividades PDTP al publicar" options={catalogActivities} value={publishActivities} onChange={setPublishActivities} />
+              <PdtpActivityPicker multiple label="Actividades PDTP por acuse de recibo" options={catalogActivities} value={ackActivities} onChange={setAckActivities} />
               <Checkbox
                 id="type-active"
                 name="isActive"

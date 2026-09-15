@@ -18,6 +18,7 @@ import { alcoholTestDispatches, alcoholTests, serviceEquipment, workers } from "
 import { nanoid } from "@/lib/id"
 import { assertWorksiteAccess, type WorksiteScope } from "@/lib/services/pdtp/helpers"
 import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
+import { pdtpCatalogActivityIdForLegacyNumber } from "@/lib/services/pdtp-adapters/catalog-activities-2026"
 
 /** Familia de `service_equipment` que corresponde a un alcotómetro. */
 export const ALCOTEST_EQUIPMENT_KIND = "alcotest"
@@ -157,7 +158,7 @@ export async function recordAlcoholTest(
     // (accreditation.ts:144-151), así que cada control es su propio id.
     sourceId: `alcotest:${id}`,
     worksiteId: input.worksiteId,
-    activityNumbers: [activityNumber],
+    catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(activityNumber)],
     occurredAt: input.performedAt,
     evidenceRef: input.evidenceUrl ?? `Control de alcotest ${id}`,
     metadata: {
@@ -240,7 +241,7 @@ export async function recordAlcoholTestDispatch(
     sourceType: "alcotest",
     sourceId: `alcotest-dispatch:${id}`,
     worksiteId: input.worksiteId,
-    activityNumbers: [ALCOTEST_DISPATCH_ACTIVITY_NUMBER],
+    catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(ALCOTEST_DISPATCH_ACTIVITY_NUMBER)],
     occurredAt: sentAt,
     evidenceRef: input.evidenceUrl ?? `Envío de registros ${input.year}-${String(input.month).padStart(2, "0")} a ${input.recipient}`,
     metadata: { alcoholTestDispatchId: id, year: input.year, month: input.month, testCount: testsInPeriod.length },

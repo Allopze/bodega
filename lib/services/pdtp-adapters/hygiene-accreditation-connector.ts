@@ -25,6 +25,7 @@
 
 import type { AccreditationInput } from "@/lib/services/pdtp/accreditation"
 import { recordPdtpFulfillmentEvent, recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
+import { pdtpCatalogActivityIdForLegacyNumber } from "./catalog-activities-2026"
 
 /** N°45: "Evaluación cuantitativas por mutual". */
 const PDTP_QUANTITATIVE_MEASUREMENT_ACTIVITY_NUMBER = 45
@@ -100,7 +101,7 @@ export async function onExposureMeasurementRecorded(input: {
     sourceType: "higiene",
     sourceId: `medicion:${input.measurementId}`,
     worksiteId: input.worksiteId,
-    activityNumbers: [PDTP_QUANTITATIVE_MEASUREMENT_ACTIVITY_NUMBER],
+    catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(PDTP_QUANTITATIVE_MEASUREMENT_ACTIVITY_NUMBER)],
     occurredAt: occurredAtFromChileDate(input.measuredOn),
     executedQuantity: 1,
     evidenceRef,
@@ -148,7 +149,7 @@ export async function onProtocolApplicabilityAssessed(input: {
     sourceType: "higiene",
     sourceId: `protocolo:${input.applicabilityId}:v${input.version}`,
     worksiteId: input.worksiteId,
-    activityNumbers: [activityNumber],
+    catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(activityNumber)],
     occurredAt: occurredAtFromChileDate(input.assessedOn),
     executedQuantity: 1,
     evidenceRef: `Protocolo ${input.protocolShortName}: ${input.status} (v${input.version})`,
@@ -189,7 +190,7 @@ export async function onSurveillanceControlAttended(input: {
     sourceType: "vigilancia",
     sourceId: `vigilancia:${input.enrollmentId}`,
     worksiteId: input.worksiteId,
-    activityNumbers: [PDTP_SURVEILLANCE_CONTROL_ACTIVITY_NUMBER],
+    catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(PDTP_SURVEILLANCE_CONTROL_ACTIVITY_NUMBER)],
     occurredAt: occurredAtFromChileDate(input.attendedOn),
     executedQuantity: 1,
     evidenceRef: `Control de vigilancia realizado: ${input.enrollmentId}`,

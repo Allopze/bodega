@@ -23,6 +23,7 @@ import {
 import { CategoryForm } from "./category-form"
 import { TypeForm } from "./type-form"
 import { CONFIDENTIALITY_LABEL as DEFAULT_CONFIDENTIALITY_LABEL, type CategoryOption } from "./labels"
+import type { PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
 
 export interface CategoryRow {
   slug: string
@@ -46,6 +47,8 @@ export interface TypeRow {
   pdtpActivityNumbers: number[] | null
   /** Actividades que acredita cada acuse de recibo. */
   pdtpAcknowledgmentActivityNumbers: number[] | null
+  pdtpCatalogActivityIds?: string[]
+  pdtpAcknowledgmentCatalogActivityIds?: string[]
   isActive: boolean
 }
 
@@ -87,6 +90,7 @@ interface TaxonomyViewProps {
   /** Categorías reales de BD para el selector del formulario de tipos. */
   categoryOptions: CategoryOption[]
   types: TypeRow[]
+  catalogActivities: PdtpActivityPickerOption[]
 }
 
 function formatPdtpNumbers(numbers: number[] | null): string {
@@ -94,7 +98,7 @@ function formatPdtpNumbers(numbers: number[] | null): string {
   return numbers.map((n) => `N°${n}`).join(", ")
 }
 
-export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DEFAULT_CONFIDENTIALITY_LABEL, categoryOptions, types }: TaxonomyViewProps) {
+export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DEFAULT_CONFIDENTIALITY_LABEL, categoryOptions, types, catalogActivities }: TaxonomyViewProps) {
   const [catSheetOpen, setCatSheetOpen] = React.useState(false)
   const [editCategory, setEditCategory] = React.useState<CategoryRow | null>(null)
   const [typeSheetOpen, setTypeSheetOpen] = React.useState(false)
@@ -400,6 +404,7 @@ export function TaxonomyView({ categories, activeSlug, confidentialityLabel = DE
             editType={editType}
             categorySlug={activeSlug}
             categoryOptions={categoryOptions}
+            catalogActivities={catalogActivities}
           />
         )}
       </section>

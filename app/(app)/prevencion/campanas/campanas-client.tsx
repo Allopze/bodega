@@ -15,7 +15,8 @@ import {
 import { EmptyState } from "@/components/ui/empty-state"
 import { EvidenceField } from "@/components/prevention/evidence-field"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/field"
+import { Field, Label } from "@/components/ui/field"
+import { DatePicker } from "@/components/ui/date-picker"
 import { PageHeader } from "@/components/ui/page-header"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import {
@@ -30,8 +31,8 @@ import {
   createCampaignAction,
   setCampaignPdtpActivitiesAction,
 } from "./actions"
-import { PDTP_CAMPAIGN_ACTIVITIES } from "@/lib/services/prevention-campaigns.catalog"
 import type { preventionCampaigns } from "@/db/schema"
+import { PdtpActivityPicker, type PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
 
 export type CampaignRow = typeof preventionCampaigns.$inferSelect & {
   worksiteName: string
@@ -47,12 +48,16 @@ interface CampanasClientProps {
   initialCampaigns: CampaignRow[]
   worksites: WorksitesItem[]
   canManage: boolean
+  catalogActivities: PdtpActivityPickerOption[]
+  catalogBindings: Record<string, string[]>
 }
 
 export function CampanasClient({
   initialCampaigns,
   worksites,
   canManage,
+  catalogActivities,
+  catalogBindings,
 }: CampanasClientProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -81,7 +86,8 @@ export function CampanasClient({
         worksiteId: newWorksiteId,
         title: newTitle,
         description: newDescription,
-        pdtpActivityNumbers: [Number(newActivity)],
+        pdtpActivityNumbers: [],
+        catalogActivityIds: [newActivity],
       })
       if (res.ok) {
         setIsCreateOpen(false)
@@ -97,9 +103,11 @@ export function CampanasClient({
   }
 
   /** El número declarado, o el primero si la campaña declara más de uno. */
-  const activityOf = (campaign: CampaignRow): number => {
+  const activityOf = (campaign: CampaignRow): string => {
+    const catalogId = catalogBindings[campaign.id]?.[0]
+    if (catalogId) return catalogId
     const numbers = campaign.pdtpActivityNumbers
-    return Array.isArray(numbers) && numbers.length > 0 ? Number(numbers[0]) : 85
+    return Array.isArray(numbers) && numbers.length > 0 ? `legacy:${String(numbers[0])}` : ""
   }
 
   const handleSetActivity = (campaignId: string, value: string) => {
@@ -107,7 +115,8 @@ export function CampanasClient({
     startTransition(async () => {
       const res = await setCampaignPdtpActivitiesAction({
         campaignId,
-        pdtpActivityNumbers: [Number(value)],
+        pdtpActivityNumbers: [],
+        catalogActivityIds: [value],
       })
       if (res.ok) router.refresh()
       else setError(res.message ?? "Ocurrió un error")
@@ -198,24 +207,10 @@ export function CampanasClient({
                           acreditó, y cambiarle el número dejaría la ejecución apuntando a
                           otra actividad. */}
                       {canManage && cmp.status !== "done" ? (
-                        <Select
-                          value={String(activityOf(cmp))}
-                          onValueChange={(value) => handleSetActivity(cmp.id, value)}
-                        >
-                          <SelectTrigger className="h-8 w-[130px] text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {PDTP_CAMPAIGN_ACTIVITIES.map((activity) => (
-                              <SelectItem key={activity.n} value={String(activity.n)}>
-                                N°{activity.n}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <PdtpActivityPicker label="Actividad" options={catalogActivities} value={activityOf(cmp).startsWith("legacy:") ? "" : activityOf(cmp)} onChange={(value) => handleSetActivity(cmp.id, value)} />
                       ) : (
                         <span className="font-mono text-xs text-[var(--color-text-muted)]">
-                          N°{activityOf(cmp)}
+                          {catalogActivities.find((activity) => activity.id === activityOf(cmp))?.title ?? (activityOf(cmp).replace("legacy:", "N°") || "No vinculada")}
                         </span>
                       )}
                     </TableCell>
@@ -277,19 +272,7 @@ export function CampanasClient({
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Actividad del programa que acredita</Label>
-              <Select value={newActivity} onValueChange={setNewActivity}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona la actividad" />
-                </SelectTrigger>
-                <SelectContent>
-                  {PDTP_CAMPAIGN_ACTIVITIES.map((activity) => (
-                    <SelectItem key={activity.n} value={String(activity.n)}>
-                      N°{activity.n} — {activity.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <PdtpActivityPicker label="Actividad del catálogo que acredita" options={catalogActivities} value={newActivity} onChange={setNewActivity} />
             </div>
             <div className="space-y-1.5">
               <Label>Descripción / Alcance (Opcional)</Label>
@@ -321,13 +304,9 @@ export function CampanasClient({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Fecha en que se hizo la campaña</Label>
-              <Input type="date" value={heldOn} onChange={(e) => setHeldOn(e.target.value)} />
-              <p className="text-xs text-[var(--color-text-muted)]">
-                Es la fecha con la que el PDTP cuenta el cumplimiento, no la de hoy.
-              </p>
-            </div>
+            <Field label="Fecha en que se hizo la campaña" htmlFor="campaign-held-on" helper="Es la fecha con la que el PDTP cuenta el cumplimiento, no la de hoy.">
+              <DatePicker id="campaign-held-on" ariaLabel="Fecha en que se hizo la campaña" value={heldOn} onChange={setHeldOn} />
+            </Field>
             <EvidenceField
               label="Evidencia de difusión (foto, lista de asistencia, acta)"
               helper="Sube el archivo, o pega el enlace si ya vive en Drive/SharePoint."

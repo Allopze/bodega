@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm"
-import { db } from "@/db"
+import { db, type DB, type Tx } from "@/db"
 import { sstDocumentCategories, sstDocumentTypes } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { sstDocumentCategoryUpsertSchema, sstDocumentTypeUpsertSchema } from "@/lib/validation/prevention"
@@ -41,18 +41,18 @@ export async function upsertDocumentCategory(input: unknown) {
   return rows[0]
 }
 
-export async function upsertDocumentType(input: unknown) {
+export async function upsertDocumentType(input: unknown, client: DB | Tx = db) {
   const data = sstDocumentTypeUpsertSchema.parse(input)
   // El schema valida el formato del slug; la existencia se verifica acá contra
   // la tabla, que es la fuente de verdad que el admin puede extender.
-  const [category] = await db
+  const [category] = await client
     .select({ slug: sstDocumentCategories.slug })
     .from(sstDocumentCategories)
     .where(eq(sstDocumentCategories.slug, data.categorySlug))
   if (!category) throw new Error("La categoría indicada no existe")
   const now = new Date().toISOString()
   const id = data.id || `sdtype-${nanoid()}`
-  await db.insert(sstDocumentTypes).values({
+  await client.insert(sstDocumentTypes).values({
     id,
     categorySlug: data.categorySlug,
     code: data.code,
@@ -79,7 +79,7 @@ export async function upsertDocumentType(input: unknown) {
       isActive: data.isActive, updatedAt: now,
     },
   })
-  const rows = await db.select().from(sstDocumentTypes).where(eq(sstDocumentTypes.id, id))
+  const rows = await client.select().from(sstDocumentTypes).where(eq(sstDocumentTypes.id, id))
   return rows[0]
 }
 

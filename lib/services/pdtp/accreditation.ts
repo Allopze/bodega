@@ -81,13 +81,15 @@ export type AccreditationResult = {
   skippedExcluded: number[]
   /** Actividades no encontradas en el programa activo (no error fatal, se registra en log). */
   skippedNotFound: number[]
+  /** Identidades de catálogo que el programa aplicable todavía no incorpora. */
+  skippedCatalogNotFound?: string[]
   /**
    * El evento ocurrió en un año que el programa resuelto no cubre. No se
    * acredita nada: una ejecución sellada con el año del programa mentiría
    * sobre cuándo ocurrió el trabajo, y sellada con el año real sería invisible
    * para `loadProgramScheduleAndExecutions`, que filtra por `program.year`.
    */
-  skippedOutOfPeriod?: { occurredYear: number; programYear: number; activityNumbers: number[] }
+  skippedOutOfPeriod?: { occurredYear: number; programYear: number; activityNumbers: number[]; catalogActivityIds?: string[] }
 }
 
 export type AccreditationInput = {
@@ -95,8 +97,10 @@ export type AccreditationInput = {
   /** ID del objeto real (run, session, delivery, meeting, drill…). */
   sourceId: string
   worksiteId: string
-  /** Números de actividad PDTP a acreditar (campo `n`, no el id). */
-  activityNumbers: number[]
+  /** Identidades corporativas estables a acreditar. */
+  catalogActivityIds?: string[]
+  /** @deprecated Snapshot/entrada compatible del primer despliegue. */
+  activityNumbers?: number[]
   /** Si se omite, busca el programa activo para la faena (primer `active`). */
   programId?: string
   /** ISO timestamp del evento real — determina el mes/semana PDTP. */
@@ -383,7 +387,12 @@ export async function accreditPdtpFromEvent(
   if (input.autoApproveByUserId && input.sourceType !== "inspeccion" && input.sourceType !== "capacitacion_ocurrencia") {
     throw new Error("Sólo las inspecciones y las ocurrencias de capacitación pueden aprobar automáticamente su cumplimiento.")
   }
-  if (input.activityNumbers.length === 0) {
+  const activityNumbers = input.activityNumbers ?? []
+  const catalogActivityIds = input.catalogActivityIds ?? []
+  if (activityNumbers.length > 0 && catalogActivityIds.length > 0) {
+    throw new Error("La acreditación debe indicar identidades de catálogo o números legados, no ambos.")
+  }
+  if (activityNumbers.length === 0 && catalogActivityIds.length === 0) {
     return { accredited: [], skippedExcluded: [], skippedNotFound: [] }
   }
 
@@ -433,26 +442,41 @@ export async function accreditPdtpFromEvent(
       accredited: [],
       skippedExcluded: [],
       skippedNotFound: [],
-      skippedOutOfPeriod: { occurredYear: resolved.occurredYear, programYear: resolved.programYear, activityNumbers: input.activityNumbers },
+      skippedOutOfPeriod: {
+        occurredYear: resolved.occurredYear,
+        programYear: resolved.programYear,
+        activityNumbers,
+        ...(catalogActivityIds.length > 0 ? { catalogActivityIds } : {}),
+      },
     }
   }
   const { program, occurredYear, slot } = resolved
 
-  // 2. Resolver las actividades del programa por número
+  // 2. Resolver las actividades del programa por identidad corporativa. Los
+  // números se conservan sólo como lectura compatible durante el despliegue 1.
   const activityRows = await client
     // PDTP-001: se trae `evidenceRequirement` porque es la actividad, y no el
     // conector, la que declara si hay que documentar.
-    .select({ id: pdtpActivities.id, n: pdtpActivities.n, evidenceRequirement: pdtpActivities.evidenceRequirement })
+    .select({
+      id: pdtpActivities.id,
+      n: pdtpActivities.n,
+      catalogActivityId: pdtpActivities.catalogActivityId,
+      evidenceRequirement: pdtpActivities.evidenceRequirement,
+    })
     .from(pdtpActivities)
     .where(
       and(
         eq(pdtpActivities.programId, program.id),
-        inArray(pdtpActivities.n, input.activityNumbers),
+        catalogActivityIds.length > 0
+          ? inArray(pdtpActivities.catalogActivityId, catalogActivityIds)
+          : inArray(pdtpActivities.n, activityNumbers),
       ),
     )
 
   const foundNs = new Set(activityRows.map((a) => a.n))
-  const skippedNotFound = input.activityNumbers.filter((n) => !foundNs.has(n))
+  const skippedNotFound = activityNumbers.filter((n) => !foundNs.has(n))
+  const foundCatalogIds = new Set(activityRows.map((activity) => activity.catalogActivityId).filter(Boolean))
+  const skippedCatalogNotFound = catalogActivityIds.filter((id) => !foundCatalogIds.has(id))
   if (skippedNotFound.length > 0) {
     logger.warn(
       { programId: program.id, skippedNotFound, sourceType: input.sourceType, sourceId: input.sourceId },
@@ -461,7 +485,10 @@ export async function accreditPdtpFromEvent(
   }
 
   if (activityRows.length === 0) {
-    return { accredited: [], skippedExcluded: [], skippedNotFound }
+    return {
+      accredited: [], skippedExcluded: [], skippedNotFound,
+      ...(catalogActivityIds.length > 0 ? { skippedCatalogNotFound } : {}),
+    }
   }
 
   // 3. Filtrar actividades excluidas de esta faena (R4)
@@ -482,7 +509,10 @@ export async function accreditPdtpFromEvent(
   const eligibleActivities = activityRows.filter((a) => !excludedIds.has(a.id))
 
   if (eligibleActivities.length === 0) {
-    return { accredited: [], skippedExcluded, skippedNotFound }
+    return {
+      accredited: [], skippedExcluded, skippedNotFound,
+      ...(catalogActivityIds.length > 0 ? { skippedCatalogNotFound } : {}),
+    }
   }
 
   // 4. Upsert idempotente para cada actividad elegible
@@ -610,7 +640,10 @@ export async function accreditPdtpFromEvent(
     "[accreditPdtpFromEvent] Acreditación completada.",
   )
 
-  return { accredited, skippedExcluded, skippedNotFound }
+  return {
+    accredited, skippedExcluded, skippedNotFound,
+    ...(catalogActivityIds.length > 0 ? { skippedCatalogNotFound } : {}),
+  }
 }
 
 // ── Reversión ─────────────────────────────────────────────────────────────────

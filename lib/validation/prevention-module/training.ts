@@ -51,6 +51,7 @@ export const trainingCourseSchema = z.object({
    * cerrar una sesión; hasta ahora no había forma de escribirlo desde la UI de
    * creación de cursos. */
   pdtpActivityNumbers: z.array(z.number().int().positive()).default([]),
+  catalogActivityIds: z.array(z.string().min(1)).max(20).optional(),
 }).superRefine((value, ctx) => {
   if (value.kind === "legal_mandatory") {
     if (value.minimumDurationMinutes < DS44_ART16_MIN_DURATION_MINUTES) {

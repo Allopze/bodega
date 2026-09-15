@@ -160,6 +160,7 @@ export const pdtpActivityUpdateSchema = z.object({
 
 export const pdtpActivityAddSchema = z.object({
   programId: z.string().min(1, "Programa requerido"),
+  catalogActivityId: z.string().trim().min(1).optional(),
   activity: z.string().trim().min(1).max(4000),
   program: z.string().trim().min(1).max(2000),
   responsibleSlugs: z.array(z.string().min(1)).min(1, "Al menos un responsable"),

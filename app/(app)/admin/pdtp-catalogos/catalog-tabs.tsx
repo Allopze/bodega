@@ -3,16 +3,24 @@
 import * as React from "react"
 import { useActionState, useEffect, useState } from "react"
 import Link from "next/link"
-import { PencilSimple, ToggleLeft, ToggleRight } from "@phosphor-icons/react"
+import { Archive, PencilSimple, ToggleLeft, ToggleRight, UploadSimple } from "@phosphor-icons/react"
 import { DataTable } from "@/components/ui/data-table"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Button } from "@/components/ui/button"
 import { ResponsiveDataListCard, ResponsiveDataListField } from "@/components/ui/responsive-data-list"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/lib/toast"
 import { INITIAL_STATE } from "@/lib/form-state"
-import { togglePdtpResponsibleActiveAction, togglePdtpSheetActiveAction } from "./actions"
+import {
+  publishPdtpCatalogActivityAction,
+  retirePdtpCatalogActivityAction,
+  togglePdtpResponsibleActiveAction,
+  togglePdtpSheetActiveAction,
+} from "./actions"
+import { ActivityForm, type CatalogActivityRow } from "./activity-form"
 import { ResponsibleForm, type ResponsibleRow } from "./responsible-form"
 import { SheetForm, type SheetRow } from "./sheet-form"
 
@@ -35,6 +43,14 @@ const SHEET_COLUMNS = [
   { key: "", label: "", sortable: false, width: "w-24" },
 ]
 
+const ACTIVITY_COLUMNS = [
+  { key: "code", label: "Código", sortable: true, width: "w-44" },
+  { key: "title", label: "Actividad", sortable: true },
+  { key: "currentRevision", label: "Revisión", sortable: true, numeric: true, width: "w-24" },
+  { key: "status", label: "Estado", sortable: true, width: "w-28" },
+  { key: "", label: "", sortable: false, width: "w-36" },
+]
+
 export interface ProgramSummary {
   id: string
   year: number
@@ -45,6 +61,7 @@ export interface ProgramSummary {
 }
 
 interface CatalogTabsProps {
+  activities: CatalogActivityRow[]
   roleOptions: string[]
   responsibles: ResponsibleRow[]
   sheets: SheetRow[]
@@ -52,13 +69,17 @@ interface CatalogTabsProps {
 }
 
 const TABS = [
+  { key: "activities", label: "Actividades" },
   { key: "responsibles", label: "Responsables" },
   { key: "sheets", label: "Hojas del programa" },
   { key: "programs", label: "Programas activos" },
 ] as const
 
-export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: CatalogTabsProps) {
-  const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("responsibles")
+export function CatalogTabs({ activities, roleOptions, responsibles, sheets, programs }: CatalogTabsProps) {
+  const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("activities")
+  const [activitySheetOpen, setActivitySheetOpen] = useState(false)
+  const [editActivity, setEditActivity] = useState<CatalogActivityRow | null>(null)
+  const [retireActivity, setRetireActivity] = useState<CatalogActivityRow | null>(null)
   const [respSheetOpen, setRespSheetOpen] = useState(false)
   const [editResp, setEditResp] = useState<ResponsibleRow | null>(null)
   const [sheetSheetOpen, setSheetSheetOpen] = useState(false)
@@ -66,6 +87,8 @@ export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: Cat
 
   const [respToggleState, respToggleAction] = useActionState(togglePdtpResponsibleActiveAction, INITIAL_STATE)
   const [sheetToggleState, sheetToggleAction] = useActionState(togglePdtpSheetActiveAction, INITIAL_STATE)
+  const [publishState, publishAction] = useActionState(publishPdtpCatalogActivityAction, INITIAL_STATE)
+  const [retireState, retireAction] = useActionState(retirePdtpCatalogActivityAction, INITIAL_STATE)
 
   useEffect(() => {
     if (respToggleState.message) {
@@ -77,9 +100,18 @@ export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: Cat
       (sheetToggleState.ok ? toast.success : toast.error).call(null, sheetToggleState.message)
     }
   }, [sheetToggleState])
+  useEffect(() => {
+    if (publishState.message) (publishState.ok ? toast.success : toast.error)(publishState.message)
+  }, [publishState])
+  useEffect(() => {
+    if (!retireState.message) return
+    ;(retireState.ok ? toast.success : toast.error)(retireState.message)
+    if (retireState.ok) setRetireActivity(null)
+  }, [retireState])
 
   const respRows = responsibles as (ResponsibleRow & Record<string, unknown>)[]
   const sheetRows = sheets as (SheetRow & Record<string, unknown>)[]
+  const activityRows = activities as (CatalogActivityRow & Record<string, unknown>)[]
 
   return (
     <>
@@ -92,6 +124,78 @@ export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: Cat
           ))}
         </TabsList>
       </Tabs>
+
+      {tab === "activities" && (
+        <section>
+          <div className="mb-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Actividades preventivas</h2>
+            <p className="text-xs text-[var(--color-text-muted)]">El código identifica la actividad; las revisiones conservan el contenido histórico.</p>
+          </div>
+          <DataTable
+            caption="Catálogo corporativo de actividades preventivas"
+            columns={ACTIVITY_COLUMNS}
+            rows={activityRows}
+            searchKeys={["code", "title", "description", "executionGuidance", "status"]}
+            pageSize={20}
+            emptyTitle="Sin actividades"
+            emptyDescription="Crea una definición y publícala para incorporarla a programas preventivos."
+            renderMobileCard={(row) => {
+              const activity = row as CatalogActivityRow
+              return (
+                <ResponsiveDataListCard
+                  title={activity.title}
+                  description={activity.description}
+                  status={<CatalogStatus status={activity.status} />}
+                  actions={<ActivityActions activity={activity} onRevise={() => { setEditActivity(activity); setActivitySheetOpen(true) }} onRetire={() => setRetireActivity(activity)} publishAction={publishAction} />}
+                >
+                  <ResponsiveDataListField label="Código"><span className="font-mono">{activity.code}</span></ResponsiveDataListField>
+                  <ResponsiveDataListField label="Revisión">{activity.currentRevision}</ResponsiveDataListField>
+                  <ResponsiveDataListField label="Detalle" className="col-span-2"><ActivityHistory activity={activity} /></ResponsiveDataListField>
+                </ResponsiveDataListCard>
+              )
+            }}
+            renderRow={(row) => {
+              const activity = row as CatalogActivityRow
+              return (
+                <TableRow>
+                  <TableCell className="font-mono text-xs">{activity.code}</TableCell>
+                  <TableCell>
+                    <p className="font-medium">{activity.title}</p>
+                    <p className="mt-1 max-w-3xl text-xs text-[var(--color-text-muted)]">{activity.description}</p>
+                    <ActivityHistory activity={activity} />
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{activity.currentRevision}</TableCell>
+                  <TableCell><CatalogStatus status={activity.status} /></TableCell>
+                  <TableCell><ActivityActions activity={activity} onRevise={() => { setEditActivity(activity); setActivitySheetOpen(true) }} onRetire={() => setRetireActivity(activity)} publishAction={publishAction} /></TableCell>
+                </TableRow>
+              )
+            }}
+          />
+          <ActivityForm
+            key={editActivity?.id ?? "revision"}
+            open={activitySheetOpen}
+            onClose={() => { setActivitySheetOpen(false); setEditActivity(null) }}
+            activity={editActivity}
+          />
+          <Dialog open={Boolean(retireActivity)} onOpenChange={(open) => { if (!open) setRetireActivity(null) }}>
+            <DialogContent>
+              <form action={retireAction} className="space-y-4">
+                <DialogHeader>
+                  <DialogTitle>Retirar {retireActivity?.title}</DialogTitle>
+                  <DialogDescription>Seguirá visible en programas e historiales, pero no podrá seleccionarse para trabajo nuevo.</DialogDescription>
+                </DialogHeader>
+                <input type="hidden" name="id" value={retireActivity?.id ?? ""} />
+                <label className="block text-sm font-medium" htmlFor="retire-reason">Motivo del retiro</label>
+                <Textarea id="retire-reason" name="reason" minLength={10} required />
+                <DialogFooter>
+                  <Button type="button" variant="secondary" onClick={() => setRetireActivity(null)}>Cancelar</Button>
+                  <Button type="submit" variant="destructive"><Archive size={16} />Retirar actividad</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </section>
+      )}
 
       {tab === "responsibles" && (
         <section>
@@ -313,6 +417,61 @@ export function CatalogTabs({ roleOptions, responsibles, sheets, programs }: Cat
     </>
   )
 
+}
+
+function CatalogStatus({ status }: { status: CatalogActivityRow["status"] }) {
+  const meta = status === "active"
+    ? { label: "Activa", variant: "success" as const }
+    : status === "draft"
+      ? { label: "Borrador", variant: "warning" as const }
+      : { label: "Retirada", variant: "default" as const }
+  return <MetaBadge meta={meta} />
+}
+
+function ActivityHistory({ activity }: { activity: CatalogActivityRow }) {
+  return (
+    <details className="mt-2 text-xs text-[var(--color-text-muted)]">
+      <summary className="cursor-pointer font-medium text-[var(--color-primary)]">Ver guía e historial</summary>
+      <div className="mt-2 space-y-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+        <div><span className="font-semibold text-[var(--color-text)]">Guía vigente:</span> {activity.executionGuidance}</div>
+        {activity.retiredReason && <div><span className="font-semibold text-[var(--color-text)]">Motivo de retiro:</span> {activity.retiredReason}</div>}
+        <ol className="space-y-2">
+          {[...activity.revisions].reverse().map((revision) => (
+            <li key={revision.revision}>
+              <span className="font-semibold text-[var(--color-text)]">Revisión {revision.revision}: {revision.title}</span>
+              <span className="block">{revision.changeNote || "Sin nota de cambio"}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </details>
+  )
+}
+
+function ActivityActions({
+  activity,
+  onRevise,
+  onRetire,
+  publishAction,
+}: {
+  activity: CatalogActivityRow
+  onRevise: () => void
+  onRetire: () => void
+  publishAction: (payload: FormData) => void
+}) {
+  if (activity.status === "retired") return null
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      <Button type="button" variant="ghost" size="sm" onClick={onRevise}><PencilSimple size={15} />Revisar</Button>
+      {activity.status === "draft" && (
+        <form action={publishAction}>
+          <input type="hidden" name="id" value={activity.id} />
+          <Button type="submit" variant="ghost" size="sm"><UploadSimple size={15} />Publicar</Button>
+        </form>
+      )}
+      {activity.status === "active" && <Button type="button" variant="ghost" size="sm" onClick={onRetire}><Archive size={15} />Retirar</Button>}
+    </div>
+  )
 }
 
 function ProgramTable({ programs }: { programs: ProgramSummary[] }) {

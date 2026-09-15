@@ -32,9 +32,11 @@ import { and, eq, inArray } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import {
   pdtpActivities,
+  pdtpCatalogActivities,
   pdtpActivityWorksiteExclusions,
   pdtpActivityWorksiteParams,
   pdtpFulfillmentEvents,
+  pdtpFulfillmentEventTargets,
   pdtpResponsibleCatalog,
   permissions,
   preventionCampaigns,
@@ -59,6 +61,7 @@ import {
 } from "./accreditation"
 import { engancheDestinationFor } from "@/lib/services/pdtp-adapters/fulfillment-contract-2026"
 import { usablePdtpInstrumentNumbers } from "./instruments"
+import { legacyPdtpActivityNumberForCatalogId } from "@/lib/services/pdtp-adapters/catalog-activities-2026"
 
 type QueryClient = DB | Tx
 
@@ -104,7 +107,8 @@ async function upsertPendingEvent(input: {
   occurredAt: string
   quantity: number
   evidenceRef: string | null
-  activityNumbers: number[]
+  activityNumbers?: number[]
+  catalogActivityIds?: string[]
   sourceVersion: string | null
   returnHref: string | null
   periodOverride: { year: number; month: number; week: number } | null
@@ -135,7 +139,7 @@ async function upsertPendingEvent(input: {
         evidenceRef: input.evidenceRef,
         sourceVersion: input.sourceVersion,
         returnHref: input.returnHref,
-        activityNumbers: input.activityNumbers,
+        activityNumbers: input.activityNumbers ?? [],
         periodOverrideJson: input.periodOverride,
         plannedYear: input.plannedYear === undefined ? existing.plannedYear : input.plannedYear,
         autoApproveByUserId: input.autoApproveByUserId === undefined
@@ -144,6 +148,7 @@ async function upsertPendingEvent(input: {
         updatedAt: now,
       })
       .where(eq(pdtpFulfillmentEvents.id, existing.id))
+    await replaceEventTargets(existing.id, input.catalogActivityIds, now, client)
     return existing.id
   }
   const now = nextEventTimestamp()
@@ -162,7 +167,7 @@ async function upsertPendingEvent(input: {
     returnHref: input.returnHref,
     idempotencyKey,
     status: "pending",
-    activityNumbers: input.activityNumbers,
+    activityNumbers: input.activityNumbers ?? [],
     plannedYear: input.plannedYear ?? null,
     autoApproveByUserId: input.autoApproveByUserId ?? null,
     resultJson: {},
@@ -170,7 +175,10 @@ async function upsertPendingEvent(input: {
     createdAt: now,
     updatedAt: now,
   }).onConflictDoNothing({ target: pdtpFulfillmentEvents.idempotencyKey }).returning({ id: pdtpFulfillmentEvents.id })
-  if (inserted) return inserted.id
+  if (inserted) {
+    await replaceEventTargets(inserted.id, input.catalogActivityIds, now, client)
+    return inserted.id
+  }
 
   // Carrera: otra llamada concurrente insertó primero. Se suma el intento a
   // esa fila en vez de fallar.
@@ -178,7 +186,48 @@ async function upsertPendingEvent(input: {
     .from(pdtpFulfillmentEvents).where(eq(pdtpFulfillmentEvents.idempotencyKey, idempotencyKey)).limit(1)
   if (!concurrent) throw new Error("No se pudo crear ni recuperar el evento de cumplimiento.")
   await client.update(pdtpFulfillmentEvents).set({ attempts: concurrent.attempts + 1, updatedAt: now }).where(eq(pdtpFulfillmentEvents.id, concurrent.id))
+  await replaceEventTargets(concurrent.id, input.catalogActivityIds, now, client)
   return concurrent.id
+}
+
+async function replaceEventTargets(
+  eventId: string,
+  catalogActivityIds: string[] | undefined,
+  now: string,
+  client: QueryClient,
+) {
+  // `undefined` means a legacy caller in deployment 1: preserve any targets
+  // produced by the backfill. An explicit array is the new source of truth.
+  if (catalogActivityIds === undefined) return
+  const uniqueIds = [...new Set(catalogActivityIds)]
+  await client.delete(pdtpFulfillmentEventTargets).where(eq(pdtpFulfillmentEventTargets.eventId, eventId))
+  if (uniqueIds.length === 0) return
+  await client.insert(pdtpFulfillmentEventTargets).values(uniqueIds.map((catalogActivityId) => ({
+    id: `pdtp-target:${eventId}:${catalogActivityId}`,
+    eventId,
+    catalogActivityId,
+    createdAt: now,
+  })))
+}
+
+async function resolveEventTargets(eventId: string, result: AccreditationResult) {
+  if (result.accredited.length === 0) return
+  const annualIds = result.accredited.map((entry) => entry.activityId)
+  const annualRows = await db.select({
+    id: pdtpActivities.id,
+    n: pdtpActivities.n,
+    catalogActivityId: pdtpActivities.catalogActivityId,
+  }).from(pdtpActivities).where(inArray(pdtpActivities.id, annualIds))
+  for (const annual of annualRows) {
+    if (!annual.catalogActivityId) continue
+    await db.update(pdtpFulfillmentEventTargets).set({
+      resolvedActivityId: annual.id,
+      activityNumberSnapshot: annual.n,
+    }).where(and(
+      eq(pdtpFulfillmentEventTargets.eventId, eventId),
+      eq(pdtpFulfillmentEventTargets.catalogActivityId, annual.catalogActivityId),
+    ))
+  }
 }
 
 /**
@@ -211,6 +260,7 @@ export async function recordPendingPdtpFulfillmentEvent(
     quantity: input.executedQuantity ?? 1,
     evidenceRef: input.evidenceRef ?? null,
     activityNumbers: input.activityNumbers,
+    catalogActivityIds: input.catalogActivityIds,
     sourceVersion: input.sourceVersion ?? null,
     returnHref: input.returnHref ?? null,
     periodOverride: input.plannedPeriod ?? null,
@@ -236,17 +286,34 @@ export async function recordPdtpFulfillmentEvent(input: AccreditationInput & {
   sourceVersion?: string
   returnHref?: string
 }): Promise<AccreditationResult | null> {
+  let normalizedInput = input
+  if (input.catalogActivityIds?.length) {
+    const uniqueIds = [...new Set(input.catalogActivityIds)]
+    const existing = await db.select({ id: pdtpCatalogActivities.id }).from(pdtpCatalogActivities)
+      .where(inArray(pdtpCatalogActivities.id, uniqueIds))
+    if (existing.length !== uniqueIds.length) {
+      const legacyNumbers = uniqueIds.map(legacyPdtpActivityNumberForCatalogId)
+      if (legacyNumbers.every((number): number is number => number !== null)) {
+        // Compatibilidad estrictamente temporal: si el código se despliega
+        // después de crear las tablas pero antes del backfill, el hecho sigue
+        // quedando durable con su snapshot numérico. En un ambiente migrado
+        // (la ruta normal) nunca entra aquí y se crean objetivos normalizados.
+        normalizedInput = { ...input, catalogActivityIds: undefined, activityNumbers: legacyNumbers }
+      }
+    }
+  }
   let eventId: string
   try {
     eventId = await upsertPendingEvent({
-      sourceType: input.sourceType,
-      sourceId: input.sourceId,
+      sourceType: normalizedInput.sourceType,
+      sourceId: normalizedInput.sourceId,
       eventType: "completed",
-      worksiteId: input.worksiteId,
-      occurredAt: input.occurredAt,
-      quantity: input.executedQuantity ?? 1,
-      evidenceRef: input.evidenceRef ?? null,
-      activityNumbers: input.activityNumbers,
+      worksiteId: normalizedInput.worksiteId,
+      occurredAt: normalizedInput.occurredAt,
+      quantity: normalizedInput.executedQuantity ?? 1,
+      evidenceRef: normalizedInput.evidenceRef ?? null,
+      activityNumbers: normalizedInput.activityNumbers,
+      catalogActivityIds: normalizedInput.catalogActivityIds,
       sourceVersion: input.sourceVersion ?? null,
       returnHref: input.returnHref ?? null,
       periodOverride: input.plannedPeriod ?? null,
@@ -262,7 +329,8 @@ export async function recordPdtpFulfillmentEvent(input: AccreditationInput & {
   }
 
   try {
-    const result = await accreditPdtpFromEvent(input)
+    const result = await accreditPdtpFromEvent(normalizedInput)
+    await resolveEventTargets(eventId, result)
     const now = new Date().toISOString()
     await db.update(pdtpFulfillmentEvents).set({
       status: result.accredited.length > 0 ? "accredited" : "rejected",
@@ -377,6 +445,17 @@ export async function reconcilePdtpFulfillmentEvents(input: { limit?: number } =
     .orderBy(pdtpFulfillmentEvents.createdAt)
     .limit(limit)
 
+  const targetRows = pending.length === 0 ? [] : await db.select({
+    eventId: pdtpFulfillmentEventTargets.eventId,
+    catalogActivityId: pdtpFulfillmentEventTargets.catalogActivityId,
+  }).from(pdtpFulfillmentEventTargets).where(inArray(pdtpFulfillmentEventTargets.eventId, pending.map((event) => event.id)))
+  const catalogIdsByEvent = new Map<string, string[]>()
+  for (const target of targetRows) {
+    const ids = catalogIdsByEvent.get(target.eventId) ?? []
+    ids.push(target.catalogActivityId)
+    catalogIdsByEvent.set(target.eventId, ids)
+  }
+
   let accredited = 0
   let rejected = 0
   let stillPending = 0
@@ -431,11 +510,14 @@ export async function reconcilePdtpFulfillmentEvents(input: { limit?: number } =
         rejected++
         continue
       }
+      const catalogActivityIds = catalogIdsByEvent.get(event.id)
       const result = await recordPdtpFulfillmentEvent({
         sourceType: event.sourceType as AccreditationInput["sourceType"],
         sourceId: event.sourceId,
         worksiteId: event.worksiteId,
-        activityNumbers: (event.activityNumbers as number[]) ?? [],
+        ...(catalogActivityIds?.length
+          ? { catalogActivityIds }
+          : { activityNumbers: (event.activityNumbers as number[]) ?? [] }),
         occurredAt: event.occurredAt,
         executedQuantity: Number(event.quantity),
         evidenceRef: event.evidenceRef ?? undefined,

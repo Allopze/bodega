@@ -13,6 +13,7 @@ export const pgliteTestFiles = [
   "db/__tests__/operational-integrity-constraints.test.ts",
   "db/__tests__/pdtp-worksite-cascade.test.ts",
   "db/__tests__/pdtp-check-constraints.test.ts",
+  "db/__tests__/pdtp-catalog-activity-constraints.test.ts",
   "db/__tests__/purchase-credit-note-constraints.test.ts",
   // COM-002: el CHECK que impide declarar un medidor reemplazado sin motivo.
   "db/__tests__/fuel-load-meter-replacement-constraints.test.ts",
@@ -66,6 +67,8 @@ export const pgliteTestFiles = [
   // corriendo en el proyecto paralelo competían por CPU con los demás.
   "lib/__tests__/operational-work-queue-pdtp-activity-source.test.ts",
   "lib/__tests__/pdtp-accreditation.test.ts",
+  "lib/__tests__/pdtp-catalog-activities.test.ts",
+  "lib/__tests__/pdtp-accreditation-bindings.test.ts",
   "lib/__tests__/prevention-training-occurrences-migration.test.ts",
   "lib/__tests__/prevention-training-occurrences-pglite.test.ts",
   "lib/__tests__/worksite-deactivation-pdtp.test.ts",

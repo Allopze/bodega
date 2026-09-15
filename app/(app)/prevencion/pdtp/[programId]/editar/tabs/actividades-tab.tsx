@@ -17,7 +17,9 @@ import {
   batchUpdatePdtpActivitiesAction,
   deletePdtpActivityAction,
   reorderPdtpActivitiesAction,
+  adoptLatestCatalogRevisionAction,
 } from "../../../actions"
+import type { PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
 import {
   derivePdtpScheduleSource,
   deriveScheduleHorizon,
@@ -45,6 +47,7 @@ export function ActividadesTab({
   activities,
   schedule,
   responsibleCatalog,
+  catalogActivities,
 }: {
   programId: string
   programYear: number
@@ -55,6 +58,7 @@ export function ActividadesTab({
    *  si la planificación vigente se ajustó a mano antes de reemplazarla. */
   schedule: PdtpScheduleRow[]
   responsibleCatalog: Array<{ slug: string; displayName: string }>
+  catalogActivities: Array<PdtpActivityPickerOption & { executionGuidance: string; currentRevision: number }>
 }) {
   const router = useRouter()
   const effectivePeriodStart = periodStart ?? `${programYear}-01-01`
@@ -150,6 +154,18 @@ export function ActividadesTab({
     }
   }
 
+  async function handleAdoptRevision(activityId: string) {
+    setBusyId(activityId)
+    setError(null)
+    try {
+      const result = await adoptLatestCatalogRevisionAction({ activityId })
+      if (!result.ok) setError(result.message ?? "No se pudo adoptar la revisión.")
+      else router.refresh()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   const selectedIdSet = new Set(selectedIds)
 
   return (
@@ -182,15 +198,20 @@ export function ActividadesTab({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {items.map((activity, index) => (
+              {items.map((activity, index) => {
+                const catalog = catalogActivities.find((entry) => entry.id === activity.catalogActivityId)
+                const hasNewRevision = Boolean(catalog && activity.catalogRevision && activity.catalogRevision < catalog.currentRevision)
+                return (
                 <TableRow key={activity.id} className={activity.status === "retired" ? "bg-[var(--color-surface-2)] opacity-70" : "bg-[var(--color-surface)]"}>
                   <TableCell><Checkbox labelHidden label={`Seleccionar actividad ${activity.n}`} disabled={activity.status === "retired"} checked={selectedIdSet.has(activity.id)} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, activity.id] : current.filter((id) => id !== activity.id))} /></TableCell>
                   <TableCell className="font-mono text-xs text-[var(--color-text-subtle)]">{activity.n}</TableCell>
                   <TableCell>
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-medium text-[var(--color-text)]">{activity.activity}</p>
+                      <p className="font-medium text-[var(--color-text)]">{catalog?.title ?? activity.activity}</p>
                       {activity.status === "retired" && <MetaBadge meta={{ label: "Retirada", variant: "outline" }} />}
+                      {activity.catalogRevision && <MetaBadge meta={{ label: `Rev. ${activity.catalogRevision}`, variant: "outline" }} />}
                     </div>
+                    {catalog && <p className="mt-1 text-xs text-[var(--color-text-muted)]">{activity.activity}</p>}
                     {activity.status === "retired" && activity.retiredReason && (
                       <p className="mt-1 text-xs text-[var(--color-text-subtle)]">
                         Desde {activity.retiredEffectiveFrom ? formatDate(activity.retiredEffectiveFrom) : "fecha no disponible"} · {activity.retiredReason}
@@ -202,7 +223,8 @@ export function ActividadesTab({
                     <div className="flex items-center justify-end gap-1">
                       <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || activity.status === "retired" || index === 0} onClick={() => move(index, -1)} aria-label="Subir">↑</Button>
                       <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || activity.status === "retired" || index === items.length - 1} onClick={() => move(index, 1)} aria-label="Bajar">↓</Button>
-                      <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || activity.status === "retired"} onClick={() => handleDuplicate(activity.id)}>Duplicar</Button>
+                      {!activity.catalogActivityId && <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || activity.status === "retired"} onClick={() => handleDuplicate(activity.id)}>Duplicar</Button>}
+                      {hasNewRevision && <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || activity.status === "retired"} onClick={() => handleAdoptRevision(activity.id)}>Adoptar revisión</Button>}
                       <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || activity.status === "retired"} onClick={() => setEditing(activity)}>Editar</Button>
                       <Button
                         type="button"
@@ -219,7 +241,8 @@ export function ActividadesTab({
                     </div>
                   </TableCell>
                 </TableRow>
-              ))}
+                )
+              })}
             </TableBody>
           </Table>
           </TableRoot>

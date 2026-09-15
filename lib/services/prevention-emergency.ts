@@ -21,6 +21,7 @@ import { assessDrillCompletion, assessPlanReadiness, EMERGENCY_SCENARIO_TYPES } 
 import type { EmergencyQuickFilter } from "@/lib/prevention/emergency-list-filters"
 import { createCapaActionWithClient } from "@/lib/services/prevention-capa"
 import { onEmergencyDrillCompleted, onEmergencyPlanApproved } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
+import { replacePdtpAccreditationBindings, resolvePdtpAccreditationTarget } from "@/lib/services/pdtp/accreditation-bindings"
 import { recordPdtpFulfillmentRevocation } from "@/lib/services/pdtp/fulfillment"
 import { getUserIdsWithPermission } from "@/lib/services/notification-targeting"
 import { codeYear, todayInChile } from "@/lib/utils"
@@ -447,6 +448,7 @@ const setPlanPdtpActivitiesSchema = z.object({
   planId: z.string().min(1),
   expectedVersion: z.number().int().positive(),
   pdtpActivityNumbers: z.array(z.number().int().positive()).max(20),
+  catalogActivityIds: z.array(z.string().min(1)).max(20).optional(),
 })
 
 export async function setEmergencyPlanPdtpActivities(input: unknown, access: EmergencyAccess) {
@@ -461,6 +463,7 @@ export async function setEmergencyPlanPdtpActivities(input: unknown, access: Eme
     const numbers = data.pdtpActivityNumbers.length > 0
       ? [...new Set(data.pdtpActivityNumbers)].sort((a, b) => a - b)
       : null
+    if (data.catalogActivityIds) await replacePdtpAccreditationBindings({ sourceType: "emergencia", sourceId: plan.id, eventType: "complete_drill", catalogActivityIds: data.catalogActivityIds, updatedByUserId: access.userId }, tx)
     const now = nowIso()
     const [updated] = await tx.update(preventionEmergencyPlans).set({
       pdtpActivityNumbers: numbers,
@@ -737,13 +740,14 @@ export async function completeEmergencyDrill(input: unknown, access: EmergencyAc
     const [plan] = await tx.select({ pdtpActivityNumbers: preventionEmergencyPlans.pdtpActivityNumbers })
       .from(preventionEmergencyPlans).where(eq(preventionEmergencyPlans.id, drill.planId)).limit(1)
     const activityNumbers = Array.isArray(plan?.pdtpActivityNumbers) ? plan.pdtpActivityNumbers : []
-    if (activityNumbers.length > 0) {
+    const target = await resolvePdtpAccreditationTarget({ sourceType: "emergencia", sourceId: drill.planId, eventType: "complete_drill", legacyActivityNumbers: activityNumbers }, tx)
+    if (target.catalogActivityIds?.length || target.activityNumbers?.length) {
       accreditation = {
         drillId: drill.id,
         worksiteId: drill.worksiteId,
         executedAt: data.executedAt,
         participantCount: data.participants.length,
-        activityNumbers,
+        ...target,
         // EMG-001: si hay acta, la acreditación referencia el archivo real en
         // vez del rótulo sintético «Simulacro completado: <id>».
         evidencePath: data.evidencePath ?? null,

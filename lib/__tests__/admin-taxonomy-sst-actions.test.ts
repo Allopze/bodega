@@ -11,6 +11,12 @@ const mockSetCategoryActive = vi.hoisted(() => vi.fn())
 const mockSetTypeActive = vi.hoisted(() => vi.fn())
 const mockSeedDefault = vi.hoisted(() => vi.fn())
 const mockRecordAudit = vi.hoisted(() => vi.fn())
+const mockReplaceBindings = vi.hoisted(() => vi.fn())
+const mockTx = vi.hoisted(() => ({ kind: "test-transaction" }))
+
+vi.mock("@/db", () => ({
+  db: { transaction: (callback: (tx: typeof mockTx) => unknown) => callback(mockTx) },
+}))
 
 vi.mock("@/lib/auth/can", () => ({
   requirePermission: mockRequirePermission,
@@ -26,6 +32,9 @@ vi.mock("@/lib/services/prevention-documents/taxonomy", () => ({
   seedDefaultCategories: mockSeedDefault,
 }))
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn() }))
+vi.mock("@/lib/services/pdtp/accreditation-bindings", () => ({
+  replacePdtpAccreditationBindings: mockReplaceBindings,
+}))
 
 import {
   saveDocumentCategoryAction,
@@ -121,6 +130,7 @@ describe("saveDocumentTypeAction", () => {
     const res = await saveDocumentTypeAction(prevState, fd)
     expect(res.ok).toBe(true)
     expect(mockUpsertType).toHaveBeenCalled()
+    expect(mockReplaceBindings).toHaveBeenCalledTimes(2)
     expect(mockRecordAudit).toHaveBeenCalledWith(expect.objectContaining({
       entityType: "sst_document_type",
     }))

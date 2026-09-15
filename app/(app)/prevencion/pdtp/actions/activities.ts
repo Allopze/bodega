@@ -20,6 +20,7 @@ import {
   PdtpScheduleConflictError,
 } from "@/lib/services/prevention-pdtp"
 import type { ActionState } from "@/lib/validation/prevention"
+import { adoptLatestCatalogRevision } from "@/lib/services/pdtp/catalog-activities"
 import {
   pdtpActivityUpdateSchema,
   pdtpActivityAddSchema,
@@ -106,6 +107,19 @@ export async function duplicatePdtpActivityAction(input: unknown): Promise<Actio
     return { ok: true }
   } catch (e) {
     return fail(e)
+  }
+}
+
+export async function adoptLatestCatalogRevisionAction(input: { activityId: string }): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  try {
+    const updated = await adoptLatestCatalogRevision(input.activityId)
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${updated.programId}/editar`)
+    return { ok: true }
+  } catch (error) {
+    return fail(error)
   }
 }
 

@@ -7,6 +7,8 @@ import {
   pdtpActivityChecklists,
   pdtpActivitySchedule,
   pdtpChangeLog,
+  pdtpCatalogActivities,
+  pdtpCatalogActivityRevisions,
   pdtpDocumentHistory,
   pdtpExecutions,
   pdtpExecutionChecklists,
@@ -88,7 +90,13 @@ export type PdtpImportPreview = {
   blockingErrors: string[]
 }
 
-type StoredPreview = { catalog: PdtpCatalog; summary: PdtpImportPreview }
+type StoredPreview = {
+  catalog: PdtpCatalog
+  summary: PdtpImportPreview
+  catalogActivityIdByNumber?: Record<string, string>
+}
+
+const CATALOG_CANDIDATE_BLOCKER = "[catalog-candidate:"
 
 function buildImportedDocumentHistory(
   metadata: NonNullable<PdtpCatalog["metadata"]>,
@@ -181,6 +189,14 @@ export async function stagePdtpXlsxImport(input: {
   await workbook.xlsx.load(input.bytes as never)
   validateLoadedWorkbook(workbook)
   const catalog = extractPdtpCatalogFromWorkbook(workbook)
+  const catalogRevisions = await db.select({
+    id: pdtpCatalogActivities.id,
+    code: pdtpCatalogActivities.code,
+    status: pdtpCatalogActivities.status,
+    revision: pdtpCatalogActivityRevisions.revision,
+    description: pdtpCatalogActivityRevisions.description,
+    executionGuidance: pdtpCatalogActivityRevisions.executionGuidance,
+  }).from(pdtpCatalogActivities).innerJoin(pdtpCatalogActivityRevisions, eq(pdtpCatalogActivityRevisions.catalogActivityId, pdtpCatalogActivities.id))
   const existingActivities = await db.select().from(pdtpActivities).where(eq(pdtpActivities.programId, input.programId))
   const existingByNumber = new Map(existingActivities.map((activity) => [activity.n, activity]))
   const importedExistingIds = existingActivities
@@ -237,6 +253,28 @@ export async function stagePdtpXlsxImport(input: {
   const scheduleClassificationsPending = catalog.activities.filter((activity) => activity.schedule.length === 0).length
   const warnings = [...(catalog.warnings ?? [])]
   const blockingErrors: string[] = []
+  const catalogActivityIdByNumber: Record<string, string> = {}
+  const candidateActivities: Array<{ id: string; code: string; n: number; description: string; executionGuidance: string }> = []
+  for (const activity of catalog.activities) {
+    const existingIdentity = existingByNumber.get(activity.n)?.catalogActivityId
+    if (existingIdentity) {
+      catalogActivityIdByNumber[String(activity.n)] = existingIdentity
+      continue
+    }
+    const matches = catalogRevisions.filter((candidate) => candidate.description === activity.activity && candidate.executionGuidance === activity.program)
+    if (matches.length === 1) {
+      catalogActivityIdByNumber[String(activity.n)] = matches[0]!.id
+    } else if (matches.length > 1) {
+      blockingErrors.push(`La actividad N°${activity.n} coincide con más de una identidad del catálogo; vincúlala explícitamente.`)
+    } else {
+      const id = `pdtp-import-candidate-${checksumSha256.slice(0, 12)}-${activity.n}`
+      catalogActivityIdByNumber[String(activity.n)] = id
+      candidateActivities.push({ id, code: `PDT-IMPORT-${checksumSha256.slice(0, 8).toUpperCase()}-${activity.n}`, n: activity.n, description: activity.activity, executionGuidance: activity.program })
+      blockingErrors.push(`${CATALOG_CANDIDATE_BLOCKER}${id}] La actividad N°${activity.n} creó una candidata en borrador; revísala y publícala antes de aplicar.`)
+    }
+  }
+  const repeatedCatalogIds = Object.entries(catalogActivityIdByNumber).filter(([, id], index, entries) => entries.findIndex(([, candidate]) => candidate === id) !== index)
+  if (repeatedCatalogIds.length > 0) blockingErrors.push("El archivo intenta incorporar la misma identidad de catálogo más de una vez en el programa.")
   const extraActivities = existingActivities.filter((activity) => !catalog.activities.some((candidate) => candidate.n === activity.n))
   if (extraActivities.length > 0) {
     blockingErrors.push(
@@ -304,7 +342,7 @@ export async function stagePdtpXlsxImport(input: {
       sourceMimeType: input.mimeType,
       sourceSizeBytes: input.bytes.byteLength,
       sourceChecksumSha256: checksumSha256,
-      previewJson: { catalog, summary } satisfies StoredPreview,
+      previewJson: { catalog, summary, catalogActivityIdByNumber } satisfies StoredPreview,
       metadataJson: catalog.metadata ?? {},
       warningsJson: warnings,
       requestedByUserId: input.userId,
@@ -312,6 +350,18 @@ export async function stagePdtpXlsxImport(input: {
       updatedAt: now,
     }).returning()
     if (!created) throw new Error("No se pudo crear el lote de importación.")
+    for (const candidate of candidateActivities) {
+      await tx.insert(pdtpCatalogActivities).values({
+        id: candidate.id, code: candidate.code, status: "draft", currentRevision: 1,
+        createdByUserId: input.userId, createdAt: now, updatedAt: now,
+      }).onConflictDoNothing()
+      await tx.insert(pdtpCatalogActivityRevisions).values({
+        id: `${candidate.id}-r1`, catalogActivityId: candidate.id, revision: 1,
+        title: `Revisar actividad importada N° ${candidate.n}`,
+        description: candidate.description, executionGuidance: candidate.executionGuidance,
+        changeNote: "Candidata creada desde importación Excel", createdByUserId: input.userId, createdAt: now,
+      }).onConflictDoNothing()
+    }
     const rows: Array<typeof pdtpImportRows.$inferInsert> = [
       ...catalog.activities.map((activity) => ({
         id: `${batchId}-activity-${activity.n}`,
@@ -362,6 +412,63 @@ function storedPreview(batch: typeof pdtpImportBatches.$inferSelect): StoredPrev
   return stored
 }
 
+/** Resuelve explícitamente una candidata de Excel contra una identidad ya
+ * publicada. El lote conserva el mapeo auditado y la candidata queda retirada
+ * en vez de borrarse, para explicar de dónde vino la decisión. */
+export async function linkPdtpImportCandidate(input: {
+  batchId: string
+  candidateCatalogActivityId: string
+  targetCatalogActivityId: string
+  userId: string
+}): Promise<PdtpImportPreview> {
+  if (!input.candidateCatalogActivityId.startsWith("pdtp-import-candidate-")) {
+    throw new Error("La actividad indicada no es una candidata de importación.")
+  }
+  if (input.candidateCatalogActivityId === input.targetCatalogActivityId) {
+    throw new Error("Selecciona una actividad publicada distinta de la candidata.")
+  }
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT id FROM ${pdtpImportBatches} WHERE id = ${input.batchId} FOR UPDATE`)
+    const [batch] = await tx.select().from(pdtpImportBatches).where(eq(pdtpImportBatches.id, input.batchId)).limit(1)
+    if (!batch || batch.status !== "staged") throw new Error("El lote no está disponible para vincular candidatas.")
+    const stored = storedPreview(batch)
+    const [program] = await tx.select({ version: pdtpPrograms.version }).from(pdtpPrograms).where(eq(pdtpPrograms.id, batch.programId)).limit(1)
+    if (!program) throw new Error("Programa PDTP no encontrado.")
+    const map = { ...(stored.catalogActivityIdByNumber ?? {}) }
+    const numberEntry = Object.entries(map).find(([, id]) => id === input.candidateCatalogActivityId)
+    if (!numberEntry) throw new Error("La candidata no pertenece a este lote.")
+    const [candidate, target] = await Promise.all([
+      tx.select().from(pdtpCatalogActivities).where(eq(pdtpCatalogActivities.id, input.candidateCatalogActivityId)).limit(1).then((rows) => rows[0]),
+      tx.select().from(pdtpCatalogActivities).where(eq(pdtpCatalogActivities.id, input.targetCatalogActivityId)).limit(1).then((rows) => rows[0]),
+    ])
+    if (!candidate || candidate.status !== "draft") throw new Error("La candidata ya no está en borrador.")
+    if (!target || target.status !== "active") throw new Error("Sólo puedes vincular una actividad publicada y activa.")
+    if (Object.entries(map).some(([n, id]) => n !== numberEntry[0] && id === target.id)) {
+      throw new Error("La identidad seleccionada ya está vinculada a otra fila del mismo programa.")
+    }
+    map[numberEntry[0]] = target.id
+    const marker = `${CATALOG_CANDIDATE_BLOCKER}${candidate.id}]`
+    const summary = {
+      ...stored.summary,
+      blockingErrors: stored.summary.blockingErrors.filter((error) => !error.startsWith(marker)),
+    }
+    const now = new Date().toISOString()
+    await tx.update(pdtpImportBatches).set({
+      previewJson: { ...stored, summary, catalogActivityIdByNumber: map } satisfies StoredPreview,
+      updatedAt: now,
+    }).where(eq(pdtpImportBatches.id, batch.id))
+    await tx.update(pdtpCatalogActivities).set({
+      status: "retired",
+      retiredReason: `Candidata vinculada a la actividad ${target.code}.`,
+      retiredByUserId: input.userId,
+      retiredAt: now,
+      updatedAt: now,
+    }).where(eq(pdtpCatalogActivities.id, candidate.id))
+    await addPdtpChangeLogEntry(batch.programId, program.version, input.userId, "import:catalog-link", { candidateCatalogActivityId: candidate.id }, { targetCatalogActivityId: target.id, activityNumber: Number(numberEntry[0]) }, "Candidata importada vinculada explícitamente a una identidad publicada.", tx)
+    return summary
+  })
+}
+
 async function captureImportSnapshot(client: Tx | typeof db, programId: string, activityNumbers: number[]): Promise<ImportSnapshot> {
   const [program] = await client.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
@@ -397,6 +504,11 @@ export async function applyPdtpImportBatch(input: {
   if (batch.status === "applied") return batch.applyResultJson as Record<string, unknown>
   if (batch.status !== "staged" && batch.status !== "rolled_back") throw new Error("El lote no está disponible para aplicar.")
   const stored = storedPreview(batch)
+  const mappedCatalogIds = Object.values(stored.catalogActivityIdByNumber ?? {})
+  const mappedCatalog = mappedCatalogIds.length ? await db.select({ id: pdtpCatalogActivities.id, status: pdtpCatalogActivities.status })
+    .from(pdtpCatalogActivities).where(inArray(pdtpCatalogActivities.id, mappedCatalogIds)) : []
+  const mappedStatus = new Map(mappedCatalog.map((activity) => [activity.id, activity.status]))
+  const unresolvedCatalog = mappedCatalogIds.filter((id) => mappedStatus.get(id) !== "active")
   const executions = stored.catalog.importedExecutions ?? []
   if (input.worksiteId) {
     if (input.scope !== "all" && !input.scope.includes(input.worksiteId)) {
@@ -415,8 +527,9 @@ export async function applyPdtpImportBatch(input: {
       throw new Error("Acepta explícitamente la migración sin evidencia adjunta e indica un motivo de al menos 10 caracteres.")
     }
   }
-  if (stored.summary.blockingErrors.length > 0) {
-    throw new Error(`El lote tiene errores bloqueantes: ${stored.summary.blockingErrors.join(" ")}`)
+  const staticBlockingErrors = stored.summary.blockingErrors.filter((error) => !error.startsWith(CATALOG_CANDIDATE_BLOCKER))
+  if (staticBlockingErrors.length > 0 || unresolvedCatalog.length > 0) {
+    throw new Error(`El lote tiene errores bloqueantes: ${[...staticBlockingErrors, ...(unresolvedCatalog.length ? [`${unresolvedCatalog.length} actividad(es) candidata(s) siguen sin publicar.`] : [])].join(" ")}`)
   }
 
   const now = new Date().toISOString()
@@ -429,8 +542,15 @@ export async function applyPdtpImportBatch(input: {
     if (lockedBatch.status !== "staged" && lockedBatch.status !== "rolled_back") throw new Error("El lote no está disponible para aplicar.")
     const batch = lockedBatch
     const stored = storedPreview(batch)
-    if (stored.summary.blockingErrors.length > 0) {
-      throw new Error(`El lote tiene errores bloqueantes: ${stored.summary.blockingErrors.join(" ")}`)
+    const catalogMap = stored.catalogActivityIdByNumber ?? {}
+    const catalogIds = Object.values(catalogMap)
+    const currentCatalog = catalogIds.length ? await tx.select({ id: pdtpCatalogActivities.id, status: pdtpCatalogActivities.status, currentRevision: pdtpCatalogActivities.currentRevision })
+      .from(pdtpCatalogActivities).where(inArray(pdtpCatalogActivities.id, catalogIds)) : []
+    const catalogById = new Map(currentCatalog.map((activity) => [activity.id, activity]))
+    const unresolved = catalogIds.filter((id) => catalogById.get(id)?.status !== "active")
+    const staticErrors = stored.summary.blockingErrors.filter((error) => !error.startsWith(CATALOG_CANDIDATE_BLOCKER))
+    if (staticErrors.length > 0 || unresolved.length > 0 || catalogIds.length !== stored.catalog.activities.length) {
+      throw new Error(`El lote tiene actividades sin identidad publicada o vínculos ambiguos; corrige el catálogo antes de aplicar.`)
     }
 
     await tx.execute(sql`SELECT id FROM ${pdtpPrograms} WHERE id = ${batch.programId} FOR UPDATE`)
@@ -479,10 +599,17 @@ export async function applyPdtpImportBatch(input: {
 
     for (const activity of stored.catalog.activities) {
       const existing = existingByNumber.get(activity.n)
+      const catalogId = catalogMap[String(activity.n)]!
+      const catalogDefinition = catalogById.get(catalogId)!
+      if (existing?.catalogActivityId && existing.catalogActivityId !== catalogId) {
+        throw new Error(`La actividad anual N°${activity.n} ya está vinculada a otra identidad de catálogo.`)
+      }
       let activityId = existing?.id ?? pdtpActivityId(batch.programId, activity.n)
       if (!existing && allProgramIds.has(activityId)) activityId = `${pdtpActivityId(batch.programId, activity.n)}-${nanoid(6)}`
       activityIdByNumber.set(activity.n, activityId)
       const values = {
+        catalogActivityId: catalogId,
+        catalogRevision: catalogDefinition.currentRevision,
         displayOrder: activity.n,
         status: "active",
         retiredReason: null,

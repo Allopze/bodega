@@ -1,6 +1,6 @@
 import { and, eq, inArray, notInArray, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpActivityChecklists, pdtpActivitySchedule, pdtpPrograms, pdtpSheetActivities, workerCapabilities } from "@/db/schema"
+import { pdtpActivities, pdtpActivityChecklists, pdtpActivitySchedule, pdtpCatalogActivities, pdtpCatalogActivityRevisions, pdtpPrograms, pdtpSheetActivities, workerCapabilities } from "@/db/schema"
 import { addPdtpChangeLogEntry, assertPdtpProgramEditableState, pdtpActivityId, pdtpScheduleId, pdtpSheetActivityId, resolveSheetForProgram } from "./helpers"
 import {
   derivePdtpScheduleSource,
@@ -165,6 +165,7 @@ export type PdtpActivityUpdateInput = {
 
 export type PdtpActivityAddInput = {
   programId: string
+  catalogActivityId?: string
   activity: string
   program: string
   responsibleSlugs: string[]
@@ -426,14 +427,30 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
   const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, input.programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
   assertPdtpProgramEditableState(program)
+  const catalogDefinition = input.catalogActivityId ? await db.select({
+    id: pdtpCatalogActivities.id,
+    status: pdtpCatalogActivities.status,
+    revision: pdtpCatalogActivities.currentRevision,
+    description: pdtpCatalogActivityRevisions.description,
+    executionGuidance: pdtpCatalogActivityRevisions.executionGuidance,
+  }).from(pdtpCatalogActivities).innerJoin(pdtpCatalogActivityRevisions, and(
+    eq(pdtpCatalogActivityRevisions.catalogActivityId, pdtpCatalogActivities.id),
+    eq(pdtpCatalogActivityRevisions.revision, pdtpCatalogActivities.currentRevision),
+  )).where(eq(pdtpCatalogActivities.id, input.catalogActivityId)).limit(1) : []
+  const catalog = catalogDefinition[0]
+  if (input.catalogActivityId && !catalog) throw new Error("Actividad de catálogo no encontrada.")
+  if (catalog?.status !== undefined && catalog.status !== "active") throw new Error("Sólo se pueden incorporar actividades publicadas.")
   const subjectCapabilityCodes = normalizedSubjectCapabilityCodes(input.subjectCapabilityCodes)
   await validateCapabilitySubjectConfiguration(input.subjectSource ?? null, subjectCapabilityCodes)
 
-  const existingActivities = await db.select({ n: pdtpActivities.n, displayOrder: pdtpActivities.displayOrder })
+  const existingActivities = await db.select({ n: pdtpActivities.n, displayOrder: pdtpActivities.displayOrder, catalogActivityId: pdtpActivities.catalogActivityId })
     .from(pdtpActivities)
     .where(eq(pdtpActivities.programId, input.programId))
   const maxN = existingActivities.reduce((m, row) => Math.max(m, row.n), 0)
   const maxDisplayOrder = existingActivities.reduce((m, row) => Math.max(m, row.displayOrder), 0)
+  if (catalog && existingActivities.some((activity) => activity.catalogActivityId === catalog.id)) {
+    throw new Error("La actividad ya está incorporada en este programa.")
+  }
   const newN = Math.max(90, maxN + 1)
   const now = new Date().toISOString()
   const activityId = pdtpActivityId(input.programId, newN)
@@ -455,7 +472,10 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
   return db.transaction(async (tx) => {
     const [created] = await tx.insert(pdtpActivities).values({
       id: activityId, programId: input.programId, n: newN, displayOrder: maxDisplayOrder + 1,
-      activity: input.activity, program: input.program,
+      catalogActivityId: catalog?.id ?? null,
+      catalogRevision: catalog?.revision ?? null,
+      activity: catalog?.description ?? input.activity,
+      program: catalog?.executionGuidance ?? input.program,
       responsibleSlugs: input.responsibleSlugs, responsibleDisplay: input.responsibleDisplay,
       audienceRoles: input.audienceRoles ?? [], scheduleMode: input.scheduleMode ?? "scheduled",
       scheduleClassificationStatus: input.scheduleClassificationStatus ?? "confirmed",
@@ -488,7 +508,13 @@ export async function addPdtpActivity(input: PdtpActivityAddInput, userId: strin
       }).onConflictDoNothing()
     }
 
-    await addPdtpChangeLogEntry(input.programId, program.version, userId, `activity:${newN}`, null, { n: newN, activity: input.activity, sheetCodes: input.sheetCodes }, `Actividad ${newN} agregada manualmente.`, tx)
+    await addPdtpChangeLogEntry(input.programId, program.version, userId, `activity:${newN}`, null, {
+      n: newN,
+      catalogActivityId: catalog?.id ?? null,
+      catalogRevision: catalog?.revision ?? null,
+      activity: catalog?.description ?? input.activity,
+      sheetCodes: input.sheetCodes,
+    }, catalog ? `Actividad ${newN} incorporada desde catálogo.` : `Actividad ${newN} agregada manualmente.`, tx)
     return created
   })
 }
@@ -545,6 +571,7 @@ export async function duplicatePdtpActivity(activityId: string, userId: string) 
   const [source] = await db.select().from(pdtpActivities).where(eq(pdtpActivities.id, activityId)).limit(1)
   if (!source) throw new Error("Actividad PDTP no encontrada.")
   if (source.status === "retired") throw new Error("No se puede duplicar una actividad retirada.")
+  if (source.catalogActivityId) throw new Error("Una identidad de catálogo no puede repetirse dentro del mismo programa.")
   const [program] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, source.programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
   assertPdtpProgramEditableState(program)

@@ -20,6 +20,7 @@
  */
 
 import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
+import { pdtpCatalogActivityIdForLegacyNumber } from "./catalog-activities-2026"
 
 /** Fijo en el conector: es lo que la hace legítima en la lista blanca de la compuerta. */
 const SENSITIVE_WORKERS_ACTIVITY_NUMBER = 17
@@ -43,7 +44,7 @@ export async function onSensitiveWorkerIdentificationClosed(input: {
     sourceType: "evaluacion_sst",
     sourceId: `sensibles:${input.evaluationId}`,
     worksiteId: input.worksiteId,
-    activityNumbers: [SENSITIVE_WORKERS_ACTIVITY_NUMBER],
+    catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(SENSITIVE_WORKERS_ACTIVITY_NUMBER)],
     occurredAt: occurredAtFromChileDate(input.fechaEvaluacion),
     // Una persona registrada. El padrón de la actividad es la dotación, así que
     // numerador y denominador se cuentan en la misma unidad.

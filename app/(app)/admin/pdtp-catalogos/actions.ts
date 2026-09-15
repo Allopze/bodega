@@ -14,6 +14,12 @@ import {
 } from "@/lib/services/pdtp/admin-catalogs"
 import type { ActionState } from "@/lib/validation/masters"
 import { listRoleSlugs } from "@/lib/services/pdtp/admin-catalogs"
+import {
+  createCatalogActivity,
+  createCatalogActivityRevision,
+  publishCatalogActivity,
+  retireCatalogActivity,
+} from "@/lib/services/pdtp/catalog-activities"
 
 const REVALIDATE = "/admin/pdtp-catalogos"
 
@@ -171,4 +177,69 @@ export async function togglePdtpSheetActiveAction(_prev: ActionState, formData: 
 
 export async function loadAdminRoleSlugsAction(): Promise<string[]> {
   return listRoleSlugs()
+}
+
+export async function savePdtpCatalogActivityAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try {
+    session = await requirePermission("admin:pdtp_catalog")
+  } catch {
+    return errorState("Sin permisos")
+  }
+  const id = getFormString(formData, "id")
+  const input = {
+    title: getFormString(formData, "title") ?? "",
+    description: getFormString(formData, "description") ?? "",
+    executionGuidance: getFormString(formData, "executionGuidance") ?? "",
+  }
+  try {
+    const row = id
+      ? await createCatalogActivityRevision({
+        catalogActivityId: id,
+        ...input,
+        changeNote: getFormString(formData, "changeNote") ?? "",
+        createdByUserId: session.user.id,
+      })
+      : await createCatalogActivity({
+        code: getFormString(formData, "code") ?? "",
+        ...input,
+        createdByUserId: session.user.id,
+      })
+    await recordAudit({
+      userId: session.user.id, userEmail: session.user.email ?? undefined,
+      action: "create", entityType: "pdtp_catalog_activity_revision",
+      entityId: id ?? row.id, newState: { title: input.title },
+    })
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: id ? "Nueva revisión creada" : "Actividad creada como borrador" }
+  } catch (error) {
+    return errorState((error as Error).message)
+  }
+}
+
+export async function publishPdtpCatalogActivityAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("admin:pdtp_catalog") } catch { return errorState("Sin permisos") }
+  const id = getFormString(formData, "id")
+  if (!id) return errorState("Actividad requerida")
+  try {
+    await publishCatalogActivity(id)
+    await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "update", entityType: "pdtp_catalog_activity", entityId: id, newState: { status: "active" } })
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: "Actividad publicada" }
+  } catch (error) { return errorState((error as Error).message) }
+}
+
+export async function retirePdtpCatalogActivityAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  let session
+  try { session = await requirePermission("admin:pdtp_catalog") } catch { return errorState("Sin permisos") }
+  const id = getFormString(formData, "id")
+  const reason = getFormString(formData, "reason") ?? ""
+  if (!id) return errorState("Actividad requerida")
+  try {
+    await retireCatalogActivity(id, reason, undefined, session.user.id)
+    await recordAudit({ userId: session.user.id, userEmail: session.user.email ?? undefined, action: "update", entityType: "pdtp_catalog_activity", entityId: id, newState: { status: "retired", reason } })
+    revalidatePath(REVALIDATE)
+    return { ok: true, message: "Actividad retirada; el historial permanece disponible" }
+  } catch (error) { return errorState((error as Error).message) }
 }

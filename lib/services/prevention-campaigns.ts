@@ -5,6 +5,7 @@ import { preventionCampaigns } from "@/db/schema"
 import type { WorksiteScope } from "@/lib/auth/scope"
 import { nanoid } from "@/lib/id"
 import { recordPdtpFulfillmentEvent } from "@/lib/services/pdtp/fulfillment"
+import { replacePdtpAccreditationBindings, resolvePdtpAccreditationTarget } from "@/lib/services/pdtp/accreditation-bindings"
 import { checkEvidence, evidencePathSchema } from "@/lib/validation/evidence-contract"
 
 export interface CampaignAccess {
@@ -42,6 +43,7 @@ const campaignCreateSchema = z.object({
   title: z.string().trim().min(3).max(200),
   description: z.string().trim().optional(),
   pdtpActivityNumbers: z.array(z.number().int()).default([85]),
+  catalogActivityIds: z.array(z.string().min(1)).min(1).optional(),
 })
 
 export async function createCampaign(input: unknown, access: CampaignAccess) {
@@ -51,20 +53,23 @@ export async function createCampaign(input: unknown, access: CampaignAccess) {
   const code = `CMP-${nanoid(6).toUpperCase()}`
   const now = new Date().toISOString()
 
-  const [created] = await db.insert(preventionCampaigns).values({
-    id: `cmp-${nanoid()}`,
+  const id = `cmp-${nanoid()}`
+  return db.transaction(async (tx) => {
+  const [created] = await tx.insert(preventionCampaigns).values({
+    id,
     worksiteId: data.worksiteId,
     code,
     title: data.title,
     description: data.description ?? null,
-    pdtpActivityNumbers: data.pdtpActivityNumbers,
+    pdtpActivityNumbers: data.catalogActivityIds ? [] : data.pdtpActivityNumbers,
     status: "pending",
     createdByUserId: access.userId,
     createdAt: now,
     updatedAt: now,
   }).returning()
-
+  if (data.catalogActivityIds) await replacePdtpAccreditationBindings({ sourceType: "campana", sourceId: id, eventType: "close", catalogActivityIds: data.catalogActivityIds, updatedByUserId: access.userId }, tx)
   return created
+  })
 }
 
 /**
@@ -89,8 +94,9 @@ export { PDTP_CAMPAIGN_ACTIVITIES } from "./prevention-campaigns.catalog"
 
 const setCampaignActivitySchema = z.object({
   campaignId: z.string().min(1),
-  pdtpActivityNumbers: z.array(z.number().int().positive()).min(1, "Selecciona la actividad que acredita"),
-})
+  pdtpActivityNumbers: z.array(z.number().int().positive()).default([]),
+  catalogActivityIds: z.array(z.string().min(1)).min(1).optional(),
+}).refine((value) => value.catalogActivityIds?.length || value.pdtpActivityNumbers.length, { message: "Selecciona la actividad que acredita" })
 
 /**
  * Corrige qué actividad del PDTP acredita una campaña.
@@ -110,11 +116,14 @@ export async function setCampaignPdtpActivities(input: unknown, access: Campaign
     throw new CampaignDomainError("La campaña ya está hecha y acreditó su actividad: no se puede cambiar cuál acredita.")
   }
 
-  const [updated] = await db.update(preventionCampaigns)
-    .set({ pdtpActivityNumbers: data.pdtpActivityNumbers, updatedAt: new Date().toISOString() })
+  return db.transaction(async (tx) => {
+  const [updated] = await tx.update(preventionCampaigns)
+    .set({ pdtpActivityNumbers: data.catalogActivityIds ? campaign.pdtpActivityNumbers : data.pdtpActivityNumbers, updatedAt: new Date().toISOString() })
     .where(eq(preventionCampaigns.id, data.campaignId))
     .returning()
+  if (data.catalogActivityIds) await replacePdtpAccreditationBindings({ sourceType: "campana", sourceId: campaign.id, eventType: "close", catalogActivityIds: data.catalogActivityIds, updatedByUserId: access.userId }, tx)
   return updated
+  })
 }
 
 const campaignCompleteSchema = z.object({
@@ -179,12 +188,18 @@ export async function closeCampaign(input: unknown, access: CampaignAccess) {
   let pdtpAccredited = false
   let pdtpPending = false
   const activityNumbers = Array.isArray(campaign.pdtpActivityNumbers) ? campaign.pdtpActivityNumbers : []
-  if (activityNumbers.length > 0) {
+  const accreditationTarget = await resolvePdtpAccreditationTarget({
+    sourceType: "campana",
+    sourceId: campaign.id,
+    eventType: "close",
+    legacyActivityNumbers: activityNumbers,
+  })
+  if (accreditationTarget.catalogActivityIds?.length || accreditationTarget.activityNumbers?.length) {
     const result = await recordPdtpFulfillmentEvent({
       sourceType: "campana",
       sourceId: campaign.id,
       worksiteId: campaign.worksiteId,
-      activityNumbers,
+      ...accreditationTarget,
       // La fecha del hecho, no la de digitación: el motor resuelve el período
       // (mes y semana) y el año del programa con `occurredAt`.
       occurredAt: occurredAtFromChileDate(data.heldOn),

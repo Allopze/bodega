@@ -38,6 +38,7 @@ import { competencyConvalidationSchema,
   trainingVersionTransitionSchema,
 } from "@/lib/validation/prevention-module/training"
 import { onTrainingSessionCancelled, onTrainingSessionClosed } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
+import { replacePdtpAccreditationBindings, resolvePdtpAccreditationTarget } from "@/lib/services/pdtp/accreditation-bindings"
 import { onCompetencyObtained } from "@/lib/services/pdtp-adapters/competency-gap-connector"
 import { computeCompetencyGapsForScope } from "@/lib/services/prevention-training-gaps"
 import { codeYear, todayInChile } from "@/lib/utils"
@@ -115,8 +116,10 @@ export async function createTrainingCourse(input: unknown, access: TrainingAcces
   })
   if (findings.length > 0) throw new Error(findings.map((item) => item.message).join(" "))
 
-  const [created] = await db.insert(preventionTrainingCourses).values({
-    id: `trcourse-${nanoid()}`,
+  const id = `trcourse-${nanoid()}`
+  return db.transaction(async (tx) => {
+  const [created] = await tx.insert(preventionTrainingCourses).values({
+    id,
     code: data.code,
     name: data.name,
     kind: data.kind,
@@ -128,12 +131,14 @@ export async function createTrainingCourse(input: unknown, access: TrainingAcces
     legalRequirementId: data.legalRequirementId ?? null,
     riskEntryId: data.riskEntryId ?? null,
     legalBasis: data.legalBasis ?? null,
-    pdtpActivityNumbers: data.pdtpActivityNumbers,
+    pdtpActivityNumbers: data.catalogActivityIds ? [] : data.pdtpActivityNumbers,
     createdByUserId: access.userId,
   }).returning()
   if (!created) throw new Error("No se pudo crear el curso.")
-  await history(db, { entityType: "course", entityId: created.id, changeType: "created", reason: "Curso registrado en el catálogo", afterState: created, actorUserId: access.userId })
+  if (data.catalogActivityIds) await replacePdtpAccreditationBindings({ sourceType: "capacitacion", sourceId: id, eventType: "close", catalogActivityIds: data.catalogActivityIds, updatedByUserId: access.userId }, tx)
+  await history(tx, { entityType: "course", entityId: created.id, changeType: "created", reason: "Curso registrado en el catálogo", afterState: created, actorUserId: access.userId })
   return created
+  })
 }
 
 export async function createTrainingCourseVersion(input: unknown, access: TrainingAccess) {
@@ -474,13 +479,14 @@ export async function closeTrainingSession(input: unknown, access: TrainingAcces
     // Se prepara aquí y se dispara DESPUÉS del commit (ver abajo): así una
     // reversión de la transacción no deja una ejecución PDTP huérfana.
     const pdtpActivityNumbers = Array.isArray(course.pdtpActivityNumbers) ? course.pdtpActivityNumbers : []
-    if (pdtpActivityNumbers.length > 0) {
+    const target = await resolvePdtpAccreditationTarget({ sourceType: "capacitacion", sourceId: course.id, eventType: "close", legacyActivityNumbers: pdtpActivityNumbers }, tx)
+    if (target.catalogActivityIds?.length || target.activityNumbers?.length) {
       accreditation = {
         sessionId: session.id,
         worksiteId: session.worksiteId,
         closedAt: updated.closedAt ?? now,
         attendedCount: granted.length,
-        activityNumbers: pdtpActivityNumbers,
+        ...target,
       }
       // Y el cierre en abanico de las obligaciones por persona, para los cursos
       // cuya actividad se mide por plazo (la N°57). Es una lista de personas y

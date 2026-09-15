@@ -24,6 +24,7 @@ import { FileInput } from "@/components/ui/file-input"
 import { Textarea } from "@/components/ui/textarea"
 import { Field } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { PdtpActivityPicker, type PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
 
 export type ImportPreview = {
   batchId: string
@@ -54,9 +55,10 @@ export type ImportExcelSectionProps = {
    * revisar el preview — y filtra el padrón completo de faenas al cliente.
    */
   visibleWorksites: Array<{ id: string; name: string; code: string }>
+  catalogActivities: PdtpActivityPickerOption[]
 }
 
-export function ImportExcelSection({ programId, visibleWorksites }: ImportExcelSectionProps) {
+export function ImportExcelSection({ programId, visibleWorksites, catalogActivities }: ImportExcelSectionProps) {
   const router = useRouter()
   const formRef = React.useRef<HTMLFormElement>(null)
   const fileRef = React.useRef<HTMLInputElement>(null)
@@ -68,6 +70,12 @@ export function ImportExcelSection({ programId, visibleWorksites }: ImportExcelS
   const [acceptanceReason, setAcceptanceReason] = React.useState("")
   const [confirmCancel, setConfirmCancel] = React.useState(false)
   const [cancelReason, setCancelReason] = React.useState("")
+  const [candidateTargets, setCandidateTargets] = React.useState<Record<string, string>>({})
+
+  const candidateErrors = (preview?.blockingErrors ?? []).flatMap((error) => {
+    const match = error.match(/^\[catalog-candidate:([^\]]+)\]/)
+    return match ? [{ id: match[1]!, message: error.replace(match[0], "").trim() }] : []
+  })
 
   async function handleStage(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -155,6 +163,33 @@ export function ImportExcelSection({ programId, visibleWorksites }: ImportExcelS
     }
   }
 
+  async function handleLinkCandidate(candidateId: string) {
+    const targetCatalogActivityId = candidateTargets[candidateId]
+    if (!preview || !targetCatalogActivityId) return
+    setPending(true)
+    setState(null)
+    try {
+      const fd = new FormData()
+      fd.set("mode", "link_candidate")
+      fd.set("batchId", preview.batchId)
+      fd.set("candidateCatalogActivityId", candidateId)
+      fd.set("targetCatalogActivityId", targetCatalogActivityId)
+      const res = await fetch("/api/prevencion/pdtp/import", { method: "POST", body: fd })
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        setState({ ok: false, message: json.error ?? "No se pudo vincular la candidata." })
+      } else {
+        const json = await res.json()
+        setPreview(json.preview as ImportPreview)
+        setState({ ok: true, message: json.message })
+      }
+    } catch {
+      setState({ ok: false, message: "Error de red al vincular la candidata." })
+    } finally {
+      setPending(false)
+    }
+  }
+
   return (
     <div>
       <h3 className="mb-2 text-h3 text-[var(--color-text)]">Migrar un programa desde Excel</h3>
@@ -214,7 +249,24 @@ export function ImportExcelSection({ programId, visibleWorksites }: ImportExcelS
           </div>
           {/* Son la razón por la que "Aplicar lote" está deshabilitado: sin
               pintarlos el usuario no sabía qué corregir del archivo. */}
-          {preview.blockingErrors.length > 0 && <ul className="space-y-1 rounded-lg border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-xs text-[var(--color-danger-ink)]">{preview.blockingErrors.map((error) => <li key={error}>• {error}</li>)}</ul>}
+          {candidateErrors.length > 0 && <div className="space-y-3 rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-3">
+            <p className="text-sm font-semibold text-[var(--color-warning-ink)]">Actividades desconocidas pendientes</p>
+            {candidateErrors.map((candidate) => <div key={candidate.id} className="grid gap-2 rounded-lg bg-[var(--color-surface)] p-3 md:grid-cols-[1fr_auto] md:items-end">
+              <div>
+                <p className="mb-2 text-xs text-[var(--color-text-muted)]">{candidate.message}</p>
+                <PdtpActivityPicker
+                  label="Vincular a una actividad publicada"
+                  options={catalogActivities.filter((activity) => activity.id !== candidate.id)}
+                  value={candidateTargets[candidate.id] ?? ""}
+                  onChange={(value) => setCandidateTargets((current) => ({ ...current, [candidate.id]: value }))}
+                  disabled={pending}
+                />
+              </div>
+              <Button type="button" size="sm" variant="secondary" disabled={pending || !candidateTargets[candidate.id]} onClick={() => handleLinkCandidate(candidate.id)}>Vincular</Button>
+            </div>)}
+            <p className="text-xs text-[var(--color-warning-ink)]">También puedes revisar y publicar cada candidata desde Admin → Catálogos PDTP → Actividades.</p>
+          </div>}
+          {preview.blockingErrors.filter((error) => !error.startsWith("[catalog-candidate:")).length > 0 && <ul className="space-y-1 rounded-lg border border-[var(--color-danger-line)] bg-[var(--color-danger-tint)] px-3 py-2 text-xs text-[var(--color-danger-ink)]">{preview.blockingErrors.filter((error) => !error.startsWith("[catalog-candidate:")).map((error) => <li key={error}>• {error}</li>)}</ul>}
           {preview.warnings.length > 0 && <ul className="space-y-1 rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] px-3 py-2 text-xs text-[var(--color-warning-ink)]">{preview.warnings.map((warning) => <li key={warning}>• {warning}</li>)}</ul>}
 
           {preview.counts.executedCells > 0 && (

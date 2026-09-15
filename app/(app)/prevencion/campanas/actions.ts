@@ -20,8 +20,9 @@ const createCampaignSchema = z.object({
   description: z.string().trim().optional(),
   // Sin default: el diálogo ofrece las cinco del programa y quien crea la
   // campaña elige. Fijarlo acá era lo que dejaba las N°86 a N°89 inalcanzables.
-  pdtpActivityNumbers: z.array(z.number().int().positive()).min(1, "Selecciona la actividad que acredita"),
-})
+  pdtpActivityNumbers: z.array(z.number().int().positive()).default([]),
+  catalogActivityIds: z.array(z.string().min(1)).min(1).optional(),
+}).refine((value) => value.catalogActivityIds?.length || value.pdtpActivityNumbers.length, { message: "Selecciona la actividad que acredita" })
 
 const closeCampaignSchema = z.object({
   campaignId: z.string().min(1),

@@ -329,6 +329,8 @@ export async function instantiatePdtpTemplateVersion(input: {
         id,
         programId: input.targetProgramId,
         n,
+        catalogActivityId: typeof activity.catalogActivityId === "string" ? activity.catalogActivityId : null,
+        catalogRevision: typeof activity.catalogRevision === "number" ? activity.catalogRevision : null,
         displayOrder: numberValue(activity.displayOrder, n),
         status: stringValue(activity.status, "active"),
         retiredReason: typeof activity.retiredReason === "string" ? activity.retiredReason : null,

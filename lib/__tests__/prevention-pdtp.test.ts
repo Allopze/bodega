@@ -1,6 +1,7 @@
 import path from "node:path"
+import ExcelJS from "exceljs"
 import { PGlite } from "@electric-sql/pglite"
-import { and, eq, inArray } from "drizzle-orm"
+import { and, eq, inArray, like, sql } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
@@ -25,6 +26,7 @@ import { mkdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { PDTP_2026_SOURCE } from "@/lib/services/pdtp-adapters/contract-2026"
+import { PDTP_2026_CATALOG_ACTIVITIES } from "@/lib/services/pdtp-adapters/catalog-activities-2026"
 const tmpEvidenceDir = join(tmpdir(), "pdtp-evidence-test")
 mkdirSync(tmpEvidenceDir, { recursive: true })
 
@@ -38,6 +40,9 @@ vi.mock("@/lib/storage/config", () => ({
 }))
 
 await migratePGlite(pg, path.resolve(process.cwd(), "db/migrations"))
+const PDTP_2026_WORKBOOK_CATALOG = extractPdtpCatalogFromWorkbook(
+  await readPdtpWorkbook(path.resolve(process.cwd(), PDTP_2026_SOURCE.repoPath)),
+)
 
 /**
  * RBAC como dato de referencia, sembrado una vez: la compuerta 81/81 exige que
@@ -64,6 +69,37 @@ await inMemoryDb.insert(schema.rolePermissions).values(
     { roleId: `role-${name}`, permissionId: "perm-pdtp-execute" },
   ]),
 )
+// El despliegue 1 crea y rellena el catálogo antes de habilitar importaciones.
+// El fixture replica ese orden para que el Excel 2026 vincule identidades
+// existentes; un archivo realmente desconocido se cubre en la prueba dedicada.
+await inMemoryDb.insert(schema.pdtpCatalogActivities).values(
+  PDTP_2026_CATALOG_ACTIVITIES.map((activity) => ({
+    id: activity.id,
+    code: activity.code,
+    // Esta suite prueba el importador genérico, no el retiro histórico (que
+    // tiene cobertura propia). Mantenerlas activas permite importar una copia
+    // del libro sin convertir ese fixture en una nueva selección retirada.
+    status: "active",
+    currentRevision: activity.revision,
+    createdAt: "2026-01-01T12:00:00.000Z",
+    updatedAt: "2026-01-01T12:00:00.000Z",
+  })),
+)
+await inMemoryDb.insert(schema.pdtpCatalogActivityRevisions).values(
+  PDTP_2026_CATALOG_ACTIVITIES.map((activity) => {
+    const source = PDTP_2026_WORKBOOK_CATALOG.activities.find((row) => row.n === activity.legacyNumber)!
+    return {
+    id: `${activity.id}-r${activity.revision}`,
+    catalogActivityId: activity.id,
+    revision: activity.revision,
+    title: activity.title,
+    description: source.activity,
+    executionGuidance: source.program,
+    changeNote: "Manifestación histórica de prueba",
+    createdAt: "2026-01-01T12:00:00.000Z",
+    }
+  }),
+)
 
 afterAll(async () => {
   delete testGlobal.__db
@@ -71,6 +107,18 @@ afterAll(async () => {
 })
 
 beforeEach(async () => {
+  // Las candidatas de importación pertenecen al caso anterior y sus revisiones
+  // son inmutables. El fixture desactiva el guard sólo para retirar esas filas
+  // efímeras; las 87 identidades base permanecen entre pruebas.
+  await inMemoryDb.execute(sql.raw("ALTER TABLE pdtp_catalog_activity_revisions DISABLE TRIGGER pdtp_catalog_revision_immutable"))
+  try {
+    await inMemoryDb.delete(schema.pdtpCatalogActivityRevisions)
+      .where(like(schema.pdtpCatalogActivityRevisions.catalogActivityId, "pdtp-import-candidate-%"))
+  } finally {
+    await inMemoryDb.execute(sql.raw("ALTER TABLE pdtp_catalog_activity_revisions ENABLE TRIGGER pdtp_catalog_revision_immutable"))
+  }
+  await inMemoryDb.delete(schema.pdtpCatalogActivities)
+    .where(like(schema.pdtpCatalogActivities.id, "pdtp-import-candidate-%"))
   await inMemoryDb.delete(schema.operationalActivityEvents)
   await inMemoryDb.delete(schema.preventionRiskLegalHistory)
   // pdtpExecutions.obligationId es `onDelete: "set null"`: si `pdtpObligations`
@@ -665,6 +713,45 @@ describe("prevention PDTP service", () => {
     expect(await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.programId, program.id))).toHaveLength(0)
     const [rolledBack] = await inMemoryDb.select().from(schema.pdtpImportBatches).where(eq(schema.pdtpImportBatches.id, staged.batch.id))
     expect(rolledBack!.status).toBe("rolled_back")
+  })
+
+  it("creates an unknown imported activity as draft and blocks apply until explicit linking", async () => {
+    const { readFile } = await import("node:fs/promises")
+    const { applyPdtpImportBatch, createLegacyPdtpProgramForTests, linkPdtpImportCandidate, rollbackPdtpImportBatch, stagePdtpXlsxImport } = await import("@/lib/services/prevention-pdtp")
+    const workbook = new ExcelJS.Workbook()
+    await workbook.xlsx.load(await readFile(path.resolve(process.cwd(), PDTP_2026_SOURCE.repoPath)) as never)
+    const first = PDTP_2026_WORKBOOK_CATALOG.activities[0]!
+    const row = workbook.getWorksheet("PDTP GENERAL")!.getRow(first.sourceSheetRow)
+    const activityColumn = Number.isFinite(Number(row.getCell(1).value)) ? 2 : 3
+    row.getCell(activityColumn).value = "Actividad preventiva desconocida para revisar"
+    const bytes = new Uint8Array(await workbook.xlsx.writeBuffer())
+    const program = await createLegacyPdtpProgramForTests({ year: 2027, title: "Importación con candidata", userId: "user-1" })
+
+    const staged = await stagePdtpXlsxImport({
+      programId: program.id,
+      bytes,
+      fileName: "programa-con-candidata.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      userId: "user-1",
+    })
+    const [candidate] = await inMemoryDb.select().from(schema.pdtpCatalogActivities)
+      .where(like(schema.pdtpCatalogActivities.id, "pdtp-import-candidate-%"))
+    expect(candidate).toMatchObject({ status: "draft", currentRevision: 1 })
+    await expect(applyPdtpImportBatch({ batchId: staged.batch.id, userId: "user-1", scope: ["ws-1"] }))
+      .rejects.toThrow(/siguen sin publicar/i)
+
+    const linkedPreview = await linkPdtpImportCandidate({
+      batchId: staged.batch.id,
+      candidateCatalogActivityId: candidate!.id,
+      targetCatalogActivityId: PDTP_2026_CATALOG_ACTIVITIES[0]!.id,
+      userId: "user-1",
+    })
+    expect(linkedPreview.blockingErrors).toEqual([])
+    expect((await inMemoryDb.select().from(schema.pdtpCatalogActivities).where(eq(schema.pdtpCatalogActivities.id, candidate!.id)))[0])
+      .toMatchObject({ status: "retired", retiredByUserId: "user-1" })
+    await expect(applyPdtpImportBatch({ batchId: staged.batch.id, userId: "user-1", scope: ["ws-1"] }))
+      .resolves.toMatchObject({ activityCount: 87 })
+    await rollbackPdtpImportBatch({ batchId: staged.batch.id, userId: "user-1", reason: "Limpieza de candidata publicada", scope: ["ws-1"] })
   })
 
   it("returns a read-only sheet view with monthly planned totals", async () => {

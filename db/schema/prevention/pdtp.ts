@@ -1,5 +1,5 @@
 import { relations, sql } from "drizzle-orm"
-import { boolean, check, date, index, integer, jsonb, numeric, real, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import { boolean, check, date, foreignKey, index, integer, jsonb, numeric, real, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import { pgTable } from "drizzle-orm/pg-core"
 import { users } from "../users"
 import { worksites } from "../worksites"
@@ -287,10 +287,75 @@ export const pdtpResponsibleCatalog = pgTable("pdtp_responsible_catalog", {
   uniqueIndex("pdtp_responsible_catalog_display_unique").on(table.displayName),
 ])
 
+/** Identidad corporativa estable de una actividad preventiva reutilizable. */
+export const pdtpCatalogActivities = pgTable("pdtp_catalog_activities", {
+  id:                  text("id").primaryKey(),
+  code:                text("code").notNull(),
+  status:              text("status").notNull().default("draft"),
+  currentRevision:     integer("current_revision").notNull().default(1),
+  retiredReason:       text("retired_reason"),
+  retiredByUserId:     text("retired_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  retiredAt:           timestamp("retired_at", { withTimezone: true, mode: "string" }),
+  createdByUserId:     text("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt:           timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:           timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("pdtp_catalog_activities_code_unique").on(table.code),
+  index("pdtp_catalog_activities_status_idx").on(table.status),
+  check("pdtp_catalog_activities_code_check", sql`${table.code} ~ '^PDT-[A-Z0-9][A-Z0-9-]{2,116}[A-Z0-9]$'`),
+  check("pdtp_catalog_activities_status_check", sql`${table.status} IN ('draft', 'active', 'retired')`),
+  check("pdtp_catalog_activities_revision_check", sql`${table.currentRevision} >= 1`),
+  check("pdtp_catalog_activities_retirement_check", sql`${table.status} <> 'retired' OR (
+    length(trim(COALESCE(${table.retiredReason}, ''))) >= 10 AND ${table.retiredAt} IS NOT NULL
+  )`),
+])
+
+/** Contenido inmutable de una identidad del catálogo. */
+export const pdtpCatalogActivityRevisions = pgTable("pdtp_catalog_activity_revisions", {
+  id:                  text("id").primaryKey(),
+  catalogActivityId:   text("catalog_activity_id").notNull(),
+  revision:            integer("revision").notNull(),
+  title:               text("title").notNull(),
+  description:         text("description").notNull(),
+  executionGuidance:   text("execution_guidance").notNull(),
+  changeNote:          text("change_note"),
+  createdByUserId:     text("created_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+  createdAt:           timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.catalogActivityId], foreignColumns: [pdtpCatalogActivities.id], name: "pdtp_revision_catalog_activity_fk" }).onDelete("restrict"),
+  uniqueIndex("pdtp_catalog_activity_revisions_identity_unique").on(table.catalogActivityId, table.revision),
+  index("pdtp_catalog_activity_revisions_activity_idx").on(table.catalogActivityId, table.revision),
+  check("pdtp_catalog_activity_revisions_revision_check", sql`${table.revision} >= 1`),
+  check("pdtp_catalog_activity_revisions_title_check", sql`length(trim(${table.title})) BETWEEN 3 AND 80`),
+  check("pdtp_catalog_activity_revisions_description_check", sql`length(trim(${table.description})) >= 3`),
+  check("pdtp_catalog_activity_revisions_guidance_check", sql`length(trim(${table.executionGuidance})) >= 2`),
+])
+
+/** Configuración reusable entre un evento operacional y una identidad. */
+export const pdtpAccreditationBindings = pgTable("pdtp_accreditation_bindings", {
+  id:                  text("id").primaryKey(),
+  sourceType:          text("source_type").notNull(),
+  sourceId:            text("source_id").notNull(),
+  eventType:           text("event_type").notNull(),
+  catalogActivityId:   text("catalog_activity_id").notNull(),
+  isActive:            boolean("is_active").notNull().default(true),
+  createdByUserId:     text("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt:           timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:           timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.catalogActivityId], foreignColumns: [pdtpCatalogActivities.id], name: "pdtp_binding_catalog_activity_fk" }).onDelete("restrict"),
+  uniqueIndex("pdtp_accreditation_bindings_unique").on(table.sourceType, table.sourceId, table.eventType, table.catalogActivityId),
+  index("pdtp_accreditation_bindings_source_idx").on(table.sourceType, table.sourceId, table.eventType),
+  index("pdtp_accreditation_bindings_activity_idx").on(table.catalogActivityId),
+  check("pdtp_accreditation_bindings_event_type_check", sql`${table.eventType} IN ('execute', 'review', 'publish', 'acknowledge', 'close', 'complete_drill')`),
+])
+
 export const pdtpActivities = pgTable("pdtp_activities", {
   id:                 text("id").primaryKey(),
   programId:          text("program_id").notNull().references(() => pdtpPrograms.id, { onDelete: "cascade" }),
   n:                  integer("n").notNull(),
+  catalogActivityId:  text("catalog_activity_id"),
+  catalogRevision:    integer("catalog_revision"),
   displayOrder:       integer("display_order").notNull().default(0),
   status:             text("status").notNull().default("active"),
   retiredReason:      text("retired_reason"),
@@ -366,8 +431,15 @@ export const pdtpActivities = pgTable("pdtp_activities", {
   updatedAt:          timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
 }, (table) => [
   uniqueIndex("pdtp_activities_program_n_unique").on(table.programId, table.n),
+  uniqueIndex("pdtp_activities_program_catalog_unique").on(table.programId, table.catalogActivityId),
+  foreignKey({
+    columns: [table.catalogActivityId, table.catalogRevision],
+    foreignColumns: [pdtpCatalogActivityRevisions.catalogActivityId, pdtpCatalogActivityRevisions.revision],
+    name: "pdtp_activities_catalog_revision_fk",
+  }).onDelete("restrict"),
   index("pdtp_activities_program_display_order_idx").on(table.programId, table.displayOrder),
   check("pdtp_activities_n_check", sql`${table.n} >= 1`),
+  check("pdtp_activities_catalog_revision_pair_check", sql`(${table.catalogActivityId} IS NULL) = (${table.catalogRevision} IS NULL)`),
   check("pdtp_activities_display_order_check", sql`${table.displayOrder} >= 0`),
   check("pdtp_activities_status_check", sql`${table.status} IN ('active', 'retired')`),
   check("pdtp_activities_retirement_check", sql`${table.status} = 'active' OR (
@@ -577,6 +649,28 @@ export const pdtpFulfillmentEvents = pgTable("pdtp_fulfillment_events", {
   check("pdtp_fulfillment_events_quantity_check", sql`${table.quantity} >= 0`),
   check("pdtp_fulfillment_events_attempts_check", sql`${table.attempts} >= 0`),
   check("pdtp_fulfillment_events_planned_year_check", sql`${table.plannedYear} IS NULL OR ${table.plannedYear} BETWEEN 2024 AND 2100`),
+])
+
+/**
+ * Objetivos normalizados de un evento de cumplimiento. `activityNumbers` en
+ * el evento queda como snapshot histórico durante la transición, pero la
+ * identidad resoluble vive aquí.
+ */
+export const pdtpFulfillmentEventTargets = pgTable("pdtp_fulfillment_event_targets", {
+  id:                  text("id").primaryKey(),
+  eventId:             text("event_id").notNull(),
+  catalogActivityId:   text("catalog_activity_id").notNull(),
+  resolvedActivityId:  text("resolved_activity_id"),
+  activityNumberSnapshot: integer("activity_number_snapshot"),
+  createdAt:           timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.eventId], foreignColumns: [pdtpFulfillmentEvents.id], name: "pdtp_event_target_event_fk" }).onDelete("cascade"),
+  foreignKey({ columns: [table.catalogActivityId], foreignColumns: [pdtpCatalogActivities.id], name: "pdtp_event_target_catalog_activity_fk" }).onDelete("restrict"),
+  foreignKey({ columns: [table.resolvedActivityId], foreignColumns: [pdtpActivities.id], name: "pdtp_event_target_annual_activity_fk" }).onDelete("set null"),
+  uniqueIndex("pdtp_fulfillment_event_targets_identity_unique").on(table.eventId, table.catalogActivityId),
+  index("pdtp_fulfillment_event_targets_catalog_idx").on(table.catalogActivityId),
+  index("pdtp_fulfillment_event_targets_resolved_idx").on(table.resolvedActivityId),
+  check("pdtp_fulfillment_event_targets_number_check", sql`${table.activityNumberSnapshot} IS NULL OR ${table.activityNumberSnapshot} >= 1`),
 ])
 
 export const pdtpObligationReminders = pgTable("pdtp_obligation_reminders", {

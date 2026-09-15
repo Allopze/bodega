@@ -37,6 +37,7 @@ import { Field } from "@/components/ui/field"
 import { useOperation } from "@/lib/hooks/use-operation"
 import { formatDate, todayInChile } from "@/lib/utils"
 import { useUrlFilters } from "@/lib/hooks/use-url-filters"
+import { PdtpActivityPicker, type PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
 import {
   NO_SUBJECT,
   subjectIdsFromRef,
@@ -67,6 +68,8 @@ export interface TemplateItem {
   pdtpActivityNumbers: number[] | null
   /** Actividades que acredita al REVISARSE (la firma, no la ejecución). */
   pdtpReviewActivityNumbers: number[] | null
+  pdtpCatalogActivityIds?: string[]
+  pdtpReviewCatalogActivityIds?: string[]
   /** Desviaciones que este instrumento ofrece al registrar, con su gravedad. */
   deviations: DeviationEntry[]
   /** Desviaciones registradas como "Otra" que aún no están en el catálogo. */
@@ -187,19 +190,16 @@ function coverageLabel(coverage: Coverage) {
   return `${coverage.withDanoPotencial}/${coverage.totalItems} con gravedad`
 }
 
-function toggleNumber(values: number[], value: number, checked: boolean) {
-  return checked ? [...new Set([...values, value])].sort((a, b) => a - b) : values.filter((item) => item !== value)
-}
-
 /**
  * Catálogo de instrumentos. Antes convivía con la programación en una sola
  * pantalla de pestañas: son dos actos distintos —qué se pregunta y cuándo se
  * pregunta— con permisos y públicos distintos, y la pestaña obligaba a pasar
  * por uno para llegar al otro.
  */
-export function InspectionTemplatesPanel({ templates, pdtpOptions, canManage, canApprove }: {
+export function InspectionTemplatesPanel({ templates, pdtpOptions, catalogActivities = [], canManage, canApprove }: {
   templates: TemplateItem[]
   pdtpOptions: PdtpActivityOption[]
+  catalogActivities?: import("@/components/prevention/pdtp-activity-picker").PdtpActivityPickerOption[]
   canManage: boolean
   canApprove: boolean
 }) {
@@ -335,7 +335,7 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, canManage, ca
                 }</dd></div>
                 <div className="col-span-2"><dt className="text-[var(--color-text-subtle)]">Fuente y paridad</dt><dd className="mt-0.5 font-medium">{item.sourceSnapshot ? <><a className="underline" href={`/api/prevencion/documentacion/${item.sourceSnapshot.documentId}/version/${item.sourceSnapshot.versionId}`}>{item.sourceSnapshot.fileName}</a> · {item.sourceSnapshot.revision ?? "sin revisión"} · {parityStatusLabel(item.parityReport?.status)}</> : isOfficialProvenance(item.provenanceKind) ? "Documento oficial pendiente" : "Definición propia de plataforma"}</dd></div>
               </dl>
-              <TemplateActions item={item} templates={templates} pdtpOptions={pdtpOptions} canManage={canManage} canApprove={canApprove} />
+              <TemplateActions item={item} templates={templates} catalogActivities={catalogActivities} canManage={canManage} canApprove={canApprove} />
             </article>
           ))}
         </div>
@@ -441,7 +441,7 @@ export function InspectionTemplatesPanel({ templates, pdtpOptions, canManage, ca
                     )}
                   </TableCell>
                   <TableCell className="text-right">
-                    <TemplateActions item={item} templates={templates} pdtpOptions={pdtpOptions} canManage={canManage} canApprove={canApprove} />
+                    <TemplateActions item={item} templates={templates} catalogActivities={catalogActivities} canManage={canManage} canApprove={canApprove} />
                   </TableCell>
                 </TableRow>
               ))}
@@ -483,10 +483,10 @@ function RequestApprovalButton({ templateId }: { templateId: string }) {
   )
 }
 
-function TemplateActions({ item, templates, pdtpOptions, canManage, canApprove }: {
+function TemplateActions({ item, templates, catalogActivities, canManage, canApprove }: {
   item: TemplateItem
   templates: TemplateItem[]
-  pdtpOptions: PdtpActivityOption[]
+  catalogActivities: PdtpActivityPickerOption[]
   canManage: boolean
   canApprove: boolean
 }) {
@@ -494,7 +494,7 @@ function TemplateActions({ item, templates, pdtpOptions, canManage, canApprove }
   return (
     <div className="flex flex-wrap justify-end gap-2">
       {item.status !== "superseded" && canManage && <DeviationCatalogDialog templateCode={item.code} name={item.name} entries={item.deviations} unclassified={item.unclassifiedDeviations} />}
-      {item.status !== "superseded" && canManage && <PdtpActivitiesDialog templateId={item.id} name={item.name} expectedVersion={item.version} current={item.pdtpActivityNumbers ?? []} currentReview={item.pdtpReviewActivityNumbers ?? []} options={pdtpOptions} />}
+      {item.status !== "superseded" && canManage && <PdtpActivitiesDialog templateId={item.id} name={item.name} expectedVersion={item.version} current={item.pdtpCatalogActivityIds ?? []} currentReview={item.pdtpReviewCatalogActivityIds ?? []} options={catalogActivities} />}
       {item.status === "draft" && canApprove && <ApproveDialog templateId={item.id} name={item.name} expectedVersion={item.version} />}
       {item.status === "draft" && canManage && !canApprove && <RequestApprovalButton templateId={item.id} />}
       {item.status !== "superseded" && canApprove && <RetireDialog templateId={item.id} name={item.name} />}
@@ -1063,30 +1063,13 @@ function PdtpActivitiesDialog({ templateId, name, expectedVersion, current, curr
   templateId: string
   name: string
   expectedVersion: number
-  current: number[]
-  currentReview: number[]
-  options: PdtpActivityOption[]
+  current: string[]
+  currentReview: string[]
+  options: PdtpActivityPickerOption[]
 }) {
   const [open, setOpen] = React.useState(false)
-  const [execution, setExecution] = React.useState<number[]>(current)
-  const [review, setReview] = React.useState<number[]>(currentReview)
-  const executionSet = React.useMemo(() => new Set(execution), [execution])
-  const reviewSet = React.useMemo(() => new Set(review), [review])
-  const retainedNumbers = React.useMemo(() => {
-    const activeNumbers = new Set(options.map((option) => option.n))
-    return [...new Set([...current, ...currentReview])]
-      .filter((number) => !activeNumbers.has(number))
-      .sort((a, b) => a - b)
-  }, [current, currentReview, options])
-  const visibleOptions = React.useMemo(() => [
-    ...options.map((option) => ({ ...option, retained: false })),
-    ...retainedNumbers.map((number) => ({
-      n: number,
-      name: "Actividad vinculada fuera del programa activo",
-      year: 0,
-      retained: true,
-    })),
-  ].sort((a, b) => a.n - b.n), [options, retainedNumbers])
+  const [execution, setExecution] = React.useState<string[]>(current)
+  const [review, setReview] = React.useState<string[]>(currentReview)
   const operation = useOperation()
 
   return (
@@ -1100,8 +1083,10 @@ function PdtpActivitiesDialog({ templateId, name, expectedVersion, current, curr
               () => setInspectionTemplatePdtpActivitiesAction({
                 templateId,
                 expectedVersion,
-                pdtpActivityNumbers: execution,
-                pdtpReviewActivityNumbers: review,
+                pdtpActivityNumbers: [],
+                pdtpReviewActivityNumbers: [],
+                catalogActivityIds: execution,
+                reviewCatalogActivityIds: review,
               }),
               () => setOpen(false),
             )
@@ -1111,34 +1096,22 @@ function PdtpActivitiesDialog({ templateId, name, expectedVersion, current, curr
           <DialogHeader>
             <DialogTitle>Acreditación PDTP · {name}</DialogTitle>
             <DialogDescription>
-              Elige por número y nombre qué actividad acredita la ejecución y cuál acredita la revisión segregada.
+              Elige qué identidad corporativa acredita la ejecución y cuál acredita la revisión segregada.
             </DialogDescription>
           </DialogHeader>
           {options.length === 0 && (
             <p className="rounded-lg bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">
-              No hay un PDTP activo con actividades seleccionables.{" "}
-              <Link href="/prevencion/pdtp" className="underline">Activa el programa anual</Link> antes de agregar nuevas acreditaciones.
+              No hay actividades publicadas en el catálogo corporativo.
             </p>
           )}
-          {retainedNumbers.length > 0 && (
-            <p className="rounded-lg border border-[var(--color-warning-line)] bg-[var(--color-warning-tint)] p-3 text-sm text-[var(--color-warning-ink)]">
-              Las actividades señaladas como fuera del programa activo se conservan por trazabilidad. Desmárcalas si esta plantilla ya no debe acreditarlas.
-            </p>
-          )}
-          {visibleOptions.length > 0 && (
+          {options.length > 0 && (
             <div className="grid gap-4 md:grid-cols-2">
-              <fieldset className="max-h-72 space-y-2 overflow-y-auto rounded-lg border border-[var(--color-border)] p-3">
-                <legend className="px-1 text-sm font-semibold">Al declarar ejecutada</legend>
-                {visibleOptions.map((option) => <Checkbox key={`execute-${option.year}-${option.n}`} checked={executionSet.has(option.n)} onChange={(event) => setExecution((values) => toggleNumber(values, option.n, event.target.checked))} label={`N° ${option.n} — ${option.name}`} />)}
-              </fieldset>
-              <fieldset className="max-h-72 space-y-2 overflow-y-auto rounded-lg border border-[var(--color-border)] p-3">
-                <legend className="px-1 text-sm font-semibold">Al revisar y cerrar</legend>
-                {visibleOptions.map((option) => <Checkbox key={`review-${option.year}-${option.n}`} checked={reviewSet.has(option.n)} onChange={(event) => setReview((values) => toggleNumber(values, option.n, event.target.checked))} label={`N° ${option.n} — ${option.name}`} />)}
-              </fieldset>
+              <PdtpActivityPicker multiple label="Al declarar ejecutada" options={options} value={execution} onChange={setExecution} />
+              <PdtpActivityPicker multiple label="Al revisar y cerrar" options={options} value={review} onChange={setReview} />
             </div>
           )}
           {operation.message && <p role="status" className="text-sm">{operation.message}</p>}
-          <DialogFooter><Button type="submit" disabled={operation.pending || visibleOptions.length === 0}>Guardar</Button></DialogFooter>
+          <DialogFooter><Button type="submit" disabled={operation.pending || options.length === 0}>Guardar</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

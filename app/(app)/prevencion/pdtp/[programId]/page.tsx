@@ -16,6 +16,7 @@ import {
   listPdtpProgramSheets,
 } from "@/lib/services/prevention-pdtp"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
+import { listCatalogActivities } from "@/lib/services/pdtp/catalog-activities"
 import { getPendingPdtpApprovalsForView, getPdtpChangeLog, listAccessiblePdtpProgramWorksites } from "@/lib/services/pdtp"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
@@ -134,6 +135,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const canManageLifecycle = can(session, "prevention:pdtp:lifecycle:manage")
   const canExecute = can(session, "prevention:pdtp:execute")
   const canManageProgram = can(session, "prevention:pdtp:program:manage")
+  const catalogActivities = canManageProgram && program.status === "draft" ? await listCatalogActivities() : []
   const exportHref = `/api/prevencion/pdtp/export?programId=${programId}&hoja=${sheetCode}${selectedWorksiteId ? `&faena=${selectedWorksiteId}` : ""}&year=${program.year}`
 
   return (
@@ -155,7 +157,17 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
                 gestión. Antes este flujo estaba escondido tras Editar → Revisión
                 → "Vistas avanzadas", y el usuario no lo encontraba. */}
             {canManageProgram && program.status === "draft" && (
-              <PdtpImportExcelDialog programId={programId} visibleWorksites={worksites} />
+              <PdtpImportExcelDialog
+                programId={programId}
+                visibleWorksites={worksites}
+                catalogActivities={catalogActivities.map((activity) => ({
+                  id: activity.id,
+                  code: activity.code,
+                  title: activity.title,
+                  description: activity.description,
+                  status: activity.status as "draft" | "active" | "retired",
+                }))}
+              />
             )}
             {canApprove && (
               <Button asChild variant="secondary" size="sm">

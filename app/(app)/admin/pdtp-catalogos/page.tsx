@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/ui/page-header"
 import { PageContainer } from "@/components/ui/page-container"
 import { PdtpActions } from "./pdtp-actions"
 import { CatalogTabs } from "./catalog-tabs"
+import type { CatalogActivityRow } from "./activity-form"
 
 export const metadata: Metadata = { title: "Catálogos PDTP" }
 
@@ -16,7 +17,7 @@ export default async function PdtpCatalogsPage() {
     redirect("/forbidden")
   }
 
-  const [{ responsibles, programs, sheets }, roleOptions] = await Promise.all([
+  const [{ responsibles, programs, sheets, activities }, roleOptions] = await Promise.all([
     listPdtpAdminCatalogs(),
     listRoleSlugs(),
   ])
@@ -25,7 +26,7 @@ export default async function PdtpCatalogsPage() {
     <PageContainer>
       <PageHeader
         title="Catálogos PDTP"
-        description="Mantén el catálogo de responsables, las hojas del programa preventivo y revisa los programas activos."
+        description="Administra actividades preventivas reutilizables, responsables y estructura de los programas anuales."
         breadcrumb={[
           { label: "Inicio", href: "/dashboard" },
           { label: "Administración", href: "/admin" },
@@ -34,6 +35,19 @@ export default async function PdtpCatalogsPage() {
         actions={<PdtpActions programs={programs.map((p) => ({ id: p.id, year: p.year, version: p.version, status: p.status, title: p.title ?? p.id }))} roleOptions={roleOptions} />}
       />
       <CatalogTabs
+        activities={activities.map((activity) => ({
+          ...activity,
+          status: activity.status as CatalogActivityRow["status"],
+          updatedAt: activity.updatedAt,
+          revisions: activity.revisions.map((revision) => ({
+            revision: revision.revision,
+            title: revision.title,
+            description: revision.description,
+            executionGuidance: revision.executionGuidance,
+            changeNote: revision.changeNote ?? "",
+            createdAt: revision.createdAt,
+          })),
+        }))}
         roleOptions={roleOptions}
         responsibles={responsibles.map((r) => ({
           slug: r.slug,

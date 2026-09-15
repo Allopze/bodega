@@ -11,13 +11,13 @@ import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { describePdtpRecurrence, type PdtpRecurrenceFrequency, type PdtpRecurrenceRule } from "@/lib/services/pdtp/recurrence"
 import { addPdtpActivityAction } from "../../actions"
+import { PdtpActivityPicker, type PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
 
 type ResponsibleOption = { slug: string; displayName: string }
 type ScheduleMode = "scheduled" | "on_demand" | "triggered"
 
 type Draft = {
-  activityDescription: string
-  executionGuidance: string
+  catalogActivityId: string
   responsibleSlug: string
   audienceRoles: string
   scheduleMode: ScheduleMode
@@ -33,8 +33,7 @@ type Draft = {
 }
 
 const EMPTY_DRAFT: Draft = {
-  activityDescription: "",
-  executionGuidance: "Registrar cómo se realizó y conservar evidencia verificable",
+  catalogActivityId: "",
   responsibleSlug: "",
   audienceRoles: "",
   scheduleMode: "scheduled",
@@ -66,10 +65,12 @@ const FREQUENCY_OPTIONS: Array<{ value: PdtpRecurrenceFrequency; label: string }
 export function GuidedActivityForm({
   programId,
   responsibleCatalog,
+  catalogActivities,
   generalViewCode = "pdtp_general",
 }: {
   programId: string
   responsibleCatalog: ResponsibleOption[]
+  catalogActivities: Array<PdtpActivityPickerOption & { executionGuidance: string; currentRevision: number }>
   generalViewCode?: string
 }) {
   const router = useRouter()
@@ -87,13 +88,11 @@ export function GuidedActivityForm({
     try {
       const saved = window.localStorage.getItem(storageKey)
       if (saved) {
-        const parsed = JSON.parse(saved) as Partial<Draft> & { activity?: string; programName?: string }
+        const parsed = JSON.parse(saved) as Partial<Draft>
         setDraft({
           ...EMPTY_DRAFT,
           ...parsed,
           responsibleSlug: parsed.responsibleSlug || defaultResponsibleSlug,
-          activityDescription: parsed.activityDescription ?? parsed.activity ?? EMPTY_DRAFT.activityDescription,
-          executionGuidance: parsed.executionGuidance ?? parsed.programName ?? EMPTY_DRAFT.executionGuidance,
         })
       }
     } catch {
@@ -123,11 +122,12 @@ export function GuidedActivityForm({
     : draft.scheduleMode === "on_demand"
       ? "No genera una cuota semanal. Se mide solo cuando existan solicitudes o casos reales."
       : `Cada evento abre una obligación con plazo de ${draft.dueDays} día(s).`
+  const selectedCatalogActivity = catalogActivities.find((activity) => activity.id === draft.catalogActivityId)
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!draft.activityDescription.trim() || !draft.responsibleSlug) {
-      setMessage({ ok: false, text: "Completa la actividad y el responsable antes de guardar." })
+    if (!selectedCatalogActivity || !draft.responsibleSlug) {
+      setMessage({ ok: false, text: "Selecciona una actividad del catálogo y su responsable antes de guardar." })
       return
     }
     if (draft.scheduleMode === "triggered" && !draft.triggerDescription.trim()) {
@@ -141,8 +141,9 @@ export function GuidedActivityForm({
     try {
       const result = await addPdtpActivityAction({
         programId,
-        activity: draft.activityDescription,
-        program: draft.executionGuidance,
+        catalogActivityId: selectedCatalogActivity.id,
+        activity: selectedCatalogActivity.description,
+        program: selectedCatalogActivity.executionGuidance,
         responsibleSlugs: [draft.responsibleSlug],
         responsibleDisplay: responsible?.displayName ?? draft.responsibleSlug,
         audienceRoles: draft.audienceRoles.split(",").map((role) => role.trim()).filter(Boolean),
@@ -178,16 +179,28 @@ export function GuidedActivityForm({
     <form onSubmit={submit} className="space-y-5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 md:p-5">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h3 className="text-base font-semibold text-[var(--color-text)]">Agregar una actividad</h3>
-          <p className="mt-1 text-sm text-[var(--color-text-muted)]">Describe qué debe ocurrir; la plataforma generará la planificación correspondiente.</p>
+          <h3 className="text-base font-semibold text-[var(--color-text)]">Agregar desde catálogo</h3>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">Elige la definición corporativa y configura sólo su ejecución anual.</p>
         </div>
         <MetaBadge meta={{ label: hydrated ? "Borrador local guardado" : "Preparando borrador", variant: "outline" }} />
       </div>
 
       <FieldGroup className="gap-4">
-        <Field label="¿Qué actividad preventiva se realizará?" htmlFor="guided-activity" required>
-          <Textarea id="guided-activity" value={draft.activityDescription} onChange={(event) => patch("activityDescription", event.target.value)} rows={3} maxLength={4000} placeholder="Ej.: revisar condiciones de almacenamiento y registrar hallazgos" required />
-        </Field>
+        <div>
+          <PdtpActivityPicker
+            label="Actividad preventiva"
+            options={catalogActivities}
+            value={draft.catalogActivityId}
+            onChange={(value) => patch("catalogActivityId", value)}
+          />
+          {selectedCatalogActivity && (
+            <div className="mt-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm">
+              <p className="font-semibold text-[var(--color-text)]">{selectedCatalogActivity.title}</p>
+              <p className="mt-1 text-[var(--color-text-muted)]">{selectedCatalogActivity.description}</p>
+              <p className="mt-2 text-xs text-[var(--color-text-subtle)]"><span className="font-semibold">Guía:</span> {selectedCatalogActivity.executionGuidance}</p>
+            </div>
+          )}
+        </div>
 
         <Field label="Responsable principal" htmlFor="guided-responsible" required>
           {responsibleCatalog.length > 0 ? (
@@ -261,9 +274,6 @@ export function GuidedActivityForm({
         <details className="rounded-lg border border-[var(--color-border)] px-3 py-2">
           <summary className="cursor-pointer text-sm font-medium text-[var(--color-text)]">Responsabilidades, evidencia y detalles opcionales</summary>
           <div className="mt-4 grid gap-4">
-            <Field label="Guía de ejecución" htmlFor="guided-execution-guidance" helper="Explica cómo realizar y demostrar el trabajo; no corresponde a una columna obligatoria del Excel.">
-              <Textarea id="guided-execution-guidance" value={draft.executionGuidance} onChange={(event) => patch("executionGuidance", event.target.value)} rows={3} maxLength={2000} />
-            </Field>
             <Field label="Evidencia mínima esperada" htmlFor="guided-evidence">
               <Textarea id="guided-evidence" value={draft.evidenceRequirement} onChange={(event) => patch("evidenceRequirement", event.target.value)} rows={2} maxLength={3000} />
             </Field>

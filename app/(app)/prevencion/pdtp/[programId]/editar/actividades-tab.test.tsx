@@ -16,6 +16,7 @@ vi.mock("../../actions", () => ({
   batchUpdatePdtpActivitiesAction: vi.fn(),
   deletePdtpActivityAction: vi.fn(),
   reorderPdtpActivitiesAction: vi.fn(),
+  adoptLatestCatalogRevisionAction: vi.fn(),
 }))
 
 const MONTHLY = { frequency: "monthly", interval: 1, plannedQuantity: 1, weekOfMonth: 2 }
@@ -53,6 +54,7 @@ function renderTab(props: Partial<Parameters<typeof ActividadesTab>[0]> = {}) {
       activities={[makeActivity()]}
       schedule={makeCells([])}
       responsibleCatalog={[]}
+      catalogActivities={[]}
       {...props}
     />,
   )

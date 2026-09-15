@@ -143,7 +143,9 @@ INVENTARIO DE EXTINTORES FAENA BIODIVERSA 2026.xlsx
 !/docs/aidocs-config.yml
 !/docs/.ignore
 !/docs/plan.yml
-/qa
+/qa/**
+!/qa/**/
+!/qa/**/*.md
 # Scratch de ejecución de planes (subagent-driven development)
 .superpowers/
 OC-ejemplo-pdfcn.pdf

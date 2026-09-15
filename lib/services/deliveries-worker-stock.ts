@@ -18,6 +18,7 @@ import { nanoid } from "@/lib/id"
 import { getTraceableDeliveryBalance } from "@/lib/services/delivery-eligibility"
 import { deliverItemTx } from "@/lib/services/item-state"
 import { onEppDeliveryCompleted } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
+import { pdtpCatalogActivityIdForLegacyNumber } from "@/lib/services/pdtp-adapters/catalog-activities-2026"
 import { applyMovementTx } from "@/lib/services/stock"
 import { inTransitDeliveryWarning, readInTransitToWorksite, type InTransitDeliveryLine } from "@/lib/services/dispatch-in-transit"
 import { codeYear, todayInChile } from "@/lib/utils"
@@ -474,7 +475,7 @@ export async function registerWorkerStockDelivery(
       worksiteId: input.sourceWorksiteId,
       deliveredAt,
       workerCount: 1,
-      activityNumbers: [PDTP_EPP_DELIVERY_ACTIVITY_NUMBER],
+      catalogActivityIds: [pdtpCatalogActivityIdForLegacyNumber(PDTP_EPP_DELIVERY_ACTIVITY_NUMBER)],
       // Sin un artefacto real, el motor marca la ejecución
       // `evidenceStatus: "not_required"` y la N°62 —"dejar documentada su
       // entrega"— quedaría acreditada sin documento.

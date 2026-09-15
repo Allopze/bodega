@@ -230,6 +230,51 @@ describe("PDTP-001 — «no requiere evidencia» y «faltó la evidencia»", () 
 })
 
 describe("accreditPdtpFromEvent", () => {
+  it("resuelve la misma identidad de catálogo al número anual correcto por año", async () => {
+    const catalogActivityId = "catalog-inspection-shared"
+    const nextProgramId = `pdtp-${PROGRAM_YEAR + 1}-v1`
+    await inMemoryDb.insert(schema.pdtpCatalogActivities).values({
+      id: catalogActivityId,
+      code: "PDT-TEST-INSPECCION-COMPARTIDA",
+      status: "active",
+      currentRevision: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
+    await inMemoryDb.insert(schema.pdtpCatalogActivityRevisions).values({
+      id: `${catalogActivityId}-r1`, catalogActivityId, revision: 1,
+      title: "Inspeccionar condiciones compartidas", description: "Inspección de extintores",
+      executionGuidance: "Prevención PDTP", createdAt: new Date().toISOString(),
+    })
+    await inMemoryDb.update(schema.pdtpActivities).set({ catalogActivityId, catalogRevision: 1 })
+      .where(eq(schema.pdtpActivities.id, ACT_ID))
+    await inMemoryDb.insert(schema.pdtpPrograms).values({
+      id: nextProgramId, version: 1, year: PROGRAM_YEAR + 1, title: "Programa siguiente", status: "active",
+      elaboratedByName: "Prevencionista Test", elaboratedByTitle: "Experto en Prevención", creationMode: "blank",
+      complianceTarget: 0.9, pesoEjecucion: 0.5, pesoVerificacion: 0.3, pesoCierre: 0.2,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    })
+    await inMemoryDb.insert(schema.pdtpActivities).values({
+      id: `${nextProgramId}-a-007`, programId: nextProgramId, n: 7, catalogActivityId, catalogRevision: 1,
+      activity: "Inspección de extintores", program: "Prevención PDTP", responsibleSlugs: ["prevencionista"],
+      responsibleDisplay: "Prevencionista", scheduleMode: "triggered", scheduleClassificationStatus: "confirmed",
+      sourceSheetRow: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    })
+
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    const current = await accreditPdtpFromEvent({
+      sourceType: "inspeccion", sourceId: "catalog-current", worksiteId: WS_ID,
+      catalogActivityIds: [catalogActivityId], occurredAt: `${PROGRAM_YEAR}-03-05T10:00:00.000Z`,
+    })
+    const next = await accreditPdtpFromEvent({
+      sourceType: "inspeccion", sourceId: "catalog-next", worksiteId: WS_ID,
+      catalogActivityIds: [catalogActivityId], occurredAt: `${PROGRAM_YEAR + 1}-03-05T10:00:00.000Z`,
+    })
+
+    expect(current.accredited.map((row) => row.activityN)).toEqual([ACT_N])
+    expect(next.accredited.map((row) => row.activityN)).toEqual([7])
+  })
+
   it("acredita correctamente una actividad con un evento real", async () => {
     const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
 

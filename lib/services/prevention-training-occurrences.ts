@@ -38,6 +38,7 @@ import {
 } from "@/lib/services/pdtp/fulfillment"
 import type { AccreditationInput, RevocationInput } from "@/lib/services/pdtp/accreditation"
 import { nanoid } from "@/lib/id"
+import { resolvePdtpAccreditationTarget } from "@/lib/services/pdtp/accreditation-bindings"
 
 export const TRAINING_OCCURRENCE_MAX_FILE_SIZE = 25 * 1024 * 1024
 // El margen cubre los campos multipart y los encabezados sin permitir que una
@@ -329,7 +330,8 @@ function pdtpCompletionInput(args: {
   year: number
   scheduledMonth: number | null
   scheduledWeek: number | null
-  activityNumbers: number[]
+  activityNumbers?: number[]
+  catalogActivityIds?: string[]
   evidenceRef: string | null
   catalogCode: string
   catalogTitle: string
@@ -341,7 +343,7 @@ function pdtpCompletionInput(args: {
     sourceType: "capacitacion_ocurrencia",
     sourceId: args.occurrenceId,
     worksiteId: args.worksiteId,
-    activityNumbers: args.activityNumbers,
+    ...(args.catalogActivityIds?.length ? { catalogActivityIds: args.catalogActivityIds } : { activityNumbers: args.activityNumbers }),
     occurredAt: nowIso(),
     executedQuantity: 1,
     evidenceRef: args.evidenceRef ?? undefined,
@@ -477,14 +479,15 @@ export async function recordTrainingOccurrenceStatus(
     }, tx)
 
     const activityNumbers = (current.catalog.pdtpActivityNumbers as number[]) ?? []
-    if (nextStatus === "completed" && activityNumbers.length > 0) {
+    const target = await resolvePdtpAccreditationTarget({ sourceType: "capacitacion_ocurrencia", sourceId: current.catalog.id, eventType: "close", legacyActivityNumbers: activityNumbers }, tx)
+    if (nextStatus === "completed" && (target.catalogActivityIds?.length || target.activityNumbers?.length)) {
       completionEvent = pdtpCompletionInput({
         occurrenceId: current.occurrence.id,
         worksiteId: current.occurrence.worksiteId,
         year: current.occurrence.year,
         scheduledMonth: current.occurrence.scheduledMonth,
         scheduledWeek: current.occurrence.scheduledWeek,
-        activityNumbers,
+        ...target,
         evidenceRef: activeEvidence[0]?.storagePath ?? null,
         catalogCode: current.catalog.code,
         catalogTitle: current.catalog.title,
@@ -493,7 +496,7 @@ export async function recordTrainingOccurrenceStatus(
         actorUserId: access.userId,
       })
       await recordPendingPdtpFulfillmentEvent(completionEvent, tx)
-    } else if (nextStatus === "not_completed" && current.occurrence.status === "completed" && activityNumbers.length > 0) {
+    } else if (nextStatus === "not_completed" && current.occurrence.status === "completed" && (target.catalogActivityIds?.length || target.activityNumbers?.length)) {
       revocationEvent = pdtpRevocationInput(
         current.occurrence.id,
         current.occurrence.worksiteId,

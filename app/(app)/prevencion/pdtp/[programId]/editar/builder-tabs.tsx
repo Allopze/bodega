@@ -16,6 +16,7 @@ import type { PdtpBaseComparison } from "@/lib/services/prevention-pdtp"
 import { deriveScheduleHorizon } from "@/lib/services/pdtp/recurrence"
 import { ChecklistTab } from "./checklist-tab"
 import { GuidedActivityForm } from "./guided-activity-form"
+import type { PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
 import { ImportExcelSection } from "./import-excel-section"
 import { WorksiteAdjustmentsPanel } from "./worksite-adjustments-panel"
 import { ActividadesTab } from "./tabs/actividades-tab"
@@ -55,6 +56,7 @@ type PdtpBuilderTabsProps = {
   userId: string
   canDelete: boolean
   responsibleCatalog: Array<{ slug: string; displayName: string }>
+  catalogActivities: Array<PdtpActivityPickerOption & { executionGuidance: string; currentRevision: number }>
   visibleWorksites: Array<{ id: string; name: string; code: string }>
   canManageWorksiteMembership: boolean
   memberWorksiteIds: string[]
@@ -84,6 +86,7 @@ export function PdtpBuilderTabs({
   userId,
   canDelete,
   responsibleCatalog,
+  catalogActivities,
   visibleWorksites,
   canManageWorksiteMembership,
   memberWorksiteIds,
@@ -158,6 +161,7 @@ export function PdtpBuilderTabs({
         <GuidedActivityForm
           programId={program.id}
           responsibleCatalog={responsibleCatalog}
+          catalogActivities={catalogActivities}
           generalViewCode={generalViewCode}
         />
         <section>
@@ -170,6 +174,7 @@ export function PdtpBuilderTabs({
             activities={activities}
             schedule={schedule}
             responsibleCatalog={responsibleCatalog}
+            catalogActivities={catalogActivities}
           />
         </section>
 
@@ -259,7 +264,7 @@ export function PdtpBuilderTabs({
           <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-[var(--color-text)]">Vistas operativas e importación administrativa</summary>
           <div className="space-y-6 border-t border-[var(--color-border)] p-4">
             <SheetsTab programId={program.id} sheets={sheets} userId={userId} />
-            <ImportExcelSection programId={program.id} visibleWorksites={visibleWorksites} />
+            <ImportExcelSection programId={program.id} visibleWorksites={visibleWorksites} catalogActivities={catalogActivities} />
           </div>
         </details>
       </TabsContent>
