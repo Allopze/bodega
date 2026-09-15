@@ -162,3 +162,6 @@ scripts/.tmp-docs-registry.json
 # Runner temporal de /docs:execute (Playwright vía node, no vía MCP) — nunca
 # debe versionarse: puede contener estado de sesión.
 scripts/.docs-runner/
+docs/generado
+docs/plan.yml
+docs/generado/index.md

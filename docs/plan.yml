@@ -251,7 +251,9 @@ modules:
       route: /admin/usuarios
       dynamic: false
       file: admin-usuarios.md
-  status: pending
+  status: complete
+  completed_at: "2026-09-14T19:30:00.000Z"
+  completion_notes: "43/43 páginas capturadas contra localhost:3001. 41 con captura real; admin-contenedores-detalle.md y admin-inventario-faena-detalle.md documentadas desde el esquema (sin registros de ejemplo en esta BD local)."
 -
   name: requests
   priority: 2
@@ -285,7 +287,9 @@ modules:
       route: /solicitudes/nueva
       dynamic: false
       file: solicitudes-nueva.md
-  status: pending
+  status: complete
+  completed_at: "2026-09-15T00:00:00.000Z"
+  completion_notes: "3/3 páginas capturadas contra localhost:3001."
 -
   name: approvals
   priority: 3
@@ -309,7 +313,9 @@ modules:
       route: /aprobaciones
       dynamic: false
       file: aprobaciones.md
-  status: pending
+  status: complete
+  completed_at: "2026-09-15T00:00:00.000Z"
+  completion_notes: "1/1 páginas capturadas contra localhost:3001."
 -
   name: purchasing
   priority: 4
@@ -353,7 +359,9 @@ modules:
       route: /compras/nueva
       dynamic: false
       file: compras-nueva.md
-  status: pending
+  status: complete
+  completed_at: "2026-09-15T00:00:00.000Z"
+  completion_notes: "5/5 páginas capturadas contra localhost:3001."
 -
   name: receiving
   priority: 5
@@ -387,7 +395,9 @@ modules:
       route: /recepcion/nueva
       dynamic: false
       file: recepcion-nueva.md
-  status: pending
+  status: complete
+  completed_at: "2026-09-15T00:00:00.000Z"
+  completion_notes: "3/3 páginas capturadas contra localhost:3001."
 -
   name: warehouse
   priority: 6
@@ -481,7 +491,9 @@ modules:
       route: /trazabilidad/trabajador/[workerId]
       dynamic: true
       file: trazabilidad-trabajador-worker-id.md
-  status: pending
+  status: complete
+  completed_at: "2026-09-15T00:00:00.000Z"
+  completion_notes: "15/15 páginas capturadas contra localhost:3001."
 -
   name: deliveries
   priority: 7
@@ -510,7 +522,9 @@ modules:
       route: /entregas/[id]/print
       dynamic: true
       file: entregas-detalle-print.md
-  status: pending
+  status: complete
+  completed_at: "2026-09-15T00:00:00.000Z"
+  completion_notes: "2/2 páginas capturadas contra localhost:3001."
 -
   name: operations
   priority: 8
@@ -1054,7 +1068,9 @@ modules:
       route: /prevencion/trabajador/[workerId]
       dynamic: true
       file: prevencion-trabajador-worker-id.md
-  status: pending
+  status: complete
+  completed_at: "2026-09-15T02:00:00.000Z"
+  completion_notes: "71/71 páginas. 55 con captura real, 16 páginas de detalle documentadas desde el esquema (sin registros de ejemplo en esta BD local para esas tablas)."
 -
   name: sst
   priority: 14
@@ -1078,7 +1094,9 @@ modules:
       route: /prevencion/evaluaciones
       dynamic: false
       file: prevencion-evaluaciones.md
-  status: pending
+  status: complete
+  completed_at: "2026-09-15T02:00:00.000Z"
+  completion_notes: "1/1 página capturada."
 -
   name: ppa
   priority: 15
@@ -1117,7 +1135,9 @@ modules:
       route: /prevencion/ppa/[id]
       dynamic: true
       file: prevencion-ppa-detalle.md
-  status: pending
+  status: complete
+  completed_at: "2026-09-15T02:00:00.000Z"
+  completion_notes: "4/4 páginas: 3 capturadas, 1 (/ppa/result/[token]) documentada como página de token de un solo uso sin ejemplo disponible."
 -
   name: combustibles
   priority: 16

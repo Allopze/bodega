@@ -24,13 +24,13 @@ activos.
 | Área | Ruta base | Estado |
 |------|-----------|--------|
 | Dashboard | `/dashboard` | 🔜 Pendiente |
-| Solicitudes | `/solicitudes` | 🔜 Pendiente |
-| Aprobaciones | `/aprobaciones` | 🔜 Pendiente |
-| Compras | `/compras` | 🔜 Pendiente |
-| Recepción | `/recepcion` | 🔜 Pendiente |
-| Bodega | `/bodega` | 🔜 Pendiente |
-| Entregas | `/entregas` | 🔜 Pendiente |
-| Prevención y SG-SST | `/prevencion` | 🔜 Pendiente |
+| [Solicitudes](./requests/solicitudes.md) | `/solicitudes` | ✅ Completo (3/3) |
+| [Aprobaciones](./approvals/aprobaciones.md) | `/aprobaciones` | ✅ Completo (1/1) |
+| [Compras](./purchasing/compras.md) | `/compras` | ✅ Completo (5/5) |
+| [Recepción](./receiving/recepcion.md) | `/recepcion` | ✅ Completo (3/3) |
+| [Bodega](./warehouse/bodega.md) | `/bodega` | ✅ Completo (15/15) |
+| [Entregas](./deliveries/entregas.md) | `/entregas` | ✅ Completo (2/2) |
+| [Prevención y SG-SST](./prevention/prevencion.md) | `/prevencion` | ✅ Completo (76/76 — 60 con captura, 16 desde esquema) |
 | Control operacional | `/control-operacional` | 🔜 Pendiente |
 | Flota | `/flota` | 🔜 Pendiente |
 | Mantenciones | `/mantenciones` | 🔜 Pendiente |
@@ -46,7 +46,7 @@ activos.
 | Soporte | `/soporte` | 🔜 Pendiente |
 | Perfil | `/perfil` | 🔜 Pendiente |
 | TI | `/ti` | 🔜 Pendiente |
-| Administración | `/admin` | 🔜 Pendiente |
+| [Administración](./admin/admin.md) | `/admin` | ✅ Completo (43/43) |
 
 Las páginas se van agregando a medida que se ejecuta `/docs:generate` sobre cada
 una. Son 207 páginas bajo `app/(app)/`.
