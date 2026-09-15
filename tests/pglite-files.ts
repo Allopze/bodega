@@ -34,6 +34,10 @@ export const pgliteTestFiles = [
   "lib/__tests__/analytics-chile-day.test.ts",
   "lib/__tests__/operational-integrity-watermark.test.ts",
   "scripts/verify-purchase-invoice-allocations.test.ts",
+  // Los fixtures de `npm run ss` contra las migraciones reales: sin esto, una
+  // migración podía invalidarlos y el repo no lo sabía hasta correr la
+  // auditoría completa (caso 0281 / TIA-001, 2026-09-15).
+  "scripts/capture-fixtures-pglite.test.ts",
   "lib/__tests__/preflight-invoice-reconciliation.test.ts",
   "lib/__tests__/epp-stock-availability.test.ts",
   "lib/__tests__/deliveries-size-stock-pglite.test.ts",

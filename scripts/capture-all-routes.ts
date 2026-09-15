@@ -1412,6 +1412,45 @@ export function shiftCaptureDateDays(days: number): string {
   return `${shifted.getUTCFullYear()}-${m}-${d}`
 }
 
+/**
+ * Fixture del acta de entrega de TI: respalda `/ti/asignaciones` y el acta
+ * impresa (`/ti/actas/it-assignment-audit-1/print`). El acuse lo registra una
+ * persona **distinta** de quien entrega, que es lo que exige TIA-001.
+ *
+ * Vive exportado, y no escrito en línea en el sembrado, porque su forma la
+ * dicta un CHECK de la base: `it_asset_assignments_acceptance_coherent`
+ * (migración 0281) sólo admite acuse en un acta 'aceptada' y prohíbe que
+ * ninguna otra lo tenga. Mientras el fixture estuvo suelto, el INSERT violó ese
+ * CHECK —firmaba el acta con el mismo técnico que la entregaba, dejando
+ * `acceptance_status` en su DEFAULT 'pendiente'— y `prepareDatabase` murió
+ * antes de la primera captura: la corrida completa no producía ni un PNG ni
+ * manifest, y sólo se notaba ejecutándola. `capture-fixtures-pglite.test.ts`
+ * inserta este mismo objeto contra las migraciones reales, así que la próxima
+ * restricción que lo invalide falla en `npm run test:pglite`.
+ */
+export function itAssignmentCaptureFixture(input: {
+  now: string
+  worksiteId: string
+  deliveredByUserId: string
+}) {
+  return {
+    id: "it-assignment-audit-1",
+    code: "ACT-2026-0001",
+    assetId: "it-asset-audit-1",
+    workerId: "worker-audit-1",
+    worksiteId: input.worksiteId,
+    kind: "delivery",
+    deliveredAt: input.now,
+    deliveredByUserId: input.deliveredByUserId,
+    physicalState: "bueno",
+    acceptanceStatus: "aceptada",
+    acceptedAt: input.now,
+    acceptedByUserId: "user-audit-jefa",
+    createdAt: input.now,
+    updatedAt: input.now,
+  }
+}
+
 async function prepareDatabase(captureDbUrl: string) {
   assertSafeDestructiveDatabase({
     databaseUrl: captureDbUrl,
@@ -1801,9 +1840,9 @@ async function prepareDatabase(captureDbUrl: string) {
   await db.insert(schema.itAssets).values({
     id: "it-asset-audit-1", code: "TI-NB-0001", assetTypeId: "it-asset-type-audit-1", brand: "Lenovo", model: "ThinkPad T14", serialNumber: "CAPTURE-TI-0001", status: "asignado", workerId: "worker-audit-1", worksiteId, location: "Oficina de operaciones", createdAt: now, updatedAt: now,
   })
-  await db.insert(schema.itAssetAssignments).values({
-    id: "it-assignment-audit-1", code: "ACT-2026-0001", assetId: "it-asset-audit-1", workerId: "worker-audit-1", worksiteId, kind: "delivery", deliveredAt: now, deliveredByUserId: userId, physicalState: "bueno", acceptedAt: now, acceptedByUserId: userId, createdAt: now, updatedAt: now,
-  })
+  await db.insert(schema.itAssetAssignments).values(
+    itAssignmentCaptureFixture({ now, worksiteId, deliveredByUserId: userId }),
+  )
   await db.insert(schema.itTickets).values({
     id: "it-ticket-audit-1", code: "INC-2026-0001", subject: "Revisión de equipo asignado", description: "El notebook asignado requiere diagnóstico de conectividad VPN.", category: "internet", priority: "normal", status: "en_diagnostico", requesterUserId: userId, workerId: "worker-audit-1", worksiteId, assetId: "it-asset-audit-1", assigneeUserId: userId, createdAt: now, updatedAt: now,
   })
