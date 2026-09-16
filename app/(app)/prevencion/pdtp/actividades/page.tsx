@@ -132,7 +132,7 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
         <div className="flex flex-wrap items-end gap-3 border-y border-[var(--color-border)] py-3">
           <PdtpYearPicker current={year} years={allPrograms.map((item) => item.year)} hrefBase={VIEWER_HREF} sheetCode={sheetCode} worksiteId={selectedWorksiteId} viewMode={viewMode} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} />
           <PdtpPeriodPicker month={currentPeriod.month} week={currentPeriod.week} hrefBase={VIEWER_HREF} programId={program.id} sheetCode={sheetCode} worksiteId={selectedWorksiteId} viewMode={viewMode} year={year} status={statusFilter} />
-          <PdtpProgramPicker current={program.id} programs={programs.map((item) => ({ id: item.id, title: item.title, year: item.year }))} hrefBase={VIEWER_HREF} sheetCode={sheetCode} worksiteId={selectedWorksiteId} viewMode={viewMode} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} />
+          <PdtpProgramPicker current={program.id} programs={programs.map((item) => ({ id: item.id, title: item.title, year: item.year, version: item.version }))} hrefBase={VIEWER_HREF} sheetCode={sheetCode} worksiteId={selectedWorksiteId} viewMode={viewMode} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} />
           {sheets.length > 0 ? (
             <PdtpSheetPicker current={sheetCode} options={sheets.map((sheet) => ({ code: sheet.code, label: sheet.label }))} programId={program.id} worksiteId={selectedWorksiteId} viewMode={viewMode} hrefBase={VIEWER_HREF} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} />
           ) : (

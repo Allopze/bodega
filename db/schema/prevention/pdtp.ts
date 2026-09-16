@@ -1,7 +1,7 @@
 import { relations, sql } from "drizzle-orm"
 import { boolean, check, date, foreignKey, index, integer, jsonb, numeric, real, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import { pgTable } from "drizzle-orm/pg-core"
-import { users } from "../users"
+import { roles, users } from "../users"
 import { worksites } from "../worksites"
 import { preventionContainers } from "./containers"
 import { preventionEmergencyResources } from "./emergency"
@@ -70,7 +70,9 @@ export const pdtpPrograms = pgTable("pdtp_programs", {
   pesoVerificacion:      real("peso_verificacion").notNull().default(0.3),
   pesoCierre:            real("peso_cierre").notNull().default(0.2),
 }, (table) => [
-  uniqueIndex("pdtp_programs_year_unique").on(table.year),
+  // La identidad documental es año + versión: una revisión correctiva v+1
+  // convive con la evidencia de la versión que estaba activa.
+  uniqueIndex("pdtp_programs_year_version_unique").on(table.year, table.version),
   index("pdtp_programs_status_idx").on(table.status),
   check("pdtp_programs_status_check", sql`${table.status} IN ('draft', 'in_review', 'rejected', 'active', 'closed', 'archived')`),
   check("pdtp_programs_creation_mode_check", sql`${table.creationMode} IN ('blank', 'program_copy', 'template', 'xlsx_import', 'base_2026')`),
@@ -469,6 +471,52 @@ export const pdtpActivities = pgTable("pdtp_activities", {
     AND ${table.subjectCapabilityCodes} IS NULL
   )`),
   check("pdtp_activities_target_value_check", sql`${table.targetValue} IS NULL OR ${table.targetValue} >= 0`),
+])
+
+/**
+ * Roles que acreditan el hecho operacional de una actividad.
+ *
+ * Esta asignación no reemplaza `responsibleSlugs`: éstos representan quién
+ * planifica o responde por la medida. El ejecutor representa quién tiene que
+ * entrar al módulo de destino y registrar el hecho, permitiendo flujos
+ * segregados sin otorgar permisos ni alterar responsabilidades documentales.
+ */
+export const pdtpActivityExecutorAssignments = pgTable("pdtp_activity_executor_assignments", {
+  id:          text("id").primaryKey(),
+  activityId:  text("activity_id").notNull().references(() => pdtpActivities.id, { onDelete: "cascade" }),
+  roleId:      text("role_id").notNull().references(() => roles.id, { onDelete: "restrict" }),
+  createdAt:   timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:   timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("pdtp_activity_executor_assignments_activity_role_unique").on(table.activityId, table.roleId),
+  index("pdtp_activity_executor_assignments_role_idx").on(table.roleId),
+])
+
+/**
+ * Decisión explícita sobre una diferencia entre una revisión anual y la Base
+ * preventiva vigente. `kept` no altera el programa; `applied` es el registro
+ * auditable de que el operador adoptó la diferencia concreta de la Base.
+ */
+export const pdtpRevisionDiffDecisions = pgTable("pdtp_revision_diff_decisions", {
+  id:                    text("id").primaryKey(),
+  programId:             text("program_id").notNull().references(() => pdtpPrograms.id, { onDelete: "cascade" }),
+  baseTemplateVersionId: text("base_template_version_id").notNull(),
+  activityIdentity:      text("activity_identity").notNull(),
+  decision:              text("decision").notNull(),
+  decidedByUserId:       text("decided_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  decidedAt:             timestamp("decided_at", { withTimezone: true, mode: "string" }).notNull(),
+  createdAt:             timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  updatedAt:             timestamp("updated_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (table) => [
+  uniqueIndex("pdtp_revision_diff_decisions_program_base_identity_unique").on(table.programId, table.baseTemplateVersionId, table.activityIdentity),
+  index("pdtp_revision_diff_decisions_program_idx").on(table.programId),
+  foreignKey({
+    columns: [table.baseTemplateVersionId],
+    foreignColumns: [pdtpProgramTemplateVersions.id],
+    name: "pdtp_rev_diff_base_version_fk",
+  }).onDelete("restrict"),
+  check("pdtp_revision_diff_decisions_identity_check", sql`length(trim(${table.activityIdentity})) > 0`),
+  check("pdtp_revision_diff_decisions_decision_check", sql`${table.decision} IN ('applied', 'kept')`),
 ])
 
 export const pdtpActivitySchedule = pgTable("pdtp_activity_schedule", {
@@ -906,6 +954,7 @@ export const pdtpProgramsRelations = relations(pdtpPrograms, ({ many, one }) => 
   documentHistory: many(pdtpDocumentHistory),
   roleLegendEntries: many(pdtpRoleLegendEntries),
   worksites: many(pdtpProgramWorksites),
+  revisionDiffDecisions: many(pdtpRevisionDiffDecisions),
 }))
 
 export const pdtpProgramWorksitesRelations = relations(pdtpProgramWorksites, ({ one }) => ({
@@ -968,6 +1017,18 @@ export const pdtpActivitiesRelations = relations(pdtpActivities, ({ one, many })
   sheetMemberships: many(pdtpSheetActivities),
   checklists: many(pdtpActivityChecklists),
   worksiteExclusions: many(pdtpActivityWorksiteExclusions),
+  executorAssignments: many(pdtpActivityExecutorAssignments),
+}))
+
+export const pdtpActivityExecutorAssignmentsRelations = relations(pdtpActivityExecutorAssignments, ({ one }) => ({
+  activity: one(pdtpActivities, { fields: [pdtpActivityExecutorAssignments.activityId], references: [pdtpActivities.id] }),
+  role: one(roles, { fields: [pdtpActivityExecutorAssignments.roleId], references: [roles.id] }),
+}))
+
+export const pdtpRevisionDiffDecisionsRelations = relations(pdtpRevisionDiffDecisions, ({ one }) => ({
+  program: one(pdtpPrograms, { fields: [pdtpRevisionDiffDecisions.programId], references: [pdtpPrograms.id] }),
+  baseTemplateVersion: one(pdtpProgramTemplateVersions, { fields: [pdtpRevisionDiffDecisions.baseTemplateVersionId], references: [pdtpProgramTemplateVersions.id] }),
+  decidedByUser: one(users, { fields: [pdtpRevisionDiffDecisions.decidedByUserId], references: [users.id] }),
 }))
 
 export const pdtpActivityScheduleRelations = relations(pdtpActivitySchedule, ({ one }) => ({
@@ -1047,6 +1108,10 @@ export const pdtpExecutionChecklistResponsesRelations = relations(pdtpExecutionC
 /* ── Types ───────────────────────────────────────────────────────────────── */
 export type PdtpProgram = typeof pdtpPrograms.$inferSelect
 export type NewPdtpProgram = typeof pdtpPrograms.$inferInsert
+export type PdtpActivityExecutorAssignment = typeof pdtpActivityExecutorAssignments.$inferSelect
+export type NewPdtpActivityExecutorAssignment = typeof pdtpActivityExecutorAssignments.$inferInsert
+export type PdtpRevisionDiffDecision = typeof pdtpRevisionDiffDecisions.$inferSelect
+export type NewPdtpRevisionDiffDecision = typeof pdtpRevisionDiffDecisions.$inferInsert
 export type PdtpProgramTemplate = typeof pdtpProgramTemplates.$inferSelect
 export type NewPdtpProgramTemplate = typeof pdtpProgramTemplates.$inferInsert
 export type PdtpProgramTemplateVersion = typeof pdtpProgramTemplateVersions.$inferSelect

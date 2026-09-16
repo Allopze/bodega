@@ -64,9 +64,9 @@ const PROGRAM_ID = "pdtp-fulfill-v1"
 const ACT_N = 42
 const ACT_ID = `${PROGRAM_ID}-a-042`
 
-async function seedProgram(status: "draft" | "active") {
+async function seedProgram(status: "draft" | "active", version = 1) {
   await inMemoryDb.insert(schema.pdtpPrograms).values({
-    id: PROGRAM_ID, version: 1, year: PROGRAM_YEAR, title: `PDTP ${PROGRAM_YEAR} fulfillment`,
+    id: PROGRAM_ID, version, year: PROGRAM_YEAR, title: `PDTP ${PROGRAM_YEAR} fulfillment`,
     status, elaboratedByName: "Prevencionista", elaboratedByTitle: "Experto en Prevención",
     creationMode: "blank", complianceTarget: 0.9, pesoEjecucion: 0.5, pesoVerificacion: 0.3, pesoCierre: 0.2,
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
@@ -76,6 +76,7 @@ async function seedProgram(status: "draft" | "active") {
 beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
   await inMemoryDb.delete(schema.pdtpExecutions)
+  await inMemoryDb.delete(schema.pdtpActivityExecutorAssignments)
   await inMemoryDb.delete(schema.pdtpActivityWorksiteParams)
   await inMemoryDb.delete(schema.pdtpActivityWorksiteExclusions)
   await inMemoryDb.delete(schema.pdtpProgramWorksites)
@@ -122,6 +123,16 @@ async function seedActivity(overrides: Partial<typeof schema.pdtpActivities.$inf
     mechanism: "constancia", evidenceRequirement: "Registro verificable",
     sourceSheetRow: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     ...overrides,
+  })
+}
+
+async function seedExecutor(roleId = "role-prf") {
+  await inMemoryDb.insert(schema.pdtpActivityExecutorAssignments).values({
+    id: `executor-${roleId}`,
+    activityId: ACT_ID,
+    roleId,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   })
 }
 
@@ -518,14 +529,11 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
       approvedByUserId: USER_ID, approvedAt: now,
     })
 
-    // El destino de la N°24 (Inspecciones) es otra pregunta —`destination_review`,
-    // no bloqueante, y ya cubierta por el test de arriba con el mismo n=24—; lo
-    // que este test verifica es específicamente que aprobar la plantilla apague
-    // el `instrument_required`/`config_required`, no que la actividad quede sin
-    // ningún issue.
+    // En una v1 histórica no se inventan ejecutores. Este test verifica que
+    // aprobar la plantilla apague específicamente `instrument_required`/
+    // `config_required`; v+1 cubre la asignación explícita abajo.
     const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
-    const blockingIssues = issues.filter((issue) => issue.n === 24 && issue.status !== "destination_review")
-    expect(blockingIssues).toEqual([])
+    expect(issues.filter((issue) => issue.n === 24)).toEqual([])
   })
 
   it("la N°84 exige un plan en TODAS las faenas del programa, no en cualquiera", async () => {
@@ -555,9 +563,8 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
       status: "draft", version: 1, pdtpActivityNumbers: [84],
       createdByUserId: USER_ID, createdAt: now, updatedAt: now,
     })
-    // Ya no hay problema de configuración. Queda un `destination_review`, que
-    // es otra cosa y no bloquea: el responsable del fixture no tiene el permiso
-    // de simulacros.
+    // Ya no hay problema de configuración. La v1 histórica conserva sus
+    // responsables sin fabricar ejecutores para la actividad.
     expect((await assertPdtpFulfillmentCoverage(PROGRAM_ID)).filter((i) => i.status === "config_required")).toEqual([])
   })
 
@@ -615,14 +622,11 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
    * y no aplica al acto que la acredita: la N°52 cierra con el acta de
    * trabajador nuevo, que exige `sst:close`, y su responsable no lo tiene. Es
    * lo que la compuerta dejaba pasar sin decir nada. */
-  it("una compuesta cuyo acto acreditador no tiene dueño sale a revisión", async () => {
+  it("una compuesta histórica no recibe ejecutores inventados", async () => {
     await seedProgram("draft")
     await seedActivity({ mechanism: "compuesta", n: 52 })
     const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
-    expect(issues).toEqual([
-      expect.objectContaining({ n: 52, status: "destination_review" }),
-    ])
-    expect(issues[0]!.reason).toMatch(/sst:close/)
+    expect(issues).toEqual([])
   })
 
   it("la N°43 la declara el tipo de documento al publicar", async () => {
@@ -659,10 +663,7 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
     expect((await assertPdtpFulfillmentCoverage(PROGRAM_ID)).filter((i) => i.status === "config_required")).toEqual([])
   })
 
-  it("un enganche cuyo responsable no tiene el permiso del destino se reporta, no bloquea", async () => {
-    // El mapa de destinos es nuevo y buena parte de lo que encuentra es
-    // segregación de deberes, no grants faltantes. Promoverlo a bloqueante
-    // antes de que alguien revise la lista sería repetir el episodio de la N°84.
+  it("un enganche histórico no convierte al responsable en ejecutor", async () => {
     await seedProgram("draft")
     // La N°24 se cumple en Inspecciones y exige `inspections:execute`; el rol
     // del fixture sólo tiene el permiso de constancias.
@@ -677,9 +678,34 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
       pdtpActivityNumbers: [24],
     })
 
-    const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
-    expect(issues).toEqual([expect.objectContaining({ n: 24, status: "destination_review" })])
-    expect(issues[0]!.reason).toContain("inspecciones")
+    expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([])
+  })
+
+  it("una revisión v+1 exige un ejecutor antes de enviarse a revisión", async () => {
+    await seedProgram("draft", 2)
+    await seedActivity({ mechanism: "constancia" })
+    expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([
+      expect.objectContaining({ n: ACT_N, status: "executor_required", requiredPermission: "prevention:constancias:execute" }),
+    ])
+  })
+
+  it("una revisión v+1 distingue ejecutor sin permiso de uno válido", async () => {
+    await seedProgram("draft", 2)
+    await seedActivity({ mechanism: "enganche", n: 24 })
+    const now = new Date().toISOString()
+    await inMemoryDb.insert(schema.preventionInspectionTemplates).values({
+      id: "tpl-v2-24", code: "inspeccion-v2", versionLabel: "01", status: "approved",
+      name: "Inspección v2", kind: "inspection", executorOfRecord: "platform_user",
+      definitionSnapshot: {}, contentHash: "v".repeat(64), pdtpActivityNumbers: [24],
+      authorUserId: USER_ID, approvedByUserId: USER_ID, approvedAt: now, createdAt: now, updatedAt: now,
+    })
+    await seedExecutor()
+    expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([
+      expect.objectContaining({ n: 24, status: "executor_permission_gap", requiredPermission: "prevention:inspections:execute" }),
+    ])
+    await inMemoryDb.insert(schema.permissions).values({ id: "perm-inspections-execute", name: "prevention:inspections:execute", module: "prevention" })
+    await inMemoryDb.insert(schema.rolePermissions).values({ roleId: "role-prf", permissionId: "perm-inspections-execute" })
+    expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([])
   })
 
   it("una actividad de enganche segregada a propósito no se reporta", async () => {
@@ -717,23 +743,25 @@ describe("assertPdtpFulfillmentCoverage — compuerta 81/81", () => {
 })
 
 describe("compuerta 81/81 — permiso en el módulo destino (2026-09-03)", () => {
-  it("una constancia cuyo responsable no puede entrar a Constancias es permission_gap", async () => {
-    await seedProgram("draft")
+  it("una constancia v+1 cuyo ejecutor no puede entrar a Constancias es executor_permission_gap", async () => {
+    await seedProgram("draft", 2)
     await seedActivity({ mechanism: "constancia", evidenceRequirement: "Registro verificable" })
-    // Se le quita al rol el permiso del módulo donde la constancia se marca.
+    await seedExecutor()
+    // Se le quita al ejecutor el permiso del módulo donde la constancia se marca.
     await inMemoryDb.delete(schema.rolePermissions).where(eq(schema.rolePermissions.permissionId, "perm-constancias-execute"))
 
     const issues = await assertPdtpFulfillmentCoverage(PROGRAM_ID)
     expect(issues).toEqual([expect.objectContaining({
       n: ACT_N,
-      status: "permission_gap",
-      reason: expect.stringContaining("prevention:constancias:execute"),
+      status: "executor_permission_gap",
+      requiredPermission: "prevention:constancias:execute",
     })])
   })
 
-  it("con el permiso cargado, la misma actividad pasa la compuerta", async () => {
-    await seedProgram("draft")
+  it("con ejecutor y permiso cargados, la misma actividad v+1 pasa la compuerta", async () => {
+    await seedProgram("draft", 2)
     await seedActivity({ mechanism: "constancia", evidenceRequirement: "Registro verificable" })
+    await seedExecutor()
     expect(await assertPdtpFulfillmentCoverage(PROGRAM_ID)).toEqual([])
   })
 

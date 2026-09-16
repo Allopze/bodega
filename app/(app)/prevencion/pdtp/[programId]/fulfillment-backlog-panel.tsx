@@ -1,5 +1,6 @@
 import { MetaBadge } from "@/components/states/state-badge"
 import { countPdtpFulfillmentBacklog } from "@/lib/services/pdtp/backlog"
+import { CreatePdtpRevisionButton } from "./create-pdtp-revision-button"
 
 /**
  * Lo que el libro de cumplimiento (`pdtp_fulfillment_events`) tiene sin
@@ -13,7 +14,7 @@ import { countPdtpFulfillmentBacklog } from "@/lib/services/pdtp/backlog"
  * actividad está excluida de la faena o su número no existe—. Ésos el cron no
  * los reintenta: si nadie los ve, el trabajo hecho simplemente desaparece.
  */
-export async function FulfillmentBacklogPanel({ programId }: { programId: string }) {
+export async function FulfillmentBacklogPanel({ programId, canManageProgram, programStatus }: { programId: string; canManageProgram: boolean; programStatus: string }) {
   const backlog = await countPdtpFulfillmentBacklog(programId)
   // PDTP-002: los rechazados también abren el panel. Antes sólo lo hacían
   // `pending` y `error`, así que un hecho que la plataforma decidió no
@@ -57,6 +58,12 @@ export async function FulfillmentBacklogPanel({ programId }: { programId: string
           </div>
         )}
       </div>
+
+      {backlog.digestDrift && programStatus === "active" && canManageProgram && (
+        <div className="mt-3">
+          <CreatePdtpRevisionButton sourceProgramId={programId} />
+        </div>
+      )}
 
       {backlog.recentRejected.length > 0 && (
         <ul className="mt-3 space-y-1 text-xs text-[var(--color-text-subtle)]">

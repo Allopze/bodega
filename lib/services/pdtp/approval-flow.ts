@@ -4,7 +4,7 @@ import { pdtpApprovalDecisions, pdtpApprovalSteps, pdtpPrograms } from "@/db/sch
 import { ALL_MODULE_PERMISSIONS } from "@/modules/permissions"
 import { onPdtpProgramLegallyApproved } from "@/lib/services/pdtp-adapters/pdtp-accreditation-connectors"
 import { addPdtpChangeLogEntry, assertPdtpProgramEditableState, isUniqueViolation } from "./helpers"
-import { computePdtpProgramContentDigest } from "./content-digest"
+import { computePdtpProgramContentDigestForStoredVersion } from "./content-digest"
 
 type QueryClient = Tx | typeof db
 
@@ -238,7 +238,7 @@ export async function decidePdtpApprovalStep(args: {
       ))
       if (missingPrevious) throw new Error(`Primero debe aprobarse el paso ${missingPrevious.label}.`)
 
-      const { digest } = await computePdtpProgramContentDigest(args.programId, tx)
+      const { digest } = await computePdtpProgramContentDigestForStoredVersion(args.programId, tx)
       if (digest !== program.contentDigest) {
         throw new Error("El contenido cambió después de enviarse a revisión. Debe abrirse una nueva revisión.")
       }

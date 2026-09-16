@@ -226,7 +226,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
           {focusProgram && (
             <span className="text-xs text-[var(--color-text-muted)]">
               {activeProgram ? "Programa activo" : "Programa en borrador"}:{" "}
-              <strong className="font-semibold text-[var(--color-text)]">{focusProgram.title}</strong>
+              <strong className="font-semibold text-[var(--color-text)]">{focusProgram.title} <span className="font-mono text-xs font-normal text-[var(--color-text-muted)]">v{focusProgram.version}</span></strong>
             </span>
           )}
         </div>
@@ -254,7 +254,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
                   href={`/prevencion/pdtp/${program.id}`}
                   className="flex items-center justify-between rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm transition-colors hover:bg-[var(--color-surface-2)]"
                 >
-                  <span className="font-medium text-[var(--color-text)]">{program.title}</span>
+                  <span className="font-medium text-[var(--color-text)]">{program.title} <span className="font-mono text-xs font-normal text-[var(--color-text-muted)]">v{program.version}</span></span>
                   <span className="text-xs text-[var(--color-text-muted)]">{pdtpProgramStatusLabel(program.status)}</span>
                 </Link>
               </li>
@@ -328,6 +328,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
             monthlyTrend={monthlyTrendData}
             worksiteCompliance={worksiteComplianceData}
             categoryBreakdown={categoryBreakdownData}
+            operationalHref={focusProgram ? activitiesHref(focusProgram.id, year, selectedWorksiteId, "semana", "pending", currentPeriod) : "/prevencion/pdtp/actividades"}
           />
         </div>
       )}

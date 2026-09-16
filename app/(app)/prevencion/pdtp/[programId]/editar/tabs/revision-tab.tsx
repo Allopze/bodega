@@ -6,7 +6,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 import type { pdtpPrograms } from "@/db/schema"
 import type { PdtpChecklistTemplate } from "@/lib/services/prevention-pdtp"
-import type { PdtpBaseComparison } from "@/lib/services/prevention-pdtp"
+import type { PdtpBaseComparison, PdtpRevisionDiff } from "@/lib/services/prevention-pdtp"
+import { RevisionDiffDecisions } from "../revision-diff-decisions"
 
 import type { PdtpActivityRow } from "./types"
 
@@ -19,6 +20,7 @@ export function ReviewTab({
   memberWorksiteIds,
   activityWorksiteExclusions,
   baseComparison,
+  revisionDiffDecisions,
 }: {
   program: typeof pdtpPrograms.$inferSelect
   activities: PdtpActivityRow[]
@@ -27,7 +29,8 @@ export function ReviewTab({
   visibleWorksites: Array<{ id: string; name: string; code: string }>
   memberWorksiteIds: string[]
   activityWorksiteExclusions: Array<{ activityId: string; worksiteId: string; reason: string }>
-  baseComparison: PdtpBaseComparison | null
+  baseComparison: (PdtpBaseComparison | PdtpRevisionDiff) | null
+  revisionDiffDecisions: Array<{ activityIdentity: string; decision: "applied" | "kept"; decidedAt: string }>
 }) {
   const activeActivities = activities.filter((activity) => activity.status === "active")
   const missingSchedule = activeActivities.filter((activity) => (activity.scheduleMode ?? "scheduled") === "scheduled" && !activity.recurrenceRule && activity.sourceSheetRow === 0).length
@@ -70,12 +73,20 @@ export function ReviewTab({
         memberWorksiteIds={memberWorksiteIds}
         exclusions={activityWorksiteExclusions}
       />
-      {baseComparison && <BaseComparisonPanel comparison={baseComparison} />}
+      {baseComparison && <BaseComparisonPanel comparison={baseComparison} programId={program.id} decisions={revisionDiffDecisions} />}
     </section>
   )
 }
 
-function BaseComparisonPanel({ comparison }: { comparison: PdtpBaseComparison }) {
+function BaseComparisonPanel({
+  comparison,
+  programId,
+  decisions,
+}: {
+  comparison: PdtpBaseComparison | PdtpRevisionDiff
+  programId: string
+  decisions: Array<{ activityIdentity: string; decision: "applied" | "kept"; decidedAt: string }>
+}) {
   const metrics = [
     ["Agregadas", comparison.addedActivities],
     ["Retiradas", comparison.retiredActivities],
@@ -88,7 +99,7 @@ function BaseComparisonPanel({ comparison }: { comparison: PdtpBaseComparison })
     <div className="border-t border-[var(--color-border)] px-4 py-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h4 className="text-h3 text-[var(--color-text)]">Cambios frente a la Base 2026</h4>
+          <h4 className="text-h3 text-[var(--color-text)]">Cambios frente a la Base vigente</h4>
           <p className="mt-1 text-xs text-[var(--color-text-muted)]">
             Revisión {comparison.sourceRevision} · digest {comparison.sourceDigest.slice(0, 12)}…
           </p>
@@ -105,6 +116,9 @@ function BaseComparisonPanel({ comparison }: { comparison: PdtpBaseComparison })
           </div>
         ))}
       </dl>
+      {"items" in comparison && comparison.items.length > 0 && (
+        <RevisionDiffDecisions programId={programId} items={comparison.items} decisions={decisions} />
+      )}
     </div>
   )
 }

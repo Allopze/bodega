@@ -33,8 +33,12 @@ export {
 
 export {
   createPdtpProgramAction,
+  createPdtpRevisionAction,
+  decidePdtpRevisionDiffAction,
   updatePdtpProgramAction,
   deletePdtpProgramAction,
   createPdtpSheetAction,
   deletePdtpSheetAction,
 } from "./actions/program-crud"
+
+export { setPdtpActivityExecutorAssignmentsAction } from "./actions/executors"

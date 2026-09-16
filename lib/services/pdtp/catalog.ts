@@ -49,7 +49,7 @@ export async function loadPdtpCatalog(input: LoadPdtpCatalogInput, database: DB 
     elaboratedByUserId: input.userId, elaboratedByName,
     elaboratedByTitle, createdAt: now, updatedAt: now,
   }).onConflictDoUpdate({
-    target: pdtpPrograms.year,
+    target: [pdtpPrograms.year, pdtpPrograms.version],
     set: {
       title: input.title,
       creationMode: input.year === 2026 ? "base_2026" : "xlsx_import",

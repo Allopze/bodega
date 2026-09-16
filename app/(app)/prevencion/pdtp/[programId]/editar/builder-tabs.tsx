@@ -12,7 +12,7 @@ import type {
   pdtpSheets,
 } from "@/db/schema"
 import type { PdtpChecklistTemplate } from "@/lib/services/prevention-pdtp"
-import type { PdtpBaseComparison } from "@/lib/services/prevention-pdtp"
+import type { PdtpBaseComparison, PdtpRevisionDiff } from "@/lib/services/prevention-pdtp"
 import { deriveScheduleHorizon } from "@/lib/services/pdtp/recurrence"
 import { ChecklistTab } from "./checklist-tab"
 import { GuidedActivityForm } from "./guided-activity-form"
@@ -24,6 +24,7 @@ import { MetadataTab, WorksiteScopePanel } from "./tabs/metadata-tab"
 import { PlanificacionTab, ScheduleOverview } from "./tabs/planificacion-tab"
 import { ReviewTab } from "./tabs/revision-tab"
 import { SheetsTab } from "./tabs/sheets-tab"
+import { ExecutorAssignmentsPanel } from "./executor-assignments-panel"
 
 export { ActividadesTab } from "./tabs/actividades-tab"
 export { MetadataTab, WorksiteScopePanel } from "./tabs/metadata-tab"
@@ -63,7 +64,19 @@ type PdtpBuilderTabsProps = {
   activityWorksiteExclusions: Array<{ activityId: string; worksiteId: string; reason: string }>
   activityWorksiteParams: WorksiteParam[]
   activityScheduleOverrides: ScheduleOverride[]
-  baseComparison: PdtpBaseComparison | null
+  baseComparison: (PdtpBaseComparison | PdtpRevisionDiff) | null
+  coverageIssues: Array<{
+    n: number
+    status: string
+    reason: string
+    destinationModule?: string
+    requiredPermission?: string
+    suggestedExecutorRoleIds?: string[]
+  }>
+  executorAssignments: Array<{ activityId: string; roleId: string; roleName: string; roleLabel: string }>
+  executorRoleOptions: Array<{ id: string; name: string; label: string; permissions: string[] }>
+  revisionDiffDecisions: Array<{ activityIdentity: string; decision: "applied" | "kept"; decidedAt: string }>
+  initialStep?: string
 }
 
 const STEPS = [
@@ -94,19 +107,26 @@ export function PdtpBuilderTabs({
   activityWorksiteParams,
   activityScheduleOverrides,
   baseComparison,
+  coverageIssues,
+  executorAssignments,
+  executorRoleOptions,
+  revisionDiffDecisions,
+  initialStep,
 }: PdtpBuilderTabsProps) {
   const storageKey = `pdtp-builder-step:${program.id}`
-  const [activeStep, setActiveStep] = React.useState<Step>("actividades")
+  const requestedStep: Step | null = initialStep && isStep(initialStep) ? initialStep : null
+  const [activeStep, setActiveStep] = React.useState<Step>(() => requestedStep ?? "actividades")
 
-  // La pestaña guardada sólo puede leerse en el cliente, así que el servidor
-  // siempre pinta "actividades" y el efecto corrige después. Ese salto no es
-  // cosmético: el panel inicial se desmonta con lo que el usuario tuviera
-  // abierto, y un clic hecho entre ambos renders se pierde junto con su
-  // diálogo. `restored` mantiene los paneles fuera hasta que la pestaña real
-  // está resuelta, de modo que nunca se interactúa con un panel provisional.
-  const [restored, setRestored] = React.useState(false)
+  // La pestaña guardada sólo puede leerse en el cliente. Cuando no hay una
+  // sección solicitada por URL, `restored` mantiene los paneles fuera hasta
+  // que la pestaña real está resuelta, de modo que nunca se interactúa con un
+  // panel provisional durante la hidratación. Una sección solicitada se toma
+  // desde el primer render y la página remonta este editor si cambia.
+  const [restored, setRestored] = React.useState(() => Boolean(requestedStep))
+  const restoreStorageKey = requestedStep ? null : storageKey
 
   React.useEffect(() => {
+    if (!restoreStorageKey) return
     try {
       const saved = window.sessionStorage.getItem(storageKey)
       if (isStep(saved)) setActiveStep(saved)
@@ -115,7 +135,7 @@ export function PdtpBuilderTabs({
     } finally {
       setRestored(true)
     }
-  }, [storageKey])
+  }, [restoreStorageKey, storageKey])
 
   function changeStep(value: string) {
     const next: Step = isStep(value) ? value : "actividades"
@@ -242,6 +262,13 @@ export function PdtpBuilderTabs({
       </TabsContent>
 
       <TabsContent value="revision" className="space-y-5">
+        <ExecutorAssignmentsPanel
+          programId={program.id}
+          activities={activities}
+          roleOptions={executorRoleOptions}
+          assignments={executorAssignments}
+          coverageIssues={coverageIssues}
+        />
         <ReviewTab
           program={program}
           activities={activities}
@@ -251,6 +278,7 @@ export function PdtpBuilderTabs({
           memberWorksiteIds={memberWorksiteIds}
           activityWorksiteExclusions={activityWorksiteExclusions}
           baseComparison={baseComparison}
+          revisionDiffDecisions={revisionDiffDecisions}
         />
 
         <details className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">

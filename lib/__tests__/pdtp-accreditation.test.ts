@@ -449,12 +449,13 @@ describe("accreditPdtpFromEvent", () => {
       addedAt: new Date().toISOString(),
     })
 
+    // Sin `programId`: el campo es ignorado por la resolución (ver JSDoc de
+    // `AccreditationInput.programId`), así que no aporta nada pasarlo acá.
     await expect(accreditPdtpFromEvent({
       sourceType: "inspeccion",
       sourceId: "run-outside-membership",
       worksiteId: WS_ID,
       activityNumbers: [ACT_N],
-      programId: PROGRAM_ID,
       occurredAt: `${PROGRAM_YEAR}-04-15T10:00:00.000Z`,
       autoApproveByUserId: USER_ID,
     })).rejects.toThrow(/no pertenece al programa/)

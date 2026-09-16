@@ -4,8 +4,8 @@
  * El panel agrupa la compuerta de cobertura en dos niveles: lo que frena el
  * ciclo de vida y lo que no. Lo que se fija acá es que el texto diga la verdad
  * para las CUATRO clasificaciones que no frenan, no sólo para las dos que
- * hablan de un instrumento: `decision_required` y `destination_review` caen en
- * el mismo bucket y no tienen curso, plantilla, plan ni mapa que crear.
+ * hablan de un instrumento: `decision_required` cae en el mismo bucket y no
+ * tiene curso, plantilla, plan ni mapa que crear.
  */
 
 import { render, screen } from "@testing-library/react"
@@ -16,6 +16,7 @@ import type { PdtpCoverageReport } from "@/lib/services/prevention-pdtp"
 function report(groups: PdtpCoverageReport["groups"], total = 3, ready = 0): PdtpCoverageReport {
   return { total, ready, groups }
 }
+const panelProps = { programId: "pdtp-test", programStatus: "draft", canManageProgram: true, canManageRoles: false }
 
 const sinPadron: PdtpCoverageReport["groups"][number] = {
   status: "decision_required",
@@ -40,37 +41,37 @@ const sinMecanismo: PdtpCoverageReport["groups"][number] = {
 
 describe("CoverageReportPanel", () => {
   it("no describe como instrumento faltante a un grupo que no lo es", () => {
-    render(<CoverageReportPanel report={report([sinPadron])} />)
+    render(<CoverageReportPanel report={report([sinPadron])} {...panelProps} />)
 
     // El resumen del bucket no bloqueante tiene que valer para las cuatro
     // clasificaciones que contiene, no sólo para las dos de instrumento.
     expect(screen.queryByText(/curso, plantilla, plan o mapa/i)).toBeNull()
-    expect(screen.getByText(/no acreditan cumplimiento/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/no acreditan cumplimiento/i).length).toBeGreaterThan(0)
   })
 
   it("dice que el programa se firma y se activa igual con lo que no frena", () => {
-    render(<CoverageReportPanel report={report([sinInstrumento])} />)
+    render(<CoverageReportPanel report={report([sinInstrumento])} {...panelProps} />)
 
-    expect(screen.getByText(/se firma y se activa igual/i)).toBeInTheDocument()
+    expect(screen.getByText(/no frenan el ciclo de vida/i)).toBeInTheDocument()
     expect(screen.getByText("N°63")).toBeInTheDocument()
   })
 
   it("separa lo que frena el ciclo de vida de lo que no", () => {
-    render(<CoverageReportPanel report={report([sinMecanismo, sinInstrumento])} />)
+    render(<CoverageReportPanel report={report([sinMecanismo, sinInstrumento])} {...panelProps} />)
 
     expect(screen.getByText(/frenan el envío a revisión y la activación/i)).toBeInTheDocument()
     expect(screen.getAllByText(/no frena; no acredita hasta resolverse/i)).toHaveLength(1)
   })
 
-  it("no afirma que algo frena cuando no hay ningún grupo bloqueante", () => {
-    render(<CoverageReportPanel report={report([sinInstrumento])} />)
+  it("no afirma que algo frena y reconoce que lo pendiente aún no acredita", () => {
+    render(<CoverageReportPanel report={report([sinInstrumento])} {...panelProps} />)
 
     expect(screen.queryByText(/frenan el envío a revisión y la activación/i)).toBeNull()
-    expect(screen.getByText(/declaran dónde se registra su cumplimiento/i)).toBeInTheDocument()
+    expect(screen.getByText(/no hay bloqueos de destino o ejecutor/i)).toBeInTheDocument()
   })
 
   it("no se dibuja cuando el programa no tiene actividades activas", () => {
-    const { container } = render(<CoverageReportPanel report={report([], 0, 0)} />)
+    const { container } = render(<CoverageReportPanel report={report([], 0, 0)} {...panelProps} />)
     expect(container).toBeEmptyDOMElement()
   })
 })

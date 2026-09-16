@@ -32,6 +32,7 @@ import { and, eq, inArray } from "drizzle-orm"
 import { db, type DB, type Tx } from "@/db"
 import {
   pdtpActivities,
+  pdtpActivityExecutorAssignments,
   pdtpCatalogActivities,
   pdtpActivityWorksiteExclusions,
   pdtpActivityWorksiteParams,
@@ -43,6 +44,7 @@ import {
   preventionEmergencyPlans,
   preventionInspectionTemplates,
   pdtpProgramWorksites,
+  pdtpPrograms,
   preventionTrainingCourses,
   rolePermissions,
   roles,
@@ -634,17 +636,11 @@ export type PdtpFulfillmentCoverageStatus =
   | "config_required"
   | "code_gap"
   | "permission_gap"
+  /** El destino requiere acreditar un hecho y todavía no se eligió quién lo hace. */
+  | "executor_required"
+  /** Hay ejecutores declarados, pero ninguno tiene el permiso del destino. */
+  | "executor_permission_gap"
   | "decision_required"
-  /**
-   * El destino de una actividad de enganche declara un permiso que ninguno de
-   * sus responsables tiene. **No bloquea**, y no es un descuido: buena parte de
-   * estos casos son segregación de deberes, no errores de RBAC —quien redacta
-   * el plan de emergencia no es quien lo firma—. Se reporta para que una
-   * persona revise la lista y decida cuáles son grants faltantes y cuáles son
-   * la norma funcionando. Promoverlo a bloqueante antes de esa revisión es
-   * repetir el episodio de la N°84.
-   */
-  | "destination_review"
   /**
    * El número está declarado —hay plantilla, curso o plan con ese `n`— pero el
    * instrumento no está vigente: la plantilla sigue en `draft`, el curso no
@@ -670,6 +666,11 @@ export type PdtpFulfillmentCoverageIssue = {
   activity: string
   status: PdtpFulfillmentCoverageStatus
   reason: string
+  /** Información operativa para una CTA legible; nunca concede permisos. */
+  destinationModule?: string
+  requiredPermission?: string
+  executorRoleLabels?: string[]
+  suggestedExecutorRoleIds?: string[]
 }
 
 /**
@@ -709,16 +710,16 @@ const STRUCTURALLY_WIRED_ACTIVITY_NUMBERS = new Set([
  * es la semilla por defecto, y lo que decide si alguien entra son los grants
  * que estén realmente cargados.
  */
-async function permissionsByRoleName(client: QueryClient): Promise<Map<string, Set<string>>> {
-  const rows = await client.select({ role: roles.name, permission: permissions.name })
+async function permissionsByRoleId(client: QueryClient): Promise<Map<string, Set<string>>> {
+  const rows = await client.select({ roleId: roles.id, permission: permissions.name })
     .from(rolePermissions)
     .innerJoin(roles, eq(rolePermissions.roleId, roles.id))
     .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
   const byRole = new Map<string, Set<string>>()
   for (const row of rows) {
-    const set = byRole.get(row.role) ?? new Set<string>()
+    const set = byRole.get(row.roleId) ?? new Set<string>()
     set.add(row.permission)
-    byRole.set(row.role, set)
+    byRole.set(row.roleId, set)
   }
   return byRole
 }
@@ -977,6 +978,16 @@ function instrumentIssueFor(
  * lanza: el llamador decide si un problema bloquea o sólo se muestra.
  */
 export async function assertPdtpFulfillmentCoverage(programId: string, client: QueryClient = db): Promise<PdtpFulfillmentCoverageIssue[]> {
+  const [program] = await client.select({ version: pdtpPrograms.version, status: pdtpPrograms.status })
+    .from(pdtpPrograms)
+    .where(eq(pdtpPrograms.id, programId))
+    .limit(1)
+  if (!program) throw new Error("Programa PDTP no encontrado.")
+  // Los programas históricos no reciben ejecutores inventados por migración.
+  // Una v1 ya activa muestra el riesgo para que se abra una revisión, pero la
+  // compuerta sólo lo exige en v+1, que es donde se puede configurar sin
+  // mutar evidencia ni la huella firmada del programa en curso.
+  const requiresExecutorConfiguration = program.version > 1 || program.status === "active"
   const activities = await client.select().from(pdtpActivities)
     .where(and(eq(pdtpActivities.programId, programId), eq(pdtpActivities.status, "active")))
   if (activities.length === 0) return []
@@ -989,6 +1000,7 @@ export async function assertPdtpFulfillmentCoverage(programId: string, client: Q
     worksiteIds,
     worksiteRows,
     responsibleRows,
+    executorRows,
     permissionsByRole,
     excludedByActivity,
     manualSubjectRows,
@@ -999,7 +1011,14 @@ export async function assertPdtpFulfillmentCoverage(programId: string, client: Q
     programWorksiteIds(client, programId),
     client.select({ id: worksites.id, name: worksites.name }).from(worksites),
     client.select().from(pdtpResponsibleCatalog),
-    permissionsByRoleName(client),
+    client.select({
+      activityId: pdtpActivityExecutorAssignments.activityId,
+      roleId: roles.id,
+      roleLabel: roles.label,
+    }).from(pdtpActivityExecutorAssignments)
+      .innerJoin(roles, eq(roles.id, pdtpActivityExecutorAssignments.roleId))
+      .where(inArray(pdtpActivityExecutorAssignments.activityId, activityIds)),
+    permissionsByRoleId(client),
     excludedWorksitesByActivity(client, activityIds),
     client.select({
       activityId: pdtpActivityWorksiteParams.activityId,
@@ -1009,6 +1028,12 @@ export async function assertPdtpFulfillmentCoverage(programId: string, client: Q
   ])
   const worksiteNameById = new Map(worksiteRows.map((row) => [row.id, row.name]))
   const roleBySlug = new Map(responsibleRows.map((row) => [row.slug, row.roleName ?? row.operatedByRoleName]))
+  const executorRolesByActivity = new Map<string, Array<{ id: string; label: string }>>()
+  for (const row of executorRows) {
+    const assigned = executorRolesByActivity.get(row.activityId) ?? []
+    assigned.push({ id: row.roleId, label: row.roleLabel })
+    executorRolesByActivity.set(row.activityId, assigned)
+  }
   const manualSubjectWorksitesByActivity = new Map<string, Set<string>>()
   for (const row of manualSubjectRows) {
     if ((row.expectedSubjectCount ?? 0) <= 0) continue
@@ -1031,19 +1056,6 @@ export async function assertPdtpFulfillmentCoverage(programId: string, client: Q
 
     if (activity.mechanism === "sin_definir") {
       issues.push({ n: activity.n, activity: activity.activity, status: "code_gap", reason: "Sin mecanismo de acreditación clasificado." })
-      continue
-    }
-
-    // Que el responsable exista como rol no basta: ese rol tiene que poder
-    // entrar a donde el trabajo se registra. Antes la compuerta se quedaba en
-    // el mapeo, así que una actividad pasaba con un responsable que abría la
-    // tarjeta en /pendientes y se encontraba con un 403.
-    const requiredPermission = destinationPermissionFor(activity.mechanism)
-    if (requiredPermission && !roles.some((role) => permissionsByRole.get(role)?.has(requiredPermission))) {
-      issues.push({
-        n: activity.n, activity: activity.activity, status: "permission_gap",
-        reason: `Ninguno de sus responsables (${roles.join(", ")}) tiene ${requiredPermission}, el permiso del módulo donde se registra.`,
-      })
       continue
     }
 
@@ -1101,26 +1113,46 @@ export async function assertPdtpFulfillmentCoverage(programId: string, client: Q
       continue
     }
 
-    // Destino conocido: se **reporta**, no se bloquea. El mapa es nuevo y buena
-    // parte de lo que encuentra es segregación de deberes —quien redacta el plan
-    // de emergencia no es quien lo firma—, no grants que falten. Va después de
-    // la verificación de cableado: una actividad sin destino declarado ya salió
-    // como `config_required` y repetirlo sería ruido.
-    //
-    // `compuesta` entra acá igual que `enganche`, y es la tercera vez que hay
-    // que decir lo mismo: la exención de `compuesta` se razonó una sola vez, para
-    // el chequeo de PERMISO de la planilla —nadie la ejecuta, se cumple cuando
-    // sus componentes cierran— y después se arrastró al chequeo de cableado (ya
-    // corregido) y a éste. Acá tampoco aplica: la N°15, la N°18, la N°23 y la
-    // N°52 se acreditan al cerrar el acta de trabajador nuevo, que exige
-    // `sst:close`, y ninguno de sus responsables lo tiene. Que nadie la "ejecute"
-    // no significa que su acto acreditador no tenga dueño.
-    if (activity.mechanism === "enganche" || activity.mechanism === "compuesta") {
-      const destination = engancheDestinationPermissionFor(activity.n)
-      if (destination && !roles.some((role) => permissionsByRole.get(role)?.has(destination.permission))) {
+    // Planificar y acreditar son responsabilidades distintas. Se contrasta el
+    // permiso del módulo solamente contra los ejecutores asignados; los flujos
+    // que el contrato declara segregados devuelven `null` y se conservan como
+    // válidos sin pedir un grant incompatible con su control de aprobación.
+    const directPermission = destinationPermissionFor(activity.mechanism)
+    const enganchePermission = activity.mechanism === "enganche" || activity.mechanism === "compuesta"
+      ? engancheDestinationPermissionFor(activity.n)
+      : null
+    const destination = enganchePermission
+      ?? (directPermission ? {
+        permission: directPermission,
+        module: activity.mechanism === "constancia" ? "Constancias" : "Programa preventivo",
+      } : null)
+    if (destination && requiresExecutorConfiguration) {
+      const executorRoles = executorRolesByActivity.get(activity.id) ?? []
+      const suggestedExecutorRoleIds = [...permissionsByRole.entries()]
+        .filter(([, grants]) => grants.has(destination.permission))
+        .map(([roleId]) => roleId)
+      if (executorRoles.length === 0) {
         issues.push({
-          n: activity.n, activity: activity.activity, status: "destination_review",
-          reason: `Se cumple en ${destination.module} y ninguno de sus responsables (${roles.join(", ")}) tiene ${destination.permission}.`,
+          n: activity.n,
+          activity: activity.activity,
+          status: "executor_required",
+          reason: `Se acredita en ${destination.module}; falta asignar al menos un rol ejecutor para registrar ese hecho.`,
+          destinationModule: destination.module,
+          requiredPermission: destination.permission,
+          suggestedExecutorRoleIds,
+        })
+        continue
+      }
+      if (!executorRoles.some((role) => permissionsByRole.get(role.id)?.has(destination.permission))) {
+        issues.push({
+          n: activity.n,
+          activity: activity.activity,
+          status: "executor_permission_gap",
+          reason: `Se acredita en ${destination.module}, pero ninguno de los ejecutores asignados puede registrar el hecho.`,
+          destinationModule: destination.module,
+          requiredPermission: destination.permission,
+          executorRoleLabels: executorRoles.map((role) => role.label),
+          suggestedExecutorRoleIds,
         })
         continue
       }

@@ -7,6 +7,8 @@ import { guardPermission } from "@/lib/auth/can"
 import { safeActionMessage } from "@/lib/action-error"
 import {
   createAnnualPdtpProgram,
+  createPdtpRevision,
+  decidePdtpRevisionDiff,
   updatePdtpProgram,
   deletePdtpProgram as deletePdtpProgramService,
   createPdtpSheet,
@@ -61,6 +63,45 @@ export async function createPdtpProgramAction(
   }
   revalidatePath(REVALIDATE)
   redirect(`${REVALIDATE}/${programId}/editar`)
+}
+
+export async function createPdtpRevisionAction(sourceProgramId: string): Promise<ActionState & { programId?: string }> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  if (!sourceProgramId) return { ok: false, message: "Programa de origen no válido." }
+  try {
+    const result = await createPdtpRevision({ sourceProgramId, userId: guard.session.user.id })
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${sourceProgramId}`)
+    revalidatePath(`${REVALIDATE}/${result.programId}`)
+    return { ok: true, programId: result.programId }
+  } catch (error) {
+    return fail(error)
+  }
+}
+
+export async function decidePdtpRevisionDiffAction(input: {
+  programId: string
+  activityIdentity: string
+  decision: "applied" | "kept"
+}): Promise<ActionState> {
+  const guard = await guardPermission("prevention:pdtp:program:manage")
+  if (guard.error) return guard.error
+  if (!input || typeof input !== "object"
+    || typeof input.programId !== "string" || input.programId.trim().length === 0
+    || typeof input.activityIdentity !== "string" || input.activityIdentity.trim().length === 0
+    || (input.decision !== "applied" && input.decision !== "kept")) {
+    return { ok: false, message: "La diferencia seleccionada no es válida." }
+  }
+  try {
+    await decidePdtpRevisionDiff({ ...input, userId: guard.session.user.id })
+    revalidatePath(REVALIDATE)
+    revalidatePath(`${REVALIDATE}/${input.programId}`)
+    revalidatePath(`${REVALIDATE}/${input.programId}/editar`)
+    return { ok: true }
+  } catch (error) {
+    return fail(error)
+  }
 }
 
 export async function updatePdtpProgramAction(

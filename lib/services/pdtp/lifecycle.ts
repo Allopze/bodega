@@ -2,7 +2,7 @@ import { and, eq, isNull, ne } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpProgramWorksites, pdtpPrograms } from "@/db/schema"
 import { addPdtpChangeLogEntry } from "./helpers"
-import { computePdtpProgramContentDigest } from "./content-digest"
+import { computePdtpProgramContentDigest, computePdtpProgramContentDigestForStoredVersion } from "./content-digest"
 import { assertPdtpFulfillmentCoverage, type PdtpFulfillmentCoverageIssue } from "./fulfillment"
 import {
   assertAllRequiredPdtpApprovalStepsApproved,
@@ -19,9 +19,9 @@ import {
  * Sólo están las dos que se arreglan DENTRO del programa: una actividad sin
  * mecanismo de acreditación clasificado (o cuyo destino todavía cae a la
  * planilla genérica) no tiene dónde cumplirse, y una cuyo responsable no mapea
- * a un rol real —o mapea a uno sin permiso en el módulo donde el trabajo se
- * registra— no tiene quién la cumpla. Ninguna se resuelve fuera del PDTP, así
- * que dejarlas pasar sería prometer trabajo imposible.
+ * a un rol real o cuyo destino no tiene un ejecutor acreditador válido no tiene
+ * quién la cumpla. Ninguna se resuelve fuera del PDTP, así que dejarlas pasar
+ * sería prometer trabajo imposible.
  *
  * El resto se informa y no frena nada. `config_required` e `instrument_required`
  * apuntan a instrumentos EXTERNOS —un curso, una plantilla, una campaña, un
@@ -30,7 +30,7 @@ import {
  * el programa inutilizable hasta tener el catálogo completo, cuando lo que
  * corresponde es lo contrario: se activa y se usa, y esas actividades
  * simplemente no acreditan cumplimiento mientras su instrumento no exista o no
- * esté vigente. `decision_required` y `destination_review` nunca frenaron nada.
+ * esté vigente. `decision_required` nunca frena nada.
  */
 const BLOCKING_COVERAGE_LABELS = {
   code_gap: "sin mecanismo de acreditación clasificado",
@@ -39,6 +39,8 @@ const BLOCKING_COVERAGE_LABELS = {
   // donde el trabajo se registra. Decir sólo "no mapea a un rol real" mentía
   // en el segundo caso, que es el más común.
   permission_gap: "sin un responsable que pueda registrar el cumplimiento",
+  executor_required: "sin rol ejecutor para acreditar el hecho",
+  executor_permission_gap: "con ejecutores sin permiso para acreditar el hecho",
 } satisfies Partial<Record<PdtpFulfillmentCoverageIssue["status"], string>>
 
 type BlockingCoverageStatus = keyof typeof BLOCKING_COVERAGE_LABELS
@@ -174,8 +176,9 @@ const COVERAGE_STATUS_LABELS: Record<PdtpFulfillmentCoverageIssue["status"], str
   code_gap: "Sin mecanismo de acreditación clasificado",
   config_required: "Sin la configuración que su enganche o constancia necesita",
   permission_gap: "Sin un responsable que pueda registrar el cumplimiento",
+  executor_required: "Sin ejecutor acreditador configurado",
+  executor_permission_gap: "Con ejecutor sin permiso en el destino",
   decision_required: "Midiéndose por cobertura sin padrón declarado",
-  destination_review: "Con un destino de enganche por revisar",
   instrument_required: "Con instrumento declarado pero no vigente (plantilla, curso o plan sin aprobar/publicar)",
 }
 
@@ -331,7 +334,7 @@ export async function activatePdtpProgram(programId: string, userId: string) {
     const [program] = await tx.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, programId)).limit(1)
     if (!program) throw new Error("Programa PDTP no encontrado.")
     if (program.status === "active" && program.activatedByUserId === userId && program.contentDigest) {
-      const { digest } = await computePdtpProgramContentDigest(programId, tx)
+      const { digest } = await computePdtpProgramContentDigestForStoredVersion(programId, tx)
       if (digest !== program.contentDigest) throw new Error("El contenido activo no coincide con la versión firmada.")
       return program
     }
@@ -372,7 +375,7 @@ export async function activatePdtpProgram(programId: string, userId: string) {
     }
 
     await assertAllRequiredPdtpApprovalStepsApproved(programId, program.contentVersion, program.contentDigest, tx)
-    const { digest } = await computePdtpProgramContentDigest(programId, tx)
+    const { digest } = await computePdtpProgramContentDigestForStoredVersion(programId, tx)
     if (digest !== program.contentDigest) {
       throw new Error("El contenido actual no coincide con la versión firmada. Debe abrirse una nueva revisión.")
     }

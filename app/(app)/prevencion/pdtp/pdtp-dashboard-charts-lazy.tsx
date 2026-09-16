@@ -13,6 +13,7 @@ export function PdtpDashboardChartsLazy(props: {
   monthlyTrend: MonthlyTrendData[]
   worksiteCompliance: WorksiteComplianceData[]
   categoryBreakdown: CategoryBreakdownData[]
+  operationalHref: string
 }) {
   return <PdtpDashboardCharts {...props} />
 }

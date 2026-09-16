@@ -1,7 +1,7 @@
 import { and, count, desc, eq, inArray, like } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpFulfillmentEvents, pdtpPrograms, pdtpProgramWorksites } from "@/db/schema"
-import { computePdtpProgramContentDigest } from "@/lib/services/pdtp/content-digest"
+import { computePdtpProgramContentDigestForStoredVersion } from "@/lib/services/pdtp/content-digest"
 import { NO_ACTIVE_PROGRAM_LAST_ERROR_TAG } from "@/lib/services/pdtp/fulfillment"
 
 /**
@@ -117,7 +117,7 @@ export async function countPdtpFulfillmentBacklog(programId: string): Promise<{
   // derivar: `contentDigest` nulo es "no hay firma", no "deriva sin medir".
   let digestDrift = false
   if (program?.contentDigest) {
-    const { digest } = await computePdtpProgramContentDigest(programId)
+    const { digest } = await computePdtpProgramContentDigestForStoredVersion(programId)
     digestDrift = digest !== program.contentDigest
   }
 

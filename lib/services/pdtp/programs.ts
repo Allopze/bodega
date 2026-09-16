@@ -4,10 +4,18 @@ import { nanoid } from "@/lib/id"
 import {
   pdtpActivities,
   pdtpActivityChecklists,
+  pdtpActivityExecutorAssignments,
   pdtpActivitySchedule,
+  pdtpActivityScheduleOverrides,
+  pdtpActivityWorksiteExclusions,
+  pdtpActivityWorksiteParams,
+  pdtpDocumentHistory,
+  pdtpImportBatches,
   pdtpPrograms,
+  pdtpProgramWorksites,
   pdtpSheetActivities,
   pdtpSheets,
+  pdtpRoleLegendEntries,
   preventionPdtpSourceLinks,
   users as schemaUsers,
 } from "@/db/schema"
@@ -17,7 +25,7 @@ import { pdtpActivityChecklistId } from "./checklist-domain"
 import { getCurrentPdtpBase2026Version, getPdtpTemplateVersion, instantiatePdtpTemplateVersion } from "./templates"
 
 type LegacyPdtpProgramCreateInput = {
-  year: number; title: string; userId: string; copySheetsFromProgramId?: string; templateVersionId?: string
+  year: number; title: string; userId: string; copySheetsFromProgramId?: string; templateVersionId?: string; revisionFromProgramId?: string
 }
 
 export async function createAnnualPdtpProgram(input: { year: number; userId: string }) {
@@ -28,6 +36,7 @@ export async function createAnnualPdtpProgram(input: { year: number; userId: str
   const create = async () => db.transaction(async (tx) => {
     const [existing] = await tx.select().from(pdtpPrograms)
       .where(eq(pdtpPrograms.year, input.year))
+      .orderBy(desc(pdtpPrograms.version))
       .limit(1)
     if (existing) return { programId: existing.id, program: existing, created: false, baseVersionId: existing.sourceTemplateVersionId }
 
@@ -90,7 +99,10 @@ export async function createAnnualPdtpProgram(input: { year: number; userId: str
     return await create()
   } catch (error) {
     if (!isUniqueViolation(error)) throw error
-    const [existing] = await db.select().from(pdtpPrograms).where(eq(pdtpPrograms.year, input.year)).limit(1)
+    const [existing] = await db.select().from(pdtpPrograms)
+      .where(eq(pdtpPrograms.year, input.year))
+      .orderBy(desc(pdtpPrograms.version))
+      .limit(1)
     if (!existing) throw error
     return { programId: existing.id, program: existing, created: false, baseVersionId: existing.sourceTemplateVersionId }
   }
@@ -129,27 +141,82 @@ export async function createLegacyPdtpProgramForTests(input: LegacyPdtpProgramCr
   throw new Error("No se pudo crear el programa PDTP tras varios intentos concurrentes.")
 }
 
+/**
+ * Abre una revisión v+1 sin tocar el programa activo de origen.
+ *
+ * El bloqueo de la fila fuente y la búsqueda del borrador abierto ocurren en
+ * la misma transacción que crea el clon. Eso hace que dos clics concurrentes
+ * devuelvan el mismo borrador en vez de generar dos revisiones para el año.
+ */
+export async function createPdtpRevision(input: { sourceProgramId: string; userId: string }) {
+  const MAX_ATTEMPTS = 8
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const program = await createPdtpProgramAttempt({
+        year: 0,
+        title: "",
+        userId: input.userId,
+        revisionFromProgramId: input.sourceProgramId,
+      }, new Date().toISOString())
+      return { programId: program.id, program }
+    } catch (error) {
+      if (isUniqueViolation(error) && attempt < MAX_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * (20 + Math.floor(Math.random() * 60))))
+        continue
+      }
+      if (isUniqueViolation(error)) {
+        throw new Error("No se pudo reservar una versión nueva del programa. Intenta nuevamente.")
+      }
+      throw error
+    }
+  }
+  throw new Error("No se pudo crear la revisión PDTP tras varios intentos concurrentes.")
+}
+
 async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now: string) {
   return db.transaction(async (tx) => {
       if (input.copySheetsFromProgramId && input.templateVersionId) {
         throw new Error("Selecciona un solo origen: plantilla o programa anterior.")
       }
-      const existingVersion = await tx.select({ version: pdtpPrograms.version })
-        .from(pdtpPrograms)
-        .where(eq(pdtpPrograms.year, input.year))
-        .orderBy(desc(pdtpPrograms.version)).limit(1)
-      const version = (existingVersion[0]?.version ?? 0) + 1
-      const programId = pdtpProgramId(input.year, version)
-
-      const sourceProgram = input.copySheetsFromProgramId
-        ? (await tx.select({ id: pdtpPrograms.id, contentVersion: pdtpPrograms.contentVersion })
-            .from(pdtpPrograms)
-            .where(eq(pdtpPrograms.id, input.copySheetsFromProgramId))
+      if (input.revisionFromProgramId && (input.copySheetsFromProgramId || input.templateVersionId)) {
+        throw new Error("Una revisión sólo puede partir de un programa activo.")
+      }
+      if (input.revisionFromProgramId) {
+        await tx.execute(sql`SELECT id FROM ${pdtpPrograms} WHERE id = ${input.revisionFromProgramId} FOR UPDATE`)
+      }
+      const sourceProgramId = input.revisionFromProgramId ?? input.copySheetsFromProgramId
+      const sourceProgram = sourceProgramId
+        ? (await tx.select().from(pdtpPrograms)
+            .where(eq(pdtpPrograms.id, sourceProgramId))
             .limit(1))[0]
         : undefined
-      if (input.copySheetsFromProgramId && !sourceProgram) {
+      if (sourceProgramId && !sourceProgram) {
         throw new Error("El programa de origen ya no existe.")
       }
+      if (input.revisionFromProgramId && sourceProgram?.status !== "active") {
+        throw new Error("Sólo se puede crear una revisión desde el programa activo.")
+      }
+      // La copia genérica conserva estructura pero se reancla al año que el
+      // operador pidió. Sólo la revisión v+1 debe permanecer en el mismo año
+      // que su programa activo de origen.
+      const year = input.revisionFromProgramId && sourceProgram ? sourceProgram.year : input.year
+      if (input.revisionFromProgramId && sourceProgram) {
+        const [openRevision] = await tx.select().from(pdtpPrograms)
+          .where(and(
+            eq(pdtpPrograms.year, sourceProgram.year),
+            eq(pdtpPrograms.sourceProgramId, sourceProgram.id),
+            inArray(pdtpPrograms.status, ["draft", "in_review"]),
+          ))
+          .orderBy(desc(pdtpPrograms.version))
+          .limit(1)
+        if (openRevision) return openRevision
+      }
+      const existingVersion = await tx.select({ version: pdtpPrograms.version })
+        .from(pdtpPrograms)
+        .where(eq(pdtpPrograms.year, year))
+        .orderBy(desc(pdtpPrograms.version)).limit(1)
+      const version = (existingVersion[0]?.version ?? 0) + 1
+      const programId = pdtpProgramId(year, version)
       const templateVersion = input.templateVersionId
         ? await getPdtpTemplateVersion(input.templateVersionId, tx)
         : null
@@ -166,41 +233,160 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
       const elaboratedByTitle = elaborator?.name?.trim() ? "Prevencionista" : "Sistema"
 
       const [program] = await tx.insert(pdtpPrograms).values({
-        id: programId, year: input.year, version, status: "draft", title: input.title,
-        periodStart: `${input.year}-01-01`, periodEnd: `${input.year}-12-31`,
+        id: programId,
+        year,
+        version,
+        status: "draft",
+        title: sourceProgram?.title ?? input.title,
+        periodStart: sourceProgram?.periodStart ?? `${year}-01-01`,
+        periodEnd: sourceProgram?.periodEnd ?? `${year}-12-31`,
+        documentCode: sourceProgram?.documentCode ?? null,
+        documentRevision: sourceProgram?.documentRevision ?? null,
+        validFrom: sourceProgram?.validFrom ?? null,
+        validUntil: sourceProgram?.validUntil ?? null,
+        indicatorName: sourceProgram?.indicatorName ?? null,
+        indicatorType: sourceProgram?.indicatorType ?? null,
+        indicatorFormula: sourceProgram?.indicatorFormula ?? null,
+        indicatorPeriodicity: sourceProgram?.indicatorPeriodicity ?? null,
+        measurementOwner: sourceProgram?.measurementOwner ?? null,
+        appliesToAllWorksites: sourceProgram?.appliesToAllWorksites ?? false,
         creationMode: templateVersion ? "template" : sourceProgram ? "program_copy" : "blank",
         sourceProgramId: templateVersion?.sourceProgramId ?? sourceProgram?.id ?? null,
         sourceContentVersion: templateVersion?.sourceContentVersion ?? sourceProgram?.contentVersion ?? null,
-        sourceTemplateVersionId: templateVersion?.id ?? null,
+        sourceTemplateVersionId: templateVersion?.id ?? sourceProgram?.sourceTemplateVersionId ?? null,
+        sourceMetadataJson: sourceProgram
+          ? { ...(sourceProgram.sourceMetadataJson as Record<string, unknown>), revisionFrom: { programId: sourceProgram.id, contentVersion: sourceProgram.contentVersion } }
+          : {},
         elaboratedByUserId: input.userId, elaboratedByName, elaboratedByTitle,
         createdAt: now, updatedAt: now,
       }).returning()
       if (!program) throw new Error("No se pudo crear el programa PDTP.")
 
+      // La trazabilidad documental también pertenece a la revisión. Se clonan
+      // los lotes de importación que sostienen la historia/leyenda y se
+      // remapean sus FKs al nuevo programa; no se copian ejecuciones, firmas ni
+      // decisiones de aprobación.
+      if (sourceProgram) {
+        const [sourceHistory, sourceRoleLegend] = await Promise.all([
+          tx.select().from(pdtpDocumentHistory).where(eq(pdtpDocumentHistory.programId, sourceProgram.id)),
+          tx.select().from(pdtpRoleLegendEntries).where(eq(pdtpRoleLegendEntries.programId, sourceProgram.id)),
+        ])
+        const sourceBatchIds = [...new Set([
+          ...sourceHistory.map((entry) => entry.sourceImportBatchId).filter((id): id is string => Boolean(id)),
+          ...sourceRoleLegend.map((entry) => entry.sourceImportBatchId),
+        ])]
+        const batchIdMap = new Map<string, string>()
+        if (sourceBatchIds.length > 0) {
+          const sourceBatches = await tx.select().from(pdtpImportBatches)
+            .where(inArray(pdtpImportBatches.id, sourceBatchIds))
+          await tx.insert(pdtpImportBatches).values(sourceBatches.map((batch) => {
+            const id = `pdtp-import-${nanoid()}`
+            batchIdMap.set(batch.id, id)
+            return {
+              id,
+              programId,
+              status: "applied",
+              adapterCode: batch.adapterCode,
+              sourceFileName: batch.sourceFileName,
+              sourceMimeType: batch.sourceMimeType,
+              sourceSizeBytes: batch.sourceSizeBytes,
+              sourceChecksumSha256: batch.sourceChecksumSha256,
+              previewJson: batch.previewJson,
+              metadataJson: { ...(batch.metadataJson as Record<string, unknown>), clonedFromProgramId: sourceProgram.id },
+              warningsJson: batch.warningsJson,
+              preApplySnapshotJson: batch.preApplySnapshotJson,
+              applyResultJson: batch.applyResultJson,
+              targetWorksiteId: batch.targetWorksiteId,
+              acceptedMissingEvidence: batch.acceptedMissingEvidence,
+              acceptanceReason: batch.acceptanceReason,
+              requestedByUserId: input.userId,
+              appliedByUserId: input.userId,
+              createdAt: now,
+              updatedAt: now,
+              appliedAt: now,
+            }
+          })).onConflictDoNothing()
+        }
+        if (sourceHistory.length > 0) {
+          await tx.insert(pdtpDocumentHistory).values(sourceHistory.map((entry) => ({
+            id: `pdtp-history-${nanoid()}`,
+            programId,
+            entryKind: entry.entryKind,
+            stableKey: entry.stableKey,
+            sequence: entry.sequence,
+            declaredActorName: entry.declaredActorName,
+            declaredActorTitle: entry.declaredActorTitle,
+            declaredAtText: entry.declaredAtText,
+            description: entry.description,
+            linkedUserId: entry.linkedUserId,
+            reconciledByUserId: entry.reconciledByUserId,
+            reconciledAt: entry.reconciledAt,
+            reconciliationReason: entry.reconciliationReason,
+            sourceImportBatchId: entry.sourceImportBatchId ? (batchIdMap.get(entry.sourceImportBatchId) ?? null) : null,
+            sourceMetadataJson: entry.sourceMetadataJson,
+            createdAt: now,
+            updatedAt: now,
+          })))
+        }
+        if (sourceRoleLegend.length > 0) {
+          const copiedLegend = sourceRoleLegend.map((entry) => {
+            const sourceImportBatchId = batchIdMap.get(entry.sourceImportBatchId)
+            if (!sourceImportBatchId) throw new Error("No se pudo conservar el origen documental de la leyenda de roles.")
+            return {
+              id: `pdtp-role-legend-${nanoid()}`,
+              programId,
+              code: entry.code,
+              label: entry.label,
+              sourceImportBatchId,
+              createdAt: now,
+            }
+          })
+          await tx.insert(pdtpRoleLegendEntries).values(copiedLegend)
+        }
+      }
+
+      // El alcance por faena también es parte del programa. Las ejecuciones no
+      // se tocan: siguen referidas exclusivamente a las actividades del origen.
+      if (sourceProgram) {
+        const sourceWorksites = await tx.select().from(pdtpProgramWorksites)
+          .where(eq(pdtpProgramWorksites.programId, sourceProgram.id))
+        if (sourceWorksites.length > 0) {
+          await tx.insert(pdtpProgramWorksites).values(sourceWorksites.map((membership) => ({
+            id: `pdtp-program-worksite-${nanoid()}`,
+            programId,
+            worksiteId: membership.worksiteId,
+            isActive: membership.isActive,
+            addedByUserId: membership.addedByUserId,
+            addedAt: now,
+          }))).onConflictDoNothing()
+        }
+      }
+
       if (templateVersion) {
         await instantiatePdtpTemplateVersion({
           templateVersionId: templateVersion.id,
           targetProgramId: programId,
-          targetYear: input.year,
+          targetYear: year,
           client: tx,
         })
-      } else if (input.copySheetsFromProgramId) {
-        await copyPdtpApprovalSteps(input.copySheetsFromProgramId, programId, tx)
+      } else if (sourceProgram) {
+        // Copia la definición de los pasos, nunca decisiones ni firmas.
+        await copyPdtpApprovalSteps(sourceProgram.id, programId, tx)
       } else {
         await ensureDefaultPdtpApprovalSteps(programId, tx)
       }
 
       if (templateVersion) {
         // La estructura completa fue materializada desde la foto inmutable.
-      } else if (input.copySheetsFromProgramId) {
+      } else if (sourceProgram) {
         const sourceSheetCandidates = await tx.select().from(pdtpSheets)
           .where(and(
-            or(isNull(pdtpSheets.programId), eq(pdtpSheets.programId, input.copySheetsFromProgramId)),
+            or(isNull(pdtpSheets.programId), eq(pdtpSheets.programId, sourceProgram.id)),
           ))
         const sourceSheetByCode = new Map<string, typeof pdtpSheets.$inferSelect>()
         for (const sheet of sourceSheetCandidates) {
           const current = sourceSheetByCode.get(sheet.code)
-          if (!current || sheet.programId === input.copySheetsFromProgramId) sourceSheetByCode.set(sheet.code, sheet)
+          if (!current || sheet.programId === sourceProgram.id) sourceSheetByCode.set(sheet.code, sheet)
         }
         const sourceSheets = [...sourceSheetByCode.values()]
         if (sourceSheets.length > 0) {
@@ -211,15 +397,16 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
             label: sheet.label,
             area: sheet.area,
             defaultScopeRoles: sheet.defaultScopeRoles,
+            isActive: sheet.isActive,
           }))).onConflictDoNothing()
         }
 
         // "Duplicar programa" es estructura completa, no solo hojas: copia
         // actividades + planificación + a qué hoja pertenece cada una. La
-        // planificación se reancla al año del programa nuevo (`input.year`),
+        // planificación se reancla al año del programa nuevo (`year`),
         // no al del programa origen.
         const sourceActivities = await tx.select().from(pdtpActivities)
-          .where(eq(pdtpActivities.programId, input.copySheetsFromProgramId))
+          .where(eq(pdtpActivities.programId, sourceProgram.id))
           .orderBy(pdtpActivities.n)
         const activityIdMap = new Map<string, string>()
         const activityNMap = new Map<string, number>()
@@ -231,15 +418,18 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
           activityNMap.set(activity.id, activity.n)
           copiedActivities.push({
             id: newActivityId, programId, n: activity.n, displayOrder: activity.displayOrder,
+            catalogActivityId: activity.catalogActivityId, catalogRevision: activity.catalogRevision,
             status: activity.status, retiredReason: activity.retiredReason,
             retiredEffectiveFrom: activity.retiredEffectiveFrom,
+            retiredByUserId: activity.retiredByUserId, retiredAt: activity.retiredAt,
             activity: activity.activity, program: activity.program,
             responsibleSlugs: activity.responsibleSlugs, responsibleDisplay: activity.responsibleDisplay,
             audienceRoles: activity.audienceRoles, scheduleMode: activity.scheduleMode,
             scheduleClassificationStatus: activity.scheduleClassificationStatus,
             recurrenceRule: activity.recurrenceRule, triggerType: activity.triggerType,
-            triggerDescription: activity.triggerDescription, dueDays: activity.dueDays,
-            evidenceRequirement: activity.evidenceRequirement, indicatorMode: activity.indicatorMode,
+            triggerDescription: activity.triggerDescription, dueDays: activity.dueDays, dueHours: activity.dueHours,
+            evidenceRequirement: activity.evidenceRequirement, mechanism: activity.mechanism, indicatorMode: activity.indicatorMode,
+            subjectSource: activity.subjectSource, subjectCapabilityCodes: activity.subjectCapabilityCodes,
             targetValue: activity.targetValue, targetUnit: activity.targetUnit,
             sourceSheetRow: activity.sourceSheetRow, notes: activity.notes, createdAt: now, updatedAt: now,
           })
@@ -248,18 +438,22 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
 
         if (activityIdMap.size > 0) {
           const sourceActivityIds = [...activityIdMap.keys()]
-          const [scheduleRows, membershipRows, sourceLinks, checklistRows] = await Promise.all([
+          const [scheduleRows, membershipRows, sourceLinks, checklistRows, overrideRows, exclusionRows, paramRows, executorRows] = await Promise.all([
             tx.select().from(pdtpActivitySchedule).where(inArray(pdtpActivitySchedule.activityId, sourceActivityIds)),
             tx.select().from(pdtpSheetActivities).where(inArray(pdtpSheetActivities.activityId, sourceActivityIds)),
-            tx.select().from(preventionPdtpSourceLinks).where(and(inArray(preventionPdtpSourceLinks.activityId, sourceActivityIds), eq(preventionPdtpSourceLinks.isActive, true))),
-            tx.select().from(pdtpActivityChecklists).where(and(inArray(pdtpActivityChecklists.activityId, sourceActivityIds), eq(pdtpActivityChecklists.isActive, true))),
+            tx.select().from(preventionPdtpSourceLinks).where(inArray(preventionPdtpSourceLinks.activityId, sourceActivityIds)),
+            tx.select().from(pdtpActivityChecklists).where(inArray(pdtpActivityChecklists.activityId, sourceActivityIds)),
+            tx.select().from(pdtpActivityScheduleOverrides).where(inArray(pdtpActivityScheduleOverrides.activityId, sourceActivityIds)),
+            tx.select().from(pdtpActivityWorksiteExclusions).where(inArray(pdtpActivityWorksiteExclusions.activityId, sourceActivityIds)),
+            tx.select().from(pdtpActivityWorksiteParams).where(inArray(pdtpActivityWorksiteParams.activityId, sourceActivityIds)),
+            tx.select().from(pdtpActivityExecutorAssignments).where(inArray(pdtpActivityExecutorAssignments.activityId, sourceActivityIds)),
           ])
           const copiedSchedule: Array<typeof pdtpActivitySchedule.$inferInsert> = []
           for (const cell of scheduleRows) {
             const newActivityId = activityIdMap.get(cell.activityId)!
             copiedSchedule.push({
-              id: pdtpScheduleId(newActivityId, input.year, cell.month, cell.week), activityId: newActivityId,
-              year: input.year, month: cell.month, week: cell.week, plannedQuantity: cell.plannedQuantity, sourceColumn: cell.sourceColumn,
+              id: pdtpScheduleId(newActivityId, year, cell.month, cell.week), activityId: newActivityId,
+              year, month: cell.month, week: cell.week, plannedQuantity: cell.plannedQuantity, sourceColumn: cell.sourceColumn,
             })
           }
           if (copiedSchedule.length > 0) await tx.insert(pdtpActivitySchedule).values(copiedSchedule).onConflictDoNothing()
@@ -285,8 +479,12 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
               sourceType: link.sourceType,
               sourceId: link.sourceId,
               sourceVersionSnapshot: link.sourceVersionSnapshot,
-              justification: `Copiado desde ${input.copySheetsFromProgramId}: ${link.justification}`,
+              justification: `Copiado desde ${sourceProgram.id}: ${link.justification}`,
+              isActive: link.isActive,
               createdByUserId: input.userId,
+              retiredByUserId: link.isActive ? null : link.retiredByUserId,
+              retiredAt: link.isActive ? null : link.retiredAt,
+              retirementReason: link.isActive ? null : link.retirementReason,
               createdAt: now,
             }))).onConflictDoNothing()
           }
@@ -307,6 +505,58 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
               }
             })).onConflictDoNothing()
           }
+
+          if (overrideRows.length > 0) {
+            await tx.insert(pdtpActivityScheduleOverrides).values(overrideRows.map((override) => ({
+              id: `pdtp-override-${nanoid()}`,
+              activityId: activityIdMap.get(override.activityId)!,
+              worksiteId: override.worksiteId,
+              year,
+              month: override.month,
+              week: override.week,
+              plannedQuantity: override.plannedQuantity,
+              updatedByUserId: override.updatedByUserId,
+              createdAt: now,
+              updatedAt: now,
+            }))).onConflictDoNothing()
+          }
+
+          if (exclusionRows.length > 0) {
+            await tx.insert(pdtpActivityWorksiteExclusions).values(exclusionRows.map((exclusion) => ({
+              id: `pdtp-exclusion-${nanoid()}`,
+              activityId: activityIdMap.get(exclusion.activityId)!,
+              worksiteId: exclusion.worksiteId,
+              reason: exclusion.reason,
+              createdByUserId: exclusion.createdByUserId,
+              createdAt: now,
+            }))).onConflictDoNothing()
+          }
+
+          if (paramRows.length > 0) {
+            await tx.insert(pdtpActivityWorksiteParams).values(paramRows.map((param) => ({
+              id: `pdtp-worksite-param-${nanoid()}`,
+              activityId: activityIdMap.get(param.activityId)!,
+              worksiteId: param.worksiteId,
+              expectedSubjectCount: param.expectedSubjectCount,
+              targetCoveragePercent: param.targetCoveragePercent,
+              responsibleSlugs: param.responsibleSlugs,
+              responsibleDisplay: param.responsibleDisplay,
+              responsibleReason: param.responsibleReason,
+              updatedByUserId: param.updatedByUserId,
+              createdAt: now,
+              updatedAt: now,
+            }))).onConflictDoNothing()
+          }
+
+          if (executorRows.length > 0) {
+            await tx.insert(pdtpActivityExecutorAssignments).values(executorRows.map((assignment) => ({
+              id: `pdtp-executor-${nanoid()}`,
+              activityId: activityIdMap.get(assignment.activityId)!,
+              roleId: assignment.roleId,
+              createdAt: now,
+              updatedAt: now,
+            }))).onConflictDoNothing()
+          }
         }
       } else {
         // Vista única por defecto para un programa en blanco: no asume la
@@ -317,7 +567,18 @@ async function createPdtpProgramAttempt(input: LegacyPdtpProgramCreateInput, now
         })
       }
 
-      await addPdtpChangeLogEntry(programId, version, input.userId, "lifecycle", null, { status: "draft" }, "Programa creado.", tx)
+      await addPdtpChangeLogEntry(
+        programId,
+        version,
+        input.userId,
+        "lifecycle",
+        null,
+        { status: "draft", revisionFromProgramId: input.revisionFromProgramId ?? null },
+        input.revisionFromProgramId
+          ? `Revisión v${version} creada desde ${input.revisionFromProgramId}; se copiaron estructura y configuración, no ejecuciones ni firmas.`
+          : "Programa creado.",
+        tx,
+      )
       return program
   })
 }

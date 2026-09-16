@@ -130,6 +130,7 @@ beforeEach(async () => {
   // (única para `obligation_id IS NULL`). Borrar las ejecuciones primero evita
   // que la cascada llegue a dispararse.
   await inMemoryDb.delete(schema.pdtpFulfillmentEvents)
+  await inMemoryDb.delete(schema.pdtpRevisionDiffDecisions)
   await inMemoryDb.delete(schema.pdtpExecutions)
   await inMemoryDb.delete(schema.pdtpObligationReminders)
   await inMemoryDb.delete(schema.pdtpObligations)
@@ -3720,6 +3721,193 @@ describe("prevention PDTP service", () => {
     expect(byCategory).toEqual([
       { category: "Abrir, investigar y cerrar cada caso", planned: 2, executed: 1, percent: 0.5 },
     ])
+  })
+
+  it("verifies legacy signed digests with their stored snapshot schema", async () => {
+    const {
+      computePdtpProgramContentDigest,
+      computePdtpProgramContentDigestForStoredVersion,
+      addPdtpActivity,
+      createLegacyPdtpProgramForTests,
+    } = await import("@/lib/services/prevention-pdtp")
+    const program = await createLegacyPdtpProgramForTests({ year: 2038, title: "Programa con huella histórica", userId: "user-1" })
+    await addPdtpActivity({
+      programId: program.id,
+      activity: "Actividad histórica",
+      program: "Control preventivo",
+      responsibleSlugs: ["prf"],
+      responsibleDisplay: "Prevencionista",
+      scheduleMode: "scheduled",
+      recurrenceRule: { frequency: "annual", interval: 1, plannedQuantity: 1, weekOfMonth: 1 },
+      sheetCodes: ["pdtp_general"],
+    }, "user-1")
+    const [activity] = await inMemoryDb.select().from(schema.pdtpActivities)
+      .where(eq(schema.pdtpActivities.programId, program.id)).limit(1)
+    await inMemoryDb.update(schema.pdtpActivities).set({ mechanism: "constancia" })
+      .where(eq(schema.pdtpActivities.id, activity!.id))
+    const legacy = await computePdtpProgramContentDigest(program.id, undefined, { schemaVersion: 13 })
+    await inMemoryDb.update(schema.pdtpPrograms).set({
+      contentDigest: legacy.digest,
+      reviewSnapshotJson: legacy.snapshot,
+    }).where(eq(schema.pdtpPrograms.id, program.id))
+    await inMemoryDb.update(schema.pdtpActivities).set({ mechanism: "enganche" })
+      .where(eq(schema.pdtpActivities.id, activity!.id))
+
+    const stored = await computePdtpProgramContentDigestForStoredVersion(program.id)
+    const current = await computePdtpProgramContentDigest(program.id)
+    expect(stored.schemaVersion).toBe(13)
+    expect(stored.digest).toBe(legacy.digest)
+    expect(current.digest).not.toBe(legacy.digest)
+  })
+
+  /**
+   * I3 (QA 2026-09-16, ronda de arreglos): el builder sólo sabe deshacer los
+   * cambios de forma de `schemaVersion` ≥13 y ≥14 (executorAssignments y
+   * mechanism); las versiones 9 a 11 quedan incorporadas sin condición y no
+   * hay forma de reproducir cómo se veía la huella antes de esos cambios. Sin
+   * esta compuerta, verificar un programa firmado en, por ejemplo, la versión
+   * 10 devolvía en silencio un digest que nunca coincide con el firmado —
+   * indistinguible de un drift de contenido real. Fija que en vez de eso la
+   * ruta de verificación falle con un error explícito y legible.
+   */
+  it("rechaza explícitamente verificar una huella firmada en un esquema anterior al reconstruible", async () => {
+    const {
+      computePdtpProgramContentDigestForStoredVersion,
+      PdtpUnreconstructibleContentSchemaError,
+      MIN_RECONSTRUCTIBLE_PDTP_CONTENT_SCHEMA_VERSION,
+      createLegacyPdtpProgramForTests,
+    } = await import("@/lib/services/prevention-pdtp")
+    expect(MIN_RECONSTRUCTIBLE_PDTP_CONTENT_SCHEMA_VERSION).toBe(12)
+
+    const program = await createLegacyPdtpProgramForTests({ year: 2039, title: "Programa con huella pre-12", userId: "user-1" })
+    // No importa que este `contentDigest` no derive de nada real: el punto es
+    // que la ruta de verificación ni siquiera debe intentar compararlo, sino
+    // rechazar la versión de esquema antes de calcular nada.
+    await inMemoryDb.update(schema.pdtpPrograms).set({
+      contentDigest: "f".repeat(64),
+      reviewSnapshotJson: { schemaVersion: 10 },
+    }).where(eq(schema.pdtpPrograms.id, program.id))
+
+    await expect(computePdtpProgramContentDigestForStoredVersion(program.id))
+      .rejects.toBeInstanceOf(PdtpUnreconstructibleContentSchemaError)
+    await expect(computePdtpProgramContentDigestForStoredVersion(program.id))
+      .rejects.toThrow(/esquema anterior al mínimo|esquema 10/)
+  })
+
+  // PGlite conserva el lock de `FOR UPDATE` hasta cerrar el archivo de
+  // pruebas, a diferencia de PostgreSQL que lo libera al cerrar la
+  // transacción. Este caso queda al final para probar la contención real sin
+  // contaminar los fixtures históricos que lo siguen en el emulador.
+  it("creates one v+1 revision concurrently and never copies executions or approval decisions", async () => {
+    const {
+      comparePdtpRevisionToCurrentBase,
+      buildPdtpProgramContentSnapshot,
+      createPdtpRevision,
+      createPdtpTemplateVersion,
+      decidePdtpRevisionDiff,
+      listPdtpRevisionDiffDecisions,
+      markPdtpExecution,
+    } = await import("@/lib/services/prevention-pdtp")
+    const source = await loadActiveCatalog()
+    const [sourceActivity] = await inMemoryDb.select().from(schema.pdtpActivities)
+      .where(eq(schema.pdtpActivities.programId, source.id))
+      .limit(1)
+    await markPdtpExecution({
+      activityId: sourceActivity!.id,
+      worksiteId: "ws-1",
+      year: 2026,
+      month: 2,
+      week: 1,
+      executedQuantity: 1,
+      evidenceText: "Evidencia que debe permanecer en v1",
+    }, "user-1", ["ws-1"])
+    await inMemoryDb.insert(schema.pdtpActivityScheduleOverrides).values({
+      id: "revision-diff-override-source",
+      activityId: sourceActivity!.id,
+      worksiteId: "ws-1",
+      year: 2026,
+      month: 2,
+      week: 1,
+      plannedQuantity: 4,
+      updatedByUserId: "user-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    })
+    await createPdtpTemplateVersion({
+      sourceProgramId: source.id,
+      name: "Base preventiva 2026",
+      userId: "user-1",
+      allowUnclassifiedBaseActivities: true,
+    })
+
+    const revisions = await Promise.all([
+      createPdtpRevision({ sourceProgramId: source.id, userId: "user-1" }),
+      createPdtpRevision({ sourceProgramId: source.id, userId: "user-1" }),
+    ])
+    expect(new Set(revisions.map((revision) => revision.programId))).toEqual(new Set(["pdtp-2026-v2"]))
+
+    const revision = revisions[0]!.program
+    expect(revision).toMatchObject({
+      year: 2026,
+      version: 2,
+      status: "draft",
+      sourceProgramId: source.id,
+      sourceContentVersion: source.contentVersion,
+    })
+    const [sourceAfter] = await inMemoryDb.select().from(schema.pdtpPrograms)
+      .where(eq(schema.pdtpPrograms.id, source.id))
+    expect(sourceAfter?.status).toBe("active")
+
+    const revisionActivities = await inMemoryDb.select().from(schema.pdtpActivities)
+      .where(eq(schema.pdtpActivities.programId, revision.id))
+    const revisionSchedule = await inMemoryDb.select().from(schema.pdtpActivitySchedule)
+      .where(inArray(schema.pdtpActivitySchedule.activityId, revisionActivities.map((activity) => activity.id)))
+    const revisionExecutions = await inMemoryDb.select().from(schema.pdtpExecutions)
+      .where(inArray(schema.pdtpExecutions.activityId, revisionActivities.map((activity) => activity.id)))
+    const revisionDecisions = await inMemoryDb.select().from(schema.pdtpApprovalDecisions)
+      .where(eq(schema.pdtpApprovalDecisions.programId, revision.id))
+    expect(revisionActivities).toHaveLength(87)
+    expect(new Set(revisionSchedule.map((cell) => cell.year))).toEqual(new Set([2026]))
+    expect(revisionExecutions).toHaveLength(0)
+    expect(revisionDecisions).toHaveLength(0)
+
+    await inMemoryDb.update(schema.pdtpActivities)
+      .set({ notes: "Cambio publicado por la Base preventiva v2." })
+      .where(eq(schema.pdtpActivities.id, sourceActivity!.id))
+    await inMemoryDb.update(schema.pdtpActivityScheduleOverrides)
+      .set({ plannedQuantity: 7, updatedAt: "2026-02-01T00:00:00.000Z" })
+      .where(eq(schema.pdtpActivityScheduleOverrides.id, "revision-diff-override-source"))
+    const baseV2 = await createPdtpTemplateVersion({
+      sourceProgramId: source.id,
+      name: "Base preventiva 2026",
+      userId: "user-1",
+      allowUnclassifiedBaseActivities: true,
+    })
+    const diff = await comparePdtpRevisionToCurrentBase(revision.id)
+    const changed = diff?.items.find((item) => item.activityNumber === sourceActivity!.n)
+    expect(changed).toMatchObject({ kind: "content_changed" })
+
+    await decidePdtpRevisionDiff({
+      programId: revision.id,
+      activityIdentity: changed!.identity,
+      decision: "applied",
+      userId: "user-1",
+    })
+    const afterSnapshot = await buildPdtpProgramContentSnapshot(revision.id) as { activities: Array<Record<string, unknown>> }
+    const baseSnapshot = baseV2.version.snapshotJson as { activities: Array<Record<string, unknown>> }
+    const appliedActivity = afterSnapshot.activities.find((activity) => activity.n === sourceActivity!.n)!
+    const baseActivity = baseSnapshot.activities.find((activity) => activity.n === sourceActivity!.n)!
+    const differentKeys = [...new Set([...Object.keys(appliedActivity), ...Object.keys(baseActivity)])]
+      .filter((key) => JSON.stringify(appliedActivity[key]) !== JSON.stringify(baseActivity[key]))
+    expect(differentKeys).toEqual([])
+    const [appliedOverride] = await inMemoryDb.select().from(schema.pdtpActivityScheduleOverrides)
+      .where(and(
+        eq(schema.pdtpActivityScheduleOverrides.activityId, revisionActivities.find((activity) => activity.n === sourceActivity!.n)!.id),
+        eq(schema.pdtpActivityScheduleOverrides.worksiteId, "ws-1"),
+      ))
+    expect(appliedOverride?.plannedQuantity).toBe(7)
+    expect(await listPdtpRevisionDiffDecisions(revision.id, baseV2.version.id))
+      .toEqual(expect.arrayContaining([expect.objectContaining({ activityIdentity: changed!.identity, decision: "applied" })]))
   })
 })
 

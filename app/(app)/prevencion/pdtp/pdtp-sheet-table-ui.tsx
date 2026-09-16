@@ -563,7 +563,7 @@ export function PdtpProgramPicker({
   week,
 }: {
   current: string
-  programs: Array<{ id: string; title: string; year: number }>
+  programs: Array<{ id: string; title: string; year: number; version: number }>
   hrefBase: string
   sheetCode: string
   worksiteId?: string
@@ -588,7 +588,7 @@ export function PdtpProgramPicker({
       }}>
         <SelectTrigger className="w-64" aria-label="Seleccionar programa"><SelectValue /></SelectTrigger>
         <SelectContent>
-          {programs.map((program) => <SelectItem key={program.id} value={program.id}>{program.title} · {program.year}</SelectItem>)}
+          {programs.map((program) => <SelectItem key={program.id} value={program.id}>{program.title} · {program.year} · v{program.version}</SelectItem>)}
         </SelectContent>
       </Select>
     </div>

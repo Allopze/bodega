@@ -109,7 +109,7 @@ export default async function PdtpProgramasListPage({ searchParams }: PdtpProgra
               <div key={program.id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 transition-shadow hover:shadow-md">
                 <div className="flex items-start justify-between">
                   <div>
-                    <p className="font-semibold text-[var(--color-text)]">{program.title}</p>
+                    <p className="font-semibold text-[var(--color-text)]">{program.title} <span className="font-mono text-xs font-normal text-[var(--color-text-muted)]">v{program.version}</span></p>
                     <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
                       Año {program.year}
                     </p>

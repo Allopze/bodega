@@ -57,6 +57,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const { programId } = await params
   const program = await getPdtpProgram(programId)
   if (!program) notFound()
+  const sourceProgram = program.sourceProgramId ? await getPdtpProgram(program.sourceProgramId) : null
 
   // Vistas reales del programa (plantillas globales + copias program-scoped,
   // dedupe por código con la copia program-scoped ganando). No asumen las
@@ -230,9 +231,24 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
       />
 
       <div className="space-y-4">
+        {sourceProgram && (
+          <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-subtle)]">Linaje de revisión</p>
+            <p className="mt-1 text-sm text-[var(--color-text)]">
+              <Link className="font-medium text-[var(--color-primary-ink)] hover:underline" href={`/prevencion/pdtp/${sourceProgram.id}`}>v{sourceProgram.version}</Link>
+              {" → "}v{program.version}. La evidencia y las firmas de v{sourceProgram.version} permanecen en su versión de origen.
+            </p>
+          </section>
+        )}
         {/* Program lifecycle status block, con la metadata del documento importado plegada dentro */}
-        <CoverageReportPanel report={coverageReport} />
-        <FulfillmentBacklogPanel programId={programId} />
+        <CoverageReportPanel
+          report={coverageReport}
+          programId={programId}
+          programStatus={program.status}
+          canManageProgram={canManageProgram}
+          canManageRoles={can(session, "admin:roles")}
+        />
+        <FulfillmentBacklogPanel programId={programId} canManageProgram={canManageProgram} programStatus={program.status} />
 
         <ProgramLifecycleControls
           program={program}

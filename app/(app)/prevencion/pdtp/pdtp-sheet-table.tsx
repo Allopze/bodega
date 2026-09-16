@@ -63,7 +63,7 @@ function PdtpExecutionBadges({ exec }: { exec: ExecutionForBadges }) {
 
 function PdtpAggregateBreakdown({ summaries, worksiteNames, bare = false }: { summaries: PdtpAggregateActivityWorksite[]; worksiteNames: Record<string, string>; bare?: boolean }) {
   if (summaries.length === 0) return null
-  const chips = <div className="mt-1 flex flex-wrap gap-1.5">{summaries.map((summary) => <MetaBadge key={summary.worksiteId} meta={{ label: `${worksiteNames[summary.worksiteId] ?? "Faena"}: ${summary.executed}/${summary.planned} · ${summary.status === "executed" ? "Ejecutada" : summary.status === "overdue" ? "Atrasada" : summary.status === "pending" ? "Pendiente" : "No programada"}`, variant: "outline" }} />)}</div>
+  const chips = <div className="mt-1 flex flex-wrap gap-1.5">{summaries.map((summary) => <MetaBadge key={summary.worksiteId} meta={{ label: `${worksiteNames[summary.worksiteId] ?? "Faena"}: Plan ${summary.planned} · ejecutado ${summary.executed} · ${summary.status === "executed" ? "Ejecutada" : summary.status === "overdue" ? "Atrasada" : summary.status === "pending" ? "Pendiente" : "No programada"}`, variant: "outline" }} />)}</div>
   // `bare`: sin <details> propio, para vivir dentro del expander único de la
   // vista anual (UI/UX 2026-08-05, B1b — antes había dos expanders por fila).
   if (bare) return chips
@@ -328,7 +328,10 @@ export function PdtpSheetTable({
           </div>
         ) : (
           <>
-            <TableRoot stickyHeader>
+            <p id="pdtp-horizontal-scroll-hint" className="mb-2 text-xs text-[var(--color-text-muted)] sm:hidden">
+              Desliza horizontalmente para revisar más semanas y columnas.
+            </p>
+            <TableRoot stickyHeader aria-describedby="pdtp-horizontal-scroll-hint">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -435,15 +438,13 @@ export function PdtpSheetTable({
                               >
                                 <div className="whitespace-nowrap">
                                   <span>{formatQuantity(planned)}</span>
-                                  {worksiteId && (
-                                    <span className="text-[11px] text-[var(--color-success)]"> / {formatQuantity(executed)}</span>
-                                  )}
+                                  <span className="text-[11px] text-[var(--color-success)]"> / {formatQuantity(executed)}</span>
                                 </div>
                               </TableCellNum>
                             )
                           })}
                           <TableCellNum className={`font-semibold whitespace-nowrap ${rowPy}`}>
-                            {formatQuantity(activity.totalPlanned)}{worksiteId && <span className="text-[var(--color-success)]"> / {formatQuantity(activity.totalExecuted)}</span>}
+                            {formatQuantity(activity.totalPlanned)}<span className="text-[var(--color-success)]"> / {formatQuantity(activity.totalExecuted)}</span>
                           </TableCellNum>
                           {canOperate && worksiteId && (
                             <TableCell className={rowPy}>
