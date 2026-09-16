@@ -180,15 +180,96 @@ export async function readFuelIntegrationsPreflight(sql: postgres.Sql): Promise<
   }
 }
 
+/**
+ * Contadores que describen una invariante, no una deuda: si alguno deja de ser
+ * cero, el dato contradice algo que el código ya da por cierto (una identidad
+ * estable por transacción, un proveedor conocido, un lote activo por cuenta,
+ * una clave única en el detalle). Desplegar sobre eso es pedirle a una
+ * migración o a un backfill que rompa a mitad de camino, así que el deploy se
+ * detiene antes de tocar nada: el preflight corre después del pg_dump y antes
+ * de migrar.
+ *
+ * Deliberadamente fuera de esta lista: la cola de pendientes del proveedor, los
+ * rechazos abiertos, los enlaces sin conciliar, los odómetros regresivos y el
+ * rendimiento en cero. Todo eso es trabajo operativo acumulado, real pero
+ * inofensivo para el despliegue; bloquear por ahí sería dejar los deploys
+ * rehenes de una digitación del proveedor.
+ */
+export const BLOCKING_FUEL_COUNTERS = [
+  "splitTctIdentities",
+  "providerTransactionsWithoutIdentity",
+  "unknownProviderTransactions",
+  "duplicateActiveBatches",
+  "projectionPlateDuplicates",
+  "batchDetailMismatches",
+  "detailDuplicateKeys",
+] as const satisfies readonly (keyof FuelIntegrationsPreflight)[]
+
+/** Contadores que sí se informan, pero nunca detienen un despliegue. */
+export const FUEL_DEBT_COUNTERS = [
+  "openProviderPendings",
+  "openProviderRejections",
+  "unmatchedReconciliationLinks",
+  "dteReconciliationMismatches",
+  "detailWithoutOdometer",
+  "detailPlatesWithoutVehicle",
+  "meterReadingsRegressive",
+  "meterReadingsNoChange",
+  "providerPerformanceZero",
+] as const satisfies readonly (keyof FuelIntegrationsPreflight)[]
+
+export interface CounterFinding {
+  counter: string
+  value: number
+}
+
+export function findBlockingFuelCounters(report: FuelIntegrationsPreflight): CounterFinding[] {
+  return BLOCKING_FUEL_COUNTERS
+    .map((counter) => ({ counter, value: report[counter] }))
+    .filter(({ value }) => value > 0)
+}
+
+export function findFuelDebtCounters(report: FuelIntegrationsPreflight): CounterFinding[] {
+  return FUEL_DEBT_COUNTERS
+    .map((counter) => ({ counter, value: report[counter] }))
+    .filter(({ value }) => value > 0)
+}
+
+function formatFindings(findings: readonly CounterFinding[]): string {
+  return findings.map(({ counter, value }) => `    ${counter}: ${value}`).join("\n")
+}
+
 async function main() {
   const databaseUrl = process.env.DATABASE_URL?.trim()
   if (!databaseUrl) throw new Error("DATABASE_URL es requerido. Este preflight sólo lee la base indicada.")
   const sql = postgres(databaseUrl, { max: 1 })
+  let report: FuelIntegrationsPreflight
   try {
-    console.log(JSON.stringify(await readFuelIntegrationsPreflight(sql), null, 2))
+    report = await readFuelIntegrationsPreflight(sql)
+    console.log(JSON.stringify(report, null, 2))
   } finally {
     await sql.end()
   }
+
+  const debt = findFuelDebtCounters(report)
+  if (debt.length > 0) {
+    console.warn(`    deuda operativa (no bloquea):\n${formatFindings(debt)}`)
+  }
+
+  const blocking = findBlockingFuelCounters(report)
+  if (blocking.length === 0) return
+
+  // La salida de emergencia es explícita y queda en el log del deploy: puede
+  // hacer falta desplegar justamente el arreglo del dato que bloquea.
+  if (process.env.SKIP_FUEL_PREFLIGHT_GATE === "1") {
+    console.warn(`    ⚠️  invariantes rotas, ignoradas por SKIP_FUEL_PREFLIGHT_GATE=1:\n${formatFindings(blocking)}`)
+    return
+  }
+
+  throw new Error(
+    `El dato de combustible contradice invariantes que el despliegue da por ciertas:\n${formatFindings(blocking)}\n` +
+      `  No se aplicaron migraciones. Corrige el dato, o repite con SKIP_FUEL_PREFLIGHT_GATE=1 si ya evaluaste el riesgo.`,
+  )
 }
 
 // Sin `await` de nivel superior: el runner transpila a CJS y ahí el top-level

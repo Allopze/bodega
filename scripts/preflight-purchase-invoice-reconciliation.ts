@@ -215,6 +215,35 @@ async function readReport(sql: postgres.Sql, useAllocations: boolean): Promise<P
   }
 }
 
+/**
+ * Aquí no hay invariantes que romper, así que no hay nada que bloquee.
+ *
+ * Todos estos contadores miden conciliación pendiente: facturas sin líneas,
+ * líneas que no cuadran contra la OC, recepciones candidatas empatadas. El
+ * backfill es idempotente y deriva el estado de la evidencia, así que desplegar
+ * con deuda no la empeora; lo único que haría un umbral es dejar los deploys
+ * detenidos hasta que alguien concilie una factura de hace meses. Se informa
+ * para que la deuda sea visible en el log y no crezca en silencio.
+ *
+ * Si algún día uno de estos contadores pasa a describir una invariante, el
+ * lugar de la puerta es este archivo, junto al de combustible.
+ */
+export const INVOICE_DEBT_COUNTERS = [
+  "invoicesWithoutLines",
+  "unlinkedLines",
+  "priceVarianceLines",
+  "affectedClosedOrders",
+  "ambiguousReceiptSuggestions",
+] as const satisfies readonly (keyof PurchaseInvoiceReconciliationPreflight)[]
+
+export function findInvoiceDebtCounters(
+  report: PurchaseInvoiceReconciliationPreflight,
+): Array<{ counter: string; value: number }> {
+  return INVOICE_DEBT_COUNTERS
+    .map((counter) => ({ counter, value: report[counter] }))
+    .filter(({ value }) => value > 0)
+}
+
 async function main() {
   const databaseUrl = process.env.DATABASE_URL?.trim()
   if (!databaseUrl) throw new Error("DATABASE_URL es requerido. Este preflight sólo lee la base indicada.")
@@ -222,6 +251,12 @@ async function main() {
   try {
     const report = await readPurchaseInvoiceReconciliationPreflight(sql)
     console.log(JSON.stringify(report, null, 2))
+    const debt = findInvoiceDebtCounters(report)
+    if (debt.length > 0) {
+      console.warn(
+        `    conciliación pendiente (no bloquea):\n${debt.map(({ counter, value }) => `    ${counter}: ${value}`).join("\n")}`,
+      )
+    }
   } finally {
     await sql.end()
   }

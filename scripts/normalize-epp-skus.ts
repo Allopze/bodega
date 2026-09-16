@@ -3,9 +3,15 @@
  *   EPP-001, EPP-002, ... (EPP)
  *   SRV-001, SRV-002, ... (servicios)
  *
- * Sólo renumera productos activos. Los productos inactivos conservan su SKU
- * para preservar la trazabilidad histórica; sus códigos quedan reservados y
- * pueden producir saltos en la secuencia activa.
+ * Conserva el código de todo producto que ya tiene un SKU canónico de su
+ * prefijo: el SKU es lo que quedó impreso en guías y actas, así que sólo se
+ * asigna a productos nuevos, a SKUs heredados y a reclasificados de prefijo.
+ * Eso deja la secuencia fuera del orden alfabético a medida que se agregan
+ * productos, y es a propósito.
+ *
+ * Sólo toca productos activos. Los inactivos conservan su SKU para preservar la
+ * trazabilidad histórica; sus códigos quedan reservados y producen saltos en la
+ * secuencia activa.
  *
  * También ajusta unit_of_measure de productos que requieren presentación
  * distinta de "unidad".
@@ -122,12 +128,23 @@ async function main() {
   }
 
   // ── 2. Query EPP y SRV ──────────────────────────────────────────────────
+  // El desempate por `id` no es cosmético. Hay productos que comparten nombre
+  // exacto (varias tallas del mismo botín), y `ORDER BY p.name` a secas deja su
+  // posición en manos del plan de ejecución. Como este script reescribe cada
+  // fila dos veces por corrida (SKU temporal y definitivo), su lugar en el heap
+  // cambia y el orden se daba vuelta en el siguiente deploy: en producción los
+  // SKU EPP-023..026 se permutaban entre sí una y otra vez.
+  //
+  // El anclaje de `buildSequentialSkuMap` ya impide esa rotación, porque un
+  // producto con código canónico no se mueve. Este orden sigue decidiendo qué
+  // correlativo recibe cada producto nuevo, y ahí un empate sin desempate
+  // volvería a repartir códigos distintos en cada corrida.
   const eppRows = await sql`
     SELECT p.id, p.name
     FROM products p
     JOIN product_categories c ON c.id = p.category_id
     WHERE c.is_epp = true AND p.is_active = true
-    ORDER BY p.name
+    ORDER BY p.name, p.id
   `
 
   const srvRows = await sql`
@@ -135,7 +152,7 @@ async function main() {
     FROM products p
     JOIN product_categories c ON c.id = p.category_id
     WHERE c.is_epp = false AND p.is_active = true
-    ORDER BY p.name
+    ORDER BY p.name, p.id
   `
 
   const allProducts = await sql<AllProductRow[]>`

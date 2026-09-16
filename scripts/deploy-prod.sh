@@ -6,6 +6,7 @@ set -euo pipefail
 #         PROD_SSH=usuario@host npm run deploy:prod          # override target
 #         PROD_DIR=/srv/plataforma npm run deploy:prod       # override path
 #         PROD_PUBLIC_URL=https://... npm run deploy:prod     # override edge URL
+#         SKIP_FUEL_PREFLIGHT_GATE=1 npm run deploy:prod      # forzar pese al preflight
 #
 # Producción vive en OTRA máquina desde 2026-08-28 (antes compartía el daemon
 # Docker con este checkout). La imagen se sigue construyendo acá, sobre `main`,
@@ -38,6 +39,8 @@ IMAGE_EXPLICIT="${IMAGE:+1}"
 IMAGE="${IMAGE:-ghcr.io/allopze/bodega:latest}"
 PREV_IMAGE="${IMAGE%:*}:prev"
 BUILDER="${BUILDER:-chome-prod}"
+# Salida de emergencia de la puerta del preflight de combustible (ver más abajo).
+SKIP_FUEL_PREFLIGHT_GATE="${SKIP_FUEL_PREFLIGHT_GATE:-}"
 # Lo único que se comprueba desde fuera del servidor: que el túnel publique
 # esta release. Nada de lo demás pasa por el borde de Cloudflare.
 PROD_PUBLIC_URL="${PROD_PUBLIC_URL:-https://plataforma.portalchome.cl}"
@@ -387,7 +390,14 @@ run_timed "Diagnóstico de conciliación OC-factura (previo a migrar)" run_in_pr
 # transacciones con odómetro trae el detalle ya guardado, cuántas patentes no
 # resuelven a un equipo y cuántas lecturas regresivas arrastra el histórico. Es
 # la cifra con la que se contrasta el backfill de más abajo.
-run_timed "Diagnóstico de integraciones de combustible (previo a migrar)" run_in_prod docker compose run --rm preflight-fuel-integrations
+# Este diagnóstico además corta: si el dato contradice una invariante
+# estructural (identidades partidas, proveedor desconocido, claves duplicadas en
+# el detalle) sale distinto de cero y el deploy se detiene acá, con el pg_dump ya
+# hecho y sin migrar nada. La deuda operativa —pendientes del proveedor,
+# odómetros regresivos— sólo se informa. `SKIP_FUEL_PREFLIGHT_GATE=1` fuerza el
+# paso, que es lo que se necesita cuando el deploy trae justamente el arreglo.
+run_timed "Diagnóstico de integraciones de combustible (previo a migrar)" \
+  run_in_prod docker compose run --rm -e "SKIP_FUEL_PREFLIGHT_GATE=$SKIP_FUEL_PREFLIGHT_GATE" preflight-fuel-integrations
 
 run_timed "Applying migrations" run_in_prod docker compose run --rm migrate
 
