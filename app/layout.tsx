@@ -3,6 +3,17 @@ import { GeistMono } from "geist/font/mono"
 import localFont from "next/font/local"
 import "./globals.css"
 
+// El proxy (`proxy.ts` → `lib/security/csp.ts`) emite una CSP con nonce por
+// request, y Next sólo puede estampar ese nonce en el HTML que renderiza en la
+// petición: en una página prerenderizada el `<script>` inline del flight queda
+// horneado **sin** nonce y el navegador lo bloquea, así que la app nunca
+// hidrata. Se veía en /recuperar (la única página HTML estática junto con el
+// 404): dos violaciones de `script-src` y React #412 en cada carga. Declararlo
+// en el layout raíz es lo que garantiza el invariante para toda ruta presente y
+// futura — repetirlo página por página ya falló una vez (login, /tae y /ppa lo
+// tenían; /recuperar no).
+export const dynamic = "force-dynamic"
+
 const exo = localFont({
   variable: "--font-exo",
   display: "swap",
