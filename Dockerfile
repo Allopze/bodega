@@ -36,8 +36,14 @@ FROM dev AS build
 # `next build` page-data collection.  The build never opens a real
 # connection (all routes using @/db are force-dynamic), so a placeholder
 # URL is safe here.  The real DATABASE_URL is injected at runtime only.
+# `scripts/deploy-prod.sh` corre `npm run typecheck` antes de invocar el build y
+# pasa este ARG en 1, así que repetir `tsc` dentro de la imagen sólo agregaría
+# ~1 GB al pico de memoria y ~32 s. Por defecto viene vacío: un `docker build`
+# a mano sigue verificando tipos, como antes.
+ARG BODEGA_BUILD_SKIP_TYPECHECK=
 RUN --mount=type=cache,id=chome-next,target=/app/.next/cache,sharing=locked \
     NODE_OPTIONS=--max-old-space-size=8192 \
+    BODEGA_BUILD_SKIP_TYPECHECK="$BODEGA_BUILD_SKIP_TYPECHECK" \
     DATABASE_URL=postgres://build:build@localhost:5432/build npm run build
 
 # Bundle the RBAC synchronizer while its TypeScript sources, path aliases and

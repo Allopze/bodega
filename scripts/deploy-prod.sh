@@ -154,6 +154,12 @@ if [ "$confirm" != "y" ]; then
   exit 1
 fi
 
+# El chequeo de tipos corre acá, antes de tocar producción: si falla, el deploy
+# se detiene sin haber etiquetado el rollback ni volcado la base. Además deja de
+# correr dentro de `next build` (ver el ARG del Dockerfile), donde compartía el
+# proceso —y el pico de memoria— con la compilación de webpack.
+run_timed "Chequeo de tipos (previo a construir la imagen)" npm run typecheck
+
 echo "==> Verifying persistent BuildKit builder ($BUILDER)"
 if ! docker buildx inspect "$BUILDER" --bootstrap; then
   echo "ERROR: BuildKit builder '$BUILDER' is unavailable. Install docker-buildx-plugin and bootstrap the builder before deploying."
@@ -347,7 +353,8 @@ dump_production_database() {
 
 run_timed "Dumping production database" dump_production_database
 
-run_timed "Building image from $(pwd) (main)" docker buildx build --builder "$BUILDER" --target prod --tag "$IMAGE" --load --progress=plain .
+run_timed "Building image from $(pwd) (main)" docker buildx build --builder "$BUILDER" --target prod --tag "$IMAGE" --load --progress=plain \
+  --build-arg BODEGA_BUILD_SKIP_TYPECHECK=1 .
 
 # Prod dejó de compartir el daemon Docker con este checkout, así que la imagen
 # recién construida tiene que viajar.
