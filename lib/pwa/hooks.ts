@@ -24,25 +24,33 @@ import { showSyncNotification } from "./notifications"
 
 /* ── useOnlineStatus ─────────────────────────────────────────────────────── */
 
+function subscribeOnlineStatus(onStoreChange: () => void) {
+  window.addEventListener("online", onStoreChange)
+  window.addEventListener("offline", onStoreChange)
+  return () => {
+    window.removeEventListener("online", onStoreChange)
+    window.removeEventListener("offline", onStoreChange)
+  }
+}
+
+function getOnlineSnapshot(): boolean {
+  return navigator.onLine
+}
+
+/**
+ * En el servidor no hay conectividad que medir. NO se puede preguntar por
+ * `navigator`: desde Node 22 el runtime global expone un objeto `navigator` sin
+ * `onLine`, así que un guard `typeof navigator !== "undefined"` daba por bueno
+ * el entorno del servidor y leía `undefined` (falsy) — el servidor renderizaba
+ * el aviso "Sin conexión" y el navegador, con `navigator.onLine === true`, el
+ * formulario, dejando React #418 de hidratación en cada carga de /ppa.
+ */
+function getServerOnlineSnapshot(): boolean {
+  return true
+}
+
 export function useOnlineStatus(): boolean {
-  const [online, setOnline] = React.useState(
-    () => typeof navigator !== "undefined" ? navigator.onLine : true,
-  )
-
-  React.useEffect(() => {
-    const handleOnline = () => setOnline(true)
-    const handleOffline = () => setOnline(false)
-
-    window.addEventListener("online", handleOnline)
-    window.addEventListener("offline", handleOffline)
-
-    return () => {
-      window.removeEventListener("online", handleOnline)
-      window.removeEventListener("offline", handleOffline)
-    }
-  }, [])
-
-  return online
+  return React.useSyncExternalStore(subscribeOnlineStatus, getOnlineSnapshot, getServerOnlineSnapshot)
 }
 
 /* ── usePpaOfflineQueue ──────────────────────────────────────────────────── */
