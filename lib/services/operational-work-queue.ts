@@ -49,7 +49,6 @@ import { approvalQueueFilter, TERMINAL_REQUEST_STATUSES } from "@/lib/approvals-
 import { itemHasNoActiveOrderSql } from "@/lib/adquisiciones/pending-purchase"
 import { resolveWorksiteScope, type WorksiteScope } from "@/lib/auth/scope"
 import { logger } from "@/lib/logger"
-import { sentry } from "@/lib/sentry"
 import {
   DIRECT_FAENA_RECEIVABLE_STATUSES,
   FAENA_RECEIVABLE_STATUSES,
@@ -1512,7 +1511,6 @@ export async function getOperationalWorkQueue(session: Session, rawFilters: Oper
         failedModules,
         healthySourceCount: recovery.healthy.length,
       })
-      sentry.captureMessage(`Operational queue source degraded: ${failedModules}`, "warning")
       try {
         const result = await getOperationalWorkQueuePage(session, scope, filters, recovery.healthy)
         return { ...result, sourceErrors: recovery.sourceErrors, refreshedAt: new Date().toISOString() }

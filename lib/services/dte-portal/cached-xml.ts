@@ -4,10 +4,10 @@
  * Lectura del XML de un DTE ya descargado y verificado, desde el disco.
  *
  * Vive aparte de `purchase-document-xml.ts` a propósito: ese módulo importa
- * `DtePortalClient` para poder salir al portal, y el cliente arrastra `undici`
- * y `@sentry/nextjs`. La imagen de producción es un build standalone de Next
+ * `DtePortalClient` para poder salir al portal, y el cliente arrastra `undici`.
+ * La imagen de producción es un build standalone de Next
  * —56 paquetes en `node_modules`, sólo lo que el tracer vio— y ninguno de esos
- * dos está ahí, así que un one-shot que importe la cadena completa revienta al
+ * paquete está ahí, así que un one-shot que importe la cadena completa revienta al
  * arrancar con ERR_MODULE_NOT_FOUND. Leer un archivo del disco no necesita un
  * cliente HTTP; separarlo es lo que permite que `backfill-dte-order-refs`
  * exista sin llevarse el portal puesto.

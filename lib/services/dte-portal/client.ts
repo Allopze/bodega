@@ -335,7 +335,7 @@ export class DtePortalClient {
   private sanitizeErrorMessage(_msg: string): string {
     // Fetch/undici errors can embed a complete request URL or a proxy response.
     // Codes above preserve the actionable class; do not persist or forward raw
-    // transport text to a route, logger, audit record, or Sentry.
+    // transport text to a route, logger or audit record.
     return "[detalle técnico omitido]"
   }
 }

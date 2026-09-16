@@ -34,7 +34,6 @@ describe("lib/env.ts", () => {
     delete process.env.APP_URL
     delete process.env.RESEND_API_KEY
     delete process.env.STORAGE_PATH
-    delete process.env.SENTRY_DSN
 
     const { env } = await import("../env")
     expect(env.authSecret).toBe("mysecret")

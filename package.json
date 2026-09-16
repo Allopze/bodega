@@ -84,7 +84,6 @@
     "test:e2e": "BODEGA_NODE_HEAP_MB=${BODEGA_NODE_HEAP_MB:-8192} bash scripts/run-resource-guard.sh bash scripts/run-e2e.sh",
     "test:e2e:ui": "BODEGA_NODE_HEAP_MB=8192 bash scripts/run-resource-guard.sh playwright test --ui",
     "test:fast": "bash scripts/run-resource-guard.sh vitest run --config vitest.non-pglite.config.ts",
-    "test:env-dsn": "NEXT_PUBLIC_SENTRY_DSN=https://publickey@o123456.ingest.sentry.io/789 bash scripts/run-resource-guard.sh vitest run --config vitest.non-pglite.config.ts",
     "test:pglite": "bash scripts/run-resource-guard.sh vitest run --config vitest.pglite.config.ts",
     "test:watch": "bash scripts/run-resource-guard.sh vitest",
     "test:coverage": "bash scripts/run-resource-guard.sh vitest run --coverage",
@@ -111,7 +110,6 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@radix-ui/react-visually-hidden": "^1.2.4",
-    "@sentry/nextjs": "^10.59.0",
     "@tanstack/react-query": "^5.101.0",
     "@tesseract.js-data/eng": "1.0.0",
     "@tesseract.js-data/spa": "1.0.0",
@@ -186,7 +184,6 @@
   },
   "allowScripts": {
     "cli-progress@3.12.0": true,
-    "@sentry/cli@2.58.6": true,
     "core-js@3.49.0": true,
     "sharp@0.34.5": true,
     "tesseract.js@5.1.1": true,

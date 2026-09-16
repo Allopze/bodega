@@ -52,13 +52,13 @@ describe("plan de habilitación de plantillas PDTP 2026", () => {
   })
 
   it("el stage del Dockerfile le da a este bundle los globals de CJS", () => {
-    /* Éste es el primer script que entra por `prevention-inspections.ts`, que
-     * importa el `logger` → `lib/sentry.ts` → `@sentry/nextjs`, y con eso entra
-     * Next entero: código CJS que usa `__dirname`, indefinido en un bundle ESM.
-     * Sin el banner el script revienta al cargar, en producción, antes de
-     * ejecutar una línea propia — que es exactamente lo que pasó la primera vez.
-     * `@sentry/nextjs` no puede ir external porque la imagen final no lo copia
-     * a node_modules. */
+    /* Cualquier dependencia CJS que caiga dentro de este bundle ESM usa
+     * `__dirname`/`require`, indefinidos ahí. Sin el banner el script revienta
+     * al cargar, en producción, antes de ejecutar una línea propia — que es
+     * exactamente lo que pasó la primera vez, cuando la cadena
+     * `logger -> lib/sentry.ts -> @sentry/nextjs` metía Next entero. Esa cadena
+     * ya no existe, pero el banner se conserva: cuesta una línea y el día que
+     * alguien importe un servicio pesado acá el fallo vuelve a ser en runtime. */
     const dockerfile = readFileSync("Dockerfile", "utf8")
     const stage = /RUN \.\/node_modules\/\.bin\/esbuild scripts\/approve-pdtp-2026-inspection-templates\.ts[\s\S]*?--outfile=\S+/.exec(dockerfile)
     expect(stage, "falta el stage de esbuild para el script de habilitación").not.toBeNull()

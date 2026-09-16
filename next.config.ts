@@ -1,5 +1,4 @@
 import type { NextConfig } from "next";
-import { withSentryConfig } from "@sentry/nextjs";
 
 const configuredBuildWorkers = Number.parseInt(process.env.BODEGA_BUILD_WORKERS ?? "", 10);
 const buildWorkers = Number.isSafeInteger(configuredBuildWorkers) && configuredBuildWorkers > 0
@@ -121,8 +120,14 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withSentryConfig(nextConfig, {
-  silent: true,
-  org: process.env.SENTRY_ORG,
-  project: process.env.SENTRY_PROJECT,
-});
+// `next build` corre `tsc` sobre el proyecto completo dentro del mismo proceso
+// de build. En esta base (3.238 archivos) eso suma ~1 GB al pico de memoria y
+// ~32 s, y el pico del build ya roza la RAM de la máquina que compila la imagen.
+// El deploy corre `npm run typecheck` como paso propio y previo (scripts/
+// deploy-prod.sh), así que dentro de la imagen el chequeo sería el segundo.
+// Fuera de ese flujo la variable no está y `next build` sigue verificando tipos.
+if (process.env.BODEGA_BUILD_SKIP_TYPECHECK === "1") {
+  nextConfig.typescript = { ignoreBuildErrors: true };
+}
+
+export default nextConfig;

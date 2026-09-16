@@ -14,13 +14,11 @@
  * masked. This keeps PII (RUT, email, hashed passwords, tokens) out of logs
  * that may be shipped to an external SaaS — relevant for Ley 19.628 (Chile) / GDPR.
  */
-import { sentry } from "@/lib/sentry"
-
 const LEVEL = process.env.NODE_ENV === "production" ? "warn" : "debug"
 
 // Match both generic secrets and the DTE key-material vocabulary.  Keep this
-// deliberately broad: the logger is the last boundary before stdout/Sentry,
-// so a false positive is preferable to a credential leaving the process.
+// deliberately broad: the logger is the last boundary before stdout, so a
+// false positive is preferable to a credential leaving the process.
 const SENSITIVE_KEY = /(?:password|passphrase|hashed_?password|token|token_?hash|secret|authorization|cookie|rut(?:_?(?:usr|emp))?|email|importer_?email|phone|telefono|clave|cod_?emp|keyring|(?:private|encryption)_?key|ciphertext|envelope|(?:auth_)?tag|(?:initialization_?)?iv)/i
 
 const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi
@@ -35,31 +33,6 @@ function redactString(value: string): string {
     .replace(SECRET_ASSIGNMENT_RE, "$1[redacted]")
     .replace(EMAIL_RE, "[email]")
     .replace(RUT_RE, "[rut]")
-}
-
-function redactError(error: Error): Error {
-  const safeError = new Error(redactString(error.message))
-  safeError.name = error.name
-  safeError.stack = redactString(error.stack ?? error.message)
-  return safeError
-}
-
-/**
- * El `Error` de un log, esté suelto o anidado dentro del objeto de contexto
- * (`logger.error({ err }, "mensaje")`). Buscarlo sólo entre los argumentos de
- * primer nivel mandaba a Sentry un `captureMessage` con el texto aplastado en
- * vez de un `captureException` con stack: el fallo llegaba sin traza.
- */
-function findError(value: unknown, depth = 0, seen = new WeakSet<object>()): Error | undefined {
-  if (value instanceof Error) return value
-  if (depth > 3 || value === null || typeof value !== "object") return undefined
-  if (seen.has(value as object)) return undefined
-  seen.add(value as object)
-  for (const nested of Object.values(value as Record<string, unknown>)) {
-    const found = findError(nested, depth + 1, seen)
-    if (found) return found
-  }
-  return undefined
 }
 
 function redact(value: unknown, depth = 0, seen = new WeakSet<object>()): unknown {
@@ -209,18 +182,5 @@ export const logger = {
 
   error(...args: unknown[]) {
     writeLog("error", args)
-    // Forward errors to Sentry for production observability. The sentry wrapper
-    // is a no-op when SENTRY_DSN is not set or NODE_ENV !== "production".
-    const firstError = findError(args)
-    if (firstError) {
-      // Do not hand the original Error to Sentry: its message/stack can contain
-      // a portal URL, credentials, or an encrypted envelope.
-      sentry.captureException(redactError(firstError))
-    } else {
-      // `writeLog` already redacts stdout; Sentry is a separate sink and must
-      // receive the exact same safe representation rather than raw strings.
-      const msg = args.map((a) => (typeof a === "string" ? redactString(a) : JSON.stringify(redact(a)))).join(" ")
-      sentry.captureMessage(msg, "error")
-    }
   },
 }

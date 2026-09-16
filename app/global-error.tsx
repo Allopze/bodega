@@ -1,7 +1,5 @@
 "use client"
 
-import { useEffect } from "react"
-import * as Sentry from "@sentry/nextjs"
 
 const BODY_STYLE = {
   display: "flex",
@@ -24,21 +22,15 @@ const BUTTON_STYLE = {
   fontSize: "0.875rem",
 } as const
 
+// Next entrega `error` a este límite, pero no se consume: el fallo detallado ya
+// queda registrado —y depurado— en su frontera de servidor, y desde el
+// navegador nunca se reenvía un mensaje o stack que pueda cargar credenciales.
 export default function GlobalError({
-  error,
   reset,
 }: {
   error: Error & { digest?: string }
   reset: () => void
 }) {
-  useEffect(() => {
-    // A global boundary can receive errors from arbitrary server/client paths.
-    // The detailed failure is captured at its server boundary with redaction;
-    // never forward a potentially credential-bearing message or stack from the
-    // browser to Sentry here.
-    Sentry.captureMessage("CHOME_GLOBAL_ERROR", "error")
-  }, [error.digest])
-
   return (
     <html lang="es">
       <head>

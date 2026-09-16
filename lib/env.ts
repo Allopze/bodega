@@ -30,7 +30,6 @@ export const env = {
   appUrl:           process.env.APP_URL?.trim() || null,
   resendApiKey:     process.env.RESEND_API_KEY?.trim() || null,
   storagePath:      process.env.STORAGE_PATH?.trim() || null,
-  sentryDsn:        process.env.SENTRY_DSN?.trim() || null,
 
   // Numeric with defaults
   taxRate:          Number(process.env.TAX_RATE ?? 0.19),

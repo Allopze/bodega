@@ -33,7 +33,6 @@ const DTE_KEYRING_RUNTIME_ENV_KEYS = [
   "DTE_SETTINGS_KEYRING",
   "DTE_SETTINGS_ACTIVE_KEY_ID",
   "DTE_SETTINGS_MODE",
-  "SENTRY_DSN",
 ] as const
 
 function appServiceFromCompose(compose: string): string {
@@ -154,7 +153,11 @@ describe("deploy workflow", () => {
 
     expect(deployScript).toContain('BUILDER="${BUILDER:-chome-prod}"')
     expect(deployScript).toContain('docker buildx inspect "$BUILDER" --bootstrap')
-    expect(deployScript).toContain('docker buildx build --builder "$BUILDER" --target prod --tag "$IMAGE" --load --progress=plain .')
+    expect(deployScript).toContain('docker buildx build --builder "$BUILDER" --target prod --tag "$IMAGE" --load --progress=plain')
+    // El chequeo de tipos corre como paso propio del deploy, así que la imagen
+    // no vuelve a correr `tsc` dentro de `next build` (ver el ARG del Dockerfile).
+    expect(deployScript).toContain("run_timed \"Chequeo de tipos (previo a construir la imagen)\" npm run typecheck")
+    expect(deployScript).toContain("--build-arg BODEGA_BUILD_SKIP_TYPECHECK=1")
     expect(deployScript).toContain("run_timed")
     expect(deployScript).not.toContain('if "$@"; then')
   })
@@ -266,7 +269,7 @@ describe("deploy workflow", () => {
     expect(at("reconcile-epp-duplicate-sizes")).toBeLessThan(at("backfill-epp-clothing-sizes"))
   })
 
-  it("emits the Sentry-dependent PDTP reconciler as CommonJS", () => {
+  it("emits the PDTP reconciler as CommonJS", () => {
     const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
     const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
     const build = dockerfile.match(
@@ -279,7 +282,7 @@ describe("deploy workflow", () => {
     expect(compose).toContain('command: ["node", "scripts/reconcile-pdtp-fulfillment-events.cjs"]')
   })
 
-  it("emits the Sentry-dependent SST migrator as CommonJS", () => {
+  it("emits the SST migrator as CommonJS", () => {
     const dockerfile = readFileSync(path.join(repoRoot, "Dockerfile"), "utf8")
     const compose = readFileSync(path.join(repoRoot, "docker-compose.yml"), "utf8")
     const build = dockerfile.match(

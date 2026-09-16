@@ -106,7 +106,6 @@ services:
       # Outbound mail runs on Resend (lib/email/smtp.ts). Without this key the app
       # boots fine but stays silent (no emails: invitations, password reset, etc.).
       - RESEND_API_KEY=${RESEND_API_KEY:-}
-      - SENTRY_DSN=${SENTRY_DSN:-}
       - STORAGE_PATH=${STORAGE_PATH:-/data/storage}
       # Backend de documentos SST: filesystem (default) o cloudreve. Solo
       # `cloudreve` activa las credenciales de abajo.
@@ -347,9 +346,11 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
     command: ["node", "scripts/sync-rbac.mjs"]
 
-  # One-shot: normaliza SKUs de productos EPP y servicios a formato secuencial
-  # (EPP-001, EPP-002, ... / SRV-001, SRV-002, ...). Conserva los SKU de
-  # productos fuera del conjunto activo, por lo que puede dejar saltos. Es
+  # One-shot: asigna SKUs de productos EPP y servicios en formato secuencial
+  # (EPP-001, EPP-002, ... / SRV-001, SRV-002, ...). Conserva el código de todo
+  # producto que ya tiene uno canónico —el SKU es lo que quedó impreso en las
+  # guías—, así que en la práctica sólo numera productos nuevos. Los SKU de
+  # productos fuera del conjunto activo quedan reservados y dejan saltos. Es
   # idempotente: si ya está normalizado, no cambia nada. Corre después de
   # migraciones.
   #

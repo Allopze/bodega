@@ -86,15 +86,12 @@ RUN ./node_modules/.bin/esbuild scripts/seed-pdtp-inspection-templates-2026.ts \
 # que faltan, retirar las vigentes que no declaran actividad— por la misma
 # puerta que la UI, firmado por quien lo corre. No va en el deploy: se invoca a
 # mano con un actor explícito.
-# El banner no es opcional acá y sí lo es en los demás scripts: éste es el
-# primero que entra por `lib/services/prevention-inspections.ts`, que importa el
-# `logger`, que importa `lib/sentry.ts`, que importa `@sentry/nextjs` — y con él
-# entra Next entero, incluido código CJS que usa `__dirname`. En un bundle ESM
-# eso revienta al cargar, antes de ejecutar una línea propia. `@sentry/nextjs`
-# no puede marcarse external porque la imagen final no copia ese paquete a
-# node_modules, así que el camino es dejarlo dentro y darle los globals que
-# espera. El wrapper de Sentry ya es no-op sin `SENTRY_DSN`, que es el caso de
-# cualquier script de línea de comandos.
+# El banner da los globals CJS (`require`, `__dirname`, `__filename`) que espera
+# cualquier dependencia CJS que caiga dentro de un bundle ESM: sin ellos el
+# script revienta al cargar, antes de ejecutar una línea propia. Se conserva
+# como red de seguridad —cuesta una línea— aunque la cadena que lo hizo
+# obligatorio (logger -> lib/sentry.ts -> @sentry/nextjs, que arrastraba Next
+# entero) ya no existe desde que se removió Sentry.
 RUN ./node_modules/.bin/esbuild scripts/approve-pdtp-2026-inspection-templates.ts \
     --bundle \
     --platform=node \
