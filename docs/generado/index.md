@@ -23,7 +23,7 @@ activos.
 
 | Área | Ruta base | Estado |
 |------|-----------|--------|
-| Dashboard | `/dashboard` | 🔜 Pendiente |
+| [Dashboard](./_plataforma/dashboard.md) | `/dashboard` | ✅ Completo |
 | [Solicitudes](./requests/solicitudes.md) | `/solicitudes` | ✅ Completo (3/3) |
 | [Aprobaciones](./approvals/aprobaciones.md) | `/aprobaciones` | ✅ Completo (1/1) |
 | [Compras](./purchasing/compras.md) | `/compras` | ✅ Completo (5/5) |
@@ -31,21 +31,21 @@ activos.
 | [Bodega](./warehouse/bodega.md) | `/bodega` | ✅ Completo (15/15) |
 | [Entregas](./deliveries/entregas.md) | `/entregas` | ✅ Completo (2/2) |
 | [Prevención y SG-SST](./prevention/prevencion.md) | `/prevencion` | ✅ Completo (76/76 — 60 con captura, 16 desde esquema) |
-| Control operacional | `/control-operacional` | 🔜 Pendiente |
-| Flota | `/flota` | 🔜 Pendiente |
-| Mantenciones | `/mantenciones` | 🔜 Pendiente |
-| Repuestos | `/repuestos` | 🔜 Pendiente |
-| Combustibles | `/combustibles` | 🔜 Pendiente |
-| Servicios | `/servicios` | 🔜 Pendiente |
-| Facturación | `/facturacion` | 🔜 Pendiente |
+| [Control operacional](./flota/control-operacional.md) | `/control-operacional` | ✅ Completo |
+| [Flota](./flota/flota.md) | `/flota` | ✅ Completo (4/4) |
+| [Mantenciones](./mantenciones/mantenciones.md) | `/mantenciones` | ✅ Completo (4/4 — 1 desde esquema) |
+| Repuestos | — | ➖ Sin páginas propias (panel embebido en Solicitudes y Compras) |
+| [Combustibles](./combustibles/combustibles.md) | `/combustibles` | ✅ Completo (28/28 — 6 desde esquema) |
+| Servicios | — | ➖ Sin páginas propias (panel embebido en Solicitudes y Compras) |
+| [Facturación](./billing/facturacion.md) | `/facturacion` | ✅ Completo (9/9) |
 | Trazabilidad | `/trazabilidad` | 🔜 Pendiente |
-| Analítica | `/analitica` | 🔜 Pendiente |
-| Reportes | `/reportes` | 🔜 Pendiente |
-| Pendientes | `/pendientes` | 🔜 Pendiente |
-| Notificaciones | `/notificaciones` | 🔜 Pendiente |
-| Soporte | `/soporte` | 🔜 Pendiente |
-| Perfil | `/perfil` | 🔜 Pendiente |
-| TI | `/ti` | 🔜 Pendiente |
+| [Analítica](./analytics/analitica.md) | `/analitica` | ✅ Completo (1/1) |
+| [Reportes](./reports/reportes.md) | `/reportes` | ✅ Completo (1/1) |
+| [Pendientes](./operations/pendientes.md) | `/pendientes` | ✅ Completo (1/1) |
+| Notificaciones | `/notificaciones` | 🔜 Pendiente (transversal, fuera de los 19 módulos) |
+| [Soporte](./feedback/soporte.md) | `/soporte` | ✅ Completo (3/3) |
+| [Perfil](./_plataforma/perfil.md) | `/perfil` | ✅ Completo |
+| [TI](./ti/ti.md) | `/ti` | ✅ Completo (13/13 — 3 desde esquema) |
 | [Administración](./admin/admin.md) | `/admin` | ✅ Completo (43/43) |
 
 Las páginas se van agregando a medida que se ejecuta `/docs:generate` sobre cada

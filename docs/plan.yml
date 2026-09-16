@@ -9,7 +9,8 @@
 # regeneres una vez que haya progreso (se perdería).
 
 created_at: "2026-09-14T18:00:20.153Z"
-status: pending
+status: complete
+completed_at: "2026-09-15T16:30:00.000Z"
 source:
   knowledge_base: docs/.knowledge/
   config: docs/aidocs-config.yml
@@ -548,7 +549,9 @@ modules:
       route: /pendientes
       dynamic: false
       file: pendientes.md
-  status: pending
+  status: complete
+  completed_at: "2026-09-15T16:30:00.000Z"
+  completion_notes: "1/1 página capturada."
 -
   name: reports
   priority: 9
@@ -572,7 +575,9 @@ modules:
       route: /reportes
       dynamic: false
       file: reportes.md
-  status: pending
+  status: complete
+  completed_at: "2026-09-15T16:30:00.000Z"
+  completion_notes: "1/1 página capturada."
 -
   name: analytics
   priority: 10
@@ -596,7 +601,9 @@ modules:
       route: /analitica
       dynamic: false
       file: analitica.md
-  status: pending
+  status: complete
+  completed_at: "2026-09-15T16:30:00.000Z"
+  completion_notes: "1/1 página capturada."
 -
   name: billing
   priority: 11
@@ -660,7 +667,9 @@ modules:
       route: /facturacion/sincronizacion
       dynamic: false
       file: facturacion-sincronizacion.md
-  status: pending
+  status: complete
+  completed_at: "2026-09-15T16:30:00.000Z"
+  completion_notes: "9/9 páginas capturadas. Se corrigió un bug de extracción: los campos de un formulario sin htmlFor explícito arrastraban el textContent completo del <select> anidado (todas las opciones, incluidos nombres reales de responsables de cobranza) en vez del solo label — recapturada tras el fix."
 -
   name: feedback
   priority: 12
@@ -694,7 +703,9 @@ modules:
       route: /soporte/nuevo
       dynamic: false
       file: soporte-nuevo.md
-  status: pending
+  status: complete
+  completed_at: "2026-09-15T16:30:00.000Z"
+  completion_notes: "3/3 páginas capturadas."
 -
   name: prevention
   priority: 13
@@ -1296,7 +1307,9 @@ modules:
       route: /tae/resultado/[token]
       dynamic: true
       file: tae-resultado-token.md
-  status: pending
+  status: complete
+  completed_at: "2026-09-15T14:00:00.000Z"
+  completion_notes: "28/28 páginas: 22 con captura real (7 fallaron en el primer intento por una caída del servidor local, recapturadas después), 6 documentadas desde el esquema y 3 páginas dinámicas (una polimórfica, dos de token público de un solo uso) documentadas como tales, sin tabla de campos."
 -
   name: flota
   priority: 17
@@ -1335,7 +1348,9 @@ modules:
       route: /flota/monitoreo
       dynamic: false
       file: flota-monitoreo.md
-  status: pending
+  status: complete
+  completed_at: "2026-09-15T14:00:00.000Z"
+  completion_notes: "4/4 páginas capturadas."
 -
   name: mantenciones
   priority: 18
@@ -1374,7 +1389,9 @@ modules:
       route: /mantenciones/politicas-documentales
       dynamic: false
       file: mantenciones-politicas-documentales.md
-  status: pending
+  status: complete
+  completed_at: "2026-09-15T14:00:00.000Z"
+  completion_notes: "4/4 páginas: 3 capturadas, 1 (/mantenciones/[id]) documentada desde el esquema (maintenance_records sin registros en esta BD local)."
 -
   name: ti
   priority: 19
@@ -1458,7 +1475,9 @@ modules:
       route: /ti/tickets/[id]
       dynamic: true
       file: ti-tickets-detalle.md
-  status: pending
+  status: complete
+  completed_at: "2026-09-15T15:00:00.000Z"
+  completion_notes: "13/13 páginas: 10 con captura real, 3 documentadas desde el esquema (it_assets, it_tickets, it_asset_assignments sin registros en esta BD local)."
 embedded_modules:
 -
   name: repuestos
@@ -1510,7 +1529,9 @@ shell:
     -
       route: /reportar-incidente
       dynamic: false
-  status: pending
+  status: complete
+  completed_at: "2026-09-15T17:00:00.000Z"
+  completion_notes: "6/6 páginas: 5 capturadas, 1 (\"/\") documentada como redirect puro a /dashboard. Se corrigió un segundo bug de extracción durante esta pasada: un <style> inline de un gráfico Recharts se colaba en el texto de los enlaces del dashboard — recapturada tras el fix."
 cross_module_flows:
 -
   name: solicitud-a-entrega
@@ -1524,7 +1545,9 @@ cross_module_flows:
     - deliveries
   reason: "El flujo de negocio central de la plataforma, documentado en CONTEXT.md. No es una sola foreign key: cruza los 6 módulos del Tier 2."
   output: docs/generado/requests/solicitud-a-entrega.md
-  status: pending
+  status: complete
+  completed_at: "2026-09-16T01:35:00.000Z"
+  completion_notes: "Recorrido real de punta a punta con datos de prueba creados para esto (SOL-0044 → OC-2026-0033 → REC-2026-0052 → GDI-000030 → ENT-2026-0058), 19 capturas, verificado en base de datos en cada paso. Hallazgo documentado: la entrega no queda enlazada por FK al ítem de origen (delivery_items.request_item_id queda null), por lo que la trazabilidad del ítem no refleja la entrega aunque la solicitud sí cierra. Dos incidentes reales durante la grabación (aprobó SOL-0042 por error, creó una OC del ítem de SOL-0035 por error) revertidos con las acciones propias de la app; detalle en la sección \"Riesgo operativo observado\" del documento."
 -
   name: cobertura-pdtp-prevencion
   title: Cobertura y cumplimiento del PDTP
@@ -1534,7 +1557,9 @@ cross_module_flows:
     - sst
   reason: Los tres módulos de prevención comparten navegación y probablemente indicadores de cumplimiento cruzados.
   output: docs/generado/prevention/cobertura-pdtp-prevencion.md
-  status: pending
+  status: complete
+  completed_at: "2026-09-16T01:45:00.000Z"
+  completion_notes: "Verificado contra el código, no solo la navegación compartida: lib/services/pdtp/accreditation.ts auto-acredita ejecuciones PDTP desde eventos de sst_evaluations; prevention_capa_actions acepta source_type='ppa'. Confirmado con datos reales: 13 ejecuciones auto-acreditadas existen (epp, emergencia, aprobacion_programa) pero ninguna vía evaluacion_sst ni ppa (CAPA está vacía, 0 filas). No se generaron pasos de usuario en vivo para este hallazgo — forzar un ejemplo real de sst/ppa habría exigido completar una evaluación SST o un PPA completos, y ya hubo suficiente mutación de datos reales en el otro flujo hoy."
 -
   name: admin-prevention
   title: null
