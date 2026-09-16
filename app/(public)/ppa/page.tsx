@@ -4,6 +4,17 @@ import { PpaForm } from "./ppa-form"
 import { OfflineSavedMessage } from "./offline-saved"
 
 /**
+ * El layout de esta ruta consulta el toggle del módulo en la base de datos, y
+ * `isRouteOperational` falla cerrado. Durante `next build` no hay base, así que
+ * un intento de prerender renderiza "PPA Digital no disponible" y lo hornea.
+ * Hoy Next infiere el dinamismo desde `searchParams`, pero eso deja el
+ * formulario que los trabajadores abren por QR a merced de esa inferencia.
+ * Declararlo explícito es la misma garantía que ya tiene /tae, que comparte el
+ * gate.
+ */
+export const dynamic = "force-dynamic"
+
+/**
  * Formulario PPA público (sin login). Acceso por enlace directo o QR.
  *
  * PPA-001 (auditoría 2026-09-14): la faena se precargaba con `?faena=<id>` a
