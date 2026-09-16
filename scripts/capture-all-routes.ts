@@ -6,7 +6,7 @@ import crypto from "node:crypto"
 import postgres from "postgres"
 import bcrypt from "bcryptjs"
 import sharp from "sharp"
-import { chromium, type BrowserContext, type Locator, type Page } from "@playwright/test"
+import { chromium, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test"
 import { loadEnvConfig } from "@next/env"
 import { drizzle } from "drizzle-orm/postgres-js"
 import { migrate } from "drizzle-orm/postgres-js/migrator"
@@ -1135,18 +1135,119 @@ export function reconcileCaptureArtifacts(
 }
 
 /**
+ * Resuelve cuando el navegador deja de responder (o de inmediato si ya no está).
+ *
+ * Existe porque una corrida puede perder el proceso de Chromium a mitad de
+ * camino —el 2026-09-16 murió en la ruta 11 de 242 por agotamiento de recursos—
+ * y sin esta señal las llamadas de Playwright que ya estaban en vuelo pueden no
+ * resolverse nunca: la corrida quedaba colgada antes de escribir el manifest,
+ * que es el peor final posible, porque se pierden las rutas restantes y ni
+ * siquiera queda escrito por qué.
+ */
+function browserDisconnected(browser: Browser | null): Promise<void> {
+  if (!browser || !browser.isConnected()) return Promise.resolve()
+  return new Promise((resolve) => {
+    browser.once("disconnected", () => resolve())
+  })
+}
+
+/** Espera acotada: para cierres que, contra un navegador muerto, no vuelven. */
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Resultado de una ruta que no se pudo capturar. Tenerlo en un solo lugar evita
+ * que los dos caminos que llegan acá —la navegación falló, o la ruta se quedó
+ * sin resultado porque el navegador murió antes de despacharla— inventen formas
+ * distintas para el mismo hecho.
+ */
+function failedCaptureResult({
+  viewport,
+  route,
+  requestedUrl,
+  relativeScreenshot,
+  error,
+}: {
+  viewport: string
+  route: RouteTarget
+  requestedUrl: string
+  relativeScreenshot: string
+  error: string
+}): CaptureResult {
+  return {
+    viewport,
+    slug: route.slug,
+    path: route.path,
+    requestedUrl,
+    finalUrl: requestedUrl,
+    status: null,
+    ok: false,
+    state: "capture-invalid",
+    screenshot: relativeScreenshot,
+    error,
+    notes: route.notes,
+  }
+}
+
+/**
+ * Declara como fallo toda ruta del viewport que no tenga resultado propio y
+ * devuelve lo declarado.
+ *
+ * Es el único cierre honesto cuando el navegador se cae a mitad de camino: el
+ * manifest queda diciendo exactamente qué no se cubrió. La alternativa —dejar
+ * esas rutas fuera de los resultados— hace que la corrida se lea como más corta
+ * de lo que era, y el gate de integridad no puede distinguir "no se intentó" de
+ * "no existía", que es convertir un hueco de cobertura en un éxito silencioso.
+ *
+ * Exportada (como `resolveServerLaunch`) para poder fijar ese invariante en las
+ * pruebas sin levantar un navegador.
+ */
+export function declareUncoveredRoutes(
+  results: CaptureResult[],
+  viewport: string,
+  routes: RouteTarget[],
+  serverBaseUrl: string,
+  reason: string,
+): CaptureResult[] {
+  const recorded = new Set(results.map((result) => `${result.viewport}|${result.slug}`))
+  const uncovered = routes.filter((route) => !recorded.has(`${viewport}|${route.slug}`))
+  if (uncovered.length === 0) return []
+
+  console.warn(`  ⚠ ${viewport}: ${uncovered.length} ruta(s) sin capturar (${reason}); se declaran como fallo en el manifest`)
+  const declared = uncovered.map((route) => failedCaptureResult({
+    viewport,
+    route,
+    requestedUrl: `${serverBaseUrl}${route.path}`,
+    relativeScreenshot: path.join(outputDir, `${viewport}-${route.slug}.png`),
+    error: `Sin capturar: ${reason}`,
+  }))
+  results.push(...declared)
+  return declared
+}
+
+/**
  * Captura rutas en paralelo usando un pool de workers que comparten una cola.
  * Cada worker toma la siguiente ruta disponible (índice atómico en JS
  * single-threaded), ejecuta captureRoute y almacena el resultado en la
  * posición original para mantener el orden. El factor limitante es el
  * servidor Next.js (monoproceso); 4-8 workers son óptimos localmente.
  * La concurrencia se configura con CAPTURE_CONCURRENCY (default 4).
+ *
+ * El default es 4, no 8: con dos viewports simultáneos, 8 workers por viewport
+ * son 16 pestañas de tablas anchas capturadas a página completa, y en esta
+ * máquina eso agota los recursos del renderer. Medido el 2026-09-16 con el
+ * módulo `ti` corrido dos veces seguidas sobre el mismo build: con 8 fallaron
+ * 11 de las 26 rutas (`Page crashed`, `net::ERR_INSUFFICIENT_RESOURCES` y el
+ * navegador cerrándose a mitad de corrida), y con 4 las 26 rutas más sus 28
+ * capturas de interacción cerraron sin un solo fallo. Subirlo es válido en un
+ * host dedicado, pero hay que medirlo.
  */
 async function captureRouteBatch(
   context: BrowserContext,
   viewport: string,
   routes: RouteTarget[],
-  concurrency: number = Number(process.env.CAPTURE_CONCURRENCY) || 8,
+  concurrency: number = Number(process.env.CAPTURE_CONCURRENCY) || 4,
   serverBaseUrl: string = baseUrl,
 ): Promise<CaptureResult[]> {
   if (routes.length === 0) return []
@@ -1157,12 +1258,21 @@ async function captureRouteBatch(
   let completedCount = 0
   let errorCount = 0
   const startTime = Date.now()
+  const browserLost = browserDisconnected(context.browser())
 
   async function worker() {
     while (nextIndex < routes.length) {
       const idx = nextIndex++
       const routeStart = Date.now()
-      const routeResults = await captureRoute(context, viewport, routes[idx]!, serverBaseUrl)
+      // La carrera es contra la muerte del navegador, no contra un reloj: una
+      // ruta lenta (un print que renderiza PDF, un tablero pesado) es legítima,
+      // pero una llamada contra un navegador que ya no existe no tiene por qué
+      // resolverse nunca.
+      const routeResults = await Promise.race([
+        captureRoute(context, viewport, routes[idx]!, serverBaseUrl),
+        browserLost.then(() => null),
+      ])
+      if (routeResults === null) return
       const routeMs = Date.now() - routeStart
       results.push(...routeResults)
       completedCount++
@@ -1175,6 +1285,18 @@ async function captureRouteBatch(
 
   const poolSize = Math.min(concurrency, routes.length)
   await Promise.all(Array.from({ length: poolSize }, () => worker()))
+
+  // Red de seguridad: si el navegador murió, las rutas que estaban en vuelo se
+  // abandonaron arriba y las que nunca se despacharon no produjeron nada. Se
+  // declaran para que el manifest diga qué quedó sin cubrir.
+  errorCount += declareUncoveredRoutes(
+    results,
+    viewport,
+    routes,
+    serverBaseUrl,
+    "el navegador se cerró durante la corrida",
+  ).length
+
   finalizeProgress(total, errorCount)
   return results
 }
@@ -1249,16 +1371,27 @@ async function main() {
   serversToStop.push(...serverInfos.map((s) => s.server))
 
   const browser = await chromium.launch()
+  const browserLost = browserDisconnected(browser)
 
   try {
     const viewportTasks = viewports.map((viewport, vpIdx) => {
       const serverBaseUrl = serverInfos[vpIdx]!.serverBaseUrl
       return (async () => {
-        const context = await browser.newContext({
-          viewport: { width: viewport.width, height: viewport.height },
-          deviceScaleFactor: 1,
-          locale: "es-CL",
-        })
+        let context: BrowserContext
+        try {
+          context = await browser.newContext({
+            viewport: { width: viewport.width, height: viewport.height },
+            deviceScaleFactor: 1,
+            locale: "es-CL",
+          })
+        } catch (error) {
+          // El navegador puede morir antes de abrir el contexto (o el host quedar
+          // sin recursos para uno nuevo). Se declara la vista completa sin
+          // capturar en vez de terminar la corrida sin manifest.
+          const reason = error instanceof Error ? error.message : String(error)
+          declareUncoveredRoutes(results, viewport.name, routes, serverBaseUrl, `no se pudo abrir un contexto del navegador: ${reason}`)
+          return
+        }
 
         const nonAuthRoutes = routes.filter((r) => !r.auth)
         if (nonAuthRoutes.length > 0) {
@@ -1268,18 +1401,27 @@ async function main() {
 
         const authRoutes = routes.filter((r) => r.auth)
         if (authRoutes.length > 0) {
-          await login(context, serverBaseUrl)
+          // El login se espera contra la caída del navegador: sin esto, `login`
+          // reintenta tres veces contra un navegador que ya no existe y su
+          // excepción termina la corrida entera sin manifest. El `.catch` evita
+          // el rechazo no manejado cuando la carrera ya se resolvió por caída.
+          const loginAttempt = login(context, serverBaseUrl)
+          loginAttempt.catch(() => undefined)
+          await Promise.race([loginAttempt, browserLost])
           const authResults = await captureRouteBatch(context, viewport.name, authRoutes, undefined, serverBaseUrl)
           results.push(...authResults)
         }
 
-        await context.close()
+        await context.close().catch(() => undefined)
       })()
     })
 
     await Promise.all(viewportTasks)
   } finally {
-    await browser.close()
+    // Un cierre contra un navegador ya muerto puede no resolverse (el driver de
+    // Playwright se queda sin responder): no puede impedir que el manifest se
+    // escriba, que es la evidencia de la corrida.
+    await Promise.race([browser.close().catch(() => undefined), delay(5_000)])
     await Promise.all(serversToStop.map((s) => stopServer(s)))
   }
 

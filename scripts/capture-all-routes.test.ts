@@ -6,6 +6,7 @@ import { chileDateParts } from "@/lib/utils"
 import {
   cleanOutputDir,
   createDiscoveredCaptureRoutes,
+  declareUncoveredRoutes,
   getAllowedCapturePaths,
   getCaptureRoutes,
   getCaptureRouteInventory,
@@ -21,6 +22,8 @@ import {
   shouldUseProductionCaptureServer,
   shiftCaptureDateMonths,
   uniqueInteractionSlug,
+  type CaptureResult,
+  type RouteTarget,
 } from "./capture-all-routes"
 import {
   discoverRoutePatterns,
@@ -548,5 +551,71 @@ describe("poda de interacciones redundantes", () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe("declareUncoveredRoutes", () => {
+  /**
+   * Cuando el navegador se cae a mitad de la corrida, las rutas que se quedaron
+   * sin resultado tienen que aparecer en el manifest como fallo declarado: el
+   * 2026-09-16 Chromium murió en la ruta 11 de 242 y, sin esto, la corrida
+   * moría sin manifest —ni capturas ni hueco de cobertura escrito—, así que el
+   * único final aceptable es una corrida que cierra y dice qué no cubrió.
+   */
+  const motivo = "el navegador se cerró durante la corrida"
+  const ruta = (slug: string): RouteTarget => ({ slug, path: `/${slug}`, auth: true })
+  const capturada = (viewport: string, slug: string): CaptureResult => ({
+    viewport,
+    slug,
+    path: `/${slug}`,
+    requestedUrl: `http://127.0.0.1:3127/${slug}`,
+    finalUrl: `http://127.0.0.1:3127/${slug}`,
+    status: 200,
+    ok: true,
+    state: "capture-ok",
+    screenshot: `/tmp/${viewport}-${slug}.png`,
+  })
+
+  it("declara solo las rutas sin resultado y no pisa las ya capturadas", () => {
+    const capturadaOk = capturada("desktop", "ti")
+    const results: CaptureResult[] = [capturadaOk]
+
+    const declaradas = declareUncoveredRoutes(
+      results,
+      "desktop",
+      [ruta("ti"), ruta("ti-activos"), ruta("ti-bajas")],
+      "http://127.0.0.1:3127",
+      motivo,
+    )
+
+    expect(declaradas.map((r) => r.slug)).toEqual(["ti-activos", "ti-bajas"])
+    expect(declaradas[0]).toMatchObject({
+      ok: false,
+      state: "capture-invalid",
+      status: null,
+      error: `Sin capturar: ${motivo}`,
+    })
+    // El manifest no puede declarar fallo lo que sí tiene PNG.
+    expect(results[0]).toEqual(capturadaOk)
+    expect(results).toHaveLength(3)
+  })
+
+  it("no declara nada cuando todas las rutas del viewport tienen resultado", () => {
+    const results: CaptureResult[] = [capturada("mobile", "ti")]
+
+    expect(declareUncoveredRoutes(results, "mobile", [ruta("ti")], "http://127.0.0.1:3128", motivo)).toEqual([])
+    expect(results).toHaveLength(1)
+  })
+
+  it("no confunde la captura de un viewport con la del otro", () => {
+    // Las dos vistas capturan los mismos slugs: si la clave no incluyera el
+    // viewport, la corrida de desktop daría por cubiertas rutas que sólo se
+    // capturaron en mobile y el hueco desaparecería del manifest.
+    const results: CaptureResult[] = [capturada("mobile", "ti")]
+
+    const declaradas = declareUncoveredRoutes(results, "desktop", [ruta("ti")], "http://127.0.0.1:3127", motivo)
+
+    expect(declaradas.map((r) => r.slug)).toEqual(["ti"])
+    expect(declaradas[0]!.viewport).toBe("desktop")
   })
 })
