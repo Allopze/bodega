@@ -12,7 +12,7 @@ import { logger } from "@/lib/logger"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
 import { isPdtpPeriodOnOrAfterActivation } from "./period"
-import { assertPdtpPeriodOpen } from "./period-closures"
+import { assertPdtpPeriodOpen } from "./period-guard"
 
 export async function markPdtpExecution(input: unknown, userId: string, scope: WorksiteScope) {
   const data = pdtpExecutionSchema.parse(input)

@@ -51,7 +51,7 @@ import { applyOverridesToSchedule, loadPdtpOverrides } from "./overrides"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
 import { currentPdtpPeriod, isPdtpPeriodOnOrAfterActivation } from "./period"
 import { deriveScheduleHorizon } from "./recurrence"
-import { assertPdtpPeriodOpen } from "./period-closures"
+import { assertPdtpPeriodOpen } from "./period-guard"
 
 export type PdtpDeviationKind = "not_performed" | "not_applicable" | "reprogrammed"
 

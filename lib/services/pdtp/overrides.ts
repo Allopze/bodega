@@ -18,7 +18,7 @@ import {
   type PdtpActivityScheduleOverride,
 } from "@/db/schema"
 import { addPdtpChangeLogEntry } from "./helpers"
-import { assertPdtpPeriodOpen } from "./period-closures"
+import { assertPdtpPeriodOpen } from "./period-guard"
 
 export type PdtpOverrideInput = {
   activityId: string

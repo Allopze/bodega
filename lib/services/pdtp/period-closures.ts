@@ -49,7 +49,7 @@
 
 import { createHash } from "node:crypto"
 import { and, desc, eq, sql } from "drizzle-orm"
-import { db, type Tx } from "@/db"
+import { db } from "@/db"
 import {
   pdtpPeriodClosures,
   pdtpPrograms,
@@ -70,6 +70,7 @@ import { buildPdtpRe36Document, type PdtpRe36Document, type PdtpRe36DeviationRow
 import { getPdtpComplianceIndicators, getPdtpIntegralCompliance, type PdtpComplianceIndicators, type PdtpIntegralCompliance } from "./compliance"
 import { getPdtpManagementReport, type PdtpManagementReport } from "./management-report"
 import { currentPdtpPeriod, pdtpActivationPeriod } from "./period"
+import { pdtpMonthLabel as monthLabel } from "./period-guard"
 
 /* ── Corte reproducible ──────────────────────────────────────────────────── */
 
@@ -288,46 +289,12 @@ export async function buildPdtpPeriodClosureSnapshot(input: {
 
 /* ── Bloqueo de escrituras ───────────────────────────────────────────────── */
 
-const MONTH_NAMES = [
-  "enero", "febrero", "marzo", "abril", "mayo", "junio",
-  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
-]
-
-function monthLabel(year: number, month: number): string {
-  return `${MONTH_NAMES[month - 1] ?? String(month)} de ${year}`
-}
-
 /**
- * Lanza si el mes de esa faena está cerrado.
- *
- * **Se llama dentro de la transacción de la escritura**, pasando el `tx`: una
- * lectura previa y por fuera vuelve a ser obsoleta en cuanto otra transacción
- * cierra el mes entre la comprobación y el INSERT. Es el mismo criterio que la
- * exclusión mutua celda-desvío de `executions.ts` y `deviations.ts`.
- *
- * Un cierre `reopened` no bloquea: reabrir es exactamente la operación que
- * devuelve la escritura.
+ * El guard vive en `period-guard.ts` (sin las importaciones pesadas del
+ * snapshot) y se reexporta acá para que quien piense en "cierres" lo encuentre
+ * donde lo espera. Ver ese archivo para el porqué de la separación.
  */
-export async function assertPdtpPeriodOpen(
-  programId: string,
-  worksiteId: string,
-  year: number,
-  month: number,
-  client: Tx | typeof db = db,
-): Promise<void> {
-  const [closure] = await client.select({ status: pdtpPeriodClosures.status })
-    .from(pdtpPeriodClosures)
-    .where(and(
-      eq(pdtpPeriodClosures.programId, programId),
-      eq(pdtpPeriodClosures.worksiteId, worksiteId),
-      eq(pdtpPeriodClosures.year, year),
-      eq(pdtpPeriodClosures.month, month),
-    ))
-    .limit(1)
-  if (closure?.status === "closed") {
-    throw new Error(`El mes de ${monthLabel(year, month)} está cerrado para esta faena. Reábrelo con un motivo si necesitas corregir algo.`)
-  }
-}
+export { assertPdtpPeriodOpen } from "./period-guard"
 
 /* ── Cerrar / reabrir ────────────────────────────────────────────────────── */
 
