@@ -193,6 +193,34 @@ describe("PDTP recurrence rules", () => {
       .toContain("frecuencia mensual")
   })
 
+  it("`custom` de una sola semana con meses contiguos (preset `monthly_week` con rango, Tarea 2.2) se describe como mensual con rango, no como \"en meses seleccionados\"", () => {
+    // Acto 33 del Anexo A: semana 4, febrero a diciembre. El preset
+    // `monthly_week` con rango de meses codifica esto como `custom` (ver
+    // schedule-presets.ts) porque `monthly` no puede excluir enero — pero
+    // quien firma el programa no debería leer "en meses seleccionados" para
+    // lo que es, en la práctica, un mensual con rango.
+    expect(describePdtpRecurrence({
+      frequency: "custom", interval: 1, plannedQuantity: 1, weekOfMonth: 4, months: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], weeks: [4],
+    })).toContain("mensual, semana 4 (febrero a diciembre)")
+
+    // Un único mes también cuenta como "contiguo" (rango degenerado).
+    expect(describePdtpRecurrence({
+      frequency: "custom", interval: 1, plannedQuantity: 1, weekOfMonth: 2, months: [3], weeks: [2],
+    })).toContain("mensual, semana 2 (marzo)")
+
+    // Si los meses NO son un rango corrido (selección salteada real), el
+    // texto genérico de `custom` sigue siendo el correcto — no se cambia.
+    expect(describePdtpRecurrence({
+      frequency: "custom", interval: 1, plannedQuantity: 1, weekOfMonth: 2, months: [3, 6, 9], weeks: [2],
+    })).toContain("en meses seleccionados")
+
+    // Con más de una semana, el caso ya cubierto (custom con weeks.length>1)
+    // no cambia: sigue siendo "en meses seleccionados (semanas...)".
+    expect(describePdtpRecurrence({
+      frequency: "custom", interval: 1, plannedQuantity: 1, weekOfMonth: 1, months: [2, 3, 4], weeks: [1, 3],
+    })).toContain("en meses seleccionados (semanas 1 y 3)")
+  })
+
   it("`{quarterly, weeks:[1,3]}` duplica las celdas (8 en vez de 4) y el texto lo menciona, no solo `monthly`", () => {
     const rule = { frequency: "quarterly" as const, interval: 1, plannedQuantity: 1, weekOfMonth: 1, weeks: [1, 3] }
     const cells = projectRecurrenceToLegacySchedule(rule)

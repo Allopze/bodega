@@ -164,12 +164,26 @@ function monthName(month: number): string {
   return MONTH_NAMES[month - 1] ?? String(month)
 }
 
+function sortedUniqueMonths(months: number[]): number[] {
+  return [...new Set(months)].filter((month) => month >= 1 && month <= 12).sort((a, b) => a - b)
+}
+
+/**
+ * Único uso: distinguir en `frequencyLabel` un rango de meses corrido (ej.
+ * "febrero a diciembre") de una selección salteada (ej. "marzo, junio y
+ * septiembre"), para decidir si un `custom` de una sola semana se describe
+ * como "mensual, semana N (rango)" o se deja como "en meses seleccionados".
+ * Un único mes cuenta como contiguo (rango degenerado de longitud 1).
+ */
+function monthsAreContiguous(sortedMonths: number[]): boolean {
+  return sortedMonths.length > 0 && sortedMonths.every((month, index) => index === 0 || month === (sortedMonths[index - 1] ?? 0) + 1)
+}
+
 /** "de junio a julio" para meses contiguos, "en marzo, junio y septiembre" si no. */
 function monthsRangeLabel(months: number[]): string {
-  const sorted = [...new Set(months)].filter((month) => month >= 1 && month <= 12).sort((a, b) => a - b)
+  const sorted = sortedUniqueMonths(months)
   if (sorted.length === 0) return ""
-  const isContiguous = sorted.length > 1 && sorted.every((month, index) => index === 0 || month === (sorted[index - 1] ?? 0) + 1)
-  if (isContiguous) return `de ${monthName(sorted[0] ?? 1)} a ${monthName(sorted[sorted.length - 1] ?? 1)}`
+  if (sorted.length > 1 && monthsAreContiguous(sorted)) return `de ${monthName(sorted[0] ?? 1)} a ${monthName(sorted[sorted.length - 1] ?? 1)}`
   return `en ${listLabel(sorted.map((month) => monthName(month)))}`
 }
 
@@ -183,12 +197,30 @@ function monthsRangeLabel(months: number[]): string {
  * las celdas proyectadas (8 en vez de 4) y el texto tiene que contarlo, no
  * solo el caso `monthly` (que además conserva el nombre coloquial
  * "quincenal" cuando son exactamente dos semanas).
+ *
+ * Caso adicional (Tarea 2.2, preset `monthly_week` con rango de meses): un
+ * `custom` con **una sola semana** cuya lista de meses es un rango corrido
+ * (ej. `months: [2..12]`, producido por ese preset) no es realmente "en
+ * meses seleccionados" para quien lo lee — es un mensual con rango, y
+ * merece el mismo nombre coloquial que `monthly` ("mensual, semana 4
+ * (febrero a diciembre)"). Si los meses **no** son un rango corrido (una
+ * selección salteada real), el texto genérico de `custom` sigue siendo el
+ * correcto.
  */
 function frequencyLabel(rule: PdtpRecurrenceRule, weeksPerMonth: number): string {
   if (rule.frequency === "weekly") {
     return rule.months && rule.months.length > 0 ? `campaña ${monthsRangeLabel(rule.months)}` : FREQUENCY_LABELS.weekly
   }
   const weeks = resolveWeeks(rule, weeksPerMonth)
+  if (rule.frequency === "custom" && weeks.length === 1) {
+    const sortedMonths = sortedUniqueMonths(rule.months ?? [])
+    if (monthsAreContiguous(sortedMonths)) {
+      const rangeText = sortedMonths.length > 1
+        ? `${monthName(sortedMonths[0] ?? 1)} a ${monthName(sortedMonths[sortedMonths.length - 1] ?? 1)}`
+        : monthName(sortedMonths[0] ?? 1)
+      return `mensual, semana ${weeks[0] ?? 1} (${rangeText})`
+    }
+  }
   if (weeks.length <= 1) return FREQUENCY_LABELS[rule.frequency]
   if (rule.frequency === "monthly" && weeks.length === 2) return `quincenal (${weeksLabel(weeks)})`
   return `${FREQUENCY_LABELS[rule.frequency]} (${weeksLabel(weeks)})`

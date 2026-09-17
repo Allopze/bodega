@@ -128,6 +128,15 @@ describe("punctual", () => {
     )
     expect(cells).toEqual([{ month: 1, week: 2, plannedQuantity: 1 }])
   })
+
+  it("plannedQuantity negativa se clampea a 0, igual que projectRecurrenceToLegacySchedule hace para todo preset con regla", () => {
+    const cells = presetToCells(
+      "punctual",
+      { cells: [{ month: 1, week: 1 }], plannedQuantity: -5 },
+      DEFAULT_SCHEDULE_HORIZON,
+    )
+    expect(cells).toEqual([{ month: 1, week: 1, plannedQuantity: 0 }])
+  })
 })
 
 describe("equivalencia obligatoria: presetToCells === projectRecurrenceToLegacySchedule(presetToRule(...))", () => {
@@ -176,5 +185,40 @@ describe("trampa documentada de resolveWeeks: horizonte con weeksPerMonth reduci
     const cells = presetToCells("biweekly_24", {}, horizon)
     expect(cells).toHaveLength(3)
     expect(cells.every((cell) => cell.week === 2)).toBe(true)
+  })
+
+  it("biweekly_13 (semanas 1 y 3) corre el mismo riesgo: con weeksPerMonth=1 ambas semanas colapsan a 1", () => {
+    // `weeks:[1,3]` sobrevive intacto a weeksPerMonth=2 (1→1, 3→2, siguen
+    // siendo distintas), pero con weeksPerMonth=1 —un período aún más
+    // acotado— ambas se recortan a 1 y el `Set` las deduplica: el mismo
+    // colapso silencioso que `biweekly_24`, solo que requiere un horizonte
+    // más chico para manifestarse en este preset en particular.
+    const horizon = { months: [1, 2, 3], weeksPerMonth: 1 }
+    const cells = presetToCells("biweekly_13", {}, horizon)
+    expect(cells).toHaveLength(3)
+    expect(cells.every((cell) => cell.week === 1)).toBe(true)
+  })
+})
+
+describe("weekOfMonth fuera de 1..4 se clampea en silencio (monthly_week, quarterly)", () => {
+  it("0 se clampea a 1, 5 se clampea a 4, -3 se clampea a 1", () => {
+    expect(presetToRule("monthly_week", { weekOfMonth: 0 })?.weekOfMonth).toBe(1)
+    expect(presetToRule("monthly_week", { weekOfMonth: 5 })?.weekOfMonth).toBe(4)
+    expect(presetToRule("monthly_week", { weekOfMonth: -3 })?.weekOfMonth).toBe(1)
+    expect(presetToRule("quarterly", { weekOfMonth: 5 })?.weekOfMonth).toBe(4)
+  })
+
+  it("el clamp se refleja en las celdas proyectadas, no solo en la regla", () => {
+    const cells = presetToCells("monthly_week", { weekOfMonth: 5 }, DEFAULT_SCHEDULE_HORIZON)
+    expect(cells).toHaveLength(12)
+    expect(cells.every((cell) => cell.week === 4)).toBe(true)
+  })
+})
+
+describe("llave de preset desconocida", () => {
+  it("presetToRule y presetToCells no revientan; devuelven null/[] (la tarea de importación les pasará datos externos)", () => {
+    const bogusKey = "no_existe" as PdtpSchedulePresetKey
+    expect(presetToRule(bogusKey, {})).toBeNull()
+    expect(presetToCells(bogusKey, {}, DEFAULT_SCHEDULE_HORIZON)).toEqual([])
   })
 })

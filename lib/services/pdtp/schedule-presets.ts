@@ -176,7 +176,12 @@ export function presetToCells(
   horizon: PdtpScheduleHorizon = DEFAULT_SCHEDULE_HORIZON,
 ): PdtpScheduleCell[] {
   if (key === "punctual") {
-    const plannedQuantity = params.plannedQuantity ?? 1
+    // Mismo clamp que `projectRecurrenceToLegacySchedule` aplica a
+    // `plannedQuantity` (`Math.max(0, rule.plannedQuantity)`) para todo
+    // preset con regla: sin este clamp, una cantidad negativa se propagaría
+    // sin filtro solo en esta rama, y los dos caminos de `presetToCells` se
+    // comportarían distinto ante la misma entrada inválida.
+    const plannedQuantity = Math.max(0, params.plannedQuantity ?? 1)
     const weeksPerMonth = Math.min(4, Math.max(1, Math.trunc(horizon.weeksPerMonth || 4)))
     const months = new Set(horizon.months)
     return (params.cells ?? [])
