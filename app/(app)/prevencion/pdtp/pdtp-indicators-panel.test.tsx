@@ -10,6 +10,7 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { PdtpIndicatorsPanel } from "./pdtp-indicators-panel"
+import { buildPdtpActivitiesHref } from "./pdtp-context"
 import type { PdtpComplianceIndicators, PdtpIntegralCompliance } from "@/lib/services/prevention-pdtp"
 
 afterEach(cleanup)
@@ -19,9 +20,11 @@ const DATA: PdtpComplianceIndicators = {
   year: 2026,
   target: 0.85,
   monthly: Array.from({ length: 12 }, (_, i) => {
-    if (i === 0) return { month: 1, planned: 10, executed: 9, percent: 0.9 }
-    if (i === 1) return { month: 2, planned: 10, executed: 0, percent: 0 }
-    return { month: i + 1, planned: 0, executed: 0, percent: null }
+    if (i === 0) return { month: 1, planned: 10, executed: 9, percent: 0.9, zeroActivities: 0, zeroActivityIds: [] }
+    // Febrero: dos actividades planificadas sin ninguna ejecución aprobada —
+    // el caso que esta columna existe para exponer.
+    if (i === 1) return { month: 2, planned: 10, executed: 0, percent: 0, zeroActivities: 2, zeroActivityIds: ["act-1", "act-2"] }
+    return { month: i + 1, planned: 0, executed: 0, percent: null, zeroActivities: 0, zeroActivityIds: [] }
   }),
   quarterly: [
     { quarter: 1, planned: 20, executed: 9, percent: 0.45 },
@@ -29,7 +32,7 @@ const DATA: PdtpComplianceIndicators = {
     { quarter: 3, planned: 0, executed: 0, percent: null },
     { quarter: 4, planned: 0, executed: 0, percent: null },
   ],
-  annual: { planned: 20, executed: 9, percent: 0.45 },
+  annual: { planned: 20, executed: 9, percent: 0.45, zeroActivityMonths: 1, zeroActivityIds: ["act-1", "act-2"] },
   lastExecutionUpdatedAt: "2026-01-15T10:30:00.000Z",
   subjectRosterIssues: [],
 }
@@ -132,5 +135,37 @@ describe("PdtpIndicatorsPanel — render compacto actual", () => {
     const details = container.querySelector("details") as HTMLDetailsElement
     const eneroLink = within(details).getByText("Ene").closest("a")!
     expect(eneroLink).toHaveAttribute("href", "#registros-pdtp")
+  })
+
+  it("muestra la columna 'En cero' con el conteo mensual y enlaza al visor de actividades ya filtrado", () => {
+    const { container } = render(<PdtpIndicatorsPanel data={DATA} integral={INTEGRAL} worksiteId="ws-1" />)
+    const details = container.querySelector("details") as HTMLDetailsElement
+
+    const header = within(details).getByText("En cero")
+    expect(header).toHaveAttribute(
+      "title",
+      "Actividades con planificación en el mes y ninguna ejecución aprobada. El % mensual puede llegar a 100 % por compensación entre actividades.",
+    )
+
+    // Febrero: 2 actividades en cero, enlazadas con el helper existente
+    // (no una URL armada a mano) preservando programa, faena, mes y año.
+    const febRow = within(details).getByText("Feb").closest("tr")!
+    const zeroLink = within(febRow).getByText("2").closest("a")!
+    expect(zeroLink).toHaveAttribute(
+      "href",
+      buildPdtpActivitiesHref({ programa: "prog-1", anio: "2026", faena: "ws-1", vista: "semana", estado: "overdue", mes: 2 }),
+    )
+
+    // Enero no tiene actividades en cero: se muestra "0" sin enlace.
+    const eneroRow = within(details).getByText("Ene").closest("tr")!
+    expect(within(eneroRow).getByText("0")).toBeInTheDocument()
+    expect(within(eneroRow).queryByText("0")?.closest("a")).toBeNull()
+
+    // Marzo no tiene planificación (Prog./Ejec. también en "0"): la columna
+    // "En cero" (5ª celda: Mes, Prog., Ejec., %, En cero, Meta) también
+    // muestra "0", no un guion confuso como el de "%".
+    const marRow = within(details).getByText("Mar").closest("tr")!
+    const marCells = marRow.querySelectorAll("td")
+    expect(marCells[4]).toHaveTextContent("0")
   })
 })

@@ -175,6 +175,12 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
   const overdueActionsCount = actions.filter((a) => a.vencida).length
   const executedCount = indicators?.annual.executed ?? 0
   const pendingCount = Math.max(0, (currentMonthData?.planned ?? 0) - (currentMonthData?.executed ?? 0))
+  // Expone cuántas de las pendientes del mes vigente no tienen NINGUNA
+  // ejecución aprobada (distinto de "no llegó al 100%"): el % mensual puede
+  // compensar una actividad sobreejecutada con otra en cero y marcar el mes
+  // en 100%, así que este número es el que de verdad dice si algo quedó sin
+  // tocar (tarea 1.4, no cambia la fórmula de `percent`).
+  const zeroActivitiesThisMonth = currentMonthData?.zeroActivities ?? 0
   const aggregateForKpis = focusProgram
     ? await getPdtpAggregatedSheetViewByProgram(focusProgram.id, "pdtp_general", effectiveWorksites.map((worksite) => worksite.id), currentPeriod)
     : null
@@ -295,7 +301,7 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
             <KpiCard
               label="Pendientes"
               value={String(pendingCount)}
-              detail="Programadas sin ejecución en el período vigente"
+              detail={`${zeroActivitiesThisMonth} actividades en cero este mes`}
               icon={<ChartBar size={22} className="text-[var(--color-primary)]" />}
               href={focusProgram ? activitiesHref(focusProgram.id, year, selectedWorksiteId, "semana", "pending", currentPeriod) : undefined}
             />

@@ -24,6 +24,21 @@ export type PdtpComplianceMonth = {
    * que también es fracción. Distinto de `PdtpSheetView.monthlyTotals[].percent`
    * (entero 0-100) — no mezclar los dos sin convertir. */
   percent: number | null
+  /**
+   * Cuántas actividades del "resto" (ni `coverage` ni `closed_on_time`)
+   * tuvieron planificación este mes (`p > 0`) y ninguna ejecución aprobada
+   * (`rawExecuted === 0`). No cambia `percent` ni `executed` — el techo de
+   * sobrecumplimiento por mes sigue permitiendo que una actividad compense a
+   * otra (decisión de jefatura, ver comentario del bucle mensual); esto solo
+   * expone cuántas quedaron en cero para que un 100 % no oculte que hubo
+   * actividades sin ninguna ejecución. `coverage` y `closed_on_time` no
+   * cuentan aquí: son todo-o-nada por su propia regla y un cero ahí significa
+   * "no se acreditó el padrón/plazo", no "no se hizo nada".
+   */
+  zeroActivities: number
+  /** Ids de las actividades que componen `zeroActivities`, para enlazar
+   * directo al listado filtrado sin una consulta adicional. */
+  zeroActivityIds: string[]
 }
 
 export type PdtpComplianceIndicators = {
@@ -32,7 +47,17 @@ export type PdtpComplianceIndicators = {
   target: number
   monthly: PdtpComplianceMonth[]
   quarterly: Array<{ quarter: number; planned: number; executed: number; percent: number | null }>
-  annual: { planned: number; executed: number; percent: number | null }
+  annual: {
+    planned: number
+    executed: number
+    percent: number | null
+    /** Meses del año con al menos una actividad en cero (`PdtpComplianceMonth.zeroActivities > 0`). */
+    zeroActivityMonths: number
+    /** Unión de `zeroActivityIds` de los 12 meses, sin duplicar: una actividad
+     * que quedó en cero en más de un mes cuenta una sola vez en este listado
+     * anual (es un listado de actividades, no de eventos mes-actividad). */
+    zeroActivityIds: string[]
+  }
   /** Última `updatedAt` entre las ejecuciones aprobadas que componen el
    * indicador, o `null` si no hay ninguna todavía. No es la hora del
    * cálculo (eso es "corte", ver `asOf` en el caller) sino de los datos. */
@@ -163,9 +188,9 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
   if (activityRows.length === 0) {
     return {
       programId: program.id, year, target: program.complianceTarget,
-      monthly: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, planned: 0, executed: 0, percent: null })),
+      monthly: Array.from({ length: 12 }, (_, i) => ({ month: i + 1, planned: 0, executed: 0, percent: null, zeroActivities: 0, zeroActivityIds: [] })),
       quarterly: Array.from({ length: 4 }, (_, i) => ({ quarter: i + 1, planned: 0, executed: 0, percent: null })),
-      annual: { planned: 0, executed: 0, percent: null },
+      annual: { planned: 0, executed: 0, percent: null, zeroActivityMonths: 0, zeroActivityIds: [] },
       lastExecutionUpdatedAt: null,
       subjectRosterIssues: [],
     }
@@ -299,6 +324,12 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
     // otra dentro del mismo mes.
     let restPlanned = 0
     let restRawExecuted = 0
+    // Actividades del "resto" con planificación este mes y cero ejecución
+    // aprobada. No participa en `percent` ni en `executed` — solo documenta,
+    // para el mismo mes que ya compensó una actividad con otra, cuáles
+    // quedaron exactamente en cero (R3 sigue intacto; esto es un dato nuevo,
+    // no una corrección de la fórmula).
+    const zeroActivityIds: string[] = []
     for (const activityId of allActivityIds) {
       const p = plannedByActivityMonth.get(`${activityId}:${month}`) ?? 0
       const rawExecuted = executedByActivityMonth.get(`${activityId}:${month}`) ?? 0
@@ -339,12 +370,13 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
         // ese mes — así una actividad puede compensar a otra dentro del mes.
         restPlanned += p
         restRawExecuted += rawExecuted
+        if (p > 0 && rawExecuted === 0) zeroActivityIds.push(activityId)
       }
     }
     const planned = coveragePlanned + restPlanned
     const executed = coverageExecuted + Math.min(restRawExecuted, restPlanned)
     const percent = planned > 0 ? Math.round((executed / planned) * 100) / 100 : null
-    return { month, planned, executed, percent }
+    return { month, planned, executed, percent, zeroActivities: zeroActivityIds.length, zeroActivityIds }
   })
 
   const quarterly = Array.from({ length: 4 }, (_, q) => {
@@ -360,6 +392,10 @@ export async function getPdtpComplianceIndicators(yearOrProgramId: number | stri
   const annual = {
     planned: annualPlanned, executed: annualExecuted,
     percent: annualPlanned > 0 ? Math.round((annualExecuted / annualPlanned) * 100) / 100 : null,
+    zeroActivityMonths: monthly.filter((m) => m.zeroActivities > 0).length,
+    // Unión, no concatenación: la misma actividad en cero en dos meses distintos
+    // sigue siendo una actividad para este listado anual.
+    zeroActivityIds: [...new Set(monthly.flatMap((m) => m.zeroActivityIds))],
   }
 
   const lastExecutionUpdatedAt = approvedExecutionRows.reduce<string | null>((latest, row) => {
@@ -404,7 +440,17 @@ export async function getPdtpComplianceIndicatorsForScope(
   const monthly: PdtpComplianceMonth[] = Array.from({ length: 12 }, (_, i) => {
     const planned = resolved.reduce((sum, entry) => sum + entry.monthly[i]!.planned, 0)
     const executed = resolved.reduce((sum, entry) => sum + entry.monthly[i]!.executed, 0)
-    return { month: i + 1, planned, executed, percent: planned > 0 ? Math.round((executed / planned) * 100) / 100 : null }
+    // Unión de ids entre faenas, no suma de conteos: la misma actividad en
+    // cero en dos faenas es una sola actividad en cero para el agregado (una
+    // faena que ya reprueba esa actividad no la hace "más en cero" porque otra
+    // faena también la reprueba).
+    const zeroActivityIds = [...new Set(resolved.flatMap((entry) => entry.monthly[i]!.zeroActivityIds))]
+    return {
+      month: i + 1, planned, executed,
+      percent: planned > 0 ? Math.round((executed / planned) * 100) / 100 : null,
+      zeroActivities: zeroActivityIds.length,
+      zeroActivityIds,
+    }
   })
   const quarterly = Array.from({ length: 4 }, (_, q) => {
     const months = monthly.slice(q * 3, q * 3 + 3)
@@ -425,7 +471,12 @@ export async function getPdtpComplianceIndicatorsForScope(
     target: resolved[0]!.target,
     monthly,
     quarterly,
-    annual: { planned: annualPlanned, executed: annualExecuted, percent: annualPlanned > 0 ? Math.round((annualExecuted / annualPlanned) * 100) / 100 : null },
+    annual: {
+      planned: annualPlanned, executed: annualExecuted,
+      percent: annualPlanned > 0 ? Math.round((annualExecuted / annualPlanned) * 100) / 100 : null,
+      zeroActivityMonths: monthly.filter((m) => m.zeroActivities > 0).length,
+      zeroActivityIds: [...new Set(monthly.flatMap((m) => m.zeroActivityIds))],
+    },
     lastExecutionUpdatedAt,
     subjectRosterIssues,
     worksiteCount: worksiteIds.length,

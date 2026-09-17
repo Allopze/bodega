@@ -270,7 +270,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
         </ProgramLifecycleControls>
 
         {/* Compliance indicators */}
-        {indicators && <PdtpIndicatorsPanel data={indicators} integral={integral} asOf={renderedAt} />}
+        {indicators && <PdtpIndicatorsPanel data={indicators} integral={integral} asOf={renderedAt} worksiteId={selectedWorksiteId} />}
 
         <div className="flex flex-wrap items-center gap-3 border-y border-[var(--color-border)] py-3">
           <PdtpSheetPicker current={sheetCode} options={sheetOptions} programId={programId} worksiteId={selectedWorksiteId} viewMode={viewMode} />

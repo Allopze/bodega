@@ -2,7 +2,14 @@ import { CheckCircle, Target, ChartBar } from "@phosphor-icons/react/dist/ssr"
 import { cn, MONTH_LABELS, QUARTER_LABELS } from "@/lib/utils"
 import { Table, TableBody, TableCell, TableCellNum, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
 import { PersistedDetails } from "./persisted-details"
+import { buildPdtpActivitiesHref } from "./pdtp-context"
 import type { PdtpComplianceIndicators, PdtpIntegralCompliance } from "@/lib/services/prevention-pdtp"
+
+/** Título exacto acordado para la columna "En cero": explica qué mide y por
+ * qué el % mensual puede seguir en 100 % aunque existan actividades en cero
+ * (el techo de sobrecumplimiento sigue siendo por mes, no cambia por esto). */
+const ZERO_ACTIVITIES_COLUMN_TITLE =
+  "Actividades con planificación en el mes y ninguna ejecución aprobada. El % mensual puede llegar a 100 % por compensación entre actividades."
 
 function fmtPct(ratio: number | null): string {
   if (ratio === null) return "—"
@@ -28,8 +35,24 @@ function fmtDateTime(iso: string): string {
   return DATE_TIME_FORMAT.format(new Date(iso))
 }
 
-export function PdtpIndicatorsPanel({ data, integral, asOf }: { data: PdtpComplianceIndicators; integral?: PdtpIntegralCompliance | null; asOf?: string }) {
-  const { monthly, quarterly, annual, target, lastExecutionUpdatedAt } = data
+export function PdtpIndicatorsPanel({ data, integral, asOf, worksiteId }: {
+  data: PdtpComplianceIndicators
+  integral?: PdtpIntegralCompliance | null
+  asOf?: string
+  /** Faena elegida en la vista que llama a este panel (no viaja en `data`:
+   * el indicador agregado por alcance no tiene una sola faena). Se usa solo
+   * para conservar el filtro al enlazar al visor de actividades. */
+  worksiteId?: string
+}) {
+  const { monthly, quarterly, annual, target, lastExecutionUpdatedAt, programId, year } = data
+  const zeroActivitiesHref = (month: number) => buildPdtpActivitiesHref({
+    programa: programId,
+    anio: String(year),
+    faena: worksiteId,
+    vista: "semana",
+    estado: "overdue",
+    mes: month,
+  })
 
   return (
     <div className="space-y-3">
@@ -127,6 +150,7 @@ export function PdtpIndicatorsPanel({ data, integral, asOf }: { data: PdtpCompli
                   <TableHead className="text-right">Prog.</TableHead>
                   <TableHead className="text-right">Ejec.</TableHead>
                   <TableHead className="text-right">%</TableHead>
+                  <TableHead className="text-right" title={ZERO_ACTIVITIES_COLUMN_TITLE}>En cero</TableHead>
                   <TableHead>Meta</TableHead>
                 </TableRow>
               </TableHeader>
@@ -144,6 +168,19 @@ export function PdtpIndicatorsPanel({ data, integral, asOf }: { data: PdtpCompli
                       <TableCellNum className="px-2 py-1.5 text-xs">{m.executed}</TableCellNum>
                       <TableCellNum className={cn("px-2 py-1.5 text-xs font-semibold", meetsTarget ? "text-[var(--color-success)]" : m.executed > 0 ? "text-[var(--color-signal-ink)]" : "text-[var(--color-text-faint)]")}>
                         {fmtPct(m.percent)}
+                      </TableCellNum>
+                      <TableCellNum className="px-2 py-1.5 text-xs">
+                        {m.zeroActivities > 0 ? (
+                          <a
+                            href={zeroActivitiesHref(m.month)}
+                            className="font-semibold text-[var(--color-signal-ink)] hover:text-[var(--color-primary)] hover:underline"
+                            title="Ver las actividades en cero de este mes"
+                          >
+                            {m.zeroActivities}
+                          </a>
+                        ) : (
+                          <span className="text-[var(--color-text-faint)]">0</span>
+                        )}
                       </TableCellNum>
                       <TableCell className="px-2 py-1.5">
                         {meetsTarget && <CheckCircle size={13} className="text-[var(--color-success)]" />}

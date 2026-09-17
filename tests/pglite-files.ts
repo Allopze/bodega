@@ -108,6 +108,7 @@ export const pgliteTestFiles = [
   "lib/__tests__/operational-assignments.test.ts",
   "lib/__tests__/pending-purchase-queue.test.ts",
   "lib/__tests__/pdtp-coverage-r2.test.ts",
+  "lib/__tests__/pdtp-compliance-zero.test.ts",
   "lib/__tests__/pdtp-capability-subjects.test.ts",
   "lib/__tests__/pdtp-checklist-action-plan.test.ts",
   "lib/__tests__/pdtp-fulfillment.test.ts",
