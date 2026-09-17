@@ -69,9 +69,37 @@ function parseDeclaredDateToIso(text: string | null | undefined): string | null 
     const year = Number(ddmmyyyy[3])
     if (month < 1 || month > 12 || day < 1 || day > 31) return null
     const asDate = new Date(Date.UTC(year, month - 1, day))
-    return Number.isNaN(asDate.getTime()) ? null : asDate.toISOString()
+    if (Number.isNaN(asDate.getTime())) return null
+    // `Date.UTC` hace rollover silencioso para días que no existen
+    // ("31-04-2033" → 1 de mayo; "30-02-2033" → 2 de marzo): se verifica que
+    // la fecha construida coincida exactamente con lo declarado, para no
+    // devolver una fecha distinta de la pedida.
+    if (asDate.getUTCFullYear() !== year || asDate.getUTCMonth() !== month - 1 || asDate.getUTCDate() !== day) {
+      return null
+    }
+    return asDate.toISOString()
   }
   const parsed = new Date(trimmed)
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
+}
+
+/**
+ * Normaliza a ISO estricto un valor de columna `timestamptz` (`mode:
+ * "string"`, formato nativo de Postgres — `"2033-01-31 20:00:00-04"`, NO
+ * ISO — hay un espacio en vez de `T`) o cualquier otra fecha ya
+ * parseable por `Date`. Existe porque `changeControl` mezclaba dos fuentes
+ * (fechas declaradas en texto libre, ya normalizadas por
+ * `parseDeclaredDateToIso` a ISO estricto, y columnas nativas sin
+ * normalizar) y las comparaba con `localeCompare` — que asume un único
+ * formato. Con las dos fuentes crudas, un texto declarado a medianoche y uno
+ * nativo el mismo día a las 23:00 podían ordenar al revés (el espacio del
+ * formato nativo, código 32, ordena antes que la `T` de ISO, código 84).
+ * Devuelve `null` si el valor no es interpretable — igual que
+ * `parseDeclaredDateToIso`, nunca se muestra como fecha si no hay certeza.
+ */
+function toCanonicalIso(value: string | null | undefined): string | null {
+  if (!value) return null
+  const parsed = new Date(value)
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
 }
 
@@ -166,10 +194,12 @@ export type PdtpRe36Document = {
     quarterly: Array<{ quarter: number; planned: number; executed: number; percent: number | null }>
   }
   signatures: {
-    /** `at`: fecha tal como se declaró (texto libre u hora nativa), o `null`
-     * si no hay ninguna declaración. `atIso`: la misma fecha normalizada a
-     * ISO cuando se pudo interpretar (ver `parseDeclaredDateToIso`), para que
-     * el renderizador no tenga que adivinar el formato de `at`. */
+    /** `at`: fecha tal como se declaró (texto libre u hora nativa, en su
+     * formato original), o `null` si no hay ninguna declaración. `atIso`: esa
+     * misma fecha normalizada a **ISO estricto** (`toCanonicalIso`/
+     * `parseDeclaredDateToIso`) cuando se pudo interpretar — siempre el mismo
+     * formato o siempre `null`, nunca una mezcla — para que el renderizador
+     * pueda comparar/ordenar sin adivinar el formato de `at`. */
     elaboratedBy: { name: string; title: string; at: string | null; atIso: string | null }
     reviewedByJdpr: { name: string; title: string; at: string; atIso: string | null } | null
     approvedByLegal: { name: string; title: string; at: string; atIso: string | null } | null
@@ -271,12 +301,19 @@ export async function buildPdtpRe36Document(input: {
     list.push(membership)
     membershipsBySheet.set(membership.sheetId, list)
   }
-  // Descarta hojas sin miembros en este programa: `listPdtpProgramSheets`
-  // trae también las plantillas globales (`programId IS NULL`), y una
-  // plantilla que nunca se materializó para este programa no tiene
-  // membresías propias — emitirla produciría una pestaña vacía (`rows: []`)
-  // en el renderizador.
-  resolvedSheets = resolvedSheets.filter((sheet) => (membershipsBySheet.get(sheet.id) ?? []).length > 0)
+  // Descarta SOLO las plantillas globales (`programId IS NULL`) sin
+  // membresías en este programa: `listPdtpProgramSheets` las trae igual, y
+  // una plantilla que nunca se materializó no tiene membresías propias —
+  // emitirla produciría una pestaña vacía (`rows: []`) en el renderizador.
+  // Una hoja PROPIA del programa (`programId` = este programa) se conserva
+  // aunque esté vacía: crear una hoja y asignarle actividades son acciones
+  // separadas (`sheet-management.ts`), así que un usuario puede crear
+  // "Subcontrato XYZ" y no haberle asignado actividades todavía — filtrarla
+  // por estar vacía la haría desaparecer en silencio del documento que firma
+  // Legal, que es peor que mostrarla sin filas.
+  resolvedSheets = resolvedSheets.filter((sheet) => (
+    sheet.programId !== null || (membershipsBySheet.get(sheet.id) ?? []).length > 0
+  ))
 
   const allActivityIdsSet = new Set<string>()
   for (const sheet of resolvedSheets) {
@@ -494,8 +531,9 @@ export async function buildPdtpRe36Document(input: {
           name: userNameById.get(program.approvedByJdprUserId) ?? "Usuario no encontrado",
           title: jdprStep?.label ?? "Revisión técnica JDPR",
           at: program.approvedByJdprAt ?? "",
-          // Nativa: ya es ISO, no hace falta parsear texto libre.
-          atIso: program.approvedByJdprAt ?? null,
+          // Nativa: columna `timestamptz` (formato Postgres, no ISO estricto)
+          // — se normaliza igual que cualquier otra fuente.
+          atIso: toCanonicalIso(program.approvedByJdprAt),
         }
       : reviewHistory
         ? {
@@ -511,7 +549,7 @@ export async function buildPdtpRe36Document(input: {
           name: userNameById.get(program.approvedByLegalUserId) ?? "Usuario no encontrado",
           title: legalStep?.label ?? "Aprobación Legal y RRHH",
           at: program.approvedByLegalAt ?? "",
-          atIso: program.approvedByLegalAt ?? null,
+          atIso: toCanonicalIso(program.approvedByLegalAt),
         }
       : approvalHistory
         ? {
@@ -529,21 +567,28 @@ export async function buildPdtpRe36Document(input: {
     .map((row) => ({
       at: row.declaredAtText ?? row.createdAt,
       // Si se declaró texto libre, se intenta interpretarlo; si no hay texto
-      // declarado, la hora nativa de creación del registro ya es ISO.
-      atIso: row.declaredAtText ? parseDeclaredDateToIso(row.declaredAtText) : row.createdAt,
+      // declarado, se normaliza la hora nativa de creación (columna
+      // `timestamptz`, formato Postgres, no ISO estricto) con el mismo
+      // canonicalizador que las demás fuentes — `atIso` debe ser siempre el
+      // mismo formato o siempre `null`, nunca una mezcla.
+      atIso: row.declaredAtText ? parseDeclaredDateToIso(row.declaredAtText) : toCanonicalIso(row.createdAt),
       description: row.description ?? "",
       actor: (row.linkedUserId ? userNameById.get(row.linkedUserId) : null) ?? row.declaredActorName ?? null,
     }))
   const changeControlFromLog = changeLogRows.map((row) => ({
     at: row.changedAt,
-    atIso: row.changedAt,
+    atIso: toCanonicalIso(row.changedAt),
     description: row.note ?? `${row.section} actualizado.`,
     actor: row.changedByUserId ? (userNameById.get(row.changedByUserId) ?? null) : null,
   }))
-  // Orden global por fecha conocida; las entradas sin fecha interpretable
-  // (texto libre no parseable, caso raro) quedan al final, en su orden
-  // relativo original — `Array.prototype.sort` es estable, no hay con qué
-  // ordenarlas mejor que eso.
+  // Orden global por fecha conocida — ambas fuentes ya pasaron por el mismo
+  // canonicalizador (`atIso` siempre ISO estricto o siempre `null`), así que
+  // `localeCompare` sobre `atIso` sí compara cronológicamente (antes, una
+  // fuente traía el formato nativo de Postgres crudo y otra ISO estricto: el
+  // espacio del formato nativo ordena antes que la `T` de ISO y podía
+  // invertir el orden real). Las entradas sin fecha interpretable quedan al
+  // final, en su orden relativo original — `Array.prototype.sort` es
+  // estable, no hay con qué ordenarlas mejor que eso.
   const changeControl = [...changeControlFromHistory, ...changeControlFromLog].sort((a, b) => {
     if (a.atIso && b.atIso) return a.atIso.localeCompare(b.atIso)
     if (a.atIso) return -1

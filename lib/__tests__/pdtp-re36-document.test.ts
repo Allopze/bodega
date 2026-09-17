@@ -444,4 +444,76 @@ describe("buildPdtpRe36Document", () => {
       programId: PROGRAM_ID, worksiteId: WORKSITE_ID, scope: ["otra-faena-sin-acceso"],
     })).rejects.toThrow()
   })
+
+  it("conserva una hoja PROPIA del programa aunque todavía no tenga actividades asignadas (rows: [])", async () => {
+    await seedBaseFixture()
+    // Crear la hoja y asignarle actividades son acciones separadas
+    // (`sheet-management.ts`): esta hoja existe para el programa pero nadie
+    // le ha asignado actividades todavía — no debe desaparecer del documento.
+    await inMemoryDb.insert(schema.pdtpSheets).values({
+      id: `${PROGRAM_ID}-subcontrato`, code: "subcontrato", programId: PROGRAM_ID,
+      label: "Subcontrato XYZ", area: "General", defaultScopeRoles: [],
+    })
+
+    const { buildPdtpRe36Document } = await import("@/lib/services/pdtp/re36-document")
+    const doc = await buildPdtpRe36Document({ programId: PROGRAM_ID, worksiteId: WORKSITE_ID, scope: "all" })
+
+    const ownEmptySheet = doc.sheets.find((sheet) => sheet.code === "subcontrato")
+    expect(ownEmptySheet).toBeDefined()
+    expect(ownEmptySheet!.rows).toEqual([])
+    expect(ownEmptySheet!.bands).toEqual([])
+
+    // La plantilla GLOBAL sin materializar sigue descartándose — no es lo
+    // mismo que una hoja propia vacía.
+    expect(doc.sheets.find((sheet) => sheet.code === "empty_template")).toBeUndefined()
+  })
+
+  it("ordena `changeControl` cronológicamente cuando dos entradas caen el mismo día (una declarada en texto, otra nativa) — antes se invertía", async () => {
+    await seedBaseFixture()
+    // Entrada declarada en texto libre, a medianoche del 15-05.
+    await inMemoryDb.insert(schema.pdtpDocumentHistory).values({
+      id: "dh-change-sameday", programId: PROGRAM_ID, entryKind: "change_control", stableKey: "change-sameday", sequence: 2,
+      description: "Entrada declarada a medianoche (mismo día)", declaredAtText: "15-05-2033",
+      createdAt: now(), updatedAt: now(),
+    })
+    // Entrada nativa el mismo día calendario, claramente más tarde.
+    await inMemoryDb.insert(schema.pdtpChangeLog).values({
+      id: "log-sameday-late", programId: PROGRAM_ID, version: 1, changedByUserId: USER_ID,
+      changedAt: "2033-05-15T23:00:00.000Z", section: "activities", before: null, after: null,
+      note: "Entrada nativa a las 23:00 (mismo día, posterior)",
+    })
+
+    const { buildPdtpRe36Document } = await import("@/lib/services/pdtp/re36-document")
+    const doc = await buildPdtpRe36Document({ programId: PROGRAM_ID, worksiteId: WORKSITE_ID, scope: "all" })
+
+    const sameDay = doc.changeControl.filter((entry) => entry.description.includes("mismo día"))
+    expect(sameDay).toHaveLength(2)
+    // La de medianoche (declarada en texto) debe ordenar ANTES que la de las
+    // 23:00 (nativa) — con el bug (comparar el string crudo `timestamptz` de
+    // Postgres contra un ISO estricto), el espacio del formato nativo
+    // ordenaba antes que la `T` de ISO y esto salía al revés.
+    expect(sameDay[0]!.description).toContain("medianoche")
+    expect(sameDay[1]!.description).toContain("23:00")
+    expect(sameDay[0]!.atIso).toBe("2033-05-15T00:00:00.000Z")
+    expect(sameDay[1]!.atIso).toBe("2033-05-15T23:00:00.000Z")
+  })
+
+  it("no acepta días que no existen ('atIso' queda null) pero conserva el texto declarado tal cual en 'at'", async () => {
+    await seedBaseFixture()
+
+    await inMemoryDb.update(schema.pdtpDocumentHistory)
+      .set({ declaredAtText: "31-04-2033" }) // abril tiene 30 días.
+      .where(eq(schema.pdtpDocumentHistory.id, "dh-elaboration"))
+    const { buildPdtpRe36Document } = await import("@/lib/services/pdtp/re36-document")
+    const docApril = await buildPdtpRe36Document({ programId: PROGRAM_ID, worksiteId: WORKSITE_ID, scope: "all" })
+    expect(docApril.signatures.elaboratedBy.at).toBe("31-04-2033")
+    expect(docApril.signatures.elaboratedBy.atIso).toBeNull()
+
+    await inMemoryDb.update(schema.pdtpDocumentHistory)
+      .set({ declaredAtText: "30-02-2033" }) // 2033 no es bisiesto: febrero tiene 28.
+      .where(eq(schema.pdtpDocumentHistory.id, "dh-elaboration"))
+    const docFebrero = await buildPdtpRe36Document({ programId: PROGRAM_ID, worksiteId: WORKSITE_ID, scope: "all" })
+    expect(docFebrero.signatures.elaboratedBy.at).toBe("30-02-2033")
+    expect(docFebrero.signatures.elaboratedBy.atIso).toBeNull()
+  })
 })
