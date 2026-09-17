@@ -13,6 +13,7 @@ import {
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { applyOverridesToSchedule, loadPdtpOverrides } from "./overrides"
+import { applyDeviationsToSchedule, loadPdtpDeviations } from "./deviations"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
 import { getPdtpActionWorksiteId } from "./capa-view"
 
@@ -174,7 +175,7 @@ export async function addPdtpChangeLogEntry(
 }
 
 export async function loadProgramScheduleAndExecutions(activityIds: string[], year: number, worksiteId?: string) {
-  const [scheduleRows, executionRows, overrideRows, exclusionRows, activityRows] = await Promise.all([
+  const [scheduleRows, executionRows, overrideRows, exclusionRows, activityRows, deviationRows] = await Promise.all([
     db.select().from(pdtpActivitySchedule).where(and(
       inArray(pdtpActivitySchedule.activityId, activityIds),
       eq(pdtpActivitySchedule.year, year),
@@ -194,6 +195,9 @@ export async function loadProgramScheduleAndExecutions(activityIds: string[], ye
       status: pdtpActivities.status,
       retiredEffectiveFrom: pdtpActivities.retiredEffectiveFrom,
     }).from(pdtpActivities).where(inArray(pdtpActivities.id, activityIds)),
+    worksiteId
+      ? loadPdtpDeviations(activityIds, year, worksiteId)
+      : Promise.resolve([] as Awaited<ReturnType<typeof loadPdtpDeviations>>),
   ])
   // Aplicabilidad por faena (regla R4): una actividad excluida de la faena
   // (p. ej. CPHS en faenas con <25 trabajadores) no aporta al denominador ni al
@@ -211,12 +215,19 @@ export async function loadProgramScheduleAndExecutions(activityIds: string[], ye
       ? isPdtpActivityEffectiveForPeriod(activity, row.year, row.month, row.week)
       : false
   })
+  // Costura única: los desvíos por celda (not_applicable/reprogrammed/
+  // not_performed) se aplican acá, después de overrides y exclusiones, y
+  // sólo cuando hay `worksiteId` — la misma condición que habilita esas dos
+  // transformaciones. Se aplican ANTES del filtro de vigencia por retiro
+  // para que una celda reprogramada a un período ya retirado también salga
+  // (effectiveForPeriod evalúa la celda destino igual que cualquier otra).
   const effectiveSchedule = worksiteId
-    ? withoutExcluded(applyOverridesToSchedule(scheduleRows, overrideRows))
+    ? applyDeviationsToSchedule(withoutExcluded(applyOverridesToSchedule(scheduleRows, overrideRows)), deviationRows)
     : scheduleRows
   return {
     scheduleRows: effectiveForPeriod(effectiveSchedule),
     executionRows: effectiveForPeriod(withoutExcluded(executionRows)),
+    deviationRows,
   }
 }
 

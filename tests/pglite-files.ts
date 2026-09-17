@@ -109,6 +109,10 @@ export const pgliteTestFiles = [
   "lib/__tests__/pending-purchase-queue.test.ts",
   "lib/__tests__/pdtp-coverage-r2.test.ts",
   "lib/__tests__/pdtp-compliance-zero.test.ts",
+  // Tarea 3.2: desvíos por celda aplicados en la costura única
+  // (loadProgramScheduleAndExecutions) — indicador, RE-36, exclusión mutua
+  // con ejecuciones y no-alteración de la huella firmada.
+  "lib/__tests__/pdtp-deviations.test.ts",
   "lib/__tests__/pdtp-re36-document.test.ts",
   "lib/__tests__/pdtp-capability-subjects.test.ts",
   "lib/__tests__/pdtp-checklist-action-plan.test.ts",

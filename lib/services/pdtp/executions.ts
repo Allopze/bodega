@@ -1,8 +1,8 @@
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
-import { pdtpActivities, pdtpActivityWorksiteExclusions, pdtpExecutions, pdtpChangeLog, pdtpObligations, pdtpPrograms, worksites } from "@/db/schema"
+import { pdtpActivities, pdtpActivityWorksiteExclusions, pdtpExecutionDeviations, pdtpExecutions, pdtpChangeLog, pdtpObligations, pdtpPrograms, worksites } from "@/db/schema"
 import { pdtpExecutionId } from "./helpers"
-import { assertWorksiteAccess } from "./helpers"
+import { addPdtpChangeLogEntry, assertWorksiteAccess } from "./helpers"
 import type { WorksiteScope } from "./helpers"
 import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
 import { pdtpExecutionSchema } from "@/lib/validation/prevention"
@@ -19,6 +19,7 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
 
   const [activity] = await db.select({
     programId: pdtpActivities.programId,
+    n: pdtpActivities.n,
     status: pdtpActivities.status,
     retiredEffectiveFrom: pdtpActivities.retiredEffectiveFrom,
     evidenceRequirement: pdtpActivities.evidenceRequirement,
@@ -28,6 +29,7 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
   const [program] = await db.select({
     status: pdtpPrograms.status,
     year: pdtpPrograms.year,
+    version: pdtpPrograms.version,
     activatedAt: pdtpPrograms.activatedAt,
   }).from(pdtpPrograms).where(eq(pdtpPrograms.id, activity.programId)).limit(1)
   if (!program) throw new Error("Programa PDTP no encontrado.")
@@ -68,6 +70,28 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
     .limit(1)
   if (exclusion) {
     throw new Error("La actividad está excluida para esta faena y no admite ejecuciones.")
+  }
+
+  // Exclusión mutua con los desvíos por celda (deviations.ts):
+  // `not_applicable`/`reprogrammed` retiraron o movieron el planificado de
+  // esta celda — registrar una ejecución sobre ella contradiría al desvío,
+  // así que se rechaza. Un `not_performed` activo, en cambio, describía "no
+  // se hizo" hasta ahora: si llega una ejecución con cantidad > 0, el hecho
+  // ocurrió después de todo y el desvío deja de ser cierto — se retira solo,
+  // más abajo, dentro de la misma transacción que registra la ejecución.
+  const [activeDeviation] = await db.select({
+    id: pdtpExecutionDeviations.id,
+    kind: pdtpExecutionDeviations.kind,
+  }).from(pdtpExecutionDeviations).where(and(
+    eq(pdtpExecutionDeviations.activityId, data.activityId),
+    eq(pdtpExecutionDeviations.worksiteId, data.worksiteId),
+    eq(pdtpExecutionDeviations.year, data.year),
+    eq(pdtpExecutionDeviations.month, data.month),
+    eq(pdtpExecutionDeviations.week, data.week),
+    eq(pdtpExecutionDeviations.status, "active"),
+  )).limit(1)
+  if (activeDeviation && (activeDeviation.kind === "not_applicable" || activeDeviation.kind === "reprogrammed")) {
+    throw new Error("Esta celda tiene un desvío activo (no aplicable o reprogramado) y no admite ejecuciones.")
   }
 
   // Si la ejecución ya está aprobada, no se permite reescribir. Sólo
@@ -173,6 +197,32 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
     }).returning()
 
     if (!row) throw new Error("La ejecución ya fue aprobada y no se puede modificar.")
+
+    // El hecho ocurrió después de todo: un `not_performed` activo sobre esta
+    // celda deja de ser cierto en cuanto llega una ejecución con cantidad
+    // real. Se retira automáticamente, con su propio motivo y su propia
+    // entrada de changelog — no requiere que el usuario lo haga a mano.
+    if (activeDeviation && activeDeviation.kind === "not_performed" && data.executedQuantity > 0) {
+      const withdrawn = await tx.update(pdtpExecutionDeviations).set({
+        status: "withdrawn",
+        withdrawnByUserId: userId,
+        withdrawnAt: now,
+        withdrawReason: "Ejecución registrada posteriormente",
+      }).where(and(
+        eq(pdtpExecutionDeviations.id, activeDeviation.id),
+        eq(pdtpExecutionDeviations.status, "active"),
+      )).returning({ id: pdtpExecutionDeviations.id })
+      if (withdrawn.length > 0) {
+        await addPdtpChangeLogEntry(
+          activity.programId, program.version, userId, `deviation:${activity.n}`,
+          { status: "active" },
+          { status: "withdrawn", reason: "Ejecución registrada posteriormente" },
+          `Desvío "no realizado" retirado automáticamente para actividad ${activity.n}: ejecución registrada posteriormente.`,
+          tx,
+        )
+      }
+    }
+
     await recordOperationalActivity({
       eventType: existing ? "pdtp.execution_resubmitted" : "pdtp.execution_submitted",
       module: "pdtp",

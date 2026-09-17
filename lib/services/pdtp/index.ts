@@ -141,6 +141,15 @@ export type { PdtpPendingTarget, PdtpWeeklyPendingResult, PdtpActionVencidasRemi
 export { setPdtpActivityOverride, deletePdtpActivityOverride, loadPdtpOverrides, applyOverridesToSchedule } from "./overrides"
 export type { PdtpOverrideInput } from "./overrides"
 export {
+  recordPdtpDeviation,
+  withdrawPdtpDeviation,
+  loadPdtpDeviations,
+  applyDeviationsToSchedule,
+  deviationsByActivityMonth,
+  listPdtpDeviationsForProgram,
+} from "./deviations"
+export type { PdtpDeviationKind } from "./deviations"
+export {
   listPdtpProgramWorksites,
   listAccessiblePdtpProgramWorksites,
   setPdtpProgramWorksites,

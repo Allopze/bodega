@@ -196,6 +196,46 @@ export const pdtpActivityAddSchema = z.object({
   validateSubjectSourceConfiguration(value, ctx)
 })
 
+const pdtpDeviationKindSchema = z.enum(["not_performed", "not_applicable", "reprogrammed"])
+
+/**
+ * `reprogrammed` exige destino completo (mes y semana) y distinto de la
+ * celda de origen — espejo exacto de los CHECK
+ * `pdtp_execution_deviations_target_check`,
+ * `pdtp_execution_deviations_target_both_or_neither_check` y
+ * `pdtp_execution_deviations_target_not_same_cell_check`. El resto de los
+ * tipos no admite destino: declararlo sería contenido fantasma que la DB
+ * de todas formas rechazaría.
+ */
+export const pdtpDeviationSchema = z.object({
+  activityId: z.string().min(1, "Actividad requerida"),
+  worksiteId: z.string().min(1, "Faena requerida"),
+  year: z.coerce.number().int().min(2000).max(2100),
+  month: z.coerce.number().int().min(1).max(12),
+  week: z.coerce.number().int().min(1).max(4),
+  kind: pdtpDeviationKindSchema,
+  reason: z.string().trim().min(10, "El motivo debe tener al menos 10 caracteres").max(1000),
+  targetMonth: z.coerce.number().int().min(1).max(12).optional(),
+  targetWeek: z.coerce.number().int().min(1).max(4).optional(),
+}).superRefine((value, ctx) => {
+  if (value.kind === "reprogrammed") {
+    if (value.targetMonth === undefined || value.targetWeek === undefined) {
+      ctx.addIssue({ code: "custom", path: ["targetMonth"], message: "El destino (mes y semana) es obligatorio para reprogramar" })
+      return
+    }
+    if (value.targetMonth === value.month && value.targetWeek === value.week) {
+      ctx.addIssue({ code: "custom", path: ["targetMonth"], message: "El destino no puede ser la misma celda de origen" })
+    }
+  } else if (value.targetMonth !== undefined || value.targetWeek !== undefined) {
+    ctx.addIssue({ code: "custom", path: ["targetMonth"], message: "El destino solo aplica al reprogramar" })
+  }
+})
+
+export const pdtpDeviationWithdrawSchema = z.object({
+  deviationId: z.string().min(1, "Desvío requerido"),
+  reason: z.string().trim().min(10, "El motivo debe tener al menos 10 caracteres").max(1000),
+})
+
 export const pdtpActivityOverrideSchema = z.object({
   activityId: z.string().min(1, "Actividad requerida"),
   worksiteId: z.string().min(1, "Faena requerida"),
