@@ -42,3 +42,10 @@ export {
 } from "./actions/program-crud"
 
 export { setPdtpActivityExecutorAssignmentsAction } from "./actions/executors"
+
+export {
+  upsertPdtpObjectiveAction,
+  deletePdtpObjectiveAction,
+  reorderPdtpObjectivesAction,
+  setPdtpActivityObjectiveAction,
+} from "./actions/objectives"

@@ -535,6 +535,14 @@ run_timed "Declarando el dato de cursos, planes y campañas del PDTP" run_in_pro
 # antes dejaría clasificada una actividad que el paso anterior acaba de retirar.
 run_timed "Clasificando las actividades del PDTP por mecanismo" run_in_prod docker compose run --rm apply-pdtp-mechanisms
 
+# Los 8 objetivos del programa 2026 (RE-36) y su asignación por número de
+# actividad. Después de los retiros: una actividad retirada por decisión de
+# catálogo igual recibe su objetivo (se conserva por trazabilidad), pero no
+# tiene sentido asignar antes de que el catálogo termine de decidir qué existe.
+# Corre antes de firmar el programa a propósito: así los objetivos entran en la
+# huella firmada desde la primera versión y no generan drift más adelante.
+run_timed "Declarando los objetivos del PDTP 2026" run_in_prod docker compose run --rm apply-pdtp-objectives
+
 # Después de los retiros y de la clasificación: sin SLA ni evidencia mínima en
 # las actividades a demanda, el programa no se puede ni enviar a revisión
 # (`pdtpSubmitReviewBlockers`). No aborta el deploy si el programa todavía no

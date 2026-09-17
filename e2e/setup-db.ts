@@ -2163,6 +2163,31 @@ async function main() {
     sheetRow: 1,
     displayOrder: 1,
   })
+  /* Segunda actividad del mismo programa y hoja, sin objetivo: le da
+   * contraste al filtro `?objetivo=` de e2e/pdtp-objetivos.spec.ts. Sin ella,
+   * el programa sólo tendría una actividad y filtrar por objetivo no
+   * demostraría nada (se vería igual con o sin el filtro). */
+  await db.insert(schema.pdtpActivities).values({
+    id: "pdtp-draft-act-sin-objetivo-e2e",
+    programId: "pdtp-draft-e2e",
+    n: 91,
+    displayOrder: 2,
+    activity: "Actividad sin objetivo E2E",
+    program: "Guía preventiva E2E",
+    responsibleSlugs: [],
+    responsibleDisplay: "Prevencionista",
+    sourceSheetRow: 0,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.pdtpSheetActivities).values({
+    id: "pdtp-draft-sheet-act-sin-objetivo-e2e",
+    sheetId: "pdtp-draft-sheet-e2e",
+    sheetCode: "pdtp_general",
+    activityId: "pdtp-draft-act-sin-objetivo-e2e",
+    sheetRow: 2,
+    displayOrder: 2,
+  })
   await db.insert(schema.pdtpProgramTemplates).values({
     id: "pdtp-base-template-e2e",
     code: "base_preventiva_2026",

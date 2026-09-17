@@ -18,8 +18,10 @@ import {
   deletePdtpActivityAction,
   reorderPdtpActivitiesAction,
   adoptLatestCatalogRevisionAction,
+  setPdtpActivityObjectiveAction,
 } from "../../../actions"
 import type { PdtpActivityPickerOption } from "@/components/prevention/pdtp-activity-picker"
+import type { PdtpObjective } from "@/lib/services/prevention-pdtp"
 import {
   derivePdtpScheduleSource,
   deriveScheduleHorizon,
@@ -48,6 +50,7 @@ export function ActividadesTab({
   schedule,
   responsibleCatalog,
   catalogActivities,
+  objectives = [],
 }: {
   programId: string
   programYear: number
@@ -59,6 +62,9 @@ export function ActividadesTab({
   schedule: PdtpScheduleRow[]
   responsibleCatalog: Array<{ slug: string; displayName: string }>
   catalogActivities: Array<PdtpActivityPickerOption & { executionGuidance: string; currentRevision: number }>
+  /** Sin objetivos, la columna y el select por fila no se muestran: la tabla
+   *  se ve igual que antes de que este programa tuviera objetivos. */
+  objectives?: PdtpObjective[]
 }) {
   const router = useRouter()
   const effectivePeriodStart = periodStart ?? `${programYear}-01-01`
@@ -166,7 +172,20 @@ export function ActividadesTab({
     }
   }
 
+  async function handleSetObjective(activityId: string, objectiveId: string | null) {
+    setBusyId(activityId)
+    setError(null)
+    try {
+      const result = await setPdtpActivityObjectiveAction({ programId, activityId, objectiveId })
+      if (!result.ok) setError(result.message ?? "No se pudo actualizar el objetivo.")
+      else router.refresh()
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   const selectedIdSet = new Set(selectedIds)
+  const hasObjectives = objectives.length > 0
 
   return (
     <div className="space-y-3">
@@ -194,6 +213,7 @@ export function ActividadesTab({
               <TableRow>
                 <TableHead className="w-10"><span className="sr-only">Seleccionar</span></TableHead>
                 <TableHead className="w-12">N°</TableHead><TableHead>Actividad</TableHead><TableHead>Guía de ejecución</TableHead>
+                {hasObjectives && <TableHead className="w-56">Objetivo</TableHead>}
                 <TableHead className="w-56 text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
@@ -219,6 +239,21 @@ export function ActividadesTab({
                     )}
                   </TableCell>
                   <TableCell className="text-[var(--color-text-muted)]">{activity.program}</TableCell>
+                  {hasObjectives && (
+                    <TableCell>
+                      <Select
+                        value={activity.objectiveId ?? "none"}
+                        onValueChange={(value) => handleSetObjective(activity.id, value === "none" ? null : value)}
+                        disabled={busyId !== null}
+                      >
+                        <SelectTrigger aria-label={`Objetivo de la actividad ${activity.n}`}><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Sin objetivo</SelectItem>
+                          {objectives.map((objective) => <SelectItem key={objective.id} value={objective.id}>{objective.code} · {objective.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                  )}
                   <TableCell>
                     <div className="flex items-center justify-end gap-1">
                       <Button type="button" variant="ghost" size="sm" disabled={busyId !== null || activity.status === "retired" || index === 0} onClick={() => move(index, -1)} aria-label="Subir">↑</Button>
@@ -262,6 +297,7 @@ export function ActividadesTab({
         programId={programId}
         activityIds={selectedIds}
         responsibleCatalog={responsibleCatalog}
+        objectives={objectives}
         onSaved={() => { setSelectedIds([]); router.refresh() }}
       />
 
@@ -300,33 +336,49 @@ export function ActividadesTab({
   )
 }
 
-function BatchEditActivitiesDialog({ open, onOpenChange, programId, activityIds, responsibleCatalog, onSaved }: {
+function BatchEditActivitiesDialog({ open, onOpenChange, programId, activityIds, responsibleCatalog, objectives, onSaved }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   programId: string
   activityIds: string[]
   responsibleCatalog: Array<{ slug: string; displayName: string }>
+  objectives: PdtpObjective[]
   onSaved: () => void
 }) {
   const [responsible, setResponsible] = React.useState("keep")
   const [replaceEvidence, setReplaceEvidence] = React.useState(false)
   const [evidence, setEvidence] = React.useState("")
+  const [objective, setObjective] = React.useState("keep")
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   async function save() {
     const targetResponsible = responsible === "keep" ? undefined : responsibleCatalog.find((item) => item.slug === responsible)
+    // `undefined` = sin cambio, `null` = quitar objetivo, string = asignar.
+    const objectiveChange: string | null | undefined = objective === "keep" ? undefined : objective === "none" ? null : objective
+    if (!targetResponsible && !replaceEvidence && objectiveChange === undefined) {
+      setError("Selecciona al menos un cambio para aplicar.")
+      return
+    }
     setPending(true)
     setError(null)
     try {
-      const result = await batchUpdatePdtpActivitiesAction({
-        programId,
-        activityIds,
-        responsibleSlugs: targetResponsible ? [targetResponsible.slug] : undefined,
-        responsibleDisplay: targetResponsible?.displayName,
-        evidenceRequirement: replaceEvidence ? evidence : undefined,
-      })
-      if (!result.ok) setError(result.message ?? "No se pudo editar la selección.")
-      else { onOpenChange(false); onSaved() }
+      if (targetResponsible || replaceEvidence) {
+        const result = await batchUpdatePdtpActivitiesAction({
+          programId,
+          activityIds,
+          responsibleSlugs: targetResponsible ? [targetResponsible.slug] : undefined,
+          responsibleDisplay: targetResponsible?.displayName,
+          evidenceRequirement: replaceEvidence ? evidence : undefined,
+        })
+        if (!result.ok) { setError(result.message ?? "No se pudo editar la selección."); return }
+      }
+      if (objectiveChange !== undefined) {
+        const results = await Promise.all(activityIds.map((activityId) => setPdtpActivityObjectiveAction({ programId, activityId, objectiveId: objectiveChange })))
+        const failed = results.find((result) => !result.ok)
+        if (failed) { setError(failed.message ?? "No se pudo actualizar el objetivo de algunas actividades."); return }
+      }
+      onOpenChange(false)
+      onSaved()
     } finally {
       setPending(false)
     }
@@ -345,6 +397,18 @@ function BatchEditActivitiesDialog({ open, onOpenChange, programId, activityIds,
           </Field>
           <Checkbox label="Reemplazar evidencia mínima" checked={replaceEvidence} onChange={(event) => setReplaceEvidence(event.target.checked)} />
           {replaceEvidence && <Textarea value={evidence} onChange={(event) => setEvidence(event.target.value)} maxLength={3000} placeholder="Evidencia mínima común para la selección" />}
+          {objectives.length > 0 && (
+            <Field label="Cambiar objetivo" htmlFor="batch-objective">
+              <Select value={objective} onValueChange={setObjective}>
+                <SelectTrigger id="batch-objective"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="keep">Sin cambio</SelectItem>
+                  <SelectItem value="none">Quitar objetivo</SelectItem>
+                  {objectives.map((item) => <SelectItem key={item.id} value={item.id}>{item.code} · {item.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
           <p className="text-xs text-[var(--color-text-muted)]">Solo se cambian los campos indicados. Calendario, vistas, checklist y ejecuciones permanecen asociados.</p>
           {error && <p role="alert" className="text-sm text-[var(--color-danger)]">{error}</p>}
         </FieldGroup>

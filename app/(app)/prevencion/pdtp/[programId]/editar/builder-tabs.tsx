@@ -21,13 +21,16 @@ import { ImportExcelSection } from "./import-excel-section"
 import { WorksiteAdjustmentsPanel } from "./worksite-adjustments-panel"
 import { ActividadesTab } from "./tabs/actividades-tab"
 import { MetadataTab, WorksiteScopePanel } from "./tabs/metadata-tab"
+import { ObjetivosTab } from "./tabs/objetivos-tab"
 import { PlanificacionTab, ScheduleOverview } from "./tabs/planificacion-tab"
 import { ReviewTab } from "./tabs/revision-tab"
 import { SheetsTab } from "./tabs/sheets-tab"
 import { ExecutorAssignmentsPanel } from "./executor-assignments-panel"
+import type { PdtpObjective } from "@/lib/services/prevention-pdtp"
 
 export { ActividadesTab } from "./tabs/actividades-tab"
 export { MetadataTab, WorksiteScopePanel } from "./tabs/metadata-tab"
+export { ObjetivosTab } from "./tabs/objetivos-tab"
 export { PlanificacionTab } from "./tabs/planificacion-tab"
 export { AudiencePreviewPanel } from "./tabs/revision-tab"
 export type { PdtpActivityRow, PdtpScheduleRow } from "./tabs/types"
@@ -54,6 +57,7 @@ type PdtpBuilderTabsProps = {
   activities: Array<typeof pdtpActivities.$inferSelect>
   schedule: Array<typeof pdtpActivitySchedule.$inferSelect>
   checklists: PdtpChecklistTemplate[]
+  objectives: PdtpObjective[]
   userId: string
   canDelete: boolean
   responsibleCatalog: Array<{ slug: string; displayName: string }>
@@ -96,6 +100,7 @@ export function PdtpBuilderTabs({
   activities,
   schedule,
   checklists,
+  objectives,
   userId,
   canDelete,
   responsibleCatalog,
@@ -195,8 +200,18 @@ export function PdtpBuilderTabs({
             schedule={schedule}
             responsibleCatalog={responsibleCatalog}
             catalogActivities={catalogActivities}
+            objectives={objectives}
           />
         </section>
+
+        <details className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-[var(--color-text)]">
+            Objetivos del programa{objectives.length > 0 ? ` (${objectives.length})` : ""}
+          </summary>
+          <div className="border-t border-[var(--color-border)] p-4">
+            <ObjetivosTab programId={program.id} objectives={objectives} activities={activities} />
+          </div>
+        </details>
 
         <details className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
           <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-[var(--color-text)]">

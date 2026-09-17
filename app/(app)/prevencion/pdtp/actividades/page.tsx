@@ -10,6 +10,7 @@ import {
   listPdtpProgramWorksites,
   listPdtpProgramSheets,
   listPdtpPrograms,
+  listPdtpObjectives,
   resolveProgramWorksiteIds,
   type PdtpAggregatedSheetView,
 } from "@/lib/services/prevention-pdtp"
@@ -21,13 +22,13 @@ import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { PdtpSheetTable } from "../pdtp-sheet-table"
-import { PdtpPeriodPicker, PdtpProgramPicker, PdtpSheetPicker, PdtpViewToggle, PdtpWorksitePicker, PdtpYearPicker } from "../pdtp-sheet-table-ui"
+import { PdtpObjectivePicker, PdtpPeriodPicker, PdtpProgramPicker, PdtpSheetPicker, PdtpViewToggle, PdtpWorksitePicker, PdtpYearPicker } from "../pdtp-sheet-table-ui"
 import { buildPdtpActivitiesHref, resolvePdtpYear, resolveSelectedWorksiteId } from "../pdtp-context"
 
 export const metadata: Metadata = { title: "Actividades del programa preventivo" }
 
 type ActivityViewerPageProps = {
-  searchParams: Promise<{ programa?: string | string[]; hoja?: string | string[]; faena?: string | string[]; vista?: string | string[]; anio?: string | string[]; estado?: string | string[]; mes?: string | string[]; semana?: string | string[] }>
+  searchParams: Promise<{ programa?: string | string[]; hoja?: string | string[]; faena?: string | string[]; vista?: string | string[]; anio?: string | string[]; estado?: string | string[]; mes?: string | string[]; semana?: string | string[]; objetivo?: string | string[] }>
 }
 
 const VIEWER_HREF = "/prevencion/pdtp/actividades"
@@ -68,6 +69,13 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
       </PageContainer>
     )
   }
+
+  // Sólo aplica si el id pertenece a este programa: cambiar de programa o de
+  // año con un `?objetivo=` residual en la URL no debe filtrar por un objetivo
+  // ajeno (ni reventar, si el programa no tiene objetivos todavía).
+  const objectives = await listPdtpObjectives(program.id)
+  const requestedObjective = one(query.objetivo)
+  const objectiveFilter = objectives.some((objective) => objective.id === requestedObjective) ? requestedObjective : undefined
 
   const programMembers = await listPdtpProgramWorksites(program.id)
   const effectiveWorksiteIds = new Set(resolveProgramWorksiteIds(
@@ -110,6 +118,7 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
     estado: statusFilter,
     mes: currentPeriod.month,
     semana: currentPeriod.week,
+    objetivo: objectiveFilter,
   })
   const editProgramHref = `/prevencion/pdtp/${program.id}/editar?volver=${encodeURIComponent(activityViewerHref)}`
   const canRepairProgram = canManageProgram && program.status === "draft"
@@ -130,18 +139,33 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
 
       <div className="space-y-4">
         <div className="flex flex-wrap items-end gap-3 border-y border-[var(--color-border)] py-3">
-          <PdtpYearPicker current={year} years={allPrograms.map((item) => item.year)} hrefBase={VIEWER_HREF} sheetCode={sheetCode} worksiteId={selectedWorksiteId} viewMode={viewMode} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} />
-          <PdtpPeriodPicker month={currentPeriod.month} week={currentPeriod.week} hrefBase={VIEWER_HREF} programId={program.id} sheetCode={sheetCode} worksiteId={selectedWorksiteId} viewMode={viewMode} year={year} status={statusFilter} />
-          <PdtpProgramPicker current={program.id} programs={programs.map((item) => ({ id: item.id, title: item.title, year: item.year, version: item.version }))} hrefBase={VIEWER_HREF} sheetCode={sheetCode} worksiteId={selectedWorksiteId} viewMode={viewMode} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} />
+          <PdtpYearPicker current={year} years={allPrograms.map((item) => item.year)} hrefBase={VIEWER_HREF} sheetCode={sheetCode} worksiteId={selectedWorksiteId} viewMode={viewMode} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} objetivo={objectiveFilter} />
+          <PdtpPeriodPicker month={currentPeriod.month} week={currentPeriod.week} hrefBase={VIEWER_HREF} programId={program.id} sheetCode={sheetCode} worksiteId={selectedWorksiteId} viewMode={viewMode} year={year} status={statusFilter} objetivo={objectiveFilter} />
+          <PdtpProgramPicker current={program.id} programs={programs.map((item) => ({ id: item.id, title: item.title, year: item.year, version: item.version }))} hrefBase={VIEWER_HREF} sheetCode={sheetCode} worksiteId={selectedWorksiteId} viewMode={viewMode} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} objetivo={objectiveFilter} />
           {sheets.length > 0 ? (
-            <PdtpSheetPicker current={sheetCode} options={sheets.map((sheet) => ({ code: sheet.code, label: sheet.label }))} programId={program.id} worksiteId={selectedWorksiteId} viewMode={viewMode} hrefBase={VIEWER_HREF} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} />
+            <PdtpSheetPicker current={sheetCode} options={sheets.map((sheet) => ({ code: sheet.code, label: sheet.label }))} programId={program.id} worksiteId={selectedWorksiteId} viewMode={viewMode} hrefBase={VIEWER_HREF} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} objetivo={objectiveFilter} />
           ) : (
             <p className="text-sm text-[var(--color-text-muted)]">Este programa aún no tiene hojas de actividades.</p>
           )}
-          {worksites.length > 1 && <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} programId={program.id} viewMode={viewMode} hrefBase={VIEWER_HREF} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} />}
+          {worksites.length > 1 && <PdtpWorksitePicker current={selectedWorksiteId} sheetCode={sheetCode} worksites={worksites} programId={program.id} viewMode={viewMode} hrefBase={VIEWER_HREF} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} objetivo={objectiveFilter} />}
+          {objectives.length > 0 && (
+            <PdtpObjectivePicker
+              current={objectiveFilter}
+              objectives={objectives}
+              programId={program.id}
+              sheetCode={sheetCode}
+              worksiteId={selectedWorksiteId}
+              viewMode={viewMode}
+              hrefBase={VIEWER_HREF}
+              year={year}
+              status={statusFilter}
+              month={currentPeriod.month}
+              week={currentPeriod.week}
+            />
+          )}
           {/* Fila propia en móvil: con `ml-auto` a secas el toggle quedaba
               huérfano bajo los selects (UI/UX 2026-08-05, MV-3). */}
-          <div className="w-full lg:ml-auto lg:w-auto"><PdtpViewToggle current={viewMode} sheetCode={sheetCode} worksiteId={selectedWorksiteId} programId={program.id} hrefBase={VIEWER_HREF} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} /></div>
+          <div className="w-full lg:ml-auto lg:w-auto"><PdtpViewToggle current={viewMode} sheetCode={sheetCode} worksiteId={selectedWorksiteId} programId={program.id} hrefBase={VIEWER_HREF} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} objetivo={objectiveFilter} /></div>
         </div>
 
         {requiresWorksiteSelection ? <EmptyState compact title="Selecciona una faena para comenzar" description="Puedes consultar la vista anual, pero debes elegir una faena para revisar su evidencia o registrar ejecución." /> : !view ? <EmptyState compact tone="warning" title={sheets.length === 0 ? "Este programa aún no tiene una hoja de actividades" : `No se puede mostrar «${selectedSheet?.label ?? sheetCode}»`} description={sheets.length === 0 ? `Agrega una hoja y sus actividades a «${program.title}» para que la faena pueda registrar ejecución.` : `La hoja seleccionada no está disponible para «${program.title}». Revisa la configuración del programa y vuelve a esta misma vista.`} action={<Button asChild size="sm"><Link href={canRepairProgram ? editProgramHref : `/prevencion/pdtp/programas?anio=${year}`}>{canRepairProgram ? "Gestionar programa" : "Volver a programas"}</Link></Button>} /> : (
@@ -157,7 +181,7 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
                 </details>
               </>
             )}
-            <PdtpSheetTable view={view} worksiteId={selectedWorksiteId} canExecute={Boolean(selectedWorksiteId) && can(session, "prevention:pdtp:execute")} viewMode={viewMode} currentPeriod={currentPeriod} sheetCode={sheetCode} initialStatusFilter={statusFilter} aggregateWorksiteNames={Object.fromEntries(worksites.map((worksite) => [worksite.id, worksite.name]))} />
+            <PdtpSheetTable view={view} worksiteId={selectedWorksiteId} canExecute={Boolean(selectedWorksiteId) && can(session, "prevention:pdtp:execute")} viewMode={viewMode} currentPeriod={currentPeriod} sheetCode={sheetCode} initialStatusFilter={statusFilter} aggregateWorksiteNames={Object.fromEntries(worksites.map((worksite) => [worksite.id, worksite.name]))} objectives={objectives} objectiveFilter={objectiveFilter} />
           </>
         )}
       </div>

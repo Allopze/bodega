@@ -411,6 +411,7 @@ export function PdtpWorksitePicker({
   month,
   week,
   allHref,
+  objetivo,
 }: {
   current?: string
   sheetCode: string
@@ -424,6 +425,8 @@ export function PdtpWorksitePicker({
   month?: number
   week?: number
   allHref?: string
+  /** Id de objetivo seleccionado (`?objetivo=`); se conserva al cambiar de faena. */
+  objetivo?: string
 }) {
   const router = useRouter()
   return (
@@ -443,6 +446,7 @@ export function PdtpWorksitePicker({
           if (week) params.set("semana", String(week))
           if (worksiteId !== "all") params.set("faena", worksiteId)
           if (hrefBase && programId) params.set("programa", programId)
+          if (objetivo) params.set("objetivo", objetivo)
           router.replace(hrefBase ? `${hrefBase}?${params}` : programId ? `${PDT_BASE}/${programId}?${params}` : `${PDT_BASE}?${params}`, { scroll: false })
         }}
       >
@@ -471,6 +475,7 @@ export function PdtpViewToggle({
   status,
   month,
   week,
+  objetivo,
 }: {
   current: "semana" | "anual"
   sheetCode: string
@@ -481,6 +486,8 @@ export function PdtpViewToggle({
   status?: string
   month?: number
   week?: number
+  /** Id de objetivo seleccionado (`?objetivo=`); se conserva al cambiar de vista. */
+  objetivo?: string
 }) {
   return (
     <SegmentedControl
@@ -491,7 +498,7 @@ export function PdtpViewToggle({
         key: option.value,
         label: option.label,
         href: hrefBase && programId
-          ? `${hrefBase}?programa=${programId}&hoja=${sheetCode}${worksiteId ? `&faena=${worksiteId}` : ""}&vista=${option.value}${year ? `&anio=${year}` : ""}${month ? `&mes=${month}` : ""}${week ? `&semana=${week}` : ""}${status && status !== "all" ? `&estado=${status}` : ""}`
+          ? `${hrefBase}?programa=${programId}&hoja=${sheetCode}${worksiteId ? `&faena=${worksiteId}` : ""}&vista=${option.value}${year ? `&anio=${year}` : ""}${month ? `&mes=${month}` : ""}${week ? `&semana=${week}` : ""}${status && status !== "all" ? `&estado=${status}` : ""}${objetivo ? `&objetivo=${objetivo}` : ""}`
           : programId
           ? `${PDT_BASE}/${programId}?hoja=${sheetCode}${worksiteId ? `&faena=${worksiteId}` : ""}&vista=${option.value}`
           : `${PDT_BASE}?hoja=${sheetCode}${worksiteId ? `&faena=${worksiteId}` : ""}&vista=${option.value}`,
@@ -512,6 +519,7 @@ export function PdtpSheetPicker({
   status,
   month,
   week,
+  objetivo,
 }: {
   current: string
   options: Array<{ code: string; label: string }>
@@ -523,6 +531,8 @@ export function PdtpSheetPicker({
   status?: string
   month?: number
   week?: number
+  /** Id de objetivo seleccionado (`?objetivo=`); se conserva al cambiar de hoja. */
+  objetivo?: string
 }) {
   const router = useRouter()
   return (
@@ -538,12 +548,70 @@ export function PdtpSheetPicker({
           if (week) params.set("semana", String(week))
           if (worksiteId) params.set("faena", worksiteId)
           if (hrefBase && programId) params.set("programa", programId)
+          if (objetivo) params.set("objetivo", objetivo)
           router.replace(hrefBase ? `${hrefBase}?${params}` : programId ? `${PDT_BASE}/${programId}?${params}` : `${PDT_BASE}?${params}`, { scroll: false })
         }}
       >
         <SelectTrigger className="w-64" aria-label="Seleccionar hoja"><SelectValue /></SelectTrigger>
         <SelectContent>
           {options.map((option) => <SelectItem key={option.code} value={option.code}>{option.label}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
+
+/**
+ * Filtro por objetivo del programa (`?objetivo=`). Solo tiene sentido
+ * renderizarlo cuando el programa tiene al menos un objetivo declarado; el
+ * llamador decide eso, no este componente.
+ */
+export function PdtpObjectivePicker({
+  current,
+  objectives,
+  programId,
+  sheetCode,
+  worksiteId,
+  viewMode = "semana",
+  hrefBase,
+  year,
+  status,
+  month,
+  week,
+}: {
+  current?: string
+  objectives: Array<{ id: string; code: string; name: string }>
+  programId: string
+  sheetCode: string
+  worksiteId?: string
+  viewMode?: "semana" | "anual"
+  hrefBase: string
+  year?: number
+  status?: string
+  month?: number
+  week?: number
+}) {
+  const router = useRouter()
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-eyebrow shrink-0 text-[var(--color-text-faint)]">Objetivo</span>
+      <Select
+        value={current ?? "all"}
+        onValueChange={(objectiveId) => {
+          const params = new URLSearchParams({ programa: programId, hoja: sheetCode, vista: viewMode })
+          if (year) params.set("anio", String(year))
+          if (status && status !== "all") params.set("estado", status)
+          if (month) params.set("mes", String(month))
+          if (week) params.set("semana", String(week))
+          if (worksiteId) params.set("faena", worksiteId)
+          if (objectiveId !== "all") params.set("objetivo", objectiveId)
+          router.replace(`${hrefBase}?${params}`, { scroll: false })
+        }}
+      >
+        <SelectTrigger className="w-64" aria-label="Seleccionar objetivo"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Todos los objetivos</SelectItem>
+          {objectives.map((objective) => <SelectItem key={objective.id} value={objective.id}>{objective.code} · {objective.name}</SelectItem>)}
         </SelectContent>
       </Select>
     </div>
@@ -561,6 +629,7 @@ export function PdtpProgramPicker({
   status,
   month,
   week,
+  objetivo,
 }: {
   current: string
   programs: Array<{ id: string; title: string; year: number; version: number }>
@@ -572,6 +641,8 @@ export function PdtpProgramPicker({
   status?: string
   month?: number
   week?: number
+  /** Id de objetivo seleccionado (`?objetivo=`); se conserva al cambiar de programa. */
+  objetivo?: string
 }) {
   const router = useRouter()
   return (
@@ -584,6 +655,7 @@ export function PdtpProgramPicker({
         if (month) params.set("mes", String(month))
         if (week) params.set("semana", String(week))
         if (worksiteId) params.set("faena", worksiteId)
+        if (objetivo) params.set("objetivo", objetivo)
         router.replace(`${hrefBase}?${params}`, { scroll: false })
       }}>
         <SelectTrigger className="w-64" aria-label="Seleccionar programa"><SelectValue /></SelectTrigger>
@@ -606,6 +678,7 @@ export function PdtpYearPicker({
   status,
   month,
   week,
+  objetivo,
 }: {
   current: number
   years: number[]
@@ -617,6 +690,8 @@ export function PdtpYearPicker({
   status?: string
   month?: number
   week?: number
+  /** Id de objetivo seleccionado (`?objetivo=`); se conserva al cambiar de año. */
+  objetivo?: string
 }) {
   const router = useRouter()
   const options = [...new Set([...years, current])].sort((a, b) => b - a)
@@ -632,6 +707,7 @@ export function PdtpYearPicker({
         if (status && status !== "all") params.set("estado", status)
         if (month) params.set("mes", String(month))
         if (week) params.set("semana", String(week))
+        if (objetivo) params.set("objetivo", objetivo)
         router.replace(`${hrefBase}?${params}`, { scroll: false })
       }}>
         <SelectTrigger className="w-28" aria-label="Seleccionar año"><SelectValue /></SelectTrigger>
@@ -653,6 +729,7 @@ export function PdtpPeriodPicker({
   viewMode,
   year,
   status,
+  objetivo,
 }: {
   month: number
   week: number
@@ -663,12 +740,15 @@ export function PdtpPeriodPicker({
   viewMode: "semana" | "anual"
   year: number
   status?: string
+  /** Id de objetivo seleccionado (`?objetivo=`); se conserva al cambiar de período. */
+  objetivo?: string
 }) {
   const router = useRouter()
   const navigate = (nextMonth: number, nextWeek: number) => {
     const params = new URLSearchParams({ programa: programId, hoja: sheetCode, vista: viewMode, anio: String(year), mes: String(nextMonth), semana: String(nextWeek) })
     if (worksiteId) params.set("faena", worksiteId)
     if (status && status !== "all") params.set("estado", status)
+    if (objetivo) params.set("objetivo", objetivo)
     router.replace(`${hrefBase}?${params}`, { scroll: false })
   }
   return (

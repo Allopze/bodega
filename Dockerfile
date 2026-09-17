@@ -238,6 +238,18 @@ RUN ./node_modules/.bin/esbuild scripts/apply-pdtp-2026-mechanisms.ts \
     --external:postgres \
     --outfile=/tmp/apply-pdtp-mechanisms.mjs
 
+# Los 8 objetivos del programa 2026 (RE-36) y su asignación a las actividades
+# por número de catálogo legado. Corre antes de firmar el programa, para que
+# los objetivos entren en la huella firmada desde la primera versión.
+RUN ./node_modules/.bin/esbuild scripts/apply-pdtp-2026-objectives.ts \
+    --bundle \
+    --platform=node \
+    --format=esm \
+    --external:drizzle-orm \
+    --external:drizzle-orm/* \
+    --external:postgres \
+    --outfile=/tmp/apply-pdtp-objectives.mjs
+
 # El SLA y la evidencia mínima de las actividades a demanda del programa: sin
 # esto no se puede ni enviar el programa a revisión
 # (`pdtpSubmitReviewBlockers`). Va después de las decisiones de catálogo (que
@@ -531,6 +543,7 @@ COPY --from=build /tmp/apply-pdtp-catalog-decisions.mjs ./scripts/apply-pdtp-cat
 COPY --from=build /tmp/apply-pdtp-worksite-scope.mjs ./scripts/apply-pdtp-worksite-scope.mjs
 COPY --from=build /tmp/apply-pdtp-program-data.mjs ./scripts/apply-pdtp-program-data.mjs
 COPY --from=build /tmp/apply-pdtp-mechanisms.mjs ./scripts/apply-pdtp-mechanisms.mjs
+COPY --from=build /tmp/apply-pdtp-objectives.mjs ./scripts/apply-pdtp-objectives.mjs
 COPY --from=build /tmp/apply-pdtp-demand-slas.mjs ./scripts/apply-pdtp-demand-slas.mjs
 COPY --from=build /tmp/reconcile-pdtp-fulfillment-events.cjs ./scripts/reconcile-pdtp-fulfillment-events.cjs
 COPY --from=build /tmp/invoice-reconciliation/preflight-purchase-invoice-reconciliation.mjs ./scripts/preflight-purchase-invoice-reconciliation.mjs

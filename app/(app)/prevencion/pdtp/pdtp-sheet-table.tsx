@@ -74,6 +74,36 @@ function aggregateSummaries(activity: PdtpSheetView["activities"][number]): Pdtp
   return "worksiteSummaries" in activity ? activity.worksiteSummaries as PdtpAggregateActivityWorksite[] : null
 }
 
+/**
+ * Agrupa actividades por objetivo, en el orden de `objectives` (ya viene
+ * ordenado por `displayOrder` desde `listPdtpObjectives`). Un objetivo sin
+ * actividades en esta vista no aparece: mostrar un grupo vacío no aporta. Las
+ * actividades sin objetivo asignado quedan al final, en un grupo aparte.
+ */
+function groupActivitiesByObjective<A extends { objectiveId: string | null }>(
+  activities: A[],
+  objectives: ObjectiveSummary[],
+): Array<{ label: string; activities: A[] }> {
+  const byObjectiveId = new Map<string, A[]>()
+  const unassigned: A[] = []
+  for (const activity of activities) {
+    if (activity.objectiveId) {
+      const bucket = byObjectiveId.get(activity.objectiveId) ?? []
+      bucket.push(activity)
+      byObjectiveId.set(activity.objectiveId, bucket)
+    } else {
+      unassigned.push(activity)
+    }
+  }
+  const groups = objectives
+    .map((objective) => ({ label: `${objective.code} · ${objective.name}`, activities: byObjectiveId.get(objective.id) ?? [] }))
+    .filter((group) => group.activities.length > 0)
+  if (unassigned.length > 0) groups.push({ label: "Sin objetivo asignado", activities: unassigned })
+  return groups
+}
+
+type ObjectiveSummary = { id: string; code: string; name: string }
+
 type PdtpSheetTableProps = {
   view: PdtpSheetView
   worksiteId?: string
@@ -86,7 +116,15 @@ type PdtpSheetTableProps = {
   sheetCode: string
   initialStatusFilter?: PdtpActivityStatus | "all"
   aggregateWorksiteNames?: Record<string, string>
+  /** Objetivos del programa, ordenados. Sin objetivos (la mayoría de los
+   *  programas hoy), la tabla se comporta exactamente igual que antes: sin
+   *  filtro ni agrupación. */
+  objectives?: ObjectiveSummary[]
+  /** Id de objetivo seleccionado por `?objetivo=` en el visor transversal. */
+  objectiveFilter?: string
 }
+
+const EMPTY_OBJECTIVES: ObjectiveSummary[] = []
 
 export function PdtpSheetTable({
   view,
@@ -100,6 +138,8 @@ export function PdtpSheetTable({
   sheetCode,
   initialStatusFilter = "all",
   aggregateWorksiteNames = {},
+  objectives = EMPTY_OBJECTIVES,
+  objectiveFilter,
 }: PdtpSheetTableProps) {
   const canOperate = canExecute || canManageProgram
   const router = useRouter()
@@ -117,12 +157,19 @@ export function PdtpSheetTable({
       .filter((cell) => cell.month === currentPeriod.month && cell.week === currentPeriod.week)
       .reduce((total, cell) => total + cell.plannedQuantity, 0)
 
-  const weeklyActivities = view.activities.filter(
+  // El filtro por objetivo se aplica antes de derivar semana/anual: así el
+  // conteo por estado, la paginación y el estado vacío de "sin actividades
+  // esta semana" ya reflejan sólo el objetivo elegido.
+  const objectiveScopedActivities = objectiveFilter
+    ? view.activities.filter((activity) => activity.objectiveId === objectiveFilter)
+    : view.activities
+
+  const weeklyActivities = objectiveScopedActivities.filter(
     (activity) => plannedQuantityForCurrentWeek(activity) > 0,
   )
 
   // Derive status for all activities in the current view
-  const viewActivities = viewMode === "semana" ? weeklyActivities : view.activities
+  const viewActivities = viewMode === "semana" ? weeklyActivities : objectiveScopedActivities
   const sourceActivities = viewActivities
 
   const INITIAL_ROW_LIMIT = 30
@@ -153,7 +200,12 @@ export function PdtpSheetTable({
     ? filteredActivities.slice(0, INITIAL_ROW_LIMIT)
     : filteredActivities
 
-  const groupedActivities = [{ label: "Actividades", activities: displayActivities }]
+  // La agrupación por objetivo sólo aplica a la vista anual y sólo si el
+  // programa declaró objetivos: fuera de eso, un único grupo "Actividades",
+  // exactamente como se veía antes de que existieran los objetivos.
+  const groupedActivities = viewMode === "anual" && objectives.length > 0
+    ? groupActivitiesByObjective(displayActivities, objectives)
+    : [{ label: "Actividades", activities: displayActivities }]
 
   const rowPy = density === "compact" ? "py-1.5" : "py-3"
 

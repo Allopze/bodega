@@ -10,6 +10,8 @@ export interface PdtpActivitiesQuery extends PdtpListQuery {
   estado?: string
   mes?: number
   semana?: number
+  /** Id de `pdtp_objectives`. Sin objetivos en el programa, este filtro no aplica. */
+  objetivo?: string
 }
 
 export function resolvePdtpYear(value: string | undefined, currentYear = new Date().getFullYear()): number {
@@ -36,6 +38,7 @@ export function buildPdtpActivitiesHref(query: PdtpActivitiesQuery): string {
   if (query.estado && query.estado !== "all") params.set("estado", query.estado)
   if (query.mes) params.set("mes", String(query.mes))
   if (query.semana) params.set("semana", String(query.semana))
+  if (query.objetivo) params.set("objetivo", query.objetivo)
   return `/prevencion/pdtp/actividades?${params}`
 }
 

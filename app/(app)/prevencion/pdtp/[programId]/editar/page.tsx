@@ -21,6 +21,7 @@ import {
   getPdtpCoverageReport,
   listPdtpActivityExecutorAssignments,
   listPdtpExecutorRoleOptions,
+  listPdtpObjectives,
 } from "@/lib/services/prevention-pdtp"
 import { db } from "@/db"
 import { worksites } from "@/db/schema"
@@ -53,7 +54,7 @@ export default async function PdtpEditProgramPage({ params, searchParams }: Prop
   if (program.status !== "draft") redirect(`/prevencion/pdtp/${programId}`)
 
   const worksiteScope = resolveWorksiteScope(session)
-  const [sheets, activities, checklists, responsibleCatalog, catalogActivities, visibleWorksites, programWorksites, baseComparison, coverageReport, executorAssignments, executorRoleOptions] = await Promise.all([
+  const [sheets, activities, checklists, responsibleCatalog, catalogActivities, visibleWorksites, programWorksites, baseComparison, coverageReport, executorAssignments, executorRoleOptions, objectives] = await Promise.all([
     listPdtpProgramSheets(programId),
     listPdtpProgramActivities(programId),
     listProgramActiveChecklists(programId),
@@ -73,6 +74,7 @@ export default async function PdtpEditProgramPage({ params, searchParams }: Prop
     getPdtpCoverageReport(programId),
     listPdtpActivityExecutorAssignments(programId),
     listPdtpExecutorRoleOptions(),
+    listPdtpObjectives(programId),
   ])
   const activityIds = activities.map((activity) => activity.id)
   const [activityWorksiteExclusions, schedule, activityWorksiteParams, activityScheduleOverrides] = await Promise.all([
@@ -109,6 +111,7 @@ export default async function PdtpEditProgramPage({ params, searchParams }: Prop
         activities={activities}
         schedule={schedule}
         checklists={checklists}
+        objectives={objectives}
         responsibleCatalog={responsibleCatalog.filter((responsible) => responsible.isActive)}
         catalogActivities={catalogActivities.map((activity) => ({
           id: activity.id,

@@ -48,6 +48,7 @@
     "pdtp:apply-catalog-decisions": "tsx --env-file=.env.local scripts/apply-pdtp-2026-catalog-decisions.ts",
     "pdtp:apply-worksite-scope": "tsx --env-file=.env.local scripts/apply-pdtp-2026-worksite-scope.ts",
     "pdtp:apply-mechanisms": "tsx --env-file=.env.local scripts/apply-pdtp-2026-mechanisms.ts",
+    "pdtp:apply-objectives": "tsx --env-file=.env.local scripts/apply-pdtp-2026-objectives.ts",
     "pdtp:apply-program-data": "tsx --env-file=.env.local scripts/apply-pdtp-2026-program-data.ts",
     "pdtp:apply-demand-slas": "tsx --env-file=.env.local scripts/apply-pdtp-2026-demand-slas.ts",
     "pdtp:seed-course-versions": "tsx --env-file=.env.local scripts/seed-pdtp-2026-course-versions.ts",

@@ -719,6 +719,25 @@ services:
       - PDTP_MECHANISMS_DRY_RUN=${PDTP_MECHANISMS_DRY_RUN:-}
     command: ["node", "scripts/apply-pdtp-mechanisms.mjs"]
 
+  # One-shot: los 8 objetivos del programa 2026 (RE-36) y su asignación a las
+  # actividades por número de catálogo legado. Idempotente por código de
+  # objetivo y por actividad ya asignada.
+  apply-pdtp-objectives:
+    build:
+      context: .
+      target: prod
+    image: ghcr.io/${GITHUB_REPOSITORY:-chome/bodega}:${IMAGE_TAG:-latest}
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgres://${POSTGRES_USER:-bodega}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-bodega}}
+      - PDTP_OBJECTIVES_DEPLOY_MODE=true
+      - PDTP_OBJECTIVES_DRY_RUN=${PDTP_OBJECTIVES_DRY_RUN:-}
+    command: ["node", "scripts/apply-pdtp-objectives.mjs"]
+
   # One-shot: SLA y evidencia mínima de las actividades a demanda del programa.
   # Sin esto no se puede ni enviar el programa a revisión. Idempotente por
   # actividad.

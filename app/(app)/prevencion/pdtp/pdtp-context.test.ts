@@ -22,6 +22,11 @@ describe("PDTP context", () => {
     expect(resolvePdtpActivitiesReturnHref(href)).toBe(href)
   })
 
+  it("conserva el filtro de objetivo al construir el href de Actividades", () => {
+    const href = buildPdtpActivitiesHref({ programa: "programa-1", objetivo: "objective-1" })
+    expect(href).toBe("/prevencion/pdtp/actividades?programa=programa-1&objetivo=objective-1")
+  })
+
   it("solo acepta retornos internos hacia Actividades PDTP", () => {
     expect(resolvePdtpActivitiesReturnHref("https://example.com")).toBeUndefined()
     expect(resolvePdtpActivitiesReturnHref("/prevencion/pdtp/programa-1")).toBeUndefined()

@@ -37,6 +37,7 @@ PDTP_DATA_STEPS=(
   "db:seed-emergency-plans|seed-emergency-plans"
   "pdtp:apply-program-data|apply-pdtp-program-data"
   "pdtp:apply-mechanisms|apply-pdtp-mechanisms"
+  "pdtp:apply-objectives|apply-pdtp-objectives"
   "pdtp:apply-demand-slas|apply-pdtp-demand-slas"
   "db:seed-pdtp-inspection-templates|seed-inspection-templates"
   "db:preflight-pdtp-wiring|preflight-pdtp-wiring"
@@ -67,6 +68,7 @@ if [[ "${PDTP_APPLY_DRY_RUN:-}" == "true" ]]; then
   export PDTP_DECISIONS_DRY_RUN=true
   export PDTP_WORKSITE_SCOPE_DRY_RUN=true
   export PDTP_MECHANISMS_DRY_RUN=true
+  export PDTP_OBJECTIVES_DRY_RUN=true
   export PDTP_PROGRAM_DATA_DRY_RUN=true
   export PDTP_DEMAND_SLAS_DRY_RUN=true
   export EMERGENCY_PLANS_DRY_RUN=true
