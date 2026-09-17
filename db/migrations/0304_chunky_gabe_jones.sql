@@ -1,0 +1,1 @@
+ALTER TABLE "pdtp_execution_deviations" ADD CONSTRAINT "pdtp_execution_deviations_target_both_or_neither_check" CHECK (("pdtp_execution_deviations"."target_month" IS NULL) = ("pdtp_execution_deviations"."target_week" IS NULL));

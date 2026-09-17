@@ -322,6 +322,42 @@ describe("PDTP CHECK constraints SQL", () => {
       )
     })
 
+    it("rechaza 'reprogrammed' con solo target_month (destino a medias)", async () => {
+      await expectCheckViolation(
+        insertDeviation({
+          kind: "reprogrammed",
+          reason: "Se reprograma por falta de insumos",
+          targetMonth: 2,
+          targetWeek: null,
+        }),
+        "pdtp_execution_deviations_target_both_or_neither_check",
+      )
+    })
+
+    it("rechaza 'reprogrammed' con solo target_week (destino a medias)", async () => {
+      await expectCheckViolation(
+        insertDeviation({
+          kind: "reprogrammed",
+          reason: "Se reprograma por falta de insumos",
+          targetMonth: null,
+          targetWeek: 2,
+        }),
+        "pdtp_execution_deviations_target_both_or_neither_check",
+      )
+    })
+
+    it("rechaza 'reprogrammed' con target_month = month y target_week NULL (el agujero: sin el CHECK both_or_neither, la comparación de tuplas evalúa a NULL y el CHECK de 'misma celda' lo deja pasar)", async () => {
+      await expectCheckViolation(
+        insertDeviation({
+          kind: "reprogrammed",
+          reason: "Se reprograma por falta de insumos",
+          month: 1, week: 1,
+          targetMonth: 1, targetWeek: null,
+        }),
+        "pdtp_execution_deviations_target_both_or_neither_check",
+      )
+    })
+
     it("rechaza status inválido", async () => {
       await expectCheckViolation(
         insertDeviation({ status: "cancelled" }),

@@ -2129,6 +2129,13 @@
       "when": 1789676806522,
       "tag": "0303_spotty_screwball",
       "breakpoints": true
+    },
+    {
+      "idx": 304,
+      "version": "7",
+      "when": 1789677443659,
+      "tag": "0304_chunky_gabe_jones",
+      "breakpoints": true
     }
   ]
 }

@@ -720,6 +720,15 @@ export const pdtpExecutionDeviations = pgTable("pdtp_execution_deviations", {
   // Equivalencia, no implicación: un `reprogrammed` SIEMPRE trae destino, y
   // ningún otro tipo lo trae.
   check("pdtp_execution_deviations_target_check", sql`(${table.kind} <> 'reprogrammed') = (${table.targetMonth} IS NULL AND ${table.targetWeek} IS NULL)`),
+  // La equivalencia de arriba sólo exige que no sean AMBOS NULL: un destino a
+  // medias (mes sin semana o viceversa) la pasa igual. Y eso es peligroso, no
+  // sólo incompleto: con un componente NULL, la comparación de tuplas del
+  // CHECK "no reprogramar a la misma celda" evalúa a NULL en vez de a FALSE,
+  // y Postgres considera satisfecho un CHECK que da NULL — dejando pasar un
+  // `reprogrammed` que en realidad apunta a su propia celda de origen. Exigir
+  // que ambos vengan o ninguno cierra el destino a medias y, con eso, le
+  // devuelve su fuerza a la comparación de tuplas.
+  check("pdtp_execution_deviations_target_both_or_neither_check", sql`(${table.targetMonth} IS NULL) = (${table.targetWeek} IS NULL)`),
   // Reprogramar a la misma celda de origen no tiene sentido.
   check("pdtp_execution_deviations_target_not_same_cell_check", sql`${table.kind} <> 'reprogrammed' OR (${table.targetMonth}, ${table.targetWeek}) <> (${table.month}, ${table.week})`),
   check("pdtp_execution_deviations_target_month_check", sql`${table.targetMonth} IS NULL OR ${table.targetMonth} BETWEEN 1 AND 12`),
