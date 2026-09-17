@@ -3,6 +3,30 @@ import { countPdtpFulfillmentBacklog } from "@/lib/services/pdtp/backlog"
 import { CreatePdtpRevisionButton } from "./create-pdtp-revision-button"
 
 /**
+ * Si corresponde ofrecer "Crear revisión v+1" cuando el contenido vigente ya
+ * no coincide con lo firmado (QA 2026-09-16 P1(b)). Un programa `active` es
+ * inmutable —su editor redirige al detalle—, así que ante un desvío de huella
+ * la única salida accionable es abrir una revisión nueva, y sólo tiene sentido
+ * ofrecérsela a quien puede gestionar el programa.
+ *
+ * Extraída como función pura (en vez de dejar la condición inline en el JSX)
+ * para poder cubrir su tabla de verdad completa sin montar
+ * `FulfillmentBacklogPanel`, que es un server component `async` que consulta
+ * la base directamente.
+ */
+export function shouldOfferPdtpRevision({
+  digestDrift,
+  programStatus,
+  canManageProgram,
+}: {
+  digestDrift: boolean
+  programStatus: string
+  canManageProgram: boolean
+}): boolean {
+  return digestDrift && programStatus === "active" && canManageProgram
+}
+
+/**
  * Lo que el libro de cumplimiento (`pdtp_fulfillment_events`) tiene sin
  * resolver. Nada leía esa tabla antes: un evento en `error` —la N°1 firmada en
  * revisión, entre otros— era invisible hasta que alguien corría el script
@@ -59,7 +83,7 @@ export async function FulfillmentBacklogPanel({ programId, canManageProgram, pro
         )}
       </div>
 
-      {backlog.digestDrift && programStatus === "active" && canManageProgram && (
+      {shouldOfferPdtpRevision({ digestDrift: backlog.digestDrift, programStatus, canManageProgram }) && (
         <div className="mt-3">
           <CreatePdtpRevisionButton sourceProgramId={programId} />
         </div>

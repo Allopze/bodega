@@ -9,9 +9,16 @@
  */
 
 import { render, screen } from "@testing-library/react"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { CoverageReportPanel } from "./coverage-report-panel"
 import type { PdtpCoverageReport } from "@/lib/services/prevention-pdtp"
+
+// CreatePdtpRevisionButton (programa activo) usa useRouter; sin este mock,
+// renderizarlo fuera de un app router monta y explota con "invariant expected
+// app router to be mounted", igual que en create-pdtp-revision-button.test.tsx.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}))
 
 function report(groups: PdtpCoverageReport["groups"], total = 3, ready = 0): PdtpCoverageReport {
   return { total, ready, groups }
@@ -37,6 +44,42 @@ const sinMecanismo: PdtpCoverageReport["groups"][number] = {
   label: "Sin mecanismo de acreditación clasificado",
   blocks: true,
   issues: [{ n: 12, activity: "Actividad sin clasificar", status: "code_gap", reason: "Sin mecanismo de acreditación clasificado." }],
+}
+
+// Formas tomadas de assertPdtpFulfillmentCoverage (lib/services/pdtp/fulfillment.ts
+// ~1134-1157): "executor_required" cuando no hay ningún rol ejecutor asignado,
+// "executor_permission_gap" cuando hay ejecutores pero ninguno tiene el permiso
+// del destino. Las dos bloquean el ciclo de vida (BLOCKING_COVERAGE_LABELS en
+// lib/services/pdtp/lifecycle.ts), a diferencia de decision_required/instrument_required.
+const sinEjecutor: PdtpCoverageReport["groups"][number] = {
+  status: "executor_required",
+  label: "Sin ejecutor acreditador configurado",
+  blocks: true,
+  issues: [{
+    n: 20,
+    activity: "Charla de seguridad",
+    status: "executor_required",
+    reason: "Se acredita en Programa preventivo; falta asignar al menos un rol ejecutor para registrar ese hecho.",
+    destinationModule: "Programa preventivo",
+    requiredPermission: "prevention:pdtp:execute",
+    suggestedExecutorRoleIds: ["rol-prevencionista"],
+  }],
+}
+
+const ejecutorSinPermiso: PdtpCoverageReport["groups"][number] = {
+  status: "executor_permission_gap",
+  label: "Con ejecutor sin permiso en el destino",
+  blocks: true,
+  issues: [{
+    n: 21,
+    activity: "Inducción de contratistas",
+    status: "executor_permission_gap",
+    reason: "Se acredita en Programa preventivo, pero ninguno de los ejecutores asignados puede registrar el hecho.",
+    destinationModule: "Programa preventivo",
+    requiredPermission: "prevention:pdtp:execute",
+    executorRoleLabels: ["Bodeguero"],
+    suggestedExecutorRoleIds: ["rol-prevencionista"],
+  }],
 }
 
 describe("CoverageReportPanel", () => {
@@ -73,5 +116,37 @@ describe("CoverageReportPanel", () => {
   it("no se dibuja cuando el programa no tiene actividades activas", () => {
     const { container } = render(<CoverageReportPanel report={report([], 0, 0)} {...panelProps} />)
     expect(container).toBeEmptyDOMElement()
+  })
+
+  it("P1(a): sin ejecutor asignado no dice el mensaje genérico y ofrece configurar en el borrador", () => {
+    render(<CoverageReportPanel report={report([sinEjecutor])} {...panelProps} />)
+
+    expect(screen.queryByText(/Todas las actividades activas tienen un destino y un ejecutor acreditador válido/i)).toBeNull()
+    expect(screen.getByText(/no tienen un destino ejecutable o un ejecutor acreditador válido/i)).toBeInTheDocument()
+    expect(screen.getByText("N°20")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Configurar ejecutores en el borrador" })).toBeInTheDocument()
+  })
+
+  it("P1(a): en un programa activo, sin ejecutor ofrece crear una revisión en vez de editar el borrador", () => {
+    render(<CoverageReportPanel report={report([sinEjecutor])} {...panelProps} programStatus="active" />)
+
+    expect(screen.queryByRole("link", { name: "Configurar ejecutores en el borrador" })).toBeNull()
+    expect(screen.getByRole("button", { name: /crear revisi/i })).toBeInTheDocument()
+  })
+
+  it("P1(a): ejecutor sin permiso ofrece administrar roles cuando el usuario puede hacerlo", () => {
+    render(<CoverageReportPanel report={report([ejecutorSinPermiso])} {...panelProps} canManageRoles />)
+
+    expect(screen.queryByText(/Todas las actividades activas tienen un destino y un ejecutor acreditador válido/i)).toBeNull()
+    expect(screen.getByText("N°21")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Administrar roles" })).toBeInTheDocument()
+  })
+
+  it("P1(a): ejecutor sin permiso explica qué rol falta cuando el usuario no administra roles", () => {
+    render(<CoverageReportPanel report={report([ejecutorSinPermiso])} {...panelProps} canManageRoles={false} />)
+
+    expect(screen.queryByRole("link", { name: "Administrar roles" })).toBeNull()
+    expect(screen.getByText(/Bodeguero/)).toBeInTheDocument()
+    expect(screen.getByText(/registrar cumplimiento en PDTP/i)).toBeInTheDocument()
   })
 })
