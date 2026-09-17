@@ -9,8 +9,15 @@
  * El renderizador a Excel y el enchufe a la ruta de descarga son las tareas
  * 1.6/1.7. El informe de la tarea documenta, campo por campo, de qué fuente
  * sale cada bloque — léase antes de tocar el renderizador.
+ *
+ * Los textos de este modelo (`activity`, `program`, `responsibles`,
+ * `objectiveName`, `description` de `changeControl`, `label`/`name` de
+ * `glossary`/firmas, etc.) viajan **crudos**, tal como están en la base de
+ * datos: este módulo no los sanea. Quien serialice a Excel (tarea 1.6) debe
+ * aplicar `sanitizeCell` (`lib/reports/export-module/excel-builder.ts`) o un
+ * saneo equivalente antes de escribirlos en una celda.
  */
-import { and, asc, eq, gt, inArray } from "drizzle-orm"
+import { and, asc, eq, gte, inArray } from "drizzle-orm"
 import { db } from "@/db"
 import {
   pdtpActivities,
@@ -41,6 +48,33 @@ function cellIndex(month: number, week: number): number {
   return (month - 1) * WEEKS_PER_MONTH + (week - 1)
 }
 
+/**
+ * Intenta convertir una fecha declarada en texto libre a ISO, para poder
+ * ordenar `changeControl`/firmas globalmente. El documento legado importado
+ * declara fechas en formato local `DD-MM-YYYY` (p. ej. "12-02-2026",
+ * "04-02-2026" — ver §2.6 de `PDTP_INTERFAZ_DESDE_EXCEL_2026-09-16.md`); ese
+ * formato NO es el que asume `new Date(text)` (que lo leería como
+ * mes-día-año o lo rechazaría). Si el texto no calza con ese patrón se
+ * intenta un parseo genérico como último recurso; si tampoco resuelve a una
+ * fecha válida, devuelve `null` — el texto original (`declaredAtText`/`at`)
+ * se conserva igual para mostrarlo tal como se declaró.
+ */
+function parseDeclaredDateToIso(text: string | null | undefined): string | null {
+  if (!text) return null
+  const trimmed = text.trim()
+  const ddmmyyyy = /^(\d{1,2})-(\d{1,2})-(\d{4})$/.exec(trimmed)
+  if (ddmmyyyy) {
+    const day = Number(ddmmyyyy[1])
+    const month = Number(ddmmyyyy[2])
+    const year = Number(ddmmyyyy[3])
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null
+    const asDate = new Date(Date.UTC(year, month - 1, day))
+    return Number.isNaN(asDate.getTime()) ? null : asDate.toISOString()
+  }
+  const parsed = new Date(trimmed)
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
+}
+
 export type PdtpRe36Cell = { p: number | null; e: number | null; note?: string }
 
 export type PdtpRe36Row = {
@@ -62,6 +96,28 @@ export type PdtpRe36Row = {
 
 export type PdtpRe36Band = { code: string | null; name: string; fromRow: number; toRow: number }
 
+/**
+ * Una hoja del documento. **Invariante de coherencia (condicional, no
+ * general)**: `Σ rows[].cells[].p` de ESTA hoja es igual a
+ * `indicators.annual.planned` (`getPdtpComplianceIndicators`) **solo si**:
+ *
+ *   (a) esta hoja contiene TODAS las actividades del programa (no un
+ *       subconjunto), y
+ *   (b) ninguna de esas actividades usa `indicatorMode` distinto de
+ *       `'planned_vs_completed'` — una `'coverage'` aporta al indicador el
+ *       padrón (override manual, derivado, o `p` como último recurso), no la
+ *       celda `p` cruda; una `'closed_on_time'` aporta casos vencidos con
+ *       `p = 0` en el cronograma.
+ *
+ * El RE-36 real **no** cumple (a) entre hojas: las 8 hojas por cargo son
+ * subconjuntos **solapados** de la hoja general (p. ej. la actividad 6 vive
+ * en "GENERAL" y en "PRF Y Adm. de contrato"), así que sumar `p` de varias
+ * hojas del mismo documento cuenta dos veces las actividades compartidas. La
+ * igualdad solo es útil como chequeo de humo sobre UNA hoja que sea, de
+ * hecho, el programa completo en modo `planned_vs_completed` — no se debe
+ * generalizar a "la suma de todas las hojas" ni a programas con actividades
+ * `coverage`/`closed_on_time`.
+ */
 export type PdtpRe36Sheet = { code: string; label: string; rows: PdtpRe36Row[]; bands: PdtpRe36Band[] }
 
 export type PdtpRe36DeviationRow = {
@@ -96,16 +152,36 @@ export type PdtpRe36Document = {
   worksite: { id: string; name: string; code: string }
   cutoff: { asOf: string; year: number; month: number | null }
   sheets: PdtpRe36Sheet[]
+  /**
+   * Indicador de **todo el programa** en esta faena (`getPdtpComplianceIndicators`),
+   * no de una hoja: una hoja de cargo (p. ej. "CPHS", 4 actividades) y la
+   * hoja general comparten exactamente el mismo `platformIndicators` — no es
+   * un total por hoja. El renderizador (tarea 1.6) imprime, además, una fila
+   * de totales **por hoja** con fórmulas `SUM` sobre las celdas de esa hoja
+   * (así es el RE-36 real); ese total por hoja se deriva de `sheet.rows[].cells`
+   * en el renderizador, no vive en este campo ni debe confundirse con él.
+   */
   platformIndicators: {
     monthly: Array<{ month: number; planned: number; executed: number; percent: number | null; zeroActivities: number }>
     quarterly: Array<{ quarter: number; planned: number; executed: number; percent: number | null }>
   }
   signatures: {
-    elaboratedBy: { name: string; title: string; at: string | null }
-    reviewedByJdpr: { name: string; title: string; at: string } | null
-    approvedByLegal: { name: string; title: string; at: string } | null
+    /** `at`: fecha tal como se declaró (texto libre u hora nativa), o `null`
+     * si no hay ninguna declaración. `atIso`: la misma fecha normalizada a
+     * ISO cuando se pudo interpretar (ver `parseDeclaredDateToIso`), para que
+     * el renderizador no tenga que adivinar el formato de `at`. */
+    elaboratedBy: { name: string; title: string; at: string | null; atIso: string | null }
+    reviewedByJdpr: { name: string; title: string; at: string; atIso: string | null } | null
+    approvedByLegal: { name: string; title: string; at: string; atIso: string | null } | null
   }
-  changeControl: Array<{ at: string; description: string; actor: string | null }>
+  /**
+   * Ordenado por fecha (`atIso` cuando se conoce; las entradas sin fecha
+   * interpretable quedan al final, en su orden relativo original). `at` es
+   * el texto tal como se declaró (o la hora nativa ISO si no hubo
+   * declaración); `atIso` es esa misma fecha normalizada, o `null` si no se
+   * pudo interpretar con confianza.
+   */
+  changeControl: Array<{ at: string; atIso: string | null; description: string; actor: string | null }>
   glossary: Array<{ code: string; label: string }>
   legend: { onDemand: string; e0: string; eGte1: string }
   /** Fase 3: desvíos (reprogramaciones, incumplimientos justificados). Vacío
@@ -126,6 +202,21 @@ export async function buildPdtpRe36Document(input: {
   worksiteId: string
   scope: WorksiteScope
   sheetCodes?: string[]
+  /**
+   * Fecha de corte del documento (ISO). Default: el momento de la llamada.
+   * Sin esto, dos generaciones del mismo estado producían documentos
+   * distintos (`asOf` cambiaba) — la fase de cierre mensual congela y
+   * compara exactamente este documento, así que tiene que ser reproducible.
+   */
+  asOf?: string
+  /**
+   * Mes de corte (1-12), o `null` para "año completo". Se refleja en
+   * `cutoff.month` tal cual. `getPdtpComplianceIndicators` no acepta un
+   * corte mensual hoy, así que `platformIndicators` sigue siendo del año
+   * completo aunque se pase un mes — recortarlo de verdad queda para la fase
+   * de cierre mensual, no para esta tarea.
+   */
+  cutoffMonth?: number | null
 }): Promise<PdtpRe36Document> {
   assertWorksiteAccess(input.worksiteId, input.scope)
 
@@ -147,20 +238,49 @@ export async function buildPdtpRe36Document(input: {
       sheetByCode.set(sheet.code, sheet)
     }
   }
-  let resolvedSheets = [...sheetByCode.values()].sort((a, b) => a.code.localeCompare(b.code))
+  // Orden del formato: GENERAL siempre primero, el resto alfabético por
+  // código. `pdtp_general` es el código canónico de la plantilla 2026
+  // (`sheet-meta-2026.ts`); `general` a secas cubre un programa genérico que
+  // nombre su hoja completa así.
+  const isGeneralSheetCode = (code: string) => {
+    const normalized = code.toLowerCase()
+    return normalized === "pdtp_general" || normalized === "general"
+  }
+  let resolvedSheets = [...sheetByCode.values()].sort((a, b) => {
+    const aGeneral = isGeneralSheetCode(a.code)
+    const bGeneral = isGeneralSheetCode(b.code)
+    if (aGeneral !== bGeneral) return aGeneral ? -1 : 1
+    return a.code.localeCompare(b.code)
+  })
   if (input.sheetCodes) {
     const wanted = new Set(input.sheetCodes)
     resolvedSheets = resolvedSheets.filter((sheet) => wanted.has(sheet.code))
   }
 
+  // Una sola consulta con `inArray` (no un `select` por hoja dentro de un
+  // `for` secuencial) y se agrupa en memoria.
+  const sheetIds = resolvedSheets.map((sheet) => sheet.id)
+  const allMemberships = sheetIds.length > 0
+    ? await db.select().from(pdtpSheetActivities)
+        .where(inArray(pdtpSheetActivities.sheetId, sheetIds))
+        .orderBy(asc(pdtpSheetActivities.sheetId), asc(pdtpSheetActivities.displayOrder))
+    : []
   const membershipsBySheet = new Map<string, Array<typeof pdtpSheetActivities.$inferSelect>>()
+  for (const membership of allMemberships) {
+    const list = membershipsBySheet.get(membership.sheetId) ?? []
+    list.push(membership)
+    membershipsBySheet.set(membership.sheetId, list)
+  }
+  // Descarta hojas sin miembros en este programa: `listPdtpProgramSheets`
+  // trae también las plantillas globales (`programId IS NULL`), y una
+  // plantilla que nunca se materializó para este programa no tiene
+  // membresías propias — emitirla produciría una pestaña vacía (`rows: []`)
+  // en el renderizador.
+  resolvedSheets = resolvedSheets.filter((sheet) => (membershipsBySheet.get(sheet.id) ?? []).length > 0)
+
   const allActivityIdsSet = new Set<string>()
   for (const sheet of resolvedSheets) {
-    const memberships = await db.select().from(pdtpSheetActivities)
-      .where(eq(pdtpSheetActivities.sheetId, sheet.id))
-      .orderBy(asc(pdtpSheetActivities.displayOrder))
-    membershipsBySheet.set(sheet.id, memberships)
-    for (const membership of memberships) allActivityIdsSet.add(membership.activityId)
+    for (const membership of membershipsBySheet.get(sheet.id) ?? []) allActivityIdsSet.add(membership.activityId)
   }
   const allActivityIds = [...allActivityIdsSet]
 
@@ -328,12 +448,15 @@ export async function buildPdtpRe36Document(input: {
 
   // Control de cambios (regla dura, brief §6): solo lo declarado en
   // `pdtp_document_history` (entryKind = 'change_control') más las entradas de
-  // `pdtp_change_log` posteriores al congelamiento (`reviewStartedAt`). Sin
-  // `reviewStartedAt` (programa que nunca entró a revisión) no hay "posterior
-  // al congelamiento" que mostrar, así que no se incluye ningún changelog.
+  // `pdtp_change_log` posteriores o simultáneas al congelamiento
+  // (`reviewStartedAt`). `>=`, no `>`: con `>` la entrada que *genera* el
+  // congelamiento aparecía o no según cayeran o no en el mismo milisegundo
+  // dos `new Date()` distintos — no determinista. Sin `reviewStartedAt`
+  // (programa que nunca entró a revisión) no hay "posterior al
+  // congelamiento" que mostrar, así que no se incluye ningún changelog.
   const changeLogRows = program.reviewStartedAt
     ? await db.select().from(pdtpChangeLog)
-        .where(and(eq(pdtpChangeLog.programId, input.programId), gt(pdtpChangeLog.changedAt, program.reviewStartedAt)))
+        .where(and(eq(pdtpChangeLog.programId, input.programId), gte(pdtpChangeLog.changedAt, program.reviewStartedAt)))
         .orderBy(asc(pdtpChangeLog.changedAt))
     : []
 
@@ -361,6 +484,7 @@ export async function buildPdtpRe36Document(input: {
       name: program.elaboratedByName,
       title: program.elaboratedByTitle,
       at: elaborationHistory?.declaredAtText ?? null,
+      atIso: parseDeclaredDateToIso(elaborationHistory?.declaredAtText),
     },
     // Prioridad: la aprobación nativa de Chome (autoritativa) sobre la
     // declaración importada del documento legado (solo si nunca hubo
@@ -370,6 +494,8 @@ export async function buildPdtpRe36Document(input: {
           name: userNameById.get(program.approvedByJdprUserId) ?? "Usuario no encontrado",
           title: jdprStep?.label ?? "Revisión técnica JDPR",
           at: program.approvedByJdprAt ?? "",
+          // Nativa: ya es ISO, no hace falta parsear texto libre.
+          atIso: program.approvedByJdprAt ?? null,
         }
       : reviewHistory
         ? {
@@ -377,6 +503,7 @@ export async function buildPdtpRe36Document(input: {
               ?? reviewHistory.declaredActorName ?? "—",
             title: reviewHistory.declaredActorTitle ?? "—",
             at: reviewHistory.declaredAtText ?? "",
+            atIso: parseDeclaredDateToIso(reviewHistory.declaredAtText),
           }
         : null,
     approvedByLegal: program.approvedByLegalUserId
@@ -384,6 +511,7 @@ export async function buildPdtpRe36Document(input: {
           name: userNameById.get(program.approvedByLegalUserId) ?? "Usuario no encontrado",
           title: legalStep?.label ?? "Aprobación Legal y RRHH",
           at: program.approvedByLegalAt ?? "",
+          atIso: program.approvedByLegalAt ?? null,
         }
       : approvalHistory
         ? {
@@ -391,6 +519,7 @@ export async function buildPdtpRe36Document(input: {
               ?? approvalHistory.declaredActorName ?? "—",
             title: approvalHistory.declaredActorTitle ?? "—",
             at: approvalHistory.declaredAtText ?? "",
+            atIso: parseDeclaredDateToIso(approvalHistory.declaredAtText),
           }
         : null,
   }
@@ -399,23 +528,45 @@ export async function buildPdtpRe36Document(input: {
     .filter((row) => row.entryKind === "change_control")
     .map((row) => ({
       at: row.declaredAtText ?? row.createdAt,
+      // Si se declaró texto libre, se intenta interpretarlo; si no hay texto
+      // declarado, la hora nativa de creación del registro ya es ISO.
+      atIso: row.declaredAtText ? parseDeclaredDateToIso(row.declaredAtText) : row.createdAt,
       description: row.description ?? "",
       actor: (row.linkedUserId ? userNameById.get(row.linkedUserId) : null) ?? row.declaredActorName ?? null,
     }))
   const changeControlFromLog = changeLogRows.map((row) => ({
     at: row.changedAt,
+    atIso: row.changedAt,
     description: row.note ?? `${row.section} actualizado.`,
     actor: row.changedByUserId ? (userNameById.get(row.changedByUserId) ?? null) : null,
   }))
-  const changeControl = [...changeControlFromHistory, ...changeControlFromLog]
+  // Orden global por fecha conocida; las entradas sin fecha interpretable
+  // (texto libre no parseable, caso raro) quedan al final, en su orden
+  // relativo original — `Array.prototype.sort` es estable, no hay con qué
+  // ordenarlas mejor que eso.
+  const changeControl = [...changeControlFromHistory, ...changeControlFromLog].sort((a, b) => {
+    if (a.atIso && b.atIso) return a.atIso.localeCompare(b.atIso)
+    if (a.atIso) return -1
+    if (b.atIso) return 1
+    return 0
+  })
 
-  const roleLegendCodesLower = new Set(roleLegendRows.map((row) => row.code.toLowerCase()))
+  // El código de un rol declarado (JDPR, PRF...) puede repetirse entre lotes
+  // de importación distintos (el índice único de `pdtp_role_legend_entries`
+  // incluye `sourceImportBatchId`, así que el mismo código puede insertarse
+  // más de una vez para el mismo programa). Se deduplica por código,
+  // quedándose con la primera declaración.
+  const roleLegendByCode = new Map<string, { code: string; label: string }>()
+  for (const row of roleLegendRows) {
+    if (!roleLegendByCode.has(row.code)) roleLegendByCode.set(row.code, { code: row.code, label: row.label })
+  }
+  const roleLegendCodesLower = new Set([...roleLegendByCode.keys()].map((code) => code.toLowerCase()))
   const catalogRows = responsibleSlugsUsed.size > 0
     ? await db.select().from(pdtpResponsibleCatalog).where(inArray(pdtpResponsibleCatalog.slug, [...responsibleSlugsUsed]))
     : []
   const catalogBySlug = new Map(catalogRows.map((row) => [row.slug, row]))
   const glossary = [
-    ...roleLegendRows.map((row) => ({ code: row.code, label: row.label })),
+    ...roleLegendByCode.values(),
     ...[...responsibleSlugsUsed]
       .filter((slug) => !roleLegendCodesLower.has(slug.toLowerCase()))
       .sort((a, b) => a.localeCompare(b))
@@ -439,9 +590,10 @@ export async function buildPdtpRe36Document(input: {
       annualPercent: indicators.annual.percent,
     },
     worksite: worksiteRow,
-    // Sin parámetro de corte explícito, el documento se genera "a hoy": todo
-    // el año, sin recortar a un mes particular (`month: null`).
-    cutoff: { asOf: new Date().toISOString(), year: program.year, month: null },
+    // Reproducible: sin `input.asOf`/`input.cutoffMonth` explícitos, cae al
+    // comportamiento anterior (ahora, año completo) — pero un caller que
+    // necesita congelar el documento (cierre mensual) puede fijarlos.
+    cutoff: { asOf: input.asOf ?? new Date().toISOString(), year: program.year, month: input.cutoffMonth ?? null },
     sheets,
     platformIndicators,
     signatures,

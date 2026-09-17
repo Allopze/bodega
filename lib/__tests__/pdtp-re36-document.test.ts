@@ -1,5 +1,6 @@
 import path from "node:path"
 import { PGlite } from "@electric-sql/pglite"
+import { eq, isNull } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/pglite"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
@@ -30,12 +31,15 @@ afterAll(async () => {
   await pg.close()
 })
 
-// El borrado de `pdtpPrograms` cascadea a objetivos, hojas, membresías,
-// actividades, cronograma, overrides, exclusiones y change_log (todas tienen
-// `onDelete: "cascade"` hacia el programa o hacia la actividad). Solo hace
-// falta limpiar aparte lo que no cuelga de esa cascada: faenas y usuarios.
+// El borrado de `pdtpPrograms` cascadea a objetivos, hojas program-scoped,
+// membresías, actividades, cronograma, overrides, exclusiones, change_log,
+// document_history e import_batches (todas tienen `onDelete: "cascade"` hacia
+// el programa o hacia la actividad). Solo hace falta limpiar aparte lo que no
+// cuelga de esa cascada: faenas, usuarios y las hojas plantilla (`programId
+// IS NULL`, que no referencian ningún programa).
 beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpPrograms)
+  await inMemoryDb.delete(schema.pdtpSheets).where(isNull(schema.pdtpSheets.programId))
   await inMemoryDb.delete(schema.worksites)
   await inMemoryDb.delete(schema.users)
 })
@@ -138,25 +142,87 @@ async function seedBaseFixture() {
     },
   ])
 
-  // Una hoja de programa con las tres actividades (la excluida queda fuera
-  // de `rows` aunque sea miembro de la hoja).
-  await inMemoryDb.insert(schema.pdtpSheets).values({
-    id: `${PROGRAM_ID}-general`, code: "general", programId: PROGRAM_ID,
-    label: "General", area: "General", defaultScopeRoles: [],
-  })
+  // Dos hojas de programa: "general" con las tres actividades (la excluida
+  // queda fuera de `rows` aunque sea miembro de la hoja) y "cphs" con un
+  // subconjunto (solo act-b) — para probar el orden GENERAL-primero y que
+  // las hojas se resuelven con una sola consulta agrupada en memoria.
+  await inMemoryDb.insert(schema.pdtpSheets).values([
+    { id: `${PROGRAM_ID}-general`, code: "general", programId: PROGRAM_ID, label: "General", area: "General", defaultScopeRoles: [] },
+    { id: `${PROGRAM_ID}-cphs`, code: "cphs", programId: PROGRAM_ID, label: "CPHS", area: "General", defaultScopeRoles: [] },
+  ])
   await inMemoryDb.insert(schema.pdtpSheetActivities).values([
     { id: "sa-1", sheetId: `${PROGRAM_ID}-general`, sheetCode: "general", activityId: "act-a", sheetRow: 1, displayOrder: 1 },
     { id: "sa-2", sheetId: `${PROGRAM_ID}-general`, sheetCode: "general", activityId: "act-b", sheetRow: 2, displayOrder: 2 },
     { id: "sa-3", sheetId: `${PROGRAM_ID}-general`, sheetCode: "general", activityId: "act-excluded", sheetRow: 3, displayOrder: 3 },
+    { id: "sa-cphs-1", sheetId: `${PROGRAM_ID}-cphs`, sheetCode: "cphs", activityId: "act-b", sheetRow: 1, displayOrder: 1 },
   ])
 
-  // Control de cambios: una entrada antes del congelamiento (no debe
-  // aparecer) y otra después (sí debe aparecer).
+  // Plantilla global (`programId: null`) sin ninguna membresía para este
+  // programa: `listPdtpProgramSheets` la trae igual (código genérico
+  // compartido), y el documento debe descartarla en vez de emitir una
+  // pestaña vacía.
+  await inMemoryDb.insert(schema.pdtpSheets).values({
+    id: "template-empty-global", code: "empty_template", programId: null,
+    label: "Plantilla sin materializar", area: "General", defaultScopeRoles: [],
+  })
+
+  // Dos lotes de importación (para poblar `pdtp_role_legend_entries` con un
+  // código repetido entre lotes distintos — el índice único incluye
+  // `sourceImportBatchId`, así que dos filas con el mismo `code` son válidas
+  // en la base y el glosario del documento debe deduplicarlas).
+  await inMemoryDb.insert(schema.pdtpImportBatches).values([
+    {
+      id: "batch-1", programId: PROGRAM_ID, sourceFileName: "re36-v1.xlsx",
+      sourceMimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      sourceSizeBytes: 100, sourceChecksumSha256: "a".repeat(64), previewJson: {},
+      requestedByUserId: USER_ID, createdAt: now(), updatedAt: now(),
+    },
+    {
+      id: "batch-2", programId: PROGRAM_ID, sourceFileName: "re36-v2.xlsx",
+      sourceMimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      sourceSizeBytes: 100, sourceChecksumSha256: "b".repeat(64), previewJson: {},
+      requestedByUserId: USER_ID, createdAt: now(), updatedAt: now(),
+    },
+  ])
+  await inMemoryDb.insert(schema.pdtpRoleLegendEntries).values([
+    { id: "legend-jdpr-1", programId: PROGRAM_ID, code: "JDPR", label: "Jefe del Departamento de Prevención de Riesgos", sourceImportBatchId: "batch-1", createdAt: now() },
+    { id: "legend-jdpr-2", programId: PROGRAM_ID, code: "JDPR", label: "Jefe del Departamento de Prevención de Riesgos (lote 2)", sourceImportBatchId: "batch-2", createdAt: now() },
+  ])
+
+  // Historia documental declarada (formato legado): elaboración y aprobación
+  // Legal con fecha en texto libre `DD-MM-YYYY`, y una entrada de control de
+  // cambios. Ninguna tiene `linkedUserId` (nadie la reconcilió todavía), así
+  // que el CHECK de reconciliación no aplica.
+  await inMemoryDb.insert(schema.pdtpDocumentHistory).values([
+    {
+      id: "dh-elaboration", programId: PROGRAM_ID, entryKind: "elaboration", stableKey: "elaboration-1", sequence: 1,
+      declaredActorName: "Jefa Dpto. Prevención de Riesgos", declaredActorTitle: "Prevencionista",
+      declaredAtText: "15-01-2033", createdAt: now(), updatedAt: now(),
+    },
+    {
+      id: "dh-approval", programId: PROGRAM_ID, entryKind: "approval", stableKey: "approval-1", sequence: 1,
+      declaredActorName: "Gerente Legal y RRHH", declaredActorTitle: "Gerente Legal y RRHH",
+      declaredAtText: "20-01-2033", createdAt: now(), updatedAt: now(),
+    },
+    {
+      id: "dh-change-control", programId: PROGRAM_ID, entryKind: "change_control", stableKey: "change-1", sequence: 1,
+      description: "ítem 3 se agrega difusión al CPHS", declaredAtText: "12-02-2033", createdAt: now(), updatedAt: now(),
+    },
+  ])
+
+  // Control de cambios nativo: una entrada antes del congelamiento (no debe
+  // aparecer), otra EXACTAMENTE en el instante del congelamiento (debe
+  // aparecer: `>=`, no `>`) y otra claramente posterior (debe aparecer).
   await inMemoryDb.insert(schema.pdtpChangeLog).values([
     {
       id: "log-before", programId: PROGRAM_ID, version: 1, changedByUserId: USER_ID,
       changedAt: "2033-01-15T00:00:00.000Z", section: "activities", before: null, after: null,
       note: "Cambio antes del congelamiento (no debe salir en el documento).",
+    },
+    {
+      id: "log-boundary", programId: PROGRAM_ID, version: 1, changedByUserId: USER_ID,
+      changedAt: "2033-02-01T00:00:00.000Z", section: "activities", before: null, after: null,
+      note: "Cambio exactamente en el congelamiento (debe salir, >= no >).",
     },
     {
       id: "log-after", programId: PROGRAM_ID, version: 1, changedByUserId: USER_ID,
@@ -167,7 +233,7 @@ async function seedBaseFixture() {
 }
 
 describe("buildPdtpRe36Document", () => {
-  it("arma el documento RE-36 con P/E coherentes con el indicador de cumplimiento", async () => {
+  it("arma el documento RE-36 con P/E coherentes con el indicador de cumplimiento (Σp de la hoja GENERAL, que contiene todas las actividades en modo planned_vs_completed)", async () => {
     await seedBaseFixture()
     const { buildPdtpRe36Document } = await import("@/lib/services/pdtp/re36-document")
     const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
@@ -177,12 +243,17 @@ describe("buildPdtpRe36Document", () => {
 
     const doc = await buildPdtpRe36Document({ programId: PROGRAM_ID, worksiteId: WORKSITE_ID, scope: "all" })
 
-    expect(doc.sheets).toHaveLength(1)
-    const sheet = doc.sheets[0]!
-    expect(sheet.code).toBe("general")
+    // Orden: GENERAL primero, el resto alfabético — y la plantilla global sin
+    // membresías (`empty_template`) no aparece (se habría emitido con `rows: []`).
+    expect(doc.sheets.map((sheet) => sheet.code)).toEqual(["general", "cphs"])
+
+    const sheet = doc.sheets.find((s) => s.code === "general")!
+    const cphsSheet = doc.sheets.find((s) => s.code === "cphs")!
 
     // La actividad excluida no aparece como fila.
     expect(sheet.rows.map((row) => row.activityId)).toEqual(["act-a", "act-b"])
+    // La hoja "cphs" es un subconjunto real (solo act-b) — distinto de "general".
+    expect(cphsSheet.rows.map((row) => row.activityId)).toEqual(["act-b"])
 
     // 2 bandas en orden (objetivo "1" antes que objetivo "2").
     expect(sheet.bands).toHaveLength(2)
@@ -211,7 +282,12 @@ describe("buildPdtpRe36Document", () => {
     expect(marS2.p).toBe(3)
     expect(marS2.e).toBeNull()
 
-    // Coherencia dura: Σp del documento === indicators.annual.planned.
+    // Coherencia dura, PERO SOLO bajo las condiciones documentadas en el
+    // JSDoc de `PdtpRe36Sheet`: esta es la hoja GENERAL (todas las
+    // actividades del programa, ninguna en `coverage`/`closed_on_time`).
+    // NO se prueba sumando todas las hojas del documento (eso duplicaría
+    // act-b, que también vive en "cphs") — ver el test de más abajo que
+    // documenta el caso en que la igualdad no vale.
     const sumP = sheet.rows.reduce(
       (total, row) => total + row.cells.reduce((s, cell) => s + (cell.p ?? 0), 0),
       0,
@@ -219,13 +295,66 @@ describe("buildPdtpRe36Document", () => {
     expect(sumP).toBe(indicators!.annual.planned)
     expect(sumP).toBe(2 + 3) // override (2) + act-b planificado (3), act-excluded fuera.
 
-    // Control de cambios: solo la entrada posterior al congelamiento.
-    expect(doc.changeControl).toHaveLength(1)
-    expect(doc.changeControl[0]!.description).toContain("posterior al congelamiento")
+    // Control de cambios: la anterior al congelamiento no aparece; la que
+    // cae justo en el congelamiento (`>=`, no `>`) y la posterior sí, más la
+    // entrada declarada en `pdtp_document_history` — todas ordenadas por
+    // fecha (`atIso`), sin importar el orden en que se insertaron.
+    expect(doc.changeControl.map((entry) => entry.description)).toEqual([
+      "Cambio exactamente en el congelamiento (debe salir, >= no >).",
+      "Cambio posterior al congelamiento (debe salir en el documento).",
+      "ítem 3 se agrega difusión al CPHS",
+    ])
+    expect(doc.changeControl.every((entry) => entry.atIso !== null)).toBe(true)
+
+    // Firmas: elaboración y aprobación Legal declaradas en texto libre
+    // `DD-MM-YYYY`, normalizadas a ISO en `atIso`. No hubo declaración ni
+    // aprobación nativa de JDPR: `reviewedByJdpr` es `null`.
+    expect(doc.signatures.elaboratedBy.at).toBe("15-01-2033")
+    expect(doc.signatures.elaboratedBy.atIso).toBe("2033-01-15T00:00:00.000Z")
+    expect(doc.signatures.reviewedByJdpr).toBeNull()
+    expect(doc.signatures.approvedByLegal?.name).toBe("Gerente Legal y RRHH")
+    expect(doc.signatures.approvedByLegal?.at).toBe("20-01-2033")
+    expect(doc.signatures.approvedByLegal?.atIso).toBe("2033-01-20T00:00:00.000Z")
+
+    // Glosario: el código "JDPR" se declaró en dos lotes de importación
+    // distintos (posible en la base) pero aparece una sola vez en el documento.
+    expect(doc.glossary.filter((entry) => entry.code === "JDPR")).toHaveLength(1)
 
     // Campos declarados para fases futuras: presentes y vacíos.
     expect(rowA.assigneeNames).toEqual([])
     expect(doc.deviations).toEqual([])
+  })
+
+  it("recorta por vigencia (`activatedAt`) igual que el indicador — sin este filtro, Σp y el indicador dejan de coincidir", async () => {
+    await seedBaseFixture()
+    // Activación posterior a feb-S1 (la única celda de act-a): esa celda debe
+    // quedar fuera del documento, igual que queda fuera del indicador.
+    await inMemoryDb.update(schema.pdtpPrograms)
+      .set({ activatedAt: "2033-02-10T15:00:00.000Z" })
+      .where(eq(schema.pdtpPrograms.id, PROGRAM_ID))
+
+    const { buildPdtpRe36Document } = await import("@/lib/services/pdtp/re36-document")
+    const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
+
+    const doc = await buildPdtpRe36Document({ programId: PROGRAM_ID, worksiteId: WORKSITE_ID, scope: "all" })
+    const indicators = await getPdtpComplianceIndicators(PROGRAM_ID, WORKSITE_ID)
+    const sheet = doc.sheets.find((s) => s.code === "general")!
+    const rowA = sheet.rows.find((row) => row.activityId === "act-a")!
+    const febS1 = rowA.cells[(2 - 1) * 4 + (1 - 1)]!
+
+    expect(febS1.p).toBeNull()
+    expect(febS1.e).toBeNull()
+
+    const sumP = sheet.rows.reduce(
+      (total, row) => total + row.cells.reduce((s, cell) => s + (cell.p ?? 0), 0),
+      0,
+    )
+    // Con el filtro: solo queda act-b (3). Sin el filtro (borrando las dos
+    // líneas de `filterPdtpRowsFromActivation` en `buildPdtpRe36Document`)
+    // daría 5 (2 del override + 3) contra un indicador que sigue en 3 —
+    // exactamente el bug que este test existe para atrapar.
+    expect(sumP).toBe(3)
+    expect(sumP).toBe(indicators!.annual.planned)
   })
 
   it("usa bandas por eje (`pdtpActivities.program`) cuando el programa no tiene objetivos", async () => {
@@ -235,7 +364,7 @@ describe("buildPdtpRe36Document", () => {
 
     const { buildPdtpRe36Document } = await import("@/lib/services/pdtp/re36-document")
     const doc = await buildPdtpRe36Document({ programId: PROGRAM_ID, worksiteId: WORKSITE_ID, scope: "all" })
-    const sheet = doc.sheets[0]!
+    const sheet = doc.sheets.find((s) => s.code === "general")!
 
     // Cada fila queda sin objetivo (código/nombre null) y las bandas se arman
     // por el eje (`activity.program`): "Difusión" (act-a) y "Verificación" (act-b).
@@ -247,6 +376,65 @@ describe("buildPdtpRe36Document", () => {
     expect(sheet.bands[0]!.code).toBeNull()
     expect(sheet.bands[0]!.name).toBe("Difusión")
     expect(sheet.bands[1]!.name).toBe("Verificación")
+  })
+
+  it("Σp NO coincide con indicators.annual.planned cuando la actividad es `coverage` (límite documentado de la invariante)", async () => {
+    const coverageProgramId = "pdtp-re36-coverage-prog"
+    const coverageWorksiteId = "ws-re36-coverage"
+
+    await inMemoryDb.insert(schema.worksites).values({
+      id: coverageWorksiteId, name: "Faena cobertura", code: "FCOV", isActive: true,
+    })
+    await inMemoryDb.insert(schema.pdtpPrograms).values({
+      id: coverageProgramId, year: 2034, version: 1, status: "active",
+      title: "Programa cobertura", elaboratedByName: "Prevencionista", elaboratedByTitle: "Prevencionista",
+      creationMode: "blank", complianceTarget: 0.9, pesoEjecucion: 0.5, pesoVerificacion: 0.3, pesoCierre: 0.2,
+      createdAt: now(), updatedAt: now(),
+    })
+    await inMemoryDb.insert(schema.pdtpActivities).values({
+      id: "act-coverage", programId: coverageProgramId, n: 1,
+      activity: "Inducción a trabajador nuevo", program: "SG-SST",
+      responsibleSlugs: ["prf"], responsibleDisplay: "PRF",
+      indicatorMode: "coverage", sourceSheetRow: 1, createdAt: now(), updatedAt: now(),
+    })
+    // Celda P cruda = 1 (una sola ocurrencia planificada), pero el padrón de
+    // cobertura declarado para esta faena es 50 trabajadores — el indicador
+    // mide contra el padrón, no contra la celda.
+    await inMemoryDb.insert(schema.pdtpActivitySchedule).values({
+      id: "sch-coverage", activityId: "act-coverage", year: 2034, month: 5, week: 1, plannedQuantity: 1, sourceColumn: "test",
+    })
+    await inMemoryDb.insert(schema.pdtpActivityWorksiteParams).values({
+      id: "params-coverage", activityId: "act-coverage", worksiteId: coverageWorksiteId, expectedSubjectCount: 50,
+    })
+    await inMemoryDb.insert(schema.pdtpSheets).values({
+      id: `${coverageProgramId}-general`, code: "general", programId: coverageProgramId,
+      label: "General", area: "General", defaultScopeRoles: [],
+    })
+    await inMemoryDb.insert(schema.pdtpSheetActivities).values({
+      id: "sa-coverage-1", sheetId: `${coverageProgramId}-general`, sheetCode: "general", activityId: "act-coverage",
+      sheetRow: 1, displayOrder: 1,
+    })
+
+    const { buildPdtpRe36Document } = await import("@/lib/services/pdtp/re36-document")
+    const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
+
+    const doc = await buildPdtpRe36Document({ programId: coverageProgramId, worksiteId: coverageWorksiteId, scope: "all" })
+    const indicators = await getPdtpComplianceIndicators(coverageProgramId, coverageWorksiteId)
+    const sheet = doc.sheets.find((s) => s.code === "general")!
+
+    const sumP = sheet.rows.reduce(
+      (total, row) => total + row.cells.reduce((s, cell) => s + (cell.p ?? 0), 0),
+      0,
+    )
+
+    // La celda cruda (1) es lo que el documento muestra; el indicador cuenta
+    // el padrón (50). Esto NO es un bug: es exactamente la condición (b) que
+    // el JSDoc de `PdtpRe36Sheet` documenta como necesaria para que Σp ===
+    // indicators.annual.planned — con una actividad `coverage` en la hoja,
+    // deja de cumplirse a propósito.
+    expect(sumP).toBe(1)
+    expect(indicators!.annual.planned).toBe(50)
+    expect(sumP).not.toBe(indicators!.annual.planned)
   })
 
   it("respeta el alcance de faenas (`WorksiteScope`) igual que el resto del módulo", async () => {

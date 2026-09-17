@@ -142,6 +142,14 @@ async function loadClosedOnTimeByActivityMonth(activityIds: string[], worksiteId
  * calculaba en la clave interna pero no se exponía); los llamados existentes
  * de este archivo re-agrupan por `activityId:month` y no leen `week`, así que
  * no cambian.
+ *
+ * API pública ahora: quien la llame debe saber que el objeto devuelto
+ * **pierde `worksiteId` y `year`** (la deduplicación interna sí los usa como
+ * parte de la clave por celda, pero no viajan en el resultado). Por lo
+ * tanto, solo debe invocarse con filas ya acotadas a **una** faena y **un**
+ * año — si se le pasan filas de varias faenas o años mezcladas, dos celdas
+ * distintas (misma actividad/mes/semana, pero de faena o año distinto)
+ * colisionan en la misma entrada del resultado agregado.
  */
 export function effectiveApprovedExecutionsByCell(rows: ApprovedExecution[]) {
   const cells = new Map<string, {
