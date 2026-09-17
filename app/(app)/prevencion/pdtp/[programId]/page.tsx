@@ -137,7 +137,9 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   const canExecute = can(session, "prevention:pdtp:execute")
   const canManageProgram = can(session, "prevention:pdtp:program:manage")
   const catalogActivities = canManageProgram && program.status === "draft" ? await listCatalogActivities() : []
-  const exportHref = `/api/prevencion/pdtp/export?programId=${programId}&hoja=${sheetCode}${selectedWorksiteId ? `&faena=${selectedWorksiteId}` : ""}&year=${program.year}`
+  const exportBaseHref = `/api/prevencion/pdtp/export?programId=${programId}&hoja=${sheetCode}${selectedWorksiteId ? `&faena=${selectedWorksiteId}` : ""}&year=${program.year}`
+  const exportRe36Href = `${exportBaseHref}&formato=re36`
+  const exportPlanoHref = `${exportBaseHref}&formato=plano`
 
   return (
     <PageContainer>
@@ -185,9 +187,15 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem asChild>
-                  <a href={exportHref} download className="flex items-center gap-2">
+                  <a href={exportRe36Href} download className="flex items-center gap-2">
                     <DownloadSimple size={14} />
-                    Exportar programa
+                    Exportar RE-36
+                  </a>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <a href={exportPlanoHref} download className="flex items-center gap-2">
+                    <DownloadSimple size={14} />
+                    Exportar planilla plana
                   </a>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>

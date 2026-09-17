@@ -76,7 +76,10 @@ test.describe("PDTP — Ciclo de vida y aprobaciones", () => {
 
     await page.goto("/prevencion/pdtp/pdtp-prog-e2e")
     await page.getByRole("button", { name: "Más acciones" }).click()
-    await expect(page.getByRole("menuitem", { name: "Exportar programa" })).toBeVisible()
+    // Task 1.7: el ítem único "Exportar programa" se separó en dos formatos
+    // explícitos (RE-36 por defecto, planilla plana conservada).
+    await expect(page.getByRole("menuitem", { name: "Exportar RE-36" })).toBeVisible()
+    await expect(page.getByRole("menuitem", { name: "Exportar planilla plana" })).toBeVisible()
     expect(hydrationErrors).toEqual([])
   })
 
