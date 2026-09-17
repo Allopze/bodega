@@ -8,6 +8,7 @@ import {
   pdtpActivityScheduleOverrides,
   pdtpActivityWorksiteExclusions,
   pdtpActivityWorksiteParams,
+  pdtpObjectives,
   pdtpPrograms,
   pdtpRevisionDiffDecisions,
   pdtpSheetActivities,
@@ -49,10 +50,20 @@ function activityIdentity(activity: SnapshotRecord) {
     : `number:${String(activity.n)}`
 }
 
-function activityValues(activity: SnapshotRecord, now: string) {
+function activityValues(activity: SnapshotRecord, now: string, objectiveIdByCode: Map<string, string>) {
   return {
     catalogActivityId: typeof activity.catalogActivityId === "string" ? activity.catalogActivityId : null,
     catalogRevision: typeof activity.catalogRevision === "number" ? activity.catalogRevision : null,
+    // El objetivo se resuelve por código, no por id: la Base declara
+    // `objectiveCode` (ver content-digest.ts, ≥15), y el id real depende de
+    // qué objetivo con ese código tenga ESTE programa — nunca el id del
+    // objetivo en el programa de la Base, que violaría la FK compuesta
+    // `pdtp_activities_objective_same_program_fk`. Un código que ya no
+    // exista en este programa (objetivo eliminado localmente) cae a `null`
+    // en vez de fallar la adopción completa de la diferencia.
+    objectiveId: typeof activity.objectiveCode === "string"
+      ? (objectiveIdByCode.get(activity.objectiveCode) ?? null)
+      : null,
     displayOrder: numberValue(activity.displayOrder, numberValue(activity.n)),
     status: stringValue(activity.status, "active"),
     retiredReason: typeof activity.retiredReason === "string" ? activity.retiredReason : null,
@@ -210,6 +221,10 @@ export async function decidePdtpRevisionDiff(input: {
       if (!baseActivity) throw new Error("La actividad ya no está disponible en la Base vigente.")
       const activityNumber = numberValue(baseActivity.n)
       if (activityNumber < 1) throw new Error("La Base contiene una actividad sin número válido.")
+      const programObjectives = await tx.select({ id: pdtpObjectives.id, code: pdtpObjectives.code })
+        .from(pdtpObjectives)
+        .where(eq(pdtpObjectives.programId, program.id))
+      const objectiveIdByCode = new Map(programObjectives.map((objective) => [objective.code, objective.id]))
       let activityId = currentActivity?.id
       if (!activityId) {
         const [sameNumber] = await tx.select({ id: pdtpActivities.id }).from(pdtpActivities)
@@ -222,15 +237,23 @@ export async function decidePdtpRevisionDiff(input: {
           n: activityNumber,
           sourceSheetRow: 0,
           createdAt: now,
-          ...activityValues(baseActivity, now),
+          ...activityValues(baseActivity, now, objectiveIdByCode),
         })
       } else {
-        const values = activityValues(baseActivity, now)
+        const values = activityValues(baseActivity, now, objectiveIdByCode)
         // Las Bases anteriores a la v14 no declaraban `mechanism` en su
         // snapshot. Adoptar otra diferencia no debe borrar el mecanismo que
         // ya tiene la revisión por una ausencia histórica del campo.
         if (!("mechanism" in baseActivity)) {
           delete (values as Partial<typeof pdtpActivities.$inferInsert>).mechanism
+        }
+        // Mismo criterio para `objectiveCode`: las Bases anteriores a la v15
+        // no lo declaraban. Adoptar otra diferencia no debe desasignar el
+        // objetivo que ya tiene la revisión por una ausencia histórica del
+        // campo — a diferencia de una Base v15+ que sí declara el campo y
+        // cuyo `null` explícito (objetivo quitado en la Base) sí debe pisar.
+        if (!("objectiveCode" in baseActivity)) {
+          delete (values as Partial<typeof pdtpActivities.$inferInsert>).objectiveId
         }
         await tx.update(pdtpActivities).set({
           n: activityNumber,

@@ -26,9 +26,12 @@ beforeEach(async () => {
   // actividades primero evita que quede una fila colgando cuando se borran
   // los objetivos después.
   await inMemoryDb.delete(schema.pdtpActivityExecutorAssignments)
+  await inMemoryDb.delete(schema.pdtpRevisionDiffDecisions)
   await inMemoryDb.delete(schema.pdtpActivitySchedule)
   await inMemoryDb.delete(schema.pdtpActivities)
   await inMemoryDb.delete(schema.pdtpObjectives)
+  await inMemoryDb.delete(schema.pdtpProgramTemplateVersions)
+  await inMemoryDb.delete(schema.pdtpProgramTemplates)
   await inMemoryDb.delete(schema.pdtpPrograms)
   await inMemoryDb.delete(schema.pdtpResponsibleCatalog)
   await inMemoryDb.delete(schema.users)
@@ -174,5 +177,127 @@ describe("PDTP objetivos: servicio y huella", () => {
     await expect(
       batchUpdatePdtpActivities({ programId: otherProgram.id, activityIds: [otherActivity.id], objectiveId: objective.id }, "user-1"),
     ).rejects.toThrow()
+  })
+
+  it("adoptar una diferencia de la Base resuelve objectiveCode al objectiveId del programa destino, no el del origen (I1)", async () => {
+    const { upsertPdtpObjective, setPdtpActivityObjective } = await import("@/lib/services/pdtp/objectives")
+    const { createPdtpRevision } = await import("@/lib/services/pdtp/programs")
+    const { createPdtpTemplateVersion } = await import("@/lib/services/pdtp/templates")
+    const { comparePdtpRevisionToCurrentBase } = await import("@/lib/services/pdtp/base-comparison")
+    const { decidePdtpRevisionDiff } = await import("@/lib/services/pdtp/revision-diff-decisions")
+    const { program: source, activity: sourceActivity } = await createDraftProgramWithActivity(2070)
+
+    const sourceObjective1 = await upsertPdtpObjective({
+      programId: source.id, code: "1", name: "FORTALECER EL LIDERAZGO DE SEGURIDAD Y SALUD EN EL TRABAJO",
+    }, "user-1")
+    const sourceObjective2 = await upsertPdtpObjective({
+      programId: source.id, code: "2", name: "MANTENER A LA EMPRESA Y SUS SUCURSALES ENTRE LOS MÁRGENES DE LA NORMATIVA LEGAL VIGENTE",
+    }, "user-1")
+    await setPdtpActivityObjective({ programId: source.id, activityId: sourceActivity.id, objectiveId: sourceObjective1.id }, "user-1")
+
+    // La revisión clona ambos objetivos (1 y 2) con ids nuevos, y la
+    // actividad queda apuntando al objetivo "1" clonado — igual que en el
+    // test de arriba.
+    await inMemoryDb.update(schema.pdtpPrograms).set({ status: "active" }).where(eq(schema.pdtpPrograms.id, source.id))
+    const revision = await createPdtpRevision({ sourceProgramId: source.id, userId: "user-1" })
+    const [revisionActivity] = await inMemoryDb.select().from(schema.pdtpActivities)
+      .where(eq(schema.pdtpActivities.programId, revision.programId))
+    const revisionObjective2 = (await inMemoryDb.select().from(schema.pdtpObjectives)
+      .where(eq(schema.pdtpObjectives.programId, revision.programId)))
+      .find((objective) => objective.code === "2")!
+
+    // El programa origen (ahora "activo", fuera del flujo de edición normal)
+    // cambia de objetivo directamente en la base — el operador no puede usar
+    // `setPdtpActivityObjective` sobre un programa activo, así que se simula
+    // el cambio como lo haría una edición posterior antes de publicar Base.
+    await inMemoryDb.update(schema.pdtpActivities).set({ objectiveId: sourceObjective2.id })
+      .where(eq(schema.pdtpActivities.id, sourceActivity.id))
+
+    await createPdtpTemplateVersion({
+      sourceProgramId: source.id,
+      name: "Base preventiva 2026",
+      userId: "user-1",
+      allowUnclassifiedBaseActivities: true,
+    })
+
+    const diff = await comparePdtpRevisionToCurrentBase(revision.programId)
+    const changed = diff?.items.find((item) => item.activityNumber === revisionActivity!.n)
+    expect(changed).toMatchObject({ kind: "content_changed" })
+
+    await decidePdtpRevisionDiff({
+      programId: revision.programId,
+      activityIdentity: changed!.identity,
+      decision: "applied",
+      userId: "user-1",
+    })
+
+    const [afterActivity] = await inMemoryDb.select().from(schema.pdtpActivities)
+      .where(eq(schema.pdtpActivities.id, revisionActivity!.id))
+    // Apunta al objetivo "2" YA EXISTENTE en el programa destino (clonado al
+    // crear la revisión), nunca al id del objetivo "2" del programa origen —
+    // eso violaría la FK compuesta `pdtp_activities_objective_same_program_fk`.
+    expect(afterActivity?.objectiveId).toBe(revisionObjective2.id)
+    expect(afterActivity?.objectiveId).not.toBe(sourceObjective2.id)
+  })
+
+  it("reorderPdtpObjectives exige la lista completa y rechaza duplicados (I2)", async () => {
+    const { upsertPdtpObjective, reorderPdtpObjectives } = await import("@/lib/services/pdtp/objectives")
+    const { program } = await createDraftProgramWithActivity(2071)
+
+    const a = await upsertPdtpObjective({ programId: program.id, code: "1", name: "A" }, "user-1")
+    const b = await upsertPdtpObjective({ programId: program.id, code: "2", name: "B" }, "user-1")
+    const c = await upsertPdtpObjective({ programId: program.id, code: "3", name: "C" }, "user-1")
+
+    // Lista parcial: omite "b".
+    await expect(
+      reorderPdtpObjectives({ programId: program.id, orderedIds: [c.id, a.id] }, "user-1"),
+    ).rejects.toThrow(/todos los objetivos/)
+
+    // Duplicado explícito: A(0), B(1), C(2) con `[C, A]` dejaría C=0, A=1 y B
+    // sin tocar — orden ambiguo. Con `[A, A, C]` el largo (3) coincide con el
+    // total de objetivos pese a omitir B y repetir A; sin el rechazo
+    // explícito de duplicados, `[...new Set(ids)]` lo habría dejado pasar.
+    await expect(
+      reorderPdtpObjectives({ programId: program.id, orderedIds: [a.id, a.id, c.id] }, "user-1"),
+    ).rejects.toThrow(/duplicados/)
+
+    // Ninguno de los dos intentos rechazados alteró el orden vigente.
+    const unchanged = await inMemoryDb.select().from(schema.pdtpObjectives)
+      .where(eq(schema.pdtpObjectives.programId, program.id))
+    expect(unchanged.find((o) => o.id === a.id)?.displayOrder).toBe(a.displayOrder)
+    expect(unchanged.find((o) => o.id === b.id)?.displayOrder).toBe(b.displayOrder)
+    expect(unchanged.find((o) => o.id === c.id)?.displayOrder).toBe(c.displayOrder)
+
+    // La lista completa y sin duplicados sí se aplica.
+    await reorderPdtpObjectives({ programId: program.id, orderedIds: [c.id, a.id, b.id] }, "user-1")
+    const reordered = await inMemoryDb.select().from(schema.pdtpObjectives)
+      .where(eq(schema.pdtpObjectives.programId, program.id))
+    expect(reordered.find((o) => o.id === c.id)?.displayOrder).toBe(0)
+    expect(reordered.find((o) => o.id === a.id)?.displayOrder).toBe(1)
+    expect(reordered.find((o) => o.id === b.id)?.displayOrder).toBe(2)
+  })
+
+  it("deletePdtpProgram borra un programa con objetivos y actividades asignadas sin reventar (I3)", async () => {
+    const { upsertPdtpObjective, setPdtpActivityObjective } = await import("@/lib/services/pdtp/objectives")
+    const { deletePdtpProgram } = await import("@/lib/services/pdtp/programs")
+    const { program, activity } = await createDraftProgramWithActivity(2072)
+
+    const objective = await upsertPdtpObjective({ programId: program.id, code: "1", name: "Objetivo" }, "user-1")
+    await setPdtpActivityObjective({ programId: program.id, activityId: activity.id, objectiveId: objective.id }, "user-1")
+
+    // Antes de la migración 0302 esto revienta con 23502 (la FK compuesta
+    // original nulificaba también `program_id`, NOT NULL) en cualquier orden
+    // de ejecución de cascades donde el de `pdtp_objectives` corra antes que
+    // el de `pdtp_activities` — que es justamente el orden que produce
+    // reconstruir el esquema desde cero, porque `pdtpObjectives` se declara
+    // antes que `pdtpActivities` en `db/schema/prevention/pdtp.ts`.
+    await expect(deletePdtpProgram(program.id)).resolves.toBeUndefined()
+
+    const remainingPrograms = await inMemoryDb.select().from(schema.pdtpPrograms).where(eq(schema.pdtpPrograms.id, program.id))
+    expect(remainingPrograms).toHaveLength(0)
+    const remainingActivities = await inMemoryDb.select().from(schema.pdtpActivities).where(eq(schema.pdtpActivities.programId, program.id))
+    expect(remainingActivities).toHaveLength(0)
+    const remainingObjectives = await inMemoryDb.select().from(schema.pdtpObjectives).where(eq(schema.pdtpObjectives.programId, program.id))
+    expect(remainingObjectives).toHaveLength(0)
   })
 })

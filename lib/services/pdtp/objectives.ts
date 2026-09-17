@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpObjectives, pdtpPrograms } from "@/db/schema"
 import { nanoid } from "@/lib/id"
@@ -111,9 +111,17 @@ export async function upsertPdtpObjective(input: {
 
 /**
  * Elimina un objetivo del programa. `pdtp_activities.objective_id` tiene
- * `ON DELETE SET NULL`, así que sus actividades quedan sin objetivo asignado
- * en vez de bloquear el borrado — se registra cuántas en el changelog para
- * que quede trazado sin reconstruirlo desde la bitácora de actividades.
+ * `ON DELETE SET NULL (objective_id)` — columna específica, ver migración
+ * 0302 — así que sus actividades quedan sin objetivo asignado (y su
+ * `program_id` intacto) en vez de bloquear el borrado. Se registra cuántas
+ * quedaron huérfanas en el changelog para que quede trazado sin
+ * reconstruirlo desde la bitácora de actividades.
+ *
+ * Antes de la migración 0302 esta función hacía un `UPDATE` explícito para
+ * desasignar antes de borrar, porque la FK original nulificaba también
+ * `program_id` (NOT NULL) y reventaba. Con la FK corregida ese rodeo ya no
+ * hace falta: la propia base de datos deja `objective_id` en NULL al borrar
+ * el objetivo referenciado.
  */
 export async function deletePdtpObjective(input: { programId: string; objectiveId: string }, userId: string): Promise<void> {
   await db.transaction(async (tx) => {
@@ -129,18 +137,6 @@ export async function deletePdtpObjective(input: { programId: string; objectiveI
     const orphaned = await tx.select({ id: pdtpActivities.id })
       .from(pdtpActivities)
       .where(eq(pdtpActivities.objectiveId, input.objectiveId))
-    // Desasigna explícitamente antes de borrar el objetivo: la FK compuesta
-    // `pdtp_activities_objective_same_program_fk` es `ON DELETE SET NULL`
-    // sobre AMBAS columnas del par (`program_id`, `objective_id`), porque
-    // Postgres nulifica todas las columnas de una FK compuesta salvo que se
-    // liste explícitamente cuál (sintaxis `SET NULL (col)`, no usada en la
-    // migración 0301). Dejar que la FK dispare el cascade intentaría poner
-    // `program_id` en NULL también, violando su propio NOT NULL. Anular acá
-    // primero evita que el trigger de la FK tenga filas que tocar.
-    if (orphaned.length > 0) {
-      await tx.update(pdtpActivities).set({ objectiveId: null, updatedAt: new Date().toISOString() })
-        .where(eq(pdtpActivities.objectiveId, input.objectiveId))
-    }
     await tx.delete(pdtpObjectives).where(eq(pdtpObjectives.id, input.objectiveId))
     await addPdtpChangeLogEntry(
       input.programId, program.version, userId, "objectives",
@@ -152,27 +148,42 @@ export async function deletePdtpObjective(input: { programId: string; objectiveI
   })
 }
 
+/**
+ * Reordena TODOS los objetivos del programa. Sigue el precedente de
+ * `reorderPdtpActivities` (`activities.ts`): exige la lista completa en vez
+ * de aceptar un subconjunto — una lista parcial dejaría el `displayOrder` de
+ * los objetivos omitidos sin sentido frente a los reordenados. A diferencia
+ * de aquella, además rechaza duplicados de forma explícita: con
+ * `[...new Set(ids)]` un duplicado y una omisión se compensaban en el
+ * conteo (mismo `length`) y pasaban la validación en silencio, dejando un
+ * objetivo repetido en el orden final y otro con el `displayOrder` que le
+ * tocaba sin tocar.
+ */
 export async function reorderPdtpObjectives(input: { programId: string; orderedIds: string[] }, userId: string): Promise<void> {
   await db.transaction(async (tx) => {
     const [program] = await tx.select().from(pdtpPrograms).where(eq(pdtpPrograms.id, input.programId)).limit(1)
     if (!program) throw new Error("Programa PDTP no encontrado.")
     assertPdtpProgramEditableState(program)
 
-    const uniqueIds = [...new Set(input.orderedIds)]
-    if (uniqueIds.length === 0) throw new Error("Selecciona al menos un objetivo para reordenar.")
-    const existing = await tx.select().from(pdtpObjectives)
-      .where(and(eq(pdtpObjectives.programId, input.programId), inArray(pdtpObjectives.id, uniqueIds)))
-    if (existing.length !== uniqueIds.length) {
-      throw new Error("La selección contiene objetivos ajenos al programa.")
+    if (input.orderedIds.length === 0) throw new Error("Selecciona al menos un objetivo para reordenar.")
+    if (new Set(input.orderedIds).size !== input.orderedIds.length) {
+      throw new Error("La lista de orden contiene objetivos duplicados.")
     }
+
+    const existing = await tx.select().from(pdtpObjectives).where(eq(pdtpObjectives.programId, input.programId))
+    const existingIds = new Set(existing.map((objective) => objective.id))
+    if (input.orderedIds.length !== existingIds.size || input.orderedIds.some((id) => !existingIds.has(id))) {
+      throw new Error("La lista de orden debe incluir todos los objetivos del programa, sin omitir ninguno.")
+    }
+
     const now = new Date().toISOString()
-    for (const [index, id] of uniqueIds.entries()) {
+    for (const [index, id] of input.orderedIds.entries()) {
       await tx.update(pdtpObjectives).set({ displayOrder: index, updatedAt: now }).where(eq(pdtpObjectives.id, id))
     }
     await addPdtpChangeLogEntry(
       input.programId, program.version, userId, "objectives",
       { orderedIds: existing.map((objective) => objective.id) },
-      { orderedIds: uniqueIds },
+      { orderedIds: input.orderedIds },
       "Orden de objetivos actualizado.",
       tx,
     )
