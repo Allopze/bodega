@@ -73,6 +73,13 @@ export const pdtpRecurrenceRuleSchema = z.object({
   plannedQuantity: z.coerce.number().positive().max(100000).default(1),
   months: z.array(z.coerce.number().int().min(1).max(12)).max(12).optional(),
   weekOfMonth: z.coerce.number().int().min(1).max(4).default(1),
+  // Semanas del mes (1-4) para ocurrencias no-semanales (ej. quincenal:
+  // weeks: [1, 3]). Opcional y sin default: ausente significa "usar
+  // weekOfMonth", igual que antes de este campo (ver `resolveWeeks` en
+  // lib/services/pdtp/recurrence.ts). Normalizado a único y ordenado para
+  // que el orden de captura no afecte `recurrenceRulesEqual`.
+  weeks: z.array(z.coerce.number().int().min(1).max(4)).min(1).max(4).optional()
+    .transform((weeks) => (weeks ? [...new Set(weeks)].sort((a, b) => a - b) : weeks)),
 }).superRefine((rule, ctx) => {
   if (rule.frequency === "custom" && !rule.months?.length) {
     ctx.addIssue({

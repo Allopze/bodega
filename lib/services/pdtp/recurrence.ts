@@ -6,6 +6,16 @@ export type PdtpRecurrenceRule = {
   plannedQuantity: number
   months?: number[]
   weekOfMonth: number
+  /**
+   * Semanas del mes (1-4) en que se proyecta cada ocurrencia no-semanal
+   * (`monthly`, `quarterly`, `semiannual`, `annual`, `custom`). Opcional y
+   * retrocompatible: cuando está ausente —todas las reglas guardadas antes de
+   * este campo— el comportamiento es idéntico al histórico de una sola
+   * semana, `[weekOfMonth]` (ver `resolveWeeks`). Con más de una semana
+   * permite expresar patrones quincenales (`weeks: [1, 3]`) sin inventar una
+   * nueva frecuencia.
+   */
+  weeks?: number[]
 }
 
 export type PdtpScheduleCell = { month: number; week: number; plannedQuantity: number }
@@ -59,6 +69,20 @@ const FREQUENCY_LABELS: Record<PdtpRecurrenceFrequency, string> = {
 }
 
 /**
+ * Semanas del mes (1-4) en que se proyecta una ocurrencia no-semanal:
+ * `rule.weeks` normalizado (único, ordenado, acotado a `weeksPerMonth`) si
+ * viene, o `[weekOfMonth]` si no —el comportamiento histórico previo a este
+ * campo—. Centraliza esa caída para que `projectRecurrenceToLegacySchedule` y
+ * `describePdtpRecurrence` no puedan divergir en cómo la calculan.
+ */
+export function resolveWeeks(rule: PdtpRecurrenceRule, weeksPerMonth: number): number[] {
+  const clampedWeeksPerMonth = Math.min(4, Math.max(1, Math.trunc(weeksPerMonth || 4)))
+  const raw = rule.weeks && rule.weeks.length > 0 ? rule.weeks : [rule.weekOfMonth]
+  const clamped = raw.map((week) => Math.min(clampedWeeksPerMonth, Math.max(1, Math.trunc(week || 1))))
+  return [...new Set(clamped)].sort((a, b) => a - b)
+}
+
+/**
  * Proyección de compatibilidad hacia la grilla histórica de semanas/mes.
  * La regla de recurrencia es la fuente de verdad del constructor; estas celdas
  * permiten que las vistas operacionales antiguas sigan funcionando durante la
@@ -73,13 +97,20 @@ export function projectRecurrenceToLegacySchedule(
   const interval = Math.max(1, Math.trunc(rule.interval || 1))
   const quantity = Math.max(0, rule.plannedQuantity)
   const weeksPerMonth = Math.min(4, Math.max(1, Math.trunc(horizon.weeksPerMonth || 4)))
-  const week = Math.min(weeksPerMonth, Math.max(1, Math.trunc(rule.weekOfMonth || 1)))
   const months = [...new Set(horizon.months)].filter((month) => month >= 1 && month <= 12).sort((a, b) => a - b)
 
   if (rule.frequency === "weekly") {
+    // `months`, en `weekly`, acota la campaña a un subconjunto de meses del
+    // año (ej. `{ weekly, months: [6, 7] }` = campaña de junio a julio). Sin
+    // `months` —el caso de toda regla semanal guardada antes de este
+    // cambio— no se filtra nada y el comportamiento es idéntico al histórico.
+    const candidateMonths = rule.months && rule.months.length > 0
+      ? [...new Set(rule.months)].filter((month) => month >= 1 && month <= 12)
+      : null
+    const filteredMonths = candidateMonths ? months.filter((month) => candidateMonths.includes(month)) : months
     const cells: PdtpScheduleCell[] = []
     let position = 0
-    for (const month of months) {
+    for (const month of filteredMonths) {
       for (let weekOfMonth = 1; weekOfMonth <= weeksPerMonth; weekOfMonth++) {
         if (position % interval === 0) cells.push({ month, week: weekOfMonth, plannedQuantity: quantity })
         position += 1
@@ -99,12 +130,58 @@ export function projectRecurrenceToLegacySchedule(
     ? [...new Set(rule.months ?? [])].filter((month) => month >= 1 && month <= 12)
     : FULL_YEAR_MONTHS.filter((month) => (month - 1) % monthStep === 0)
   const selectedMonths = candidateMonths.filter((month) => months.includes(month)).sort((a, b) => a - b)
+  const weeks = resolveWeeks(rule, weeksPerMonth)
 
-  return selectedMonths.map((month) => ({ month, week, plannedQuantity: quantity }))
+  return selectedMonths.flatMap((month) => weeks.map((week) => ({ month, week, plannedQuantity: quantity })))
+}
+
+const MONTH_NAMES = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+]
+
+function listLabel(items: string[]): string {
+  if (items.length === 0) return ""
+  if (items.length === 1) return items[0] ?? ""
+  return `${items.slice(0, -1).join(", ")} y ${items[items.length - 1] ?? ""}`
+}
+
+function weeksLabel(weeks: number[]): string {
+  return `semana${weeks.length > 1 ? "s" : ""} ${listLabel(weeks.map(String))}`
+}
+
+function monthName(month: number): string {
+  return MONTH_NAMES[month - 1] ?? String(month)
+}
+
+/** "de junio a julio" para meses contiguos, "en marzo, junio y septiembre" si no. */
+function monthsRangeLabel(months: number[]): string {
+  const sorted = [...new Set(months)].filter((month) => month >= 1 && month <= 12).sort((a, b) => a - b)
+  if (sorted.length === 0) return ""
+  const isContiguous = sorted.length > 1 && sorted.every((month, index) => index === 0 || month === (sorted[index - 1] ?? 0) + 1)
+  if (isContiguous) return `de ${monthName(sorted[0] ?? 1)} a ${monthName(sorted[sorted.length - 1] ?? 1)}`
+  return `en ${listLabel(sorted.map((month) => monthName(month)))}`
+}
+
+/**
+ * Etiqueta legible de la frecuencia, incluyendo los dos patrones que `weeks`
+ * y `months` permiten expresar sin una frecuencia nueva: quincenal (`monthly`
+ * con dos semanas) y campaña (`weekly` acotado a un subconjunto de meses).
+ */
+function frequencyLabel(rule: PdtpRecurrenceRule, weeksPerMonth: number): string {
+  if (rule.frequency === "weekly" && rule.months && rule.months.length > 0) {
+    return `campaña ${monthsRangeLabel(rule.months)}`
+  }
+  if (rule.frequency === "monthly") {
+    const weeks = resolveWeeks(rule, weeksPerMonth)
+    if (weeks.length === 2) return `quincenal (${weeksLabel(weeks)})`
+    if (weeks.length > 2) return `mensual (${weeksLabel(weeks)})`
+  }
+  return FREQUENCY_LABELS[rule.frequency]
 }
 
 export function describePdtpRecurrence(rule: PdtpRecurrenceRule, horizon: PdtpScheduleHorizon = DEFAULT_SCHEDULE_HORIZON): string {
-  const base = FREQUENCY_LABELS[rule.frequency]
+  const base = frequencyLabel(rule, horizon.weeksPerMonth)
   const interval = rule.interval > 1 ? ` cada ${rule.interval} ciclos` : ""
   const quantity = rule.plannedQuantity === 1 ? "1 ejecución" : `${rule.plannedQuantity} ejecuciones`
   const projected = projectRecurrenceToLegacySchedule(rule, horizon)
@@ -130,10 +207,12 @@ export function describePdtpRecurrenceImpact(
  *
  * No se compara con `JSON.stringify`: la regla vive en una columna `jsonb`, y
  * Postgres no conserva ahí el orden de las claves ni la forma numérica (`1`
- * frente a `1.0`). Con `months` presente eso da un falso "cambió" —el cliente
- * lo serializa al final y `jsonb` lo devuelve entre `interval` y
- * `plannedQuantity`— y un falso "cambió" no es cosmético: dispara la
- * re-proyección de la recurrencia, que reescribe el calendario del año.
+ * frente a `1.0`). Con `months` o `weeks` presentes eso da un falso "cambió"
+ * —el cliente los serializa en el orden en que el usuario los tocó, y
+ * `jsonb` no promete devolverlos en ese mismo orden— y un falso "cambió" no
+ * es cosmético: dispara la re-proyección de la recurrencia, que reescribe el
+ * calendario del año. Por eso ambos arreglos se comparan normalizados
+ * (único, ordenado), no por posición.
  */
 export function recurrenceRulesEqual(a: PdtpRecurrenceRule | null | undefined, b: PdtpRecurrenceRule | null | undefined): boolean {
   if (!a || !b) return !a && !b
@@ -143,7 +222,10 @@ export function recurrenceRulesEqual(a: PdtpRecurrenceRule | null | undefined, b
   if (Number(a.weekOfMonth) !== Number(b.weekOfMonth)) return false
   const monthsA = [...new Set(a.months ?? [])].sort((x, y) => x - y)
   const monthsB = [...new Set(b.months ?? [])].sort((x, y) => x - y)
-  return monthsA.length === monthsB.length && monthsA.every((month, index) => month === monthsB[index])
+  if (monthsA.length !== monthsB.length || !monthsA.every((month, index) => month === monthsB[index])) return false
+  const weeksA = [...new Set(a.weeks ?? [])].sort((x, y) => x - y)
+  const weeksB = [...new Set(b.weeks ?? [])].sort((x, y) => x - y)
+  return weeksA.length === weeksB.length && weeksA.every((week, index) => week === weeksB[index])
 }
 
 /**
