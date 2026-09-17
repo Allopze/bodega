@@ -128,6 +128,11 @@ export {
 export type {
   PdtpPeriodClosureSnapshot, PdtpPeriodClosureObjective, PdtpPeriodClosureListRow,
 } from "./period-closures"
+export {
+  PDTP_CLOSURE_DISTRIBUTION_ROLES,
+  resolvePdtpClosureRecipients,
+  distributePdtpPeriodClosure,
+} from "./period-closure-distribution"
 export type {
   PdtpRe36Document, PdtpRe36Sheet, PdtpRe36Row, PdtpRe36Cell, PdtpRe36Band, PdtpRe36DeviationRow,
 } from "./re36-document"
