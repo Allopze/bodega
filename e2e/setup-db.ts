@@ -2188,6 +2188,34 @@ async function main() {
     sheetRow: 2,
     displayOrder: 2,
   })
+  /* Tercera actividad, exclusiva de e2e/pdtp-planificacion-presets.spec.ts:
+   * la N°90 termina retirada por pdtp-annual-adjustments.spec.ts (que corre
+   * antes, alfabéticamente) y la N°91 la usa pdtp-objetivos.spec.ts para su
+   * propio filtro — ninguna de las dos es un ancla segura para un spec que
+   * necesita aplicar un preset de planificación y leer el total resultante.
+   * Dos responsables a propósito: le da al panel "Carga por rol" algo que
+   * sumar en más de una columna. */
+  await db.insert(schema.pdtpActivities).values({
+    id: "pdtp-draft-act-planificacion-e2e",
+    programId: "pdtp-draft-e2e",
+    n: 92,
+    displayOrder: 3,
+    activity: "Actividad de planificación por preset E2E",
+    program: "Guía preventiva E2E",
+    responsibleSlugs: ["sup", "jt"],
+    responsibleDisplay: "Supervisor y Jefe de Turno",
+    sourceSheetRow: 0,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.pdtpSheetActivities).values({
+    id: "pdtp-draft-sheet-act-planificacion-e2e",
+    sheetId: "pdtp-draft-sheet-e2e",
+    sheetCode: "pdtp_general",
+    activityId: "pdtp-draft-act-planificacion-e2e",
+    sheetRow: 3,
+    displayOrder: 3,
+  })
   await db.insert(schema.pdtpProgramTemplates).values({
     id: "pdtp-base-template-e2e",
     code: "base_preventiva_2026",

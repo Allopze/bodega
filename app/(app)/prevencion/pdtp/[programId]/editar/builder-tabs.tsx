@@ -226,6 +226,7 @@ export function PdtpBuilderTabs({
               periodEnd={program.periodEnd}
               activities={activeActivities}
               schedule={schedule}
+              responsibleCatalog={responsibleCatalog}
             />
           </div>
         </details>

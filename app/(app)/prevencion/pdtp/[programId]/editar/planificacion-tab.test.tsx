@@ -1,18 +1,42 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
+import type { ReactNode } from "react"
 import type { pdtpActivities, pdtpActivitySchedule } from "@/db/schema"
 import { PlanificacionTab } from "./builder-tabs"
 import { ScheduleOverview } from "./tabs/planificacion-tab"
 import { deriveScheduleHorizon } from "@/lib/services/pdtp/recurrence"
 
-const { mockUpdate, mockRefresh } = vi.hoisted(() => ({
+const { mockUpdate, mockApplyPreset, mockRefresh } = vi.hoisted(() => ({
   mockUpdate: vi.fn(),
+  mockApplyPreset: vi.fn(),
   mockRefresh: vi.fn(),
 }))
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mockRefresh, push: vi.fn() }) }))
-vi.mock("../../actions", () => ({ updatePdtpActivityAction: mockUpdate }))
+vi.mock("../../actions", () => ({ updatePdtpActivityAction: mockUpdate, applyPdtpSchedulePresetAction: mockApplyPreset }))
+
+// El diálogo de aplicación masiva y el submenú de parámetros por fila usan
+// `@/components/ui/select` (Radix): se sustituye por un `<select>` nativo,
+// mismo patrón que el resto de la suite (ver `delivery-form.test.tsx`), para
+// no depender de pointer capture / ResizeObserver en jsdom.
+vi.mock("@/components/ui/select", () => ({
+  Select: ({ children, value, onValueChange }: {
+    children?: ReactNode
+    value?: string
+    onValueChange?: (value: string) => void
+  }) => (
+    <select data-testid="select" value={value} onChange={(event) => onValueChange?.(event.target.value)}>
+      {children}
+    </select>
+  ),
+  SelectTrigger: () => null,
+  SelectValue: () => null,
+  SelectContent: ({ children }: { children?: ReactNode }) => <>{children}</>,
+  SelectItem: ({ children, value, disabled }: { children?: ReactNode; value: string; disabled?: boolean }) => (
+    <option value={value} disabled={disabled}>{children}</option>
+  ),
+}))
 
 const ACTIVITIES = [
   { id: "act-1", n: 1, activity: "Inspección de EPP" },
@@ -25,6 +49,7 @@ const SCHEDULE = [
 beforeEach(() => {
   vi.useFakeTimers()
   mockUpdate.mockResolvedValue({ ok: true })
+  mockApplyPreset.mockResolvedValue({ ok: true, data: { applied: [], skippedConflicts: [] } })
 })
 
 afterEach(() => {
@@ -81,11 +106,26 @@ function openRowMenu() {
 }
 
 describe("PlanificacionTab: atajos, totales y validación", () => {
-  it("el preset 1 × mes llena una semana por mes del período", () => {
+  it("el preset 'Semanal' llena todas las semanas del período (sin parámetros)", () => {
     render(<PlanificacionTab programId="program-1" year={2027} activities={ACTIVITIES} schedule={SCHEDULE} />)
 
     openRowMenu()
-    fireEvent.click(screen.getByRole("menuitem", { name: "1 × mes" }))
+    fireEvent.click(screen.getByRole("menuitem", { name: "Semanal" }))
+
+    // 12 meses × 4 semanas.
+    expect(screen.getByTitle("Ene · Semana 1")).toHaveValue("1")
+    expect(screen.getByTitle("Dic · Semana 4")).toHaveValue("1")
+    expect(screen.getAllByText("48").length).toBeGreaterThanOrEqual(2)
+  })
+
+  it("el preset 'Mensual, semana N' (con parámetros) llena una semana por mes tras abrir su submenú y aplicar", () => {
+    render(<PlanificacionTab programId="program-1" year={2027} activities={ACTIVITIES} schedule={SCHEDULE} />)
+
+    openRowMenu()
+    // ROW_PRESETS ya no existe: los presets con parámetros (aquí, la semana
+    // del mes) abren un submenú en vez de aplicarse con un solo clic.
+    fireEvent.click(screen.getByRole("menuitem", { name: "Mensual, semana N" }))
+    fireEvent.click(screen.getByRole("button", { name: "Aplicar" }))
 
     for (const month of ["Ene", "Feb", "Dic"]) {
       expect(screen.getByTitle(`${month} · Semana 1`)).toHaveValue("1")
@@ -224,5 +264,98 @@ describe("ScheduleOverview", () => {
     />)
 
     expect(screen.queryByText("Matriz manual")).not.toBeInTheDocument()
+  })
+})
+
+const TWO_ACTIVITIES = [
+  { id: "act-1", n: 1, activity: "Inspección de EPP", responsibleSlugs: ["sup"] },
+  { id: "act-2", n: 2, activity: "Charla de seguridad", responsibleSlugs: ["sup", "jt"] },
+] as unknown as Array<typeof pdtpActivities.$inferSelect>
+
+describe("PlanificacionTab: selección múltiple y aplicación masiva de presets", () => {
+  it("seleccionar dos filas y aplicar invoca la acción con los ids seleccionados", async () => {
+    render(<PlanificacionTab programId="program-1" year={2027} activities={TWO_ACTIVITIES} schedule={SCHEDULE} />)
+
+    expect(screen.queryByText(/seleccionada/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Seleccionar la actividad N°1" }))
+    fireEvent.click(screen.getByRole("checkbox", { name: "Seleccionar la actividad N°2" }))
+    expect(screen.getByText("2 seleccionadas")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Aplicar patrón…" }))
+    const dialog = screen.getByRole("dialog", { name: "Aplicar patrón de planificación" })
+    expect(dialog).toHaveTextContent("2 actividades seleccionada(s)")
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Aplicar" }))
+    })
+
+    expect(mockApplyPreset).toHaveBeenCalledTimes(1)
+    expect(mockApplyPreset).toHaveBeenCalledWith(expect.objectContaining({
+      programId: "program-1",
+      activityIds: ["act-1", "act-2"],
+      preset: "weekly",
+      mode: "replace",
+    }))
+    // Tras aplicar sin conflictos, el diálogo hace router.refresh() (el
+    // mismo mecanismo que ya re-adopta la huella guardada en cada fila) y
+    // limpia la selección.
+    expect(mockRefresh).toHaveBeenCalled()
+  })
+
+  it("con conflictos de planificación manual, muestra la lista y reenvía sólo los ids confirmados", async () => {
+    mockApplyPreset
+      .mockResolvedValueOnce({
+        ok: true,
+        data: {
+          applied: ["act-1"],
+          skippedConflicts: [{ activityId: "act-2", n: 2, reason: "manual_schedule_would_be_replaced" }],
+        },
+      })
+      .mockResolvedValueOnce({ ok: true, data: { applied: ["act-2"], skippedConflicts: [] } })
+
+    render(<PlanificacionTab programId="program-1" year={2027} activities={TWO_ACTIVITIES} schedule={SCHEDULE} />)
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Seleccionar la actividad N°1" }))
+    fireEvent.click(screen.getByRole("checkbox", { name: "Seleccionar la actividad N°2" }))
+    fireEvent.click(screen.getByRole("button", { name: "Aplicar patrón…" }))
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Aplicar" }))
+    })
+
+    expect(screen.getByText(/N°2 —/)).toBeInTheDocument()
+    const confirmButton = screen.getByRole("button", { name: "Reemplazar manuales" })
+    expect(confirmButton).not.toBeDisabled()
+
+    await act(async () => {
+      fireEvent.click(confirmButton)
+    })
+
+    expect(mockApplyPreset).toHaveBeenCalledTimes(2)
+    const [secondCall] = mockApplyPreset.mock.calls[1]!
+    // Sólo el id que el usuario vio y aceptó — nunca la selección original
+    // completa ni un booleano de lote.
+    expect(secondCall.activityIds).toEqual(["act-2"])
+    expect(secondCall.replaceConfirmedActivityIds).toEqual(["act-2"])
+  })
+
+  it("el panel de carga por rol suma la cantidad planificada a cada responsable de la actividad", () => {
+    render(<PlanificacionTab
+      programId="program-1"
+      year={2027}
+      activities={TWO_ACTIVITIES}
+      schedule={[
+        { activityId: "act-1", month: 1, week: 1, plannedQuantity: 2 },
+        { activityId: "act-2", month: 1, week: 1, plannedQuantity: 3 },
+      ] as unknown as Array<typeof pdtpActivitySchedule.$inferSelect>}
+    />)
+
+    fireEvent.click(screen.getByText(/Carga por rol/))
+    // sup aparece en las dos actividades (2 + 3 = 5); jt sólo en la segunda (3).
+    const supRow = screen.getByText("sup").closest("tr")!
+    expect(supRow).toHaveTextContent("5")
+    const jtRow = screen.getByText("jt").closest("tr")!
+    expect(jtRow).toHaveTextContent("3")
   })
 })

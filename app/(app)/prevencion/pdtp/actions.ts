@@ -22,6 +22,7 @@ export {
   addPdtpActivityAction,
   duplicatePdtpActivityAction,
   batchUpdatePdtpActivitiesAction,
+  applyPdtpSchedulePresetAction,
   deletePdtpActivityAction,
   reorderPdtpActivitiesAction,
   adoptLatestCatalogRevisionAction,

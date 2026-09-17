@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { MetaBadge } from "@/components/states/state-badge"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
   DropdownMenu,
@@ -12,6 +13,9 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn, pluralize, MONTH_LABELS } from "@/lib/utils"
@@ -23,16 +27,22 @@ import {
   describePdtpRecurrence,
   describePdtpScheduleSource,
   deriveScheduleHorizon,
-  projectRecurrenceToLegacySchedule,
   scheduleCellsFingerprint,
   type PdtpRecurrenceRule,
   type PdtpScheduleHorizon,
   type PdtpScheduleSource,
 } from "@/lib/services/pdtp/recurrence"
+import {
+  PDTP_SCHEDULE_PRESETS,
+  presetToCells,
+  type PdtpSchedulePresetKey,
+  type PdtpSchedulePresetParams,
+} from "@/lib/services/pdtp/schedule-presets"
 import { useDebouncedAutosave } from "@/lib/hooks/use-debounced-autosave"
 import { useEnterAdvancesFields } from "@/lib/hooks/use-enter-advances-fields"
 import { Table, TableBody, TableCell, TableCellNum, TableFooter, TableHead, TableHeader, TableRoot, TableRow } from "@/components/ui/table"
-
+import { ApplyPresetDialog, defaultParamsFor, PresetParamsFields } from "../apply-preset-dialog"
+import { RoleLoadPanel } from "../role-load-panel"
 
 import type { PdtpActivityRow, PdtpScheduleRow } from "./types"
 
@@ -108,13 +118,14 @@ function scheduleKey(month: number, week: number) {
   return `${month}-${week}`
 }
 
-export function PlanificacionTab({ programId: _programId, year, periodStart, periodEnd, activities, schedule }: {
+export function PlanificacionTab({ programId, year, periodStart, periodEnd, activities, schedule, responsibleCatalog = [] }: {
   programId: string
   year: number
   periodStart?: string | null
   periodEnd?: string | null
   activities: PdtpActivityRow[]
   schedule: PdtpScheduleRow[]
+  responsibleCatalog?: Array<{ slug: string; displayName: string }>
 }) {
   const scheduleByActivity = React.useMemo(() => {
     const map = new Map<string, Record<string, number>>()
@@ -170,6 +181,48 @@ export function PlanificacionTab({ programId: _programId, year, periodStart, per
     if (filter === "unplanned") return sources.get(activity.id) === "none"
     return sources.get(activity.id) === "manual"
   }), [activities, filter, sources])
+
+  // Selección para el aplicador masivo de presets: por id, no por fila
+  // visible, para que cambiar de filtro no descarte en silencio lo ya
+  // marcado (el diálogo igual resuelve n°/nombre contra `activities`, la
+  // lista completa, no `visibleActivities`).
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set())
+  const selectedActivities = React.useMemo(
+    () => activities.filter((activity) => selectedIds.has(activity.id)).map((activity) => ({ id: activity.id, n: activity.n, activity: activity.activity })),
+    [activities, selectedIds],
+  )
+  const [applyDialogOpen, setApplyDialogOpen] = React.useState(false)
+
+  function toggleSelected(activityId: string, checked: boolean) {
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      if (checked) next.add(activityId)
+      else next.delete(activityId)
+      return next
+    })
+  }
+
+  const allVisibleSelected = visibleActivities.length > 0 && visibleActivities.every((activity) => selectedIds.has(activity.id))
+  function toggleSelectAllVisible(checked: boolean) {
+    setSelectedIds((current) => {
+      const next = new Set(current)
+      for (const activity of visibleActivities) {
+        if (checked) next.add(activity.id)
+        else next.delete(activity.id)
+      }
+      return next
+    })
+  }
+
+  // Carga por rol: sobre TODAS las actividades (no sólo las visibles bajo el
+  // filtro actual) y sobre los valores vivos de cada fila — lo tecleado y aún
+  // no guardado, no sólo lo persistido. `rowStates[id]?.values` sólo existe
+  // para filas que ya montaron su `PlanificacionRow` (todas, salvo que el
+  // filtro las oculte); para esas, cae a la planificación guardada.
+  const liveCellsForRoleLoad = React.useMemo(() => activities.flatMap((activity) => {
+    const values = rowStates[activity.id]?.values ?? scheduleByActivity.get(activity.id) ?? {}
+    return valuesToCells(values).map((cell) => ({ activityId: activity.id, ...cell }))
+  }), [activities, rowStates, scheduleByActivity])
 
   // Misma preferencia de densidad que la hoja operativa: ambas son tablas PDTP
   // y el usuario espera un único ajuste.
@@ -255,6 +308,29 @@ export function PlanificacionTab({ programId: _programId, year, periodStart, per
         </div>
       </div>
 
+      <RoleLoadPanel activities={activities} cells={liveCellsForRoleLoad} catalog={responsibleCatalog} />
+
+      {selectedIds.size > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--color-primary-line)] bg-[var(--color-primary-tint)] px-3 py-2 text-xs">
+          <p className="font-medium text-[var(--color-text)]">
+            {selectedIds.size} {pluralize(selectedIds.size, "seleccionada")}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button type="button" size="sm" onClick={() => setApplyDialogOpen(true)}>Aplicar patrón…</Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>Limpiar</Button>
+          </div>
+        </div>
+      )}
+
+      <ApplyPresetDialog
+        programId={programId}
+        open={applyDialogOpen}
+        onOpenChange={setApplyDialogOpen}
+        activities={selectedActivities}
+        horizon={horizon}
+        onApplied={() => setSelectedIds(new Set())}
+      />
+
       {/* La tabla va dentro de un form solo para reutilizar el avance con Enter
           entre celdas (hook ya probado); no hay envío que hacer, el guardado es
           automático. */}
@@ -264,7 +340,17 @@ export function PlanificacionTab({ programId: _programId, year, periodStart, per
           <caption className="sr-only">Planificación semanal de actividades PDTP para {year}</caption>
           <TableHeader>
             <TableRow>
-              <TableHead rowSpan={2} className="sticky left-0 z-20 min-w-[18rem] bg-[var(--color-surface-2)] text-left">Actividad</TableHead>
+              <TableHead rowSpan={2} className="sticky left-0 z-20 min-w-[18rem] bg-[var(--color-surface-2)] text-left">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    label="Seleccionar todas las actividades visibles"
+                    labelHidden
+                    checked={allVisibleSelected}
+                    onChange={(event) => toggleSelectAllVisible(event.target.checked)}
+                  />
+                  Actividad
+                </div>
+              </TableHead>
               {horizon.months.map((month) => (
                 <TableHead
                   key={month}
@@ -300,6 +386,8 @@ export function PlanificacionTab({ programId: _programId, year, periodStart, per
                 weeks={weeks}
                 source={sources.get(activity.id) ?? "none"}
                 onStateChange={reportRowState}
+                selected={selectedIds.has(activity.id)}
+                onToggleSelected={(checked) => toggleSelected(activity.id, checked)}
               />
             ))}
           </TableBody>
@@ -409,19 +497,25 @@ function scheduleFingerprint(values: Record<string, number>): string {
 /** Acepta solo un número con hasta dos decimales; vacío significa "sin planificar". */
 const CELL_PATTERN = /^\d{0,6}([.,]\d{0,2})?$/
 
-const ROW_PRESETS = [
-  { key: "weekly", label: "Semanal", rule: { frequency: "weekly" as const, interval: 1, plannedQuantity: 1, weekOfMonth: 1 } },
-  { key: "monthly", label: "1 × mes", rule: { frequency: "monthly" as const, interval: 1, plannedQuantity: 1, weekOfMonth: 1 } },
-  { key: "quarterly", label: "Trimestral", rule: { frequency: "quarterly" as const, interval: 1, plannedQuantity: 1, weekOfMonth: 1 } },
-]
+// Los presets sin parámetros aparecen como ítems directos del menú de la
+// fila (un clic, como antes); los que necesitan parámetros abren un
+// submenú con sólo los campos que declaran en `needs`. `punctual` queda
+// fuera de este menú a propósito: no es un "rellenar el período" — es una
+// selección manual de celdas, que ya se edita celda por celda en la matriz.
+// Tiene sentido como preset del aplicador masivo (mismo patrón de celdas
+// para muchas actividades a la vez), no como atajo de una sola fila.
+const SIMPLE_ROW_PRESETS = PDTP_SCHEDULE_PRESETS.filter((preset) => preset.needs.length === 0)
+const PARAM_ROW_PRESETS = PDTP_SCHEDULE_PRESETS.filter((preset) => preset.needs.length > 0 && preset.key !== "punctual")
 
-function PlanificacionRow({ activity, initial, horizon, weeks, source, onStateChange }: {
+function PlanificacionRow({ activity, initial, horizon, weeks, source, onStateChange, selected, onToggleSelected }: {
   activity: PdtpActivityRow
   initial: Record<string, number>
   horizon: PdtpScheduleHorizon
   weeks: number[]
   source: PdtpScheduleSource
   onStateChange: (activityId: string, state: RowState) => void
+  selected: boolean
+  onToggleSelected: (checked: boolean) => void
 }) {
   const router = useRouter()
   const [values, setValues] = React.useState<Record<string, number>>(initial)
@@ -429,6 +523,11 @@ function PlanificacionRow({ activity, initial, horizon, weeks, source, onStateCh
   // intermedios válidos que no deben perderse ni convertirse en 0 al vuelo.
   const [drafts, setDrafts] = React.useState<Record<string, string>>({})
   const [clearing, setClearing] = React.useState(false)
+  // Controlado sólo para poder cerrarlo desde el botón "Aplicar" de un
+  // submenú de parámetros: ese botón no es un `DropdownMenuItem` (necesita
+  // seguir recibiendo clics dentro de sus campos sin que Radix lo trate
+  // como una selección), así que Radix no cierra el menú solo.
+  const [menuOpen, setMenuOpen] = React.useState(false)
   // Un conflicto de huella no se arregla reintentando: la huella obsoleta no
   // cambia sola, así que el reintento automático del autoguardado giraría para
   // siempre. Se detiene el autoguardado y se pide recargar explícitamente.
@@ -463,11 +562,13 @@ function PlanificacionRow({ activity, initial, horizon, weeks, source, onStateCh
     setValues((prev) => ({ ...prev, [key]: Number.isFinite(parsed) ? parsed : 0 }))
   }
 
-  function applyPreset(rule: PdtpRecurrenceRule) {
-    // Se construye con la misma proyección que usa el guardado del servicio,
-    // así que el preset y la recurrencia equivalente coinciden exactamente.
-    setValues(cellsToValues(projectRecurrenceToLegacySchedule(rule, horizon)))
+  function applyPresetKey(key: PdtpSchedulePresetKey, params: PdtpSchedulePresetParams) {
+    // `presetToCells` es la misma función que usa el aplicador masivo
+    // (Tarea 2.3): el atajo de una sola fila y el lote de muchas nunca
+    // pueden dar celdas distintas para el mismo preset+parámetros.
+    setValues(cellsToValues(presetToCells(key, params, horizon)))
     setDrafts({})
+    setMenuOpen(false)
   }
 
   const { status, error, saveNow } = useDebouncedAutosave({
@@ -504,24 +605,36 @@ function PlanificacionRow({ activity, initial, horizon, weeks, source, onStateCh
     <TableRow className="bg-[var(--color-surface)] align-top">
       <TableCell className="sticky left-0 z-10 border-r border-[var(--color-border)] bg-[var(--color-surface)] text-xs">
         <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="line-clamp-2" title={activity.activity}>
-              <span className="font-mono text-[var(--color-text-subtle)]">N°{activity.n}</span> {activity.activity}
-            </p>
-            <div className="mt-1 flex flex-wrap items-center gap-1">
-              <RowStatusBadge status={status} isDirty={isDirty} conflict={conflict} />
-              {source === "manual" && <MetaBadge meta={{ label: "Manual", variant: "outline" }} />}
-              {invalidCells && <MetaBadge meta={{ label: "Revisa las cantidades", variant: "danger" }} />}
+          <div className="flex min-w-0 items-start gap-2">
+            <Checkbox
+              label={`Seleccionar la actividad N°${activity.n}`}
+              labelHidden
+              className="mt-0.5"
+              checked={selected}
+              onChange={(event) => onToggleSelected(event.target.checked)}
+            />
+            <div className="min-w-0">
+              <p className="line-clamp-2" title={activity.activity}>
+                <span className="font-mono text-[var(--color-text-subtle)]">N°{activity.n}</span> {activity.activity}
+              </p>
+              <div className="mt-1 flex flex-wrap items-center gap-1">
+                <RowStatusBadge status={status} isDirty={isDirty} conflict={conflict} />
+                {source === "manual" && <MetaBadge meta={{ label: "Manual", variant: "outline" }} />}
+                {invalidCells && <MetaBadge meta={{ label: "Revisa las cantidades", variant: "danger" }} />}
+              </div>
             </div>
           </div>
-          <DropdownMenu>
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
               <Button type="button" variant="ghost" size="icon-sm" aria-label={`Atajos de planificación para la actividad N°${activity.n}`}>⋯</Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>Rellenar el período</DropdownMenuLabel>
-              {ROW_PRESETS.map((preset) => (
-                <DropdownMenuItem key={preset.key} onSelect={() => applyPreset(preset.rule)}>{preset.label}</DropdownMenuItem>
+              {SIMPLE_ROW_PRESETS.map((preset) => (
+                <DropdownMenuItem key={preset.key} onSelect={() => applyPresetKey(preset.key, {})}>{preset.label}</DropdownMenuItem>
+              ))}
+              {PARAM_ROW_PRESETS.map((preset) => (
+                <RowPresetSubmenu key={preset.key} presetKey={preset.key} label={preset.label} horizon={horizon} onApply={(params) => applyPresetKey(preset.key, params)} />
               ))}
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => setClearing(true)}>Limpiar fila</DropdownMenuItem>
@@ -566,6 +679,33 @@ function PlanificacionRow({ activity, initial, horizon, weeks, source, onStateCh
       ))}
       <TableCellNum className="text-xs">{formatPlannedTotal(rowTotal)}</TableCellNum>
     </TableRow>
+  )
+}
+
+/**
+ * Submenú de un preset que necesita parámetros (todo `PARAM_ROW_PRESETS`):
+ * arranca con los mismos valores por defecto que el diálogo de aplicación
+ * masiva (`defaultParamsFor`) y aplica localmente a esta fila — sin llamar
+ * al servidor, igual que los presets sin parámetros. El botón "Aplicar" es
+ * un botón normal, no un `DropdownMenuItem`, para que los campos del
+ * formulario reciban clics y tecleo sin que Radix los trate como una
+ * selección de menú.
+ */
+function RowPresetSubmenu({ presetKey, label, horizon, onApply }: {
+  presetKey: PdtpSchedulePresetKey
+  label: string
+  horizon: PdtpScheduleHorizon
+  onApply: (params: PdtpSchedulePresetParams) => void
+}) {
+  const [params, setParams] = React.useState<PdtpSchedulePresetParams>(() => defaultParamsFor(presetKey))
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>{label}</DropdownMenuSubTrigger>
+      <DropdownMenuSubContent>
+        <PresetParamsFields preset={presetKey} params={params} onChange={setParams} horizon={horizon} />
+        <Button type="button" size="sm" className="mt-3 w-full" onClick={() => onApply(params)}>Aplicar</Button>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
   )
 }
 
