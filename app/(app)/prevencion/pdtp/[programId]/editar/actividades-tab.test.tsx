@@ -4,8 +4,10 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import type { pdtpActivities, pdtpActivitySchedule } from "@/db/schema"
 import { ActividadesTab } from "./builder-tabs"
 
-const { mockUpdate, mockRefresh } = vi.hoisted(() => ({
+const { mockUpdate, mockBatchUpdate, mockSetObjective, mockRefresh } = vi.hoisted(() => ({
   mockUpdate: vi.fn(),
+  mockBatchUpdate: vi.fn(),
+  mockSetObjective: vi.fn(),
   mockRefresh: vi.fn(),
 }))
 
@@ -13,7 +15,8 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mockRefresh, pu
 vi.mock("../../actions", () => ({
   updatePdtpActivityAction: mockUpdate,
   duplicatePdtpActivityAction: vi.fn(),
-  batchUpdatePdtpActivitiesAction: vi.fn(),
+  batchUpdatePdtpActivitiesAction: mockBatchUpdate,
+  setPdtpActivityObjectiveAction: mockSetObjective,
   deletePdtpActivityAction: vi.fn(),
   reorderPdtpActivitiesAction: vi.fn(),
   adoptLatestCatalogRevisionAction: vi.fn(),
@@ -62,6 +65,8 @@ function renderTab(props: Partial<Parameters<typeof ActividadesTab>[0]> = {}) {
 
 beforeEach(() => {
   mockUpdate.mockResolvedValue({ ok: true })
+  mockBatchUpdate.mockResolvedValue({ ok: true })
+  mockSetObjective.mockResolvedValue({ ok: true })
 })
 
 afterEach(() => {
@@ -127,5 +132,33 @@ describe("EditActivityDialog", () => {
 
     await vi.waitFor(() => expect(mockUpdate).toHaveBeenCalled())
     expect(mockUpdate.mock.calls[0]![0].recurrenceRule).toMatchObject({ frequency: "custom", months: [1, 3, 8] })
+  })
+})
+
+describe("BatchEditActivitiesDialog", () => {
+  const OBJECTIVES = [{ id: "objective-1", code: "1", name: "Objetivo Uno" }] as unknown as Parameters<typeof ActividadesTab>[0]["objectives"]
+
+  it("envía el cambio de objetivo en el mismo POST atómico de batchUpdatePdtpActivitiesAction, no en llamadas sueltas por actividad", async () => {
+    renderTab({
+      activities: [makeActivity({ id: "act-1", n: 1 }), makeActivity({ id: "act-2", n: 2 })],
+      objectives: OBJECTIVES,
+    })
+
+    fireEvent.click(screen.getByLabelText("Seleccionar actividad 1"))
+    fireEvent.click(screen.getByLabelText("Seleccionar actividad 2"))
+    fireEvent.click(screen.getByRole("button", { name: "Editar selección" }))
+
+    fireEvent.click(screen.getByRole("combobox", { name: "Cambiar objetivo" }))
+    fireEvent.click(screen.getByRole("option", { name: "1 · Objetivo Uno" }))
+    fireEvent.click(screen.getByRole("button", { name: "Aplicar cambios" }))
+
+    await vi.waitFor(() => expect(mockBatchUpdate).toHaveBeenCalledTimes(1))
+    expect(mockBatchUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      activityIds: ["act-1", "act-2"],
+      objectiveId: "objective-1",
+    }))
+    // Regresión: antes esto disparaba un `setPdtpActivityObjectiveAction` por
+    // actividad seleccionada, sin atomicidad.
+    expect(mockSetObjective).not.toHaveBeenCalled()
   })
 })

@@ -313,7 +313,9 @@ export const pdtpActivityBatchUpdateSchema = z.object({
   responsibleSlugs: z.array(z.string().min(1)).min(1).optional(),
   responsibleDisplay: z.string().trim().min(1).max(160).optional(),
   evidenceRequirement: z.string().trim().max(3000).nullable().optional(),
-}).refine((value) => value.responsibleSlugs !== undefined || value.evidenceRequirement !== undefined, {
+  /** Objetivo del programa (RE-36) a asignar a la selección; `null` desasigna. */
+  objectiveId: z.string().min(1).nullable().optional(),
+}).refine((value) => value.responsibleSlugs !== undefined || value.evidenceRequirement !== undefined || value.objectiveId !== undefined, {
   message: "Selecciona al menos un cambio para aplicar",
 })
 

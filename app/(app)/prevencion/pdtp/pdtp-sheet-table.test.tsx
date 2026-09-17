@@ -305,3 +305,69 @@ describe("PdtpSheetTable — paginación de la vista anual", () => {
     expect(screen.getByText("Ejecutada 1")).toBeDefined()
   })
 })
+
+describe("PdtpSheetTable — agrupación por objetivo", () => {
+  const OBJECTIVES = [
+    { id: "obj-1", code: "1", name: "Objetivo Uno" },
+    { id: "obj-2", code: "2", name: "Objetivo Dos" },
+  ]
+
+  function makeActivityWithObjective(id: string, n: string, activity: string, objectiveId: string | null) {
+    return { ...makeActivity(id, n, activity, ANNUAL_PLAN_FOR_GROUPING, ZERO12), objectiveId } as unknown as PdtpSheetView["activities"][number]
+  }
+
+  const ANNUAL_PLAN_FOR_GROUPING = withPlanned(7, 1)
+
+  /** Texto de cada fila, en orden de aparición en el DOM: cabeceras de grupo y actividades intercaladas. */
+  function rowTexts(container: HTMLElement): string[] {
+    return [...container.querySelectorAll("tbody tr")].map((row) => row.textContent ?? "")
+  }
+
+  it("agrupa por objetivo en la vista anual, en el orden declarado y con «Sin objetivo asignado» al final", () => {
+    const uno = makeActivityWithObjective("act-uno", "1", "Actividad del objetivo uno", "obj-1")
+    const dos = makeActivityWithObjective("act-dos", "2", "Actividad del objetivo dos", "obj-2")
+    const sinObjetivo = makeActivityWithObjective("act-sin-objetivo", "3", "Actividad sin objetivo", null)
+    const view = makeView([uno, dos, sinObjetivo])
+
+    const { container } = render(
+      <PdtpSheetTable view={view} viewMode="anual" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" objectives={OBJECTIVES} />,
+    )
+
+    const texts = rowTexts(container)
+    const indexOf = (needle: string) => texts.findIndex((text) => text.includes(needle))
+
+    expect(indexOf("1 · Objetivo Uno")).toBeGreaterThanOrEqual(0)
+    expect(indexOf("2 · Objetivo Dos")).toBeGreaterThanOrEqual(0)
+    expect(indexOf("Sin objetivo asignado")).toBeGreaterThanOrEqual(0)
+
+    // Orden: objetivo 1 (con su actividad), objetivo 2 (con su actividad),
+    // sin objetivo al final (con la suya) — ni una fila fuera de su grupo.
+    expect(indexOf("1 · Objetivo Uno")).toBeLessThan(indexOf("Actividad del objetivo uno"))
+    expect(indexOf("Actividad del objetivo uno")).toBeLessThan(indexOf("2 · Objetivo Dos"))
+    expect(indexOf("2 · Objetivo Dos")).toBeLessThan(indexOf("Actividad del objetivo dos"))
+    expect(indexOf("Actividad del objetivo dos")).toBeLessThan(indexOf("Sin objetivo asignado"))
+    expect(indexOf("Sin objetivo asignado")).toBeLessThan(indexOf("Actividad sin objetivo"))
+  })
+
+  it("sin objetivos declarados, la tabla se ve igual que antes: un único grupo «Actividades»", () => {
+    const uno = makeActivityWithObjective("act-uno", "1", "Actividad del objetivo uno", "obj-1")
+    const dos = makeActivityWithObjective("act-dos", "2", "Actividad del objetivo dos", "obj-2")
+    const sinObjetivo = makeActivityWithObjective("act-sin-objetivo", "3", "Actividad sin objetivo", null)
+    const view = makeView([uno, dos, sinObjetivo])
+
+    // Sin pasar `objectives` (o pasando []): mismo comportamiento que un
+    // programa que todavía no declaró objetivos.
+    const { container } = render(
+      <PdtpSheetTable view={view} viewMode="anual" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />,
+    )
+
+    expect(screen.getByText("Actividad del objetivo uno")).toBeDefined()
+    expect(screen.getByText("Actividad del objetivo dos")).toBeDefined()
+    expect(screen.getByText("Actividad sin objetivo")).toBeDefined()
+    expect(screen.queryByText("Sin objetivo asignado")).toBeNull()
+    expect(screen.queryByText("1 · Objetivo Uno")).toBeNull()
+
+    const groupHeaderRows = rowTexts(container).filter((text) => text === "Actividades")
+    expect(groupHeaderRows).toHaveLength(1)
+  })
+})

@@ -206,6 +206,7 @@ describe("deploy workflow", () => {
       ["apply-pdtp-2026-catalog-decisions", "apply-pdtp-catalog-decisions"],
       ["apply-pdtp-2026-program-data", "apply-pdtp-program-data"],
       ["apply-pdtp-2026-mechanisms", "apply-pdtp-mechanisms"],
+      ["apply-pdtp-2026-objectives", "apply-pdtp-objectives"],
       ["apply-pdtp-2026-demand-slas", "apply-pdtp-demand-slas"],
     ] as const
 

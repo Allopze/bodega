@@ -130,4 +130,18 @@ describe("ObjetivosTab", () => {
     await vi.waitFor(() => expect(mockReorder).toHaveBeenCalledTimes(1))
     expect(mockReorder).toHaveBeenCalledWith({ programId: "program-1", orderedIds: ["objective-2", "objective-1"] })
   })
+
+  it("si el borrado falla, cierra el diálogo de confirmación para que el mensaje de error sea visible", async () => {
+    mockDelete.mockResolvedValue({ ok: false, message: "El programa ya entró a revisión." })
+    const objectives = [makeObjective({ id: "objective-1", code: "1", name: "Objetivo uno" })]
+    render(<ObjetivosTab programId="program-1" objectives={objectives} activities={[]} />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Eliminar" }))
+    fireEvent.click(screen.getByRole("button", { name: "Eliminar definitivamente" }))
+
+    await vi.waitFor(() => expect(screen.getByText("El programa ya entró a revisión.")).toBeInTheDocument())
+    // Regresión: el diálogo se quedaba abierto sobre el mensaje y su overlay
+    // lo tapaba por completo — el usuario veía el botón dejar de girar y nada más.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+  })
 })

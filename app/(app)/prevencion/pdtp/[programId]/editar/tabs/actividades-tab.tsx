@@ -244,7 +244,7 @@ export function ActividadesTab({
                       <Select
                         value={activity.objectiveId ?? "none"}
                         onValueChange={(value) => handleSetObjective(activity.id, value === "none" ? null : value)}
-                        disabled={busyId !== null}
+                        disabled={busyId !== null || activity.status === "retired"}
                       >
                         <SelectTrigger aria-label={`Objetivo de la actividad ${activity.n}`}><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -362,21 +362,21 @@ function BatchEditActivitiesDialog({ open, onOpenChange, programId, activityIds,
     setPending(true)
     setError(null)
     try {
-      if (targetResponsible || replaceEvidence) {
-        const result = await batchUpdatePdtpActivitiesAction({
-          programId,
-          activityIds,
-          responsibleSlugs: targetResponsible ? [targetResponsible.slug] : undefined,
-          responsibleDisplay: targetResponsible?.displayName,
-          evidenceRequirement: replaceEvidence ? evidence : undefined,
-        })
-        if (!result.ok) { setError(result.message ?? "No se pudo editar la selección."); return }
-      }
-      if (objectiveChange !== undefined) {
-        const results = await Promise.all(activityIds.map((activityId) => setPdtpActivityObjectiveAction({ programId, activityId, objectiveId: objectiveChange })))
-        const failed = results.find((result) => !result.ok)
-        if (failed) { setError(failed.message ?? "No se pudo actualizar el objetivo de algunas actividades."); return }
-      }
+      // Un único envío atómico: `batchUpdatePdtpActivities` ya valida
+      // pertenencia del objetivo, rechaza retiradas y escribe el UPDATE + su
+      // entrada de changelog dentro de la misma transacción. Antes esto
+      // disparaba N `setPdtpActivityObjectiveAction` (una por actividad
+      // seleccionada) sin atomicidad: si una fallaba a mitad, las anteriores
+      // ya habían escrito y la UI se quedaba sin refrescar.
+      const result = await batchUpdatePdtpActivitiesAction({
+        programId,
+        activityIds,
+        responsibleSlugs: targetResponsible ? [targetResponsible.slug] : undefined,
+        responsibleDisplay: targetResponsible?.displayName,
+        evidenceRequirement: replaceEvidence ? evidence : undefined,
+        objectiveId: objectiveChange,
+      })
+      if (!result.ok) { setError(result.message ?? "No se pudo editar la selección."); return }
       onOpenChange(false)
       onSaved()
     } finally {

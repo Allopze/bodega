@@ -105,10 +105,15 @@ export function ObjetivosTab({ programId, objectives, activities }: {
     setDeleteError(null)
     try {
       const result = await deletePdtpObjectiveAction({ programId, objectiveId: deleting.id })
+      // En los dos casos se cierra el diálogo: en éxito porque ya no hay nada
+      // que confirmar, y en error porque el mensaje se pinta debajo, fuera del
+      // `ConfirmDialog` — con el diálogo abierto su overlay lo tapa y no hay
+      // forma de que el usuario lo vea (mismo criterio que el borrado del
+      // programa en `MetadataTab`).
+      setDeleting(null)
       if (!result.ok) {
         setDeleteError(result.message ?? "No se pudo eliminar el objetivo.")
       } else {
-        setDeleting(null)
         router.refresh()
       }
     } finally {
@@ -200,7 +205,7 @@ export function ObjetivosTab({ programId, objectives, activities }: {
 
       {items.length > 0 && unassignedCount > 0 && (
         <p className="text-xs text-[var(--color-text-muted)]">
-          {countOf(unassignedCount, "actividad")} sin objetivo asignado todavía. Se asignan desde la fila de cada actividad, en la pestaña Actividades.
+          {countOf(unassignedCount, "actividad")} sin objetivo asignado todavía. Se asignan desde la tabla de actividades, más arriba.
         </p>
       )}
 
