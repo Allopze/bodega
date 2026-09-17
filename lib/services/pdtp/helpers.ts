@@ -174,6 +174,22 @@ export async function addPdtpChangeLogEntry(
   })
 }
 
+/**
+ * Clave de exclusión mutua de una celda PDTP (actividad × faena ×
+ * año/mes/semana). `markPdtpExecution` (executions.ts) y
+ * `recordPdtpDeviation` (deviations.ts) toman el mismo
+ * `pg_advisory_xact_lock(hashtext(...))` con esta clave antes de leer lo que
+ * el otro escribe: sin un objeto común que ambas transacciones bloqueen, las
+ * dos lecturas son fantasmas (la fila que buscan todavía no existe) y ambas
+ * operaciones pueden pasar, dejando la celda con ejecución aprobada Y desvío
+ * activo — justo lo que la exclusión mutua promete impedir.
+ */
+export function pdtpCellLockKey(
+  activityId: string, worksiteId: string, year: number, month: number, week: number,
+): string {
+  return `pdtp-cell:${activityId}:${worksiteId}:${year}:${month}:${week}`
+}
+
 export async function loadProgramScheduleAndExecutions(activityIds: string[], year: number, worksiteId?: string) {
   const [scheduleRows, executionRows, overrideRows, exclusionRows, activityRows, deviationRows] = await Promise.all([
     db.select().from(pdtpActivitySchedule).where(and(
@@ -215,19 +231,42 @@ export async function loadProgramScheduleAndExecutions(activityIds: string[], ye
       ? isPdtpActivityEffectiveForPeriod(activity, row.year, row.month, row.week)
       : false
   })
+  const isCellEffective = (activityId: string, month: number, week: number) => {
+    const activity = retirementByActivity.get(activityId)
+    return activity ? isPdtpActivityEffectiveForPeriod(activity, year, month, week) : false
+  }
   // Costura única: los desvíos por celda (not_applicable/reprogrammed/
   // not_performed) se aplican acá, después de overrides y exclusiones, y
   // sólo cuando hay `worksiteId` — la misma condición que habilita esas dos
-  // transformaciones. Se aplican ANTES del filtro de vigencia por retiro
-  // para que una celda reprogramada a un período ya retirado también salga
-  // (effectiveForPeriod evalúa la celda destino igual que cualquier otra).
+  // transformaciones.
+  //
+  // La vigencia por retiro se filtra en DOS pasadas, una a cada lado de los
+  // desvíos, porque cada lado responde a una pregunta distinta:
+  //
+  // 1. ANTES: el ORIGEN. Una celda ya nula por retiro no puede prestar su
+  //    planificado: sin esta pasada, un `reprogrammed` con origen en un
+  //    período retirado trasladaba planificado fantasma a un período vigente
+  //    e inflaba el denominador con trabajo que ya no se exige.
+  // 2. DESPUÉS: el DESTINO y el resto del set. Una celda destino creada por
+  //    un desvío se evalúa como cualquier otra. `applyDeviationsToSchedule`
+  //    recibe además `isCellEffective` para no consumir el origen cuando el
+  //    destino no es vigente (ver su JSDoc: el planificado se conserva en el
+  //    origen en vez de evaporarse).
   const effectiveSchedule = worksiteId
-    ? applyDeviationsToSchedule(withoutExcluded(applyOverridesToSchedule(scheduleRows, overrideRows)), deviationRows)
+    ? applyDeviationsToSchedule(
+        effectiveForPeriod(withoutExcluded(applyOverridesToSchedule(scheduleRows, overrideRows))),
+        deviationRows,
+        isCellEffective,
+      )
     : scheduleRows
   return {
     scheduleRows: effectiveForPeriod(effectiveSchedule),
     executionRows: effectiveForPeriod(withoutExcluded(executionRows)),
-    deviationRows,
+    // Mismo tratamiento que las otras dos colecciones: un desvío de una
+    // actividad excluida en la faena, o de un período ya retirado, describe
+    // una celda que el cómputo descartó — mostrarlo (Task 3.3, UI) sería
+    // contradecir lo que el propio indicador calcula.
+    deviationRows: effectiveForPeriod(withoutExcluded(deviationRows)),
   }
 }
 

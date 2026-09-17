@@ -22,12 +22,15 @@ import { db, type DB, type Tx } from "@/db"
 import {
   pdtpActivities,
   pdtpActivityWorksiteExclusions,
+  pdtpExecutionDeviations,
   pdtpExecutions,
   pdtpProgramWorksites,
   pdtpPrograms,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
 import { logger } from "@/lib/logger"
+import { addPdtpChangeLogEntry } from "./helpers"
+import { PDTP_DEVIATION_LABELS, type PdtpDeviationKind } from "./deviations"
 
 type AccreditationClient = DB | Tx
 
@@ -523,6 +526,69 @@ export async function accreditPdtpFromEvent(
   // 4. Upsert idempotente para cada actividad elegible
   const accredited: AccreditationResult["accredited"] = []
 
+  /**
+   * Retira el desvío activo (cualquiera de los tres tipos) sobre la celda que
+   * esta acreditación va a escribir.
+   *
+   * `withdrawnByUserId` no admite NULL mientras el CHECK
+   * `pdtp_execution_deviations_withdrawn_check` exija actor, y una
+   * acreditación por integración no siempre trae uno (sólo las que aprueban
+   * automáticamente): se cae al autor del desvío como titular formal del
+   * retiro. Quién lo retiró de verdad —nadie: el motor, a partir de un hecho
+   * del módulo de origen— queda dicho en el motivo y en el changelog, que se
+   * escribe sin `changedByUserId`, igual que `pdtp_executions` deja
+   * `executed_by_user_id` en NULL para `origin = 'integration'`.
+   */
+  const withdrawDeviationForAccreditedCell = async (activity: { id: string; n: number }) => {
+    const [activeDeviation] = await client
+      .select({
+        id: pdtpExecutionDeviations.id,
+        kind: pdtpExecutionDeviations.kind,
+        createdByUserId: pdtpExecutionDeviations.createdByUserId,
+      })
+      .from(pdtpExecutionDeviations)
+      .where(and(
+        eq(pdtpExecutionDeviations.activityId, activity.id),
+        eq(pdtpExecutionDeviations.worksiteId, input.worksiteId),
+        eq(pdtpExecutionDeviations.year, occurredYear),
+        eq(pdtpExecutionDeviations.month, slot.month),
+        eq(pdtpExecutionDeviations.week, slot.week),
+        eq(pdtpExecutionDeviations.status, "active"),
+      ))
+      .limit(1)
+    if (!activeDeviation) return
+
+    const label = PDTP_DEVIATION_LABELS[activeDeviation.kind as PdtpDeviationKind] ?? activeDeviation.kind
+    const withdrawReason = `Retirado automáticamente: la acreditación por integración desde ${input.sourceType} (${input.sourceId}) registró evidencia real en esta celda.`
+    const [withdrawn] = await client
+      .update(pdtpExecutionDeviations)
+      .set({
+        status: "withdrawn",
+        withdrawnByUserId: input.autoApproveByUserId ?? activeDeviation.createdByUserId,
+        withdrawnAt: now,
+        withdrawReason,
+      })
+      .where(and(
+        eq(pdtpExecutionDeviations.id, activeDeviation.id),
+        // Condición de escritura, no lectura previa: si otro flujo lo retiró
+        // en el intertanto, este UPDATE no hace nada y no se anota nada.
+        eq(pdtpExecutionDeviations.status, "active"),
+      ))
+      .returning({ id: pdtpExecutionDeviations.id })
+    if (!withdrawn) return
+
+    await addPdtpChangeLogEntry(
+      program.id,
+      program.version,
+      input.autoApproveByUserId ?? null,
+      `deviation:${activity.n}`,
+      { status: "active", kind: activeDeviation.kind, year: occurredYear, month: slot.month, week: slot.week },
+      { status: "withdrawn", reason: withdrawReason },
+      `Desvío "${label}" retirado automáticamente para actividad ${activity.n}: acreditación por integración desde ${input.sourceType} (${input.sourceId}).`,
+      client,
+    )
+  }
+
   for (const activity of eligibleActivities) {
     const idempotencyKey = accreditationKey(
       activity.id,
@@ -530,6 +596,22 @@ export async function accreditPdtpFromEvent(
       input.sourceType,
       input.sourceId,
     )
+
+    // ── La evidencia gana ─────────────────────────────────────────────────
+    // Una acreditación por integración entra a la costura única
+    // (`loadProgramScheduleAndExecutions`) con `obligationId` nulo, así que un
+    // desvío activo sobre esta celda dejaría el cálculo incoherente: un
+    // `not_applicable`/`reprogrammed` la sacó del denominador y acá aterriza
+    // ejecutado > 0 contra planificado 0; un `not_performed` afirma que no se
+    // hizo, y el módulo de origen acaba de probar que sí.
+    //
+    // Nunca se falla por el desvío: `accreditPdtpFromEvent` la invocan
+    // conectores cuyo flujo propio (cerrar un hallazgo, una inspección, una
+    // capacitación) no puede romperse por una declaración operacional del
+    // PDTP. Se retira el desvío, con motivo explícito que nombra la fuente y
+    // su entrada de changelog, en la misma unidad de trabajo que escribe la
+    // ejecución (`client` es la transacción del conector cuando la hay).
+    await withdrawDeviationForAccreditedCell(activity)
 
     // Verificar si ya existe
     const [existing] = await client

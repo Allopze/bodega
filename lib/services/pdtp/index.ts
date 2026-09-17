@@ -149,6 +149,11 @@ export {
   listPdtpDeviationsForProgram,
 } from "./deviations"
 export type { PdtpDeviationKind } from "./deviations"
+// `PdtpExecutionDeviation` es el tipo de retorno de `recordPdtpDeviation`,
+// `loadPdtpDeviations` y `listPdtpDeviationsForProgram`: sin él exportado acá,
+// un consumidor del servicio tenía que importarlo de `@/db/schema` para poder
+// nombrar lo que estas tres funciones devuelven.
+export type { PdtpExecutionDeviation } from "@/db/schema"
 export {
   listPdtpProgramWorksites,
   listAccessiblePdtpProgramWorksites,

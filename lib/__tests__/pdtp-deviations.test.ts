@@ -315,6 +315,150 @@ describe("recordPdtpDeviation: validaciones de entrada", () => {
     }, "user-1", "all")).resolves.toBeDefined()
   })
 
+  it("rechaza reprogramar hacia un período anterior a la activación del programa", async () => {
+    const { recordPdtpDeviation } = await import("@/lib/services/pdtp/deviations")
+    const { program, activity } = await createActiveProgramWithScheduledCell(2072, { month: 7, week: 1, plannedQuantity: 2 })
+    await inMemoryDb.update(schema.pdtpPrograms)
+      .set({ activatedAt: "2072-06-05T12:00:00.000Z" })
+      .where(eq(schema.pdtpPrograms.id, program.id))
+
+    await expect(recordPdtpDeviation({
+      activityId: activity.id, worksiteId: "ws-1", year: 2072, month: 7, week: 1,
+      kind: "reprogrammed", reason: "Se intenta reprogramar hacia atrás, antes de la activación.",
+      targetMonth: 3, targetWeek: 1,
+    }, "user-1", "all")).rejects.toThrow(/anterior a la activación del programa/)
+  })
+
+  it("rechaza reprogramar hacia un período donde la actividad ya está retirada", async () => {
+    const { recordPdtpDeviation } = await import("@/lib/services/pdtp/deviations")
+    const { activity } = await createActiveProgramWithScheduledCell(2073, { month: 3, week: 1, plannedQuantity: 2 })
+    await inMemoryDb.update(schema.pdtpActivities)
+      .set({ status: "retired", retiredEffectiveFrom: "2073-06-01", retiredAt: new Date().toISOString(), retiredReason: "Actividad retirada a mitad de año por cambio normativo." })
+      .where(eq(schema.pdtpActivities.id, activity.id))
+
+    await expect(recordPdtpDeviation({
+      activityId: activity.id, worksiteId: "ws-1", year: 2073, month: 3, week: 1,
+      kind: "reprogrammed", reason: "Se intenta reprogramar a un mes donde la actividad ya no rige.",
+      targetMonth: 8, targetWeek: 1,
+    }, "user-1", "all")).rejects.toThrow(/retirada para el período de destino/)
+  })
+})
+
+describe("desvíos y vigencia por retiro (costura única, dos pasadas)", () => {
+  it("un `reprogrammed` con ORIGEN en un período ya retirado no traslada planificado fantasma al destino", async () => {
+    const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
+    const { loadProgramScheduleAndExecutions } = await import("@/lib/services/pdtp/helpers")
+    const { program, activity } = await createActiveProgramWithScheduledCell(2074, { month: 3, week: 1, plannedQuantity: 4 })
+    await inMemoryDb.update(schema.pdtpActivities)
+      .set({ status: "retired", retiredEffectiveFrom: "2074-03-01", retiredAt: new Date().toISOString(), retiredReason: "Actividad retirada desde marzo por cambio normativo." })
+      .where(eq(schema.pdtpActivities.id, activity.id))
+
+    // Desvío histórico: registrado cuando la actividad aún regía en marzo, con
+    // destino en febrero (dentro de la vigencia). Hoy `recordPdtpDeviation` lo
+    // rechazaría por el origen retirado, así que se inserta directo.
+    await inMemoryDb.insert(schema.pdtpExecutionDeviations).values({
+      id: "dev-origen-retirado", activityId: activity.id, worksiteId: "ws-1",
+      year: 2074, month: 3, week: 1, kind: "reprogrammed",
+      reason: "Reprogramación histórica desde una celda que luego quedó retirada.",
+      targetMonth: 2, targetWeek: 1, status: "active",
+      createdByUserId: "user-1", createdAt: new Date().toISOString(),
+    })
+
+    const indicators = await getPdtpComplianceIndicators(program.id, "ws-1")
+    expect(indicators!.monthly[2]!.planned).toBe(0) // marzo: retirada, no exige nada
+    expect(indicators!.monthly[1]!.planned).toBe(0) // febrero: NO hereda planificado de una celda retirada
+
+    // Minor 8: el desvío de una celda ya descartada tampoco se devuelve.
+    const loaded = await loadProgramScheduleAndExecutions([activity.id], 2074, "ws-1")
+    expect(loaded.deviationRows).toEqual([])
+  })
+
+  it("un retiro posterior a un `reprogrammed` legítimo conserva el planificado en el origen en vez de evaporarlo", async () => {
+    const { recordPdtpDeviation } = await import("@/lib/services/pdtp/deviations")
+    const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
+    const { program, activity } = await createActiveProgramWithScheduledCell(2075, { month: 3, week: 1, plannedQuantity: 4 })
+
+    // Desvío válido al registrarse: la actividad todavía rige todo el año.
+    await recordPdtpDeviation({
+      activityId: activity.id, worksiteId: "ws-1", year: 2075, month: 3, week: 1,
+      kind: "reprogrammed", reason: "Se reprograma a agosto por disponibilidad del relator.",
+      targetMonth: 8, targetWeek: 1,
+    }, "user-1", "all")
+
+    // Retiro declarado después: el destino (agosto) deja de regir.
+    await inMemoryDb.update(schema.pdtpActivities)
+      .set({ status: "retired", retiredEffectiveFrom: "2075-06-01", retiredAt: new Date().toISOString(), retiredReason: "Actividad retirada desde junio por cambio normativo." })
+      .where(eq(schema.pdtpActivities.id, activity.id))
+
+    const indicators = await getPdtpComplianceIndicators(program.id, "ws-1")
+    expect(indicators!.monthly[7]!.planned).toBe(0) // agosto: la actividad ya no rige
+    // Opción conservadora: el planificado no desaparece del denominador sin
+    // dejar rastro; se conserva en su celda de origen, que sí era vigente.
+    expect(indicators!.monthly[2]!.planned).toBe(4)
+  })
+})
+
+describe("acreditación por integración sobre una celda con desvío activo (la evidencia gana)", () => {
+  async function accreditOver(kind: "not_performed" | "not_applicable" | "reprogrammed", year: number) {
+    const { recordPdtpDeviation } = await import("@/lib/services/pdtp/deviations")
+    const { accreditPdtpFromEvent } = await import("@/lib/services/pdtp/accreditation")
+    const { activity } = await createActiveProgramWithScheduledCell(year, { month: 3, week: 1, plannedQuantity: 2 })
+
+    const deviation = await recordPdtpDeviation({
+      activityId: activity.id, worksiteId: "ws-1", year, month: 3, week: 1, kind,
+      reason: "Desvío declarado antes de que llegara la evidencia del módulo de origen.",
+      ...(kind === "reprogrammed" ? { targetMonth: 5, targetWeek: 1 } : {}),
+    }, "user-1", "all")
+
+    const result = await accreditPdtpFromEvent({
+      sourceType: "capacitacion",
+      sourceId: `sesion-${kind}`,
+      worksiteId: "ws-1",
+      activityNumbers: [activity.n],
+      occurredAt: `${year}-03-05T12:00:00.000Z`,
+    })
+
+    const [reloaded] = await inMemoryDb.select().from(schema.pdtpExecutionDeviations)
+      .where(eq(schema.pdtpExecutionDeviations.id, deviation.id))
+    const changeLog = await inMemoryDb.select().from(schema.pdtpChangeLog)
+      .where(eq(schema.pdtpChangeLog.section, `deviation:${activity.n}`))
+    return { result, reloaded: reloaded!, changeLog }
+  }
+
+  it("retira un `not_performed` activo y deja su entrada de changelog", async () => {
+    const { result, reloaded, changeLog } = await accreditOver("not_performed", 2024)
+    expect(result.accredited).toHaveLength(1)
+    expect(reloaded.status).toBe("withdrawn")
+    expect(reloaded.withdrawReason).toMatch(/acreditación por integración desde capacitacion/)
+    expect(changeLog.some((entry) => entry.note?.includes("retirado automáticamente"))).toBe(true)
+  })
+
+  it("retira un `not_applicable` activo (planificado 0 con ejecutado > 0 sería incoherente)", async () => {
+    const { result, reloaded, changeLog } = await accreditOver("not_applicable", 2025)
+    expect(result.accredited).toHaveLength(1)
+    expect(reloaded.status).toBe("withdrawn")
+    expect(reloaded.withdrawReason).toMatch(/acreditación por integración desde capacitacion/)
+    expect(changeLog.some((entry) => entry.note?.includes("retirado automáticamente"))).toBe(true)
+  })
+
+  it("retira un `reprogrammed` activo: la evidencia cayó en la celda de origen", async () => {
+    const { result, reloaded, changeLog } = await accreditOver("reprogrammed", 2026)
+    expect(result.accredited).toHaveLength(1)
+    expect(reloaded.status).toBe("withdrawn")
+    expect(reloaded.withdrawReason).toMatch(/acreditación por integración desde capacitacion/)
+    expect(changeLog.some((entry) => entry.note?.includes("retirado automáticamente"))).toBe(true)
+  })
+
+  it("nunca falla por el desvío: la acreditación se completa y la ejecución queda registrada", async () => {
+    const { result } = await accreditOver("not_applicable", 2027)
+    expect(result.accredited).toHaveLength(1)
+    const executions = await inMemoryDb.select().from(schema.pdtpExecutions)
+    expect(executions).toHaveLength(1)
+    expect(executions[0]!.origin).toBe("integration")
+  })
+})
+
+describe("recordPdtpDeviation: validaciones de entrada (continuación)", () => {
   it("falla cerrado fuera del alcance de faena del usuario", async () => {
     const { recordPdtpDeviation } = await import("@/lib/services/pdtp/deviations")
     const { activity } = await createActiveProgramWithScheduledCell(2067, { month: 1, week: 1, plannedQuantity: 2 })
@@ -323,6 +467,20 @@ describe("recordPdtpDeviation: validaciones de entrada", () => {
       activityId: activity.id, worksiteId: "ws-1", year: 2067, month: 1, week: 1,
       kind: "not_applicable", reason: "Un usuario fuera del alcance intenta declarar esto.",
     }, "user-1", ["ws-2"])).rejects.toThrow(/sin acceso/)
+  })
+
+  it("rechaza retirar un desvío con un motivo demasiado corto (schema, no validación a mano)", async () => {
+    const { recordPdtpDeviation, withdrawPdtpDeviation } = await import("@/lib/services/pdtp/deviations")
+    const { activity } = await createActiveProgramWithScheduledCell(2069, { month: 1, week: 1, plannedQuantity: 2 })
+    const deviation = await recordPdtpDeviation({
+      activityId: activity.id, worksiteId: "ws-1", year: 2069, month: 1, week: 1,
+      kind: "not_applicable", reason: "Desvío que luego se intentará retirar sin motivo.",
+    }, "user-1", "all")
+
+    await expect(withdrawPdtpDeviation({ deviationId: deviation.id, reason: "corto" }, "user-1", "all"))
+      .rejects.toThrow(/al menos 10 caracteres/)
+    await expect(withdrawPdtpDeviation({ deviationId: "", reason: "Motivo suficientemente largo para pasar." }, "user-1", "all"))
+      .rejects.toThrow(/Desvío requerido/)
   })
 
   it("rechaza declarar desvíos sobre una actividad excluida en esa faena", async () => {

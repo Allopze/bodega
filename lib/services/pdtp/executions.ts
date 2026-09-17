@@ -2,7 +2,7 @@ import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm"
 import { db } from "@/db"
 import { pdtpActivities, pdtpActivityWorksiteExclusions, pdtpExecutionDeviations, pdtpExecutions, pdtpChangeLog, pdtpObligations, pdtpPrograms, worksites } from "@/db/schema"
 import { pdtpExecutionId } from "./helpers"
-import { addPdtpChangeLogEntry, assertWorksiteAccess } from "./helpers"
+import { addPdtpChangeLogEntry, assertWorksiteAccess, pdtpCellLockKey } from "./helpers"
 import type { WorksiteScope } from "./helpers"
 import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
 import { pdtpExecutionSchema } from "@/lib/validation/prevention"
@@ -70,28 +70,6 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
     .limit(1)
   if (exclusion) {
     throw new Error("La actividad está excluida para esta faena y no admite ejecuciones.")
-  }
-
-  // Exclusión mutua con los desvíos por celda (deviations.ts):
-  // `not_applicable`/`reprogrammed` retiraron o movieron el planificado de
-  // esta celda — registrar una ejecución sobre ella contradiría al desvío,
-  // así que se rechaza. Un `not_performed` activo, en cambio, describía "no
-  // se hizo" hasta ahora: si llega una ejecución con cantidad > 0, el hecho
-  // ocurrió después de todo y el desvío deja de ser cierto — se retira solo,
-  // más abajo, dentro de la misma transacción que registra la ejecución.
-  const [activeDeviation] = await db.select({
-    id: pdtpExecutionDeviations.id,
-    kind: pdtpExecutionDeviations.kind,
-  }).from(pdtpExecutionDeviations).where(and(
-    eq(pdtpExecutionDeviations.activityId, data.activityId),
-    eq(pdtpExecutionDeviations.worksiteId, data.worksiteId),
-    eq(pdtpExecutionDeviations.year, data.year),
-    eq(pdtpExecutionDeviations.month, data.month),
-    eq(pdtpExecutionDeviations.week, data.week),
-    eq(pdtpExecutionDeviations.status, "active"),
-  )).limit(1)
-  if (activeDeviation && (activeDeviation.kind === "not_applicable" || activeDeviation.kind === "reprogrammed")) {
-    throw new Error("Esta celda tiene un desvío activo (no aplicable o reprogramado) y no admite ejecuciones.")
   }
 
   // Si la ejecución ya está aprobada, no se permite reescribir. Sólo
@@ -173,6 +151,38 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
   // ≡ NULL (semánticamente equivalente y simplifica queries). Lo mismo
   // aplica a `evidenceUrl` cuando se preserva el previo inexistente.
   return db.transaction(async (tx) => {
+    // Exclusión mutua con los desvíos por celda (deviations.ts):
+    // `not_applicable`/`reprogrammed` retiraron o movieron el planificado de
+    // esta celda — registrar una ejecución sobre ella contradiría al desvío,
+    // así que se rechaza. Un `not_performed` activo, en cambio, describía "no
+    // se hizo" hasta ahora: si llega una ejecución con cantidad > 0, el hecho
+    // ocurrió después de todo y el desvío deja de ser cierto — se retira solo,
+    // más abajo, en esta misma transacción.
+    //
+    // TOCTOU: esta lectura vive DENTRO de la transacción y detrás del mismo
+    // advisory lock por celda que toma `recordPdtpDeviation`. Leerla afuera
+    // dejaba pasar dos operaciones concurrentes y la celda terminaba con
+    // ejecución aprobada Y desvío activo. El `FOR UPDATE` retiene la fila de
+    // desvío mientras esta transacción decide; el advisory lock cubre el caso
+    // que el `FOR UPDATE` no puede —que el desvío todavía no exista— y es lo
+    // que hace de la lectura una condición de escritura, igual que
+    // `setWhere: ne(status, 'approved')` más abajo lo es para la aprobación.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${pdtpCellLockKey(data.activityId, data.worksiteId, data.year, data.month, data.week)}))`)
+    const [activeDeviation] = await tx.select({
+      id: pdtpExecutionDeviations.id,
+      kind: pdtpExecutionDeviations.kind,
+    }).from(pdtpExecutionDeviations).where(and(
+      eq(pdtpExecutionDeviations.activityId, data.activityId),
+      eq(pdtpExecutionDeviations.worksiteId, data.worksiteId),
+      eq(pdtpExecutionDeviations.year, data.year),
+      eq(pdtpExecutionDeviations.month, data.month),
+      eq(pdtpExecutionDeviations.week, data.week),
+      eq(pdtpExecutionDeviations.status, "active"),
+    )).limit(1).for("update")
+    if (activeDeviation && (activeDeviation.kind === "not_applicable" || activeDeviation.kind === "reprogrammed")) {
+      throw new Error("Esta celda tiene un desvío activo (no aplicable o reprogramado) y no admite ejecuciones.")
+    }
+
     const [row] = await tx.insert(pdtpExecutions).values({
       id, activityId: data.activityId, worksiteId: data.worksiteId, year: data.year, month: data.month,
       week: data.week, executedQuantity: data.executedQuantity, status: "submitted",

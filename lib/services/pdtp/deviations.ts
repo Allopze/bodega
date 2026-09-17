@@ -24,7 +24,7 @@
  * por faena. Su traza vive en `pdtp_change_log`, sección `deviation:{n}`.
  */
 
-import { and, desc, eq, inArray, isNull } from "drizzle-orm"
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm"
 import { db } from "@/db"
 import {
   pdtpActivities,
@@ -37,12 +37,13 @@ import {
   type PdtpExecutionDeviation,
 } from "@/db/schema"
 import { nanoid } from "@/lib/id"
-import { pdtpDeviationSchema } from "@/lib/validation/prevention"
+import { pdtpDeviationSchema, pdtpDeviationWithdrawSchema } from "@/lib/validation/prevention"
 import {
   addPdtpChangeLogEntry,
   assertWorksiteAccess,
   isActivePdtpWorksite,
   isUniqueViolation,
+  pdtpCellLockKey,
   type WorksiteScope,
 } from "./helpers"
 import { assertPdtpWorksiteCanOperateProgram } from "./worksites"
@@ -53,7 +54,9 @@ import { deriveScheduleHorizon } from "./recurrence"
 
 export type PdtpDeviationKind = "not_performed" | "not_applicable" | "reprogrammed"
 
-const DEVIATION_LABELS: Record<PdtpDeviationKind, string> = {
+/** Etiqueta legible de cada tipo, para motivos y changelog (también la usa
+ * `accreditation.ts` al retirar un desvío por evidencia). */
+export const PDTP_DEVIATION_LABELS: Record<PdtpDeviationKind, string> = {
   not_performed: "no realizado",
   not_applicable: "no aplicable",
   reprogrammed: "reprogramado",
@@ -68,9 +71,12 @@ const DEVIATION_LABELS: Record<PdtpDeviationKind, string> = {
  * ese período; la actividad no está excluida en esa faena; para
  * `not_applicable`/`reprogrammed`, la celda tiene planificado efectivo > 0
  * (override si existe, si no el catálogo); `not_performed` no se declara a
- * futuro; `reprogrammed` cae dentro del año y del horizonte del programa; y
- * ninguno de los dos primeros se declara sobre una celda que ya tiene una
- * ejecución registrada con cantidad > 0.
+ * futuro; el destino de un `reprogrammed` cae dentro del año y del horizonte
+ * del programa y pasa **las mismas** validaciones de período que el origen
+ * (no anterior a la activación, actividad vigente ahí); y ninguno de los dos
+ * primeros se declara sobre una celda que ya tiene una ejecución registrada
+ * con cantidad > 0 —esto último dentro de la transacción y detrás del
+ * advisory lock por celda, ver `pdtpCellLockKey`.
  *
  * La unicidad de un desvío activo por celda la impone el índice parcial de
  * `pdtp_execution_deviations` (WHERE status = 'active'); acá sólo se traduce
@@ -141,7 +147,10 @@ export async function recordPdtpDeviation(
     }
   }
 
-  if (data.kind === "not_applicable" || data.kind === "reprogrammed") {
+  // `not_applicable` y `reprogrammed` transforman el planificado, así que son
+  // los dos que no pueden convivir con una ejecución en la misma celda.
+  const requiresCellExclusivity = data.kind === "not_applicable" || data.kind === "reprogrammed"
+  if (requiresCellExclusivity) {
     const [scheduleRows, overrideRows] = await Promise.all([
       db.select().from(pdtpActivitySchedule).where(and(
         eq(pdtpActivitySchedule.activityId, data.activityId),
@@ -157,26 +166,30 @@ export async function recordPdtpDeviation(
     }
 
     if (data.kind === "reprogrammed") {
+      // El horizonte acota los MESES (un programa de período parcial no cubre
+      // el año completo). No se compara la semana contra
+      // `horizon.weeksPerMonth`: `deriveScheduleHorizon` se invoca con su
+      // valor por defecto (4) y Zod ya acota `targetWeek` a 1–4, así que esa
+      // comparación nunca podía ser falsa — era una validación aparente.
       const horizon = deriveScheduleHorizon(program)
-      if (!horizon.months.includes(data.targetMonth!) || data.targetWeek! > horizon.weeksPerMonth) {
+      if (!horizon.months.includes(data.targetMonth!)) {
         throw new Error("El destino de la reprogramación debe caer dentro del año y del horizonte del programa.")
       }
-    }
-
-    const [conflictingExecution] = await db.select({
-      id: pdtpExecutions.id,
-      executedQuantity: pdtpExecutions.executedQuantity,
-    }).from(pdtpExecutions).where(and(
-      eq(pdtpExecutions.activityId, data.activityId),
-      eq(pdtpExecutions.worksiteId, data.worksiteId),
-      eq(pdtpExecutions.year, data.year),
-      eq(pdtpExecutions.month, data.month),
-      eq(pdtpExecutions.week, data.week),
-      isNull(pdtpExecutions.obligationId),
-      inArray(pdtpExecutions.status, ["submitted", "approved"]),
-    )).limit(1)
-    if (conflictingExecution && conflictingExecution.executedQuantity > 0) {
-      throw new Error("Ya hay una ejecución registrada en esta celda; no se puede declarar no aplicable ni reprogramar.")
+      // El destino pasa LAS MISMAS validaciones de período que el origen. Sin
+      // esto, reprogramar hacia atrás (antes de la activación) o hacia un
+      // período donde la actividad ya está retirada pasaba todas las
+      // validaciones y después cada consumidor —`filterPdtpRowsFromActivation`
+      // en compliance/sheets/re36/management-report/constancias, y el filtro de
+      // vigencia de `loadProgramScheduleAndExecutions`— borraba la celda
+      // destino: el desvío decía "lo moví" y en realidad evaporaba planificado
+      // del denominador.
+      const target = { year: data.year, month: data.targetMonth!, week: data.targetWeek! }
+      if (!isPdtpPeriodOnOrAfterActivation(target, program.activatedAt)) {
+        throw new Error("El destino de la reprogramación es anterior a la activación del programa: esa celda no se exige y el planificado desaparecería del cálculo.")
+      }
+      if (!isPdtpActivityEffectiveForPeriod(activity, target.year, target.month, target.week)) {
+        throw new Error("La actividad está retirada para el período de destino de la reprogramación: no se puede mover planificado a una celda que ya no se exige.")
+      }
     }
   }
 
@@ -184,6 +197,33 @@ export async function recordPdtpDeviation(
   const id = nanoid()
   try {
     return await db.transaction(async (tx) => {
+      // TOCTOU con `markPdtpExecution`: la ejecución conflictiva se lee acá,
+      // DENTRO de la transacción que inserta el desvío y detrás del mismo
+      // advisory lock por celda que toma executions.ts, no antes y por fuera.
+      // El `FOR UPDATE` bloquea la fila de ejecución si ya existe; el advisory
+      // lock cubre el caso que el `FOR UPDATE` no puede cubrir —que la fila aún
+      // no exista— y es lo que convierte la lectura en condición de escritura:
+      // ninguna de las dos operaciones puede entrar mientras la otra está en
+      // vuelo sobre la misma celda.
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${pdtpCellLockKey(data.activityId, data.worksiteId, data.year, data.month, data.week)}))`)
+      if (requiresCellExclusivity) {
+        const [conflictingExecution] = await tx.select({
+          id: pdtpExecutions.id,
+          executedQuantity: pdtpExecutions.executedQuantity,
+        }).from(pdtpExecutions).where(and(
+          eq(pdtpExecutions.activityId, data.activityId),
+          eq(pdtpExecutions.worksiteId, data.worksiteId),
+          eq(pdtpExecutions.year, data.year),
+          eq(pdtpExecutions.month, data.month),
+          eq(pdtpExecutions.week, data.week),
+          isNull(pdtpExecutions.obligationId),
+          inArray(pdtpExecutions.status, ["submitted", "approved"]),
+        )).limit(1).for("update")
+        if (conflictingExecution && conflictingExecution.executedQuantity > 0) {
+          throw new Error("Ya hay una ejecución registrada en esta celda; no se puede declarar no aplicable ni reprogramar.")
+        }
+      }
+
       const [row] = await tx.insert(pdtpExecutionDeviations).values({
         id,
         activityId: data.activityId,
@@ -208,7 +248,7 @@ export async function recordPdtpDeviation(
           worksiteId: data.worksiteId, year: data.year, month: data.month, week: data.week,
           kind: data.kind, reason: data.reason, targetMonth: row.targetMonth, targetWeek: row.targetWeek,
         },
-        `Desvío "${DEVIATION_LABELS[data.kind]}" registrado para actividad ${activity.n}. Motivo: ${data.reason}`,
+        `Desvío "${PDTP_DEVIATION_LABELS[data.kind]}" registrado para actividad ${activity.n}. Motivo: ${data.reason}`,
         tx,
       )
       return row
@@ -222,21 +262,24 @@ export async function recordPdtpDeviation(
 }
 
 /**
- * Retira un desvío activo. Requiere motivo (mismo mínimo que el resto del
- * módulo, ≥10 caracteres — reflejado en el CHECK
+ * Retira un desvío activo. La entrada se valida con
+ * `pdtpDeviationWithdrawSchema` (motivo ≥10 caracteres, mismo mínimo que el
+ * resto del módulo — reflejado en el CHECK
  * `pdtp_execution_deviations_withdrawn_check`).
  */
 export async function withdrawPdtpDeviation(
-  input: { deviationId: string; reason: string },
+  input: unknown,
   userId: string,
   scope: WorksiteScope,
 ): Promise<void> {
-  const reason = input.reason?.trim() ?? ""
-  if (reason.length < 10) throw new Error("El motivo del retiro debe tener al menos 10 caracteres.")
+  // La regla del motivo (≥10 caracteres, recortado) vive en el schema, no
+  // duplicada acá: `pdtpDeviationWithdrawSchema` ya la declara y era código
+  // muerto mientras esta función la validaba a mano.
+  const { deviationId, reason } = pdtpDeviationWithdrawSchema.parse(input)
 
   await db.transaction(async (tx) => {
     const [deviation] = await tx.select().from(pdtpExecutionDeviations)
-      .where(eq(pdtpExecutionDeviations.id, input.deviationId)).limit(1)
+      .where(eq(pdtpExecutionDeviations.id, deviationId)).limit(1)
     if (!deviation) throw new Error("Desvío PDTP no encontrado.")
     assertWorksiteAccess(deviation.worksiteId, scope)
     if (deviation.status !== "active") throw new Error("El desvío ya fue retirado.")
@@ -255,7 +298,7 @@ export async function withdrawPdtpDeviation(
       withdrawnAt: now,
       withdrawReason: reason,
     }).where(and(
-      eq(pdtpExecutionDeviations.id, input.deviationId),
+      eq(pdtpExecutionDeviations.id, deviationId),
       eq(pdtpExecutionDeviations.status, "active"),
     )).returning()
     if (!updated) throw new Error("El desvío cambió de estado antes de poder retirarse. Actualiza la página e inténtalo nuevamente.")
@@ -299,10 +342,55 @@ export async function loadPdtpDeviations(
  *   semana); el destino queda marcado con `sourceColumn: "deviation:<id>"`
  *   para poder rastrear que ese número no es el original del catálogo.
  * - `not_performed`: no toca ninguna celda.
+ *
+ * ## Semántica: una celda descartada no vuelve
+ *
+ * Un destino de reprogramación puede caer sobre una celda que ya fue sacada
+ * del denominador. La regla es que nada la reviva:
+ *
+ * - **Destino con `not_applicable` activo**: la cantidad movida se pierde.
+ *   Alguien declaró que esa semana no se exige; devolverla al denominador con
+ *   el planificado de otra celda contradiría esa declaración. El origen
+ *   igualmente desaparece (el desvío se aplicó: el trabajo dejó de exigirse
+ *   ahí).
+ * - **Destino que es el origen de otro `reprogrammed`**: la cantidad sigue la
+ *   cadena hasta el destino final, para no quedar depositada en una celda que
+ *   el propio cálculo vacía un paso más adelante.
+ * - **Cadena con ciclo**: no hay destino final que pueda exigir la cantidad,
+ *   así que se descarta y todos los orígenes del ciclo salen igual.
+ *
+ * ## Destino no vigente (`isCellEffective`)
+ *
+ * `recordPdtpDeviation` ya no deja registrar una reprogramación hacia un
+ * período donde la actividad está retirada o anterior a la activación del
+ * programa. Pero un retiro declarado **después** del desvío puede dejar un
+ * `reprogrammed` histórico apuntando a una celda que el filtro de vigencia de
+ * `loadProgramScheduleAndExecutions` va a borrar: aplicarlo haría desaparecer
+ * planificado legítimo del denominador sin dejar rastro.
+ *
+ * Por eso, cuando el caller entrega `isCellEffective`, un destino final no
+ * vigente **aborta el desvío**: no se aplica y el origen conserva su
+ * planificado donde estaba (sigue exigiéndose y, si no se hizo, cuenta como
+ * incumplimiento). Es la opción conservadora —no perder planificado en
+ * silencio— frente a la alternativa de dejarlo evaporarse. Es distinto del
+ * caso `not_applicable`: ahí hay una declaración explícita de que la celda no
+ * se exige; acá sólo hay un retiro posterior que invalidó el destino.
  */
 export function applyDeviationsToSchedule<
-  T extends { activityId: string; month: number; week: number; plannedQuantity: number; sourceColumn: string },
->(rows: T[], deviations: PdtpExecutionDeviation[]): T[] {
+  T extends {
+    id: string
+    activityId: string
+    year: number
+    month: number
+    week: number
+    plannedQuantity: number
+    sourceColumn: string
+  },
+>(
+  rows: T[],
+  deviations: PdtpExecutionDeviation[],
+  isCellEffective?: (activityId: string, month: number, week: number) => boolean,
+): T[] {
   const active = deviations.filter((d) => d.status === "active")
   if (active.length === 0) return rows
 
@@ -321,37 +409,84 @@ export function applyDeviationsToSchedule<
   const rowByKey = new Map<string, T>()
   for (const row of rows) rowByKey.set(cellKey(row.activityId, row.month, row.week), row)
 
+  /**
+   * Destino final de la cadena que arranca en `originKey`:
+   * - `move`: la cantidad se deposita ahí;
+   * - `discard`: se pierde, pero el origen igual sale del denominador;
+   * - `abort`: el desvío no se aplica y el origen conserva su planificado.
+   */
+  type Resolution =
+    | { kind: "move"; targetKey: string; activityId: string; month: number; week: number }
+    | { kind: "discard" }
+    | { kind: "abort" }
+
+  const resolveFinalTarget = (originKey: string): Resolution => {
+    const visited = new Set<string>([originKey])
+    let deviation = reprogrammedByOrigin.get(originKey)!
+    for (;;) {
+      const month = deviation.targetMonth!
+      const week = deviation.targetWeek!
+      const targetKey = cellKey(deviation.activityId, month, week)
+      if (isCellEffective && !isCellEffective(deviation.activityId, month, week)) return { kind: "abort" }
+      if (notApplicableKeys.has(targetKey)) return { kind: "discard" }
+      const next = reprogrammedByOrigin.get(targetKey)
+      if (!next) return { kind: "move", targetKey, activityId: deviation.activityId, month, week }
+      if (visited.has(targetKey)) return { kind: "discard" }
+      visited.add(targetKey)
+      deviation = next
+    }
+  }
+
   type Addition = { quantity: number; deviationIds: string[]; activityId: string; month: number; week: number }
   const additionsByTargetKey = new Map<string, Addition>()
+  const consumedOriginKeys = new Set<string>()
   for (const [originKey, deviation] of reprogrammedByOrigin) {
+    const resolution = resolveFinalTarget(originKey)
+    if (resolution.kind === "abort") continue
+    // El origen sale del denominador aunque la cantidad se descarte: el
+    // desvío se aplicó, esa semana ya no exige nada.
+    consumedOriginKeys.add(originKey)
+    if (resolution.kind === "discard") continue
     const originRow = rowByKey.get(originKey)
     // Sin fila de origen ya no hay cantidad que mover (p. ej. un override
-    // posterior la dejó en 0 y la fila desapareció del set efectivo).
+    // posterior la dejó en 0 y la fila desapareció del set efectivo, o el
+    // filtro de vigencia ya borró la celda por retiro de la actividad).
     if (!originRow) continue
-    const targetKey = cellKey(deviation.activityId, deviation.targetMonth!, deviation.targetWeek!)
-    const existing = additionsByTargetKey.get(targetKey)
+    const existing = additionsByTargetKey.get(resolution.targetKey)
     if (existing) {
       existing.quantity += originRow.plannedQuantity
       existing.deviationIds.push(deviation.id)
     } else {
-      additionsByTargetKey.set(targetKey, {
+      additionsByTargetKey.set(resolution.targetKey, {
         quantity: originRow.plannedQuantity,
+        // Se traza el desvío que sacó la cantidad de su celda original; los
+        // tramos intermedios de una cadena quedan trazados por los suyos.
         deviationIds: [deviation.id],
-        activityId: deviation.activityId,
-        month: deviation.targetMonth!,
-        week: deviation.targetWeek!,
+        activityId: resolution.activityId,
+        month: resolution.month,
+        week: resolution.week,
       })
     }
   }
 
-  const consumedOriginKeys = new Set(reprogrammedByOrigin.keys())
   const producedTargetKeys = new Set<string>()
   const result: T[] = []
 
   for (const row of rows) {
     const key = cellKey(row.activityId, row.month, row.week)
-    if (notApplicableKeys.has(key)) continue // elimina la celda: sale del denominador
-    if (consumedOriginKeys.has(key)) continue // el planificado se movió por completo al destino
+    // Marcar como "ya producida" toda celda que este bucle descarta es lo que
+    // impide que el bucle final la recree con la cantidad movida: una celda
+    // fuera del denominador no vuelve por la puerta de atrás. Con la
+    // resolución de cadenas de arriba ningún destino final cae acá, pero la
+    // marca mantiene la invariante aunque esa resolución cambie.
+    if (notApplicableKeys.has(key)) {
+      producedTargetKeys.add(key) // elimina la celda: sale del denominador
+      continue
+    }
+    if (consumedOriginKeys.has(key)) {
+      producedTargetKeys.add(key) // el planificado se movió por completo al destino
+      continue
+    }
     const addition = additionsByTargetKey.get(key)
     if (addition) {
       producedTargetKeys.add(key)
@@ -366,14 +501,18 @@ export function applyDeviationsToSchedule<
   }
 
   // Destinos que no tenían fila propia: se crean clonando cualquier fila de
-  // la misma actividad para conservar el resto de sus columnas (id, year…),
-  // que esta función no conoce por ser genérica sobre T.
+  // la misma actividad para conservar el resto de sus columnas (year…), que
+  // esta función no conoce por ser genérica sobre T. El `id` NO se clona: se
+  // sintetiza con el mismo formato determinista por celda que usa
+  // `applyOverridesToSchedule` (overrides.ts), porque clonarlo devolvía dos
+  // filas distintas con el mismo id en un mismo set.
   for (const [targetKey, addition] of additionsByTargetKey) {
     if (producedTargetKeys.has(targetKey)) continue
     const template = rows.find((row) => row.activityId === addition.activityId)
     if (!template) continue
     result.push({
       ...template,
+      id: `${addition.activityId}-s-${template.year}-${String(addition.month).padStart(2, "0")}-${addition.week}`,
       month: addition.month,
       week: addition.week,
       plannedQuantity: addition.quantity,
