@@ -12,6 +12,8 @@ export interface PdtpActivitiesQuery extends PdtpListQuery {
   semana?: number
   /** Id de `pdtp_objectives`. Sin objetivos en el programa, este filtro no aplica. */
   objetivo?: string
+  /** `"yo"`: sólo las actividades asignadas nominalmente a quien mira. */
+  asignado?: string
 }
 
 export function resolvePdtpYear(value: string | undefined, currentYear = new Date().getFullYear()): number {
@@ -39,6 +41,7 @@ export function buildPdtpActivitiesHref(query: PdtpActivitiesQuery): string {
   if (query.mes) params.set("mes", String(query.mes))
   if (query.semana) params.set("semana", String(query.semana))
   if (query.objetivo) params.set("objetivo", query.objetivo)
+  if (query.asignado) params.set("asignado", query.asignado)
   return `/prevencion/pdtp/actividades?${params}`
 }
 

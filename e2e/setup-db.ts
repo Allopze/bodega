@@ -113,6 +113,12 @@ async function main() {
     { roleId: "rol-jefe-terreno-e2e", permissionId: "p-prev-insp-view" },
     { roleId: "rol-jefe-terreno-e2e", permissionId: "p-prev-insp-execute" },
     { roleId: "rol-jefe-terreno-e2e", permissionId: "p-prev-insp-ingest" },
+    // Fase 5: el jefe de terreno es el destinatario natural de una asignación
+    // nominal del programa preventivo, y sin estos dos permisos su cola de
+    // pendientes no trae ninguna actividad del PDTP — que es justo lo que
+    // e2e/pdtp-asignacion-nominal.spec.ts tiene que ver aparecer.
+    { roleId: "rol-jefe-terreno-e2e", permissionId: "p-prev-pdtp-view" },
+    { roleId: "rol-jefe-terreno-e2e", permissionId: "p-prev-pdtp-execute" },
   ])
   await db.insert(schema.users).values({
     id: "user-jefe-terreno-e2e",
@@ -127,6 +133,27 @@ async function main() {
   await db.insert(schema.userRoles).values({ userId: "user-jefe-terreno-e2e", roleId: "rol-jefe-terreno-e2e" })
   await db.insert(schema.worksiteUsers).values({
     userId: "user-jefe-terreno-e2e",
+    worksiteId: "ws-e2e",
+    isPrimary: true,
+  })
+  /* Segundo jefe de terreno de la MISMA faena (Fase 5). Dos personas con el
+   * mismo cargo es la situación que hace necesaria la asignación nominal: sin
+   * ella la misma fila le aparece a los dos en /pendientes y ninguno sabe si
+   * es suya. `e2e/pdtp-asignacion-nominal.spec.ts` le asigna la actividad a
+   * este usuario y comprueba que el otro deja de verla. */
+  await db.insert(schema.users).values({
+    id: "user-jt-pdtp-e2e",
+    name: "JT Asignado E2E",
+    email: "jt@e2e.chome.cl",
+    hashedPassword: password,
+    avatarColor: "95",
+    isActive: true,
+    createdAt: now,
+    updatedAt: now,
+  })
+  await db.insert(schema.userRoles).values({ userId: "user-jt-pdtp-e2e", roleId: "rol-jefe-terreno-e2e" })
+  await db.insert(schema.worksiteUsers).values({
+    userId: "user-jt-pdtp-e2e",
     worksiteId: "ws-e2e",
     isPrimary: true,
   })

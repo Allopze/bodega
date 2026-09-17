@@ -38,6 +38,7 @@ export async function GET(request: NextRequest) {
           requestedWorksiteId: worksiteId ?? requestedWorksiteId ?? null,
           requestedYear: url.searchParams.get("year"),
           sheetCode: normalizeSheetCode(url.searchParams.get("hoja")),
+          porPersona: url.searchParams.get("por_persona"),
         },
         reason,
       })
@@ -117,14 +118,19 @@ export async function GET(request: NextRequest) {
       await auditOutcome("invalid", "Exportación RE-36 rechazada porque no existe un programa para el año solicitado", worksiteId)
       return NextResponse.json({ error: "No existe un programa PDTP para ese año." }, { status: 400 })
     }
-    const doc = await buildPdtpRe36Document({ programId: resolvedProgramId, worksiteId, scope: worksiteIds })
+    // `?por_persona=1`: la variante nominalizada de la hoja POR CARGO del Excel
+    // original — una pestaña por persona con asignación nominal vigente en la
+    // faena. Sin asignaciones, `buildPdtpRe36Document` devuelve el documento
+    // normal en vez de un libro sin pestañas.
+    const porPersona = isTruthyFlag(url.searchParams.get("por_persona"))
+    const doc = await buildPdtpRe36Document({ programId: resolvedProgramId, worksiteId, scope: worksiteIds, porPersona })
     const xlsx = await renderPdtpRe36Buffer(doc)
     // El nombre usa el año y la versión del programa resuelto (`doc.program`)
     // y el código de faena del registro resuelto (`doc.worksite.code`), no
     // el `?year=`/`?faena=` de la query: mismo motivo que `buildPdtpExport`
     // (ver comentario de `filenameBase` en `lib/services/pdtp/sheets.ts`) —
     // un `?year=` legado o un id de faena no siempre coincide con lo resuelto.
-    const filenameBase = `RE-36-PDTP-${doc.program.year}-${doc.worksite.code}-v${doc.program.version}`
+    const filenameBase = `RE-36-PDTP-${porPersona ? "POR-PERSONA-" : ""}${doc.program.year}-${doc.worksite.code}-v${doc.program.version}`
     await auditOutcome("success", `Exportación RE-36 de programa preventivo acotada por faena (${doc.program.year}, ${doc.sheets.length} hoja(s))`, worksiteId)
 
     return new NextResponse(xlsx, {
@@ -160,6 +166,12 @@ function normalizeSheetCode(value: string | null): string {
  * tarea. Un valor desconocido no revienta la ruta: cae al default, igual que
  * `normalizeSheetCode` con un código inexistente.
  */
+/** `1`, `true` o `si` cuentan como sí; cualquier otra cosa (o nada) es no. */
+function isTruthyFlag(value: string | null): boolean {
+  const normalized = value?.trim().toLowerCase()
+  return normalized === "1" || normalized === "true" || normalized === "si"
+}
+
 function normalizeFormato(value: string | null): "re36" | "plano" {
   return value?.trim().toLowerCase() === "plano" ? "plano" : "re36"
 }

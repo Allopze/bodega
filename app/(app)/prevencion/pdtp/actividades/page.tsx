@@ -11,12 +11,14 @@ import {
   listPdtpProgramSheets,
   listPdtpPrograms,
   listPdtpObjectives,
+  listPdtpActivityAssignees,
   resolveProgramWorksiteIds,
   type PdtpAggregatedSheetView,
 } from "@/lib/services/prevention-pdtp"
 import { listScopedWorksites } from "@/lib/services/ppa"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
 import type { PdtpActivityStatusFilter } from "@/lib/services/pdtp/period"
+import { todayInChile } from "@/lib/utils"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
@@ -28,7 +30,7 @@ import { buildPdtpActivitiesHref, resolvePdtpYear, resolveSelectedWorksiteId } f
 export const metadata: Metadata = { title: "Actividades del programa preventivo" }
 
 type ActivityViewerPageProps = {
-  searchParams: Promise<{ programa?: string | string[]; hoja?: string | string[]; faena?: string | string[]; vista?: string | string[]; anio?: string | string[]; estado?: string | string[]; mes?: string | string[]; semana?: string | string[]; objetivo?: string | string[] }>
+  searchParams: Promise<{ programa?: string | string[]; hoja?: string | string[]; faena?: string | string[]; vista?: string | string[]; anio?: string | string[]; estado?: string | string[]; mes?: string | string[]; semana?: string | string[]; objetivo?: string | string[]; asignado?: string | string[] }>
 }
 
 const VIEWER_HREF = "/prevencion/pdtp/actividades"
@@ -88,6 +90,22 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
     ? resolveSelectedWorksiteId(requestedWorksite, worksites)
     : (!isGlobalViewer && worksites.length === 1 ? worksites[0]!.id : undefined)
 
+  // Asignación nominal (Fase 5). Una sola consulta por faena seleccionada: sin
+  // faena no hay a quién nombrar —la vista agregada mezcla faenas y el mismo
+  // cargo puede estar en manos distintas en cada una—.
+  const today = todayInChile()
+  const assigneeRows = selectedWorksiteId
+    ? await listPdtpActivityAssignees(program.id, selectedWorksiteId, { asOf: today })
+    : []
+  const assigneesByActivity = assigneeRows.reduce<Record<string, Array<{ userId: string; name: string }>>>((acc, row) => {
+    const list = acc[row.activityId] ?? []
+    list.push({ userId: row.userId, name: row.userName })
+    acc[row.activityId] = list
+    return acc
+  }, {})
+  // `?asignado=yo` sólo tiene sentido con faena: es "lo mío en esta faena".
+  const assigneeFilterUserId = selectedWorksiteId && one(query.asignado) === "yo" ? session.user.id : undefined
+
   const sheetsRaw = await listPdtpProgramSheets(program.id)
   const sheets = [...new Map([...sheetsRaw].sort((a, b) => (a.programId ? 1 : -1) - (b.programId ? 1 : -1)).map((sheet) => [sheet.code, sheet] as const)).values()]
   const sheetCode = sheets.some((sheet) => sheet.code === one(query.hoja))
@@ -119,6 +137,7 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
     mes: currentPeriod.month,
     semana: currentPeriod.week,
     objetivo: objectiveFilter,
+    asignado: assigneeFilterUserId ? "yo" : undefined,
   })
   const editProgramHref = `/prevencion/pdtp/${program.id}/editar?volver=${encodeURIComponent(activityViewerHref)}`
   const canRepairProgram = canManageProgram && program.status === "draft"
@@ -163,6 +182,27 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
               week={currentPeriod.week}
             />
           )}
+          {/* "Sólo lo mío": la vista sigue mostrando TODO el programa —esa es la
+              diferencia con Pendientes— pero deja acotarlo a lo que uno tiene a
+              su nombre en esta faena sin cambiar de pantalla. */}
+          {selectedWorksiteId && assigneeRows.length > 0 && (
+            <Button asChild size="sm" variant={assigneeFilterUserId ? "primary" : "secondary"}>
+              <Link href={buildPdtpActivitiesHref({
+                programa: program.id,
+                hoja: sheetCode,
+                faena: selectedWorksiteId,
+                vista: viewMode,
+                anio: String(year),
+                estado: statusFilter,
+                mes: currentPeriod.month,
+                semana: currentPeriod.week,
+                objetivo: objectiveFilter,
+                asignado: assigneeFilterUserId ? undefined : "yo",
+              })}>
+                {assigneeFilterUserId ? "Ver todas las actividades" : "Sólo las asignadas a mí"}
+              </Link>
+            </Button>
+          )}
           {/* Fila propia en móvil: con `ml-auto` a secas el toggle quedaba
               huérfano bajo los selects (UI/UX 2026-08-05, MV-3). */}
           <div className="w-full lg:ml-auto lg:w-auto"><PdtpViewToggle current={viewMode} sheetCode={sheetCode} worksiteId={selectedWorksiteId} programId={program.id} hrefBase={VIEWER_HREF} year={year} status={statusFilter} month={currentPeriod.month} week={currentPeriod.week} objetivo={objectiveFilter} /></div>
@@ -181,7 +221,7 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
                 </details>
               </>
             )}
-            <PdtpSheetTable view={view} worksiteId={selectedWorksiteId} canExecute={Boolean(selectedWorksiteId) && can(session, "prevention:pdtp:execute")} viewMode={viewMode} currentPeriod={currentPeriod} sheetCode={sheetCode} initialStatusFilter={statusFilter} aggregateWorksiteNames={Object.fromEntries(worksites.map((worksite) => [worksite.id, worksite.name]))} objectives={objectives} objectiveFilter={objectiveFilter} />
+            <PdtpSheetTable view={view} worksiteId={selectedWorksiteId} canExecute={Boolean(selectedWorksiteId) && can(session, "prevention:pdtp:execute")} viewMode={viewMode} currentPeriod={currentPeriod} sheetCode={sheetCode} initialStatusFilter={statusFilter} aggregateWorksiteNames={Object.fromEntries(worksites.map((worksite) => [worksite.id, worksite.name]))} objectives={objectives} objectiveFilter={objectiveFilter} assigneesByActivity={assigneesByActivity} canManageAssignees={Boolean(selectedWorksiteId) && can(session, "prevention:pdtp:assignee:manage")} assigneeFilterUserId={assigneeFilterUserId} today={today} />
           </>
         )}
       </div>

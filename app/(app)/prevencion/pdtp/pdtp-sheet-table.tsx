@@ -21,6 +21,7 @@ import { PdtpExecutionForm } from "./pdtp-execution-form"
 import { PdtpApprovalButtons } from "./pdtp-approval-buttons"
 import { PdtpOverrideForm } from "./pdtp-override-form"
 import { PdtpDeviationForm, PdtpDeviationList } from "./pdtp-deviation-form"
+import { PdtpAssigneeChip, PdtpAssigneePicker } from "./pdtp-assignee-picker"
 import { PdtpEvidenceThumbs } from "./pdtp-evidence-thumbs"
 import {
   PdtpStatusBadge,
@@ -175,9 +176,23 @@ type PdtpSheetTableProps = {
   objectives?: ObjectiveSummary[]
   /** Id de objetivo seleccionado por `?objetivo=` en el visor transversal. */
   objectiveFilter?: string
+  /**
+   * Fase 5 — asignación nominal vigente hoy en la faena seleccionada, por
+   * actividad. Esta vista muestra TODAS las actividades (a diferencia de
+   * Pendientes, que sólo muestra lo propio): el chip dice de quién es cada una.
+   */
+  assigneesByActivity?: Record<string, Array<{ userId: string; name: string }>>
+  /** `prevention:pdtp:assignee:manage`: habilita el menú "Asignar a…". */
+  canManageAssignees?: boolean
+  /** Con `?asignado=yo`, el id del usuario por el que se filtra la tabla. */
+  assigneeFilterUserId?: string
+  /** Día chileno de hoy (`AAAA-MM-DD`), resuelto en el servidor. */
+  today?: string
 }
 
 const EMPTY_OBJECTIVES: ObjectiveSummary[] = []
+const EMPTY_ASSIGNEES_BY_ACTIVITY: Record<string, Array<{ userId: string; name: string }>> = {}
+const EMPTY_ASSIGNEE_LIST: Array<{ userId: string; name: string }> = []
 
 export function PdtpSheetTable({
   view,
@@ -193,8 +208,12 @@ export function PdtpSheetTable({
   aggregateWorksiteNames = {},
   objectives = EMPTY_OBJECTIVES,
   objectiveFilter,
+  assigneesByActivity = EMPTY_ASSIGNEES_BY_ACTIVITY,
+  canManageAssignees = false,
+  assigneeFilterUserId,
+  today = "",
 }: PdtpSheetTableProps) {
-  const canOperate = canExecute || canManageProgram
+  const canOperate = canExecute || canManageProgram || canManageAssignees
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -213,9 +232,17 @@ export function PdtpSheetTable({
   // El filtro por objetivo se aplica antes de derivar semana/anual: así el
   // conteo por estado, la paginación y el estado vacío de "sin actividades
   // esta semana" ya reflejan sólo el objetivo elegido.
-  const objectiveScopedActivities = objectiveFilter
+  const objectiveFilteredActivities = objectiveFilter
     ? view.activities.filter((activity) => activity.objectiveId === objectiveFilter)
     : view.activities
+
+  // `?asignado=yo`: la vista sigue pudiendo mostrarlo todo, pero deja verlo
+  // acotado a lo propio sin tener que ir a Pendientes.
+  const objectiveScopedActivities = assigneeFilterUserId
+    ? objectiveFilteredActivities.filter((activity) =>
+        (assigneesByActivity[activity.id] ?? EMPTY_ASSIGNEE_LIST).some((person) => person.userId === assigneeFilterUserId),
+      )
+    : objectiveFilteredActivities
 
   const weeklyActivities = objectiveScopedActivities.filter(
     (activity) => plannedQuantityForCurrentWeek(activity) > 0,
@@ -411,6 +438,7 @@ export function PdtpSheetTable({
                           </TableCell>
                           <TableCell className={rowPy}>
                             <PdtpResponsibleChips display={activity.responsibleDisplay} />
+                            <PdtpAssigneeChip names={(assigneesByActivity[activity.id] ?? EMPTY_ASSIGNEE_LIST).map((person) => person.name)} />
                           </TableCell>
                           <TableCell className={rowPy}>
                             <PdtpStatusBadge status={status} overdueMonths={overdueMonths} notPerformedReasons={notPerformedReasonsForMonth(activity, currentPeriod.month)} />
@@ -528,6 +556,7 @@ export function PdtpSheetTable({
                                 <div className="mt-1.5 space-y-1 border-l border-[var(--color-border)] pl-2">
                                   <p>{activity.program}</p>
                                   <PdtpResponsibleChips display={activity.responsibleDisplay} />
+                                  <PdtpAssigneeChip names={(assigneesByActivity[activity.id] ?? EMPTY_ASSIGNEE_LIST).map((person) => person.name)} />
                                   {!worksiteId && <PdtpAggregateBreakdown bare summaries={aggregateSummaries(activity) ?? []} worksiteNames={aggregateWorksiteNames} />}
                                 </div>
                               </details>
@@ -614,6 +643,17 @@ export function PdtpSheetTable({
                                   defaultWeek={currentPeriod.week}
                                   globalQuantity={activity.monthlyPlanned[currentPeriod.month - 1] ?? 0}
                                   hoja={sheetCode}
+                                />}
+                                {/* Asignar es por faena: sin faena seleccionada
+                                    no hay a quién nombrar, y la vista anual
+                                    agregada no distingue de cuál se trata. */}
+                                {canManageAssignees && <PdtpAssigneePicker
+                                  activityId={activity.id}
+                                  activityN={activity.n}
+                                  activityName={activity.activity}
+                                  worksiteId={worksiteId}
+                                  currentAssignees={assigneesByActivity[activity.id] ?? EMPTY_ASSIGNEE_LIST}
+                                  today={today}
                                 />}
                               </div>
                             </TableCell>

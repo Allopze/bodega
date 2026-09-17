@@ -352,6 +352,10 @@ function QueueCard({ item, today }: { item: OperationalWorkItem; today: string }
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <MetaBadge meta={{ label: `${item.blocked ? "Bloqueada · " : ""}${item.statusLabel}`, variant: item.blocked ? "danger" : "info" }} />
+        {/* Con dueño nominal, la fila no le aparece a nadie más de su cargo:
+            decirlo aquí es lo que distingue "me toca a mí" de "le toca a
+            cualquiera del equipo". */}
+        {item.assignee && <MetaBadge meta={{ label: `Asignada a ${item.assignee.name}`, variant: "outline" }} />}
         <span className={cn("text-[11px]", overdue ? overdueTone(daysLate) : "text-[var(--color-text-subtle)]")}>
           {item.sourceDueAt
             ? overdue
@@ -382,6 +386,9 @@ function QueueRow({ item, today }: { item: OperationalWorkItem; today: string })
       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{item.worksiteName}</td>
       <td className="px-3 py-2.5">
         <MetaBadge meta={{ label: `${item.blocked ? "Bloqueada · " : ""}${item.statusLabel}`, variant: item.blocked ? "danger" : "info" }} />
+        {item.assignee && (
+          <MetaBadge meta={{ label: `Asignada a ${item.assignee.name}`, variant: "outline" }} className="mt-1" />
+        )}
       </td>
       <td className="px-3 py-2.5 text-[var(--color-text-muted)]">
         {item.sourceDueAt

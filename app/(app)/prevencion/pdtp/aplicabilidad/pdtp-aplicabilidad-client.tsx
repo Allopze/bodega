@@ -30,16 +30,21 @@ export type AplicabilidadWorksite = {
 
 export type ExclusionsMap = Record<string, { reason: string; createdBy?: string }> // key: `${activityId}:${worksiteId}`
 export type ParamsMap = Record<string, { expectedSubjectCount: number | null; targetCoveragePercent: number | null }> // key: `${activityId}:${worksiteId}`
+/** Fase 5: nombres de los asignados nominales vigentes. key: `${activityId}:${worksiteId}` */
+export type AssigneesMap = Record<string, string[]>
 
 type Props = {
   activities: AplicabilidadActivity[]
   worksites: AplicabilidadWorksite[]
   exclusions: ExclusionsMap
   params: ParamsMap
+  assignees?: AssigneesMap
   canManage: boolean
 }
 
-export function PdtpAplicabilidadClient({ activities, worksites, exclusions, params, canManage }: Props) {
+const EMPTY_ASSIGNEES: AssigneesMap = {}
+
+export function PdtpAplicabilidadClient({ activities, worksites, exclusions, params, assignees = EMPTY_ASSIGNEES, canManage }: Props) {
   const router = useRouter()
   const [selectedWorksiteId, setSelectedWorksiteId] = useState<string>(worksites[0]?.id ?? "")
   const { pending, message, setMessage, run } = useOperation()
@@ -145,6 +150,7 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
               <TableHead className="w-[140px]">Modo / Indicador</TableHead>
               <TableHead className="w-[140px]">Estado Faena</TableHead>
               <TableHead className="w-[180px]">Parámetros (R1/R2)</TableHead>
+              <TableHead className="w-[160px]">Asignada a</TableHead>
               {canManage && <TableHead className="w-[120px] text-right">Acciones</TableHead>}
             </TableRow>
           </TableHeader>
@@ -198,6 +204,16 @@ export function PdtpAplicabilidadClient({ activities, worksites, exclusions, par
                     )}
                     {act.indicatorMode !== "coverage" && !param?.expectedSubjectCount && !param?.targetCoveragePercent && (
                       <span className="text-[var(--color-text-muted)]">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    {/* Quién la tiene a su nombre en esta faena. Sin nadie, la
+                        ven todos los del cargo responsable: es el comportamiento
+                        por defecto, no un dato faltante. */}
+                    {(assignees[key] ?? []).length > 0 ? (
+                      <span className="text-[var(--color-text)]">{(assignees[key] ?? []).join(", ")}</span>
+                    ) : (
+                      <span className="text-[var(--color-text-muted)]">Todo el cargo responsable</span>
                     )}
                   </TableCell>
                   {canManage && (

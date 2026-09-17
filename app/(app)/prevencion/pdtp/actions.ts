@@ -57,6 +57,11 @@ export {
 } from "./actions/deviations"
 
 export {
+  listPdtpAssigneeCandidatesAction,
+  setPdtpActivityAssigneesAction,
+} from "./actions/assignees"
+
+export {
   closePdtpPeriodAction,
   reopenPdtpPeriodAction,
   distributePdtpPeriodClosureAction,

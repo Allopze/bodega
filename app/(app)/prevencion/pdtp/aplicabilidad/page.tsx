@@ -3,11 +3,12 @@ import { redirect } from "next/navigation"
 import { requireAuth, can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { db } from "@/db"
-import { pdtpActivities, pdtpActivityWorksiteExclusions, pdtpActivityWorksiteParams, pdtpPrograms, worksites } from "@/db/schema"
-import { and, eq, inArray, sql } from "drizzle-orm"
+import { pdtpActivities, pdtpActivityWorksiteAssignees, pdtpActivityWorksiteExclusions, pdtpActivityWorksiteParams, pdtpPrograms, users, worksites } from "@/db/schema"
+import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm"
+import { todayInChile } from "@/lib/utils"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
-import { PdtpAplicabilidadClient, type ExclusionsMap, type ParamsMap } from "./pdtp-aplicabilidad-client"
+import { PdtpAplicabilidadClient, type AssigneesMap, type ExclusionsMap, type ParamsMap } from "./pdtp-aplicabilidad-client"
 
 export const metadata: Metadata = { title: "Aplicabilidad por Faena (PDTP SG-SST)" }
 
@@ -89,6 +90,35 @@ export default async function PdtpAplicabilidadPage() {
     }
   }
 
+  // Asignación nominal vigente hoy (Fase 5): quién responde por cada actividad
+  // en cada faena. Sin asignado, la actividad la ven todos los del cargo.
+  const today = todayInChile()
+  const assigneeRows = activityIds.length > 0 && worksiteIds.length > 0
+    ? await db.select({
+        activityId: pdtpActivityWorksiteAssignees.activityId,
+        worksiteId: pdtpActivityWorksiteAssignees.worksiteId,
+        name: users.name,
+      })
+        .from(pdtpActivityWorksiteAssignees)
+        .innerJoin(users, eq(users.id, pdtpActivityWorksiteAssignees.userId))
+        .where(and(
+          inArray(pdtpActivityWorksiteAssignees.activityId, activityIds),
+          inArray(pdtpActivityWorksiteAssignees.worksiteId, worksiteIds),
+          lte(pdtpActivityWorksiteAssignees.validFrom, today),
+          or(
+            isNull(pdtpActivityWorksiteAssignees.validUntil),
+            sql`${pdtpActivityWorksiteAssignees.validUntil} >= ${today}`,
+          ),
+        ))
+        .orderBy(users.name)
+    : []
+
+  const assigneesMap: AssigneesMap = {}
+  for (const row of assigneeRows) {
+    const key = `${row.activityId}:${row.worksiteId}`
+    assigneesMap[key] = [...(assigneesMap[key] ?? []), row.name]
+  }
+
   return (
     <PageContainer>
       <PageHeader
@@ -109,6 +139,7 @@ export default async function PdtpAplicabilidadPage() {
         worksites={scopedWorksites}
         exclusions={exclusionsMap}
         params={paramsMap}
+        assignees={assigneesMap}
         canManage={canManage}
       />
     </PageContainer>
