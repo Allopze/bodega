@@ -50,3 +50,8 @@ export {
   reorderPdtpObjectivesAction,
   setPdtpActivityObjectiveAction,
 } from "./actions/objectives"
+
+export {
+  recordPdtpDeviationAction,
+  withdrawPdtpDeviationAction,
+} from "./actions/deviations"

@@ -313,6 +313,23 @@ export async function withdrawPdtpDeviation(
   })
 }
 
+/**
+ * Tipo de un desvío por id, o `null` si no existe.
+ *
+ * Existe para que la capa de acciones pueda elegir el permiso del retiro
+ * —`not_performed` lo retira quien ejecuta; los otros dos cambian lo
+ * planificado y los retira quien administra metas— **leyendo la fila**, no
+ * creyéndole al cliente. Un `kind` enviado por el formulario sería un permiso
+ * elegido por quien lo pide.
+ */
+export async function getPdtpDeviationKind(deviationId: string): Promise<PdtpDeviationKind | null> {
+  const [row] = await db.select({ kind: pdtpExecutionDeviations.kind })
+    .from(pdtpExecutionDeviations)
+    .where(eq(pdtpExecutionDeviations.id, deviationId))
+    .limit(1)
+  return (row?.kind as PdtpDeviationKind | undefined) ?? null
+}
+
 /** Desvíos activos de un set de actividades para una faena y año. */
 export async function loadPdtpDeviations(
   activityIds: string[],

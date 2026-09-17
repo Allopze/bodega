@@ -36,6 +36,9 @@ function makeActivity(
   // cero'" más abajo) — `effectiveMonthlyExecuted` (lo que muestra la tabla)
   // no cambia, solo lo que ve `isPdtpActivityZeroThisMonth`.
   approvedMonthlyExecuted: number[] = monthlyExecuted,
+  /** Desvíos activos de la actividad (Fase 3). Vacío en casi todos los
+   *  fixtures: sólo el describe de "no realizada" los necesita. */
+  deviations: PdtpSheetView["activities"][number]["deviations"] = [],
 ): PdtpSheetView["activities"][number] {
   const totalPlanned = monthlyPlanned.reduce((s, v) => s + v, 0)
   const totalExecuted = monthlyExecuted.reduce((s, v) => s + v, 0)
@@ -55,6 +58,10 @@ function makeActivity(
     effectiveMonthlyPlanned: monthlyPlanned,
     effectiveMonthlyExecuted: monthlyExecuted,
     approvedMonthlyExecuted,
+    monthlyNotPerformed: Array.from({ length: 12 }, (_, index) => deviations.filter(
+      (deviation) => deviation.kind === "not_performed" && deviation.month === index + 1,
+    ).length),
+    deviations,
     totalPlanned,
     totalExecuted,
     effectiveTotalPlanned: totalPlanned,

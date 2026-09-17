@@ -17,6 +17,20 @@ import { ReporteGestionFilters } from "./reporte-gestion-filters"
 
 export const metadata: Metadata = { title: "Reporte de gestión PDTP" }
 
+/** Conteo de desvíos de una actividad, en palabras y sin enums crudos. */
+function PdtpDeviationSummary({ deviations }: { deviations: { notPerformed: number; notApplicable: number; reprogrammed: number } }) {
+  const chips: Array<{ label: string; variant: "warning" | "outline" }> = []
+  if (deviations.notPerformed > 0) chips.push({ label: `${deviations.notPerformed} no realizada${deviations.notPerformed === 1 ? "" : "s"}`, variant: "warning" })
+  if (deviations.notApplicable > 0) chips.push({ label: `${deviations.notApplicable} no aplica`, variant: "outline" })
+  if (deviations.reprogrammed > 0) chips.push({ label: `${deviations.reprogrammed} reprogramada${deviations.reprogrammed === 1 ? "" : "s"}`, variant: "outline" })
+  if (chips.length === 0) return <span className="text-[var(--color-text-faint)]">Sin desvíos</span>
+  return (
+    <span className="flex flex-wrap gap-1">
+      {chips.map((chip) => <MetaBadge key={chip.label} meta={chip} />)}
+    </span>
+  )
+}
+
 type PageProps = {
   params: Promise<{ programId: string }>
   searchParams: Promise<{ faena?: string; actividad?: string; responsable?: string; estado?: string; desde?: string; hasta?: string }>
@@ -125,6 +139,7 @@ export default async function PdtpManagementReportPage({ params, searchParams }:
                 <TableHead className="text-right">Ejecutado</TableHead>
                 <TableHead className="text-right">Avance</TableHead>
                 <TableHead>Estado</TableHead>
+                <TableHead>Desvíos</TableHead>
                 <TableHead>Responsables</TableHead>
                 <TableHead />
               </TableRow>
@@ -139,6 +154,14 @@ export default async function PdtpManagementReportPage({ params, searchParams }:
                   <TableCellNum className="font-semibold">{row.percent !== null ? `${Math.round(row.percent * 100)}%` : "—"}</TableCellNum>
                   <TableCell>
                     <MetaBadge meta={{ label: `${row.meetsTarget ? "Cumple meta" : "En desviación"}`, variant: row.meetsTarget ? "success" : "warning" }} dot />
+                  </TableCell>
+                  {/* Explica el avance, no lo corrige: los tres tipos de
+                      desvío ya están reflejados en Planificado/Ejecutado por
+                      la costura única. Una actividad "En desviación" con un
+                      desvío declarado es una decisión registrada; sin ninguno,
+                      es trabajo que nadie explicó. */}
+                  <TableCell className="text-xs text-[var(--color-text-muted)]">
+                    <PdtpDeviationSummary deviations={row.deviations} />
                   </TableCell>
                   <TableCell className="max-w-xs text-xs text-[var(--color-text-muted)]">{row.responsibles.join(", ") || "Sin responsable"}</TableCell>
                   <TableCell>

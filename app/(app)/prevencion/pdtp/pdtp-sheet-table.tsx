@@ -20,6 +20,7 @@ import { deriveActivityStatus, countOverdueMonths, isPdtpActivityZeroThisMonth, 
 import { PdtpExecutionForm } from "./pdtp-execution-form"
 import { PdtpApprovalButtons } from "./pdtp-approval-buttons"
 import { PdtpOverrideForm } from "./pdtp-override-form"
+import { PdtpDeviationForm, PdtpDeviationList } from "./pdtp-deviation-form"
 import { PdtpEvidenceThumbs } from "./pdtp-evidence-thumbs"
 import {
   PdtpStatusBadge,
@@ -32,6 +33,7 @@ import {
   usePdtpMonthWindow,
   type PdtpStatusCounts,
 } from "./pdtp-sheet-table-ui"
+import { pdtpDeviationKindLabel } from "@/lib/prevention/pdtp"
 import { MONTH_LABELS } from "@/lib/utils"
 
 /** Mes del período PDTP (1–12); etiqueta en `MONTH_LABELS[mes - 1]`. */
@@ -100,6 +102,57 @@ function groupActivitiesByObjective<A extends { objectiveId: string | null }>(
     .filter((group) => group.activities.length > 0)
   if (unassigned.length > 0) groups.push({ label: "Sin objetivo asignado", activities: unassigned })
   return groups
+}
+
+type SheetActivity = PdtpSheetView["activities"][number]
+type SheetDeviation = SheetActivity["deviations"][number]
+
+/**
+ * Los desvíos "no realizada" del mes, en el formato que `deriveActivityStatus`
+ * y `countOverdueMonths` esperan. `monthlyNotPerformed` lo calcula `sheets.ts`
+ * desde la costura única.
+ */
+function statusOptions(activity: SheetActivity): { monthlyNotPerformed?: number[] } {
+  return { monthlyNotPerformed: activity.monthlyNotPerformed }
+}
+
+/**
+ * Marca discreta en la celda de un mes cuando esa celda tiene desvíos
+ * declarados. El `title` lista tipo, semana y motivo: sin él, una celda cuyo
+ * P bajó por un "no aplica" o se movió por una reprogramación se lee como un
+ * número que cambió solo.
+ */
+function PdtpDeviationMonthMark({ deviations }: { deviations: SheetDeviation[] }) {
+  if (deviations.length === 0) return null
+  const detail = deviations
+    .map((deviation) => {
+      const destino = deviation.targetMonth !== null && deviation.targetWeek !== null
+        ? ` → ${MONTH_LABELS[deviation.targetMonth - 1]} sem ${deviation.targetWeek}`
+        : ""
+      return `${pdtpDeviationKindLabel(deviation.kind)} · sem ${deviation.week}${destino}: ${deviation.reason}`
+    })
+    .join("\n")
+  return (
+    <span
+      className="ml-1 cursor-help align-super text-[9px] font-semibold text-[var(--color-signal-ink)]"
+      title={detail}
+      aria-label={`Desvíos declarados en el mes: ${deviations.length}`}
+    >
+      ✱
+    </span>
+  )
+}
+
+/** Desvíos de una actividad en un mes concreto. */
+function deviationsForMonth(activity: SheetActivity, month: number): SheetDeviation[] {
+  return activity.deviations.filter((deviation) => deviation.month === month)
+}
+
+/** Motivos declarados de "no realizada" para un mes, para el tooltip del badge. */
+function notPerformedReasonsForMonth(activity: SheetActivity, month: number): string[] {
+  return activity.deviations
+    .filter((deviation) => deviation.kind === "not_performed" && deviation.month === month)
+    .map((deviation) => deviation.reason)
 }
 
 type ObjectiveSummary = { id: string; code: string; name: string }
@@ -176,9 +229,9 @@ export function PdtpSheetTable({
   const [showAll, setShowAll] = React.useState(false)
   // Compute status counts for the summary
   const statusCounts: PdtpStatusCounts = React.useMemo(() => {
-    const counts = { executed: 0, pending: 0, overdue: 0, not_scheduled: 0, zero: 0 }
+    const counts = { executed: 0, pending: 0, overdue: 0, not_scheduled: 0, not_performed: 0, zero: 0 }
     for (const activity of sourceActivities) {
-      const s = deriveActivityStatus(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod)
+      const s = deriveActivityStatus(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod, statusOptions(activity))
       counts[s]++
       // `zero` se superpone a `pending`/`overdue` (ver el comentario de
       // `PdtpStatusCounts`): se recalcula aparte, no se deriva de `counts[s]`.
@@ -207,7 +260,7 @@ export function PdtpSheetTable({
           isPdtpActivityZeroThisMonth(activity, activity.effectiveMonthlyPlanned, activity.approvedMonthlyExecuted, currentPeriod),
         )
       : sourceActivities.filter((activity) =>
-          deriveActivityStatus(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod) === statusFilter,
+          deriveActivityStatus(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod, statusOptions(activity)) === statusFilter,
         )
 
   // La paginación se mide sobre lo que realmente se ve: si el filtro de estado
@@ -297,8 +350,8 @@ export function PdtpSheetTable({
                       </TableCell>
                     </TableRow>
                     {group.activities.map((activity) => {
-                      const status = deriveActivityStatus(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod)
-                      const overdueMonths = countOverdueMonths(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod)
+                      const status = deriveActivityStatus(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod, statusOptions(activity))
+                      const overdueMonths = countOverdueMonths(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod, statusOptions(activity))
                       return (
                         <TableRow key={activity.id}>
                           <TableCell className={`font-mono text-xs text-[var(--color-text-faint)] ${rowPy}`}>
@@ -317,6 +370,15 @@ export function PdtpSheetTable({
                                 </p>
                               )}
                               {!worksiteId && <PdtpAggregateBreakdown summaries={aggregateSummaries(activity) ?? []} worksiteNames={aggregateWorksiteNames} />}
+                              {/* Los desvíos del mes viven bajo la actividad,
+                                  no detrás de un ícono: explican por qué la
+                                  celda de esta semana se ve como se ve. */}
+                              {worksiteId && (
+                                <PdtpDeviationList
+                                  deviations={deviationsForMonth(activity, currentPeriod.month)}
+                                  canWithdraw={canOperate}
+                                />
+                              )}
                               {worksiteId && activity.executions.length > 0 && (
                                 <div className="mt-2 space-y-2">
                                   {activity.executions.map((exec) => (
@@ -351,7 +413,7 @@ export function PdtpSheetTable({
                             <PdtpResponsibleChips display={activity.responsibleDisplay} />
                           </TableCell>
                           <TableCell className={rowPy}>
-                            <PdtpStatusBadge status={status} overdueMonths={overdueMonths} />
+                            <PdtpStatusBadge status={status} overdueMonths={overdueMonths} notPerformedReasons={notPerformedReasonsForMonth(activity, currentPeriod.month)} />
                           </TableCell>
                           {canOperate && worksiteId && (
                             <TableCell className={rowPy}>
@@ -377,6 +439,17 @@ export function PdtpSheetTable({
                                   globalQuantity={plannedQuantityForCurrentWeek(activity)}
                                   hoja={sheetCode}
                                 />}
+                                <PdtpDeviationForm
+                                  activityId={activity.id}
+                                  activityN={activity.n}
+                                  activityName={activity.activity}
+                                  worksiteId={worksiteId}
+                                  year={view.program.year}
+                                  defaultMonth={currentPeriod.month}
+                                  defaultWeek={currentPeriod.week}
+                                  canDeclareNotPerformed={canExecute}
+                                  canManagePlanning={canManageProgram}
+                                />
                               </div>
                             </TableCell>
                           )}
@@ -434,8 +507,8 @@ export function PdtpSheetTable({
                       </TableCell>
                     </TableRow>
                     {group.activities.map((activity) => {
-                      const status = deriveActivityStatus(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod)
-                      const overdueMonths = countOverdueMonths(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod)
+                      const status = deriveActivityStatus(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod, statusOptions(activity))
+                      const overdueMonths = countOverdueMonths(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod, statusOptions(activity))
                       // `group` + `group-hover` en las celdas sticky: su fondo
                       // sólido tapaba el hover de la fila y el gris se veía solo
                       // de ESTADO a la derecha — la "fila cortada" de la
@@ -494,7 +567,7 @@ export function PdtpSheetTable({
                             </div>
                           </TableCell>
                           <TableCell className={rowPy}>
-                            <PdtpStatusBadge status={status} overdueMonths={overdueMonths} />
+                            <PdtpStatusBadge status={status} overdueMonths={overdueMonths} notPerformedReasons={notPerformedReasonsForMonth(activity, currentPeriod.month)} />
                           </TableCell>
                           {visibleMonths.map((mi) => {
                             const planned = activity.monthlyPlanned[mi] ?? 0
@@ -510,6 +583,7 @@ export function PdtpSheetTable({
                                 <div className="whitespace-nowrap">
                                   <span>{formatQuantity(planned)}</span>
                                   <span className="text-[11px] text-[var(--color-success)]"> / {formatQuantity(executed)}</span>
+                                  <PdtpDeviationMonthMark deviations={deviationsForMonth(activity, (PDTP_MONTHS[mi] ?? mi + 1))} />
                                 </div>
                               </TableCellNum>
                             )
