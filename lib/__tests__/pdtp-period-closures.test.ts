@@ -349,6 +349,42 @@ describe("mes cerrado: bloqueo de escrituras", () => {
     }, "user-1", "all")).rejects.toThrow(/cerrado/i)
   })
 
+  it("rechaza `deletePdtpActivityOverride` en el mes cerrado", async () => {
+    // Borrar un override devuelve la meta al valor global del catálogo: cambia
+    // el planificado del mes igual que crearlo. Sin este guard, el bloqueo del
+    // cierre se podía saltar por la puerta de atrás.
+    const { setPdtpActivityOverride, deletePdtpActivityOverride } = await import("@/lib/services/pdtp/overrides")
+    const { closePdtpPeriod } = await import("@/lib/services/pdtp/period-closures")
+    const { program, activity } = await createActiveProgram()
+
+    await setPdtpActivityOverride({
+      activityId: activity.id, worksiteId: "ws-1", year: YEAR, month: MONTH, week: 1,
+      plannedQuantity: 9, reason: "Ajuste de meta por dotación de la faena.",
+    }, "user-1", "all")
+    await closePdtpPeriod({
+      programId: program.id, worksiteId: "ws-1", year: YEAR, month: MONTH, reason: REASON,
+    }, "user-1", "all")
+
+    await expect(deletePdtpActivityOverride({
+      activityId: activity.id, worksiteId: "ws-1", year: YEAR, month: MONTH, week: 1,
+      reason: "Se revierte la meta especial de la faena.",
+    }, "user-1", "all")).rejects.toThrow(/cerrado/i)
+  })
+
+  it("`deletePdtpActivityOverride` sigue funcionando en un mes abierto", async () => {
+    const { setPdtpActivityOverride, deletePdtpActivityOverride } = await import("@/lib/services/pdtp/overrides")
+    const { activity } = await createActiveProgram()
+
+    await setPdtpActivityOverride({
+      activityId: activity.id, worksiteId: "ws-1", year: YEAR, month: MONTH, week: 1,
+      plannedQuantity: 9, reason: "Ajuste de meta por dotación de la faena.",
+    }, "user-1", "all")
+    await expect(deletePdtpActivityOverride({
+      activityId: activity.id, worksiteId: "ws-1", year: YEAR, month: MONTH, week: 1,
+      reason: "Se revierte la meta especial de la faena.",
+    }, "user-1", "all")).resolves.toBeUndefined()
+  })
+
   it("no bloquea otra faena ni otro mes", async () => {
     const { markPdtpExecution } = await import("@/lib/services/prevention-pdtp")
     const { activity } = await closedProgram()

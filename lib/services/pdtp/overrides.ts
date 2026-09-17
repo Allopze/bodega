@@ -190,6 +190,12 @@ export async function deletePdtpActivityOverride(
   }
 
   await db.transaction(async (tx) => {
+  // Mes cerrado: borrar un override cambia el planificado del mes exactamente
+  // igual que crearlo —la meta vuelve al valor global del catálogo—, así que el
+  // bloqueo tiene que valer para las dos operaciones. `setPdtpActivityOverride`
+  // ya lo hacía; esta se había quedado sin el guard, y el hueco dejaba mover el
+  // planificado de un mes cuya foto ya estaba congelada y distribuida.
+  await assertPdtpPeriodOpen(activity.programId, input.worksiteId, input.year, input.month, tx)
   await tx
     .delete(pdtpActivityScheduleOverrides)
     .where(and(
