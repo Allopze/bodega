@@ -11,7 +11,7 @@ import { can } from "@/lib/auth/can"
 import { resolveWorksiteScope } from "@/lib/auth/scope"
 import { buildXlsxBuffer } from "@/lib/reports/export"
 import { renderPdtpRe36Buffer } from "@/lib/reports/pdtp-re36-workbook"
-import { buildPdtpExport, buildPdtpRe36Document, assertWorksiteAccess, isActivePdtpWorksite } from "@/lib/services/prevention-pdtp"
+import { buildPdtpExport, buildPdtpRe36Document, resolveActivePdtpProgramId, assertWorksiteAccess, isActivePdtpWorksite } from "@/lib/services/prevention-pdtp"
 import { encodeContentDisposition } from "@/lib/utils"
 import { logger } from "@/lib/logger"
 import { recordAudit } from "@/lib/audit"
@@ -103,13 +103,21 @@ export async function GET(request: NextRequest) {
     }
 
     // Formato RE-36 (default): el documento por faena, no una hoja plana.
-    // A diferencia de `buildPdtpExport`, `buildPdtpRe36Document` no acepta
-    // resolver el programa por año: exige `programId` explícito.
-    if (!programId) {
-      await auditOutcome("invalid", "Exportación RE-36 rechazada porque falta indicar el programa", worksiteId)
-      return NextResponse.json({ error: "Falta indicar el programa para exportar el RE-36." }, { status: 400 })
+    // `buildPdtpRe36Document` exige `programId` explícito (no resuelve por
+    // año como `getPdtpSheetView`), así que sin `programId` se resuelve acá
+    // con el mismo criterio que ya usa el camino plano (`getPdtpSheetView`,
+    // `lib/services/pdtp/sheets.ts:426-433`): programa activo del año, o si
+    // no hay ninguno activo, el de mayor versión — `resolveActivePdtpProgramId`
+    // implementa exactamente esa misma regla, no una segunda. Antes de esta
+    // corrección, `?faena=w1` sin `programId` funcionaba con la planilla
+    // plana (default anterior) y dejó de funcionar al cambiar el default a
+    // RE-36; esto la restaura para el nuevo default.
+    const resolvedProgramId = programId ?? await resolveActivePdtpProgramId(year)
+    if (!resolvedProgramId) {
+      await auditOutcome("invalid", "Exportación RE-36 rechazada porque no existe un programa para el año solicitado", worksiteId)
+      return NextResponse.json({ error: "No existe un programa PDTP para ese año." }, { status: 400 })
     }
-    const doc = await buildPdtpRe36Document({ programId, worksiteId, scope: worksiteIds })
+    const doc = await buildPdtpRe36Document({ programId: resolvedProgramId, worksiteId, scope: worksiteIds })
     const xlsx = await renderPdtpRe36Buffer(doc)
     // El nombre usa el año y la versión del programa resuelto (`doc.program`)
     // y el código de faena del registro resuelto (`doc.worksite.code`), no
@@ -153,5 +161,5 @@ function normalizeSheetCode(value: string | null): string {
  * `normalizeSheetCode` con un código inexistente.
  */
 function normalizeFormato(value: string | null): "re36" | "plano" {
-  return value === "plano" ? "plano" : "re36"
+  return value?.trim().toLowerCase() === "plano" ? "plano" : "re36"
 }

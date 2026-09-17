@@ -4,6 +4,7 @@ import { NextRequest } from "next/server"
 const mockAuth = vi.hoisted(() => vi.fn())
 const mockBuild = vi.hoisted(() => vi.fn())
 const mockBuildRe36Document = vi.hoisted(() => vi.fn())
+const mockResolveActiveProgramId = vi.hoisted(() => vi.fn())
 const mockXlsx = vi.hoisted(() => vi.fn())
 const mockRenderRe36Buffer = vi.hoisted(() => vi.fn())
 const mockAudit = vi.hoisted(() => vi.fn())
@@ -17,6 +18,7 @@ vi.mock("@/lib/logger", () => ({ logger: { error: vi.fn() } }))
 vi.mock("@/lib/services/prevention-pdtp", () => ({
   buildPdtpExport: mockBuild,
   buildPdtpRe36Document: mockBuildRe36Document,
+  resolveActivePdtpProgramId: mockResolveActiveProgramId,
   isActivePdtpWorksite: mockIsActiveWorksite,
   assertWorksiteAccess: (worksiteId: string, scope: string[] | "all") => {
     if (scope !== "all" && !scope.includes(worksiteId)) throw new Error("Sin acceso")
@@ -57,6 +59,7 @@ beforeEach(() => {
   mockXlsx.mockResolvedValue(new Uint8Array([1, 2, 3]).buffer)
   mockBuildRe36Document.mockResolvedValue(re36Document())
   mockRenderRe36Buffer.mockResolvedValue(new Uint8Array([4, 5, 6]).buffer)
+  mockResolveActiveProgramId.mockResolvedValue("resolved-by-year")
   mockIsActiveWorksite.mockResolvedValue(true)
 })
 
@@ -133,10 +136,24 @@ describe("GET PDTP Excel", () => {
     }))
   })
 
-  it("rejects formato=re36 without programId instead of guessing the program", async () => {
+  it("resolves the program by year for formato=re36 without programId, same as the plano path always did", async () => {
     mockAuth.mockResolvedValue(session())
 
-    const response = await GET(request("?faena=w1"))
+    const response = await GET(request("?faena=w1&year=2026"))
+
+    expect(response.status).toBe(200)
+    expect(mockResolveActiveProgramId).toHaveBeenCalledWith(2026)
+    expect(mockBuildRe36Document).toHaveBeenCalledWith({ programId: "resolved-by-year", worksiteId: "w1", scope: ["w1"] })
+    expect(mockAudit).toHaveBeenCalledWith(expect.objectContaining({
+      newState: expect.objectContaining({ result: "success", formato: "re36" }),
+    }))
+  })
+
+  it("rejects formato=re36 when no program exists for the resolved year", async () => {
+    mockAuth.mockResolvedValue(session())
+    mockResolveActiveProgramId.mockResolvedValue(null)
+
+    const response = await GET(request("?faena=w1&year=2026"))
 
     expect(response.status).toBe(400)
     expect(mockBuildRe36Document).not.toHaveBeenCalled()
