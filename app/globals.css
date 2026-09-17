@@ -112,6 +112,9 @@
   --duration-fast:    140ms;
   --duration-default: 180ms;
   --duration-slow:    220ms;
+  /* Excepción documentada en DESIGN.md § Motion: el hero de /login es la única
+     superficie de la plataforma que es identidad de marca, no bitácora. */
+  --duration-hero:    600ms;
 
   /* ── Radii — escala jerárquica SaaS ── */
   --radius-xs:   0.25rem;   /* 4px  — micro chips, badges                */
@@ -337,6 +340,98 @@ body {
   to   { opacity: 1; }
 }
 
+/* ─── Hero del login — octágono de marca ────────────────────────────────────
+   El <aside> del hero es Server Component y hermano del <main> que contiene el
+   form (cliente): el estado vive en React, del otro lado del árbol. En vez de
+   un Context (un provider entero para mover un string un nivel de DOM) o de
+   mutar `document.documentElement` (estado global que sobrevive al
+   `router.push` a /dashboard), el form publica `data-auth-state` en su propio
+   <form> y el grid lo lee con `:has()`: el aside no se vuelve cliente, no hay
+   mutación del DOM y el atributo se desmonta con el form — no hay estado que
+   limpiar. `:has()` no es una apuesta: la paleta ya usa `oklch()` sin
+   fallback, que exige un baseline más alto que `:has()` en los tres motores,
+   y el repo ya lo usa (file-dropzone.tsx, access-matrix.tsx). */
+
+.auth-hero-frame {
+  fill: none;
+  stroke: rgb(255 255 255 / 0.9);
+  stroke-width: 7.2;
+  stroke-linejoin: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 0;
+  opacity: 0;                    /* estado final: el <Image> del logo ya trae el marco */
+  transition: stroke var(--duration-slow) var(--ease-out);
+}
+
+.auth-hero-tracer {
+  fill: none;
+  stroke: var(--color-accent);   /* #ffd53f — contrasta sobre el gradiente esmeralda */
+  stroke-width: 7.2;
+  stroke-linecap: round;
+  stroke-dasharray: 14 86;
+  opacity: 0;
+  transition: opacity var(--duration-default) var(--ease-out);
+}
+
+/* Capa de estado — color y opacidad. Corre SIEMPRE, también bajo reduced
+   motion: es la que comunica el estado, y ni el color ni la opacidad son
+   movimiento (mismo criterio que el kill switch global, línea ~417).
+   `animation: none` en el error es necesario incluso aquí: una animación
+   CSS en curso gana en la cascada sobre una declaración normal aunque esta
+   tenga más especificidad (no compiten como dos reglas normales), así que
+   sin cancelarla el relleno `forwards` de la intro (opacity:0) seguiría
+   ganándole a este `opacity: 1`. */
+.auth-grid:has(form[data-auth-state="pending"]) .auth-hero-tracer { opacity: 1; }
+.auth-grid:has(form[data-auth-state="error"])   .auth-hero-frame  { animation: none; opacity: 1; stroke: var(--color-danger); }
+/* `fill` va aquí y no dentro de `auth-frame-success`: declarado sólo en el
+   keyframe de 0%, el 100% se sintetizaba desde el valor base (`fill: none`),
+   que no interpola con un color — el relleno saltaba en vez de animar. En la
+   regla, el color es constante y el keyframe sólo mueve `fill-opacity`. */
+.auth-grid:has(form[data-auth-state="success"]) .auth-hero-frame  { opacity: 1; stroke: var(--color-primary-line); fill: var(--color-primary); }
+
+/* Capa de movimiento — gateada por `no-preference`, mismo patrón que
+   [data-pressable] (línea ~268). Bajo `reduce` estas reglas no existen: no hay
+   que neutralizarlas, no hay `!important`, y el `infinite` no llega a
+   declararse. Reducirlo a 0.01ms como hace el kill switch con las animaciones
+   finitas sería contraproducente aquí: un `infinite` a 0.01ms dispara
+   `animationiteration` miles de veces por segundo. */
+@media (prefers-reduced-motion: no-preference) {
+  /* Dos animaciones sobre el mismo elemento a propósito: si la opacidad
+     interpolara dentro del mismo keyframe que el trazo (100%→0% en 600ms),
+     el marco quedaría casi invisible antes de terminar de dibujarse — la
+     opacidad cae en paralelo con el `stroke-dashoffset`, no después. Separada,
+     `auth-frame-fadeout` no empieza hasta que el trazo termina (`--duration-hero`
+     de retraso) y se apaga en el mismo tramo (600–820ms) en que
+     `.auth-hero-logo` aparece: crossfade real, no un corte. */
+  .auth-hero-frame {
+    animation:
+      auth-frame-draw var(--duration-hero) var(--ease-out) both,
+      auth-frame-fadeout var(--duration-slow) var(--ease-out) var(--duration-hero) both;
+  }
+  .auth-hero-logo     { animation: fade-in var(--duration-slow) var(--ease-out) var(--duration-hero) both; }
+  .auth-hero-wordmark { animation: fade-in var(--duration-fast) var(--ease-out) 780ms both; }
+
+  .auth-grid:has(form[data-auth-state="pending"]) .auth-hero-tracer {
+    animation: auth-frame-trace 1800ms linear infinite;
+  }
+  .auth-grid:has(form[data-auth-state="error"]) .auth-hero-octagon {
+    animation: auth-frame-shake 160ms var(--ease-in-out) 2;
+  }
+  .auth-grid:has(form[data-auth-state="success"]) .auth-hero-frame {
+    animation: auth-frame-success 420ms var(--ease-out) forwards;
+  }
+}
+
+@keyframes auth-frame-draw    { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+@keyframes auth-frame-fadeout { from { opacity: 1; }             to { opacity: 0; } }
+@keyframes auth-frame-trace { from { stroke-dashoffset: 0; }   to { stroke-dashoffset: -100; } }
+@keyframes auth-frame-shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+@keyframes auth-frame-success {
+  from { stroke-opacity: 1; fill-opacity: 0; }
+  55%  { stroke-opacity: 1; fill-opacity: 0.28; }
+  to   { stroke-opacity: 0; fill-opacity: 0; }
+}
+
 /* ─── Sonner: entry, progress bar, exit ────────────────────────── */
 
 /* Keep the toast surface clipped and provide right padding for the close button */
@@ -419,6 +514,7 @@ body {
     --duration-fast: 0ms;
     --duration-default: 0ms;
     --duration-slow: 0ms;
+    --duration-hero: 0ms;
     scroll-behavior: auto !important;
   }
   .animate-in, .animate-out {
@@ -432,4 +528,7 @@ body {
     from { opacity: 0.5; }
     to { opacity: 0.5; }
   }
+  /* El hero del login (octágono, ~línea 340) declara su movimiento dentro de
+     `@media (prefers-reduced-motion: no-preference)`: bajo `reduce` sus
+     animaciones no existen y no hay nada que neutralizar aquí. */
 }

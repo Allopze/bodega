@@ -4,9 +4,9 @@ import { clearRateLimits, login } from "./helpers"
 async function loginScopedUser(page: Page) {
   await clearRateLimits()
   await page.goto("/login")
-  await page.getByLabel("Correo electrónico").fill("scoped@e2e.chome.cl")
-  await page.getByLabel("Contraseña").fill("scoped2026")
-  await page.getByRole("button", { name: "Ingresar" }).click()
+  await page.getByLabel("Correo electrónico", { exact: true }).fill("scoped@e2e.chome.cl")
+  await page.getByLabel("Contraseña", { exact: true }).fill("scoped2026")
+  await page.getByRole("button", { name: "Ingresar", exact: true }).click()
   await expect(page).toHaveURL(/\/dashboard/)
 }
 

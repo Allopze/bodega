@@ -22,9 +22,9 @@ test("login: shows rate-limit message after repeated failures", async ({ page })
     // Submit wrong credentials enough times to trigger the email/IP rate-limit.
     // The rate-limit kicks in after 5 failures within 15 minutes.
     for (let i = 0; i < 6; i++) {
-      await page.getByLabel("Correo electrónico").fill("locked@example.com")
-      await page.getByLabel("Contraseña").fill("wrongpassword")
-      await page.getByRole("button", { name: "Ingresar" }).click()
+      await page.getByLabel("Correo electrónico", { exact: true }).fill("locked@example.com")
+      await page.getByLabel("Contraseña", { exact: true }).fill("wrongpassword")
+      await page.getByRole("button", { name: "Ingresar", exact: true }).click()
       await page.waitForTimeout(300)
     }
 
@@ -68,7 +68,7 @@ test("unauthenticated: API routes reject access without session", async ({ reque
 
 test("forgot-password: shows confirmation even for non-existent email", async ({ page }) => {
   await page.goto("/recuperar")
-  await page.getByLabel("Correo electrónico").fill("doesnotexist@nowhere.example")
+  await page.getByLabel("Correo electrónico", { exact: true }).fill("doesnotexist@nowhere.example")
   await page.getByRole("button", { name: "Enviar instrucciones" }).click()
 
   // Should show success message (no enumeration)

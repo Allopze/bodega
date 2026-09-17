@@ -6140,9 +6140,9 @@ async function login(context: BrowserContext, serverBaseUrl: string = baseUrl) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       await page.goto(loginUrl, { waitUntil: "domcontentloaded", timeout: 45_000 })
-      await page.getByLabel("Correo electrónico").fill("admin.audit@chome.cl")
-      await page.getByLabel("Contraseña").fill("chome2026")
-      await page.getByRole("button", { name: "Ingresar" }).click()
+      await page.getByLabel("Correo electrónico", { exact: true }).fill("admin.audit@chome.cl")
+      await page.getByLabel("Contraseña", { exact: true }).fill("chome2026")
+      await page.getByRole("button", { name: "Ingresar", exact: true }).click()
       // Wait for the redirect to /dashboard. 60s covers slow server startups
       // after a cold boot or heavy DB migration. No networkidle race — if the
       // URL doesn't change, the timeout fires and we retry.

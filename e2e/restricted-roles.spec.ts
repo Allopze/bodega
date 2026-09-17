@@ -16,9 +16,9 @@ test.describe("Restricted roles — faena scope enforcement", () => {
     // Log in as the scoped user
     await clearRateLimits()
     await page.goto("/login")
-    await page.getByLabel("Correo electrónico").fill("scoped@e2e.chome.cl")
-    await page.getByLabel("Contraseña").fill("scoped2026")
-    await page.getByRole("button", { name: "Ingresar" }).click()
+    await page.getByLabel("Correo electrónico", { exact: true }).fill("scoped@e2e.chome.cl")
+    await page.getByLabel("Contraseña", { exact: true }).fill("scoped2026")
+    await page.getByRole("button", { name: "Ingresar", exact: true }).click()
     await expect(page).toHaveURL(/\/dashboard/)
 
     // Navigate to solicitudes
@@ -36,9 +36,9 @@ test.describe("Restricted roles — faena scope enforcement", () => {
     // Log in as scoped user
     await clearRateLimits()
     await page.goto("/login")
-    await page.getByLabel("Correo electrónico").fill("scoped@e2e.chome.cl")
-    await page.getByLabel("Contraseña").fill("scoped2026")
-    await page.getByRole("button", { name: "Ingresar" }).click()
+    await page.getByLabel("Correo electrónico", { exact: true }).fill("scoped@e2e.chome.cl")
+    await page.getByLabel("Contraseña", { exact: true }).fill("scoped2026")
+    await page.getByRole("button", { name: "Ingresar", exact: true }).click()
     await expect(page).toHaveURL(/\/dashboard/)
 
     // Try to navigate to nueva solicitud
@@ -61,9 +61,9 @@ test.describe("Restricted roles — faena scope enforcement", () => {
   test("un receptor sin permiso de Compras abre la OC, sin su facturación", async ({ page }) => {
     await clearRateLimits()
     await page.goto("/login")
-    await page.getByLabel("Correo electrónico").fill("scoped@e2e.chome.cl")
-    await page.getByLabel("Contraseña").fill("scoped2026")
-    await page.getByRole("button", { name: "Ingresar" }).click()
+    await page.getByLabel("Correo electrónico", { exact: true }).fill("scoped@e2e.chome.cl")
+    await page.getByLabel("Contraseña", { exact: true }).fill("scoped2026")
+    await page.getByRole("button", { name: "Ingresar", exact: true }).click()
     await expect(page).toHaveURL(/\/dashboard/)
 
     await page.goto("/compras/oc-e2e")
@@ -86,9 +86,9 @@ test.describe("Restricted roles — faena scope enforcement", () => {
     // Log in as admin
     await clearRateLimits()
     await page.goto("/login")
-    await page.getByLabel("Correo electrónico").fill("admin@e2e.chome.cl")
-    await page.getByLabel("Contraseña").fill("chome2026")
-    await page.getByRole("button", { name: "Ingresar" }).click()
+    await page.getByLabel("Correo electrónico", { exact: true }).fill("admin@e2e.chome.cl")
+    await page.getByLabel("Contraseña", { exact: true }).fill("chome2026")
+    await page.getByRole("button", { name: "Ingresar", exact: true }).click()
     await expect(page).toHaveURL(/\/dashboard/)
 
     // Admin should have full access — can navigate to admin/faenas
