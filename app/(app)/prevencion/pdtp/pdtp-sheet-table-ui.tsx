@@ -7,7 +7,7 @@ import { MetaBadge } from "@/components/states/state-badge"
 import { SegmentedControl } from "@/components/ui/segmented-control"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip } from "@/components/ui/tooltip"
-import type { PdtpActivityStatus } from "@/lib/services/pdtp/period"
+import type { PdtpActivityStatus, PdtpActivityStatusFilter } from "@/lib/services/pdtp/period"
 import { pdtpExecutionStatusLabel } from "@/lib/prevention/pdtp"
 import { countOf } from "@/lib/utils"
 import { useLocalStorageState } from "@/lib/hooks/use-local-storage-state"
@@ -251,6 +251,12 @@ export type PdtpStatusCounts = {
   pending: number
   overdue: number
   not_scheduled: number
+  /** `pending ∪ overdue`, excluidas `coverage`/`closed_on_time` — el mismo
+   * criterio que `zeroActivityIds` en `compliance.ts`. Se superpone a
+   * `pending`/`overdue` a propósito (no es una quinta categoría exclusiva):
+   * es el filtro que corresponde a "actividades en cero" del indicador. No
+   * se suma a `all` para no contar dos veces las mismas filas. */
+  zero: number
 }
 
 export function PdtpActivitySummary({
@@ -259,23 +265,31 @@ export function PdtpActivitySummary({
   onFilter,
 }: {
   counts: PdtpStatusCounts
-  activeFilter: PdtpActivityStatus | "all"
-  onFilter: (s: PdtpActivityStatus | "all") => void
+  activeFilter: PdtpActivityStatusFilter | "all"
+  onFilter: (s: PdtpActivityStatusFilter | "all") => void
 }) {
   // Misma dimensión (estado de actividad) → mismo tratamiento tipográfico:
   // antes convivían 4 estilos de chip en la misma fila de filtros
   // (UI/UX 2026-08-05, M1). "Pendientes" usa `signal`, el tono reservado
   // para "pendiente" en el sistema de tokens.
   const items: Array<{
-    key: PdtpActivityStatus | "all"
+    key: PdtpActivityStatusFilter | "all"
     label: string
     count: number
     variant: "success" | "signal" | "danger" | "neutral"
+    title?: string
   }> = [
     { key: "all", label: "Todas", count: counts.executed + counts.pending + counts.overdue + counts.not_scheduled, variant: "neutral" },
     { key: "executed", label: "Ejecutadas", count: counts.executed, variant: "success" },
     { key: "pending", label: "Pendientes", count: counts.pending, variant: "signal" },
     { key: "overdue", label: "Atrasadas", count: counts.overdue, variant: "danger" },
+    {
+      key: "en_cero",
+      label: "En cero",
+      count: counts.zero,
+      variant: "danger",
+      title: "Planificadas este mes sin ninguna ejecución aprobada (pendientes + atrasadas). Es lo mismo que cuenta el indicador de cumplimiento mensual.",
+    },
     { key: "not_scheduled", label: "Sin programar", count: counts.not_scheduled, variant: "neutral" },
   ]
 
@@ -288,6 +302,7 @@ export function PdtpActivitySummary({
             key={item.key}
             type="button"
             onClick={() => onFilter(item.key)}
+            title={item.title}
             className={[
               "inline-flex items-center gap-1.5 rounded-[var(--radius-full)] px-2.5 py-1 text-[11px] font-medium transition-all",
               isActive

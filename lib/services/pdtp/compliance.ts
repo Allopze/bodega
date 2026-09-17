@@ -36,8 +36,15 @@ export type PdtpComplianceMonth = {
    * "no se acreditó el padrón/plazo", no "no se hizo nada".
    */
   zeroActivities: number
-  /** Ids de las actividades que componen `zeroActivities`, para enlazar
-   * directo al listado filtrado sin una consulta adicional. */
+  /**
+   * Ids de las actividades que componen `zeroActivities` este mes. La UI no
+   * enlaza por id (el visor de actividades filtra por mes + estado
+   * `en_cero`, ver `isPdtpActivityZeroThisMonth` en `period.ts`): este campo
+   * existe para que `getPdtpComplianceIndicatorsForScope` pueda **deduplicar**
+   * la unión entre faenas — una actividad en cero en dos faenas es una sola
+   * actividad en cero para el agregado (ver comentario ahí) — sin volver a
+   * consultar cuáles son.
+   */
   zeroActivityIds: string[]
 }
 

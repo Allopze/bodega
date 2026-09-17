@@ -1185,11 +1185,14 @@ describe("prevention PDTP service", () => {
 
     expect(result!.monthly.slice(0, 6).every((month) => month.planned === 0 && month.percent === null)).toBe(true)
     expect(result!.monthly.slice(6).every((month) => month.planned === 1)).toBe(true)
-    // toMatchObject, no toEqual: la tarea 1.4 agregó `zeroActivityMonths` /
-    // `zeroActivityIds` a `annual`. Ese dato no es lo que este caso prueba
-    // (el corte de vigencia a mitad de año) y `planned`/`executed`/`percent`
-    // —lo que sí prueba— quedan intactos.
-    expect(result!.annual).toMatchObject({ planned: 6, executed: 0, percent: 0 })
+    // Se compara el subconjunto exacto de campos con `toEqual` estricto (no
+    // `annual` completo con `toMatchObject`, que dejaría pasar cualquier
+    // valor futuro sin que el test se entere): la tarea 1.4 agregó
+    // `zeroActivityMonths`/`zeroActivityIds` a `annual`, ajeno a lo que este
+    // caso prueba (el corte de vigencia a mitad de año), así que se
+    // desestructuran solo los campos que sí importan aquí.
+    const { planned, executed, percent } = result!.annual
+    expect({ planned, executed, percent }).toEqual({ planned: 6, executed: 0, percent: 0 })
 
     const report = await getPdtpManagementReport({
       programId: program.id,
@@ -3186,12 +3189,15 @@ describe("prevention PDTP service", () => {
     expect(documentHistory.map((entry) => entry.entryKind).sort()).toEqual(["approval", "change_control", "elaboration"])
     expect(documentHistory.find((entry) => entry.entryKind === "approval")?.linkedUserId).toBeNull()
     expect(roleLegend).toHaveLength(5)
-    // toMatchObject, no toEqual: la tarea 1.4 agregó `zeroActivityMonths` /
+    // Subconjunto exacto con `toEqual` estricto, no `annual` completo con
+    // `toMatchObject`: la tarea 1.4 agregó `zeroActivityMonths`/
     // `zeroActivityIds` a `annual` (aquí serían casi todas las 87 actividades
     // importadas, irrelevante para lo que este caso de importación prueba).
     // `planned`/`executed`/`percent` — la fórmula que sí importa aquí —
     // quedan intactos.
-    expect((await getPdtpComplianceIndicators(program.id, "ws-1"))?.annual).toMatchObject({ planned: 1013, executed: 0, percent: 0 })
+    const importedAnnual = (await getPdtpComplianceIndicators(program.id, "ws-1"))?.annual
+    const { planned: importedPlanned, executed: importedExecuted, percent: importedPercent } = importedAnnual!
+    expect({ planned: importedPlanned, executed: importedExecuted, percent: importedPercent }).toEqual({ planned: 1013, executed: 0, percent: 0 })
 
     const { submitPdtpProgramForReview } = await import("@/lib/services/prevention-pdtp")
     await expect(submitPdtpProgramForReview(program.id, "user-1")).rejects.toThrow(/22 actividad\(es\).*requieren confirmar/i)

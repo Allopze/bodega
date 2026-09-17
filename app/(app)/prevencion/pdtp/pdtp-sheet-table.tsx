@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/table"
 import { MetaBadge } from "@/components/states/state-badge"
 import type { PdtpAggregateActivityWorksite, PdtpSheetView } from "@/lib/services/prevention-pdtp"
-import { deriveActivityStatus, countOverdueMonths, pdtpActivationPeriod, type PdtpActivityStatus, type PdtpPeriod } from "@/lib/services/pdtp/period"
+import { deriveActivityStatus, countOverdueMonths, isPdtpActivityZeroThisMonth, pdtpActivationPeriod, type PdtpActivityStatusFilter, type PdtpPeriod } from "@/lib/services/pdtp/period"
 import { PdtpExecutionForm } from "./pdtp-execution-form"
 import { PdtpApprovalButtons } from "./pdtp-approval-buttons"
 import { PdtpOverrideForm } from "./pdtp-override-form"
@@ -114,7 +114,7 @@ type PdtpSheetTableProps = {
   viewMode: "semana" | "anual"
   currentPeriod: PdtpPeriod
   sheetCode: string
-  initialStatusFilter?: PdtpActivityStatus | "all"
+  initialStatusFilter?: PdtpActivityStatusFilter | "all"
   aggregateWorksiteNames?: Record<string, string>
   /** Objetivos del programa, ordenados. Sin objetivos (la mayoría de los
    *  programas hoy), la tabla se comporta exactamente igual que antes: sin
@@ -145,7 +145,7 @@ export function PdtpSheetTable({
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const [statusFilter, setStatusFilter] = React.useState<PdtpActivityStatus | "all">(initialStatusFilter)
+  const [statusFilter, setStatusFilter] = React.useState<PdtpActivityStatusFilter | "all">(initialStatusFilter)
 
   React.useEffect(() => setStatusFilter(initialStatusFilter), [initialStatusFilter])
   const [density, toggleDensity] = usePdtpDensity()
@@ -176,20 +176,33 @@ export function PdtpSheetTable({
   const [showAll, setShowAll] = React.useState(false)
   // Compute status counts for the summary
   const statusCounts: PdtpStatusCounts = React.useMemo(() => {
-    const counts = { executed: 0, pending: 0, overdue: 0, not_scheduled: 0 }
+    const counts = { executed: 0, pending: 0, overdue: 0, not_scheduled: 0, zero: 0 }
     for (const activity of sourceActivities) {
       const s = deriveActivityStatus(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod)
       counts[s]++
+      // `zero` se superpone a `pending`/`overdue` (ver el comentario de
+      // `PdtpStatusCounts`): se recalcula aparte, no se deriva de `counts[s]`.
+      if (isPdtpActivityZeroThisMonth(activity, activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod)) {
+        counts.zero++
+      }
     }
     return counts
   }, [sourceActivities, currentPeriod])
 
-  // Apply filter, then pagination for large tables
+  // Apply filter, then pagination for large tables. "en_cero" no es un
+  // `PdtpActivityStatus` exacto: es `pending ∪ overdue` sin `coverage`/
+  // `closed_on_time`, el mismo criterio que `zeroActivityIds` en
+  // `compliance.ts` — de ahí que use su propio predicado en vez de comparar
+  // contra `deriveActivityStatus(...) === statusFilter`.
   const filteredActivities = statusFilter === "all"
     ? sourceActivities
-    : sourceActivities.filter((activity) =>
-        deriveActivityStatus(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod) === statusFilter,
-      )
+    : statusFilter === "en_cero"
+      ? sourceActivities.filter((activity) =>
+          isPdtpActivityZeroThisMonth(activity, activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod),
+        )
+      : sourceActivities.filter((activity) =>
+          deriveActivityStatus(activity.effectiveMonthlyPlanned, activity.effectiveMonthlyExecuted, currentPeriod) === statusFilter,
+        )
 
   // La paginación se mide sobre lo que realmente se ve: si el filtro de estado
   // deja pocas filas no hay nada que paginar, y el contador del botón tiene que

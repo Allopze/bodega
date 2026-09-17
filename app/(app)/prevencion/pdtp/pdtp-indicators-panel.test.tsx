@@ -147,13 +147,17 @@ describe("PdtpIndicatorsPanel — render compacto actual", () => {
       "Actividades con planificación en el mes y ninguna ejecución aprobada. El % mensual puede llegar a 100 % por compensación entre actividades.",
     )
 
-    // Febrero: 2 actividades en cero, enlazadas con el helper existente
-    // (no una URL armada a mano) preservando programa, faena, mes y año.
+    // Febrero: 2 actividades en cero, enlazadas con el helper existente (no
+    // una URL armada a mano) preservando programa, faena, mes y año. El
+    // destino usa el filtro compuesto "en_cero" (pending ∪ overdue, sin
+    // coverage/closed_on_time) y la vista anual — no "overdue" a secas, que
+    // escondería el caso más común (pending sin mes anterior en cero), ni
+    // "semana", que filtraría además por la semana de HOY.
     const febRow = within(details).getByText("Feb").closest("tr")!
     const zeroLink = within(febRow).getByText("2").closest("a")!
     expect(zeroLink).toHaveAttribute(
       "href",
-      buildPdtpActivitiesHref({ programa: "prog-1", anio: "2026", faena: "ws-1", vista: "semana", estado: "overdue", mes: 2 }),
+      buildPdtpActivitiesHref({ programa: "prog-1", anio: "2026", faena: "ws-1", vista: "anual", estado: "en_cero", mes: 2 }),
     )
 
     // Enero no tiene actividades en cero: se muestra "0" sin enlace.

@@ -45,12 +45,25 @@ export function PdtpIndicatorsPanel({ data, integral, asOf, worksiteId }: {
   worksiteId?: string
 }) {
   const { monthly, quarterly, annual, target, lastExecutionUpdatedAt, programId, year } = data
+  // `estado=en_cero` es el filtro del visor que corresponde exactamente a lo
+  // que esta columna cuenta (`pending ∪ overdue`, sin `coverage`/
+  // `closed_on_time` — ver `isPdtpActivityZeroThisMonth` en `period.ts`).
+  // `estado=overdue` a secas escondía el caso más común: una actividad en
+  // cero sin un mes *anterior* también en cero es "pending", no "overdue".
+  //
+  // `vista=anual`, no `semana`: la vista semanal filtra candidatas por la
+  // semana de HOY (si no se pasa `?semana=`), que no tiene por qué coincidir
+  // con la semana en que se planificó la actividad en el mes `M` que se está
+  // mirando — para cualquier mes que no sea el actual, esa combinación deja
+  // la lista vacía aunque el filtro de estado esté bien. "En cero" es un
+  // concepto mensual, y la vista anual sí filtra por mes sin esa segunda
+  // restricción de semana.
   const zeroActivitiesHref = (month: number) => buildPdtpActivitiesHref({
     programa: programId,
     anio: String(year),
     faena: worksiteId,
-    vista: "semana",
-    estado: "overdue",
+    vista: "anual",
+    estado: "en_cero",
     mes: month,
   })
 

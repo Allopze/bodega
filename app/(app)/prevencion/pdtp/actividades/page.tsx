@@ -16,7 +16,7 @@ import {
 } from "@/lib/services/prevention-pdtp"
 import { listScopedWorksites } from "@/lib/services/ppa"
 import { currentPdtpPeriod } from "@/lib/services/pdtp/period"
-import type { PdtpActivityStatus } from "@/lib/services/pdtp/period"
+import type { PdtpActivityStatusFilter } from "@/lib/services/pdtp/period"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
@@ -57,8 +57,8 @@ export default async function PdtpActivitiesPage({ searchParams }: ActivityViewe
     ? "semana"
     : one(query.vista) === "anual" || isGlobalViewer ? "anual" : "semana"
   const requestedStatus = one(query.estado)
-  const statusFilter: PdtpActivityStatus | "all" = ["executed", "pending", "overdue", "not_scheduled"].includes(requestedStatus ?? "")
-    ? requestedStatus as PdtpActivityStatus
+  const statusFilter: PdtpActivityStatusFilter | "all" = ["executed", "pending", "overdue", "not_scheduled", "en_cero"].includes(requestedStatus ?? "")
+    ? requestedStatus as PdtpActivityStatusFilter
     : "all"
 
   if (!program) {

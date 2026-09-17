@@ -259,9 +259,11 @@ describe("Padrón PDTP por capacidades de trabajadores", () => {
     const { getPdtpComplianceIndicators } = await import("@/lib/services/pdtp/compliance")
     const compliance = await getPdtpComplianceIndicators("program-capability-roster", WORKSITE_ID)
 
-    // toMatchObject: la tarea 1.4 agregó `zeroActivityMonths`/`zeroActivityIds`
-    // a `annual`, ajeno a lo que este caso prueba (padrón por capacidad vacío).
-    expect(compliance?.annual).toMatchObject({ planned: 0, executed: 0, percent: null })
+    // Subconjunto exacto con `toEqual` estricto: la tarea 1.4 agregó
+    // `zeroActivityMonths`/`zeroActivityIds` a `annual`, ajeno a lo que este
+    // caso prueba (padrón por capacidad vacío).
+    const { planned, executed, percent } = compliance!.annual
+    expect({ planned, executed, percent }).toEqual({ planned: 0, executed: 0, percent: null })
     expect(compliance?.subjectRosterIssues).toEqual([
       expect.objectContaining({
         activityId: "activity-capability-roster",

@@ -887,9 +887,11 @@ describe("dos eventos en la misma celda de período", () => {
     })
 
     const compliance = await getPdtpComplianceIndicators(PROGRAM_ID, WS_ID)
-    // toMatchObject: la tarea 1.4 agregó `zeroActivityMonths`/`zeroActivityIds`
-    // a `annual`, ajeno a lo que este caso prueba (no doble-contar un evento).
-    expect(compliance!.annual).toMatchObject({ planned: 2, executed: 1, percent: 0.5 })
+    // Subconjunto exacto con `toEqual` estricto: la tarea 1.4 agregó
+    // `zeroActivityMonths`/`zeroActivityIds` a `annual`, ajeno a lo que este
+    // caso prueba (no doble-contar un evento).
+    const { planned, executed, percent } = compliance!.annual
+    expect({ planned, executed, percent }).toEqual({ planned: 2, executed: 1, percent: 0.5 })
     const categories = await getPdtpComplianceByCategoryForScope(PROGRAM_ID, [WS_ID])
     expect(categories).toEqual([{
       category: "Prevención PDTP 2026",
@@ -996,8 +998,10 @@ describe("una inspección acreditada alimenta los ejes de verificación y cierre
       sourceType: "inspeccion",
     })
     const compliance = await getPdtpComplianceIndicators(PROGRAM_ID, WS_ID)
-    // toMatchObject: ver comentario de más arriba sobre `zeroActivity*` (tarea 1.4).
-    expect(compliance!.annual).toMatchObject({ planned: 1, executed: 1, percent: 1 })
+    // Subconjunto exacto con `toEqual` estricto: ver comentario de más arriba
+    // sobre `zeroActivity*` (tarea 1.4).
+    const { planned, executed, percent } = compliance!.annual
+    expect({ planned, executed, percent }).toEqual({ planned: 1, executed: 1, percent: 1 })
   })
 
   /* Antes este caso usaba "programa en borrador" para provocar el fallo y
@@ -1177,8 +1181,10 @@ describe("una inspección acreditada alimenta los ejes de verificación y cierre
     })
 
     const withOpenFinding = await getPdtpComplianceIndicators(PROGRAM_ID, WS_ID)
-    // toMatchObject: ver comentario de más arriba sobre `zeroActivity*` (tarea 1.4).
-    expect(withOpenFinding!.annual).toMatchObject({ planned: 1, executed: 1, percent: 1 })
+    // Subconjunto exacto con `toEqual` estricto: ver comentario de más arriba
+    // sobre `zeroActivity*` (tarea 1.4).
+    const { planned: openPlanned, executed: openExecuted, percent: openPercent } = withOpenFinding!.annual
+    expect({ planned: openPlanned, executed: openExecuted, percent: openPercent }).toEqual({ planned: 1, executed: 1, percent: 1 })
 
     await inMemoryDb.update(schema.preventionInspectionFindings).set({
       status: "closed",

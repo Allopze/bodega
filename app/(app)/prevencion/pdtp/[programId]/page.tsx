@@ -35,7 +35,7 @@ import { PdtpSheetPicker, PdtpViewToggle, PdtpWorksitePicker } from "../pdtp-she
 import { PdtpIndicatorsPanel } from "../pdtp-indicators-panel"
 import { PdtpImportExcelDialog } from "../pdtp-import-excel-dialog"
 import { resolveSelectedWorksiteId } from "../pdtp-context"
-import type { PdtpActivityStatus } from "@/lib/services/pdtp/period"
+import type { PdtpActivityStatusFilter } from "@/lib/services/pdtp/period"
 import { CoverageReportPanel } from "./coverage-report-panel"
 import { FulfillmentBacklogPanel } from "./fulfillment-backlog-panel"
 import { ProgramLifecycleControls } from "./program-lifecycle-controls"
@@ -80,8 +80,8 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   // enlace compartido o un remount del árbol volvían el filtro a "Todas".
   // Mismo patrón que actividades/page.tsx.
   const requestedStatus = Array.isArray(query.estado) ? query.estado[0] : query.estado
-  const statusFilter: PdtpActivityStatus | "all" = ["executed", "pending", "overdue", "not_scheduled"].includes(requestedStatus ?? "")
-    ? requestedStatus as PdtpActivityStatus
+  const statusFilter: PdtpActivityStatusFilter | "all" = ["executed", "pending", "overdue", "not_scheduled", "en_cero"].includes(requestedStatus ?? "")
+    ? requestedStatus as PdtpActivityStatusFilter
     : "all"
   const renderedAt = new Date().toISOString()
   const currentPeriod = currentPdtpPeriod()

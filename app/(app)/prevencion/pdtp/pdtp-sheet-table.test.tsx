@@ -228,6 +228,80 @@ describe("PdtpSheetTable — weekly filter", () => {
   })
 })
 
+/**
+ * Destino real del enlace "En cero" del panel de indicadores
+ * (`pdtp-indicators-panel.tsx`, `?estado=en_cero`): antes de esta ronda ese
+ * enlace apuntaba a `estado=overdue`, que deja fuera exactamente el caso más
+ * común (una actividad en cero sin un mes *anterior* también en cero es
+ * "pending", no "overdue" — ver `isPdtpActivityZeroThisMonth` en
+ * `period.ts`). Este test verifica lo que de verdad importa: qué muestra el
+ * visor con ese filtro activo, no solo que la URL se construya bien.
+ */
+describe("PdtpSheetTable — filtro 'En cero'", () => {
+  it("incluye pendientes y atrasadas, y excluye ejecutadas, sin programar y actividades de cobertura", () => {
+    const pending = makeActivity("act-pending-zero", "1", "Pendiente en cero", withPlanned(7, 1), ZERO12)
+    const overdue = makeActivity(
+      "act-overdue-zero",
+      "2",
+      "Atrasada en cero",
+      [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+      ZERO12,
+    )
+    const executed = makeActivity("act-executed-zero", "3", "Ejecutada este mes", withPlanned(7, 1), withPlanned(7, 1))
+    const notScheduled = makeActivity("act-not-scheduled-zero", "4", "Sin plan este mes", ZERO12, ZERO12)
+    // Planificada y en cero igual que `pending`, pero de modo `coverage`:
+    // tiene su propia regla todo-o-nada (R1/R2) y un cero ahí no es "no se
+    // hizo nada" — el mismo criterio que excluye a `coverage` de
+    // `zeroActivityIds` en `compliance.ts`.
+    const coverage = {
+      ...makeActivity("act-coverage-zero", "5", "Cobertura en cero", withPlanned(7, 1), ZERO12),
+      indicatorMode: "coverage",
+    } as unknown as PdtpSheetView["activities"][number]
+
+    const view = makeView([pending, overdue, executed, notScheduled, coverage])
+    render(
+      <PdtpSheetTable
+        view={view}
+        viewMode="anual"
+        currentPeriod={CURRENT_PERIOD}
+        sheetCode="pdtp_general"
+        initialStatusFilter="en_cero"
+      />,
+    )
+
+    expect(screen.getByText("Pendiente en cero")).toBeInTheDocument()
+    expect(screen.getByText("Atrasada en cero")).toBeInTheDocument()
+    expect(screen.queryByText("Ejecutada este mes")).not.toBeInTheDocument()
+    expect(screen.queryByText("Sin plan este mes")).not.toBeInTheDocument()
+    expect(screen.queryByText("Cobertura en cero")).not.toBeInTheDocument()
+  })
+
+  it("el chip 'En cero' del resumen cuenta pending ∪ overdue y filtra al pulsarlo", () => {
+    const pending = makeActivity("act-pending-zero-2", "1", "Pendiente en cero 2", withPlanned(7, 1), ZERO12)
+    const overdue = makeActivity(
+      "act-overdue-zero-2",
+      "2",
+      "Atrasada en cero 2",
+      [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+      ZERO12,
+    )
+    const executed = makeActivity("act-executed-zero-2", "3", "Ejecutada 2", withPlanned(7, 1), withPlanned(7, 1))
+    const view = makeView([pending, overdue, executed])
+
+    render(<PdtpSheetTable view={view} viewMode="anual" currentPeriod={CURRENT_PERIOD} sheetCode="pdtp_general" />)
+
+    // El label y el conteo son nodos de texto separados dentro del mismo
+    // <span> (`{item.label} {item.count}`); el texto normalizado del chip
+    // es "En cero 2".
+    const zeroChip = screen.getByText("En cero 2").closest("button")!
+
+    fireEvent.click(zeroChip)
+    expect(screen.getByText("Pendiente en cero 2")).toBeInTheDocument()
+    expect(screen.getByText("Atrasada en cero 2")).toBeInTheDocument()
+    expect(screen.queryByText("Ejecutada 2")).not.toBeInTheDocument()
+  })
+})
+
 describe("PdtpExecutionForm — vigencia", () => {
   it("no ofrece períodos anteriores y parte en la semana de aceptación", () => {
     render(<PdtpExecutionForm

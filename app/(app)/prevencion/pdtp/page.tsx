@@ -181,6 +181,12 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
   // en 100%, así que este número es el que de verdad dice si algo quedó sin
   // tocar (tarea 1.4, no cambia la fórmula de `percent`).
   const zeroActivitiesThisMonth = currentMonthData?.zeroActivities ?? 0
+  const zeroActivitiesLabel = zeroActivitiesThisMonth === 1 ? "1 actividad en cero" : `${zeroActivitiesThisMonth} actividades en cero`
+  // Sin faena elegida, `zeroActivitiesThisMonth` es la UNIÓN entre las faenas
+  // autorizadas (`getPdtpComplianceIndicatorsForScope`): una actividad cuenta
+  // una vez aunque esté en cero en varias faenas a la vez. Sin esta
+  // aclaración, "N actividades en cero" se lee como "N faena-mes en cero".
+  const zeroActivitiesQualifier = selectedWorksiteId ? "" : " en al menos una faena"
   const aggregateForKpis = focusProgram
     ? await getPdtpAggregatedSheetViewByProgram(focusProgram.id, "pdtp_general", effectiveWorksites.map((worksite) => worksite.id), currentPeriod)
     : null
@@ -301,9 +307,17 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
             <KpiCard
               label="Pendientes"
               value={String(pendingCount)}
-              detail={`${zeroActivitiesThisMonth} actividades en cero este mes`}
+              // Primero explica lo que muestra el tile (una cantidad de
+              // instancias programadas sin ejecutar este mes); las
+              // actividades en cero van como dato secundario, con
+              // singular/plural correcto — antes decía "1 actividades".
+              detail={`Programadas sin ejecutar este mes · ${zeroActivitiesLabel}${zeroActivitiesQualifier}`}
               icon={<ChartBar size={22} className="text-[var(--color-primary)]" />}
-              href={focusProgram ? activitiesHref(focusProgram.id, year, selectedWorksiteId, "semana", "pending", currentPeriod) : undefined}
+              // "en_cero" (pending ∪ overdue), el mismo destino que la
+              // columna "En cero" del panel de indicadores cuando hablan del
+              // mismo mes: antes este tile enlazaba a "pending" a secas y
+              // dejaba fuera las atrasadas, que también están en cero.
+              href={focusProgram ? activitiesHref(focusProgram.id, year, selectedWorksiteId, "semana", "en_cero", currentPeriod) : undefined}
             />
             {/* Reemplaza el conteo de faenas, que no cambiaba ninguna decisión
                 (regla A1). El integral pondera ejecución + verificación de
