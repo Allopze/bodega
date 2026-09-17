@@ -113,6 +113,9 @@ export const pgliteTestFiles = [
   // (loadProgramScheduleAndExecutions) — indicador, RE-36, exclusión mutua
   // con ejecuciones y no-alteración de la huella firmada.
   "lib/__tests__/pdtp-deviations.test.ts",
+  // Fase 4: el cierre mensual por faena y su distribución por correo.
+  "lib/__tests__/pdtp-period-closures.test.ts",
+  "lib/__tests__/pdtp-closure-distribution.test.ts",
   "lib/__tests__/pdtp-re36-document.test.ts",
   "lib/__tests__/pdtp-capability-subjects.test.ts",
   "lib/__tests__/pdtp-checklist-action-plan.test.ts",

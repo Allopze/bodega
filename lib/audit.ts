@@ -9,7 +9,11 @@ type AuditDb = Pick<DB, "insert">
 interface AuditParams {
   userId:     string | null
   userEmail?: string
-  action:     "create" | "update" | "status_change" | "delete" | "cancel" | "login" | "export"
+  // `close`: cierre/reapertura de un período contable o de gestión (hoy, el
+  // cierre mensual del PDTP por faena). No es un `status_change` cualquiera:
+  // congela una foto que después se distribuye como evidencia, y la auditoría
+  // necesita poder aislarla.
+  action:     "create" | "update" | "status_change" | "delete" | "cancel" | "login" | "export" | "close"
   entityType: string
   entityId:   string
   entityCode?: string

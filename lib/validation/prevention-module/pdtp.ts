@@ -632,3 +632,33 @@ export const pdtpFollowupAddSchema = z.object({
    */
   evidenciaChecksums: z.record(z.string(), z.string().regex(/^[a-f0-9]{64}$/)).optional(),
 })
+
+/* ── Cierre mensual por faena (Fase 4, G4) ──────────────────────────────── */
+
+/**
+ * Cerrar el mes de un programa en una faena. El motivo tiene el mismo mínimo
+ * (10 caracteres) que el resto del módulo y que el CHECK
+ * `pdtp_period_closures_close_reason_check`: la regla vive en un solo lugar y
+ * la base la respalda.
+ *
+ * `distribute` no es parte del cierre sino de lo que la acción hace después
+ * (mandar la notificación y el correo). Viaja acá porque es una casilla del
+ * mismo formulario; el servicio de cierre lo ignora.
+ */
+export const closePdtpPeriodSchema = z.object({
+  programId: z.string().min(1, "Programa requerido"),
+  worksiteId: z.string().min(1, "Faena requerida"),
+  year: z.coerce.number().int().min(2024).max(2100),
+  month: z.coerce.number().int().min(1).max(12),
+  reason: z.string().trim().min(10, "El fundamento del cierre debe tener al menos 10 caracteres").max(3000),
+  distribute: z.coerce.boolean().optional().default(false),
+})
+
+export const reopenPdtpPeriodSchema = z.object({
+  closureId: z.string().min(1, "Cierre requerido"),
+  reason: z.string().trim().min(10, "El motivo de la reapertura debe tener al menos 10 caracteres").max(3000),
+})
+
+export const distributePdtpPeriodClosureSchema = z.object({
+  closureId: z.string().min(1, "Cierre requerido"),
+})

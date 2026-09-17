@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm"
-import { db } from "@/db"
+import { db, type Tx } from "@/db"
 import { pdtpActivities, pdtpActivityWorksiteExclusions, pdtpExecutionDeviations, pdtpExecutions, pdtpChangeLog, pdtpObligations, pdtpPrograms, worksites } from "@/db/schema"
 import { pdtpExecutionId } from "./helpers"
 import { addPdtpChangeLogEntry, assertWorksiteAccess, pdtpCellLockKey } from "./helpers"
@@ -12,6 +12,7 @@ import { logger } from "@/lib/logger"
 import { recordOperationalActivity } from "@/lib/services/operational-activity"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
 import { isPdtpPeriodOnOrAfterActivation } from "./period"
+import { assertPdtpPeriodOpen } from "./period-closures"
 
 export async function markPdtpExecution(input: unknown, userId: string, scope: WorksiteScope) {
   const data = pdtpExecutionSchema.parse(input)
@@ -168,6 +169,12 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
     // que hace de la lectura una condición de escritura, igual que
     // `setWhere: ne(status, 'approved')` más abajo lo es para la aprobación.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${pdtpCellLockKey(data.activityId, data.worksiteId, data.year, data.month, data.week)}))`)
+    // Mes cerrado: la foto del cierre ya se congeló y se distribuyó; escribir
+    // sobre ese mes la dejaría mintiendo. Va DENTRO de la transacción, con el
+    // `tx`, por lo mismo que la lectura del desvío de arriba: comprobarlo
+    // afuera es leer un estado que otra transacción puede cambiar antes del
+    // INSERT.
+    await assertPdtpPeriodOpen(activity.programId, data.worksiteId, data.year, data.month, tx)
     const [activeDeviation] = await tx.select({
       id: pdtpExecutionDeviations.id,
       kind: pdtpExecutionDeviations.kind,
@@ -246,6 +253,24 @@ export async function markPdtpExecution(input: unknown, userId: string, scope: W
   })
 }
 
+/**
+ * El mes de la celda que esta ejecución ocupa tiene que estar abierto para
+ * aprobarla o rechazarla: las dos cambian lo que el indicador del mes dice, y
+ * ese número ya está congelado en la foto del cierre.
+ *
+ * El programa se resuelve desde la actividad porque la fila de ejecución sólo
+ * conoce la celda. Se hace con el `tx` de la operación, no con `db`.
+ */
+async function assertPdtpPeriodOpenForExecution(
+  tx: Tx,
+  execution: { activityId: string; worksiteId: string; year: number; month: number },
+): Promise<void> {
+  const [activity] = await tx.select({ programId: pdtpActivities.programId })
+    .from(pdtpActivities).where(eq(pdtpActivities.id, execution.activityId)).limit(1)
+  if (!activity) return
+  await assertPdtpPeriodOpen(activity.programId, execution.worksiteId, execution.year, execution.month, tx)
+}
+
 export async function approvePdtpExecution(executionId: string, userId: string, scope: WorksiteScope) {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT id FROM ${pdtpExecutions} WHERE id = ${executionId} FOR UPDATE`)
@@ -265,6 +290,7 @@ export async function approvePdtpExecution(executionId: string, userId: string, 
       throw new Error("Quien registró el cumplimiento no puede aprobarlo. Debe hacerlo otra persona.")
     }
     assertWorksiteAccess(execution.worksiteId, scope)
+    await assertPdtpPeriodOpenForExecution(tx, execution)
 
     const now = new Date().toISOString()
     const [updated] = await tx.update(pdtpExecutions)
@@ -333,6 +359,7 @@ export async function rejectPdtpExecution(
     if (execution.status === "rejected") throw new Error("La ejecución ya fue rechazada.")
     if (execution.status !== "submitted") throw new Error("Solo se pueden rechazar ejecuciones en estado 'submitted'.")
     assertWorksiteAccess(execution.worksiteId, scope)
+    await assertPdtpPeriodOpenForExecution(tx, execution)
 
     const now = new Date().toISOString()
     const [updated] = await tx.update(pdtpExecutions)

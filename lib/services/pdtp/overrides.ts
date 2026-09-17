@@ -18,6 +18,7 @@ import {
   type PdtpActivityScheduleOverride,
 } from "@/db/schema"
 import { addPdtpChangeLogEntry } from "./helpers"
+import { assertPdtpPeriodOpen } from "./period-closures"
 
 export type PdtpOverrideInput = {
   activityId: string
@@ -85,6 +86,10 @@ export async function setPdtpActivityOverride(
   // Override y changelog en la misma transacción: el motivo es parte del
   // contenido firmable del programa, igual que en las exclusiones por faena.
   return db.transaction(async (tx) => {
+  // Mes cerrado: una meta por faena es planificado, y el planificado del mes
+  // ya quedó congelado en la foto del cierre. Dentro de la transacción y con
+  // el `tx`, mismo criterio que ejecuciones y desvíos.
+  await assertPdtpPeriodOpen(activity.programId, input.worksiteId, input.year, input.month, tx)
   const [row] = await tx
     .insert(pdtpActivityScheduleOverrides)
     .values({

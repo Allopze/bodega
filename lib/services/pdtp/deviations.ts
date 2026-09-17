@@ -51,6 +51,7 @@ import { applyOverridesToSchedule, loadPdtpOverrides } from "./overrides"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
 import { currentPdtpPeriod, isPdtpPeriodOnOrAfterActivation } from "./period"
 import { deriveScheduleHorizon } from "./recurrence"
+import { assertPdtpPeriodOpen } from "./period-closures"
 
 export type PdtpDeviationKind = "not_performed" | "not_applicable" | "reprogrammed"
 
@@ -206,6 +207,16 @@ export async function recordPdtpDeviation(
       // ninguna de las dos operaciones puede entrar mientras la otra está en
       // vuelo sobre la misma celda.
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${pdtpCellLockKey(data.activityId, data.worksiteId, data.year, data.month, data.week)}))`)
+      // Mes cerrado: la foto del cierre congeló el planificado y el ejecutado
+      // de ese mes. Un `reprogrammed` toca DOS meses —saca planificado del
+      // origen y lo deposita en el destino—, así que los dos tienen que estar
+      // abiertos: cerrar sólo el origen dejaría que un desvío alterara un mes
+      // ya distribuido por la puerta de atrás. Dentro de la transacción y con
+      // el `tx`, igual que la lectura de la ejecución conflictiva.
+      await assertPdtpPeriodOpen(activity.programId, data.worksiteId, data.year, data.month, tx)
+      if (data.kind === "reprogrammed") {
+        await assertPdtpPeriodOpen(activity.programId, data.worksiteId, data.year, data.targetMonth!, tx)
+      }
       if (requiresCellExclusivity) {
         const [conflictingExecution] = await tx.select({
           id: pdtpExecutions.id,
@@ -290,6 +301,15 @@ export async function withdrawPdtpDeviation(
     const [program] = await tx.select({ version: pdtpPrograms.version })
       .from(pdtpPrograms).where(eq(pdtpPrograms.id, activity.programId)).limit(1)
     if (!program) throw new Error("Programa PDTP no encontrado.")
+
+    // Retirar deshace el efecto del desvío sobre el planificado, así que pesa
+    // igual que declararlo: si el mes está cerrado, el número congelado dejaría
+    // de corresponder. Para un `reprogrammed` se comprueban origen y destino,
+    // porque retirar devuelve la cantidad de uno al otro.
+    await assertPdtpPeriodOpen(activity.programId, deviation.worksiteId, deviation.year, deviation.month, tx)
+    if (deviation.kind === "reprogrammed" && deviation.targetMonth !== null) {
+      await assertPdtpPeriodOpen(activity.programId, deviation.worksiteId, deviation.year, deviation.targetMonth, tx)
+    }
 
     const now = new Date().toISOString()
     const [updated] = await tx.update(pdtpExecutionDeviations).set({

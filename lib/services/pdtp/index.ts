@@ -114,6 +114,20 @@ export {
 export {
   buildPdtpRe36Document,
 } from "./re36-document"
+export {
+  pdtpPeriodClosureId,
+  pdtpPeriodCutoffIso,
+  buildPdtpPeriodClosureSnapshot,
+  closePdtpPeriod,
+  reopenPdtpPeriod,
+  listPdtpPeriodClosures,
+  getPdtpPeriodClosure,
+  getLatestPdtpPeriodClosure,
+  assertPdtpPeriodOpen,
+} from "./period-closures"
+export type {
+  PdtpPeriodClosureSnapshot, PdtpPeriodClosureObjective, PdtpPeriodClosureListRow,
+} from "./period-closures"
 export type {
   PdtpRe36Document, PdtpRe36Sheet, PdtpRe36Row, PdtpRe36Cell, PdtpRe36Band, PdtpRe36DeviationRow,
 } from "./re36-document"
