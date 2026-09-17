@@ -23,12 +23,21 @@ import { listVencidas } from "./followups"
 import { loadProgramScheduleAndExecutions } from "./helpers"
 import { listPdtpObligationReminderCandidates, recordPdtpObligationReminder, type PdtpReminderWindow } from "./obligations"
 import { isPdtpActivityEffectiveForPeriod } from "./retirement"
+import { listPdtpActivityAssignees } from "./assignees"
+import { todayInChile } from "@/lib/utils"
 
 export type PdtpPendingTarget = {
   worksiteId: string
   worksiteName: string
   /** IDs de actividades con plan pendiente en el período (sin ejecución). */
   activityIds: string[]
+  /**
+   * Fase 5: asignados nominales vigentes, por actividad, en esta faena. Una
+   * actividad que aparece acá le pertenece a esas personas y el recordatorio va
+   * sólo a ellas; una que no aparece sigue avisándose a todo el rol, como
+   * antes. Las claves son un subconjunto de `activityIds`.
+   */
+  assigneeUserIdsByActivity: Record<string, string[]>
 }
 
 export type PdtpWeeklyPendingResult = {
@@ -127,7 +136,23 @@ export async function findPdtpWeeklyPending(period: PdtpPeriod = currentPdtpPeri
       }, []),
     )
     if (pendingActivityIds.size > 0) {
-      return { worksiteId: ws.id, worksiteName: ws.name, activityIds: [...pendingActivityIds] }
+      // El asignado nominal manda sobre el rol: si alguien tiene la actividad a
+      // su nombre en esta faena, el recordatorio es suyo y no del rol completo.
+      // Se resuelve al día de hoy en Chile, que es cuando se envía el correo.
+      const assignees = await listPdtpActivityAssignees(program.id, ws.id, { asOf: todayInChile() })
+      const assigneeUserIdsByActivity: Record<string, string[]> = {}
+      for (const assignee of assignees) {
+        if (!pendingActivityIds.has(assignee.activityId)) continue
+        const list = assigneeUserIdsByActivity[assignee.activityId] ?? []
+        list.push(assignee.userId)
+        assigneeUserIdsByActivity[assignee.activityId] = list
+      }
+      return {
+        worksiteId: ws.id,
+        worksiteName: ws.name,
+        activityIds: [...pendingActivityIds],
+        assigneeUserIdsByActivity,
+      }
     }
     return null
   }))
@@ -172,19 +197,29 @@ export async function runPdtpWeeklyReminders(period: PdtpPeriod = currentPdtpPer
     userIds: await getUserIdsWithPermissionForWorksite("prevention:pdtp:execute", target.worksiteId),
   })))
   for (const { target, userIds } of recipientsByTarget) {
-    for (const userId of userIds) {
-      const key = `${userId}::${target.worksiteId}`
+    // Fase 5: el destinatario se resuelve POR ACTIVIDAD, no por faena. Una
+    // actividad con asignado nominal le llega sólo a ese asignado (a los dos,
+    // si son turnos); el resto sigue yendo a todos los que tienen el permiso en
+    // la faena. Mandarle a un rol completo el recordatorio de algo que ya tiene
+    // dueño con nombre es exactamente el ruido que hace que se dejen de leer.
+    const addPending = (recipientId: string, activityId: string) => {
+      const key = `${recipientId}::${target.worksiteId}`
       const existing = userWorksiteMap.get(key)
       if (existing) {
-        for (const aid of target.activityIds) existing.activityIds.add(aid)
+        existing.activityIds.add(activityId)
       } else {
         userWorksiteMap.set(key, {
-          userId,
+          userId: recipientId,
           worksiteId: target.worksiteId,
           worksiteName: target.worksiteName,
-          activityIds: new Set(target.activityIds),
+          activityIds: new Set([activityId]),
         })
       }
+    }
+    for (const activityId of target.activityIds) {
+      const assigned = target.assigneeUserIdsByActivity[activityId] ?? []
+      const recipients = assigned.length > 0 ? assigned : userIds
+      for (const recipientId of recipients) addPending(recipientId, activityId)
     }
   }
 

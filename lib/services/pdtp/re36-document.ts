@@ -32,6 +32,7 @@ import {
   worksites,
 } from "@/db/schema"
 import { listPdtpApprovalSteps } from "./approval-flow"
+import { listPdtpActivityAssignees } from "./assignees"
 import { effectiveApprovedExecutionsByCell, getPdtpComplianceIndicators } from "./compliance"
 import { assertWorksiteAccess, loadProgramScheduleAndExecutions, type WorksiteScope } from "./helpers"
 import { listPdtpObjectives } from "./objectives"
@@ -40,7 +41,7 @@ import { getPdtpProgram } from "./programs"
 import { listPdtpProgramSheets } from "./sheet-management"
 import { MONTH_LABELS } from "./constants"
 import { pdtpDeviationKindLabel } from "@/lib/prevention/pdtp"
-import { chileDateParts } from "@/lib/utils"
+import { chileDateParts, todayInChile } from "@/lib/utils"
 
 const MONTHS = 12
 const WEEKS_PER_MONTH = 4
@@ -119,6 +120,29 @@ function formatChileDay(value: string | null | undefined): string {
   return `${String(day).padStart(2, "0")}-${String(month).padStart(2, "0")}-${year}`
 }
 
+/**
+ * `AAAA-MM-DD` del día chileno de un instante ISO. La vigencia de una
+ * asignación nominal es una fecha civil; el corte del documento es un instante.
+ * Esta es la traducción entre las dos, y tiene que hacerse en hora de Chile:
+ * un corte a las 23:00 del 31 de marzo es el 31 de marzo en faena y el 1 de
+ * abril en UTC, y con él cambiaría el responsable que muestra el documento.
+ */
+function isoToChileDay(value: string): string {
+  const { year, month, day } = chileDateParts(new Date(value))
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+}
+
+/**
+ * Texto de la columna RESPONSABLES del RE-36: el cargo del programa firmado
+ * y, entre paréntesis, quién lo tiene a su nombre hoy en esta faena —
+ * "Sup, JT (María Pérez)". El cargo no se reemplaza: el documento se firma por
+ * cargo y tiene que seguir leyéndose igual cuando la persona rote.
+ */
+export function pdtpRe36ResponsiblesLabel(row: Pick<PdtpRe36Row, "responsibles" | "assigneeNames">): string {
+  if (row.assigneeNames.length === 0) return row.responsibles
+  return `${row.responsibles} (${row.assigneeNames.join(", ")})`
+}
+
 export type PdtpRe36Cell = { p: number | null; e: number | null; note?: string }
 
 export type PdtpRe36Row = {
@@ -129,9 +153,16 @@ export type PdtpRe36Row = {
   program: string
   activity: string
   responsibles: string
-  /** Fase 5: nombres resueltos de los ejecutores acreditadores asignados a la
-   * actividad. Vacío hasta esa fase — el campo se declara ahora para que el
-   * tipo no cambie cuando se llene. */
+  /**
+   * Fase 5: nombres de las personas que tienen esta actividad asignada
+   * nominalmente en esta faena, vigentes **a la fecha de corte del documento**
+   * (`cutoff.asOf`, en día chileno). Vacío cuando nadie la tiene a su nombre.
+   *
+   * Resolver a la fecha de corte —y no "a hoy"— es lo que mantiene reproducible
+   * la foto congelada del cierre mensual: las vigencias se cierran en vez de
+   * borrarse, así que preguntar por el 31 de marzo devuelve siempre lo mismo y
+   * nombrar hoy a otro responsable no marca el mes cerrado como desviado.
+   */
   assigneeNames: string[]
   scheduleMode: "scheduled" | "on_demand" | "triggered"
   /** 48 celdas: `(month-1)*4 + (week-1)`, mes 1-12, semana 1-4. */
@@ -273,6 +304,16 @@ export async function buildPdtpRe36Document(input: {
    * de cierre mensual, no para esta tarea.
    */
   cutoffMonth?: number | null
+  /**
+   * Variante "por persona": en vez de las hojas por cargo del formato, una
+   * hoja por persona con asignación nominal vigente, con sus actividades. Es la
+   * réplica de la hoja POR CARGO del Excel original, nominalizada — lo que la
+   * faena imprime y le entrega a cada responsable.
+   *
+   * Si nadie tiene asignación nominal en esta faena no hay variante que
+   * generar, y el documento vuelve a sus hojas normales en vez de salir vacío.
+   */
+  porPersona?: boolean
 }): Promise<PdtpRe36Document> {
   assertWorksiteAccess(input.worksiteId, input.scope)
 
@@ -442,6 +483,19 @@ export async function buildPdtpRe36Document(input: {
 
   const responsibleSlugsUsed = new Set<string>()
 
+  // Asignación nominal (Fase 5), a la fecha de corte del documento. El corte se
+  // expresa en día chileno porque la vigencia de una asignación es una fecha
+  // civil, no un instante: leerla en UTC movería el cambio de responsable entre
+  // las 20:00 y la medianoche.
+  const assigneeAsOf = input.asOf ? isoToChileDay(input.asOf) : todayInChile()
+  const assigneeRows = await listPdtpActivityAssignees(input.programId, input.worksiteId, { asOf: assigneeAsOf })
+  const assigneeNamesByActivity = new Map<string, string[]>()
+  for (const assignee of assigneeRows) {
+    const list = assigneeNamesByActivity.get(assignee.activityId) ?? []
+    list.push(assignee.userName)
+    assigneeNamesByActivity.set(assignee.activityId, list)
+  }
+
   const sheets: PdtpRe36Sheet[] = resolvedSheets.map((sheet) => {
     const memberships = membershipsBySheet.get(sheet.id) ?? []
     const candidateActivities = memberships
@@ -488,7 +542,7 @@ export async function buildPdtpRe36Document(input: {
         program: activity.program,
         activity: activity.activity,
         responsibles: activity.responsibleDisplay,
-        assigneeNames: [],
+        assigneeNames: assigneeNamesByActivity.get(activity.id) ?? [],
         scheduleMode: activity.scheduleMode as "scheduled" | "on_demand" | "triggered",
         cells,
       }
@@ -526,6 +580,19 @@ export async function buildPdtpRe36Document(input: {
 
     return { code: sheet.code, label: sheet.label, rows, bands }
   })
+
+  // ── Variante "por persona" ────────────────────────────────────────────────
+  //
+  // Réplica nominalizada de la hoja POR CARGO del Excel original: una pestaña
+  // por persona con asignación nominal vigente, con las actividades que tiene a
+  // su nombre. Las filas son las MISMAS que ya se armaron (mismas celdas P/E,
+  // mismas notas de desvío) — acá sólo se reagrupan, no se recalcula nada.
+  //
+  // Las bandas se rehacen sobre el nuevo orden: un `fromRow`/`toRow` heredado
+  // de la hoja general apuntaría a filas que en esta pestaña no existen.
+  const outputSheets = input.porPersona
+    ? buildPerPersonSheets(sheets, assigneeRows)
+    : sheets
 
   const indicators = await getPdtpComplianceIndicators(input.programId, input.worksiteId)
   if (!indicators) throw new Error("No fue posible calcular los indicadores de cumplimiento del programa.")
@@ -734,7 +801,7 @@ export async function buildPdtpRe36Document(input: {
     // comportamiento anterior (ahora, año completo) — pero un caller que
     // necesita congelar el documento (cierre mensual) puede fijarlos.
     cutoff: { asOf: input.asOf ?? new Date().toISOString(), year: program.year, month: input.cutoffMonth ?? null },
-    sheets,
+    sheets: outputSheets,
     platformIndicators,
     signatures,
     changeControl,
@@ -746,4 +813,72 @@ export async function buildPdtpRe36Document(input: {
     },
     deviations,
   }
+}
+
+/**
+ * Agrupa las filas ya construidas en una hoja por persona asignada.
+ *
+ * Devuelve las hojas originales cuando no hay ninguna asignación nominal: un
+ * documento sin pestañas no lo abre Excel, y "nadie tiene nada asignado en esta
+ * faena" no es un error que justifique negarle el export a quien lo pidió.
+ */
+function buildPerPersonSheets(
+  sheets: PdtpRe36Sheet[],
+  assignees: Array<{ activityId: string; userId: string; userName: string }>,
+): PdtpRe36Sheet[] {
+  if (assignees.length === 0) return sheets
+
+  // Una fila por actividad, sin importar en cuántas hojas por cargo aparezca:
+  // las hojas del RE-36 son subconjuntos solapados y duplicar la actividad en
+  // la pestaña de la persona la haría contar dos veces al sumar.
+  const rowByActivity = new Map<string, PdtpRe36Row>()
+  for (const sheet of sheets) {
+    for (const row of sheet.rows) {
+      if (!rowByActivity.has(row.activityId)) rowByActivity.set(row.activityId, row)
+    }
+  }
+
+  const byUser = new Map<string, { name: string; rows: PdtpRe36Row[] }>()
+  for (const assignee of assignees) {
+    const row = rowByActivity.get(assignee.activityId)
+    if (!row) continue
+    const entry = byUser.get(assignee.userId) ?? { name: assignee.userName, rows: [] }
+    if (!entry.rows.some((existing) => existing.activityId === row.activityId)) entry.rows.push(row)
+    byUser.set(assignee.userId, entry)
+  }
+
+  const personSheets = [...byUser.entries()]
+    .filter(([, entry]) => entry.rows.length > 0)
+    .sort((a, b) => a[1].name.localeCompare(b[1].name))
+    .map(([userId, entry]) => {
+      const rows = [...entry.rows].sort((a, b) => a.n - b.n)
+      return {
+        code: `persona:${userId}`,
+        label: entry.name,
+        rows,
+        bands: bandsForRows(rows),
+      }
+    })
+
+  return personSheets.length > 0 ? personSheets : sheets
+}
+
+/** Bandas por objetivo (o eje) sobre un orden de filas concreto, 1-based. */
+function bandsForRows(rows: PdtpRe36Row[]): PdtpRe36Band[] {
+  const bands: PdtpRe36Band[] = []
+  let lastGroupKey: string | null = null
+  for (const [index, row] of rows.entries()) {
+    const rowNumber = index + 1
+    const code = row.objectiveCode
+    const name = row.objectiveName ?? row.program
+    const groupKey = code ? `obj:${code}` : `program:${row.program}`
+    const currentBand = bands[bands.length - 1]
+    if (currentBand && lastGroupKey === groupKey) {
+      currentBand.toRow = rowNumber
+    } else {
+      bands.push({ code, name, fromRow: rowNumber, toRow: rowNumber })
+    }
+    lastGroupKey = groupKey
+  }
+  return bands
 }

@@ -113,6 +113,8 @@ export const pgliteTestFiles = [
   // (loadProgramScheduleAndExecutions) — indicador, RE-36, exclusión mutua
   // con ejecuciones y no-alteración de la huella firmada.
   "lib/__tests__/pdtp-deviations.test.ts",
+  // Fase 5: asignación nominal de actividades a personas, por faena.
+  "lib/__tests__/pdtp-assignees.test.ts",
   // Fase 4: el cierre mensual por faena y su distribución por correo.
   "lib/__tests__/pdtp-period-closures.test.ts",
   "lib/__tests__/pdtp-closure-distribution.test.ts",

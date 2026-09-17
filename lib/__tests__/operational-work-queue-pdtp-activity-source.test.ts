@@ -11,7 +11,7 @@ import { PGlite } from "@electric-sql/pglite"
 import { drizzle } from "drizzle-orm/pglite"
 import { eq } from "drizzle-orm"
 import { migratePGlite } from "@/lib/testing/pglite-migrate"
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest"
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest"
 import path from "node:path"
 import type { Session } from "next-auth"
 import * as schema from "@/db/schema"
@@ -48,11 +48,15 @@ describe("cola operacional — actividades programadas del PDTP", () => {
    *  en el mes en curso y se verifica sólo la rama que aplica. */
   const previousMonth = month > 1 ? month - 1 : null
 
-  function makeSession(roles: string[], worksiteIds: string[] = [worksiteA, worksiteB]): Session {
+  function makeSession(
+    roles: string[],
+    worksiteIds: string[] = [worksiteA, worksiteB],
+    userId = "user-pdtpq",
+  ): Session {
     return {
       expires: "2099-01-01T00:00:00.000Z",
       user: {
-        id: "user-pdtpq", name: "Test", email: "pdtpq@chome.cl",
+        id: userId, name: "Test", email: "pdtpq@chome.cl",
         // PEND-001: la cola selecciona por el permiso de la acción que promete
         // la CTA («Ejecutar actividad»), no por el de lectura del módulo.
         roles, permissions: ["prevention:pdtp:view", "prevention:pdtp:execute"], worksiteIds,
@@ -68,10 +72,18 @@ describe("cola operacional — actividades programadas del PDTP", () => {
       { id: worksiteA, name: "Faena PDTPQ A", code: "PDTPQ-A", isActive: true, createdAt: now, updatedAt: now },
       { id: worksiteB, name: "Faena PDTPQ B", code: "PDTPQ-B", isActive: true, createdAt: now, updatedAt: now },
     ])
-    await inMemoryDb.insert(schema.users).values({
-      id: "user-pdtpq", name: "Test", email: "pdtpq@chome.cl",
-      hashedPassword: "hash", isActive: true, createdAt: now, updatedAt: now,
-    })
+    await inMemoryDb.insert(schema.users).values([
+      {
+        id: "user-pdtpq", name: "Test", email: "pdtpq@chome.cl",
+        hashedPassword: "hash", isActive: true, createdAt: now, updatedAt: now,
+      },
+      // Segundo jefe de terreno de la misma faena: es el que deja de ver la
+      // fila cuando la actividad tiene dueño con nombre.
+      {
+        id: "user-pdtpq-2", name: "Otro Jefe", email: "pdtpq2@chome.cl",
+        hashedPassword: "hash", isActive: true, createdAt: now, updatedAt: now,
+      },
+    ])
     await inMemoryDb.insert(schema.pdtpResponsibleCatalog).values([
       { slug: "jt", displayName: "Jefe de terreno PDTPQ", roleName: "jefe_terreno", kind: "rbac_role", isActive: true },
       { slug: "prf", displayName: "Prevencionista PDTPQ", roleName: "prevencionista_faena", kind: "rbac_role", isActive: true },
@@ -379,5 +391,87 @@ describe("cola operacional — actividades programadas del PDTP", () => {
       await inMemoryDb.delete(schema.pdtpActivitySchedule)
         .where(eq(schema.pdtpActivitySchedule.id, "sch-jt-prev-act"))
     }
+  })
+
+  /**
+   * Fase 5 — asignación nominal. El cambio de visibilidad es la decisión
+   * delicada de la fase: con asignado, los demás del mismo rol dejan de ver la
+   * fila. Se prueban los tres estados, porque equivocarse en cualquiera de
+   * ellos deja trabajo invisible:
+   *
+   *  · sin asignación vigente, la visibilidad por rol queda EXACTAMENTE igual;
+   *  · con asignación, la ve el asignado y nadie más;
+   *  · con dos asignados (turnos), la ven los dos.
+   */
+  describe("asignación nominal por faena", () => {
+    const asignar = (id: string, userId: string, validUntil: string | null = null) =>
+      inMemoryDb.insert(schema.pdtpActivityWorksiteAssignees).values({
+        id, activityId: "act-pdtpq-jt", worksiteId: worksiteA, userId,
+        roleId: null, validFrom: "2020-01-01", validUntil,
+        createdByUserId: "user-pdtpq", createdAt: now, updatedAt: now,
+      })
+
+    afterEach(async () => { await inMemoryDb.delete(schema.pdtpActivityWorksiteAssignees) })
+
+    it("sin asignación vigente, los dos jefes de terreno siguen viendo la fila", async () => {
+      const mias = await pdtpItems(makeSession(["jefe_terreno"], [worksiteA]))
+      const ajenas = await pdtpItems(makeSession(["jefe_terreno"], [worksiteA], "user-pdtpq-2"))
+      expect(mias.map((item) => item.sourceId)).toEqual(ajenas.map((item) => item.sourceId))
+      expect(mias.length).toBeGreaterThan(0)
+      // Sin dueño con nombre, la tarjeta no miente diciendo que es de alguien.
+      expect(mias[0]!.assignee).toBeNull()
+    })
+
+    it("con asignado nominal la ve el asignado, con su nombre, y el otro del mismo rol no", async () => {
+      await asignar("asg-q-1", "user-pdtpq")
+
+      const delAsignado = await pdtpItems(makeSession(["jefe_terreno"], [worksiteA]))
+      expect(delAsignado).toHaveLength(1)
+      expect(delAsignado[0]!.assignee).toEqual({ userId: "user-pdtpq", name: "Test" })
+
+      const delOtro = await pdtpItems(makeSession(["jefe_terreno"], [worksiteA], "user-pdtpq-2"))
+      expect(delOtro.map((item) => item.sourceId)).not.toContain(`act-pdtpq-jt:${worksiteA}`)
+    })
+
+    it("la asignación es por faena: la otra faena sigue viéndose por rol", async () => {
+      await asignar("asg-q-2", "user-pdtpq")
+      const delOtro = await pdtpItems(makeSession(["jefe_terreno"], [worksiteA, worksiteB], "user-pdtpq-2"))
+      expect(delOtro.map((item) => item.worksiteId)).toEqual([worksiteB])
+    })
+
+    it("dos asignados por turnos la ven los dos", async () => {
+      await asignar("asg-q-3", "user-pdtpq")
+      await asignar("asg-q-4", "user-pdtpq-2")
+      const primero = await pdtpItems(makeSession(["jefe_terreno"], [worksiteA]))
+      const segundo = await pdtpItems(makeSession(["jefe_terreno"], [worksiteA], "user-pdtpq-2"))
+      expect(primero).toHaveLength(1)
+      expect(segundo).toHaveLength(1)
+      expect(segundo[0]!.assignee).toEqual({ userId: "user-pdtpq-2", name: "Otro Jefe" })
+    })
+
+    it("una vigencia ya cerrada devuelve la fila al rol completo", async () => {
+      await asignar("asg-q-5", "user-pdtpq", "2020-12-31")
+      const delOtro = await pdtpItems(makeSession(["jefe_terreno"], [worksiteA], "user-pdtpq-2"))
+      expect(delOtro).toHaveLength(1)
+      expect(delOtro[0]!.assignee).toBeNull()
+    })
+
+    it("una vigencia que todavía no empieza no esconde nada", async () => {
+      await inMemoryDb.insert(schema.pdtpActivityWorksiteAssignees).values({
+        id: "asg-q-6", activityId: "act-pdtpq-jt", worksiteId: worksiteA, userId: "user-pdtpq",
+        roleId: null, validFrom: "2099-01-01", validUntil: null,
+        createdByUserId: "user-pdtpq", createdAt: now, updatedAt: now,
+      })
+      const delOtro = await pdtpItems(makeSession(["jefe_terreno"], [worksiteA], "user-pdtpq-2"))
+      expect(delOtro).toHaveLength(1)
+      expect(delOtro[0]!.assignee).toBeNull()
+    })
+
+    it("asignar no le da la fila a quien no tiene el rol responsable", async () => {
+      // La asignación decide entre los que YA podían verla; no es una llave que
+      // reparta trabajo a cualquiera.
+      await asignar("asg-q-7", "user-pdtpq")
+      expect(await pdtpItems(makeSession(["bodeguero"], [worksiteA]))).toHaveLength(0)
+    })
   })
 })

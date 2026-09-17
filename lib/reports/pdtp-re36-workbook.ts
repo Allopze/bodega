@@ -23,6 +23,7 @@ import type { Session } from "next-auth"
 import { addExportMetadataSheet } from "@/lib/reports/export-metadata"
 import { safeWorksheetName, sanitizeCell } from "@/lib/reports/export-module/excel-builder"
 import type { PdtpRe36Document, PdtpRe36Sheet } from "@/lib/services/pdtp/re36-document"
+import { pdtpRe36ResponsiblesLabel } from "@/lib/services/pdtp/re36-document"
 
 /**
  * Filas/columnas fijas del layout, para no repetir números mágicos. Todo lo
@@ -359,7 +360,10 @@ function renderDataRows(ws: ExcelJS.Worksheet, sheet: PdtpRe36Sheet) {
     setText(ws, `B${excelRow}`, row.n)
     setText(ws, `C${excelRow}`, row.program)
     setText(ws, `D${excelRow}`, row.activity)
-    setText(ws, `E${excelRow}`, row.responsibles)
+    // Cargo del programa firmado + quién lo tiene a su nombre en esta faena
+    // ("Sup, JT (María Pérez)"). El cargo no se reemplaza: el documento se
+    // firma por cargo y tiene que seguir leyéndose igual cuando la persona rote.
+    setText(ws, `E${excelRow}`, pdtpRe36ResponsiblesLabel(row))
 
     for (let month = 1; month <= RE36_LAYOUT.monthsCount; month++) {
       for (let week = 1; week <= RE36_LAYOUT.weeksPerMonth; week++) {

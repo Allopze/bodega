@@ -7,7 +7,7 @@ import type { PdtpPendingTarget } from "@/lib/services/prevention-pdtp"
 afterEach(cleanup)
 
 const WEEKLY_PENDING: PdtpPendingTarget[] = [
-  { worksiteId: "ws-1", worksiteName: "Faena A", activityIds: ["act-1", "act-2"] },
+  { worksiteId: "ws-1", worksiteName: "Faena A", activityIds: ["act-1", "act-2"], assigneeUserIdsByActivity: {} },
 ]
 
 describe("WeeklyScheduledSection — actividades programadas de la semana", () => {

@@ -14,6 +14,7 @@ import {
   billingInvoices,
   pdtpActivities,
   pdtpActivitySchedule,
+  pdtpActivityWorksiteAssignees,
   pdtpActivityWorksiteExclusions,
   pdtpExecutionDeviations,
   pdtpExecutions,
@@ -874,6 +875,10 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
     // acreditación crea ejecuciones sin dueño).
     if (session.user.roles.length > 0 && canActOnQueueSource(session.user.permissions, "pdtp")) {
       const chileNow = sql`(now() AT TIME ZONE 'America/Santiago')`
+      // Día civil chileno: la vigencia de una asignación nominal es por fecha,
+      // y medirla en UTC movería su entrada en vigor entre las 20:00 y la
+      // medianoche — la fila cambiaría de dueño de noche.
+      const chileToday = sql`(now() AT TIME ZONE 'America/Santiago')::date`
       const currentYear = sql`EXTRACT(YEAR FROM ${chileNow})::int`
       const currentMonth = sql`EXTRACT(MONTH FROM ${chileNow})::int`
       add("pdtp", sql`
@@ -890,7 +895,7 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
           false AS blocked,
           ${pdtpActivities.createdAt}::text AS created_at,
           TO_CHAR((make_date(${currentYear}, impago.mes, 1) + INTERVAL '1 month' - INTERVAL '1 day')::date, 'YYYY-MM-DD') AS source_due_at,
-          ${emptyAssignee} AS native_assignee_user_id, ${emptyAssignee} AS native_assignee_name,
+          asignado.user_id AS native_assignee_user_id, asignado.user_name AS native_assignee_name,
           -- D12: la cola avisa, el módulo de destino registra. El destino real
           -- lo decide resolvePdtpFulfillmentTarget, en TypeScript, después de
           -- que la consulta vuelve: depende del contrato anual
@@ -924,6 +929,22 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
               AND ${pdtpProgramWorksites.worksiteId} = ${worksites.id}
           )
         )
+        -- Asignación nominal por faena (Fase 5). Sólo trae AL USUARIO DE LA
+        -- SESIÓN: la fila que se le muestra lleva su propio nombre, y el
+        -- filtro de más abajo usa la presencia de esta fila como "esta tarea
+        -- es mía con nombre y apellido". Traer a todos los asignados acá
+        -- duplicaría la fila por cada persona de un turno.
+        LEFT JOIN LATERAL (
+          SELECT ${pdtpActivityWorksiteAssignees.userId} AS user_id, asignado_user.name AS user_name
+          FROM ${pdtpActivityWorksiteAssignees}
+          INNER JOIN ${users} AS asignado_user ON asignado_user.id = ${pdtpActivityWorksiteAssignees.userId}
+          WHERE ${pdtpActivityWorksiteAssignees.activityId} = ${pdtpActivities.id}
+            AND ${pdtpActivityWorksiteAssignees.worksiteId} = ${worksites.id}
+            AND ${pdtpActivityWorksiteAssignees.userId} = ${session.user.id}
+            AND ${pdtpActivityWorksiteAssignees.validFrom} <= ${chileToday}
+            AND (${pdtpActivityWorksiteAssignees.validUntil} IS NULL OR ${pdtpActivityWorksiteAssignees.validUntil} >= ${chileToday})
+          LIMIT 1
+        ) asignado ON TRUE
         CROSS JOIN LATERAL (
           SELECT MIN(${pdtpActivitySchedule.month}) AS mes
           FROM ${pdtpActivitySchedule}
@@ -992,8 +1013,29 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
             WHERE ${pdtpActivityWorksiteExclusions.activityId} = ${pdtpActivities.id}
               AND ${pdtpActivityWorksiteExclusions.worksiteId} = ${worksites.id}
           )
-          AND EXISTS (
-            SELECT 1 FROM jsonb_array_elements_text(${pdtpActivities.responsibleSlugs}) AS slug
+          -- Visibilidad (Fase 5). Dos regímenes, excluyentes por celda:
+          --
+          --  · SIN asignado nominal vigente: exactamente el criterio de antes
+          --    —le toca a quien tenga el rol responsable (o el que opera por
+          --    él, D21)—. Nada cambia para las 87 filas que nadie asignó.
+          --  · CON asignado nominal vigente: la ve el asignado (los asignados,
+          --    si son dos por turnos) y NADIE MÁS, ni siquiera otros del mismo
+          --    rol. Es el punto de asignar, y es la parte delicada: una
+          --    asignación equivocada deja la fila fuera de la vista de todos
+          --    menos de una persona. Por eso la vista de actividades sigue
+          --    mostrándolo todo, con el chip "Asignada a".
+          AND (
+            asignado.user_id IS NOT NULL
+            OR (
+              NOT EXISTS (
+                SELECT 1 FROM ${pdtpActivityWorksiteAssignees}
+                WHERE ${pdtpActivityWorksiteAssignees.activityId} = ${pdtpActivities.id}
+                  AND ${pdtpActivityWorksiteAssignees.worksiteId} = ${worksites.id}
+                  AND ${pdtpActivityWorksiteAssignees.validFrom} <= ${chileToday}
+                  AND (${pdtpActivityWorksiteAssignees.validUntil} IS NULL OR ${pdtpActivityWorksiteAssignees.validUntil} >= ${chileToday})
+              )
+              AND EXISTS (
+                SELECT 1 FROM jsonb_array_elements_text(${pdtpActivities.responsibleSlugs}) AS slug
             WHERE slug.value IN (
               -- El dueño puede ser el rol del responsable o el rol que opera la
               -- plataforma por él: los conductores y operadores son el
@@ -1006,6 +1048,8 @@ function operationalSourceBranches(session: Session, scope: WorksiteScope): Oper
                   ${inArray(pdtpResponsibleCatalog.roleName, session.user.roles)}
                   OR ${inArray(pdtpResponsibleCatalog.operatedByRoleName, session.user.roles)}
                 )
+            )
+              )
             )
           )
       `)

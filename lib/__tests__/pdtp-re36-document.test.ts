@@ -516,4 +516,88 @@ describe("buildPdtpRe36Document", () => {
     expect(docFebrero.signatures.elaboratedBy.at).toBe("30-02-2033")
     expect(docFebrero.signatures.elaboratedBy.atIso).toBeNull()
   })
+
+  /**
+   * Fase 5 — asignación nominal en el documento. El RE-36 se firma por CARGO y
+   * así se sigue leyendo; lo que agrega la fase es quién lo tiene a su nombre
+   * hoy en esta faena, entre paréntesis, y la variante "por persona" que
+   * replica la hoja POR CARGO del Excel original.
+   */
+  describe("asignación nominal", () => {
+    async function asignar(activityId: string, userId: string, validFrom: string, validUntil: string | null = null) {
+      await inMemoryDb.insert(schema.pdtpActivityWorksiteAssignees).values({
+        id: `asg-${activityId}-${userId}-${validFrom}`,
+        activityId, worksiteId: WORKSITE_ID, userId,
+        roleId: null, validFrom, validUntil,
+        createdByUserId: USER_ID, createdAt: now(), updatedAt: now(),
+      })
+    }
+
+    it("sin asignados, RESPONSABLES queda como el cargo del programa firmado", async () => {
+      await seedBaseFixture()
+      const { buildPdtpRe36Document, pdtpRe36ResponsiblesLabel } = await import("@/lib/services/pdtp/re36-document")
+      const doc = await buildPdtpRe36Document({ programId: PROGRAM_ID, worksiteId: WORKSITE_ID, scope: "all" })
+      const rowA = doc.sheets[0]!.rows.find((row) => row.activityId === "act-a")!
+      expect(rowA.assigneeNames).toEqual([])
+      expect(pdtpRe36ResponsiblesLabel(rowA)).toBe(rowA.responsibles)
+    })
+
+    it("RESPONSABLES suma el nombre de quien la tiene asignada, sin reemplazar el cargo", async () => {
+      await seedBaseFixture()
+      await asignar("act-a", USER_ID, `${YEAR}-01-01`)
+      const { buildPdtpRe36Document, pdtpRe36ResponsiblesLabel } = await import("@/lib/services/pdtp/re36-document")
+      const doc = await buildPdtpRe36Document({ programId: PROGRAM_ID, worksiteId: WORKSITE_ID, scope: "all" })
+      const rowA = doc.sheets[0]!.rows.find((row) => row.activityId === "act-a")!
+      expect(rowA.assigneeNames).toEqual(["Usuaria de prueba"])
+      expect(pdtpRe36ResponsiblesLabel(rowA)).toBe(`${rowA.responsibles} (Usuaria de prueba)`)
+    })
+
+    it("resuelve los asignados a la fecha de corte, no a hoy: la foto del cierre no se mueve", async () => {
+      await seedBaseFixture()
+      // Asignación que empieza DESPUÉS del corte del documento: un cierre de
+      // febrero no puede cambiar porque en septiembre se nombre a otro
+      // responsable — si cambiara, el mes cerrado nacería desviado.
+      await asignar("act-a", USER_ID, `${YEAR}-09-01`)
+      const { buildPdtpRe36Document } = await import("@/lib/services/pdtp/re36-document")
+      const doc = await buildPdtpRe36Document({
+        programId: PROGRAM_ID, worksiteId: WORKSITE_ID, scope: "all",
+        asOf: `${YEAR}-02-28T23:59:59.000Z`, cutoffMonth: 2,
+      })
+      const rowA = doc.sheets[0]!.rows.find((row) => row.activityId === "act-a")!
+      expect(rowA.assigneeNames).toEqual([])
+    })
+
+    it("la variante por persona arma una hoja por asignado, con lo suyo", async () => {
+      await seedBaseFixture()
+      await inMemoryDb.insert(schema.users).values({
+        id: "u-re36-2", name: "Otro responsable", email: "re36b@example.test", hashedPassword: "x",
+      })
+      await asignar("act-a", USER_ID, `${YEAR}-01-01`)
+      await asignar("act-b", "u-re36-2", `${YEAR}-01-01`)
+
+      const { buildPdtpRe36Document } = await import("@/lib/services/pdtp/re36-document")
+      const doc = await buildPdtpRe36Document({
+        programId: PROGRAM_ID, worksiteId: WORKSITE_ID, scope: "all", porPersona: true,
+      })
+      // Una pestaña por persona, con su nombre como etiqueta: es lo que la
+      // faena imprime y le entrega a cada responsable.
+      expect(doc.sheets.map((sheet) => sheet.label)).toEqual(["Otro responsable", "Usuaria de prueba"])
+      expect(doc.sheets[0]!.rows.map((row) => row.activityId)).toEqual(["act-b"])
+      expect(doc.sheets[1]!.rows.map((row) => row.activityId)).toEqual(["act-a"])
+      // Las celdas son las mismas del documento normal: la variante reagrupa,
+      // no recalcula.
+      expect(doc.sheets[1]!.rows[0]!.cells.some((cell) => cell.p !== null)).toBe(true)
+    })
+
+    it("sin ningún asignado, la variante por persona devuelve el documento normal", async () => {
+      // Un libro sin pestañas no lo abre Excel, y "nadie tiene nada asignado
+      // acá" no es motivo para negarle el export a quien lo pidió.
+      await seedBaseFixture()
+      const { buildPdtpRe36Document } = await import("@/lib/services/pdtp/re36-document")
+      const doc = await buildPdtpRe36Document({
+        programId: PROGRAM_ID, worksiteId: WORKSITE_ID, scope: "all", porPersona: true,
+      })
+      expect(doc.sheets.map((sheet) => sheet.code)).toEqual(["general", "cphs"])
+    })
+  })
 })

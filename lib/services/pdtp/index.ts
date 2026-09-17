@@ -158,6 +158,13 @@ export type { PdtpSchedulePresetKey, PdtpSchedulePresetParams } from "./schedule
 export { findPdtpWeeklyPending, runPdtpWeeklyReminders, runPdtpActionPlanVencidasReminders, runPdtpObligationReminders, runPdtpSignaturePendingReminders } from "./reminders"
 export type { PdtpPendingTarget, PdtpWeeklyPendingResult, PdtpActionVencidasReminderResult, PdtpObligationReminderResult, PdtpSignaturePendingResult } from "./reminders"
 export { setPdtpActivityOverride, deletePdtpActivityOverride, loadPdtpOverrides, applyOverridesToSchedule } from "./overrides"
+export {
+  listPdtpActivityAssignees,
+  listPdtpAssigneeCandidates,
+  setPdtpActivityAssignees,
+  resolvePdtpAssigneesForCell,
+} from "./assignees"
+export type { PdtpActivityAssignee, PdtpAssigneeCandidate, PdtpSetAssigneesInput } from "./assignees"
 export type { PdtpOverrideInput } from "./overrides"
 export {
   recordPdtpDeviation,
