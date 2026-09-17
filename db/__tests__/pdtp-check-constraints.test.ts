@@ -21,6 +21,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await inMemoryDb.delete(schema.pdtpActivityScheduleOverrides)
+  await inMemoryDb.delete(schema.pdtpExecutionDeviations)
   await inMemoryDb.delete(schema.pdtpExecutions)
   await inMemoryDb.delete(schema.pdtpActivitySchedule)
   await inMemoryDb.delete(schema.pdtpSheetActivities)
@@ -221,6 +222,163 @@ describe("PDTP CHECK constraints SQL", () => {
           .where(eq(schema.pdtpActivities.id, "a1")),
         "pdtp_activities_objective_same_program_fk",
       )
+    })
+  })
+
+  describe("pdtp_execution_deviations", () => {
+    function insertDeviation(overrides: Partial<{
+      id: string
+      activityId: string
+      worksiteId: string
+      year: number
+      month: number
+      week: number
+      kind: string
+      reason: string
+      targetMonth: number | null
+      targetWeek: number | null
+      status: string
+      createdByUserId: string
+      withdrawnByUserId: string | null
+      withdrawnAt: string | null
+      withdrawReason: string | null
+    }> = {}) {
+      const now = new Date().toISOString()
+      return inMemoryDb.insert(schema.pdtpExecutionDeviations).values({
+        id: overrides.id ?? "dev-1",
+        activityId: overrides.activityId ?? "a1",
+        worksiteId: overrides.worksiteId ?? "w1",
+        year: overrides.year ?? 2026,
+        month: overrides.month ?? 1,
+        week: overrides.week ?? 1,
+        kind: overrides.kind ?? "not_performed",
+        reason: overrides.reason ?? "Lluvia intensa toda la semana",
+        targetMonth: overrides.targetMonth ?? null,
+        targetWeek: overrides.targetWeek ?? null,
+        status: overrides.status ?? "active",
+        createdByUserId: overrides.createdByUserId ?? "u1",
+        createdAt: now,
+        withdrawnByUserId: overrides.withdrawnByUserId ?? null,
+        withdrawnAt: overrides.withdrawnAt ?? null,
+        withdrawReason: overrides.withdrawReason ?? null,
+      } as never)
+    }
+
+    it("acepta un desvío 'not_performed' válido (sanity)", async () => {
+      await insertDeviation({})
+    })
+
+    it("rechaza kind inválido", async () => {
+      await expectCheckViolation(
+        insertDeviation({ kind: "weather" }),
+        "pdtp_execution_deviations_kind_check",
+      )
+    })
+
+    it("rechaza reason con menos de 10 caracteres", async () => {
+      await expectCheckViolation(
+        insertDeviation({ reason: "corto" }),
+        "pdtp_execution_deviations_reason_check",
+      )
+    })
+
+    it("acepta 'reprogrammed' con destino distinto de la celda de origen", async () => {
+      await insertDeviation({
+        kind: "reprogrammed",
+        reason: "Se reprograma por falta de insumos",
+        targetMonth: 2,
+        targetWeek: 1,
+      })
+    })
+
+    it("rechaza 'reprogrammed' sin destino (mitad 1 de la equivalencia)", async () => {
+      await expectCheckViolation(
+        insertDeviation({ kind: "reprogrammed", reason: "Se reprograma por falta de insumos" }),
+        "pdtp_execution_deviations_target_check",
+      )
+    })
+
+    it("rechaza un tipo distinto de 'reprogrammed' que trae destino (mitad 2 de la equivalencia)", async () => {
+      await expectCheckViolation(
+        insertDeviation({
+          kind: "not_applicable",
+          reason: "No aplica esta semana por cierre",
+          targetMonth: 2,
+          targetWeek: 1,
+        }),
+        "pdtp_execution_deviations_target_check",
+      )
+    })
+
+    it("rechaza 'reprogrammed' cuyo destino es la misma celda de origen", async () => {
+      await expectCheckViolation(
+        insertDeviation({
+          kind: "reprogrammed",
+          reason: "Se reprograma por falta de insumos",
+          month: 1, week: 1,
+          targetMonth: 1, targetWeek: 1,
+        }),
+        "pdtp_execution_deviations_target_not_same_cell_check",
+      )
+    })
+
+    it("rechaza status inválido", async () => {
+      await expectCheckViolation(
+        insertDeviation({ status: "cancelled" }),
+        "pdtp_execution_deviations_status_check",
+      )
+    })
+
+    it("rechaza 'withdrawn' sin actor, fecha o motivo", async () => {
+      await expectCheckViolation(
+        insertDeviation({ status: "withdrawn" }),
+        "pdtp_execution_deviations_withdrawn_check",
+      )
+    })
+
+    it("rechaza 'withdrawn' con motivo demasiado corto", async () => {
+      const now = new Date().toISOString()
+      await expectCheckViolation(
+        insertDeviation({
+          status: "withdrawn",
+          withdrawnByUserId: "u1",
+          withdrawnAt: now,
+          withdrawReason: "corto",
+        }),
+        "pdtp_execution_deviations_withdrawn_check",
+      )
+    })
+
+    it("acepta 'withdrawn' con actor, fecha y motivo válidos (sanity)", async () => {
+      const now = new Date().toISOString()
+      await insertDeviation({
+        status: "withdrawn",
+        withdrawnByUserId: "u1",
+        withdrawnAt: now,
+        withdrawReason: "Se retira porque se hizo la actividad tarde",
+      })
+    })
+
+    it("un segundo desvío activo en la misma celda viola el índice único parcial", async () => {
+      await insertDeviation({ id: "dev-a" })
+      await expectCheckViolation(
+        insertDeviation({ id: "dev-b" }),
+        "pdtp_execution_deviations_cell_active_unique",
+      )
+    })
+
+    it("un desvío retirado no bloquea registrar uno nuevo activo en la misma celda", async () => {
+      const now = new Date().toISOString()
+      await insertDeviation({
+        id: "dev-withdrawn",
+        status: "withdrawn",
+        withdrawnByUserId: "u1",
+        withdrawnAt: now,
+        withdrawReason: "Se retira porque se hizo la actividad tarde",
+      })
+      // Mismo activityId/worksiteId/year/month/week que el anterior, pero el
+      // índice único parcial sólo mira las filas `status = 'active'`.
+      await insertDeviation({ id: "dev-new-active" })
     })
   })
 })

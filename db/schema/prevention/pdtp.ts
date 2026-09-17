@@ -674,6 +674,60 @@ export const pdtpExecutions = pgTable("pdtp_executions", {
 ])
 
 /**
+ * Desvíos por celda (actividad × faena × año/mes/semana): la explicación de
+ * por qué una celda no tiene una ejecución "normal" — no se hizo, no aplica,
+ * o se reprogramó para otra celda.
+ *
+ * No es un estado nuevo en `pdtp_executions` a propósito: esa tabla tiene un
+ * índice único parcial que admite una sola fila manual por celda
+ * (`pdtp_executions_activity_scope_period_unique`), pensado para que una
+ * carga humana pendiente no compita con una integración. Meter "no
+ * realizada" ahí colisionaría con esa fila manual y obligaría a tocar el
+ * CHECK de `status` y todos los consumidores de `status IN ('submitted',
+ * 'approved')`. Además un desvío es un hecho operacional, no contenido del
+ * documento firmado: no debe entrar en la huella de `content-digest.ts`, así
+ * que vive en su propia tabla, fuera de lo que el hash del programa cubre.
+ */
+export const pdtpExecutionDeviations = pgTable("pdtp_execution_deviations", {
+  id:                 text("id").primaryKey(),
+  activityId:         text("activity_id").notNull().references(() => pdtpActivities.id, { onDelete: "cascade" }),
+  worksiteId:         text("worksite_id").notNull().references(() => worksites.id, { onDelete: "cascade" }),
+  year:               integer("year").notNull(),
+  month:              integer("month").notNull(),
+  week:               integer("week").notNull(),
+  kind:               text("kind").notNull(),
+  reason:             text("reason").notNull(),
+  /** Sólo para `kind = 'reprogrammed'`: la celda destino. */
+  targetMonth:        integer("target_month"),
+  targetWeek:         integer("target_week"),
+  status:             text("status").notNull().default("active"),
+  createdByUserId:    text("created_by_user_id").notNull().references(() => users.id),
+  createdAt:          timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  withdrawnByUserId:  text("withdrawn_by_user_id").references(() => users.id),
+  withdrawnAt:        timestamp("withdrawn_at", { withTimezone: true, mode: "string" }),
+  withdrawReason:     text("withdraw_reason"),
+}, (table) => [
+  // Una sola celda puede tener un desvío activo a la vez; retirar uno libera
+  // la celda para registrar otro. Sin el WHERE, un desvío retirado
+  // bloquearía indefinidamente registrar uno nuevo en la misma celda.
+  uniqueIndex("pdtp_execution_deviations_cell_active_unique").on(table.activityId, table.worksiteId, table.year, table.month, table.week).where(sql`${table.status} = 'active'`),
+  index("pdtp_execution_deviations_worksite_period_idx").on(table.worksiteId, table.year, table.month),
+  check("pdtp_execution_deviations_month_check", sql`${table.month} BETWEEN 1 AND 12`),
+  check("pdtp_execution_deviations_week_check", sql`${table.week} BETWEEN 1 AND 4`),
+  check("pdtp_execution_deviations_kind_check", sql`${table.kind} IN ('not_performed', 'not_applicable', 'reprogrammed')`),
+  check("pdtp_execution_deviations_reason_check", sql`length(trim(${table.reason})) >= 10`),
+  check("pdtp_execution_deviations_status_check", sql`${table.status} IN ('active', 'withdrawn')`),
+  // Equivalencia, no implicación: un `reprogrammed` SIEMPRE trae destino, y
+  // ningún otro tipo lo trae.
+  check("pdtp_execution_deviations_target_check", sql`(${table.kind} <> 'reprogrammed') = (${table.targetMonth} IS NULL AND ${table.targetWeek} IS NULL)`),
+  // Reprogramar a la misma celda de origen no tiene sentido.
+  check("pdtp_execution_deviations_target_not_same_cell_check", sql`${table.kind} <> 'reprogrammed' OR (${table.targetMonth}, ${table.targetWeek}) <> (${table.month}, ${table.week})`),
+  check("pdtp_execution_deviations_target_month_check", sql`${table.targetMonth} IS NULL OR ${table.targetMonth} BETWEEN 1 AND 12`),
+  check("pdtp_execution_deviations_target_week_check", sql`${table.targetWeek} IS NULL OR ${table.targetWeek} BETWEEN 1 AND 4`),
+  check("pdtp_execution_deviations_withdrawn_check", sql`${table.status} <> 'withdrawn' OR (${table.withdrawnByUserId} IS NOT NULL AND ${table.withdrawnAt} IS NOT NULL AND length(trim(COALESCE(${table.withdrawReason}, ''))) >= 10)`),
+])
+
+/**
  * Libro durable de eventos de cumplimiento (Fase 2 de la plataforma de
  * cumplimiento, 2026-09-02).
  *
@@ -1098,6 +1152,13 @@ export const pdtpExecutionsRelations = relations(pdtpExecutions, ({ one }) => ({
   checklistInstance: one(pdtpExecutionChecklists),
 }))
 
+export const pdtpExecutionDeviationsRelations = relations(pdtpExecutionDeviations, ({ one }) => ({
+  activity: one(pdtpActivities, { fields: [pdtpExecutionDeviations.activityId], references: [pdtpActivities.id] }),
+  worksite: one(worksites, { fields: [pdtpExecutionDeviations.worksiteId], references: [worksites.id] }),
+  createdByUser: one(users, { fields: [pdtpExecutionDeviations.createdByUserId], references: [users.id] }),
+  withdrawnByUser: one(users, { fields: [pdtpExecutionDeviations.withdrawnByUserId], references: [users.id] }),
+}))
+
 export const pdtpFulfillmentEventsRelations = relations(pdtpFulfillmentEvents, ({ one }) => ({
   worksite: one(worksites, { fields: [pdtpFulfillmentEvents.worksiteId], references: [worksites.id] }),
   program: one(pdtpPrograms, { fields: [pdtpFulfillmentEvents.programId], references: [pdtpPrograms.id] }),
@@ -1188,6 +1249,8 @@ export type PdtpActivitySchedule = typeof pdtpActivitySchedule.$inferSelect
 export type NewPdtpActivitySchedule = typeof pdtpActivitySchedule.$inferInsert
 export type PdtpExecution = typeof pdtpExecutions.$inferSelect
 export type NewPdtpExecution = typeof pdtpExecutions.$inferInsert
+export type PdtpExecutionDeviation = typeof pdtpExecutionDeviations.$inferSelect
+export type NewPdtpExecutionDeviation = typeof pdtpExecutionDeviations.$inferInsert
 export type PdtpObligation = typeof pdtpObligations.$inferSelect
 export type NewPdtpObligation = typeof pdtpObligations.$inferInsert
 export type PdtpObligationReminder = typeof pdtpObligationReminders.$inferSelect
