@@ -60,6 +60,17 @@ const P_SCALE_HIGH = "FFB35900"
 const ORANGE_BAND = "FFC000"
 const HATCH_GRAY = "FF808080"
 
+/**
+ * Anchos (en columnas, contadas desde la etiqueta) de los merges de texto
+ * libre que no forman parte del cronograma — puramente estéticos, sin
+ * relación con `RE36_LAYOUT`. Nombrados para que no queden como números
+ * sueltos en medio del código (ronda de arreglos 1/5).
+ */
+const INDICATOR_VALUE_SPAN = 8
+const PLATFORM_LABEL_SPAN = 8
+const PLATFORM_NOTE_SPAN = 12
+const LEGEND_TEXT_SPAN = 10
+
 /** Convierte un índice de columna 1-based (1 = A) a su letra de Excel. */
 function columnLetter(col: number): string {
   let n = col
@@ -131,11 +142,13 @@ export function renderPdtpRe36Workbook(
 
   // La hoja "general" es la que lleva `platformIndicators` (indicador de
   // PROGRAMA, no de hoja — ver JSDoc de `PdtpRe36Document.platformIndicators`).
-  // Se identifica por código (mismo criterio que `buildPdtpRe36Document`); si
+  // Se identifica por código (mismo criterio que `buildPdtpRe36Document`). Si
   // ninguna hoja calza (programa sin hoja general materializada, o filtrado
-  // por `sheetCodes` que la excluyó), se usa la primera hoja como fallback
-  // para no perder el bloque en silencio.
-  const generalSheet = doc.sheets.find((sheet) => isGeneralSheetCode(sheet.code)) ?? doc.sheets[0] ?? null
+  // por `sheetCodes` que la excluyó), NINGUNA hoja lleva el bloque — no se
+  // usa la primera hoja como respaldo (ronda de arreglos 1/5: eso lo dejaba
+  // pegado a los totales de una hoja de cargo cualquiera, que no le
+  // corresponden en absoluto).
+  const generalSheet = doc.sheets.find((sheet) => isGeneralSheetCode(sheet.code)) ?? null
 
   for (const sheet of doc.sheets) {
     const worksheetName = safeWorksheetName(sheet.label || sheet.code, usedNames)
@@ -226,7 +239,34 @@ function renderHeader(ws: ExcelJS.Worksheet, doc: PdtpRe36Document) {
   ws.mergeCells(titleRow, RE36_LAYOUT.fixedColumns + 1, titleRow, LAST_COLUMN)
   setText(ws, `${columnLetter(RE36_LAYOUT.fixedColumns + 1)}${titleRow}`, `CÓDIGO: ${doc.program.documentCode}`, { bold: true })
 
-  const subtitleRow = titleRow + 1
+  // Identificación del documento: faena, revisión y fecha de corte. Cada
+  // faena manda su propia copia de este archivo y lo firma Legal — sin esto
+  // impreso, un RE-36 descargado no dice de qué faena es ni a qué fecha
+  // corresponde (hallazgo de la ronda de arreglos 1/5). `cutoff.asOf` es
+  // siempre ISO (a diferencia de `signatures.*.at`, que puede no serlo), así
+  // que se puede recortar de forma determinista sin parsear.
+  const identificationRow = titleRow + 1
+  const identificationThird = Math.floor(LAST_COLUMN / 3)
+  ws.mergeCells(identificationRow, 1, identificationRow, identificationThird)
+  setText(ws, `A${identificationRow}`, `Faena: ${doc.worksite.name} (${doc.worksite.code})`, { bold: true })
+  ws.mergeCells(identificationRow, identificationThird + 1, identificationRow, identificationThird * 2)
+  setText(
+    ws,
+    `${columnLetter(identificationThird + 1)}${identificationRow}`,
+    `Revisión: ${doc.program.documentRevision ?? "—"}`,
+    { bold: true },
+  )
+  ws.mergeCells(identificationRow, identificationThird * 2 + 1, identificationRow, LAST_COLUMN)
+  const cutoffDate = doc.cutoff.asOf.slice(0, 10)
+  const cutoffMonthLabel = doc.cutoff.month !== null ? `Mes ${doc.cutoff.month}` : "Año completo"
+  setText(
+    ws,
+    `${columnLetter(identificationThird * 2 + 1)}${identificationRow}`,
+    `Corte: ${cutoffDate} (${cutoffMonthLabel})`,
+    { bold: true },
+  )
+
+  const subtitleRow = identificationRow + 1
   ws.mergeCells(subtitleRow, 1, subtitleRow, LAST_COLUMN)
   setText(ws, `A${subtitleRow}`, "Indicadores de desempeño del plan de trabajo anual", { bold: true })
 
@@ -243,7 +283,7 @@ function renderHeader(ws: ExcelJS.Worksheet, doc: PdtpRe36Document) {
     const row = RE36_LAYOUT.indicatorFirstRow + index
     ws.mergeCells(row, 1, row, 2)
     setText(ws, `A${row}`, label, { bold: true })
-    ws.mergeCells(row, 3, row, RE36_LAYOUT.fixedColumns + 8)
+    ws.mergeCells(row, 3, row, RE36_LAYOUT.fixedColumns + INDICATOR_VALUE_SPAN)
     const valueCell = ws.getCell(`C${row}`)
     if (label === "Meta" || label === "Resultado") {
       valueCell.value = typeof value === "number" ? value : ""
@@ -310,6 +350,11 @@ function renderDataRows(ws: ExcelJS.Worksheet, sheet: PdtpRe36Sheet) {
         const eAddr = re36CellAddress(month, week, "E", excelRow)
         if (cell.p !== null) ws.getCell(pAddr).value = cell.p
         if (cell.e !== null) ws.getCell(eAddr).value = cell.e
+        // `cell.note`: el modelo no lo populúa hoy (reservado para una fase
+        // futura, ver JSDoc de `PdtpRe36Cell`), pero si llega a traer algo se
+        // adjunta como nota de Excel a la celda que sí tenga un valor escrito
+        // (E si hay ejecución, si no P) en vez de descartarlo en silencio.
+        if (cell.note) ws.getCell(cell.e !== null ? eAddr : pAddr).note = sanitizeCell(cell.note) as string
       }
     }
 
@@ -344,53 +389,109 @@ function renderBands(ws: ExcelJS.Worksheet, sheet: PdtpRe36Sheet) {
   }
 }
 
+/**
+ * Formato condicional del semáforo (columnas E) y de la escala de color
+ * (columnas P). Un solo bloque por tipo de columna en vez de 96 llamadas
+ * (una por semana): `ref` de ExcelJS acepta una lista de rangos separados
+ * por espacio (equivalente al `sqref` de OOXML, que admite múltiples
+ * referencias), así que las 48 columnas E entran en un solo `addConditionalFormatting`
+ * con prioridades 1-3 (únicas en toda la hoja, no repetidas 48 veces), y lo
+ * mismo para las 48 columnas P.
+ *
+ * **Regla de vacíos (CRITICAL, ronda de arreglos 1/5):** una celda E sin
+ * ejecución reportada no se escribe (`cell.e === null` → no se asigna
+ * `.value`, ver `renderDataRows`), así que queda genuinamente vacía. En
+ * Excel/LibreOffice, una regla `cellIs equal 0` SÍ hace match sobre una
+ * celda vacía (el vacío se evalúa como 0 en la comparación numérica) — sin
+ * una regla que lo excluya explícitamente, la regla roja pintaría de rojo
+ * casi toda la grilla de un RE-36 real (89 actividades, la mayoría con solo
+ * unas pocas de las 48 semanas planificadas), tapando además el achurado de
+ * las actividades a demanda. El Excel original resuelve esto con una tercera
+ * regla `containsBlanks`/fórmula `LEN(TRIM(celda))=0` **por delante** (mayor
+ * precedencia, número de prioridad menor) de la regla del 0: cuando varias
+ * reglas de un mismo atributo (relleno) hacen match sobre la misma celda,
+ * Excel aplica el relleno de la regla de mayor precedencia (menor prioridad)
+ * que lo define explícitamente — por eso esta regla fija `pattern: "none"`
+ * en vez de dejar `style` vacío, para competir de verdad por el atributo
+ * `fill` y ganarle a la regla roja en las celdas vacías. Una celda con el
+ * valor literal `0` no calza con `LEN(TRIM(...))=0` (`TRIM(0)` es el texto
+ * `"0"`, de largo 1), así que sigue pintándose de rojo correctamente.
+ *
+ * **Umbral verde:** `executedQuantity`/`plannedQuantity` son `numeric(10,2)`
+ * en la base (`db/schema/prevention/pdtp.ts`) y el Zod de captura no exige
+ * enteros (`z.coerce.number().min(0)`, sin `.int()`), así que un valor como
+ * `0.5` es alcanzable. `cellIs between [1, 1e9]` reproduce exactamente
+ * "E ≥ 1" del Excel original (ExcelJS no tipa un operador
+ * `greaterThanOrEqual`); `greaterThan 0` habría pintado `0.5` de verde, que
+ * el original no hace.
+ *
+ * Nota honesta: esto reproduce la estructura de reglas del Excel original
+ * (verificada contra el archivo fuente), pero no hay forma de comprobar en
+ * este entorno que Excel/LibreOffice efectivamente evalúan la precedencia
+ * como se describe arriba — no hay motor de cálculo disponible aquí (mismo
+ * hueco de LibreOffice documentado en el informe de la tarea). El test
+ * asociado verifica la estructura de las reglas (tipos, fórmulas,
+ * prioridades relativas), no el resultado visual.
+ */
 function renderConditionalFormatting(ws: ExcelJS.Worksheet, hasRows: boolean, lastDataRow: number) {
   if (!hasRows) return
   const { firstDataRow } = RE36_LAYOUT
 
+  const eRanges: string[] = []
+  const pRanges: string[] = []
   for (let month = 1; month <= RE36_LAYOUT.monthsCount; month++) {
     for (let week = 1; week <= RE36_LAYOUT.weeksPerMonth; week++) {
       const eCol = columnLetter(cellColumn(month, week, "E"))
-      const eRef = `${eCol}${firstDataRow}:${eCol}${lastDataRow}`
-      ws.addConditionalFormatting({
-        ref: eRef,
-        rules: [
-          {
-            type: "cellIs",
-            operator: "equal",
-            formulae: ["0"],
-            priority: 1,
-            style: { fill: { type: "pattern", pattern: "solid", fgColor: { argb: CONDITIONAL_RED } } },
-          },
-          {
-            // ExcelJS no tipa un operador `greaterThanOrEqual`; para enteros
-            // no negativos (E siempre lo es, ver JSDoc de `PdtpRe36Cell`),
-            // "E ≥ 1" y "E > 0" son la misma condición, así que se usa
-            // `greaterThan` con 0 en su lugar.
-            type: "cellIs",
-            operator: "greaterThan",
-            formulae: ["0"],
-            priority: 2,
-            style: { fill: { type: "pattern", pattern: "solid", fgColor: { argb: CONDITIONAL_GREEN } } },
-          },
-        ],
-      })
-
+      eRanges.push(`${eCol}${firstDataRow}:${eCol}${lastDataRow}`)
       const pCol = columnLetter(cellColumn(month, week, "P"))
-      const pRef = `${pCol}${firstDataRow}:${pCol}${lastDataRow}`
-      ws.addConditionalFormatting({
-        ref: pRef,
-        rules: [
-          {
-            type: "colorScale",
-            priority: 3,
-            cfvo: [{ type: "num", value: 1 }, { type: "num", value: 5 }],
-            color: [{ argb: P_SCALE_LOW }, { argb: P_SCALE_HIGH }],
-          },
-        ],
-      })
+      pRanges.push(`${pCol}${firstDataRow}:${pCol}${lastDataRow}`)
     }
   }
+
+  // Ancla de la fórmula de vacíos: la esquina superior izquierda del primer
+  // rango del `sqref` (mes 1 / semana 1 / E). Excel ajusta la referencia
+  // relativa para cada celda del `sqref`, incluidas las de rangos no
+  // contiguos, igual que si fuera un solo rango — mismo mecanismo que usa el
+  // Excel original (ancla en la fila 14, ver el brief).
+  const eAnchor = re36CellAddress(1, 1, "E", firstDataRow)
+
+  ws.addConditionalFormatting({
+    ref: eRanges.join(" "),
+    rules: [
+      {
+        type: "expression",
+        formulae: [`LEN(TRIM(${eAnchor}))=0`],
+        priority: 1,
+        style: { fill: { type: "pattern", pattern: "none" } },
+      },
+      {
+        type: "cellIs",
+        operator: "equal",
+        formulae: ["0"],
+        priority: 2,
+        style: { fill: { type: "pattern", pattern: "solid", fgColor: { argb: CONDITIONAL_RED } } },
+      },
+      {
+        type: "cellIs",
+        operator: "between",
+        formulae: ["1", "1000000000"],
+        priority: 3,
+        style: { fill: { type: "pattern", pattern: "solid", fgColor: { argb: CONDITIONAL_GREEN } } },
+      },
+    ],
+  })
+
+  ws.addConditionalFormatting({
+    ref: pRanges.join(" "),
+    rules: [
+      {
+        type: "colorScale",
+        priority: 4,
+        cfvo: [{ type: "num", value: 1 }, { type: "num", value: 5 }],
+        color: [{ argb: P_SCALE_LOW }, { argb: P_SCALE_HIGH }],
+      },
+    ],
+  })
 }
 
 function renderTotals(
@@ -473,11 +574,11 @@ function renderTotals(
 
 function renderPlatformIndicators(ws: ExcelJS.Worksheet, doc: PdtpRe36Document, startRow: number): number {
   let row = startRow
-  ws.mergeCells(row, 1, row, RE36_LAYOUT.fixedColumns + 8)
+  ws.mergeCells(row, 1, row, RE36_LAYOUT.fixedColumns + PLATFORM_LABEL_SPAN)
   setText(ws, `A${row}`, "Indicador de la plataforma — programa completo", { bold: true })
   row += 1
 
-  ws.mergeCells(row, 1, row, RE36_LAYOUT.fixedColumns + 12)
+  ws.mergeCells(row, 1, row, RE36_LAYOUT.fixedColumns + PLATFORM_NOTE_SPAN)
   const noteCell = setText(
     ws,
     `A${row}`,
@@ -606,7 +707,7 @@ function renderLegend(ws: ExcelJS.Worksheet, doc: PdtpRe36Document, startRow: nu
   ]
   for (const [label, text] of legendEntries) {
     setText(ws, `A${row}`, label, { bold: true })
-    ws.mergeCells(row, 2, row, RE36_LAYOUT.fixedColumns + 10)
+    ws.mergeCells(row, 2, row, RE36_LAYOUT.fixedColumns + LEGEND_TEXT_SPAN)
     const cell = setText(ws, `B${row}`, text)
     cell.alignment = { wrapText: true }
     row += 1

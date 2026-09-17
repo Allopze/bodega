@@ -17,6 +17,53 @@ function findRecalcScript(): string | null {
   return null
 }
 
+function hasSoffice(): boolean {
+  try {
+    execFileSync("bash", ["-lc", "command -v soffice"], { encoding: "utf8" })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function hasOpenpyxl(): boolean {
+  try {
+    execFileSync("python3", ["-c", "import openpyxl"], { encoding: "utf8" })
+    return true
+  } catch {
+    return false
+  }
+}
+
+const recalcScript = findRecalcScript()
+const canRecalcWithLibreOffice = Boolean(recalcScript) && hasSoffice()
+const canInspectWithOpenpyxl = hasOpenpyxl()
+
+/** Escribe `buffer` en `.tmp/<name>` (dentro del worktree, no en `/tmp`), corre `run` y garantiza el borrado del archivo al final. */
+async function withFixtureFile<T>(buffer: ArrayBuffer, name: string, run: (fixturePath: string) => T | Promise<T>): Promise<T> {
+  const tmpDir = path.resolve(process.cwd(), ".tmp")
+  fs.mkdirSync(tmpDir, { recursive: true })
+  const fixturePath = path.join(tmpDir, name)
+  fs.writeFileSync(fixturePath, Buffer.from(buffer))
+  try {
+    return await run(fixturePath)
+  } finally {
+    fs.rmSync(fixturePath, { force: true })
+  }
+}
+
+/** Reconstruye el `ref` multi-rango que `renderConditionalFormatting` arma para las columnas E o P, usando solo la API pública del módulo (sin asumir su algoritmo interno). */
+function buildScheduleRangeRef(kind: "P" | "E", lastDataRow: number): string {
+  const ranges: string[] = []
+  for (let month = 1; month <= RE36_LAYOUT.monthsCount; month++) {
+    for (let week = 1; week <= RE36_LAYOUT.weeksPerMonth; week++) {
+      const col = re36CellAddress(month, week, kind, RE36_LAYOUT.firstDataRow).replace(/\d+$/, "")
+      ranges.push(`${col}${RE36_LAYOUT.firstDataRow}:${col}${lastDataRow}`)
+    }
+  }
+  return ranges.join(" ")
+}
+
 /**
  * Fixture puro (sin PGlite, sin `@/db`): 2 hojas, 3 actividades en 2
  * objetivos, 1 de ellas "a demanda", P/E en 4 celdas repartidas entre las
@@ -162,19 +209,127 @@ describe("renderPdtpRe36Workbook", () => {
     expect(merges).toContain("A16:A17")
   })
 
-  it("las columnas E tienen reglas condicionales 0→rojo y ≥1→verde", () => {
+  it("identifica la faena, la revisión y la fecha de corte en la cabecera de cada hoja", () => {
     const workbook = renderPdtpRe36Workbook(buildFixtureDocument())
     const ws = workbook.getWorksheet("PDTP GENERAL")!
-    const cfs = (ws as unknown as { conditionalFormattings: Array<{ ref: string; rules: Array<{ type: string; operator?: string; style?: { fill?: { fgColor?: { argb?: string } } } }> }> }).conditionalFormattings
-    const eColumnCf = cfs.find((cf) => cf.ref === "G16:G18")
-    expect(eColumnCf).toBeDefined()
-    const redRule = eColumnCf!.rules.find((rule) => rule.operator === "equal")
-    // ExcelJS no tipa `greaterThanOrEqual`; el renderizador usa `greaterThan`
-    // con 0, condición equivalente para enteros no negativos (ver comentario
-    // en `renderConditionalFormatting`).
-    const greenRule = eColumnCf!.rules.find((rule) => rule.operator === "greaterThan")
-    expect(redRule?.style?.fill?.fgColor?.argb).toBe("FFFF0000")
-    expect(greenRule?.style?.fill?.fgColor?.argb).toBe("FF00B050")
+    // Fila 2 (justo bajo el título): faena / revisión / corte, en tres
+    // tercios del ancho de la hoja — ver `renderHeader`.
+    const rowTexts = [1, 2, 3].map((col) => String(ws.getRow(2).getCell(col).value ?? ""))
+    const joined = rowTexts.join(" | ")
+    expect(joined).toContain("Faena Norte")
+    expect(joined).toContain("FN-01")
+
+    let revisionText = ""
+    let cutoffText = ""
+    ws.getRow(2).eachCell({ includeEmpty: false }, (cell) => {
+      const text = String(cell.value ?? "")
+      if (text.startsWith("Revisión:")) revisionText = text
+      if (text.startsWith("Corte:")) cutoffText = text
+    })
+    expect(revisionText).toBe("Revisión: 0")
+    expect(cutoffText).toBe("Corte: 2026-09-17 (Año completo)")
+  })
+
+  describe("semáforo de las columnas E (3 reglas: vacío, 0, ≥1)", () => {
+    it("arma un solo bloque de formato condicional multi-rango para las 48 columnas E, con 3 reglas y prioridades únicas", () => {
+      const workbook = renderPdtpRe36Workbook(buildFixtureDocument())
+      const ws = workbook.getWorksheet("PDTP GENERAL")!
+      const cfs = (
+        ws as unknown as {
+          conditionalFormattings: Array<{
+            ref: string
+            rules: Array<{
+              type: string
+              operator?: string
+              formulae?: string[]
+              priority: number
+              style?: { fill?: { pattern?: string; fgColor?: { argb?: string } } }
+            }>
+          }>
+        }
+      ).conditionalFormattings
+
+      // 3 filas de datos: firstDataRow=16 → lastDataRow=18.
+      const expectedERef = buildScheduleRangeRef("E", 18)
+      const eCf = cfs.find((cf) => cf.ref === expectedERef)
+      expect(eCf).toBeDefined()
+      expect(eCf!.rules).toHaveLength(3)
+
+      const sortedRules = [...eCf!.rules].sort((a, b) => a.priority - b.priority)
+      const [blankRule, redRule, greenRule] = [sortedRules[0]!, sortedRules[1]!, sortedRules[2]!]
+
+      // Regla 1 (mayor precedencia — "por delante" de la del 0, igual que el
+      // Excel original): celda vacía → sin relleno. `LEN(TRIM(anchor))=0` es
+      // la misma fórmula que usa el original (ancla en la primera celda del
+      // sqref: mes 1 / semana 1 / E de la fila de datos).
+      expect(blankRule.type).toBe("expression")
+      expect(blankRule.formulae).toEqual([`LEN(TRIM(${re36CellAddress(1, 1, "E", RE36_LAYOUT.firstDataRow)}))=0`])
+      expect(blankRule.style?.fill?.pattern).toBe("none")
+
+      expect(redRule.type).toBe("cellIs")
+      expect(redRule.operator).toBe("equal")
+      expect(redRule.formulae).toEqual(["0"])
+      expect(redRule.style?.fill?.fgColor?.argb).toBe("FFFF0000")
+
+      // "≥ 1" con `between [1, 1e9]` (no `greaterThan 0`): executedQuantity
+      // es `numeric(10,2)` en la base y no está forzado a entero, así que
+      // 0.5 no debe pintarse verde (el Excel original tampoco lo haría).
+      expect(greenRule.type).toBe("cellIs")
+      expect(greenRule.operator).toBe("between")
+      expect(greenRule.formulae).toEqual(["1", "1000000000"])
+      expect(greenRule.style?.fill?.fgColor?.argb).toBe("FF00B050")
+
+      // "por delante": la regla de vacíos tiene el número de prioridad más
+      // bajo (mayor precedencia) de las tres.
+      expect(blankRule.priority).toBeLessThan(redRule.priority)
+      expect(redRule.priority).toBeLessThan(greenRule.priority)
+
+      // La escala de color de P vive en su propio bloque (columnas
+      // distintas), con una prioridad propia — no repite 1/2/3 en cada una
+      // de las 48 columnas como antes de esta ronda de arreglos.
+      const expectedPRef = buildScheduleRangeRef("P", 18)
+      const pCf = cfs.find((cf) => cf.ref === expectedPRef)
+      expect(pCf).toBeDefined()
+      expect(pCf!.rules).toHaveLength(1)
+      expect(pCf!.rules[0]!.type).toBe("colorScale")
+      const allPriorities = cfs.flatMap((cf) => cf.rules.map((rule) => rule.priority))
+      expect(new Set(allPriorities).size).toBe(allPriorities.length) // únicas en toda la hoja
+    })
+
+    it.skipIf(!canInspectWithOpenpyxl)(
+      "las 3 reglas sobreviven un round-trip con openpyxl (verificación estructural — no hay motor de cálculo en este entorno, ver informe)",
+      async () => {
+        const buffer = await renderPdtpRe36Buffer(buildFixtureDocument())
+        await withFixtureFile(buffer, "re36-cf-openpyxl.xlsx", (fixturePath) => {
+          const script = [
+            "import sys, json",
+            "import openpyxl",
+            "wb = openpyxl.load_workbook(sys.argv[1])",
+            'ws = wb["PDTP GENERAL"]',
+            "out = []",
+            "for cf in ws.conditional_formatting:",
+            "    for rule in cf.rules:",
+            "        out.append({",
+            '            "sqref": str(cf.sqref),',
+            '            "type": rule.type,',
+            '            "priority": rule.priority,',
+            '            "operator": rule.operator,',
+            '            "formula": list(rule.formula) if rule.formula else None,',
+            "        })",
+            "print(json.dumps(out))",
+          ].join("\n")
+          const output = execFileSync("python3", ["-c", script, fixturePath], { encoding: "utf8" })
+          const rules = JSON.parse(output) as Array<{ sqref: string; type: string; priority: number; operator: string | null; formula: string[] | null }>
+          const eRules = rules.filter((rule) => rule.sqref.startsWith("G16:G18"))
+          expect(eRules).toHaveLength(3)
+          const byPriority = [...eRules].sort((a, b) => a.priority - b.priority)
+          expect(byPriority[0]!.type).toBe("expression")
+          expect(byPriority[0]!.formula).toEqual([`LEN(TRIM(${re36CellAddress(1, 1, "E", RE36_LAYOUT.firstDataRow)}))=0`])
+          expect(byPriority[1]!.operator).toBe("equal")
+          expect(byPriority[2]!.operator).toBe("between")
+        })
+      },
+    )
   })
 
   it("la fila a demanda tiene relleno lightUp en las 96 celdas", () => {
@@ -252,6 +407,24 @@ describe("renderPdtpRe36Workbook", () => {
     expect(hasPlatformLabel(cargo)).toBe(false)
   })
 
+  it("omite platformIndicators por completo cuando ninguna hoja es la general (no cae en la primera hoja de cargo)", () => {
+    const doc = buildFixtureDocument()
+    // Sin hoja "pdtp_general"/"general": ambas hojas restantes son de cargo.
+    doc.sheets = [{ ...doc.sheets[0]!, code: "cargo-a" }, { ...doc.sheets[1]!, code: "cargo-b" }]
+    const workbook = renderPdtpRe36Workbook(doc)
+    const hasPlatformLabel = (ws: ReturnType<typeof workbook.getWorksheet>) => {
+      let found = false
+      ws!.eachRow((row) => {
+        if (String(row.getCell(1).value ?? "").includes("Indicador de la plataforma")) found = true
+      })
+      return found
+    }
+    for (const sheet of workbook.worksheets) {
+      if (sheet.name === "Desvíos") continue
+      expect(hasPlatformLabel(sheet)).toBe(false)
+    }
+  })
+
   it("sanea textos que empiezan con = + - @ para que no se interpreten como fórmula", () => {
     const doc = buildFixtureDocument()
     doc.sheets[0]!.rows[0]!.activity = "=CMD('calc')"
@@ -268,7 +441,7 @@ describe("renderPdtpRe36Workbook", () => {
     expect(sanitizedChangeControl).toBe(true)
   })
 
-  it("re36CellAddress calcula la columna a partir de RE36_LAYOUT, sin números fijos", () => {
+  it("re36CellAddress asigna F/G al mes1/semana1 y CW al mes12/semana4/E", () => {
     expect(re36CellAddress(1, 1, "P", RE36_LAYOUT.firstDataRow)).toBe("F16")
     expect(re36CellAddress(1, 1, "E", RE36_LAYOUT.firstDataRow)).toBe("G16")
     expect(re36CellAddress(12, 4, "E", RE36_LAYOUT.firstDataRow)).toBe("CW16")
@@ -276,50 +449,33 @@ describe("renderPdtpRe36Workbook", () => {
 })
 
 describe("renderPdtpRe36Buffer", () => {
-  it("produce un libro que LibreOffice recalcula sin errores", async () => {
+  it("el buffer escrito conserva las fórmulas de los totales (round-trip, sin recálculo real)", async () => {
     const buffer = await renderPdtpRe36Buffer(buildFixtureDocument())
+    await withFixtureFile(buffer, "re36-formula-roundtrip.xlsx", async (fixturePath) => {
+      const reloaded = new (await import("exceljs")).default.Workbook()
+      await reloaded.xlsx.readFile(fixturePath)
+      const ws = reloaded.getWorksheet("PDTP GENERAL")!
+      const totalP = ws.getCell("F19").value as { formula?: string } | string
+      const percent = ws.getCell("G21").value as { formula?: string } | string
+      expect(typeof totalP).toBe("object")
+      expect((totalP as { formula: string }).formula).toBe("SUM(F16:F18)")
+      expect(typeof percent).toBe("object")
+      expect((percent as { formula: string }).formula).toBe('IFERROR(G20/F19,"")')
+    })
+    if (!canRecalcWithLibreOffice) {
+      console.warn(
+        "LibreOffice (soffice) no está disponible en este entorno: no se pudo correr el recálculo real. " +
+          "Este test solo prueba que las fórmulas sobreviven la escritura del buffer (ver informe de la tarea 1.6).",
+      )
+    }
+  })
 
-    const tmpDir = path.resolve(process.cwd(), ".tmp")
-    fs.mkdirSync(tmpDir, { recursive: true })
-    const fixturePath = path.join(tmpDir, "re36-fixture.xlsx")
-    fs.writeFileSync(fixturePath, Buffer.from(buffer))
-
-    try {
-      const recalcScript = findRecalcScript()
-
-      let sofficeAvailable = false
-      try {
-        execFileSync("bash", ["-lc", "command -v soffice"], { encoding: "utf8" })
-        sofficeAvailable = true
-      } catch {
-        sofficeAvailable = false
-      }
-
-      if (!recalcScript || !sofficeAvailable) {
-        // LibreOffice no está instalado en este entorno (verificado con
-        // `command -v soffice`) — se documenta en el informe de la tarea.
-        // Verificación de respaldo: reabrir el buffer escrito y confirmar
-        // que las celdas de totales siguen siendo fórmulas de Excel (no
-        // texto, que es lo que habría pasado si por error se hubiera usado
-        // `xlsxToBase64` en vez de `workbook.xlsx.writeBuffer()`).
-        const reloaded = new (await import("exceljs")).default.Workbook()
-        await reloaded.xlsx.readFile(fixturePath)
-        const ws = reloaded.getWorksheet("PDTP GENERAL")!
-        const totalP = ws.getCell("F19").value as { formula?: string } | string
-        const percent = ws.getCell("G21").value as { formula?: string } | string
-        expect(typeof totalP).toBe("object")
-        expect((totalP as { formula: string }).formula).toBe("SUM(F16:F18)")
-        expect(typeof percent).toBe("object")
-        expect((percent as { formula: string }).formula).toBe('IFERROR(G20/F19,"")')
-        console.warn("LibreOffice (soffice) no está disponible en este entorno: se omitió el recálculo real; se verificó en su lugar que las fórmulas sobreviven la escritura del buffer (ver informe de la tarea 1.6).")
-        return
-      }
-
-      const output = execFileSync("python3", [recalcScript, fixturePath], { encoding: "utf8", timeout: 60_000 })
+  it.skipIf(!canRecalcWithLibreOffice)("LibreOffice recalcula el libro sin errores", async () => {
+    const buffer = await renderPdtpRe36Buffer(buildFixtureDocument())
+    await withFixtureFile(buffer, "re36-libreoffice-recalc.xlsx", (fixturePath) => {
+      const output = execFileSync("python3", [recalcScript!, fixturePath], { encoding: "utf8", timeout: 60_000 })
       const result = JSON.parse(output) as { status: string; total_errors: number }
       expect(result.total_errors).toBe(0)
-    } finally {
-      fs.rmSync(fixturePath, { force: true })
-    }
+    })
   }, 60_000)
 })
