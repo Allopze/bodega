@@ -17,6 +17,7 @@ import {
 import { isPdtpActionOpen } from "@/lib/services/pdtp/checklist-domain"
 import { listScopedWorksites } from "@/lib/services/ppa"
 import { currentPdtpPeriod, type PdtpPeriod } from "@/lib/services/pdtp/period"
+import { getLatestPdtpPeriodClosure } from "@/lib/services/pdtp/period-closures"
 import { PageContainer } from "@/components/ui/page-container"
 import { Breadcrumbs, PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
@@ -187,6 +188,12 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
   // una vez aunque esté en cero en varias faenas a la vez. Sin esta
   // aclaración, "N actividades en cero" se lee como "N faena-mes en cero".
   const zeroActivitiesQualifier = selectedWorksiteId ? "" : " en al menos una faena"
+  // Último mes congelado del programa, en el alcance del usuario: responde
+  // "¿hasta dónde llega la evidencia firmada?" sin abrir la pantalla de cierres.
+  const latestClosure = focusProgram
+    ? await getLatestPdtpPeriodClosure(focusProgram.id, effectiveWorksites.map((worksite) => worksite.id))
+    : null
+
   const aggregateForKpis = focusProgram
     ? await getPdtpAggregatedSheetViewByProgram(focusProgram.id, "pdtp_general", effectiveWorksites.map((worksite) => worksite.id), currentPeriod)
     : null
@@ -239,6 +246,18 @@ export default async function PdtpDashboardPage({ searchParams }: PdtpDashboardP
             <span className="text-xs text-[var(--color-text-muted)]">
               {activeProgram ? "Programa activo" : "Programa en borrador"}:{" "}
               <strong className="font-semibold text-[var(--color-text)]">{focusProgram.title} <span className="font-mono text-xs font-normal text-[var(--color-text-muted)]">v{focusProgram.version}</span></strong>
+            </span>
+          )}
+          {focusProgram && (
+            <span className="text-xs text-[var(--color-text-muted)]">
+              Último cierre:{" "}
+              {latestClosure
+                ? (
+                  <Link href={`/prevencion/pdtp/${focusProgram.id}/cierres`} className="font-semibold text-[var(--color-text)] hover:underline">
+                    {`${String(latestClosure.month).padStart(2, "0")}/${latestClosure.year}`}
+                  </Link>
+                )
+                : <strong className="font-semibold text-[var(--color-text)]">ningún mes cerrado</strong>}
             </span>
           )}
         </div>

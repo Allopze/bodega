@@ -125,13 +125,30 @@ function formatPercent(value: number | null): number | string {
 type QuarterFormulaMode = "ratio" | "average"
 
 /**
+ * Datos de la hoja "Cierre" que acompaña al documento cuando lo que se
+ * descarga es una **foto congelada** de un mes (Fase 4), no el estado vigente.
+ *
+ * Es lo único que distingue el Excel de un cierre del Excel del programa vivo:
+ * el resto de las hojas se renderizan desde el mismo `PdtpRe36Document`, que
+ * en ese caso viene del `snapshotJson` del cierre y no de la base. Sin esta
+ * hoja, quien recibe el archivo meses después no puede saber a qué corte
+ * corresponde, quién lo firmó ni con qué huella.
+ *
+ * Todo viene ya formateado en castellano: este renderizador no traduce enums
+ * ni fechas.
+ */
+export type PdtpRe36ClosureSheet = {
+  rows: Array<{ label: string; value: string }>
+}
+
+/**
  * Renderiza el libro completo: una hoja por `doc.sheets` (nombre vía
  * `safeWorksheetName`) más la hoja "Desvíos" (siempre presente, aunque
  * `doc.deviations` esté vacío — Fase 3 la llena).
  */
 export function renderPdtpRe36Workbook(
   doc: PdtpRe36Document,
-  options?: { quarterFormula?: QuarterFormulaMode },
+  options?: { quarterFormula?: QuarterFormulaMode; closure?: PdtpRe36ClosureSheet },
 ): ExcelJS.Workbook {
   const quarterFormula: QuarterFormulaMode = options?.quarterFormula ?? "ratio"
   const workbook = new ExcelJS.Workbook()
@@ -157,6 +174,7 @@ export function renderPdtpRe36Workbook(
   }
 
   renderDeviationsSheet(workbook, doc, usedNames)
+  if (options?.closure) renderClosureSheet(workbook, options.closure, usedNames)
 
   return workbook
 }
@@ -164,9 +182,9 @@ export function renderPdtpRe36Workbook(
 /** Igual que `renderPdtpRe36Workbook`, pero devuelve el buffer final del libro. */
 export async function renderPdtpRe36Buffer(
   doc: PdtpRe36Document,
-  options?: { quarterFormula?: QuarterFormulaMode; session?: Session },
+  options?: { quarterFormula?: QuarterFormulaMode; session?: Session; closure?: PdtpRe36ClosureSheet },
 ): Promise<ArrayBuffer> {
-  const workbook = renderPdtpRe36Workbook(doc, { quarterFormula: options?.quarterFormula })
+  const workbook = renderPdtpRe36Workbook(doc, { quarterFormula: options?.quarterFormula, closure: options?.closure })
 
   if (options?.session) {
     const rowCount = doc.sheets.reduce((total, sheet) => total + sheet.rows.length, 0)
@@ -737,4 +755,25 @@ function renderDeviationsSheet(workbook: ExcelJS.Workbook, doc: PdtpRe36Document
   })
 
   for (let col = 1; col <= headers.length; col++) ws.getColumn(col).width = 18
+}
+
+/**
+ * Hoja "Cierre": corte, motivo, quién cerró y huella de la foto. Dos columnas,
+ * etiqueta y valor, porque no es una tabla de datos sino la portada de
+ * procedencia del archivo.
+ */
+function renderClosureSheet(workbook: ExcelJS.Workbook, closure: PdtpRe36ClosureSheet, usedNames: Set<string>) {
+  const ws = workbook.addWorksheet(safeWorksheetName("Cierre", usedNames))
+  setText(ws, "A1", "Dato", { bold: true })
+  setText(ws, "B1", "Valor", { bold: true })
+  ws.views = [{ state: "frozen", ySplit: 1 }]
+
+  closure.rows.forEach((entry, index) => {
+    const row = index + 2
+    setText(ws, `A${row}`, entry.label, { bold: true })
+    setText(ws, `B${row}`, entry.value)
+  })
+
+  ws.getColumn(1).width = 28
+  ws.getColumn(2).width = 72
 }

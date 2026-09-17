@@ -29,7 +29,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { ChartBar, DotsThree, DownloadSimple, ListChecks, PencilSimple } from "@phosphor-icons/react/dist/ssr"
+import { ChartBar, DotsThree, DownloadSimple, ListChecks, LockKey, PencilSimple } from "@phosphor-icons/react/dist/ssr"
 import { PdtpSheetTable } from "../pdtp-sheet-table"
 import { PdtpSheetPicker, PdtpViewToggle, PdtpWorksitePicker } from "../pdtp-sheet-table-ui"
 import { PdtpIndicatorsPanel } from "../pdtp-indicators-panel"
@@ -40,6 +40,7 @@ import { CoverageReportPanel } from "./coverage-report-panel"
 import { FulfillmentBacklogPanel } from "./fulfillment-backlog-panel"
 import { ProgramLifecycleControls } from "./program-lifecycle-controls"
 import { ReconcileDeclaredActorButton } from "./reconcile-declared-actor-button"
+import { PdtpPeriodCloseButton } from "./period-close-button"
 
 export const metadata: Metadata = { title: "Programa de Trabajo Preventivo SG-SST" }
 
@@ -120,6 +121,7 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
   ])
 
   const canApprove = can(session, "prevention:pdtp:approve")
+  const canClosePeriod = can(session, "prevention:pdtp:close_period")
 
   const pendingApprovals: Array<{ id: string; activityId: string; month: number; week: number }> =
     canApprove && selectedWorksiteId && view && view.activities.length > 0
@@ -177,6 +179,16 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
                 <Link href={`/prevencion/pdtp/aprobaciones?programId=${programId}`}>Aprobaciones</Link>
               </Button>
             )}
+            {/* El cierre es por faena: sin una seleccionada no hay mes que
+                congelar, así que el botón no aparece en vez de aparecer y
+                fallar al enviarse. */}
+            {canClosePeriod && selectedWorksiteId && program.status === "active" && (
+              <PdtpPeriodCloseButton
+                programId={programId}
+                worksiteId={selectedWorksiteId}
+                year={program.year}
+              />
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger
                 type="button"
@@ -202,6 +214,12 @@ export default async function PdtpDetailPage({ params, searchParams }: PdtpPageP
                   <Link href={`/prevencion/pdtp/${programId}/reporte${selectedWorksiteId ? `?faena=${selectedWorksiteId}` : ""}`} className="flex items-center gap-2">
                     <ChartBar size={14} />
                     Reporte de gestión
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href={`/prevencion/pdtp/${programId}/cierres`} className="flex items-center gap-2">
+                    <LockKey size={14} />
+                    Cierres mensuales
                   </Link>
                 </DropdownMenuItem>
                 {selectedWorksiteId && (

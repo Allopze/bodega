@@ -55,3 +55,9 @@ export {
   recordPdtpDeviationAction,
   withdrawPdtpDeviationAction,
 } from "./actions/deviations"
+
+export {
+  closePdtpPeriodAction,
+  reopenPdtpPeriodAction,
+  distributePdtpPeriodClosureAction,
+} from "./actions/period-closures"

@@ -339,6 +339,15 @@ export const preventionModule = {
               permissions: ["prevention:pdtp:view"],
             },
             {
+              // El cierre por faena congela la copia del mes que se firma y se
+              // distribuye. Ver la lista sólo exige `view`; cerrar y reabrir
+              // exigen `prevention:pdtp:close_period`, que la propia pantalla
+              // comprueba para mostrar u ocultar sus acciones.
+              label: "Cierres mensuales",
+              href: "/prevencion/pdtp/cierres",
+              permissions: ["prevention:pdtp:view"],
+            },
+            {
               label: "Aprobaciones",
               href: "/prevencion/pdtp/aprobaciones",
               permissions: ["prevention:pdtp:approve"],
